@@ -2613,6 +2613,7 @@ restack(Monitor *m)
 {
 	Client *c;
 	XEvent ev;
+	Window sibling;
 	XWindowChanges wc;
 
 	// drawbar(m);
@@ -2623,12 +2624,17 @@ restack(Monitor *m)
 	if (m->sel->isfloating || !m->lt[m->sellt]->arrange)
 		XRaiseWindow(dpy, m->sel->win);
 	if (m->lt[m->sellt]->arrange) {
+		sibling = m->barwin;
 		wc.stack_mode = Below;
-		wc.sibling = m->barwin;
 		for (c = m->stack; c; c = c->snext)
 			if (!c->isfloating && ISVISIBLE(c)) {
-				XConfigureWindow(dpy, c->win, CWSibling|CWStackMode, &wc);
-				wc.sibling = c->win;
+				if (sibling == None) {
+					XLowerWindow(dpy, c->win);
+				} else {
+					wc.sibling = sibling;
+					XConfigureWindow(dpy, c->win, CWSibling|CWStackMode, &wc);
+				}
+				sibling = c->win;
 			}
 	}
 	restackprioritywindows();
@@ -2672,6 +2678,8 @@ restackprioritywindows(void)
 	Window focused;
 
 	for (m = mons; m; m = m->next)
+		raisefloatingclients(m->stack);
+	for (m = mons; m; m = m->next)
 		raisealwaysontopclients(m->stack);
 	for (m = mons; m; m = m->next)
 		if (!monitorhasfullscreen(m)) {
@@ -2696,6 +2704,17 @@ raisealwaysontopclients(Client *c)
 		return;
 	raisealwaysontopclients(c->snext);
 	if ((c->alwaysontop || c->ewmhabove) && ISVISIBLE(c))
+		XRaiseWindow(dpy, c->win);
+}
+
+void
+raisefloatingclients(Client *c)
+{
+	if (!c)
+		return;
+	raisefloatingclients(c->snext);
+	if (c->isfloating && ISVISIBLE(c)
+	    && !c->alwaysontop && !c->ewmhabove && !isvisiblefullscreen(c))
 		XRaiseWindow(dpy, c->win);
 }
 
