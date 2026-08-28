@@ -36,10 +36,38 @@ second (or later) release in the same month. Before releasing, set `VERSION`
 in `config.mk` to the version you're cutting (there is no automatic bump —
 set it by hand each time).
 
+### Pre-releases
+
+A version may carry an `-alpha.N`, `-beta.N` or `-rc.N` suffix, for example
+`2026.08.0-beta.1`. The suffix is part of the one `VERSION` in `config.mk`, so
+it reaches the source archive, the compiled `dwm -v` string, the tag, and the
+installer image together — there is no separate pre-release switch to forget.
+
+`scripts/lyona-release` publishes a suffixed version to GitHub with
+`--prerelease`, so it is never promoted to Latest. Only the three channel names
+above are accepted, and the counter is required: `-beta` without a number is
+rejected, as is any other word.
+
+An ISO9660 volume identifier admits only `A-Z`, `0-9` and `_` and is capped at
+32 characters, so the volume label drops the suffix punctuation:
+`2026.08.0-beta.1` produces `LYONA_2026_08_0_BETA1`. The ISO filename and
+`/etc/lyona-iso-release` keep the full version.
+
+A pre-release is still a release: everything in the checklist above applies,
+and step 9 must state plainly which parts are unqualified.
+
 To create the GitHub release:
 
 ```sh
 scripts/lyona-release --version v2026.08.0 --iso ~/Downloads/lyona.iso --notes RELEASE_NOTES.md
+```
+
+For a pre-release, pass the suffixed version — it must match `config.mk`:
+
+```sh
+scripts/lyona-release --version v2026.08.0-beta.1 \
+	--iso release/lyona-2026.08.0-beta.1-x86_64.iso \
+	--notes docs/RELEASE-NOTES-2026.08.0-beta.1.md
 ```
 
 The helper validates and hashes local artifacts before it creates a remote tag
@@ -68,12 +96,12 @@ checkout onto the system's archiso `releng` profile, then runs `mkarchiso`.
 The build reads `VERSION` from `config.mk` — `--version` overrides it for test
 images — and produces:
 
-| Artifact | Value at 2026.08.0 |
-| --- | --- |
-| ISO filename | `lyona-2026.08.0-x86_64.iso` |
-| Volume label (`iso_label`) | `LYONA_2026_08_0` |
-| `iso_application` | `lyona 2026.08.0 Arch Linux install medium` |
-| On-medium stamp | `/etc/lyona-iso-release` |
+| Artifact | Value at 2026.08.0 | Value at 2026.08.0-beta.1 |
+| --- | --- | --- |
+| ISO filename | `lyona-2026.08.0-x86_64.iso` | `lyona-2026.08.0-beta.1-x86_64.iso` |
+| Volume label (`iso_label`) | `LYONA_2026_08_0` | `LYONA_2026_08_0_BETA1` |
+| `iso_application` | `lyona 2026.08.0 Arch Linux install medium` | `lyona 2026.08.0-beta.1 Arch Linux install medium` |
+| On-medium stamp | `/etc/lyona-iso-release` | `/etc/lyona-iso-release` |
 
 `/etc/lyona-iso-release` records `LYONA_ISO_VERSION`,
 `LYONA_ISO_LABEL`, `LYONA_ISO_COMMIT`, and `LYONA_ISO_BUILD_DATE`,
