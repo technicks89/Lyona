@@ -14,8 +14,8 @@
 
 ![The lyona desktop with its Quickshell panel](./lyona-qs-4x.webp)
 
-This is a fork of [dwm-titus](https://github.com/ChrisTitusTech/dwm-titus) (An awesome x11 Fedora distro). It is designed to run on Arch Linux rather than Fedora. 
-lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy) (An amazing wayland Arch distro)
+This is a fork of [dwm-titus](https://github.com/ChrisTitusTech/dwm-titus). It is designed to run on Arch Linux rather than Fedora. 
+lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy).
 
 lyona is a complete, lightweight X11 desktop with sensible defaults,
 guided installation, and powerful customization. It is designed for people who
