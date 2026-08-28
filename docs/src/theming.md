@@ -183,3 +183,26 @@ The setting owns only `font.conf` under the lyona XDG configuration
 directory. A malformed file falls back to the existing Meslo family at 100
 percent without preventing shell startup. GTK and Qt application font policy
 is intentionally deferred to the separate toolkit-control slice.
+
+---
+## Boot Menu
+
+The GRUB boot menu uses the `CyberRe` theme, selected by the installer on
+machines that boot with GRUB. It is not part of the palette system above --
+GRUB reads its own theme long before the session starts, so it does not follow
+the dark/light theme you pick in Settings.
+
+```bash
+lyona-grub-theme status    # detected bootloader and selected theme
+lyona-grub-theme list      # installed themes
+lyona-grub-theme apply     # select CyberRe (or apply <name>)
+lyona-grub-theme remove    # back to the default GRUB appearance
+```
+
+Applying or removing a theme edits `/etc/default/grub` and regenerates
+`/boot/grub/grub.cfg`, so it needs root and backs the file up first. See
+[Install](install.md#grub-boot-menu-theme) for exactly which keys it changes.
+
+Machines that boot with systemd-boot -- which includes installs made from the
+lyona image -- have no GRUB menu to theme, and the commands above report that
+and do nothing.

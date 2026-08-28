@@ -8,6 +8,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- Theme the GRUB boot menu by default. The `CyberRe` theme (vendored from
+  [ChrisTitusTech/bootloader-themes](https://github.com/ChrisTitusTech/bootloader-themes),
+  MIT) installs to `/usr/share/grub/themes/CyberRe`, and the installer
+  selects it on machines that boot with GRUB. New `lyona-grub-theme` helper
+  with `status`, `list`, `apply`, and `remove`.
+
+  Installing the theme files changes nothing about booting. Selecting the
+  theme edits `/etc/default/grub`, so it backs the file up first, prints
+  every key it rewrites (`GRUB_THEME`, a `GRUB_TERMINAL_OUTPUT` that would
+  disable the graphical terminal, and `GRUB_GFXMODE` when unset), comments
+  replaced lines out instead of deleting them, and regenerates
+  `/boot/grub/grub.cfg`. Which entry boots, the kernel command line, and the
+  timeout are untouched.
+
+  Machines that do not boot with GRUB -- including installs from the lyona
+  image, which use systemd-boot -- are reported and left alone, and a failed
+  theme step does not fail the install. Opt out with `--skip-grub-theme` or
+  `DWM_INSTALL_GRUB_THEME=false`; revert an applied theme with
+  `lyona-grub-theme remove`.
+
 ## [2026.08.0-beta.1] - 2026-08-28
 
 First beta of the Arch Linux line. See
@@ -22,7 +44,7 @@ status.
   by a best-effort `archiso`-based install medium
   (`scripts/build-lyona-arch-iso.sh`); an AUR helper (`yay`) is installed
   as a standing convenience tool. Project branding moves to
-  `technicks89`/`lyonasoft.com`. Arch Linux is now the sole supported
+  `technicks89`/`technicks89.com`. Arch Linux is now the sole supported
   platform.
 
 - Rename the project from `dwm-titus` to `lyona`, to avoid confusion with

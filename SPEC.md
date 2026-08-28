@@ -34,8 +34,11 @@ distributions are outside the supported product and validation contract.
   third-party desktop utility.
 - Automatic installation of proprietary GPU drivers without an explicit
   per-install opt-in (interactive prompt or `LYONA_NVIDIA_DRIVER=1`).
-- Automatic bootloader, Plymouth, firewall, or kernel changes outside a
-  dedicated image flow that documents and validates them.
+- Automatic firewall or kernel changes, or automatic changes to which entry
+  the bootloader boots, outside a dedicated image flow that documents and
+  validates them. Boot *appearance* -- the Plymouth splash and the GRUB menu
+  theme -- is in scope as a documented, reported, reversible default; see
+  Section 5.5.
 - Turning the Settings frontend into a general-purpose root shell, service
   editor, firewall editor, or partition manager.
 - Bundling every optional desktop application.
@@ -228,6 +231,26 @@ it is installed, the installer must make it bootable through the bootloader
 already in use -- regenerating the GRUB configuration or cloning the existing
 systemd-boot entry -- and must report an unrecognized bootloader rather than
 guessing at its configuration.
+
+The installer must install the vendored GRUB menu themes under
+`/usr/share/grub/themes/` and, on a machine that boots with GRUB, select the
+default theme (`CyberRe`) unless the user opts out with `--skip-grub-theme`
+or `DWM_INSTALL_GRUB_THEME=false`. Installing the theme files must not change
+any boot behavior on its own.
+
+Selecting a theme is a bootloader change and must therefore back up
+`/etc/default/grub` before its first edit, report every key it rewrites,
+comment out replaced assignments instead of deleting them, and regenerate the
+GRUB configuration. It must set `GRUB_THEME`, clear a `GRUB_TERMINAL_OUTPUT`
+that would disable the graphical terminal, and supply a `GRUB_GFXMODE` only
+when the user has not chosen one. It must never change which entry boots, the
+kernel command line, or the timeout.
+
+A machine that does not boot with GRUB -- including installs from the lyona
+image, which use systemd-boot -- must be reported and left untouched, and a
+failed theme step must not fail an otherwise successful install. The
+selection must be reversible from the installed system through
+`lyona-grub-theme remove`.
 
 The archiso installer image separately enables `multilib` in its own
 `pacman.conf`, which archinstall copies onto the installed system, and

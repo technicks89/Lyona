@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+#
+# Select the GRUB boot-menu theme.
+#
+#     lyona-grub-theme status
+#     lyona-grub-theme list
+#     lyona-grub-theme apply [THEME]
+#     lyona-grub-theme remove
+#
+# The themes themselves are installed by `make install-grub-theme`, which is
+# only a copy into /usr/share/grub/themes and changes nothing about booting.
+# This script is the part that edits the bootloader, so it is separate,
+# reversible, and loud about what it touched: /etc/default/grub is backed up
+# before the first edit and every key it rewrites is printed.
+#
+# A theme needs more than GRUB_THEME to actually appear. GRUB draws themes
+# only on gfxterm, so a GRUB_TERMINAL_OUTPUT=console left in place would
+# silently produce a plain text menu, and the 640x480 fallback GRUB_GFXMODE
+# would letterbox a 1920x1080 background. Both are corrected here, and both
+# are reported, because they are bootloader changes in their own right.
+
+set -euo pipefail
+export LC_ALL=C
+
+DEFAULT_THEME=CyberRe
+
+grub_defaults=${LYONA_GRUB_DEFAULTS:-/etc/default/grub}
+theme_root=${LYONA_GRUB_THEME_DIR:-/usr/share/grub/themes}
+boot_dir=${LYONA_GRUB_BOOT_DIR:-/boot}
+
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' NC='\033[0m'
+info() { printf "${CYAN}[INFO]${NC} %s\n" "$1"; }
+ok() { printf "${GREEN}[OK]${NC} %s\n" "$1"; }
+warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; }
+err() { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; }
+
+usage() {
+	cat <<EOF
+Usage: lyona-grub-theme <command>
+
+Commands:
+  status          Report the detected bootloader and the selected theme.
+  list            List the themes installed under $theme_root.
+  apply [THEME]   Select THEME (default: $DEFAULT_THEME) in $grub_defaults and
+                  regenerate the GRUB configuration.
+  remove          Deselect the lyona-managed theme and regenerate.
+  -h, --help      Show this help.
+
+Machines that do not boot with GRUB are reported and left alone; apply and
+remove succeed without touching anything, so an installer can call them
+unconditionally.
+
+Environment:
+  LYONA_GRUB_DEFAULTS    GRUB defaults file (default: /etc/default/grub)
+  LYONA_GRUB_THEME_DIR   Theme install root (default: /usr/share/grub/themes)
+  LYONA_GRUB_BOOT_DIR    Boot directory (default: /boot)
+EOF
+}
+
+run_root() {
+	if [[ $EUID -eq 0 ]]; then
+		"$@"
+	else
+		sudo "$@"
+	fi
+}
+
+# Rejects anything that could escape $theme_root, since the name becomes a
+# path in a file that runs as root at boot.
+valid_theme_name() {
+	[[ ${1:-} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] && [[ $1 != *..* ]]
+}
+
+grub_available() {
+	[[ -f $grub_defaults ]] && command -v grub-mkconfig >/dev/null 2>&1
+}
+
+theme_file() {
+	printf '%s/%s/theme.txt' "$theme_root" "$1"
+}
+
+# The GRUB_THEME currently selected, or empty. Only uncommented assignments
+# count, and the last one wins the same way the shell that sources this file
+# would resolve it.
+selected_theme_file() {
+	[[ -f $grub_defaults ]] || return 0
+	sed -n 's/^[[:space:]]*GRUB_THEME=//p' "$grub_defaults" |
+		sed 's/^"//; s/"$//; s/^'\''//; s/'\''$//' |
+		tail -n 1
+}
+
+backup_defaults() {
+	local backup
+	backup="$grub_defaults.lyona-backup-$(date +%Y%m%d%H%M%S)"
+	run_root install -m 0644 "$grub_defaults" "$backup"
+	info "Saved a copy of $grub_defaults to $backup."
+}
+
+# Replaces every existing assignment of $key with a single one at the end of
+# the file, commenting the originals rather than deleting them so the previous
+# value stays readable next to the backup.
+set_grub_key() {
+	local key=$1 value=$2 tmp
+	tmp=$(mktemp) || {
+		err "could not create a temporary file."
+		return 1
+	}
+
+	awk -v key="$key" -v value="$value" '
+		$0 ~ "^[[:space:]]*" key "=" {
+			print "# Commented by lyona-grub-theme: " $0
+			next
+		}
+		{ print }
+		END { print key "=\"" value "\"" }
+	' "$grub_defaults" >"$tmp" || {
+		rm -f "$tmp"
+		err "could not rewrite $grub_defaults."
+		return 1
+	}
+
+	run_root install -m 0644 "$tmp" "$grub_defaults"
+	rm -f "$tmp"
+	info "Set $key=\"$value\" in $grub_defaults."
+}
+
+# Comments out every assignment of $key without adding one back, for keys
+# whose GRUB default is what we want (GRUB_TERMINAL_OUTPUT unset means
+# gfxterm, which is what a theme needs).
+comment_grub_key() {
+	local key=$1 tmp
+	command grep -Eq "^[[:space:]]*$key=" "$grub_defaults" || return 0
+
+	tmp=$(mktemp) || {
+		err "could not create a temporary file."
+		return 1
+	}
+	awk -v key="$key" '
+		$0 ~ "^[[:space:]]*" key "=" {
+			print "# Commented by lyona-grub-theme: " $0
+			next
+		}
+		{ print }
+	' "$grub_defaults" >"$tmp" || {
+		rm -f "$tmp"
+		err "could not rewrite $grub_defaults."
+		return 1
+	}
+
+	run_root install -m 0644 "$tmp" "$grub_defaults"
+	rm -f "$tmp"
+	warn "Commented out $key in $grub_defaults."
+}
+
+regenerate_grub() {
+	local cfg="$boot_dir/grub/grub.cfg"
+
+	if [[ ! -d $boot_dir/grub ]]; then
+		warn "$boot_dir/grub does not exist; skipping grub-mkconfig."
+		warn "Regenerate the GRUB configuration yourself before rebooting."
+		return 0
+	fi
+
+	info "Regenerating $cfg..."
+	if ! run_root grub-mkconfig -o "$cfg"; then
+		err "grub-mkconfig failed. $grub_defaults was changed; restore the backup"
+		err "printed above if the boot menu misbehaves."
+		return 1
+	fi
+}
+
+cmd_status() {
+	local current
+
+	if ! grub_available; then
+		printf 'grub-theme: no-grub\n'
+		info "No GRUB installation found ($grub_defaults or grub-mkconfig is missing)."
+		return 0
+	fi
+
+	current=$(selected_theme_file)
+	if [[ -z $current ]]; then
+		printf 'grub-theme: none\n'
+		return 0
+	fi
+
+	printf 'grub-theme: %s\n' "$current"
+	[[ -f $current ]] ||
+		warn "$current is selected but does not exist; the boot menu will fall back to plain text."
+}
+
+cmd_list() {
+	local dir found=false
+
+	[[ -d $theme_root ]] || {
+		info "No themes are installed under $theme_root."
+		return 0
+	}
+	for dir in "$theme_root"/*/; do
+		[[ -f ${dir}theme.txt ]] || continue
+		found=true
+		printf '%s\n' "$(basename "$dir")"
+	done
+	"$found" || info "No themes are installed under $theme_root."
+}
+
+cmd_apply() {
+	# $# rather than ${1:-...}: an explicitly empty argument is a caller
+	# passing an unset variable, which must not quietly become the default.
+	local theme=$DEFAULT_THEME file
+	(($# == 0)) || theme=$1
+
+	valid_theme_name "$theme" || {
+		err "Invalid theme name: $theme"
+		return 1
+	}
+
+	if ! grub_available; then
+		info "No GRUB installation found; leaving the bootloader alone."
+		info "This machine boots with something else (systemd-boot, rEFInd, ...)."
+		return 0
+	fi
+
+	file=$(theme_file "$theme")
+	[[ -f $file ]] || {
+		err "Theme '$theme' is not installed ($file not found)."
+		err "Run 'sudo make install-grub-theme' from the lyona checkout first."
+		return 1
+	}
+
+	if [[ $(selected_theme_file) == "$file" ]]; then
+		ok "GRUB is already using the $theme theme."
+		return 0
+	fi
+
+	backup_defaults
+	set_grub_key GRUB_THEME "$file"
+
+	# GRUB draws a theme only on gfxterm, and only at the resolution it was
+	# told to use; without these two the theme is installed and invisible.
+	if command grep -Eq '^[[:space:]]*GRUB_TERMINAL_OUTPUT=' "$grub_defaults"; then
+		comment_grub_key GRUB_TERMINAL_OUTPUT
+		warn "GRUB draws themes only on gfxterm, which is the default when that key is unset."
+	fi
+	command grep -Eq '^[[:space:]]*GRUB_GFXMODE=' "$grub_defaults" ||
+		set_grub_key GRUB_GFXMODE auto
+
+	regenerate_grub
+	ok "GRUB boot menu now uses the $theme theme."
+}
+
+cmd_remove() {
+	if ! grub_available; then
+		info "No GRUB installation found; nothing to remove."
+		return 0
+	fi
+
+	if [[ -z $(selected_theme_file) ]]; then
+		ok "No GRUB theme is selected."
+		return 0
+	fi
+
+	backup_defaults
+	comment_grub_key GRUB_THEME
+	regenerate_grub
+	ok "GRUB boot menu restored to the default appearance."
+}
+
+case ${1:-} in
+status)
+	cmd_status
+	;;
+list)
+	cmd_list
+	;;
+apply)
+	shift
+	(($# <= 1)) || {
+		usage >&2
+		exit 2
+	}
+	cmd_apply "$@"
+	;;
+remove)
+	cmd_remove
+	;;
+-h | --help | help)
+	usage
+	;;
+*)
+	usage >&2
+	exit 2
+	;;
+esac

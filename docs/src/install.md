@@ -207,6 +207,51 @@ required, recommended, or optional packages need it, since everything the
 installer selects is available directly through official `pacman` repos
 (`core`/`extra`/`multilib`).
 
+### GRUB boot menu theme
+
+The installer ships the `CyberRe` GRUB theme and selects it by default on
+machines that boot with GRUB, so the boot menu matches the rest of the
+desktop instead of the stock text list.
+
+Installing the theme files (`make install-system`) changes nothing about
+booting — they are just data under `/usr/share/grub/themes/CyberRe`.
+Selecting the theme is a separate step, because it edits the bootloader:
+
+- `/etc/default/grub` is copied to
+  `/etc/default/grub.lyona-backup-<timestamp>` before the first edit.
+- `GRUB_THEME` is pointed at the installed theme.
+- `GRUB_TERMINAL_OUTPUT` is commented out if present. GRUB draws themes only
+  on `gfxterm`, so a `console` setting would leave the theme installed and
+  invisible.
+- `GRUB_GFXMODE` is set to `auto` if it is not already set, since the
+  640x480 fallback letterboxes the theme's 1920x1080 background.
+- `grub-mkconfig` regenerates `/boot/grub/grub.cfg`.
+
+Every one of those is printed as it happens. Replaced lines are commented out
+rather than deleted, so the previous values stay readable in the file next to
+the backup.
+
+Machines that do not boot with GRUB — including the lyona ISO's own installs,
+which use systemd-boot — are reported and left completely alone. A theme step
+that fails does not fail the install.
+
+Skip the bootloader edit with `--skip-grub-theme` (or
+`DWM_INSTALL_GRUB_THEME=false`); the theme files are still installed, so it
+can be selected later.
+
+Manage it afterwards with:
+
+```bash
+lyona-grub-theme status    # detected bootloader and selected theme
+lyona-grub-theme list      # installed themes
+lyona-grub-theme apply     # select CyberRe (or apply <name>)
+lyona-grub-theme remove    # back to the default GRUB appearance
+```
+
+The theme is vendored from
+[ChrisTitusTech/bootloader-themes](https://github.com/ChrisTitusTech/bootloader-themes)
+(MIT) so it is available during an offline install.
+
 ## Starting dwm
 
 **Display manager** (SDDM, GDM, LightDM): log out and select **dwm** from the session list.

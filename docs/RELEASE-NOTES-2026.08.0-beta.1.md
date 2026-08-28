@@ -37,7 +37,7 @@ The distribution target moved from Fedora to Arch Linux in full: the
 installer, dependency map, and diagnostics use `pacman` and Arch package
 names, and the Fedora Kickstart/RPM Fusion/COPR image path is replaced by an
 archiso-based install medium. Arch Linux is the sole supported platform.
-Project branding moved to `technicks89`/`lyonasoft.com`, and the project was
+Project branding moved to `technicks89`/`technicks89.com`, and the project was
 renamed from `dwm-titus` to `lyona`. **There is no migration path from an
 existing `dwm-titus` install** — reinstall onto the new paths.
 
