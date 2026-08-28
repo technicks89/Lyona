@@ -396,6 +396,18 @@ esac
 if [ -z "$display_helper" ] && command -v dwm-settings-display >/dev/null 2>&1; then
 	display_helper=dwm-settings-display
 fi
+
+if command -v xsettingsd >/dev/null 2>&1 &&
+	! pgrep -u "$(id -u)" -x xsettingsd >/dev/null 2>&1; then
+	if [ "${DWM_AUTOSTART_NO_SETSID:-0}" != 1 ] && command -v setsid >/dev/null 2>&1; then
+		setsid -f xsettingsd -c "${XDG_CONFIG_HOME:-$HOME/.config}/lyona/xsettingsd.conf" \
+			>/dev/null 2>&1 || true
+	else
+		xsettingsd -c "${XDG_CONFIG_HOME:-$HOME/.config}/lyona/xsettingsd.conf" \
+			>/dev/null 2>&1 &
+	fi
+fi
+
 if [ -n "$display_helper" ]; then
 	"$display_helper" dpi-apply-saved >/dev/null 2>&1 || true
 fi

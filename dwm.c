@@ -43,6 +43,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
+#include <X11/Xresource.h>
 #include <X11/Xutil.h>
 #ifdef XINERAMA
 #include <X11/extensions/Xinerama.h>
@@ -245,6 +246,9 @@ static void raisefullscreenclients(Client *c);
 static void raisealwaysontopclients(Client *c);
 static void restackprioritywindows(void);
 static void restack(Monitor *m);
+static unsigned int scaledpx(unsigned int value);
+static void updatefonts(void);
+static void updatedpi(int force);
 static int sendevent(Client *c, Atom proto);
 static void sendmon(Client *c, Monitor *m);
 static void setclientstate(Client *c, long state);
@@ -432,7 +436,15 @@ static char          rt_rules_strbuf[TOML_RULES_MAX * 3][TOML_MAX_STR];
 static Rule         *rt_rules  = NULL;
 static int           rt_nrules = 0;
 
+#define DEFAULTDPI 96
+#define MINDPI     72
+#define MAXDPI     384
+
 static unsigned int  dyn_borderpx;
+
+static unsigned int  cfg_borderpx = 1;
+static unsigned int  dyn_snap;
+static int           dpi_value = DEFAULTDPI;
 
 static int           inotify_fd = -1;
 static int           inotify_wd = -1;
@@ -2079,16 +2091,16 @@ movemouse(const Arg *arg)
 
 			nx = ocx + (ev.xmotion.x - x);
 			ny = ocy + (ev.xmotion.y - y);
-			if (abs(selmon->wx - nx) < snap)
+			if (abs(selmon->wx - nx) < (int)dyn_snap)
 				nx = selmon->wx;
-			else if (abs((selmon->wx + selmon->ww) - (nx + WIDTH(c))) < snap)
+			else if (abs((selmon->wx + selmon->ww) - (nx + WIDTH(c))) < (int)dyn_snap)
 				nx = selmon->wx + selmon->ww - WIDTH(c);
-			if (abs(selmon->wy - ny) < snap)
+			if (abs(selmon->wy - ny) < (int)dyn_snap)
 				ny = selmon->wy;
-			else if (abs((selmon->wy + selmon->wh) - (ny + HEIGHT(c))) < snap)
+			else if (abs((selmon->wy + selmon->wh) - (ny + HEIGHT(c))) < (int)dyn_snap)
 				ny = selmon->wy + selmon->wh - HEIGHT(c);
 			if (!c->isfloating && selmon->lt[selmon->sellt]->arrange
-			&& (abs(nx - c->x) > snap || abs(ny - c->y) > snap))
+			&& (abs(nx - c->x) > (int)dyn_snap || abs(ny - c->y) > (int)dyn_snap))
 				togglefloating(NULL);
 			if (!selmon->lt[selmon->sellt]->arrange || c->isfloating)
 				resize(c, nx, ny, c->w, c->h, 1);
@@ -2230,7 +2242,7 @@ placemouse(const Arg *arg)
 			nx = ocx + (ev.xmotion.x - x);
 			ny = ocy + (ev.xmotion.y - y);
 
-			if (!freemove && (abs(nx - ocx) > snap || abs(ny - ocy) > snap))
+			if (!freemove && (abs(nx - ocx) > (int)dyn_snap || abs(ny - ocy) > (int)dyn_snap))
 				freemove = 1;
 
 			if (freemove)
@@ -2337,6 +2349,8 @@ propertynotify(XEvent *e)
 	}
 	if ((ev->window == root) && (ev->atom == XA_WM_NAME)) {
 		updatestatus();
+	} else if ((ev->window == root) && (ev->atom == XA_RESOURCE_MANAGER)) {
+		updatedpi(0);
 	} else if (ev->state == PropertyDelete) {
 		return;
 	} else if ((c = wintoclient(ev->window))) {
@@ -2494,7 +2508,7 @@ resizemouse(const Arg *arg)
 			&& c->mon->wy + nh >= selmon->wy && c->mon->wy + nh <= selmon->wy + selmon->wh)
 			{
 				if (!c->isfloating && selmon->lt[selmon->sellt]->arrange
-				&& (abs(nw - c->w) > snap || abs(nh - c->h) > snap)) {
+				&& (abs(nw - c->w) > (int)dyn_snap || abs(nh - c->h) > (int)dyn_snap)) {
 					togglefloating(NULL);
 				}
 			}
@@ -3733,7 +3747,11 @@ load_themes_toml(const char *user_path, const char *default_path)
 
 	const TomlValue *vbpx = toml_get(&doc, "appearance", "borderpx");
 	if (vbpx && vbpx->type == TOML_INT && vbpx->i >= 0) {
-		unsigned int newbpx = (unsigned int)vbpx->i;
+		unsigned int newbpx;
+		/* themes.toml states the border at 96 dpi; keep it so updatedpi() can
+		 * rescale from the authored value instead of from a scaled one. */
+		cfg_borderpx = (unsigned int)vbpx->i;
+		newbpx = scaledpx(cfg_borderpx);
 		if (newbpx != dyn_borderpx) {
 			dyn_borderpx = newbpx;
 			if (mons) {
@@ -3741,6 +3759,10 @@ load_themes_toml(const char *user_path, const char *default_path)
 				Client  *c;
 				for (m = mons; m; m = m->next)
 					for (c = m->clients; c; c = c->next) {
+						if (c->isfullscreen && c->fakefullscreen != 1) {
+							c->oldbw = dyn_borderpx;
+							continue;
+						}
 						c->bw = dyn_borderpx;
 						XSetWindowBorderWidth(dpy, c->win, c->bw);
 					}
@@ -4000,6 +4022,99 @@ setup_inotify(void)
 
 }
 
+unsigned int
+scaledpx(unsigned int value)
+{
+	if (value == 0)
+		return 0;
+	return MAX(1u, (value * (unsigned int)dpi_value + DEFAULTDPI / 2) / DEFAULTDPI);
+}
+
+void
+updatefonts(void)
+{
+	char scaled[LENGTH(fonts)][256];
+	const char *names[LENGTH(fonts)];
+	Fnt *previous;
+	size_t i;
+
+	if (!drw)
+		return;
+
+	for (i = 0; i < LENGTH(fonts); i++) {
+		if (strstr(fonts[i], "pixelsize="))
+			snprintf(scaled[i], sizeof scaled[i], "%s", fonts[i]);
+		else
+			snprintf(scaled[i], sizeof scaled[i], "%s:dpi=%d", fonts[i], dpi_value);
+		names[i] = scaled[i];
+	}
+
+	previous = drw->fonts;
+	drw->fonts = NULL;
+	if (!drw_fontset_create(drw, names, LENGTH(fonts))) {
+		drw->fonts = previous;
+		fprintf(stderr, "dwm: could not reload fonts at %d dpi\n", dpi_value);
+		return;
+	}
+	drw_fontset_free(previous);
+	lrpad = drw->fonts->h;
+}
+
+void
+updatedpi(int force)
+{
+	char *resources;
+	char *type = NULL;
+	XrmDatabase db;
+	XrmValue value;
+	int parsed, newdpi = DEFAULTDPI;
+	unsigned int newborder;
+	Monitor *m;
+	Client *c;
+
+	if (!dpy)
+		return;
+
+	if ((resources = XResourceManagerString(dpy))) {
+		if ((db = XrmGetStringDatabase(resources))) {
+			if (XrmGetResource(db, "Xft.dpi", "Xft.Dpi", &type, &value)
+			    && value.addr) {
+				parsed = atoi(value.addr);
+				if (parsed >= MINDPI && parsed <= MAXDPI)
+					newdpi = parsed;
+			}
+			XrmDestroyDatabase(db);
+		}
+	}
+
+	if (!force && newdpi == dpi_value)
+		return;
+	dpi_value = newdpi;
+
+	updatefonts();
+	dyn_snap = scaledpx(snap);
+
+	newborder = scaledpx(cfg_borderpx);
+	if (newborder != dyn_borderpx) {
+		dyn_borderpx = newborder;
+		for (m = mons; m; m = m->next)
+			for (c = m->clients; c; c = c->next) {
+				if (c->isfullscreen && c->fakefullscreen != 1) {
+					c->oldbw = dyn_borderpx;
+					continue;
+				}
+				c->bw = dyn_borderpx;
+				XSetWindowBorderWidth(dpy, c->win, c->bw);
+			}
+	}
+
+	if (mons) {
+		arrange(NULL);
+		restackprioritywindows();
+	}
+	fprintf(stderr, "dwm: display scale is now %d dpi\n", dpi_value);
+}
+
 void
 setup(void)
 {
@@ -4022,6 +4137,8 @@ setup(void)
 	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
 		die("no fonts could be loaded.");
 	lrpad = drw->fonts->h;
+	dyn_snap = snap;
+	updatedpi(1);
 	bh = 0;
 	updategeom();
 

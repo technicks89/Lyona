@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.SystemTray
+import qs.core
 import qs.appearance
 import qs.controlcenter
 import qs.controls
@@ -172,6 +173,33 @@ ShellRoot {
 
     AppearanceModel {
         id: appearanceModel
+    }
+
+    readonly property string dpiStatePath: (Quickshell.env("XDG_RUNTIME_DIR") || "")
+        + "/dwm-settings-display/dpi.current"
+
+    function applyDpiState(text) {
+        let dpi = 96;
+        let valid = false;
+        for (const line of String(text).trim().split("\n")) {
+            const fields = line.split("\t");
+            if (fields[0] === "dpi-state-protocol" && fields[1] === "1") {
+                valid = true;
+            } else if (fields[0] === "dpi" && fields.length >= 2) {
+                dpi = Number(fields[1]);
+            }
+        }
+        if (valid)
+            Theme.applyDisplayDpi(dpi);
+    }
+
+    FileView {
+        id: dpiStateWatch
+        path: root.dpiStatePath
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.applyDpiState(this.text())
+        onFileChanged: reload()
     }
 
     NetworkModel {

@@ -7,10 +7,13 @@ set -euo pipefail
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/lyona"
 profile_dir="${DWM_DISPLAY_PROFILE_DIR:-$config_dir/display-profiles}"
 dpi_resources="${DWM_DPI_RESOURCES:-$config_dir/dpi.Xresources}"
+xsettings_config="${DWM_XSETTINGS_CONFIG:-$config_dir/xsettingsd.conf}"
+default_dpi=96
 minimum_dpi=72
 maximum_dpi=384
 runtime_base="${XDG_RUNTIME_DIR:-/tmp/lyona-$UID}"
 state_dir="$runtime_base/dwm-settings-display"
+dpi_state="$state_dir/dpi.current"
 managed_config="${DWM_XORG_CONFIG:-/etc/X11/xorg.conf.d/90-lyona-display.conf}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -224,11 +227,78 @@ emit_dpi() {
 		"$active" "$source" "${persisted:-none}" "${recommended:-none}"
 }
 
+warn() {
+	printf 'dwm-settings-display: %s\n' "$*" >&2
+}
+
 merge_dpi() {
 	local value=$1
 	x11_resources_available || return 0
 	printf 'Xft.dpi: %s\n' "$value" | xrdb -merge 2>/dev/null ||
-		printf 'dwm-settings-display: could not merge Xft.dpi into the running X resource database\n' >&2
+		warn "could not merge Xft.dpi into the running X resource database"
+}
+
+clear_merged_dpi() {
+	local remaining
+	x11_resources_available || return 0
+	remaining=$(mktemp)
+	trap 'rm -f "${remaining:-}"' RETURN
+	if xrdb -query >"$remaining" 2>/dev/null; then
+		awk -F: '$1 != "Xft.dpi"' "$remaining" | xrdb -load 2>/dev/null ||
+			warn "could not clear Xft.dpi from the running X resource database"
+	fi
+}
+
+apply_server_dpi() {
+	local value=$1
+	command -v xrandr >/dev/null 2>&1 && [[ -n ${DISPLAY:-} ]] || return 0
+	xrandr --dpi "$value" >/dev/null 2>&1 ||
+		warn "the X server refused a DPI change; running clients keep the old screen size"
+}
+
+write_xsettings_dpi() {
+	local value=$1 temporary
+	command -v xsettingsd >/dev/null 2>&1 || return 0
+	if [[ -L $xsettings_config ]]; then
+		warn "refusing to write through a symlinked xsettingsd configuration"
+		return 0
+	fi
+	mkdir -p "$config_dir" || return 0
+	temporary=$(mktemp "$config_dir/.xsettingsd.XXXXXX") || return 0
+	trap 'rm -f "${temporary:-}"' RETURN
+	if [[ -f $xsettings_config ]]; then
+		grep -v '^[[:space:]]*Xft/DPI[[:space:]]' "$xsettings_config" >"$temporary" || :
+	fi
+	if [[ -n $value ]]; then
+		printf 'Xft/DPI %s\n' "$((10#$value * 1024))" >>"$temporary"
+	fi
+	chmod 644 "$temporary"
+	mv -fT "$temporary" "$xsettings_config" || return 0
+	temporary=
+	# A missing or not-yet-started daemon is fine; it reads the file on start.
+	pkill -HUP -u "$UID" -x xsettingsd >/dev/null 2>&1 || :
+}
+
+publish_dpi_state() {
+	local value=$1 temporary
+	[[ -d $runtime_base && ! -L $runtime_base ]] || return 0
+	if [[ ! -e $state_dir ]]; then
+		mkdir -m 700 "$state_dir" 2>/dev/null || return 0
+	fi
+	[[ -d $state_dir && ! -L $state_dir ]] || return 0
+	temporary=$(mktemp "$state_dir/.dpi.XXXXXX" 2>/dev/null) || return 0
+	printf 'dpi-state-protocol\t1\ndpi\t%s\n' "$value" >"$temporary"
+	chmod 600 "$temporary"
+	mv -fT "$temporary" "$dpi_state" 2>/dev/null || rm -f "$temporary"
+}
+
+apply_dpi_runtime() {
+	local value=$1
+
+	merge_dpi "$value"
+	write_xsettings_dpi "$value"
+	apply_server_dpi "$value"
+	publish_dpi_state "$value"
 }
 
 set_dpi() {
@@ -243,29 +313,26 @@ set_dpi() {
 	chmod 644 "$temporary"
 	mv -fT "$temporary" "$dpi_resources"
 	temporary=
-	merge_dpi "$value"
+	apply_dpi_runtime "$value"
 	printf 'result\tdpi-set\t%s\n' "$value"
 }
 
 reset_dpi() {
-	local remaining
 	[[ ! -L $dpi_resources ]] || die "refusing to remove a symlinked DPI resource file"
 	rm -f "$dpi_resources"
-	if x11_resources_available; then
-		remaining=$(mktemp)
-		trap 'rm -f "${remaining:-}"' RETURN
-		if xrdb -query >"$remaining" 2>/dev/null; then
-			awk -F: '$1 != "Xft.dpi"' "$remaining" | xrdb -load 2>/dev/null ||
-				printf 'dwm-settings-display: could not clear Xft.dpi from the running X resource database\n' >&2
-		fi
-	fi
+	clear_merged_dpi
+	write_xsettings_dpi ""
+	publish_dpi_state "$default_dpi"
 	printf 'result\tdpi-reset\tdefault\n'
 }
 
 apply_saved_dpi() {
 	local value
-	value=$(persisted_dpi) || return 0
-	merge_dpi "$value"
+	if ! value=$(persisted_dpi); then
+		publish_dpi_state "$(session_dpi || printf '%s' "$default_dpi")"
+		return 0
+	fi
+	apply_dpi_runtime "$value"
 }
 
 discover() {
