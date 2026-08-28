@@ -1,0 +1,41 @@
+# binaries
+/dwm
+
+# User config (created from config.def.h, not tracked)
+config.h
+
+# Patch Fail
+*.rej
+*.orig
+
+# Object Files
+*.o
+
+nohup.out
+.DS_STORE
+livemedia.log
+program.log
+*.iso
+
+# Local editor settings that may contain machine-specific absolute paths
+.zed/settings.json
+
+/release/**
+/release
+
+# Local Vicinae AppImage extraction/staging tree
+/vicinae/
+
+# Generated mdBook output. Documentation source lives under docs/src/.
+/docs/book/
+/docs/docs/
+
+# Local Serena project metadata/cache
+/.serena/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Local Arch ISO build output
+/out/

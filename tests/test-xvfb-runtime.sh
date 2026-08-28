@@ -1,0 +1,1088 @@
+#!/bin/sh
+
+set -eu
+
+# shellcheck source=tests/lib.sh
+. "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+
+require_cmd() {
+	for cmd; do
+		if ! command -v "$cmd" >/dev/null 2>&1; then
+			printf '%s\n' "missing required command: $cmd" >&2
+			exit 77
+		fi
+	done
+}
+
+wait_for_display() {
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if DISPLAY=$display xprop -root >/dev/null 2>&1; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "Xvfb did not become ready" >&2
+	return 1
+}
+
+wait_for_root_property() {
+	prop=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if DISPLAY=$display xprop -root "$prop" 2>/dev/null |
+			grep -qv 'not found'; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "root property did not appear: $prop" >&2
+	return 1
+}
+
+wait_for_current_desktop() {
+	expected=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		current=$(DISPLAY=$display xprop -root _NET_CURRENT_DESKTOP 2>/dev/null |
+			sed -n 's/.*= //p')
+		if [ "$current" = "$expected" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "current desktop did not become $expected" >&2
+	return 1
+}
+
+wait_for_monitor_desktops() {
+	expected=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		desktops=$(DISPLAY=$display xprop -root _DWM_MONITOR_DESKTOPS 2>/dev/null |
+			sed -n 's/.*= //p' |
+			tr -d '[:space:]')
+		if [ "$desktops" = "$expected" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "monitor desktops did not become $expected" >&2
+	return 1
+}
+
+wait_for_fullscreen_monitors() {
+	expected=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		property=$(DISPLAY=$display xprop -root _DWM_FULLSCREEN_MONITORS 2>/dev/null || true)
+		monitors=$(printf '%s\n' "$property" |
+			sed -n 's/^[^=]*=[[:space:]]*//p' |
+			tr -d '[:space:]')
+		if printf '%s\n' "$property" | grep -Fq '_DWM_FULLSCREEN_MONITORS(' &&
+			[ "$monitors" = "$expected" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "fullscreen monitors did not become ${expected:-empty}" >&2
+	return 1
+}
+
+wait_for_window_state() {
+	win=$1
+	needle=$2
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if DISPLAY=$display xprop -id "$win" _NET_WM_STATE 2>/dev/null |
+			grep -q "$needle"; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $win did not gain state $needle" >&2
+	return 1
+}
+
+wait_for_window_state_absent() {
+	win=$1
+	needle=$2
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if ! DISPLAY=$display xprop -id "$win" _NET_WM_STATE 2>/dev/null |
+			grep -q "$needle"; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $win retained state $needle" >&2
+	return 1
+}
+
+wait_for_top_window() {
+	expected=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		top=$(DISPLAY=$display xdotool search --class '^DwmXvfb(Runtime|Terminal)$' 2>/dev/null |
+			tail -n 1 || true)
+		if [ -n "$top" ] && [ "$(printf '0x%x' "$top")" = "$expected" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $expected did not reach the top of the stack" >&2
+	return 1
+}
+
+wait_for_window_above() {
+	expected=$1
+	other=$2
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if [ "$(DISPLAY=$display "$work/xclient" above "$expected" "$other")" = 1 ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $expected did not move above $other" >&2
+	return 1
+}
+
+wait_for_active_window() {
+	expected_win=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		active=$(DISPLAY=$display xprop -root _NET_ACTIVE_WINDOW 2>/dev/null |
+			sed -n 's/.*# //p')
+		if [ "$active" = "$expected_win" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $expected_win did not become active" >&2
+	return 1
+}
+
+wait_for_input_focus() {
+	expected_win=$(printf '%d' "$1")
+	i=0
+	while [ "$i" -lt 100 ]; do
+		focused=$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)
+		if [ "$focused" = "$expected_win" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $1 did not receive input focus" >&2
+	return 1
+}
+
+wait_for_client_window() {
+	expected_win=$1
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if DISPLAY=$display xprop -root _NET_CLIENT_LIST 2>/dev/null |
+			grep -q "$expected_win"; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s\n' "window $expected_win did not enter the client list" >&2
+	return 1
+}
+
+require_cmd Xvfb awk cc pkg-config xdotool xprop sed grep tail
+pkg-config --exists x11
+
+work=$(mktemp -d)
+trap 'set +e; [ -n "${swallow_client_pid:-}" ] && kill "$swallow_client_pid" 2>/dev/null; [ -n "${many_state_client_pid:-}" ] && kill "$many_state_client_pid" 2>/dev/null; [ -n "${fullscreen_client_pid:-}" ] && kill "$fullscreen_client_pid" 2>/dev/null; [ -n "${panel_pid:-}" ] && kill "$panel_pid" 2>/dev/null; [ -n "${popup_client_pid:-}" ] && kill "$popup_client_pid" 2>/dev/null; [ -n "${second_above_client_pid:-}" ] && kill "$second_above_client_pid" 2>/dev/null; [ -n "${stack_client_pid:-}" ] && kill "$stack_client_pid" 2>/dev/null; [ -n "${above_client_pid:-}" ] && kill "$above_client_pid" 2>/dev/null; [ -n "${second_client_pid:-}" ] && kill "$second_client_pid" 2>/dev/null; [ -n "${client_pid:-}" ] && kill "$client_pid" 2>/dev/null; [ -n "${dwm_pid:-}" ] && kill "$dwm_pid" 2>/dev/null; [ -n "${xvfb_pid:-}" ] && kill "$xvfb_pid" 2>/dev/null; rm -rf "$work"' EXIT HUP INT TERM
+
+home="$work/home"
+mkdir -p "$home/.config/lyona" "$home/.local/share/lyona/config"
+cp "$repo/config/hotkeys.toml" "$home/.config/lyona/hotkeys.toml"
+cp "$repo/config/themes.toml" "$home/.config/lyona/themes.toml"
+cp "$repo/config/window-rules.toml" "$home/.config/lyona/window-rules.toml"
+cp "$repo/config/"*.toml "$home/.local/share/lyona/config/"
+sed -i '/^rules = \[/a\  { class="DwmXvfbTerminal", isterminal=1 },' \
+	"$home/.config/lyona/window-rules.toml"
+
+cat >"$work/xclient.c" <<'EOF'
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#include <X11/Xutil.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+static volatile sig_atomic_t running = 1;
+
+static void
+stop(int sig)
+{
+	(void)sig;
+	running = 0;
+}
+
+int
+main(int argc, char **argv)
+{
+	Display *dpy;
+	Window win;
+	XClassHint classhint;
+	Atom wm_delete;
+	XEvent ev;
+	int set_hints = 1;
+	int malformed_icon = 0;
+	int initial_above = 0;
+	int initial_many_states = 0;
+	int override_redirect = 0;
+	int panel = 0;
+	int preconfigure_panel = 0;
+	Window transient_for = None;
+	const char *popup_state = NULL;
+	const char *popup_type = NULL;
+	int swallow_terminal = 0;
+	pid_t child_pid = -1;
+
+	signal(SIGTERM, stop);
+	signal(SIGINT, stop);
+
+	dpy = XOpenDisplay(NULL);
+	if (!dpy)
+		return 2;
+	if (argc == 3 && strcmp(argv[1], "attributes") == 0) {
+		XWindowAttributes attributes;
+
+		win = strtoul(argv[2], NULL, 0);
+		if (!XGetWindowAttributes(dpy, win, &attributes)) {
+			XCloseDisplay(dpy);
+			return 3;
+		}
+		printf("override_redirect=%d\n", attributes.override_redirect);
+		XCloseDisplay(dpy);
+		return 0;
+	}
+	if (argc == 3 && strcmp(argv[1], "map-state") == 0) {
+		XWindowAttributes attributes;
+
+		win = strtoul(argv[2], NULL, 0);
+		if (!XGetWindowAttributes(dpy, win, &attributes)) {
+			XCloseDisplay(dpy);
+			return 3;
+		}
+		printf("%d\n", attributes.map_state);
+		XCloseDisplay(dpy);
+		return 0;
+	}
+	if (argc == 4 && strcmp(argv[1], "above") == 0) {
+		Window root_return, parent_return, *children = NULL;
+		Window first = strtoul(argv[2], NULL, 0);
+		Window second = strtoul(argv[3], NULL, 0);
+		unsigned int child_count = 0;
+		int first_index = -1, second_index = -1;
+		unsigned int i;
+
+		if (!XQueryTree(dpy, DefaultRootWindow(dpy), &root_return,
+		    &parent_return, &children, &child_count)) {
+			XCloseDisplay(dpy);
+			return 3;
+		}
+		for (i = 0; i < child_count; i++) {
+			if (children[i] == first)
+				first_index = i;
+			if (children[i] == second)
+				second_index = i;
+		}
+		if (children)
+			XFree(children);
+		printf("%d\n", first_index >= 0 && second_index >= 0
+			&& first_index > second_index);
+		XCloseDisplay(dpy);
+		return 0;
+	}
+	if ((argc == 3 && strcmp(argv[1], "fullscreen") == 0)
+	|| (argc == 5 && strcmp(argv[1], "state") == 0)) {
+		XEvent ev;
+		Atom state = XInternAtom(dpy, "_NET_WM_STATE", False);
+		Atom requested;
+		long action = 1;
+
+		win = strtoul(argv[2], NULL, 0);
+		if (strcmp(argv[1], "fullscreen") == 0) {
+			requested = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
+		} else {
+			action = strtol(argv[3], NULL, 10);
+			requested = XInternAtom(dpy, argv[4], False);
+		}
+		memset(&ev, 0, sizeof(ev));
+		ev.xclient.type = ClientMessage;
+		ev.xclient.window = win;
+		ev.xclient.message_type = state;
+		ev.xclient.format = 32;
+		ev.xclient.data.l[0] = action;
+		ev.xclient.data.l[1] = requested;
+		XSendEvent(dpy, DefaultRootWindow(dpy), False,
+			SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+		XFlush(dpy);
+		XCloseDisplay(dpy);
+		return 0;
+	}
+	if (argc == 2 && strcmp(argv[1], "minimal") == 0)
+		set_hints = 0;
+	else if (argc == 2 && strcmp(argv[1], "malformed-icon") == 0)
+		malformed_icon = 1;
+	else if (argc == 2 && strcmp(argv[1], "initial-above") == 0)
+		initial_above = 1;
+	else if (argc == 2 && strcmp(argv[1], "initial-many-states") == 0)
+		initial_many_states = 1;
+	else if (argc == 2 && strcmp(argv[1], "panel") == 0)
+		panel = preconfigure_panel = 1;
+	else if (argc == 2 && strcmp(argv[1], "override") == 0)
+		override_redirect = 1;
+	else if (argc == 3 && strcmp(argv[1], "override-transient") == 0) {
+		override_redirect = 1;
+		transient_for = strtoul(argv[2], NULL, 0);
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-tooltip") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_TOOLTIP";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-kde") == 0) {
+		override_redirect = 1;
+		popup_type = "_KDE_NET_WM_WINDOW_TYPE_OVERRIDE";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-notification") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_NOTIFICATION";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-menu") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_MENU";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-popup-menu") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_POPUP_MENU";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-dropdown-menu") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-combo") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_COMBO";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-dnd") == 0) {
+		override_redirect = 1;
+		popup_type = "_NET_WM_WINDOW_TYPE_DND";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-above") == 0) {
+		override_redirect = 1;
+		popup_state = "_NET_WM_STATE_ABOVE";
+	}
+	else if (argc == 2 && strcmp(argv[1], "override-stays-on-top") == 0) {
+		override_redirect = 1;
+		popup_state = "_NET_WM_STATE_STAYS_ON_TOP";
+	}
+	else if (argc == 2 && strcmp(argv[1], "swallow-terminal") == 0)
+		swallow_terminal = 1;
+
+	win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
+		panel ? 1 : 20, panel ? 1 : 20,
+		panel ? 1 : 320, panel ? 1 : 180,
+		0, 0, WhitePixel(dpy, DefaultScreen(dpy)));
+	if (override_redirect) {
+		XSetWindowAttributes attributes = { .override_redirect = True };
+
+		XChangeWindowAttributes(dpy, win, CWOverrideRedirect, &attributes);
+	}
+	if (set_hints) {
+		XStoreName(dpy, win, "dwm-xvfb-runtime");
+		classhint.res_name = panel ? "quickshell" : "dwm-xvfb-runtime";
+		classhint.res_class = panel ? "quickshell"
+			: (swallow_terminal ? "DwmXvfbTerminal" : "DwmXvfbRuntime");
+		XSetClassHint(dpy, win, &classhint);
+	}
+	if (swallow_terminal) {
+		unsigned long pid = (unsigned long)getpid();
+
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_PID", False),
+			XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&pid, 1);
+	}
+	if (malformed_icon) {
+		unsigned long icon[] = { 8, 8, 0xff00ff00 };
+		Atom net_wm_icon = XInternAtom(dpy, "_NET_WM_ICON", False);
+		XChangeProperty(dpy, win, net_wm_icon, XA_CARDINAL, 32,
+			PropModeReplace, (unsigned char *)icon, 3);
+	}
+	if (popup_type) {
+		Atom type = XInternAtom(dpy, popup_type, False);
+
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False),
+			XA_ATOM, 32, PropModeReplace, (unsigned char *)&type, 1);
+	}
+	if (popup_state) {
+		Atom state = XInternAtom(dpy, popup_state, False);
+
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_STATE", False),
+			XA_ATOM, 32, PropModeReplace, (unsigned char *)&state, 1);
+	}
+	if (transient_for != None)
+		XSetTransientForHint(dpy, win, transient_for);
+	if (initial_many_states) {
+		Atom states[65];
+		char name[64];
+		int i;
+
+		states[0] = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
+		for (i = 1; i < 64; i++) {
+			snprintf(name, sizeof(name), "_DWM_XVFB_STATE_%d", i);
+			states[i] = XInternAtom(dpy, name, False);
+		}
+		states[64] = XInternAtom(dpy, "_NET_WM_STATE_STAYS_ON_TOP", False);
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_STATE", False),
+			XA_ATOM, 32, PropModeReplace, (unsigned char *)states, 65);
+	} else if (initial_above) {
+		Atom states[2];
+
+		states[0] = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
+		states[1] = XInternAtom(dpy, "_NET_WM_STATE_STAYS_ON_TOP", False);
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_STATE", False),
+			XA_ATOM, 32, PropModeReplace, (unsigned char *)states, 2);
+	}
+	wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+	XSetWMProtocols(dpy, win, &wm_delete, 1);
+	XSelectInput(dpy, win, StructureNotifyMask);
+	if (preconfigure_panel) {
+		XMoveResizeWindow(dpy, win, 0, 0, 1024, 24);
+		XFlush(dpy);
+		usleep(100000);
+	}
+	XMapWindow(dpy, win);
+	XFlush(dpy);
+
+	printf("0x%lx\n", win);
+	fflush(stdout);
+	if (swallow_terminal && (child_pid = fork()) == 0) {
+		Atom states[1];
+		Display *child_dpy;
+		Window child_win;
+		unsigned long pid = (unsigned long)getpid();
+
+		close(ConnectionNumber(dpy));
+		usleep(200000);
+		child_dpy = XOpenDisplay(NULL);
+		if (!child_dpy)
+			return 3;
+		child_win = XCreateSimpleWindow(child_dpy, DefaultRootWindow(child_dpy),
+			40, 40, 320, 180, 0, 0, WhitePixel(child_dpy, DefaultScreen(child_dpy)));
+		XStoreName(child_dpy, child_win, "dwm-xvfb-swallowed");
+		classhint.res_name = "dwm-xvfb-swallowed";
+		classhint.res_class = "DwmXvfbRuntime";
+		XSetClassHint(child_dpy, child_win, &classhint);
+		XChangeProperty(child_dpy, child_win,
+			XInternAtom(child_dpy, "_NET_WM_PID", False), XA_CARDINAL, 32,
+			PropModeReplace, (unsigned char *)&pid, 1);
+		states[0] = XInternAtom(child_dpy, "_NET_WM_STATE_ABOVE", False);
+		XChangeProperty(child_dpy, child_win,
+			XInternAtom(child_dpy, "_NET_WM_STATE", False), XA_ATOM, 32,
+			PropModeReplace, (unsigned char *)states, 1);
+		XSelectInput(child_dpy, child_win, StructureNotifyMask);
+		XMapWindow(child_dpy, child_win);
+		XFlush(child_dpy);
+		printf("0x%lx\n", child_win);
+		fflush(stdout);
+		while (running) {
+			while (XPending(child_dpy)) {
+				XNextEvent(child_dpy, &ev);
+				if (ev.type == DestroyNotify)
+					running = 0;
+			}
+			usleep(50000);
+		}
+		XDestroyWindow(child_dpy, child_win);
+		XCloseDisplay(child_dpy);
+		return 0;
+	}
+
+	while (running) {
+		while (XPending(dpy)) {
+			XNextEvent(dpy, &ev);
+			if (ev.type == DestroyNotify)
+				running = 0;
+		}
+		usleep(50000);
+	}
+	if (child_pid > 0) {
+		kill(child_pid, SIGTERM);
+		waitpid(child_pid, NULL, 0);
+	}
+
+	XDestroyWindow(dpy, win);
+	XCloseDisplay(dpy);
+	return 0;
+}
+EOF
+# shellcheck disable=SC2046
+cc "$work/xclient.c" -o "$work/xclient" $(pkg-config --cflags --libs x11)
+
+display=":$((($$ % 500) + 150))"
+Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+	>"$work/xvfb.log" 2>&1 &
+xvfb_pid=$!
+wait_for_display
+
+DISPLAY=$display \
+	HOME=$home \
+	XDG_DATA_HOME="$home/.local/share" \
+	PATH="$repo:$PATH" \
+	"$repo/dwm" >"$work/dwm.log" 2>&1 &
+dwm_pid=$!
+
+wait_for_root_property _NET_SUPPORTED
+wait_for_root_property _NET_NUMBER_OF_DESKTOPS
+wait_for_root_property _DWM_MONITOR_DESKTOPS
+wait_for_root_property _DWM_SELECTED_MONITOR
+wait_for_root_property _DWM_FULLSCREEN_MONITORS
+wait_for_current_desktop 0
+wait_for_monitor_desktops 0,0,1024,768,0
+DISPLAY=$display xprop -root _DWM_SELECTED_MONITOR | grep -Eq '= 0$'
+wait_for_fullscreen_monitors ''
+DISPLAY=$display xprop -root _NET_SUPPORTED | grep -q _NET_WM_STATE_ABOVE
+DISPLAY=$display xprop -root _NET_SUPPORTED | grep -q _NET_WM_STATE_STAYS_ON_TOP
+
+DISPLAY=$display "$work/xclient" >"$work/window-id" 2>"$work/xclient.log" &
+client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+win=$(cat "$work/window-id")
+[ -n "$win" ]
+
+wait_for_active_window "$win"
+DISPLAY=$display xprop -root _NET_CLIENT_LIST | grep -q "$win"
+
+DISPLAY=$display xdotool key Super+2
+wait_for_current_desktop 1
+wait_for_monitor_desktops 0,0,1024,768,1
+
+printf '%s\n' \
+	'keys = [' \
+	'  { mod="SUPER", key="0", desc="Xvfb all tags", func="view", ui=511 },' \
+	'  { mod="SUPER", key="1", desc="Xvfb tag 1", func="view", ui=1 },' \
+	'  { mod="SUPER", key="2", desc="Xvfb tag 2", func="view", ui=2 },' \
+	'  { mod="SUPER", key="m", desc="Xvfb fullscreen", func="fullscreen" },' \
+	'  { mod="SUPER", key="o", desc="Xvfb monocle", func="setlayout", layout_idx=2 },' \
+	'  { mod="SUPER", key="t", desc="Xvfb tile", func="setlayout", layout_idx=0 },' \
+	'  { mod="SUPER", key="f", desc="Xvfb toggle floating", func="togglefloating" },' \
+	'  { mod="SUPER", key="k", desc="Xvfb focus previous", func="focusstack", i=-1 },' \
+	'  { mod="SUPER", key="v", desc="Xvfb mouse resize", func="resizemouse" },' \
+	'  { mod="SUPER", key="u", desc="Xvfb reload tag", func="view", ui=16 },' \
+	'  { mod="SUPER SHIFT", key="y", desc="Xvfb fake fullscreen", func="togglefakefullscreen" },' \
+	']' >"$home/.config/lyona/hotkeys.toml"
+kill -USR1 "$dwm_pid"
+sleep 0.2
+DISPLAY=$display xdotool key Super+u
+wait_for_current_desktop 4
+
+DISPLAY=$display xdotool key Super+1
+wait_for_current_desktop 0
+
+printf '%s\n' '=' >"$home/.config/lyona/hotkeys.toml"
+kill -USR1 "$dwm_pid"
+sleep 0.2
+DISPLAY=$display xdotool key Super+u
+wait_for_current_desktop 4
+DISPLAY=$display xdotool key Super+1
+wait_for_current_desktop 0
+
+wait_for_active_window "$win"
+DISPLAY=$display xdotool key Super+o
+sleep 0.2
+monocle_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+monocle_width=$(printf '%s\n' "$monocle_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+monocle_height=$(printf '%s\n' "$monocle_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+
+DISPLAY=$display xdotool mousemove --window "$win" 100 100
+DISPLAY=$display xdotool key Super+v
+sleep 0.05
+DISPLAY=$display xdotool mousemove_relative --sync 120 90
+DISPLAY=$display xdotool click 3
+sleep 0.2
+
+floating_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+floating_width=$(printf '%s\n' "$floating_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+floating_height=$(printf '%s\n' "$floating_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+if [ "$floating_width" -ge "$monocle_width" ] || [ "$floating_height" -ge "$monocle_height" ]; then
+	printf '%s\n' "monocle mouse resize did not fall back to floating resize" >&2
+	exit 1
+fi
+
+DISPLAY=$display xdotool key Super+t
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+single_tiled_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+single_tiled_width=$(printf '%s\n' "$single_tiled_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+single_tiled_height=$(printf '%s\n' "$single_tiled_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+
+DISPLAY=$display xdotool mousemove --window "$win" 100 100
+DISPLAY=$display xdotool key Super+v
+sleep 0.05
+DISPLAY=$display xdotool mousemove_relative --sync 120 90
+DISPLAY=$display xdotool click 3
+sleep 0.2
+
+single_floating_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+single_floating_width=$(printf '%s\n' "$single_floating_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+single_floating_height=$(printf '%s\n' "$single_floating_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+if [ "$single_floating_width" -ge "$single_tiled_width" ] || [ "$single_floating_height" -ge "$single_tiled_height" ]; then
+	printf '%s\n' "single tiled client mouse resize did not fall back to floating resize" >&2
+	exit 1
+fi
+
+DISPLAY=$display xdotool key Super+f
+DISPLAY=$display "$work/xclient" >"$work/second-window-id" 2>"$work/second-client.log" &
+second_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/second-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+second_win=$(cat "$work/second-window-id")
+[ -n "$second_win" ]
+wait_for_active_window "$second_win"
+
+two_tiled_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$second_win")
+two_tiled_width=$(printf '%s\n' "$two_tiled_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+two_tiled_height=$(printf '%s\n' "$two_tiled_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+outer_x=$((two_tiled_width - 100))
+
+DISPLAY=$display xdotool mousemove --window "$second_win" "$outer_x" 100
+DISPLAY=$display xdotool key Super+v
+sleep 0.05
+DISPLAY=$display xdotool mousemove_relative --sync -- -120 90
+DISPLAY=$display xdotool click 3
+sleep 0.2
+
+two_floating_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$second_win")
+two_floating_width=$(printf '%s\n' "$two_floating_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+two_floating_height=$(printf '%s\n' "$two_floating_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+if [ "$two_floating_width" -ge "$two_tiled_width" ] || [ "$two_floating_height" -ge "$two_tiled_height" ]; then
+	printf '%s\n' "outer-edge tiled resize without an adjustable split did not fall back to floating resize" >&2
+	exit 1
+fi
+
+kill "$second_client_pid"
+wait "$second_client_pid" 2>/dev/null || true
+second_client_pid=
+wait_for_active_window "$win"
+
+DISPLAY=$display "$work/xclient" fullscreen "$win"
+wait_for_window_state "$win" _NET_WM_STATE_FULLSCREEN
+
+kill "$client_pid"
+wait "$client_pid" 2>/dev/null || true
+client_pid=
+
+DISPLAY=$display "$work/xclient" minimal >"$work/minimal-window-id" 2>"$work/minimal-client.log" &
+client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/minimal-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+minimal_win=$(cat "$work/minimal-window-id")
+[ -n "$minimal_win" ]
+wait_for_active_window "$minimal_win"
+DISPLAY=$display xprop -root _NET_CLIENT_LIST | grep -q "$minimal_win"
+
+kill "$client_pid"
+wait "$client_pid" 2>/dev/null || true
+client_pid=
+
+DISPLAY=$display "$work/xclient" malformed-icon >"$work/icon-window-id" 2>"$work/icon-client.log" &
+client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/icon-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+icon_win=$(cat "$work/icon-window-id")
+[ -n "$icon_win" ]
+wait_for_active_window "$icon_win"
+DISPLAY=$display xprop -root _NET_CLIENT_LIST | grep -q "$icon_win"
+kill -0 "$dwm_pid"
+
+DISPLAY=$display "$work/xclient" initial-above >"$work/above-window-id" 2>"$work/above-client.log" &
+above_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/above-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+above_win=$(cat "$work/above-window-id")
+[ -n "$above_win" ]
+wait_for_window_state "$above_win" _NET_WM_STATE_ABOVE
+wait_for_window_state "$above_win" _NET_WM_STATE_STAYS_ON_TOP
+DISPLAY=$display "$work/xclient" initial-above >"$work/second-above-window-id" 2>"$work/second-above-client.log" &
+second_above_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/second-above-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+second_above_win=$(cat "$work/second-above-window-id")
+[ -n "$second_above_win" ]
+wait_for_top_window "$second_above_win"
+DISPLAY=$display xdotool key Super+k
+wait_for_active_window "$above_win"
+wait_for_top_window "$above_win"
+
+DISPLAY=$display "$work/xclient" override >"$work/stack-window-id" 2>"$work/stack-client.log" &
+stack_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/stack-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+stack_win=$(cat "$work/stack-window-id")
+[ -n "$stack_win" ]
+wait_for_top_window "$above_win"
+DISPLAY=$display xdotool key Super+t
+wait_for_top_window "$above_win"
+
+DISPLAY=$display xprop -id "$stack_win" \
+	-f _NET_WM_WINDOW_TYPE 32a \
+	-set _NET_WM_WINDOW_TYPE _NET_WM_WINDOW_TYPE_TOOLTIP
+wait_for_top_window "$stack_win"
+DISPLAY=$display xprop -id "$stack_win" -remove _NET_WM_WINDOW_TYPE
+wait_for_top_window "$above_win"
+
+for popup_marker in tooltip kde notification menu popup-menu dropdown-menu combo dnd above stays-on-top; do
+	DISPLAY=$display "$work/xclient" "override-$popup_marker" \
+		>"$work/popup-$popup_marker-window-id" \
+		2>"$work/popup-$popup_marker-client.log" &
+	popup_client_pid=$!
+	i=0
+	while [ "$i" -lt 100 ] && [ ! -s "$work/popup-$popup_marker-window-id" ]; do
+		i=$((i + 1))
+		sleep 0.05
+	done
+	popup_win=$(cat "$work/popup-$popup_marker-window-id")
+	[ -n "$popup_win" ]
+	[ "$(DISPLAY=$display "$work/xclient" attributes "$popup_win")" = "override_redirect=1" ]
+	case $popup_marker in
+	tooltip)
+		popup_atom=_NET_WM_WINDOW_TYPE_TOOLTIP
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	kde)
+		popup_atom=_KDE_NET_WM_WINDOW_TYPE_OVERRIDE
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	notification)
+		popup_atom=_NET_WM_WINDOW_TYPE_NOTIFICATION
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	menu)
+		popup_atom=_NET_WM_WINDOW_TYPE_MENU
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	popup-menu)
+		popup_atom=_NET_WM_WINDOW_TYPE_POPUP_MENU
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	dropdown-menu)
+		popup_atom=_NET_WM_WINDOW_TYPE_DROPDOWN_MENU
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	combo)
+		popup_atom=_NET_WM_WINDOW_TYPE_COMBO
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	dnd)
+		popup_atom=_NET_WM_WINDOW_TYPE_DND
+		popup_property=_NET_WM_WINDOW_TYPE
+		;;
+	above)
+		popup_atom=_NET_WM_STATE_ABOVE
+		popup_property=_NET_WM_STATE
+		;;
+	stays-on-top)
+		popup_atom=_NET_WM_STATE_STAYS_ON_TOP
+		popup_property=_NET_WM_STATE
+		;;
+	esac
+	DISPLAY=$display xprop -id "$popup_win" "$popup_property" |
+		grep -q "$popup_atom"
+	wait_for_top_window "$popup_win"
+	DISPLAY=$display xdotool windowfocus "$popup_win"
+	wait_for_input_focus "$above_win"
+	DISPLAY=$display xdotool key Super+t
+	wait_for_top_window "$popup_win"
+	kill "$popup_client_pid"
+	wait "$popup_client_pid" 2>/dev/null || true
+	popup_client_pid=
+done
+
+DISPLAY=$display "$work/xclient" state "$above_win" 0 _NET_WM_STATE_STAYS_ON_TOP
+wait_for_window_state_absent "$above_win" _NET_WM_STATE_STAYS_ON_TOP
+wait_for_top_window "$above_win"
+
+DISPLAY=$display "$work/xclient" state "$above_win" 0 _NET_WM_STATE_ABOVE
+wait_for_window_state_absent "$above_win" _NET_WM_STATE_ABOVE
+DISPLAY=$display xdotool windowraise "$stack_win"
+wait_for_top_window "$stack_win"
+
+DISPLAY=$display "$work/xclient" state "$above_win" 1 _NET_WM_STATE_STAYS_ON_TOP
+wait_for_window_state "$above_win" _NET_WM_STATE_STAYS_ON_TOP
+wait_for_top_window "$above_win"
+
+DISPLAY=$display "$work/xclient" >"$work/fullscreen-window-id" 2>"$work/fullscreen-client.log" &
+fullscreen_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/fullscreen-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+fullscreen_win=$(cat "$work/fullscreen-window-id")
+[ -n "$fullscreen_win" ]
+wait_for_active_window "$fullscreen_win"
+
+DISPLAY=$display "$work/xclient" panel >"$work/panel-window-id" 2>"$work/panel-client.log" &
+panel_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/panel-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+panel_win=$(cat "$work/panel-window-id")
+[ -n "$panel_win" ]
+DISPLAY=$display xprop -root _NET_CLIENT_LIST | grep -q "$panel_win"
+[ "$(DISPLAY=$display "$work/xclient" map-state "$panel_win")" = 2 ]
+
+DISPLAY=$display xdotool key Super+Shift+y
+wait_for_window_state "$fullscreen_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors ''
+DISPLAY=$display xdotool windowraise "$stack_win"
+DISPLAY=$display xdotool key Super+t
+wait_for_top_window "$above_win"
+DISPLAY=$display xdotool key Super+Shift+y
+wait_for_window_state_absent "$fullscreen_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors ''
+
+DISPLAY=$display "$work/xclient" override-transient "$panel_win" \
+	>"$work/popup-panel-transient-window-id" \
+	2>"$work/popup-panel-transient-client.log" &
+popup_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/popup-panel-transient-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+popup_win=$(cat "$work/popup-panel-transient-window-id")
+[ -n "$popup_win" ]
+[ "$(DISPLAY=$display "$work/xclient" attributes "$popup_win")" = "override_redirect=1" ]
+DISPLAY=$display xprop -id "$popup_win" WM_TRANSIENT_FOR | grep -q "$panel_win"
+wait_for_window_above "$popup_win" "$above_win"
+wait_for_window_above "$popup_win" "$fullscreen_win"
+DISPLAY=$display xdotool windowfocus "$popup_win"
+wait_for_input_focus "$popup_win"
+
+DISPLAY=$display "$work/xclient" fullscreen "$fullscreen_win"
+wait_for_window_state "$fullscreen_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+wait_for_window_above "$fullscreen_win" "$popup_win"
+wait_for_input_focus "$fullscreen_win"
+
+DISPLAY=$display xdotool key Super+t
+wait_for_top_window "$fullscreen_win"
+wait_for_window_above "$fullscreen_win" "$popup_win"
+DISPLAY=$display xdotool windowfocus "$popup_win"
+wait_for_input_focus "$fullscreen_win"
+kill "$popup_client_pid"
+wait "$popup_client_pid" 2>/dev/null || true
+popup_client_pid=
+DISPLAY=$display xdotool key Super+2
+wait_for_current_desktop 1
+wait_for_fullscreen_monitors ''
+DISPLAY=$display xdotool key Super+0
+wait_for_fullscreen_monitors 0
+DISPLAY=$display xdotool key Super+1
+wait_for_current_desktop 0
+wait_for_fullscreen_monitors 0
+
+DISPLAY=$display "$work/xclient" state "$fullscreen_win" 0 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state_absent "$fullscreen_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors ''
+kill "$fullscreen_client_pid"
+wait "$fullscreen_client_pid" 2>/dev/null || true
+fullscreen_client_pid=
+
+DISPLAY=$display "$work/xclient" >"$work/unselected-fullscreen-window-id" \
+	2>"$work/unselected-fullscreen-client.log" &
+fullscreen_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/unselected-fullscreen-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+fullscreen_win=$(cat "$work/unselected-fullscreen-window-id")
+[ -n "$fullscreen_win" ]
+wait_for_active_window "$fullscreen_win"
+DISPLAY=$display "$work/xclient" fullscreen "$fullscreen_win"
+wait_for_window_state "$fullscreen_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+
+DISPLAY=$display "$work/xclient" >"$work/fullscreen-peer-window-id" \
+	2>"$work/fullscreen-peer-client.log" &
+second_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/fullscreen-peer-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+fullscreen_peer_win=$(cat "$work/fullscreen-peer-window-id")
+[ -n "$fullscreen_peer_win" ]
+wait_for_active_window "$fullscreen_peer_win"
+wait_for_fullscreen_monitors 0
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$fullscreen_win" "$panel_win"
+
+DISPLAY=$display "$work/xclient" fullscreen "$fullscreen_peer_win"
+wait_for_window_state "$fullscreen_peer_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$fullscreen_peer_win" "$fullscreen_win"
+wait_for_window_above "$fullscreen_win" "$panel_win"
+kill "$second_client_pid"
+wait "$second_client_pid" 2>/dev/null || true
+second_client_pid=
+kill "$fullscreen_client_pid"
+wait "$fullscreen_client_pid" 2>/dev/null || true
+fullscreen_client_pid=
+wait_for_fullscreen_monitors ''
+kill "$panel_pid"
+wait "$panel_pid" 2>/dev/null || true
+panel_pid=
+
+DISPLAY=$display "$work/xclient" initial-many-states >"$work/many-state-window-id" 2>"$work/many-state-client.log" &
+many_state_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/many-state-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+many_state_win=$(cat "$work/many-state-window-id")
+[ -n "$many_state_win" ]
+wait_for_window_state "$many_state_win" _NET_WM_STATE_ABOVE
+wait_for_window_state "$many_state_win" _NET_WM_STATE_STAYS_ON_TOP
+DISPLAY=$display "$work/xclient" state "$many_state_win" 0 _NET_WM_STATE_ABOVE
+sleep 0.2
+wait_for_window_state "$many_state_win" _NET_WM_STATE_ABOVE
+wait_for_window_state "$many_state_win" _NET_WM_STATE_STAYS_ON_TOP
+kill "$many_state_client_pid"
+wait "$many_state_client_pid" 2>/dev/null || true
+many_state_client_pid=
+
+DISPLAY=$display "$work/xclient" fullscreen "$above_win"
+wait_for_window_state "$above_win" _NET_WM_STATE_FULLSCREEN
+wait_for_window_state "$above_win" _NET_WM_STATE_STAYS_ON_TOP
+DISPLAY=$display "$work/xclient" state "$above_win" 0 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state_absent "$above_win" _NET_WM_STATE_FULLSCREEN
+wait_for_window_state "$above_win" _NET_WM_STATE_STAYS_ON_TOP
+
+kill "$second_above_client_pid"
+wait "$second_above_client_pid" 2>/dev/null || true
+second_above_client_pid=
+kill "$stack_client_pid"
+wait "$stack_client_pid" 2>/dev/null || true
+stack_client_pid=
+kill "$above_client_pid"
+wait "$above_client_pid" 2>/dev/null || true
+above_client_pid=
+
+DISPLAY=$display "$work/xclient" override >"$work/restore-stack-window-id" 2>"$work/restore-stack-client.log" &
+stack_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/restore-stack-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+stack_win=$(cat "$work/restore-stack-window-id")
+[ -n "$stack_win" ]
+
+: >"$work/swallow-window-ids"
+DISPLAY=$display "$work/xclient" swallow-terminal >"$work/swallow-window-ids" 2>"$work/swallow-client.log" &
+swallow_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ "$(wc -l <"$work/swallow-window-ids")" -lt 2 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+terminal_win=$(sed -n '1p' "$work/swallow-window-ids")
+swallowed_win=$(sed -n '2p' "$work/swallow-window-ids")
+[ -n "$terminal_win" ]
+[ -n "$swallowed_win" ]
+wait_for_active_window "$swallowed_win"
+DISPLAY=$display xdotool windowraise "$stack_win"
+DISPLAY=$display xdotool key Super+t
+wait_for_top_window "$swallowed_win"
+
+DISPLAY=$display xdotool windowkill "$swallowed_win"
+wait_for_client_window "$terminal_win"
+DISPLAY=$display xdotool windowraise "$stack_win"
+DISPLAY=$display xdotool key Super+t
+wait_for_top_window "$stack_win"
+
+kill "$swallow_client_pid"
+wait "$swallow_client_pid" 2>/dev/null || true
+swallow_client_pid=
+kill "$stack_client_pid"
+wait "$stack_client_pid" 2>/dev/null || true
+stack_client_pid=
+
+mkdir -p "$home/.local/share/lyona/scripts"
+cat >"$home/.local/share/lyona/scripts/autostop.sh" <<EOF
+#!/bin/sh
+sleep 0.2
+: >"$work/autostop.called"
+EOF
+chmod +x "$home/.local/share/lyona/scripts/autostop.sh"
+cp "$repo/config/hotkeys.toml" "$home/.config/lyona/hotkeys.toml"
+kill -USR1 "$dwm_pid"
+sleep 0.2
+DISPLAY=$display xdotool key Super+Shift+q
+i=0
+while [ "$i" -lt 100 ] && kill -0 "$dwm_pid" 2>/dev/null; do
+	i=$((i + 1))
+	sleep 0.05
+done
+if kill -0 "$dwm_pid" 2>/dev/null; then
+	printf '%s\n' 'Super+Shift+Q did not exit dwm' >&2
+	exit 1
+fi
+wait "$dwm_pid"
+dwm_pid=
+if [ ! -f "$work/autostop.called" ]; then
+	printf '%s\n' 'dwm exited before the session-stop hook completed' >&2
+	exit 1
+fi
+
+printf '%s\n' "Xvfb runtime smoke: PASS"

@@ -1,0 +1,444 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+KEY_ID=F3B607488DB35A47
+KEYSERVER=keyserver.ubuntu.com
+# shellcheck disable=SC2016 # pacman expands $arch and $repo, not the shell
+BOOTSTRAP_SERVER='https://cdn77.cachyos.org/repo/$arch/$repo'
+DEFAULT_KERNEL=linux-cachyos
+MIRRORLIST_PACKAGES=(cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist)
+
+pacman_conf=${LYONA_CACHYOS_PACMAN_CONF:-/etc/pacman.conf}
+boot_dir=${LYONA_CACHYOS_BOOT_DIR:-/boot}
+ldso=${LYONA_CACHYOS_LDSO:-/lib/ld-linux-x86-64.so.2}
+noconfirm=${LYONA_CACHYOS_NONINTERACTIVE:-0}
+
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' NC='\033[0m'
+info() { printf "${CYAN}[INFO]${NC} %s\n" "$1"; }
+ok() { printf "${GREEN}[OK]${NC} %s\n" "$1"; }
+warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; }
+err() { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; }
+
+usage() {
+	cat <<EOF
+Usage: scripts/lyona-cachyos <command>
+
+Commands:
+  status          Report whether the CachyOS repositories are configured.
+  add-repos [--no-upgrade]
+                  Add the CachyOS repositories matching this CPU's ISA level.
+                  --no-upgrade syncs the databases but skips the system
+                  upgrade, for callers that only need the repositories.
+  install-kernel [--with-headers] [KERNEL...]
+                  Install $DEFAULT_KERNEL (or the named kernels) and make them
+                  bootable without changing the default boot entry. Headers
+                  are installed only with --with-headers, or when DKMS is
+                  already present.
+  -h, --help      Show this help.
+
+Environment:
+  LYONA_CACHYOS_NONINTERACTIVE=1  Pass --noconfirm to pacman.
+EOF
+}
+
+run_root() {
+	if [[ $EUID -eq 0 ]]; then
+		"$@"
+	else
+		sudo "$@"
+	fi
+}
+
+pacman_install() {
+	local args=(-S --needed)
+	[[ $noconfirm == 1 ]] && args+=(--noconfirm)
+	run_root pacman "${args[@]}" "$@"
+}
+
+require_platform() {
+	local machine
+	machine=$(uname -m)
+	if [[ $machine != x86_64 ]]; then
+		err "The CachyOS repositories are x86_64 only (this machine is $machine)."
+		return 1
+	fi
+	command -v pacman >/dev/null 2>&1 || {
+		err "pacman was not found."
+		return 1
+	}
+	command -v pacman-key >/dev/null 2>&1 || {
+		err "pacman-key was not found."
+		return 1
+	}
+	[[ -f $pacman_conf ]] || {
+		err "$pacman_conf not found."
+		return 1
+	}
+}
+
+repos_configured() {
+	command grep -Eq '^\[cachyos(-[a-z0-9]+)*\]' "$pacman_conf"
+}
+
+detect_isa_level() {
+	if [[ -n ${LYONA_CACHYOS_ISA:-} ]]; then
+		printf '%s\n' "$LYONA_CACHYOS_ISA"
+		return
+	fi
+
+	local ld_help=""
+	[[ -x $ldso ]] && ld_help=$("$ldso" --help 2>/dev/null || true)
+
+	if command -v gcc >/dev/null 2>&1 &&
+		gcc -march=native -Q --help=target 2>/dev/null |
+		command grep -E '^[[:space:]]*-march=' |
+			command grep -Eq 'znver[45]'; then
+		printf 'znver4\n'
+	elif command grep -Fq 'x86-64-v4 (supported, searched)' <<<"$ld_help"; then
+		printf 'v4\n'
+	elif command grep -Fq 'x86-64-v3 (supported, searched)' <<<"$ld_help"; then
+		printf 'v3\n'
+	else
+		printf 'baseline\n'
+	fi
+}
+
+repo_blocks_for_level() {
+	local level=$1 mirrorlist
+
+	if [[ $level == baseline ]]; then
+		printf '[cachyos]\nInclude = /etc/pacman.d/cachyos-mirrorlist\n\n'
+		return
+	fi
+
+	case $level in
+	v3) mirrorlist=/etc/pacman.d/cachyos-v3-mirrorlist ;;
+	v4 | znver4) mirrorlist=/etc/pacman.d/cachyos-v4-mirrorlist ;;
+	*)
+		err "Unknown ISA level: $level"
+		return 1
+		;;
+	esac
+
+	printf '[cachyos-%s]\nInclude = %s\n\n' "$level" "$mirrorlist"
+	printf '[cachyos-core-%s]\nInclude = %s\n\n' "$level" "$mirrorlist"
+	printf '[cachyos-extra-%s]\nInclude = %s\n\n' "$level" "$mirrorlist"
+	printf '[cachyos]\nInclude = /etc/pacman.d/cachyos-mirrorlist\n\n'
+}
+
+write_repo_blocks() {
+	local blocks=$1 tmp
+	tmp=$(mktemp)
+
+	if ! awk -v blocks="$blocks" '
+		/^\[/ {
+			if ($0 ~ /^\[cachyos[^]]*\]$/) { skip = 1; next }
+			skip = 0
+			if ($0 != "[options]" && !inserted) {
+				printf "%s\n\n", blocks
+				inserted = 1
+			}
+		}
+		skip { next }
+		/^[[:space:]]*Architecture[[:space:]]*=/ { print "Architecture = auto"; next }
+		{ print }
+		END { exit !inserted }
+	' "$pacman_conf" >"$tmp"; then
+		rm -f "$tmp"
+		err "$pacman_conf has no repository section to insert the CachyOS repositories before."
+		return 1
+	fi
+
+	run_root install -m 0644 "$tmp" "$pacman_conf"
+	rm -f "$tmp"
+}
+
+import_key() {
+	info "Importing the CachyOS package signing key..."
+	run_root pacman-key --recv-keys "$KEY_ID" --keyserver "$KEYSERVER" || {
+		err "Could not receive the CachyOS signing key $KEY_ID."
+		return 1
+	}
+	run_root pacman-key --lsign-key "$KEY_ID" || {
+		err "Could not locally sign the CachyOS signing key $KEY_ID."
+		return 1
+	}
+}
+
+add_repos() {
+	local level backup restore=false status=0 upgrade_after=true
+
+	while (($# > 0)); do
+		case $1 in
+		--no-upgrade)
+			upgrade_after=false
+			shift
+			;;
+		*)
+			err "Unknown add-repos option: $1"
+			return 1
+			;;
+		esac
+	done
+
+	require_platform || return 1
+
+	if repos_configured; then
+		ok "The CachyOS repositories are already configured."
+		return 0
+	fi
+
+	level=$(detect_isa_level)
+	info "Detected CachyOS package level: $level"
+
+	backup="$pacman_conf.lyona-backup-$(date +%Y%m%d%H%M%S)"
+	run_root install -m 0644 "$pacman_conf" "$backup"
+	info "Saved a copy of $pacman_conf to $backup."
+
+	import_key || return 1
+
+	while true; do
+		write_repo_blocks "$(printf '[cachyos]\nServer = %s\n\n' "$BOOTSTRAP_SERVER")" || {
+			restore=true
+			break
+		}
+		run_root pacman -Sy || {
+			err "Could not sync the CachyOS package database."
+			restore=true
+			break
+		}
+		pacman_install "${MIRRORLIST_PACKAGES[@]}" || {
+			err "Could not install the CachyOS keyring and mirrorlists."
+			restore=true
+			break
+		}
+		if [[ $level != baseline ]]; then
+			pacman_install cachyos/pacman || {
+				err "Could not install the CachyOS pacman build needed by the $level mirrorlist."
+				restore=true
+				break
+			}
+		fi
+		write_repo_blocks "$(repo_blocks_for_level "$level")" || {
+			restore=true
+			break
+		}
+		break
+	done
+
+	if [[ $restore == true ]]; then
+		run_root install -m 0644 "$backup" "$pacman_conf"
+		err "Restored $pacman_conf from $backup; no CachyOS repositories were added."
+		return 1
+	fi
+
+	if [[ $upgrade_after == true ]]; then
+		local upgrade=(-Syu)
+		[[ $noconfirm == 1 ]] && upgrade+=(--noconfirm)
+		if ! run_root pacman "${upgrade[@]}"; then
+			warn "The CachyOS repositories were added, but the system upgrade failed."
+			warn "Run 'sudo pacman -Syu' before installing further packages."
+			status=1
+		fi
+	else
+		# Callers that are about to install a fresh system from these
+		# repositories do not want this system upgraded first.
+		if ! run_root pacman -Sy; then
+			warn "The CachyOS repositories were added, but the database sync failed."
+			status=1
+		fi
+	fi
+
+	ok "CachyOS repositories configured ($level)."
+	return $status
+}
+
+find_boot_entry_source() {
+	local entries=$1 entry preferred=""
+
+	for entry in "$entries"/*.conf; do
+		[[ -f $entry ]] || continue
+		command grep -Eq '^[[:space:]]*linux[[:space:]]+\S+' "$entry" || continue
+		if command grep -Eq '^[[:space:]]*linux[[:space:]]+\S*/vmlinuz-linux$' "$entry"; then
+			printf '%s\n' "$entry"
+			return 0
+		fi
+		[[ -n $preferred ]] || preferred=$entry
+	done
+
+	[[ -n $preferred ]] || return 1
+	printf '%s\n' "$preferred"
+}
+
+add_boot_entry() {
+	local kernel=$1 entries="$boot_dir/loader/entries"
+	local source_entry source_kernel target tmp
+
+	if [[ -d $boot_dir/grub ]] && command -v grub-mkconfig >/dev/null 2>&1; then
+		info "Regenerating the GRUB configuration..."
+		run_root grub-mkconfig -o "$boot_dir/grub/grub.cfg"
+		ok "GRUB now lists $kernel."
+		warn "GRUB may order $kernel above the previous kernel; pin the one you want"
+		warn "with GRUB_DEFAULT in /etc/default/grub if the menu order matters."
+		return 0
+	fi
+
+	if [[ ! -d $entries ]]; then
+		warn "No GRUB or systemd-boot layout found under $boot_dir."
+		warn "Add a boot entry for $kernel with your bootloader before rebooting."
+		return 0
+	fi
+
+	if command grep -rlq "vmlinuz-$kernel" "$entries" 2>/dev/null; then
+		ok "A boot entry for $kernel already exists."
+		return 0
+	fi
+
+	source_entry=$(find_boot_entry_source "$entries") || {
+		warn "No existing boot entry in $entries to model $kernel on."
+		warn "Add one manually before rebooting."
+		return 0
+	}
+
+	source_kernel=$(
+		command sed -nE 's#^[[:space:]]*linux[[:space:]]+.*/vmlinuz-(\S+)[[:space:]]*$#\1#p' \
+			"$source_entry" | head -n1
+	)
+	if [[ -z $source_kernel ]]; then
+		warn "Could not read the kernel image name from $source_entry."
+		warn "Add a boot entry for $kernel manually before rebooting."
+		return 0
+	fi
+
+	target=$(basename -- "$source_entry")
+	if [[ $target == *"$source_kernel"* ]]; then
+		target=${target//$source_kernel/$kernel}
+	else
+		target="${target%.conf}-$kernel.conf"
+	fi
+
+	tmp=$(mktemp)
+	command sed \
+		-e "s#vmlinuz-$source_kernel#vmlinuz-$kernel#g" \
+		-e "s#initramfs-$source_kernel#initramfs-$kernel#g" \
+		-e "s#($source_kernel)#($kernel)#g" \
+		"$source_entry" >"$tmp"
+	run_root install -m 0644 "$tmp" "$entries/$target"
+	rm -f "$tmp"
+
+	if [[ ! -e $boot_dir/vmlinuz-$kernel ]]; then
+		warn "$boot_dir/vmlinuz-$kernel does not exist yet; check the entry before rebooting."
+	fi
+	ok "Added the systemd-boot entry $target for $kernel."
+	keep_default_entry "$(basename -- "$source_entry")"
+}
+
+keep_default_entry() {
+	local source_entry=$1 loader_conf="$boot_dir/loader/loader.conf" current tmp
+
+	if [[ -f $loader_conf ]]; then
+		current=$(command sed -nE 's/^default[[:space:]]+(\S+).*/\1/p' "$loader_conf" | head -n1)
+		if [[ -n $current ]]; then
+			info "The default boot entry stays $current."
+			return 0
+		fi
+	fi
+
+	tmp=$(mktemp)
+	[[ -f $loader_conf ]] && cat "$loader_conf" >"$tmp"
+	printf 'default %s\n' "$source_entry" >>"$tmp"
+	run_root install -D -m 0644 "$tmp" "$loader_conf"
+	rm -f "$tmp"
+	info "Pinned the default boot entry to $source_entry so the new kernel is opt-in."
+}
+
+install_kernel() {
+	local kernels=() kernel packages=() with_headers=false
+
+	while (($# > 0)); do
+		case $1 in
+		--with-headers)
+			with_headers=true
+			shift
+			;;
+		--)
+			shift
+			break
+			;;
+		-*)
+			err "Unknown install-kernel option: $1"
+			return 1
+			;;
+		*)
+			kernels+=("$1")
+			shift
+			;;
+		esac
+	done
+	kernels+=("$@")
+
+	require_platform || return 1
+
+	if ! repos_configured; then
+		err "The CachyOS repositories are not configured; run 'lyona-cachyos add-repos' first."
+		return 1
+	fi
+
+	((${#kernels[@]} > 0)) || kernels=("$DEFAULT_KERNEL")
+
+	# Headers are only needed to build out-of-tree modules. Ship them when
+	# asked, or when DKMS is already installed and would want to build
+	# against the new kernel.
+	if [[ $with_headers != true ]] && command -v pacman >/dev/null 2>&1 &&
+		pacman -Qq dkms >/dev/null 2>&1; then
+		with_headers=true
+		info "DKMS is installed; including kernel headers."
+	fi
+
+	for kernel in "${kernels[@]}"; do
+		packages+=("$kernel")
+		[[ $with_headers == true ]] && packages+=("$kernel-headers")
+	done
+
+	info "Installing ${kernels[*]}..."
+	pacman_install "${packages[@]}" || {
+		err "Could not install ${kernels[*]}."
+		return 1
+	}
+
+	for kernel in "${kernels[@]}"; do
+		add_boot_entry "$kernel"
+	done
+	ok "${kernels[*]} installed. The previous kernel stays the default; select the"
+	ok "CachyOS kernel at boot to use it."
+}
+
+status() {
+	if repos_configured; then
+		printf 'cachyos-repos: configured\n'
+	else
+		printf 'cachyos-repos: not configured\n'
+	fi
+}
+
+case "${1:-}" in
+status)
+	status
+	;;
+add-repos)
+	shift
+	add_repos "$@"
+	;;
+install-kernel)
+	shift
+	install_kernel "$@"
+	;;
+-h | --help)
+	usage
+	;;
+*)
+	err "Unknown command: ${1:-(none)}"
+	usage >&2
+	exit 1
+	;;
+esac

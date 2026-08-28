@@ -1,0 +1,22 @@
+# Silence "Failed to start Attach File /dev/block/sr0 to Loopback Block Device."
+# on the live medium.
+#
+# systemd's /usr/lib/udev/rules.d/99-systemd.rules pulls in systemd-loop@.service
+# for an optical drive whose GPT the kernel could not parse, so that
+# systemd-gpt-auto-generator can still see discoverable partitions:
+#
+#   SUBSYSTEM=="block", ENV{ID_CDROM}=="1", \
+#     ENV{ID_PART_GPT_AUTO_ROOT_DISK_NEEDS_LOOP}=="1", \
+#     ENV{SYSTEMD_WANTS}+="systemd-loop@.service"
+#
+# An El Torito ISO booted from a 2048-byte-sector CD-ROM always trips that
+# check, and `systemd-dissect --attach` then fails on the read-only device, so
+# the job lands on the console as a red [FAILED] line during boot.
+#
+# archiso never uses gpt-auto root: its own initramfs hook finds the medium by
+# the archisosearchuuid= / archisodevice= boot parameters and mounts the
+# squashfs from there. The loop device buys nothing here, so clear the flag
+# before 99-systemd.rules reads it. The blkid builtin that sets the property
+# runs from 60-persistent-storage.rules, so 90- lands between the two.
+ACTION!="remove", SUBSYSTEM=="block", ENV{ID_CDROM}=="1", \
+  ENV{ID_PART_GPT_AUTO_ROOT_DISK_NEEDS_LOOP}="0"

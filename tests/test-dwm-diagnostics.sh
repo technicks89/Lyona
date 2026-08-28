@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=tests/lib.sh
+. "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+HELPER="$repo/scripts/dwm-diagnostics"
+BASH_BIN="${BASH:-/usr/bin/bash}"
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+mkdir -p "$work/bin" "$work/home/.config"
+
+for cmd in cc make Xorg startx xrandr xset xsetroot xclip xdotool alacritty; do
+	cat >"$work/bin/$cmd" <<'SCRIPT'
+#!/bin/sh
+exit 0
+SCRIPT
+	chmod +x "$work/bin/$cmd"
+done
+
+cat >"$work/bin/pkg-config" <<'SCRIPT'
+#!/bin/sh
+test "$1" = "--exists"
+case "$2" in
+	x11|xft|xinerama|xrender|imlib2|x11-xcb|xcb|xcb-res)
+		exit 0
+		;;
+esac
+exit 1
+SCRIPT
+chmod +x "$work/bin/pkg-config"
+
+env HOME="$work/home" PATH="$work/bin" "$BASH_BIN" "$HELPER" >"$work/ok"
+grep -Fqx "  required_failures=0" "$work/ok"
+grep -Fq "Optional desktop" "$work/ok"
+grep -Fq "degraded quickshell" "$work/ok"
+grep -Fq "degraded maim" "$work/ok"
+
+rm -f "$work/bin/alacritty" "$work/bin/Xorg"
+
+if env HOME="$work/home" PATH="$work/bin" "$BASH_BIN" "$HELPER" >"$work/fail" 2>"$work/err"; then
+	echo "diagnostics passed despite missing required commands" >&2
+	exit 1
+fi
+
+grep -Fq "missing X11 server" "$work/fail"
+grep -Fq "missing terminal" "$work/fail"
+grep -Fq "Required failures must be fixed" "$work/err"

@@ -1,0 +1,44 @@
+name: "Feature request"
+description: "Suggest a new feature or improvement for the project."
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Feature request
+        Explain the user problem and how the proposal fits the X11 scope in
+        `SPEC.md`. Use an issue for general questions because Discussions are
+        not enabled for this repository.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      placeholder: "What workflow is difficult or unavailable today?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Describe the solution you'd like
+      placeholder: "Provide a clear and concise description."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and Arch Linux impact
+      description: Explain alternatives and effects on supported Arch Linux installations.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This request is compatible with the project's X11 scope.
+          required: true
+        - label: I checked for an existing issue or pull request.
+          required: true

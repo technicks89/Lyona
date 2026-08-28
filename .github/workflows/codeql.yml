@@ -1,0 +1,51 @@
+name: CodeQL
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  schedule:
+    - cron: "23 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          pacman -Sy --noconfirm --needed \
+            gcc make pkgconf \
+            libx11 libxft libxinerama libxrender \
+            imlib2 libxcb xcb-util \
+            fontconfig freetype2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4.37.8
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      - name: Build
+        run: scripts/run-tests make clean all
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4.37.8

@@ -1,0 +1,361 @@
+#!/usr/bin/env bash
+#
+# Generate a GTK 3 and GTK 4 theme from a lyona palette.
+#
+# Every theme in config/themes.toml gets a matching GTK theme, so GTK
+# applications stop falling back to stock Adwaita while the terminal, dwm and
+# the panel are themed. The generated theme imports the platform's own base
+# theme and recolours it; it does not attempt to restyle widgets.
+#
+#     lyona-gtk-theme generate THEME_ID THEMES_FILE OUTDIR
+#     lyona-gtk-theme generate-all THEMES_FILE OUTDIR_ROOT
+#
+# generate-all writes OUTDIR_ROOT/Lyona-<id> for every [theme.<id>] section.
+# Output is deterministic: the same palette always produces the same bytes.
+
+set -euo pipefail
+export LC_ALL=C
+
+die() {
+	printf 'lyona-gtk-theme: %s\n' "$*" >&2
+	exit 1
+}
+
+usage() {
+	cat >&2 <<'EOF'
+usage: lyona-gtk-theme generate THEME_ID THEMES_FILE OUTDIR
+       lyona-gtk-theme generate-all THEMES_FILE OUTDIR_ROOT
+EOF
+	exit 2
+}
+
+# Copied from theme-apply.sh rather than sourced: that script has no
+# sourceable form, and a shared file would need an install path and a runtime
+# lookup for no gain.
+toml_get() {
+	local section="$1" key="$2" file="$3"
+	awk -v sec="[$section]" -v key="$key" '
+		/^[[:space:]]*\[/ {
+			header = $0
+			sub(/^[[:space:]]*/, "", header)
+			sub(/[[:space:]]*#.*/, "", header)
+			sub(/[[:space:]]+$/, "", header)
+			in_sec = (header == sec)
+		}
+		in_sec && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+			sub(/^[^=]*=[[:space:]]*/, "")
+			gsub(/"/, "")
+			gsub(/[[:space:]]+#.*$/, "")
+			sub(/[[:space:]]+$/, "")
+			print; exit
+		}
+	' "$file"
+}
+
+theme_ids() {
+	awk '
+		/^[[:space:]]*\[theme\./ {
+			header = $0
+			sub(/^[[:space:]]*\[theme\./, "", header)
+			sub(/\].*$/, "", header)
+			print header
+		}
+	' "$1"
+}
+
+valid_theme_id() {
+	case ${1:-} in
+	"" | *[/\\]* | *..* | *[[:space:]]*) return 1 ;;
+	esac
+	[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+}
+
+valid_hex() {
+	[[ ${1:-} =~ ^#[0-9A-Fa-f]{6}$ ]]
+}
+
+# Channel of #RRGGBB as a decimal 0-255.
+hex_component() {
+	local colour=$1 offset=$2
+	printf '%d' "$((16#${colour:offset:2}))"
+}
+
+# `pct` percent of the way from $1 toward $2, per channel. One ramp toward the
+# foreground gives usable surface/overlay/muted tones on light and dark
+# palettes alike, which a fixed pair of palette keys cannot.
+blend() {
+	local from=$1 to=$2 pct=$3 i out='#' a b
+	for i in 1 3 5; do
+		a=$(hex_component "$from" "$i")
+		b=$(hex_component "$to" "$i")
+		out+=$(printf '%02X' "$(((a * (100 - pct) + b * pct + 50) / 100))")
+	done
+	printf '%s' "$out"
+}
+
+# First non-empty, valid colour among the arguments.
+first_colour() {
+	local candidate
+	for candidate in "$@"; do
+		valid_hex "$candidate" && {
+			printf '%s' "$candidate"
+			return 0
+		}
+	done
+	return 1
+}
+
+# Sets the nine palette tokens plus dark mode for one theme.
+resolve_palette() {
+	local id=$1 file=$2
+	local section="theme.$id"
+	local norm_fg norm_bg norm_border sel_fg sel_bg sel_border
+	local term_bg_raw term_fg_raw term_red
+
+	norm_fg=$(toml_get "$section" normfgcolor "$file")
+	norm_bg=$(toml_get "$section" normbgcolor "$file")
+	norm_border=$(toml_get "$section" normbordercolor "$file")
+	sel_fg=$(toml_get "$section" selfgcolor "$file")
+	sel_bg=$(toml_get "$section" selbgcolor "$file")
+	sel_border=$(toml_get "$section" selbordercolor "$file")
+	term_bg_raw=$(toml_get "$section" term_bg "$file")
+	term_fg_raw=$(toml_get "$section" term_fg "$file")
+	term_red=$(toml_get "$section" term_color1 "$file")
+
+	DARK_MODE=$(toml_get "$section" dark_mode "$file")
+	[[ -n $DARK_MODE ]] || DARK_MODE=true
+
+	# The application background is term_bg, NOT normbgcolor. On light
+	# palettes normbgcolor is the dwm bar's mid grey -- catppuccin-latte is
+	# #BCC0CC against a real background of #EFF1F5 -- so using it would give
+	# grey windows on every light theme.
+	BG=$(first_colour "$term_bg_raw" "$norm_bg") ||
+		die "theme '$id' has no usable background colour"
+	FG=$(first_colour "$sel_fg" "$term_fg_raw" "$norm_fg") ||
+		die "theme '$id' has no usable foreground colour"
+	FG_DIM=$(first_colour "$norm_fg" "$FG")
+	ACCENT=$(first_colour "$sel_border" "$sel_bg" "$FG")
+	ERROR=$(first_colour "$term_red" "$ACCENT")
+	TERM_BG=$(first_colour "$term_bg_raw" "$BG")
+	TERM_FG=$(first_colour "$term_fg_raw" "$FG")
+
+	SURFACE=$(blend "$BG" "$FG" 8)
+	OVERLAY=$(blend "$BG" "$FG" 16)
+	MUTED=$(blend "$BG" "$FG" 45)
+
+	# normbordercolor equals term_bg in solarized, gruvbox and everforest, so
+	# taking it unguarded renders invisible borders on three of the palettes.
+	BORDER=$(first_colour "$norm_border" "")
+	if [[ -z ${BORDER:-} || $BORDER == "$BG" ]]; then
+		BORDER=$(blend "$BG" "$FG" 25)
+	fi
+}
+
+gtk3_import() {
+	if [[ $DARK_MODE == true ]]; then
+		printf '%s' 'resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css'
+	else
+		printf '%s' 'resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained.css'
+	fi
+}
+
+# GTK 4 ships no Adwaita resource at all; its base theme is Default.
+gtk4_import() {
+	if [[ $DARK_MODE == true ]]; then
+		printf '%s' 'resource:///org/gtk/libgtk/theme/Default/Default-dark.css'
+	else
+		printf '%s' 'resource:///org/gtk/libgtk/theme/Default/Default-light.css'
+	fi
+}
+
+emit_css() {
+	local id=$1 import=$2
+
+	printf '/*\n'
+	printf ' * Lyona-%s -- generated by lyona-gtk-theme from the %s palette.\n' "$id" "$id"
+	printf ' * Do not edit: regenerate with lyona-gtk-theme generate %s\n' "$id"
+	printf ' *\n'
+	printf ' * Imports the platform base theme for every metric and asset, then\n'
+	printf ' * recolours the surfaces it hardcodes.\n'
+	printf ' */\n\n'
+	printf '@import url("%s");\n\n' "$import"
+
+	printf '@define-color lyona_bg      %s;\n' "$BG"
+	printf '@define-color lyona_surface %s;\n' "$SURFACE"
+	printf '@define-color lyona_overlay %s;\n' "$OVERLAY"
+	printf '@define-color lyona_border  %s;\n' "$BORDER"
+	printf '@define-color lyona_fg      %s;\n' "$FG"
+	printf '@define-color lyona_fg_dim  %s;\n' "$FG_DIM"
+	printf '@define-color lyona_muted   %s;\n' "$MUTED"
+	printf '@define-color lyona_accent  %s;\n' "$ACCENT"
+	printf '@define-color lyona_error   %s;\n' "$ERROR"
+	printf '\n'
+	# The raw terminal pair, so a consumer can match the terminal exactly.
+	printf '@define-color lyona_term_bg %s;\n' "$TERM_BG"
+	printf '@define-color lyona_term_fg %s;\n' "$TERM_FG"
+	printf '\n'
+
+	printf '@define-color theme_bg_color            @lyona_bg;\n'
+	printf '@define-color theme_fg_color            @lyona_fg;\n'
+	printf '@define-color theme_base_color          @lyona_surface;\n'
+	printf '@define-color theme_text_color          @lyona_fg;\n'
+	printf '@define-color theme_selected_bg_color   @lyona_accent;\n'
+	printf '@define-color theme_selected_fg_color   @lyona_bg;\n'
+	printf '@define-color insensitive_bg_color      @lyona_bg;\n'
+	printf '@define-color insensitive_fg_color      @lyona_muted;\n'
+	printf '@define-color borders                   @lyona_border;\n'
+	printf '@define-color error_color               @lyona_error;\n'
+	printf '\n'
+
+	cat <<'CSS'
+window,
+window.background,
+.background,
+dialog,
+popover,
+popover.background,
+menu,
+.menu {
+	background-color: @lyona_bg;
+	color: @lyona_fg;
+}
+
+label,
+.dim-label {
+	color: @lyona_fg_dim;
+}
+
+label:disabled,
+.dim-label:disabled {
+	color: @lyona_muted;
+}
+
+entry {
+	background-color: @lyona_surface;
+	background-image: none;
+	color: @lyona_fg;
+	border-color: @lyona_border;
+	caret-color: @lyona_accent;
+}
+
+entry:focus {
+	border-color: @lyona_accent;
+	box-shadow: inset 0 0 0 1px @lyona_accent;
+}
+
+entry selection,
+label selection {
+	background-color: @lyona_accent;
+	color: @lyona_bg;
+}
+
+button,
+button.toggle-button {
+	background-color: @lyona_surface;
+	background-image: none;
+	color: @lyona_fg;
+	border-color: @lyona_border;
+}
+
+button:hover,
+button.toggle-button:hover {
+	background-color: @lyona_overlay;
+}
+
+button:active,
+button:checked,
+button.toggle-button:checked {
+	background-color: @lyona_accent;
+	color: @lyona_bg;
+	border-color: @lyona_accent;
+}
+
+button:disabled {
+	background-color: @lyona_bg;
+	color: @lyona_muted;
+	border-color: @lyona_border;
+}
+
+/*
+ * Widgets the LightDM greeter uses. `menubar` is its top status bar and
+ * `lightdm-combo` its session chooser; both names come from slick-greeter's
+ * own style classes. Harmless in a normal application.
+ */
+menubar,
+menubar > menuitem {
+	background-color: @lyona_bg;
+	color: @lyona_fg_dim;
+}
+
+menubar > menuitem:hover {
+	background-color: @lyona_overlay;
+	color: @lyona_fg;
+}
+
+menuitem:hover,
+.lightdm-combo menuitem:hover {
+	background-color: @lyona_accent;
+	color: @lyona_bg;
+}
+
+separator {
+	background-color: @lyona_border;
+	color: @lyona_border;
+}
+CSS
+}
+
+emit_index_theme() {
+	local id=$1
+	cat <<EOF
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=Lyona-$id
+Comment=Generated from the lyona $id palette
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=Lyona-$id
+IconTheme=Adwaita
+CursorTheme=Adwaita
+EOF
+}
+
+generate_one() {
+	local id=$1 file=$2 outdir=$3
+
+	valid_theme_id "$id" || die "unsafe theme id: $id"
+	[[ -f $file ]] || die "themes file not found: $file"
+
+	resolve_palette "$id" "$file"
+
+	mkdir -p -- "$outdir/gtk-3.0" "$outdir/gtk-4.0" ||
+		die "could not create $outdir"
+	emit_index_theme "$id" >"$outdir/index.theme"
+	emit_css "$id" "$(gtk3_import)" >"$outdir/gtk-3.0/gtk.css"
+	emit_css "$id" "$(gtk4_import)" >"$outdir/gtk-4.0/gtk.css"
+}
+
+case ${1:-} in
+generate)
+	[[ $# -eq 4 ]] || usage
+	generate_one "$2" "$3" "$4"
+	;;
+generate-all)
+	[[ $# -eq 3 ]] || usage
+	[[ -f $2 ]] || die "themes file not found: $2"
+	generated=0
+	while IFS= read -r theme_id; do
+		[[ -n $theme_id ]] || continue
+		generate_one "$theme_id" "$2" "$3/Lyona-$theme_id"
+		generated=$((generated + 1))
+	done < <(theme_ids "$2")
+	((generated > 0)) || die "no [theme.*] sections in $2"
+	;;
+-h | --help | help)
+	usage
+	;;
+*)
+	usage
+	;;
+esac

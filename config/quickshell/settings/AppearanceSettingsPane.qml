@@ -1,0 +1,924 @@
+import QtQuick
+import QtQuick.Layouts
+import qs.core
+
+pragma ComponentBehavior: Bound
+
+Flickable {
+    id: root
+
+    required property var appearanceModel
+    required property var capabilities
+    property string selectedThemeId: ""
+    property string selectedWallpaperPath: ""
+    property string selectedWallpaperFit: "fill"
+    property string selectedFontFamily: "MesloLGS Nerd Font Mono"
+    property real selectedFontScale: 1.0
+    readonly property var selectedTheme: root.appearanceModel.themeById(root.selectedThemeId)
+    // What the user has picked but not yet applied, per capability. Kept
+    // separate from the saved selection so a half-made choice survives the
+    // status refreshes that arrive while the pane is open.
+    property var selectedToolkit: ({})
+    property var syncedToolkit: ({})
+    readonly property bool appearanceBusy: root.appearanceModel.busy
+        || root.appearanceModel.wallpaperBusy || root.appearanceModel.fontBusy
+        || root.appearanceModel.toolkitBusy
+    readonly property bool toolkitControlsBusy: root.appearanceBusy
+        || root.appearanceModel.toolkitStatusBusy
+    readonly property bool wallpaperControlsBusy: root.appearanceBusy
+        || root.appearanceModel.wallpaperStatusBusy
+    readonly property bool wallpaperPreviewControlsBusy: root.appearanceBusy
+        || root.appearanceModel.wallpaperPreviewActionBusy
+    readonly property bool fontControlsBusy: root.appearanceBusy || root.appearanceModel.fontStatusBusy
+        || root.appearanceModel.wallpaperStatusBusy
+    contentWidth: width
+    contentHeight: content.implicitHeight
+    clip: true
+
+    function displayName(value) {
+        if (!value || value.length === 0) return "Unknown";
+        return value.charAt(0).toUpperCase() + value.substring(1).replace(/-/g, " ");
+    }
+
+    function ensureSelection() {
+        if (root.appearanceModel.themeById(root.selectedThemeId)) return;
+        let preferred = root.appearanceModel.activeTheme;
+        if (!root.appearanceModel.themeById(preferred))
+            preferred = root.appearanceModel.resolvedTheme;
+        if (root.appearanceModel.themeById(preferred)) root.selectedThemeId = preferred;
+        else if (root.appearanceModel.themes.length > 0)
+            root.selectedThemeId = root.appearanceModel.themes[0].id;
+    }
+
+    function ensureWallpaperSelection() {
+        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+            if (candidate.token === root.selectedWallpaperPath) return;
+        }
+        const preferred = root.appearanceModel.wallpaperPath;
+        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+            if (candidate.token === preferred) {
+                root.selectedWallpaperPath = preferred;
+                root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+                return;
+            }
+        }
+        if (root.appearanceModel.wallpaperCandidates.length > 0)
+            root.selectedWallpaperPath = root.appearanceModel.wallpaperCandidates[0].token;
+        else root.selectedWallpaperPath = "";
+        if (root.appearanceModel.validWallpaperFit(root.appearanceModel.wallpaperFit))
+            root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+    }
+
+    function wallpaperSelectionAvailable() {
+        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+            if (candidate.token === root.selectedWallpaperPath) return true;
+        }
+        return false;
+    }
+
+    function wallpaperEmptyDetail() {
+        if (!root.appearanceModel.inventoryParsed
+                || root.appearanceModel.inventoryProviderState === "unavailable")
+            return root.appearanceModel.inventoryProviderDetail;
+        const selection = root.appearanceModel.inventorySelections.wallpaper;
+        if (!selection) return "Wallpaper inventory did not return a selection record";
+        if (selection.state === "unavailable"
+                || selection.detail === "Wallpaper candidate discovery did not complete")
+            return selection.detail;
+        let detail = "No supported images were found in ~/Pictures/backgrounds.";
+        if (selection.state !== "available") detail += " " + selection.detail + ".";
+        if (root.appearanceModel.inventoryWatchState === "available")
+            return detail + " Add an AVIF, BMP, GIF, JPEG, PNG, SVG, or WebP image and this list will update while Appearance is open.";
+        return detail + " " + root.appearanceModel.inventoryWatchDetail
+            + ". Add an image, then use Refresh to update this list.";
+    }
+
+    function syncWallpaperSelection() {
+        const preferred = root.appearanceModel.wallpaperPath;
+        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+            if (candidate.token === preferred) {
+                root.selectedWallpaperPath = preferred;
+                if (root.appearanceModel.validWallpaperFit(root.appearanceModel.wallpaperFit))
+                    root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+                return;
+            }
+        }
+        root.ensureWallpaperSelection();
+    }
+
+    function syncFontSelection() {
+        if (root.appearanceModel.fontFamily.length > 0)
+            root.selectedFontFamily = root.appearanceModel.fontFamily;
+        if (root.appearanceModel.fontScale >= 0.8 && root.appearanceModel.fontScale <= 1.5)
+            root.selectedFontScale = root.appearanceModel.fontScale;
+    }
+
+    // Adopt the saved option only when it actually changed underneath, so a
+    // pending choice is not discarded every time the status is re-read.
+    function syncToolkitSelection() {
+        const selected = ({});
+        const synced = ({});
+        for (const capability of root.appearanceModel.toolkitCapabilities) {
+            const saved = root.appearanceModel.toolkitSelectionFor(capability).option;
+            const previous = root.syncedToolkit[capability];
+            const pending = root.selectedToolkit[capability];
+            selected[capability] = (previous !== undefined && previous === saved
+                && pending !== undefined) ? pending : saved;
+            synced[capability] = saved;
+        }
+        root.selectedToolkit = selected;
+        root.syncedToolkit = synced;
+    }
+
+    function toolkitChosen(capability) {
+        const chosen = root.selectedToolkit[capability];
+        return chosen === undefined
+            ? root.appearanceModel.toolkitSelectionFor(capability).option : chosen;
+    }
+
+    function toolkitDirty(capability) {
+        return root.toolkitChosen(capability)
+            !== root.appearanceModel.toolkitSelectionFor(capability).option;
+    }
+
+    function chooseToolkit(capability, value) {
+        const next = ({});
+        for (const key in root.selectedToolkit) next[key] = root.selectedToolkit[key];
+        next[capability] = value;
+        root.selectedToolkit = next;
+    }
+
+    onVisibleChanged: if (visible) {
+        root.ensureSelection();
+        root.ensureWallpaperSelection();
+        root.syncFontSelection();
+        root.syncToolkitSelection();
+    }
+    Component.onCompleted: {
+        root.ensureSelection();
+        root.ensureWallpaperSelection();
+        root.syncFontSelection();
+        root.syncToolkitSelection();
+    }
+
+    Connections {
+        target: root.appearanceModel
+        function onThemesChanged() { root.ensureSelection(); }
+        function onWallpaperCandidatesChanged() { root.ensureWallpaperSelection(); }
+        function onWallpaperPathChanged() { root.syncWallpaperSelection(); }
+        function onWallpaperFitChanged() {
+            if (root.selectedWallpaperPath === root.appearanceModel.wallpaperPath
+                    && root.appearanceModel.validWallpaperFit(root.appearanceModel.wallpaperFit))
+                root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+        }
+        function onFontFamilyChanged() { root.syncFontSelection(); }
+        function onFontScaleChanged() { root.syncFontSelection(); }
+        function onToolkitSelectionsChanged() { root.syncToolkitSelection(); }
+    }
+
+    ColumnLayout {
+        id: content
+        width: root.width
+        spacing: Theme.spacingLg
+
+        RowLayout {
+            Layout.fillWidth: true
+            UiText {
+                Layout.fillWidth: true
+                text: root.appearanceModel.applicationState === "available"
+                    ? "Selected appearance is fully applied"
+                    : root.appearanceModel.applicationState === "partial"
+                        ? "Selected appearance is only partially applied"
+                        : root.appearanceModel.providerDetail
+                color: Theme.statusColor(root.appearanceModel.applicationState)
+                font.bold: true
+                elide: Text.ElideRight
+            }
+            ShellButton {
+                label: root.appearanceBusy ? "Working..." : "Refresh"
+                enabled: !root.appearanceBusy
+                onActivated: root.appearanceModel.refreshAll()
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.message.length > 0
+            text: root.appearanceModel.message
+            color: root.appearanceModel.messageSeverity === "success" ? Theme.success
+                : root.appearanceModel.messageSeverity === "warning" ? Theme.warning
+                    : root.appearanceModel.messageSeverity === "danger" ? Theme.danger
+                        : Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
+
+        StatusCard {
+            visible: !root.appearanceModel.mutationReady
+            label: "Theme changes are read-only"
+            statusState: "restricted"
+            value: "Protected"
+            detail: "Inventory and active colors remain available, but a theme source or integration path failed ownership, link, or atomic-update safety checks."
+        }
+
+        StatusCard {
+            visible: root.appearanceModel.recoveryState === "available"
+            label: "Interrupted theme transaction"
+            statusState: "failed"
+            value: root.appearanceModel.recoveryAction
+            detail: "Recovery is available for " + root.appearanceModel.recoveryTheme
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.recoveryState === "available"
+            ShellButton {
+                label: root.appearanceBusy ? "Recovering..." : "Restore previous state"
+                enabled: !root.appearanceBusy
+                onActivated: root.appearanceModel.recover()
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.previewState !== "none"
+            Layout.preferredHeight: previewColumn.implicitHeight + Theme.spacingLg * 2
+            color: Theme.controlNormalFill
+            border.color: root.appearanceModel.previewState === "failed" ? Theme.danger : Theme.warning
+            border.width: Theme.controlFocusBorderWidth
+            radius: Theme.controlRadius
+
+            ColumnLayout {
+                id: previewColumn
+                anchors.fill: parent
+                anchors.margins: Theme.spacingLg
+                spacing: Theme.spacingSm
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.previewState === "failed"
+                        ? "Preview rollback needs attention"
+                        : "Previewing " + root.appearanceModel.previewTheme
+                            + " / " + root.appearanceModel.previewRemaining + "s remaining"
+                    color: root.appearanceModel.previewState === "failed" ? Theme.danger : Theme.warning
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                }
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.previewDetail
+                    color: Theme.menuText
+                    wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    ShellButton {
+                        visible: root.appearanceModel.previewState === "active"
+                        label: "Keep theme"
+                        enabled: !root.appearanceBusy
+                        onActivated: root.appearanceModel.keepPreview()
+                    }
+                    ShellButton {
+                        label: "Restore previous"
+                        enabled: !root.appearanceBusy
+                        onActivated: root.appearanceModel.revertPreview()
+                    }
+                    ShellButton {
+                        visible: root.appearanceModel.previewState === "failed"
+                        label: "Accept external state"
+                        danger: true
+                        enabled: !root.appearanceBusy
+                        onActivated: root.appearanceModel.abandonPreview()
+                    }
+                }
+            }
+        }
+
+        SectionLabel { label: "Themes" }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            Repeater {
+                model: root.appearanceModel.themes
+                delegate: ShellButton {
+                    id: themeButton
+                    required property var modelData
+                    label: root.displayName(themeButton.modelData.id)
+                        + (themeButton.modelData.id === root.selectedThemeId ? " / Selected" : "")
+                        + (themeButton.modelData.id === root.appearanceModel.activeTheme ? " / Active" : "")
+                    enabled: themeButton.modelData.valid && !root.appearanceBusy
+                    onActivated: root.selectedThemeId = themeButton.modelData.id
+                }
+            }
+        }
+
+        StatusCard {
+            visible: root.selectedTheme !== null
+            label: root.selectedTheme ? root.displayName(root.selectedTheme.id) : "Theme"
+            statusState: root.selectedTheme && root.selectedTheme.valid ? "available" : "unavailable"
+            value: root.selectedTheme && root.selectedTheme.dark ? "Dark" : "Light"
+            detail: root.selectedTheme ? root.selectedTheme.detail
+                + " / GTK: " + root.selectedTheme.gtkTheme : "Select a theme"
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+            ShellButton {
+                label: "Preview for 30 seconds"
+                enabled: root.appearanceModel.mutationReady && root.selectedTheme !== null
+                    && root.selectedTheme.valid && root.selectedTheme.mutable
+                    && !root.appearanceBusy
+                    && root.appearanceModel.previewState === "none"
+                    && root.appearanceModel.recoveryState === "none"
+                onActivated: root.appearanceModel.startPreview(root.selectedThemeId)
+            }
+            ShellButton {
+                label: "Apply"
+                enabled: root.appearanceModel.mutationReady && root.selectedTheme !== null
+                    && root.selectedTheme.valid && root.selectedTheme.mutable
+                    && !root.appearanceBusy
+                    && root.appearanceModel.previewState === "none"
+                    && root.appearanceModel.recoveryState === "none"
+                onActivated: root.appearanceModel.applyTheme(root.selectedThemeId)
+            }
+            ShellButton {
+                label: "Reset to managed default"
+                enabled: root.appearanceModel.mutationReady && !root.appearanceBusy
+                    && root.appearanceModel.previewState === "none"
+                    && root.appearanceModel.recoveryState === "none"
+                onActivated: root.appearanceModel.resetTheme()
+            }
+        }
+
+        SectionLabel { label: "Wallpaper" }
+
+        StatusCard {
+            label: "Configured wallpaper"
+            statusState: root.appearanceModel.wallpaperState
+            value: root.appearanceModel.wallpaperFit
+            detail: root.appearanceModel.wallpaperDetail
+                + (root.appearanceModel.wallpaperPath.length > 0
+                    ? " / " + root.appearanceModel.wallpaperPath : "")
+        }
+
+        StatusCard {
+            visible: root.appearanceModel.wallpaperProviderState !== "available"
+            label: "Wallpaper provider"
+            statusState: root.appearanceModel.wallpaperProviderState
+            value: root.appearanceModel.wallpaperProviderState
+            detail: root.appearanceModel.wallpaperProviderDetail
+        }
+
+        StatusCard {
+            visible: !root.appearanceModel.wallpaperMutationReady
+            label: "Wallpaper apply and preview unavailable"
+            statusState: "restricted"
+            value: root.appearanceModel.wallpaperResetReady ? "Reset available" : "Protected"
+            detail: root.appearanceModel.wallpaperMutationDetail
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.wallpaperPreviewState !== "none"
+            Layout.preferredHeight: wallpaperPreviewColumn.implicitHeight + Theme.spacingLg * 2
+            color: Theme.controlNormalFill
+            border.color: root.appearanceModel.wallpaperPreviewState === "failed"
+                ? Theme.danger : Theme.warning
+            border.width: Theme.controlFocusBorderWidth
+            radius: Theme.controlRadius
+
+            ColumnLayout {
+                id: wallpaperPreviewColumn
+                anchors.fill: parent
+                anchors.margins: Theme.spacingLg
+                spacing: Theme.spacingSm
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.wallpaperPreviewState === "failed"
+                        ? "Wallpaper preview recovery needs attention"
+                        : "Wallpaper preview / " + root.appearanceModel.wallpaperPreviewRemaining
+                            + "s remaining / " + root.appearanceModel.wallpaperPreviewFit
+                    color: root.appearanceModel.wallpaperPreviewState === "failed"
+                        ? Theme.danger : Theme.warning
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                }
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.wallpaperPreviewDetail
+                        + (root.appearanceModel.wallpaperPreviewPath.length > 0
+                            ? " / " + root.appearanceModel.wallpaperPreviewPath : "")
+                    color: Theme.menuText
+                    wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    ShellButton {
+                        visible: root.appearanceModel.wallpaperPreviewState === "active"
+                        label: "Keep wallpaper"
+                        enabled: !root.wallpaperPreviewControlsBusy
+                        onActivated: root.appearanceModel.keepWallpaperPreview()
+                    }
+                    ShellButton {
+                        label: "Restore configured"
+                        visible: root.appearanceModel.wallpaperPreviewToken.length > 0
+                        enabled: root.appearanceModel.wallpaperPreviewState === "active"
+                            ? !root.wallpaperPreviewControlsBusy : !root.wallpaperControlsBusy
+                        onActivated: root.appearanceModel.revertWallpaperPreview()
+                    }
+                    ShellButton {
+                        visible: root.appearanceModel.wallpaperPreviewState === "failed"
+                            && root.appearanceModel.wallpaperPreviewToken.length > 0
+                        label: "Use current configuration"
+                        danger: true
+                        enabled: !root.wallpaperControlsBusy
+                        onActivated: root.appearanceModel.abandonWallpaperPreview()
+                    }
+                    ShellButton {
+                        visible: root.appearanceModel.wallpaperPreviewState === "failed"
+                        label: "Repair wallpaper state"
+                        enabled: !root.wallpaperControlsBusy
+                        onActivated: root.appearanceModel.reconcileWallpaperPreview()
+                    }
+                }
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.wallpaperCandidates.length === 0
+            text: root.wallpaperEmptyDetail()
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            Repeater {
+                model: root.appearanceModel.wallpaperCandidates
+                delegate: ShellButton {
+                    id: wallpaperButton
+                    required property var modelData
+                    label: wallpaperButton.modelData.label
+                        + (wallpaperButton.modelData.token === root.selectedWallpaperPath
+                            ? " / Selected" : "")
+                        + (wallpaperButton.modelData.token === root.appearanceModel.wallpaperPath
+                            ? " / Saved" : "")
+                    enabled: !root.wallpaperControlsBusy
+                    onActivated: root.selectedWallpaperPath = wallpaperButton.modelData.token
+                }
+            }
+        }
+
+        SectionLabel { label: "Fit mode" }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            Repeater {
+                model: [
+                    { "id": "fill", "label": "Fill" },
+                    { "id": "max", "label": "Fit" },
+                    { "id": "center", "label": "Center" },
+                    { "id": "scale", "label": "Stretch" },
+                    { "id": "tile", "label": "Tile" }
+                ]
+                delegate: ShellButton {
+                    id: fitButton
+                    required property var modelData
+                    label: fitButton.modelData.label
+                        + (fitButton.modelData.id === root.selectedWallpaperFit ? " / Selected" : "")
+                    enabled: !root.wallpaperControlsBusy
+                    onActivated: root.selectedWallpaperFit = fitButton.modelData.id
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+            ShellButton {
+                label: "Preview wallpaper for 30 seconds"
+                enabled: root.appearanceModel.wallpaperMutationReady
+                    && root.wallpaperSelectionAvailable() && !root.wallpaperControlsBusy
+                    && root.appearanceModel.wallpaperPreviewState === "none"
+                onActivated: root.appearanceModel.previewWallpaper(
+                    root.selectedWallpaperPath, root.selectedWallpaperFit)
+            }
+            ShellButton {
+                label: "Apply wallpaper"
+                enabled: root.appearanceModel.wallpaperMutationReady
+                    && root.wallpaperSelectionAvailable() && !root.wallpaperControlsBusy
+                    && root.appearanceModel.wallpaperPreviewState === "none"
+                onActivated: root.appearanceModel.applyWallpaper(
+                    root.selectedWallpaperPath, root.selectedWallpaperFit)
+            }
+            ShellButton {
+                label: "Reset wallpaper"
+                enabled: root.appearanceModel.wallpaperResetReady && !root.wallpaperControlsBusy
+                    && root.appearanceModel.wallpaperPreviewState === "none"
+                onActivated: root.appearanceModel.resetWallpaper()
+            }
+        }
+
+        SectionLabel { label: "Font and text size" }
+
+        StatusCard {
+            label: "Managed shell font"
+            statusState: root.appearanceModel.fontState
+            value: Math.round(root.appearanceModel.fontScale * 100) + "%"
+            detail: root.appearanceModel.fontDetail + " / " + root.appearanceModel.fontFamily
+        }
+
+        StatusCard {
+            visible: root.appearanceModel.fontProviderState !== "available"
+                || !root.appearanceModel.fontMutationReady
+            label: "Font changes unavailable"
+            statusState: root.appearanceModel.fontProviderState === "available"
+                ? "restricted" : root.appearanceModel.fontProviderState
+            value: "Protected"
+            detail: root.appearanceModel.fontProviderState !== "available"
+                ? root.appearanceModel.fontProviderDetail
+                : "The installed font helper cannot safely update user state"
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.max(Theme.controlHeight, fontInput.implicitHeight + 14)
+            color: Theme.controlNormalFill
+            border.color: fontInput.activeFocus ? Theme.controlFocusBorder : Theme.controlNormalBorder
+            border.width: fontInput.activeFocus ? Theme.controlFocusBorderWidth : Theme.controlBorderWidth
+            radius: Theme.controlRadius
+
+            TextInput {
+                id: fontInput
+                anchors.fill: parent
+                anchors.margins: 7
+                text: root.selectedFontFamily
+                color: Theme.textStrong
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBodySize
+                activeFocusOnTab: true
+                selectByMouse: true
+                verticalAlignment: TextInput.AlignVCenter
+                onTextEdited: root.selectedFontFamily = text
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            text: "Enter an exact installed Fontconfig family. Suggestions are bounded to the first 24 discovered families."
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            Repeater {
+                model: root.appearanceModel.fontCandidates.slice(0, 24)
+                delegate: ShellButton {
+                    id: fontButton
+                    required property var modelData
+                    label: fontButton.modelData.label
+                        + (fontButton.modelData.token === root.selectedFontFamily ? " / Selected" : "")
+                    enabled: !root.fontControlsBusy && fontButton.modelData.state === "available"
+                    onActivated: root.selectedFontFamily = fontButton.modelData.token
+                }
+            }
+        }
+
+        SectionLabel { label: "Text scale" }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+
+            Repeater {
+                model: [0.8, 0.9, 1.0, 1.1, 1.25, 1.5]
+                delegate: ShellButton {
+                    id: scaleButton
+                    required property real modelData
+                    label: Math.round(scaleButton.modelData * 100) + "%"
+                        + (Math.abs(scaleButton.modelData - root.selectedFontScale) < 0.001
+                            ? " / Selected" : "")
+                    enabled: !root.fontControlsBusy
+                    onActivated: root.selectedFontScale = scaleButton.modelData
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.fontPreviewState !== "none"
+            Layout.preferredHeight: fontPreviewColumn.implicitHeight + Theme.spacingLg * 2
+            color: Theme.controlNormalFill
+            border.color: root.appearanceModel.fontPreviewState === "failed"
+                ? Theme.danger : Theme.warning
+            border.width: Theme.controlFocusBorderWidth
+            radius: Theme.controlRadius
+
+            ColumnLayout {
+                id: fontPreviewColumn
+                anchors.fill: parent
+                anchors.margins: Theme.spacingLg
+                spacing: Theme.spacingSm
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.fontPreviewState === "failed"
+                        ? "Font preview recovery needs attention"
+                        : "Font preview / " + root.appearanceModel.fontPreviewRemaining
+                            + "s remaining / " + root.appearanceModel.fontPreviewFamily
+                            + " / " + Math.round(root.appearanceModel.fontPreviewScale * 100) + "%"
+                    color: root.appearanceModel.fontPreviewState === "failed"
+                        ? Theme.danger : Theme.warning
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                }
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.fontPreviewDetail
+                    color: Theme.menuText
+                    wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    ShellButton {
+                        visible: root.appearanceModel.fontPreviewState === "active"
+                        label: "Keep font"
+                        enabled: !root.fontControlsBusy
+                        onActivated: root.appearanceModel.keepFontPreview()
+                    }
+                    ShellButton {
+                        label: "Restore previous"
+                        enabled: !root.fontControlsBusy
+                        onActivated: root.appearanceModel.revertFontPreview()
+                    }
+                    ShellButton {
+                        visible: root.appearanceModel.fontPreviewState === "failed"
+                        label: "Accept external state"
+                        danger: true
+                        enabled: !root.fontControlsBusy
+                        onActivated: root.appearanceModel.abandonFontPreview()
+                    }
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingSm
+            ShellButton {
+                label: "Preview font for 30 seconds"
+                enabled: root.appearanceModel.fontMutationReady
+                    && root.selectedFontFamily.trim().length > 0 && !root.fontControlsBusy
+                    && root.appearanceModel.fontPreviewState === "none"
+                onActivated: root.appearanceModel.previewFont(
+                    root.selectedFontFamily.trim(), root.selectedFontScale)
+            }
+            ShellButton {
+                label: "Apply font"
+                enabled: root.appearanceModel.fontMutationReady
+                    && root.selectedFontFamily.trim().length > 0 && !root.fontControlsBusy
+                    && root.appearanceModel.fontPreviewState === "none"
+                onActivated: root.appearanceModel.applyFont(
+                    root.selectedFontFamily.trim(), root.selectedFontScale)
+            }
+            ShellButton {
+                label: "Reset font"
+                enabled: root.appearanceModel.fontMutationReady && !root.fontControlsBusy
+                    && root.appearanceModel.fontPreviewState === "none"
+                onActivated: root.appearanceModel.resetFont()
+            }
+        }
+
+        SectionLabel { label: "Cursor, icons and toolkits" }
+
+        UiText {
+            Layout.fillWidth: true
+            text: "Each of these follows the active theme until you override it. "
+                + "An override survives a theme change; releasing one hands that "
+                + "choice back to the theme without disturbing the others."
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
+
+        StatusCard {
+            visible: root.appearanceModel.toolkitProviderState !== "available"
+                || !root.appearanceModel.toolkitMutationReady
+            label: "Toolkit changes unavailable"
+            statusState: root.appearanceModel.toolkitProviderState === "available"
+                ? "restricted" : root.appearanceModel.toolkitProviderState
+            value: "Protected"
+            detail: root.appearanceModel.toolkitProviderState !== "available"
+                ? root.appearanceModel.toolkitProviderDetail
+                : root.appearanceModel.toolkitMutationDetail
+        }
+
+        Repeater {
+            model: root.appearanceModel.toolkitCapabilities
+            delegate: ColumnLayout {
+                id: toolkitControl
+                required property string modelData
+                readonly property var selection:
+                    root.appearanceModel.toolkitSelectionFor(toolkitControl.modelData)
+                readonly property string sentinel:
+                    root.appearanceModel.toolkitSentinelFor(toolkitControl.modelData)
+                readonly property string chosen: root.toolkitChosen(toolkitControl.modelData)
+                readonly property bool releasing: toolkitControl.chosen === toolkitControl.sentinel
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+
+                StatusCard {
+                    label: root.appearanceModel.toolkitTitles[toolkitControl.modelData]
+                    statusState: toolkitControl.selection.state
+                    // What the option currently resolves to, which is the only
+                    // thing that tells the user what following the theme means.
+                    value: toolkitControl.selection.option === toolkitControl.sentinel
+                        ? (toolkitControl.selection.live.length > 0
+                            ? toolkitControl.selection.live : "Theme default")
+                        : toolkitControl.selection.option
+                    detail: toolkitControl.selection.detail
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacingSm
+
+                    Repeater {
+                        model: root.appearanceModel.toolkitCandidatesFor(toolkitControl.modelData)
+                        delegate: ShellButton {
+                            id: toolkitCandidate
+                            required property string modelData
+                            readonly property bool isSentinel:
+                                toolkitCandidate.modelData === toolkitControl.sentinel
+                            label: (toolkitCandidate.isSentinel
+                                    ? (toolkitControl.modelData === "icon"
+                                        ? "Follow system icons" : "Follow the theme")
+                                    : toolkitCandidate.modelData)
+                                + (toolkitCandidate.modelData === toolkitControl.chosen
+                                    ? " / Selected" : "")
+                                + (toolkitCandidate.modelData === toolkitControl.selection.option
+                                    ? " / Saved" : "")
+                            enabled: !root.toolkitControlsBusy
+                                && root.appearanceModel.toolkitPreviewState === "none"
+                            onActivated: root.chooseToolkit(toolkitControl.modelData,
+                                toolkitCandidate.modelData)
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacingSm
+
+                    ShellButton {
+                        // Releasing an override is convergent and instant, so
+                        // there is nothing worth previewing about it.
+                        visible: !toolkitControl.releasing
+                        label: "Preview for 30 seconds"
+                        enabled: root.appearanceModel.toolkitMutationReady
+                            && !root.toolkitControlsBusy && root.toolkitDirty(toolkitControl.modelData)
+                            && root.appearanceModel.toolkitPreviewState === "none"
+                        onActivated: root.appearanceModel.previewToolkit(
+                            toolkitControl.modelData, toolkitControl.chosen)
+                    }
+                    ShellButton {
+                        visible: !toolkitControl.releasing
+                        label: "Apply"
+                        enabled: root.appearanceModel.toolkitMutationReady
+                            && !root.toolkitControlsBusy && root.toolkitDirty(toolkitControl.modelData)
+                            && root.appearanceModel.toolkitPreviewState === "none"
+                        onActivated: root.appearanceModel.applyToolkit(
+                            toolkitControl.modelData, toolkitControl.chosen)
+                    }
+                    ShellButton {
+                        label: toolkitControl.modelData === "icon"
+                            ? "Follow system icons" : "Follow the theme"
+                        enabled: root.appearanceModel.toolkitMutationReady
+                            && !root.toolkitControlsBusy
+                            && toolkitControl.selection.option !== toolkitControl.sentinel
+                            && root.appearanceModel.toolkitPreviewState === "none"
+                        onActivated: root.appearanceModel.resetToolkit(toolkitControl.modelData)
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.appearanceModel.toolkitPreviewState !== "none"
+            Layout.preferredHeight: toolkitPreviewColumn.implicitHeight + Theme.spacingLg * 2
+            color: Theme.controlNormalFill
+            border.color: root.appearanceModel.toolkitPreviewState === "failed"
+                ? Theme.danger : Theme.warning
+            border.width: Theme.controlFocusBorderWidth
+            radius: Theme.controlRadius
+
+            ColumnLayout {
+                id: toolkitPreviewColumn
+                anchors.fill: parent
+                anchors.margins: Theme.spacingLg
+                spacing: Theme.spacingSm
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.toolkitPreviewState === "failed"
+                        ? "Toolkit preview recovery needs attention"
+                        : "Toolkit preview / "
+                            + root.appearanceModel.toolkitPreviewRemaining
+                            + "s remaining / "
+                            + (root.appearanceModel.toolkitTitles[
+                                root.appearanceModel.toolkitPreviewCapability] || "Toolkit")
+                            + " / " + root.appearanceModel.toolkitPreviewValue
+                    color: root.appearanceModel.toolkitPreviewState === "failed"
+                        ? Theme.danger : Theme.warning
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                }
+                UiText {
+                    Layout.fillWidth: true
+                    text: root.appearanceModel.toolkitPreviewDetail
+                    color: Theme.menuText
+                    wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    ShellButton {
+                        visible: root.appearanceModel.toolkitPreviewState === "active"
+                        label: "Keep"
+                        enabled: !root.toolkitControlsBusy
+                        onActivated: root.appearanceModel.keepToolkitPreview()
+                    }
+                    ShellButton {
+                        visible: root.appearanceModel.toolkitPreviewState === "active"
+                        label: "Restore previous"
+                        enabled: !root.toolkitControlsBusy
+                        onActivated: root.appearanceModel.revertToolkitPreview()
+                    }
+                    ShellButton {
+                        visible: root.appearanceModel.toolkitPreviewState === "failed"
+                        label: "Accept external state"
+                        danger: true
+                        enabled: !root.toolkitControlsBusy
+                        onActivated: root.appearanceModel.abandonToolkitPreview()
+                    }
+                }
+            }
+        }
+
+        SectionLabel { label: "Application status" }
+
+        Repeater {
+            model: root.appearanceModel.integrations
+            delegate: StatusCard {
+                id: integrationCard
+                required property var modelData
+                label: root.displayName(integrationCard.modelData.id)
+                statusState: integrationCard.modelData.state
+                value: integrationCard.modelData.state
+                detail: integrationCard.modelData.detail
+                    + (integrationCard.modelData.value.length > 0
+                        ? " / " + integrationCard.modelData.value : "")
+            }
+        }
+
+        SectionLabel {
+            visible: root.capabilities.length > 0
+            label: "Additional capabilities"
+        }
+
+        Repeater {
+            model: root.capabilities
+            delegate: StatusCard {
+                id: capabilityCard
+                required property var modelData
+                label: capabilityCard.modelData.label
+                statusState: capabilityCard.modelData.status
+                value: capabilityCard.modelData.status
+                detail: capabilityCard.modelData.detail
+            }
+        }
+
+        SectionLabel {
+            visible: root.appearanceModel.errors.length > 0
+            label: "Unresolved details"
+        }
+
+        Repeater {
+            model: root.appearanceModel.errors
+            delegate: StatusCard {
+                id: errorCard
+                required property var modelData
+                label: root.displayName(errorCard.modelData.scope)
+                statusState: "failed"
+                value: errorCard.modelData.code
+                detail: errorCard.modelData.detail
+            }
+        }
+    }
+}

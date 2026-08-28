@@ -1,0 +1,21 @@
+import QtQuick
+import QtQuick.Layouts
+import qs.core
+
+RowLayout {
+    id: root
+
+    required property var state
+    spacing: Theme.panelGap
+
+    Repeater {
+        model: root.state.runningApps
+
+        delegate: RunningAppItem {
+            required property var modelData
+            app: modelData
+            active: modelData.appClass === root.state.activeWindowClass
+            onFocusRequested: windowId => root.state.focusWindow(windowId)
+        }
+    }
+}

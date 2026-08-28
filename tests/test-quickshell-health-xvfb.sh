@@ -1,0 +1,518 @@
+#!/bin/sh
+set -eu
+
+# shellcheck source=tests/lib.sh
+. "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+
+for command_name in Xvfb dbus-run-session quickshell xdotool xprop pgrep; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		printf 'SKIP: %s is unavailable\n' "$command_name"
+		exit 77
+	fi
+done
+
+if [ "${DWM_XVFB_DBUS_SESSION:-0}" != 1 ]; then
+	exec env DWM_XVFB_DBUS_SESSION=1 dbus-run-session -- "$0" "$@"
+fi
+
+work=$(mktemp -d)
+display=":$((($$ % 400) + 300))"
+cleanup() {
+	set +e
+	[ -n "${quickshell_pid:-}" ] && kill "$quickshell_pid" 2>/dev/null
+	[ -n "${dwm_pid:-}" ] && kill "$dwm_pid" 2>/dev/null
+	[ -n "${xvfb_pid:-}" ] && kill "$xvfb_pid" 2>/dev/null
+	rm -rf "$work"
+}
+trap cleanup EXIT HUP INT TERM
+
+home=$work/home
+runtime=$work/runtime
+config_home=$home/.config
+data_home=$home/.local/share
+mkdir -p "$config_home/quickshell" "$config_home/lyona" "$data_home/lyona/scripts" "$runtime"
+chmod 700 "$runtime"
+cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
+cp "$repo/config/"*.toml "$config_home/lyona/"
+sed -i '/title="dwm control center utility"/d' "$config_home/lyona/window-rules.toml"
+sed -i '/title="dwm network password"/a\
+  { title="dwm control center",         isfloating=1, alwaysontop=1 },' \
+	"$config_home/lyona/window-rules.toml"
+grep -Fqx '  { title="dwm control center",         isfloating=1, alwaysontop=1 },' \
+	"$config_home/lyona/window-rules.toml"
+cp "$repo/scripts/dwm-system-health" "$repo/scripts/dwm-diagnostics" \
+	"$repo/scripts/dwm-quickshell-controlcenter" "$repo/scripts/dwm-quickshell-controls" \
+	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-quickshell-network" \
+	"$repo/scripts/dwm-quickshell-pointer" \
+	"$data_home/lyona/scripts/"
+
+Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
+xvfb_pid=$!
+
+i=0
+while [ "$i" -lt 100 ]; do
+	if DISPLAY=$display xprop -root >/dev/null 2>&1; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+DISPLAY=$display xprop -root >/dev/null
+
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime "$repo/dwm" >"$work/dwm.log" 2>&1 &
+dwm_pid=$!
+
+env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
+	XDG_DATA_HOME="$data_home" XDG_RUNTIME_DIR="$runtime" \
+	PATH="$data_home/lyona/scripts:$PATH" \
+	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
+quickshell_pid=$!
+
+config=$config_home/quickshell/shell.qml
+i=0
+while [ "$i" -lt 200 ]; do
+	if DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		quickshell ipc --path "$config" call systemhealth open >/dev/null 2>&1; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+
+window=
+i=0
+while [ "$i" -lt 200 ]; do
+	window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm system health$' 2>/dev/null | head -1 || true)
+	[ -n "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+
+if [ -z "$window" ]; then
+	printf 'System Health window did not open\n' >&2
+	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+
+DISPLAY=$display xprop -id "$window" _NET_WM_STATE | grep -q '_NET_WM_STATE_FULLSCREEN'
+geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$window")
+width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+[ "$width" = 1024 ]
+[ "$height" = 768 ]
+
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call systemhealth close >/dev/null
+
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --name '^dwm system health$' >/dev/null 2>&1; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --name '^dwm system health$' >/dev/null 2>&1; then
+	printf 'System Health window did not close\n' >&2
+	exit 1
+fi
+
+i=0
+while [ "$i" -lt 200 ]; do
+	scan_processes=$(pgrep -af '[d]wm-system-health (scan-user|scan-system)' || true)
+	if ! printf '%s\n' "$scan_processes" | grep -F "$data_home/lyona/scripts/dwm-system-health" >/dev/null; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+scan_processes=$(pgrep -af '[d]wm-system-health (scan-user|scan-system)' || true)
+if printf '%s\n' "$scan_processes" | grep -F "$data_home/lyona/scripts/dwm-system-health" >/dev/null; then
+	printf 'System Health scan remained active after close\n' >&2
+	exit 1
+fi
+
+visible_windows=$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call controlcenter open >/dev/null
+
+window=
+i=0
+while [ "$i" -lt 200 ]; do
+	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
+		was_visible=0
+		for existing in $visible_windows; do
+			[ "$candidate" = "$existing" ] && was_visible=1
+		done
+		if [ "$was_visible" = 0 ]; then
+			window=$candidate
+			break
+		fi
+	done
+	[ -n "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+
+if [ -z "$window" ]; then
+	printf 'Control Center popup did not open\n' >&2
+	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+
+DISPLAY=$display xdotool mousemove 700 700 click 1
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+	printf 'Control Center popup did not close on outside click\n' >&2
+	exit 1
+fi
+
+visible_windows=$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call controlcenter open >/dev/null
+
+window=
+i=0
+while [ "$i" -lt 200 ]; do
+	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
+		was_visible=0
+		for existing in $visible_windows; do
+			[ "$candidate" = "$existing" ] && was_visible=1
+		done
+		if [ "$was_visible" = 0 ]; then
+			window=$candidate
+			break
+		fi
+	done
+	[ -n "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ -n "$window" ]
+
+DISPLAY=$display xdotool key Escape
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+	printf 'Control Center popup did not close on Escape\n' >&2
+	exit 1
+fi
+
+exercise_panel_popup() {
+	target=$1
+	label=$2
+	visible_windows=$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)
+	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		quickshell ipc --path "$config" call "$target" open >/dev/null
+
+	popup_window=
+	i=0
+	while [ "$i" -lt 200 ]; do
+		for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
+			was_visible=0
+			for existing in $visible_windows; do
+				[ "$candidate" = "$existing" ] && was_visible=1
+			done
+			if [ "$was_visible" = 0 ]; then
+				popup_window=$candidate
+				break
+			fi
+		done
+		[ -n "$popup_window" ] && break
+		i=$((i + 1))
+		sleep 0.05
+	done
+
+	if [ -z "$popup_window" ]; then
+		printf '%s popup did not open\n' "$label" >&2
+		tail -40 "$work/quickshell.log" >&2
+		exit 1
+	fi
+
+	DISPLAY=$display xdotool windowfocus --sync "$popup_window"
+	DISPLAY=$display xdotool key Escape
+	i=0
+	while [ "$i" -lt 100 ]; do
+		if ! DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$popup_window"; then
+			break
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	if DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$popup_window"; then
+		printf '%s popup did not close on Escape\n' "$label" >&2
+		exit 1
+	fi
+}
+
+exercise_panel_popup controls Audio
+exercise_panel_popup network Network
+exercise_panel_popup power Power
+
+visible_windows=$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call controlcenter open >/dev/null
+
+window=
+i=0
+while [ "$i" -lt 200 ]; do
+	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
+		was_visible=0
+		for existing in $visible_windows; do
+			[ "$candidate" = "$existing" ] && was_visible=1
+		done
+		if [ "$was_visible" = 0 ]; then
+			window=$candidate
+			break
+		fi
+	done
+	[ -n "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ -n "$window" ]
+
+DISPLAY=$display xdotool mousemove 120 205 click 1
+sleep 0.1
+DISPLAY=$display xdotool key Escape
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+	printf 'Control Center in-place page did not close on Escape\n' >&2
+	exit 1
+fi
+
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call controlcenter open >/dev/null
+sleep 0.1
+DISPLAY=$display xdotool mousemove 120 105 click 1
+
+launcher_window=
+i=0
+while [ "$i" -lt 200 ]; do
+	launcher_window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' 2>/dev/null | head -1 || true)
+	[ -n "$launcher_window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ -z "$launcher_window" ]; then
+	printf 'Applications menu item did not open the launcher\n' >&2
+	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+if DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null | grep -Fqx "$window"; then
+	printf 'Control Center remained open behind the launcher\n' >&2
+	exit 1
+fi
+DISPLAY=$display xdotool windowactivate --sync "$launcher_window"
+DISPLAY=$display xdotool key Escape
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' >/dev/null 2>&1; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' >/dev/null 2>&1; then
+	printf 'Launcher did not close on Escape\n' >&2
+	exit 1
+fi
+
+DISPLAY=$display xdotool mousemove 5 5
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call menu summon >/dev/null
+
+menu_window=
+i=0
+while [ "$i" -lt 200 ]; do
+	menu_window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm menu$' 2>/dev/null | head -1 || true)
+	[ -n "$menu_window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ -z "$menu_window" ]; then
+	printf 'Command menu did not open\n' >&2
+	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+
+[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call menu resultCount)" = 10 ]
+[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call menu selectedLabel)" = Apps ]
+[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call launcher applicationConsumers)" = 1 ]
+
+geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$menu_window")
+width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+[ "$width" = 720 ]
+[ "$height" = 600 ]
+
+pointer_window=
+i=0
+while [ "$i" -lt 100 ]; do
+	pointer_window=$(DISPLAY=$display xdotool getmouselocation --shell |
+		awk -F= '$1 == "WINDOW" { print $2 }')
+	[ "$pointer_window" = "$menu_window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$pointer_window" = "$menu_window" ]
+[ "$(DISPLAY=$display xdotool getwindowfocus)" = "$menu_window" ]
+
+DISPLAY=$display xdotool key Return
+i=0
+while [ "$i" -lt 100 ]; do
+	active_menu=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		quickshell ipc --path "$config" call menu activeMenu)
+	[ "$active_menu" = apps ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$active_menu" = apps ]
+
+DISPLAY=$display xdotool key BackSpace
+i=0
+while [ "$i" -lt 100 ]; do
+	active_menu=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		quickshell ipc --path "$config" call menu activeMenu)
+	[ "$active_menu" = root ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$active_menu" = root ]
+
+DISPLAY=$display xdotool type --delay 10 'system health'
+i=0
+while [ "$i" -lt 100 ]; do
+	selected_label=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		quickshell ipc --path "$config" call menu selectedLabel)
+	[ "$selected_label" = 'System Health' ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$selected_label" = 'System Health' ]
+DISPLAY=$display xdotool key Return
+
+health_window=
+i=0
+while [ "$i" -lt 200 ]; do
+	health_window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm system health$' 2>/dev/null | head -1 || true)
+	[ -n "$health_window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ -z "$health_window" ]; then
+	printf 'Command menu did not dispatch the System Health IPC action\n' >&2
+	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+if DISPLAY=$display xdotool search --onlyvisible --name '^dwm menu$' >/dev/null 2>&1; then
+	printf 'Command menu remained visible after dispatch\n' >&2
+	exit 1
+fi
+[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call launcher applicationConsumers)" = 0 ]
+[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call launcher indexCount)" = 0 ]
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call systemhealth close >/dev/null
+
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call menu toggle >/dev/null
+i=0
+while [ "$i" -lt 200 ]; do
+	menu_window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm menu$' 2>/dev/null | head -1 || true)
+	[ -n "$menu_window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ -n "$menu_window" ]
+DISPLAY=$display xdotool windowactivate --sync "$menu_window"
+DISPLAY=$display xdotool key Escape
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --name '^dwm menu$' >/dev/null 2>&1; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --name '^dwm menu$' >/dev/null 2>&1; then
+	printf 'Command menu did not close on Escape\n' >&2
+	exit 1
+fi
+
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call controlcenter openKeybinds >/dev/null
+
+window=
+i=0
+while [ "$i" -lt 200 ]; do
+	window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm control center utility$' 2>/dev/null | head -1 || true)
+	[ -n "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+
+if [ -z "$window" ]; then
+	printf 'Control-center utility window did not open\n' >&2
+	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+
+geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$window")
+width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+[ "$width" = 680 ]
+[ "$height" = 500 ]
+
+DISPLAY=$display xdotool windowactivate --sync "$window"
+DISPLAY=$display xdotool key Escape
+i=0
+while [ "$i" -lt 100 ]; do
+	if ! DISPLAY=$display xdotool search --onlyvisible --name '^dwm control center utility$' >/dev/null 2>&1; then
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if DISPLAY=$display xdotool search --onlyvisible --name '^dwm control center utility$' >/dev/null 2>&1; then
+	printf 'Control-center utility window did not close\n' >&2
+	exit 1
+fi
+kill -0 "$quickshell_pid"
+
+ticks_before=$(awk '{ print $14 + $15 }' "/proc/$quickshell_pid/stat")
+ticks_per_second=$(getconf CLK_TCK)
+sleep 2
+ticks_after=$(awk '{ print $14 + $15 }' "/proc/$quickshell_pid/stat")
+if ! awk -v delta="$((ticks_after - ticks_before))" -v hz="$ticks_per_second" \
+	'BEGIN { exit !((delta * 100 / (hz * 2)) <= 5) }'; then
+	printf 'Quickshell exceeded 5%% CPU while the dashboard was closed\n' >&2
+	exit 1
+fi
+
+printf 'Quickshell System Health Xvfb: PASS\n'

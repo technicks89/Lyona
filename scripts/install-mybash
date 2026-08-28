@@ -1,0 +1,148 @@
+#!/bin/sh -e
+
+gitpath="$HOME/.local/share/mybash"
+
+# Upstream's setup.sh defines this and it did not come across with the rest.
+# Without it every call returned "command not found", which is falsy, so each
+# `! command_exists X` was always true: the "already installed" branches were
+# unreachable and the installers ran on every pass. That matters because
+# `_install_pkg ... || curl | sudo sh` then became reachable even on a machine
+# that already had the tool, where a transient pacman failure would pipe a
+# remote script into sudo sh.
+#
+# Upstream's version tests only "$1"; this one tests every argument, which is
+# what installDepend's seven-argument call expects.
+command_exists() {
+	for command_name in "$@"; do
+		command -v "$command_name" >/dev/null 2>&1 || return 1
+	done
+}
+
+installDepend() {
+	if [ ! -f "/usr/share/bash-completion/bash_completion" ] || ! command_exists bash tar bat tree unzip fc-list git; then
+		printf "%b\n" "Installing Bash..."
+		sudo pacman -S --needed --noconfirm bash bash-completion tar bat tree unzip fontconfig git fzf
+	fi
+}
+
+cloneMyBash() {
+	# Check if the dir exists before attempting to clone into it.
+	if [ -d "$gitpath" ]; then
+		rm -rf "$gitpath"
+	fi
+	mkdir -p "$HOME/.local/share" # Only create the dir if it doesn't exist.
+	cd "$HOME" && git clone https://github.com/technicks89/mybash.git "$gitpath"
+}
+
+installFont() {
+	# Check to see if the MesloLGS Nerd Font is installed (Change this to whatever font you would like)
+	FONT_NAME="MesloLGS Nerd Font Mono"
+	if fc-list :family | grep -iq "$FONT_NAME"; then
+		printf "%b\n" "Font '$FONT_NAME' is installed."
+	else
+		printf "%b\n" "Installing font '$FONT_NAME'"
+		# Change this URL to correspond with the correct font
+		FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Meslo.zip"
+		FONT_DIR="$HOME/.local/share/fonts"
+		TEMP_DIR=$(mktemp -d)
+		curl -sSLo "$TEMP_DIR"/"${FONT_NAME}".zip "$FONT_URL"
+		unzip "$TEMP_DIR"/"${FONT_NAME}".zip -d "$TEMP_DIR"
+		mkdir -p "$FONT_DIR"/"$FONT_NAME"
+		mv "${TEMP_DIR}"/*.ttf "$FONT_DIR"/"$FONT_NAME"
+		fc-cache -fv
+		rm -rf "${TEMP_DIR}"
+		printf "%b\n" "'$FONT_NAME' installed successfully."
+	fi
+}
+
+_install_pkg() {
+	sudo pacman -S --needed --noconfirm "$1"
+}
+
+installStarshipAndFzf() {
+	if ! command_exists starship; then
+		printf "%b\n" "Installing Starship..."
+		_install_pkg starship 2>/dev/null || {
+			printf "%b\n" "Package manager install failed, using curl..."
+			curl -sSL https://starship.rs/install.sh | sudo sh || {
+				printf "%b\n" "Failed to install starship!"
+				exit 1
+			}
+		}
+	else
+		printf "%b\n" "Starship already installed"
+	fi
+
+	if ! command_exists fzf; then
+		printf "%b\n" "Installing fzf..."
+		_install_pkg fzf 2>/dev/null || {
+			printf "%b\n" "Package manager install failed, using git..."
+			git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+			sudo ~/.fzf/install
+		}
+	else
+		printf "%b\n" "Fzf already installed"
+	fi
+}
+
+installZoxide() {
+	if command_exists zoxide; then
+		printf "%b\n" "Zoxide already installed"
+		return
+	fi
+
+	printf "%b\n" "Installing Zoxide..."
+	_install_pkg zoxide 2>/dev/null || {
+		printf "%b\n" "Package manager install failed, using curl..."
+		if ! curl -sSL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh; then
+			printf "%b\n" "Something went wrong during zoxide install!"
+			exit 1
+		fi
+	}
+}
+
+linkConfig() {
+	OLD_BASHRC="$HOME/.bashrc"
+	if [ -e "$OLD_BASHRC" ] && [ ! -e "$HOME/.bashrc.bak" ]; then
+		printf "%b\n" "Moving old bash config file to $HOME/.bashrc.bak"
+		if ! mv "$OLD_BASHRC" "$HOME/.bashrc.bak"; then
+			printf "%b\n" "Can't move the old bash config file!"
+			exit 1
+		fi
+	fi
+
+	printf "%b\n" "Linking new bash config file..."
+	ln -svf "$gitpath/.bashrc" "$HOME/.bashrc" || {
+		printf "%b\n" "Failed to create symbolic link for .bashrc"
+		exit 1
+	}
+
+	mkdir -p "$HOME/.config"
+	ln -svf "$gitpath/starship.toml" "$HOME/.config/starship.toml" || {
+		printf "%b\n" "Failed to create symbolic link for starship.toml"
+		exit 1
+	}
+	# fastfetch reads this at startup and starship-theme is the palette
+	# switcher; without these two the prompt works but uses stock defaults.
+	# ~/.local/bin is already on PATH via the linked .bashrc.
+	mkdir -p "$HOME/.config/fastfetch"
+	ln -svf "$gitpath/config.jsonc" "$HOME/.config/fastfetch/config.jsonc" || {
+		printf "%b\n" "Failed to create symbolic link for config.jsonc"
+		exit 1
+	}
+
+	mkdir -p "$HOME/.local/bin"
+	ln -svf "$gitpath/starship-theme" "$HOME/.local/bin/starship-theme" || {
+		printf "%b\n" "Failed to create symbolic link for starship-theme"
+		exit 1
+	}
+
+	printf "%b\n" "Done! restart your shell to see the changes."
+}
+
+installDepend
+cloneMyBash
+installFont
+installStarshipAndFzf
+installZoxide
+linkConfig

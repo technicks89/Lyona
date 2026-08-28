@@ -1,0 +1,68 @@
+name: Build ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the ISO to (e.g. v2026.08.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-iso-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag }}
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Trust the container checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Confirm release tag exists
+        run: gh api "repos/:owner/:repo/git/ref/tags/$TAG" >/dev/null
+
+      - name: Install build dependencies
+        run: pacman -Sy --noconfirm --needed archiso rsync github-cli
+
+      - name: Build ISO
+        run: scripts/build-lyona-arch-iso.sh --output out/
+
+      - name: Checksum ISO
+        working-directory: out
+        run: sha256sum ./*.iso > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyona-iso-${{ github.event.inputs.tag }}
+          path: |
+            out/*.iso
+            out/SHA256SUMS
+
+      - name: Attach ISO to release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/*.iso out/SHA256SUMS --clobber
+          else
+            gh release create "$TAG" out/*.iso out/SHA256SUMS \
+              --prerelease \
+              --title "lyona $TAG (ISO, unqualified)" \
+              --notes "Automated ISO build. Not yet VM-qualified — see docs/RELEASING.md."
+          fi

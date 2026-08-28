@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Render the lyona horizontal logo as a terminal paint map.
+
+    lyona-logo-art SVG OUTFILE [--width COLUMNS]
+
+The installer draws its logo on a bare virtual terminal, which has sixteen
+colours and no truecolor, so the artwork is quantised to the five colours the
+logo is actually made of and written as palette slots rather than hex. Those
+slots are repointed at the active palette by lyona-console-theme, which is what
+makes the logo follow the theme.
+
+Vertical resolution comes from half blocks: one character cell carries two
+pixels, an upper half block coloured in front of a background, so a cell is
+square rather than the 1:2 a whole block would be. The map is two characters
+per cell -- the top pixel's colour then the bottom's -- so the colours stay
+data the tests can read, rather than escapes baked into the art.
+
+Regenerate with:
+
+    scripts/lyona-logo-art assets/logo/lyona-logo-horizontal-dark.svg \
+        archiso/airootfs/root/lyona-logo.txt
+"""
+
+import argparse
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+from PIL import Image
+
+# The logo's own colours, mapped to the console slots that carry them. The
+# character is what lands in the paint map; '.' is the background showing
+# through, which is why it has no slot.
+PALETTE = {
+    "g": ((0x22, 0xC5, 0x5E), 2),   # green quadrant
+    "b": ((0x3B, 0x82, 0xF6), 4),   # blue quadrant
+    "t": ((0x14, 0xB8, 0xA6), 6),   # teal quadrant
+    "v": ((0x8B, 0x5C, 0xF6), 5),   # violet quadrant
+    "w": ((0xFF, 0xFF, 0xFF), 15),  # outline, cross and wordmark
+}
+
+# Below this the pixel is treated as background rather than snapped to the
+# nearest colour, which keeps antialiased edges from smearing the artwork out.
+ALPHA_FLOOR = 110
+
+
+def nearest(pixel):
+    red, green, blue, alpha = pixel
+    if alpha < ALPHA_FLOOR:
+        return "."
+    best, best_distance = ".", None
+    for name, ((pr, pg, pb), _slot) in PALETTE.items():
+        distance = (red - pr) ** 2 + (green - pg) ** 2 + (blue - pb) ** 2
+        if best_distance is None or distance < best_distance:
+            best, best_distance = name, distance
+    return best
+
+
+def render(svg, columns):
+    height = round(columns * 158 / 516)
+    if height % 2:
+        height += 1  # two pixel rows per character row
+    with tempfile.TemporaryDirectory() as work:
+        png = pathlib.Path(work) / "logo.png"
+        subprocess.run(
+            ["rsvg-convert", "-w", str(columns), "-h", str(height),
+             str(svg), "-o", str(png)],
+            check=True,
+        )
+        image = Image.open(png).convert("RGBA")
+
+    rows = []
+    for top in range(0, image.height, 2):
+        row = []
+        for x in range(image.width):
+            upper = nearest(image.getpixel((x, top)))
+            lower = nearest(image.getpixel((x, top + 1)))
+            row.append(upper + lower)
+        rows.append("".join(row).rstrip())
+    # Drop blank rows at the top and bottom so the art has no dead margin the
+    # centring would then have to account for.
+    while rows and set(rows[0]) <= {"."}:
+        rows.pop(0)
+    while rows and set(rows[-1]) <= {"."}:
+        rows.pop()
+    width = max(len(r) for r in rows)
+    return [r.ljust(width, ".") for r in rows]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("svg")
+    parser.add_argument("outfile")
+    parser.add_argument("--width", type=int, default=72,
+                        help="rendered width in terminal columns")
+    args = parser.parse_args()
+
+    if args.width < 16 or args.width > 200:
+        sys.exit("lyona-logo-art: width must be between 16 and 200 columns")
+
+    rows = render(pathlib.Path(args.svg), args.width)
+    pathlib.Path(args.outfile).write_text("\n".join(rows) + "\n")
+    print(f"{args.outfile}: {len(rows)} rows, {len(rows[0]) // 2} columns")
+
+
+if __name__ == "__main__":
+    main()
