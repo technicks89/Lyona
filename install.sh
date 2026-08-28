@@ -33,6 +33,8 @@ Options:
                          to the optimized packages.
   --cachyos-kernel       Install the linux-cachyos kernel and add a boot entry
                          for it. Implies --enable-cachyos-repos.
+  --skip-grub-theme      Install the GRUB theme files but leave the bootloader
+                         configuration untouched.
   --dry-run              Print the resolved plan and exit before changes.
   -h, --help             Show this help.
 EOF
@@ -66,6 +68,8 @@ ARCH_GAMING_REPOS_APPROVED=false
 CACHYOS_REPOS_APPROVED="${DWM_INSTALL_CACHYOS_REPOS:-false}"
 CACHYOS_KERNEL_MODE="${DWM_INSTALL_CACHYOS_KERNEL:-false}"
 CACHYOS_KERNEL=linux-cachyos
+GRUB_THEME_MODE="${DWM_INSTALL_GRUB_THEME:-true}"
+GRUB_THEME_NAME=CyberRe
 DRY_RUN=false
 
 while (($# > 0)); do
@@ -109,6 +113,10 @@ while (($# > 0)); do
 		;;
 	--cachyos-kernel)
 		CACHYOS_KERNEL_MODE=true
+		shift
+		;;
+	--skip-grub-theme)
+		GRUB_THEME_MODE=false
 		shift
 		;;
 	--dry-run)
@@ -173,6 +181,20 @@ for cachyos_setting in CACHYOS_REPOS_APPROVED CACHYOS_KERNEL_MODE; do
 done
 unset cachyos_setting
 
+case "$GRUB_THEME_MODE" in
+1 | true | yes)
+	GRUB_THEME_MODE=true
+	;;
+0 | false | no)
+	GRUB_THEME_MODE=false
+	;;
+*)
+	err "Unsupported DWM_INSTALL_GRUB_THEME: $GRUB_THEME_MODE"
+	err "Supported values: true, false"
+	exit 1
+	;;
+esac
+
 if [[ $CACHYOS_KERNEL_MODE == true ]]; then
 	CACHYOS_REPOS_APPROVED=true
 fi
@@ -208,6 +230,38 @@ herdr_arch_supported() {
 
 install_herdr_profile() {
 	[[ $HERDR_INSTALL_MODE == true ]] && herdr_arch_supported
+}
+
+# Same override the helper reads, so both agree about which machine they are
+# looking at and either branch can be exercised in a test.
+grub_in_use() {
+	[[ -f ${LYONA_GRUB_DEFAULTS:-/etc/default/grub} ]] &&
+		command -v grub-mkconfig &>/dev/null
+}
+
+# The theme files land with `make install-system`; this only selects one, and
+# only when the machine actually boots with GRUB. It is reported in the
+# summary above rather than done quietly, because it edits the bootloader.
+apply_grub_theme() {
+	if [[ $GRUB_THEME_MODE != true ]]; then
+		info "Skipping GRUB theme selection (--skip-grub-theme)."
+		return 0
+	fi
+	if ! grub_in_use; then
+		info "No GRUB installation found; leaving the bootloader alone."
+		return 0
+	fi
+
+	info "Selecting the $GRUB_THEME_NAME GRUB theme..."
+	if "$REPO_DIR/scripts/lyona-grub-theme" apply "$GRUB_THEME_NAME"; then
+		ok "GRUB boot menu themed."
+	else
+		# A failed theme edit must not fail an otherwise good install: the
+		# helper backs up /etc/default/grub before touching it, and the
+		# machine still boots with the configuration it had.
+		warn "Could not select the GRUB theme; the bootloader was left as it was."
+		warn "Re-run it by hand with: sudo lyona-grub-theme apply $GRUB_THEME_NAME"
+	fi
 }
 
 arch_gaming_profile() {
@@ -475,6 +529,13 @@ print_install_summary() {
 		else
 			printf '  CachyOS kernel: not requested (use --cachyos-kernel)\n'
 		fi
+	fi
+	if [[ $GRUB_THEME_MODE != true ]]; then
+		printf '  GRUB theme: files installed, bootloader left unchanged (--skip-grub-theme)\n'
+	elif grub_in_use; then
+		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first)\n' "$GRUB_THEME_NAME"
+	else
+		printf '  GRUB theme: files installed; this machine does not boot with GRUB\n'
 	fi
 	print_summary_profile "Terminal candidates" terminal
 	if install_herdr_profile; then
@@ -866,6 +927,7 @@ make install-user \
 	OWNER="$(id -un)" \
 	XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
 	XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+apply_grub_theme
 configure_displays_after_install
 
 echo ""
@@ -877,6 +939,9 @@ info "Detected: $DISTRO_NAME"
 echo "  • Build configuration: $REPO_DIR/config.h"
 echo "  • Reconfigure by removing config.h and running the installer again"
 echo "  • Display setup: dwm-display-setup"
+if grub_in_use; then
+	echo "  • GRUB theme: lyona-grub-theme status (remove with lyona-grub-theme remove)"
+fi
 echo "  • Log out and select 'dwm', or start with: startx"
 if [[ $currentdm == "lightdm" ]]; then
 	echo "  • Start LightDM now (optional): sudo systemctl start lightdm.service"

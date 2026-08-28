@@ -5,7 +5,7 @@
   </picture>
   <p><strong>An Arch Linux X11 desktop built for keyboard-driven work</strong></p>
   <p>
-    <a href="https://dwm.lyonasoft.com">Documentation</a> |
+    <a href="https://dwm.technicks89.com">Documentation</a> |
     <a href="https://github.com/technicks89/Lyona/releases/latest">Latest release</a> |
     <a href="./CHANGELOG.md">Changelog</a> |
     <a href="./CONTRIBUTING.md">Contributing</a>
@@ -50,7 +50,7 @@ Choose the path that matches your system:
 | [Existing system](#existing-system) | An Arch installation you already use | Installs dependencies, the desktop session, and the selected feature set while preserving local configuration. |
 
 For complete requirements and installation details, see the
-[Installation Guide](https://dwm.lyonasoft.com/install.html).
+[Installation Guide](https://dwm.technicks89.com/install.html).
 
 ### Arch ISO
 
@@ -74,7 +74,7 @@ and [CachyOS](https://cachyos.org) repositories and both the `linux-cachyos`
 and `linux-cachyos-lts` kernels without being asked; the stock Arch kernel
 stays the default boot entry, so the CachyOS ones are there to select, not
 to surprise you. See the
-[Installation Guide](https://dwm.lyonasoft.com/install.html) for details.
+[Installation Guide](https://dwm.technicks89.com/install.html) for details.
 No prebuilt ISO is currently published as a release; build one yourself
 with the script above.
 
@@ -104,7 +104,7 @@ On x86_64, `--enable-cachyos-repos` adds the [CachyOS](https://cachyos.org)
 repositories for this CPU's ISA level, and `--cachyos-kernel` also installs
 `linux-cachyos` and adds a boot entry for it. Both are opt-in, ask before
 touching `pacman.conf`, and back it up first; see the
-[Installation Guide](https://dwm.lyonasoft.com/install.html) for what they
+[Installation Guide](https://dwm.technicks89.com/install.html) for what they
 change.
 
 `maim` is an optional dependency used only by the screenshot hotkeys. If it is
@@ -161,21 +161,21 @@ keyboard settings, and `udevadm` for stable device identity and hotplug events.
 Kept values are stored in `input-settings.conf` in the same XDG directory;
 `DWM_INPUT_SETTINGS_FILE` can select another file.
 
-See the [Configuration Guide](https://dwm.lyonasoft.com/configuration.html)
-and [Theming Guide](https://dwm.lyonasoft.com/theming.html) for examples and
+See the [Configuration Guide](https://dwm.technicks89.com/configuration.html)
+and [Theming Guide](https://dwm.technicks89.com/theming.html) for examples and
 safe customization paths.
 
 ## Documentation
 
-- [Installation](https://dwm.lyonasoft.com/install.html)
-- [Getting Started](https://dwm.lyonasoft.com/getting-started.html)
-- [Keybindings](https://dwm.lyonasoft.com/keybinds.html)
-- [Configuration](https://dwm.lyonasoft.com/configuration.html)
-- [Theming](https://dwm.lyonasoft.com/theming.html)
-- [Control Center](https://dwm.lyonasoft.com/control-center.html)
-- [Settings](https://dwm.lyonasoft.com/settings.html)
-- [How lyona Works](https://dwm.lyonasoft.com/patches.html)
-- [Troubleshooting](https://dwm.lyonasoft.com/troubleshooting.html)
+- [Installation](https://dwm.technicks89.com/install.html)
+- [Getting Started](https://dwm.technicks89.com/getting-started.html)
+- [Keybindings](https://dwm.technicks89.com/keybinds.html)
+- [Configuration](https://dwm.technicks89.com/configuration.html)
+- [Theming](https://dwm.technicks89.com/theming.html)
+- [Control Center](https://dwm.technicks89.com/control-center.html)
+- [Settings](https://dwm.technicks89.com/settings.html)
+- [How lyona Works](https://dwm.technicks89.com/patches.html)
+- [Troubleshooting](https://dwm.technicks89.com/troubleshooting.html)
 
 The technical guide explains the project architecture, what dwm is, and how
 the maintained enhancements fit together. You do not need to understand or
@@ -191,7 +191,7 @@ dwm-diagnostics
 
 You can also open **Control Center -> System Health** for a graphical overview.
 If the session does not start, run `startx` from a TTY to see its error output.
-The [Troubleshooting Guide](https://dwm.lyonasoft.com/troubleshooting.html)
+The [Troubleshooting Guide](https://dwm.technicks89.com/troubleshooting.html)
 covers common session, panel, terminal, theme, display, and NVIDIA issues.
 
 If the problem remains, [open an issue](https://github.com/technicks89/Lyona/issues)

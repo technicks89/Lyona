@@ -9,7 +9,7 @@ asked to upgrade before receiving a fix.
 ## Reporting a Vulnerability
 
 Do not open a public issue for a suspected vulnerability. Email
-`namato@lyonasoft.com` with the subject `lyona security report`.
+`namato@technicks89.com` with the subject `lyona security report`.
 
 Include affected versions or commits, reproduction steps, impact, relevant
 logs, and any proposed mitigation. Do not include credentials, private keys,

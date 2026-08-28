@@ -16,6 +16,8 @@ SYSTEMDUSERDIR ?= ${PREFIX}/lib/systemd/user
 CAPITAINE_DARK_THEME = Capitaine-Cursors
 CAPITAINE_LIGHT_THEME = Capitaine-Cursors-White
 CAPITAINE_LICENSE_DIR = ${DATADIR}/licenses/lyona/capitaine-cursors
+GRUB_THEME_NAME = CyberRe
+GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 run_managed_test = if [ -n "$${DWM_TEST_WORKSPACE:-}" ] && [ -n "$${DWM_TEST_RUNNER_TOKEN:-}" ] && [ "$${TMPDIR:-}" = "$${DWM_TEST_WORKSPACE}" ] && [ -f "$${DWM_TEST_WORKSPACE}/.runner" ] && [ ! -L "$${DWM_TEST_WORKSPACE}/.runner" ] && [ "$$(cat "$${DWM_TEST_WORKSPACE}/.runner" 2>/dev/null)" = "$${DWM_TEST_RUNNER_TOKEN}" ]; then $(1); else scripts/run-tests $(1); fi
 
 SRC = drw.c dwm.c util.c tomlparser.c
@@ -68,6 +70,7 @@ INSTALL_COMMANDS = \
 	scripts/install-mybash \
 	scripts/lyona-cachyos \
 	scripts/lyona-console-theme \
+	scripts/lyona-grub-theme \
 	scripts/lyona-plymouth-theme \
 	scripts/nvidia-gpu \
 	scripts/nvidia-suspend-test.sh \
@@ -176,6 +179,7 @@ install-system:
 	done
 	$(MAKE) install-gtk-themes
 	$(MAKE) install-cursors
+	$(MAKE) install-grub-theme
 	@echo ""
 	@echo "==> Installing system files..."
 	install -Dm755 dwm ${DESTDIR}${PREFIX}/bin/dwm
@@ -210,6 +214,19 @@ install-cursors:
 		"${DESTDIR}${DATADIR}/icons/"
 	install -Dm644 assets/cursors/COPYING \
 		"${DESTDIR}${CAPITAINE_LICENSE_DIR}/COPYING"
+
+# Copying the theme into place changes nothing about booting; selecting it is
+# a separate, reversible step in scripts/lyona-grub-theme.
+install-grub-theme:
+	@echo "==> Installing the ${GRUB_THEME_NAME} GRUB theme..."
+	rm -rf "${DESTDIR}${DATADIR}/grub/themes/${GRUB_THEME_NAME}"
+	mkdir -p "${DESTDIR}${DATADIR}/grub/themes"
+	@# --no-preserve=ownership because GRUB parses theme.txt as root at boot,
+	@# so it must not stay owned by the user who ran the build.
+	cp -a --no-preserve=ownership "assets/grub/${GRUB_THEME_NAME}" \
+		"${DESTDIR}${DATADIR}/grub/themes/"
+	install -Dm644 assets/grub/LICENSE \
+		"${DESTDIR}${GRUB_THEME_LICENSE_DIR}/LICENSE"
 
 install-user:
 	@test -n "${USER_HOME}" || { echo "USER_HOME could not be determined." >&2; exit 1; }
@@ -311,7 +328,9 @@ uninstall:
 	rm -rf \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_DARK_THEME}" \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_LIGHT_THEME}" \
-		"${DESTDIR}${CAPITAINE_LICENSE_DIR}"
+		"${DESTDIR}${CAPITAINE_LICENSE_DIR}" \
+		"${DESTDIR}${DATADIR}/grub/themes/${GRUB_THEME_NAME}" \
+		"${DESTDIR}${GRUB_THEME_LICENSE_DIR}"
 	@# One directory per palette, so the list comes from the palettes rather
 	@# than from a second copy of it that can fall out of step.
 	awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print id; }' config/themes.toml \
@@ -341,10 +360,10 @@ release: dwm
 	echo "==> Created ${RELEASE_ARCHIVE}"
 
 check-shell:
-	shellcheck install.sh scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-quickshell-launcher scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shellcheck install.sh scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-quickshell-launcher scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
 
 check-format:
-	shfmt -d install.sh scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-quickshell-launcher scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shfmt -d install.sh scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-quickshell-launcher scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
 
 check-session-guards:
 	tests/test-autostart.sh
@@ -409,6 +428,9 @@ check-gtk-theme:
 
 check-plymouth-theme:
 	tests/test-lyona-plymouth-theme.sh
+
+check-grub-theme:
+	tests/test-lyona-grub-theme.sh
 
 check-shell-contracts:
 	tests/test-shell-contracts.sh
@@ -553,8 +575,12 @@ check-install-manifest: all
 			\( -type f -o -type l \) \
 			-printf 'usr/share/icons/${CAPITAINE_LIGHT_THEME}/%P\n'; \
 		awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print "usr/share/themes/Lyona-" id "/index.theme"; print "usr/share/themes/Lyona-" id "/gtk-3.0/gtk.css"; print "usr/share/themes/Lyona-" id "/gtk-4.0/gtk.css"; }' config/themes.toml; \
+		find "assets/grub/${GRUB_THEME_NAME}" \
+			\( -type f -o -type l \) \
+			-printf 'usr/share/grub/themes/${GRUB_THEME_NAME}/%P\n'; \
 		printf '%s\n' \
-			usr/share/licenses/lyona/capitaine-cursors/COPYING; \
+			usr/share/licenses/lyona/capitaine-cursors/COPYING \
+			usr/share/licenses/lyona/grub-themes/LICENSE; \
 	} | sort > "$$expected"; \
 	find "$$stage" \( -type f -o -type l \) -printf '%P\n' | sort > "$$actual"; \
 	cmp "$$expected" "$$actual"; \
@@ -566,6 +592,7 @@ check-install-manifest: all
 		"$$stage/usr/share/xsessions/dwm.desktop"; \
 	test -f "$$stage/usr/share/icons/${CAPITAINE_DARK_THEME}/cursors/default"; \
 	test -f "$$stage/usr/share/icons/${CAPITAINE_LIGHT_THEME}/cursors/default"; \
+	test -f "$$stage/usr/share/grub/themes/${GRUB_THEME_NAME}/theme.txt"; \
 	$(MAKE) uninstall \
 		DESTDIR="$$stage" PREFIX=/usr XSESSIONSDIR=/usr/share/xsessions; \
 	find "$$stage" \( -type f -o -type l \) -printf '%P\n' | sort > "$$after"; \
@@ -619,6 +646,7 @@ check:
 	$(MAKE) check-shell-contracts
 	$(MAKE) check-gtk-theme
 	$(MAKE) check-plymouth-theme
+	$(MAKE) check-grub-theme
 	$(MAKE) check-session-launch
 	$(MAKE) check-dwm-roundtrips
 	$(MAKE) check-display-profile
@@ -670,6 +698,6 @@ check:
 	check-test-runner \
 	check-display-profile check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lock \
-	check-session-guards check-session-migration check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-session-launch check-dwm-roundtrips check-system-health check-settings \
+	check-session-guards check-session-migration check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
-	install-cursors install-gtk-themes native release release-check uninstall
+	install-cursors install-grub-theme install-gtk-themes native release release-check uninstall

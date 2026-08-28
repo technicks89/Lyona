@@ -39,6 +39,8 @@ an untested package or installation path.
 - `config.mk`: compiler, include, library, and installation settings.
 - `Makefile`: build, install, uninstall, and release targets.
 - `config/`: application configuration and default TOML runtime settings.
+- `assets/`: vendored third-party assets (cursors, GRUB themes) and the lyona
+  logo artwork, each with the upstream licence beside it.
 - `scripts/`: session startup, dependency checks, desktop helpers, and
   operational scripts.
 - `install.sh`: supported existing-system installer for Arch Linux.
