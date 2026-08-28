@@ -41,4 +41,8 @@ month) from `config.mk`.
   generated `active-theme.conf` and pinned kitty to the Nord palette
   regardless of the selected theme.
 
+### Fixed
+
+- Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
+
 [Unreleased]: https://github.com/technicks89/Lyona/compare/v0.1.0...HEAD

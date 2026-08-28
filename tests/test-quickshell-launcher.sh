@@ -38,6 +38,8 @@ symlink_desktop="$work/data/applications/symlink.desktop"
 flatpak_desktop="$work/home/.local/share/flatpak/exports/share/applications/flatpak.desktop"
 snap_desktop="$work/home/.local/share/snapd/applications/snap.desktop"
 localized_desktop="$work/data/applications/localized.desktop"
+chatgpt_native_desktop="$work/data/applications/chatgpt.desktop"
+chatgpt_web_desktop="$work/empty/applications/ChatGPT.desktop"
 
 cat >"$work/data/applications/visible.desktop" <<'DESKTOP'
 [Desktop Entry]
@@ -146,6 +148,24 @@ Exec=hidden-app
 NoDisplay=true
 DESKTOP
 
+mkdir -p "$work/empty/applications"
+cat >"$chatgpt_native_desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=ChatGPT
+GenericName=AI assistant
+Exec=chatgpt %U
+Categories=Utility;Development;
+DESKTOP
+
+cat >"$chatgpt_web_desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=ChatGPT
+Exec=webapp-launch https://chatgpt.com/
+Categories=Network;WebApp;
+DESKTOP
+
 cat >"$work/data/applications/link.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Link
@@ -173,6 +193,10 @@ if printf '%s\n' "$output" | grep -F 'Hidden App'; then
 	exit 1
 fi
 if printf '%s\n' "$output" | grep -F 'Link Entry'; then
+	exit 1
+fi
+assert_listed "$chatgpt_native_desktop"
+if printf '%s\n' "$output" | grep -F "$chatgpt_web_desktop"; then
 	exit 1
 fi
 

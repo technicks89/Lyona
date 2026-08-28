@@ -3,7 +3,7 @@
     <source media="(prefers-color-scheme: dark)" srcset="./assets/logo/lyona-logo-horizontal-dark.png" />
     <img src="./assets/logo/lyona-logo-horizontal-light.png" alt="lyona logo" width="320" />
   </picture>
-  <p><strong>An Arch Linux X11 desktop built for keyboard-driven work. Derived from ChrisTitusTech's dwm-titus and DHH's Omarchy</strong></p>
+  <p><strong>An Arch Linux X11 desktop built for keyboard-driven work</strong></p>
   <p>
     <a href="https://dwm.lyonasoft.com">Documentation</a> |
     <a href="https://github.com/technicks89/Lyona/releases/latest">Latest release</a> |
@@ -14,8 +14,8 @@
 
 ![The lyona desktop with its Quickshell panel](./lyona-qs-4x.webp)
 
-This is a fork of dwm-titus (An awesome x11 distro). It is designed to run on Arch Linux rather than Fedora. 
-The ISO build, and soon the feel draws inspiration from Omarchy (An amazing wayland distro)
+This is a fork of [dwm-titus](https://github.com/ChrisTitusTech/dwm-titus) (An awesome x11 Fedora distro). It is designed to run on Arch Linux rather than Fedora. 
+lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy) (An amazing wayland Arch distro)
 
 lyona is a complete, lightweight X11 desktop with sensible defaults,
 guided installation, and powerful customization. It is designed for people who
