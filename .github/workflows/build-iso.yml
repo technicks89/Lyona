@@ -26,8 +26,11 @@ jobs:
       TAG: ${{ github.event.inputs.tag }}
 
     steps:
-      - name: Install checkout dependency
-        run: pacman -Sy --noconfirm --needed git
+      # github-cli lands here rather than with the build dependencies below:
+      # the tag check runs before them so a bad tag fails in seconds instead of
+      # after a full archiso install.
+      - name: Install checkout and release-query dependencies
+        run: pacman -Sy --noconfirm --needed git github-cli
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
