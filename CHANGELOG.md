@@ -3,9 +3,16 @@
 All notable project changes are documented here. This project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses calendar
 versions (`YYYY.MM`, or `YYYY.MM.PATCH` for a second release in the same
-month) from `config.mk`.
+month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
+`-rc.N`.
 
 ## [Unreleased]
+
+## [2026.08.0-beta.1] - 2026-08-28
+
+First beta of the Arch Linux line. See
+`docs/RELEASE-NOTES-2026.08.0-beta.1.md` for artifacts and qualification
+status.
 
 ### Changed
 
@@ -71,4 +78,5 @@ month) from `config.mk`.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.08.0-beta.1...HEAD
+[2026.08.0-beta.1]: https://github.com/technicks89/Lyona/releases/tag/v2026.08.0-beta.1

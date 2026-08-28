@@ -109,12 +109,26 @@ if [[ -z $iso_version ]]; then
 fi
 
 iso_version=${iso_version#v}
-if [[ ! $iso_version =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-	err "version must look like MAJOR.MINOR or MAJOR.MINOR.PATCH: $iso_version"
+if [[ ! $iso_version =~ ^[0-9]+(\.[0-9]+){1,2}(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+	err "version must look like MAJOR.MINOR or MAJOR.MINOR.PATCH, optionally with"
+	err "an -alpha.N, -beta.N or -rc.N pre-release suffix: $iso_version"
 	exit 1
 fi
 
-iso_label="LYONA_${iso_version//./_}"
+# An ISO9660 volume identifier admits only A-Z, 0-9 and _, and is capped at 32
+# characters, so a pre-release suffix cannot be carried verbatim:
+# 2026.08.0-beta.1 becomes LYONA_2026_08_0_BETA1.
+iso_label="LYONA_${iso_version%%-*}"
+iso_label="${iso_label//./_}"
+if [[ $iso_version == *-* ]]; then
+	iso_prerelease=${iso_version#*-}
+	iso_label="${iso_label}_${iso_prerelease//./}"
+fi
+iso_label=${iso_label^^}
+if ((${#iso_label} > 32)); then
+	err "volume label $iso_label exceeds the 32-character ISO9660 limit"
+	exit 1
+fi
 
 if [[ $profile_only != true ]]; then
 	if [[ $EUID -ne 0 ]]; then

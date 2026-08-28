@@ -244,6 +244,7 @@ static int isvisiblefullscreen(Client *c);
 static int monitorhasfullscreen(Monitor *m);
 static void raisefullscreenclients(Client *c);
 static void raisealwaysontopclients(Client *c);
+static void raisefloatingclients(Client *c);
 static void restackprioritywindows(void);
 static void restack(Monitor *m);
 static unsigned int scaledpx(unsigned int value);

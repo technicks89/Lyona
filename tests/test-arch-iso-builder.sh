@@ -333,7 +333,16 @@ LYONA_RELENG_DIR="$releng" \
 	>"$work/profile.out" 2>&1
 
 profiledef="$work/staged/profile/profiledef.sh"
-expected_label="LYONA_${config_version//./_}"
+# Mirrors the volume-label rule in build-lyona-arch-iso.sh: an ISO9660 volume
+# identifier admits only A-Z, 0-9 and _, so a pre-release suffix loses its
+# punctuation -- 2026.08.0-beta.1 becomes LYONA_2026_08_0_BETA1.
+expected_label="LYONA_${config_version%%-*}"
+expected_label="${expected_label//./_}"
+if [[ $config_version == *-* ]]; then
+	config_prerelease=${config_version#*-}
+	expected_label="${expected_label}_${config_prerelease//./}"
+fi
+expected_label=${expected_label^^}
 grep -Fqx 'iso_name="lyona"' "$profiledef" || {
 	printf 'staged profiledef.sh does not set iso_name to lyona.\n' >&2
 	exit 1
@@ -654,6 +663,20 @@ grep -Fqx 'iso_version="9.9.9"' "$work/staged-override/profile/profiledef.sh"
 grep -Fqx 'iso_label="LYONA_9_9_9"' "$work/staged-override/profile/profiledef.sh"
 grep -Fqx 'LYONA_ISO_VERSION=9.9.9' \
 	"$work/staged-override/profile/airootfs/etc/lyona-iso-release"
+
+# A pre-release keeps its suffix in the version but not in the volume label.
+LYONA_RELENG_DIR="$releng" \
+	"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --version v9.9.9-beta.2 \
+	--output "$work/staged-prerelease" >"$work/prerelease.out" 2>&1
+grep -Fqx 'iso_version="9.9.9-beta.2"' "$work/staged-prerelease/profile/profiledef.sh"
+grep -Fqx 'iso_label="LYONA_9_9_9_BETA2"' "$work/staged-prerelease/profile/profiledef.sh"
+grep -Fqx 'LYONA_ISO_VERSION=9.9.9-beta.2' \
+	"$work/staged-prerelease/profile/airootfs/etc/lyona-iso-release"
+
+expect_failure 'a malformed pre-release suffix' 'version must look like' \
+	"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --version 9.9.9-beta
+expect_failure 'an unknown pre-release channel' 'version must look like' \
+	"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --version 9.9.9-snapshot.1
 
 if [[ $EUID -ne 0 ]]; then
 	mkdir -p "$work/bin"

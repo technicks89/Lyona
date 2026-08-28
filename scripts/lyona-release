@@ -8,8 +8,10 @@ Usage: scripts/lyona-release [options]
 Create a GitHub release for the current config.mk VERSION.
 
 lyona uses calendar versioning: YYYY.MM, or YYYY.MM.PATCH for a second
-(or later) release in the same month. Set VERSION in config.mk to the
-release you want to cut before running this script.
+(or later) release in the same month. A pre-release appends -alpha.N,
+-beta.N or -rc.N and is published to GitHub with --prerelease so it is
+never promoted to Latest. Set VERSION in config.mk to the release you
+want to cut before running this script.
 
 Options:
   --version VERSION       Confirm the committed config.mk VERSION to release.
@@ -173,14 +175,21 @@ fi
 release_version=${release_version:-$current_version}
 release_version=${release_version#v}
 
-if [[ ! $release_version =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-	err "version must look like YYYY.MM or YYYY.MM.PATCH: $release_version"
+if [[ ! $release_version =~ ^[0-9]+(\.[0-9]+){1,2}(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+	err "version must look like YYYY.MM or YYYY.MM.PATCH, optionally with an"
+	err "-alpha.N, -beta.N or -rc.N pre-release suffix: $release_version"
 	exit 1
 fi
 
-IFS=. read -r year month patch <<<"$release_version"
+# Split the pre-release suffix off before normalising the numeric part, so that
+# 2026.08-beta.1 and 2026.08.0-beta.1 both settle on 2026.08.0-beta.1.
+prerelease=
+if [[ $release_version == *-* ]]; then
+	prerelease=${release_version#*-}
+fi
+IFS=. read -r year month patch <<<"${release_version%%-*}"
 patch=${patch:-0}
-release_version="$year.$month.$patch"
+release_version="$year.$month.$patch${prerelease:+-$prerelease}"
 tag="v$release_version"
 release_archive="$repo_root/release/lyona-$release_version.tar.gz"
 checksums="$repo_root/release/lyona-$release_version-SHA256SUMS"
@@ -280,10 +289,14 @@ if [[ $release_exists == true ]]; then
 	run gh release upload "$tag" "${assets[@]}" --clobber
 else
 	gh_args=(release create "$tag" "${assets[@]}" --title "lyona $tag" --verify-tag)
+	if [[ -n $prerelease ]]; then
+		# A pre-release must not be published as the latest stable release.
+		gh_args+=(--prerelease)
+	fi
 	if [[ -n $notes_file ]]; then
 		gh_args+=(--notes-file "$notes_file")
 	else
-		gh_args+=(--notes "lyona $tag release.")
+		gh_args+=(--notes "lyona $tag${prerelease:+ pre-}release.")
 	fi
 	run gh "${gh_args[@]}"
 fi
