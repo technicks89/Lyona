@@ -12,7 +12,7 @@ dwm_packages() {
 			xcb-util freetype2 fontconfig
 		;;
 	arch:x11)
-		printf '%s\n' xorg-server xorg-xinit xorg-xrandr xorg-xset xorg-xsetroot xorg-xinput xorg-setxkbmap
+		printf '%s\n' xorg-server xorg-xinit xorg-xrandr xorg-xrdb xorg-xset xorg-xsetroot xorg-xinput xorg-setxkbmap xsettingsd
 		;;
 	arch:runtime-required)
 		printf '%s\n' dbus curl git procps-ng psmisc unzip util-linux xclip xdotool xorg-xprop xdg-utils

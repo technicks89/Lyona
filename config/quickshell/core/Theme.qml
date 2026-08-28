@@ -86,51 +86,67 @@ Singleton {
         root.fontScale = Math.max(0.8, Math.min(1.5, scale));
     }
 
-    readonly property int spacingXxs: 2
-    readonly property int spacingXs: 3
-    readonly property int spacingSm: 4
-    readonly property int spacingMd: 6
-    readonly property int spacingLg: 8
-    readonly property int spacingXl: 10
-    readonly property int spacingXxl: 12
-    readonly property int spacingXxxl: 14
-    readonly property int spacingHuge: 18
+    property int displayDpi: 96
+    readonly property real uiScale: Math.max(0.75, Math.min(3.0, root.displayDpi / 96))
 
-    readonly property int fontCaptionSize: Math.max(8, Math.round(10 * fontScale))
-    readonly property int fontBodySmallSize: Math.max(10, Math.round(12 * fontScale))
-    readonly property int fontBodySize: Math.max(10, Math.round(13 * fontScale))
-    readonly property int fontSubtitleSize: Math.max(11, Math.round(14 * fontScale))
-    readonly property int fontTitleSize: Math.max(14, Math.round(18 * fontScale))
-    readonly property int largeSurfaceTitleSize: Math.max(18, Math.round(24 * fontScale))
-    readonly property int panelIconFontSize: 13
+    function applyDisplayDpi(dpi) {
+        const value = Math.round(Number(dpi));
+        root.displayDpi = (isFinite(value) && value >= 72 && value <= 384) ? value : 96;
+    }
 
-    readonly property int controlHeight: 30
-    readonly property int controlRowHeight: 32
-    readonly property int controlPaddingX: 9
-    readonly property int controlBorderWidth: 1
-    readonly property int controlFocusBorderWidth: 2
-    readonly property int controlRadius: 6
-    readonly property int menuHeaderHeight: 26
+    /* A zero stays zero -- a metric set to 0 means "no border/no margin", not
+     * "the smallest possible one". Everything else keeps at least one pixel. */
+    function dp(px) {
+        if (px <= 0)
+            return 0;
+        return Math.max(1, Math.round(px * root.uiScale));
+    }
+
+    readonly property int spacingXxs: dp(2)
+    readonly property int spacingXs: dp(3)
+    readonly property int spacingSm: dp(4)
+    readonly property int spacingMd: dp(6)
+    readonly property int spacingLg: dp(8)
+    readonly property int spacingXl: dp(10)
+    readonly property int spacingXxl: dp(12)
+    readonly property int spacingXxxl: dp(14)
+    readonly property int spacingHuge: dp(18)
+
+    readonly property int fontCaptionSize: Math.max(dp(8), Math.round(10 * fontScale * uiScale))
+    readonly property int fontBodySmallSize: Math.max(dp(10), Math.round(12 * fontScale * uiScale))
+    readonly property int fontBodySize: Math.max(dp(10), Math.round(13 * fontScale * uiScale))
+    readonly property int fontSubtitleSize: Math.max(dp(11), Math.round(14 * fontScale * uiScale))
+    readonly property int fontTitleSize: Math.max(dp(14), Math.round(18 * fontScale * uiScale))
+    readonly property int largeSurfaceTitleSize: Math.max(dp(18), Math.round(24 * fontScale * uiScale))
+    readonly property int panelIconFontSize: dp(13)
+
+    readonly property int controlHeight: dp(30)
+    readonly property int controlRowHeight: dp(32)
+    readonly property int controlPaddingX: dp(9)
+    readonly property int controlBorderWidth: dp(1)
+    readonly property int controlFocusBorderWidth: dp(2)
+    readonly property int controlRadius: dp(6)
+    readonly property int menuHeaderHeight: dp(26)
     readonly property int popupPadding: spacingHuge
     readonly property int popupRadius: controlRadius
-    readonly property int panelHeroIconSize: 32
-    readonly property real panelMetaLetterSpacing: 1.2
-    readonly property int panelSliderHeight: 32
-    readonly property int panelSliderTrackHeight: 6
-    readonly property int panelSliderKnobSize: 16
-    readonly property int panelToggleWidth: 40
-    readonly property int panelToggleHeight: 22
-    readonly property int panelToggleKnobSize: 14
-    readonly property int panelToggleInset: 3
+    readonly property int panelHeroIconSize: dp(32)
+    readonly property real panelMetaLetterSpacing: 1.2 * uiScale
+    readonly property int panelSliderHeight: dp(32)
+    readonly property int panelSliderTrackHeight: dp(6)
+    readonly property int panelSliderKnobSize: dp(16)
+    readonly property int panelToggleWidth: dp(40)
+    readonly property int panelToggleHeight: dp(22)
+    readonly property int panelToggleKnobSize: dp(14)
+    readonly property int panelToggleInset: dp(3)
 
-    readonly property int panelHeight: 30
+    readonly property int panelHeight: dp(30)
     readonly property int panelMargin: 0
     readonly property int panelEdgeMargin: 0
     readonly property int panelGap: spacingSm
     readonly property int popupMargin: popupPadding
     readonly property int popupSpacing: spacingXxl
-    readonly property int controlCenterX: 6
-    readonly property int controlCenterWidth: 276
+    readonly property int controlCenterX: dp(6)
+    readonly property int controlCenterWidth: dp(276)
     readonly property int rowSpacing: spacingXl
     readonly property int listSpacing: spacingSm
     readonly property int compactSpacing: spacingXxs
@@ -139,36 +155,36 @@ Singleton {
     readonly property int radius: controlRadius
     readonly property int smallRadius: controlRadius
     readonly property int barRadius: 0
-    readonly property int pillRadius: 6
-    readonly property int pillHeight: 26
-    readonly property int pillHorizontalPadding: 9
-    readonly property int compactWidgetSize: 22
-    readonly property int compactWidgetHorizontalPadding: 6
-    readonly property real networkWidgetHorizontalPadding: 4.5
+    readonly property int pillRadius: dp(6)
+    readonly property int pillHeight: dp(26)
+    readonly property int pillHorizontalPadding: dp(9)
+    readonly property int compactWidgetSize: dp(22)
+    readonly property int compactWidgetHorizontalPadding: dp(6)
+    readonly property real networkWidgetHorizontalPadding: 4.5 * uiScale
     readonly property int pillBorderWidth: controlBorderWidth
     readonly property int animationFast: 120
     readonly property int animationNormal: 180
     readonly property int buttonHeight: controlHeight
-    readonly property int chipHeight: 28
-    readonly property int workspaceButtonSize: 22
-    readonly property int compactButtonHeight: 40
-    readonly property int confirmButtonHeight: 48
-    readonly property int notificationAccentWidth: 4
-    readonly property int notificationAccentRadius: 2
-    readonly property int largeSurfaceMargin: 22
-    readonly property int largeSurfaceNavWidth: 248
-    readonly property int largeSurfaceSearchHeight: 44
-    readonly property int largeSurfaceCardRadius: 8
+    readonly property int chipHeight: dp(28)
+    readonly property int workspaceButtonSize: dp(22)
+    readonly property int compactButtonHeight: dp(40)
+    readonly property int confirmButtonHeight: dp(48)
+    readonly property int notificationAccentWidth: dp(4)
+    readonly property int notificationAccentRadius: dp(2)
+    readonly property int largeSurfaceMargin: dp(22)
+    readonly property int largeSurfaceNavWidth: dp(248)
+    readonly property int largeSurfaceSearchHeight: dp(44)
+    readonly property int largeSurfaceCardRadius: dp(8)
     readonly property int titleFontSize: fontTitleSize
     readonly property int bodyFontSize: fontSubtitleSize
     readonly property int panelFontSize: fontBodySize
     readonly property int smallFontSize: fontBodySmallSize
     readonly property int tinyFontSize: fontCaptionSize
-    readonly property int inputFontSize: Math.max(12, Math.round(16 * fontScale))
-    readonly property int iconSize: 28
-    readonly property int trayItemSize: 24
-    readonly property int trayIconSize: 18
-    readonly property int closeButtonSize: 30
+    readonly property int inputFontSize: Math.max(dp(12), Math.round(16 * fontScale * uiScale))
+    readonly property int iconSize: dp(28)
+    readonly property int trayItemSize: dp(24)
+    readonly property int trayIconSize: dp(18)
+    readonly property int closeButtonSize: dp(30)
 
     /*
      * The status vocabulary shared by the provider-backed Settings panes and

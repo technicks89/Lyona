@@ -55,5 +55,7 @@ xorg-xinit
 xorg-xinput
 xorg-xprop
 xorg-xrandr
+xorg-xrdb
 xorg-xset
 xorg-xsetroot
+xsettingsd
