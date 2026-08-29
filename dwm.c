@@ -245,6 +245,7 @@ static int monitorhasfullscreen(Monitor *m);
 static void raisefullscreenclients(Client *c);
 static void raisealwaysontopclients(Client *c);
 static void raisefloatingclients(Client *c);
+static void raiseselectedclient(Monitor *m);
 static void restackprioritywindows(void);
 static void restack(Monitor *m);
 static unsigned int scaledpx(unsigned int value);
@@ -2681,6 +2682,8 @@ restackprioritywindows(void)
 	for (m = mons; m; m = m->next)
 		raisefloatingclients(m->stack);
 	for (m = mons; m; m = m->next)
+		raiseselectedclient(m);
+	for (m = mons; m; m = m->next)
 		raisealwaysontopclients(m->stack);
 	for (m = mons; m; m = m->next)
 		if (!monitorhasfullscreen(m)) {
@@ -2717,6 +2720,18 @@ raisefloatingclients(Client *c)
 	if (c->isfloating && ISVISIBLE(c)
 	    && !c->alwaysontop && !c->ewmhabove && !isvisiblefullscreen(c))
 		XRaiseWindow(dpy, c->win);
+}
+
+void
+raiseselectedclient(Monitor *m)
+{
+	Client *c;
+
+	if (!m || !(c = m->sel) || !ISVISIBLE(c))
+		return;
+	if (c->alwaysontop || c->ewmhabove || isvisiblefullscreen(c))
+		return;
+	XRaiseWindow(dpy, c->win);
 }
 
 void

@@ -17,6 +17,15 @@ count() {
 	printf '%s\n' "$2" | grep -c "$1" || true
 }
 
+order() {
+	printf '%s\n' "$2" | grep -n "$1" | head -1 | cut -d: -f1
+}
+
+priority=$(body 'restackprioritywindows')
+[ "$(order 'raisefloatingclients' "$priority")" \
+	-lt "$(order 'raiseselectedclient' "$priority")" ] ||
+	fail 'raiseselectedclient must run after the floating pass.'
+
 # ── WM_CLASS is cached on the client ─────────────────────────────────────
 grep -q '	char class\[256\];' "$dwm_c" ||
 	fail 'Client no longer caches its WM_CLASS class.'
