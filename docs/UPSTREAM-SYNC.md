@@ -126,6 +126,17 @@ upstream actually shipped by the time it was implemented (wrong emitter count,
 wrong helper for text-scale, an undocumented notifications capability) —
 corrected in place before removal, and the corrections are reflected in the
 Phase 5/6/7/8 documents that referenced it.
+Phases 0, 1, 2, 3, and 4 are **done** — implemented, verified (`make check-shell`,
+`make check-format`, `make check-quickshell-qml`, and the relevant functional
+tests all pass), and their planning documents (`SYNC-P0-DPI-GATE.md`,
+`SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`, `P5-SETTINGS-LAYOUT-PORT.md`,
+`SYNC-P4-A11Y-CAPABILITIES.md`) have been removed — the record of what changed now
+lives in `CHANGELOG.md` (Phase 2 and Phase 4's `TASKS.md` checkboxes are also
+ticked; Phases 0, 1, and 3 never had one) and git history, not in a plan for work
+still to do. Phase 4's own doc had drifted from what upstream actually shipped by
+the time it was implemented (wrong emitter count, wrong helper for text-scale, an
+undocumented notifications capability) — corrected in place before removal, and the
+corrections are reflected in the Phase 5/6/7/8 documents that referenced it.
 
 **`*` Phase 3 exception — `c3e9a18` was not ported.** `P5-SETTINGS-LAYOUT-PORT.md`
 (now removed) fully specified the Settings-window enlargement and compaction, and
@@ -162,6 +173,15 @@ as originally recommended.
 
 **Net effect:** with Phases 0, 1, 2, 3, 4, and 11 done, the only thing left is the
 5→6/7/8 accessibility chain and Phase 9. Nothing about that
+| 2 | **Phase 5** — Contrast and motion policy | Depends on Phase 4 (done). |
+| 3 | **Phase 6** — Accessibility Settings controls | Depends on Phases 4 (done) and 5. |
+| 4 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
+| 5 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
+| 6 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — last by design. |
+| — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
+
+**Net effect:** with Phases 0, 1, 2, 3, and 4 done, the only thing left before the
+5→6/7/8 accessibility chain and Phase 9 is Phase 11. Nothing about that
 remaining order changed from the original survey — the two pieces of new work
 found on 2026-09-06 both slotted in without disturbing it: Phase 11 because it
 shared no files with anything else, and the regional-services scope because it
