@@ -55,7 +55,32 @@ run_bounded_probe() {
 	shift
 	command_path=$(provider_path "$command_name") || return 1
 	timeout_path=$(command -v timeout 2>/dev/null) || return 1
-	"$timeout_path" 2 "$command_path" "$@" >/dev/null 2>&1
+	"$timeout_path" --signal=TERM --kill-after=1 2 \
+		"$command_path" "$@" >/dev/null 2>&1
+}
+
+input_snapshot_valid() {
+	command_path=$(provider_path dwm-settings-input) || return 1
+	timeout_path=$(command -v timeout 2>/dev/null) || return 1
+	input_snapshot=$("$timeout_path" --signal=TERM --kill-after=1 2 \
+		"$command_path" discover 2>/dev/null) || return 1
+	printf '%s\n' "$input_snapshot" |
+		awk -F '\t' '
+			NR == 1 && $0 == "input-protocol\t1" {
+				header = 1
+				protocols++
+				next
+			}
+			$1 == "input-protocol" { protocols++; invalid = 1; next }
+			$1 == "device" && NF == 5 && $2 != "" && $3 != "" && $4 != "" && $5 != "" { next }
+			$1 == "device" { invalid = 1; next }
+			$1 == "setting" && NF == 9 && $2 != "" && $3 != "" && $4 != "" && $5 != "" { next }
+			$1 == "setting" { invalid = 1; next }
+			$1 == "unsupported" && NF == 4 && $2 != "" && $3 != "" && $4 != "" { next }
+			$1 == "unsupported" { invalid = 1; next }
+			{ next }
+			END { exit(header && protocols == 1 && !invalid ? 0 : 1) }
+		'
 }
 
 appearance_snapshot_valid() {
@@ -94,6 +119,102 @@ toolkit_mutation_ready() {
 	command_path=$(provider_path dwm-settings-toolkit) || return 1
 	timeout_path=$(command -v timeout 2>/dev/null) || return 1
 	"$timeout_path" 2 "$command_path" mutation-ready >/dev/null 2>&1
+}
+
+# Text scale lives in dwm-settings-font, not dwm-settings-toolkit -- Lyona
+# split the managed-shell font/text-scale contract from the theme-independent
+# cursor/icon/GTK/Qt overrides toolkit owns. Validate every field of the
+# helper's status output before trusting it: this is the boundary between an
+# unprivileged helper and the Settings UI.
+emit_text_scale_capability() {
+	command_path=$(provider_path dwm-settings-font 2>/dev/null || true)
+	if [ -z "$command_path" ]; then
+		emit_capability appearance accessibility-text-scale 'Text scaling' unavailable user-session \
+			dwm-settings-font 'Install the managed font provider'
+		return
+	fi
+
+	timeout_path=$(command -v timeout 2>/dev/null || true)
+	if [ -z "$timeout_path" ] ||
+		! font_status=$("$timeout_path" --signal=TERM --kill-after=1 \
+			5 "$command_path" status 2>/dev/null); then
+		emit_capability appearance accessibility-text-scale 'Text scaling' unavailable user-session \
+			dwm-settings-font 'The font provider is not responding'
+		return
+	fi
+
+	text_scale_record=$(printf '%s\n' "$font_status" |
+		awk -F '\t' '
+			function valid_field(value, allow_empty) {
+				return length(value) <= 4095 && (allow_empty || value != "")
+			}
+			function valid_state(value) {
+				return value == "available" || value == "partial" || value == "unavailable"
+			}
+			NR == 1 {
+				header = ($0 == "appearance-font-action-protocol\t1\t0")
+				next
+			}
+			$1 == "provider" {
+				providers++
+				if (NF != 5 || $2 != "font" || !valid_state($3) || $4 != "user-session" ||
+					!valid_field($5, 0) || providers != 1) invalid = 1
+				next
+			}
+			$1 == "selection" {
+				selections++
+				if (NF == 5 && valid_state($2) && valid_field($3, 1) && valid_field($4, 0) &&
+					valid_field($5, 0) && selections == 1) {
+					state = $2
+					detail = $5
+				} else invalid = 1
+				next
+			}
+			# Version 1 is append-only: reject malformed known records, but ignore new record types.
+			{ next }
+			END {
+				if (!invalid && header && providers == 1 && selections == 1 && detail != "")
+					printf "%s\t%s\n", state, detail
+				else
+					exit 1
+			}
+		' 2>/dev/null) || text_scale_record=
+	if [ -z "$text_scale_record" ]; then
+		emit_capability appearance accessibility-text-scale 'Text scaling' unavailable user-session \
+			dwm-settings-font 'The font provider returned an unsupported response'
+		return
+	fi
+
+	tab=$(printf '\t')
+	text_scale_state=${text_scale_record%%"$tab"*}
+	text_scale_detail=${text_scale_record#*"$tab"}
+	emit_capability appearance accessibility-text-scale 'Text scaling' "$text_scale_state" user-session \
+		dwm-settings-font "$text_scale_detail"
+}
+
+emit_accessibility_capabilities() {
+	emit_text_scale_capability
+	emit_capability appearance accessibility-contrast 'High contrast' partial read-only \
+		quickshell-theme 'Semantic colors are available; a dedicated high-contrast policy is not configured'
+	emit_capability appearance accessibility-reduced-motion 'Reduced motion' unsupported read-only \
+		quickshell-theme 'Managed shell animations do not yet expose a reduced-motion policy'
+	if run_bounded_probe busctl --user --quiet status org.freedesktop.Notifications; then
+		emit_capability appearance accessibility-notifications 'Notification policy' partial read-only \
+			dbus 'A notification D-Bus owner is active; managed policy controls are not configured'
+	else
+		emit_capability appearance accessibility-notifications 'Notification policy' unavailable read-only \
+			dbus 'No notification D-Bus owner is observable in this session'
+	fi
+	if [ "$input_discovery_state" = available ]; then
+		emit_capability appearance accessibility-input 'Keyboard and pointer access' partial read-only x11 \
+			'Input discovery and settings are available; dedicated accessibility controls are not configured'
+	elif [ "$input_discovery_state" = unready ]; then
+		emit_capability appearance accessibility-input 'Keyboard and pointer access' unavailable read-only x11 \
+			'Input tools are installed, but no responsive XInput session is available'
+	else
+		emit_capability appearance accessibility-input 'Keyboard and pointer access' unavailable read-only x11 \
+			'Install xinput and the managed input Settings provider'
+	fi
 }
 
 emit_capability() {
@@ -224,9 +345,19 @@ discover() {
 			dwm-settings-display-root 'Live previews remain available; install the trusted root helper for persistence'
 	fi
 
-	if provider_available dwm-settings-input && provider_available xinput; then
+	if ! provider_available dwm-settings-input || ! provider_available xinput; then
+		input_discovery_state=missing
+	elif input_snapshot_valid; then
+		input_discovery_state=available
+	else
+		input_discovery_state=unready
+	fi
+	if [ "$input_discovery_state" = available ]; then
 		emit_capability input input-devices 'Input devices' available user-session \
 			dwm-settings-input 'Stable device discovery, preview, reset, and persistence are available'
+	elif [ "$input_discovery_state" = unready ]; then
+		emit_capability input input-devices 'Input devices' unavailable user-session \
+			dwm-settings-input 'Input tools are installed, but no responsive XInput session is available'
 	else
 		emit_capability input input-devices 'Input devices' unavailable user-session \
 			dwm-settings-input 'Install xinput and the managed input Settings provider'
@@ -321,8 +452,7 @@ discover() {
 		emit_capability appearance toolkit 'Cursor, icons and toolkits' partial read-only dwm-settings-toolkit \
 			'Toolkit choices are readable; finish the active appearance change before making another'
 	fi
-	emit_capability appearance accessibility Accessibility unsupported user-session x11 \
-		'Accessibility settings begin in Phase 5'
+	emit_accessibility_capabilities
 
 	if provider_available dwm-system-health; then
 		emit_capability system health 'System health' available read-only dwm-system-health \

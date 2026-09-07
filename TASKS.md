@@ -85,7 +85,7 @@ Acceptance:
 
 ### ACCESSIBILITY-001: Practical X11 Accessibility and Notification Policy
 
-- [ ] Define capability records for text scaling, contrast, reduced motion,
+- [x] Define capability records for text scaling, contrast, reduced motion,
   notification policy, and practical keyboard or pointer accessibility features
   available through supported Arch/X11 interfaces.
 - [ ] Add accessible Settings controls with keyboard navigation, visible focus,

@@ -37,6 +37,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `DWM_INSTALL_GRUB_THEME=false`; revert an applied theme with
   `lyona-grub-theme remove`.
 
+- Add text scaling, contrast, reduced motion, notification policy, and
+  keyboard/pointer accessibility capability records to `dwm-settings-provider
+  discover`, so Settings can report accessibility maturity per capability
+  instead of a single all-or-nothing accessibility state. Text scale is
+  probed live against `dwm-settings-font`; contrast and reduced motion report
+  static `partial`/`unsupported` states describing the semantic-theme
+  subsystem's current maturity; notification policy probes the D-Bus
+  notification owner; keyboard/pointer access reflects XInput discovery
+  readiness. Every emitted record is bounded and validated the same way as
+  the rest of `dwm-settings-provider`'s helper output.
+
 ### Changed
 
 - Increase the Settings window to 1180x760 and tighten its navigation rows,
@@ -56,6 +67,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `Exec=` parsing, and URL validation. A bare `Super+A` ChatGPT launch now
   prefers an installed desktop app and falls back to the web app only when
   asked to, without risking recursion back through the launcher.
+- Fix `dwm-settings-input`'s device scan silently reporting zero devices when
+  `xinput --list --short` failed outright, instead of surfacing the failure.
+  It now checks the command's exit status before parsing its output and
+  exits with `die` on failure.
 - Fix a race in `dwm-settings-appearance`'s inventory scanner: a named
   coprocess's PID and file-descriptor bookkeeping could be unset by bash
   before the caller read them, if the scan finished first. Replaced with
