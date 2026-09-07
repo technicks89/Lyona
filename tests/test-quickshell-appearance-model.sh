@@ -235,6 +235,11 @@ grep -Fq 'Math.max(104, outputContent.implicitHeight + 16)' "$display_pane"
 grep -Fq 'profileNameInput.implicitHeight + 12' "$display_pane"
 grep -Fq 'confirmationRow.implicitHeight + 16' "$display_pane"
 grep -Fq 'settingInput.implicitHeight + 14' "$input_pane"
+# Phase 7: XKB input accessibility (done -- see CHANGELOG.md).
+grep -Fq 'deviceCard.modelData.kind === "accessibility"' "$input_pane"
+grep -Fq 'accessibleDescription: settingRow.modelData.label + ". Starts a timed preview."' "$input_pane"
+grep -Fq 'if (settingsModel.previewKind !== "input") return;' "$shell_qml"
+grep -Fq 'if (settingsModel.previewOperationLocked) return;' "$shell_qml"
 if grep -Eq 'FileView|themes\.toml|function applyThemes' "$theme"; then
 	printf 'Theme.qml still owns theme file parsing instead of the shared AppearanceModel\n' >&2
 	exit 1

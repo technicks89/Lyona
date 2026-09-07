@@ -26,10 +26,16 @@ dwm_packages() {
 			pciutils gum
 		;;
 	arch:desktop-optional)
+		# xkbset (XKB AccessX controls -- sticky/slow/bounce/mouse keys) has
+		# no official-repo package; it is AUR-only. Listing it here, not in
+		# `desktop`, means the availability pre-check silently skips it
+		# instead of failing the whole required-package transaction.
+		# dwm-settings-input/dwm-settings-provider already degrade cleanly
+		# when it is absent; check-deps.sh reports it as missing.
 		printf '%s\n' \
 			thunar gvfs gvfs-smb tumbler thunar-archive-plugin file-roller \
 			xdg-user-dirs gnome-keyring networkmanager \
-			rsync
+			rsync xkbset
 		;;
 	arch:gaming)
 		if [[ ${ARCH:-$(uname -m)} == x86_64 ]]; then
