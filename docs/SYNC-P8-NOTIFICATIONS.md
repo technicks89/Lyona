@@ -2,7 +2,7 @@
 
 Upstream: [`#204`](https://github.com/ChrisTitusTech/dwm-titus/pull/204)
 `feat: add managed notification policy` (`ad47c20`, +1239 / -86).
-Depends on [Phase 4](SYNC-P4-A11Y-CAPABILITIES.md).
+Depends on Phase 4 (accessibility capability records, done — see `CHANGELOG.md`).
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
 Do-not-disturb, popup timeout, and per-urgency suppression — while preserving the
@@ -163,9 +163,11 @@ is open and stops when it closes:
 ## `scripts/dwm-settings-provider`
 
 Adds `watch-notifications` (the D-Bus owner watch backing the `Process` above) and
-folds notification-owner state into the capability records from
-[Phase 4](SYNC-P4-A11Y-CAPABILITIES.md). Keep the field validation established
-there — bounded lengths, whitelisted states, reject on any malformed row.
+folds notification-owner state into the `accessibility-notifications` capability
+record Phase 4 added (done — see `CHANGELOG.md`) — flipping it from `partial` to
+`available` once the owning process is confirmed to be the managed
+`dwm-notifications` provider. Keep the field validation established there —
+bounded lengths, whitelisted states, reject on any malformed row.
 
 ## `scripts/autostart.sh`
 

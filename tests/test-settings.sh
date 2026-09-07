@@ -68,17 +68,57 @@ make_preamble_appearance_stub() {
 	chmod +x "$path"
 }
 
+make_font_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' \
+		'printf "appearance-font-action-protocol\t1\t0\nprovider\tfont\tavailable\tuser-session\tFixture provider\nselection\tavailable\tSans\t1.25\tFixture text scale\n"' >"$path"
+	chmod +x "$path"
+}
+
+make_custom_font_stub() {
+	path=$1
+	payload=$2
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' "printf '%s\\n' '$payload'" >"$path"
+	chmod +x "$path"
+}
+
+make_hanging_font_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' "trap '' TERM" 'while :; do :; done' >"$path"
+	chmod +x "$path"
+}
+
+make_input_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' \
+		'printf "input-protocol\t1\nfuture-input-record\tappend-only-fixture\n"' >"$path"
+	chmod +x "$path"
+}
+
+make_malformed_input_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' 'printf "input-protocol\t2\n"' >"$path"
+	chmod +x "$path"
+}
+
 base_bin=$work/base-bin
 arch_bin=$work/arch-bin
 make_tools "$base_bin" dirname awk tr stat find grep timeout readlink
 cp -a "$base_bin" "$arch_bin"
 
 for command_name in xrandr nmcli bluetoothctl pactl xset gsettings light-locker \
-	xdg-settings xdg-mime xinput; do
+	xdg-settings xdg-mime xinput busctl; do
 	make_stub "$arch_bin/$command_name"
 done
 make_stub "$arch_bin/dwm-xdg-autostart"
 make_appearance_stub "$arch_bin/dwm-settings-appearance"
+make_font_stub "$arch_bin/dwm-settings-font"
+make_input_stub "$arch_bin/dwm-settings-input"
 make_stub "$arch_bin/dwm-settings-theme"
 make_stub "$arch_bin/inotifywait"
 make_failing_stub "$arch_bin/pkexec"
@@ -116,6 +156,135 @@ printf '%s\n' "$arch_output" | grep -Fqx \
 printf '%s\n' "$arch_output" | grep -Fqx \
 	'capability	appearance	themes	Themes	available	user-session	dwm-settings-theme	Theme inventory, bounded preview, apply, reset, and recovery are available'
 available_theme_record='capability	appearance	themes	Themes	available	user-session	dwm-settings-theme	Theme inventory, bounded preview, apply, reset, and recovery are available'
+
+printf '%s\n' "$arch_output" | grep -Fqx \
+	'capability	appearance	accessibility-text-scale	Text scaling	available	user-session	dwm-settings-font	Fixture text scale'
+printf '%s\n' "$arch_output" | grep -Fqx \
+	'capability	appearance	accessibility-contrast	High contrast	partial	read-only	quickshell-theme	Semantic colors are available; a dedicated high-contrast policy is not configured'
+printf '%s\n' "$arch_output" | grep -Fqx \
+	'capability	appearance	accessibility-reduced-motion	Reduced motion	unsupported	read-only	quickshell-theme	Managed shell animations do not yet expose a reduced-motion policy'
+printf '%s\n' "$arch_output" | grep -Fqx \
+	'capability	appearance	accessibility-notifications	Notification policy	partial	read-only	dbus	A notification D-Bus owner is active; managed policy controls are not configured'
+printf '%s\n' "$arch_output" | grep -Fqx \
+	'capability	appearance	accessibility-input	Keyboard and pointer access	partial	read-only	x11	Input discovery and settings are available; dedicated accessibility controls are not configured'
+[ "$(printf '%s\n' "$arch_output" |
+	grep -c '^capability	appearance	accessibility-')" -eq 5 ]
+
+# ── text scale: malformed, missing, hanging, and unavailable font provider ──
+
+incomplete_font_bin=$work/incomplete-font-bin
+cp -a "$arch_bin" "$incomplete_font_bin"
+make_custom_font_stub "$incomplete_font_bin/dwm-settings-font" \
+	"$(printf 'appearance-font-action-protocol\t1\t0\nselection\tavailable\tSans\t1.25\tIncomplete status shape')"
+incomplete_font_output=$(PATH="$incomplete_font_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$incomplete_font_output" | grep -Fqx \
+	'capability	appearance	accessibility-text-scale	Text scaling	unavailable	user-session	dwm-settings-font	The font provider returned an unsupported response'
+
+for malformed_text_scale_case in empty-detail malformed-state duplicate-provider duplicate-selection malformed-header; do
+	malformed_text_scale_bin=$work/malformed-text-scale-$malformed_text_scale_case-bin
+	cp -a "$arch_bin" "$malformed_text_scale_bin"
+	case $malformed_text_scale_case in
+	empty-detail)
+		malformed_text_scale_payload=$(printf \
+			'appearance-font-action-protocol\t1\t0\nprovider\tfont\tavailable\tuser-session\tFixture provider\nselection\tavailable\tSans\t1.25\t')
+		;;
+	malformed-state)
+		malformed_text_scale_payload=$(printf \
+			'appearance-font-action-protocol\t1\t0\nprovider\tfont\tavailable\tuser-session\tFixture provider\nselection\tbogus\tSans\t1.25\tMalformed state')
+		;;
+	duplicate-provider)
+		malformed_text_scale_payload=$(printf \
+			'appearance-font-action-protocol\t1\t0\nprovider\tfont\tavailable\tuser-session\tFirst\nprovider\tfont\tavailable\tuser-session\tSecond\nselection\tavailable\tSans\t1.25\tDuplicate provider')
+		;;
+	duplicate-selection)
+		malformed_text_scale_payload=$(printf \
+			'appearance-font-action-protocol\t1\t0\nprovider\tfont\tavailable\tuser-session\tFixture provider\nselection\tavailable\tSans\t1.25\tFirst\nselection\tavailable\tSans\t1.25\tSecond')
+		;;
+	malformed-header)
+		malformed_text_scale_payload=$(printf \
+			'not-a-font-action-protocol\nprovider\tfont\tavailable\tuser-session\tFixture provider\nselection\tavailable\tSans\t1.25\tMalformed header')
+		;;
+	esac
+	make_custom_font_stub "$malformed_text_scale_bin/dwm-settings-font" "$malformed_text_scale_payload"
+	malformed_text_scale_output=$(PATH="$malformed_text_scale_bin" XDG_CONFIG_HOME="$work/arch-config" \
+		DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+	printf '%s\n' "$malformed_text_scale_output" | grep -Fqx \
+		'capability	appearance	accessibility-text-scale	Text scaling	unavailable	user-session	dwm-settings-font	The font provider returned an unsupported response'
+done
+
+unavailable_text_scale_bin=$work/unavailable-text-scale-bin
+cp -a "$arch_bin" "$unavailable_text_scale_bin"
+make_custom_font_stub "$unavailable_text_scale_bin/dwm-settings-font" \
+	"$(printf 'appearance-font-action-protocol\t1\t0\nprovider\tfont\tavailable\tuser-session\tFixture provider\nselection\tunavailable\tSans\t1.25\tConfigured font family is not installed: Sans')"
+unavailable_text_scale_output=$(PATH="$unavailable_text_scale_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$unavailable_text_scale_output" | grep -Fqx \
+	'capability	appearance	accessibility-text-scale	Text scaling	unavailable	user-session	dwm-settings-font	Configured font family is not installed: Sans'
+
+hanging_font_bin=$work/hanging-font-bin
+cp -a "$arch_bin" "$hanging_font_bin"
+make_hanging_font_stub "$hanging_font_bin/dwm-settings-font"
+hanging_font_output=$(PATH="$hanging_font_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
+	timeout --signal=KILL 10 "$provider" discover)
+printf '%s\n' "$hanging_font_output" | grep -Fqx \
+	'capability	appearance	accessibility-text-scale	Text scaling	unavailable	user-session	dwm-settings-font	The font provider is not responding'
+
+missing_font_bin=$work/missing-font-bin
+cp -a "$arch_bin" "$missing_font_bin"
+rm -f "$missing_font_bin/dwm-settings-font"
+missing_font_provider_dir=$work/missing-font-provider
+mkdir "$missing_font_provider_dir"
+cp "$provider" "$missing_font_provider_dir/dwm-settings-provider"
+missing_font_output=$(PATH="$missing_font_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
+	"$missing_font_provider_dir/dwm-settings-provider" discover)
+printf '%s\n' "$missing_font_output" | grep -Fqx \
+	'capability	appearance	accessibility-text-scale	Text scaling	unavailable	user-session	dwm-settings-font	Install the managed font provider'
+
+# ── keyboard/pointer accessibility follows input-devices discovery ──
+
+missing_accessibility_input_bin=$work/missing-accessibility-input-bin
+cp -a "$arch_bin" "$missing_accessibility_input_bin"
+rm -f "$missing_accessibility_input_bin/xinput"
+missing_accessibility_input_output=$(PATH="$missing_accessibility_input_bin" \
+	XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$missing_accessibility_input_output" | grep -Fqx \
+	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	read-only	x11	Install xinput and the managed input Settings provider'
+printf '%s\n' "$missing_accessibility_input_output" | grep -Fqx \
+	'capability	input	input-devices	Input devices	unavailable	user-session	dwm-settings-input	Install xinput and the managed input Settings provider'
+
+unready_accessibility_input_bin=$work/unready-accessibility-input-bin
+cp -a "$arch_bin" "$unready_accessibility_input_bin"
+make_failing_stub "$unready_accessibility_input_bin/dwm-settings-input"
+unready_accessibility_input_output=$(PATH="$unready_accessibility_input_bin" \
+	XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$unready_accessibility_input_output" | grep -Fqx \
+	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	read-only	x11	Input tools are installed, but no responsive XInput session is available'
+printf '%s\n' "$unready_accessibility_input_output" | grep -Fqx \
+	'capability	input	input-devices	Input devices	unavailable	user-session	dwm-settings-input	Input tools are installed, but no responsive XInput session is available'
+
+malformed_accessibility_input_bin=$work/malformed-accessibility-input-bin
+cp -a "$arch_bin" "$malformed_accessibility_input_bin"
+make_malformed_input_stub "$malformed_accessibility_input_bin/dwm-settings-input"
+malformed_accessibility_input_output=$(PATH="$malformed_accessibility_input_bin" \
+	XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$malformed_accessibility_input_output" | grep -Fqx \
+	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	read-only	x11	Input tools are installed, but no responsive XInput session is available'
+
+# ── notifications: no D-Bus owner observable ──
+
+no_notification_owner_bin=$work/no-notification-owner-bin
+cp -a "$arch_bin" "$no_notification_owner_bin"
+make_failing_stub "$no_notification_owner_bin/busctl"
+no_notification_owner_output=$(PATH="$no_notification_owner_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$no_notification_owner_output" | grep -Fqx \
+	'capability	appearance	accessibility-notifications	Notification policy	unavailable	read-only	dbus	No notification D-Bus owner is observable in this session'
 
 unsafe_theme_bin=$work/unsafe-theme-bin
 cp -a "$arch_bin" "$unsafe_theme_bin"

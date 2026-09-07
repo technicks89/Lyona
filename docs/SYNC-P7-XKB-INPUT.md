@@ -2,7 +2,7 @@
 
 Upstream: [`#203`](https://github.com/ChrisTitusTech/dwm-titus/pull/203)
 `Phase 5: add XKB accessibility controls` (`8b846fb`, +608 / -82).
-Depends on [Phase 4](SYNC-P4-A11Y-CAPABILITIES.md).
+Depends on Phase 4 (accessibility capability records, done — see `CHANGELOG.md`).
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
 Sticky keys, slow keys, bounce keys and mouse keys, over `xkbset`. Independent of
@@ -150,9 +150,15 @@ a `die` that takes the whole `discover` down. Lyona's existing pattern at
 	emit_unsupported "$key" accessibility "xkbset is unavailable"
 ```
 
-The capability record from [Phase 4](SYNC-P4-A11Y-CAPABILITIES.md) reports
-`restricted` for a present-but-unreachable X display and `unavailable` for a missing
-`xkbset`, so the two failures stay distinguishable in Settings.
+Correction against what Phase 4 actually shipped (done — see `CHANGELOG.md`): its
+`accessibility-input` capability record is `partial`/`unavailable`/`unavailable`
+driven only by `input_discovery_state` (`available`/`unready`/else) — it has no
+`restricted` state, and does not look at `xkbset` at all. This phase is what adds
+that: flip the `partial` case to `available` when `xkbset` is present, the XKB
+accessibility snapshot validates, and `xkbset q` succeeds; add a new
+`unavailable`/`user-session` case for "`xkbset` installed but not fully responsive";
+and leave Phase 4's two `unavailable`/`x11` cases (missing `xkbset`, unready X) as
+they are, so the two failure modes stay distinguishable in Settings.
 
 ## Verification
 
@@ -180,5 +186,5 @@ Manual, in a live X session:
 ## Closes
 
 Part of `TASKS.md:88` (the keyboard-accessibility capability, whose record
-[Phase 4](SYNC-P4-A11Y-CAPABILITIES.md) defined) and the input half of
+Phase 4 defined, done — see `CHANGELOG.md`) and the input half of
 `TASKS.md:91`.

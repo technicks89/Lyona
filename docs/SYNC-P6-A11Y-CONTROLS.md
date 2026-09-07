@@ -2,7 +2,7 @@
 
 Upstream: [`#202`](https://github.com/ChrisTitusTech/dwm-titus/pull/202)
 `Phase 5: add accessibility Settings controls` (`28a374f`, +811 / -127).
-Depends on [Phase 4](SYNC-P4-A11Y-CAPABILITIES.md) and
+Depends on Phase 4 (accessibility capability records, done — see CHANGELOG.md) and
 [Phase 5](SYNC-P5-CONTRAST-MOTION.md).
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
@@ -204,10 +204,9 @@ emits a `mutation\t{available|unavailable}\tDETAIL` row, so the pane can disting
 "you cannot change this" from "this is off".
 
 `scripts/dwm-settings-provider` (+91) folds that state into the contrast and
-reduced-motion capability records added in
-[Phase 4](SYNC-P4-A11Y-CAPABILITIES.md). Keep the field-validation style already
-established there — bounded lengths, whitelisted states, reject on any malformed
-row.
+reduced-motion capability records Phase 4 added (done — see `CHANGELOG.md`). Keep
+the field-validation style already established there — bounded lengths,
+whitelisted states, reject on any malformed row.
 
 ## `config/quickshell/shell.qml`
 

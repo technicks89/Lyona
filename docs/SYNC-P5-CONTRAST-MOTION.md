@@ -2,7 +2,7 @@
 
 Upstream: [`#201`](https://github.com/ChrisTitusTech/dwm-titus/pull/201)
 `Phase 5: add contrast and motion policy` (`eed7625`, +1138 / -48).
-Depends on [Phase 4](SYNC-P4-A11Y-CAPABILITIES.md).
+Depends on Phase 4 (accessibility capability records, done — see `CHANGELOG.md`).
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
 This is the phase with the largest Lyona-specific adaptation, because it edits
@@ -340,6 +340,12 @@ Manual, in a live session:
 `TASKS.md:93` — *Apply reduced-motion and contrast choices consistently to managed
 [surfaces]*.
 
-Also flips the contrast and reduced-motion capability records added in
-[Phase 4](SYNC-P4-A11Y-CAPABILITIES.md) from `unavailable` to `available`; assert
-that transition in `tests/test-settings.sh`.
+Note, corrected against what Phase 4 actually shipped (done — see `CHANGELOG.md`):
+its contrast and reduced-motion capability records are **static** placeholders —
+`partial`/`quickshell-theme` and `unsupported`/`quickshell-theme` — describing the
+subsystem's general maturity, decoupled from whether `dwm-accessibility-settings`
+exists. **This phase does not flip them and does not touch
+`scripts/dwm-settings-provider` at all** — confirmed against upstream's actual
+`#201`, which doesn't either. The flip to a live, mutation-state-aware capability
+is [Phase 6](SYNC-P6-A11Y-CONTROLS.md)'s work (`accessibility_mutation_state()`,
+upstream `#202`), not this one.
