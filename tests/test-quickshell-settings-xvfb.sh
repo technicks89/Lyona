@@ -376,6 +376,17 @@ if [ "${1:-}" = preview-status ] && [ -f "$fixture" ]; then
 	esac
 	exit 0
 fi
+if [ "${1:-}" = mutation-ready ] && [ -f "$fixture.mutation-delay" ]; then
+	printf x >>"$fixture.mutation-calls"
+	if [ ! -f "$fixture.mutation-started" ]; then
+		: >"$fixture.mutation-started"
+		i=0
+		while [ ! -f "$fixture.mutation-release" ] && [ "$i" -lt 500 ]; do
+			i=$((i + 1))
+			sleep 0.01
+		done
+	fi
+fi
 exec "$(dirname -- "$0")/dwm-settings-theme.real" "$@"
 SH
 chmod +x "$data_home/lyona/scripts/dwm-settings-theme"
@@ -476,6 +487,9 @@ cat >"$data_home/lyona/scripts/busctl" <<'SH'
 #!/bin/sh
 set -eu
 case $* in
+'--user '*)
+	PATH=/usr/bin:/bin exec busctl "$@"
+	;;
 '--system --json=short call org.bluez / org.freedesktop.DBus.ObjectManager GetManagedObjects')
 	cat <<'JSON'
 {"type":"a{oa{sa{sv}}}","data":[{"/org/bluez/hci0":{"org.bluez.Adapter1":{"Address":{"type":"s","data":"00:11:22:33:44:55"},"Alias":{"type":"s","data":"Test Adapter"},"Powered":{"type":"b","data":true},"Discovering":{"type":"b","data":false},"Pairable":{"type":"b","data":true}}}}]}
@@ -2205,6 +2219,48 @@ if [ "$preview_status_calls" -gt 5 ]; then
 fi
 rm -f "$theme_status_fixture.started" "$theme_status_fixture.calls"
 printf '%s\n' none >"$theme_status_fixture"
+
+test_stage='validating queued theme readiness'
+rm -f "$theme_status_fixture.mutation-started" "$theme_status_fixture.mutation-release"
+: >"$theme_status_fixture.mutation-calls"
+: >"$theme_status_fixture.mutation-delay"
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceRefresh >/dev/null
+i=0
+while [ "$i" -lt 200 ]; do
+	[ -f "$theme_status_fixture.mutation-started" ] && break
+	i=$((i + 1))
+	sleep 0.01
+done
+if [ ! -f "$theme_status_fixture.mutation-started" ]; then
+	printf 'Delayed theme readiness probe did not start\n' >&2
+	exit 1
+fi
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceRefresh >/dev/null
+readiness_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMutationReady 2>/dev/null || true)
+if [ "$readiness_ready" != false ]; then
+	printf 'Theme mutation remained ready while a refresh retry was pending\n' >&2
+	exit 1
+fi
+: >"$theme_status_fixture.mutation-release"
+i=0
+while [ "$i" -lt 200 ]; do
+	readiness_calls=$(wc -c <"$theme_status_fixture.mutation-calls")
+	readiness_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMutationReady 2>/dev/null || true)
+	[ "$readiness_calls" -ge 2 ] && [ "$readiness_ready" = true ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$readiness_calls" -lt 2 ] || [ "$readiness_ready" != true ]; then
+	printf 'Queued theme readiness did not converge: calls=%s ready=%s\n' \
+		"$readiness_calls" "$readiness_ready" >&2
+	exit 1
+fi
+rm -f "$theme_status_fixture.mutation-delay" "$theme_status_fixture.mutation-started" \
+	"$theme_status_fixture.mutation-release" "$theme_status_fixture.mutation-calls"
 
 mv "$config_home/lyona/themes.toml" "$work/named-themes.toml"
 mv "$data_home/lyona/config/themes.toml" "$work/managed-themes.toml"

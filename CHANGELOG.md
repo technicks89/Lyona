@@ -89,6 +89,33 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   automatically only when already resolvable, and every code path degrades
   cleanly to an explicit unsupported state when it is absent.
 
+- Add a managed notification policy: Do Not Disturb and a configurable popup
+  duration (4/6/10 seconds), in a new Settings → Appearance → Notifications
+  section. The existing D-Bus notification owner is never touched -- the
+  policy gates which popups *display*, not which notifications are
+  *received*, so history keeps recording everything even while Do Not
+  Disturb is on. Critical-urgency notifications always show regardless of
+  the policy. The policy fails closed: an unreadable or malformed policy
+  file suppresses all non-critical popups rather than defaulting to
+  "show everything." `dwm-settings-provider`'s `accessibility-notifications`
+  capability now inspects the real D-Bus owner process (via
+  `/proc/<pid>/exe` and its Quickshell config selectors) to confirm it is
+  actually the managed Lyona shell before reporting `available`, rather
+  than just checking that some owner exists.
+
+- Replace the Displays pane's single mode-cycling button with dependent
+  resolution and refresh-rate dropdowns, and replace immediate mode changes
+  with an explicit **Apply changes** step: a 15-second countdown, **Keep
+  changes** to confirm, or **Revert**/timeout/closing Settings to restore the
+  captured layout automatically. `ShellButton` gains a `primary` visual state
+  for the Apply/Keep/Use-at-next-login actions. Saved layouts are relabeled
+  from implementation-oriented wording ("Profile", "Install persistent",
+  "Rollback system") to "Layout name", "Use at next login", and "Restore
+  login backup". `AppearanceModel`'s theme-mutation readiness probe now
+  queues and re-checks itself instead of racing a concurrent action or
+  refresh, so a refresh that lands while a readiness check or mutation is
+  already running no longer reports a stale `mutationReady` value.
+
 ### Security
 
 - `install-mybash`'s Starship fallback no longer pipes a remote script

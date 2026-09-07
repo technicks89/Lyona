@@ -457,7 +457,11 @@ fi
 [ -z "$systemctl_import_pid" ] || wait "$systemctl_import_pid"
 [ -z "$dbus_import_pid" ] || wait "$dbus_import_pid"
 
-QUICKSHELL_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml"
+case ${XDG_CONFIG_HOME:-} in
+/*) quickshell_config_home=$XDG_CONFIG_HOME ;;
+*) quickshell_config_home=${HOME:?HOME is required for XDG_CONFIG_HOME fallback}/.config ;;
+esac
+QUICKSHELL_CONFIG=$quickshell_config_home/quickshell/shell.qml
 if [ -f "$QUICKSHELL_CONFIG" ]; then
 	quickshell_check=
 	quickshell_compatible=0

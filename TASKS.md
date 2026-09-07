@@ -93,7 +93,7 @@ Acceptance:
 - [x] Apply reduced-motion and contrast choices consistently to managed
   Quickshell surfaces without introducing a Wayland, compositor, or polling
   dependency.
-- [ ] Add notification behavior controls that preserve the existing D-Bus owner,
+- [x] Add notification behavior controls that preserve the existing D-Bus owner,
   history lifecycle, urgency semantics, and safe failure isolation.
 
 Acceptance:
