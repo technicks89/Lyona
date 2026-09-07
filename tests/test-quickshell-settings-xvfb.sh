@@ -272,6 +272,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-appearance" "$repo/scripts/dwm-settings-wallpaper" \
 	"$repo/scripts/dwm-settings-font" \
 	"$repo/scripts/dwm-settings-theme" \
+	"$repo/scripts/dwm-accessibility-settings" \
 	"$repo/scripts/theme-apply.sh" \
 	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$data_home/lyona/scripts/"
 
@@ -783,6 +784,64 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 [ "$ui_scale" = 1.5000 ]
+
+# A theme change must still apply while a contrast override is active, and
+# must not clear the override. This is the whole reason Theme.qml's
+# paletteTextMuted split exists -- see docs/SYNC-P5-CONTRAST-MOTION.md.
+XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-accessibility-settings" set contrast high >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	high_contrast=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeHighContrast 2>/dev/null || true)
+	[ "$high_contrast" = true ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$high_contrast" = true ]
+
+before_text=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor text)
+
+# Apply a theme with a demonstrably different palette and require that the
+# palette moved, the override survived, and muted text stayed pinned to text.
+XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-settings-theme" apply dracula >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	after_text=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor text 2>/dev/null || true)
+	[ -n "$after_text" ] && [ "$after_text" != "$before_text" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ -n "$after_text" ] && [ "$after_text" != "$before_text" ]
+
+high_contrast=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeHighContrast)
+[ "$high_contrast" = true ]
+text_muted=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor textMuted)
+[ "$text_muted" = "$after_text" ]
+
+# With the override off, muted text must follow the theme again.
+XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-accessibility-settings" set contrast standard >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	text_muted=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor textMuted 2>/dev/null || true)
+	[ "$text_muted" != "$after_text" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$text_muted" != "$after_text" ]
+
+# Restore, so nothing later in this file observes the previewed theme or override.
+XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-accessibility-settings" reset >/dev/null
+XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-settings-theme" apply nord >/dev/null
 
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
