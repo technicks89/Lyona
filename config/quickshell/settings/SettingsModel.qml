@@ -24,6 +24,7 @@ Scope {
     property var defaultsModel: null
     property var autostartModel: null
     property var appearanceModel: null
+    property var panelSettingsModel: null
     property var capabilities: []
     property int selectedIndex: 0
     property var displayOutputs: []
@@ -178,6 +179,7 @@ Scope {
             if (wantAppearance && !root.appearanceModel.settingsVisible) root.appearanceModel.openSettings();
             else if (!wantAppearance && root.appearanceModel.settingsVisible) root.appearanceModel.closeSettings();
         }
+        if (id === "appearance" && root.panelSettingsModel) root.panelSettingsModel.refresh();
         if (id === "displays") root.refreshDisplays();
         if (id === "input") root.refreshInput();
     }
@@ -538,6 +540,8 @@ Scope {
     }
 
     function refresh() {
+        if (root.visible && root.selectedSectionId === "appearance" && root.panelSettingsModel)
+            root.panelSettingsModel.refresh();
         if (!root.visible || providerProcess.running) return;
         root.busy = true;
         root.discoveryState = "loading";

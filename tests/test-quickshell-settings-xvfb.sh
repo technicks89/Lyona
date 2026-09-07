@@ -3,6 +3,9 @@ set -eu
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+screen_geometry=${DWM_SETTINGS_TEST_SCREEN_GEOMETRY:-1280x800x24}
+expected_window_width=${DWM_SETTINGS_EXPECTED_WINDOW_WIDTH:-1180}
+expected_window_height=${DWM_SETTINGS_EXPECTED_WINDOW_HEIGHT:-760}
 
 for command_name in Xvfb dbus-monitor dbus-run-session glib-compile-schemas \
 	gsettings inotifywait quickshell xdotool xinput xprop pgrep getconf; do
@@ -539,7 +542,7 @@ esac
 SH
 chmod +x "$data_home/lyona/scripts/xset"
 
-Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
+Xvfb "$display" -screen 0 "$screen_geometry" -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 xvfb_identity=$(capture_process_identity "$xvfb_pid")
 
@@ -701,8 +704,8 @@ width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
 height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
 x=$(printf '%s\n' "$geometry" | awk -F= '$1 == "X" { print $2 }')
 y=$(printf '%s\n' "$geometry" | awk -F= '$1 == "Y" { print $2 }')
-[ "$width" = 980 ]
-[ "$height" = 620 ]
+[ "$width" = "$expected_window_width" ]
+[ "$height" = "$expected_window_height" ]
 
 i=0
 while [ "$i" -lt 100 ]; do

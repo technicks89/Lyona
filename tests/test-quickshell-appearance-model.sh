@@ -211,17 +211,18 @@ grep -Fq 'Theme preview completed outside Settings' "$model"
 grep -Fq 'function applyAppearanceColors(colors, darkMode)' "$theme"
 grep -Fq 'function applyFontPreferences(family, scale)' "$theme"
 grep -Fq 'readonly property string iconFontFamily: "MesloLGS Nerd Font Mono"' "$theme"
-grep -Fq 'readonly property int panelIconFontSize: 13' "$theme"
+grep -Fq 'readonly property int panelIconFontSize: dp(13)' "$theme"
 grep -Fq 'font.pixelSize: Theme.panelIconFontSize + 1' "$icon_text"
 test "$(grep -Fc 'Theme.panelIconFontSize' "$panel")" -eq 5
-grep -Fq 'Math.round(13 * fontScale)' "$theme"
+grep -Fq 'Math.round(13 * fontScale * uiScale)' "$theme"
 test "$(grep -Ec 'font\.pixelSize: Theme\.(bodyFontSize|inputFontSize)' "$display_pane")" -eq 9
 test "$(grep -Ec 'font\.pixelSize: Theme\.(bodyFontSize|inputFontSize)' "$input_pane")" -eq 5
 grep -Fq 'font.pixelSize: Theme.inputFontSize' "$network_pane"
 grep -Fq 'passwordInput.implicitHeight + 2 * Theme.spacingSm' "$network_pane"
-grep -Fq 'xPositionInput.implicitHeight + 14' "$display_pane"
-grep -Fq 'yPositionInput.implicitHeight + 14' "$display_pane"
-grep -Fq 'profileNameInput.implicitHeight + 16' "$display_pane"
+grep -Fq 'xPositionInput.implicitHeight + 10' "$display_pane"
+grep -Fq 'yPositionInput.implicitHeight + 10' "$display_pane"
+grep -Fq 'Math.max(104, outputContent.implicitHeight + 16)' "$display_pane"
+grep -Fq 'profileNameInput.implicitHeight + 12' "$display_pane"
 grep -Fq 'confirmationRow.implicitHeight + 16' "$display_pane"
 grep -Fq 'settingInput.implicitHeight + 14' "$input_pane"
 if grep -Eq 'FileView|themes\.toml|function applyThemes' "$theme"; then
