@@ -121,6 +121,29 @@ inventory=$(HOME=$home PATH=$bin_dir XDG_CONFIG_HOME=$config_home \
 	DWM_APPEARANCE_WALLPAPER_DIR=$wallpaper_dir QT_QPA_PLATFORMTHEME=qt6ct \
 	"$helper" inventory)
 
+# Force the inventory-stream producer to exit before the parent shell resumes
+# after spawning it -- the exact race start_inventory_stream's process
+# substitution (rather than a named coprocess) exists to survive. A DEBUG
+# trap fires right before `inventory_stream_pid=$!` executes and waits out
+# the producer first, so by the time that assignment runs, $! already refers
+# to a finished process. $! stays valid regardless -- unlike a named
+# coprocess's PID variable, which bash can unset once the coprocess is
+# reaped.
+race_env=$work/stream-race.env
+race_marker=$work/stream-race.marker
+cat >"$race_env" <<'EOF'
+set -T
+trap 'case $BASH_COMMAND in inventory_stream_pid=\$*) stream_wait_status=0; wait "$!" || stream_wait_status=$?; printf "%s\n" "$stream_wait_status" >>"$DWM_TEST_STREAM_RACE_MARKER" ;; esac' DEBUG
+EOF
+race_inventory=$(HOME=$home PATH=$bin_dir XDG_CONFIG_HOME=$config_home \
+	XDG_DATA_HOME=$data_root DWM_APPEARANCE_DATA_DIRS=$data_root \
+	DWM_APPEARANCE_WALLPAPER_DIR=$wallpaper_dir QT_QPA_PLATFORMTHEME=qt6ct \
+	BASH_ENV=$race_env DWM_TEST_STREAM_RACE_MARKER=$race_marker "$helper" inventory)
+[[ -s $race_marker && $(sort -u "$race_marker") == 0 && $race_inventory == "$inventory" ]] || {
+	printf 'Fast inventory producer lost its stream or bypassed the startup race fixture\n' >&2
+	exit 1
+}
+
 ln -s "$helper" "$bin_dir/dwm-settings-appearance"
 bare_inventory=$(
 	cd "$work"

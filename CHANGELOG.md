@@ -44,6 +44,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   visible without reducing the configured text scale. Clamp the enlarged
   window to the active screen on smaller outputs.
 
+### Fixed
+
+- Fix `scripts/webapp-launch`, which never worked for a user-scoped browser
+  install: unquoted brace expansion ran before tilde expansion, so
+  `~/.local/share/applications` and `~/.nix-profile/share/applications` were
+  never actually searched, only `/usr/share/applications`. The browser
+  resolution was also unquoted (word-split a path containing a space) and
+  parsed `Exec=` with a `sed` pattern that mishandled quoted or
+  backslash-escaped values. Rewritten with proper quoting, spec-correct
+  `Exec=` parsing, and URL validation. A bare `Super+A` ChatGPT launch now
+  prefers an installed desktop app and falls back to the web app only when
+  asked to, without risking recursion back through the launcher.
+- Fix a race in `dwm-settings-appearance`'s inventory scanner: a named
+  coprocess's PID and file-descriptor bookkeeping could be unset by bash
+  before the caller read them, if the scan finished first. Replaced with
+  process substitution, which captures its PID synchronously and keeps it
+  valid regardless of whether the process has since exited. The scan also no
+  longer inherits the parent shell's stdin.
+
 ## [2026.08.0-beta.1] - 2026-08-28
 
 First beta of the Arch Linux line. See
