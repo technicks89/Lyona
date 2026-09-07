@@ -263,6 +263,67 @@ than porting upstream's inline version; four models depend on it.
 
 ---
 
+## 1d — Port `#246`'s incidental coprocess-race fix
+
+Found during the 2026-09-06 upstream re-survey (`docs/UPSTREAM-SYNC.md`), riding
+along in a commit that is otherwise Phase 10 (`SYNC-P10-SYSTEM-MANAGEMENT.md`)
+territory — `feat(system): add bounded printer service reader (#246)`. The printer
+half is out of scope here; this one hunk touches `scripts/dwm-settings-appearance`,
+unrelated to system management, and is small and independent enough to fold into
+this standalone-fixes phase rather than waiting on Phase 10's much larger,
+still-deferred boundary.
+
+### Context
+
+`start_inventory_stream()` in `dwm-settings-appearance` used a named coprocess
+(`coproc DWM_INVENTORY_STREAM { ... }`) to run a bounded `timeout` scan and read its
+output asynchronously. Bash can unset a *completed* named coprocess's `_PID` and
+fd-array variables before the calling code reads them — a real race, not
+theoretical — so `inventory_stream_pid=$DWM_INVENTORY_STREAM_PID` could pick up
+stale or empty state if the producer finished (or was reaped) between the `coproc`
+statement and the following line. The inner `timeout` invocation also had no
+`</dev/null`, so the child inherited the parent shell's stdin — a problem if
+anything downstream ever read from it unexpectedly.
+
+### Fix
+
+Ported verbatim — Lyona's copy of `dwm-settings-appearance` has the identical
+`start_inventory_stream()` at the same call site:
+
+```diff
+--- a/scripts/dwm-settings-appearance
++++ b/scripts/dwm-settings-appearance
+@@
+ start_inventory_stream() {
+ 	stop_inventory_stream cancel
+-	coproc DWM_INVENTORY_STREAM {
++	# Own the read descriptor even if the producer exits before this shell
++	# resumes. Bash can unset a completed named coprocess's PID and fd array.
++	exec {inventory_stream_fd}< <(
+ 		exec timeout --signal=TERM --kill-after=1 \
+-			"$max_inventory_scan_seconds" "$@" 2>/dev/null
+-	}
+-	inventory_stream_pid=$DWM_INVENTORY_STREAM_PID
+-	exec {inventory_stream_fd}<&"${DWM_INVENTORY_STREAM[0]}"
++			"$max_inventory_scan_seconds" "$@" </dev/null 2>/dev/null
++	)
++	inventory_stream_pid=$!
+ }
+```
+
+Process substitution (`< <(...)`) replaces the named coprocess entirely: `$!`
+after `exec {fd}< <(...)` is the substituted command's PID, captured
+synchronously in the same statement — no window where a second statement reads
+stale coprocess bookkeeping. `</dev/null` on the inner `timeout` stops the
+producer from inheriting the parent's stdin.
+
+Port alongside it: upstream's matching test hardening in
+`tests/test-quickshell-settings-xvfb.sh` (the commit's third message line,
+`test(appearance): verify inventory race wait statuses`) — a race-simulation
+assertion worth carrying over even though the QML-facing behavior doesn't change.
+
+---
+
 ## Verification
 
 ```bash

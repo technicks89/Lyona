@@ -1,14 +1,16 @@
-# Sync Phase 10 — system management (OS package updates)
+# Sync Phase 10 — system management (OS package updates and regional services)
 
-Upstream: `#207`–`#228` (merged) and
-[PR #229](https://github.com/ChrisTitusTech/dwm-titus/pull/229)
-`feat(system): recover exact PackageKit operation evidence` (open at survey time).
-Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
+Upstream: `#207`–`#253` (all merged; **zero open PRs** as of the 2026-09-06
+re-survey — see "Re-survey before starting" below for what changed since the
+original 2026-09-05 survey). Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
 **Planned, scheduled after Lyona's own Phase 6.** This is the largest single body of
-upstream work — ~12,200 lines, roughly half of everything upstream landed after the
-fork — and it is the one place where a straight port is impossible: the whole thing
-is written against PackageKit on Fedora.
+upstream work — **over 26,800 lines** across 47 commits (updated from the original
+~12,200-line estimate after the 2026-09-06 re-survey found 25 more commits) — and it
+is the one place where a straight port is impossible: the whole thing is written
+against PackageKit on Fedora, plus (as of the re-survey) a second, mostly
+distro-agnostic domain — timezone/NTP/locale/accounts/printer/repository management
+— layered onto the same file and journal.
 
 This document plans the Arch port properly, so the work is ready to start when its
 prerequisites land.
@@ -268,7 +270,10 @@ Each is one reviewable commit, in order.
 | **— decision point —** | See below | | |
 | **SM-005** | Durable operation journal | `#211`–`#223` | ~2,780 |
 | **SM-006** | Execution owner, restart evidence | `#224`–`#228` | ~1,300 |
-| **SM-007** | Operation UI, recovery surfaces | `#229` + upstream's remaining work | ~700 |
+| **SM-007** | Operation UI, recovery surfaces, cancellation, live confirmation | `#229`–`#241` | ~7,700 (was estimated ~700; corrected after the 2026-09-06 re-survey — see below) |
+| **SM-008** | Regional services contract: `timedate1`/`locale1` D-Bus wiring, capability records | `#242`–`#244` | ~1,300 |
+| **SM-009** | Timezone/NTP/locale mutation, narrow non-cancelable-dispatch semantics | `#247`, `#253` | ~860 |
+| **SM-010** | Read-only AccountsService/printer/repository readers; delegate actions | `#245`, `#246`, `#248`–`#252` | ~4,700 |
 
 ### The decision point after SM-004
 
@@ -300,6 +305,53 @@ So the honest options at that point are:
 
 **The recommendation is option 2**, revisited with SM-004 shipped and real usage
 behind it. Record the decision here when it is made.
+
+---
+
+## SM-008/009/010 — regional services (added 2026-09-06)
+
+Upstream built a second domain in the same file after the original survey:
+timezone, NTP, and system locale, mutated through systemd's own `timedate1`/`locale1`
+D-Bus interfaces (`#242`–`#244`, `#247`, `#253`), plus read-only readers for
+`AccountsService`, CUPS/printers, and pacman repositories (`#245`, `#246`, `#248`–`#252`).
+This is exactly the scope this document originally declined — see "Packages," below,
+which still says *"Not ported. Lyona's profile covers updates only"* about
+`accountsservice`/`cups`. Upstream has since built that declined scope, in the same
+script, reusing the same journal/ownership-lease/cancellation machinery SM-005/006
+already plan to port.
+
+**This is more portable than the rest of Phase 10, not less.** `timedate1` and
+`locale1` are standard systemd D-Bus interfaces present on any systemd distro —
+Arch included — not a Fedora/dnf-specific dependency the way PackageKit is.
+`AccountsService` and CUPS are likewise cross-distro. Only the "bounded repository
+reader" (`#248`) is package-manager-specific and needs the same `PacmanBackend`-style
+treatment as SM-002.
+
+Two patterns worth adopting verbatim when SM-009 is written:
+
+- **The narrow non-cancelable-dispatch exception (`#247`).** `timezone-set`/
+  `ntp-set`/`locale-set` dispatch to `timedate1`/`locale1` and can't be canceled
+  once sent. Rather than silently breaking the "every privileged action is
+  cancelable" invariant, upstream added a documented, narrow exception: the
+  *confirmation* stays cancelable, the *dispatched call* does not, and an ambiguous
+  post-dispatch result must report `interrupted` — never fabricate success or
+  cancellation. Adopt the same rule (and the same documented-exception pattern,
+  not a silent one) for Lyona's `SPEC.md`/`ROADMAP.md` if SM-009 needs it.
+- **Delegate, don't reimplement.** `accounts-open`/`printers-open`/`sources-open`
+  launch the existing external privileged GUI tool rather than rebuilding
+  account/printer/repository management inside `dwm-system-management`. Keep this
+  split in the Arch port — it's real privilege-minimization, not a shortcut.
+
+**Not part of the near-term execution order.** Folded into this document rather
+than a new phase number because it's the same file, the same journal, and the same
+"wait for Lyona's own Phase 6, then re-survey again" gating logic as the rest of
+Phase 10 — see [`UPSTREAM-SYNC.md`'s recommended execution order](UPSTREAM-SYNC.md#recommended-execution-order).
+
+Note: `#246`'s printer-reader work is SM-010's; that commit also carried one
+unrelated hunk in `scripts/dwm-settings-appearance` (a coprocess-race fix, nothing
+to do with printers or system management) — already ported separately as
+[`SYNC-P1-STANDALONE.md`](SYNC-P1-STANDALONE.md)'s item 1d, since it has no
+dependency on anything in this document.
 
 ---
 
@@ -422,17 +474,39 @@ Settle each before the boundary that depends on it:
 | 3 | CachyOS `v3`/`v4` ISA repositories — does the snapshot need to report which is active? `scripts/lyona-cachyos` already detects it | SM-002 |
 | 4 | Journal, lite, or stop at read-only (options 1–3 above) | SM-005 |
 | 5 | Does upstream's Phase 6 close, and does it stay on PackageKit? Re-survey before SM-001 | SM-001 |
+| 6 | Has upstream added a third domain beyond updates and regional services since the last re-survey? Given the pace below, assume yes and check | SM-001 |
 
 ## Re-survey before starting
 
-Upstream was mid-flight at survey time. PR #229's own summary:
+**Original survey (2026-09-05, through `94ca1a4`):** upstream was mid-flight. PR
+#229's own summary at that time: *"This is one provider recovery boundary, not
+Phase 6 completion. Snapshot/control integration, root-scoped operation ownership
+and confirmation, regional/delegated entry points, information/recovery surfaces,
+and combined qualification remain in TASKS.md."* Public mutation commands and the
+operation UI were still disabled.
 
-> This is one provider recovery boundary, not Phase 6 completion. Snapshot/control
-> integration, root-scoped operation ownership and confirmation, regional/delegated
-> entry points, information/recovery surfaces, and combined qualification remain in
-> TASKS.md.
+**Re-survey (2026-09-06, through `03b2195`) — that has since changed.** In the 33
+hours between the two surveys, upstream merged **25 more commits** (`#229`–`#253`),
+all of them, with **zero PRs left open**. PR #229 itself merged as `900a39e`
+(2026-09-05T14:31:27Z). The two corrections that matter most:
 
-Public mutation commands and the operation UI were still disabled. Re-read
-`docs/P6-SYSTEM-MANAGEMENT.md` in the upstream tree before SM-001 — 1,664 lines of
-protocol contract, and the only document explaining why the journal is shaped as it
-is. Read it before the code.
+1. **Mutation and the operation UI are no longer disabled.** `#239` ("own update
+   starts and cancellation") and `#240` ("confirm update actions in Settings") make
+   a real click-to-install/cancel-updates surface live, with confirmation and
+   journaling. The risk profile this document treated as hypothetical when it said
+   "mutation commands remain disabled for the next review boundary" is now concrete
+   upstream behavior. This doesn't change the deferral decision — Lyona's own
+   Phase 6 still goes first regardless — but read `docs/P6-SYSTEM-MANAGEMENT.md` in
+   the upstream tree assuming the mutation path is real, not theoretical, before
+   SM-001 starts.
+2. **A second domain (regional services, SM-008/009/010 above) appeared that this
+   document originally, explicitly declined.** See that section for what it is and
+   why it's folded in rather than given its own phase number.
+
+**The lesson for whoever starts SM-001**: upstream is not slowing down. 25 commits
+in 33 hours is not an outlier to average out — assume the same pace has continued
+and **re-survey again, from scratch, immediately before SM-001**, not from this
+document's numbers. Re-read `docs/P6-SYSTEM-MANAGEMENT.md` in the upstream tree in
+full — it has grown well past the 1,664 lines cited when this document was first
+written, and it is the only document explaining why the journal is shaped as it is.
+Read it before the code, every time.

@@ -27,6 +27,9 @@ if [ "$(id -u)" -eq 0 ] && [ "${DWM_SETTINGS_XVFB_UNPRIVILEGED:-0}" != 1 ]; then
 		"$root_runner_work/data" "$root_runner_work/runtime" \
 		"$root_runner_work/state" "$fixture_repo/tests"
 	cp -a "$repo/config" "$repo/scripts" "$fixture_repo/"
+	cp "$repo/tests/lib.sh" "$fixture_repo/tests/lib.sh"
+	mkdir -p "$fixture_repo/assets"
+	cp -a "$repo/assets/logo" "$fixture_repo/assets/logo"
 	cp "$repo/dwm" "$fixture_repo/dwm"
 	cp "$0" "$fixture_repo/tests/test-quickshell-settings-xvfb.sh"
 	chown -R "$unprivileged_uid:$unprivileged_gid" "$root_runner_work"
@@ -730,6 +733,53 @@ display_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_
 display_dpi_source=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings displayDpiSource)
 [ "$display_dpi_source" = saved ]
+
+# DPI hot-reload gate: prove dwm-settings-display -> dpi.current ->
+# dpiStateWatch -> Theme.applyDisplayDpi -> Theme.uiScale actually works end
+# to end, not just that the helper discovered a DPI (asserted above). Every
+# later change that resizes or recolours DPI-scaled geometry relies on this
+# path; it is asserted here, on the unmodified tree, before any of them land.
+# See docs/SYNC-P0-DPI-GATE.md.
+theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeDisplayDpi)
+[ "$theme_dpi" = 144 ]
+ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale)
+[ "$ui_scale" = 1.5000 ]
+
+# Drive a live DPI change through the real helper (not a hand-written state
+# file), matching how a resolution or display-settings change reaches the
+# shell in production.
+XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-settings-display" dpi-set 192 >/dev/null
+
+# dpiStateWatch coalesces file-change notifications, so poll rather than
+# sleeping a fixed interval.
+i=0
+while [ "$i" -lt 100 ]; do
+	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale 2>/dev/null || true)
+	[ "$ui_scale" != 1.5000 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeDisplayDpi)
+[ "$theme_dpi" = 192 ]
+[ "$ui_scale" = 2.0000 ]
+
+# Restore, so nothing later in this file observes the previewed DPI.
+XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-settings-display" dpi-set 144 >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale 2>/dev/null || true)
+	[ "$ui_scale" = 1.5000 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$ui_scale" = 1.5000 ]
 
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
