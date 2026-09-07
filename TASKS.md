@@ -88,7 +88,7 @@ Acceptance:
 - [x] Define capability records for text scaling, contrast, reduced motion,
   notification policy, and practical keyboard or pointer accessibility features
   available through supported Arch/X11 interfaces.
-- [ ] Add accessible Settings controls with keyboard navigation, visible focus,
+- [x] Add accessible Settings controls with keyboard navigation, visible focus,
   usable common display sizes, explanatory unavailable states, and reset.
 - [x] Apply reduced-motion and contrast choices consistently to managed
   Quickshell surfaces without introducing a Wayland, compositor, or polling

@@ -243,6 +243,7 @@ ShellRoot {
         defaultsModel: defaultsModel
         autostartModel: autostartModel
         appearanceModel: appearanceModel
+        accessibilityModel: accessibilityModel
         panelSettingsModel: panelSettingsModel
     }
 
@@ -1002,6 +1003,7 @@ ShellRoot {
         defaultsModel: defaultsModel
         autostartModel: autostartModel
         appearanceModel: appearanceModel
+        accessibilityModel: accessibilityModel
         panelSettingsModel: panelSettingsModel
     }
 }

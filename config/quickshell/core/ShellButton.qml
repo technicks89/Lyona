@@ -5,6 +5,7 @@ Rectangle {
     id: root
 
     required property string label
+    property string accessibleDescription: ""
     property bool danger: false
     property bool compact: true
     property bool hovered: buttonMouse.containsMouse
@@ -14,6 +15,10 @@ Rectangle {
     implicitWidth: buttonLabel.implicitWidth + (Theme.controlPaddingX * 2)
     implicitHeight: Theme.controlHeight
     activeFocusOnTab: root.enabled
+    Accessible.role: Accessible.Button
+    Accessible.name: root.label
+    Accessible.description: root.accessibleDescription
+    Accessible.onPressAction: root.requestActivation()
     color: !root.enabled ? Theme.controlDisabledFill
         : root.hovered ? Theme.controlHoverFill : Theme.controlNormalFill
     border.color: root.activeFocus ? Theme.controlFocusBorder
@@ -23,10 +28,14 @@ Rectangle {
     border.width: root.activeFocus ? Theme.controlFocusBorderWidth : Theme.controlBorderWidth
     radius: Theme.controlRadius
 
+    function requestActivation() {
+        if (root.enabled) root.activated();
+    }
+
     Keys.onPressed: event => {
         if (root.enabled && !event.isAutoRepeat
                 && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
-            root.activated();
+            root.requestActivation();
             event.accepted = true;
         }
     }
@@ -52,6 +61,6 @@ Rectangle {
         enabled: root.enabled
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.activated()
+        onClicked: root.requestActivation()
     }
 }
