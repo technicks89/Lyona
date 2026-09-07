@@ -104,7 +104,7 @@ Every new helper must be registered in **three** places or it will not ship:
 | 4 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#190` | — |
 | 5 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#201` | 4 |
 | 6 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#202` | 4, 5 |
-| 7 | [`SYNC-P7-XKB-INPUT.md`](SYNC-P7-XKB-INPUT.md) | `#203` | 4 |
+| 7 | **Done** — see `CHANGELOG.md` | `#203` | 4 |
 | 8 | [`SYNC-P8-NOTIFICATIONS.md`](SYNC-P8-NOTIFICATIONS.md) | `#204` | 4 |
 | 9 | [`SYNC-P9-DISPLAY-APPLY.md`](SYNC-P9-DISPLAY-APPLY.md) | `#198`, `#200`, `f558c77` | 0, 3 |
 | 10 | [`SYNC-P10-SYSTEM-MANAGEMENT.md`](SYNC-P10-SYSTEM-MANAGEMENT.md) | `#207`–`#253` | Lyona UPDATE-001…003 |
@@ -113,16 +113,23 @@ Every new helper must be registered in **three** places or it will not ship:
 File numbers above are **not** the recommended run order — see
 [Recommended execution order](#recommended-execution-order) below.
 
-Phases 0, 1, 2, 3, 4, 5, 6, and 11 are **done** — implemented, verified (`make
-check-shell`, `make check-format`, `make check-quickshell-qml`, and the
-relevant functional tests all pass), and their planning documents
+Phases 0, 1, 2, 3, 4, 5, 6, 7, and 11 are **done** — implemented, verified
+(`make check-shell`, `make check-format`, `make check-quickshell-qml`, and
+the relevant functional tests all pass), and their planning documents
 (`SYNC-P0-DPI-GATE.md`, `SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`,
 `P5-SETTINGS-LAYOUT-PORT.md`, `SYNC-P4-A11Y-CAPABILITIES.md`,
 `SYNC-P11-SECURITY-HARDENING.md`, `SYNC-P5-CONTRAST-MOTION.md`,
-`SYNC-P6-A11Y-CONTROLS.md`) have been removed — the record of what changed
-now lives in `CHANGELOG.md` (Phase 2, 4, 6, and 11's `TASKS.md` checkboxes
-are also ticked, and Phase 5's `TASKS.md:93` checkbox too; Phases 0, 1, and 3
-never had one) and git history, not in a plan for work still to do. Phase 4's
+`SYNC-P6-A11Y-CONTROLS.md`, `SYNC-P7-XKB-INPUT.md`) have been removed — the
+record of what changed now lives in `CHANGELOG.md` (Phase 2, 4, 6, and 11's
+`TASKS.md` checkboxes are also ticked, and Phase 5's `TASKS.md:93` checkbox
+too; Phase 7 closed the same `TASKS.md:88`/`:91` items Phases 4 and 6 already
+checked, so it ticks nothing new; Phases 0, 1, and 3 never had one) and git
+history, not in a plan for work still to do. `SYNC-P7-XKB-INPUT.md`'s claim
+that `xkbset` "is in the Arch extra repository, so no AUR handling is
+needed" was wrong — confirmed against a live `pacman -Ss`/AUR RPC query,
+it is AUR-only. Shipped as an `arch:desktop-optional` entry instead of
+`arch:desktop`, so the availability pre-check skips it silently rather than
+failing the required-package transaction. Phase 4's
 own doc had drifted from what upstream actually shipped by the time it was
 implemented (wrong emitter count, wrong helper for text-scale, an
 undocumented notifications capability) — corrected in place before removal,
@@ -166,13 +173,13 @@ as originally recommended.
 | ✅ | **Phase 4** — Accessibility capability records | **Done.** See `CHANGELOG.md`, `TASKS.md`. Foundation for 5/6/7/8 — touched only `dwm-settings-provider`/`dwm-settings-input`, no conflict with the already-done Phase 2/3 Settings-pane work. |
 | ✅ | **Phase 5** — Contrast and motion policy | **Done.** See `CHANGELOG.md`, `TASKS.md`. Depends on Phase 4 (done). |
 | ✅ | **Phase 6** — Accessibility Settings controls | **Done.** See `CHANGELOG.md`, `TASKS.md`. Depends on Phases 4 and 5 (both done). |
-| 1 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
-| 2 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
-| 3 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — also depends on Phase 6 (done), which touches the same `ShellButton.qml` this phase's Apply button extends — last by design. |
+| ✅ | **Phase 7** — XKB input accessibility | **Done.** See `CHANGELOG.md`. Depends on Phase 4 (done) only; independent of 5/6. |
+| 1 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
+| 2 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — also depends on Phase 6 (done), which touches the same `ShellButton.qml` this phase's Apply button extends — last by design. |
 | — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
 
-**Net effect:** with Phases 0, 1, 2, 3, 4, 5, 6, and 11 done, the only thing left is
-Phase 7/8 and Phase 9. Nothing about that
+**Net effect:** with Phases 0, 1, 2, 3, 4, 5, 6, 7, and 11 done, the only thing left is
+Phase 8 and Phase 9. Nothing about that
 remaining order changed from the original survey — the two pieces of new work
 found on 2026-09-06 both slotted in without disturbing it: Phase 11 because it
 shared no files with anything else, and the regional-services scope because it

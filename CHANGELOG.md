@@ -77,6 +77,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   readiness probe against the configuration filesystem) instead of the
   static placeholders Phase 4 shipped.
 
+- Add XKB accessibility controls -- sticky keys, slow keys, bounce keys, and
+  mouse keys -- to Settings → Input, backed by `xkbset` through the existing
+  `dwm-settings-input` provider. The new "Keyboard accessibility" group uses
+  the same bounded preview-then-keep-or-revert flow, and reset, as every
+  other input setting. Reflects live in `dwm-settings-provider`'s
+  `accessibility-input` capability record, which now distinguishes "xkbset
+  is missing," "xkbset is installed but unresponsive," and "fully available"
+  instead of a single static state. `xkbset` has no official Arch package
+  and is AUR-only; it is listed as an optional dependency that installs
+  automatically only when already resolvable, and every code path degrades
+  cleanly to an explicit unsupported state when it is absent.
+
 ### Security
 
 - `install-mybash`'s Starship fallback no longer pipes a remote script
