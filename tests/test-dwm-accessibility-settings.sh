@@ -61,6 +61,7 @@ assert_string_contains "$status" \
 assert_string_contains "$status" $'setting\tcontrast\tstandard'
 assert_string_contains "$status" $'setting\tmotion\tfull'
 assert_string_contains "$status" $'complete\tstatus'
+assert_string_contains "$status" $'mutation\tavailable\tAccessibility policy can be updated'
 assert_no_file "$state_file" 'status alone must not create persistent state'
 
 # ── the watch handshake fires, and a killed inotifywait is not hidden ───
@@ -116,6 +117,19 @@ HOME="$home" XDG_CONFIG_HOME="$config" XDG_RUNTIME_DIR="$runtime" \
 	"$helper" watch >"$work/watch.out" 2>"$work/watch.err" &
 watch_pid=$!
 wait_for_line "$work/watch.out" $'ready\taccessibility'
+
+# The mutation-readiness probe creates, exchanges, and removes two dotfiles
+# in the same directory the watch is on -- none of that churn may reach the
+# watch stream as a false "the policy changed" signal.
+run_helper status >/dev/null
+sleep 0.1
+if grep -Eq '^changed\t' "$work/watch.out" 2>/dev/null; then
+	fail 'the mutation-readiness probe leaked a policy change event'
+fi
+if find "$config/lyona" -maxdepth 1 -name '.accessibility-exchange-*' -print -quit | grep -q .; then
+	fail 'the mutation-readiness probe left temporary files behind'
+fi
+
 run_helper set contrast high >/dev/null
 for _ in $(seq 1 200); do
 	grep -Eq '^changed\t' "$work/watch.out" 2>/dev/null && break
@@ -142,6 +156,7 @@ assert_string_contains "$malformed_status" \
 	$'state\tpartial\tMalformed accessibility settings were preserved; using safe defaults'
 assert_string_contains "$malformed_status" $'setting\tcontrast\tstandard'
 assert_string_contains "$malformed_status" $'setting\tmotion\tfull'
+assert_string_contains "$malformed_status" $'mutation\tavailable\tAccessibility policy can be updated'
 run_helper set motion reduced >/dev/null
 assert_line "$state_file" $'contrast\tstandard'
 assert_line "$state_file" $'motion\treduced'
@@ -165,6 +180,8 @@ printf 'accessibility-settings-protocol\t2\t0\ncontrast\thigh\nmotion\treduced\n
 future_status=$(run_helper status)
 assert_string_contains "$future_status" \
 	$'state\tpartial\tUnsupported accessibility settings version was preserved; using safe defaults'
+assert_string_contains "$future_status" \
+	$'mutation\tunavailable\tPersistent accessibility state cannot be safely replaced'
 assert_line "$state_file" $'accessibility-settings-protocol\t2\t0'
 cp "$state_file" "$work/future.before"
 if run_helper set contrast high >"$work/future-set.out" 2>"$work/future-set.err"; then
@@ -177,6 +194,35 @@ if run_helper reset >"$work/future-reset.out" 2>"$work/future-reset.err"; then
 fi
 assert_contains "$work/future-reset.err" 'unsupported version'
 cmp -s "$work/future.before" "$state_file" || fail 'future-version state must survive an attempted reset untouched'
+
+# ── mutation reports unavailable when the filesystem can't exchange atomically ─
+
+printf 'accessibility-settings-protocol\t1\t0\ncontrast\tstandard\nmotion\tfull\n' >"$state_file"
+real_mv=$(command -v mv)
+no_exchange_bin=$work/no-exchange-bin
+mkdir "$no_exchange_bin"
+cat >"$no_exchange_bin/mv" <<EOF
+#!/bin/sh
+for argument do
+	[ "\$argument" != --exchange ] || exit 1
+done
+exec "$real_mv" "\$@"
+EOF
+chmod 700 "$no_exchange_bin/mv"
+no_exchange_config=$work/no-exchange-config
+mkdir "$no_exchange_config"
+initial_exchange_unavailable_status=$(HOME="$home" XDG_CONFIG_HOME="$no_exchange_config" \
+	XDG_RUNTIME_DIR="$runtime" PATH="$no_exchange_bin:$PATH" "$helper" status)
+assert_string_contains "$initial_exchange_unavailable_status" \
+	$'mutation\tunavailable\tAtomic accessibility state exchange is unavailable on the configuration filesystem'
+assert_no_file "$no_exchange_config/lyona/accessibility.conf"
+exchange_unavailable_status=$(HOME="$home" XDG_CONFIG_HOME="$config" XDG_RUNTIME_DIR="$runtime" \
+	PATH="$no_exchange_bin:$PATH" "$helper" status)
+assert_string_contains "$exchange_unavailable_status" \
+	$'mutation\tunavailable\tAtomic accessibility state exchange is unavailable on the configuration filesystem'
+if find "$config/lyona" -maxdepth 1 -name '.accessibility-exchange-*' -print -quit | grep -q .; then
+	fail 'the mutation-readiness probe left temporary files behind after a failed exchange'
+fi
 
 # ── a single concurrent edit between staging and publish is refused ─────
 

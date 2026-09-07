@@ -276,7 +276,11 @@ grep -Fq 'Component.onCompleted: {' "$pane"
 grep -Fq 'root.ensureWallpaperSelection();' "$pane"
 grep -Fq 'preferred = root.appearanceModel.resolvedTheme' "$pane"
 grep -Fq 'label: "Additional capabilities"' "$pane"
-grep -Fq 'model: root.capabilities' "$pane"
+grep -Fq 'model: root.additionalCapabilities' "$pane"
+# accessibility-contrast/accessibility-reduced-motion have dedicated controls
+# now (Phase 6, done -- see CHANGELOG.md); the generic list must not repeat them.
+grep -Fq 'capability.id !== "accessibility-contrast"' "$pane"
+grep -Fq 'capability.id !== "accessibility-reduced-motion"' "$pane"
 grep -Fq 'onActivated: root.appearanceModel.keepPreview()' "$pane"
 grep -Fq 'onActivated: root.appearanceModel.revertPreview()' "$pane"
 grep -Fq 'onActivated: root.appearanceModel.abandonPreview()' "$pane"

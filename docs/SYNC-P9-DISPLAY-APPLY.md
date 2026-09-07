@@ -122,10 +122,9 @@ if the user does not confirm — the standard protection against a mode that lea
 screen unreadable.
 
 `config/quickshell/core/ShellButton.qml` gains the primary/pending visual states the
-Apply button needs. This is the same file
-[Phase 6](SYNC-P6-A11Y-CONTROLS.md) touched; land Phase 6 first so the
-`Accessible.*` block and `requestActivation()` are already in place and this is a
-clean additive hunk.
+Apply button needs. This is the same file Phase 6 touched (done — see
+`CHANGELOG.md`); its `Accessible.*` block and `requestActivation()` are already in
+place, so this lands as a clean additive hunk.
 
 `config/quickshell/appearance/AppearanceModel.qml` (+42) manages the preview
 lifecycle — start, countdown, confirm, revert.

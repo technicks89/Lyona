@@ -63,6 +63,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   unreadable policy file falls back to standard contrast and full motion
   without preventing shell startup.
 
+- Add keyboard- and screen-reader-accessible controls for the new high
+  contrast and reduced motion policy: a Settings → Appearance "Accessibility"
+  section with two toggles, a status card explaining why a control is
+  disabled when the provider is read-only, and a reset action. `Settings`
+  and the Bluetooth power toggle in the Control Center gained proper
+  `Accessible.*` metadata and a shared `requestToggle()`/`requestActivation()`
+  guard, so a screen reader's press action can no longer bypass the same
+  enabled/busy check the keyboard and mouse paths already enforce.
+  `dwm-settings-provider`'s `accessibility-contrast` and
+  `accessibility-reduced-motion` capability records now reflect whether the
+  policy can actually be changed right now (backed by a real atomic-exchange
+  readiness probe against the configuration filesystem) instead of the
+  static placeholders Phase 4 shipped.
+
 ### Security
 
 - `install-mybash`'s Starship fallback no longer pipes a remote script

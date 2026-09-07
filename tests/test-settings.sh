@@ -91,6 +91,29 @@ make_hanging_font_stub() {
 	chmod +x "$path"
 }
 
+make_accessibility_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' \
+		'printf "accessibility-settings-protocol\t1\t0\nstate\tdefaults\tFixture defaults\nsetting\tcontrast\tstandard\nsetting\tmotion\tfull\nmutation\tavailable\tFixture mutations\nfuture-accessibility-record\tappend-only-fixture\ncomplete\tstatus\n"' >"$path"
+	chmod +x "$path"
+}
+
+make_custom_accessibility_stub() {
+	path=$1
+	payload=$2
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' "printf '%s\\n' '$payload'" >"$path"
+	chmod +x "$path"
+}
+
+make_hanging_accessibility_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' "trap '' TERM" 'while :; do :; done' >"$path"
+	chmod +x "$path"
+}
+
 make_input_stub() {
 	path=$1
 	mkdir -p "${path%/*}"
@@ -118,6 +141,7 @@ done
 make_stub "$arch_bin/dwm-xdg-autostart"
 make_appearance_stub "$arch_bin/dwm-settings-appearance"
 make_font_stub "$arch_bin/dwm-settings-font"
+make_accessibility_stub "$arch_bin/dwm-accessibility-settings"
 make_input_stub "$arch_bin/dwm-settings-input"
 make_stub "$arch_bin/dwm-settings-theme"
 make_stub "$arch_bin/inotifywait"
@@ -160,9 +184,9 @@ available_theme_record='capability	appearance	themes	Themes	available	user-sessi
 printf '%s\n' "$arch_output" | grep -Fqx \
 	'capability	appearance	accessibility-text-scale	Text scaling	available	user-session	dwm-settings-font	Fixture text scale'
 printf '%s\n' "$arch_output" | grep -Fqx \
-	'capability	appearance	accessibility-contrast	High contrast	partial	read-only	quickshell-theme	Semantic colors are available; a dedicated high-contrast policy is not configured'
+	'capability	appearance	accessibility-contrast	High contrast	available	user-session	dwm-accessibility-settings	Persistent managed-shell high-contrast policy is available'
 printf '%s\n' "$arch_output" | grep -Fqx \
-	'capability	appearance	accessibility-reduced-motion	Reduced motion	unsupported	read-only	quickshell-theme	Managed shell animations do not yet expose a reduced-motion policy'
+	'capability	appearance	accessibility-reduced-motion	Reduced motion	available	user-session	dwm-accessibility-settings	Persistent managed-shell reduced-motion policy is available'
 printf '%s\n' "$arch_output" | grep -Fqx \
 	'capability	appearance	accessibility-notifications	Notification policy	partial	read-only	dbus	A notification D-Bus owner is active; managed policy controls are not configured'
 printf '%s\n' "$arch_output" | grep -Fqx \
@@ -242,6 +266,76 @@ missing_font_output=$(PATH="$missing_font_bin" XDG_CONFIG_HOME="$work/arch-confi
 	"$missing_font_provider_dir/dwm-settings-provider" discover)
 printf '%s\n' "$missing_font_output" | grep -Fqx \
 	'capability	appearance	accessibility-text-scale	Text scaling	unavailable	user-session	dwm-settings-font	Install the managed font provider'
+
+# ── contrast/motion: malformed, unsafe, hanging, and missing accessibility provider ──
+
+for invalid_accessibility_case in malformed duplicate-setting missing-complete; do
+	invalid_accessibility_bin=$work/invalid-accessibility-$invalid_accessibility_case-bin
+	cp -a "$arch_bin" "$invalid_accessibility_bin"
+	case $invalid_accessibility_case in
+	malformed)
+		invalid_accessibility_payload='not-an-accessibility-status'
+		;;
+	duplicate-setting)
+		invalid_accessibility_payload=$(printf \
+			'accessibility-settings-protocol\t1\t0\nstate\tdefaults\tFixture defaults\nsetting\tcontrast\tstandard\nsetting\tcontrast\thigh\nsetting\tmotion\tfull\nmutation\tavailable\tFixture mutations\ncomplete\tstatus')
+		;;
+	missing-complete)
+		invalid_accessibility_payload=$(printf \
+			'accessibility-settings-protocol\t1\t0\nstate\tdefaults\tFixture defaults\nsetting\tcontrast\tstandard\nsetting\tmotion\tfull\nmutation\tavailable\tFixture mutations')
+		;;
+	esac
+	make_custom_accessibility_stub \
+		"$invalid_accessibility_bin/dwm-accessibility-settings" \
+		"$invalid_accessibility_payload"
+	invalid_accessibility_output=$(PATH="$invalid_accessibility_bin" \
+		XDG_CONFIG_HOME="$work/arch-config" \
+		DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+	printf '%s\n' "$invalid_accessibility_output" | grep -Fqx \
+		'capability	appearance	accessibility-contrast	High contrast	unavailable	user-session	dwm-accessibility-settings	The accessibility settings provider returned an unsupported response'
+	printf '%s\n' "$invalid_accessibility_output" | grep -Fqx \
+		'capability	appearance	accessibility-reduced-motion	Reduced motion	unavailable	user-session	dwm-accessibility-settings	The accessibility settings provider returned an unsupported response'
+done
+
+unsafe_accessibility_bin=$work/unsafe-accessibility-bin
+cp -a "$arch_bin" "$unsafe_accessibility_bin"
+unsafe_accessibility_payload=$(printf \
+	'accessibility-settings-protocol\t1\t0\nstate\tunavailable\tUnsafe fixture state\nsetting\tcontrast\tstandard\nsetting\tmotion\tfull\nmutation\tunavailable\tFixture mutations disabled\ncomplete\tstatus')
+make_custom_accessibility_stub \
+	"$unsafe_accessibility_bin/dwm-accessibility-settings" \
+	"$unsafe_accessibility_payload"
+unsafe_accessibility_output=$(PATH="$unsafe_accessibility_bin" \
+	XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$unsafe_accessibility_output" | grep -Fqx \
+	'capability	appearance	accessibility-contrast	High contrast	unavailable	user-session	dwm-accessibility-settings	Persistent accessibility state cannot be safely updated'
+printf '%s\n' "$unsafe_accessibility_output" | grep -Fqx \
+	'capability	appearance	accessibility-reduced-motion	Reduced motion	unavailable	user-session	dwm-accessibility-settings	Persistent accessibility state cannot be safely updated'
+
+hanging_accessibility_bin=$work/hanging-accessibility-bin
+cp -a "$arch_bin" "$hanging_accessibility_bin"
+make_hanging_accessibility_stub \
+	"$hanging_accessibility_bin/dwm-accessibility-settings"
+hanging_accessibility_output=$(PATH="$hanging_accessibility_bin" \
+	XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
+	timeout --signal=KILL 10 "$provider" discover)
+printf '%s\n' "$hanging_accessibility_output" | grep -Fqx \
+	'capability	appearance	accessibility-contrast	High contrast	unavailable	user-session	dwm-accessibility-settings	The accessibility settings provider returned an unsupported response'
+
+missing_accessibility_bin=$work/missing-accessibility-bin
+cp -a "$arch_bin" "$missing_accessibility_bin"
+rm -f "$missing_accessibility_bin/dwm-accessibility-settings"
+missing_accessibility_provider_dir=$work/missing-accessibility-provider
+mkdir "$missing_accessibility_provider_dir"
+cp "$provider" "$missing_accessibility_provider_dir/dwm-settings-provider"
+missing_accessibility_output=$(PATH="$missing_accessibility_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
+	"$missing_accessibility_provider_dir/dwm-settings-provider" discover)
+printf '%s\n' "$missing_accessibility_output" | grep -Fqx \
+	'capability	appearance	accessibility-contrast	High contrast	unavailable	user-session	dwm-accessibility-settings	Install the managed accessibility settings provider'
+printf '%s\n' "$missing_accessibility_output" | grep -Fqx \
+	'capability	appearance	accessibility-reduced-motion	Reduced motion	unavailable	user-session	dwm-accessibility-settings	Install the managed accessibility settings provider'
 
 # ── keyboard/pointer accessibility follows input-devices discovery ──
 
