@@ -349,9 +349,9 @@ Phase 10 — see [`UPSTREAM-SYNC.md`'s recommended execution order](UPSTREAM-SYN
 
 Note: `#246`'s printer-reader work is SM-010's; that commit also carried one
 unrelated hunk in `scripts/dwm-settings-appearance` (a coprocess-race fix, nothing
-to do with printers or system management) — already ported separately as
-[`SYNC-P1-STANDALONE.md`](SYNC-P1-STANDALONE.md)'s item 1d, since it has no
-dependency on anything in this document.
+to do with printers or system management) — already ported separately as Phase 1's
+item 1d (done — see `CHANGELOG.md`), since it had no dependency on anything in this
+document.
 
 ---
 

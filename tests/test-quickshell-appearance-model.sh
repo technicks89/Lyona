@@ -9,6 +9,7 @@ icon_text=$repo/config/quickshell/core/IconText.qml
 panel=$repo/config/quickshell/panel/DwmPanel.qml
 commands=$repo/config/quickshell/core/Commands.qml
 model=$repo/config/quickshell/appearance/AppearanceModel.qml
+watched_process=$repo/config/quickshell/core/WatchedProcess.qml
 settings_model=$repo/config/quickshell/settings/SettingsModel.qml
 settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
 pane=$repo/config/quickshell/settings/AppearanceSettingsPane.qml
@@ -79,6 +80,15 @@ grep -Fq 'if (!root.settingsVisible) return;' "$model"
 grep -Fq 'inventoryWatchProcess.running = false' "$model"
 assert_contains "$model" 'compositorWatcher.stop()'
 assert_contains "$model" 'compositorWatcher.start()'
+# Upstream f4f477c hardens their appearance watcher so a helper that dies
+# while the surface is open gets restarted, and a burst of change lines
+# coalesces into one refresh. Lyona already has both properties in the
+# shared WatchedProcess component the compositor watcher above uses --
+# verify that instead of porting a second, inline copy.
+assert_contains "$watched_process" 'if (!running && root.active)'
+assert_contains "$watched_process" 'restartTimer.restart()'
+assert_contains "$watched_process" 'if (root.active && !watchProcess.running)'
+assert_contains "$watched_process" 'onTriggered: root.settled()'
 grep -Fq 'root.inventoryCandidates = candidates' "$model"
 grep -Fq 'candidate.id === "wallpaper"' "$model"
 grep -Fq 'candidate.id === "font"' "$model"

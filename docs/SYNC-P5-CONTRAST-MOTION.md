@@ -57,7 +57,8 @@ attacker's contrast policy, and it matches the convention already in
 
 ## `config/quickshell/core/Commands.qml`
 
-Add next to `settingsToolkitCommand`:
+Add after `panelSettingsCommand` — the file's current last function (Phase 2,
+done; it displaced `settingsToolkitCommand` as the tail):
 
 ```qml
     function accessibilitySettingsCommand(action, args) {
@@ -254,9 +255,18 @@ previous session's override in place.
 
 ```diff
  import Quickshell.Services.SystemTray
+ import qs.core
 +import qs.accessibility
  import qs.appearance
 ```
+
+Lyona's import block is alphabetical after `qs.core`; place `qs.accessibility`
+accordingly.
+
+**The `AppearanceModel` instantiation is no longer immediately followed by
+`dpiStatePath`.** Phase 2 (done) inserted a `PanelSettingsModel` instantiation
+right after it. Insert `AccessibilityModel` between the two — after
+`AppearanceModel`, before `PanelSettingsModel`:
 
 ```diff
      AppearanceModel {
@@ -266,10 +276,11 @@ previous session's override in place.
 +    AccessibilityModel {
 +        id: accessibilityModel
 +    }
-```
 
-Lyona's import block is alphabetical after `qs.core`; place `qs.accessibility`
-accordingly.
+     PanelSettingsModel {
+         id: panelSettingsModel
+     }
+```
 
 ## `Makefile`
 

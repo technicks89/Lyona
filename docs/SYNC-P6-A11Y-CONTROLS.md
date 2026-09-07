@@ -18,6 +18,7 @@ that matters.
 | `config/quickshell/core/PanelToggleSwitch.qml` | +17 / -2 | `Accessible.*` + `requestToggle()` |
 | `config/quickshell/core/ShellButton.qml` | +13 / -3 | `Accessible.*` + `requestActivation()` |
 | `config/quickshell/controls/BluetoothWindow.qml` | +2 | First caller of the new required property |
+| `config/quickshell/settings/AppearanceSettingsPane.qml` (again) | +1 | **Second** caller — Phase 2's panel-widget toggle, added after this document was written; see the note below |
 | `config/quickshell/settings/SettingsModel.qml` | +4 | Model wiring |
 | `config/quickshell/settings/SettingsWindow.qml` | +2 | Section wiring |
 | `config/quickshell/shell.qml` | +34 | IPC probes for the xvfb test |
@@ -87,6 +88,26 @@ commit or the QML fails to load. Find them all with:
 grep -rn "PanelToggleSwitch {" config/quickshell
 ```
 
+**This now finds two, not one.** Phase 2 (panel-widget persistence, done since
+this document was written) added a second `PanelToggleSwitch` — the per-widget
+toggle in `config/quickshell/settings/AppearanceSettingsPane.qml`'s "Panel widgets"
+section:
+
+```diff
+                     PanelToggleSwitch {
++                        accessibleName: panelWidgetRow.modelData.label + " widget"
+                         checked: root.panelSettingsModel.widgetEnabled(panelWidgetRow.modelData.id)
+                         busy: root.panelSettingsModel.busy
+                         enabled: root.panelSettingsModel.mutationReady
+                         onToggled: root.panelSettingsModel.toggleWidget(panelWidgetRow.modelData.id)
+                     }
+```
+
+`panelWidgetRow.modelData.label` is the same string the row's own `UiText` already
+displays ("Workspaces", "Volume", …) — reuse it rather than inventing new copy.
+Miss this one and `make check-quickshell-qml` (not a silent failure) is what
+catches it, per the note below — but catch it in review instead.
+
 ### `config/quickshell/core/ShellButton.qml`
 
 ```diff
@@ -146,6 +167,14 @@ The first caller of the new required property, and the template for the sweep:
 
 The new "Accessibility" group: a `PanelToggleSwitch` for high contrast, one for
 reduced motion, and a provider-status row.
+
+**The pane already has a `required property var panelSettingsModel` and a "Panel
+widgets" `SectionLabel` group (Phase 2, done) sitting right before "Application
+status".** Add `required property var accessibilityModel` alongside the existing
+`appearanceModel`/`panelSettingsModel` properties, and insert the new
+"Accessibility" section immediately after "Panel widgets" — same position
+relative to "Application status" upstream's diff context assumed, just with one
+more sibling section ahead of it now.
 
 **Use Lyona's `StatusCard`** (`config/quickshell/core/StatusCard.qml`) for the status
 row. Upstream repeats an inline `component StatusCard` in each pane; Lyona already
