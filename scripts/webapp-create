@@ -14,16 +14,19 @@ create_webapp() {
         exit 1
     fi
     
+    case "$name" in *$'\n'*|*$'\r'*) echo "Name must not contain newlines" >&2; exit 1 ;; esac
+    case "$url"  in *$'\n'*|*$'\r'*) echo "URL must not contain newlines" >&2; exit 1 ;; esac
+
     mkdir -p "$APPS_DIR" "$ICONS_DIR"
-    
+
     local clean_name=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')
     local desktop_file="$APPS_DIR/${clean_name}.desktop"
     local icon_path="$ICONS_DIR/${clean_name}.png"
-    
+
     if [[ -n "$icon_url" ]]; then
         echo "Downloading icon..."
         if command -v curl >/dev/null 2>&1; then
-            curl -s -o "$icon_path" "$icon_url"
+            curl -s --proto '=https' --max-filesize 10485760 -o "$icon_path" "$icon_url"
         elif command -v wget >/dev/null 2>&1; then
             wget -q -O "$icon_path" "$icon_url"
         fi

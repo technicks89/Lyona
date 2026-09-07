@@ -105,6 +105,43 @@ Acceptance:
 - Keyboard-only navigation, text scaling, contrast, reduced motion, notification
   delivery/history, and reset behavior pass nested-X11 and real-session checks.
 
+### SECURITY-001: Installer and Signing-Key Hardening
+
+Independent of the rest of this phase — a read-only security audit of
+`scripts/`, `config/`, `install.sh`, and `config.mk`, done — see `CHANGELOG.md`
+and `docs/SYNC-P11-SECURITY-HARDENING.md` for the finding-by-finding detail.
+
+- [x] Replace `install-mybash`'s `curl | sudo sh` Starship fallback with a
+  checksum-verified, non-root download; pin the fzf-bin clone and drop `sudo`
+  from its install; drop zoxide's unpinned curl fallback in favor of the
+  official Arch package.
+- [x] Wire `xscreensaver-setup.sh`'s config to `lock: True` and add a guarded
+  `dwm-lock` branch so an active xscreensaver daemon is actually used to lock,
+  not merely blank, the screen.
+- [x] Pin and verify the CachyOS signing key's fingerprint before
+  `pacman-key --lsign-key` trusts it; delete and refuse an unexpected key.
+- [x] Pin `install.sh`'s `yay-bin` AUR clone to a reviewed commit and drop
+  `--noconfirm` from its `makepkg -si` so a compromised AUR page can't build
+  and install silently.
+- [x] Add standard compiler hardening flags (`_FORTIFY_SOURCE=2`,
+  `-fstack-protector-strong`, `-fPIE`/`-pie`, `-Wl,-z,relro,-z,now`,
+  `-Wformat-security`) to `config.mk`.
+- [x] Reject newline-embedded `webapp-create` names/URLs before they reach the
+  generated `.desktop` file; restrict icon downloads to HTTPS with a size cap.
+- [x] Add a dedicated polkit `.policy` action for `dwm-settings-display`'s
+  `pkexec` call instead of relying on the generic exec-path prompt.
+
+Acceptance:
+
+- `scripts/run-tests make clean all` builds cleanly with the new hardening
+  flags; the built `dwm` reports as a PIE binary with `BIND_NOW`/`RELRO` set.
+- A corrupted CachyOS key fingerprint is refused and the untrusted key is
+  deleted, never locally signed.
+- `dwm-lock` locks (not merely blanks) an active xscreensaver session, and
+  does not misfire when the daemon is installed but not running.
+- `webapp-create` rejects a newline-embedded name or URL before writing any
+  file.
+
 ### P5-UI5: Optional X11-Native Experience Integration
 
 - [ ] Inventory UI-5 candidates, beginning with event-driven clipboard history,

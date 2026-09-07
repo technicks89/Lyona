@@ -35,6 +35,12 @@ EOF
 cat >"$bin/pacman-key" <<'EOF'
 #!/bin/sh
 printf 'pacman-key %s\n' "$*" >>"${LYONA_TEST_LOG:?}"
+case "$1" in
+--list-keys)
+	printf 'pub   rsa3072 2021-08-10 [SC]\n'
+	printf '      %s\n' "${LYONA_TEST_CACHYOS_KEY_FP:-882DCFE48E2051D48E2562ABF3B607488DB35A47}"
+	;;
+esac
 exit 0
 EOF
 cat >"$bin/grub-mkconfig" <<'EOF'
@@ -97,6 +103,7 @@ run_helper() {
 		LYONA_TEST_PACMAN_FAIL="${pacman_fail:-}" \
 		LYONA_TEST_INSTALLED="${installed:-}" \
 		LYONA_TEST_MARCH="${march:-x86-64}" \
+		LYONA_TEST_CACHYOS_KEY_FP="${cachyos_key_fp:-}" \
 		LYONA_CACHYOS_PACMAN_CONF="$case_dir/pacman.conf" \
 		LYONA_CACHYOS_BOOT_DIR="$case_dir/boot" \
 		LYONA_CACHYOS_LDSO="$case_dir/ldso" \
@@ -161,6 +168,18 @@ mapfile -t pacman_calls < <(grep '^pacman ' "$case_dir/calls.log")
 	fail "pacman replacement call was ${pacman_calls[2]}"
 [[ ${pacman_calls[3]} == 'pacman -Syu --noconfirm' ]] ||
 	fail "upgrade call was ${pacman_calls[3]}"
+
+# --- a fingerprint mismatch refuses to trust the received key ----------------
+case_dir=$(new_case bad-fingerprint)
+cachyos_key_fp=0000000000000000000000000000000000000000 \
+	run_helper "$case_dir" add-repos >"$case_dir/out" 2>&1 &&
+	fail 'add-repos succeeded despite a signing-key fingerprint mismatch' "$case_dir/out"
+grep -Fq 'pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com' \
+	"$case_dir/calls.log" || fail 'the signing key was not received' "$case_dir/calls.log"
+grep -Fq 'pacman-key --delete F3B607488DB35A47' "$case_dir/calls.log" ||
+	fail 'the untrusted key was not deleted' "$case_dir/calls.log"
+grep -Fq 'pacman-key --lsign-key F3B607488DB35A47' "$case_dir/calls.log" &&
+	fail 'a fingerprint mismatch must not be locally signed' "$case_dir/calls.log"
 
 # --- --no-upgrade syncs but does not upgrade the running system --------------
 case_dir=$(new_case no-upgrade)

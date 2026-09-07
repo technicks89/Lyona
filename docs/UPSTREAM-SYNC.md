@@ -35,14 +35,12 @@ already reproduced in Lyona by hand; the rest are the work planned here.
 - **Docs site**: keep mdBook (`docs/book.toml`, `docs/theme/catppuccin.css`).
   Upstream's Astro rebuild (`#194`) is **not** ported. Only the prose that rides
   along in later commits is folded into the existing `docs/src/*.md`.
-- **Security hardening** (new, 2026-09-06): a read-only audit of Lyona's own
+- **Security hardening** (2026-09-06): a read-only audit of Lyona's own
   scripts, config, and build found real findings independent of anything upstream
   — two of them (a `curl | sudo sh` fallback reachable in the *default* install
-  profile, and a shipped lock-screen setup script that doesn't lock) live in the
-  default or a plausible path today. Planned as
-  [`SYNC-P11-SECURITY-HARDENING.md`](SYNC-P11-SECURITY-HARDENING.md), sequenced
-  early despite its file number — see
-  [Recommended execution order](#recommended-execution-order) below.
+  profile, and a shipped lock-screen setup script that doesn't lock) lived in the
+  default or a plausible path. **Done** — see `CHANGELOG.md`'s "Security" section
+  and `TASKS.md`'s `SECURITY-001`.
 
 ---
 
@@ -110,22 +108,24 @@ Every new helper must be registered in **three** places or it will not ship:
 | 8 | [`SYNC-P8-NOTIFICATIONS.md`](SYNC-P8-NOTIFICATIONS.md) | `#204` | 4 |
 | 9 | [`SYNC-P9-DISPLAY-APPLY.md`](SYNC-P9-DISPLAY-APPLY.md) | `#198`, `#200`, `f558c77` | 0, 3 |
 | 10 | [`SYNC-P10-SYSTEM-MANAGEMENT.md`](SYNC-P10-SYSTEM-MANAGEMENT.md) | `#207`–`#253` | Lyona UPDATE-001…003 |
-| 11 | [`SYNC-P11-SECURITY-HARDENING.md`](SYNC-P11-SECURITY-HARDENING.md) | — (Lyona's own audit) | — |
+| 11 | **Done** — see `CHANGELOG.md`, `TASKS.md` | — (Lyona's own audit) | — |
 
 File numbers above are **not** the recommended run order — see
 [Recommended execution order](#recommended-execution-order) below.
 
-Phases 0, 1, 2, 3, and 4 are **done** — implemented, verified (`make check-shell`,
-`make check-format`, `make check-quickshell-qml`, and the relevant functional
-tests all pass), and their planning documents (`SYNC-P0-DPI-GATE.md`,
-`SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`, `P5-SETTINGS-LAYOUT-PORT.md`,
-`SYNC-P4-A11Y-CAPABILITIES.md`) have been removed — the record of what changed now
-lives in `CHANGELOG.md` (Phase 2 and Phase 4's `TASKS.md` checkboxes are also
-ticked; Phases 0, 1, and 3 never had one) and git history, not in a plan for work
-still to do. Phase 4's own doc had drifted from what upstream actually shipped by
-the time it was implemented (wrong emitter count, wrong helper for text-scale, an
-undocumented notifications capability) — corrected in place before removal, and the
-corrections are reflected in the Phase 5/6/7/8 documents that referenced it.
+Phases 0, 1, 2, 3, 4, and 11 are **done** — implemented, verified (`make
+check-shell`, `make check-format`, `make check-quickshell-qml`, and the
+relevant functional tests all pass), and their planning documents
+(`SYNC-P0-DPI-GATE.md`, `SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`,
+`P5-SETTINGS-LAYOUT-PORT.md`, `SYNC-P4-A11Y-CAPABILITIES.md`,
+`SYNC-P11-SECURITY-HARDENING.md`) have been removed — the record of what
+changed now lives in `CHANGELOG.md` (Phase 2, 4, and 11's `TASKS.md`
+checkboxes are also ticked; Phases 0, 1, and 3 never had one) and git history,
+not in a plan for work still to do. Phase 4's own doc had drifted from what
+upstream actually shipped by the time it was implemented (wrong emitter count,
+wrong helper for text-scale, an undocumented notifications capability) —
+corrected in place before removal, and the corrections are reflected in the
+Phase 5/6/7/8 documents that referenced it.
 
 **`*` Phase 3 exception — `c3e9a18` was not ported.** `P5-SETTINGS-LAYOUT-PORT.md`
 (now removed) fully specified the Settings-window enlargement and compaction, and
@@ -140,30 +140,31 @@ no shared dependency), small, and can land as its own commit whenever it's picke
 ## Recommended execution order
 
 **This is the authoritative sequence — it is not the same as ascending file
-number, and that's intentional.** Phase 11's file number reflects when it was
+number, and that's intentional.** Phase 11's file number reflected when it was
 added to this plan (2026-09-06, after a security audit run alongside a routine
-upstream re-survey), not when it should run.
+upstream re-survey), not when it ran — it's done now, out of file-number order,
+as originally recommended.
 
 | Order | Phase | Why here |
 | --- | --- | --- |
 | ✅ | **Phase 0** — DPI gate | **Done.** The remaining item at completion was environmental (no working PipeWire/`gvfs` session on the test machine, not a defect in the phase's own code) — see `CHANGELOG.md`. |
 | ✅ | **Phase 1** — Standalone fixes | **Done**, including item 1d (`#246`'s incidental `dwm-settings-appearance` coprocess-race fix, found during the 2026-09-06 re-survey) — see `CHANGELOG.md`. |
-| 1 | **Phase 11** — Security hardening | Zero file overlap with any other phase. Contains two P0 findings live in the *default recommended install path* and in an *opt-in but misleadingly-named lock script* — higher real-world impact than any feature-parity work below, and nothing about it depends on any other phase finishing first. |
+| ✅ | **Phase 11** — Security hardening | **Done.** See `CHANGELOG.md`'s "Security" section, `TASKS.md`'s `SECURITY-001`. Zero file overlap with any other phase; contained two P0 findings live in the *default recommended install path* and in an *opt-in but misleadingly-named lock script*. |
 | ✅ | **Phase 2** — Panel-widget persistence | **Done.** See `CHANGELOG.md`. |
 | ✅ | **Phase 3** — Settings layout compaction | **Done**, except the `c3e9a18` `ControlCenterWindow.qml` tightening noted above, which remains open. |
 | ✅ | **Phase 4** — Accessibility capability records | **Done.** See `CHANGELOG.md`, `TASKS.md`. Foundation for 5/6/7/8 — touched only `dwm-settings-provider`/`dwm-settings-input`, no conflict with the already-done Phase 2/3 Settings-pane work. |
-| 2 | **Phase 5** — Contrast and motion policy | Depends on Phase 4 (done). |
-| 3 | **Phase 6** — Accessibility Settings controls | Depends on Phases 4 (done) and 5. |
-| 4 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
-| 5 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
-| 6 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — last by design. |
+| 1 | **Phase 5** — Contrast and motion policy | Depends on Phase 4 (done). |
+| 2 | **Phase 6** — Accessibility Settings controls | Depends on Phases 4 (done) and 5. |
+| 3 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
+| 4 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
+| 5 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — last by design. |
 | — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
 
-**Net effect:** with Phases 0, 1, 2, 3, and 4 done, the only thing left before the
-5→6/7/8 accessibility chain and Phase 9 is Phase 11. Nothing about that
+**Net effect:** with Phases 0, 1, 2, 3, 4, and 11 done, the only thing left is the
+5→6/7/8 accessibility chain and Phase 9. Nothing about that
 remaining order changed from the original survey — the two pieces of new work
-found on 2026-09-06 both slot in without disturbing it: Phase 11 because it
-shares no files with anything else, and the regional-services scope because it
+found on 2026-09-06 both slotted in without disturbing it: Phase 11 because it
+shared no files with anything else, and the regional-services scope because it
 extends a phase (10) that's already deferred rather than needing a phase of
 its own.
 
@@ -195,7 +196,7 @@ Phase-specific gates:
 | 8 | `make check-quickshell-notifications`, `make check-session-guards` |
 | 9 | `make check-settings`, `make check-quickshell-appearance-model` |
 | 10 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management` |
-| 11 | `make clean all` (compiler-flag change), `make check-shell`, `make check-format` — see `SYNC-P11-SECURITY-HARDENING.md` for the per-item checks |
+| 11 | `make clean all` (compiler-flag change), `make check-shell`, `make check-format`, `make check-lock`, `make check-cachyos`, `make check-install` — **done**, see `CHANGELOG.md` |
 
 Full suite before the last phase merges:
 

@@ -55,6 +55,16 @@ installFont() {
 	fi
 }
 
+# Pinned SHA-256 of the current https://starship.rs/install.sh, captured and
+# reviewed from a direct download. The script has no per-release URL of its
+# own -- it self-elevates via `sudo` only for its final install step, so it
+# must not be run with the whole script already as root. Re-capture and
+# re-review this hash if the installer content ever legitimately changes.
+STARSHIP_INSTALLER_SHA256="52c64f14a558034ebeb1907ea9364e802b32474576fd3e68265f73bc33cc8fbb"
+# Reviewed fzf-bin release tag: pins to a checksummed upstream release rather
+# than an unpinned clone of a moving branch.
+FZF_REF="v0.74.3"
+
 _install_pkg() {
 	sudo pacman -S --needed --noconfirm "$1"
 }
@@ -63,11 +73,27 @@ installStarshipAndFzf() {
 	if ! command_exists starship; then
 		printf "%b\n" "Installing Starship..."
 		_install_pkg starship 2>/dev/null || {
-			printf "%b\n" "Package manager install failed, using curl..."
-			curl -sSL https://starship.rs/install.sh | sudo sh || {
+			printf "%b\n" "Package manager install failed; installing the checksum-verified installer..."
+			starship_tmp=$(mktemp) || exit 1
+			trap 'rm -f "$starship_tmp"' EXIT
+			curl --fail --location --show-error --silent \
+				https://starship.rs/install.sh --output "$starship_tmp" || {
+				printf "%b\n" "Failed to download the Starship installer!"
+				exit 1
+			}
+			if ! printf '%s  %s\n' "$STARSHIP_INSTALLER_SHA256" "$starship_tmp" | sha256sum --check --status; then
+				printf "%b\n" "Starship installer checksum verification failed! Refusing to run it."
+				exit 1
+			fi
+			# Not run under sudo: the installer only escalates internally
+			# (via its own elevate_priv/sudo call) if /usr/local/bin is not
+			# already writable by this user.
+			sh "$starship_tmp" --yes || {
 				printf "%b\n" "Failed to install starship!"
 				exit 1
 			}
+			rm -f "$starship_tmp"
+			trap - EXIT
 		}
 	else
 		printf "%b\n" "Starship already installed"
@@ -76,9 +102,10 @@ installStarshipAndFzf() {
 	if ! command_exists fzf; then
 		printf "%b\n" "Installing fzf..."
 		_install_pkg fzf 2>/dev/null || {
-			printf "%b\n" "Package manager install failed, using git..."
-			git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-			sudo ~/.fzf/install
+			printf "%b\n" "Package manager install failed; cloning the pinned fzf release..."
+			git clone --branch "$FZF_REF" --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+			# --bin installs only into ~/.fzf/bin for this user; never needs sudo.
+			~/.fzf/install --bin --no-update-rc
 		}
 	else
 		printf "%b\n" "Fzf already installed"
@@ -92,12 +119,12 @@ installZoxide() {
 	fi
 
 	printf "%b\n" "Installing Zoxide..."
-	_install_pkg zoxide 2>/dev/null || {
-		printf "%b\n" "Package manager install failed, using curl..."
-		if ! curl -sSL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh; then
-			printf "%b\n" "Something went wrong during zoxide install!"
-			exit 1
-		fi
+	# zoxide is in the official Arch repos; Lyona targets Arch only, so an
+	# unpinned curl|sh fallback for a non-Arch install serves no supported
+	# configuration and is dropped rather than pinned.
+	_install_pkg zoxide || {
+		printf "%b\n" "Failed to install zoxide!"
+		exit 1
 	}
 }
 
