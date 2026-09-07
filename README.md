@@ -35,10 +35,52 @@ the existing-system installer on Arch Linux.
 | **Everyday essentials** | A polished panel, application launcher, system tray, Control Center, Settings, notifications, screenshots, audio, brightness, and power controls. |
 | **Easy discovery** | An interactive keybind viewer, guided display setup, built-in diagnostics, and clear unsupported-feature reporting. |
 | **Personal configuration** | Live-reloading hotkeys, themes, and window rules, with local configuration preserved across upgrades. |
+| **Panel customization** | Show or hide individual panel widgets (workspace, volume, Bluetooth, network, power) from Settings, with the choice persisted across every monitor and a fresh session. |
 | **Two installation paths** | A ready-to-install Arch image or an installer for an existing Arch system. |
 
 > lyona is an X11 desktop. A Wayland-native session is not currently part
 > of the project scope.
+
+## Recent Changes
+
+Highlights from the last few development phases. See
+[CHANGELOG.md](./CHANGELOG.md) for the complete, unabridged list.
+
+### Features
+
+- Show or hide individual panel widgets (workspace, volume, Bluetooth,
+  network, power) from Settings, persisted across every monitor and a fresh
+  session.
+- Settings now reports accessibility maturity per capability — text scale,
+  contrast, reduced motion, notification policy, and keyboard/pointer access
+  — instead of a single all-or-nothing accessibility state.
+- The Settings window was resized and its navigation, panes, and display
+  controls tightened, so more options stay visible without shrinking your
+  configured text scale.
+
+### Bug Fixes
+
+- Fixed a `Super+A` ChatGPT/webapp launch that never found a user-scoped
+  browser install; it now correctly prefers an installed desktop app and
+  falls back to the web app only when asked to.
+- Fixed `dwm-settings-input` silently reporting zero input devices when
+  `xinput` failed outright, instead of surfacing the failure.
+- Fixed a rare race in the appearance inventory scanner that could lose
+  track of an in-progress scan.
+
+### Security Updates
+
+- Closed the last installer paths that could pipe an unverified remote
+  script into `sudo sh`, or build an unpinned clone as root (the Starship,
+  fzf, zoxide, and `yay-bin` fallbacks).
+- `xscreensaver`-based screen blanking is now wired into the real lock
+  chain, so it actually locks the session instead of just going dark.
+- The CachyOS package-signing key is now fingerprint-verified before it's
+  trusted, instead of trusting whatever a keyserver returns for its key ID.
+- `dwm` now builds with standard compiler hardening (stack protector, PIE,
+  RELRO, fortified source, format-security warnings).
+- Closed a `.desktop`-file injection path in `webapp-create` and added a
+  dedicated polkit consent prompt for display-settings changes.
 
 ## Install
 
@@ -160,6 +202,12 @@ The adjacent `dwm-settings-input` provider uses `xinput`, `setxkbmap` for
 keyboard settings, and `udevadm` for stable device identity and hotplug events.
 Kept values are stored in `input-settings.conf` in the same XDG directory;
 `DWM_INPUT_SETTINGS_FILE` can select another file.
+
+Settings also reports accessibility maturity per capability — text scale,
+contrast, reduced motion, notification policy, and keyboard/pointer access —
+instead of a single all-or-nothing accessibility state, so it's clear which
+of these are already usable and which are still read-only reporting on your
+system.
 
 See the [Configuration Guide](https://dwm.technicks89.com/configuration.html)
 and [Theming Guide](https://dwm.technicks89.com/theming.html) for examples and

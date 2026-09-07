@@ -112,6 +112,41 @@ if DWM_LOCK_TEST_DIR="$work" PATH="$work/bin" "$helper" 2>"$work/err"; then
 fi
 grep -Fq "no usable screen locker found" "$work/err"
 
+cat >"$work/bin/xscreensaver-command" <<'SCRIPT'
+#!/bin/sh
+printf '%s\n' "$*" >"${DWM_LOCK_TEST_DIR:?}/xscreensaver-command"
+SCRIPT
+chmod +x "$work/bin/xscreensaver-command"
+
+# xscreensaver-command is installed but the daemon is not running (pgrep,
+# stubbed to fail at the top of this file, reports no match): the branch
+# must not be taken, and dwm-lock still falls through to "no usable locker".
+if DWM_LOCK_TEST_DIR="$work" PATH="$work/bin" "$helper" 2>"$work/err"; then
+	echo "dwm-lock locked via xscreensaver-command with no running daemon" >&2
+	exit 1
+fi
+grep -Fq "no usable screen locker found" "$work/err"
+test ! -e "$work/xscreensaver-command"
+
+cat >"$work/bin/pgrep" <<'SCRIPT'
+#!/bin/sh
+case $* in
+"-x xscreensaver") exit 0 ;;
+*) exit 1 ;;
+esac
+SCRIPT
+chmod +x "$work/bin/pgrep"
+
+DWM_LOCK_TEST_DIR="$work" PATH="$work/bin" "$helper"
+grep -Fxq -- "-lock" "$work/xscreensaver-command"
+
+rm -f "$work/bin/xscreensaver-command" "$work/xscreensaver-command"
+cat >"$work/bin/pgrep" <<'SCRIPT'
+#!/bin/sh
+exit 1
+SCRIPT
+chmod +x "$work/bin/pgrep"
+
 cat >"$work/bin/busctl" <<'SCRIPT'
 #!/bin/sh
 printf 'address=%s\nargs=%s\n' \

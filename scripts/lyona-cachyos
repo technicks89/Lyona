@@ -3,6 +3,10 @@ set -euo pipefail
 
 KEY_ID=F3B607488DB35A47
 KEYSERVER=keyserver.ubuntu.com
+# Cross-checked against a live keyserver.ubuntu.com query and an independent
+# CachyOS-provisioned machine's already-trusted pacman keyring; both agreed.
+# Verify again on rotation.
+KEY_FINGERPRINT=882DCFE48E2051D48E2562ABF3B607488DB35A47
 # shellcheck disable=SC2016 # pacman expands $arch and $repo, not the shell
 BOOTSTRAP_SERVER='https://cdn77.cachyos.org/repo/$arch/$repo'
 DEFAULT_KERNEL=linux-cachyos
@@ -154,11 +158,20 @@ write_repo_blocks() {
 }
 
 import_key() {
+	local received_fp
+
 	info "Importing the CachyOS package signing key..."
 	run_root pacman-key --recv-keys "$KEY_ID" --keyserver "$KEYSERVER" || {
 		err "Could not receive the CachyOS signing key $KEY_ID."
 		return 1
 	}
+	received_fp=$(pacman-key --list-keys "$KEY_ID" 2>/dev/null |
+		command grep -A1 '^pub' | tail -n1 | tr -d '[:space:]')
+	if [[ ${received_fp^^} != "$KEY_FINGERPRINT" ]]; then
+		err "CachyOS key fingerprint mismatch — refusing to trust it."
+		run_root pacman-key --delete "$KEY_ID" 2>/dev/null || true
+		return 1
+	fi
 	run_root pacman-key --lsign-key "$KEY_ID" || {
 		err "Could not locally sign the CachyOS signing key $KEY_ID."
 		return 1

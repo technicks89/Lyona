@@ -110,6 +110,12 @@ if command -v gnome-screensaver-command >/dev/null 2>&1 &&
 	exit 0
 fi
 
+if command -v xscreensaver-command >/dev/null 2>&1 &&
+	pgrep -x xscreensaver >/dev/null 2>&1 &&
+	try_lock xscreensaver-command -lock; then
+	exit 0
+fi
+
 for locker in i3lock slock xlock; do
 	if command -v "$locker" >/dev/null 2>&1 &&
 		try_lock "$locker"; then

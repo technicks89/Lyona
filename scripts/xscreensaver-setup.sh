@@ -63,7 +63,7 @@ cat >"$XSCREENSAVER_CONFIG" <<'EOF'
 mode:         blank
 timeout:      0:10:00
 cycle:        0:10:00
-lock:         False
+lock:         True
 lockTimeout:  0:00:00
 dpmsEnabled:  False
 dpmsStandby:  0:00:00

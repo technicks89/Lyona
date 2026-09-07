@@ -87,6 +87,10 @@ INSTALL_COMMANDS = \
 INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
 PRIVILEGED_HELPERS = scripts/dwm-settings-display-root
 PRIVILEGED_HELPER_DIR = ${PREFIX}/libexec/lyona
+POLKIT_ACTIONS = config/polkit/com.lyona.settings-display.policy
+# polkit does not search PREFIX-relative paths; this is a fixed system path
+# regardless of PREFIX.
+POLKIT_ACTIONS_DIR = /usr/share/polkit-1/actions
 
 RELEASE_NAME = lyona-${VERSION}
 RELEASE_ARCHIVE = release/${RELEASE_NAME}.tar.gz
@@ -195,6 +199,11 @@ install-system:
 	for f in ${PRIVILEGED_HELPERS}; do \
 		sed "s|@PREFIX@|${PREFIX}|g" "$$f" | \
 			install -Dm755 /dev/stdin ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$(basename "$$f"); \
+	done
+	@echo "==> Installing polkit actions..."
+	for f in ${POLKIT_ACTIONS}; do \
+		sed "s|@PREFIX@|${PREFIX}|g" "$$f" | \
+			install -Dm644 /dev/stdin ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$(basename "$$f"); \
 	done
 
 install-gtk-themes:
@@ -342,6 +351,9 @@ uninstall:
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
 	rm -f ${DESTDIR}${PRIVILEGED_HELPER_DIR}/dwm-settings-display-root
+	for name in $(notdir ${POLKIT_ACTIONS}); do \
+		rm -f ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$name; \
+	done
 
 release: dwm
 	@work="$$(mktemp -d)"; \
@@ -588,6 +600,9 @@ check-install-manifest: all
 		printf '%s\n' \
 			usr/share/licenses/lyona/capitaine-cursors/COPYING \
 			usr/share/licenses/lyona/grub-themes/LICENSE; \
+		for name in $(notdir ${POLKIT_ACTIONS}); do \
+			printf 'usr/share/polkit-1/actions/%s\n' "$$name"; \
+		done; \
 	} | sort > "$$expected"; \
 	find "$$stage" \( -type f -o -type l \) -printf '%P\n' | sort > "$$actual"; \
 	cmp "$$expected" "$$actual"; \
@@ -595,6 +610,8 @@ check-install-manifest: all
 		test -x "$$stage/usr/bin/$$name"; \
 	done; \
 	test -x "$$stage/usr/libexec/lyona/dwm-settings-display-root"; \
+	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-settings-display-root' \
+		"$$stage/usr/share/polkit-1/actions/com.lyona.settings-display.policy"; \
 	grep -Fqx 'Exec=/usr/bin/dwm' \
 		"$$stage/usr/share/xsessions/dwm.desktop"; \
 	test -f "$$stage/usr/share/icons/${CAPITAINE_DARK_THEME}/cursors/default"; \

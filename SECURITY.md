@@ -25,3 +25,17 @@ The installer and helpers must preserve the privilege and configuration rules
 in `SPEC.md`: package and system installation are explicit, user configuration
 is preserved, downloaded artifacts are verified where checksums are available,
 and privileged repair actions remain allowlisted and bounded.
+
+## Hardening Notes
+
+- **2026-09-06** — closed a read-only security audit of `scripts/`, `config/`,
+  `install.sh`, and `config.mk` (see `CHANGELOG.md`'s "Security" section and
+  `docs/SYNC-P11-SECURITY-HARDENING.md` for detail): removed the last
+  unverified `curl | sudo sh` and unpinned-clone-then-root-install paths in
+  the installer (`install-mybash`'s Starship/fzf/zoxide fallbacks,
+  `install.sh`'s `yay-bin` bootstrap), pinned the CachyOS signing key's
+  fingerprint before it is locally signed, wired `xscreensaver-setup.sh`
+  into `dwm-lock`'s real locker chain so it actually locks, added standard
+  compiler hardening flags to the `dwm` build, closed a `.desktop`-key
+  injection path in `webapp-create`, and added a dedicated polkit action for
+  `dwm-settings-display`'s `pkexec` call.

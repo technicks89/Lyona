@@ -48,6 +48,40 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   readiness. Every emitted record is bounded and validated the same way as
   the rest of `dwm-settings-provider`'s helper output.
 
+### Security
+
+- `install-mybash`'s Starship fallback no longer pipes a remote script
+  straight into `sudo sh` on a transient `pacman` failure: it now downloads
+  `https://starship.rs/install.sh` to a temp file, verifies it against a
+  pinned SHA-256, and runs it as the invoking user (the installer itself only
+  escalates internally if `/usr/local/bin` is not already writable). The fzf
+  fallback now clones a pinned release tag and installs with `--bin`, which
+  never needs `sudo`, instead of an unpinned clone plus `sudo ~/.fzf/install`.
+  The zoxide curl fallback is dropped entirely in favor of the official Arch
+  package, since Lyona targets Arch only.
+- `xscreensaver-setup.sh` now writes `lock: True` instead of `lock: False`,
+  and `dwm-lock` gained a guarded fallback branch (only taken when the
+  daemon is actually running) so a screen that blanks via xscreensaver is
+  also actually locked, instead of dismissible with any keypress.
+- `lyona-cachyos` now verifies the CachyOS signing key's fingerprint against
+  a pinned value before `pacman-key --lsign-key` trusts it, and deletes any
+  key that doesn't match rather than signing it. Previously it trusted
+  whatever a keyserver returned for the key ID with no independent check.
+- `install.sh`'s `yay-bin` AUR bootstrap now clones a specific reviewed
+  commit instead of an unpinned moving ref, and no longer passes
+  `--noconfirm` to `makepkg -si`, restoring the normal PKGBUILD review pause.
+- `config.mk` now builds `dwm` with `-D_FORTIFY_SOURCE=2`,
+  `-fstack-protector-strong`, `-fPIE`/`-pie`, `-Wl,-z,relro,-z,now`, and
+  `-Wformat -Wformat-security`. Fixed one real issue `-Wformat-security`
+  surfaced: `getparentprocess()` never checked `fscanf`'s return value.
+- `webapp-create` rejects a name or URL containing a newline before writing
+  the generated `.desktop` file, closing a `.desktop`-key-injection path, and
+  restricts icon downloads to HTTPS with a 10 MiB cap.
+- Added a dedicated polkit `.policy` action
+  (`config/polkit/com.lyona.settings-display.policy`) for
+  `dwm-settings-display`'s `pkexec` call, replacing the generic
+  `org.freedesktop.policykit.exec` prompt with a scoped message and icon.
+
 ### Changed
 
 - Increase the Settings window to 1180x760 and tighten its navigation rows,

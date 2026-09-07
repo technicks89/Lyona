@@ -60,6 +60,10 @@ MESLO_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v${MESLO_VE
 MESLO_SHA256="13b502ac8c2bd9d3161018064560e23cd42b175bb730780a270975265a19ad57"
 ARCH="$(uname -m)"
 YAY_BIN_URL="https://aur.archlinux.org/yay-bin.git"
+# Reviewed AUR PKGBUILD commit (yay-bin 13.0.1): downloads a checksummed
+# release tarball from github.com/Jguer/yay, no arbitrary build step. Re-pin
+# after reviewing the diff since the last pin.
+YAY_BIN_REF="13e0a4754d106a9252b7479bf1b370fbe454fc48"
 INSTALL_PROFILE="${DWM_INSTALL_PROFILE:-full}"
 HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
 NON_INTERACTIVE=false
@@ -453,12 +457,13 @@ ensure_yay_installed() {
 
 	info "Installing yay as a standing AUR helper..."
 	tmp_dir="$(mktemp -d)"
-	if ! git clone --depth 1 "$YAY_BIN_URL" "$tmp_dir/yay-bin" 2>/dev/null; then
+	if ! git clone "$YAY_BIN_URL" "$tmp_dir/yay-bin" 2>/dev/null ||
+		! git -C "$tmp_dir/yay-bin" checkout --quiet "$YAY_BIN_REF"; then
 		rm -rf "$tmp_dir"
 		warn "Could not download yay; continuing without an AUR helper."
 		return 1
 	fi
-	if ! (cd "$tmp_dir/yay-bin" && makepkg -si --noconfirm); then
+	if ! (cd "$tmp_dir/yay-bin" && makepkg -si); then
 		rm -rf "$tmp_dir"
 		warn "yay build failed; continuing without an AUR helper."
 		return 1
