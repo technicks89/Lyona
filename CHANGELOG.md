@@ -48,6 +48,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   readiness. Every emitted record is bounded and validated the same way as
   the rest of `dwm-settings-provider`'s helper output.
 
+- Add a persistent high-contrast and reduced-motion policy, applied across
+  every managed Quickshell surface. New `dwm-accessibility-settings` helper
+  (`status`/`watch`/`set`/`reset`) stores the policy at
+  `~/.config/lyona/accessibility.conf`, with the same atomic-publish,
+  concurrent-edit-refusal, and symlink/hard-link-refusal safety as the
+  existing settings helpers. High contrast widens control borders and pins
+  muted text to full-strength text; reduced motion collapses animation
+  durations to zero. Both compose over the active theme rather than
+  replacing it, so hot-reloading a theme while an override is active still
+  repaints the palette and the override survives -- `Theme.qml`'s
+  `textMuted` is now a read-only value derived from a separate
+  `paletteTextMuted` palette slot for exactly this reason. A missing or
+  unreadable policy file falls back to standard contrast and full motion
+  without preventing shell startup.
+
 ### Security
 
 - `install-mybash`'s Starship fallback no longer pipes a remote script

@@ -3,7 +3,7 @@
 Upstream: [`#202`](https://github.com/ChrisTitusTech/dwm-titus/pull/202)
 `Phase 5: add accessibility Settings controls` (`28a374f`, +811 / -127).
 Depends on Phase 4 (accessibility capability records, done — see CHANGELOG.md) and
-[Phase 5](SYNC-P5-CONTRAST-MOTION.md).
+Phase 5 (contrast and motion policy, done — see CHANGELOG.md).
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
 Phase 5 made contrast and motion *work*. This makes them *reachable* — and does it

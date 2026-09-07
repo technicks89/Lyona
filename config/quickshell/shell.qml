@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.SystemTray
 import qs.core
+import qs.accessibility
 import qs.appearance
 import qs.controlcenter
 import qs.controls
@@ -173,6 +174,10 @@ ShellRoot {
 
     AppearanceModel {
         id: appearanceModel
+    }
+
+    AccessibilityModel {
+        id: accessibilityModel
     }
 
     PanelSettingsModel {
@@ -538,6 +543,14 @@ ShellRoot {
 
         function themeUiScale(): string {
             return Theme.uiScale.toFixed(4);
+        }
+
+        function themeColor(role: string): string {
+            return String(Theme[role] || "");
+        }
+
+        function themeHighContrast(): bool {
+            return Theme.highContrast;
         }
 
         function inputCount(): int {

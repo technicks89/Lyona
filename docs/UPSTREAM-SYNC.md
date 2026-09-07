@@ -102,7 +102,7 @@ Every new helper must be registered in **three** places or it will not ship:
 | 2 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#186` part 1 | — |
 | 3 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#186` part 2, `c3e9a18`* | 0, 2 |
 | 4 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#190` | — |
-| 5 | [`SYNC-P5-CONTRAST-MOTION.md`](SYNC-P5-CONTRAST-MOTION.md) | `#201` | 4 |
+| 5 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#201` | 4 |
 | 6 | [`SYNC-P6-A11Y-CONTROLS.md`](SYNC-P6-A11Y-CONTROLS.md) | `#202` | 4, 5 |
 | 7 | [`SYNC-P7-XKB-INPUT.md`](SYNC-P7-XKB-INPUT.md) | `#203` | 4 |
 | 8 | [`SYNC-P8-NOTIFICATIONS.md`](SYNC-P8-NOTIFICATIONS.md) | `#204` | 4 |
@@ -113,30 +113,24 @@ Every new helper must be registered in **three** places or it will not ship:
 File numbers above are **not** the recommended run order — see
 [Recommended execution order](#recommended-execution-order) below.
 
-Phases 0, 1, 2, 3, 4, and 11 are **done** — implemented, verified (`make
+Phases 0, 1, 2, 3, 4, 5, and 11 are **done** — implemented, verified (`make
 check-shell`, `make check-format`, `make check-quickshell-qml`, and the
 relevant functional tests all pass), and their planning documents
 (`SYNC-P0-DPI-GATE.md`, `SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`,
 `P5-SETTINGS-LAYOUT-PORT.md`, `SYNC-P4-A11Y-CAPABILITIES.md`,
-`SYNC-P11-SECURITY-HARDENING.md`) have been removed — the record of what
-changed now lives in `CHANGELOG.md` (Phase 2, 4, and 11's `TASKS.md`
-checkboxes are also ticked; Phases 0, 1, and 3 never had one) and git history,
-not in a plan for work still to do. Phase 4's own doc had drifted from what
-upstream actually shipped by the time it was implemented (wrong emitter count,
-wrong helper for text-scale, an undocumented notifications capability) —
-corrected in place before removal, and the corrections are reflected in the
-Phase 5/6/7/8 documents that referenced it.
-Phases 0, 1, 2, 3, and 4 are **done** — implemented, verified (`make check-shell`,
-`make check-format`, `make check-quickshell-qml`, and the relevant functional
-tests all pass), and their planning documents (`SYNC-P0-DPI-GATE.md`,
-`SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`, `P5-SETTINGS-LAYOUT-PORT.md`,
-`SYNC-P4-A11Y-CAPABILITIES.md`) have been removed — the record of what changed now
-lives in `CHANGELOG.md` (Phase 2 and Phase 4's `TASKS.md` checkboxes are also
-ticked; Phases 0, 1, and 3 never had one) and git history, not in a plan for work
-still to do. Phase 4's own doc had drifted from what upstream actually shipped by
-the time it was implemented (wrong emitter count, wrong helper for text-scale, an
-undocumented notifications capability) — corrected in place before removal, and the
-corrections are reflected in the Phase 5/6/7/8 documents that referenced it.
+`SYNC-P11-SECURITY-HARDENING.md`, `SYNC-P5-CONTRAST-MOTION.md`) have been
+removed — the record of what changed now lives in `CHANGELOG.md` (Phase 2, 4,
+and 11's `TASKS.md` checkboxes are also ticked, and Phase 5's `TASKS.md:93`
+checkbox too; Phases 0, 1, and 3 never had one) and git history, not in a plan
+for work still to do. Phase 4's own doc had drifted from what upstream
+actually shipped by the time it was implemented (wrong emitter count, wrong
+helper for text-scale, an undocumented notifications capability) — corrected
+in place before removal, and the corrections are reflected in the Phase
+5/6/7/8 documents that referenced it. Phase 5's own doc adapted upstream's
+inline appearance watcher onto Lyona's shared `WatchedProcess` component —
+verified against `AppearanceModel.qml`'s existing compositor-watcher
+substitution rather than porting upstream's `watchReady`/
+`watchSetupFailures` bookkeeping.
 
 **`*` Phase 3 exception — `c3e9a18` was not ported.** `P5-SETTINGS-LAYOUT-PORT.md`
 (now removed) fully specified the Settings-window enlargement and compaction, and
@@ -164,24 +158,15 @@ as originally recommended.
 | ✅ | **Phase 2** — Panel-widget persistence | **Done.** See `CHANGELOG.md`. |
 | ✅ | **Phase 3** — Settings layout compaction | **Done**, except the `c3e9a18` `ControlCenterWindow.qml` tightening noted above, which remains open. |
 | ✅ | **Phase 4** — Accessibility capability records | **Done.** See `CHANGELOG.md`, `TASKS.md`. Foundation for 5/6/7/8 — touched only `dwm-settings-provider`/`dwm-settings-input`, no conflict with the already-done Phase 2/3 Settings-pane work. |
-| 1 | **Phase 5** — Contrast and motion policy | Depends on Phase 4 (done). |
-| 2 | **Phase 6** — Accessibility Settings controls | Depends on Phases 4 (done) and 5. |
-| 3 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
-| 4 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
-| 5 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — last by design. |
+| ✅ | **Phase 5** — Contrast and motion policy | **Done.** See `CHANGELOG.md`, `TASKS.md`. Depends on Phase 4 (done). |
+| 1 | **Phase 6** — Accessibility Settings controls | Depends on Phases 4 and 5 (both done). |
+| 2 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
+| 3 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
+| 4 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — last by design. |
 | — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
 
-**Net effect:** with Phases 0, 1, 2, 3, 4, and 11 done, the only thing left is the
-5→6/7/8 accessibility chain and Phase 9. Nothing about that
-| 2 | **Phase 5** — Contrast and motion policy | Depends on Phase 4 (done). |
-| 3 | **Phase 6** — Accessibility Settings controls | Depends on Phases 4 (done) and 5. |
-| 4 | **Phase 7** — XKB input accessibility | Depends on Phase 4 (done) only; independent of 5/6. |
-| 5 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
-| 6 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — last by design. |
-| — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
-
-**Net effect:** with Phases 0, 1, 2, 3, and 4 done, the only thing left before the
-5→6/7/8 accessibility chain and Phase 9 is Phase 11. Nothing about that
+**Net effect:** with Phases 0, 1, 2, 3, 4, 5, and 11 done, the only thing left is
+Phase 6→7/8 and Phase 9. Nothing about that
 remaining order changed from the original survey — the two pieces of new work
 found on 2026-09-06 both slotted in without disturbing it: Phase 11 because it
 shared no files with anything else, and the regional-services scope because it

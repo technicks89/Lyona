@@ -90,7 +90,7 @@ Acceptance:
   available through supported Arch/X11 interfaces.
 - [ ] Add accessible Settings controls with keyboard navigation, visible focus,
   usable common display sizes, explanatory unavailable states, and reset.
-- [ ] Apply reduced-motion and contrast choices consistently to managed
+- [x] Apply reduced-motion and contrast choices consistently to managed
   Quickshell surfaces without introducing a Wayland, compositor, or polling
   dependency.
 - [ ] Add notification behavior controls that preserve the existing D-Bus owner,
