@@ -45,6 +45,16 @@ grep -Fq 'fields[1] === "none" && fields[2] === "unavailable"' "$model"
 grep -Fq '"mutable": root.validThemeName(fields[1])' "$model"
 grep -Fq 'Commands.checkedCommand(Commands.settingsThemeCommand(action, args))' "$model"
 grep -Fq 'Commands.settingsThemeCommand("mutation-ready", [])' "$model"
+grep -Fq 'property bool mutationReadinessPending: false' "$model"
+grep -Fq 'root.mutationReady = false;' "$model"
+grep -Fq 'if (readinessProcess.running || actionProcess.running) {' "$model"
+grep -Fq 'root.mutationReadinessPending = true;' "$model"
+grep -Fq 'if (!running && root.mutationReadinessPending && !actionProcess.running) {' "$model"
+grep -Fq 'onStreamFinished: root.mutationReady = !root.mutationReadinessPending' "$model"
+for mutation_function in startPreview applyTheme resetTheme; do
+	sed -n "/function $mutation_function(/,/^    }/p" "$model" |
+		grep -Fq 'root.mutationReadinessPending'
+done
 grep -Fq 'Theme.applyAppearanceColors(colors, darkMode)' "$model"
 grep -Fq 'watchChanges: true' "$model"
 test "$(grep -Fc 'watchChanges: true' "$model")" -eq 5
@@ -225,7 +235,7 @@ grep -Fq 'readonly property int panelIconFontSize: dp(13)' "$theme"
 grep -Fq 'font.pixelSize: Theme.panelIconFontSize + 1' "$icon_text"
 test "$(grep -Fc 'Theme.panelIconFontSize' "$panel")" -eq 5
 grep -Fq 'Math.round(13 * fontScale * uiScale)' "$theme"
-test "$(grep -Ec 'font\.pixelSize: Theme\.(bodyFontSize|inputFontSize)' "$display_pane")" -eq 9
+test "$(grep -Ec 'font\.pixelSize: Theme\.(bodyFontSize|inputFontSize)' "$display_pane")" -eq 13
 test "$(grep -Ec 'font\.pixelSize: Theme\.(bodyFontSize|inputFontSize)' "$input_pane")" -eq 5
 grep -Fq 'font.pixelSize: Theme.inputFontSize' "$network_pane"
 grep -Fq 'passwordInput.implicitHeight + 2 * Theme.spacingSm' "$network_pane"

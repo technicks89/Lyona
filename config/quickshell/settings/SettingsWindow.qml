@@ -18,6 +18,7 @@ FloatingWindow {
     required property var autostartModel
     required property var appearanceModel
     required property var accessibilityModel
+    required property var notificationModel
     required property var panelSettingsModel
 
     title: "dwm settings"
@@ -379,6 +380,9 @@ FloatingWindow {
                                 visible: root.settingsModel.selectedSectionId === "appearance"
                                 appearanceModel: root.appearanceModel
                                 accessibilityModel: root.accessibilityModel
+                                notificationModel: root.notificationModel
+                                notificationCapability: root.settingsModel.capabilityById(
+                                    "accessibility-notifications")
                                 panelSettingsModel: root.panelSettingsModel
                                 capabilities: root.settingsModel.capabilitiesForSection("appearance")
                                     .filter(function(capability) {

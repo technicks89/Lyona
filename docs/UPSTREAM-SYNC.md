@@ -105,26 +105,63 @@ Every new helper must be registered in **three** places or it will not ship:
 | 5 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#201` | 4 |
 | 6 | **Done** — see `CHANGELOG.md`, `TASKS.md` | `#202` | 4, 5 |
 | 7 | **Done** — see `CHANGELOG.md` | `#203` | 4 |
-| 8 | [`SYNC-P8-NOTIFICATIONS.md`](SYNC-P8-NOTIFICATIONS.md) | `#204` | 4 |
-| 9 | [`SYNC-P9-DISPLAY-APPLY.md`](SYNC-P9-DISPLAY-APPLY.md) | `#198`, `#200`, `f558c77` | 0, 3 |
+| 8 | **Done** — see `CHANGELOG.md` | `#204` | 4 |
+| 9 | **Done** — see `CHANGELOG.md` | `#198`, `#200`, `f558c77` | 0, 3 |
 | 10 | [`SYNC-P10-SYSTEM-MANAGEMENT.md`](SYNC-P10-SYSTEM-MANAGEMENT.md) | `#207`–`#253` | Lyona UPDATE-001…003 |
 | 11 | **Done** — see `CHANGELOG.md`, `TASKS.md` | — (Lyona's own audit) | — |
 
 File numbers above are **not** the recommended run order — see
 [Recommended execution order](#recommended-execution-order) below.
 
-Phases 0, 1, 2, 3, 4, 5, 6, 7, and 11 are **done** — implemented, verified
-(`make check-shell`, `make check-format`, `make check-quickshell-qml`, and
-the relevant functional tests all pass), and their planning documents
+Phases 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, and 11 are **done** — implemented,
+verified (`make check-shell`, `make check-format`, `make check-quickshell-qml`,
+and the relevant functional tests all pass), and their planning documents
 (`SYNC-P0-DPI-GATE.md`, `SYNC-P1-STANDALONE.md`, `P5-PANEL-WIDGETS-PORT.md`,
 `P5-SETTINGS-LAYOUT-PORT.md`, `SYNC-P4-A11Y-CAPABILITIES.md`,
 `SYNC-P11-SECURITY-HARDENING.md`, `SYNC-P5-CONTRAST-MOTION.md`,
-`SYNC-P6-A11Y-CONTROLS.md`, `SYNC-P7-XKB-INPUT.md`) have been removed — the
-record of what changed now lives in `CHANGELOG.md` (Phase 2, 4, 6, and 11's
-`TASKS.md` checkboxes are also ticked, and Phase 5's `TASKS.md:93` checkbox
-too; Phase 7 closed the same `TASKS.md:88`/`:91` items Phases 4 and 6 already
-checked, so it ticks nothing new; Phases 0, 1, and 3 never had one) and git
-history, not in a plan for work still to do. `SYNC-P7-XKB-INPUT.md`'s claim
+`SYNC-P6-A11Y-CONTROLS.md`, `SYNC-P7-XKB-INPUT.md`, `SYNC-P8-NOTIFICATIONS.md`,
+`SYNC-P9-DISPLAY-APPLY.md`)
+have been removed — the record of what changed now lives in `CHANGELOG.md`
+(Phase 2, 4, 6, and 11's `TASKS.md` checkboxes are also ticked, and Phase 5's
+`TASKS.md:93` and Phase 8's `TASKS.md:96` checkboxes too; Phase 7 closed the
+same `TASKS.md:88`/`:91` items Phases 4 and 6 already checked, so it ticks
+nothing new; Phases 0, 1, 3, and 9 never had one) and git history, not in a plan
+for work still to do. Phase 9's own doc pointed its "Closes" section at
+`TASKS.md:133`, which by the time of implementation was a `SECURITY-001`
+acceptance line, not the `P5-VALIDATE` "Exercise reversible appearance and
+accessibility changes on Arch" item it meant — a line-number drift from an
+earlier phase's insertion into this same file, not a content error. That
+`P5-VALIDATE` item stays unchecked: it covers all of Phase 5's reversible
+appearance/accessibility work, most of it needs real multi-monitor hardware,
+and this phase's own manual-verification checklist (also in the removed doc)
+was written for exactly that reason. Phase 9's "Lyona adaptation" section
+also proposed a DPI-revert-on-abandoned-preview test
+(`dwm-settings-display → publish_dpi_state() → dpi.current → Theme.uiScale`
+reverting when a resolution preview's countdown lapses) that doesn't
+correspond to real behavior: `scripts/dwm-settings-display`'s resolution
+preview/revert/watchdog paths never call `publish_dpi_state()` at all — DPI
+and resolution are entirely decoupled in the current implementation, so
+there's nothing for a countdown lapse to leave stale. Confirmed against the
+real upstream diff too: `65fd1a6`'s actual `tests/test-quickshell-settings-xvfb.sh`
+hunk (+95/-21) has nothing to do with display resolution — it exercises
+`AppearanceModel.qml`'s new `mutationReadinessPending` queueing (a `dwm-settings-theme
+mutation-ready` fixture stub that stalls until released), which is real and
+was ported (see the "validating queued theme readiness" stage in that file).
+No DPI-revert wiring or test was added; documented here instead of forced in
+speculatively. Phase 8's own doc undercounted the real scope — it
+missed `tests/test-quickshell-settings-xvfb.sh` entirely (a +167/-13 hunk)
+and its `scripts/autostart.sh` claim ("create `~/.config/lyona` before the
+shell starts") didn't match the real commit at all, which only hardens
+`QUICKSHELL_CONFIG`'s path against a relative `XDG_CONFIG_HOME` — ported the
+real diff, not the doc's claim. Also **deliberately scoped out**: the
+`test-quickshell-settings-xvfb.sh` restart-based persistence assertions
+(load/reset/Do-Not-Disturb/malformed-JSON survive a fresh Quickshell
+process, not just a live file change) — building a `restart_quickshell`
+helper in an unfamiliar 2700-line file carried real risk for marginal
+additional coverage, given the same policy behavior (including on-disk
+persistence, verified by reading the actual JSON file) is already fully
+exercised end-to-end by `test-quickshell-large-surfaces-xvfb.sh`, which
+passes. `SYNC-P7-XKB-INPUT.md`'s claim
 that `xkbset` "is in the Arch extra repository, so no AUR handling is
 needed" was wrong — confirmed against a live `pacman -Ss`/AUR RPC query,
 it is AUR-only. Shipped as an `arch:desktop-optional` entry instead of
@@ -174,12 +211,13 @@ as originally recommended.
 | ✅ | **Phase 5** — Contrast and motion policy | **Done.** See `CHANGELOG.md`, `TASKS.md`. Depends on Phase 4 (done). |
 | ✅ | **Phase 6** — Accessibility Settings controls | **Done.** See `CHANGELOG.md`, `TASKS.md`. Depends on Phases 4 and 5 (both done). |
 | ✅ | **Phase 7** — XKB input accessibility | **Done.** See `CHANGELOG.md`. Depends on Phase 4 (done) only; independent of 5/6. |
-| 1 | **Phase 8** — Managed notification policy | Depends on Phase 4 (done) only; independent of 5/6/7. |
-| 2 | **Phase 9** — Display resolution and apply workflow | Depends on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done) — also depends on Phase 6 (done), which touches the same `ShellButton.qml` this phase's Apply button extends — last by design. |
+| ✅ | **Phase 8** — Managed notification policy | **Done.** See `CHANGELOG.md`. Depends on Phase 4 (done) only; independent of 5/6/7. |
+| ✅ | **Phase 9** — Display resolution and apply workflow | **Done.** See `CHANGELOG.md`. Depended on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done); also touched the same `ShellButton.qml` Phase 6 extended, for the new Apply button's primary/pending states. |
 | — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
 
-**Net effect:** with Phases 0, 1, 2, 3, 4, 5, 6, 7, and 11 done, the only thing left is
-Phase 8 and Phase 9. Nothing about that
+**Net effect:** with Phases 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, and 11 done, the only
+work left in this document is Phase 10, and that stays deliberately deferred.
+Nothing about that
 remaining order changed from the original survey — the two pieces of new work
 found on 2026-09-06 both slotted in without disturbing it: Phase 11 because it
 shared no files with anything else, and the regional-services scope because it

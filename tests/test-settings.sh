@@ -31,6 +31,30 @@ make_failing_stub() {
 	chmod +x "$path"
 }
 
+make_notification_bus_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' 'printf '\''{"type":"u","data":[4242]}\n'\''' >"$path"
+	chmod +x "$path"
+}
+
+make_live_notification_bus_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' \
+		"printf '{\"type\":\"u\",\"data\":[%s]}\\n' \"\$PPID\"" >"$path"
+	chmod +x "$path"
+}
+
+make_notification_monitor_stub() {
+	path=$1
+	mkdir -p "${path%/*}"
+	printf '%s\n' '#!/bin/sh' \
+		"printf '%s\\n' \"\$*\" >\"\${DWM_SETTINGS_MONITOR_LOG:?}\"" \
+		"printf 'signal\\n'" >"$path"
+	chmod +x "$path"
+}
+
 make_appearance_stub() {
 	path=$1
 	mkdir -p "${path%/*}"
@@ -142,10 +166,16 @@ arch_bin=$work/arch-bin
 make_tools "$base_bin" dirname awk tr stat find grep timeout readlink
 cp -a "$base_bin" "$arch_bin"
 
+grep -Fq "*' (deleted)') process_executable=\${process_executable%' (deleted)'} ;;" \
+	"$provider"
+grep -Fq "case \${XDG_CONFIG_HOME:-} in" "$provider"
+grep -Fq "*) config_home=\${HOME:-}/.config ;;" "$provider"
+
 for command_name in xrandr nmcli bluetoothctl pactl xset gsettings light-locker \
-	xdg-settings xdg-mime xinput xkbset busctl; do
+	xdg-settings xdg-mime xinput xkbset; do
 	make_stub "$arch_bin/$command_name"
 done
+make_notification_bus_stub "$arch_bin/busctl"
 make_stub "$arch_bin/dwm-xdg-autostart"
 make_appearance_stub "$arch_bin/dwm-settings-appearance"
 make_font_stub "$arch_bin/dwm-settings-font"
@@ -164,6 +194,15 @@ printf 'ID=arch\nPRETTY_NAME="Arch\tLinux"\n' \
 
 arch_output=$(PATH="$arch_bin" XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+notification_monitor_bin=$work/notification-monitor-bin
+cp -a "$arch_bin" "$notification_monitor_bin"
+make_notification_monitor_stub "$notification_monitor_bin/busctl"
+PATH="$notification_monitor_bin" DWM_SETTINGS_MONITOR_LOG="$work/notification-monitor.log" \
+	"$provider" watch-notifications >"$work/notification-monitor.out"
+grep -Fqx 'signal' "$work/notification-monitor.out"
+grep -Fqx -- \
+	"--user --no-pager monitor --match=type='signal',sender='org.freedesktop.DBus',path='/org/freedesktop/DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.freedesktop.Notifications'" \
+	"$work/notification-monitor.log"
 printf '%s\n' "$arch_output" | grep -Fqx 'settings-protocol	1'
 printf '%s\n' "$arch_output" | grep -Fqx 'platform	arch	arch	Arch Linux'
 printf '%s\n' "$arch_output" | grep -Fqx \
@@ -196,7 +235,7 @@ printf '%s\n' "$arch_output" | grep -Fqx \
 printf '%s\n' "$arch_output" | grep -Fqx \
 	'capability	appearance	accessibility-reduced-motion	Reduced motion	available	user-session	dwm-accessibility-settings	Persistent managed-shell reduced-motion policy is available'
 printf '%s\n' "$arch_output" | grep -Fqx \
-	'capability	appearance	accessibility-notifications	Notification policy	partial	read-only	dbus	A notification D-Bus owner is active; managed policy controls are not configured'
+	'capability	appearance	accessibility-notifications	Notification policy	partial	read-only	dbus	A notification owner is active, but it is not the managed policy provider'
 printf '%s\n' "$arch_output" | grep -Fqx \
 	'capability	appearance	accessibility-input	Keyboard and pointer access	available	user-session	dwm-settings-input	Persistent XKB accessibility controls are available'
 [ "$(printf '%s\n' "$arch_output" |
@@ -429,6 +468,15 @@ no_notification_owner_output=$(PATH="$no_notification_owner_bin" XDG_CONFIG_HOME
 printf '%s\n' "$no_notification_owner_output" | grep -Fqx \
 	'capability	appearance	accessibility-notifications	Notification policy	unavailable	read-only	dbus	No notification D-Bus owner is observable in this session'
 
+mismatched_notification_owner_bin=$work/mismatched-notification-owner-bin
+cp -a "$arch_bin" "$mismatched_notification_owner_bin"
+make_live_notification_bus_stub "$mismatched_notification_owner_bin/busctl"
+mismatched_notification_owner_output=$(PATH="$mismatched_notification_owner_bin" \
+	XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$mismatched_notification_owner_output" | grep -Fqx \
+	'capability	appearance	accessibility-notifications	Notification policy	partial	read-only	dbus	A notification owner is active, but it is not the managed policy provider'
+
 unsafe_theme_bin=$work/unsafe-theme-bin
 cp -a "$arch_bin" "$unsafe_theme_bin"
 make_failing_stub "$unsafe_theme_bin/dwm-settings-theme"
@@ -580,6 +628,17 @@ grep -Fq 'Commands.settingsDisplayCommand("watch", root.watchOwnerArguments())' 
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'Commands.settingsInputCommand("watch", root.watchOwnerArguments())' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'Commands.settingsProviderCommand("watch-notifications", [])' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'stdout: SplitParser { onRead: notificationOwnerSettleTimer.restart() }' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'notificationOwnerWatchProcess.running = id === "appearance" && root.visible;' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+if ! grep -Fq 'if (id === "appearance") root.refresh();' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"; then
+	printf 'Activating the appearance section must refresh capabilities, so the notification-owner capability updates promptly\n' >&2
+	exit 1
+fi
 grep -Fq 'path: "/proc/" + Quickshell.processId.toString() + "/stat"' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runInput("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
@@ -604,18 +663,101 @@ grep -Fq -- '--tearfree auto --force-full-composition-pipeline auto' \
 	"$repo/scripts/dwm-settings-display-root"
 grep -Fq 'fields.length >= 10 ? fields[9] : "unsupported"' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'NVIDIA full composition on persistent install' \
+grep -Fq 'NVIDIA anti-tearing available at next login' \
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'import QtQuick.Controls as Controls' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'component DisplayComboBox: Controls.ComboBox' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'Accessible.name: accessibleLabel' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'palette.window: Theme.popupBackground' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'highlighted: comboBox.highlightedIndex === index' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'accessibleLabel: "Resolution for " + outputCard.modelData.name' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'root.settingsModel.displayResolutionChoices(outputCard.index)' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'root.settingsModel.setDisplayResolution(outputCard.index, model[index])' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'root.settingsModel.displayRefreshRateChoices(outputCard.index)' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'root.settingsModel.setDisplayRefreshRate(outputCard.index, model[index])' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'function displayResolutionChoices(index)' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'const scanVariant = /^([ip])/i.exec(match[3]);' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq '(scanVariant ? scanVariant[1].toLowerCase() : "")' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'function displayRefreshRateChoices(index)' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+if grep -Fq 'cycleDisplayMode' "$repo/config/quickshell/settings/DisplaySettingsPane.qml"; then
+	printf 'Display resolution must not be presented as a mode-cycling button.\n' >&2
+	exit 1
+fi
+grep -Fq 'label: "Apply changes"' "$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'enabled: root.settingsModel.displayState === "ready"' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq '&& root.settingsModel.displayHasPendingChanges' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'readonly property bool displayHasPendingChanges:' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'property bool displayRefreshPending: false' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'root.displayRefreshPending = true;' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (!running && root.displayRefreshPending && root.visible) {' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq '? "Display changes are ready to apply" : outputs.length + " connected outputs";' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'label: root.settingsModel.previewRollbackFailed ? "Keep current" : "Keep changes"' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'onActivated: root.settingsModel.keepPreview()' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'onTextEdited: if (acceptableInput)' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+test "$(grep -Fc 'onTextEdited: if (acceptableInput)' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml")" -eq 2
+grep -Fq 'function keepPreview() {' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'root.runDisplay("keep", [root.previewToken]);' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+if grep -Fq 'keepPreview(root.profileName' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"; then
+	printf 'Keeping a display preview must not implicitly save a typed layout name.\n' >&2
+	exit 1
+fi
+grep -Fq 'label: "Use at next login"' "$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'label: "Restore login backup"' "$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+grep -Fq 'the previous next-login layout will be backed up' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+if grep -Fq 'root.profileName = modelData;' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"; then
+	printf 'Trying a saved layout must not populate the save target.\n' >&2
+	exit 1
+fi
+if grep -Fq 'label: "Install persistent"' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"; then
+	printf 'Displays still exposes implementation-oriented persistence wording.\n' >&2
+	exit 1
+fi
 grep -Fq 'migrate or remove it before installing a managed display profile' \
 	"$repo/scripts/dwm-settings-display-root"
 grep -Fq 'watch-apply' "$repo/scripts/autostart.sh"
 grep -Fq 'displayWatchProcess.running = false' "$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'inputWatchProcess.running = false' "$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'notificationOwnerWatchProcess.running = false' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'stdout: SplitParser { onRead: inputSettleTimer.restart() }' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.searchQuery = ""' "$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'activeFocusOnTab: root.enabled' "$repo/config/quickshell/core/ShellButton.qml"
 grep -Fq 'event.key === Qt.Key_Return' "$repo/config/quickshell/core/ShellButton.qml"
+grep -Fq 'property bool primary: false' "$repo/config/quickshell/core/ShellButton.qml"
+grep -Fq ': root.danger ? (root.hovered ? Theme.controlHoverFill : Theme.controlNormalFill)' \
+	"$repo/config/quickshell/core/ShellButton.qml"
 grep -Fq 'title: "dwm settings"' "$repo/config/quickshell/settings/SettingsWindow.qml"
 grep -Fq 'label: "Settings"' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
 grep -Fq 'root.settingsModel.openOnScreen(targetScreen)' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
