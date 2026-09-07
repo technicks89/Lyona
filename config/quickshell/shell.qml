@@ -522,6 +522,18 @@ ShellRoot {
             return settingsModel.displayDpiSource;
         }
 
+        // Pure reads over Theme's own state, distinct from displayDpi() above
+        // (which reads the helper-reported value via settingsModel). These
+        // prove the DPI hot-reload path actually reached Theme.uiScale, not
+        // just that the helper discovered a DPI. See docs/SYNC-P0-DPI-GATE.md.
+        function themeDisplayDpi(): int {
+            return Theme.displayDpi;
+        }
+
+        function themeUiScale(): string {
+            return Theme.uiScale.toFixed(4);
+        }
+
         function inputCount(): int {
             return settingsModel.inputDevices.length;
         }
