@@ -123,7 +123,7 @@ half-applied install, and what UPDATE-002 checks after applying an update.
 
 Reuse the existing safety idiom rather than writing a new one: the
 `state_file_safe()` shape from the panel-settings helper
-(`docs/P5-PANEL-WIDGETS-PORT.md` §1) — regular file, not a symlink, owned by
+(`scripts/dwm-panel-settings`) — regular file, not a symlink, owned by
 the reader, single hard link, size-capped, not group/other-writable. A missing
 record is a normal `defaults` state, never an error; an unsafe one is reported,
 never rewritten.

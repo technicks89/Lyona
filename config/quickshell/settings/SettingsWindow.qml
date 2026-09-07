@@ -17,12 +17,13 @@ FloatingWindow {
     required property var defaultsModel
     required property var autostartModel
     required property var appearanceModel
+    required property var panelSettingsModel
 
     title: "dwm settings"
     visible: settingsModel.visible
     screen: settingsModel.targetScreen
-    implicitWidth: 980
-    implicitHeight: 620
+    implicitWidth: Math.min(1180, root.screen ? Math.max(1, root.screen.width - 32) : 1180)
+    implicitHeight: Math.min(760, root.screen ? Math.max(1, root.screen.height - 32) : 760)
     color: Theme.transparent
 
     function focusSearch() {
@@ -55,7 +56,7 @@ FloatingWindow {
 
             ColumnLayout {
                 anchors.fill: parent
-                spacing: Theme.sectionSpacing
+                spacing: Theme.spacingXl
 
                 LargeSurfaceHeader {
                     Layout.fillWidth: true
@@ -156,10 +157,10 @@ FloatingWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: Theme.sectionSpacing
+                    spacing: Theme.spacingXl
 
                     Rectangle {
-                        Layout.preferredWidth: Theme.largeSurfaceNavWidth
+                        Layout.preferredWidth: Theme.settingsNavWidth
                         Layout.fillHeight: true
                         color: Theme.menuBackground
                         border.color: Theme.popupBorder
@@ -168,8 +169,8 @@ FloatingWindow {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: Theme.spacingXl
-                            spacing: Theme.spacingLg
+                            anchors.margins: Theme.spacingLg
+                            spacing: Theme.spacingMd
 
                             SectionLabel {
                                 label: "Sections"
@@ -181,7 +182,7 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
-                                spacing: Theme.spacingSm
+                                spacing: Theme.spacingXxs
                                 model: root.settingsModel.filteredSections
 
                                 delegate: Rectangle {
@@ -192,7 +193,8 @@ FloatingWindow {
                                     readonly property bool selected: root.settingsModel.selectedSectionId === modelData.id
 
                                     width: sectionList.width
-                                    height: 52
+                                    height: Math.max(Theme.dp(44),
+                                        sectionRow.implicitHeight + Theme.spacingSm)
                                     color: selected ? Theme.menuSelectedBackground
                                         : sectionMouse.containsMouse ? Theme.menuHoverBackground : Theme.transparent
                                     border.color: selected ? Theme.controlSelectedBorder : Theme.transparent
@@ -210,10 +212,12 @@ FloatingWindow {
                                     }
 
                                     RowLayout {
+                                        id: sectionRow
+
                                         anchors.fill: parent
-                                        anchors.leftMargin: 12
-                                        anchors.rightMargin: 10
-                                        spacing: Theme.spacingLg
+                                        anchors.leftMargin: 10
+                                        anchors.rightMargin: 8
+                                        spacing: Theme.spacingMd
 
                                         UiText {
                                             text: String(sectionButton.index + 1).padStart(2, "0")
@@ -282,8 +286,8 @@ FloatingWindow {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: Theme.spacingHuge
-                            spacing: Theme.sectionSpacing
+                            anchors.margins: Theme.spacingXxl
+                            spacing: Theme.spacingXl
 
                             ColumnLayout {
                                 Layout.fillWidth: true
@@ -373,6 +377,7 @@ FloatingWindow {
                                 Layout.fillHeight: true
                                 visible: root.settingsModel.selectedSectionId === "appearance"
                                 appearanceModel: root.appearanceModel
+                                panelSettingsModel: root.panelSettingsModel
                                 capabilities: root.settingsModel.capabilitiesForSection("appearance")
                                     .filter(function(capability) {
                                         // These three are drawn by the pane itself;
@@ -397,7 +402,7 @@ FloatingWindow {
                                     && root.settingsModel.selectedSectionId !== "defaults"
                                     && root.settingsModel.selectedSectionId !== "appearance"
                                 clip: true
-                                spacing: Theme.spacingLg
+                                spacing: Theme.spacingMd
                                 model: root.settingsModel.capabilitiesForSection(root.settingsModel.selectedSectionId)
 
                                 delegate: Rectangle {
@@ -407,7 +412,7 @@ FloatingWindow {
                                     readonly property color stateColor: Theme.statusColor(modelData.status)
 
                                     width: capabilityList.width
-                                    height: Math.max(92, cardColumn.implicitHeight + 24)
+                                    height: Math.max(78, cardColumn.implicitHeight + 16)
                                     color: Theme.controlNormalFill
                                     border.color: Theme.controlNormalBorder
                                     border.width: Theme.controlBorderWidth
@@ -426,11 +431,11 @@ FloatingWindow {
                                         id: cardColumn
 
                                         anchors.fill: parent
-                                        anchors.leftMargin: 16
-                                        anchors.rightMargin: 12
-                                        anchors.topMargin: 12
-                                        anchors.bottomMargin: 12
-                                        spacing: Theme.spacingSm
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 10
+                                        anchors.topMargin: 8
+                                        anchors.bottomMargin: 8
+                                        spacing: Theme.spacingXs
 
                                         RowLayout {
                                             Layout.fillWidth: true

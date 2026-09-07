@@ -5,7 +5,7 @@ Upstream: [`#198`](https://github.com/ChrisTitusTech/dwm-titus/pull/198)
 [`#200`](https://github.com/ChrisTitusTech/dwm-titus/pull/200)
 `Settings: clarify display apply workflow` (`65fd1a6`), and `f558c77`
 `Stabilize Settings preview countdown validation`.
-Depends on [Phase 0](SYNC-P0-DPI-GATE.md) and Phase 3.
+Depends on Phase 0 and Phase 3, both done — see `CHANGELOG.md`.
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 
 Last of the Phase-5 parity work. Deliberately sequenced **after** the layout
@@ -144,8 +144,8 @@ dwm-settings-display  →  publish_dpi_state()  →  dpi.current
 resolution must also revert the published DPI**, or the shell is left scaled for a
 resolution that is no longer active — every surface mis-sized, with no visible cause.
 
-Assert it in `tests/test-quickshell-settings-xvfb.sh`, building on
-[Phase 0](SYNC-P0-DPI-GATE.md)'s probes:
+Assert it in `tests/test-quickshell-settings-xvfb.sh`, building on Phase 0's
+`themeDisplayDpi`/`themeUiScale` probes (already in `shell.qml`):
 
 ```sh
 # Apply a mode, let the countdown lapse without confirming, and require that

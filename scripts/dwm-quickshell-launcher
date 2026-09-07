@@ -402,7 +402,6 @@ launch_chatgpt() {
 	launch_background webapp-launch https://chatgpt.com
 }
 
-
 case ${1:-list} in
 list)
 	list_apps

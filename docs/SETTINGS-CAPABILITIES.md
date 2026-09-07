@@ -53,7 +53,7 @@ provider work still required.
 
 | Operations | Owner and interface | Class | Settings disposition |
 | --- | --- | --- | --- |
-| Open/close pages, show/hide panel widgets | `ControlCenterModel.qml` in-memory state | User-session | Reuse interaction patterns; persistence is not currently provided for widget visibility. |
+| Open/close pages, show/hide panel widgets | One root `PanelSettingsModel.qml` over versioned `dwm-panel-settings` state; Control Center delegates to it | User-session | Workspace, volume, Bluetooth, network, and power visibility is shared by every monitor and Settings. Absent or invalid state safely reads as all-on; atomic set/reset refuses unsafe or concurrent replacement. |
 | System summary, theme list, keybind list, power status | `dwm-quickshell-controlcenter info`, `themes`, `keybinds`, `power-status`; tab-separated records | Read-only | Keep as internal interfaces until a future owning phase versions their output and error contracts. |
 | Restart Picom or Quickshell, toggle compositor, reload wallpaper | `dwm-quickshell-controlcenter action` with fixed action names | User-session | Keep allowlisted; surface missing-tool and process failures instead of unconditional success. |
 | Dependency check and installer | Fixed Control Center actions launched in a terminal | Delegated | Keep as explicit delegated workflows, not background Settings mutations. |
@@ -129,6 +129,7 @@ action.
 | Managed shell font and text scale | `dwm-settings-font` action protocol version 1.0, Fontconfig exact-family validation with equivalent MesloLGS aliases, `Theme.qml`, and the root Appearance model | User-session | The dedicated mode-preserving `font.conf` owns only the managed shell family and one of six bounded scales. Preview rollback is watchdog-backed and hash-guarded; malformed state falls back to Meslo at 100 percent, while the icon font remains fixed so ordinary fonts cannot remove shell glyphs. GTK and Qt font policy remains outside this slice. |
 | GTK configuration tool | `nwg-look` | Delegated | Optional entry point only. |
 | Wallpaper, font, cursor, icon, GTK, Qt, and compositor asset state | `dwm-settings-appearance inventory` version 1.0 plus pane-scoped asset and Picom watchers | Read-only | Candidate output and watch coverage are bounded; missing tools or assets degrade only their capability. Font mutation has an independent managed-shell contract, and cursor, icon, GTK, and Qt mutation is owned by `dwm-settings-toolkit`. |
+| Panel widget visibility | One root `PanelSettingsModel.qml` and fixed `dwm-panel-settings` status/set/reset protocols over `panel-widgets.conf` | User-session | The former implicit all-on session state migrates without a write. All monitors, Control Center, and Settings consume the same values. Malformed or unsupported state is preserved and presented as safe all-on defaults until an explicit set/reset atomically repairs it; unsafe files are never replaced. |
 | Notification policy and accessibility | No settings-ready provider contract | Unsupported | Add by Phase 5 with explicit preview, reset, and rollback behavior. |
 
 The Phase 5 appearance snapshot is append-only within protocol version 1. It

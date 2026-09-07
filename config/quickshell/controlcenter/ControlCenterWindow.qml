@@ -29,6 +29,21 @@ ClickAwayPopup {
         return "Control Center";
     }
 
+    function pageMessage() {
+        if (root.controlCenterModel.page === "power")
+            return root.powerModel.messageFor("controlcenter");
+        if (root.controlCenterModel.page === "widgets"
+                && root.controlCenterModel.panelSettingsModel) {
+            const panelModel = root.controlCenterModel.panelSettingsModel;
+            if (panelModel.message.length > 0 && !panelModel.actionSucceeded)
+                return panelModel.message;
+            if (panelModel.providerState !== "available" && panelModel.providerState !== "defaults")
+                return panelModel.providerDetail;
+            if (panelModel.message.length > 0) return panelModel.message;
+        }
+        return root.controlCenterModel.message;
+    }
+
     function openApplications() {
         const targetScreen = root.panelWindow ? root.panelWindow.screen : null;
         root.controlCenterModel.close();
@@ -197,10 +212,8 @@ ClickAwayPopup {
 
                 UiText {
                     Layout.fillWidth: true
-                    visible: (root.controlCenterModel.page === "power"
-                        ? root.powerModel.messageFor("controlcenter") : root.controlCenterModel.message).length > 0
-                    text: root.controlCenterModel.page === "power"
-                        ? root.powerModel.messageFor("controlcenter") : root.controlCenterModel.message
+                    visible: root.pageMessage().length > 0
+                    text: root.pageMessage()
                     color: Theme.textMuted
                     elide: Text.ElideRight
                 }
@@ -302,6 +315,9 @@ ClickAwayPopup {
                             label: modelData
                             detail: root.controlCenterModel.widgetEnabled(modelData) ? "On" : "Off"
                             active: root.controlCenterModel.widgetEnabled(modelData)
+                            enabled: !root.controlCenterModel.panelSettingsModel
+                                || (root.controlCenterModel.panelSettingsModel.mutationReady
+                                    && !root.controlCenterModel.panelSettingsModel.busy)
                             onActivated: root.controlCenterModel.toggleWidget(modelData)
                         }
                     }

@@ -66,7 +66,7 @@ Acceptance:
     active theme. Text size remains outstanding: `dwm-settings-display
     dpi-set` already scales through `Xft.dpi`, and live rescaling of running
     applications would need an XSETTINGS daemon.
-- [ ] Move the existing in-memory panel-widget visibility controls onto shared,
+- [x] Move the existing in-memory panel-widget visibility controls onto shared,
   versioned user state with Settings integration, safe defaults, and migration
   that preserves the current Control Center behavior.
 - [ ] Preserve optional-component behavior: missing Picom, Feh, toolkit themes,

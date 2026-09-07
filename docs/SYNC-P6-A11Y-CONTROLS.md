@@ -184,7 +184,7 @@ row.
 
 The +34 lines are IPC probes for `tests/test-quickshell-settings-xvfb.sh` to read
 back the rendered accessibility state. Pure reads, in the same `settings` handler
-that [Phase 0](SYNC-P0-DPI-GATE.md) extended.
+that Phase 0 extended (done — see `CHANGELOG.md`).
 
 ## Verification
 

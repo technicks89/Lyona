@@ -10,6 +10,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Persist workspace, volume, Bluetooth, network, and power panel visibility in
+  one versioned user-owned state file shared by every monitor, Control Center,
+  and Settings. An absent file migrates from the prior implicit all-on state;
+  malformed, incomplete, unsafe, or unsupported state falls back all-on
+  without preventing shell startup. Atomic set/reset actions preserve the file
+  mode and refuse concurrent or unsafe replacements.
+
 - Theme the GRUB boot menu by default. The `CyberRe` theme (vendored from
   [ChrisTitusTech/bootloader-themes](https://github.com/ChrisTitusTech/bootloader-themes),
   MIT) installs to `/usr/share/grub/themes/CyberRe`, and the installer
@@ -29,6 +36,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   theme step does not fail the install. Opt out with `--skip-grub-theme` or
   `DWM_INSTALL_GRUB_THEME=false`; revert an applied theme with
   `lyona-grub-theme remove`.
+
+### Changed
+
+- Increase the Settings window to 1180x760 and tighten its navigation rows,
+  pane margins, capability cards, and display controls so more options remain
+  visible without reducing the configured text scale. Clamp the enlarged
+  window to the active screen on smaller outputs.
 
 ## [2026.08.0-beta.1] - 2026-08-28
 

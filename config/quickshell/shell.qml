@@ -175,6 +175,10 @@ ShellRoot {
         id: appearanceModel
     }
 
+    PanelSettingsModel {
+        id: panelSettingsModel
+    }
+
     readonly property string dpiStatePath: (Quickshell.env("XDG_RUNTIME_DIR") || "")
         + "/dwm-settings-display/dpi.current"
 
@@ -217,6 +221,7 @@ ShellRoot {
     ControlCenterModel {
         id: controlCenterModel
         powerModel: powerModel
+        panelSettingsModel: panelSettingsModel
     }
 
     SystemHealthModel {
@@ -233,6 +238,7 @@ ShellRoot {
         defaultsModel: defaultsModel
         autostartModel: autostartModel
         appearanceModel: appearanceModel
+        panelSettingsModel: panelSettingsModel
     }
 
     LazyLoader {
@@ -795,6 +801,22 @@ ShellRoot {
             return appearanceModel.recoveryState;
         }
 
+        function panelSettingsState(): string {
+            return panelSettingsModel.providerState;
+        }
+
+        function panelWidgetEnabled(widget: string): bool {
+            return panelSettingsModel.widgetEnabled(widget);
+        }
+
+        function panelWidgetSet(widget: string, enabled: bool): void {
+            panelSettingsModel.setWidget(widget, enabled);
+        }
+
+        function panelWidgetsReset(): void {
+            panelSettingsModel.reset();
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }
@@ -906,6 +928,7 @@ ShellRoot {
             controlsModel: controlsModel
             bluetoothModel: bluetoothModel
             controlCenterModel: controlCenterModel
+            panelSettingsModel: panelSettingsModel
             powerModel: powerModel
             powerMenuModel: powerMenuModel
             primaryPanel: modelData === Quickshell.screens[0]
@@ -966,5 +989,6 @@ ShellRoot {
         defaultsModel: defaultsModel
         autostartModel: autostartModel
         appearanceModel: appearanceModel
+        panelSettingsModel: panelSettingsModel
     }
 }

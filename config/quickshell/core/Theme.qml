@@ -173,6 +173,7 @@ Singleton {
     readonly property int notificationAccentRadius: dp(2)
     readonly property int largeSurfaceMargin: dp(22)
     readonly property int largeSurfaceNavWidth: dp(248)
+    readonly property int settingsNavWidth: dp(232)
     readonly property int largeSurfaceSearchHeight: dp(44)
     readonly property int largeSurfaceCardRadius: dp(8)
     readonly property int titleFontSize: fontTitleSize

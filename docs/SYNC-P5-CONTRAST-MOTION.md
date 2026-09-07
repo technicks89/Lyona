@@ -181,8 +181,8 @@ dwm-accessibility-settings set contrast standard
 ```
 
 `themeColor(role)` and `themeHighContrast` are two more pure-read IPC probes in the
-same `settings` handler [Phase 0](SYNC-P0-DPI-GATE.md) extended; add them alongside
-`themeUiScale`.
+same `settings` handler Phase 0 extended (done — see `CHANGELOG.md`); add them
+alongside `themeUiScale`.
 
 Add the setter beside `applyDisplayDpi` (`Theme.qml:92`):
 
