@@ -9,8 +9,8 @@ Detail lives in three companion plans:
 | Boundary | Document | Delivers |
 | --- | --- | --- |
 | UPDATE-001 | **Done** — see `CHANGELOG.md`, `TASKS.md` | An installed system that can state what it is running |
-| UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) | `lyona-update` — check, stage, apply, roll back |
-| UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper |
+| UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) — **Done** | `lyona-update` — check, stage, apply, roll back |
+| UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) — **Done** | Settings and Control Center surfaces over that helper |
 
 `P6-UPDATE-PROVENANCE.md` (UPDATE-001's own planning document) has been
 removed now that it is implemented — the record of what changed lives in
@@ -18,11 +18,10 @@ removed now that it is implemented — the record of what changed lives in
 retiring a plan document once it is implemented (see `docs/UPSTREAM-SYNC.md`
 for the same convention applied to the upstream-sync phase docs).
 
-> **Sequencing.** Phase 5 closed and UPDATE-002 landed (2026-09-08). UPDATE-003
-> is next; `AGENTS.md` still forbids beginning it in a change scoped to
-> complete UPDATE-001, and it forbids beginning the separate upstream-ported
-> system-management work (`docs/UPSTREAM-SYNC.md`) in a change scoped to
-> complete UPDATE-001…003.
+> **Sequencing.** UPDATE-001, UPDATE-002, and UPDATE-003 are all done
+> (2026-09-08) — see `CHANGELOG.md` and `TASKS.md`. The upstream-ported
+> system-management work (`docs/UPSTREAM-SYNC.md`) is now the active
+> boundary, starting with Sync Phase 1.
 
 ---
 

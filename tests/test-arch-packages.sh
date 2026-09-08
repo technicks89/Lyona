@@ -29,10 +29,12 @@ mapfile -t packages < <(
 	{
 		dwm_packages arch required
 		dwm_packages arch desktop
+		dwm_packages arch system-management
+		dwm_packages arch system-management-optional
 	} | awk 'NF' | sort -u
 )
 if ((${#packages[@]} == 0)); then
-	printf 'Arch package map returned no required or desktop packages.\n' >&2
+	printf 'Arch package map returned no required, desktop, or system-management packages.\n' >&2
 	exit 1
 fi
 
@@ -146,5 +148,5 @@ grep -Fq 'unavailable in enabled repositories: absent-two' "$work/optional.err"
 
 "$repo/install.sh" --dry-run --non-interactive --profile core >/dev/null
 
-printf 'Arch required and desktop package map: PASS (%s packages)\n' \
+printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

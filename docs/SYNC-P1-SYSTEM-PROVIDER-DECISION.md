@@ -200,7 +200,7 @@ plus QML. Record the answer in this document's "Decision" line below before
 Phase 2 starts; every later phase's shape depends on it.
 
 ```text
-Decision: ____________________   Date: __________   Recorded by: __________
+Decision: Option A — adopt the Python helper   Date: 2026-09-08   Recorded by: project owner
 ```
 
 If Option B is chosen, Phases 5–7 must be rescoped before they are started —
@@ -348,8 +348,17 @@ equivalents, all verified present in `extra` this session:
 +	dwm_install_package_profile system-management
 ```
 
-Mirror the required half into `archiso/packages.x86_64`, add the new names to
-`scripts/check-deps.sh`, and assert both profiles in
+**Correction, found during implementation:** do *not* mirror this into
+`archiso/packages.x86_64`. That file is a strict `required + desktop + iso`
+derivation, enforced by `check-archiso`
+(`tests/test-arch-iso-builder.sh`) — it does not carry `desktop-optional`'s
+packages either, and these are target-system runtime dependencies for a
+Settings feature (the ISO installs the target via `pacstrap`, not
+PackageKit), the same category as `desktop-optional`, not an ISO bootstrap
+requirement. `scripts/check-deps.sh` needs no separate edit either — it
+already walks the aggregate `required`/`recommended`/`optional` profiles
+`arch:system-management`/`arch:system-management-optional` were wired into,
+so it reports the new packages automatically. Assert both profiles in
 `tests/test-arch-packages.sh`.
 
 > **`python3-rpm` has no Arch counterpart and must not be sought.** Its only

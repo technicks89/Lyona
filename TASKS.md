@@ -11,25 +11,26 @@ Phase 6 begins from the completed Personalization and Accessibility phase.
 Keep DWM, X11, Arch providers, runtime TOML files, and existing user-owned
 configuration compatible while adding the workflows below.
 
-lyona's own update path (`UPDATE-001…003`, `docs/P6-UPDATE-*.md`) lands
-first. It solves a different problem — updating lyona itself via signed
-release tarballs — than Arch system-package updates and regional/account/
-printer management, which is separate, already-planned, upstream-ported work
-tracked as its own nine-phase sequence in `docs/UPSTREAM-SYNC.md`'s "The
-system-management port" section. The two meet at exactly one point: UPDATE-003
-lays out the Settings → System pane so an "Arch packages" group can be added
-beside the "lyona" group later without rework — that "later" is
-`docs/UPSTREAM-SYNC.md`'s Sync Phases 3 and 7. Do not begin that upstream-sync
-work in a change scoped to complete UPDATE-001…003.
+lyona's own update path (`UPDATE-001…003`, `docs/P6-UPDATE-*.md`) — solving a
+different problem, updating lyona itself via signed release tarballs, than
+Arch system-package updates and regional/account/printer management — is
+**done** (merged `3c8adb2`, `d489f1f`, `fdb0995`). That was a prerequisite,
+not the whole of Phase 6: the active work is now the upstream-ported
+system-management work itself, tracked as its own nine-phase sequence in
+`docs/UPSTREAM-SYNC.md`'s "The system-management port" section (Arch package
+updates, timezone/NTP/locale, accounts, printers, software sources). The two
+efforts meet at exactly one point: UPDATE-003 laid out the Settings → System
+pane so an "Arch packages" group can be added beside the "lyona" group
+without rework — that "later" is `docs/UPSTREAM-SYNC.md`'s Sync Phases 3 and 7.
 
 Keep Phase 6 reviewable through these ordered boundaries. Finish, validate,
 and merge each before starting the next:
 
-1. UPDATE-001 — install provenance.
-2. UPDATE-002 — `lyona-update` check/apply/rollback with backup restore.
-3. UPDATE-003 — Settings and Control Center surfaces over that helper.
+1. UPDATE-001 — install provenance. **Done.**
+2. UPDATE-002 — `lyona-update` check/apply/rollback with backup restore. **Done.**
+3. UPDATE-003 — Settings and Control Center surfaces over that helper. **Done.**
 4. The upstream-ported system-management work (`docs/UPSTREAM-SYNC.md`'s Sync
-   Phases 1–9), once UPDATE-001…003 land.
+   Phases 1–9) — **active**, Sync Phase 1 below.
 
 ### UPDATE-001: Install Provenance
 
@@ -198,6 +199,95 @@ Acceptance:
   (a stubbed `lyona-update`, IPC probes, and a real phase-progression check
   through the stub's `apply`) is written and passes `check-shell`/
   `check-format`, but has not itself been run end-to-end.
+
+### Sync Phase 1: System-Management Provider Decision, Contract, and Packaging
+
+Upstream: `#207`, `#209`, `#265`. Doc:
+`docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md`. Lands no user-visible behavior —
+it exists because the subsystem cannot be ported until one question is
+answered, and answering it later would mean rewriting whatever came before.
+
+- [x] **The core decision.** Adopt upstream's Python helper
+  (`scripts/dwm-system-management`, PackageKit over D-Bus via PyGObject's
+  `Gio`) largely as-is (Option A), rather than a POSIX-shell reimplementation
+  (Option B, rejected — the doc's own analysis found the highest-risk part of
+  the whole port, a crash-safe atomic journal and async D-Bus reads, is
+  exactly what shell is worst at) or a read-only shell-only subset (Option C).
+  — **Met**: recorded in `docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md`'s
+  `Decision:` line, 2026-09-08.
+- [x] Write `docs/P6-SYSTEM-MANAGEMENT.md`, Lyona's own contract, adapted from
+  upstream's real 2,492-line Fedora document (fetched and read in full, not
+  worked from summary) with Arch substitutions applied throughout. — **Met**,
+  349 lines — deliberately condensed relative to upstream: the exhaustive
+  D-Bus retry/timeout/byte-budget detail belongs to each Sync Phase document
+  that implements that piece, not to this contract, which fixes the protocol
+  grammar, the protocol-minor staging table, the authorization/lifecycle
+  rules, and the Arch interface substitutions. D-3 and D-4 carried through as
+  still open, not resolved by writing it.
+- [x] New `arch:system-management` / `arch:system-management-optional`
+  package profiles (`python`, `python-gobject`, `packagekit`,
+  `accountsservice`, `cups` required; `system-config-printer`, `arch-audit`
+  optional), wired into `arch:recommended`/`arch:optional`, `install.sh`.
+  — **Met**, `tests/test-arch-packages.sh` (now also asserting these two
+  profiles against live `pacman -Si`, not just `required`/`desktop`)
+  confirms all packages are real and installable: "Arch required, desktop,
+  and system-management package map: PASS (67 packages)".
+  **`archiso/packages.x86_64` deliberately does not include them** —
+  correcting the doc's own "mirror the required half" instruction: that file
+  is a strictly `required + desktop + iso` derivation, test-enforced by
+  `check-archiso` (`tests/test-arch-iso-builder.sh`), and does not carry
+  `desktop-optional`'s packages either. The live ISO installs the target
+  system via `pacstrap`, not PackageKit; these are target-system runtime
+  dependencies for a Settings feature, the same category as
+  `desktop-optional`'s thunar/gvfs, not ISO bootstrap requirements. Manually
+  adding them broke `check-archiso`, caught and reverted.
+  `scripts/check-deps.sh` reports the new packages automatically — it walks
+  the same aggregate profiles, no separate edit was needed there.
+- [x] `Commands.qml`: `systemManagementCommand()` and
+  `terminatingCheckedCommand()` (the latter forwards surface-close signals to
+  a long-running helper instead of orphaning it, porting `dd55e585`'s
+  corrected mktemp/trap ordering, not the original's). — **Met**,
+  `check-quickshell-qml` clean. **Bug found and fixed**: the ported script's
+  `ulimit -f 16384` counts 512-byte blocks, not bytes — that was an 8 MiB
+  cap, not the intended 16 KiB one. Corrected to `ulimit -f 32`
+  (32 * 512 = 16384 bytes). The arithmetic is unambiguous (POSIX/bash's
+  documented unit for `ulimit -f`), but actual enforcement is unverified —
+  tested directly in this sandbox and `RLIMIT_FSIZE` is not enforced here at
+  all (`dd` wrote 20000 bytes through a 16384-byte limit with no error),
+  which looks like a container/sandbox restriction on that rlimit rather
+  than a flaw in the fix.
+- [x] `scripts/dwm-settings-provider`: replace the placeholder `system
+  administration` record with a real `dwm-system-management` availability
+  check. — **Met**, with one deviation from the doc's literal diff, disclosed
+  here: the doc names this capability `updates`, but that id was already
+  taken by UPDATE-003's `lyona-update` capability in the same `system`
+  section. Used `package-updates` instead (label "System updates", matching
+  the doc) to avoid two capabilities silently colliding on one id.
+- [x] `docs/SETTINGS-CAPABILITIES.md`: row for the new operations, and the
+  upstream `#207` correction applied — **`unsupported` is a capability
+  status, not an operation class.** — **Met**, both the "System and
+  diagnostics" summary row and the "System Health and Administration"
+  operations table corrected; a not-yet-implemented capability is *omitted*
+  by selecting the highest fully implemented protocol minor, never
+  advertised as `unsupported`.
+- [ ] `Makefile`: `INSTALL_COMMANDS`, `check-system-management`,
+  `check-quickshell-system-management`. — **Deliberately deferred to Sync
+  Phase 2**, not done here: `scripts/dwm-system-management` and
+  `tests/test-system-management.py` do not exist yet (Sync Phase 1 is
+  decision-and-packaging only; the actual script lands in
+  `SYNC-P2-UPDATE-SNAPSHOT.md`). Registering `INSTALL_COMMANDS` or a
+  `check-system-management` target against files that do not exist would
+  break `make install`/`check-install`/`make check` immediately — a real
+  sequencing gap in the phase document as written, not a shortcut. Land this
+  half of the Makefile diff together with the script itself in Sync Phase 2.
+
+Acceptance: `make check-shell check-format check-quickshell-qml
+check-arch-packages check-install check-settings` all pass — **Met**. The
+manual on-a-real-CachyOS-install verification (`pacman -Si packagekit`,
+`busctl --system introspect ... VersionM...`, importing `PackageKitGlib` via
+`python3 -c`) is unverified in this sandbox — no live PackageKit/D-Bus
+session here — and remains a real prerequisite to confirm before Sync Phase 2
+starts, per the doc's own "If the last two fail, stop" instruction.
 
 ## Phase Completion
 

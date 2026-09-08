@@ -360,6 +360,14 @@ Make the desktop appearance and interaction model configurable as one system.
 
 Status: Active (2026-09-08)
 
+Lands in two parts, tracked in `TASKS.md`: lyona's own update path
+(`UPDATE-001…003`, `lyona-update`) is **done** — it is a prerequisite for the
+rest of this phase, not the whole of it. The outcomes below — Arch package
+updates, regional/account/printer/software-source management — are the
+upstream-ported system-management port
+(`docs/UPSTREAM-SYNC.md#the-system-management-port`, Sync Phases 1–9), now
+underway. Phase 6 is not done until that port is.
+
 ### Objective
 
 Cover the system tasks users reasonably expect from a desktop environment
