@@ -26,6 +26,7 @@ retained_writers = []
 
 
 def name_call(method, connection=bus):
+    """Request or release the fixture's PackageKit bus name."""
     parameters = GLib.Variant("(su)", (NAME, 0)) if method == "RequestName" else GLib.Variant("(s)", (NAME,))
     return connection.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
         "org.freedesktop.DBus", method, parameters, GLib.VariantType.new("(u)"),
@@ -33,6 +34,7 @@ def name_call(method, connection=bus):
 
 
 def launch(monitor_environment=environment):
+    """Start the update monitor with the selected private-bus environment."""
     process = subprocess.Popen([sys.argv[1], "watch-updates"], env=monitor_environment,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
     processes.append(process)
@@ -40,6 +42,7 @@ def launch(monitor_environment=environment):
 
 
 def line(process, timeout=3):
+    """Read one newline-terminated record before the bounded deadline."""
     output = b""
     deadline = time.monotonic() + timeout
     with selectors.DefaultSelector() as selector:
@@ -54,6 +57,7 @@ def line(process, timeout=3):
 
 
 def emit(member, *, path=PATH, interface=NAME, parameters=None, connection=bus):
+    """Emit and flush one signal on the fixture's private bus."""
     connection.emit_signal(None, path, interface, member, parameters)
     connection.flush_sync(None)
 
