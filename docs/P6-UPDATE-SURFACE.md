@@ -1,9 +1,9 @@
 # UPDATE-003 — Update Surfaces in Settings and Control Center
 
 Third boundary of the Phase 6 update path. Architecture and rationale:
-[`P6-UPDATE-OVERVIEW.md`](P6-UPDATE-OVERVIEW.md). Depends on
-[`UPDATE-001`](P6-UPDATE-PROVENANCE.md) and
-[`UPDATE-002`](P6-UPDATE-HELPER.md).
+[`P6-UPDATE-OVERVIEW.md`](P6-UPDATE-OVERVIEW.md). Depends on UPDATE-001
+(**done**, see `CHANGELOG.md` and `TASKS.md` — its own planning document was
+removed once implemented) and [`UPDATE-002`](P6-UPDATE-HELPER.md).
 
 ## Context
 

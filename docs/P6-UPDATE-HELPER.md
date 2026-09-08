@@ -1,8 +1,9 @@
 # UPDATE-002 — `lyona-update`
 
 Second boundary of the Phase 6 update path. Architecture and rationale:
-[`P6-UPDATE-OVERVIEW.md`](P6-UPDATE-OVERVIEW.md). Depends on
-[`UPDATE-001`](P6-UPDATE-PROVENANCE.md) for the installed-version record.
+[`P6-UPDATE-OVERVIEW.md`](P6-UPDATE-OVERVIEW.md). Depends on UPDATE-001 for
+the installed-version record — **done**, see `CHANGELOG.md` and `TASKS.md`'s
+`UPDATE-001`; its own planning document was removed once implemented.
 
 ## Context
 

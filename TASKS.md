@@ -72,35 +72,54 @@ Acceptance:
 
 ### UPDATE-002: `lyona-update` Helper
 
-- [ ] Ship `lyona-update check|apply|rollback`, staging to
-  `$XDG_STATE_HOME/lyona/updates/<version>/`, verifying a signed release
-  tarball's SHA-256 against the GitHub release asset digest before unpacking,
-  and never swapping the live tree in place (`Commands.helperCommand`
-  resolves helpers from the data dir of a *running* session).
-- [ ] Reuse `scripts/dev-sync-install.sh`'s existing backup/verify machinery
+- [x] Ship `lyona-update check|apply|rollback|backups`, staging to
+  `$XDG_STATE_HOME/lyona/updates/<version>/`, verifying a release tarball's
+  SHA-256 against the GitHub release asset digest before unpacking, and never
+  swapping the live tree in place. — **Met**, `scripts/lyona-update`,
+  `tests/test-lyona-update.sh`.
+- [x] Reuse `scripts/dev-sync-install.sh`'s existing backup/verify machinery
   (`backup_live_install()`, `verify_install()`, `verify_tree()`,
   `runtime_verify()`) rather than rebuilding it, and add the missing restore
   path so `rollback` actually reads a backup back — provably from a bare TTY
-  with no desktop running, per `docs/P6-UPDATE-HELPER.md`'s acceptance.
-- [ ] One confirmed privileged step (the existing `${PREFIX}/libexec/lyona` +
-  `dwm-polkit` pattern) for `make install-system` alone; everything else —
-  check, download, verify, build, stage — runs unprivileged. Declining leaves
-  a staged, verified, uninstalled update and a non-zero exit, never a
-  half-applied system.
-- [ ] `check`/`apply` support a channel (`stable`/`preview`) recorded in
-  `~/.config/lyona/update.conf`, seeded but never overwritten.
+  with no desktop running (falls back from `pkexec` to `sudo` when no
+  graphical session/agent is reachable). — **Met**: a
+  `DEV_SYNC_INSTALL_LIB_ONLY`/`DEV_SYNC_INSTALL_REPO_DIR` sourcing guard added
+  to `dev-sync-install.sh` (its own direct-invocation behavior unchanged,
+  `tests/test-dev-sync-install.sh`); `scripts/lyona-update-root`'s
+  `restore-system` verb accepts either `PKEXEC_UID` or `SUDO_UID`. The
+  power-loss-mid-install and bare-TTY scenarios themselves need the
+  disposable-VM pass in `docs/P6-UPDATE-HELPER.md`'s Verification section —
+  no root is available to exercise them in the automated suite.
+- [x] One confirmed privileged step (the existing `${PREFIX}/libexec/lyona`
+  polkit pattern) for `make install-system` alone; everything else — check,
+  download, verify, build, stage — runs unprivileged. Declining leaves a
+  staged, verified, uninstalled update and a non-zero exit, never a
+  half-applied system. — **Met**, `scripts/lyona-update-root`,
+  `config/polkit/com.lyona.update.policy`; the "declined" path is exercised
+  in `tests/test-lyona-update.sh` (no trusted root-owned helper exists in the
+  unprivileged test sandbox, which is itself the natural "unavailable" case).
+- [x] `check`/`apply` support a channel (`stable`/`preview`) recorded in
+  `~/.config/lyona/update.conf`, seeded but never overwritten. — **Met**,
+  `tests/test-lyona-update.sh`.
 
 Acceptance:
 
 - An interrupted `apply` leaves a mixed tree recoverable by `rollback`, never
   a silent claim of success — the provenance stamp from UPDATE-001 is written
-  last, after `rollback` re-verifies.
+  last, after `rollback` re-verifies. — Ordering is correct by construction
+  (backup before any write, stamp last, per the nine-step sequence in
+  `docs/P6-UPDATE-HELPER.md`); the actual power-loss/recovery run needs the
+  disposable-VM pass, not covered by the unprivileged automated suite.
 - A downgrade or offline `check` degrades explicitly (`apply --file PATH`,
-  `--allow-downgrade`) rather than failing unhelpfully.
+  `--allow-downgrade`) rather than failing unhelpfully. — **Met**,
+  `tests/test-lyona-update.sh`.
 - Preservation carries over unweakened: everything `tests/test-install-preservation.sh`
   already guards (`config.h`, `~/.config/lyona/*.toml`, symlinked config
   directories, settings-helper-owned files) survives an update the same way
-  it survives a fresh install.
+  it survives a fresh install. — The preservation machinery itself is reused
+  unmodified (`make install-user`, `dev-sync-install.sh`'s verify functions);
+  a full `apply`-driven end-to-end preservation run requires real privilege
+  and is part of the disposable-VM pass, not the automated suite.
 
 ### UPDATE-003: Settings and Control Center Surfaces
 

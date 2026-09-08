@@ -28,6 +28,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   stamped. Nothing else about the install path changed; this is the
   foundation the rest of Phase 6's update path (`lyona-update`) builds on.
 
+- Add `lyona-update` (UPDATE-002, `docs/P6-UPDATE-HELPER.md`): a `check` /
+  `apply` / `rollback` / `backups` helper that lets an installed machine move
+  to a newer release and back again, on top of UPDATE-001's provenance
+  record. `check` compares the installed version against a `stable` or
+  `preview` GitHub release (calendar-version ordering, with a short-lived
+  cache so a panel indicator does not hammer the API) and reports `current`,
+  `behind`, `ahead`, `downgrade-offered`, `unknown`, or `offline` — never an
+  error for an unreachable network. `apply` downloads and SHA-256-verifies a
+  release tarball *before* unpacking it, builds unprivileged, backs up the
+  live install, then runs one confirmed privileged step
+  (`scripts/lyona-update-root`, installed via
+  `config/polkit/com.lyona.update.policy`) before verifying the result and
+  restamping provenance last — a build failure or a declined privileged step
+  costs nothing but time, never a half-applied system. `rollback` is the
+  missing half of `scripts/dev-sync-install.sh`'s existing backup machinery
+  (now reusable as a library via a `DEV_SYNC_INSTALL_LIB_ONLY` sourcing
+  guard that leaves its own direct-invocation behavior unchanged): it
+  refuses on any checksum or environment mismatch, and works from a bare TTY
+  with no desktop running by falling back from `pkexec` to `sudo` when no
+  agent is reachable. Channel and backup retention are configured in
+  `~/.config/lyona/update.conf`, seeded on first use and never overwritten.
+
 - Persist workspace, volume, Bluetooth, network, and power panel visibility in
   one versioned user-owned state file shared by every monitor, Control Center,
   and Settings. An absent file migrates from the prior implicit all-on state;

@@ -321,14 +321,16 @@ their own boundary group:
 
 | Prerequisite | Document | Delivers | Status |
 | --- | --- | --- | --- |
-| UPDATE-001 | [`P6-UPDATE-PROVENANCE.md`](P6-UPDATE-PROVENANCE.md) | An installed system that can state what it is running | Designed, not started |
+| UPDATE-001 | **Done** — see `CHANGELOG.md`, `TASKS.md` | An installed system that can state what it is running | Done (2026-09-08) |
 | UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) | `lyona-update` — check, stage, apply, roll back | Designed, not started |
 | UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper | Designed, not started |
 
 (`P6-UPDATE-OVERVIEW.md` indexes all three plus the architecture decisions
-behind them; it is not its own boundary.) None of the three is implemented —
-the currently active `TASKS.md` phase is still Phase 5, and `P6-UPDATE-OVERVIEW.md`
-itself says implementation must wait until Phase 5 closes.
+behind them; it is not its own boundary.) UPDATE-001 is implemented — the
+currently active `TASKS.md` phase is Phase 6 (System Management), and
+`P6-UPDATE-PROVENANCE.md` has been removed now that it is done, per this
+project's plan-doc-retirement convention. UPDATE-002 and UPDATE-003 remain
+not started.
 
 **The two efforts meet at exactly one point**, and it is worth naming
 precisely rather than leaving as a vague "later": `P6-UPDATE-SURFACE.md`'s

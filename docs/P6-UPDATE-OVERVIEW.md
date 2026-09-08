@@ -8,15 +8,21 @@ Detail lives in three companion plans:
 
 | Boundary | Document | Delivers |
 | --- | --- | --- |
-| UPDATE-001 | [`P6-UPDATE-PROVENANCE.md`](P6-UPDATE-PROVENANCE.md) | An installed system that can state what it is running |
+| UPDATE-001 | **Done** — see `CHANGELOG.md`, `TASKS.md` | An installed system that can state what it is running |
 | UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) | `lyona-update` — check, stage, apply, roll back |
 | UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper |
 
-> **Sequencing.** `AGENTS.md` forbids beginning the next phase in a change
-> scoped to complete the current one, and Phase 5 is still active
-> (`ROADMAP.md:301`). These are plans; implementing UPDATE-001 must wait until
-> Phase 5 closes. The ROADMAP/TASKS edits described below belong to the commit
-> that opens Phase 6, not to this planning document.
+`P6-UPDATE-PROVENANCE.md` (UPDATE-001's own planning document) has been
+removed now that it is implemented — the record of what changed lives in
+`CHANGELOG.md` and `TASKS.md` from here on, per this project's convention of
+retiring a plan document once it is implemented (see `docs/UPSTREAM-SYNC.md`
+for the same convention applied to the upstream-sync phase docs).
+
+> **Sequencing.** Phase 5 closed and UPDATE-001 landed (2026-09-08). UPDATE-002
+> is next; `AGENTS.md` still forbids beginning it in a change scoped to
+> complete UPDATE-001, and it forbids beginning the separate upstream-ported
+> system-management work (`docs/UPSTREAM-SYNC.md`) in a change scoped to
+> complete UPDATE-001…003.
 
 ---
 

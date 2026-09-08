@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+install_prefix='@PREFIX@'
+
+die() {
+	printf 'lyona-update-root: %s\n' "$*" >&2
+	exit 1
+}
+
+trusted_parent_chain() {
+	local parent=${1%/*}
+	while :; do
+		[[ -d $parent && ! -L $parent ]] || return 1
+		[[ $(stat -c %u "$parent") == 0 ]] || return 1
+		find "$parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null | grep -q . || return 1
+		[[ $parent == / ]] && return 0
+		parent=${parent%/*}
+		[[ -n $parent ]] || parent=/
+	done
+}
+
+trusted_file() {
+	local path=$1 canonical
+	canonical=$(readlink -f -- "$path" 2>/dev/null || true)
+	[[ -n $canonical && $canonical == "$path" ]] || return 1
+	trusted_parent_chain "$canonical" || return 1
+	[[ -f $canonical && ! -L $canonical && -x $canonical ]] || return 1
+	[[ $(stat -c %u "$canonical") == 0 ]] || return 1
+	find "$canonical" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
+}
+
+# A directory that a specific unprivileged user owns and controls, and that
+# no other unprivileged user could have written into. This is the whole
+# security boundary for a staging/backup directory: it must be provably the
+# invoking user's own, never a shared or world-writable location this helper
+# was tricked into trusting.
+user_owned_dir() {
+	local path=$1 want_uid=$2 mode
+	[[ $path == /* && $path != */../* && $path != *'/..' ]] || return 1
+	[[ -d $path && ! -L $path ]] || return 1
+	[[ $(stat -c %u -- "$path") == "$want_uid" ]] || return 1
+	mode=$(stat -c %a -- "$path")
+	((($((8#$mode)) & 8#022) == 0)) || return 1
+	return 0
+}
+
+log_outcome() {
+	local verb=$1 version=$2 target=$3 outcome=$4
+	[[ -n $log_file ]] || return 0
+	umask 077
+	mkdir -p "$(dirname -- "$log_file")" 2>/dev/null || return 0
+	printf '%s\t%s\t%s\t%s\t%s\n' \
+		"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$verb" "$version" "$target" "$outcome" \
+		>>"$log_file" 2>/dev/null || :
+}
+
+[[ $EUID == 0 ]] || die "this helper must run as root"
+self=$(readlink -f "${BASH_SOURCE[0]}")
+[[ $self == "$install_prefix/libexec/lyona/lyona-update-root" ]] ||
+	die "helper is not running from its trusted installed path"
+trusted_file "$self" || die "helper is not a trusted root-owned executable"
+
+# rollback must work from a bare TTY with no polkit agent running, so this
+# accepts sudo's invoking-user variable as well as pkexec's -- never a
+# caller-supplied argument, and never anything read from a shell the
+# invoking user could have shaped (both variables come from the setuid
+# wrapper itself, not from the environment the invoker otherwise controls).
+if [[ -n ${PKEXEC_UID:-} ]]; then
+	[[ $PKEXEC_UID =~ ^[0-9]+$ ]] || die "PKEXEC_UID is malformed"
+	invoking_uid=$PKEXEC_UID
+elif [[ -n ${SUDO_UID:-} ]]; then
+	[[ $SUDO_UID =~ ^[0-9]+$ ]] || die "SUDO_UID is malformed"
+	invoking_uid=$SUDO_UID
+else
+	die "this helper must run through polkit or sudo"
+fi
+invoking_home=$(getent passwd "$invoking_uid" | cut -d: -f6)
+[[ -n $invoking_home && $invoking_home == /* ]] ||
+	die "could not resolve the invoking user's home directory"
+invoking_user=$(getent passwd "$invoking_uid" | cut -d: -f1)
+[[ -n $invoking_user ]] || die "could not resolve the invoking user's name"
+state_home=$invoking_home/.local/state
+log_file=$state_home/lyona/update.log
+
+make_path=$(command -v make) || die "make is unavailable"
+
+case ${1:-} in
+install-system)
+	[[ $# == 3 ]] || die "install-system requires a staging directory and its version"
+	staging_dir=$2
+	requested_version=$3
+	updates_root=$state_home/lyona/updates
+	case $staging_dir in
+	"$updates_root"/*) ;;
+	*) die "staging directory is not under the invoking user's managed updates area" ;;
+	esac
+	user_owned_dir "$staging_dir" "$invoking_uid" ||
+		die "staging directory is not a safe, user-owned directory"
+	[[ -x $staging_dir/dwm && -f $staging_dir/dwm ]] ||
+		die "staging directory has no built dwm binary"
+	[[ -f $staging_dir/config.mk ]] || die "staging directory has no config.mk"
+	staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$staging_dir/config.mk")
+	[[ -n $staged_version ]] || die "could not read VERSION from the staged config.mk"
+	[[ $staged_version == "$requested_version" ]] ||
+		die "staged version ($staged_version) does not match the requested version ($requested_version)"
+	if ! "$make_path" -C "$staging_dir" install-system \
+		USER_HOME="$invoking_home" \
+		OWNER="$invoking_user" \
+		XDG_STATE_HOME="$state_home"; then
+		log_outcome install-system "$requested_version" "$staging_dir" failed
+		die "install-system failed"
+	fi
+	log_outcome install-system "$requested_version" "$staging_dir" succeeded
+	;;
+restore-system)
+	[[ $# == 2 ]] || die "restore-system requires a backup directory"
+	backup_dir=$2
+	backups_root=$state_home/lyona/live-update-backups
+	case $backup_dir in
+	"$backups_root"/*) ;;
+	*) die "backup directory is not under the invoking user's managed backups area" ;;
+	esac
+	user_owned_dir "$backup_dir" "$invoking_uid" ||
+		die "backup directory is not a safe, user-owned directory"
+	sums_file=$backup_dir/SHA256SUMS
+	[[ -f $sums_file && ! -L $sums_file ]] || die "backup has no checksum manifest"
+	system_archive=$backup_dir/system-files.tar
+	if [[ -e $system_archive ]]; then
+		[[ -f $system_archive && ! -L $system_archive ]] || die "unsafe system-files archive"
+		(cd "$backup_dir" && sha256sum --quiet --check <(grep -F 'system-files.tar' SHA256SUMS)) ||
+			die "system-files.tar failed checksum verification; refusing to restore"
+		if ! tar -C / -xpf "$system_archive"; then
+			log_outcome restore-system unknown "$backup_dir" failed
+			die "restoring system-files.tar failed"
+		fi
+	fi
+	log_outcome restore-system unknown "$backup_dir" succeeded
+	;;
+*)
+	die "usage: lyona-update-root install-system STAGING_DIR VERSION | restore-system BACKUP_DIR"
+	;;
+esac

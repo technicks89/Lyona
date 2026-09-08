@@ -1,0 +1,759 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=scripts/dwm-paths.sh
+. "${BASH_SOURCE[0]%/*}/dwm-paths.sh"
+export LC_ALL=C
+
+self=lyona-update
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+version_helper=${LYONA_UPDATE_VERSION_HELPER:-$script_dir/lyona-version}
+root_helper_name=lyona-update-root
+# An installed machine has no .git, so unlike lyona-release (which reads the
+# remote from the local checkout via `gh`) this has to be a constant. Kept
+# overridable only for the test suite, which stubs the GitHub API entirely.
+github_repo=${LYONA_UPDATE_GITHUB_REPO:-technicks89/Lyona}
+github_api_base=${LYONA_UPDATE_GITHUB_API:-https://api.github.com}
+cache_ttl=${LYONA_UPDATE_CACHE_TTL:-300}
+
+warn() { printf '%s: %s\n' "$self" "$*" >&2; }
+die() {
+	warn "$*"
+	exit 1
+}
+
+usage() {
+	cat <<'EOF'
+Usage: lyona-update check    [--channel stable|preview] [--json]
+       lyona-update apply    [--version V] [--file PATH] [--from-checkout DIR]
+                             [--allow-downgrade] [--dry-run] [--yes]
+       lyona-update rollback [--backup ID] [--list] [--yes]
+       lyona-update backups  [--json]
+EOF
+}
+
+for required_command in awk curl jq mktemp sha256sum sort tar; do
+	command -v "$required_command" >/dev/null 2>&1 ||
+		die "required command not found: $required_command"
+done
+
+config_home=${XDG_CONFIG_HOME:-}
+data_home=${XDG_DATA_HOME:-}
+state_home=${XDG_STATE_HOME:-}
+cache_home=${XDG_CACHE_HOME:-}
+[[ $config_home == /* ]] || config_home=${HOME:?HOME is required for XDG_CONFIG_HOME fallback}/.config
+[[ $data_home == /* ]] || data_home=${HOME:?HOME is required for XDG_DATA_HOME fallback}/.local/share
+[[ $state_home == /* ]] || state_home=${HOME:?HOME is required for XDG_STATE_HOME fallback}/.local/state
+[[ $cache_home == /* ]] || cache_home=${HOME:?HOME is required for XDG_CACHE_HOME fallback}/.cache
+
+config_file=$config_home/lyona/update.conf
+cache_file=$cache_home/lyona/update-index.json
+updates_root=$state_home/lyona/updates
+backups_root=$state_home/lyona/live-update-backups
+
+# --- version comparison -----------------------------------------------
+
+valid_version() {
+	local v=$1
+	[[ $v =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-(alpha|beta|rc)\.[0-9]+)?$ ]]
+}
+
+# Encodes YYYY.MM[.PATCH][-alpha|beta|rc.N] into a 13-digit zero-padded
+# string that sorts correctly with a plain string comparison: a release
+# outranks every pre-release of the same core version, and rc > beta > alpha.
+version_rank() {
+	local v=$1 core=$1 suffix='' suffix_word='' suffix_num=0 srank=9 year month patch=0
+	valid_version "$v" || return 1
+	if [[ $v == *-* ]]; then
+		core=${v%%-*}
+		suffix=${v#*-}
+		suffix_word=${suffix%%.*}
+		suffix_num=${suffix#*.}
+		case $suffix_word in
+		alpha) srank=1 ;;
+		beta) srank=2 ;;
+		rc) srank=3 ;;
+		esac
+	fi
+	IFS=. read -r year month patch <<<"$core"
+	patch=${patch:-0}
+	# 10# forces base-10: bash's printf %d otherwise reads a leading-zero
+	# field like month "08" as invalid octal and silently substitutes 0.
+	printf '%04d%02d%03d%d%03d\n' \
+		"$((10#$year))" "$((10#$month))" "$((10#$patch))" "$srank" "$((10#$suffix_num))"
+}
+
+# --- configuration -------------------------------------------------------
+
+channel=stable
+check_on_login=true
+auto_apply=false
+keep_backups=5
+
+seed_config() {
+	[[ -e $config_file ]] && return 0
+	printf 'channel=stable\ncheck_on_login=true\nauto_apply=false\nkeep_backups=5\n' |
+		install -Dm600 /dev/stdin "$config_file"
+}
+
+read_config() {
+	seed_config
+	[[ -f $config_file && ! -L $config_file ]] || return 0
+	local key value
+	while IFS='=' read -r key value || [[ -n $key ]]; do
+		# check_on_login is read for shape validation only -- consumed by
+		# the login-time check this boundary doesn't implement yet
+		# (UPDATE-003).
+		# shellcheck disable=SC2034
+		case $key in
+		channel) channel=$value ;;
+		check_on_login) check_on_login=$value ;;
+		auto_apply) auto_apply=$value ;;
+		keep_backups) keep_backups=$value ;;
+		esac
+	done <"$config_file"
+	# The key exists so the file shape is stable, but this boundary has no
+	# unattended-apply implementation -- a stray "true" must be refused
+	# loudly rather than silently doing nothing.
+	[[ $auto_apply == false ]] || die "auto_apply=true is not supported yet; set it back to false in $config_file"
+	[[ $keep_backups =~ ^[0-9]+$ ]] || die "keep_backups must be a non-negative integer in $config_file"
+}
+
+# --- installed version -----------------------------------------------
+
+installed_status_json=
+installed_version=
+installed_state=
+installed_commit=
+installed_source=
+
+read_installed() {
+	[[ -x $version_helper ]] || die "lyona-version helper is unavailable: $version_helper"
+	installed_status_json=$("$version_helper" status --json)
+	installed_version=$("$version_helper" print)
+	installed_state=$(jq -r '.state' <<<"$installed_status_json")
+	if jq -e '.user.state == "available"' <<<"$installed_status_json" >/dev/null; then
+		installed_commit=$(jq -r '.user.commit' <<<"$installed_status_json")
+		installed_source=$(jq -r '.user.source' <<<"$installed_status_json")
+	elif jq -e '.system.state == "available"' <<<"$installed_status_json" >/dev/null; then
+		installed_commit=$(jq -r '.system.commit' <<<"$installed_status_json")
+		installed_source=$(jq -r '.system.source' <<<"$installed_status_json")
+	else
+		installed_commit=unknown
+		installed_source=unknown
+	fi
+}
+
+# --- GitHub release lookup --------------------------------------------
+
+fetch_url() {
+	curl --die --silent --show-error --location \
+		--connect-timeout 5 --max-time 15 \
+		-H 'Accept: application/vnd.github+json' \
+		"$@"
+}
+
+# Prints one release object (never an array) for the requested channel, or
+# fails if the channel has nothing published or the network is unreachable.
+fetch_release() {
+	local requested_channel=$1
+	case $requested_channel in
+	stable)
+		fetch_url "$github_api_base/repos/$github_repo/releases/latest"
+		;;
+	preview)
+		# Newest first, drafts already excluded for an unauthenticated
+		# request -- the first entry is the newest preview or stable build.
+		fetch_url "$github_api_base/repos/$github_repo/releases" | jq -c '.[0] // empty'
+		;;
+	*)
+		die "unknown channel: $requested_channel (expected stable or preview)"
+		;;
+	esac
+}
+
+# Populates release_version / release_commit / release_published / release_asset_name /
+# release_asset_url / release_asset_size / release_checksum. Returns 1 when the
+# remote could not be reached or has nothing published for the channel --
+# both are reported as "offline", never as an error.
+release_version=
+release_commit=unknown
+release_published=unknown
+release_asset_name=
+release_asset_url=
+release_asset_size=unknown
+release_checksum=unknown
+
+# The cache stores every resolved field, not just the raw release listing --
+# a cache hit must not still hit the network for the checksum and tag-commit
+# lookups below, or the TTL would only ever save one of the three requests
+# a panel indicator makes on every poll.
+load_cache() {
+	local requested_channel=$1 age mtime now cached
+	[[ -f $cache_file && ! -L $cache_file ]] || return 1
+	cached=$(cat "$cache_file" 2>/dev/null) || return 1
+	[[ $(jq -r '.channel // empty' <<<"$cached") == "$requested_channel" ]] || return 1
+	mtime=$(stat -c %Y -- "$cache_file" 2>/dev/null) || return 1
+	now=$(date +%s)
+	age=$((now - mtime))
+	((age >= 0 && age < cache_ttl)) || return 1
+	release_version=$(jq -r '.version // empty' <<<"$cached")
+	[[ -n $release_version ]] || return 1
+	release_commit=$(jq -r '.commit // "unknown"' <<<"$cached")
+	release_published=$(jq -r '.publishedAt // "unknown"' <<<"$cached")
+	release_asset_name=$(jq -r '.assetName // empty' <<<"$cached")
+	release_asset_url=$(jq -r '.assetUrl // empty' <<<"$cached")
+	release_asset_size=$(jq -r '.assetSize // "unknown"' <<<"$cached")
+	release_checksum=$(jq -r '.checksum // "unknown"' <<<"$cached")
+	return 0
+}
+
+save_cache() {
+	local requested_channel=$1 tmp
+	ensure_owned_directory "$(dirname "$cache_file")" "cache"
+	tmp=$(mktemp "$(dirname "$cache_file")/.update-index.json.XXXXXX")
+	jq -cn \
+		--arg channel "$requested_channel" \
+		--arg version "$release_version" \
+		--arg commit "$release_commit" \
+		--arg publishedAt "$release_published" \
+		--arg assetName "$release_asset_name" \
+		--arg assetUrl "$release_asset_url" \
+		--arg assetSize "$release_asset_size" \
+		--arg checksum "$release_checksum" \
+		'{channel: $channel, version: $version, commit: $commit,
+		  publishedAt: $publishedAt, assetName: $assetName, assetUrl: $assetUrl,
+		  assetSize: $assetSize, checksum: $checksum}' >"$tmp"
+	mv -fT "$tmp" "$cache_file"
+}
+
+resolve_release() {
+	local requested_channel=$1 release_json tag_json
+	load_cache "$requested_channel" && return 0
+
+	if ! release_json=$(fetch_release "$requested_channel" 2>/dev/null) ||
+		[[ -z $release_json || $release_json == null ]]; then
+		return 1
+	fi
+
+	release_version=$(jq -r '.tag_name // empty' <<<"$release_json")
+	release_version=${release_version#v}
+	[[ -n $release_version ]] || return 1
+	release_published=$(jq -r '.published_at // "unknown"' <<<"$release_json")
+
+	release_asset_name="lyona-$release_version.tar.gz"
+	release_asset_url=$(jq -r --arg name "$release_asset_name" \
+		'.assets[]? | select(.name == $name) | .browser_download_url' <<<"$release_json")
+	release_asset_size=$(jq -r --arg name "$release_asset_name" \
+		'.assets[]? | select(.name == $name) | .size' <<<"$release_json")
+	[[ -n $release_asset_size ]] || release_asset_size=unknown
+
+	local checksums_name checksums_url
+	checksums_name="lyona-$release_version-SHA256SUMS"
+	checksums_url=$(jq -r --arg name "$checksums_name" \
+		'.assets[]? | select(.name == $name) | .browser_download_url' <<<"$release_json")
+	if [[ -n $checksums_url ]]; then
+		release_checksum=$(fetch_url "$checksums_url" 2>/dev/null |
+			awk -v want="$release_asset_name" '$0 ~ want"$" { print $1; exit }')
+		[[ -n $release_checksum ]] || release_checksum=unknown
+	fi
+
+	# Best-effort only: the release commit comes from resolving the tag's
+	# git ref, a second API call that a rate limit or a transient failure
+	# must not turn into a hard "check" failure.
+	tag_json=$(fetch_url "$github_api_base/repos/$github_repo/git/ref/tags/v$release_version" 2>/dev/null) || tag_json=
+	if [[ -n $tag_json ]]; then
+		release_commit=$(jq -r '.object.sha // "unknown"' <<<"$tag_json")
+		release_commit=${release_commit:0:7}
+		[[ -n $release_commit ]] || release_commit=unknown
+	fi
+
+	save_cache "$requested_channel" 2>/dev/null || :
+	return 0
+}
+
+# --- check ---------------------------------------------------------------
+
+cmd_check() {
+	read_config
+	local requested_channel=$channel json=false
+	while (($# > 0)); do
+		case $1 in
+		--channel)
+			(($# >= 2)) || die "--channel requires a value"
+			requested_channel=$2
+			shift 2
+			;;
+		--json)
+			json=true
+			shift
+			;;
+		*) die "unknown option: $1" ;;
+		esac
+	done
+	case $requested_channel in
+	stable | preview) ;;
+	*) die "--channel must be stable or preview: $requested_channel" ;;
+	esac
+
+	read_installed
+
+	local state message='' reached=false
+	if [[ $installed_state == unavailable ]]; then
+		state=unavailable
+		message='The installed-version record is present but cannot be trusted.'
+	elif [[ $installed_state == defaults ]]; then
+		state=unknown
+		message='No install provenance record was found.'
+	elif ! resolve_release "$requested_channel"; then
+		state=offline
+		message='The update server could not be reached.'
+	else
+		reached=true
+		local installed_rank remote_rank
+		installed_rank=$(version_rank "$installed_version" 2>/dev/null || printf 0)
+		remote_rank=$(version_rank "$release_version" 2>/dev/null || printf 0)
+		if [[ $installed_source == checkout && $remote_rank -le $installed_rank ]]; then
+			state=ahead
+			message='Running a development checkout newer than the published release.'
+		elif [[ $remote_rank > $installed_rank ]]; then
+			state=behind
+			message="A newer $requested_channel release is available."
+		elif [[ $remote_rank < $installed_rank ]]; then
+			state=downgrade-offered
+			message="The $requested_channel channel offers an older release than what is installed."
+		else
+			state=current
+			message='The installed release matches the channel.'
+		fi
+	fi
+
+	if [[ $json == true ]]; then
+		jq -cn \
+			--arg state "$state" \
+			--arg message "$message" \
+			--arg installedVersion "$installed_version" \
+			--arg installedCommit "$installed_commit" \
+			--arg channel "$requested_channel" \
+			--arg reached "$reached" \
+			--arg availableVersion "${release_version:-}" \
+			--arg availableCommit "${release_commit:-unknown}" \
+			--arg availablePublished "${release_published:-unknown}" \
+			--arg assetName "${release_asset_name:-}" \
+			--arg assetChecksum "${release_checksum:-unknown}" \
+			--arg assetSize "${release_asset_size:-unknown}" \
+			'{
+				state: $state, message: $message, channel: $channel,
+				installed: {version: $installedVersion, commit: $installedCommit},
+				available: (if $reached == "true" then {
+					version: $availableVersion, commit: $availableCommit,
+					publishedAt: $availablePublished,
+					asset: {name: $assetName, checksum: $assetChecksum, size: $assetSize}
+				} else null end)
+			}'
+		return 0
+	fi
+
+	printf 'lyona-update-protocol\t1\t0\n'
+	printf 'state\t%s\t%s\n' "$state" "$message"
+	printf 'installed\t%s\t%s\n' "$installed_version" "$installed_commit"
+	if [[ $reached == true ]]; then
+		printf 'available\t%s\t%s\t%s\n' "$release_version" "$release_commit" "$release_published"
+		printf 'channel\t%s\n' "$requested_channel"
+		printf 'asset\t%s\t%s\t%s\n' "$release_asset_name" "$release_checksum" "$release_asset_size"
+	else
+		printf 'channel\t%s\n' "$requested_channel"
+	fi
+	printf 'complete\tcheck\n'
+}
+
+# --- shared helpers for apply / rollback ------------------------------
+
+trusted_root_helper() {
+	local candidate canonical derived=
+	derived=${script_dir%/bin}/libexec/lyona/$root_helper_name
+	for candidate in "$derived" /usr/local/libexec/lyona/$root_helper_name \
+		/usr/libexec/lyona/$root_helper_name; do
+		[[ -n $candidate ]] || continue
+		canonical=$(readlink -f -- "$candidate" 2>/dev/null || true)
+		[[ -n $canonical && $canonical == "$candidate" ]] || continue
+		[[ -f $candidate && ! -L $candidate && -x $candidate ]] || continue
+		[[ $(stat -c %u -- "$candidate") == 0 ]] || continue
+		find "$candidate" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q . || continue
+		printf '%s\n' "$candidate"
+		return 0
+	done
+	return 1
+}
+
+# rollback is the path a user takes with no desktop running, so this must not
+# require a polkit agent: it tries pkexec only when a graphical session looks
+# reachable, and always has sudo as a fallback.
+run_privileged() {
+	local helper
+	helper=$(trusted_root_helper) || die "trusted privileged update helper is unavailable"
+	if [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]] && command -v pkexec >/dev/null 2>&1; then
+		if pkexec "$helper" "$@"; then
+			return 0
+		fi
+		warn "pkexec did not succeed; falling back to sudo"
+	fi
+	command -v sudo >/dev/null 2>&1 ||
+		die "neither a polkit agent nor sudo is available to complete this step"
+	sudo "$helper" "$@"
+}
+
+# --- apply -----------------------------------------------------------
+
+sha256_of() {
+	sha256sum -- "$1" | awk '{ print $1 }'
+}
+
+cmd_apply() {
+	local requested_version='' file_path='' from_checkout='' allow_downgrade=false dry_run=false yes=false
+	while (($# > 0)); do
+		case $1 in
+		--version)
+			(($# >= 2)) || die "--version requires a value"
+			requested_version=$2
+			shift 2
+			;;
+		--file)
+			(($# >= 2)) || die "--file requires a value"
+			file_path=$2
+			shift 2
+			;;
+		--from-checkout)
+			(($# >= 2)) || die "--from-checkout requires a value"
+			from_checkout=$2
+			shift 2
+			;;
+		--allow-downgrade)
+			allow_downgrade=true
+			shift
+			;;
+		--dry-run)
+			dry_run=true
+			shift
+			;;
+		--yes)
+			yes=true
+			shift
+			;;
+		*) die "unknown option: $1" ;;
+		esac
+	done
+	[[ -z $file_path || -z $from_checkout ]] || die "--file and --from-checkout are mutually exclusive"
+
+	read_config
+	read_installed
+
+	local staging_dir tarball checksum
+	if [[ -n $from_checkout ]]; then
+		valid_absolute_path "$from_checkout" || die "--from-checkout must be an absolute path"
+		[[ -f $from_checkout/config.mk ]] || die "not a lyona checkout: $from_checkout"
+		requested_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$from_checkout/config.mk")
+		[[ -n $requested_version ]] || die "could not read VERSION from $from_checkout/config.mk"
+		staging_dir=$from_checkout
+	else
+		if [[ -n $file_path ]]; then
+			valid_absolute_path "$file_path" || die "--file must be an absolute path"
+			[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
+			tarball=$file_path
+			[[ -n $requested_version ]] || die "--file requires --version to confirm what it contains"
+		else
+			[[ -n $requested_version ]] || {
+				resolve_release "$channel" || die "could not reach the update server; pass --file for an offline install"
+				requested_version=$release_version
+			}
+			valid_version "$requested_version" || die "not a valid version: $requested_version"
+			[[ $requested_version == "${release_version:-}" ]] || resolve_release "$channel" ||
+				die "could not look up release $requested_version"
+			[[ $requested_version == "$release_version" ]] ||
+				die "requested version $requested_version does not match the resolved release $release_version"
+			checksum=$release_checksum
+			[[ $checksum != unknown ]] || die "no published checksum for $requested_version; refusing to install unverified"
+
+			ensure_owned_directory "$updates_root" "updates"
+			tarball=$updates_root/lyona-$requested_version.tar.gz
+			[[ -n $release_asset_url ]] || die "release $requested_version has no source archive asset"
+			warn "downloading lyona-$requested_version.tar.gz"
+			local tmp_tarball
+			tmp_tarball=$(mktemp "$updates_root/.lyona-$requested_version.tar.gz.XXXXXX")
+			if ! curl --die --silent --show-error --location \
+				--retry 3 --connect-timeout 10 --max-time 300 \
+				"$release_asset_url" --output "$tmp_tarball"; then
+				rm -f "$tmp_tarball"
+				die "failed to download $release_asset_url"
+			fi
+			mv -fT "$tmp_tarball" "$tarball"
+		fi
+
+		if [[ -n ${checksum:-} ]] && [[ $checksum != unknown ]]; then
+			:
+		elif [[ -n $file_path ]]; then
+			resolve_release "$channel" && [[ $requested_version == "$release_version" ]] && checksum=$release_checksum
+			checksum=${checksum:-unknown}
+		fi
+		if [[ ${checksum:-unknown} != unknown ]]; then
+			warn "verifying checksum"
+			local actual_checksum
+			actual_checksum=$(sha256_of "$tarball")
+			[[ $actual_checksum == "$checksum" ]] ||
+				die "checksum mismatch for $tarball: expected $checksum, got $actual_checksum"
+		else
+			warn "no checksum available for $tarball; proceeding without verification is not supported"
+			die "refusing to install an unverified tarball"
+		fi
+
+		staging_dir=$updates_root/$requested_version
+		rm -rf "$staging_dir"
+		mkdir -p "$staging_dir"
+		if ! tar -xzf "$tarball" -C "$staging_dir" --strip-components=1; then
+			rm -rf "$staging_dir"
+			die "failed to unpack $tarball"
+		fi
+		if [[ -f $script_dir/../config.h ]]; then
+			cp -a "$script_dir/../config.h" "$staging_dir/config.h"
+		fi
+	fi
+
+	local installed_rank requested_rank
+	installed_rank=$(version_rank "$installed_version" 2>/dev/null || printf 0)
+	requested_rank=$(version_rank "$requested_version" 2>/dev/null || die "not a valid version: $requested_version")
+	if [[ $requested_rank < $installed_rank && $allow_downgrade != true ]]; then
+		die "requested version $requested_version is older than the installed $installed_version; pass --allow-downgrade to proceed"
+	fi
+
+	warn "building $requested_version"
+	if ! make -C "$staging_dir" clean >/dev/null; then
+		die "failed to clean the staging tree"
+	fi
+	if ! make -C "$staging_dir" all; then
+		die "build failed for $requested_version; the live install is untouched"
+	fi
+
+	if [[ $dry_run == true ]]; then
+		printf 'dry run: would back up the live install, then write:\n'
+		printf '  %s/bin (system commands and dwm)\n' "${PREFIX:-/usr/local}"
+		printf '  %s/libexec/lyona (privileged helpers)\n' "${PREFIX:-/usr/local}"
+		printf '  %s/share/man/man1/dwm.1\n' "${PREFIX:-/usr/local}"
+		printf '  /etc/lyona-release\n'
+		printf '  %s\n' "$state_home/lyona/install.state"
+		printf 'complete\tapply-dry-run\n'
+		return 0
+	fi
+
+	if [[ $yes != true ]]; then
+		local answer
+		printf 'Install %s over the running system? [y/N] ' "$requested_version" >&2
+		IFS= read -r answer || answer=
+		case $answer in
+		y | Y | yes | YES) ;;
+		*) die "not confirmed; the staged, built update in $staging_dir was left in place" ;;
+		esac
+	fi
+
+	# shellcheck source=scripts/dev-sync-install.sh
+	DEV_SYNC_INSTALL_LIB_ONLY=1 DEV_SYNC_INSTALL_REPO_DIR=$staging_dir \
+		. "$script_dir/dev-sync-install.sh"
+	prepare_expected_files
+
+	warn "backing up the live installation"
+	backup_live_install
+
+	warn "installing $requested_version (this step requires authentication)"
+	if ! run_privileged install-system "$staging_dir" "$requested_version"; then
+		die "the privileged install step failed or was declined; the live install is untouched, and the staged, built update in $staging_dir was left in place"
+	fi
+	if ! make -C "$staging_dir" install-user \
+		USER_HOME="$HOME" OWNER="$(id -un)" \
+		XDG_CONFIG_HOME="$config_home" XDG_DATA_HOME="$data_home" XDG_STATE_HOME="$state_home"; then
+		die "the user-level install step failed after the system files were already updated; run lyona-update rollback"
+	fi
+
+	warn "verifying the installed state"
+	verify_install || die "the live installation does not match the staged update; run lyona-update rollback"
+
+	warn "runtime check"
+	runtime_verify 1 || warn "runtime validation reported a problem; see above"
+
+	prune_backups
+	printf 'complete\tapply\t%s\n' "$requested_version"
+}
+
+# --- backups / rollback ------------------------------------------------
+
+list_backup_ids() {
+	[[ -d $backups_root ]] || return 0
+	find "$backups_root" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r
+}
+
+backup_version_of() {
+	local id=$1 checkout_file
+	checkout_file=$backups_root/$id/checkout.txt
+	[[ -f $checkout_file ]] || {
+		printf 'unknown\n'
+		return 0
+	}
+	awk -F= '$1 == "version" { print $2; exit }' "$checkout_file" 2>/dev/null
+}
+
+prune_backups() {
+	[[ $keep_backups -gt 0 ]] || return 0
+	local id count=0
+	while IFS= read -r id; do
+		[[ -n $id ]] || continue
+		count=$((count + 1))
+		if ((count > keep_backups)); then
+			rm -rf -- "${backups_root:?}/$id"
+		fi
+	done < <(list_backup_ids)
+}
+
+cmd_backups() {
+	local json=false
+	while (($# > 0)); do
+		case $1 in
+		--json)
+			json=true
+			shift
+			;;
+		*) die "unknown option: $1" ;;
+		esac
+	done
+	if [[ $json == true ]]; then
+		printf '['
+		local id first=true version date
+		while IFS= read -r id; do
+			[[ -n $id ]] || continue
+			version=$(backup_version_of "$id")
+			date=${id%%-*}
+			[[ $first == true ]] || printf ','
+			first=false
+			jq -cn --arg id "$id" --arg version "$version" --arg date "$date" \
+				'{id: $id, version: $version, date: $date}'
+		done < <(list_backup_ids)
+		printf ']\n'
+		return 0
+	fi
+	printf 'lyona-update-protocol\t1\t0\n'
+	local id version
+	while IFS= read -r id; do
+		[[ -n $id ]] || continue
+		version=$(backup_version_of "$id")
+		printf 'backup\t%s\t%s\n' "$id" "$version"
+	done < <(list_backup_ids)
+	printf 'complete\tbackups\n'
+}
+
+verify_backup_checksums() {
+	local backup_dir=$1 archive
+	local sums_file=$backup_dir/SHA256SUMS
+	[[ -f $sums_file && ! -L $sums_file ]] || die "backup has no checksum manifest: $backup_dir"
+	for archive in "$backup_dir"/*.tar; do
+		[[ -f $archive ]] || continue
+		(cd "$backup_dir" && sha256sum --quiet --check <(grep -F "$(basename "$archive")" SHA256SUMS)) ||
+			die "backup checksum verification failed: $archive"
+	done
+}
+
+cmd_rollback() {
+	local backup_id='' list_only=false yes=false
+	while (($# > 0)); do
+		case $1 in
+		--backup)
+			(($# >= 2)) || die "--backup requires a value"
+			backup_id=$2
+			shift 2
+			;;
+		--list)
+			list_only=true
+			shift
+			;;
+		--yes)
+			yes=true
+			shift
+			;;
+		*) die "unknown option: $1" ;;
+		esac
+	done
+
+	if [[ $list_only == true ]]; then
+		cmd_backups
+		return 0
+	fi
+
+	if [[ -z $backup_id ]]; then
+		backup_id=$(list_backup_ids | head -n1)
+		[[ -n $backup_id ]] || die "no backups are available"
+	fi
+	local backup_dir=$backups_root/$backup_id
+	case $backup_id in
+	*/* | '' | . | ..) die "invalid backup id: $backup_id" ;;
+	esac
+	[[ -d $backup_dir && ! -L $backup_dir ]] || die "backup not found: $backup_id"
+
+	verify_backup_checksums "$backup_dir"
+
+	local checkout_file=$backup_dir/checkout.txt
+	local backup_prefix backup_config_home backup_data_home
+	backup_prefix=$(awk -F= '$1 == "prefix" { print $2; exit }' "$checkout_file" 2>/dev/null)
+	backup_config_home=$(awk -F= '$1 == "config_home" { print $2; exit }' "$checkout_file" 2>/dev/null)
+	backup_data_home=$(awk -F= '$1 == "xdg_data_home" { print $2; exit }' "$checkout_file" 2>/dev/null)
+	local current_prefix=${PREFIX:-/usr/local}
+	if [[ -n $backup_prefix && $backup_prefix != "$current_prefix" ]] ||
+		[[ -n $backup_config_home && $backup_config_home != "$config_home" ]] ||
+		[[ -n $backup_data_home && $backup_data_home != "$data_home" ]]; then
+		die "backup $backup_id was taken against a different environment; refusing to restore into this one"
+	fi
+
+	if [[ $yes != true ]]; then
+		local answer
+		printf 'Restore backup %s over the running system? [y/N] ' "$backup_id" >&2
+		IFS= read -r answer || answer=
+		case $answer in
+		y | Y | yes | YES) ;;
+		*) die "not confirmed" ;;
+		esac
+	fi
+
+	warn "restoring system files (this step requires authentication)"
+	run_privileged restore-system "$backup_dir" ||
+		die "the privileged restore step failed or was declined"
+
+	if [[ -f $backup_dir/lyona-data.tar ]]; then
+		tar -C "$(dirname "$data_home/lyona")" -xpf "$backup_dir/lyona-data.tar"
+	fi
+	if [[ -f $backup_dir/quickshell.tar ]]; then
+		tar -C "$(dirname "$config_home/quickshell")" -xpf "$backup_dir/quickshell.tar"
+	fi
+
+	local restored_version
+	restored_version=$(backup_version_of "$backup_id")
+	printf 'SESSION RESTART REQUIRED: log out and back in to activate %s.\n' "${restored_version:-the restored version}"
+	printf 'complete\trollback\t%s\n' "${restored_version:-unknown}"
+}
+
+# --- dispatch --------------------------------------------------------
+
+[[ $# -ge 1 ]] || {
+	usage >&2
+	exit 2
+}
+subcommand=$1
+shift
+case $subcommand in
+check) cmd_check "$@" ;;
+apply) cmd_apply "$@" ;;
+rollback) cmd_rollback "$@" ;;
+backups) cmd_backups "$@" ;;
+-h | --help)
+	usage
+	exit 0
+	;;
+*)
+	usage >&2
+	exit 2
+	;;
+esac
