@@ -1,0 +1,212 @@
+#!/bin/sh
+set -eu
+
+self=lyona-version
+max_record_size=4096
+
+warn() {
+	printf '%s: %s\n' "$self" "$1" >&2
+}
+
+die() {
+	warn "$1"
+	exit 1
+}
+
+usage() {
+	printf 'usage: %s status [--json] | %s print\n' "$self" "$self" >&2
+	exit 2
+}
+
+# A record is "safe" when it cannot have been placed or edited by anyone
+# other than its owning scope: a regular file, never a symlink, a single
+# hard link (no alias written elsewhere), size-capped, and not writable by
+# group or other. A missing record is not unsafe -- it is simply absent.
+record_safe() {
+	path=$1
+	want_owner=$2
+	# Check symlink-ness first: -e follows symlinks, so a dangling symlink
+	# would otherwise read as "absent" (defaults) instead of "unsafe"
+	# (unavailable), and its target must never be read or written either way.
+	[ -L "$path" ] && return 1
+	[ -e "$path" ] || return 2
+	[ -f "$path" ] || return 1
+	mode=$(stat -c %a -- "$path" 2>/dev/null) || return 1
+	owner=$(stat -c %u -- "$path" 2>/dev/null) || return 1
+	links=$(stat -c %h -- "$path" 2>/dev/null) || return 1
+	size=$(stat -c %s -- "$path" 2>/dev/null) || return 1
+	[ "$owner" = "$want_owner" ] || return 1
+	[ "$links" = 1 ] || return 1
+	[ "$size" -le "$max_record_size" ] || return 1
+	[ $((0$mode & 022)) -eq 0 ] || return 1
+	return 0
+}
+
+# Parse a strict "LYONA_KEY=value" record: reject anything that is not
+# exactly that shape rather than silently accepting the first match, so a
+# corrupted or hand-edited file surfaces as malformed instead of partially
+# trusted.
+record_field() {
+	path=$1 key=$2
+	awk -F= -v key="$key" '
+		$1 == key { value = substr($0, length($1) + 2); found = 1; print value; exit }
+		END { exit !found }
+	' "$path" 2>/dev/null
+}
+
+record_valid_format() {
+	path=$1
+	awk '
+		NF == 0 { next }
+		!/^LYONA_[A-Z_]+=[^\n]*$/ { exit 1 }
+	' "$path" 2>/dev/null
+}
+
+# Populates the scope-prefixed globals: <scope>_state, <scope>_version,
+# <scope>_commit, <scope>_source, <scope>_location, <scope>_date.
+read_scope() {
+	scope=$1 path=$2 want_owner=$3 location_key=$4
+	safe=0
+	record_safe "$path" "$want_owner" || safe=$?
+	if [ "$safe" = 2 ]; then
+		eval "${scope}_state=defaults"
+		return 0
+	fi
+	if [ "$safe" != 0 ] || ! record_valid_format "$path"; then
+		eval "${scope}_state=unavailable"
+		return 0
+	fi
+	version=$(record_field "$path" LYONA_VERSION) || version=
+	# shellcheck disable=SC2034 # read indirectly below via eval
+	commit=$(record_field "$path" LYONA_COMMIT) || commit=
+	source_kind=$(record_field "$path" LYONA_SOURCE) || source_kind=
+	# shellcheck disable=SC2034 # read indirectly below via eval
+	location=$(record_field "$path" "$location_key") || location=
+	date=$(record_field "$path" LYONA_INSTALL_DATE) || date=
+	if [ -z "$version" ] || [ -z "$source_kind" ] || [ -z "$date" ]; then
+		eval "${scope}_state=unavailable"
+		return 0
+	fi
+	eval "${scope}_state=available"
+	eval "${scope}_version=\$version"
+	eval "${scope}_commit=\${commit:-unknown}"
+	eval "${scope}_source=\$source_kind"
+	eval "${scope}_location=\$location"
+	eval "${scope}_date=\$date"
+}
+
+binary_version() {
+	detail=$(dwm -v 2>&1 1>/dev/null) || :
+	case $detail in
+	dwm-*) printf '%s\n' "${detail#dwm-}" ;;
+	*) printf 'unknown\n' ;;
+	esac
+}
+
+json_string() {
+	value=$1
+	value=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
+	printf '"%s"' "$value"
+}
+
+cmd_status() {
+	json=false
+	case ${1:-} in
+	--json) json=true ;;
+	'') ;;
+	*) usage ;;
+	esac
+
+	system_record=${DWM_TEST_SYSTEM_RECORD:-/etc/lyona-release}
+	state_home=${XDG_STATE_HOME:-${HOME:?HOME is required}/.local/state}
+	user_record=${DWM_TEST_USER_RECORD:-$state_home/lyona/install.state}
+
+	system_state=defaults system_version='' system_commit='' system_source='' system_location='' system_date=''
+	user_state=defaults user_version='' user_commit='' user_source='' user_location='' user_date=''
+	read_scope system "$system_record" "${DWM_TEST_SYSTEM_OWNER:-0}" LYONA_PREFIX
+	read_scope user "$user_record" "$(id -u)" LYONA_DATA_DIR
+
+	binary=$(binary_version)
+
+	if [ "$system_state" = available ] && [ "$user_state" = available ] &&
+		[ "$system_version" = "$user_version" ] && [ "$system_version" = "$binary" ]; then
+		consistent=yes
+	else
+		consistent=no
+	fi
+
+	if [ "$system_state" = unavailable ] || [ "$user_state" = unavailable ]; then
+		state=unavailable
+	elif [ "$system_state" = available ] && [ "$user_state" = available ]; then
+		state=available
+	elif [ "$system_state" = available ] || [ "$user_state" = available ]; then
+		state=partial
+	else
+		state=defaults
+	fi
+
+	if [ "$json" = true ]; then
+		printf '{'
+		printf '"state":%s,' "$(json_string "$state")"
+		printf '"system":{"state":%s,"version":%s,"commit":%s,"source":%s,"prefix":%s,"date":%s},' \
+			"$(json_string "$system_state")" "$(json_string "$system_version")" \
+			"$(json_string "$system_commit")" "$(json_string "$system_source")" \
+			"$(json_string "$system_location")" "$(json_string "$system_date")"
+		printf '"user":{"state":%s,"version":%s,"commit":%s,"source":%s,"dataDir":%s,"date":%s},' \
+			"$(json_string "$user_state")" "$(json_string "$user_version")" \
+			"$(json_string "$user_commit")" "$(json_string "$user_source")" \
+			"$(json_string "$user_location")" "$(json_string "$user_date")"
+		printf '"binary":%s,' "$(json_string "$binary")"
+		printf '"consistent":%s' "$([ "$consistent" = yes ] && printf true || printf false)"
+		printf '}\n'
+		return 0
+	fi
+
+	printf 'lyona-version-protocol\t1\t0\n'
+	printf 'state\t%s\tInstalled version recorded for system and user\n' "$state"
+	printf 'system\t%s\t%s\t%s\t%s\t%s\n' "${system_version:-none}" "${system_commit:-none}" \
+		"${system_source:-none}" "${system_location:-none}" "${system_date:-none}"
+	printf 'user\t%s\t%s\t%s\t%s\t%s\n' "${user_version:-none}" "${user_commit:-none}" \
+		"${user_source:-none}" "${user_location:-none}" "${user_date:-none}"
+	printf 'binary\t%s\n' "$binary"
+	printf 'consistent\t%s\n' "$consistent"
+	printf 'complete\tstatus\n'
+}
+
+cmd_print() {
+	state_home=${XDG_STATE_HOME:-${HOME:?HOME is required}/.local/state}
+	user_record=${DWM_TEST_USER_RECORD:-$state_home/lyona/install.state}
+	system_record=${DWM_TEST_SYSTEM_RECORD:-/etc/lyona-release}
+
+	user_state=defaults user_version=''
+	read_scope user "$user_record" "$(id -u)" LYONA_DATA_DIR
+	if [ "$user_state" = available ]; then
+		printf '%s\n' "$user_version"
+		return 0
+	fi
+
+	system_state=defaults system_version=''
+	read_scope system "$system_record" "${DWM_TEST_SYSTEM_OWNER:-0}" LYONA_PREFIX
+	if [ "$system_state" = available ]; then
+		printf '%s\n' "$system_version"
+		return 0
+	fi
+
+	printf 'unknown\n'
+}
+
+[ $# -ge 1 ] || usage
+case $1 in
+status)
+	shift
+	cmd_status "${1:-}"
+	;;
+print)
+	shift
+	[ $# -eq 0 ] || usage
+	cmd_print
+	;;
+*)
+	usage
+	;;
+esac

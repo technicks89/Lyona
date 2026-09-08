@@ -240,9 +240,22 @@ install_sudoers="$TARGET/etc/sudoers.d/90-lyona-install"
 install -m 0440 /dev/null "$install_sudoers"
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$target_user" >"$install_sudoers"
 
+# UPDATE-001 install provenance: the live medium's own build already computed
+# a commit for /etc/lyona-iso-release (scripts/build-lyona-arch-iso.sh); carry
+# it through to the target so an ISO-installed machine records a real commit
+# and LYONA_SOURCE=iso, not "unknown". `su -` starts a login shell that resets
+# the environment, so these are passed inside the command string, not
+# exported beforehand.
+iso_commit=unknown
+if [[ -r /etc/lyona-iso-release ]]; then
+	iso_commit=$(awk -F= '$1 == "LYONA_ISO_COMMIT" { print $2; exit }' /etc/lyona-iso-release)
+	[[ -n $iso_commit ]] || iso_commit=unknown
+fi
+install -Dm644 /etc/lyona-iso-release "$TARGET/etc/lyona-iso-release" 2>/dev/null || true
+
 run_logged "Running install.sh --profile full as $target_user..." \
 	arch-chroot "$TARGET" su - "$target_user" -c \
-	'cd "$HOME/.local/share/lyona" && ./install.sh --non-interactive --profile full'
+	"cd \"\$HOME/.local/share/lyona\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full"
 
 rm -f "$install_sudoers"
 

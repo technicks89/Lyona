@@ -38,6 +38,29 @@ postinstall="$repo/archiso/airootfs/root/lyona-postinstall.sh"
 
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
 
+# UPDATE-001: the live medium's own build commit must reach the target
+# install, not "unknown" -- carried through /etc/lyona-iso-release, since
+# `su -` starts a login shell that resets the environment before install.sh
+# runs.
+grep -Fq 'awk -F= '"'"'$1 == "LYONA_ISO_COMMIT" { print $2; exit }'"'"' /etc/lyona-iso-release' \
+	"$postinstall" || {
+	printf 'lyona-postinstall.sh does not read the live medium build commit.\n' >&2
+	exit 1
+}
+# shellcheck disable=SC2016 # the literal shell source text is what we look for
+grep -Fq 'install -Dm644 /etc/lyona-iso-release "$TARGET/etc/lyona-iso-release"' \
+	"$postinstall" || {
+	printf 'lyona-postinstall.sh does not carry /etc/lyona-iso-release onto the target.\n' >&2
+	exit 1
+}
+# shellcheck disable=SC2016 # the literal shell source text is what we look for
+grep -Fq 'env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full' \
+	"$postinstall" || {
+	printf 'lyona-postinstall.sh does not pass LYONA_SOURCE/LYONA_COMMIT into install.sh.\n' >&2
+	exit 1
+}
+
+# shellcheck disable=SC2016 # the literal shell source text is what we look for
 grep -Fq 'install -Dm755 "$REPO_SRC/scripts/lyona-cachyos" "$TARGET$CACHYOS_HELPER"' \
 	"$postinstall" || {
 	printf 'lyona-postinstall.sh does not install the CachyOS helper into the target.\n' >&2
