@@ -5,7 +5,7 @@ set -eu
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 repo=${DWM_SYSTEM_MANAGEMENT_XVFB_REPO:-$repo}
 
-for command_name in Xvfb quickshell xprop getconf; do
+for command_name in Xvfb quickshell xprop getconf pgrep; do
 	if ! command -v "$command_name" >/dev/null 2>&1; then
 		printf 'SKIP: %s is unavailable\n' "$command_name"
 		exit 77
