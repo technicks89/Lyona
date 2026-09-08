@@ -28,6 +28,40 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   stamped. Nothing else about the install path changed; this is the
   foundation the rest of Phase 6's update path (`lyona-update`) builds on.
 
+- Add `lyona-update` (UPDATE-002, `docs/P6-UPDATE-HELPER.md`): a `check` /
+  `apply` / `rollback` / `backups` helper that lets an installed machine move
+  to a newer release and back again, on top of UPDATE-001's provenance
+  record. `check` compares the installed version against a `stable` or
+  `preview` GitHub release (calendar-version ordering, with a short-lived
+  cache so a panel indicator does not hammer the API) and reports `current`,
+  `behind`, `ahead`, `downgrade-offered`, `unknown`, or `offline` — never an
+  error for an unreachable network. `apply` downloads and SHA-256-verifies a
+  release tarball *before* unpacking it, builds unprivileged, backs up the
+  live install, then runs one confirmed privileged step
+  (`scripts/lyona-update-root`, installed via
+  `config/polkit/com.lyona.update.policy`) before verifying the result and
+  restamping provenance last — a build failure or a declined privileged step
+  costs nothing but time, never a half-applied system. `rollback` is the
+  missing half of `scripts/dev-sync-install.sh`'s existing backup machinery
+  (now reusable as a library via a `DEV_SYNC_INSTALL_LIB_ONLY` sourcing
+  guard that leaves its own direct-invocation behavior unchanged): it
+  refuses on any checksum or environment mismatch, and is designed to work
+  from a bare TTY with no desktop running by falling back from `pkexec` to
+  `sudo` when no agent is reachable — not yet exercised from an actual bare
+  TTY; that scenario is pending the disposable-VM verification pass in
+  `docs/P6-UPDATE-HELPER.md`. Channel and backup retention are configured in
+  `~/.config/lyona/update.conf`, seeded on first use and never overwritten.
+  The privileged step re-verifies the release tarball's checksum immediately
+  before use and then extracts, rebuilds, and installs from a scratch
+  directory the invoking user never has write access to, rather than running
+  a Makefile from a directory that was still writable by that user at the
+  moment root acted on it; `rollback`'s restore likewise validates every
+  backup archive member's path, type, and mode before extracting — refusing
+  anything outside the managed install locations, any non-regular member
+  (symlink, hardlink, device, FIFO, socket), and any setuid, setgid, or
+  sticky bit — rather than trusting GNU tar's own default root-extraction
+  behavior against a directory the invoking user could have replaced.
+
 - Persist workspace, volume, Bluetooth, network, and power panel visibility in
   one versioned user-owned state file shared by every monitor, Control Center,
   and Settings. An absent file migrates from the prior implicit all-on state;

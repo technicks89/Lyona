@@ -18,6 +18,7 @@ state_home="$test_home/.local/state"
 data_dir="$xdg_data_home/lyona"
 output="$work/output"
 install_sources="$work/install-sources"
+privileged_helpers="$work/privileged-helpers"
 
 mkdir -p "$test_repo" "$prefix/bin" "$prefix/libexec/lyona" \
 	"$manprefix/man1" "$xsessions_dir" \
@@ -39,10 +40,17 @@ chmod 755 "$test_repo/dwm"
 make -s -C "$test_repo" --no-print-directory \
 	--eval='test-print-install-sources: ; @printf "%s\n" $(INSTALL_COMMANDS)' \
 	test-print-install-sources >"$install_sources"
+# shellcheck disable=SC2016
+make -s -C "$test_repo" --no-print-directory \
+	--eval='test-print-privileged-helpers: ; @printf "%s\n" $(PRIVILEGED_HELPERS)' \
+	test-print-privileged-helpers >"$privileged_helpers"
 
 install -Dm755 "$test_repo/dwm" "$prefix/bin/dwm"
-sed "s|@PREFIX@|$prefix|g" "$test_repo/scripts/dwm-settings-display-root" |
-	install -Dm755 /dev/stdin "$prefix/libexec/lyona/dwm-settings-display-root"
+while IFS= read -r privileged_helper; do
+	[ -n "$privileged_helper" ] || continue
+	sed "s|@PREFIX@|$prefix|g" "$test_repo/$privileged_helper" |
+		install -Dm755 /dev/stdin "$prefix/libexec/lyona/${privileged_helper##*/}"
+done <"$privileged_helpers"
 while IFS= read -r install_source; do
 	[ -n "$install_source" ] || continue
 	install -Dm755 "$test_repo/$install_source" \

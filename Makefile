@@ -34,6 +34,7 @@ INSTALL_COMMANDS = \
 	scripts/active-audio \
 	scripts/dwm-accessibility-settings \
 	scripts/check-deps.sh \
+	scripts/dev-sync-install.sh \
 	scripts/disable-powersaving \
 	scripts/dwm-controlcenter \
 	scripts/dwm-default-apps \
@@ -81,6 +82,7 @@ INSTALL_COMMANDS = \
 	scripts/lyona-console-theme \
 	scripts/lyona-grub-theme \
 	scripts/lyona-plymouth-theme \
+	scripts/lyona-update \
 	scripts/lyona-version \
 	scripts/nvidia-gpu \
 	scripts/nvidia-suspend-test.sh \
@@ -94,9 +96,10 @@ INSTALL_COMMANDS = \
 	scripts/xdg-enable-autostart.sh \
 	scripts/xscreensaver-setup.sh
 INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
-PRIVILEGED_HELPERS = scripts/dwm-settings-display-root
+PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/lyona-update-root
 PRIVILEGED_HELPER_DIR = ${PREFIX}/libexec/lyona
-POLKIT_ACTIONS = config/polkit/com.lyona.settings-display.policy
+POLKIT_ACTIONS = config/polkit/com.lyona.settings-display.policy \
+	config/polkit/com.lyona.update.policy
 # polkit does not search PREFIX-relative paths; this is a fixed system path
 # regardless of PREFIX.
 POLKIT_ACTIONS_DIR = /usr/share/polkit-1/actions
@@ -207,7 +210,9 @@ install-system:
 	done
 	@echo "==> Installing privileged helpers..."
 	for f in ${PRIVILEGED_HELPERS}; do \
-		sed "s|@PREFIX@|${PREFIX}|g" "$$f" | \
+		sed -e "s|@PREFIX@|${PREFIX}|g" -e "s|@MANPREFIX@|${MANPREFIX}|g" \
+			-e "s|@DATADIR@|${DATADIR}|g" -e "s|@XSESSIONSDIR@|${XSESSIONSDIR}|g" \
+			"$$f" | \
 			install -Dm755 /dev/stdin ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$(basename "$$f"); \
 	done
 	@echo "==> Installing polkit actions..."
@@ -397,7 +402,9 @@ uninstall:
 	for name in ${INSTALL_COMMAND_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
-	rm -f ${DESTDIR}${PRIVILEGED_HELPER_DIR}/dwm-settings-display-root
+	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
+		rm -f ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$name; \
+	done
 	for name in $(notdir ${POLKIT_ACTIONS}); do \
 		rm -f ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$name; \
 	done
@@ -420,10 +427,10 @@ release: dwm
 	echo "==> Created ${RELEASE_ARCHIVE}"
 
 check-shell:
-	shellcheck install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shellcheck install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-update scripts/lyona-update-root scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
 
 check-format:
-	shfmt -d install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shfmt -d install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-update scripts/lyona-update-root scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
 
 check-session-guards:
 	tests/test-autostart.sh
@@ -632,12 +639,14 @@ check-install-manifest: all
 		printf '%s\n' \
 			pre-existing \
 			usr/bin/dwm \
-			usr/libexec/lyona/dwm-settings-display-root \
 			usr/share/man/man1/dwm.1 \
 			usr/share/xsessions/dwm.desktop \
 			etc/lyona-release; \
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
+		done; \
+		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
+			printf 'usr/libexec/lyona/%s\n' "$$name"; \
 		done; \
 		find "assets/cursors/${CAPITAINE_DARK_THEME}" \
 			\( -type f -o -type l \) \
@@ -661,9 +670,13 @@ check-install-manifest: all
 	for name in dwm ${INSTALL_COMMAND_NAMES}; do \
 		test -x "$$stage/usr/bin/$$name"; \
 	done; \
-	test -x "$$stage/usr/libexec/lyona/dwm-settings-display-root"; \
+	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
+		test -x "$$stage/usr/libexec/lyona/$$name"; \
+	done; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-settings-display-root' \
 		"$$stage/usr/share/polkit-1/actions/com.lyona.settings-display.policy"; \
+	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/lyona-update-root' \
+		"$$stage/usr/share/polkit-1/actions/com.lyona.update.policy"; \
 	grep -Fqx 'Exec=/usr/bin/dwm' \
 		"$$stage/usr/share/xsessions/dwm.desktop"; \
 	test -f "$$stage/usr/share/icons/${CAPITAINE_DARK_THEME}/cursors/default"; \
@@ -680,6 +693,9 @@ check-install-preservation:
 
 check-lyona-version:
 	tests/test-lyona-version.sh
+
+check-lyona-update:
+	tests/test-lyona-update.sh
 
 check-test-runner:
 	@$(call run_managed_test,tests/test-run-tests.sh)
@@ -773,6 +789,7 @@ check:
 	$(MAKE) check-install
 	$(MAKE) check-install-preservation
 	$(MAKE) check-lyona-version
+	$(MAKE) check-lyona-update
 	$(MAKE) check-test-runner
 	$(MAKE) check-lightdm-config
 	$(MAKE) release-check
@@ -780,7 +797,7 @@ check:
 .PHONY: clean all check check-accessibility check-appearance check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-test-runner \
 	check-display-profile check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
-	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lock \
+	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall

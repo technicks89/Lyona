@@ -30,10 +30,17 @@ Path overrides use the same variables as the Makefile:
 EOF
 }
 
-die() {
-	printf '%s: %s\n' "$program" "$*" >&2
-	exit 1
-}
+# A caller sourcing this file in DEV_SYNC_INSTALL_LIB_ONLY mode has almost
+# certainly already defined its own die() (dwm-paths.sh's helpers require
+# one); defining a second one here would silently replace theirs for the
+# rest of their process, misattributing every later error message to this
+# file's own $program instead of the sourcing script's.
+if ! command -v die >/dev/null 2>&1; then
+	die() {
+		printf '%s: %s\n' "$program" "$*" >&2
+		exit 1
+	}
+fi
 
 note() {
 	printf '==> %s\n' "$*"
@@ -52,27 +59,45 @@ validate_live_root() {
 	fi
 }
 
-repo_dir=$(
-	unset CDPATH
-	cd -- "$(dirname -- "$0")/.." && pwd
-)
+# DEV_SYNC_INSTALL_REPO_DIR lets a sourcing caller (lyona-update, staging an
+# unpacked release rather than this script's own checkout) point every path
+# and function below at a different tree. $0 is meaningless once sourced --
+# it names the sourcing script, not this file -- so lib-only mode requires
+# the override explicitly rather than silently deriving a wrong path from it.
+if [ "${DEV_SYNC_INSTALL_LIB_ONLY:-0}" = 1 ]; then
+	[ -n "${DEV_SYNC_INSTALL_REPO_DIR:-}" ] ||
+		die "DEV_SYNC_INSTALL_REPO_DIR is required when sourcing this file"
+	repo_dir=$DEV_SYNC_INSTALL_REPO_DIR
+else
+	repo_dir=${DEV_SYNC_INSTALL_REPO_DIR:-$(
+		unset CDPATH
+		cd -- "$(dirname -- "$0")/.." && pwd
+	)}
+fi
 
+# DEV_SYNC_INSTALL_LIB_ONLY=1: a caller sources this file for its functions
+# and path variables (backup_live_install, verify_install, runtime_verify,
+# prepare_expected_files) without running this script's own CLI or build/
+# install/backup sequence. Skip argument parsing entirely in that mode --
+# $@ belongs to the sourcing script, not to us.
 check_only=0
-while [ "$#" -gt 0 ]; do
-	case $1 in
-	--check)
-		check_only=1
-		;;
-	-h | --help)
-		usage
-		exit 0
-		;;
-	*)
-		die "unknown option: $1"
-		;;
-	esac
-	shift
-done
+if [ "${DEV_SYNC_INSTALL_LIB_ONLY:-0}" != 1 ]; then
+	while [ "$#" -gt 0 ]; do
+		case $1 in
+		--check)
+			check_only=1
+			;;
+		-h | --help)
+			usage
+			exit 0
+			;;
+		*)
+			die "unknown option: $1"
+			;;
+		esac
+		shift
+	done
+fi
 
 if [ -n "${DESTDIR:-}" ]; then
 	die "DESTDIR is not supported; this command targets a live installation"
@@ -93,7 +118,7 @@ quickshell_dir=$config_home/quickshell
 binary_target=$prefix/bin/dwm
 man_target=$manprefix/man1/dwm.1
 xsession_target=$xsessions_dir/dwm.desktop
-display_root_helper_target=$prefix/libexec/lyona/dwm-settings-display-root
+privileged_helper_dir=$prefix/libexec/lyona
 make_command=${MAKE:-make}
 
 validate_live_root USER_HOME "$user_home"
@@ -116,7 +141,8 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 install_sources_file=$work/install-sources
 expected_man=$work/dwm.1
 expected_xsession=$work/dwm.desktop
-expected_display_root_helper=$work/dwm-settings-display-root
+privileged_helpers_file=$work/privileged-helpers
+expected_privileged_dir=$work/privileged
 tree_diff=$work/tree.diff
 
 prepare_expected_files() {
@@ -127,12 +153,24 @@ prepare_expected_files() {
 	[ -s "$install_sources_file" ] ||
 		die "Makefile did not report any installed commands"
 
+	# shellcheck disable=SC2016
+	"$make_path" -s -C "$repo_dir" --no-print-directory \
+		--eval='dwm-dev-print-privileged-helpers: ; @printf "%s\n" $(PRIVILEGED_HELPERS)' \
+		dwm-dev-print-privileged-helpers >"$privileged_helpers_file"
+	[ -s "$privileged_helpers_file" ] ||
+		die "Makefile did not report any privileged helpers"
+
 	version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$repo_dir/config.mk")
 	[ -n "$version" ] || die "could not read VERSION from config.mk"
 	sed "s/VERSION/$version/g" "$repo_dir/dwm.1" >"$expected_man"
 	sed "s|@PREFIX@|$prefix|g" "$repo_dir/dwm.desktop" >"$expected_xsession"
-	sed "s|@PREFIX@|$prefix|g" "$repo_dir/scripts/dwm-settings-display-root" \
-		>"$expected_display_root_helper"
+
+	mkdir -p "$expected_privileged_dir"
+	while IFS= read -r privileged_helper; do
+		[ -n "$privileged_helper" ] || continue
+		sed "s|@PREFIX@|$prefix|g" "$repo_dir/$privileged_helper" \
+			>"$expected_privileged_dir/${privileged_helper##*/}"
+	done <"$privileged_helpers_file"
 }
 
 verification_failed=0
@@ -196,20 +234,25 @@ verify_install() {
 		verify_executable "$repo_dir/$install_source" "$prefix/bin/$install_name" \
 			"installed command $install_name"
 	done <"$install_sources_file"
-	verify_executable "$expected_display_root_helper" \
-		"$display_root_helper_target" "privileged display helper"
 	verify_privileged_helper_trust=1
 	if [ "${DWM_DEV_SYNC_SKIP_PRIVILEGED_TRUST:-0}" = 1 ]; then
 		verify_privileged_helper_trust=0
 	fi
-	if [ "$verify_privileged_helper_trust" -eq 1 ] && [ -e "$display_root_helper_target" ]; then
-		if [ "$(stat -c %u "$display_root_helper_target")" -ne 0 ] ||
-			find "$display_root_helper_target" -maxdepth 0 -perm /022 -print -quit | grep -q .; then
-			printf 'UNTRUSTED: privileged display helper ownership or mode (%s)\n' \
-				"$display_root_helper_target" >&2
-			verification_failed=1
+	while IFS= read -r privileged_helper; do
+		[ -n "$privileged_helper" ] || continue
+		privileged_helper_name=${privileged_helper##*/}
+		privileged_helper_target=$privileged_helper_dir/$privileged_helper_name
+		verify_executable "$expected_privileged_dir/$privileged_helper_name" \
+			"$privileged_helper_target" "privileged helper $privileged_helper_name"
+		if [ "$verify_privileged_helper_trust" -eq 1 ] && [ -e "$privileged_helper_target" ]; then
+			if [ "$(stat -c %u "$privileged_helper_target")" -ne 0 ] ||
+				find "$privileged_helper_target" -maxdepth 0 -perm /022 -print -quit | grep -q .; then
+				printf 'UNTRUSTED: privileged helper ownership or mode: %s (%s)\n' \
+					"$privileged_helper_name" "$privileged_helper_target" >&2
+				verification_failed=1
+			fi
 		fi
-	fi
+	done <"$privileged_helpers_file"
 
 	verify_file "$expected_man" "$man_target" "dwm man page"
 	verify_file "$expected_xsession" "$xsession_target" "dwm X session"
@@ -271,7 +314,10 @@ backup_live_install() {
 		[ -n "$install_source" ] || continue
 		add_system_backup_path "$prefix/bin/${install_source##*/}"
 	done <"$install_sources_file"
-	add_system_backup_path "$display_root_helper_target"
+	while IFS= read -r privileged_helper; do
+		[ -n "$privileged_helper" ] || continue
+		add_system_backup_path "$privileged_helper_dir/${privileged_helper##*/}"
+	done <"$privileged_helpers_file"
 	for cursor_source in "$repo_dir"/assets/cursors/Capitaine-Cursors*; do
 		[ -d "$cursor_source" ] || continue
 		add_system_backup_path "$data_root/icons/${cursor_source##*/}"
@@ -284,6 +330,7 @@ backup_live_install() {
 	{
 		printf 'commit=%s\n' "$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf unknown)"
 		printf 'branch=%s\n' "$(git -C "$repo_dir" branch --show-current 2>/dev/null || printf unknown)"
+		printf 'version=%s\n' "$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$repo_dir/config.mk")"
 		printf 'prefix=%s\n' "$prefix"
 		printf 'data_root=%s\n' "$data_root"
 		printf 'config_home=%s\n' "$config_home"
@@ -405,6 +452,14 @@ runtime_verify() {
 
 	[ "$runtime_failed" -eq 0 ]
 }
+
+if [ "${DEV_SYNC_INSTALL_LIB_ONLY:-0}" = 1 ]; then
+	# Every function and path variable above is now defined in the sourcing
+	# shell. Stop before this script's own build/verify/backup/install
+	# sequence -- the caller drives that with its own step ordering.
+	# shellcheck disable=SC2317 # exit is reachable when run directly, not sourced
+	return 0 2>/dev/null || exit 0
+fi
 
 prepare_expected_files
 
