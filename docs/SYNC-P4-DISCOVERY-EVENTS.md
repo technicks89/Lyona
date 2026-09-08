@@ -161,11 +161,32 @@ The process lifecycle around it is strict and must be ported exactly:
 - `restartPending` handles a domain change while a stop is in flight, so a new
   subscription cannot inherit the old monitor's `ready`.
 
-**Lyona adaptation.** `monitor.command` must come from
-`Commands.systemManagementCommand(action, args)` wrapped in
-`Commands.terminatingCheckedCommand(...)` — the variant added in
-[Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#3-commandsqml) precisely so a
-long-running helper receives the close signal instead of being orphaned.
+**Correction, found during implementation: do *not* wrap `monitor.command`.**
+This section originally instructed wrapping it in
+`Commands.terminatingCheckedCommand(...)`, reasoning that the variant exists
+precisely so a long-running helper receives the close signal instead of being
+orphaned. That reasoning does not survive contact with what the wrapper
+actually does: both `checkedCommand` and `terminatingCheckedCommand` redirect
+the wrapped command's stdout to a temp file and only `cat` it once the child
+exits — correct for a bounded one-shot read (the `snapshot` fetch), fatal for
+a streaming event source. Under that wrapper `ready`/`changed` never reach
+`SplitParser` incrementally; they only arrive as one batch at shutdown, after
+there is nothing left to react to. This was caught, not assumed: the xvfb
+verification test genuinely failed — the snapshot stayed stuck at `"idle"` —
+the moment the test fixture's stub `watch-updates` was changed from
+exiting immediately to behaving like the real helper (emit `ready`, then stay
+resident until `SIGTERM`).
+
+`monitor.command` must be the **unwrapped**
+`Commands.systemManagementCommand(action, args)`, matching upstream's own
+code exactly. This carries no orphaning risk either: `helperCommand`'s own
+script chain reaches the real helper via `exec`, so this `Process`'s PID
+already *is* the helper, and `monitor.signal(15)` / `monitor.signal(9)` in
+§3 already reach it directly — there is no intermediate
+command-substitution child for `terminatingCheckedCommand` to rescue here,
+unlike the plain `checkedCommand` shape `SystemManagementModel`'s one-shot
+snapshot fetch uses.
+
 Wrap both `Timer` intervals' pixel-free constants as-is (they are
 milliseconds, not geometry — `Theme.dp()` does not apply).
 

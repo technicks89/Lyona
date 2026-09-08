@@ -8,6 +8,10 @@ settings_model=$repo/config/quickshell/settings/SettingsModel.qml
 settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
 system_pane=$repo/config/quickshell/settings/SystemSettingsPane.qml
 system_model=$repo/config/quickshell/systemmanagement/SystemManagementModel.qml
+discovery_cycle=$repo/config/quickshell/systemmanagement/SystemDiscoveryCycle.js
+provider_discovery=$repo/config/quickshell/systemmanagement/SystemProviderDiscovery.qml
+update_discovery=$repo/config/quickshell/systemmanagement/SystemUpdateDiscovery.qml
+provider_root=$repo/scripts/dwm-system-management
 commands=$repo/config/quickshell/core/Commands.qml
 provider=$repo/scripts/dwm-settings-provider
 
@@ -30,8 +34,24 @@ grep -Fq 'root.systemManagementModel.closeSettings()' "$settings_model"
 grep -Fq 'root.selectedSectionId === "system" && root.systemManagementModel' "$settings_model"
 grep -Fq 'function openSettings()' "$system_model"
 grep -Fq 'function closeSettings()' "$system_model"
-grep -Fq 'if (!root.settingsVisible || snapshotProcess.running) return;' "$system_model"
 grep -Fq 'if (snapshotProcess.running) snapshotProcess.running = false;' "$system_model"
+
+# Sync Phase 4: reads are coalesced through the discovery cycle, not fired
+# per call. A request that arrives while one is already in flight is
+# recorded (snapshotPending) and replayed once, never launched as a second
+# overlapping process.
+grep -Fq 'if (root.snapshotOwned) {' "$system_model"
+grep -Fq 'root.snapshotPending = true;' "$system_model"
+grep -Fq 'if (!discoveryModel.canTake()) return;' "$system_model"
+grep -Fq 'discoveryModel.open();' "$system_model"
+grep -Fq 'discoveryModel.close();' "$system_model"
+grep -Fq 'discoveryModel.refresh();' "$system_model"
+grep -Fq 'discoveryModel.take();' "$system_model"
+grep -Fq 'discoveryModel.beforePublish(snapshotProcess.cycleToken);' "$system_model"
+grep -Fq 'discoveryModel.complete(snapshotProcess.cycleToken, successful);' "$system_model"
+grep -Fq 'SystemUpdateDiscovery {' "$system_model"
+grep -Fq 'readonly property alias discovery: discoveryModel' "$system_model"
+grep -Fq 'readonly property string discoveryDetail: discoveryModel.detail' "$system_model"
 
 # The fetch goes through the plain checkedCommand gate, not
 # terminatingCheckedCommand -- this is a one-shot bounded read, not the
@@ -96,5 +116,59 @@ grep -Fq 'emit_capability system authorization' "$provider"
 # introduce a second exclusion or a duplicate pane mount.
 test "$(grep -c 'SystemSettingsPane {' "$settings_window")" -eq 1
 test "$(grep -c '!== "system"' "$settings_window")" -eq 1
+
+# Sync Phase 4 (docs/SYNC-P4-DISCOVERY-EVENTS.md): live discovery monitoring.
+grep -Fq 'function create()' "$discovery_cycle"
+grep -Fq 'function owns(cycle, token)' "$discovery_cycle"
+grep -Fq 'unresolved: false' "$discovery_cycle"
+
+grep -Fq 'domain: "updates"' "$update_discovery"
+
+# The refactored, generic-from-the-start form is ported directly (upstream's
+# a6d65c08/#260) -- five domains selectable, only "updates" has a helper
+# behind it yet; the other four are Sync Phase 9.
+grep -Fq 'function domainDefinition(value)' "$provider_discovery"
+grep -Fq '"watch-updates"' "$provider_discovery"
+grep -Fq '"watch-regional"' "$provider_discovery"
+grep -Fq '"watch-accounts"' "$provider_discovery"
+grep -Fq '"watch-units"' "$provider_discovery"
+
+# Deliberately unwrapped: both checkedCommand and terminatingCheckedCommand
+# buffer the wrapped command's stdout to a temp file and only `cat` it once
+# the child exits -- correct for a bounded one-shot read, but it defeats
+# live event streaming entirely (ready/changed would only ever arrive as one
+# batch at shutdown). helperCommand's own script already execs the real
+# helper, so this Process's PID already *is* the helper and monitor.signal()
+# reaches it directly -- no orphaning risk to guard against here. This
+# corrects docs/SYNC-P4-DISCOVERY-EVENTS.md's own terminatingCheckedCommand
+# instruction, found wrong when the xvfb test's snapshot never left "idle"
+# with a real (non-instantly-exiting) watch-updates stub.
+grep -Fq 'monitor.command = Commands.systemManagementCommand(selected.action, selected.args);' "$provider_discovery"
+grep -Fq 'Timer { id: setupDeadline; interval: 12000' "$provider_discovery"
+grep -Fq 'Timer { id: stopDeadline; interval: 1500' "$provider_discovery"
+grep -Fq 'monitor.signal(15)' "$provider_discovery"
+grep -Fq 'monitor.signal(9)' "$provider_discovery"
+
+# Any event line that is not exactly "<prefix>\tready" or "<prefix>\tchanged"
+# fails the monitor -- unlike the snapshot protocol, unknown records here
+# are never tolerated.
+grep -Fq 'else root.failMonitor();' "$provider_discovery"
+
+grep -Fq 'function systemManagementDiscoveryStatus(): string' "$shell_qml"
+
+# The Python side: a bounded, read-only event stream, not a transaction.
+grep -Fq 'class UpdateEventMonitor:' "$provider_root"
+grep -Fq 'def watch_update_events() -> int:' "$provider_root"
+grep -Fq 'list(argv) == ["watch-updates"]' "$provider_root"
+if awk '/^class UpdateEventMonitor:/,/^def watch_update_events\(\) -> int:/' "$provider_root" |
+	awk '/^def watch_update_events\(\) -> int:/{exit} {print}' |
+	grep -q 'PackageKitGlib'; then
+	printf 'UpdateEventMonitor must not touch PackageKitGlib transaction machinery.\n' >&2
+	exit 1
+fi
+
+# The pane surfaces the live-monitoring state as an advisory line, per the
+# phase document's exact wording ("Reload status to retry/reconcile").
+grep -Fq 'root.systemManagementModel.discoveryDetail' "$system_pane"
 
 printf 'Quickshell system-management model contract: PASS\n'
