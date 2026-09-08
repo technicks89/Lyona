@@ -127,6 +127,37 @@ deadline (120 seconds for the discovery/simulate path, matching a
 `Cancel`-then-five-second-grace-then-detach sequence on timeout) — nothing
 here waits indefinitely on PackageKit.
 
+**Deliberate exclusions from the ported snapshot layer** (Sync Phase 2,
+`docs/SYNC-P2-UPDATE-SNAPSHOT.md`):
+
+- **DNF5 install-preview preservation.** Upstream's `#232` widens
+  `normalize_plan()`'s requested/represented reconciliation so a DNF5
+  `SIMULATE` that reports an install action (not just an upgrade action) for
+  a new dependency is still accepted. Whether `libpk_backend_alpm.so` ever
+  does the same is unverified — there is no live PackageKit daemon available
+  to check against yet. Left unported; the snapshot layer keeps the stricter
+  pre-`#232` reconciliation (every requested package ID must resolve to
+  exactly one `update` action) until this is confirmed on a real install.
+  A `SIMULATE` plan the alpm backend represents differently will surface as
+  a `malformed`/`"PackageKit returned an incomplete update plan"` error
+  rather than silently mis-porting DNF5-specific behavior.
+- **Security severity is always `unknown`.** The alpm sync databases carry no
+  CVE/security classification, so every `update` record's severity field
+  reads `unknown` — this is accurate, not a gap. `arch-audit` (shipped as
+  `arch:system-management-optional`) could add this later behind its own
+  capability, but it needs the network, must never block this bounded
+  snapshot, and does not cover CachyOS's own packages — out of scope here.
+- **Restart-requirement heuristic (an addition, not an exclusion).** Whether
+  the alpm backend populates PackageKit's `RequireRestart` signal at all is
+  unverified for the same reason. Rather than silently reporting `none`
+  whenever the backend stays silent — which would tell a user it is safe to
+  skip a reboot after a kernel or glibc update — `dwm-system-management`
+  falls back to a name-based heuristic over the pending update set
+  (`linux`/`linux-*`/`linux-cachyos*`, `systemd`, `glibc`, `dbus` → the
+  existing `system` restart value; anything else → `unknown`, never a
+  fabricated `none`) whenever a transaction succeeds with pending updates but
+  zero `RequireRestart` signals were seen.
+
 ### Regional state (timezone, NTP, locale)
 
 `org.freedesktop.timedate1` and `org.freedesktop.locale1` are the stable
