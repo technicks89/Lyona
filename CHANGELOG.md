@@ -10,6 +10,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add install provenance (UPDATE-001, `docs/P6-UPDATE-PROVENANCE.md`):
+  `make install-system` and `make install-user` now each write a stamped
+  record last, only on success — `/etc/lyona-release` (system) and
+  `$XDG_STATE_HOME/lyona/install.state` (user) — and the new `lyona-version`
+  helper reads them back through the same safety idiom used elsewhere
+  (`status`, `status --json`, `print`). A record that is missing reads as
+  `defaults`; one that is symlinked, wrong-owner, oversized, or writable by
+  group/other reads as `unavailable` and is never read through or rewritten.
+  `consistent` is `yes` only when the system record, the user record, and the
+  running `dwm -v` binary all agree, catching a half-applied install rather
+  than reporting a version nobody can act on. An ISO install now carries its
+  real build commit onto the target instead of recording `unknown`
+  (`archiso/airootfs/root/lyona-postinstall.sh` passes `LYONA_SOURCE=iso`/
+  `LYONA_COMMIT` through explicitly, since `su -` resets the environment),
+  and `install.sh`'s completion banner reports the version that was actually
+  stamped. Nothing else about the install path changed; this is the
+  foundation the rest of Phase 6's update path (`lyona-update`) builds on.
+
 - Persist workspace, volume, Bluetooth, network, and power panel visibility in
   one versioned user-owned state file shared by every monitor, Control Center,
   and Settings. An absent file migrates from the prior implicit all-on state;

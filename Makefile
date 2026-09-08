@@ -9,10 +9,17 @@ OWNER ?= $(or $(SUDO_USER),$(USER))
 USER_HOME ?= $(shell getent passwd "${OWNER}" 2>/dev/null | cut -d: -f6)
 XDG_CONFIG_HOME ?= ${USER_HOME}/.config
 XDG_DATA_HOME ?= ${USER_HOME}/.local/share
+XDG_STATE_HOME ?= ${USER_HOME}/.local/state
 DATA_DIR  := ${XDG_DATA_HOME}/lyona
 CFG_DIR   := ${XDG_CONFIG_HOME}
 DATADIR   ?= ${PREFIX}/share
 SYSTEMDUSERDIR ?= ${PREFIX}/lib/systemd/user
+# UPDATE-001 install provenance. The ISO build passes both through the
+# environment (archiso/airootfs/root/lyona-postinstall.sh); an existing-system
+# install falls back to the local checkout's own HEAD, and finally to
+# "unknown" when git is unavailable -- an ISO-provisioned target has no .git.
+LYONA_COMMIT ?= $(shell git -C . rev-parse HEAD 2>/dev/null || printf unknown)
+LYONA_SOURCE ?= $(if $(wildcard .git),checkout,tarball)
 CAPITAINE_DARK_THEME = Capitaine-Cursors
 CAPITAINE_LIGHT_THEME = Capitaine-Cursors-White
 CAPITAINE_LICENSE_DIR = ${DATADIR}/licenses/lyona/capitaine-cursors
@@ -74,6 +81,7 @@ INSTALL_COMMANDS = \
 	scripts/lyona-console-theme \
 	scripts/lyona-grub-theme \
 	scripts/lyona-plymouth-theme \
+	scripts/lyona-version \
 	scripts/nvidia-gpu \
 	scripts/nvidia-suspend-test.sh \
 	scripts/nvidia-temp \
@@ -169,7 +177,8 @@ install:
 				$(MAKE) install-user \
 				USER_HOME="${USER_HOME}" OWNER="$$target_user" \
 				XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" \
-				XDG_DATA_HOME="${XDG_DATA_HOME}"; \
+				XDG_DATA_HOME="${XDG_DATA_HOME}" \
+				XDG_STATE_HOME="${XDG_STATE_HOME}"; \
 		else \
 			$(MAKE) install-user; \
 		fi; \
@@ -206,6 +215,23 @@ install-system:
 		sed "s|@PREFIX@|${PREFIX}|g" "$$f" | \
 			install -Dm644 /dev/stdin ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$(basename "$$f"); \
 	done
+	$(MAKE) stamp-system
+
+# Written last, and only from this target, so an install that fails partway
+# through never leaves a stamp claiming success.
+stamp-system:
+	@echo "==> Recording system install provenance..."
+	install -d -m 0755 ${DESTDIR}/etc
+	temp=$$(mktemp "${DESTDIR}/etc/.lyona-release.XXXXXX"); \
+	{ \
+		printf 'LYONA_VERSION=%s\n' "${VERSION}"; \
+		printf 'LYONA_COMMIT=%s\n' "${LYONA_COMMIT}"; \
+		printf 'LYONA_SOURCE=%s\n' "${LYONA_SOURCE}"; \
+		printf 'LYONA_PREFIX=%s\n' "${PREFIX}"; \
+		printf 'LYONA_INSTALL_DATE=%s\n' "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	} >"$$temp"; \
+	chmod 0644 "$$temp"; \
+	mv -f "$$temp" "${DESTDIR}/etc/lyona-release"
 
 install-gtk-themes:
 	@echo "==> Generating GTK themes from the palettes..."
@@ -327,15 +353,35 @@ install-user:
 			find "${CFG_DIR}/$$b" \( -name '*.sh' -o -name '*.py' \) -print0 2>/dev/null | xargs -0 -r chmod +x; \
 		fi; \
 	done
+	$(MAKE) stamp-user
 	@echo ""
 	@echo "  dwm installed successfully."
 	@echo "  Log out and select 'dwm', or start with: startx"
 	@echo ""
 
+# Written last, and only from this target, so an install that fails partway
+# through never leaves a stamp claiming success.
+stamp-user:
+	@echo "==> Recording user install provenance..."
+	mkdir -p "${XDG_STATE_HOME}/lyona"
+	temp=$$(mktemp "${XDG_STATE_HOME}/lyona/.install.state.XXXXXX"); \
+	{ \
+		printf 'LYONA_VERSION=%s\n' "${VERSION}"; \
+		printf 'LYONA_COMMIT=%s\n' "${LYONA_COMMIT}"; \
+		printf 'LYONA_SOURCE=%s\n' "${LYONA_SOURCE}"; \
+		printf 'LYONA_DATA_DIR=%s\n' "${DATA_DIR}"; \
+		printf 'LYONA_CONFIG_DIR=%s\n' "${CFG_DIR}"; \
+		printf 'LYONA_SOURCE_TREE=%s\n' "$$(realpath .)"; \
+		printf 'LYONA_INSTALL_DATE=%s\n' "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	} >"$$temp"; \
+	chmod 0600 "$$temp"; \
+	mv -f "$$temp" "${XDG_STATE_HOME}/lyona/install.state"
+
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/dwm \
 		${DESTDIR}${MANPREFIX}/man1/dwm.1 \
-		${DESTDIR}${XSESSIONSDIR}/dwm.desktop
+		${DESTDIR}${XSESSIONSDIR}/dwm.desktop \
+		${DESTDIR}/etc/lyona-release
 	rm -rf \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_DARK_THEME}" \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_LIGHT_THEME}" \
@@ -374,10 +420,10 @@ release: dwm
 	echo "==> Created ${RELEASE_ARCHIVE}"
 
 check-shell:
-	shellcheck install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shellcheck install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
 
 check-format:
-	shfmt -d install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shfmt -d install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
 
 check-session-guards:
 	tests/test-autostart.sh
@@ -588,7 +634,8 @@ check-install-manifest: all
 			usr/bin/dwm \
 			usr/libexec/lyona/dwm-settings-display-root \
 			usr/share/man/man1/dwm.1 \
-			usr/share/xsessions/dwm.desktop; \
+			usr/share/xsessions/dwm.desktop \
+			etc/lyona-release; \
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
 		done; \
@@ -630,6 +677,9 @@ check-install-manifest: all
 
 check-install-preservation:
 	tests/test-install-preservation.sh
+
+check-lyona-version:
+	tests/test-lyona-version.sh
 
 check-test-runner:
 	@$(call run_managed_test,tests/test-run-tests.sh)
@@ -722,6 +772,7 @@ check:
 	$(MAKE) check-arch-packages
 	$(MAKE) check-install
 	$(MAKE) check-install-preservation
+	$(MAKE) check-lyona-version
 	$(MAKE) check-test-runner
 	$(MAKE) check-lightdm-config
 	$(MAKE) release-check
@@ -729,7 +780,7 @@ check:
 .PHONY: clean all check check-accessibility check-appearance check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-test-runner \
 	check-display-profile check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
-	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lock \
+	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
-	install-cursors install-grub-theme install-gtk-themes native release release-check uninstall
+	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall

@@ -307,8 +307,20 @@ for _ in 1 2; do
 		OWNER="$OWNER" \
 		XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
 		XDG_CONFIG_DIRS="$XDG_CONFIG_DIRS" \
-		XDG_DATA_HOME="$XDG_DATA_HOME"
+		XDG_DATA_HOME="$XDG_DATA_HOME" \
+		XDG_STATE_HOME="$TEST_HOME/.local/state"
 done
+
+# UPDATE-001: install-user writes a provenance stamp, and running install-user
+# twice (the loop just above) replaces it rather than appending -- a doubled
+# LYONA_VERSION line would mean the second run appended instead of the atomic
+# mktemp-then-mv replace the Makefile's stamp-user target uses.
+STATE_STAMP="$TEST_HOME/.local/state/lyona/install.state"
+assert_file "$STATE_STAMP"
+test "$(stat -c %a "$STATE_STAMP")" = 600
+test "$(grep -Fc 'LYONA_VERSION=' "$STATE_STAMP")" -eq 1
+grep -Fq "LYONA_DATA_DIR=$XDG_DATA_HOME/lyona" "$STATE_STAMP"
+grep -Fq "LYONA_CONFIG_DIR=$XDG_CONFIG_HOME" "$STATE_STAMP"
 
 assert_preserved config-h "$TEST_REPO/config.h" "$WORK_DIR/config-h.before"
 assert_preserved xinitrc "$TEST_HOME/.xinitrc" "$WORK_DIR/xinitrc.before"
@@ -378,7 +390,8 @@ run_as_owner env HOME="$FRESH_HOME" make -C "$TEST_REPO" install-user \
 	OWNER="$OWNER" \
 	XDG_CONFIG_HOME="$FRESH_CONFIG_HOME" \
 	XDG_CONFIG_DIRS="$FRESH_CONFIG_DIRS" \
-	XDG_DATA_HOME="$FRESH_DATA_HOME"
+	XDG_DATA_HOME="$FRESH_DATA_HOME" \
+	XDG_STATE_HOME="$FRESH_HOME/.local/state"
 
 if [[ $(grep -Fxc -- '-f' "$WORK_DIR/fc-cache.log") -ne 3 ]]; then
 	printf 'Expected one font-cache refresh per user install.\n' >&2
@@ -409,5 +422,30 @@ if find "$EMPTY_CONFIG_HOME/autostart" -type f -print -quit | grep -q .; then
 	exit 1
 fi
 test "$(stat -c %U "$EMPTY_CONFIG_HOME/autostart")" = "$OWNER"
+
+# UPDATE-001: a failed install-user must leave no stamp claiming success.
+# stamp-user is the last recipe line, so any earlier failure -- here, a
+# regular file obstructing the data-dir mkdir -- aborts before it runs.
+FAIL_HOME="$WORK_DIR/fail-home"
+FAIL_CONFIG_HOME="$FAIL_HOME/.config"
+FAIL_DATA_HOME="$FAIL_HOME/.local/share"
+FAIL_CONFIG_DIRS="$WORK_DIR/fail-etc-xdg"
+mkdir -p "$FAIL_HOME/.local/share" "$FAIL_CONFIG_DIRS/autostart"
+: >"$FAIL_DATA_HOME/lyona"
+if [[ $(id -u) -eq 0 ]]; then
+	chown -R "$OWNER:$OWNER_GROUP" "$FAIL_HOME" "$FAIL_CONFIG_DIRS"
+fi
+if run_as_owner env HOME="$FAIL_HOME" make -C "$TEST_REPO" install-user \
+	USER_HOME="$FAIL_HOME" \
+	OWNER="$OWNER" \
+	XDG_CONFIG_HOME="$FAIL_CONFIG_HOME" \
+	XDG_CONFIG_DIRS="$FAIL_CONFIG_DIRS" \
+	XDG_DATA_HOME="$FAIL_DATA_HOME" \
+	XDG_STATE_HOME="$FAIL_HOME/.local/state" >"$WORK_DIR/failed-install-user.log" 2>&1; then
+	printf 'install-user succeeded despite an obstructed data directory.\n' >&2
+	cat "$WORK_DIR/failed-install-user.log" >&2
+	exit 1
+fi
+assert_no_file "$FAIL_HOME/.local/state/lyona/install.state"
 
 printf 'Repeated install preservation: PASS\n'

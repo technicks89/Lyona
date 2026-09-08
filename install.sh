@@ -923,15 +923,26 @@ ensure_yay_installed || true
 cd "$REPO_DIR"
 make clean
 make
+# UPDATE-001 install provenance: an ISO install passes LYONA_SOURCE/LYONA_COMMIT
+# through the environment (archiso/airootfs/root/lyona-postinstall.sh); an
+# existing-system install leaves both unset and the Makefile falls back to the
+# local checkout's own git HEAD. Passed as make arguments, not relied on
+# through `sudo`'s environment, which does not preserve it by default.
+provenance_args=()
+[[ -z ${LYONA_SOURCE:-} ]] || provenance_args+=("LYONA_SOURCE=$LYONA_SOURCE")
+[[ -z ${LYONA_COMMIT:-} ]] || provenance_args+=("LYONA_COMMIT=$LYONA_COMMIT")
 sudo make install-system \
 	USER_HOME="$HOME" \
 	OWNER="$(id -un)" \
-	DATADIR="/usr/share"
+	DATADIR="/usr/share" \
+	"${provenance_args[@]}"
 make install-user \
 	USER_HOME="$HOME" \
 	OWNER="$(id -un)" \
 	XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-	XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+	XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" \
+	XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}" \
+	"${provenance_args[@]}"
 apply_grub_theme
 configure_displays_after_install
 
@@ -941,6 +952,7 @@ echo "║          Installation Complete!           ║"
 echo "╚═══════════════════════════════════════════╝"
 echo ""
 info "Detected: $DISTRO_NAME"
+echo "  • Installed version: $("$REPO_DIR/scripts/lyona-version" print 2>/dev/null || echo unknown)"
 echo "  • Build configuration: $REPO_DIR/config.h"
 echo "  • Reconfigure by removing config.h and running the installer again"
 echo "  • Display setup: dwm-display-setup"

@@ -358,6 +358,8 @@ Make the desktop appearance and interaction model configurable as one system.
 
 ## Phase 6: System Management
 
+Status: Active (2026-09-08)
+
 ### Objective
 
 Cover the system tasks users reasonably expect from a desktop environment
