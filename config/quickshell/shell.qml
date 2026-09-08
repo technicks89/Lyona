@@ -19,6 +19,7 @@ import qs.power
 import qs.settings
 import qs.state
 import qs.system
+import qs.systemmanagement
 
 pragma ComponentBehavior: Bound
 
@@ -189,6 +190,10 @@ ShellRoot {
         id: updateModel
     }
 
+    SystemManagementModel {
+        id: systemManagementModel
+    }
+
     readonly property string dpiStatePath: (Quickshell.env("XDG_RUNTIME_DIR") || "")
         + "/dwm-settings-display/dpi.current"
 
@@ -251,6 +256,7 @@ ShellRoot {
         accessibilityModel: accessibilityModel
         panelSettingsModel: panelSettingsModel
         updateModel: updateModel
+        systemManagementModel: systemManagementModel
     }
 
     LazyLoader {
@@ -923,6 +929,26 @@ ShellRoot {
             updateModel.apply(version);
         }
 
+        function systemManagementUpdateCount(): int {
+            return systemManagementModel.updates.length;
+        }
+
+        function systemManagementPackageChangeCount(): int {
+            return systemManagementModel.packageChanges.length;
+        }
+
+        function systemManagementSnapshotState(): string {
+            return systemManagementModel.snapshotState;
+        }
+
+        function systemManagementRestartState(): string {
+            return systemManagementModel.updateRestart.status + ":" + systemManagementModel.updateRestart.value;
+        }
+
+        function systemManagementSettingsVisible(): bool {
+            return systemManagementModel.settingsVisible;
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }
@@ -1100,5 +1126,6 @@ ShellRoot {
         notificationModel: notificationModel
         panelSettingsModel: panelSettingsModel
         updateModel: updateModel
+        systemManagementModel: systemManagementModel
     }
 }
