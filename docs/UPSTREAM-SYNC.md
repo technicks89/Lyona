@@ -326,7 +326,7 @@ their own boundary group:
 | UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper | Designed, not started |
 
 (`P6-UPDATE-OVERVIEW.md` indexes all three plus the architecture decisions
-behind them; it is not its own boundary.) UPDATE-001 is implemented — the
+behind them; it is not its own boundary.) UPDATE-001 and UPDATE-002 are implemented — the
 currently active `TASKS.md` phase is Phase 6 (System Management), and
 `P6-UPDATE-PROVENANCE.md` has been removed now that it is done, per this
 project's plan-doc-retirement convention. UPDATE-002 and UPDATE-003 remain

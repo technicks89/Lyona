@@ -18,7 +18,7 @@ removed now that it is implemented — the record of what changed lives in
 retiring a plan document once it is implemented (see `docs/UPSTREAM-SYNC.md`
 for the same convention applied to the upstream-sync phase docs).
 
-> **Sequencing.** Phase 5 closed and UPDATE-001 landed (2026-09-08). UPDATE-002
+> **Sequencing.** Phase 5 closed and UPDATE-002 landed (2026-09-08). UPDATE-003
 > is next; `AGENTS.md` still forbids beginning it in a change scoped to
 > complete UPDATE-001, and it forbids beginning the separate upstream-ported
 > system-management work (`docs/UPSTREAM-SYNC.md`) in a change scoped to

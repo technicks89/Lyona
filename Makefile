@@ -210,7 +210,9 @@ install-system:
 	done
 	@echo "==> Installing privileged helpers..."
 	for f in ${PRIVILEGED_HELPERS}; do \
-		sed "s|@PREFIX@|${PREFIX}|g" "$$f" | \
+		sed -e "s|@PREFIX@|${PREFIX}|g" -e "s|@MANPREFIX@|${MANPREFIX}|g" \
+			-e "s|@DATADIR@|${DATADIR}|g" -e "s|@XSESSIONSDIR@|${XSESSIONSDIR}|g" \
+			"$$f" | \
 			install -Dm755 /dev/stdin ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$(basename "$$f"); \
 	done
 	@echo "==> Installing polkit actions..."

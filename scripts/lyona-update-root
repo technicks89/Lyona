@@ -2,6 +2,9 @@
 set -euo pipefail
 
 install_prefix='@PREFIX@'
+install_manprefix='@MANPREFIX@'
+install_datadir='@DATADIR@'
+install_xsessionsdir='@XSESSIONSDIR@'
 
 die() {
 	printf 'lyona-update-root: %s\n' "$*" >&2
@@ -39,6 +42,17 @@ user_owned_dir() {
 	local path=$1 want_uid=$2 mode
 	[[ $path == /* && $path != */../* && $path != *'/..' ]] || return 1
 	[[ -d $path && ! -L $path ]] || return 1
+	[[ $(stat -c %u -- "$path") == "$want_uid" ]] || return 1
+	mode=$(stat -c %a -- "$path")
+	((($((8#$mode)) & 8#022) == 0)) || return 1
+	return 0
+}
+
+# Same shape, for a single regular file rather than a directory.
+user_owned_file() {
+	local path=$1 want_uid=$2 mode
+	[[ $path == /* && $path != */../* && $path != *'/..' ]] || return 1
+	[[ -f $path && ! -L $path ]] || return 1
 	[[ $(stat -c %u -- "$path") == "$want_uid" ]] || return 1
 	mode=$(stat -c %a -- "$path")
 	((($((8#$mode)) & 8#022) == 0)) || return 1
@@ -85,33 +99,126 @@ log_file=$state_home/lyona/update.log
 
 make_path=$(command -v make) || die "make is unavailable"
 
+# Everything below this point that ends up executed -- a Makefile recipe, a
+# script invoked by one -- must come from a tree this process itself
+# extracted from a tarball it just re-hashed, never from a directory the
+# invoking user has had write access to at any point. A staging directory
+# the unprivileged caller built and handed us is fine as a *data* source
+# (a prebuilt "dwm" is inert until the user's own session later runs it,
+# same as anything else in their PATH already), but it must never be the
+# thing "make install-system" is run against, because config.mk and the
+# Makefile execute arbitrary shell during evaluation (`$(shell ...)`), not
+# only via the recipe someone thinks they are invoking.
+extract_verified_tree() {
+	local tarball=$1 dest=$2
+	tar -xzf "$tarball" -C "$dest" --strip-components=1 ||
+		die "failed to extract the verified release tarball"
+}
+
 case ${1:-} in
 install-system)
-	[[ $# == 3 ]] || die "install-system requires a staging directory and its version"
-	staging_dir=$2
-	requested_version=$3
-	updates_root=$state_home/lyona/updates
-	case $staging_dir in
-	"$updates_root"/*) ;;
-	*) die "staging directory is not under the invoking user's managed updates area" ;;
+	case ${2:-} in
+	release)
+		[[ $# == 6 ]] ||
+			die "install-system release requires a tarball, its checksum, the version, and a config.h path (or -)"
+		tarball_path=$3
+		expected_sha256=$4
+		requested_version=$5
+		config_h_path=$6
+		updates_root=$state_home/lyona/updates
+
+		case $tarball_path in
+		"$updates_root"/*) ;;
+		*) die "tarball is not under the invoking user's managed updates area" ;;
+		esac
+		user_owned_file "$tarball_path" "$invoking_uid" ||
+			die "tarball is not a safe, user-owned file"
+		[[ $expected_sha256 =~ ^[0-9a-fA-F]{64}$ ]] || die "malformed expected checksum"
+		[[ $requested_version =~ ^[0-9][0-9A-Za-z.+_-]*$ ]] || die "malformed version"
+
+		actual_sha256=$(sha256sum -- "$tarball_path" | awk '{ print $1 }')
+		# Re-verified here, immediately before extraction, rather than
+		# trusted from the unprivileged caller's earlier check: that check
+		# and this one straddle an arbitrary amount of time (build,
+		# confirmation prompt) during which the tarball sits in a
+		# directory the invoking user can still write to.
+		[[ ${actual_sha256,,} == "${expected_sha256,,}" ]] ||
+			die "tarball checksum does not match the expected release digest; refusing to install"
+
+		if [[ $config_h_path != - ]]; then
+			user_owned_file "$config_h_path" "$invoking_uid" ||
+				die "config.h is not a safe, user-owned file"
+		fi
+
+		verified_dir=$(mktemp -d) || die "could not create a scratch directory"
+		chmod 700 "$verified_dir"
+		trap 'rm -rf "$verified_dir"' EXIT
+
+		extract_verified_tree "$tarball_path" "$verified_dir"
+		staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$verified_dir/config.mk")
+		[[ -n $staged_version ]] || die "could not read VERSION from the verified release's config.mk"
+		[[ $staged_version == "$requested_version" ]] ||
+			die "the verified release is version $staged_version, not the requested $requested_version"
+
+		if [[ $config_h_path != - ]]; then
+			cp -a "$config_h_path" "$verified_dir/config.h"
+		fi
+
+		# The compiled binary is rebuilt here, from source this process
+		# just verified, rather than trusted from the unprivileged
+		# caller's own prior build: a "dwm" copied in from the staging
+		# directory would be installed system-wide, where every user who
+		# selects it at login runs whatever the invoking user last put
+		# there -- not only their own session.
+		if ! "$make_path" -C "$verified_dir" clean; then
+			die "failed to clean the verified build tree"
+		fi
+		if ! "$make_path" -C "$verified_dir" all; then
+			die "failed to build the verified release"
+		fi
+
+		if ! "$make_path" -C "$verified_dir" install-system \
+			USER_HOME="$invoking_home" \
+			OWNER="$invoking_user" \
+			XDG_STATE_HOME="$state_home"; then
+			log_outcome install-system "$requested_version" "$verified_dir" failed
+			die "install-system failed"
+		fi
+		log_outcome install-system "$requested_version" "$tarball_path" succeeded
+		;;
+	checkout)
+		[[ $# == 4 ]] || die "install-system checkout requires a checkout directory and its version"
+		staging_dir=$3
+		requested_version=$4
+
+		# No release tarball exists for a local developer checkout to
+		# re-verify against; this mode carries the same trust level as
+		# the invoking user running "sudo make install-system" themselves
+		# directly from that same checkout -- not a weaker one introduced
+		# by going through lyona-update.
+		user_owned_dir "$staging_dir" "$invoking_uid" ||
+			die "checkout directory is not a safe, user-owned directory"
+		[[ -x $staging_dir/dwm && -f $staging_dir/dwm ]] ||
+			die "checkout directory has no built dwm binary"
+		[[ -f $staging_dir/config.mk ]] || die "checkout directory has no config.mk"
+		staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$staging_dir/config.mk")
+		[[ -n $staged_version ]] || die "could not read VERSION from the checkout's config.mk"
+		[[ $staged_version == "$requested_version" ]] ||
+			die "checkout version ($staged_version) does not match the requested version ($requested_version)"
+
+		if ! "$make_path" -C "$staging_dir" install-system \
+			USER_HOME="$invoking_home" \
+			OWNER="$invoking_user" \
+			XDG_STATE_HOME="$state_home"; then
+			log_outcome install-system "$requested_version" "$staging_dir" failed
+			die "install-system failed"
+		fi
+		log_outcome install-system "$requested_version" "$staging_dir" succeeded
+		;;
+	*)
+		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- | install-system checkout CHECKOUT_DIR VERSION"
+		;;
 	esac
-	user_owned_dir "$staging_dir" "$invoking_uid" ||
-		die "staging directory is not a safe, user-owned directory"
-	[[ -x $staging_dir/dwm && -f $staging_dir/dwm ]] ||
-		die "staging directory has no built dwm binary"
-	[[ -f $staging_dir/config.mk ]] || die "staging directory has no config.mk"
-	staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$staging_dir/config.mk")
-	[[ -n $staged_version ]] || die "could not read VERSION from the staged config.mk"
-	[[ $staged_version == "$requested_version" ]] ||
-		die "staged version ($staged_version) does not match the requested version ($requested_version)"
-	if ! "$make_path" -C "$staging_dir" install-system \
-		USER_HOME="$invoking_home" \
-		OWNER="$invoking_user" \
-		XDG_STATE_HOME="$state_home"; then
-		log_outcome install-system "$requested_version" "$staging_dir" failed
-		die "install-system failed"
-	fi
-	log_outcome install-system "$requested_version" "$staging_dir" succeeded
 	;;
 restore-system)
 	[[ $# == 2 ]] || die "restore-system requires a backup directory"
@@ -128,8 +235,65 @@ restore-system)
 	system_archive=$backup_dir/system-files.tar
 	if [[ -e $system_archive ]]; then
 		[[ -f $system_archive && ! -L $system_archive ]] || die "unsafe system-files archive"
+		# This only catches accidental corruption, not a deliberate
+		# tamperer: SHA256SUMS lives in the same user-writable directory
+		# as the archive it checks, so both can be regenerated together.
+		# The member-path allowlist below is what actually bounds a
+		# hostile archive's blast radius.
 		(cd "$backup_dir" && sha256sum --quiet --check <(grep -F 'system-files.tar' SHA256SUMS)) ||
 			die "system-files.tar failed checksum verification; refusing to restore"
+
+		# Never trust an archive member's path, type, or mode: an archive
+		# built (or replaced) by the invoking user could otherwise plant
+		# a member anywhere on the filesystem ("../../etc/cron.d/x", an
+		# absolute path), or a symlink/hardlink/device/fifo/socket that
+		# resolves outside the managed locations at extraction time, or
+		# a setuid/setgid root binary at an already-allowed path ("dwm"
+		# with the setuid bit is a root shell for every user on the
+		# machine, since dwm can spawn arbitrary configured commands) --
+		# and GNU tar preserves all of that by default when run as root.
+		# --numeric-owner avoids trusting archive-supplied user/group
+		# names for anything, including as a parsing surface.
+		bin_dir_rel=${install_prefix#/}/bin
+		libexec_dir_rel=${install_prefix#/}/libexec/lyona
+		man_dir_rel=${install_manprefix#/}/man1
+		xsessions_dir_rel=${install_xsessionsdir#/}
+		icons_dir_rel=${install_datadir#/}/icons
+		licenses_dir_rel=${install_datadir#/}/licenses/lyona
+		while IFS= read -r listing_line; do
+			[[ -n $listing_line ]] || continue
+			member_type=${listing_line:0:1}
+			member_mode=${listing_line:1:9}
+			member_path=$(awk '{ for (i = 6; i <= NF; i++) printf "%s%s", (i > 6 ? " " : ""), $i }' <<<"$listing_line")
+			[[ -n $member_path ]] || die "could not parse a backup archive listing line: $listing_line"
+
+			case $member_type in
+			- | d) ;;
+			*) die "backup archive contains a non-regular member (type '$member_type'): $member_path" ;;
+			esac
+			case $member_mode in
+			*[sStT]*) die "backup archive contains a member with setuid, setgid, or sticky permissions: $member_path" ;;
+			esac
+			case $member_path in
+			/* | *..*) die "backup archive contains an unsafe path: $member_path" ;;
+			esac
+
+			case $member_path in
+			"$bin_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+			"$bin_dir_rel/" | "$bin_dir_rel/"*) ;;
+			"$libexec_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+			"$libexec_dir_rel/" | "$libexec_dir_rel/"*) ;;
+			"$man_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+			"$man_dir_rel/" | "$man_dir_rel/"*) ;;
+			"$xsessions_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+			"$xsessions_dir_rel/" | "$xsessions_dir_rel/"*) ;;
+			"$icons_dir_rel/" | "$icons_dir_rel/"*) ;;
+			"$licenses_dir_rel/" | "$licenses_dir_rel/"*) ;;
+			etc/lyona-release) ;;
+			*) die "backup archive contains a path outside the managed install locations: $member_path" ;;
+			esac
+		done < <(tar --numeric-owner -tvf "$system_archive")
+
 		if ! tar -C / -xpf "$system_archive"; then
 			log_outcome restore-system unknown "$backup_dir" failed
 			die "restoring system-files.tar failed"
@@ -138,6 +302,6 @@ restore-system)
 	log_outcome restore-system unknown "$backup_dir" succeeded
 	;;
 *)
-	die "usage: lyona-update-root install-system STAGING_DIR VERSION | restore-system BACKUP_DIR"
+	die "usage: lyona-update-root install-system release|checkout ... | restore-system BACKUP_DIR"
 	;;
 esac

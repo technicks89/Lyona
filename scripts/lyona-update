@@ -147,7 +147,7 @@ read_installed() {
 # --- GitHub release lookup --------------------------------------------
 
 fetch_url() {
-	curl --die --silent --show-error --location \
+	curl --fail --silent --show-error --location \
 		--connect-timeout 5 --max-time 15 \
 		-H 'Accept: application/vnd.github+json' \
 		"$@"
@@ -393,10 +393,13 @@ run_privileged() {
 	local helper
 	helper=$(trusted_root_helper) || die "trusted privileged update helper is unavailable"
 	if [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]] && command -v pkexec >/dev/null 2>&1; then
-		if pkexec "$helper" "$@"; then
-			return 0
-		fi
-		warn "pkexec did not succeed; falling back to sudo"
+		local pkexec_status=0
+		pkexec "$helper" "$@" || pkexec_status=$?
+		case $pkexec_status in
+		0) return 0 ;;
+		126 | 127) warn "pkexec could not authorize or run this step; falling back to sudo" ;;
+		*) return "$pkexec_status" ;;
+		esac
 	fi
 	command -v sudo >/dev/null 2>&1 ||
 		die "neither a polkit agent nor sudo is available to complete this step"
@@ -448,14 +451,16 @@ cmd_apply() {
 	read_config
 	read_installed
 
-	local staging_dir tarball checksum
+	local staging_dir tarball checksum install_mode config_h_arg=-
 	if [[ -n $from_checkout ]]; then
 		valid_absolute_path "$from_checkout" || die "--from-checkout must be an absolute path"
 		[[ -f $from_checkout/config.mk ]] || die "not a lyona checkout: $from_checkout"
 		requested_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$from_checkout/config.mk")
 		[[ -n $requested_version ]] || die "could not read VERSION from $from_checkout/config.mk"
 		staging_dir=$from_checkout
+		install_mode=checkout
 	else
+		install_mode=release
 		if [[ -n $file_path ]]; then
 			valid_absolute_path "$file_path" || die "--file must be an absolute path"
 			[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
@@ -480,7 +485,7 @@ cmd_apply() {
 			warn "downloading lyona-$requested_version.tar.gz"
 			local tmp_tarball
 			tmp_tarball=$(mktemp "$updates_root/.lyona-$requested_version.tar.gz.XXXXXX")
-			if ! curl --die --silent --show-error --location \
+			if ! curl --fail --silent --show-error --location \
 				--retry 3 --connect-timeout 10 --max-time 300 \
 				"$release_asset_url" --output "$tmp_tarball"; then
 				rm -f "$tmp_tarball"
@@ -513,8 +518,10 @@ cmd_apply() {
 			rm -rf "$staging_dir"
 			die "failed to unpack $tarball"
 		fi
-		if [[ -f $script_dir/../config.h ]]; then
-			cp -a "$script_dir/../config.h" "$staging_dir/config.h"
+		local live_config_h=${script_dir%/*}/config.h
+		if [[ -f $live_config_h ]]; then
+			cp -a "$live_config_h" "$staging_dir/config.h"
+			config_h_arg=$live_config_h
 		fi
 	fi
 
@@ -563,7 +570,15 @@ cmd_apply() {
 	backup_live_install
 
 	warn "installing $requested_version (this step requires authentication)"
-	if ! run_privileged install-system "$staging_dir" "$requested_version"; then
+	local privileged_install_ok=true
+	if [[ $install_mode == release ]]; then
+		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" ||
+			privileged_install_ok=false
+	else
+		run_privileged install-system checkout "$staging_dir" "$requested_version" ||
+			privileged_install_ok=false
+	fi
+	if [[ $privileged_install_ok != true ]]; then
 		die "the privileged install step failed or was declined; the live install is untouched, and the staged, built update in $staging_dir was left in place"
 	fi
 	if ! make -C "$staging_dir" install-user \

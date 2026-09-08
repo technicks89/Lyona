@@ -45,10 +45,22 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   missing half of `scripts/dev-sync-install.sh`'s existing backup machinery
   (now reusable as a library via a `DEV_SYNC_INSTALL_LIB_ONLY` sourcing
   guard that leaves its own direct-invocation behavior unchanged): it
-  refuses on any checksum or environment mismatch, and works from a bare TTY
-  with no desktop running by falling back from `pkexec` to `sudo` when no
-  agent is reachable. Channel and backup retention are configured in
+  refuses on any checksum or environment mismatch, and is designed to work
+  from a bare TTY with no desktop running by falling back from `pkexec` to
+  `sudo` when no agent is reachable — not yet exercised from an actual bare
+  TTY; that scenario is pending the disposable-VM verification pass in
+  `docs/P6-UPDATE-HELPER.md`. Channel and backup retention are configured in
   `~/.config/lyona/update.conf`, seeded on first use and never overwritten.
+  The privileged step re-verifies the release tarball's checksum immediately
+  before use and then extracts, rebuilds, and installs from a scratch
+  directory the invoking user never has write access to, rather than running
+  a Makefile from a directory that was still writable by that user at the
+  moment root acted on it; `rollback`'s restore likewise validates every
+  backup archive member's path, type, and mode before extracting — refusing
+  anything outside the managed install locations, any non-regular member
+  (symlink, hardlink, device, FIFO, socket), and any setuid, setgid, or
+  sticky bit — rather than trusting GNU tar's own default root-extraction
+  behavior against a directory the invoking user could have replaced.
 
 - Persist workspace, volume, Bluetooth, network, and power panel visibility in
   one versioned user-owned state file shared by every monitor, Control Center,

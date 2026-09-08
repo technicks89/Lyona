@@ -98,6 +98,36 @@ Acceptance:
   `config/polkit/com.lyona.update.policy`; the "declined" path is exercised
   in `tests/test-lyona-update.sh` (no trusted root-owned helper exists in the
   unprivileged test sandbox, which is itself the natural "unavailable" case).
+  Hardened after review: the privileged helper originally ran `make -C
+  <staging-dir> install-system` against a directory the invoking user could
+  still write to at that point — a Makefile/`config.mk` executes arbitrary
+  shell during GNU Make's own variable expansion (`$(shell ...)`), not only
+  through the recipe someone thinks they're invoking, so this was arbitrary
+  root code execution behind an "Install a lyona update" auth prompt. Fixed
+  by having `install-system release` re-verify the tarball's SHA-256
+  immediately before use, then extract, rebuild, and install from a fresh
+  root-owned-only scratch directory the invoking user has never had write
+  access to (closing the verify-then-mutate window down to nothing, and
+  ensuring the binary every user on the machine runs is one root itself
+  built from verified source, not a copy the invoking user could have
+  swapped after their own unprivileged build finished). `restore-system` had
+  the same shape (`tar -xpf` onto `/` from a manifest and checksum both
+  living in the same user-writable backup directory) and now validates every
+  archive member — path, type, and mode — before extracting: the path must
+  fall under a fixed set of managed locations (no `..` or absolute escape),
+  the type must be a regular file or directory (never a symlink, hardlink,
+  device, FIFO, or socket, any of which GNU tar preserves and creates by
+  default when run as root), and the mode must carry no setuid, setgid, or
+  sticky bit (a setuid-root `dwm` is a root shell for every user on the
+  machine, since dwm can spawn arbitrary configured commands). Verified
+  against a small harness covering a legitimate backup plus each rejected
+  shape (symlink, hardlink, setuid, FIFO, a nested path under a directory
+  that should only ever be flat, and a path outside every managed prefix) —
+  the legitimate case is accepted and every hostile shape is refused with a
+  specific reason. `--from-checkout` (`install-system checkout`) is
+  unaffected — it carries the same trust level as running `sudo make
+  install-system` directly from a developer's own checkout, not a weaker one
+  introduced by going through `lyona-update`.
 - [x] `check`/`apply` support a channel (`stable`/`preview`) recorded in
   `~/.config/lyona/update.conf`, seeded but never overwritten. — **Met**,
   `tests/test-lyona-update.sh`.

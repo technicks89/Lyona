@@ -330,6 +330,7 @@ backup_live_install() {
 	{
 		printf 'commit=%s\n' "$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf unknown)"
 		printf 'branch=%s\n' "$(git -C "$repo_dir" branch --show-current 2>/dev/null || printf unknown)"
+		printf 'version=%s\n' "$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$repo_dir/config.mk")"
 		printf 'prefix=%s\n' "$prefix"
 		printf 'data_root=%s\n' "$data_root"
 		printf 'config_home=%s\n' "$config_home"
