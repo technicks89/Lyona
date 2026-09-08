@@ -247,7 +247,15 @@ answered, and answering it later would mean rewriting whatever came before.
   `terminatingCheckedCommand()` (the latter forwards surface-close signals to
   a long-running helper instead of orphaning it, porting `dd55e585`'s
   corrected mktemp/trap ordering, not the original's). — **Met**,
-  `check-quickshell-qml` clean.
+  `check-quickshell-qml` clean. **Bug found and fixed**: the ported script's
+  `ulimit -f 16384` counts 512-byte blocks, not bytes — that was an 8 MiB
+  cap, not the intended 16 KiB one. Corrected to `ulimit -f 32`
+  (32 * 512 = 16384 bytes). The arithmetic is unambiguous (POSIX/bash's
+  documented unit for `ulimit -f`), but actual enforcement is unverified —
+  tested directly in this sandbox and `RLIMIT_FSIZE` is not enforced here at
+  all (`dd` wrote 20000 bytes through a 16384-byte limit with no error),
+  which looks like a container/sandbox restriction on that rlimit rather
+  than a flaw in the fix.
 - [x] `scripts/dwm-settings-provider`: replace the placeholder `system
   administration` record with a real `dwm-system-management` availability
   check. — **Met**, with one deviation from the doc's literal diff, disclosed

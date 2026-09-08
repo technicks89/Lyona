@@ -52,7 +52,10 @@ Singleton {
             'error_file=$(mktemp "$runtime_dir/dwm-checked-command-error.XXXXXX") || exit 1',
             '[ "$terminate_requested" -eq 0 ] || exit 143',
             'file_limit=$(ulimit -f)',
-            'if [ "$file_limit" = unlimited ] || [ "$file_limit" -gt 16384 ]; then ulimit -f 16384 || exit 1; fi',
+            // ulimit -f counts 512-byte blocks, not bytes: 32 blocks is the
+            // actual 16 KiB cap (32 * 512 = 16384 bytes), not 16384 blocks
+            // (which would be 8 MiB).
+            'if [ "$file_limit" = unlimited ] || [ "$file_limit" -gt 32 ]; then ulimit -f 32 || exit 1; fi',
             '[ "$terminate_requested" -eq 0 ] || exit 143',
             '"$@" >"$output_file" 2>"$error_file" &',
             'child=$!',
