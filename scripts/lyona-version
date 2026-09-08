@@ -57,8 +57,7 @@ record_field() {
 record_valid_format() {
 	path=$1
 	awk '
-		NF == 0 { next }
-		!/^LYONA_[A-Z_]+=[^\n]*$/ { exit 1 }
+	!/^LYONA_[A-Z_]+=[^[:cntrl:]]*$/ { exit 1 }
 	' "$path" 2>/dev/null
 }
 
