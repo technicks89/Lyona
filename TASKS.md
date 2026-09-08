@@ -366,6 +366,89 @@ Acceptance:
   `test_record_count_limit_discards_the_whole_inventory`, the identity/
   classification rejection tests) and the real `missing-provider` run above.
 
+### Sync Phase 3: Update Model and the System Settings Pane
+
+Upstream: `#209`, `#210`. Doc: `docs/SYNC-P3-SYSTEM-PANE.md`. First
+user-visible behavior of the whole port: Settings → System gains a real,
+read-only Arch update status pane alongside the existing `lyona-update`
+group UPDATE-003 already built there.
+
+- [x] `config/quickshell/systemmanagement/SystemManagementModel.qml`
+  (new, ~250 lines) — a `Scope` root model instantiated once in `shell.qml`,
+  following the same `settingsVisible`/`openSettings()`/`closeSettings()`
+  lifecycle every other Settings-only model already uses (`NetworkModel`,
+  `AppearanceModel`, `PanelSettingsModel`, …): never polled, the snapshot
+  fetch is gated on `settingsVisible`, and closing the section stops any
+  fetch this model owns. — **Met**.
+- [x] Strict, all-or-nothing snapshot parsing, per the doc's "parser rules
+  that must not be softened": a missing/unsupported
+  `system-management-protocol` header or a snapshot without a trailing
+  `complete\tsnapshot` discards the whole result rather than rendering a
+  partial one; every mandatory provider/state/action ID for protocol minor 0
+  must be present; list identity (duplicate package IDs) and a record-count
+  cap are re-checked model-side; every enum field (`validStatus`,
+  `validSeverity`, `validInstallability`, `validRestart`, `validPlanAction`,
+  `validErrorCode`) is checked against an explicit allowlist rather than
+  passed through to the UI. — **Met**, exercised end-to-end by the new
+  nested-X11 test (below), not just by source inspection.
+- [x] `SystemSettingsPane.qml`: added a "System updates" section (provider/
+  recovery status line, a responsive `GridLayout` of update-summary/
+  last-refresh/restart-guidance `StatusCard`s, the pending-update and
+  dependency-preview lists, and the read-only caption the doc specifies —
+  *not* Sync Phase 7's mutation-capable wording) — **coexisting** with, not
+  replacing, the pre-existing "lyona" group from UPDATE-003 and the generic
+  `system health`/`system authorization` capability rows. — **Met**. The
+  `additionalCapabilities` filter also now excludes `package-updates`
+  (Sync Phase 1's capability id), which gets this dedicated section instead
+  of falling through to the generic list.
+- [x] `SettingsModel.qml` / `SettingsWindow.qml` / `shell.qml` wiring —
+  **Met**: `systemManagementModel` property, open/close pairing in
+  `activateSection`, a `refresh()` hook, `required property var` threading
+  through `SettingsWindow`, one `SystemManagementModel {}` instantiation in
+  `shell.qml`, `import qs.systemmanagement`, and the four IPC probes the doc
+  specifies (`systemManagementUpdateCount`, `systemManagementPackageChangeCount`,
+  `systemManagementSnapshotState`, `systemManagementRestartState`).
+- [x] `tests/test-quickshell-system-management.sh` (new) — a grep-based
+  static contract test matching the existing `test-quickshell-update-model.sh`
+  idiom (this sandbox cannot run a live Quickshell session in every context,
+  so source-level contract checks are the first line of coverage): lifecycle
+  wiring, all-or-nothing parsing markers, the restart-heuristic vocabulary,
+  no privilege escalation from the pane/model, no mutation entry point yet,
+  and the capability-filter coexistence rule. — **Met**, 
+  `check-quickshell-system-management` passing.
+- [x] `tests/test-quickshell-system-management-xvfb.sh` (new) — a real
+  nested-X11 test (Xvfb + `dwm` + `quickshell`, following
+  `test-quickshell-large-surfaces-xvfb.sh`'s skeleton) with a stubbed
+  `dwm-system-management` emitting one pending `linux-cachyos` update (to
+  exercise the Sync Phase 2 restart heuristic's `system` branch) and one
+  dependency-preview row. **Actually run in this sandbox and passing** —
+  unlike the pre-existing `check-quickshell-settings-xvfb` gap (`xkbset`
+  unavailable), this test needs no input/accessibility surface, so it is
+  real, executed verification, not a written-but-unexercised test: it opens
+  Settings, selects "system", polls the snapshot to `loaded`, asserts the
+  parsed update/package-change counts and the restart state via the new IPC
+  probes, then re-triggers a (deliberately slowed) fetch and immediately
+  navigates away, polling to confirm no `dwm-system-management` process
+  survives past its section closing. — **Met**,
+  `check-quickshell-system-management-xvfb` passing end-to-end.
+
+Acceptance:
+
+- `make check-quickshell-qml check-quickshell-system-management
+  check-quickshell-system-management-xvfb check-settings` all pass —
+  **Met**, and unlike every other Sync Phase so far, the xvfb leg is real
+  executed coverage in this sandbox, not a documented gap.
+- `make check-quickshell-large-surfaces-xvfb` (which exercises the shared
+  `shell.qml`/`SettingsWindow.qml` surface this phase modified) still passes
+  with closed-shell CPU at baseline — **Met**, confirming the new model adds
+  no idle polling.
+- Read-only claim: the pane never calls a mutation entry point — **Met** by
+  construction (no `installAll`/`cancelUpdate`/`refreshMetadata` function
+  exists yet) and asserted by the static contract test. The doc's own manual
+  CachyOS-install checks (open with updates pending vs. none, behavior with
+  `packagekit` uninstalled on a live system) remain unverified here, carried
+  forward from Sync Phase 1/2's same open prerequisite.
+
 ## Phase Completion
 
 When all Phase 6 acceptance criteria pass:

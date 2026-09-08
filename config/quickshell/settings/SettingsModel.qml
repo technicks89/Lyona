@@ -27,6 +27,7 @@ Scope {
     property var accessibilityModel: null
     property var panelSettingsModel: null
     property var updateModel: null
+    property var systemManagementModel: null
     property var capabilities: []
     property int selectedIndex: 0
     property var displayOutputs: []
@@ -201,6 +202,13 @@ Scope {
         if (id === "system" && root.updateModel) {
             root.updateModel.refresh();
             root.updateModel.refreshBackups();
+        }
+        if (root.systemManagementModel) {
+            const wantSystem = id === "system" && root.visible;
+            if (wantSystem && !root.systemManagementModel.settingsVisible)
+                root.systemManagementModel.openSettings();
+            else if (!wantSystem && root.systemManagementModel.settingsVisible)
+                root.systemManagementModel.closeSettings();
         }
     }
 
@@ -651,6 +659,8 @@ Scope {
             root.accessibilityModel.refresh();
         if (root.visible && root.selectedSectionId === "appearance" && root.panelSettingsModel)
             root.panelSettingsModel.refresh();
+        if (root.visible && root.selectedSectionId === "system" && root.systemManagementModel)
+            root.systemManagementModel.refresh();
         if (!root.visible || providerProcess.running) return;
         root.busy = true;
         root.discoveryState = "loading";

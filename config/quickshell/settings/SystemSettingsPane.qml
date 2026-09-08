@@ -8,11 +8,12 @@ Flickable {
     id: root
 
     required property var updateModel
+    required property var systemManagementModel
     property var capabilities: []
     property string confirmVersion: ""
 
     readonly property var additionalCapabilities: root.capabilities.filter(function(capability) {
-        return capability.id !== "updates";
+        return capability.id !== "updates" && capability.id !== "package-updates";
     })
 
     contentWidth: width
@@ -223,6 +224,158 @@ Flickable {
                     onActivated: root.updateModel.rollback(backupRow.modelData.id)
                 }
             }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.spacingLg
+
+            UiText {
+                Layout.fillWidth: true
+                text: root.systemManagementModel.updateProvider.status === "unavailable"
+                    ? root.systemManagementModel.updateProvider.detail
+                    : root.systemManagementModel.busy ? "Loading..." : root.systemManagementModel.message
+                color: Theme.statusColor(root.systemManagementModel.updateProvider.status)
+                font.bold: true
+                elide: Text.ElideRight
+            }
+
+            ShellButton {
+                objectName: "reloadSystemStatus"
+                label: root.systemManagementModel.busy ? "Loading..." : "Reload status"
+                enabled: !root.systemManagementModel.busy
+                onActivated: root.systemManagementModel.refresh()
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: root.systemManagementModel.recoveryProvider.status !== "unsupported"
+            text: root.systemManagementModel.recoveryProvider.detail
+            color: Theme.statusColor(root.systemManagementModel.recoveryProvider.status)
+            wrapMode: Text.WordWrap
+        }
+
+        SectionLabel { label: "System updates" }
+
+        GridLayout {
+            Layout.fillWidth: true
+            columns: root.width >= 720 ? 3 : 1
+            columnSpacing: Theme.spacingMd
+            rowSpacing: Theme.spacingMd
+
+            StatusCard {
+                Layout.fillWidth: true
+                label: "Pending updates"
+                statusState: root.systemManagementModel.updateSummary.status
+                value: root.systemManagementModel.updateSummary.value
+                detail: root.systemManagementModel.updateSummary.detail
+            }
+
+            StatusCard {
+                Layout.fillWidth: true
+                label: "Last refresh"
+                statusState: root.systemManagementModel.updateLastRefresh.status
+                value: root.systemManagementModel.updateLastRefresh.value === "unknown"
+                    ? "Unknown"
+                    : Theme.formatDuration(Number(root.systemManagementModel.updateLastRefresh.value)) + " ago"
+                detail: root.systemManagementModel.updateLastRefresh.detail
+            }
+
+            StatusCard {
+                Layout.fillWidth: true
+                label: "Restart guidance"
+                statusState: root.systemManagementModel.updateRestart.status
+                value: root.systemManagementModel.updateRestart.value
+                detail: root.systemManagementModel.updateRestart.detail
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: root.systemManagementModel.snapshotState === "loaded"
+                && root.systemManagementModel.updates.length === 0
+            text: "No pending Arch updates"
+            color: Theme.menuMutedText
+        }
+
+        Repeater {
+            model: root.systemManagementModel.updates
+            delegate: RowLayout {
+                id: updateRow
+
+                required property var modelData
+
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: updateRow.modelData.name + " " + updateRow.modelData.version
+                    color: updateRow.modelData.installability === "blocked"
+                        ? Theme.menuMutedText : Theme.menuText
+                    elide: Text.ElideRight
+                }
+
+                UiText {
+                    text: updateRow.modelData.installability === "blocked"
+                        ? "Blocked" : updateRow.modelData.severity
+                    color: updateRow.modelData.severity === "security" || updateRow.modelData.severity === "critical"
+                        ? Theme.danger : Theme.menuMutedText
+                }
+            }
+        }
+
+        SectionLabel {
+            visible: root.systemManagementModel.packageChanges.length > 0
+            label: "Dependency preview"
+        }
+
+        Repeater {
+            model: root.systemManagementModel.packageChanges
+            delegate: RowLayout {
+                id: changeRow
+
+                required property var modelData
+
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: changeRow.modelData.name + " " + changeRow.modelData.version
+                    color: Theme.menuText
+                    elide: Text.ElideRight
+                }
+
+                UiText {
+                    text: changeRow.modelData.action
+                    color: Theme.menuMutedText
+                }
+            }
+        }
+
+        Repeater {
+            model: root.systemManagementModel.errors
+            delegate: UiText {
+                id: errorRow
+
+                required property var modelData
+
+                Layout.fillWidth: true
+                text: errorRow.modelData.detail
+                color: Theme.danger
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            text: "This pane reads update and recovery state only. Metadata refresh, "
+                + "update installation, and cancellation require a separate confirmed "
+                + "operation workflow."
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
         }
 
         SectionLabel {

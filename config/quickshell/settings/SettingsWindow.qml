@@ -21,6 +21,7 @@ FloatingWindow {
     required property var notificationModel
     required property var panelSettingsModel
     required property var updateModel
+    required property var systemManagementModel
 
     title: "dwm settings"
     visible: settingsModel.visible
@@ -400,6 +401,7 @@ FloatingWindow {
                                 Layout.fillHeight: true
                                 visible: root.settingsModel.selectedSectionId === "system"
                                 updateModel: root.updateModel
+                                systemManagementModel: root.systemManagementModel
                                 capabilities: root.settingsModel.capabilitiesForSection("system")
                             }
 
