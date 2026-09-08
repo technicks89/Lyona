@@ -232,9 +232,11 @@ Flickable {
 
             UiText {
                 Layout.fillWidth: true
-                text: root.systemManagementModel.updateProvider.status === "unavailable"
-                    ? root.systemManagementModel.updateProvider.detail
-                    : root.systemManagementModel.busy ? "Loading..." : root.systemManagementModel.message
+                text: root.systemManagementModel.busy
+                    ? "Loading..."
+                    : root.systemManagementModel.updateProvider.status === "available"
+                        ? root.systemManagementModel.message
+                        : root.systemManagementModel.updateProvider.detail
                 color: Theme.statusColor(root.systemManagementModel.updateProvider.status)
                 font.bold: true
                 elide: Text.ElideRight

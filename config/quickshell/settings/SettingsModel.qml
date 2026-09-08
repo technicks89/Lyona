@@ -726,6 +726,7 @@ Scope {
 		if (root.defaultsModel) root.defaultsModel.closeSettings();
 		if (root.autostartModel) root.autostartModel.closeSettings();
 		if (root.appearanceModel) root.appearanceModel.closeSettings();
+		if (root.systemManagementModel) root.systemManagementModel.closeSettings();
 			inputSettleTimer.stop();
         root.visible = false;
         root.busy = false;

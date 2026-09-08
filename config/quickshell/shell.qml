@@ -945,6 +945,10 @@ ShellRoot {
             return systemManagementModel.updateRestart.status + ":" + systemManagementModel.updateRestart.value;
         }
 
+        function systemManagementSettingsVisible(): bool {
+            return systemManagementModel.settingsVisible;
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }

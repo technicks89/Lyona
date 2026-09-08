@@ -109,14 +109,12 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 # restart heuristic's "system" branch, docs/SYNC-P2-UPDATE-SNAPSHOT.md
 # section 5) and one dependency-preview row, so the pane's counts and IPC
 # probes have real content to assert against without a live PackageKit
-# daemon. A configurable delay lets the "closing stops the fetch" assertion
-# below actually catch the process mid-flight instead of racing it.
-cat >"$data_home/lyona/scripts/dwm-system-management" <<SH
+# daemon.
+cat >"$data_home/lyona/scripts/dwm-system-management" <<'SH'
 #!/bin/sh
 set -eu
-case "\${1:-}" in
+case "${1:-}" in
 snapshot)
-	sleep "\${DWM_SYSTEM_MANAGEMENT_STUB_DELAY:-0}"
 	printf 'system-management-protocol\t1\t0\n'
 	printf 'snapshot-generation\t%s\n' '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 	printf 'provider\tupdates\tpartial\tdelegated\tPackageKit\tRead-only update discovery is available\n'
@@ -200,28 +198,44 @@ test_stage='validating parsed snapshot content'
 # update pending) round-trips through the model's own enum validation.
 [ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
 
-test_stage='validating that closing the section stops an in-flight fetch'
+# These assert directly on systemManagementModel.settingsVisible (exposed
+# for exactly this) rather than on timing or process survival. A stub delay
+# or "does the next fetch complete" proxy cannot isolate this: every real
+# reopen path (open(), openOnScreen(), toggle()) resets to the "displays"
+# section first, and *that* transition always correctly calls
+# closeSettings() via activateSection regardless of whether close() itself
+# does -- so by the time "system" is reselected, activateSection's own
+# transition has already masked the bug. The only place the omission is
+# actually observable is settingsVisible staying true immediately after
+# close(), before any other section transition has a chance to paper over
+# it. checkedCommand's `output=$("$@")` also means killing the wrapping
+# process does not kill the real helper (an orphaned command-substitution
+# child keeps running to its own completion), so process-liveness checks
+# cannot substitute for reading the model's own state either.
+
+test_stage='validating that closing the section resets settingsVisible'
 ipc settings select displays >/dev/null
-[ "$(ipc settings currentSection)" = displays ]
-DWM_SYSTEM_MANAGEMENT_STUB_DELAY=2
-export DWM_SYSTEM_MANAGEMENT_STUB_DELAY
-# Re-select "system" (starts a slow fetch), then immediately navigate away.
-# openSettings()/closeSettings() must kill the process rather than leave it
-# running unowned once the section is no longer visible.
+[ "$(ipc settings systemManagementSettingsVisible)" = false ]
 ipc settings select system >/dev/null
+[ "$(ipc settings systemManagementSettingsVisible)" = true ]
 ipc settings select displays >/dev/null
-i=0
-still_running=1
-while [ "$i" -lt 20 ]; do
-	if ! pgrep -f 'dwm-system-management snapshot' >/dev/null 2>&1; then
-		still_running=0
-		break
-	fi
-	i=$((i + 1))
-	sleep 0.1
-done
-if [ "$still_running" -eq 1 ]; then
-	printf 'dwm-system-management kept running after its section closed\n' >&2
+if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
+	printf 'systemManagementModel.settingsVisible stayed true after navigating away from "system"\n' >&2
+	exit 1
+fi
+
+test_stage='validating that closing the whole Settings window resets settingsVisible'
+# close() (the whole-window path, distinct from selecting a different
+# section) does not route through activateSection -- it must still pair
+# openSettings()/closeSettings() for every Settings-only model, including
+# systemManagementModel, or settingsVisible/snapshotProcess never reset
+# while the window stays closed.
+ipc settings open >/dev/null
+ipc settings select system >/dev/null
+[ "$(ipc settings systemManagementSettingsVisible)" = true ]
+ipc settings close >/dev/null
+if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
+	printf 'systemManagementModel.settingsVisible stayed true after closing the Settings window\n' >&2
 	exit 1
 fi
 
