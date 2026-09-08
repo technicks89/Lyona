@@ -150,7 +150,14 @@ disable the whole feature.
 - **Arch package updates** (`pacman -Syu`). Phase 6 wants this, but it is a
   different risk profile, authorisation story and failure mode. The System
   section is laid out so an "Arch packages" group can be added beside "lyona"
-  later without rework.
+  later without rework. That "later" is now a planned nine-phase upstream
+  port — see [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#the-system-management-port)
+  — with the pane group itself in
+  [`SYNC-P3-SYSTEM-PANE.md`](SYNC-P3-SYSTEM-PANE.md) and its confirm/cancel
+  operation surface in
+  [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md). Neither is
+  implemented; both are gated on this document's own UPDATE-003 landing
+  first.
 - **Rollback from within a broken session.** If the desktop will not start there
   is no UI to click; the TTY path in UPDATE-002 is the answer, and the
   documentation must say so plainly.

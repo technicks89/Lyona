@@ -56,8 +56,11 @@ product roadmap.
   PR #159.
 - P3-UI4, Settings, System Health, notifications, and launcher: complete in
   PR #163.
-- UI-5, optional X11-native experiences: planned for Phase 5 personalization
-  and accessibility; split backend-heavy work when needed.
+- UI-5, optional X11-native experiences: evaluated in Phase 5 personalization
+  and accessibility. Only candidate identified — event-driven clipboard
+  history — deferred as its own future review boundary rather than adopted;
+  see `TASKS.md`'s `P5-UI5`. Split backend-heavy work when a candidate is
+  later adopted.
 - UI-6, whole-shell integration hardening: planned for Phase 7 image and
   release qualification, with no major features.
 
@@ -298,7 +301,7 @@ Unify normal session behavior and application defaults.
 
 ## Phase 5: Personalization and Accessibility
 
-Status: Active (2026-08-22)
+Status: Complete (2026-09-07)
 
 ### Objective
 
@@ -317,6 +320,41 @@ Make the desktop appearance and interaction model configurable as one system.
 - Supported applications and shell surfaces follow the selected appearance.
 - Invalid themes or missing assets cannot prevent login or shell startup.
 - Accessibility choices persist and are usable at common display sizes.
+
+### Completion Evidence
+
+- `THEME-001`, `APPEARANCE-001`, `ACCESSIBILITY-001`, and `SECURITY-001` are
+  complete — see `TASKS.md` for the item-by-item record. `SECURITY-001`'s
+  findings are also recorded in `CHANGELOG.md`'s "Security" section.
+- `P5-UI5` evaluated its only named candidate, event-driven clipboard history,
+  and deferred it as its own future review boundary rather than adopting it —
+  see `TASKS.md`'s `P5-UI5`. No feature work was dropped; none was owed here.
+- `P5-VALIDATE`'s automatable checks all pass: the full focused test suite
+  (`check-quickshell-appearance-model`, `check-quickshell-design-system`,
+  `check-quickshell-large-surfaces(-xvfb)`, `check-quickshell-panel-menus`,
+  `check-quickshell-panel-settings`, `check-accessibility`,
+  `check-quickshell-notifications`, `check-settings`, `check-appearance`,
+  `check-session-guards`), a clean `make clean all` build (PIE, `BIND_NOW`),
+  `check-shell`, `check-format`, `check-quickshell-qml`, `check-install`, and
+  `check-install-preservation`. The closed-CPU baseline read
+  **0.00 percentage points** (`check-quickshell-large-surfaces-xvfb`), inside
+  the 0.5-point budget.
+- **Limitations, carried forward rather than dropped:**
+  - Live rescaling of *already-running* applications' text is not solved —
+    `dwm-settings-display dpi-set` scales `Xft.dpi` for newly launched
+    applications, but rescaling already-running ones needs an XSETTINGS
+    daemon, which does not exist yet. Tracked for a future phase if a real
+    need for it appears.
+  - Real-hardware qualification — a fresh LightDM login, multi-monitor
+    rendering, and "on Arch" (not fixture-qualified) reversibility exercises —
+    remains outstanding. This sandbox has no display hardware, no LightDM
+    session, and no multi-monitor setup to qualify against; every reversible
+    workflow this involves is proven through automated and Xvfb-fixture
+    coverage instead (see `TASKS.md`'s `P5-VALIDATE`). Qualify on real
+    Arch/CachyOS hardware before relying on this as a substitute for that.
+  - `check-quickshell-settings-xvfb` `SKIP`s in this sandbox because `xkbset`
+    (AUR-only, no AUR helper here) is unavailable — an environment gap, not a
+    Phase 5 defect; confirmed unchanged from `main` before this branch.
 
 ## Phase 6: System Management
 

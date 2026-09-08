@@ -2033,4 +2033,19 @@ cmp -- "$config_before_malformed_owner" "$config_home/lyona/wallpaper.conf"
 grep -Fqx 'not a valid token' "$state_home/lyona/appearance/wallpaper/preview.current"
 test ! -s "$log"
 
+# Feh entirely absent must degrade only the wallpaper provider/mutation
+# capability, not crash the helper.
+no_feh_home=$work/no-feh-home
+mkdir -p "$no_feh_home/.config" "$no_feh_home/.local/state" "$no_feh_home/Pictures/backgrounds"
+printf 'lone image\n' >"$no_feh_home/Pictures/backgrounds/only.png"
+no_feh_status=$(DISPLAY=:915 HOME=$no_feh_home XDG_CONFIG_HOME=$no_feh_home/.config \
+	XDG_STATE_HOME=$no_feh_home/.local/state XDG_RUNTIME_DIR=$runtime \
+	DWM_APPEARANCE_WALLPAPER_DIR=$no_feh_home/Pictures/backgrounds \
+	DWM_WALLPAPER_FEH=$work/nonexistent-feh PATH="$bin_dir:$PATH" \
+	"$helper" status --read-only)
+grep -Fqx $'provider\twallpaper\tpartial\tuser-session\tFeh is optional and is not installed' \
+	<<<"$no_feh_status"
+grep -Fqx $'mutation\trestricted\tWallpaper changes are unavailable in this session' \
+	<<<"$no_feh_status"
+
 printf 'Wallpaper settings helper: PASS\n'
