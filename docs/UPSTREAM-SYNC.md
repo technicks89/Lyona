@@ -4,7 +4,12 @@ Index for the phased port of upstream work landed since the fork. Each phase has
 its own document with literal code; this file carries the survey, the exclusions,
 the rules that apply everywhere, and the phase order.
 
-Surveyed at upstream `94ca1a4` (2026-09-05) plus open PR #229.
+Surveyed at upstream `94ca1a4` (2026-09-05); re-surveyed at `03b2195`
+(2026-09-06); re-surveyed again at `dd55e58` (2026-09-07) — see
+[The system-management port](#the-system-management-port) below for what the
+third survey changed and why it replaces the former single
+`SYNC-P10-SYSTEM-MANAGEMENT.md` (now removed) with a fresh nine-phase
+sequence.
 
 ---
 
@@ -22,16 +27,21 @@ already reproduced in Lyona by hand; the rest are the work planned here.
 
 ## Decisions taken up front
 
-- **Upstream's Phase 6** (PackageKit system-package updates plus, as of the
-  2026-09-06 re-survey, a second "regional services" domain — timezone, NTP,
-  locale, accounts, printers, repositories — `#207`–`#253`, **over 26,800 lines**)
-  is **planned as a later phase**, scheduled after Lyona's own Phase 6 —
+- **Upstream's Phase 6** (PackageKit system-package updates plus a "regional
+  services" domain — timezone, NTP, locale, accounts, printers, repositories —
+  `#207`–`#265`, a single **8,946-line Python 3 program** at `dd55e58`) is
+  **planned as a later phase**, scheduled after Lyona's own Phase 6 —
   `lyona-update`, designed in `docs/P6-UPDATE-*.md` — which solves a different
-  problem and lands first. The Arch port is planned in
-  [`SYNC-P10-SYSTEM-MANAGEMENT.md`](SYNC-P10-SYSTEM-MANAGEMENT.md), sequenced into
-  ten boundaries (SM-001…SM-010) around upstream's own `UpdateBackend` seam. See
-  that document's "Re-survey before starting" section for what changed between the
-  two surveys — upstream merged 25 commits in the 33 hours between them.
+  problem and lands first. The Arch port is now planned as its own nine-phase
+  sequence — see [The system-management port](#the-system-management-port) —
+  which **replaced** an earlier single `SYNC-P10-SYSTEM-MANAGEMENT.md` plan
+  after a 2026-09-07 re-survey found two things that plan got wrong: the
+  provider is not a PackageKit-only Fedora artefact that needs replacing (it
+  is already a working Arch/alpm frontend — see
+  [Position in the sequence](#position-in-the-sequence)), and the regional
+  scope alone had grown past what one document could track. This is a
+  **restructuring, not new upstream scope** — the total line count and PR
+  range are the same drift already noted; only the plan's shape changed.
 - **Docs site**: keep mdBook (`docs/book.toml`, `docs/theme/catppuccin.css`).
   Upstream's Astro rebuild (`#194`) is **not** ported. Only the prose that rides
   along in later commits is folded into the existing `docs/src/*.md`.
@@ -60,7 +70,7 @@ These upstream changes are **done or declined**. Recorded so they are not re-app
 | `b0e9b0e`, `46991ca` *personalization backend*; `scripts/dwm-xsettings` | `scripts/dwm-settings-toolkit`, `scripts/dwm-settings-display` | **Pre-fork divergence.** Lyona renamed `dwm-settings-personalization` → `dwm-settings-toolkit` (writes `~/.config/lyona/personalization.conf`) and folded the xsettingsd job into `dwm-settings-display`'s `write_xsettings_dpi()`. Every later upstream hunk touching `dwm-xsettings` is therefore N/A. |
 | `f4f477c` *stabilize appearance watcher lifecycle* | `config/quickshell/core/WatchedProcess.qml` | Lyona already extracted the watch-process + settle-timer + restart-timer trio into a reusable component. Upstream's fix hardens their inline copy. **Verify only** (Phase 1c). |
 | DPI hot reload | `2a49ffd Fixed DPI settings` | Lyona-only. `Theme.uiScale`, `Theme.dp()` and `dpiStateWatch` do not exist upstream — which is why several upstream hunks below need adaptation rather than a straight copy. |
-| `#207`–`#229` upstream Phase 6 | — | Not excluded — **planned** as Phase 10, after Lyona's own Phase 6. See [`SYNC-P10-SYSTEM-MANAGEMENT.md`](SYNC-P10-SYSTEM-MANAGEMENT.md). |
+| `#207`–`#265` upstream Phase 6 | — | Not excluded — **planned**, after Lyona's own Phase 6. See [The system-management port](#the-system-management-port). |
 
 ### Lyona-only assets the port must reuse rather than duplicate
 
@@ -91,6 +101,16 @@ Apply to **every** phase; not repeated in the per-phase documents.
 Every new helper must be registered in **three** places or it will not ship:
 `Makefile` `INSTALL_COMMANDS`, `Makefile` `check-shell`, `Makefile` `check-format`.
 
+**Exception**: `scripts/dwm-system-management`
+([the system-management port](#the-system-management-port)) is Python, not
+POSIX shell. `check-shell` (shellcheck) and `check-format` (shfmt) do not
+read it and must not be made to. It still registers in `INSTALL_COMMANDS`,
+and gets its own Python-run test gate (`check-system-management`) instead of
+the shell two — see
+[Phase 1 of that sequence](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#6-makefile-registration).
+This is the only helper in the tree with this exception; do not generalize it
+without a matching decision recorded here.
+
 ---
 
 ## Phase order
@@ -107,7 +127,7 @@ Every new helper must be registered in **three** places or it will not ship:
 | 7 | **Done** — see `CHANGELOG.md` | `#203` | 4 |
 | 8 | **Done** — see `CHANGELOG.md` | `#204` | 4 |
 | 9 | **Done** — see `CHANGELOG.md` | `#198`, `#200`, `f558c77` | 0, 3 |
-| 10 | [`SYNC-P10-SYSTEM-MANAGEMENT.md`](SYNC-P10-SYSTEM-MANAGEMENT.md) | `#207`–`#253` | Lyona UPDATE-001…003 |
+| 10 | **Superseded** — see [The system-management port](#the-system-management-port) | `#207`–`#265` | Lyona UPDATE-001…003 |
 | 11 | **Done** — see `CHANGELOG.md`, `TASKS.md` | — (Lyona's own audit) | — |
 
 File numbers above are **not** the recommended run order — see
@@ -182,6 +202,15 @@ reduced-motion toggles were added as their own section alongside Lyona's
 existing generic "Additional capabilities" list, filtering only the two
 capability IDs the new controls make redundant.
 
+**Phase 10 is superseded, not done.** The single `SYNC-P10-SYSTEM-MANAGEMENT.md`
+document that used to occupy this slot (sequenced as ten boundaries,
+SM-001…SM-010) was replaced on 2026-09-07 by
+[a fresh nine-phase sequence](#the-system-management-port) after a re-survey
+found its central premise wrong (see below) and its regional-services scope
+had grown too large for one document. None of the underlying work is done —
+this is a planning restructure, recorded here so a future reader does not
+go looking for a "Phase 10" that no longer exists as a single unit.
+
 **`*` Phase 3 exception — `c3e9a18` was not ported.** `P5-SETTINGS-LAYOUT-PORT.md`
 (now removed) fully specified the Settings-window enlargement and compaction, and
 that half is done. Upstream's `c3e9a18` `ControlCenterWindow.qml` tightening — section
@@ -213,16 +242,183 @@ as originally recommended.
 | ✅ | **Phase 7** — XKB input accessibility | **Done.** See `CHANGELOG.md`. Depends on Phase 4 (done) only; independent of 5/6. |
 | ✅ | **Phase 8** — Managed notification policy | **Done.** See `CHANGELOG.md`. Depends on Phase 4 (done) only; independent of 5/6/7. |
 | ✅ | **Phase 9** — Display resolution and apply workflow | **Done.** See `CHANGELOG.md`. Depended on Phase 0 (DPI interaction, done) and Phase 3 (final geometry, done); also touched the same `ShellButton.qml` Phase 6 extended, for the new Apply button's primary/pending states. |
-| — | **Phase 10** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — see that document's own "Re-survey before starting," which now has real teeth: 25 commits landed in the 33 hours between this plan's two surveys. |
+| — | **Phase 10 (superseded)** — System management | **Still deferred**, not part of the near-term order at all. Gated on Lyona's own `UPDATE-001…003` landing and on re-surveying upstream *again* immediately before starting — the 2026-09-07 re-survey did exactly that and replaced this single slot with [a nine-phase sequence](#the-system-management-port), whose own internal order is fixed (1→9, linearly dependent) and does not interleave with the rest of this table. |
 
 **Net effect:** with Phases 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, and 11 done, the only
-work left in this document is Phase 10, and that stays deliberately deferred.
-Nothing about that
-remaining order changed from the original survey — the two pieces of new work
-found on 2026-09-06 both slotted in without disturbing it: Phase 11 because it
-shared no files with anything else, and the regional-services scope because it
-extends a phase (10) that's already deferred rather than needing a phase of
-its own.
+work left in this document is the system-management port, and that stays
+deliberately deferred as a whole — gated on Lyona's own `UPDATE-001…003`,
+unaffected by this restructuring. Nothing about the rest of this table's
+order changed from the original survey — every piece of new work found in
+later re-surveys (Phase 11's security audit, the regional-services growth)
+slotted in without disturbing Phases 0–9's already-settled order.
+
+---
+
+## The system-management port
+
+Nine documents, `docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md` through
+`docs/SYNC-P9-REGIONAL-MUTATION.md`, replacing the single
+`SYNC-P10-SYSTEM-MANAGEMENT.md` (SM-001…SM-010) that occupied this slot
+between 2026-09-05 and 2026-09-07. **This numbering restarts at 1 and is its
+own sequence** — it does not renumber, does not replace, and shares no file
+with the completed Phases 0–9 and 11 above. Where a cross-reference is
+ambiguous, the documents below say "the earlier sync work's Phase *N*"
+explicitly (for example,
+[Phase 7](SYNC-P7-OPERATION-SURFACE.md#lyona-adaptations) does, for the
+`ShellButton` primary/pending states the completed display-apply phase
+added). Read `Phase 1` through `Phase 9` below as belonging to this section
+only.
+
+**The whole sequence is still gated on Lyona's own `UPDATE-001…003`**
+(`docs/P6-UPDATE-*.md`, `lyona-update`) **landing first**, exactly as it was
+under the old numbering — restructuring the plan did not change that
+dependency. Nothing in this section is scheduled; it exists so the next
+person who picks this up starts from an accurate plan instead of a stale one.
+
+### Why the old plan was replaced, not just updated
+
+Two independent findings from the 2026-09-07 re-survey, both verified
+against the live `dd55e58` source and the live Arch package databases, made
+`SYNC-P10-SYSTEM-MANAGEMENT.md`'s foundation unsound rather than merely
+out of date:
+
+1. **The old plan's central premise — "the whole thing is written against
+   PackageKit on Fedora and the provider layer must be replaced by a
+   `PacmanBackend`" — is wrong.** `packagekit` on Arch ships
+   `usr/lib/packagekit-backend/libpk_backend_alpm.so`: PackageKit is already
+   a first-class `alpm`/`pacman` frontend on Arch, not a Fedora-only
+   artefact. The genuinely Fedora-specific code (`read_fedora_identity()`,
+   an RPM-database version gate, three delegated-tool paths) is small and
+   localized. See
+   [Phase 1's "second finding"](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#the-second-finding-that-reframes-the-whole-port)
+   for the verified package table. This changes the entire port from "a
+   from-scratch reimplementation of a Fedora subsystem" to either "adopt a
+   working Python helper with small Arch substitutions" or "a deliberate,
+   scoped decision not to" — see [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md)
+   for the full option analysis and the recommendation.
+2. **The `*-bus.py`/`*-provider.py` files earlier notes described as a
+   shipped "Python D-Bus daemon architecture" are test fixtures.** They live
+   under `tests/fixtures/`, not `scripts/`. The real shipped surface is one
+   8,946-line `scripts/dwm-system-management` plus a handful of
+   `config/quickshell/systemmanagement/*.qml` files — see the file table in
+   [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#what-upstream-actually-built-verified-at-dd55e58-2026-09-07).
+   There is no daemon and nothing Lyona would need to reach over a socket.
+
+Independent of both findings, the regional-services scope
+(`#242`–`#265`) alone had grown to a size that did not fit one document
+alongside the update-journal half — hence the split into nine phases rather
+than one restructured document.
+
+### Position in the sequence
+
+This whole port sits **after** every phase in the "Phase order" table above
+(0–9, 11, all done) and **after** Lyona's own `ROADMAP.md` Phase 6 lands.
+That prerequisite is not just a phase number — it is three concrete,
+already-written design documents, none of them upstream-sync work (nothing
+here ports code from `ChrisTitusTech/dwm-titus`; `lyona-update` is
+Lyona-native, updating Lyona itself rather than Arch packages), tracked as
+their own boundary group:
+
+| Prerequisite | Document | Delivers | Status |
+| --- | --- | --- | --- |
+| UPDATE-001 | [`P6-UPDATE-PROVENANCE.md`](P6-UPDATE-PROVENANCE.md) | An installed system that can state what it is running | Designed, not started |
+| UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) | `lyona-update` — check, stage, apply, roll back | Designed, not started |
+| UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper | Designed, not started |
+
+(`P6-UPDATE-OVERVIEW.md` indexes all three plus the architecture decisions
+behind them; it is not its own boundary.) None of the three is implemented —
+the currently active `TASKS.md` phase is still Phase 5, and `P6-UPDATE-OVERVIEW.md`
+itself says implementation must wait until Phase 5 closes.
+
+**The two efforts meet at exactly one point**, and it is worth naming
+precisely rather than leaving as a vague "later": `P6-UPDATE-SURFACE.md`'s
+Settings → System pane is explicitly laid out so an "Arch packages" group can
+be added beside the "lyona" group **later, without rework** — that later is
+[Phase 3](SYNC-P3-SYSTEM-PANE.md) (the pane itself) and
+[Phase 7](SYNC-P7-OPERATION-SURFACE.md) (its confirm/cancel operation
+surface) of this port. Outside that one shared pane, the two efforts share no
+file and no helper — `lyona-update` never touches `dwm-system-management` or
+PackageKit, and this port never touches release tarballs or `lyona-update`'s
+own provenance stamp.
+
+Within the nine-phase sequence itself the phases are linearly dependent —
+each depends on the previous one's files existing — with one branch point:
+Phases 5–7 (the update-mutation half) and Phases 8–9 (the regional half) do
+not depend on each other and could in principle be worked in either order
+once Phase 4 is done, but Phase 9 reuses Phase 5's journal directly, so
+**Phase 5 must land before Phase 9 regardless of which half is tackled
+first**.
+
+| Phase | Document | Upstream | Depends on |
+| --- | --- | --- | --- |
+| 1 | [`SYNC-P1-SYSTEM-PROVIDER-DECISION.md`](SYNC-P1-SYSTEM-PROVIDER-DECISION.md) | `#207`, `#209`, `#265` | UPDATE-001…003 |
+| 2 | [`SYNC-P2-UPDATE-SNAPSHOT.md`](SYNC-P2-UPDATE-SNAPSHOT.md) | `#208`, `#232`, `#241` | 1 |
+| 3 | [`SYNC-P3-SYSTEM-PANE.md`](SYNC-P3-SYSTEM-PANE.md) | `#209`, `#210` | 2, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout |
+| 4 | [`SYNC-P4-DISCOVERY-EVENTS.md`](SYNC-P4-DISCOVERY-EVENTS.md) | `#237`, `#238`, `#260` | 3 |
+| 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) |
+| 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 |
+| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout |
+| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 |
+| 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) |
+
+### The decision point after Phase 4
+
+[Phase 4](SYNC-P4-DISCOVERY-EVENTS.md) completes everything upstream's
+system-update feature can do **without** a durable journal — discovery,
+live-watch, the Settings pane, all read-only. The journal
+([Phase 5](SYNC-P5-OPERATION-JOURNAL.md), ~2,800 helper lines plus ~4,000
+test lines) exists because a PackageKit D-Bus transaction leaves no evidence
+once the daemon is gone. The question worth deciding explicitly before
+starting Phase 5, rather than discovering the cost partway through: does
+`/var/log/pacman.log`, `/var/cache/pacman/pkg`, and `pacman -Qu` already
+answer "did that commit, and can I recover from a crash mid-transaction"
+well enough that 2,800 lines are not worth it?
+
+[Phase 5's own document](SYNC-P5-OPERATION-JOURNAL.md#read-this-before-starting)
+lays out exactly what `pacman.log` can and cannot answer, and is explicit
+that the journal is not optional if [Phase 9](SYNC-P9-REGIONAL-MUTATION.md)'s
+regional mutations are wanted — a "did a `timezone-set` I dispatched but
+never confirmed actually take effect" question has no package-manager log to
+fall back on at all. **If the answer is "the journal is not worth it,"** the
+honest outcome recorded here is: close Phases 5–7 as declined, keep Phases
+8's read-only half only, and drop Phase 9 down to delegated-tool launches
+without the timezone/NTP/locale mutation half (which needs the same
+crash-durability guarantee the journal provides). This decision has **not**
+been made — it is deferred to whoever picks Phase 5 up, with this section as
+the record of what was already considered.
+
+### Open decisions
+
+Every phase above that depends on an unresolved choice names it here rather
+than silently picking one. None of these block writing further plan
+documents; all of them block **implementation**.
+
+| ID | Question | Where it matters | Status |
+| --- | --- | --- | --- |
+| — | **The core decision**: adopt upstream's Python helper largely as-is (Option A), rewrite it in POSIX shell (Option B), or stop at a read-only shell-only subset (Option C)? | Every phase from [2](SYNC-P2-UPDATE-SNAPSHOT.md) onward changes shape depending on the answer | **Open.** [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#recommendation) recommends Option A with Option C as the fallback; recorded in that document's own `Decision:` line, not here, because it is a single project-owner call, not a per-item checklist. |
+| **D-3** | Arch delegated-tool targets for `accounts-open` and `sources-open` — neither `lxqt-admin-user` nor `dnfdragora` exists in Arch's official repositories; `system-config-printer` (`printers-open`) does. | [Phase 9 §3](SYNC-P9-REGIONAL-MUTATION.md#open-decision-d-3-arch-targets-for-accounts-open-and-sources-open) | **Open.** Candidates: ship `unavailable` with an honest detail string, or an AUR-packaged equivalent behind `arch:system-management-optional` (the `xkbset` precedent). Phase 9's document is written either way; this decision must be settled before its delegated-launch buttons are implemented. |
+| **D-4** | Does `pacman -Sup --print-format ... --dbpath "$CHECKUPDATES_DB"` genuinely stay read-only (no root, no live pacman lock) on a real CachyOS install? | [Phase 2, "If Option C was chosen"](SYNC-P2-UPDATE-SNAPSHOT.md) (§6) | **Open — unverified against a live system.** If it does not, the fallback (a polkit-mediated read-only helper) changes the privilege model for the whole update-read half and must be settled before Phase 2 is implemented, not discovered mid-implementation. |
+
+### Verification
+
+Each phase's own document has its exact commands; the summary:
+
+| Phase | Command |
+| --- | --- |
+| 1 | `make check-arch-packages`, `make check-install`, `make check-settings` |
+| 2 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py` |
+| 3 | `make check-quickshell-system-management`, `make check-quickshell-qml` |
+| 4 | `make check-quickshell-system-management`, `make check-quickshell-qml` |
+| 5 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py` |
+| 6 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py` |
+| 7 | `make check-quickshell-system-management`, `make check-quickshell-qml` |
+| 8 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management` |
+| 9 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management` |
+
+`check-system-management` (the Python gate registered in
+[Phase 1 §6](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#6-makefile-registration)) is
+the `Makefile` target; the table above shows the underlying command for
+direct use.
 
 ---
 
@@ -251,7 +447,7 @@ Phase-specific gates:
 | 7 | `make check-settings`, `make check-arch-packages` |
 | 8 | `make check-quickshell-notifications`, `make check-session-guards` |
 | 9 | `make check-settings`, `make check-quickshell-appearance-model` |
-| 10 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management` |
+| — | System-management port: see [its own verification table](#the-system-management-port) — each of its nine phases has its own gate. |
 | 11 | `make clean all` (compiler-flag change), `make check-shell`, `make check-format`, `make check-lock`, `make check-cachyos`, `make check-install` — **done**, see `CHANGELOG.md` |
 
 Full suite before the last phase merges:

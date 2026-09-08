@@ -163,7 +163,11 @@ risk profile (`pacman -Syu` can require reboots, break drivers, and is
 already well served by existing tooling), a different authorisation story, and
 a different failure mode. `lyona-update` covers the desktop itself only. The
 Arch side belongs in its own Phase 6 boundary; UPDATE-003 leaves room for it in
-the Settings section but does not implement it.
+the Settings section but does not implement it. That boundary is now planned
+in detail as its own nine-phase upstream port — see
+[`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#the-system-management-port), in
+particular [`SYNC-P3-SYSTEM-PANE.md`](SYNC-P3-SYSTEM-PANE.md) for the
+"Arch packages" group this document's Settings layout reserved room for.
 
 ---
 
