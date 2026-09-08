@@ -82,6 +82,28 @@ against `checkupdates(8)` and drop `PackageKitBackend`. See §6.
 These are the only places where the platform leaks past the seam. Fix all four
 here, before anything is built on top.
 
+**Correction, found during implementation:** none of the four exist in the
+code this phase actually ports. `bd87fd3c` (`#208`, the "+859 helper lines"
+this phase's Files table describes) has no `read_fedora_identity()`, no
+`require_mutation_safe()`, no RPM import, and no `DELEGATED_TOOLS` — verified
+directly by fetching that commit's `scripts/dwm-system-management` and
+grepping it. Those four all belong to code introduced by later upstream
+commits that also bring the recovery journal and mutation dispatch (a
+snapshot generation ID and the mutation-blocker plumbing were unrecognizable
+until the journal exists to back them) — exactly the machinery §0's "No
+mutation, no journal, no root, no polkit prompt" already excludes from this
+phase. "With the later corrections `#232` and `#241` folded in" is also
+overstated: by `65138a89` (`#241`) the upstream file had grown from 859 to
+5,752 lines, almost entirely from unrelated intervening PRs, not from those
+two commits' own diffs (19 and 121 lines respectively, confirmed against each
+commit's own patch). §3a and §3b are therefore **not applicable to this
+phase** — ported as forward guidance for whichever later phase actually
+brings in `read_fedora_identity()`'s and `require_mutation_safe()`'s Arch
+equivalents (Phase 5's journal and Phase 6's execution path). §3c is moot for
+the same reason: the ported baseline was never Fedora-branded in its operator
+strings (grepped; zero hits). §3d **is** applicable and was evaluated — see
+below.
+
 ### 3a. Platform identity
 
 ```diff
@@ -163,6 +185,18 @@ exclusion in `docs/P6-SYSTEM-MANAGEMENT.md` rather than silently dropped.
 Confirm against the alpm backend's actual `SIMULATE` output on the
 qualification host.
 
+**Decision: not ported.** The patched code (`normalize_plan`'s
+`represented`/`requested` reconciliation) is the pre-`#232` form in the
+`#208` baseline this phase ports, and `#232`'s own fix text is explicit that
+it exists to preserve DNF5's `GetUpdates`-includes-install-actions behaviour
+— there is no live alpm daemon in this sandbox to confirm whether
+`SIMULATE|ONLY_TRUSTED` against `libpk_backend_alpm.so` ever emits an
+`install` action for a plain dependency pull the way DNF5 does. Left as the
+unmodified `#208` reconciliation (requires every plan row for a requested ID
+to carry `action == "update"`, rejecting anything else) rather than guessing.
+Verify on the qualification host before Phase 6 (mutation) depends on this
+function's shape.
+
 ## 4. What `package_id` means on Arch
 
 `package_display_fields()` (`:4854`) splits PackageKit's four-field identity:
@@ -222,6 +256,23 @@ glibc update. That is the one failure mode worth designing against.
 [Phase 5](SYNC-P5-OPERATION-JOURNAL.md); note the requirement here so it is
 not forgotten). `needrestart` is the mature version of this heuristic and is
 worth evaluating rather than reimplementing.
+
+**Implemented as `_restart_heuristic_hint()`.** Real-daemon verification is
+still not possible in this sandbox (no running `packagekit`/`libpk_backend_alpm.so`
+here — see Verification), so the heuristic is applied defensively rather than
+conditionally: it only overrides `aggregate_restart()`'s output when the
+transaction succeeded, at least one update is pending, and zero
+`RequireRestart` signals were seen at all — the exact "backend stayed silent"
+case this section warns about. `aggregate_restart([])` on a genuinely empty
+update set is untouched (`none` is correct there — nothing is pending). The
+table above maps to the existing `state\tupdate-restart` value vocabulary
+(`none`/`application`/`session`/`system`/`security-session`/`security-system`)
+rather than a new `yes`/`no` axis: a heuristic hit reports `system` (the
+existing, already-conservative "reboot needed" value), a miss reports
+`unknown`. Covered by
+`tests/test-system-management.py`'s `test_restart_heuristic_*` cases,
+including that it never fires when the backend *does* report a real
+`RequireRestart` signal.
 
 ## 6. If Option C was chosen — `PacmanBackend`
 
@@ -324,7 +375,21 @@ Bounds and degradation:
   deadline honoured.
 
 Kernel case: with a `linux-cachyos` update pending, `update-restart` reads
-`yes`; with only a leaf application pending it reads `unknown`, **not** `no`.
+`system`; with only a leaf application pending it reads `unknown`, **not**
+`none`.
+
+**Run in this sandbox:** the three automated commands above, all passing (19
+unit tests, `make check-system-management`, `make check-install`); a direct
+`scripts/dwm-system-management snapshot` invocation, which exercised the real
+`missing-provider` degrade path end-to-end (`python-gobject` is present here,
+but the `PackageKitGlib` typelib is not — `packagekit` itself is not
+installed in this container) and produced the correct complete-but-degraded
+protocol output with exit `0`. **Not run:** everything requiring a live
+`packagekit` daemon and an actual alpm-backed transaction — the read-only
+proof, the polkit-prompt absence check, real `RequireRestart`/`package_id`
+shape verification, and the §3d SIMULATE question above. This sandbox has no
+running PackageKit service; the read-only-daemon checks remain a real
+CachyOS install prerequisite, unchanged from Phase 1's equivalent caveat.
 
 ## Closes
 

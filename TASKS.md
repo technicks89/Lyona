@@ -270,16 +270,13 @@ answered, and answering it later would mean rewriting whatever came before.
   operations table corrected; a not-yet-implemented capability is *omitted*
   by selecting the highest fully implemented protocol minor, never
   advertised as `unsupported`.
-- [ ] `Makefile`: `INSTALL_COMMANDS`, `check-system-management`,
-  `check-quickshell-system-management`. — **Deliberately deferred to Sync
-  Phase 2**, not done here: `scripts/dwm-system-management` and
-  `tests/test-system-management.py` do not exist yet (Sync Phase 1 is
-  decision-and-packaging only; the actual script lands in
-  `SYNC-P2-UPDATE-SNAPSHOT.md`). Registering `INSTALL_COMMANDS` or a
-  `check-system-management` target against files that do not exist would
-  break `make install`/`check-install`/`make check` immediately — a real
-  sequencing gap in the phase document as written, not a shortcut. Land this
-  half of the Makefile diff together with the script itself in Sync Phase 2.
+- [x] `Makefile`: `INSTALL_COMMANDS`, `check-system-management`,
+  `check-quickshell-system-management`. — Landed in **Sync Phase 2** as
+  planned here: `INSTALL_COMMANDS` gained `scripts/dwm-system-management` and
+  `check-system-management` now runs the new test suite.
+  `check-quickshell-system-management` is **not** registered yet — there is
+  still no QML consumer (`SystemManagementModel.qml` etc. do not exist until
+  Sync Phase 3), so there is nothing for that target to run against.
 
 Acceptance: `make check-shell check-format check-quickshell-qml
 check-arch-packages check-install check-settings` all pass — **Met**. The
@@ -288,6 +285,86 @@ manual on-a-real-CachyOS-install verification (`pacman -Si packagekit`,
 `python3 -c`) is unverified in this sandbox — no live PackageKit/D-Bus
 session here — and remains a real prerequisite to confirm before Sync Phase 2
 starts, per the doc's own "If the last two fail, stop" instruction.
+**That gate was not cleared before Sync Phase 2 began** — the project owner
+directed moving on regardless; Sync Phase 2's own acceptance section below
+carries the same unverified-live-daemon caveat forward rather than treating
+it as resolved.
+
+### Sync Phase 2: Bounded Read-Only Update Snapshot
+
+Upstream: `#208` (`bd87fd3c`, the actual ported baseline — see the
+correction below). Doc: `docs/SYNC-P2-UPDATE-SNAPSHOT.md`. Delivers
+`scripts/dwm-system-management snapshot`: one bounded, read-only,
+machine-readable protocol-minor-0 snapshot of pending Arch updates. No
+mutation, no journal, no root, no polkit prompt.
+
+- [x] Port `scripts/dwm-system-management` (bounds/codecs, the
+  `UpdateBackend` protocol, `PackageKitBackend`, `build_snapshot`, `main`).
+  — **Met**, ~830 lines. **Correction to the phase document, found during
+  implementation**: fetched `#208`'s actual commit (`bd87fd3c`) rather than
+  trusting the doc's line-number citations, and confirmed none of "the four
+  Fedora couplings" (§3a–§3c: `read_fedora_identity()`,
+  `require_mutation_safe()`, the RPM version gate, Fedora-branded operator
+  strings) exist in that baseline at all — they belong to later upstream
+  commits coupled to the recovery journal and mutation dispatch, which this
+  phase explicitly excludes. The doc's "with `#232`/`#241` folded in" framing
+  was also checked directly against each commit's own patch and found
+  overstated: those two commits are 19 and 121 lines respectively; the
+  5,752-line file size at `#241` comes almost entirely from unrelated
+  intervening PRs (the journal/mutation work), not from them. Full reasoning
+  recorded in `docs/SYNC-P2-UPDATE-SNAPSHOT.md` section 3's correction note.
+- [x] §3d (`#232`'s DNF5 install-preview fix) — **not ported**, recorded as a
+  deliberate exclusion in `docs/P6-SYSTEM-MANAGEMENT.md`. There is no live
+  PackageKit/alpm daemon in this sandbox to confirm whether the alpm backend
+  ever needs the same install-vs-update reconciliation DNF5 does; the
+  snapshot layer keeps `#208`'s stricter pre-`#232` check.
+- [x] §5 security severity — no code change needed; PackageKit's `InfoEnum`
+  vocabulary is shared across backends, not Fedora-specific, so every update
+  already reports `unknown` severity honestly on Arch without any porting
+  work.
+- [x] §5 restart-requirements heuristic — **implemented**
+  (`_restart_heuristic_hint()`), applied only when a transaction succeeds
+  with pending updates but zero `RequireRestart` signals were seen at all.
+  Maps kernel/`systemd`/`glibc`/`dbus` updates to the existing `system`
+  restart value and everything else to `unknown` — never a fabricated
+  `none`. 5 dedicated test cases, including that a real backend
+  `RequireRestart` signal is never overridden by the heuristic.
+- [x] `snapshot_generation()`'s domain-separation seed renamed from
+  upstream's `dwm-titus-update-plan-v1` to `lyona-update-plan-v1` — an
+  internal, non-user-visible constant; test expectations recomputed and
+  hardcoded the same way upstream's test does (not derived at test time,
+  to also catch regressions in the hashing algorithm itself).
+- [x] `tests/test-system-management.py` — ported from upstream's `#208` test
+  file (354 lines) nearly unchanged (it had no Fedora/RPM cases to discard —
+  those belong to the same later commits as §3a/§3b), plus 5 new cases for
+  the restart heuristic. — **Met**, 19/19 passing.
+- [x] `Makefile` registration (`INSTALL_COMMANDS`, `check-system-management`)
+  — see Sync Phase 1's now-checked item above.
+
+Acceptance:
+
+- `make check-system-management` (19 unit tests against fixture backends) and
+  `make check-install` both pass — **Met**.
+- The snapshot is genuinely read-only and never prompts for privilege — **Not
+  verified end-to-end**: no live PackageKit daemon in this sandbox
+  (`packagekit`'s `PackageKitGlib` typelib is not installed here, though
+  `python-gobject` itself is). What *was* verified directly: running
+  `scripts/dwm-system-management snapshot` for real exercised the guarded
+  lazy-import failure path exactly as designed — a complete, correctly
+  degraded `missing-provider`/`unavailable` protocol snapshot, exit `0`, no
+  traceback. The real-daemon checks (`sudo diff -r /var/lib/pacman/sync`
+  before/after, `db.lck` absence, no polkit prompt, real `package_id`
+  four-field shape, whether `RequireRestart` populates at all) still need a
+  CachyOS install with `packagekit` actually running — carried forward as
+  the same open prerequisite Sync Phase 1 already recorded, not newly
+  introduced here.
+- Bounds and degradation (network down, `packagekit` uninstalled,
+  `python-gobject` uninstalled, oversized/malformed PackageKit data, several
+  hundred pending updates) — **Met** for everything exercisable without a
+  live daemon: covered by the fixture-backed unit tests
+  (`test_source_failures_preserve_the_complete_protocol_shape`,
+  `test_record_count_limit_discards_the_whole_inventory`, the identity/
+  classification rejection tests) and the real `missing-provider` run above.
 
 ## Phase Completion
 
