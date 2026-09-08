@@ -37,6 +37,23 @@ dwm_packages() {
 			xdg-user-dirs gnome-keyring networkmanager \
 			rsync xkbset
 		;;
+	arch:system-management)
+		# PackageKit on Arch is a first-class alpm frontend: the `packagekit`
+		# package depends on `pacman` and `libalpm.so` and ships
+		# `usr/lib/packagekit-backend/libpk_backend_alpm.so`. python-gobject
+		# supplies gi.repository.Gio/GLib and the PackageKitGlib typelib comes
+		# from libpackagekit-glib, which `packagekit` already depends on.
+		printf '%s\n' \
+			python python-gobject packagekit accountsservice cups
+		;;
+	arch:system-management-optional)
+		# Delegated administration targets. Each one missing disables only its
+		# own `*-open` action; readable state is unaffected.
+		# arch-audit adds CVE severity that the alpm sync database does not
+		# carry; it needs the network and does not cover CachyOS packages.
+		printf '%s\n' \
+			system-config-printer arch-audit
+		;;
 	arch:gaming)
 		if [[ ${ARCH:-$(uname -m)} == x86_64 ]]; then
 			printf '%s\n' \
@@ -105,6 +122,7 @@ dwm_packages() {
 		;;
 	arch:recommended)
 		dwm_packages "$family" desktop
+		dwm_packages "$family" system-management
 		dwm_packages "$family" screenshot-optional
 		dwm_packages "$family" theme
 		dwm_packages "$family" theme-gtk
@@ -114,6 +132,7 @@ dwm_packages() {
 	arch:optional)
 		dwm_packages "$family" theme-optional
 		dwm_packages "$family" desktop-optional
+		dwm_packages "$family" system-management-optional
 		;;
 	arch:full)
 		dwm_packages "$family" required

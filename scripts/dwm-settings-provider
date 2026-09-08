@@ -695,6 +695,13 @@ discover() {
 		emit_capability system authorization 'Administrative authorization' restricted privileged polkit \
 			'Read-only state remains available; install the trusted system helper for authorized actions'
 	fi
+	if provider_available dwm-system-management; then
+		emit_capability system package-updates 'System updates' available read-only dwm-system-management \
+			'Update discovery is available; installation requires explicit confirmation'
+	else
+		emit_capability system package-updates 'System updates' unavailable read-only dwm-system-management \
+			'Install the dwm-system-management helper'
+	fi
 	emit_capability system administration 'Advanced administration' unsupported delegated arch-tools \
 		'High-risk administration remains delegated to trusted tools'
 	if provider_available lyona-update; then

@@ -322,15 +322,19 @@ their own boundary group:
 | Prerequisite | Document | Delivers | Status |
 | --- | --- | --- | --- |
 | UPDATE-001 | **Done** — see `CHANGELOG.md`, `TASKS.md` | An installed system that can state what it is running | Done (2026-09-08) |
-| UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) | `lyona-update` — check, stage, apply, roll back | Designed, not started |
-| UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper | Designed, not started |
+| UPDATE-002 | [`P6-UPDATE-HELPER.md`](P6-UPDATE-HELPER.md) | `lyona-update` — check, stage, apply, roll back | Done (2026-09-08) |
+| UPDATE-003 | [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md) | Settings and Control Center surfaces over that helper | Done (2026-09-08) |
 
 (`P6-UPDATE-OVERVIEW.md` indexes all three plus the architecture decisions
-behind them; it is not its own boundary.) UPDATE-001 and UPDATE-002 are implemented — the
-currently active `TASKS.md` phase is Phase 6 (System Management), and
-`P6-UPDATE-PROVENANCE.md` has been removed now that it is done, per this
-project's plan-doc-retirement convention. UPDATE-002 and UPDATE-003 remain
-not started.
+behind them; it is not its own boundary.) All three are implemented and
+merged (`3c8adb2`, `d489f1f`, `fdb0995`) — the currently active `TASKS.md`
+phase is now this section's own nine-phase sequence, starting with
+[Sync Phase 1](#the-system-management-port). `P6-UPDATE-PROVENANCE.md` was
+removed once implemented, per this project's plan-doc-retirement convention;
+`P6-UPDATE-HELPER.md` and `P6-UPDATE-SURFACE.md` are kept despite being done
+— [Sync Phase 3](SYNC-P3-SYSTEM-PANE.md) and
+[Sync Phase 7](SYNC-P7-OPERATION-SURFACE.md) below cite `P6-UPDATE-SURFACE.md`'s
+pane layout directly as design material for work that has not landed yet.
 
 **The two efforts meet at exactly one point**, and it is worth naming
 precisely rather than leaving as a vague "later": `P6-UPDATE-SURFACE.md`'s
