@@ -121,4 +121,12 @@ Singleton {
     function accessibilitySettingsCommand(action, args) {
         return helperCommand("dwm-accessibility-settings", action, args, true);
     }
+
+    function updateCommand(action, args) {
+        return helperCommand("lyona-update", action, args, true);
+    }
+
+    function versionCommand(action, args) {
+        return helperCommand("lyona-version", action, args, true);
+    }
 }

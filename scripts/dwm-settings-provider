@@ -697,6 +697,13 @@ discover() {
 	fi
 	emit_capability system administration 'Advanced administration' unsupported delegated arch-tools \
 		'High-risk administration remains delegated to trusted tools'
+	if provider_available lyona-update; then
+		emit_capability system updates 'Software updates' available user-session lyona-update \
+			'Check, apply, and roll back lyona releases from Settings'
+	else
+		emit_capability system updates 'Software updates' unavailable user-session lyona-update \
+			'Install the lyona-update helper'
+	fi
 }
 
 case ${1:-} in

@@ -10,6 +10,30 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add the update surface to Settings and Control Center (UPDATE-003,
+  `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
+  root model over `lyona-update`/`lyona-version`, and a Settings -> System pane
+  showing the installed-version card (turning red and naming which of
+  system/user/binary disagree when the install is damaged), current update
+  status, a confirmed **Update now** action with phase-by-phase progress
+  (downloading, verifying, building, installing, verifying, restarting), a
+  stable/preview channel selector, and a backups list with per-backup
+  rollback. Control Center gets a one-line installed-version row plus a
+  conditional **Update available** row when behind — no apply action there by
+  design, since a multi-minute privileged operation does not belong behind a
+  one-click row. `lyona-update` gained `set-channel` (persists the channel
+  selection through the same seed-never-overwrite `update.conf` convention)
+  and a `$XDG_STATE_HOME/lyona/update.status` file, written at every phase of
+  `apply`/`rollback`, that lets a fresh model instance report the outcome of
+  an update that completed across its own Quickshell restart — without it,
+  every successful update would look like a crash to the UI. `rollback` now
+  also restarts Quickshell itself when a desktop session is present (falling
+  back to a plain "log in now" message from a bare TTY, where it always
+  worked), instead of leaving the running shell out of sync with what was
+  just restored. New `docs/src/updating.md` walks through checking, applying,
+  channels, and rollback, prominently including the bare-TTY recovery path;
+  mirrored in `README.md`'s Troubleshooting section.
+
 - Add install provenance (UPDATE-001, `docs/P6-UPDATE-PROVENANCE.md`):
   `make install-system` and `make install-user` now each write a stamped
   record last, only on success — `/etc/lyona-release` (system) and

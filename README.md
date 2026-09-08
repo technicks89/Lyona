@@ -222,6 +222,7 @@ safe customization paths.
 - [Theming](https://dwm.technicks89.com/theming.html)
 - [Control Center](https://dwm.technicks89.com/control-center.html)
 - [Settings](https://dwm.technicks89.com/settings.html)
+- [Updating and Rollback](https://dwm.technicks89.com/updating.html)
 - [How lyona Works](https://dwm.technicks89.com/patches.html)
 - [Troubleshooting](https://dwm.technicks89.com/troubleshooting.html)
 
@@ -241,6 +242,21 @@ You can also open **Control Center -> System Health** for a graphical overview.
 If the session does not start, run `startx` from a TTY to see its error output.
 The [Troubleshooting Guide](https://dwm.technicks89.com/troubleshooting.html)
 covers common session, panel, terminal, theme, display, and NVIDIA issues.
+
+### An update broke the session
+
+If a `lyona-update` apply leaves you without a working desktop, log in at a
+TTY (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> through <kbd>F6</kbd>) and
+roll back — this does not need Quickshell, D-Bus, or a running polkit agent:
+
+```bash
+lyona-update rollback --list   # see what is available
+lyona-update rollback          # restore the newest backup
+startx                         # or log in normally afterward
+```
+
+See [Updating and Rollback](https://dwm.technicks89.com/updating.html) for
+the full walkthrough.
 
 If the problem remains, [open an issue](https://github.com/technicks89/Lyona/issues)
 and include the relevant diagnostic output. Review it first and remove any

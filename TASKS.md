@@ -153,24 +153,51 @@ Acceptance:
 
 ### UPDATE-003: Settings and Control Center Surfaces
 
-- [ ] Add a "lyona" group to Settings → System backed by `lyona-update`,
+- [x] Add a "lyona" group to Settings → System backed by `lyona-update`,
   laid out so an "Arch packages" group can be added beside it later without
   rework — that group is `docs/UPSTREAM-SYNC.md`'s Sync Phases 3 and 7, gated
-  on this boundary landing first.
-- [ ] Surface check/apply/rollback with visible confirmation, live progress,
-  and cancellation. `auto_apply` stays rejected — no silent background
-  updates; unattended updates need their own specification.
-- [ ] Rollback from within a broken session is explicitly out of scope for
+  on this boundary landing first. — **Met**: `SystemSettingsPane.qml` over
+  `UpdateModel.qml`, wired into the "system" section `SettingsModel.qml`
+  already reserved (alongside its existing `health`/`authorization`/
+  `administration` capabilities, now joined by a fourth `updates` capability
+  from `dwm-settings-provider`).
+- [x] Surface check/apply/rollback with visible confirmation, live progress
+  — **partially met**. Confirmation (naming the target version before
+  calling `apply()`), phase-by-phase progress surviving Quickshell's own
+  restart (via the new `update.status` file), and channel/backups/rollback
+  are all implemented and covered by `tests/test-quickshell-update-model.sh`.
+  **Cancellation is not implemented** — once `apply`/`rollback` is started
+  there is no way to interrupt it from the pane. `auto_apply` stays rejected
+  — no silent background updates; unattended updates need their own
+  specification.
+- [x] Rollback from within a broken session is explicitly out of scope for
   this pane — if the desktop will not start there is no UI to click. Document
-  the TTY path (UPDATE-002) as the answer.
+  the TTY path (UPDATE-002) as the answer. — **Met**, `docs/src/updating.md`
+  and `README.md`'s Troubleshooting section both lead with the TTY path.
+  `rollback` now also restarts Quickshell itself when a desktop session is
+  present, so a live rollback from the pane actually takes effect.
 
 Acceptance:
 
-- The update surface never auto-applies without explicit confirmation.
+- The update surface never auto-applies without explicit confirmation. —
+  **Met**: `SystemSettingsPane.qml`'s `confirmVersion` gate, matching
+  `DisplaySettingsPane.qml`'s existing confirmation idiom for a privileged
+  action rather than inventing a new dialog.
 - Declining the privileged step leaves a staged, verified, uninstalled update
-  and a clear non-zero result, not a half-applied system.
+  and a clear non-zero result, not a half-applied system. — **Met**, carried
+  over unchanged from UPDATE-002's `run_privileged` behavior; the pane
+  surfaces the CLI's own stderr as `message`.
 - Closing the pane leaves no resident scan, duplicate subscription, or
-  orphaned helper process.
+  orphaned helper process. — `UpdateModel` uses no polling timer (only
+  `FileView` watches and one one-shot login-check `Timer` with
+  `repeat: false`, asserted by `tests/test-quickshell-update-model.sh`), so
+  there is nothing to leave running. Not independently exercised under Xvfb
+  in this environment (`xkbset` is unavailable in the sandbox this was built
+  in, matching the same pre-existing gap noted for `check-quickshell-settings-xvfb`
+  since Phase 5) — the extension to `tests/test-quickshell-settings-xvfb.sh`
+  (a stubbed `lyona-update`, IPC probes, and a real phase-progression check
+  through the stub's `apply`) is written and passes `check-shell`/
+  `check-format`, but has not itself been run end-to-end.
 
 ## Phase Completion
 

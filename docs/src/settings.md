@@ -79,3 +79,34 @@ backs up the previous managed next-login fragment, and offers **Restore login
 backup**. It does not capture the live XRandR layout. Later phases add
 connectivity, audio, power, defaults, personalization, and system-management
 operations.
+
+## System
+
+The System section shows the installed lyona version, its commit and source
+(release tarball, ISO, or developer checkout), and whether the system record,
+user record, and running binary agree. If they disagree the card turns red and
+names which of the three differs — that is the one signal a damaged install
+gives you, so it is impossible to miss.
+
+**Check for updates** compares the installed version against the configured
+channel (`stable` or `preview`) and reports current, behind, ahead, or
+offline — an unreachable update server is never treated as an error, and the
+installed version stays visible either way. When a newer release is
+available, **Update now** asks you to confirm the exact target version, then
+downloads and SHA-256-verifies the release tarball, builds it, backs up the
+live install, and installs it through one confirmed privileged step. Progress
+is shown phase by phase (downloading, verifying, building, installing,
+verifying, restarting) rather than a bare spinner, because the whole
+operation restarts Quickshell partway through and can take several minutes.
+Declining the privileged step, or a build failure, costs nothing but time —
+the live install is never left half-applied.
+
+Switch between the `stable` and `preview` channels at any time; `preview`
+carries a visible warning that pre-release builds are not release-qualified.
+Every backup taken before an update is listed with its version and date, each
+with its own **Roll back** action.
+
+See [Updating and Rollback](./updating.md) for the full walkthrough,
+including how to roll back from a bare TTY if a session will not start —
+Settings has no way to help with that case, since there is no UI to click
+when the desktop itself will not come up.
