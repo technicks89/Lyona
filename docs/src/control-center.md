@@ -17,6 +17,14 @@ The Utilities section opens the unified Settings application directly. Phase
 1 Settings is a read-only capability overview with section search and
 keyboard/mouse navigation. It can also be opened with `dwm-settings open`.
 
+The Utilities section also shows the installed lyona version, and — only when
+a newer release is available on the configured channel — an **Update
+available** row naming it. Both open Settings -> System. There is no update
+action in Control Center itself: applying an update is a multi-minute
+privileged operation that restarts Quickshell, and does not belong behind a
+one-click row next to the volume slider. See [Settings](./settings.md) and
+[Updating and Rollback](./updating.md).
+
 ---
 
 ## Network Popover

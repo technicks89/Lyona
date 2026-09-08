@@ -274,7 +274,8 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-theme" \
 	"$repo/scripts/dwm-accessibility-settings" \
 	"$repo/scripts/theme-apply.sh" \
-	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$data_home/lyona/scripts/"
+	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
+	"$data_home/lyona/scripts/"
 
 appearance_failure_fixture=$work/appearance-snapshot-failure
 mv "$data_home/lyona/scripts/dwm-settings-appearance" \
@@ -390,6 +391,69 @@ fi
 exec "$(dirname -- "$0")/dwm-settings-theme.real" "$@"
 SH
 chmod +x "$data_home/lyona/scripts/dwm-settings-theme"
+
+# UpdateModel: a fixed "behind" check response, and an apply stub that
+# writes update.status through several phases (matching the real helper's
+# own write_status cadence) so the model's phase/busy handling can be
+# observed end-to-end without a real download or privileged install.
+update_provenance_record=$work/update-user-record
+cat >"$update_provenance_record" <<'EOF'
+LYONA_VERSION=2026.08.0
+LYONA_COMMIT=abc1234
+LYONA_SOURCE=tarball
+LYONA_DATA_DIR=/tmp/lyona-xvfb-fixture
+LYONA_INSTALL_DATE=2026-08-01T00:00:00Z
+EOF
+chmod 600 "$update_provenance_record"
+cat >"$data_home/lyona/scripts/lyona-update" <<'SH'
+#!/bin/sh
+set -eu
+case "${1:-}" in
+check)
+	printf 'lyona-update-protocol\t1\t0\n'
+	printf 'state\tbehind\tA newer stable release is available\n'
+	printf 'installed\t2026.08.0\tabc1234\n'
+	printf 'available\t2026.09.0\tdef5678\t2026-09-14T09:22:07Z\n'
+	printf 'channel\tstable\n'
+	printf 'asset\tlyona-2026.09.0.tar.gz\tdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef\t4718592\n'
+	printf 'complete\tcheck\n'
+	;;
+apply)
+	status_file=${XDG_STATE_HOME:-$HOME/.local/state}/lyona/update.status
+	mkdir -p "$(dirname -- "$status_file")"
+	for phase in downloading verifying building installing; do
+		{
+			printf 'lyona-update-status-protocol\t1\t0\n'
+			printf 'phase\t%s\tSimulated %s\n' "$phase" "$phase"
+			printf 'target\t2026.09.0\n'
+			printf 'outcome\tpending\t\n'
+			printf 'timestamp\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+			printf 'complete\tstatus\n'
+		} >"$status_file"
+		sleep 0.3
+	done
+	{
+		printf 'lyona-update-status-protocol\t1\t0\n'
+		printf 'phase\trestarting\tUpdate complete\n'
+		printf 'target\t2026.09.0\n'
+		printf 'outcome\tsucceeded\t\n'
+		printf 'timestamp\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		printf 'complete\tstatus\n'
+	} >"$status_file"
+	;;
+backups)
+	printf 'lyona-update-protocol\t1\t0\n'
+	printf 'complete\tbackups\n'
+	;;
+set-channel)
+	printf 'complete\tset-channel\t%s\n' "${2:-stable}"
+	;;
+*)
+	exit 2
+	;;
+esac
+SH
+chmod +x "$data_home/lyona/scripts/lyona-update"
 
 malformed_power_snapshot=$work/malformed-power-snapshot
 mv "$data_home/lyona/scripts/dwm-quickshell-controlcenter" \
@@ -591,6 +655,8 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	DWM_SETTINGS_TEST_APPEARANCE_FAILURE="$appearance_failure_fixture" \
 	DWM_SETTINGS_TEST_WALLPAPER_STATUS="$wallpaper_status_fixture" \
 	DWM_SETTINGS_TEST_THEME_STATUS="$theme_status_fixture" \
+	DWM_TEST_SYSTEM_RECORD=/nonexistent DWM_TEST_SYSTEM_OWNER=0 \
+	DWM_TEST_USER_RECORD="$update_provenance_record" \
 	PATH="$data_home/lyona/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
@@ -684,6 +750,55 @@ if ! DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$dat
 	tail -60 "$work/quickshell.log" >&2
 	exit 1
 fi
+
+update_ipc() {
+	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings "$@"
+}
+
+# UpdateModel refreshes unconditionally on startup (matching
+# PanelSettingsModel's own Component.onCompleted), so its state is
+# observable without first navigating to the System section.
+i=0
+while [ "$i" -lt 100 ]; do
+	[ "$(update_ipc updateState)" = behind ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+test_stage='waiting for the update model to report behind'
+[ "$(update_ipc updateState)" = behind ]
+test_stage='checking update model installed/available versions'
+assert_equals '2026.08.0' "$(update_ipc updateInstalledVersion)" 'installed version from the stub check response'
+assert_equals '2026.09.0' "$(update_ipc updateAvailableVersion)" 'available version from the stub check response'
+assert_equals 'true' "$(update_ipc updateConsistent)" 'consistent from the fixture provenance record'
+assert_equals 'false' "$(update_ipc updateBusy)" 'idle before apply is triggered'
+
+test_stage='driving apply through the stub and observing phase progression'
+update_ipc updateApply 2026.09.0 >/dev/null
+i=0
+seen_phase=""
+while [ "$i" -lt 100 ]; do
+	phase=$(update_ipc updatePhase)
+	case $phase in
+	downloading | verifying | building | installing) seen_phase=$phase ;;
+	esac
+	[ "$(update_ipc updateBusy)" = false ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ -z "$seen_phase" ]; then
+	printf 'Update apply never reported a download/verify/build/install phase\n' >&2
+	exit 1
+fi
+test_stage='waiting for the stub apply to reach a terminal outcome'
+i=0
+while [ "$i" -lt 100 ]; do
+	[ "$(update_ipc updateBusy)" = false ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+assert_equals 'false' "$(update_ipc updateBusy)" 'apply completed via the stub terminal status write'
+assert_contains "$state_home/lyona/update.status" "$(printf 'outcome\tsucceeded\t')"
 
 clock_ticks=$(getconf CLK_TCK)
 baseline_cpu_percent=

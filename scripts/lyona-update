@@ -24,11 +24,12 @@ die() {
 
 usage() {
 	cat <<'EOF'
-Usage: lyona-update check    [--channel stable|preview] [--json]
-       lyona-update apply    [--version V] [--file PATH] [--from-checkout DIR]
-                             [--allow-downgrade] [--dry-run] [--yes]
-       lyona-update rollback [--backup ID] [--list] [--yes]
-       lyona-update backups  [--json]
+Usage: lyona-update check       [--channel stable|preview] [--json]
+       lyona-update apply       [--version V] [--file PATH] [--from-checkout DIR]
+                                [--allow-downgrade] [--dry-run] [--yes]
+       lyona-update rollback    [--backup ID] [--list] [--yes]
+       lyona-update backups     [--json]
+       lyona-update set-channel stable|preview
 EOF
 }
 
@@ -50,6 +51,52 @@ config_file=$config_home/lyona/update.conf
 cache_file=$cache_home/lyona/update-index.json
 updates_root=$state_home/lyona/updates
 backups_root=$state_home/lyona/live-update-backups
+status_file=$state_home/lyona/update.status
+
+# An apply restarts Quickshell (and rollback now does too, see cmd_rollback),
+# destroying whatever in-memory state the UpdateModel held. This file is how
+# it learns what happened across that restart: written at every phase
+# transition, read back on Component.onCompleted. Best-effort throughout --
+# a status write failing (disk full, an unwritable state dir) must never be
+# what turns an otherwise-successful apply into a reported failure.
+write_status() {
+	local phase=$1 detail=$2 target=${3:-} outcome=${4:-pending} message=${5:-} dir tmp
+	dir=$(dirname -- "$status_file") || return 0
+	mkdir -p "$dir" 2>/dev/null || return 0
+	tmp=$(mktemp "$dir/.update.status.XXXXXX" 2>/dev/null) || return 0
+	if ! {
+		printf 'lyona-update-status-protocol\t1\t0\n'
+		printf 'phase\t%s\t%s\n' "$phase" "$detail"
+		printf 'target\t%s\n' "$target"
+		printf 'outcome\t%s\t%s\n' "$outcome" "$message"
+		printf 'timestamp\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		printf 'complete\tstatus\n'
+	} >"$tmp" 2>/dev/null; then
+		rm -f "$tmp"
+		return 0
+	fi
+	chmod 600 "$tmp" 2>/dev/null || :
+	mv -fT "$tmp" "$status_file" 2>/dev/null || :
+}
+
+# Set as an EXIT trap by cmd_apply/cmd_rollback once they have real work to
+# report: bash's dynamic scoping means this top-level function still sees
+# those functions' locals (status_phase/status_detail/status_target/
+# status_written) even though it fires from die()'s exit, several call
+# frames below where they were declared -- there is no need to thread them
+# through explicitly.
+report_status_failure() {
+	# dev_sync_exit_status: set by dev-sync-install.sh's own trap chaining
+	# when it is sourced mid-apply/rollback, since $? by the time this runs
+	# as part of that chain is "rm -rf"'s (always 0), not the status that
+	# actually triggered the trap. Falls back to $? directly when this fires
+	# as the sole EXIT trap (a failure before dev-sync-install.sh is ever
+	# sourced).
+	local exit_status=${dev_sync_exit_status:-$?}
+	[[ ${status_written:-false} == true ]] && return 0
+	write_status "${status_phase:-idle}" "${status_detail:-}" "${status_target:-}" \
+		failed "${status_detail:-} (exit $exit_status)"
+}
 
 # --- version comparison -----------------------------------------------
 
@@ -101,9 +148,9 @@ read_config() {
 	[[ -f $config_file && ! -L $config_file ]] || return 0
 	local key value
 	while IFS='=' read -r key value || [[ -n $key ]]; do
-		# check_on_login is read for shape validation only -- consumed by
-		# the login-time check this boundary doesn't implement yet
-		# (UPDATE-003).
+		# check_on_login is read for shape validation only -- this CLI never
+		# schedules anything itself; UpdateModel.qml reads update.conf
+		# directly for the login-time check (UPDATE-003).
 		# shellcheck disable=SC2034
 		case $key in
 		channel) channel=$value ;;
@@ -117,6 +164,27 @@ read_config() {
 	# loudly rather than silently doing nothing.
 	[[ $auto_apply == false ]] || die "auto_apply=true is not supported yet; set it back to false in $config_file"
 	[[ $keep_backups =~ ^[0-9]+$ ]] || die "keep_backups must be a non-negative integer in $config_file"
+}
+
+cmd_set_channel() {
+	(($# == 1)) || die "set-channel requires exactly one value: stable or preview"
+	case $1 in
+	stable | preview) ;;
+	*) die "channel must be stable or preview: $1" ;;
+	esac
+	read_config
+	channel=$1
+	local tmp
+	tmp=$(mktemp "$(dirname "$config_file")/.update.conf.XXXXXX")
+	{
+		printf 'channel=%s\n' "$channel"
+		printf 'check_on_login=%s\n' "$check_on_login"
+		printf 'auto_apply=%s\n' "$auto_apply"
+		printf 'keep_backups=%s\n' "$keep_backups"
+	} >"$tmp"
+	chmod 600 "$tmp"
+	mv -fT "$tmp" "$config_file"
+	printf 'complete\tset-channel\t%s\n' "$channel"
 }
 
 # --- installed version -----------------------------------------------
@@ -448,6 +516,9 @@ cmd_apply() {
 	done
 	[[ -z $file_path || -z $from_checkout ]] || die "--file and --from-checkout are mutually exclusive"
 
+	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false
+	trap report_status_failure EXIT
+
 	read_config
 	read_installed
 
@@ -457,6 +528,7 @@ cmd_apply() {
 		[[ -f $from_checkout/config.mk ]] || die "not a lyona checkout: $from_checkout"
 		requested_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$from_checkout/config.mk")
 		[[ -n $requested_version ]] || die "could not read VERSION from $from_checkout/config.mk"
+		status_target=$requested_version
 		staging_dir=$from_checkout
 		install_mode=checkout
 	else
@@ -466,11 +538,13 @@ cmd_apply() {
 			[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
 			tarball=$file_path
 			[[ -n $requested_version ]] || die "--file requires --version to confirm what it contains"
+			status_target=$requested_version
 		else
 			[[ -n $requested_version ]] || {
 				resolve_release "$channel" || die "could not reach the update server; pass --file for an offline install"
 				requested_version=$release_version
 			}
+			status_target=$requested_version
 			valid_version "$requested_version" || die "not a valid version: $requested_version"
 			[[ $requested_version == "${release_version:-}" ]] || resolve_release "$channel" ||
 				die "could not look up release $requested_version"
@@ -482,7 +556,9 @@ cmd_apply() {
 			ensure_owned_directory "$updates_root" "updates"
 			tarball=$updates_root/lyona-$requested_version.tar.gz
 			[[ -n $release_asset_url ]] || die "release $requested_version has no source archive asset"
-			warn "downloading lyona-$requested_version.tar.gz"
+			status_detail="Downloading lyona-$requested_version.tar.gz"
+			write_status "$status_phase" "$status_detail" "$status_target" pending ''
+			warn "$status_detail"
 			local tmp_tarball
 			tmp_tarball=$(mktemp "$updates_root/.lyona-$requested_version.tar.gz.XXXXXX")
 			if ! curl --fail --silent --show-error --location \
@@ -500,6 +576,8 @@ cmd_apply() {
 			resolve_release "$channel" && [[ $requested_version == "$release_version" ]] && checksum=$release_checksum
 			checksum=${checksum:-unknown}
 		fi
+		status_phase=verifying status_detail='Verifying release checksum'
+		write_status "$status_phase" "$status_detail" "$status_target" pending ''
 		if [[ ${checksum:-unknown} != unknown ]]; then
 			warn "verifying checksum"
 			local actual_checksum
@@ -511,6 +589,8 @@ cmd_apply() {
 			die "refusing to install an unverified tarball"
 		fi
 
+		status_detail="Unpacking lyona-$requested_version.tar.gz"
+		write_status "$status_phase" "$status_detail" "$status_target" pending ''
 		staging_dir=$updates_root/$requested_version
 		rm -rf "$staging_dir"
 		mkdir -p "$staging_dir"
@@ -532,6 +612,8 @@ cmd_apply() {
 		die "requested version $requested_version is older than the installed $installed_version; pass --allow-downgrade to proceed"
 	fi
 
+	status_phase=building status_detail="Building $requested_version"
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "building $requested_version"
 	if ! make -C "$staging_dir" clean >/dev/null; then
 		die "failed to clean the staging tree"
@@ -541,6 +623,12 @@ cmd_apply() {
 	fi
 
 	if [[ $dry_run == true ]]; then
+		status_written=true
+		trap - EXIT
+		# A dry run isn't a real, restart-surviving operation -- remove the
+		# "building" status this same call just wrote rather than leaving a
+		# stale pending record for a build that already finished.
+		rm -f "$status_file"
 		printf 'dry run: would back up the live install, then write:\n'
 		printf '  %s/bin (system commands and dwm)\n' "${PREFIX:-/usr/local}"
 		printf '  %s/libexec/lyona (privileged helpers)\n' "${PREFIX:-/usr/local}"
@@ -566,10 +654,14 @@ cmd_apply() {
 		. "$script_dir/dev-sync-install.sh"
 	prepare_expected_files
 
-	warn "backing up the live installation"
+	status_phase=installing status_detail='Backing up the live installation'
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	warn "$status_detail"
 	backup_live_install
 
-	warn "installing $requested_version (this step requires authentication)"
+	status_detail="Installing $requested_version (authentication required)"
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	warn "$status_detail"
 	local privileged_install_ok=true
 	if [[ $install_mode == release ]]; then
 		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" ||
@@ -587,13 +679,20 @@ cmd_apply() {
 		die "the user-level install step failed after the system files were already updated; run lyona-update rollback"
 	fi
 
-	warn "verifying the installed state"
+	status_phase=verifying-install status_detail='Verifying installed state'
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	warn "$status_detail"
 	verify_install || die "the live installation does not match the staged update; run lyona-update rollback"
 
-	warn "runtime check"
+	status_phase=restarting status_detail='Restarting Quickshell'
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	warn "$status_detail"
 	runtime_verify 1 || warn "runtime validation reported a problem; see above"
 
 	prune_backups
+	status_written=true
+	write_status restarting 'Update complete' "$status_target" succeeded ''
+	trap - EXIT
 	printf 'complete\tapply\t%s\n' "$requested_version"
 }
 
@@ -709,6 +808,10 @@ cmd_rollback() {
 	esac
 	[[ -d $backup_dir && ! -L $backup_dir ]] || die "backup not found: $backup_id"
 
+	local status_phase=restarting status_detail="Verifying backup $backup_id" status_target=$backup_id status_written=false
+	trap report_status_failure EXIT
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+
 	verify_backup_checksums "$backup_dir"
 
 	local checkout_file=$backup_dir/checkout.txt
@@ -733,6 +836,8 @@ cmd_rollback() {
 		esac
 	fi
 
+	status_detail="Restoring backup $backup_id"
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "restoring system files (this step requires authentication)"
 	run_privileged restore-system "$backup_dir" ||
 		die "the privileged restore step failed or was declined"
@@ -746,7 +851,30 @@ cmd_rollback() {
 
 	local restored_version
 	restored_version=$(backup_version_of "$backup_id")
-	printf 'SESSION RESTART REQUIRED: log out and back in to activate %s.\n' "${restored_version:-the restored version}"
+	status_target=${restored_version:-$backup_id}
+
+	# Matches apply's own step 9: a rollback triggered live from the Settings
+	# pane should take effect without a full logout whenever that's safe, and
+	# the pane needs the same completion signal apply gives it. runtime_verify
+	# itself defers to a session restart -- printing that requirement -- only
+	# when the restored dwm binary actually differs from the running one, and
+	# defers entirely (prints nothing actionable) when DISPLAY is unavailable,
+	# which is exactly the bare-TTY case this command exists for; that case
+	# gets its own explicit instruction below instead.
+	status_phase=restarting status_detail='Restarting Quickshell'
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	# shellcheck source=scripts/dev-sync-install.sh
+	DEV_SYNC_INSTALL_LIB_ONLY=1 DEV_SYNC_INSTALL_REPO_DIR=$backup_dir \
+		. "$script_dir/dev-sync-install.sh"
+	if [[ -z ${DISPLAY:-} ]]; then
+		printf 'Log in now to start using %s.\n' "${restored_version:-the restored version}"
+	else
+		runtime_verify 1 || warn "runtime validation reported a problem; see above"
+	fi
+
+	status_written=true
+	write_status restarting 'Rollback complete' "$status_target" succeeded ''
+	trap - EXIT
 	printf 'complete\trollback\t%s\n' "${restored_version:-unknown}"
 }
 
@@ -763,6 +891,7 @@ check) cmd_check "$@" ;;
 apply) cmd_apply "$@" ;;
 rollback) cmd_rollback "$@" ;;
 backups) cmd_backups "$@" ;;
+set-channel) cmd_set_channel "$@" ;;
 -h | --help)
 	usage
 	exit 0

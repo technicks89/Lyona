@@ -14,6 +14,7 @@ ClickAwayPopup {
     required property var powerMenuModel
     required property var powerModel
     required property var settingsModel
+    required property var updateModel
 
     readonly property int cardWidth: Theme.controlCenterWidth
     readonly property int maximumHeight: panelWindow && panelWindow.screen
@@ -72,6 +73,14 @@ ClickAwayPopup {
         root.controlCenterModel.close();
         Qt.callLater(function() {
             root.settingsModel.openOnScreen(targetScreen);
+        });
+    }
+
+    function openSystemUpdate() {
+        const targetScreen = root.panelWindow ? root.panelWindow.screen : null;
+        root.controlCenterModel.close();
+        Qt.callLater(function() {
+            root.settingsModel.openOnScreen(targetScreen, "system");
         });
     }
 
@@ -297,6 +306,20 @@ ClickAwayPopup {
                         Layout.fillWidth: true
                         label: "System Info"
                         onActivated: root.openSystemInfo()
+                    }
+                    MenuRow {
+                        Layout.fillWidth: true
+                        label: "lyona version"
+                        detail: root.updateModel.installedVersion.length > 0
+                            ? root.updateModel.installedVersion : "Unknown"
+                        onActivated: root.openSystemUpdate()
+                    }
+                    MenuRow {
+                        Layout.fillWidth: true
+                        visible: root.updateModel.updateAvailable
+                        label: "Update available: " + root.updateModel.availableVersion
+                        navigates: true
+                        onActivated: root.openSystemUpdate()
                     }
                 }
 

@@ -7,5 +7,6 @@
 - [Theming](./theming.md)
 - [Control Center](./control-center.md)
 - [Settings](./settings.md)
+- [Updating and Rollback](./updating.md)
 - [How lyona Works](./patches.md)
 - [Troubleshooting](./troubleshooting.md)

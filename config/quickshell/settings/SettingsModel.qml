@@ -26,6 +26,7 @@ Scope {
     property var appearanceModel: null
     property var accessibilityModel: null
     property var panelSettingsModel: null
+    property var updateModel: null
     property var capabilities: []
     property int selectedIndex: 0
     property var displayOutputs: []
@@ -197,6 +198,10 @@ Scope {
         if (id === "appearance" && root.panelSettingsModel) root.panelSettingsModel.refresh();
         if (id === "displays") root.refreshDisplays();
         if (id === "input") root.refreshInput();
+        if (id === "system" && root.updateModel) {
+            root.updateModel.refresh();
+            root.updateModel.refreshBackups();
+        }
     }
 
     function parseDisplays(text) {
@@ -653,25 +658,33 @@ Scope {
         providerProcess.running = true;
     }
 
-    function openWindow() {
+    function openWindow(sectionId) {
         root.visible = true;
         root.searchQuery = "";
-        root.selectedIndex = 0;
-        root.selectedSectionId = root.sections[0].id;
+        const targetId = sectionId || root.sections[0].id;
+        let targetIndex = 0;
+        for (let index = 0; index < root.sections.length; index++) {
+            if (root.sections[index].id === targetId) {
+                targetIndex = index;
+                break;
+            }
+        }
+        root.selectedIndex = targetIndex;
+        root.selectedSectionId = targetId;
         root.refresh();
         root.activateSection(root.selectedSectionId);
 		root.recoverDisplayPreview();
 		root.recoverInputPreview();
     }
 
-    function open() {
+    function open(sectionId) {
         root.targetScreen = null;
-        root.openWindow();
+        root.openWindow(sectionId);
     }
 
-    function openOnScreen(screen) {
+    function openOnScreen(screen, sectionId) {
         root.targetScreen = screen;
-        root.openWindow();
+        root.openWindow(sectionId);
     }
 
     function close() {

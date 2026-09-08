@@ -336,6 +336,44 @@ if PREFIX=/usr/local run_update rollback --backup 20260101T000000Z-1 --yes \
 fi
 assert_contains "$work/out" 'different environment'
 
+# ── set-channel: seeds, persists, preserves other keys, rejects garbage ──
+reset_curl_responses
+status=$(run_update set-channel stable)
+assert_string_contains "$status" "$(printf 'complete\tset-channel\tstable')"
+assert_contains "$config_home/lyona/update.conf" 'channel=stable'
+status=$(run_update set-channel preview)
+assert_string_contains "$status" "$(printf 'complete\tset-channel\tpreview')"
+assert_contains "$config_home/lyona/update.conf" 'channel=preview'
+assert_contains "$config_home/lyona/update.conf" 'check_on_login=true'
+assert_contains "$config_home/lyona/update.conf" 'keep_backups=5'
+if run_update set-channel bogus >"$work/out" 2>&1; then
+	fail "set-channel with a bogus value unexpectedly succeeded"
+fi
+assert_contains "$work/out" 'channel must be stable or preview'
+assert_contains "$config_home/lyona/update.conf" 'channel=preview'
+run_update set-channel stable >/dev/null
+
+# ── apply: writes update.status at each unprivileged phase, and reports
+#    failure (not a stale "pending") once the privileged step is reached ──
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+status_file="$state_home/lyona/update.status"
+rm -f "$status_file"
+if run_update apply --from-checkout "$repo" --allow-downgrade --yes \
+	>"$work/out" 2>&1; then
+	fail "apply unexpectedly succeeded with no privileged helper installed"
+fi
+assert_file "$status_file"
+assert_contains "$status_file" "$(printf 'outcome\tfailed')"
+assert_not_contains "$status_file" "$(printf 'outcome\tpending')"
+
+# ── apply --dry-run: leaves no status file (nothing to report) ─────────
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+rm -f "$status_file"
+run_update apply --from-checkout "$repo" --allow-downgrade --dry-run >/dev/null
+assert_no_file "$status_file"
+
 # ── --help / usage ───────────────────────────────────────────────────────
 status=$(run_update --help)
 assert_string_contains "$status" 'Usage: lyona-update'

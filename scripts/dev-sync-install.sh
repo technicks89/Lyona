@@ -137,7 +137,29 @@ done
 make_path=$(command -v "$make_command")
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/dwm-dev-sync.XXXXXX")
-trap 'rm -rf "$work"' EXIT HUP INT TERM
+# A caller sourcing this file in LIB_ONLY mode may already have its own EXIT
+# trap registered (lyona-update's apply/rollback use one to report a failed
+# status on any die() from here on). `trap` silently replaces whatever was
+# there, so any existing handler is captured and chained instead of clobbered
+# -- the same class of fix as die()'s command -v guard above, for traps
+# instead of functions.
+# shellcheck disable=SC3045 # trap -p is not POSIX Base, but this project's
+# /bin/sh is bash on its only supported platform (Arch), and dash supports it
+# too; there is no portable alternative for reading back an existing trap.
+dev_sync_previous_exit_trap=$(trap -p EXIT | sed -n "s/^trap -- '\\(.*\\)' EXIT\$/\\1/p")
+if [ -n "$dev_sync_previous_exit_trap" ]; then
+	# dev_sync_exit_status is captured before "rm -rf" runs and left in the
+	# environment for the chained handler to read: $? right before that
+	# handler runs would otherwise be rm's own (always 0), not the status
+	# that actually triggered this trap.
+	# shellcheck disable=SC2064 # deliberately expanded now: $work and the
+	# captured trap command are both already fully resolved, and must be
+	# baked into the chained trap string as it is set, not re-evaluated
+	# later against whatever $work/$dev_sync_previous_exit_trap then hold.
+	trap "dev_sync_exit_status=\$?; rm -rf \"$work\"; $dev_sync_previous_exit_trap" EXIT HUP INT TERM
+else
+	trap 'rm -rf "$work"' EXIT HUP INT TERM
+fi
 install_sources_file=$work/install-sources
 expected_man=$work/dwm.1
 expected_xsession=$work/dwm.desktop
