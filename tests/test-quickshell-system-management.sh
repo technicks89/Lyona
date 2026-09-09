@@ -40,7 +40,7 @@ grep -Fq 'if (snapshotProcess.running) snapshotProcess.running = false;' "$syste
 # per call. A request that arrives while one is already in flight is
 # recorded (snapshotPending) and replayed once, never launched as a second
 # overlapping process.
-grep -Fq 'if (root.snapshotOwned) {' "$system_model"
+grep -Fq 'if (root.snapshotOwned || snapshotProcess.running) {' "$system_model"
 grep -Fq 'root.snapshotPending = true;' "$system_model"
 grep -Fq 'if (!discoveryModel.canTake()) return;' "$system_model"
 grep -Fq 'discoveryModel.open();' "$system_model"
@@ -52,6 +52,29 @@ grep -Fq 'discoveryModel.complete(snapshotProcess.cycleToken, successful);' "$sy
 grep -Fq 'SystemUpdateDiscovery {' "$system_model"
 grep -Fq 'readonly property alias discovery: discoveryModel' "$system_model"
 grep -Fq 'readonly property string discoveryDetail: discoveryModel.detail' "$system_model"
+
+# Relaunch-ordering fix: StdioCollector.onStreamFinished can run before
+# Process.running actually flips to false, and Qt.callLater gives no
+# ordering guarantee relative to that transition either. Ownership must
+# therefore be freed -- and any pending relaunch scheduled -- only from the
+# real onRunningChanged(!running) observation, never from finishSnapshot
+# (which onStreamFinished can call while the old process is still running).
+# finishSnapshot must be bookkeeping-only.
+grep -Fq 'snapshotProcess.cycleToken = null;' "$system_model"
+finish_snapshot_body=$(awk '/^    function finishSnapshot\(successful\) \{/,/^    \}/' "$system_model")
+if printf '%s\n' "$finish_snapshot_body" | grep -q 'snapshotOwned = false\|snapshotProcess.running = true'; then
+	printf 'finishSnapshot must not touch ownership or relaunch directly; that belongs in onRunningChanged.\n' >&2
+	exit 1
+fi
+running_changed_body=$(awk '/^        onRunningChanged: if \(!running\) \{/,/^        \}$/' "$system_model")
+if ! printf '%s\n' "$running_changed_body" | grep -q 'root.snapshotOwned = false;'; then
+	printf 'onRunningChanged must clear snapshotOwned once the process is confirmed not running.\n' >&2
+	exit 1
+fi
+if ! printf '%s\n' "$running_changed_body" | grep -q 'Qt.callLater(function() {'; then
+	printf 'onRunningChanged must queue the pending relaunch, not call requestSnapshot synchronously.\n' >&2
+	exit 1
+fi
 
 # The fetch goes through the plain checkedCommand gate, not
 # terminatingCheckedCommand -- this is a one-shot bounded read, not the

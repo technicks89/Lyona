@@ -93,7 +93,6 @@ Scope {
         discoveryModel.close();
         root.snapshotPending = false;
         if (snapshotProcess.running) snapshotProcess.running = false;
-        root.snapshotOwned = false;
     }
 
     function refresh() {
@@ -107,8 +106,20 @@ Scope {
     // discoveryModel.take()/beforePublish()/complete() so a signal arriving
     // mid-read schedules exactly one follow-up settling read rather than a
     // read per signal.
+    //
+    // Guarded on snapshotProcess.running as well as snapshotOwned:
+    // StdioCollector.onStreamFinished fires before Quickshell.Io.Process
+    // updates `running` to false, and Qt.callLater does not guarantee it
+    // runs after that transition either. A queued relaunch (or any other
+    // caller) can therefore reach this function while the previous process
+    // has not actually exited yet -- reassigning `running` to `true` while
+    // it is already `true` is a no-op, silently dropping the new read. Both
+    // snapshotOwned and the relaunch itself are cleared/scheduled only from
+    // onRunningChanged's real not-running transition below, never from
+    // finishSnapshot, so this guard should never trip in practice; it stays
+    // as the actual authority a caller cannot get out of sync with.
     function requestSnapshot() {
-        if (root.snapshotOwned) {
+        if (root.snapshotOwned || snapshotProcess.running) {
             root.snapshotPending = true;
             return;
         }
@@ -123,15 +134,12 @@ Scope {
         snapshotProcess.running = true;
     }
 
+    // Cycle bookkeeping only -- ownership and the next launch are handled
+    // separately, gated on the process's real exit (see requestSnapshot).
     function finishSnapshot(successful) {
         discoveryModel.beforePublish(snapshotProcess.cycleToken);
         discoveryModel.complete(snapshotProcess.cycleToken, successful);
-        root.snapshotOwned = false;
-        // The old process emits runningChanged after exited; queue the next
-        // launch so that signal cannot finalize a new run's ownership.
-        Qt.callLater(function() {
-            if (root.snapshotPending && root.settingsVisible) root.requestSnapshot();
-        });
+        snapshotProcess.cycleToken = null;
     }
 
     function parseSnapshot(text) {
@@ -284,10 +292,23 @@ Scope {
         running: false
         stdout: StdioCollector { onStreamFinished: root.finishSnapshot(root.parseSnapshot(this.text)) }
         stderr: StdioCollector { id: snapshotError }
-        onRunningChanged: if (!running && !root.snapshotAttempted) {
-            root.resetToFallback(snapshotError.text.trim().length > 0
-                ? snapshotError.text.trim() : "System management provider did not return a result");
-            root.finishSnapshot(false);
+        onRunningChanged: if (!running) {
+            if (!root.snapshotAttempted) {
+                root.resetToFallback(snapshotError.text.trim().length > 0
+                    ? snapshotError.text.trim() : "System management provider did not return a result");
+                root.finishSnapshot(false);
+            }
+            // The process is now confirmed exited -- only here is it safe to
+            // free ownership and consider relaunching. Queueing the relaunch
+            // still matters (this handler runs inside the same exit
+            // notification a fresh Process.running assignment would race
+            // against), but gating it behind a real `!running` observation
+            // (rather than firing from finishSnapshot's onStreamFinished,
+            // which can run first) is what actually closes the race.
+            root.snapshotOwned = false;
+            Qt.callLater(function() {
+                if (root.snapshotPending && root.settingsVisible) root.requestSnapshot();
+            });
         }
     }
 }

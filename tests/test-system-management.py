@@ -20,6 +20,7 @@ import importlib.util
 import importlib.machinery
 import io
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -261,6 +262,14 @@ class UpdateEventMonitorTests(unittest.TestCase):
             backend.assert_not_called()
 
     def test_real_private_bus_signals_lifecycle_and_lost_output(self):
+        if shutil.which("dbus-run-session") is None:
+            self.skipTest("dbus-run-session is unavailable")
+        try:
+            import gi
+
+            gi.require_version("Gio", "2.0")
+        except (ImportError, ValueError):
+            self.skipTest("System Python GObject bindings are unavailable")
         result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
             str(REPO / "tests/fixtures/system-update-events-bus.py"), str(PROVIDER_PATH)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)

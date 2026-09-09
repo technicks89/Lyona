@@ -270,7 +270,7 @@ test_stage='validating no watch-updates monitor survives the closed window'
 i=0
 still_running=1
 while [ "$i" -lt 30 ]; do
-	if ! pgrep -f 'dwm-system-management watch-updates' >/dev/null 2>&1; then
+	if ! pgrep -f "$work.*dwm-system-management watch-updates" >/dev/null 2>&1; then
 		still_running=0
 		break
 	fi

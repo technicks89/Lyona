@@ -522,6 +522,33 @@ mutation and the recovery journal are next.
   monitor reaches `ready` (or `failed`) — up to 12 s in the pathological
   case — instead of being masked by data fetched before the user ever
   opened Settings.
+  **Bug found and fixed after review**: the relaunch-on-completion logic
+  originally lived in `finishSnapshot()`, called from
+  `StdioCollector.onStreamFinished` — which fires *before*
+  `Quickshell.Io.Process` updates `running` to `false`, and `Qt.callLater`
+  gives no ordering guarantee relative to that transition either. A queued
+  relaunch (or `discoveryModel`'s own `complete()`-triggered
+  `snapshotRequested` signal, which fires from the same call) could
+  therefore reach `requestSnapshot()` while the previous process was still
+  reported `running`. Reassigning `snapshotProcess.running` to `true` while
+  it is already `true` is a no-op, so the new read silently never launched
+  — and when the *old* process's real `runningChanged` eventually fired,
+  its `!root.snapshotAttempted` fallback path (guarded by a flag the new,
+  never-launched call had already reset to `false`) completed the *new*
+  cycle with the *old* process's exit. Fixed by moving all ownership
+  clearing and the relaunch trigger into `onRunningChanged`'s real
+  `!running` observation — the only point that observation is trustworthy
+  — leaving `finishSnapshot()` as pure cycle bookkeeping; `closeSettings()`
+  no longer clears `snapshotOwned` directly either, for the same reason.
+  Also added the explicit `snapshotProcess.running` guard in
+  `requestSnapshot()` itself (defense in depth: correct now that ownership
+  is gated properly, but keeps any future caller from reintroducing the
+  no-op-reassignment failure mode) and clear `snapshotProcess.cycleToken`
+  once a cycle completes. Verified by reverting to the pre-fix shape and
+  confirming the extended static contract test — which checks
+  `finishSnapshot()` never touches ownership/relaunch and
+  `onRunningChanged` is the sole place that does — fails against it, then
+  passes again with the fix restored.
 - [x] `SystemSettingsPane.qml`: surfaces `discoveryDetail` as a warning line
   ("Connecting to update change notifications...", the settling-read
   reconciliation message, or the failed-monitor message) — **Met**.

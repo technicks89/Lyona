@@ -10,6 +10,7 @@ function begin(cycle) {
     cycle.phase = "initial-pending";
     cycle.dirty = false;
     cycle.forceSettle = cycle.unresolved;
+    cycle.unresolved = false;
     cycle.settlingDirty = false;
 }
 
