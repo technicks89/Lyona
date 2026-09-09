@@ -129,6 +129,15 @@ snapshot)
 	printf 'package-change\tlinux-cachyos;6.18.1-1;x86_64;core\tupdate\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	printf 'complete\tsnapshot\n'
 	;;
+watch-updates)
+	# Real bus signals are exercised for real by
+	# tests/test-system-management.py's UpdateEventMonitorTests; this stub
+	# only needs to prove the QML side coalesces through discoveryModel
+	# correctly once a monitor reaches ready.
+	printf 'update-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
 *)
 	exit 2
 	;;
@@ -198,6 +207,19 @@ test_stage='validating parsed snapshot content'
 # update pending) round-trips through the model's own enum validation.
 [ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
 
+# The snapshot only loaded because the discovery monitor reached ready and
+# coalesced the read through it (SystemManagementModel no longer fires a
+# read directly on open) -- confirm the monitor itself is actually up, not
+# just that a read eventually happened some other way.
+discovery_status=$(ipc settings systemManagementDiscoveryStatus)
+case $discovery_status in
+idle:ready) ;;
+*)
+	printf 'Discovery monitor did not reach idle:ready: %s\n' "$discovery_status" >&2
+	exit 1
+	;;
+esac
+
 # These assert directly on systemManagementModel.settingsVisible (exposed
 # for exactly this) rather than on timing or process survival. A stub delay
 # or "does the next fetch complete" proxy cannot isolate this: every real
@@ -236,6 +258,27 @@ ipc settings select system >/dev/null
 ipc settings close >/dev/null
 if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after closing the Settings window\n' >&2
+	exit 1
+fi
+
+test_stage='validating no watch-updates monitor survives the closed window'
+# Unlike the bounded snapshot fetch (checkedCommand's orphaned
+# command-substitution child makes "did the process exit" an unreliable
+# proxy -- see above), the stub's watch-updates only exits on SIGTERM, so
+# this actually proves stopMonitor()'s signal(15)-then-signal(9) reaches the
+# real long-running process rather than just resetting QML-side state.
+i=0
+still_running=1
+while [ "$i" -lt 30 ]; do
+	if ! pgrep -f "$work.*dwm-system-management watch-updates" >/dev/null 2>&1; then
+		still_running=0
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.1
+done
+if [ "$still_running" -eq 1 ]; then
+	printf 'dwm-system-management watch-updates survived the Settings window closing\n' >&2
 	exit 1
 fi
 

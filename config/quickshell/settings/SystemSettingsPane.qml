@@ -258,6 +258,14 @@ Flickable {
             wrapMode: Text.WordWrap
         }
 
+        UiText {
+            Layout.fillWidth: true
+            visible: root.systemManagementModel.discoveryDetail.length > 0
+            text: root.systemManagementModel.discoveryDetail
+            color: Theme.warning
+            wrapMode: Text.WordWrap
+        }
+
         SectionLabel { label: "System updates" }
 
         GridLayout {

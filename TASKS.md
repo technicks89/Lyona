@@ -449,6 +449,152 @@ Acceptance:
   `packagekit` uninstalled on a live system) remain unverified here, carried
   forward from Sync Phase 1/2's same open prerequisite.
 
+### Sync Phase 4: Live Discovery Monitoring
+
+Upstream: `#237`, `#238`, `#260`. Doc: `docs/SYNC-P4-DISCOVERY-EVENTS.md`.
+Replaces "click Reload status and hope" with a bounded subscription: while
+the System pane is open, the helper watches PackageKit's manager signals and
+tells the shell when to re-read. **The last read-only Sync Phase** —
+mutation and the recovery journal are next.
+
+- [x] `scripts/dwm-system-management`: `UpdateEventMonitor`, `watch_update_events()`,
+  the `watch-updates` command — ported from upstream's real `a30f5fed`
+  (#238) source (fetched and read in full, not worked from the doc's
+  paraphrase). Distro-neutral: it only subscribes to PackageKit manager
+  signals over raw `Gio` D-Bus, never touches `PackageKitGlib`'s
+  alpm-vs-dnf-backend-specific transaction machinery. — **Met**,
+  `check-system-management` (30 tests, up from 19 — 10 new
+  `UpdateEventMonitorTests`, including a real `dbus-run-session`
+  integration test against `tests/fixtures/system-update-events-bus.py`,
+  actually run in this sandbox, not just written).
+- [x] `config/quickshell/systemmanagement/SystemDiscoveryCycle.js` (new, 71
+  lines) — the pure two-round (initial/settling) cycle state machine,
+  ported verbatim. — **Met**. Directly unit-tested (not only through the
+  UI, per the doc's own instruction) with 16 cases via `qmltestrunner`
+  (Qt's official QML `TestCase` harness, already a hard dependency of this
+  shell — `qmltestrunner` ships with `qt6-declarative`, which `quickshell`
+  itself depends on). **Environment gotcha found and fixed**: this Arch dev
+  host has both `qt5-declarative` and `qt6-declarative` installed, and the
+  plain `qmltestrunner` resolved via `PATH` is the Qt5 build — a
+  *different* binary, not a symlink — which silently exits nonzero with
+  zero output on this file's Qt6-only `import QtQuick`/`import QtTest`.
+  The test script now targets `/usr/lib/qt6/bin/qmltestrunner` explicitly.
+- [x] `config/quickshell/systemmanagement/SystemProviderDiscovery.qml` (new,
+  ~200 lines) and `SystemUpdateDiscovery.qml` (new, 3 lines) — the
+  generic, five-domain-capable lifecycle ported directly from upstream's
+  `a6d65c08` (#260) refactored form, per the doc's own instruction not to
+  write an updates-only version first. Only `domain: "updates"` has a
+  helper behind it at this boundary; `time`/`locale`/`accounts`/`printers`
+  are Sync Phase 9. — **Met**.
+  **Correction to the phase document, found during implementation**: the
+  doc's "Lyona adaptation" instructed wrapping `monitor.command` in
+  `Commands.terminatingCheckedCommand(...)`. This is wrong for a streaming
+  event source and was caught by the xvfb test genuinely failing (the
+  snapshot never left `"idle"` once the fixture stub actually implemented
+  `watch-updates` as a real resident process instead of exiting
+  immediately) — both `checkedCommand` and `terminatingCheckedCommand`
+  redirect the wrapped command's stdout to a temp file and only `cat` it
+  once the child exits, which defeats live line-by-line streaming entirely
+  (`ready`/`changed` would only ever arrive as one batch at shutdown, after
+  `SplitParser` has nothing left to read incrementally). Fixed by using
+  `Commands.systemManagementCommand(action, args)` directly, unwrapped —
+  matching upstream's own code exactly. This carries no orphaning risk
+  either: `helperCommand`'s own script chain reaches the real helper via
+  `exec`, so this `Process`'s PID already *is* the helper, and
+  `monitor.signal(15)`/`monitor.signal(9)` reach it directly. Also fixed
+  along the way: a duplicate `onExited` handler tripped
+  `quickshell-qmllint` (`QProcess::ExitStatus` isn't exposed to it); removed
+  as genuinely redundant with the existing `onRunningChanged` handler, which
+  already covers every exit path.
+- [x] `SystemManagementModel.qml`: owns a `SystemUpdateDiscovery`, coalesces
+  reads through `take()`/`beforePublish()`/`complete()` rather than firing
+  one snapshot fetch per signal — a request arriving mid-fetch is recorded
+  (`snapshotPending`) and replayed exactly once. `openSettings()` /
+  `closeSettings()` now delegate to the discovery model instead of firing
+  an eager fetch directly. **Deliberate simplification**: upstream's
+  `Component.onCompleted: Qt.callLater(operationModel.requestSnapshot)`
+  (an eager read at whole-app startup, independent of the pane ever being
+  opened) was not ported — it exists to prewarm data before first open, but
+  it's tied to `operationModel` (Sync Phase 6+, not built yet), and adding
+  a bespoke prewarm call for this phase alone would contradict Sync Phase
+  3's own established "never polled, on-demand only while `settingsVisible`"
+  contract. The tradeoff: first-open latency now depends on how quickly the
+  monitor reaches `ready` (or `failed`) — up to 12 s in the pathological
+  case — instead of being masked by data fetched before the user ever
+  opened Settings.
+  **Bug found and fixed after review**: the relaunch-on-completion logic
+  originally lived in `finishSnapshot()`, called from
+  `StdioCollector.onStreamFinished` — which fires *before*
+  `Quickshell.Io.Process` updates `running` to `false`, and `Qt.callLater`
+  gives no ordering guarantee relative to that transition either. A queued
+  relaunch (or `discoveryModel`'s own `complete()`-triggered
+  `snapshotRequested` signal, which fires from the same call) could
+  therefore reach `requestSnapshot()` while the previous process was still
+  reported `running`. Reassigning `snapshotProcess.running` to `true` while
+  it is already `true` is a no-op, so the new read silently never launched
+  — and when the *old* process's real `runningChanged` eventually fired,
+  its `!root.snapshotAttempted` fallback path (guarded by a flag the new,
+  never-launched call had already reset to `false`) completed the *new*
+  cycle with the *old* process's exit. Fixed by moving all ownership
+  clearing and the relaunch trigger into `onRunningChanged`'s real
+  `!running` observation — the only point that observation is trustworthy
+  — leaving `finishSnapshot()` as pure cycle bookkeeping; `closeSettings()`
+  no longer clears `snapshotOwned` directly either, for the same reason.
+  Also added the explicit `snapshotProcess.running` guard in
+  `requestSnapshot()` itself (defense in depth: correct now that ownership
+  is gated properly, but keeps any future caller from reintroducing the
+  no-op-reassignment failure mode) and clear `snapshotProcess.cycleToken`
+  once a cycle completes. Verified by reverting to the pre-fix shape and
+  confirming the extended static contract test — which checks
+  `finishSnapshot()` never touches ownership/relaunch and
+  `onRunningChanged` is the sole place that does — fails against it, then
+  passes again with the fix restored.
+- [x] `SystemSettingsPane.qml`: surfaces `discoveryDetail` as a warning line
+  ("Connecting to update change notifications...", the settling-read
+  reconciliation message, or the failed-monitor message) — **Met**.
+- [x] `shell.qml`: `systemManagementDiscoveryStatus()` IPC probe — **Met**.
+- [x] `tests/test-quickshell-system-management.sh` (Sync Phase 3's static
+  contract test) updated for the new coalescing shape (the old
+  `if (!root.settingsVisible || snapshotProcess.running) return;` guard
+  moved into `requestSnapshot()`) and extended with Sync Phase 4 assertions
+  (cycle/discovery wiring, the unwrapped `monitor.command`, the 12 s/1.5 s
+  timers, `monitor.signal(15)`/`monitor.signal(9)`, the Python
+  `UpdateEventMonitor`/`watch_update_events` dispatch, and that the monitor
+  code never imports `PackageKitGlib`). — **Met**.
+- [x] `tests/test-quickshell-system-management-xvfb.sh` extended: the stub
+  `dwm-system-management` now implements `watch-updates` for real (emits
+  `ready`, then blocks on `SIGTERM` like the genuine helper does, rather
+  than exiting immediately) so the coalesced-read-via-discovery path is
+  exercised for real, not bypassed through the `failed` fallback. Verifies
+  `systemManagementDiscoveryStatus` reaches `idle:ready`, and — because the
+  monitor is now a genuinely long-running process instead of the bounded
+  snapshot fetch (whose `pgrep`-based liveness checks turned out unsound;
+  see Sync Phase 3's fix note) — a real `pgrep -f 'dwm-system-management
+  watch-updates'` check that confirms `stopMonitor()`'s
+  `signal(15)`-then-`signal(9)` sequence actually reaches and kills the
+  resident process when the Settings window closes. — **Met**, and actually
+  run in this sandbox: `check-quickshell-system-management-xvfb` passes,
+  including this new orphan-process assertion.
+
+Acceptance:
+
+- `make check-quickshell-qml check-system-management
+  check-quickshell-system-management check-quickshell-system-management-xvfb
+  check-quickshell-system-discovery-cycle` all pass — **Met**, and (unlike
+  every prior Sync Phase) every leg here is real executed coverage in this
+  sandbox: the Python monitor against a real private D-Bus session, the
+  pure JS state machine via `qmltestrunner`, and the full QML lifecycle via
+  a genuinely long-running Xvfb stub.
+- `make check-quickshell-large-surfaces-xvfb` still passes with closed-shell
+  CPU at baseline (0.50%, within the established threshold) — **Met**,
+  confirming the discovery monitor (a blocked `GLib.MainLoop`, per the doc)
+  adds no busy-polling.
+- The doc's remaining manual CachyOS-install checks (`pkcon refresh`
+  triggering a re-read live, PackageKit restart recovery via
+  `NameOwnerChanged`, a real `pacman -Syu` reaching `blocked` rather than a
+  read-per-signal storm) remain unverified here — no live PackageKit daemon
+  in this sandbox, the same open prerequisite carried since Sync Phase 1.
+
 ## Phase Completion
 
 When all Phase 6 acceptance criteria pass:

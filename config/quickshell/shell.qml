@@ -949,6 +949,12 @@ ShellRoot {
             return systemManagementModel.settingsVisible;
         }
 
+        function systemManagementDiscoveryStatus(): string {
+            const discovery = systemManagementModel.discovery;
+            return discovery.phase + ":" + (discovery.ready ? "ready"
+                : discovery.failed ? "failed" : "inactive");
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }
