@@ -874,6 +874,7 @@ class UpdateEventMonitor:
     """Read-only manager signals, with bounded setup and no transaction calls."""
 
     def __init__(self, Gio, GLib, GLibUnix, emit: Callable[[str], None]) -> None:
+        """Initialize the monitor with injectable GLib bindings and output."""
         self.Gio, self.GLib, self.GLibUnix = Gio, GLib, GLibUnix
         self.emit = emit
         self.loop = GLib.MainLoop()
@@ -894,6 +895,7 @@ class UpdateEventMonitor:
         self.owner_epoch = 0
 
     def stop(self, code: int) -> None:
+        """Stop the event loop once while preserving the first exit status."""
         if self.stopped:
             return
         self.stopped = True
@@ -902,12 +904,14 @@ class UpdateEventMonitor:
         self.loop.quit()
 
     def write(self, record: str) -> None:
+        """Emit one protocol record or stop when the consumer is unavailable."""
         try:
             self.emit(record)
         except OSError:
             self.stop(1)
 
     def changed(self, *_args) -> None:
+        """Coalesce setup-time changes or publish a change after readiness."""
         if self.stopped:
             return
         if not self.ready:
@@ -916,12 +920,14 @@ class UpdateEventMonitor:
             self.write("update-event\tchanged")
 
     def global_changed(self, _connection, sender, _path, _interface, _member, _parameters, _data) -> None:
+        """Accept manager signals only from the current PackageKit owner."""
         # The bus-side match restricts the well-known sender. Avoid GDBus's
         # implicit name cache, whose lookup failures cannot be observed here.
         if not self.ready or sender == self.owner:
             self.changed()
 
     def owner_changed(self, _connection, _sender, _path, _interface, _member, parameters, _data) -> None:
+        """Invalidate state when the PackageKit well-known name changes owner."""
         if self.stopped:
             return
         name, _old, new = parameters.unpack()
@@ -931,6 +937,7 @@ class UpdateEventMonitor:
             self.changed()
 
     def owner_resolved(self, connection, result, epoch) -> None:
+        """Finish initial owner lookup and publish readiness for this epoch."""
         if self.stopped:
             return
         if time.monotonic() >= self.deadline:
@@ -955,6 +962,7 @@ class UpdateEventMonitor:
         self.dirty = False
 
     def match_finished(self, connection, result, rule) -> None:
+        """Install the next fixed match after the bus confirms this rule."""
         if self.stopped:
             return
         if time.monotonic() >= self.deadline:
@@ -975,6 +983,7 @@ class UpdateEventMonitor:
             10000, self.cancellable, self.owner_resolved, self.owner_epoch)
 
     def add_match(self) -> None:
+        """Request installation of the next fixed D-Bus signal match."""
         rule = self.match_rules[len(self.installed_rules)]
         # NO_MATCH_RULE local subscriptions plus explicit AddMatch replies make
         # denial observable; signal_subscribe alone cannot report bus rejection.
@@ -984,6 +993,7 @@ class UpdateEventMonitor:
             10000, self.cancellable, self.match_finished, rule)
 
     def connected(self, _source, result, _data) -> None:
+        """Finish connecting and register the fixed PackageKit subscriptions."""
         if self.stopped:
             return
         if time.monotonic() >= self.deadline:
@@ -1009,12 +1019,15 @@ class UpdateEventMonitor:
             self.stop(1)
 
     def run(self) -> int:
+        """Run until stopped, then remove subscriptions, sources, and matches."""
         def timeout():
+            """Fail setup when the bounded readiness deadline expires."""
             self.deadline_source = 0
             self.stop(1)
             return self.GLib.SOURCE_REMOVE
 
         def terminate():
+            """Translate a process termination signal into a clean stop."""
             self.stop(0)
             return self.GLib.SOURCE_CONTINUE
 
@@ -1045,10 +1058,12 @@ class UpdateEventMonitor:
 
 
 def watch_update_events() -> int:
+    """Stream bounded PackageKit change records without blocking on output."""
     output_descriptor = None
     original_blocking = None
 
     def emit(record: str) -> None:
+        """Write one atomic ASCII record to the monitor's nonblocking pipe."""
         payload = (record + "\n").encode("ascii")
         # Each fixed row fits PIPE_BUF. Never block GLib callbacks behind a
         # stalled reader or queue unbounded notifications. Overflow is an
