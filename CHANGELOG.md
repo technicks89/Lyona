@@ -255,6 +255,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   process substitution, which captures its PID synchronously and keeps it
   valid regardless of whether the process has since exited. The scan also no
   longer inherits the parent shell's stdin.
+- Document the command menu's `menu open|close|toggle|summon` IPC surface,
+  which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
+  asserted the documentation but nothing had ever satisfied it, so
+  `make check` failed on a from-scratch checkout).
 
 ## [2026.08.0-beta.1] - 2026-08-28
 
