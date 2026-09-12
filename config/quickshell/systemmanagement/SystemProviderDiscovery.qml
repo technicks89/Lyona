@@ -112,7 +112,16 @@ Scope {
         return token;
     }
 
-    function beforePublish(token) { Cycle.beforePublish(root.cycle, token); }
+    // Returns whether the token still owns the cycle, checked before Cycle
+    // transitions phase to *-completing. Callers must gate any snapshot
+    // publish on this return value and skip assigning parsed fields when it
+    // is false -- otherwise a read that completes after close() or a domain
+    // change could still overwrite fresher state with stale data.
+    function beforePublish(token) {
+        const owned = Cycle.owns(root.cycle, token);
+        Cycle.beforePublish(root.cycle, token);
+        return owned;
+    }
 
     function complete(token, successful) {
         Cycle.complete(root.cycle, token, successful);

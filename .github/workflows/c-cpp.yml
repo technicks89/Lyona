@@ -45,21 +45,17 @@ jobs:
             shellcheck shfmt sudo xorg-server-xvfb
 
       - name: Install AUR-only xkbset (test dependency only, never shipped)
-        # xkbset is not in Arch's official repos (confirmed against a live
-        # AUR query -- see docs/SYNC-P7-XKB-INPUT.md); it ships to real
-        # installs as arch:desktop-optional and its absence there is
-        # handled gracefully. tests/test-quickshell-settings-xvfb.sh has no
-        # such fallback: it treats xkbset as a hard prerequisite and exits
-        # 77 without it, which make reports as a failed target rather than
-        # a skip. Build it here with a throwaway non-root user, since
-        # makepkg refuses to run as root and this container starts as root.
         run: |
           useradd -m builder
           printf 'builder ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/builder
           runuser -u builder -- bash -euxc '
+            commit=90f104d04bc4c3ff3b7e343f04672e4da666eb7e
+            sha256=a205e06303f78959b9ee263c2864e5440366636f463a7ad404d1e1a33021000a
             cd /tmp
-            curl -fsSL https://aur.archlinux.org/cgit/aur.git/snapshot/xkbset.tar.gz -o xkbset.tar.gz
+            curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/aur-$commit.tar.gz" -o xkbset.tar.gz
+            printf "%s  xkbset.tar.gz\n" "$sha256" | sha256sum -c -
             tar xzf xkbset.tar.gz
+            mv "aur-$commit" xkbset
             cd xkbset
             makepkg -si --noconfirm --needed
           '
