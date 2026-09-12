@@ -142,20 +142,6 @@ Scope {
         snapshotProcess.cycleToken = null;
     }
 
-    // beforePublish() must run -- and its ownership answer be checked --
-    // before parseSnapshot() ever assigns root.* fields. A read whose token
-    // no longer owns the cycle (the pane closed, or a domain change began a
-    // new cycle, while this read was in flight) is not parsed at all: its
-    // result is discarded instead of overwriting fresher state.
-    function publishSnapshot(text) {
-        const token = snapshotProcess.cycleToken;
-        const owned = discoveryModel.beforePublish(token);
-        root.snapshotAttempted = true;
-        const successful = owned && root.parseSnapshot(text);
-        discoveryModel.complete(token, successful);
-        snapshotProcess.cycleToken = null;
-    }
-
     function parseSnapshot(text) {
         root.snapshotAttempted = true;
 
@@ -304,7 +290,7 @@ Scope {
         id: snapshotProcess
         property var cycleToken: null
         running: false
-        stdout: StdioCollector { onStreamFinished: root.publishSnapshot(this.text) }
+        stdout: StdioCollector { onStreamFinished: root.finishSnapshot(root.parseSnapshot(this.text)) }
         stderr: StdioCollector { id: snapshotError }
         onRunningChanged: if (!running) {
             if (!root.snapshotAttempted) {

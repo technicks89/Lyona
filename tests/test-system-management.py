@@ -15,22 +15,16 @@ the manager's own D-Bus signals).
 from __future__ import annotations
 
 import contextlib
-import errno
 import hashlib
 import importlib.util
 import importlib.machinery
 import io
-import os
 import pathlib
 import shutil
-import stat
 import subprocess
 import sys
-import tempfile
-import threading
 import time
 import unittest
-from dataclasses import replace
 from unittest import mock
 
 
