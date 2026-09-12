@@ -74,6 +74,7 @@ Scope {
     }
     property string inputState: "idle"
     property string inputMessage: ""
+    property bool inputRefreshPending: false
     property string previewKind: ""
     property string previewToken: ""
     property int previewSeconds: 0
@@ -573,7 +574,12 @@ Scope {
     }
 
     function refreshInput() {
-        if (!root.visible || inputDiscoverProcess.running) return;
+        if (!root.visible) return;
+        if (inputDiscoverProcess.running) {
+            root.inputRefreshPending = true;
+            return;
+        }
+        root.inputRefreshPending = false;
         root.inputState = "loading";
         inputDiscoverProcess.running = true;
     }
@@ -714,6 +720,7 @@ Scope {
         providerProcess.running = false;
         root.displayRefreshPending = false;
         displayDiscoverProcess.running = false;
+        root.inputRefreshPending = false;
         inputDiscoverProcess.running = false;
         displayWatchProcess.running = false;
         inputWatchProcess.running = false;
@@ -786,6 +793,15 @@ Scope {
         running: false
         stdout: StdioCollector { onStreamFinished: root.parseInput(this.text) }
         stderr: StdioCollector { onStreamFinished: { const error = this.text.trim(); if (error) { root.inputState = "failure"; root.inputMessage = error; } } }
+        onRunningChanged: {
+            if (!running && root.inputRefreshPending && root.visible) {
+                root.inputRefreshPending = false;
+                Qt.callLater(function() {
+                    if (root.visible && !inputDiscoverProcess.running)
+                        root.refreshInput();
+                });
+            }
+        }
     }
 
     Process {

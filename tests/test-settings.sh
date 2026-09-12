@@ -710,6 +710,12 @@ grep -Fq 'root.displayRefreshPending = true;' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'if (!running && root.displayRefreshPending && root.visible) {' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'property bool inputRefreshPending: false' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'root.inputRefreshPending = true;' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (!running && root.inputRefreshPending && root.visible) {' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq '? "Display changes are ready to apply" : outputs.length + " connected outputs";' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'label: root.settingsModel.previewRollbackFailed ? "Keep current" : "Keep changes"' \
