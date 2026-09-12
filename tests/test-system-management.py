@@ -700,6 +700,9 @@ class JournalControlRecordTests(unittest.TestCase):
         )
         return replace(record, **changes)
 
+    def state_payloads(self):
+        return provider._initial_journal_payloads(self.boot_id)
+
     def test_operation_round_trips_nonterminal_and_terminal_update(self):
         active = self.update_operation()
         active_payload = provider.encode_journal_operation(active)
@@ -845,6 +848,659 @@ class JournalControlRecordTests(unittest.TestCase):
             with self.subTest(name=name):
                 with self.assertRaises(provider.JournalRecordError):
                     provider.decode_journal_operation("\t".join(changed))
+
+    def test_state_round_trips_initial_and_nonterminal_active_payloads(self):
+        payloads = self.state_payloads()
+        state = provider.decode_journal_state(payloads)
+        self.assertEqual(state.cursor, 0)
+        self.assertIsNone(state.active)
+        self.assertIsNone(state.handoff)
+        self.assertEqual(state.restart.boot_id, self.boot_id)
+        self.assertEqual(state.terminals, (None,) * provider.JOURNAL_TERMINAL_COUNT)
+
+        active = self.update_operation(slot=7)
+        payloads["active"] = provider.encode_journal_operation(active)
+        self.assertEqual(provider.decode_journal_state(payloads).active, active)
+
+    def test_state_accepts_each_terminalization_checkpoint(self):
+        active = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=123,
+        )
+        active_payload = provider.encode_journal_operation(active)
+        checkpoints = []
+
+        payloads = self.state_payloads()
+        payloads["active"] = active_payload
+        checkpoints.append(payloads.copy())
+        payloads["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(payloads["restart"]),
+                last_applied_operation_id=active.operation_id,
+            )
+        )
+        payloads["terminal-07"] = active_payload
+        checkpoints.append(payloads.copy())
+        payloads["cursor"] = "08"
+        checkpoints.append(payloads.copy())
+        payloads["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(active.operation_id, 7)
+        )
+        checkpoints.append(payloads.copy())
+        payloads["active"] = ""
+        checkpoints.append(payloads.copy())
+
+        for index, checkpoint in enumerate(checkpoints):
+            with self.subTest(checkpoint=index):
+                state = provider.decode_journal_state(checkpoint)
+                self.assertEqual(state.terminals[7], active if index >= 1 else None)
+
+    def test_state_accepts_old_selected_slot_before_terminal_overwrite(self):
+        payloads = self.state_payloads()
+        old = replace(
+            self.update_operation(
+                operation_id="op-ffffffffffffffffffffffffffffffff", slot=7
+            ),
+            finished_at="2026-02-27T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=100,
+        )
+        current = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=123,
+        )
+        payloads["active"] = provider.encode_journal_operation(current)
+        payloads["terminal-07"] = provider.encode_journal_operation(old)
+        payloads["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(payloads["restart"]),
+                last_applied_operation_id=old.operation_id,
+            )
+        )
+        self.assertEqual(provider.decode_journal_state(payloads).active, current)
+
+    def test_state_accepts_pruned_lower_scope_restart_guidance(self):
+        terminal = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            session_restart="security-session",
+            application_restart=True,
+            terminal_monotonic=123,
+        )
+        payloads = self.state_payloads()
+        payloads["terminal-07"] = provider.encode_journal_operation(terminal)
+        payloads["cursor"] = "08"
+        payloads["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(payloads["restart"]),
+                last_applied_operation_id=terminal.operation_id,
+            )
+        )
+        state = provider.decode_journal_state(payloads)
+        self.assertEqual(state.restart.session, "none")
+        self.assertFalse(state.restart.application)
+
+        later = replace(
+            terminal,
+            operation_id="op-ffffffffffffffffffffffffffffffff",
+            session_restart="session",
+            application_restart=False,
+            terminal_monotonic=200,
+            slot=8,
+        )
+        payloads["terminal-08"] = provider.encode_journal_operation(later)
+        payloads["cursor"] = "09"
+        payloads["restart"] = provider.encode_journal_restart(
+            replace(
+                state.restart,
+                last_applied_operation_id=later.operation_id,
+                session="session",
+                session_cutoff=later.terminal_monotonic,
+            )
+        )
+        self.assertEqual(provider.decode_journal_state(payloads).restart.session, "session")
+
+    def test_state_rejects_missing_extra_or_wrong_typed_paths(self):
+        payloads = self.state_payloads()
+        invalid = []
+        missing = payloads.copy()
+        del missing["active"]
+        invalid.append(missing)
+        extra = payloads.copy()
+        extra["terminal-32"] = ""
+        invalid.append(extra)
+        wrong_type = payloads.copy()
+        wrong_type["active"] = None
+        invalid.append(wrong_type)
+        for state in invalid:
+            with self.subTest(paths=state.keys()):
+                with self.assertRaises(provider.JournalRecordError):
+                    provider.decode_journal_state(state)
+
+    def test_state_rejects_invalid_terminal_slot_records(self):
+        terminal = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=123,
+        )
+        cases = {}
+        nonterminal = self.state_payloads()
+        nonterminal["terminal-07"] = provider.encode_journal_operation(
+            self.update_operation(slot=7)
+        )
+        cases["nonterminal slot"] = nonterminal
+        wrong_slot = self.state_payloads()
+        wrong_slot["terminal-06"] = provider.encode_journal_operation(terminal)
+        cases["wrong slot identity"] = wrong_slot
+        duplicate = self.state_payloads()
+        duplicate["terminal-07"] = provider.encode_journal_operation(terminal)
+        duplicate["terminal-08"] = provider.encode_journal_operation(
+            replace(terminal, slot=8)
+        )
+        cases["duplicate retained identity"] = duplicate
+        active_duplicate = self.state_payloads()
+        active_duplicate["active"] = provider.encode_journal_operation(
+            self.update_operation(slot=7)
+        )
+        active_duplicate["terminal-07"] = provider.encode_journal_operation(terminal)
+        cases["active identity duplicated in terminal"] = active_duplicate
+        for name, payloads in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(provider.JournalRecordError):
+                    provider.decode_journal_state(payloads)
+
+    def test_state_rejects_handoff_and_terminalization_conflicts(self):
+        terminal = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=123,
+        )
+        other = replace(
+            terminal,
+            operation_id="op-ffffffffffffffffffffffffffffffff",
+        )
+        cases = {}
+        missing = self.state_payloads()
+        missing["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(terminal.operation_id, 7)
+        )
+        cases["handoff terminal missing"] = missing
+        mismatch = self.state_payloads()
+        mismatch["terminal-07"] = provider.encode_journal_operation(terminal)
+        mismatch["cursor"] = "08"
+        mismatch["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(other.operation_id, 7)
+        )
+        cases["handoff identity mismatch"] = mismatch
+        active_conflict = self.state_payloads()
+        active_conflict["active"] = provider.encode_journal_operation(other)
+        active_conflict["terminal-07"] = provider.encode_journal_operation(terminal)
+        active_conflict["cursor"] = "08"
+        active_conflict["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(terminal.operation_id, 7)
+        )
+        cases["active conflicts with handoff"] = active_conflict
+        for name, payloads in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(provider.JournalRecordError):
+                    provider.decode_journal_state(payloads)
+
+    def test_state_rejects_stale_cursor_restart_and_restart_id_reuse(self):
+        terminal = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=123,
+        )
+        cases = {}
+        stale_cursor = self.state_payloads()
+        stale_cursor["terminal-07"] = provider.encode_journal_operation(terminal)
+        stale_cursor["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(terminal.operation_id, 7)
+        )
+        cases["handoff cursor is stale"] = stale_cursor
+        missing_restart = self.state_payloads()
+        missing_restart["active"] = provider.encode_journal_operation(terminal)
+        missing_restart["terminal-07"] = provider.encode_journal_operation(terminal)
+        cases["terminal update restart commit missing"] = missing_restart
+        missing_retained_restart = self.state_payloads()
+        missing_retained_restart["terminal-07"] = provider.encode_journal_operation(
+            terminal
+        )
+        missing_retained_restart["cursor"] = "08"
+        cases["retained update restart identity missing"] = missing_retained_restart
+        reused = self.state_payloads()
+        reused["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(reused["restart"]),
+                last_applied_operation_id=terminal.operation_id,
+            )
+        )
+        reused["active"] = provider.encode_journal_operation(
+            self.update_operation(slot=8)
+        )
+        cases["nonterminal active reuses restart identity"] = reused
+        non_update = replace(
+            terminal,
+            action_id="timezone-set",
+            kind="timezone",
+            generation=None,
+            transaction_path=None,
+            system_restart=None,
+            session_restart=None,
+            application_restart=None,
+            boot_id=None,
+            terminal_monotonic=None,
+        )
+        reused_terminal = self.state_payloads()
+        reused_terminal["restart"] = reused["restart"]
+        reused_terminal["terminal-07"] = provider.encode_journal_operation(non_update)
+        reused_terminal["cursor"] = "08"
+        cases["non-update terminal reuses restart identity"] = reused_terminal
+        previous_boot = self.state_payloads()
+        previous_boot["restart"] = reused["restart"]
+        previous_boot["terminal-07"] = provider.encode_journal_operation(
+            replace(terminal, boot_id="11234567-89ab-cdef-0123-456789abcdef")
+        )
+        previous_boot["cursor"] = "08"
+        cases["previous-boot update reuses restart identity"] = previous_boot
+        missing_contribution = self.state_payloads()
+        missing_contribution["restart"] = reused["restart"]
+        missing_contribution["terminal-07"] = provider.encode_journal_operation(
+            replace(terminal, system_restart="security-system")
+        )
+        missing_contribution["cursor"] = "08"
+        cases["system contribution missing"] = missing_contribution
+        older_contribution = self.state_payloads()
+        newer = replace(
+            terminal,
+            operation_id="op-ffffffffffffffffffffffffffffffff",
+            terminal_monotonic=200,
+            slot=8,
+        )
+        older_contribution["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(older_contribution["restart"]),
+                last_applied_operation_id=newer.operation_id,
+            )
+        )
+        older_contribution["terminal-07"] = provider.encode_journal_operation(
+            replace(terminal, system_restart="security-system")
+        )
+        older_contribution["terminal-08"] = provider.encode_journal_operation(newer)
+        cases["older system contribution missing"] = older_contribution
+        stale_identity = self.state_payloads()
+        stale_identity["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(stale_identity["restart"]),
+                last_applied_operation_id=terminal.operation_id,
+            )
+        )
+        stale_identity["terminal-07"] = provider.encode_journal_operation(terminal)
+        stale_identity["terminal-08"] = provider.encode_journal_operation(newer)
+        cases["last-applied identity is stale"] = stale_identity
+        for field, changes in (
+            (
+                "session",
+                {
+                    "session": "session",
+                    "session_cutoff": terminal.terminal_monotonic - 1,
+                },
+            ),
+            (
+                "application",
+                {
+                    "application": True,
+                    "application_cutoff": terminal.terminal_monotonic - 1,
+                },
+            ),
+        ):
+            stale_cutoff = self.state_payloads()
+            stale_cutoff["restart"] = provider.encode_journal_restart(
+                replace(
+                    provider.decode_journal_restart(stale_cutoff["restart"]),
+                    last_applied_operation_id=terminal.operation_id,
+                    **changes,
+                )
+            )
+            stale_cutoff["terminal-07"] = provider.encode_journal_operation(
+                replace(
+                    terminal,
+                    session_restart="session" if field == "session" else "none",
+                    application_restart=field == "application",
+                )
+            )
+            stale_cutoff["cursor"] = "08"
+            cases[f"{field} cutoff is stale"] = stale_cutoff
+        for field, changes in (
+            (
+                "session",
+                {
+                    "session": "session",
+                    "session_cutoff": terminal.terminal_monotonic + 1,
+                },
+            ),
+            (
+                "application",
+                {
+                    "application": True,
+                    "application_cutoff": terminal.terminal_monotonic + 1,
+                },
+            ),
+        ):
+            future_cutoff = self.state_payloads()
+            future_cutoff["restart"] = provider.encode_journal_restart(
+                replace(
+                    provider.decode_journal_restart(future_cutoff["restart"]),
+                    last_applied_operation_id=terminal.operation_id,
+                    **changes,
+                )
+            )
+            future_cutoff["terminal-07"] = provider.encode_journal_operation(
+                replace(
+                    terminal,
+                    session_restart="session" if field == "session" else "none",
+                    application_restart=field == "application",
+                )
+            )
+            future_cutoff["cursor"] = "08"
+            cases[f"{field} cutoff is newer than the last update"] = future_cutoff
+        for field, restart_changes in (
+            ("system", {"system": "security-system"}),
+            (
+                "session",
+                {"session": "security-session", "session_cutoff": 123},
+            ),
+            ("application", {"application": True, "application_cutoff": 123}),
+        ):
+            unsupported_bucket = self.state_payloads()
+            unsupported_bucket["restart"] = provider.encode_journal_restart(
+                replace(
+                    provider.decode_journal_restart(unsupported_bucket["restart"]),
+                    last_applied_operation_id=terminal.operation_id,
+                    **restart_changes,
+                )
+            )
+            unsupported_bucket["terminal-07"] = provider.encode_journal_operation(
+                terminal
+            )
+            unsupported_bucket["cursor"] = "08"
+            cases[f"{field} bucket is unsupported by retained history"] = (
+                unsupported_bucket
+            )
+        for field, contribution_changes, restart_changes in (
+            (
+                "session",
+                {"session_restart": "session"},
+                {"session": "session", "session_cutoff": 150},
+            ),
+            (
+                "application",
+                {"application_restart": True},
+                {"application": True, "application_cutoff": 150},
+            ),
+        ):
+            inexact_cutoff = self.state_payloads()
+            older = replace(terminal, terminal_monotonic=100, **contribution_changes)
+            latest = replace(
+                terminal,
+                operation_id="op-ffffffffffffffffffffffffffffffff",
+                terminal_monotonic=200,
+                slot=8,
+            )
+            inexact_cutoff["restart"] = provider.encode_journal_restart(
+                replace(
+                    provider.decode_journal_restart(inexact_cutoff["restart"]),
+                    last_applied_operation_id=latest.operation_id,
+                    **restart_changes,
+                )
+            )
+            inexact_cutoff["terminal-07"] = provider.encode_journal_operation(older)
+            inexact_cutoff["terminal-08"] = provider.encode_journal_operation(latest)
+            inexact_cutoff["cursor"] = "09"
+            cases[f"{field} cutoff is not a retained contribution"] = inexact_cutoff
+        unidentified_guidance = self.state_payloads()
+        unidentified_guidance["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(unidentified_guidance["restart"]),
+                system="unknown",
+            )
+        )
+        cases["restart guidance has no identity"] = unidentified_guidance
+        orphan_identity = self.state_payloads()
+        orphan_identity["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(orphan_identity["restart"]),
+                last_applied_operation_id="op-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                system="unknown",
+            )
+        )
+        cases["restart identity is absent before ring wrap"] = orphan_identity
+        for field, changes in (
+            ("session", {"session_cutoff": 123}),
+            ("application", {"application_cutoff": 123}),
+        ):
+            cleared_cutoff = self.state_payloads()
+            cleared_cutoff["restart"] = provider.encode_journal_restart(
+                replace(
+                    provider.decode_journal_restart(cleared_cutoff["restart"]),
+                    last_applied_operation_id=terminal.operation_id,
+                    **changes,
+                )
+            )
+            cleared_cutoff["terminal-07"] = provider.encode_journal_operation(
+                terminal
+            )
+            cleared_cutoff["cursor"] = "08"
+            cases[f"cleared {field} bucket retains cutoff"] = cleared_cutoff
+        expected_errors = {
+            "system contribution missing": "restart contribution is incomplete",
+            "session cutoff is stale": "session restart cutoff is stale",
+            "application cutoff is stale": "application restart cutoff is stale",
+            "session cutoff is newer than the last update": (
+                "session restart cutoff is stale"
+            ),
+            "application cutoff is newer than the last update": (
+                "application restart cutoff is stale"
+            ),
+            "system bucket is unsupported by retained history": (
+                "system restart bucket is unsupported"
+            ),
+            "session bucket is unsupported by retained history": (
+                "session restart bucket is unsupported"
+            ),
+            "application bucket is unsupported by retained history": (
+                "application restart state is not derivable"
+            ),
+            "session cutoff is not a retained contribution": (
+                "session restart state is not derivable"
+            ),
+            "application cutoff is not a retained contribution": (
+                "application restart state is not derivable"
+            ),
+            "cleared session bucket retains cutoff": (
+                "cleared session restart has a cutoff"
+            ),
+            "cleared application bucket retains cutoff": (
+                "cleared application restart has a cutoff"
+            ),
+        }
+        for name, payloads in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                    provider.JournalRecordError,
+                    expected_errors.get(name, "journal"),
+                ):
+                    provider.decode_journal_state(payloads)
+
+    def test_state_rejects_cross_record_recovery_conflicts(self):
+        terminal = replace(
+            self.update_operation(slot=7),
+            finished_at="2026-02-28T01:03:04Z",
+            state="succeeded",
+            terminal_monotonic=123,
+        )
+        cases = {}
+
+        newer = replace(
+            terminal,
+            operation_id="op-ffffffffffffffffffffffffffffffff",
+            terminal_monotonic=200,
+        )
+        stale_active = self.state_payloads()
+        stale_active["terminal-07"] = provider.encode_journal_operation(newer)
+        stale_active["cursor"] = "08"
+        stale_active["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(stale_active["restart"]),
+                last_applied_operation_id=newer.operation_id,
+            )
+        )
+        stale_active["active"] = provider.encode_journal_operation(
+            replace(terminal, slot=8, terminal_monotonic=100)
+        )
+        cases["active update predates retained history"] = stale_active
+
+        stale_refresh = self.state_payloads()
+        refresh = replace(
+            terminal,
+            action_id="updates-refresh",
+            kind="refresh",
+            generation=None,
+            system_restart=None,
+            session_restart=None,
+            application_restart=None,
+            boot_id=None,
+            terminal_monotonic=100,
+            slot=8,
+        )
+        stale_refresh["terminal-07"] = provider.encode_journal_operation(newer)
+        stale_refresh["cursor"] = "08"
+        stale_refresh["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(stale_refresh["restart"]),
+                last_applied_operation_id=newer.operation_id,
+            )
+        )
+        stale_refresh["active"] = provider.encode_journal_operation(refresh)
+        cases["active refresh predates retained update history"] = stale_refresh
+
+        old_boot_active = self.state_payloads()
+        old_boot_active["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(old_boot_active["restart"]),
+                last_applied_operation_id="op-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                system="unknown",
+            )
+        )
+        old_boot_active["active"] = provider.encode_journal_operation(
+            replace(
+                self.update_operation(slot=7),
+                boot_id="11234567-89ab-cdef-0123-456789abcdef",
+            )
+        )
+        old_boot_active["cursor"] = "07"
+        regional_terminal = replace(
+            terminal,
+            action_id="timezone-set",
+            kind="timezone",
+            generation=None,
+            transaction_path=None,
+            system_restart=None,
+            session_restart=None,
+            application_restart=None,
+            boot_id=None,
+            terminal_monotonic=None,
+        )
+        for slot in range(provider.JOURNAL_TERMINAL_COUNT):
+            old_boot_active[f"terminal-{slot:02d}"] = (
+                provider.encode_journal_operation(
+                    replace(
+                        regional_terminal,
+                        operation_id=f"op-{slot + 1:032x}",
+                        slot=slot,
+                    )
+                )
+            )
+        cases["old-boot active update restart is not clear"] = old_boot_active
+
+        old_boot_handoff = self.state_payloads()
+        old_boot_terminal = replace(
+            terminal, boot_id="11234567-89ab-cdef-0123-456789abcdef"
+        )
+        old_boot_handoff["terminal-07"] = provider.encode_journal_operation(
+            old_boot_terminal
+        )
+        old_boot_handoff["cursor"] = "08"
+        old_boot_handoff["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(old_boot_terminal.operation_id, 7)
+        )
+        old_boot_handoff["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(old_boot_handoff["restart"]),
+                last_applied_operation_id="op-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                system="unknown",
+            )
+        )
+        cases["old-boot handoff restart is not clear"] = old_boot_handoff
+
+        downgraded_session = self.state_payloads()
+        downgraded_session["terminal-07"] = provider.encode_journal_operation(
+            replace(terminal, session_restart="security-session")
+        )
+        downgraded_session["cursor"] = "08"
+        downgraded_session["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(downgraded_session["restart"]),
+                last_applied_operation_id=terminal.operation_id,
+                session="session",
+                session_cutoff=terminal.terminal_monotonic,
+            )
+        )
+        cases["security-session urgency is downgraded"] = downgraded_session
+
+        stale_handoff = self.state_payloads()
+        refresh = replace(
+            terminal,
+            action_id="updates-refresh",
+            kind="refresh",
+            generation=None,
+            system_restart=None,
+            session_restart=None,
+            application_restart=None,
+            boot_id=None,
+            terminal_monotonic=100,
+        )
+        later_update = replace(newer, slot=8)
+        stale_handoff["terminal-07"] = provider.encode_journal_operation(refresh)
+        stale_handoff["terminal-08"] = provider.encode_journal_operation(later_update)
+        stale_handoff["cursor"] = "08"
+        stale_handoff["handoff"] = provider.encode_journal_handoff(
+            provider.JournalHandoff(refresh.operation_id, 7)
+        )
+        stale_handoff["restart"] = provider.encode_journal_restart(
+            replace(
+                provider.decode_journal_restart(stale_handoff["restart"]),
+                last_applied_operation_id=later_update.operation_id,
+            )
+        )
+        cases["handoff is superseded by retained update"] = stale_handoff
+
+        stale_cursor = self.state_payloads()
+        stale_cursor["terminal-07"] = provider.encode_journal_operation(refresh)
+        cases["completed terminal cursor is stale"] = stale_cursor
+
+        for name, payloads in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(provider.JournalRecordError):
+                    provider.decode_journal_state(payloads)
 
 
 class JournalFileTests(unittest.TestCase):
@@ -1261,6 +1917,79 @@ class JournalLayoutTests(unittest.TestCase):
             finally:
                 os.close(directory_descriptor)
 
+    def test_descriptor_close_failure_does_not_mask_layout_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory_descriptor = self.open_directory(directory)
+            provider.initialize_journal_layout(directory_descriptor, self.boot_id)
+            original_close_descriptors = provider._close_descriptors
+            cleanup_calls = 0
+
+            def close_descriptors_then_fail(descriptors):
+                nonlocal cleanup_calls
+                cleanup_calls += 1
+                self.assertIsNone(original_close_descriptors(descriptors))
+                return OSError(errno.EIO, "injected close failure")
+
+            try:
+                with (
+                    mock.patch.object(
+                        provider,
+                        "_validate_initialized_journal_path_unlocked",
+                        side_effect=provider.JournalLayoutError(
+                            "injected primary layout error"
+                        ),
+                    ),
+                    mock.patch.object(
+                        provider,
+                        "_close_descriptors",
+                        side_effect=close_descriptors_then_fail,
+                    ),
+                ):
+                    with self.assertRaisesRegex(
+                        provider.JournalLayoutError, "injected primary layout error"
+                    ):
+                        provider.initialize_journal_layout(
+                            directory_descriptor, self.boot_id
+                        )
+            finally:
+                os.close(directory_descriptor)
+
+            self.assertEqual(cleanup_calls, 2)
+
+    def test_successful_layout_close_failure_inside_exception_handler_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory_descriptor = self.open_directory(directory)
+            provider.initialize_journal_layout(directory_descriptor, self.boot_id)
+            original_close_descriptors = provider._close_descriptors
+            cleanup_calls = 0
+
+            def close_descriptors_then_fail(descriptors):
+                nonlocal cleanup_calls
+                cleanup_calls += 1
+                self.assertIsNone(original_close_descriptors(descriptors))
+                return OSError(errno.EIO, "injected close failure")
+
+            try:
+                try:
+                    raise RuntimeError("outer handled error")
+                except RuntimeError:
+                    with mock.patch.object(
+                        provider,
+                        "_close_descriptors",
+                        side_effect=close_descriptors_then_fail,
+                    ):
+                        with self.assertRaisesRegex(
+                            provider.JournalLayoutError,
+                            "journal partial descriptor close failed",
+                        ):
+                            provider.initialize_journal_layout(
+                                directory_descriptor, self.boot_id
+                            )
+            finally:
+                os.close(directory_descriptor)
+
+            self.assertEqual(cleanup_calls, 2)
+
     def test_legacy_plaintext_is_rejected_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             active = pathlib.Path(directory) / "active"
@@ -1649,6 +2378,359 @@ class JournalLayoutTests(unittest.TestCase):
                     )
             finally:
                 os.close(directory_descriptor)
+
+
+class JournalStateLoadTests(unittest.TestCase):
+    boot_id = "01234567-89ab-cdef-0123-456789abcdef"
+
+    def open_initialized_chain(self, directory):
+        state = pathlib.Path(directory) / "state"
+        journal = state / "lyona" / "system-management"
+        chain = provider.open_journal_directory_chain(str(journal))
+        provider.initialize_journal_layout(chain.directory_descriptor, self.boot_id)
+        return state, journal, chain
+
+    def test_loads_exact_fixed_paths_read_only_without_enumeration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, _journal, chain = self.open_initialized_chain(directory)
+            opened = {}
+            first_read_saw_all_descriptors = False
+            original_open = os.open
+            original_read = provider._read_journal_file_unlocked
+
+            def track_open(path, flags, *args, **kwargs):
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if (
+                    path in provider.JOURNAL_NAMES
+                    and kwargs.get("dir_fd") == chain.directory_descriptor
+                ):
+                    opened[path] = (descriptor, flags)
+                return descriptor
+
+            def observe_first_read(descriptor):
+                nonlocal first_read_saw_all_descriptors
+                if not first_read_saw_all_descriptors:
+                    self.assertEqual(tuple(opened), provider.JOURNAL_NAMES)
+                    first_read_saw_all_descriptors = True
+                return original_read(descriptor)
+
+            try:
+                with (
+                    mock.patch.object(provider.os, "open", side_effect=track_open),
+                    mock.patch.object(
+                        provider.os,
+                        "listdir",
+                        side_effect=AssertionError("directory enumeration is forbidden"),
+                    ),
+                    mock.patch.object(
+                        provider.os,
+                        "scandir",
+                        side_effect=AssertionError("directory enumeration is forbidden"),
+                    ),
+                    mock.patch.object(
+                        provider,
+                        "_read_journal_file_unlocked",
+                        side_effect=observe_first_read,
+                    ),
+                ):
+                    state = provider.load_journal_state(chain)
+            finally:
+                chain.close()
+
+            self.assertTrue(first_read_saw_all_descriptors)
+            self.assertEqual(
+                state,
+                provider.decode_journal_state(
+                    provider._initial_journal_payloads(self.boot_id)
+                ),
+            )
+            self.assertEqual(tuple(opened), provider.JOURNAL_NAMES)
+            for descriptor, flags in opened.values():
+                self.assertEqual(flags & os.O_ACCMODE, os.O_RDONLY)
+                self.assertTrue(flags & os.O_NONBLOCK)
+                self.assertTrue(flags & os.O_NOFOLLOW)
+                self.assertTrue(flags & os.O_CLOEXEC)
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_record_error_closes_every_retained_file_descriptor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, _journal, chain = self.open_initialized_chain(directory)
+            active_descriptor = os.open(
+                "active",
+                os.O_NOFOLLOW | os.O_CLOEXEC | os.O_RDWR,
+                dir_fd=chain.directory_descriptor,
+            )
+            try:
+                provider.commit_journal_file(
+                    chain.directory_descriptor, active_descriptor, "malformed"
+                )
+            finally:
+                os.close(active_descriptor)
+
+            opened = []
+            original_open = os.open
+
+            def track_open(path, flags, *args, **kwargs):
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if (
+                    path in provider.JOURNAL_NAMES
+                    and kwargs.get("dir_fd") == chain.directory_descriptor
+                ):
+                    opened.append(descriptor)
+                return descriptor
+
+            try:
+                with mock.patch.object(provider.os, "open", side_effect=track_open):
+                    with self.assertRaisesRegex(
+                        provider.JournalRecordError, "operation field count"
+                    ):
+                        provider.load_journal_state(chain)
+            finally:
+                chain.close()
+
+            self.assertEqual(len(opened), len(provider.JOURNAL_NAMES))
+            for descriptor in opened:
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_close_failure_does_not_mask_primary_record_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, _journal, chain = self.open_initialized_chain(directory)
+            opened = []
+            original_open = os.open
+            original_close = os.close
+            failed_close = False
+
+            def track_open(path, flags, *args, **kwargs):
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if (
+                    path in provider.JOURNAL_NAMES
+                    and kwargs.get("dir_fd") == chain.directory_descriptor
+                ):
+                    opened.append(descriptor)
+                return descriptor
+
+            def close_then_fail_once(descriptor):
+                nonlocal failed_close
+                original_close(descriptor)
+                if descriptor in opened and not failed_close:
+                    failed_close = True
+                    raise OSError(errno.EIO, "injected close failure")
+
+            try:
+                with (
+                    mock.patch.object(provider.os, "open", side_effect=track_open),
+                    mock.patch.object(
+                        provider,
+                        "decode_journal_state",
+                        side_effect=provider.JournalRecordError(
+                            "injected primary record error"
+                        ),
+                    ),
+                    mock.patch.object(
+                        provider.os, "close", side_effect=close_then_fail_once
+                    ),
+                ):
+                    with self.assertRaisesRegex(
+                        provider.JournalRecordError, "injected primary record error"
+                    ):
+                        provider.load_journal_state(chain)
+            finally:
+                chain.close()
+
+            self.assertTrue(failed_close)
+            for descriptor in opened:
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_successful_load_close_failure_inside_exception_handler_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, _journal, chain = self.open_initialized_chain(directory)
+            opened = []
+            original_open = os.open
+            original_close = os.close
+            failed_close = False
+
+            def track_open(path, flags, *args, **kwargs):
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if (
+                    path in provider.JOURNAL_NAMES
+                    and kwargs.get("dir_fd") == chain.directory_descriptor
+                ):
+                    opened.append(descriptor)
+                return descriptor
+
+            def close_then_fail_once(descriptor):
+                nonlocal failed_close
+                original_close(descriptor)
+                if descriptor in opened and not failed_close:
+                    failed_close = True
+                    raise OSError(errno.EIO, "injected close failure")
+
+            try:
+                try:
+                    raise RuntimeError("outer handled error")
+                except RuntimeError:
+                    with (
+                        mock.patch.object(
+                            provider.os, "open", side_effect=track_open
+                        ),
+                        mock.patch.object(
+                            provider.os, "close", side_effect=close_then_fail_once
+                        ),
+                    ):
+                        with self.assertRaisesRegex(
+                            provider.JournalLayoutError,
+                            "journal state descriptor close failed",
+                        ):
+                            provider.load_journal_state(chain)
+            finally:
+                chain.close()
+
+            self.assertTrue(failed_close)
+            for descriptor in opened:
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_open_failure_closes_every_previously_opened_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, _journal, chain = self.open_initialized_chain(directory)
+            opened = []
+            original_open = os.open
+
+            def fail_later_open(path, flags, *args, **kwargs):
+                if (
+                    path == "terminal-05"
+                    and kwargs.get("dir_fd") == chain.directory_descriptor
+                ):
+                    raise OSError(errno.EIO, "injected open failure")
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if (
+                    path in provider.JOURNAL_NAMES
+                    and kwargs.get("dir_fd") == chain.directory_descriptor
+                ):
+                    opened.append(descriptor)
+                return descriptor
+
+            try:
+                with mock.patch.object(provider.os, "open", side_effect=fail_later_open):
+                    with self.assertRaisesRegex(
+                        provider.JournalLayoutError, "terminal-05 open failed"
+                    ):
+                        provider.load_journal_state(chain)
+            finally:
+                chain.close()
+
+            self.assertGreater(len(opened), 1)
+            for descriptor in opened:
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_fixed_symlink_is_rejected_without_following_the_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, journal, chain = self.open_initialized_chain(directory)
+            path = journal / "terminal-31"
+            target = journal / "terminal-31-retained"
+            path.rename(target)
+            path.symlink_to(target.name)
+            before = target.read_bytes()
+            try:
+                with self.assertRaisesRegex(
+                    provider.JournalLayoutError, "terminal-31 open failed"
+                ):
+                    provider.load_journal_state(chain)
+                self.assertEqual(target.read_bytes(), before)
+            finally:
+                chain.close()
+
+    def test_unsafe_metadata_reports_the_exact_fixed_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, journal, chain = self.open_initialized_chain(directory)
+            active = journal / "active"
+            os.chmod(active, 0o644)
+            try:
+                with self.assertRaisesRegex(
+                    provider.JournalLayoutError, "active identity is unsafe"
+                ):
+                    provider.load_journal_state(chain)
+            finally:
+                os.chmod(active, 0o600)
+                chain.close()
+
+    def test_fifo_path_fails_without_waiting_for_a_writer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, journal, chain = self.open_initialized_chain(directory)
+            path = journal / "terminal-31"
+            path.unlink()
+            os.mkfifo(path, 0o600)
+            os.chmod(path, 0o600)
+            started = time.monotonic()
+            try:
+                with self.assertRaisesRegex(
+                    provider.JournalLayoutError, "terminal-31 identity is unsafe"
+                ):
+                    provider.load_journal_state(chain)
+                self.assertLess(time.monotonic() - started, 1)
+            finally:
+                chain.close()
+
+    def test_replaced_path_is_rejected_after_descriptor_bound_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _state, journal, chain = self.open_initialized_chain(directory)
+            active = journal / "active"
+            detached = journal / "active-detached"
+            image = active.read_bytes()
+            original_read = provider._read_journal_file_unlocked
+            replaced = False
+
+            def replace_active(descriptor):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    active.rename(detached)
+                    active.write_bytes(image)
+                    os.chmod(active, 0o600)
+                return original_read(descriptor)
+
+            try:
+                with mock.patch.object(
+                    provider,
+                    "_read_journal_file_unlocked",
+                    side_effect=replace_active,
+                ):
+                    with self.assertRaisesRegex(
+                        provider.JournalLayoutError, "active identity is unsafe"
+                    ):
+                        provider.load_journal_state(chain)
+                self.assertTrue(replaced)
+                self.assertEqual(detached.read_bytes(), image)
+                self.assertEqual(active.read_bytes(), image)
+            finally:
+                chain.close()
+
+    def test_replaced_ancestor_is_rejected_after_complete_decode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path, _journal, chain = self.open_initialized_chain(directory)
+            moved = pathlib.Path(directory) / "state-moved"
+            original_decode = provider.decode_journal_state
+
+            def replace_state(payloads):
+                result = original_decode(payloads)
+                state_path.rename(moved)
+                state_path.mkdir()
+                return result
+
+            try:
+                with mock.patch.object(
+                    provider, "decode_journal_state", side_effect=replace_state
+                ):
+                    with self.assertRaisesRegex(
+                        provider.JournalLayoutError, "state is unsafe"
+                    ):
+                        provider.load_journal_state(chain)
+            finally:
+                chain.close()
 
 
 class JournalDirectoryChainTests(unittest.TestCase):
