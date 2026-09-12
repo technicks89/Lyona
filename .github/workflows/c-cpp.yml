@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: archlinux:base-devel
+    env:
+      DWM_TEST_TMP_ROOT: /var/tmp/lyona-tests
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trust the container checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install build and validation dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t required_packages < <(dwm_packages arch required | awk 'NF' | sort -u)
+          mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
+          mapfile -t system_management_packages < <(dwm_packages arch system-management | awk 'NF' | sort -u)
+          pacman -Sy --noconfirm --needed \
+            "${required_packages[@]}" "${qml_packages[@]}" \
+            "${system_management_packages[@]}" \
+            diffutils dbus dconf glib2 inotify-tools jq \
+            shellcheck shfmt sudo xorg-server-xvfb
+
+      - name: Install AUR-only xkbset (test dependency only, never shipped)
+        run: |
+          useradd -m builder
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/builder
+          runuser -u builder -- bash -euxc '
+            commit=90f104d04bc4c3ff3b7e343f04672e4da666eb7e
+            sha256=a205e06303f78959b9ee263c2864e5440366636f463a7ad404d1e1a33021000a
+            cd /tmp
+            curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/aur-$commit.tar.gz" -o xkbset.tar.gz
+            printf "%s  xkbset.tar.gz\n" "$sha256" | sha256sum -c -
+            tar xzf xkbset.tar.gz
+            mv "aur-$commit" xkbset
+            cd xkbset
+            makepkg -si --noconfirm --needed
+          '
+          rm -f /etc/sudoers.d/builder
+          userdel -r builder
+
+      - name: Validate Arch package map
+        run: scripts/run-tests make check-arch-packages
+
+      - name: Validate
+        run: scripts/run-tests
+
+      - name: Validate privileged display helper security
+        env:
+          DWM_SECURITY_CONTAINER: "1"
+        run: scripts/run-tests tests/test-settings-display-security.sh
+
+      - name: Validate nested X11 runtime
+        run: scripts/run-tests make check-xvfb-runtime
+
+  clang-build:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Clang and build dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t build_packages < <(dwm_packages arch build | awk 'NF' | sort -u)
+          pacman -Sy --noconfirm --needed clang "${build_packages[@]}"
+
+      - name: Build with Clang
+        run: make clean all CC=clang
+
+  quickshell-qml:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Sy --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Quickshell QML lint dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
+          pacman -Sy --noconfirm --needed make "${qml_packages[@]}"
+
+      - name: Validate Quickshell package version
+        run: scripts/run-tests scripts/dwm-quickshell-version-check
+
+      - name: Validate Quickshell QML
+        run: scripts/run-tests make check-quickshell-qml
