@@ -38,9 +38,10 @@ jobs:
           mapfile -t required_packages < <(dwm_packages arch required | awk 'NF' | sort -u)
           mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
           mapfile -t system_management_packages < <(dwm_packages arch system-management | awk 'NF' | sort -u)
+          mapfile -t font_packages < <(dwm_packages arch fonts | awk 'NF' | sort -u)
           pacman -Sy --noconfirm --needed \
             "${required_packages[@]}" "${qml_packages[@]}" \
-            "${system_management_packages[@]}" \
+            "${system_management_packages[@]}" "${font_packages[@]}" \
             diffutils dbus dconf glib2 inotify-tools jq \
             shellcheck shfmt sudo xorg-server-xvfb
 
