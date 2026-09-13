@@ -26,9 +26,10 @@ if [ -n "$version" ] && awk -F. '
 		patch = $3 + 0
 		exit !(major > 0 || minor > 3 || (minor == 3 && patch >= 0))
 	}
-' <<EOF; then
+' <<EOF
 $version
 EOF
+then
 	exit 0
 fi
 
