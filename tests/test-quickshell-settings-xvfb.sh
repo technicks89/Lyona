@@ -66,6 +66,12 @@ fi
 work=$(mktemp -d "$test_tmp_root/dwm-settings-xvfb.XXXXXX")
 display=":$((($$ % 400) + 700))"
 dwm_bin=${DWM_SETTINGS_TEST_DWM_BIN:-$repo/dwm}
+dwm_bin_dir=$(CDPATH='' cd -- "$(dirname -- "$dwm_bin")" && pwd)
+dwm_installed_version=$("$dwm_bin" -v 2>&1 1>/dev/null) || :
+case $dwm_installed_version in
+dwm-*) dwm_installed_version=${dwm_installed_version#dwm-} ;;
+*) dwm_installed_version=unknown ;;
+esac
 runtime_alias_dir=
 test_stage='initializing fixture'
 
@@ -396,15 +402,31 @@ chmod +x "$data_home/lyona/scripts/dwm-settings-theme"
 # writes update.status through several phases (matching the real helper's
 # own write_status cadence) so the model's phase/busy handling can be
 # observed end-to-end without a real download or privileged install.
+#
+# consistent() requires the system and user records to agree with each other
+# and with the dwm binary actually on PATH for the quickshell process (see
+# dwm_bin_dir below), matching tests/test-lyona-version.sh, so both records
+# track whatever version the built binary reports rather than a literal, and
+# the system record is owned by whoever is running the test (root in the CI
+# container, an unprivileged user locally) rather than assumed to be root.
 update_provenance_record=$work/update-user-record
-cat >"$update_provenance_record" <<'EOF'
-LYONA_VERSION=2026.08.0
+cat >"$update_provenance_record" <<EOF
+LYONA_VERSION=$dwm_installed_version
 LYONA_COMMIT=abc1234
 LYONA_SOURCE=tarball
 LYONA_DATA_DIR=/tmp/lyona-xvfb-fixture
 LYONA_INSTALL_DATE=2026-08-01T00:00:00Z
 EOF
 chmod 600 "$update_provenance_record"
+update_provenance_system_record=$work/update-system-record
+cat >"$update_provenance_system_record" <<EOF
+LYONA_VERSION=$dwm_installed_version
+LYONA_COMMIT=abc1234
+LYONA_SOURCE=tarball
+LYONA_PREFIX=/usr/local
+LYONA_INSTALL_DATE=2026-08-01T00:00:00Z
+EOF
+chmod 644 "$update_provenance_system_record"
 cat >"$data_home/lyona/scripts/lyona-update" <<'SH'
 #!/bin/sh
 set -eu
@@ -655,9 +677,9 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	DWM_SETTINGS_TEST_APPEARANCE_FAILURE="$appearance_failure_fixture" \
 	DWM_SETTINGS_TEST_WALLPAPER_STATUS="$wallpaper_status_fixture" \
 	DWM_SETTINGS_TEST_THEME_STATUS="$theme_status_fixture" \
-	DWM_TEST_SYSTEM_RECORD=/nonexistent DWM_TEST_SYSTEM_OWNER=0 \
+	DWM_TEST_SYSTEM_RECORD="$update_provenance_system_record" DWM_TEST_SYSTEM_OWNER="$(id -u)" \
 	DWM_TEST_USER_RECORD="$update_provenance_record" \
-	PATH="$data_home/lyona/scripts:$PATH" \
+	PATH="$data_home/lyona/scripts:$dwm_bin_dir:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 quickshell_identity=$(capture_process_identity "$quickshell_pid")
