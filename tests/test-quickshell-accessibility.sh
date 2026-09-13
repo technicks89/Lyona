@@ -26,7 +26,12 @@ assert_contains "$model" 'property string mutationDetail: "Loading accessibility
 assert_contains "$model" 'root.mutationState = mutation[1];'
 assert_contains "$model" 'root.mutationDetail = mutation[2];'
 assert_contains "$model" 'root.mutationState = "unavailable";'
-assert_contains "$model" 'Component.onCompleted: root.refresh()'
+# Unlike DefaultAppsModel/AutostartModel/PowerModel/AppearanceModel's
+# WatchedProcess usage, this one is active: true unconditionally rather than
+# gated on section visibility, so nothing else ever starts it -- it has to
+# happen here, or external accessibility.conf changes are never picked up.
+assert_contains "$model" 'root.refresh();'
+assert_contains "$model" 'accessibilityWatcher.start();'
 assert_contains "$model" 'Commands.accessibilitySettingsCommand("status", [])'
 assert_contains "$model" 'Commands.accessibilitySettingsCommand("watch", [])'
 assert_contains "$model" 'Commands.checkedCommand(' # set()/reset() go through the checked wrapper

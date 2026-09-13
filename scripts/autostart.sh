@@ -432,6 +432,13 @@ export XDG_SESSION_TYPE=x11
 export QT_QPA_PLATFORM=xcb
 unset WAYLAND_DISPLAY
 
+# Theme.uiScale (config/quickshell/core/Theme.qml) is the shell's own DPI
+# scaling, driven by dwm-settings-display's dpi.current -- not Qt's. Qt6
+# scales automatically from the X server's DPI by default, and the two would
+# otherwise compound (a 1.5x DPI setting rendering at 1.5 * 1.5 = 2.25x).
+export QT_ENABLE_HIGHDPI_SCALING=0
+export QT_SCALE_FACTOR=1
+
 systemctl_import_pid=
 dbus_import_pid=
 if command -v systemctl >/dev/null 2>&1; then
@@ -440,6 +447,7 @@ if command -v systemctl >/dev/null 2>&1; then
 		systemctl --user import-environment \
 			DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP DESKTOP_SESSION \
 			XDG_SESSION_TYPE QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME \
+			QT_ENABLE_HIGHDPI_SCALING QT_SCALE_FACTOR \
 			XCURSOR_THEME XCURSOR_SIZE
 	} &
 	systemctl_import_pid=$!
@@ -450,6 +458,7 @@ if command -v dbus-update-activation-environment >/dev/null 2>&1; then
 		dbus-update-activation-environment --systemd \
 			DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP DESKTOP_SESSION \
 			XDG_SESSION_TYPE QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME \
+			QT_ENABLE_HIGHDPI_SCALING QT_SCALE_FACTOR \
 			XCURSOR_THEME XCURSOR_SIZE
 	} 2>/dev/null &
 	dbus_import_pid=$!
