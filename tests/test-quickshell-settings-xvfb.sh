@@ -1949,11 +1949,22 @@ fi
 
 test_stage='validating wallpaper watchdog reconciliation'
 wallpaper_preview_meta=$state_home/lyona/appearance/wallpaper/nested-wallpaper.meta
-wallpaper_watchdog_identity=$(awk -F= '
-	$1 == "pid" { pid = $2 }
-	$1 == "pid_start" { start = $2 }
-	END { if (pid != "" && start != "") print pid ":" start }
-' "$wallpaper_preview_meta")
+# The preview-active checks above only observe Quickshell's own in-memory
+# state; the watchdog helper writes this metadata file as a separate,
+# asynchronous step that can still be in flight, so this polls rather than
+# reading it once.
+wallpaper_watchdog_identity=
+i=0
+while [ "$i" -lt 100 ]; do
+	wallpaper_watchdog_identity=$(awk -F= '
+		$1 == "pid" { pid = $2 }
+		$1 == "pid_start" { start = $2 }
+		END { if (pid != "" && start != "") print pid ":" start }
+	' "$wallpaper_preview_meta" 2>/dev/null || true)
+	[ -n "$wallpaper_watchdog_identity" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
 if [ -z "$wallpaper_watchdog_identity" ]; then
 	printf 'Wallpaper watchdog metadata omitted process identity: %s\n' \
 		"$wallpaper_preview_meta" >&2
