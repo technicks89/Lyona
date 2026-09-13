@@ -281,6 +281,8 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-accessibility-settings" \
 	"$repo/scripts/theme-apply.sh" \
 	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
+	"$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-watchdog.sh" \
+	"$repo/scripts/dwm-simple-watch.sh" \
 	"$data_home/lyona/scripts/"
 
 appearance_failure_fixture=$work/appearance-snapshot-failure
@@ -289,7 +291,7 @@ mv "$data_home/lyona/scripts/dwm-settings-appearance" \
 cat >"$data_home/lyona/scripts/dwm-settings-appearance" <<'SH'
 #!/bin/sh
 set -eu
-fixture=${DWM_SETTINGS_TEST_APPEARANCE_FAILURE:?}
+fixture=${DWM_SETTINGS_TEST_APPEARANCE_FAILURE:-}
 if [ "${1:-}" = snapshot ] && [ -f "$fixture" ]; then
 	case $(cat "$fixture") in
 	silent) exit 1 ;;
@@ -340,7 +342,7 @@ mv "$data_home/lyona/scripts/dwm-settings-theme" \
 cat >"$data_home/lyona/scripts/dwm-settings-theme" <<'SH'
 #!/bin/sh
 set -eu
-fixture=${DWM_SETTINGS_TEST_THEME_STATUS:?}
+fixture=${DWM_SETTINGS_TEST_THEME_STATUS:-}
 if [ "${1:-}" = preview-status ] && [ -f "$fixture" ]; then
 	case $(cat "$fixture") in
 	active-zero)
@@ -668,6 +670,14 @@ HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	gsettings set apps.light-locker lock-on-suspend true
 
+# Publish the runtime DPI state before Quickshell starts, matching
+# autostart.sh's own ordering (dpi-apply-saved runs long before it starts
+# Quickshell). shell.qml's dpiStateWatch FileView is bound to this path once,
+# at startup; a path that does not exist yet when the watch is first bound is
+# not reliably picked up later, so this has to land before the launch below.
+DISPLAY=$display XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-settings-display" dpi-apply-saved >/dev/null
+
 env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_RUNTIME_DIR="$runtime" \
 	QT_QPA_PLATFORMTHEME= \
@@ -679,6 +689,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	DWM_SETTINGS_TEST_THEME_STATUS="$theme_status_fixture" \
 	DWM_TEST_SYSTEM_RECORD="$update_provenance_system_record" DWM_TEST_SYSTEM_OWNER="$(id -u)" \
 	DWM_TEST_USER_RECORD="$update_provenance_record" \
+	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
 	PATH="$data_home/lyona/scripts:$dwm_bin_dir:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
@@ -894,9 +905,18 @@ display_dpi_source=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XD
 # to end, not just that the helper discovered a DPI (asserted above). Every
 # later change that resizes or recolours DPI-scaled geometry relies on this
 # path; it is asserted here, on the unmodified tree, before any of them land.
-# See docs/SYNC-P0-DPI-GATE.md.
-theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeDisplayDpi)
+# The dpi-apply-saved call that publishes dpi.current runs before Quickshell
+# is started (see above), matching autostart.sh's own ordering -- Quickshell's
+# FileView watch only reliably picks up a path that already exists when it is
+# first bound, not one created out from under an already-running watch.
+i=0
+while [ "$i" -lt 100 ]; do
+	theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeDisplayDpi 2>/dev/null || true)
+	[ "$theme_dpi" = 144 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
 [ "$theme_dpi" = 144 ]
 ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale)
@@ -935,6 +955,22 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 [ "$ui_scale" = 1.5000 ]
+
+# The DPI hot-reload gate above is done with its assertions; drop back to the
+# 96 DPI / 1.0 uiScale baseline that every hardcoded pixel offset later in
+# this file (mouse clicks, window geometry) assumes. Nothing past this point
+# exercises DPI scaling itself.
+XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/lyona/scripts/dwm-settings-display" dpi-reset >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale 2>/dev/null || true)
+	[ "$ui_scale" = 1.0000 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$ui_scale" = 1.0000 ]
 
 # A theme change must still apply while a contrast override is active, and
 # must not clear the override. This is the whole reason Theme.qml's
