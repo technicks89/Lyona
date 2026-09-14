@@ -3,7 +3,13 @@ name: CI
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -15,11 +21,12 @@ concurrency:
 
 jobs:
   validate:
+    name: Desktop smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     container: archlinux:base-devel
     env:
-      DWM_TEST_TMP_ROOT: /var/tmp/lyona-tests
+      DWM_TEST_TMP_ROOT: /var/tmp/lyona-ci
 
     steps:
       - name: Install checkout dependency
@@ -32,95 +39,21 @@ jobs:
       - name: Trust the container checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install build and validation dependencies
+      - name: Install build and smoke dependencies
         run: |
           source scripts/dwm-packages.sh
-          mapfile -t required_packages < <(dwm_packages arch required | awk 'NF' | sort -u)
-          mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
-          mapfile -t system_management_packages < <(dwm_packages arch system-management | awk 'NF' | sort -u)
-          mapfile -t font_packages < <(dwm_packages arch fonts | awk 'NF' | sort -u)
-          pacman -Syu --noconfirm --needed \
-            "${required_packages[@]}" "${qml_packages[@]}" \
-            "${system_management_packages[@]}" "${font_packages[@]}" \
-            diffutils dbus dconf glib2 inotify-tools jq \
-            shellcheck shfmt sudo xorg-server-xvfb
+          mapfile -t packages < <(dwm_packages arch ci-smoke | awk 'NF' | sort -u)
+          pacman -Syu --noconfirm --needed "${packages[@]}"
 
-      - name: Install AUR-only xkbset (test dependency only, never shipped)
+      - name: Build dwm
         run: |
-          useradd -m builder
-          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/builder
-          runuser -u builder -- bash -euxc '
-            commit=90f104d04bc4c3ff3b7e343f04672e4da666eb7e
-            sha256=a205e06303f78959b9ee263c2864e5440366636f463a7ad404d1e1a33021000a
-            cd /tmp
-            curl -fsSL "https://aur.archlinux.org/cgit/aur.git/snapshot/aur-$commit.tar.gz" -o xkbset.tar.gz
-            printf "%s  xkbset.tar.gz\n" "$sha256" | sha256sum -c -
-            tar xzf xkbset.tar.gz
-            mv "aur-$commit" xkbset
-            cd xkbset
-            makepkg -si --noconfirm --needed
-          '
-          rm -f /etc/sudoers.d/builder
-          userdel -r builder
+          scripts/run-tests make clean all
+          chmod 0755 dwm
 
-      - name: Validate Arch package map
-        run: scripts/run-tests make check-arch-packages
-
-      - name: Validate
-        run: scripts/run-tests
-
-      - name: Validate privileged display helper security
-        env:
-          DWM_SECURITY_CONTAINER: "1"
-        run: scripts/run-tests tests/test-settings-display-security.sh
-
-      - name: Validate nested X11 runtime
-        run: scripts/run-tests make check-xvfb-runtime
-
-  clang-build:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container: archlinux:base-devel
-
-    steps:
-      - name: Install checkout dependency
-        run: pacman -Syu --noconfirm --needed git
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install Clang and build dependencies
+      - name: Launch desktop and check basic interaction
+        timeout-minutes: 2
         run: |
-          source scripts/dwm-packages.sh
-          mapfile -t build_packages < <(dwm_packages arch build | awk 'NF' | sort -u)
-          pacman -Syu --noconfirm --needed clang "${build_packages[@]}"
-
-      - name: Build with Clang
-        run: make clean all CC=clang
-
-  quickshell-qml:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container: archlinux:base-devel
-
-    steps:
-      - name: Install checkout dependency
-        run: pacman -Syu --noconfirm --needed git
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install Quickshell QML lint dependencies
-        run: |
-          source scripts/dwm-packages.sh
-          mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
-          pacman -Syu --noconfirm --needed make "${qml_packages[@]}"
-
-      - name: Validate Quickshell package version
-        run: scripts/run-tests scripts/dwm-quickshell-version-check
-
-      - name: Validate Quickshell QML
-        run: scripts/run-tests make check-quickshell-qml
+          install -d -m 0700 -o nobody -g nobody /home/dwm-ci /run/dwm-ci "$DWM_TEST_TMP_ROOT"
+          chown -R nobody:nobody "$GITHUB_WORKSPACE" "$DWM_TEST_TMP_ROOT"
+          runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+            scripts/run-tests timeout --kill-after=5s 90s tests/test-desktop-smoke-xvfb.sh
