@@ -1333,6 +1333,8 @@ Scope {
         }
         if (root.wallpaperBusy || wallpaperActionProcess.running || wallpaperReadinessProcess.running
                 || wallpaperStatusProcess.running || inventoryProcess.running
+                || root.wallpaperStatusPending || root.inventoryPending
+                || (inventoryWatchProcess.running && !root.inventoryWatchReady)
                 || root.busy || root.fontBusy) {
             return;
         }
