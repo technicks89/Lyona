@@ -227,7 +227,7 @@ assert_contains "$repo/Makefile" 'install-grub-theme'
 # can be asserted against the installer's own summary. An earlier revision had
 # --skip-grub-theme setting the mode to true, which the name alone hides.
 grub_summary() {
-	(cd "$repo" && ./install.sh --dry-run "$@" 2>&1) |
+	(cd "$repo" && PATH="$bin:$PATH" ./install.sh --dry-run "$@" 2>&1) |
 		sed -n 's/^  GRUB theme: //p'
 }
 

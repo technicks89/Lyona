@@ -17,6 +17,16 @@ dwm_packages() {
 	arch:runtime-required)
 		printf '%s\n' dbus curl git procps-ng psmisc unzip util-linux xclip xdotool xorg-xprop xdg-utils
 		;;
+	arch:ci-smoke)
+		# The hosted CI smoke job: build dwm, then start the real managed
+		# Quickshell shell against it in a private Xvfb+dbus session and
+		# exercise the launcher. Kept separate from `required` because
+		# nothing outside this one CI job needs xorg-server-xvfb or a
+		# desktop Quickshell on a build-only host.
+		dwm_packages "$family" required
+		dwm_packages "$family" fonts
+		printf '%s\n' quickshell xorg-server-xvfb inotify-tools jq
+		;;
 	arch:desktop)
 		printf '%s\n' \
 			quickshell picom feh dex mate-polkit \

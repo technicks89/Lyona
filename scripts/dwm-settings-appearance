@@ -1734,7 +1734,7 @@ emit_color_records() {
 		'border-strong|selbordercolor|normbordercolor'
 		'text|normfgcolor|'
 		'text-strong|selfgcolor|normfgcolor'
-		'text-muted|term_fg|normfgcolor'
+		'text-muted|term_color8|normfgcolor'
 		'placeholder|term_color8|term_fg|normfgcolor'
 		'accent|selbordercolor|'
 		'accent-secondary|term_color4|selbordercolor'

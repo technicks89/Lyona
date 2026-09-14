@@ -187,9 +187,10 @@ grep -Fq 'actionProcess.command = Commands.checkedCommand(' "$model"
 grep -Fq 'Commands.sessionActionCommand(requestedAction.id));' "$model"
 grep -Fq 'function clearRejectionFor(origin)' "$model"
 request_action_block=$(sed -n '/function requestAction(action, origin)/,/function cancelConfirmation(origin)/p' "$model")
-if grep -Fq 'root.actionSucceeded = false' <<EOF; then
+if grep -Fq 'root.actionSucceeded = false' <<EOF
 $request_action_block
 EOF
+then
 	printf '%s\n' 'Session-action rejection paths must not mutate another action result.' >&2
 	exit 1
 fi

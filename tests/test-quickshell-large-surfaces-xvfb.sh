@@ -146,6 +146,7 @@ dwm_pid=$!
 env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 	QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software \
+	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
 	DWM_LARGE_SURFACE_DEX_LOG="$work/dex.log" PATH="$bin:$data_home/lyona/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!

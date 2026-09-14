@@ -228,6 +228,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Reduce hosted CI to one Arch build and desktop smoke job
+  (`tests/test-desktop-smoke-xvfb.sh`, `check-desktop-smoke-xvfb`): build
+  dwm, then start the real managed Quickshell shell in a private Xvfb+dbus
+  session and check its panel, the launcher's Super+R/Escape keys, and an
+  application launch. Skip documentation-only pushes. The full Xvfb/Settings
+  suite (`scripts/run-tests` / `make check`) stays a local check rather than
+  a hosted CI job; local validation and independent review remain the merge
+  gate. The previous full desktop suite, `clang-build`, and `quickshell-qml`
+  hosted jobs are removed; `workflow_dispatch` now runs the same smoke job.
 - Increase the Settings window to 1180x760 and tighten its navigation rows,
   pane margins, capability cards, and display controls so more options remain
   visible without reducing the configured text scale. Clamp the enlarged
@@ -255,6 +264,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   process substitution, which captures its PID synchronously and keeps it
   valid regardless of whether the process has since exited. The scan also no
   longer inherits the parent shell's stdin.
+- Document the command menu's `menu open|close|toggle|summon` IPC surface,
+  which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
+  asserted the documentation but nothing had ever satisfied it, so
+  `make check` failed on a from-scratch checkout).
 
 ## [2026.08.0-beta.1] - 2026-08-28
 

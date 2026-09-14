@@ -118,7 +118,10 @@ Scope {
                 && fields[2] === "all" && fields[3] === "defaults";
     }
 
-    Component.onCompleted: root.refresh()
+    Component.onCompleted: {
+        root.refresh();
+        accessibilityWatcher.start();
+    }
 
     WatchedProcess {
         id: accessibilityWatcher

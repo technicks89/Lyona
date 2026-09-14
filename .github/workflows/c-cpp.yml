@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Desktop smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: archlinux:base-devel
+    env:
+      DWM_TEST_TMP_ROOT: /var/tmp/lyona-ci
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trust the container checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install build and smoke dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t packages < <(dwm_packages arch ci-smoke | awk 'NF' | sort -u)
+          pacman -Syu --noconfirm --needed "${packages[@]}"
+
+      - name: Build dwm
+        run: |
+          scripts/run-tests make clean all
+          chmod 0755 dwm
+
+      - name: Launch desktop and check basic interaction
+        timeout-minutes: 2
+        run: |
+          install -d -m 0700 -o nobody -g nobody /home/dwm-ci /run/dwm-ci "$DWM_TEST_TMP_ROOT"
+          chown -R nobody:nobody "$GITHUB_WORKSPACE" "$DWM_TEST_TMP_ROOT"
+          runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+            scripts/run-tests timeout --kill-after=5s 90s tests/test-desktop-smoke-xvfb.sh

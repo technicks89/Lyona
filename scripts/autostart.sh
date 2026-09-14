@@ -476,7 +476,16 @@ if [ -f "$QUICKSHELL_CONFIG" ]; then
 	fi
 	if [ -n "$quickshell_check" ] && "$quickshell_check"; then
 		quickshell_compatible=1
-		start_managed_quickshell "$QUICKSHELL_CONFIG"
+		# Theme.uiScale (config/quickshell/core/Theme.qml) is the shell's own
+		# DPI scaling, driven by dwm-settings-display's dpi.current -- not
+		# Qt's. Qt6 scales automatically from the X server's DPI by default,
+		# and the two would otherwise compound (a 1.5x DPI setting rendering
+		# at 1.5 * 1.5 = 2.25x). Scoped to Quickshell's own launch rather than
+		# exported session-wide, so other Qt apps keep their native scaling;
+		# any later self-relaunch (dwm-quickshell-controlcenter's restart
+		# action) still inherits it as a descendant of this process.
+		QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
+			start_managed_quickshell "$QUICKSHELL_CONFIG"
 	else
 		printf '%s\n' 'lyona: compatible Quickshell 0.3.0 or newer is required' >&2
 	fi
