@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Install checkout dependency
-        run: pacman -Sy --noconfirm --needed git
+        run: pacman -Syu --noconfirm --needed git
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +39,7 @@ jobs:
           mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
           mapfile -t system_management_packages < <(dwm_packages arch system-management | awk 'NF' | sort -u)
           mapfile -t font_packages < <(dwm_packages arch fonts | awk 'NF' | sort -u)
-          pacman -Sy --noconfirm --needed \
+          pacman -Syu --noconfirm --needed \
             "${required_packages[@]}" "${qml_packages[@]}" \
             "${system_management_packages[@]}" "${font_packages[@]}" \
             diffutils dbus dconf glib2 inotify-tools jq \
@@ -85,7 +85,7 @@ jobs:
 
     steps:
       - name: Install checkout dependency
-        run: pacman -Sy --noconfirm --needed git
+        run: pacman -Syu --noconfirm --needed git
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -95,7 +95,7 @@ jobs:
         run: |
           source scripts/dwm-packages.sh
           mapfile -t build_packages < <(dwm_packages arch build | awk 'NF' | sort -u)
-          pacman -Sy --noconfirm --needed clang "${build_packages[@]}"
+          pacman -Syu --noconfirm --needed clang "${build_packages[@]}"
 
       - name: Build with Clang
         run: make clean all CC=clang
@@ -107,7 +107,7 @@ jobs:
 
     steps:
       - name: Install checkout dependency
-        run: pacman -Sy --noconfirm --needed git
+        run: pacman -Syu --noconfirm --needed git
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -117,7 +117,7 @@ jobs:
         run: |
           source scripts/dwm-packages.sh
           mapfile -t qml_packages < <(dwm_packages arch qml-validation | awk 'NF' | sort -u)
-          pacman -Sy --noconfirm --needed make "${qml_packages[@]}"
+          pacman -Syu --noconfirm --needed make "${qml_packages[@]}"
 
       - name: Validate Quickshell package version
         run: scripts/run-tests scripts/dwm-quickshell-version-check
