@@ -49,6 +49,7 @@ Scope {
     property string wallpaperMutationDetail: "Wallpaper changes have not been checked"
     property bool wallpaperResetReady: false
     property bool wallpaperBusy: false
+    property bool wallpaperReconcilePending: false
     readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running
         || wallpaperStatusProcess.running || inventoryProcess.running
         || root.wallpaperStatusPending || root.inventoryPending
@@ -531,6 +532,7 @@ Scope {
 
     function refreshWallpaperStatus() {
         if (!root.settingsVisible) return;
+        if (root.wallpaperReconcilePending) root.tryReconcileWallpaperPreview();
         if (wallpaperReadinessProcess.running || wallpaperStatusProcess.running
                 || wallpaperActionProcess.running || inventoryProcess.running) {
             root.wallpaperStatusPending = true;
@@ -1314,6 +1316,27 @@ Scope {
 
     function reconcileWallpaperPreview() {
         if (root.wallpaperPreviewState !== "failed") return;
+        root.wallpaperReconcilePending = true;
+        root.tryReconcileWallpaperPreview();
+    }
+
+    // runWallpaperAction() silently drops the reconcile request whenever the
+    // continuous background status poller (or another action) is mid-flight,
+    // which happens often enough while the wallpaper pane is open that a
+    // single fire-and-forget attempt can be lost with no user-visible retry.
+    // refreshWallpaperStatus() re-attempts this on every poll cycle instead.
+    function tryReconcileWallpaperPreview() {
+        if (!root.wallpaperReconcilePending) return;
+        if (root.wallpaperPreviewState !== "failed") {
+            root.wallpaperReconcilePending = false;
+            return;
+        }
+        if (root.wallpaperBusy || wallpaperActionProcess.running || wallpaperReadinessProcess.running
+                || wallpaperStatusProcess.running || inventoryProcess.running
+                || root.busy || root.fontBusy) {
+            return;
+        }
+        root.wallpaperReconcilePending = false;
         root.runWallpaperAction("reconcile", [], root.wallpaperPreviewPath,
             root.wallpaperPreviewFit, root.wallpaperPreviewToken);
     }

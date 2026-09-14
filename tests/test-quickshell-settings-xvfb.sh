@@ -2007,7 +2007,12 @@ fi
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperReconcile >/dev/null
 i=0
-while [ "$i" -lt 100 ]; do
+# Reconciliation is a queued retry (it waits out any in-flight background
+# status poll before re-firing), and each retry attempt is itself a fresh
+# process spawn plus a watchdog rearm; under contended CI runners that chain
+# has been observed to take well past 5s, so this poll gets more headroom
+# than the simpler single-round-trip waits elsewhere in this file.
+while [ "$i" -lt 300 ]; do
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewState 2>/dev/null || true)
 	[ "$wallpaper_preview" = active ] && break
