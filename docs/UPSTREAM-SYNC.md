@@ -361,9 +361,9 @@ first**.
 | 2 | [`SYNC-P2-UPDATE-SNAPSHOT.md`](SYNC-P2-UPDATE-SNAPSHOT.md) | `#208`, `#232`, `#241` | 1 | ✅ Done |
 | 3 | [`SYNC-P3-SYSTEM-PANE.md`](SYNC-P3-SYSTEM-PANE.md) | `#209`, `#210` | 2, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | ✅ Done |
 | 4 | [`SYNC-P4-DISCOVERY-EVENTS.md`](SYNC-P4-DISCOVERY-EVENTS.md) | `#237`, `#238`, `#260` | 3 | ✅ Done |
-| 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) | ✅ Done — landed in `b164494` (merged 2026-09-14); **not yet recorded in `TASKS.md`/`CHANGELOG.md`**, see [the note below](#phase-5-landed-without-its-tracking-entries) |
-| 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 | ✅ Done — 2026-09-15, on `sync-p6-update-execution`; see `TASKS.md`, `CHANGELOG.md` |
-| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | Not started |
+| 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) | ✅ Done — landed in `b164494` (merged 2026-09-14); tracking entries backfilled 2026-09-15, see [the note below](#phase-5s-tracking-entries-were-backfilled-and-phase-6-found-a-qml-gap) |
+| 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 | ✅ Done — merged `ee2611a` (PR #29, 2026-09-15); see `TASKS.md`, `CHANGELOG.md` |
+| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | ✅ Done — 2026-09-15, on `sync-p7-operation-surface`; `#262` deferred to Phase 9 (see the doc's §3 note); see `TASKS.md`, `CHANGELOG.md` |
 | 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 | Not started |
 | 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) | Not started |
 
@@ -394,6 +394,34 @@ found:
   `config/quickshell/systemmanagement/SystemManagementModel.qml`, which
   Lyona's Phase 5 never ported. Filled in as part of Sync Phase 6 (which
   needed it anyway) — see `TASKS.md`'s Sync Phase 6 entry.
+
+### Phase 7 found two more doc/scaffolding gaps, and deferred one upstream commit
+
+Implementing Sync Phase 7 on `sync-p7-operation-surface` (2026-09-15) found:
+
+- `SYNC-P7-OPERATION-SURFACE.md` §3 incorrectly said the watch/ack processes
+  run under `Commands.terminatingCheckedCommand(...)`. They must not — the
+  same buffering-defeats-streaming mistake [Phase 4](SYNC-P4-DISCOVERY-EVENTS.md#3-systemproviderdiscoveryqml-is-generic-from-the-start)
+  already found and corrected for `watch-updates`. Corrected in the doc's §3.
+- `SYNC-P7-OPERATION-SURFACE.md` §4's `reveal()` snippet calls a `scrollTo()`
+  helper that assumes keyboard-scroll scaffolding Lyona's `SystemSettingsPane.qml`
+  never had (it is a plain `Flickable`, no `Keys.onPressed` line/page-step
+  handler). `reveal()` sets `root.contentY` directly instead — same behavior,
+  different mechanism. Corrected in the doc's §4.
+- `#262` ("native origins") depends on the regional/delegated action
+  machinery [Phase 8](SYNC-P8-REGIONAL-READERS.md)/[Phase 9](SYNC-P9-REGIONAL-MUTATION.md)
+  add, which does not exist yet — deferred to Phase 9, same as Phase 6's
+  `#232`/E7 exclusion. The security property it is cited for (a closed list
+  of dispatchable actions) already holds: `SystemOperationModel.startUpdate()`
+  only accepts the two literal update-action strings. See `SYNC-P7-OPERATION-SURFACE.md`
+  §3's note.
+
+Also: `tests/qml/SystemOperationParser.qml` (upstream's direct parser-fuzzing
+harness) was not ported, and the existing `test-quickshell-system-management-xvfb.sh`
+stub cannot exercise a live confirm → dispatch → watch → cancel → ack cycle
+(it predates this phase and reports both update actions as permanently
+unavailable). Both are open automated-coverage gaps — see
+`SYNC-P7-OPERATION-SURFACE.md`'s Verification section.
 
 ### The decision point after Phase 4
 

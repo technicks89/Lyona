@@ -955,6 +955,15 @@ ShellRoot {
                 : discovery.failed ? "failed" : "inactive");
         }
 
+        function systemManagementOperationState(): string {
+            return systemManagementModel.operation.state;
+        }
+
+        function systemManagementOperationResult(): string {
+            const result = systemManagementModel.operation.result;
+            return result === null ? "" : result.actionId + ":" + result.state;
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }
