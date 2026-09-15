@@ -1,8 +1,12 @@
 .pragma library
 
-// A parser owns one stream. It never runs a command or acknowledges a journal.
-// Feed cumulative StdioCollector.data (ArrayBuffer), not arbitrary QString
-// chunks: a pipe read can split a UTF-8 character or a protocol record.
+/**
+ * Create a parser for one cumulative StdioCollector byte stream.
+ *
+ * A parser never runs a command or acknowledges a journal. Feed cumulative
+ * ArrayBuffer data, not arbitrary QString chunks, because a pipe read can
+ * split a UTF-8 character or protocol record.
+ */
 function create(expectedId, expectedAction) {
     const parser = {
         expectedId: expectedId || "", expectedAction: expectedAction || "",
@@ -16,14 +20,18 @@ function create(expectedId, expectedAction) {
     return parser;
 }
 
+/** Record the parser's first failure and report that parsing cannot continue. */
 function fail(parser, detail) {
     if (!parser.failure) parser.failure = detail;
     return false;
 }
 
-// Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md) adds regional/delegated
-// actions; the kinds are classified here already (mirroring upstream) so
-// this parser does not need a second revision when that phase wires them up.
+/**
+ * Return the protocol kind for a supported system-management action.
+ *
+ * Sync Phase 9 adds regional and delegated actions; classifying them here
+ * avoids a second parser revision when that phase wires them up.
+ */
 function actionKind(action) {
     if (action === "updates-refresh") return "refresh";
     if (action === "updates-install-all") return "update";
@@ -35,6 +43,7 @@ function actionKind(action) {
     return "";
 }
 
+/** Return the provider namespace that owns an action, or an empty string. */
 function owner(action) {
     const kind = actionKind(action);
     if (kind === "refresh" || kind === "update") return "updates";
@@ -45,10 +54,12 @@ function owner(action) {
     return "";
 }
 
+/** Return whether an operation state is terminal. */
 function terminal(state) {
     return ["permission-denied", "canceled", "failed", "interrupted", "succeeded"].indexOf(state) >= 0;
 }
 
+/** Return whether the protocol permits a transition between two states. */
 function transition(previous, next) {
     if (terminal(previous)) return false;
     // Same-state records update progress without inventing a new transition.
@@ -60,6 +71,7 @@ function transition(previous, next) {
     return false;
 }
 
+/** Return the number of bytes needed to encode a JavaScript string as UTF-8. */
 function utf8Bytes(text) {
     let count = 0;
     for (let i = 0; i < text.length; i++) {
@@ -72,6 +84,7 @@ function utf8Bytes(text) {
     return count;
 }
 
+/** Return whether a record has enough fields and each payload fits its limit. */
 function fieldsFit(fields, count) {
     if (fields.length < count) return false;
     for (let i = 1; i < count; i++)
@@ -79,6 +92,7 @@ function fieldsFit(fields, count) {
     return true;
 }
 
+/** Return whether a value is a canonical UTC protocol timestamp. */
 function timestamp(value) {
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(value)
             || value.slice(0, 4) === "0000") return false;
@@ -86,6 +100,7 @@ function timestamp(value) {
     return !isNaN(date.getTime()) && date.toISOString() === value.slice(0, -1) + ".000Z";
 }
 
+/** Validate and apply one decoded protocol record to a parser. */
 function acceptLine(parser, line) {
     if (parser.complete) return fail(parser, "Records after operation completion");
     const fields = line.split("\t");
@@ -153,6 +168,7 @@ function acceptLine(parser, line) {
     return true;
 }
 
+/** Consume newly appended bytes from a cumulative operation stream buffer. */
 function consume(parser, buffer) {
     if (parser.failure) return false;
     if (parser.ended || !(buffer instanceof ArrayBuffer) || buffer.byteLength < parser.offset)
@@ -185,6 +201,7 @@ function consume(parser, buffer) {
     return true;
 }
 
+/** Finalize a parser and verify stream completeness and process exit status. */
 function finish(parser, exitCode, normalExit, replay) {
     if (parser.failure) return false;
     if (parser.ended) return fail(parser, "Operation stream already ended");
