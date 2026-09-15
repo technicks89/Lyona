@@ -808,12 +808,90 @@ upstream's real source at `aa326d59` (Sync Phase 6's end) → `65138a89`
   permission-denied) is unverified here — same open prerequisite carried
   since Sync Phase 1.
 
+### Sync Phase 8: Regional, Account, Printer, and Repository Readers
+
+Upstream: `#242`–`#246`, `#248`. Doc: `docs/SYNC-P8-REGIONAL-READERS.md`.
+Five bounded, read-only `Gio` service readers — system timezone/NTP, locale,
+the local `AccountsService` account list, CUPS's running state, and the
+PackageKit repository list. No mutation, no D-Bus write of any kind.
+Diffed Lyona's current `scripts/dwm-system-management` directly against
+upstream's Phase-8-end state (`9d05092a`) rather than reusing a prior sync
+phase's boundary SHA — sync-phase numbering is Lyona's own dependency
+ordering, not upstream's chronological commit order, so the latter approach
+falsely flagged already-ported Phase 4 code as new (caught before porting
+anything from it).
+
+- [x] `ServiceRead` (shared bounded single-use lifetime base class),
+  `RegionalRead`, `AccountRead`, `CupsRead`, `RepositoryRead`, and their
+  validation/decode helpers (`validate_timezone_name`/`_choices`,
+  `prepare_timezone_change`, `validate_locale_name`/`_choices`,
+  `LocaleConfiguration`/`parse_locale_configuration`/`prepare_locale_change`/
+  `locale_change_matches`, `RegionalTimeState`/`regional_string_array`/
+  `decode_regional_reply`, `RepositoryRow`/`decode_repository_row`,
+  `UnitState`/`decode_unit_state`/`CupsState`/`classify_cups`,
+  `AccountRecord`/`AccountInventory`/`account_object_path`,
+  `locale_process_status`/`close_locale_process`/`read_locale_choices`) —
+  **Met**, ported verbatim: all five readers are distro-neutral D-Bus
+  clients against standard interfaces (`timedate1`, `locale1`, `Accounts`,
+  `systemd1`, PackageKit's own D-Bus surface) or a fixed `/usr/bin/locale -a`
+  subprocess — nothing Fedora- or Arch-specific to adapt. `PackageKitBackend.
+  _transaction_failure` made a `@staticmethod` (upstream's own change,
+  needed so `RepositoryRead` can call it unbound) — verified it never
+  touched `self`.
+- [x] Five new test-fixture private-bus/private-process qualification
+  harnesses (`tests/fixtures/system-regional-read-bus.py`,
+  `system-locale-process.py`, `system-account-read-bus.py`,
+  `system-cups-read-bus.py`, `system-repository-read-bus.py`) — **Met**,
+  copied verbatim (each reads its target constants directly off the
+  `provider` module via `runpy`, so no adaptation was needed or possible).
+  Requires the `arch:system-management` package group
+  (`scripts/dwm-packages.sh`: `packagekit accountsservice cups`, already
+  anticipating this phase) for `test_real_*_reads_use_an_isolated_private_bus`
+  to run rather than error.
+- [x] Six new test classes ported verbatim from upstream's six PRs —
+  **Met**: `RegionalValidationTests` (11), `RegionalReadTests` (16, incl. one
+  real-bus test), `LocaleEnumerationTests` (17, incl. process-group
+  signal-handling edge cases), `AccountReadTests` (18, incl. one real-bus
+  test), `CupsReadTests` (12, incl. one real-bus test), `RepositoryReadTests`
+  (15, incl. one real-bus test) — 314 → 403 tests, all passing.
+- [x] **Scope correction, found while implementing**: `SYNC-P8-REGIONAL-
+  READERS.md`'s own "Files" table and §6 claimed this phase also needed
+  `docs/P6-SYSTEM-MANAGEMENT.md` stub fill-in (it was not a stub — already
+  fully written), and changes to `SystemManagementModel.qml`/
+  `SystemSettingsPane.qml`/`shell.qml`. None of upstream's six PRs touch
+  `build_snapshot()`/`build_managed_snapshot()`, any QML file, or
+  `shell.qml` — the five readers this phase adds have no caller yet. The
+  actual caller (`NativeSnapshotSources`/`build_native_snapshot()`, which
+  also emits the `timezone-set`/`ntp-set`/`locale-set`/`*-open` mutation and
+  delegate actions and calls `read_fedora_identity()`-gated `admission()`)
+  is Sync Phase 9 material by its own content, found only at the `dd55e58`
+  full-repo survey point, not in any of this phase's own cited commits.
+  Corrected in the doc; the `shell.qml` probe snippet is left in place for
+  Phase 9 to use directly.
+- [x] Not ported (out of scope, confirmed Phase 9 territory) —
+  `NativeSnapshotSources`, `build_native_snapshot()`, `native_list_lines()`,
+  `validate_snapshot_size()`'s Phase-9-specific list-kind additions,
+  `packagekit_security_floor()`/`read_fedora_identity()` (Fedora-specific;
+  Lyona already has its own `require_mutation_safe()` replacement from Sync
+  Phase 6), and every `timezone-set`/`ntp-set`/`locale-set`/`*-open`
+  mutation/delegate command.
+- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
+  tests/test-system-management.py` (403 tests, up from 314 — all pass, 149s),
+  `scripts/run-tests make clean all` (build unaffected; no QML touched, so
+  `check-quickshell-qml`/`check-quickshell-system-management` were re-run
+  only as a regression check, not new coverage, and are unchanged). No live
+  `timedate1`/`locale1`/`Accounts`/`cups`/PackageKit daemon exercise outside
+  the private-bus/private-process fixtures in this sandbox, so the doc's
+  manual real-system checklist (live timezone/locale/account/printer/
+  repository reads, independent-failure isolation) is unverified here — same
+  open prerequisite carried since Sync Phase 1.
+
 ## Phase Completion
 
-When all Phase 7 acceptance criteria pass:
+When all Phase 8 acceptance criteria pass:
 
 1. Record delivered behavior and validation in `CHANGELOG.md`.
-2. Update the Phase 7 status and limitations in `ROADMAP.md`.
+2. Update the Phase 8 status and limitations in `ROADMAP.md`.
 3. Replace this file's active task set with the next phase's tasks — the
    upstream-ported system-management work indexed in `docs/UPSTREAM-SYNC.md`'s
    "The system-management port" section (Sync Phases 1–9).

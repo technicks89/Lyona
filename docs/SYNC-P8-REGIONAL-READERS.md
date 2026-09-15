@@ -26,11 +26,25 @@ write of any kind.** Every reader here is a bounded, single-use, read-only
 
 | File | Change |
 | --- | --- |
-| `scripts/dwm-system-management` | `RegionalRead`, `NtpRead`, `AccountRead`, `CupsRead`, `RepositoryRead`; `NativeSnapshotSources`; new `snapshot` fields |
-| `docs/P6-SYSTEM-MANAGEMENT.md` | Fill in the regional/account/printer/repository sections left as stubs after [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md) |
-| `config/quickshell/systemmanagement/SystemManagementModel.qml` | Parse the four new record kinds; own their state |
-| `config/quickshell/settings/SystemSettingsPane.qml` | Surface timezone, locale, account, printer, and repository summaries |
-| `config/quickshell/shell.qml` | `systemManagementRegionalState()`, `systemManagementAccountCount()`, `systemManagementPrinterState()`, `systemManagementRepositoryCount()` probes |
+| `scripts/dwm-system-management` | `ServiceRead`, `RegionalRead`, `AccountRead`, `CupsRead`, `RepositoryRead` and their validation/decode helpers |
+| `tests/fixtures/system-regional-read-bus.py`, `system-locale-process.py`, `system-account-read-bus.py`, `system-cups-read-bus.py`, `system-repository-read-bus.py` | **New** — private-bus/private-process qualification harnesses for each reader |
+| `tests/test-system-management.py` | `RegionalValidationTests`, `RegionalReadTests`, `LocaleEnumerationTests`, `AccountReadTests`, `CupsReadTests`, `RepositoryReadTests` |
+
+> **Scope correction, found while implementing.** The original version of
+> this table also listed `docs/P6-SYSTEM-MANAGEMENT.md` ("fill in stubs" —
+> it was not a stub; already fully written, evidently from earlier work),
+> `SystemManagementModel.qml`, `SystemSettingsPane.qml`, and `shell.qml`.
+> None of upstream's six Phase 8 PRs (`#242`–`#246`, `#248`) touch the
+> snapshot protocol, any QML file, or `shell.qml` at all — they add the five
+> readers as standalone classes with **no caller**. The record-emitting
+> caller (`NativeSnapshotSources`, `build_native_snapshot()`) that would
+> wire these into `snapshot`'s output, add the `timezone-set`/`ntp-set`/
+> `locale-set`/`*-open` mutation and delegate actions, and call
+> `read_fedora_identity()`-gated `admission()`, exists only much later in
+> upstream's history (found at the `dd55e58` full-repo survey point, not in
+> any commit these six PRs' own citations name) — it is Sync Phase 9
+> material by its own content (mutation actions, `delegate()`, the Fedora
+> identity gate), not this phase's. See §7 below.
 
 ---
 
@@ -139,13 +153,20 @@ Two spots, both small:
   clients against standard interfaces (`timedate1`, `locale1`, `Accounts`,
   `systemd1`, and PackageKit's own D-Bus surface).
 
-## 6. Settings pane surface
+## 6. No Settings pane surface in this phase
 
-Extend `SystemSettingsPane.qml` (from [Phase 3](SYNC-P3-SYSTEM-PANE.md)) with
-four read-only summary rows — timezone + NTP status, locale, account count,
-printer service state, repository count — following the same `StatusCard`
-pattern the update summary already uses. No controls yet; every mutation and
-every delegated-tool launch button is [Phase 9](SYNC-P9-REGIONAL-MUTATION.md).
+There is nothing to mount yet. The five readers this phase adds have no
+caller — `build_snapshot()`/`build_managed_snapshot()` are untouched, so
+`snapshot`'s protocol output carries no `region-state`/`account`/
+`state\tcups-service`/`repository` records for them to feed. Wiring
+`NativeSnapshotSources`/`build_native_snapshot()` into the snapshot output,
+extending `SystemManagementModel.qml` to parse the new record kinds, adding
+the `StatusCard` summary rows to `SystemSettingsPane.qml`, and the
+`shell.qml` probes below are all [Phase 9](SYNC-P9-REGIONAL-MUTATION.md)'s
+job — that function emits the read state *and* the `timezone-set`/
+`ntp-set`/`locale-set`/`*-open` actions together, in one pass, so there is
+no clean read-only half to split off into this phase without inventing a
+snapshot shape upstream never actually shipped. See §5's note above.
 
 ```qml
         function systemManagementRegionalState(): string {
@@ -166,35 +187,60 @@ every delegated-tool launch button is [Phase 9](SYNC-P9-REGIONAL-MUTATION.md).
         }
 ```
 
+(Left here for Phase 9 to use directly — the record kinds and status
+computation these probes assume are exactly what `build_native_snapshot()`
+produces.)
+
 ---
 
 ## Verification
 
 ```bash
 scripts/run-tests /usr/bin/python3 tests/test-system-management.py
-scripts/run-tests make check-quickshell-system-management
-scripts/run-tests make check-quickshell-qml
 ```
 
-Manual, on a real CachyOS install:
+Each reader also has its own `tests/fixtures/system-*-bus.py`/
+`system-locale-process.py` private-bus or private-process qualification
+harness, run by `test_real_*_reads_use_an_isolated_private_bus` in the suite
+above — none of them touch the host's real `timedate1`/`locale1`/
+`Accounts`/`systemd1`/PackageKit. `packagekit`, `accountsservice`, and `cups`
+(the `arch:system-management` package group in `scripts/dwm-packages.sh`,
+already anticipating this phase) must be installed for `RepositoryRead`'s
+and `AccountRead`'s/`CupsRead`'s real-bus tests to run rather than error.
 
-- `timedatectl status` and the pane's timezone/NTP line agree.
-- `localectl status` and the pane's locale line agree.
-- Create a second local user (`useradd`), confirm the account count updates
-  after a Reload; delete it and confirm the count drops back.
-- `systemctl stop cups`, confirm the pane reports the service down without
-  crashing the rest of the snapshot; `systemctl start cups` to restore it.
+No `make check-quickshell-qml`/`check-quickshell-system-management` entries
+here: this phase does not touch any QML file, so both are unaffected and
+were re-run only as a regression check, not as new coverage.
+
+Manual, on a real CachyOS install — **there is no pane surface to check
+yet** (see §6); this instead exercises the readers directly:
+
+- `python3 -c 'import sys; sys.path.insert(0, "scripts"); ...'`-style ad hoc
+  calls to `RegionalRead("time-state").run()`,
+  `RegionalRead("locale-state").run()`, `AccountRead().run()`,
+  `CupsRead().run()`, and `RepositoryRead().run()` each return real, current
+  system state and never throw for common cases (a normal desktop with
+  `timedate1`/`locale1`/`Accounts`/`cups`/PackageKit all present and
+  running).
+- Create a second local user (`useradd`), confirm `AccountRead().run()`'s
+  record count updates; delete it and confirm the count drops back.
+- `systemctl stop cups`, confirm `CupsRead().run()` reports it without
+  raising; `systemctl start cups` to restore it.
 - Disable a repository in `/etc/pacman.conf` (comment out a `[repo]`
-  section), confirm the pane's repository count reflects it after a Reload —
+  section), confirm `RepositoryRead().run()`'s row count reflects it —
   PackageKit re-reads `pacman.conf` on each `GetRepoList`, it does not cache
   across transactions.
-- Every failure above degrades **only its own row** — killing `timedate1`
-  (there is no clean way to stop it; instead revoke bus access via a polkit
-  rule for testing) must not blank the account or repository rows.
+- Every reader fails independently — killing `timedate1` (there is no clean
+  way to stop it; instead revoke bus access via a polkit rule for testing)
+  must not affect `AccountRead`/`CupsRead`/`RepositoryRead` results.
+- Repeat Phase 9's own manual checklist once it exists and actually surfaces
+  these readers in the pane — this phase's manual checks above are a
+  stand-in until then.
 
 ## Closes
 
-The read-only three-quarters of Phase 6's regional/account/printer/repository
-scope in `ROADMAP.md`. The mutation quarter — timezone/NTP/locale changes and
-the delegated-tool launch buttons — is
-[Phase 9](SYNC-P9-REGIONAL-MUTATION.md).
+Nothing in `ROADMAP.md` yet — no protocol record, model property, or pane
+row exists for any of these five readers until
+[Phase 9](SYNC-P9-REGIONAL-MUTATION.md) wires `NativeSnapshotSources`/
+`build_native_snapshot()` in (see §5's and §6's notes above). This phase
+only delivers the backend readers themselves, verified in isolation.

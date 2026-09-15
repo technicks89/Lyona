@@ -46,6 +46,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   mounted in the System pane above the status grid, with live progress, a
   verified-result card, and cancellation gated on PackageKit reporting it
   safe.
+- Add five bounded, read-only backend readers to `dwm-system-management`
+  (Sync Phase 8, `docs/SYNC-P8-REGIONAL-READERS.md`): system timezone/NTP
+  (`RegionalRead`), locale (`RegionalRead`, `read_locale_choices()`), the
+  local `AccountsService` account list (`AccountRead`, current-user-reserved,
+  concurrency-bounded, overflow-safe), CUPS's running state (`CupsRead`,
+  a systemd unit query, not a print-queue connection), and the PackageKit
+  repository list (`RepositoryRead`, reusing the update snapshot's
+  transaction handshake). Each is its own single-use `ServiceRead` subclass
+  with an independent deadline, so one source failing (e.g. `timedate1`
+  unreachable) never blanks another. No mutation, no D-Bus write, and
+  no caller yet -- these are backend building blocks with no snapshot
+  protocol record, model property, or Settings row until Sync Phase 9 wires
+  them into the snapshot alongside the timezone/NTP/locale/account/printer/
+  source mutation and delegated-tool-launch actions.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
   root model over `lyona-update`/`lyona-version`, and a Settings -> System pane
