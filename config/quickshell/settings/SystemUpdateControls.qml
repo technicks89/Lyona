@@ -105,6 +105,11 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: confirmationContent.implicitHeight + Theme.spacingLg * 2
         visible: root.confirmation !== null
+        // prepareInstall/prepareRefresh already holding focus (e.g. activated
+        // by keyboard without a focus change) fires no onActiveFocusChanged
+        // on them -- this card becoming visible is what must reveal it then,
+        // alongside (not instead of) the focus-based path below.
+        onVisibleChanged: if (confirmationCard.visible) root.revealRequested(confirmationCard);
         color: Theme.controlNormalFill
         border.color: Theme.warning
         border.width: Theme.controlBorderWidth
