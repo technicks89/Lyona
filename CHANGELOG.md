@@ -31,6 +31,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   gains `active-operation`/`terminal-handoff` snapshot parsing so a
   Quickshell restart mid-update can reattach via `watch-operation` instead of
   showing nothing.
+- Put a button on the confirmed execution path (Sync Phase 7,
+  `docs/SYNC-P7-OPERATION-SURFACE.md`): Settings -> System can now refresh
+  PackageKit metadata and install Arch updates, not just read their status.
+  `SystemOperationProtocol.js` (new) is a pure UTF-8-safe stream parser over
+  `watch-operation`/`ack-operation` output; `SystemOperationModel.qml` (new)
+  owns the process lifecycle over it, including reattaching to an operation
+  the shell did not start after a Quickshell restart. Confirmation is a
+  captured snapshot, not a flag: `SystemManagementModel.qml`'s
+  `prepareUpdate()`/`confirmUpdate()` re-validate the plan's generation, this
+  model's own read counter, and the live discovery cycle epoch all still
+  match at confirm time, invalidating the prompt rather than dispatching a
+  stale plan. `SystemUpdateControls.qml` (new) is the confirm/cancel UI,
+  mounted in the System pane above the status grid, with live progress, a
+  verified-result card, and cancellation gated on PackageKit reporting it
+  safe.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
   root model over `lyona-update`/`lyona-version`, and a Settings -> System pane

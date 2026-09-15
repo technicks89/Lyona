@@ -22,6 +22,20 @@ Flickable {
 
     onVisibleChanged: if (!visible) root.confirmVersion = "";
 
+    // Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
+    // moves keyboard/tab focus onto its own buttons and scroll lists, which
+    // this Flickable does not know about on its own -- reveal() keeps that
+    // focus target on screen the same way this pane already scrolls itself
+    // via Keys.onPressed below.
+    function reveal(target) {
+        const position = target.mapToItem(content, 0, 0);
+        if (position.y < root.contentY)
+            root.contentY = Math.max(0, position.y);
+        else if (position.y + target.height > root.contentY + root.height)
+            root.contentY = Math.min(Math.max(0, root.contentHeight - root.height),
+                position.y + target.height - root.height);
+    }
+
     ColumnLayout {
         id: content
 
@@ -268,6 +282,11 @@ Flickable {
 
         SectionLabel { label: "System updates" }
 
+        SystemUpdateControls {
+            model: root.systemManagementModel
+            onRevealRequested: target => root.reveal(target)
+        }
+
         GridLayout {
             Layout.fillWidth: true
             columns: root.width >= 720 ? 3 : 1
@@ -299,6 +318,40 @@ Flickable {
                 value: root.systemManagementModel.updateRestart.value
                 detail: root.systemManagementModel.updateRestart.detail
             }
+        }
+
+        StatusCard {
+            id: operationCard
+            readonly property var operation: root.systemManagementModel.operation.progress
+                || root.systemManagementModel.activeOperation
+            Layout.fillWidth: true
+            visible: operationCard.operation !== null
+            label: operationCard.operation === null ? "Active operation" : operationCard.operation.actionId
+            statusState: "partial"
+            value: operationCard.operation === null ? ""
+                : operationCard.operation.percent === "unknown"
+                    ? operationCard.operation.state
+                    : operationCard.operation.state + " / " + operationCard.operation.percent + "%"
+            detail: operationCard.operation === null ? "" : operationCard.operation.detail
+        }
+
+        StatusCard {
+            id: resultCard
+            readonly property var result: root.systemManagementModel.operation.result
+            Layout.fillWidth: true
+            visible: resultCard.result !== null
+            label: resultCard.result === null ? "Verified operation result" : resultCard.result.actionId
+            statusState: resultCard.result !== null && resultCard.result.state === "succeeded" ? "available" : "partial"
+            value: resultCard.result === null ? "" : resultCard.result.state
+            detail: resultCard.result === null ? "" : resultCard.result.detail
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: root.systemManagementModel.operation.detail.length > 0
+            text: root.systemManagementModel.operation.detail
+            color: root.systemManagementModel.operation.blocked ? Theme.danger : Theme.menuMutedText
+            wrapMode: Text.WordWrap
         }
 
         UiText {
@@ -381,9 +434,9 @@ Flickable {
 
         UiText {
             Layout.fillWidth: true
-            text: "This pane reads update and recovery state only. Metadata refresh, "
-                + "update installation, and cancellation require a separate confirmed "
-                + "operation workflow."
+            text: "Reload status reads PackageKit and recovery state. Metadata refresh and "
+                + "update installation require visible confirmation above. PackageKit owns "
+                + "authorization and safe cancellation."
             color: Theme.menuMutedText
             wrapMode: Text.WordWrap
         }
