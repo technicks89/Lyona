@@ -29,6 +29,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from dataclasses import replace
 from unittest import mock
@@ -281,6 +282,258 @@ class UpdateEventMonitorTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "PackageKit private-bus event monitor: PASS\n")
+
+
+class OperationStreamTests(unittest.TestCase):
+    operation_id = "op-" + "1" * 32
+    started = "2026-09-05T01:00:00Z"
+    finished = "2026-09-05T00:00:00Z"  # A wall-clock rollback is valid.
+
+    def terminal(self, action="updates-refresh", state="succeeded", error=None):
+        kind = provider.JOURNAL_OPERATION_ACTION_KINDS[action]
+        return provider.JournalOperation(
+            self.operation_id, action, self.started, self.finished, kind, state,
+            error, "Durable result", "a" * 64 if kind == "update" else None,
+            "/18_adcbcaed" if kind in {"refresh", "update"} else None,
+            "none" if kind == "update" else None,
+            "none" if kind == "update" else None,
+            False if kind == "update" else None,
+            "01234567-89ab-cdef-0123-456789abcdef" if kind == "update" else None,
+            123 if kind in {"refresh", "update"} else None, 0,
+        )
+
+    def stream(self, output, action="updates-refresh"):
+        return provider.OperationStream(self.operation_id, action, self.started, "Starting", output.append)
+
+    def test_progress_cap_reserves_every_lifecycle_and_terminal_record(self):
+        output = []
+        stream = self.stream(output)
+        stream.transition("authorizing", "Authorization")
+        stream.transition("running", "Running")
+        for index in range(400):
+            emitted = stream.transition("running", str(index), percent=index % 101, cancelable=True)
+            self.assertEqual(emitted, index < 252)
+        self.assertTrue(stream.transition("cancel-requested", "Cancellation requested", cancelable=False))
+        self.assertFalse(stream.transition("cancel-requested", "Still waiting", percent=100))
+        stream.finish(self.terminal())  # Success may race cancellation.
+        lines = "".join(output).splitlines()
+        operations = rows(lines, "operation")
+        self.assertEqual(len(operations), 257)
+        self.assertEqual([row[4] for row in operations[:3]], ["pending", "authorizing", "running"])
+        self.assertEqual([row[4] for row in operations[-2:]], ["cancel-requested", "succeeded"])
+        self.assertEqual(operations[-1][6], "no")
+        self.assertEqual(rows(lines, "audit")[0][1:7], [self.operation_id, "updates-refresh", "refresh", "succeeded", self.started, self.finished])
+        self.assertEqual(lines[-1], "complete\toperation")
+        self.assertLess(len("".join(output).encode()), 8 * 1024 * 1024)
+        self.assertEqual(stream.progress_records, 252)
+
+    def test_repeated_progress_is_coalesced_but_changed_cancelability_is_visible(self):
+        output = []
+        stream = self.stream(output)
+        stream.transition("running", "Working", percent=0)
+        self.assertFalse(stream.transition("running", "Working", percent=0))
+        self.assertTrue(stream.transition("running", "Working", percent=0, cancelable=True))
+        self.assertEqual(stream.progress_records, 1)
+
+    def test_pending_and_authorizing_progress_share_the_budget_without_consuming_lifecycle(self):
+        output = []
+        stream = self.stream(output)
+        stream.progress("Pending", cancelable=True)
+        stream.transition("authorizing", "Authorization")
+        for index in range(300):
+            stream.progress("Authorization", cancelable=index % 2 == 0)
+        self.assertEqual(stream.progress_records, 252)
+        stream.transition("running", "Running")
+        stream.transition("cancel-requested", "Cancel requested")
+        stream.finish(self.terminal())
+        operation_rows = rows("".join(output).splitlines(), "operation")
+        self.assertEqual(len(operation_rows), 257)
+        self.assertEqual([row[4] for row in operation_rows[-3:]], ["running", "cancel-requested", "succeeded"])
+
+    def test_replay_all_kinds_and_results_preserves_exact_terminal_and_error_owner(self):
+        for action in provider.JOURNAL_OPERATION_ACTION_KINDS:
+            for state in sorted(provider.JOURNAL_OPERATION_TERMINAL_STATES):
+                with self.subTest(action=action, state=state):
+                    error = "internal" if state == "failed" else None
+                    record = self.terminal(action, state, error)
+                    output = []
+                    provider.replay_terminal_operation(record, output.append)
+                    lines = "".join(output).splitlines()
+                    states = [row[4] for row in rows(lines, "operation")]
+                    implied = ["running"] if state == "succeeded" else ["authorizing"] if state == "permission-denied" else []
+                    self.assertEqual(states, ["pending", *implied, state])
+                    self.assertEqual(rows(lines, "operation")[-1][7], record.detail)
+                    self.assertEqual(rows(lines, "audit")[0][-1], record.detail)
+                    self.assertEqual(len(rows(lines, "audit")), 1)
+                    self.assertEqual(len(rows(lines, "complete")), 1)
+                    if error:
+                        owner = "updates" if record.kind in {"refresh", "update"} else "regional" if record.kind != "delegate" else "accounts" if action in {"accounts-open", "password-open"} else action.split("-")[0]
+                        self.assertEqual(rows(lines, "error"), [["error", owner, error, record.detail]])
+                        self.assertEqual(lines[-4].split("\t")[0], "error")
+                    else:
+                        self.assertEqual(rows(lines, "error"), [])
+                    if record.kind == "update":
+                        self.assertIn("comparison is unavailable", rows(lines, "operation")[0][-1])
+
+    def test_invalid_transitions_fields_and_terminal_identity_emit_nothing(self):
+        output = []
+        stream = self.stream(output)
+        before = tuple(output)
+        for state, options in (
+            ("pending", {}), ("cancel-requested", {}), ("succeeded", {}),
+            ("running", {"percent": 101}), ("running", {"percent": True}),
+            ("running", {"percent": "50"}), ("running", {"cancelable": 1}),
+        ):
+            with self.subTest(state=state, options=options), self.assertRaises(ValueError):
+                stream.transition(state, "Invalid", **options)
+            self.assertEqual(tuple(output), before)
+        for detail in ("bad\tvalue", "bad\nvalue", "bad\0value", "x" * 513, "\ud800"):
+            with self.subTest(detail=repr(detail)), self.assertRaises(ValueError):
+                stream.transition("running", detail)
+            self.assertEqual(tuple(output), before)
+        for record in (
+            self.terminal(),  # Success before running is invalid.
+            self.terminal(state="failed"),  # Failed requires an error.
+            replace(self.terminal(state="failed", error="internal"), operation_id="op-" + "2" * 32),
+            replace(self.terminal(state="failed", error="internal"), started_at=self.finished),
+        ):
+            with self.assertRaises(ValueError):
+                stream.finish(record)
+            self.assertEqual(tuple(output), before)
+
+    def test_terminal_error_and_completion_are_final_and_output_failure_is_not_retried(self):
+        output = []
+        stream = self.stream(output)
+        stream.finish(self.terminal(state="failed", error="conflict"))
+        before = tuple(output)
+        with self.assertRaises(ValueError):
+            stream.finish(self.terminal(state="failed", error="conflict"))
+        with self.assertRaises(ValueError):
+            stream.transition("running", "Late")
+        self.assertEqual(tuple(output), before)
+        output = []
+        stream = self.stream(output)
+        broken_pipe = BrokenPipeError("closed consumer")
+        writer = mock.Mock(side_effect=broken_pipe)
+        stream._write = writer
+        with self.assertRaises(BrokenPipeError) as caught:
+            stream.finish(self.terminal(state="interrupted", error="timeout"))
+        self.assertIs(caught.exception, broken_pipe)
+        self.assertTrue(stream.faulted)
+        with self.assertRaises(ValueError):
+            stream.finish(self.terminal(state="interrupted", error="timeout"))
+        writer.assert_called_once()
+
+    def test_live_terminal_summary_is_not_written_into_retained_record(self):
+        record = self.terminal()
+        output = []
+        stream = self.stream(output)
+        stream.transition("running", "Running")
+        stream.finish(record, detail="Live observed summary")
+        self.assertEqual(record.detail, "Durable result")
+        replay = []
+        provider.replay_terminal_operation(record, replay.append)
+        self.assertNotIn("Live observed summary", "".join(replay))
+
+    def test_invalid_construction_or_nonterminal_replay_has_no_output(self):
+        for operation_id, action, started in (
+            ("bad", "updates-refresh", self.started),
+            (self.operation_id, "updates-cancel", self.started),
+            (self.operation_id, "health-open", self.started),
+            (self.operation_id, "updates-refresh", "2026-02-30T00:00:00Z"),
+        ):
+            output = []
+            with self.assertRaises(ValueError):
+                provider.OperationStream(operation_id, action, started, "Starting", output.append)
+            self.assertEqual(output, [])
+        output = []
+        pending = replace(self.terminal(), state="pending", finished_at=None, terminal_monotonic=None)
+        with self.assertRaises(ValueError):
+            provider.replay_terminal_operation(pending, output.append)
+        self.assertEqual(output, [])
+
+
+class ObservedUpdateTests(unittest.TestCase):
+    def preview(self, action="update", package_id="pkg;2;x86_64;updates"):
+        return provider.PlanRow(package_id, action, "pkg", "2", "Preview")
+
+    def test_normalized_digest_matches_fixed_bytes_and_ignores_download_and_old_cleanup(self):
+        preview = [self.preview(), self.preview("install", "dep;1;x86_64;updates"),
+                   self.preview("obsolete", "old;1;noarch;installed")]
+        observed = provider.ObservedUpdateSummary(preview)
+        self.assertFalse(observed.observe(10, "pkg;2;x86_64;updates"))
+        self.assertFalse(observed.observe(14, "pkg;1;x86_64;installed"))
+        accepted = [(11, "update", "pkg;2;x86_64;updates"),
+                    (12, "install", "dep;1;x86_64;updates"),
+                    (14, "obsolete", "old;1;noarch;installed")]
+        expected = hashlib.sha256(b"lyona-update-observed-v1")
+        for info, action, package_id in accepted:
+            self.assertTrue(observed.observe(info, package_id))
+            for field in (action, package_id):
+                encoded = field.encode()
+                expected.update(len(encoded).to_bytes(8, "big") + encoded)
+        self.assertEqual(observed._digest.hexdigest(), expected.hexdigest())
+        self.assertEqual(observed.counts, {"install": 1, "update": 1, "remove": 0, "obsolete": 1, "unknown": 0})
+        self.assertEqual(observed.comparison(), "unknown")
+        self.assertEqual(observed.comparison(final=True), "no")
+        self.assertEqual(observed.samples, [])
+
+    def test_cleanup_uses_architecture_and_exact_obsolete_identity(self):
+        observed = provider.ObservedUpdateSummary([self.preview()])
+        self.assertTrue(observed.observe(14, "pkg;1;i686;installed"))
+        self.assertEqual(observed.counts["unknown"], 1)
+        self.assertEqual(observed.comparison(final=True), "unknown")
+
+    def test_repeated_expected_signals_are_digested_without_unbounded_identity_storage(self):
+        observed = provider.ObservedUpdateSummary([self.preview()])
+        observed.observe(11, "pkg;2;x86_64;updates")
+        digest = observed._digest.hexdigest()
+        observed.observe(11, "pkg;2;x86_64;updates")
+        self.assertNotEqual(observed._digest.hexdigest(), digest)
+        self.assertEqual(observed.counts["update"], 2)
+        self.assertEqual(len(observed._matched), 1)
+        self.assertEqual(observed.comparison(final=True), "no")
+
+    def test_missing_extra_and_unknown_actions_never_report_equal(self):
+        observed = provider.ObservedUpdateSummary([self.preview()])
+        self.assertEqual(observed.comparison(final=True), "yes")
+        observed.observe(11, "pkg;2;x86_64;updates")
+        self.assertEqual(observed.comparison(final=True), "no")
+        observed.observe(13, "other;1;x86_64;installed")
+        self.assertEqual(observed.comparison(), "yes")
+        observed.observe(99, "unknown;1;x86_64;installed")
+        self.assertEqual(observed.comparison(final=True), "unknown")
+
+    def test_samples_and_summary_size_remain_bounded_and_duplicate_samples_coalesce(self):
+        observed = provider.ObservedUpdateSummary([])
+        for index in range(4096):
+            observed.observe(12, f"extra-{index};1;x86_64;updates")
+        observed.observe(12, "extra-0;1;x86_64;updates")
+        self.assertEqual(len(observed.samples), 128)
+        self.assertEqual(observed.counts["install"], 4097)
+        self.assertEqual(len(observed._matched), 0)
+        self.assertEqual(observed.comparison(final=True), "yes")
+        observed.counts = dict.fromkeys(observed.actions, provider.JOURNAL_SEQUENCE_MAX)
+        observed.observe(12, "extra-0;1;x86_64;updates")
+        self.assertEqual(observed.counts["install"], provider.JOURNAL_SEQUENCE_MAX)
+        self.assertEqual(observed.comparison(final=True), "unknown")
+        self.assertLessEqual(len(observed.detail(final=True).encode()), 512)
+
+    def test_invalid_input_cannot_change_counts_or_digest(self):
+        observed = provider.ObservedUpdateSummary([])
+        before = observed.detail(final=True)
+        for info, package_id in ((True, "pkg;1;x86_64;repo"), (-1, "pkg;1;x86_64;repo"),
+                                 (12, "malformed"), (12, "pkg;1;;repo"),
+                                 (12, "pkg;1;x86_64;bad\nrepo"), (12, "\ud800;1;x86_64;repo"),
+                                 (12, "x" * 513), (12, "pkg;1;x86_64;bad\0repo")):
+            with self.subTest(info=info, package_id=repr(package_id)), self.assertRaises(provider.SnapshotFailure):
+                observed.observe(info, package_id)
+            self.assertEqual(observed.detail(final=True), before)
+        for preview in ([self.preview(), self.preview()], [self.preview("reinstall")],
+                        [self.preview("downgrade")], [replace(self.preview(), package_id=[])],
+                        [None], [self.preview()] * 4097):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.ObservedUpdateSummary(preview)
 
 
 class SnapshotTests(unittest.TestCase):
@@ -4358,6 +4611,62 @@ class JournalDirectoryChainTests(unittest.TestCase):
 
 
 class SnapshotValidationTests(unittest.TestCase):
+    def test_dnf5_requested_installs_remain_visible_in_complete_plan(self):
+        updates = tuple(package(8, f"pkg-{index};2;x86_64;updates", "Update")
+                        for index in range(23))
+        plan = tuple(package(12 if index < 5 else 11, update.package_id, "Change")
+                     for index, update in enumerate(updates)) + tuple(
+            package(13, f"old-{index};1;x86_64;installed", "Removal")
+            for index in range(6))
+        backend = FixtureBackend(updates=updates, plan=plan)
+
+        output = provider.build_snapshot(backend)
+
+        self.assertEqual(len(rows(output, "update")), 23)
+        changes = rows(output, "package-change")
+        self.assertEqual(len(changes), 29)
+        self.assertEqual([row[2] for row in changes].count("install"), 5)
+        self.assertEqual([row[2] for row in changes].count("update"), 18)
+        self.assertEqual([row[2] for row in changes].count("remove"), 6)
+        self.assertEqual(rows(output, "error"), [])
+        generation = rows(output, "snapshot-generation")[0][1]
+        requested, preview = provider.confirmed_update_plan(backend, generation)
+        self.assertEqual(set(requested), {update.package_id for update in updates})
+        self.assertEqual({row.package_id for row in preview if row.action == "install"},
+                         {update.package_id for update in updates[:5]})
+
+    def test_requested_install_action_change_invalidates_confirmation(self):
+        update = package(8, "example;2;x86_64;updates", "Update")
+        backend = FixtureBackend(updates=(update,),
+                                 plan=(package(12, update.package_id, "Install"),))
+        generation = rows(provider.build_snapshot(backend), "snapshot-generation")[0][1]
+        backend.plan_records = (package(11, update.package_id, "Update"),)
+
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            provider.confirmed_update_plan(backend, generation)
+        self.assertEqual(raised.exception.code, "conflict")
+
+    def test_requested_outbound_or_unsupported_plan_action_is_malformed(self):
+        package_id = "example;2;x86_64;updates"
+        for info in (13, 15, 19, 20):
+            with self.subTest(info=info), self.assertRaisesRegex(
+                    provider.SnapshotFailure, "incomplete update plan"):
+                provider.normalize_plan((package(info, package_id, "Change"),),
+                                        (package_id,))
+
+    def test_requested_install_does_not_relax_missing_duplicate_or_extra_update_checks(self):
+        package_id = "example;2;x86_64;updates"
+        install = package(12, package_id, "Install")
+        extra_id = "dependency;1;x86_64;updates"
+        for plan in ((), (install, install), (package(12, extra_id, "Dependency"),),
+                     (install, package(11, extra_id, "Unexpected update"))):
+            with self.subTest(plan=plan), self.assertRaises(provider.SnapshotFailure):
+                provider.normalize_plan(plan, (package_id,))
+        valid = provider.normalize_plan(
+            (install, package(12, extra_id, "Dependency")), (package_id,))
+        self.assertEqual({row.package_id for row in valid}, {package_id, extra_id})
+        self.assertEqual({row.action for row in valid}, {"install"})
+
     def test_duplicate_plan_preserves_readable_updates(self):
         update = package(8, "openssl;4.0;x86_64;updates", "TLS library")
         backend = FixtureBackend(
@@ -4535,6 +4844,2336 @@ class SnapshotValidationTests(unittest.TestCase):
             row for row in rows(output, "state") if row[1] == "update-restart"
         )
         self.assertEqual(restart[2:4], ["available", "none"])
+
+
+class PackageKitSafetyTests(unittest.TestCase):
+    """docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate: Arch has no RPM
+    database and no distribution backport to disambiguate. The whole upstream
+    RPM/backport-identity gate (packagekit_security_floor(),
+    _require_running_backport_identity(), read_fedora_identity()) is deleted
+    rather than ported -- require_mutation_safe() is only the daemon's own
+    D-Bus VersionMajor/Minor/Micro properties compared against (1, 3, 5).
+    """
+
+    def test_version_at_or_above_floor_is_accepted(self):
+        for version in ((1, 3, 5), (1, 3, 6), (1, 4, 0), (2, 0, 0)):
+            with self.subTest(version=version):
+                backend = object.__new__(provider.PackageKitBackend)
+                backend.GLib = types.SimpleNamespace(Variant=lambda signature, values: values)
+                backend._call = mock.Mock(return_value=types.SimpleNamespace(unpack=lambda: (
+                    {"VersionMajor": version[0], "VersionMinor": version[1], "VersionMicro": version[2]},)))
+                backend.require_mutation_safe()
+
+    def test_version_below_floor_is_refused(self):
+        for version in ((1, 3, 4), (1, 2, 9), (0, 9, 9)):
+            with self.subTest(version=version):
+                backend = object.__new__(provider.PackageKitBackend)
+                backend.GLib = types.SimpleNamespace(Variant=lambda signature, values: values)
+                backend._call = mock.Mock(return_value=types.SimpleNamespace(unpack=lambda: (
+                    {"VersionMajor": version[0], "VersionMinor": version[1], "VersionMicro": version[2]},)))
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    backend.require_mutation_safe()
+                self.assertEqual(raised.exception.status, "unsupported")
+
+    def test_malformed_or_missing_version_properties_are_refused(self):
+        for reply in (
+            types.SimpleNamespace(unpack=lambda: ({"VersionMajor": 1, "VersionMinor": 3},)),
+            types.SimpleNamespace(unpack=lambda: ({"VersionMajor": "1", "VersionMinor": 3, "VersionMicro": 5},)),
+            types.SimpleNamespace(unpack=lambda: ({},)),
+            types.SimpleNamespace(unpack=lambda: ()),
+            types.SimpleNamespace(unpack=lambda: ("not-a-dict", "extra")),
+        ):
+            with self.subTest(reply=reply):
+                backend = object.__new__(provider.PackageKitBackend)
+                backend.GLib = types.SimpleNamespace(Variant=lambda signature, values: values)
+                backend._call = mock.Mock(return_value=reply)
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    backend.require_mutation_safe()
+                self.assertEqual(raised.exception.status, "unsupported")
+
+    def test_backend_call_failure_propagates_unwrapped(self):
+        # SnapshotFailure is not in require_mutation_safe()'s except clause
+        # (matching upstream): a lookup failure from _call() already carries
+        # its own accurate code/status and is not masked as "unsupported".
+        backend = object.__new__(provider.PackageKitBackend)
+        backend.GLib = types.SimpleNamespace(Variant=lambda signature, values: values)
+        original = provider.SnapshotFailure("timeout", "PackageKit request timed out", "unavailable")
+        backend._call = mock.Mock(side_effect=original)
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            backend.require_mutation_safe()
+        self.assertIs(raised.exception, original)
+
+    def test_unknown_action_reports_unsupported_without_touching_backend(self):
+        backend = mock.Mock()
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            provider.run_packagekit_mutation(None, backend, "arbitrary", lambda value: None,
+                                            boot_id="01234567-89ab-cdef-0123-456789abcdef")
+        self.assertEqual((raised.exception.code, raised.exception.status), ("unsupported", "unsupported"))
+        self.assertEqual(backend.mock_calls, [])
+
+
+class PackageKitExecutionTests(unittest.TestCase):
+    boot_id = "01234567-89ab-cdef-0123-456789abcdef"
+    package_id = "example;2;x86_64;updates"
+
+    @contextlib.contextmanager
+    def journal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "state" / "lyona" / "system-management"
+            with provider.open_journal_directory_chain(str(path)) as chain:
+                provider.initialize_journal_layout(chain.directory_descriptor, self.boot_id)
+                with provider.retain_writable_journal(chain) as journal:
+                    yield journal
+
+    def backend(self, journal, events):
+        """Drive the real adapter with a deterministic, host-independent bus."""
+        test = self
+
+        class Variant:
+            def __init__(self, signature, values):
+                self.signature, self.values = signature, values
+
+            def unpack(self):
+                return self.values
+
+        class BusError(Exception):
+            pass
+
+        class Loop:
+            stopped = False
+
+            def quit(self):
+                self.stopped = True
+
+            def run(self):
+                for event in events:
+                    if self.stopped:
+                        break
+                    test.assertFalse(journal._exclusive)
+                    event(connection)
+                test.assertTrue(self.stopped, "adapter did not reach a terminal observation")
+
+        class Connection:
+            def __init__(self):
+                self.subscriptions = {}
+                self.calls = []
+                self.cancel_allowed = True
+                self.closed_callback = None
+
+            def connect(self, signal, callback):
+                test.assertEqual(signal, "closed")
+                self.closed_callback = callback
+                return 19
+
+            def disconnect(self, handle):
+                test.assertEqual(handle, 19)
+                self.closed_callback = None
+
+            def signal_subscribe(self, *args):
+                key = len(self.subscriptions) + 1
+                self.subscriptions[key] = args
+                return key
+
+            def signal_unsubscribe(self, key):
+                del self.subscriptions[key]
+
+            def call(self, *args):
+                test.assertFalse(journal._exclusive)
+                with provider.lock_writable_journal(journal):
+                    active = provider.load_writable_journal_state(journal).active
+                test.assertEqual(active.state, "authorizing")
+                test.assertEqual(active.transaction_path, args[1])
+                test.assertEqual(len(self.subscriptions), 3)
+                self.calls.append(args)
+                self.reply_callback = args[-2]
+
+            def call_finish(self, result):
+                if isinstance(result, Exception):
+                    raise result
+                return Variant("()", ())
+
+            def call_sync(self, *args):
+                test.assertFalse(journal._exclusive)
+                self.calls.append(args)
+                test.assertEqual(args[1], "/1_test")
+                if args[3] == "Get":
+                    return Variant("(v)", (self.cancel_allowed,))
+                test.assertEqual(args[3], "Cancel")
+                return Variant("()", ())
+
+            def emit(self, signal, values, *, properties=False):
+                interface = provider.PROPERTIES_INTERFACE if properties else provider.TRANSACTION_INTERFACE
+                for args in tuple(self.subscriptions.values()):
+                    if args[1] == interface:
+                        test.assertEqual(args[0], provider.PACKAGEKIT_NAME)
+                        test.assertEqual(args[3], "/1_test")
+                        args[-2](self, provider.PACKAGEKIT_NAME, "/1_test", interface,
+                                 signal, Variant("", values), None)
+
+            def progress(self, **properties):
+                self.emit("PropertiesChanged", (provider.TRANSACTION_INTERFACE, properties, []), properties=True)
+
+            def reply_error(self, message):
+                self.reply_callback(self, BusError(message), None)
+
+        connection = Connection()
+        backend = provider.PackageKitBackend.__new__(provider.PackageKitBackend)
+        backend.connection = connection
+        backend.flags_only_trusted = 2
+        backend.GLib = types.SimpleNamespace(Variant=Variant, MainLoop=Loop, Error=BusError,
+                                            VariantType=types.SimpleNamespace(new=lambda value: value))
+        backend.Gio = types.SimpleNamespace(
+            Cancellable=lambda: types.SimpleNamespace(cancel=lambda: None),
+            dbus_error_get_remote_error=lambda error: "org.freedesktop.DBus.Error." + str(error),
+            DBusSignalFlags=types.SimpleNamespace(NONE=0),
+            DBusCallFlags=types.SimpleNamespace(NONE=0, ALLOW_INTERACTIVE_AUTHORIZATION=1))
+        backend.require_mutation_safe = mock.Mock()
+        backend.create_mutation = mock.Mock(return_value="/1_test")
+        backend.updates = mock.Mock(return_value=provider.TransactionResult((provider.Package(5, self.package_id, "Example"),)))
+        backend.simulate = mock.Mock(return_value=provider.TransactionResult((provider.Package(11, self.package_id, "Example"),)))
+        return backend
+
+    def run_operation(self, journal, backend, chunks, update=False, write=None):
+        args = {}
+        if update:
+            args = dict(generation=provider.snapshot_generation([self.package_id],
+                        [provider.PlanRow(self.package_id, "update", "example", "2", "Example")]))
+        return provider.run_packagekit_mutation(
+            journal, backend, "updates-install-all" if update else "updates-refresh",
+            write or chunks.append, boot_id=self.boot_id, **args)
+
+    def test_refresh_dispatch_and_durable_handoff_precede_terminal_output(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=3, Percentage=42, AllowCancel=True),
+                                            lambda bus: bus.emit("Finished", (1, 10))])
+
+            def write(chunk):
+                if "complete\toperation" in chunk:
+                    with provider.lock_writable_journal(journal):
+                        state = provider.load_writable_journal_state(journal)
+                    self.assertIsNone(state.active)
+                    self.assertIsNotNone(state.handoff)
+                    self.assertEqual(state.terminals[0].state, "succeeded")
+                chunks.append(chunk)
+
+            terminal = self.run_operation(journal, backend, chunks, write=write)
+            self.assertEqual(terminal.state, "succeeded")
+            self.assertEqual(backend.connection.calls[0][3], "RefreshCache")
+            self.assertEqual(backend.connection.calls[0][4].unpack(), (True,))
+            self.assertEqual(backend.connection.subscriptions, {})
+            self.assertIsNone(backend.connection.closed_callback)
+            self.assertIn("\t42\tyes\t", "".join(chunks))
+
+    def test_update_uses_exact_ids_and_accumulates_restart_contributions(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.emit("Package", (11, self.package_id, "Example")),
+                lambda bus: bus.emit("RequireRestart", (3, self.package_id)),
+                lambda bus: bus.emit("RequireRestart", (6, self.package_id)),
+                lambda bus: bus.emit("RequireRestart", (2, self.package_id)),
+                lambda bus: bus.emit("Finished", (1, 10))])
+            terminal = self.run_operation(journal, backend, chunks, update=True)
+            self.assertEqual(backend.connection.calls[0][3], "UpdatePackages")
+            self.assertEqual(backend.connection.calls[0][4].unpack(), (2, [self.package_id]))
+            self.assertEqual((terminal.system_restart, terminal.session_restart, terminal.application_restart),
+                             ("security-system", "session", True))
+            self.assertIn("different=no", "".join(chunks))
+
+    def test_lost_method_reply_keeps_observing_until_finished(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.reply_error("TimedOut"),
+                lambda bus: bus.progress(Status=3), lambda bus: bus.emit("Finished", (1, 1))])
+            self.assertEqual(self.run_operation(journal, backend, chunks, update=True).state, "succeeded")
+
+    def test_denial_before_running_does_not_add_restart_uncertainty(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.reply_error("AccessDenied")])
+            terminal = self.run_operation(journal, backend, chunks, update=True)
+            self.assertEqual((terminal.state, terminal.system_restart), ("permission-denied", "none"))
+            self.assertIn("error\tupdates\tpermission-denied", "".join(chunks))
+
+    def test_definitive_method_rejection_does_not_wait_for_terminal_signals(self):
+        for error in ("UnknownMethod", "InvalidArgs", "UnknownInterface", "UnknownObject"):
+            with self.subTest(error=error), self.journal() as journal:
+                backend = self.backend(journal, [lambda bus: bus.reply_error(error)])
+                chunks = []
+                terminal = self.run_operation(journal, backend, chunks, update=True)
+                self.assertEqual((terminal.state, terminal.system_restart), ("failed", "none"))
+                self.assertIn("complete\toperation", "".join(chunks))
+
+    def test_definitive_rejection_does_not_clear_observed_execution_uncertainty(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=3),
+                                            lambda bus: bus.reply_error("InvalidArgs")])
+            terminal = self.run_operation(journal, backend, [], update=True)
+            self.assertEqual((terminal.state, terminal.system_restart), ("failed", "unknown"))
+
+    def test_invalidated_or_malformed_status_cannot_prove_prerunning_cancellation(self):
+        for invalidate in (True, False):
+            with self.subTest(invalidate=invalidate), self.journal() as journal:
+                def invalidate_status(bus):
+                    if invalidate:
+                        bus.emit("PropertiesChanged", (provider.TRANSACTION_INTERFACE, {}, ["Status"]), properties=True)
+                    else:
+                        bus.progress(Status="bad")
+                backend = self.backend(journal, [lambda bus: bus.progress(Status=31), invalidate_status,
+                                                lambda bus: bus.emit("Finished", (3, 0))])
+                terminal = self.run_operation(journal, backend, [], update=True)
+                self.assertEqual((terminal.state, terminal.system_restart), ("canceled", "unknown"))
+
+    def test_lost_object_or_bus_after_send_is_interrupted_unknown(self):
+        for event in (lambda bus: bus.emit("Destroy", ()), lambda bus: bus.closed_callback()):
+            with self.subTest(event=event), self.journal() as journal:
+                backend = self.backend(journal, [event])
+                terminal = self.run_operation(journal, backend, [], update=True)
+                self.assertEqual((terminal.state, terminal.system_restart), ("interrupted", "unknown"))
+
+    def test_error_cancels_only_with_fresh_allow_cancel_and_never_after_finished(self):
+        for allowed in (True, False):
+            with self.subTest(allowed=allowed), self.journal() as journal:
+                chunks = []
+                backend = self.backend(journal, [lambda bus: bus.progress(Status=3, AllowCancel=True),
+                    lambda bus: bus.emit("ErrorCode", (13, "Untrusted raw text")),
+                    lambda bus: bus.emit("Finished", (2, 10))])
+                backend.connection.cancel_allowed = allowed
+                terminal = self.run_operation(journal, backend, chunks, update=True)
+                self.assertEqual(terminal.state, "failed")
+                methods = [call[3] for call in backend.connection.calls]
+                self.assertEqual(methods.count("Cancel"), int(allowed))
+                self.assertEqual(methods.count("Get"), 1)
+                self.assertNotIn("Untrusted raw text", "".join(chunks))
+
+    def test_canceled_while_running_has_legal_transition_and_uncertainty(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=3),
+                                            lambda bus: bus.emit("Finished", (3, 0))])
+            terminal = self.run_operation(journal, backend, chunks, update=True)
+            self.assertEqual((terminal.state, terminal.system_restart), ("canceled", "unknown"))
+            self.assertIn("\tcancel-requested\t", "".join(chunks))
+
+    def test_malformed_percentage_is_unknown_and_invalidated_cancel_is_not_reused(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=3, Percentage=True, AllowCancel=True),
+                lambda bus: bus.emit("PropertiesChanged", (provider.TRANSACTION_INTERFACE, {}, ["AllowCancel"]), properties=True),
+                lambda bus: bus.emit("ErrorCode", (13, "")), lambda bus: bus.emit("Finished", (2, 1))])
+            self.run_operation(journal, backend, chunks)
+            self.assertIn("percentage is malformed", "".join(chunks))
+            self.assertEqual([call[3] for call in backend.connection.calls], ["RefreshCache"])
+
+    def test_persistence_failure_keeps_observer_but_suppresses_terminal(self):
+        with self.journal() as journal:
+            chunks = []
+            observed = []
+
+            def damage(bus):
+                os.fchmod(journal.descriptor("terminal-31"), 0o644)
+                bus.progress(Status=3, AllowCancel=True)
+
+            def finish(bus):
+                observed.append(True)
+                bus.emit("Finished", (1, 0))
+
+            backend = self.backend(journal, [damage, finish])
+            with self.assertRaises(provider.JournalFileError):
+                self.run_operation(journal, backend, chunks, update=True)
+            self.assertEqual(observed, [True])
+            self.assertNotIn("complete\toperation", "".join(chunks))
+            self.assertIn("Cancel", [call[3] for call in backend.connection.calls])
+            os.fchmod(journal.descriptor("terminal-31"), 0o600)
+
+    def test_output_failure_after_send_does_not_abandon_durable_result(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=3),
+                                            lambda bus: bus.emit("Finished", (1, 0))])
+            def write(chunk):
+                if "\trunning\t" in chunk:
+                    raise BrokenPipeError("closed consumer")
+            with self.assertRaises(BrokenPipeError):
+                self.run_operation(journal, backend, [], write=write)
+            with provider.lock_writable_journal(journal):
+                state = provider.load_writable_journal_state(journal)
+            self.assertIsNone(state.active)
+            self.assertEqual(state.terminals[0].state, "succeeded")
+
+    def test_overlap_and_invalid_inputs_never_dispatch(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [lambda bus: bus.emit("Finished", (1, 0))])
+            self.run_operation(journal, backend, [])
+            before = len(backend.connection.calls)
+            with self.assertRaises(provider.JournalAdmissionError):
+                self.run_operation(journal, backend, [])
+            self.assertEqual(len(backend.connection.calls), before)
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.run_packagekit_mutation(journal, backend, "updates-install-all", lambda value: None,
+                                                boot_id=self.boot_id, generation="invalid")
+            self.assertEqual(len(backend.connection.calls), before)
+
+    def test_security_rejection_never_creates_or_journals_a_transaction(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [])
+            backend.require_mutation_safe.side_effect = provider.SnapshotFailure("unsupported", "Unsafe build")
+            with self.assertRaises(provider.SnapshotFailure):
+                self.run_operation(journal, backend, [])
+            backend.create_mutation.assert_not_called()
+            with provider.lock_writable_journal(journal):
+                self.assertIsNone(provider.load_writable_journal_state(journal).active)
+
+    def test_changed_plan_rejects_before_mutable_transaction_or_journal_write(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [])
+            backend.simulate.return_value = provider.TransactionResult((provider.Package(11, self.package_id, "Changed preview"),))
+            with self.assertRaises(provider.SnapshotFailure) as raised:
+                self.run_operation(journal, backend, [], update=True)
+            self.assertEqual(raised.exception.code, "conflict")
+            backend.create_mutation.assert_not_called()
+            with provider.lock_writable_journal(journal):
+                state = provider.load_writable_journal_state(journal)
+                self.assertIsNone(state.active)
+                self.assertIsNone(state.handoff)
+
+    def test_preflight_waits_are_unlocked_and_competing_admission_is_rechecked(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [])
+            def competing_owner(package_ids):
+                with provider.lock_writable_journal(journal):
+                    provider.begin_journal_operation(journal, "updates-refresh", "2026-09-05T00:00:00Z",
+                                                     "Competing owner", transaction_path="/2_other", boot_id=self.boot_id)
+                return provider.TransactionResult((provider.Package(11, self.package_id, "Example"),))
+            backend.simulate.side_effect = competing_owner
+            with self.assertRaises(provider.JournalAdmissionError):
+                self.run_operation(journal, backend, [], update=True)
+            self.assertEqual(backend.connection.calls, [])
+
+    def test_fresh_complete_plan_matches_snapshot_generation(self):
+        backend = FixtureBackend(updates=(provider.Package(5, self.package_id, "Example"),
+                                         provider.Package(9, "blocked;1;x86_64;updates", "Blocked")),
+                                 plan=(provider.Package(12, "dependency;1;x86_64;updates", "Dependency"),
+                                       provider.Package(11, self.package_id, "Example")))
+        generation = rows(provider.build_snapshot(backend), "snapshot-generation")[0][1]
+        package_ids, preview = provider.confirmed_update_plan(backend, generation)
+        self.assertEqual(package_ids, (self.package_id,))
+        self.assertEqual({row.action for row in preview}, {"install", "update"})
+
+    def test_invalid_generation_never_reads_backend(self):
+        for generation in (None, "", "A" * 64, "a" * 65, "a" * 63):
+            with self.subTest(generation=generation):
+                backend = mock.Mock()
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    provider.confirmed_update_plan(backend, generation)
+                self.assertEqual(raised.exception.code, "malformed")
+                self.assertEqual(backend.mock_calls, [])
+
+    def test_empty_set_never_simulates_even_when_generation_matches(self):
+        backend = mock.Mock()
+        backend.updates.return_value = provider.TransactionResult(())
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            provider.confirmed_update_plan(backend, provider.snapshot_generation((), ()))
+        self.assertEqual(raised.exception.code, "conflict")
+        backend.simulate.assert_not_called()
+
+    def test_failed_or_unsupported_plan_never_becomes_confirmed(self):
+        for result, code in (
+            (provider.SnapshotFailure("permission-denied", "Denied"), "permission-denied"),
+            (provider.TransactionResult(()), "malformed"),
+            (provider.TransactionResult((provider.Package(11, self.package_id, "Example"),) * 2), "malformed"),
+            (provider.TransactionResult((provider.Package(11, self.package_id, "Example"),
+                                          provider.Package(20, "dependency;1;x86_64;updates", "Downgrade"))), "unsupported"),
+        ):
+            with self.subTest(code=code):
+                backend = mock.Mock()
+                backend.updates.return_value = provider.TransactionResult((provider.Package(5, self.package_id, "Example"),))
+                if isinstance(result, Exception):
+                    backend.simulate.side_effect = result
+                else:
+                    backend.simulate.return_value = result
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    provider.confirmed_update_plan(backend, "a" * 64)
+                self.assertEqual(raised.exception.code, code)
+
+    def test_boot_identity_is_fixed_bounded_and_strict(self):
+        value = "01234567-89ab-cdef-0123-456789abcdef"
+        for data in (value.encode(), (value + "\n").encode()):
+            with mock.patch("builtins.open", mock.mock_open(read_data=data)) as source:
+                self.assertEqual(provider.read_boot_id(), value)
+                source.assert_called_once_with("/proc/sys/kernel/random/boot_id", "rb")
+                source().read.assert_called_once_with(37)
+        for data in (b"", value.upper().encode(), b" " + value.encode(), value.encode() + b"x", b"\xff"):
+            with self.subTest(data=data), mock.patch("builtins.open", mock.mock_open(read_data=data)):
+                with self.assertRaises(provider.SnapshotFailure):
+                    provider.read_boot_id()
+        with mock.patch("builtins.open", side_effect=PermissionError):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.read_boot_id()
+
+    def test_output_failure_before_dispatch_preserves_recoverable_active_record(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [])
+            def write(chunk):
+                if "\tauthorizing\t" in chunk:
+                    raise BrokenPipeError("closed consumer")
+            with self.assertRaises(BrokenPipeError):
+                self.run_operation(journal, backend, [], write=write)
+            self.assertEqual(backend.connection.calls, [])
+            self.assertEqual(backend.connection.subscriptions, {})
+            with provider.lock_writable_journal(journal):
+                self.assertEqual(provider.load_writable_journal_state(journal).active.state, "authorizing")
+
+    def test_external_cancellation_checkpoint_is_reconciled_without_regression(self):
+        with self.journal() as journal:
+            def cancel(bus):
+                with provider.lock_writable_journal(journal):
+                    current = provider.load_writable_journal_state(journal).active
+                    provider.advance_journal_operation(journal, current,
+                        replace(current, state="cancel-requested", detail="Canceled by a second control"))
+                bus.progress(Status=3, Percentage=55)
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=3), cancel,
+                                            lambda bus: bus.emit("Finished", (3, 0))])
+            self.assertEqual(self.run_operation(journal, backend, chunks).state, "canceled")
+            output = "".join(chunks)
+            self.assertIn("\tcancel-requested\t55\t", output)
+            self.assertNotIn("\trunning\t55\t", output)
+
+    def test_malformed_finished_is_interrupted_not_success(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [lambda bus: bus.emit("Finished", (True, 0))])
+            terminal = self.run_operation(journal, backend, [], update=True)
+            self.assertEqual((terminal.state, terminal.error_code, terminal.system_restart),
+                             ("interrupted", "malformed", "unknown"))
+
+
+class SessionEvidenceTests(unittest.TestCase):
+    class Variant:
+        def __init__(self, signature, value):
+            self.signature, self.value = signature, value
+
+        def get_type_string(self):
+            return self.signature
+
+        def unpack(self):
+            return self.value
+
+        def get_child_value(self, index):
+            return self.value[index]
+
+        def get_variant(self):
+            return self.value
+
+    def backend(self, path="/org/freedesktop/login1/session/_31", timestamp=None):
+        backend = provider.PackageKitBackend.__new__(provider.PackageKitBackend)
+        backend.GLib = types.SimpleNamespace(Variant=self.Variant, Error=RuntimeError,
+                                            VariantType=types.SimpleNamespace(new=lambda value: value))
+        backend.Gio = types.SimpleNamespace(DBusCallFlags=types.SimpleNamespace(NONE=0),
+            dbus_error_get_remote_error=lambda error: "org.freedesktop.DBus.Error." + str(error))
+        backend.connection = mock.Mock()
+        backend.connection.call_sync.side_effect = [self.Variant("(o)", (path,)),
+            self.Variant("(v)", (self.Variant("v", timestamp or self.Variant("t", 123)),))]
+        return backend
+
+    def test_fixed_own_session_and_typed_timestamp_share_deadline(self):
+        backend = self.backend()
+        with mock.patch.object(provider.time, "monotonic", side_effect=[100, 101, 102, 103, 104]), \
+                mock.patch.object(provider.os, "getpid", return_value=456):
+            self.assertEqual(backend.session_started(), 123)
+        first, second = backend.connection.call_sync.call_args_list
+        self.assertEqual(first.args[:4], ("org.freedesktop.login1", "/org/freedesktop/login1",
+                                          "org.freedesktop.login1.Manager", "GetSessionByPID"))
+        self.assertEqual(first.args[4].unpack(), (456,))
+        self.assertEqual(second.args[:4], ("org.freedesktop.login1", "/org/freedesktop/login1/session/_31",
+                                           provider.PROPERTIES_INTERFACE, "Get"))
+        self.assertEqual(second.args[4].unpack(), ("org.freedesktop.login1.Session", "TimestampMonotonic"))
+        self.assertEqual((first.args[5], second.args[5]), (None, None))
+        self.assertEqual((first.args[7], second.args[7]), (9000, 7000))
+
+    def test_malformed_session_path_never_reads_property(self):
+        for path in ("/other", "/org/freedesktop/login1/session/", "/org/freedesktop/login1/session/" + "x" * 257):
+            with self.subTest(path=path):
+                backend = self.backend(path=path)
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    backend.session_started()
+                self.assertEqual(raised.exception.code, "malformed")
+                self.assertEqual(backend.connection.call_sync.call_count, 1)
+
+    def test_signed_boolean_or_out_of_range_timestamp_is_not_recovery_evidence(self):
+        for signature, value in (("x", 123), ("b", True), ("t", True), ("t", -1), ("t", 1 << 64)):
+            with self.subTest(signature=signature, value=value):
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    self.backend(timestamp=self.Variant(signature, value)).session_started()
+                self.assertEqual(raised.exception.code, "malformed")
+
+    def test_wrong_outer_reply_type_is_a_malformed_result(self):
+        backend = self.backend()
+        backend.connection.call_sync.side_effect = [self.Variant("(s)", ("/org/freedesktop/login1/session/_31",))]
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            backend.session_started()
+        self.assertEqual(raised.exception.code, "malformed")
+
+    def test_missing_service_or_expired_deadline_does_not_guess_clear(self):
+        backend = self.backend()
+        backend.connection.call_sync.side_effect = RuntimeError("ServiceUnknown")
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            backend.session_started()
+        self.assertEqual(raised.exception.status, "unavailable")
+        self.assertEqual(raised.exception.code, "missing-provider")
+        backend = self.backend()
+        with mock.patch.object(provider.time, "monotonic", side_effect=[100, 101, 110]):
+            with self.assertRaises(provider.SnapshotFailure) as raised:
+                backend.session_started()
+        self.assertEqual(raised.exception.code, "timeout")
+        self.assertEqual(backend.connection.call_sync.call_count, 1)
+
+
+    def test_denied_and_timeout_replies_keep_distinct_failure_codes(self):
+        for message, code in (("AccessDenied", "permission-denied"), ("NoReply", "timeout"),
+                              ("TimedOut", "timeout"), ("Timeout", "timeout"),
+                              ("InvalidArgs", "malformed"), ("Unrecognized", "internal")):
+            with self.subTest(message=message):
+                backend = self.backend()
+                backend.connection.call_sync.side_effect = RuntimeError(message)
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    backend.session_started()
+                self.assertEqual(raised.exception.code, code)
+
+
+class OperationRecoveryTests(unittest.TestCase):
+    boot_id = PackageKitExecutionTests.boot_id
+    journal = PackageKitExecutionTests.journal
+
+    def begin(self, journal, kind="update", **changes):
+        with provider.lock_writable_journal(journal):
+            args = dict(transaction_path="/1_test", boot_id=self.boot_id) if kind in {"update", "refresh"} else {}
+            if kind == "update":
+                args.update(generation="a" * 64, boot_id=self.boot_id)
+            operation = provider.begin_journal_operation(journal,
+                {"update": "updates-install-all", "refresh": "updates-refresh", "timezone": "timezone-set"}[kind],
+                "2026-09-05T00:00:00Z", "Recovery fixture", **args)
+            if changes:
+                operation = provider.advance_journal_operation(journal, operation, replace(operation, **changes))
+            return operation
+
+    def backend(self, evidence=None, history=()):
+        backend = mock.Mock()
+        backend.probe_operation.return_value = evidence or provider.RecoveryEvidence(False)
+        backend.operation_history.return_value = history
+        return backend
+
+    def recover(self, journal, backend, **kwargs):
+        return provider.recover_journal_active(journal, backend, boot_id=kwargs.pop("boot_id", self.boot_id), **kwargs)
+
+    def test_exact_history_success_failure_and_absence_have_distinct_results(self):
+        for result, expected in ((True, "succeeded"), (False, "interrupted"), (None, "interrupted")):
+            with self.subTest(result=result), self.journal() as journal:
+                operation = self.begin(journal)
+                history = () if result is None else ((operation.transaction_path, result, 22, os.getuid()),)
+                state, evidence, failure = self.recover(journal, self.backend(history=history))
+                self.assertIsNone(state.active)
+                self.assertIsNone(evidence)
+                self.assertIsNone(failure)
+                terminal = state.terminals[operation.slot]
+                self.assertEqual((terminal.state, terminal.system_restart), (expected, "unknown"))
+                self.assertEqual(state.handoff.operation_id, operation.operation_id)
+                self.assertEqual(state.restart.system, "unknown")
+
+    def test_active_transaction_remains_owned_and_is_never_retried(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running")
+            observation = provider.RecoveryEvidence(True, status=3, allow_cancel=True, percent=45)
+            backend = self.backend(observation)
+            state, evidence, failure = self.recover(journal, backend)
+            self.assertEqual(state.active, operation)
+            self.assertEqual(evidence, observation)
+            self.assertIsNone(failure)
+            self.assertEqual([call[0] for call in backend.mock_calls], ["probe_operation", "operation_history"])
+
+    def test_timeout_is_not_absence_but_exact_history_can_supply_a_result(self):
+        for history_success in (False, True):
+            with self.subTest(history_success=history_success), self.journal() as journal:
+                operation = self.begin(journal)
+                history = ((operation.transaction_path, True, 22, os.getuid()),) if history_success else ()
+                backend = self.backend(history=history)
+                backend.probe_operation.side_effect = provider.SnapshotFailure("timeout", "Expired")
+                state, _, failure = self.recover(journal, backend)
+                self.assertEqual(failure.code, "timeout")
+                if history_success:
+                    self.assertIsNone(state.active)
+                    self.assertEqual(state.terminals[operation.slot].state, "succeeded")
+                else:
+                    self.assertEqual(state.active, operation)
+                    self.assertIsNone(state.handoff)
+
+    def test_unsuccessful_history_requires_confirmed_absence(self):
+        for lookup in ("present", "timeout"):
+            with self.subTest(lookup=lookup), self.journal() as journal:
+                operation = self.begin(journal, state="running")
+                observation = provider.RecoveryEvidence(True, status=3)
+                backend = self.backend(observation,
+                    ((operation.transaction_path, False, 22, os.getuid()),))
+                if lookup == "timeout":
+                    backend.probe_operation.side_effect = provider.SnapshotFailure("timeout", "Expired")
+                state, evidence, failure = self.recover(journal, backend)
+                self.assertEqual(state.active, operation)
+                self.assertIsNone(state.handoff)
+                self.assertTrue(all(terminal is None for terminal in state.terminals))
+                self.assertEqual(evidence, observation if lookup == "present" else None)
+                self.assertEqual(failure.code if failure else None, "timeout" if lookup == "timeout" else None)
+                with provider.lock_writable_journal(journal):
+                    with self.assertRaises(provider.JournalAdmissionError):
+                        provider.prepare_journal_admission(journal)
+
+    def test_history_timeout_after_exact_absence_is_conservative_interruption(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend()
+            backend.operation_history.side_effect = provider.SnapshotFailure("timeout", "Expired history")
+            state, _, failure = self.recover(journal, backend)
+            self.assertEqual(failure.code, "timeout")
+            self.assertEqual(state.terminals[operation.slot].state, "interrupted")
+
+    def test_malformed_probe_or_history_preserves_nonterminal_record(self):
+        for source in ("probe_operation", "operation_history"):
+            with self.subTest(source=source), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend()
+                getattr(backend, source).side_effect = provider.SnapshotFailure("malformed", "Malformed evidence")
+                state, _, failure = self.recover(journal, backend)
+                self.assertEqual(state.active, operation)
+                self.assertEqual(failure.code, "malformed")
+                if source == "probe_operation":
+                    backend.operation_history.assert_not_called()
+
+    def test_refresh_and_regional_interruption_never_query_history(self):
+        for kind in ("refresh", "timezone"):
+            with self.subTest(kind=kind), self.journal() as journal:
+                operation = self.begin(journal, kind)
+                backend = self.backend()
+                state, _, _ = self.recover(journal, backend)
+                self.assertEqual(state.terminals[operation.slot].state, "interrupted")
+                backend.operation_history.assert_not_called()
+                if kind == "timezone":
+                    backend.probe_operation.assert_not_called()
+
+    def test_durable_terminal_recovery_opens_no_service(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="failed", finished_at="2026-09-05T00:01:00Z",
+                                   terminal_monotonic=100, error_code="package")
+            backend = self.backend()
+            state, _, _ = self.recover(journal, backend)
+            self.assertEqual(state.terminals[operation.slot], operation)
+            self.assertEqual(backend.mock_calls, [])
+
+    def test_restart_checkpoint_precedes_adopted_finished(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend()
+            def probe(_operation, *, on_restart, on_running):
+                on_restart(5)
+                on_restart(6)
+                with provider.lock_writable_journal(journal):
+                    active = provider.load_writable_journal_state(journal).active
+                    self.assertEqual((active.system_restart, active.session_restart), ("security-system", "security-session"))
+                    self.assertEqual(active.state, "pending")
+                return provider.RecoveryEvidence(False, "succeeded", restart_types=(5, 6), terminal_monotonic=100)
+            backend.probe_operation.side_effect = probe
+            state, _, _ = self.recover(journal, backend)
+            terminal = state.terminals[operation.slot]
+            self.assertEqual((terminal.system_restart, terminal.session_restart, terminal.terminal_monotonic),
+                             ("security-system", "security-session", 100))
+            backend.operation_history.assert_not_called()
+
+    def test_persistence_failure_never_consumes_a_later_success(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend()
+            def probe(_operation, *, on_restart, on_running):
+                with mock.patch.object(provider, "commit_writable_journal_path", side_effect=provider.JournalFileError("Fault")):
+                    on_restart(6)
+                self.fail("A persistence failure must stop recovered success")
+            backend.probe_operation.side_effect = probe
+            with self.assertRaises(provider.JournalFileError):
+                self.recover(journal, backend)
+            with provider.lock_writable_journal(journal):
+                state = provider.load_writable_journal_state(journal)
+            self.assertEqual(state.active, operation)
+            self.assertIsNone(state.handoff)
+
+    def test_partial_restart_adoption_cannot_prove_no_reboot(self):
+        for signals, session, application in (((1,), "none", False),
+                ((2,), "none", True), ((3,), "session", False),
+                ((5, 2), "security-session", True)):
+            with self.subTest(signals=signals), self.journal() as journal:
+                operation = self.begin(journal, state="running")
+                backend = self.backend(provider.RecoveryEvidence(False, "succeeded",
+                    restart_types=signals, status=3, terminal_monotonic=100))
+                state, _, _ = self.recover(journal, backend)
+                terminal = state.terminals[operation.slot]
+                self.assertEqual((terminal.system_restart, terminal.session_restart,
+                                  terminal.application_restart), ("unknown", session, application))
+                self.assertEqual((state.restart.system, state.restart.session,
+                                  state.restart.application), ("unknown", session, application))
+
+    def test_stale_probe_never_terminalizes_replacement_owner(self):
+        with self.journal() as journal:
+            self.begin(journal, "refresh")
+            replacement = None
+            backend = self.backend()
+            def probe(operation, **_kwargs):
+                nonlocal replacement
+                with provider.lock_writable_journal(journal):
+                    terminal = replace(operation, state="interrupted", finished_at="2026-09-05T00:01:00Z", terminal_monotonic=100)
+                    provider.advance_journal_operation(journal, operation, terminal)
+                    provider.complete_journal_terminal(journal)
+                    provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                    replacement = provider.begin_journal_operation(journal, "updates-refresh", "2026-09-05T00:02:00Z", "New owner", transaction_path="/2_new", boot_id=self.boot_id)
+                return provider.RecoveryEvidence(False, "succeeded", terminal_monotonic=200)
+            backend.probe_operation.side_effect = probe
+            state, evidence, failure = self.recover(journal, backend)
+            self.assertEqual(state.active, replacement)
+            self.assertIsNone(evidence)
+            self.assertIsNone(failure)
+
+    def test_history_uncertainty_retains_lower_scopes_and_boot_change_clears_all(self):
+        for new_boot in (self.boot_id, "11111111-2222-3333-4444-555555555555"):
+            with self.subTest(boot=new_boot), self.journal() as journal:
+                operation = self.begin(journal, system_restart="security-system", session_restart="security-session", application_restart=True)
+                backend = self.backend(history=((operation.transaction_path, True, 22, os.getuid()),))
+                state, _, _ = self.recover(journal, backend, boot_id=new_boot)
+                terminal = state.terminals[operation.slot]
+                expected = ("unknown", "security-session", True) if new_boot == self.boot_id else ("none", "none", False)
+                self.assertEqual((terminal.system_restart, terminal.session_restart, terminal.application_restart), expected)
+                self.assertEqual((state.restart.system, state.restart.session, state.restart.application), expected)
+
+    def test_adoption_denial_or_proven_authorization_cancel_is_all_clear(self):
+        for result in ("permission-denied", "canceled"):
+            with self.subTest(result=result), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend(provider.RecoveryEvidence(False, result, provider.SnapshotFailure(result, "Stopped"), status=31, terminal_monotonic=100))
+                state, _, _ = self.recover(journal, backend)
+                self.assertEqual((state.terminals[operation.slot].state, state.restart.system), (result, "none"))
+
+    def test_no_replay_replaces_system_evidence_but_partial_replay_merges_it(self):
+        for signals, expected in (((), "unknown"), ((2,), "security-system")):
+            with self.subTest(signals=signals), self.journal() as journal:
+                operation = self.begin(journal, state="running", system_restart="security-system")
+                backend = self.backend(provider.RecoveryEvidence(False, "succeeded",
+                    restart_types=signals, status=3, terminal_monotonic=100))
+                state, _, _ = self.recover(journal, backend)
+                self.assertEqual(state.terminals[operation.slot].system_restart, expected)
+                self.assertEqual(state.restart.system, expected)
+
+    def test_new_boot_prunes_old_cutoffs_before_recovered_terminal_commit(self):
+        with self.journal() as journal:
+            first = self.begin(journal, state="running", system_restart="system")
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, first, replace(first, state="succeeded",
+                    finished_at="2026-09-05T00:01:00Z", terminal_monotonic=1000000))
+                provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                provider.acknowledge_journal_handoff(journal, first.operation_id)
+            operation = self.begin(journal)
+            backend = self.backend(history=((operation.transaction_path, True, 22, os.getuid()),))
+            with mock.patch.object(provider.time, "monotonic_ns", return_value=200000):
+                state, _, _ = self.recover(journal, backend, boot_id="11111111-2222-3333-4444-555555555555")
+            self.assertEqual(state.terminals[operation.slot].terminal_monotonic, 200)
+            self.assertEqual(state.restart.system, "none")
+            self.assertEqual(state.terminals[first.slot].terminal_monotonic, 1000000)
+
+    def test_denial_with_running_or_unknown_adopted_status_retains_uncertainty(self):
+        for status, expected in ((0, "permission-denied"), (3, "failed")):
+            with self.subTest(status=status), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend(provider.RecoveryEvidence(False, "permission-denied",
+                    provider.SnapshotFailure("permission-denied", "Denied"), status=status, terminal_monotonic=100))
+                state, _, _ = self.recover(journal, backend)
+                self.assertEqual((state.terminals[operation.slot].state, state.restart.system), (expected, "unknown"))
+
+    def test_observed_running_is_durable_before_a_later_recovery_attempt(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend()
+            def probe(_operation, *, on_restart, on_running):
+                on_running()
+                with provider.lock_writable_journal(journal):
+                    self.assertEqual(provider.load_writable_journal_state(journal).active.state, "running")
+                return provider.RecoveryEvidence(True, status=3)
+            backend.probe_operation.side_effect = probe
+            state, _, _ = self.recover(journal, backend)
+            self.assertEqual(state.active.state, "running")
+            backend = self.backend(provider.RecoveryEvidence(False, "canceled", status=31, terminal_monotonic=100))
+            state, _, _ = self.recover(journal, backend)
+            self.assertEqual((state.terminals[operation.slot].state, state.restart.system), ("canceled", "unknown"))
+
+    def test_recovery_override_cannot_weaken_arbitrary_contributions(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, system_restart="system", session_restart="session", application_restart=True)
+            for changes in ({"system_restart": "none"}, {"system_restart": "unknown", "session_restart": "none"},
+                            {"system_restart": "unknown", "application_restart": False}):
+                with self.subTest(changes=changes), provider.lock_writable_journal(journal):
+                    terminal = replace(operation, state="failed", error_code="internal",
+                        finished_at="2026-09-05T00:01:00Z", terminal_monotonic=100, **changes)
+                    with self.assertRaises(provider.JournalAdmissionError):
+                        provider.advance_journal_operation(journal, operation, terminal, recovery_boot_id=self.boot_id)
+                    self.assertEqual(provider.load_writable_journal_state(journal).active, operation)
+
+    def test_active_list_and_history_identity_bounds(self):
+        self.assertEqual(provider.validate_transaction_list(["/1_test"]), ("/1_test",))
+        for values in (["/1_test"] * 2, [f"/{index}_test" for index in range(257)], ["/wrong/path"], None, "x"):
+            with self.subTest(values=str(values)[:40]), self.assertRaises(provider.SnapshotFailure):
+                provider.validate_transaction_list(values)
+        row = ("/1_test", "2026-09-05T00:00:00Z", True, 22, 10, "ignored package data", os.getuid(), "ignored command")
+        self.assertEqual(provider.validate_history_record(row), ("/1_test", True, 22, os.getuid()))
+        for index, value in ((0, "/wrong"), (2, 1), (3, True), (4, -1), (6, 1 << 32)):
+            malformed = list(row)
+            malformed[index] = value
+            with self.subTest(index=index), self.assertRaises(provider.SnapshotFailure):
+                provider.validate_history_record(malformed)
+        exact = ("/1_test", True, 22, os.getuid())
+        for records in ((exact, exact), (("/1_test", True, 13, os.getuid()),), (("/1_test", True, 22, os.getuid() + 1),)):
+            with self.subTest(records=records), self.assertRaises(provider.SnapshotFailure):
+                provider.match_update_history(records, "/1_test", os.getuid())
+
+
+class RecoveryAdapterTests(unittest.TestCase):
+    boot_id = PackageKitExecutionTests.boot_id
+    package_id = PackageKitExecutionTests.package_id
+    journal = PackageKitExecutionTests.journal
+    begin = OperationRecoveryTests.begin
+
+    def backend(self, journal):
+        backend = PackageKitExecutionTests.backend(self, journal, [])
+        backend.GLib.Variant = SessionEvidenceTests.Variant
+        return backend
+
+    def emit(self, backend, signal, signature, values, interface=None):
+        interface = interface or provider.TRANSACTION_INTERFACE
+        for args in tuple(backend.connection.subscriptions.values()):
+            if args[1] == interface:
+                args[-2](backend.connection, args[0], args[3], interface, signal,
+                         SessionEvidenceTests.Variant(signature, values), None)
+
+    def properties(self, **changes):
+        return {"Role": 22, "Uid": os.getuid(), "Status": 3, "AllowCancel": True, "Percentage": 45, **changes}
+
+    def test_probe_uses_exact_object_and_shared_deadline_without_cancellation(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            backend._recovery_call = mock.Mock(side_effect=[SessionEvidenceTests.Variant("(a{sv})", (self.properties(),)),
+                                                          SessionEvidenceTests.Variant("(ao)", ([operation.transaction_path],))])
+            result = backend.probe_operation(operation)
+            first, second = backend._recovery_call.call_args_list
+            self.assertEqual(first.args[:3], (operation.transaction_path, provider.PROPERTIES_INTERFACE, "GetAll"))
+            self.assertEqual(second.args[:3], (provider.PACKAGEKIT_PATH, provider.PACKAGEKIT_INTERFACE, "GetTransactionList"))
+            self.assertEqual(first.args[4], second.args[4])
+            self.assertEqual((result.present, result.status, result.allow_cancel, result.percent), (True, 3, True, 45))
+            self.assertEqual(backend.connection.calls, [])
+            self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_exact_unknown_object_and_empty_list_prove_absence(self):
+        for error in ("UnknownObject", "UnknownMethod"):
+            for listed in ([], ["/1_test"]):
+                with self.subTest(error=error, listed=listed), self.journal() as journal:
+                    operation = self.begin(journal)
+                    backend = self.backend(journal)
+                    failure = provider.SnapshotFailure("missing-provider", "Absent object")
+                    failure.__cause__ = backend.GLib.Error(error)
+                    backend._recovery_call = mock.Mock(side_effect=[failure, SessionEvidenceTests.Variant("(ao)", (listed,))])
+                    self.assertEqual(backend.probe_operation(operation).present, bool(listed))
+
+    def test_adapter_checkpoints_running_before_consuming_finished(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            checkpointed = []
+            def request(_path, _interface, method, *_args):
+                if method == "GetAll":
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(),))
+                self.assertEqual(checkpointed, ["running"])
+                self.emit(backend, "Finished", "(uu)", (1, 1))
+                return SessionEvidenceTests.Variant("(ao)", ([],))
+            backend._recovery_call = mock.Mock(side_effect=request)
+            self.assertEqual(backend.probe_operation(operation, on_running=lambda: checkpointed.append("running")).state, "succeeded")
+
+    def test_destroy_cannot_be_overwritten_by_an_inflight_snapshot(self):
+        for stage in ("GetAll", "GetTransactionList"):
+            for listed in ([], ["/1_test"]):
+                with self.subTest(stage=stage, listed=listed), self.journal() as journal:
+                    operation = self.begin(journal, "refresh")
+                    backend = self.backend(journal)
+                    def request(_path, _interface, method, *_args):
+                        if method == stage:
+                            self.emit(backend, "Destroy", "()", ())
+                        if method == "GetAll":
+                            return SessionEvidenceTests.Variant("(a{sv})", (self.properties(Role=13),))
+                        return SessionEvidenceTests.Variant("(ao)", (listed,))
+                    backend._recovery_call = mock.Mock(side_effect=request)
+                    evidence = backend.probe_operation(operation)
+                    self.assertFalse(evidence.present)
+                    self.assertFalse(evidence.allow_cancel)
+                    state, _, _ = provider.recover_journal_active(journal, backend, boot_id=self.boot_id)
+                    self.assertEqual(state.terminals[operation.slot].state, "interrupted")
+
+    def test_destroy_requires_valid_signature_and_verified_identity(self):
+        for fault in ("signature", "identity"):
+            with self.subTest(fault=fault), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend(journal)
+                def request(_path, _interface, method, *_args):
+                    if method == "GetAll":
+                        self.emit(backend, "Destroy", "(s)" if fault == "signature" else "()",
+                            ("invalid",) if fault == "signature" else ())
+                        if fault == "identity":
+                            failure = provider.SnapshotFailure("missing-provider", "No object identity")
+                            failure.__cause__ = backend.GLib.Error("UnknownObject")
+                            raise failure
+                        return SessionEvidenceTests.Variant("(a{sv})", (self.properties(),))
+                    return SessionEvidenceTests.Variant("(ao)", ([operation.transaction_path],))
+                backend._recovery_call = mock.Mock(side_effect=request)
+                if fault == "signature":
+                    with self.assertRaises(provider.SnapshotFailure) as raised:
+                        backend.probe_operation(operation)
+                    self.assertEqual(raised.exception.code, "malformed")
+                else:
+                    self.assertTrue(backend.probe_operation(operation).present)
+
+    def test_malformed_list_or_owner_never_becomes_absence(self):
+        for properties, listed in ((self.properties(Uid=os.getuid() + 1), []),
+                                   (self.properties(Role=13), []),
+                                   (self.properties(), ["/1_test", "/1_test"])):
+            with self.subTest(properties=properties, listed=listed), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend(journal)
+                backend._recovery_call = mock.Mock(side_effect=[SessionEvidenceTests.Variant("(a{sv})", (properties,)),
+                                                              SessionEvidenceTests.Variant("(ao)", (listed,))])
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    backend.probe_operation(operation)
+                self.assertEqual(raised.exception.code, "malformed")
+                self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_terminal_evidence_does_not_depend_on_secondary_list(self):
+        for kind in ("refresh", "update"):
+            for result, expected in ((1, "succeeded"), (2, "failed")):
+                for stage in ("before-list", "timeout", "malformed", "invalid-list"):
+                    with self.subTest(kind=kind, result=result, stage=stage), self.journal() as journal:
+                        operation = self.begin(journal, kind)
+                        backend = self.backend(journal)
+                        def request(_path, _interface, method, *_args):
+                            if method == "GetAll":
+                                if stage == "before-list":
+                                    self.emit(backend, "Finished", "(uu)", (result, 1))
+                                return SessionEvidenceTests.Variant("(a{sv})", (self.properties(Role=13 if kind == "refresh" else 22),))
+                            self.assertNotEqual(stage, "before-list")
+                            self.emit(backend, "Finished", "(uu)", (result, 1))
+                            if stage == "invalid-list":
+                                return SessionEvidenceTests.Variant("(ao)", (["/1_duplicate", "/1_duplicate"],))
+                            raise provider.SnapshotFailure(stage, "Secondary lookup failed")
+                        backend._recovery_call = mock.Mock(side_effect=request)
+                        evidence = backend.probe_operation(operation)
+                        self.assertEqual(evidence.state, expected)
+                        self.assertIsInstance(evidence.terminal_monotonic, int)
+                        self.assertEqual(backend._recovery_call.call_count, 1 if stage == "before-list" else 2)
+                        self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_terminal_evidence_does_not_override_wrong_owner_or_duplicate_finish(self):
+        for fault in ("owner", "duplicate"):
+            with self.subTest(fault=fault), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend(journal)
+                def request(*_args):
+                    self.emit(backend, "Finished", "(uu)", (1, 1))
+                    if fault == "duplicate":
+                        self.emit(backend, "Finished", "(uu)", (1, 1))
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(Uid=os.getuid() + (fault == "owner")),))
+                backend._recovery_call = mock.Mock(side_effect=request)
+                with self.assertRaises(provider.SnapshotFailure) as raised:
+                    backend.probe_operation(operation)
+                self.assertEqual(raised.exception.code, "malformed")
+
+    def test_unverified_object_cannot_checkpoint_buffered_signals(self):
+        for fault in ("uid", "role", "absent", "service", "signal", "valid"):
+            with self.subTest(fault=fault), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.backend(journal)
+                checkpoints = []
+                def request(_path, _interface, method, *_args):
+                    if method == "GetAll":
+                        if fault == "service":
+                            self.emit(backend, "NameOwnerChanged", "(sss)",
+                                (provider.PACKAGEKIT_NAME, ":1.2", ":1.3"), "org.freedesktop.DBus")
+                        elif fault == "signal":
+                            self.emit(backend, "RequireRestart", "(s)", ("invalid",))
+                        self.emit(backend, "PropertiesChanged", "(sa{sv}as)",
+                            (provider.TRANSACTION_INTERFACE, {"Status": 3}, []), provider.PROPERTIES_INTERFACE)
+                        self.emit(backend, "RequireRestart", "(us)", (6, self.package_id))
+                        self.emit(backend, "Finished", "(uu)", (1, 1))
+                        self.assertEqual(checkpoints, [])
+                        if fault == "absent":
+                            failure = provider.SnapshotFailure("missing-provider", "Absent object")
+                            failure.__cause__ = backend.GLib.Error("UnknownObject")
+                            raise failure
+                        return SessionEvidenceTests.Variant("(a{sv})", (self.properties(
+                            Uid=os.getuid() + (fault == "uid"), Role=13 if fault == "role" else 22),))
+                    self.emit(backend, "RequireRestart", "(us)", (4, self.package_id))
+                    self.emit(backend, "Finished", "(uu)", (1, 1))
+                    return SessionEvidenceTests.Variant("(ao)", ([],))
+                backend._recovery_call = mock.Mock(side_effect=request)
+                def probe():
+                    return backend.probe_operation(operation,
+                        on_running=lambda: checkpoints.append("running"),
+                        on_restart=lambda value: checkpoints.append(value))
+                if fault in {"uid", "role", "service", "signal"}:
+                    with self.assertRaises(provider.SnapshotFailure) as raised:
+                        probe()
+                    self.assertEqual(raised.exception.code, "missing-provider" if fault == "service" else "malformed")
+                else:
+                    evidence = probe()
+                    self.assertEqual(evidence.state, "succeeded" if fault == "valid" else None)
+                    self.assertEqual(evidence.restart_types, (6,) if fault == "valid" else ())
+                    if fault == "absent":
+                        self.assertEqual((evidence.status, evidence.allow_cancel, evidence.percent), (0, False, None))
+                self.assertEqual(checkpoints, ["running", 6] if fault == "valid" else [])
+                self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_probe_checkpoints_restart_before_finished_and_discards_late_signal(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            checkpointed = []
+            saved = []
+            def request(_path, _interface, method, *_args):
+                if method == "GetAll":
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(),))
+                saved.extend(backend.connection.subscriptions.values())
+                self.emit(backend, "RequireRestart", "(us)", (6, self.package_id))
+                self.assertEqual(checkpointed, [6])
+                self.emit(backend, "Finished", "(uu)", (1, 1))
+                return SessionEvidenceTests.Variant("(ao)", ([],))
+            backend._recovery_call = mock.Mock(side_effect=request)
+            result = backend.probe_operation(operation, on_restart=checkpointed.append)
+            self.assertEqual((result.state, result.restart_types), ("succeeded", (6,)))
+            self.assertIsInstance(result.terminal_monotonic, int)
+            args = saved[0]
+            args[-2](backend.connection, args[0], args[3], args[1], "RequireRestart", SessionEvidenceTests.Variant("(us)", (4, self.package_id)), None)
+            self.assertEqual(checkpointed, [6])
+
+    def test_checkpoint_fault_suppresses_later_finished(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            def request(*_args):
+                self.emit(backend, "RequireRestart", "(us)", (6, self.package_id))
+                self.emit(backend, "Finished", "(uu)", (1, 1))
+                return SessionEvidenceTests.Variant("(a{sv})", (self.properties(),))
+            backend._recovery_call = mock.Mock(side_effect=request)
+            fault = provider.JournalFileError("Persistence fault")
+            with self.assertRaises(provider.JournalFileError) as raised:
+                backend.probe_operation(operation, on_restart=mock.Mock(side_effect=fault))
+            self.assertIs(raised.exception, fault)
+            self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_invalidated_status_and_cancel_permission_are_not_reused(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            def request(_path, _interface, method, *_args):
+                if method == "GetAll":
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(Status=31),))
+                self.emit(backend, "PropertiesChanged", "(sa{sv}as)", (provider.TRANSACTION_INTERFACE, {}, ["Status", "AllowCancel"]), provider.PROPERTIES_INTERFACE)
+                self.emit(backend, "Finished", "(uu)", (3, 1))
+                return SessionEvidenceTests.Variant("(ao)", ([],))
+            backend._recovery_call = mock.Mock(side_effect=request)
+            result = backend.probe_operation(operation)
+            self.assertEqual((result.state, result.status, result.allow_cancel), ("canceled", 0, False))
+
+    def test_probe_timeout_detaches_without_canceling_recorded_transaction(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            backend._recovery_call = mock.Mock(side_effect=provider.SnapshotFailure("timeout", "Expired"))
+            with self.assertRaises(provider.SnapshotFailure):
+                backend.probe_operation(operation)
+            self.assertEqual(backend.connection.subscriptions, {})
+            self.assertEqual(backend.connection.calls, [])
+
+    def test_native_error_names_are_independent_of_message_text(self):
+        with self.journal() as journal:
+            backend = self.backend(journal)
+            cases = (("NoReply", "timeout"), ("Timeout", "timeout"), ("TimedOut", "timeout"),
+                     ("ServiceUnknown", "missing-provider"), ("NameHasNoOwner", "missing-provider"),
+                     ("UnknownObject", "missing-provider"), ("AccessDenied", "permission-denied"),
+                     ("AuthFailed", "permission-denied"), ("UnknownMethod", "unsupported"),
+                     ("UnknownInterface", "unsupported"), ("InvalidArgs", "malformed"),
+                     ("InvalidSignature", "malformed"), ("Failed", "internal"))
+            for name, expected in cases:
+                with self.subTest(name=name):
+                    backend.Gio.dbus_error_get_remote_error = mock.Mock(return_value="org.freedesktop.DBus.Error." + name)
+                    self.assertEqual(backend._dbus_failure(backend.GLib.Error("Opaque remote message")).code, expected)
+            backend.Gio.dbus_error_get_remote_error = mock.Mock(return_value="org.example.Unlisted")
+            self.assertEqual(backend._dbus_failure(backend.GLib.Error("NoReply Timeout AccessDenied")).code, "internal")
+            backend.Gio.dbus_error_get_remote_error = mock.Mock(return_value="org.freedesktop.PackageKit.Transaction.RefusedByPolicy")
+            self.assertEqual(backend._dbus_failure(backend.GLib.Error("Opaque policy denial")).code, "permission-denied")
+            backend.Gio.dbus_error_get_remote_error = mock.Mock(return_value=None)
+            backend.Gio.io_error_quark = lambda: 42
+            backend.Gio.IOErrorEnum = types.SimpleNamespace(TIMED_OUT=24)
+            local = mock.Mock(matches=lambda domain, code: (domain, code) == (42, 24))
+            self.assertEqual(backend._dbus_failure(local).code, "timeout")
+
+    def test_no_reply_before_deadline_can_use_exact_update_history(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            backend.Gio.dbus_error_get_remote_error = mock.Mock(return_value="org.freedesktop.DBus.Error.NoReply")
+            backend.operation_history = mock.Mock(return_value=((operation.transaction_path, True, 22, os.getuid()),))
+            def request(*_args):
+                error = backend.GLib.Error("Opaque connection loss")
+                raise backend._dbus_failure(error) from error
+            backend._recovery_call = mock.Mock(side_effect=request)
+            state, evidence, failure = provider.recover_journal_active(journal, backend, boot_id=self.boot_id)
+            self.assertIsNone(state.active)
+            self.assertIsNone(evidence)
+            self.assertEqual((state.terminals[operation.slot].state, state.restart.system), ("succeeded", "unknown"))
+            self.assertEqual(failure.code, "timeout")
+            backend.operation_history.assert_called_once_with()
+
+    def test_service_owner_change_invalidates_bounded_probe(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            checkpoint = mock.Mock()
+            def request(_path, _interface, method, *_args):
+                if method == "GetAll":
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(),))
+                self.emit(backend, "NameOwnerChanged", "(sss)", (provider.PACKAGEKIT_NAME, ":1.2", ":1.3"), "org.freedesktop.DBus")
+                self.emit(backend, "RequireRestart", "(us)", (6, self.package_id))
+                return SessionEvidenceTests.Variant("(ao)", ([],))
+            backend._recovery_call = mock.Mock(side_effect=request)
+            with self.assertRaises(provider.SnapshotFailure) as raised:
+                backend.probe_operation(operation, on_restart=checkpoint)
+            self.assertEqual(raised.exception.code, "missing-provider")
+            checkpoint.assert_not_called()
+            self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_history_timeout_grace_does_not_accept_late_success(self):
+        with self.journal() as journal:
+            backend = self.backend(journal)
+            backend._recovery_call = mock.Mock(side_effect=[SessionEvidenceTests.Variant("(o)", ("/2_history",)),
+                provider.SnapshotFailure("timeout", "Expired")])
+            def grace(path, _loop, finished):
+                self.assertEqual(path, "/2_history")
+                self.emit(backend, "Transaction", "(osbuusus)", ("/1_test", "2026-09-05T00:00:00Z", True, 22, 1, "ignored", os.getuid(), "ignored"))
+                self.emit(backend, "Finished", "(uu)", (1, 1))
+                self.assertTrue(finished())
+            backend._cancel_with_grace = mock.Mock(side_effect=grace)
+            with self.assertRaises(provider.SnapshotFailure) as raised:
+                backend.operation_history()
+            self.assertEqual(raised.exception.code, "timeout")
+            self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_history_uses_fixed_limit_discards_payload_and_rejects_overflow(self):
+        for count in (1, 65):
+            with self.subTest(count=count), self.journal() as journal:
+                backend = self.backend(journal)
+                backend._cancel_with_grace = mock.Mock()
+                def request(_path, _interface, method, parameters, *_args):
+                    if method == "CreateTransaction":
+                        return SessionEvidenceTests.Variant("(o)", ("/2_history",))
+                    self.assertEqual(method, "GetOldTransactions")
+                    self.assertEqual(parameters.unpack(), (64,))
+                    for index in range(count):
+                        self.emit(backend, "Transaction", "(osbuusus)", (f"/{index}_old", "2026-09-05T00:00:00Z", True, 22, 1, "ignored", os.getuid(), "ignored"))
+                    if count == 1:
+                        self.emit(backend, "Finished", "(uu)", (1, 1))
+                    return SessionEvidenceTests.Variant("()", ())
+                backend._recovery_call = mock.Mock(side_effect=request)
+                if count == 1:
+                    self.assertEqual(backend.operation_history(), (("/0_old", True, 22, os.getuid()),))
+                    backend._cancel_with_grace.assert_not_called()
+                else:
+                    with self.assertRaises(provider.SnapshotFailure) as raised:
+                        backend.operation_history()
+                    self.assertEqual(raised.exception.code, "malformed")
+                    self.assertEqual(backend._cancel_with_grace.call_args.args[0], "/2_history")
+                self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_local_recovery_request_deadline_cancels_and_ignores_late_reply(self):
+        for expired, signature in ((False, "(ao)"), (True, "(ao)"), (False, "(as)")):
+            with self.subTest(expired=expired, signature=signature):
+                backend = provider.PackageKitBackend.__new__(provider.PackageKitBackend)
+                state = {}
+                class Loop:
+                    def run(self):
+                        if expired:
+                            state["timer"]()
+                        else:
+                            state["reply"](backend.connection, object(), None)
+                    def quit(self):
+                        pass
+                def timer(_delay, callback):
+                    state["timer"] = callback
+                    return 1
+                backend.GLib = types.SimpleNamespace(MainLoop=Loop, Error=RuntimeError, SOURCE_REMOVE=False,
+                    VariantType=types.SimpleNamespace(new=lambda value: value), timeout_add=timer, source_remove=mock.Mock())
+                cancellation = mock.Mock()
+                backend.Gio = types.SimpleNamespace(Cancellable=lambda: cancellation, DBusCallFlags=types.SimpleNamespace(NONE=0))
+                backend.connection = mock.Mock()
+                backend.connection.call.side_effect = lambda *args: state.update(reply=args[-2])
+                backend.connection.call_finish.return_value = SessionEvidenceTests.Variant(signature, ([],))
+                with mock.patch.object(provider.time, "monotonic", return_value=100):
+                    if expired or signature != "(ao)":
+                        with self.assertRaises(provider.SnapshotFailure) as raised:
+                            backend._recovery_call(provider.PACKAGEKIT_PATH, provider.PACKAGEKIT_INTERFACE, "GetTransactionList", None, 110, "(ao)")
+                        self.assertEqual(raised.exception.code, "timeout" if expired else "malformed")
+                    else:
+                        self.assertEqual(backend._recovery_call(provider.PACKAGEKIT_PATH, provider.PACKAGEKIT_INTERFACE, "GetTransactionList", None, 110, "(ao)").unpack(), ([],))
+                cancellation.cancel.assert_called_once_with()
+                before = backend.connection.call_finish.call_count
+                state["reply"](backend.connection, object(), None)
+                self.assertEqual(backend.connection.call_finish.call_count, before)
+
+
+class OperationWatchTests(unittest.TestCase):
+    """Live fixtures use the real adapter but never invoke a package action."""
+    boot_id = PackageKitExecutionTests.boot_id
+    package_id = PackageKitExecutionTests.package_id
+    journal = PackageKitExecutionTests.journal
+    begin = OperationRecoveryTests.begin
+    backend = RecoveryAdapterTests.backend
+    emit = RecoveryAdapterTests.emit
+    properties = RecoveryAdapterTests.properties
+
+    def live_backend(self, journal, events, **properties):
+        backend = self.backend(journal)
+        backend.session_started = mock.Mock(return_value=None)
+        backend._recovery_call = mock.Mock(side_effect=lambda _path, _interface, method, *_args:
+            SessionEvidenceTests.Variant("(a{sv})", (self.properties(**properties),)) if method == "GetAll"
+            else SessionEvidenceTests.Variant("(ao)", (["/1_test"],)))
+        test = self
+
+        class Loop:
+            stopped = False
+
+            def quit(self):
+                self.stopped = True
+
+            def run(self):
+                for event in events:
+                    test.assertFalse(journal._exclusive)
+                    if self.stopped:
+                        break
+                    event(backend)
+                test.assertTrue(self.stopped, "watch did not terminate from exact evidence")
+
+        backend.GLib.MainLoop = Loop
+        return backend
+
+    def progress(self, backend, **values):
+        self.emit(backend, "PropertiesChanged", "(sa{sv}as)",
+            (provider.TRANSACTION_INTERFACE, values, []), provider.PROPERTIES_INTERFACE)
+
+    def test_live_watch_keeps_subscriptions_and_commits_before_terminal_output(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            chunks = []
+            backend = self.live_backend(journal, [lambda bus: self.progress(bus, Status=3, AllowCancel=True, Percentage=42),
+                lambda bus: self.emit(bus, "RequireRestart", "(us)", (6, self.package_id)),
+                lambda bus: self.emit(bus, "Finished", "(uu)", (1, 1))], Status=31)
+
+            def write(chunk):
+                if "complete\toperation" in chunk:
+                    state = provider.load_journal_state(journal.chain)
+                    self.assertIsNone(state.active)
+                    self.assertEqual(state.handoff.operation_id, operation.operation_id)
+                chunks.append(chunk)
+
+            provider.watch_journal_operation(journal, operation.operation_id, write,
+                boot_id=self.boot_id, backend_factory=lambda: backend)
+            output = "".join(chunks)
+            for value in ("\tauthorizing\t", "\trunning\t", "\t42\tyes\t", "\tsucceeded\t", "comparison is unavailable"):
+                self.assertIn(value, output)
+            self.assertEqual(backend.connection.calls, [])
+            self.assertEqual([call.args[2] for call in backend._recovery_call.call_args_list], ["GetAll", "GetTransactionList"])
+            self.assertEqual(backend.connection.subscriptions, {})
+            self.assertIsNone(backend.connection.closed_callback)
+            self.assertEqual(provider.load_journal_state(journal.chain).restart.system, "security-system")
+
+    def test_watch_has_no_silence_deadline_after_verified_adoption(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            clock = [100]
+            def later(bus):
+                clock[0] = 100000
+                self.progress(bus, Status=3)
+                self.emit(bus, "Finished", "(uu)", (1, 1))
+            backend = self.live_backend(journal, [later])
+            with mock.patch.object(provider.time, "monotonic", side_effect=lambda: clock[0]):
+                result = backend.probe_operation(operation, watch=True)
+            self.assertEqual(result.state, "succeeded")
+            self.assertEqual(backend.connection.calls, [])
+
+    def test_logind_lookup_follows_terminal_observation_and_precedes_commit(self):
+        for kind in ("refresh", "update"):
+            with self.subTest(kind=kind), self.journal() as journal:
+                operation = self.begin(journal, kind)
+                finished = []
+                def finish(bus):
+                    finished.append(True)
+                    self.emit(bus, "Finished", "(uu)", (1, 1))
+                    self.emit(bus, "Destroy", "()", ())
+                backend = self.live_backend(journal, [finish], Role=13 if kind == "refresh" else 22)
+                def session():
+                    self.assertEqual(finished, [True])
+                    self.assertFalse(journal._exclusive)
+                    self.assertIsNotNone(provider.load_journal_state(journal.chain).active)
+                    return None
+                backend.session_started.side_effect = session
+                chunks = []
+                provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                    boot_id=self.boot_id, backend_factory=lambda: backend)
+                backend.session_started.assert_called_once_with()
+                self.assertIn("\tsucceeded\t", "".join(chunks))
+
+    def test_completion_during_backend_creation_replays_the_exact_retained_result(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = mock.Mock()
+            def attach():
+                with provider.lock_writable_journal(journal):
+                    running = provider.advance_journal_operation(journal, operation,
+                        replace(operation, state="running"))
+                    provider.advance_journal_operation(journal, running, replace(running,
+                        state="succeeded", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=10))
+                    provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                return backend
+            chunks = []
+            provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                boot_id=self.boot_id, backend_factory=attach)
+            backend.probe_operation.assert_not_called()
+            backend.operation_history.assert_not_called()
+            backend.session_started.assert_not_called()
+            output = "".join(chunks).splitlines()
+            self.assertEqual(rows(output, "operation")[-1][1:5],
+                [operation.operation_id, operation.action_id, "update", "succeeded"])
+            self.assertEqual(output[-1], "complete\toperation")
+            self.assertEqual(provider.load_journal_state(journal.chain).handoff.operation_id, operation.operation_id)
+
+    def test_property_deltas_during_getall_override_its_stale_snapshot(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.live_backend(journal, [lambda bus: self.emit(bus, "Finished", "(uu)", (3, 0))])
+            def request(_path, _interface, method, *_args):
+                if method == "GetAll":
+                    self.progress(backend, Status=31, AllowCancel=True, Percentage=27)
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(Status=1, AllowCancel=False, Percentage=0),))
+                return SessionEvidenceTests.Variant("(ao)", ([operation.transaction_path],))
+            backend._recovery_call.side_effect = request
+            chunks = []
+            provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                boot_id=self.boot_id, backend_factory=lambda: backend)
+            self.assertIn("\tauthorizing\t27\tyes\t", "".join(chunks))
+
+    def test_unrelated_and_unchanged_signals_do_not_reload_the_journal(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            def noise(bus):
+                with mock.patch.object(provider, "load_writable_journal_state", side_effect=AssertionError("Noise reloaded journal")):
+                    for _ in range(100):
+                        self.emit(bus, "Package", "(uss)", (12, self.package_id, "Package"))
+                        self.emit(bus, "Packages", "(a(uss))", ([(12, self.package_id, "Package")],))
+                        self.progress(bus, Percentage=45, AllowCancel=True, Status=3)
+                        self.progress(bus, Speed=100)
+            backend = self.live_backend(journal, [noise, lambda bus: self.emit(bus, "Finished", "(uu)", (1, 0))])
+            chunks = []
+            provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                boot_id=self.boot_id, backend_factory=lambda: backend)
+            self.assertEqual("".join(chunks).splitlines()[-1], "complete\toperation")
+
+    def test_watch_uses_new_live_cancelability_not_stale_initial_false(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            progress = []
+            backend = self.live_backend(journal, [lambda bus: self.progress(bus, AllowCancel=True),
+                lambda bus: self.progress(bus, AllowCancel=False),
+                lambda bus: self.emit(bus, "Finished", "(uu)", (1, 1))], AllowCancel=False)
+            backend.probe_operation(operation, watch=True, on_progress=progress.append)
+            self.assertIn(True, [item.allow_cancel for item in progress])
+            self.assertFalse(progress[-1].allow_cancel)
+
+    def test_authorizing_watch_emits_cancelability_loss_without_claiming_running(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.live_backend(journal, [lambda bus: self.progress(bus, AllowCancel=False),
+                lambda bus: self.emit(bus, "Finished", "(uu)", (3, 0))], Status=31)
+            chunks = []
+            provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                boot_id=self.boot_id, backend_factory=lambda: backend)
+            operation_rows = rows("".join(chunks).splitlines(), "operation")
+            authorizing = [row for row in operation_rows if row[4] == "authorizing"]
+            self.assertEqual([row[6] for row in authorizing], ["yes", "no"])
+            self.assertNotIn("running", [row[4] for row in operation_rows])
+            self.assertEqual(operation_rows[-1][4], "canceled")
+
+    def test_live_authorization_is_displayed_without_erasing_unknown_execution(self):
+        for initial in ("invalid", "missing"):
+            with self.subTest(initial=initial), self.journal() as journal:
+                operation = self.begin(journal)
+                backend = self.live_backend(journal, [lambda bus: self.progress(bus, Status=31),
+                    lambda bus: self.emit(bus, "Finished", "(uu)", (3, 0))], Status="invalid")
+                if initial == "missing":
+                    values = self.properties()
+                    del values["Status"]
+                    backend._recovery_call.side_effect = [SessionEvidenceTests.Variant("(a{sv})", (values,)),
+                        SessionEvidenceTests.Variant("(ao)", ([operation.transaction_path],))]
+                chunks = []
+                provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                    boot_id=self.boot_id, backend_factory=lambda: backend)
+                self.assertIn("\tauthorizing\t", "".join(chunks))
+                state = provider.load_journal_state(journal.chain)
+                self.assertEqual((state.terminals[operation.slot].state, state.restart.system), ("canceled", "unknown"))
+
+    def test_cancelability_change_during_active_list_is_not_latched_out(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.live_backend(journal, [lambda bus: self.emit(bus, "Finished", "(uu)", (1, 1))], AllowCancel=False)
+            def request(_path, _interface, method, *_args):
+                if method == "GetAll":
+                    return SessionEvidenceTests.Variant("(a{sv})", (self.properties(AllowCancel=False),))
+                self.progress(backend, AllowCancel=True)
+                return SessionEvidenceTests.Variant("(ao)", ([operation.transaction_path],))
+            backend._recovery_call.side_effect = request
+            progress = []
+            backend.probe_operation(operation, watch=True, on_progress=progress.append)
+            self.assertTrue(progress[-1].allow_cancel)
+
+    def test_watch_bus_loss_malformed_signal_or_output_failure_detaches_without_cancel(self):
+        for fault in ("bus", "malformed", "output"):
+            with self.subTest(fault=fault), self.journal() as journal:
+                operation = self.begin(journal)
+                def event(bus):
+                    if fault == "bus":
+                        bus.connection.closed_callback()
+                    elif fault == "malformed":
+                        self.emit(bus, "Destroy", "(s)", ("wrong",))
+                    else:
+                        self.progress(bus, Percentage=40)
+                backend = self.live_backend(journal, [event])
+                def progress(evidence):
+                    if evidence.percent == 40:
+                        raise BrokenPipeError("closed consumer")
+                with self.assertRaises((provider.SnapshotFailure, BrokenPipeError)):
+                    backend.probe_operation(operation, watch=True, on_progress=progress)
+                self.assertEqual(backend.connection.calls, [])
+                self.assertEqual(backend.connection.subscriptions, {})
+                self.assertIsNone(backend.connection.closed_callback)
+                self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_destroyed_watch_recovers_conservative_interruption(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            backend = self.live_backend(journal, [lambda bus: self.emit(bus, "Destroy", "()", ())], Role=13)
+            chunks = []
+            provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                boot_id=self.boot_id, backend_factory=lambda: backend)
+            self.assertIn("\tinterrupted\t", "".join(chunks))
+            self.assertIn("complete\toperation", "".join(chunks))
+
+    def test_terminalized_active_replays_and_acknowledges_without_backend(self):
+        for kind in ("update", "refresh", "timezone"):
+            with self.subTest(kind=kind), self.journal() as journal:
+                operation = self.begin(journal, kind)
+                terminal = replace(operation, state="failed", error_code="internal",
+                    finished_at="2026-09-05T00:01:00Z", detail="Fixture failure",
+                    terminal_monotonic=100 if kind in {"refresh", "update"} else None)
+                with provider.lock_writable_journal(journal):
+                    provider.advance_journal_operation(journal, operation, terminal)
+                chunks = []
+                backend = mock.Mock(side_effect=AssertionError("replay opened a service"))
+                provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                    boot_id=self.boot_id, backend_factory=backend)
+                backend.assert_not_called()
+                self.assertIn("complete\toperation", "".join(chunks))
+                with provider.lock_writable_journal(journal):
+                    provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                    self.assertEqual(provider.retained_journal_operation(journal, operation.operation_id), terminal)
+
+    def test_stale_id_and_active_regional_emit_no_stream(self):
+        for kind in ("refresh", "timezone"):
+            with self.subTest(kind=kind), self.journal() as journal:
+                operation = self.begin(journal, kind)
+                requested = "op-" + "0" * 32 if kind == "refresh" else operation.operation_id
+                chunks = []
+                backend = mock.Mock()
+                with self.assertRaises(provider.JournalAdmissionError):
+                    provider.watch_journal_operation(journal, requested, chunks.append,
+                        boot_id=self.boot_id, backend_factory=backend)
+                self.assertEqual(chunks, [])
+                backend.assert_not_called()
+                self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_service_free_controls_retain_lower_guidance_until_snapshot_has_session_evidence(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, session_restart="security-session", application_restart=True)
+            terminal = replace(operation, state="failed", error_code="internal", detail="Fixture",
+                finished_at="2026-09-05T00:01:00Z", terminal_monotonic=100)
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, operation, terminal)
+            backend = mock.Mock(side_effect=AssertionError("Replay opened a service"))
+            provider.watch_journal_operation(journal, operation.operation_id, lambda _chunk: None,
+                boot_id=self.boot_id, backend_factory=backend)
+            backend.assert_not_called()
+            with provider.lock_writable_journal(journal):
+                provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                state = provider.load_writable_journal_state(journal)
+                self.assertEqual((state.restart.session, state.restart.application), ("security-session", True))
+                provider.prune_journal_restart(journal, self.boot_id, 200)
+                state = provider.load_writable_journal_state(journal)
+                self.assertEqual((state.restart.session, state.restart.application), ("none", False))
+
+    def test_control_cli_has_fixed_syntax_and_stream_free_stale_diagnostics(self):
+        for args in ([], ["watch-operation"], ["ack-operation", "bad"], ["watch-operation", "op-" + "a" * 32, "extra"],
+                     ["updates-refresh", "extra"], ["updates-cancel"], ["updates-cancel", "bad"],
+                     ["updates-cancel", "op-" + "a" * 32, "extra"]):
+            with self.subTest(args=args), contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(provider.main(args), 2)
+                self.assertEqual(stdout.getvalue(), "")
+        for command, diagnostic in (("watch-operation", "watch"), ("ack-operation", "ack"), ("updates-cancel", "cancel")):
+            with self.subTest(command=command), mock.patch.object(provider, "open_journal_directory", side_effect=provider.JournalLayoutError("Unsafe raw text")), \
+                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(provider.main([command, "op-" + "a" * 32]), 3)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(stderr.getvalue(), f"{diagnostic} target is unavailable\n")
+
+    def test_owner_replaced_before_adoption_is_never_followed(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            backend = mock.Mock()
+            backend.session_started.return_value = None
+            following = []
+            def factory():
+                with provider.lock_writable_journal(journal):
+                    terminal = replace(operation, state="failed", error_code="internal", detail="Fixture",
+                        finished_at="2026-09-05T00:01:00Z", terminal_monotonic=100)
+                    provider.advance_journal_operation(journal, operation, terminal)
+                    provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                    provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                following.append(self.begin(journal, "refresh"))
+                return backend
+            chunks = []
+            with self.assertRaises(provider.JournalAdmissionError):
+                provider.watch_journal_operation(journal, operation.operation_id, chunks.append,
+                    boot_id=self.boot_id, backend_factory=factory)
+            backend.probe_operation.assert_not_called()
+            self.assertNotIn("complete\toperation", "".join(chunks))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, following[0])
+
+    def test_cli_replay_and_ack_preserve_terminal_and_use_no_service(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            terminal = replace(operation, state="failed", error_code="internal", detail="Fixture",
+                finished_at="2026-09-05T00:01:00Z", terminal_monotonic=100)
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, operation, terminal)
+            state_home = str(pathlib.Path(journal.chain.path).parents[1])
+            with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state_home}), \
+                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                    mock.patch.object(provider.PackageKitBackend, "__init__", side_effect=AssertionError("Unexpected service")), \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(provider.main(["watch-operation", operation.operation_id]), 0)
+                self.assertIn("complete\toperation", stdout.getvalue())
+                stdout.seek(0)
+                stdout.truncate(0)
+                self.assertEqual(provider.main(["ack-operation", operation.operation_id]), 0)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(stderr.getvalue(), "")
+                self.assertEqual(provider.main(["ack-operation", operation.operation_id]), 3)
+                self.assertEqual(stderr.getvalue(), "ack target is unavailable\n")
+            state = provider.load_journal_state(journal.chain)
+            self.assertEqual(state.terminals[operation.slot], terminal)
+            self.assertIsNone(state.handoff)
+
+    def test_closed_cli_pipe_has_fixed_exit_and_preserves_handoff(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            terminal = replace(operation, state="failed", error_code="internal", detail="Fixture",
+                finished_at="2026-09-05T00:01:00Z", terminal_monotonic=100)
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, operation, terminal)
+                provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+            environment = dict(os.environ, XDG_STATE_HOME=str(pathlib.Path(journal.chain.path).parents[1]))
+            reader, writer = os.pipe()
+            os.close(reader)
+            try:
+                result = subprocess.run(["/usr/bin/python3", str(PROVIDER_PATH), "watch-operation", operation.operation_id],
+                    stdout=writer, stderr=subprocess.PIPE, env=environment, timeout=10)
+            finally:
+                os.close(writer)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, b"operation observation was interrupted\n")
+            self.assertEqual(provider.load_journal_state(journal.chain).handoff.operation_id, operation.operation_id)
+
+
+class UpdateCommandTests(unittest.TestCase):
+    boot_id = PackageKitExecutionTests.boot_id
+    package_id = PackageKitExecutionTests.package_id
+    journal = PackageKitExecutionTests.journal
+    backend = PackageKitExecutionTests.backend
+    begin = OperationRecoveryTests.begin
+
+    def generation(self):
+        return provider.snapshot_generation([self.package_id],
+            [provider.PlanRow(self.package_id, "update", "example", "2", "Example")])
+
+    def invoke(self, journal, args, backend, output=None, boot_id=None):
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
+                mock.patch.object(provider, "read_boot_id", return_value=boot_id or self.boot_id), \
+                mock.patch.object(provider, "PackageKitBackend", **({"side_effect": backend} if isinstance(backend, Exception) else {"return_value": backend})), \
+                contextlib.redirect_stdout(io.StringIO() if output is None else output) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+            code = provider.main(args)
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_fixed_grammar_rejects_before_opening_journal_or_backend(self):
+        for args in (["updates-refresh", "extra"], ["updates-install-all"], ["updates-install-all", "bad"],
+                     ["updates-install-all", "A" * 64], ["updates-install-all", "a" * 64, "extra"],
+                     ["updates-install-all", "--force"], ["--updates-refresh"]):
+            with self.subTest(args=args), mock.patch.object(provider, "open_journal_directory") as journal, \
+                    mock.patch.object(provider, "PackageKitBackend") as backend, \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(provider.main(args), 2)
+                journal.assert_not_called()
+                backend.assert_not_called()
+                self.assertEqual(stdout.getvalue(), "")
+
+    def test_refresh_and_confirmed_install_use_real_owner_and_durable_handoff(self):
+        for update in (False, True):
+            with self.subTest(update=update), self.journal() as journal:
+                backend = self.backend(journal, [lambda bus: bus.progress(Status=3, Percentage=45),
+                    lambda bus: bus.emit("Finished", (1, 0))])
+                args = ["updates-install-all", self.generation()] if update else ["updates-refresh"]
+                code, output, diagnostic = self.invoke(journal, args, backend)
+                self.assertEqual((code, diagnostic), (0, ""))
+                state = provider.load_journal_state(journal.chain)
+                self.assertIsNone(state.active)
+                terminal = state.terminals[state.handoff.slot]
+                self.assertEqual(terminal.state, "succeeded")
+                self.assertEqual(rows(output.splitlines(), "audit")[0][1:5],
+                    [terminal.operation_id, args[0], "update" if update else "refresh", "succeeded"])
+                self.assertEqual(output.splitlines()[-1], "complete\toperation")
+                self.assertEqual(backend.connection.calls[0][3], "UpdatePackages" if update else "RefreshCache")
+                backend.require_mutation_safe.assert_called_once_with()
+
+    def test_denied_failed_and_canceled_terminal_results_exit_one(self):
+        for exit_code, error_code, expected in ((8, 48, "permission-denied"), (2, 1, "failed"), (3, 17, "canceled")):
+            with self.subTest(expected=expected), self.journal() as journal:
+                backend = self.backend(journal, [lambda bus: bus.emit("ErrorCode", (error_code, "Fixture result")),
+                    lambda bus: bus.emit("Finished", (exit_code, 0))])
+                code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend)
+                self.assertEqual((code, diagnostic), (1, ""))
+                self.assertEqual(rows(output.splitlines(), "operation")[-1][4], expected)
+                self.assertEqual(provider.load_journal_state(journal.chain).terminals[0].state, expected)
+
+    def test_preflight_and_backend_failures_emit_rejection_without_journal_change(self):
+        for stage in ("backend", "security", "inventory", "simulation", "generation", "create"):
+            with self.subTest(stage=stage), self.journal() as journal:
+                before = provider.load_journal_state(journal.chain)
+                backend = self.backend(journal, [])
+                failure = provider.SnapshotFailure("network", "Fixture preflight failure")
+                args = ["updates-install-all", self.generation()]
+                if stage == "backend":
+                    backend = failure
+                elif stage == "generation":
+                    args[1] = "0" * 64
+                else:
+                    attribute = {"security": "require_mutation_safe", "inventory": "updates",
+                                 "simulation": "simulate", "create": "create_mutation"}[stage]
+                    getattr(backend, attribute).side_effect = failure
+                code, output, diagnostic = self.invoke(journal, args, backend)
+                self.assertEqual((code, diagnostic), (1, ""))
+                self.assertEqual([row[4] for row in rows(output.splitlines(), "operation")], ["pending", "failed"])
+                self.assertEqual(rows(output.splitlines(), "error")[0][2], "conflict" if stage == "generation" else "network")
+                self.assertEqual(len(rows(output.splitlines(), "audit")), 1)
+                self.assertEqual(output.splitlines()[-1], "complete\toperation")
+                self.assertIn("no package mutation was dispatched", output)
+                self.assertEqual(provider.load_journal_state(journal.chain), before)
+                if stage != "backend":
+                    self.assertEqual(backend.connection.calls, [])
+
+    def test_active_and_handoff_conflicts_preserve_existing_identity(self):
+        for handoff in (False, True):
+            with self.subTest(handoff=handoff), self.journal() as journal:
+                operation = self.begin(journal)
+                if handoff:
+                    with provider.lock_writable_journal(journal):
+                        provider.advance_journal_operation(journal, operation, replace(operation, state="failed",
+                            error_code="internal", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+                        provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                before = provider.load_journal_state(journal.chain)
+                backend = self.backend(journal, [])
+                code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend)
+                self.assertEqual((code, diagnostic), (1, ""))
+                self.assertEqual(rows(output.splitlines(), "error")[0][2], "conflict")
+                self.assertNotEqual(rows(output.splitlines(), "audit")[0][1], operation.operation_id)
+                self.assertEqual(provider.load_journal_state(journal.chain), before)
+                backend.require_mutation_safe.assert_not_called()
+                backend.create_mutation.assert_not_called()
+
+    def test_direct_post_reboot_commands_prune_before_any_backend_preflight(self):
+        new_boot = "abcdef01-2345-6789-abcd-ef0123456789"
+        for update in (False, True):
+            with self.subTest(update=update), self.journal() as journal:
+                operation = self.begin(journal, state="running")
+                with provider.lock_writable_journal(journal):
+                    provider.advance_journal_operation(journal, operation, replace(operation, state="succeeded",
+                        system_restart="system", session_restart="session", application_restart=True,
+                        finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+                    provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                    provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                backend = self.backend(journal, [lambda bus: bus.progress(Status=3),
+                    lambda bus: bus.emit("Finished", (1, 0))])
+                def preflight():
+                    state = provider.load_journal_state(journal.chain)
+                    self.assertEqual(state.restart, provider.JournalRestart(new_boot, None, "none", "none", 0, False, 0))
+                    self.assertIsNone(state.active)
+                    self.assertIsNone(state.handoff)
+                backend.require_mutation_safe.side_effect = preflight
+                args = ["updates-install-all", self.generation()] if update else ["updates-refresh"]
+                code, output, diagnostic = self.invoke(journal, args, backend, boot_id=new_boot)
+                self.assertEqual((code, diagnostic), (0, ""))
+                self.assertEqual(rows(output.splitlines(), "operation")[-1][4], "succeeded")
+                self.assertEqual(provider.load_journal_state(journal.chain).restart.boot_id, new_boot)
+
+    def test_old_boot_active_or_handoff_is_still_a_read_only_conflict(self):
+        new_boot = "abcdef01-2345-6789-abcd-ef0123456789"
+        for handoff in (False, True):
+            with self.subTest(handoff=handoff), self.journal() as journal:
+                operation = self.begin(journal)
+                if handoff:
+                    with provider.lock_writable_journal(journal):
+                        provider.advance_journal_operation(journal, operation, replace(operation, state="failed",
+                            error_code="internal", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+                        provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                before = provider.load_journal_state(journal.chain)
+                backend = self.backend(journal, [])
+                code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend, boot_id=new_boot)
+                self.assertEqual((code, diagnostic), (1, ""))
+                self.assertEqual(rows(output.splitlines(), "error")[0][2], "conflict")
+                self.assertEqual(provider.load_journal_state(journal.chain), before)
+                backend.require_mutation_safe.assert_not_called()
+                backend.create_mutation.assert_not_called()
+
+    def test_admission_race_rejects_before_any_write_attempt(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [])
+            competing = []
+            def create():
+                competing.append(self.begin(journal, "refresh"))
+                return "/1_test"
+            backend.create_mutation.side_effect = create
+            code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend)
+            self.assertEqual((code, diagnostic), (1, ""))
+            self.assertEqual(rows(output.splitlines(), "error")[0][2], "conflict")
+            self.assertEqual(provider.load_journal_state(journal.chain).active, competing[0])
+            self.assertEqual(backend.connection.calls, [])
+
+    def test_failed_admission_commit_never_fabricates_rejected_or_terminal_stream(self):
+        for after_commit in (False, True):
+            with self.subTest(after_commit=after_commit), self.journal() as journal:
+                backend = self.backend(journal, [])
+                begin = provider.begin_journal_operation
+                def fail(*args, **kwargs):
+                    if after_commit:
+                        begin(*args, **kwargs)
+                    raise provider.JournalCommitError("Uncertain commit")
+                with mock.patch.object(provider, "begin_journal_operation", side_effect=fail):
+                    code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend)
+                self.assertEqual((code, output), (1, ""))
+                self.assertIn("refresh status and observe the existing operation", diagnostic)
+                self.assertEqual(provider.load_journal_state(journal.chain).active is not None, after_commit)
+                self.assertEqual(backend.connection.calls, [])
+
+    def test_lost_observation_after_admission_keeps_one_incomplete_stream(self):
+        with self.journal() as journal:
+            backend = self.backend(journal, [])
+            backend.execute_mutation = mock.Mock(side_effect=provider.SnapshotFailure("interrupted", "Lost observation"))
+            code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend)
+            self.assertEqual(code, 1)
+            self.assertEqual(len(rows(output.splitlines(), "operation")), 1)
+            self.assertNotIn("complete\toperation", output)
+            self.assertNotIn("audit\t", output)
+            self.assertNotIn("Request rejected", output)
+            self.assertIsNotNone(provider.load_journal_state(journal.chain).active)
+            self.assertIn("observe the existing operation", diagnostic)
+
+    def test_unsafe_journal_or_id_generation_failure_has_fixed_stream_free_guidance(self):
+        for stage in ("open", "id"):
+            with self.subTest(stage=stage), self.journal() as journal:
+                failure = provider.SnapshotFailure("missing-provider", "Backend unavailable")
+                name = "open_journal_directory" if stage == "open" else "generate_journal_operation_id"
+                with mock.patch.object(provider, name, side_effect=provider.JournalLayoutError("Raw unsafe diagnostic")):
+                    code, output, diagnostic = self.invoke(journal, ["updates-refresh"], failure)
+                self.assertEqual((code, output), (1, ""))
+                self.assertEqual(diagnostic, "operation result could not be confirmed; refresh status and observe the existing operation\n")
+
+    def test_output_failure_before_or_after_dispatch_preserves_recovery_without_retry(self):
+        for phase in ("pending", "running"):
+            with self.subTest(phase=phase), self.journal() as journal:
+                class FailingOutput(io.StringIO):
+                    failed_writes = 0
+
+                    def write(self, value):
+                        if f"\t{phase}\t" in value:
+                            self.failed_writes += 1
+                            raise OSError("Injected output failure")
+                        return super().write(value)
+
+                output = FailingOutput()
+                backend = self.backend(journal, [lambda bus: bus.progress(Status=3),
+                    lambda bus: bus.emit("Finished", (1, 0))])
+                code, text, diagnostic = self.invoke(journal, ["updates-refresh"], backend, output)
+                self.assertEqual((code, output.failed_writes), (1, 1))
+                self.assertNotIn("Request rejected", text)
+                self.assertNotIn("complete\toperation", text)
+                self.assertIn("observe the existing operation", diagnostic)
+                state = provider.load_journal_state(journal.chain)
+                if phase == "pending":
+                    self.assertEqual(state.active.state, "pending")
+                    self.assertEqual(backend.connection.calls, [])
+                else:
+                    self.assertIsNone(state.active)
+                    self.assertEqual(state.terminals[state.handoff.slot].state, "succeeded")
+
+    def test_rejected_request_formatter_validates_before_output_and_never_builds_journal_payload(self):
+        for failure in (provider.SnapshotFailure("unknown", "Invalid"), None):
+            output = []
+            with self.assertRaises(provider.OperationProtocolError):
+                provider.reject_unadmitted_operation("op-" + "1" * 32, "updates-refresh",
+                    "2026-09-05T01:00:00Z", failure, output.append)
+            self.assertEqual(output, [])
+        output = []
+        with mock.patch.object(provider, "encode_journal_operation", side_effect=AssertionError("Must not fabricate a transaction")):
+            provider.reject_unadmitted_operation("op-" + "1" * 32, "updates-install-all",
+                "2026-09-05T01:00:00Z", provider.SnapshotFailure("conflict", "Changed preview"), output.append)
+        self.assertEqual(rows("".join(output).splitlines(), "audit")[0][2:5], ["updates-install-all", "update", "failed"])
+
+
+class OperationCancelTests(unittest.TestCase):
+    boot_id = PackageKitExecutionTests.boot_id
+    package_id = PackageKitExecutionTests.package_id
+    journal = PackageKitExecutionTests.journal
+    begin = OperationRecoveryTests.begin
+    emit = RecoveryAdapterTests.emit
+    properties = RecoveryAdapterTests.properties
+
+    def backend(self, journal, *, changes=None, event=None):
+        backend = RecoveryAdapterTests.backend(self, journal)
+        backend.GLib.MainContext = types.SimpleNamespace(default=lambda: types.SimpleNamespace(pending=lambda: False))
+        def request(path, interface, method, parameters, deadline, signature, *, destination):
+            self.assertFalse(journal._exclusive)
+            if event is not None:
+                event(backend, method)
+            if method == "GetNameOwner":
+                self.assertEqual((destination, path, interface, parameters.unpack(), signature),
+                    ("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", (provider.PACKAGEKIT_NAME,), "(s)"))
+                return SessionEvidenceTests.Variant("(s)", (":1.77",))
+            self.assertEqual((destination, path), (":1.77", "/1_test"))
+            if method == "GetAll":
+                self.assertEqual((interface, parameters.unpack(), signature),
+                    (provider.PROPERTIES_INTERFACE, (provider.TRANSACTION_INTERFACE,), "(a{sv})"))
+                return SessionEvidenceTests.Variant("(a{sv})", (self.properties(**(changes or {})),))
+            self.assertEqual((method, interface, parameters, signature), ("Cancel", provider.TRANSACTION_INTERFACE, None, "()"))
+            return SessionEvidenceTests.Variant("()", ())
+        backend._recovery_call = mock.Mock(side_effect=request)
+        return backend
+
+    def cancel(self, journal, operation, backend, *, boot_id=None):
+        dispatched = mock.Mock()
+        provider.cancel_journal_operation(journal, operation.operation_id, boot_id=boot_id or self.boot_id,
+            backend_factory=lambda: backend, on_dispatch=dispatched)
+        return dispatched
+
+    def cli(self, journal, operation_id, backend):
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
+                mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                mock.patch.object(provider, "PackageKitBackend", return_value=backend), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+            code = provider.main(["updates-cancel", operation_id])
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_exact_cancel_is_unlocked_pinned_and_never_claims_completion(self):
+        for kind in ("refresh", "update"):
+            for state in ("pending", "authorizing", "running"):
+                with self.subTest(kind=kind, state=state), self.journal() as journal:
+                    operation = self.begin(journal, kind, **({} if state == "pending" else {"state": state}))
+                    backend = self.backend(journal, changes={"Role": 13 if kind == "refresh" else 22})
+                    dispatched = self.cancel(journal, operation, backend)
+                    dispatched.assert_called_once_with()
+                    current = provider.load_journal_state(journal.chain)
+                    self.assertEqual(current.active.state, "cancel-requested" if state == "running" else state)
+                    self.assertEqual(current.active.operation_id, operation.operation_id)
+                    self.assertIsNone(current.handoff)
+                    self.assertEqual(current.terminals, (None,) * 32)
+                    self.assertEqual([call.args[2] for call in backend._recovery_call.call_args_list],
+                                     ["GetNameOwner", "GetAll", "Cancel"])
+                    self.assertEqual(len({call.args[4] for call in backend._recovery_call.call_args_list}), 1)
+                    self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_stale_terminal_regional_and_previous_boot_never_open_backend(self):
+        for case in ("stale", "terminal", "regional", "boot"):
+            with self.subTest(case=case), self.journal() as journal:
+                operation = self.begin(journal, "timezone" if case == "regional" else "update")
+                if case == "terminal":
+                    with provider.lock_writable_journal(journal):
+                        provider.advance_journal_operation(journal, operation, replace(operation, state="failed",
+                            error_code="internal", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+                before = provider.load_journal_state(journal.chain)
+                factory = mock.Mock()
+                with self.assertRaises(provider.CancelTargetUnavailable):
+                    provider.cancel_journal_operation(journal, "op-" + "0" * 32 if case == "stale" else operation.operation_id,
+                        boot_id="abcdef01-2345-6789-abcd-ef0123456789" if case == "boot" else self.boot_id,
+                        backend_factory=factory, on_dispatch=mock.Mock())
+                factory.assert_not_called()
+                self.assertEqual(provider.load_journal_state(journal.chain), before)
+
+    def test_unavailable_identity_and_cancelability_leave_active_unchanged(self):
+        for changes in ({"Role": 13}, {"Role": 0}, {"Role": True}, {"Uid": os.getuid() + 1},
+                        {"Uid": True}, {"AllowCancel": False}, {"AllowCancel": 1},
+                        {"Status": 18}, {"Status": None}, {"Status": 37}):
+            with self.subTest(changes=changes), self.journal() as journal:
+                operation = self.begin(journal, state="running")
+                backend = self.backend(journal, changes=changes)
+                self.assertEqual(self.cli(journal, operation.operation_id, backend), (3, "", "cancel target is unavailable\n"))
+                self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+                self.assertNotIn("Cancel", [call.args[2] for call in backend._recovery_call.call_args_list])
+                self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_revocation_or_finish_during_getall_cannot_be_overwritten(self):
+        for member, signature, values, interface in (
+            ("PropertiesChanged", "(sa{sv}as)", (provider.TRANSACTION_INTERFACE, {"AllowCancel": False}, []), provider.PROPERTIES_INTERFACE),
+            ("PropertiesChanged", "(sa{sv}as)", (provider.TRANSACTION_INTERFACE, {}, ["Uid"]), provider.PROPERTIES_INTERFACE),
+            ("Finished", "(uu)", (1, 1), None), ("Destroy", "()", (), None),
+            ("NameOwnerChanged", "(sss)", (provider.PACKAGEKIT_NAME, ":1.77", ":1.88"), "org.freedesktop.DBus"),
+        ):
+            with self.subTest(member=member, values=values), self.journal() as journal:
+                operation = self.begin(journal)
+                def event(backend, method):
+                    if method == "GetAll":
+                        self.emit(backend, member, signature, values, interface)
+                backend = self.backend(journal, event=event)
+                self.assertEqual(self.cli(journal, operation.operation_id, backend), (3, "", "cancel target is unavailable\n"))
+                self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_queued_revocation_after_journal_check_prevents_dispatch(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            queued = [True]
+            def iterate(_blocking):
+                queued.clear()
+                self.emit(backend, "PropertiesChanged", "(sa{sv}as)",
+                    (provider.TRANSACTION_INTERFACE, {"AllowCancel": False}, []), provider.PROPERTIES_INTERFACE)
+            backend.GLib.MainContext = types.SimpleNamespace(default=lambda: types.SimpleNamespace(
+                pending=lambda: bool(queued), iteration=iterate))
+            self.assertEqual(self.cli(journal, operation.operation_id, backend), (3, "", "cancel target is unavailable\n"))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_noisy_context_is_bounded_and_never_dispatches(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            iterate = mock.Mock()
+            backend.GLib.MainContext = types.SimpleNamespace(default=lambda: types.SimpleNamespace(pending=lambda: True, iteration=iterate))
+            self.assertEqual(self.cli(journal, operation.operation_id, backend)[0], 3)
+            self.assertEqual(iterate.call_count, 64)
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_completion_during_lookup_is_rechecked_before_send(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running")
+            def event(_backend, method):
+                if method == "GetAll":
+                    with provider.lock_writable_journal(journal):
+                        provider.advance_journal_operation(journal, operation, replace(operation, state="succeeded",
+                            finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+            backend = self.backend(journal, event=event)
+            self.assertEqual(self.cli(journal, operation.operation_id, backend)[0], 3)
+            self.assertEqual(provider.load_journal_state(journal.chain).active.state, "succeeded")
+            self.assertNotIn("Cancel", [call.args[2] for call in backend._recovery_call.call_args_list])
+
+    def test_accepted_cancel_cannot_advance_a_replacement_operation(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running")
+            replacement = []
+            def event(_backend, method):
+                if method == "Cancel":
+                    with provider.lock_writable_journal(journal):
+                        provider.advance_journal_operation(journal, operation, replace(operation, state="succeeded",
+                            finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+                        provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                        provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                    replacement.append(self.begin(journal, "refresh", state="running"))
+            self.assertEqual(self.cli(journal, operation.operation_id, self.backend(journal, event=event)), (0, "", ""))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, replacement[0])
+
+    def test_lost_cancel_reply_is_not_stale_rejection_or_completion(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running")
+            def event(_backend, method):
+                if method == "Cancel":
+                    raise provider.SnapshotFailure("timeout", "Lost cancel reply")
+            result = self.cli(journal, operation.operation_id, self.backend(journal, event=event))
+            self.assertEqual(result, (1, "", "cancellation request could not be confirmed; observe the existing operation\n"))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_backend_stale_rejection_after_send_is_stream_free_status_three(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running")
+            def event(backend, method):
+                if method == "Cancel":
+                    failure = provider.SnapshotFailure("internal", "Backend rejected stale cancel")
+                    failure.__cause__ = backend.GLib.Error("stale")
+                    raise failure
+            backend = self.backend(journal, event=event)
+            backend.Gio.dbus_error_get_remote_error = lambda _error: provider.TRANSACTION_INTERFACE + ".NotRunning"
+            self.assertEqual(self.cli(journal, operation.operation_id, backend), (3, "", "cancel target is unavailable\n"))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_cancel_persistence_failure_retains_observation_guidance(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running")
+            with mock.patch.object(provider, "advance_journal_operation", side_effect=provider.JournalCommitError("Injected write failure")):
+                result = self.cli(journal, operation.operation_id, self.backend(journal))
+            self.assertEqual(result[0], 1)
+            self.assertEqual(result[1], "")
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_lookup_failure_cleans_subscriptions_without_dispatch_or_journal_change(self):
+        for stage in ("GetNameOwner", "GetAll"):
+            with self.subTest(stage=stage), self.journal() as journal:
+                operation = self.begin(journal)
+                def event(_backend, method):
+                    if method == stage:
+                        raise provider.SnapshotFailure("timeout", "Lookup timed out")
+                backend = self.backend(journal, event=event)
+                self.assertEqual(self.cli(journal, operation.operation_id, backend), (3, "", "cancel target is unavailable\n"))
+                self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+                self.assertEqual(backend.connection.subscriptions, {})
+
+    def test_invalid_peer_is_rejected_before_object_access(self):
+        with self.journal() as journal:
+            operation = self.begin(journal)
+            backend = self.backend(journal)
+            backend._recovery_call = mock.Mock(return_value=SessionEvidenceTests.Variant("(s)", (provider.PACKAGEKIT_NAME,)))
+            self.assertEqual(self.cli(journal, operation.operation_id, backend), (3, "", "cancel target is unavailable\n"))
+            backend._recovery_call.assert_called_once()
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+
+class RecoverySnapshotTests(unittest.TestCase):
+    boot_id = PackageKitExecutionTests.boot_id
+    journal = PackageKitExecutionTests.journal
+    begin = OperationRecoveryTests.begin
+
+    def backend(self, **kwargs):
+        backend = FixtureBackend(**kwargs)
+        backend.session_started = mock.Mock(return_value=0)
+        backend.probe_operation = mock.Mock(return_value=provider.RecoveryEvidence(False))
+        backend.operation_history = mock.Mock(return_value=())
+        return backend
+
+    def snapshot(self, journal, backend, *, boot_id=None):
+        state_home = str(pathlib.Path(journal.chain.path).parents[1])
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state_home}), \
+                mock.patch.object(provider, "read_boot_id", return_value=boot_id or self.boot_id):
+            return provider.build_managed_snapshot(backend)
+
+    def restart(self, journal, **changes):
+        cutoffs = sorted({changes[key] for key in ("session_cutoff", "application_cutoff") if key in changes}) or [100]
+        for index, cutoff in enumerate(cutoffs):
+            operation = self.begin(journal, state="running",
+                system_restart=changes.get("system", "none") if index == 0 else "none",
+                session_restart=changes.get("session", "none") if cutoff == changes.get("session_cutoff") else "none",
+                application_restart=changes.get("application", False) if cutoff == changes.get("application_cutoff") else False)
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, operation, replace(operation,
+                    state="succeeded", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=cutoff))
+                provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                provider.acknowledge_journal_handoff(journal, operation.operation_id)
+
+    def restart_row(self, output):
+        return next(row for row in rows(output, "state") if row[1] == "update-restart")
+
+    def test_cli_initializes_only_its_fixed_journal_and_keeps_actions_disabled(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}), \
+                mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                mock.patch.object(provider, "PackageKitBackend", return_value=self.backend()), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(provider.main(["snapshot"]), 0)
+            output = stdout.getvalue().splitlines()
+            self.assertEqual(output[-1], "complete\tsnapshot")
+            self.assertEqual(self.restart_row(output)[2:4], ["available", "none"])
+            self.assertEqual([row[2] for row in rows(output, "action")], ["unavailable"] * 3)
+            path = pathlib.Path(directory) / "lyona" / "system-management"
+            self.assertEqual({item.name for item in path.iterdir()}, set(provider.JOURNAL_NAMES))
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+
+    def test_durable_restart_overrides_discovery_and_survives_missing_packagekit(self):
+        for unavailable in (False, True):
+            with self.subTest(unavailable=unavailable), self.journal() as journal:
+                self.restart(journal, system="system", session="security-session", session_cutoff=100)
+                backend = self.backend(restart_types=(1,), updates_failure=
+                    provider.SnapshotFailure("missing-provider", "PackageKit is absent", "unavailable") if unavailable else None)
+                output = self.snapshot(journal, backend)
+                self.assertEqual(self.restart_row(output)[2:4], ["available", "security-system"])
+                self.assertEqual(output[-1], "complete\tsnapshot")
+
+    def test_new_session_prunes_independent_cutoffs_before_display(self):
+        with self.journal() as journal:
+            self.restart(journal, session="security-session", session_cutoff=100, application=True, application_cutoff=300)
+            backend = self.backend()
+            backend.session_started.return_value = 200
+            output = self.snapshot(journal, backend)
+            self.assertEqual(self.restart_row(output)[2:4], ["available", "application"])
+            state = provider.load_journal_state(journal.chain)
+            self.assertEqual((state.restart.session, state.restart.application), ("none", True))
+
+    def test_missing_session_evidence_retains_known_guidance_as_partial(self):
+        with self.journal() as journal:
+            self.restart(journal, session="security-session", session_cutoff=100)
+            backend = self.backend()
+            backend.session_started.side_effect = provider.SnapshotFailure("timeout", "Logind timed out")
+            output = self.snapshot(journal, backend)
+            self.assertEqual(self.restart_row(output)[2:4], ["partial", "security-session"])
+            self.assertIn(["error", "recovery", "timeout", "Logind timed out"], rows(output, "error"))
+            self.assertEqual(provider.load_journal_state(journal.chain).restart.session, "security-session")
+
+    def test_new_boot_clears_all_guidance_durably(self):
+        with self.journal() as journal:
+            self.restart(journal, system="unknown", session="session", session_cutoff=100, application=True, application_cutoff=100)
+            new_boot = "abcdef01-2345-6789-abcd-ef0123456789"
+            output = self.snapshot(journal, self.backend(), boot_id=new_boot)
+            self.assertEqual(self.restart_row(output)[2:4], ["available", "none"])
+            self.assertEqual(provider.load_journal_state(journal.chain).restart.boot_id, new_boot)
+
+    def test_logind_failure_does_not_reintroduce_guidance_satisfied_by_reboot(self):
+        with self.journal() as journal:
+            self.restart(journal, system="unknown", session="session", session_cutoff=100)
+            backend = self.backend()
+            backend.session_started.side_effect = provider.SnapshotFailure("missing-provider", "Logind missing")
+            output = self.snapshot(journal, backend, boot_id="abcdef01-2345-6789-abcd-ef0123456789")
+            self.assertEqual(self.restart_row(output)[2:4], ["partial", "none"])
+
+    def test_read_only_journal_failure_preserves_validated_prior_guidance(self):
+        with self.journal() as journal:
+            self.restart(journal, system="security-system")
+            with mock.patch.object(provider, "initialize_journal_layout", side_effect=OSError(errno.EROFS, "Read-only fixture")):
+                output = self.snapshot(journal, self.backend())
+            self.assertEqual(self.restart_row(output)[2:4], ["partial", "security-system"])
+
+    def test_active_lookup_precedes_logind_and_emits_exact_finite_identity(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            backend = self.backend()
+            def probe(record, **_kwargs):
+                self.assertEqual(record, operation)
+                self.assertFalse(journal._exclusive)
+                backend.session_started.assert_not_called()
+                return provider.RecoveryEvidence(True, percent=27, allow_cancel=True)
+            backend.probe_operation.side_effect = probe
+            output = self.snapshot(journal, backend)
+            self.assertEqual(rows(output, "active-operation")[0][1:7],
+                [operation.operation_id, operation.action_id, "refresh", "pending", "27", "yes"])
+            self.assertEqual(next(row[2] for row in rows(output, "action") if row[1] == "updates-cancel"), "available")
+            self.assertEqual(rows(output, "terminal-handoff"), [])
+            self.assertEqual(output[-1], "complete\tsnapshot")
+
+    def test_lookup_timeout_preserves_active_identity_and_does_not_guess_absence(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            backend = self.backend()
+            backend.probe_operation.side_effect = provider.SnapshotFailure("timeout", "Lookup expired")
+            output = self.snapshot(journal, backend)
+            self.assertEqual(rows(output, "active-operation")[0][1], operation.operation_id)
+            self.assertEqual(rows(output, "active-operation")[0][6], "no")
+            self.assertEqual(next(row[2] for row in rows(output, "action") if row[1] == "updates-cancel"), "unavailable")
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+            self.assertIn(["error", "recovery", "timeout", "Lookup expired"], rows(output, "error"))
+
+    def test_absent_refresh_becomes_durable_interrupted_handoff(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            output = self.snapshot(journal, self.backend())
+            self.assertEqual(rows(output, "active-operation"), [])
+            self.assertEqual(rows(output, "terminal-handoff"),
+                [["terminal-handoff", operation.operation_id, operation.action_id, "refresh"]])
+            self.assertEqual(provider.load_journal_state(journal.chain).terminals[operation.slot].state, "interrupted")
+
+    def test_terminalized_update_is_completed_and_pruned_before_handoff(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, state="running", session_restart="session")
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, operation, replace(operation,
+                    state="succeeded", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+            backend = self.backend()
+            backend.session_started.return_value = 200
+            output = self.snapshot(journal, backend)
+            backend.probe_operation.assert_not_called()
+            backend.operation_history.assert_not_called()
+            self.assertEqual(self.restart_row(output)[2:4], ["available", "none"])
+            self.assertEqual(rows(output, "terminal-handoff")[0][1], operation.operation_id)
+            self.assertIsNone(provider.load_journal_state(journal.chain).active)
+
+    def test_stranded_regional_state_is_not_emitted_as_packagekit_active(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "timezone")
+            backend = self.backend()
+            output = self.snapshot(journal, backend)
+            backend.probe_operation.assert_not_called()
+            self.assertEqual(rows(output, "active-operation"), [])
+            self.assertEqual(rows(output, "terminal-handoff")[0][1], operation.operation_id)
+            self.assertEqual(provider.load_journal_state(journal.chain).terminals[operation.slot].state, "interrupted")
+
+    def test_prune_failure_retains_prior_guidance_without_publishing_handoff(self):
+        with self.journal() as journal:
+            self.restart(journal, session="security-session", session_cutoff=100)
+            backend = self.backend()
+            backend.session_started.return_value = 200
+            with mock.patch.object(provider, "commit_writable_journal_path", side_effect=provider.JournalCommitError("Injected write failure")):
+                output = self.snapshot(journal, backend)
+            self.assertEqual(self.restart_row(output)[2:4], ["partial", "security-session"])
+            self.assertEqual(rows(output, "active-operation") + rows(output, "terminal-handoff"), [])
+            self.assertEqual(provider.load_journal_state(journal.chain).restart.session, "security-session")
+
+    def test_unsafe_journal_does_not_hide_readable_inventory_or_touch_replacement(self):
+        with self.journal() as journal:
+            path = pathlib.Path(journal.chain.path) / "handoff"
+            path.chmod(0o644)
+            try:
+                before = path.read_bytes()
+                backend = self.backend(updates=(package(9, "held;2;x86_64;updates", "Held"),))
+                output = self.snapshot(journal, backend)
+                self.assertEqual(len(rows(output, "update")), 1)
+                self.assertEqual(rows(output, "active-operation") + rows(output, "terminal-handoff"), [])
+                self.assertEqual(self.restart_row(output)[2:4], ["partial", "unknown"])
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+            finally:
+                path.chmod(0o600)
+
+    def test_backend_construction_failure_still_completes_durable_handoff(self):
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            with provider.lock_writable_journal(journal):
+                provider.advance_journal_operation(journal, operation, replace(operation,
+                    state="failed", error_code="internal", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
+            with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
+                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                    mock.patch.object(provider, "PackageKitBackend", side_effect=provider.SnapshotFailure("missing-provider", "Bindings missing")), \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(provider.main(["snapshot"]), 0)
+            self.assertEqual(rows(stdout.getvalue().splitlines(), "terminal-handoff")[0][1], operation.operation_id)
 
 
 if __name__ == "__main__":

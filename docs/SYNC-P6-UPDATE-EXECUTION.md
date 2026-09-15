@@ -223,6 +223,18 @@ Carry [Phase 5](SYNC-P5-OPERATION-JOURNAL.md#unknown-must-be-a-legal-restart-val
 Arch needs `unknown` to win in more cases than that, per
 [Phase 2](SYNC-P2-UPDATE-SNAPSHOT.md#restart-requirements).
 
+**Blocking gap, verified against the shipped Phase 5 code (2026-09-14):**
+`JOURNAL_RESTART_SESSION_STRENGTH` in `scripts/dwm-system-management` has no
+`unknown` member — only `JOURNAL_RESTART_SYSTEM_STRENGTH` does. If this
+fold ever needs to write an `unknown` *session*-restart value into a journal
+record (matching upstream's generic, axis-agnostic fold shape above), journal
+record validation will reject it outright. Add the member to
+`JOURNAL_RESTART_SESSION_STRENGTH` as part of this phase (it is a small,
+isolated change to Phase 5's existing strength map — see
+[Phase 5's note](SYNC-P5-OPERATION-JOURNAL.md#unknown-must-be-a-legal-restart-value)),
+or confirm session restart genuinely never needs `unknown` on Arch and narrow
+this section's fold to system-restart only, explicitly.
+
 ---
 
 ## Verification

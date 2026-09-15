@@ -13,14 +13,22 @@ import qs.core
  * (docs/SYNC-P4-DISCOVERY-EVENTS.md) replaces "click Reload and hope" with
  * a bounded live subscription (SystemUpdateDiscovery) that coalesces reads:
  * while the pane is open, the helper watches PackageKit's manager signals
- * and this model re-reads only when told to, never per signal. This is the
- * last read-only Sync Phase -- mutation and the recovery journal are later.
+ * and this model re-reads only when told to, never per signal. Sync Phase 4
+ * was the last read-only phase before the recovery journal (Sync Phase 5)
+ * and confirmed mutation (Sync Phase 6, below).
  *
  * The helper is bounded (docs/SYNC-P2-UPDATE-SNAPSHOT.md), but this model is
  * the second line of defence: every record is re-validated against explicit
  * allowlists rather than passed through to the UI, a missing mandatory
  * record fails the whole snapshot instead of rendering a partial one, and a
  * snapshot without a trailing `complete\tsnapshot` is discarded whole.
+ *
+ * Sync Phase 6 (docs/SYNC-P6-UPDATE-EXECUTION.md) turns the journal into a
+ * working execution owner: `active-operation`/`terminal-handoff` records
+ * (from the helper's `build_managed_snapshot()`) report an in-progress or
+ * unacknowledged-result operation so a Quickshell restart mid-update can
+ * reattach via `watch-operation` rather than showing nothing. The confirm
+ * button and progress surface are Sync Phase 7's `SystemOperationModel.qml`.
  */
 Scope {
     id: root
@@ -41,6 +49,8 @@ Scope {
     property var updates: []
     property var packageChanges: []
     property var errors: []
+    property var activeOperation: null
+    property var terminalHandoff: null
 
     readonly property bool busy: root.snapshotOwned
     readonly property int maxListRecords: 4096
@@ -55,6 +65,34 @@ Scope {
     readonly property var validPlanAction: ["update", "install", "remove", "obsolete", "reinstall", "downgrade"]
     readonly property var validErrorCode: ["malformed", "timeout", "missing-provider", "permission-denied",
         "unsupported", "network", "repository", "conflict", "signature", "internal", "package", "canceled"]
+
+    function validOperationId(value) {
+        return /^op-[0-9a-f]{32}$/.test(value);
+    }
+
+    function validOperationState(value) {
+        return value === "pending" || value === "authorizing" || value === "running"
+            || value === "cancel-requested";
+    }
+
+    function validPercent(value) {
+        return value === "unknown" || (/^(0|[1-9][0-9]?)$/.test(value)) || value === "100";
+    }
+
+    function updateActionKind(actionId) {
+        if (actionId === "updates-refresh") return "refresh";
+        if (actionId === "updates-install-all") return "update";
+        return "";
+    }
+
+    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md) adds regional/delegated
+    // action kinds here; kept as its own function (mirroring upstream) so an
+    // operation record can be validated without assuming it is update-related.
+    function operationActionKind(actionId) {
+        const updateKind = root.updateActionKind(actionId);
+        if (updateKind.length > 0) return updateKind;
+        return "";
+    }
 
     function providerFallback(detail) {
         return { "status": "unavailable", "class": "delegated", "owner": "", "detail": detail };
@@ -81,6 +119,8 @@ Scope {
         root.updates = [];
         root.packageChanges = [];
         root.errors = [];
+        root.activeOperation = null;
+        root.terminalHandoff = null;
     }
 
     function openSettings() {
@@ -166,6 +206,7 @@ Scope {
         let generation = "";
         let updateProvider = null, recoveryProvider = null;
         let updateSummary = null, updateLastRefresh = null, updateRestart = null;
+        let activeOperation = null, terminalHandoff = null;
         const actions = [];
         const updates = [];
         const packageChanges = [];
@@ -243,6 +284,35 @@ Scope {
                 seenChangeIds[fields[1]] = true;
                 packageChanges.push({ "packageId": fields[1], "action": fields[2], "name": fields[3],
                     "version": fields[4], "summary": fields[5] });
+            } else if (kind === "active-operation") {
+                if (activeOperation !== null || terminalHandoff !== null) {
+                    root.resetToFallback("System management provider repeated snapshot operation state");
+                    return false;
+                }
+                if (fields.length !== 8 || !root.validOperationId(fields[1])
+                        || root.operationActionKind(fields[2]).length === 0
+                        || root.operationActionKind(fields[2]) !== fields[3]
+                        || !root.validOperationState(fields[4])
+                        || !root.validPercent(fields[5])
+                        || (fields[6] !== "yes" && fields[6] !== "no")) {
+                    root.resetToFallback("System management provider returned an invalid active operation");
+                    return false;
+                }
+                activeOperation = { "id": fields[1], "actionId": fields[2], "kind": fields[3],
+                    "state": fields[4], "percent": fields[5], "cancelable": fields[6] === "yes",
+                    "detail": fields[7] };
+            } else if (kind === "terminal-handoff") {
+                if (activeOperation !== null || terminalHandoff !== null) {
+                    root.resetToFallback("System management provider repeated snapshot operation state");
+                    return false;
+                }
+                if (fields.length !== 4 || !root.validOperationId(fields[1])
+                        || root.operationActionKind(fields[2]).length === 0
+                        || root.operationActionKind(fields[2]) !== fields[3]) {
+                    root.resetToFallback("System management provider returned an invalid terminal handoff");
+                    return false;
+                }
+                terminalHandoff = { "id": fields[1], "actionId": fields[2], "kind": fields[3] };
             } else if (kind === "error") {
                 if (fields.length !== 4 || root.validErrorCode.indexOf(fields[2]) < 0) {
                     root.resetToFallback("System management provider returned a malformed error record");
@@ -276,6 +346,8 @@ Scope {
         root.updates = updates;
         root.packageChanges = packageChanges;
         root.errors = errors;
+        root.activeOperation = activeOperation;
+        root.terminalHandoff = terminalHandoff;
         root.snapshotState = "loaded";
         root.message = updates.length + " update" + (updates.length === 1 ? "" : "s") + " found";
         return true;

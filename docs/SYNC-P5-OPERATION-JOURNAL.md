@@ -245,6 +245,20 @@ and `JOURNAL_RESTART_SESSION_VALUES` derive from strength maps at `:99` and
 requirement, so that folding `unknown` with `none` yields `unknown` rather
 than `none`.
 
+**Gap found verifying the shipped implementation (2026-09-14):**
+`JOURNAL_RESTART_SYSTEM_STRENGTH` has `"unknown": 1` as specified.
+`JOURNAL_RESTART_SESSION_STRENGTH` does not — it is `{"none": 0, "session": 1,
+"security-session": 2}`, no `unknown` member. Nothing in the current codebase
+exercises the gap yet: `_restart_heuristic_hint()` only ever returns
+`"system"` or `"unknown"` into the system-restart row, never touches session
+restart. It becomes live the moment [Phase 6](SYNC-P6-UPDATE-EXECUTION.md#6-restart-guidance-folding)'s
+restart-guidance fold needs to write an `unknown` session-restart value into a
+journal record — `_journal_operation_fields()`'s validation
+(`record.session_restart not in JOURNAL_RESTART_SESSION_VALUES`) will reject
+it. Add the member before or while building that fold, or confirm session
+restart genuinely never needs it on Arch and record that decision here
+instead.
+
 ## 4. Locking and admission
 
 - `_journal_lock()` (`:3273`) — `flock` with a 5-second deadline
