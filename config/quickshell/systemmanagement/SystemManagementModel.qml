@@ -27,19 +27,35 @@ import qs.core
  * working execution owner: `active-operation`/`terminal-handoff` records
  * (from the helper's `build_managed_snapshot()`) report an in-progress or
  * unacknowledged-result operation so a Quickshell restart mid-update can
- * reattach via `watch-operation` rather than showing nothing. The confirm
- * button and progress surface are Sync Phase 7's `SystemOperationModel.qml`.
+ * reattach via `watch-operation` rather than showing nothing.
+ *
+ * Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md) adds the confirm/cancel
+ * surface: `updateActionReason()`/`prepareUpdate()`/`confirmUpdate()`/
+ * `discardUpdate()` own visible confirmation as a captured snapshot (the
+ * generation, this model's own read counter, and the discovery cycle epoch
+ * must all still match at confirm time, or the prompt invalidates itself
+ * rather than dispatching a stale plan), and `operation` (a
+ * `SystemOperationModel`) owns the actual process/journal-control lifecycle.
+ * A `required` snapshot request (the operation model recovering evidence)
+ * bypasses `settingsVisible` -- reusing `discoveryModel`'s existing
+ * take/beforePublish/complete cycle, which already no-ops safely on a null
+ * token when the pane is closed.
  */
 Scope {
     id: root
 
+    signal confirmationInvalidated()
+
     property bool settingsVisible: false
     property bool snapshotOwned: false
     property bool snapshotPending: false
+    property bool requiredPending: false
+    property bool snapshotRequired: false
     property bool snapshotAttempted: false
     property string snapshotState: "idle" // idle | loading | loaded | unavailable
     property string message: "System management has not been loaded"
     property string generation: ""
+    property int requestGeneration: 0
     property var updateProvider: root.providerFallback("Update status has not been loaded")
     property var recoveryProvider: root.recoveryFallback("Recovery status has not been loaded")
     property var updateSummary: root.stateFallback("Update status has not been loaded")
@@ -51,10 +67,14 @@ Scope {
     property var errors: []
     property var activeOperation: null
     property var terminalHandoff: null
+    property var updateConfirmation: null
+    property string confirmationMessage: ""
+    property bool dispatchingUpdate: false
 
     readonly property bool busy: root.snapshotOwned
     readonly property int maxListRecords: 4096
     readonly property alias discovery: discoveryModel
+    readonly property alias operation: operationModel
     readonly property string discoveryDetail: discoveryModel.detail
 
     readonly property var validStatus: ["available", "partial", "restricted", "unavailable", "unsupported"]
@@ -79,6 +99,10 @@ Scope {
         return value === "unknown" || (/^(0|[1-9][0-9]?)$/.test(value)) || value === "100";
     }
 
+    function validGeneration(value) {
+        return /^[0-9a-f]{64}$/.test(value);
+    }
+
     function updateActionKind(actionId) {
         if (actionId === "updates-refresh") return "refresh";
         if (actionId === "updates-install-all") return "update";
@@ -92,6 +116,78 @@ Scope {
         const updateKind = root.updateActionKind(actionId);
         if (updateKind.length > 0) return updateKind;
         return "";
+    }
+
+    function updateActionReason(actionId) {
+        if (actionId !== "updates-refresh" && actionId !== "updates-install-all")
+            return "This update action is not supported.";
+        if (!root.settingsVisible || root.dispatchingUpdate)
+            return "Open System Settings to prepare an update action.";
+        if (root.snapshotOwned || root.snapshotPending || root.requiredPending || !discoveryModel.fresh)
+            return "Wait for fresh update discovery, or reload status to retry.";
+        if (!root.validGeneration(root.generation) || root.recoveryProvider.status !== "available")
+            return "Complete recovery evidence is required. Reload status to retry.";
+        if (!operationModel.canStart)
+            return "An operation or its recovery still owns the update workflow.";
+        const action = root.actions.find(item => item.id === actionId);
+        if (!action || action.status !== "available")
+            return action && action.detail.length > 0 ? action.detail : "The provider did not offer this action.";
+        if (actionId === "updates-install-all" && root.packageChanges.length === 0)
+            return "No complete installable package-change preview is available.";
+        return "";
+    }
+
+    // prepareUpdate()/confirmUpdate() capture the state the user is agreeing
+    // to -- generation, this model's own read counter, and the discovery
+    // cycle epoch -- rather than a flag. confirmUpdate() refuses to dispatch
+    // unless all three still match, so a plan that changed underneath a
+    // prompt the user has not yet acted on is never silently dispatched.
+    function prepareUpdate(actionId) {
+        const reason = root.updateActionReason(actionId);
+        if (reason.length > 0) {
+            root.confirmationMessage = reason;
+            return false;
+        }
+        root.confirmationMessage = "";
+        root.updateConfirmation = {
+            actionId: actionId, generation: root.generation,
+            requestGeneration: root.requestGeneration, epoch: discoveryModel.cycle.epoch,
+            changes: actionId === "updates-install-all"
+                ? JSON.parse(JSON.stringify(root.packageChanges)) : []
+        };
+        return true;
+    }
+
+    function discardUpdate() {
+        root.updateConfirmation = null;
+        root.confirmationMessage = "";
+    }
+
+    function confirmUpdate() {
+        const pending = root.updateConfirmation;
+        if (pending === null || root.dispatchingUpdate) return false;
+        const reason = root.updateActionReason(pending.actionId);
+        if (reason.length > 0 || pending.generation !== root.generation
+                || pending.requestGeneration !== root.requestGeneration
+                || pending.epoch !== discoveryModel.cycle.epoch) {
+            root.confirmationInvalidated();
+            return false;
+        }
+        // Capture the fixed arguments and claim dispatch before clearing the
+        // prompt: reentrant UI callbacks must not dispatch another origin.
+        root.dispatchingUpdate = true;
+        root.updateConfirmation = null;
+        const started = operationModel.startUpdate(pending.actionId,
+            pending.actionId === "updates-install-all" ? pending.generation : "");
+        root.confirmationMessage = started ? "" : "Update state changed. Reload status and confirm again.";
+        root.dispatchingUpdate = false;
+        return started;
+    }
+
+    onConfirmationInvalidated: {
+        if (root.updateConfirmation !== null)
+            root.confirmationMessage = "Update state changed. Review a fresh preview and confirm again.";
+        root.updateConfirmation = null;
     }
 
     function providerFallback(detail) {
@@ -126,18 +222,35 @@ Scope {
     function openSettings() {
         root.settingsVisible = true;
         discoveryModel.open();
+        root.refreshRecovery();
     }
 
     function closeSettings() {
         root.settingsVisible = false;
+        root.confirmationInvalidated();
         discoveryModel.close();
         root.snapshotPending = false;
-        if (snapshotProcess.running) snapshotProcess.running = false;
+        // A required fetch (recovering operation evidence) is not this
+        // pane's to kill: it keeps running so operationModel can still
+        // reattach to an in-progress or unacknowledged operation offscreen.
+        if (!root.snapshotRequired && snapshotProcess.running) snapshotProcess.running = false;
     }
 
     function refresh() {
         if (!root.settingsVisible) return;
         discoveryModel.refresh();
+        root.refreshRecovery();
+    }
+
+    // Drives operationModel's recovery snapshot the same way discoveryModel
+    // drives the pane's own reads: reset the backoff, then ask again only if
+    // the model was actually waiting on one (idle/observing/result states
+    // already have everything they need and must not restart recovery).
+    function refreshRecovery() {
+        const requiredRecovery = operationModel.waitingSnapshot || operationModel.blocked
+            || operationModel.state === "recovering";
+        operationModel.resetRecovery();
+        if (requiredRecovery) operationModel.requestSnapshot();
     }
 
     // The single entry point for starting a fetch, regardless of whether the
@@ -158,15 +271,27 @@ Scope {
     // onRunningChanged's real not-running transition below, never from
     // finishSnapshot, so this guard should never trip in practice; it stays
     // as the actual authority a caller cannot get out of sync with.
-    function requestSnapshot() {
+    // `required` (Sync Phase 7) is operationModel asking for recovery
+    // evidence: it bypasses discoveryModel.canTake()'s settingsVisible tie,
+    // but still hands discoveryModel.take() the request -- take() itself
+    // returns null while the pane is closed, and a null token is a safe
+    // no-op through beforePublish/complete (SystemDiscoveryCycle.js's
+    // owns()), so the read still runs without joining the visible cycle.
+    function requestSnapshot(required) {
         if (root.snapshotOwned || snapshotProcess.running) {
-            root.snapshotPending = true;
+            root.snapshotPending = root.snapshotPending || !required;
+            root.requiredPending = root.requiredPending || !!required;
             return;
         }
-        if (!discoveryModel.canTake()) return;
+        required = required || root.requiredPending;
+        if (!required && !discoveryModel.canTake()) return;
         root.snapshotPending = false;
+        root.requiredPending = false;
         root.snapshotOwned = true;
         root.snapshotAttempted = false;
+        root.snapshotRequired = required;
+        root.requestGeneration++;
+        root.confirmationInvalidated();
         snapshotProcess.cycleToken = discoveryModel.take();
         root.snapshotState = "loading";
         root.message = "Loading system update status...";
@@ -174,12 +299,16 @@ Scope {
         snapshotProcess.running = true;
     }
 
-    // Cycle bookkeeping only -- ownership and the next launch are handled
+    // Cycle bookkeeping, plus handing the parsed operation state to
+    // operationModel -- ownership and the next launch are handled
     // separately, gated on the process's real exit (see requestSnapshot).
     function finishSnapshot(successful) {
         discoveryModel.beforePublish(snapshotProcess.cycleToken);
+        if (successful) operationModel.acceptSnapshot(root.activeOperation, root.terminalHandoff);
+        else operationModel.snapshotFailed();
         discoveryModel.complete(snapshotProcess.cycleToken, successful);
         snapshotProcess.cycleToken = null;
+        root.snapshotRequired = false;
     }
 
     function parseSnapshot(text) {
@@ -219,7 +348,7 @@ Scope {
             const kind = fields[0];
 
             if (kind === "snapshot-generation") {
-                if (fields.length !== 2 || !/^[0-9a-f]{64}$/.test(fields[1])) {
+                if (fields.length !== 2 || !root.validGeneration(fields[1])) {
                     root.resetToFallback("System management provider returned a malformed generation");
                     return false;
                 }
@@ -346,16 +475,41 @@ Scope {
         root.updates = updates;
         root.packageChanges = packageChanges;
         root.errors = errors;
-        root.activeOperation = activeOperation;
-        root.terminalHandoff = terminalHandoff;
+        // A snapshot race can still name an identity operationModel already
+        // acknowledged (its own control process exits before this read's
+        // journal state settles) -- never resurrect it here.
+        root.activeOperation = activeOperation !== null && operationModel.wasAcknowledged(activeOperation.id)
+            ? null : activeOperation;
+        root.terminalHandoff = terminalHandoff !== null && operationModel.wasAcknowledged(terminalHandoff.id)
+            ? null : terminalHandoff;
         root.snapshotState = "loaded";
         root.message = updates.length + " update" + (updates.length === 1 ? "" : "s") + " found";
         return true;
     }
 
+    // Reads recovery evidence for an in-progress or unacknowledged operation
+    // even before Settings is ever opened, so a Quickshell restart mid-update
+    // can reattach on its own. Confirmed dispatch stays owned by root/UI --
+    // this model only accepts fixed update commands (startUpdate).
+    Component.onCompleted: Qt.callLater(function() { operationModel.requestSnapshot(); })
+
     SystemUpdateDiscovery {
         id: discoveryModel
-        onSnapshotRequested: root.requestSnapshot()
+        onSnapshotRequested: root.requestSnapshot(false)
+        onInvalidated: root.confirmationInvalidated()
+    }
+
+    SystemOperationModel {
+        id: operationModel
+        onDiscoveryInvalidated: discoveryModel.invalidate()
+        onSnapshotRequested: root.requestSnapshot(true)
+        onAcknowledged: operationId => {
+            if (root.terminalHandoff !== null && root.terminalHandoff.id === operationId)
+                root.terminalHandoff = null;
+            if (root.activeOperation !== null && root.activeOperation.id === operationId)
+                root.activeOperation = null;
+            discoveryModel.invalidate();
+        }
     }
 
     Process {
@@ -379,7 +533,8 @@ Scope {
             // which can run first) is what actually closes the race.
             root.snapshotOwned = false;
             Qt.callLater(function() {
-                if (root.snapshotPending && root.settingsVisible) root.requestSnapshot();
+                if (root.requiredPending) root.requestSnapshot(true);
+                else if (root.snapshotPending && root.settingsVisible) root.requestSnapshot(false);
             });
         }
     }

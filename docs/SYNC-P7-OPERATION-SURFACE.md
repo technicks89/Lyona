@@ -129,10 +129,21 @@ difference between a greyed-out button and an explanation.
 ## 3. `SystemOperationModel.qml`
 
 Owns one child process at a time, running
-`Commands.systemManagementCommand(action, args)` under
-`Commands.terminatingCheckedCommand(...)` (from
-[Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#3-commandsqml)), feeding
+`Commands.systemManagementCommand(action, args)` directly, feeding
 `StdioCollector.data` into the parser.
+
+> **Correction, found during implementation.** This section originally said
+> the watch/ack commands run under `Commands.terminatingCheckedCommand(...)`
+> (from [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#3-commandsqml)). They do
+> not, and must not: `terminatingCheckedCommand` (like `checkedCommand`)
+> buffers the wrapped command's stdout to a temp file and only `cat`s it once
+> the child exits — correct for the bounded one-shot `snapshot` read, but it
+> would defeat `watch-operation`'s live streaming entirely, turning every
+> progress record into one batch delivered at exit. This is the exact same
+> mistake [Phase 4](SYNC-P4-DISCOVERY-EVENTS.md#3-systemproviderdiscoveryqml-is-generic-from-the-start)
+> already found and corrected for `watch-updates`/`watch-regional`/etc.; the
+> ported `SystemOperationModel.qml` (upstream does not wrap these either)
+> follows the same rule.
 
 Rules to carry:
 
@@ -151,6 +162,18 @@ Rules to carry:
   Lyona's own standing rule in
   [`SETTINGS-PLATFORM.md`](SETTINGS-PLATFORM.md#helper-protocol): *"QML cannot
   supply command strings, executables, arbitrary paths, or elevation flags."*
+
+  > **Deferred to [Phase 9](SYNC-P9-REGIONAL-MUTATION.md).** `#262`'s own diff
+  > is a "native origins" adaptation spanning the regional/delegated action
+  > machinery ([Phase 8](SYNC-P8-REGIONAL-READERS.md)/[Phase 9](SYNC-P9-REGIONAL-MUTATION.md))
+  > that does not exist in Lyona yet, so the commit itself is not ported here.
+  > The security property it is cited for above already holds without it:
+  > `startUpdate(action, generation)` only accepts the two literal strings
+  > `"updates-refresh"`/`"updates-install-all"` (see its guard clause) — QML
+  > has no path to construct or pass through an arbitrary action string for
+  > the update domain this phase covers. Re-check this note when Phase 9 adds
+  > regional/delegated origins, the same way [Phase 6](SYNC-P6-UPDATE-EXECUTION.md)'s
+  > `#232`/E7 exclusion was inherited rather than re-litigated.
 
 ## 4. `SystemUpdateControls.qml` and the pane
 
@@ -177,6 +200,29 @@ confirmation prompt that appears below the fold is a confirmation nobody read:
 +            root.scrollTo(position.y + target.height - root.height);
 +    }
 ```
+
+> **Gap found during implementation.** This `scrollTo()` call assumes prior
+> keyboard-scroll scaffolding (a `Keys.onPressed` line/page-step handler and a
+> `scrollTo()` helper) that upstream's `SystemSettingsPane.qml` already had
+> from an earlier phase. Lyona's pane never ported that scaffolding — it is
+> a plain `Flickable` with no `scrollTo()` — so `reveal()` here sets
+> `root.contentY` directly instead of calling a helper that does not exist:
+>
+> ```qml
+> function reveal(target) {
+>     const position = target.mapToItem(content, 0, 0);
+>     if (position.y < root.contentY)
+>         root.contentY = Math.max(0, position.y);
+>     else if (position.y + target.height > root.contentY + root.height)
+>         root.contentY = Math.min(Math.max(0, root.contentHeight - root.height),
+>             position.y + target.height - root.height);
+> }
+> ```
+>
+> The behavior (scroll the minimum distance to bring `target` on screen) is
+> the same; only the mechanism differs. Porting the keyboard line/page-step
+> handler itself is out of scope here — it was never part of any prior Lyona
+> sync phase and this phase's upstream diff does not touch it either.
 
 Two `StatusCard`s replace the single active-operation card from
 [Phase 3](SYNC-P3-SYSTEM-PANE.md): one for the live operation, one for the
@@ -228,13 +274,28 @@ verified result, which persists until acknowledged.
 ```bash
 scripts/run-tests make check-quickshell-qml
 scripts/run-tests make check-quickshell-system-management
-scripts/run-tests make check-quickshell-settings-xvfb
+scripts/run-tests make check-quickshell-system-management-xvfb
 scripts/run-tests /usr/bin/python3 tests/test-system-management.py
 ```
 
 `SystemOperationProtocol.js` is a pure library — test it directly with
 malformed, truncated, split-mid-codepoint and illegal-transition streams.
 Upstream's `tests/qml/SystemOperationParser.qml` harness is the model.
+
+> **Known automated-coverage gap.** `tests/qml/SystemOperationParser.qml` was
+> not ported in this pass — deferred, not forgotten. Separately,
+> `tests/test-quickshell-system-management-xvfb.sh`'s stub `dwm-system-management`
+> reports `recovery\tunsupported` and both update actions `unavailable` (it
+> predates this phase and was built for read-only assertions), so it proves
+> `SystemOperationModel`/`SystemUpdateControls` mount and settle to their idle
+> defaults against a real Quickshell process (added assertions:
+> `systemManagementOperationState` is `idle`, `systemManagementOperationResult`
+> is empty) but cannot exercise a live confirm → dispatch → watch → cancel →
+> ack cycle — that needs a PackageKit-transaction-capable stub (handling
+> `updates-refresh`, `updates-install-all`, `watch-operation`, `ack-operation`,
+> `updates-cancel`) comparable in complexity to `tests/test-system-management.py`'s
+> own fixtures. Both gaps are left for whoever picks this up next; the manual
+> VM checklist below is the only coverage of the live cycle until then.
 
 Manual, on a **disposable** CachyOS VM:
 

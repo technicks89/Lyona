@@ -208,6 +208,18 @@ test_stage='validating parsed snapshot content'
 # update pending) round-trips through the model's own enum validation.
 [ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
 
+test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
+# The stub reports recovery as unsupported and both update actions as
+# unavailable, so operationModel never has evidence to recover and
+# SystemUpdateControls' prepare buttons stay disabled -- this stub cannot
+# exercise a live confirm/dispatch/watch/cancel/ack cycle (that needs a
+# PackageKit-transaction-capable stub, tracked in docs/SYNC-P7-OPERATION-SURFACE.md).
+# What this does prove: SystemOperationModel and SystemUpdateControls mount
+# and settle to their idle defaults against a real Quickshell process,
+# without a binding error or crash.
+[ "$(ipc settings systemManagementOperationState)" = idle ]
+[ "$(ipc settings systemManagementOperationResult)" = '' ]
+
 # The snapshot only loaded because the discovery monitor reached ready and
 # coalesced the read through it (SystemManagementModel no longer fires a
 # read directly on open) -- confirm the monitor itself is actually up, not

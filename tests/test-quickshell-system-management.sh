@@ -34,15 +34,20 @@ grep -Fq 'root.systemManagementModel.closeSettings()' "$settings_model"
 grep -Fq 'root.selectedSectionId === "system" && root.systemManagementModel' "$settings_model"
 grep -Fq 'function openSettings()' "$system_model"
 grep -Fq 'function closeSettings()' "$system_model"
-grep -Fq 'if (snapshotProcess.running) snapshotProcess.running = false;' "$system_model"
+# Sync Phase 7: a required (recovery) fetch is not this pane's to kill --
+# closeSettings must leave it running so operationModel can still reattach.
+grep -Fq 'if (!root.snapshotRequired && snapshotProcess.running) snapshotProcess.running = false;' "$system_model"
 
 # Sync Phase 4: reads are coalesced through the discovery cycle, not fired
 # per call. A request that arrives while one is already in flight is
 # recorded (snapshotPending) and replayed once, never launched as a second
-# overlapping process.
+# overlapping process. Sync Phase 7 adds a `required` parameter (operationModel
+# recovering evidence) that is coalesced separately (requiredPending) and
+# bypasses discoveryModel.canTake()'s settingsVisible tie.
 grep -Fq 'if (root.snapshotOwned || snapshotProcess.running) {' "$system_model"
-grep -Fq 'root.snapshotPending = true;' "$system_model"
-grep -Fq 'if (!discoveryModel.canTake()) return;' "$system_model"
+grep -Fq 'root.snapshotPending = root.snapshotPending || !required;' "$system_model"
+grep -Fq 'root.requiredPending = root.requiredPending || !!required;' "$system_model"
+grep -Fq 'if (!required && !discoveryModel.canTake()) return;' "$system_model"
 grep -Fq 'discoveryModel.open();' "$system_model"
 grep -Fq 'discoveryModel.close();' "$system_model"
 grep -Fq 'discoveryModel.refresh();' "$system_model"
@@ -64,6 +69,16 @@ grep -Fq 'snapshotProcess.cycleToken = null;' "$system_model"
 finish_snapshot_body=$(awk '/^    function finishSnapshot\(successful\) \{/,/^    \}/' "$system_model")
 if printf '%s\n' "$finish_snapshot_body" | grep -q 'snapshotOwned = false\|snapshotProcess.running = true'; then
 	printf 'finishSnapshot must not touch ownership or relaunch directly; that belongs in onRunningChanged.\n' >&2
+	exit 1
+fi
+# Sync Phase 7: the parsed operation state is handed to operationModel from
+# this same bookkeeping step, on both the success and failure paths.
+if ! printf '%s\n' "$finish_snapshot_body" | grep -Fq 'operationModel.acceptSnapshot(root.activeOperation, root.terminalHandoff);'; then
+	printf 'finishSnapshot must hand a successful parse to operationModel.acceptSnapshot.\n' >&2
+	exit 1
+fi
+if ! printf '%s\n' "$finish_snapshot_body" | grep -Fq 'operationModel.snapshotFailed();'; then
+	printf 'finishSnapshot must tell operationModel when the snapshot failed.\n' >&2
 	exit 1
 fi
 running_changed_body=$(awk '/^        onRunningChanged: if \(!running\) \{/,/^        \}$/' "$system_model")
@@ -109,14 +124,35 @@ grep -Fq 'maxListRecords' "$system_model"
 grep -Fq '"unknown"' "$system_model"
 grep -Fq '"system"' "$system_model"
 
-# Read-only at this boundary: no mutation call exists yet, and the pane must
-# say so rather than the earlier "not yet enabled" wording Sync Phase 7
-# replaces.
-if grep -qE '\.installAll\(|\.cancelUpdate\(|\.refreshMetadata\(' "$system_model" "$system_pane"; then
-	printf 'No mutation entry point may exist before Sync Phase 7.\n' >&2
+# Sync Phase 7: confirmation is a captured snapshot the model owns
+# (generation, requestGeneration and the discovery cycle epoch must all
+# still match at confirm time), never a bare flag the pane could set.
+grep -Fq 'signal confirmationInvalidated()' "$system_model"
+grep -Fq 'property var updateConfirmation: null' "$system_model"
+grep -Fq 'function updateActionReason(actionId) {' "$system_model"
+grep -Fq 'function prepareUpdate(actionId) {' "$system_model"
+grep -Fq 'function discardUpdate() {' "$system_model"
+grep -Fq 'function confirmUpdate() {' "$system_model"
+confirm_update_body=$(awk '/^    function confirmUpdate\(\) \{/,/^    \}/' "$system_model")
+if ! printf '%s\n' "$confirm_update_body" | grep -Fq 'pending.epoch !== discoveryModel.cycle.epoch'; then
+	printf 'confirmUpdate must invalidate a stale prompt rather than dispatch it.\n' >&2
 	exit 1
 fi
-grep -Fq 'require a separate confirmed' "$system_pane"
+
+# Confirmed dispatch and the actual process/journal-control lifecycle belong
+# to operationModel (SystemOperationModel), not this model or the pane.
+grep -Fq 'readonly property alias operation: operationModel' "$system_model"
+grep -Fq 'SystemOperationModel {' "$system_model"
+grep -Fq 'operationModel.startUpdate(' "$system_model"
+if grep -qE '\.installAll\(|\.cancelUpdate\(|\.refreshMetadata\(' "$system_model" "$system_pane"; then
+	printf 'No mutation entry point may bypass operationModel.startUpdate/requestCancel.\n' >&2
+	exit 1
+fi
+grep -Fq 'update installation require visible confirmation above. PackageKit owns' "$system_pane"
+grep -Fq 'authorization and safe cancellation.' "$system_pane"
+grep -Fq 'SystemUpdateControls {' "$system_pane"
+grep -Fq 'onRevealRequested: target => root.reveal(target)' "$system_pane"
+grep -Fq 'function reveal(target) {' "$system_pane"
 
 # The privileged step is still lyona-update's alone; this pane never invokes
 # privilege escalation directly.
@@ -193,5 +229,40 @@ fi
 # The pane surfaces the live-monitoring state as an advisory line, per the
 # phase document's exact wording ("Reload status to retry/reconcile").
 grep -Fq 'root.systemManagementModel.discoveryDetail' "$system_pane"
+
+# Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): confirmed dispatch and
+# the process/journal-control lifecycle for one operation at a time.
+operation_model=$repo/config/quickshell/systemmanagement/SystemOperationModel.qml
+operation_protocol=$repo/config/quickshell/systemmanagement/SystemOperationProtocol.js
+update_controls=$repo/config/quickshell/settings/SystemUpdateControls.qml
+
+grep -Fq 'function startUpdate(action, generation) {' "$operation_model"
+grep -Fq 'function requestCancel() {' "$operation_model"
+grep -Fq 'function acceptSnapshot(active, terminal) {' "$operation_model"
+grep -Fq 'function wasAcknowledged(operationId) {' "$operation_model"
+grep -Fq 'readonly property bool canStart:' "$operation_model"
+grep -Fq 'readonly property bool canCancel:' "$operation_model"
+# Never exposed by IPC -- only the Settings caller (via updateActionReason/
+# prepareUpdate/confirmUpdate) may reach startUpdate.
+if grep -q 'startUpdate' "$shell_qml"; then
+	printf 'shell.qml must not call operationModel.startUpdate directly; only the confirmed Settings surface may.\n' >&2
+	exit 1
+fi
+
+grep -Fq '.pragma library' "$operation_protocol"
+grep -Fq 'function actionKind(action) {' "$operation_protocol"
+grep -Fq 'function consume(parser, buffer) {' "$operation_protocol"
+grep -Fq 'function finish(parser, exitCode, normalExit, replay) {' "$operation_protocol"
+
+grep -Fq 'required property var model' "$update_controls"
+grep -Fq 'signal revealRequested(var target)' "$update_controls"
+grep -Fq 'root.model.prepareUpdate("updates-refresh")' "$update_controls"
+grep -Fq 'root.model.prepareUpdate("updates-install-all")' "$update_controls"
+grep -Fq 'root.model.confirmUpdate()' "$update_controls"
+grep -Fq 'root.model.discardUpdate()' "$update_controls"
+grep -Fq 'root.model.operation.requestCancel()' "$update_controls"
+
+grep -Fq 'function systemManagementOperationState(): string' "$shell_qml"
+grep -Fq 'function systemManagementOperationResult(): string' "$shell_qml"
 
 printf 'Quickshell system-management model contract: PASS\n'

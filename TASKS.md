@@ -711,12 +711,109 @@ worked from the doc's paraphrase.
   interrupted-transaction/reboot-guidance-pruning scenarios) is unverified
   here — same open prerequisite carried since Sync Phase 1.
 
+### Sync Phase 7: Operation Surface in Quickshell
+
+Upstream: `#235`, `#236`, `#239`–`#241`, `#262`. Doc:
+`docs/SYNC-P7-OPERATION-SURFACE.md`. The click-to-install surface: Settings →
+System can now refresh metadata and install updates, with visible
+confirmation, live progress, cancellation and recovery. Ported directly from
+upstream's real source at `aa326d59` (Sync Phase 6's end) → `65138a89`
+(`#241`), fetched and diffed in full, not worked from the doc's paraphrase.
+
+- [x] `SystemOperationProtocol.js` (**new**, ~198 lines, `.pragma library`) —
+  **Met**, ported verbatim: a pure, stateless, byte-level UTF-8-safe stream
+  parser with no QML dependencies, owning both UTF-8 decoding (so a pipe read
+  cannot be mistaken for a record boundary mid-codepoint) and the operation
+  state machine as a transition allowlist (`running → permission-denied` is
+  absent on purpose — authorization is decided before execution starts).
+- [x] `SystemOperationModel.qml` (**new**, 395 lines) — **Met**, ported
+  verbatim: owns one child process at a time (`watchProcess`/`ackProcess`)
+  over that parser, `canStart`/`canCancel` admission gates, exact-operation-ID
+  cancellation (never "the current one"), and `#236` (`a424a47b`) reattachment
+  to an operation the shell did not start (a Quickshell restart mid-update
+  recovers via `watch-operation` rather than showing nothing — this is why
+  Sync Phase 5 exists). No Arch-specific adaptation needed; it is a pure state
+  machine over `Commands.systemManagementCommand()`.
+- [x] `SystemManagementModel.qml` confirmation-flow integration (Lyona
+  adaptation, not a drop-in port) — **Met**: `updateActionReason()`,
+  `prepareUpdate()`/`confirmUpdate()`/`discardUpdate()`, and
+  `confirmationInvalidated` implement upstream's "confirmation is a captured
+  snapshot, not a flag" pattern (`generation` + this model's own
+  `requestGeneration` + `discoveryModel.cycle.epoch` must all still match at
+  confirm time). Integrated into Lyona's existing request-coalescing
+  architecture: `requestSnapshot(required)` gained a `required` parameter
+  (operationModel recovering evidence bypasses `settingsVisible` via
+  `discoveryModel.take()`, which already no-ops safely on a `null` token —
+  verified via `SystemDiscoveryCycle.js`'s `owns()` guard before relying on
+  it) rather than upstream's separate generation-matching field; `finishSnapshot()`
+  now hands the parsed result to `operationModel.acceptSnapshot()`/
+  `snapshotFailed()`. Two vestigial properties (`snapshotHasOutput`,
+  `snapshotErrorDetail`) from an early draft that mirrored upstream's exact
+  shape too literally were removed — Lyona's `snapshotAttempted`/
+  `snapshotError.text` already covered that state.
+- [x] `SystemUpdateControls.qml` (**new**, in `config/quickshell/settings/`,
+  262 lines) — **Met**, adapted: the confirm/cancel UI, mounted in
+  `SystemSettingsPane.qml` above the status grid. Field names adapted to
+  Lyona's actual model shape (`action.status`, not upstream's
+  `action.availability` — Lyona's `parseSnapshot()` action records were
+  already named `status`; `root.validGeneration()` added as a shared helper
+  rather than repeating upstream's inline regex once per phase). Two new
+  `StatusCard`s (live operation, verified result, matching upstream's split of
+  the old single active-operation card) plus an operation-detail line.
+- [x] `SystemSettingsPane.qml` `reveal()` — **Met, adapted**: upstream's
+  version calls a `scrollTo()` helper Lyona's plain-`Flickable` pane never
+  had (no prior keyboard line/page-step scaffolding was ported) — `reveal()`
+  here sets `root.contentY` directly instead, same behavior. See
+  `SYNC-P7-OPERATION-SURFACE.md` §4's note.
+- [x] `shell.qml` probes — **Met**: `systemManagementOperationState()`,
+  `systemManagementOperationResult()` added.
+  `systemManagementDiscoveryStatus()` (also cited by this phase's diff) was
+  already present from Sync Phase 4/6 work.
+- [x] **`#262` ("native origins") — deferred to Sync Phase 9**, same pattern
+  as Sync Phase 6's `#232`/E7 exclusion: it depends on the regional/delegated
+  action machinery Phase 8/9 add, which does not exist yet. The security
+  property it is cited for (a closed, non-constructible list of dispatchable
+  actions) already holds — `startUpdate(action, generation)` only accepts the
+  two literal strings `"updates-refresh"`/`"updates-install-all"`. See
+  `SYNC-P7-OPERATION-SURFACE.md` §3's note.
+- [x] Doc corrections found during implementation — **Met**: fixed
+  `SYNC-P7-OPERATION-SURFACE.md` §3's incorrect claim that the watch/ack
+  processes run under `Commands.terminatingCheckedCommand(...)` (they must
+  not — same streaming-vs-buffering mistake Sync Phase 4 already found and
+  corrected for `watch-updates`).
+- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
+  tests/test-system-management.py` (314 tests, unchanged — this phase does
+  not touch the Python backend), `scripts/run-tests make check-quickshell-qml`
+  (clean, no new warnings beyond the pre-existing baseline plus the same
+  `QProcess::ExitStatus`-on-`onExited` warning class Sync Phase 6 already
+  accepted for the analogous case), `scripts/run-tests make
+  check-quickshell-system-management` (grep-contract test, updated for the
+  new surface — several assertions were stale against the legitimate Phase 7
+  changes and rewritten, not weakened),
+  `scripts/run-tests make check-quickshell-system-discovery-cycle`,
+  `scripts/run-tests make check-quickshell-system-management-xvfb` (live
+  Quickshell + Xvfb + stub helper; added assertions that
+  `SystemOperationModel`/`SystemUpdateControls` mount and settle to their
+  idle defaults), `scripts/run-tests make clean all` (build unaffected).
+  **Known automated-coverage gap** (documented, not silently skipped):
+  upstream's `tests/qml/SystemOperationParser.qml` direct parser-fuzzing
+  harness was not ported, and no stub here exercises a live confirm →
+  dispatch → watch → cancel → ack cycle (the xvfb stub predates this phase
+  and reports both update actions as permanently unavailable) — that needs a
+  PackageKit-transaction-capable stub comparable to
+  `tests/test-system-management.py`'s own fixtures. See
+  `SYNC-P7-OPERATION-SURFACE.md`'s Verification section. No live
+  PackageKit/D-Bus daemon in this sandbox either, so the doc's manual
+  disposable-VM checklist (confirm-then-invalidate, cancel, restart-reattach,
+  permission-denied) is unverified here — same open prerequisite carried
+  since Sync Phase 1.
+
 ## Phase Completion
 
-When all Phase 6 acceptance criteria pass:
+When all Phase 7 acceptance criteria pass:
 
 1. Record delivered behavior and validation in `CHANGELOG.md`.
-2. Update the Phase 6 status and limitations in `ROADMAP.md`.
+2. Update the Phase 7 status and limitations in `ROADMAP.md`.
 3. Replace this file's active task set with the next phase's tasks — the
    upstream-ported system-management work indexed in `docs/UPSTREAM-SYNC.md`'s
    "The system-management port" section (Sync Phases 1–9).
