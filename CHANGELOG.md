@@ -10,6 +10,27 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add a durable, crash-safe operation journal to `dwm-system-management`
+  (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
+  8,192-byte frame codec, an `openat`-relative directory chain hardened
+  against symlink/group-writable tampering, operation/restart/handoff record
+  codecs, admission control, and collision-safe operation IDs. Ships no
+  user-visible behavior on its own — it is the crash-durable record Sync
+  Phase 6 writes into and recovers from.
+- Turn the journal into a working, confirmed execution owner (Sync Phase 6,
+  `docs/SYNC-P6-UPDATE-EXECUTION.md`): `dwm-system-management` gains
+  `updates-refresh`, `updates-install-all GENERATION`,
+  `watch-operation OPERATION_ID`, `ack-operation OPERATION_ID`, and
+  `updates-cancel OPERATION_ID` CLI commands that actually run PackageKit
+  transactions, stream bounded progress, can be cancelled, and recover exact
+  evidence (never a fabricated success) after a crash or shell restart mid
+  update. `require_mutation_safe()`'s PackageKit-version gate now checks the
+  daemon's own D-Bus version properties directly instead of Fedora's RPM
+  database (Arch has neither). Still CLI-only; the Settings/Control Center
+  button is Sync Phase 7. `config/quickshell/systemmanagement/SystemManagementModel.qml`
+  gains `active-operation`/`terminal-handoff` snapshot parsing so a
+  Quickshell restart mid-update can reattach via `watch-operation` instead of
+  showing nothing.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
   root model over `lyona-update`/`lyona-version`, and a Settings -> System pane

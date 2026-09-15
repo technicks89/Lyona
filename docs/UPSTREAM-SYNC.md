@@ -355,17 +355,45 @@ once Phase 4 is done, but Phase 9 reuses Phase 5's journal directly, so
 **Phase 5 must land before Phase 9 regardless of which half is tackled
 first**.
 
-| Phase | Document | Upstream | Depends on |
-| --- | --- | --- | --- |
-| 1 | [`SYNC-P1-SYSTEM-PROVIDER-DECISION.md`](SYNC-P1-SYSTEM-PROVIDER-DECISION.md) | `#207`, `#209`, `#265` | UPDATE-001…003 |
-| 2 | [`SYNC-P2-UPDATE-SNAPSHOT.md`](SYNC-P2-UPDATE-SNAPSHOT.md) | `#208`, `#232`, `#241` | 1 |
-| 3 | [`SYNC-P3-SYSTEM-PANE.md`](SYNC-P3-SYSTEM-PANE.md) | `#209`, `#210` | 2, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout |
-| 4 | [`SYNC-P4-DISCOVERY-EVENTS.md`](SYNC-P4-DISCOVERY-EVENTS.md) | `#237`, `#238`, `#260` | 3 |
-| 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) |
-| 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 |
-| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout |
-| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 |
-| 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) |
+| Phase | Document | Upstream | Depends on | Status |
+| --- | --- | --- | --- | --- |
+| 1 | [`SYNC-P1-SYSTEM-PROVIDER-DECISION.md`](SYNC-P1-SYSTEM-PROVIDER-DECISION.md) | `#207`, `#209`, `#265` | UPDATE-001…003 | ✅ Done |
+| 2 | [`SYNC-P2-UPDATE-SNAPSHOT.md`](SYNC-P2-UPDATE-SNAPSHOT.md) | `#208`, `#232`, `#241` | 1 | ✅ Done |
+| 3 | [`SYNC-P3-SYSTEM-PANE.md`](SYNC-P3-SYSTEM-PANE.md) | `#209`, `#210` | 2, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | ✅ Done |
+| 4 | [`SYNC-P4-DISCOVERY-EVENTS.md`](SYNC-P4-DISCOVERY-EVENTS.md) | `#237`, `#238`, `#260` | 3 | ✅ Done |
+| 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) | ✅ Done — landed in `b164494` (merged 2026-09-14); **not yet recorded in `TASKS.md`/`CHANGELOG.md`**, see [the note below](#phase-5-landed-without-its-tracking-entries) |
+| 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 | ✅ Done — 2026-09-15, on `sync-p6-update-execution`; see `TASKS.md`, `CHANGELOG.md` |
+| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | Not started |
+| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 | Not started |
+| 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) | Not started |
+
+### Phase 5's tracking entries were backfilled, and Phase 6 found a QML gap
+
+Phase 5 landed (`b164494`, "Sync p5 operation journal update", merged
+2026-09-14) without its `TASKS.md`/`CHANGELOG.md` entries — the PR only
+touched `CHANGELOG.md` for an unrelated CI change and an unrelated
+command-menu doc fix, breaking the
+[Commit and tracking](#commit-and-tracking) convention below. **Backfilled
+2026-09-15**, verified against the shipped code (not the plan document) —
+see `TASKS.md`'s Sync Phase 5 entry for exactly what was checked.
+
+While implementing Sync Phase 6 immediately after, two further things were
+found:
+
+- `JOURNAL_RESTART_SESSION_STRENGTH` is still missing the `unknown` member
+  both [Phase 2](SYNC-P2-UPDATE-SNAPSHOT.md#restart-requirements) and
+  [Phase 5](SYNC-P5-OPERATION-JOURNAL.md#unknown-must-be-a-legal-restart-value)
+  require (only the system map has it) — confirmed **not** exercised by
+  Sync Phase 6's own restart-folding code (it only ever sets `unknown` on
+  the system axis), so it did not block this phase, but remains open for
+  whichever future phase needs it. See
+  [Phase 6 §6](SYNC-P6-UPDATE-EXECUTION.md#6-restart-guidance-folding).
+- Phase 5's own "Files" table undercounted its scope: upstream's real
+  commit range for this phase also added `activeOperation`/
+  `terminalHandoff` state and `updateActionKind()` to
+  `config/quickshell/systemmanagement/SystemManagementModel.qml`, which
+  Lyona's Phase 5 never ported. Filled in as part of Sync Phase 6 (which
+  needed it anyway) — see `TASKS.md`'s Sync Phase 6 entry.
 
 ### The decision point after Phase 4
 
@@ -401,7 +429,7 @@ documents; all of them block **implementation**.
 
 | ID | Question | Where it matters | Status |
 | --- | --- | --- | --- |
-| — | **The core decision**: adopt upstream's Python helper largely as-is (Option A), rewrite it in POSIX shell (Option B), or stop at a read-only shell-only subset (Option C)? | Every phase from [2](SYNC-P2-UPDATE-SNAPSHOT.md) onward changes shape depending on the answer | **Open.** [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#recommendation) recommends Option A with Option C as the fallback; recorded in that document's own `Decision:` line, not here, because it is a single project-owner call, not a per-item checklist. |
+| — | **The core decision**: adopt upstream's Python helper largely as-is (Option A), rewrite it in POSIX shell (Option B), or stop at a read-only shell-only subset (Option C)? | Every phase from [2](SYNC-P2-UPDATE-SNAPSHOT.md) onward changes shape depending on the answer | **Decided: Option A**, 2026-09-08 — recorded in [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#recommendation)'s own `Decision:` line and `TASKS.md`'s Sync Phase 1 checklist, not here, because it was a single project-owner call, not a per-item checklist. Confirmed in shipped code as of Phase 5: `scripts/dwm-system-management` keeps `transaction_path`/`JOURNAL_PACKAGEKIT_PATH_PATTERN` unchanged (the Option-A path from [Phase 5](SYNC-P5-OPERATION-JOURNAL.md#the-one-coupling-to-break), not the `transaction_ref` rename Option C would have needed), and no `PacmanBackend` class exists. |
 | **D-3** | Arch delegated-tool targets for `accounts-open` and `sources-open` — neither `lxqt-admin-user` nor `dnfdragora` exists in Arch's official repositories; `system-config-printer` (`printers-open`) does. | [Phase 9 §3](SYNC-P9-REGIONAL-MUTATION.md#open-decision-d-3-arch-targets-for-accounts-open-and-sources-open) | **Open.** Candidates: ship `unavailable` with an honest detail string, or an AUR-packaged equivalent behind `arch:system-management-optional` (the `xkbset` precedent). Phase 9's document is written either way; this decision must be settled before its delegated-launch buttons are implemented. |
 | **D-4** | Does `pacman -Sup --print-format ... --dbpath "$CHECKUPDATES_DB"` genuinely stay read-only (no root, no live pacman lock) on a real CachyOS install? | [Phase 2, "If Option C was chosen"](SYNC-P2-UPDATE-SNAPSHOT.md) (§6) | **Open — unverified against a live system.** If it does not, the fallback (a polkit-mediated read-only helper) changes the privilege model for the whole update-read half and must be settled before Phase 2 is implemented, not discovered mid-implementation. |
 

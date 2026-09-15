@@ -595,6 +595,122 @@ Acceptance:
   read-per-signal storm) remain unverified here — no live PackageKit daemon
   in this sandbox, the same open prerequisite carried since Sync Phase 1.
 
+### Sync Phase 5: Durable Operation Journal
+
+Upstream: `#211`–`#225`. Doc: `docs/SYNC-P5-OPERATION-JOURNAL.md`. Lands no
+user-visible behavior — the crash-durable journal Sync Phase 6 writes into.
+**Backfilled 2026-09-15**: this phase's code (`b164494`, "Sync p5 operation
+journal update", merged 2026-09-14) shipped without its `TASKS.md`/
+`CHANGELOG.md` entries, breaking the project's own tracking convention —
+see `docs/UPSTREAM-SYNC.md`'s "Phase 5 landed without its tracking entries"
+note. This entry is written from direct verification against the shipped
+`scripts/dwm-system-management` and `tests/test-system-management.py`, not
+from the plan document alone.
+
+- [x] Frame codec, directory chain, record codecs, locking, admission,
+  operation IDs (J1–J9) — **Met**. Verified: `JOURNAL_MAGIC`/frame-size/
+  payload-offset constants, the full vocabulary
+  (`JOURNAL_OPERATION_ACTION_KINDS`, `_STATES`, `_TERMINAL_STATES`,
+  `JOURNAL_ERROR_CODES`) ported verbatim; `JOURNAL_DIRECTORY_SUFFIX` renamed
+  to `("lyona", "system-management")` per the doc's one mandatory
+  substitution; `JOURNAL_LOCK_DEADLINE_SECONDS = 5`,
+  `JOURNAL_ACTIVE_ADMISSION_COMMITS = 12`, `JOURNAL_OPERATION_ID_ATTEMPTS = 4`
+  present with their derivation comments; `openat`-relative directory-chain
+  hardening (`open_journal_directory_chain`, `validate_journal_directory_chain`)
+  present. 161 pre-existing tests in `tests/test-system-management.py` pass.
+- [x] **The core decision, confirmed in shipped code.** Option A (adopt
+  upstream's Python helper) — `transaction_path` and
+  `JOURNAL_PACKAGEKIT_PATH_PATTERN` are kept unchanged (not renamed to
+  `transaction_ref`, which only Option C would need), and no `PacmanBackend`
+  class exists anywhere in the file. Matches `SYNC-P1`'s `Decision:` line
+  (2026-09-08). — **Met**.
+- [ ] **Gap found verifying the shipped code**:
+  `JOURNAL_RESTART_SESSION_STRENGTH` is missing the `unknown` member both
+  this phase's own doc and Sync Phase 2 require (`JOURNAL_RESTART_SYSTEM_STRENGTH`
+  has it; the session map does not). Not yet exercised by any code path —
+  becomes live when Sync Phase 6's restart-guidance fold needs to write an
+  `unknown` session-restart value. See
+  `docs/SYNC-P5-OPERATION-JOURNAL.md#unknown-must-be-a-legal-restart-value`
+  and `docs/SYNC-P6-UPDATE-EXECUTION.md#6-restart-guidance-folding`.
+
+### Sync Phase 6: Confirmed Update Execution and Recovery
+
+Upstream: `#226`–`#234`, `#231`. Doc: `docs/SYNC-P6-UPDATE-EXECUTION.md`.
+Turns the journal into a working execution owner: `updates-refresh` and
+`updates-install-all` actually run, stream bounded progress, can be
+cancelled, and survive a shell restart. Still CLI-only — Sync Phase 7 puts a
+button on it. Ported directly from upstream's real source at `c8585a80`
+(Sync Phase 5's end) → `aa326d59` (`#234`), fetched and diffed in full, not
+worked from the doc's paraphrase.
+
+- [x] `OperationStream`, `ObservedUpdateSummary`, `RecoverySnapshot`,
+  `read_recovery_snapshot()`, `build_managed_snapshot()`,
+  `recover_journal_active()`, `PackageKitMutation`,
+  `run_packagekit_mutation()` (E1–E6) — **Met**, ported verbatim (only the
+  `dwm-titus-update-observed-v1` digest domain-separator renamed to
+  `lyona-update-observed-v1`, matching the existing `snapshot_generation()`
+  rename convention).
+- [x] **E7 (`#232`, DNF5 install-preview correction) — excluded, per Sync
+  Phase 2's existing decision**, not a new Sync Phase 6 finding. Confirmed
+  the underlying PackageKit behavior (a simulated transaction can report an
+  `install` action for a newly-pulled dependency, not just `update` actions)
+  is general to PackageKit's `SIMULATE` role, not DNF5-specific — Lyona's own
+  `PLAN_INFO` already maps info code 12 to `"install"` — but Sync Phase 2's
+  `normalize_plan()` reconciliation was left at its pre-`#232` (stricter)
+  form pending live-daemon verification, and that decision stands unchanged
+  through this phase. Recorded in `docs/P6-SYSTEM-MANAGEMENT.md` already.
+- [x] `require_mutation_safe()` (E-adjacent, Lyona adaptation) — **Met**, per
+  `docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate`: the RPM/Fedora
+  backport gate (`packagekit_security_floor()`,
+  `_require_running_backport_identity()`, `read_fedora_identity()`) is
+  deleted outright, not ported — replaced with a direct check of the
+  daemon's own D-Bus `VersionMajor`/`VersionMinor`/`VersionMicro`
+  properties against `(1, 3, 5)`. New test coverage in
+  `PackageKitSafetyTests` (version-at-floor, below-floor, malformed-reply,
+  and call-failure-propagates-unwrapped cases) replaces upstream's
+  RPM/backport-mocking tests.
+- [x] `control_journal_target()`, `watch_journal_operation()`,
+  `cancel_journal_operation()`, `operation_control()`, `update_command()`,
+  and the `updates-refresh` / `updates-install-all GENERATION` /
+  `watch-operation OPERATION_ID` / `ack-operation OPERATION_ID` /
+  `updates-cancel OPERATION_ID` CLI commands (E8–E9) — **Met**, ported
+  verbatim including the "never fabricate success, never report a
+  possibly-admitted operation as rejected" `update_command()` error
+  handling.
+- [x] `PackageKitBackend` additions: `session_started()`, `create_mutation()`,
+  `_recovery_call()`, `cancel_operation()`, `probe_operation()`,
+  `operation_history()`, `execute_mutation()`, plus the expanded
+  `_dbus_failure()` D-Bus error-name taxonomy — **Met**, ported verbatim
+  (pure D-Bus/PackageKit client code, no Fedora-specific paths).
+- [x] **QML scaffolding gap found and filled**:
+  `config/quickshell/systemmanagement/SystemManagementModel.qml` was missing
+  the `activeOperation`/`terminalHandoff` properties, `updateActionKind()`/
+  `operationActionKind()`, and `active-operation`/`terminal-handoff` record
+  parsing that upstream's own Sync-Phase-5-equivalent commits had already
+  added — Sync Phase 5's doc undercounted its own file scope (its "Files"
+  table listed only the backend, tests, and `SettingsModel.qml`). Integrated
+  into Lyona's existing request-coalescing architecture (`snapshotOwned`/
+  `cycleToken`/`discoveryModel.take()`) rather than upstream's simpler
+  `requestGeneration`-counter pattern — the two are different designs, not a
+  drop-in replacement. Upstream's more exhaustive cross-record consistency
+  checks (cancel-availability-matches-active-cancelable, plan reconciliation
+  against `requestedUpdates`) were **not** ported: they read as Sync Phase
+  7's confirmation-flow territory (a new `SystemOperationModel.qml`, per
+  that phase's "Files" table), not this file's job, and Lyona's existing
+  per-record validation style does not have the stricter coupling they
+  patch in the first place. `config/quickshell/shell.qml` needed no change
+  — `systemManagementRestartState()` already existed from an earlier phase.
+- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
+  tests/test-system-management.py` (314 tests, up from 161 — all pass),
+  `scripts/run-tests make check-system-management`,
+  `scripts/run-tests make check-quickshell-system-management`,
+  `scripts/run-tests make check-quickshell-qml` (clean, no new warnings
+  beyond the pre-existing baseline), `scripts/run-tests make clean all`
+  (build unaffected). No live PackageKit/D-Bus daemon in this sandbox, so
+  the doc's manual disposable-VM checklist (real install/cancel/
+  interrupted-transaction/reboot-guidance-pruning scenarios) is unverified
+  here — same open prerequisite carried since Sync Phase 1.
+
 ## Phase Completion
 
 When all Phase 6 acceptance criteria pass:
