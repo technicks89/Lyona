@@ -438,9 +438,10 @@ Scope {
                         root.resetToFallback("System management provider repeated a provider record");
                         return false;
                     }
-                    if (fields.length !== 6 || root.validStatus.indexOf(fields[2]) < 0 || fields[3] !== "delegated")
+                    if (fields.length !== 6 || root.validStatus.indexOf(fields[2]) < 0 || fields[3] !== "delegated") {
                         nativeInvalid[fields[1]] = true;
-                    else nativeProviders[fields[1]] = { "status": fields[2], "class": fields[3],
+                        nativeProviders[fields[1]] = null;
+                    } else nativeProviders[fields[1]] = { "status": fields[2], "class": fields[3],
                         "owner": fields[4], "detail": fields[5] };
                     continue;
                 }
@@ -460,9 +461,10 @@ Scope {
                         return false;
                     }
                     if (fields.length !== 5 || root.validStatus.indexOf(fields[2]) < 0
-                            || !root.validNativeValue(fields[1], fields[2], fields[3]))
+                            || !root.validNativeValue(fields[1], fields[2], fields[3])) {
                         nativeInvalid[nativeOwner] = true;
-                    else nativeStates[fields[1]] = { "status": fields[2], "value": fields[3], "detail": fields[4] };
+                        nativeStates[fields[1]] = null;
+                    } else nativeStates[fields[1]] = { "status": fields[2], "value": fields[3], "detail": fields[4] };
                     continue;
                 }
                 if (fields.length !== 5 || root.validStatus.indexOf(fields[2]) < 0) {
@@ -489,9 +491,10 @@ Scope {
                         return false;
                     }
                     if (fields.length !== 7 || root.validActionStatus.indexOf(fields[2]) < 0
-                            || fields[3] !== "delegated" || fields[4] !== nativeOwner)
+                            || fields[3] !== "delegated" || fields[4] !== nativeOwner) {
                         nativeInvalid[nativeOwner] = true;
-                    else nativeActions[fields[1]] = { "id": fields[1], "status": fields[2], "class": fields[3],
+                        nativeActions[fields[1]] = null;
+                    } else nativeActions[fields[1]] = { "id": fields[1], "status": fields[2], "class": fields[3],
                         "owner": fields[4], "label": fields[5], "detail": fields[6] };
                     continue;
                 }
