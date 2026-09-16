@@ -100,6 +100,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   nine-phase system-management port -- Settings UI wiring for all of this
   (pickers, toggles, launch buttons) is left for later, same as it was for
   every reader Sync Phase 8 added.
+- Add the Sync Phase 9 Settings UI (`sync-p9-settings-ui`, PR #33): a new
+  `config/quickshell/settings/SystemRegionalControls.qml` (timezone/locale
+  pickers, NTP toggle, delegated-launch buttons, a confirmation card) mounted
+  in `SystemSettingsPane.qml`; `SystemOperationModel.startRegional()`/
+  `startDelegated()` and `SystemManagementModel`'s `prepareRegional()`/
+  `confirmRegional()`/`discardRegional()`/`launchDelegated()` family driving
+  a private `SystemRegionalPreflightModel` instance; and `shell.qml` IPC
+  probes for regional preview/confirm and delegated launch. This is the
+  Settings UI half Sync Phase 9's own entry above left for later --
+  timezone/locale/NTP changes and delegated administration (accounts,
+  password, printers, sources) are now reachable from Settings, not only the
+  CLI. `launchDelegated()` dispatches without its own confirmation step;
+  Sync Sprint 1 (`docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) converges this
+  surface onto upstream's structure, which adds one.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
   root model over `lyona-update`/`lyona-version`, and a Settings -> System pane
