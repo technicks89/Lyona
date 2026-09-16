@@ -23,6 +23,7 @@ import io
 import os
 import pathlib
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -93,6 +94,1456 @@ def package(info, package_id, summary):
 
 def rows(lines, kind):
     return [line.split("\t") for line in lines if line.startswith(f"{kind}\t")]
+
+
+class RegionalValidationTests(unittest.TestCase):
+    def malformed(self, function, *args):
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            function(*args)
+        self.assertEqual(caught.exception.code, "malformed")
+
+    def test_timezone_names_are_exact_bounded_ascii_paths(self):
+        for name in ("UTC", "America/Chicago", "Etc/GMT+5", "x" * 255):
+            self.assertEqual(provider.validate_timezone_name(name), name)
+        for name in (None, 1, "", "x" * 256, "/UTC", "UTC/", "A//B",
+                     ".", "..", "A/../B", "A/./B", "A\nB", "A\x7fB", "é"):
+            with self.subTest(name=name):
+                self.malformed(provider.validate_timezone_name, name)
+
+    def test_timezone_choices_preserve_order_and_reject_duplicates(self):
+        self.assertEqual(provider.validate_timezone_choices(["UTC", "Etc/UTC"]),
+                         ("UTC", "Etc/UTC"))
+        self.assertEqual(provider.validate_timezone_choices([]), ())
+        for values in ("UTC", {"UTC"}, ["UTC", "UTC"], ["UTC", None]):
+            self.malformed(provider.validate_timezone_choices, values)
+        self.assertEqual(len(provider.validate_timezone_choices(
+            [f"Zone/{index}" for index in range(2048)])), 2048)
+        self.malformed(provider.validate_timezone_choices,
+                       [f"Zone/{index}" for index in range(2049)])
+
+    def test_timezone_reply_byte_limit_is_inclusive(self):
+        values = [f"{index:04d}" + "x" * 124 for index in range(2048)]
+        self.assertEqual(sum(len(value) for value in values), 256 * 1024)
+        self.assertEqual(len(provider.validate_timezone_choices(values)), 2048)
+        values[-1] += "x"
+        self.malformed(provider.validate_timezone_choices, values)
+
+    def test_timezone_choice_requires_exact_fresh_membership(self):
+        self.assertEqual(provider.prepare_timezone_change("UTC", ["UTC"]), "UTC")
+        for choices in ([], ["Etc/UTC"], ["utc"]):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.prepare_timezone_change("UTC", choices)
+            self.assertEqual(caught.exception.code, "conflict")
+        self.malformed(provider.prepare_timezone_change, "UTC", ["UTC", "UTC"])
+
+    def test_locale_names_and_output_are_strict_and_not_normalized(self):
+        for name in ("C", "C.utf8", "en_US.utf8", "sr_RS@latin", "x" * 128):
+            self.assertEqual(provider.validate_locale_name(name), name)
+        for name in (None, "", "x" * 129, "en US", "C\t", "C\r", "C\n",
+                     "C\x00", "C\x7f", "é", "\ud800"):
+            self.malformed(provider.validate_locale_name, name)
+        self.assertEqual(provider.validate_locale_choices(b"C\nen_US.utf8\n"),
+                         ("C", "en_US.utf8"))
+        self.assertEqual(provider.validate_locale_choices(b"C"), ("C",))
+        self.assertEqual(provider.validate_locale_choices(b""), ())
+        for output in ("C\n", b"\n", b"C\n\n", b"C\r\n", b"C\nC\n",
+                       b"C\n\xff", b"x" * (2 * 1024 * 1024 + 1)):
+            self.malformed(provider.validate_locale_choices, output)
+
+    def test_locale_record_count_and_name_limits_are_inclusive(self):
+        names = [f"{index:04d}" + "x" * 124 for index in range(4096)]
+        self.assertEqual(provider.validate_locale_choices(
+            ("\n".join(names) + "\n").encode("ascii")), tuple(names))
+        self.malformed(provider.validate_locale_choices,
+                       ("\n".join(names) + "\nextra\n").encode("ascii"))
+
+    def test_locale_configuration_preserves_and_orders_all_allowlisted_keys(self):
+        values = [f"{key}=C" for key in reversed(provider.REGIONAL_LOCALE_KEYS)]
+        parsed = provider.parse_locale_configuration(values)
+        self.assertEqual(parsed.assignments,
+                         tuple(f"{key}=C" for key in provider.REGIONAL_LOCALE_KEYS))
+        self.assertEqual(parsed.lang, "C")
+        self.assertEqual(parsed.detail, ", ".join(parsed.assignments[1:]))
+        empty = provider.parse_locale_configuration(["LC_TIME=", "LANGUAGE="])
+        self.assertEqual(empty.lang, "unknown")
+        self.assertEqual(empty.detail, "none")
+        self.assertEqual(empty.assignments, ("LANGUAGE=", "LC_TIME="))
+        self.assertEqual(provider.parse_locale_configuration([]).assignments, ())
+        self.assertEqual(provider.parse_locale_configuration(["LANG="]).lang, "")
+
+    def test_locale_configuration_rejects_malformed_arrays_without_sanitizing(self):
+        for values in ("LANG=C", {"LANG=C"}, [None], ["LANG"], ["=C"],
+                       ["LC_ALL=C"], ["PATH=/tmp"], ["LANG=C", "LANG=C"],
+                       ["LANG=C\n"], ["LANG=\x00"], ["LANG=\x85"],
+                       ["LANG=C x"], ["LANG=C x"], ["LANG=C‮x"],
+                       ["LANG=\ud800"], ["LANG=C"] * 15):
+            with self.subTest(values=values):
+                self.malformed(provider.parse_locale_configuration, values)
+
+    def test_locale_assignment_and_detail_utf8_limits_are_inclusive(self):
+        # LANG is not an override, so its assignment limit can be tested alone.
+        self.assertEqual(len(provider.parse_locale_configuration(
+            ["LANG=" + "é" * 253 + "x"]).lang.encode("utf-8")), 507)
+        self.malformed(provider.parse_locale_configuration, ["LANG=" + "é" * 254])
+        values = ["LANG=C", "LC_TIME=" + "é" * 250, "LC_NUMERIC=x"]
+        self.malformed(provider.parse_locale_configuration, values)
+        values = ["LC_TIME=" + "x" * 493, "LC_NAME=x"]
+        self.assertEqual(len(provider.parse_locale_configuration(values).detail), 512)
+        values[-1] += "x"
+        self.malformed(provider.parse_locale_configuration, values)
+
+    def test_locale_change_requires_exact_fresh_choice_and_preserves_overrides(self):
+        before = ["LC_TIME=de_DE.utf8", "LANG=en_US.utf8", "LANGUAGE=de:en"]
+        result = provider.prepare_locale_change(before, "LANG=fr_FR.utf8",
+                                                b"C\nfr_FR.utf8\n")
+        self.assertEqual(result.assignments,
+                         ("LANG=fr_FR.utf8", "LANGUAGE=de:en", "LC_TIME=de_DE.utf8"))
+        self.assertEqual(before[1], "LANG=en_US.utf8")
+        for argument in ("fr_FR.utf8", "LC_TIME=fr_FR.utf8", "LANG=", None):
+            self.malformed(provider.prepare_locale_change, before, argument,
+                           b"fr_FR.utf8\n")
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            provider.prepare_locale_change(before, "LANG=fr_FR.utf8", b"C\n")
+        self.assertEqual(caught.exception.code, "conflict")
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.prepare_locale_change(before, "LANG=fr_FR.UTF-8", b"fr_FR.utf8\n")
+
+    def test_effective_locale_comparison_preserves_overrides_not_array_spelling(self):
+        expected = ["LANG=C", "LC_TIME=C", "LC_NUMERIC=de_DE.utf8", "LANGUAGE=de:en"]
+        self.assertTrue(provider.locale_change_matches(expected,
+            ["LANGUAGE=de:en", "LC_NUMERIC=de_DE.utf8", "LANG=C"]))
+        for observed in (["LANG=C", "LANGUAGE=de:en"],
+                         ["LANG=C", "LC_NUMERIC=de_DE.utf8"],
+                         ["LANG=C", "LC_NUMERIC=de_DE.utf8", "LANGUAGE=en:de"],
+                         ["LANG=C", "LC_NUMERIC=de_DE.utf8", "LANGUAGE=de:en", "LC_TIME=fr"],
+                         ["LANG=fr", "LC_NUMERIC=de_DE.utf8", "LANGUAGE=de:en"]):
+            self.assertFalse(provider.locale_change_matches(expected, observed))
+        self.assertTrue(provider.locale_change_matches(["LANG=C", "LC_TIME="], ["LANG=C"]))
+        self.assertTrue(provider.locale_change_matches(["LANG=C"], ["LANG=C", "LANGUAGE=en"]))
+        self.assertFalse(provider.locale_change_matches(["LANG=C", "LANGUAGE="],
+                                                        ["LANG=C", "LANGUAGE=en"]))
+        self.assertFalse(provider.locale_change_matches(["LANG=C", "LANGUAGE="],
+                                                        ["LANG=C"]))
+        self.malformed(provider.locale_change_matches, ["LANG=C"], ["LC_ALL=C"])
+
+
+class RegionalReadTests(unittest.TestCase):
+    def reader(self, kind="time-state"):
+        from gi.repository import Gio, GLib
+        loop, cancellable, connection = mock.Mock(), mock.Mock(), mock.Mock()
+        glib = types.SimpleNamespace(Error=GLib.Error, Variant=GLib.Variant,
+            VariantType=GLib.VariantType, MainLoop=mock.Mock(return_value=loop),
+            timeout_add=mock.Mock(return_value=17), source_remove=mock.Mock(),
+            SOURCE_REMOVE=False)
+        gio = mock.Mock()
+        gio.Cancellable.return_value = cancellable
+        gio.bus_get_finish.return_value = connection
+        gio.dbus_error_get_remote_error.return_value = None
+        gio.io_error_quark.return_value = Gio.io_error_quark()
+        gio.IOErrorEnum.TIMED_OUT = Gio.IOErrorEnum.TIMED_OUT
+        read = provider.RegionalRead(kind, gio, glib)
+        return read, connection, gio, glib, GLib
+
+    def time_reply(self, glib, **overrides):
+        values = {"Timezone": glib.Variant("s", "UTC"),
+                  "CanNTP": glib.Variant("b", True),
+                  "NTP": glib.Variant("b", False),
+                  "NTPSynchronized": glib.Variant("b", True)}
+        values.update(overrides)
+        return glib.Variant("(a{sv})", (values,))
+
+    def deliver(self, read, connection):
+        read.connected(None, object(), None)
+        read.replied(connection, object(), None)
+
+    def test_only_three_fixed_read_requests_are_sent(self):
+        expected = {
+            "time-state": ("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
+                           "org.freedesktop.DBus.Properties", "GetAll"),
+            "locale-state": ("org.freedesktop.locale1", "/org/freedesktop/locale1",
+                             "org.freedesktop.DBus.Properties", "Get"),
+            "timezone-choices": ("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
+                                 "org.freedesktop.timedate1", "ListTimezones"),
+        }
+        for kind, target in expected.items():
+            read, connection, gio, glib, variant = self.reader(kind)
+            connection.call_finish.return_value = {
+                "time-state": self.time_reply(variant),
+                "locale-state": variant.Variant("(v)", (variant.Variant("as", ["LANG=C"]),)),
+                "timezone-choices": variant.Variant("(as)", (["UTC"],)),
+            }[kind]
+            read.loop.run.side_effect = lambda: self.deliver(read, connection)
+            result = read.run()
+            self.assertIsNotNone(result)
+            self.assertEqual(connection.call.call_args.args[:4], target)
+            self.assertEqual(connection.call.call_args.args[6], gio.DBusCallFlags.NONE)
+            self.assertGreater(connection.call.call_args.args[7], 0)
+            self.assertLessEqual(connection.call.call_args.args[7], 10000)
+            self.assertEqual(gio.bus_get.call_args.args[0], gio.BusType.SYSTEM)
+            glib.source_remove.assert_called_once_with(17)
+            self.assertTrue(read.cancellable.cancel.called)
+            connection.close_sync.assert_not_called()
+            if kind == "time-state":
+                self.assertEqual(result, provider.RegionalTimeState("UTC", True, False, True))
+            elif kind == "locale-state":
+                self.assertEqual(result.assignments, ("LANG=C",))
+            else:
+                self.assertEqual(result, ("UTC",))
+
+    def test_unknown_read_is_rejected_before_connecting(self):
+        for kind in ("SetNTP", "SetLocale", "Get", "", None, []):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.RegionalRead(kind, mock.Mock(), mock.Mock())
+
+    def test_time_property_types_and_required_fields_are_strict(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for name in ("Timezone", "CanNTP", "NTP", "NTPSynchronized"):
+            reply = self.time_reply(variant, **{name: variant.Variant("u", 1)})
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.decode_regional_reply("time-state", reply)
+            self.assertEqual(caught.exception.code, "malformed")
+        for reply in (variant.Variant("(a{sv})", ({},)),
+                      variant.Variant("(s)", ("UTC",)),
+                      self.time_reply(variant, Timezone=variant.Variant("s", "../UTC"))):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.decode_regional_reply("time-state", reply)
+        result = provider.decode_regional_reply("time-state", self.time_reply(
+            variant, FutureProperty=variant.Variant("s", "ignored")))
+        self.assertEqual(result.timezone, "UTC")
+
+    def test_locale_and_timezone_replies_use_existing_bounds(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for kind, reply in (
+            ("locale-state", variant.Variant("(v)", (variant.Variant("s", "LANG=C"),))),
+            ("locale-state", variant.Variant("(v)", (variant.Variant("as", ["LC_ALL=C"]),))),
+            ("timezone-choices", variant.Variant("(as)", (["UTC", "UTC"],))),
+            ("timezone-choices", variant.Variant("(as)", (["x" * 256],))),
+            ("timezone-choices", variant.Variant("(as)", (["UTC"] * 2049,))),
+            ("locale-state", variant.Variant("(v)", (variant.Variant("as", ["LANG=C"] * 15),))),
+            ("locale-state", variant.Variant("(v)", (variant.Variant("as", ["LANG=" + "x" * 508]),))),
+        ):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.decode_regional_reply(kind, reply)
+
+    def test_serialized_string_array_bounds_count_utf8_before_unpacking(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        self.assertEqual(provider.regional_string_array(variant.Variant("as", ["é"]),
+                                                       1, 2, 2), ("é",))
+        for field_bytes, total_bytes, separators in ((1, 2, False), (2, 1, False), (2, 2, True)):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.regional_string_array(variant.Variant("as", ["é"]),
+                    1, field_bytes, total_bytes, separators=separators)
+        oversized = mock.Mock()
+        oversized.get_type_string.return_value = "as"
+        oversized.n_children.return_value = 1
+        child = oversized.get_child_value.return_value
+        child.get_size.return_value = 1000
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.regional_string_array(oversized, 1, 10, 10)
+        child.unpack.assert_not_called()
+
+    def test_oversized_or_duplicate_timedate_properties_are_rejected(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        extra = {f"Extra{index}": variant.Variant("b", True) for index in range(61)}
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.decode_regional_reply("time-state", self.time_reply(variant, **extra))
+        duplicate = variant.Variant.parse(None,
+            "({'Timezone': <'UTC'>, 'Timezone': <'Etc/UTC'>},)", None, None)
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.decode_regional_reply("time-state", duplicate)
+
+    def test_deadline_covers_connection_and_ignores_late_callbacks(self):
+        read, connection, gio, glib, _variant = self.reader()
+        read.loop.run.side_effect = read.expire
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            read.run()
+        self.assertEqual(caught.exception.code, "timeout")
+        read.connected(None, object(), None)
+        read.replied(connection, object(), None)
+        gio.bus_get_finish.assert_not_called()
+        connection.call_finish.assert_not_called()
+        connection.call.assert_not_called()
+        glib.source_remove.assert_not_called()
+
+    def test_deadline_covers_method_and_cannot_publish_a_late_reply(self):
+        read, connection, _gio, _glib, variant = self.reader()
+        connection.call_finish.return_value = self.time_reply(variant)
+        def during_loop():
+            read.connected(None, object(), None)
+            read.expire()
+            read.replied(connection, object(), None)
+        read.loop.run.side_effect = during_loop
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            read.run()
+        self.assertEqual(caught.exception.code, "timeout")
+        connection.call.assert_called_once()
+        connection.call_finish.assert_not_called()
+        self.assertIsNone(read.value)
+
+    def test_elapsed_deadline_before_connection_dispatch_is_rejected(self):
+        read, connection, gio, _glib, _variant = self.reader()
+        read.deadline = 10
+        with mock.patch.object(provider.time, "monotonic", return_value=10):
+            read.connected(None, object(), None)
+        self.assertEqual(read.failure.code, "timeout")
+        gio.bus_get_finish.assert_not_called()
+        connection.call.assert_not_called()
+
+    def test_decoding_that_crosses_deadline_cannot_publish_success(self):
+        read, connection, _gio, _glib, variant = self.reader()
+        read.deadline = 10
+        connection.call_finish.return_value = self.time_reply(variant)
+        with mock.patch.object(provider.time, "monotonic", side_effect=[9, 10]):
+            read.replied(connection, object(), None)
+        self.assertEqual(read.failure.code, "timeout")
+        self.assertIsNone(read.value)
+
+    def test_malformed_decode_after_deadline_still_reports_timeout(self):
+        read, connection, _gio, _glib, variant = self.reader()
+        read.deadline = 10
+        connection.call_finish.return_value = variant.Variant("(s)", ("wrong",))
+        with mock.patch.object(provider.time, "monotonic", side_effect=[9, 10]):
+            read.replied(connection, object(), None)
+        self.assertEqual(read.failure.code, "timeout")
+
+    def test_synchronous_callback_completion_does_not_enter_a_dead_loop(self):
+        read, connection, gio, _glib, variant = self.reader()
+        connection.call_finish.return_value = self.time_reply(variant)
+        gio.bus_get.side_effect = lambda *_args: self.deliver(read, connection)
+        self.assertEqual(read.run().timezone, "UTC")
+        read.loop.run.assert_not_called()
+
+    def test_typed_bus_failures_preserve_capability_scope(self):
+        names = {
+            "ServiceUnknown": ("missing-provider", "unavailable"),
+            "AccessDenied": ("permission-denied", "restricted"),
+            "InvalidArgs": ("malformed", "partial"),
+            "UnknownMethod": ("unsupported", "unsupported"),
+            "NoReply": ("timeout", "unavailable"),
+            "Unexpected": ("internal", "unavailable"),
+        }
+        for name, expected in names.items():
+            read, connection, gio, _glib, variant = self.reader()
+            gio.dbus_error_get_remote_error.return_value = "org.freedesktop.DBus.Error." + name
+            connection.call_finish.side_effect = variant.Error("fixture failure")
+            read.loop.run.side_effect = lambda: self.deliver(read, connection)
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                read.run()
+            self.assertEqual((caught.exception.code, caught.exception.status), expected)
+
+    def test_bus_connect_failure_and_local_timeout_are_typed(self):
+        from gi.repository import Gio
+        read, connection, gio, _glib, variant = self.reader()
+        gio.bus_get_finish.side_effect = variant.Error.new_literal(
+            Gio.io_error_quark(), "fixture timeout", Gio.IOErrorEnum.TIMED_OUT)
+        read.loop.run.side_effect = lambda: read.connected(None, object(), None)
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            read.run()
+        self.assertEqual(caught.exception.code, "timeout")
+        connection.call.assert_not_called()
+
+    def test_single_use_and_unexpected_loop_exit_cannot_fake_a_result(self):
+        read, _connection, gio, glib, _variant = self.reader()
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            read.run()
+        self.assertEqual(caught.exception.code, "internal")
+        with self.assertRaises(RuntimeError):
+            read.run()
+        gio.bus_get.assert_called_once()
+        glib.source_remove.assert_called_once_with(17)
+
+    def test_real_regional_reads_use_an_isolated_private_bus(self):
+        process = subprocess.Popen(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-regional-read-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=30)
+            self.assertEqual(process.returncode, 0, stderr.decode("utf-8", "replace"))
+            self.assertIn(b"Private-bus regional reads: PASS", stdout)
+        finally:
+            if process.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, 9)
+                process.communicate(timeout=3)
+
+
+class LocaleEnumerationTests(unittest.TestCase):
+    @contextlib.contextmanager
+    def catalog(self, mode="success", *arguments, signal_number=None):
+        popen = subprocess.Popen
+        processes = []
+
+        def launch(command, **options):
+            self.assertEqual(command, ["/usr/bin/timeout", "--signal=TERM",
+                "--kill-after=1", "3", "/usr/bin/locale", "-a"])
+            self.assertEqual(options["env"], {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+            self.assertTrue(options["start_new_session"])
+            self.assertNotIn("preexec_fn", options)
+            process = popen(command[:4] + ["/usr/bin/python3",
+                str(REPO / "tests/fixtures/system-locale-process.py"), mode, *arguments], **options)
+            processes.append(process)
+            if signal_number is not None:
+                signal.raise_signal(signal_number)
+            return process
+
+        try:
+            with mock.patch.object(provider.subprocess, "Popen", side_effect=launch):
+                yield processes
+        finally:
+            for process in processes:
+                if process.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=2)
+                if process.stdout:
+                    process.stdout.close()
+                if process.stderr:
+                    process.stderr.close()
+
+    def failure(self, code, mode, *arguments):
+        with self.catalog(mode, *arguments) as processes:
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.read_locale_choices()
+            self.assertEqual(caught.exception.code, code)
+            self.assertNotIn("private diagnostic", str(caught.exception))
+            self.assertTrue(all(p.returncode is not None for p in processes))
+
+    def test_fixed_catalog_is_fresh_and_preserves_exact_names(self):
+        handlers = {number: signal.getsignal(number)
+                    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        with mock.patch.dict(os.environ, {"LOCPATH": "/untrusted", "LC_ALL": "invalid"}), \
+                self.catalog() as processes:
+            for _ in range(2):
+                self.assertEqual(provider.read_locale_choices(), ("C", "C.utf8", "POSIX", "en_US.utf8"))
+            self.assertEqual(len(processes), 2)
+            self.assertTrue(all(p.returncode == 0 and p.stdout.closed and p.stderr.closed for p in processes))
+        self.assertEqual(handlers, {number: signal.getsignal(number) for number in handlers})
+
+    def test_missing_supervisor_is_a_scoped_failure(self):
+        handlers = {number: signal.getsignal(number)
+                    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        with mock.patch.object(provider.subprocess, "Popen", side_effect=FileNotFoundError):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.read_locale_choices()
+        self.assertEqual(caught.exception.code, "missing-provider")
+        self.assertEqual(handlers, {number: signal.getsignal(number) for number in handlers})
+
+    def test_exit_status_is_required_and_diagnostics_are_not_exposed(self):
+        for status, code in ((1, "internal"), (125, "internal"), (126, "internal"),
+                             (127, "missing-provider"), (124, "timeout"), (137, "timeout")):
+            with self.subTest(status=status):
+                self.failure(code, "exit", str(status))
+
+    def test_catalog_validates_complete_stdout(self):
+        for mode in ("duplicate", "nonascii", "blank", "oversized-name", "too-many"):
+            with self.subTest(mode=mode):
+                self.failure("malformed", mode)
+
+    def test_stdout_and_stderr_share_one_bounded_budget(self):
+        for mode in ("stdout-overflow", "stderr-overflow", "combined-overflow"):
+            with self.subTest(mode=mode):
+                self.failure("malformed", mode)
+
+    def test_exact_output_budget_and_empty_catalog_are_accepted(self):
+        with self.catalog("exact-budget"):
+            self.assertEqual(provider.read_locale_choices(), ("C",))
+        with self.catalog("empty"):
+            self.assertEqual(provider.read_locale_choices(), ())
+
+    def test_decoding_cannot_publish_success_or_malformed_after_deadline(self):
+        monotonic = time.monotonic
+        for malformed in (False, True):
+            offset = [0]
+            def decode(_output):
+                offset[0] = 4
+                if malformed:
+                    raise provider.SnapshotFailure("malformed", "Late parser failure")
+                return ("C",)
+            with self.subTest(malformed=malformed), self.catalog(), \
+                    mock.patch.object(provider.time, "monotonic", side_effect=lambda: monotonic() + offset[0]), \
+                    mock.patch.object(provider, "validate_locale_choices", side_effect=decode):
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    provider.read_locale_choices()
+            self.assertEqual(caught.exception.code, "timeout")
+
+    def test_eof_without_process_exit_still_times_out(self):
+        started = time.monotonic()
+        self.failure("timeout", "closed-pipes")
+        self.assertLess(time.monotonic() - started, 5.5)
+
+    def test_timeout_kills_a_term_resistant_process_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = str(pathlib.Path(directory) / "child-pid")
+            self.failure("timeout", "descendant", pid_file)
+            child = int(pathlib.Path(pid_file).read_text())
+            self.assert_process_stopped(child)
+
+    def assert_process_stopped(self, pid, *, seconds=2):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            try:
+                state = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+            except FileNotFoundError:
+                return
+            if state == "Z":
+                return
+            time.sleep(0.02)
+        self.fail(f"Owned locale fixture {pid} remained running")
+
+    def test_non_main_thread_cannot_install_process_signal_handlers(self):
+        errors = []
+        def run():
+            try:
+                provider.read_locale_choices()
+            except provider.SnapshotFailure as error:
+                errors.append(error.code)
+        with mock.patch.object(provider.subprocess, "Popen") as launch:
+            thread = threading.Thread(target=run)
+            thread.start()
+            thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, ["internal"])
+        launch.assert_not_called()
+
+    def test_auto_reaped_children_are_rejected_before_launch(self):
+        with mock.patch.object(provider.signal, "getsignal", return_value=signal.SIG_IGN), \
+                mock.patch.object(provider.subprocess, "Popen") as launch:
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.read_locale_choices()
+        self.assertEqual(caught.exception.code, "internal")
+        launch.assert_not_called()
+
+    def test_termination_during_launch_cleans_up_before_exit_and_restores_handlers(self):
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            handler = signal.getsignal(number)
+            with self.subTest(number=number), self.catalog("closed-pipes", signal_number=number) as processes:
+                with self.assertRaises(SystemExit) as caught:
+                    provider.read_locale_choices()
+                self.assertEqual(caught.exception.code, 128 + number)
+                self.assertTrue(all(p.returncode is not None for p in processes))
+            self.assertEqual(signal.getsignal(number), handler)
+
+    def test_cleanup_failure_cannot_publish_a_valid_catalog(self):
+        with self.catalog(), mock.patch.object(provider, "close_locale_process",
+                side_effect=provider.SnapshotFailure("timeout", "Fixture cleanup failure")):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.read_locale_choices()
+        self.assertEqual(caught.exception.code, "timeout")
+
+    def test_cleanup_failure_cannot_hide_pending_process_termination(self):
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            for during_cleanup in (False, True):
+                handler = signal.getsignal(number)
+                def cleanup(_process):
+                    if during_cleanup:
+                        signal.raise_signal(number)
+                    raise provider.SnapshotFailure("timeout", "Fixture cleanup failure")
+                with self.subTest(number=number, during_cleanup=during_cleanup), \
+                        self.catalog(signal_number=None if during_cleanup else number), \
+                        mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+                    with self.assertRaises(SystemExit) as caught:
+                        provider.read_locale_choices()
+                    self.assertEqual(caught.exception.code, 128 + number)
+                self.assertEqual(signal.getsignal(number), handler)
+
+    def test_lost_child_ownership_never_signals_a_possibly_reused_group(self):
+        process = mock.Mock(pid=123)
+        with mock.patch.object(provider, "locale_process_status", side_effect=ChildProcessError), \
+                mock.patch.object(provider.os, "killpg") as kill:
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.close_locale_process(process)
+        self.assertEqual(caught.exception.code, "timeout")
+        kill.assert_not_called()
+        process.stdout.close.assert_called_once()
+        process.stderr.close.assert_called_once()
+
+    def test_killed_collector_leaves_a_bounded_independent_supervisor(self):
+        self.interrupt_collector(signal.SIGKILL)
+
+    def test_terminated_collector_cleans_up_a_running_descendant_group(self):
+        self.interrupt_collector(signal.SIGTERM)
+
+    def interrupt_collector(self, number):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = pathlib.Path(directory) / "child-pid"
+            supervisor_file = pathlib.Path(directory) / "supervisor-pid"
+            process = subprocess.Popen(["/usr/bin/python3",
+                str(REPO / "tests/fixtures/system-locale-process.py"), "collector",
+                str(PROVIDER_PATH), str(pid_file), str(supervisor_file)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True)
+            supervisor = None
+            try:
+                deadline = time.monotonic() + 3
+                while not pid_file.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(pid_file.exists(), "Locale child did not become ready")
+                supervisor = int(supervisor_file.read_text())
+                child = int(pid_file.read_text())
+                process.send_signal(number)
+                process.communicate(timeout=3)
+                self.assertEqual(process.returncode, -signal.SIGKILL if number == signal.SIGKILL else 143)
+                self.assert_process_stopped(supervisor, seconds=5)
+                self.assert_process_stopped(child)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=2)
+                if supervisor is None and supervisor_file.exists():
+                    supervisor = int(supervisor_file.read_text())
+                if supervisor is not None:
+                    # Fixture-only cleanup if an assertion failed while the
+                    # known supervisor and its group are still running.
+                    try:
+                        command = pathlib.Path(f"/proc/{supervisor}/cmdline").read_bytes()
+                        if command.startswith(b"/usr/bin/timeout\0"):
+                            os.killpg(supervisor, signal.SIGKILL)
+                    except (FileNotFoundError, ProcessLookupError):
+                        pass
+
+
+class AccountReadTests(unittest.TestCase):
+    current_path = "/org/freedesktop/Accounts/Current"
+
+    def collect(self, paths=(), *, current=None, values=None, transform=None,
+                stop_when=None, remote_error=None, connection_error=False):
+        _unused, connection, gio, glib, variant = RegionalReadTests.reader(self)
+        read = provider.AccountRead(gio, glib)
+        current = self.current_path if current is None else current
+        calls, queued = [], []
+        peaks = []
+        gio.dbus_error_get_remote_error.return_value = remote_error
+        error = variant.Error("fixture service error")
+        if connection_error:
+            gio.bus_get_finish.side_effect = error
+
+        def sent(*args):
+            self.assertEqual(args[0], provider.ACCOUNTS_NAME)
+            self.assertEqual(args[6], gio.DBusCallFlags.NONE)
+            self.assertGreater(args[7], 0)
+            self.assertLessEqual(args[7], 3000)
+            self.assertIn(args[3], ("ListCachedUsers", "FindUserById", "Get"))
+            if args[3] == "Get":
+                self.assertEqual(args[2], provider.PROPERTIES_INTERFACE)
+                interface, name = args[4].unpack()
+                self.assertEqual(interface, provider.ACCOUNT_INTERFACE)
+                self.assertIn(name, provider.ACCOUNT_PROPERTIES)
+                self.assertLessEqual(read.outstanding, 8)
+            else:
+                self.assertEqual(args[1:3], (provider.ACCOUNTS_PATH, provider.ACCOUNTS_NAME))
+                if args[3] == "FindUserById":
+                    self.assertEqual(args[4].unpack(), (os.getuid(),))
+                    self.assertEqual(args[4].get_type_string(), "(x)")
+            calls.append(args)
+            queued.append(args)
+            peaks.append(len(queued))
+
+        def finish(reply):
+            if isinstance(reply, variant.Error):
+                raise reply
+            return reply
+
+        def reply_for(args):
+            method = args[3]
+            if method == "ListCachedUsers":
+                reply = variant.Variant("(ao)", (list(paths),))
+            elif method == "FindUserById":
+                reply = variant.Variant("(o)", (current,))
+            else:
+                name = args[4].unpack()[1]
+                default = {"UserName": "login", "RealName": "", "SystemAccount": False, "LocalAccount": True}[name]
+                field = (values or {}).get(args[1], {}).get(name, default)
+                inner = field if isinstance(field, variant.Variant) else variant.Variant(provider.ACCOUNT_PROPERTIES[name], field)
+                reply = variant.Variant("(v)", (inner,))
+            return transform(args, reply, variant, error) if transform else reply
+
+        def drive():
+            read.connected(None, object(), None)
+            while queued and not read.done:
+                args = queued.pop(0)
+                args[9](connection, reply_for(args), args[10])
+                if stop_when and stop_when(read):
+                    read.expire()
+
+        connection.call.side_effect = sent
+        connection.call_finish.side_effect = finish
+        read.loop.run.side_effect = drive
+        result = read.run()
+        self.assertTrue(read.cancellable.cancel.called)
+        connection.close_sync.assert_not_called()
+        return result, read, calls, queued, connection, max(peaks, default=0)
+
+    def codes(self, result):
+        return {error.code for error in result.errors}
+
+    def test_fixed_reads_reserve_current_user_and_cap_concurrency(self):
+        result, read, calls, _queued, _connection, peak = self.collect(
+            ["/users/z", self.current_path, "/users/a", "/users/a"])
+        self.assertEqual(result.status, "available")
+        self.assertEqual(result.candidates, (self.current_path, "/users/a", "/users/z"))
+        self.assertEqual([row.scope for row in result.records], ["current", "other", "other"])
+        self.assertEqual(result.current_path, self.current_path)
+        self.assertEqual((len(calls), peak), (14, 8))
+        self.assertEqual(read.outstanding, 0)
+        self.assertEqual(result.records[0].display_name, "login")
+        with self.assertRaises(RuntimeError):
+            read.run()
+
+    def test_filtering_preserves_current_system_account_and_remote_accounts(self):
+        result, *_ = self.collect(["/system", "/remote"], values={
+            self.current_path: {"SystemAccount": True, "RealName": "Current User"},
+            "/system": {"SystemAccount": True}, "/remote": {"LocalAccount": False}})
+        self.assertEqual(result.status, "available")
+        self.assertEqual([row.path for row in result.records], [self.current_path, "/remote"])
+        self.assertEqual(result.records[0].display_name, "Current User")
+        self.assertFalse(result.records[1].local_account)
+        self.assertIn("/system", result.candidates)
+
+    def test_overflow_keeps_current_and_lowest_255_other_paths(self):
+        paths = [f"/users/u{index:04}" for index in range(300, -1, -1)]
+        result, read, *_ = self.collect(paths)
+        self.assertEqual((result.status, len(result.records)), ("partial", 256))
+        self.assertEqual(result.candidates, (self.current_path, *sorted(paths)[:255]))
+        self.assertEqual(self.codes(result), {"malformed"})
+        self.assertLessEqual(len(read.seen), 257)
+        self.assertLessEqual(len(read.selected), 256)
+
+    def test_256_including_current_is_complete_but_256_plus_current_is_partial(self):
+        others = [f"/users/u{index:04}" for index in range(256)]
+        result, *_ = self.collect([*others[:255], self.current_path])
+        self.assertEqual((result.status, len(result.records)), ("available", 256))
+        result, *_ = self.collect(others)
+        self.assertEqual((result.status, len(result.records)), ("partial", 256))
+
+    def test_repeated_paths_do_not_create_false_overflow(self):
+        result, *_ = self.collect(["/same"] * 300)
+        self.assertEqual((result.status, len(result.records)), ("available", 2))
+
+    def test_bad_account_properties_do_not_hide_valid_rows(self):
+        from gi.repository import GLib
+        for fields in ({"UserName": ""}, {"RealName": "x" * 513},
+                       {"SystemAccount": GLib.Variant("u", 0)}, {"LocalAccount": GLib.Variant("s", "yes")}):
+            with self.subTest(fields=fields):
+                result, *_ = self.collect(["/bad", "/good"], values={"/bad": fields})
+                self.assertEqual(result.status, "partial")
+                self.assertEqual([row.path for row in result.records], [self.current_path, "/good"])
+                self.assertEqual(self.codes(result), {"malformed"})
+
+    def test_field_bounds_are_utf8_and_do_not_truncate_display_text(self):
+        result, *_ = self.collect(values={self.current_path: {"RealName": "é" * 256, "UserName": "a\tb\nc"}})
+        self.assertEqual(result.records[0].display_name, "é" * 256)
+        self.assertEqual(result.records[0].login_name, "a b c")
+        result, *_ = self.collect(values={self.current_path: {"RealName": "é" * 257}})
+        self.assertEqual(result.records, ())
+        self.assertEqual(self.codes(result), {"malformed"})
+
+    def test_oversized_encoded_list_discards_all_rows(self):
+        paths = [f"/users/u{index:04}" for index in range(255)]
+        values = {path: {"RealName": "x" * 512, "UserName": "y" * 512}
+                  for path in [self.current_path, *paths]}
+        result, *_ = self.collect(paths, values=values)
+        self.assertEqual((result.status, result.records), ("partial", ()))
+        self.assertEqual(self.codes(result), {"malformed"})
+
+    def test_oversized_object_path_is_rejected_before_unpacking(self):
+        value = mock.Mock()
+        value.get_type_string.return_value = "o"
+        value.get_size.return_value = 514
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.account_object_path(value)
+        value.unpack.assert_not_called()
+        result, *_ = self.collect(["/" + "x" * 512, "/good"])
+        self.assertEqual([row.path for row in result.records], [self.current_path, "/good"])
+        self.assertEqual(self.codes(result), {"malformed"})
+
+    def test_bad_list_still_allows_a_valid_current_user_lookup(self):
+        def corrupt(args, reply, variant, _error):
+            return variant.Variant("(s)", ("bad",)) if args[3] == "ListCachedUsers" else reply
+        result, *_ = self.collect(transform=corrupt)
+        self.assertEqual((result.status, len(result.records)), ("partial", 1))
+        self.assertEqual(result.records[0].scope, "current")
+
+    def test_failed_current_lookup_never_infers_current_scope_from_a_path(self):
+        def fail(args, reply, _variant, error):
+            return error if args[3] == "FindUserById" else reply
+        result, *_ = self.collect([self.current_path], transform=fail)
+        self.assertIsNone(result.current_path)
+        self.assertEqual(result.records[0].scope, "other")
+        self.assertEqual(result.status, "partial")
+
+    def test_connection_denial_or_missing_service_is_scoped(self):
+        for name, code, status in (("AccessDenied", "permission-denied", "restricted"),
+                                   ("ServiceUnknown", "missing-provider", "unavailable")):
+            with self.subTest(name=name):
+                result, _read, calls, *_ = self.collect(connection_error=True,
+                    remote_error=f"org.freedesktop.DBus.Error.{name}")
+                self.assertEqual((result.status, result.records, calls), (status, (), []))
+                self.assertEqual(self.codes(result), {code})
+
+    def test_deadline_preserves_completed_rows_and_ignores_late_replies(self):
+        result, read, calls, queued, connection, _peak = self.collect(
+            ["/users/a", "/users/b"], stop_when=lambda reader: len(reader.records) == 1)
+        self.assertEqual((result.status, len(result.records)), ("partial", 1))
+        self.assertEqual(self.codes(result), {"timeout"})
+        self.assertTrue(queued)
+        count = len(calls)
+        for args in queued[:]:
+            args[9](connection, object(), args[10])
+        self.assertIs(read.value, result)
+        self.assertEqual(len(calls), count)
+
+    def test_missing_property_excludes_only_its_account(self):
+        def missing(args, reply, _variant, error):
+            return error if args[1] == "/bad" and args[3] == "Get" else reply
+        result, *_ = self.collect(["/bad", "/good"], transform=missing,
+            remote_error="org.freedesktop.DBus.Error.UnknownProperty")
+        self.assertEqual([row.path for row in result.records], [self.current_path, "/good"])
+        self.assertEqual((result.status, self.codes(result)), ("partial", {"malformed"}))
+
+    def test_late_path_decoding_and_errors_cannot_publish_state(self):
+        original = provider.account_object_path
+        for late_call in (1, 2):
+            for malformed in (False, True):
+                with self.subTest(late_call=late_call, malformed=malformed):
+                    count = 0
+                    with mock.patch.object(provider.time, "monotonic", return_value=0) as clock:
+                        def decode(value):
+                            nonlocal count
+                            count += 1
+                            if count == late_call:
+                                clock.return_value = 4
+                                if malformed:
+                                    raise provider.SnapshotFailure("malformed", "late decode")
+                            return original(value)
+                        with mock.patch.object(provider, "account_object_path", side_effect=decode):
+                            result, read, calls, *_ = self.collect(["/cached"])
+                    self.assertEqual((result.status, self.codes(result)), ("partial", {"timeout"}))
+                    self.assertEqual(result.records, ())
+                    self.assertIsNone(result.current_path)
+                    self.assertLessEqual(len(calls), 2)
+                    self.assertEqual(len(read.selected), late_call - 1)
+
+    def test_late_property_decoding_and_errors_cannot_publish_a_row(self):
+        for malformed in (False, True):
+            with self.subTest(malformed=malformed):
+                with mock.patch.object(provider.time, "monotonic", return_value=0) as clock:
+                    def late(args, reply, _variant, _error):
+                        if args[3] != "Get":
+                            return reply
+                        wrapped = mock.Mock(wraps=reply)
+                        inner = mock.Mock(wraps=reply.get_child_value(0).get_variant())
+                        child = mock.Mock()
+                        child.get_variant.return_value = inner
+                        wrapped.get_child_value.return_value = child
+                        def unpack():
+                            clock.return_value = 4
+                            if malformed:
+                                raise provider.SnapshotFailure("malformed", "late property")
+                            return "login"
+                        inner.unpack.side_effect = unpack
+                        return wrapped
+                    result, *_ = self.collect(transform=late)
+                self.assertEqual((result.records, self.codes(result)), ((), {"timeout"}))
+
+    def test_connection_deadline_and_unexpected_loop_exit_do_not_fake_success(self):
+        for expires in (False, True):
+            with self.subTest(expires=expires):
+                _unused, connection, gio, glib, _variant = RegionalReadTests.reader(self)
+                read = provider.AccountRead(gio, glib)
+                if expires:
+                    read.loop.run.side_effect = read.expire
+                result = read.run()
+                self.assertEqual(result.records, ())
+                self.assertEqual(self.codes(result), {"timeout" if expires else "internal"})
+                self.assertEqual(result.status, "partial" if expires else "unavailable")
+                connection.call.assert_not_called()
+                self.assertTrue(read.cancellable.cancel.called)
+
+    def test_real_account_reads_use_an_isolated_private_bus(self):
+        process = subprocess.Popen(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-account-read-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=20)
+            self.assertEqual(process.returncode, 0, stderr.decode("utf-8", "replace"))
+            self.assertIn(b"Private-bus account reads: PASS", stdout)
+        finally:
+            if process.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, 9)
+                process.communicate(timeout=3)
+
+
+class CupsReadTests(unittest.TestCase):
+    def state(self, load="loaded", active="inactive", sub="dead"):
+        return provider.UnitState("/org/freedesktop/systemd1/unit/fixture", load, active, sub)
+
+    def reply(self, variant, state=None, **overrides):
+        state = self.state() if state is None else state
+        row = ["cups.service", "Fixture", state.load, state.active, state.sub, "", state.path, 0, "", "/"]
+        for index, value in overrides.items():
+            row[int(index)] = value
+        return variant.Variant(provider.UNIT_REPLY_TYPE, ([tuple(row)],))
+
+    def reader(self):
+        _unused, connection, gio, glib, variant = RegionalReadTests.reader(self)
+        return provider.CupsRead(gio, glib), connection, gio, glib, variant
+
+    def collect(self, replies=None, *, mode="normal", remote_error=None, transform=None):
+        read, connection, gio, glib, variant = self.reader()
+        gio.dbus_error_get_remote_error.return_value = remote_error
+        calls = []
+        connection.call.side_effect = lambda *args: calls.append(args)
+        def during_loop():
+            if mode == "connection-timeout":
+                read.expire()
+                return
+            if mode == "connection-error":
+                gio.bus_get_finish.side_effect = variant.Error("fixture")
+            read.connected(None, object(), None)
+            if mode == "method-timeout":
+                read.expire()
+            for call in calls:
+                unit = call[-1]
+                if mode == "socket-timeout" and unit == "cups.socket":
+                    read.expire()
+                reply = (replies or {}).get(unit, self.reply(variant))
+                if isinstance(reply, Exception):
+                    connection.call_finish.side_effect = reply
+                else:
+                    connection.call_finish.side_effect = None
+                    connection.call_finish.return_value = reply
+                if transform:
+                    transform(read, connection, unit)
+                read.replied(connection, object(), unit)
+        read.loop.run.side_effect = during_loop
+        result = read.run()
+        return result, read, connection, gio, glib, calls
+
+    def test_cups_status_matrix_preserves_running_service_and_socket_activation(self):
+        absent = self.state("not-found")
+        stopped = self.state()
+        running = self.state(active="active", sub="running")
+        listening = self.state(active="active", sub="listening")
+        failed = self.state(active="failed", sub="failed")
+        cases = [(running, listening, "available", "running"),
+                 (running, absent, "available", "running"),
+                 (running, failed, "available", "running"),
+                 (stopped, listening, "available", "socket-ready"),
+                 (stopped, absent, "available", "stopped"),
+                 (stopped, stopped, "available", "stopped"),
+                 (absent, absent, "unsupported", "unknown"),
+                 (absent, listening, "partial", "unknown"),
+                 (failed, listening, "partial", "unknown"),
+                 (stopped, failed, "partial", "unknown"),
+                 (stopped, self.state(active="active", sub="running"), "partial", "unknown"),
+                 (self.state(active="activating", sub="start"), listening, "partial", "unknown"),
+                 (stopped, self.state(active="deactivating", sub="stop-pre"), "partial", "unknown"),
+                 (self.state("masked"), listening, "partial", "unknown")]
+        for service, socket, status, value in cases:
+            with self.subTest(service=service, socket=socket):
+                result = provider.classify_cups(dict(zip(provider.CUPS_UNITS, (service, socket))))
+                self.assertEqual((result.status, result.value), (status, value))
+
+    def test_only_fixed_read_queries_are_sent_with_one_aggregate_lifetime(self):
+        result, read, connection, gio, glib, calls = self.collect()
+        self.assertEqual((result.status, result.value), ("available", "stopped"))
+        self.assertEqual(len(calls), 2)
+        for call, unit in zip(calls, provider.CUPS_UNITS):
+            self.assertEqual(call[:4], (provider.SYSTEMD_NAME, provider.SYSTEMD_PATH,
+                             provider.SYSTEMD_MANAGER, "ListUnitsByNames"))
+            self.assertEqual(call[4].unpack(), ([unit],))
+            self.assertEqual(call[5].dup_string(), provider.UNIT_REPLY_TYPE)
+            self.assertEqual(call[6], gio.DBusCallFlags.NO_AUTO_START)
+            self.assertGreater(call[7], 0)
+            self.assertLessEqual(call[7], 10000)
+            self.assertIs(call[8], read.cancellable)
+        glib.timeout_add.assert_called_once_with(10000, read.expire)
+        glib.source_remove.assert_called_once_with(17)
+        connection.close_sync.assert_not_called()
+        self.assertTrue(read.cancellable.cancel.called)
+        with self.assertRaises(RuntimeError):
+            read.run()
+
+    def test_decoder_checks_structure_and_bounds_before_unpacking(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for reply in (variant.Variant("(s)", ("bad",)),
+                      variant.Variant(provider.UNIT_REPLY_TYPE, ([],)),
+                      variant.Variant(provider.UNIT_REPLY_TYPE, ([self.reply(variant).unpack()[0][0]] * 2,)),
+                      self.reply(variant, **{"1": "x" * provider.UNIT_REPLY_BYTES}),
+                      self.reply(variant, **{"2": "x" * 513}),
+                      self.reply(variant, **{"3": "active\n"}),
+                      self.reply(variant, **{"4": ""}),
+                      self.reply(variant, **{"6": "/wrong/unit"})):
+            with self.subTest(reply_type=reply.get_type_string()):
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    provider.decode_unit_state(reply)
+                self.assertEqual(caught.exception.code, "malformed")
+        oversized = mock.Mock()
+        oversized.get_type_string.return_value = provider.UNIT_REPLY_TYPE
+        oversized.get_size.return_value = provider.UNIT_REPLY_BYTES + 1
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.decode_unit_state(oversized)
+        oversized.get_child_value.assert_not_called()
+        # Canonical aliases need not equal the fixed query name or a guessed path.
+        self.assertEqual(provider.decode_unit_state(self.reply(variant, **{"0": "org.cups.cupsd.service"})),
+                         self.state())
+
+    def test_connection_and_method_deadlines_cancel_and_ignore_late_replies(self):
+        for mode in ("connection-timeout", "method-timeout"):
+            result, read, connection, gio, glib, _calls = self.collect(mode=mode)
+            self.assertEqual((result.status, result.value), ("unavailable", "unknown"))
+            self.assertEqual([error.code for error in result.errors], ["timeout"])
+            self.assertTrue(read.cancellable.cancel.called)
+            glib.source_remove.assert_not_called()
+            connection.call_finish.assert_not_called()
+            before = tuple(result.units)
+            read.connected(None, object(), None)
+            read.replied(connection, object(), "cups.service")
+            self.assertEqual(result.units, before)
+            if mode == "connection-timeout":
+                gio.bus_get_finish.assert_not_called()
+
+    def test_active_service_survives_socket_timeout_but_inactive_does_not(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for active in (False, True):
+            state = self.state(active="active", sub="running") if active else self.state()
+            result, read, _connection, _gio, _glib, _calls = self.collect(
+                {"cups.service": self.reply(variant, state)}, mode="socket-timeout")
+            self.assertEqual((result.status, result.value),
+                             ("available", "running") if active else ("unavailable", "unknown"))
+            self.assertEqual([error.code for error in result.errors], ["timeout"])
+            self.assertEqual(result.units, (("cups.service", state),))
+            self.assertIs(read.value, result)
+
+    def test_error_and_malformed_socket_cannot_downgrade_running_service(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for bad in (variant.Error("fixture"), variant.Variant("(s)", ("bad",))):
+            result, *_ = self.collect({"cups.service": self.reply(variant, self.state(active="active")),
+                                      "cups.socket": bad}, remote_error="org.freedesktop.DBus.Error.AccessDenied")
+            self.assertEqual((result.status, result.value), ("available", "running"))
+            self.assertEqual(len(result.errors), 1)
+
+    def test_denial_absence_and_malformed_states_are_distinct(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for remote, code in (("org.freedesktop.DBus.Error.AccessDenied", "permission-denied"),
+                             ("org.freedesktop.DBus.Error.ServiceUnknown", "missing-provider")):
+            result, *_ = self.collect(mode="connection-error", remote_error=remote)
+            self.assertEqual((result.status, result.value), ("unavailable", "unknown"))
+            self.assertEqual([error.code for error in result.errors], [code])
+        result, *_ = self.collect({unit: variant.Error("fixture") for unit in provider.CUPS_UNITS},
+                                 remote_error="org.freedesktop.systemd1.NoSuchUnit")
+        self.assertEqual((result.status, result.value, result.errors), ("unsupported", "unknown", ()))
+        for remote in ("org.freedesktop.DBus.Error.UnknownObject", "org.freedesktop.DBus.Error.UnknownMethod"):
+            result, *_ = self.collect({unit: variant.Error("fixture") for unit in provider.CUPS_UNITS},
+                                     remote_error=remote)
+            self.assertEqual(result.status, "unavailable")
+        result, *_ = self.collect({"cups.service": variant.Variant("(s)", ("bad",))})
+        self.assertEqual((result.status, result.value), ("partial", "unknown"))
+
+    def test_decoder_result_or_error_after_deadline_is_discarded(self):
+        for raises in (False, True):
+            read, connection, _gio, _glib, variant = self.reader()
+            read.deadline = 10
+            state = self.state(active="active")
+            def late(_reply):
+                read.deadline = 1
+                if raises:
+                    raise provider.SnapshotFailure("malformed", "late")
+                return state
+            with mock.patch.object(provider.time, "monotonic", return_value=2), \
+                    mock.patch.object(provider, "decode_unit_state", side_effect=late):
+                read.replied(connection, object(), "cups.service")
+            self.assertEqual(read.value.units, ())
+            self.assertEqual([error.code for error in read.value.errors], ["timeout"])
+            read.unit_failed("cups.socket", variant.Error("late"))
+            self.assertEqual(len(read.value.errors), 1)
+
+    def test_unexpected_loop_exit_and_duplicate_callbacks_do_not_fake_success(self):
+        read, connection, _gio, _glib, _variant = self.reader()
+        result = read.run()
+        self.assertEqual((result.status, result.value), ("unavailable", "unknown"))
+        self.assertEqual([error.code for error in result.errors], ["internal"])
+        result, read, connection, *_ = self.collect()
+        calls = connection.call_finish.call_count
+        read.replied(connection, object(), "cups.service")
+        self.assertEqual(connection.call_finish.call_count, calls)
+        self.assertIs(result, read.value)
+
+    def test_reversed_replies_and_synchronous_dispatch_errors_keep_both_units_bounded(self):
+        for reverse, synchronous_error in ((True, False), (False, True)):
+            read, connection, gio, _glib, variant = self.reader()
+            calls = []
+            def sent(*args):
+                calls.append(args)
+                if synchronous_error:
+                    raise variant.Error("dispatch failure")
+            connection.call.side_effect = sent
+            gio.dbus_error_get_remote_error.return_value = "org.freedesktop.systemd1.NoSuchUnit"
+            def during_loop():
+                read.connected(None, object(), None)
+                if not synchronous_error:
+                    for call in reversed(calls) if reverse else calls:
+                        connection.call_finish.return_value = self.reply(variant)
+                        read.replied(connection, object(), call[-1])
+                        read.replied(connection, object(), call[-1])
+            read.loop.run.side_effect = during_loop
+            result = read.run()
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(result.status, "unsupported" if synchronous_error else "available")
+            self.assertEqual(result.errors, ())
+            self.assertEqual(len(result.units), 2)
+            self.assertEqual(connection.call_finish.call_count, 0 if synchronous_error else 2)
+
+    def test_elapsed_deadline_prevents_dispatch_and_normalizes_late_bus_failure(self):
+        for during_finish in (False, True):
+            read, connection, gio, _glib, variant = self.reader()
+            read.deadline = 10 if during_finish else 1
+            def late(_result):
+                read.deadline = 1
+                raise variant.Error("late failure")
+            connection.call_finish.side_effect = late
+            with mock.patch.object(provider.time, "monotonic", return_value=2):
+                if during_finish:
+                    read.replied(connection, object(), "cups.service")
+                else:
+                    read.connected(None, object(), None)
+                    gio.bus_get_finish.assert_not_called()
+            self.assertEqual(read.value.units, ())
+            self.assertEqual([error.code for error in read.value.errors], ["timeout"])
+            connection.call.assert_not_called()
+
+    def test_real_cups_reads_use_an_isolated_private_bus(self):
+        process = subprocess.Popen(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-cups-read-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=35)
+            self.assertEqual(process.returncode, 0, stderr.decode("utf-8", "replace"))
+            self.assertIn(b"Private-bus printer reads: PASS", stdout)
+        finally:
+            if process.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, 9)
+                process.communicate(timeout=3)
+
+
+class RepositoryReadTests(unittest.TestCase):
+    def reader(self):
+        _unused, connection, gio, glib, variant = RegionalReadTests.reader(self)
+        return provider.RepositoryRead(gio, glib), connection, gio, glib, variant
+
+    def collect(self, *, records=None, overrides=None, stall=None, before_ack=False,
+                terminal=None, no_terminal=False, transform=None, remote_error=None, activate=False):
+        read, connection, gio, glib, variant = self.reader()
+        calls = []
+        connection.call.side_effect = lambda *args: calls.append(args)
+        gio.dbus_error_get_remote_error.return_value = remote_error
+        replies = {"start": variant.Variant("(u)", (2,)),
+                   "owner": variant.Variant("(s)", (":1.42",)),
+                   "owner-after-start": variant.Variant("(s)", (":1.42",)),
+                   "verify-owner": variant.Variant("(s)", (":1.42",)),
+                   "create": variant.Variant("(o)", ("/12_fixture",))}
+        replies.update(overrides or {})
+        if activate:
+            replies["owner"] = variant.Error("no owner")
+        def signals():
+            for record in records if records is not None else (
+                    variant.Variant("(ssb)", ("z-disabled", "Disabled", False)),
+                    variant.Variant("(ssb)", ("a-enabled", "Enabled", True))):
+                read.received(connection, read.owner, read.path, provider.TRANSACTION_INTERFACE,
+                              "RepoDetail", record, None)
+            if not no_terminal:
+                member, values = terminal or ("Finished", variant.Variant("(uu)", (1, 4)))
+                read.received(connection, read.owner, read.path, provider.TRANSACTION_INTERFACE,
+                              member, values, None)
+        def during_loop():
+            if stall == "connect":
+                read.expire()
+            read.connected(None, object(), None)
+            for call in calls:
+                stage = call[-1]
+                if stage is None:
+                    continue  # Best-effort cleanup does not own a new read.
+                if transform:
+                    transform(read, connection, stage)
+                if stage == "fetch" and before_ack:
+                    signals()
+                if stall == stage:
+                    read.expire()
+                reply = replies.get(stage, variant.Variant("()", ()))
+                gio.dbus_error_get_remote_error.return_value = (
+                    "org.freedesktop.DBus.Error.NameHasNoOwner" if activate and stage == "owner" else remote_error)
+                connection.call_finish.side_effect = reply if isinstance(reply, Exception) else None
+                connection.call_finish.return_value = reply
+                call[-2](connection, object(), stage)
+                call[-2](connection, object(), stage)  # Duplicate callbacks are inert.
+                if stage == "fetch" and not before_ack:
+                    signals()
+            if not read.done:
+                read.expire()
+        read.loop.run.side_effect = during_loop
+        failure = None
+        try:
+            value = read.run()
+        except provider.SnapshotFailure as error:
+            value, failure = None, error
+        return value, failure, read, connection, gio, glib, calls
+
+    def test_complete_enabled_disabled_rows_and_exact_fixed_calls(self):
+        for before_ack in (False, True):
+            value, failure, read, connection, gio, glib, calls = self.collect(before_ack=before_ack)
+            self.assertIsNone(failure)
+            self.assertEqual([row.fields() for row in value], [
+                ("repository", "a-enabled", "enabled", "Enabled"),
+                ("repository", "z-disabled", "disabled", "Disabled")])
+            self.assertEqual([call[3] for call in calls], ["GetNameOwner",
+                "CreateTransaction", "AddMatch", "SetHints", "GetRepoList", "GetNameOwner", "RemoveMatch"])
+            for call in calls:
+                self.assertEqual(call[6], gio.DBusCallFlags.NONE)
+                self.assertGreater(call[7], 0)
+                self.assertLessEqual(call[7], 30000)
+            fetch = next(call for call in calls if call[3] == "GetRepoList")
+            self.assertEqual(fetch[:4], (":1.42", "/12_fixture", provider.TRANSACTION_INTERFACE, "GetRepoList"))
+            self.assertEqual(fetch[4].get_type_string(), "(t)")
+            self.assertEqual(fetch[4].unpack(), (2,))
+            hints = next(call for call in calls if call[3] == "SetHints")
+            self.assertEqual(hints[4].unpack(), (["background=true", "interactive=false", "cache-age=4294967295"],))
+            self.assertEqual(connection.signal_subscribe.call_args.args[5], gio.DBusSignalFlags.NO_MATCH_RULE)
+            connection.signal_unsubscribe.assert_called_once()
+            connection.disconnect.assert_called_once()
+            connection.close_sync.assert_not_called()
+            glib.source_remove.assert_called_once_with(17)
+            self.assertTrue(read.cancellable.cancel.called)
+            self.assertEqual(read.rows, {})
+            with self.assertRaises(RuntimeError):
+                read.run()
+
+    def test_empty_success_requires_both_method_ack_and_finished(self):
+        value, failure, *_ = self.collect(records=[])
+        self.assertEqual(value, ())
+        self.assertIsNone(failure)
+        value, failure, *_ = self.collect(records=[], no_terminal=True)
+        self.assertIsNone(value)
+        self.assertEqual(failure.code, "timeout")
+        for before_ack in (False, True):
+            _read, _connection, _gio, _glib, variant = self.reader()
+            value, failure, *_ = self.collect(before_ack=before_ack,
+                overrides={"fetch": variant.Error("lost acknowledgment")})
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, "internal")
+
+    def test_every_stage_timeout_discards_rows_and_late_callbacks(self):
+        for stage in ("connect", "start", "owner", "owner-after-start", "create", "match", "hints", "fetch", "verify-owner"):
+            value, failure, read, connection, gio, _glib, calls = self.collect(
+                stall=stage, activate=stage in ("start", "owner-after-start"))
+            self.assertIsNone(value, stage)
+            self.assertEqual(failure.code, "timeout", stage)
+            self.assertEqual(read.rows, {})
+            before = connection.call_finish.call_count
+            read.replied(connection, object(), stage)
+            read.connected(None, object(), None)
+            self.assertEqual(connection.call_finish.call_count, before)
+            if stage == "connect":
+                gio.bus_get_finish.assert_not_called()
+            canceled = [call for call in calls if call[3] == "Cancel"]
+            self.assertEqual(len(canceled), int(stage == "fetch"))
+            if canceled:
+                self.assertEqual(canceled[0][:4], (":1.42", "/12_fixture", provider.TRANSACTION_INTERFACE, "Cancel"))
+            self.assertEqual(sum(call[3] == "RemoveMatch" for call in calls),
+                             int(stage in ("match", "hints", "fetch", "verify-owner")))
+
+    def test_bus_failures_and_replacement_are_provider_scoped(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for stage, remote, code, status in (
+                ("owner", "org.freedesktop.DBus.Error.ServiceUnknown", "missing-provider", "unavailable"),
+                ("match", "org.freedesktop.DBus.Error.AccessDenied", "permission-denied", "restricted"),
+                ("fetch", "org.freedesktop.PackageKit.Transaction.RefusedByPolicy", "permission-denied", "restricted"),
+                ("fetch", "org.freedesktop.PackageKit.Transaction.NotSupported", "unsupported", "unsupported")):
+            value, failure, *_ = self.collect(overrides={stage: variant.Error("fixture")}, remote_error=remote)
+            self.assertIsNone(value)
+            self.assertEqual((failure.code, failure.status), (code, status))
+        value, failure, *_ = self.collect(overrides={"verify-owner": variant.Variant("(s)", (":1.43",))})
+        self.assertIsNone(value)
+        self.assertEqual(failure.code, "conflict")
+
+    def test_typed_reply_validation_rejects_invalid_setup(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for stage, reply in (("start", variant.Variant("(u)", (0,))),
+                ("owner", variant.Variant("(s)", ("org.freedesktop.PackageKit",))),
+                ("owner", variant.Variant("(s)", (":" + "1" * 255 + ".1",))),
+                ("create", variant.Variant("(o)", ("/unrelated",))),
+                ("match", variant.Variant("(b)", (True,))),
+                ("hints", variant.Variant("(s)", ("bad",))),
+                ("fetch", variant.Variant("(b)", (True,)))):
+            value, failure, *_ = self.collect(overrides={stage: reply}, activate=stage == "start")
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, "malformed", stage)
+
+    def test_absent_daemon_activation_is_bounded_and_attempted_only_once(self):
+        value, failure, _read, _connection, _gio, _glib, calls = self.collect(activate=True)
+        self.assertIsNone(failure)
+        self.assertEqual(len(value), 2)
+        self.assertEqual([call[3] for call in calls[:3]], ["GetNameOwner", "StartServiceByName", "GetNameOwner"])
+        self.assertEqual(calls[1][4].unpack(), (provider.PACKAGEKIT_NAME, 0))
+        _read, _connection, _gio, _glib, variant = self.reader()
+        value, failure, *_rest, calls = self.collect(activate=True,
+            overrides={"owner-after-start": variant.Error("still absent")},
+            remote_error="org.freedesktop.DBus.Error.NameHasNoOwner")
+        self.assertIsNone(value)
+        self.assertEqual(failure.code, "missing-provider")
+        self.assertEqual(sum(call[3] == "StartServiceByName" for call in calls), 1)
+
+    def test_repository_fields_are_bounded_before_unpacking(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        row = provider.decode_repository_row(variant.Variant("(ssb)", ("x" * 512, "é" * 256, True)))
+        self.assertEqual(len(row.repository_id), 512)
+        self.assertEqual(len(row.description.encode()), 512)
+        for record in (variant.Variant("(ssb)", ("", "description", True)),
+                       variant.Variant("(ssb)", ("bad\tid", "description", True)),
+                       variant.Variant("(ssb)", ("id", "é" * 257, True)),
+                       variant.Variant("(ssb)", ("x" * 513, "description", True)),
+                       variant.Variant("(sss)", ("id", "description", "true"))):
+            value, failure, *_ = self.collect(records=[record])
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, "malformed")
+        oversized = mock.Mock()
+        oversized.get_type_string.return_value = "(ssb)"
+        oversized.get_size.return_value = 1000000
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.decode_repository_row(oversized)
+        oversized.unpack.assert_not_called()
+        self.assertEqual(provider.decode_repository_row(variant.Variant("(ssb)",
+            ("id", "one\ntwo\tthree", False))).description, "one two three")
+
+    def test_duplicate_count_and_encoded_byte_overflow_discard_complete_result(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        record = lambda index: variant.Variant("(ssb)", (f"repo-{index}", "description", True))
+        value, failure, *_ = self.collect(records=[record(index) for index in range(512)])
+        self.assertIsNone(failure)
+        self.assertEqual(len(value), 512)
+        for records in ([record(0), record(0)], [record(index) for index in range(513)]):
+            value, failure, read, *_ = self.collect(records=records)
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, "malformed")
+            self.assertEqual(read.rows, {})
+        records = [variant.Variant("(ssb)", (f"{index:03d}" + "i" * 509, "d" * 512, True)) for index in range(512)]
+        value, failure, *_ = self.collect(records=records)
+        self.assertIsNone(value)
+        self.assertEqual(failure.code, "malformed")
+        size = provider.encoded_record_size(provider.decode_repository_row(record(0)).fields())
+        for limit, success in ((size, True), (size - 1, False)):
+            with mock.patch.object(provider, "REPOSITORY_MAX_BYTES", limit):
+                value, failure, *_ = self.collect(records=[record(0)])
+            self.assertEqual(failure is None, success)
+
+    def test_transaction_errors_and_malformed_terminal_signals_never_succeed(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        for terminal, code in (
+                (("ErrorCode", variant.Variant("(us)", (18, "private details"))), "repository"),
+                (("ErrorCode", variant.Variant("(us)", (48, "private details"))), "permission-denied"),
+                (("ErrorCode", variant.Variant("(us)", (2, "private details"))), "network"),
+                (("ErrorCode", variant.Variant("(us)", (18, "x" * 513))), "malformed"),
+                (("Finished", variant.Variant("(uu)", (2, 4))), "internal"),
+                (("Finished", variant.Variant("(u)", (1,))), "malformed"),
+                (("Destroy", variant.Variant("()", ())), "missing-provider"),
+                (("Destroy", variant.Variant("(b)", (True,))), "malformed")):
+            value, failure, *_ = self.collect(terminal=terminal)
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, code)
+            self.assertNotIn("private details", str(failure))
+
+    def test_wrong_peer_and_unrelated_signals_are_ignored_without_unpacking(self):
+        def unrelated(read, connection, stage):
+            if stage != "fetch":
+                return
+            values = mock.Mock()
+            for sender, path, interface, member in ((":1.99", read.path, provider.TRANSACTION_INTERFACE, "RepoDetail"),
+                    (read.owner, "/99_other", provider.TRANSACTION_INTERFACE, "Finished"),
+                    (read.owner, read.path, "other.Interface", "ErrorCode"),
+                    (read.owner, read.path, provider.TRANSACTION_INTERFACE, "Package")):
+                read.received(connection, sender, path, interface, member, values, None)
+            values.unpack.assert_not_called()
+            values.get_type_string.assert_not_called()
+        value, failure, *_ = self.collect(transform=unrelated)
+        self.assertIsNone(failure)
+        self.assertEqual(len(value), 2)
+
+    def test_premature_signal_and_unexpected_loop_exit_fail_closed(self):
+        _read, _connection, _gio, _glib, variant = self.reader()
+        def premature(read, connection, stage):
+            if stage == "match":
+                read.received(connection, read.owner, read.path, provider.TRANSACTION_INTERFACE,
+                    "Finished", variant.Variant("(uu)", (1, 0)), None)
+        value, failure, *_ = self.collect(transform=premature)
+        self.assertIsNone(value)
+        self.assertEqual(failure.code, "malformed")
+        read, *_ = self.reader()
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            read.run()
+        self.assertEqual(caught.exception.code, "internal")
+
+    def test_real_repository_reads_use_an_isolated_private_bus(self):
+        process = subprocess.Popen(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-repository-read-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            output, error = process.communicate(timeout=50)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+        self.assertEqual(process.returncode, 0, error.decode(errors="replace"))
+        self.assertIn(b"Private-bus repository reads: PASS", output)
+
+    def test_expired_decoding_never_publishes_a_value_or_late_error(self):
+        for raises in (False, True):
+            def decode_late(_values):
+                current.deadline = 0
+                if raises:
+                    raise provider.SnapshotFailure("malformed", "late decoding error")
+                return provider.RepositoryRow("late", True, "Late")
+            def capture(read, _connection, _stage):
+                nonlocal current
+                current = read
+            current = None
+            with mock.patch.object(provider, "decode_repository_row", side_effect=decode_late):
+                value, failure, read, *_ = self.collect(transform=capture)
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, "timeout")
+            self.assertEqual(read.rows, {})
+
+    def test_bus_close_is_bounded_and_cannot_override_terminal_evidence(self):
+        for expired in (False, True):
+            def close(read, _connection, stage):
+                if stage == "fetch":
+                    if expired:
+                        read.deadline = 0
+                    read.connection_closed()
+            value, failure, read, *_ = self.collect(transform=close)
+            self.assertIsNone(value)
+            self.assertEqual(failure.code, "timeout" if expired else "missing-provider")
+            read.connection_closed()
+            self.assertIs(read.failure, failure)
+        value, failure, read, *_ = self.collect()
+        read.connection_closed()
+        self.assertIs(read.value, value)
+        self.assertIsNone(read.failure)
+
+    def test_synchronous_dispatch_and_cleanup_failures_remain_bounded(self):
+        read, connection, _gio, _glib, variant = self.reader()
+        connection.call.side_effect = variant.Error("send failed")
+        read.loop.run.side_effect = lambda: read.connected(None, object(), None)
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            read.run()
+        self.assertEqual(caught.exception.code, "internal")
+        connection.close_sync.assert_not_called()
+        def reject_cleanup(_read, connection, stage):
+            if stage == "verify-owner":
+                connection.call.side_effect = variant.Error("cleanup failed")
+        value, failure, *_ = self.collect(transform=reject_cleanup)
+        self.assertIsNone(failure)
+        self.assertEqual(len(value), 2)
 
 
 class UpdateEventMonitorTests(unittest.TestCase):

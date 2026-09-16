@@ -364,7 +364,7 @@ first**.
 | 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) | ✅ Done — landed in `b164494` (merged 2026-09-14); tracking entries backfilled 2026-09-15, see [the note below](#phase-5s-tracking-entries-were-backfilled-and-phase-6-found-a-qml-gap) |
 | 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 | ✅ Done — merged `ee2611a` (PR #29, 2026-09-15); see `TASKS.md`, `CHANGELOG.md` |
 | 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | ✅ Done — 2026-09-15, on `sync-p7-operation-surface`; `#262` deferred to Phase 9 (see the doc's §3 note); see `TASKS.md`, `CHANGELOG.md` |
-| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 | Not started |
+| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 | ✅ Done — 2026-09-15, on `sync-p8-regional-readers`; backend readers only, no snapshot/QML wiring (see the doc's §5/§6 notes and the note below); see `TASKS.md`, `CHANGELOG.md` |
 | 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) | Not started |
 
 ### Phase 5's tracking entries were backfilled, and Phase 6 found a QML gap
@@ -422,6 +422,49 @@ stub cannot exercise a live confirm → dispatch → watch → cancel → ack cy
 (it predates this phase and reports both update actions as permanently
 unavailable). Both are open automated-coverage gaps — see
 `SYNC-P7-OPERATION-SURFACE.md`'s Verification section.
+
+### Phase 8 is backend readers only — its own doc oversold the scope
+
+Implementing Sync Phase 8 on `sync-p8-regional-readers` (2026-09-15) first
+had to fix its own diff methodology: diffing Lyona's current
+`scripts/dwm-system-management` against a *prior sync phase's* boundary SHA
+(as if sync-phase order were upstream's chronological order) falsely showed
+already-ported Phase 4 code (`UpdateEventMonitor`) as new. Diffing Lyona's
+current file directly against upstream's actual Phase-8-end state
+(`9d05092a`, the last of the six cited PRs) instead of a stale prior-phase
+boundary avoided that; the file-history investigation this took is what
+surfaced Sync Phase 7's own missed Python half (`#241`'s `build_snapshot()`/
+`build_managed_snapshot()` mutation-availability wiring, never ported
+alongside that phase's QML work) — fixed on the separate
+`sync-p7-mutation-availability-fix` branch, not this one; see `TASKS.md`'s
+"Sync Phase 7 follow-up" entry there for the full record.
+
+Once that was sorted out, tracing what upstream's six Phase 8 PRs
+(`#242`–`#246`, `#248`) actually touch — none of them modify
+`build_snapshot()`/`build_managed_snapshot()`, any QML file, or `shell.qml`
+— found that `SYNC-P8-REGIONAL-READERS.md`'s own "Files" table and §6 were
+wrong: it claimed `docs/P6-SYSTEM-MANAGEMENT.md` needed its regional/
+account/printer/repository sections "filled in as stubs" (they were already
+fully written, apparently from earlier work) and that `SystemManagementModel.qml`/
+`SystemSettingsPane.qml`/`shell.qml` needed this phase's own changes. The
+caller that would actually wire the five readers into the snapshot protocol
+— `NativeSnapshotSources`/`build_native_snapshot()` — exists only much
+later in upstream's history (found at the `dd55e58` full-repo survey point);
+by its own content (the `timezone-set`/`ntp-set`/`locale-set`/`*-open`
+mutation and delegate actions, and the `read_fedora_identity()`-gated
+`admission()` call) it is Sync Phase 9 material, not Phase 8's. Corrected in
+the doc's "Files" table and §§5–6, with the QML `shell.qml` probe snippet
+left in place for Phase 9 to use directly rather than deleted.
+
+Landed: the four `ServiceRead` subclasses (`RegionalRead`, `AccountRead`,
+`CupsRead`, `RepositoryRead` — `RegionalRead` is instantiated fresh per kind,
+covering both the timezone/NTP and locale reads, for five reads total) and
+their validation/decode helpers, ported verbatim (all four are
+distro-neutral D-Bus clients against standard interfaces — nothing Fedora-
+or Arch-specific to adapt), plus all six
+upstream test classes (89 new tests, 314 → 403, including five private-bus/
+private-process qualification harnesses under `tests/fixtures/`) — see
+`TASKS.md`'s Sync Phase 8 entry.
 
 ### The decision point after Phase 4
 

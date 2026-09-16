@@ -14,16 +14,20 @@ rewriting it.
 
 from __future__ import annotations
 
+import bisect
 import contextlib
 import errno
 import fcntl
 import hashlib
 import os
 import re
+import selectors
 import signal
 import stat
 import struct
+import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -38,8 +42,24 @@ MAX_LIST_BYTES = 3 * 1024 * 1024
 READ_DEADLINE_SECONDS = 120
 REFRESH_AGE_DEADLINE_SECONDS = 10
 CANCEL_GRACE_SECONDS = 5
+REPOSITORY_READ_SECONDS = 30
+REPOSITORY_MAX_ROWS = 512
+REPOSITORY_MAX_BYTES = 384 * 1024
 MAX_OPERATION_PROGRESS_RECORDS = 252
 MAX_OPERATION_MISMATCH_SAMPLES = 128
+
+REGIONAL_TIMEZONE_MAX = 255
+REGIONAL_TIMEZONE_COUNT = 2048
+REGIONAL_TIMEZONE_BYTES = 256 * 1024
+REGIONAL_LOCALE_MAX = 128
+REGIONAL_LOCALE_COUNT = 4096
+REGIONAL_LOCALE_OUTPUT_BYTES = 2 * 1024 * 1024
+REGIONAL_LOCALE_ARRAY_BYTES = 8192
+REGIONAL_LOCALE_KEYS = (
+    "LANG", "LANGUAGE", "LC_CTYPE", "LC_NUMERIC", "LC_TIME", "LC_COLLATE",
+    "LC_MONETARY", "LC_MESSAGES", "LC_PAPER", "LC_NAME", "LC_ADDRESS",
+    "LC_TELEPHONE", "LC_MEASUREMENT", "LC_IDENTIFICATION",
+)
 
 JOURNAL_MAGIC = b"DWMJNL1\0"
 JOURNAL_FRAME_MAJOR = 1
@@ -158,6 +178,38 @@ PACKAGEKIT_INTERFACE = "org.freedesktop.PackageKit"
 TRANSACTION_INTERFACE = "org.freedesktop.PackageKit.Transaction"
 PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 
+REGIONAL_READ_SECONDS = 10
+REGIONAL_TIME_PROPERTY_COUNT = 64
+REGIONAL_READ_REQUESTS = {
+    "time-state": ("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
+                   PROPERTIES_INTERFACE, "GetAll", "(s)",
+                   ("org.freedesktop.timedate1",), "(a{sv})"),
+    "locale-state": ("org.freedesktop.locale1", "/org/freedesktop/locale1",
+                     PROPERTIES_INTERFACE, "Get", "(ss)",
+                     ("org.freedesktop.locale1", "Locale"), "(v)"),
+    "timezone-choices": ("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
+                         "org.freedesktop.timedate1", "ListTimezones", None,
+                         None, "(as)"),
+}
+
+ACCOUNTS_NAME = "org.freedesktop.Accounts"
+ACCOUNTS_PATH = "/org/freedesktop/Accounts"
+ACCOUNT_INTERFACE = "org.freedesktop.Accounts.User"
+ACCOUNT_PROPERTIES = {"UserName": "s", "RealName": "s", "SystemAccount": "b", "LocalAccount": "b"}
+ACCOUNT_LIMIT = 256
+ACCOUNT_LIST_BYTES = 256 * 1024
+ACCOUNT_PROPERTY_CONCURRENCY = 8
+DBUS_OBJECT_PATH = re.compile(r"/(?:[A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)*)?")
+
+SYSTEMD_NAME = "org.freedesktop.systemd1"
+SYSTEMD_PATH = "/org/freedesktop/systemd1"
+SYSTEMD_MANAGER = "org.freedesktop.systemd1.Manager"
+CUPS_UNITS = ("cups.service", "cups.socket")
+CUPS_READ_SECONDS = 10
+UNIT_REPLY_TYPE = "(a(ssssssouso))"
+UNIT_REPLY_BYTES = 64 * 1024
+UNIT_STATE_TOKEN = re.compile(r"[a-z][a-z-]{0,63}")
+
 ROLE_REFRESH_CACHE = 13
 EXIT_SUCCESS = 1
 G_MAXUINT = (1 << 32) - 1
@@ -209,6 +261,1071 @@ class SnapshotFailure(Exception):
         self.code = code
         self.detail = clean_text(detail)
         self.status = status
+
+
+# Sync Phase 8 (docs/SYNC-P8-REGIONAL-READERS.md): five bounded, read-only
+# `Gio` service readers -- system timezone/NTP, locale, the local
+# AccountsService account list, CUPS's running state, and the PackageKit
+# repository list. No mutation, no D-Bus write of any kind. Each is its own
+# fresh ServiceRead subclass call, never a cached result, and each source
+# fails independently (a timedate1 outage must not blank the account list).
+# Wiring these into build_snapshot()'s output is Sync Phase 9's
+# NativeSnapshotSources/build_native_snapshot() -- that function also emits
+# the timezone-set/ntp-set/locale-set/*-open mutation and delegate actions,
+# and calls read_fedora_identity() (Fedora-specific, replaced elsewhere in
+# this file by require_mutation_safe()'s direct D-Bus version check), so it
+# is not read-only-only material and does not belong in this phase.
+def validate_timezone_name(value: object) -> str:
+    """Validate a timezone identity without normalizing or resolving its path."""
+    if (not isinstance(value, str) or not value
+            or len(value) > REGIONAL_TIMEZONE_MAX or not value.isascii()
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+            or any(part in ("", ".", "..") for part in value.split("/"))):
+        raise SnapshotFailure("malformed", "Invalid regional timezone identity")
+    return value
+
+
+def validate_timezone_choices(values: object) -> tuple[str, ...]:
+    """Validate one complete unpacked ListTimezones reply and its payload bounds."""
+    if not isinstance(values, (list, tuple)) or len(values) > REGIONAL_TIMEZONE_COUNT:
+        raise SnapshotFailure("malformed", "Invalid regional timezone list")
+    result = tuple(validate_timezone_name(value) for value in values)
+    if (len(set(result)) != len(result)
+            or sum(len(value) for value in result) > REGIONAL_TIMEZONE_BYTES):
+        raise SnapshotFailure("malformed", "Duplicate or oversized timezone list")
+    return result
+
+
+def prepare_timezone_change(value: object, choices: object) -> str:
+    """Require exact membership in the caller's fresh ListTimezones reply."""
+    timezone = validate_timezone_name(value)
+    if timezone not in validate_timezone_choices(choices):
+        raise SnapshotFailure("conflict", "The selected timezone is no longer available")
+    return timezone
+
+
+def validate_locale_name(value: object) -> str:
+    """Validate a locale identity; installed availability needs a fresh allowlist."""
+    if (not isinstance(value, str) or not value
+            or len(value) > REGIONAL_LOCALE_MAX or not value.isascii()
+            or any(char.isspace() or ord(char) < 32 or ord(char) == 127
+                   for char in value)):
+        raise SnapshotFailure("malformed", "Invalid regional locale identity")
+    return value
+
+
+def validate_locale_choices(output: object) -> tuple[str, ...]:
+    """Validate complete bounded locale -a stdout without stripping identities."""
+    if not isinstance(output, bytes) or len(output) > REGIONAL_LOCALE_OUTPUT_BYTES:
+        raise SnapshotFailure("malformed", "Invalid regional locale output")
+    try:
+        text = output.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise SnapshotFailure("malformed", "Non-ASCII regional locale output") from error
+    if not text:
+        return ()
+    lines = text.removesuffix("\n").split("\n", REGIONAL_LOCALE_COUNT)
+    if len(lines) > REGIONAL_LOCALE_COUNT:
+        raise SnapshotFailure("malformed", "Too many regional locale choices")
+    result = tuple(validate_locale_name(line) for line in lines)
+    if len(set(result)) != len(result):
+        raise SnapshotFailure("malformed", "Duplicate regional locale choices")
+    return result
+
+
+@dataclass(frozen=True)
+class LocaleConfiguration:
+    """Canonical, fully displayable locale1 assignments, not an authorization."""
+
+    assignments: tuple[str, ...]
+    lang: str
+    detail: str
+
+
+def parse_locale_configuration(values: object) -> LocaleConfiguration:
+    """Preserve the complete allowlisted locale array or reject it without truncation."""
+    if not isinstance(values, (list, tuple)) or len(values) > len(REGIONAL_LOCALE_KEYS):
+        raise SnapshotFailure("malformed", "Invalid regional locale assignment array")
+    assignments: dict[str, str] = {}
+    total_bytes = 0
+    for assignment in values:
+        if not isinstance(assignment, str) or len(assignment) > MAX_TEXT_BYTES:
+            raise SnapshotFailure("malformed", "Invalid regional locale assignment")
+        try:
+            encoded = assignment.encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise SnapshotFailure("malformed", "Non-UTF-8 locale assignment") from error
+        total_bytes += len(encoded) + 1
+        key, separator, value = assignment.partition("=")
+        if (not separator or key not in REGIONAL_LOCALE_KEYS or key in assignments
+                or len(encoded) > MAX_TEXT_BYTES
+                or total_bytes > REGIONAL_LOCALE_ARRAY_BYTES
+                or not assignment.isprintable()):
+            raise SnapshotFailure("malformed", "Unsafe or oversized locale assignment")
+        assignments[key] = value
+    ordered = tuple(f"{key}={assignments[key]}" for key in REGIONAL_LOCALE_KEYS
+                    if key in assignments)
+    detail = ", ".join(f"{key}={assignments[key]}" for key in REGIONAL_LOCALE_KEYS[1:]
+                       if assignments.get(key)) or "none"
+    if len(detail.encode("utf-8")) > MAX_TEXT_BYTES:
+        raise SnapshotFailure("malformed", "Locale overrides are too large to confirm safely")
+    return LocaleConfiguration(ordered, assignments.get("LANG", "unknown"), detail)
+
+
+def prepare_locale_change(
+    values: object, argument: object, choice_output: object
+) -> LocaleConfiguration:
+    """Prepare only LANG using caller-supplied fresh reads, preserving every override."""
+    if not isinstance(argument, str) or not argument.startswith("LANG="):
+        raise SnapshotFailure("malformed", "Only LANG=LOCALE is accepted")
+    locale = validate_locale_name(argument[5:])
+    choices = validate_locale_choices(choice_output)
+    if locale not in choices:
+        raise SnapshotFailure("conflict", "The selected locale is no longer available")
+    current = parse_locale_configuration(values)
+    preserved = [value for value in current.assignments if not value.startswith("LANG=")]
+    return parse_locale_configuration([f"LANG={locale}", *preserved])
+
+
+def locale_change_matches(expected_values: object, observed_values: object) -> bool:
+    """Compare effective LC values, permitting omission of redundant overrides."""
+    expected = dict(value.split("=", 1) for value in
+                    parse_locale_configuration(expected_values).assignments)
+    observed = dict(value.split("=", 1) for value in
+                    parse_locale_configuration(observed_values).assignments)
+    if expected.get("LANG", "") != observed.get("LANG", ""):
+        return False
+    # LANGUAGE is a preference list, not an LC category with LANG fallback.
+    # Only a pre-existing explicit assignment has a preservation requirement.
+    if ("LANGUAGE" in expected
+            and ("LANGUAGE" not in observed or expected["LANGUAGE"] != observed["LANGUAGE"])):
+        return False
+    return all((expected.get(key) or expected.get("LANG", ""))
+               == (observed.get(key) or observed.get("LANG", ""))
+               for key in REGIONAL_LOCALE_KEYS[2:])
+
+
+@dataclass(frozen=True)
+class RegionalTimeState:
+    """Typed timedate1 state, independent of locale and mutation availability."""
+
+    timezone: str
+    can_ntp: bool
+    ntp_enabled: bool
+    ntp_synchronized: bool
+
+
+def regional_string_array(values: object, count: int, field_bytes: int,
+                          total_bytes: int, *, separators: bool = False) -> tuple[str, ...]:
+    """Bound serialized string sizes before allocating Python copies of a reply."""
+    if values.get_type_string() != "as" or values.n_children() > count:
+        raise SnapshotFailure("malformed", "Invalid regional string array")
+    result = []
+    size = 0
+    for index in range(values.n_children()):
+        child = values.get_child_value(index)
+        # A serialized GVariant string includes its one terminating NUL byte.
+        payload_bytes = child.get_size() - 1
+        size += payload_bytes + int(separators)
+        if payload_bytes > field_bytes or size > total_bytes:
+            raise SnapshotFailure("malformed", "Oversized regional string array")
+        result.append(child.unpack())
+    return tuple(result)
+
+
+def decode_regional_reply(kind: str, reply: object) -> object:
+    """Validate the exact reply signature and required regional property types."""
+    if not isinstance(kind, str) or kind not in REGIONAL_READ_REQUESTS:
+        raise SnapshotFailure("malformed", "Unknown regional read")
+    if reply.get_type_string() != REGIONAL_READ_REQUESTS[kind][-1]:
+        raise SnapshotFailure("malformed", "Unexpected regional reply signature")
+    if kind == "timezone-choices":
+        return validate_timezone_choices(regional_string_array(reply.get_child_value(0),
+            REGIONAL_TIMEZONE_COUNT, REGIONAL_TIMEZONE_MAX, REGIONAL_TIMEZONE_BYTES))
+    if kind == "locale-state":
+        values = reply.get_child_value(0).get_variant()
+        return parse_locale_configuration(regional_string_array(values,
+            len(REGIONAL_LOCALE_KEYS), MAX_TEXT_BYTES, REGIONAL_LOCALE_ARRAY_BYTES,
+            separators=True))
+    properties = reply.get_child_value(0)
+    if properties.n_children() > REGIONAL_TIME_PROPERTY_COUNT:
+        raise SnapshotFailure("malformed", "Too many timedate1 properties")
+    keys = set()
+    for index in range(properties.n_children()):
+        key = properties.get_child_value(index).get_child_value(0)
+        if key.get_size() > MAX_TEXT_BYTES + 1 or key.unpack() in keys:
+            raise SnapshotFailure("malformed", "Duplicate or oversized timedate1 property name")
+        keys.add(key.unpack())
+    values = []
+    for name, signature in (("Timezone", "s"), ("CanNTP", "b"),
+                            ("NTP", "b"), ("NTPSynchronized", "b")):
+        value = properties.lookup_value(name, None)
+        if (value is None or value.get_type_string() != signature
+                or (signature == "s" and value.get_size() > REGIONAL_TIMEZONE_MAX + 1)):
+            raise SnapshotFailure("malformed", "Missing or malformed timedate1 property")
+        values.append(value.unpack())
+    return RegionalTimeState(validate_timezone_name(values[0]), *values[1:])
+
+
+class ServiceRead:
+    """Shared single-use lifetime for bounded, asynchronous service readers."""
+
+    label = "Service"
+    seconds = REGIONAL_READ_SECONDS
+
+    def __init__(self, Gio=None, GLib=None) -> None:
+        if Gio is None or GLib is None:
+            try:
+                import gi
+                gi.require_version("Gio", "2.0")
+                from gi.repository import Gio, GLib
+            except (ImportError, ValueError) as error:
+                raise SnapshotFailure("missing-provider", "System Python GObject bindings are unavailable",
+                                      "unavailable") from error
+        self.Gio, self.GLib = Gio, GLib
+        self.loop = GLib.MainLoop()
+        self.cancellable = Gio.Cancellable()
+        self.connection = None
+        self.deadline = 0.0
+        self.deadline_source = 0
+        self.started = False
+        self.done = False
+        self.value = None
+        self.failure = None
+
+    def finish(self, value=None, failure=None) -> None:
+        if self.done:
+            return
+        self.done = True
+        self.value, self.failure = value, failure
+        self.cancellable.cancel()
+        self.loop.quit()
+
+    def fail(self, failure: SnapshotFailure) -> None:
+        self.finish(failure=failure)
+
+    def timeout_failure(self) -> SnapshotFailure:
+        return SnapshotFailure("timeout", f"{self.label} read timed out", "unavailable")
+
+    def expire(self) -> bool:
+        self.deadline_source = 0
+        self.fail(self.timeout_failure())
+        return self.GLib.SOURCE_REMOVE
+
+    def pending(self) -> bool:
+        if self.done:
+            return False
+        if time.monotonic() >= self.deadline:
+            self.fail(self.timeout_failure())
+            return False
+        return True
+
+    def bus_failure(self, error: Exception) -> SnapshotFailure:
+        if time.monotonic() >= self.deadline:
+            return self.timeout_failure()
+        name = self.Gio.dbus_error_get_remote_error(error)
+        code, status = {
+            "org.freedesktop.DBus.Error.ServiceUnknown": ("missing-provider", "unavailable"),
+            "org.freedesktop.DBus.Error.NameHasNoOwner": ("missing-provider", "unavailable"),
+            "org.freedesktop.DBus.Error.UnknownObject": ("missing-provider", "unavailable"),
+            "org.freedesktop.DBus.Error.AccessDenied": ("permission-denied", "restricted"),
+            "org.freedesktop.DBus.Error.AuthFailed": ("permission-denied", "restricted"),
+            "org.freedesktop.DBus.Error.InvalidArgs": ("malformed", "partial"),
+            "org.freedesktop.DBus.Error.InvalidSignature": ("malformed", "partial"),
+            "org.freedesktop.DBus.Error.UnknownMethod": ("unsupported", "unsupported"),
+            "org.freedesktop.DBus.Error.UnknownInterface": ("unsupported", "unsupported"),
+            "org.freedesktop.DBus.Error.Timeout": ("timeout", "unavailable"),
+            "org.freedesktop.DBus.Error.TimedOut": ("timeout", "unavailable"),
+            "org.freedesktop.DBus.Error.NoReply": ("timeout", "unavailable"),
+        }.get(name, ("internal", "unavailable"))
+        if (name is None and error.matches(self.Gio.io_error_quark(),
+                                          self.Gio.IOErrorEnum.TIMED_OUT)):
+            code, status = "timeout", "unavailable"
+        return SnapshotFailure(code, f"{self.label} service read failed", status)
+
+    def connected(self, _source, result, _data) -> None:
+        raise NotImplementedError
+
+    def run(self) -> object:
+        if self.started:
+            raise RuntimeError(f"{self.label} reads are single-use")
+        self.started = True
+        self.deadline = time.monotonic() + self.seconds
+        try:
+            self.deadline_source = self.GLib.timeout_add(self.seconds * 1000, self.expire)
+            self.Gio.bus_get(self.Gio.BusType.SYSTEM, self.cancellable, self.connected, None)
+            if not self.done:
+                self.loop.run()
+            if not self.done:
+                self.fail(SnapshotFailure("internal", f"{self.label} read ended without a reply", "unavailable"))
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+        finally:
+            self.done = True
+            self.cancellable.cancel()
+            self.loop.quit()
+            if self.deadline_source:
+                self.GLib.source_remove(self.deadline_source)
+                self.deadline_source = 0
+            # bus_get returns a shared connection; never close another reader's bus.
+        if self.failure:
+            raise self.failure
+        return self.value
+
+
+@dataclass(frozen=True)
+class RepositoryRow:
+    repository_id: str
+    enabled: bool
+    description: str
+
+    def fields(self) -> tuple[str, ...]:
+        return ("repository", self.repository_id,
+                "enabled" if self.enabled else "disabled", self.description)
+
+
+def decode_repository_row(values: object) -> RepositoryRow:
+    """Bound serialized fields before copying a RepoDetail into Python."""
+    if values.get_type_string() != "(ssb)" or values.get_size() > 2 * MAX_TEXT_BYTES + 16:
+        raise SnapshotFailure("malformed", "Invalid PackageKit repository record")
+    for index in (0, 1):
+        if values.get_child_value(index).get_size() > MAX_TEXT_BYTES + 1:
+            raise SnapshotFailure("malformed", "Oversized PackageKit repository field")
+    repository_id, description, enabled = values.unpack()
+    return RepositoryRow(canonical_identity(repository_id), enabled,
+                         clean_text(description, truncate=False))
+
+
+class RepositoryRead(ServiceRead):
+    """Collect one complete fixed GetRepoList transaction, never a mutation."""
+
+    label = "Repository"
+    seconds = REPOSITORY_READ_SECONDS
+
+    def __init__(self, Gio=None, GLib=None) -> None:
+        super().__init__(Gio, GLib)
+        try:
+            import gi
+            gi.require_version("PackageKitGlib", "1.0")
+            from gi.repository import PackageKitGlib
+        except (ImportError, ValueError) as error:
+            raise SnapshotFailure("missing-provider", "PackageKit bindings are unavailable", "unavailable") from error
+        self.filter_none = PackageKitGlib.filter_bitfield_from_string("none")
+        self.stage = "connect"
+        self.owner = self.path = self.match_rule = ""
+        self.subscription = self.closed_handler = 0
+        self.fetch_sent = self.acknowledged = self.finished = False
+        self.rows: dict[str, RepositoryRow] = {}
+        self.row_bytes = 0
+
+    def request(self, stage, method, parameters=None, signature="()", *, bus=False, manager=False):
+        if not self.pending():
+            return
+        self.stage = stage
+        destination = "org.freedesktop.DBus" if bus else self.owner
+        path = "/org/freedesktop/DBus" if bus else PACKAGEKIT_PATH if manager else self.path
+        interface = "org.freedesktop.DBus" if bus else PACKAGEKIT_INTERFACE if manager else TRANSACTION_INTERFACE
+        self.connection.call(destination, path, interface, method, parameters,
+            self.GLib.VariantType.new(signature), self.Gio.DBusCallFlags.NONE,
+            max(1, min(int((self.deadline - time.monotonic()) * 1000), self.seconds * 1000)),
+            self.cancellable, self.replied, stage)
+
+    def connected(self, _source, result, _data):
+        if not self.pending() or self.stage != "connect":
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            if not self.pending():
+                return
+            self.connection.set_exit_on_close(False)
+            self.closed_handler = self.connection.connect("closed", self.connection_closed)
+            self.request("owner", "GetNameOwner",
+                self.GLib.Variant("(s)", (PACKAGEKIT_NAME,)), "(s)", bus=True)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+
+    def connection_closed(self, *_args):
+        if self.pending():
+            self.fail(SnapshotFailure("missing-provider", "Repository service bus disconnected", "unavailable"))
+
+    def bus_failure(self, error):
+        if time.monotonic() < self.deadline:
+            name = self.Gio.dbus_error_get_remote_error(error)
+            if name == "org.freedesktop.PackageKit.Transaction.RefusedByPolicy":
+                return SnapshotFailure("permission-denied", "PackageKit denied repository discovery", "restricted")
+            if name == "org.freedesktop.PackageKit.Transaction.NotSupported":
+                return SnapshotFailure("unsupported", "PackageKit cannot list repositories", "unsupported")
+        return super().bus_failure(error)
+
+    def replied(self, connection, result, stage):
+        if not self.pending() or stage != self.stage:
+            return
+        try:
+            reply = connection.call_finish(result)
+            if not self.pending():
+                return
+            signature = {"start": "(u)", "owner": "(s)", "owner-after-start": "(s)", "verify-owner": "(s)",
+                         "create": "(o)"}.get(stage, "()")
+            if reply.get_type_string() != signature or reply.get_size() > 256:
+                raise SnapshotFailure("malformed", "Invalid repository transaction reply")
+            if stage == "start":
+                if reply.unpack()[0] not in (1, 2):
+                    raise SnapshotFailure("malformed", "Invalid PackageKit activation reply")
+                self.request("owner-after-start", "GetNameOwner", self.GLib.Variant("(s)", (PACKAGEKIT_NAME,)), "(s)", bus=True)
+            elif stage in ("owner", "owner-after-start", "verify-owner"):
+                owner = reply.unpack()[0]
+                if re.fullmatch(r":[0-9]+\.[0-9]+", owner) is None:
+                    raise SnapshotFailure("malformed", "Invalid PackageKit service identity")
+                if stage != "verify-owner":
+                    self.owner = owner
+                    self.request("create", "CreateTransaction", signature="(o)", manager=True)
+                else:
+                    if owner != self.owner:
+                        raise SnapshotFailure("conflict", "PackageKit changed during repository discovery")
+                    rows = tuple(self.rows[key] for key in sorted(self.rows, key=lambda key: key.encode("utf-8")))
+                    if self.pending():
+                        self.finish(rows)
+            elif stage == "create":
+                path = reply.unpack()[0]
+                if JOURNAL_PACKAGEKIT_PATH_PATTERN.fullmatch(path) is None:
+                    raise SnapshotFailure("malformed", "Invalid repository transaction path")
+                self.path = path
+                self.subscription = connection.signal_subscribe(self.owner, TRANSACTION_INTERFACE,
+                    None, self.path, None, self.Gio.DBusSignalFlags.NO_MATCH_RULE, self.received, None)
+                self.match_rule = f"type='signal',sender='{self.owner}',interface='{TRANSACTION_INTERFACE}',path='{self.path}'"
+                # An explicit acknowledgment makes bus policy denial observable.
+                self.request("match", "AddMatch", self.GLib.Variant("(s)", (self.match_rule,)), bus=True)
+            elif stage == "match":
+                self.request("hints", "SetHints", self.GLib.Variant("(as)",
+                    (["background=true", "interactive=false", "cache-age=4294967295"],)))
+            elif stage == "hints":
+                self.fetch_sent = True
+                self.request("fetch", "GetRepoList", self.GLib.Variant("(t)", (self.filter_none,)))
+            elif stage == "fetch":
+                self.acknowledged = True
+                self.stage = "wait"
+                self.maybe_complete()
+        except self.GLib.Error as error:
+            if (stage == "owner" and self.pending()
+                    and self.Gio.dbus_error_get_remote_error(error) == "org.freedesktop.DBus.Error.NameHasNoOwner"):
+                # Activate only an absent daemon, once, within the same deadline.
+                try:
+                    self.request("start", "StartServiceByName",
+                        self.GLib.Variant("(su)", (PACKAGEKIT_NAME, 0)), "(u)", bus=True)
+                except self.GLib.Error as activation_error:
+                    self.fail(self.bus_failure(activation_error))
+                return
+            self.fail(self.bus_failure(error))
+        except (SnapshotFailure, TypeError, ValueError) as error:
+            if self.pending():
+                self.fail(error if isinstance(error, SnapshotFailure) else
+                          SnapshotFailure("malformed", "Malformed repository transaction reply"))
+
+    def maybe_complete(self):
+        if self.acknowledged and self.finished and self.stage == "wait":
+            self.request("verify-owner", "GetNameOwner",
+                self.GLib.Variant("(s)", (PACKAGEKIT_NAME,)), "(s)", bus=True)
+
+    def received(self, _connection, sender, path, interface, member, values, _data):
+        if (not self.pending() or sender != self.owner or path != self.path
+                or interface != TRANSACTION_INTERFACE or self.finished
+                or member not in ("RepoDetail", "ErrorCode", "Finished", "Destroy")):
+            return
+        try:
+            if self.stage not in ("fetch", "wait"):
+                raise SnapshotFailure("malformed", "Premature repository transaction signal")
+            if member == "RepoDetail":
+                if len(self.rows) >= REPOSITORY_MAX_ROWS:
+                    raise SnapshotFailure("malformed", "Too many PackageKit repositories")
+                row = decode_repository_row(values)
+                size = encoded_record_size(row.fields())
+                if row.repository_id in self.rows or self.row_bytes + size > REPOSITORY_MAX_BYTES:
+                    raise SnapshotFailure("malformed", "Duplicate or oversized repository result")
+                if self.pending():
+                    self.rows[row.repository_id] = row
+                    self.row_bytes += size
+            elif member == "ErrorCode":
+                if (values.get_type_string() != "(us)" or values.get_size() > MAX_TEXT_BYTES + 16
+                        or values.get_child_value(1).get_size() > MAX_TEXT_BYTES + 1):
+                    raise SnapshotFailure("malformed", "Invalid PackageKit repository error")
+                raise PackageKitBackend._transaction_failure(values.get_child_value(0).unpack(), "")
+            elif member == "Finished":
+                if values.get_type_string() != "(uu)" or values.get_size() != 8:
+                    raise SnapshotFailure("malformed", "Invalid repository completion signal")
+                self.finished = True
+                if values.unpack()[0] != EXIT_SUCCESS:
+                    raise SnapshotFailure("internal", "Repository transaction did not succeed")
+                self.maybe_complete()
+            else:
+                if values.get_type_string() != "()":
+                    raise SnapshotFailure("malformed", "Invalid repository destruction signal")
+                raise SnapshotFailure("missing-provider", "Repository transaction disappeared", "unavailable")
+        except (SnapshotFailure, TypeError, ValueError) as error:
+            if self.pending():
+                self.fail(error if isinstance(error, SnapshotFailure) else
+                          SnapshotFailure("malformed", "Malformed repository transaction signal"))
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+
+    def run(self):
+        try:
+            return super().run()
+        finally:
+            if self.connection is not None:
+                if self.subscription:
+                    self.connection.signal_unsubscribe(self.subscription)
+                    self.subscription = 0
+                if self.closed_handler:
+                    self.connection.disconnect(self.closed_handler)
+                    self.closed_handler = 0
+                if self.failure and self.fetch_sent and not self.finished:
+                    # Only this reader's exact transaction, never another owner's
+                    # work. Best effort is not a claim that the daemon canceled it.
+                    with contextlib.suppress(self.GLib.Error):
+                        self.connection.call(self.owner, self.path, TRANSACTION_INTERFACE, "Cancel",
+                            None, None, self.Gio.DBusCallFlags.NONE, 1000, None, None, None)
+                if self.match_rule:
+                    # Also remove a rule whose AddMatch reply was lost. These
+                    # asynchronous cleanup requests do not extend the deadline.
+                    with contextlib.suppress(self.GLib.Error):
+                        self.connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                            "org.freedesktop.DBus", "RemoveMatch", self.GLib.Variant("(s)", (self.match_rule,)),
+                            None, self.Gio.DBusCallFlags.NONE, 1000, None, None, None)
+                    self.match_rule = ""
+            self.rows.clear()
+
+
+@dataclass(frozen=True)
+class UnitState:
+    path: str
+    load: str
+    active: str
+    sub: str
+
+
+def decode_unit_state(reply: object) -> UnitState:
+    """Decode the single fixed-name query before exposing any unit state."""
+    if (reply.get_type_string() != UNIT_REPLY_TYPE or reply.get_size() > UNIT_REPLY_BYTES
+            or reply.get_child_value(0).n_children() != 1):
+        raise SnapshotFailure("malformed", "Invalid systemd unit reply")
+    row = reply.get_child_value(0).get_child_value(0)
+    # ListUnitsByNames can return a canonical alias name. The fixed request,
+    # not a guessed object-path encoding or canonical name, identifies the unit.
+    values = []
+    for index in (2, 3, 4, 6):
+        child = row.get_child_value(index)
+        if child.get_size() > MAX_TEXT_BYTES + 1:
+            raise SnapshotFailure("malformed", "Oversized systemd unit state")
+        values.append(child.unpack())
+    load, active, sub, path = values
+    if (any(UNIT_STATE_TOKEN.fullmatch(value) is None for value in (load, active, sub))
+            or not path.startswith(SYSTEMD_PATH + "/unit/")
+            or DBUS_OBJECT_PATH.fullmatch(path) is None):
+        raise SnapshotFailure("malformed", "Malformed systemd unit state")
+    return UnitState(path, load, active, sub)
+
+
+@dataclass(frozen=True)
+class CupsState:
+    status: str
+    value: str
+    units: tuple[tuple[str, UnitState], ...]
+    errors: tuple[SnapshotFailure, ...]
+
+
+def classify_cups(units: Mapping[str, UnitState], errors=()) -> CupsState:
+    """Keep a validated running scheduler independent of the socket probe."""
+    service, socket = (units.get(name) for name in CUPS_UNITS)
+    status, value = "partial", "unknown"
+    if service and service.load == "loaded" and service.active == "active":
+        status, value = "available", "running"
+    elif errors or len(units) != 2:
+        status = "partial" if errors and all(error.code == "malformed" for error in errors) else "unavailable"
+    else:
+        service_absent = (service.load, service.active, service.sub) == ("not-found", "inactive", "dead")
+        socket_absent = (socket.load, socket.active, socket.sub) == ("not-found", "inactive", "dead")
+        if service_absent and socket_absent:
+            status = "unsupported"
+        elif service.load == "loaded" and service.active == "inactive":
+            if socket.load == "loaded" and (socket.active, socket.sub) == ("active", "listening"):
+                status, value = "available", "socket-ready"
+            elif socket_absent or (socket.load == "loaded" and socket.active == "inactive"):
+                status, value = "available", "stopped"
+    return CupsState(status, value, tuple((name, units[name]) for name in CUPS_UNITS if name in units),
+                     tuple(errors))
+
+
+class CupsRead(ServiceRead):
+    """Read two fixed CUPS units under one connection-to-decoding deadline."""
+
+    label = "Printer"
+    seconds = CUPS_READ_SECONDS
+
+    def __init__(self, Gio=None, GLib=None) -> None:
+        super().__init__(Gio, GLib)
+        self.units = {}
+        self.errors = []
+        self.waiting = set(CUPS_UNITS)
+
+    def fail(self, failure: SnapshotFailure) -> None:
+        if not self.done:
+            self.errors.append(failure)
+            self.finish(value=classify_cups(self.units, self.errors))
+
+    def connected(self, _source, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            self.connection.set_exit_on_close(False)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+            return
+        for unit in CUPS_UNITS:
+            if not self.pending():
+                return
+            try:
+                self.connection.call(SYSTEMD_NAME, SYSTEMD_PATH, SYSTEMD_MANAGER,
+                    "ListUnitsByNames", self.GLib.Variant("(as)", ([unit],)),
+                    self.GLib.VariantType.new(UNIT_REPLY_TYPE), self.Gio.DBusCallFlags.NO_AUTO_START,
+                    max(1, int((self.deadline - time.monotonic()) * 1000)),
+                    self.cancellable, self.replied, unit)
+            except self.GLib.Error as error:
+                self.unit_failed(unit, error)
+
+    def unit_failed(self, unit: str, error: Exception) -> None:
+        if not self.pending():
+            return
+        if self.Gio.dbus_error_get_remote_error(error) == "org.freedesktop.systemd1.NoSuchUnit":
+            self.completed_unit(unit, state=UnitState("", "not-found", "inactive", "dead"))
+        else:
+            self.completed_unit(unit, failure=self.bus_failure(error))
+
+    def completed_unit(self, unit: str, state=None, failure=None) -> None:
+        if not self.pending() or unit not in self.waiting:
+            return
+        self.waiting.remove(unit)
+        if failure is not None:
+            self.errors.append(failure)
+        else:
+            self.units[unit] = state
+        if not self.waiting:
+            self.finish(value=classify_cups(self.units, self.errors))
+
+    def replied(self, connection, result, unit) -> None:
+        if not self.pending() or unit not in self.waiting:
+            return
+        try:
+            self.completed_unit(unit, state=decode_unit_state(connection.call_finish(result)))
+        except self.GLib.Error as error:
+            self.unit_failed(unit, error)
+        except SnapshotFailure as error:
+            self.completed_unit(unit, failure=error)
+
+
+class RegionalRead(ServiceRead):
+    """One fixed read with an aggregate connection, reply, and decoding deadline."""
+
+    label = "Regional"
+
+    def __init__(self, kind: str, Gio=None, GLib=None) -> None:
+        if not isinstance(kind, str) or kind not in REGIONAL_READ_REQUESTS:
+            raise SnapshotFailure("malformed", "Unknown regional read")
+        self.kind = kind
+        super().__init__(Gio, GLib)
+
+    def connected(self, _source, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            self.connection.set_exit_on_close(False)
+            name, path, interface, method, signature, args, reply_type = REGIONAL_READ_REQUESTS[self.kind]
+            parameters = None if signature is None else self.GLib.Variant(signature, args)
+            if not self.pending():
+                return
+            self.connection.call(name, path, interface, method, parameters,
+                self.GLib.VariantType.new(reply_type), self.Gio.DBusCallFlags.NONE,
+                max(1, int((self.deadline - time.monotonic()) * 1000)),
+                self.cancellable, self.replied, None)
+        except self.GLib.Error as error:
+            self.finish(failure=self.bus_failure(error))
+
+    def replied(self, connection, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            value = decode_regional_reply(self.kind, connection.call_finish(result))
+            if self.pending():
+                self.finish(value=value)
+        except self.GLib.Error as error:
+            self.finish(failure=self.bus_failure(error))
+        except SnapshotFailure as error:
+            if self.pending():
+                self.finish(failure=error)
+
+
+@dataclass(frozen=True)
+class AccountRecord:
+    path: str
+    scope: str
+    display_name: str
+    login_name: str
+    local_account: bool
+
+    def fields(self) -> tuple[str, ...]:
+        return "account", self.path, self.scope, self.display_name, self.login_name
+
+
+@dataclass(frozen=True)
+class AccountInventory:
+    records: tuple[AccountRecord, ...]
+    candidates: tuple[str, ...]
+    current_path: str | None
+    status: str
+    errors: tuple[SnapshotFailure, ...]
+
+
+def account_object_path(value: object) -> str:
+    if value.get_type_string() != "o" or value.get_size() > MAX_TEXT_BYTES + 1:
+        raise SnapshotFailure("malformed", "Invalid AccountsService object path")
+    path = value.unpack()
+    if not isinstance(path, str) or DBUS_OBJECT_PATH.fullmatch(path) is None:
+        raise SnapshotFailure("malformed", "Invalid AccountsService object path")
+    return path
+
+
+class AccountRead(ServiceRead):
+    """Bounded account discovery; neither publishes a protocol nor changes users."""
+
+    label = "Account"
+    seconds = 3
+
+    def __init__(self, Gio=None, GLib=None) -> None:
+        super().__init__(Gio, GLib)
+        self.enumerated = False
+        self.selected: list[str] = []
+        self.seen: set[str] = set()
+        self.current_path = None
+        self.candidates: tuple[str, ...] = ()
+        self.errors: dict[str, SnapshotFailure] = {}
+        self.values: dict[str, dict[str, object]] = {}
+        self.records: dict[str, AccountRecord] = {}
+        self.invalid: set[str] = set()
+        self.queue: tuple[tuple[str, str], ...] = ()
+        self.offset = 0
+        self.outstanding = 0
+        self.draining = False
+
+    def note(self, error: SnapshotFailure) -> None:
+        # One diagnostic per closed error code, not one per failed property.
+        self.errors.setdefault(error.code, error)
+
+    def inventory(self) -> AccountInventory:
+        records = tuple(self.records[path] for path in self.candidates if path in self.records)
+        errors = dict(self.errors)
+        if (len(records) > ACCOUNT_LIMIT
+                or sum(encoded_record_size(row.fields()) for row in records) > ACCOUNT_LIST_BYTES):
+            records = ()
+            errors["malformed"] = SnapshotFailure("malformed", "Account rows exceeded the protocol budget")
+        status = "available"
+        if errors:
+            status = "partial" if self.enumerated or records or "timeout" in errors else next(iter(errors.values())).status
+        return AccountInventory(records, self.candidates, self.current_path, status, tuple(errors.values()))
+
+    def fail(self, failure: SnapshotFailure) -> None:
+        if not self.done:
+            self.note(failure)
+            self.finish(value=self.inventory())
+
+    def request(self, path, interface, method, parameters, reply_type, callback, data=None):
+        if self.pending():
+            self.connection.call(ACCOUNTS_NAME, path, interface, method, parameters,
+                self.GLib.VariantType.new(reply_type), self.Gio.DBusCallFlags.NONE,
+                max(1, int((self.deadline - time.monotonic()) * 1000)),
+                self.cancellable, callback, data)
+
+    def connected(self, _source, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            self.connection.set_exit_on_close(False)
+            self.request(ACCOUNTS_PATH, ACCOUNTS_NAME, "ListCachedUsers", None, "(ao)", self.cached)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+
+    def cached(self, connection, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(ao)":
+                raise SnapshotFailure("malformed", "Invalid cached account list")
+            self.enumerated = True
+            paths = reply.get_child_value(0)
+            # Never unpack or sort an unbounded reply. Retain at most 257
+            # unique identities for overflow evidence and the lowest 256 paths.
+            for index in range(paths.n_children()):
+                if not self.pending():
+                    return
+                try:
+                    path = account_object_path(paths.get_child_value(index))
+                except SnapshotFailure as error:
+                    if not self.pending():
+                        return
+                    self.note(error)
+                    continue
+                if not self.pending():
+                    return
+                if len(self.seen) <= ACCOUNT_LIMIT:
+                    self.seen.add(path)
+                if len(self.seen) > ACCOUNT_LIMIT:
+                    self.note(SnapshotFailure("malformed", "Too many AccountsService candidates"))
+                if path not in self.selected and (len(self.selected) < ACCOUNT_LIMIT or path < self.selected[-1]):
+                    bisect.insort(self.selected, path)
+                    if len(self.selected) > ACCOUNT_LIMIT:
+                        self.selected.pop()
+        except self.GLib.Error as error:
+            if not self.pending():
+                return
+            self.note(self.bus_failure(error))
+        except SnapshotFailure as error:
+            if not self.pending():
+                return
+            self.note(error)
+        if self.pending():
+            try:
+                self.request(ACCOUNTS_PATH, ACCOUNTS_NAME, "FindUserById",
+                    self.GLib.Variant("(x)", (os.getuid(),)), "(o)", self.current)
+            except self.GLib.Error as error:
+                self.note(self.bus_failure(error))
+                self.start_properties()
+
+    def current(self, connection, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(o)":
+                raise SnapshotFailure("malformed", "Invalid current account reply")
+            current = account_object_path(reply.get_child_value(0))
+            if not self.pending():
+                return
+            if len(self.seen) >= ACCOUNT_LIMIT and current not in self.seen:
+                self.note(SnapshotFailure("malformed", "Too many AccountsService candidates"))
+            if self.pending():
+                self.current_path = current
+        except self.GLib.Error as error:
+            if not self.pending():
+                return
+            self.note(self.bus_failure(error))
+        except SnapshotFailure as error:
+            if not self.pending():
+                return
+            self.note(error)
+        self.start_properties()
+
+    def start_properties(self) -> None:
+        if not self.pending():
+            return
+        others = [path for path in self.selected if path != self.current_path][:ACCOUNT_LIMIT - 1]
+        self.candidates = ((self.current_path,) if self.current_path is not None else ()) + tuple(others)
+        self.values = {path: {} for path in self.candidates}
+        self.queue = tuple((path, name) for path in self.candidates for name in ACCOUNT_PROPERTIES)
+        self.pump()
+
+    def pump(self) -> None:
+        if self.draining or not self.pending():
+            return
+        self.draining = True
+        try:
+            while self.pending() and self.outstanding < ACCOUNT_PROPERTY_CONCURRENCY and self.offset < len(self.queue):
+                path, name = self.queue[self.offset]
+                self.offset += 1
+                if path in self.invalid:
+                    continue
+                self.outstanding += 1
+                try:
+                    self.request(path, PROPERTIES_INTERFACE, "Get",
+                        self.GLib.Variant("(ss)", (ACCOUNT_INTERFACE, name)), "(v)", self.property_reply, (path, name))
+                except self.GLib.Error as error:
+                    self.outstanding -= 1
+                    self.invalid.add(path)
+                    self.note(self.bus_failure(error))
+            if not self.outstanding and self.offset == len(self.queue):
+                value = self.inventory()
+                if self.pending():
+                    self.finish(value=value)
+        finally:
+            self.draining = False
+
+    def property_reply(self, connection, result, data) -> None:
+        if not self.pending():
+            return
+        path, name = data
+        self.outstanding -= 1
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(v)":
+                raise SnapshotFailure("malformed", "Invalid account property reply")
+            value = reply.get_child_value(0).get_variant()
+            signature = ACCOUNT_PROPERTIES[name]
+            if (value.get_type_string() != signature
+                    or (signature == "s" and value.get_size() > MAX_TEXT_BYTES + 1)):
+                raise SnapshotFailure("malformed", "Invalid account property type or size")
+            decoded = value.unpack()
+            if name == "UserName" and not decoded:
+                raise SnapshotFailure("malformed", "Account has no login name")
+            if not self.pending():
+                return
+            if path not in self.invalid:
+                self.values[path][name] = decoded
+                fields = self.values[path]
+                if len(fields) == len(ACCOUNT_PROPERTIES):
+                    scope = "current" if path == self.current_path else "other"
+                    if scope == "current" or not fields["SystemAccount"]:
+                        record = AccountRecord(path, scope,
+                            clean_text(fields["RealName"] or fields["UserName"]),
+                            clean_text(fields["UserName"]), fields["LocalAccount"])
+                        if not self.pending():
+                            return
+                        self.records[path] = record
+        except self.GLib.Error as error:
+            if not self.pending():
+                return
+            self.invalid.add(path)
+            if self.Gio.dbus_error_get_remote_error(error) == "org.freedesktop.DBus.Error.UnknownProperty":
+                self.note(SnapshotFailure("malformed", "Missing account property"))
+            else:
+                self.note(self.bus_failure(error))
+        except SnapshotFailure as error:
+            if not self.pending():
+                return
+            self.invalid.add(path)
+            self.note(error)
+        self.pump()
+
+
+def locale_process_status(process: subprocess.Popen):
+    # Leave the child waitable so its PID/process-group ID cannot be reused
+    # between observing exit and signaling any remaining group members.
+    return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+
+
+def close_locale_process(process: subprocess.Popen) -> None:
+    """Stop only our still-owned group, reap its leader, and close both pipes."""
+    try:
+        status = locale_process_status(process)
+        if status is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGTERM)
+            deadline = time.monotonic() + 1
+            # Do not reap an early-exiting supervisor: a descendant may still
+            # resist TERM, and the retained PID protects the final group signal.
+            while time.monotonic() < deadline:
+                time.sleep(min(0.02, max(0, deadline - time.monotonic())))
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        # A separately bounded reap tolerates scheduler delay after KILL. A
+        # kernel-stuck process is a cleanup failure, never a successful catalog.
+        process.wait(timeout=1)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SnapshotFailure("timeout", "Locale process cleanup could not be confirmed",
+                              "unavailable") from error
+    finally:
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+
+
+def read_locale_choices() -> tuple[str, ...]:
+    """Collect one fresh system locale catalog, never a caller-selected command."""
+    if (threading.current_thread() is not threading.main_thread()
+            or signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL):
+        raise SnapshotFailure("internal", "Locale process ownership is unavailable", "unavailable")
+    process = None
+    handlers = {}
+    interrupted = 0
+
+    def terminate(number, _frame):
+        nonlocal interrupted
+        interrupted = interrupted or number
+
+    def check_deadline():
+        if interrupted:
+            raise SystemExit(128 + interrupted)
+        if time.monotonic() >= deadline:
+            raise SnapshotFailure("timeout", "Locale enumeration timed out", "unavailable")
+
+    try:
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            handlers[number] = signal.signal(number, terminate)
+        deadline = time.monotonic() + 3
+        check_deadline()
+        try:
+            # The independent timeout also bounds the fixed command if this
+            # collector is killed before its finally block can execute. Avoid
+            # Python preexec_fn callbacks in a process that can also use GIO.
+            process = subprocess.Popen(["/usr/bin/timeout", "--signal=TERM",
+                "--kill-after=1", "3", "/usr/bin/locale", "-a"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True, env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+        except FileNotFoundError as error:
+            raise SnapshotFailure("missing-provider", "Locale enumeration command is unavailable",
+                                  "unavailable") from error
+        output = bytearray()
+        received = 0
+        with selectors.DefaultSelector() as selector:
+            for stream in (process.stdout, process.stderr):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ)
+            while True:
+                check_deadline()
+                status = locale_process_status(process)
+                if status is not None and not selector.get_map():
+                    break
+                for key, _events in selector.select(min(0.05, max(0, deadline - time.monotonic()))):
+                    check_deadline()
+                    try:
+                        chunk = os.read(key.fd, min(65536, REGIONAL_LOCALE_OUTPUT_BYTES - received + 1))
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    received += len(chunk)
+                    if received > REGIONAL_LOCALE_OUTPUT_BYTES:
+                        raise SnapshotFailure("malformed", "Oversized locale enumeration output")
+                    if key.fileobj is process.stdout:
+                        output.extend(chunk)
+        exit_code = status.si_status if status.si_code == os.CLD_EXITED else -status.si_status
+        if exit_code in (124, 137, -signal.SIGKILL):
+            raise SnapshotFailure("timeout", "Locale enumeration timed out", "unavailable")
+        if exit_code == 127:
+            raise SnapshotFailure("missing-provider", "Locale enumeration command is unavailable", "unavailable")
+        if exit_code != 0:
+            raise SnapshotFailure("internal", "Locale enumeration failed", "unavailable")
+        try:
+            choices = validate_locale_choices(bytes(output))
+        except SnapshotFailure:
+            check_deadline()
+            raise
+        check_deadline()
+        return choices
+    except OSError as error:
+        raise SnapshotFailure("internal", "Locale enumeration failed", "unavailable") from error
+    finally:
+        try:
+            if process is not None:
+                close_locale_process(process)
+        finally:
+            for number, handler in handlers.items():
+                signal.signal(number, handler)
+            # Termination must remain terminal even if group cleanup failed;
+            # otherwise callers could catch a read failure and keep running.
+            if interrupted:
+                raise SystemExit(128 + interrupted)
 
 
 class JournalFrameError(ValueError):
@@ -5150,7 +6267,8 @@ class PackageKitBackend:
             if source:
                 self.GLib.source_remove(source)
 
-    def _transaction_failure(self, code: int, _detail: str) -> SnapshotFailure:
+    @staticmethod
+    def _transaction_failure(code: int, _detail: str) -> SnapshotFailure:
         if code == 2:
             return SnapshotFailure("network", "PackageKit could not reach the network")
         if code in {18, 19, 28, 33, 37, 43, 64}:
