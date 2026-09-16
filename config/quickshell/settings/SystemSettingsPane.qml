@@ -287,6 +287,13 @@ Flickable {
             onRevealRequested: target => root.reveal(target)
         }
 
+        SectionLabel { label: "Regional & administration" }
+
+        SystemRegionalControls {
+            model: root.systemManagementModel
+            onRevealRequested: target => root.reveal(target)
+        }
+
         GridLayout {
             Layout.fillWidth: true
             columns: root.width >= 720 ? 3 : 1

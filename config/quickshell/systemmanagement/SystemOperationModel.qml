@@ -172,6 +172,66 @@ Scope {
         return true;
     }
 
+    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.1): regional and
+    // delegated actions land in the same journal watch-operation/
+    // ack-operation already serve, so they reuse this model's existing
+    // recovery/watch/acknowledge machinery unchanged -- only a way to start
+    // one was missing. startUpdate's own signature does not fit either
+    // family cleanly (three regional actions always take a 64-hex generation
+    // *and* an argument; four delegated actions take neither), so these are
+    // separate entry points rather than an overload, sharing dispatch()'s
+    // "claim ownership, build the command, launch watchProcess" tail.
+
+    // RegionalMutation re-validates the generation against a fresh read
+    // server-side before dispatch -- this precondition check is a QML-side
+    // fast path, not the authority. Argument shape matches
+    // validate_regional_argument() in scripts/dwm-system-management: a
+    // timezone name, "enabled"/"disabled", or "LANG=...".
+    function startRegional(action, argument, generation) {
+        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
+                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
+                || ["timezone-set", "ntp-set", "locale-set"].indexOf(action) < 0
+                || typeof argument !== "string" || !/^[0-9a-f]{64}$/.test(generation))
+            return false;
+        return root.dispatch(action, [action, argument, generation]);
+    }
+
+    // Delegated actions take no argument and no generation -- the helper
+    // resolves and launches a fixed tool, or reports it unsupported/
+    // unavailable. No package-change-style preview applies.
+    function startDelegated(action) {
+        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
+                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
+                || ["accounts-open", "password-open", "printers-open", "sources-open"].indexOf(action) < 0)
+            return false;
+        return root.dispatch(action, [action]);
+    }
+
+    function dispatch(action, args) {
+        const command = Commands.systemManagementCommand(args[0], args.slice(1));
+        root.snapshotKnown = false;
+        root.parser = Protocol.create("", action);
+        root.progress = null;
+        root.log = [];
+        root.streamOwned = true;
+        root.streamReplay = false;
+        root.streamFailed = false;
+        root.terminalPending = false;
+        root.result = null;
+        root.audit = null;
+        root.operationError = null;
+        root.cancelRequestedId = "";
+        root.cancelUncertainId = "";
+        root.cancelConflictId = "";
+        root.cancelDetail = "";
+        root.state = "observing";
+        root.detail = "Starting " + action;
+        watchProcess.command = command;
+        root.discoveryInvalidated();
+        Qt.callLater(function() { if (root.streamOwned) watchProcess.running = true; });
+        return true;
+    }
+
     function consume(data) {
         if (!root.streamOwned) return;
         if (!Protocol.consume(root.parser, data)) {
