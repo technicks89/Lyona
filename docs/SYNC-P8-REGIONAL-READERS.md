@@ -13,7 +13,7 @@ shape (not used yet — this phase is one-shot reads only) and on the
 [decision recorded in Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md) about who
 owns `dwm-system-management`.
 
-Adds the four read-only sources protocol minor `1` needs: system timezone and
+Adds the five read-only sources protocol minor `1` needs: system timezone and
 NTP state, system locale, the local `AccountsService` account list, CUPS's
 running state, and the PackageKit repository list. **No mutation, no D-Bus
 write of any kind.** Every reader here is a bounded, single-use, read-only
@@ -35,8 +35,9 @@ write of any kind.** Every reader here is a bounded, single-use, read-only
 > it was not a stub; already fully written, evidently from earlier work),
 > `SystemManagementModel.qml`, `SystemSettingsPane.qml`, and `shell.qml`.
 > None of upstream's six Phase 8 PRs (`#242`–`#246`, `#248`) touch the
-> snapshot protocol, any QML file, or `shell.qml` at all — they add the five
-> readers as standalone classes with **no caller**. The record-emitting
+> snapshot protocol, any QML file, or `shell.qml` at all — they add four
+> reader classes (five logical reads — `RegionalRead` covers two) as
+> standalone classes with **no caller**. The record-emitting
 > caller (`NativeSnapshotSources`, `build_native_snapshot()`) that would
 > wire these into `snapshot`'s output, add the `timezone-set`/`ntp-set`/
 > `locale-set`/`*-open` mutation and delegate actions, and call
@@ -50,18 +51,19 @@ write of any kind.** Every reader here is a bounded, single-use, read-only
 
 ## 1. What each reader actually does (verified at `dd55e58`)
 
-All five are `ServiceRead` subclasses (`scripts/dwm-system-management:1055`
-onward) — a bounded async `Gio` call with a deadline timer, never a
-blocking/synchronous D-Bus round trip. None of them touch PackageKit.
+Four `ServiceRead` subclasses (`scripts/dwm-system-management:1055` onward)
+back these five reads — `RegionalRead` is instantiated fresh per `kind`, so
+it alone covers two of them. Each read is a bounded async `Gio` call with a
+deadline timer, never a blocking/synchronous D-Bus round trip. None of them
+touch PackageKit except `RepositoryRead`.
 
 | Reader | Interface | What it reads |
 | --- | --- | --- |
-| `RegionalRead("time-state")` | `org.freedesktop.timedate1` (`Get`/property reads) | `Timezone`, `LocalRTC` |
-| `NtpRead` | `org.freedesktop.timedate1` (`Properties.Get`, one call per property) | `CanNTP`, `NTPSynchronized` — the two properties that do **not** appear in `PropertiesChanged` and must be polled, not watched |
+| `RegionalRead("time-state")` | `org.freedesktop.timedate1` (`Properties.GetAll`, one call) | `Timezone`, `CanNTP`, `NTP` (enabled), `NTPSynchronized` — all four in the same reply, since `GetAll` already returns every property in one round trip; no separate poll |
 | `RegionalRead("locale-state")` | `org.freedesktop.locale1` | The full `Locale` string array, parsed into `LANG`/`LC_*` assignments |
 | `AccountRead` | `org.freedesktop.Accounts` | `ListCachedUsers` + `FindUserById(getuid())`, then per-account `RealName`/`UserName`/`SystemAccount`/`LocalAccount` properties, concurrency-bounded (`ACCOUNT_PROPERTY_CONCURRENCY`) |
 | `CupsRead` | `org.freedesktop.systemd1` `ListUnitsByNames` | `cups.service` + `cups.socket` unit states (`CUPS_UNITS`) — **not** a CUPS IPP connection, just "is the service up" |
-| `RepositoryRead` | PackageKit `GetRepoList` | The only one of the five that *does* touch PackageKit — repository id/enabled/description |
+| `RepositoryRead` | PackageKit `GetRepoList` | The only one of the four that *does* touch PackageKit — repository id/enabled/description |
 
 Bind them together exactly as upstream's `NativeSnapshotSources` does
 (`:5384`) — a class with **no constructor side effects**; each method call is

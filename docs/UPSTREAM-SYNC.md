@@ -433,8 +433,11 @@ already-ported Phase 4 code (`UpdateEventMonitor`) as new. Diffing Lyona's
 current file directly against upstream's actual Phase-8-end state
 (`9d05092a`, the last of the six cited PRs) instead of a stale prior-phase
 boundary avoided that; the file-history investigation this took is what
-surfaced [Phase 7's own missed Python half](#phase-7s-python-side-was-missed-entirely-found-while-starting-phase-8),
-documented above.
+surfaced Sync Phase 7's own missed Python half (`#241`'s `build_snapshot()`/
+`build_managed_snapshot()` mutation-availability wiring, never ported
+alongside that phase's QML work) — fixed on the separate
+`sync-p7-mutation-availability-fix` branch, not this one; see `TASKS.md`'s
+"Sync Phase 7 follow-up" entry there for the full record.
 
 Once that was sorted out, tracing what upstream's six Phase 8 PRs
 (`#242`–`#246`, `#248`) actually touch — none of them modify
@@ -453,10 +456,12 @@ mutation and delegate actions, and the `read_fedora_identity()`-gated
 the doc's "Files" table and §§5–6, with the QML `shell.qml` probe snippet
 left in place for Phase 9 to use directly rather than deleted.
 
-Landed: the five `ServiceRead` subclasses (`RegionalRead`, `AccountRead`,
-`CupsRead`, `RepositoryRead`) and their validation/decode helpers, ported
-verbatim (all five are distro-neutral D-Bus clients against standard
-interfaces — nothing Fedora- or Arch-specific to adapt), plus all six
+Landed: the four `ServiceRead` subclasses (`RegionalRead`, `AccountRead`,
+`CupsRead`, `RepositoryRead` — `RegionalRead` is instantiated fresh per kind,
+covering both the timezone/NTP and locale reads, for five reads total) and
+their validation/decode helpers, ported verbatim (all four are
+distro-neutral D-Bus clients against standard interfaces — nothing Fedora-
+or Arch-specific to adapt), plus all six
 upstream test classes (89 new tests, 314 → 403, including five private-bus/
 private-process qualification harnesses under `tests/fixtures/`) — see
 `TASKS.md`'s Sync Phase 8 entry.

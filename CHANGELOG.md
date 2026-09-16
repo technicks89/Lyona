@@ -53,7 +53,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   concurrency-bounded, overflow-safe), CUPS's running state (`CupsRead`,
   a systemd unit query, not a print-queue connection), and the PackageKit
   repository list (`RepositoryRead`, reusing the update snapshot's
-  transaction handshake). Each is its own single-use `ServiceRead` subclass
+  transaction handshake). Four `ServiceRead` subclasses back these five
+  reads (`RegionalRead` is instantiated fresh per kind, for both the
+  timezone/NTP and locale reads); each read is its own single-use instance
   with an independent deadline, so one source failing (e.g. `timedate1`
   unreachable) never blanks another. No mutation, no D-Bus write, and
   no caller yet -- these are backend building blocks with no snapshot

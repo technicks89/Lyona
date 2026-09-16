@@ -831,7 +831,9 @@ anything from it).
   `UnitState`/`decode_unit_state`/`CupsState`/`classify_cups`,
   `AccountRecord`/`AccountInventory`/`account_object_path`,
   `locale_process_status`/`close_locale_process`/`read_locale_choices`) —
-  **Met**, ported verbatim: all five readers are distro-neutral D-Bus
+  **Met**, ported verbatim: all four `ServiceRead` subclasses (`RegionalRead`
+  is instantiated fresh per kind, covering both the timezone/NTP and locale
+  reads, for five reads total) are distro-neutral D-Bus
   clients against standard interfaces (`timedate1`, `locale1`, `Accounts`,
   `systemd1`, PackageKit's own D-Bus surface) or a fixed `/usr/bin/locale -a`
   subprocess — nothing Fedora- or Arch-specific to adapt. `PackageKitBackend.
