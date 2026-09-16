@@ -64,6 +64,10 @@ Scope {
     property var actions: []
     property var updates: []
     property var packageChanges: []
+    property var nativeProviders: ({})
+    property var nativeStates: ({})
+    property var accounts: []
+    property var repositories: []
     property var errors: []
     property var activeOperation: null
     property var terminalHandoff: null
@@ -85,6 +89,48 @@ Scope {
     readonly property var validPlanAction: ["update", "install", "remove", "obsolete", "reinstall", "downgrade"]
     readonly property var validErrorCode: ["malformed", "timeout", "missing-provider", "permission-denied",
         "unsupported", "network", "repository", "conflict", "signature", "internal", "package", "canceled"]
+
+    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md): protocol minor 1's
+    // regional/accounts/printers/sources records. Four fixed owners, each
+    // failing independently -- a malformed regional record must not blank
+    // the accounts list, matching the helper's own per-owner build_native_
+    // snapshot() isolation.
+    readonly property var validNativeOwners: ["regional", "accounts", "printers", "sources"]
+    readonly property var validNativeStateIds: ["timezone", "ntp-enabled", "ntp-synchronized",
+        "locale", "accounts-count", "cups-service"]
+    readonly property var validNativeActionIds: ["timezone-set", "ntp-set", "locale-set",
+        "accounts-open", "password-open", "printers-open", "sources-open"]
+
+    function nativeStateOwner(identifier) {
+        if (identifier === "timezone" || identifier === "ntp-enabled"
+                || identifier === "ntp-synchronized" || identifier === "locale") return "regional";
+        if (identifier === "accounts-count") return "accounts";
+        if (identifier === "cups-service") return "printers";
+        return "";
+    }
+
+    function nativeActionOwner(actionId) {
+        if (root.regionalActionKind(actionId).length > 0) return "regional";
+        if (actionId === "accounts-open" || actionId === "password-open") return "accounts";
+        if (actionId === "printers-open") return "printers";
+        if (actionId === "sources-open") return "sources";
+        return "";
+    }
+
+    function validNativeValue(identifier, status, value) {
+        if (identifier === "accounts-count")
+            return status === "available" ? /^(0|[1-9][0-9]*)$/.test(value) && Number(value) <= 256
+                : value === "unknown";
+        if (identifier === "cups-service")
+            return status === "available" ? (value === "running" || value === "socket-ready" || value === "stopped")
+                : value === "unknown";
+        if (identifier === "ntp-enabled" || identifier === "ntp-synchronized")
+            return status === "available" ? (value === "yes" || value === "no") : value === "unknown";
+        // An explicit LANG= is readable unset configuration, not a malformed
+        // regional provider. A replacement still requires its own fresh preview.
+        if (identifier === "locale") return status === "available" || value === "unknown";
+        return value.length > 0 && (status === "available" || value === "unknown");
+    }
 
     function validOperationId(value) {
         return /^op-[0-9a-f]{32}$/.test(value);
@@ -109,13 +155,28 @@ Scope {
         return "";
     }
 
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md) adds regional/delegated
-    // action kinds here; kept as its own function (mirroring upstream) so an
-    // operation record can be validated without assuming it is update-related.
+    function regionalActionKind(actionId) {
+        if (actionId === "timezone-set") return "timezone";
+        if (actionId === "ntp-set") return "ntp";
+        if (actionId === "locale-set") return "locale";
+        return "";
+    }
+
+    function delegatedActionKind(actionId) {
+        if (actionId === "accounts-open" || actionId === "password-open"
+                || actionId === "printers-open" || actionId === "sources-open") return "delegate";
+        return "";
+    }
+
+    // Kept as separate functions (mirroring the Python side's
+    // JOURNAL_OPERATION_ACTION_KINDS entries) so an operation record can be
+    // validated without assuming which family it belongs to.
     function operationActionKind(actionId) {
         const updateKind = root.updateActionKind(actionId);
         if (updateKind.length > 0) return updateKind;
-        return "";
+        const regionalKind = root.regionalActionKind(actionId);
+        if (regionalKind.length > 0) return regionalKind;
+        return root.delegatedActionKind(actionId);
     }
 
     function updateActionReason(actionId) {
@@ -214,6 +275,10 @@ Scope {
         root.actions = [];
         root.updates = [];
         root.packageChanges = [];
+        root.nativeProviders = {};
+        root.nativeStates = {};
+        root.accounts = [];
+        root.repositories = [];
         root.errors = [];
         root.activeOperation = null;
         root.terminalHandoff = null;
@@ -323,10 +388,12 @@ Scope {
         }
 
         const header = lines[0].split("\t");
-        if (header.length !== 3 || header[0] !== "system-management-protocol" || header[1] !== "1") {
+        if (header.length !== 3 || header[0] !== "system-management-protocol" || header[1] !== "1"
+                || (header[2] !== "0" && header[2] !== "1")) {
             root.resetToFallback("System management provider returned an unsupported protocol");
             return false;
         }
+        const minor = Number(header[2]);
         if (lines[lines.length - 1] !== "complete\tsnapshot") {
             root.resetToFallback("System management provider returned a truncated snapshot");
             return false;
@@ -342,6 +409,18 @@ Scope {
         const errors = [];
         const seenUpdateIds = {};
         const seenChangeIds = {};
+        // Sync Phase 9: minor 1's four native owners each fail independently
+        // -- a malformed/incomplete owner is marked invalid and falls back,
+        // never rejecting the whole snapshot (the update domain above keeps
+        // its existing all-or-nothing strictness, untouched).
+        const nativeProviders = {};
+        const nativeStates = {};
+        const nativeActions = {};
+        const nativeInvalid = {};
+        const accountsList = [];
+        const repositoriesList = [];
+        const seenAccountIds = {};
+        const seenRepositoryIds = {};
 
         for (let index = 1; index < lines.length - 1; index++) {
             const fields = lines[index].split("\t");
@@ -354,6 +433,18 @@ Scope {
                 }
                 generation = fields[1];
             } else if (kind === "provider") {
+                if (minor === 1 && fields.length >= 2 && root.validNativeOwners.indexOf(fields[1]) >= 0) {
+                    if (nativeProviders[fields[1]] !== undefined) {
+                        root.resetToFallback("System management provider repeated a provider record");
+                        return false;
+                    }
+                    if (fields.length !== 6 || root.validStatus.indexOf(fields[2]) < 0 || fields[3] !== "delegated") {
+                        nativeInvalid[fields[1]] = true;
+                        nativeProviders[fields[1]] = null;
+                    } else nativeProviders[fields[1]] = { "status": fields[2], "class": fields[3],
+                        "owner": fields[4], "detail": fields[5] };
+                    continue;
+                }
                 if (fields.length !== 6 || root.validStatus.indexOf(fields[2]) < 0
                         || fields[3].length === 0 || fields[4].length === 0) {
                     root.resetToFallback("System management provider returned a malformed provider record");
@@ -363,6 +454,19 @@ Scope {
                 if (fields[1] === "updates") updateProvider = record;
                 else if (fields[1] === "recovery") recoveryProvider = record;
             } else if (kind === "state") {
+                const nativeOwner = fields.length >= 2 ? root.nativeStateOwner(fields[1]) : "";
+                if (minor === 1 && nativeOwner.length > 0) {
+                    if (nativeStates[fields[1]] !== undefined) {
+                        root.resetToFallback("System management provider repeated a state record");
+                        return false;
+                    }
+                    if (fields.length !== 5 || root.validStatus.indexOf(fields[2]) < 0
+                            || !root.validNativeValue(fields[1], fields[2], fields[3])) {
+                        nativeInvalid[nativeOwner] = true;
+                        nativeStates[fields[1]] = null;
+                    } else nativeStates[fields[1]] = { "status": fields[2], "value": fields[3], "detail": fields[4] };
+                    continue;
+                }
                 if (fields.length !== 5 || root.validStatus.indexOf(fields[2]) < 0) {
                     root.resetToFallback("System management provider returned a malformed state record");
                     return false;
@@ -380,12 +484,61 @@ Scope {
                 else if (fields[1] === "update-last-refresh") updateLastRefresh = record;
                 else if (fields[1] === "update-restart") updateRestart = record;
             } else if (kind === "action") {
+                const nativeOwner = fields.length >= 2 ? root.nativeActionOwner(fields[1]) : "";
+                if (minor === 1 && nativeOwner.length > 0) {
+                    if (nativeActions[fields[1]] !== undefined) {
+                        root.resetToFallback("System management provider repeated an action record");
+                        return false;
+                    }
+                    if (fields.length !== 7 || root.validActionStatus.indexOf(fields[2]) < 0
+                            || fields[3] !== "delegated" || fields[4] !== nativeOwner) {
+                        nativeInvalid[nativeOwner] = true;
+                        nativeActions[fields[1]] = null;
+                    } else nativeActions[fields[1]] = { "id": fields[1], "status": fields[2], "class": fields[3],
+                        "owner": fields[4], "label": fields[5], "detail": fields[6] };
+                    continue;
+                }
                 if (fields.length !== 7 || root.validActionStatus.indexOf(fields[2]) < 0) {
                     root.resetToFallback("System management provider returned a malformed action record");
                     return false;
                 }
                 actions.push({ "id": fields[1], "status": fields[2], "class": fields[3],
                     "owner": fields[4], "label": fields[5], "detail": fields[6] });
+            } else if (kind === "account" || kind === "repository") {
+                if (minor !== 1) {
+                    root.resetToFallback("System management provider returned an inactive list owner");
+                    return false;
+                }
+                const isAccount = kind === "account";
+                const owner = isAccount ? "accounts" : "sources";
+                const seen = isAccount ? seenAccountIds : seenRepositoryIds;
+                if (fields.length < 2 || fields[1].length === 0) {
+                    root.resetToFallback("System management provider returned a list without an identity");
+                    return false;
+                }
+                if (seen[fields[1]] !== undefined) {
+                    root.resetToFallback("System management provider repeated a list identity");
+                    return false;
+                }
+                seen[fields[1]] = true;
+                const list = isAccount ? accountsList : repositoriesList;
+                if (list.length >= (isAccount ? 256 : root.maxListRecords)) {
+                    nativeInvalid[owner] = true;
+                    continue;
+                }
+                if (isAccount) {
+                    if (fields.length !== 5 || (fields[2] !== "current" && fields[2] !== "other") || fields[4].length === 0) {
+                        nativeInvalid[owner] = true;
+                        continue;
+                    }
+                    accountsList.push({ "id": fields[1], "scope": fields[2], "displayName": fields[3], "loginName": fields[4] });
+                } else {
+                    if (fields.length !== 4 || (fields[2] !== "enabled" && fields[2] !== "disabled")) {
+                        nativeInvalid[owner] = true;
+                        continue;
+                    }
+                    repositoriesList.push({ "id": fields[1], "state": fields[2], "description": fields[3] });
+                }
             } else if (kind === "update") {
                 if (fields.length !== 7 || root.validSeverity.indexOf(fields[2]) < 0
                         || root.validInstallability.indexOf(fields[3]) < 0
@@ -465,6 +618,51 @@ Scope {
             return false;
         }
 
+        let publishedProviders = {};
+        let publishedStates = {};
+        if (minor === 1) {
+            for (let i = 0; i < root.validNativeOwners.length; i++) {
+                if (nativeProviders[root.validNativeOwners[i]] === undefined) nativeInvalid[root.validNativeOwners[i]] = true;
+            }
+            for (let i = 0; i < root.validNativeStateIds.length; i++) {
+                const identifier = root.validNativeStateIds[i];
+                if (nativeStates[identifier] === undefined) nativeInvalid[root.nativeStateOwner(identifier)] = true;
+            }
+            for (let i = 0; i < root.validNativeActionIds.length; i++) {
+                if (nativeActions[root.validNativeActionIds[i]] === undefined)
+                    nativeInvalid[root.nativeActionOwner(root.validNativeActionIds[i])] = true;
+            }
+            if (!nativeInvalid.accounts) {
+                const count = nativeStates["accounts-count"];
+                const currentCount = accountsList.filter(function(item) { return item.scope === "current"; }).length;
+                if ((count.status === "available" && Number(count.value) !== accountsList.length)
+                        || (count.status !== "available" && count.status !== "partial" && accountsList.length > 0)
+                        || currentCount > 1) nativeInvalid.accounts = true;
+            }
+            if (!nativeInvalid.sources && repositoriesList.length > 0
+                    && nativeProviders.sources.status !== "available" && nativeProviders.sources.status !== "partial")
+                nativeInvalid.sources = true;
+            for (let i = 0; i < root.validNativeOwners.length; i++) {
+                const owner = root.validNativeOwners[i];
+                if (nativeInvalid[owner]) {
+                    const detail = "System management provider returned malformed " + owner + " state";
+                    publishedProviders[owner] = { "status": "partial", "class": "delegated", "owner": "", "detail": detail };
+                    errors.push({ "capability": owner, "code": "malformed", "detail": detail });
+                } else publishedProviders[owner] = nativeProviders[owner];
+            }
+            for (let i = 0; i < root.validNativeStateIds.length; i++) {
+                const identifier = root.validNativeStateIds[i];
+                const owner = root.nativeStateOwner(identifier);
+                publishedStates[identifier] = nativeInvalid[owner]
+                    ? { "status": "partial", "value": "unknown", "detail": publishedProviders[owner].detail }
+                    : nativeStates[identifier];
+            }
+            for (let i = 0; i < root.validNativeActionIds.length; i++) {
+                const actionId = root.validNativeActionIds[i];
+                if (!nativeInvalid[root.nativeActionOwner(actionId)]) actions.push(nativeActions[actionId]);
+            }
+        }
+
         root.generation = generation;
         root.updateProvider = updateProvider;
         root.recoveryProvider = recoveryProvider;
@@ -474,6 +672,10 @@ Scope {
         root.actions = actions;
         root.updates = updates;
         root.packageChanges = packageChanges;
+        root.nativeProviders = publishedProviders;
+        root.nativeStates = publishedStates;
+        root.accounts = minor === 1 && !nativeInvalid.accounts ? accountsList : [];
+        root.repositories = minor === 1 && !nativeInvalid.sources ? repositoriesList : [];
         root.errors = errors;
         // A snapshot race can still name an identity operationModel already
         // acknowledged (its own control process exits before this read's
@@ -482,6 +684,10 @@ Scope {
             ? null : activeOperation;
         root.terminalHandoff = terminalHandoff !== null && operationModel.wasAcknowledged(terminalHandoff.id)
             ? null : terminalHandoff;
+        // A malformed native domain degrades only its own root.nativeProviders
+        // entry (status "partial") -- root.snapshotState stays keyed to the
+        // update domain's own success, matching every existing consumer
+        // (e.g. SystemSettingsPane.qml's "No pending Arch updates" gate).
         root.snapshotState = "loaded";
         root.message = updates.length + " update" + (updates.length === 1 ? "" : "s") + " found";
         return true;

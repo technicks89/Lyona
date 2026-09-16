@@ -29,6 +29,27 @@ and recovery.
 | `config/quickshell/systemmanagement/SystemManagementModel.qml` | Confirmation state, action-reason logic |
 | `config/quickshell/settings/SystemSettingsPane.qml` | Mount the controls; active/result cards; `reveal()` |
 | `config/quickshell/shell.qml` | Operation state/result probes |
+| `scripts/dwm-system-management` | `build_snapshot()`/`build_managed_snapshot()` thread `mutation_blocker`/`mutation_failure` so `updates-refresh`/`updates-install-all` can actually report `available` |
+
+> **Gap found during Sync Phase 8 and fixed on `sync-p7-mutation-fix-v2`.**
+> This file's own commit citation (`#241`, `65138a89` is the *QML* SHA for
+> this phase; `#241`'s *Python* changes to `scripts/dwm-system-management`
+> were never diffed or ported) was missed entirely during the original Sync
+> Phase 7 work — only the QML side was fetched and ported. The practical
+> effect: `build_snapshot()` unconditionally emitted `updates-refresh`/
+> `updates-install-all` as `unavailable`, so every confirm/cancel control this
+> phase adds was permanently disabled against a real backend from the moment
+> Sync Phase 7 merged (`44b0a39`, PR #30) until this fix. Ported PR #241's
+> `mutation_blocker`/`mutation_failure` threading verbatim, preserving Lyona's
+> own `_restart_heuristic_hint()` (Arch-only, not in upstream) and updating
+> the stale pre-Phase-6 provider-detail text that still referenced
+> `lyona-update`. Also ported PR #241's test rewrite: `test_cli_initializes_
+> only_its_fixed_journal_and_keeps_actions_disabled` renamed to `..._and_
+> offers_safe_refresh` plus six new `RecoverySnapshotTests` cases covering
+> every origin-blocking path (unsafe backend, failed/unsupported plan, failed
+> discovery, incomplete recovery, malformed inventory, existing owner/handoff)
+> — 314 → 321 tests, all passing. See `TASKS.md`'s "Sync Phase 7 follow-up"
+> entry for the full verification record.
 
 ---
 

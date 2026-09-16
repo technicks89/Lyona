@@ -95,6 +95,29 @@ Port `SystemRegionalPreflightProtocol.js`/`SystemRegionalPreflightModel.qml`
 as the QML-side parser and lifecycle for this pair of commands; they are pure
 request/response, no watch involved.
 
+Both ported unchanged from upstream's `0eae066d` (PRs #263/#264) — neither
+file is distro- or Fedora-specific, and `Commands.systemManagementCommand()`
+already dispatches arbitrary actions generically, so no adaptation was
+needed. The pure parser is covered directly, translated into this repo's
+`QtTest`/`TestCase` convention rather than upstream's bespoke `ShellRoot`
+harness: `tests/qml/tst_system_regional_preflight_protocol.qml` (picked up
+automatically by `qmltestrunner -input tests/qml`, run via the existing
+`check-quickshell-system-discovery-cycle` target — no new Makefile wiring
+needed). Verified with `qmltestrunner` directly (39/39 passed, including the
+pre-existing `SystemDiscoveryCycle` suite) since `scripts/quickshell-qmllint`
+alone cannot execute JS logic.
+
+> **Known automated-coverage gap**, matching [Phase 7's own precedent for
+> `SystemOperationParser.qml`](SYNC-P7-OPERATION-SURFACE.md#5-shellqml-probes):
+> upstream's `tests/qml/SystemRegionalPreflightOwner.qml` and
+> `tests/qml/SystemNativeDiscovery.qml` (PR #264) exercise
+> `SystemRegionalPreflightModel`/`SystemProviderDiscovery` as live Quickshell
+> processes against a real private-bus provider stub
+> (`tests/fixtures/system-regional-preflight-provider.py`) — comparable in
+> complexity to `tests/test-system-management.py`'s own fixtures, and out of
+> scope for this pass. Deferred, not forgotten; the parser itself (the part
+> most likely to have a subtle byte-level bug) has full coverage above.
+
 ## 2. `RegionalMutation`: what "never fabricate a terminal state" means in code
 
 `RegionalMutation` (`:1153`) is the client for `timezone-set`/`ntp-set`/
