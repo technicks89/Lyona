@@ -1090,11 +1090,24 @@ against the full test suite before moving on.
 - [x] **Not in scope, and not in any of this phase's own cited PRs**
   (confirmed by diffing each one): the Settings UI wiring
   (`SystemSettingsPane.qml`'s timezone/locale pickers, NTP toggle,
-  delegated-launch buttons) and `shell.qml`'s
-  `systemManagementRegionalPreview()`/`systemManagementRegionalConfirm()`/
-  `systemManagementDelegatedLaunch()` probes described in the doc's §5. Left
-  for whoever picks up that Settings-pane work next, same as Sync Phase 8
-  left the native snapshot wiring for this phase.
+  delegated-launch buttons) and `shell.qml`'s regional/delegated IPC probes
+  described in the doc's §5. Landed in PR #32 as the backend + read-only
+  QML half only; the doc's §5 has since been rewritten (2026-09-16) into a
+  concrete implementation plan against the actual shipped
+  `SystemOperationModel`/`SystemManagementModel`/`SystemOperationProtocol.js`
+  APIs (not the pre-implementation sketch it started as), and the follow-up
+  itself is scoped to its own `sync-p9-settings-ui` branch and PR — tracked
+  below, not merged with this entry.
+- [ ] **Follow-up: Sync Phase 9 Settings UI wiring** (`sync-p9-settings-ui`,
+  plan in `SYNC-P9-REGIONAL-MUTATION.md` §5) — `SystemOperationModel.
+  startRegional()`/`startDelegated()`, `SystemManagementModel`'s
+  `prepareRegional()`/`confirmRegional()`/`discardRegional()`/
+  `launchDelegated()` family driving a `SystemRegionalPreflightModel`
+  instance, a new `SystemRegionalControls.qml` (timezone/locale pickers, NTP
+  toggle, delegated-launch buttons, confirmation card), its mount point in
+  `SystemSettingsPane.qml`, `shell.qml` IPC probes, and the
+  `test-quickshell-system-management-xvfb.sh` stub extension needed to
+  exercise all of it. Not started.
 - [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
   tests/test-system-management.py` (537 tests, up from 410, all passing),
   `QT_QPA_PLATFORM=offscreen qmltestrunner -input tests/qml` (39/39),

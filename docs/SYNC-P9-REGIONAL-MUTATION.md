@@ -34,15 +34,28 @@ it landed.
 
 ## Files
 
+**Landed in PR #32** (`sync-p7-mutation-fix-v2`, backend + read-only QML):
+
 | File | Change |
 | --- | --- |
 | `scripts/dwm-system-management` | `RegionalPreview`, `RegionalMutation`, `regional_preflight_output`, `delegated_command`, `trusted_delegated_executable`, `launch_delegated_tool`, `RegionalEventMonitor`, `AccountEventMonitor`; the `regional-choices`, `regional-preview`, `timezone-set`, `ntp-set`, `locale-set`, `accounts-open`, `password-open`, `printers-open`, `sources-open`, `watch-regional`, `watch-accounts`, `watch-units` commands |
 | `docs/P6-SYSTEM-MANAGEMENT.md` | Regional mutation and delegated-administration sections |
-| `config/quickshell/systemmanagement/SystemRegionalPreflightModel.qml` | **New**, ~173 lines |
-| `config/quickshell/systemmanagement/SystemRegionalPreflightProtocol.js` | **New**, ~153 lines |
-| `config/quickshell/systemmanagement/SystemProviderDiscovery.qml` | Add `time`/`locale`/`accounts`/`printers` to `domainDefinition` (placeholders since [Phase 4](SYNC-P4-DISCOVERY-EVENTS.md#3-systemproviderdiscoveryqml-is-generic-from-the-start)) |
-| `config/quickshell/settings/SystemSettingsPane.qml` | Timezone/locale pickers, NTP toggle, delegated-launch buttons |
-| `config/quickshell/shell.qml` | `systemManagementRegionalPreview()`, `systemManagementRegionalConfirm()`, `systemManagementDelegatedLaunch()` probes |
+| `config/quickshell/systemmanagement/SystemRegionalPreflightModel.qml` | **New**, ~178 lines |
+| `config/quickshell/systemmanagement/SystemRegionalPreflightProtocol.js` | **New**, ~158 lines |
+| `config/quickshell/systemmanagement/SystemProviderDiscovery.qml` | **Already done, turns out — no change needed.** `domainDefinition()` (`:40`) already returns full `time`/`locale`/`accounts`/`printers` entries; Phase 4 built it generically and Checkpoint 2's `watch-regional`/`watch-accounts`/`watch-units` commands are all `domainDefinition()` needed to become real. Confirmed by reading the shipped file, not assumed. |
+
+**Follow-up, planned below, its own branch (`sync-p9-settings-ui`) and PR** — the
+Settings UI surface. None of this phase's own cited upstream PRs touch any of
+these files (confirmed by diffing each one), so none of it shipped in PR #32:
+
+| File | Change |
+| --- | --- |
+| `config/quickshell/systemmanagement/SystemOperationModel.qml` | Add `startRegional()`/`startDelegated()` dispatch entry points beside the existing `startUpdate()` |
+| `config/quickshell/systemmanagement/SystemManagementModel.qml` | Own an instance of `SystemRegionalPreflightModel`; add `regionalActionReason()`/`prepareRegional()`/`confirmRegional()`/`discardRegional()`/`launchDelegated()` mirroring the existing `updateActionReason()`/`prepareUpdate()`/`confirmUpdate()`/`discardUpdate()` family |
+| `config/quickshell/settings/SystemRegionalControls.qml` | **New** — timezone/locale pickers, NTP toggle, delegated-launch buttons, and the preview confirmation card, mirroring `SystemUpdateControls.qml`'s shape |
+| `config/quickshell/settings/SystemSettingsPane.qml` | Mount `SystemRegionalControls` |
+| `config/quickshell/shell.qml` | `systemManagementRegionalPreview()`, `systemManagementRegionalConfirm()`, `systemManagementDelegatedLaunch()` probes (and a couple more state probes than the original sketch had — see §5.6) |
+| `tests/test-quickshell-system-management-xvfb.sh` | Extend the stub `dwm-system-management` to emit protocol minor `1` native rows and answer `timezone-set`/`ntp-set`/`locale-set`/`*-open`, so the new controls have real content to assert against |
 
 ---
 
@@ -285,42 +298,396 @@ Settings never displays. Leave `security` out of `domainDefinition` until (if
 ever) upstream ships the read side too, and note this explicitly rather than
 silently matching upstream's dict.
 
-## 5. Settings pane surface
+## 5. Settings pane surface (follow-up: `sync-p9-settings-ui`)
 
-Add to `SystemSettingsPane.qml`, reusing exactly the primitives
-[Phase 7](SYNC-P7-OPERATION-SURFACE.md#lyona-adaptations) already named:
+Everything below is **plan, not yet implemented** — written after PR #32
+landed the backend and the read-only QML preflight model, against the
+actual shipped code (not the aspirational sketch this section used to be).
+Two things already fully exist and need no new code, confirmed by reading
+the shipped files rather than assumed:
 
-- A timezone picker and locale picker (`Controls.ComboBox`, the same
-  `DisplayComboBox`-style component the
-  [old sync work's display-resolution phase](UPSTREAM-SYNC.md#recommended-execution-order)
-  introduced for resolution/refresh-rate — reuse that component shape rather
-  than inventing a second combo-box style), populated from
-  `regional-choices` and gated on a `StatusCard` while unavailable.
-- An NTP toggle using the same primary/pending `ShellButton` states
-  [Phase 7](SYNC-P7-OPERATION-SURFACE.md) already wired for confirm/cancel.
-- A confirmation step between "pick a value" and "dispatch" that shows the
-  `RegionalPreview`'s `current`/`target`/`detail` fields verbatim — this is
-  the user-visible form of the generation check, and it must read as "here
-  is exactly what will change," not a generic "are you sure."
-- Delegated-launch buttons (`accounts-open`/`password-open`/`printers-open`/
-  `sources-open`), each independently `unavailable` per **D-3**'s outcome,
-  with the `unavailable` detail string shown rather than a disabled button
-  with no explanation.
-- Every constant through `Theme.dp()`.
+- `SystemRegionalPreflightModel.qml`/`SystemRegionalPreflightProtocol.js`
+  (Checkpoint 3) already own the async `regional-choices`/`regional-preview`
+  read: `requestChoices(kind)`, `requestPreview(action, argument)`, and a
+  `completed(outcome)` signal carrying `{ status, error, choices, preview }`
+  where `preview` is `{ actionId, argument, generation, current, target,
+  detail }`. This is the thing to instantiate and drive below, not
+  reinvent.
+- `SystemOperationProtocol.js`'s `actionKind()`/`owner()` (`:35`, `:47`) and
+  `SystemManagementModel.qml`'s `active-operation`/`terminal-handoff`
+  snapshot parsing (via `operationActionKind()` → `regionalActionKind()`/
+  `delegatedActionKind()`) already classify `timezone-set`/`ntp-set`/
+  `locale-set`/`accounts-open`/`password-open`/`printers-open`/
+  `sources-open` correctly — both were pre-extended during Checkpoint 1/2
+  specifically so this follow-up would not need a second parser revision.
+  A regional or delegated operation dispatched through `native_command()`
+  lands in the **same journal** `watch-operation`/`ack-operation` already
+  serve, so `SystemOperationModel`'s existing recovery/watch/acknowledge
+  machinery — and `SystemSettingsPane.qml`'s existing `operationCard`/
+  `resultCard` (`:323`–`:347`) — already display it generically. The only
+  gap is a way to **start** one.
+
+### 5.1 `SystemOperationModel.qml`: two new dispatch entry points
+
+`startUpdate(action, generation)` (`:142`) hardcodes its action allowlist
+and each action's own generation shape (empty for `updates-refresh`, 64-hex
+for `updates-install-all`) — regional/delegated actions don't fit that one
+signature cleanly (three regional actions always take a 64-hex generation
+*and* an argument; four delegated actions take neither). Add two siblings
+that share the same "claim ownership, build the command, launch
+`watchProcess`" shape `startUpdate` already uses, rather than overloading
+its signature:
 
 ```qml
-        function systemManagementRegionalPreview(action: string, value: string): string {
-            return systemManagementModel.regionalPreflight(action, value);
+    // Regional actions always carry a 64-hex generation (RegionalMutation
+    // re-validates it against a fresh read before dispatch; the QML layer
+    // does not need to re-derive package-change-style state the way
+    // startUpdate does). Argument shape matches validate_regional_argument()
+    // in scripts/dwm-system-management: a timezone name, "enabled"/
+    // "disabled", or "LANG=...".
+    function startRegional(action, argument, generation) {
+        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
+                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
+                || ["timezone-set", "ntp-set", "locale-set"].indexOf(action) < 0
+                || typeof argument !== "string" || !/^[0-9a-f]{64}$/.test(generation))
+            return false;
+        return root.dispatch(action, [action, argument, generation]);
+    }
+
+    // Delegated actions take no argument and no generation -- the helper
+    // resolves and launches a fixed tool, or reports it unsupported/
+    // unavailable. No package-change-style preview applies.
+    function startDelegated(action) {
+        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
+                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
+                || ["accounts-open", "password-open", "printers-open", "sources-open"].indexOf(action) < 0)
+            return false;
+        return root.dispatch(action, [action]);
+    }
+
+    // Shared tail of startUpdate/startRegional/startDelegated: claim
+    // ownership and launch the watch process. Factored out here rather than
+    // duplicated a third time; startUpdate keeps its own body unchanged
+    // (touching already-tested Sync Phase 6/7 code is out of scope) but
+    // could be folded into this too in a later cleanup pass.
+    function dispatch(action, args) {
+        const command = Commands.systemManagementCommand(args[0], args.slice(1));
+        root.snapshotKnown = false;
+        root.parser = Protocol.create("", action);
+        root.progress = null;
+        root.log = [];
+        root.streamOwned = true;
+        root.streamReplay = false;
+        root.streamFailed = false;
+        root.terminalPending = false;
+        root.result = null;
+        root.audit = null;
+        root.operationError = null;
+        root.cancelRequestedId = "";
+        root.cancelUncertainId = "";
+        root.cancelConflictId = "";
+        root.cancelDetail = "";
+        root.state = "observing";
+        root.detail = "Starting " + action;
+        watchProcess.command = command;
+        root.discoveryInvalidated();
+        Qt.callLater(function() { if (root.streamOwned) watchProcess.running = true; });
+        return true;
+    }
+```
+
+`canStart`, `canCancel`, `finishWatch`, `consume` — all already generic
+(action-kind-agnostic), confirmed by reading them; **no other change to this
+file**. Note regional/delegated operations are never cancelable
+(`RegionalMutation`/`run_delegated_launch` have no `cancel-requested`
+transition — `cancelTarget()` already excludes anything whose `kind` isn't
+`update`/`refresh`, so `canCancel` correctly stays `false` for these without
+any change).
+
+### 5.2 `SystemManagementModel.qml`: own the preview lifecycle
+
+Instantiate `SystemRegionalPreflightModel` beside `discoveryModel`/
+`operationModel` (`:702`–`:719`), gated on `settingsVisible` the same way:
+
+```qml
+    SystemRegionalPreflightModel {
+        id: regionalPreflightModel
+        active: root.settingsVisible
+        onCompleted: outcome => root.regionalPreviewReceived(outcome)
+    }
+```
+
+Add state and functions mirroring `updateActionReason()`/`prepareUpdate()`/
+`confirmUpdate()`/`discardUpdate()` (`:182`–`:246`) exactly — same captured-
+snapshot discipline, adapted for the fact that RegionalMutation re-validates
+its own generation server-side (see the family doc-comment at `:201`) so the
+QML side only needs to guard *dispatch eligibility*, not re-derive plan
+content the way `updates-install-all`'s package-change list does:
+
+```qml
+    property var regionalPreview: null       // { actionId, argument, generation, current, target, detail }
+    property string regionalPreviewError: "" // set on a failed preflight read
+    property bool regionalPreviewPending: false
+    property string regionalConfirmMessage: ""
+    property bool dispatchingRegional: false
+
+    function nativeActionReason(actionId) {
+        if (root.validNativeActionIds.indexOf(actionId) < 0)
+            return "This administration action is not supported.";
+        if (!root.settingsVisible || root.dispatchingRegional)
+            return "Open System Settings to prepare this action.";
+        if (root.snapshotOwned || root.snapshotPending || root.requiredPending || !discoveryModel.fresh)
+            return "Wait for fresh status, or reload status to retry.";
+        if (!operationModel.canStart)
+            return "An operation or its recovery still owns the update workflow.";
+        // Confirmed by reading parseSnapshot() (:660-662): every valid native
+        // action record is already merged into the same flat root.actions
+        // updateActionReason() searches (actions.push(nativeActions[actionId])
+        // for each non-invalid owner) -- no separate nativeActions accessor
+        // is needed, this is a straight copy of updateActionReason()'s own
+        // lookup shape.
+        const action = root.actions.find(item => item.id === actionId);
+        if (!action || action.status !== "available")
+            return action && action.detail.length > 0 ? action.detail : "This action is not currently offered.";
+        return "";
+    }
+
+    // Regional (timezone-set/ntp-set/locale-set): fetch a fresh preview
+    // before showing a confirmation card. Unlike prepareUpdate(), there is
+    // no synchronous "reason" to check up front beyond nativeActionReason --
+    // the preview read itself is the validity check.
+    function prepareRegional(action, argument) {
+        const reason = root.nativeActionReason(action);
+        if (reason.length > 0) {
+            root.regionalConfirmMessage = reason;
+            return false;
+        }
+        root.regionalConfirmMessage = "";
+        root.regionalPreviewError = "";
+        root.regionalPreview = null;
+        root.regionalPreviewPending = true;
+        return regionalPreflightModel.requestPreview(action, argument);
+    }
+
+    function regionalPreviewReceived(outcome) {
+        root.regionalPreviewPending = false;
+        if (outcome.command !== "regional-preview") return; // a choices read, not a preview
+        if (outcome.status !== "available") {
+            root.regionalPreviewError = outcome.error.detail;
+            return;
+        }
+        root.regionalPreview = outcome.preview;
+    }
+
+    function discardRegional() {
+        regionalPreflightModel.cancel();
+        root.regionalPreview = null;
+        root.regionalPreviewPending = false;
+        root.regionalPreviewError = "";
+        root.regionalConfirmMessage = "";
+    }
+
+    function confirmRegional() {
+        const pending = root.regionalPreview;
+        if (pending === null || root.dispatchingRegional) return false;
+        const reason = root.nativeActionReason(pending.actionId);
+        if (reason.length > 0) {
+            root.regionalConfirmMessage = reason;
+            root.regionalPreview = null;
+            return false;
+        }
+        root.dispatchingRegional = true;
+        root.regionalPreview = null;
+        const started = operationModel.startRegional(pending.actionId, pending.argument, pending.generation);
+        // A false return here means RegionalMutation itself will reject the
+        // stale generation server-side -- startRegional's own precondition
+        // check is a QML-side fast path, not the authority. Either way,
+        // never claim success; tell the user to look again.
+        root.regionalConfirmMessage = started ? "" : "Regional state changed. Review a fresh preview and confirm again.";
+        root.dispatchingRegional = false;
+        return started;
+    }
+
+    // Delegated actions (accounts-open/password-open/printers-open/
+    // sources-open) have no preview step -- launch_delegated_tool() either
+    // starts a fixed, already-trusted executable or the action was already
+    // reported unavailable/unsupported by nativeActionReason(). Whether this
+    // still deserves a lightweight "Open <tool>?" confirmation before
+    // dispatch is an open question -- see 5.8.
+    function launchDelegated(action) {
+        const reason = root.nativeActionReason(action);
+        if (reason.length > 0) {
+            root.regionalConfirmMessage = reason;
+            return false;
+        }
+        return operationModel.startDelegated(action);
+    }
+
+    onConfirmationInvalidated: {
+        // discoveryModel/operationModel signals already invalidate the
+        // update confirmation (:248); extend the same handler rather than
+        // add a second signal, since both share one invalidation source.
+        if (root.regionalPreview !== null)
+            root.regionalConfirmMessage = "State changed. Review a fresh preview and confirm again.";
+        root.regionalPreview = null;
+    }
+```
+
+### 5.3 New `SystemRegionalControls.qml`
+
+Mirror `SystemUpdateControls.qml`'s shape exactly (`PlainText`/`ActionButton`
+local components, a `confirmationCard` `Rectangle` with the same
+`onVisibleChanged: if (visible) root.revealRequested(...)` pattern from the
+`onVisibleChanged` fix already applied to `SystemUpdateControls.qml`) rather
+than inventing a second confirmation-card style. One thing `SystemUpdateControls.qml`
+never needed that this file does: `import qs.systemmanagement` — every
+`settings/` pane so far only imports `qs.core` because its model is handed
+in as a `required property var`, but this file instantiates
+`SystemRegionalPreflightModel` (a `qs.systemmanagement` type) directly for
+its own picker choice reads, and implicit same-directory lookup does not
+cross the `settings/`/`systemmanagement/` directory boundary. Structure:
+
+- A local inline `component RegionalComboBox: Controls.ComboBox { ... }`,
+  copying `DisplaySettingsPane.qml`'s `DisplayComboBox` (`:15`–`:45`)
+  verbatim (same `palette.*`/`Theme.*` bindings) — it is a local inline
+  component there too, not a shared one, so this follows the existing
+  precedent rather than breaking it by promoting one file's private
+  component into `qs.core` unasked.
+- Timezone picker: `model: timezoneChoicesModel.result === null ? [] : timezoneChoicesModel.result.choices`,
+  populated by a second `SystemRegionalPreflightModel { requestChoices("timezone") }`
+  instance (or reuse `regionalPreflightModel` for both choices and preview —
+  decide in 5.8, since driving both from one instance means a choices
+  request and a preview request can race for ownership; a dedicated
+  instance per concern is probably simpler and matches how `discoveryModel`
+  and `operationModel` are already two separate model instances rather than
+  one doing double duty).
+- Locale picker: same shape, `requestChoices("locale")`.
+- NTP toggle: `PanelToggleSwitch { checked: <current NTP state from
+  nativeStates>; onToggled: root.model.prepareRegional("ntp-set",
+  checked ? "disabled" : "enabled") }` — reads current state from
+  `root.model.nativeStates["ntp-enabled"]` (already parsed and published by
+  Checkpoint 1; `value` is `"yes"`/`"no"`/`"unknown"`).
+- Confirmation card: shows `root.model.regionalPreview.current` →
+  `.target`, `.detail` verbatim (per the original design note, still
+  correct: "here is exactly what will change," not a generic "are you
+  sure"), with Confirm/Not now buttons calling
+  `root.model.confirmRegional()`/`root.model.discardRegional()`.
+- Delegated-launch buttons: four `ActionButton`s, `enabled:
+  root.model.nativeActionReason(actionId) === ""`, `onActivated:
+  root.model.launchDelegated(actionId)`. Per **D-3**, `accounts-open`/
+  `sources-open` are permanently `unsupported` on Arch — the button stays
+  visible but disabled, with the `unsupported` detail text shown beside it
+  (matching `SystemUpdateControls.qml`'s `refreshReason`/`installReason`
+  pattern at `:82`–`:95`), never hidden with no explanation.
+- Every constant through `Theme.dp()`, matching every other pane file.
+
+### 5.4 `SystemSettingsPane.qml`
+
+Add a `SectionLabel { label: "Regional & administration" }` and mount
+`SystemRegionalControls { model: root.systemManagementModel; onRevealRequested:
+target => root.reveal(target) }`, in the same position `SystemUpdateControls`
+occupies relative to its own section (`:283`–`:288`) — directly after it,
+before the pending-updates `GridLayout`, since both are Settings → System
+confirm-surfaces and belong adjacent to each other rather than interleaved
+with the read-only status cards below.
+
+### 5.5 `SystemProviderDiscovery.qml` consumers
+
+`domainDefinition()` already answers for `time`/`locale`/`accounts`/
+`printers` (§4, already shipped) but nothing currently instantiates
+`SystemProviderDiscovery { domain: "time" }` etc. — `SystemUpdateDiscovery.qml`
+is the only consumer today, hardcoded to the update domain. Decide during
+implementation whether `SystemRegionalControls.qml` needs its own live
+discovery subscriptions at all for this first pass (a manual "Reload status"
+covers the pickers/toggle/buttons adequately, matching how
+`updateActionReason()` already requires `discoveryModel.fresh` before
+allowing a *dispatch*, without every read-only field needing its own push
+subscription) — wiring live regional/account/printer discovery pushes can be
+a later, separate enhancement if the manual-reload UX proves insufficient in
+practice, rather than required scope for this follow-up.
+
+### 5.6 `shell.qml` IPC probes
+
+```qml
+        function systemManagementRegionalPreviewPending(): bool {
+            return systemManagementModel.regionalPreviewPending;
         }
 
-        function systemManagementRegionalConfirm(action: string, generation: string): void {
-            systemManagementModel.confirmRegional(action, generation);
+        function systemManagementRegionalPreview(action: string, argument: string): bool {
+            return systemManagementModel.prepareRegional(action, argument);
         }
 
-        function systemManagementDelegatedLaunch(action: string): void {
-            systemManagementModel.launchDelegated(action);
+        function systemManagementRegionalPreviewResult(): string {
+            const preview = systemManagementModel.regionalPreview;
+            return preview === null ? "" : preview.actionId + ":" + preview.current + ":" + preview.target;
+        }
+
+        function systemManagementRegionalConfirm(): bool {
+            return systemManagementModel.confirmRegional();
+        }
+
+        function systemManagementRegionalDiscard(): void {
+            systemManagementModel.discardRegional();
+        }
+
+        function systemManagementDelegatedLaunch(action: string): bool {
+            return systemManagementModel.launchDelegated(action);
         }
 ```
+
+The original sketch's `systemManagementRegionalPreview(action, value):
+string` returning a value synchronously does not match the real, async
+`Process`-backed preview read — corrected here to return a `bool` (request
+accepted or not, matching `updateApply`'s own fire-and-forget shape) with a
+separate `systemManagementRegionalPreviewResult()` probe to poll, the same
+two-probe split `systemManagementOperationState()`/
+`systemManagementOperationResult()` (`:958`–`:965`) already establishes for
+async state.
+
+### 5.7 Test plan
+
+- `tests/test-quickshell-system-management-xvfb.sh`: extend the stub
+  `dwm-system-management` (`:113`–`:145`) to also answer `regional-choices`,
+  `regional-preview`, `timezone-set`/`ntp-set`/`locale-set`, and
+  `accounts-open`/`password-open`/`printers-open`/`sources-open` with fixed,
+  deterministic output (mirroring the existing `snapshot`/`watch-updates`
+  cases), and emit protocol minor `1` native rows from `snapshot` so
+  `nativeProviders`/`nativeStates` are populated for the new controls to
+  read. New assertions: a picker's `model` is non-empty once
+  `regional-choices` completes, `systemManagementRegionalPreview()` +
+  `systemManagementRegionalPreviewResult()` round-trip a fixed timezone
+  change, `systemManagementRegionalConfirm()` dispatches and
+  `systemManagementOperationResult()` eventually reports
+  `timezone-set:succeeded`, and each delegated-launch button's `enabled`
+  state matches **D-3** (`accounts-open`/`sources-open` always disabled,
+  `printers-open` enabled against the stub).
+- `tests/test-system-management.py`: unaffected — this follow-up is QML-only,
+  the Python backend is already fully covered.
+- `scripts/quickshell-qmllint --root config/quickshell`: run as always: the
+  only way to catch a binding-loop or unqualified-access mistake in the new
+  files before a live run.
+
+### 5.8 Open questions to resolve during implementation, not before
+
+- Does `launchDelegated()` need its own confirmation card (matching
+  regional's "here is exactly what will change"), or is enabling the button
+  only when available, plus the result card after dispatch, enough? The
+  action itself is irreversible-ish (it opens a privileged tool) but
+  `run_delegated_launch()`'s own docstring already frames it as "launch
+  accepted; continue in the tool" — leaning toward *no* extra confirmation
+  card, just the button, but this is a UX call worth a second opinion before
+  building it.
+- One `SystemRegionalPreflightModel` instance shared by choices+preview
+  requests, or one per concern (two or three instances total) — the model's
+  own doc comment says "one request at a time; a new request cancels
+  whatever is in flight," which is wrong for driving two independent
+  pickers simultaneously from one instance.
+- Whether to split this into two checkpoints the way Phase 9's backend was
+  (Checkpoint A: `SystemOperationModel`/`SystemManagementModel`/`shell.qml`
+  wiring, verified via `qmllint`; Checkpoint B: `SystemRegionalControls.qml`
+  + pane mounting + the xvfb test extension) — recommended, given how much
+  is genuinely new here, but not mandatory if it turns out smaller in
+  practice than this plan estimates.
 
 ---
 
@@ -333,7 +700,12 @@ scripts/run-tests make check-quickshell-qml
 ```
 
 Manual, on a real CachyOS install — **do these on a machine you can afford to
-have its timezone/locale/NTP setting changed on**:
+have its timezone/locale/NTP setting changed on**. Every item below exercises
+the Settings pane (pickers, confirm card, delegated-launch buttons), so none
+of it is runnable against PR #32's backend-only scope alone — this is the
+follow-up's (`sync-p9-settings-ui`, §5) own manual verification, listed here
+because it was already written before the two-PR split and stays accurate
+for what that follow-up needs to prove:
 
 - Preview a timezone change, confirm it, verify `timedatectl status` reflects
   it, then verify the pane's own state (not just the raw D-Bus property)
@@ -368,6 +740,12 @@ scope in `ROADMAP.md`, and the `ROADMAP.md` exit criterion *"Every privileged
 action is allowlisted, confirmed, auditable, and cancelable"* for the
 regional half — the update half was
 [Phase 7](SYNC-P7-OPERATION-SURFACE.md#closes)'s. This is also the last phase
-of the nine; once it lands, Phase 6's system-management scope (as currently
-understood — see the decisions logged in
-[`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions)) is complete.
+of the nine, but landed across two PRs: PR #32 closes the backend
+(`RegionalMutation`, delegated administration, native journal watch, live
+watch, the QML preflight parser/model) and every one of this phase's own
+cited upstream PRs. §5's Settings UI surface is genuinely required for the
+exit criterion above — "confirmed" means a user can see and act on a
+confirmation, not just that the backend refuses to dispatch without one —
+so Phase 6's system-management scope is **not yet** complete until §5 also
+lands, on its own branch (`sync-p9-settings-ui`) and PR, planned in detail
+above.

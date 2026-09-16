@@ -109,22 +109,48 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 # restart heuristic's "system" branch, docs/SYNC-P2-UPDATE-SNAPSHOT.md
 # section 5) and one dependency-preview row, so the pane's counts and IPC
 # probes have real content to assert against without a live PackageKit
-# daemon.
+# daemon. Sync Phase 9 follow-up (docs/SYNC-P9-REGIONAL-MUTATION.md §5.7)
+# adds protocol minor 1's native rows plus fixed regional-choices/
+# regional-preview/timezone-set/ntp-set/locale-set/*-open responses, so
+# SystemRegionalControls has real content for a full preview -> confirm ->
+# dispatch -> verified-result cycle, not just idle defaults.
 cat >"$data_home/lyona/scripts/dwm-system-management" <<'SH'
 #!/bin/sh
 set -eu
+generation='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+opid='op-11111111111111111111111111111111'
 case "${1:-}" in
 snapshot)
-	printf 'system-management-protocol\t1\t0\n'
-	printf 'snapshot-generation\t%s\n' '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+	printf 'system-management-protocol\t1\t1\n'
+	printf 'snapshot-generation\t%s\n' "$generation"
 	printf 'provider\tupdates\tpartial\tdelegated\tPackageKit\tRead-only update discovery is available\n'
 	printf 'provider\trecovery\tunsupported\tuser-session\tdwm-system-management\tManaged update recovery is not enabled in this build\n'
+	printf 'provider\tregional\tavailable\tdelegated\torg.freedesktop.timedate1\tRegional status is available\n'
+	printf 'provider\taccounts\tavailable\tdelegated\torg.freedesktop.Accounts\tAccount status is available\n'
+	printf 'provider\tprinters\tavailable\tdelegated\torg.freedesktop.systemd1\tPrinter status is available\n'
+	printf 'provider\tsources\tavailable\tdelegated\torg.freedesktop.PackageKit\tSoftware source status is available\n'
 	printf 'state\tupdate-summary\tavailable\t1\tPackageKit update discovery completed\n'
 	printf 'state\tupdate-last-refresh\tavailable\t120\tSeconds since PackageKit last refreshed metadata\n'
 	printf 'state\tupdate-restart\tavailable\tsystem\tHeuristic guidance over pending package names\n'
+	printf 'state\ttimezone\tavailable\tEtc/UTC\tSystem timezone\n'
+	printf 'state\tntp-enabled\tavailable\tyes\tNetwork time enablement\n'
+	printf 'state\tntp-synchronized\tavailable\tyes\tNetwork time synchronization at this read\n'
+	printf 'state\tlocale\tavailable\tC\t\n'
+	printf 'state\taccounts-count\tavailable\t1\tAccount count\n'
+	printf 'state\tcups-service\tavailable\tstopped\tCUPS state\n'
 	printf 'action\tupdates-refresh\tunavailable\tdelegated\tupdates\tRefresh updates\tManaged update operations are not enabled in this build\n'
 	printf 'action\tupdates-install-all\tunavailable\tdelegated\tupdates\tInstall all updates\tManaged update operations are not enabled\n'
 	printf 'action\tupdates-cancel\tunavailable\tdelegated\tupdates\tCancel update\tNo managed update operation is active\n'
+	printf 'action\ttimezone-set\tavailable\tdelegated\tregional\tChange timezone\tChange the system timezone\n'
+	printf 'action\tntp-set\tavailable\tdelegated\tregional\tConfigure network time\tToggle network time synchronization\n'
+	printf 'action\tlocale-set\tavailable\tdelegated\tregional\tChange locale\tChange the system locale\n'
+	# D-3 (docs/UPSTREAM-SYNC.md#open-decisions): accounts-open/sources-open
+	# are permanently unavailable on Arch; the stub reports exactly that
+	# real shape so the pane's disabled buttons are exercised for real.
+	printf 'action\taccounts-open\tunavailable\tdelegated\taccounts\tAccounts\tNo account-management tool is packaged for Arch\n'
+	printf 'action\tpassword-open\tavailable\tdelegated\taccounts\tPassword\tChange your password\n'
+	printf 'action\tprinters-open\tavailable\tdelegated\tprinters\tPrinters\tManage printers\n'
+	printf 'action\tsources-open\tunavailable\tdelegated\tsources\tSoftware sources\tNo interactive repository editor is packaged for Arch\n'
 	printf 'update\tlinux-cachyos;6.18.1-1;x86_64;core\tunknown\tinstallable\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	printf 'package-change\tlinux-cachyos;6.18.1-1;x86_64;core\tupdate\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	printf 'complete\tsnapshot\n'
@@ -137,6 +163,58 @@ watch-updates)
 	printf 'update-event\tready\n'
 	trap 'exit 0' TERM
 	while :; do sleep 0.1; done
+	;;
+regional-choices)
+	case "$2" in
+	timezone)
+		printf 'regional-choices-protocol\t1\t0\ttimezone\n'
+		printf 'choice\tAmerica/Chicago\n'
+		printf 'choice\tEtc/UTC\n'
+		;;
+	locale)
+		printf 'regional-choices-protocol\t1\t0\tlocale\n'
+		printf 'choice\tC\n'
+		printf 'choice\ten_US.utf8\n'
+		;;
+	esac
+	printf 'complete\tregional-choices\n'
+	;;
+regional-preview)
+	# $2=action $3=argument -- fixed target/detail per action, matching
+	# SystemRegionalPreflightProtocol.js's validPreview() exactly (target
+	# must equal the argument for timezone-set/ntp-set, or its LANG= value
+	# for locale-set).
+	printf 'regional-preview-protocol\t1\t0\n'
+	case "$2" in
+	timezone-set) printf 'preview\ttimezone-set\t%s\t%s\tEtc/UTC\t%s\tSystem timezone\n' "$3" "$generation" "$3" ;;
+	ntp-set) printf 'preview\tntp-set\t%s\t%s\tyes\t%s\tNetwork time synchronization setting\n' "$3" "$generation" "$3" ;;
+	locale-set) printf 'preview\tlocale-set\t%s\t%s\tC\t%s\tLANGUAGE=C\n' "$3" "$generation" "${3#LANG=}" ;;
+	esac
+	printf 'complete\tregional-preview\n'
+	;;
+timezone-set | ntp-set | locale-set)
+	# $2=value $3=generation -- a fixed succeeded operation stream, matching
+	# SystemOperationProtocol.js's transition/audit/complete grammar exactly
+	# (the same shape RegionalMutation's real journal-backed dispatch emits).
+	action=$1
+	kind=timezone
+	[ "$action" = ntp-set ] && kind=ntp
+	[ "$action" = locale-set ] && kind=locale
+	printf 'system-management-protocol\t1\t0\n'
+	printf 'operation\t%s\t%s\t%s\tpending\tunknown\tno\tStarting %s\n' "$opid" "$action" "$kind" "$action"
+	printf 'operation\t%s\t%s\t%s\trunning\tunknown\tno\tDispatching %s\n' "$opid" "$action" "$kind" "$action"
+	printf 'operation\t%s\t%s\t%s\tsucceeded\tunknown\tno\tRegional change verified\n' "$opid" "$action" "$kind"
+	printf 'audit\t%s\t%s\t%s\tsucceeded\t2026-09-16T12:00:00Z\t2026-09-16T12:00:01Z\tRegional change verified\n' "$opid" "$action" "$kind"
+	printf 'complete\toperation\n'
+	;;
+password-open | printers-open)
+	action=$1
+	printf 'system-management-protocol\t1\t0\n'
+	printf 'operation\t%s\t%s\tdelegate\tpending\tunknown\tno\tStarting %s\n' "$opid" "$action" "$action"
+	printf 'operation\t%s\t%s\tdelegate\trunning\tunknown\tno\tOpening %s\n' "$opid" "$action" "$action"
+	printf 'operation\t%s\t%s\tdelegate\tsucceeded\tunknown\tno\tLaunch accepted; continue in the tool\n' "$opid" "$action"
+	printf 'audit\t%s\t%s\tdelegate\tsucceeded\t2026-09-16T12:00:00Z\t2026-09-16T12:00:01Z\tLaunch accepted; continue in the tool\n' "$opid" "$action"
+	printf 'complete\toperation\n'
 	;;
 *)
 	exit 2
@@ -292,6 +370,87 @@ while [ "$i" -lt 30 ]; do
 done
 if [ "$still_running" -eq 1 ]; then
 	printf 'dwm-system-management watch-updates survived the Settings window closing\n' >&2
+	exit 1
+fi
+
+# Sync Phase 9 follow-up (docs/SYNC-P9-REGIONAL-MUTATION.md §5.7): a full
+# preview -> confirm -> dispatch -> verified-result cycle, and delegated-
+# launch availability matching D-3 -- run last, after every existing
+# assertion above, since operationModel/discoveryModel are shared with the
+# update-confirm surface those already checked at their own idle baseline.
+test_stage='reopening Settings for the regional preview/confirm cycle'
+ipc settings open >/dev/null
+ipc settings select system >/dev/null
+[ "$(ipc settings systemManagementSettingsVisible)" = true ]
+
+test_stage='requesting a regional preview'
+[ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
+
+preview_result=
+i=0
+while [ "$i" -lt 100 ]; do
+	preview_result=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+	[ -n "$preview_result" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$preview_result" != 'timezone-set:Etc/UTC:America/Chicago' ]; then
+	printf 'Regional preview did not report the expected current/target: %s\n' "$preview_result" >&2
+	exit 1
+fi
+
+test_stage='confirming and dispatching the regional change'
+[ "$(ipc settings systemManagementRegionalConfirm)" = true ]
+
+operation_result=
+i=0
+while [ "$i" -lt 100 ]; do
+	operation_result=$(ipc settings systemManagementOperationResult 2>/dev/null || true)
+	[ "$operation_result" = 'timezone-set:succeeded' ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$operation_result" != 'timezone-set:succeeded' ]; then
+	printf 'Regional dispatch did not reach a verified succeeded result: %s\n' "$operation_result" >&2
+	exit 1
+fi
+
+test_stage='validating delegated-launch availability matches D-3'
+# printers-open is available against the stub; accounts-open is
+# permanently unsupported (D-3) regardless of timing -- retry printers-open
+# alone to ride out any transient busy-ness from the timezone-set dispatch
+# settling (operationModel is shared state), then re-check accounts-open
+# once things are quiet to prove its "false" is D-3, not leftover busy-ness.
+launched=false
+i=0
+while [ "$i" -lt 100 ]; do
+	if [ "$(ipc settings systemManagementDelegatedLaunch printers-open)" = true ]; then
+		launched=true
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$launched" != true ]; then
+	printf 'systemManagementDelegatedLaunch(printers-open) never became dispatchable\n' >&2
+	exit 1
+fi
+
+delegated_result=
+i=0
+while [ "$i" -lt 100 ]; do
+	delegated_result=$(ipc settings systemManagementOperationResult 2>/dev/null || true)
+	[ "$delegated_result" = 'printers-open:succeeded' ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$delegated_result" != 'printers-open:succeeded' ]; then
+	printf 'Delegated launch did not reach a verified succeeded result: %s\n' "$delegated_result" >&2
+	exit 1
+fi
+
+if [ "$(ipc settings systemManagementDelegatedLaunch accounts-open)" != false ]; then
+	printf 'systemManagementDelegatedLaunch(accounts-open) dispatched despite D-3\n' >&2
 	exit 1
 fi
 

@@ -964,6 +964,38 @@ ShellRoot {
             return result === null ? "" : result.actionId + ":" + result.state;
         }
 
+        // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.6): the preview
+        // read is async (a real Process), so this returns whether the
+        // request was accepted, matching updateApply()'s fire-and-forget
+        // shape -- systemManagementRegionalPreviewResult() below is the
+        // separate probe to poll, the same split
+        // systemManagementOperationState()/systemManagementOperationResult()
+        // already establish for async state.
+        function systemManagementRegionalPreviewPending(): bool {
+            return systemManagementModel.regionalPreviewPending;
+        }
+
+        function systemManagementRegionalPreview(action: string, argument: string): bool {
+            return systemManagementModel.prepareRegional(action, argument);
+        }
+
+        function systemManagementRegionalPreviewResult(): string {
+            const preview = systemManagementModel.regionalPreview;
+            return preview === null ? "" : preview.actionId + ":" + preview.current + ":" + preview.target;
+        }
+
+        function systemManagementRegionalConfirm(): bool {
+            return systemManagementModel.confirmRegional();
+        }
+
+        function systemManagementRegionalDiscard(): void {
+            systemManagementModel.discardRegional();
+        }
+
+        function systemManagementDelegatedLaunch(action: string): bool {
+            return systemManagementModel.launchDelegated(action);
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }
