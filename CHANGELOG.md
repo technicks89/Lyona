@@ -10,6 +10,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add a manual `Full suite (manual)` GitHub Actions workflow
+  (`.github/workflows/full-suite.yml`, Sync Sprint 1 S1-01,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) that runs `scripts/run-tests
+  make check` (or one named target) as an unprivileged user in an
+  `archlinux:base-devel` container, uploads the log, and optionally builds
+  dwm with clang. Push and pull-request CI is unchanged.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened

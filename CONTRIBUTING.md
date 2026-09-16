@@ -48,6 +48,15 @@ Arch package, VM, and X11 checks require their documented host tools. If a
 required environment is unavailable, state exactly what was not tested in the
 pull request instead of claiming universal validation.
 
+### Manual full-suite run
+
+Hosted CI runs only the desktop smoke job on every push. To run the whole
+suite on a clean Arch container, open **Actions → Full suite (manual) → Run
+workflow**. Leave `target` as `check` for everything, or name one `make`
+target (for example `check-system-management`) to rerun a single gate. The
+log is attached to the run as `full-suite-log`. A passing manual run does not
+replace local `scripts/run-tests make check` before merge.
+
 ## Change Guidelines
 
 - Preserve the C99 style and avoid new mandatory dependencies unless they are
