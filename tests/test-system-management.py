@@ -20,10 +20,14 @@ import hashlib
 import importlib.util
 import importlib.machinery
 import io
+import json
 import os
 import pathlib
+import pty
+import select
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -467,6 +471,681 @@ class RegionalReadTests(unittest.TestCase):
                 process.communicate(timeout=3)
 
 
+class NtpReadTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d unchanged. NtpRead/NtpSample
+    are not called from main()'s CLI dispatch (RegionalRead("time-state")
+    already covers the same fields as part of a fuller read) but are real,
+    tested module API surface upstream ships and the private-bus regional-read
+    fixture exercises directly -- ported for parity rather than treated as
+    dead code.
+    """
+
+    def reader(self):
+        _regional, connection, gio, glib, variant = RegionalReadTests().reader()
+        return provider.NtpRead(gio, glib), connection, gio, glib, variant
+
+    def test_only_two_fixed_boolean_gets_under_one_deadline(self):
+        read, connection, gio, glib, variant = self.reader()
+        def run():
+            read.connected(None, object(), None)
+            for field, value in (("NTPSynchronized", False), ("CanNTP", True)):
+                connection.call_finish.return_value = variant.Variant("(v)", (variant.Variant("b", value),))
+                read.replied(connection, object(), field)
+        read.loop.run.side_effect = run
+        self.assertEqual(read.run(), provider.NtpSample(True, False))
+        calls = connection.call.call_args_list
+        self.assertEqual(len(calls), 2)
+        for call, field in zip(calls, ("CanNTP", "NTPSynchronized")):
+            self.assertEqual(call.args[:4], ("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
+                provider.PROPERTIES_INTERFACE, "Get"))
+            self.assertEqual(call.args[4].unpack(), ("org.freedesktop.timedate1", field))
+            self.assertEqual(call.args[6], gio.DBusCallFlags.NONE)
+            self.assertTrue(0 < call.args[7] <= 10000)
+        glib.source_remove.assert_called_once_with(17)
+        connection.close_sync.assert_not_called()
+        with self.assertRaises(RuntimeError):
+            read.run()
+
+    def test_partial_timeout_denial_and_bad_types_do_not_publish_a_sample(self):
+        for failure in ("timeout", "denial", "type", "oversized"):
+            read, connection, gio, _glib, variant = self.reader()
+            def run():
+                read.connected(None, object(), None)
+                connection.call_finish.return_value = variant.Variant("(v)", (variant.Variant("b", True),))
+                read.replied(connection, object(), "CanNTP")
+                self.assertFalse(read.done)
+                if failure == "timeout":
+                    read.deadline = time.monotonic() - 1
+                elif failure == "denial":
+                    gio.dbus_error_get_remote_error.return_value = "org.freedesktop.DBus.Error.AccessDenied"
+                    connection.call_finish.side_effect = variant.Error("denied")
+                else:
+                    connection.call_finish.return_value = variant.Variant("(v)",
+                        (variant.Variant("s", "x" * (100 if failure == "oversized" else 1)),))
+                read.replied(connection, object(), "NTPSynchronized")
+            read.loop.run.side_effect = run
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                read.run()
+            self.assertEqual(caught.exception.code, {"timeout": "timeout", "denial": "permission-denied"}.get(failure, "malformed"))
+            self.assertIsNone(read.value)
+            connection.call_finish.reset_mock(side_effect=True)
+            read.replied(connection, object(), "NTPSynchronized")
+            connection.call_finish.assert_not_called()
+
+
+class RegionalMutationTests(unittest.TestCase):
+    """Sync Phase 9 (docs/SYNC-P9-REGIONAL-DELEGATION.md), ported from upstream's
+    0eae066d nearly unchanged: RegionalMutation's lifecycle is distro-neutral
+    (timedate1/locale1 D-Bus contracts, not a package-manager concern). The one
+    real divergence is upstream's `read_fedora_identity()` precondition on
+    `run()` -- Lyona's RegionalMutation never calls it (Phase 6 precedent), so
+    every fedora-rejection mock and assertion below is dropped rather than
+    adapted.
+    """
+
+    def client(self, action="timezone-set", argument="Etc/UTC"):
+        from gi.repository import Gio, GLib
+        self.GLib = GLib
+        self.clock = 1.0
+        self.methods = []
+        self.events = []
+        self.owner = ":1.42"
+        self.time_state = provider.RegionalTimeState("UTC", True, False, True)
+        self.locale_state = provider.parse_locale_configuration(["LANG=C", "LANGUAGE=C", "LC_TIME=C"])
+        self.before_request = lambda _method: None
+        self.before_hook = lambda: None
+        self.after_hook = lambda: None
+        self.replies = {}
+        self.context = mock.Mock()
+        self.context.pending.return_value = False
+        loop = mock.Mock()
+        loop.get_context.return_value = self.context
+        glib = types.SimpleNamespace(Error=GLib.Error, Variant=GLib.Variant,
+            VariantType=GLib.VariantType, MainLoop=mock.Mock(return_value=loop),
+            timeout_add=mock.Mock(side_effect=range(17, 100)), source_remove=mock.Mock(), SOURCE_REMOVE=False)
+        gio = mock.Mock()
+        gio.BusType, gio.DBusCallFlags, gio.DBusSignalFlags = Gio.BusType, Gio.DBusCallFlags, Gio.DBusSignalFlags
+        gio.dbus_is_unique_name = Gio.dbus_is_unique_name
+        gio.dbus_error_get_remote_error = Gio.dbus_error_get_remote_error
+        gio.io_error_quark = Gio.io_error_quark
+        gio.IOErrorEnum = Gio.IOErrorEnum
+        self.connection = mock.Mock()
+        gio.bus_get_finish.return_value = self.connection
+        self.connection.signal_subscribe.side_effect = range(1, 10)
+        def finish(result):
+            if isinstance(result, Exception):
+                raise result
+            return result
+        self.connection.call_finish.side_effect = finish
+        state = self.locale_state if action == "locale-set" else self.time_state
+        choices = ("C", "en_US.utf8") if action == "locale-set" else ("UTC", "Etc/UTC")
+        preview = provider.make_regional_preview(action, argument, state, choices)
+
+        def before(preflight):
+            self.events.append(("authorizing", preflight))
+            self.before_hook()
+
+        def after():
+            self.events.append(("running", None))
+            self.after_hook()
+
+        client = provider.RegionalMutation(action, argument, preview.generation, before, after, gio, glib)
+        self.current = client
+
+        def call(name, path, interface, method, args, reply_type, flags, timeout, cancellable, callback, data):
+            self.methods.append((name, path, interface, method, None if args is None else args.unpack(), flags, timeout))
+            if method == "RemoveMatch":
+                return
+            self.before_request(method)
+            if method in self.replies:
+                result = self.replies[method]
+            elif method == "GetNameOwner":
+                result = GLib.Variant("(s)", (self.owner,))
+            elif method == "GetAll":
+                values = {"Timezone": GLib.Variant("s", self.time_state.timezone),
+                          "CanNTP": GLib.Variant("b", self.time_state.can_ntp),
+                          "NTP": GLib.Variant("b", self.time_state.ntp_enabled),
+                          "NTPSynchronized": GLib.Variant("b", self.time_state.ntp_synchronized)}
+                result = GLib.Variant("(a{sv})", (values,))
+            elif method == "Get":
+                result = GLib.Variant("(v)", (GLib.Variant("as", self.locale_state.assignments),))
+            elif method == "ListTimezones":
+                result = GLib.Variant("(as)", (["UTC", "Etc/UTC"],))
+            else:
+                if method == "SetTimezone":
+                    self.time_state = replace(self.time_state, timezone=args.unpack()[0])
+                elif method == "SetNTP":
+                    self.time_state = replace(self.time_state, ntp_enabled=args.unpack()[0])
+                elif method == "SetLocale":
+                    self.locale_state = provider.parse_locale_configuration(args.unpack()[0])
+                result = GLib.Variant("()", ())
+            if result is not None:
+                callback(self.connection, result, data)
+        self.connection.call.side_effect = call
+        gio.bus_get.side_effect = lambda *_args: client.connected(None, object(), None)
+        self.gio, self.glib = gio, glib
+        return client
+
+    def run_client(self, client):
+        with mock.patch.object(provider, "read_locale_choices", return_value=("C", "en_US.utf8")), \
+                mock.patch.object(provider.time, "monotonic", side_effect=lambda: self.clock):
+            return client.run()
+
+    def failure(self, client, code):
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            self.run_client(client)
+        self.assertEqual(caught.exception.code, code)
+        return caught.exception
+
+    def mutations(self):
+        return [method for method in self.methods if method[3].startswith("Set")]
+
+    def notify(self, values, invalidated=(), sender=":1.42"):
+        client = self.current
+        args = self.GLib.Variant("(sa{sv}as)", (client.name, values, invalidated))
+        client.properties_changed(None, sender, client.path, provider.PROPERTIES_INTERFACE,
+                                  "PropertiesChanged", args, None)
+
+    def test_fixed_methods_full_arguments_and_acknowledged_subscription_order(self):
+        for action, argument, method, signature_args in (
+            ("timezone-set", "Etc/UTC", "SetTimezone", ("Etc/UTC", True)),
+            ("ntp-set", "enabled", "SetNTP", (True, True)),
+            ("ntp-set", "disabled", "SetNTP", (False, True)),
+            ("locale-set", "LANG=en_US.utf8", "SetLocale",
+             (["LANG=en_US.utf8", "LANGUAGE=C", "LC_TIME=C"], True)),
+        ):
+            with self.subTest(action=action, argument=argument):
+                client = self.client(action, argument)
+                self.assertIsNotNone(self.run_client(client))
+                calls = self.mutations()
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(calls[0][:6], (":1.42", client.path, client.name, method,
+                    signature_args, self.gio.DBusCallFlags.ALLOW_INTERACTIVE_AUTHORIZATION))
+                self.assertEqual(calls[0][6], 60000)
+                methods = [row[3] for row in self.methods]
+                final_read = methods.index("AddMatch") + 3
+                self.assertEqual(methods[final_read], "ListTimezones" if action == "timezone-set" else
+                                 "Get" if action == "locale-set" else "GetAll")
+                self.assertEqual([event[0] for event in self.events], ["authorizing", "running"])
+                self.assertTrue(client.sent and client.acknowledged and client.done)
+                self.assertEqual(len(client.subscriptions), 2)
+                self.assertEqual(self.connection.signal_unsubscribe.call_count, 2)
+                self.assertEqual(methods[-2:], ["RemoveMatch", "RemoveMatch"])
+                self.connection.close_sync.assert_not_called()
+                self.glib.timeout_add.assert_any_call(60000, client.expire)
+                self.assertEqual(provider.PROTOCOL_MINOR, 0)
+                with self.assertRaises(RuntimeError):
+                    self.run_client(client)
+
+    def test_validation_precedes_connection_or_admission(self):
+        client = self.client()
+        for action, argument, generation in (("SetTime", "UTC", "a" * 64),
+                                            ("timezone-set", "../UTC", "a" * 64),
+                                            ("ntp-set", "true", "a" * 64),
+                                            ("locale-set", "LC_TIME=C", "a" * 64),
+                                            ("timezone-set", "UTC", "A" * 64)):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.RegionalMutation(action, argument, generation, mock.Mock(), mock.Mock(), self.gio, self.glib)
+        self.gio.bus_get.assert_not_called()
+        self.assertEqual(self.events, [])
+
+    def test_fresh_state_and_catalog_reject_stale_generation_before_admission(self):
+        for change in ("state", "catalog", "language"):
+            client = self.client("locale-set", "LANG=en_US.utf8") if change == "language" else self.client()
+            if change == "state":
+                self.time_state = replace(self.time_state, timezone="Etc/UTC")
+            elif change == "catalog":
+                self.replies["ListTimezones"] = self.GLib.Variant("(as)", (["UTC"],))
+            else:
+                self.locale_state = provider.parse_locale_configuration(["LANG=C", "LANGUAGE="])
+            self.failure(client, "conflict")
+            self.assertFalse(client.sent)
+            self.assertEqual(self.events, [])
+            self.assertEqual(self.mutations(), [])
+
+    def test_pre_send_configuration_events_and_journal_delay_prevent_dispatch(self):
+        for scenario in ("changed", "invalidated", "deadline", "flood", "checkpoint"):
+            client = self.client()
+            def before():
+                if scenario == "changed":
+                    self.notify({"Timezone": self.GLib.Variant("s", "Etc/UTC")})
+                elif scenario == "invalidated":
+                    self.notify({}, ["Timezone"])
+                elif scenario == "deadline":
+                    self.clock = 12
+                elif scenario == "flood":
+                    self.context.pending.return_value = True
+                else:
+                    raise OSError("journal sync failed")
+            self.before_hook = before
+            self.failure(client, {"deadline": "timeout", "checkpoint": "interrupted"}.get(scenario, "conflict"))
+            self.assertEqual(self.mutations(), [])
+            self.assertFalse(client.sent)
+            self.assertLessEqual(self.context.iteration.call_count, provider.REGIONAL_CALLBACK_LIMIT)
+            if scenario == "checkpoint":
+                self.assertIsInstance(client.hook_error, OSError)
+
+    def test_matching_notifications_are_accepted_but_conflict_history_is_retained(self):
+        for conflict in (False, True):
+            client = self.client()
+            def after():
+                if conflict:
+                    self.notify({"Timezone": self.GLib.Variant("s", "UTC")})
+                self.notify({"Timezone": self.GLib.Variant("s", "Etc/UTC")})
+            self.after_hook = after
+            if conflict:
+                self.failure(client, "conflict")
+            else:
+                self.assertEqual(self.run_client(client).timezone, "Etc/UTC")
+            self.assertEqual(len(self.mutations()), 1)
+
+    def test_irrelevant_signals_do_not_invalidate_or_extend_the_deadline(self):
+        client = self.client("ntp-set", "enabled")
+        def before():
+            self.notify({"NTPSynchronized": self.GLib.Variant("b", False)})
+            self.notify({"NTP": self.GLib.Variant("b", True)}, sender=":1.99")
+        self.before_hook = before
+        self.after_hook = lambda: self.notify({"NTPSynchronized": self.GLib.Variant("b", True)})
+        self.assertTrue(self.run_client(client).ntp_enabled)
+        self.assertEqual(self.glib.timeout_add.call_count, 2)
+
+    def test_invalidated_malformed_and_mismatched_final_state_cannot_report_success(self):
+        for scenario in ("invalidated", "signature", "duplicate", "final"):
+            client = self.client()
+            def after():
+                if scenario == "invalidated":
+                    self.notify({}, ["Timezone"])
+                elif scenario == "signature":
+                    self.notify({"Timezone": self.GLib.Variant("b", True)})
+                elif scenario == "duplicate":
+                    value = self.GLib.Variant.parse(None,
+                        "('org.freedesktop.timedate1', {'Timezone': <'UTC'>, 'Timezone': <'Etc/UTC'>}, @as [])", None, None)
+                    client.properties_changed(None, client.owner, client.path, provider.PROPERTIES_INTERFACE,
+                        "PropertiesChanged", value, None)
+                else:
+                    self.time_state = replace(self.time_state, timezone="UTC")
+            self.after_hook = after
+            self.failure(client, "conflict")
+            self.assertTrue(client.sent and client.acknowledged)
+
+    def test_effective_locale_notifications_allow_lc_elision_but_not_language_loss(self):
+        for lost in (False, True):
+            client = self.client("locale-set", "LANG=en_US.utf8")
+            self.locale_state = provider.parse_locale_configuration(["LANG=C", "LANGUAGE=C", "LC_TIME=en_US.utf8"])
+            client.generation = provider.make_regional_preview(client.action, client.argument,
+                self.locale_state, ["en_US.utf8"]).generation
+            def after():
+                values = ["LANG=en_US.utf8"] + ([] if lost else ["LANGUAGE=C"])
+                self.locale_state = provider.parse_locale_configuration(values)
+                self.notify({"Locale": self.GLib.Variant("as", values)})
+            self.after_hook = after
+            if lost:
+                self.failure(client, "conflict")
+            else:
+                self.assertEqual(self.run_client(client).lang, "en_US.utf8")
+
+    def test_owner_changes_before_and_after_dispatch_never_retarget_or_retry(self):
+        for after_dispatch in (False, True):
+            client = self.client()
+            def changed():
+                client.owner_changed(None, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus", "NameOwnerChanged", self.GLib.Variant("(sss)",
+                        (client.name, client.owner, ":1.99")), None)
+            if after_dispatch:
+                self.after_hook = changed
+            else:
+                self.before_hook = changed
+            self.failure(client, "interrupted" if after_dispatch else "conflict")
+            self.assertEqual(len(self.mutations()), int(after_dispatch))
+            self.assertTrue(all(row[0] == ":1.42" for row in self.mutations()))
+        client = self.client()
+        self.after_hook = lambda: setattr(self, "owner", ":1.99")
+        self.failure(client, "conflict")
+
+    def test_unsupported_preserved_locale_values_reject_before_admission(self):
+        for assignment in ("LANGUAGE=de:en", "LANGUAGE=français", "LC_TIME=", "LC_TIME=" + "x" * 128):
+            client = self.client("locale-set", "LANG=en_US.utf8")
+            self.locale_state = provider.parse_locale_configuration(["LANG=C", assignment])
+            client.generation = provider.make_regional_preview(client.action, client.argument,
+                self.locale_state, ["en_US.utf8"]).generation
+            before = self.locale_state.assignments
+            self.failure(client, "unsupported")
+            self.assertEqual(self.locale_state.assignments, before)
+            self.assertEqual(self.events, [])
+            self.assertEqual(self.mutations(), [])
+            self.assertFalse(client.sent)
+
+    def test_aggregate_deadline_covers_reply_verification_and_discards_late_callbacks(self):
+        for stage in ("reply", "verify", "final-owner"):
+            client = self.client()
+            def delay(method):
+                if ((stage == "reply" and method == "SetTimezone")
+                    or (stage == "verify" and method == "GetAll" and client.acknowledged)
+                    or (stage == "final-owner" and method == "GetNameOwner" and client.acknowledged)):
+                    self.clock = 61
+            self.before_request = delay
+            error = self.failure(client, "timeout")
+            self.assertIn("outcome is unknown", error.detail)
+            self.assertTrue(client.sent)
+            self.assertEqual(client.deadline, 61)
+            self.assertIsNone(client.value)
+            before = list(self.methods)
+            client.connected(None, object(), None)
+            client.properties_changed(None, client.owner, client.path, "", "", None, None)
+            self.assertEqual(before, self.methods)
+            self.assertEqual(len(self.mutations()), 1)
+
+    def test_post_reply_checkpoint_failure_cannot_publish_success(self):
+        client = self.client()
+        def fail():
+            raise OSError("journal storage unavailable")
+        self.after_hook = fail
+        self.failure(client, "interrupted")
+        self.assertTrue(client.sent and client.acknowledged)
+        self.assertIsInstance(client.hook_error, OSError)
+        self.assertIsNone(client.value)
+        self.assertEqual(len(self.mutations()), 1)
+
+    def test_rejected_matches_and_typed_method_errors_never_remove_unowned_rules(self):
+        from gi.repository import Gio
+        for method, remote, expected in (
+            ("AddMatch", "AccessDenied", "permission-denied"),
+            ("SetTimezone", "AccessDenied", "permission-denied"),
+            ("SetTimezone", "InteractiveAuthorizationRequired", "permission-denied"),
+            ("SetTimezone", "InvalidArgs", "malformed"),
+            ("SetTimezone", "NoReply", "timeout"),
+        ):
+            client = self.client()
+            self.replies[method] = Gio.DBusError.new_for_dbus_error(
+                "org.freedesktop.DBus.Error." + remote, "fixture error")
+            failure = self.failure(client, expected)
+            if remote == "NoReply":
+                self.assertIn("outcome is unknown", failure.detail)
+            self.assertEqual(len(self.mutations()), int(method.startswith("Set")))
+            self.assertFalse(client.acknowledged)
+            removed = [row for row in self.methods if row[3] == "RemoveMatch"]
+            self.assertEqual(len(removed), 0 if method == "AddMatch" else 2)
+
+    def test_late_match_acknowledgment_only_cleans_up_and_never_resumes(self):
+        client = self.client()
+        self.replies["AddMatch"] = None
+        client.loop.run.side_effect = client.expire
+        self.failure(client, "timeout")
+        call = [call for call in self.connection.call.call_args_list if call.args[3] == "AddMatch"][0]
+        self.assertEqual([row[3] for row in self.methods].count("RemoveMatch"), 0)
+        callback, data = call.args[-2:]
+        callback(self.connection, self.GLib.Variant("()", ()), data)
+        self.assertEqual([row[3] for row in self.methods].count("RemoveMatch"), 1)
+        self.assertEqual(self.events, [])
+        self.assertFalse(client.sent)
+        self.assertEqual(self.mutations(), [])
+
+    def test_local_transport_failure_after_dispatch_is_unknown_not_rejection(self):
+        from gi.repository import Gio, GLib
+        client = self.client()
+        self.replies["SetTimezone"] = GLib.Error.new_literal(
+            Gio.io_error_quark(), "fixture connection closed", Gio.IOErrorEnum.CLOSED)
+        failure = self.failure(client, "interrupted")
+        self.assertIn("outcome is unknown", failure.detail)
+        self.assertTrue(client.sent)
+        self.assertFalse(client.acknowledged)
+        self.assertEqual(len(self.mutations()), 1)
+
+    def test_queued_confirmation_change_is_drained_before_dispatch(self):
+        client = self.client()
+        def before():
+            self.context.pending.side_effect = [True, False]
+            self.context.iteration.side_effect = lambda _block: self.notify(
+                {"Timezone": self.GLib.Variant("s", "UTC")})
+        self.before_hook = before
+        self.failure(client, "conflict")
+        self.context.iteration.assert_called_once_with(False)
+        self.assertEqual(self.mutations(), [])
+
+    def test_private_bus_fixed_execution_and_failure_paths(self):
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-regional-mutation-bus.py"), str(PROVIDER_PATH)],
+            capture_output=True, text=True, timeout=90, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Private-bus regional mutations: PASS", result.stdout)
+
+
+class RegionalPreflightTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d nearly unchanged -- these
+    exercise the pure preview/generation/preflight-stream functions ported in
+    Checkpoint 1, which are distro-neutral. The one adaptation is the preview
+    generation's digest domain separator, which Lyona renamed from upstream's
+    "dwm-titus-regional-preview-v1" to "lyona-regional-preview-v1" -- the fixed
+    hex digests below were recomputed against Lyona's real domain separator.
+    """
+
+    def time_state(self, **changes):
+        return replace(provider.RegionalTimeState("UTC", True, False, True), **changes)
+
+    def test_timezone_preview_requires_membership_and_binds_current_and_target(self):
+        preview = provider.make_regional_preview("timezone-set", "Etc/UTC", self.time_state(), ["UTC", "Etc/UTC"])
+        self.assertEqual(preview.fields()[:3], ("preview", "timezone-set", "Etc/UTC"))
+        self.assertEqual((preview.current, preview.target), ("UTC", "Etc/UTC"))
+        provider.require_regional_generation(preview, preview.generation)
+        for current, target in (("Etc/UTC", "Etc/UTC"), ("UTC", "UTC")):
+            changed = provider.make_regional_preview("timezone-set", target,
+                self.time_state(timezone=current), ["UTC", "Etc/UTC"])
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.require_regional_generation(changed, preview.generation)
+            self.assertEqual(caught.exception.code, "conflict")
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.make_regional_preview("timezone-set", "Etc/UTC", self.time_state(), ["UTC"])
+        same = provider.make_regional_preview("timezone-set", "Etc/UTC",
+            self.time_state(ntp_enabled=True), ["Etc/UTC", "UTC", "Europe/London"])
+        self.assertEqual(same.generation, preview.generation)
+
+    def test_ntp_generation_has_exact_framing_and_ignores_synchronization_samples(self):
+        preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
+        framed = b"lyona-regional-preview-v1"
+        for value in (b"ntp-set", b"enabled", b"yes", b"disabled"):
+            framed += len(value).to_bytes(8, "big") + value
+        self.assertEqual(preview.generation, hashlib.sha256(framed).hexdigest())
+        self.assertEqual(provider.make_regional_preview("ntp-set", "enabled",
+            self.time_state(ntp_synchronized=False)).generation, preview.generation)
+        self.assertNotEqual(provider.make_regional_preview("ntp-set", "enabled",
+            self.time_state(ntp_enabled=True)).generation, preview.generation)
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            provider.make_regional_preview("ntp-set", "enabled", self.time_state(can_ntp=False))
+        self.assertEqual(caught.exception.code, "unsupported")
+
+    def test_locale_generation_preserves_key_presence_order_and_complete_overrides(self):
+        assignments = ["LANG=C", "LANGUAGE=de:en", "LC_TIME=de_DE.utf8", "LC_NUMERIC=fr_FR.utf8"]
+        before = provider.parse_locale_configuration(assignments)
+        preview = provider.make_regional_preview("locale-set", "LANG=en_US.utf8", before, ["C", "en_US.utf8"])
+        self.assertEqual((preview.current, preview.target, preview.detail),
+                         ("C", "en_US.utf8", "LANGUAGE=de:en, LC_NUMERIC=fr_FR.utf8, LC_TIME=de_DE.utf8"))
+        reordered = provider.make_regional_preview("locale-set", "LANG=en_US.utf8",
+            provider.parse_locale_configuration(list(reversed(assignments))), ["en_US.utf8", "C"])
+        self.assertEqual(preview, reordered)
+        for changed in ([item for item in assignments if item != "LANGUAGE=de:en"],
+                        [item.replace("LANGUAGE=de:en", "LANGUAGE=en") for item in assignments],
+                        [item.replace("LC_TIME=de_DE.utf8", "LC_TIME=C") for item in assignments]):
+            other = provider.make_regional_preview("locale-set", "LANG=en_US.utf8",
+                provider.parse_locale_configuration(changed), ["C", "en_US.utf8"])
+            self.assertNotEqual(other.generation, preview.generation)
+        forged = replace(before, lang="forged", detail="forged")
+        self.assertEqual(provider.make_regional_preview("locale-set", "LANG=en_US.utf8",
+            forged, ["C", "en_US.utf8"]), preview)
+        absent, empty = [provider.make_regional_preview("locale-set", "LANG=en_US.utf8",
+            provider.parse_locale_configuration(values), ["en_US.utf8"]).generation
+            for values in (["LANG=C"], ["LANG=C", "LC_TIME="])]
+        self.assertNotEqual(absent, empty)
+
+    def test_invalid_selections_and_states_are_rejected_before_io(self):
+        for action, argument in (("timezone-set", "../UTC"), ("ntp-set", "yes"),
+                                 ("locale-set", "LC_TIME=C"), ("locale-set", "LANG=C\n"),
+                                 ("arbitrary", "command")):
+            with mock.patch.object(provider, "RegionalRead") as reader, \
+                    mock.patch.object(provider, "read_locale_choices") as locales:
+                with self.assertRaises(provider.SnapshotFailure):
+                    provider.read_regional_preview(action, argument)
+                reader.assert_not_called()
+                locales.assert_not_called()
+        for state in (None, self.time_state(can_ntp=1), self.time_state(timezone="../UTC")):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.make_regional_preview("ntp-set", "enabled", state)
+        for value in (None, "", "A" * 64, "a" * 63, "a" * 65):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.require_regional_generation(
+                    provider.make_regional_preview("ntp-set", "enabled", self.time_state()), value)
+            self.assertEqual(caught.exception.code, "malformed")
+
+    def test_locale_generation_counts_utf8_bytes_in_each_length_prefix(self):
+        preview = provider.make_regional_preview("locale-set", "LANG=en_US.utf8",
+            provider.parse_locale_configuration(["LANGUAGE=français", "LANG=C"]), ["en_US.utf8"])
+        self.assertEqual(preview.generation, "91a4140beab5262819df4ce568434252f44557dfd6b6b04b40baa4cecc7f8ede"[:64])
+
+    def test_preflight_uses_only_fresh_fixed_readers(self):
+        states = {"time-state": self.time_state(), "timezone-choices": ("UTC", "Etc/UTC"),
+                  "locale-state": provider.parse_locale_configuration(["LANG=C"])}
+        with mock.patch.object(provider, "RegionalRead", side_effect=lambda kind: mock.Mock(
+                run=mock.Mock(return_value=states[kind]))) as reader, \
+                mock.patch.object(provider, "read_locale_choices", return_value=("C", "en_US.utf8")) as locales, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                mock.patch.object(provider, "open_journal_directory") as journal:
+            for _ in range(2):
+                provider.read_regional_preview("timezone-set", "Etc/UTC")
+                provider.read_regional_preview("ntp-set", "enabled")
+                provider.read_regional_preview("locale-set", "LANG=en_US.utf8")
+            self.assertEqual([call.args[0] for call in reader.call_args_list],
+                ["time-state", "timezone-choices", "time-state", "locale-state"] * 2)
+            self.assertEqual(locales.call_count, 2)
+            backend.assert_not_called()
+            journal.assert_not_called()
+
+    def test_choice_streams_are_sorted_complete_and_independently_versioned(self):
+        for kind in ("timezone", "locale"):
+            with mock.patch.object(provider, "regional_choices", return_value=("UTC", "C")):
+                output, code = provider.regional_preflight_output("regional-choices", [kind])
+            self.assertEqual(code, 0)
+            self.assertEqual(output.splitlines(), [f"regional-choices-protocol\t1\t0\t{kind}",
+                "choice\tC", "choice\tUTC", "complete\tregional-choices"])
+            self.assertLessEqual(len(output.encode()), provider.REGIONAL_CHOICE_STREAM_BYTES[kind])
+        self.assertEqual(provider.PROTOCOL_MINOR, 0)
+
+    def test_choice_catalog_limits_and_duplicates_are_rejected(self):
+        for values in (("C", "C"), ("bad\nlocale",), ("x" * 129,), tuple(f"x{i}" for i in range(4097))):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.validate_locale_catalog(values)
+        maximum = tuple(f"x{i}" for i in range(4096))
+        self.assertEqual(provider.validate_locale_catalog(maximum), maximum)
+        for kind, patch, value in (("locale", "read_locale_choices", ("C", "C")),
+                                   ("timezone", "RegionalRead", mock.Mock(run=mock.Mock(return_value=("UTC", "UTC"))))):
+            with mock.patch.object(provider, patch, return_value=value):
+                output, code = provider.regional_preflight_output("regional-choices", [kind])
+            self.assertEqual(code, 1)
+            self.assertIn("error\tregional\tmalformed\t", output)
+            self.assertNotIn("\nchoice\t", output)
+
+    def test_preview_stream_and_errors_never_publish_partial_evidence(self):
+        preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
+        with mock.patch.object(provider, "read_regional_preview", return_value=preview):
+            output, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
+        self.assertEqual((code, output.splitlines()), (0, ["regional-preview-protocol\t1\t0",
+            "\t".join(preview.fields()), "complete\tregional-preview"]))
+        for command, args, helper in (("regional-preview", ["ntp-set", "enabled"], "read_regional_preview"),
+                                     ("regional-choices", ["locale"], "regional_choices")):
+            for code in ("timeout", "permission-denied", "missing-provider", "malformed"):
+                with mock.patch.object(provider, helper, side_effect=provider.SnapshotFailure(code, "Fixture failure")):
+                    output, status = provider.regional_preflight_output(command, args)
+                self.assertEqual(status, 1)
+                self.assertEqual(len(output.splitlines()), 3)
+                self.assertEqual(output.splitlines()[1], f"error\tregional\t{code}\tFixture failure")
+                self.assertNotIn("\npreview\t", output)
+                self.assertNotIn("\nchoice\t", output)
+
+    def test_full_encoded_stream_limits_include_newlines(self):
+        preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
+        with mock.patch.object(provider, "read_regional_preview", return_value=preview):
+            output, _ = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
+            for limit, expected in ((len(output.encode()), 0), (len(output.encode()) - 1, 1)):
+                with mock.patch.object(provider, "REGIONAL_PREVIEW_STREAM_BYTES", limit):
+                    bounded, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
+                self.assertEqual(code, expected)
+                if code:
+                    self.assertNotIn("\npreview\t", bounded)
+        with mock.patch.object(provider, "regional_choices", return_value=("UTC",)):
+            output, _ = provider.regional_preflight_output("regional-choices", ["timezone"])
+            for limit, expected in ((len(output.encode()), 0), (len(output.encode()) - 1, 1)):
+                with mock.patch.dict(provider.REGIONAL_CHOICE_STREAM_BYTES, timezone=limit):
+                    bounded, code = provider.regional_preflight_output("regional-choices", ["timezone"])
+                self.assertEqual(code, expected)
+                if code:
+                    self.assertNotIn("\nchoice\t", bounded)
+
+    def test_non_utf8_or_oversized_preview_fields_are_not_emitted(self):
+        preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
+        for detail in ("x" * 513, "é" * 257, "bad\nfield", "bad\0field", "bad\ud800field", "bad\x1bfield", None):
+            with mock.patch.object(provider, "read_regional_preview", return_value=replace(preview, detail=detail)):
+                output, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
+            self.assertEqual(code, 1)
+            self.assertNotIn("\npreview\t", output)
+        with mock.patch.object(provider, "read_regional_preview", side_effect=provider.SnapshotFailure(
+                "unrecognized\ncode", "bad\ud800\0detail")):
+            output, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
+        self.assertEqual(code, 1)
+        self.assertEqual(output.splitlines()[1], "error\tregional\tinternal\tbad  detail")
+        output.encode("utf-8")
+
+    def test_closed_preflight_consumer_exits_without_traceback_or_shutdown_flush(self):
+        program = """
+import io, runpy, sys
+if int(sys.argv[2]) > 8192:
+    sys.stdout = io.TextIOWrapper(io.FileIO(sys.stdout.fileno(), "w", closefd=False),
+                                encoding="utf-8", write_through=True)
+main = runpy.run_path(sys.argv[1])["main"]
+main.__globals__["regional_preflight_output"] = lambda *_: ("x" * int(sys.argv[2]), 0)
+raise SystemExit(main(["regional-choices", "locale"]))
+"""
+        for size in (32, 65536):
+            with self.subTest(size=size):
+                read_fd, write_fd = os.pipe()
+                os.close(read_fd)
+                try:
+                    result = subprocess.run([sys.executable, "-c", program, str(PROVIDER_PATH), str(size)],
+                        stdin=subprocess.DEVNULL, stdout=write_fd, stderr=subprocess.PIPE, timeout=5)
+                finally:
+                    os.close(write_fd)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(result.stderr, b"")
+
+    def test_preflight_cli_grammar_and_invalid_native_requests(self):
+        invalid = (["regional-choices"], ["regional-choices", "time"], ["regional-choices", "locale", "extra"],
+                   ["regional-preview"], ["regional-preview", "ntp-set"],
+                   ["regional-preview", "arbitrary", "value"], ["regional-preview", "ntp-set", "enabled", "extra"],
+                   ["timezone-set", "UTC"], ["ntp-set", "enabled", "A" * 64],
+                   ["locale-set", "LC_TIME=C", "a" * 64])
+        with mock.patch.object(provider, "RegionalRead") as reader, \
+                mock.patch.object(provider, "read_locale_choices") as locales, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                mock.patch.object(provider, "open_journal_directory") as journal, \
+                contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()):
+            for args in invalid:
+                self.assertEqual(provider.main(args), 2, args)
+            self.assertEqual(output.getvalue(), "")
+            for mocked in (reader, locales, backend, journal):
+                mocked.assert_not_called()
+            for args in (["regional-preview", "timezone-set", "../UTC"],
+                         ["regional-preview", "ntp-set", "yes"],
+                         ["regional-preview", "locale-set", "LC_TIME=C"]):
+                output.seek(0)
+                output.truncate(0)
+                self.assertEqual(provider.main(args), 1, args)
+                self.assertEqual(len(output.getvalue().splitlines()), 3)
+                self.assertIn("error\tregional\tmalformed\t", output.getvalue())
+            for mocked in (reader, locales, backend, journal):
+                mocked.assert_not_called()
+        with mock.patch.object(provider, "regional_choices", return_value=("C",)), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(provider.main(["regional-choices", "locale"]), 0)
+            self.assertIn("choice\tC\n", output.getvalue())
+
+
 class LocaleEnumerationTests(unittest.TestCase):
     @contextlib.contextmanager
     def catalog(self, mode="success", *arguments, signal_number=None):
@@ -700,6 +1379,244 @@ class LocaleEnumerationTests(unittest.TestCase):
                             os.killpg(supervisor, signal.SIGKILL)
                     except (FileNotFoundError, ProcessLookupError):
                         pass
+
+
+class DelegatedToolTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d with the D-3 decision
+    (docs/UPSTREAM-SYNC.md#open-decisions) applied: Lyona's DELEGATED_TOOLS
+    has only printers-open (system-config-printer, confirmed in Arch extra);
+    accounts-open and sources-open ship permanent `unsupported` instead of
+    upstream's lxqt-admin-user/dnfdragora, so their tool-path subtests are
+    replaced with assertions that they reject before any trust check or
+    terminal-selection I/O. Terminal selection, trust-chain validation, and
+    the posix_spawn launch mechanics are distro-neutral and port unchanged.
+    """
+
+    environment = {"HOME": "/fixture-home", "PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"}
+
+    @contextlib.contextmanager
+    def selection(self, program="import os; os.write(1, b'kitty\\n')", *, mode=None, signal_number=None):
+        popen, processes = subprocess.Popen, []
+        def launch(command, **options):
+            self.assertEqual(command, ["/usr/bin/timeout", "--signal=TERM", "--kill-after=1", "3",
+                "/usr/bin/bash", "/usr/local/bin/dwm-terminal", "--print-command"])
+            self.assertEqual(options["env"], self.environment)
+            self.assertTrue(options["start_new_session"])
+            self.assertEqual(options["stdin"], subprocess.DEVNULL)
+            replacement = (["/usr/bin/python3", "-c", program] if mode is None else
+                           ["/usr/bin/python3", str(REPO / "tests/fixtures/system-locale-process.py"), mode])
+            process = popen(command[:4] + replacement, **options)
+            processes.append(process)
+            if signal_number is not None:
+                signal.raise_signal(signal_number)
+            return process
+        try:
+            with mock.patch.object(provider.subprocess, "Popen", side_effect=launch):
+                yield processes
+        finally:
+            for process in processes:
+                if process.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=2)
+                process.stdout.close()
+                process.stderr.close()
+
+    def read_selection(self):
+        return provider.read_terminal_selection("/usr/local/bin/dwm-terminal", self.environment)
+
+    def test_fixed_tool_paths_and_password_argv(self):
+        for action, path in provider.DELEGATED_TOOLS.items():
+            path = path[0]
+            with self.subTest(action=action), mock.patch.object(provider, "trusted_delegated_executable", side_effect=lambda path, _name: path) as trusted, \
+                    mock.patch.object(provider, "read_terminal_selection") as selector:
+                self.assertEqual(provider.delegated_command(action)[0], (path,))
+                trusted.assert_called_once_with(path, os.path.basename(path))
+                selector.assert_not_called()
+        for name, arguments in provider.PASSWORD_TERMINALS.items():
+            with self.subTest(name=name), \
+                    mock.patch.object(provider, "trusted_delegated_executable", side_effect=lambda path, _name: path), \
+                    mock.patch.object(provider, "terminal_selection_environment", return_value=self.environment), \
+                    mock.patch.object(provider, "read_terminal_selection", return_value=name), \
+                    mock.patch.object(provider.shutil, "which", side_effect=["/usr/local/bin/dwm-terminal", "/usr/bin/" + name]):
+                self.assertEqual(provider.delegated_command("password-open"),
+                    (("/usr/bin/" + name, *arguments, "/usr/bin/passwd"), "Password change"))
+
+    def test_accounts_and_sources_open_are_permanently_unsupported_per_d3(self):
+        # D-3: neither lxqt-admin-user (accounts-open) nor dnfdragora (sources-open)
+        # is packaged for Arch. Both must reject before any trust check or
+        # terminal-selection I/O -- there is no fallback tool to resolve.
+        for action in ("accounts-open", "sources-open"):
+            with self.subTest(action=action), \
+                    mock.patch.object(provider, "trusted_delegated_executable") as trusted, \
+                    mock.patch.object(provider, "read_terminal_selection") as selector:
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    provider.delegated_command(action)
+                self.assertEqual(caught.exception.code, "unsupported")
+                trusted.assert_not_called()
+                selector.assert_not_called()
+
+    def test_unknown_actions_and_unsupported_terminals_never_launch_or_fall_back(self):
+        for action in ("health-open", "password-open user", "accounts-open --root", None, []):
+            with self.subTest(action=action), mock.patch.object(provider, "trusted_delegated_executable") as target:
+                with self.assertRaises(provider.SnapshotFailure):
+                    provider.delegated_command(action)
+                target.assert_not_called()
+        for selected in ("warp-terminal", "kitty -e sh", "bash", "/usr/bin/foot"):
+            with self.subTest(selected=selected), \
+                    mock.patch.object(provider, "trusted_delegated_executable", side_effect=lambda path, _name: path), \
+                    mock.patch.object(provider, "terminal_selection_environment", return_value=self.environment), \
+                    mock.patch.object(provider, "read_terminal_selection", return_value=selected), \
+                    mock.patch.object(provider.shutil, "which", return_value="/usr/local/bin/dwm-terminal") as which:
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    provider.delegated_command("password-open")
+                self.assertEqual(caught.exception.code, "unsupported")
+                which.assert_called_once()
+
+    def test_trust_checks_resolved_executable_and_every_parent(self):
+        path = "/usr/bin/passwd"
+        def metadata(current, **_options):
+            return types.SimpleNamespace(st_uid=0, st_mode=(stat.S_IFREG | 0o4755) if current == path else stat.S_IFDIR | 0o755)
+        with mock.patch.object(provider.os.path, "realpath", return_value=path), \
+                mock.patch.object(provider.os, "stat", side_effect=metadata) as inspected, \
+                mock.patch.object(provider.os, "access", return_value=True):
+            self.assertEqual(provider.trusted_delegated_executable("/alias/passwd", "passwd"), path)
+            self.assertEqual([call.args[0] for call in inspected.call_args_list], [path, "/usr/bin", "/usr", "/"])
+        for target in (path, "/usr/bin", "/usr", "/"):
+            for field in ("owner", "writable", "type"):
+                def unsafe(current, **options):
+                    value = metadata(current, **options)
+                    if current == target:
+                        if field == "owner":
+                            value.st_uid = 1000
+                        elif field == "writable":
+                            value.st_mode |= 0o020
+                        else:
+                            value.st_mode = stat.S_IFLNK | 0o777
+                    return value
+                with self.subTest(target=target, field=field), mock.patch.object(provider.os.path, "realpath", return_value=path), \
+                        mock.patch.object(provider.os, "stat", side_effect=unsafe):
+                    with self.assertRaises(provider.SnapshotFailure) as caught:
+                        provider.trusted_delegated_executable(path, "passwd")
+                    self.assertEqual(caught.exception.code, "unsupported")
+        with mock.patch.object(provider.os.path, "realpath", return_value="/usr/bin/sh"):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.trusted_delegated_executable(path, "passwd")
+
+    def test_selection_environment_excludes_startup_and_loader_inputs(self):
+        source = {**self.environment, "DWM_TERMINAL": "kitty", "XDG_CONFIG_HOME": "/fixture/config",
+                  "BASH_ENV": "/private", "LD_PRELOAD": "/private", "LOCPATH": "/private", "BASH_FUNC_x%%": "() { false; }"}
+        with mock.patch.dict(os.environ, source, clear=True):
+            self.assertEqual(provider.terminal_selection_environment(),
+                {**self.environment, "DWM_TERMINAL": "kitty", "XDG_CONFIG_HOME": "/fixture/config"})
+        for value in ("x" * 4097, "\udcff"):
+            with mock.patch.dict(os.environ, {**self.environment, "DWM_TERMINAL": value}, clear=True):
+                with self.assertRaises(provider.SnapshotFailure):
+                    provider.terminal_selection_environment()
+
+    def test_selection_is_fresh_bounded_and_reaped(self):
+        handlers = {number: signal.getsignal(number) for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        with self.selection() as children:
+            self.assertEqual(self.read_selection(), "kitty")
+            self.assertEqual(self.read_selection(), "kitty")
+            self.assertEqual(len(children), 2)
+            self.assertTrue(all(child.returncode == 0 and child.stdout.closed and child.stderr.closed for child in children))
+        self.assertEqual(handlers, {number: signal.getsignal(number) for number in handlers})
+
+    def test_selector_rejects_partial_malformed_and_excess_output(self):
+        for output in (b"", b"kitty", b"kitty\nxterm\n", b"kitty\n\xff", b"kitty\t\n", b"x" * 4096 + b"\n"):
+            with self.subTest(output=output[:20]), self.selection("import os; os.write(1, " + repr(output) + ")"):
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    self.read_selection()
+                self.assertEqual(caught.exception.code, "malformed")
+        with self.selection("import os; os.write(1, b'kitty\\n'); os.write(2, b'x' * 4091)"):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                self.read_selection()
+            self.assertEqual(caught.exception.code, "malformed")
+        with self.selection("import os; os.write(1, b'kitty\\n'); os.write(2, b'x' * 4090)"):
+            self.assertEqual(self.read_selection(), "kitty")
+
+    def test_selector_exit_status_and_real_deadline_are_required(self):
+        for status, code in ((1, "internal"), (127, "missing-provider"), (124, "timeout")):
+            with self.subTest(status=status), self.selection("import os; os.write(1, b'kitty\\n'); os._exit(" + str(status) + ")"):
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    self.read_selection()
+                self.assertEqual(caught.exception.code, code)
+        started = time.monotonic()
+        with self.selection(mode="closed-pipes") as children:
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                self.read_selection()
+            self.assertEqual(caught.exception.code, "timeout")
+            self.assertTrue(children[0].stdout.closed and children[0].stderr.closed)
+            self.assertIsNotNone(children[0].returncode)
+        self.assertLess(time.monotonic() - started, 5.5)
+
+    def test_missing_closefrom_fails_before_open_or_spawn(self):
+        unavailable = types.SimpleNamespace(open=mock.Mock(), posix_spawn=mock.Mock())
+        with mock.patch.object(provider, "os", unavailable):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.launch_delegated_tool(("/usr/bin/kitty", "/usr/bin/passwd"))
+        self.assertEqual(caught.exception.code, "unsupported")
+        unavailable.open.assert_not_called()
+        unavailable.posix_spawn.assert_not_called()
+
+    def test_launch_uses_new_session_null_stdio_and_closefrom(self):
+        command = ("/usr/bin/kitty", "/usr/bin/passwd")
+        with mock.patch.object(provider.os, "posix_spawn", return_value=1234) as spawn:
+            provider.launch_delegated_tool(command)
+        args, options = spawn.call_args
+        self.assertEqual(args[:2], (command[0], command))
+        self.assertTrue(options["setsid"])
+        self.assertEqual(options["setsigmask"], ())
+        actions = options["file_actions"]
+        self.assertEqual([action[2] for action in actions[:3]], [0, 1, 2])
+        self.assertEqual(actions[-1], (os.POSIX_SPAWN_CLOSEFROM, 3))
+        with self.assertRaises(OSError):
+            os.fstat(actions[0][1])
+        for error, code in ((FileNotFoundError(), "missing-provider"), (PermissionError(), "permission-denied"),
+                            (OSError(errno.ENOEXEC, "Fixture"), "internal"), (InterruptedError(), "interrupted"),
+                            (NotImplementedError(), "unsupported")):
+            with self.subTest(code=code), mock.patch.object(provider.os, "posix_spawn", side_effect=error):
+                with self.assertRaises(provider.SnapshotFailure) as caught:
+                    provider.launch_delegated_tool(command)
+                self.assertEqual(caught.exception.code, code)
+
+    def test_selector_signals_and_cleanup_failure_cannot_publish_selection(self):
+        handlers = {number: signal.getsignal(number) for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        for number in handlers:
+            with self.subTest(number=number), self.selection(mode="closed-pipes", signal_number=number) as children:
+                with self.assertRaises(SystemExit) as caught:
+                    self.read_selection()
+                self.assertEqual(caught.exception.code, 128 + number)
+                self.assertTrue(children[0].stdout.closed and children[0].stderr.closed)
+                self.assertIsNotNone(children[0].returncode)
+        self.assertEqual(handlers, {number: signal.getsignal(number) for number in handlers})
+        original = provider.close_locale_process
+        def cleanup(process):
+            original(process)
+            raise provider.SnapshotFailure("timeout", "Fixture cleanup failed")
+        with self.selection(), mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                self.read_selection()
+            self.assertEqual(caught.exception.code, "timeout")
+            self.assertIn("Terminal selection cleanup", caught.exception.detail)
+
+    def test_kernel_exec_failure_and_post_acceptance_cleanup_are_distinguished(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.launch_delegated_tool((str(pathlib.Path(directory) / "absent"),))
+            self.assertEqual(caught.exception.code, "missing-provider")
+        original = os.close
+        def close(descriptor):
+            original(descriptor)
+            raise OSError(errno.EIO, "Fixture close failure")
+        with mock.patch.object(provider.os, "posix_spawn", return_value=1234) as launch, \
+                mock.patch.object(provider.os, "close", side_effect=close):
+            with self.assertRaises(provider.SnapshotFailure) as caught:
+                provider.launch_delegated_tool(("/usr/bin/kitty", "/usr/bin/passwd"))
+            self.assertEqual(caught.exception.code, "interrupted")
+            self.assertIn("may already be open", caught.exception.detail)
+            launch.assert_called_once()
 
 
 class AccountReadTests(unittest.TestCase):
@@ -1733,6 +2650,524 @@ class UpdateEventMonitorTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "PackageKit private-bus event monitor: PASS\n")
+
+
+class RegionalEventMonitorTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d nearly unchanged --
+    AuthenticatedEventMonitor/RegionalEventMonitor generalize Phase 4's
+    UpdateEventMonitor pattern and are distro-neutral (timedate1/locale1
+    D-Bus contracts, not a package-manager concern).
+    """
+
+    def monitor(self, kind="time"):
+        from gi.repository import Gio, GLib
+        glib = mock.Mock(Error=GLib.Error, Variant=GLib.Variant,
+            VariantType=GLib.VariantType, SOURCE_REMOVE=False, SOURCE_CONTINUE=True,
+            PRIORITY_DEFAULT=0)
+        gio = mock.Mock(dbus_is_unique_name=Gio.dbus_is_unique_name)
+        unix, emitted = mock.Mock(), []
+        monitor = provider.RegionalEventMonitor(kind, gio, glib, unix, emitted.append)
+        monitor.deadline = time.monotonic() + 10
+        monitor.deadline_source = 7
+        monitor.connection = gio.bus_get_finish.return_value
+        monitor.connection.call_finish.return_value = GLib.Variant("()", ())
+        return monitor, emitted, gio, glib, unix
+
+    def owner(self, monitor, glib, old, new, sender="org.freedesktop.DBus"):
+        monitor.owner_changed(None, sender, "/org/freedesktop/DBus", "org.freedesktop.DBus",
+            "NameOwnerChanged", glib.Variant("(sss)", (monitor.name, old, new)), None)
+
+    def properties(self, monitor, glib, fields=(), invalidated=(), sender=":1.2"):
+        monitor.properties_changed(None, sender, monitor.path, provider.PROPERTIES_INTERFACE,
+            "PropertiesChanged", glib.Variant("(sa{sv}as)", (monitor.name,
+                {field: glib.Variant("b", True) for field in fields}, list(invalidated))), None)
+
+    def test_fixed_subscriptions_require_both_acknowledgements_and_owner_barrier(self):
+        for kind in ("time", "locale"):
+            monitor, emitted, gio, glib, _unix = self.monitor(kind)
+            connection = monitor.connection
+            monitor.connected(None, object(), None)
+            subscriptions = connection.signal_subscribe.call_args_list
+            self.assertEqual(len(subscriptions), 2)
+            self.assertEqual(subscriptions[1].args[:5], (None, provider.PROPERTIES_INTERFACE,
+                "PropertiesChanged", monitor.path, monitor.name))
+            self.assertTrue(all(call.args[5] == gio.DBusSignalFlags.NO_MATCH_RULE for call in subscriptions))
+            for index, rule in enumerate(monitor.match_rules):
+                connection.call_finish.return_value = glib.Variant("()", ())
+                monitor.match_finished(connection, object(), rule)
+                self.assertEqual(emitted, [])
+                if index == 0:
+                    connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+                    monitor.owner_initialized(connection, object(), 0)
+            self.assertEqual([call.args[3] for call in connection.call.call_args_list],
+                ["AddMatch", "GetNameOwner", "AddMatch", "GetNameOwner"])
+            self.assertTrue(all(call.args[0] == "org.freedesktop.DBus" for call in connection.call.call_args_list))
+            self.assertEqual(connection.call.call_args.args[4].unpack(), (monitor.name,))
+            connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+            monitor.owner_resolved(connection, object(), 0)
+            self.assertEqual(emitted, ["regional-event\tready"])
+            self.assertEqual(monitor.deadline_source, 0)
+
+    def test_absence_is_ready_but_denial_and_malformed_owner_are_not(self):
+        for error in ("NameHasNoOwner", "AccessDenied", "NoReply", None):
+            monitor, emitted, gio, glib, _unix = self.monitor()
+            if error:
+                monitor.connection.call_finish.side_effect = glib.Error("fixture failure")
+                gio.dbus_error_get_remote_error.return_value = "org.freedesktop.DBus.Error." + error
+            else:
+                monitor.connection.call_finish.return_value = glib.Variant("(s)", (monitor.name,))
+            monitor.owner_resolved(monitor.connection, object(), 0)
+            self.assertEqual(monitor.ready, error == "NameHasNoOwner")
+            self.assertEqual(emitted, ["regional-event\tready"] if error == "NameHasNoOwner" else [])
+
+    def test_owner_epoch_race_coalescing_departure_and_forged_sender(self):
+        monitor, emitted, _gio, glib, _unix = self.monitor()
+        monitor.owner = ":1.2"
+        for _ in range(100):
+            self.properties(monitor, glib, ["NTP"])
+        self.owner(monitor, glib, ":1.2", ":1.3")
+        monitor.connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        monitor.owner_resolved(monitor.connection, object(), 0)
+        self.assertEqual(monitor.owner, ":1.3")
+        self.assertEqual(emitted, ["regional-event\tready", "regional-event\tchanged"])
+        self.properties(monitor, glib, ["NTP"], sender=":1.2")
+        self.owner(monitor, glib, ":1.3", ":1.8", sender=":1.8")
+        self.assertEqual(monitor.owner, ":1.3")
+        self.owner(monitor, glib, ":1.3", "")
+        self.assertEqual(monitor.owner, "")
+        self.assertEqual(len(emitted), 2, "Idle departure must not reactivate a service")
+        self.properties(monitor, glib, ["NTP"], sender=":1.3")
+        self.assertEqual(len(emitted), 2)
+        self.owner(monitor, glib, "", ":1.4")
+        self.owner(monitor, glib, ":1.4", ":1.5")
+        self.assertEqual(len(emitted), 4)
+
+    def test_only_relevant_properties_invalidate_and_bounds_fail_closed(self):
+        for kind in ("time", "locale"):
+            monitor, emitted, _gio, glib, _unix = self.monitor(kind)
+            monitor.ready, monitor.owner = True, ":1.2"
+            self.properties(monitor, glib, ["Unrelated"])
+            self.assertEqual(emitted, [])
+            for field in monitor.relevant:
+                self.properties(monitor, glib, [field])
+                self.properties(monitor, glib, invalidated=[field])
+            self.assertEqual(len(emitted), len(monitor.relevant) * 2)
+            self.properties(monitor, glib, ["x" * 513])
+            self.assertTrue(monitor.stopped)
+        for fields, invalidated in (([str(i) for i in range(65)], []), ([], ["x" * 513])):
+            monitor, _emitted, _gio, glib, _unix = self.monitor()
+            monitor.owner = ":1.2"
+            self.properties(monitor, glib, fields, invalidated)
+            self.assertTrue(monitor.stopped)
+
+    def test_setup_rejects_unicast_senders_before_parsing_or_dirtying(self):
+        monitor, emitted, _gio, glib, _unix = self.monitor()
+        self.properties(monitor, glib, ["Timezone"])
+        self.properties(monitor, glib, ["x" * 20000])
+        self.assertFalse(monitor.stopped)
+        self.assertFalse(monitor.dirty)
+        monitor.owner = ":1.2"
+        self.properties(monitor, glib, ["x" * 20000], sender=":1.8")
+        self.assertFalse(monitor.stopped)
+        self.assertFalse(monitor.dirty)
+        self.properties(monitor, glib, ["Timezone"])
+        self.assertTrue(monitor.dirty)
+        self.assertEqual(emitted, [])
+
+    def test_real_setup_unicast_is_authenticated_before_readiness(self):
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-regional-setup-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Regional setup unicast authentication: PASS\n")
+
+    def test_expired_setup_late_ack_and_denial_never_report_ready(self):
+        for callback in ("connected", "match_finished", "owner_resolved"):
+            monitor, emitted, _gio, _glib, _unix = self.monitor()
+            monitor.deadline = time.monotonic() - 1
+            getattr(monitor, callback)(monitor.connection, object(), "fixture")
+            self.assertTrue(monitor.stopped)
+            self.assertEqual(emitted, [])
+        for denied in (True, False):
+            monitor, emitted, _gio, glib, _unix = self.monitor()
+            monitor.stop(0)
+            if denied:
+                monitor.connection.call_finish.side_effect = glib.Error("denied")
+            monitor.match_finished(monitor.connection, object(), "owned-rule")
+            self.assertEqual(monitor.exit_code, 0)
+            self.assertEqual(emitted, [])
+            if denied:
+                monitor.connection.call.assert_not_called()
+            else:
+                self.assertEqual(monitor.connection.call.call_args.args[3], "RemoveMatch")
+                self.assertEqual(monitor.connection.call.call_args.args[4].unpack(), ("owned-rule",))
+
+    def test_cleanup_is_single_use_and_removes_only_acknowledged_rules(self):
+        monitor, _emitted, gio, glib, unix = self.monitor()
+        connection = monitor.connection
+        connection.signal_subscribe.side_effect = [20, 21]
+        connection.connect.return_value = 24
+        glib.timeout_add.return_value = 10
+        unix.signal_add.side_effect = [11, 12, 13]
+        def run():
+            monitor.connected(None, object(), None)
+            monitor.match_finished(connection, object(), monitor.match_rules[0])
+            connection.call_finish.side_effect = glib.Error("second match denied")
+            monitor.match_finished(connection, object(), monitor.match_rules[1])
+        monitor.loop.run.side_effect = run
+        self.assertEqual(monitor.run(), 1)
+        self.assertEqual([call.args[0] for call in connection.signal_unsubscribe.call_args_list], [20, 21])
+        removals = [call for call in connection.call.call_args_list if call.args[3] == "RemoveMatch"]
+        self.assertEqual(len(removals), 1)
+        self.assertEqual(removals[0].args[4].unpack(), (monitor.match_rules[0],))
+        self.assertEqual([call.args[0] for call in glib.source_remove.call_args_list], [11, 12, 13, 10])
+        connection.close_sync.assert_not_called()
+        self.assertTrue(monitor.cancellable.cancel.called)
+        with self.assertRaises(RuntimeError):
+            monitor.run()
+        self.assertEqual(gio.bus_get.call_count, 1)
+
+    def test_closed_cli_and_real_private_bus_lifecycle(self):
+        with mock.patch.object(provider, "watch_regional_events", return_value=0) as watch, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                contextlib.redirect_stderr(io.StringIO()):
+            for kind in ("time", "locale"):
+                self.assertEqual(provider.main(["watch-regional", kind]), 0)
+            self.assertEqual(watch.call_args_list, [mock.call("time"), mock.call("locale")])
+            for args in ([], ["other"], ["time", "extra"], ["--system"]):
+                self.assertEqual(provider.main(["watch-regional", *args]), 2)
+            backend.assert_not_called()
+        for kind in ("time", "locale"):
+            result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+                str(REPO / "tests/fixtures/system-update-events-bus.py"), str(PROVIDER_PATH), kind],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, kind + " private-bus event monitor: PASS\n")
+
+
+class AccountEventMonitorTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d unchanged -- distro-neutral."""
+
+    def monitor(self):
+        _regional, emitted, gio, glib, unix = RegionalEventMonitorTests().monitor()
+        monitor = provider.AccountEventMonitor(gio, glib, unix, emitted.append)
+        monitor.deadline = time.monotonic() + 10
+        monitor.deadline_source = 7
+        monitor.connection = gio.bus_get_finish.return_value
+        return monitor, emitted, gio, glib, unix
+
+    def setup(self, monitor, glib):
+        connection = monitor.connection
+        monitor.connected(None, object(), None)
+        for index, rule in enumerate(monitor.match_rules):
+            connection.call_finish.return_value = glib.Variant("()", ())
+            monitor.match_finished(connection, object(), rule)
+            if index == 0:
+                connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+                monitor.owner_initialized(connection, object(), 0)
+
+    def test_four_fixed_matches_precede_ready_without_account_enumeration(self):
+        monitor, emitted, gio, glib, _unix = self.monitor()
+        self.setup(monitor, glib)
+        connection = monitor.connection
+        subscriptions = connection.signal_subscribe.call_args_list
+        self.assertEqual(len(subscriptions), 4)
+        self.assertEqual([call.args[2] for call in subscriptions],
+            ["NameOwnerChanged", "UserAdded", "UserDeleted", "Changed"])
+        self.assertEqual(subscriptions[-1].args[:5], (None, provider.ACCOUNT_INTERFACE,
+            "Changed", None, None))
+        self.assertTrue(all(call.args[5] == gio.DBusSignalFlags.NO_MATCH_RULE for call in subscriptions))
+        self.assertEqual([call.args[3] for call in connection.call.call_args_list],
+            ["AddMatch", "GetNameOwner", "AddMatch", "AddMatch", "AddMatch", "GetNameOwner"])
+        self.assertTrue(all(call.args[0] == "org.freedesktop.DBus" for call in connection.call.call_args_list))
+        self.assertEqual(emitted, [])
+        connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        monitor.owner_resolved(connection, object(), 0)
+        self.assertEqual(emitted, ["accounts-event\tready"])
+
+    def test_every_valid_candidate_path_is_covered_before_and_after_ready(self):
+        monitor, emitted, _gio, glib, _unix = self.monitor()
+        monitor.owner = ":1.2"
+        for path in ("/users/Excluded", "/future/New", "/org/freedesktop/Accounts/User1000"):
+            monitor.user_changed(None, ":1.2", path, provider.ACCOUNT_INTERFACE,
+                "Changed", glib.Variant("()", ()), None)
+        self.assertTrue(monitor.dirty)
+        self.assertEqual(emitted, [])
+        monitor.connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        monitor.owner_resolved(monitor.connection, object(), 0)
+        self.assertEqual(emitted, ["accounts-event\tready", "accounts-event\tchanged"])
+        for member in ("UserAdded", "UserDeleted"):
+            monitor.users_changed(None, ":1.2", provider.ACCOUNTS_PATH, provider.ACCOUNTS_NAME,
+                member, glib.Variant("(o)", ("/users/New",)), None)
+        self.assertEqual(len(emitted), 4)
+
+    def test_untrusted_unicast_never_reaches_payload_parsing(self):
+        for owner, sender in (("", ":1.2"), (":1.2", ":1.8")):
+            monitor, emitted, _gio, _glib, _unix = self.monitor()
+            monitor.owner = owner
+            payload = mock.Mock()
+            monitor.users_changed(None, sender, provider.ACCOUNTS_PATH, provider.ACCOUNTS_NAME,
+                "UserAdded", payload, None)
+            monitor.user_changed(None, sender, "/users/Unknown", provider.ACCOUNT_INTERFACE,
+                "Changed", payload, None)
+            payload.get_type_string.assert_not_called()
+            self.assertFalse(monitor.stopped)
+            self.assertFalse(monitor.dirty)
+            self.assertEqual(emitted, [])
+
+    def test_notifications_are_typed_bounded_and_scope_checked(self):
+        for manager in (True, False):
+            monitor, emitted, _gio, glib, _unix = self.monitor()
+            monitor.owner, monitor.ready = ":1.2", True
+            callback = monitor.users_changed if manager else monitor.user_changed
+            interface = provider.ACCOUNTS_NAME if manager else provider.ACCOUNT_INTERFACE
+            path = provider.ACCOUNTS_PATH if manager else "/users/Changed"
+            member = "UserAdded" if manager else "Changed"
+            callback(None, ":1.2", path, "org.example.Unrelated", member, mock.Mock(), None)
+            callback(None, ":1.2", path, interface, "Unrelated", mock.Mock(), None)
+            self.assertEqual(emitted, [])
+            callback(None, ":1.2", path, interface, member, glib.Variant("(s)", ("wrong",)), None)
+            self.assertTrue(monitor.stopped)
+        for manager in (True, False):
+            monitor, _emitted, _gio, glib, _unix = self.monitor()
+            monitor.owner = ":1.2"
+            path = "/" + "x" * 513
+            if manager:
+                monitor.users_changed(None, ":1.2", provider.ACCOUNTS_PATH, provider.ACCOUNTS_NAME,
+                    "UserDeleted", glib.Variant("(o)", (path,)), None)
+            else:
+                monitor.user_changed(None, ":1.2", path, provider.ACCOUNT_INTERFACE,
+                    "Changed", glib.Variant("()", ()), None)
+            self.assertTrue(monitor.stopped)
+
+    def test_owner_replacement_rejects_old_senders_and_departure_is_quiet(self):
+        monitor, emitted, _gio, glib, _unix = self.monitor()
+        monitor.owner, monitor.ready = ":1.2", True
+        owner = RegionalEventMonitorTests().owner
+        owner(monitor, glib, ":1.2", ":1.3")
+        self.assertEqual(emitted, ["accounts-event\tchanged"])
+        monitor.user_changed(None, ":1.2", "/users/Old", provider.ACCOUNT_INTERFACE,
+            "Changed", glib.Variant("()", ()), None)
+        self.assertEqual(len(emitted), 1)
+        owner(monitor, glib, ":1.3", "")
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(monitor.owner, "")
+
+    def test_denied_partial_setup_removes_only_owned_rules_and_all_local_sources(self):
+        monitor, emitted, gio, glib, unix = self.monitor()
+        connection = monitor.connection
+        connection.signal_subscribe.side_effect = [20, 21, 22, 23]
+        connection.connect.return_value = 24
+        glib.timeout_add.return_value = 10
+        unix.signal_add.side_effect = [11, 12, 13]
+        def run():
+            monitor.connected(None, object(), None)
+            monitor.match_finished(connection, object(), monitor.match_rules[0])
+            connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+            monitor.owner_initialized(connection, object(), 0)
+            connection.call_finish.side_effect = glib.Error("denied service match")
+            monitor.match_finished(connection, object(), monitor.match_rules[1])
+        monitor.loop.run.side_effect = run
+        self.assertEqual(monitor.run(), 1)
+        self.assertEqual(emitted, [])
+        self.assertEqual([call.args[0] for call in connection.signal_unsubscribe.call_args_list], [20, 21, 22, 23])
+        self.assertEqual([call.args[0] for call in glib.source_remove.call_args_list], [11, 12, 13, 10])
+        removals = [call for call in connection.call.call_args_list if call.args[3] == "RemoveMatch"]
+        self.assertEqual(len(removals), 1)
+        self.assertEqual(removals[0].args[4].unpack(), (monitor.match_rules[0],))
+        connection.close_sync.assert_not_called()
+        with self.assertRaises(RuntimeError):
+            monitor.run()
+        self.assertEqual(gio.bus_get.call_count, 1)
+
+    def test_cli_is_argument_free_and_private_bus_lifecycle_and_unicast_pass(self):
+        with mock.patch.object(provider, "watch_account_events", return_value=0) as watch, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(provider.main(["watch-accounts"]), 0)
+            for extra in ("user", "--system", "/users/Selected"):
+                self.assertEqual(provider.main(["watch-accounts", extra]), 2)
+            watch.assert_called_once_with()
+            backend.assert_not_called()
+        for fixture, expected in (("system-update-events-bus.py", "accounts private-bus event monitor: PASS\n"),
+                                  ("system-regional-setup-bus.py", "Account setup unicast authentication: PASS\n")):
+            result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+                str(REPO / "tests/fixtures" / fixture), str(PROVIDER_PATH), "accounts"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, expected)
+
+
+class UnitEventMonitorTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d unchanged. Unlike the
+    Checkpoint 1 draft's WATCH_UNIT_SETS comment, docs/SYNC-P9-REGIONAL-
+    MUTATION.md's own §4 grammar ("watch-units printers|security") and this
+    fixture (which drives `watch-units security` as a real CLI subprocess)
+    both confirm main() dispatches "security" exactly like "printers" --
+    only SystemProviderDiscovery.qml's domainDefinition table leaves
+    "security" out (Checkpoint 3, no provider/state/action exists for it
+    yet). That earlier main()-level restriction has been reverted.
+    """
+
+    def monitor(self, kind="printers"):
+        _regional, emitted, gio, glib, unix = RegionalEventMonitorTests().monitor()
+        monitor = provider.UnitEventMonitor(kind, gio, glib, unix, emitted.append)
+        monitor.deadline = time.monotonic() + 10
+        monitor.deadline_source = 7
+        monitor.connection = mock.Mock()
+        gio.DBusConnection.new_for_address_finish.return_value = monitor.connection
+        return monitor, emitted, gio, glib, unix
+
+    def resolve(self, monitor, glib):
+        identity = (monitor.resolution_epoch, monitor.resolve_round)
+        for index, name in enumerate(monitor.units):
+            monitor.connection.call_finish.return_value = glib.Variant("(o)",
+                (provider.SYSTEMD_PATH + "/unit/Alias" + str(index),))
+            monitor.unit_resolved(monitor.connection, object(), (*identity, name))
+
+    def setup(self, monitor, glib, finish=True):
+        connection = monitor.connection
+        monitor.connected(None, object(), None)
+        for index, rule in enumerate(monitor.match_rules):
+            connection.call_finish.return_value = glib.Variant("()", ())
+            monitor.match_finished(connection, object(), rule)
+            if index == 0:
+                connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+                monitor.owner_initialized(connection, object(), 0)
+        connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        monitor.owner_resolved(connection, object(), 0)
+        connection.call_finish.return_value = glib.Variant("()", ())
+        monitor.subscribed(connection, object(), None)
+        self.resolve(monitor, glib)
+        if finish:
+            connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+            monitor.final_owner(connection, object(), (0, monitor.resolution_epoch))
+
+    def manager(self, monitor, glib, member="UnitNew", sender=":1.2"):
+        monitor.manager_event(None, sender, monitor.path, provider.SYSTEMD_MANAGER, member,
+            glib.Variant("(so)", ("unrelated.service", provider.SYSTEMD_PATH + "/unit/Unknown")), None)
+
+    def test_private_connection_fixed_calls_and_all_barriers_precede_readiness(self):
+        for kind, count in (("printers", 2), ("security", 1)):
+            monitor, emitted, gio, glib, _unix = self.monitor(kind)
+            self.setup(monitor, glib)
+            self.assertEqual(emitted, ["units-event\tready"])
+            gio.bus_get.assert_not_called()
+            gio.bus_get_finish.assert_not_called()
+            calls = monitor.connection.call.call_args_list
+            self.assertEqual([call.args[3] for call in calls],
+                ["AddMatch", "GetNameOwner", *(["AddMatch"] * 5), "GetNameOwner",
+                 "Subscribe", *(["GetUnit"] * count), "GetNameOwner"])
+            system_calls = [call for call in calls if call.args[0] == ":1.2"]
+            self.assertEqual([call.args[3] for call in system_calls], ["Subscribe", *(["GetUnit"] * count)])
+            self.assertEqual([call.args[4].unpack()[0] for call in system_calls[1:]], list(monitor.units))
+            self.assertTrue(all(call.args[6] == gio.DBusCallFlags.NO_AUTO_START for call in system_calls))
+            subscriptions = monitor.connection.signal_subscribe.call_args_list
+            self.assertEqual(len(subscriptions), 6)
+            self.assertEqual(subscriptions[-1].args[3:5], (None, provider.SYSTEMD_NAME + ".Unit"))
+            self.assertEqual(set(monitor.paths), set(monitor.units))
+
+    def test_authentication_precedes_decoding_during_setup_and_after_readiness(self):
+        for ready in (False, True):
+            monitor, emitted, _gio, glib, _unix = self.monitor()
+            monitor.ready = ready
+            for owner in ("", ":1.2"):
+                monitor.owner = owner
+                bad = glib.Variant("(s)", ("x" * 70000,))
+                monitor.manager_event(None, ":1.9", monitor.path, provider.SYSTEMD_MANAGER, "UnitNew", bad, None)
+                monitor.properties_changed(None, ":1.9", provider.SYSTEMD_PATH + "/unit/Alias",
+                    provider.PROPERTIES_INTERFACE, "PropertiesChanged", bad, None)
+            self.assertFalse(monitor.stopped)
+            self.assertFalse(monitor.dirty)
+            self.assertEqual(emitted, [])
+
+    def test_reconciliation_has_one_settling_pass_and_rejects_late_epochs(self):
+        monitor, emitted, _gio, glib, _unix = self.monitor()
+        self.setup(monitor, glib)
+        monitor.connection.call.reset_mock()
+        self.manager(monitor, glib)
+        old_identity = (monitor.resolution_epoch - 1, 0, monitor.units[0])
+        monitor.unit_resolved(monitor.connection, object(), old_identity)
+        self.assertEqual(monitor.waiting, set(monitor.units))
+        for _ in range(100):
+            self.manager(monitor, glib)
+        self.resolve(monitor, glib)
+        self.assertEqual(monitor.resolve_round, 1)
+        for _ in range(100):
+            self.manager(monitor, glib)
+        self.resolve(monitor, glib)
+        self.assertTrue(monitor.stopped)
+        self.assertEqual(monitor.exit_code, 1)
+        self.assertEqual(len(monitor.connection.call.call_args_list), 4)
+        self.assertEqual(emitted, ["units-event\tready"])
+
+    def test_event_during_final_barrier_cannot_publish_stale_or_duplicate_ready(self):
+        monitor, emitted, _gio, glib, _unix = self.monitor()
+        self.setup(monitor, glib, finish=False)
+        old = (0, monitor.resolution_epoch)
+        self.manager(monitor, glib)
+        monitor.connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        monitor.final_owner(monitor.connection, object(), old)
+        self.assertEqual(emitted, [])
+        self.resolve(monitor, glib)
+        monitor.connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        current = (0, monitor.resolution_epoch)
+        monitor.final_owner(monitor.connection, object(), current)
+        monitor.final_owner(monitor.connection, object(), old)
+        monitor.final_owner(monitor.connection, object(), current)
+        self.assertEqual(emitted, ["units-event\tready"])
+
+    def test_typed_scope_deadline_and_owner_loss_fail_without_reconnect(self):
+        for invalid in ("signature", "path", "deadline", "owner"):
+            monitor, emitted, gio, glib, _unix = self.monitor()
+            self.setup(monitor, glib)
+            if invalid == "owner":
+                RegionalEventMonitorTests().owner(monitor, glib, ":1.2", ":1.3")
+            else:
+                monitor.reconcile()
+                if invalid == "deadline":
+                    monitor.resolve_deadline = time.monotonic() - 1
+                signature, value = ("(s)", "bad") if invalid == "signature" else ("(o)", "/wrong_scope")
+                monitor.connection.call_finish.return_value = glib.Variant(signature, (value,))
+                monitor.unit_resolved(monitor.connection, object(),
+                    (monitor.resolution_epoch, monitor.resolve_round, monitor.units[0]))
+            self.assertTrue(monitor.stopped)
+            self.assertEqual(monitor.exit_code, 1)
+            gio.bus_get.assert_not_called()
+            self.assertEqual(emitted[0], "units-event\tready")
+
+    def test_property_bounds_and_synchronous_call_errors_fail_closed(self):
+        for signature, value in (("(s)", ("x",)),
+                ("(sa{sv}as)", (provider.SYSTEMD_NAME + ".Unit", {"ActiveState": None}, []))):
+            monitor, emitted, _gio, glib, _unix = self.monitor()
+            self.setup(monitor, glib)
+            if signature == "(sa{sv}as)":
+                value[1]["ActiveState"] = glib.Variant("b", True)
+            monitor.properties_changed(None, ":1.2", monitor.paths[monitor.units[0]],
+                provider.PROPERTIES_INTERFACE, "PropertiesChanged", glib.Variant(signature, value), None)
+            self.assertTrue(monitor.stopped)
+            self.assertEqual(emitted, ["units-event\tready"])
+        monitor, _emitted, _gio, glib, _unix = self.monitor()
+        self.setup(monitor, glib)
+        monitor.connection.call.side_effect = glib.Error("fixture call failure")
+        monitor.reconcile()
+        self.assertTrue(monitor.stopped)
+
+    def test_cli_grammar_and_real_private_bus_lifecycle(self):
+        with mock.patch.object(provider, "watch_service_events", return_value=0) as watch, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                contextlib.redirect_stderr(io.StringIO()):
+            for kind in ("printers", "security"):
+                self.assertEqual(provider.main(["watch-units", kind]), 0)
+            for args in ([], ["cups.service"], ["printers", "extra"], ["--system"]):
+                self.assertEqual(provider.main(["watch-units", *args]), 2)
+            self.assertEqual(watch.call_args_list, [mock.call("printers"), mock.call("security")])
+            backend.assert_not_called()
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-unit-events-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Private-bus unit events: PASS\n")
 
 
 class OperationStreamTests(unittest.TestCase):
@@ -4984,6 +6419,284 @@ class JournalRetainedSessionTests(unittest.TestCase):
                 self.assertIsNone(provider.load_writable_journal_state(journal).active)
 
 
+class NativeJournalOwnerTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d unchanged -- the native
+    journal-owner lease (retain_native_journal_owner/native_journal_owner_busy)
+    is a distro-neutral extension of Phase 5's own journal file-locking
+    discipline, not a package-manager concern.
+    """
+
+    boot_id = JournalRetainedSessionTests.boot_id
+    session = JournalRetainedSessionTests.session
+
+    def begin(self, journal, action="timezone-set"):
+        return provider.begin_journal_operation(journal, action,
+            "2026-09-06T17:00:00Z", "Native ownership fixture")
+
+    @contextlib.contextmanager
+    def owner(self, journal, action="timezone-set"):
+        with contextlib.ExitStack() as retained:
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal, action)
+                retained.enter_context(provider.retain_native_journal_owner(journal, operation))
+            yield operation
+
+    def recover(self, journal):
+        backend = mock.Mock()
+        result = provider.recover_journal_active(journal, backend, boot_id=self.boot_id)
+        self.assertEqual(backend.mock_calls, [])
+        return result
+
+    def test_every_native_kind_retains_live_state_without_backend_or_terminal_writes(self):
+        for action in ("timezone-set", "ntp-set", "locale-set", "accounts-open", "password-open",
+                       "printers-open", "sources-open"):
+            with self.subTest(action=action), self.session() as (path, chain, journal):
+                with self.owner(journal, action) as operation:
+                    before = {name: (path / name).read_bytes() for name in ("active", "cursor", "handoff")}
+                    # Required service work does not retain the directory lock.
+                    with provider._journal_lock(chain.directory_descriptor, exclusive=True):
+                        pass
+                    with provider.retain_writable_journal(chain) as observer:
+                        for _ in range(2):
+                            state, evidence, failure = self.recover(observer)
+                            self.assertEqual(state.active, operation)
+                            self.assertIsNone(state.handoff)
+                            self.assertTrue(all(item is None for item in state.terminals))
+                            self.assertIsNone(evidence)
+                            self.assertIsNone(failure)
+                    self.assertEqual(before,
+                        {name: (path / name).read_bytes() for name in before})
+                state, _, _ = self.recover(journal)
+                self.assertIsNone(state.active)
+                self.assertEqual(state.terminals[operation.slot].state, "interrupted")
+                self.assertEqual(state.handoff.operation_id, operation.operation_id)
+
+    def test_same_descriptor_set_probe_and_recovery_cannot_release_its_owner(self):
+        with self.session() as (_path, chain, journal), self.owner(journal) as operation:
+            for state_name in ("pending", "authorizing", "running"):
+                with provider.lock_writable_journal(journal):
+                    if operation.state != state_name:
+                        operation = provider.advance_journal_operation(journal, operation,
+                            replace(operation, state=state_name))
+                    self.assertTrue(provider.native_journal_owner_busy(journal, operation))
+                    with self.assertRaises(provider.JournalAdmissionError):
+                        with provider.retain_native_journal_owner(journal, operation):
+                            self.fail("nested owner stole the lease")
+                self.assertEqual(self.recover(journal)[0].active, operation)
+                with provider.retain_writable_journal(chain) as observer:
+                    with provider.lock_writable_journal(observer):
+                        self.assertTrue(provider.native_journal_owner_busy(observer, operation))
+                        with self.assertRaises(provider.JournalAdmissionError):
+                            with provider.retain_native_journal_owner(observer, operation):
+                                self.fail("a second descriptor set stole the lease")
+
+    def test_unlocked_stale_wrong_kind_and_terminal_targets_are_rejected(self):
+        with self.session() as (_path, _chain, journal):
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal)
+            for function in (provider.native_journal_owner_busy, provider.retain_native_journal_owner):
+                with self.assertRaises(provider.JournalLockError):
+                    if function is provider.native_journal_owner_busy:
+                        function(journal, operation)
+                    else:
+                        with function(journal, operation):
+                            self.fail("unlocked lease was acquired")
+            with provider.lock_writable_journal(journal):
+                for invalid in (None, replace(operation, operation_id="op-" + "f" * 32),
+                                replace(operation, kind="update"), replace(operation, state="failed")):
+                    with self.assertRaises(provider.JournalAdmissionError):
+                        provider.native_journal_owner_busy(journal, invalid)
+                    with self.assertRaises(provider.JournalAdmissionError):
+                        with provider.retain_native_journal_owner(journal, invalid):
+                            self.fail("invalid lease was acquired")
+                self.assertFalse(provider.native_journal_owner_busy(journal, operation))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_body_and_unlock_failures_release_the_independent_lease_descriptor(self):
+        original_close = provider._close_descriptors
+        def close_failure(descriptors):
+            return original_close(descriptors) or OSError("close fixture")
+        for failure in ("body", "unlock", "close"):
+            with self.subTest(failure=failure), self.session() as (_path, _chain, journal):
+                if failure == "unlock":
+                    patch = mock.patch.object(provider, "_unlock_native_owner",
+                        side_effect=provider.JournalLockError("unlock fixture"))
+                elif failure == "close":
+                    patch = mock.patch.object(provider, "_close_descriptors", side_effect=close_failure)
+                else:
+                    patch = contextlib.nullcontext()
+                with self.assertRaisesRegex(RuntimeError if failure == "body" else provider.JournalLockError,
+                                            "fixture" if failure != "close" else "descriptor close failed"):
+                    with patch:
+                        with self.owner(journal) as operation:
+                            if failure == "body":
+                                raise RuntimeError("body fixture")
+                # The dedicated file description must be closed even when
+                # the explicit unlock failed, leaving no inherited lease.
+                with provider.lock_writable_journal(journal):
+                    self.assertFalse(provider.native_journal_owner_busy(journal, operation))
+
+    def test_kernel_lock_errors_are_explicit_and_do_not_clear_the_active_record(self):
+        with self.session() as (path, _chain, journal):
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal)
+                before = (path / "active").read_bytes()
+                for number, expected in ((errno.EAGAIN, True), (errno.EACCES, True)):
+                    with mock.patch.object(provider.fcntl, "flock", side_effect=OSError(number, "fixture")):
+                        self.assertEqual(provider.native_journal_owner_busy(journal, operation), expected)
+                with mock.patch.object(provider.fcntl, "flock", side_effect=OSError(errno.EIO, "fixture")):
+                    with self.assertRaises(provider.JournalLockError):
+                        provider.native_journal_owner_busy(journal, operation)
+                self.assertEqual((path / "active").read_bytes(), before)
+
+    def test_lease_handle_is_separate_nonblocking_close_on_exec_and_closed_on_failure(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail), self.session() as (_path, chain, journal):
+                captured = []
+                original_open = os.open
+                def opened(name, flags, *args, **kwargs):
+                    descriptor = original_open(name, flags, *args, **kwargs)
+                    if name == "active" and kwargs.get("dir_fd") == chain.directory_descriptor:
+                        captured.append(descriptor)
+                        self.assertNotEqual(descriptor, journal.descriptor("active"))
+                        self.assertTrue(flags & os.O_NOFOLLOW)
+                        self.assertTrue(flags & os.O_NONBLOCK)
+                        self.assertTrue(flags & os.O_CLOEXEC)
+                        self.assertFalse(os.get_inheritable(descriptor))
+                    return descriptor
+                with provider.lock_writable_journal(journal):
+                    operation = self.begin(journal)
+                    with mock.patch.object(provider.os, "open", side_effect=opened):
+                        if fail:
+                            with mock.patch.object(provider, "_try_native_owner_lock",
+                                    side_effect=provider.JournalLockError("fixture")):
+                                with self.assertRaises(provider.JournalLockError):
+                                    with provider.retain_native_journal_owner(journal, operation):
+                                        self.fail("failed acquisition was accepted")
+                        else:
+                            with provider.retain_native_journal_owner(journal, operation):
+                                self.assertTrue(provider.native_journal_owner_busy(journal, operation))
+                    self.assertEqual(len(captured), 1)
+                    with self.assertRaises(OSError):
+                        os.fstat(captured[0])
+                    self.assertFalse(provider.native_journal_owner_busy(journal, operation))
+
+    def test_open_failure_is_explicit_and_preserves_active_state(self):
+        with self.session() as (path, _chain, journal):
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal)
+                before = (path / "active").read_bytes()
+                with mock.patch.object(provider.os, "open", side_effect=OSError(errno.EACCES, "fixture")):
+                    with self.assertRaises(provider.JournalLockError):
+                        with provider.retain_native_journal_owner(journal, operation):
+                            self.fail("failed open was accepted")
+                self.assertEqual((path / "active").read_bytes(), before)
+                self.assertFalse(provider.native_journal_owner_busy(journal, operation))
+
+    def test_replaced_path_during_lease_open_is_rejected_and_handle_closed(self):
+        captured = []
+        with self.assertRaises(provider.JournalLayoutError):
+            with self.session() as (path, chain, journal):
+                with provider.lock_writable_journal(journal):
+                    operation = self.begin(journal)
+                    original_open = os.open
+                    def replaced(name, flags, *args, **kwargs):
+                        descriptor = original_open(name, flags, *args, **kwargs)
+                        if name == "active" and kwargs.get("dir_fd") == chain.directory_descriptor:
+                            captured.append(descriptor)
+                            active = path / "active"
+                            content = active.read_bytes()
+                            active.rename(path / "detached-active")
+                            active.write_bytes(content)
+                            active.chmod(0o600)
+                        return descriptor
+                    with mock.patch.object(provider.os, "open", side_effect=replaced):
+                        with provider.retain_native_journal_owner(journal, operation):
+                            self.fail("replaced lease path was accepted")
+        self.assertEqual(len(captured), 1)
+        with self.assertRaises(OSError):
+            os.fstat(captured[0])
+
+    def test_replaced_directory_during_owned_interval_is_rejected_before_recovery(self):
+        with self.assertRaises(provider.JournalLayoutError):
+            with self.session() as (path, _chain, journal), self.owner(journal):
+                before = (path / "active").read_bytes()
+                detached = path.with_name("detached-journal")
+                path.rename(detached)
+                path.mkdir(mode=0o700)
+                try:
+                    self.recover(journal)
+                    self.fail("detached journal was recovered")
+                finally:
+                    self.assertEqual((detached / "active").read_bytes(), before)
+
+    def test_recovery_probe_error_never_terminalizes_an_unknown_owner(self):
+        with self.session() as (path, _chain, journal):
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal)
+            before = (path / "active").read_bytes()
+            backend = mock.Mock()
+            with mock.patch.object(provider, "_try_native_owner_lock",
+                    side_effect=provider.JournalLockError("probe fixture")):
+                with self.assertRaises(provider.JournalLockError):
+                    provider.recover_journal_active(journal, backend, boot_id=self.boot_id)
+            self.assertEqual(backend.mock_calls, [])
+            self.assertEqual((path / "active").read_bytes(), before)
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+
+    def test_durable_terminal_recovery_does_not_wait_for_live_owner_release(self):
+        with self.session() as (_path, chain, journal), self.owner(journal) as operation:
+            with provider.lock_writable_journal(journal):
+                operation = provider.advance_journal_operation(journal, operation,
+                    replace(operation, state="running"))
+                terminal = provider.advance_journal_operation(journal, operation,
+                    replace(operation, state="succeeded", finished_at="2026-09-06T17:01:00Z"))
+            with provider.retain_writable_journal(chain) as observer:
+                state, evidence, failure = self.recover(observer)
+            self.assertIsNone(state.active)
+            self.assertEqual(state.terminals[operation.slot], terminal)
+            self.assertEqual(state.handoff.operation_id, operation.operation_id)
+            self.assertIsNone(evidence)
+            self.assertIsNone(failure)
+
+    def test_process_exit_and_sigkill_release_ownership_before_orphan_recovery(self):
+        program = """
+import contextlib, runpy, sys
+p = runpy.run_path(sys.argv[1])
+with p["open_journal_directory_chain"](sys.argv[2]) as chain:
+    with p["retain_writable_journal"](chain) as journal, contextlib.ExitStack() as owner:
+        with p["lock_writable_journal"](journal):
+            operation = p["load_writable_journal_state"](journal).active
+            owner.enter_context(p["retain_native_journal_owner"](journal, operation))
+        print("ready", flush=True)
+        sys.stdin.buffer.read(1)
+"""
+        for killed in (False, True):
+            with self.subTest(killed=killed), self.session() as (_path, chain, journal):
+                with provider.lock_writable_journal(journal):
+                    operation = self.begin(journal)
+                child = subprocess.Popen([sys.executable, "-c", program, str(PROVIDER_PATH), chain.path],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+                try:
+                    self.assertTrue(select.select([child.stdout], [], [], 3)[0], "owner did not become ready")
+                    self.assertEqual(child.stdout.readline(16), b"ready\n")
+                    self.assertEqual(self.recover(journal)[0].active, operation)
+                    if killed:
+                        child.kill()
+                    _stdout, stderr = child.communicate(input=None if killed else b"x", timeout=3)
+                    self.assertEqual(child.returncode, -signal.SIGKILL if killed else 0, stderr)
+                    self.assertEqual(stderr, b"")
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                    child.communicate(timeout=3)
+                state, evidence, failure = self.recover(journal)
+                self.assertIsNone(state.active)
+                self.assertIsNone(evidence)
+                self.assertIsNone(failure)
+                self.assertEqual(state.terminals[operation.slot].state, "interrupted")
+
+
 class JournalLifecycleTests(unittest.TestCase):
     boot_id = "01234567-89ab-cdef-0123-456789abcdef"
     started = "2026-09-04T18:00:00Z"
@@ -6891,6 +8604,1169 @@ class SessionEvidenceTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, code)
 
 
+class NativeJournalWatchTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d with one scope cut: upstream
+    co-locates generic control_output_writer() unit tests in this class plus
+    four tests of control_output_writers() (plural) / run_operation_control()'s
+    byte-writer signature -- a broader Phase 5/6 CLI-output refactor Lyona's
+    operation_control() never adopted (it keeps its own simpler, already-tested
+    synchronous sys.stdout.write()/flush() path, ported unchanged in Phase 5/6
+    and never exposed to the shared-fd-blocking-mode bug control_output_writer
+    exists to fix). The five control_output_writer() unit tests that test the
+    function directly (not through run_operation_control) are ported unchanged;
+    the four that specifically exercise control_output_writers()/the
+    byte-writer refactor of run_operation_control are NOT ported -- that
+    refactor itself is out of this checkpoint's scope.
+    """
+
+    boot_id = NativeJournalOwnerTests.boot_id
+    session = NativeJournalOwnerTests.session
+    begin = NativeJournalOwnerTests.begin
+    owner = NativeJournalOwnerTests.owner
+
+    def checkpoint(self, journal, state, *, complete=True):
+        with provider.lock_writable_journal(journal):
+            current = provider.load_writable_journal_state(journal).active
+            if state == "succeeded" and current.state in {"pending", "authorizing"}:
+                current = provider.advance_journal_operation(journal, current, replace(current, state="running"))
+            if state == "permission-denied" and current.state == "pending":
+                current = provider.advance_journal_operation(journal, current, replace(current, state="authorizing"))
+            changes = dict(state=state, detail=f"Native fixture {state}")
+            if state in provider.JOURNAL_OPERATION_TERMINAL_STATES:
+                changes["finished_at"] = "2026-09-06T17:01:00Z"
+                if state == "failed":
+                    changes["error_code"] = "conflict"
+            current = provider.advance_journal_operation(journal, current, replace(current, **changes))
+            if complete and state in provider.JOURNAL_OPERATION_TERMINAL_STATES:
+                provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+            return current
+
+    def watch(self, journal, operation, write):
+        backend = mock.Mock(side_effect=AssertionError("native watch opened PackageKit"))
+        provider.watch_journal_operation(journal, operation.operation_id, write,
+            boot_id=self.boot_id, backend_factory=backend)
+        backend.assert_not_called()
+
+    @contextlib.contextmanager
+    def events(self, callback):
+        waiter = types.SimpleNamespace(wait=callback)
+        with mock.patch.object(provider, "NativeJournalEvents",
+                return_value=contextlib.nullcontext(waiter)):
+            yield
+
+    def test_each_kind_replays_exact_durable_result_without_backend_or_cancelability(self):
+        for action in ("timezone-set", "ntp-set", "locale-set", "accounts-open", "password-open",
+                       "printers-open", "sources-open"):
+            for result in ("succeeded", "permission-denied", "canceled", "failed", "interrupted"):
+                with self.subTest(action=action, result=result), self.session() as (_path, _chain, journal), \
+                        self.owner(journal, action) as operation:
+                    chunks = []
+                    def finish(_deadline):
+                        self.assertFalse(journal._exclusive)
+                        self.checkpoint(journal, result, complete=False)
+                    def write(chunk):
+                        if "complete\toperation" in chunk:
+                            state = provider.load_journal_state(journal.chain)
+                            self.assertIsNone(state.active)
+                            self.assertEqual(state.handoff.operation_id, operation.operation_id)
+                        chunks.append(chunk)
+                    with self.events(finish):
+                        self.watch(journal, operation, write)
+                    operations = rows("".join(chunks).splitlines(), "operation")
+                    self.assertEqual(operations[0][4], "pending")
+                    self.assertEqual(operations[-1][1:5],
+                        [operation.operation_id, action, operation.kind, result])
+                    self.assertTrue(all(row[5:7] == ["unknown", "no"] for row in operations))
+                    self.assertEqual(len(rows("".join(chunks).splitlines(), "audit")), 1)
+
+    def test_progress_coalesces_without_writing_and_deadline_does_not_extend(self):
+        with self.session() as (_path, _chain, journal), self.owner(journal) as operation:
+            chunks, deadlines = [], []
+            steps = iter(("pending", "authorizing", "authorizing", "running", "succeeded"))
+            def changed(deadline):
+                deadlines.append(deadline)
+                state = next(steps)
+                if state == provider.load_journal_state(journal.chain).active.state:
+                    return
+                self.checkpoint(journal, state)
+            with self.events(changed):
+                self.watch(journal, operation, chunks.append)
+            self.assertEqual(len(set(deadlines)), 1)
+            self.assertEqual([row[4] for row in rows("".join(chunks).splitlines(), "operation")],
+                ["pending", "authorizing", "running", "succeeded"])
+            self.assertEqual(provider.load_journal_state(journal.chain).handoff.operation_id, operation.operation_id)
+
+    def test_orphan_recovery_and_completion_during_watch_setup_are_exact(self):
+        for completed in (False, True):
+            with self.subTest(completed=completed), self.session() as (_path, _chain, journal):
+                with provider.lock_writable_journal(journal):
+                    operation = self.begin(journal)
+                @contextlib.contextmanager
+                def events(_journal):
+                    if completed:
+                        self.checkpoint(journal, "succeeded")
+                    yield types.SimpleNamespace(wait=mock.Mock(side_effect=AssertionError("unneeded wait")))
+                chunks = []
+                with mock.patch.object(provider, "NativeJournalEvents", side_effect=events):
+                    self.watch(journal, operation, chunks.append)
+                self.assertEqual(rows("".join(chunks).splitlines(), "operation")[-1][4],
+                    "succeeded" if completed else "interrupted")
+
+    def test_final_deadline_probe_recovers_close_before_unlock_race(self):
+        with self.session() as (_path, _chain, journal), contextlib.ExitStack() as owner:
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal)
+                owner.enter_context(provider.retain_native_journal_owner(journal, operation))
+            clock, waits, chunks = [10], [], []
+            def wait(deadline):
+                waits.append(deadline)
+                if len(waits) == 1:
+                    return  # CLOSE_WRITE arrived while the lease was still busy.
+                owner.close()
+                clock[0] = deadline  # No further filesystem event followed.
+            with self.events(wait), mock.patch.object(provider.time, "monotonic", side_effect=lambda: clock[0]):
+                self.watch(journal, operation, chunks.append)
+            self.assertEqual(len(waits), 2)
+            self.assertEqual(rows("".join(chunks).splitlines(), "operation")[-1][4], "interrupted")
+
+    def test_timeout_or_output_loss_preserves_the_live_owner_and_has_no_terminal(self):
+        for fault in ("timeout", "output", "events"):
+            with self.subTest(fault=fault), self.session() as (path, _chain, journal), self.owner(journal) as operation:
+                before = (path / "active").read_bytes()
+                clock, chunks = [10], []
+                def wait(deadline):
+                    if fault == "events":
+                        raise provider.SnapshotFailure("interrupted", "events fixture")
+                    clock[0] = deadline
+                def write(chunk):
+                    chunks.append(chunk)
+                    if fault == "output":
+                        raise BrokenPipeError("output fixture")
+                with self.events(wait), mock.patch.object(provider.time, "monotonic", side_effect=lambda: clock[0]):
+                    with self.assertRaises(BrokenPipeError if fault == "output" else provider.SnapshotFailure):
+                        self.watch(journal, operation, write)
+                self.assertNotIn("complete\toperation", "".join(chunks))
+                self.assertEqual((path / "active").read_bytes(), before)
+                with provider.lock_writable_journal(journal):
+                    self.assertTrue(provider.native_journal_owner_busy(journal, operation))
+
+    def test_replacement_owner_is_never_followed(self):
+        with self.session() as (_path, _chain, journal), self.owner(journal) as operation:
+            following, chunks = [], []
+            def replace_owner(_deadline):
+                self.checkpoint(journal, "succeeded")
+                with provider.lock_writable_journal(journal):
+                    provider.acknowledge_journal_handoff(journal, operation.operation_id)
+                    following.append(self.begin(journal, "ntp-set"))
+            with self.events(replace_owner), self.assertRaises(provider.JournalAdmissionError):
+                self.watch(journal, operation, chunks.append)
+            self.assertNotIn("complete\toperation", "".join(chunks))
+            self.assertEqual(provider.load_journal_state(journal.chain).active, following[0])
+
+    def test_same_id_changed_immutable_fields_are_rejected_before_recovery_writes(self):
+        for changes in (dict(action_id="ntp-set", kind="ntp"),
+                        dict(action_id="updates-refresh", kind="refresh", transaction_path="/1_test"),
+                        dict(started_at="2026-09-06T16:00:00Z")):
+            with self.subTest(changes=changes), self.session() as (path, _chain, journal):
+                with provider.lock_writable_journal(journal):
+                    operation = self.begin(journal)
+                changed, before, chunks = replace(operation, **changes), {}, []
+                @contextlib.contextmanager
+                def events(_journal):
+                    with provider.lock_writable_journal(journal):
+                        provider.commit_writable_journal_path(journal, "active",
+                            provider.encode_journal_operation(changed))
+                    before.update({name: (path / name).read_bytes() for name in provider.JOURNAL_NAMES})
+                    yield types.SimpleNamespace(wait=mock.Mock(side_effect=AssertionError("unneeded wait")))
+                with mock.patch.object(provider, "NativeJournalEvents", side_effect=events):
+                    with self.assertRaises(provider.JournalAdmissionError):
+                        self.watch(journal, operation, chunks.append)
+                for name, content in before.items():
+                    self.assertTrue((path / name).read_bytes() == content, f"Recovery changed {name}")
+                self.assertNotIn("complete\toperation", "".join(chunks))
+
+    def test_same_id_changed_terminal_is_rejected_without_rewriting_any_record(self):
+        with self.session() as (path, _chain, journal):
+            with provider.lock_writable_journal(journal):
+                operation = self.begin(journal)
+            before, chunks = {}, []
+            @contextlib.contextmanager
+            def events(_journal):
+                with provider.lock_writable_journal(journal):
+                    provider.commit_writable_journal_path(journal, "active",
+                        provider.encode_journal_operation(replace(operation, action_id="ntp-set", kind="ntp")))
+                self.checkpoint(journal, "succeeded")
+                before.update({name: (path / name).read_bytes() for name in provider.JOURNAL_NAMES})
+                yield types.SimpleNamespace(wait=mock.Mock(side_effect=AssertionError("unneeded wait")))
+            with mock.patch.object(provider, "NativeJournalEvents", side_effect=events):
+                with self.assertRaises(provider.JournalAdmissionError):
+                    self.watch(journal, operation, chunks.append)
+            for name, content in before.items():
+                self.assertTrue((path / name).read_bytes() == content, f"Recovery changed {name}")
+            self.assertNotIn("complete\toperation", "".join(chunks))
+
+    def test_real_inode_events_and_descriptor_cleanup(self):
+        with self.session() as (_path, _chain, journal):
+            with provider.NativeJournalEvents(journal) as events:
+                descriptor = events.descriptor
+                self.assertFalse(os.get_blocking(descriptor))
+                self.assertFalse(os.get_inheritable(descriptor))
+                with provider.lock_writable_journal(journal):
+                    self.begin(journal)
+                started = time.monotonic()
+                events.wait(started + 1)
+                self.assertLess(time.monotonic() - started, 0.5)
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    def test_overflow_lost_malformed_and_empty_notifications_fail_closed(self):
+        for fault in ("overflow", "ignored", "short", "name", "empty", "cookie", "unknown"):
+            with self.subTest(fault=fault), self.session() as (_path, _chain, journal), \
+                    provider.NativeJournalEvents(journal) as events:
+                data = provider.struct.pack("=iIII", events.watch, 2, 0, 0)
+                if fault == "overflow": data = provider.struct.pack("=iIII", -1, 0x4000, 0, 0)
+                elif fault == "ignored": data = provider.struct.pack("=iIII", events.watch, 0x8000, 0, 0)
+                elif fault == "short": data = data[:-1]
+                elif fault == "empty": data = b""
+                elif fault == "name": data = provider.struct.pack("=iIII", events.watch, 2, 0, 16)
+                elif fault == "cookie": data = provider.struct.pack("=iIII", events.watch, 2, 1, 0)
+                elif fault == "unknown": data = provider.struct.pack("=iIII", events.watch + 1, 2, 0, 0)
+                with mock.patch.object(events.selector, "select", return_value=[True]), \
+                        mock.patch.object(provider.os, "read", return_value=data):
+                    with self.assertRaises(provider.SnapshotFailure):
+                        events.wait(time.monotonic() + 1)
+
+    def test_setup_failure_closes_created_event_descriptor(self):
+        with self.session() as (_path, _chain, journal):
+            events = provider.NativeJournalEvents(journal)
+            captured = []
+            original_close = os.close
+            def close(descriptor):
+                captured.append(descriptor)
+                return original_close(descriptor)
+            with mock.patch.object(provider.selectors, "DefaultSelector", side_effect=OSError("selector fixture")), \
+                    mock.patch.object(provider.os, "close", side_effect=close):
+                with self.assertRaises(OSError):
+                    with events:
+                        self.fail("failed setup entered")
+            self.assertEqual(len(captured), 1)
+            self.assertIsNone(events.descriptor)
+            with self.assertRaises(OSError):
+                os.fstat(captured[0])
+
+    def test_live_snapshot_exposes_native_identity_without_enabling_origins(self):
+        for action in ("timezone-set", "ntp-set", "locale-set", "accounts-open", "password-open",
+                       "printers-open", "sources-open"):
+            with self.subTest(action=action), self.session() as (_path, _chain, journal), \
+                    self.owner(journal, action) as operation:
+                fixture = RecoverySnapshotTests()
+                backend = fixture.backend()
+                output = fixture.snapshot(journal, backend)
+                self.assertEqual(rows(output, "active-operation")[0][1:7],
+                    [operation.operation_id, action, operation.kind, "pending", "unknown", "no"])
+                self.assertEqual([row[2] for row in rows(output, "action")], ["unavailable"] * 3)
+                self.assertEqual(rows(output, "terminal-handoff"), [])
+                backend.probe_operation.assert_not_called()
+                backend.operation_history.assert_not_called()
+
+    def test_real_cli_watch_observes_completion_and_owner_sigkill(self):
+        owner_program = """
+import contextlib, dataclasses, runpy, sys
+p = runpy.run_path(sys.argv[1])
+with p["open_journal_directory_chain"](sys.argv[2]) as chain:
+    with p["retain_writable_journal"](chain) as journal, contextlib.ExitStack() as owner:
+        with p["lock_writable_journal"](journal):
+            operation = p["load_writable_journal_state"](journal).active
+            owner.enter_context(p["retain_native_journal_owner"](journal, operation))
+        print("ready", flush=True)
+        sys.stdin.buffer.read(1)
+        with p["lock_writable_journal"](journal):
+            running = p["advance_journal_operation"](journal, operation,
+                dataclasses.replace(operation, state="running"))
+            p["advance_journal_operation"](journal, running, dataclasses.replace(running,
+                state="succeeded", finished_at="2026-09-06T17:01:00Z"))
+            p["complete_journal_terminal"](journal)
+"""
+        watch_program = """
+import runpy, sys
+p = runpy.run_path(sys.argv[1])
+p["main"].__globals__["NATIVE_WATCH_SECONDS"] = 1
+def unexpected(*args, **kwargs):
+    raise AssertionError("Native watch must not open PackageKit")
+p["PackageKitBackend"].__init__ = unexpected
+raise SystemExit(p["main"](sys.argv[2:]))
+"""
+        for killed in (False, True):
+            with self.subTest(killed=killed), self.session() as (_path, chain, journal):
+                with provider.lock_writable_journal(journal):
+                    operation = self.begin(journal)
+                processes = []
+                try:
+                    owner = subprocess.Popen([sys.executable, "-c", owner_program, str(PROVIDER_PATH), chain.path],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, close_fds=True)
+                    processes.append(owner)
+                    self.assertTrue(select.select([owner.stdout], [], [], 3)[0])
+                    self.assertEqual(owner.stdout.readline(16), b"ready\n")
+                    environment = dict(os.environ, XDG_STATE_HOME=str(pathlib.Path(chain.path).parents[1]))
+                    watcher = subprocess.Popen([sys.executable, "-c", watch_program, str(PROVIDER_PATH),
+                        "watch-operation", operation.operation_id], stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, env=environment, bufsize=0, close_fds=True)
+                    processes.append(watcher)
+                    prefix = b""
+                    for _ in range(2):
+                        self.assertTrue(select.select([watcher.stdout], [], [], 3)[0])
+                        prefix += watcher.stdout.readline(1024)
+                    self.assertIn(b"\tpending\t", prefix)
+                    if killed:
+                        owner.kill()
+                    _output, diagnostic = owner.communicate(input=None if killed else b"x", timeout=3)
+                    self.assertEqual((owner.returncode, diagnostic), (-signal.SIGKILL if killed else 0, b""))
+                    output, diagnostic = watcher.communicate(timeout=4)
+                    self.assertEqual((watcher.returncode, diagnostic), (0, b""))
+                    records = (prefix + output).decode().splitlines()
+                    self.assertEqual(rows(records, "operation")[-1][4], "interrupted" if killed else "succeeded")
+                    self.assertEqual(records[-1], "complete\toperation")
+                    self.assertEqual(provider.load_journal_state(chain).handoff.operation_id, operation.operation_id)
+                finally:
+                    for process in processes:
+                        if process.poll() is None:
+                            process.kill()
+                        process.communicate(timeout=3)
+
+    def test_isolated_pipe_and_terminal_writers_preserve_flags_and_close(self):
+        for terminal in (False, True):
+            for blocking in (False, True):
+                with self.subTest(terminal=terminal, blocking=blocking):
+                    reader, writer = pty.openpty() if terminal else os.pipe()
+                    opened = []
+                    real_open = os.open
+                    def capture(*args):
+                        descriptor = real_open(*args)
+                        opened.append(descriptor)
+                        return descriptor
+                    try:
+                        os.set_blocking(writer, blocking)
+                        original = provider.fcntl.fcntl(writer, provider.fcntl.F_GETFL)
+                        output = types.SimpleNamespace(fileno=lambda: writer)
+                        with contextlib.ExitStack() as resources, \
+                                mock.patch.object(provider.os, "open", side_effect=capture):
+                            send = provider.control_output_writer(output, resources)
+                            self.assertEqual(len(opened), 1)
+                            self.assertNotEqual(opened[0], writer)
+                            self.assertFalse(os.get_blocking(opened[0]))
+                            self.assertFalse(os.get_inheritable(opened[0]))
+                            self.assertEqual(send(b"watch"), 5)
+                            self.assertTrue(select.select([reader], [], [], 1)[0])
+                            self.assertEqual(os.read(reader, 4096), b"watch")
+                            os.write(writer, b"parent")
+                            self.assertTrue(select.select([reader], [], [], 1)[0])
+                            self.assertEqual(os.read(reader, 4096), b"parent")
+                            with self.assertRaises(BlockingIOError):
+                                for _ in range(256):
+                                    send(b"x" * 4096)
+                            self.assertEqual(provider.fcntl.fcntl(writer, provider.fcntl.F_GETFL), original)
+                        with self.assertRaises(OSError):
+                            os.fstat(opened[0])
+                        self.assertEqual(provider.fcntl.fcntl(writer, provider.fcntl.F_GETFL), original)
+                    finally:
+                        os.close(reader)
+                        os.close(writer)
+
+    def test_packet_pipe_writer_retains_packet_boundaries(self):
+        reader, writer = os.pipe2(os.O_DIRECT)
+        try:
+            with contextlib.ExitStack() as resources:
+                send = provider.control_output_writer(types.SimpleNamespace(fileno=lambda: writer), resources)
+                send(b"first")
+                send(b"second")
+                self.assertTrue(select.select([reader], [], [], 1)[0])
+                self.assertEqual(os.read(reader, 4096), b"first")
+                self.assertTrue(select.select([reader], [], [], 1)[0])
+                self.assertEqual(os.read(reader, 4096), b"second")
+                self.assertTrue(os.get_blocking(writer))
+        finally:
+            os.close(reader)
+            os.close(writer)
+
+    def test_socket_output_is_nonblocking_per_call_without_changing_flags(self):
+        for blocking in (False, True):
+            with self.subTest(blocking=blocking):
+                sender, reader = socket.socketpair()
+                with sender, reader, contextlib.ExitStack() as resources:
+                    sender.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+                    sender.setblocking(blocking)
+                    send = provider.control_output_writer(sender, resources)
+                    self.assertEqual(send(b"watch"), 5)
+                    self.assertEqual(reader.recv(4096), b"watch")
+                    with self.assertRaises(BlockingIOError):
+                        for _ in range(64):
+                            send(b"x" * 4096)
+                    self.assertEqual(os.get_blocking(sender.fileno()), blocking)
+                    reader.close()
+                    with self.assertRaises(OSError):
+                        send(b"closed")
+                    self.assertEqual(os.get_blocking(sender.fileno()), blocking)
+
+    def test_regular_output_preserves_shared_offset_and_append_semantics(self):
+        for append in (False, True):
+            with self.subTest(append=append), tempfile.TemporaryFile() as output:
+                output.write(b"prefix")
+                output.flush()
+                flags = provider.fcntl.fcntl(output.fileno(), provider.fcntl.F_GETFL)
+                if append:
+                    flags |= os.O_APPEND
+                    provider.fcntl.fcntl(output.fileno(), provider.fcntl.F_SETFL, flags)
+                    output.seek(0)
+                with contextlib.ExitStack() as resources:
+                    send = provider.control_output_writer(output, resources)
+                    self.assertEqual(send(b"watch"), 5)
+                    os.write(output.fileno(), b"parent")
+                    self.assertEqual(provider.fcntl.fcntl(output.fileno(), provider.fcntl.F_GETFL), flags)
+                output.seek(0)
+                self.assertEqual(output.read(), b"prefixwatchparent")
+
+    def test_pipe_reopen_rejects_readonly_and_mismatched_output(self):
+        reader, writer = os.pipe()
+        closed = []
+        real_close = os.close
+        try:
+            with contextlib.ExitStack() as resources, mock.patch.object(provider.os, "open") as opened:
+                with self.assertRaisesRegex(OSError, "not writable"):
+                    provider.control_output_writer(types.SimpleNamespace(fileno=lambda: reader), resources)
+                opened.assert_not_called()
+            original = os.fstat(writer)
+            changed = types.SimpleNamespace(st_dev=original.st_dev, st_ino=original.st_ino + 1,
+                st_mode=original.st_mode, st_rdev=original.st_rdev)
+            def close(descriptor):
+                closed.append(descriptor)
+                real_close(descriptor)
+            with self.assertRaisesRegex(OSError, "identity changed"), contextlib.ExitStack() as resources, \
+                    mock.patch.object(provider.os, "fstat", side_effect=[original, changed]), \
+                    mock.patch.object(provider.os, "close", side_effect=close):
+                provider.control_output_writer(types.SimpleNamespace(fileno=lambda: writer), resources)
+            self.assertEqual(len(closed), 1)
+            with self.assertRaises(OSError):
+                os.fstat(closed[0])
+            self.assertTrue(os.get_blocking(writer))
+        finally:
+            os.close(reader)
+            os.close(writer)
+
+    def test_path_replacement_during_watch_never_publishes_completion(self):
+        chunks = []
+        with self.assertRaises(provider.JournalLayoutError):
+            with self.session() as (path, _chain, journal), self.owner(journal) as operation:
+                def replace_path(_deadline):
+                    active = path / "active"
+                    content = active.read_bytes()
+                    active.rename(path / "detached-active")
+                    active.write_bytes(content)
+                    active.chmod(0o600)
+                with self.events(replace_path):
+                    self.watch(journal, operation, chunks.append)
+        self.assertNotIn("complete\toperation", "".join(chunks))
+
+
+class RegionalOwnerTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d nearly unchanged --
+    run_regional_mutation()'s lifecycle is distro-neutral (timedate1/locale1
+    contracts and journal admission, not a package-manager concern).
+    """
+
+    boot_id = JournalRetainedSessionTests.boot_id
+    session = JournalRetainedSessionTests.session
+
+    def setup_client(self, journal, mode="success", action="timezone-set", argument="Etc/UTC"):
+        state = (provider.parse_locale_configuration(["LANG=POSIX"]) if action == "locale-set" else
+                 provider.RegionalTimeState("UTC", True, False, True))
+        preview = provider.make_regional_preview(action, argument, state,
+            ["C", "POSIX"] if action == "locale-set" else ["UTC", "Etc/UTC"])
+        self.events = []
+        self.during = lambda: None
+        self.before_admission = lambda: None
+        self.client = None
+
+        def factory(received_action, received_argument, generation, before, after):
+            self.assertEqual((received_action, received_argument), (action, argument))
+            client = types.SimpleNamespace(sent=False, acknowledged=False, hook_error=None,
+                kind="locale-state" if action == "locale-set" else "time-state")
+            self.client = client
+
+            def hook(callback, *args):
+                try:
+                    callback(*args)
+                except Exception as error:
+                    client.hook_error = error
+                    raise provider.SnapshotFailure("interrupted", "Fixture checkpoint failed") from error
+
+            def run():
+                provider.require_regional_generation(preview, generation)
+                if mode == "preflight":
+                    raise provider.SnapshotFailure("missing-provider", "Fixture preflight unavailable")
+                self.before_admission()
+                hook(before, preview)
+                with provider.lock_writable_journal(journal):
+                    current = provider.load_writable_journal_state(journal).active
+                    self.assertEqual(current.state, "authorizing")
+                    self.assertTrue(provider.native_journal_owner_busy(journal, current))
+                # This interval is unlocked; only the active-file lease is held.
+                with provider._journal_lock(journal.chain.directory_descriptor, exclusive=True):
+                    pass
+                if mode == "stale-before-send":
+                    raise provider.SnapshotFailure("conflict", "Fixture confirmation changed")
+                client.sent = True
+                self.events.append("sent")
+                if mode in {"denied", "method-error", "timeout", "transport"}:
+                    code = {"denied": "permission-denied", "method-error": "internal",
+                            "timeout": "timeout", "transport": "interrupted"}[mode]
+                    raise provider.SnapshotFailure(code, "Fixture service outcome")
+                client.acknowledged = True
+                hook(after)
+                self.during()
+                self.events.append("verified")
+                if mode == "mismatch":
+                    raise provider.SnapshotFailure("conflict", "Fixture verification mismatch")
+                return state
+            client.run = run
+            return client
+        return factory, preview.generation
+
+    def invoke(self, journal, mode="success", action="timezone-set", argument="Etc/UTC", write=None,
+               on_admission=None, configure=None):
+        factory, generation = self.setup_client(journal, mode, action, argument)
+        if configure is not None:
+            configure()
+        output = []
+        with mock.patch.object(provider, "RegionalMutation", side_effect=factory) as client, \
+                mock.patch.object(provider, "RegionalRead") as fresh, \
+                mock.patch.object(provider, "PackageKitBackend") as packagekit:
+            terminal = provider.run_regional_mutation(journal, action, argument, generation,
+                output.append if write is None else write, on_admission=on_admission)
+            packagekit.assert_not_called()
+            client.assert_called_once()
+        return terminal, "".join(output), fresh
+
+    def test_successful_fixed_actions_have_durable_handoffs_and_no_update_restart_changes(self):
+        for action, argument in (("timezone-set", "Etc/UTC"), ("ntp-set", "enabled"), ("locale-set", "LANG=C")):
+            with self.subTest(action=action), self.session() as (path, _chain, journal):
+                with provider.lock_writable_journal(journal):
+                    previous = provider.begin_journal_operation(journal, "updates-install-all",
+                        "2026-09-06T21:00:00Z", "Earlier update", generation="a" * 64,
+                        transaction_path="/1_test", boot_id=self.boot_id)
+                    provider.advance_journal_operation(journal, previous, replace(previous, state="running"))
+                    previous = provider.load_writable_journal_state(journal).active
+                    provider.advance_journal_operation(journal, previous, replace(previous, state="succeeded",
+                        system_restart="system", session_restart="session", application_restart=True,
+                        finished_at="2026-09-06T21:01:00Z", terminal_monotonic=100))
+                    provider.complete_journal_terminal(journal, boot_id=self.boot_id)
+                    provider.acknowledge_journal_handoff(journal, previous.operation_id)
+                restart = (path / "restart").read_bytes()
+                terminal, output, fresh = self.invoke(journal, action=action, argument=argument)
+                self.assertEqual(self.events, ["sent", "verified"])
+                self.assertEqual(terminal.state, "succeeded")
+                self.assertIsNone(terminal.boot_id)
+                self.assertIsNone(terminal.generation)
+                self.assertIsNone(terminal.terminal_monotonic)
+                state = provider.load_journal_state(journal.chain)
+                self.assertIsNone(state.active)
+                self.assertEqual(state.handoff.operation_id, terminal.operation_id)
+                self.assertEqual(state.terminals[terminal.slot], terminal)
+                self.assertEqual((path / "restart").read_bytes(), restart)
+                self.assertEqual([row[4] for row in rows(output.splitlines(), "operation")],
+                    ["pending", "authorizing", "running", "succeeded"])
+                self.assertTrue(all(row[5:7] == ["unknown", "no"] for row in rows(output.splitlines(), "operation")))
+                self.assertEqual(output.splitlines()[-1], "complete\toperation")
+                fresh.assert_not_called()
+                if action == "locale-set":
+                    self.assertIn("sign out and back in", terminal.detail)
+
+    def test_denial_conflict_and_explicit_error_have_exact_typed_terminals(self):
+        for mode, state, code in (("denied", "permission-denied", "permission-denied"),
+                                  ("method-error", "failed", "internal"),
+                                  ("mismatch", "failed", "conflict"),
+                                  ("stale-before-send", "failed", "conflict")):
+            with self.subTest(mode=mode), self.session() as (_path, _chain, journal):
+                terminal, output, fresh = self.invoke(journal, mode)
+                self.assertEqual((terminal.state, terminal.error_code), (state, code))
+                self.assertEqual(rows(output.splitlines(), "error")[0][1:3], ["regional", code])
+                self.assertEqual(self.client.sent, mode != "stale-before-send")
+                fresh.assert_not_called()
+
+    def test_ambiguous_terminal_is_durable_and_lease_free_before_independent_read(self):
+        for mode in ("timeout", "transport"):
+            with self.subTest(mode=mode), self.session() as (_path, _chain, journal):
+                factory, generation = self.setup_client(journal, mode)
+                output = []
+                def reread():
+                    state = provider.load_journal_state(journal.chain)
+                    self.assertIsNone(state.active)
+                    self.assertEqual(state.terminals[state.handoff.slot].state, "interrupted")
+                    self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                    provider._unlock_native_owner(journal.descriptor("active"))
+                    self.assertTrue(output[-1].endswith("complete\toperation\n"))
+                    raise provider.SnapshotFailure("permission-denied", "Fresh read unavailable")
+                with mock.patch.object(provider, "RegionalMutation", side_effect=factory), \
+                        mock.patch.object(provider, "RegionalRead") as reader:
+                    reader.return_value.run.side_effect = reread
+                    terminal = provider.run_regional_mutation(journal, "timezone-set", "Etc/UTC",
+                        generation, output.append)
+                    reader.assert_called_once_with("time-state")
+                    reader.return_value.run.assert_called_once()
+                self.assertEqual(terminal.state, "interrupted")
+                self.assertEqual(terminal.error_code, "timeout" if mode == "timeout" else "interrupted")
+                self.assertEqual(self.events, ["sent"])
+
+    def test_preflight_failure_never_admits_or_emits_an_operation(self):
+        with self.session() as (_path, _chain, journal):
+            before = provider.load_journal_state(journal.chain)
+            output, admitted = [], mock.Mock()
+            with self.assertRaises(provider.SnapshotFailure):
+                self.invoke(journal, "preflight", write=output.append, on_admission=admitted)
+            self.assertEqual(output, [])
+            admitted.assert_not_called()
+            self.assertEqual(provider.load_journal_state(journal.chain), before)
+
+    def test_output_loss_before_dispatch_aborts_but_after_dispatch_keeps_verification(self):
+        for phase in ("pending", "authorizing", "running", "succeeded"):
+            with self.subTest(phase=phase), self.session() as (_path, _chain, journal):
+                output = []
+                def write(chunk):
+                    if "\t" + phase + "\t" in chunk:
+                        raise BrokenPipeError("Fixture output closed")
+                    output.append(chunk)
+                with self.assertRaises(BrokenPipeError):
+                    self.invoke(journal, write=write)
+                state = provider.load_journal_state(journal.chain)
+                self.assertIsNone(state.active)
+                terminal = state.terminals[state.handoff.slot]
+                sent = phase in {"running", "succeeded"}
+                self.assertEqual(self.client.sent, sent)
+                self.assertEqual(terminal.state, "succeeded" if sent else "failed")
+                self.assertEqual(self.events, ["sent", "verified"] if sent else [])
+                self.assertNotIn("complete\toperation", "".join(output))
+
+    def test_checkpoint_failures_suppress_terminal_success_and_release_the_lease(self):
+        for phase in ("authorizing", "running", "succeeded"):
+            for after_write in (False, True):
+                with self.subTest(phase=phase, after_write=after_write), self.session() as (_path, _chain, journal):
+                    output = []
+                    original = provider.advance_journal_operation
+                    def advance(current_journal, current, following, **kwargs):
+                        if following.state == phase:
+                            if after_write:
+                                original(current_journal, current, following, **kwargs)
+                            raise provider.JournalCommitError("Fixture sync failure")
+                        return original(current_journal, current, following, **kwargs)
+                    with mock.patch.object(provider, "advance_journal_operation", side_effect=advance), \
+                            self.assertRaises(provider.JournalCommitError):
+                        self.invoke(journal, write=output.append)
+                    self.assertNotIn("complete\toperation", "".join(output))
+                    state = provider.load_journal_state(journal.chain)
+                    self.assertIsNotNone(state.active)
+                    self.assertIsNone(state.handoff)
+                    self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                    provider._unlock_native_owner(journal.descriptor("active"))
+                    self.assertEqual(self.client.sent, phase != "authorizing")
+
+    def test_admission_race_does_not_replace_a_competing_owner(self):
+        with self.session() as (_path, _chain, journal):
+            admitted = mock.Mock()
+            def configure():
+                def competing():
+                    with provider.lock_writable_journal(journal):
+                        provider.begin_journal_operation(journal, "ntp-set", "2026-09-06T22:00:00Z", "Competing request")
+                self.before_admission = competing
+            with self.assertRaises(provider.JournalAdmissionError):
+                self.invoke(journal, on_admission=admitted, configure=configure)
+            admitted.assert_not_called()
+            self.assertEqual(provider.load_journal_state(journal.chain).active.action_id, "ntp-set")
+            self.assertFalse(self.client.sent)
+
+    def test_native_cli_routes_only_fixed_valid_arguments(self):
+        for args in (["timezone-set", "UTC", "a" * 64], ["ntp-set", "enabled", "b" * 64],
+                     ["locale-set", "LANG=C", "c" * 64]):
+            with mock.patch.object(provider, "native_command", return_value=0) as command:
+                self.assertEqual(provider.main(args), 0)
+                command.assert_called_once_with(*args)
+        for args in (["timezone-set"], ["timezone-set", "../UTC", "a" * 64],
+                     ["ntp-set", "true", "a" * 64], ["locale-set", "LANG=C", "A" * 64],
+                     ["locale-set", "LANG=C", "a" * 64, "extra"]):
+            with mock.patch.object(provider, "native_command") as command, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(provider.main(args), 2)
+                command.assert_not_called()
+
+
+class RegionalCommandTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d and adapted to Lyona's
+    actual CLI-boundary function: upstream splits an injectable-writer
+    run_native_command(action, argument, generation, write, error_write) from
+    a thin native_command() wrapper; Lyona's native_command() (Checkpoint 1)
+    is a single function using a fixed synchronous sys.stdout.write()/flush()
+    (the same simpler, already-established convention operation_control()
+    uses -- see NativeJournalWatchTests' docstring). Tests are adapted to call
+    provider.native_command() directly through contextlib.redirect_stdout/
+    stderr instead of an injected writer. One upstream test
+    (test_raw_short_full_and_closed_output_abort_before_dispatch) specifically
+    exercises the injectable-writer signature and is not ported for the same
+    reason. test_non_fedora_rejects_before_opening_journal is dropped outright
+    -- Lyona's native_command() has no Fedora-identity gate at all.
+    """
+
+    boot_id = RegionalOwnerTests.boot_id
+    session = RegionalOwnerTests.session
+    setup_client = RegionalOwnerTests.setup_client
+
+    def invoke(self, journal, mode="success"):
+        factory, generation = self.setup_client(journal, mode)
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
+                mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                mock.patch.object(provider, "RegionalMutation", side_effect=factory), \
+                mock.patch.object(provider, "RegionalRead"), \
+                mock.patch.object(provider, "PackageKitBackend") as packagekit, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+            code = provider.native_command("timezone-set", "Etc/UTC", generation)
+            packagekit.assert_not_called()
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_confirmed_success_and_denial_have_durable_exact_results(self):
+        for mode, expected, code in (("success", "succeeded", 0), ("denied", "permission-denied", 1)):
+            with self.subTest(mode=mode), self.session() as (_path, _chain, journal):
+                result, output, diagnostic = self.invoke(journal, mode)
+                self.assertEqual((result, diagnostic), (code, ""))
+                state = provider.load_journal_state(journal.chain)
+                self.assertIsNone(state.active)
+                terminal = state.terminals[state.handoff.slot]
+                self.assertEqual(terminal.state, expected)
+                self.assertEqual(rows(output.splitlines(), "audit")[0][1:5],
+                    [terminal.operation_id, "timezone-set", "timezone", expected])
+                self.assertEqual(output.splitlines()[-1], "complete\toperation")
+
+    def test_preflight_rejection_and_overlap_do_not_change_the_journal(self):
+        for mode in ("preflight", "active", "handoff"):
+            with self.subTest(mode=mode), self.session() as (_path, _chain, journal):
+                if mode != "preflight":
+                    with provider.lock_writable_journal(journal):
+                        active = provider.begin_journal_operation(journal, "ntp-set", "2026-09-06T22:00:00Z", "Existing")
+                        if mode == "handoff":
+                            provider.advance_journal_operation(journal, active, replace(active, state="failed",
+                                error_code="internal", finished_at="2026-09-06T22:01:00Z"))
+                            provider.complete_journal_terminal(journal)
+                before = provider.load_journal_state(journal.chain)
+                code, output, diagnostic = self.invoke(journal, "preflight" if mode == "preflight" else "success")
+                self.assertEqual((code, diagnostic), (1, ""))
+                self.assertEqual(rows(output.splitlines(), "error")[0][1:3],
+                    ["regional", "missing-provider" if mode == "preflight" else "conflict"])
+                self.assertIn("no regional mutation was dispatched", output)
+                self.assertEqual(output.splitlines()[-1], "complete\toperation")
+                self.assertEqual(provider.load_journal_state(journal.chain), before)
+
+    def test_uncertain_admission_and_terminal_handoff_never_fabricate_completion(self):
+        for stage in ("admission", "handoff"):
+            for after in (False, True):
+                with self.subTest(stage=stage, after=after), self.session() as (_path, _chain, journal):
+                    name = "begin_journal_operation" if stage == "admission" else "complete_journal_terminal"
+                    original = getattr(provider, name)
+                    def fail(*args, **kwargs):
+                        if after:
+                            original(*args, **kwargs)
+                        raise provider.JournalCommitError("Fixture private detail")
+                    with mock.patch.object(provider, name, side_effect=fail):
+                        code, output, diagnostic = self.invoke(journal)
+                    self.assertEqual(code, 1)
+                    self.assertNotIn("complete\toperation", output)
+                    self.assertEqual(diagnostic,
+                        "regional result could not be confirmed; refresh state and observe the existing operation\n")
+                    self.assertEqual(self.client.sent, stage == "handoff")
+                    if stage == "admission":
+                        self.assertEqual(output, "")
+                    state = provider.load_journal_state(journal.chain)
+                    self.assertEqual(state.handoff is not None, stage == "handoff" and after)
+
+    def test_private_bus_actual_cli_journal_and_output_loss(self):
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-regional-owner-bus.py"), str(PROVIDER_PATH)],
+            capture_output=True, text=True, timeout=60, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Private-bus regional owner: PASS", result.stdout)
+
+
+class DelegatedOwnerTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d nearly unchanged --
+    run_delegated_launch()'s lifecycle is distro-neutral. One drop:
+    test_cli_fixed_grammar_and_preflight_rejection's read_fedora_identity
+    mock is removed (no such gate exists in Lyona's delegated_command()).
+    """
+
+    boot_id = RegionalOwnerTests.boot_id
+    session = RegionalOwnerTests.session
+
+    def invoke(self, journal, action="accounts-open", *, write=None, failure=None, admitted=None):
+        output = []
+        def launch(command):
+            self.assertEqual(command, ("/usr/bin/fixture",))
+            with provider.lock_writable_journal(journal):
+                active = provider.load_writable_journal_state(journal).active
+                self.assertEqual(active.state, "running")
+                self.assertEqual(active.action_id, action)
+                self.assertTrue(provider.native_journal_owner_busy(journal, active))
+            with provider._journal_lock(journal.chain.directory_descriptor, exclusive=True):
+                pass
+            if failure is not None:
+                raise provider.SnapshotFailure(failure, "Fixture launch result")
+        with mock.patch.object(provider, "delegated_command", return_value=(("/usr/bin/fixture",), "Fixture tool")), \
+                mock.patch.object(provider, "launch_delegated_tool", side_effect=launch) as launcher, \
+                mock.patch.object(provider, "PackageKitBackend") as packagekit:
+            result = provider.run_delegated_launch(journal, action, output.append if write is None else write,
+                on_admission=admitted)
+            packagekit.assert_not_called()
+        return result, "".join(output), launcher
+
+    def test_all_fixed_launches_have_exact_durable_launch_only_results(self):
+        for action in provider.DELEGATED_ACTIONS:
+            with self.subTest(action=action), self.session() as (path, _chain, journal):
+                restart = (path / "restart").read_bytes()
+                result, output, launcher = self.invoke(journal, action)
+                launcher.assert_called_once()
+                self.assertEqual((result.kind, result.state), ("delegate", "succeeded"))
+                self.assertIn("launch accepted", result.detail)
+                self.assertIn("not tracked here", result.detail)
+                self.assertIsNone(result.generation)
+                self.assertIsNone(result.boot_id)
+                state = provider.load_journal_state(journal.chain)
+                self.assertIsNone(state.active)
+                self.assertEqual(state.terminals[state.handoff.slot], result)
+                self.assertEqual((path / "restart").read_bytes(), restart)
+                self.assertEqual([row[4] for row in rows(output.splitlines(), "operation")], ["pending", "running", "succeeded"])
+                self.assertEqual(output.splitlines()[-1], "complete\toperation")
+                self.assertTrue(all(row[6] == "no" for row in rows(output.splitlines(), "operation")))
+
+    def test_launch_errors_and_ambiguity_have_scoped_results_without_retry(self):
+        for code in ("missing-provider", "permission-denied", "unsupported", "internal", "interrupted"):
+            with self.subTest(code=code), self.session() as (_path, _chain, journal):
+                result, output, launcher = self.invoke(journal, failure=code)
+                launcher.assert_called_once()
+                self.assertEqual(result.state, "interrupted" if code == "interrupted" else "failed")
+                self.assertEqual(rows(output.splitlines(), "error")[0][1:3], ["accounts", code])
+
+    def test_output_loss_before_launch_aborts_and_after_acceptance_preserves_handoff(self):
+        for phase in ("pending", "running", "succeeded"):
+            with self.subTest(phase=phase), self.session() as (_path, _chain, journal):
+                output = []
+                def write(chunk):
+                    if "\t" + phase + "\t" in chunk:
+                        raise BrokenPipeError()
+                    output.append(chunk)
+                with mock.patch.object(provider, "delegated_command", return_value=(("/usr/bin/fixture",), "Fixture")), \
+                        mock.patch.object(provider, "launch_delegated_tool") as launch, self.assertRaises(BrokenPipeError):
+                    provider.run_delegated_launch(journal, "printers-open", write)
+                self.assertEqual(launch.call_count, int(phase == "succeeded"))
+                state = provider.load_journal_state(journal.chain)
+                self.assertEqual(state.terminals[state.handoff.slot].state, "succeeded" if phase == "succeeded" else "failed")
+                self.assertNotIn("complete\toperation", "".join(output))
+
+    def test_unavailable_tool_and_admission_race_preserve_existing_state(self):
+        for race in (False, True):
+            with self.subTest(race=race), self.session() as (_path, _chain, journal):
+                admitted, output = mock.Mock(), []
+                def resolve(_action):
+                    if not race:
+                        raise provider.SnapshotFailure("missing-provider", "Unavailable fixture")
+                    with provider.lock_writable_journal(journal):
+                        provider.begin_journal_operation(journal, "ntp-set", "2026-09-06T23:00:00Z", "Competing")
+                    return ("/usr/bin/fixture",), "Fixture"
+                with mock.patch.object(provider, "delegated_command", side_effect=resolve), \
+                        mock.patch.object(provider, "launch_delegated_tool") as launch, \
+                        self.assertRaises(provider.JournalAdmissionError if race else provider.SnapshotFailure):
+                    provider.run_delegated_launch(journal, "accounts-open", output.append, on_admission=admitted)
+                admitted.assert_not_called()
+                launch.assert_not_called()
+                self.assertEqual(output, [])
+                self.assertEqual(provider.load_journal_state(journal.chain).active is not None, race)
+
+    def test_uncertain_admission_or_handoff_never_emits_complete(self):
+        for stage in ("begin_journal_operation", "complete_journal_terminal"):
+            for after in (False, True):
+                with self.subTest(stage=stage, after=after), self.session() as (_path, _chain, journal):
+                    original, admitted, output = getattr(provider, stage), mock.Mock(), []
+                    def fail(*args, **kwargs):
+                        if after:
+                            original(*args, **kwargs)
+                        raise provider.JournalCommitError("Uncertain fixture write")
+                    with mock.patch.object(provider, stage, side_effect=fail), self.assertRaises(provider.JournalCommitError):
+                        self.invoke(journal, write=output.append, admitted=admitted)
+                    admitted.assert_called_once()
+                    self.assertNotIn("complete\toperation", "".join(output))
+                    self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                    provider._unlock_native_owner(journal.descriptor("active"))
+
+    def test_cli_fixed_grammar_and_preflight_rejection(self):
+        for action in provider.DELEGATED_ACTIONS:
+            with mock.patch.object(provider, "native_command", return_value=0) as command:
+                self.assertEqual(provider.main([action]), 0)
+                command.assert_called_once_with(action)
+            with mock.patch.object(provider, "native_command") as command, contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(provider.main([action, "unexpected"]), 2)
+                command.assert_not_called()
+            with self.session() as (path, _chain, journal), \
+                    mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(path.parents[1])}), \
+                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                    mock.patch.object(provider, "delegated_command", side_effect=provider.SnapshotFailure("missing-provider", "Fixture tool missing")), \
+                    mock.patch.object(provider, "launch_delegated_tool") as launch, \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(provider.main([action]), 1)
+                self.assertIn("no administration tool was launched", stdout.getvalue())
+                self.assertEqual(stderr.getvalue(), "")
+                state = provider.load_journal_state(journal.chain)
+                self.assertIsNone(state.active)
+                self.assertIsNone(state.handoff)
+                launch.assert_not_called()
+
+    def test_real_child_is_detached_and_never_inherits_journal_or_output(self):
+        for mode in ("open", "failed-work", "lost-output"):
+            with self.subTest(mode=mode), self.session() as (path, _chain, journal):
+                report = path.parent / "child.json"
+                command = ("/usr/bin/python3", str(REPO / "tests/fixtures/system-delegated-tool.py"), str(report), mode)
+                original, children, output = os.posix_spawn, [], []
+                def spawn(*args, **kwargs):
+                    pid = original(*args, **kwargs)
+                    children.append(pid)
+                    return pid
+                def write(chunk):
+                    if mode == "lost-output" and "\tsucceeded\t" in chunk:
+                        raise BrokenPipeError()
+                    output.append(chunk)
+                try:
+                    with mock.patch.object(provider, "delegated_command", return_value=(command, "Fixture")), \
+                            mock.patch.object(provider.os, "posix_spawn", side_effect=spawn):
+                        if mode == "lost-output":
+                            with self.assertRaises(BrokenPipeError):
+                                provider.run_delegated_launch(journal, "sources-open", write)
+                        else:
+                            provider.run_delegated_launch(journal, "sources-open", write)
+                    deadline = time.monotonic() + 3
+                    while not report.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    value = json.loads(report.read_text())
+                    self.assertEqual(value["pid"], children[0])
+                    self.assertEqual(value["sid"], children[0])
+                    self.assertEqual(value["descriptors"], {"0": "/dev/null", "1": "/dev/null", "2": "/dev/null"})
+                    state = provider.load_journal_state(journal.chain)
+                    self.assertIsNone(state.active)
+                    terminal = state.terminals[state.handoff.slot]
+                    self.assertEqual(terminal.state, "succeeded")
+                    self.assertIn("launch accepted", terminal.detail)
+                    self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                    provider._unlock_native_owner(journal.descriptor("active"))
+                    if mode == "failed-work":
+                        pid, status = os.waitpid(children.pop(), 0)
+                        self.assertEqual(pid, value["pid"])
+                        self.assertEqual(os.waitstatus_to_exitcode(status), 42)
+                        self.assertEqual(provider.load_journal_state(journal.chain).terminals[terminal.slot], terminal)
+                    replay = []
+                    with mock.patch.object(provider, "launch_delegated_tool", side_effect=AssertionError("Unexpected relaunch")):
+                        provider.watch_journal_operation(journal, terminal.operation_id, replay.append, boot_id=self.boot_id)
+                    self.assertTrue("".join(replay).endswith("complete\toperation\n"))
+                finally:
+                    for pid in children:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
+                        os.waitpid(pid, 0)
+
+
+class FixtureNativeSources:
+    """Typed finite results; no test silently consults or launches host providers."""
+
+    def __init__(self):
+        self.time_state = mock.Mock(return_value=provider.RegionalTimeState("America/Chicago", True, True, False))
+        self.locale_state = mock.Mock(return_value=provider.parse_locale_configuration(("LANG=en_US.UTF-8", "LC_TIME=C")))
+        account = provider.AccountRecord("/arbitrary/current", "current", "Current user", "fixture", True)
+        self.accounts = mock.Mock(return_value=provider.AccountInventory((account,), (account.path,), account.path, "available", ()))
+        self.printers = mock.Mock(return_value=provider.CupsState("available", "socket-ready", (), ()))
+        self.repositories = mock.Mock(return_value=(provider.RepositoryRow("fedora", True, "Fedora"),
+            provider.RepositoryRow("disabled", False, "Disabled source")))
+        self.delegate = mock.Mock(return_value=(("/usr/bin/fixed-fixture",), "Fixture tool"))
+        self.admission = mock.Mock()
+
+
+class NativeSnapshotTests(unittest.TestCase):
+    """Sync Phase 9, ported from upstream's 0eae066d with one drop:
+    test_real_native_admission_is_fedora_gated_and_does_not_commit's fedora
+    half is removed -- Lyona's NativeSnapshotSources.admission() has no
+    read_fedora_identity() gate at all (Sync Phase 6 precedent, documented
+    at the admission() definition), so only the "does not commit" half of
+    that test still applies, renamed accordingly. Everything else here
+    exercises build_native_snapshot()/build_managed_snapshot(), which are
+    distro-neutral aside from that one already-adapted gate.
+    """
+
+    def snapshot(self, sources=None, *, backend=None, active=False, recovery_failure=None, missing_state=False):
+        fixture = RecoverySnapshotTests()
+        sources = sources or FixtureNativeSources()
+        backend = backend or fixture.backend()
+        with fixture.journal() as journal:
+            if active:
+                fixture.begin(journal, "timezone")
+            recovery = provider.RecoverySnapshot(None if missing_state else provider.load_journal_state(journal.chain),
+                failures=(recovery_failure,) if recovery_failure else ())
+            with mock.patch.object(provider, "read_recovery_snapshot", return_value=recovery), \
+                    mock.patch.object(provider, "launch_delegated_tool") as launch:
+                output = provider.build_managed_snapshot(backend, native_sources=sources)
+            launch.assert_not_called()
+            return output
+
+    def by_id(self, output, kind):
+        return {row[1]: row for row in rows(output, kind)}
+
+    def test_complete_cumulative_set_and_no_dispatch(self):
+        sources = FixtureNativeSources()
+        output = self.snapshot(sources)
+        self.assertEqual(output[0], "system-management-protocol\t1\t1")
+        self.assertEqual(output[-1], "complete\tsnapshot")
+        self.assertEqual(len(rows(output, "provider")), 6)
+        self.assertEqual(len(rows(output, "state")), 9)
+        self.assertEqual(len(rows(output, "action")), 10)
+        self.assertEqual(len(rows(output, "account")), 1)
+        self.assertEqual(len(rows(output, "repository")), 2)
+        self.assertEqual(self.by_id(output, "state")["accounts-count"][2:4], ["available", "1"])
+        self.assertEqual(self.by_id(output, "state")["ntp-synchronized"][3], "no")
+        self.assertEqual(self.by_id(output, "state")["locale"][3:], ["en_US.UTF-8", "LC_TIME=C"])
+        for method in (sources.time_state, sources.locale_state, sources.accounts,
+                       sources.printers, sources.repositories, sources.admission):
+            method.assert_called_once_with()
+        self.assertEqual({call.args[0] for call in sources.delegate.call_args_list}, provider.DELEGATED_ACTIONS)
+        self.assertEqual(rows(output, "error"), [])
+        self.assertEqual(provider.build_snapshot(FixtureBackend())[0], "system-management-protocol\t1\t0")
+
+    def test_independent_reader_failures_keep_every_mandatory_record(self):
+        for name, owner, state_id in (("time_state", "regional", "timezone"),
+                ("locale_state", "regional", "locale"), ("accounts", "accounts", "accounts-count"),
+                ("printers", "printers", "cups-service"), ("repositories", "sources", None)):
+            with self.subTest(name=name):
+                sources = FixtureNativeSources()
+                getattr(sources, name).side_effect = provider.SnapshotFailure("permission-denied", "Read denied", "restricted")
+                output = self.snapshot(sources)
+                self.assertEqual(len(rows(output, "provider")), 6)
+                self.assertEqual(len(rows(output, "state")), 9)
+                self.assertEqual(len(rows(output, "action")), 10)
+                if state_id:
+                    self.assertEqual(self.by_id(output, "state")[state_id][2:4], ["restricted", "unknown"])
+                self.assertIn(["error", owner, "permission-denied", "Read denied"], rows(output, "error"))
+                self.assertEqual(self.by_id(output, "state")["locale" if name == "time_state" else "timezone"][2], "available")
+                self.assertEqual(self.by_id(output, "action")["accounts-open"][2], "available")
+
+    def test_missing_tools_preserve_rows_and_readable_state(self):
+        sources = FixtureNativeSources()
+        sources.delegate.side_effect = provider.SnapshotFailure("missing-provider", "Tool is missing", "unavailable")
+        output = self.snapshot(sources)
+        self.assertEqual(len(rows(output, "account")), 1)
+        self.assertEqual(len(rows(output, "repository")), 2)
+        self.assertEqual(self.by_id(output, "state")["cups-service"][2:4], ["available", "socket-ready"])
+        for identifier in provider.DELEGATED_ACTIONS:
+            self.assertEqual(self.by_id(output, "action")[identifier][2], "unavailable")
+        self.assertEqual(self.by_id(output, "action")["timezone-set"][2], "available")
+
+    def test_partial_accounts_and_running_printer_survive_scoped_errors(self):
+        sources = FixtureNativeSources()
+        failure = provider.SnapshotFailure("timeout", "Optional lookup timed out", "unavailable")
+        sources.accounts.return_value = replace(sources.accounts.return_value, status="partial", errors=(failure,))
+        sources.printers.return_value = provider.CupsState("available", "running", (), (failure,))
+        output = self.snapshot(sources)
+        self.assertEqual(len(rows(output, "account")), 1)
+        self.assertEqual(self.by_id(output, "state")["accounts-count"][2:4], ["partial", "unknown"])
+        self.assertEqual(self.by_id(output, "state")["cups-service"][2:4], ["available", "running"])
+        self.assertEqual(self.by_id(output, "provider")["printers"][2], "partial")
+
+    def test_native_offers_do_not_require_packagekit_or_logind_safety(self):
+        fixture = RecoverySnapshotTests()
+        backend = fixture.backend()
+        backend.require_mutation_safe.side_effect = provider.SnapshotFailure("unsupported", "Update security floor is unavailable")
+        for failure in (None, provider.SnapshotFailure("missing-provider", "No logind session", "unavailable")):
+            with self.subTest(failure=failure):
+                sources = FixtureNativeSources()
+                output = self.snapshot(sources, backend=backend, recovery_failure=failure)
+                actions = self.by_id(output, "action")
+                self.assertEqual(actions["updates-refresh"][2], "unavailable")
+                for identifier in provider.JOURNAL_OPERATION_ACTION_KINDS:
+                    if identifier not in {"updates-refresh", "updates-install-all"}:
+                        self.assertEqual(actions[identifier][2], "available")
+                sources.admission.assert_called_once_with()
+
+    def test_missing_recovery_active_owner_and_admission_failures_block_native(self):
+        for scenario in ("missing", "active", "admission"):
+            with self.subTest(scenario=scenario):
+                sources = FixtureNativeSources()
+                if scenario == "admission":
+                    sources.admission.side_effect = provider.SnapshotFailure("conflict", "Journal is busy")
+                output = self.snapshot(sources, active=scenario == "active", missing_state=scenario == "missing")
+                for row in rows(output, "action")[3:]:
+                    self.assertEqual(row[2], "unavailable")
+                if scenario != "admission":
+                    sources.admission.assert_not_called()
+                self.assertEqual(self.by_id(output, "state")["timezone"][2], "available")
+
+    def test_ntp_and_unwritable_locale_preserve_readable_status(self):
+        for assignments in (("LANG=en_US.UTF-8", "LANGUAGE=en:fr"), ("LANG=en_US.UTF-8", "LC_TIME=")):
+            sources = FixtureNativeSources()
+            sources.time_state.return_value = replace(sources.time_state.return_value, can_ntp=False)
+            sources.locale_state.return_value = provider.parse_locale_configuration(assignments)
+            output = self.snapshot(sources)
+            actions = self.by_id(output, "action")
+            self.assertEqual(actions["ntp-set"][2], "unavailable")
+            self.assertEqual(actions["locale-set"][2], "unavailable")
+            self.assertEqual(actions["timezone-set"][2], "available")
+            self.assertEqual(self.by_id(output, "state")["locale"][2:4], ["available", "en_US.UTF-8"])
+        sources.locale_state.return_value = provider.parse_locale_configuration(("LANG=old:invalid", "LC_TIME=C"))
+        self.assertEqual(self.by_id(self.snapshot(sources), "action")["locale-set"][2], "available")
+        sources.locale_state.return_value = provider.parse_locale_configuration(("LANG=",))
+        output = self.snapshot(sources)
+        self.assertEqual(self.by_id(output, "state")["locale"][2:4], ["available", ""])
+        self.assertEqual(self.by_id(output, "action")["locale-set"][2], "available")
+
+    def test_list_count_byte_and_duplicate_failures_discard_only_owner(self):
+        for family in ("account-count", "account-bytes", "account-duplicate", "repository-count", "repository-bytes", "repository-duplicate"):
+            with self.subTest(family=family):
+                sources = FixtureNativeSources()
+                if family.startswith("account"):
+                    original = sources.accounts.return_value
+                    count = 257 if family.endswith("count") else 256 if family.endswith("bytes") else 2
+                    records = tuple(provider.AccountRecord("/arbitrary/" + str(i) if not family.endswith("duplicate") else "/same",
+                        "other", "x" * 512, "y" * 512, True) for i in range(count))
+                    sources.accounts.return_value = replace(original, records=records)
+                    owner, kind = "accounts", "account"
+                else:
+                    count = 513 if family.endswith("count") else 512 if family.endswith("bytes") else 2
+                    records = tuple(provider.RepositoryRow((str(i) + "x" * 500) if not family.endswith("duplicate") else "same",
+                        True, "y" * 512) for i in range(count))
+                    sources.repositories.return_value = records
+                    owner, kind = "sources", "repository"
+                output = self.snapshot(sources)
+                self.assertEqual(rows(output, kind), [])
+                self.assertTrue(any(row[1:3] == [owner, "malformed"] for row in rows(output, "error")))
+                self.assertEqual(self.by_id(output, "state")["timezone"][2], "available")
+
+    def test_non_list_and_total_byte_reservations(self):
+        provider.validate_snapshot_size(["account\trow"] * 9216)
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.validate_snapshot_size(["account\trow"] * 9217)
+        provider.validate_snapshot_size(["future\t" + "x" * (1024 * 1024 - 8)])
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.validate_snapshot_size(["future\t" + "x" * (1024 * 1024 - 7)])
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.validate_snapshot_size(["account\t" + "x" * (8 * 1024 * 1024)])
+
+    def test_real_native_admission_does_not_commit(self):
+        fixture = RecoverySnapshotTests()
+        with fixture.journal() as journal:
+            before = {name: os.pread(journal.descriptor(name), provider.JOURNAL_FILE_SIZE, 0) for name in provider.JOURNAL_NAMES}
+            with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}):
+                provider.NativeSnapshotSources().admission()
+            self.assertEqual(before, {name: os.pread(journal.descriptor(name), provider.JOURNAL_FILE_SIZE, 0) for name in provider.JOURNAL_NAMES})
+            with mock.patch.object(provider, "open_journal_directory", side_effect=OSError("fixture unavailable")):
+                with self.assertRaises(provider.SnapshotFailure):
+                    provider.NativeSnapshotSources().admission()
+
+
 class OperationRecoveryTests(unittest.TestCase):
     boot_id = PackageKitExecutionTests.boot_id
     journal = PackageKitExecutionTests.journal
@@ -7849,19 +10725,24 @@ class OperationWatchTests(unittest.TestCase):
                     provider.acknowledge_journal_handoff(journal, operation.operation_id)
                     self.assertEqual(provider.retained_journal_operation(journal, operation.operation_id), terminal)
 
-    def test_stale_id_and_active_regional_emit_no_stream(self):
-        for kind in ("refresh", "timezone"):
-            with self.subTest(kind=kind), self.journal() as journal:
-                operation = self.begin(journal, kind)
-                requested = "op-" + "0" * 32 if kind == "refresh" else operation.operation_id
-                chunks = []
-                backend = mock.Mock()
-                with self.assertRaises(provider.JournalAdmissionError):
-                    provider.watch_journal_operation(journal, requested, chunks.append,
-                        boot_id=self.boot_id, backend_factory=backend)
-                self.assertEqual(chunks, [])
-                backend.assert_not_called()
-                self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
+    def test_stale_id_emits_no_stream(self):
+        # A native (non-update/refresh) kind watched by its own correct id with
+        # no live owner lease is NOT rejected here -- Sync Phase 9's
+        # watch_native_journal_operation() recovers and streams that as an
+        # "interrupted" terminal instead (see NativeJournalWatchTests.
+        # test_orphan_recovery_and_completion_during_watch_setup_are_exact).
+        # Only a genuinely mismatched id is rejected before any output.
+        with self.journal() as journal:
+            operation = self.begin(journal, "refresh")
+            requested = "op-" + "0" * 32
+            chunks = []
+            backend = mock.Mock()
+            with self.assertRaises(provider.JournalAdmissionError):
+                provider.watch_journal_operation(journal, requested, chunks.append,
+                    boot_id=self.boot_id, backend_factory=backend)
+            self.assertEqual(chunks, [])
+            backend.assert_not_called()
+            self.assertEqual(provider.load_journal_state(journal.chain).active, operation)
 
     def test_service_free_controls_retain_lower_guidance_until_snapshot_has_session_evidence(self):
         with self.journal() as journal:
@@ -8428,6 +11309,7 @@ class RecoverySnapshotTests(unittest.TestCase):
 
     def backend(self, **kwargs):
         backend = FixtureBackend(**kwargs)
+        backend.require_mutation_safe = mock.Mock()
         backend.session_started = mock.Mock(return_value=0)
         backend.probe_operation = mock.Mock(return_value=provider.RecoveryEvidence(False))
         backend.operation_history = mock.Mock(return_value=())
@@ -8455,20 +11337,119 @@ class RecoverySnapshotTests(unittest.TestCase):
     def restart_row(self, output):
         return next(row for row in rows(output, "state") if row[1] == "update-restart")
 
-    def test_cli_initializes_only_its_fixed_journal_and_keeps_actions_disabled(self):
+    def unavailable_native_sources(self):
+        # A deterministic stand-in for Sync Phase 9's NativeSnapshotSources:
+        # every read/delegate call fails the same fixed way, regardless of
+        # whether this sandbox happens to have a real system bus. Only
+        # admission() succeeds (no active operation exists in these fixtures).
+        failure = provider.SnapshotFailure("missing-provider", "fixture: no native services", "unavailable")
+        sources = mock.Mock()
+        for method in ("time_state", "locale_state", "accounts", "printers", "repositories", "delegate"):
+            getattr(sources, method).side_effect = failure
+        sources.admission.return_value = None
+        return mock.patch.object(provider, "NativeSnapshotSources", return_value=sources)
+
+    def test_cli_initializes_only_its_fixed_journal_and_offers_safe_refresh(self):
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}), \
                 mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
                 mock.patch.object(provider, "PackageKitBackend", return_value=self.backend()), \
+                self.unavailable_native_sources(), \
                 contextlib.redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(provider.main(["snapshot"]), 0)
             output = stdout.getvalue().splitlines()
             self.assertEqual(output[-1], "complete\tsnapshot")
             self.assertEqual(self.restart_row(output)[2:4], ["available", "none"])
-            self.assertEqual([row[2] for row in rows(output, "action")], ["unavailable"] * 3)
+            self.assertEqual([row[2] for row in rows(output, "action")],
+                ["available", "unavailable", "unavailable"] + ["unavailable"] * 7)
             path = pathlib.Path(directory) / "lyona" / "system-management"
             self.assertEqual({item.name for item in path.iterdir()}, set(provider.JOURNAL_NAMES))
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+
+    def test_complete_safe_plan_offers_confirmed_origins_without_dispatch(self):
+        update = package(8, "fixture;2;noarch;updates", "Update")
+        backend = self.backend(updates=(update,), plan=(
+            package(11, update.package_id, "Update"),
+            package(12, "dependency;1;noarch;updates", "Dependency"),
+            package(15, "old;1;noarch;installed", "Obsolete")))
+        with self.journal() as journal:
+            output = self.snapshot(journal, backend)
+            self.assertEqual([row[2] for row in rows(output, "action")],
+                ["available", "available", "unavailable"])
+            self.assertEqual(rows(output, "provider")[0][2], "available")
+            self.assertEqual(len(rows(output, "package-change")), 3)
+            backend.require_mutation_safe.assert_called_once_with()
+            self.assertIsNone(provider.load_journal_state(journal.chain).active)
+            self.assertIsNone(provider.load_journal_state(journal.chain).handoff)
+
+    def test_unsafe_backend_blocks_origins_without_hiding_inventory(self):
+        update = package(8, "fixture;2;noarch;updates", "Update")
+        backend = self.backend(updates=(update,), plan=(package(11, update.package_id, "Update"),))
+        backend.require_mutation_safe.side_effect = provider.SnapshotFailure(
+            "unsupported", "PackageKit security floor is not satisfied", "unsupported")
+        with self.journal() as journal:
+            output = self.snapshot(journal, backend)
+            self.assertEqual([row[2] for row in rows(output, "action")], ["unavailable"] * 3)
+            self.assertEqual(len(rows(output, "update")), 1)
+            self.assertEqual(len(rows(output, "package-change")), 1)
+            self.assertIn(["error", "updates", "unsupported", "PackageKit security floor is not satisfied"],
+                rows(output, "error"))
+
+    def test_failed_or_unsupported_plan_blocks_only_install(self):
+        update = package(8, "fixture;2;noarch;updates", "Update")
+        cases = (
+            {"plan_failure": provider.SnapshotFailure("timeout", "Simulation timed out")},
+            {"plan": ()},
+            {"plan": (package(11, update.package_id, "Update"),
+                      package(19, "extra;1;noarch;installed", "Reinstall"))},
+        )
+        for case in cases:
+            with self.subTest(case=case), self.journal() as journal:
+                output = self.snapshot(journal, self.backend(updates=(update,), **case))
+                self.assertEqual([row[2] for row in rows(output, "action")],
+                    ["available", "unavailable", "unavailable"])
+                self.assertEqual(len(rows(output, "update")), 1)
+
+    def test_failed_discovery_can_offer_explicit_refresh_but_not_install(self):
+        with self.journal() as journal:
+            output = self.snapshot(journal, self.backend(updates_failure=
+                provider.SnapshotFailure("network", "Repository is offline")))
+            self.assertEqual([row[2] for row in rows(output, "action")],
+                ["available", "unavailable", "unavailable"])
+            self.assertIn(["error", "updates", "network", "Repository is offline"], rows(output, "error"))
+
+    def test_incomplete_recovery_blocks_origins_and_skips_security_probe(self):
+        backend = self.backend()
+        backend.session_started.side_effect = provider.SnapshotFailure("timeout", "Logind timed out")
+        with self.journal() as journal:
+            output = self.snapshot(journal, backend)
+            self.assertEqual([row[2] for row in rows(output, "action")], ["unavailable"] * 3)
+            backend.require_mutation_safe.assert_not_called()
+
+    def test_malformed_inventory_blocks_all_origins(self):
+        for result in (
+            {"updates": (package(99, "fixture;2;noarch;updates", "Invalid info"),)},
+            {"updates_failure": provider.SnapshotFailure("malformed", "Invalid transaction output")},
+        ):
+            with self.subTest(result=result), self.journal() as journal:
+                output = self.snapshot(journal, self.backend(**result))
+                self.assertEqual([row[2] for row in rows(output, "action")], ["unavailable"] * 3)
+                self.assertEqual(rows(output, "update"), [])
+                self.assertEqual(rows(output, "package-change"), [])
+                self.assertIn("malformed", [row[2] for row in rows(output, "error")])
+
+    def test_existing_owner_or_handoff_blocks_origins_and_skips_security_probe(self):
+        for active in (True, False):
+            with self.subTest(active=active), self.journal() as journal:
+                operation = self.begin(journal, "refresh")
+                backend = self.backend()
+                if active:
+                    backend.probe_operation.return_value = provider.RecoveryEvidence(True, allow_cancel=True)
+                output = self.snapshot(journal, backend)
+                self.assertEqual([row[2] for row in rows(output, "action")][:2], ["unavailable"] * 2)
+                backend.require_mutation_safe.assert_not_called()
+                self.assertEqual(rows(output, "active-operation" if active else "terminal-handoff")[0][1],
+                    operation.operation_id)
 
     def test_durable_restart_overrides_discovery_and_survives_missing_packagekit(self):
         for unavailable in (False, True):
@@ -8622,6 +11603,7 @@ class RecoverySnapshotTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
                     mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
                     mock.patch.object(provider, "PackageKitBackend", side_effect=provider.SnapshotFailure("missing-provider", "Bindings missing")), \
+                    self.unavailable_native_sources(), \
                     contextlib.redirect_stdout(io.StringIO()) as stdout:
                 self.assertEqual(provider.main(["snapshot"]), 0)
             self.assertEqual(rows(stdout.getvalue().splitlines(), "terminal-handoff")[0][1], operation.operation_id)

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Exercise the real update monitor on a private bus, never host PackageKit."""
+"""Exercise fixed service monitors on a private bus, never host services."""
 
 import fcntl
 import os
@@ -18,6 +18,15 @@ from gi.repository import Gio, GLib
 
 NAME = "org.freedesktop.PackageKit"
 PATH = "/org/freedesktop/PackageKit"
+kind = sys.argv[2] if len(sys.argv) == 3 else "updates"
+assert kind in ("updates", "time", "locale", "accounts")
+command = ["watch-updates"] if kind == "updates" else ["watch-accounts"] if kind == "accounts" else ["watch-regional", kind]
+prefix = b"update-event" if kind == "updates" else b"accounts-event" if kind == "accounts" else b"regional-event"
+ready = prefix + b"\tready\n"
+changed = prefix + b"\tchanged\n"
+if kind != "updates":
+    NAME = "org.freedesktop." + {"time": "timedate1", "locale": "locale1", "accounts": "Accounts"}[kind]
+    PATH = "/" + NAME.replace(".", "/")
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 address = os.environ["DBUS_SESSION_BUS_ADDRESS"]
 environment = dict(os.environ, DBUS_SYSTEM_BUS_ADDRESS=address)
@@ -26,7 +35,7 @@ retained_writers = []
 
 
 def name_call(method, connection=bus):
-    """Request or release the fixture's PackageKit bus name."""
+    """Own or release only the fixture's selected service name."""
     parameters = GLib.Variant("(su)", (NAME, 0)) if method == "RequestName" else GLib.Variant("(s)", (NAME,))
     return connection.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
         "org.freedesktop.DBus", method, parameters, GLib.VariantType.new("(u)"),
@@ -34,15 +43,15 @@ def name_call(method, connection=bus):
 
 
 def launch(monitor_environment=environment):
-    """Start the update monitor with the selected private-bus environment."""
-    process = subprocess.Popen([sys.argv[1], "watch-updates"], env=monitor_environment,
+    """Start the real provider against the selected disposable bus."""
+    process = subprocess.Popen([sys.argv[1], *command], env=monitor_environment,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
     processes.append(process)
     return process
 
 
 def line(process, timeout=3):
-    """Read one newline-terminated record before the bounded deadline."""
+    """Collect one bounded line without buffering subsequent events."""
     output = b""
     deadline = time.monotonic() + timeout
     with selectors.DefaultSelector() as selector:
@@ -57,7 +66,21 @@ def line(process, timeout=3):
 
 
 def emit(member, *, path=PATH, interface=NAME, parameters=None, connection=bus):
-    """Emit and flush one signal on the fixture's private bus."""
+    """Emit real signals, adapting global changes to the selected service."""
+    if kind == "accounts" and member in ("UpdatesChanged", "InstalledChanged", "RepoListChanged"):
+        interface = NAME
+        if member == "RepoListChanged":
+            member, interface = "Changed", NAME + ".User"
+            path = PATH + "/User1001" if path == PATH else path
+            parameters = GLib.Variant("()", ())
+        else:
+            member = "UserAdded" if member == "UpdatesChanged" else "UserDeleted"
+            parameters = GLib.Variant("(o)", (PATH + "/User1001",))
+    elif kind in ("time", "locale") and member in ("UpdatesChanged", "InstalledChanged", "RepoListChanged"):
+        member = "PropertiesChanged"
+        interface = "org.freedesktop.DBus.Properties"
+        field = "Timezone" if kind == "time" else "Locale"
+        parameters = GLib.Variant("(sa{sv}as)", (NAME, {}, [field]))
     connection.emit_signal(None, path, interface, member, parameters)
     connection.flush_sync(None)
 
@@ -65,12 +88,19 @@ def emit(member, *, path=PATH, interface=NAME, parameters=None, connection=bus):
 try:
     assert name_call("RequestName") == 1
     process = launch()
-    assert line(process) == b"update-event\tready\n"
-    # No PackageKit methods are exported. Reaching ready proves setup only
+    assert line(process) == ready
+    # No platform methods are exported. Reaching ready proves setup only
     # calls the bus daemon, without activating a transaction or reading state.
     for member in ("UpdatesChanged", "InstalledChanged", "RepoListChanged"):
         emit(member)
-        assert line(process) == b"update-event\tchanged\n", member
+        assert line(process) == changed, member
+
+    if kind in ("time", "locale"):
+        field = "Timezone" if kind == "time" else "Locale"
+        value = GLib.Variant("s", "UTC") if kind == "time" else GLib.Variant("as", ["LANG=C"])
+        emit("PropertiesChanged", interface="org.freedesktop.DBus.Properties",
+            parameters=GLib.Variant("(sa{sv}as)", (NAME, {field: value}, [])))
+        assert line(process) == changed
 
     emit("TransactionListChanged", parameters=GLib.Variant("(ao)", (["/18_fixture"],)))
     emit("UpdatesChanged", path="/18_fixture", interface=NAME + ".Transaction")
@@ -79,18 +109,21 @@ try:
     outsider = Gio.DBusConnection.new_for_address_sync(address,
         Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
     emit("UpdatesChanged", connection=outsider)
+    if kind in ("time", "locale"):
+        emit("PropertiesChanged", interface="org.freedesktop.DBus.Properties",
+            parameters=GLib.Variant("(sa{sv}as)", (NAME, {"Unrelated": GLib.Variant("b", True)}, [])))
     assert line(process, 0.2) == b"", "Unrelated signals triggered discovery"
     outsider.close_sync(None)
 
     assert name_call("ReleaseName") == 1
-    assert line(process) == b"update-event\tchanged\n"
+    assert line(process, 3 if kind == "updates" else 0.2) == (changed if kind == "updates" else b"")
     assert name_call("RequestName") == 1
-    assert line(process) == b"update-event\tchanged\n"
+    assert line(process) == changed
     emit("InstalledChanged")
-    assert line(process) == b"update-event\tchanged\n", "Replacement owner not monitored"
+    assert line(process) == changed, "Replacement owner not monitored"
     for _ in range(100):
         emit("UpdatesChanged")
-    assert all(line(process) == b"update-event\tchanged\n" for _ in range(100))
+    assert all(line(process) == changed for _ in range(100))
     assert line(process, 0.2) == b"", "Idle monitor emitted output"
     process.send_signal(signal.SIGTERM)
     assert process.wait(timeout=3) == 0
@@ -98,41 +131,46 @@ try:
 
     # Lost stdout is not a successful monitor or an interpreter flush failure.
     broken = launch()
-    assert line(broken) == b"update-event\tready\n"
+    assert line(broken) == ready
     broken.stdout.close()
     emit("UpdatesChanged")
     assert broken.wait(timeout=3) == 1
     error = broken.stderr.read()
     assert b"reload status explicitly" in error and b"Traceback" not in error
 
-    # Shell groups can retain the same write-side open-file description for
-    # later commands. Restore its original mode on both clean and failed exits.
-    for originally_blocking, overflow, merged in ((True, False, False), (False, False, False),
-            (True, True, False), (True, True, True)):
+    # Shell groups can retain this writer during monitoring and after a forced
+    # exit. Never change its mode, even temporarily, or disrupt parent output.
+    for originally_blocking, overflow, merged, killed in (
+            (True, False, False, False), (False, False, False, False),
+            (True, True, False, False), (True, True, True, False),
+            (True, False, True, True), (False, False, True, True)):
         reader, writer = os.pipe()
         retained_writers.append(writer)
         os.set_blocking(writer, originally_blocking)
-        inherited = subprocess.Popen([sys.argv[1], "watch-updates"], env=environment,
+        inherited = subprocess.Popen([sys.argv[1], *command], env=environment,
             stdout=writer, stderr=subprocess.STDOUT if merged else subprocess.PIPE, bufsize=0)
         processes.append(inherited)
         inherited.stdout = os.fdopen(reader, "rb", buffering=0)
         fcntl.fcntl(writer, fcntl.F_SETPIPE_SZ, 4096)
-        assert line(inherited) == b"update-event\tready\n"
+        assert line(inherited) == ready
+        assert os.get_blocking(writer) == originally_blocking, "Live monitor changed inherited stdout mode"
+        os.write(writer, b"parent output\n")
+        assert line(inherited) == b"parent output\n"
         if overflow:
             for _ in range(1000):
                 emit("UpdatesChanged")
                 if inherited.poll() is not None:
                     break
         else:
-            inherited.send_signal(signal.SIGTERM)
-        assert inherited.wait(timeout=3) == int(overflow)
-        assert os.get_blocking(writer) == originally_blocking, "Inherited stdout mode was not restored"
+            inherited.send_signal(signal.SIGKILL if killed else signal.SIGTERM)
+        assert inherited.wait(timeout=3) == (-signal.SIGKILL if killed else int(overflow))
+        assert os.get_blocking(writer) == originally_blocking, "Inherited stdout mode changed"
 
     # A reader that remains open but stops draining cannot pin the GLib loop
     # and its subscriptions. Overflow exits explicitly, with no event queue.
     stalled = launch()
     fcntl.fcntl(stalled.stdout.fileno(), fcntl.F_SETPIPE_SZ, 4096)
-    assert line(stalled) == b"update-event\tready\n"
+    assert line(stalled) == ready
     for _ in range(1000):
         emit("UpdatesChanged")
         if stalled.poll() is not None:
@@ -141,13 +179,17 @@ try:
     error = stalled.stderr.read()
     assert b"reload status explicitly" in error and b"Traceback" not in error
 
-    # Missing PackageKit does not prevent an installed subscription; finite
+    # A missing service does not prevent an installed subscription; finite
     # discovery separately reports capability availability.
     assert name_call("ReleaseName") == 1
     absent = launch()
-    assert line(absent) == b"update-event\tready\n"
+    assert line(absent) == ready
     absent.send_signal(signal.SIGINT)
     assert absent.wait(timeout=3) == 0
+    hungup = launch()
+    assert line(hungup) == ready
+    hungup.send_signal(signal.SIGHUP)
+    assert hungup.wait(timeout=3) == 0
 
     # A separate disposable bus lets the fixture prove connection loss without
     # terminating its own control bus or touching any host session/system bus.
@@ -157,7 +199,7 @@ try:
     private_address = line(daemon).decode().strip()
     assert private_address.startswith("unix:")
     disconnected = launch(dict(environment, DBUS_SYSTEM_BUS_ADDRESS=private_address))
-    assert line(disconnected) == b"update-event\tready\n"
+    assert line(disconnected) == ready
     daemon.terminate()
     daemon.wait(timeout=3)
     assert disconnected.wait(timeout=3) == 1
@@ -180,7 +222,7 @@ try:
         assert b"reload status explicitly" in denied.stderr.read()
     finally:
         denied_connection.close_sync(None)
-    print("PackageKit private-bus event monitor: PASS")
+    print(("PackageKit" if kind == "updates" else kind) + " private-bus event monitor: PASS")
 finally:
     for process in processes:
         if process.poll() is None:

@@ -45,7 +45,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   stale plan. `SystemUpdateControls.qml` (new) is the confirm/cancel UI,
   mounted in the System pane above the status grid, with live progress, a
   verified-result card, and cancellation gated on PackageKit reporting it
-  safe.
+  safe. `build_snapshot()`/`build_managed_snapshot()` now thread a
+  `mutation_blocker`/`mutation_failure` result so `updates-refresh`/
+  `updates-install-all` actually report `available` once recovery evidence
+  and `require_mutation_safe()` allow it -- ported from the same upstream
+  commit as the rest of this phase, but missed in the original port (found
+  and fixed while starting Sync Phase 8; without it every confirm/cancel
+  control above was unconditionally disabled).
 - Add five bounded, read-only backend readers to `dwm-system-management`
   (Sync Phase 8, `docs/SYNC-P8-REGIONAL-READERS.md`): system timezone/NTP
   (`RegionalRead`), locale (`RegionalRead`, `read_locale_choices()`), the
@@ -62,6 +68,32 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   protocol record, model property, or Settings row until Sync Phase 9 wires
   them into the snapshot alongside the timezone/NTP/locale/account/printer/
   source mutation and delegated-tool-launch actions.
+- Wire Sync Phase 8's readers into a confirmed timezone/NTP/locale mutation
+  path and delegated administration (Sync Phase 9,
+  `docs/SYNC-P9-REGIONAL-MUTATION.md`): `dwm-system-management` gains
+  `regional-choices`/`regional-preview` read-only preflight commands, a
+  confirmed `timezone-set`/`ntp-set`/`locale-set` mutation path
+  (`RegionalMutation`) that never fabricates a terminal state -- a sent
+  change whose reply is lost is reported `interrupted`, never guessed
+  success or failure -- and `accounts-open`/`password-open`/
+  `printers-open`/`sources-open` delegated tool launching, each a fixed,
+  root-owned, isolated `posix_spawn`. Since a regional/delegated operation
+  has no PackageKit transaction to attach to, it gets its own crash-durable
+  journal-owner lease (a dedicated `flock` on the active record, independent
+  of the directory admission lock) and its own inotify-based watch.
+  `watch-regional time|locale`, `watch-accounts`, and `watch-units printers`
+  generalize Sync Phase 4's update monitor into a live-watch family covering
+  four more domains. `accounts-open` and `sources-open` ship permanent
+  `unsupported` on Arch -- neither `lxqt-admin-user` nor `dnfdragora` is
+  packaged for it, and `system-config-printer` (`printers-open`) is the only
+  one of the four with a real target; edit `/etc/pacman.conf` directly for
+  repositories. `SystemRegionalPreflightProtocol.js`/
+  `SystemRegionalPreflightModel.qml` (new) are the QML-side parser and
+  process lifecycle for the read-only preflight commands, ported unchanged
+  from upstream. This closes out Sync Phase 9 and, with it, the whole
+  nine-phase system-management port -- Settings UI wiring for all of this
+  (pickers, toggles, launch buttons) is left for later, same as it was for
+  every reader Sync Phase 8 added.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
   root model over `lyona-update`/`lyona-version`, and a Settings -> System pane

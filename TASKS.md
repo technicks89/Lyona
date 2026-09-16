@@ -808,6 +808,47 @@ upstream's real source at `aa326d59` (Sync Phase 6's end) → `65138a89`
   permission-denied) is unverified here — same open prerequisite carried
   since Sync Phase 1.
 
+### Sync Phase 7 follow-up: mutation-availability wiring (found during Sync Phase 8)
+
+While establishing Sync Phase 8's diff baseline, found that Sync Phase 7's
+own upstream commit (`#241`) has a Python-side half — `scripts/dwm-system-
+management`'s `build_snapshot()`/`build_managed_snapshot()` threading
+`mutation_blocker`/`mutation_failure` so `updates-refresh`/`updates-
+install-all` can report `available` — that was never diffed or ported: the
+original Sync Phase 7 work fetched only the QML boundary (`aa326d59` →
+`65138a89`) and never checked `#241`'s Python diff. **Effect: every confirm/
+cancel control Sync Phase 7 shipped was permanently disabled against a real
+backend** from the moment it merged (`44b0a39`, PR #30) — `build_snapshot()`
+unconditionally emitted both update actions as `unavailable`, and
+`updateActionReason()` checks `action.status !== "available"`.
+
+- [x] Ported `#241`'s `mutation_blocker`/`mutation_failure` threading
+  verbatim into `build_snapshot()`/`build_managed_snapshot()` — **Met**.
+  Preserved Lyona's own `_restart_heuristic_hint()` (Arch-only, not upstream
+  code, untouched by this diff) and replaced the stale pre-Phase-6 provider
+  detail text ("installation is handled by lyona-update or a terminal, not
+  this pane yet") with upstream's accurate wording now that Phase 6/7 ship
+  real managed installation through this same pane.
+- [x] Ported `#241`'s test rewrite — **Met**: `test_cli_initializes_only_
+  its_fixed_journal_and_keeps_actions_disabled` renamed to `..._and_offers_
+  safe_refresh` (assertion updated to expect `updates-refresh` available),
+  plus six new `RecoverySnapshotTests` cases: complete-safe-plan,
+  unsafe-backend, failed/unsupported-plan, failed-discovery,
+  incomplete-recovery, malformed-inventory, existing-owner-or-handoff — each
+  verifying a distinct origin-blocking path. 314 → 321 tests, all passing.
+- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
+  tests/test-system-management.py` (321 tests), `scripts/run-tests make
+  clean all`, `scripts/run-tests make check-quickshell-system-management`
+  (no QML changed by this fix; confirmed unaffected).
+
+See `SYNC-P7-OPERATION-SURFACE.md`'s "Files" table note for the doc-side
+correction. This fix was originally developed on `sync-p7-mutation-
+availability-fix`, separately from Sync Phase 8's own `sync-p8-regional-
+readers` branch (this is Sync Phase 7's scope, not Sync Phase 8's) — both
+land together here on `sync-p7-mutation-fix-v2`, rebased onto `main` after
+Sync Phase 8 merged (PR #31), since Sync Phase 8 depends on this fix's base
+state.
+
 ### Sync Phase 8: Regional, Account, Printer, and Repository Readers
 
 Upstream: `#242`–`#246`, `#248`. Doc: `docs/SYNC-P8-REGIONAL-READERS.md`.
@@ -855,7 +896,9 @@ anything from it).
   real-bus test), `LocaleEnumerationTests` (17, incl. process-group
   signal-handling edge cases), `AccountReadTests` (18, incl. one real-bus
   test), `CupsReadTests` (12, incl. one real-bus test), `RepositoryReadTests`
-  (15, incl. one real-bus test) — 314 → 403 tests, all passing.
+  (15, incl. one real-bus test) — 321 → 410 tests, all passing (321 is the
+  Sync Phase 7 follow-up fix's own count above, landed on the same branch;
+  314 → 410 combined).
 - [x] **Scope correction, found while implementing**: `SYNC-P8-REGIONAL-
   READERS.md`'s own "Files" table and §6 claimed this phase also needed
   `docs/P6-SYSTEM-MANAGEMENT.md` stub fill-in (it was not a stub — already
@@ -878,7 +921,8 @@ anything from it).
   Phase 6), and every `timezone-set`/`ntp-set`/`locale-set`/`*-open`
   mutation/delegate command.
 - [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
-  tests/test-system-management.py` (403 tests, up from 314 — all pass, 149s),
+  tests/test-system-management.py` (410 tests, combined with the Sync
+  Phase 7 fix above — all pass, 151s),
   `scripts/run-tests make clean all` (build unaffected; no QML touched, so
   `check-quickshell-qml`/`check-quickshell-system-management` were re-run
   only as a regression check, not new coverage, and are unchanged). No live
@@ -887,6 +931,183 @@ anything from it).
   manual real-system checklist (live timezone/locale/account/printer/
   repository reads, independent-failure isolation) is unverified here — same
   open prerequisite carried since Sync Phase 1.
+
+### Sync Phase 9: Regional Mutation, Delegated Administration, and Live Watch
+
+Upstream: `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264`.
+Doc: `docs/SYNC-P9-REGIONAL-MUTATION.md`. The last of the nine
+system-management phases: wires Sync Phase 8's readers, plus a confirmed
+timezone/NTP/locale mutation path and delegated tool launching
+(`accounts-open`/`password-open`/`printers-open`/`sources-open`), into the
+snapshot and the CLI, adds the native-operation journal-owner lease and its
+own inotify-based watch (regional/delegated operations have no PackageKit
+transaction to attach to), and generalizes Sync Phase 4's `UpdateEventMonitor`
+into a live-watch family covering four more domains. Done in three
+checkpoints (the scope is far larger than any prior phase), each verified
+against the full test suite before moving on.
+
+- [x] **Checkpoint 1 — backend wiring**: `NativeSnapshotSources`
+  (`time_state`/`locale_state`/`accounts`/`printers`/`repositories`/
+  `delegate`/`admission`), `build_native_snapshot()`/`native_list_lines()`,
+  `RegionalPreview`/`make_regional_preview()`/`require_regional_generation()`/
+  `regional_choices()`/`read_regional_preview()`/`regional_preflight_output()`
+  (the `regional-choices`/`regional-preview` read-only CLI streams),
+  `DELEGATED_TOOLS`/`PASSWORD_TERMINALS`/`DELEGATED_ACTIONS`,
+  `trusted_delegated_executable()`/`terminal_selection_environment()`/
+  `read_terminal_selection()`/`delegated_command()`. `build_managed_snapshot()`
+  extended with an optional `native_sources` parameter; protocol minor bumped
+  to `1` only when it is supplied (`SNAPSHOT_MINOR = 1`, distinct from the
+  regional-preflight streams' own always-`0` `PROTOCOL_MINOR`).
+  `SystemManagementModel.qml` extended to parse the four new native provider
+  groups with per-owner graceful degradation (a malformed regional record
+  cannot blank the accounts list) — **Met**.
+- [x] **D-3 decided** (2026-09-15, asked of the user directly, recorded in
+  `docs/UPSTREAM-SYNC.md`'s Open Decisions table): neither
+  `lxqt-admin-user` (`accounts-open`) nor `dnfdragora` (`sources-open`)
+  exists in Arch's official repositories. Both ship permanent `unsupported`
+  rather than an unverified AUR dependency or a new privileged repo-editing
+  surface — `accounts-open` with no default tool, `sources-open` pointing at
+  `/etc/pacman.conf` and `docs/src/settings.md`. Only `printers-open`
+  (`system-config-printer`, confirmed in Arch `extra`) has a real fixed
+  executable in `DELEGATED_TOOLS`; `password-open` resolves dynamically via
+  `dwm-terminal --print-command`, unaffected.
+- [x] **Checkpoint 2 — `RegionalMutation`/delegated launch/native journal
+  owner/live watch/CLI dispatch**: `RegionalMutation`'s 7-step lifecycle
+  (pin+subscribe the owner before anything else; re-preflight and
+  re-validate the generation; drain queued notifications; a `before_send`
+  durable checkpoint hook; dispatch with `ALLOW_INTERACTIVE_AUTHORIZATION`;
+  from `sent = True` onward every transport failure becomes `interrupted`,
+  never a guessed success/failure; an `after_reply` hook, then re-read and
+  verify before reporting success), `run_regional_mutation()`,
+  `run_delegated_launch()`/`launch_delegated_tool()` (`posix_spawn` +
+  `POSIX_SPAWN_CLOSEFROM`, detached, no inherited descriptors). A separate
+  file-lease (`retain_native_journal_owner()`/`native_journal_owner_busy()`,
+  a dedicated `flock` on `active`, distinct from the directory-level
+  admission lock) lets a live CLI process prove liveness without holding the
+  directory lock across service work. `NativeJournalEvents` (raw `ctypes`
+  `inotify_init1`/`inotify_add_watch` on `/proc/self/fd/<active-fd>`) and
+  `watch_native_journal_operation()` give native operations their own watch,
+  since they have no PackageKit-style transaction to attach to.
+  `AuthenticatedEventMonitor(UpdateEventMonitor)` generalizes Sync Phase 4's
+  monitor — authenticate the exact D-Bus owner before enabling delivery, since
+  a bus-side match alone cannot make rejection or a spoofed direct signal
+  observable — into `RegionalEventMonitor`/`AccountEventMonitor`/
+  `UnitEventMonitor`; `watch_update_events()` itself is retired in favor of
+  the same consolidated `watch_service_events(service_kind=None)` upstream
+  uses, rather than kept as a separate near-duplicate. `native_command()`
+  combines delegated+regional CLI dispatch — **Met**.
+- [x] **Real bugs found and fixed while porting Checkpoint 2's own test
+  coverage** (each confirmed against upstream's actual `0eae066d` source or
+  its real fixtures, not assumed):
+  - `validate_locale_catalog()` was called from three sites
+    (`make_regional_preview()`, `regional_choices()`,
+    `RegionalMutation.run()`) but never defined — a latent `NameError`.
+    Added, and `validate_locale_choices()` refactored to delegate to it
+    (matching upstream's own structure) instead of duplicating the logic.
+  - `UpdateEventMonitor.changed()`/`owner_resolved()` hardcoded the literal
+    string `"update-event"` instead of a `record_prefix` class attribute.
+    Every Sync Phase 9 subclass inherits `changed()` unmodified, so
+    `RegionalEventMonitor`/`AccountEventMonitor`/`UnitEventMonitor` all
+    silently emitted `update-event\t...` instead of their own prefix on
+    every change notification — caught by the real private-bus fixtures,
+    not a mock. Fixed by adding `record_prefix = "update-event"` to the
+    base class.
+  - `control_output_writer()` (missing entirely) — the event-monitor output
+    path called `os.set_blocking()` directly on `sys.stdout`'s file
+    descriptor, mutating the *shared* open-file-description blocking mode of
+    an inherited pipe/tty, observable by (and disruptive to) a parent shell
+    group holding the other end. Ported upstream's `/proc/self/fd` reopen
+    mechanism, used by the now-consolidated `watch_service_events()`.
+    `control_output_writers()` (the plural, signal-handling variant
+    `operation_control()`/`run_operation_control()` would need) was **not**
+    ported — `operation_control()` keeps its own simpler, already-tested
+    synchronous `sys.stdout.write()`/`.flush()` path from Sync Phase 5/6,
+    which never sets `O_NONBLOCK` in the first place and was never exposed
+    to this class of bug; reconciling the two designs is out of this
+    checkpoint's scope.
+  - `read_recovery_snapshot()` had a check with no upstream equivalent —
+    `if current.active.kind not in {"update", "refresh"}: raise
+    JournalAdmissionError(...)` — that unconditionally failed every snapshot
+    read whenever a regional/delegated operation was in progress. Removed;
+    confirmed absent from upstream's real `0eae066d` source.
+  - `watch_journal_operation()` had an upfront `native_journal_owner_busy()`
+    check added earlier in this phase's own work, rejecting a watch on an
+    abandoned native operation with zero output. Upstream dispatches to
+    `watch_native_journal_operation()` unconditionally — its own
+    `recover_journal_active()` call already terminalizes an unowned
+    operation as `interrupted` through the normal recovery path on its first
+    pass, streaming that transition like any other. Reverted; updated the
+    one pre-existing Sync Phase 5/6 test whose expectations depended on the
+    stricter (incorrect) behavior.
+  - `main()`'s `watch-units` dispatch restricted `argv[1]` to literally
+    `"printers"`. `docs/SYNC-P9-REGIONAL-MUTATION.md`'s own §4 grammar
+    (`watch-units printers|security`) and upstream's real fixture (which
+    drives `watch-units security` as a genuine CLI subprocess) both confirm
+    `main()` should dispatch `"security"` identically to `"printers"` — only
+    `SystemProviderDiscovery.qml`'s `domainDefinition` table (no provider,
+    state, or action for a `security` domain exists in the protocol-minor
+    table) is the actual, narrower place that decision belongs. Reverted at
+    the CLI layer; the doc's misleading comment corrected.
+  - `tests/fixtures/system-regional-owner-bus.py` hardcoded upstream's own
+    `state/dwm-titus/system-management` XDG path instead of Lyona's renamed
+    `state/lyona/system-management` — caught by its own real-CLI subprocess
+    test failing to open the journal at all.
+- [x] Twelve new test classes ported (adapted to the bugs/decisions above,
+  not copied blind) — **Met**: `RegionalMutationTests`, `RegionalPreflightTests`,
+  `NtpReadTests` (upstream's own tested-but-uncalled `NtpRead`/`NtpSample`
+  API surface — not dead code, ported for parity), `DelegatedToolTests`,
+  `RegionalEventMonitorTests`, `AccountEventMonitorTests`,
+  `UnitEventMonitorTests`, `NativeJournalOwnerTests`, `NativeJournalWatchTests`
+  (its five generic `control_output_writer()` unit tests ported; the four
+  testing `control_output_writers()`/`run_operation_control()`'s byte-writer
+  signature were not, per the scope note above), `RegionalOwnerTests`,
+  `RegionalCommandTests` (adapted to Lyona's single `native_command()`
+  rather than upstream's split injectable-writer `run_native_command()`),
+  `DelegatedOwnerTests`, `NativeSnapshotTests` — plus five new
+  private-bus/private-process fixtures and updates to three existing ones.
+  410 → 537 tests, all passing.
+- [x] **Checkpoint 3 — QML**: `SystemRegionalPreflightProtocol.js`
+  (pure stream parser) and `SystemRegionalPreflightModel.qml` (the
+  Process/Timer/StdioCollector lifecycle, mirroring
+  `SystemOperationModel.qml`'s shape) ported unchanged — neither is
+  distro-specific, and `Commands.systemManagementCommand()` already
+  dispatches arbitrary actions generically. The parser is covered directly
+  by `tests/qml/tst_system_regional_preflight_protocol.qml`, translated into
+  this repo's own `QtTest`/`TestCase` convention (matching
+  `tst_system_discovery_cycle.qml`) rather than upstream's bespoke
+  `ShellRoot` harness — picked up automatically by the existing
+  `qmltestrunner -input tests/qml` invocation, no new Makefile target
+  needed. 39/39 pass (23 new, plus the pre-existing 16) — **Met**.
+- [x] **Known automated-coverage gap**, matching the precedent [Sync Phase 7
+  set for `SystemOperationParser.qml`](SYNC-P7-OPERATION-SURFACE.md): upstream's
+  `tests/qml/SystemRegionalPreflightOwner.qml` and
+  `tests/qml/SystemNativeDiscovery.qml` (PR #264) drive
+  `SystemRegionalPreflightModel`/`SystemProviderDiscovery` as live Quickshell
+  processes against a real private-bus provider stub
+  (`tests/fixtures/system-regional-preflight-provider.py`) — comparable in
+  complexity to `tests/test-system-management.py`'s own fixtures, and out of
+  scope for this pass. Deferred, not forgotten.
+- [x] **Not in scope, and not in any of this phase's own cited PRs**
+  (confirmed by diffing each one): the Settings UI wiring
+  (`SystemSettingsPane.qml`'s timezone/locale pickers, NTP toggle,
+  delegated-launch buttons) and `shell.qml`'s
+  `systemManagementRegionalPreview()`/`systemManagementRegionalConfirm()`/
+  `systemManagementDelegatedLaunch()` probes described in the doc's §5. Left
+  for whoever picks up that Settings-pane work next, same as Sync Phase 8
+  left the native snapshot wiring for this phase.
+- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
+  tests/test-system-management.py` (537 tests, up from 410, all passing),
+  `QT_QPA_PLATFORM=offscreen qmltestrunner -input tests/qml` (39/39),
+  `scripts/quickshell-qmllint --root config/quickshell` (clean — the only
+  warnings are the pre-existing, codebase-wide "type not found" noise from
+  Quickshell's own QML module not being installed in the lint sandbox,
+  unrelated to this phase's files), `make clean all`,
+  `tests/test-quickshell-system-management.sh`. No live `timedate1`/
+  `locale1`/`Accounts`/systemd/PackageKit daemon exercise outside the
+  private-bus/private-process fixtures in this sandbox, so the doc's manual
+  real-system checklist (confirm a real timezone/locale/NTP change, conflict
+  detection against a concurrent external change, delegated-tool launch)
+  is unverified here — same open prerequisite carried since Sync Phase 1.
 
 ## Phase Completion
 

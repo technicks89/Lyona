@@ -16,13 +16,17 @@ from __future__ import annotations
 
 import bisect
 import contextlib
+import ctypes
 import errno
 import fcntl
 import hashlib
+import io
 import os
 import re
 import selectors
+import shutil
 import signal
+import socket
 import stat
 import struct
 import subprocess
@@ -36,6 +40,7 @@ from typing import Callable, Iterable, Iterator, Mapping, Protocol, Sequence
 
 PROTOCOL_MAJOR = 1
 PROTOCOL_MINOR = 0
+SNAPSHOT_MINOR = 1
 MAX_TEXT_BYTES = 512
 MAX_LIST_RECORDS = 4096
 MAX_LIST_BYTES = 3 * 1024 * 1024
@@ -47,6 +52,18 @@ REPOSITORY_MAX_ROWS = 512
 REPOSITORY_MAX_BYTES = 384 * 1024
 MAX_OPERATION_PROGRESS_RECORDS = 252
 MAX_OPERATION_MISMATCH_SAMPLES = 128
+NATIVE_WATCH_SECONDS = 120
+# D-3 (docs/UPSTREAM-SYNC.md#open-decisions), decided 2026-09-15: neither
+# upstream's lxqt-admin-user (accounts-open) nor dnfdragora (sources-open)
+# exists in Arch's official repositories. Both ship permanent `unavailable`
+# (see delegated_command()) rather than an unverified AUR dependency or a
+# new privileged repo-editing surface. Only printers-open has a real fixed
+# executable; system-config-printer is confirmed in Arch `extra`.
+DELEGATED_TOOLS = {
+    "printers-open": ("/usr/bin/system-config-printer", "Printers"),
+}
+PASSWORD_TERMINALS = {"alacritty": ("-e",), "kitty": (), "st": ("-e",), "xterm": ("-e",)}
+DELEGATED_ACTIONS = frozenset(("accounts-open", "password-open", "printers-open", "sources-open"))
 
 REGIONAL_TIMEZONE_MAX = 255
 REGIONAL_TIMEZONE_COUNT = 2048
@@ -55,6 +72,8 @@ REGIONAL_LOCALE_MAX = 128
 REGIONAL_LOCALE_COUNT = 4096
 REGIONAL_LOCALE_OUTPUT_BYTES = 2 * 1024 * 1024
 REGIONAL_LOCALE_ARRAY_BYTES = 8192
+REGIONAL_CHOICE_STREAM_BYTES = {"timezone": 512 * 1024, "locale": 1024 * 1024}
+REGIONAL_PREVIEW_STREAM_BYTES = 8192
 REGIONAL_LOCALE_KEYS = (
     "LANG", "LANGUAGE", "LC_CTYPE", "LC_NUMERIC", "LC_TIME", "LC_COLLATE",
     "LC_MONETARY", "LC_MESSAGES", "LC_PAPER", "LC_NAME", "LC_ADDRESS",
@@ -179,6 +198,8 @@ TRANSACTION_INTERFACE = "org.freedesktop.PackageKit.Transaction"
 PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
 
 REGIONAL_READ_SECONDS = 10
+REGIONAL_MUTATION_SECONDS = 60
+REGIONAL_CALLBACK_LIMIT = 64
 REGIONAL_TIME_PROPERTY_COUNT = 64
 REGIONAL_READ_REQUESTS = {
     "time-state": ("org.freedesktop.timedate1", "/org/freedesktop/timedate1",
@@ -205,6 +226,15 @@ SYSTEMD_NAME = "org.freedesktop.systemd1"
 SYSTEMD_PATH = "/org/freedesktop/systemd1"
 SYSTEMD_MANAGER = "org.freedesktop.systemd1.Manager"
 CUPS_UNITS = ("cups.service", "cups.socket")
+# Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §4): both entries are
+# dispatchable from main() below, matching upstream. "security" is left out
+# of SystemProviderDiscovery.qml's domainDefinition table only -- no provider,
+# state, or action for a "security" domain exists anywhere in this file's
+# protocol-minor table (Sync Phase 1's decision, still Not implemented
+# upstream / out of scope), so wiring the watch half into Settings alone
+# would stream state Settings never displays. The CLI/backend surface is
+# distro-neutral and not the place to encode that UI-scope decision.
+WATCH_UNIT_SETS = {"printers": CUPS_UNITS, "security": ("firewalld.service",)}
 CUPS_READ_SECONDS = 10
 UNIT_REPLY_TYPE = "(a(ssssssouso))"
 UNIT_REPLY_BYTES = 64 * 1024
@@ -327,7 +357,14 @@ def validate_locale_choices(output: object) -> tuple[str, ...]:
     lines = text.removesuffix("\n").split("\n", REGIONAL_LOCALE_COUNT)
     if len(lines) > REGIONAL_LOCALE_COUNT:
         raise SnapshotFailure("malformed", "Too many regional locale choices")
-    result = tuple(validate_locale_name(line) for line in lines)
+    return validate_locale_catalog(lines)
+
+
+def validate_locale_catalog(values: object) -> tuple[str, ...]:
+    """Validate already decoded identities without rebuilding unbounded stdout."""
+    if not isinstance(values, (list, tuple)) or len(values) > REGIONAL_LOCALE_COUNT:
+        raise SnapshotFailure("malformed", "Invalid regional locale catalog")
+    result = tuple(validate_locale_name(value) for value in values)
     if len(set(result)) != len(result):
         raise SnapshotFailure("malformed", "Duplicate regional locale choices")
     return result
@@ -405,6 +442,20 @@ def locale_change_matches(expected_values: object, observed_values: object) -> b
                for key in REGIONAL_LOCALE_KEYS[2:])
 
 
+def require_locale_service_arguments(configuration: LocaleConfiguration) -> None:
+    """Keep broader readable state, but never send known-invalid localed values.
+
+    systemd 259 validates every SetLocale value, including LANGUAGE, as a locale
+    name. Do not omit an unsupported override to make an otherwise valid LANG
+    selection writable. Installed aliases remain the platform's responsibility.
+    """
+    for assignment in parse_locale_configuration(configuration.assignments).assignments:
+        value = assignment.split("=", 1)[1]
+        if (not 1 <= len(value) < 128 or value in {".", ".."}
+                or re.fullmatch(r"[A-Za-z0-9_.@-]+", value) is None):
+            raise SnapshotFailure("unsupported", "The locale service cannot accept the complete preserved assignment set; review locale configuration without dropping overrides", "unsupported")
+
+
 @dataclass(frozen=True)
 class RegionalTimeState:
     """Typed timedate1 state, independent of locale and mutation availability."""
@@ -465,6 +516,120 @@ def decode_regional_reply(kind: str, reply: object) -> object:
             raise SnapshotFailure("malformed", "Missing or malformed timedate1 property")
         values.append(value.unpack())
     return RegionalTimeState(validate_timezone_name(values[0]), *values[1:])
+
+
+@dataclass(frozen=True)
+class RegionalPreview:
+    action: str
+    argument: str
+    generation: str
+    current: str
+    target: str
+    detail: str
+
+    def fields(self) -> tuple[str, ...]:
+        return ("preview", self.action, self.argument, self.generation,
+                self.current, self.target, self.detail)
+
+
+def validate_regional_argument(action: str, argument: object) -> str:
+    """Validate one fixed action's selection before starting any preflight I/O."""
+    if action == "timezone-set":
+        return validate_timezone_name(argument)
+    if action == "ntp-set" and isinstance(argument, str) and argument in ("enabled", "disabled"):
+        return argument
+    if action == "locale-set" and isinstance(argument, str) and argument.startswith("LANG="):
+        return "LANG=" + validate_locale_name(argument[5:])
+    raise SnapshotFailure("malformed", "Invalid regional action or selected value")
+
+
+def make_regional_preview(action: str, argument: object, state: object, choices=()) -> RegionalPreview:
+    """Bind a selection to complete validated current state, without I/O."""
+    argument = validate_regional_argument(action, argument)
+    if action == "locale-set":
+        if not isinstance(state, LocaleConfiguration):
+            raise SnapshotFailure("malformed", "Invalid regional locale state")
+        current = parse_locale_configuration(state.assignments)
+        catalog = validate_locale_catalog(choices)
+        expected = prepare_locale_change(current.assignments, argument,
+                                         ("\n".join(catalog) + ("\n" if catalog else "")).encode("ascii"))
+        current_value, target, detail = current.lang, expected.lang, expected.detail
+        source_fields = current.assignments
+    else:
+        if (not isinstance(state, RegionalTimeState)
+                or any(type(value) is not bool for value in
+                       (state.can_ntp, state.ntp_enabled, state.ntp_synchronized))):
+            raise SnapshotFailure("malformed", "Invalid regional time state")
+        validate_timezone_name(state.timezone)
+        if action == "timezone-set":
+            target = prepare_timezone_change(argument, choices)
+            current_value, detail = state.timezone, "System timezone"
+            source_fields = (state.timezone,)
+        else:
+            if not state.can_ntp:
+                raise SnapshotFailure("unsupported", "No supported network time service is available", "unsupported")
+            current_value = "enabled" if state.ntp_enabled else "disabled"
+            target, detail = argument, "Network time synchronization setting"
+            source_fields = ("yes", current_value)
+    digest = hashlib.sha256(b"lyona-regional-preview-v1")
+    for field in (action, argument, *source_fields):
+        encoded = field.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return RegionalPreview(action, argument, digest.hexdigest(), current_value, target, detail)
+
+
+def require_regional_generation(preview: RegionalPreview, confirmed: object) -> None:
+    """Future owners must call this with freshly collected preflight evidence."""
+    if not isinstance(confirmed, str) or JOURNAL_GENERATION_PATTERN.fullmatch(confirmed) is None:
+        raise SnapshotFailure("malformed", "Invalid regional confirmation generation")
+    if confirmed != preview.generation:
+        raise SnapshotFailure("conflict", "Regional state changed; review a fresh confirmation")
+
+
+def regional_choices(kind: str) -> tuple[str, ...]:
+    if kind == "timezone":
+        return validate_timezone_choices(RegionalRead("timezone-choices").run())
+    if kind == "locale":
+        return validate_locale_catalog(read_locale_choices())
+    raise SnapshotFailure("malformed", "Unknown regional choice catalog")
+
+
+def read_regional_preview(action: str, argument: object) -> RegionalPreview:
+    argument = validate_regional_argument(action, argument)
+    state = RegionalRead("locale-state" if action == "locale-set" else "time-state").run()
+    choices = regional_choices("locale" if action == "locale-set" else "timezone") if action != "ntp-set" else ()
+    return make_regional_preview(action, argument, state, choices)
+
+
+def regional_preflight_output(command: str, arguments: Sequence[str]) -> tuple[str, int]:
+    """Fully buffer a bounded read-only stream; failures never leak partial rows."""
+    choices = command == "regional-choices"
+    if (choices and (len(arguments) != 1 or arguments[0] not in REGIONAL_CHOICE_STREAM_BYTES)
+            or not choices and (command != "regional-preview" or len(arguments) != 2
+                or arguments[0] not in {"timezone-set", "ntp-set", "locale-set"})):
+        raise ValueError("invalid regional preflight command")
+    header = f"{command}-protocol\t1\t0" + ("\t" + arguments[0] if choices else "")
+    completion = "complete\t" + command
+    limit = REGIONAL_CHOICE_STREAM_BYTES[arguments[0]] if choices else REGIONAL_PREVIEW_STREAM_BYTES
+    try:
+        if choices:
+            records = [("choice", value) for value in sorted(regional_choices(arguments[0]))]
+        else:
+            records = [read_regional_preview(*arguments).fields()]
+        for record in records:
+            if any(not isinstance(field, str) or len(field.encode("utf-8")) > MAX_TEXT_BYTES
+                   or field and not field.isprintable() for field in record):
+                raise SnapshotFailure("malformed", "Undisplayable regional preflight field")
+        output = "\n".join((header, *("\t".join(record) for record in records), completion)) + "\n"
+        if len(output.encode("utf-8")) > limit:
+            raise SnapshotFailure("malformed", "Regional preflight stream is too large")
+        return output, 0
+    except (SnapshotFailure, UnicodeError) as error:
+        failure = error if isinstance(error, SnapshotFailure) else SnapshotFailure("malformed", "Non-UTF-8 regional preflight field")
+        code = failure.code if failure.code in JOURNAL_ERROR_CODES else "internal"
+        detail = "".join(char if char.isprintable() else " " for char in failure.detail)
+        return "\n".join((header, f"error\tregional\t{code}\t{detail}", completion)) + "\n", 1
 
 
 class ServiceRead:
@@ -966,6 +1131,385 @@ class RegionalRead(ServiceRead):
 
 
 @dataclass(frozen=True)
+class NtpSample:
+    """The two explicitly sampled, non-emitting network time properties."""
+
+    can_ntp: bool
+    synchronized: bool
+
+
+class NtpRead(ServiceRead):
+    """Read only the two non-emitting timedate1 properties under one deadline."""
+
+    label = "Network time status"
+
+    def __init__(self, Gio=None, GLib=None):
+        super().__init__(Gio, GLib)
+        self.values = {}
+        self.waiting = {"CanNTP", "NTPSynchronized"}
+
+    def connected(self, _source, result, _data):
+        if not self.pending():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            self.connection.set_exit_on_close(False)
+            name, path = REGIONAL_READ_REQUESTS["time-state"][:2]
+            for field in ("CanNTP", "NTPSynchronized"):
+                if not self.pending():
+                    return
+                self.connection.call(name, path, PROPERTIES_INTERFACE, "Get",
+                    self.GLib.Variant("(ss)", (name, field)), self.GLib.VariantType.new("(v)"),
+                    self.Gio.DBusCallFlags.NONE, max(1, int((self.deadline - time.monotonic()) * 1000)),
+                    self.cancellable, self.replied, field)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+
+    def replied(self, connection, result, field):
+        if not self.pending() or field not in self.waiting:
+            return
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(v)" or reply.get_size() > 32:
+                raise SnapshotFailure("malformed", "Invalid network time status reply")
+            value = reply.get_child_value(0).get_variant()
+            if value.get_type_string() != "b":
+                raise SnapshotFailure("malformed", "Invalid network time status property")
+            self.values[field] = value.unpack()
+            self.waiting.remove(field)
+            if not self.waiting and self.pending():
+                self.finish(NtpSample(self.values["CanNTP"], self.values["NTPSynchronized"]))
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+        except SnapshotFailure as error:
+            if self.pending():
+                self.fail(error)
+
+
+class RegionalMutation(ServiceRead):
+    """Internal fixed service client; durable admission is a required caller hook.
+
+    The fixed CLI owner uses this client; Settings origins remain gated. The
+    caller must retain its native journal lease, checkpoint authorizing in
+    before_send, checkpoint running in after_reply, and commit the result before
+    releasing ownership.
+    A sent timeout is ambiguous, not proof of failure or service cancellation.
+    """
+
+    label = "Regional operation"
+
+    def __init__(self, action: str, argument: str, generation: str,
+                 before_send: Callable[[RegionalPreview], None],
+                 after_reply: Callable[[], None], Gio=None, GLib=None) -> None:
+        self.action = action
+        self.argument = validate_regional_argument(action, argument)
+        if not isinstance(generation, str) or JOURNAL_GENERATION_PATTERN.fullmatch(generation) is None:
+            raise SnapshotFailure("malformed", "Invalid regional confirmation generation")
+        if not callable(before_send) or not callable(after_reply):
+            raise ValueError("Regional operation requires durable lifecycle hooks")
+        self.generation = generation
+        self.before_send, self.after_reply = before_send, after_reply
+        self.kind = "locale-state" if action == "locale-set" else "time-state"
+        self.name, self.path = REGIONAL_READ_REQUESTS[self.kind][:2]
+        self.owner = ""
+        self.sent = self.acknowledged = False
+        self.dirty = False
+        self.observed = self.expected = self.preview = None
+        self.choices = ()
+        self.hook_error = None
+        self.subscriptions = []
+        self.rules = []
+        self.installed_rules = []
+        self.closed_handler = 0
+        super().__init__(Gio, GLib)
+
+    def timeout_failure(self) -> SnapshotFailure:
+        detail = ("Regional operation timed out after dispatch; the outcome is unknown. Refresh state before a new confirmation"
+                  if self.sent else "Regional operation preflight timed out; no change was sent")
+        return SnapshotFailure("timeout", detail, "unavailable")
+
+    def request(self, name, path, interface, method, parameters, reply_type, handler,
+                *, interactive=False, match_rule=None) -> None:
+        if not self.pending():
+            return
+
+        def replied(connection, result, _data):
+            if match_rule is None and not self.pending():
+                return
+            try:
+                reply = connection.call_finish(result)
+                if match_rule is not None:
+                    # Pair only a successful AddMatch with RemoveMatch. An
+                    # unrequested or rejected rule can belong to another user
+                    # of this shared connection. Late acknowledgments perform
+                    # cleanup only, never resume the operation.
+                    if self.done:
+                        self.remove_match(match_rule)
+                        return
+                    self.installed_rules.append(match_rule)
+                if not self.pending():
+                    return
+                if reply.get_type_string() != reply_type:
+                    raise SnapshotFailure("malformed", "Unexpected regional operation reply")
+                if self.pending():
+                    handler(reply)
+            except self.GLib.Error as error:
+                if self.pending():
+                    self.fail(self.bus_failure(error))
+            except SnapshotFailure as error:
+                if self.pending():
+                    self.fail(error)
+
+        flags = (self.Gio.DBusCallFlags.ALLOW_INTERACTIVE_AUTHORIZATION
+                 if interactive else self.Gio.DBusCallFlags.NONE)
+        try:
+            self.connection.call(name, path, interface, method, parameters,
+                self.GLib.VariantType.new(reply_type), flags,
+                max(1, int((self.deadline - time.monotonic()) * 1000)),
+                self.cancellable, replied, None)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+
+    def bus_request(self, method, value, reply_type, handler):
+        self.request("org.freedesktop.DBus", "/org/freedesktop/DBus",
+            "org.freedesktop.DBus", method, self.GLib.Variant("(s)", (value,)),
+            reply_type, handler)
+
+    def bus_failure(self, error):
+        name = self.Gio.dbus_error_get_remote_error(error)
+        if (time.monotonic() < self.deadline
+                and name == "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired"):
+            return SnapshotFailure("permission-denied", "Regional authorization was not granted", "restricted")
+        failure = super().bus_failure(error)
+        if failure.code == "timeout":
+            return self.timeout_failure()
+        if self.sent and name is None:
+            return SnapshotFailure("interrupted", "Regional transport failed after dispatch; the outcome is unknown. Refresh state before retrying")
+        return failure
+
+    def remove_match(self, rule):
+        with contextlib.suppress(self.GLib.Error):
+            self.connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "RemoveMatch", self.GLib.Variant("(s)", (rule,)),
+                None, self.Gio.DBusCallFlags.NONE, 1000, None, None, None)
+
+    def read_state(self, handler, *, activate=False):
+        _name, path, interface, method, signature, arguments, reply_type = REGIONAL_READ_REQUESTS[self.kind]
+        self.request(self.name if activate else self.owner, path, interface, method,
+            self.GLib.Variant(signature, arguments), reply_type, handler)
+
+    def connected(self, _source, result, _data) -> None:
+        if not self.pending():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            self.connection.set_exit_on_close(False)
+            self.closed_handler = self.connection.connect("closed", lambda *_args: self.fail(
+                SnapshotFailure("interrupted", "Regional service connection was lost; refresh state before retrying")))
+            # A fixed read may activate an idle platform service. Its result is
+            # not confirmation evidence; the pinned, subscribed read below is.
+            self.read_state(lambda _reply: self.resolve_owner(self.pinned), activate=True)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+
+    def resolve_owner(self, handler):
+        self.bus_request("GetNameOwner", self.name, "(s)", handler)
+
+    def pinned(self, reply):
+        value = reply.get_child_value(0)
+        if value.get_size() > 256:
+            raise SnapshotFailure("malformed", "Invalid regional service owner")
+        owner = value.unpack()
+        if not self.Gio.dbus_is_unique_name(owner):
+            raise SnapshotFailure("malformed", "Invalid regional service owner")
+        self.owner = owner
+        specs = [
+            (None, PROPERTIES_INTERFACE, "PropertiesChanged", self.path, self.name,
+             self.properties_changed,
+             f"type='signal',sender='{owner}',interface='{PROPERTIES_INTERFACE}',member='PropertiesChanged',path='{self.path}',arg0='{self.name}'"),
+            ("org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
+             "/org/freedesktop/DBus", self.name, self.owner_changed,
+             f"type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',path='/org/freedesktop/DBus',arg0='{self.name}'"),
+        ]
+        for sender, interface, member, path, arg0, callback, rule in specs:
+            self.subscriptions.append(self.connection.signal_subscribe(sender, interface,
+                member, path, arg0, self.Gio.DBusSignalFlags.NO_MATCH_RULE, callback, None))
+            self.rules.append(rule)
+        self.add_match(0)
+
+    def add_match(self, index):
+        if index < len(self.rules):
+            rule = self.rules[index]
+            self.request("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "AddMatch", self.GLib.Variant("(s)", (rule,)),
+                "()", lambda _reply: self.add_match(index + 1), match_rule=rule)
+        else:
+            self.resolve_owner(self.ready)
+
+    def require_owner(self, reply):
+        if reply.get_child_value(0).get_size() > 256 or reply.unpack()[0] != self.owner:
+            raise SnapshotFailure("conflict", "Regional service owner changed; refresh state before retrying")
+
+    def ready(self, reply):
+        self.require_owner(reply)
+        if self.action == "timezone-set":
+            self.request(self.owner, self.path, self.name, "ListTimezones", None,
+                "(as)", self.catalog_read)
+        else:
+            self.read_state(self.preflight_read)
+
+    def catalog_read(self, reply):
+        self.choices = decode_regional_reply("timezone-choices", reply)
+        self.read_state(self.preflight_read)
+
+    def drain(self) -> bool:
+        # Flush already queued notifications after synchronous journal work.
+        # Never turn a signal flood into an unbounded nested event loop.
+        context = self.loop.get_context()
+        for _ in range(REGIONAL_CALLBACK_LIMIT):
+            if not self.pending():
+                return False
+            if not context.pending():
+                return True
+            context.iteration(False)
+        if self.pending() and context.pending():
+            self.fail(SnapshotFailure("conflict", "Regional state notifications did not settle; refresh before retrying"))
+        return self.pending()
+
+    def hook(self, callback, *args) -> bool:
+        try:
+            callback(*args)
+        except Exception as error:
+            # A failed durable checkpoint must never escape a GLib callback
+            # and leave the loop able to send or publish a later success.
+            self.hook_error = error
+            self.fail(SnapshotFailure("interrupted", "Regional operation checkpoint failed; inspect recovery before retrying"))
+        return self.pending()
+
+    def preflight_read(self, reply):
+        state = decode_regional_reply(self.kind, reply)
+        self.preview = make_regional_preview(self.action, self.argument, state, self.choices)
+        require_regional_generation(self.preview, self.generation)
+        self.expected = (parse_locale_configuration((self.argument, *(value for value in state.assignments
+            if not value.startswith("LANG=")))) if self.action == "locale-set" else
+            replace(state, timezone=self.argument) if self.action == "timezone-set" else
+            replace(state, ntp_enabled=self.argument == "enabled"))
+        if self.action == "locale-set":
+            require_locale_service_arguments(self.expected)
+        if not self.drain():
+            return
+        if self.dirty:
+            raise SnapshotFailure("conflict", "Regional state changed before dispatch; review a fresh confirmation")
+        if not self.hook(self.before_send, self.preview) or not self.drain():
+            return
+        require_regional_generation(self.preview, self.generation)
+        if self.dirty:
+            raise SnapshotFailure("conflict", "Regional state changed before dispatch; review a fresh confirmation")
+        method, parameters = {
+            "timezone-set": ("SetTimezone", lambda: self.GLib.Variant("(sb)", (self.argument, True))),
+            "ntp-set": ("SetNTP", lambda: self.GLib.Variant("(bb)", (self.argument == "enabled", True))),
+            "locale-set": ("SetLocale", lambda: self.GLib.Variant("(asb)", (self.expected.assignments, True))),
+        }[self.action]
+        arguments = parameters()
+        self.GLib.source_remove(self.deadline_source)
+        self.deadline = time.monotonic() + REGIONAL_MUTATION_SECONDS
+        self.deadline_source = self.GLib.timeout_add(REGIONAL_MUTATION_SECONDS * 1000, self.expire)
+        self.sent = True
+        self.request(self.owner, self.path, self.name, method, arguments, "()",
+            self.method_replied, interactive=True)
+
+    def method_replied(self, _reply):
+        self.acknowledged = True
+        if self.hook(self.after_reply):
+            self.read_state(self.verified)
+
+    def matches(self, state):
+        if self.action == "locale-set":
+            return locale_change_matches(self.expected.assignments, state.assignments)
+        if self.action == "timezone-set":
+            return state.timezone == self.expected.timezone
+        return state.can_ntp and state.ntp_enabled == self.expected.ntp_enabled
+
+    def verified(self, reply):
+        self.observed = decode_regional_reply(self.kind, reply)
+        if not self.matches(self.observed):
+            self.dirty = True
+        self.resolve_owner(self.completed)
+
+    def completed(self, reply):
+        self.require_owner(reply)
+        if not self.drain():
+            return
+        if self.dirty:
+            raise SnapshotFailure("conflict", "Regional state differs from the confirmed result; a concurrent writer may have changed or been overwritten. Refresh state before retrying")
+        self.finish(value=self.observed)
+
+    def owner_changed(self, _connection, _sender, _path, _interface, _member, parameters, _data):
+        if self.pending():
+            self.fail(SnapshotFailure("interrupted" if self.sent else "conflict",
+                "Regional service owner changed; the result cannot be confirmed. Refresh state before retrying"))
+
+    def properties_changed(self, _connection, sender, _path, _interface, _member, parameters, _data):
+        if not self.pending() or sender != self.owner:
+            return
+        try:
+            if parameters.get_type_string() != "(sa{sv}as)" or parameters.get_size() > 16384:
+                raise SnapshotFailure("malformed", "Invalid regional notification")
+            if parameters.get_child_value(0).unpack() != self.name:
+                return
+            changed = parameters.get_child_value(1)
+            invalidated = regional_string_array(parameters.get_child_value(2),
+                REGIONAL_TIME_PROPERTY_COUNT, MAX_TEXT_BYTES, 8192)
+            if changed.n_children() > REGIONAL_TIME_PROPERTY_COUNT:
+                raise SnapshotFailure("malformed", "Oversized regional notification")
+            keys = set()
+            for index in range(changed.n_children()):
+                key = changed.get_child_value(index).get_child_value(0)
+                if key.get_size() > MAX_TEXT_BYTES + 1 or key.unpack() in keys:
+                    raise SnapshotFailure("malformed", "Invalid regional notification key")
+                keys.add(key.unpack())
+            relevant = ({"Locale"} if self.action == "locale-set" else
+                        {"Timezone"} if self.action == "timezone-set" else {"NTP", "CanNTP"})
+            if not relevant.intersection(keys.union(invalidated)):
+                return
+            if not self.sent or relevant.intersection(invalidated):
+                self.dirty = True
+                return
+            for key in relevant.intersection(keys):
+                value = changed.lookup_value(key, None)
+                if key == "Locale":
+                    state = parse_locale_configuration(regional_string_array(value,
+                        len(REGIONAL_LOCALE_KEYS), MAX_TEXT_BYTES, REGIONAL_LOCALE_ARRAY_BYTES, separators=True))
+                    equivalent = self.matches(state)
+                elif key == "Timezone":
+                    equivalent = (value.get_type_string() == "s" and value.get_size() <= REGIONAL_TIMEZONE_MAX + 1
+                                  and value.unpack() == self.expected.timezone)
+                else:
+                    equivalent = (value.get_type_string() == "b" and value.unpack()
+                                  == (True if key == "CanNTP" else self.expected.ntp_enabled))
+                if not equivalent:
+                    self.dirty = True
+        except SnapshotFailure:
+            self.dirty = True
+
+    def run(self):
+        if self.started:
+            raise RuntimeError("Regional operations are single-use")
+        if self.action == "locale-set":
+            self.choices = validate_locale_catalog(read_locale_choices())
+        try:
+            return super().run()
+        finally:
+            if self.connection is not None:
+                for subscription in self.subscriptions:
+                    self.connection.signal_unsubscribe(subscription)
+                if self.closed_handler:
+                    self.connection.disconnect(self.closed_handler)
+                for rule in self.installed_rules:
+                    self.remove_match(rule)
+
+
+@dataclass(frozen=True)
 class AccountRecord:
     path: str
     scope: str
@@ -1326,6 +1870,196 @@ def read_locale_choices() -> tuple[str, ...]:
             # otherwise callers could catch a read failure and keep running.
             if interrupted:
                 raise SystemExit(128 + interrupted)
+
+
+# Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §3): delegated
+# administration for accounts/password/printers/software-sources.
+# `password-open` has no fixed executable -- it resolves the user's already
+# -configured terminal via Lyona's own `dwm-terminal --print-command`
+# (the same contract upstream's read_terminal_selection() calls), matches it
+# against PASSWORD_TERMINALS, and launches `<terminal> [-e] passwd`.
+def trusted_delegated_executable(path: str, basename: str) -> str:
+    """Resolve an unprivileged launch target into a root-controlled executable path."""
+    try:
+        resolved = os.path.realpath(path, strict=True)
+        if os.path.basename(resolved) != basename:
+            raise SnapshotFailure("unsupported", "The configured administration command has an unsupported identity")
+        current = resolved
+        while True:
+            value = os.stat(current, follow_symlinks=False)
+            expected_type = stat.S_ISREG if current == resolved else stat.S_ISDIR
+            if not expected_type(value.st_mode) or value.st_uid != 0 or value.st_mode & 0o022:
+                raise SnapshotFailure("unsupported", "The administration command is not in a root-controlled executable path")
+            if current == "/":
+                break
+            current = os.path.dirname(current)
+        if not os.access(resolved, os.X_OK):
+            raise SnapshotFailure("permission-denied", "The administration command is not executable")
+        return resolved
+    except FileNotFoundError as error:
+        raise SnapshotFailure("missing-provider", "The required administration command is not installed") from error
+    except OSError as error:
+        raise SnapshotFailure("internal", "The administration command could not be inspected") from error
+
+
+def terminal_selection_environment() -> dict[str, str]:
+    """Preserve only terminal-selection inputs, never shell startup or loader overrides."""
+    result = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LANG": "C", "LC_ALL": "C"}
+    for name in ("HOME", "XDG_CONFIG_HOME", "DWM_TERMINAL"):
+        if name in os.environ:
+            result[name] = os.environ[name]
+    try:
+        invalid = any(len(value.encode("utf-8")) > 4096 or "\0" in value for value in result.values())
+    except UnicodeError:
+        invalid = True
+    if not result.get("HOME", "").startswith("/") or invalid:
+        raise SnapshotFailure("malformed", "Terminal selection environment is unavailable or oversized")
+    return result
+
+
+def read_terminal_selection(helper: str, environment: Mapping[str, str]) -> str:
+    """Bound the managed helper's read-only terminal selection without capturing passwords."""
+    if (threading.current_thread() is not threading.main_thread()
+            or signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL):
+        raise SnapshotFailure("internal", "Terminal selection process ownership is unavailable")
+    process, handlers, interrupted = None, {}, 0
+
+    def terminate(number, _frame):
+        nonlocal interrupted
+        interrupted = interrupted or number
+
+    def check_deadline():
+        if interrupted:
+            raise SystemExit(128 + interrupted)
+        if time.monotonic() >= deadline:
+            raise SnapshotFailure("timeout", "Terminal selection timed out")
+
+    try:
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            handlers[number] = signal.signal(number, terminate)
+        deadline = time.monotonic() + 3
+        # A fixed interpreter avoids resolving the helper's env shebang through
+        # the user's PATH. The helper only prints its selected command identity.
+        check_deadline()
+        process = subprocess.Popen(["/usr/bin/timeout", "--signal=TERM", "--kill-after=1", "3",
+            "/usr/bin/bash", helper, "--print-command"], stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, env=dict(environment))
+        output, received = bytearray(), 0
+        with selectors.DefaultSelector() as selector:
+            for stream in (process.stdout, process.stderr):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ)
+            while True:
+                check_deadline()
+                status = locale_process_status(process)
+                if status is not None and not selector.get_map():
+                    break
+                for key, _events in selector.select(min(0.05, max(0, deadline - time.monotonic()))):
+                    check_deadline()
+                    try:
+                        chunk = os.read(key.fd, min(4096, 4096 - received + 1))
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    received += len(chunk)
+                    if received > 4096:
+                        raise SnapshotFailure("malformed", "Terminal selection output is oversized")
+                    if key.fileobj is process.stdout:
+                        output.extend(chunk)
+        check_deadline()
+        code = status.si_status if status.si_code == os.CLD_EXITED else -status.si_status
+        if code in (124, 137, -signal.SIGKILL):
+            raise SnapshotFailure("timeout", "Terminal selection timed out")
+        if code != 0:
+            raise SnapshotFailure("missing-provider" if code == 127 else "internal", "Terminal selection failed")
+        try:
+            value = bytes(output).decode("utf-8")
+        except UnicodeDecodeError as error:
+            check_deadline()
+            raise SnapshotFailure("malformed", "Terminal selection is not UTF-8") from error
+        valid = value.endswith("\n") and bool(value[:-1]) and value[:-1].isprintable()
+        check_deadline()
+        if not valid:
+            raise SnapshotFailure("malformed", "Terminal selection is not one command identity")
+        return value[:-1]
+    except FileNotFoundError as error:
+        raise SnapshotFailure("missing-provider", "Terminal selection helper is unavailable") from error
+    except OSError as error:
+        raise SnapshotFailure("internal", "Terminal selection failed") from error
+    finally:
+        try:
+            if process is not None:
+                try:
+                    close_locale_process(process)
+                except SnapshotFailure as error:
+                    raise SnapshotFailure("timeout", "Terminal selection cleanup could not be confirmed") from error
+        finally:
+            for number, handler in handlers.items():
+                signal.signal(number, handler)
+            if interrupted:
+                raise SystemExit(128 + interrupted)
+
+
+def delegated_command(action: str) -> tuple[tuple[str, ...], str]:
+    """Resolve only fixed administration entries; unavailable tools are capability-local."""
+    if not isinstance(action, str) or action not in DELEGATED_ACTIONS:
+        raise SnapshotFailure("malformed", "Unknown delegated administration action")
+    if action == "accounts-open":
+        raise SnapshotFailure("unsupported",
+            "No account-management tool is packaged for Arch; see docs/src/settings.md", "unsupported")
+    if action == "sources-open":
+        raise SnapshotFailure("unsupported",
+            "No interactive repository editor is packaged for Arch; edit /etc/pacman.conf directly, "
+            "see docs/src/settings.md", "unsupported")
+    if action in DELEGATED_TOOLS:
+        path, label = DELEGATED_TOOLS[action]
+        return (trusted_delegated_executable(path, os.path.basename(path)),), label
+    # action == "password-open"
+    passwd = trusted_delegated_executable("/usr/bin/passwd", "passwd")
+    environment = terminal_selection_environment()
+    helper = shutil.which("dwm-terminal", path=environment["PATH"])
+    if helper is None:
+        raise SnapshotFailure("missing-provider", "The managed terminal selector is not installed")
+    helper = trusted_delegated_executable(helper, "dwm-terminal")
+    selected = read_terminal_selection(helper, environment)
+    name = os.path.basename(selected)
+    if name not in PASSWORD_TERMINALS:
+        raise SnapshotFailure("unsupported", "The configured terminal has no supported password-launch form; run passwd in your terminal")
+    terminal = shutil.which(selected, path=environment["PATH"])
+    if terminal is None:
+        raise SnapshotFailure("missing-provider", "The selected terminal is no longer installed")
+    terminal = trusted_delegated_executable(terminal, name)
+    return (terminal, *PASSWORD_TERMINALS[name], passwd), "Password change"
+
+
+def launch_delegated_tool(command: tuple[str, ...]) -> None:
+    """Accept a resolved fixed exec without waiting for the tool's internal administration."""
+    if not hasattr(os, "POSIX_SPAWN_CLOSEFROM"):
+        raise SnapshotFailure("unsupported", "Isolated administration launches are unavailable")
+    accepted = False
+    try:
+        null = os.open("/dev/null", os.O_RDWR | os.O_CLOEXEC)
+        try:
+            actions = [(os.POSIX_SPAWN_DUP2, null, descriptor) for descriptor in (0, 1, 2)]
+            actions.append((os.POSIX_SPAWN_CLOSEFROM, 3))
+            os.posix_spawn(command[0], command, dict(os.environ), file_actions=actions,
+                setsid=True, setsigmask=(),
+                setsigdef=(signal.SIGPIPE, signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+            accepted = True
+        finally:
+            os.close(null)
+    except FileNotFoundError as error:
+        raise SnapshotFailure("missing-provider", "The administration tool is no longer installed") from error
+    except PermissionError as error:
+        raise SnapshotFailure("permission-denied", "The administration tool could not be launched") from error
+    except NotImplementedError as error:
+        raise SnapshotFailure("unsupported", "Isolated administration launches are unavailable") from error
+    except OSError as error:
+        if accepted or isinstance(error, InterruptedError):
+            raise SnapshotFailure("interrupted", "Administration launch observation was interrupted; the tool may already be open") from error
+        raise SnapshotFailure("internal", "The administration tool could not be launched") from error
 
 
 class JournalFrameError(ValueError):
@@ -3579,6 +4313,83 @@ def load_writable_journal_state(journal: JournalDescriptorSet) -> JournalState:
     return state
 
 
+def _native_owner_descriptor(journal: JournalDescriptorSet, operation: JournalOperation) -> int:
+    _require_exclusive_journal(journal)
+    if (not isinstance(operation, JournalOperation)
+            or operation.kind not in {"timezone", "ntp", "locale", "delegate"}
+            or operation.state in JOURNAL_OPERATION_TERMINAL_STATES
+            or load_writable_journal_state(journal).active != operation):
+        raise JournalAdmissionError("native lease target is not the exact active operation")
+    return journal.descriptor("active")
+
+
+def _try_native_owner_lock(descriptor: int) -> bool:
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError as error:
+        if error.errno in {errno.EACCES, errno.EAGAIN}:
+            return False
+        raise JournalLockError("native owner lease acquisition failed") from error
+
+
+def _unlock_native_owner(descriptor: int) -> None:
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+    except OSError as error:
+        raise JournalLockError("native owner lease release failed") from error
+
+
+@contextlib.contextmanager
+def retain_native_journal_owner(
+    journal: JournalDescriptorSet, operation: JournalOperation,
+) -> Iterator[None]:
+    """Enter beside admission under the directory lock; retain only a file lease.
+
+    Use an ExitStack to retain this context after the short directory interval
+    ends, and close it before closing the retained journal. This lease is local
+    operation liveness, not authorization or proof of a platform result.
+    """
+    _native_owner_descriptor(journal, operation)
+    try:
+        # A separate open file description is essential: flock on dup(active)
+        # would let a probe through active release the owner's own lock.
+        lease_descriptor = os.open("active",
+            os.O_RDWR | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=journal.chain.directory_descriptor)
+    except OSError as error:
+        raise JournalLockError("native owner lease descriptor open failed") from error
+    try:
+        _validate_journal_path_identity(journal.chain.directory_descriptor, "active",
+                                       lease_descriptor, JOURNAL_FILE_SIZE)
+        journal.validate()
+        if not _try_native_owner_lock(lease_descriptor):
+            journal.validate()
+            raise JournalAdmissionError("another live native owner holds the lease")
+        try:
+            journal.validate()
+            yield
+        finally:
+            _unlock_native_owner(lease_descriptor)
+    finally:
+        error = _close_descriptors((lease_descriptor,))
+        if error is not None:
+            raise JournalLockError("native owner lease descriptor close failed") from error
+
+
+def native_journal_owner_busy(journal: JournalDescriptorSet, operation: JournalOperation) -> bool:
+    """Probe nonblocking under the directory lock without releasing our own lease."""
+    descriptor = _native_owner_descriptor(journal, operation)
+    if not _try_native_owner_lock(descriptor):
+        journal.validate()
+        return True
+    try:
+        journal.validate()
+        return False
+    finally:
+        _unlock_native_owner(descriptor)
+
+
 def commit_writable_journal_path(
     journal: JournalDescriptorSet, name: str, payload: str
 ) -> tuple[int, JournalFrame]:
@@ -4419,15 +5230,22 @@ class OperationStream:
 def reject_unadmitted_operation(operation_id: str, action_id: str, started_at: str,
                                failure: SnapshotFailure, write: Callable[[str], object]) -> None:
     """Report a rejected request without inventing a durable transaction or result."""
-    if (not isinstance(action_id, str) or action_id not in {"updates-refresh", "updates-install-all"}
+    if (not isinstance(action_id, str) or action_id not in {
+            "updates-refresh", "updates-install-all", "timezone-set", "ntp-set", "locale-set", *DELEGATED_ACTIONS}
             or not isinstance(failure, SnapshotFailure) or failure.code not in JOURNAL_ERROR_CODES):
-        raise OperationProtocolError("rejected update request is invalid")
+        raise OperationProtocolError("rejected operation request is invalid")
     _validate_journal_detail(failure.detail)
     finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    stream = OperationStream(operation_id, action_id, started_at,
-        "Request rejected before operation admission; no package mutation was dispatched", write)
+    regional = action_id in {"timezone-set", "ntp-set", "locale-set"}
+    provider_id, mutation = ("regional", "regional") if regional else ("updates", "package")
+    detail = f"Request rejected before operation admission; no {mutation} mutation was dispatched"
+    if action_id in DELEGATED_ACTIONS:
+        provider_id = {"accounts-open": "accounts", "password-open": "accounts",
+                       "printers-open": "printers", "sources-open": "sources"}[action_id]
+        detail = "Request rejected before operation admission; no administration tool was launched"
+    stream = OperationStream(operation_id, action_id, started_at, detail, write)
     stream._send([
-        f"error\tupdates\t{failure.code}\t{failure.detail}",
+        f"error\t{provider_id}\t{failure.code}\t{failure.detail}",
         stream._operation_line("failed", "unknown", False, failure.detail),
         "\t".join(("audit", operation_id, action_id, stream.kind, "failed", started_at, finished_at, failure.detail)),
         "complete\toperation",
@@ -4610,8 +5428,6 @@ def read_recovery_snapshot(backend: PackageKitBackend) -> RecoverySnapshot:
                         current = load_writable_journal_state(journal)
                     if current.active != state.active:
                         evidence = None
-                    if current.active is not None and current.active.kind not in {"update", "refresh"}:
-                        raise JournalAdmissionError("Another regional or delegated owner appeared during recovery")
                     return RecoverySnapshot(current, evidence, prior_restart, tuple(failures))
     except (SnapshotFailure, JournalFrameError, JournalRecordError, JournalAdmissionError, OSError) as error:
         if isinstance(error, SnapshotFailure):
@@ -4625,11 +5441,236 @@ def read_recovery_snapshot(backend: PackageKitBackend) -> RecoverySnapshot:
         return RecoverySnapshot(prior_restart=prior_restart, failures=tuple(failures + [failure]))
 
 
-def build_managed_snapshot(backend: PackageKitBackend) -> list[str]:
+class NativeSnapshotSources:
+    """Fixed read-only sources; construction neither reads state nor starts tools."""
+
+    def time_state(self):
+        return RegionalRead("time-state").run()
+
+    def locale_state(self):
+        return RegionalRead("locale-state").run()
+
+    def accounts(self):
+        return AccountRead().run()
+
+    def printers(self):
+        return CupsRead().run()
+
+    def repositories(self):
+        return RepositoryRead().run()
+
+    def delegate(self, action):
+        if not hasattr(os, "POSIX_SPAWN_CLOSEFROM"):
+            raise SnapshotFailure("unsupported", "Isolated administration launches are unavailable", "unsupported")
+        return delegated_command(action)
+
+    def admission(self):
+        """Check advisory native admission without PackageKit, logind, or a lease.
+
+        Upstream also gates this on read_fedora_identity() -- Lyona is
+        Arch-only by construction, so an "is this Fedora" check is either
+        always-false (breaking every native action outright) or a pointless
+        tautology. Deleted outright, matching Sync Phase 6's precedent for
+        the same gate in require_mutation_safe().
+        """
+        try:
+            with open_journal_directory() as chain:
+                with open_writable_journal(chain) as journal:
+                    prepare_journal_admission(journal)
+        except (JournalAdmissionError, JournalLockError) as error:
+            raise SnapshotFailure("conflict", "Another operation or recovery state blocks administration; reload status") from error
+        except (JournalFrameError, JournalRecordError, OSError) as error:
+            raise SnapshotFailure("internal", "Durable journal storage is unavailable; inspect recovery guidance and reload status") from error
+
+
+def native_list_lines(records, limit: int, byte_limit: int) -> list[str]:
+    """Retain a complete bounded source result, never an apparently complete prefix."""
+    if len(records) > limit:
+        raise SnapshotFailure("malformed", "System management list exceeds its record limit")
+    result, seen, size = [], set(), 0
+    for record in records:
+        fields = record.fields()
+        if not fields[1] or fields[1] in seen:
+            raise SnapshotFailure("malformed", "System management list has a missing or duplicate identity")
+        seen.add(fields[1])
+        for field in fields[1:]:
+            clean_text(field, truncate=False)
+            if "\t" in field or "\n" in field or "\r" in field:
+                raise SnapshotFailure("malformed", "System management list has unsafe text")
+        line = "\t".join(fields)
+        size += len(line.encode("utf-8")) + 1
+        if size > byte_limit:
+            raise SnapshotFailure("malformed", "System management list exceeds its byte limit")
+        result.append(line)
+    return result
+
+
+def build_native_snapshot(sources: NativeSnapshotSources,
+                          blocker: SnapshotFailure | None) -> list[str]:
+    """Produce every minor-one record, isolating failures to its fixed owner."""
+    groups = {name: {"states": [], "actions": [], "lists": [], "errors": [], "statuses": []}
+              for name in ("regional", "accounts", "printers", "sources")}
+
+    def error(owner, failure):
+        groups[owner]["errors"].append(failure)
+
+    def state(owner, identifier, status, value, detail):
+        groups[owner]["statuses"].append(status)
+        groups[owner]["states"].append("\t".join(("state", identifier, status, value, clean_text(detail))))
+
+    def action(owner, identifier, label, detail, failure=None):
+        failure = failure or blocker
+        groups[owner]["actions"].append("\t".join(("action", identifier,
+            "unavailable" if failure else "available", "delegated", owner, label,
+            clean_text(failure.detail if failure else detail))))
+
+    try:
+        clock = sources.time_state()
+    except SnapshotFailure as failure:
+        error("regional", failure)
+        for identifier in ("timezone", "ntp-enabled", "ntp-synchronized"):
+            state("regional", identifier, failure.status, "unknown", failure.detail)
+        action("regional", "timezone-set", "Change timezone", "", failure)
+        action("regional", "ntp-set", "Configure network time", "", failure)
+    else:
+        state("regional", "timezone", "available", clock.timezone, "System timezone")
+        state("regional", "ntp-enabled", "available", "yes" if clock.ntp_enabled else "no", "Network time enablement")
+        state("regional", "ntp-synchronized", "available", "yes" if clock.ntp_synchronized else "no", "Network time synchronization at this read")
+        action("regional", "timezone-set", "Change timezone", "Requires a fresh selected timezone preview and explicit confirmation")
+        ntp_failure = None if clock.can_ntp else SnapshotFailure("unsupported", "No supported network time service is available", "unsupported")
+        action("regional", "ntp-set", "Configure network time", "Requires a fresh network time preview and explicit confirmation", ntp_failure)
+
+    try:
+        locale = sources.locale_state()
+    except SnapshotFailure as failure:
+        error("regional", failure)
+        state("regional", "locale", failure.status, "unknown", failure.detail)
+        action("regional", "locale-set", "Change system language", "", failure)
+    else:
+        state("regional", "locale", "available", locale.lang, locale.detail)
+        locale_failure = None
+        try:
+            # The old LANG will be replaced. Only preserved overrides can rule
+            # out every future selection; choices and full preview remain fresh.
+            overrides = tuple(value for value in locale.assignments if not value.startswith("LANG="))
+            require_locale_service_arguments(parse_locale_configuration(("LANG=C", *overrides)))
+        except SnapshotFailure as failure:
+            locale_failure = failure
+            error("regional", failure)
+        action("regional", "locale-set", "Change system language",
+            "Requires a fresh installed locale preview; existing overrides are preserved", locale_failure)
+
+    try:
+        accounts = sources.accounts()
+        account_lines = native_list_lines(accounts.records, ACCOUNT_LIMIT, ACCOUNT_LIST_BYTES)
+    except SnapshotFailure as failure:
+        error("accounts", failure)
+        state("accounts", "accounts-count", failure.status, "unknown", failure.detail)
+    else:
+        groups["accounts"]["lists"] = account_lines
+        groups["accounts"]["errors"].extend(accounts.errors)
+        state("accounts", "accounts-count", accounts.status,
+            str(len(account_lines)) if accounts.status == "available" else "unknown",
+            "AccountsService account inventory" if accounts.status == "available" else "Validated account subset; enumeration is incomplete")
+
+    try:
+        printers = sources.printers()
+    except SnapshotFailure as failure:
+        error("printers", failure)
+        state("printers", "cups-service", failure.status, "unknown", failure.detail)
+    else:
+        groups["printers"]["errors"].extend(printers.errors)
+        state("printers", "cups-service", printers.status, printers.value,
+            "Fixed CUPS scheduler and socket status; printer administration stays in its platform tool")
+
+    try:
+        repositories = native_list_lines(sources.repositories(), REPOSITORY_MAX_ROWS, REPOSITORY_MAX_BYTES)
+    except SnapshotFailure as failure:
+        error("sources", failure)
+        groups["sources"]["statuses"].append(failure.status)
+    else:
+        groups["sources"]["lists"] = repositories
+        groups["sources"]["statuses"].append("available")
+
+    for owner, identifier, label in (("accounts", "accounts-open", "Manage accounts"),
+            ("accounts", "password-open", "Change my password"),
+            ("printers", "printers-open", "Manage printers"),
+            ("sources", "sources-open", "Manage software sources")):
+        failure = None
+        try:
+            sources.delegate(identifier)  # Resolve fixed trusted argv only; never exec it.
+        except SnapshotFailure as unavailable:
+            failure = unavailable
+            error(owner, unavailable)
+        action(owner, identifier, label, "Confirm opening the fixed platform tool; the tool owns authorization and completion", failure)
+
+    lines = []
+    owners = {"regional": "systemd timedated/localed", "accounts": "AccountsService",
+              "printers": "CUPS/systemd", "sources": "PackageKit"}
+    for owner, group in groups.items():
+        if blocker is not None:
+            error(owner, blocker)
+        statuses = group["statuses"]
+        if all(value == "available" for value in statuses) and not group["errors"]:
+            status = "available"
+        elif any(value in {"available", "partial"} for value in statuses):
+            status = "partial"
+        elif all(value == "unsupported" for value in statuses):
+            status = "unsupported"
+        elif all(value == "restricted" for value in statuses):
+            status = "restricted"
+        else:
+            status = "unavailable"
+        lines.append("\t".join(("provider", owner, status, "delegated", owners[owner],
+            "Readable status and individually confirmed platform actions" if status == "available"
+            else "Inspect individual state, action availability, and capability errors")))
+        lines.extend(group["states"])
+        lines.extend(group["actions"])
+        lines.extend(group["lists"])
+        seen = set()
+        for failure in group["errors"]:
+            record = f"error\t{owner}\t{failure.code}\t{clean_text(failure.detail)}"
+            if record not in seen:
+                seen.add(record)
+                lines.append(record)
+    return lines
+
+
+def validate_snapshot_size(lines: Sequence[str]) -> None:
+    """Keep the cumulative non-list reservation separate from bounded lists."""
+    non_list = total = list_count = 0
+    for line in lines:
+        size = len(line.encode("utf-8")) + 1
+        total += size
+        if line.partition("\t")[0] in {"update", "package-change", "repository", "account", "filesystem"}:
+            list_count += 1
+        else:
+            non_list += size
+        if list_count > 9216 or non_list > 1024 * 1024 or total > 8 * 1024 * 1024:
+            raise SnapshotFailure("malformed", "System management snapshot exceeds its output reservation")
+
+
+def build_managed_snapshot(backend: PackageKitBackend, *,
+                           native_sources: NativeSnapshotSources | None = None) -> list[str]:
     """Combine readable discovery with independently validated durable recovery."""
     recovery = read_recovery_snapshot(backend)
-    lines = build_snapshot(backend)
     state = recovery.state
+    mutation_blocker = None
+    mutation_failure = None
+    if recovery.failures or state is None:
+        mutation_blocker = "Complete durable recovery evidence is required; reload status and inspect recovery errors"
+    elif state.active is not None or state.handoff is not None:
+        mutation_blocker = "An operation or its unacknowledged result still owns the update workflow"
+    else:
+        try:
+            backend.require_mutation_safe()
+        except SnapshotFailure as failure:
+            mutation_failure = failure
+            mutation_blocker = failure.detail
+    # This is advisory availability, not admission. The mutation command repeats
+    # its security, journal-ownership, session, and generation checks at dispatch.
+    lines = build_snapshot(backend, mutation_blocker=mutation_blocker,
+        mutation_failure=mutation_failure)
     restart = state.restart if state is not None else recovery.prior_restart
     value = "unknown"
     if restart is not None and restart.system != "unknown":
@@ -4667,12 +5708,29 @@ def build_managed_snapshot(backend: PackageKitBackend) -> list[str]:
         operation = state.terminals[state.handoff.slot]
         lines.append("\t".join(("terminal-handoff", operation.operation_id, operation.action_id, operation.kind)))
     lines.extend(f"error\trecovery\t{failure.code}\t{failure.detail}" for failure in recovery.failures)
+    if native_sources is not None:
+        native_blocker = None
+        if state is None or state.active is not None or state.handoff is not None:
+            native_blocker = SnapshotFailure("conflict", "Complete idle journal recovery is required before administration; reload status")
+        else:
+            try:
+                native_sources.admission()
+            except SnapshotFailure as failure:
+                native_blocker = failure
+        lines.extend(build_native_snapshot(native_sources, native_blocker))
+        lines[0] = f"system-management-protocol\t{PROTOCOL_MAJOR}\t{SNAPSHOT_MINOR}"
     lines.append("complete\tsnapshot")
+    validate_snapshot_size(lines)
     return lines
 
 
-def build_snapshot(backend: UpdateBackend) -> list[str]:
+def build_snapshot(backend: UpdateBackend, *,
+                   mutation_blocker: str | None = "Managed recovery and backend safety have not been verified",
+                   mutation_failure: SnapshotFailure | None = None) -> list[str]:
+    """Render bounded discovery; only the managed caller can offer mutations."""
     errors: list[tuple[str, str]] = []
+    if mutation_failure is not None:
+        errors.append((mutation_failure.code, mutation_failure.detail))
     last_refresh_status = "unavailable"
     last_refresh_value = "unknown"
     last_refresh_detail = "PackageKit refresh history is unavailable"
@@ -4705,6 +5763,8 @@ def build_snapshot(backend: UpdateBackend) -> list[str]:
     try:
         result = backend.updates()
     except SnapshotFailure as failure:
+        if failure.code == "malformed":
+            mutation_blocker = mutation_blocker or failure.detail
         summary_status = failure.status
         restart_status = failure.status
         summary_detail = failure.detail
@@ -4717,6 +5777,7 @@ def build_snapshot(backend: UpdateBackend) -> list[str]:
             summary_detail = "PackageKit update discovery completed"
             inventory_ok = True
         except SnapshotFailure as failure:
+            mutation_blocker = mutation_blocker or failure.detail
             summary_status = failure.status
             summary_detail = failure.detail
             errors.append((failure.code, failure.detail))
@@ -4740,6 +5801,7 @@ def build_snapshot(backend: UpdateBackend) -> list[str]:
     installable_ids = [
         row.package_id for row in update_rows if row.installability == "installable"
     ]
+    plan_ok = False
     plan_detail = (
         "No installable updates require a dependency preview"
         if inventory_ok
@@ -4757,14 +5819,16 @@ def build_snapshot(backend: UpdateBackend) -> list[str]:
                 )
                 errors.append(("unsupported", plan_detail))
             else:
+                plan_ok = True
                 plan_detail = "PackageKit dependency preview completed"
         except SnapshotFailure as failure:
             plan_detail = failure.detail
             errors.append((failure.code, failure.detail))
 
     generation = snapshot_generation(installable_ids, plan_rows)
-    provider_status = "partial" if inventory_ok else summary_status
-    if provider_status not in {"partial", "restricted", "unavailable", "unsupported"}:
+    mutation_ready = mutation_blocker is None and mutation_failure is None
+    provider_status = ("available" if mutation_ready and not errors else "partial") if inventory_ok else summary_status
+    if provider_status not in {"available", "partial", "restricted", "unavailable", "unsupported"}:
         provider_status = "partial"
 
     lines = [
@@ -4778,8 +5842,8 @@ def build_snapshot(backend: UpdateBackend) -> list[str]:
                 "delegated",
                 "PackageKit",
                 clean_text(
-                    "Read-only update discovery is available; installation is "
-                    "handled by lyona-update or a terminal, not this pane yet"
+                    "PackageKit discovery is readable; update actions require "
+                    "explicit confirmation and platform authorization"
                     if inventory_ok
                     else summary_detail
                 ),
@@ -4814,17 +5878,18 @@ def build_snapshot(backend: UpdateBackend) -> list[str]:
                 clean_text(restart_detail),
             )
         ),
-        "action\tupdates-refresh\tunavailable\tdelegated\tupdates\tRefresh updates\t"
-        "Managed update controls are not enabled in Settings",
+        "\t".join(("action", "updates-refresh", "available" if mutation_ready else "unavailable",
+            "delegated", "updates", "Refresh updates", clean_text(mutation_blocker or
+                "Confirm a PackageKit metadata refresh; package installation is a separate action"))),
         "\t".join(
             (
                 "action",
                 "updates-install-all",
-                "unavailable",
+                "available" if mutation_ready and plan_ok else "unavailable",
                 "delegated",
                 "updates",
                 "Install all updates",
-                clean_text(f"Managed update controls are not enabled in Settings; {plan_detail}"),
+                clean_text(f"{mutation_blocker}; {plan_detail}" if mutation_blocker else plan_detail),
             )
         ),
         "action\tupdates-cancel\tunavailable\tdelegated\tupdates\tCancel update\t"
@@ -4843,6 +5908,7 @@ def recover_journal_active(
     journal: JournalDescriptorSet, backend: PackageKitBackend, *,
     boot_id: str, session_started: int | None = None,
     watch: bool = False, expected_operation_id: str | None = None,
+    expected_operation: JournalOperation | None = None,
     on_progress: Callable[[RecoveryEvidence], object] | None = None,
     session_reader: Callable[[], int | None] | None = None,
 ) -> tuple[JournalState, RecoveryEvidence | None, SnapshotFailure | None]:
@@ -4851,12 +5917,24 @@ def recover_journal_active(
         raise JournalRecordError("recovery boot identity is invalid")
     if session_started is not None:
         _encode_journal_uint64(session_started, "session start")
+    identity = ("operation_id", "action_id", "started_at", "kind", "generation", "transaction_path", "boot_id", "slot")
+    if expected_operation is not None:
+        if (not isinstance(expected_operation, JournalOperation)
+                or expected_operation_id not in {None, expected_operation.operation_id}):
+            raise JournalAdmissionError("recovery expected identity is invalid")
+        expected_operation_id = expected_operation.operation_id
     original = load_journal_state(journal.chain).active
+    if expected_operation is not None and original is not None and any(
+            getattr(original, field) != getattr(expected_operation, field) for field in identity):
+        raise JournalAdmissionError("recovery owner identity changed")
     if expected_operation_id is not None and original is None:
         # Completion can race the watcher's initial target selection. Validate
         # the exact retained result without following a replacement owner.
         with lock_writable_journal(journal):
-            retained_journal_operation(journal, expected_operation_id)
+            terminal = retained_journal_operation(journal, expected_operation_id)
+            if expected_operation is not None and any(
+                    getattr(terminal, field) != getattr(expected_operation, field) for field in identity):
+                raise JournalAdmissionError("recovery terminal identity changed")
             return load_writable_journal_state(journal), None, None
     if expected_operation_id is not None and (original is None or original.operation_id != expected_operation_id):
         raise JournalAdmissionError("recovery target changed")
@@ -4868,7 +5946,6 @@ def recover_journal_active(
     lookup_failure = None
     history_match = None
     history_used = False
-    identity = ("operation_id", "action_id", "started_at", "kind", "generation", "transaction_path", "boot_id", "slot")
 
     def checkpoint_running():
         with lock_writable_journal(journal):
@@ -4937,6 +6014,13 @@ def recover_journal_active(
         if current.state in JOURNAL_OPERATION_TERMINAL_STATES:
             complete_journal_terminal(journal, boot_id=boot_id, session_started=session_started)
             return load_writable_journal_state(journal), None, None
+        if current.kind not in {"update", "refresh"} and native_journal_owner_busy(journal, current):
+            # A live RegionalMutation/delegated-launch process still holds the
+            # native lease -- this call has no PackageKit-style evidence for
+            # that kind at all (the block above never runs for it), so falling
+            # through would default to "interrupted" and terminalize an
+            # operation its own owning process is still legitimately running.
+            return current_state, None, None
         if lookup_failure is not None and (lookup_failure.code == "malformed" or (
                 not history_used and (evidence is None or evidence.present))):
             return current_state, evidence, lookup_failure
@@ -4996,6 +6080,176 @@ def recover_journal_active(
         advance_journal_operation(journal, current, terminal, recovery_boot_id=recovery_boot)
         complete_journal_terminal(journal, boot_id=boot_id, session_started=session_started)
         return load_writable_journal_state(journal), None, lookup_failure
+
+
+class NativeOperationOwner:
+    """Checkpoint one leased native owner before publishing its operation stream."""
+
+    def __init__(self, journal: JournalDescriptorSet, operation: JournalOperation,
+                 write: Callable[[str], object]) -> None:
+        self.journal, self.operation = journal, operation
+        self.stream = None
+        self.output_error = self.persistence_error = None
+        self.terminal = None
+        try:
+            self.stream = OperationStream(operation.operation_id, operation.action_id,
+                operation.started_at, operation.detail, write)
+        except Exception as error:
+            # Admission and its lease already exist. A partial first bundle
+            # cannot be retried or replaced with an unadmitted request.
+            self.output_error = error
+
+    def current(self):
+        current = load_writable_journal_state(self.journal).active
+        if current != self.operation or current.state in JOURNAL_OPERATION_TERMINAL_STATES:
+            raise JournalAdmissionError("Native operation ownership changed")
+        return current
+
+    def output(self, callback):
+        if self.output_error is None:
+            try:
+                callback()
+            except Exception as error:
+                if self.stream is not None and not self.stream.faulted:
+                    raise
+                self.output_error = error
+
+    def checkpoint(self, state, detail):
+        if self.persistence_error is not None:
+            raise self.persistence_error
+        try:
+            with lock_writable_journal(self.journal):
+                current = self.current()
+                self.operation = advance_journal_operation(self.journal, current,
+                    replace(current, state=state, detail=detail))
+        except (OSError, JournalFrameError, JournalRecordError, JournalAdmissionError) as error:
+            self.persistence_error = error
+            raise
+        self.output(lambda: self.stream.transition(state, detail))
+
+    def finish(self, state, failure=None, *, success_detail=None):
+        if self.persistence_error is not None:
+            raise self.persistence_error
+        if failure is None and self.operation.kind == "delegate" and success_detail is None:
+            raise OperationProtocolError("Delegated completion requires an explicit launch-only result")
+        detail = (success_detail if failure is None and success_detail is not None else
+                  "Regional change verified; sign out and back in for applications to use the locale"
+                  if failure is None and self.operation.kind == "locale" else
+                  "Regional change verified" if failure is None else failure.detail)
+        with lock_writable_journal(self.journal):
+            current = self.current()
+            terminal = replace(current, state=state,
+                finished_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                error_code=None if failure is None else failure.code, detail=detail)
+            advance_journal_operation(self.journal, current, terminal)
+            complete_journal_terminal(self.journal)
+        self.terminal = terminal
+        self.output(lambda: self.stream.finish(terminal))
+        return terminal
+
+
+def run_regional_mutation(
+    journal: JournalDescriptorSet, action: str, argument: str, generation: str,
+    write: Callable[[str], object], *, on_admission: Callable[[], None] | None = None,
+) -> JournalOperation:
+    """Own confirmed native execution, retaining liveness but not a service-wait lock."""
+    argument = validate_regional_argument(action, argument)
+    if not isinstance(generation, str) or JOURNAL_GENERATION_PATTERN.fullmatch(generation) is None:
+        raise SnapshotFailure("malformed", "Invalid regional confirmation generation")
+    if not callable(write):
+        raise ValueError("Regional operation requires an output writer")
+    with lock_writable_journal(journal):
+        prepare_journal_admission(journal)
+    owner = None
+    failure = None
+    with contextlib.ExitStack() as retained:
+        def before_send(preview):
+            nonlocal owner
+            # The service client has just checked fresh configuration, choices,
+            # compatibility and confirmation. Admission closes concurrent starts.
+            with lock_writable_journal(journal):
+                prepare_journal_admission(journal)
+                if on_admission is not None:
+                    on_admission()
+                operation = begin_journal_operation(journal, action,
+                    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    f"Preparing {action}: {preview.target}")
+                retained.enter_context(retain_native_journal_owner(journal, operation))
+            owner = NativeOperationOwner(journal, operation, write)
+            if owner.output_error is not None:
+                raise owner.output_error
+            owner.checkpoint("authorizing", "Regional authorization is pending; a sent change cannot be canceled")
+            if owner.output_error is not None:
+                raise owner.output_error
+
+        def after_reply():
+            owner.checkpoint("running", "Regional service accepted the change; verifying current state")
+
+        client = RegionalMutation(action, argument, generation, before_send, after_reply)
+        try:
+            client.run()
+        except SnapshotFailure as error:
+            if owner is None:
+                raise client.hook_error or error
+            if owner.persistence_error is not None:
+                raise owner.persistence_error
+            if client.hook_error is not None and client.hook_error is not owner.output_error:
+                raise client.hook_error
+            failure = (SnapshotFailure("internal", "Regional output was unavailable before dispatch; no change was sent")
+                       if not client.sent and owner.output_error is not None else error)
+        if owner is None:
+            raise SnapshotFailure("interrupted", "Regional execution ended without an admitted owner")
+        if failure is None and (not client.sent or not client.acknowledged or owner.operation.state != "running"):
+            failure = SnapshotFailure("interrupted", "Regional execution ended without verified service completion")
+        state = ("succeeded" if failure is None else
+                 "interrupted" if client.sent and failure.code in {"timeout", "interrupted"} else
+                 "permission-denied" if failure.code == "permission-denied" and owner.operation.state == "authorizing" else
+                 "failed")
+        terminal = owner.finish(state, failure)
+    if client.sent and failure is not None and failure.code in {"timeout", "interrupted"}:
+        # The terminal/handoff is durable and the native lease is released
+        # before this independent read. Its outcome cannot reclassify the call.
+        # Settings will publish its own fresh snapshot on origin completion.
+        with contextlib.suppress(SnapshotFailure):
+            RegionalRead(client.kind).run()
+    if owner.output_error is not None:
+        raise owner.output_error
+    return terminal
+
+
+def run_delegated_launch(journal: JournalDescriptorSet, action: str, write: Callable[[str], object],
+                         *, on_admission: Callable[[], None] | None = None) -> JournalOperation:
+    """Journal only a fixed tool's accepted launch, retaining no ownership of its later work."""
+    if not isinstance(action, str) or action not in DELEGATED_ACTIONS or not callable(write):
+        raise SnapshotFailure("malformed", "Invalid delegated administration request")
+    with lock_writable_journal(journal):
+        prepare_journal_admission(journal)
+    command, label = delegated_command(action)
+    with contextlib.ExitStack() as retained:
+        with lock_writable_journal(journal):
+            prepare_journal_admission(journal)
+            if on_admission is not None:
+                on_admission()
+            operation = begin_journal_operation(journal, action,
+                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "Preparing " + label)
+            retained.enter_context(retain_native_journal_owner(journal, operation))
+        owner = NativeOperationOwner(journal, operation, write)
+        failure = None
+        if owner.output_error is None:
+            owner.checkpoint("running", "Opening " + label + "; administration remains in that tool")
+        if owner.output_error is not None:
+            failure = SnapshotFailure("internal", "Administration output was unavailable; no tool was launched")
+        else:
+            try:
+                launch_delegated_tool(command)
+            except SnapshotFailure as error:
+                failure = error
+        terminal = owner.finish("succeeded" if failure is None else
+            "interrupted" if failure.code == "interrupted" else "failed", failure,
+            success_detail=label + " launch accepted; continue in the tool. Its changes and authorization are not tracked here")
+    if owner.output_error is not None:
+        raise owner.output_error
+    return terminal
 
 
 class PackageKitMutation:
@@ -6326,6 +7580,8 @@ class PackageKitBackend:
 class UpdateEventMonitor:
     """Read-only manager signals, with bounded setup and no transaction calls."""
 
+    record_prefix = "update-event"
+
     def __init__(self, Gio, GLib, GLibUnix, emit: Callable[[str], None]) -> None:
         """Initialize the monitor with injectable GLib bindings and output."""
         self.Gio, self.GLib, self.GLibUnix = Gio, GLib, GLibUnix
@@ -6370,7 +7626,7 @@ class UpdateEventMonitor:
         if not self.ready:
             self.dirty = True
         else:
-            self.write("update-event\tchanged")
+            self.write(self.record_prefix + "\tchanged")
 
     def global_changed(self, _connection, sender, _path, _interface, _member, _parameters, _data) -> None:
         """Accept manager signals only from the current PackageKit owner."""
@@ -6409,9 +7665,9 @@ class UpdateEventMonitor:
         self.GLib.source_remove(self.deadline_source)
         self.deadline_source = 0
         self.ready = True
-        self.write("update-event\tready")
+        self.write(self.record_prefix + "\tready")
         if self.dirty and not self.stopped:
-            self.write("update-event\tchanged")
+            self.write(self.record_prefix + "\tchanged")
         self.dirty = False
 
     def match_finished(self, connection, result, rule) -> None:
@@ -6510,18 +7766,676 @@ class UpdateEventMonitor:
         return self.exit_code
 
 
-def watch_update_events() -> int:
-    """Stream bounded PackageKit change records without blocking on output."""
-    output_descriptor = None
-    original_blocking = None
+# Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §4): the generic
+# authenticated-owner pattern watch-regional/watch-accounts/watch-units share,
+# extending UpdateEventMonitor's bounded-setup/dirty-flag shape. Each fixed
+# name owner is authenticated (GetNameOwner, matched) before enabling
+# property/signal delivery -- a bus-side match filter alone cannot make bus
+# rejection or a spoofed direct signal observable. `watch_update_events()`
+# above is untouched: it is Sync Phase 4's own working, tested PackageKit
+# monitor, not folded into this class family.
+class AuthenticatedEventMonitor(UpdateEventMonitor):
+    """Acknowledge fixed service matches and authenticate even setup-time signals."""
+
+    def __init__(self, Gio, GLib, GLibUnix, emit):
+        super().__init__(Gio, GLib, GLibUnix, emit)
+        self.started = False
+        self.name = ""
+        self.path = ""
+
+    def setting_up(self):
+        if self.stopped:
+            return False
+        if time.monotonic() >= self.deadline:
+            self.stop(1)
+            return False
+        return True
+
+    def remove_match(self, connection, rule):
+        with contextlib.suppress(self.GLib.Error):
+            connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                "RemoveMatch", self.GLib.Variant("(s)", (rule,)), None,
+                self.Gio.DBusCallFlags.NONE, 1000, None, None, None)
+
+    def match_finished(self, connection, result, rule):
+        try:
+            reply = connection.call_finish(result)
+            # Only acknowledged rules belong to this caller. A late reply can
+            # release that rule, but can never resume an expired monitor.
+            if self.stopped:
+                self.remove_match(connection, rule)
+                return
+            self.installed_rules.append(rule)
+            if not self.setting_up():
+                return
+            if reply.get_type_string() != "()":
+                self.stop(1)
+            elif 1 < len(self.installed_rules) < len(self.match_rules):
+                self.add_match()
+            else:
+                # Authenticate the owner after the owner-change match, before
+                # enabling property delivery. Bus-side matches do not filter
+                # signals addressed directly to this connection.
+                callback = self.owner_initialized if len(self.installed_rules) == 1 else self.owner_resolved
+                connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                    "GetNameOwner", self.GLib.Variant("(s)", (self.name,)), self.GLib.VariantType.new("(s)"),
+                    self.Gio.DBusCallFlags.NONE, max(1, int((self.deadline - time.monotonic()) * 1000)),
+                    self.cancellable, callback, self.owner_epoch)
+        except self.GLib.Error:
+            self.stop(1)
+
+    def resolve_owner(self, connection, result, epoch):
+        if not self.setting_up():
+            return
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(s)" or reply.get_size() > 256:
+                self.stop(1)
+                return
+            owner = reply.unpack()[0]
+            if not self.Gio.dbus_is_unique_name(owner):
+                self.stop(1)
+                return
+        except self.GLib.Error as error:
+            if self.Gio.dbus_error_get_remote_error(error) != "org.freedesktop.DBus.Error.NameHasNoOwner":
+                self.stop(1)
+                return
+            owner = ""
+        if not self.setting_up():
+            return
+        if epoch == self.owner_epoch:
+            self.owner = owner
+        return True
+
+    def owner_initialized(self, connection, result, epoch):
+        if self.resolve_owner(connection, result, epoch):
+            self.add_match()
+
+    def owner_resolved(self, connection, result, epoch):
+        if not self.resolve_owner(connection, result, epoch):
+            return
+        self.GLib.source_remove(self.deadline_source)
+        self.deadline_source = 0
+        self.ready = True
+        self.write(self.record_prefix + "\tready")
+        if self.dirty and not self.stopped:
+            self.write(self.record_prefix + "\tchanged")
+        self.dirty = False
+
+    def owner_changed(self, _connection, sender, path, interface, member, parameters, _data):
+        if (self.stopped or sender != "org.freedesktop.DBus" or path != "/org/freedesktop/DBus"
+                or interface != "org.freedesktop.DBus" or member != "NameOwnerChanged"):
+            return
+        if parameters.get_type_string() != "(sss)" or parameters.get_size() > 768:
+            self.stop(1)
+            return
+        name, old, new = parameters.unpack()
+        if name != self.name:
+            return
+        if any(len(value) > 255 or value and not self.Gio.dbus_is_unique_name(value) for value in (old, new)):
+            self.stop(1)
+            return
+        self.owner_epoch += 1
+        self.owner = new
+        # timedated/localed normally exit after 30 idle seconds. Departure is
+        # not a configuration change: rereading here would reactivate forever.
+        # Arrival or replacement reconciles state; mutations still fresh-read.
+        if new:
+            self.changed()
+
+    def service_specs(self):
+        raise NotImplementedError
+
+    def connected(self, _source, result, _data):
+        if not self.setting_up():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            if not self.setting_up():
+                return
+            self.subscribe_connection()
+        except self.GLib.Error:
+            self.stop(1)
+
+    def subscribe_connection(self):
+        """Attach only local filters and acknowledged fixed bus matches."""
+        try:
+            self.connection.set_exit_on_close(False)
+            self.closed_handler = self.connection.connect("closed", lambda *_args: self.stop(1))
+            specs = [
+                ("org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged", "/org/freedesktop/DBus", self.name, self.owner_changed,
+                 f"type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',path='/org/freedesktop/DBus',arg0='{self.name}'"),
+            ] + self.service_specs()
+            for sender, interface, member, path, arg0, callback, rule in specs:
+                self.subscriptions.append(self.connection.signal_subscribe(sender, interface, member, path,
+                    arg0, self.Gio.DBusSignalFlags.NO_MATCH_RULE, callback, None))
+                self.match_rules.append(rule)
+            self.add_match()
+        except self.GLib.Error:
+            self.stop(1)
+
+    def run(self):
+        if self.started:
+            raise RuntimeError("Service monitors are single-use")
+        self.started = True
+        return super().run()
+
+
+class RegionalEventMonitor(AuthenticatedEventMonitor):
+    """Observe fixed regional properties, without activating idle platform services."""
+
+    record_prefix = "regional-event"
+
+    def __init__(self, kind, Gio, GLib, GLibUnix, emit):
+        if not isinstance(kind, str) or kind not in ("time", "locale"):
+            raise ValueError("Unknown regional monitor")
+        super().__init__(Gio, GLib, GLibUnix, emit)
+        self.name, self.path = REGIONAL_READ_REQUESTS[kind + "-state"][:2]
+        self.relevant = {"Locale"} if kind == "locale" else {"Timezone", "CanNTP", "NTP", "NTPSynchronized"}
+
+    def service_specs(self):
+        return [(None, PROPERTIES_INTERFACE, "PropertiesChanged", self.path, self.name, self.properties_changed,
+            f"type='signal',sender='{self.name}',interface='{PROPERTIES_INTERFACE}',member='PropertiesChanged',path='{self.path}',arg0='{self.name}'")]
+
+    def properties_changed(self, _connection, sender, path, interface, member, parameters, _data):
+        if (self.stopped or path != self.path or interface != PROPERTIES_INTERFACE
+                or member != "PropertiesChanged" or not self.owner or sender != self.owner):
+            return
+        try:
+            if parameters.get_type_string() != "(sa{sv}as)" or parameters.get_size() > 16384:
+                raise SnapshotFailure("malformed", "Invalid regional notification")
+            if parameters.get_child_value(0).unpack() != self.name:
+                return
+            changed = parameters.get_child_value(1)
+            invalidated = regional_string_array(parameters.get_child_value(2),
+                REGIONAL_TIME_PROPERTY_COUNT, MAX_TEXT_BYTES, 8192)
+            if changed.n_children() > REGIONAL_TIME_PROPERTY_COUNT:
+                raise SnapshotFailure("malformed", "Oversized regional notification")
+            keys = set()
+            for index in range(changed.n_children()):
+                key = changed.get_child_value(index).get_child_value(0)
+                if key.get_size() > MAX_TEXT_BYTES + 1 or key.unpack() in keys:
+                    raise SnapshotFailure("malformed", "Invalid regional notification key")
+                keys.add(key.unpack())
+            if self.relevant.intersection(keys.union(invalidated)):
+                self.changed()
+        except SnapshotFailure:
+            self.stop(1)
+
+
+class AccountEventMonitor(AuthenticatedEventMonitor):
+    """Cover candidate changes before enumeration without retaining an unbounded list."""
+
+    record_prefix = "accounts-event"
+
+    def __init__(self, Gio, GLib, GLibUnix, emit):
+        super().__init__(Gio, GLib, GLibUnix, emit)
+        self.name, self.path = ACCOUNTS_NAME, ACCOUNTS_PATH
+
+    def service_specs(self):
+        specs = [(None, self.name, member, self.path, None, self.users_changed,
+            f"type='signal',sender='{self.name}',interface='{self.name}',member='{member}',path='{self.path}'")
+            for member in ("UserAdded", "UserDeleted")]
+        # This single authenticated interface subscription already covers all
+        # selected candidates, including excluded/new objects, before any read.
+        # Extra objects can only invalidate; no identities or values are kept.
+        specs.append((None, ACCOUNT_INTERFACE, "Changed", None, None, self.user_changed,
+            f"type='signal',sender='{self.name}',interface='{ACCOUNT_INTERFACE}',member='Changed'"))
+        return specs
+
+    def users_changed(self, _connection, sender, path, interface, member, parameters, _data):
+        if (self.stopped or not self.owner or sender != self.owner or path != self.path
+                or interface != self.name or member not in ("UserAdded", "UserDeleted")):
+            return
+        try:
+            if parameters.get_type_string() != "(o)" or parameters.get_size() > MAX_TEXT_BYTES + 8:
+                raise SnapshotFailure("malformed", "Invalid account notification")
+            account_object_path(parameters.get_child_value(0))
+            self.changed()
+        except SnapshotFailure:
+            self.stop(1)
+
+    def user_changed(self, _connection, sender, path, interface, member, parameters, _data):
+        if (self.stopped or not self.owner or sender != self.owner
+                or interface != ACCOUNT_INTERFACE or member != "Changed"):
+            return
+        if (not isinstance(path, str) or len(path) > MAX_TEXT_BYTES
+                or DBUS_OBJECT_PATH.fullmatch(path) is None
+                or parameters.get_type_string() != "()" or parameters.get_size() > 8):
+            self.stop(1)
+            return
+        self.changed()
+
+
+class UnitEventMonitor(AuthenticatedEventMonitor):
+    """Observe fixed loaded units on a private, sender-owned systemd subscription.
+
+    A private Gio.DBusConnection.new_for_address() connection, not the shared
+    Gio.bus_get() one every other monitor here uses: systemd's own
+    Manager.Subscribe() is scoped to the calling connection, so sharing the
+    process-wide bus connection could collide with another reader's Subscribe
+    state within the same process.
+    """
+
+    record_prefix = "units-event"
+
+    def __init__(self, kind, Gio, GLib, GLibUnix, emit):
+        if not isinstance(kind, str) or kind not in WATCH_UNIT_SETS:
+            raise ValueError("Unknown unit monitor")
+        super().__init__(Gio, GLib, GLibUnix, emit)
+        self.name, self.path = SYSTEMD_NAME, SYSTEMD_PATH
+        self.units = WATCH_UNIT_SETS[kind]
+        self.paths = dict.fromkeys(self.units, "")
+        self.subscribed_owner = ""
+        self.subscription_ready = False
+        self.resolving = False
+        self.resolve_again = False
+        self.resolve_round = 0
+        self.resolution_epoch = 0
+        self.resolve_source = 0
+        self.resolve_cancel = None
+        self.connecting = False
+        self.closing = False
+        self.cleanup_done = False
+        self.cleanup_loop = None
+
+    def service_specs(self):
+        specs = [(None, SYSTEMD_MANAGER, member, self.path, None, self.manager_event,
+            f"type='signal',sender='{self.name}',interface='{SYSTEMD_MANAGER}',member='{member}',path='{self.path}'")
+            for member in ("UnitNew", "UnitRemoved", "UnitFilesChanged", "Reloading")]
+        specs.append((None, PROPERTIES_INTERFACE, "PropertiesChanged", None, SYSTEMD_NAME + ".Unit", self.properties_changed,
+            f"type='signal',sender='{self.name}',interface='{PROPERTIES_INTERFACE}',member='PropertiesChanged',arg0='{SYSTEMD_NAME}.Unit'"))
+        return specs
+
+    def connected(self, _source, result, _data):
+        self.connecting = False
+        try:
+            self.connection = self.Gio.DBusConnection.new_for_address_finish(result)
+            self.connection.set_exit_on_close(False)
+            if not self.setting_up():
+                self.close_connection()
+                return
+            self.subscribe_connection()
+        except self.GLib.Error:
+            self.stop(1)
+            if self.cleanup_loop is not None:
+                self.cleanup_done = True
+                self.cleanup_loop.quit()
+
+    def owner_resolved(self, connection, result, epoch):
+        """Subscribe only after all matches and an authenticated owner barrier."""
+        if not self.resolve_owner(connection, result, epoch):
+            return
+        if not self.owner:
+            self.stop(1)
+            return
+        self.subscribed_owner = self.owner
+        try:
+            connection.call(self.owner, self.path, SYSTEMD_MANAGER, "Subscribe", None,
+                self.GLib.VariantType.new("()"), self.Gio.DBusCallFlags.NO_AUTO_START,
+                max(1, int((self.deadline - time.monotonic()) * 1000)), self.cancellable,
+                self.subscribed, None)
+        except self.GLib.Error:
+            self.stop(1)
+
+    def subscribed(self, connection, result, _data):
+        try:
+            reply = connection.call_finish(result)
+            if not self.setting_up():
+                return
+            if reply.get_type_string() != "()" or reply.get_size() > 8:
+                self.stop(1)
+                return
+            self.subscription_ready = True
+            self.reconcile()
+        except self.GLib.Error:
+            self.stop(1)
+
+    def owner_changed(self, *args):
+        super().owner_changed(*args)
+        if self.subscribed_owner and self.owner != self.subscribed_owner:
+            # A new daemon does not inherit the old sender's Subscribe state.
+            # Fail explicitly instead of silently reconnecting or reauthorizing.
+            self.stop(1)
+
+    @staticmethod
+    def valid_path(path):
+        return (isinstance(path, str) and len(path) <= MAX_TEXT_BYTES
+                and path.startswith(SYSTEMD_PATH + "/unit/")
+                and DBUS_OBJECT_PATH.fullmatch(path) is not None)
+
+    def manager_event(self, _connection, sender, path, interface, member, parameters, _data):
+        if (self.stopped or not self.owner or sender != self.owner
+                or path != self.path or interface != SYSTEMD_MANAGER):
+            return
+        relevant = True
+        if member in ("UnitNew", "UnitRemoved"):
+            if parameters.get_type_string() != "(so)" or parameters.get_size() > 2 * MAX_TEXT_BYTES + 16:
+                self.stop(1)
+                return
+            name, unit_path = parameters.unpack()
+            if (not name or len(name.encode("utf-8")) > MAX_TEXT_BYTES
+                    or any(ord(char) < 32 or ord(char) == 127 for char in name)
+                    or not self.valid_path(unit_path)):
+                self.stop(1)
+                return
+            relevant = name in self.units or unit_path in self.paths.values()
+            if member == "UnitRemoved" and not relevant:
+                return
+        elif member == "UnitFilesChanged":
+            if parameters.get_type_string() != "()" or parameters.get_size() > 8:
+                self.stop(1)
+                return
+        elif member == "Reloading":
+            if parameters.get_type_string() != "(b)" or parameters.get_size() > 8:
+                self.stop(1)
+                return
+            if parameters.unpack()[0]:
+                return
+        else:
+            return
+        if relevant:
+            self.changed()
+        # An arrival may use a previously unknown canonical alias. Resolve
+        # only our fixed names; never enumerate or load the announced unit.
+        self.reconcile()
+
+    def properties_changed(self, _connection, sender, path, interface, member, parameters, _data):
+        if (self.stopped or not self.owner or sender != self.owner
+                or interface != PROPERTIES_INTERFACE or member != "PropertiesChanged"
+                or not self.valid_path(path)):
+            return
+        if path not in self.paths.values() and self.ready and not self.resolving:
+            return
+        try:
+            if parameters.get_type_string() != "(sa{sv}as)" or parameters.get_size() > UNIT_REPLY_BYTES:
+                raise SnapshotFailure("malformed", "Invalid unit notification")
+            fields = parameters.get_child_value(1)
+            invalidated = parameters.get_child_value(2)
+            if (parameters.get_child_value(0).unpack() != SYSTEMD_NAME + ".Unit"):
+                return
+            if fields.n_children() > 256 or invalidated.n_children() > 256:
+                raise SnapshotFailure("malformed", "Oversized unit notification")
+            relevant = {"LoadState", "ActiveState", "SubState"}
+            changed = False
+            for index in range(fields.n_children()):
+                item = fields.get_child_value(index)
+                key = item.get_child_value(0)
+                if key.get_size() > MAX_TEXT_BYTES + 1:
+                    raise SnapshotFailure("malformed", "Oversized unit property")
+                if key.unpack() in relevant:
+                    value = item.get_child_value(1).get_variant()
+                    if value.get_type_string() != "s" or value.get_size() > 65 or UNIT_STATE_TOKEN.fullmatch(value.unpack()) is None:
+                        raise SnapshotFailure("malformed", "Invalid unit property")
+                    changed = True
+            for index in range(invalidated.n_children()):
+                key = invalidated.get_child_value(index)
+                if key.get_size() > MAX_TEXT_BYTES + 1:
+                    raise SnapshotFailure("malformed", "Oversized invalidated unit property")
+                changed = changed or key.unpack() in relevant
+            if changed:
+                self.changed()
+        except SnapshotFailure:
+            self.stop(1)
+
+    def reconcile(self):
+        """Resolve at most two fixed-name passes for one in-flight event burst."""
+        if self.stopped or not self.subscription_ready:
+            return
+        if self.resolving:
+            self.resolve_again = True
+            return
+        self.resolving = True
+        self.resolution_epoch += 1
+        self.resolve_again = False
+        self.resolve_round = 0
+        self.resolve_deadline = min(self.deadline, time.monotonic() + 10) if not self.ready else time.monotonic() + 10
+        self.resolve_cancel = self.Gio.Cancellable()
+        self.resolve_source = self.GLib.timeout_add(max(1, int((self.resolve_deadline - time.monotonic()) * 1000)), self.resolve_timeout)
+        self.resolve_pass()
+
+    def resolve_timeout(self):
+        self.resolve_source = 0
+        self.stop(1)
+        return self.GLib.SOURCE_REMOVE
+
+    def resolve_pass(self):
+        self.waiting = set(self.units)
+        self.next_paths = {}
+        for name in self.units:
+            if self.stopped or time.monotonic() >= self.resolve_deadline:
+                self.stop(1)
+                return
+            try:
+                self.connection.call(self.subscribed_owner, self.path, SYSTEMD_MANAGER, "GetUnit",
+                    self.GLib.Variant("(s)", (name,)), self.GLib.VariantType.new("(o)"),
+                    self.Gio.DBusCallFlags.NO_AUTO_START,
+                    max(1, int((self.resolve_deadline - time.monotonic()) * 1000)),
+                    self.resolve_cancel, self.unit_resolved, (self.resolution_epoch, self.resolve_round, name))
+            except self.GLib.Error:
+                self.stop(1)
+                return
+
+    def unit_resolved(self, connection, result, identity):
+        epoch, round_id, name = identity
+        if (self.stopped or not self.resolving or epoch != self.resolution_epoch
+                or round_id != self.resolve_round or name not in self.waiting):
+            return
+        if time.monotonic() >= self.resolve_deadline:
+            self.stop(1)
+            return
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(o)" or reply.get_size() > MAX_TEXT_BYTES + 8:
+                self.stop(1)
+                return
+            path = reply.unpack()[0]
+            if not self.valid_path(path):
+                self.stop(1)
+                return
+        except self.GLib.Error as error:
+            if self.Gio.dbus_error_get_remote_error(error) != "org.freedesktop.systemd1.NoSuchUnit":
+                self.stop(1)
+                return
+            path = ""
+        if time.monotonic() >= self.resolve_deadline:
+            self.stop(1)
+            return
+        self.next_paths[name] = path
+        self.waiting.remove(name)
+        if self.waiting:
+            return
+        changed = self.paths != self.next_paths
+        self.paths = self.next_paths
+        if changed and self.ready:
+            self.changed()
+        if self.resolve_again:
+            if self.resolve_round:
+                self.stop(1)
+                return
+            self.resolve_again = False
+            self.resolve_round = 1
+            self.resolve_pass()
+            return
+        self.resolving = False
+        self.GLib.source_remove(self.resolve_source)
+        self.resolve_source = 0
+        if not self.ready:
+            try:
+                self.connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                    "GetNameOwner", self.GLib.Variant("(s)", (self.name,)), self.GLib.VariantType.new("(s)"),
+                    self.Gio.DBusCallFlags.NONE, max(1, int((self.deadline - time.monotonic()) * 1000)),
+                    self.cancellable, self.final_owner, (self.owner_epoch, self.resolution_epoch))
+            except self.GLib.Error:
+                self.stop(1)
+
+    def final_owner(self, connection, result, identity):
+        owner_epoch, resolution_epoch = identity
+        if (self.stopped or self.ready or self.resolving
+                or resolution_epoch != self.resolution_epoch):
+            return
+        if not self.resolve_owner(connection, result, owner_epoch):
+            return
+        if self.owner != self.subscribed_owner:
+            self.stop(1)
+            return
+        self.GLib.source_remove(self.deadline_source)
+        self.deadline_source = 0
+        self.ready = True
+        self.write(self.record_prefix + "\tready")
+        if self.dirty and not self.stopped:
+            self.write(self.record_prefix + "\tchanged")
+        self.dirty = False
+
+    def close_connection(self):
+        """Close only this sender's connection; never unsubscribe another client."""
+        if self.connection is None or self.closing:
+            return
+        self.closing = True
+        if self.connection.is_closed():
+            self.cleanup_done = True
+            if self.cleanup_loop is not None:
+                self.cleanup_loop.quit()
+            return
+
+        def closed(connection, result, _data):
+            try:
+                connection.close_finish(result)
+            except self.GLib.Error:
+                if not connection.is_closed():
+                    self.exit_code = 1
+            self.cleanup_done = True
+            if self.cleanup_loop is not None:
+                self.cleanup_loop.quit()
+
+        self.connection.close(None, closed, None)
+
+    def run(self):
+        if self.started:
+            raise RuntimeError("Service monitors are single-use")
+        self.started = True
+
+        def expired():
+            self.deadline_source = 0
+            self.stop(1)
+            return self.GLib.SOURCE_REMOVE
+
+        def terminate():
+            self.stop(0)
+            return self.GLib.SOURCE_CONTINUE
+
+        try:
+            self.deadline = time.monotonic() + 10
+            self.deadline_source = self.GLib.timeout_add(10000, expired)
+            for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                self.sources.append(self.GLibUnix.signal_add(self.GLib.PRIORITY_DEFAULT, signum, terminate))
+            address = self.Gio.dbus_address_get_for_bus_sync(self.Gio.BusType.SYSTEM, self.cancellable)
+            if self.setting_up():
+                self.connecting = True
+                flags = self.Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | self.Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
+                self.Gio.DBusConnection.new_for_address(address, flags, None, self.cancellable, self.connected, None)
+                self.loop.run()
+        except self.GLib.Error:
+            self.stop(1)
+        finally:
+            self.stopped = True
+            self.cancellable.cancel()
+            if self.resolve_cancel is not None:
+                self.resolve_cancel.cancel()
+            if self.connection is not None:
+                for subscription in self.subscriptions:
+                    self.connection.signal_unsubscribe(subscription)
+                if self.closed_handler:
+                    self.connection.disconnect(self.closed_handler)
+            for source in self.sources + [self.deadline_source, self.resolve_source]:
+                if source:
+                    self.GLib.source_remove(source)
+            self.cleanup_loop = self.GLib.MainLoop()
+            cleanup_expired = False
+
+            def cleanup_timeout():
+                nonlocal cleanup_expired
+                cleanup_expired = True
+                self.exit_code = 1
+                self.cleanup_loop.quit()
+                return self.GLib.SOURCE_REMOVE
+
+            cleanup_source = self.GLib.timeout_add(1000, cleanup_timeout)
+            self.close_connection()
+            if not self.cleanup_done and (self.connection is not None or self.connecting):
+                self.cleanup_loop.run()
+            if not cleanup_expired:
+                self.GLib.source_remove(cleanup_source)
+        return self.exit_code
+
+
+def control_output_writer(output, resources: contextlib.ExitStack) -> Callable[[bytes], int] | None:
+    """Never set file-status flags on an inherited open-file description.
+
+    Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §4): ported from upstream's
+    0eae066d, promoted from "general robustness, out of scope" to required --
+    the plain os.set_blocking(fd, False) this replaces mutates the *shared*
+    open-file description an inherited stdout pipe/tty points at, which is
+    visible to (and disrupts) any other holder of that same writer, including
+    a parent shell group. Opening a private descriptor via /proc/self/fd
+    avoids that. control_output_writers() (the signal-handling stdout+stderr
+    pair upstream also ships) is not ported: operation_control() keeps its
+    own simpler, already-tested synchronous sys.stdout.write()/flush() path,
+    which never sets O_NONBLOCK on the inherited descriptor in the first
+    place and so was never exposed to this class of bug.
+    """
+    try:
+        descriptor = output.fileno()
+    except io.UnsupportedOperation:
+        return None  # In-memory test consumers have no kernel writer.
+    original = os.fstat(descriptor)
+    flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+    if (flags & os.O_ACCMODE) not in (os.O_WRONLY, os.O_RDWR):
+        raise OSError("Operation output is not writable")
+    if stat.S_ISFIFO(original.st_mode) or stat.S_ISCHR(original.st_mode):
+        # dup would still share O_NONBLOCK with the parent. Opening the retained
+        # proc descriptor gives pipes/terminals a separate open-file description.
+        descriptor = os.open(f"/proc/self/fd/{descriptor}",
+            os.O_WRONLY | os.O_NONBLOCK | os.O_CLOEXEC | os.O_NOCTTY)
+        resources.callback(os.close, descriptor)
+        if stat.S_ISFIFO(original.st_mode) and flags & os.O_DIRECT:
+            # Packet mode is set after opening a pipe, on this private OFD only.
+            fcntl.fcntl(descriptor, fcntl.F_SETFL, fcntl.fcntl(descriptor, fcntl.F_GETFL) | os.O_DIRECT)
+        current = os.fstat(descriptor)
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_mode, value.st_rdev)
+        if identity(current) != identity(original):
+            raise OSError("Operation output identity changed")
+    elif stat.S_ISSOCK(original.st_mode):
+        # Sockets cannot be reopened through proc. MSG_DONTWAIT is per-call,
+        # unlike O_NONBLOCK, and does not affect another holder of this socket.
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.send.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_int]
+        libc.send.restype = ctypes.c_ssize_t
+
+        def send(payload):
+            count = libc.send(descriptor, payload, len(payload), socket.MSG_DONTWAIT | socket.MSG_NOSIGNAL)
+            if count < 0:
+                raise OSError(ctypes.get_errno(), "Operation socket output failed")
+            return count
+
+        return send
+    elif not stat.S_ISREG(original.st_mode):
+        raise OSError("Unsupported operation output type")
+    # Regular files retain their original shared offset and append semantics.
+    # O_NONBLOCK cannot impose a storage-I/O deadline on a regular file.
+    return lambda payload: os.write(descriptor, payload)
+
+
+def watch_service_events(service_kind: str | None = None) -> int:
+    """Stream bounded change records for updates or one of the Phase 9 domains."""
+    output_writer = None
 
     def emit(record: str) -> None:
-        """Write one atomic ASCII record to the monitor's nonblocking pipe."""
         payload = (record + "\n").encode("ascii")
         # Each fixed row fits PIPE_BUF. Never block GLib callbacks behind a
         # stalled reader or queue unbounded notifications. Overflow is an
         # explicit monitoring failure; the consumer must refresh finite state.
-        if os.write(output_descriptor, payload) != len(payload):
+        if output_writer(payload) != len(payload):
             raise OSError("Incomplete event output")
 
     try:
@@ -6531,37 +8445,46 @@ def watch_update_events() -> int:
         gi.require_version("GLibUnix", "2.0")
         from gi.repository import Gio, GLib, GLibUnix
 
-        output_descriptor = sys.stdout.fileno()
-        original_blocking = os.get_blocking(output_descriptor)
-        os.set_blocking(output_descriptor, False)
-        code = UpdateEventMonitor(Gio, GLib, GLibUnix, emit).run()
+        with contextlib.ExitStack() as resources:
+            output_writer = control_output_writer(sys.stdout, resources)
+            if output_writer is None:
+                raise OSError("Event output requires a file descriptor")
+            if service_kind is None:
+                monitor = UpdateEventMonitor(Gio, GLib, GLibUnix, emit)
+            elif service_kind == "accounts":
+                monitor = AccountEventMonitor(Gio, GLib, GLibUnix, emit)
+            elif service_kind in WATCH_UNIT_SETS:
+                monitor = UnitEventMonitor(service_kind, Gio, GLib, GLibUnix, emit)
+            else:
+                monitor = RegionalEventMonitor(service_kind, Gio, GLib, GLibUnix, emit)
+            code = monitor.run()
     except (ImportError, ValueError, OSError):
         code = 1
-    finally:
-        if output_descriptor is not None and original_blocking is not None:
-            try:
-                # File status flags belong to the shared open-file description.
-                # A shell group may retain this writer for its next command.
-                os.set_blocking(output_descriptor, original_blocking)
-            except OSError:
-                code = 1
     if code:
-        error_descriptor = None
-        error_blocking = None
         try:
-            error_descriptor = sys.stderr.fileno()
-            error_blocking = os.get_blocking(error_descriptor)
-            os.set_blocking(error_descriptor, False)
-            os.write(error_descriptor, b"PackageKit live change monitoring is unavailable; reload status explicitly\n")
+            with contextlib.ExitStack() as resources:
+                error_writer = control_output_writer(sys.stderr, resources)
+                if error_writer is not None:
+                    label = ("PackageKit" if service_kind is None else "Account" if service_kind == "accounts"
+                             else "Unit" if service_kind in WATCH_UNIT_SETS else "Regional")
+                    error_writer((label + " live change monitoring is unavailable; reload status explicitly\n").encode("ascii"))
         except (OSError, ValueError):
             # Exit status remains authoritative when even diagnostics cannot
             # be delivered (including stderr sharing the full stdout pipe).
             pass
-        finally:
-            if error_descriptor is not None and error_blocking is not None:
-                with contextlib.suppress(OSError):
-                    os.set_blocking(error_descriptor, error_blocking)
     return code
+
+
+def watch_update_events() -> int:
+    return watch_service_events()
+
+
+def watch_regional_events(kind: str) -> int:
+    return watch_service_events(kind)
+
+
+def watch_account_events() -> int:
+    return watch_service_events("accounts")
 
 
 def control_journal_target(journal: JournalDescriptorSet, operation_id: str, boot_id: str) -> JournalOperation:
@@ -6573,9 +8496,121 @@ def control_journal_target(journal: JournalDescriptorSet, operation_id: str, boo
             state = load_writable_journal_state(journal)
         if state.active is None:
             return retained_journal_operation(journal, operation_id)
-        if state.active.operation_id != operation_id or state.active.kind not in {"refresh", "update"}:
+        # Sync Phase 9: this target is no longer restricted to update/refresh
+        # -- watch-operation/ack-operation must also reach a regional or
+        # delegated active/terminal operation. cancel_journal_operation below
+        # keeps its own separate update/refresh-only restriction; only that
+        # family is cancelable.
+        if state.active.operation_id != operation_id:
             raise JournalAdmissionError("journal control target is unavailable")
         return state.active
+
+
+class NativeJournalEvents:
+    """One inode watch, retained before recovery; notifications are hints only."""
+
+    # IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | IN_DELETE_SELF | IN_MOVE_SELF.
+    mask = 0x0002 | 0x0004 | 0x0008 | 0x0400 | 0x0800
+
+    def __init__(self, journal: JournalDescriptorSet) -> None:
+        self.journal = journal
+        self.descriptor = None
+        self.selector = None
+
+    def __enter__(self):
+        try:
+            self.journal.validate()
+            libc = ctypes.CDLL(None, use_errno=True)
+            libc.inotify_init1.argtypes = [ctypes.c_int]
+            libc.inotify_init1.restype = ctypes.c_int
+            libc.inotify_add_watch.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
+            libc.inotify_add_watch.restype = ctypes.c_int
+            descriptor = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+            if descriptor < 0:
+                raise OSError(ctypes.get_errno(), "native journal event setup failed")
+            self.descriptor = descriptor
+            path = f"/proc/self/fd/{self.journal.descriptor('active')}".encode("ascii")
+            self.watch = libc.inotify_add_watch(descriptor, path, self.mask)
+            if self.watch < 0:
+                raise OSError(ctypes.get_errno(), "native journal inode watch failed")
+            self.selector = selectors.DefaultSelector()
+            self.selector.register(descriptor, selectors.EVENT_READ)
+            self.journal.validate()
+            return self
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, *_args):
+        try:
+            if self.selector is not None:
+                self.selector.close()
+        finally:
+            if self.descriptor is not None:
+                descriptor, self.descriptor = self.descriptor, None
+                os.close(descriptor)  # Also frees the instance's inode watch.
+
+    def wait(self, deadline: float) -> None:
+        while time.monotonic() < deadline:
+            if not self.selector.select(max(0, deadline - time.monotonic())):
+                continue
+            try:
+                data = os.read(self.descriptor, 65536)
+            except BlockingIOError:
+                continue
+            # A file-only watch has fixed 16-byte events and no filename.
+            # Overflow, unmount, lost watches, and malformed events fail closed.
+            if not data or len(data) % 16:
+                raise SnapshotFailure("interrupted", "Native journal notifications are incomplete")
+            for offset in range(0, len(data), 16):
+                watch, mask, cookie, length = struct.unpack_from("=iIII", data, offset)
+                if watch != self.watch or not mask or mask & ~self.mask or cookie or length:
+                    raise SnapshotFailure("interrupted", "Native journal monitoring was lost")
+            return  # Coalesce one bounded batch into one validated recovery read.
+
+
+def watch_native_journal_operation(
+    journal: JournalDescriptorSet, original: JournalOperation,
+    write: Callable[[str], object], *, boot_id: str,
+) -> None:
+    """Observe durable native checkpoints, never the service or its target value."""
+    deadline = time.monotonic() + NATIVE_WATCH_SECONDS
+    identity = ("operation_id", "action_id", "started_at", "kind", "generation",
+                "transaction_path", "boot_id", "slot")
+    with NativeJournalEvents(journal) as events:
+        stream = OperationStream(original.operation_id, original.action_id,
+                                 original.started_at, original.detail, write)
+        while True:
+            # Also run after the deadline: Linux can notify close before freeing
+            # flock. A final fresh probe bounds recovery of that last-event race.
+            state, _evidence, failure = recover_journal_active(journal, None,
+                boot_id=boot_id, expected_operation=original)
+            if failure is not None:
+                raise failure
+            current = state.active
+            if current is None:
+                current = next((item for item in state.terminals
+                    if item is not None and item.operation_id == original.operation_id), None)
+            if current is None or any(getattr(current, key) != getattr(original, key) for key in identity):
+                raise JournalAdmissionError("native journal watch owner changed")
+            if current.state in JOURNAL_OPERATION_TERMINAL_STATES:
+                if current.state == "succeeded" and stream.state in {"pending", "authorizing"}:
+                    stream.transition("running", current.detail)
+                elif current.state == "permission-denied" and stream.state == "pending":
+                    stream.transition("authorizing", current.detail)
+                elif current.state == "canceled" and stream.state == "running":
+                    stream.transition("cancel-requested", current.detail)
+                stream.finish(current)
+                return
+            if current.state == "cancel-requested" and stream.state in {"pending", "authorizing"}:
+                stream.transition("running", current.detail)
+            if current.state != stream.state:
+                stream.transition(current.state, current.detail)
+            else:
+                stream.progress(current.detail)
+            if time.monotonic() >= deadline:
+                raise SnapshotFailure("timeout", "Native owner remains active; refresh and observe its result")
+            events.wait(deadline)
 
 
 def watch_journal_operation(
@@ -6586,6 +8621,14 @@ def watch_journal_operation(
     original = control_journal_target(journal, operation_id, boot_id)
     if original.state in JOURNAL_OPERATION_TERMINAL_STATES:
         replay_terminal_operation(original, write)
+        return
+    if original.kind not in {"update", "refresh"}:
+        # A native operation has no separate PackageKit-style transaction to
+        # attach to. watch_native_journal_operation()'s own recover_journal_active()
+        # call handles the no-live-owner case: an abandoned/stranded operation
+        # is terminalized as "interrupted" on its first recovery pass and that
+        # transition is streamed like any other, never rejected upfront.
+        watch_native_journal_operation(journal, original, write, boot_id=boot_id)
         return
     detail = "Observing recovered PackageKit operation; package comparison is unavailable"
     stream = OperationStream(original.operation_id, original.action_id, original.started_at, detail, write)
@@ -6700,6 +8743,61 @@ def operation_control(command: str, operation_id: str) -> int:
         return 3
 
 
+def native_command(action: str, argument: str = "", generation: str = "") -> int:
+    """Own an explicit CLI request for one fixed regional or delegated origin."""
+    admission_started = False
+    output_started = False
+    delegated = action in DELEGATED_ACTIONS
+    family = "administration" if delegated else "regional"
+
+    def admitted():
+        nonlocal admission_started
+        admission_started = True
+
+    def write(chunk):
+        nonlocal output_started
+        output_started = True  # A failed write may already have delivered bytes.
+        sys.stdout.write(chunk)
+        sys.stdout.flush()
+
+    try:
+        boot_id = read_boot_id()
+        with open_journal_directory() as chain:
+            initialize_journal_layout(chain.directory_descriptor, boot_id)
+            with retain_writable_journal(chain) as journal:
+                started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                try:
+                    terminal = (run_delegated_launch(journal, action, write, on_admission=admitted)
+                                if delegated else run_regional_mutation(journal, action, argument, generation,
+                                                                       write, on_admission=admitted))
+                    return 0 if terminal.state == "succeeded" else 1
+                except (SnapshotFailure, JournalFrameError, JournalRecordError,
+                        JournalAdmissionError, OSError, OperationProtocolError) as error:
+                    if admission_started or output_started:
+                        raise
+                    # This ID represents only the rejected request. No active,
+                    # terminal, or handoff payload is fabricated for it.
+                    with lock_writable_journal(journal):
+                        operation_id = generate_journal_operation_id(load_writable_journal_state(journal))
+                    if isinstance(error, SnapshotFailure):
+                        failure = error
+                    elif isinstance(error, (JournalAdmissionError, JournalLockError)):
+                        failure = SnapshotFailure("conflict", "Another operation or recovery state blocks this request; refresh state before retrying")
+                    elif isinstance(error, (JournalFrameError, JournalRecordError, OperationProtocolError)):
+                        failure = SnapshotFailure("malformed", family.capitalize() + " preflight is malformed; refresh state and inspect recovery guidance")
+                    else:
+                        failure = SnapshotFailure("internal", family.capitalize() + " preflight failed; check journal storage and refresh state before retrying")
+                    reject_unadmitted_operation(operation_id, action, started_at, failure, write)
+                    return 1
+    except (SnapshotFailure, JournalFrameError, JournalRecordError, JournalAdmissionError,
+            OSError, OperationProtocolError) as error:
+        if isinstance(error, BrokenPipeError):
+            with open(os.devnull, "w") as sink:
+                os.dup2(sink.fileno(), sys.stdout.fileno())
+        print(family + " result could not be confirmed; refresh state and observe the existing operation", file=sys.stderr)
+        return 1
+
+
 def update_command(action_id: str, generation: str | None = None) -> int:
     """Own an explicit CLI request; never replace a possibly admitted operation."""
     admission_started = False
@@ -6759,11 +8857,49 @@ def update_command(action_id: str, generation: str | None = None) -> int:
 
 
 def usage() -> int:
-    print(f"usage: {sys.argv[0]} snapshot | updates-refresh | updates-install-all GENERATION | watch-operation OPERATION_ID | ack-operation OPERATION_ID | updates-cancel OPERATION_ID", file=sys.stderr)
+    print(f"usage: {sys.argv[0]} snapshot | watch-updates | updates-refresh | "
+          "updates-install-all GENERATION | watch-operation OPERATION_ID | "
+          "ack-operation OPERATION_ID | updates-cancel OPERATION_ID | "
+          "regional-choices timezone|locale | regional-preview ACTION VALUE | "
+          "timezone-set ZONE GENERATION | ntp-set enabled|disabled GENERATION | "
+          "locale-set LANG=LOCALE GENERATION | accounts-open | password-open | "
+          "printers-open | sources-open | watch-regional time|locale | "
+          "watch-accounts | watch-units printers|security", file=sys.stderr)
     return 2
 
 
 def main(argv: Sequence[str]) -> int:
+    if argv and argv[0] == "watch-units":
+        return watch_service_events(argv[1]) if len(argv) == 2 and argv[1] in WATCH_UNIT_SETS else usage()
+    if argv and argv[0] == "watch-accounts":
+        return watch_account_events() if len(argv) == 1 else usage()
+    if argv and argv[0] == "watch-regional":
+        return watch_regional_events(argv[1]) if len(argv) == 2 and argv[1] in ("time", "locale") else usage()
+    if argv and argv[0] in {"timezone-set", "ntp-set", "locale-set"}:
+        if len(argv) != 3 or JOURNAL_GENERATION_PATTERN.fullmatch(argv[2]) is None:
+            return usage()
+        try:
+            validate_regional_argument(argv[0], argv[1])
+        except SnapshotFailure:
+            return usage()
+        return native_command(*argv)
+    if argv and argv[0] in DELEGATED_ACTIONS:
+        return native_command(argv[0]) if len(argv) == 1 else usage()
+    if argv and argv[0] in {"regional-choices", "regional-preview"}:
+        try:
+            output, code = regional_preflight_output(argv[0], argv[1:])
+        except ValueError:
+            return usage()
+        try:
+            sys.stdout.write(output)
+            sys.stdout.flush()
+        except BrokenPipeError:
+            # Prevent the shutdown flush from replacing the controlled status
+            # or emitting an unraisable-exception diagnostic for a closed pane.
+            with open(os.devnull, "w") as sink:
+                os.dup2(sink.fileno(), sys.stdout.fileno())
+            return 1
+        return code
     if list(argv) == ["watch-updates"]:
         return watch_update_events()
     if list(argv) == ["updates-refresh"]:
@@ -6803,7 +8939,7 @@ def main(argv: Sequence[str]) -> int:
                 raise self.failure
 
         backend = FailedBackend(failure)
-    lines = build_managed_snapshot(backend)
+    lines = build_managed_snapshot(backend, native_sources=NativeSnapshotSources())
     print("\n".join(lines))
     return 0
 

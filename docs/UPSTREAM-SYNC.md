@@ -363,9 +363,9 @@ first**.
 | 4 | [`SYNC-P4-DISCOVERY-EVENTS.md`](SYNC-P4-DISCOVERY-EVENTS.md) | `#237`, `#238`, `#260` | 3 | ✅ Done |
 | 5 | [`SYNC-P5-OPERATION-JOURNAL.md`](SYNC-P5-OPERATION-JOURNAL.md) | `#211`–`#225` | 2, [the decision point below](#the-decision-point-after-phase-4) | ✅ Done — landed in `b164494` (merged 2026-09-14); tracking entries backfilled 2026-09-15, see [the note below](#phase-5s-tracking-entries-were-backfilled-and-phase-6-found-a-qml-gap) |
 | 6 | [`SYNC-P6-UPDATE-EXECUTION.md`](SYNC-P6-UPDATE-EXECUTION.md) | `#226`–`#234`, `#231` | 5 | ✅ Done — merged `ee2611a` (PR #29, 2026-09-15); see `TASKS.md`, `CHANGELOG.md` |
-| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | ✅ Done — 2026-09-15, on `sync-p7-operation-surface`; `#262` deferred to Phase 9 (see the doc's §3 note); see `TASKS.md`, `CHANGELOG.md` |
-| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 | ✅ Done — 2026-09-15, on `sync-p8-regional-readers`; backend readers only, no snapshot/QML wiring (see the doc's §5/§6 notes and the note below); see `TASKS.md`, `CHANGELOG.md` |
-| 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) | Not started |
+| 7 | [`SYNC-P7-OPERATION-SURFACE.md`](SYNC-P7-OPERATION-SURFACE.md) | `#235`, `#236`, `#239`–`#241`, `#262` | 6, [`P6-UPDATE-SURFACE.md`](P6-UPDATE-SURFACE.md)'s pane layout | ✅ Done — 2026-09-15, merged `44b0a39` (PR #30); `#262` deferred to Phase 9 (see the doc's §3 note); `#241`'s Python-side mutation-availability wiring was missed and fixed separately on `sync-p7-mutation-fix-v2` (found while starting Phase 8, see the note below); see `TASKS.md`, `CHANGELOG.md` |
+| 8 | [`SYNC-P8-REGIONAL-READERS.md`](SYNC-P8-REGIONAL-READERS.md) | `#242`–`#246`, `#248` | 4 | ✅ Done — 2026-09-15, merged `8d9ad51` (PR #31); backend readers only, no snapshot/QML wiring (see the doc's §5/§6 notes and the note below); see `TASKS.md`, `CHANGELOG.md` |
+| 9 | [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md) | `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264` | 5, 8, [**D-3**](#open-decisions) | ✅ Backend + QML done, uncommitted on `sync-p7-mutation-fix-v2` pending review (2026-09-16); Settings UI wiring out of scope (see the note below); see `TASKS.md`, `CHANGELOG.md` |
 
 ### Phase 5's tracking entries were backfilled, and Phase 6 found a QML gap
 
@@ -423,6 +423,35 @@ stub cannot exercise a live confirm → dispatch → watch → cancel → ack cy
 unavailable). Both are open automated-coverage gaps — see
 `SYNC-P7-OPERATION-SURFACE.md`'s Verification section.
 
+### Phase 7's Python side was missed entirely, found while starting Phase 8
+
+Establishing Sync Phase 8's diff baseline (2026-09-15) required diffing
+Lyona's current `scripts/dwm-system-management` directly against upstream's
+Phase-8-end state, rather than reusing a prior phase's boundary SHA as
+"before" — **sync-phase numbering is Lyona's own dependency ordering, not
+upstream's chronological commit order**, so two arbitrary full-file
+snapshots can (and did) pull in unrelated interleaved history. That direct
+diff surfaced `mutation_blocker`/`mutation_failure` threading through
+`build_snapshot()`/`build_managed_snapshot()` as still missing from Lyona's
+file. Tracing it back: it is `#241`'s own Python diff — `#241` is cited in
+*Sync Phase 7's* upstream PR list, but the original Phase 7 work fetched and
+diffed only the QML boundary (`aa326d59` → `65138a89`) and never fetched
+`#241`'s Python side at all.
+
+Effect: `build_snapshot()` unconditionally emitted `updates-refresh`/
+`updates-install-all` as `unavailable` regardless of recovery/security state,
+so every confirm/cancel control Sync Phase 7 shipped was **permanently
+disabled against a real backend** from the moment it merged (`44b0a39`,
+PR #30) until this was found and fixed on `sync-p7-mutation-fix-v2`
+— see `TASKS.md`'s "Sync Phase 7 follow-up" entry and
+`SYNC-P7-OPERATION-SURFACE.md`'s "Files" table note for the full record.
+
+**Lesson for the remaining phases**: when a phase's doc cites multiple
+upstream PRs, fetch and diff *every one of them* against Lyona's current
+file before considering the phase's backend scope complete — a single QML-
+only or Python-only fetch for a multi-PR phase can silently drop half of one
+PR's contribution, as it did here.
+
 ### Phase 8 is backend readers only — its own doc oversold the scope
 
 Implementing Sync Phase 8 on `sync-p8-regional-readers` (2026-09-15) first
@@ -433,11 +462,7 @@ already-ported Phase 4 code (`UpdateEventMonitor`) as new. Diffing Lyona's
 current file directly against upstream's actual Phase-8-end state
 (`9d05092a`, the last of the six cited PRs) instead of a stale prior-phase
 boundary avoided that; the file-history investigation this took is what
-surfaced Sync Phase 7's own missed Python half (`#241`'s `build_snapshot()`/
-`build_managed_snapshot()` mutation-availability wiring, never ported
-alongside that phase's QML work) — fixed on the separate
-`sync-p7-mutation-availability-fix` branch, not this one; see `TASKS.md`'s
-"Sync Phase 7 follow-up" entry there for the full record.
+surfaced Sync Phase 7's own missed Python half, documented just above.
 
 Once that was sorted out, tracing what upstream's six Phase 8 PRs
 (`#242`–`#246`, `#248`) actually touch — none of them modify
@@ -462,9 +487,62 @@ covering both the timezone/NTP and locale reads, for five reads total) and
 their validation/decode helpers, ported verbatim (all four are
 distro-neutral D-Bus clients against standard interfaces — nothing Fedora-
 or Arch-specific to adapt), plus all six
-upstream test classes (89 new tests, 314 → 403, including five private-bus/
+upstream test classes (89 new tests, 321 → 410 combined with the Sync
+Phase 7 fix above (314 → 410 overall), including five private-bus/
 private-process qualification harnesses under `tests/fixtures/`) — see
 `TASKS.md`'s Sync Phase 8 entry.
+
+### Phase 9 was ported in three checkpoints, and its own methodology found more bugs
+
+Sync Phase 9's scope (the last of the nine) is dramatically larger than any
+prior phase — `RegionalMutation`'s confirmed-mutation lifecycle, delegated
+tool launching, a native-operation journal-owner lease with its own
+inotify-based watch, a four-domain live-watch monitor family, and the QML
+preflight parser/model — so, asked directly, the user chose to split it into
+three checkpoints (backend wiring; `RegionalMutation`/delegated
+launch/native watch/CLI dispatch; QML) with a full test-suite verification
+between each, rather than one continuous push.
+
+The same "diff Lyona's current file directly against upstream's actual
+end-state, never a prior phase's boundary SHA" discipline [Phase 8 already
+established](#phase-8-is-backend-readers-only--its-own-doc-oversold-the-scope)
+caught real bugs this time in Lyona's **own** Phase 9 work, not just upstream
+drift — porting Checkpoint 2's test coverage surfaced six of them (see
+`TASKS.md`'s Sync Phase 9 entry for the full list): a `validate_locale_catalog()`
+call with no matching definition; `UpdateEventMonitor.changed()` hardcoding
+`"update-event"` instead of a `record_prefix`, so every new monitor subclass
+silently mis-labeled its own events; a missing `control_output_writer()`,
+whose absence let the event-monitor output path mutate a *shared* inherited
+pipe's blocking mode; a fabricated `read_recovery_snapshot()` check with no
+upstream equivalent that failed every snapshot read while any regional/
+delegated operation was active; an upfront `watch_journal_operation()`
+rejection that was *stricter* than upstream's actual (correct) behavior of
+recovering an abandoned native operation through the normal path; and a
+`watch-units security` CLI restriction that read too much into the doc's own
+QML-scoped exclusion. All confirmed against upstream's real `0eae066d`
+source or its real private-bus fixtures before being changed — none were
+guessed. A `tests/fixtures/system-regional-owner-bus.py` fixture also
+carried upstream's own `dwm-titus` XDG path literally instead of Lyona's
+renamed `lyona` one.
+
+**D-3** (`accounts-open`/`sources-open` Arch targets) was decided the same
+way, asked of the user directly rather than picked unilaterally: both ship
+permanent `unsupported`.
+
+Two things this phase's own cited PRs (`#247`, `#249`, `#252`–`#254`,
+`#256`–`#258`, `#263`, `#264`) do **not** touch, confirmed by diffing each
+one, are left for later: `SystemSettingsPane.qml`'s timezone/locale/NTP/
+delegated-launch rows, and `shell.qml`'s `systemManagementRegionalPreview()`/
+`systemManagementRegionalConfirm()`/`systemManagementDelegatedLaunch()`
+probes (the doc's §5 describes the intended shape; Sync Phase 8 already left
+the QML probe snippet in place for this). Also deferred, matching [Phase 7's
+own precedent for `SystemOperationParser.qml`](SYNC-P7-OPERATION-SURFACE.md):
+upstream's `SystemRegionalPreflightOwner.qml`/`SystemNativeDiscovery.qml`
+live-process integration tests, which need a private-bus provider stub
+comparable in complexity to `tests/test-system-management.py`'s own
+fixtures. The pure parser itself has full coverage, translated into this
+repo's `QtTest`/`TestCase` convention rather than upstream's bespoke
+`ShellRoot` harness.
 
 ### The decision point after Phase 4
 
@@ -501,7 +579,7 @@ documents; all of them block **implementation**.
 | ID | Question | Where it matters | Status |
 | --- | --- | --- | --- |
 | — | **The core decision**: adopt upstream's Python helper largely as-is (Option A), rewrite it in POSIX shell (Option B), or stop at a read-only shell-only subset (Option C)? | Every phase from [2](SYNC-P2-UPDATE-SNAPSHOT.md) onward changes shape depending on the answer | **Decided: Option A**, 2026-09-08 — recorded in [Phase 1](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#recommendation)'s own `Decision:` line and `TASKS.md`'s Sync Phase 1 checklist, not here, because it was a single project-owner call, not a per-item checklist. Confirmed in shipped code as of Phase 5: `scripts/dwm-system-management` keeps `transaction_path`/`JOURNAL_PACKAGEKIT_PATH_PATTERN` unchanged (the Option-A path from [Phase 5](SYNC-P5-OPERATION-JOURNAL.md#the-one-coupling-to-break), not the `transaction_ref` rename Option C would have needed), and no `PacmanBackend` class exists. |
-| **D-3** | Arch delegated-tool targets for `accounts-open` and `sources-open` — neither `lxqt-admin-user` nor `dnfdragora` exists in Arch's official repositories; `system-config-printer` (`printers-open`) does. | [Phase 9 §3](SYNC-P9-REGIONAL-MUTATION.md#open-decision-d-3-arch-targets-for-accounts-open-and-sources-open) | **Open.** Candidates: ship `unavailable` with an honest detail string, or an AUR-packaged equivalent behind `arch:system-management-optional` (the `xkbset` precedent). Phase 9's document is written either way; this decision must be settled before its delegated-launch buttons are implemented. |
+| **D-3** | Arch delegated-tool targets for `accounts-open` and `sources-open` — neither `lxqt-admin-user` nor `dnfdragora` exists in Arch's official repositories; `system-config-printer` (`printers-open`) does. | [Phase 9 §3](SYNC-P9-REGIONAL-MUTATION.md#open-decision-d-3-arch-targets-for-accounts-open-and-sources-open) | **Decided (2026-09-15), asked of the user directly**: both ship permanent `unsupported` (via `SnapshotFailure("unsupported", ..., "unsupported")`, not a missing-tool `unavailable` — the absence is a fixed Arch-packaging fact, not a transient read failure). `accounts-open` — no default tool. `sources-open` — points at `/etc/pacman.conf` and `docs/src/settings.md`'s existing guidance, rather than inventing a new privileged repo-editing surface. `printers-open` (`system-config-printer`, confirmed in Arch `extra`) is the only delegated-tool action with a real fixed executable; `password-open` resolves dynamically via `dwm-terminal --print-command`, unaffected by this decision. Implemented and test-covered in Sync Phase 9 Checkpoint 1/2 (`DelegatedToolTests`). |
 | **D-4** | Does `pacman -Sup --print-format ... --dbpath "$CHECKUPDATES_DB"` genuinely stay read-only (no root, no live pacman lock) on a real CachyOS install? | [Phase 2, "If Option C was chosen"](SYNC-P2-UPDATE-SNAPSHOT.md) (§6) | **Open — unverified against a live system.** If it does not, the fallback (a polkit-mediated read-only helper) changes the privilege model for the whole update-read half and must be settled before Phase 2 is implemented, not discovered mid-implementation. |
 
 ### Verification
@@ -518,7 +596,7 @@ Each phase's own document has its exact commands; the summary:
 | 6 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py` |
 | 7 | `make check-quickshell-system-management`, `make check-quickshell-qml` |
 | 8 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management` |
-| 9 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management` |
+| 9 | `scripts/run-tests /usr/bin/python3 tests/test-system-management.py`, `make check-quickshell-system-management`, `QT_QPA_PLATFORM=offscreen qmltestrunner -input tests/qml` |
 
 `check-system-management` (the Python gate registered in
 [Phase 1 §6](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#6-makefile-registration)) is
