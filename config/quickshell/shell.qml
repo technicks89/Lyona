@@ -992,8 +992,34 @@ ShellRoot {
             systemManagementModel.discardRegional();
         }
 
+        // Sync Sprint 1 S1-04 (#266): delegated actions now go through a
+        // visible confirmation step (prepareDelegate()/confirmDelegate()/
+        // discardDelegate()), the same as regional mutations already do.
+        // Kept as one convenience probe (prepare then confirm) for existing
+        // test call sites that only care about the end-to-end outcome; the
+        // individual steps below exist to test the confirmation step itself.
         function systemManagementDelegatedLaunch(action: string): bool {
-            return systemManagementModel.launchDelegated(action);
+            return systemManagementModel.prepareDelegate(action) && systemManagementModel.confirmDelegate();
+        }
+
+        function systemManagementNativeConfirmationPending(): bool {
+            return systemManagementModel.nativeConfirmation !== null;
+        }
+
+        function systemManagementPrepareDelegate(action: string): bool {
+            return systemManagementModel.prepareDelegate(action);
+        }
+
+        function systemManagementConfirmDelegate(): bool {
+            return systemManagementModel.confirmDelegate();
+        }
+
+        function systemManagementDiscardDelegate(): void {
+            systemManagementModel.discardDelegate();
+        }
+
+        function systemManagementNativeConfirmationMessage(): string {
+            return systemManagementModel.nativeConfirmationMessage;
         }
 
         // Sync Sprint 1 S1-03 (#261): one discovery model per native domain,

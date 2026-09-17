@@ -158,8 +158,9 @@ Scope {
     // action, so a new action can't accidentally skip a check the others
     // already had. startRegional()/startDelegated() stay as thin wrappers
     // over the unified startNative() -- callers (SystemManagementModel's
-    // confirmRegional()/launchDelegated()) are converged onto startNative()
-    // directly in Sync Sprint 1 S1-05, at which point these two are removed.
+    // confirmRegional() and, since Sync Sprint 1 S1-04, confirmDelegate())
+    // are converged onto startNative() directly in Sync Sprint 1 S1-05, at
+    // which point these two thin wrappers are removed.
     function startNative(action, value, generation) {
         if (["timezone-set", "ntp-set", "locale-set", "accounts-open", "password-open",
                 "printers-open", "sources-open"].indexOf(action) < 0) return false;

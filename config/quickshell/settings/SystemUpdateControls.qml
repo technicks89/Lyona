@@ -18,6 +18,14 @@ ColumnLayout {
     signal revealRequested(var target)
 
     readonly property var confirmation: root.model.updateConfirmation
+    // Sync Sprint 1 S1-04 (#267): operationModel is shared across update,
+    // regional and delegated dispatch now -- the cancel control below only
+    // ever applied to update/refresh anyway (SystemOperationModel's own
+    // cancel_journal_operation() restricts to that family), but a regional
+    // or delegated operation's progress previously still lit up "PackageKit
+    // owns the active operation" here, which is only true for updates.
+    readonly property bool updateOperation: model.operation.progress !== null
+        && (model.operation.progress.kind === "update" || model.operation.progress.kind === "refresh")
 
     Layout.fillWidth: true
     spacing: Theme.spacingMd
@@ -197,21 +205,22 @@ ColumnLayout {
     }
 
     PlainText {
+        objectName: "operationOwnerNote"
         visible: root.model.operation.busy
-        text: "PackageKit owns the active operation. Keep watching here or close Settings and return later."
+        text: "The active system operation remains owned. Keep watching here or close Settings and return later."
         color: Theme.menuMutedText
     }
 
     ActionButton {
         objectName: "cancelUpdate"
-        visible: root.model.operation.streamOwned
+        visible: root.model.operation.streamOwned && root.updateOperation
         label: "Request cancellation"
         enabled: root.model.operation.canCancel
         onActivated: root.model.operation.requestCancel()
     }
 
     PlainText {
-        visible: root.model.operation.streamOwned && !root.model.operation.canCancel
+        visible: root.model.operation.streamOwned && root.updateOperation && !root.model.operation.canCancel
             && root.model.operation.cancelDetail.length === 0
         text: "Cancellation is not currently safe or available. Wait for PackageKit's verified result."
         color: Theme.menuMutedText

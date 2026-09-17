@@ -21,6 +21,12 @@ Flickable {
     clip: true
 
     onVisibleChanged: if (!visible) root.confirmVersion = "";
+    // #267: layout publication (a card appearing/disappearing above the
+    // confirmation, or the window resizing) can move a focused delegate
+    // control after it first received focus -- follow geometry changes
+    // rather than polling or leaving focus off-screen.
+    onHeightChanged: Qt.callLater(delegateControls.revealFocusedControl)
+    onContentHeightChanged: Qt.callLater(delegateControls.revealFocusedControl)
 
     // Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
     // moves keyboard/tab focus onto its own buttons and scroll lists, which
@@ -287,9 +293,19 @@ Flickable {
             onRevealRequested: target => root.reveal(target)
         }
 
-        SectionLabel { label: "Regional & administration" }
+        SectionLabel { label: "Regional" }
 
         SystemRegionalControls {
+            model: root.systemManagementModel
+            onRevealRequested: target => root.reveal(target)
+        }
+
+        // Sync Sprint 1 S1-04 (#267): moved out of SystemRegionalControls
+        // into its own component, now that delegated launches get a visible
+        // confirmation step instead of dispatching immediately -- it
+        // supplies its own SectionLabel.
+        SystemDelegateControls {
+            id: delegateControls
             model: root.systemManagementModel
             onRevealRequested: target => root.reveal(target)
         }
@@ -442,8 +458,9 @@ Flickable {
         UiText {
             Layout.fillWidth: true
             text: "Reload status reads PackageKit and recovery state. Metadata refresh and "
-                + "update installation require visible confirmation above. PackageKit owns "
-                + "authorization and safe cancellation."
+                + "update installation require visible confirmation above. Delegated launches "
+                + "also require confirmation; those tools own their internal changes. PackageKit "
+                + "owns update authorization and safe cancellation."
             color: Theme.menuMutedText
             wrapMode: Text.WordWrap
         }

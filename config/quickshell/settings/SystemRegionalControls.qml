@@ -8,12 +8,12 @@ pragma ComponentBehavior: Bound
 
 /*
  * Sync Phase 9 follow-up (docs/SYNC-P9-REGIONAL-MUTATION.md §5.3): the
- * visible timezone/locale/NTP/delegated-administration surface for
- * SystemManagementModel's regional actions. Mirrors SystemUpdateControls.qml's
- * shape exactly -- confirmation itself is owned by the model
- * (prepareRegional()/confirmRegional()/discardRegional()/launchDelegated()),
- * this component only renders `regionalPreview` and forwards user intent, so
- * a captured plan is never re-derived or re-validated in two places.
+ * visible timezone/locale/NTP surface for SystemManagementModel's regional
+ * actions. Mirrors SystemUpdateControls.qml's shape exactly -- confirmation
+ * itself is owned by the model (prepareRegional()/confirmRegional()/
+ * discardRegional()), this component only renders `regionalPreview` and
+ * forwards user intent, so a captured plan is never re-derived or
+ * re-validated in two places.
  *
  * Two private SystemRegionalPreflightModel instances read the timezone/
  * locale choice catalogs (one per picker); SystemManagementModel owns a
@@ -22,6 +22,13 @@ pragma ComponentBehavior: Bound
  * time; a new request cancels whatever is in flight" -- three independent
  * concerns (two pickers plus one preview) need three independent instances,
  * not one juggling all of them.
+ *
+ * Sync Sprint 1 S1-04 (#267): the delegated-administration section
+ * (accounts/password/printers/software-sources launch buttons) that used to
+ * live here moved to its own SystemDelegateControls.qml, now that delegated
+ * launches get a visible confirmation step instead of dispatching
+ * immediately -- the same split SystemUpdateControls.qml/SystemRegionalControls.qml
+ * already have between the update and regional confirmation surfaces.
  */
 ColumnLayout {
     id: root
@@ -252,57 +259,4 @@ ColumnLayout {
         }
     }
 
-    SectionLabel { label: "Administration" }
-
-    UiText {
-        Layout.fillWidth: true
-        text: "Each tool below is launched directly; its own authorization and any changes it makes are not tracked here."
-        color: Theme.menuMutedText
-        wrapMode: Text.WordWrap
-    }
-
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: Theme.spacingSm
-
-        ActionButton {
-            objectName: "launchAccounts"
-            label: "Accounts..."
-            enabled: root.model.nativeActionReason("accounts-open") === ""
-            onActivated: root.model.launchDelegated("accounts-open")
-        }
-
-        ActionButton {
-            objectName: "launchPassword"
-            label: "Password..."
-            enabled: root.model.nativeActionReason("password-open") === ""
-            onActivated: root.model.launchDelegated("password-open")
-        }
-
-        ActionButton {
-            objectName: "launchPrinters"
-            label: "Printers..."
-            enabled: root.model.nativeActionReason("printers-open") === ""
-            onActivated: root.model.launchDelegated("printers-open")
-        }
-
-        ActionButton {
-            objectName: "launchSources"
-            label: "Software sources..."
-            enabled: root.model.nativeActionReason("sources-open") === ""
-            onActivated: root.model.launchDelegated("sources-open")
-        }
-    }
-
-    Repeater {
-        model: ["accounts-open", "password-open", "printers-open", "sources-open"]
-        delegate: PlainText {
-            id: delegatedReason
-            required property string modelData
-            readonly property string reason: root.model.nativeActionReason(modelData)
-            visible: delegatedReason.reason.length > 0
-            text: delegatedReason.reason
-            color: Theme.menuMutedText
-        }
-    }
 }

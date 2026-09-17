@@ -477,6 +477,81 @@ if [ "$operation_result" != 'timezone-set:succeeded' ]; then
 	exit 1
 fi
 
+test_stage='validating the delegated confirmation step itself (#266): prepare then discard'
+# Sync Sprint 1 S1-04 (#266): delegated actions no longer dispatch on the
+# first click -- prepareDelegate() must show a pending confirmation that
+# discardDelegate() can retire without ever starting an operation. Retry
+# preparation to ride out any transient busy-ness left over from the
+# earlier regional dispatch (operationModel is shared state).
+prepared=false
+i=0
+while [ "$i" -lt 100 ]; do
+	if [ "$(ipc settings systemManagementPrepareDelegate printers-open)" = true ]; then
+		prepared=true
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$prepared" != true ]; then
+	printf 'systemManagementPrepareDelegate(printers-open) never became preparable\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementNativeConfirmationPending)" != true ]; then
+	printf 'prepareDelegate(printers-open) did not leave a pending confirmation\n' >&2
+	exit 1
+fi
+ipc settings systemManagementDiscardDelegate >/dev/null
+if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+	printf 'discardDelegate() did not clear the pending confirmation\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementOperationResult)" = 'printers-open:succeeded' ]; then
+	printf 'discardDelegate() dispatched an operation instead of discarding it\n' >&2
+	exit 1
+fi
+
+test_stage='validating the delegated confirmation step itself: prepare then confirm'
+prepared=false
+i=0
+while [ "$i" -lt 100 ]; do
+	if [ "$(ipc settings systemManagementPrepareDelegate printers-open)" = true ]; then
+		prepared=true
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$prepared" != true ]; then
+	printf 'systemManagementPrepareDelegate(printers-open) never became preparable (second attempt)\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementConfirmDelegate)" != true ]; then
+	printf 'systemManagementConfirmDelegate() did not dispatch a prepared confirmation\n' >&2
+	exit 1
+fi
+
+test_stage='validating that accounts-open is D-3 unsupported, not merely busy'
+# accounts-open must never reach a pending confirmation at all -- D-3 keeps
+# it permanently unsupported, so prepareDelegate() itself must refuse it and
+# report the helper's own reason text, matching delegated_command()'s exact
+# "No account-management tool is packaged for Arch" message.
+if [ "$(ipc settings systemManagementPrepareDelegate accounts-open)" != false ]; then
+	printf 'systemManagementPrepareDelegate(accounts-open) prepared despite D-3\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+	printf 'prepareDelegate(accounts-open) left a pending confirmation despite being refused\n' >&2
+	exit 1
+fi
+case $(ipc settings systemManagementNativeConfirmationMessage) in
+*"No account-management tool is packaged for Arch"*) ;;
+*)
+	printf 'prepareDelegate(accounts-open) did not surface the D-3 reason text\n' >&2
+	exit 1
+	;;
+esac
+
 test_stage='validating delegated-launch availability matches D-3'
 # printers-open is available against the stub; accounts-open is
 # permanently unsupported (D-3) regardless of timing -- retry printers-open

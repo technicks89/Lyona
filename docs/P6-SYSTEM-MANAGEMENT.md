@@ -364,17 +364,18 @@ contracts this port reuses rather than duplicates.
 
 ## Open decisions
 
-Two decisions from [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions)
-directly constrain this document and are **not** resolved by writing it:
+Two decisions from [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions):
 
 - **D-3** — Arch delegated-tool targets for `accounts-open` and
   `sources-open`. Neither `lxqt-admin-user` nor `dnfdragora` exists in
   Arch's official repositories; `system-config-printer` (`printers-open`)
-  does and needs no substitute. Must be settled before
-  [`SYNC-P9`](SYNC-P9-REGIONAL-MUTATION.md) is implemented.
+  does and needs no substitute. **Decided (2026-09-15):** both ship
+  permanent `unsupported` (`delegated_command()` in
+  `scripts/dwm-system-management`); the Settings UI implementing this —
+  `SystemDelegateControls.qml`'s confirmed launch surface — is
+  [Sync Sprint 1 S1-04](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-04-confirmed-delegated-administration).
 - **D-4** — whether a read-only `pacman -Sup --dbpath`-style query genuinely
-  stays lock-free/root-free on a live CachyOS install, relevant to
-  [`SYNC-P2`](SYNC-P2-UPDATE-SNAPSHOT.md)'s read path if Option C's
-  fallback were ever revisited. Not relevant to Option A's PackageKit path
-  directly, recorded here only because it was raised alongside this
-  decision.
+  stays lock-free/root-free on a live CachyOS install. Not relevant to the
+  shipped PackageKit read path directly; recorded here only because it was
+  raised alongside this decision. **Still open** — see
+  [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions).

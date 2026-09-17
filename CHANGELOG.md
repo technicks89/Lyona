@@ -16,6 +16,22 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   make check` (or one named target) as an unprivileged user in an
   `archlinux:base-devel` container, uploads the log, and optionally builds
   dwm with clang. Push and pull-request CI is unchanged.
+- Add confirmed delegated administration (Sync Sprint 1 S1-04,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream `#266`/`#267`):
+  the Accounts/Password/Printers/Software-sources launch buttons in
+  Settings → System now show a visible "Open *tool*?" confirmation card
+  before launching, the same as regional (timezone/NTP/locale) changes
+  already do, instead of dispatching on the first click.
+  `SystemManagementModel.qml` gains `nativeConfirmation`/
+  `prepareDelegate()`/`confirmDelegate()`/`discardDelegate()`/
+  `delegateActionReason()`, replacing `launchDelegated()`, which dispatched
+  immediately with no confirmation step. A live account or printer change
+  retires an in-progress confirmation prepared against stale data. The new
+  `config/quickshell/settings/SystemDelegateControls.qml` also lists the
+  accounts and software sources the system currently reports, read-only.
+  D-3 (`accounts-open`/`sources-open` permanently `unsupported` on Arch, no
+  `lxqt-admin-user`/`dnfdragora` equivalent) is unchanged; their launch
+  buttons stay disabled and now show the helper's own reason text.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened
