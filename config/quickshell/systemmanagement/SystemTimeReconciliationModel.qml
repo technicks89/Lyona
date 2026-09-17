@@ -94,8 +94,8 @@ Scope {
         // With readable time state, both actions share the same admission
         // blocker. Only NTP adds a capability check. Do not infer capability
         // absence when the shared blocker also disables the timezone action.
-        const canNtp = ntpOffer && ntpOffer.availability === "available" ? true
-            : zoneOffer && zoneOffer.availability === "available" ? false : null;
+        const canNtp = ntpOffer && ntpOffer.status === "available" ? true
+            : zoneOffer && zoneOffer.status === "available" ? false : null;
         expected = zone && enabled && zone.status === "available" && enabled.status === "available"
             ? { timezone: zone.value, ntpEnabled: enabled.value === "yes", canNtp: canNtp } : null;
         Cycle.begin(cycle);
