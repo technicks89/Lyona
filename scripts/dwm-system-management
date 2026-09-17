@@ -21,9 +21,11 @@ import errno
 import fcntl
 import hashlib
 import io
+import json
 import os
 import re
 import selectors
+import shlex
 import shutil
 import signal
 import socket
@@ -42,6 +44,16 @@ PROTOCOL_MAJOR = 1
 PROTOCOL_MINOR = 0
 SNAPSHOT_MINOR = 1
 MAX_TEXT_BYTES = 512
+INFORMATION_UINT_MAX = (1 << 64) - 1
+INFORMATION_MEMORY_KEYS = {
+    "MemTotal": "memory-total-bytes", "MemAvailable": "memory-available-bytes",
+    "SwapTotal": "swap-total-bytes", "SwapFree": "swap-free-bytes",
+}
+HARDWARE_INFORMATION_FIELDS = {
+    "HardwareVendor": "hardware-vendor", "HardwareModel": "hardware-model",
+}
+FILESYSTEM_OUTPUT_BYTES = 2 * 1024 * 1024
+FILESYSTEM_RECORDS = 256
 MAX_LIST_RECORDS = 4096
 MAX_LIST_BYTES = 3 * 1024 * 1024
 READ_DEADLINE_SECONDS = 120
@@ -302,6 +314,259 @@ class SnapshotFailure(Exception):
         self.code = code
         self.detail = clean_text(detail)
         self.status = status
+
+
+@dataclass(frozen=True)
+class InformationState:
+    """One independently readable information value, not yet a protocol row."""
+
+    status: str
+    value: str
+    detail: str
+    error_code: str = ""
+
+
+def information_unknown(error: Exception) -> InformationState:
+    """Normalize source failures without exposing source contents or exception text."""
+    if isinstance(error, SnapshotFailure):
+        return InformationState(error.status, "unknown", error.detail, error.code)
+    if isinstance(error, OSError):
+        if error.errno in (errno.EACCES, errno.EPERM):
+            return InformationState("restricted", "unknown", "Information source access denied", "permission-denied")
+        if error.errno in (errno.ENOENT, errno.ENOTDIR):
+            return InformationState("unsupported", "unknown", "Information source is absent", "missing-provider")
+        return InformationState("unavailable", "unknown", "Information source could not be read", "internal")
+    return InformationState("partial", "unknown", "Information source is malformed", "malformed")
+
+
+def information_text(value: object, detail: str) -> InformationState:
+    """Validate bounded printable display text without truncating a malformed field."""
+    if not isinstance(value, str) or not value.strip():
+        raise SnapshotFailure("malformed", "Information text is missing or invalid")
+    if len(value) > MAX_TEXT_BYTES or not value.isprintable() or len(value.encode("utf-8")) > MAX_TEXT_BYTES:
+        raise SnapshotFailure("malformed", "Information text is oversized or undisplayable")
+    return InformationState("available", value, detail)
+
+
+def information_number(value: object, detail: str) -> InformationState:
+    """Keep counters exact as canonical unsigned 64-bit decimal text."""
+    if type(value) is not int or not 0 <= value <= INFORMATION_UINT_MAX:
+        raise SnapshotFailure("malformed", "Information counter is invalid or overflowing")
+    return InformationState("available", str(value), detail)
+
+
+def information_fields(data: bytes, keys: Mapping[str, str], separator: str,
+                       decode: Callable[[str, str], InformationState]) -> dict[str, InformationState]:
+    """Isolate duplicate, missing, and malformed allowlisted fields from their peers."""
+    result = {}
+    seen = set()
+    encoded_keys = {key.encode("ascii"): key for key in keys}
+    for line in data.splitlines():
+        raw_key, found, value = line.partition(separator.encode("ascii"))
+        key = encoded_keys.get(raw_key)
+        if key is None:
+            continue
+        identifier = keys[key]
+        try:
+            if not found or key in seen:
+                raise SnapshotFailure("malformed", "Duplicate or malformed information field")
+            result[identifier] = decode(key, value.decode("utf-8"))
+        except (SnapshotFailure, UnicodeError, ValueError) as error:
+            result[identifier] = information_unknown(error)
+        seen.add(key)
+    for identifier in keys.values():
+        if identifier not in result:
+            result[identifier] = InformationState("partial", "unknown", "Information field was not reported", "missing-provider")
+    return result
+
+
+def parse_os_information(data: bytes) -> dict[str, InformationState]:
+    """Read only the display keys; shell-like quoting never executes anything.
+
+    Sync Sprint 2 S2-01 (#277): upstream maps only PRETTY_NAME -> os-name and
+    VERSION_ID -> os-version, which renders "unknown" on Arch/CachyOS -- both
+    are rolling releases with no VERSION_ID. Read BUILD_ID too (Arch's
+    os-release sets it to "rolling") and fall back to it only when
+    VERSION_ID itself was not reported, never overriding a real value.
+    """
+    def decode(key, value):
+        fields = shlex.split(key + "=" + value, comments=False)
+        if len(fields) != 1 or not fields[0].startswith(key + "="):
+            raise SnapshotFailure("malformed", "Malformed OS information field")
+        return information_text(fields[0][len(key) + 1:], "Operating system identity")
+
+    fields = information_fields(data, {"PRETTY_NAME": "os-name", "VERSION_ID": "os-version",
+                                       "BUILD_ID": "os-build"}, "=", decode)
+    if fields["os-version"].status != "available" and fields["os-build"].status == "available":
+        fields["os-version"] = fields["os-build"]
+    del fields["os-build"]
+    return fields
+
+
+def parse_memory_information(data: bytes) -> dict[str, InformationState]:
+    """Accept only decimal kernel kB values and check the exact 1024-byte conversion."""
+    def decode(_key, value):
+        match = re.fullmatch(r"[ \t]*([0-9]{1,20})[ \t]+kB[ \t]*", value)
+        if match is None:
+            raise SnapshotFailure("malformed", "Malformed memory information field")
+        return information_number(int(match[1]) * 1024, "Memory bytes at this read")
+
+    return information_fields(data, INFORMATION_MEMORY_KEYS, ":", decode)
+
+
+def parse_cpu_information(data: bytes) -> dict[str, InformationState]:
+    """Use the first x86_64 model-name field, never a later processor's fallback."""
+    for line in data.splitlines():
+        key, found, value = line.partition(b":")
+        if key.strip() == b"model name":
+            if not found:
+                raise SnapshotFailure("malformed", "Malformed processor model field")
+            return {"cpu-model": information_text(value.decode("utf-8").strip(), "Processor model")}
+    return {"cpu-model": InformationState("partial", "unknown", "Processor model was not reported", "missing-provider")}
+
+
+def read_local_information() -> dict[str, InformationState]:
+    """Read fixed local sources once; no service, subprocess, journal, or mutation."""
+    result = {}
+    sources = (
+        ("/etc/os-release", 64 * 1024, parse_os_information, ("os-name", "os-version")),
+        ("/proc/cpuinfo", 4 * 1024 * 1024, parse_cpu_information, ("cpu-model",)),
+        ("/proc/meminfo", 1024 * 1024, parse_memory_information, tuple(INFORMATION_MEMORY_KEYS.values())),
+    )
+    for path, limit, parse, identifiers in sources:
+        try:
+            with open(path, "rb") as source:
+                data = source.read(limit + 1)
+            if len(data) > limit:
+                raise SnapshotFailure("malformed", "Information source exceeds its byte limit")
+            result.update(parse(data))
+        except (OSError, UnicodeError, SnapshotFailure) as error:
+            result.update((identifier, information_unknown(error)) for identifier in identifiers)
+    try:
+        identity = os.uname()
+    except OSError as error:
+        result.update((identifier, information_unknown(error)) for identifier in ("kernel-release", "architecture"))
+    else:
+        for attribute, identifier in (("release", "kernel-release"), ("machine", "architecture")):
+            try:
+                result[identifier] = information_text(getattr(identity, attribute, None), "Kernel identity")
+            except (SnapshotFailure, UnicodeError) as error:
+                result[identifier] = information_unknown(error)
+    try:
+        count = os.cpu_count()
+        if count is None:
+            raise SnapshotFailure("missing-provider", "Logical processor count was not reported")
+        if type(count) is not int or count <= 0:
+            raise SnapshotFailure("malformed", "Logical processor count is invalid")
+        result["logical-cpus"] = information_number(count, "Logical processors")
+    except (OSError, SnapshotFailure) as error:
+        result["logical-cpus"] = information_unknown(error)
+    try:
+        clock = getattr(time, "CLOCK_BOOTTIME", None)
+        if clock is None:
+            raise SnapshotFailure("unsupported", "Boot-time clock is unavailable", "unsupported")
+        uptime = time.clock_gettime(clock)
+        if type(uptime) not in (int, float) or not 0 <= uptime < (1 << 64):
+            raise SnapshotFailure("malformed", "Boot-time clock returned an invalid counter")
+        result["uptime-seconds"] = information_number(int(uptime), "Whole seconds since boot, including suspend")
+    except (OSError, SnapshotFailure) as error:
+        result["uptime-seconds"] = information_unknown(error)
+    return result
+
+
+@dataclass(frozen=True)
+class FilesystemRow:
+    """A mount-ID-keyed observation; paths are display text, never action input."""
+
+    mount_id: str
+    status: str
+    source: str
+    target: str
+    fstype: str
+    size_bytes: str
+    used_bytes: str
+    available_bytes: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class FilesystemInformation:
+    summary: InformationState
+    rows: tuple[FilesystemRow, ...] = ()
+
+
+def parse_filesystem_information(data: bytes) -> FilesystemInformation:
+    """Validate the fixed findmnt JSON inventory and retain only unambiguous rows."""
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("Duplicate JSON key")
+            result[key] = value
+        return result
+
+    def invalid_constant(_value):
+        raise ValueError("Invalid JSON number")
+
+    if len(data) > FILESYSTEM_OUTPUT_BYTES:
+        raise SnapshotFailure("malformed", "Filesystem output exceeds its byte limit")
+    try:
+        document = json.loads(data.decode("utf-8"), object_pairs_hook=pairs, parse_constant=invalid_constant)
+    except (ValueError, UnicodeError, RecursionError) as error:
+        raise SnapshotFailure("malformed", "Filesystem output is not valid bounded JSON") from error
+    if not isinstance(document, dict) or not isinstance(document.get("filesystems"), list):
+        raise SnapshotFailure("malformed", "Filesystem inventory is missing")
+    pending = list(reversed(document["filesystems"]))
+    seen, rows = set(), {}
+    partial = False
+    while pending:
+        item = pending.pop()
+        if not isinstance(item, dict):
+            partial = True
+            continue
+        children = item.get("children", [])
+        if isinstance(children, list):
+            pending.extend(reversed(children))
+        else:
+            partial = True
+        try:
+            identifier = information_number(item.get("id"), "Mount identity").value
+        except SnapshotFailure:
+            partial = True
+            continue
+        if identifier in seen:
+            rows.pop(identifier, None)
+            partial = True
+            continue
+        if len(seen) >= FILESYSTEM_RECORDS:
+            partial = True
+            continue
+        seen.add(identifier)
+        display = []
+        try:
+            for key in ("source", "target", "fstype"):
+                value = item.get(key)
+                if not isinstance(value, str) or not value:
+                    raise ValueError("Missing display field")
+                value.encode("utf-8")  # Reject escaped surrogates before sanitization.
+                display.append(clean_text("".join(char if char.isprintable() else " " for char in value)))
+        except (ValueError, UnicodeError):
+            partial = True
+            continue
+        counters = []
+        for key in ("size", "used", "avail"):
+            try:
+                counters.append(information_number(item.get(key), "Filesystem bytes").value)
+            except SnapshotFailure:
+                counters.append("unknown")
+        complete = "unknown" not in counters
+        partial = partial or not complete
+        rows[identifier] = FilesystemRow(identifier, "available" if complete else "partial", *display, *counters,
+            "Filesystem bytes at this read" if complete else "Some filesystem byte counts could not be read")
+    ordered = tuple(rows[key] for key in sorted(rows, key=int))
+    summary = (InformationState("partial", "unknown", "Filesystem inventory is incomplete", "malformed") if partial
+        else information_number(len(ordered), "Mounted real filesystems"))
+    return FilesystemInformation(summary, ordered)
 
 
 # Sync Phase 8 (docs/SYNC-P8-REGIONAL-READERS.md): five bounded, read-only
@@ -747,6 +1012,83 @@ class ServiceRead:
         if self.failure:
             raise self.failure
         return self.value
+
+
+class HardwareRead(ServiceRead):
+    """Read two fixed hostname1 properties while preserving a validated peer."""
+
+    label = "Hardware information"
+
+    def __init__(self, Gio=None, GLib=None):
+        super().__init__(Gio, GLib)
+        self.values = {}
+        self.waiting = set(HARDWARE_INFORMATION_FIELDS)
+
+    def fail(self, failure):
+        if self.done:
+            return
+        for field in self.waiting:
+            self.values[HARDWARE_INFORMATION_FIELDS[field]] = information_unknown(failure)
+        self.waiting.clear()
+        self.finish(value=dict(self.values))
+
+    def record(self, field, state):
+        if not self.pending() or field not in self.waiting:
+            return
+        self.values[HARDWARE_INFORMATION_FIELDS[field]] = state
+        self.waiting.remove(field)
+        if not self.waiting:
+            self.finish(value=dict(self.values))
+
+    def property_failure(self, error):
+        if self.Gio.dbus_error_get_remote_error(error) == "org.freedesktop.DBus.Error.UnknownProperty":
+            return SnapshotFailure("unsupported", "Hardware information property is absent", "unsupported")
+        return self.bus_failure(error)
+
+    def connected(self, _source, result, _data):
+        if not self.pending():
+            return
+        try:
+            self.connection = self.Gio.bus_get_finish(result)
+            self.connection.set_exit_on_close(False)
+        except self.GLib.Error as error:
+            self.fail(self.bus_failure(error))
+            return
+        for field in HARDWARE_INFORMATION_FIELDS:
+            if not self.pending():
+                return
+            try:
+                self.connection.call("org.freedesktop.hostname1", "/org/freedesktop/hostname1",
+                    PROPERTIES_INTERFACE, "Get", self.GLib.Variant("(ss)", ("org.freedesktop.hostname1", field)),
+                    self.GLib.VariantType.new("(v)"), self.Gio.DBusCallFlags.NONE,
+                    max(1, int((self.deadline - time.monotonic()) * 1000)), self.cancellable, self.replied, field)
+            except self.GLib.Error as error:
+                self.record(field, information_unknown(self.property_failure(error)))
+
+    def replied(self, connection, result, field):
+        if not self.pending() or field not in self.waiting:
+            return
+        try:
+            reply = connection.call_finish(result)
+            if reply.get_type_string() != "(v)" or reply.get_size() > MAX_TEXT_BYTES + 32:
+                raise SnapshotFailure("malformed", "Invalid hardware information reply")
+            value = reply.get_child_value(0).get_variant()
+            if value.get_type_string() != "s" or value.get_size() > MAX_TEXT_BYTES + 1:
+                raise SnapshotFailure("malformed", "Invalid hardware information property")
+            state = information_text(value.unpack(), "Hardware identity reported by hostname1")
+        except self.GLib.Error as error:
+            state = information_unknown(self.property_failure(error))
+        except (SnapshotFailure, UnicodeError) as error:
+            state = information_unknown(error)
+        self.record(field, state)
+
+
+def read_hardware_information() -> dict[str, InformationState]:
+    """Keep missing service bindings scoped without swallowing interruption."""
+    try:
+        return run_interruptible_read(HardwareRead())
+    except SnapshotFailure as error:
+        return {identifier: information_unknown(error) for identifier in HARDWARE_INFORMATION_FIELDS.values()}
 
 
 @dataclass(frozen=True)
@@ -1979,6 +2321,96 @@ def read_locale_choices() -> tuple[str, ...]:
             # otherwise callers could catch a read failure and keep running.
             if interrupted:
                 raise SystemExit(128 + interrupted)
+
+
+def read_filesystem_information() -> FilesystemInformation:
+    """Collect only the fixed findmnt inventory with bounded owned-group cleanup."""
+    if (threading.current_thread() is not threading.main_thread()
+            or signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL):
+        return FilesystemInformation(information_unknown(
+            SnapshotFailure("internal", "Filesystem process ownership is unavailable", "unavailable")))
+    process = None
+    handlers = {}
+    interrupted = 0
+
+    def terminate(number, _frame):
+        nonlocal interrupted
+        interrupted = interrupted or number
+
+    def check_deadline():
+        if interrupted:
+            raise SystemExit(128 + interrupted)
+        if time.monotonic() >= deadline:
+            raise SnapshotFailure("timeout", "Filesystem enumeration timed out", "unavailable")
+
+    try:
+        try:
+            for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                handlers[number] = signal.signal(number, terminate)
+            deadline = time.monotonic() + 3
+            check_deadline()
+            try:
+                process = subprocess.Popen(["/usr/bin/timeout", "--signal=TERM", "--kill-after=1", "3",
+                    "/usr/bin/findmnt", "--json", "--bytes", "--real", "--uniq", "--output",
+                    "ID,SOURCE,TARGET,FSTYPE,SIZE,USED,AVAIL"], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                    env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+            except FileNotFoundError as error:
+                raise SnapshotFailure("missing-provider", "Filesystem command is unavailable", "unavailable") from error
+            output = bytearray()
+            received = 0
+            with selectors.DefaultSelector() as selector:
+                for stream in (process.stdout, process.stderr):
+                    os.set_blocking(stream.fileno(), False)
+                    selector.register(stream, selectors.EVENT_READ)
+                while True:
+                    check_deadline()
+                    status = locale_process_status(process)
+                    if status is not None and not selector.get_map():
+                        break
+                    for key, _events in selector.select(min(0.05, max(0, deadline - time.monotonic()))):
+                        check_deadline()
+                        try:
+                            chunk = os.read(key.fd, min(65536, FILESYSTEM_OUTPUT_BYTES - received + 1))
+                        except BlockingIOError:
+                            continue
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        received += len(chunk)
+                        if received > FILESYSTEM_OUTPUT_BYTES:
+                            raise SnapshotFailure("malformed", "Filesystem output exceeds its byte limit")
+                        if key.fileobj is process.stdout:
+                            output.extend(chunk)
+            exit_code = status.si_status if status.si_code == os.CLD_EXITED else -status.si_status
+            if exit_code in (124, 137, -signal.SIGKILL):
+                raise SnapshotFailure("timeout", "Filesystem enumeration timed out", "unavailable")
+            if exit_code == 127:
+                raise SnapshotFailure("missing-provider", "Filesystem command is unavailable", "unavailable")
+            if exit_code != 0:
+                raise SnapshotFailure("internal", "Filesystem enumeration failed", "unavailable")
+            try:
+                result = parse_filesystem_information(bytes(output))
+            finally:
+                check_deadline()
+        finally:
+            try:
+                if process is not None:
+                    try:
+                        close_locale_process(process)
+                    except SnapshotFailure as error:
+                        raise SnapshotFailure(error.code, "Filesystem process cleanup could not be confirmed",
+                                              error.status) from error
+            finally:
+                for number, handler in handlers.items():
+                    signal.signal(number, handler)
+                if interrupted:
+                    raise SystemExit(128 + interrupted)
+    except SnapshotFailure as error:
+        return FilesystemInformation(information_unknown(error))
+    except OSError as error:
+        return FilesystemInformation(information_unknown(error))
+    return result
 
 
 # Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §3): delegated

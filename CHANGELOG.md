@@ -10,6 +10,26 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add bounded local, hardware, and filesystem information readers to
+  `dwm-system-management` (Sync Sprint 2 S2-01,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
+  `#277`/`#278`/`#279`): `read_local_information()` reads OS identity
+  (`/etc/os-release`), CPU model (`/proc/cpuinfo`), memory/swap
+  (`/proc/meminfo`), kernel release/architecture (`uname`), logical CPU
+  count, and boot-time uptime, each field failing independently rather than
+  blanking the whole read. `read_hardware_information()` reads vendor/model
+  from `org.freedesktop.hostname1` over a fresh, bounded D-Bus connection.
+  `read_filesystem_information()` runs a fixed, deadline-bounded
+  `findmnt --json` and validates its output into per-mount rows (source,
+  target, filesystem type, size/used/available bytes), rejecting duplicate
+  or oversized JSON without losing valid peer rows. None of this is wired
+  into the snapshot protocol or any UI yet -- that starts at S2-05.
+  Lyona adaptation: upstream's OS-identity mapping only reads `VERSION_ID`,
+  which renders "unknown" on Arch and CachyOS since both are rolling
+  releases with no `VERSION_ID` at all; `parse_os_information()` now falls
+  back to `BUILD_ID` (which Arch's `os-release` sets to `rolling`) only
+  when `VERSION_ID` itself was not reported, verified against both a
+  synthetic fixture and this repository's own CachyOS sandbox.
 - Add a manual `Full suite (manual)` GitHub Actions workflow
   (`.github/workflows/full-suite.yml`, Sync Sprint 1 S1-01,
   `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) that runs `scripts/run-tests
