@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls as Controls
 import qs.core
 
 pragma ComponentBehavior: Bound
@@ -18,6 +19,20 @@ ColumnLayout {
     signal revealRequested(var target)
 
     readonly property var confirmation: root.model.updateConfirmation
+    // Sync Sprint 1 S1-04 (#267): operationModel is shared across update,
+    // regional and delegated dispatch now -- the cancel control below only
+    // ever applied to update/refresh anyway (SystemOperationModel's own
+    // cancel_journal_operation() restricts to that family), but a regional
+    // or delegated operation's progress previously still lit up "PackageKit
+    // owns the active operation" here, which is only true for updates.
+    readonly property bool updateOperation: model.operation.progress !== null
+        && (model.operation.progress.kind === "update" || model.operation.progress.kind === "refresh")
+    // S1-09 (#291): the live PackageKit-reported package/phase/percent, shown
+    // only while this model's own stream genuinely owns a running/verifying
+    // update or refresh -- never a stale item from a just-finished stream.
+    readonly property var active: updateOperation && model.operation.streamOwned && !model.operation.streamFailed
+        ? model.operation.progress : null
+    readonly property var item: model.operation.currentItem || null
 
     Layout.fillWidth: true
     spacing: Theme.spacingMd
@@ -197,21 +212,22 @@ ColumnLayout {
     }
 
     PlainText {
+        objectName: "operationOwnerNote"
         visible: root.model.operation.busy
-        text: "PackageKit owns the active operation. Keep watching here or close Settings and return later."
+        text: "The active system operation remains owned. Keep watching here or close Settings and return later."
         color: Theme.menuMutedText
     }
 
     ActionButton {
         objectName: "cancelUpdate"
-        visible: root.model.operation.streamOwned
+        visible: root.model.operation.streamOwned && root.updateOperation
         label: "Request cancellation"
         enabled: root.model.operation.canCancel
         onActivated: root.model.operation.requestCancel()
     }
 
     PlainText {
-        visible: root.model.operation.streamOwned && !root.model.operation.canCancel
+        visible: root.model.operation.streamOwned && root.updateOperation && !root.model.operation.canCancel
             && root.model.operation.cancelDetail.length === 0
         text: "Cancellation is not currently safe or available. Wait for PackageKit's verified result."
         color: Theme.menuMutedText
@@ -233,35 +249,43 @@ ColumnLayout {
         color: Theme.danger
     }
 
-    PlainText {
-        id: operationAuditText
-        readonly property var audit: root.model.operation.audit
-        visible: operationAuditText.audit !== null
-        text: operationAuditText.audit === null ? ""
-            : "Verified audit: " + operationAuditText.audit.actionId + " / " + operationAuditText.audit.result
-                + " / " + operationAuditText.audit.started + " - " + operationAuditText.audit.finished
-                + " / " + operationAuditText.audit.detail
-        color: Theme.menuMutedText
-    }
+    ColumnLayout {
+        objectName: "updateProgress"
+        Layout.fillWidth: true
+        visible: root.active !== null
+        spacing: Theme.spacingSm
 
-    PlainText {
-        visible: root.model.operation.log.length > 0
-        text: "Operation log (bounded / scroll for earlier progress)"
-        font.bold: true
-        color: Theme.menuText
-    }
+        PlainText {
+            objectName: "currentPackageLabel"
+            text: root.model.operation.terminalPending ? "Verifying the update result..."
+                : root.item !== null && root.item.name.length > 0
+                    ? root.item.phase.charAt(0).toUpperCase() + root.item.phase.slice(1) + ": " + root.item.name
+                    : root.active !== null && root.active.state === "authorizing" ? "Waiting for authorization..."
+                    : root.active !== null && root.active.kind === "refresh" ? "Refreshing repository metadata..."
+                    : "Preparing package updates..."
+            font.bold: true
+        }
 
-    ScrollList {
-        objectName: "updateOperationLog"
-        Layout.preferredHeight: Math.min(contentHeight, 180)
-        visible: count > 0
-        model: root.model.operation.log
-        spacing: Theme.spacingXs
-        delegate: PlainText {
-            required property var modelData
-            width: ListView.view.width
-            text: modelData.state + " / " + modelData.percent + " / " + modelData.detail
-            color: Theme.menuText
+        Controls.ProgressBar {
+            objectName: "currentPackageProgress"
+            Layout.fillWidth: true
+            from: 0
+            to: 100
+            indeterminate: visible && !Theme.reducedMotion && (root.item === null || root.item.percent === "unknown")
+            value: root.item !== null && root.item.percent !== "unknown" ? Number(root.item.percent) : 0
+            Accessible.name: "Current package progress"
+        }
+
+        PlainText {
+            text: root.item !== null && root.item.percent !== "unknown" ? "Current item: " + root.item.percent + "%"
+                : "Waiting for package progress from PackageKit"
+            color: Theme.menuMutedText
+        }
+
+        PlainText {
+            text: "Overall transaction: " + (root.active !== null && root.active.percent !== "unknown"
+                ? root.active.percent + "%" : "in progress")
+            color: Theme.menuMutedText
         }
     }
 }

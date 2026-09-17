@@ -43,19 +43,29 @@ grep -Fq 'if (!root.snapshotRequired && snapshotProcess.running) snapshotProcess
 # recorded (snapshotPending) and replayed once, never launched as a second
 # overlapping process. Sync Phase 7 adds a `required` parameter (operationModel
 # recovering evidence) that is coalesced separately (requiredPending) and
-# bypasses discoveryModel.canTake()'s settingsVisible tie.
-grep -Fq 'if (root.snapshotOwned || snapshotProcess.running) {' "$system_model"
+# bypasses discoveryReady()'s settingsVisible tie. Sync Sprint 1 S1-03
+# (#261) generalizes the single discoveryModel to five (discoveryModels()),
+# each contributing its own cycle token via requestSnapshot()'s take() loop,
+# and adds discoveryBatch so openSettings()/refresh() looping over all five
+# results in at most one fetch, not up to five.
+grep -Fq 'if (root.snapshotOwned || snapshotProcess.running || root.discoveryBatch) {' "$system_model"
 grep -Fq 'root.snapshotPending = root.snapshotPending || !required;' "$system_model"
 grep -Fq 'root.requiredPending = root.requiredPending || !!required;' "$system_model"
-grep -Fq 'if (!required && !discoveryModel.canTake()) return;' "$system_model"
-grep -Fq 'discoveryModel.open();' "$system_model"
-grep -Fq 'discoveryModel.close();' "$system_model"
-grep -Fq 'discoveryModel.refresh();' "$system_model"
-grep -Fq 'discoveryModel.take();' "$system_model"
-grep -Fq 'discoveryModel.beforePublish(snapshotProcess.cycleToken);' "$system_model"
-grep -Fq 'discoveryModel.complete(snapshotProcess.cycleToken, successful);' "$system_model"
+grep -Fq 'if (!required && (!ready || !root.discoveryModels().some(model => model.canTake()))) return;' "$system_model"
+grep -Fq 'function discoveryModels() {' "$system_model"
+grep -Fq 'function discoveryReady() {' "$system_model"
+grep -Fq 'for (const model of root.discoveryModels()) model.open();' "$system_model"
+grep -Fq 'for (const model of root.discoveryModels()) model.close();' "$system_model"
+grep -Fq 'for (const model of root.discoveryModels()) model.refresh();' "$system_model"
+grep -Fq 'const token = model.take();' "$system_model"
+grep -Fq 'for (const item of tokens) item.model.beforePublish(item.token);' "$system_model"
+grep -Fq 'for (const item of tokens) item.model.complete(item.token, successful);' "$system_model"
 grep -Fq 'SystemUpdateDiscovery {' "$system_model"
 grep -Fq 'readonly property alias discovery: discoveryModel' "$system_model"
+grep -Fq 'readonly property alias timeDiscovery: timeDiscoveryModel' "$system_model"
+grep -Fq 'readonly property alias localeDiscovery: localeDiscoveryModel' "$system_model"
+grep -Fq 'readonly property alias accountDiscovery: accountDiscoveryModel' "$system_model"
+grep -Fq 'readonly property alias printerDiscovery: printerDiscoveryModel' "$system_model"
 grep -Fq 'readonly property string discoveryDetail: discoveryModel.detail' "$system_model"
 
 # Relaunch-ordering fix: StdioCollector.onStreamFinished can run before
@@ -65,7 +75,7 @@ grep -Fq 'readonly property string discoveryDetail: discoveryModel.detail' "$sys
 # real onRunningChanged(!running) observation, never from finishSnapshot
 # (which onStreamFinished can call while the old process is still running).
 # finishSnapshot must be bookkeeping-only.
-grep -Fq 'snapshotProcess.cycleToken = null;' "$system_model"
+grep -Fq 'snapshotProcess.cycleTokens = [];' "$system_model"
 finish_snapshot_body=$(awk '/^    function finishSnapshot\(successful\) \{/,/^    \}/' "$system_model")
 if printf '%s\n' "$finish_snapshot_body" | grep -q 'snapshotOwned = false\|snapshotProcess.running = true'; then
 	printf 'finishSnapshot must not touch ownership or relaunch directly; that belongs in onRunningChanged.\n' >&2
@@ -148,7 +158,7 @@ if grep -qE '\.installAll\(|\.cancelUpdate\(|\.refreshMetadata\(' "$system_model
 	printf 'No mutation entry point may bypass operationModel.startUpdate/requestCancel.\n' >&2
 	exit 1
 fi
-grep -Fq 'update installation require visible confirmation above. PackageKit owns' "$system_pane"
+grep -Fq 'update installation require visible confirmation above. Delegated launches' "$system_pane"
 grep -Fq 'authorization and safe cancellation.' "$system_pane"
 grep -Fq 'SystemUpdateControls {' "$system_pane"
 grep -Fq 'onRevealRequested: target => root.reveal(target)' "$system_pane"
@@ -264,5 +274,132 @@ grep -Fq 'root.model.operation.requestCancel()' "$update_controls"
 
 grep -Fq 'function systemManagementOperationState(): string' "$shell_qml"
 grep -Fq 'function systemManagementOperationResult(): string' "$shell_qml"
+
+# Sync Sprint 1 S1-04 (#266, #267): delegated actions (accounts-open/
+# password-open/printers-open/sources-open) get the same visible
+# confirmation step regional mutations already have, instead of dispatching
+# immediately on click.
+delegate_controls=$repo/config/quickshell/settings/SystemDelegateControls.qml
+
+grep -Fq 'function delegateDiscovery(actionId) {' "$system_model"
+grep -Fq 'function delegateContextReason(actionId) {' "$system_model"
+grep -Fq 'function delegateActionReason(actionId) {' "$system_model"
+grep -Fq 'function prepareDelegate(actionId) {' "$system_model"
+grep -Fq 'function discardDelegate() {' "$system_model"
+grep -Fq 'function invalidateNativeConfirmation(domain) {' "$system_model"
+grep -Fq 'function confirmDelegate() {' "$system_model"
+grep -Fq 'property var nativeConfirmation: null' "$system_model"
+grep -Fq 'property string nativeConfirmationMessage: ""' "$system_model"
+grep -Fq 'property bool dispatchingNative: false' "$system_model"
+# launchDelegated() dispatched immediately with no confirmation step -- it
+# must be gone, not just unused, so nothing can regress to calling it.
+if grep -q 'function launchDelegated' "$system_model"; then
+	printf 'launchDelegated() must not exist -- delegated actions require prepareDelegate()/confirmDelegate().\n' >&2
+	exit 1
+fi
+
+test -f "$delegate_controls"
+grep -Fq 'required property var model' "$delegate_controls"
+grep -Fq 'signal revealRequested(var target)' "$delegate_controls"
+grep -Fq 'root.model.prepareDelegate(toolCard.modelData.id)' "$delegate_controls"
+grep -Fq 'root.model.confirmDelegate()' "$delegate_controls"
+grep -Fq 'root.model.discardDelegate()' "$delegate_controls"
+grep -Fq 'SystemDelegateControls {' "$system_pane"
+
+# Mutual exclusion with the update cancel control: a regional or delegated
+# operation's progress must not enable "Request cancellation" -- only
+# cancel_journal_operation()'s own update/refresh restriction ever permits it.
+grep -Fq 'readonly property bool updateOperation:' "$update_controls"
+grep -Fq 'visible: root.model.operation.streamOwned && root.updateOperation' "$update_controls"
+
+# Never exposed by IPC directly -- only the confirmed Settings surface
+# (prepareDelegate/confirmDelegate) may reach operationModel.startNative.
+if grep -q 'systemManagementModel.startNative' "$shell_qml"; then
+	printf 'shell.qml must not call operationModel.startNative directly; only the confirmed Settings surface may.\n' >&2
+	exit 1
+fi
+
+grep -Fq 'function systemManagementPrepareDelegate(action: string): bool' "$shell_qml"
+grep -Fq 'function systemManagementConfirmDelegate(): bool' "$shell_qml"
+grep -Fq 'function systemManagementDiscardDelegate(): void' "$shell_qml"
+grep -Fq 'function systemManagementNativeConfirmationPending(): bool' "$shell_qml"
+
+# Sync Sprint 1 S1-05 (#268, #269): regional preview/confirm state moved off
+# SystemManagementModel into its own SystemRegionalSettingsModel
+# (systemManagementModel.regional), the same split S1-04 already gave
+# delegated actions.
+regional_settings_model=$repo/config/quickshell/systemmanagement/SystemRegionalSettingsModel.qml
+regional_controls=$repo/config/quickshell/settings/SystemRegionalControls.qml
+
+test -f "$regional_settings_model"
+grep -Fq 'function prepare(action, argument) {' "$regional_settings_model"
+grep -Fq 'function discard() {' "$regional_settings_model"
+grep -Fq 'function confirm() {' "$regional_settings_model"
+grep -Fq 'function ownsPreparation() {' "$regional_settings_model"
+grep -Fq 'function invalidate(domain) {' "$regional_settings_model"
+grep -Fq 'model.operation.startNative(pending.ticket.action,' "$regional_settings_model"
+grep -Fq 'readonly property alias regional: regionalModel' "$system_model"
+grep -Fq 'SystemRegionalSettingsModel {' "$system_model"
+grep -Fq 'onInvalidated: regionalModel.invalidate("time")' "$system_model"
+grep -Fq 'onInvalidated: regionalModel.invalidate("locale")' "$system_model"
+grep -Fq 'regionalModel.invalidate("");' "$system_model"
+# The old PR #33 regional state/functions lived directly on this model --
+# they must be gone, not just superseded, so nothing can regress to reading
+# stale properties SystemRegionalSettingsModel now owns.
+for stale in 'property var regionalPreview' 'function prepareRegional' \
+	'function confirmRegional' 'function discardRegional' 'function nativeActionReason'; do
+	if grep -q "$stale" "$system_model"; then
+		printf '%s must not exist on SystemManagementModel -- regional state moved to SystemRegionalSettingsModel.\n' "$stale" >&2
+		exit 1
+	fi
+done
+# startRegional()/startDelegated() were thin wrappers kept only until both
+# callers converged onto startNative() directly in this item.
+operation_model_source=$(cat "$operation_model")
+if printf '%s' "$operation_model_source" | grep -q 'function startRegional\|function startDelegated'; then
+	printf 'startRegional()/startDelegated() must not exist -- both callers use startNative() directly.\n' >&2
+	exit 1
+fi
+
+test -f "$regional_controls"
+grep -Fq 'required property real viewportHeight' "$regional_controls"
+grep -Fq 'readonly property var regional: model.regional' "$regional_controls"
+grep -Fq 'root.regional.prepare(' "$regional_controls"
+grep -Fq 'root.regional.discard()' "$regional_controls"
+grep -Fq 'root.regional.confirm()' "$regional_controls"
+grep -Fq 'SystemRegionalControls {' "$system_pane"
+grep -Fq 'viewportHeight: root.height' "$system_pane"
+
+grep -Fq 'function systemManagementRegionalPreview(action: string, argument: string): bool' "$shell_qml"
+grep -Fq 'function systemManagementRegionalConfirm(): bool' "$shell_qml"
+grep -Fq 'function systemManagementRegionalDiscard(): void' "$shell_qml"
+grep -Fq 'function systemManagementRegionalRequestChoices(kind: string): bool' "$shell_qml"
+grep -Fq 'function systemManagementRegionalChoicesCount(kind: string): int' "$shell_qml"
+
+# Sync Sprint 1 S1-06 (#270): one shared, timezone-aware minute clock for the
+# panel and Settings, replacing a bare SystemClock neither of which noticed
+# a live timezone-set mutation.
+clock_model=$repo/config/quickshell/core/ClockModel.qml
+panel=$repo/config/quickshell/panel/DwmPanel.qml
+settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
+
+test -f "$clock_model"
+grep -Fq 'property var timezoneState: null' "$clock_model"
+grep -Fq 'Date.timeZoneUpdated();' "$clock_model"
+grep -Fq 'SystemClock {' "$clock_model"
+grep -Fq 'ClockModel {' "$shell_qml"
+grep -Fq 'timezoneState: systemManagementModel.nativeStates.timezone || null' "$shell_qml"
+if grep -q 'SystemClock {' "$shell_qml"; then
+	printf 'shell.qml must not own a bare SystemClock directly -- ClockModel wraps it.\n' >&2
+	exit 1
+fi
+grep -Fq 'text: root.clock.panelText' "$panel"
+grep -Fq 'required property var clock' "$settings_window"
+grep -Fq 'clockText: root.clock.settingsText' "$settings_window"
+grep -Fq 'clock: clock' "$shell_qml"
+grep -Fq 'property string clockText: ""' "$system_pane"
+grep -Fq 'objectName: "systemLocalTime"' "$system_pane"
+grep -Fq 'function clockPanelText(): string' "$shell_qml"
+grep -Fq 'function clockSettingsText(): string' "$shell_qml"
 
 printf 'Quickshell system-management model contract: PASS\n'

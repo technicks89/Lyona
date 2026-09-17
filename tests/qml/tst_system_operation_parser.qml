@@ -1,0 +1,262 @@
+import QtQuick
+import QtTest
+import "../../config/quickshell/systemmanagement/SystemOperationProtocol.js" as Protocol
+
+/*
+ * Direct, non-UI tests for the pure operation-watch stream parser
+ * (Sync Phase 6/7, docs' now-retired SYNC-P6/P7, and Sync Sprint 1 S1-03's
+ * #262 cancel-requested tightening). Protocol.js is plain functions over a
+ * plain object with no QML dependency -- test it directly, matching
+ * tst_system_discovery_cycle.qml's and tst_system_regional_preflight_protocol.qml's
+ * own precedent.
+ *
+ * Assertions are translated from upstream's tests/qml/SystemOperationParser.qml
+ * at its #262 boundary (05b74e0) -- a bespoke ShellRoot + Qt.quit() harness --
+ * into this repo's QtTest/TestCase convention; every scenario that boundary
+ * covers is preserved, just regrouped into named test_* functions instead of
+ * one giant unitTests() body. This closes the coverage gap the earlier
+ * Sync Phase 7 doc deferred.
+ *
+ * Deliberately NOT ported: upstream's own harness also drives a real
+ * Quickshell.Io.Process to prove a multi-byte UTF-8 character split across
+ * separate native pipe reads survives intact. That property is already
+ * exhaustively covered here without a live process, by test_utf8_byte_
+ * boundary_handling feeding a parser every possible slice point of the same
+ * fixture directly -- and a live QProcess cannot be instantiated under plain
+ * qmltestrunner in this project's toolchain in the first place (confirmed:
+ * a bare `import qs.core` component hangs it). Package-progress ("item")
+ * coverage from upstream's #291 is folded in as
+ * test_item_progress_is_distinct_from_overall_progress_and_log (Sync
+ * Sprint 1 S1-09).
+ *
+ * Run: QT_QPA_PLATFORM=offscreen qmltestrunner -input tests/qml
+ */
+TestCase {
+    name: "SystemOperationProtocol"
+
+    property string operationId: "op-11111111111111111111111111111111"
+    property string header: "system-management-protocol\t1\t0\n"
+
+    function bytes(text) {
+        const encoded = unescape(encodeURIComponent(text));
+        const result = new Uint8Array(encoded.length);
+        for (let i = 0; i < encoded.length; i++) result[i] = encoded.charCodeAt(i);
+        return result.buffer;
+    }
+
+    function operation(state, action, detail) {
+        action = action || "updates-refresh";
+        return ["operation", operationId, action, Protocol.actionKind(action), state,
+            "unknown", "no", detail || "Fixture"].join("\t") + "\n";
+    }
+
+    function audit(state, action) {
+        action = action || "updates-refresh";
+        return ["audit", operationId, action, Protocol.actionKind(action), state,
+            "2026-09-05T12:00:00Z", "2026-09-04T12:00:00Z", "Clock rollback is valid"].join("\t") + "\n";
+    }
+
+    function fixture(state, action) {
+        action = action || "updates-refresh";
+        let text = header + operation("pending", action);
+        if (state === "succeeded") text += operation("running", action);
+        if (state === "permission-denied") text += operation("authorizing", action);
+        if (state === "failed") text += "error\t" + Protocol.owner(action) + "\tconflict\tFixture failure\n";
+        return text + operation(state, action) + audit(state, action) + "complete\toperation\n";
+    }
+
+    function parse(text, code, replay) {
+        const parser = Protocol.create(operationId, "");
+        return Protocol.consume(parser, bytes(text)) && Protocol.finish(parser, code, true, replay === true);
+    }
+
+    function test_every_action_every_terminal_state_and_replay() {
+        for (const action of ["updates-refresh", "updates-install-all", "timezone-set", "ntp-set",
+                "locale-set", "accounts-open", "password-open", "printers-open", "sources-open"]) {
+            for (const state of ["succeeded", "permission-denied", "failed", "interrupted", "canceled"]) {
+                verify(parse(fixture(state, action), state === "succeeded" ? 0 : 1), action + ": " + state);
+                verify(parse(fixture(state, action), 0, true), action + ": replay " + state);
+            }
+        }
+    }
+
+    // #262: only update/refresh may ever claim cancelable=yes or sit in
+    // cancel-requested. Every other action's watch stream must be rejected
+    // outright if the helper ever reports either.
+    function test_cancelable_only_permitted_for_update_and_refresh_actions() {
+        for (const action of ["timezone-set", "ntp-set", "locale-set", "accounts-open",
+                "password-open", "printers-open", "sources-open"]) {
+            const canceled = fixture("succeeded", action).replace(operation("succeeded", action),
+                operation("cancel-requested", action) + operation("succeeded", action));
+            verify(!parse(canceled, 0), action + " cannot claim a cancellation request with cancelable=no");
+            for (const state of ["pending", "running"]) {
+                const native = fixture("succeeded", action);
+                verify(!parse(native.replace("\t" + state + "\tunknown\tno",
+                    "\t" + state + "\tunknown\tyes"), 0), action + " cannot advertise cancellation in " + state);
+            }
+        }
+    }
+
+    function test_item_progress_is_distinct_from_overall_progress_and_log() {
+        const itemPrefix = header + operation("pending", "updates-install-all")
+            + operation("running", "updates-install-all");
+        const itemRecord = "package-progress\t" + operationId + "\texample\tdownloading\t42\n";
+        const itemParser = Protocol.create(operationId, "updates-install-all");
+        verify(Protocol.consume(itemParser, bytes(itemPrefix + itemRecord)), "Accept item progress");
+        verify(itemParser.item.name === "example" && itemParser.item.percent === "42"
+            && itemParser.operation.percent === "unknown" && itemParser.records.length === 2,
+            "Item progress is distinct from overall progress and log");
+        for (const invalidItem of [itemRecord.replace("42", "101"), itemRecord.replace("downloading", "invented"),
+                itemRecord.replace(operationId, "op-" + "2".repeat(32))])
+            verify(!Protocol.consume(Protocol.create(), bytes(itemPrefix + invalidItem)), "Reject invalid item: " + invalidItem);
+        verify(!Protocol.consume(Protocol.create(), bytes(header
+            + operation("pending", "updates-install-all") + itemRecord)), "Reject item before running");
+    }
+
+    function test_malformed_fixtures_are_rejected() {
+        const good = fixture("succeeded");
+        const pending = operation("pending");
+        const running = operation("running");
+        const failed = fixture("failed");
+        const invalid = [
+            good.slice(header.length), good.replace("\t1\t0", "\t2\t0"),
+            good.replace("\t1\t0", "\t1\t1"), header + good,
+            good.replace(pending, "\n" + pending),
+            good.replace(running, "\tunnamed extension\n" + running),
+            good.replace(pending, running), good.replace(running, ""),
+            good.replace(running, operation("permission-denied")),
+            good.replace(running, "error\tupdates\tinternal\tConflicting failure\n" + running),
+            good.replace("\tsucceeded\tunknown\tno", "\tsucceeded\tunknown\tyes"),
+            good.replace("\tunknown\tno", "\t101\tno"),
+            good.replace("\tunknown\tno", "\t01\tno"),
+            good.replace("\tunknown\tno", "\tunknown\ttrue"),
+            good.replace("\tpending\t", "\tinvented\t"),
+            good.replace(pending, pending.replace("updates-refresh", "updates-install-all")),
+            good.replace(pending, pending.replace(operationId, "op-22222222222222222222222222222222")),
+            good.replace(pending, pending.replace(operationId, "op-ABC")),
+            good.replace(pending, pending.replace("updates-refresh", "updates-cancel")),
+            good.replace(pending, pending.replace("\trefresh\t", "\tdelegate\t")),
+            good.replace("Fixture", "x".repeat(513)),
+            good.replace("Fixture", "€".repeat(171)),
+            good.replace("Fixture", " "), good.replace("Fixture", "\r"),
+            good.replace("complete\toperation\n", ""), good.slice(0, -1),
+            good + "complete\toperation\n", good + "future\tx\n", good + "\n",
+            good.replace("complete\toperation", "complete\tsnapshot"),
+            good.replace(audit("succeeded"), ""),
+            good.replace(audit("succeeded"), audit("succeeded") + audit("succeeded")),
+            good.replace(audit("succeeded"), audit("failed")),
+            good.replace("2026-09-04T12:00:00Z", "2026-02-30T12:00:00Z"),
+            good.replace("2026-09-04T12:00:00Z", "2026-09-04T12:00:60Z"),
+            good.replace("2026-09-04T12:00:00Z", "0000-09-04T12:00:00Z"),
+            good.replace("2026-09-04T12:00:00Z", "2026-09-04T12:00:00+00:00"),
+            good.replace(running, audit("succeeded") + running),
+            good.replace("complete\toperation", running + "complete\toperation"),
+            failed.replace("error\tupdates\tconflict\tFixture failure\n", ""),
+            failed.replace("error\tupdates", "error\trecovery"),
+            failed.replace("error\tupdates", "error\tregional"),
+            failed.replace("\tconflict\t", "\tDBus.Error\t"),
+            failed.replace("error\tupdates\tconflict\tFixture failure\n",
+                "error\tupdates\tconflict\tX\nerror\tupdates\tconflict\tY\n")
+        ];
+        for (const type of ["snapshot-generation", "provider", "state", "update", "package-change",
+                "repository", "account", "filesystem", "action", "active-operation", "terminal-handoff"])
+            invalid.push(good.replace(running, type + "\tx\n" + running));
+        for (const text of invalid)
+            verify(!parse(text, text.indexOf("\tfailed\t") >= 0 ? 1 : 0), "Accepted malformed fixture: " + text);
+    }
+
+    function test_missing_fields_rejected() {
+        const good = fixture("succeeded");
+        const running = operation("running");
+        for (const type of ["operation", "error", "audit", "complete"])
+            verify(!parse(good.replace(running, type + "\n" + running), 0), "Missing fields: " + type);
+    }
+
+    function test_unknown_record_and_trailing_extension_fields_accepted() {
+        const good = fixture("succeeded");
+        const running = operation("running");
+        verify(parse(good.replace(running, "future\tx\n" + running), 0), "Unknown record");
+        verify(parse(good.trim().split("\n").map(line => line + "\t" + "x".repeat(513)).join("\n") + "\n", 0),
+            "Trailing extension fields");
+    }
+
+    function test_512_byte_field_accepted() {
+        const good = fixture("succeeded");
+        verify(parse(good.replace("Fixture", "€".repeat(170) + "ab"), 0), "512-byte field");
+    }
+
+    function test_exit_code_must_match_result() {
+        const good = fixture("succeeded");
+        const failed = fixture("failed");
+        verify(!parse(good, 1), "Success with failed exit");
+        verify(!parse(failed, 0), "Failed origin with successful exit");
+        verify(!parse(failed, 1, true), "Failed replay with failed exit");
+    }
+
+    function test_same_state_progress_and_terminal_race() {
+        const good = fixture("succeeded");
+        const pending = operation("pending");
+        const running = operation("running");
+        const progress = good.replace(running, pending + operation("authorizing")
+            + operation("authorizing") + running + running + operation("cancel-requested")
+            + operation("cancel-requested"));
+        verify(parse(progress, 0), "Same-state progress and completion/cancel race");
+    }
+
+    function test_operation_record_count_bound() {
+        const good = fixture("succeeded");
+        const running = operation("running");
+        verify(parse(good.replace(running, running.repeat(255)), 0), "256 nonterminal records");
+        verify(!parse(good.replace(running, running.repeat(256)), 0), "257 nonterminal records");
+    }
+
+    // Every possible byte-split point of a multi-byte UTF-8 fixture, fed
+    // directly -- the property upstream's live-process harness proves
+    // through real pipe timing instead.
+    function test_utf8_byte_boundary_handling() {
+        const unicode = bytes(fixture("succeeded").replace("Fixture", "split ¢€😀"));
+        const parser = Protocol.create(operationId, "updates-refresh");
+        for (let i = 0; i <= unicode.byteLength; i++)
+            verify(Protocol.consume(parser, unicode.slice(0, i)), "Byte boundary " + i);
+        verify(Protocol.finish(parser, 0, true, false), "Split Unicode completion");
+        compare(parser.records[0].detail, "split ¢€😀", "Unicode preserved");
+        verify(!Protocol.consume(parser, unicode), "Data after EOF");
+    }
+
+    function test_malformed_utf8_rejected() {
+        for (const malformed of [[0xc0, 0xaf], [0xe0, 0x80, 0xaf], [0xed, 0xa0, 0x80],
+                [0xf4, 0x90, 0x80, 0x80], [0x80], [0xc2, 0x20]])
+            verify(!Protocol.consume(Protocol.create(), new Uint8Array(malformed).buffer), "Malformed UTF-8");
+    }
+
+    function test_truncated_utf8_rejected() {
+        const truncated = Protocol.create();
+        verify(Protocol.consume(truncated, new Uint8Array([0xe2]).buffer), "Pending UTF-8");
+        verify(!Protocol.finish(truncated, 0, true, false), "Truncated UTF-8");
+    }
+
+    function test_byte_limit_enforced() {
+        const good = fixture("succeeded");
+        const running = operation("running");
+        verify(!Protocol.consume(Protocol.create(), new ArrayBuffer(8 * 1024 * 1024 + 1)), "Byte limit");
+        const extension = "future\t" + "x".repeat(8 * 1024 * 1024 - bytes(good).byteLength - 8) + "\n";
+        verify(parse(good.replace(running, extension + running), 0), "Exact byte limit with ignored extension");
+    }
+
+    function test_expected_id_and_action_validation() {
+        const good = fixture("succeeded");
+        const replaced = Protocol.create();
+        Protocol.consume(replaced, bytes(header));
+        verify(!Protocol.consume(replaced, new ArrayBuffer(0)), "Shrinking collector");
+        verify(!Protocol.consume(Protocol.create("bad"), bytes(good)), "Invalid expected ID");
+        verify(!Protocol.consume(Protocol.create("", "health-open"), bytes(good)), "Invalid expected action");
+        verify(!Protocol.consume(Protocol.create("", "updates-install-all"), bytes(good)), "Mismatched expected action");
+    }
+
+    function test_crash_is_not_success() {
+        const good = fixture("succeeded");
+        const crashed = Protocol.create();
+        Protocol.consume(crashed, bytes(good));
+        verify(!Protocol.finish(crashed, 0, false, false), "Crash is not success");
+    }
+}

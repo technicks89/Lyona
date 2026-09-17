@@ -11,11 +11,16 @@ Scope {
 
     signal snapshotRequested()
     signal acknowledged(string operationId)
-    signal discoveryInvalidated()
+    // #262 (05b74e0): carries the action that changed, so the caller can
+    // invalidate only that action's own discovery domain instead of always
+    // the update discovery model regardless of what actually mutated.
+    signal discoveryInvalidated(string actionId)
 
     property string state: "idle"
     property string detail: ""
     property var progress: null
+    readonly property var currentItem: streamOwned && !streamFailed && !terminalPending ? liveItem : null
+    property var liveItem: null
     property var result: null
     property var audit: null
     property var operationError: null
@@ -112,6 +117,7 @@ Scope {
         } else if (active !== null || terminal !== null) {
             const target = active !== null ? active : terminal;
             root.parser = Protocol.create(target.id, target.actionId);
+            root.liveItem = null;
             root.progress = null;
             root.log = [];
             root.streamOwned = true;
@@ -122,7 +128,7 @@ Scope {
             if (root.cancelUncertainId !== target.id) root.cancelUncertainId = "";
             if (root.cancelConflictId !== target.id) root.cancelConflictId = "";
             if (!root.cancelRequestedId && !root.cancelUncertainId && !root.cancelConflictId) root.cancelDetail = "";
-            if (active !== null) root.discoveryInvalidated();
+            if (active !== null) root.discoveryInvalidated(target.actionId);
             root.progress = active;
             root.state = "observing";
             root.detail = "Observing " + target.actionId;
@@ -140,75 +146,65 @@ Scope {
     // This internal entry point is not exposed by IPC. The Settings caller
     // also validates visible confirmation, fresh discovery and availability.
     function startUpdate(action, generation) {
-        // Recheck fields rather than a UI binding during reentrant publication.
-        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
-                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
-                || typeof generation !== "string"
-                || (action !== "updates-refresh" && action !== "updates-install-all")
-                || (action === "updates-install-all" ? !/^[0-9a-f]{64}$/.test(generation) : generation !== ""))
-            return false;
-        const command = Commands.systemManagementCommand(action,
-            action === "updates-install-all" ? [generation] : []);
-        root.snapshotKnown = false;
-        root.parser = Protocol.create("", action);
-        root.progress = null;
-        root.log = [];
-        root.streamOwned = true;
-        root.streamReplay = false;
-        root.streamFailed = false;
-        root.terminalPending = false;
-        root.result = null;
-        root.audit = null;
-        root.operationError = null;
-        root.cancelRequestedId = "";
-        root.cancelUncertainId = "";
-        root.cancelConflictId = "";
-        root.cancelDetail = "";
-        root.state = "observing";
-        root.detail = "Starting " + action;
-        watchProcess.command = command;
-        root.discoveryInvalidated();
-        Qt.callLater(function() { if (root.streamOwned) watchProcess.running = true; });
-        return true;
+        if (action !== "updates-refresh" && action !== "updates-install-all") return false;
+        return root.startOperation(action, "", generation);
     }
 
     // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.1): regional and
     // delegated actions land in the same journal watch-operation/
     // ack-operation already serve, so they reuse this model's existing
     // recovery/watch/acknowledge machinery unchanged -- only a way to start
-    // one was missing. startUpdate's own signature does not fit either
-    // family cleanly (three regional actions always take a 64-hex generation
-    // *and* an argument; four delegated actions take neither), so these are
-    // separate entry points rather than an overload, sharing dispatch()'s
-    // "claim ownership, build the command, launch watchProcess" tail.
-
-    // RegionalMutation re-validates the generation against a fresh read
-    // server-side before dispatch -- this precondition check is a QML-side
-    // fast path, not the authority. Argument shape matches
-    // validate_regional_argument() in scripts/dwm-system-management: a
-    // timezone name, "enabled"/"disabled", or "LANG=...".
-    function startRegional(action, argument, generation) {
-        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
-                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
-                || ["timezone-set", "ntp-set", "locale-set"].indexOf(action) < 0
-                || typeof argument !== "string" || !/^[0-9a-f]{64}$/.test(generation))
-            return false;
-        return root.dispatch(action, [action, argument, generation]);
+    // one was missing.
+    // #262 (05b74e0): startUpdate/startRegional/startDelegated used to each
+    // carry their own ad-hoc precondition check and a hand-built argv. One
+    // originArguments()/startOperation() pair now does both for every fixed
+    // action, so a new action can't accidentally skip a check the others
+    // already had. startRegional()/startDelegated() briefly stayed as thin
+    // wrappers (Sync Sprint 1 S1-03/S1-04) while their only callers were
+    // SystemManagementModel's own confirmRegional()/confirmDelegate(); both
+    // callers are now converged onto startNative() directly
+    // (SystemRegionalSettingsModel.confirm() and confirmDelegate(), Sync
+    // Sprint 1 S1-05), so the wrappers themselves are removed.
+    function startNative(action, value, generation) {
+        if (["timezone-set", "ntp-set", "locale-set", "accounts-open", "password-open",
+                "printers-open", "sources-open"].indexOf(action) < 0) return false;
+        return root.startOperation(action, value, generation);
     }
 
-    // Delegated actions take no argument and no generation -- the helper
-    // resolves and launches a fixed tool, or reports it unsupported/
-    // unavailable. No package-change-style preview applies.
-    function startDelegated(action) {
-        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
-                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
-                || ["accounts-open", "password-open", "printers-open", "sources-open"].indexOf(action) < 0)
-            return false;
-        return root.dispatch(action, [action]);
+    // The single source of truth for what a fixed action's argv may
+    // legally be. RegionalMutation re-validates the generation against a
+    // fresh read server-side before dispatch -- this is a QML-side fast
+    // path, not the authority -- but it still must not be looser than the
+    // helper's own validate_regional_argument(): a timezone name,
+    // "enabled"/"disabled", or "LANG=...".
+    function originArguments(action, value, generation) {
+        if (typeof action !== "string" || typeof value !== "string" || typeof generation !== "string") return null;
+        if (action === "updates-refresh") return value === "" && generation === "" ? [] : null;
+        if (action === "updates-install-all")
+            return value === "" && generation.length === 64 && /^[0-9a-f]{64}$/.test(generation) ? [generation] : null;
+        if (["accounts-open", "password-open", "printers-open", "sources-open"].indexOf(action) >= 0)
+            return value === "" && generation === "" ? [] : null;
+        if (generation.length !== 64 || !/^[0-9a-f]{64}$/.test(generation)) return null;
+        if (action === "timezone-set" && value.length > 0 && value.length <= 255 && !/[^\x20-\x7e]/.test(value)
+                && value.split("/").every(part => part !== "" && part !== "." && part !== "..")) return [value, generation];
+        if (action === "ntp-set" && (value === "enabled" || value === "disabled")) return [value, generation];
+        // Readable locale aliases are broader; never claim an origin for a
+        // selection that the fixed locale service cannot accept.
+        const locale = value.slice(5);
+        if (action === "locale-set" && value.startsWith("LANG=") && locale.length > 0 && locale.length < 128
+                && locale !== "." && locale !== ".." && !/[^A-Za-z0-9_.@-]/.test(locale)) return [value, generation];
+        return null;
     }
 
-    function dispatch(action, args) {
-        const command = Commands.systemManagementCommand(args[0], args.slice(1));
+    function startOperation(action, value, generation) {
+        const args = root.originArguments(action, value, generation);
+        // Recheck fields rather than a UI binding during reentrant publication.
+        if (!root.snapshotKnown || root.streamOwned || root.controlOwned || root.waitingSnapshot
+                || root.blocked || retryTimer.running || root.snapshotActive !== null || root.handoff !== null
+                || args === null)
+            return false;
+        const command = Commands.systemManagementCommand(action, args);
+        root.liveItem = null;
         root.snapshotKnown = false;
         root.parser = Protocol.create("", action);
         root.progress = null;
@@ -227,7 +223,7 @@ Scope {
         root.state = "observing";
         root.detail = "Starting " + action;
         watchProcess.command = command;
-        root.discoveryInvalidated();
+        root.discoveryInvalidated(action);
         Qt.callLater(function() { if (root.streamOwned) watchProcess.running = true; });
         return true;
     }
@@ -253,13 +249,15 @@ Scope {
                 break;
             }
         }
+        root.liveItem = root.parser.item;
         root.log = root.parser.records.filter(record => !Protocol.terminal(record.state));
     }
 
     function finishWatch(exitCode, normalExit) {
         if (!root.streamOwned) return;
-        if (root.parser.expectedAction === "updates-refresh" || root.parser.expectedAction === "updates-install-all")
-            root.discoveryInvalidated();
+        // #262: every action's own domain gets invalidated now, not only
+        // the two update actions.
+        root.discoveryInvalidated(root.parser.expectedAction);
         if (!Protocol.finish(root.parser, exitCode, normalExit, root.streamReplay)) {
             root.streamFailed = true;
             root.recover(exitCode === 3 ? "Operation watch target changed (conflict)" : root.parser.failure);
@@ -381,12 +379,17 @@ Scope {
             root.controlOwned = false;
             return;
         }
+        // #262: capture before result/handoff are cleared below -- the
+        // acknowledged operation's own domain is invalidated, not always
+        // the update discovery model.
+        const acknowledgedAction = root.result.actionId;
         if (root.matches(root.handoff, root.result)) root.handoff = null;
         if (root.snapshotActive !== null && root.snapshotActive.id === root.controlId)
             root.snapshotActive = null;
         // Match the bounded retained journal: late discovery output must not
         // resurrect an acknowledged identity or send a duplicate ack control.
         root.acknowledgedIds = root.acknowledgedIds.concat([root.controlId]).slice(-32);
+        root.discoveryInvalidated(acknowledgedAction);
         root.retries = 0;
         root.detail = root.result.detail;
         root.controlOwned = false;

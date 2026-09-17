@@ -109,10 +109,9 @@ ShellRoot {
         id: dwmState
     }
 
-    SystemClock {
+    ClockModel {
         id: clock
-
-        precision: SystemClock.Minutes
+        timezoneState: systemManagementModel.nativeStates.timezone || null
     }
 
     LauncherModel {
@@ -971,29 +970,144 @@ ShellRoot {
         // separate probe to poll, the same split
         // systemManagementOperationState()/systemManagementOperationResult()
         // already establish for async state.
+        // Sync Sprint 1 S1-05 (#268): SystemManagementModel.prepareRegional()/
+        // regionalPreview/confirmRegional()/discardRegional() moved into
+        // SystemRegionalSettingsModel (systemManagementModel.regional) --
+        // these probes keep their established names (existing tests call
+        // them) but now route to that model.
         function systemManagementRegionalPreviewPending(): bool {
-            return systemManagementModel.regionalPreviewPending;
+            return systemManagementModel.regional.request !== null;
         }
 
         function systemManagementRegionalPreview(action: string, argument: string): bool {
-            return systemManagementModel.prepareRegional(action, argument);
+            return systemManagementModel.regional.prepare(action, argument);
         }
 
         function systemManagementRegionalPreviewResult(): string {
-            const preview = systemManagementModel.regionalPreview;
+            const confirmation = systemManagementModel.regional.confirmation;
+            const preview = confirmation === null ? null : confirmation.preview;
             return preview === null ? "" : preview.actionId + ":" + preview.current + ":" + preview.target;
         }
 
         function systemManagementRegionalConfirm(): bool {
-            return systemManagementModel.confirmRegional();
+            return systemManagementModel.regional.confirm();
         }
 
         function systemManagementRegionalDiscard(): void {
-            systemManagementModel.discardRegional();
+            systemManagementModel.regional.discard();
         }
 
+        function systemManagementRegionalMessage(): string {
+            return systemManagementModel.regional.message;
+        }
+
+        function systemManagementRegionalOwnsPreparation(): bool {
+            return systemManagementModel.regional.ownsPreparation();
+        }
+
+        // Fire-and-poll, matching systemManagementRegionalPreview()'s own
+        // split: the read is async, so request and result are separate
+        // probes.
+        function systemManagementRegionalRequestChoices(kind: string): bool {
+            return systemManagementModel.regional.requestChoices(kind);
+        }
+
+        function systemManagementRegionalChoicesCount(kind: string): int {
+            return systemManagementModel.regional.choices(kind).length;
+        }
+
+        // Sync Sprint 1 S1-04 (#266): delegated actions now go through a
+        // visible confirmation step (prepareDelegate()/confirmDelegate()/
+        // discardDelegate()), the same as regional mutations already do.
+        // Kept as one convenience probe (prepare then confirm) for existing
+        // test call sites that only care about the end-to-end outcome; the
+        // individual steps below exist to test the confirmation step itself.
         function systemManagementDelegatedLaunch(action: string): bool {
-            return systemManagementModel.launchDelegated(action);
+            return systemManagementModel.prepareDelegate(action) && systemManagementModel.confirmDelegate();
+        }
+
+        function systemManagementNativeConfirmationPending(): bool {
+            return systemManagementModel.nativeConfirmation !== null;
+        }
+
+        function systemManagementPrepareDelegate(action: string): bool {
+            return systemManagementModel.prepareDelegate(action);
+        }
+
+        function systemManagementConfirmDelegate(): bool {
+            return systemManagementModel.confirmDelegate();
+        }
+
+        function systemManagementDiscardDelegate(): void {
+            systemManagementModel.discardDelegate();
+        }
+
+        function systemManagementNativeConfirmationMessage(): string {
+            return systemManagementModel.nativeConfirmationMessage;
+        }
+
+        // Sync Sprint 1 S1-03 (#261): one discovery model per native domain,
+        // same phase:ready/failed/inactive shape as systemManagementDiscoveryStatus()
+        // above (the update domain's own probe), for "time", "locale",
+        // "accounts" or "printers".
+        function systemManagementNativeDiscoveryStatus(domain: string): string {
+            const discovery = domain === "time" ? systemManagementModel.timeDiscovery
+                : domain === "locale" ? systemManagementModel.localeDiscovery
+                : domain === "accounts" ? systemManagementModel.accountDiscovery
+                : domain === "printers" ? systemManagementModel.printerDiscovery : null;
+            if (discovery === null) return "";
+            return discovery.phase + ":" + (discovery.ready ? "ready"
+                : discovery.failed ? "failed" : "inactive");
+        }
+
+        // Sync Sprint 1 S1-08 (#275/#276): a time-service owner arrival is
+        // uncertainty, not a confirmed change -- these expose
+        // systemManagementModel.timeReconciliation's own reconciliation
+        // state, distinct from timeDiscovery's plain watch-stream health.
+        function systemManagementTimeReconciliationBlocked(): bool {
+            return systemManagementModel.timeReconciliation.blocked;
+        }
+
+        function systemManagementTimeReconciliationDetail(): string {
+            return systemManagementModel.timeReconciliation.detail;
+        }
+
+        function systemManagementTimeSampleNow(): void {
+            systemManagementModel.timeReconciliation.sampleNow();
+        }
+
+        // #259/#261: the degradation-aware view, not the raw parsed record --
+        // proves nativeProviderView() actually reflects a healthy read once
+        // its own discovery monitor is up, for "regional", "accounts",
+        // "printers" or "sources".
+        function systemManagementNativeProviderStatus(owner: string): string {
+            return systemManagementModel.nativeProviderView(owner).status;
+        }
+
+        // #259/#261: same for one native state identifier (e.g. "timezone",
+        // "ntp-enabled", "locale", "accounts-count", "cups-service").
+        function systemManagementNativeStateValue(identifier: string): string {
+            const state = systemManagementModel.nativeStateView(identifier);
+            return state.status + ":" + state.value;
+        }
+
+        function systemManagementAccountsCount(): int {
+            return systemManagementModel.accounts.length;
+        }
+
+        function systemManagementRepositoriesCount(): int {
+            return systemManagementModel.repositories.length;
+        }
+
+        // Sync Sprint 1 S1-06 (#270): the shared ClockModel, not
+        // system-management-specific, but exposed alongside these probes
+        // since it now feeds SystemSettingsPane's "Local date and time" row.
+        function clockPanelText(): string {
+            return clock.panelText;
+        }
+
+        function clockSettingsText(): string {
+            return clock.settingsText;
         }
 
         function autostartConfirming(): bool {
@@ -1160,6 +1274,7 @@ ShellRoot {
     }
 
     SettingsWindow {
+        clock: clock
         settingsModel: settingsModel
         networkModel: networkModel
         bluetoothModel: bluetoothModel

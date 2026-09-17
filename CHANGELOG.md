@@ -10,6 +10,120 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add a manual `Full suite (manual)` GitHub Actions workflow
+  (`.github/workflows/full-suite.yml`, Sync Sprint 1 S1-01,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) that runs `scripts/run-tests
+  make check` (or one named target) as an unprivileged user in an
+  `archlinux:base-devel` container, uploads the log, and optionally builds
+  dwm with clang. Push and pull-request CI is unchanged.
+- Add confirmed delegated administration (Sync Sprint 1 S1-04,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream `#266`/`#267`):
+  the Accounts/Password/Printers/Software-sources launch buttons in
+  Settings → System now show a visible "Open *tool*?" confirmation card
+  before launching, the same as regional (timezone/NTP/locale) changes
+  already do, instead of dispatching on the first click.
+  `SystemManagementModel.qml` gains `nativeConfirmation`/
+  `prepareDelegate()`/`confirmDelegate()`/`discardDelegate()`/
+  `delegateActionReason()`, replacing `launchDelegated()`, which dispatched
+  immediately with no confirmation step. A live account or printer change
+  retires an in-progress confirmation prepared against stale data. The new
+  `config/quickshell/settings/SystemDelegateControls.qml` also lists the
+  accounts and software sources the system currently reports, read-only.
+  D-3 (`accounts-open`/`sources-open` permanently `unsupported` on Arch, no
+  `lxqt-admin-user`/`dnfdragora` equivalent) is unchanged; their launch
+  buttons stay disabled and now show the helper's own reason text.
+- Give regional (timezone/locale/NTP) preview and confirmation its own model
+  (Sync Sprint 1 S1-05, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
+  from upstream `#268`/`#269`): the new
+  `config/quickshell/systemmanagement/SystemRegionalSettingsModel.qml`
+  replaces the regional preview/confirm state that used to live directly on
+  `SystemManagementModel.qml` (`regionalPreview`/`prepareRegional()`/
+  `confirmRegional()`/`discardRegional()`), the same split S1-04 already
+  gave delegated actions. `SystemRegionalControls.qml` is rewritten to
+  match: timezone and locale changes now load a reported choices catalog
+  first and require an exact selection from it, rather than accepting free
+  text, before reviewing and confirming a change. A pending update,
+  delegated, or regional confirmation now blocks starting any of the other
+  two consistently in both directions -- closing gaps in the S1-04 mutual
+  exclusion where an update confirmation in flight did not block starting a
+  delegated one, and a live confirmation-invalidation signal did not clear
+  a pending delegated confirmation.
+- Share one timezone-aware minute clock between the panel and Settings
+  (Sync Sprint 1 S1-06, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
+  from upstream `#270`): the new `config/quickshell/core/ClockModel.qml`
+  replaces a bare `SystemClock` instance in the panel that never noticed a
+  live `timezone-set` change -- Qt's `Date` does not re-read the system
+  timezone on its own, so nothing previously called
+  `Date.timeZoneUpdated()` after a confirmed timezone mutation. The
+  System Settings page now also shows the current local date and time next
+  to the timezone/locale controls.
+- Add a bounded, event-driven read path for network time status to
+  `dwm-system-management` (Sync Sprint 1 S1-07,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
+  `#271`/`#272`/`#273`): new `ntp-sample` and `time-status` CLI commands
+  publish one finite record each, and a new `watch-time` command emits a
+  `time-event\towner-arrived` record distinct from an actual `timedate1`
+  property change, separating "the service came back, state is uncertain"
+  from "state actually changed" for the first time. A local stop (SIGTERM/
+  SIGINT/SIGHUP) during a regional change or its verifying read now
+  terminalizes the in-flight journal operation as `interrupted` and returns
+  promptly instead of leaving it ambiguous or blocking on the change's own
+  timeout; a repeated stop coalesces rather than reordering cleanup, and an
+  unrelated `SystemExit` (such as the locale catalog collector's own signal
+  handling) is never reclassified as a stop. `finite_status_command()` also
+  fixes a case the ported test suite caught during development: a closed,
+  readonly, or Python-level-closed stdout previously reached the network
+  read before failing on the write, wasting a live D-Bus round trip on
+  output nobody could receive; it now fails immediately instead.
+- Reconcile network-time-service owner arrivals and sample synchronization
+  while System Settings is open (Sync Sprint 1 S1-08,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
+  `#274`/`#275`/`#276`): the "time" domain now watches with S1-07's
+  `watch-time` instead of `watch-regional time`, so an authenticated
+  `timedate1` owner arrival (uncertainty) is reconciled with a bounded
+  `time-status` read through the new `SystemTimeReconciliationModel.qml`,
+  instead of being treated as an unconditional invalidation the way every
+  other watched property change is. A confirmed `ntp-set` change now also
+  triggers an immediate `ntp-sample` read, and network time synchronization
+  is sampled every 30 seconds while Settings is open rather than only at the
+  last full snapshot; `SystemRegionalControls.qml` preserves and restores
+  keyboard focus around either read the same way it already does around a
+  regional confirmation. Found and fixed along the way: porting
+  `tests/qml/SystemRegionalPreflightOwner.qml` (upstream's own bespoke
+  integration harness for `SystemRegionalPreflightModel.qml`, closing a
+  coverage gap Sync Phase 9 deferred) against a real Quickshell process
+  surfaced a real crash -- `SystemRegionalPreflightProtocol.js`'s `consume()`
+  threw a `TypeError` on the empty buffer a reused `StdioCollector` can
+  deliver when its process restarts or fails to start, never previously
+  exercised; a `0`-byte buffer is now a no-op instead.
+- Show live per-package update progress and recover user-service session
+  evidence (Sync Sprint 1 S1-09, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`,
+  ported from the system-management half of upstream `#291`): PackageKit's
+  `Package`/`ItemProgress` signals now publish a bounded, ephemeral
+  `package-progress` record (name, phase, percent) separate from the
+  operation's own overall progress and log, and System Settings shows it as
+  a labeled progress bar in place of the previous raw operation-log
+  scrollback. A terminal operation's `error` record now always carries the
+  operation's own detail rather than a caller-supplied override, so a failed
+  acknowledgment's recovery instructions ("Reload status to retry") stay
+  visible instead of being replaced by unrelated internal audit text. Restart
+  evidence (`session_started()`) now also works when the helper is launched
+  as a `systemd --user` service outside any login session scope: it falls
+  back to logind's verified primary graphical display instead of failing
+  outright on `NoSessionForPID`, re-verifying that display's identity hasn't
+  changed before trusting its session timestamp. Ported and verified at the
+  Python and QML-model/protocol layers (7 new/adapted Python tests, 1 new
+  qmltestrunner test), plus upstream's own dedicated `SystemUpdateUi.qml`
+  xvfb integration harness (a pre-`#291` file, predating this item by a
+  long way -- see the sprint doc's S1-09 implementation notes) as
+  `make check-quickshell-update-ui-xvfb`: porting it surfaced and fixed a
+  real gap in its own fixture, not in production code -- with no active
+  operation and a `partial` recovery reading, `journalAdmitted` (S1-03,
+  from upstream's `#262`) had no evidence to trust the journal, since this
+  update-only fixture never emitted the minor-1 native provider/state/
+  action rows a real `dwm-system-management` always does; `operationModel`
+  correctly, if unhelpfully, retried into `blocked`. Fixed in the fixture,
+  not the model.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened
@@ -94,6 +208,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   nine-phase system-management port -- Settings UI wiring for all of this
   (pickers, toggles, launch buttons) is left for later, same as it was for
   every reader Sync Phase 8 added.
+- Add the Sync Phase 9 Settings UI (`sync-p9-settings-ui`, PR #33): a new
+  `config/quickshell/settings/SystemRegionalControls.qml` (timezone/locale
+  pickers, NTP toggle, delegated-launch buttons, a confirmation card) mounted
+  in `SystemSettingsPane.qml`; `SystemOperationModel.startRegional()`/
+  `startDelegated()` and `SystemManagementModel`'s `prepareRegional()`/
+  `confirmRegional()`/`discardRegional()`/`launchDelegated()` family driving
+  a private `SystemRegionalPreflightModel` instance; and `shell.qml` IPC
+  probes for regional preview/confirm and delegated launch. This is the
+  Settings UI half Sync Phase 9's own entry above left for later --
+  timezone/locale/NTP changes and delegated administration (accounts,
+  password, printers, sources) are now reachable from Settings, not only the
+  CLI. `launchDelegated()` dispatches without its own confirmation step;
+  Sync Sprint 1 (`docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) converges this
+  surface onto upstream's structure, which adds one.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
   root model over `lyona-update`/`lyona-version`, and a Settings -> System pane

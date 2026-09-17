@@ -461,7 +461,7 @@ class RegionalReadTests(unittest.TestCase):
             str(REPO / "tests/fixtures/system-regional-read-bus.py"), str(PROVIDER_PATH)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         try:
-            stdout, stderr = process.communicate(timeout=30)
+            stdout, stderr = process.communicate(timeout=45)
             self.assertEqual(process.returncode, 0, stderr.decode("utf-8", "replace"))
             self.assertIn(b"Private-bus regional reads: PASS", stdout)
         finally:
@@ -531,6 +531,305 @@ class NtpReadTests(unittest.TestCase):
             connection.call_finish.reset_mock(side_effect=True)
             read.replied(connection, object(), "NTPSynchronized")
             connection.call_finish.assert_not_called()
+
+
+class TimeStatusCommandTests(unittest.TestCase):
+    """Sync Sprint 1 S1-07, ported from upstream's 75ca9c2 (#273).
+
+    test_output_failure_and_interruption_never_report_success's first half
+    (writer failure/short-write modes) is not ported: it exercises
+    control_output_writers(), the abstraction Lyona declined during Sync
+    Phase 9 -- see NtpSampleCommandTests' own docstring for why that
+    divergence means this command was never exposed to the bug it guards
+    against. The signal-interruption half is ported unchanged below.
+    """
+
+    header = "time-status-protocol\t1\t0\n"
+    complete = "complete\ttime-status\n"
+
+    def test_exact_tuple_and_strict_validation(self):
+        for can_ntp in (False, True):
+            for enabled in (False, True):
+                for synchronized in (False, True):
+                    state = provider.RegionalTimeState("Etc/UTC", can_ntp, enabled, synchronized)
+                    with mock.patch.object(provider, "RegionalRead") as reader:
+                        reader.return_value.run.return_value = state
+                        output, code = provider.time_status_output()
+                    reader.assert_called_once_with("time-state")
+                    self.assertEqual(code, 0)
+                    self.assertEqual(output, self.header + "time\tEtc/UTC\t"
+                        + "\t".join("yes" if value else "no" for value in (can_ntp, enabled, synchronized))
+                        + "\n" + self.complete)
+        for state in (None, ("UTC", True, True, True),
+                      provider.RegionalTimeState("UTC", 1, True, True),
+                      provider.RegionalTimeState("UTC", True, "yes", True),
+                      provider.RegionalTimeState("UTC", True, True, 0),
+                      provider.RegionalTimeState("UTC\nrecord", True, True, True)):
+            with mock.patch.object(provider, "RegionalRead") as reader:
+                reader.return_value.run.return_value = state
+                output, code = provider.time_status_output()
+            self.assertEqual(code, 1)
+            self.assertIn("\nerror\ttime-status\tmalformed\t", output)
+            self.assertNotIn("\ntime\t", output)
+
+    def test_scoped_error_bounds_and_fixed_cli(self):
+        for error_code in (*sorted(provider.NTP_SAMPLE_ERROR_CODES), "other"):
+            with mock.patch.object(provider, "RegionalRead", side_effect=provider.SnapshotFailure(
+                    error_code, "failure\n\t\x00\ud800" + "é" * 600)):
+                output, code = provider.time_status_output()
+            self.assertEqual(code, 1)
+            self.assertEqual(len(output.splitlines()), 3)
+            self.assertTrue(output.startswith(self.header + "error\ttime-status\t"
+                + ("internal" if error_code == "other" else error_code) + "\t"))
+            self.assertTrue(output.endswith(self.complete))
+            self.assertLessEqual(len(output.encode()), provider.TIME_STATUS_STREAM_BYTES)
+        with mock.patch.object(provider, "RegionalRead") as reader, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                mock.patch.object(provider, "open_journal_directory") as journal, \
+                mock.patch.object(provider, "native_command") as mutation, \
+                contextlib.redirect_stdout(io.StringIO()) as output, \
+                contextlib.redirect_stderr(io.StringIO()):
+            reader.return_value.run.return_value = provider.RegionalTimeState("UTC", True, False, True)
+            self.assertEqual(provider.main(["time-status"]), 0)
+            self.assertEqual(output.getvalue(), self.header + "time\tUTC\tyes\tno\tyes\n" + self.complete)
+            for args in (["time"], ["--system"], ["Timezone"], ["extra", "argument"]):
+                self.assertEqual(provider.main(["time-status", *args]), 2)
+            reader.assert_called_once_with("time-state")
+            backend.assert_not_called()
+            journal.assert_not_called()
+            mutation.assert_not_called()
+
+    def test_interruption_never_reports_success(self):
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            previous = signal.getsignal(signum)
+            with mock.patch.object(provider, "RegionalRead") as reader, \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                def stop():
+                    signal.raise_signal(signum)
+                    signal.raise_signal(signum)
+                    return provider.RegionalTimeState("UTC", True, False, True)
+                reader.return_value.run.side_effect = stop
+                self.assertEqual(provider.main(["time-status"]), 1)
+                self.assertEqual(output.getvalue(), "")
+                reader.return_value.GLib.idle_add.assert_called_once()
+                reader.return_value.GLib.source_remove.assert_called_once()
+            self.assertIs(signal.getsignal(signum), previous)
+
+    def test_actual_command_handles_missing_output_and_unused_diagnostics(self):
+        code = """
+import os, runpy, sys
+from unittest import mock
+provider = runpy.run_path(sys.argv[1], run_name="time_output_fixture")
+mode = sys.argv[2]
+descriptor = 2 if mode.startswith("stderr") else 1
+if mode.endswith("readonly"):
+    source = os.open("/dev/null", os.O_RDONLY)
+    os.dup2(source, descriptor)
+    if source != descriptor:
+        os.close(source)
+elif mode.endswith("stream-closed"):
+    sys.stdout.close()
+else:
+    os.close(descriptor)
+    if mode.endswith("none"):
+        if descriptor == 1:
+            sys.stdout = None
+        else:
+            sys.stderr = None
+output = "time-status-protocol\\t1\\t0\\ntime\\tUTC\\tyes\\tno\\tyes\\ncomplete\\ttime-status\\n"
+reader = (lambda: (output, 0)) if descriptor == 2 else mock.Mock(side_effect=AssertionError("Read without output"))
+with mock.patch.dict(provider["main"].__globals__, time_status_output=reader):
+    raise SystemExit(provider["main"](["time-status"]))
+"""
+        for mode in ("stdout-closed", "stdout-readonly", "stdout-none", "stdout-stream-closed",
+                     "stderr-closed", "stderr-readonly", "stderr-none"):
+            with self.subTest(mode=mode):
+                result = subprocess.run([sys.executable, "-c", code, str(PROVIDER_PATH), mode],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, check=False)
+                available = mode.startswith("stderr")
+                self.assertEqual(result.returncode, 0 if available else 1)
+                self.assertEqual(result.stdout,
+                    (self.header + "time\tUTC\tyes\tno\tyes\n" + self.complete).encode() if available else b"")
+                self.assertEqual(result.stderr, b"")
+
+
+class NtpSampleCommandTests(unittest.TestCase):
+    """Sync Sprint 1 S1-07, ported from upstream's ebf7a31 (#271).
+
+    Two upstream cases are not ported: test_short_or_failed_write_cannot_report_completion
+    and test_real_pipe_output_preserves_parent_flags_and_fails_when_full both exercise
+    control_output_writers(), the nonblocking-descriptor write abstraction Lyona declined
+    during Sync Phase 9 (see control_output_writer()'s own docstring) because its simple
+    synchronous sys.stdout.write()/flush() path never sets O_NONBLOCK on the inherited
+    descriptor, so it was never exposed to the bug that abstraction exists to fix.
+    """
+
+    header = "ntp-sample-protocol\t1\t0\n"
+    complete = "complete\tntp-sample\n"
+
+    def test_all_boolean_pairs_have_one_exact_bounded_stream(self):
+        for can_ntp in (False, True):
+            for synchronized in (False, True):
+                with mock.patch.object(provider, "NtpRead") as reader:
+                    reader.return_value.run.return_value = provider.NtpSample(can_ntp, synchronized)
+                    output, code = provider.ntp_sample_output()
+                self.assertEqual(code, 0)
+                self.assertEqual(output, self.header + "sample\t"
+                    + ("yes" if can_ntp else "no") + "\t" + ("yes" if synchronized else "no") + "\n" + self.complete)
+                self.assertLessEqual(len(output.encode()), provider.NTP_SAMPLE_STREAM_BYTES)
+                reader.assert_called_once_with()
+                reader.return_value.run.assert_called_once_with()
+
+    def test_invalid_values_never_coerce_to_a_successful_sample(self):
+        for value in (None, (True, True), provider.NtpSample(1, True),
+                      provider.NtpSample(True, "yes")):
+            with mock.patch.object(provider, "NtpRead") as reader:
+                reader.return_value.run.return_value = value
+                output, code = provider.ntp_sample_output()
+            self.assertEqual(code, 1)
+            self.assertIn("\nerror\tntp-sample\tmalformed\t", output)
+            self.assertNotIn("\nsample\t", output)
+
+    def test_typed_errors_are_bounded_and_cannot_inject_records(self):
+        for error_code in (*sorted(provider.NTP_SAMPLE_ERROR_CODES), "unrecognized"):
+            failure = provider.SnapshotFailure(error_code, "denied\t\n\r\x00\ud800" + "é" * 600)
+            with mock.patch.object(provider, "NtpRead", side_effect=failure):
+                output, code = provider.ntp_sample_output()
+            self.assertEqual(code, 1)
+            self.assertEqual(len(output.splitlines()), 3)
+            expected_code = "internal" if error_code == "unrecognized" else error_code
+            self.assertTrue(output.startswith(self.header + "error\tntp-sample\t" + expected_code + "\t"))
+            self.assertTrue(output.endswith(self.complete))
+            self.assertNotIn("\nsample\t", output)
+            self.assertLessEqual(len(output.encode()), provider.NTP_SAMPLE_STREAM_BYTES)
+            self.assertTrue(output.splitlines()[1].split("\t")[3].isprintable())
+
+    def test_fixed_cli_never_enters_packagekit_journal_or_mutation_paths(self):
+        with mock.patch.object(provider, "NtpRead") as reader, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                mock.patch.object(provider, "open_journal_directory") as journal, \
+                mock.patch.object(provider, "native_command") as mutation, \
+                contextlib.redirect_stdout(io.StringIO()) as output, \
+                contextlib.redirect_stderr(io.StringIO()):
+            reader.return_value.run.return_value = provider.NtpSample(True, False)
+            self.assertEqual(provider.main(["ntp-sample"]), 0)
+            self.assertEqual(output.getvalue(), self.header + "sample\tyes\tno\n" + self.complete)
+            for arguments in (["time"], ["--system"], ["CanNTP"], ["enabled"], ["extra", "argument"]):
+                self.assertEqual(provider.main(["ntp-sample", *arguments]), 2)
+            reader.assert_called_once_with()
+            backend.assert_not_called()
+            journal.assert_not_called()
+            mutation.assert_not_called()
+
+    def test_unused_stderr_does_not_prevent_stdout_sampling(self):
+        code = """
+import os, runpy, sys
+from unittest import mock
+provider = runpy.run_path(sys.argv[1], run_name="ntp_output_fixture")
+if sys.argv[2] == "readonly":
+    descriptor = os.open("/dev/null", os.O_RDONLY)
+    os.dup2(descriptor, 2)
+    if descriptor != 2:
+        os.close(descriptor)
+else:
+    os.close(2)
+    if sys.argv[2] == "none":
+        sys.stderr = None
+with mock.patch.dict(provider["ntp_sample_output"].__globals__,
+        read_ntp_sample=lambda: provider["NtpSample"](True, False)):
+    raise SystemExit(provider["main"](["ntp-sample"]))
+"""
+        for mode in ("closed", "readonly", "none"):
+            with self.subTest(mode=mode):
+                result = subprocess.run([sys.executable, "-c", code, str(PROVIDER_PATH), mode],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, check=False)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout,
+                    (self.header + "sample\tyes\tno\n" + self.complete).encode())
+                self.assertEqual(result.stderr, b"")
+
+    def test_unavailable_stdout_is_a_controlled_failure(self):
+        code = """
+import os, runpy, sys
+from unittest import mock
+provider = runpy.run_path(sys.argv[1], run_name="ntp_output_fixture")
+mode = sys.argv[2]
+if mode == "readonly":
+    descriptor = os.open("/dev/null", os.O_RDONLY)
+    os.dup2(descriptor, 1)
+    if descriptor != 1:
+        os.close(descriptor)
+elif mode == "stream-closed":
+    sys.stdout.close()
+else:
+    os.close(1)
+    if mode == "none":
+        sys.stdout = None
+with mock.patch.dict(provider["ntp_sample_output"].__globals__,
+        read_ntp_sample=mock.Mock(side_effect=AssertionError("Read without output"))):
+    raise SystemExit(provider["main"](["ntp-sample"]))
+"""
+        for mode in ("closed", "readonly", "none", "stream-closed"):
+            with self.subTest(mode=mode):
+                result = subprocess.run([sys.executable, "-c", code, str(PROVIDER_PATH), mode],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5, check=False)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(result.stderr, b"")
+
+    def test_interruption_releases_output_context_and_restores_handlers(self):
+        handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        for signum in handlers:
+            with contextlib.redirect_stdout(io.StringIO()) as output, \
+                    contextlib.redirect_stderr(io.StringIO()), mock.patch.object(provider, "NtpRead") as reader:
+                def signal_read():
+                    signal.raise_signal(signum)
+                    signal.raise_signal(signum)
+                    return provider.NtpSample(True, True)
+                reader.return_value.run.side_effect = signal_read
+                self.assertEqual(provider.ntp_sample_command(), 1)
+                self.assertEqual(output.getvalue(), "")
+                reader.return_value.fail.assert_not_called()
+                reader.return_value.GLib.idle_add.assert_called_once()
+                reader.return_value.GLib.source_remove.assert_called_once_with(
+                    reader.return_value.GLib.idle_add.return_value)
+            for selected, handler in handlers.items():
+                self.assertIs(signal.getsignal(selected), handler)
+
+    def test_signal_between_done_check_and_loop_start_cannot_lose_quit(self):
+        from gi.repository import GLib
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            gio = mock.Mock()
+            read = provider.NtpRead(gio, GLib)
+            loop = read.loop
+            expired = []
+
+            def guarded_stop():
+                expired.append(True)
+                loop.quit()
+                return GLib.SOURCE_REMOVE
+
+            def start():
+                # ServiceRead.run has already passed `if not self.done`.
+                signal.raise_signal(signum)
+                loop.run()
+
+            read.loop = types.SimpleNamespace(run=start, quit=loop.quit)
+            guard = GLib.timeout_add(200, guarded_stop)
+            try:
+                with mock.patch.object(provider, "NtpRead", return_value=read), \
+                        contextlib.redirect_stdout(io.StringIO()) as output, \
+                        contextlib.redirect_stderr(io.StringIO()) as diagnostic:
+                    self.assertEqual(provider.ntp_sample_command(), 1)
+                self.assertEqual(expired, [], "Cancellation quit before the main loop could observe it")
+                self.assertEqual(output.getvalue(), "")
+                # PyGObject's first loop may emit Python deprecation warnings.
+                self.assertNotIn("Traceback", diagnostic.getvalue())
+                self.assertTrue(read.done)
+                gio.bus_get_finish.assert_not_called()
+            finally:
+                if not expired:
+                    GLib.source_remove(guard)
 
 
 class RegionalMutationTests(unittest.TestCase):
@@ -626,9 +925,12 @@ class RegionalMutationTests(unittest.TestCase):
         self.gio, self.glib = gio, glib
         return client
 
-    def run_client(self, client):
+    def run_client(self, client, *, interruptible=False):
         with mock.patch.object(provider, "read_locale_choices", return_value=("C", "en_US.utf8")), \
                 mock.patch.object(provider.time, "monotonic", side_effect=lambda: self.clock):
+            if interruptible:
+                with contextlib.ExitStack() as retained:
+                    return provider.run_interruptible_regional(client, retained)
             return client.run()
 
     def failure(self, client, code):
@@ -724,6 +1026,40 @@ class RegionalMutationTests(unittest.TestCase):
             self.assertLessEqual(self.context.iteration.call_count, provider.REGIONAL_CALLBACK_LIMIT)
             if scenario == "checkpoint":
                 self.assertIsInstance(client.hook_error, OSError)
+
+    def test_stop_after_final_drain_prevents_mutating_request(self):
+        for action, argument in (("timezone-set", "Etc/UTC"), ("ntp-set", "enabled"),
+                                 ("locale-set", "LANG=en_US.utf8")):
+            for stage in ("arguments", "timer", "request"):
+                for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                    with self.subTest(action=action, stage=stage, signum=signum):
+                        client = self.client(action, argument)
+                        self.glib.idle_add = mock.Mock(return_value=1000)
+                        self.glib.PRIORITY_HIGH = -100
+                        variant, timer = self.glib.Variant, self.glib.timeout_add.side_effect
+                        variant_type = self.glib.VariantType
+                        def arguments(signature, values):
+                            if stage == "arguments" and signature in ("(sb)", "(bb)", "(asb)"):
+                                signal.raise_signal(signum)
+                            return variant(signature, values)
+                        def arm(milliseconds, callback):
+                            if stage == "timer" and milliseconds == 60000:
+                                signal.raise_signal(signum)
+                            return next(timer)
+                        def expected_type(signature):
+                            if stage == "request" and client.sent:
+                                signal.raise_signal(signum)
+                            return variant_type.new(signature)
+                        self.glib.Variant = arguments
+                        self.glib.VariantType = types.SimpleNamespace(new=expected_type)
+                        self.glib.timeout_add.side_effect = arm
+                        with self.assertRaises(provider.RegionalCommandInterrupted):
+                            self.run_client(client, interruptible=True)
+                        self.assertEqual(self.mutations(), [])
+                        # Once handoff has begun, a stopped request remains
+                        # conservatively unconfirmed even if the bus was not called.
+                        self.assertEqual(client.sent, stage == "request")
+                        self.assertEqual([event[0] for event in self.events], ["authorizing"])
 
     def test_matching_notifications_are_accepted_but_conflict_history_is_retained(self):
         for conflict in (False, True):
@@ -1262,12 +1598,23 @@ class LocaleEnumerationTests(unittest.TestCase):
         while time.monotonic() < deadline:
             try:
                 state = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 return
             if state == "Z":
                 return
             time.sleep(0.02)
         self.fail(f"Owned locale fixture {pid} remained running")
+
+    def test_stopped_process_assertion_accepts_disappearance_during_read(self):
+        for error in (FileNotFoundError, ProcessLookupError):
+            with self.subTest(error=error), \
+                    mock.patch.object(pathlib.Path, "read_text", side_effect=error):
+                self.assert_process_stopped(123)
+
+    def test_stopped_process_assertion_preserves_other_read_errors(self):
+        with mock.patch.object(pathlib.Path, "read_text", side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                self.assert_process_stopped(123)
 
     def test_non_main_thread_cannot_install_process_signal_handlers(self):
         errors = []
@@ -2845,6 +3192,74 @@ class RegionalEventMonitorTests(unittest.TestCase):
             self.assertEqual(result.stdout, kind + " private-bus event monitor: PASS\n")
 
 
+class TimeEventMonitorTests(unittest.TestCase):
+    """Sync Sprint 1 S1-07, ported from upstream's 75ca9c2 (#273)."""
+
+    owner = RegionalEventMonitorTests.owner
+    properties = RegionalEventMonitorTests.properties
+
+    def monitor(self):
+        _regional, emitted, gio, glib, unix = RegionalEventMonitorTests().monitor()
+        monitor = provider.TimeEventMonitor(gio, glib, unix, emitted.append)
+        monitor.deadline = time.monotonic() + 10
+        monitor.deadline_source = 7
+        monitor.connection = gio.bus_get_finish.return_value
+        return monitor, emitted, gio, glib
+
+    def test_arrivals_are_distinct_but_departure_and_untrusted_signals_are_quiet(self):
+        monitor, emitted, _gio, glib = self.monitor()
+        monitor.ready, monitor.owner = True, ":1.2"
+        self.owner(monitor, glib, ":1.2", "")
+        self.properties(monitor, glib, ["NTP"])
+        self.owner(monitor, glib, "", ":1.8", sender=":1.8")
+        self.assertEqual(emitted, [])
+        self.owner(monitor, glib, "", ":1.3")
+        self.owner(monitor, glib, ":1.3", ":1.4")
+        self.assertEqual(emitted, ["time-event\towner-arrived"] * 2)
+        self.properties(monitor, glib, ["NTP"], sender=":1.3")
+        self.properties(monitor, glib, ["Timezone"], sender=":1.4")
+        self.properties(monitor, glib, invalidated=["NTPSynchronized"], sender=":1.4")
+        self.assertEqual(emitted[2:], ["time-event\tchanged"] * 2)
+        monitor.stop(0)
+        self.owner(monitor, glib, ":1.4", ":1.5")
+        self.assertEqual(len(emitted), 4)
+
+    def test_setup_arrivals_and_properties_coalesce_without_losing_owner_epoch(self):
+        monitor, emitted, _gio, glib = self.monitor()
+        self.owner(monitor, glib, "", ":1.2")
+        self.properties(monitor, glib, ["NTP"])
+        self.owner(monitor, glib, ":1.2", ":1.3")
+        self.assertEqual(emitted, [])
+        monitor.connection.call_finish.return_value = glib.Variant("(s)", (":1.2",))
+        monitor.owner_resolved(monitor.connection, object(), 0)
+        self.assertEqual(monitor.owner, ":1.3")
+        self.assertEqual(emitted, ["time-event\tready", "time-event\tchanged"])
+        self.assertFalse(monitor.dirty)
+
+    def test_failed_arrival_output_stops_monitor(self):
+        monitor, _emitted, _gio, glib = self.monitor()
+        monitor.ready = True
+        monitor.emit = mock.Mock(side_effect=BlockingIOError())
+        self.owner(monitor, glib, "", ":1.2")
+        self.assertTrue(monitor.stopped)
+        self.assertEqual(monitor.exit_code, 1)
+
+    def test_fixed_cli_and_real_private_bus_lifecycle(self):
+        with mock.patch.object(provider, "watch_service_events", return_value=0) as watch, \
+                mock.patch.object(provider, "PackageKitBackend") as backend, \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(provider.main(["watch-time"]), 0)
+            for args in (["time"], ["locale"], ["--system"], ["extra", "argument"]):
+                self.assertEqual(provider.main(["watch-time", *args]), 2)
+            watch.assert_called_once_with("time-discovery")
+            backend.assert_not_called()
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-update-events-bus.py"), str(PROVIDER_PATH), "time-discovery"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "time-discovery private-bus event monitor: PASS\n")
+
+
 class AccountEventMonitorTests(unittest.TestCase):
     """Sync Phase 9, ported from upstream's 0eae066d unchanged -- distro-neutral."""
 
@@ -3190,6 +3605,33 @@ class OperationStreamTests(unittest.TestCase):
 
     def stream(self, output, action="updates-refresh"):
         return provider.OperationStream(self.operation_id, action, self.started, "Starting", output.append)
+
+    def test_user_error_stays_separate_from_audit_detail(self):
+        output = []
+        stream = self.stream(output, "updates-install-all")
+        stream.transition("running", "Working")
+        stream.finish(self.terminal("updates-install-all", "failed", "network"), detail="Internal audit comparison")
+        records = "".join(output).splitlines()
+        self.assertEqual(rows(records, "error")[0][3], "Durable result")
+        self.assertEqual(rows(records, "audit")[0][7], "Internal audit comparison")
+
+    def test_item_progress_is_coalesced_bounded_and_separate_from_lifecycle(self):
+        output = []
+        stream = self.stream(output, "updates-install-all")
+        stream.transition("running", "Working")
+        stream.item_progress("example", "downloading", 42)
+        stream.item_progress("example", "downloading", 42)
+        self.assertEqual(len(rows("".join(output).splitlines(), "package-progress")), 1)
+        self.assertEqual(stream.progress_records, 0)
+        for index in range(4200):
+            stream.item_progress("example", "installing", index % 101)
+        items = rows("".join(output).splitlines(), "package-progress")
+        self.assertEqual(len(items), 4097)
+        self.assertEqual(items[-1][2:], ["", "working", "unknown"])
+        stream.finish(self.terminal("updates-install-all"))
+        self.assertIn("complete\toperation\n", "".join(output))
+        with self.assertRaises(provider.OperationProtocolError):
+            stream.item_progress("example", "installing", 50)
 
     def test_progress_cap_reserves_every_lifecycle_and_terminal_record(self):
         output = []
@@ -8229,6 +8671,24 @@ class PackageKitExecutionTests(unittest.TestCase):
             self.assertIsNone(backend.connection.closed_callback)
             self.assertIn("\t42\tyes\t", "".join(chunks))
 
+    def test_package_item_progress_does_not_replace_overall_percentage_or_audit(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.progress(Status=8, Percentage=20),
+                lambda bus: bus.emit("Package", (10, self.package_id, "Example")),
+                lambda bus: bus.emit("ItemProgress", (self.package_id, 8, 67)),
+                lambda bus: bus.emit("ItemProgress", (self.package_id, 9, 101)),
+                lambda bus: bus.emit("ItemProgress", ("unsafe\tidentity", 9, 5)),
+                lambda bus: bus.emit("Finished", (1, 10))])
+            terminal = self.run_operation(journal, backend, chunks, update=True)
+            self.assertEqual(terminal.state, "succeeded")
+            items = rows("".join(chunks).splitlines(), "package-progress")
+            name = provider.package_display_fields(self.package_id)[0]
+            self.assertEqual([item[2:] for item in items], [[name, "downloading", "unknown"],
+                [name, "downloading", "67"], [name, "installing", "unknown"], ["", "working", "unknown"]])
+            self.assertIn("\t20\t", "".join(chunks))
+            self.assertNotIn("unsafe", "".join(chunks))
+
     def test_update_uses_exact_ids_and_accumulates_restart_contributions(self):
         with self.journal() as journal:
             chunks = []
@@ -8349,6 +8809,18 @@ class PackageKitExecutionTests(unittest.TestCase):
             self.assertNotIn("complete\toperation", "".join(chunks))
             self.assertIn("Cancel", [call[3] for call in backend.connection.calls])
             os.fchmod(journal.descriptor("terminal-31"), 0o600)
+
+    def test_early_item_progress_does_not_change_denial_or_restart_evidence(self):
+        with self.journal() as journal:
+            chunks = []
+            backend = self.backend(journal, [lambda bus: bus.emit("ItemProgress", (self.package_id, 8, 42)),
+                lambda bus: bus.reply_error("AccessDenied")])
+            terminal = self.run_operation(journal, backend, chunks, update=True)
+            self.assertEqual((terminal.state, terminal.system_restart, terminal.session_restart),
+                             ("permission-denied", "none", "none"))
+            records = "".join(chunks).splitlines()
+            self.assertEqual(rows(records, "package-progress"), [])
+            self.assertNotIn("running", [record[4] for record in rows(records, "operation")])
 
     def test_output_failure_after_send_does_not_abandon_durable_result(self):
         with self.journal() as journal:
@@ -8553,6 +9025,45 @@ class SessionEvidenceTests(unittest.TestCase):
         self.assertEqual(second.args[4].unpack(), ("org.freedesktop.login1.Session", "TimestampMonotonic"))
         self.assertEqual((first.args[5], second.args[5]), (None, None))
         self.assertEqual((first.args[7], second.args[7]), (9000, 7000))
+
+    def service_backend(self, changes=None, final_identity=None):
+        backend = self.backend()
+        backend.Gio.dbus_error_get_remote_error = lambda error: str(error)
+        user_path = "/org/freedesktop/login1/user/_1000"
+        identity = ("7", "/org/freedesktop/login1/session/_37")
+        state = dict(User=(provider.os.getuid(), user_path), Id="7", Type="x11",
+                     Class="user", State="active", Active=True, Remote=False)
+        state.update(changes or {})
+        def boxed(signature, value):
+            return self.Variant("(v)", (self.Variant("v", self.Variant(signature, value)),))
+        backend.connection.call_sync.side_effect = [
+            RuntimeError("org.freedesktop.login1.NoSessionForPID"),
+            self.Variant("(o)", (user_path,)), boxed("(so)", identity),
+            self.Variant("(a{sv})", (state,)), boxed("t", 456),
+            boxed("(so)", final_identity or identity)]
+        return backend
+
+    def test_user_service_uses_verified_primary_display(self):
+        backend = self.service_backend()
+        with mock.patch.dict(provider.os.environ, {"XDG_SESSION_ID": "untrusted-other-session"}):
+            self.assertEqual(backend.session_started(), 456)
+        calls = backend.connection.call_sync.call_args_list
+        self.assertEqual(calls[1].args[3:5][0], "GetUser")
+        self.assertEqual(calls[1].args[4].unpack(), (provider.os.getuid(),))
+        self.assertEqual(calls[3].args[3], "GetAll")
+        self.assertEqual(calls[-1].args[4].unpack(), ("org.freedesktop.login1.User", "Display"))
+
+    def test_user_service_rejects_unverified_display(self):
+        for changes in ({"User": (provider.os.getuid() + 1, "/other")},
+                        {"Id": "other"}, {"Type": "tty"}, {"Class": "manager"},
+                        {"State": "closing"}, {"Active": False}, {"Remote": True}):
+            with self.subTest(changes=changes), self.assertRaises(provider.SnapshotFailure):
+                self.service_backend(changes).session_started()
+
+    def test_user_service_retains_guidance_when_display_changes(self):
+        with self.assertRaises(provider.SnapshotFailure) as raised:
+            self.service_backend(final_identity=("8", "/org/freedesktop/login1/session/_38")).session_started()
+        self.assertEqual(raised.exception.code, "missing-provider")
 
     def test_malformed_session_path_never_reads_property(self):
         for path in ("/other", "/org/freedesktop/login1/session/", "/org/freedesktop/login1/session/" + "x" * 257):
@@ -9067,6 +9578,100 @@ raise SystemExit(p["main"](sys.argv[2:]))
         self.assertNotIn("complete\toperation", "".join(chunks))
 
 
+class RegionalInterruptionTests(unittest.TestCase):
+    """Sync Sprint 1 S1-07, ported from upstream's 3bef09c (#272)."""
+
+    catalog = LocaleEnumerationTests.catalog
+
+    def run_client(self, client):
+        with contextlib.ExitStack() as retained:
+            return provider.run_interruptible_regional(client, retained)
+
+    def test_locale_enumeration_stop_reaps_child_and_becomes_typed_rejection(self):
+        from gi.repository import GLib
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            gio = mock.Mock()
+            client = provider.RegionalMutation("locale-set", "LANG=C", "a" * 64,
+                mock.Mock(), mock.Mock(), gio, GLib)
+            with self.subTest(signum=signum), self.catalog("closed-pipes", signal_number=signum) as processes:
+                with self.assertRaises(provider.RegionalCommandInterrupted) as raised:
+                    self.run_client(client)
+                self.assertIn("no change was sent", raised.exception.detail)
+                self.assertFalse(client.sent)
+                gio.bus_get.assert_not_called()
+                self.assertTrue(all(p.returncode is not None and p.stdout.closed and p.stderr.closed for p in processes))
+
+    def test_repeated_stop_coalesces_and_rejects_a_just_completed_read(self):
+        handlers = {number: signal.getsignal(number)
+                    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        for signum in handlers:
+            for sent in (False, True):
+                with self.subTest(signum=signum, sent=sent):
+                    client = mock.Mock(sent=sent)
+                    def run():
+                        signal.raise_signal(signum)
+                        signal.raise_signal(signum)
+                        return "verified"
+                    client.run.side_effect = run
+                    with self.assertRaises(provider.RegionalCommandInterrupted) as raised:
+                        self.run_client(client)
+                    self.assertEqual(raised.exception.code, "interrupted")
+                    self.assertIn("may still complete" if sent else "no change was sent", raised.exception.detail)
+                    client.GLib.idle_add.assert_called_once()
+                    client.GLib.source_remove.assert_called_once_with(client.GLib.idle_add.return_value)
+                    client.fail.assert_not_called()
+                    for number, handler in handlers.items():
+                        self.assertIs(signal.getsignal(number), handler)
+
+    def test_unrelated_system_exit_is_not_reclassified_as_a_stop(self):
+        for action, started, code in (("timezone-set", False, 143),
+                                      ("locale-set", True, 143), ("locale-set", False, 2)):
+            client = mock.Mock(action=action, started=started, sent=False)
+            client.run.side_effect = SystemExit(code)
+            with self.subTest(action=action, started=started, code=code), self.assertRaises(SystemExit) as raised:
+                self.run_client(client)
+            self.assertEqual(raised.exception.code, code)
+            client.GLib.idle_add.assert_not_called()
+
+    def test_startup_gap_cannot_lose_the_queued_stop(self):
+        from gi.repository import GLib
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            gio = mock.Mock()
+            client = provider.RegionalMutation("timezone-set", "Etc/UTC", "a" * 64,
+                mock.Mock(), mock.Mock(), gio, GLib)
+            loop = client.loop
+            expired = []
+            def guard_stop():
+                expired.append(True)
+                loop.quit()
+                return GLib.SOURCE_REMOVE
+            def start():
+                signal.raise_signal(signum)
+                loop.run()
+            client.loop = types.SimpleNamespace(run=start, quit=loop.quit)
+            guard = GLib.timeout_add(200, guard_stop)
+            try:
+                with contextlib.redirect_stderr(io.StringIO()) as diagnostic, \
+                        self.assertRaises(provider.RegionalCommandInterrupted):
+                    self.run_client(client)
+                self.assertEqual(expired, [], "Regional stop was lost before loop startup")
+                self.assertNotIn("Traceback", diagnostic.getvalue())
+                self.assertTrue(client.done)
+                self.assertFalse(client.sent)
+                gio.bus_get_finish.assert_not_called()
+            finally:
+                if not expired:
+                    GLib.source_remove(guard)
+
+    def test_actual_cli_signal_matrix_on_private_bus(self):
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-regional-interruption-bus.py"), str(PROVIDER_PATH)],
+            capture_output=True, text=True, timeout=90, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("Regional signal case: PASS"), 18)
+        self.assertIn("Private-bus regional interruption: PASS", result.stdout)
+
+
 class RegionalOwnerTests(unittest.TestCase):
     """Sync Phase 9, ported from upstream's 0eae066d nearly unchanged --
     run_regional_mutation()'s lifecycle is distro-neutral (timedate1/locale1
@@ -9225,6 +9830,113 @@ class RegionalOwnerTests(unittest.TestCase):
             self.assertEqual(output, [])
             admitted.assert_not_called()
             self.assertEqual(provider.load_journal_state(journal.chain), before)
+
+    def test_local_stop_terminalizes_a_running_owner_without_another_service_wait(self):
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            with self.subTest(signum=signum), self.session() as (_path, _chain, journal):
+                def configure():
+                    self.before_admission = lambda: setattr(self.client, "GLib", mock.Mock())
+                    self.during = lambda: signal.raise_signal(signum)
+                terminal, output, fresh = self.invoke(journal, configure=configure)
+                self.assertEqual((terminal.state, terminal.error_code), ("interrupted", "interrupted"))
+                self.assertEqual([row[4] for row in rows(output.splitlines(), "operation")],
+                    ["pending", "authorizing", "running", "interrupted"])
+                fresh.assert_not_called()
+                durable = provider.load_journal_state(journal.chain)
+                self.assertIsNone(durable.active)
+                self.assertEqual(durable.terminals[durable.handoff.slot], terminal)
+                self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                provider._unlock_native_owner(journal.descriptor("active"))
+
+    def test_repeated_stop_during_terminal_commit_and_lease_release_is_coalesced(self):
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            with self.subTest(signum=signum), self.session() as (_path, _chain, journal):
+                def configure():
+                    self.before_admission = lambda: setattr(self.client, "GLib", mock.Mock())
+                    self.during = lambda: signal.raise_signal(signum)
+                advance, unlock = provider.advance_journal_operation, provider._unlock_native_owner
+                terminal_started = []
+                def commit(current_journal, current, following, **kwargs):
+                    if following.state == "interrupted":
+                        terminal_started.append(True)
+                        signal.raise_signal(signum)
+                    return advance(current_journal, current, following, **kwargs)
+                def release(descriptor):
+                    if terminal_started:
+                        signal.raise_signal(signum)
+                    return unlock(descriptor)
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
+                        mock.patch.object(provider, "advance_journal_operation", side_effect=commit), \
+                        mock.patch.object(provider, "_unlock_native_owner", side_effect=release):
+                    terminal, _output, fresh = self.invoke(journal, configure=configure)
+                self.assertEqual(terminal.state, "interrupted")
+                fresh.assert_not_called()
+                durable = provider.load_journal_state(journal.chain)
+                self.assertIsNone(durable.active)
+                self.assertEqual(durable.terminals[durable.handoff.slot], terminal)
+                self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                provider._unlock_native_owner(journal.descriptor("active"))
+
+    def test_first_stop_during_timeout_handoff_skips_the_optional_read(self):
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            with self.subTest(signum=signum), self.session() as (_path, _chain, journal):
+                complete = provider.complete_journal_terminal
+                def handoff(*args, **kwargs):
+                    signal.raise_signal(signum)
+                    return complete(*args, **kwargs)
+                with mock.patch.object(provider, "complete_journal_terminal", side_effect=handoff):
+                    terminal, _output, fresh = self.invoke(journal, mode="timeout")
+                self.assertEqual((terminal.state, terminal.error_code), ("interrupted", "timeout"))
+                self.assertTrue(self.client.local_interrupted)
+                fresh.assert_not_called()
+                durable = provider.load_journal_state(journal.chain)
+                self.assertIsNone(durable.active)
+                self.assertEqual(durable.terminals[durable.handoff.slot], terminal)
+
+    def test_stop_during_independent_read_preserves_the_durable_terminal(self):
+        from gi.repository import GLib
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            with self.subTest(signum=signum), self.session() as (_path, _chain, journal):
+                factory, generation = self.setup_client(journal, mode="transport")
+                gio = mock.Mock()
+                read = provider.RegionalRead("time-state", gio, GLib)
+                expired, output = [], []
+                trigger_source = 0
+                def trigger():
+                    nonlocal trigger_source
+                    trigger_source = 0
+                    durable = provider.load_journal_state(journal.chain)
+                    self.assertIsNone(durable.active)
+                    self.assertEqual(durable.terminals[durable.handoff.slot].state, "interrupted")
+                    self.assertTrue(provider._try_native_owner_lock(journal.descriptor("active")))
+                    provider._unlock_native_owner(journal.descriptor("active"))
+                    signal.raise_signal(signum)
+                    return GLib.SOURCE_REMOVE
+                def guard_stop():
+                    expired.append(True)
+                    read.loop.quit()
+                    return GLib.SOURCE_REMOVE
+                guard = GLib.timeout_add(1000, guard_stop)
+                trigger_source = GLib.idle_add(trigger)
+                try:
+                    with mock.patch.object(provider, "RegionalMutation", side_effect=factory), \
+                            mock.patch.object(provider, "RegionalRead", return_value=read), \
+                            contextlib.redirect_stdout(io.StringIO()), \
+                            contextlib.redirect_stderr(io.StringIO()) as diagnostic:
+                        terminal = provider.run_regional_mutation(journal, "timezone-set", "Etc/UTC",
+                            generation, output.append)
+                    self.assertEqual(expired, [], "Independent read ignored the local stop")
+                    self.assertNotIn("Traceback", diagnostic.getvalue())
+                    self.assertTrue(read.done)
+                    self.assertEqual((terminal.state, terminal.error_code), ("interrupted", "interrupted"))
+                    durable = provider.load_journal_state(journal.chain)
+                    self.assertEqual(durable.terminals[durable.handoff.slot], terminal)
+                    self.assertTrue(output[-1].endswith("complete\toperation\n"))
+                finally:
+                    if not expired:
+                        GLib.source_remove(guard)
+                    if trigger_source:
+                        GLib.source_remove(trigger_source)
 
     def test_output_loss_before_dispatch_aborts_but_after_dispatch_keeps_verification(self):
         for phase in ("pending", "authorizing", "running", "succeeded"):

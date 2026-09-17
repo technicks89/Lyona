@@ -1,0 +1,123 @@
+name: Full suite (manual)
+
+# Manual only. The smoke job in c-cpp.yml stays the per-push gate; this is the
+# occasional "run everything on a clean Arch container" check that replaced
+# nothing and blocks nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "make target to run (default: the whole suite)"
+        type: string
+        default: check
+      clang:
+        description: "Also build dwm with clang"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-suite-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-suite:
+    name: make ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: archlinux:base-devel
+      # Several acceptance tests create private namespaces, a private system
+      # bus, and nested Xvfb displays.
+      options: >-
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+    defaults:
+      run:
+        shell: bash
+    env:
+      DWM_TEST_TMP_ROOT: /var/tmp/lyona-ci
+
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trust the container checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Validate the target name
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          # Keep workflow input out of the shell grammar: one make target name.
+          [[ $TARGET =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "invalid target: $TARGET" >&2; exit 2; }
+
+      - name: Install full validation dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t packages < <(
+            {
+              dwm_packages arch full
+              dwm_packages arch ci-smoke
+              dwm_packages arch qml-validation
+              printf '%s\n' shellcheck shfmt archiso python-dbus \
+                xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
+            } | awk 'NF' | sort -u
+          )
+          # desktop-optional/gaming entries may be AUR-only; install what the
+          # repositories have and let the owning tests skip the rest.
+          available=()
+          for package in "${packages[@]}"; do
+            pacman -Si -- "$package" >/dev/null 2>&1 && available+=("$package")
+          done
+          pacman -S --noconfirm --needed "${available[@]}"
+
+      - name: Prepare unprivileged runner
+        run: |
+          install -d -m 0700 -o nobody -g nobody /home/dwm-ci /run/dwm-ci "$DWM_TEST_TMP_ROOT"
+          chown -R nobody:nobody "$GITHUB_WORKSPACE" "$DWM_TEST_TMP_ROOT"
+
+      - name: Run make ${{ inputs.target }}
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+            scripts/run-tests make "$TARGET" 2>&1 | tee /var/tmp/lyona-ci/full-suite.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-suite-log
+          path: /var/tmp/lyona-ci/full-suite.log
+          if-no-files-found: ignore
+
+  clang-build:
+    name: clang build
+    if: inputs.clang
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: archlinux:base-devel
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install clang and build dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t packages < <(dwm_packages arch build | awk 'NF' | sort -u)
+          pacman -S --noconfirm --needed clang "${packages[@]}"
+
+      - name: Build with clang
+        run: make clean all CC=clang

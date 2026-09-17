@@ -110,3 +110,44 @@ See [Updating and Rollback](./updating.md) for the full walkthrough,
 including how to roll back from a bare TTY if a session will not start —
 Settings has no way to help with that case, since there is no UI to click
 when the desktop itself will not come up.
+
+### Timezone, locale and network time
+
+**Load choices** reads the reported timezone or locale catalog before you can
+select anything — a value must come from that exact list, not free text.
+Filter with the search box, select one, then **Review change...** reads a
+fresh preview against the system's current state before showing a
+confirmation card. **Apply change** cannot be undone once sent; **Cancel**
+only dismisses the preview itself without changing anything. System locale
+changes apply to new sessions — Settings never logs you out to apply one.
+
+**Automatic network time** shows whether NTP is enabled and whether the
+clock was synchronized as of the last read, with **Review enable...**/
+**Review disable...** buttons that go through the same preview-then-confirm
+flow.
+
+A live change to any of these — from this session or another — invalidates
+a preview or confirmation prepared against the state it read, with a message
+asking you to review a fresh one rather than silently applying stale data.
+
+### Accounts, printers and software sources
+
+Below the update controls, System also lists **Accounts**, **Password**,
+**Printers**, and **Software sources**. Each launches a separate,
+already-trusted administration tool — Settings shows a confirmation card
+first ("Open *tool*?") because closing Settings afterward does not close the
+tool or undo anything it does, and a successful launch is not proof the
+tool's own work finished. Cancel discards the prepared launch without
+starting anything.
+
+**Printers** opens `system-config-printer`. **Password** opens `passwd` in
+your configured terminal — Settings never reads or stores your password
+itself. **Accounts** and **Software sources** are unavailable on Arch: no
+account-management GUI or interactive repository editor is packaged for it.
+Edit `/etc/pacman.conf` directly for repository changes; see
+[Configuration](./configuration.md) for where lyona's own managed files
+live. A disabled button always states why, rather than leaving it
+unexplained.
+
+Below the launch buttons, System also lists the accounts and software
+sources the system currently reports, read-only.

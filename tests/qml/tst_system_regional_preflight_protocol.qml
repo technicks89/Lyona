@@ -41,6 +41,19 @@ TestCase {
             current, action === "locale-set" ? argument.slice(5) : argument, detail].join("\t")
             + "\ncomplete\tregional-preview\n";
     }
+    function observationHeader(command) { return command + "-protocol\t1\t0\n"; }
+    function observationComplete(command) { return "complete\t" + command + "\n"; }
+    function observationRow(command) {
+        return command === "time-status" ? "time\tEtc/UTC\tyes\tno\tyes\n" : "sample\tyes\tno\n";
+    }
+    function observationStream(command) {
+        return observationHeader(command) + observationRow(command) + observationComplete(command);
+    }
+    function observationValue(command) {
+        return command === "time-status"
+            ? { timezone: "Etc/UTC", canNtp: true, ntpEnabled: false, synchronized: true }
+            : { canNtp: true, synchronized: false };
+    }
     function parse(command, selection, argument, text, code, normal) {
         const parser = Protocol.create(command, selection, argument);
         return Protocol.consume(parser, bytes(text)) && Protocol.finish(parser, code, normal !== false);
@@ -198,6 +211,120 @@ TestCase {
         }
     }
 
+    function test_observation_round_trip_across_every_split() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const good = observationStream(command);
+            const all = bytes(good);
+            for (let split = 0; split <= all.byteLength; split++) {
+                const parser = Protocol.create(command, "", "");
+                verify(Protocol.consume(parser, all.slice(0, split)) && Protocol.consume(parser, all)
+                    && Protocol.finish(parser, 0, true), command + " every observation split: " + split);
+                compare(JSON.stringify(parser.observation), JSON.stringify(observationValue(command)), command + " exact observation");
+            }
+        }
+    }
+
+    function test_observation_boolean_combinations() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const time = command === "time-status";
+            const fieldCount = time ? 3 : 2;
+            for (let bits = 0; bits < (1 << fieldCount); bits++) {
+                const values = Array.from({length: fieldCount}, (_, i) => bits & (1 << i) ? "yes" : "no");
+                const row = (time ? "time\tEtc/UTC\t" : "sample\t") + values.join("\t") + "\n";
+                verify(parse(command, "", "", observationHeader(command) + row + observationComplete(command), 0),
+                    command + " every boolean combination: " + values.join(","));
+            }
+        }
+    }
+
+    function test_observation_rejects_malformed_streams() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const time = command === "time-status";
+            const good = observationStream(command);
+            const row = observationRow(command);
+            const error = "error\t" + command + "\tinternal\tNot available\n";
+            const bad = [good.slice(0, -1), good + "\n", good + observationComplete(command),
+                good.replace("\t1\t0", "\t1\t1"), good.replace("\t1\t0", "\t2\t0"),
+                observationHeader(command) + observationComplete(command),
+                observationHeader(command) + row + row + observationComplete(command),
+                observationHeader(command) + row + error + observationComplete(command),
+                observationHeader(command) + error + row + observationComplete(command),
+                good.replace("yes", "true"), good.replace("no", "0"),
+                good.replace(row, row.slice(0, -1) + "\textra\n"),
+                good.replace(row, "choice\tEtc/UTC\n"),
+                good.replace(row, "preview\tntp-set\tenabled\t" + generation + "\tdisabled\tenabled\tdetail\n"),
+                good.replace(row, time ? "sample\tyes\tno\n" : "time\tEtc/UTC\tyes\tno\tyes\n"),
+                good.replace(observationComplete(command), "complete\tregional-preview\n")];
+            for (const text of bad) verify(!parse(command, "", "", text, 0), command + " invalid observation: " + text);
+        }
+    }
+
+    function test_observation_rejects_wrong_exit_code_and_crash() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const good = observationStream(command);
+            for (const code of [1, 2, -1]) verify(!parse(command, "", "", good, code), command + " observation exit mismatch: " + code);
+            verify(!parse(command, "", "", good, 0, false), command + " crashed observation");
+        }
+    }
+
+    function test_observation_typed_error_codes() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const header = observationHeader(command);
+            const complete = observationComplete(command);
+            const error = "error\t" + command + "\tinternal\tNot available\n";
+            for (const code of ["missing-provider", "permission-denied", "unsupported", "timeout", "malformed", "internal"]) {
+                const failed = header + error.replace("internal", code) + complete;
+                verify(parse(command, "", "", failed, 1), command + " typed observation error: " + code);
+                verify(!parse(command, "", "", failed, 0), command + " observation error cannot succeed: " + code);
+            }
+            for (const code of ["network", "interrupted", "canceled", "unknown"])
+                verify(!parse(command, "", "", header + error.replace("internal", code) + complete, 1), command + " closed observation error code: " + code);
+            verify(!parse(command, "", "", header + error.replace(command, "regional") + complete, 1), command + " wrong observation error owner");
+            verify(!parse(command, "", "", header + error + error + complete, 1), command + " duplicate observation error");
+        }
+    }
+
+    function test_observation_rejects_unsafe_detail_text() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const header = observationHeader(command);
+            const complete = observationComplete(command);
+            const error = "error\t" + command + "\tinternal\tNot available\n";
+            for (const value of ["x".repeat(513), String.fromCodePoint(0x20ac).repeat(171), "bad" + String.fromCharCode(0x202e)])
+                verify(!parse(command, "", "", header + error.replace("Not available", value) + complete, 1),
+                    command + " bounded canonical observation detail: " + value.length);
+        }
+    }
+
+    function test_observation_accepts_detail_at_byte_limit() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const header = observationHeader(command);
+            const complete = observationComplete(command);
+            const error = "error\t" + command + "\tinternal\tNot available\n";
+            const atLimit = String.fromCodePoint(0x20ac).repeat(170) + "ab";
+            verify(parse(command, "", "", header + error.replace("Not available", atLimit) + complete, 1),
+                command + " 512-byte observation detail");
+        }
+    }
+
+    function test_observation_invalid_request_grammar_rejected() {
+        for (const command of ["time-status", "ntp-sample"])
+            for (const request of [[command, "timezone", ""], [command, "", "extra"], [command, null, ""], [command, "", null]])
+                verify(!!Protocol.create(...request).failure, command + " no observation arguments: " + JSON.stringify(request));
+    }
+
+    function test_observation_stream_limit() {
+        for (const command of ["time-status", "ntp-sample"]) {
+            const bounded = Protocol.create(command, "", "");
+            verify(bounded.limit === 1024 && !Protocol.consume(bounded, new ArrayBuffer(1025)), command + " observation stream limit");
+        }
+    }
+
+    function test_time_status_rejects_invalid_timezone() {
+        const good = observationStream("time-status");
+        for (const value of ["", "../UTC", "Etc//UTC", "x".repeat(256), String.fromCodePoint(0xe9)])
+            verify(!parse("time-status", "", "", good.replace("Etc/UTC", value), 0), "invalid observed timezone: " + value);
+    }
+
     function test_invalid_utf8_sequences_rejected() {
         for (const invalid of [[0xc0, 0x80], [0xed, 0xa0, 0x80], [0xf4, 0x90, 0x80, 0x80], [0xe2, 0x28, 0xa1], [0x80]]) {
             const parser = Protocol.create("regional-preview", "ntp-set", "enabled");
@@ -221,6 +348,31 @@ TestCase {
         const header = "regional-preview-protocol\t1\t0\n";
         const shrink = Protocol.create("regional-preview", "ntp-set", "enabled");
         verify(Protocol.consume(shrink, bytes(header)) && !Protocol.consume(shrink, bytes("short")), "shrunk collector");
+    }
+
+    // Sync Sprint 1 S1-08 (#274): a reused StdioCollector can deliver an
+    // empty onDataChanged buffer when its underlying Process restarts,
+    // before any real bytes arrive -- found via the real
+    // SystemRegionalPreflightOwner.qml integration harness (this repo's own
+    // coverage, not ported from upstream), where new Uint8Array() on that
+    // exact empty-buffer object threw in this Qt/QML JS engine. A "0 new
+    // bytes" delivery must be a no-op, not a crash or a rejection.
+    function test_empty_buffer_is_a_no_op() {
+        const fresh = Protocol.create("regional-choices", "timezone", "");
+        verify(Protocol.consume(fresh, new ArrayBuffer(0)), "empty buffer on a fresh parser is a no-op");
+        compare(fresh.offset, 0, "empty buffer does not advance a fresh parser");
+        verify(!fresh.header, "empty buffer parses no header");
+
+        const values = ["America/Chicago", "Etc/UTC"];
+        const stream = choicesStream("timezone", values);
+        const all = bytes(stream);
+        const midway = Protocol.create("regional-choices", "timezone", "");
+        verify(Protocol.consume(midway, all.slice(0, 10)), "partial stream consumed");
+        const offsetBefore = midway.offset;
+        verify(Protocol.consume(midway, all.slice(0, 10)), "empty-equivalent (same-length) redelivery is still accepted");
+        compare(midway.offset, offsetBefore, "redelivering the same prefix does not advance past it again");
+        verify(Protocol.consume(midway, all) && Protocol.finish(midway, 0, true), "stream still completes normally");
+        compare(JSON.stringify(midway.choices), JSON.stringify(values), "exact catalog after an empty-buffer-adjacent read");
     }
 
     function test_invalid_request_grammar_rejected() {

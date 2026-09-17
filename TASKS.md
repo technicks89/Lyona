@@ -1098,8 +1098,8 @@ against the full test suite before moving on.
   APIs (not the pre-implementation sketch it started as), and the follow-up
   itself is scoped to its own `sync-p9-settings-ui` branch and PR — tracked
   below, not merged with this entry.
-- [ ] **Follow-up: Sync Phase 9 Settings UI wiring** (`sync-p9-settings-ui`,
-  plan in `SYNC-P9-REGIONAL-MUTATION.md` §5) — `SystemOperationModel.
+- [x] **Follow-up: Sync Phase 9 Settings UI wiring** (`sync-p9-settings-ui`,
+  plan in `SYNC-P9-REGIONAL-MUTATION.md` §5, retired) — `SystemOperationModel.
   startRegional()`/`startDelegated()`, `SystemManagementModel`'s
   `prepareRegional()`/`confirmRegional()`/`discardRegional()`/
   `launchDelegated()` family driving a `SystemRegionalPreflightModel`
@@ -1107,7 +1107,15 @@ against the full test suite before moving on.
   toggle, delegated-launch buttons, confirmation card), its mount point in
   `SystemSettingsPane.qml`, `shell.qml` IPC probes, and the
   `test-quickshell-system-management-xvfb.sh` stub extension needed to
-  exercise all of it. Not started.
+  exercise all of it. — **Landed in `92ec6e2` (PR #33).** Verified against
+  shipped code: `startRegional()` (`SystemOperationModel.qml:190`),
+  `prepareRegional()` (`SystemManagementModel.qml:302`) and
+  `SystemRegionalControls.qml` all exist, and
+  `scripts/run-tests make check-quickshell-system-management-xvfb` passes.
+  Superseded in structure by Sync Sprint 1 S1-03…S1-05
+  (`docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`), which converges this onto
+  upstream `#261`–`#269`'s shape — most of all, `launchDelegated()` fires
+  immediately with no confirmation step, which S1-04 replaces.
 - [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
   tests/test-system-management.py` (537 tests, up from 410, all passing),
   `QT_QPA_PLATFORM=offscreen qmltestrunner -input tests/qml` (39/39),

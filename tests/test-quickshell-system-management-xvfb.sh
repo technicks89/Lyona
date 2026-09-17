@@ -153,6 +153,11 @@ snapshot)
 	printf 'action\tsources-open\tunavailable\tdelegated\tsources\tSoftware sources\tNo interactive repository editor is packaged for Arch\n'
 	printf 'update\tlinux-cachyos;6.18.1-1;x86_64;core\tunknown\tinstallable\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	printf 'package-change\tlinux-cachyos;6.18.1-1;x86_64;core\tupdate\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
+	# One account record, matching the accounts-count=1 declared above --
+	# without this the reconciliation cross-check (#259) would itself mark
+	# the accounts domain malformed (a declared count with no matching rows).
+	printf 'account\tu1000\tcurrent\tTest User\ttestuser\n'
+	printf 'repository\tcore\tenabled\tArch Linux core repository\n'
 	printf 'complete\tsnapshot\n'
 	;;
 watch-updates)
@@ -163,6 +168,56 @@ watch-updates)
 	printf 'update-event\tready\n'
 	trap 'exit 0' TERM
 	while :; do sleep 0.1; done
+	;;
+watch-regional)
+	# Sync Sprint 1 S1-03 (#261): localeDiscoveryModel runs "watch-regional
+	# locale" -- the "time" domain moved to its own watch-time command below
+	# in S1-08 (#275), so this case now only ever sees locale.
+	printf 'regional-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-time)
+	# Sync Sprint 1 S1-08 (#275): a separate command and record prefix from
+	# watch-regional, distinguishing an authenticated owner arrival
+	# ("owner-arrived", uncertainty) from an actual timedate1 property
+	# change ("changed", certainty). Report one arrival shortly after
+	# readiness so timeReconciliationModel's real arrived()/requestPending()/
+	# finish() path runs against a real Quickshell process, not just idle
+	# defaults.
+	printf 'time-event\tready\n'
+	(
+		sleep 0.2
+		printf 'time-event\towner-arrived\n'
+	) &
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-accounts)
+	printf 'accounts-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-units)
+	printf 'units-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+time-status)
+	# Sync Sprint 1 S1-08 (#275): the finite reconciliation read
+	# timeReconciliationModel dispatches after an owner arrival or a fresh
+	# snapshot. Matches the snapshot's own timezone/ntp-enabled/ntp-synchronized
+	# state exactly, so reconciliation settles quietly instead of treating
+	# every read as a real configuration change.
+	printf 'time-status-protocol\t1\t0\n'
+	printf 'time\tEtc/UTC\tyes\tyes\tyes\n'
+	printf 'complete\ttime-status\n'
+	;;
+ntp-sample)
+	# Sync Sprint 1 S1-08 (#276): the periodic/on-demand sample read.
+	printf 'ntp-sample-protocol\t1\t0\n'
+	printf 'sample\tyes\tyes\n'
+	printf 'complete\tntp-sample\n'
 	;;
 regional-choices)
 	case "$2" in
@@ -286,6 +341,105 @@ test_stage='validating parsed snapshot content'
 # update pending) round-trips through the model's own enum validation.
 [ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
 
+test_stage='validating the shared clock (#270): the stub timezone reached ClockModel'
+# ClockModel.timezoneState is bound to systemManagementModel.nativeStates.timezone
+# (config/quickshell/shell.qml); once the snapshot above loaded the stub's
+# "Etc/UTC" timezone state, the clock must have observed it and produced real
+# formatted text through the real Quickshell runtime -- this can't be unit
+# tested directly (import Quickshell resolves only inside the real binary).
+panel_clock=$(ipc settings clockPanelText)
+settings_clock=$(ipc settings clockSettingsText)
+# "ddd dd MMM - HH:mm", e.g. "Tue 16 Sep - 14:32".
+case $panel_clock in
+???" "[0-9][0-9]" "???" - "[0-9][0-9]":"[0-9][0-9]) ;;
+*)
+	printf 'clockPanelText did not match the expected "ddd dd MMM - HH:mm" shape: %s\n' "$panel_clock" >&2
+	exit 1
+	;;
+esac
+if [ -z "$settings_clock" ]; then
+	printf 'clockSettingsText was empty\n' >&2
+	exit 1
+fi
+
+test_stage='validating protocol minor 1 native content (#259)'
+# The stub's four native providers, five native states, one account and one
+# repository record all parse and reconcile cleanly -- proving compose
+# cumulative native discovery (#259) is wired end to end, not just that the
+# update domain still works.
+[ "$(ipc settings systemManagementNativeProviderStatus regional)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus accounts)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus printers)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus sources)" = available ]
+[ "$(ipc settings systemManagementNativeStateValue timezone)" = 'available:Etc/UTC' ]
+[ "$(ipc settings systemManagementNativeStateValue ntp-enabled)" = 'available:yes' ]
+[ "$(ipc settings systemManagementNativeStateValue locale)" = 'available:C' ]
+[ "$(ipc settings systemManagementNativeStateValue accounts-count)" = 'available:1' ]
+[ "$(ipc settings systemManagementNativeStateValue cups-service)" = 'available:stopped' ]
+[ "$(ipc settings systemManagementAccountsCount)" -eq 1 ]
+[ "$(ipc settings systemManagementRepositoriesCount)" -eq 1 ]
+
+test_stage='validating the four native discovery domains reach ready (#261)'
+# openSettings() opened all five discovery models together (#261); the
+# update one already proved ready above via the loaded snapshot -- these
+# four are new. Each one's own stub watch-* command (added alongside these
+# assertions) must actually be reached, not just tolerated as "failed" by
+# discoveryReady()'s deliberately permissive batch gate.
+for domain in time locale accounts printers; do
+	native_discovery_status=
+	i=0
+	while [ "$i" -lt 100 ]; do
+		native_discovery_status=$(ipc settings systemManagementNativeDiscoveryStatus "$domain" 2>/dev/null || true)
+		case $native_discovery_status in idle:ready) break ;; esac
+		i=$((i + 1))
+		sleep 0.05
+	done
+	if [ "$native_discovery_status" != idle:ready ]; then
+		printf '%s discovery did not reach idle:ready: %s\n' "$domain" "$native_discovery_status" >&2
+		exit 1
+	fi
+done
+
+test_stage='validating time reconciliation settles after the stubbed owner arrival (S1-08 #275)'
+# watch-time's own stub reports one "owner-arrived" record shortly after
+# readiness (uncertainty, not a confirmed change); timeReconciliationModel
+# must reconcile it with a real time-status read through the real Quickshell
+# runtime and Process/StdioCollector lifecycle, then release back to idle --
+# this can't be unit tested (import Quickshell resolves only in the real
+# binary). The initial post-snapshot reconciliation cycle can still be
+# in flight too, so this tolerates settling from either trigger.
+reconciliation_blocked=
+i=0
+while [ "$i" -lt 200 ]; do
+	reconciliation_blocked=$(ipc settings systemManagementTimeReconciliationBlocked 2>/dev/null || true)
+	[ "$reconciliation_blocked" = false ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$reconciliation_blocked" != false ]; then
+	printf 'Time reconciliation never settled after the stubbed owner arrival: %s (%s)\n' \
+		"$reconciliation_blocked" "$(ipc settings systemManagementTimeReconciliationDetail)" >&2
+	exit 1
+fi
+[ "$(ipc settings systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
+
+test_stage='validating an on-demand network time sample settles cleanly (S1-08 #276)'
+ipc settings systemManagementTimeSampleNow >/dev/null
+reconciliation_blocked=
+i=0
+while [ "$i" -lt 200 ]; do
+	reconciliation_blocked=$(ipc settings systemManagementTimeReconciliationBlocked 2>/dev/null || true)
+	[ "$reconciliation_blocked" = false ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$reconciliation_blocked" != false ]; then
+	printf 'On-demand network time sample never settled: %s (%s)\n' \
+		"$reconciliation_blocked" "$(ipc settings systemManagementTimeReconciliationDetail)" >&2
+	exit 1
+fi
+[ "$(ipc settings systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
+
 test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
 # The stub reports recovery as unsupported and both update actions as
 # unavailable, so operationModel never has evidence to recover and
@@ -383,6 +537,67 @@ ipc settings open >/dev/null
 ipc settings select system >/dev/null
 [ "$(ipc settings systemManagementSettingsVisible)" = true ]
 
+test_stage='loading the timezone choices catalog (#268: prepare() requires a loaded, matching catalog)'
+[ "$(ipc settings systemManagementRegionalRequestChoices timezone)" = true ]
+timezone_choices=0
+i=0
+while [ "$i" -lt 100 ]; do
+	timezone_choices=$(ipc settings systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
+	[ "$timezone_choices" -gt 0 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$timezone_choices" -eq 0 ]; then
+	printf 'Timezone choices catalog never loaded\n' >&2
+	exit 1
+fi
+
+test_stage='validating the regional confirmation step itself (#268): prepare then discard'
+# Regional preview/confirm now lives on SystemRegionalSettingsModel, the
+# same split S1-04 already gave delegated actions -- prove discard() clears
+# a pending preview without ever dispatching, before proving confirm() does.
+if [ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" != true ]; then
+	printf 'systemManagementRegionalPreview(timezone-set, America/Chicago) did not accept the read\n' >&2
+	exit 1
+fi
+discard_preview=
+i=0
+while [ "$i" -lt 100 ]; do
+	discard_preview=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+	[ -n "$discard_preview" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$discard_preview" != 'timezone-set:Etc/UTC:America/Chicago' ]; then
+	printf 'Regional preview (discard path) did not report the expected current/target: %s\n' "$discard_preview" >&2
+	exit 1
+fi
+ipc settings systemManagementRegionalDiscard >/dev/null
+discard_result=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+if [ -n "$discard_result" ]; then
+	printf 'systemManagementRegionalDiscard did not clear the pending preview: %s\n' "$discard_result" >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementOperationResult)" = 'timezone-set:succeeded' ]; then
+	printf 'discardRegional() dispatched an operation instead of discarding it\n' >&2
+	exit 1
+fi
+
+test_stage='reloading timezone choices (discard()/invalidate("") also clears the loaded catalog)'
+[ "$(ipc settings systemManagementRegionalRequestChoices timezone)" = true ]
+timezone_choices=0
+i=0
+while [ "$i" -lt 100 ]; do
+	timezone_choices=$(ipc settings systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
+	[ "$timezone_choices" -gt 0 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$timezone_choices" -eq 0 ]; then
+	printf 'Timezone choices catalog did not reload after discard\n' >&2
+	exit 1
+fi
+
 test_stage='requesting a regional preview'
 [ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
 
@@ -414,6 +629,81 @@ if [ "$operation_result" != 'timezone-set:succeeded' ]; then
 	printf 'Regional dispatch did not reach a verified succeeded result: %s\n' "$operation_result" >&2
 	exit 1
 fi
+
+test_stage='validating the delegated confirmation step itself (#266): prepare then discard'
+# Sync Sprint 1 S1-04 (#266): delegated actions no longer dispatch on the
+# first click -- prepareDelegate() must show a pending confirmation that
+# discardDelegate() can retire without ever starting an operation. Retry
+# preparation to ride out any transient busy-ness left over from the
+# earlier regional dispatch (operationModel is shared state).
+prepared=false
+i=0
+while [ "$i" -lt 100 ]; do
+	if [ "$(ipc settings systemManagementPrepareDelegate printers-open)" = true ]; then
+		prepared=true
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$prepared" != true ]; then
+	printf 'systemManagementPrepareDelegate(printers-open) never became preparable\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementNativeConfirmationPending)" != true ]; then
+	printf 'prepareDelegate(printers-open) did not leave a pending confirmation\n' >&2
+	exit 1
+fi
+ipc settings systemManagementDiscardDelegate >/dev/null
+if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+	printf 'discardDelegate() did not clear the pending confirmation\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementOperationResult)" = 'printers-open:succeeded' ]; then
+	printf 'discardDelegate() dispatched an operation instead of discarding it\n' >&2
+	exit 1
+fi
+
+test_stage='validating the delegated confirmation step itself: prepare then confirm'
+prepared=false
+i=0
+while [ "$i" -lt 100 ]; do
+	if [ "$(ipc settings systemManagementPrepareDelegate printers-open)" = true ]; then
+		prepared=true
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$prepared" != true ]; then
+	printf 'systemManagementPrepareDelegate(printers-open) never became preparable (second attempt)\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementConfirmDelegate)" != true ]; then
+	printf 'systemManagementConfirmDelegate() did not dispatch a prepared confirmation\n' >&2
+	exit 1
+fi
+
+test_stage='validating that accounts-open is D-3 unsupported, not merely busy'
+# accounts-open must never reach a pending confirmation at all -- D-3 keeps
+# it permanently unsupported, so prepareDelegate() itself must refuse it and
+# report the helper's own reason text, matching delegated_command()'s exact
+# "No account-management tool is packaged for Arch" message.
+if [ "$(ipc settings systemManagementPrepareDelegate accounts-open)" != false ]; then
+	printf 'systemManagementPrepareDelegate(accounts-open) prepared despite D-3\n' >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+	printf 'prepareDelegate(accounts-open) left a pending confirmation despite being refused\n' >&2
+	exit 1
+fi
+case $(ipc settings systemManagementNativeConfirmationMessage) in
+*"No account-management tool is packaged for Arch"*) ;;
+*)
+	printf 'prepareDelegate(accounts-open) did not surface the D-3 reason text\n' >&2
+	exit 1
+	;;
+esac
 
 test_stage='validating delegated-launch availability matches D-3'
 # printers-open is available against the stub; accounts-open is
@@ -454,6 +744,66 @@ if [ "$(ipc settings systemManagementDelegatedLaunch accounts-open)" != false ];
 	exit 1
 fi
 
+test_stage='running the regional preflight owner lifecycle harness'
+# Sync Sprint 1 S1-08 (#274): SystemRegionalPreflightModel.qml is a Scope
+# importing Quickshell.Io -- it cannot be instantiated under bare
+# qmltestrunner (verified: `module "qs.systemmanagement" is not installed`
+# outside a real Quickshell process), so its full request/cancel/timeout/
+# overflow lifecycle is exercised here by spawning quickshell directly
+# against the bespoke tests/qml/SystemRegionalPreflightOwner.qml harness,
+# the same mechanism upstream uses. This closes the coverage gap Sync
+# Phase 9 deferred.
+mkdir -p "$work/regional-preflight-owner" "$work/preflight-data/lyona/scripts" "$work/preflight-empty-path"
+mkdir -p "$work/preflight-shell-path" "$work/preflight-missing-data"
+ln -s "$(command -v sh)" "$work/preflight-shell-path/sh"
+cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/systemmanagement" "$work/regional-preflight-owner/"
+cp "$repo/tests/qml/SystemRegionalPreflightOwner.qml" "$work/regional-preflight-owner/shell.qml"
+preflight_helper="$work/preflight-data/lyona/scripts/dwm-system-management"
+cp "$repo/tests/fixtures/system-regional-preflight-provider.py" "$preflight_helper"
+chmod +x "$preflight_helper"
+preflight_quickshell=$(command -v quickshell)
+for preflight_mode in regional time-status ntp-sample; do
+	for preflight_scenario in success typed-error unsupported-error wrong-exit protocol-exit-127 malformed truncated stdout-overflow stderr-overflow \
+		close kill-close close-stdout-overflow close-stderr-overflow timeout cancel-queued cancel-claim close-result failed-start missing-helper; do
+		preflight_directory="$work/preflight-$preflight_mode-$preflight_scenario"
+		mkdir -p "$preflight_directory"
+		preflight_path=$PATH
+		preflight_data="$work/preflight-data"
+		[ "$preflight_scenario" != failed-start ] || preflight_path="$work/preflight-empty-path"
+		if [ "$preflight_scenario" = missing-helper ]; then
+			preflight_path="$work/preflight-shell-path"
+			preflight_data="$work/preflight-missing-data"
+		fi
+		timeout --foreground --kill-after=2s 45s env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
+			XDG_DATA_HOME="$preflight_data" XDG_RUNTIME_DIR="$runtime" QT_QPA_PLATFORMTHEME= PATH="$preflight_path" \
+			DWM_PREFLIGHT_DIRECTORY="$preflight_directory" DWM_PREFLIGHT_SCENARIO="$preflight_scenario" DWM_PREFLIGHT_MODE="$preflight_mode" \
+			"$preflight_quickshell" --no-duplicate --path "$work/regional-preflight-owner/shell.qml" \
+			>"$preflight_directory/output.log" 2>&1 &
+		preflight_quickshell_pid=$!
+		preflight_status=0
+		wait "$preflight_quickshell_pid" || preflight_status=$?
+		preflight_quickshell_pid=
+		case "$preflight_scenario" in
+		success)
+			preflight_calls=8
+			[ "$preflight_mode" = regional ] || preflight_calls=2
+			;;
+		close | kill-close | close-stdout-overflow | close-stderr-overflow | timeout | close-result) preflight_calls=2 ;;
+		failed-start | missing-helper) preflight_calls=0 ;;
+		*) preflight_calls=1 ;;
+		esac
+		preflight_actual=$(sed -n '1p' "$preflight_directory/calls" 2>/dev/null || true)
+		if [ "$preflight_status" -ne 0 ] || ! grep -F 'Regional preflight owner tests: PASS' "$preflight_directory/output.log" ||
+			grep -Fq 'Regional preflight owner FAILED:' "$preflight_directory/output.log" ||
+			[ "${preflight_actual:-0}" != "$preflight_calls" ] || [ -e "$preflight_directory/invalid-arguments" ] ||
+			[ -e "$preflight_directory/overlap" ] || pgrep -f "$preflight_helper" >/dev/null 2>&1; then
+			cat "$preflight_directory/output.log" >&2
+			exit 1
+		fi
+	done
+done
+
+test_stage='validating the primary session survived the preflight owner harness'
 if ! kill -0 "$dwm_pid" 2>/dev/null; then
 	printf 'dwm exited before system-management validation completed\n' >&2
 	tail -40 "$work/dwm.log" >&2

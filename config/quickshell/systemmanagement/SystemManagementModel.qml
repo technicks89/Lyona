@@ -52,6 +52,11 @@ Scope {
     property bool requiredPending: false
     property bool snapshotRequired: false
     property bool snapshotAttempted: false
+    // #261: true only while openSettings()/refresh() are looping over the
+    // five discovery models -- requestSnapshot() defers to the pending
+    // flags during that window so one batch of open/refresh signals results
+    // in at most one fetch, not up to five.
+    property bool discoveryBatch: false
     property string snapshotState: "idle" // idle | loading | loaded | unavailable
     property string message: "System management has not been loaded"
     property string generation: ""
@@ -74,24 +79,96 @@ Scope {
     property var updateConfirmation: null
     property string confirmationMessage: ""
     property bool dispatchingUpdate: false
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): regionalPreview
-    // is { actionId, argument, generation, current, target, detail } from
-    // SystemRegionalPreflightModel's completed(outcome) signal -- the
-    // user-visible form of the generation check, not a flag. Delegated
-    // actions (accounts-open/password-open/printers-open/sources-open) have
-    // no preview step and reuse regionalConfirmMessage for their own
-    // rejection reasons.
-    property var regionalPreview: null
-    property string regionalPreviewError: ""
-    property bool regionalPreviewPending: false
-    property string regionalConfirmMessage: ""
-    property bool dispatchingRegional: false
+    // Sync Sprint 1 S1-04 (#266): delegated actions (accounts-open/
+    // password-open/printers-open/sources-open) now get their own visible
+    // confirmation step, matching regional mutations rather than launching
+    // immediately -- nativeConfirmation is { actionId, generation,
+    // requestGeneration, epoch } captured at prepareDelegate() time and
+    // rechecked at confirmDelegate() time, the same "captured plan, not a
+    // flag" shape regionalModel's own confirmation ticket uses.
+    property var nativeConfirmation: null
+    property string nativeConfirmationMessage: ""
+    property bool dispatchingNative: false
 
     readonly property bool busy: root.snapshotOwned
     readonly property int maxListRecords: 4096
     readonly property alias discovery: discoveryModel
+    // #261: the four native domains each get their own SystemProviderDiscovery
+    // instance -- domainDefinition() already supports all five ("updates" via
+    // discoveryModel/SystemUpdateDiscovery, these four via the generic form).
+    readonly property alias timeDiscovery: timeDiscoveryModel
+    readonly property alias localeDiscovery: localeDiscoveryModel
+    readonly property alias accountDiscovery: accountDiscoveryModel
+    readonly property alias printerDiscovery: printerDiscoveryModel
+    readonly property alias regional: regionalModel
+    readonly property alias timeReconciliation: timeReconciliationModel
     readonly property alias operation: operationModel
     readonly property string discoveryDetail: discoveryModel.detail
+
+    // #261: every open discovery model, updates first (its own alias stays
+    // the "primary" one existing callers keep using directly).
+    function discoveryModels() {
+        return [discoveryModel, timeDiscoveryModel, localeDiscoveryModel,
+            accountDiscoveryModel, printerDiscoveryModel];
+    }
+
+    // True only once every domain has a subscription handshake (ready) or a
+    // settled failure (failed) -- an optional background snapshot must not
+    // fire while any domain is still connecting, or it would certify staler
+    // native state as fresh before that domain's own monitor caught up.
+    function discoveryReady() {
+        return root.settingsVisible && root.discoveryModels().every(
+            model => model.visible && (model.ready || model.failed));
+    }
+
+    // #262: maps one dispatched/watched/acknowledged action to the one
+    // discovery domain it actually changed. operationModel.discoveryInvalidated
+    // carries the actionId; a regional/delegated action must not go stale by
+    // only ever invalidating the (unrelated) update discovery model.
+    function invalidateActionDiscovery(action) {
+        if (action === "timezone-set" || action === "ntp-set") timeDiscoveryModel.invalidate();
+        else if (action === "locale-set") localeDiscoveryModel.invalidate();
+        else if (action === "accounts-open" || action === "password-open") accountDiscoveryModel.invalidate();
+        else if (action === "printers-open") printerDiscoveryModel.invalidate();
+        else if (action === "sources-open" || action === "updates-refresh" || action === "updates-install-all")
+            discoveryModel.invalidate();
+    }
+
+    // Maps one native state identifier to the discovery model whose
+    // watch-* stream actually keeps it fresh, so nativeStateView() can
+    // degrade a stale read without waiting on a full reload.
+    function stateDiscovery(identifier) {
+        if (identifier === "timezone" || identifier === "ntp-enabled" || identifier === "ntp-synchronized")
+            return timeDiscoveryModel;
+        if (identifier === "locale") return localeDiscoveryModel;
+        if (identifier === "accounts-count") return accountDiscoveryModel;
+        if (identifier === "cups-service") return printerDiscoveryModel;
+        return null;
+    }
+
+    // A parsed native state/provider record is only as fresh as its own
+    // discovery monitor -- these two wrap root.nativeStates/root.nativeProviders
+    // with that monitor's current health, appending its detail rather than
+    // replacing the helper's own.
+    function nativeStateView(identifier) {
+        const state = root.nativeStates[identifier] || root.stateFallback("This state is unavailable");
+        const monitor = root.stateDiscovery(identifier);
+        if (!root.settingsVisible || monitor === null) return state;
+        return { "status": state.status === "available" && (monitor.failed || monitor.unresolved || monitor.externalUnresolved) ? "partial" : state.status,
+            "value": state.value, "detail": [state.detail, monitor.detail].filter(value => value.length > 0).join(" ") };
+    }
+
+    function nativeProviderView(owner) {
+        const provider = root.nativeProviders[owner] || root.providerFallback("This provider is unavailable");
+        const monitors = owner === "regional" ? [timeDiscoveryModel, localeDiscoveryModel]
+            : owner === "accounts" ? [accountDiscoveryModel] : owner === "printers" ? [printerDiscoveryModel]
+            : owner === "sources" ? [discoveryModel] : [];
+        if (!root.settingsVisible) return provider;
+        return { "status": provider.status === "available" && monitors.some(model => model.failed || model.unresolved || model.externalUnresolved)
+                ? "partial" : provider.status,
+            "class": provider["class"], "owner": provider.owner,
+            "detail": [provider.detail].concat(monitors.map(model => model.detail)).filter(value => value.length > 0).join(" ") };
+    }
 
     readonly property var validStatus: ["available", "partial", "restricted", "unavailable", "unsupported"]
     readonly property var validActionStatus: ["available", "unavailable"]
@@ -194,8 +271,16 @@ Scope {
     function updateActionReason(actionId) {
         if (actionId !== "updates-refresh" && actionId !== "updates-install-all")
             return "This update action is not supported.";
-        if (!root.settingsVisible || root.dispatchingUpdate)
+        if (!root.settingsVisible)
             return "Open System Settings to prepare an update action.";
+        // #266/S1-05 (#268): a native (delegated or regional) confirmation
+        // already in flight must block starting an update one, the same as
+        // the reverse direction delegateActionReason()/regionalModel's own
+        // actionReason() already enforce -- this symmetric half was missed
+        // when S1-04 ported #266's delegated confirmation.
+        if (root.dispatchingUpdate || root.dispatchingNative || root.nativeConfirmation !== null
+                || regionalModel.ownsPreparation() || regionalModel.confirmation !== null)
+            return "Finish or dismiss the current confirmation first.";
         if (root.snapshotOwned || root.snapshotPending || root.requiredPending || !discoveryModel.fresh)
             return "Wait for fresh update discovery, or reload status to retry.";
         if (!root.validGeneration(root.generation) || root.recoveryProvider.status !== "available")
@@ -261,107 +346,114 @@ Scope {
         if (root.updateConfirmation !== null)
             root.confirmationMessage = "Update state changed. Review a fresh preview and confirm again.";
         root.updateConfirmation = null;
-        // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): discoveryModel/
-        // operationModel signals already invalidate the update confirmation
-        // above; extend the same handler rather than add a second signal,
-        // since both share one invalidation source.
-        if (root.regionalPreview !== null)
-            root.regionalConfirmMessage = "State changed. Review a fresh preview and confirm again.";
-        root.regionalPreview = null;
+        // #266/S1-05 (#268): discoveryModel/operationModel signals already
+        // invalidate the update confirmation above; extend the same handler
+        // rather than add a second signal, since all three (update,
+        // delegated, regional) share one invalidation source.
+        // invalidateNativeConfirmation("") was itself missed when S1-04
+        // ported #266 -- a pending delegate confirmation did not clear when
+        // the update one did.
+        root.invalidateNativeConfirmation("");
+        regionalModel.invalidate("");
     }
 
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): mirrors
-    // updateActionReason()/prepareUpdate()/confirmUpdate()/discardUpdate()
-    // above, adapted for the fact that RegionalMutation re-validates its own
-    // generation server-side (scripts/dwm-system-management's
-    // run_regional_mutation()), so this only needs to guard dispatch
-    // eligibility, not re-derive plan content the way updates-install-all's
-    // package-change list does.
-    function nativeActionReason(actionId) {
-        if (root.validNativeActionIds.indexOf(actionId) < 0)
-            return "This administration action is not supported.";
-        if (!root.settingsVisible || root.dispatchingRegional)
-            return "Open System Settings to prepare this action.";
-        if (root.snapshotOwned || root.snapshotPending || root.requiredPending || !discoveryModel.fresh)
-            return "Wait for fresh status, or reload status to retry.";
-        if (!operationModel.canStart)
-            return "An operation or its recovery still owns the update workflow.";
-        // Every valid native action record is already merged into the same
-        // flat root.actions updateActionReason() searches (parseSnapshot()'s
-        // actions.push(nativeActions[actionId]) for each non-invalid owner).
+    // Sync Sprint 1 S1-04 (#266): delegated actions (accounts-open/
+    // password-open/printers-open/sources-open) have no preview step --
+    // launch_delegated_tool() either starts a fixed, already-trusted
+    // executable or the action was already reported unavailable/unsupported
+    // -- but they now get the same *visible confirmation* regional
+    // mutations already have, rather than dispatching immediately on click.
+    // Maps a delegated action to the one discovery model whose watch-*
+    // stream keeps its provider/action offer fresh.
+    function delegateDiscovery(actionId) {
+        if (actionId === "accounts-open" || actionId === "password-open") return accountDiscoveryModel;
+        if (actionId === "printers-open") return printerDiscoveryModel;
+        if (actionId === "sources-open") return discoveryModel;
+        return null;
+    }
+
+    // Every precondition confirmDelegate() must recheck at dispatch time,
+    // not just at prepare time -- fresh discovery, no operation/recovery
+    // owning the workflow, and the action still reported available.
+    function delegateContextReason(actionId) {
+        const monitor = root.delegateDiscovery(actionId);
+        if (monitor === null) return "This delegated action is not supported.";
+        if (!root.settingsVisible) return "Open System Settings to prepare this action.";
+        if (root.snapshotOwned || root.snapshotPending || root.requiredPending || root.discoveryBatch
+                || !monitor.visible || !monitor.ready || monitor.failed || !monitor.cycle.enabled
+                || monitor.cycle.phase !== "idle" || monitor.cycle.unresolved)
+            return "Wait for fresh provider status, or reload status to retry.";
+        if (!root.validGeneration(root.generation) || !operationModel.canStart)
+            return "An operation or its recovery still owns the system workflow.";
         const action = root.actions.find(item => item.id === actionId);
         if (!action || action.status !== "available")
-            return action && action.detail.length > 0 ? action.detail : "This action is not currently offered.";
+            return action && action.detail.length > 0 ? action.detail : "The provider did not offer this action.";
         return "";
     }
 
-    // Regional (timezone-set/ntp-set/locale-set): fetch a fresh preview
-    // before showing a confirmation card. Unlike prepareUpdate(), there is
-    // no synchronous "reason" to check beyond nativeActionReason() -- the
-    // preview read itself is the validity check.
-    function prepareRegional(action, argument) {
-        const reason = root.nativeActionReason(action);
+    function delegateActionReason(actionId) {
+        if (root.dispatchingUpdate || root.dispatchingNative || root.updateConfirmation !== null
+                || regionalModel.ownsPreparation() || regionalModel.confirmation !== null)
+            return "Finish or dismiss the current confirmation first.";
+        return root.delegateContextReason(actionId);
+    }
+
+    function prepareDelegate(actionId) {
+        if (root.nativeConfirmation !== null) return false;
+        const reason = root.delegateActionReason(actionId);
         if (reason.length > 0) {
-            root.regionalConfirmMessage = reason;
+            root.nativeConfirmationMessage = reason;
             return false;
         }
-        root.regionalConfirmMessage = "";
-        root.regionalPreviewError = "";
-        root.regionalPreview = null;
-        root.regionalPreviewPending = true;
-        return regionalPreflightModel.requestPreview(action, argument);
+        const pending = { "actionId": actionId, "generation": root.generation,
+            "requestGeneration": root.requestGeneration, "epoch": root.delegateDiscovery(actionId).cycle.epoch };
+        root.dispatchingNative = true;
+        root.nativeConfirmationMessage = "";
+        // Reentrant closure or discovery callbacks may retire this preparation.
+        if (root.delegateContextReason(actionId) === "" && pending.generation === root.generation
+                && pending.requestGeneration === root.requestGeneration
+                && pending.epoch === root.delegateDiscovery(actionId).cycle.epoch)
+            root.nativeConfirmation = pending;
+        root.dispatchingNative = false;
+        return root.nativeConfirmation === pending;
     }
 
-    function regionalPreviewReceived(outcome) {
-        root.regionalPreviewPending = false;
-        if (outcome.command !== "regional-preview") return; // a choices read, not a preview
-        if (outcome.status !== "available") {
-            root.regionalPreviewError = outcome.error.detail;
-            return;
-        }
-        root.regionalPreview = outcome.preview;
+    function discardDelegate() {
+        root.nativeConfirmation = null;
+        root.nativeConfirmationMessage = "";
     }
 
-    function discardRegional() {
-        regionalPreflightModel.cancel();
-        root.regionalPreview = null;
-        root.regionalPreviewPending = false;
-        root.regionalPreviewError = "";
-        root.regionalConfirmMessage = "";
+    // domain "" invalidates unconditionally (a mutual-exclusion/generation
+    // change unrelated to any one discovery monitor); a nonempty domain
+    // only retires a confirmation prepared against that exact monitor.
+    function invalidateNativeConfirmation(domain) {
+        const pending = root.nativeConfirmation;
+        if (pending === null) return;
+        const monitor = root.delegateDiscovery(pending.actionId);
+        if (domain !== "" && (monitor === null || monitor.domain !== domain)) return;
+        root.nativeConfirmationMessage = "Provider state changed. Reload status and confirm again.";
+        root.nativeConfirmation = null;
     }
 
-    function confirmRegional() {
-        const pending = root.regionalPreview;
-        if (pending === null || root.dispatchingRegional) return false;
-        const reason = root.nativeActionReason(pending.actionId);
-        if (reason.length > 0) {
-            root.regionalConfirmMessage = reason;
-            root.regionalPreview = null;
+    function confirmDelegate() {
+        const pending = root.nativeConfirmation;
+        if (pending === null || root.dispatchingUpdate || root.dispatchingNative) return false;
+        if (root.delegateActionReason(pending.actionId) !== "") {
+            root.invalidateNativeConfirmation("");
             return false;
         }
-        root.dispatchingRegional = true;
-        root.regionalPreview = null;
-        const started = operationModel.startRegional(pending.actionId, pending.argument, pending.generation);
-        // A false return here means RegionalMutation itself will reject the
-        // stale generation server-side -- startRegional's own precondition
-        // check is a QML-side fast path, not the authority. Either way,
-        // never claim success; tell the user to look again.
-        root.regionalConfirmMessage = started ? "" : "Regional state changed. Review a fresh preview and confirm again.";
-        root.dispatchingRegional = false;
+        root.dispatchingNative = true;
+        root.nativeConfirmation = null;
+        // Recheck after prompt callbacks; the operation owner checks its own
+        // source ownership again before constructing the fixed empty argv.
+        const monitor = root.delegateDiscovery(pending.actionId);
+        const current = root.delegateContextReason(pending.actionId) === ""
+            && pending.generation === root.generation && pending.requestGeneration === root.requestGeneration
+            && monitor !== null && pending.epoch === monitor.cycle.epoch;
+        const started = current && operationModel.startNative(pending.actionId, "", "");
+        root.nativeConfirmationMessage = started ? "" : "Provider state changed. Reload status and confirm again.";
+        root.dispatchingNative = false;
         return started;
-    }
-
-    // Delegated actions (accounts-open/password-open/printers-open/
-    // sources-open) have no preview step -- launch_delegated_tool() either
-    // starts a fixed, already-trusted executable or the action was already
-    // reported unavailable/unsupported by nativeActionReason().
-    function launchDelegated(action) {
-        const reason = root.nativeActionReason(action);
-        if (reason.length > 0) {
-            root.regionalConfirmMessage = reason;
-            return false;
-        }
-        return operationModel.startDelegated(action);
     }
 
     function providerFallback(detail) {
@@ -399,14 +491,24 @@ Scope {
 
     function openSettings() {
         root.settingsVisible = true;
-        discoveryModel.open();
+        // #261: batch the five discovery models' open() calls so a signal
+        // one of them fires mid-loop (refresh()'s requestPending() can fire
+        // synchronously; open() itself cannot, but both funnel through this
+        // same guard for one consistent rule) queues rather than starting
+        // its own fetch before the rest have even opened.
+        root.discoveryBatch = true;
+        timeReconciliationModel.open();
+        for (const model of root.discoveryModels()) model.open();
         root.refreshRecovery();
+        root.discoveryBatch = false;
+        root.requestSnapshot(root.requiredPending);
     }
 
     function closeSettings() {
         root.settingsVisible = false;
+        timeReconciliationModel.close();
         root.confirmationInvalidated();
-        discoveryModel.close();
+        for (const model of root.discoveryModels()) model.close();
         root.snapshotPending = false;
         // A required fetch (recovering operation evidence) is not this
         // pane's to kill: it keeps running so operationModel can still
@@ -416,8 +518,12 @@ Scope {
 
     function refresh() {
         if (!root.settingsVisible) return;
-        discoveryModel.refresh();
+        root.discoveryBatch = true;
+        timeReconciliationModel.open();
+        for (const model of root.discoveryModels()) model.refresh();
         root.refreshRecovery();
+        root.discoveryBatch = false;
+        root.requestSnapshot(root.requiredPending);
     }
 
     // Drives operationModel's recovery snapshot the same way discoveryModel
@@ -434,9 +540,10 @@ Scope {
     // The single entry point for starting a fetch, regardless of whether the
     // trigger was a user-initiated refresh or a live discovery signal: only
     // one snapshotProcess runs at a time, and every launch is bracketed by
-    // discoveryModel.take()/beforePublish()/complete() so a signal arriving
-    // mid-read schedules exactly one follow-up settling read rather than a
-    // read per signal.
+    // each open discovery model's take()/beforePublish()/complete() (#261:
+    // now up to five, one per domain, not just discoveryModel) so a signal
+    // arriving mid-read schedules exactly one follow-up settling read
+    // rather than a read per signal.
     //
     // Guarded on snapshotProcess.running as well as snapshotOwned:
     // StdioCollector.onStreamFinished fires before Quickshell.Io.Process
@@ -449,28 +556,67 @@ Scope {
     // onRunningChanged's real not-running transition below, never from
     // finishSnapshot, so this guard should never trip in practice; it stays
     // as the actual authority a caller cannot get out of sync with.
+    // Also guarded on discoveryBatch (#261): openSettings()/refresh() loop
+    // over all five models before calling this once themselves, so a signal
+    // one of those models fires mid-loop must defer too, the same as an
+    // already-owned fetch.
     // `required` (Sync Phase 7) is operationModel asking for recovery
-    // evidence: it bypasses discoveryModel.canTake()'s settingsVisible tie,
-    // but still hands discoveryModel.take() the request -- take() itself
-    // returns null while the pane is closed, and a null token is a safe
-    // no-op through beforePublish/complete (SystemDiscoveryCycle.js's
-    // owns()), so the read still runs without joining the visible cycle.
+    // evidence: it bypasses discoveryReady()'s settingsVisible tie, but
+    // still only hands each model's take() the request when the batch is
+    // actually ready -- an unready/invisible model's take() would return
+    // null anyway (SystemDiscoveryCycle.js's owns() no-ops a null token
+    // through beforePublish/complete), so the read still runs without
+    // joining any visible cycle.
     function requestSnapshot(required) {
-        if (root.snapshotOwned || snapshotProcess.running) {
+        // S1-08 (#275): a fresh snapshot also outdates any time-status/
+        // ntp-sample read timeReconciliationModel still owns -- reserve
+        // snapshot priority over it the same way as an in-flight regional
+        // preparation below, before either can claim the shared owner.
+        if (timeReconciliationModel.ownsRead()) {
+            root.snapshotPending = root.snapshotPending || !required;
+            root.requiredPending = root.requiredPending || !!required;
+            timeReconciliationModel.beforeSnapshot();
+            if (timeReconciliationModel.ownsRead()) return;
+        }
+        // S1-05 (#268): a fresh snapshot changes root.generation, which
+        // would silently outdate any regional preview/confirmation ticket
+        // still in flight (regionalModel's own matches() check would catch
+        // this eventually, but only on the user's next interaction) --
+        // cancel it first and defer the read exactly like an already-owned
+        // fetch, rather than let a stale regional prompt survive a
+        // generation it no longer matches.
+        if (regionalModel.ownsPreparation()) {
+            root.snapshotPending = root.snapshotPending || !required;
+            root.requiredPending = root.requiredPending || !!required;
+            regionalModel.invalidate("");
+            // Optional preflight cancellation must be reaped before recovery
+            // or discovery can claim the shared snapshot owner.
+            if (regionalModel.ownsPreparation()) return;
+        }
+        if (root.snapshotOwned || snapshotProcess.running || root.discoveryBatch) {
             root.snapshotPending = root.snapshotPending || !required;
             root.requiredPending = root.requiredPending || !!required;
             return;
         }
         required = required || root.requiredPending;
-        if (!required && !discoveryModel.canTake()) return;
+        const ready = root.discoveryReady();
+        if (!required && (!ready || !root.discoveryModels().some(model => model.canTake()))) return;
         root.snapshotPending = false;
         root.requiredPending = false;
         root.snapshotOwned = true;
+        timeReconciliationModel.beforeSnapshot();
         root.snapshotAttempted = false;
         root.snapshotRequired = required;
         root.requestGeneration++;
         root.confirmationInvalidated();
-        snapshotProcess.cycleToken = discoveryModel.take();
+        const tokens = [];
+        if (ready) {
+            for (const model of root.discoveryModels()) {
+                const token = model.take();
+                if (token !== null) tokens.push({ "model": model, "token": token });
+            }
+        }
+        snapshotProcess.cycleTokens = tokens;
         root.snapshotState = "loading";
         root.message = "Loading system update status...";
         snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand("snapshot", []));
@@ -481,11 +627,13 @@ Scope {
     // operationModel -- ownership and the next launch are handled
     // separately, gated on the process's real exit (see requestSnapshot).
     function finishSnapshot(successful) {
-        discoveryModel.beforePublish(snapshotProcess.cycleToken);
+        const tokens = snapshotProcess.cycleTokens;
+        for (const item of tokens) item.model.beforePublish(item.token);
         if (successful) operationModel.acceptSnapshot(root.activeOperation, root.terminalHandoff);
         else operationModel.snapshotFailed();
-        discoveryModel.complete(snapshotProcess.cycleToken, successful);
-        snapshotProcess.cycleToken = null;
+        for (const item of tokens) item.model.complete(item.token, successful);
+        timeReconciliationModel.afterSnapshot();
+        snapshotProcess.cycleTokens = [];
         root.snapshotRequired = false;
     }
 
@@ -635,7 +783,11 @@ Scope {
                 }
                 seen[fields[1]] = true;
                 const list = isAccount ? accountsList : repositoriesList;
-                if (list.length >= (isAccount ? 256 : root.maxListRecords)) {
+                // #259: match the helper's own REPOSITORY_MAX_ROWS (512), not
+                // the generic update/package-change list bound (4096) -- the
+                // protocol contract is 512, and accepting more here would
+                // just mean silently trusting a provider past its own cap.
+                if (list.length >= (isAccount ? 256 : 512)) {
                     nativeInvalid[owner] = true;
                     continue;
                 }
@@ -689,7 +841,13 @@ Scope {
                         || root.operationActionKind(fields[2]) !== fields[3]
                         || !root.validOperationState(fields[4])
                         || !root.validPercent(fields[5])
-                        || (fields[6] !== "yes" && fields[6] !== "no")) {
+                        || (fields[6] !== "yes" && fields[6] !== "no")
+                        // #251/#262: only an update action may report itself
+                        // cancelable or sit in cancel-requested -- that state
+                        // is reachable exclusively through the same cancel
+                        // path that requires cancelable in the first place.
+                        || (root.updateActionKind(fields[2]).length === 0
+                            && (fields[6] !== "no" || fields[4] === "cancel-requested"))) {
                     root.resetToFallback("System management provider returned an invalid active operation");
                     return false;
                 }
@@ -733,6 +891,18 @@ Scope {
 
         let publishedProviders = {};
         let publishedStates = {};
+        // #262: whether the recovery journal itself was legitimately read,
+        // independent of any one domain's own record shape -- an active or
+        // terminal-handoff identity is direct evidence, as is a recovery
+        // provider that read as "available". Upstream also OR-in valid
+        // native action availability below (a working regional/delegated
+        // domain is independent proof the same journal infrastructure is
+        // readable); upstream's own `!recoveryInvalid` guard is dropped here
+        // because Lyona's mandatory-record check above already returns false
+        // outright when the recovery provider record itself is missing or
+        // malformed, so that condition can never reach this point true.
+        let journalAdmitted = activeOperation !== null || terminalHandoff !== null
+            || recoveryProvider.status === "available";
         if (minor === 1) {
             for (let i = 0; i < root.validNativeOwners.length; i++) {
                 if (nativeProviders[root.validNativeOwners[i]] === undefined) nativeInvalid[root.validNativeOwners[i]] = true;
@@ -770,9 +940,20 @@ Scope {
                     ? { "status": "partial", "value": "unknown", "detail": publishedProviders[owner].detail }
                     : nativeStates[identifier];
             }
+            // #262: a valid, available native action offer is itself proof
+            // the journal is readable, even when update-domain recovery
+            // (e.g. logind) reports unavailable and no active/handoff
+            // identity exists.
+            if (!journalAdmitted) {
+                journalAdmitted = root.validNativeActionIds.some(function(identifier) {
+                    return !nativeInvalid[root.nativeActionOwner(identifier)]
+                        && nativeActions[identifier].status === "available";
+                });
+            }
             for (let i = 0; i < root.validNativeActionIds.length; i++) {
                 const actionId = root.validNativeActionIds[i];
-                if (!nativeInvalid[root.nativeActionOwner(actionId)]) actions.push(nativeActions[actionId]);
+                if (journalAdmitted && !nativeInvalid[root.nativeActionOwner(actionId)])
+                    actions.push(nativeActions[actionId]);
             }
         }
 
@@ -801,9 +982,12 @@ Scope {
         // entry (status "partial") -- root.snapshotState stays keyed to the
         // update domain's own success, matching every existing consumer
         // (e.g. SystemSettingsPane.qml's "No pending Arch updates" gate).
+        // The function's own return value is a narrower question --
+        // journalAdmitted (#262) -- consumed by finishSnapshot()'s
+        // acceptSnapshot()/snapshotFailed() split, not by snapshotState.
         root.snapshotState = "loaded";
         root.message = updates.length + " update" + (updates.length === 1 ? "" : "s") + " found";
-        return true;
+        return journalAdmitted;
     }
 
     // Reads recovery evidence for an in-progress or unacknowledged operation
@@ -818,32 +1002,97 @@ Scope {
         onInvalidated: root.confirmationInvalidated()
     }
 
+    // #261: the generic SystemProviderDiscovery form (Sync Phase 4) already
+    // supports these four domains via domainDefinition() -- only their
+    // instantiation and coordination into the snapshot cycle was missing.
+    SystemProviderDiscovery {
+        id: timeDiscoveryModel
+        domain: "time"
+        externalUnresolved: timeReconciliationModel.blocked
+        externalDetail: timeReconciliationModel.detail
+        onSnapshotRequested: root.requestSnapshot(false)
+        // S1-05: a live timezone/NTP change must retire any regional
+        // preview/confirmation prepared against now-stale time state.
+        onInvalidated: {
+            timeReconciliationModel.beforeSnapshot();
+            regionalModel.invalidate("time");
+        }
+        // S1-08 (#275): owner arrival is uncertainty, not proof of a changed
+        // property -- timeReconciliationModel reconciles it with a bounded
+        // time-status read instead of treating it as an ordinary invalidation.
+        onOwnerArrived: timeReconciliationModel.arrived()
+    }
+    SystemProviderDiscovery {
+        id: localeDiscoveryModel
+        domain: "locale"
+        onSnapshotRequested: root.requestSnapshot(false)
+        onInvalidated: regionalModel.invalidate("locale")
+    }
+    SystemProviderDiscovery {
+        id: accountDiscoveryModel
+        domain: "accounts"
+        onSnapshotRequested: root.requestSnapshot(false)
+        // #266: a live account change must retire any confirmation prepared
+        // against a now-stale account/password offer.
+        onInvalidated: root.invalidateNativeConfirmation("accounts")
+    }
+    SystemProviderDiscovery {
+        id: printerDiscoveryModel
+        domain: "printers"
+        onSnapshotRequested: root.requestSnapshot(false)
+        onInvalidated: root.invalidateNativeConfirmation("printers")
+    }
+
     SystemOperationModel {
         id: operationModel
-        onDiscoveryInvalidated: discoveryModel.invalidate()
+        // S1-08 (#276): a completed ntp-set result is a reason to sample
+        // network time promptly, not just wait for the next periodic timer.
+        onResultChanged: timeReconciliationModel.sampleAfterOperation(result)
+        // #262: invalidate only the domain the dispatched/watched/acknowledged
+        // action actually belongs to, not always the update discovery model.
+        onDiscoveryInvalidated: actionId => root.invalidateActionDiscovery(actionId)
         onSnapshotRequested: root.requestSnapshot(true)
         onAcknowledged: operationId => {
             if (root.terminalHandoff !== null && root.terminalHandoff.id === operationId)
                 root.terminalHandoff = null;
             if (root.activeOperation !== null && root.activeOperation.id === operationId)
                 root.activeOperation = null;
-            discoveryModel.invalidate();
         }
     }
 
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): owns the
-    // regional-preview read only -- confirmed dispatch goes through
-    // operationModel.startRegional() above, same split discoveryModel/
-    // operationModel already have between read and mutate.
-    SystemRegionalPreflightModel {
-        id: regionalPreflightModel
-        active: root.settingsVisible
-        onCompleted: outcome => root.regionalPreviewReceived(outcome)
+    // Sync Sprint 1 S1-05 (#268): takes over regional preview/confirm state
+    // that used to live directly on this model (Sync Phase 9's PR #33
+    // regionalPreview/prepareRegional()/confirmRegional() family, removed
+    // above) -- confirmed dispatch goes through model.operation.startNative()
+    // internally, same split discoveryModel/operationModel already have
+    // between read and mutate.
+    SystemRegionalSettingsModel {
+        id: regionalModel
+        model: root
+        onReleased: Qt.callLater(function() {
+            if (root.requiredPending) root.requestSnapshot(true);
+            else if (root.snapshotPending && root.settingsVisible) root.requestSnapshot(false);
+            else timeReconciliationModel.requestPending();
+        })
+    }
+
+    // Sync Sprint 1 S1-08 (#275, extended by #276): owner-arrival
+    // reconciliation and periodic network-time sampling for the "time"
+    // domain, ported nearly unchanged -- verified against this file's
+    // actual settingsVisible/snapshotOwned/discoveryBatch/generation shape
+    // rather than assumed from the plan doc.
+    SystemTimeReconciliationModel {
+        id: timeReconciliationModel
+        model: root
+        onReleased: Qt.callLater(function() {
+            if (root.requiredPending) root.requestSnapshot(true);
+            else if (root.snapshotPending && root.settingsVisible) root.requestSnapshot(false);
+        })
     }
 
     Process {
         id: snapshotProcess
-        property var cycleToken: null
+        property var cycleTokens: []
         running: false
         stdout: StdioCollector { onStreamFinished: root.finishSnapshot(root.parseSnapshot(this.text)) }
         stderr: StdioCollector { id: snapshotError }

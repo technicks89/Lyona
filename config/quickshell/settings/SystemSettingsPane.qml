@@ -11,6 +11,9 @@ Flickable {
     required property var systemManagementModel
     property var capabilities: []
     property string confirmVersion: ""
+    // Sync Sprint 1 S1-06 (#270): the shared clock's formatted settings text,
+    // shown beside the timezone row below.
+    property string clockText: ""
 
     readonly property var additionalCapabilities: root.capabilities.filter(function(capability) {
         return capability.id !== "updates" && capability.id !== "package-updates";
@@ -21,6 +24,17 @@ Flickable {
     clip: true
 
     onVisibleChanged: if (!visible) root.confirmVersion = "";
+    // #267/S1-05 (#269): layout publication (a card appearing/disappearing
+    // above a confirmation, or the window resizing) can move a focused
+    // regional or delegate control after it first received focus -- follow
+    // geometry changes rather than polling or leaving focus off-screen.
+    onHeightChanged: Qt.callLater(root.revealFocusedControl)
+    onContentHeightChanged: Qt.callLater(root.revealFocusedControl)
+
+    function revealFocusedControl() {
+        regionalControls.revealFocusedControl();
+        delegateControls.revealFocusedControl();
+    }
 
     // Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
     // moves keyboard/tab focus onto its own buttons and scroll lists, which
@@ -283,13 +297,35 @@ Flickable {
         SectionLabel { label: "System updates" }
 
         SystemUpdateControls {
+            id: updateControls
             model: root.systemManagementModel
             onRevealRequested: target => root.reveal(target)
         }
 
-        SectionLabel { label: "Regional & administration" }
+        SectionLabel { label: "Regional" }
+
+        UiText {
+            objectName: "systemLocalTime"
+            Layout.fillWidth: true
+            text: root.clockText.length > 0 ? "Local date and time: " + root.clockText
+                : "Local date and time unavailable"
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
 
         SystemRegionalControls {
+            id: regionalControls
+            model: root.systemManagementModel
+            viewportHeight: root.height
+            onRevealRequested: target => root.reveal(target)
+        }
+
+        // Sync Sprint 1 S1-04 (#267): moved out of SystemRegionalControls
+        // into its own component, now that delegated launches get a visible
+        // confirmation step instead of dispatching immediately -- it
+        // supplies its own SectionLabel.
+        SystemDelegateControls {
+            id: delegateControls
             model: root.systemManagementModel
             onRevealRequested: target => root.reveal(target)
         }
@@ -329,17 +365,23 @@ Flickable {
 
         StatusCard {
             id: operationCard
+            objectName: "systemOperationFallback"
             readonly property var operation: root.systemManagementModel.operation.progress
                 || root.systemManagementModel.activeOperation
+            readonly property bool packageOperation: operationCard.operation !== null
+                && (operationCard.operation.kind === "update" || operationCard.operation.kind === "refresh")
             Layout.fillWidth: true
-            visible: operationCard.operation !== null
-            label: operationCard.operation === null ? "Active operation" : operationCard.operation.actionId
+            visible: operationCard.operation !== null && updateControls.active === null
+            label: operationCard.packageOperation ? "Update recovery"
+                : operationCard.operation === null ? "Active operation" : operationCard.operation.actionId
             statusState: "partial"
             value: operationCard.operation === null ? ""
                 : operationCard.operation.percent === "unknown"
                     ? operationCard.operation.state
                     : operationCard.operation.state + " / " + operationCard.operation.percent + "%"
-            detail: operationCard.operation === null ? "" : operationCard.operation.detail
+            detail: operationCard.packageOperation
+                ? "Live package progress is unavailable. Reload status to recover this operation."
+                : operationCard.operation === null ? "" : operationCard.operation.detail
         }
 
         StatusCard {
@@ -347,15 +389,27 @@ Flickable {
             readonly property var result: root.systemManagementModel.operation.result
             Layout.fillWidth: true
             visible: resultCard.result !== null
-            label: resultCard.result === null ? "Verified operation result" : resultCard.result.actionId
+            label: resultCard.result === null ? "Verified operation result"
+                : resultCard.result.kind === "update" ? "Package updates"
+                : resultCard.result.kind === "refresh" ? "Metadata refresh" : resultCard.result.actionId
             statusState: resultCard.result !== null && resultCard.result.state === "succeeded" ? "available" : "partial"
             value: resultCard.result === null ? "" : resultCard.result.state
-            detail: resultCard.result === null ? "" : resultCard.result.detail
+            detail: resultCard.result === null ? "" : (resultCard.result.kind === "update" || resultCard.result.kind === "refresh")
+                ? (resultCard.result.state === "succeeded"
+                    ? (resultCard.result.kind === "update" ? "Package updates completed." : "Repository metadata refreshed.")
+                    : "The operation " + resultCard.result.state + ". Review any error or recovery guidance before retrying.")
+                : resultCard.result.detail
         }
 
         UiText {
+            objectName: "systemOperationGuidance"
             Layout.fillWidth: true
             visible: root.systemManagementModel.operation.detail.length > 0
+                && (root.systemManagementModel.operation.result === null
+                    || root.systemManagementModel.operation.blocked
+                    || root.systemManagementModel.operation.state !== "result"
+                    || (root.systemManagementModel.operation.result.state !== "succeeded"
+                        && root.systemManagementModel.operation.operationError === null))
             text: root.systemManagementModel.operation.detail
             color: root.systemManagementModel.operation.blocked ? Theme.danger : Theme.menuMutedText
             wrapMode: Text.WordWrap
@@ -442,8 +496,9 @@ Flickable {
         UiText {
             Layout.fillWidth: true
             text: "Reload status reads PackageKit and recovery state. Metadata refresh and "
-                + "update installation require visible confirmation above. PackageKit owns "
-                + "authorization and safe cancellation."
+                + "update installation require visible confirmation above. Delegated launches "
+                + "also require confirmation; those tools own their internal changes. PackageKit "
+                + "owns update authorization and safe cancellation."
             color: Theme.menuMutedText
             wrapMode: Text.WordWrap
         }
