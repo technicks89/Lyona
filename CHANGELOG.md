@@ -10,6 +10,26 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add bounded security status readers to `dwm-system-management` (Sync
+  Sprint 2 S2-02, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from
+  upstream `#280`/`#281`): `read_selinux_status()` (runtime enforcement
+  first, config fallback only when the runtime interface is absent),
+  `read_secure_boot_status()` (the fixed EFI `SecureBoot` variable, never
+  inferring "disabled" from mere absence or a denied read),
+  `read_root_encryption()` (resolves LUKS/dm-crypt ancestry above `/` from
+  bounded `lsblk --json`, requiring a complete, unambiguous block-device
+  graph before claiming either answer). Lyona adaptation (D-5, decided
+  2026-09-16): upstream's `FirewalldRead` only ever asks about
+  `firewalld.service`, but a default Arch/CachyOS install runs no firewall
+  at all -- generalized into `FirewallUnitRead`/`read_firewall_status(kind)`
+  over `firewalld`, `ufw`, and `nftables`, the same real, distinct systemd
+  units either package ships, so the eventual Settings card shows honest
+  per-manager status instead of only ever reporting on firewalld. Verified
+  against this sandbox's own real system: SELinux correctly `unsupported`,
+  Secure Boot correctly read as disabled from the real EFI variable,
+  firewalld/ufw correctly `unsupported` (not installed) while nftables
+  correctly reads as installed-but-disabled, and root encryption correctly
+  resolves to `unencrypted` from this machine's real block-device topology.
 - Add bounded local, hardware, and filesystem information readers to
   `dwm-system-management` (Sync Sprint 2 S2-01,
   `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream

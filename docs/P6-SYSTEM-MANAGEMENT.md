@@ -226,17 +226,24 @@ account, printer, or repository administration inside
 `dwm-system-management`. This is privilege minimization, not a shortcut, and
 carries over from upstream unchanged.
 
-### Not implemented upstream — out of scope
+### Not implemented upstream — out of scope (superseded, see below)
 
-Upstream's own document lists "System Information and Filesystems" and
+This section described upstream's state as surveyed before Sync Sprint 2:
+upstream's own document listed "System Information and Filesystems" and
 "Security Status" sections (`os-release`/`uname`/`hostname1`/`/proc`
 identity data; SELinux/Secure Boot/firewalld/root-encryption/screen-lock
-status). The protocol-minor table below shows these were never actually
-shipped — protocol minor `2` covering them is explicitly marked
-"Not implemented upstream" in upstream's own table. Lyona is not porting
-what upstream itself never finished; if this scope is wanted later it needs
-its own decision and its own document, not an assumption carried in from a
-Fedora contract that was equally aspirational there.
+status), but the protocol-minor table below showed these were never actually
+shipped at that time.
+
+**That has since changed.** Upstream did ship this scope (`#277`–`#288`),
+and [Sync Sprint 2](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
+S2-01/S2-02 (readers: local/hardware/filesystem information, SELinux,
+Secure Boot, firewall status extended to `ufw`/`nftables` per D-5, root
+encryption) are done as of this note. The readers exist as standalone
+functions; wiring them into the snapshot protocol as minor `2` is S2-05,
+and S2-07 closes this `ROADMAP.md` Phase 6 item and this document's own
+open questions. Until S2-05 lands, minor `2` below is still accurate as
+written (no producer emits it yet).
 
 ## Provider Protocol
 
@@ -279,7 +286,7 @@ never advertises a later planned ID as `unsupported`:
 | --- | --- | --- | --- | --- | --- |
 | `0` | `updates`, `recovery` | `update-summary`, `update-last-refresh`, `update-restart` | `updates-refresh`, `updates-install-all`, `updates-cancel` | `update`, `package-change` | `SYNC-P2` through `SYNC-P7` |
 | `1` | `regional`, `accounts`, `printers`, `sources` | `timezone`, `ntp-enabled`, `ntp-synchronized`, `locale`, `accounts-count`, `cups-service` | `timezone-set`, `ntp-set`, `locale-set`, `accounts-open`, `password-open`, `printers-open`, `sources-open` | `account`, `repository` | `SYNC-P8` and `SYNC-P9` |
-| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem/SELinux/secure-boot/firewalld/encryption/lock states | `health-open` | `filesystem` | **Not implemented upstream.** Out of scope for this port |
+| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem/SELinux/secure-boot/firewalld/encryption/lock states | `health-open` | `filesystem` | `SYNC-SPRINT-2` (readers ported S2-01/S2-02; wired into the snapshot at S2-05) |
 
 The `recovery` provider is intentionally status-only from minor `0`: it owns
 journal-integrity errors that have no trustworthy operation kind of their

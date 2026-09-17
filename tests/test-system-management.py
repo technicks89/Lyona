@@ -288,6 +288,129 @@ class LocalInformationTests(unittest.TestCase):
         self.assertEqual(self.read(uptime=OSError(errno.EIO, "clock unavailable"))["uptime-seconds"].status, "unavailable")
 
 
+class LocalSecurityTests(unittest.TestCase):
+    """Sync Sprint 2 S2-02, ported from upstream's b40c832 (#280)."""
+
+    runtime_path = "/sys/fs/selinux/enforce"
+    config_path = "/etc/selinux/config"
+    variable_path = "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+
+    def read(self, kind, *, runtime=b"1", config=b"SELINUX=disabled\n", variable=b"\x07\x00\x00\x00\x01", efi=None):
+        contents = {self.runtime_path: runtime, self.config_path: config, self.variable_path: variable}
+        limits = {self.runtime_path: 2, self.config_path: 65537, self.variable_path: 6}
+        opened, streams = [], []
+        class Source(io.BytesIO):
+            def read(inner, size=-1):
+                self.assertEqual(size, limits[inner.path])
+                return super().read(size)
+        def source(path, mode):
+            self.assertEqual(mode, "rb")
+            self.assertIn(path, contents)
+            opened.append(path)
+            value = contents[path]
+            if isinstance(value, Exception):
+                raise value
+            stream = Source(value)
+            stream.path = path
+            streams.append(stream)
+            return stream
+        efi = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o755) if efi is None else efi
+        stat_options = {"side_effect": efi} if isinstance(efi, Exception) else {"return_value": efi}
+        with mock.patch.object(provider, "open", source, create=True), \
+                mock.patch.object(provider.os, "stat", **stat_options) as source_stat, \
+                mock.patch.object(provider.os, "listdir", side_effect=AssertionError("Unexpected enumeration")), \
+                mock.patch.object(provider.os, "scandir", side_effect=AssertionError("Unexpected enumeration")), \
+                mock.patch.object(provider.subprocess, "Popen", side_effect=AssertionError("Unexpected subprocess")), \
+                mock.patch.object(provider, "open_journal_directory", side_effect=AssertionError("Unexpected journal")):
+            result = provider.read_selinux_status() if kind == "selinux" else provider.read_secure_boot_status()
+        self.assertTrue(all(stream.closed for stream in streams))
+        self.assertEqual(len(opened), len(set(opened)))
+        if kind == "selinux":
+            source_stat.assert_not_called()
+        else:
+            source_stat.assert_called_once_with("/sys/firmware/efi/efivars")
+        if result.status != "available":
+            self.assertEqual(result.value, "unknown")
+            self.assertNotEqual(result.error_code, "")
+        self.assertNotIn("private detail", repr(result))
+        return result, opened
+
+    def absent(self):
+        return OSError(errno.ENOENT, "private detail")
+
+    def test_selinux_runtime_is_authoritative_and_config_is_not_read(self):
+        for data, value in ((b"1", "enforcing"), (b"0", "permissive")):
+            result, opened = self.read("selinux", runtime=data, config=AssertionError("Unused config"))
+            self.assertEqual((result.status, result.value), ("available", value))
+            self.assertEqual(opened, [self.runtime_path])
+
+    def test_malformed_or_denied_runtime_never_falls_back_to_disabled(self):
+        for data in (b"", b"1\n", b"2", b"\x01", b"1" * 100):
+            result, opened = self.read("selinux", runtime=data)
+            self.assertEqual(result.status, "partial")
+            self.assertEqual(opened, [self.runtime_path])
+        for number, status in ((errno.EACCES, "restricted"), (errno.EPERM, "restricted"), (errno.EIO, "unavailable")):
+            result, opened = self.read("selinux", runtime=OSError(number, "private detail"))
+            self.assertEqual(result.status, status)
+            self.assertEqual(opened, [self.runtime_path])
+
+    def test_only_disabled_config_can_establish_state_without_runtime(self):
+        for text in (b"SELINUX=disabled", b' SELINUX = "disabled" # comment\nOTHER=\xff\n'):
+            result, opened = self.read("selinux", runtime=self.absent(), config=text)
+            self.assertEqual((result.status, result.value), ("available", "disabled"))
+            self.assertEqual(opened, [self.runtime_path, self.config_path])
+        for text in (b"SELINUX=enforcing", b"SELINUX=permissive", b"SELINUX=DISABLED", b"SELINUX=",
+                     b"SELINUX='unclosed", b"SELINUX=$(false)", b"SELINUX=\xff", b"SELINUX",
+                     b"SELINUX=disabled\nSELINUX=disabled\nSELINUX=disabled"):
+            result, _opened = self.read("selinux", runtime=self.absent(), config=text)
+            self.assertEqual(result.status, "partial")
+
+    def test_missing_config_or_key_is_unsupported_but_denial_is_restricted(self):
+        for config in (self.absent(), b"", b"# SELINUX=disabled\nUNRELATED=value"):
+            result, _opened = self.read("selinux", runtime=self.absent(), config=config)
+            self.assertEqual(result.status, "unsupported")
+        result, _opened = self.read("selinux", runtime=self.absent(), config=PermissionError(errno.EACCES, "private detail"))
+        self.assertEqual(result.status, "restricted")
+
+    def test_selinux_config_byte_limit_precedes_parsing(self):
+        base = b"SELINUX=disabled\n"
+        exact = base + b"#" * (65536 - len(base))
+        self.assertEqual(self.read("selinux", runtime=self.absent(), config=exact)[0].value, "disabled")
+        self.assertEqual(self.read("selinux", runtime=self.absent(), config=exact + b"x")[0].status, "partial")
+
+    def test_secure_boot_exact_binary_payload_and_attributes_prefix(self):
+        for value, state in ((0, "disabled"), (1, "enabled")):
+            result, opened = self.read("secure-boot", variable=b"\xff" * 4 + bytes([value]))
+            self.assertEqual((result.status, result.value), ("available", state))
+            self.assertEqual(opened, [self.variable_path])
+        for data in (b"", b"\x00" * 4, b"\x00" * 6, b"\x00" * 4 + b"1", b"\x00" * 4 + b"\x02"):
+            self.assertEqual(self.read("secure-boot", variable=data)[0].status, "partial")
+
+    def test_secure_boot_platform_absence_and_variable_absence_are_distinct(self):
+        result, opened = self.read("secure-boot", efi=self.absent())
+        self.assertEqual(result.status, "unsupported")
+        self.assertEqual(opened, [])
+        result, opened = self.read("secure-boot", variable=self.absent())
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(opened, [self.variable_path])
+        result, opened = self.read("secure-boot", efi=types.SimpleNamespace(st_mode=stat.S_IFREG))
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(opened, [])
+
+    def test_secure_boot_denial_and_io_failure_never_mean_disabled(self):
+        for source in ("efi", "variable"):
+            for number, status in ((errno.EACCES, "restricted"), (errno.EPERM, "restricted"), (errno.EIO, "unavailable")):
+                result, _opened = self.read("secure-boot", **{source: OSError(number, "private detail")})
+                self.assertEqual(result.status, status)
+
+    def test_source_selector_is_closed_before_open(self):
+        for kind in ("other", "/etc/passwd", [], None):
+            with mock.patch.object(provider, "open", create=True) as source, \
+                    self.assertRaises(provider.SnapshotFailure):
+                provider.read_security_bytes(kind)
+            source.assert_not_called()
+
+
 class FilesystemInformationTests(unittest.TestCase):
     """Sync Sprint 2 S2-01, ported from upstream's 95ca81a (#279)."""
 
@@ -365,20 +488,157 @@ class FilesystemInformationTests(unittest.TestCase):
             provider.parse_filesystem_information(exact + b" ")
 
 
+class RootEncryptionTests(unittest.TestCase):
+    """Sync Sprint 2 S2-02, ported from upstream's 8e4ad74 (#281)."""
+
+    def node(self, name="disk", **changes):
+        return dict({"name": name, "type": "disk", "fstype": None, "mountpoints": [None], "pkname": None}, **changes)
+
+    def topology(self, encrypted=False):
+        root = self.node("root", type="crypt" if encrypted else "part", fstype="ext4", mountpoints=["/"], pkname="disk")
+        return [self.node(children=[root])]
+
+    def parse(self, rows):
+        return provider.parse_root_encryption(provider.json.dumps({"blockdevices": rows}).encode())
+
+    def assert_unknown(self, rows):
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            self.parse(rows)
+        self.assertEqual((caught.exception.code, caught.exception.status), ("malformed", "partial"))
+
+    def test_plain_and_crypt_root_ancestry(self):
+        for encrypted, value in ((False, "unencrypted"), (True, "encrypted")):
+            result = self.parse(self.topology(encrypted))
+            self.assertEqual((result.status, result.value), ("available", value))
+            self.assertIn("hardware encryption are not assessed", result.detail)
+        rows = self.topology()
+        rows[0]["fstype"] = "crypto_LUKS"
+        self.assertEqual(self.parse(rows).value, "encrypted")
+
+    def test_mapper_parent_kernel_alias_and_lvm_root(self):
+        root = self.node("fedora-root", type="lvm", fstype="btrfs", mountpoints=["/", "/home"], pkname="dm-0")
+        crypt = self.node("luks-volume", type="crypt", pkname="disk", children=[root])
+        self.assertEqual(self.parse([self.node(children=[crypt])]).value, "encrypted")
+        # kpartx mapper partitions also have a PART-prefixed UUID and alias.
+        crypt["type"] = "part"
+        self.assertEqual(self.parse([self.node(fstype="crypto_LUKS", children=[crypt])]).value, "encrypted")
+        # A second child must observe the same kernel identity for this mapper.
+        crypt["children"].append(self.node("fedora-swap", type="lvm", fstype="swap", pkname="dm-1"))
+        self.assert_unknown([self.node(children=[crypt])])
+
+    def test_multiple_backing_paths_all_encrypted_or_mixed(self):
+        def branch(name, encrypted):
+            root = self.node("root", type="raid1", fstype="ext4", mountpoints=["/"], pkname=name)
+            return self.node(name, fstype="crypto_LUKS" if encrypted else None, children=[root])
+        self.assertEqual(self.parse([branch("a", True), branch("b", True)]).value, "encrypted")
+        self.assertEqual(self.parse([branch("a", False), branch("b", False)]).value, "unencrypted")
+        self.assert_unknown([branch("a", True), branch("b", False)])
+
+    def test_encryption_above_mixed_backing_paths_covers_every_path(self):
+        root = self.node("crypt-root", type="crypt", fstype="ext4", mountpoints=["/"], pkname="md0")
+        rows = [self.node(name, fstype=fs, children=[self.node("md0", type="raid1", pkname=name, children=[root])])
+                for name, fs in (("a", None), ("b", "crypto_LUKS"))]
+        self.assertEqual(self.parse(rows).value, "encrypted")
+
+    def test_multiple_root_mounts_must_agree(self):
+        rows = [self.node("a", fstype="ext4", mountpoints=["/"]), self.node("b", fstype="btrfs", mountpoints=["/"])]
+        self.assertEqual(self.parse(rows).value, "unencrypted")
+        rows += self.topology(True)
+        self.assert_unknown(rows)
+
+    def test_missing_root_or_incomplete_root_backing_is_unknown(self):
+        for rows in ([], [self.node()], [self.node(mountpoints=["/"])],
+                     [self.node(fstype="crypto_LUKS", mountpoints=["/"])],
+                     [self.node(fstype="ext4", mountpoints=["/root", "//"])],
+                     [self.node(type="loop", fstype="ext4", mountpoints=["/"])],
+                     [self.node(type="crypt", fstype="ext4", mountpoints=["/"])],
+                     [self.node(type="part", fstype="ext4", mountpoints=["/"], pkname="absent")]):
+            self.assert_unknown(rows)
+        rows = self.topology(True)
+        rows[0]["type"] = "loop"
+        self.assert_unknown(rows)
+        # An unrelated unmounted loop does not invalidate resolved root paths.
+        self.assertEqual(self.parse(self.topology() + [self.node("loop0", type="loop")]).value, "unencrypted")
+
+    def test_bad_parent_identity_and_conflicting_duplicate_metadata(self):
+        rows = self.topology()
+        rows[0]["children"][0]["pkname"] = "wrong"
+        self.assert_unknown(rows)
+        rows[0]["children"][0]["pkname"] = "dm-0"
+        self.assert_unknown(rows)  # Physical disks do not have mapper aliases.
+        for field, value in (("type", "crypt"), ("fstype", "btrfs"), ("mountpoints", ["/home"])):
+            rows = self.topology()
+            rows[0]["children"].append(dict(rows[0]["children"][0], **{field: value}))
+            self.assert_unknown(rows)
+        rows = self.topology()
+        rows[0]["children"].append(dict(rows[0]["children"][0]))
+        self.assertEqual(self.parse(rows).value, "unencrypted")
+
+    def test_cycles_and_ambiguous_kernel_aliases_are_unknown(self):
+        a = self.node("a", type="lvm", pkname="disk")
+        b = self.node("b", type="lvm", pkname="dm-0")
+        a["children"] = [b]
+        b["children"] = [dict(a, pkname="dm-1", children=[])]
+        self.assert_unknown(self.topology() + [self.node(children=[a])])
+        rows = []
+        for name in ("a", "b"):
+            rows.append(self.node(name, type="lvm", children=[self.node(name + "-child", pkname="dm-0")]))
+        self.assert_unknown(self.topology() + rows)
+
+    def test_selected_fields_and_children_are_strict(self):
+        for field, value in (("name", ""), ("name", "bad\nname"), ("name", "\ud800"),
+                ("name", "x" * 513), ("name", "é" * 257), ("type", None), ("fstype", []),
+                ("mountpoints", None), ("mountpoints", [False]), ("children", None), ("children", [None])):
+            rows = self.topology()
+            rows[0][field] = value
+            self.assert_unknown(rows)
+        for field in ("name", "type", "fstype", "mountpoints", "pkname"):
+            rows = self.topology()
+            del rows[0][field]
+            self.assert_unknown(rows)
+
+    def test_unique_record_cap_includes_repeated_rows_without_dropping_evidence(self):
+        rows = [self.node(str(index)) for index in range(1024)]
+        rows[0].update(fstype="ext4", mountpoints=["/"])
+        self.assertEqual(self.parse(rows + [dict(rows[0])]).value, "unencrypted")
+        self.assert_unknown(rows + [self.node("extra")])
+
+    def test_nested_topology_is_resolved_without_recursive_graph_walk(self):
+        child = self.node("root", type="part", fstype="ext4", mountpoints=["/"], pkname="p0")
+        for index in range(150):
+            child = self.node("p" + str(index), type="part", pkname="p" + str(index + 1), children=[child])
+        child["pkname"] = "disk"
+        self.assertEqual(self.parse([self.node(children=[child])]).value, "unencrypted")
+
+    def test_json_byte_limit_keys_numbers_and_decoding_fail_closed(self):
+        for data in (b"", b"[]", b"{}", b'{"blockdevices":null}', b'{"blockdevices":[],"blockdevices":[]}',
+                b'{"blockdevices":[{"name":"a","name":"b"}]}', b'{"blockdevices":[],"extra":NaN}',
+                b"\xff", b"[" * 2000 + b"]" * 2000):
+            with self.assertRaises(provider.SnapshotFailure):
+                provider.parse_root_encryption(data)
+        data = provider.json.dumps({"blockdevices": self.topology()}).encode()
+        exact = data + b" " * (provider.FILESYSTEM_OUTPUT_BYTES - len(data))
+        self.assertEqual(provider.parse_root_encryption(exact).value, "unencrypted")
+        with self.assertRaises(provider.SnapshotFailure):
+            provider.parse_root_encryption(exact + b" ")
+
+
 class FilesystemProcessTests(unittest.TestCase):
+    source_command = ["/usr/bin/findmnt", "--json", "--bytes", "--real", "--uniq", "--output",
+                      "ID,SOURCE,TARGET,FSTYPE,SIZE,USED,AVAIL"]
+    source_fixture = "system-filesystem-process.py"
+
     @contextlib.contextmanager
     def source(self, mode="success", *arguments, signal_number=None, expect_cleanup=True):
         popen, processes = subprocess.Popen, []
         def launch(command, **options):
-            self.assertEqual(command, ["/usr/bin/timeout", "--signal=TERM", "--kill-after=1", "3",
-                "/usr/bin/findmnt", "--json", "--bytes", "--real", "--uniq", "--output",
-                "ID,SOURCE,TARGET,FSTYPE,SIZE,USED,AVAIL"])
+            self.assertEqual(command, ["/usr/bin/timeout", "--signal=TERM", "--kill-after=1", "3"] + self.source_command)
             self.assertEqual(options["env"], {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
             self.assertEqual(options["stdin"], subprocess.DEVNULL)
             self.assertTrue(options["start_new_session"])
             self.assertNotIn("preexec_fn", options)
             process = popen(command[:4] + ["/usr/bin/python3",
-                str(REPO / "tests/fixtures/system-filesystem-process.py"), mode, *arguments], **options)
+                str(REPO / "tests/fixtures" / self.source_fixture), mode, *arguments], **options)
             processes.append(process)
             if signal_number is not None:
                 signal.raise_signal(signal_number)
@@ -505,6 +765,114 @@ class FilesystemProcessTests(unittest.TestCase):
             thread.join(timeout=2)
             self.assertFalse(thread.is_alive())
             self.assertEqual(results[0].summary.status, "unavailable")
+            launch.assert_not_called()
+
+
+class RootEncryptionProcessTests(unittest.TestCase):
+    """Sync Sprint 2 S2-02, ported from upstream's 8e4ad74 (#281)."""
+
+    source_command = ["/usr/bin/lsblk", "--json", "--output", "NAME,TYPE,FSTYPE,MOUNTPOINTS,PKNAME"]
+    source_fixture = "system-encryption-process.py"
+    source = FilesystemProcessTests.source
+
+    def test_fixed_fresh_command_and_exact_shared_output_budget(self):
+        with self.source() as processes, mock.patch.dict(os.environ, {"LC_ALL": "invalid"}), \
+                mock.patch.object(provider, "open_journal_directory") as journal:
+            for _ in range(2):
+                state = provider.read_root_encryption()
+                self.assertEqual((state.status, state.value), ("available", "unencrypted"))
+            self.assertEqual(len(processes), 2)
+            journal.assert_not_called()
+        with self.source("exact-budget"):
+            self.assertEqual(provider.read_root_encryption().value, "unencrypted")
+
+    def test_bad_missing_and_excess_evidence_never_claims_encryption(self):
+        for mode in ("bad-json", "empty-json", "invalid-utf8", "stdout-overflow", "stderr-overflow", "combined-overflow"):
+            with self.subTest(mode=mode), self.source(mode):
+                state = provider.read_root_encryption()
+                self.assertEqual((state.status, state.value, state.error_code), ("partial", "unknown", "malformed"))
+
+    def test_exit_status_is_required_and_stderr_is_not_disclosed(self):
+        for status, code in ((1, "internal"), (125, "internal"), (126, "internal"),
+                             (127, "missing-provider"), (124, "timeout"), (137, "timeout")):
+            with self.source("exit", str(status)):
+                state = provider.read_root_encryption()
+                self.assertEqual((state.status, state.value, state.error_code), ("unavailable", "unknown", code))
+                self.assertNotIn("private diagnostic", repr(state))
+
+    def test_missing_command_and_read_denial_restore_handlers(self):
+        handlers = {n: signal.getsignal(n) for n in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+        for error, status in ((FileNotFoundError(), "unavailable"), (PermissionError(errno.EACCES, "private"), "restricted")):
+            with mock.patch.object(provider.subprocess, "Popen", side_effect=error):
+                state = provider.read_root_encryption()
+            self.assertEqual((state.status, state.value), (status, "unknown"))
+            self.assertNotIn("private", repr(state))
+        self.assertEqual(handlers, {n: signal.getsignal(n) for n in handlers})
+
+    def test_monotonic_deadline_cleans_descendants_and_closed_pipes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = str(pathlib.Path(directory) / "child-pid")
+            started = time.monotonic()
+            with self.source("descendant", pid_file), mock.patch.object(provider.time, "time", side_effect=[9999, -9999]):
+                self.assertEqual(provider.read_root_encryption().error_code, "timeout")
+            self.assertLess(time.monotonic() - started, 5.5)
+            LocaleEnumerationTests().assert_process_stopped(int(pathlib.Path(pid_file).read_text()))
+        with self.source("closed-pipes"):
+            self.assertEqual(provider.read_root_encryption().error_code, "timeout")
+
+    def test_decoding_after_deadline_cannot_publish_a_result(self):
+        monotonic = time.monotonic
+        for malformed in (False, True):
+            offset = [0]
+            def decode(_data):
+                offset[0] = 4
+                if malformed:
+                    raise provider.SnapshotFailure("malformed", "Late failure")
+                return provider.InformationState("available", "encrypted", "Fixture")
+            with self.source(), mock.patch.object(provider.time, "monotonic", side_effect=lambda: monotonic() + offset[0]), \
+                    mock.patch.object(provider, "parse_root_encryption", side_effect=decode):
+                state = provider.read_root_encryption()
+            self.assertEqual((state.value, state.error_code), ("unknown", "timeout"))
+
+    def test_interruption_and_cleanup_failure_never_hide_termination(self):
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            previous = signal.getsignal(number)
+            with self.source("closed-pipes", signal_number=number):
+                with self.assertRaises(SystemExit) as caught:
+                    provider.read_root_encryption()
+                self.assertEqual(caught.exception.code, 128 + number)
+            self.assertIs(signal.getsignal(number), previous)
+        for number in (None, signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            def cleanup(_process):
+                if number is not None:
+                    signal.raise_signal(number)
+                raise provider.SnapshotFailure("timeout", "Private cleanup detail", "unavailable")
+            with self.source(expect_cleanup=False), mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+                if number is not None:
+                    with self.assertRaises(SystemExit) as caught:
+                        provider.read_root_encryption()
+                    self.assertEqual(caught.exception.code, 128 + number)
+                else:
+                    state = provider.read_root_encryption()
+                    self.assertEqual((state.value, state.error_code), ("unknown", "timeout"))
+                    self.assertNotIn("Private cleanup detail", repr(state))
+
+    def test_closed_source_selector_and_unavailable_ownership_prevent_launch(self):
+        for kind in ("other", "/usr/bin/lsblk", [], None):
+            with mock.patch.object(provider.subprocess, "Popen") as launch, self.assertRaises(provider.SnapshotFailure):
+                provider.read_storage_information(kind)
+            launch.assert_not_called()
+        with mock.patch.object(provider.signal, "getsignal", return_value=signal.SIG_IGN), \
+                mock.patch.object(provider.subprocess, "Popen") as launch:
+            self.assertEqual(provider.read_root_encryption().status, "unavailable")
+            launch.assert_not_called()
+        result = []
+        with mock.patch.object(provider.subprocess, "Popen") as launch:
+            thread = threading.Thread(target=lambda: result.append(provider.read_root_encryption()))
+            thread.start()
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(result[0].status, "unavailable")
             launch.assert_not_called()
 
 
@@ -2898,6 +3266,122 @@ class CupsReadTests(unittest.TestCase):
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(process.pid, 9)
                 process.communicate(timeout=3)
+
+
+class FirewallUnitReadTests(unittest.TestCase):
+    """Sync Sprint 2 S2-02 (D-5), parametrized from upstream's b40c832 (#280)
+    FirewalldReadTests over all three real firewall units FirewallUnitRead
+    can read (a default Arch/CachyOS install runs none of them by default,
+    unlike Fedora's firewalld), not just firewalld.
+    """
+
+    def collect(self, kind, state=None, *, remote=None, mode="normal"):
+        _unused, connection, gio, glib, variant = RegionalReadTests().reader()
+        read = provider.FirewallUnitRead(kind, gio, glib)
+        gio.dbus_error_get_remote_error.return_value = remote
+        def run():
+            if mode == "connect-timeout":
+                read.expire()
+            read.connected(None, object(), None)
+            if mode == "timeout":
+                read.expire()
+            if remote:
+                connection.call_finish.side_effect = variant.Error("private detail")
+            else:
+                connection.call_finish.return_value = (variant.Variant("(s)", ("bad",)) if mode == "malformed"
+                    else CupsReadTests().reply(variant, state, **{"0": provider.FIREWALL_UNITS[kind][0]}))
+            if mode == "decode-timeout":
+                decode = provider.decode_unit_state
+                def delayed(reply):
+                    read.deadline = time.monotonic() - 1
+                    return decode(reply)
+                with mock.patch.object(provider, "decode_unit_state", side_effect=delayed):
+                    read.replied(connection, object(), None)
+            else:
+                read.replied(connection, object(), None)
+        read.loop.run.side_effect = run
+        with mock.patch.object(provider, "FirewallUnitRead", return_value=read), \
+                mock.patch.object(provider, "open_journal_directory") as journal:
+            result = provider.read_firewall_status(kind)
+        journal.assert_not_called()
+        connection.close_sync.assert_not_called()
+        self.assertTrue(read.cancellable.cancel.called)
+        self.assertNotIn("private detail", repr(result))
+        return result, read, connection, gio, glib
+
+    def test_fixed_unit_query_and_known_states(self):
+        for kind in provider.FIREWALL_UNITS:
+            for active, value in (("active", "enabled"), ("inactive", "disabled")):
+                result, _read, connection, gio, glib = self.collect(kind, CupsReadTests().state(active=active))
+                self.assertEqual((result.status, result.value), ("available", value))
+                self.assertIn("other firewall", result.detail)
+                connection.call.assert_called_once()
+                args = connection.call.call_args.args
+                self.assertEqual(args[:4], (provider.SYSTEMD_NAME, provider.SYSTEMD_PATH, provider.SYSTEMD_MANAGER, "ListUnitsByNames"))
+                self.assertEqual(args[4].unpack(), ([provider.FIREWALL_UNITS[kind][0]],))
+                self.assertEqual(args[6], gio.DBusCallFlags.NO_AUTO_START)
+                self.assertTrue(0 < args[7] <= 10000)
+                glib.source_remove.assert_called_once_with(17)
+
+    def test_absent_failed_transitional_and_malformed_states(self):
+        for kind in provider.FIREWALL_UNITS:
+            for active in ("failed", "activating", "deactivating", "reloading", "unknown"):
+                result, *_rest = self.collect(kind, CupsReadTests().state(active=active))
+                self.assertEqual((result.status, result.value), ("partial", "unknown"))
+            result, *_rest = self.collect(kind, CupsReadTests().state(load="not-found"))
+            self.assertEqual((result.status, result.value), ("unsupported", "unknown"))
+            for state in (CupsReadTests().state(load="not-found", active="active"), CupsReadTests().state(active="bad\nstate")):
+                self.assertEqual(self.collect(kind, state)[0].error_code, "malformed")
+            self.assertEqual(self.collect(kind, mode="malformed")[0].status, "partial")
+
+    def test_service_failures_and_late_replies_are_scoped(self):
+        for kind in provider.FIREWALL_UNITS:
+            for remote, status, code in (("org.freedesktop.systemd1.NoSuchUnit", "unsupported", "missing-provider"),
+                    ("org.freedesktop.DBus.Error.AccessDenied", "unavailable", "permission-denied"),
+                    ("org.freedesktop.DBus.Error.ServiceUnknown", "unavailable", "missing-provider")):
+                result, *_rest = self.collect(kind, remote=remote)
+                self.assertEqual((result.status, result.value, result.error_code), (status, "unknown", code))
+            for mode in ("timeout", "connect-timeout"):
+                result, read, connection, _gio, _glib = self.collect(kind, mode=mode)
+                self.assertEqual((result.status, result.error_code), ("unavailable", "timeout"))
+                connection.call_finish.reset_mock()
+                read.replied(connection, object(), None)
+                connection.call_finish.assert_not_called()
+                if mode == "connect-timeout":
+                    connection.call.assert_not_called()
+
+    def test_missing_bindings_and_interruption(self):
+        for kind in provider.FIREWALL_UNITS:
+            with mock.patch.object(provider, "FirewallUnitRead", side_effect=provider.SnapshotFailure(
+                    "missing-provider", "Bindings unavailable", "unavailable")):
+                self.assertEqual(provider.read_firewall_status(kind).status, "unavailable")
+            with mock.patch.object(provider, "FirewallUnitRead"), \
+                    mock.patch.object(provider, "run_interruptible_read", side_effect=InterruptedError):
+                with self.assertRaises(InterruptedError):
+                    provider.read_firewall_status(kind)
+
+    def test_decode_deadline_and_completed_callback_cannot_publish_late_state(self):
+        for kind in provider.FIREWALL_UNITS:
+            self.assertEqual(self.collect(kind, mode="decode-timeout")[0].error_code, "timeout")
+            _result, read, connection, _gio, _glib = self.collect(kind)
+            connection.call_finish.reset_mock()
+            read.replied(connection, object(), None)
+            connection.call_finish.assert_not_called()
+
+    def test_unknown_kind_is_rejected(self):
+        with self.assertRaises(provider.SnapshotFailure) as caught:
+            provider.FirewallUnitRead("unknown")
+        self.assertEqual(caught.exception.code, "malformed")
+
+    def test_actual_private_bus_state_deadline_and_shared_connection(self):
+        for kind in provider.FIREWALL_UNITS:
+            with self.subTest(kind=kind):
+                result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+                    str(REPO / "tests/fixtures/system-firewall-read-bus.py"), str(PROVIDER_PATH), kind],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout,
+                    f"Private-bus {kind} reads: PASS (fixed query, states, failures, deadline, late reply, shared bus)\n")
 
 
 class RepositoryReadTests(unittest.TestCase):
