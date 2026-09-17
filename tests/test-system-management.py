@@ -467,10 +467,8 @@ class FilesystemInformationTests(unittest.TestCase):
         self.assertEqual(result.summary.status, "partial")
         result = self.parse([self.row(index) for index in range(256)])
         self.assertEqual((result.summary.status, result.summary.value), ("available", "256"))
-        result = self.parse([self.row(index) for index in range(257)] + [self.row(0)])
-        self.assertEqual(result.summary.status, "partial")
-        self.assertEqual(len(result.rows), 255)
-        self.assertNotIn("0", [row.mount_id for row in result.rows])
+        with self.assertRaisesRegex(provider.SnapshotFailure, "record limit"):
+            self.parse([self.row(index) for index in range(257)] + [self.row(0)])
 
     def test_invalid_json_shape_duplicate_keys_numbers_and_utf8(self):
         for data in (b"", b"[]", b"{}", b'{"filesystems":null}', b'{"filesystems": [], "filesystems": []}',
@@ -3822,6 +3820,255 @@ class RepositoryReadTests(unittest.TestCase):
         value, failure, *_ = self.collect(transform=reject_cleanup)
         self.assertIsNone(failure)
         self.assertEqual(len(value), 2)
+
+
+class MountMonitorTests(unittest.TestCase):
+    """Sync Sprint 2 S2-04, ported from upstream's 5b246a0/dbbfde1/994011f/088069b/6ac6f5a (#284)."""
+
+    def start(self, body, *, delay=0, baseline=True, pass_fds=()):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = pathlib.Path(directory.name) / "child"
+        fixture = (f"import time\nopen({str(path)!r}, 'w').write(str(os.getpid()))\n"
+                   f"time.sleep({delay!r})\n"
+                   + ("baseline = open('/proc/self/mountinfo')\nos.set_inheritable(baseline.fileno(), True)\n" if baseline else "")
+                   + body + "\ntime.sleep(60)\n")
+        code = provider.MOUNT_MONITOR_EXEC.replace(
+            "os.execv('/usr/bin/findmnt', ['findmnt', '--poll', '--raw', '--noheadings', '--output', 'ACTION'])",
+            fixture)
+        runner = (f"import runpy,sys\np=runpy.run_path({str(PROVIDER_PATH)!r})\n"
+                  f"p['watch_mount_events'].__globals__['MOUNT_MONITOR_EXEC']={code!r}\n"
+                  "sys.exit(p['watch_mount_events']())\n")
+        process = subprocess.Popen([sys.executable, "-c", runner], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, pass_fds=pass_fds, bufsize=0)
+        self.addCleanup(self.stop, process)
+        deadline = time.monotonic() + 2
+        while not path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(path.exists())
+        child = int(path.read_text())
+        return process, child
+
+    @staticmethod
+    def stop(process):
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+        process.stdout.close()
+        process.stderr.close()
+
+    def row(self, process, timeout=2):
+        self.assertTrue(select.select([process.stdout], [], [], timeout)[0], "monitor output timed out")
+        return process.stdout.readline()
+
+    def gone(self, child):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                state = pathlib.Path(f"/proc/{child}/stat").read_text().rsplit(") ", 1)[1].split()[0]
+            except FileNotFoundError:
+                return
+            if state == "Z":  # An orphan awaits the host's reaper after parent KILL.
+                return
+            time.sleep(0.01)
+        self.fail("mount child remains running")
+
+    def test_readiness_precedes_queued_events_and_all_fixed_actions_are_preserved(self):
+        process, child = self.start("os.write(1, b'mount\\numount\\nmove\\nremount\\n')")
+        self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+        for action in (b"mount", b"umount", b"move", b"remount"):
+            self.assertEqual(self.row(process), b"mount-change\t" + action + b"\n")
+        process.terminate()
+        self.assertEqual(process.wait(timeout=3), 143)
+        self.gone(child)
+
+    def test_delayed_baseline_emits_nothing_early(self):
+        process, child = self.start("", delay=0.3)
+        self.assertFalse(select.select([process.stdout], [], [], 0.1)[0])
+        self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+        self.stop(process)
+        self.gone(child)
+
+    def test_real_findmnt_parsing_open_is_not_its_polling_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = pathlib.Path(directory)
+            source, library, marker = directory / "pause.c", directory / "pause.so", directory / "parsing"
+            source.write_text(r"""
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+FILE *fopen64(const char *path, const char *mode) {
+    FILE *(*original)(const char *, const char *) = dlsym(RTLD_NEXT, "fopen64");
+    FILE *result = original(path, mode);
+    if (result && strstr(path, "/mountinfo") && strchr(mode, 'e')) {
+        int fd = open(getenv("DWM_MOUNT_PARSE_MARKER"), O_WRONLY | O_CREAT, 0600);
+        if (fd >= 0) close(fd);
+        usleep(350000);
+    }
+    return result;
+}
+""")
+            subprocess.run(["cc", "-shared", "-fPIC", "-o", str(library), str(source), "-ldl"],
+                           check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LD_PRELOAD": str(library),
+                           "DWM_MOUNT_PARSE_MARKER": str(marker)}
+            process, child = self.start("os.execve('/usr/bin/findmnt', "
+                "['findmnt', '--poll', '--raw', '--noheadings', '--output', 'ACTION'], "
+                + repr(environment) + ")", baseline=False)
+            deadline = time.monotonic() + 1
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.assertTrue(marker.exists(), "real findmnt did not reach its initial parsing open")
+            self.assertFalse(select.select([process.stdout], [], [], 0.15)[0])
+            self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+            self.stop(process)
+            self.gone(child)
+
+    def test_temporary_parsing_descriptor_cannot_acknowledge_readiness(self):
+        process, child = self.start("baseline = open('/proc/self/mountinfo')\n"
+            "time.sleep(0.35)\nbaseline.close()\n"
+            "baseline = open('/proc/self/mountinfo')\nos.set_inheritable(baseline.fileno(), True)", baseline=False)
+        self.assertFalse(select.select([process.stdout], [], [], 0.2)[0])
+        self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+        self.stop(process)
+        self.gone(child)
+
+    def test_missing_baseline_has_one_second_deadline_and_cleanup(self):
+        started = time.monotonic()
+        process, child = self.start("", baseline=False)
+        self.assertEqual(process.wait(timeout=3), 1)
+        self.assertLess(time.monotonic() - started, 2.8)
+        self.assertEqual(process.stdout.read(), b"")
+        self.assertIn(b"reload storage status explicitly", process.stderr.read())
+        self.gone(child)
+
+    def test_bad_output_and_unexpected_exit_fail_closed(self):
+        for body in ("os.write(1, b'unknown\\n')", "os.write(1, b'\\n')",
+                     "os.write(1, b'x' * 257)", "os.write(2, b'failure')",
+                     "sys.exit(0)"):
+            with self.subTest(body=body):
+                process, child = self.start(body)
+                self.assertEqual(process.wait(timeout=3), 1)
+                self.assertNotIn(b"mount-change", process.stdout.read())
+                self.gone(child)
+
+    def test_signal_cleanup_and_parent_death(self):
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGKILL):
+            with self.subTest(number=number):
+                process, child = self.start("")
+                self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+                process.send_signal(number)
+                expected = -number if number == signal.SIGKILL else 128 + number
+                self.assertEqual(process.wait(timeout=3), expected)
+                self.gone(child)
+
+    def test_nonstandard_descriptors_do_not_reach_child(self):
+        with tempfile.TemporaryFile() as inherited:
+            identity = os.fstat(inherited.fileno())
+            body = ("for name in os.listdir('/proc/self/fd'):\n"
+                    "    try: item = os.fstat(int(name))\n"
+                    "    except OSError: continue\n"
+                    f"    if (item.st_dev, item.st_ino) == {(identity.st_dev, identity.st_ino)!r}:\n"
+                    "        os.write(2, b'inherited descriptor')\n"
+                    "os.write(1, b'mount\\n')\n")
+            process, child = self.start(body, pass_fds=(inherited.fileno(),))
+            self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+            self.assertEqual(self.row(process), b"mount-change\tmount\n")
+            self.stop(process)
+            self.gone(child)
+
+    def test_lost_output_consumer_stops_child(self):
+        process, child = self.start("time.sleep(0.15)\nos.write(1, b'mount\\n')")
+        self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+        process.stdout.close()
+        self.assertEqual(process.wait(timeout=3), 1)
+        self.gone(child)
+
+    def test_socket_outputs_are_rejected_before_starting_a_child(self):
+        for mode in ("plain", "input", "read-half", "write-half", "full-buffer"):
+            with self.subTest(mode=mode):
+                sender, reader = socket.socketpair()
+                with sender, reader, tempfile.TemporaryFile() as diagnostics, \
+                        os.fdopen(os.dup(sender.fileno()), "wb", buffering=0) as output:
+                    if mode == "input":
+                        reader.sendall(b"not a closure")
+                    elif mode == "read-half":
+                        reader.shutdown(socket.SHUT_RD)
+                    elif mode == "write-half":
+                        reader.shutdown(socket.SHUT_WR)
+                    elif mode == "full-buffer":
+                        sender.setblocking(False)
+                        try:
+                            while True:
+                                sender.send(b"x" * 4096)
+                        except BlockingIOError:
+                            pass
+                    blocking = os.get_blocking(sender.fileno())
+                    with mock.patch.object(provider.sys, "stdout", output), \
+                            mock.patch.object(provider.sys, "stderr", diagnostics), \
+                            mock.patch.object(provider.subprocess, "Popen", side_effect=AssertionError("Child started")) as spawn:
+                        self.assertEqual(provider.watch_mount_events(), 1)
+                    spawn.assert_not_called()
+                    self.assertEqual(os.get_blocking(sender.fileno()), blocking)
+                    diagnostics.seek(0)
+                    self.assertIn(b"requires write-only pipe output", diagnostics.read())
+
+    def test_regular_and_read_write_fifo_outputs_are_rejected_before_child(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryFile() as regular:
+            fifo = pathlib.Path(directory) / "output"
+            os.mkfifo(fifo, 0o600)
+            with os.fdopen(os.open(fifo, os.O_RDWR | os.O_NONBLOCK), "wb", buffering=0) as retained_reader:
+                for output in (regular, retained_reader):
+                    with self.subTest(mode=os.fstat(output.fileno()).st_mode), tempfile.TemporaryFile() as diagnostics, \
+                            mock.patch.object(provider.sys, "stdout", output), \
+                            mock.patch.object(provider.sys, "stderr", diagnostics), \
+                            mock.patch.object(provider.subprocess, "Popen", side_effect=AssertionError("Child started")) as spawn:
+                        self.assertEqual(provider.watch_mount_events(), 1)
+                        spawn.assert_not_called()
+                        diagnostics.seek(0)
+                        self.assertIn(b"requires write-only pipe output", diagnostics.read())
+
+    def test_idle_output_liveness_watch_does_not_spin(self):
+        process, child = self.start("")
+        self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+        def ticks():
+            fields = pathlib.Path(f"/proc/{process.pid}/stat").read_text().rsplit(") ", 1)[1].split()
+            return int(fields[11]) + int(fields[12])
+        before = ticks()
+        time.sleep(0.3)
+        self.assertLessEqual(ticks() - before, 1, "Idle mount supervisor consumed CPU ticks")
+        self.stop(process)
+        self.gone(child)
+
+    def test_idle_lost_output_consumer_stops_child_without_mount_events(self):
+        process, child = self.start("")
+        self.assertEqual(self.row(process), b"mount-monitor-ready\n")
+        process.stdout.close()
+        self.assertEqual(process.wait(timeout=3), 1)
+        self.gone(child)
+
+    def test_proc_identity_change_and_exited_child_are_rejected(self):
+        process = types.SimpleNamespace(pid=123)
+        with mock.patch.object(provider, "locale_process_status", return_value=None), \
+                mock.patch.object(provider.os, "stat", return_value=types.SimpleNamespace(st_dev=1, st_ino=3)):
+            with self.assertRaises(OSError):
+                provider.mount_baseline_ready(process, (1, 2))
+        with mock.patch.object(provider, "locale_process_status", return_value=object()):
+            with self.assertRaises(OSError):
+                provider.mount_baseline_ready(process, (1, 2))
+
+    def test_fixed_command_rejects_arguments(self):
+        result = subprocess.run([str(PROVIDER_PATH), "watch-mounts", "other"], capture_output=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b"")
 
 
 class UpdateEventMonitorTests(unittest.TestCase):

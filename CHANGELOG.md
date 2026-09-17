@@ -10,6 +10,35 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add a bounded mount change monitor to `dwm-system-management` (Sync Sprint
+  2 S2-04, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
+  `#284`, commits `5b246a0`/`dbbfde1`/`994011f`/`088069b`/`6ac6f5a`):
+  `watch-mounts` supervises one fixed `findmnt --poll` child, arming
+  parent-death cleanup (`prctl(PR_SET_PDEATHSIG)`) and re-checking the
+  original parent PID to close the startup race before `execv`. Readiness is
+  observed only from the live, unreaped child's own `/proc/PID/fd` — the
+  exact `mountinfo` descriptor opened without `O_CLOEXEC` — never a merely
+  temporary parsing descriptor, and never before a one-second deadline
+  expires. A pidfd and a signal-wakeup pipe alongside the child's output mean
+  no idle polling timer runs once ready. The helper requires write-only pipe
+  output (as Quickshell supplies): a socket can half-close without an event,
+  and a read/write FIFO retains its own reader, so both are rejected before
+  starting a child, and losing the pipe's reader is itself a bounded event,
+  not an idle spin. `parse_filesystem_information()` now rejects (rather
+  than silently discarding into "partial") a filesystem inventory beyond its
+  256-record limit, since silently dropping is not the same information as
+  what a client asked for. Lyona adaptation: replaced upstream's one
+  Fedora-specific comment about `CLOEXEC` parsing-descriptor timing with
+  neutral wording, since Lyona never targets Fedora; confirmed `findmnt`
+  (util-linux) is already tracked in `arch:runtime-required`. Verified on
+  this sandbox with a real unprivileged mount namespace (`unshare -rm`):
+  `watch-mounts` correctly reports `mount-monitor-ready` then
+  `mount-change\tmount`/`mount-change\tumount` for actual `mount -t tmpfs`/
+  `umount` calls. The full ported `MountMonitorTests` suite (15 tests,
+  including real subprocess signal-cleanup, orphan-reaping, and an
+  `LD_PRELOAD`-based real-`findmnt` timing test) passes 3/3 consecutive
+  runs. Does not yet wire `watch-mounts` into the snapshot protocol or
+  `SystemProviderDiscovery.qml`'s domain list — that's S2-05.
 - Reuse the shared power helper's automatic screen-lock evidence in
   `dwm-system-management` through a bounded internal information reader
   (Sync Sprint 2 S2-03, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported

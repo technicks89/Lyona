@@ -237,13 +237,20 @@ shipped at that time.
 
 **That has since changed.** Upstream did ship this scope (`#277`–`#288`),
 and [Sync Sprint 2](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
-S2-01/S2-02 (readers: local/hardware/filesystem information, SELinux,
-Secure Boot, firewall status extended to `ufw`/`nftables` per D-5, root
-encryption) are done as of this note. The readers exist as standalone
-functions; wiring them into the snapshot protocol as minor `2` is S2-05,
-and S2-07 closes this `ROADMAP.md` Phase 6 item and this document's own
-open questions. Until S2-05 lands, minor `2` below is still accurate as
-written (no producer emits it yet).
+S2-01/S2-02/S2-03/S2-04 (readers: local/hardware/filesystem information,
+SELinux, Secure Boot, firewall status extended to `ufw`/`nftables` per D-5,
+root encryption, automatic screen-lock evidence reused from the shared power
+helper, and a bounded `watch-mounts` mount-change monitor) are done as of
+this note. `watch-mounts` supervises one fixed `findmnt --poll` child with a
+pidfd and a signal-wakeup pipe alongside its output, so no idle timer remains
+once the baseline `/proc/PID/fd` probe confirms the child's own `mountinfo`
+descriptor is open; it requires write-only pipe output (as Quickshell
+supplies) so losing its reader is itself an event, and it never activates
+minor `2` or reads a journal. The readers exist as standalone functions;
+wiring them into the snapshot protocol as minor `2` is S2-05, and S2-07
+closes this `ROADMAP.md` Phase 6 item and this document's own open
+questions. Until S2-05 lands, minor `2` below is still accurate as written
+(no producer emits it yet).
 
 ## Provider Protocol
 
