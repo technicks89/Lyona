@@ -10,6 +10,44 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Reuse the shared power helper's automatic screen-lock evidence in
+  `dwm-system-management` through a bounded internal information reader
+  (Sync Sprint 2 S2-03, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported
+  from upstream `#282`, commits `92c4543`/`76d0739`/`2fe6f7d`):
+  `read_screen_lock()`/`parse_screen_lock()` consume
+  `dwm-quickshell-controlcenter power-lock-snapshot`, a new lock-only
+  snapshot that reuses `power_status()` without querying UPower, profiles,
+  suspend, or lid policy. Hardened the shared probe per upstream: the xset
+  screen-saver timeout and gsettings lock-after/lock-on-suspend values are
+  now bounds- and type-validated, reporting `partial` (not stale configured
+  fallback values) on malformed evidence, tracked through a new
+  `lock_malformed` status row. Locker readiness now matches the user's
+  effective UID and current `DISPLAY` through bounded procps environment
+  matching, so a locker on another display or missing display evidence
+  cannot establish readiness. Lyona adaptation: Lyona autostarts
+  `dwm-lock-watch` (a reactive watcher for logind's `Lock` signal,
+  independent of X11-idle timeouts) alongside `light-locker`; a new
+  `configured_lock_running()` recognizes either mechanism as "running"
+  evidence when `power_lock_managed=1`, while `start_configured_light_locker`/
+  `stop_configured_light_locker` keep using the light-locker-only,
+  DISPLAY-scoped check since they only ever manage that daemon's own
+  lifecycle. `dwm-watchdog.sh`'s shared `run_bounded()` gained an optional
+  `bounded_foreground` flag so a nested X11/GSettings probe stays inside the
+  information reader's own timeout-owned process group instead of escaping
+  it. `PowerModel.qml`/`PowerSettingsPane.qml`/`ControlCenterWindow.qml` now
+  show "Unknown" instead of a stale enabled/disabled/timeout value when the
+  lock record isn't `available`. Verified against this sandbox's real
+  session: `power-lock-snapshot` and `read_screen_lock()` both correctly
+  report `available`/`enabled` from the real X11/gsettings/light-locker
+  state; `tests/test-quickshell-power-backend.sh` (including a new
+  Lyona-specific managed-lock case exercising real `dwm-lock-watch`
+  evidence via `pgrep --pid`) and `tests/test-quickshell-controlcenter.sh`
+  pass 3/3 consecutive runs; the full `tests/test-system-management.py`
+  suite (659 tests, +8 new `ScreenLockTests`) passes with only the
+  pre-existing, unrelated PackageKitGlib-unavailable failures.
+  `tests/test-quickshell-settings-xvfb.sh`'s new lock-record fixture cases
+  were ported but could not be executed in this sandbox, which lacks the
+  suite's required `xkbset` binary (a pre-existing, unrelated gap).
 - Add bounded security status readers to `dwm-system-management` (Sync
   Sprint 2 S2-02, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from
   upstream `#280`/`#281`): `read_selinux_status()` (runtime enforcement

@@ -268,6 +268,35 @@ Then use `configured_lock_running` wherever upstream calls
 `configured_light_locker_running`. Extend `tests/test-quickshell-power-backend.sh`
 with a managed-lock case.
 
+**Refinement found during implementation:** using `configured_lock_running`
+inside `start_configured_light_locker`/`stop_configured_light_locker`
+themselves (not just the `power_status()` status row) would be wrong, not
+just a literal-vs-spirit difference. `dwm-lock-watch` is autostarted
+unconditionally from `autostart.sh:540`, independent of `power_lock_enabled`
+and `power_lock_managed`; those two functions specifically manage
+`light-locker`'s own lifecycle and cannot start or stop `dwm-lock-watch`. If
+they asked `configured_lock_running` (which treats a running `dwm-lock-watch`
+as sufficient evidence when `power_lock_managed=1`) whether *light-locker* is
+already running, `start_configured_light_locker` would see `dwm-lock-watch`
+already up, believe light-locker was already running, and never actually
+launch it — silently breaking idle-based locking on every managed system,
+since `dwm-lock-watch` is running almost always. Kept
+`configured_light_locker_running()` (light-locker-specific, `DISPLAY`-scoped,
+hardened per `76d0739`) for those two lifecycle functions, and reserved the
+new `configured_lock_running()` for the single call site that reports
+*status* — `power_status()`'s `power_lock_running` row, which is what
+`power_lock_record()`/`power-lock-snapshot` actually publish. Verified
+through `tests/test-quickshell-power-backend.sh`'s mocked fixtures (both the
+ported upstream `DISPLAY`-scoping cases and a new Lyona-specific managed-lock
+case running a real, unmocked process named `dwm-lock-watch` matched by
+`pgrep --pid`): with `power_lock_managed=1`, `power-lock on` still launches
+and converges on the fixture's own `light-locker` even while the
+`dwm-lock-watch` fixture process is running, and `power-status`'s
+`lock_running` row reports `1` from either mechanism independently. Not
+re-verified against this sandbox's live, real `light-locker`/`dwm-lock-watch`
+pair directly, since that would mean stopping the real logged-in session's
+active screen lock to observe the "not yet running" transition.
+
 ---
 
 ## S2-04: Mount change monitor
