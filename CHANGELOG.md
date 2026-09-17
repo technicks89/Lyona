@@ -57,6 +57,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `Date.timeZoneUpdated()` after a confirmed timezone mutation. The
   System Settings page now also shows the current local date and time next
   to the timezone/locale controls.
+- Add a bounded, event-driven read path for network time status to
+  `dwm-system-management` (Sync Sprint 1 S1-07,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
+  `#271`/`#272`/`#273`): new `ntp-sample` and `time-status` CLI commands
+  publish one finite record each, and a new `watch-time` command emits a
+  `time-event\towner-arrived` record distinct from an actual `timedate1`
+  property change, separating "the service came back, state is uncertain"
+  from "state actually changed" for the first time. A local stop (SIGTERM/
+  SIGINT/SIGHUP) during a regional change or its verifying read now
+  terminalizes the in-flight journal operation as `interrupted` and returns
+  promptly instead of leaving it ambiguous or blocking on the change's own
+  timeout; a repeated stop coalesces rather than reordering cleanup, and an
+  unrelated `SystemExit` (such as the locale catalog collector's own signal
+  handling) is never reclassified as a stop. `finite_status_command()` also
+  fixes a case the ported test suite caught during development: a closed,
+  readonly, or Python-level-closed stdout previously reached the network
+  read before failing on the write, wasting a live D-Bus round trip on
+  output nobody could receive; it now fails immediately instead.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened
