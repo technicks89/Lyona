@@ -9,12 +9,14 @@
 // Consumers must wait for finish(); parsed rows alone are not usable evidence.
 function create(command, selection, argument) {
     const choices = command === "regional-choices";
+    const observation = command === "time-status" || command === "ntp-sample";
     const parser = { command: command, selection: selection, argument: argument,
-        limit: choices ? (selection === "timezone" ? 524288 : 1048576) : 8192,
+        limit: observation ? 1024 : choices ? (selection === "timezone" ? 524288 : 1048576) : 8192,
         offset: 0, previous: new Uint8Array(0), line: "", lineBytes: 0,
         remaining: 0, minimum: 0, codepoint: 0, header: false, complete: false,
-        ended: false, failure: "", choices: [], identityBytes: 0, preview: null, error: null };
-    if (choices ? (["timezone", "locale"].indexOf(selection) < 0 || argument !== "")
+        ended: false, failure: "", choices: [], identityBytes: 0, preview: null, observation: null, error: null };
+    if (observation ? (selection !== "" || argument !== "")
+        : choices ? (["timezone", "locale"].indexOf(selection) < 0 || argument !== "")
             : (command !== "regional-preview"
                 || ["timezone-set", "ntp-set", "locale-set"].indexOf(selection) < 0
                 || typeof argument !== "string" || argument.length > 512))
@@ -63,6 +65,7 @@ function acceptLine(parser, line) {
     const fields = line.split("\t");
     if (fields.some(field => utf8Bytes(field) > 512)) return fail(parser, "Oversized preflight field");
     const choices = parser.command === "regional-choices";
+    const observation = parser.command === "time-status" || parser.command === "ntp-sample";
     if (!parser.header) {
         const expected = parser.command + "-protocol\t1\t0" + (choices ? "\t" + parser.selection : "");
         if (line !== expected) return fail(parser, "Unsupported preflight header");
@@ -77,20 +80,32 @@ function acceptLine(parser, line) {
         if (parser.selection === "timezone" && parser.identityBytes > 262144)
             return fail(parser, "Timezone identities exceed byte limit");
         parser.choices.push(fields[1]);
-    } else if (fields[0] === "preview" && !choices) {
+    } else if (observation && fields[0] === (parser.command === "time-status" ? "time" : "sample")) {
+        const time = parser.command === "time-status";
+        if (parser.observation || parser.error || fields.length !== (time ? 5 : 3)
+                || (time && !timezone(fields[1]))
+                || fields.slice(time ? 2 : 1).some(value => ["yes", "no"].indexOf(value) < 0))
+            return fail(parser, "Invalid time observation");
+        parser.observation = time
+            ? { timezone: fields[1], canNtp: fields[2] === "yes", ntpEnabled: fields[3] === "yes", synchronized: fields[4] === "yes" }
+            : { canNtp: fields[1] === "yes", synchronized: fields[2] === "yes" };
+    } else if (fields[0] === "preview" && parser.command === "regional-preview") {
         if (parser.preview || parser.error || !validPreview(parser, fields))
             return fail(parser, "Invalid or mismatched preflight preview");
         parser.preview = { actionId: fields[1], argument: fields[2], generation: fields[3],
             current: fields[4], target: fields[5], detail: fields[6] };
     } else if (fields[0] === "error") {
-        if (fields.length !== 4 || fields[1] !== "regional" || parser.error || parser.preview
-                || parser.choices.length || ["network", "repository", "conflict", "signature", "package",
+        const codes = observation ? ["missing-provider", "permission-denied", "unsupported", "timeout", "malformed", "internal"]
+            : ["network", "repository", "conflict", "signature", "package",
                     "unsupported", "malformed", "missing-provider", "permission-denied", "canceled",
-                    "timeout", "interrupted", "internal"].indexOf(fields[2]) < 0)
+                    "timeout", "interrupted", "internal"];
+        if (fields.length !== 4 || fields[1] !== (observation ? parser.command : "regional")
+                || parser.error || parser.preview || parser.observation || parser.choices.length || codes.indexOf(fields[2]) < 0)
             return fail(parser, "Invalid preflight error");
         parser.error = { code: fields[2], detail: fields[3] };
     } else if (fields[0] === "complete") {
-        if (fields.length !== 2 || fields[1] !== parser.command || (!choices && !parser.preview && !parser.error))
+        if (fields.length !== 2 || fields[1] !== parser.command
+                || (!choices && !parser.preview && !parser.observation && !parser.error))
             return fail(parser, "Incomplete preflight result");
         parser.complete = true;
     } else return fail(parser, "Unexpected preflight record");
@@ -102,6 +117,13 @@ function consume(parser, buffer) {
     if (parser.ended || !(buffer instanceof ArrayBuffer) || buffer.byteLength < parser.offset)
         return fail(parser, "Preflight stream replaced or already ended");
     if (buffer.byteLength > parser.limit) return fail(parser, "Preflight stream exceeds byte limit");
+    // A reused StdioCollector can deliver an empty onDataChanged buffer when
+    // its underlying Process restarts, before any real bytes arrive -- a
+    // genuine "nothing new" event, not a protocol violation. new Uint8Array()
+    // on this exact empty-buffer object throws in this Qt/QML JS engine
+    // (verified empirically, not assumed); treat it as a no-op instead of
+    // letting that throw escape uncaught from a signal handler.
+    if (buffer.byteLength === 0) return true;
     const bytes = new Uint8Array(buffer);
     for (let i = 0; i < parser.previous.length; i++)
         if (bytes[i] !== parser.previous[i]) return fail(parser, "Preflight prefix changed");

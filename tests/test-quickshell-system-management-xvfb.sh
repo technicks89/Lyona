@@ -170,11 +170,26 @@ watch-updates)
 	while :; do sleep 0.1; done
 	;;
 watch-regional)
-	# Sync Sprint 1 S1-03 (#261): timeDiscoveryModel/localeDiscoveryModel
-	# both run "watch-regional" (args "time"/"locale") sharing one prefix --
-	# the stub does not need to distinguish them, only prove each reaches
-	# ready independently.
+	# Sync Sprint 1 S1-03 (#261): localeDiscoveryModel runs "watch-regional
+	# locale" -- the "time" domain moved to its own watch-time command below
+	# in S1-08 (#275), so this case now only ever sees locale.
 	printf 'regional-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-time)
+	# Sync Sprint 1 S1-08 (#275): a separate command and record prefix from
+	# watch-regional, distinguishing an authenticated owner arrival
+	# ("owner-arrived", uncertainty) from an actual timedate1 property
+	# change ("changed", certainty). Report one arrival shortly after
+	# readiness so timeReconciliationModel's real arrived()/requestPending()/
+	# finish() path runs against a real Quickshell process, not just idle
+	# defaults.
+	printf 'time-event\tready\n'
+	(
+		sleep 0.2
+		printf 'time-event\towner-arrived\n'
+	) &
 	trap 'exit 0' TERM
 	while :; do sleep 0.1; done
 	;;
@@ -187,6 +202,22 @@ watch-units)
 	printf 'units-event\tready\n'
 	trap 'exit 0' TERM
 	while :; do sleep 0.1; done
+	;;
+time-status)
+	# Sync Sprint 1 S1-08 (#275): the finite reconciliation read
+	# timeReconciliationModel dispatches after an owner arrival or a fresh
+	# snapshot. Matches the snapshot's own timezone/ntp-enabled/ntp-synchronized
+	# state exactly, so reconciliation settles quietly instead of treating
+	# every read as a real configuration change.
+	printf 'time-status-protocol\t1\t0\n'
+	printf 'time\tEtc/UTC\tyes\tyes\tyes\n'
+	printf 'complete\ttime-status\n'
+	;;
+ntp-sample)
+	# Sync Sprint 1 S1-08 (#276): the periodic/on-demand sample read.
+	printf 'ntp-sample-protocol\t1\t0\n'
+	printf 'sample\tyes\tyes\n'
+	printf 'complete\tntp-sample\n'
 	;;
 regional-choices)
 	case "$2" in
@@ -368,6 +399,46 @@ for domain in time locale accounts printers; do
 		exit 1
 	fi
 done
+
+test_stage='validating time reconciliation settles after the stubbed owner arrival (S1-08 #275)'
+# watch-time's own stub reports one "owner-arrived" record shortly after
+# readiness (uncertainty, not a confirmed change); timeReconciliationModel
+# must reconcile it with a real time-status read through the real Quickshell
+# runtime and Process/StdioCollector lifecycle, then release back to idle --
+# this can't be unit tested (import Quickshell resolves only in the real
+# binary). The initial post-snapshot reconciliation cycle can still be
+# in flight too, so this tolerates settling from either trigger.
+reconciliation_blocked=
+i=0
+while [ "$i" -lt 200 ]; do
+	reconciliation_blocked=$(ipc settings systemManagementTimeReconciliationBlocked 2>/dev/null || true)
+	[ "$reconciliation_blocked" = false ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$reconciliation_blocked" != false ]; then
+	printf 'Time reconciliation never settled after the stubbed owner arrival: %s (%s)\n' \
+		"$reconciliation_blocked" "$(ipc settings systemManagementTimeReconciliationDetail)" >&2
+	exit 1
+fi
+[ "$(ipc settings systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
+
+test_stage='validating an on-demand network time sample settles cleanly (S1-08 #276)'
+ipc settings systemManagementTimeSampleNow >/dev/null
+reconciliation_blocked=
+i=0
+while [ "$i" -lt 200 ]; do
+	reconciliation_blocked=$(ipc settings systemManagementTimeReconciliationBlocked 2>/dev/null || true)
+	[ "$reconciliation_blocked" = false ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$reconciliation_blocked" != false ]; then
+	printf 'On-demand network time sample never settled: %s (%s)\n' \
+		"$reconciliation_blocked" "$(ipc settings systemManagementTimeReconciliationDetail)" >&2
+	exit 1
+fi
+[ "$(ipc settings systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
 
 test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
 # The stub reports recovery as unsupported and both update actions as
@@ -673,6 +744,66 @@ if [ "$(ipc settings systemManagementDelegatedLaunch accounts-open)" != false ];
 	exit 1
 fi
 
+test_stage='running the regional preflight owner lifecycle harness'
+# Sync Sprint 1 S1-08 (#274): SystemRegionalPreflightModel.qml is a Scope
+# importing Quickshell.Io -- it cannot be instantiated under bare
+# qmltestrunner (verified: `module "qs.systemmanagement" is not installed`
+# outside a real Quickshell process), so its full request/cancel/timeout/
+# overflow lifecycle is exercised here by spawning quickshell directly
+# against the bespoke tests/qml/SystemRegionalPreflightOwner.qml harness,
+# the same mechanism upstream uses. This closes the coverage gap Sync
+# Phase 9 deferred.
+mkdir -p "$work/regional-preflight-owner" "$work/preflight-data/lyona/scripts" "$work/preflight-empty-path"
+mkdir -p "$work/preflight-shell-path" "$work/preflight-missing-data"
+ln -s "$(command -v sh)" "$work/preflight-shell-path/sh"
+cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/systemmanagement" "$work/regional-preflight-owner/"
+cp "$repo/tests/qml/SystemRegionalPreflightOwner.qml" "$work/regional-preflight-owner/shell.qml"
+preflight_helper="$work/preflight-data/lyona/scripts/dwm-system-management"
+cp "$repo/tests/fixtures/system-regional-preflight-provider.py" "$preflight_helper"
+chmod +x "$preflight_helper"
+preflight_quickshell=$(command -v quickshell)
+for preflight_mode in regional time-status ntp-sample; do
+	for preflight_scenario in success typed-error unsupported-error wrong-exit protocol-exit-127 malformed truncated stdout-overflow stderr-overflow \
+		close kill-close close-stdout-overflow close-stderr-overflow timeout cancel-queued cancel-claim close-result failed-start missing-helper; do
+		preflight_directory="$work/preflight-$preflight_mode-$preflight_scenario"
+		mkdir -p "$preflight_directory"
+		preflight_path=$PATH
+		preflight_data="$work/preflight-data"
+		[ "$preflight_scenario" != failed-start ] || preflight_path="$work/preflight-empty-path"
+		if [ "$preflight_scenario" = missing-helper ]; then
+			preflight_path="$work/preflight-shell-path"
+			preflight_data="$work/preflight-missing-data"
+		fi
+		timeout --foreground --kill-after=2s 45s env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
+			XDG_DATA_HOME="$preflight_data" XDG_RUNTIME_DIR="$runtime" QT_QPA_PLATFORMTHEME= PATH="$preflight_path" \
+			DWM_PREFLIGHT_DIRECTORY="$preflight_directory" DWM_PREFLIGHT_SCENARIO="$preflight_scenario" DWM_PREFLIGHT_MODE="$preflight_mode" \
+			"$preflight_quickshell" --no-duplicate --path "$work/regional-preflight-owner/shell.qml" \
+			>"$preflight_directory/output.log" 2>&1 &
+		preflight_quickshell_pid=$!
+		preflight_status=0
+		wait "$preflight_quickshell_pid" || preflight_status=$?
+		preflight_quickshell_pid=
+		case "$preflight_scenario" in
+		success)
+			preflight_calls=8
+			[ "$preflight_mode" = regional ] || preflight_calls=2
+			;;
+		close | kill-close | close-stdout-overflow | close-stderr-overflow | timeout | close-result) preflight_calls=2 ;;
+		failed-start | missing-helper) preflight_calls=0 ;;
+		*) preflight_calls=1 ;;
+		esac
+		preflight_actual=$(sed -n '1p' "$preflight_directory/calls" 2>/dev/null || true)
+		if [ "$preflight_status" -ne 0 ] || ! grep -F 'Regional preflight owner tests: PASS' "$preflight_directory/output.log" ||
+			grep -Fq 'Regional preflight owner FAILED:' "$preflight_directory/output.log" ||
+			[ "${preflight_actual:-0}" != "$preflight_calls" ] || [ -e "$preflight_directory/invalid-arguments" ] ||
+			[ -e "$preflight_directory/overlap" ] || pgrep -f "$preflight_helper" >/dev/null 2>&1; then
+			cat "$preflight_directory/output.log" >&2
+			exit 1
+		fi
+	done
+done
+
+test_stage='validating the primary session survived the preflight owner harness'
 if ! kill -0 "$dwm_pid" 2>/dev/null; then
 	printf 'dwm exited before system-management validation completed\n' >&2
 	tail -40 "$work/dwm.log" >&2

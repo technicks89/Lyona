@@ -75,6 +75,27 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   readonly, or Python-level-closed stdout previously reached the network
   read before failing on the write, wasting a live D-Bus round trip on
   output nobody could receive; it now fails immediately instead.
+- Reconcile network-time-service owner arrivals and sample synchronization
+  while System Settings is open (Sync Sprint 1 S1-08,
+  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
+  `#274`/`#275`/`#276`): the "time" domain now watches with S1-07's
+  `watch-time` instead of `watch-regional time`, so an authenticated
+  `timedate1` owner arrival (uncertainty) is reconciled with a bounded
+  `time-status` read through the new `SystemTimeReconciliationModel.qml`,
+  instead of being treated as an unconditional invalidation the way every
+  other watched property change is. A confirmed `ntp-set` change now also
+  triggers an immediate `ntp-sample` read, and network time synchronization
+  is sampled every 30 seconds while Settings is open rather than only at the
+  last full snapshot; `SystemRegionalControls.qml` preserves and restores
+  keyboard focus around either read the same way it already does around a
+  regional confirmation. Found and fixed along the way: porting
+  `tests/qml/SystemRegionalPreflightOwner.qml` (upstream's own bespoke
+  integration harness for `SystemRegionalPreflightModel.qml`, closing a
+  coverage gap Sync Phase 9 deferred) against a real Quickshell process
+  surfaced a real crash -- `SystemRegionalPreflightProtocol.js`'s `consume()`
+  threw a `TypeError` on the empty buffer a reused `StdioCollector` can
+  deliver when its process restarts or fails to start, never previously
+  exercised; a `0`-byte buffer is now a no-op instead.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened

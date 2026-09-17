@@ -101,6 +101,7 @@ Scope {
     readonly property alias accountDiscovery: accountDiscoveryModel
     readonly property alias printerDiscovery: printerDiscoveryModel
     readonly property alias regional: regionalModel
+    readonly property alias timeReconciliation: timeReconciliationModel
     readonly property alias operation: operationModel
     readonly property string discoveryDetail: discoveryModel.detail
 
@@ -153,7 +154,7 @@ Scope {
         const state = root.nativeStates[identifier] || root.stateFallback("This state is unavailable");
         const monitor = root.stateDiscovery(identifier);
         if (!root.settingsVisible || monitor === null) return state;
-        return { "status": state.status === "available" && (monitor.failed || monitor.unresolved) ? "partial" : state.status,
+        return { "status": state.status === "available" && (monitor.failed || monitor.unresolved || monitor.externalUnresolved) ? "partial" : state.status,
             "value": state.value, "detail": [state.detail, monitor.detail].filter(value => value.length > 0).join(" ") };
     }
 
@@ -163,7 +164,7 @@ Scope {
             : owner === "accounts" ? [accountDiscoveryModel] : owner === "printers" ? [printerDiscoveryModel]
             : owner === "sources" ? [discoveryModel] : [];
         if (!root.settingsVisible) return provider;
-        return { "status": provider.status === "available" && monitors.some(model => model.failed || model.unresolved)
+        return { "status": provider.status === "available" && monitors.some(model => model.failed || model.unresolved || model.externalUnresolved)
                 ? "partial" : provider.status,
             "class": provider["class"], "owner": provider.owner,
             "detail": [provider.detail].concat(monitors.map(model => model.detail)).filter(value => value.length > 0).join(" ") };
@@ -496,6 +497,7 @@ Scope {
         // same guard for one consistent rule) queues rather than starting
         // its own fetch before the rest have even opened.
         root.discoveryBatch = true;
+        timeReconciliationModel.open();
         for (const model of root.discoveryModels()) model.open();
         root.refreshRecovery();
         root.discoveryBatch = false;
@@ -504,6 +506,7 @@ Scope {
 
     function closeSettings() {
         root.settingsVisible = false;
+        timeReconciliationModel.close();
         root.confirmationInvalidated();
         for (const model of root.discoveryModels()) model.close();
         root.snapshotPending = false;
@@ -516,6 +519,7 @@ Scope {
     function refresh() {
         if (!root.settingsVisible) return;
         root.discoveryBatch = true;
+        timeReconciliationModel.open();
         for (const model of root.discoveryModels()) model.refresh();
         root.refreshRecovery();
         root.discoveryBatch = false;
@@ -564,6 +568,16 @@ Scope {
     // through beforePublish/complete), so the read still runs without
     // joining any visible cycle.
     function requestSnapshot(required) {
+        // S1-08 (#275): a fresh snapshot also outdates any time-status/
+        // ntp-sample read timeReconciliationModel still owns -- reserve
+        // snapshot priority over it the same way as an in-flight regional
+        // preparation below, before either can claim the shared owner.
+        if (timeReconciliationModel.ownsRead()) {
+            root.snapshotPending = root.snapshotPending || !required;
+            root.requiredPending = root.requiredPending || !!required;
+            timeReconciliationModel.beforeSnapshot();
+            if (timeReconciliationModel.ownsRead()) return;
+        }
         // S1-05 (#268): a fresh snapshot changes root.generation, which
         // would silently outdate any regional preview/confirmation ticket
         // still in flight (regionalModel's own matches() check would catch
@@ -590,6 +604,7 @@ Scope {
         root.snapshotPending = false;
         root.requiredPending = false;
         root.snapshotOwned = true;
+        timeReconciliationModel.beforeSnapshot();
         root.snapshotAttempted = false;
         root.snapshotRequired = required;
         root.requestGeneration++;
@@ -617,6 +632,7 @@ Scope {
         if (successful) operationModel.acceptSnapshot(root.activeOperation, root.terminalHandoff);
         else operationModel.snapshotFailed();
         for (const item of tokens) item.model.complete(item.token, successful);
+        timeReconciliationModel.afterSnapshot();
         snapshotProcess.cycleTokens = [];
         root.snapshotRequired = false;
     }
@@ -992,10 +1008,19 @@ Scope {
     SystemProviderDiscovery {
         id: timeDiscoveryModel
         domain: "time"
+        externalUnresolved: timeReconciliationModel.blocked
+        externalDetail: timeReconciliationModel.detail
         onSnapshotRequested: root.requestSnapshot(false)
         // S1-05: a live timezone/NTP change must retire any regional
         // preview/confirmation prepared against now-stale time state.
-        onInvalidated: regionalModel.invalidate("time")
+        onInvalidated: {
+            timeReconciliationModel.beforeSnapshot();
+            regionalModel.invalidate("time");
+        }
+        // S1-08 (#275): owner arrival is uncertainty, not proof of a changed
+        // property -- timeReconciliationModel reconciles it with a bounded
+        // time-status read instead of treating it as an ordinary invalidation.
+        onOwnerArrived: timeReconciliationModel.arrived()
     }
     SystemProviderDiscovery {
         id: localeDiscoveryModel
@@ -1020,6 +1045,9 @@ Scope {
 
     SystemOperationModel {
         id: operationModel
+        // S1-08 (#276): a completed ntp-set result is a reason to sample
+        // network time promptly, not just wait for the next periodic timer.
+        onResultChanged: timeReconciliationModel.sampleAfterOperation(result)
         // #262: invalidate only the domain the dispatched/watched/acknowledged
         // action actually belongs to, not always the update discovery model.
         onDiscoveryInvalidated: actionId => root.invalidateActionDiscovery(actionId)
@@ -1040,6 +1068,21 @@ Scope {
     // between read and mutate.
     SystemRegionalSettingsModel {
         id: regionalModel
+        model: root
+        onReleased: Qt.callLater(function() {
+            if (root.requiredPending) root.requestSnapshot(true);
+            else if (root.snapshotPending && root.settingsVisible) root.requestSnapshot(false);
+            else timeReconciliationModel.requestPending();
+        })
+    }
+
+    // Sync Sprint 1 S1-08 (#275, extended by #276): owner-arrival
+    // reconciliation and periodic network-time sampling for the "time"
+    // domain, ported nearly unchanged -- verified against this file's
+    // actual settingsVisible/snapshotOwned/discoveryBatch/generation shape
+    // rather than assumed from the plan doc.
+    SystemTimeReconciliationModel {
+        id: timeReconciliationModel
         model: root
         onReleased: Qt.callLater(function() {
             if (root.requiredPending) root.requestSnapshot(true);

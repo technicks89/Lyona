@@ -556,6 +556,46 @@ This also closes the **`SystemRegionalPreflightOwner.qml` coverage gap** Sync
 Phase 9 deferred: `#274` modifies that harness, so port it now as
 `tst_system_regional_preflight_owner.qml` with its provider fixture.
 
+### Implementation notes (as actually built, correcting the two items above)
+
+`SystemRegionalPreflightModel`/`SystemTimeReconciliationModel`/`SystemManagementModel`
+all import `qs.core`/instantiate Quickshell-provided types (`Scope`, `Process`,
+`SystemClock`, etc.) — confirmed empirically (S1-03, re-confirmed here) that
+these **cannot** be instantiated under bare `qmltestrunner`
+(`module "qs.systemmanagement" is not installed` outside a real Quickshell
+process). Two corrections to the table above:
+
+- `tests/qml/SystemRegionalPreflightOwner.qml` (ported from upstream
+  essentially unchanged, plus the new `time-status`/`ntp-sample` modes) is
+  **not** translated into `tst_system_regional_preflight_owner.qml` for
+  qmltestrunner. It stays a bespoke harness, spawned directly via
+  `quickshell --no-duplicate --path .../shell.qml` from
+  `tests/test-quickshell-system-management-xvfb.sh` (the *same* mechanism
+  upstream's own xvfb script uses for this exact file) alongside its new
+  `tests/fixtures/system-regional-preflight-provider.py`. Only the parser-level
+  cases (pure `.js`, no Quickshell types) go into
+  `tst_system_regional_preflight_protocol.qml`.
+- `SystemTimeReconciliation.qml`/`SystemNtpSampling.qml`/`SystemRegionalUi.qml`
+  are upstream's own bespoke per-scenario harnesses, each paired with its own
+  Python fixture (`system-discovery-provider.py`,
+  `system-native-discovery-provider.py`, `system-provider-discovery.py`,
+  `system-regional-settings-provider.py`, `system-update-ui-provider.py`) that
+  do not exist in Lyona and were not ported — Lyona's xvfb test already
+  exercises the equivalent behavior (owner-arrival reconciliation, on-demand
+  and periodic NTP sampling) against the *real* `SystemManagementModel`
+  mounted in `shell.qml`, via new `systemManagementTimeReconciliationBlocked`/
+  `Detail`/`systemManagementTimeSampleNow` IPC probes and a `watch-time` stub
+  case that emits one deterministic `owner-arrived` record.
+
+**Bug found by `SystemRegionalPreflightOwner.qml`'s own port** (the coverage
+gap it was meant to close): `SystemRegionalPreflightProtocol.js`'s
+`consume()` threw a `TypeError` on an empty (`byteLength === 0`)
+`StdioCollector` buffer — a real delivery a reused collector can produce when
+its process restarts or fails to start (exit 127), never previously exercised
+against a real Quickshell process. Fixed by treating a `0`-byte buffer as a
+no-op; regression-covered by
+`test_empty_buffer_is_a_no_op` in `tst_system_regional_preflight_protocol.qml`.
+
 ---
 
 ## S1-09: Package progress and user-service session evidence

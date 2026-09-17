@@ -1060,6 +1060,22 @@ ShellRoot {
                 : discovery.failed ? "failed" : "inactive");
         }
 
+        // Sync Sprint 1 S1-08 (#275/#276): a time-service owner arrival is
+        // uncertainty, not a confirmed change -- these expose
+        // systemManagementModel.timeReconciliation's own reconciliation
+        // state, distinct from timeDiscovery's plain watch-stream health.
+        function systemManagementTimeReconciliationBlocked(): bool {
+            return systemManagementModel.timeReconciliation.blocked;
+        }
+
+        function systemManagementTimeReconciliationDetail(): string {
+            return systemManagementModel.timeReconciliation.detail;
+        }
+
+        function systemManagementTimeSampleNow(): void {
+            systemManagementModel.timeReconciliation.sampleNow();
+        }
+
         // #259/#261: the degradation-aware view, not the raw parsed record --
         // proves nativeProviderView() actually reflects a healthy read once
         // its own discovery monitor is up, for "regional", "accounts",
