@@ -620,6 +620,58 @@ it doesn't, the UI shows the package name with `percent: unknown`, which is
 the designed fallback. Record which one a real `pkcon update` produces on
 CachyOS, in `docs/evidence/`.
 
+### Implementation notes (as actually built)
+
+The Python (`OperationStream.item_progress()`/`PackageKitMutation.on_item_progress()`/
+`display_session()` fallback) and QML model/protocol (`SystemOperationProtocol.js`'s
+`package-progress` record, `SystemOperationModel.qml`'s `currentItem`,
+`SystemUpdateControls.qml`'s progress bar, `SystemSettingsPane.qml`'s fallback-card
+gating) are all ported and verified: `tests/test-system-management.py` gained 7
+new/adapted test methods (`OperationStreamTests` × 2, `PackageKitExecutionTests`
+× 2, `SessionEvidenceTests` × 3, all passing against the real backend logic, not
+mocks of it), and `tst_system_operation_parser.qml` gained
+`test_item_progress_is_distinct_from_overall_progress_and_log`.
+
+`tests/qml/SystemUpdateUi.qml` and its dedicated `tests/test-quickshell-update-ui-xvfb.sh`
+were **not** ported, for a reason distinct from every other "not ported" note in
+this sprint. This is not a `#291`-scoped item: upstream's `SystemUpdateUi.qml`
+predates `#291` by a long way (first added at `#240`, back when Sync Phase 7
+ported the original confirm/dispatch/cancel surface) — `#291` only extended an
+*already-existing* bespoke harness this sprint had never actually looked at,
+so the sprint doc's own `tests/qml/SystemOperationParser.qml`, `SystemUpdateUi.qml`
+| +14, +43` line understated it as an incremental diff rather than the
+~465-line net-new integration surface (harness + fixture + runner) it actually
+is once you also port everything `#291` builds on top of.
+
+It was attempted directly against Lyona's real `SystemManagementModel`/
+`SystemOperationModel`/`SystemSettingsPane` (adapting three confirmed
+naming divergences from the harness's `#240`-era API assumptions:
+`model.snapshotState === "ready"` → `"loaded"`, an action override's
+`availability` field → `status`, and a required `updateModel` property
+`SystemSettingsPane.qml` didn't have at `#240` -- Lyona's separate
+self-update/`lyona-update` feature, satisfied here with a real
+`UpdateModel {}` instance). After those three fixes it got measurably
+further (past snapshot loading, confirmation capture, and several
+discovery-state transitions) before failing at a stage that exercises
+several rapid `openSettings()`/`closeSettings()`/`refresh()` cycles in a
+tight loop: `operationModel` entered its `recover()` retry/backoff path and
+exhausted it (`"Operation recovery could not read complete journal
+evidence... Open System Settings and reload status to retry recovery."`).
+
+Isolated in a minimal single-open reproduction (no cycling): the same
+fixture snapshot loads cleanly and `operationModel` settles to `idle`/
+`blocked: false` every time. The failure is specific to *rapid* Settings
+open/close/refresh cycling, which only this pre-existing (not `#291`)
+harness's stage-by-stage design does aggressively at a 25ms poll interval --
+`operationModel`'s recovery retry/backoff (`recover()`, Sync Phase 7,
+long after `#240`) is not something `SystemUpdateUi.qml` was ever designed
+against. Whether this is a genuine, previously-unexercised race in
+`recover()`/`refreshRecovery()`'s interaction with rapid re-entry, or a
+fixture-side artifact of this specific reproduction, is **not yet
+determined** -- worth its own follow-up item before attempting this harness
+again, not a blocker for S1-09's actual `#291` scope, which is verified
+above without it.
+
 ---
 
 ## S1-10: Carried-over open items

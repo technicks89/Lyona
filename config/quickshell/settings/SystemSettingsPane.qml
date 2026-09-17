@@ -297,6 +297,7 @@ Flickable {
         SectionLabel { label: "System updates" }
 
         SystemUpdateControls {
+            id: updateControls
             model: root.systemManagementModel
             onRevealRequested: target => root.reveal(target)
         }
@@ -364,17 +365,23 @@ Flickable {
 
         StatusCard {
             id: operationCard
+            objectName: "systemOperationFallback"
             readonly property var operation: root.systemManagementModel.operation.progress
                 || root.systemManagementModel.activeOperation
+            readonly property bool packageOperation: operationCard.operation !== null
+                && (operationCard.operation.kind === "update" || operationCard.operation.kind === "refresh")
             Layout.fillWidth: true
-            visible: operationCard.operation !== null
-            label: operationCard.operation === null ? "Active operation" : operationCard.operation.actionId
+            visible: operationCard.operation !== null && updateControls.active === null
+            label: operationCard.packageOperation ? "Update recovery"
+                : operationCard.operation === null ? "Active operation" : operationCard.operation.actionId
             statusState: "partial"
             value: operationCard.operation === null ? ""
                 : operationCard.operation.percent === "unknown"
                     ? operationCard.operation.state
                     : operationCard.operation.state + " / " + operationCard.operation.percent + "%"
-            detail: operationCard.operation === null ? "" : operationCard.operation.detail
+            detail: operationCard.packageOperation
+                ? "Live package progress is unavailable. Reload status to recover this operation."
+                : operationCard.operation === null ? "" : operationCard.operation.detail
         }
 
         StatusCard {
@@ -382,15 +389,27 @@ Flickable {
             readonly property var result: root.systemManagementModel.operation.result
             Layout.fillWidth: true
             visible: resultCard.result !== null
-            label: resultCard.result === null ? "Verified operation result" : resultCard.result.actionId
+            label: resultCard.result === null ? "Verified operation result"
+                : resultCard.result.kind === "update" ? "Package updates"
+                : resultCard.result.kind === "refresh" ? "Metadata refresh" : resultCard.result.actionId
             statusState: resultCard.result !== null && resultCard.result.state === "succeeded" ? "available" : "partial"
             value: resultCard.result === null ? "" : resultCard.result.state
-            detail: resultCard.result === null ? "" : resultCard.result.detail
+            detail: resultCard.result === null ? "" : (resultCard.result.kind === "update" || resultCard.result.kind === "refresh")
+                ? (resultCard.result.state === "succeeded"
+                    ? (resultCard.result.kind === "update" ? "Package updates completed." : "Repository metadata refreshed.")
+                    : "The operation " + resultCard.result.state + ". Review any error or recovery guidance before retrying.")
+                : resultCard.result.detail
         }
 
         UiText {
+            objectName: "systemOperationGuidance"
             Layout.fillWidth: true
             visible: root.systemManagementModel.operation.detail.length > 0
+                && (root.systemManagementModel.operation.result === null
+                    || root.systemManagementModel.operation.blocked
+                    || root.systemManagementModel.operation.state !== "result"
+                    || (root.systemManagementModel.operation.result.state !== "succeeded"
+                        && root.systemManagementModel.operation.operationError === null))
             text: root.systemManagementModel.operation.detail
             color: root.systemManagementModel.operation.blocked ? Theme.danger : Theme.menuMutedText
             wrapMode: Text.WordWrap

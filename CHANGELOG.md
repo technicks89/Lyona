@@ -96,6 +96,29 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   threw a `TypeError` on the empty buffer a reused `StdioCollector` can
   deliver when its process restarts or fails to start, never previously
   exercised; a `0`-byte buffer is now a no-op instead.
+- Show live per-package update progress and recover user-service session
+  evidence (Sync Sprint 1 S1-09, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`,
+  ported from the system-management half of upstream `#291`): PackageKit's
+  `Package`/`ItemProgress` signals now publish a bounded, ephemeral
+  `package-progress` record (name, phase, percent) separate from the
+  operation's own overall progress and log, and System Settings shows it as
+  a labeled progress bar in place of the previous raw operation-log
+  scrollback. A terminal operation's `error` record now always carries the
+  operation's own detail rather than a caller-supplied override, so a failed
+  acknowledgment's recovery instructions ("Reload status to retry") stay
+  visible instead of being replaced by unrelated internal audit text. Restart
+  evidence (`session_started()`) now also works when the helper is launched
+  as a `systemd --user` service outside any login session scope: it falls
+  back to logind's verified primary graphical display instead of failing
+  outright on `NoSessionForPID`, re-verifying that display's identity hasn't
+  changed before trusting its session timestamp. Ported and verified at the
+  Python and QML-model/protocol layers (7 new/adapted Python tests, 1 new
+  qmltestrunner test) -- porting upstream's dedicated `SystemUpdateUi.qml`
+  xvfb integration harness was attempted but not completed; see the sprint
+  doc's S1-09 implementation notes for why (it predates `#291`, and surfaced
+  a `operationModel` recovery-retry interaction under rapid Settings
+  open/close/refresh cycling that needs its own follow-up, not a `#291`
+  regression).
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened
