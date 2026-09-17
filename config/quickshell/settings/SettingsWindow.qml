@@ -22,6 +22,10 @@ FloatingWindow {
     required property var panelSettingsModel
     required property var updateModel
     required property var systemManagementModel
+    // Sync Sprint 1 S1-06 (#270): the shared ClockModel instance, so
+    // SystemSettingsPane can show local time beside the timezone row
+    // without owning its own timer.
+    required property var clock
 
     title: "dwm settings"
     visible: settingsModel.visible
@@ -397,6 +401,7 @@ FloatingWindow {
                             }
 
                             SystemSettingsPane {
+                                clockText: root.clock.settingsText
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 visible: root.settingsModel.selectedSectionId === "system"

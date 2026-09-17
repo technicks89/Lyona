@@ -376,4 +376,30 @@ grep -Fq 'function systemManagementRegionalDiscard(): void' "$shell_qml"
 grep -Fq 'function systemManagementRegionalRequestChoices(kind: string): bool' "$shell_qml"
 grep -Fq 'function systemManagementRegionalChoicesCount(kind: string): int' "$shell_qml"
 
+# Sync Sprint 1 S1-06 (#270): one shared, timezone-aware minute clock for the
+# panel and Settings, replacing a bare SystemClock neither of which noticed
+# a live timezone-set mutation.
+clock_model=$repo/config/quickshell/core/ClockModel.qml
+panel=$repo/config/quickshell/panel/DwmPanel.qml
+settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
+
+test -f "$clock_model"
+grep -Fq 'property var timezoneState: null' "$clock_model"
+grep -Fq 'Date.timeZoneUpdated();' "$clock_model"
+grep -Fq 'SystemClock {' "$clock_model"
+grep -Fq 'ClockModel {' "$shell_qml"
+grep -Fq 'timezoneState: systemManagementModel.nativeStates.timezone || null' "$shell_qml"
+if grep -q 'SystemClock {' "$shell_qml"; then
+	printf 'shell.qml must not own a bare SystemClock directly -- ClockModel wraps it.\n' >&2
+	exit 1
+fi
+grep -Fq 'text: root.clock.panelText' "$panel"
+grep -Fq 'required property var clock' "$settings_window"
+grep -Fq 'clockText: root.clock.settingsText' "$settings_window"
+grep -Fq 'clock: clock' "$shell_qml"
+grep -Fq 'property string clockText: ""' "$system_pane"
+grep -Fq 'objectName: "systemLocalTime"' "$system_pane"
+grep -Fq 'function clockPanelText(): string' "$shell_qml"
+grep -Fq 'function clockSettingsText(): string' "$shell_qml"
+
 printf 'Quickshell system-management model contract: PASS\n'

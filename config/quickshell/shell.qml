@@ -109,10 +109,9 @@ ShellRoot {
         id: dwmState
     }
 
-    SystemClock {
+    ClockModel {
         id: clock
-
-        precision: SystemClock.Minutes
+        timezoneState: systemManagementModel.nativeStates.timezone || null
     }
 
     LauncherModel {
@@ -1084,6 +1083,17 @@ ShellRoot {
             return systemManagementModel.repositories.length;
         }
 
+        // Sync Sprint 1 S1-06 (#270): the shared ClockModel, not
+        // system-management-specific, but exposed alongside these probes
+        // since it now feeds SystemSettingsPane's "Local date and time" row.
+        function clockPanelText(): string {
+            return clock.panelText;
+        }
+
+        function clockSettingsText(): string {
+            return clock.settingsText;
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }
@@ -1248,6 +1258,7 @@ ShellRoot {
     }
 
     SettingsWindow {
+        clock: clock
         settingsModel: settingsModel
         networkModel: networkModel
         bluetoothModel: bluetoothModel

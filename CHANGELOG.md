@@ -48,6 +48,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   exclusion where an update confirmation in flight did not block starting a
   delegated one, and a live confirmation-invalidation signal did not clear
   a pending delegated confirmation.
+- Share one timezone-aware minute clock between the panel and Settings
+  (Sync Sprint 1 S1-06, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
+  from upstream `#270`): the new `config/quickshell/core/ClockModel.qml`
+  replaces a bare `SystemClock` instance in the panel that never noticed a
+  live `timezone-set` change -- Qt's `Date` does not re-read the system
+  timezone on its own, so nothing previously called
+  `Date.timeZoneUpdated()` after a confirmed timezone mutation. The
+  System Settings page now also shows the current local date and time next
+  to the timezone/locale controls.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened

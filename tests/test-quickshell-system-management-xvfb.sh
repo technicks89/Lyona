@@ -310,6 +310,27 @@ test_stage='validating parsed snapshot content'
 # update pending) round-trips through the model's own enum validation.
 [ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
 
+test_stage='validating the shared clock (#270): the stub timezone reached ClockModel'
+# ClockModel.timezoneState is bound to systemManagementModel.nativeStates.timezone
+# (config/quickshell/shell.qml); once the snapshot above loaded the stub's
+# "Etc/UTC" timezone state, the clock must have observed it and produced real
+# formatted text through the real Quickshell runtime -- this can't be unit
+# tested directly (import Quickshell resolves only inside the real binary).
+panel_clock=$(ipc settings clockPanelText)
+settings_clock=$(ipc settings clockSettingsText)
+# "ddd dd MMM - HH:mm", e.g. "Tue 16 Sep - 14:32".
+case $panel_clock in
+???" "[0-9][0-9]" "???" - "[0-9][0-9]":"[0-9][0-9]) ;;
+*)
+	printf 'clockPanelText did not match the expected "ddd dd MMM - HH:mm" shape: %s\n' "$panel_clock" >&2
+	exit 1
+	;;
+esac
+if [ -z "$settings_clock" ]; then
+	printf 'clockSettingsText was empty\n' >&2
+	exit 1
+fi
+
 test_stage='validating protocol minor 1 native content (#259)'
 # The stub's four native providers, five native states, one account and one
 # repository record all parse and reconcile cleanly -- proving compose

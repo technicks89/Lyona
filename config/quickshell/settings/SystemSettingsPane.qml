@@ -11,6 +11,9 @@ Flickable {
     required property var systemManagementModel
     property var capabilities: []
     property string confirmVersion: ""
+    // Sync Sprint 1 S1-06 (#270): the shared clock's formatted settings text,
+    // shown beside the timezone row below.
+    property string clockText: ""
 
     readonly property var additionalCapabilities: root.capabilities.filter(function(capability) {
         return capability.id !== "updates" && capability.id !== "package-updates";
@@ -299,6 +302,15 @@ Flickable {
         }
 
         SectionLabel { label: "Regional" }
+
+        UiText {
+            objectName: "systemLocalTime"
+            Layout.fillWidth: true
+            text: root.clockText.length > 0 ? "Local date and time: " + root.clockText
+                : "Local date and time unavailable"
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
 
         SystemRegionalControls {
             id: regionalControls
