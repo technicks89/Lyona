@@ -996,6 +996,43 @@ ShellRoot {
             return systemManagementModel.launchDelegated(action);
         }
 
+        // Sync Sprint 1 S1-03 (#261): one discovery model per native domain,
+        // same phase:ready/failed/inactive shape as systemManagementDiscoveryStatus()
+        // above (the update domain's own probe), for "time", "locale",
+        // "accounts" or "printers".
+        function systemManagementNativeDiscoveryStatus(domain: string): string {
+            const discovery = domain === "time" ? systemManagementModel.timeDiscovery
+                : domain === "locale" ? systemManagementModel.localeDiscovery
+                : domain === "accounts" ? systemManagementModel.accountDiscovery
+                : domain === "printers" ? systemManagementModel.printerDiscovery : null;
+            if (discovery === null) return "";
+            return discovery.phase + ":" + (discovery.ready ? "ready"
+                : discovery.failed ? "failed" : "inactive");
+        }
+
+        // #259/#261: the degradation-aware view, not the raw parsed record --
+        // proves nativeProviderView() actually reflects a healthy read once
+        // its own discovery monitor is up, for "regional", "accounts",
+        // "printers" or "sources".
+        function systemManagementNativeProviderStatus(owner: string): string {
+            return systemManagementModel.nativeProviderView(owner).status;
+        }
+
+        // #259/#261: same for one native state identifier (e.g. "timezone",
+        // "ntp-enabled", "locale", "accounts-count", "cups-service").
+        function systemManagementNativeStateValue(identifier: string): string {
+            const state = systemManagementModel.nativeStateView(identifier);
+            return state.status + ":" + state.value;
+        }
+
+        function systemManagementAccountsCount(): int {
+            return systemManagementModel.accounts.length;
+        }
+
+        function systemManagementRepositoriesCount(): int {
+            return systemManagementModel.repositories.length;
+        }
+
         function autostartConfirming(): bool {
             return autostartModel.confirming;
         }

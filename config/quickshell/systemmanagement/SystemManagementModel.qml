@@ -52,6 +52,11 @@ Scope {
     property bool requiredPending: false
     property bool snapshotRequired: false
     property bool snapshotAttempted: false
+    // #261: true only while openSettings()/refresh() are looping over the
+    // five discovery models -- requestSnapshot() defers to the pending
+    // flags during that window so one batch of open/refresh signals results
+    // in at most one fetch, not up to five.
+    property bool discoveryBatch: false
     property string snapshotState: "idle" // idle | loading | loaded | unavailable
     property string message: "System management has not been loaded"
     property string generation: ""
@@ -90,8 +95,80 @@ Scope {
     readonly property bool busy: root.snapshotOwned
     readonly property int maxListRecords: 4096
     readonly property alias discovery: discoveryModel
+    // #261: the four native domains each get their own SystemProviderDiscovery
+    // instance -- domainDefinition() already supports all five ("updates" via
+    // discoveryModel/SystemUpdateDiscovery, these four via the generic form).
+    readonly property alias timeDiscovery: timeDiscoveryModel
+    readonly property alias localeDiscovery: localeDiscoveryModel
+    readonly property alias accountDiscovery: accountDiscoveryModel
+    readonly property alias printerDiscovery: printerDiscoveryModel
     readonly property alias operation: operationModel
     readonly property string discoveryDetail: discoveryModel.detail
+
+    // #261: every open discovery model, updates first (its own alias stays
+    // the "primary" one existing callers keep using directly).
+    function discoveryModels() {
+        return [discoveryModel, timeDiscoveryModel, localeDiscoveryModel,
+            accountDiscoveryModel, printerDiscoveryModel];
+    }
+
+    // True only once every domain has a subscription handshake (ready) or a
+    // settled failure (failed) -- an optional background snapshot must not
+    // fire while any domain is still connecting, or it would certify staler
+    // native state as fresh before that domain's own monitor caught up.
+    function discoveryReady() {
+        return root.settingsVisible && root.discoveryModels().every(
+            model => model.visible && (model.ready || model.failed));
+    }
+
+    // #262: maps one dispatched/watched/acknowledged action to the one
+    // discovery domain it actually changed. operationModel.discoveryInvalidated
+    // carries the actionId; a regional/delegated action must not go stale by
+    // only ever invalidating the (unrelated) update discovery model.
+    function invalidateActionDiscovery(action) {
+        if (action === "timezone-set" || action === "ntp-set") timeDiscoveryModel.invalidate();
+        else if (action === "locale-set") localeDiscoveryModel.invalidate();
+        else if (action === "accounts-open" || action === "password-open") accountDiscoveryModel.invalidate();
+        else if (action === "printers-open") printerDiscoveryModel.invalidate();
+        else if (action === "sources-open" || action === "updates-refresh" || action === "updates-install-all")
+            discoveryModel.invalidate();
+    }
+
+    // Maps one native state identifier to the discovery model whose
+    // watch-* stream actually keeps it fresh, so nativeStateView() can
+    // degrade a stale read without waiting on a full reload.
+    function stateDiscovery(identifier) {
+        if (identifier === "timezone" || identifier === "ntp-enabled" || identifier === "ntp-synchronized")
+            return timeDiscoveryModel;
+        if (identifier === "locale") return localeDiscoveryModel;
+        if (identifier === "accounts-count") return accountDiscoveryModel;
+        if (identifier === "cups-service") return printerDiscoveryModel;
+        return null;
+    }
+
+    // A parsed native state/provider record is only as fresh as its own
+    // discovery monitor -- these two wrap root.nativeStates/root.nativeProviders
+    // with that monitor's current health, appending its detail rather than
+    // replacing the helper's own.
+    function nativeStateView(identifier) {
+        const state = root.nativeStates[identifier] || root.stateFallback("This state is unavailable");
+        const monitor = root.stateDiscovery(identifier);
+        if (!root.settingsVisible || monitor === null) return state;
+        return { "status": state.status === "available" && (monitor.failed || monitor.unresolved) ? "partial" : state.status,
+            "value": state.value, "detail": [state.detail, monitor.detail].filter(value => value.length > 0).join(" ") };
+    }
+
+    function nativeProviderView(owner) {
+        const provider = root.nativeProviders[owner] || root.providerFallback("This provider is unavailable");
+        const monitors = owner === "regional" ? [timeDiscoveryModel, localeDiscoveryModel]
+            : owner === "accounts" ? [accountDiscoveryModel] : owner === "printers" ? [printerDiscoveryModel]
+            : owner === "sources" ? [discoveryModel] : [];
+        if (!root.settingsVisible) return provider;
+        return { "status": provider.status === "available" && monitors.some(model => model.failed || model.unresolved)
+                ? "partial" : provider.status,
+            "class": provider["class"], "owner": provider.owner,
+            "detail": [provider.detail].concat(monitors.map(model => model.detail)).filter(value => value.length > 0).join(" ") };
+    }
 
     readonly property var validStatus: ["available", "partial", "restricted", "unavailable", "unsupported"]
     readonly property var validActionStatus: ["available", "unavailable"]
@@ -399,14 +476,22 @@ Scope {
 
     function openSettings() {
         root.settingsVisible = true;
-        discoveryModel.open();
+        // #261: batch the five discovery models' open() calls so a signal
+        // one of them fires mid-loop (refresh()'s requestPending() can fire
+        // synchronously; open() itself cannot, but both funnel through this
+        // same guard for one consistent rule) queues rather than starting
+        // its own fetch before the rest have even opened.
+        root.discoveryBatch = true;
+        for (const model of root.discoveryModels()) model.open();
         root.refreshRecovery();
+        root.discoveryBatch = false;
+        root.requestSnapshot(root.requiredPending);
     }
 
     function closeSettings() {
         root.settingsVisible = false;
         root.confirmationInvalidated();
-        discoveryModel.close();
+        for (const model of root.discoveryModels()) model.close();
         root.snapshotPending = false;
         // A required fetch (recovering operation evidence) is not this
         // pane's to kill: it keeps running so operationModel can still
@@ -416,8 +501,11 @@ Scope {
 
     function refresh() {
         if (!root.settingsVisible) return;
-        discoveryModel.refresh();
+        root.discoveryBatch = true;
+        for (const model of root.discoveryModels()) model.refresh();
         root.refreshRecovery();
+        root.discoveryBatch = false;
+        root.requestSnapshot(root.requiredPending);
     }
 
     // Drives operationModel's recovery snapshot the same way discoveryModel
@@ -434,9 +522,10 @@ Scope {
     // The single entry point for starting a fetch, regardless of whether the
     // trigger was a user-initiated refresh or a live discovery signal: only
     // one snapshotProcess runs at a time, and every launch is bracketed by
-    // discoveryModel.take()/beforePublish()/complete() so a signal arriving
-    // mid-read schedules exactly one follow-up settling read rather than a
-    // read per signal.
+    // each open discovery model's take()/beforePublish()/complete() (#261:
+    // now up to five, one per domain, not just discoveryModel) so a signal
+    // arriving mid-read schedules exactly one follow-up settling read
+    // rather than a read per signal.
     //
     // Guarded on snapshotProcess.running as well as snapshotOwned:
     // StdioCollector.onStreamFinished fires before Quickshell.Io.Process
@@ -449,20 +538,26 @@ Scope {
     // onRunningChanged's real not-running transition below, never from
     // finishSnapshot, so this guard should never trip in practice; it stays
     // as the actual authority a caller cannot get out of sync with.
+    // Also guarded on discoveryBatch (#261): openSettings()/refresh() loop
+    // over all five models before calling this once themselves, so a signal
+    // one of those models fires mid-loop must defer too, the same as an
+    // already-owned fetch.
     // `required` (Sync Phase 7) is operationModel asking for recovery
-    // evidence: it bypasses discoveryModel.canTake()'s settingsVisible tie,
-    // but still hands discoveryModel.take() the request -- take() itself
-    // returns null while the pane is closed, and a null token is a safe
-    // no-op through beforePublish/complete (SystemDiscoveryCycle.js's
-    // owns()), so the read still runs without joining the visible cycle.
+    // evidence: it bypasses discoveryReady()'s settingsVisible tie, but
+    // still only hands each model's take() the request when the batch is
+    // actually ready -- an unready/invisible model's take() would return
+    // null anyway (SystemDiscoveryCycle.js's owns() no-ops a null token
+    // through beforePublish/complete), so the read still runs without
+    // joining any visible cycle.
     function requestSnapshot(required) {
-        if (root.snapshotOwned || snapshotProcess.running) {
+        if (root.snapshotOwned || snapshotProcess.running || root.discoveryBatch) {
             root.snapshotPending = root.snapshotPending || !required;
             root.requiredPending = root.requiredPending || !!required;
             return;
         }
         required = required || root.requiredPending;
-        if (!required && !discoveryModel.canTake()) return;
+        const ready = root.discoveryReady();
+        if (!required && (!ready || !root.discoveryModels().some(model => model.canTake()))) return;
         root.snapshotPending = false;
         root.requiredPending = false;
         root.snapshotOwned = true;
@@ -470,7 +565,14 @@ Scope {
         root.snapshotRequired = required;
         root.requestGeneration++;
         root.confirmationInvalidated();
-        snapshotProcess.cycleToken = discoveryModel.take();
+        const tokens = [];
+        if (ready) {
+            for (const model of root.discoveryModels()) {
+                const token = model.take();
+                if (token !== null) tokens.push({ "model": model, "token": token });
+            }
+        }
+        snapshotProcess.cycleTokens = tokens;
         root.snapshotState = "loading";
         root.message = "Loading system update status...";
         snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand("snapshot", []));
@@ -481,11 +583,12 @@ Scope {
     // operationModel -- ownership and the next launch are handled
     // separately, gated on the process's real exit (see requestSnapshot).
     function finishSnapshot(successful) {
-        discoveryModel.beforePublish(snapshotProcess.cycleToken);
+        const tokens = snapshotProcess.cycleTokens;
+        for (const item of tokens) item.model.beforePublish(item.token);
         if (successful) operationModel.acceptSnapshot(root.activeOperation, root.terminalHandoff);
         else operationModel.snapshotFailed();
-        discoveryModel.complete(snapshotProcess.cycleToken, successful);
-        snapshotProcess.cycleToken = null;
+        for (const item of tokens) item.model.complete(item.token, successful);
+        snapshotProcess.cycleTokens = [];
         root.snapshotRequired = false;
     }
 
@@ -635,7 +738,11 @@ Scope {
                 }
                 seen[fields[1]] = true;
                 const list = isAccount ? accountsList : repositoriesList;
-                if (list.length >= (isAccount ? 256 : root.maxListRecords)) {
+                // #259: match the helper's own REPOSITORY_MAX_ROWS (512), not
+                // the generic update/package-change list bound (4096) -- the
+                // protocol contract is 512, and accepting more here would
+                // just mean silently trusting a provider past its own cap.
+                if (list.length >= (isAccount ? 256 : 512)) {
                     nativeInvalid[owner] = true;
                     continue;
                 }
@@ -689,7 +796,13 @@ Scope {
                         || root.operationActionKind(fields[2]) !== fields[3]
                         || !root.validOperationState(fields[4])
                         || !root.validPercent(fields[5])
-                        || (fields[6] !== "yes" && fields[6] !== "no")) {
+                        || (fields[6] !== "yes" && fields[6] !== "no")
+                        // #251/#262: only an update action may report itself
+                        // cancelable or sit in cancel-requested -- that state
+                        // is reachable exclusively through the same cancel
+                        // path that requires cancelable in the first place.
+                        || (root.updateActionKind(fields[2]).length === 0
+                            && (fields[6] !== "no" || fields[4] === "cancel-requested"))) {
                     root.resetToFallback("System management provider returned an invalid active operation");
                     return false;
                 }
@@ -733,6 +846,18 @@ Scope {
 
         let publishedProviders = {};
         let publishedStates = {};
+        // #262: whether the recovery journal itself was legitimately read,
+        // independent of any one domain's own record shape -- an active or
+        // terminal-handoff identity is direct evidence, as is a recovery
+        // provider that read as "available". Upstream also OR-in valid
+        // native action availability below (a working regional/delegated
+        // domain is independent proof the same journal infrastructure is
+        // readable); upstream's own `!recoveryInvalid` guard is dropped here
+        // because Lyona's mandatory-record check above already returns false
+        // outright when the recovery provider record itself is missing or
+        // malformed, so that condition can never reach this point true.
+        let journalAdmitted = activeOperation !== null || terminalHandoff !== null
+            || recoveryProvider.status === "available";
         if (minor === 1) {
             for (let i = 0; i < root.validNativeOwners.length; i++) {
                 if (nativeProviders[root.validNativeOwners[i]] === undefined) nativeInvalid[root.validNativeOwners[i]] = true;
@@ -770,9 +895,20 @@ Scope {
                     ? { "status": "partial", "value": "unknown", "detail": publishedProviders[owner].detail }
                     : nativeStates[identifier];
             }
+            // #262: a valid, available native action offer is itself proof
+            // the journal is readable, even when update-domain recovery
+            // (e.g. logind) reports unavailable and no active/handoff
+            // identity exists.
+            if (!journalAdmitted) {
+                journalAdmitted = root.validNativeActionIds.some(function(identifier) {
+                    return !nativeInvalid[root.nativeActionOwner(identifier)]
+                        && nativeActions[identifier].status === "available";
+                });
+            }
             for (let i = 0; i < root.validNativeActionIds.length; i++) {
                 const actionId = root.validNativeActionIds[i];
-                if (!nativeInvalid[root.nativeActionOwner(actionId)]) actions.push(nativeActions[actionId]);
+                if (journalAdmitted && !nativeInvalid[root.nativeActionOwner(actionId)])
+                    actions.push(nativeActions[actionId]);
             }
         }
 
@@ -801,9 +937,12 @@ Scope {
         // entry (status "partial") -- root.snapshotState stays keyed to the
         // update domain's own success, matching every existing consumer
         // (e.g. SystemSettingsPane.qml's "No pending Arch updates" gate).
+        // The function's own return value is a narrower question --
+        // journalAdmitted (#262) -- consumed by finishSnapshot()'s
+        // acceptSnapshot()/snapshotFailed() split, not by snapshotState.
         root.snapshotState = "loaded";
         root.message = updates.length + " update" + (updates.length === 1 ? "" : "s") + " found";
-        return true;
+        return journalAdmitted;
     }
 
     // Reads recovery evidence for an in-progress or unacknowledged operation
@@ -818,16 +957,41 @@ Scope {
         onInvalidated: root.confirmationInvalidated()
     }
 
+    // #261: the generic SystemProviderDiscovery form (Sync Phase 4) already
+    // supports these four domains via domainDefinition() -- only their
+    // instantiation and coordination into the snapshot cycle was missing.
+    SystemProviderDiscovery {
+        id: timeDiscoveryModel
+        domain: "time"
+        onSnapshotRequested: root.requestSnapshot(false)
+    }
+    SystemProviderDiscovery {
+        id: localeDiscoveryModel
+        domain: "locale"
+        onSnapshotRequested: root.requestSnapshot(false)
+    }
+    SystemProviderDiscovery {
+        id: accountDiscoveryModel
+        domain: "accounts"
+        onSnapshotRequested: root.requestSnapshot(false)
+    }
+    SystemProviderDiscovery {
+        id: printerDiscoveryModel
+        domain: "printers"
+        onSnapshotRequested: root.requestSnapshot(false)
+    }
+
     SystemOperationModel {
         id: operationModel
-        onDiscoveryInvalidated: discoveryModel.invalidate()
+        // #262: invalidate only the domain the dispatched/watched/acknowledged
+        // action actually belongs to, not always the update discovery model.
+        onDiscoveryInvalidated: actionId => root.invalidateActionDiscovery(actionId)
         onSnapshotRequested: root.requestSnapshot(true)
         onAcknowledged: operationId => {
             if (root.terminalHandoff !== null && root.terminalHandoff.id === operationId)
                 root.terminalHandoff = null;
             if (root.activeOperation !== null && root.activeOperation.id === operationId)
                 root.activeOperation = null;
-            discoveryModel.invalidate();
         }
     }
 
@@ -843,7 +1007,7 @@ Scope {
 
     Process {
         id: snapshotProcess
-        property var cycleToken: null
+        property var cycleTokens: []
         running: false
         stdout: StdioCollector { onStreamFinished: root.finishSnapshot(root.parseSnapshot(this.text)) }
         stderr: StdioCollector { id: snapshotError }

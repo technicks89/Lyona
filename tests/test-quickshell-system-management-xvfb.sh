@@ -153,6 +153,11 @@ snapshot)
 	printf 'action\tsources-open\tunavailable\tdelegated\tsources\tSoftware sources\tNo interactive repository editor is packaged for Arch\n'
 	printf 'update\tlinux-cachyos;6.18.1-1;x86_64;core\tunknown\tinstallable\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	printf 'package-change\tlinux-cachyos;6.18.1-1;x86_64;core\tupdate\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
+	# One account record, matching the accounts-count=1 declared above --
+	# without this the reconciliation cross-check (#259) would itself mark
+	# the accounts domain malformed (a declared count with no matching rows).
+	printf 'account\tu1000\tcurrent\tTest User\ttestuser\n'
+	printf 'repository\tcore\tenabled\tArch Linux core repository\n'
 	printf 'complete\tsnapshot\n'
 	;;
 watch-updates)
@@ -161,6 +166,25 @@ watch-updates)
 	# only needs to prove the QML side coalesces through discoveryModel
 	# correctly once a monitor reaches ready.
 	printf 'update-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-regional)
+	# Sync Sprint 1 S1-03 (#261): timeDiscoveryModel/localeDiscoveryModel
+	# both run "watch-regional" (args "time"/"locale") sharing one prefix --
+	# the stub does not need to distinguish them, only prove each reaches
+	# ready independently.
+	printf 'regional-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-accounts)
+	printf 'accounts-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-units)
+	printf 'units-event\tready\n'
 	trap 'exit 0' TERM
 	while :; do sleep 0.1; done
 	;;
@@ -285,6 +309,44 @@ test_stage='validating parsed snapshot content'
 # Confirms the Arch-only restart heuristic's "system" value (a linux-cachyos
 # update pending) round-trips through the model's own enum validation.
 [ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
+
+test_stage='validating protocol minor 1 native content (#259)'
+# The stub's four native providers, five native states, one account and one
+# repository record all parse and reconcile cleanly -- proving compose
+# cumulative native discovery (#259) is wired end to end, not just that the
+# update domain still works.
+[ "$(ipc settings systemManagementNativeProviderStatus regional)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus accounts)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus printers)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus sources)" = available ]
+[ "$(ipc settings systemManagementNativeStateValue timezone)" = 'available:Etc/UTC' ]
+[ "$(ipc settings systemManagementNativeStateValue ntp-enabled)" = 'available:yes' ]
+[ "$(ipc settings systemManagementNativeStateValue locale)" = 'available:C' ]
+[ "$(ipc settings systemManagementNativeStateValue accounts-count)" = 'available:1' ]
+[ "$(ipc settings systemManagementNativeStateValue cups-service)" = 'available:stopped' ]
+[ "$(ipc settings systemManagementAccountsCount)" -eq 1 ]
+[ "$(ipc settings systemManagementRepositoriesCount)" -eq 1 ]
+
+test_stage='validating the four native discovery domains reach ready (#261)'
+# openSettings() opened all five discovery models together (#261); the
+# update one already proved ready above via the loaded snapshot -- these
+# four are new. Each one's own stub watch-* command (added alongside these
+# assertions) must actually be reached, not just tolerated as "failed" by
+# discoveryReady()'s deliberately permissive batch gate.
+for domain in time locale accounts printers; do
+	native_discovery_status=
+	i=0
+	while [ "$i" -lt 100 ]; do
+		native_discovery_status=$(ipc settings systemManagementNativeDiscoveryStatus "$domain" 2>/dev/null || true)
+		case $native_discovery_status in idle:ready) break ;; esac
+		i=$((i + 1))
+		sleep 0.05
+	done
+	if [ "$native_discovery_status" != idle:ready ]; then
+		printf '%s discovery did not reach idle:ready: %s\n' "$domain" "$native_discovery_status" >&2
+		exit 1
+	fi
+done
 
 test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
 # The stub reports recovery as unsupported and both update actions as
