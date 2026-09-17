@@ -111,6 +111,25 @@ including how to roll back from a bare TTY if a session will not start —
 Settings has no way to help with that case, since there is no UI to click
 when the desktop itself will not come up.
 
+### Timezone, locale and network time
+
+**Load choices** reads the reported timezone or locale catalog before you can
+select anything — a value must come from that exact list, not free text.
+Filter with the search box, select one, then **Review change...** reads a
+fresh preview against the system's current state before showing a
+confirmation card. **Apply change** cannot be undone once sent; **Cancel**
+only dismisses the preview itself without changing anything. System locale
+changes apply to new sessions — Settings never logs you out to apply one.
+
+**Automatic network time** shows whether NTP is enabled and whether the
+clock was synchronized as of the last read, with **Review enable...**/
+**Review disable...** buttons that go through the same preview-then-confirm
+flow.
+
+A live change to any of these — from this session or another — invalidates
+a preview or confirmation prepared against the state it read, with a message
+asking you to review a fresh one rather than silently applying stale data.
+
 ### Accounts, printers and software sources
 
 Below the update controls, System also lists **Accounts**, **Password**,

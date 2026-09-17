@@ -445,6 +445,67 @@ ipc settings open >/dev/null
 ipc settings select system >/dev/null
 [ "$(ipc settings systemManagementSettingsVisible)" = true ]
 
+test_stage='loading the timezone choices catalog (#268: prepare() requires a loaded, matching catalog)'
+[ "$(ipc settings systemManagementRegionalRequestChoices timezone)" = true ]
+timezone_choices=0
+i=0
+while [ "$i" -lt 100 ]; do
+	timezone_choices=$(ipc settings systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
+	[ "$timezone_choices" -gt 0 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$timezone_choices" -eq 0 ]; then
+	printf 'Timezone choices catalog never loaded\n' >&2
+	exit 1
+fi
+
+test_stage='validating the regional confirmation step itself (#268): prepare then discard'
+# Regional preview/confirm now lives on SystemRegionalSettingsModel, the
+# same split S1-04 already gave delegated actions -- prove discard() clears
+# a pending preview without ever dispatching, before proving confirm() does.
+if [ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" != true ]; then
+	printf 'systemManagementRegionalPreview(timezone-set, America/Chicago) did not accept the read\n' >&2
+	exit 1
+fi
+discard_preview=
+i=0
+while [ "$i" -lt 100 ]; do
+	discard_preview=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+	[ -n "$discard_preview" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$discard_preview" != 'timezone-set:Etc/UTC:America/Chicago' ]; then
+	printf 'Regional preview (discard path) did not report the expected current/target: %s\n' "$discard_preview" >&2
+	exit 1
+fi
+ipc settings systemManagementRegionalDiscard >/dev/null
+discard_result=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+if [ -n "$discard_result" ]; then
+	printf 'systemManagementRegionalDiscard did not clear the pending preview: %s\n' "$discard_result" >&2
+	exit 1
+fi
+if [ "$(ipc settings systemManagementOperationResult)" = 'timezone-set:succeeded' ]; then
+	printf 'discardRegional() dispatched an operation instead of discarding it\n' >&2
+	exit 1
+fi
+
+test_stage='reloading timezone choices (discard()/invalidate("") also clears the loaded catalog)'
+[ "$(ipc settings systemManagementRegionalRequestChoices timezone)" = true ]
+timezone_choices=0
+i=0
+while [ "$i" -lt 100 ]; do
+	timezone_choices=$(ipc settings systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
+	[ "$timezone_choices" -gt 0 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$timezone_choices" -eq 0 ]; then
+	printf 'Timezone choices catalog did not reload after discard\n' >&2
+	exit 1
+fi
+
 test_stage='requesting a regional preview'
 [ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
 

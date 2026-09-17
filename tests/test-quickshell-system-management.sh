@@ -324,4 +324,56 @@ grep -Fq 'function systemManagementConfirmDelegate(): bool' "$shell_qml"
 grep -Fq 'function systemManagementDiscardDelegate(): void' "$shell_qml"
 grep -Fq 'function systemManagementNativeConfirmationPending(): bool' "$shell_qml"
 
+# Sync Sprint 1 S1-05 (#268, #269): regional preview/confirm state moved off
+# SystemManagementModel into its own SystemRegionalSettingsModel
+# (systemManagementModel.regional), the same split S1-04 already gave
+# delegated actions.
+regional_settings_model=$repo/config/quickshell/systemmanagement/SystemRegionalSettingsModel.qml
+regional_controls=$repo/config/quickshell/settings/SystemRegionalControls.qml
+
+test -f "$regional_settings_model"
+grep -Fq 'function prepare(action, argument) {' "$regional_settings_model"
+grep -Fq 'function discard() {' "$regional_settings_model"
+grep -Fq 'function confirm() {' "$regional_settings_model"
+grep -Fq 'function ownsPreparation() {' "$regional_settings_model"
+grep -Fq 'function invalidate(domain) {' "$regional_settings_model"
+grep -Fq 'model.operation.startNative(pending.ticket.action,' "$regional_settings_model"
+grep -Fq 'readonly property alias regional: regionalModel' "$system_model"
+grep -Fq 'SystemRegionalSettingsModel {' "$system_model"
+grep -Fq 'onInvalidated: regionalModel.invalidate("time")' "$system_model"
+grep -Fq 'onInvalidated: regionalModel.invalidate("locale")' "$system_model"
+grep -Fq 'regionalModel.invalidate("");' "$system_model"
+# The old PR #33 regional state/functions lived directly on this model --
+# they must be gone, not just superseded, so nothing can regress to reading
+# stale properties SystemRegionalSettingsModel now owns.
+for stale in 'property var regionalPreview' 'function prepareRegional' \
+	'function confirmRegional' 'function discardRegional' 'function nativeActionReason'; do
+	if grep -q "$stale" "$system_model"; then
+		printf '%s must not exist on SystemManagementModel -- regional state moved to SystemRegionalSettingsModel.\n' "$stale" >&2
+		exit 1
+	fi
+done
+# startRegional()/startDelegated() were thin wrappers kept only until both
+# callers converged onto startNative() directly in this item.
+operation_model_source=$(cat "$operation_model")
+if printf '%s' "$operation_model_source" | grep -q 'function startRegional\|function startDelegated'; then
+	printf 'startRegional()/startDelegated() must not exist -- both callers use startNative() directly.\n' >&2
+	exit 1
+fi
+
+test -f "$regional_controls"
+grep -Fq 'required property real viewportHeight' "$regional_controls"
+grep -Fq 'readonly property var regional: model.regional' "$regional_controls"
+grep -Fq 'root.regional.prepare(' "$regional_controls"
+grep -Fq 'root.regional.discard()' "$regional_controls"
+grep -Fq 'root.regional.confirm()' "$regional_controls"
+grep -Fq 'SystemRegionalControls {' "$system_pane"
+grep -Fq 'viewportHeight: root.height' "$system_pane"
+
+grep -Fq 'function systemManagementRegionalPreview(action: string, argument: string): bool' "$shell_qml"
+grep -Fq 'function systemManagementRegionalConfirm(): bool' "$shell_qml"
+grep -Fq 'function systemManagementRegionalDiscard(): void' "$shell_qml"
+grep -Fq 'function systemManagementRegionalRequestChoices(kind: string): bool' "$shell_qml"
+grep -Fq 'function systemManagementRegionalChoicesCount(kind: string): int' "$shell_qml"
+
 printf 'Quickshell system-management model contract: PASS\n'

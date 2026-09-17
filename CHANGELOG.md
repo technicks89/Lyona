@@ -32,6 +32,22 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   D-3 (`accounts-open`/`sources-open` permanently `unsupported` on Arch, no
   `lxqt-admin-user`/`dnfdragora` equivalent) is unchanged; their launch
   buttons stay disabled and now show the helper's own reason text.
+- Give regional (timezone/locale/NTP) preview and confirmation its own model
+  (Sync Sprint 1 S1-05, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
+  from upstream `#268`/`#269`): the new
+  `config/quickshell/systemmanagement/SystemRegionalSettingsModel.qml`
+  replaces the regional preview/confirm state that used to live directly on
+  `SystemManagementModel.qml` (`regionalPreview`/`prepareRegional()`/
+  `confirmRegional()`/`discardRegional()`), the same split S1-04 already
+  gave delegated actions. `SystemRegionalControls.qml` is rewritten to
+  match: timezone and locale changes now load a reported choices catalog
+  first and require an exact selection from it, rather than accepting free
+  text, before reviewing and confirming a change. A pending update,
+  delegated, or regional confirmation now blocks starting any of the other
+  two consistently in both directions -- closing gaps in the S1-04 mutual
+  exclusion where an update confirmation in flight did not block starting a
+  delegated one, and a live confirmation-invalidation signal did not clear
+  a pending delegated confirmation.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened

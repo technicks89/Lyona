@@ -971,25 +971,50 @@ ShellRoot {
         // separate probe to poll, the same split
         // systemManagementOperationState()/systemManagementOperationResult()
         // already establish for async state.
+        // Sync Sprint 1 S1-05 (#268): SystemManagementModel.prepareRegional()/
+        // regionalPreview/confirmRegional()/discardRegional() moved into
+        // SystemRegionalSettingsModel (systemManagementModel.regional) --
+        // these probes keep their established names (existing tests call
+        // them) but now route to that model.
         function systemManagementRegionalPreviewPending(): bool {
-            return systemManagementModel.regionalPreviewPending;
+            return systemManagementModel.regional.request !== null;
         }
 
         function systemManagementRegionalPreview(action: string, argument: string): bool {
-            return systemManagementModel.prepareRegional(action, argument);
+            return systemManagementModel.regional.prepare(action, argument);
         }
 
         function systemManagementRegionalPreviewResult(): string {
-            const preview = systemManagementModel.regionalPreview;
+            const confirmation = systemManagementModel.regional.confirmation;
+            const preview = confirmation === null ? null : confirmation.preview;
             return preview === null ? "" : preview.actionId + ":" + preview.current + ":" + preview.target;
         }
 
         function systemManagementRegionalConfirm(): bool {
-            return systemManagementModel.confirmRegional();
+            return systemManagementModel.regional.confirm();
         }
 
         function systemManagementRegionalDiscard(): void {
-            systemManagementModel.discardRegional();
+            systemManagementModel.regional.discard();
+        }
+
+        function systemManagementRegionalMessage(): string {
+            return systemManagementModel.regional.message;
+        }
+
+        function systemManagementRegionalOwnsPreparation(): bool {
+            return systemManagementModel.regional.ownsPreparation();
+        }
+
+        // Fire-and-poll, matching systemManagementRegionalPreview()'s own
+        // split: the read is async, so request and result are separate
+        // probes.
+        function systemManagementRegionalRequestChoices(kind: string): bool {
+            return systemManagementModel.regional.requestChoices(kind);
+        }
+
+        function systemManagementRegionalChoicesCount(kind: string): int {
+            return systemManagementModel.regional.choices(kind).length;
         }
 
         // Sync Sprint 1 S1-04 (#266): delegated actions now go through a

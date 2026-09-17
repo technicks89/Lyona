@@ -79,22 +79,13 @@ Scope {
     property var updateConfirmation: null
     property string confirmationMessage: ""
     property bool dispatchingUpdate: false
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): regionalPreview
-    // is { actionId, argument, generation, current, target, detail } from
-    // SystemRegionalPreflightModel's completed(outcome) signal -- the
-    // user-visible form of the generation check, not a flag.
-    property var regionalPreview: null
-    property string regionalPreviewError: ""
-    property bool regionalPreviewPending: false
-    property string regionalConfirmMessage: ""
-    property bool dispatchingRegional: false
     // Sync Sprint 1 S1-04 (#266): delegated actions (accounts-open/
     // password-open/printers-open/sources-open) now get their own visible
     // confirmation step, matching regional mutations rather than launching
     // immediately -- nativeConfirmation is { actionId, generation,
     // requestGeneration, epoch } captured at prepareDelegate() time and
     // rechecked at confirmDelegate() time, the same "captured plan, not a
-    // flag" shape regionalPreview already established.
+    // flag" shape regionalModel's own confirmation ticket uses.
     property var nativeConfirmation: null
     property string nativeConfirmationMessage: ""
     property bool dispatchingNative: false
@@ -109,6 +100,7 @@ Scope {
     readonly property alias localeDiscovery: localeDiscoveryModel
     readonly property alias accountDiscovery: accountDiscoveryModel
     readonly property alias printerDiscovery: printerDiscoveryModel
+    readonly property alias regional: regionalModel
     readonly property alias operation: operationModel
     readonly property string discoveryDetail: discoveryModel.detail
 
@@ -278,8 +270,16 @@ Scope {
     function updateActionReason(actionId) {
         if (actionId !== "updates-refresh" && actionId !== "updates-install-all")
             return "This update action is not supported.";
-        if (!root.settingsVisible || root.dispatchingUpdate)
+        if (!root.settingsVisible)
             return "Open System Settings to prepare an update action.";
+        // #266/S1-05 (#268): a native (delegated or regional) confirmation
+        // already in flight must block starting an update one, the same as
+        // the reverse direction delegateActionReason()/regionalModel's own
+        // actionReason() already enforce -- this symmetric half was missed
+        // when S1-04 ported #266's delegated confirmation.
+        if (root.dispatchingUpdate || root.dispatchingNative || root.nativeConfirmation !== null
+                || regionalModel.ownsPreparation() || regionalModel.confirmation !== null)
+            return "Finish or dismiss the current confirmation first.";
         if (root.snapshotOwned || root.snapshotPending || root.requiredPending || !discoveryModel.fresh)
             return "Wait for fresh update discovery, or reload status to retry.";
         if (!root.validGeneration(root.generation) || root.recoveryProvider.status !== "available")
@@ -345,94 +345,15 @@ Scope {
         if (root.updateConfirmation !== null)
             root.confirmationMessage = "Update state changed. Review a fresh preview and confirm again.";
         root.updateConfirmation = null;
-        // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): discoveryModel/
-        // operationModel signals already invalidate the update confirmation
-        // above; extend the same handler rather than add a second signal,
-        // since both share one invalidation source.
-        if (root.regionalPreview !== null)
-            root.regionalConfirmMessage = "State changed. Review a fresh preview and confirm again.";
-        root.regionalPreview = null;
-    }
-
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): mirrors
-    // updateActionReason()/prepareUpdate()/confirmUpdate()/discardUpdate()
-    // above, adapted for the fact that RegionalMutation re-validates its own
-    // generation server-side (scripts/dwm-system-management's
-    // run_regional_mutation()), so this only needs to guard dispatch
-    // eligibility, not re-derive plan content the way updates-install-all's
-    // package-change list does.
-    function nativeActionReason(actionId) {
-        if (root.validNativeActionIds.indexOf(actionId) < 0)
-            return "This administration action is not supported.";
-        if (!root.settingsVisible || root.dispatchingRegional)
-            return "Open System Settings to prepare this action.";
-        if (root.snapshotOwned || root.snapshotPending || root.requiredPending || !discoveryModel.fresh)
-            return "Wait for fresh status, or reload status to retry.";
-        if (!operationModel.canStart)
-            return "An operation or its recovery still owns the update workflow.";
-        // Every valid native action record is already merged into the same
-        // flat root.actions updateActionReason() searches (parseSnapshot()'s
-        // actions.push(nativeActions[actionId]) for each non-invalid owner).
-        const action = root.actions.find(item => item.id === actionId);
-        if (!action || action.status !== "available")
-            return action && action.detail.length > 0 ? action.detail : "This action is not currently offered.";
-        return "";
-    }
-
-    // Regional (timezone-set/ntp-set/locale-set): fetch a fresh preview
-    // before showing a confirmation card. Unlike prepareUpdate(), there is
-    // no synchronous "reason" to check beyond nativeActionReason() -- the
-    // preview read itself is the validity check.
-    function prepareRegional(action, argument) {
-        const reason = root.nativeActionReason(action);
-        if (reason.length > 0) {
-            root.regionalConfirmMessage = reason;
-            return false;
-        }
-        root.regionalConfirmMessage = "";
-        root.regionalPreviewError = "";
-        root.regionalPreview = null;
-        root.regionalPreviewPending = true;
-        return regionalPreflightModel.requestPreview(action, argument);
-    }
-
-    function regionalPreviewReceived(outcome) {
-        root.regionalPreviewPending = false;
-        if (outcome.command !== "regional-preview") return; // a choices read, not a preview
-        if (outcome.status !== "available") {
-            root.regionalPreviewError = outcome.error.detail;
-            return;
-        }
-        root.regionalPreview = outcome.preview;
-    }
-
-    function discardRegional() {
-        regionalPreflightModel.cancel();
-        root.regionalPreview = null;
-        root.regionalPreviewPending = false;
-        root.regionalPreviewError = "";
-        root.regionalConfirmMessage = "";
-    }
-
-    function confirmRegional() {
-        const pending = root.regionalPreview;
-        if (pending === null || root.dispatchingRegional) return false;
-        const reason = root.nativeActionReason(pending.actionId);
-        if (reason.length > 0) {
-            root.regionalConfirmMessage = reason;
-            root.regionalPreview = null;
-            return false;
-        }
-        root.dispatchingRegional = true;
-        root.regionalPreview = null;
-        const started = operationModel.startRegional(pending.actionId, pending.argument, pending.generation);
-        // A false return here means RegionalMutation itself will reject the
-        // stale generation server-side -- startRegional's own precondition
-        // check is a QML-side fast path, not the authority. Either way,
-        // never claim success; tell the user to look again.
-        root.regionalConfirmMessage = started ? "" : "Regional state changed. Review a fresh preview and confirm again.";
-        root.dispatchingRegional = false;
-        return started;
+        // #266/S1-05 (#268): discoveryModel/operationModel signals already
+        // invalidate the update confirmation above; extend the same handler
+        // rather than add a second signal, since all three (update,
+        // delegated, regional) share one invalidation source.
+        // invalidateNativeConfirmation("") was itself missed when S1-04
+        // ported #266 -- a pending delegate confirmation did not clear when
+        // the update one did.
+        root.invalidateNativeConfirmation("");
+        regionalModel.invalidate("");
     }
 
     // Sync Sprint 1 S1-04 (#266): delegated actions (accounts-open/
@@ -470,7 +391,8 @@ Scope {
     }
 
     function delegateActionReason(actionId) {
-        if (root.dispatchingUpdate || root.dispatchingNative || root.updateConfirmation !== null)
+        if (root.dispatchingUpdate || root.dispatchingNative || root.updateConfirmation !== null
+                || regionalModel.ownsPreparation() || regionalModel.confirmation !== null)
             return "Finish or dismiss the current confirmation first.";
         return root.delegateContextReason(actionId);
     }
@@ -642,6 +564,21 @@ Scope {
     // through beforePublish/complete), so the read still runs without
     // joining any visible cycle.
     function requestSnapshot(required) {
+        // S1-05 (#268): a fresh snapshot changes root.generation, which
+        // would silently outdate any regional preview/confirmation ticket
+        // still in flight (regionalModel's own matches() check would catch
+        // this eventually, but only on the user's next interaction) --
+        // cancel it first and defer the read exactly like an already-owned
+        // fetch, rather than let a stale regional prompt survive a
+        // generation it no longer matches.
+        if (regionalModel.ownsPreparation()) {
+            root.snapshotPending = root.snapshotPending || !required;
+            root.requiredPending = root.requiredPending || !!required;
+            regionalModel.invalidate("");
+            // Optional preflight cancellation must be reaped before recovery
+            // or discovery can claim the shared snapshot owner.
+            if (regionalModel.ownsPreparation()) return;
+        }
         if (root.snapshotOwned || snapshotProcess.running || root.discoveryBatch) {
             root.snapshotPending = root.snapshotPending || !required;
             root.requiredPending = root.requiredPending || !!required;
@@ -1056,11 +993,15 @@ Scope {
         id: timeDiscoveryModel
         domain: "time"
         onSnapshotRequested: root.requestSnapshot(false)
+        // S1-05: a live timezone/NTP change must retire any regional
+        // preview/confirmation prepared against now-stale time state.
+        onInvalidated: regionalModel.invalidate("time")
     }
     SystemProviderDiscovery {
         id: localeDiscoveryModel
         domain: "locale"
         onSnapshotRequested: root.requestSnapshot(false)
+        onInvalidated: regionalModel.invalidate("locale")
     }
     SystemProviderDiscovery {
         id: accountDiscoveryModel
@@ -1091,14 +1032,19 @@ Scope {
         }
     }
 
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.2): owns the
-    // regional-preview read only -- confirmed dispatch goes through
-    // operationModel.startRegional() above, same split discoveryModel/
-    // operationModel already have between read and mutate.
-    SystemRegionalPreflightModel {
-        id: regionalPreflightModel
-        active: root.settingsVisible
-        onCompleted: outcome => root.regionalPreviewReceived(outcome)
+    // Sync Sprint 1 S1-05 (#268): takes over regional preview/confirm state
+    // that used to live directly on this model (Sync Phase 9's PR #33
+    // regionalPreview/prepareRegional()/confirmRegional() family, removed
+    // above) -- confirmed dispatch goes through model.operation.startNative()
+    // internally, same split discoveryModel/operationModel already have
+    // between read and mutate.
+    SystemRegionalSettingsModel {
+        id: regionalModel
+        model: root
+        onReleased: Qt.callLater(function() {
+            if (root.requiredPending) root.requestSnapshot(true);
+            else if (root.snapshotPending && root.settingsVisible) root.requestSnapshot(false);
+        })
     }
 
     Process {

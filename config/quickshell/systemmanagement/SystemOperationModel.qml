@@ -156,23 +156,16 @@ Scope {
     // carry their own ad-hoc precondition check and a hand-built argv. One
     // originArguments()/startOperation() pair now does both for every fixed
     // action, so a new action can't accidentally skip a check the others
-    // already had. startRegional()/startDelegated() stay as thin wrappers
-    // over the unified startNative() -- callers (SystemManagementModel's
-    // confirmRegional() and, since Sync Sprint 1 S1-04, confirmDelegate())
-    // are converged onto startNative() directly in Sync Sprint 1 S1-05, at
-    // which point these two thin wrappers are removed.
+    // already had. startRegional()/startDelegated() briefly stayed as thin
+    // wrappers (Sync Sprint 1 S1-03/S1-04) while their only callers were
+    // SystemManagementModel's own confirmRegional()/confirmDelegate(); both
+    // callers are now converged onto startNative() directly
+    // (SystemRegionalSettingsModel.confirm() and confirmDelegate(), Sync
+    // Sprint 1 S1-05), so the wrappers themselves are removed.
     function startNative(action, value, generation) {
         if (["timezone-set", "ntp-set", "locale-set", "accounts-open", "password-open",
                 "printers-open", "sources-open"].indexOf(action) < 0) return false;
         return root.startOperation(action, value, generation);
-    }
-
-    function startRegional(action, argument, generation) {
-        return root.startNative(action, argument, generation);
-    }
-
-    function startDelegated(action) {
-        return root.startNative(action, "", "");
     }
 
     // The single source of truth for what a fixed action's argv may

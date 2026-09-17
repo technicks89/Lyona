@@ -21,12 +21,17 @@ Flickable {
     clip: true
 
     onVisibleChanged: if (!visible) root.confirmVersion = "";
-    // #267: layout publication (a card appearing/disappearing above the
-    // confirmation, or the window resizing) can move a focused delegate
-    // control after it first received focus -- follow geometry changes
-    // rather than polling or leaving focus off-screen.
-    onHeightChanged: Qt.callLater(delegateControls.revealFocusedControl)
-    onContentHeightChanged: Qt.callLater(delegateControls.revealFocusedControl)
+    // #267/S1-05 (#269): layout publication (a card appearing/disappearing
+    // above a confirmation, or the window resizing) can move a focused
+    // regional or delegate control after it first received focus -- follow
+    // geometry changes rather than polling or leaving focus off-screen.
+    onHeightChanged: Qt.callLater(root.revealFocusedControl)
+    onContentHeightChanged: Qt.callLater(root.revealFocusedControl)
+
+    function revealFocusedControl() {
+        regionalControls.revealFocusedControl();
+        delegateControls.revealFocusedControl();
+    }
 
     // Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
     // moves keyboard/tab focus onto its own buttons and scroll lists, which
@@ -296,7 +301,9 @@ Flickable {
         SectionLabel { label: "Regional" }
 
         SystemRegionalControls {
+            id: regionalControls
             model: root.systemManagementModel
+            viewportHeight: root.height
             onRevealRequested: target => root.reveal(target)
         }
 
