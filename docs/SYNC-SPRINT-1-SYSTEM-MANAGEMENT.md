@@ -633,44 +633,75 @@ mocks of it), and `tst_system_operation_parser.qml` gained
 `test_item_progress_is_distinct_from_overall_progress_and_log`.
 
 `tests/qml/SystemUpdateUi.qml` and its dedicated `tests/test-quickshell-update-ui-xvfb.sh`
-were **not** ported, for a reason distinct from every other "not ported" note in
-this sprint. This is not a `#291`-scoped item: upstream's `SystemUpdateUi.qml`
-predates `#291` by a long way (first added at `#240`, back when Sync Phase 7
-ported the original confirm/dispatch/cancel surface) — `#291` only extended an
-*already-existing* bespoke harness this sprint had never actually looked at,
-so the sprint doc's own `tests/qml/SystemOperationParser.qml`, `SystemUpdateUi.qml`
-| +14, +43` line understated it as an incremental diff rather than the
-~465-line net-new integration surface (harness + fixture + runner) it actually
-is once you also port everything `#291` builds on top of.
+**were** ported, after all, on a second pass -- ported for a reason distinct
+from every other "not ported" note in this sprint's other items. This is not
+a `#291`-scoped file: upstream's `SystemUpdateUi.qml` predates `#291` by a
+long way (first added at `#240`, back when Sync Phase 7 ported the original
+confirm/dispatch/cancel surface) -- `#291` only extended an *already-existing*
+bespoke harness this sprint had never actually looked at, so the sprint doc's
+own `tests/qml/SystemOperationParser.qml`, `SystemUpdateUi.qml` | +14, +43`
+line understated it as an incremental diff rather than the ~465-line net-new
+integration surface (harness + fixture + runner) it actually is once you also
+port everything `#291` builds on top of.
 
-It was attempted directly against Lyona's real `SystemManagementModel`/
-`SystemOperationModel`/`SystemSettingsPane` (adapting three confirmed
-naming divergences from the harness's `#240`-era API assumptions:
-`model.snapshotState === "ready"` → `"loaded"`, an action override's
-`availability` field → `status`, and a required `updateModel` property
-`SystemSettingsPane.qml` didn't have at `#240` -- Lyona's separate
-self-update/`lyona-update` feature, satisfied here with a real
-`UpdateModel {}` instance). After those three fixes it got measurably
-further (past snapshot loading, confirmation capture, and several
-discovery-state transitions) before failing at a stage that exercises
-several rapid `openSettings()`/`closeSettings()`/`refresh()` cycles in a
-tight loop: `operationModel` entered its `recover()` retry/backoff path and
-exhausted it (`"Operation recovery could not read complete journal
-evidence... Open System Settings and reload status to retry recovery."`).
+Porting it against Lyona's real `SystemManagementModel`/`SystemOperationModel`/
+`SystemSettingsPane` surfaced four real, confirmed divergences from the
+harness's `#240`-era API assumptions, each empirically root-caused (not
+guessed) before being fixed:
 
-Isolated in a minimal single-open reproduction (no cycling): the same
-fixture snapshot loads cleanly and `operationModel` settles to `idle`/
-`blocked: false` every time. The failure is specific to *rapid* Settings
-open/close/refresh cycling, which only this pre-existing (not `#291`)
-harness's stage-by-stage design does aggressively at a 25ms poll interval --
-`operationModel`'s recovery retry/backoff (`recover()`, Sync Phase 7,
-long after `#240`) is not something `SystemUpdateUi.qml` was ever designed
-against. Whether this is a genuine, previously-unexercised race in
-`recover()`/`refreshRecovery()`'s interaction with rapid re-entry, or a
-fixture-side artifact of this specific reproduction, is **not yet
-determined** -- worth its own follow-up item before attempting this harness
-again, not a blocker for S1-09's actual `#291` scope, which is verified
-above without it.
+1. `model.snapshotState === "ready"` → Lyona's enum uses `"loaded"`.
+2. An action override's `availability` field → Lyona's actions use `status`.
+3. `SystemSettingsPane.qml` has a second `required property var updateModel`
+   (Lyona's own, unrelated self-update/`lyona-update` feature) that
+   `SystemSettingsPane.qml` didn't have at `#240` -- satisfied with a real
+   `UpdateModel {}` instance; nothing in this harness exercises it, it only
+   needs to mount without an eager failure.
+4. A stale confirmation's clearing timing: `#240`-era code apparently
+   invalidated `updateConfirmation` synchronously on any replacement read;
+   Lyona's evolved design (Sync Phase 7) only invalidates it eagerly from a
+   *live* watch-triggered signal, and relies on `confirmUpdate()`'s own
+   epoch/generation check to reject (and then clear, via
+   `confirmationInvalidated()`) a stale one lazily. Functionally equivalent
+   (a stale confirmation can never dispatch either way) but different
+   timing -- fixed by reordering the assertion to call `confirmUpdate()`
+   before checking `updateConfirmation === null`, instead of the reverse.
+
+The real find was a fifth issue, past those four, that looked at first like a
+genuine `operationModel` recovery-retry race under the harness's rapid
+`openSettings()`/`closeSettings()`/`refresh()` cycling (25ms poll interval):
+`operationModel` entered its `recover()` retry/backoff path and exhausted it
+into `blocked` (`"Operation recovery could not read complete journal
+evidence..."`). A minimal single-open reproduction (no cycling) initially
+seemed to clear `operationModel`, pointing at a timing race -- but a second,
+stage-accurate reproduction with full internal-state logging (`op.state`,
+`op.retries`, `journalAdmitted`'s own inputs) showed the *same* fixture
+snapshot, read exactly once, deterministically triggers it. The actual root
+cause: `parseSnapshot()` returns `journalAdmitted` (not "did this decode
+cleanly") as `finishSnapshot()`'s `successful` flag --
+`activeOperation !== null || terminalHandoff !== null || recoveryProvider.status === "available"`,
+OR-falling-back onto any valid *native* (regional/accounts/printers) action's
+own availability (Sync Phase 9 / S1-03, ported from upstream's `#262`). This
+`#240`-era, update-only fixture never emitted minor-1 native provider/state/
+action rows at all, so with no active operation and `recovery: partial`,
+`journalAdmitted` was always false -- not because anything was malformed,
+but because the fixture never gave the model any evidence to trust. A real
+`dwm-system-management` always emits the minor-1 shape (confirmed: this is
+exactly why the main `test-quickshell-system-management-xvfb.sh` stub never
+hits this, its own actions satisfy the native fallback), so this was never a
+production concern, purely a gap in this one old, pre-`#291` fixture.
+
+Fixed by extending `system-update-ui-provider.py`'s `snapshot()` to also
+emit the same minor-1 native regional/accounts/printers/sources rows the
+main stub uses (all `available`, matching real-world shape), bumping the
+protocol header to `1\t1`. That alone made `timeReconciliationModel` (S1-08)
+treat this as a real native time domain too, which then dispatched a
+`time-status` read the fixture didn't implement (a second, smaller
+consequence of the same fix, caught by the wrapper script's own
+`invalid-arguments` check) -- added a fixed `time-status` response
+alongside. With all five fixes in place, the full 19-stage harness passes
+cleanly and repeatably (3 consecutive runs, 61 assertions, exit 0 including
+the wrapper's `origins == 3` / no-`invalid-arguments` / no-`overlap` checks),
+registered as `make check-quickshell-update-ui-xvfb`.
 
 ---
 

@@ -113,12 +113,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   outright on `NoSessionForPID`, re-verifying that display's identity hasn't
   changed before trusting its session timestamp. Ported and verified at the
   Python and QML-model/protocol layers (7 new/adapted Python tests, 1 new
-  qmltestrunner test) -- porting upstream's dedicated `SystemUpdateUi.qml`
-  xvfb integration harness was attempted but not completed; see the sprint
-  doc's S1-09 implementation notes for why (it predates `#291`, and surfaced
-  a `operationModel` recovery-retry interaction under rapid Settings
-  open/close/refresh cycling that needs its own follow-up, not a `#291`
-  regression).
+  qmltestrunner test), plus upstream's own dedicated `SystemUpdateUi.qml`
+  xvfb integration harness (a pre-`#291` file, predating this item by a
+  long way -- see the sprint doc's S1-09 implementation notes) as
+  `make check-quickshell-update-ui-xvfb`: porting it surfaced and fixed a
+  real gap in its own fixture, not in production code -- with no active
+  operation and a `partial` recovery reading, `journalAdmitted` (S1-03,
+  from upstream's `#262`) had no evidence to trust the journal, since this
+  update-only fixture never emitted the minor-1 native provider/state/
+  action rows a real `dwm-system-management` always does; `operationModel`
+  correctly, if unhelpfully, retried into `blocked`. Fixed in the fixture,
+  not the model.
 - Add a durable, crash-safe operation journal to `dwm-system-management`
   (Sync Phase 5, `docs/SYNC-P5-OPERATION-JOURNAL.md`): a double-buffered
   8,192-byte frame codec, an `openat`-relative directory chain hardened
