@@ -237,7 +237,7 @@ shipped at that time.
 
 **That has since changed.** Upstream did ship this scope (`#277`–`#288`),
 and [Sync Sprint 2](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
-S2-01 through S2-05 (readers: local/hardware/filesystem information,
+S2-01 through S2-06 (readers: local/hardware/filesystem information,
 SELinux, Secure Boot, firewall status extended to `ufw`/`nftables` per D-5,
 root encryption, automatic screen-lock evidence reused from the shared power
 helper, and a bounded `watch-mounts` mount-change monitor) are done as of
@@ -259,10 +259,18 @@ no information block, since it must not open the filesystem inventory's
 unmonitored initialization gap or falsely mark storage/security as freshly
 re-verified when it didn't actually probe them); an optional read asks for
 `snapshot-without-storage` until the `storage` domain's own `watch-mounts`
-subscription is actually ready, then `snapshot` (minor `2`, complete). minor
-`2` below is now live — S2-07 still closes this `ROADMAP.md` Phase 6 item and
-this document's own remaining open questions (S2-06's Settings information
-card and Health navigation).
+subscription is actually ready, then `snapshot` (minor `2`, complete).
+
+S2-06 gives minor `2` its visible surface: the new
+`config/quickshell/settings/SystemInformationControls.qml` card in System
+Settings' System pane (system information, storage overview, privacy/
+security status, and diagnostics/recovery guidance), plus Health navigation
+(`SystemManagementModel.openHealth()`, wired through `shell.qml`'s
+`healthModel`/`targetScreen`/`onHealthOpened`) that opens the existing
+`dwm-system-health` full-screen window on the Settings window's own current
+screen and closes Settings on the way there. See "Information and recovery
+view qualification" below. S2-07 still closes this `ROADMAP.md` Phase 6 item
+and this document's own remaining open questions.
 
 ## Provider Protocol
 
@@ -304,7 +312,7 @@ never advertises a later planned ID as `unsupported`:
 | --- | --- | --- | --- | --- | --- |
 | `0` | `updates`, `recovery` | `update-summary`, `update-last-refresh`, `update-restart` | `updates-refresh`, `updates-install-all`, `updates-cancel` | `update`, `package-change` | `SYNC-P2` through `SYNC-P7` |
 | `1` | `regional`, `accounts`, `printers`, `sources` | `timezone`, `ntp-enabled`, `ntp-synchronized`, `locale`, `accounts-count`, `cups-service` | `timezone-set`, `ntp-set`, `locale-set`, `accounts-open`, `password-open`, `printers-open`, `sources-open` | `account`, `repository` | `SYNC-P8` and `SYNC-P9` |
-| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem-summary/SELinux/secure-boot/firewalld/ufw/nftables/encryption/lock states | `health-open` | `filesystem` | `SYNC-SPRINT-2` (readers ported S2-01–S2-04; wired into the snapshot and QML consumer at S2-05) |
+| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem-summary/SELinux/secure-boot/firewalld/ufw/nftables/encryption/lock states | `health-open` | `filesystem` | `SYNC-SPRINT-2` (readers ported S2-01–S2-04; wired into the snapshot and QML consumer at S2-05; visible Settings card and Health navigation at S2-06) |
 
 The `recovery` provider is intentionally status-only from minor `0`: it owns
 journal-integrity errors that have no trustworthy operation kind of their
@@ -374,6 +382,48 @@ remove packages an image or the recommended installer already installed.
 Each later phase's own rollback removes its provider, model, and pane
 together, without touching the existing `dwm-system-health`/session-action
 contracts this port reuses rather than duplicates.
+
+## Settings Information Card and Health Navigation
+
+[Sync Sprint 2 S2-06](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation)
+gives minor `2` its visible surface:
+`config/quickshell/settings/SystemInformationControls.qml` renders the
+thirteen system-information values, bounded mounted-filesystem usage (a
+virtualized 240-pixel-tall list, so a full 256-row inventory never expands
+the pane itself), and the seven security indicators (D-5's `firewalld`/
+`ufw`/`nftables` split, plus `selinux`/`secure-boot`/`root-encryption`/
+`screen-lock`) minor `2` supplies. Byte counters keep their exact decimal
+string alongside an approximate human unit; a value that never reads
+(`unknown`, or a non-`available` status) always renders "Unknown", never a
+guessed state. A retained (stale) filesystem list is labeled explicitly,
+with Reload status as the retry path.
+
+The fixed "Open System Health" button reads `health-open`'s own availability
+and calls `SystemManagementModel.openHealth()`, which opens the existing
+`dwm-system-health` full-screen window
+([`SPEC.md` §5.9](../SPEC.md)) and closes Settings — `shell.qml` wires
+`healthModel`/`onHealthOpened` for this and resolves `targetScreen` through
+a three-way fallback (the Settings window's own current screen, then a
+requested screen, then the active panel's screen), so Health always opens on
+the screen Settings was actually showing on, including after the window
+moved. Reset guidance names `lyona-update rollback` (Lyona-managed
+configuration) and `arch-chroot` from the Lyona installation media (system
+rescue) in place of upstream's Fedora-specific tooling; System Health owns
+its own listed, separately confirmed repairs and `pacman -Qkk` verifies
+installed package files. No factory reset, disk, firewall, encryption, or
+general service mutation is introduced.
+
+Verified: `tests/qml/SystemInformationUi.qml` (run at 640×480, 780×580, and
+1000×740 by `tests/test-quickshell-information-ui-xvfb.sh`) covers the exact
+uint64 display, the 256-row virtualized inventory, unavailable/unknown
+security state with readable independent peers (including that firewalld/
+ufw/nftables read independently per D-5), explicit stale-data labeling,
+keyboard-focus reveal, one fixed health callback, and disabled navigation
+when the capability is absent. `tests/qml/SystemHealthNavigation.qml`
+(`tests/test-quickshell-health-navigation-xvfb.sh`) exercises the real
+`targetScreen` fallback expression extracted programmatically from
+`shell.qml`, so this test cannot silently drift out of sync with the actual
+production binding.
 
 ## Authoritative Interface References
 

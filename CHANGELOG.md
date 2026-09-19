@@ -10,6 +10,45 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add the System Settings information card and Health navigation for the
+  minor-2 records S2-05 wired in (Sync Sprint 2 S2-06,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#287`,
+  commits `cc96efd`/`0c9d07c`; `39ce924` targets a harness Lyona never
+  ported, nothing to port): new
+  `config/quickshell/settings/SystemInformationControls.qml` renders system
+  information, a virtualized (240px, bounded to 256 rows) storage overview,
+  privacy/security status, and diagnostics/recovery guidance in the System
+  pane. The fixed "Open System Health" button calls the now-wired
+  `SystemManagementModel.openHealth()`, which opens the existing
+  `dwm-system-health` full-screen window and closes Settings;
+  `shell.qml` resolves the target screen through a three-way fallback (the
+  Settings window's own current screen, then a requested screen, then the
+  active panel's screen) so Health always opens where Settings actually was,
+  including after the window moved between screens.
+  Lyona adaptations: the security list carries D-5's 7 identifiers
+  (`firewalld`/`ufw`/`nftables` as three distinct rows, not upstream's single
+  "Firewall service" row); action-availability checks read `.status`, not
+  upstream's `.availability` (matches `parseSnapshot()`'s actual field name —
+  the same mismatch already found and fixed for `canNtp` back in S1-08);
+  recovery guidance names Arch/Lyona tooling (`pacman -Qkk`, `arch-chroot`
+  from the Lyona installation media, `lyona-update rollback`) in place of
+  upstream's Fedora-specific `dnf`/`rpm -Va`/Anaconda rescue references, with
+  a grep gate now built into `tests/test-quickshell-system-management.sh` so
+  none can silently reappear.
+  Also ported upstream's `tests/qml/SystemInformationUi.qml` and
+  `tests/qml/SystemHealthNavigation.qml` harnesses, each as Lyona's own
+  standalone `tests/test-quickshell-{information-ui,health-navigation}-xvfb.sh`
+  + `Makefile` target (following `tests/test-quickshell-update-ui-xvfb.sh`'s
+  established isolated-shell.qml pattern, `cp -a`-ing the real
+  `config/quickshell` directories into a scratch dir rather than upstream's
+  single-giant-xvfb-file convention) — the health-navigation one
+  programmatically extracts `shell.qml`'s actual `targetScreen:` expression
+  via a small Python template step, so it can never silently drift out of
+  sync with the real production binding. Verified: both new xvfb suites pass
+  3/3 consecutive runs (the information view across all three of upstream's
+  own evidence window sizes); the full `tests/test-quickshell-system-management-xvfb.sh`
+  integration suite and full-tree qmllint (still the same 15-warning
+  baseline) both stayed clean after wiring the new card into the live pane.
 - Wire the information/storage/security readers from S2-01 through S2-04
   into the system-management snapshot protocol as minor `2`, both on the
   Python provider and the Quickshell consumer (Sync Sprint 2 S2-05,

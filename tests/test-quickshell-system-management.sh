@@ -412,4 +412,39 @@ grep -Fq 'objectName: "systemLocalTime"' "$system_pane"
 grep -Fq 'function clockPanelText(): string' "$shell_qml"
 grep -Fq 'function clockSettingsText(): string' "$shell_qml"
 
+# Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation):
+# the information/storage/security/diagnostics card and Health navigation.
+information_controls=$repo/config/quickshell/settings/SystemInformationControls.qml
+test -f "$information_controls"
+grep -Fq 'required property var model' "$information_controls"
+grep -Fq 'signal revealRequested(var target)' "$information_controls"
+grep -Fq 'onActivated: root.model.openHealth()' "$information_controls"
+grep -Fq 'SystemInformationControls {' "$system_pane"
+grep -Fq 'informationControls.revealFocusedControl();' "$system_pane"
+# D-5 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers):
+# firewalld/ufw/nftables are three distinct rows here, not upstream's single
+# "Firewall service" row -- read_firewall_status(kind) reports each
+# independently.
+for identifier in firewalld ufw nftables; do
+	grep -Fq "{id: \"$identifier\"," "$information_controls"
+done
+# health-open availability gating reads action.status, matching
+# parseSnapshot()'s actual field name for every action record (native or
+# information) -- not upstream's own action.availability.
+grep -Fq 'root.healthAction.status === "available"' "$information_controls"
+grep -Fq 'healthModel: systemHealthModel' "$shell_qml"
+grep -Fq 'targetScreen: settingsWindow.screen || settingsModel.targetScreen || root.activePanelScreen' "$shell_qml"
+grep -Fq 'onHealthOpened: settingsModel.close()' "$shell_qml"
+grep -Fq 'function systemManagementOpenHealth(): bool' "$shell_qml"
+grep -Fq 'function systemManagementFilesystemsCount(): int' "$shell_qml"
+# Recovery guidance must name Arch/Lyona tooling, never upstream's own
+# Fedora-specific package/rescue tools.
+if grep -qE 'dnf|rpm |Fedora|Anaconda' "$information_controls"; then
+	printf 'SystemInformationControls.qml must not reference Fedora tooling.\n' >&2
+	exit 1
+fi
+grep -Fq 'pacman -Qkk' "$information_controls"
+grep -Fq 'arch-chroot' "$information_controls"
+grep -Fq 'lyona-update rollback' "$information_controls"
+
 printf 'Quickshell system-management model contract: PASS\n'

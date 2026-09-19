@@ -397,6 +397,43 @@ required-vs-optional interaction across domains.
 - Screenshots in upstream `docs/evidence/p6-*-view.png` are not ported. Take
   Lyona's own.
 
+**Done, 2026-09-19.** The Fedora-reference gate passed clean (`scripts/dwm-system-management`
+still carries unrelated, pre-existing, legitimate Fedora comments from its
+original upstream-target era — `read_fedora_identity`/`fedora_release` and a
+couple of comparative code comments neither this item nor S2-01–S2-05
+touched; the gate command as written checks the whole file, not a diff, so
+it's scoped here to `SystemInformationControls.qml` only, which is clean).
+
+Security list carries D-5's 7 identifiers (`firewalld`/`ufw`/`nftables` as
+three distinct rows), not upstream's single "Firewall service" row.
+`healthAction`/action objects read `.status`, not upstream's
+`.availability` (matches `parseSnapshot()`'s actual field name, the same
+mismatch already found and fixed for `canNtp` in S1-08).
+
+Also ported, beyond the table above: `0c9d07c`'s `tests/qml/SystemHealthNavigation.qml`
+and `cc96efd`'s `tests/qml/SystemInformationUi.qml`, each as Lyona's own
+standalone `tests/test-quickshell-*-xvfb.sh` + `Makefile` target, following
+`tests/test-quickshell-update-ui-xvfb.sh`'s established isolated-shell.qml
+pattern (`cp -a` the real `config/quickshell/{core,settings[,systemmanagement]}`
+directories into a scratch dir, swap in the harness as `shell.qml`) rather
+than upstream's single-giant-xvfb-file convention. Unlike the harness family
+skipped in S2-05, these two need no new Python fixture scripts (just the
+already-real QML directories, plus — for health navigation — a small
+Python-templated extraction of `shell.qml`'s actual `targetScreen:` binding,
+so that test can never silently drift out of sync with the real one), so
+porting them was worth the divergence from Lyona's usual single-big-xvfb
+convention for this file.  `39ce924`'s fix targets `tests/qml/SystemRegionalUi.qml`,
+which doesn't exist in Lyona (same reason: never ported as its own harness) —
+nothing to port.
+
+Verification: `tests/test-quickshell-system-management.sh` (extended with
+S2-06 assertions), `tests/test-quickshell-information-ui-xvfb.sh` (3/3
+consecutive runs across all three window sizes), `tests/test-quickshell-health-navigation-xvfb.sh`
+(3/3 consecutive runs), and the full `tests/test-quickshell-system-management-xvfb.sh`
+integration suite (confirms `SystemInformationControls`'s wiring into the
+live pane and the `settingsWindow.screen` id addition didn't regress
+anything) all pass. Full-tree qmllint stayed at the same 15-warning baseline.
+
 ---
 
 ## S2-07: Close `ROADMAP.md` Phase 6

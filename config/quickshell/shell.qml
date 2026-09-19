@@ -192,7 +192,7 @@ ShellRoot {
     SystemManagementModel {
         id: systemManagementModel
         healthModel: systemHealthModel
-        targetScreen: root.activePanelScreen
+        targetScreen: settingsWindow.screen || settingsModel.targetScreen || root.activePanelScreen
         onHealthOpened: settingsModel.close()
     }
 
@@ -1291,6 +1291,7 @@ ShellRoot {
     }
 
     SettingsWindow {
+        id: settingsWindow
         clock: clock
         settingsModel: settingsModel
         networkModel: networkModel
