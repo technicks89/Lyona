@@ -104,8 +104,10 @@ fi
 # The fetch goes through the plain checkedCommand gate, not
 # terminatingCheckedCommand -- this is a one-shot bounded read, not the
 # long-running watch-* child terminatingCheckedCommand exists for
-# (Sync Phase 4).
-grep -Fq 'Commands.checkedCommand(Commands.systemManagementCommand("snapshot", []))' "$system_model"
+# (Sync Phase 4). Sync Sprint 2 S2-05 (#286): the subcommand itself now
+# selects among snapshot/snapshot-core/snapshot-without-storage.
+grep -Fq 'snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand(' "$system_model"
+grep -Fq 'required ? "snapshot-core" : snapshotProcess.storageOmitted ? "snapshot-without-storage" : "snapshot"' "$system_model"
 if grep -q 'terminatingCheckedCommand' "$system_model"; then
 	printf 'SystemManagementModel must use checkedCommand for the one-shot snapshot fetch.\n' >&2
 	exit 1
@@ -212,11 +214,16 @@ grep -Fq '"watch-units"' "$provider_discovery"
 # corrects docs/SYNC-P4-DISCOVERY-EVENTS.md's own terminatingCheckedCommand
 # instruction, found wrong when the xvfb test's snapshot never left "idle"
 # with a real (non-instantly-exiting) watch-updates stub.
-grep -Fq 'monitor.command = Commands.systemManagementCommand(selected.action, selected.args);' "$provider_discovery"
-grep -Fq 'Timer { id: setupDeadline; interval: 12000' "$provider_discovery"
-grep -Fq 'Timer { id: stopDeadline; interval: 1500' "$provider_discovery"
-grep -Fq 'monitor.signal(15)' "$provider_discovery"
-grep -Fq 'monitor.signal(9)' "$provider_discovery"
+# Sync Sprint 2 S2-05 (#286): each launch now gets its own dynamically
+# created monitor object (a generation/serial-stamped identity), so a stale
+# timer, parser line, or exit signal from a retired Process can never be
+# mistaken for a replacement one's -- the command assignment and deadline
+# Timers moved from the single static Process into that per-launch Component.
+grep -Fq 'command: Commands.systemManagementCommand(selected.action, selected.args)' "$provider_discovery"
+grep -Fq 'interval: owner.identity.storage ? 3000 : 12000' "$provider_discovery"
+grep -Fq 'interval: owner.identity.storage ? 2000 : 1500' "$provider_discovery"
+grep -Fq 'process.signal(15)' "$provider_discovery"
+grep -Fq 'root.monitor.signal(9);' "$provider_discovery"
 
 # Any event line that is not exactly "<prefix>\tready" or "<prefix>\tchanged"
 # fails the monitor -- unlike the snapshot protocol, unknown records here
@@ -340,7 +347,10 @@ grep -Fq 'function invalidate(domain) {' "$regional_settings_model"
 grep -Fq 'model.operation.startNative(pending.ticket.action,' "$regional_settings_model"
 grep -Fq 'readonly property alias regional: regionalModel' "$system_model"
 grep -Fq 'SystemRegionalSettingsModel {' "$system_model"
-grep -Fq 'onInvalidated: regionalModel.invalidate("time")' "$system_model"
+# S1-08 (#275) wrapped this in a block (also reconciling time-status before
+# invalidating); this checks for the call, not the single-line form it
+# replaced.
+grep -Fq 'regionalModel.invalidate("time");' "$system_model"
 grep -Fq 'onInvalidated: regionalModel.invalidate("locale")' "$system_model"
 grep -Fq 'regionalModel.invalidate("");' "$system_model"
 # The old PR #33 regional state/functions lived directly on this model --
@@ -401,5 +411,40 @@ grep -Fq 'property string clockText: ""' "$system_pane"
 grep -Fq 'objectName: "systemLocalTime"' "$system_pane"
 grep -Fq 'function clockPanelText(): string' "$shell_qml"
 grep -Fq 'function clockSettingsText(): string' "$shell_qml"
+
+# Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation):
+# the information/storage/security/diagnostics card and Health navigation.
+information_controls=$repo/config/quickshell/settings/SystemInformationControls.qml
+test -f "$information_controls"
+grep -Fq 'required property var model' "$information_controls"
+grep -Fq 'signal revealRequested(var target)' "$information_controls"
+grep -Fq 'onActivated: root.model.openHealth()' "$information_controls"
+grep -Fq 'SystemInformationControls {' "$system_pane"
+grep -Fq 'informationControls.revealFocusedControl();' "$system_pane"
+# D-5 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers):
+# firewalld/ufw/nftables are three distinct rows here, not upstream's single
+# "Firewall service" row -- read_firewall_status(kind) reports each
+# independently.
+for identifier in firewalld ufw nftables; do
+	grep -Fq "{id: \"$identifier\"," "$information_controls"
+done
+# health-open availability gating reads action.status, matching
+# parseSnapshot()'s actual field name for every action record (native or
+# information) -- not upstream's own action.availability.
+grep -Fq 'root.healthAction.status === "available"' "$information_controls"
+grep -Fq 'healthModel: systemHealthModel' "$shell_qml"
+grep -Fq 'targetScreen: settingsWindow.screen || settingsModel.targetScreen || root.activePanelScreen' "$shell_qml"
+grep -Fq 'onHealthOpened: settingsModel.close()' "$shell_qml"
+grep -Fq 'function systemManagementOpenHealth(): bool' "$shell_qml"
+grep -Fq 'function systemManagementFilesystemsCount(): int' "$shell_qml"
+# Recovery guidance must name Arch/Lyona tooling, never upstream's own
+# Fedora-specific package/rescue tools.
+if grep -qE 'dnf|rpm |Fedora|Anaconda' "$information_controls"; then
+	printf 'SystemInformationControls.qml must not reference Fedora tooling.\n' >&2
+	exit 1
+fi
+grep -Fq 'pacman -Qkk' "$information_controls"
+grep -Fq 'arch-chroot' "$information_controls"
+grep -Fq 'lyona-update rollback' "$information_controls"
 
 printf 'Quickshell system-management model contract: PASS\n'

@@ -34,6 +34,7 @@ Flickable {
     function revealFocusedControl() {
         regionalControls.revealFocusedControl();
         delegateControls.revealFocusedControl();
+        informationControls.revealFocusedControl();
     }
 
     // Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
@@ -501,6 +502,12 @@ Flickable {
                 + "owns update authorization and safe cancellation."
             color: Theme.menuMutedText
             wrapMode: Text.WordWrap
+        }
+
+        SystemInformationControls {
+            id: informationControls
+            model: root.systemManagementModel
+            onRevealRequested: target => root.reveal(target)
         }
 
         SectionLabel {

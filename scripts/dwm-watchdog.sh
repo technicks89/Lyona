@@ -11,12 +11,26 @@
 #     . "$script_dir/dwm-watchdog.sh"
 #
 # Defines run_bounded and run_parent_bound; sets nothing else.
+#
+# run_bounded honors a caller-set $bounded_foreground=1 (unset/0 otherwise,
+# preserving every existing caller's behavior) to keep a nested timeout in
+# the same process group as an encompassing one, rather than backgrounding
+# its own.
 
 run_bounded() {
 	duration=$1
 	shift
 	status=0
-	timeout --signal=TERM --kill-after=2 "$duration" "$@" || status=$?
+	# Sync Sprint 2 S2-03: a caller that is itself already running under a
+	# bounded, timeout-owned process group (dwm-system-management's
+	# read_information_process()) sets bounded_foreground=1 first, so this
+	# nested timeout stays inside that group instead of moving the X11/
+	# GSettings probe outside its cleanup boundary.
+	if [ "${bounded_foreground:-0}" = 1 ]; then
+		timeout --foreground --signal=TERM --kill-after=2 "$duration" "$@" || status=$?
+	else
+		timeout --signal=TERM --kill-after=2 "$duration" "$@" || status=$?
+	fi
 	if [ "$status" -eq 124 ]; then
 		printf 'operation timed out after %s seconds\n' "$duration" >&2
 	fi

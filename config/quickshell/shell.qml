@@ -191,6 +191,9 @@ ShellRoot {
 
     SystemManagementModel {
         id: systemManagementModel
+        healthModel: systemHealthModel
+        targetScreen: settingsWindow.screen || settingsModel.targetScreen || root.activePanelScreen
+        onHealthOpened: settingsModel.close()
     }
 
     readonly property string dpiStatePath: (Quickshell.env("XDG_RUNTIME_DIR") || "")
@@ -1046,6 +1049,13 @@ ShellRoot {
             return systemManagementModel.nativeConfirmationMessage;
         }
 
+        // Sync Sprint 2 S2-05 (#286): confirms opening the existing
+        // dwm-system-health view via the "health-open" action's fixed
+        // owner. openHealth() itself already checks the action is available.
+        function systemManagementOpenHealth(): bool {
+            return systemManagementModel.openHealth();
+        }
+
         // Sync Sprint 1 S1-03 (#261): one discovery model per native domain,
         // same phase:ready/failed/inactive shape as systemManagementDiscoveryStatus()
         // above (the update domain's own probe), for "time", "locale",
@@ -1054,7 +1064,9 @@ ShellRoot {
             const discovery = domain === "time" ? systemManagementModel.timeDiscovery
                 : domain === "locale" ? systemManagementModel.localeDiscovery
                 : domain === "accounts" ? systemManagementModel.accountDiscovery
-                : domain === "printers" ? systemManagementModel.printerDiscovery : null;
+                : domain === "printers" ? systemManagementModel.printerDiscovery
+                : domain === "storage" ? systemManagementModel.storageDiscovery
+                : domain === "security" ? systemManagementModel.securityDiscovery : null;
             if (discovery === null) return "";
             return discovery.phase + ":" + (discovery.ready ? "ready"
                 : discovery.failed ? "failed" : "inactive");
@@ -1097,6 +1109,11 @@ ShellRoot {
 
         function systemManagementRepositoriesCount(): int {
             return systemManagementModel.repositories.length;
+        }
+
+        // Sync Sprint 2 S2-05 (#286): same for the filesystem list (minor 2).
+        function systemManagementFilesystemsCount(): int {
+            return systemManagementModel.filesystems.length;
         }
 
         // Sync Sprint 1 S1-06 (#270): the shared ClockModel, not
@@ -1274,6 +1291,7 @@ ShellRoot {
     }
 
     SettingsWindow {
+        id: settingsWindow
         clock: clock
         settingsModel: settingsModel
         networkModel: networkModel

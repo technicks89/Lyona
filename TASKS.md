@@ -1,1142 +1,163 @@
 # Active Project Tasks
 
 `SPEC.md` is the product contract and `ROADMAP.md` defines phase order. This
-file contains implementation work only for the active roadmap phase. Phase 5
-completion evidence is recorded in `ROADMAP.md`'s Phase 5 "Completion
-Evidence" section and `CHANGELOG.md`.
+file contains implementation work only for the active roadmap phase. Phase 6
+completion evidence is recorded in `ROADMAP.md`'s Phase 6 "Completion
+Evidence" section, `docs/UPSTREAM-SYNC.md`, and `CHANGELOG.md`.
 
-## Active Phase: System Management
+## Active Phase: Arch Image and Release Qualification
 
-Phase 6 begins from the completed Personalization and Accessibility phase.
-Keep DWM, X11, Arch providers, runtime TOML files, and existing user-owned
-configuration compatible while adding the workflows below.
+Phase 7 begins from the completed system-management port (Phase 6). Its
+scope is narrower than the phases before it: the archiso profile
+(`archiso/packages.x86_64`, `archiso/pacman.conf`, `archiso/airootfs/`), the
+builder (`scripts/build-lyona-arch-iso.sh`), the unattended installer wizard
+(`archiso/airootfs/root/lyona-install.sh`/`lyona-postinstall.sh`), and
+`lyona-update`'s own check/apply/rollback path all already exist and are
+individually exercised by automated tests
+(`check-arch-packages`, `tests/test-arch-iso-builder.sh`,
+`tests/test-lyona-update.sh`, `tests/test-install-preservation.sh`). What
+Phase 7 actually closes is the gap `docs/RELEASING.md` already states plainly:
+*"This build has been verified to produce a bootable ISO on Arch Linux, but
+it has not been boot-tested end-to-end on real hardware or in a VM."* That
+sentence — real boot, real install, real upgrade/rollback, on real or
+virtualized Arch hardware — is Phase 7's actual remaining work. It cannot be
+finished from this sandbox: there is no KVM/VM tooling, GPU, or physical
+machine available here, and `docs/RELEASING.md` itself requires disposable
+VM/ISO qualification to happen outside `/tmp` and outside this kind of
+throwaway environment. Every item below is written to be carried out by
+whoever has that hardware, using the acceptance criteria and existing
+automated coverage as the bar.
 
-lyona's own update path (`UPDATE-001…003`, `docs/P6-UPDATE-*.md`) — solving a
-different problem, updating lyona itself via signed release tarballs, than
-Arch system-package updates and regional/account/printer management — is
-**done** (merged `3c8adb2`, `d489f1f`, `fdb0995`). That was a prerequisite,
-not the whole of Phase 6: the active work is now the upstream-ported
-system-management work itself, tracked as its own nine-phase sequence in
-`docs/UPSTREAM-SYNC.md`'s "The system-management port" section (Arch package
-updates, timezone/NTP/locale, accounts, printers, software sources). The two
-efforts meet at exactly one point: UPDATE-003 laid out the Settings → System
-pane so an "Arch packages" group can be added beside the "lyona" group
-without rework — that "later" is `docs/UPSTREAM-SYNC.md`'s Sync Phases 3 and 7.
+**Open questions this first-pass breakdown does not resolve** (need your
+input, not a guess):
 
-Keep Phase 6 reviewable through these ordered boundaries. Finish, validate,
+- Is legacy BIOS an actual target, or is UEFI-only acceptable long-term?
+  `docs/RELEASING.md` currently states plainly that the wizard "cannot boot
+  BIOS/legacy systems" and only offers a manual `archinstall` fallback for
+  that case — Phase 7's own ROADMAP wording ("legacy BIOS where supported")
+  already hedges on this, but doesn't say which way.
+- Which specific hardware and VM targets actually matter for the matrix
+  (ARCH-004 below)? The ROADMAP names categories (UEFI, common display
+  configs, audio, networking, suspend, NVIDIA) but not concrete machines/VM
+  configurations to qualify against.
+- Is there real NVIDIA hardware available to qualify the opt-in driver path
+  against, or does that stay a documented, unqualified limitation for this
+  release?
+
+Keep Phase 7 reviewable through these ordered boundaries. Finish, validate,
 and merge each before starting the next:
 
-1. UPDATE-001 — install provenance. **Done.**
-2. UPDATE-002 — `lyona-update` check/apply/rollback with backup restore. **Done.**
-3. UPDATE-003 — Settings and Control Center surfaces over that helper. **Done.**
-4. The upstream-ported system-management work (`docs/UPSTREAM-SYNC.md`'s Sync
-   Phases 1–9) — **active**, Sync Phase 1 below.
+1. ARCH-001 — archiso profile and package-manifest qualification against the
+   currently supported Arch release.
+2. ARCH-002 — first real boot/install qualification (the explicit
+   `docs/RELEASING.md` gap above).
+3. ARCH-003 — installation, upgrade, migration, and rollback path
+   qualification on a real installed system.
+4. ARCH-004 — VM/hardware matrix and release-notes limitation statements.
 
-### UPDATE-001: Install Provenance
+### ARCH-001: Archiso Profile and Package-Manifest Qualification
 
-- [x] Add a system-scope provenance record (`/etc/lyona-release`, written by
-  `make install-system`) and a user-scope one
-  (`$XDG_STATE_HOME/lyona/install.state`, written by `make install-user`),
-  each stamped last — as `stamp-system`/`stamp-user`, the final recipe line in
-  each target — so a failed install never claims success.
-- [x] Add `scripts/lyona-version` — a read-only, versioned-protocol reader
-  (`status`, `status --json`, `print`) that degrades safely: a missing record
-  reads as `defaults`; a symlinked, wrong-owner, oversized, or
-  group/other-writable one reads as `unavailable` and is never read through
-  or rewritten; a malformed one is preserved byte-for-byte.
-- [x] Converge the ISO and existing-system install paths: the ISO build's own
-  commit stamp (`/etc/lyona-iso-release`) now carries through
-  `archiso/airootfs/root/lyona-postinstall.sh` into the target's
-  `LYONA_SOURCE=iso`/`LYONA_COMMIT` (passed as `make` arguments, not relied on
-  through `sudo`'s environment, which does not preserve it by default),
-  instead of every ISO-installed machine recording `unknown`. The live
-  medium's own `/etc/lyona-iso-release` is also copied onto the target
-  unchanged, so it keeps recording which *image* built the machine after
-  later updates move `/etc/lyona-release` on.
-- [x] `install.sh`'s completion banner reports the version `lyona-version
-  print` actually recorded, not an assumed one.
+- [x] `archiso/packages.x86_64`/`archiso/pacman.conf` exist and
+  `dwm_packages arch required|desktop|iso` (`scripts/dwm-packages.sh`) stays
+  in sync with them — `check-arch-packages` (67 packages, passing in this
+  sandbox as of 2026-09-19).
+- [x] `scripts/build-lyona-arch-iso.sh --profile-only` stages the branded
+  profile and stamps `VERSION`/commit/label into every required field without
+  needing root or `mkarchiso` — `tests/test-arch-iso-builder.sh` (passing in
+  this sandbox as of 2026-09-19).
+- [ ] Run the real (non-`--profile-only`) build on an Arch host with
+  `archiso` installed (`sudo scripts/build-lyona-arch-iso.sh --output
+  release/`) and confirm `mkarchiso` itself resolves every package in the
+  current official repositories without a missing/renamed/moved package —
+  this sandbox has never actually invoked `mkarchiso`, only the staging step.
+- [ ] Confirm the NVIDIA opt-in path in `lyona-install.sh`/
+  `lyona-postinstall.sh` (`LYONA_NVIDIA_DRIVER=1`) actually installs a working
+  proprietary driver stack against the current Arch `nvidia`/`nvidia-dkms`
+  packages, not just that the flag is threaded through correctly.
+- [ ] Re-validate the `archinstall` JSON schema in `lyona-install.sh` against
+  whatever `archinstall` version the current `releng` profile actually pulls
+  in — `docs/RELEASING.md` already flags this as version-sensitive and known
+  to have been wrong for at least one prior `archinstall` release.
 
 Acceptance:
 
-- `lyona-version status` reports `available`/`consistent yes` after a fresh
-  install where the system record, user record, and `dwm -v` all agree. —
-  **Met**, `tests/test-lyona-version.sh`.
-- A half-applied install (mismatched system/user/binary versions) reports
-  `consistent no` naming the differing values, not a false `available`. —
-  **Met**, `tests/test-lyona-version.sh`.
-- A missing, malformed, symlinked, or world-writable record degrades to its
-  own honest state without crashing the helper or being rewritten. — **Met**,
-  `tests/test-lyona-version.sh`.
-- A failed `install-system`/`install-user` writes no stamp, and re-running an
-  install replaces rather than appends. — **Met**,
-  `tests/test-install-preservation.sh`.
+- A real `mkarchiso` run on a current Arch host produces
+  `lyona-VERSION-x86_64.iso` with no unresolved package and a correct
+  `/etc/lyona-iso-release` stamp (checksum, label, commit, build date all
+  present and correct).
+- The NVIDIA opt-in path is proven against real NVIDIA hardware or stated as
+  an explicit, unqualified limitation in release notes — never silently
+  assumed to work.
 
-### UPDATE-002: `lyona-update` Helper
+### ARCH-002: First Real Boot and Install Qualification
 
-- [x] Ship `lyona-update check|apply|rollback|backups`, staging to
-  `$XDG_STATE_HOME/lyona/updates/<version>/`, verifying a release tarball's
-  SHA-256 against the GitHub release asset digest before unpacking, and never
-  swapping the live tree in place. — **Met**, `scripts/lyona-update`,
+- [ ] Boot the built ISO in a KVM virtual machine (per `docs/RELEASING.md`'s
+  own instruction), run `lyona-install` to completion against a UEFI target,
+  and reboot from the installed virtual disk.
+- [ ] Verify LightDM presents a session, dwm starts, and the managed
+  Quickshell shell (panel, Settings, Control Center) comes up without manual
+  repair.
+- [ ] Verify the manual fallback path (boot the ISO, run `archinstall`
+  directly, then `/root/lyona-postinstall.sh` against the mounted target)
+  produces the same working result as the wizard path, at least once.
+- [ ] Record the source ISO checksum, firmware mode, architecture,
+  package-resolution result, first-boot result, and any untested hardware —
+  `docs/RELEASING.md`'s own qualification-recording instruction.
+
+Acceptance:
+
+- At least one full wizard-path boot→install→reboot→working-desktop cycle is
+  recorded, on UEFI, in a VM, with the exact evidence `docs/RELEASING.md`
+  asks release notes to carry.
+- The ISO is not treated as release-qualified (per `docs/RELEASING.md`'s own
+  explicit statement) until this item is done at least once.
+
+### ARCH-003: Installation, Upgrade, Migration, and Rollback Qualification
+
+- [x] `lyona-update check|apply|rollback|backups` is unit-tested end to end
+  (staged tarball verification, no in-place swap, backup restore) —
   `tests/test-lyona-update.sh`.
-- [x] Reuse `scripts/dev-sync-install.sh`'s existing backup/verify machinery
-  (`backup_live_install()`, `verify_install()`, `verify_tree()`,
-  `runtime_verify()`) rather than rebuilding it, and add the missing restore
-  path so `rollback` actually reads a backup back — provably from a bare TTY
-  with no desktop running (falls back from `pkexec` to `sudo` when no
-  graphical session/agent is reachable). — **Met**: a
-  `DEV_SYNC_INSTALL_LIB_ONLY`/`DEV_SYNC_INSTALL_REPO_DIR` sourcing guard added
-  to `dev-sync-install.sh` (its own direct-invocation behavior unchanged,
-  `tests/test-dev-sync-install.sh`); `scripts/lyona-update-root`'s
-  `restore-system` verb accepts either `PKEXEC_UID` or `SUDO_UID`. The
-  power-loss-mid-install and bare-TTY scenarios themselves need the
-  disposable-VM pass in `docs/P6-UPDATE-HELPER.md`'s Verification section —
-  no root is available to exercise them in the automated suite.
-- [x] One confirmed privileged step (the existing `${PREFIX}/libexec/lyona`
-  polkit pattern) for `make install-system` alone; everything else — check,
-  download, verify, build, stage — runs unprivileged. Declining leaves a
-  staged, verified, uninstalled update and a non-zero exit, never a
-  half-applied system. — **Met**, `scripts/lyona-update-root`,
-  `config/polkit/com.lyona.update.policy`; the "declined" path is exercised
-  in `tests/test-lyona-update.sh` (no trusted root-owned helper exists in the
-  unprivileged test sandbox, which is itself the natural "unavailable" case).
-  Hardened after review: the privileged helper originally ran `make -C
-  <staging-dir> install-system` against a directory the invoking user could
-  still write to at that point — a Makefile/`config.mk` executes arbitrary
-  shell during GNU Make's own variable expansion (`$(shell ...)`), not only
-  through the recipe someone thinks they're invoking, so this was arbitrary
-  root code execution behind an "Install a lyona update" auth prompt. Fixed
-  by having `install-system release` re-verify the tarball's SHA-256
-  immediately before use, then extract, rebuild, and install from a fresh
-  root-owned-only scratch directory the invoking user has never had write
-  access to (closing the verify-then-mutate window down to nothing, and
-  ensuring the binary every user on the machine runs is one root itself
-  built from verified source, not a copy the invoking user could have
-  swapped after their own unprivileged build finished). `restore-system` had
-  the same shape (`tar -xpf` onto `/` from a manifest and checksum both
-  living in the same user-writable backup directory) and now validates every
-  archive member — path, type, and mode — before extracting: the path must
-  fall under a fixed set of managed locations (no `..` or absolute escape),
-  the type must be a regular file or directory (never a symlink, hardlink,
-  device, FIFO, or socket, any of which GNU tar preserves and creates by
-  default when run as root), and the mode must carry no setuid, setgid, or
-  sticky bit (a setuid-root `dwm` is a root shell for every user on the
-  machine, since dwm can spawn arbitrary configured commands). Verified
-  against a small harness covering a legitimate backup plus each rejected
-  shape (symlink, hardlink, setuid, FIFO, a nested path under a directory
-  that should only ever be flat, and a path outside every managed prefix) —
-  the legitimate case is accepted and every hostile shape is refused with a
-  specific reason. `--from-checkout` (`install-system checkout`) is
-  unaffected — it carries the same trust level as running `sudo make
-  install-system` directly from a developer's own checkout, not a weaker one
-  introduced by going through `lyona-update`.
-- [x] `check`/`apply` support a channel (`stable`/`preview`) recorded in
-  `~/.config/lyona/update.conf`, seeded but never overwritten. — **Met**,
-  `tests/test-lyona-update.sh`.
+- [x] A repeated `make install`/`install-user` preserves existing user
+  configuration and provenance stamps rather than clobbering them —
+  `tests/test-install-preservation.sh` (passing in this sandbox as of
+  2026-09-19).
+- [ ] Qualify `lyona-update apply` and `lyona-update rollback` against a real
+  previous release tarball on a real installed system (VM or hardware), not
+  just the test harness's synthetic fixtures — confirm user data and
+  managed-configuration ownership survive an actual version-to-version
+  upgrade and a subsequent rollback.
+- [ ] Qualify the existing-system installer (`install.sh`) against a
+  pre-existing, non-lyona Arch install with real user data present, per
+  `SPEC.md`'s existing-system installer contract.
 
 Acceptance:
 
-- An interrupted `apply` leaves a mixed tree recoverable by `rollback`, never
-  a silent claim of success — the provenance stamp from UPDATE-001 is written
-  last, after `rollback` re-verifies. — Ordering is correct by construction
-  (backup before any write, stamp last, per the nine-step sequence in
-  `docs/P6-UPDATE-HELPER.md`); the actual power-loss/recovery run needs the
-  disposable-VM pass, not covered by the unprivileged automated suite.
-- A downgrade or offline `check` degrades explicitly (`apply --file PATH`,
-  `--allow-downgrade`) rather than failing unhelpfully. — **Met**,
-  `tests/test-lyona-update.sh`.
-- Preservation carries over unweakened: everything `tests/test-install-preservation.sh`
-  already guards (`config.h`, `~/.config/lyona/*.toml`, symlinked config
-  directories, settings-helper-owned files) survives an update the same way
-  it survives a fresh install. — The preservation machinery itself is reused
-  unmodified (`make install-user`, `dev-sync-install.sh`'s verify functions);
-  a full `apply`-driven end-to-end preservation run requires real privilege
-  and is part of the disposable-VM pass, not the automated suite.
+- A real upgrade-then-rollback cycle on an installed system leaves the
+  system in the exact pre-upgrade state the unit tests already assert in
+  isolation.
+- `install.sh` on a real pre-existing Arch system does not lose or silently
+  overwrite user data or configuration outside its documented, owned paths.
 
-### UPDATE-003: Settings and Control Center Surfaces
+### ARCH-004: VM/Hardware Matrix and Release-Notes Limitations
 
-- [x] Add a "lyona" group to Settings → System backed by `lyona-update`,
-  laid out so an "Arch packages" group can be added beside it later without
-  rework — that group is `docs/UPSTREAM-SYNC.md`'s Sync Phases 3 and 7, gated
-  on this boundary landing first. — **Met**: `SystemSettingsPane.qml` over
-  `UpdateModel.qml`, wired into the "system" section `SettingsModel.qml`
-  already reserved (alongside its existing `health`/`authorization`/
-  `administration` capabilities, now joined by a fourth `updates` capability
-  from `dwm-settings-provider`).
-- [x] Surface check/apply/rollback with visible confirmation, live progress
-  — **partially met**. Confirmation (naming the target version before
-  calling `apply()`), phase-by-phase progress surviving Quickshell's own
-  restart (via the new `update.status` file), and channel/backups/rollback
-  are all implemented and covered by `tests/test-quickshell-update-model.sh`.
-  **Cancellation is not implemented** — once `apply`/`rollback` is started
-  there is no way to interrupt it from the pane. `auto_apply` stays rejected
-  — no silent background updates; unattended updates need their own
-  specification.
-- [x] Rollback from within a broken session is explicitly out of scope for
-  this pane — if the desktop will not start there is no UI to click. Document
-  the TTY path (UPDATE-002) as the answer. — **Met**, `docs/src/updating.md`
-  and `README.md`'s Troubleshooting section both lead with the TTY path.
-  `rollback` now also restarts Quickshell itself when a desktop session is
-  present, so a live rollback from the pane actually takes effect.
+- [ ] Resolve the open legacy-BIOS question above, then qualify or
+  explicitly document it as unsupported.
+- [ ] Qualify common display configurations (single monitor at minimum;
+  multi-monitor if hardware is available — Phase 5's own real-hardware
+  multi-monitor qualification is still separately outstanding too, see
+  `ROADMAP.md`'s Phase 5 Completion Evidence).
+- [ ] Qualify audio, networking, and suspend/resume on at least one real or
+  virtualized target.
+- [ ] Qualify or explicitly limitation-document NVIDIA hardware (open
+  question above).
+- [ ] Write the release-notes "tested Arch release, architectures, X11
+  environments, known limitations" statement `docs/RELEASING.md` step 9
+  requires, from the actual results of ARCH-001 through ARCH-004 rather than
+  an assumed baseline.
 
 Acceptance:
 
-- The update surface never auto-applies without explicit confirmation. —
-  **Met**: `SystemSettingsPane.qml`'s `confirmVersion` gate, matching
-  `DisplaySettingsPane.qml`'s existing confirmation idiom for a privileged
-  action rather than inventing a new dialog.
-- Declining the privileged step leaves a staged, verified, uninstalled update
-  and a clear non-zero result, not a half-applied system. — **Met**, carried
-  over unchanged from UPDATE-002's `run_privileged` behavior; the pane
-  surfaces the CLI's own stderr as `message`.
-- Closing the pane leaves no resident scan, duplicate subscription, or
-  orphaned helper process. — `UpdateModel` uses no polling timer (only
-  `FileView` watches and one one-shot login-check `Timer` with
-  `repeat: false`, asserted by `tests/test-quickshell-update-model.sh`), so
-  there is nothing to leave running. Not independently exercised under Xvfb
-  in this environment (`xkbset` is unavailable in the sandbox this was built
-  in, matching the same pre-existing gap noted for `check-quickshell-settings-xvfb`
-  since Phase 5) — the extension to `tests/test-quickshell-settings-xvfb.sh`
-  (a stubbed `lyona-update`, IPC probes, and a real phase-progression check
-  through the stub's `apply`) is written and passes `check-shell`/
-  `check-format`, but has not itself been run end-to-end.
-
-### Sync Phase 1: System-Management Provider Decision, Contract, and Packaging
-
-Upstream: `#207`, `#209`, `#265`. Doc:
-`docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md`. Lands no user-visible behavior —
-it exists because the subsystem cannot be ported until one question is
-answered, and answering it later would mean rewriting whatever came before.
-
-- [x] **The core decision.** Adopt upstream's Python helper
-  (`scripts/dwm-system-management`, PackageKit over D-Bus via PyGObject's
-  `Gio`) largely as-is (Option A), rather than a POSIX-shell reimplementation
-  (Option B, rejected — the doc's own analysis found the highest-risk part of
-  the whole port, a crash-safe atomic journal and async D-Bus reads, is
-  exactly what shell is worst at) or a read-only shell-only subset (Option C).
-  — **Met**: recorded in `docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md`'s
-  `Decision:` line, 2026-09-08.
-- [x] Write `docs/P6-SYSTEM-MANAGEMENT.md`, Lyona's own contract, adapted from
-  upstream's real 2,492-line Fedora document (fetched and read in full, not
-  worked from summary) with Arch substitutions applied throughout. — **Met**,
-  349 lines — deliberately condensed relative to upstream: the exhaustive
-  D-Bus retry/timeout/byte-budget detail belongs to each Sync Phase document
-  that implements that piece, not to this contract, which fixes the protocol
-  grammar, the protocol-minor staging table, the authorization/lifecycle
-  rules, and the Arch interface substitutions. D-3 and D-4 carried through as
-  still open, not resolved by writing it.
-- [x] New `arch:system-management` / `arch:system-management-optional`
-  package profiles (`python`, `python-gobject`, `packagekit`,
-  `accountsservice`, `cups` required; `system-config-printer`, `arch-audit`
-  optional), wired into `arch:recommended`/`arch:optional`, `install.sh`.
-  — **Met**, `tests/test-arch-packages.sh` (now also asserting these two
-  profiles against live `pacman -Si`, not just `required`/`desktop`)
-  confirms all packages are real and installable: "Arch required, desktop,
-  and system-management package map: PASS (67 packages)".
-  **`archiso/packages.x86_64` deliberately does not include them** —
-  correcting the doc's own "mirror the required half" instruction: that file
-  is a strictly `required + desktop + iso` derivation, test-enforced by
-  `check-archiso` (`tests/test-arch-iso-builder.sh`), and does not carry
-  `desktop-optional`'s packages either. The live ISO installs the target
-  system via `pacstrap`, not PackageKit; these are target-system runtime
-  dependencies for a Settings feature, the same category as
-  `desktop-optional`'s thunar/gvfs, not ISO bootstrap requirements. Manually
-  adding them broke `check-archiso`, caught and reverted.
-  `scripts/check-deps.sh` reports the new packages automatically — it walks
-  the same aggregate profiles, no separate edit was needed there.
-- [x] `Commands.qml`: `systemManagementCommand()` and
-  `terminatingCheckedCommand()` (the latter forwards surface-close signals to
-  a long-running helper instead of orphaning it, porting `dd55e585`'s
-  corrected mktemp/trap ordering, not the original's). — **Met**,
-  `check-quickshell-qml` clean. **Bug found and fixed**: the ported script's
-  `ulimit -f 16384` counts 512-byte blocks, not bytes — that was an 8 MiB
-  cap, not the intended 16 KiB one. Corrected to `ulimit -f 32`
-  (32 * 512 = 16384 bytes). The arithmetic is unambiguous (POSIX/bash's
-  documented unit for `ulimit -f`), but actual enforcement is unverified —
-  tested directly in this sandbox and `RLIMIT_FSIZE` is not enforced here at
-  all (`dd` wrote 20000 bytes through a 16384-byte limit with no error),
-  which looks like a container/sandbox restriction on that rlimit rather
-  than a flaw in the fix.
-- [x] `scripts/dwm-settings-provider`: replace the placeholder `system
-  administration` record with a real `dwm-system-management` availability
-  check. — **Met**, with one deviation from the doc's literal diff, disclosed
-  here: the doc names this capability `updates`, but that id was already
-  taken by UPDATE-003's `lyona-update` capability in the same `system`
-  section. Used `package-updates` instead (label "System updates", matching
-  the doc) to avoid two capabilities silently colliding on one id.
-- [x] `docs/SETTINGS-CAPABILITIES.md`: row for the new operations, and the
-  upstream `#207` correction applied — **`unsupported` is a capability
-  status, not an operation class.** — **Met**, both the "System and
-  diagnostics" summary row and the "System Health and Administration"
-  operations table corrected; a not-yet-implemented capability is *omitted*
-  by selecting the highest fully implemented protocol minor, never
-  advertised as `unsupported`.
-- [x] `Makefile`: `INSTALL_COMMANDS`, `check-system-management`,
-  `check-quickshell-system-management`. — Landed in **Sync Phase 2** as
-  planned here: `INSTALL_COMMANDS` gained `scripts/dwm-system-management` and
-  `check-system-management` now runs the new test suite.
-  `check-quickshell-system-management` is **not** registered yet — there is
-  still no QML consumer (`SystemManagementModel.qml` etc. do not exist until
-  Sync Phase 3), so there is nothing for that target to run against.
-
-Acceptance: `make check-shell check-format check-quickshell-qml
-check-arch-packages check-install check-settings` all pass — **Met**. The
-manual on-a-real-CachyOS-install verification (`pacman -Si packagekit`,
-`busctl --system introspect ... VersionM...`, importing `PackageKitGlib` via
-`python3 -c`) is unverified in this sandbox — no live PackageKit/D-Bus
-session here — and remains a real prerequisite to confirm before Sync Phase 2
-starts, per the doc's own "If the last two fail, stop" instruction.
-**That gate was not cleared before Sync Phase 2 began** — the project owner
-directed moving on regardless; Sync Phase 2's own acceptance section below
-carries the same unverified-live-daemon caveat forward rather than treating
-it as resolved.
-
-### Sync Phase 2: Bounded Read-Only Update Snapshot
-
-Upstream: `#208` (`bd87fd3c`, the actual ported baseline — see the
-correction below). Doc: `docs/SYNC-P2-UPDATE-SNAPSHOT.md`. Delivers
-`scripts/dwm-system-management snapshot`: one bounded, read-only,
-machine-readable protocol-minor-0 snapshot of pending Arch updates. No
-mutation, no journal, no root, no polkit prompt.
-
-- [x] Port `scripts/dwm-system-management` (bounds/codecs, the
-  `UpdateBackend` protocol, `PackageKitBackend`, `build_snapshot`, `main`).
-  — **Met**, ~830 lines. **Correction to the phase document, found during
-  implementation**: fetched `#208`'s actual commit (`bd87fd3c`) rather than
-  trusting the doc's line-number citations, and confirmed none of "the four
-  Fedora couplings" (§3a–§3c: `read_fedora_identity()`,
-  `require_mutation_safe()`, the RPM version gate, Fedora-branded operator
-  strings) exist in that baseline at all — they belong to later upstream
-  commits coupled to the recovery journal and mutation dispatch, which this
-  phase explicitly excludes. The doc's "with `#232`/`#241` folded in" framing
-  was also checked directly against each commit's own patch and found
-  overstated: those two commits are 19 and 121 lines respectively; the
-  5,752-line file size at `#241` comes almost entirely from unrelated
-  intervening PRs (the journal/mutation work), not from them. Full reasoning
-  recorded in `docs/SYNC-P2-UPDATE-SNAPSHOT.md` section 3's correction note.
-- [x] §3d (`#232`'s DNF5 install-preview fix) — **not ported**, recorded as a
-  deliberate exclusion in `docs/P6-SYSTEM-MANAGEMENT.md`. There is no live
-  PackageKit/alpm daemon in this sandbox to confirm whether the alpm backend
-  ever needs the same install-vs-update reconciliation DNF5 does; the
-  snapshot layer keeps `#208`'s stricter pre-`#232` check.
-- [x] §5 security severity — no code change needed; PackageKit's `InfoEnum`
-  vocabulary is shared across backends, not Fedora-specific, so every update
-  already reports `unknown` severity honestly on Arch without any porting
-  work.
-- [x] §5 restart-requirements heuristic — **implemented**
-  (`_restart_heuristic_hint()`), applied only when a transaction succeeds
-  with pending updates but zero `RequireRestart` signals were seen at all.
-  Maps kernel/`systemd`/`glibc`/`dbus` updates to the existing `system`
-  restart value and everything else to `unknown` — never a fabricated
-  `none`. 5 dedicated test cases, including that a real backend
-  `RequireRestart` signal is never overridden by the heuristic.
-- [x] `snapshot_generation()`'s domain-separation seed renamed from
-  upstream's `dwm-titus-update-plan-v1` to `lyona-update-plan-v1` — an
-  internal, non-user-visible constant; test expectations recomputed and
-  hardcoded the same way upstream's test does (not derived at test time,
-  to also catch regressions in the hashing algorithm itself).
-- [x] `tests/test-system-management.py` — ported from upstream's `#208` test
-  file (354 lines) nearly unchanged (it had no Fedora/RPM cases to discard —
-  those belong to the same later commits as §3a/§3b), plus 5 new cases for
-  the restart heuristic. — **Met**, 19/19 passing.
-- [x] `Makefile` registration (`INSTALL_COMMANDS`, `check-system-management`)
-  — see Sync Phase 1's now-checked item above.
-
-Acceptance:
-
-- `make check-system-management` (19 unit tests against fixture backends) and
-  `make check-install` both pass — **Met**.
-- The snapshot is genuinely read-only and never prompts for privilege — **Not
-  verified end-to-end**: no live PackageKit daemon in this sandbox
-  (`packagekit`'s `PackageKitGlib` typelib is not installed here, though
-  `python-gobject` itself is). What *was* verified directly: running
-  `scripts/dwm-system-management snapshot` for real exercised the guarded
-  lazy-import failure path exactly as designed — a complete, correctly
-  degraded `missing-provider`/`unavailable` protocol snapshot, exit `0`, no
-  traceback. The real-daemon checks (`sudo diff -r /var/lib/pacman/sync`
-  before/after, `db.lck` absence, no polkit prompt, real `package_id`
-  four-field shape, whether `RequireRestart` populates at all) still need a
-  CachyOS install with `packagekit` actually running — carried forward as
-  the same open prerequisite Sync Phase 1 already recorded, not newly
-  introduced here.
-- Bounds and degradation (network down, `packagekit` uninstalled,
-  `python-gobject` uninstalled, oversized/malformed PackageKit data, several
-  hundred pending updates) — **Met** for everything exercisable without a
-  live daemon: covered by the fixture-backed unit tests
-  (`test_source_failures_preserve_the_complete_protocol_shape`,
-  `test_record_count_limit_discards_the_whole_inventory`, the identity/
-  classification rejection tests) and the real `missing-provider` run above.
-
-### Sync Phase 3: Update Model and the System Settings Pane
-
-Upstream: `#209`, `#210`. Doc: `docs/SYNC-P3-SYSTEM-PANE.md`. First
-user-visible behavior of the whole port: Settings → System gains a real,
-read-only Arch update status pane alongside the existing `lyona-update`
-group UPDATE-003 already built there.
-
-- [x] `config/quickshell/systemmanagement/SystemManagementModel.qml`
-  (new, ~250 lines) — a `Scope` root model instantiated once in `shell.qml`,
-  following the same `settingsVisible`/`openSettings()`/`closeSettings()`
-  lifecycle every other Settings-only model already uses (`NetworkModel`,
-  `AppearanceModel`, `PanelSettingsModel`, …): never polled, the snapshot
-  fetch is gated on `settingsVisible`, and closing the section stops any
-  fetch this model owns. — **Met**.
-- [x] Strict, all-or-nothing snapshot parsing, per the doc's "parser rules
-  that must not be softened": a missing/unsupported
-  `system-management-protocol` header or a snapshot without a trailing
-  `complete\tsnapshot` discards the whole result rather than rendering a
-  partial one; every mandatory provider/state/action ID for protocol minor 0
-  must be present; list identity (duplicate package IDs) and a record-count
-  cap are re-checked model-side; every enum field (`validStatus`,
-  `validSeverity`, `validInstallability`, `validRestart`, `validPlanAction`,
-  `validErrorCode`) is checked against an explicit allowlist rather than
-  passed through to the UI. — **Met**, exercised end-to-end by the new
-  nested-X11 test (below), not just by source inspection.
-- [x] `SystemSettingsPane.qml`: added a "System updates" section (provider/
-  recovery status line, a responsive `GridLayout` of update-summary/
-  last-refresh/restart-guidance `StatusCard`s, the pending-update and
-  dependency-preview lists, and the read-only caption the doc specifies —
-  *not* Sync Phase 7's mutation-capable wording) — **coexisting** with, not
-  replacing, the pre-existing "lyona" group from UPDATE-003 and the generic
-  `system health`/`system authorization` capability rows. — **Met**. The
-  `additionalCapabilities` filter also now excludes `package-updates`
-  (Sync Phase 1's capability id), which gets this dedicated section instead
-  of falling through to the generic list.
-- [x] `SettingsModel.qml` / `SettingsWindow.qml` / `shell.qml` wiring —
-  **Met**: `systemManagementModel` property, open/close pairing in
-  `activateSection`, a `refresh()` hook, `required property var` threading
-  through `SettingsWindow`, one `SystemManagementModel {}` instantiation in
-  `shell.qml`, `import qs.systemmanagement`, and the four IPC probes the doc
-  specifies (`systemManagementUpdateCount`, `systemManagementPackageChangeCount`,
-  `systemManagementSnapshotState`, `systemManagementRestartState`).
-- [x] `tests/test-quickshell-system-management.sh` (new) — a grep-based
-  static contract test matching the existing `test-quickshell-update-model.sh`
-  idiom (this sandbox cannot run a live Quickshell session in every context,
-  so source-level contract checks are the first line of coverage): lifecycle
-  wiring, all-or-nothing parsing markers, the restart-heuristic vocabulary,
-  no privilege escalation from the pane/model, no mutation entry point yet,
-  and the capability-filter coexistence rule. — **Met**, 
-  `check-quickshell-system-management` passing.
-- [x] `tests/test-quickshell-system-management-xvfb.sh` (new) — a real
-  nested-X11 test (Xvfb + `dwm` + `quickshell`, following
-  `test-quickshell-large-surfaces-xvfb.sh`'s skeleton) with a stubbed
-  `dwm-system-management` emitting one pending `linux-cachyos` update (to
-  exercise the Sync Phase 2 restart heuristic's `system` branch) and one
-  dependency-preview row. **Actually run in this sandbox and passing** —
-  unlike the pre-existing `check-quickshell-settings-xvfb` gap (`xkbset`
-  unavailable), this test needs no input/accessibility surface, so it is
-  real, executed verification, not a written-but-unexercised test: it opens
-  Settings, selects "system", polls the snapshot to `loaded`, asserts the
-  parsed update/package-change counts and the restart state via the new IPC
-  probes, then re-triggers a (deliberately slowed) fetch and immediately
-  navigates away, polling to confirm no `dwm-system-management` process
-  survives past its section closing. — **Met**,
-  `check-quickshell-system-management-xvfb` passing end-to-end.
-
-Acceptance:
-
-- `make check-quickshell-qml check-quickshell-system-management
-  check-quickshell-system-management-xvfb check-settings` all pass —
-  **Met**, and unlike every other Sync Phase so far, the xvfb leg is real
-  executed coverage in this sandbox, not a documented gap.
-- `make check-quickshell-large-surfaces-xvfb` (which exercises the shared
-  `shell.qml`/`SettingsWindow.qml` surface this phase modified) still passes
-  with closed-shell CPU at baseline — **Met**, confirming the new model adds
-  no idle polling.
-- Read-only claim: the pane never calls a mutation entry point — **Met** by
-  construction (no `installAll`/`cancelUpdate`/`refreshMetadata` function
-  exists yet) and asserted by the static contract test. The doc's own manual
-  CachyOS-install checks (open with updates pending vs. none, behavior with
-  `packagekit` uninstalled on a live system) remain unverified here, carried
-  forward from Sync Phase 1/2's same open prerequisite.
-
-### Sync Phase 4: Live Discovery Monitoring
-
-Upstream: `#237`, `#238`, `#260`. Doc: `docs/SYNC-P4-DISCOVERY-EVENTS.md`.
-Replaces "click Reload status and hope" with a bounded subscription: while
-the System pane is open, the helper watches PackageKit's manager signals and
-tells the shell when to re-read. **The last read-only Sync Phase** —
-mutation and the recovery journal are next.
-
-- [x] `scripts/dwm-system-management`: `UpdateEventMonitor`, `watch_update_events()`,
-  the `watch-updates` command — ported from upstream's real `a30f5fed`
-  (#238) source (fetched and read in full, not worked from the doc's
-  paraphrase). Distro-neutral: it only subscribes to PackageKit manager
-  signals over raw `Gio` D-Bus, never touches `PackageKitGlib`'s
-  alpm-vs-dnf-backend-specific transaction machinery. — **Met**,
-  `check-system-management` (30 tests, up from 19 — 10 new
-  `UpdateEventMonitorTests`, including a real `dbus-run-session`
-  integration test against `tests/fixtures/system-update-events-bus.py`,
-  actually run in this sandbox, not just written).
-- [x] `config/quickshell/systemmanagement/SystemDiscoveryCycle.js` (new, 71
-  lines) — the pure two-round (initial/settling) cycle state machine,
-  ported verbatim. — **Met**. Directly unit-tested (not only through the
-  UI, per the doc's own instruction) with 16 cases via `qmltestrunner`
-  (Qt's official QML `TestCase` harness, already a hard dependency of this
-  shell — `qmltestrunner` ships with `qt6-declarative`, which `quickshell`
-  itself depends on). **Environment gotcha found and fixed**: this Arch dev
-  host has both `qt5-declarative` and `qt6-declarative` installed, and the
-  plain `qmltestrunner` resolved via `PATH` is the Qt5 build — a
-  *different* binary, not a symlink — which silently exits nonzero with
-  zero output on this file's Qt6-only `import QtQuick`/`import QtTest`.
-  The test script now targets `/usr/lib/qt6/bin/qmltestrunner` explicitly.
-- [x] `config/quickshell/systemmanagement/SystemProviderDiscovery.qml` (new,
-  ~200 lines) and `SystemUpdateDiscovery.qml` (new, 3 lines) — the
-  generic, five-domain-capable lifecycle ported directly from upstream's
-  `a6d65c08` (#260) refactored form, per the doc's own instruction not to
-  write an updates-only version first. Only `domain: "updates"` has a
-  helper behind it at this boundary; `time`/`locale`/`accounts`/`printers`
-  are Sync Phase 9. — **Met**.
-  **Correction to the phase document, found during implementation**: the
-  doc's "Lyona adaptation" instructed wrapping `monitor.command` in
-  `Commands.terminatingCheckedCommand(...)`. This is wrong for a streaming
-  event source and was caught by the xvfb test genuinely failing (the
-  snapshot never left `"idle"` once the fixture stub actually implemented
-  `watch-updates` as a real resident process instead of exiting
-  immediately) — both `checkedCommand` and `terminatingCheckedCommand`
-  redirect the wrapped command's stdout to a temp file and only `cat` it
-  once the child exits, which defeats live line-by-line streaming entirely
-  (`ready`/`changed` would only ever arrive as one batch at shutdown, after
-  `SplitParser` has nothing left to read incrementally). Fixed by using
-  `Commands.systemManagementCommand(action, args)` directly, unwrapped —
-  matching upstream's own code exactly. This carries no orphaning risk
-  either: `helperCommand`'s own script chain reaches the real helper via
-  `exec`, so this `Process`'s PID already *is* the helper, and
-  `monitor.signal(15)`/`monitor.signal(9)` reach it directly. Also fixed
-  along the way: a duplicate `onExited` handler tripped
-  `quickshell-qmllint` (`QProcess::ExitStatus` isn't exposed to it); removed
-  as genuinely redundant with the existing `onRunningChanged` handler, which
-  already covers every exit path.
-- [x] `SystemManagementModel.qml`: owns a `SystemUpdateDiscovery`, coalesces
-  reads through `take()`/`beforePublish()`/`complete()` rather than firing
-  one snapshot fetch per signal — a request arriving mid-fetch is recorded
-  (`snapshotPending`) and replayed exactly once. `openSettings()` /
-  `closeSettings()` now delegate to the discovery model instead of firing
-  an eager fetch directly. **Deliberate simplification**: upstream's
-  `Component.onCompleted: Qt.callLater(operationModel.requestSnapshot)`
-  (an eager read at whole-app startup, independent of the pane ever being
-  opened) was not ported — it exists to prewarm data before first open, but
-  it's tied to `operationModel` (Sync Phase 6+, not built yet), and adding
-  a bespoke prewarm call for this phase alone would contradict Sync Phase
-  3's own established "never polled, on-demand only while `settingsVisible`"
-  contract. The tradeoff: first-open latency now depends on how quickly the
-  monitor reaches `ready` (or `failed`) — up to 12 s in the pathological
-  case — instead of being masked by data fetched before the user ever
-  opened Settings.
-  **Bug found and fixed after review**: the relaunch-on-completion logic
-  originally lived in `finishSnapshot()`, called from
-  `StdioCollector.onStreamFinished` — which fires *before*
-  `Quickshell.Io.Process` updates `running` to `false`, and `Qt.callLater`
-  gives no ordering guarantee relative to that transition either. A queued
-  relaunch (or `discoveryModel`'s own `complete()`-triggered
-  `snapshotRequested` signal, which fires from the same call) could
-  therefore reach `requestSnapshot()` while the previous process was still
-  reported `running`. Reassigning `snapshotProcess.running` to `true` while
-  it is already `true` is a no-op, so the new read silently never launched
-  — and when the *old* process's real `runningChanged` eventually fired,
-  its `!root.snapshotAttempted` fallback path (guarded by a flag the new,
-  never-launched call had already reset to `false`) completed the *new*
-  cycle with the *old* process's exit. Fixed by moving all ownership
-  clearing and the relaunch trigger into `onRunningChanged`'s real
-  `!running` observation — the only point that observation is trustworthy
-  — leaving `finishSnapshot()` as pure cycle bookkeeping; `closeSettings()`
-  no longer clears `snapshotOwned` directly either, for the same reason.
-  Also added the explicit `snapshotProcess.running` guard in
-  `requestSnapshot()` itself (defense in depth: correct now that ownership
-  is gated properly, but keeps any future caller from reintroducing the
-  no-op-reassignment failure mode) and clear `snapshotProcess.cycleToken`
-  once a cycle completes. Verified by reverting to the pre-fix shape and
-  confirming the extended static contract test — which checks
-  `finishSnapshot()` never touches ownership/relaunch and
-  `onRunningChanged` is the sole place that does — fails against it, then
-  passes again with the fix restored.
-- [x] `SystemSettingsPane.qml`: surfaces `discoveryDetail` as a warning line
-  ("Connecting to update change notifications...", the settling-read
-  reconciliation message, or the failed-monitor message) — **Met**.
-- [x] `shell.qml`: `systemManagementDiscoveryStatus()` IPC probe — **Met**.
-- [x] `tests/test-quickshell-system-management.sh` (Sync Phase 3's static
-  contract test) updated for the new coalescing shape (the old
-  `if (!root.settingsVisible || snapshotProcess.running) return;` guard
-  moved into `requestSnapshot()`) and extended with Sync Phase 4 assertions
-  (cycle/discovery wiring, the unwrapped `monitor.command`, the 12 s/1.5 s
-  timers, `monitor.signal(15)`/`monitor.signal(9)`, the Python
-  `UpdateEventMonitor`/`watch_update_events` dispatch, and that the monitor
-  code never imports `PackageKitGlib`). — **Met**.
-- [x] `tests/test-quickshell-system-management-xvfb.sh` extended: the stub
-  `dwm-system-management` now implements `watch-updates` for real (emits
-  `ready`, then blocks on `SIGTERM` like the genuine helper does, rather
-  than exiting immediately) so the coalesced-read-via-discovery path is
-  exercised for real, not bypassed through the `failed` fallback. Verifies
-  `systemManagementDiscoveryStatus` reaches `idle:ready`, and — because the
-  monitor is now a genuinely long-running process instead of the bounded
-  snapshot fetch (whose `pgrep`-based liveness checks turned out unsound;
-  see Sync Phase 3's fix note) — a real `pgrep -f 'dwm-system-management
-  watch-updates'` check that confirms `stopMonitor()`'s
-  `signal(15)`-then-`signal(9)` sequence actually reaches and kills the
-  resident process when the Settings window closes. — **Met**, and actually
-  run in this sandbox: `check-quickshell-system-management-xvfb` passes,
-  including this new orphan-process assertion.
-
-Acceptance:
-
-- `make check-quickshell-qml check-system-management
-  check-quickshell-system-management check-quickshell-system-management-xvfb
-  check-quickshell-system-discovery-cycle` all pass — **Met**, and (unlike
-  every prior Sync Phase) every leg here is real executed coverage in this
-  sandbox: the Python monitor against a real private D-Bus session, the
-  pure JS state machine via `qmltestrunner`, and the full QML lifecycle via
-  a genuinely long-running Xvfb stub.
-- `make check-quickshell-large-surfaces-xvfb` still passes with closed-shell
-  CPU at baseline (0.50%, within the established threshold) — **Met**,
-  confirming the discovery monitor (a blocked `GLib.MainLoop`, per the doc)
-  adds no busy-polling.
-- The doc's remaining manual CachyOS-install checks (`pkcon refresh`
-  triggering a re-read live, PackageKit restart recovery via
-  `NameOwnerChanged`, a real `pacman -Syu` reaching `blocked` rather than a
-  read-per-signal storm) remain unverified here — no live PackageKit daemon
-  in this sandbox, the same open prerequisite carried since Sync Phase 1.
-
-### Sync Phase 5: Durable Operation Journal
-
-Upstream: `#211`–`#225`. Doc: `docs/SYNC-P5-OPERATION-JOURNAL.md`. Lands no
-user-visible behavior — the crash-durable journal Sync Phase 6 writes into.
-**Backfilled 2026-09-15**: this phase's code (`b164494`, "Sync p5 operation
-journal update", merged 2026-09-14) shipped without its `TASKS.md`/
-`CHANGELOG.md` entries, breaking the project's own tracking convention —
-see `docs/UPSTREAM-SYNC.md`'s "Phase 5 landed without its tracking entries"
-note. This entry is written from direct verification against the shipped
-`scripts/dwm-system-management` and `tests/test-system-management.py`, not
-from the plan document alone.
-
-- [x] Frame codec, directory chain, record codecs, locking, admission,
-  operation IDs (J1–J9) — **Met**. Verified: `JOURNAL_MAGIC`/frame-size/
-  payload-offset constants, the full vocabulary
-  (`JOURNAL_OPERATION_ACTION_KINDS`, `_STATES`, `_TERMINAL_STATES`,
-  `JOURNAL_ERROR_CODES`) ported verbatim; `JOURNAL_DIRECTORY_SUFFIX` renamed
-  to `("lyona", "system-management")` per the doc's one mandatory
-  substitution; `JOURNAL_LOCK_DEADLINE_SECONDS = 5`,
-  `JOURNAL_ACTIVE_ADMISSION_COMMITS = 12`, `JOURNAL_OPERATION_ID_ATTEMPTS = 4`
-  present with their derivation comments; `openat`-relative directory-chain
-  hardening (`open_journal_directory_chain`, `validate_journal_directory_chain`)
-  present. 161 pre-existing tests in `tests/test-system-management.py` pass.
-- [x] **The core decision, confirmed in shipped code.** Option A (adopt
-  upstream's Python helper) — `transaction_path` and
-  `JOURNAL_PACKAGEKIT_PATH_PATTERN` are kept unchanged (not renamed to
-  `transaction_ref`, which only Option C would need), and no `PacmanBackend`
-  class exists anywhere in the file. Matches `SYNC-P1`'s `Decision:` line
-  (2026-09-08). — **Met**.
-- [ ] **Gap found verifying the shipped code**:
-  `JOURNAL_RESTART_SESSION_STRENGTH` is missing the `unknown` member both
-  this phase's own doc and Sync Phase 2 require (`JOURNAL_RESTART_SYSTEM_STRENGTH`
-  has it; the session map does not). Not yet exercised by any code path —
-  becomes live when Sync Phase 6's restart-guidance fold needs to write an
-  `unknown` session-restart value. See
-  `docs/SYNC-P5-OPERATION-JOURNAL.md#unknown-must-be-a-legal-restart-value`
-  and `docs/SYNC-P6-UPDATE-EXECUTION.md#6-restart-guidance-folding`.
-
-### Sync Phase 6: Confirmed Update Execution and Recovery
-
-Upstream: `#226`–`#234`, `#231`. Doc: `docs/SYNC-P6-UPDATE-EXECUTION.md`.
-Turns the journal into a working execution owner: `updates-refresh` and
-`updates-install-all` actually run, stream bounded progress, can be
-cancelled, and survive a shell restart. Still CLI-only — Sync Phase 7 puts a
-button on it. Ported directly from upstream's real source at `c8585a80`
-(Sync Phase 5's end) → `aa326d59` (`#234`), fetched and diffed in full, not
-worked from the doc's paraphrase.
-
-- [x] `OperationStream`, `ObservedUpdateSummary`, `RecoverySnapshot`,
-  `read_recovery_snapshot()`, `build_managed_snapshot()`,
-  `recover_journal_active()`, `PackageKitMutation`,
-  `run_packagekit_mutation()` (E1–E6) — **Met**, ported verbatim (only the
-  `dwm-titus-update-observed-v1` digest domain-separator renamed to
-  `lyona-update-observed-v1`, matching the existing `snapshot_generation()`
-  rename convention).
-- [x] **E7 (`#232`, DNF5 install-preview correction) — excluded, per Sync
-  Phase 2's existing decision**, not a new Sync Phase 6 finding. Confirmed
-  the underlying PackageKit behavior (a simulated transaction can report an
-  `install` action for a newly-pulled dependency, not just `update` actions)
-  is general to PackageKit's `SIMULATE` role, not DNF5-specific — Lyona's own
-  `PLAN_INFO` already maps info code 12 to `"install"` — but Sync Phase 2's
-  `normalize_plan()` reconciliation was left at its pre-`#232` (stricter)
-  form pending live-daemon verification, and that decision stands unchanged
-  through this phase. Recorded in `docs/P6-SYSTEM-MANAGEMENT.md` already.
-- [x] `require_mutation_safe()` (E-adjacent, Lyona adaptation) — **Met**, per
-  `docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate`: the RPM/Fedora
-  backport gate (`packagekit_security_floor()`,
-  `_require_running_backport_identity()`, `read_fedora_identity()`) is
-  deleted outright, not ported — replaced with a direct check of the
-  daemon's own D-Bus `VersionMajor`/`VersionMinor`/`VersionMicro`
-  properties against `(1, 3, 5)`. New test coverage in
-  `PackageKitSafetyTests` (version-at-floor, below-floor, malformed-reply,
-  and call-failure-propagates-unwrapped cases) replaces upstream's
-  RPM/backport-mocking tests.
-- [x] `control_journal_target()`, `watch_journal_operation()`,
-  `cancel_journal_operation()`, `operation_control()`, `update_command()`,
-  and the `updates-refresh` / `updates-install-all GENERATION` /
-  `watch-operation OPERATION_ID` / `ack-operation OPERATION_ID` /
-  `updates-cancel OPERATION_ID` CLI commands (E8–E9) — **Met**, ported
-  verbatim including the "never fabricate success, never report a
-  possibly-admitted operation as rejected" `update_command()` error
-  handling.
-- [x] `PackageKitBackend` additions: `session_started()`, `create_mutation()`,
-  `_recovery_call()`, `cancel_operation()`, `probe_operation()`,
-  `operation_history()`, `execute_mutation()`, plus the expanded
-  `_dbus_failure()` D-Bus error-name taxonomy — **Met**, ported verbatim
-  (pure D-Bus/PackageKit client code, no Fedora-specific paths).
-- [x] **QML scaffolding gap found and filled**:
-  `config/quickshell/systemmanagement/SystemManagementModel.qml` was missing
-  the `activeOperation`/`terminalHandoff` properties, `updateActionKind()`/
-  `operationActionKind()`, and `active-operation`/`terminal-handoff` record
-  parsing that upstream's own Sync-Phase-5-equivalent commits had already
-  added — Sync Phase 5's doc undercounted its own file scope (its "Files"
-  table listed only the backend, tests, and `SettingsModel.qml`). Integrated
-  into Lyona's existing request-coalescing architecture (`snapshotOwned`/
-  `cycleToken`/`discoveryModel.take()`) rather than upstream's simpler
-  `requestGeneration`-counter pattern — the two are different designs, not a
-  drop-in replacement. Upstream's more exhaustive cross-record consistency
-  checks (cancel-availability-matches-active-cancelable, plan reconciliation
-  against `requestedUpdates`) were **not** ported: they read as Sync Phase
-  7's confirmation-flow territory (a new `SystemOperationModel.qml`, per
-  that phase's "Files" table), not this file's job, and Lyona's existing
-  per-record validation style does not have the stricter coupling they
-  patch in the first place. `config/quickshell/shell.qml` needed no change
-  — `systemManagementRestartState()` already existed from an earlier phase.
-- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
-  tests/test-system-management.py` (314 tests, up from 161 — all pass),
-  `scripts/run-tests make check-system-management`,
-  `scripts/run-tests make check-quickshell-system-management`,
-  `scripts/run-tests make check-quickshell-qml` (clean, no new warnings
-  beyond the pre-existing baseline), `scripts/run-tests make clean all`
-  (build unaffected). No live PackageKit/D-Bus daemon in this sandbox, so
-  the doc's manual disposable-VM checklist (real install/cancel/
-  interrupted-transaction/reboot-guidance-pruning scenarios) is unverified
-  here — same open prerequisite carried since Sync Phase 1.
-
-### Sync Phase 7: Operation Surface in Quickshell
-
-Upstream: `#235`, `#236`, `#239`–`#241`, `#262`. Doc:
-`docs/SYNC-P7-OPERATION-SURFACE.md`. The click-to-install surface: Settings →
-System can now refresh metadata and install updates, with visible
-confirmation, live progress, cancellation and recovery. Ported directly from
-upstream's real source at `aa326d59` (Sync Phase 6's end) → `65138a89`
-(`#241`), fetched and diffed in full, not worked from the doc's paraphrase.
-
-- [x] `SystemOperationProtocol.js` (**new**, ~198 lines, `.pragma library`) —
-  **Met**, ported verbatim: a pure, stateless, byte-level UTF-8-safe stream
-  parser with no QML dependencies, owning both UTF-8 decoding (so a pipe read
-  cannot be mistaken for a record boundary mid-codepoint) and the operation
-  state machine as a transition allowlist (`running → permission-denied` is
-  absent on purpose — authorization is decided before execution starts).
-- [x] `SystemOperationModel.qml` (**new**, 395 lines) — **Met**, ported
-  verbatim: owns one child process at a time (`watchProcess`/`ackProcess`)
-  over that parser, `canStart`/`canCancel` admission gates, exact-operation-ID
-  cancellation (never "the current one"), and `#236` (`a424a47b`) reattachment
-  to an operation the shell did not start (a Quickshell restart mid-update
-  recovers via `watch-operation` rather than showing nothing — this is why
-  Sync Phase 5 exists). No Arch-specific adaptation needed; it is a pure state
-  machine over `Commands.systemManagementCommand()`.
-- [x] `SystemManagementModel.qml` confirmation-flow integration (Lyona
-  adaptation, not a drop-in port) — **Met**: `updateActionReason()`,
-  `prepareUpdate()`/`confirmUpdate()`/`discardUpdate()`, and
-  `confirmationInvalidated` implement upstream's "confirmation is a captured
-  snapshot, not a flag" pattern (`generation` + this model's own
-  `requestGeneration` + `discoveryModel.cycle.epoch` must all still match at
-  confirm time). Integrated into Lyona's existing request-coalescing
-  architecture: `requestSnapshot(required)` gained a `required` parameter
-  (operationModel recovering evidence bypasses `settingsVisible` via
-  `discoveryModel.take()`, which already no-ops safely on a `null` token —
-  verified via `SystemDiscoveryCycle.js`'s `owns()` guard before relying on
-  it) rather than upstream's separate generation-matching field; `finishSnapshot()`
-  now hands the parsed result to `operationModel.acceptSnapshot()`/
-  `snapshotFailed()`. Two vestigial properties (`snapshotHasOutput`,
-  `snapshotErrorDetail`) from an early draft that mirrored upstream's exact
-  shape too literally were removed — Lyona's `snapshotAttempted`/
-  `snapshotError.text` already covered that state.
-- [x] `SystemUpdateControls.qml` (**new**, in `config/quickshell/settings/`,
-  262 lines) — **Met**, adapted: the confirm/cancel UI, mounted in
-  `SystemSettingsPane.qml` above the status grid. Field names adapted to
-  Lyona's actual model shape (`action.status`, not upstream's
-  `action.availability` — Lyona's `parseSnapshot()` action records were
-  already named `status`; `root.validGeneration()` added as a shared helper
-  rather than repeating upstream's inline regex once per phase). Two new
-  `StatusCard`s (live operation, verified result, matching upstream's split of
-  the old single active-operation card) plus an operation-detail line.
-- [x] `SystemSettingsPane.qml` `reveal()` — **Met, adapted**: upstream's
-  version calls a `scrollTo()` helper Lyona's plain-`Flickable` pane never
-  had (no prior keyboard line/page-step scaffolding was ported) — `reveal()`
-  here sets `root.contentY` directly instead, same behavior. See
-  `SYNC-P7-OPERATION-SURFACE.md` §4's note.
-- [x] `shell.qml` probes — **Met**: `systemManagementOperationState()`,
-  `systemManagementOperationResult()` added.
-  `systemManagementDiscoveryStatus()` (also cited by this phase's diff) was
-  already present from Sync Phase 4/6 work.
-- [x] **`#262` ("native origins") — deferred to Sync Phase 9**, same pattern
-  as Sync Phase 6's `#232`/E7 exclusion: it depends on the regional/delegated
-  action machinery Phase 8/9 add, which does not exist yet. The security
-  property it is cited for (a closed, non-constructible list of dispatchable
-  actions) already holds — `startUpdate(action, generation)` only accepts the
-  two literal strings `"updates-refresh"`/`"updates-install-all"`. See
-  `SYNC-P7-OPERATION-SURFACE.md` §3's note.
-- [x] Doc corrections found during implementation — **Met**: fixed
-  `SYNC-P7-OPERATION-SURFACE.md` §3's incorrect claim that the watch/ack
-  processes run under `Commands.terminatingCheckedCommand(...)` (they must
-  not — same streaming-vs-buffering mistake Sync Phase 4 already found and
-  corrected for `watch-updates`).
-- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
-  tests/test-system-management.py` (314 tests, unchanged — this phase does
-  not touch the Python backend), `scripts/run-tests make check-quickshell-qml`
-  (clean, no new warnings beyond the pre-existing baseline plus the same
-  `QProcess::ExitStatus`-on-`onExited` warning class Sync Phase 6 already
-  accepted for the analogous case), `scripts/run-tests make
-  check-quickshell-system-management` (grep-contract test, updated for the
-  new surface — several assertions were stale against the legitimate Phase 7
-  changes and rewritten, not weakened),
-  `scripts/run-tests make check-quickshell-system-discovery-cycle`,
-  `scripts/run-tests make check-quickshell-system-management-xvfb` (live
-  Quickshell + Xvfb + stub helper; added assertions that
-  `SystemOperationModel`/`SystemUpdateControls` mount and settle to their
-  idle defaults), `scripts/run-tests make clean all` (build unaffected).
-  **Known automated-coverage gap** (documented, not silently skipped):
-  upstream's `tests/qml/SystemOperationParser.qml` direct parser-fuzzing
-  harness was not ported, and no stub here exercises a live confirm →
-  dispatch → watch → cancel → ack cycle (the xvfb stub predates this phase
-  and reports both update actions as permanently unavailable) — that needs a
-  PackageKit-transaction-capable stub comparable to
-  `tests/test-system-management.py`'s own fixtures. See
-  `SYNC-P7-OPERATION-SURFACE.md`'s Verification section. No live
-  PackageKit/D-Bus daemon in this sandbox either, so the doc's manual
-  disposable-VM checklist (confirm-then-invalidate, cancel, restart-reattach,
-  permission-denied) is unverified here — same open prerequisite carried
-  since Sync Phase 1.
-
-### Sync Phase 7 follow-up: mutation-availability wiring (found during Sync Phase 8)
-
-While establishing Sync Phase 8's diff baseline, found that Sync Phase 7's
-own upstream commit (`#241`) has a Python-side half — `scripts/dwm-system-
-management`'s `build_snapshot()`/`build_managed_snapshot()` threading
-`mutation_blocker`/`mutation_failure` so `updates-refresh`/`updates-
-install-all` can report `available` — that was never diffed or ported: the
-original Sync Phase 7 work fetched only the QML boundary (`aa326d59` →
-`65138a89`) and never checked `#241`'s Python diff. **Effect: every confirm/
-cancel control Sync Phase 7 shipped was permanently disabled against a real
-backend** from the moment it merged (`44b0a39`, PR #30) — `build_snapshot()`
-unconditionally emitted both update actions as `unavailable`, and
-`updateActionReason()` checks `action.status !== "available"`.
-
-- [x] Ported `#241`'s `mutation_blocker`/`mutation_failure` threading
-  verbatim into `build_snapshot()`/`build_managed_snapshot()` — **Met**.
-  Preserved Lyona's own `_restart_heuristic_hint()` (Arch-only, not upstream
-  code, untouched by this diff) and replaced the stale pre-Phase-6 provider
-  detail text ("installation is handled by lyona-update or a terminal, not
-  this pane yet") with upstream's accurate wording now that Phase 6/7 ship
-  real managed installation through this same pane.
-- [x] Ported `#241`'s test rewrite — **Met**: `test_cli_initializes_only_
-  its_fixed_journal_and_keeps_actions_disabled` renamed to `..._and_offers_
-  safe_refresh` (assertion updated to expect `updates-refresh` available),
-  plus six new `RecoverySnapshotTests` cases: complete-safe-plan,
-  unsafe-backend, failed/unsupported-plan, failed-discovery,
-  incomplete-recovery, malformed-inventory, existing-owner-or-handoff — each
-  verifying a distinct origin-blocking path. 314 → 321 tests, all passing.
-- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
-  tests/test-system-management.py` (321 tests), `scripts/run-tests make
-  clean all`, `scripts/run-tests make check-quickshell-system-management`
-  (no QML changed by this fix; confirmed unaffected).
-
-See `SYNC-P7-OPERATION-SURFACE.md`'s "Files" table note for the doc-side
-correction. This fix was originally developed on `sync-p7-mutation-
-availability-fix`, separately from Sync Phase 8's own `sync-p8-regional-
-readers` branch (this is Sync Phase 7's scope, not Sync Phase 8's) — both
-land together here on `sync-p7-mutation-fix-v2`, rebased onto `main` after
-Sync Phase 8 merged (PR #31), since Sync Phase 8 depends on this fix's base
-state.
-
-### Sync Phase 8: Regional, Account, Printer, and Repository Readers
-
-Upstream: `#242`–`#246`, `#248`. Doc: `docs/SYNC-P8-REGIONAL-READERS.md`.
-Five bounded, read-only `Gio` service readers — system timezone/NTP, locale,
-the local `AccountsService` account list, CUPS's running state, and the
-PackageKit repository list. No mutation, no D-Bus write of any kind.
-Diffed Lyona's current `scripts/dwm-system-management` directly against
-upstream's Phase-8-end state (`9d05092a`) rather than reusing a prior sync
-phase's boundary SHA — sync-phase numbering is Lyona's own dependency
-ordering, not upstream's chronological commit order, so the latter approach
-falsely flagged already-ported Phase 4 code as new (caught before porting
-anything from it).
-
-- [x] `ServiceRead` (shared bounded single-use lifetime base class),
-  `RegionalRead`, `AccountRead`, `CupsRead`, `RepositoryRead`, and their
-  validation/decode helpers (`validate_timezone_name`/`_choices`,
-  `prepare_timezone_change`, `validate_locale_name`/`_choices`,
-  `LocaleConfiguration`/`parse_locale_configuration`/`prepare_locale_change`/
-  `locale_change_matches`, `RegionalTimeState`/`regional_string_array`/
-  `decode_regional_reply`, `RepositoryRow`/`decode_repository_row`,
-  `UnitState`/`decode_unit_state`/`CupsState`/`classify_cups`,
-  `AccountRecord`/`AccountInventory`/`account_object_path`,
-  `locale_process_status`/`close_locale_process`/`read_locale_choices`) —
-  **Met**, ported verbatim: all four `ServiceRead` subclasses (`RegionalRead`
-  is instantiated fresh per kind, covering both the timezone/NTP and locale
-  reads, for five reads total) are distro-neutral D-Bus
-  clients against standard interfaces (`timedate1`, `locale1`, `Accounts`,
-  `systemd1`, PackageKit's own D-Bus surface) or a fixed `/usr/bin/locale -a`
-  subprocess — nothing Fedora- or Arch-specific to adapt. `PackageKitBackend.
-  _transaction_failure` made a `@staticmethod` (upstream's own change,
-  needed so `RepositoryRead` can call it unbound) — verified it never
-  touched `self`.
-- [x] Five new test-fixture private-bus/private-process qualification
-  harnesses (`tests/fixtures/system-regional-read-bus.py`,
-  `system-locale-process.py`, `system-account-read-bus.py`,
-  `system-cups-read-bus.py`, `system-repository-read-bus.py`) — **Met**,
-  copied verbatim (each reads its target constants directly off the
-  `provider` module via `runpy`, so no adaptation was needed or possible).
-  Requires the `arch:system-management` package group
-  (`scripts/dwm-packages.sh`: `packagekit accountsservice cups`, already
-  anticipating this phase) for `test_real_*_reads_use_an_isolated_private_bus`
-  to run rather than error.
-- [x] Six new test classes ported verbatim from upstream's six PRs —
-  **Met**: `RegionalValidationTests` (11), `RegionalReadTests` (16, incl. one
-  real-bus test), `LocaleEnumerationTests` (17, incl. process-group
-  signal-handling edge cases), `AccountReadTests` (18, incl. one real-bus
-  test), `CupsReadTests` (12, incl. one real-bus test), `RepositoryReadTests`
-  (15, incl. one real-bus test) — 321 → 410 tests, all passing (321 is the
-  Sync Phase 7 follow-up fix's own count above, landed on the same branch;
-  314 → 410 combined).
-- [x] **Scope correction, found while implementing**: `SYNC-P8-REGIONAL-
-  READERS.md`'s own "Files" table and §6 claimed this phase also needed
-  `docs/P6-SYSTEM-MANAGEMENT.md` stub fill-in (it was not a stub — already
-  fully written), and changes to `SystemManagementModel.qml`/
-  `SystemSettingsPane.qml`/`shell.qml`. None of upstream's six PRs touch
-  `build_snapshot()`/`build_managed_snapshot()`, any QML file, or
-  `shell.qml` — the five readers this phase adds have no caller yet. The
-  actual caller (`NativeSnapshotSources`/`build_native_snapshot()`, which
-  also emits the `timezone-set`/`ntp-set`/`locale-set`/`*-open` mutation and
-  delegate actions and calls `read_fedora_identity()`-gated `admission()`)
-  is Sync Phase 9 material by its own content, found only at the `dd55e58`
-  full-repo survey point, not in any of this phase's own cited commits.
-  Corrected in the doc; the `shell.qml` probe snippet is left in place for
-  Phase 9 to use directly.
-- [x] Not ported (out of scope, confirmed Phase 9 territory) —
-  `NativeSnapshotSources`, `build_native_snapshot()`, `native_list_lines()`,
-  `validate_snapshot_size()`'s Phase-9-specific list-kind additions,
-  `packagekit_security_floor()`/`read_fedora_identity()` (Fedora-specific;
-  Lyona already has its own `require_mutation_safe()` replacement from Sync
-  Phase 6), and every `timezone-set`/`ntp-set`/`locale-set`/`*-open`
-  mutation/delegate command.
-- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
-  tests/test-system-management.py` (410 tests, combined with the Sync
-  Phase 7 fix above — all pass, 151s),
-  `scripts/run-tests make clean all` (build unaffected; no QML touched, so
-  `check-quickshell-qml`/`check-quickshell-system-management` were re-run
-  only as a regression check, not new coverage, and are unchanged). No live
-  `timedate1`/`locale1`/`Accounts`/`cups`/PackageKit daemon exercise outside
-  the private-bus/private-process fixtures in this sandbox, so the doc's
-  manual real-system checklist (live timezone/locale/account/printer/
-  repository reads, independent-failure isolation) is unverified here — same
-  open prerequisite carried since Sync Phase 1.
-
-### Sync Phase 9: Regional Mutation, Delegated Administration, and Live Watch
-
-Upstream: `#247`, `#249`, `#252`–`#254`, `#256`–`#258`, `#263`, `#264`.
-Doc: `docs/SYNC-P9-REGIONAL-MUTATION.md`. The last of the nine
-system-management phases: wires Sync Phase 8's readers, plus a confirmed
-timezone/NTP/locale mutation path and delegated tool launching
-(`accounts-open`/`password-open`/`printers-open`/`sources-open`), into the
-snapshot and the CLI, adds the native-operation journal-owner lease and its
-own inotify-based watch (regional/delegated operations have no PackageKit
-transaction to attach to), and generalizes Sync Phase 4's `UpdateEventMonitor`
-into a live-watch family covering four more domains. Done in three
-checkpoints (the scope is far larger than any prior phase), each verified
-against the full test suite before moving on.
-
-- [x] **Checkpoint 1 — backend wiring**: `NativeSnapshotSources`
-  (`time_state`/`locale_state`/`accounts`/`printers`/`repositories`/
-  `delegate`/`admission`), `build_native_snapshot()`/`native_list_lines()`,
-  `RegionalPreview`/`make_regional_preview()`/`require_regional_generation()`/
-  `regional_choices()`/`read_regional_preview()`/`regional_preflight_output()`
-  (the `regional-choices`/`regional-preview` read-only CLI streams),
-  `DELEGATED_TOOLS`/`PASSWORD_TERMINALS`/`DELEGATED_ACTIONS`,
-  `trusted_delegated_executable()`/`terminal_selection_environment()`/
-  `read_terminal_selection()`/`delegated_command()`. `build_managed_snapshot()`
-  extended with an optional `native_sources` parameter; protocol minor bumped
-  to `1` only when it is supplied (`SNAPSHOT_MINOR = 1`, distinct from the
-  regional-preflight streams' own always-`0` `PROTOCOL_MINOR`).
-  `SystemManagementModel.qml` extended to parse the four new native provider
-  groups with per-owner graceful degradation (a malformed regional record
-  cannot blank the accounts list) — **Met**.
-- [x] **D-3 decided** (2026-09-15, asked of the user directly, recorded in
-  `docs/UPSTREAM-SYNC.md`'s Open Decisions table): neither
-  `lxqt-admin-user` (`accounts-open`) nor `dnfdragora` (`sources-open`)
-  exists in Arch's official repositories. Both ship permanent `unsupported`
-  rather than an unverified AUR dependency or a new privileged repo-editing
-  surface — `accounts-open` with no default tool, `sources-open` pointing at
-  `/etc/pacman.conf` and `docs/src/settings.md`. Only `printers-open`
-  (`system-config-printer`, confirmed in Arch `extra`) has a real fixed
-  executable in `DELEGATED_TOOLS`; `password-open` resolves dynamically via
-  `dwm-terminal --print-command`, unaffected.
-- [x] **Checkpoint 2 — `RegionalMutation`/delegated launch/native journal
-  owner/live watch/CLI dispatch**: `RegionalMutation`'s 7-step lifecycle
-  (pin+subscribe the owner before anything else; re-preflight and
-  re-validate the generation; drain queued notifications; a `before_send`
-  durable checkpoint hook; dispatch with `ALLOW_INTERACTIVE_AUTHORIZATION`;
-  from `sent = True` onward every transport failure becomes `interrupted`,
-  never a guessed success/failure; an `after_reply` hook, then re-read and
-  verify before reporting success), `run_regional_mutation()`,
-  `run_delegated_launch()`/`launch_delegated_tool()` (`posix_spawn` +
-  `POSIX_SPAWN_CLOSEFROM`, detached, no inherited descriptors). A separate
-  file-lease (`retain_native_journal_owner()`/`native_journal_owner_busy()`,
-  a dedicated `flock` on `active`, distinct from the directory-level
-  admission lock) lets a live CLI process prove liveness without holding the
-  directory lock across service work. `NativeJournalEvents` (raw `ctypes`
-  `inotify_init1`/`inotify_add_watch` on `/proc/self/fd/<active-fd>`) and
-  `watch_native_journal_operation()` give native operations their own watch,
-  since they have no PackageKit-style transaction to attach to.
-  `AuthenticatedEventMonitor(UpdateEventMonitor)` generalizes Sync Phase 4's
-  monitor — authenticate the exact D-Bus owner before enabling delivery, since
-  a bus-side match alone cannot make rejection or a spoofed direct signal
-  observable — into `RegionalEventMonitor`/`AccountEventMonitor`/
-  `UnitEventMonitor`; `watch_update_events()` itself is retired in favor of
-  the same consolidated `watch_service_events(service_kind=None)` upstream
-  uses, rather than kept as a separate near-duplicate. `native_command()`
-  combines delegated+regional CLI dispatch — **Met**.
-- [x] **Real bugs found and fixed while porting Checkpoint 2's own test
-  coverage** (each confirmed against upstream's actual `0eae066d` source or
-  its real fixtures, not assumed):
-  - `validate_locale_catalog()` was called from three sites
-    (`make_regional_preview()`, `regional_choices()`,
-    `RegionalMutation.run()`) but never defined — a latent `NameError`.
-    Added, and `validate_locale_choices()` refactored to delegate to it
-    (matching upstream's own structure) instead of duplicating the logic.
-  - `UpdateEventMonitor.changed()`/`owner_resolved()` hardcoded the literal
-    string `"update-event"` instead of a `record_prefix` class attribute.
-    Every Sync Phase 9 subclass inherits `changed()` unmodified, so
-    `RegionalEventMonitor`/`AccountEventMonitor`/`UnitEventMonitor` all
-    silently emitted `update-event\t...` instead of their own prefix on
-    every change notification — caught by the real private-bus fixtures,
-    not a mock. Fixed by adding `record_prefix = "update-event"` to the
-    base class.
-  - `control_output_writer()` (missing entirely) — the event-monitor output
-    path called `os.set_blocking()` directly on `sys.stdout`'s file
-    descriptor, mutating the *shared* open-file-description blocking mode of
-    an inherited pipe/tty, observable by (and disruptive to) a parent shell
-    group holding the other end. Ported upstream's `/proc/self/fd` reopen
-    mechanism, used by the now-consolidated `watch_service_events()`.
-    `control_output_writers()` (the plural, signal-handling variant
-    `operation_control()`/`run_operation_control()` would need) was **not**
-    ported — `operation_control()` keeps its own simpler, already-tested
-    synchronous `sys.stdout.write()`/`.flush()` path from Sync Phase 5/6,
-    which never sets `O_NONBLOCK` in the first place and was never exposed
-    to this class of bug; reconciling the two designs is out of this
-    checkpoint's scope.
-  - `read_recovery_snapshot()` had a check with no upstream equivalent —
-    `if current.active.kind not in {"update", "refresh"}: raise
-    JournalAdmissionError(...)` — that unconditionally failed every snapshot
-    read whenever a regional/delegated operation was in progress. Removed;
-    confirmed absent from upstream's real `0eae066d` source.
-  - `watch_journal_operation()` had an upfront `native_journal_owner_busy()`
-    check added earlier in this phase's own work, rejecting a watch on an
-    abandoned native operation with zero output. Upstream dispatches to
-    `watch_native_journal_operation()` unconditionally — its own
-    `recover_journal_active()` call already terminalizes an unowned
-    operation as `interrupted` through the normal recovery path on its first
-    pass, streaming that transition like any other. Reverted; updated the
-    one pre-existing Sync Phase 5/6 test whose expectations depended on the
-    stricter (incorrect) behavior.
-  - `main()`'s `watch-units` dispatch restricted `argv[1]` to literally
-    `"printers"`. `docs/SYNC-P9-REGIONAL-MUTATION.md`'s own §4 grammar
-    (`watch-units printers|security`) and upstream's real fixture (which
-    drives `watch-units security` as a genuine CLI subprocess) both confirm
-    `main()` should dispatch `"security"` identically to `"printers"` — only
-    `SystemProviderDiscovery.qml`'s `domainDefinition` table (no provider,
-    state, or action for a `security` domain exists in the protocol-minor
-    table) is the actual, narrower place that decision belongs. Reverted at
-    the CLI layer; the doc's misleading comment corrected.
-  - `tests/fixtures/system-regional-owner-bus.py` hardcoded upstream's own
-    `state/dwm-titus/system-management` XDG path instead of Lyona's renamed
-    `state/lyona/system-management` — caught by its own real-CLI subprocess
-    test failing to open the journal at all.
-- [x] Twelve new test classes ported (adapted to the bugs/decisions above,
-  not copied blind) — **Met**: `RegionalMutationTests`, `RegionalPreflightTests`,
-  `NtpReadTests` (upstream's own tested-but-uncalled `NtpRead`/`NtpSample`
-  API surface — not dead code, ported for parity), `DelegatedToolTests`,
-  `RegionalEventMonitorTests`, `AccountEventMonitorTests`,
-  `UnitEventMonitorTests`, `NativeJournalOwnerTests`, `NativeJournalWatchTests`
-  (its five generic `control_output_writer()` unit tests ported; the four
-  testing `control_output_writers()`/`run_operation_control()`'s byte-writer
-  signature were not, per the scope note above), `RegionalOwnerTests`,
-  `RegionalCommandTests` (adapted to Lyona's single `native_command()`
-  rather than upstream's split injectable-writer `run_native_command()`),
-  `DelegatedOwnerTests`, `NativeSnapshotTests` — plus five new
-  private-bus/private-process fixtures and updates to three existing ones.
-  410 → 537 tests, all passing.
-- [x] **Checkpoint 3 — QML**: `SystemRegionalPreflightProtocol.js`
-  (pure stream parser) and `SystemRegionalPreflightModel.qml` (the
-  Process/Timer/StdioCollector lifecycle, mirroring
-  `SystemOperationModel.qml`'s shape) ported unchanged — neither is
-  distro-specific, and `Commands.systemManagementCommand()` already
-  dispatches arbitrary actions generically. The parser is covered directly
-  by `tests/qml/tst_system_regional_preflight_protocol.qml`, translated into
-  this repo's own `QtTest`/`TestCase` convention (matching
-  `tst_system_discovery_cycle.qml`) rather than upstream's bespoke
-  `ShellRoot` harness — picked up automatically by the existing
-  `qmltestrunner -input tests/qml` invocation, no new Makefile target
-  needed. 39/39 pass (23 new, plus the pre-existing 16) — **Met**.
-- [x] **Known automated-coverage gap**, matching the precedent [Sync Phase 7
-  set for `SystemOperationParser.qml`](SYNC-P7-OPERATION-SURFACE.md): upstream's
-  `tests/qml/SystemRegionalPreflightOwner.qml` and
-  `tests/qml/SystemNativeDiscovery.qml` (PR #264) drive
-  `SystemRegionalPreflightModel`/`SystemProviderDiscovery` as live Quickshell
-  processes against a real private-bus provider stub
-  (`tests/fixtures/system-regional-preflight-provider.py`) — comparable in
-  complexity to `tests/test-system-management.py`'s own fixtures, and out of
-  scope for this pass. Deferred, not forgotten.
-- [x] **Not in scope, and not in any of this phase's own cited PRs**
-  (confirmed by diffing each one): the Settings UI wiring
-  (`SystemSettingsPane.qml`'s timezone/locale pickers, NTP toggle,
-  delegated-launch buttons) and `shell.qml`'s regional/delegated IPC probes
-  described in the doc's §5. Landed in PR #32 as the backend + read-only
-  QML half only; the doc's §5 has since been rewritten (2026-09-16) into a
-  concrete implementation plan against the actual shipped
-  `SystemOperationModel`/`SystemManagementModel`/`SystemOperationProtocol.js`
-  APIs (not the pre-implementation sketch it started as), and the follow-up
-  itself is scoped to its own `sync-p9-settings-ui` branch and PR — tracked
-  below, not merged with this entry.
-- [x] **Follow-up: Sync Phase 9 Settings UI wiring** (`sync-p9-settings-ui`,
-  plan in `SYNC-P9-REGIONAL-MUTATION.md` §5, retired) — `SystemOperationModel.
-  startRegional()`/`startDelegated()`, `SystemManagementModel`'s
-  `prepareRegional()`/`confirmRegional()`/`discardRegional()`/
-  `launchDelegated()` family driving a `SystemRegionalPreflightModel`
-  instance, a new `SystemRegionalControls.qml` (timezone/locale pickers, NTP
-  toggle, delegated-launch buttons, confirmation card), its mount point in
-  `SystemSettingsPane.qml`, `shell.qml` IPC probes, and the
-  `test-quickshell-system-management-xvfb.sh` stub extension needed to
-  exercise all of it. — **Landed in `92ec6e2` (PR #33).** Verified against
-  shipped code: `startRegional()` (`SystemOperationModel.qml:190`),
-  `prepareRegional()` (`SystemManagementModel.qml:302`) and
-  `SystemRegionalControls.qml` all exist, and
-  `scripts/run-tests make check-quickshell-system-management-xvfb` passes.
-  Superseded in structure by Sync Sprint 1 S1-03…S1-05
-  (`docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`), which converges this onto
-  upstream `#261`–`#269`'s shape — most of all, `launchDelegated()` fires
-  immediately with no confirmation step, which S1-04 replaces.
-- [x] Verification — **Met**: `scripts/run-tests /usr/bin/python3
-  tests/test-system-management.py` (537 tests, up from 410, all passing),
-  `QT_QPA_PLATFORM=offscreen qmltestrunner -input tests/qml` (39/39),
-  `scripts/quickshell-qmllint --root config/quickshell` (clean — the only
-  warnings are the pre-existing, codebase-wide "type not found" noise from
-  Quickshell's own QML module not being installed in the lint sandbox,
-  unrelated to this phase's files), `make clean all`,
-  `tests/test-quickshell-system-management.sh`. No live `timedate1`/
-  `locale1`/`Accounts`/systemd/PackageKit daemon exercise outside the
-  private-bus/private-process fixtures in this sandbox, so the doc's manual
-  real-system checklist (confirm a real timezone/locale/NTP change, conflict
-  detection against a concurrent external change, delegated-tool launch)
-  is unverified here — same open prerequisite carried since Sync Phase 1.
-
-## Phase Completion
-
-When all Phase 8 acceptance criteria pass:
-
-1. Record delivered behavior and validation in `CHANGELOG.md`.
-2. Update the Phase 8 status and limitations in `ROADMAP.md`.
-3. Replace this file's active task set with the next phase's tasks — the
-   upstream-ported system-management work indexed in `docs/UPSTREAM-SYNC.md`'s
-   "The system-management port" section (Sync Phases 1–9).
-4. Preserve incomplete or deferred work as explicit roadmap limitations.
+- Every category the ROADMAP names (UEFI, legacy BIOS, display, audio,
+  networking, suspend, NVIDIA) has either a qualification result or an
+  explicit, precise "untested"/"unsupported" statement — never left silently
+  unstated.

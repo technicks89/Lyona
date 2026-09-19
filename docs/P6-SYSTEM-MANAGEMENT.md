@@ -226,17 +226,135 @@ account, printer, or repository administration inside
 `dwm-system-management`. This is privilege minimization, not a shortcut, and
 carries over from upstream unchanged.
 
-### Not implemented upstream — out of scope
+### System information, storage, and security
 
-Upstream's own document lists "System Information and Filesystems" and
+Every source below is a fixed, bounded, read-only probe; none starts a
+service, holds a lock, or polls. Each source degrades independently —
+a missing or malformed one never invalidates its peers — and reports one of
+five statuses: `available` (a known value), `partial` (accessible but
+incomplete or malformed evidence), `restricted` (read denied), `unavailable`
+(an expected command/service could not be reached), or `unsupported` (the
+capability or its platform source does not exist). Every status other than
+`available` carries value `unknown`.
+
+Information (`INFORMATION_LOCAL_IDS`/`HARDWARE_INFORMATION_FIELDS`,
+`scripts/dwm-system-management`):
+
+- `os-name`/`os-version` — `/etc/os-release`'s `PRETTY_NAME`/`VERSION_ID`,
+  capped at 64 KiB. `os-version` falls back to `BUILD_ID` only when
+  `VERSION_ID` itself is not available (missing or malformed), never
+  overriding a real value — Arch/CachyOS omit `VERSION_ID` entirely and set
+  `BUILD_ID=rolling`, so this is the only place the port diverges from
+  upstream's own field selection (verified against this sandbox's real
+  `/etc/os-release`).
+- `kernel-release`/`architecture` — `os.uname()`. `hardware-vendor`/
+  `hardware-model` — `org.freedesktop.hostname1`'s `HardwareVendor`/
+  `HardwareModel` properties, one ten-second aggregate deadline for both.
+- `cpu-model` — `/proc/cpuinfo`'s first `model name` field, capped at 4 MiB.
+  `logical-cpus` — `os.cpu_count()`.
+- `memory-total-bytes`/`memory-available-bytes`/`swap-total-bytes`/
+  `swap-free-bytes` — `/proc/meminfo`'s `MemTotal`/`MemAvailable`/
+  `SwapTotal`/`SwapFree`, capped at 1 MiB, each a checked `kB`→bytes
+  conversion. `uptime-seconds` — `clock_gettime(CLOCK_BOOTTIME)`.
+
+Storage (`FilesystemInformation`, `read_filesystem_information()`): bounded
+`findmnt --json --bytes --real --uniq --output ID,SOURCE,TARGET,FSTYPE,SIZE,USED,AVAIL`
+in its own process group, a three-second deadline, a 384 KiB output cap, and
+at most 256 unique mount-ID records (`--uniq` collapses an over-mounted
+target to one row; the kernel mount ID is the record key). `filesystem-summary`
+is always exactly one state: `available` carries the emitted row count,
+`partial`/`unknown` accompanies a usable subset, anything else carries no
+rows. `watch-mounts` ([S2-04](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
+is the separate live-invalidation source; the reader above never polls.
+
+Security (`INFORMATION_SECURITY_IDS`, `read_selinux_status()`/
+`read_secure_boot_status()`/`read_firewall_status(kind)`/
+`read_root_encryption()`/`read_screen_lock()`):
+
+- `selinux` — the single-byte `/sys/fs/selinux/enforce` kernel interface when
+  present (`1` enforcing, `0` permissive); otherwise the allowlisted
+  `SELINUX` key in `/etc/selinux/config` (64 KiB cap), where only the literal
+  value `disabled` is trusted — `enforcing`/`permissive` without the runtime
+  interface is inconsistent and reported `partial`, never guessed. Absent
+  everywhere is `unsupported` (verified against this sandbox: `unsupported`,
+  no `selinux` package installed).
+- `secure-boot` — only the EFI global variable
+  `/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c`;
+  never a directory enumeration. The one-byte payload after the attributes
+  prefix must be `0`/`1`. No EFI variables filesystem is `unsupported`
+  (verified: this sandbox's real EFI variable read as `available`/`disabled`).
+- `firewalld`/`ufw`/`nftables` — **D-5** (decided 2026-09-16): upstream only
+  ever asks about `firewalld.service`; a default Arch/CachyOS install runs
+  none of the three real, distinct firewall managers a package might ship, so
+  this port generalizes to `FirewallUnitRead`/`FIREWALL_UNITS`/
+  `read_firewall_status(kind)` over all three, each its own independent
+  `ActiveState` read on `org.freedesktop.systemd1`, an absent unit reporting
+  `unsupported` rather than assuming firewalld is the only possibility.
+  Verified against this sandbox: firewalld/ufw `unsupported` (not installed),
+  nftables `available`/`disabled` (installed, inactive). This state describes
+  only the named service, never firewall rule content, and never implies the
+  other two managers are absent.
+- `root-encryption` — bounded `lsblk --json` (`NAME,TYPE,FSTYPE,MOUNTPOINTS,PKNAME`),
+  same process-group/three-second-deadline/384 KiB-cap shape as `findmnt`,
+  at most 1024 unique block-device records. A root mount with `crypt`/
+  `crypto_LUKS` ancestry is `encrypted`; a fully resolved ancestry without
+  either is `unencrypted`; incomplete or inconsistent topology is `partial`,
+  never guessed either way. Verified against this sandbox's real block-device
+  topology: `available`/`unencrypted`.
+- `screen-lock` — reuses `dwm-quickshell-controlcenter power-lock-snapshot`
+  ([`POWER-PROTOCOL.md`](POWER-PROTOCOL.md), [S2-03](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-03-automatic-screen-lock-evidence)),
+  never a second locker or GSettings probe. Lyona additionally autostarts
+  `dwm-lock-watch` alongside `light-locker`; `configured_lock_running()`
+  recognizes either as "running" evidence when `power_lock_managed=1`.
+  `available`/`enabled` requires both `ENABLED=yes` and `RUNNING=yes`;
+  `ENABLED=yes` with `RUNNING=no` (configured but not actually running) is
+  `partial`, not a false `enabled`.
+
+### Not implemented upstream — out of scope (superseded, see below)
+
+This section described upstream's state as surveyed before Sync Sprint 2:
+upstream's own document listed "System Information and Filesystems" and
 "Security Status" sections (`os-release`/`uname`/`hostname1`/`/proc`
 identity data; SELinux/Secure Boot/firewalld/root-encryption/screen-lock
-status). The protocol-minor table below shows these were never actually
-shipped — protocol minor `2` covering them is explicitly marked
-"Not implemented upstream" in upstream's own table. Lyona is not porting
-what upstream itself never finished; if this scope is wanted later it needs
-its own decision and its own document, not an assumption carried in from a
-Fedora contract that was equally aspirational there.
+status), but the protocol-minor table below showed these were never actually
+shipped at that time.
+
+**That has since changed.** Upstream did ship this scope (`#277`–`#288`),
+and [Sync Sprint 2](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
+S2-01 through S2-06 (readers: local/hardware/filesystem information,
+SELinux, Secure Boot, firewall status extended to `ufw`/`nftables` per D-5,
+root encryption, automatic screen-lock evidence reused from the shared power
+helper, and a bounded `watch-mounts` mount-change monitor) are done as of
+this note. `watch-mounts` supervises one fixed `findmnt --poll` child with a
+pidfd and a signal-wakeup pipe alongside its output, so no idle timer remains
+once the baseline `/proc/PID/fd` probe confirms the child's own `mountinfo`
+descriptor is open; it requires write-only pipe output (as Quickshell
+supplies) so losing its reader is itself an event.
+
+S2-05 wires all of this into the snapshot protocol as minor `2`:
+`InformationSnapshotSources`/`build_information_snapshot()` on the Python
+side, and the new `config/quickshell/systemmanagement/SystemInformationProtocol.js`
+plus matching `SystemManagementModel.qml`/`SystemProviderDiscovery.qml`
+changes on the QML side (two new discovery domains, `storage` and
+`security`, join the existing four). `snapshot`/`snapshot-core`/
+`snapshot-without-storage` are now three distinct fixed CLI commands: a
+required (recovery-only) read always asks for `snapshot-core` (minor `1`,
+no information block, since it must not open the filesystem inventory's
+unmonitored initialization gap or falsely mark storage/security as freshly
+re-verified when it didn't actually probe them); an optional read asks for
+`snapshot-without-storage` until the `storage` domain's own `watch-mounts`
+subscription is actually ready, then `snapshot` (minor `2`, complete).
+
+S2-06 gives minor `2` its visible surface: the new
+`config/quickshell/settings/SystemInformationControls.qml` card in System
+Settings' System pane (system information, storage overview, privacy/
+security status, and diagnostics/recovery guidance), plus Health navigation
+(`SystemManagementModel.openHealth()`, wired through `shell.qml`'s
+`healthModel`/`targetScreen`/`onHealthOpened`) that opens the existing
+`dwm-system-health` full-screen window on the Settings window's own current
+screen and closes Settings on the way there. See "Information and recovery
+view qualification" below. S2-07 still closes this `ROADMAP.md` Phase 6 item
+and this document's own remaining open questions.
 
 ## Provider Protocol
 
@@ -265,10 +383,12 @@ error<TAB>capability<TAB>code<TAB>detail
 complete<TAB>snapshot|operation
 ```
 
-`filesystem` is a listed record type for protocol-shape completeness (it
-mirrors upstream's grammar exactly, so a future minor `2` can add it without
-a breaking field-order change) but nothing in this port ever emits it — see
-"Not implemented upstream" above.
+`filesystem` mirrors upstream's grammar exactly; minor `2` (S2-05) emits it
+for each mounted real filesystem the bounded, one-shot `findmnt --json`
+reader (`read_filesystem_information()`) observes at snapshot time.
+`watch-mounts` (`findmnt --poll`, [S2-04](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
+is the separate live-invalidation source that triggers a fresh snapshot; it
+never supplies filesystem rows itself — see "Not implemented upstream" above.
 
 The protocol minor selects a cumulative active-ID set so each Sync Phase can
 produce a *truthful complete* snapshot rather than a half-populated one — a
@@ -279,7 +399,7 @@ never advertises a later planned ID as `unsupported`:
 | --- | --- | --- | --- | --- | --- |
 | `0` | `updates`, `recovery` | `update-summary`, `update-last-refresh`, `update-restart` | `updates-refresh`, `updates-install-all`, `updates-cancel` | `update`, `package-change` | `SYNC-P2` through `SYNC-P7` |
 | `1` | `regional`, `accounts`, `printers`, `sources` | `timezone`, `ntp-enabled`, `ntp-synchronized`, `locale`, `accounts-count`, `cups-service` | `timezone-set`, `ntp-set`, `locale-set`, `accounts-open`, `password-open`, `printers-open`, `sources-open` | `account`, `repository` | `SYNC-P8` and `SYNC-P9` |
-| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem/SELinux/secure-boot/firewalld/encryption/lock states | `health-open` | `filesystem` | **Not implemented upstream.** Out of scope for this port |
+| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem-summary/SELinux/secure-boot/firewalld/ufw/nftables/encryption/lock states | `health-open` | `filesystem` | `SYNC-SPRINT-2` (readers ported S2-01–S2-04; wired into the snapshot and QML consumer at S2-05; visible Settings card and Health navigation at S2-06) |
 
 The `recovery` provider is intentionally status-only from minor `0`: it owns
 journal-integrity errors that have no trustworthy operation kind of their
@@ -349,6 +469,48 @@ remove packages an image or the recommended installer already installed.
 Each later phase's own rollback removes its provider, model, and pane
 together, without touching the existing `dwm-system-health`/session-action
 contracts this port reuses rather than duplicates.
+
+## Settings Information Card and Health Navigation
+
+[Sync Sprint 2 S2-06](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation)
+gives minor `2` its visible surface:
+`config/quickshell/settings/SystemInformationControls.qml` renders the
+thirteen system-information values, bounded mounted-filesystem usage (a
+virtualized 240-pixel-tall list, so a full 256-row inventory never expands
+the pane itself), and the seven security indicators (D-5's `firewalld`/
+`ufw`/`nftables` split, plus `selinux`/`secure-boot`/`root-encryption`/
+`screen-lock`) minor `2` supplies. Byte counters keep their exact decimal
+string alongside an approximate human unit; a value that never reads
+(`unknown`, or a non-`available` status) always renders "Unknown", never a
+guessed state. A retained (stale) filesystem list is labeled explicitly,
+with Reload status as the retry path.
+
+The fixed "Open System Health" button reads `health-open`'s own availability
+and calls `SystemManagementModel.openHealth()`, which opens the existing
+`dwm-system-health` full-screen window
+([`SPEC.md` §5.9](../SPEC.md)) and closes Settings — `shell.qml` wires
+`healthModel`/`onHealthOpened` for this and resolves `targetScreen` through
+a three-way fallback (the Settings window's own current screen, then a
+requested screen, then the active panel's screen), so Health always opens on
+the screen Settings was actually showing on, including after the window
+moved. Reset guidance names `lyona-update rollback` (Lyona-managed
+configuration) and `arch-chroot` from the Lyona installation media (system
+rescue) in place of upstream's Fedora-specific tooling; System Health owns
+its own listed, separately confirmed repairs and `pacman -Qkk` verifies
+installed package files. No factory reset, disk, firewall, encryption, or
+general service mutation is introduced.
+
+Verified: `tests/qml/SystemInformationUi.qml` (run at 640×480, 780×580, and
+1000×740 by `tests/test-quickshell-information-ui-xvfb.sh`) covers the exact
+uint64 display, the 256-row virtualized inventory, unavailable/unknown
+security state with readable independent peers (including that firewalld/
+ufw/nftables read independently per D-5), explicit stale-data labeling,
+keyboard-focus reveal, one fixed health callback, and disabled navigation
+when the capability is absent. `tests/qml/SystemHealthNavigation.qml`
+(`tests/test-quickshell-health-navigation-xvfb.sh`) exercises the real
+`targetScreen` fallback expression extracted programmatically from
+`shell.qml`, so this test cannot silently drift out of sync with the actual
+production binding.
 
 ## Authoritative Interface References
 

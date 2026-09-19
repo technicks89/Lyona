@@ -358,7 +358,7 @@ Make the desktop appearance and interaction model configurable as one system.
 
 ## Phase 6: System Management
 
-Status: Active (2026-09-08)
+Status: Complete (2026-09-19)
 
 Lands in two parts, tracked in `TASKS.md`: lyona's own update path
 (`UPDATE-001…003`, `lyona-update`) is **done** — it is a prerequisite for the
@@ -391,6 +391,77 @@ without turning Quickshell into an unrestricted administration console.
 - Read-only status remains available when authorization is denied.
 - Interrupted updates and failed delegated tools produce actionable recovery
   guidance rather than ambiguous success.
+
+### Completion Evidence
+
+- The upstream-ported system-management work landed as its own tracked
+  sequence: fork-era system-management Sync Phases 1–9 (upstream `#207`–`#265`,
+  merged through `92ec6e2`/PR #33), Sync Sprint 1 (native discovery/origins,
+  confirmed delegated administration, regional settings model, shared clock,
+  NTP sampling and interruption recovery — merged `e947fa7`/#68), and Sync
+  Sprint 2 (system information, storage, security status, mount monitoring,
+  the Settings information card, and Health navigation — see
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`). Full history and per-item
+  detail is in `docs/UPSTREAM-SYNC.md` and each sprint document; none of it
+  is repeated here.
+- **D-5** (decided 2026-09-16, recorded in
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers`):
+  upstream's security-status port only ever asks about `firewalld.service`.
+  A default Arch/CachyOS install runs none of the three real, distinct
+  firewall managers a package might ship (`firewalld`, `ufw`, `nftables`), so
+  this port generalized to `FirewallUnitRead`/`read_firewall_status(kind)`
+  over all three, each reported independently rather than assuming firewalld
+  is the only possibility. This is a permanent, intentional divergence from
+  upstream's own shape, not a gap: every card, test, and protocol identifier
+  downstream of it (Settings' security card, `tst_system_information_protocol.qml`,
+  `InformationSnapshotTests`) carries all three.
+- Every Settings → System card (updates, regional, delegated administration,
+  information, storage, security, diagnostics/recovery) renders and updates
+  live through the real Quickshell runtime under
+  `tests/test-quickshell-system-management-xvfb.sh` and its two S2-06
+  companions (`tests/test-quickshell-information-ui-xvfb.sh`,
+  `tests/test-quickshell-health-navigation-xvfb.sh`) — not just unit-tested
+  in isolation. Authorization denial and interrupted-operation recovery text
+  (including an interrupted `timezone-set`) were qualified earlier in this
+  same port, at the operation-journal layer shared by every mutating action
+  (Sync Phase 6/7's recovery journal, exercised in `tests/test-system-management.py`'s
+  operation/journal test classes and the xvfb suite's own regional
+  preview→confirm→dispatch→interrupt scenarios) — read-only cards stay
+  populated because degradation is scoped per-owner
+  (`nativeInvalid`/`InformationSnapshotSources`), never all-or-nothing.
+  Idle CPU with all seven live `watch-*` subscriptions open (updates, time,
+  locale, accounts, printers, storage/`watch-mounts`, security/`watch-units`)
+  measured **0.00–0.50 percentage points** over a 2-second sample
+  (`tests/test-quickshell-system-management-xvfb.sh`'s own S2-07
+  measurement stage, matching Phase 5's closed-shell CPU methodology),
+  inside the same 0.5-point-class budget Phase 5 qualified against.
+- The full focused suite passes: `check-quickshell-system-management`,
+  `check-quickshell-system-management-xvfb`, `check-quickshell-information-ui-xvfb`,
+  `check-quickshell-health-navigation-xvfb`, `check-quickshell-update-ui-xvfb`,
+  `check-quickshell-system-discovery-cycle`, the full `tests/test-system-management.py`
+  suite (684 tests; the only failures are this sandbox's own 16 pre-existing
+  PackageKitGlib-unavailable cases, unrelated to this port and present
+  before it), a clean `make clean all`, `check-format`, `check-shell`,
+  `check-quickshell-qml`, `check-settings`, `check-install`, and
+  `check-install-preservation`.
+- **Limitations, carried forward rather than dropped:**
+  - Real-hardware, real-Arch-package-transaction qualification (an actual
+    PackageKit refresh/install, an actual polkit authorization denial from a
+    live agent, actual multi-monitor Health-window screen routing) remains
+    outstanding — this sandbox has no PackageKitGlib bindings available at
+    all (a pre-existing, unrelated environment gap, unchanged since before
+    this port) and no multi-monitor setup. Every workflow this involves is
+    proven through the real Quickshell runtime under Xvfb, with a real
+    subprocess/D-Bus/journal stack, instead — never a bare unit-test double.
+    Qualify against a live PackageKit transaction and a live polkit denial
+    on real Arch/CachyOS hardware before relying on this as a substitute.
+  - `check-quickshell-settings-xvfb` still `SKIP`s in this sandbox because
+    `xkbset` (AUR-only, no AUR helper here) is unavailable — carried forward
+    from Phase 5, unchanged, not a Phase 6 defect.
+  - Screenshots of the new information/storage/security/recovery views are
+    not committed alongside this evidence (unlike upstream's own
+    `docs/evidence/p6-*-view.png`); take Lyona's own before release if
+    visual evidence is wanted.
 
 ## Phase 7: Arch Image and Release Qualification
 

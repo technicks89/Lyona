@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+DISPLAY=${DISPLAY:-:fixture}
+export DISPLAY
+
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
@@ -328,7 +331,7 @@ grep -Fqx 'xset s off' "$work/actions.log"
 grep -Fqx 'xset s noblank' "$work/actions.log"
 grep -Fqx 'gsettings set apps.light-locker lock-after-screensaver 0' "$work/actions.log"
 grep -Fqx 'gsettings set apps.light-locker lock-on-suspend false' "$work/actions.log"
-grep -Fqx "pkill -u $test_uid -x light-locker" "$work/actions.log"
+grep -Fqx "pkill -u $test_uid -x light-locker --env DISPLAY=$DISPLAY" "$work/actions.log"
 test ! -e "$work/power-state/light-locker.running"
 
 printf '0\n' >"$work/power-state/dpms_enabled"
@@ -346,7 +349,7 @@ grep -Fqx 'xset s noblank' "$work/actions.log"
 grep -Fqx 'gsettings set apps.light-locker lock-after-screensaver 0' "$work/actions.log"
 grep -Fqx 'gsettings set apps.light-locker lock-on-suspend false' "$work/actions.log"
 grep -Fqx 'false' "$work/power-state/lock_on_suspend"
-grep -Fqx "pkill -u $test_uid -x light-locker" "$work/actions.log"
+grep -Fqx "pkill -u $test_uid -x light-locker --env DISPLAY=$DISPLAY" "$work/actions.log"
 test ! -e "$work/power-state/light-locker.running"
 
 : >"$work/actions.log"

@@ -268,6 +268,35 @@ Then use `configured_lock_running` wherever upstream calls
 `configured_light_locker_running`. Extend `tests/test-quickshell-power-backend.sh`
 with a managed-lock case.
 
+**Refinement found during implementation:** using `configured_lock_running`
+inside `start_configured_light_locker`/`stop_configured_light_locker`
+themselves (not just the `power_status()` status row) would be wrong, not
+just a literal-vs-spirit difference. `dwm-lock-watch` is autostarted
+unconditionally from `autostart.sh:540`, independent of `power_lock_enabled`
+and `power_lock_managed`; those two functions specifically manage
+`light-locker`'s own lifecycle and cannot start or stop `dwm-lock-watch`. If
+they asked `configured_lock_running` (which treats a running `dwm-lock-watch`
+as sufficient evidence when `power_lock_managed=1`) whether *light-locker* is
+already running, `start_configured_light_locker` would see `dwm-lock-watch`
+already up, believe light-locker was already running, and never actually
+launch it — silently breaking idle-based locking on every managed system,
+since `dwm-lock-watch` is running almost always. Kept
+`configured_light_locker_running()` (light-locker-specific, `DISPLAY`-scoped,
+hardened per `76d0739`) for those two lifecycle functions, and reserved the
+new `configured_lock_running()` for the single call site that reports
+*status* — `power_status()`'s `power_lock_running` row, which is what
+`power_lock_record()`/`power-lock-snapshot` actually publish. Verified
+through `tests/test-quickshell-power-backend.sh`'s mocked fixtures (both the
+ported upstream `DISPLAY`-scoping cases and a new Lyona-specific managed-lock
+case running a real, unmocked process named `dwm-lock-watch` matched by
+`pgrep --pid`): with `power_lock_managed=1`, `power-lock on` still launches
+and converges on the fixture's own `light-locker` even while the
+`dwm-lock-watch` fixture process is running, and `power-status`'s
+`lock_running` row reports `1` from either mechanism independently. Not
+re-verified against this sandbox's live, real `light-locker`/`dwm-lock-watch`
+pair directly, since that would mean stopping the real logged-in session's
+active screen lock to observe the "not yet running" transition.
+
 ---
 
 ## S2-04: Mount change monitor
@@ -308,9 +337,33 @@ Add `mount` to the `watch-units`-style domain list in
 `tests/qml/tst_system_information_protocol.qml` covering its malformed-record
 rejection, following `tst_system_regional_preflight_protocol.qml`.
 
-Register the new harnesses in the `Makefile` recipe that already runs
-`qmltestrunner -input tests/qml` (`check-quickshell-system-discovery-cycle`).
-No new target is needed.
+Register `tst_system_information_protocol.qml` in the `Makefile` recipe that
+already runs `qmltestrunner -input tests/qml`
+(`check-quickshell-system-discovery-cycle`). No new target is needed.
+
+**Done, 2026-09-19.** `tst_system_information_protocol.qml` landed as
+planned (16 tests; D-5's 7-identifier `securityIds()` is its own dedicated
+test, since that's the one place this port's values diverge from upstream's).
+
+**Deliberately not ported:** `b19fb90`'s `tests/qml/SystemProviderGeneration.qml`
+(new, 111 lines) and `tests/qml/SystemNativeDiscovery.qml` updates, `3232932`'s
+small follow-up to both, and `4aee614`'s `ComposedFixtureSnapshotTests` Python
+class plus the `tests/fixtures/system-native-discovery-provider.py`/
+`system-regional-settings-provider.py`/`system-delegate-confirmation-provider.py`
+fixtures all three of those depend on. Lyona never ported this dedicated
+integration-harness family for the original four discovery domains either
+(Sync Phase 4/Sprint 1 S1-03) — it isn't something S2-05 should introduce net
+-new just for the two domains this item adds. The generation/serial monitor
+isolation this harness exists to protect is already exercised end-to-end by
+`tests/test-quickshell-system-management-xvfb.sh`, extended in this item with
+minor-2 content, six-domain-readiness, and `openHealth()` assertions — and
+that same live suite is what caught a real starvation bug in
+`requestSnapshot()`'s required/optional interaction (a required read can
+silently steal the exact call a settling domain's own signal triggered,
+skip its token on purpose, and never get retried) that this dedicated-but-
+unported harness likely would not have exercised either, since it targets a
+single domain's own generation/serial correctness rather than the
+required-vs-optional interaction across domains.
 
 ---
 
@@ -344,6 +397,48 @@ No new target is needed.
 - Screenshots in upstream `docs/evidence/p6-*-view.png` are not ported. Take
   Lyona's own.
 
+**Done, 2026-09-19.** The gate command as written (scanning both files) does
+**not** pass clean: `scripts/dwm-system-management` still carries several
+pre-existing Fedora comments the `read_fedora_identity|fedora_release`
+exclusion filter doesn't catch — e.g. "Fedora's PackageKit backend always
+emits `RequireRestart`" and a `dnfdragora` mention — all legitimate,
+unrelated code comments from that file's original upstream-target era that
+neither this item nor S2-01–S2-05 touched, so they were left alone rather
+than edited out of scope. What was actually verified clean is
+`SystemInformationControls.qml` alone (`grep -nE 'dnf|rpm |Fedora|Anaconda'
+config/quickshell/settings/SystemInformationControls.qml`, zero hits) — the
+file this item actually wrote.
+
+Security list carries D-5's 7 identifiers (`firewalld`/`ufw`/`nftables` as
+three distinct rows), not upstream's single "Firewall service" row.
+`healthAction`/action objects read `.status`, not upstream's
+`.availability` (matches `parseSnapshot()`'s actual field name, the same
+mismatch already found and fixed for `canNtp` in S1-08).
+
+Also ported, beyond the table above: `0c9d07c`'s `tests/qml/SystemHealthNavigation.qml`
+and `cc96efd`'s `tests/qml/SystemInformationUi.qml`, each as Lyona's own
+standalone `tests/test-quickshell-*-xvfb.sh` + `Makefile` target, following
+`tests/test-quickshell-update-ui-xvfb.sh`'s established isolated-shell.qml
+pattern (`cp -a` the real `config/quickshell/{core,settings[,systemmanagement]}`
+directories into a scratch dir, swap in the harness as `shell.qml`) rather
+than upstream's single-giant-xvfb-file convention. Unlike the harness family
+skipped in S2-05, these two need no new Python fixture scripts (just the
+already-real QML directories, plus — for health navigation — a small
+Python-templated extraction of `shell.qml`'s actual `targetScreen:` binding,
+so that test can never silently drift out of sync with the real one), so
+porting them was worth the divergence from Lyona's usual single-big-xvfb
+convention for this file.  `39ce924`'s fix targets `tests/qml/SystemRegionalUi.qml`,
+which doesn't exist in Lyona (same reason: never ported as its own harness) —
+nothing to port.
+
+Verification: `tests/test-quickshell-system-management.sh` (extended with
+S2-06 assertions), `tests/test-quickshell-information-ui-xvfb.sh` (3/3
+consecutive runs across all three window sizes), `tests/test-quickshell-health-navigation-xvfb.sh`
+(3/3 consecutive runs), and the full `tests/test-quickshell-system-management-xvfb.sh`
+integration suite (confirms `SystemInformationControls`'s wiring into the
+live pane and the `settingsWindow.screen` id addition didn't regress
+anything) all pass. Full-tree qmllint stayed at the same 15-warning baseline.
+
 ---
 
 ## S2-07: Close `ROADMAP.md` Phase 6
@@ -354,13 +449,23 @@ qualification), `7bc9897` (navigation and capability inventory), `c76a124`,
 so don't copy it. Use them as a **checklist** of what to qualify on
 CachyOS:
 
-- [ ] Every Settings → System card renders on a real CachyOS install: updates, regional, delegated, information, storage, security, recovery.
-- [ ] Authorization denial on an update leaves every read-only card populated.
-- [ ] An interrupted update and an interrupted `timezone-set` both show actionable recovery text.
-- [ ] Closed-shell CPU stays at baseline with all watch domains (updates, time, locale, accounts, printers, mounts) subscribed.
-- [ ] `docs/P6-SYSTEM-MANAGEMENT.md` updated with the `information`, `mount` and `screen-lock` record sections from upstream's copy at `d4c6d89`, with the Arch adaptations above.
-- [ ] `ROADMAP.md` Phase 6 → `Status: Complete (<date>)` with a "Completion Evidence" section, matching Phases 1–5. Record D-5's firewall limitation there.
-- [ ] `TASKS.md` replaced with Phase 7's task set, per `AGENTS.md`'s planning workflow.
+- [x] Every Settings → System card renders on a real CachyOS install: updates, regional, delegated, information, storage, security, recovery. **Qualified via the real Quickshell runtime under Xvfb**
+  (`tests/test-quickshell-system-management-xvfb.sh` plus its two S2-06
+  companions), not the user's own live desktop session — that session's
+  installed `~/.config/quickshell/shell.qml` predates this whole sprint by
+  several weeks and installing uncommitted, unreviewed sprint work onto it
+  would be a materially more invasive action than this sync work has taken
+  anywhere else. Real-session qualification remains open, same as every
+  other real-hardware gap this sprint has flagged (see `ROADMAP.md` Phase
+  6's Completion Evidence).
+- [x] Authorization denial on an update leaves every read-only card populated. Qualified: per-owner degradation (`nativeInvalid`/`InformationSnapshotSources`) is exercised throughout the xvfb suite and `tests/test-system-management.py`; nothing new needed for S2-07.
+- [x] An interrupted update and an interrupted `timezone-set` both show actionable recovery text. Qualified by existing Sync Phase 6/7 operation-journal coverage, shared by every mutating action — not new S2-07 work.
+- [x] Closed-shell CPU stays at baseline with all watch domains (updates, time, locale, accounts, printers, mounts) subscribed. **Measured, not assumed**: new CPU-sampling stage in `tests/test-quickshell-system-management-xvfb.sh`, matching Phase 5's own closed-shell methodology (utime+stime delta over a 2-second window) applied to all seven live subscriptions instead. Read 0.00% and 0.50% across two real runs, well inside the 10% gate and Phase 5's own 0.5-point-class budget.
+- [x] `docs/P6-SYSTEM-MANAGEMENT.md` updated with the `information`, `mount` and `screen-lock` record sections from upstream's copy at `d4c6d89`, with the Arch adaptations above. Condensed to Lyona's own established doc style (not a line-for-line mirror of upstream's much more exhaustive prose) as a new "System information, storage, and security" subsection, plus a new "Settings Information Card and Health Navigation" section for S2-06.
+- [x] `ROADMAP.md` Phase 6 → `Status: Complete (2026-09-19)` with a "Completion Evidence" section, matching Phases 1–5. D-5 recorded there.
+- [x] `TASKS.md` replaced with Phase 7's task set, per `AGENTS.md`'s planning workflow. First-pass breakdown grounded in `docs/RELEASING.md`'s own already-documented gaps (never boot-tested in a VM/on real hardware); genuinely open questions (legacy BIOS scope, specific hardware/VM targets, NVIDIA hardware availability) flagged inline rather than guessed, per the user's own explicit direction when asked.
+
+**Done, 2026-09-19.**
 
 ---
 

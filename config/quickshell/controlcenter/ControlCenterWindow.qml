@@ -443,7 +443,8 @@ ClickAwayPopup {
                     MenuRow {
                         Layout.fillWidth: true
                         label: "Auto Lock"
-                        detail: root.powerModel.lockEnabled ? "On" : "Off"
+                        detail: !root.powerModel.lockAvailable ? "Unknown"
+                            : root.powerModel.lockEnabled ? "On" : "Off"
                         active: root.powerModel.lockEnabled
                         enabled: root.powerModel.lockAvailable && !root.powerModel.busy
                         onActivated: root.powerModel.setLock(!root.powerModel.lockEnabled, "controlcenter")

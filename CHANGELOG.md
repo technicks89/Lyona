@@ -10,6 +10,252 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Close `ROADMAP.md` Phase 6 (System Management) (Sync Sprint 2 S2-07,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, upstream closed its own Phase 6
+  with docs-only commits whose Fedora-44-evidence prose isn't ported; used as
+  a qualification checklist instead): measured, not assumed, idle CPU with
+  all seven `watch-*` domains (updates, time, locale, accounts, printers,
+  storage/`watch-mounts`, security/`watch-units`) subscribed — a new
+  CPU-sampling stage in
+  `tests/test-quickshell-system-management-xvfb.sh`, Phase 5's own
+  closed-shell methodology applied to this pane's live subscriptions, read
+  0.00% and 0.50% across two runs. Added a new "System information, storage,
+  and security" record-source reference and a "Settings Information Card and
+  Health Navigation" section to `docs/P6-SYSTEM-MANAGEMENT.md`. `ROADMAP.md`
+  Phase 6 is now `Status: Complete (2026-09-19)` with a Completion Evidence
+  section recording D-5's permanent firewall-manager generalization and the
+  sprint's carried-forward limitations (no PackageKitGlib bindings or
+  multi-monitor hardware in this sandbox; `xkbset` still unavailable, carried
+  from Phase 5). `docs/UPSTREAM-SYNC.md`'s status table now reflects Sprint 1
+  and Sprint 2 as done. `TASKS.md` replaced with a first-pass Phase 7 (Arch
+  Image and Release Qualification) task breakdown, grounded in
+  `docs/RELEASING.md`'s own already-documented gap ("has not been
+  boot-tested end-to-end on real hardware or in a VM") rather than invented
+  from nothing; genuinely open questions (legacy BIOS scope, specific
+  hardware/VM targets, NVIDIA hardware availability) are flagged inline for
+  the user to resolve rather than guessed, per their own explicit direction
+  when asked how to scope it.
+- Add the System Settings information card and Health navigation for the
+  minor-2 records S2-05 wired in (Sync Sprint 2 S2-06,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#287`,
+  commits `cc96efd`/`0c9d07c`; `39ce924` targets a harness Lyona never
+  ported, nothing to port): new
+  `config/quickshell/settings/SystemInformationControls.qml` renders system
+  information, a virtualized (240px, bounded to 256 rows) storage overview,
+  privacy/security status, and diagnostics/recovery guidance in the System
+  pane. The fixed "Open System Health" button calls the now-wired
+  `SystemManagementModel.openHealth()`, which opens the existing
+  `dwm-system-health` full-screen window and closes Settings;
+  `shell.qml` resolves the target screen through a three-way fallback (the
+  Settings window's own current screen, then a requested screen, then the
+  active panel's screen) so Health always opens where Settings actually was,
+  including after the window moved between screens.
+  Lyona adaptations: the security list carries D-5's 7 identifiers
+  (`firewalld`/`ufw`/`nftables` as three distinct rows, not upstream's single
+  "Firewall service" row); action-availability checks read `.status`, not
+  upstream's `.availability` (matches `parseSnapshot()`'s actual field name —
+  the same mismatch already found and fixed for `canNtp` back in S1-08);
+  recovery guidance names Arch/Lyona tooling (`pacman -Qkk`, `arch-chroot`
+  from the Lyona installation media, `lyona-update rollback`) in place of
+  upstream's Fedora-specific `dnf`/`rpm -Va`/Anaconda rescue references, with
+  a grep gate now built into `tests/test-quickshell-system-management.sh` so
+  none can silently reappear.
+  Also ported upstream's `tests/qml/SystemInformationUi.qml` and
+  `tests/qml/SystemHealthNavigation.qml` harnesses, each as Lyona's own
+  standalone `tests/test-quickshell-{information-ui,health-navigation}-xvfb.sh`
+  + `Makefile` target (following `tests/test-quickshell-update-ui-xvfb.sh`'s
+  established isolated-shell.qml pattern, `cp -a`-ing the real
+  `config/quickshell` directories into a scratch dir rather than upstream's
+  single-giant-xvfb-file convention) — the health-navigation one
+  programmatically extracts `shell.qml`'s actual `targetScreen:` expression
+  via a small Python template step, so it can never silently drift out of
+  sync with the real production binding. Verified: both new xvfb suites pass
+  3/3 consecutive runs (the information view across all three of upstream's
+  own evidence window sizes); the full `tests/test-quickshell-system-management-xvfb.sh`
+  integration suite and full-tree qmllint (still the same 15-warning
+  baseline) both stayed clean after wiring the new card into the live pane.
+- Wire the information/storage/security readers from S2-01 through S2-04
+  into the system-management snapshot protocol as minor `2`, both on the
+  Python provider and the Quickshell consumer (Sync Sprint 2 S2-05,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#285`/
+  `#286`, commits `7954c54`/`177e3c3`/`b19fb90`/`3232932`/`4aee614`):
+  `InformationSnapshotSources`/`build_information_snapshot()` assemble the
+  new records; `snapshot`/`snapshot-core`/`snapshot-without-storage` are now
+  three distinct fixed CLI commands — a required (recovery-only) read always
+  asks for `snapshot-core` (native rows only, no information block, so it
+  never opens the filesystem inventory's unmonitored initialization gap or
+  falsely marks storage/security as freshly re-verified when it didn't
+  actually probe them); an optional read asks for `snapshot-without-storage`
+  until the `storage` domain's own `watch-mounts` subscription is ready,
+  then `snapshot`. New
+  `config/quickshell/systemmanagement/SystemInformationProtocol.js` mirrors
+  the Python side's ownership/validity rules for the QML parser
+  (`SystemManagementModel.qml`) without duplicating either list. Two new
+  discovery domains, `storage` and `security`, join the existing four in
+  `SystemProviderDiscovery.qml`, which also gained upstream's per-launch
+  isolated monitor (a `generation`/`serial`-stamped identity and callback
+  set created fresh per `Process` launch via `Component.createObject()`), so
+  a stale timer, parser line, or exit signal from a retired monitor can
+  never be mistaken for a replacement one's, even within one pane cycle.
+  `openHealth()`/`healthModel`/`targetScreen`/`onHealthOpened` wire the
+  `health-open` action through to the existing `dwm-system-health` view,
+  closing Settings on open.
+  Lyona adaptation (D-5): `INFORMATION_SECURITY_IDS`/`securityIds()` carry 7
+  identifiers (selinux, secure-boot, firewalld, ufw, nftables,
+  root-encryption, screen-lock), not upstream's 5 — `InformationSnapshotSources.security()`
+  dispatches firewall identifiers through the existing `read_firewall_status(kind)`
+  from S2-02; every state-count assertion (Python and QML) is 21, not
+  upstream's 19.
+  **Real bug found and fixed during verification** (not a mechanical port
+  issue — a genuine correctness gap this session's own live xvfb testing
+  caught): a required (recovery-only) snapshot read can silently "steal" the
+  exact execution slot that a *different*, settling discovery domain's own
+  pending-cycle signal had just triggered, because a queued
+  `root.requiredPending` flag upgrades the very call that signal produced.
+  Since required reads intentionally skip discovery-token draining, that
+  domain's cycle was left stuck in `settling-pending` forever with nothing
+  left to re-trigger it — reproduced live via a delegated `printers-open`
+  dispatch that never recovered even after 100 seconds of retries. Fixed in
+  `SystemManagementModel.qml`'s `requestSnapshot()`: when a call proceeds as
+  required and other domains still have work pending, it now queues
+  `root.snapshotPending = true` so the existing `onRunningChanged` retry
+  logic follows up with a real optional drain once the required read
+  finishes.
+  Also fixed a pre-existing, unrelated dead/wasteful code path found in the
+  same function while making this required edit: `main()`'s `try: backend =
+  PackageKitBackend(); lines = build_snapshot(backend)` discarded that
+  second call's result unconditionally a few lines later; removed.
+  New `tests/qml/tst_system_information_protocol.qml` (16 tests, matching
+  `tst_system_regional_preflight_protocol.qml`'s established pattern for
+  testing a pure `.pragma library` protocol file directly) — a Lyona-specific
+  addition per the sprint document's own suggestion, since upstream never had
+  a dedicated test file for this library. Did not port upstream's separate
+  `tests/qml/SystemNativeDiscovery.qml`/`SystemProviderGeneration.qml`
+  integration-level harness (`b19fb90`, `3232932`) or the matching
+  `ComposedFixtureSnapshotTests` Python class (`4aee614`) and their
+  supporting fixtures — Lyona never ported that harness family for the
+  original four discovery domains either, and the generation/serial monitor
+  isolation it targets is already exercised end-to-end (including the
+  starvation-bug fix above) by the existing, much larger
+  `tests/test-quickshell-system-management-xvfb.sh`, which this change
+  extends with new minor-2 content, six-domain-readiness, and
+  `openHealth()`/Settings-closing assertions instead.
+  Verified live on this sandbox: `snapshot`/`snapshot-core`/
+  `snapshot-without-storage` all produce correct real output (real OS/
+  hardware/security/filesystem data at minor 2, correctly empty/partial
+  information at minor 1 and mid-storage-startup); the full ported
+  `InformationSnapshotTests` (10 tests) and new `tst_system_information_protocol.qml`
+  (16 tests) pass; the xvfb integration suite passed 5/5 consecutive runs
+  including the new S2-05 assertions; the full `tests/test-system-management.py`
+  suite (684 tests) matches the established baseline (only the 16 pre-existing,
+  unrelated PackageKitGlib-unavailable failures in this sandbox).
+- Add a bounded mount change monitor to `dwm-system-management` (Sync Sprint
+  2 S2-04, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
+  `#284`, commits `5b246a0`/`dbbfde1`/`994011f`/`088069b`/`6ac6f5a`):
+  `watch-mounts` supervises one fixed `findmnt --poll` child, arming
+  parent-death cleanup (`prctl(PR_SET_PDEATHSIG)`) and re-checking the
+  original parent PID to close the startup race before `execv`. Readiness is
+  observed only from the live, unreaped child's own `/proc/PID/fd` — the
+  exact `mountinfo` descriptor opened without `O_CLOEXEC` — never a merely
+  temporary parsing descriptor, and never before a one-second deadline
+  expires. A pidfd and a signal-wakeup pipe alongside the child's output mean
+  no idle polling timer runs once ready. The helper requires write-only pipe
+  output (as Quickshell supplies): a socket can half-close without an event,
+  and a read/write FIFO retains its own reader, so both are rejected before
+  starting a child, and losing the pipe's reader is itself a bounded event,
+  not an idle spin. `parse_filesystem_information()` now rejects (rather
+  than silently discarding into "partial") a filesystem inventory beyond its
+  256-record limit, since silently dropping is not the same information as
+  what a client asked for. Lyona adaptation: replaced upstream's one
+  Fedora-specific comment about `CLOEXEC` parsing-descriptor timing with
+  neutral wording, since Lyona never targets Fedora; confirmed `findmnt`
+  (util-linux) is already tracked in `arch:runtime-required`. Verified on
+  this sandbox with a real unprivileged mount namespace (`unshare -rm`):
+  `watch-mounts` correctly reports `mount-monitor-ready` then
+  `mount-change\tmount`/`mount-change\tumount` for actual `mount -t tmpfs`/
+  `umount` calls. The full ported `MountMonitorTests` suite (15 tests,
+  including real subprocess signal-cleanup, orphan-reaping, and an
+  `LD_PRELOAD`-based real-`findmnt` timing test) passes 3/3 consecutive
+  runs. Does not yet wire `watch-mounts` into the snapshot protocol or
+  `SystemProviderDiscovery.qml`'s domain list — that's S2-05.
+- Reuse the shared power helper's automatic screen-lock evidence in
+  `dwm-system-management` through a bounded internal information reader
+  (Sync Sprint 2 S2-03, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported
+  from upstream `#282`, commits `92c4543`/`76d0739`/`2fe6f7d`):
+  `read_screen_lock()`/`parse_screen_lock()` consume
+  `dwm-quickshell-controlcenter power-lock-snapshot`, a new lock-only
+  snapshot that reuses `power_status()` without querying UPower, profiles,
+  suspend, or lid policy. Hardened the shared probe per upstream: the xset
+  screen-saver timeout and gsettings lock-after/lock-on-suspend values are
+  now bounds- and type-validated, reporting `partial` (not stale configured
+  fallback values) on malformed evidence, tracked through a new
+  `lock_malformed` status row. Locker readiness now matches the user's
+  effective UID and current `DISPLAY` through bounded procps environment
+  matching, so a locker on another display or missing display evidence
+  cannot establish readiness. Lyona adaptation: Lyona autostarts
+  `dwm-lock-watch` (a reactive watcher for logind's `Lock` signal,
+  independent of X11-idle timeouts) alongside `light-locker`; a new
+  `configured_lock_running()` recognizes either mechanism as "running"
+  evidence when `power_lock_managed=1`, while `start_configured_light_locker`/
+  `stop_configured_light_locker` keep using the light-locker-only,
+  DISPLAY-scoped check since they only ever manage that daemon's own
+  lifecycle. `dwm-watchdog.sh`'s shared `run_bounded()` gained an optional
+  `bounded_foreground` flag so a nested X11/GSettings probe stays inside the
+  information reader's own timeout-owned process group instead of escaping
+  it. `PowerModel.qml`/`PowerSettingsPane.qml`/`ControlCenterWindow.qml` now
+  show "Unknown" instead of a stale enabled/disabled/timeout value when the
+  lock record isn't `available`. Verified against this sandbox's real
+  session: `power-lock-snapshot` and `read_screen_lock()` both correctly
+  report `available`/`enabled` from the real X11/gsettings/light-locker
+  state; `tests/test-quickshell-power-backend.sh` (including a new
+  Lyona-specific managed-lock case exercising real `dwm-lock-watch`
+  evidence via `pgrep --pid`) and `tests/test-quickshell-controlcenter.sh`
+  pass 3/3 consecutive runs; the full `tests/test-system-management.py`
+  suite (659 tests, +8 new `ScreenLockTests`) passes with only the
+  pre-existing, unrelated PackageKitGlib-unavailable failures.
+  `tests/test-quickshell-settings-xvfb.sh`'s new lock-record fixture cases
+  were ported but could not be executed in this sandbox, which lacks the
+  suite's required `xkbset` binary (a pre-existing, unrelated gap).
+- Add bounded security status readers to `dwm-system-management` (Sync
+  Sprint 2 S2-02, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from
+  upstream `#280`/`#281`): `read_selinux_status()` (runtime enforcement
+  first, config fallback only when the runtime interface is absent),
+  `read_secure_boot_status()` (the fixed EFI `SecureBoot` variable, never
+  inferring "disabled" from mere absence or a denied read),
+  `read_root_encryption()` (resolves LUKS/dm-crypt ancestry above `/` from
+  bounded `lsblk --json`, requiring a complete, unambiguous block-device
+  graph before claiming either answer). Lyona adaptation (D-5, decided
+  2026-09-16): upstream's `FirewalldRead` only ever asks about
+  `firewalld.service`, but a default Arch/CachyOS install runs no firewall
+  at all -- generalized into `FirewallUnitRead`/`read_firewall_status(kind)`
+  over `firewalld`, `ufw`, and `nftables`, the same real, distinct systemd
+  units either package ships, so the eventual Settings card shows honest
+  per-manager status instead of only ever reporting on firewalld. Verified
+  against this sandbox's own real system: SELinux correctly `unsupported`,
+  Secure Boot correctly read as disabled from the real EFI variable,
+  firewalld/ufw correctly `unsupported` (not installed) while nftables
+  correctly reads as installed-but-disabled, and root encryption correctly
+  resolves to `unencrypted` from this machine's real block-device topology.
+- Add bounded local, hardware, and filesystem information readers to
+  `dwm-system-management` (Sync Sprint 2 S2-01,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
+  `#277`/`#278`/`#279`): `read_local_information()` reads OS identity
+  (`/etc/os-release`), CPU model (`/proc/cpuinfo`), memory/swap
+  (`/proc/meminfo`), kernel release/architecture (`uname`), logical CPU
+  count, and boot-time uptime, each field failing independently rather than
+  blanking the whole read. `read_hardware_information()` reads vendor/model
+  from `org.freedesktop.hostname1` over a fresh, bounded D-Bus connection.
+  `read_filesystem_information()` runs a fixed, deadline-bounded
+  `findmnt --json` and validates its output into per-mount rows (source,
+  target, filesystem type, size/used/available bytes), rejecting duplicate
+  or oversized JSON without losing valid peer rows. None of this is wired
+  into the snapshot protocol or any UI yet -- that starts at S2-05.
+  Lyona adaptation: upstream's OS-identity mapping only reads `VERSION_ID`,
+  which renders "unknown" on Arch and CachyOS since both are rolling
+  releases with no `VERSION_ID` at all; `parse_os_information()` now falls
+  back to `BUILD_ID` (which Arch's `os-release` sets to `rolling`) only
+  when `VERSION_ID` itself was not available, verified against both a
+  synthetic fixture and this repository's own CachyOS sandbox.
 - Add a manual `Full suite (manual)` GitHub Actions workflow
   (`.github/workflows/full-suite.yml`, Sync Sprint 1 S1-01,
   `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) that runs `scripts/run-tests
