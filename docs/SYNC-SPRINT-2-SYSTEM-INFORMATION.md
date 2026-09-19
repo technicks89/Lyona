@@ -337,9 +337,9 @@ Add `mount` to the `watch-units`-style domain list in
 `tests/qml/tst_system_information_protocol.qml` covering its malformed-record
 rejection, following `tst_system_regional_preflight_protocol.qml`.
 
-Register the new harnesses in the `Makefile` recipe that already runs
-`qmltestrunner -input tests/qml` (`check-quickshell-system-discovery-cycle`).
-No new target is needed.
+Register `tst_system_information_protocol.qml` in the `Makefile` recipe that
+already runs `qmltestrunner -input tests/qml`
+(`check-quickshell-system-discovery-cycle`). No new target is needed.
 
 **Done, 2026-09-19.** `tst_system_information_protocol.qml` landed as
 planned (16 tests; D-5's 7-identifier `securityIds()` is its own dedicated
@@ -397,12 +397,17 @@ required-vs-optional interaction across domains.
 - Screenshots in upstream `docs/evidence/p6-*-view.png` are not ported. Take
   Lyona's own.
 
-**Done, 2026-09-19.** The Fedora-reference gate passed clean (`scripts/dwm-system-management`
-still carries unrelated, pre-existing, legitimate Fedora comments from its
-original upstream-target era — `read_fedora_identity`/`fedora_release` and a
-couple of comparative code comments neither this item nor S2-01–S2-05
-touched; the gate command as written checks the whole file, not a diff, so
-it's scoped here to `SystemInformationControls.qml` only, which is clean).
+**Done, 2026-09-19.** The gate command as written (scanning both files) does
+**not** pass clean: `scripts/dwm-system-management` still carries several
+pre-existing Fedora comments the `read_fedora_identity|fedora_release`
+exclusion filter doesn't catch — e.g. "Fedora's PackageKit backend always
+emits `RequireRestart`" and a `dnfdragora` mention — all legitimate,
+unrelated code comments from that file's original upstream-target era that
+neither this item nor S2-01–S2-05 touched, so they were left alone rather
+than edited out of scope. What was actually verified clean is
+`SystemInformationControls.qml` alone (`grep -nE 'dnf|rpm |Fedora|Anaconda'
+config/quickshell/settings/SystemInformationControls.qml`, zero hits) — the
+file this item actually wrote.
 
 Security list carries D-5's 7 identifiers (`firewalld`/`ufw`/`nftables` as
 three distinct rows), not upstream's single "Firewall service" row.
@@ -455,7 +460,7 @@ CachyOS:
   6's Completion Evidence).
 - [x] Authorization denial on an update leaves every read-only card populated. Qualified: per-owner degradation (`nativeInvalid`/`InformationSnapshotSources`) is exercised throughout the xvfb suite and `tests/test-system-management.py`; nothing new needed for S2-07.
 - [x] An interrupted update and an interrupted `timezone-set` both show actionable recovery text. Qualified by existing Sync Phase 6/7 operation-journal coverage, shared by every mutating action — not new S2-07 work.
-- [x] Closed-shell CPU stays at baseline with all watch domains (updates, time, locale, accounts, printers, mounts) subscribed. **Measured, not assumed**: new CPU-sampling stage in `tests/test-quickshell-system-management-xvfb.sh`, matching Phase 5's own closed-shell methodology (utime+stime delta over a 2-second window) applied to all six live subscriptions instead. Read 0.00% and 0.50% across two real runs, well inside the 10% gate and Phase 5's own 0.5-point-class budget.
+- [x] Closed-shell CPU stays at baseline with all watch domains (updates, time, locale, accounts, printers, mounts) subscribed. **Measured, not assumed**: new CPU-sampling stage in `tests/test-quickshell-system-management-xvfb.sh`, matching Phase 5's own closed-shell methodology (utime+stime delta over a 2-second window) applied to all seven live subscriptions instead. Read 0.00% and 0.50% across two real runs, well inside the 10% gate and Phase 5's own 0.5-point-class budget.
 - [x] `docs/P6-SYSTEM-MANAGEMENT.md` updated with the `information`, `mount` and `screen-lock` record sections from upstream's copy at `d4c6d89`, with the Arch adaptations above. Condensed to Lyona's own established doc style (not a line-for-line mirror of upstream's much more exhaustive prose) as a new "System information, storage, and security" subsection, plus a new "Settings Information Card and Health Navigation" section for S2-06.
 - [x] `ROADMAP.md` Phase 6 → `Status: Complete (2026-09-19)` with a "Completion Evidence" section, matching Phases 1–5. D-5 recorded there.
 - [x] `TASKS.md` replaced with Phase 7's task set, per `AGENTS.md`'s planning workflow. First-pass breakdown grounded in `docs/RELEASING.md`'s own already-documented gaps (never boot-tested in a VM/on real hardware); genuinely open questions (legacy BIOS scope, specific hardware/VM targets, NVIDIA hardware availability) flagged inline rather than guessed, per the user's own explicit direction when asked.

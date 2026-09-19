@@ -4021,6 +4021,8 @@ class MountMonitorTests(unittest.TestCase):
         self.gone(child)
 
     def test_real_findmnt_parsing_open_is_not_its_polling_baseline(self):
+        if shutil.which("cc") is None:
+            self.skipTest("cc is unavailable")
         with tempfile.TemporaryDirectory() as directory:
             directory = pathlib.Path(directory)
             source, library, marker = directory / "pause.c", directory / "pause.so", directory / "parsing"

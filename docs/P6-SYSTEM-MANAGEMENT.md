@@ -242,10 +242,11 @@ Information (`INFORMATION_LOCAL_IDS`/`HARDWARE_INFORMATION_FIELDS`,
 
 - `os-name`/`os-version` — `/etc/os-release`'s `PRETTY_NAME`/`VERSION_ID`,
   capped at 64 KiB. `os-version` falls back to `BUILD_ID` only when
-  `VERSION_ID` itself was never reported — Arch/CachyOS report `rolling` for
-  `VERSION_ID`, not a version number, so this is the only place the port
-  diverges from upstream's own field selection (verified against this
-  sandbox's real `/etc/os-release`).
+  `VERSION_ID` itself is not available (missing or malformed), never
+  overriding a real value — Arch/CachyOS omit `VERSION_ID` entirely and set
+  `BUILD_ID=rolling`, so this is the only place the port diverges from
+  upstream's own field selection (verified against this sandbox's real
+  `/etc/os-release`).
 - `kernel-release`/`architecture` — `os.uname()`. `hardware-vendor`/
   `hardware-model` — `org.freedesktop.hostname1`'s `HardwareVendor`/
   `HardwareModel` properties, one ten-second aggregate deadline for both.
@@ -383,8 +384,11 @@ complete<TAB>snapshot|operation
 ```
 
 `filesystem` mirrors upstream's grammar exactly; minor `2` (S2-05) emits it
-for each mounted real filesystem the bounded `findmnt --poll`-backed reader
-observes — see "Not implemented upstream" above.
+for each mounted real filesystem the bounded, one-shot `findmnt --json`
+reader (`read_filesystem_information()`) observes at snapshot time.
+`watch-mounts` (`findmnt --poll`, [S2-04](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
+is the separate live-invalidation source that triggers a fresh snapshot; it
+never supplies filesystem rows itself — see "Not implemented upstream" above.
 
 The protocol minor selects a cumulative active-ID set so each Sync Phase can
 produce a *truthful complete* snapshot rather than a half-populated one — a

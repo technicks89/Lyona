@@ -14,8 +14,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, upstream closed its own Phase 6
   with docs-only commits whose Fedora-44-evidence prose isn't ported; used as
   a qualification checklist instead): measured, not assumed, idle CPU with
-  all six `watch-*` domains (updates, time, locale, accounts, printers,
-  storage/`watch-mounts`) subscribed — a new CPU-sampling stage in
+  all seven `watch-*` domains (updates, time, locale, accounts, printers,
+  storage/`watch-mounts`, security/`watch-units`) subscribed — a new
+  CPU-sampling stage in
   `tests/test-quickshell-system-management-xvfb.sh`, Phase 5's own
   closed-shell methodology applied to this pane's live subscriptions, read
   0.00% and 0.50% across two runs. Added a new "System information, storage,
@@ -253,7 +254,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   which renders "unknown" on Arch and CachyOS since both are rolling
   releases with no `VERSION_ID` at all; `parse_os_information()` now falls
   back to `BUILD_ID` (which Arch's `os-release` sets to `rolling`) only
-  when `VERSION_ID` itself was not reported, verified against both a
+  when `VERSION_ID` itself was not available, verified against both a
   synthetic fixture and this repository's own CachyOS sandbox.
 - Add a manual `Full suite (manual)` GitHub Actions workflow
   (`.github/workflows/full-suite.yml`, Sync Sprint 1 S1-01,

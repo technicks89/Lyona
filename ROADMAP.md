@@ -429,9 +429,9 @@ without turning Quickshell into an unrestricted administration console.
   preview→confirm→dispatch→interrupt scenarios) — read-only cards stay
   populated because degradation is scoped per-owner
   (`nativeInvalid`/`InformationSnapshotSources`), never all-or-nothing.
-  Idle CPU with all six live `watch-*` subscriptions open (updates, time,
-  locale, accounts, printers, storage/`watch-mounts`) measured **0.00–0.50
-  percentage points** over a 2-second sample
+  Idle CPU with all seven live `watch-*` subscriptions open (updates, time,
+  locale, accounts, printers, storage/`watch-mounts`, security/`watch-units`)
+  measured **0.00–0.50 percentage points** over a 2-second sample
   (`tests/test-quickshell-system-management-xvfb.sh`'s own S2-07
   measurement stage, matching Phase 5's closed-shell CPU methodology),
   inside the same 0.5-point-class budget Phase 5 qualified against.
