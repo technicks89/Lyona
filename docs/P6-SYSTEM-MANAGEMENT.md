@@ -226,6 +226,89 @@ account, printer, or repository administration inside
 `dwm-system-management`. This is privilege minimization, not a shortcut, and
 carries over from upstream unchanged.
 
+### System information, storage, and security
+
+Every source below is a fixed, bounded, read-only probe; none starts a
+service, holds a lock, or polls. Each source degrades independently —
+a missing or malformed one never invalidates its peers — and reports one of
+five statuses: `available` (a known value), `partial` (accessible but
+incomplete or malformed evidence), `restricted` (read denied), `unavailable`
+(an expected command/service could not be reached), or `unsupported` (the
+capability or its platform source does not exist). Every status other than
+`available` carries value `unknown`.
+
+Information (`INFORMATION_LOCAL_IDS`/`HARDWARE_INFORMATION_FIELDS`,
+`scripts/dwm-system-management`):
+
+- `os-name`/`os-version` — `/etc/os-release`'s `PRETTY_NAME`/`VERSION_ID`,
+  capped at 64 KiB. `os-version` falls back to `BUILD_ID` only when
+  `VERSION_ID` itself was never reported — Arch/CachyOS report `rolling` for
+  `VERSION_ID`, not a version number, so this is the only place the port
+  diverges from upstream's own field selection (verified against this
+  sandbox's real `/etc/os-release`).
+- `kernel-release`/`architecture` — `os.uname()`. `hardware-vendor`/
+  `hardware-model` — `org.freedesktop.hostname1`'s `HardwareVendor`/
+  `HardwareModel` properties, one ten-second aggregate deadline for both.
+- `cpu-model` — `/proc/cpuinfo`'s first `model name` field, capped at 4 MiB.
+  `logical-cpus` — `os.cpu_count()`.
+- `memory-total-bytes`/`memory-available-bytes`/`swap-total-bytes`/
+  `swap-free-bytes` — `/proc/meminfo`'s `MemTotal`/`MemAvailable`/
+  `SwapTotal`/`SwapFree`, capped at 1 MiB, each a checked `kB`→bytes
+  conversion. `uptime-seconds` — `clock_gettime(CLOCK_BOOTTIME)`.
+
+Storage (`FilesystemInformation`, `read_filesystem_information()`): bounded
+`findmnt --json --bytes --real --uniq --output ID,SOURCE,TARGET,FSTYPE,SIZE,USED,AVAIL`
+in its own process group, a three-second deadline, a 384 KiB output cap, and
+at most 256 unique mount-ID records (`--uniq` collapses an over-mounted
+target to one row; the kernel mount ID is the record key). `filesystem-summary`
+is always exactly one state: `available` carries the emitted row count,
+`partial`/`unknown` accompanies a usable subset, anything else carries no
+rows. `watch-mounts` ([S2-04](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
+is the separate live-invalidation source; the reader above never polls.
+
+Security (`INFORMATION_SECURITY_IDS`, `read_selinux_status()`/
+`read_secure_boot_status()`/`read_firewall_status(kind)`/
+`read_root_encryption()`/`read_screen_lock()`):
+
+- `selinux` — the single-byte `/sys/fs/selinux/enforce` kernel interface when
+  present (`1` enforcing, `0` permissive); otherwise the allowlisted
+  `SELINUX` key in `/etc/selinux/config` (64 KiB cap), where only the literal
+  value `disabled` is trusted — `enforcing`/`permissive` without the runtime
+  interface is inconsistent and reported `partial`, never guessed. Absent
+  everywhere is `unsupported` (verified against this sandbox: `unsupported`,
+  no `selinux` package installed).
+- `secure-boot` — only the EFI global variable
+  `/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c`;
+  never a directory enumeration. The one-byte payload after the attributes
+  prefix must be `0`/`1`. No EFI variables filesystem is `unsupported`
+  (verified: this sandbox's real EFI variable read as `available`/`disabled`).
+- `firewalld`/`ufw`/`nftables` — **D-5** (decided 2026-09-16): upstream only
+  ever asks about `firewalld.service`; a default Arch/CachyOS install runs
+  none of the three real, distinct firewall managers a package might ship, so
+  this port generalizes to `FirewallUnitRead`/`FIREWALL_UNITS`/
+  `read_firewall_status(kind)` over all three, each its own independent
+  `ActiveState` read on `org.freedesktop.systemd1`, an absent unit reporting
+  `unsupported` rather than assuming firewalld is the only possibility.
+  Verified against this sandbox: firewalld/ufw `unsupported` (not installed),
+  nftables `available`/`disabled` (installed, inactive). This state describes
+  only the named service, never firewall rule content, and never implies the
+  other two managers are absent.
+- `root-encryption` — bounded `lsblk --json` (`NAME,TYPE,FSTYPE,MOUNTPOINTS,PKNAME`),
+  same process-group/three-second-deadline/384 KiB-cap shape as `findmnt`,
+  at most 1024 unique block-device records. A root mount with `crypt`/
+  `crypto_LUKS` ancestry is `encrypted`; a fully resolved ancestry without
+  either is `unencrypted`; incomplete or inconsistent topology is `partial`,
+  never guessed either way. Verified against this sandbox's real block-device
+  topology: `available`/`unencrypted`.
+- `screen-lock` — reuses `dwm-quickshell-controlcenter power-lock-snapshot`
+  ([`POWER-PROTOCOL.md`](POWER-PROTOCOL.md), [S2-03](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-03-automatic-screen-lock-evidence)),
+  never a second locker or GSettings probe. Lyona additionally autostarts
+  `dwm-lock-watch` alongside `light-locker`; `configured_lock_running()`
+  recognizes either as "running" evidence when `power_lock_managed=1`.
+  `available`/`enabled` requires both `ENABLED=yes` and `RUNNING=yes`;
+  `ENABLED=yes` with `RUNNING=no` (configured but not actually running) is
+  `partial`, not a false `enabled`.
+
 ### Not implemented upstream — out of scope (superseded, see below)
 
 This section described upstream's state as surveyed before Sync Sprint 2:

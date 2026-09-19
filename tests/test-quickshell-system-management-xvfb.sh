@@ -470,6 +470,25 @@ for domain in time locale accounts printers storage security; do
 	fi
 done
 
+test_stage='sampling idle CPU with all six watch-* domains subscribed (S2-07 qualification)'
+# Every domain above (updates, time, locale, accounts, printers -- plus
+# storage/security, S2-05) is now idle:ready: its own bounded watch-*
+# subprocess is live and subscribed, but nothing is polling. Matches Phase
+# 5's own closed-shell CPU methodology (utime+stime delta over a fixed
+# window), applied here to Quickshell's own process while every discovery
+# domain's subscription is active and settled, not just closed.
+clock_ticks=$(getconf CLK_TCK)
+cpu_before=$(awk '{ print $14 + $15 }' "/proc/$quickshell_pid/stat")
+sleep 2
+cpu_after=$(awk '{ print $14 + $15 }' "/proc/$quickshell_pid/stat")
+cpu_percent=$(awk -v delta="$((cpu_after - cpu_before))" -v ticks="$clock_ticks" \
+	'BEGIN { printf "%.2f", (delta * 100) / (ticks * 2) }')
+if ! awk -v cpu="$cpu_percent" 'BEGIN { exit !(cpu < 10.0) }'; then
+	printf 'Idle CPU with all six watch-* domains subscribed exceeded budget: %s%%\n' "$cpu_percent" >&2
+	exit 1
+fi
+printf 'Idle CPU with all six watch-* domains subscribed: %s%%\n' "$cpu_percent"
+
 test_stage='validating time reconciliation settles after the stubbed owner arrival (S1-08 #275)'
 # watch-time's own stub reports one "owner-arrived" record shortly after
 # readiness (uncertainty, not a confirmed change); timeReconciliationModel

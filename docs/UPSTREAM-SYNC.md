@@ -18,7 +18,9 @@ literal code.
 | Fork-era sync Phases 0–9 and 11 (DPI gate, standalone fixes, panel widgets, Settings layout, accessibility capabilities/contrast/motion/controls, XKB input, notifications, display apply, security hardening) | ✅ Done. Record in `CHANGELOG.md` and git history |
 | Lyona's own `UPDATE-001…003` (`lyona-update`) | ✅ Done (`3c8adb2`, `d489f1f`, `fdb0995`) |
 | System-management Sync Phases 1–9 (upstream `#207`–`#265`) | ✅ Done, through `92ec6e2` (PR #33). Tracking for #33 closes in [Sprint 1 S1-02](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-02-close-the-sync-phase-9-tracking-gap) |
-| Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 **Planned: four sprints**, below |
+| **Sprint 1** ([`SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md)) | ✅ Done, merged `e947fa7` (#68) |
+| **Sprint 2** ([`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md)) | ✅ Done (2026-09-19) — closes `ROADMAP.md` Phase 6, see its own "Completion Evidence" |
+| Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 **Planned: Sprints 3–4**, below |
 
 ## Sprint plan
 

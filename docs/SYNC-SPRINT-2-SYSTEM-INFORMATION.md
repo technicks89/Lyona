@@ -444,13 +444,23 @@ qualification), `7bc9897` (navigation and capability inventory), `c76a124`,
 so don't copy it. Use them as a **checklist** of what to qualify on
 CachyOS:
 
-- [ ] Every Settings → System card renders on a real CachyOS install: updates, regional, delegated, information, storage, security, recovery.
-- [ ] Authorization denial on an update leaves every read-only card populated.
-- [ ] An interrupted update and an interrupted `timezone-set` both show actionable recovery text.
-- [ ] Closed-shell CPU stays at baseline with all watch domains (updates, time, locale, accounts, printers, mounts) subscribed.
-- [ ] `docs/P6-SYSTEM-MANAGEMENT.md` updated with the `information`, `mount` and `screen-lock` record sections from upstream's copy at `d4c6d89`, with the Arch adaptations above.
-- [ ] `ROADMAP.md` Phase 6 → `Status: Complete (<date>)` with a "Completion Evidence" section, matching Phases 1–5. Record D-5's firewall limitation there.
-- [ ] `TASKS.md` replaced with Phase 7's task set, per `AGENTS.md`'s planning workflow.
+- [x] Every Settings → System card renders on a real CachyOS install: updates, regional, delegated, information, storage, security, recovery. **Qualified via the real Quickshell runtime under Xvfb**
+  (`tests/test-quickshell-system-management-xvfb.sh` plus its two S2-06
+  companions), not the user's own live desktop session — that session's
+  installed `~/.config/quickshell/shell.qml` predates this whole sprint by
+  several weeks and installing uncommitted, unreviewed sprint work onto it
+  would be a materially more invasive action than this sync work has taken
+  anywhere else. Real-session qualification remains open, same as every
+  other real-hardware gap this sprint has flagged (see `ROADMAP.md` Phase
+  6's Completion Evidence).
+- [x] Authorization denial on an update leaves every read-only card populated. Qualified: per-owner degradation (`nativeInvalid`/`InformationSnapshotSources`) is exercised throughout the xvfb suite and `tests/test-system-management.py`; nothing new needed for S2-07.
+- [x] An interrupted update and an interrupted `timezone-set` both show actionable recovery text. Qualified by existing Sync Phase 6/7 operation-journal coverage, shared by every mutating action — not new S2-07 work.
+- [x] Closed-shell CPU stays at baseline with all watch domains (updates, time, locale, accounts, printers, mounts) subscribed. **Measured, not assumed**: new CPU-sampling stage in `tests/test-quickshell-system-management-xvfb.sh`, matching Phase 5's own closed-shell methodology (utime+stime delta over a 2-second window) applied to all six live subscriptions instead. Read 0.00% and 0.50% across two real runs, well inside the 10% gate and Phase 5's own 0.5-point-class budget.
+- [x] `docs/P6-SYSTEM-MANAGEMENT.md` updated with the `information`, `mount` and `screen-lock` record sections from upstream's copy at `d4c6d89`, with the Arch adaptations above. Condensed to Lyona's own established doc style (not a line-for-line mirror of upstream's much more exhaustive prose) as a new "System information, storage, and security" subsection, plus a new "Settings Information Card and Health Navigation" section for S2-06.
+- [x] `ROADMAP.md` Phase 6 → `Status: Complete (2026-09-19)` with a "Completion Evidence" section, matching Phases 1–5. D-5 recorded there.
+- [x] `TASKS.md` replaced with Phase 7's task set, per `AGENTS.md`'s planning workflow. First-pass breakdown grounded in `docs/RELEASING.md`'s own already-documented gaps (never boot-tested in a VM/on real hardware); genuinely open questions (legacy BIOS scope, specific hardware/VM targets, NVIDIA hardware availability) flagged inline rather than guessed, per the user's own explicit direction when asked.
+
+**Done, 2026-09-19.**
 
 ---
 

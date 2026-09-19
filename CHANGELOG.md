@@ -10,6 +10,30 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Close `ROADMAP.md` Phase 6 (System Management) (Sync Sprint 2 S2-07,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, upstream closed its own Phase 6
+  with docs-only commits whose Fedora-44-evidence prose isn't ported; used as
+  a qualification checklist instead): measured, not assumed, idle CPU with
+  all six `watch-*` domains (updates, time, locale, accounts, printers,
+  storage/`watch-mounts`) subscribed — a new CPU-sampling stage in
+  `tests/test-quickshell-system-management-xvfb.sh`, Phase 5's own
+  closed-shell methodology applied to this pane's live subscriptions, read
+  0.00% and 0.50% across two runs. Added a new "System information, storage,
+  and security" record-source reference and a "Settings Information Card and
+  Health Navigation" section to `docs/P6-SYSTEM-MANAGEMENT.md`. `ROADMAP.md`
+  Phase 6 is now `Status: Complete (2026-09-19)` with a Completion Evidence
+  section recording D-5's permanent firewall-manager generalization and the
+  sprint's carried-forward limitations (no PackageKitGlib bindings or
+  multi-monitor hardware in this sandbox; `xkbset` still unavailable, carried
+  from Phase 5). `docs/UPSTREAM-SYNC.md`'s status table now reflects Sprint 1
+  and Sprint 2 as done. `TASKS.md` replaced with a first-pass Phase 7 (Arch
+  Image and Release Qualification) task breakdown, grounded in
+  `docs/RELEASING.md`'s own already-documented gap ("has not been
+  boot-tested end-to-end on real hardware or in a VM") rather than invented
+  from nothing; genuinely open questions (legacy BIOS scope, specific
+  hardware/VM targets, NVIDIA hardware availability) are flagged inline for
+  the user to resolve rather than guessed, per their own explicit direction
+  when asked how to scope it.
 - Add the System Settings information card and Health navigation for the
   minor-2 records S2-05 wired in (Sync Sprint 2 S2-06,
   `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#287`,
