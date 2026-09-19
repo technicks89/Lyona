@@ -120,8 +120,14 @@ set -eu
 generation='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 opid='op-11111111111111111111111111111111'
 case "${1:-}" in
-snapshot)
-	printf 'system-management-protocol\t1\t1\n'
+snapshot | snapshot-core | snapshot-without-storage)
+	# Sync Sprint 2 S2-05 (#286): a required (recovery-only) read always asks
+	# for snapshot-core (native rows, no information/storage/security block,
+	# protocol stays at NATIVE_SNAPSHOT_MINOR); an optional read asks for
+	# snapshot-without-storage until the storage domain's own watch-mounts
+	# subscription is ready (filesystem-summary stays partial, no filesystem
+	# rows), then snapshot once it is.
+	printf 'system-management-protocol\t1\t%s\n' "$([ "$1" = snapshot-core ] && printf 1 || printf 2)"
 	printf 'snapshot-generation\t%s\n' "$generation"
 	printf 'provider\tupdates\tpartial\tdelegated\tPackageKit\tRead-only update discovery is available\n'
 	printf 'provider\trecovery\tunsupported\tuser-session\tdwm-system-management\tManaged update recovery is not enabled in this build\n'
@@ -129,6 +135,12 @@ snapshot)
 	printf 'provider\taccounts\tavailable\tdelegated\torg.freedesktop.Accounts\tAccount status is available\n'
 	printf 'provider\tprinters\tavailable\tdelegated\torg.freedesktop.systemd1\tPrinter status is available\n'
 	printf 'provider\tsources\tavailable\tdelegated\torg.freedesktop.PackageKit\tSoftware source status is available\n'
+	if [ "$1" != snapshot-core ]; then
+		printf 'provider\tinformation\tavailable\tread-only\tdwm-system-management\tBounded read-only observations; inspect individual state details\n'
+		printf 'provider\tstorage\tavailable\tread-only\tdwm-system-management\tBounded read-only observations; inspect individual state details\n'
+		printf 'provider\tsecurity\tavailable\tread-only\tdwm-system-management\tBounded read-only observations; inspect individual state details\n'
+		printf 'provider\tdiagnostics\tavailable\tuser-session\tdwm-system-health\tExisting health scan, diagnostics, and fixed repair workflow\n'
+	fi
 	printf 'state\tupdate-summary\tavailable\t1\tPackageKit update discovery completed\n'
 	printf 'state\tupdate-last-refresh\tavailable\t120\tSeconds since PackageKit last refreshed metadata\n'
 	printf 'state\tupdate-restart\tavailable\tsystem\tHeuristic guidance over pending package names\n'
@@ -138,6 +150,33 @@ snapshot)
 	printf 'state\tlocale\tavailable\tC\t\n'
 	printf 'state\taccounts-count\tavailable\t1\tAccount count\n'
 	printf 'state\tcups-service\tavailable\tstopped\tCUPS state\n'
+	if [ "$1" != snapshot-core ]; then
+		printf 'state\tos-name\tavailable\tFixture Linux\tOperating system identity\n'
+		printf 'state\tos-version\tavailable\trolling\tOperating system identity\n'
+		printf 'state\tkernel-release\tavailable\t6.18.1-fixture\tKernel identity\n'
+		printf 'state\tarchitecture\tavailable\tx86_64\tKernel identity\n'
+		printf 'state\thardware-vendor\tavailable\tFixture Vendor\tHardware identity\n'
+		printf 'state\thardware-model\tavailable\tFixture Model\tHardware identity\n'
+		printf 'state\tcpu-model\tavailable\tFixture CPU\tProcessor model\n'
+		printf 'state\tlogical-cpus\tavailable\t8\tLogical processors\n'
+		printf 'state\tmemory-total-bytes\tavailable\t16000000000\tMemory bytes at this read\n'
+		printf 'state\tmemory-available-bytes\tavailable\t8000000000\tMemory bytes at this read\n'
+		printf 'state\tswap-total-bytes\tavailable\t0\tMemory bytes at this read\n'
+		printf 'state\tswap-free-bytes\tavailable\t0\tMemory bytes at this read\n'
+		printf 'state\tuptime-seconds\tavailable\t3600\tWhole seconds since boot, including suspend\n'
+		printf 'state\tselinux\tavailable\tdisabled\tInformation source is absent\n'
+		printf 'state\tsecure-boot\tavailable\tdisabled\tEFI Secure Boot variable\n'
+		printf 'state\tfirewalld\tavailable\tdisabled\tFirewalld status\n'
+		printf 'state\tufw\tavailable\tdisabled\tufw status\n'
+		printf 'state\tnftables\tavailable\tdisabled\tnftables status\n'
+		printf 'state\troot-encryption\tavailable\tunencrypted\tResolved root block-device ancestry only\n'
+		printf 'state\tscreen-lock\tavailable\tenabled\tAutomatic screen locking from the shared power helper\n'
+		if [ "$1" = snapshot ]; then
+			printf 'state\tfilesystem-summary\tavailable\t1\tMounted real filesystems\n'
+		else
+			printf 'state\tfilesystem-summary\tpartial\tunknown\tMount monitoring is not ready; reload storage status to retry\n'
+		fi
+	fi
 	printf 'action\tupdates-refresh\tunavailable\tdelegated\tupdates\tRefresh updates\tManaged update operations are not enabled in this build\n'
 	printf 'action\tupdates-install-all\tunavailable\tdelegated\tupdates\tInstall all updates\tManaged update operations are not enabled\n'
 	printf 'action\tupdates-cancel\tunavailable\tdelegated\tupdates\tCancel update\tNo managed update operation is active\n'
@@ -151,6 +190,9 @@ snapshot)
 	printf 'action\tpassword-open\tavailable\tdelegated\taccounts\tPassword\tChange your password\n'
 	printf 'action\tprinters-open\tavailable\tdelegated\tprinters\tPrinters\tManage printers\n'
 	printf 'action\tsources-open\tunavailable\tdelegated\tsources\tSoftware sources\tNo interactive repository editor is packaged for Arch\n'
+	if [ "$1" != snapshot-core ]; then
+		printf 'action\thealth-open\tavailable\tuser-session\tdiagnostics\tOpen system health\tOpen the existing health view and read-only scan\n'
+	fi
 	printf 'update\tlinux-cachyos;6.18.1-1;x86_64;core\tunknown\tinstallable\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	printf 'package-change\tlinux-cachyos;6.18.1-1;x86_64;core\tupdate\tlinux-cachyos\t6.18.1-1\tCachyOS kernel\n'
 	# One account record, matching the accounts-count=1 declared above --
@@ -158,6 +200,9 @@ snapshot)
 	# the accounts domain malformed (a declared count with no matching rows).
 	printf 'account\tu1000\tcurrent\tTest User\ttestuser\n'
 	printf 'repository\tcore\tenabled\tArch Linux core repository\n'
+	if [ "$1" = snapshot ]; then
+		printf 'filesystem\t1\tavailable\t/dev/fixture\t/\text4\t1000000000\t200000000\t800000000\tFilesystem bytes at this read\n'
+	fi
 	printf 'complete\tsnapshot\n'
 	;;
 watch-updates)
@@ -200,6 +245,11 @@ watch-accounts)
 	;;
 watch-units)
 	printf 'units-event\tready\n'
+	trap 'exit 0' TERM
+	while :; do sleep 0.1; done
+	;;
+watch-mounts)
+	printf 'mount-monitor-ready\n'
 	trap 'exit 0' TERM
 	while :; do sleep 0.1; done
 	;;
@@ -379,13 +429,33 @@ test_stage='validating protocol minor 1 native content (#259)'
 [ "$(ipc settings systemManagementAccountsCount)" -eq 1 ]
 [ "$(ipc settings systemManagementRepositoriesCount)" -eq 1 ]
 
-test_stage='validating the four native discovery domains reach ready (#261)'
-# openSettings() opened all five discovery models together (#261); the
-# update one already proved ready above via the loaded snapshot -- these
-# four are new. Each one's own stub watch-* command (added alongside these
-# assertions) must actually be reached, not just tolerated as "failed" by
-# discoveryReady()'s deliberately permissive batch gate.
-for domain in time locale accounts printers; do
+test_stage='validating protocol minor 2 information/storage/security content (S2-05 #286)'
+# The stub's information/storage/security block and one filesystem record
+# all parse cleanly at minor 2 -- proving the QML side actually activates
+# the cumulative minor once storage's own watch-mounts subscription is
+# ready, not just that the Python provider can emit it.
+[ "$(ipc settings systemManagementNativeProviderStatus information)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus storage)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus security)" = available ]
+[ "$(ipc settings systemManagementNativeProviderStatus diagnostics)" = available ]
+[ "$(ipc settings systemManagementNativeStateValue os-name)" = 'available:Fixture Linux' ]
+[ "$(ipc settings systemManagementNativeStateValue selinux)" = 'available:disabled' ]
+[ "$(ipc settings systemManagementNativeStateValue firewalld)" = 'available:disabled' ]
+[ "$(ipc settings systemManagementNativeStateValue ufw)" = 'available:disabled' ]
+[ "$(ipc settings systemManagementNativeStateValue nftables)" = 'available:disabled' ]
+[ "$(ipc settings systemManagementNativeStateValue root-encryption)" = 'available:unencrypted' ]
+[ "$(ipc settings systemManagementNativeStateValue screen-lock)" = 'available:enabled' ]
+[ "$(ipc settings systemManagementNativeStateValue filesystem-summary)" = 'available:1' ]
+[ "$(ipc settings systemManagementFilesystemsCount)" -eq 1 ]
+
+test_stage='validating the six native discovery domains reach ready (#261, extended S2-05 #286)'
+# openSettings() opened all discovery models together (#261); the update one
+# already proved ready above via the loaded snapshot -- these six are new
+# (storage and security joined in S2-05). Each one's own stub watch-* command
+# (added alongside these assertions) must actually be reached, not just
+# tolerated as "failed" by discoveryReady()'s deliberately permissive batch
+# gate.
+for domain in time locale accounts printers storage security; do
 	native_discovery_status=
 	i=0
 	while [ "$i" -lt 100 ]; do
@@ -503,6 +573,29 @@ ipc settings select system >/dev/null
 ipc settings close >/dev/null
 if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after closing the Settings window\n' >&2
+	exit 1
+fi
+
+test_stage='validating health-open closes Settings and reaches the existing dwm-system-health view (S2-05 #286)'
+# openHealth() itself owns the healthModel-null/settingsVisible/action-status
+# checks, already unit-verifiable, but reaching the real, wired
+# systemHealthModel instance and its onHealthOpened: settingsModel.close()
+# side effect through shell.qml can only be proven against the real
+# Quickshell runtime.
+ipc settings open >/dev/null
+ipc settings select system >/dev/null
+snapshot_state=
+i=0
+while [ "$i" -lt 100 ]; do
+	snapshot_state=$(ipc settings systemManagementSnapshotState 2>/dev/null || true)
+	[ "$snapshot_state" = loaded ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$snapshot_state" = loaded ]
+[ "$(ipc settings systemManagementOpenHealth)" = true ]
+if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
+	printf 'systemManagementModel.settingsVisible stayed true after systemManagementOpenHealth\n' >&2
 	exit 1
 fi
 

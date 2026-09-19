@@ -237,7 +237,7 @@ shipped at that time.
 
 **That has since changed.** Upstream did ship this scope (`#277`–`#288`),
 and [Sync Sprint 2](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
-S2-01/S2-02/S2-03/S2-04 (readers: local/hardware/filesystem information,
+S2-01 through S2-05 (readers: local/hardware/filesystem information,
 SELinux, Secure Boot, firewall status extended to `ufw`/`nftables` per D-5,
 root encryption, automatic screen-lock evidence reused from the shared power
 helper, and a bounded `watch-mounts` mount-change monitor) are done as of
@@ -245,12 +245,24 @@ this note. `watch-mounts` supervises one fixed `findmnt --poll` child with a
 pidfd and a signal-wakeup pipe alongside its output, so no idle timer remains
 once the baseline `/proc/PID/fd` probe confirms the child's own `mountinfo`
 descriptor is open; it requires write-only pipe output (as Quickshell
-supplies) so losing its reader is itself an event, and it never activates
-minor `2` or reads a journal. The readers exist as standalone functions;
-wiring them into the snapshot protocol as minor `2` is S2-05, and S2-07
-closes this `ROADMAP.md` Phase 6 item and this document's own open
-questions. Until S2-05 lands, minor `2` below is still accurate as written
-(no producer emits it yet).
+supplies) so losing its reader is itself an event.
+
+S2-05 wires all of this into the snapshot protocol as minor `2`:
+`InformationSnapshotSources`/`build_information_snapshot()` on the Python
+side, and the new `config/quickshell/systemmanagement/SystemInformationProtocol.js`
+plus matching `SystemManagementModel.qml`/`SystemProviderDiscovery.qml`
+changes on the QML side (two new discovery domains, `storage` and
+`security`, join the existing four). `snapshot`/`snapshot-core`/
+`snapshot-without-storage` are now three distinct fixed CLI commands: a
+required (recovery-only) read always asks for `snapshot-core` (minor `1`,
+no information block, since it must not open the filesystem inventory's
+unmonitored initialization gap or falsely mark storage/security as freshly
+re-verified when it didn't actually probe them); an optional read asks for
+`snapshot-without-storage` until the `storage` domain's own `watch-mounts`
+subscription is actually ready, then `snapshot` (minor `2`, complete). minor
+`2` below is now live — S2-07 still closes this `ROADMAP.md` Phase 6 item and
+this document's own remaining open questions (S2-06's Settings information
+card and Health navigation).
 
 ## Provider Protocol
 
@@ -279,10 +291,9 @@ error<TAB>capability<TAB>code<TAB>detail
 complete<TAB>snapshot|operation
 ```
 
-`filesystem` is a listed record type for protocol-shape completeness (it
-mirrors upstream's grammar exactly, so a future minor `2` can add it without
-a breaking field-order change) but nothing in this port ever emits it — see
-"Not implemented upstream" above.
+`filesystem` mirrors upstream's grammar exactly; minor `2` (S2-05) emits it
+for each mounted real filesystem the bounded `findmnt --poll`-backed reader
+observes — see "Not implemented upstream" above.
 
 The protocol minor selects a cumulative active-ID set so each Sync Phase can
 produce a *truthful complete* snapshot rather than a half-populated one — a
@@ -293,7 +304,7 @@ never advertises a later planned ID as `unsupported`:
 | --- | --- | --- | --- | --- | --- |
 | `0` | `updates`, `recovery` | `update-summary`, `update-last-refresh`, `update-restart` | `updates-refresh`, `updates-install-all`, `updates-cancel` | `update`, `package-change` | `SYNC-P2` through `SYNC-P7` |
 | `1` | `regional`, `accounts`, `printers`, `sources` | `timezone`, `ntp-enabled`, `ntp-synchronized`, `locale`, `accounts-count`, `cups-service` | `timezone-set`, `ntp-set`, `locale-set`, `accounts-open`, `password-open`, `printers-open`, `sources-open` | `account`, `repository` | `SYNC-P8` and `SYNC-P9` |
-| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem/SELinux/secure-boot/firewalld/encryption/lock states | `health-open` | `filesystem` | `SYNC-SPRINT-2` (readers ported S2-01/S2-02; wired into the snapshot at S2-05) |
+| `2` | `information`, `storage`, `security`, `diagnostics` | filesystem-summary/SELinux/secure-boot/firewalld/ufw/nftables/encryption/lock states | `health-open` | `filesystem` | `SYNC-SPRINT-2` (readers ported S2-01–S2-04; wired into the snapshot and QML consumer at S2-05) |
 
 The `recovery` provider is intentionally status-only from minor `0`: it owns
 journal-integrity errors that have no trustworthy operation kind of their

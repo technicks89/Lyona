@@ -10,6 +10,81 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Wire the information/storage/security readers from S2-01 through S2-04
+  into the system-management snapshot protocol as minor `2`, both on the
+  Python provider and the Quickshell consumer (Sync Sprint 2 S2-05,
+  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#285`/
+  `#286`, commits `7954c54`/`177e3c3`/`b19fb90`/`3232932`/`4aee614`):
+  `InformationSnapshotSources`/`build_information_snapshot()` assemble the
+  new records; `snapshot`/`snapshot-core`/`snapshot-without-storage` are now
+  three distinct fixed CLI commands — a required (recovery-only) read always
+  asks for `snapshot-core` (native rows only, no information block, so it
+  never opens the filesystem inventory's unmonitored initialization gap or
+  falsely marks storage/security as freshly re-verified when it didn't
+  actually probe them); an optional read asks for `snapshot-without-storage`
+  until the `storage` domain's own `watch-mounts` subscription is ready,
+  then `snapshot`. New
+  `config/quickshell/systemmanagement/SystemInformationProtocol.js` mirrors
+  the Python side's ownership/validity rules for the QML parser
+  (`SystemManagementModel.qml`) without duplicating either list. Two new
+  discovery domains, `storage` and `security`, join the existing four in
+  `SystemProviderDiscovery.qml`, which also gained upstream's per-launch
+  isolated monitor (a `generation`/`serial`-stamped identity and callback
+  set created fresh per `Process` launch via `Component.createObject()`), so
+  a stale timer, parser line, or exit signal from a retired monitor can
+  never be mistaken for a replacement one's, even within one pane cycle.
+  `openHealth()`/`healthModel`/`targetScreen`/`onHealthOpened` wire the
+  `health-open` action through to the existing `dwm-system-health` view,
+  closing Settings on open.
+  Lyona adaptation (D-5): `INFORMATION_SECURITY_IDS`/`securityIds()` carry 7
+  identifiers (selinux, secure-boot, firewalld, ufw, nftables,
+  root-encryption, screen-lock), not upstream's 5 — `InformationSnapshotSources.security()`
+  dispatches firewall identifiers through the existing `read_firewall_status(kind)`
+  from S2-02; every state-count assertion (Python and QML) is 21, not
+  upstream's 19.
+  **Real bug found and fixed during verification** (not a mechanical port
+  issue — a genuine correctness gap this session's own live xvfb testing
+  caught): a required (recovery-only) snapshot read can silently "steal" the
+  exact execution slot that a *different*, settling discovery domain's own
+  pending-cycle signal had just triggered, because a queued
+  `root.requiredPending` flag upgrades the very call that signal produced.
+  Since required reads intentionally skip discovery-token draining, that
+  domain's cycle was left stuck in `settling-pending` forever with nothing
+  left to re-trigger it — reproduced live via a delegated `printers-open`
+  dispatch that never recovered even after 100 seconds of retries. Fixed in
+  `SystemManagementModel.qml`'s `requestSnapshot()`: when a call proceeds as
+  required and other domains still have work pending, it now queues
+  `root.snapshotPending = true` so the existing `onRunningChanged` retry
+  logic follows up with a real optional drain once the required read
+  finishes.
+  Also fixed a pre-existing, unrelated dead/wasteful code path found in the
+  same function while making this required edit: `main()`'s `try: backend =
+  PackageKitBackend(); lines = build_snapshot(backend)` discarded that
+  second call's result unconditionally a few lines later; removed.
+  New `tests/qml/tst_system_information_protocol.qml` (16 tests, matching
+  `tst_system_regional_preflight_protocol.qml`'s established pattern for
+  testing a pure `.pragma library` protocol file directly) — a Lyona-specific
+  addition per the sprint document's own suggestion, since upstream never had
+  a dedicated test file for this library. Did not port upstream's separate
+  `tests/qml/SystemNativeDiscovery.qml`/`SystemProviderGeneration.qml`
+  integration-level harness (`b19fb90`, `3232932`) or the matching
+  `ComposedFixtureSnapshotTests` Python class (`4aee614`) and their
+  supporting fixtures — Lyona never ported that harness family for the
+  original four discovery domains either, and the generation/serial monitor
+  isolation it targets is already exercised end-to-end (including the
+  starvation-bug fix above) by the existing, much larger
+  `tests/test-quickshell-system-management-xvfb.sh`, which this change
+  extends with new minor-2 content, six-domain-readiness, and
+  `openHealth()`/Settings-closing assertions instead.
+  Verified live on this sandbox: `snapshot`/`snapshot-core`/
+  `snapshot-without-storage` all produce correct real output (real OS/
+  hardware/security/filesystem data at minor 2, correctly empty/partial
+  information at minor 1 and mid-storage-startup); the full ported
+  `InformationSnapshotTests` (10 tests) and new `tst_system_information_protocol.qml`
+  (16 tests) pass; the xvfb integration suite passed 5/5 consecutive runs
+  including the new S2-05 assertions; the full `tests/test-system-management.py`
+  suite (684 tests) matches the established baseline (only the 16 pre-existing,
+  unrelated PackageKitGlib-unavailable failures in this sandbox).
 - Add a bounded mount change monitor to `dwm-system-management` (Sync Sprint
   2 S2-04, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
   `#284`, commits `5b246a0`/`dbbfde1`/`994011f`/`088069b`/`6ac6f5a`):

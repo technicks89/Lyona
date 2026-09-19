@@ -341,6 +341,30 @@ Register the new harnesses in the `Makefile` recipe that already runs
 `qmltestrunner -input tests/qml` (`check-quickshell-system-discovery-cycle`).
 No new target is needed.
 
+**Done, 2026-09-19.** `tst_system_information_protocol.qml` landed as
+planned (16 tests; D-5's 7-identifier `securityIds()` is its own dedicated
+test, since that's the one place this port's values diverge from upstream's).
+
+**Deliberately not ported:** `b19fb90`'s `tests/qml/SystemProviderGeneration.qml`
+(new, 111 lines) and `tests/qml/SystemNativeDiscovery.qml` updates, `3232932`'s
+small follow-up to both, and `4aee614`'s `ComposedFixtureSnapshotTests` Python
+class plus the `tests/fixtures/system-native-discovery-provider.py`/
+`system-regional-settings-provider.py`/`system-delegate-confirmation-provider.py`
+fixtures all three of those depend on. Lyona never ported this dedicated
+integration-harness family for the original four discovery domains either
+(Sync Phase 4/Sprint 1 S1-03) — it isn't something S2-05 should introduce net
+-new just for the two domains this item adds. The generation/serial monitor
+isolation this harness exists to protect is already exercised end-to-end by
+`tests/test-quickshell-system-management-xvfb.sh`, extended in this item with
+minor-2 content, six-domain-readiness, and `openHealth()` assertions — and
+that same live suite is what caught a real starvation bug in
+`requestSnapshot()`'s required/optional interaction (a required read can
+silently steal the exact call a settling domain's own signal triggered,
+skip its token on purpose, and never get retried) that this dedicated-but-
+unported harness likely would not have exercised either, since it targets a
+single domain's own generation/serial correctness rather than the
+required-vs-optional interaction across domains.
+
 ---
 
 ## S2-06: Settings information card and Health navigation

@@ -42,7 +42,8 @@ from typing import Callable, Iterable, Iterator, Mapping, Protocol, Sequence
 
 PROTOCOL_MAJOR = 1
 PROTOCOL_MINOR = 0
-SNAPSHOT_MINOR = 1
+SNAPSHOT_MINOR = 2
+NATIVE_SNAPSHOT_MINOR = 1
 MAX_TEXT_BYTES = 512
 INFORMATION_UINT_MAX = (1 << 64) - 1
 INFORMATION_MEMORY_KEYS = {
@@ -6356,6 +6357,135 @@ def read_recovery_snapshot(backend: PackageKitBackend) -> RecoverySnapshot:
         return RecoverySnapshot(prior_restart=prior_restart, failures=tuple(failures + [failure]))
 
 
+INFORMATION_LOCAL_IDS = (
+    "os-name", "os-version", "kernel-release", "architecture", "cpu-model",
+    "logical-cpus", "memory-total-bytes", "memory-available-bytes",
+    "swap-total-bytes", "swap-free-bytes", "uptime-seconds",
+)
+# Lyona adaptation (D-5): upstream's single "firewalld" identifier is
+# generalized to the three real, distinct firewall units Arch/CachyOS can
+# ship (firewalld, ufw, nftables), each surfaced through its own identifier.
+INFORMATION_SECURITY_IDS = ("selinux", "secure-boot", "firewalld", "ufw", "nftables",
+    "root-encryption", "screen-lock")
+
+
+class InformationSnapshotSources:
+    """Fixed readers, invoked only when an information snapshot is requested."""
+
+    def __init__(self, *, storage_ready: bool = True):
+        self.storage_ready = storage_ready
+
+    def local(self):
+        return read_local_information()
+
+    def hardware(self):
+        return read_hardware_information()
+
+    def filesystems(self):
+        if not self.storage_ready:
+            return FilesystemInformation(InformationState("partial", "unknown",
+                "Mount monitoring is not ready; reload storage status to retry", "missing-provider"))
+        return read_filesystem_information()
+
+    def security(self, identifier):
+        if identifier in FIREWALL_UNITS:
+            return read_firewall_status(identifier)
+        readers = {"selinux": read_selinux_status, "secure-boot": read_secure_boot_status,
+            "root-encryption": read_root_encryption, "screen-lock": read_screen_lock}
+        return readers[identifier]()
+
+
+def build_information_snapshot(sources: InformationSnapshotSources) -> list[str]:
+    """Assemble the closed information records without journal or action admission.
+
+    This internal formatter deliberately does not activate a snapshot minor or
+    initiate reads from startup recovery. The caller owns visible-pane readiness.
+    """
+    groups = {owner: {"states": [], "errors": [], "statuses": []}
+              for owner in ("information", "storage", "security")}
+
+    def state(owner, identifier, value):
+        group = groups[owner]
+        group["statuses"].append(value.status)
+        group["states"].append("\t".join(("state", identifier, value.status,
+            clean_text(value.value, truncate=False), clean_text(value.detail))))
+        if value.error_code:
+            group["errors"].append("\t".join(("error", owner, value.error_code, clean_text(value.detail))))
+
+    for read, identifiers in ((sources.local, INFORMATION_LOCAL_IDS),
+            (sources.hardware, tuple(HARDWARE_INFORMATION_FIELDS.values()))):
+        try:
+            values = read()
+        except InterruptedError:
+            raise
+        except (OSError, SnapshotFailure) as failure:
+            values = dict.fromkeys(identifiers, information_unknown(failure))
+        for identifier in identifiers:
+            state("information", identifier, values.get(identifier, information_unknown(
+                SnapshotFailure("malformed", "Information reader omitted a required state"))))
+
+    for identifier in INFORMATION_SECURITY_IDS:
+        try:
+            value = sources.security(identifier)
+        except InterruptedError:
+            raise
+        except (OSError, SnapshotFailure) as failure:
+            value = information_unknown(failure)
+        state("security", identifier, value)
+
+    filesystem_lines = []
+    try:
+        filesystems = sources.filesystems()
+        # Buffer the complete encoded list before publishing its summary. This
+        # budget includes record prefixes, separators, and terminating newlines.
+        if len(filesystems.rows) > FILESYSTEM_RECORDS:
+            raise SnapshotFailure("malformed", "Filesystem inventory exceeds its record limit")
+        seen, size = set(), 0
+        for row in filesystems.rows:
+            if row.mount_id in seen:
+                raise SnapshotFailure("malformed", "Filesystem inventory repeats a mount identity")
+            seen.add(row.mount_id)
+            fields = ("filesystem", row.mount_id, row.status, row.source, row.target,
+                row.fstype, row.size_bytes, row.used_bytes, row.available_bytes, row.detail)
+            line = "\t".join(clean_text(field, truncate=False) for field in fields)
+            size += len(line.encode("utf-8")) + 1
+            if size > 384 * 1024:
+                raise SnapshotFailure("malformed", "Filesystem inventory exceeds its byte limit")
+            filesystem_lines.append(line)
+    except InterruptedError:
+        raise
+    except (OSError, SnapshotFailure) as failure:
+        filesystems = FilesystemInformation(information_unknown(failure))
+        filesystem_lines = []
+    state("storage", "filesystem-summary", filesystems.summary)
+
+    lines = []
+    for owner, group in groups.items():
+        statuses = group["statuses"]
+        if all(value == "available" for value in statuses) and not group["errors"]:
+            status = "available"
+        elif any(value in {"available", "partial"} for value in statuses):
+            status = "partial"
+        elif all(value == "unsupported" for value in statuses):
+            status = "unsupported"
+        elif all(value == "restricted" for value in statuses):
+            status = "restricted"
+        else:
+            status = "unavailable"
+        lines.append("\t".join(("provider", owner, status, "read-only",
+            "dwm-system-management", "Bounded read-only observations; inspect individual state details")))
+        lines.extend(group["states"])
+        if owner == "storage":
+            lines.extend(filesystem_lines)
+        lines.extend(dict.fromkeys(group["errors"]))
+    lines.extend((
+        "provider\tdiagnostics\tavailable\tuser-session\tdwm-system-health\tExisting health scan, diagnostics, and fixed repair workflow",
+        "action\thealth-open\tavailable\tuser-session\tdiagnostics\tOpen system health\tOpen the existing health view and read-only scan; repairs require separate confirmation",
+    ))
+    validate_snapshot_size(lines)
+    return lines
+
+
 class NativeSnapshotSources:
     """Fixed read-only sources; construction neither reads state nor starts tools."""
 
@@ -6566,8 +6696,11 @@ def validate_snapshot_size(lines: Sequence[str]) -> None:
 
 
 def build_managed_snapshot(backend: PackageKitBackend, *,
-                           native_sources: NativeSnapshotSources | None = None) -> list[str]:
+                           native_sources: NativeSnapshotSources | None = None,
+                           information_sources: InformationSnapshotSources | None = None) -> list[str]:
     """Combine readable discovery with independently validated durable recovery."""
+    if information_sources is not None and native_sources is None:
+        raise ValueError("Information snapshots require cumulative native sources")
     recovery = read_recovery_snapshot(backend)
     state = recovery.state
     mutation_blocker = None
@@ -6633,6 +6766,9 @@ def build_managed_snapshot(backend: PackageKitBackend, *,
             except SnapshotFailure as failure:
                 native_blocker = failure
         lines.extend(build_native_snapshot(native_sources, native_blocker))
+        lines[0] = f"system-management-protocol\t{PROTOCOL_MAJOR}\t{NATIVE_SNAPSHOT_MINOR}"
+    if information_sources is not None:
+        lines.extend(build_information_snapshot(information_sources))
         lines[0] = f"system-management-protocol\t{PROTOCOL_MAJOR}\t{SNAPSHOT_MINOR}"
     lines.append("complete\tsnapshot")
     validate_snapshot_size(lines)
@@ -10137,7 +10273,8 @@ def update_command(action_id: str, generation: str | None = None) -> int:
 
 
 def usage() -> int:
-    print(f"usage: {sys.argv[0]} snapshot | ntp-sample | time-status | watch-mounts | watch-time | "
+    print(f"usage: {sys.argv[0]} snapshot | snapshot-core | snapshot-without-storage | "
+          "ntp-sample | time-status | watch-mounts | watch-time | "
           "watch-updates | updates-refresh | "
           "updates-install-all GENERATION | watch-operation OPERATION_ID | "
           "ack-operation OPERATION_ID | updates-cancel OPERATION_ID | "
@@ -10197,11 +10334,10 @@ def main(argv: Sequence[str]) -> int:
         return update_command("updates-install-all", argv[1])
     if len(argv) == 2 and argv[0] in {"watch-operation", "ack-operation", "updates-cancel"} and JOURNAL_OPERATION_ID_PATTERN.fullmatch(argv[1]):
         return operation_control(argv[0], argv[1])
-    if list(argv) != ["snapshot"]:
+    if len(argv) != 1 or argv[0] not in {"snapshot", "snapshot-core", "snapshot-without-storage"}:
         return usage()
     try:
         backend = PackageKitBackend()
-        lines = build_snapshot(backend)
     except SnapshotFailure as failure:
         # Backend construction can fail before a usable source exists. Reuse the
         # normal snapshot shape so consumers still receive every mandatory ID.
@@ -10228,7 +10364,13 @@ def main(argv: Sequence[str]) -> int:
                 raise self.failure
 
         backend = FailedBackend(failure)
-    lines = build_managed_snapshot(backend, native_sources=NativeSnapshotSources())
+    # Required recovery never starts optional information probes. A failed or
+    # pending mount handshake leaves other information readable without opening
+    # the filesystem inventory's unmonitored initialization gap.
+    information_sources = None if argv[0] == "snapshot-core" else InformationSnapshotSources(
+        storage_ready=argv[0] == "snapshot")
+    lines = build_managed_snapshot(backend, native_sources=NativeSnapshotSources(),
+        information_sources=information_sources)
     print("\n".join(lines))
     return 0
 

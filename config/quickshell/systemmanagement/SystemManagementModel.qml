@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "SystemInformationProtocol.js" as Information
 
 /*
  * Bounded, read-only Arch update snapshot from dwm-system-management.
@@ -45,6 +46,9 @@ Scope {
     id: root
 
     signal confirmationInvalidated()
+    signal healthOpened()
+    property var healthModel: null
+    property var targetScreen: null
 
     property bool settingsVisible: false
     property bool snapshotOwned: false
@@ -73,6 +77,8 @@ Scope {
     property var nativeStates: ({})
     property var accounts: []
     property var repositories: []
+    property var filesystems: []
+    property bool filesystemsRetained: false
     property var errors: []
     property var activeOperation: null
     property var terminalHandoff: null
@@ -100,16 +106,30 @@ Scope {
     readonly property alias localeDiscovery: localeDiscoveryModel
     readonly property alias accountDiscovery: accountDiscoveryModel
     readonly property alias printerDiscovery: printerDiscoveryModel
+    readonly property alias storageDiscovery: storageDiscoveryModel
+    readonly property alias securityDiscovery: securityDiscoveryModel
     readonly property alias regional: regionalModel
     readonly property alias timeReconciliation: timeReconciliationModel
     readonly property alias operation: operationModel
     readonly property string discoveryDetail: discoveryModel.detail
 
+    // Sync Sprint 2 S2-05 (#286): confirms opening the existing dwm-system-health
+    // view -- the action itself is only ever offered when the helper's own
+    // "health-open" record reports available, so this never has to duplicate
+    // that decision, only route it.
+    function openHealth() {
+        const action = root.actions.find(item => item.id === "health-open");
+        if (!root.settingsVisible || root.healthModel === null || !action || action.status !== "available") return false;
+        root.healthModel.openOnScreen(root.targetScreen);
+        root.healthOpened();
+        return true;
+    }
+
     // #261: every open discovery model, updates first (its own alias stays
     // the "primary" one existing callers keep using directly).
     function discoveryModels() {
         return [discoveryModel, timeDiscoveryModel, localeDiscoveryModel,
-            accountDiscoveryModel, printerDiscoveryModel];
+            accountDiscoveryModel, printerDiscoveryModel, storageDiscoveryModel, securityDiscoveryModel];
     }
 
     // True only once every domain has a subscription handshake (ready) or a
@@ -143,6 +163,8 @@ Scope {
         if (identifier === "locale") return localeDiscoveryModel;
         if (identifier === "accounts-count") return accountDiscoveryModel;
         if (identifier === "cups-service") return printerDiscoveryModel;
+        if (identifier === "filesystem-summary") return storageDiscoveryModel;
+        if (identifier === "firewalld") return securityDiscoveryModel;
         return null;
     }
 
@@ -162,7 +184,8 @@ Scope {
         const provider = root.nativeProviders[owner] || root.providerFallback("This provider is unavailable");
         const monitors = owner === "regional" ? [timeDiscoveryModel, localeDiscoveryModel]
             : owner === "accounts" ? [accountDiscoveryModel] : owner === "printers" ? [printerDiscoveryModel]
-            : owner === "sources" ? [discoveryModel] : [];
+            : owner === "sources" ? [discoveryModel] : owner === "storage" ? [storageDiscoveryModel]
+            : owner === "security" ? [securityDiscoveryModel] : [];
         if (!root.settingsVisible) return provider;
         return { "status": provider.status === "available" && monitors.some(model => model.failed || model.unresolved || model.externalUnresolved)
                 ? "partial" : provider.status,
@@ -195,7 +218,7 @@ Scope {
                 || identifier === "ntp-synchronized" || identifier === "locale") return "regional";
         if (identifier === "accounts-count") return "accounts";
         if (identifier === "cups-service") return "printers";
-        return "";
+        return Information.owner(identifier);
     }
 
     function nativeActionOwner(actionId) {
@@ -203,10 +226,12 @@ Scope {
         if (actionId === "accounts-open" || actionId === "password-open") return "accounts";
         if (actionId === "printers-open") return "printers";
         if (actionId === "sources-open") return "sources";
+        if (actionId === "health-open") return "diagnostics";
         return "";
     }
 
     function validNativeValue(identifier, status, value) {
+        if (Information.owner(identifier).length > 0) return Information.validValue(identifier, status, value);
         if (identifier === "accounts-count")
             return status === "available" ? /^(0|[1-9][0-9]*)$/.test(value) && Number(value) <= 256
                 : value === "unknown";
@@ -469,6 +494,22 @@ Scope {
     }
 
     function resetToFallback(reason) {
+        // Sync Sprint 2 S2-05 (#286): a failed recovery-only (snapshotProcess.core)
+        // read provides no new evidence about optional information -- retire
+        // mutation offers without erasing that projection, matching the
+        // treatment a successful minor-1-only core read already gets below
+        // in parseSnapshot().
+        const preserveInformation = root.snapshotOwned && snapshotProcess.core;
+        const providers = {};
+        const states = {};
+        if (preserveInformation) {
+            for (const owner of Information.owners()) {
+                if (root.nativeProviders[owner]) providers[owner] = root.nativeProviders[owner];
+            }
+            for (const identifier of Information.stateIds()) {
+                if (root.nativeStates[identifier]) states[identifier] = root.nativeStates[identifier];
+            }
+        }
         root.snapshotState = "unavailable";
         root.message = reason;
         root.generation = "";
@@ -477,14 +518,19 @@ Scope {
         root.updateSummary = root.stateFallback(reason);
         root.updateLastRefresh = root.stateFallback(reason);
         root.updateRestart = root.stateFallback(reason);
-        root.actions = [];
+        root.actions = preserveInformation ? root.actions.filter(item => item.id === "health-open") : [];
         root.updates = [];
         root.packageChanges = [];
-        root.nativeProviders = {};
-        root.nativeStates = {};
+        root.nativeProviders = providers;
+        root.nativeStates = states;
         root.accounts = [];
         root.repositories = [];
-        root.errors = [];
+        if (!preserveInformation) {
+            root.filesystems = [];
+            root.filesystemsRetained = false;
+        }
+        root.errors = preserveInformation
+            ? root.errors.filter(item => Information.owners().indexOf(item.capability) >= 0) : [];
         root.activeOperation = null;
         root.terminalHandoff = null;
     }
@@ -518,6 +564,9 @@ Scope {
 
     function refresh() {
         if (!root.settingsVisible) return;
+        // Refresh retires the preview immediately, even while replacement
+        // subscriptions are still waiting for their readiness handshake.
+        root.confirmationInvalidated();
         root.discoveryBatch = true;
         timeReconciliationModel.open();
         for (const model of root.discoveryModels()) model.refresh();
@@ -607,19 +656,41 @@ Scope {
         timeReconciliationModel.beforeSnapshot();
         root.snapshotAttempted = false;
         root.snapshotRequired = required;
+        // Sync Sprint 2 S2-05 (#286): a required (recovery-only) read never
+        // probes optional information -- it must not open the filesystem
+        // inventory's unmonitored initialization gap, so it always asks for
+        // snapshot-core. An optional read asks for the full snapshot once
+        // the storage domain's own subscription is actually ready, and
+        // snapshot-without-storage otherwise (a blocked cycle is treated the
+        // same as not-yet-ready: its own retained projection is untrustworthy).
+        snapshotProcess.core = required;
+        snapshotProcess.storageOmitted = !required
+            && (!storageDiscoveryModel.ready || storageDiscoveryModel.phase === "blocked");
         root.requestGeneration++;
         root.confirmationInvalidated();
         const tokens = [];
-        if (ready) {
+        // A required read bypasses subscription setup, but cannot certify
+        // optional freshness until every domain has a handshake or fallback
+        // -- it must not consume tokens an optional read still needs.
+        if (ready && !required) {
             for (const model of root.discoveryModels()) {
                 const token = model.take();
                 if (token !== null) tokens.push({ "model": model, "token": token });
             }
+        } else if (required && root.discoveryModels().some(model => model.canTake())) {
+            // This required read is skipping every domain's token on purpose
+            // (above), including one whose own requestSnapshot(false) call is
+            // what brought execution here (an already-pending required need
+            // upgrades the very call a settling domain's cycle triggered).
+            // That domain will not signal again on its own -- queue the
+            // follow-up optional drain onRunningChanged already retries.
+            root.snapshotPending = true;
         }
         snapshotProcess.cycleTokens = tokens;
         root.snapshotState = "loading";
         root.message = "Loading system update status...";
-        snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand("snapshot", []));
+        snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand(
+            required ? "snapshot-core" : snapshotProcess.storageOmitted ? "snapshot-without-storage" : "snapshot", []));
         snapshotProcess.running = true;
     }
 
@@ -650,7 +721,7 @@ Scope {
 
         const header = lines[0].split("\t");
         if (header.length !== 3 || header[0] !== "system-management-protocol" || header[1] !== "1"
-                || (header[2] !== "0" && header[2] !== "1")) {
+                || (header[2] !== "0" && header[2] !== "1" && header[2] !== "2")) {
             root.resetToFallback("System management provider returned an unsupported protocol");
             return false;
         }
@@ -659,6 +730,20 @@ Scope {
             root.resetToFallback("System management provider returned a truncated snapshot");
             return false;
         }
+        // Sync Sprint 2 S2-05 (#286): minor 2's information/storage/security
+        // owners, state identifiers, and the diagnostics health-open action
+        // only join the active set a producer that actually declared minor 2
+        // may use -- a minor-1-only producer naming one of these identifiers
+        // must not have it silently accepted as native.
+        const nativeOwners = root.validNativeOwners.slice();
+        const nativeStateIds = root.validNativeStateIds.slice();
+        const nativeActionIds = root.validNativeActionIds.slice();
+        if (minor === 2) {
+            nativeOwners.push(...Information.owners());
+            nativeStateIds.push(...Information.stateIds());
+            nativeActionIds.push("health-open");
+        }
+        const priorHealthAction = root.actions.find(item => item.id === "health-open");
 
         let generation = "";
         let updateProvider = null, recoveryProvider = null;
@@ -673,15 +758,19 @@ Scope {
         // Sync Phase 9: minor 1's four native owners each fail independently
         // -- a malformed/incomplete owner is marked invalid and falls back,
         // never rejecting the whole snapshot (the update domain above keeps
-        // its existing all-or-nothing strictness, untouched).
+        // its existing all-or-nothing strictness, untouched). Sync Sprint 2
+        // S2-05 extends the same independence to minor 2's information,
+        // storage, and security owners.
         const nativeProviders = {};
         const nativeStates = {};
         const nativeActions = {};
         const nativeInvalid = {};
         const accountsList = [];
         const repositoriesList = [];
+        const filesystemsList = [];
         const seenAccountIds = {};
         const seenRepositoryIds = {};
+        const seenFilesystemIds = {};
 
         for (let index = 1; index < lines.length - 1; index++) {
             const fields = lines[index].split("\t");
@@ -694,12 +783,13 @@ Scope {
                 }
                 generation = fields[1];
             } else if (kind === "provider") {
-                if (minor === 1 && fields.length >= 2 && root.validNativeOwners.indexOf(fields[1]) >= 0) {
+                if (minor >= 1 && fields.length >= 2 && nativeOwners.indexOf(fields[1]) >= 0) {
                     if (nativeProviders[fields[1]] !== undefined) {
                         root.resetToFallback("System management provider repeated a provider record");
                         return false;
                     }
-                    if (fields.length !== 6 || root.validStatus.indexOf(fields[2]) < 0 || fields[3] !== "delegated") {
+                    if (fields.length !== 6 || root.validStatus.indexOf(fields[2]) < 0
+                            || fields[3] !== Information.providerClass(fields[1])) {
                         nativeInvalid[fields[1]] = true;
                         nativeProviders[fields[1]] = null;
                     } else nativeProviders[fields[1]] = { "status": fields[2], "class": fields[3],
@@ -716,7 +806,7 @@ Scope {
                 else if (fields[1] === "recovery") recoveryProvider = record;
             } else if (kind === "state") {
                 const nativeOwner = fields.length >= 2 ? root.nativeStateOwner(fields[1]) : "";
-                if (minor === 1 && nativeOwner.length > 0) {
+                if (minor >= 1 && nativeOwner.length > 0 && nativeStateIds.indexOf(fields[1]) >= 0) {
                     if (nativeStates[fields[1]] !== undefined) {
                         root.resetToFallback("System management provider repeated a state record");
                         return false;
@@ -746,13 +836,14 @@ Scope {
                 else if (fields[1] === "update-restart") updateRestart = record;
             } else if (kind === "action") {
                 const nativeOwner = fields.length >= 2 ? root.nativeActionOwner(fields[1]) : "";
-                if (minor === 1 && nativeOwner.length > 0) {
+                if (minor >= 1 && nativeOwner.length > 0 && nativeActionIds.indexOf(fields[1]) >= 0) {
                     if (nativeActions[fields[1]] !== undefined) {
                         root.resetToFallback("System management provider repeated an action record");
                         return false;
                     }
                     if (fields.length !== 7 || root.validActionStatus.indexOf(fields[2]) < 0
-                            || fields[3] !== "delegated" || fields[4] !== nativeOwner) {
+                            || fields[3] !== (nativeOwner === "diagnostics" ? "user-session" : "delegated")
+                            || fields[4] !== nativeOwner) {
                         nativeInvalid[nativeOwner] = true;
                         nativeActions[fields[1]] = null;
                     } else nativeActions[fields[1]] = { "id": fields[1], "status": fields[2], "class": fields[3],
@@ -765,14 +856,18 @@ Scope {
                 }
                 actions.push({ "id": fields[1], "status": fields[2], "class": fields[3],
                     "owner": fields[4], "label": fields[5], "detail": fields[6] });
-            } else if (kind === "account" || kind === "repository") {
-                if (minor !== 1) {
+            } else if (kind === "account" || kind === "repository" || kind === "filesystem") {
+                // Sync Sprint 2 S2-05 (#286): filesystem is cumulative with
+                // account/repository, active only from minor 2 (they remain
+                // active at minor 2 too -- build_native_snapshot() still runs).
+                if (minor < 1 || (kind === "filesystem" && minor < 2)) {
                     root.resetToFallback("System management provider returned an inactive list owner");
                     return false;
                 }
                 const isAccount = kind === "account";
-                const owner = isAccount ? "accounts" : "sources";
-                const seen = isAccount ? seenAccountIds : seenRepositoryIds;
+                const isFilesystem = kind === "filesystem";
+                const owner = isAccount ? "accounts" : isFilesystem ? "storage" : "sources";
+                const seen = isAccount ? seenAccountIds : isFilesystem ? seenFilesystemIds : seenRepositoryIds;
                 if (fields.length < 2 || fields[1].length === 0) {
                     root.resetToFallback("System management provider returned a list without an identity");
                     return false;
@@ -782,12 +877,13 @@ Scope {
                     return false;
                 }
                 seen[fields[1]] = true;
-                const list = isAccount ? accountsList : repositoriesList;
+                const list = isAccount ? accountsList : isFilesystem ? filesystemsList : repositoriesList;
                 // #259: match the helper's own REPOSITORY_MAX_ROWS (512), not
                 // the generic update/package-change list bound (4096) -- the
                 // protocol contract is 512, and accepting more here would
                 // just mean silently trusting a provider past its own cap.
-                if (list.length >= (isAccount ? 256 : 512)) {
+                // Filesystem matches the helper's own FILESYSTEM_RECORDS (256).
+                if (list.length >= (isAccount || isFilesystem ? 256 : 512)) {
                     nativeInvalid[owner] = true;
                     continue;
                 }
@@ -797,6 +893,12 @@ Scope {
                         continue;
                     }
                     accountsList.push({ "id": fields[1], "scope": fields[2], "displayName": fields[3], "loginName": fields[4] });
+                } else if (isFilesystem) {
+                    if (fields.length !== 10 || !Information.validFilesystem(fields)) {
+                        nativeInvalid[owner] = true;
+                        continue;
+                    }
+                    filesystemsList.push(Information.filesystem(fields));
                 } else {
                     if (fields.length !== 4 || (fields[2] !== "enabled" && fields[2] !== "disabled")) {
                         nativeInvalid[owner] = true;
@@ -903,17 +1005,17 @@ Scope {
         // malformed, so that condition can never reach this point true.
         let journalAdmitted = activeOperation !== null || terminalHandoff !== null
             || recoveryProvider.status === "available";
-        if (minor === 1) {
-            for (let i = 0; i < root.validNativeOwners.length; i++) {
-                if (nativeProviders[root.validNativeOwners[i]] === undefined) nativeInvalid[root.validNativeOwners[i]] = true;
+        if (minor >= 1) {
+            for (let i = 0; i < nativeOwners.length; i++) {
+                if (nativeProviders[nativeOwners[i]] === undefined) nativeInvalid[nativeOwners[i]] = true;
             }
-            for (let i = 0; i < root.validNativeStateIds.length; i++) {
-                const identifier = root.validNativeStateIds[i];
+            for (let i = 0; i < nativeStateIds.length; i++) {
+                const identifier = nativeStateIds[i];
                 if (nativeStates[identifier] === undefined) nativeInvalid[root.nativeStateOwner(identifier)] = true;
             }
-            for (let i = 0; i < root.validNativeActionIds.length; i++) {
-                if (nativeActions[root.validNativeActionIds[i]] === undefined)
-                    nativeInvalid[root.nativeActionOwner(root.validNativeActionIds[i])] = true;
+            for (let i = 0; i < nativeActionIds.length; i++) {
+                if (nativeActions[nativeActionIds[i]] === undefined)
+                    nativeInvalid[root.nativeActionOwner(nativeActionIds[i])] = true;
             }
             if (!nativeInvalid.accounts) {
                 const count = nativeStates["accounts-count"];
@@ -925,16 +1027,26 @@ Scope {
             if (!nativeInvalid.sources && repositoriesList.length > 0
                     && nativeProviders.sources.status !== "available" && nativeProviders.sources.status !== "partial")
                 nativeInvalid.sources = true;
-            for (let i = 0; i < root.validNativeOwners.length; i++) {
-                const owner = root.validNativeOwners[i];
+            // Sync Sprint 2 S2-05 (#286): the filesystem-summary counter must
+            // agree with the actual filesystem list it summarizes, the same
+            // consistency accounts-count already requires of the account list.
+            if (minor === 2 && !nativeInvalid.storage) {
+                const summary = nativeStates["filesystem-summary"];
+                if ((summary.status === "available" && (Number(summary.value) !== filesystemsList.length
+                            || filesystemsList.some(item => item.status !== "available")))
+                        || (summary.status !== "available" && summary.status !== "partial" && filesystemsList.length > 0))
+                    nativeInvalid.storage = true;
+            }
+            for (let i = 0; i < nativeOwners.length; i++) {
+                const owner = nativeOwners[i];
                 if (nativeInvalid[owner]) {
                     const detail = "System management provider returned malformed " + owner + " state";
-                    publishedProviders[owner] = { "status": "partial", "class": "delegated", "owner": "", "detail": detail };
+                    publishedProviders[owner] = { "status": "partial", "class": Information.providerClass(owner), "owner": "", "detail": detail };
                     errors.push({ "capability": owner, "code": "malformed", "detail": detail });
                 } else publishedProviders[owner] = nativeProviders[owner];
             }
-            for (let i = 0; i < root.validNativeStateIds.length; i++) {
-                const identifier = root.validNativeStateIds[i];
+            for (let i = 0; i < nativeStateIds.length; i++) {
+                const identifier = nativeStateIds[i];
                 const owner = root.nativeStateOwner(identifier);
                 publishedStates[identifier] = nativeInvalid[owner]
                     ? { "status": "partial", "value": "unknown", "detail": publishedProviders[owner].detail }
@@ -943,18 +1055,31 @@ Scope {
             // #262: a valid, available native action offer is itself proof
             // the journal is readable, even when update-domain recovery
             // (e.g. logind) reports unavailable and no active/handoff
-            // identity exists.
+            // identity exists. health-open is excluded -- its availability
+            // never depends on the journal and so is not evidence of it.
             if (!journalAdmitted) {
-                journalAdmitted = root.validNativeActionIds.some(function(identifier) {
-                    return !nativeInvalid[root.nativeActionOwner(identifier)]
+                journalAdmitted = nativeActionIds.some(function(identifier) {
+                    return identifier !== "health-open" && !nativeInvalid[root.nativeActionOwner(identifier)]
                         && nativeActions[identifier].status === "available";
                 });
             }
-            for (let i = 0; i < root.validNativeActionIds.length; i++) {
-                const actionId = root.validNativeActionIds[i];
-                if (journalAdmitted && !nativeInvalid[root.nativeActionOwner(actionId)])
+            for (let i = 0; i < nativeActionIds.length; i++) {
+                const actionId = nativeActionIds[i];
+                if ((actionId === "health-open" || journalAdmitted) && !nativeInvalid[root.nativeActionOwner(actionId)])
                     actions.push(nativeActions[actionId]);
             }
+        }
+        // Recovery-only reads do not probe optional information. Keep a prior
+        // readable projection until the pane's monitored information read lands.
+        if (snapshotProcess.core && minor === 1) {
+            for (const owner of Information.owners()) {
+                if (root.nativeProviders[owner]) publishedProviders[owner] = root.nativeProviders[owner];
+            }
+            for (const identifier of Information.stateIds()) {
+                if (root.nativeStates[identifier]) publishedStates[identifier] = root.nativeStates[identifier];
+            }
+            if (priorHealthAction) actions.push(priorHealthAction);
+            errors.push(...root.errors.filter(item => Information.owners().indexOf(item.capability) >= 0));
         }
 
         root.generation = generation;
@@ -968,8 +1093,15 @@ Scope {
         root.packageChanges = packageChanges;
         root.nativeProviders = publishedProviders;
         root.nativeStates = publishedStates;
-        root.accounts = minor === 1 && !nativeInvalid.accounts ? accountsList : [];
-        root.repositories = minor === 1 && !nativeInvalid.sources ? repositoriesList : [];
+        root.accounts = minor >= 1 && !nativeInvalid.accounts ? accountsList : [];
+        root.repositories = minor >= 1 && !nativeInvalid.sources ? repositoriesList : [];
+        if (!snapshotProcess.core || minor !== 1) {
+            const omitted = snapshotProcess.storageOmitted && minor === 2 && !nativeInvalid.storage
+                && nativeStates["filesystem-summary"].status === "partial" && filesystemsList.length === 0;
+            root.filesystemsRetained = omitted && root.filesystems.length > 0;
+            if (!root.filesystemsRetained)
+                root.filesystems = minor === 2 && !nativeInvalid.storage ? filesystemsList : [];
+        }
         root.errors = errors;
         // A snapshot race can still name an identity operationModel already
         // acknowledged (its own control process exits before this read's
@@ -1042,6 +1174,16 @@ Scope {
         onSnapshotRequested: root.requestSnapshot(false)
         onInvalidated: root.invalidateNativeConfirmation("printers")
     }
+    SystemProviderDiscovery {
+        id: storageDiscoveryModel
+        domain: "storage"
+        onSnapshotRequested: root.requestSnapshot(false)
+    }
+    SystemProviderDiscovery {
+        id: securityDiscoveryModel
+        domain: "security"
+        onSnapshotRequested: root.requestSnapshot(false)
+    }
 
     SystemOperationModel {
         id: operationModel
@@ -1093,6 +1235,8 @@ Scope {
     Process {
         id: snapshotProcess
         property var cycleTokens: []
+        property bool core: false
+        property bool storageOmitted: false
         running: false
         stdout: StdioCollector { onStreamFinished: root.finishSnapshot(root.parseSnapshot(this.text)) }
         stderr: StdioCollector { id: snapshotError }
