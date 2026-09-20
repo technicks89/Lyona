@@ -10,6 +10,33 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Add explicit Docked and Undocked automatic display layouts to Settings
+  (Sync Sprint 3 S3-02, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
+  from upstream `#290`/`6b7548b`): a new unprivileged
+  `scripts/dwm-settings-display-profiles` (Python) edits autorandr's `mobile`
+  (Undocked) and `docked` profiles without ever applying a layout — autorandr
+  itself applies it at login/hotplug. Settings gains saved-layout previews,
+  detected/currently-applied status, draft editing (Edit saved/Create draft),
+  and confirmed saves with backups, alongside the existing manual "Saved
+  layouts" (named, privileged Use-at-next-login) controls, which this does
+  not touch. Confirmed saves merge `set,crtc` into autorandr's
+  `skip-options` so session-specific CRTC assignments and output properties
+  can't invalidate layout matches.
+  Lyona adaptations: `autorandr` added to the `arch:desktop-optional`
+  package group (`scripts/dwm-packages.sh`) so a missing package degrades
+  the automatic-layouts UI rather than failing installs — verified on this
+  sandbox, where `autorandr` is genuinely absent, that `status()` reports
+  `available: false` with the adapted message instead of erroring; the
+  install message itself reads "Install the optional autorandr package
+  (pacman -S autorandr)...", not upstream's Fedora wording; backups move
+  from upstream's `~/.config/dwm-titus/display-profile-backups/` to
+  `~/.config/lyona/display-profile-backups/`, matching the existing
+  `~/.config/lyona/display-profiles` convention; the Python helper is
+  registered in `INSTALL_COMMANDS` only (not `check-shell`/`check-format`),
+  matching the existing `dwm-system-management` exception, with its own new
+  `check-display-profiles` Makefile target rather than folding into
+  `check-settings` as upstream does. `scripts/autostart.sh` runs no
+  competing profile-apply at login, so no autostart change was needed.
 - Replace the Displays pane's raw X/Y position inputs with relative
   placement (Sync Sprint 3 S3-01, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#289`/`55dbd76`, plus `6b7548b`'s driver-quirk fix to

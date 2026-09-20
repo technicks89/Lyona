@@ -66,6 +66,7 @@ INSTALL_COMMANDS = \
 	scripts/dwm-session-launch \
 	scripts/dwm-settings \
 	scripts/dwm-settings-display \
+	scripts/dwm-settings-display-profiles \
 	scripts/dwm-settings-input \
 	scripts/dwm-settings-appearance \
 	scripts/dwm-settings-font \
@@ -482,6 +483,9 @@ check-xdg-autostart:
 check-display-profile:
 	tests/test-dwm-display-profile.sh
 
+check-display-profiles:
+	/usr/bin/python3 tests/test-display-profiles.py
+
 check-display-setup:
 	tests/test-dwm-display-setup.sh
 
@@ -783,6 +787,7 @@ check:
 	$(MAKE) check-session-launch
 	$(MAKE) check-dwm-roundtrips
 	$(MAKE) check-display-profile
+	$(MAKE) check-display-profiles
 	$(MAKE) check-display-setup
 	$(MAKE) check-monitor-tags
 	$(MAKE) check-quickshell-launcher
@@ -841,7 +846,7 @@ check:
 
 .PHONY: clean all check check-accessibility check-appearance check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-test-runner \
-	check-display-profile check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
+	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \

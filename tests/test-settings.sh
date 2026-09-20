@@ -874,4 +874,12 @@ grep -Fq 'root.settingsModel.resetDisplayDpi()' \
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
 grep -Fq 'dpi-apply-saved' "$repo/scripts/autostart.sh"
 
+if command -v quickshell >/dev/null 2>&1; then
+	cp -a "$repo/config/quickshell" "$work/profile-model"
+	cp "$repo/tests/qml/DisplayAutomaticProfiles.qml" "$work/profile-model/shell.qml"
+	QT_QPA_PLATFORM=offscreen timeout 20 quickshell --no-duplicate --path "$work/profile-model/shell.qml"
+else
+	printf 'SKIP: Quickshell unavailable; automatic display model assertions not run.\n'
+fi
+
 printf 'Settings capability provider and shell contract: PASS\n'
