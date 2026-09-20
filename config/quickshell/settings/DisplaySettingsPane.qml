@@ -11,6 +11,13 @@ Flickable {
     required property var settingsModel
     property string profileName: ""
     property string confirmation: ""
+    property var placementAnchors: ({})
+
+    function selectPlacementAnchor(output, anchor) {
+        const anchors = Object.assign({}, root.placementAnchors);
+        anchors[output] = anchor;
+        root.placementAnchors = anchors;
+    }
 
 	component DisplayComboBox: Controls.ComboBox {
 		id: comboBox
@@ -134,6 +141,58 @@ Flickable {
             }
         }
 
+        Rectangle {
+            id: arrangement
+            Layout.fillWidth: true
+            Layout.preferredHeight: Theme.dp(200)
+            color: Theme.controlNormalFill
+            border.color: Theme.controlNormalBorder
+            radius: Theme.largeSurfaceCardRadius
+            readonly property var layout: root.settingsModel.displayArrangement
+            readonly property real scaleFactor: Math.max(0.001,
+                Math.min((width - Theme.dp(32)) / layout.width, (height - Theme.dp(48)) / layout.height))
+
+            Text {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.margins: Theme.spacingLg
+                text: arrangement.layout.tiles.length ? "Layout preview - numbers match the monitor cards below" : "Enable a monitor to preview its position"
+                color: Theme.textMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.smallFontSize
+            }
+            Item {
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: Theme.dp(32) + (arrangement.height - Theme.dp(40) - height) / 2
+                width: arrangement.layout.width * arrangement.scaleFactor
+                height: arrangement.layout.height * arrangement.scaleFactor
+                Repeater {
+                    model: arrangement.layout.tiles
+                    delegate: Rectangle {
+                        id: monitorTile
+                        required property var modelData
+                        x: (modelData.x - arrangement.layout.x) * arrangement.scaleFactor
+                        y: (modelData.y - arrangement.layout.y) * arrangement.scaleFactor
+                        width: modelData.width * arrangement.scaleFactor
+                        height: modelData.height * arrangement.scaleFactor
+                        color: modelData.primary ? Theme.controlSelectedFill : Theme.controlHoverFill
+                        border.color: modelData.primary ? Theme.accent : Theme.controlNormalBorder
+                        border.width: Theme.dp(2)
+                        radius: Theme.controlRadius
+                        Accessible.name: "Monitor " + modelData.number + " - " + modelData.name + (modelData.primary ? " - primary" : "")
+                        Text {
+                            anchors.centerIn: parent
+                            text: monitorTile.modelData.number
+                            color: Theme.textStrong
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Math.max(Theme.dp(10), Math.min(Theme.dp(32), monitorTile.height / 3))
+                            font.bold: true
+                        }
+                    }
+                }
+            }
+        }
+
         Repeater {
             model: root.settingsModel.displayOutputs
 
@@ -141,6 +200,12 @@ Flickable {
                 id: outputCard
                 required property int index
                 required property var modelData
+                readonly property string anchorName: root.placementAnchors[modelData.name] || ""
+                readonly property var placementTargets: root.settingsModel.displayPlacementTargets(index)
+                readonly property int anchorIndex: {
+                    const selected = placementTargets.find(function(target) { return target.name === outputCard.anchorName; });
+                    return selected ? selected.index : placementTargets.length ? placementTargets[0].index : -1;
+                }
 
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(104, outputContent.implicitHeight + 16)
@@ -170,7 +235,7 @@ Flickable {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { Layout.fillWidth: true; text: outputCard.modelData.name; color: Theme.textStrong; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize; font.bold: true }
+                        Text { Layout.fillWidth: true; text: "Monitor " + (outputCard.index + 1) + " - " + outputCard.modelData.name; color: Theme.textStrong; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize; font.bold: true }
                         Text {
                             text: outputCard.modelData.fullCompositionPipeline === "available"
                                 ? "NVIDIA anti-tearing available at next login"
@@ -250,64 +315,50 @@ Flickable {
                         ShellButton { label: "Rotation: " + outputCard.modelData.rotation; enabled: outputCard.modelData.enabled; onActivated: root.settingsModel.cycleRotation(outputCard.index) }
                     }
 
-                    RowLayout {
+                    Flow {
                         Layout.fillWidth: true
-                        Text { text: "X"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize }
-                        Rectangle {
-                            Layout.preferredWidth: 60
-                            Layout.preferredHeight: Math.max(Theme.controlHeight,
-                                xPositionInput.implicitHeight + 10)
-                            color: Theme.controlNormalFill; border.color: Theme.controlNormalBorder; radius: Theme.controlRadius
-                            TextInput {
-                                id: xPositionInput
-                                anchors.fill: parent
-                                anchors.margins: 5
-                                color: Theme.textStrong
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.inputFontSize
-                                validator: IntValidator {}
-                                onTextEdited: if (acceptableInput)
-                                    root.settingsModel.updateDisplay(outputCard.index, "x", Number(text))
-                                onEditingFinished: if (acceptableInput)
-                                    root.settingsModel.updateDisplay(outputCard.index, "x", Number(text))
-                            }
-                            Binding {
-                                target: xPositionInput
-                                property: "text"
-                                value: String(outputCard.modelData.x)
-                                when: !xPositionInput.activeFocus
-                                restoreMode: Binding.RestoreNone
+                        Layout.preferredHeight: implicitHeight
+                        spacing: Theme.tightSpacing
+                        enabled: outputCard.modelData.enabled && !root.settingsModel.previewOperationLocked
+
+                        DisplayComboBox {
+                            width: Theme.dp(260)
+                            enabled: outputCard.placementTargets.length > 0
+                            accessibleLabel: "Position monitor " + (outputCard.index + 1) + " relative to"
+                            model: outputCard.placementTargets.map(function(target) { return target.label; })
+                            currentIndex: Math.max(0, outputCard.placementTargets.findIndex(function(target) {
+                                return target.name === outputCard.anchorName;
+                            }))
+                            onActivated: function(index) {
+                                root.selectPlacementAnchor(outputCard.modelData.name, outputCard.placementTargets[index].name);
                             }
                         }
-                        Text { text: "Y"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize }
-                        Rectangle {
-                            Layout.preferredWidth: 60
-                            Layout.preferredHeight: Math.max(Theme.controlHeight,
-                                yPositionInput.implicitHeight + 10)
-                            color: Theme.controlNormalFill; border.color: Theme.controlNormalBorder; radius: Theme.controlRadius
-                            TextInput {
-                                id: yPositionInput
-                                anchors.fill: parent
-                                anchors.margins: 5
-                                color: Theme.textStrong
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.inputFontSize
-                                validator: IntValidator {}
-                                onTextEdited: if (acceptableInput)
-                                    root.settingsModel.updateDisplay(outputCard.index, "y", Number(text))
-                                onEditingFinished: if (acceptableInput)
-                                    root.settingsModel.updateDisplay(outputCard.index, "y", Number(text))
-                            }
-                            Binding {
-                                target: yPositionInput
-                                property: "text"
-                                value: String(outputCard.modelData.y)
-                                when: !yPositionInput.activeFocus
-                                restoreMode: Binding.RestoreNone
+
+                        Repeater {
+                            model: [
+                                { direction: "left", label: "Left of" },
+                                { direction: "right", label: "Right of" },
+                                { direction: "above", label: "Above" },
+                                { direction: "below", label: "Below" }
+                            ]
+                            delegate: ShellButton {
+                                required property var modelData
+                                label: modelData.label
+                                enabled: outputCard.anchorIndex >= 0
+                                primary: root.settingsModel.displayRelation(outputCard.index, outputCard.anchorIndex) === modelData.direction
+                                accessibleDescription: "Place monitor " + (outputCard.index + 1) + " " + modelData.label.toLowerCase() + " the selected monitor"
+                                onActivated: root.settingsModel.placeDisplay(outputCard.index, outputCard.anchorIndex, modelData.direction)
                             }
                         }
                     }
-                }
+                    Text {
+                        visible: outputCard.modelData.enabled && outputCard.placementTargets.length === 0
+                        text: "Enable another monitor to arrange it beside this one."
+                        color: Theme.textMuted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.smallFontSize
+                    }
+}
             }
         }
 
