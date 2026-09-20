@@ -13,7 +13,7 @@ Rectangle {
     signal selectedRequested
     signal connectRequested(var network)
 
-    height: Theme.dp(54)
+    height: Math.max(Theme.dp(54), rowContent.implicitHeight + Theme.dp(12))
     color: root.selected ? Theme.controlSelectedFill
         : rowMouse.containsMouse ? Theme.controlHoverFill : Theme.controlNormalFill
     border.color: root.selected ? Theme.controlSelectedBorder
@@ -31,6 +31,8 @@ Rectangle {
     }
 
     RowLayout {
+        id: rowContent
+
         anchors.fill: parent
         anchors.leftMargin: Theme.rowSpacing
         anchors.rightMargin: Theme.rowSpacing

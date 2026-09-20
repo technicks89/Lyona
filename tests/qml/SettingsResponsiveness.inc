@@ -6,6 +6,14 @@
     property var responsePanes: []
     property double responseStarted: Date.now()
     property var responseFirstPane: null
+    property var scaleHealthWindow: null
+    property var scaleNotificationPopup: null
+    property int scaleNotificationDismissed: -1
+    property var scaleNetworkPopup: null
+    property var scaleAudioPopup: null
+    property var scaleOversizedPopup: null
+    property var scaleRows: []
+    property var scaleBluetoothPane: null
     function responseCheck(ok, detail) {
         if (!ok) {
             console.error("Responsiveness FAILED: " + detail);
@@ -113,12 +121,148 @@
                     pane.flick(1200, 1600);
                 } else {
                     root.responseCheck(pane.contentY < root.scrollStartY - 1, "An inward flick from the bottom must scroll up");
-                    settingsModel.close();
-                    console.info("Settings responsiveness: PASS");
-                    Qt.quit();
+                    // Shell surfaces at the largest text scale: nothing may run
+                    // off-screen or become unreachable.
+                    Theme.applyFontPreferences("Noto Sans", 2);
+                    const health = Qt.createComponent("health/SystemHealthWindow.qml");
+                    root.scaleHealthWindow = health.createObject(root, {healthModel: systemHealthModel});
+                    root.scaleHealthWindow.visible = true;
+                    const launcher = Qt.createComponent("launcher/LauncherResultDelegate.qml");
+                    const wifi = Qt.createComponent("network/NetworkWifiRow.qml");
+                    const notifications = Qt.createComponent("notifications/NotificationPopupWindow.qml");
+                    root.scaleNotificationPopup = notifications.createObject(root,
+                        {panelWindow: root.defaultPanelWindow, notificationModel: {
+                            notifications: [0, 1, 2, 3, 4, 5, 6, 7].map(key => ({key: key, appName: "Test application",
+                                summary: "Notification " + key, body: "A long notification body that wraps across several lines so the complete stack needs scrolling at large text sizes.",
+                                urgency: 1, urgencyName: "Normal", timeoutMs: 100000})),
+                            dismiss: key => { root.scaleNotificationDismissed = key; }, expire: () => {}}});
+                    const network = Qt.createComponent("network/NetworkWindow.qml");
+                    root.scaleNetworkPopup = network.createObject(root, {panelWindow: root.defaultPanelWindow,
+                        networkModel: {visible: true, busy: false, actionsAvailable: true, editorAvailable: false,
+                            wifiPasswordPromptVisible: true, wifiPasswordPromptOrigin: "panel", wifiPassword: "",
+                            statusText: "Online", message: "", activeConnections: [], savedProfiles: [], wifiNetworks: [],
+                            selectedWifiIndex: -1, selectedWifiNetwork: () => ({ssid: "Test network"}),
+                            cancelWifiPasswordPrompt: () => {}, close: () => {}}});
+                    const audio = Qt.createComponent("controls/ControlsWindow.qml");
+                    root.scaleAudioPopup = audio.createObject(root, {panelWindow: root.defaultPanelWindow,
+                        controlsModel: {visible: true, busy: false, volumeMuted: false, volumeDisplayText: "50%",
+                            message: "", volumePercent: 50, micText: "MIC on", mediaText: "Track",
+                            mediaPlayer: "Player", outputDevices: [{name: "output", description: "Speakers", isDefault: true}],
+                            close: () => {}}});
+                    const clickAway = Qt.createComponent("core/ClickAwayPopup.qml");
+                    root.scaleOversizedPopup = clickAway.createObject(root, {targetWindow: root.defaultPanelWindow,
+                        popupWidth: 300, popupHeight: root.defaultPanelWindow.screen.height * 2, visible: true});
+                    const bluetooth = Qt.createComponent("settings/BluetoothSettingsPane.qml");
+                    root.scaleBluetoothPane = bluetooth.createObject(settingsWindow.contentItem,
+                        {width: 1000, height: 900, bluetoothModel: {
+                            providerState: "available", statusText: "Bluetooth", powered: true,
+                            available: true, actionsAvailable: true, busy: false, message: "",
+                            actionAddress: "", devices: [{name: "Headphones", address: "00:11:22:33:44:55",
+                                connected: false, paired: false, trusted: false}]}});
+                    root.scaleRows = [
+                        launcher.createObject(settingsWindow.contentItem, {width: 700, index: 0,
+                            selected: false, modelData: {name: "Application", generic: "Description", comment: "", primaryCategory: "Utility", icon: ""},
+                            launcherModel: {categoryLabel: () => "Utility"}}),
+                        wifi.createObject(settingsWindow.contentItem, {width: 700,
+                            network: {ssid: "Network", security: "WPA2", signal: 80, device: "wlan0", active: false}})
+                    ];
                 }
                 root.scrollFrames = 0;
                 root.responseStage++;
+            } else if (root.responseStage === 18) {
+                const tiles = root.responseItems(root.scaleHealthWindow.contentItem,
+                    item => item.objectName === "healthSummaryTile");
+                root.responseCheck(tiles.length === 4, "Health summary renders four tiles");
+                for (const tile of tiles) {
+                    root.responseCheck(tile.x >= 0 && tile.x + tile.width <= tile.parent.width + 1,
+                        "Health tiles wrap within the available width");
+                    const labels = root.responseItems(tile, item => item.text !== undefined);
+                    for (const label of labels) {
+                        const point = label.mapToItem(tile, 0, 0);
+                        root.responseCheck(point.x >= 0 && point.x + label.width <= tile.width
+                            && label.contentWidth <= label.width + 1,
+                            "Health summary label fits at 200 percent: " + label.text);
+                    }
+                    const caption = labels[0].mapToItem(tile, 0, 0);
+                    const count = labels[1].mapToItem(tile, 0, 0);
+                    root.responseCheck(caption.x + labels[0].width <= count.x,
+                        "Health caption and count do not overlap");
+                }
+                root.scaleHealthWindow.destroy();
+                const sections = root.responseItems(settingsWindow.contentItem,
+                    item => item.selected !== undefined && item.modelData !== undefined
+                        && item.modelData.id !== undefined);
+                const bluetoothRows = root.responseItems(root.scaleBluetoothPane,
+                    item => item.modelData !== undefined && item.modelData.address !== undefined);
+                root.responseCheck(bluetoothRows.length > 0, "200 percent Bluetooth rows are rendered");
+                const rows = root.scaleRows.concat(sections, bluetoothRows);
+                root.responseCheck(root.scaleRows.every(item => item !== null) && sections.length > 0,
+                    "200 percent row checks have rendered delegates");
+                for (const row of rows) {
+                    for (const text of root.responseItems(row, item => item.visible && item.text !== undefined)) {
+                        const point = text.mapToItem(row, 0, 0);
+                        root.responseCheck(point.y >= -1 && point.y + text.height <= row.height + 1,
+                            "200 percent text fits its row: " + text.text);
+                    }
+                }
+                const viewport = root.responseItems(root.scaleAudioPopup.contentItem,
+                    item => item.objectName === "popupViewport")[0];
+                root.responseCheck(viewport && viewport.height <= root.defaultPanelWindow.screen.height,
+                    "Audio popup stays on screen at 200 percent");
+                const card = root.responseItems(root.scaleAudioPopup.contentItem,
+                    item => String(item).startsWith("ShellSurface"))[0];
+                root.responseCheck(card !== undefined, "Audio popup card is rendered");
+                for (const text of root.responseItems(card, item => item.visible && item.text !== undefined)) {
+                    const point = text.mapToItem(card, 0, 0);
+                    root.responseCheck(point.y >= -1 && point.y + text.height <= card.height + 1,
+                        "200 percent audio controls fit inside the scrollable card: " + text.text);
+                }
+                // A popup taller than the screen is clamped to it and scrolls.
+                const oversized = root.responseItems(root.scaleOversizedPopup.contentItem,
+                    item => item.objectName === "popupViewport")[0];
+                root.responseCheck(oversized && oversized.contentHeight > oversized.height
+                    && oversized.height <= root.defaultPanelWindow.screen.height,
+                    "Oversized popup stays on screen and scrolls");
+                oversized.contentY = oversized.contentHeight - oversized.height;
+                root.responseCheck(oversized.contentY > 0, "Oversized popup can scroll to its bottom");
+                root.scaleOversizedPopup.destroy();
+                const networkSurface = root.scaleNetworkPopup.popupContent.find(item => item.content !== undefined);
+                const prompt = networkSurface.content.find(item => item.title === "dwm network password");
+                root.responseCheck(prompt && prompt.visible && prompt.height <= prompt.screen.height,
+                    "200 percent Wi-Fi prompt fits the screen");
+                const passwordViewport = root.responseItems(prompt.contentItem,
+                    item => item.objectName === "passwordViewport")[0];
+                const connect = root.responseItems(prompt.contentItem, item => item.label === "Connect")[0];
+                root.responseCheck(passwordViewport && connect,
+                    "Wi-Fi prompt keeps its action controls");
+                passwordViewport.contentY = Math.max(0, passwordViewport.contentHeight - passwordViewport.height);
+                const actionPosition = connect.mapToItem(passwordViewport, 0, 0);
+                root.responseCheck(actionPosition.y >= -1
+                    && actionPosition.y + connect.height <= passwordViewport.height + 1,
+                    "Wi-Fi Connect action is reachable at maximum scale");
+                const notificationViewport = root.responseItems(root.scaleNotificationPopup.contentItem,
+                    item => item.objectName === "notificationViewport")[0];
+                root.responseCheck(root.scaleNotificationPopup.height + Theme.panelHeight
+                    <= root.defaultPanelWindow.screen.height && notificationViewport.contentHeight > notificationViewport.height,
+                    "Eight large notifications stay within the screen and scroll");
+                notificationViewport.contentY = notificationViewport.contentHeight - notificationViewport.height;
+                const lastCard = root.responseItems(root.scaleNotificationPopup.contentItem,
+                    item => item.item !== undefined && item.item.key === 7)[0];
+                const dismissText = root.responseItems(lastCard, item => item.text === "x")[0];
+                const dismissPosition = dismissText.mapToItem(notificationViewport, 0, 0);
+                root.responseCheck(dismissPosition.y >= -1
+                    && dismissPosition.y + dismissText.height <= notificationViewport.height + 1,
+                    "The final notification dismiss control is reachable");
+                lastCard.dismiss();
+                root.responseCheck(root.scaleNotificationDismissed === 7, "Final notification dismiss reaches its model");
+                root.scaleNotificationPopup.destroy();
+                root.scaleNetworkPopup.destroy();
+                root.scaleAudioPopup.destroy();
+                for (const row of root.scaleRows) row.destroy();
+                root.scaleBluetoothPane.destroy();
+                settingsModel.close();
+                console.info("Settings responsiveness: PASS");
+                Qt.quit();
             }
         }
     }

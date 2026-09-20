@@ -10,16 +10,16 @@ ClickAwayPopup {
     required property var controlsModel
     required property var panelWindow
 
-    readonly property int cardWidth: 360
-    readonly property int cardHeight: Math.max(560, audioColumn.implicitHeight + Theme.popupPadding * 2)
+    readonly property int cardWidth: Theme.dp(360)
+    readonly property int cardHeight: Math.max(Theme.dp(560), audioColumn.implicitHeight + Theme.popupPadding * 2)
     readonly property int edgeMargin: Theme.rowSpacing
     readonly property int contentSpacing: Theme.popupSpacing
     readonly property int rowSpacing: Theme.rowSpacing
     readonly property int actionButtonHeight: Theme.compactButtonHeight
-    readonly property int volumeControlHeight: 46
-    readonly property int volumePercentWidth: 42
-    readonly property int muteButtonWidth: 84
-    readonly property int outputDeviceRowHeight: 34
+    readonly property int volumeControlHeight: Theme.dp(46)
+    readonly property int volumePercentWidth: Theme.dp(42)
+    readonly property int muteButtonWidth: Theme.dp(84)
+    readonly property int outputDeviceRowHeight: Theme.dp(34)
 
     visible: panelWindow !== null && panelWindow.screen !== null && controlsModel.visible
     targetWindow: panelWindow
@@ -175,7 +175,7 @@ ClickAwayPopup {
                             }
 
                             Text {
-                                Layout.preferredWidth: 58
+                                Layout.preferredWidth: Theme.dp(58)
                                 text: outputDeviceRow.modelData.isDefault ? "Default" : "Set"
                                 color: outputDeviceRow.modelData.isDefault ? Theme.controlSelectedText : Theme.textMuted
                                 font.family: Theme.fontFamily
@@ -225,7 +225,7 @@ ClickAwayPopup {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 54
+                Layout.preferredHeight: Theme.dp(54)
                 color: Theme.controlNormalFill
                 radius: Theme.radius
                 border.color: Theme.controlNormalBorder

@@ -11,7 +11,7 @@ Rectangle {
     required property bool selected
     required property var launcherModel
 
-    height: Theme.dp(58)
+    height: Math.max(Theme.dp(58), rowContent.implicitHeight + Theme.dp(16))
     radius: Theme.largeSurfaceCardRadius
     color: selected ? Theme.menuSelectedBackground : resultMouse.containsMouse ? Theme.menuHoverBackground : Theme.transparent
     border.color: selected ? Theme.controlSelectedBorder : Theme.transparent
@@ -26,6 +26,8 @@ Rectangle {
     }
 
     RowLayout {
+        id: rowContent
+
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: 16
