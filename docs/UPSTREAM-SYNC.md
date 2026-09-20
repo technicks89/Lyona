@@ -259,7 +259,7 @@ git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' 
 | `c67db36` | 2026-09-08 | docs: record passing final Phase 6 suite and close evidence boundaries | S2-07 (docs) |
 | `55dbd76` | 2026-09-09 | Add relative monitor placement and numbered display preview (#289) | S3-01 |
 | `6b7548b` | 2026-09-09 | Add user-controlled docked and undocked display profiles (#290) | S3-02 |
-| `902a138` | 2026-09-09 | feat(terminal): add first-class dwmterm integration (#255) | S4-05 (declined, partial) |
+| `902a138` | 2026-09-09 | feat(terminal): add first-class dwmterm integration (#255) | S4-05: **declined.** `dwmterm` is in neither the official Arch repositories nor the AUR (re-checked 2026-09-20), and making an unpackaged terminal the first probe would make `dwm-terminal` miss every time. Lyona's terminal stays `alacritty`. Only the incidental `check-deps.sh` terminal-list fix is ported |
 | `40cbdc8` | 2026-09-10 | feat(branding): add dark Anaconda installer branding and dynamic vers… | N/A (S4-07) |
 | `0c5daf0` | 2026-09-10 | fix(kickstart): prevent gearlever failure from aborting post phase (#… | N/A (S4-07) |
 | `d359a4f` | 2026-09-10 | Fix Settings readiness and progress with local review gates (#291) | S1-09 + S3-05 |

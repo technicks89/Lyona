@@ -1055,6 +1055,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `check-deps.sh` now recognises every terminal `dwm-terminal` can launch
+  (Sync Sprint 4 S4-05, ported in part from upstream `#255`/`902a138`). Its
+  fallback list stopped at Alacritty, Kitty and st, so a machine whose only
+  terminal was `warp-terminal` or `xterm` was reported as having none, though
+  `dwm-terminal` and `dwm-diagnostics` accept both. When no terminal is found the
+  hint recommends only terminals in the official repositories (Alacritty, Kitty,
+  xterm); `st` and `warp-terminal` are AUR-only, so they are detected but not
+  suggested, unlike upstream's wording. The `dwmterm` integration itself is
+  declined: it is packaged in neither the official repositories nor the AUR
+  (re-checked 2026-09-20), and promoting it to the first probe would make
+  `dwm-terminal` miss on every launch. The default stays `alacritty`.
+
 - Fix two installer and session start-up problems (Sync Sprint 4 S4-04,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
   `#283`/`378f06e` and the autostart hunk of `44800ba`). `dev-sync-install.sh`
