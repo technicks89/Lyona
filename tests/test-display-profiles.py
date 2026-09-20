@@ -25,6 +25,10 @@ class ProfilesTest(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(profiles, "ROOT", self.root).start()
         patch.object(profiles.shutil, "which", return_value="/usr/bin/autorandr").start()
+        # This suite exercises save()/status() themselves; battery presence
+        # is BatteryPresenceTests' own concern (S3-03, #310) and must not
+        # depend on whether the machine running the tests has one.
+        patch.object(profiles, "system_battery_present", return_value=True).start()
         self.commands = []
         patch.object(profiles, "run", side_effect=self.fake_run).start()
         self.docked = ["eDP-1|0|||0|0|normal|0", "DVI-I-2-2|1|2560x1440|60.00|2560|0|normal|1",
@@ -182,6 +186,43 @@ class ProfilesTest(unittest.TestCase):
         self.assertEqual((self.root / "mobile/config").read_text(), before)
         self.assertEqual((self.root / "default").readlink(), Path("mobile"))
         self.assertFalse((self.root / "settings.ini").exists())
+
+
+class BatteryPresenceTests(unittest.TestCase):
+    def supply(self, root, name, kind, scope=None):
+        path = Path(root) / name
+        path.mkdir()
+        (path / "type").write_text(kind + "\n")
+        if scope is not None:
+            (path / "scope").write_text(scope + "\n")
+
+    def check(self, entries, expected):
+        with tempfile.TemporaryDirectory() as root:
+            for entry in entries:
+                self.supply(root, *entry)
+            with patch.object(profiles, "POWER_SUPPLY", Path(root)):
+                self.assertIs(profiles.system_battery_present(), expected)
+
+    def test_desktop_with_only_ac_adapter(self):
+        self.check([("AC", "Mains")], False)
+
+    def test_wireless_mouse_battery_is_not_a_laptop(self):
+        self.check([("hidpp_battery_0", "Battery", "Device")], False)
+
+    def test_laptop_battery_with_system_scope(self):
+        self.check([("BAT0", "Battery", "System"), ("AC", "Mains")], True)
+
+    def test_laptop_battery_without_scope_attribute(self):
+        self.check([("BAT1", "Battery")], True)
+
+    def test_missing_power_supply_class(self):
+        with patch.object(profiles, "POWER_SUPPLY", Path("/nonexistent")):
+            self.assertFalse(profiles.system_battery_present())
+
+    def test_status_omits_profiles_without_battery(self):
+        with patch.object(profiles, "system_battery_present", return_value=False):
+            result = profiles.status()
+        self.assertEqual((result["battery"], result["profiles"]), (False, []))
 
 
 if __name__ == "__main__":

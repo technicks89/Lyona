@@ -10,6 +10,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Hide the Docked/Undocked automatic-layout controls when no system battery
+  is present (Sync Sprint 3 S3-03, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  upstream issue `#310`, still open upstream — no upstream code exists, this
+  is Lyona's own implementation): `scripts/dwm-settings-display-profiles`
+  gains `system_battery_present()`, reading
+  `/sys/class/power_supply/*/{type,scope}` and treating only `type=Battery`
+  with a `scope` other than `Device` (or no `scope` file, for older ACPI
+  drivers) as a real system battery — peripheral HID batteries (mice,
+  keyboards) report `scope=Device` and are excluded, matching the issue's
+  acceptance criteria exactly. `status()` reports the new `battery` field and
+  returns early (empty profiles) when it's false. Settings' new
+  `automaticDisplaysRelevant` property binds the whole "Automatic layouts"
+  section's visibility to that field. Verified against this sandbox's real
+  `/sys/class/power_supply`, which holds exactly the peripheral case the
+  issue calls out (a `hidpp_battery_18` wireless-mouse battery,
+  `scope=Device`): `system_battery_present()` correctly excludes it and
+  reports `battery: false`.
 - Add explicit Docked and Undocked automatic display layouts to Settings
   (Sync Sprint 3 S3-02, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
   from upstream `#290`/`6b7548b`): a new unprivileged

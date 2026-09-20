@@ -39,10 +39,14 @@ Scope {
             const docked = JSON.parse(JSON.stringify(model.displayOutputs));
             const mobile = [{ name: "eDP-1", enabled: true, primary: true, mode: "2560x1600",
                 rate: "90.00", x: 0, y: 0, rotation: "normal" }];
-            model.automaticDisplayState = { available: true, profiles: [
+            model.automaticDisplayState = { available: true, battery: true, profiles: [
                 { role: "undocked", name: "mobile", saved: true, outputs: mobile, error: "" },
                 { role: "docked", name: "docked", saved: true, outputs: docked, error: "" }
             ], detected: ["docked"], current: [], default: "mobile", error: "" };
+            require(model.automaticDisplaysRelevant, "A system battery makes automatic layouts relevant (#310)");
+            model.automaticDisplayState = Object.assign({}, model.automaticDisplayState, { battery: false });
+            require(!model.automaticDisplaysRelevant, "No system battery hides automatic layouts (#310)");
+            model.automaticDisplayState = Object.assign({}, model.automaticDisplayState, { battery: true });
             const baseline = model.displayBaseline;
             model.editAutomaticDisplay("undocked");
             require(model.displayEditingRole === "undocked", "Selected editor role");
