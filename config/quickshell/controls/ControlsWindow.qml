@@ -11,7 +11,7 @@ ClickAwayPopup {
     required property var panelWindow
 
     readonly property int cardWidth: 360
-    readonly property int cardHeight: 560
+    readonly property int cardHeight: Math.max(560, audioColumn.implicitHeight + Theme.popupPadding * 2)
     readonly property int edgeMargin: Theme.rowSpacing
     readonly property int contentSpacing: Theme.popupSpacing
     readonly property int rowSpacing: Theme.rowSpacing
@@ -53,6 +53,7 @@ ClickAwayPopup {
         }
 
         ColumnLayout {
+            id: audioColumn
             anchors.fill: parent
             spacing: root.contentSpacing
 

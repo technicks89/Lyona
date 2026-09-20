@@ -17,12 +17,15 @@ PopupWindow {
     color: Theme.transparent
     grabFocus: true
     implicitWidth: targetWindow ? targetWindow.width : 0
-    implicitHeight: targetWindow && targetWindow.screen ? targetWindow.screen.height : 0
+    // Keep the transparent click-away surface below the panel so compositors
+    // cannot blur the bar through this popup. Content coordinates stay panel-relative.
+    readonly property int panelOffset: targetWindow ? targetWindow.height : 0
+    implicitHeight: targetWindow && targetWindow.screen ? Math.max(0, targetWindow.screen.height - panelOffset) : 0
 
     anchor {
         window: targetWindow
         rect.x: 0
-        rect.y: 0
+        rect.y: root.panelOffset
     }
 
     MouseArea {
@@ -30,18 +33,32 @@ PopupWindow {
         onClicked: root.dismissed()
     }
 
-    Item {
-        id: popupHost
+    Flickable {
+        id: viewport
+        objectName: "popupViewport"
 
-        x: root.popupX
-        y: root.popupY
-        width: root.popupWidth
-        height: root.popupHeight
-        opacity: 1.0
+        x: Math.max(0, Math.min(root.popupX, root.width - width))
+        y: Math.max(0, Math.min(root.popupY - root.panelOffset, root.height - height))
+        width: Math.min(root.popupWidth, root.width)
+        height: Math.min(root.popupHeight, root.height)
+        contentWidth: root.popupWidth
+        contentHeight: root.popupHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.AutoFlickIfNeeded
         z: 1
+        onVisibleChanged: if (visible) { contentX = 0; contentY = 0; }
 
-        MouseArea {
-            anchors.fill: parent
+        Item {
+            id: popupHost
+
+            width: root.popupWidth
+            height: root.popupHeight
+            opacity: 1.0
+
+            MouseArea {
+                anchors.fill: parent
+            }
         }
     }
 }

@@ -10,6 +10,30 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Keep the panel sharp under popups, and make shell surfaces usable at large
+  text (Sync Sprint 3 S3-07 and S3-08, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  ported from upstream `#324`/`c44dae4` and the surface fixes of `#327`/`a5b829d`).
+  Popups now start below the panel so a compositor can no longer blur the bar
+  through the transparent click-away surface, and a popup taller or wider than
+  the screen scrolls inside a clamped viewport instead of running off-screen.
+  The Wi-Fi password dialog grows with its content, wraps its hint text, and
+  scrolls when it would exceed the screen. Notification stacks, System Health,
+  the Controls and Bluetooth windows and the panel icon glyphs size from the
+  text scale. Font sizes go through the new `Theme.scaledFontSize()` and the
+  shell text scale accepts 0.75–2.0 (was 0.8–1.5). Status and rollback
+  readiness for the wallpaper now list files by name and metadata only and
+  never start an image decoder; the decode check moves to apply/preview.
+  Lyona adaptations (decision D-7, amended 2026-09-20): geometry stays on
+  `Theme.dp()` — upstream's `scaledSize()` is not ported, and the fixed
+  pixel sizes it touched are wrapped in `dp()` instead. Upstream's
+  desktop-typography port (`desktopFont*`, `applySharedTypography()`) is not
+  taken because it needs a desktop font and text-size provider Lyona doesn't
+  have; the managed shell font and its controls stay as they are. Upstream
+  `68a0d1f` is not taken either: Lyona's default-wallpaper selection already
+  decodes only a sample. `devicePixelRatio` was confirmed to be 1.0 at 144 DPI
+  under Lyona's `QT_ENABLE_HIGHDPI_SCALING=0` launch, so no native-scale
+  compensation is needed.
+
 - Compact the Control Center and Settings detail pane (Sync Sprint 3 S3-04,
   `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
   `c3e9a18` "refactor(quickshell): compact control surfaces", open since the

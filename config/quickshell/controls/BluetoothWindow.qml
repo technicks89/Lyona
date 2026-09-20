@@ -88,15 +88,17 @@ ClickAwayPopup {
 
                     required property var modelData
                     width: ListView.view.width
-                    height: 58
+                    height: Math.max(Theme.dp(58), deviceContent.implicitHeight + Theme.dp(20))
                     radius: Theme.smallRadius
                     color: deviceMouse.containsMouse ? Theme.controlHoverFill : Theme.controlNormalFill
                     border.color: deviceMouse.containsMouse ? Theme.controlHoverBorder : Theme.controlNormalBorder
                     border.width: Theme.controlBorderWidth
 
                     RowLayout {
+                        id: deviceContent
+
                         anchors.fill: parent
-                        anchors.margins: 10
+                        anchors.margins: Theme.dp(10)
                         ColumnLayout {
                             Layout.fillWidth: true
 

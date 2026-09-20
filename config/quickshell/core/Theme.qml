@@ -81,12 +81,17 @@ Singleton {
     }
 
     property string fontFamily: "MesloLGS Nerd Font Mono"
-    property real fontScale: 1.0
+    property real requestedFontScale: 1.0
+    readonly property real fontScale: requestedFontScale
     readonly property string iconFontFamily: "MesloLGS Nerd Font Mono"
 
     function applyFontPreferences(family, scale) {
         root.fontFamily = family.length > 0 ? family : "MesloLGS Nerd Font Mono";
-        root.fontScale = Math.max(0.8, Math.min(1.5, scale));
+        root.requestedFontScale = Math.max(0.75, Math.min(2.0, scale));
+    }
+
+    function scaledFontSize(value, minimum) {
+        return Math.max(dp(minimum), Math.round(value * root.fontScale * root.uiScale));
     }
 
     property int displayDpi: 96
@@ -120,13 +125,13 @@ Singleton {
     readonly property int spacingXxxl: dp(14)
     readonly property int spacingHuge: dp(18)
 
-    readonly property int fontCaptionSize: Math.max(dp(8), Math.round(10 * fontScale * uiScale))
-    readonly property int fontBodySmallSize: Math.max(dp(10), Math.round(12 * fontScale * uiScale))
-    readonly property int fontBodySize: Math.max(dp(10), Math.round(13 * fontScale * uiScale))
-    readonly property int fontSubtitleSize: Math.max(dp(11), Math.round(14 * fontScale * uiScale))
-    readonly property int fontTitleSize: Math.max(dp(14), Math.round(18 * fontScale * uiScale))
-    readonly property int largeSurfaceTitleSize: Math.max(dp(18), Math.round(24 * fontScale * uiScale))
-    readonly property int panelIconFontSize: dp(13)
+    readonly property int fontCaptionSize: scaledFontSize(10, 8)
+    readonly property int fontBodySmallSize: scaledFontSize(12, 10)
+    readonly property int fontBodySize: scaledFontSize(13, 10)
+    readonly property int fontSubtitleSize: scaledFontSize(14, 11)
+    readonly property int fontTitleSize: scaledFontSize(18, 14)
+    readonly property int largeSurfaceTitleSize: scaledFontSize(24, 18)
+    readonly property int panelIconFontSize: scaledFontSize(14, 8)
 
     readonly property int controlHeight: dp(30)
     readonly property int controlRowHeight: dp(32)
@@ -189,7 +194,7 @@ Singleton {
     readonly property int panelFontSize: fontBodySize
     readonly property int smallFontSize: fontBodySmallSize
     readonly property int tinyFontSize: fontCaptionSize
-    readonly property int inputFontSize: Math.max(dp(12), Math.round(16 * fontScale * uiScale))
+    readonly property int inputFontSize: scaledFontSize(16, 12)
     readonly property int iconSize: dp(28)
     readonly property int trayItemSize: dp(24)
     readonly property int trayIconSize: dp(18)
