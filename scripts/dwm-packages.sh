@@ -45,7 +45,7 @@ dwm_packages() {
 		printf '%s\n' \
 			thunar gvfs gvfs-smb tumbler thunar-archive-plugin file-roller \
 			xdg-user-dirs gnome-keyring networkmanager \
-			rsync xkbset
+			rsync xkbset autorandr
 		;;
 	arch:system-management)
 		# PackageKit on Arch is a first-class alpm frontend: the `packagekit`

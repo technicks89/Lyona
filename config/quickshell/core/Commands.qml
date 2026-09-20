@@ -130,6 +130,10 @@ Singleton {
         return helperCommand("dwm-settings-display", action, args, true);
     }
 
+    function settingsDisplayProfilesCommand(action, args) {
+        return helperCommand("dwm-settings-display-profiles", action, args, true);
+    }
+
     function settingsInputCommand(action, args) {
         return helperCommand("dwm-settings-input", action, args, true);
     }
