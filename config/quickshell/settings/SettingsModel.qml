@@ -36,7 +36,8 @@ Scope {
     property var displayModes: []
     property var displayProfiles: []
     property var displayUnsupportedProfiles: []
-    property var automaticDisplayState: ({ available: false, profiles: [], detected: [], current: [], default: "", error: "Loading automatic layouts" })
+    property var automaticDisplayState: ({ available: false, battery: false, profiles: [], detected: [], current: [], default: "", error: "Loading automatic layouts" })
+    readonly property bool automaticDisplaysRelevant: automaticDisplayState.battery === true
     property string automaticDisplayMessage: ""
     property string displayEditingRole: "live"
     property bool automaticDisplayRefreshPending: false
@@ -917,7 +918,7 @@ Scope {
             onStreamFinished: {
                 try {
                     const state = JSON.parse(this.text);
-                    if (state.version !== 1 || !Array.isArray(state.profiles)
+                    if (state.version !== 1 || typeof state.battery !== "boolean" || !Array.isArray(state.profiles)
                             || !Array.isArray(state.detected) || !Array.isArray(state.current)) throw new Error("Invalid profile response");
                     root.automaticDisplayState = state;
                 } catch (error) {

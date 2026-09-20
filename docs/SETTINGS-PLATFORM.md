@@ -288,6 +288,19 @@ Named Lyona layouts and privileged **Use at next login** remain separate
 from these automatic, per-user layouts. These automatic profile controls do
 not update the named Lyona layouts above, or vice versa.
 
+The **Automatic layouts** section is shown only when the system reports a
+laptop/system battery (upstream issue `#310`, open upstream; no upstream
+code exists for it, so this is Lyona's own implementation). Detection reads
+`/sys/class/power_supply/*/type` and `scope`: a supply with `type=Battery`
+and `scope` other than `Device` counts as a system battery; peripheral HID
+batteries (a wireless mouse or keyboard) report `scope=Device` and are
+excluded, and drivers old enough to omit the `scope` file at all default to
+counting. A desktop with no battery, or with only peripheral batteries, never
+sees the Docked/Undocked controls; other display settings are unaffected
+either way. The helper reports `battery` in its `status` response and the
+pane's visibility binds to that field directly, not to whether `autorandr`
+itself is installed.
+
 Persistent display installation requires a second UI confirmation and
 `pkexec`. The helper must be exactly under an installed project libexec path,
 root-owned, non-symlinked, and not writable by group or others. Its installed

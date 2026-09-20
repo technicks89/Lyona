@@ -874,6 +874,19 @@ grep -Fq 'root.settingsModel.resetDisplayDpi()' \
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
 grep -Fq 'dpi-apply-saved' "$repo/scripts/autostart.sh"
 
+# #310: without a system battery, automatic layouts are hidden end to end --
+# the real helper must report battery:false and no profiles, and the pane's
+# visibility must be bound to that state, not to availability/error alone.
+grep -Fq 'readonly property bool automaticDisplaysRelevant: automaticDisplayState.battery === true' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'visible: root.settingsModel.automaticDisplaysRelevant' \
+	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
+mkdir -p "$work/empty-power-supply"
+battery_status=$(DWM_POWER_SUPPLY_ROOT="$work/empty-power-supply" \
+	"$repo/scripts/dwm-settings-display-profiles" status)
+printf '%s\n' "$battery_status" | grep -Fq '"battery": false'
+printf '%s\n' "$battery_status" | grep -Fq '"profiles": []'
+
 if command -v quickshell >/dev/null 2>&1; then
 	cp -a "$repo/config/quickshell" "$work/profile-model"
 	cp "$repo/tests/qml/DisplayAutomaticProfiles.qml" "$work/profile-model/shell.qml"

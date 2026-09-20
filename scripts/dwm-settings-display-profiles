@@ -26,6 +26,26 @@ def profile_root():
 ROOT = profile_root()
 INTERNAL = re.compile(r"^(eDP|LVDS|DSI)[-0-9]")
 NAME = re.compile(r"[A-Za-z0-9_.:+-]+")
+POWER_SUPPLY = Path(os.environ.get("DWM_POWER_SUPPLY_ROOT", "/sys/class/power_supply"))
+
+
+def system_battery_present():
+    """True only for a laptop/system battery; HID peripheral batteries report scope=Device."""
+    try:
+        supplies = sorted(POWER_SUPPLY.iterdir())
+    except OSError:
+        return False
+    for supply in supplies:
+        try:
+            if (supply / "type").read_text().strip() != "Battery":
+                continue
+            scope_file = supply / "scope"
+            scope = scope_file.read_text().strip() if scope_file.exists() else "System"
+        except OSError:
+            continue
+        if scope != "Device":
+            return True
+    return False
 
 
 def run(*args):
@@ -93,7 +113,10 @@ def validate(item):
 
 def status():
     result = dict(version=1, available=bool(shutil.which("autorandr")), profiles=[],
-                  detected=[], current=[], default="", error="")
+                  detected=[], current=[], default="", error="",
+                  battery=system_battery_present())
+    if not result["battery"]:
+        return result
     if not result["available"]:
         result["error"] = "Install the optional autorandr package (pacman -S autorandr) for automatic dock layouts."
         return result

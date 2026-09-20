@@ -90,6 +90,12 @@ Flickable {
         width: root.width
         spacing: Theme.spacingLg
 
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spacingLg
+            // #310: laptop-only controls. Peripheral batteries do not count.
+            visible: root.settingsModel.automaticDisplaysRelevant
+
         Text {
             Layout.fillWidth: true
             text: "Automatic layouts - login and dock connection"
@@ -197,6 +203,7 @@ Flickable {
                     }
                 }
             }
+        }
         }
 
         Text {

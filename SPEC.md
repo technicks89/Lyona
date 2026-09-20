@@ -530,7 +530,10 @@ The planned Settings surface covers:
   edits do not apply live, saves require confirmation and backups, and the
   Undocked layout enables only the built-in screen. Profiles must not pin
   session-specific CRTC assignments. Existing system-wide Xorg persistence
-  remains a separate advanced operation.
+  remains a separate advanced operation. Automatic layout controls are shown
+  only when a system (laptop) battery is present; peripheral batteries such
+  as a wireless mouse or keyboard don't count, and other display settings are
+  unaffected either way.
 - Keyboard, pointer, touchpad, and other supported input devices.
 - NetworkManager connections, VPN entry points, and Bluetooth devices.
 - PipeWire/WirePlumber-compatible audio devices and application streams.
