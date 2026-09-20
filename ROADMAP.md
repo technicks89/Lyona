@@ -418,6 +418,29 @@ without turning Quickshell into an unrestricted administration console.
   upstream's own shape, not a gap: every card, test, and protocol identifier
   downstream of it (Settings' security card, `tst_system_information_protocol.qml`,
   `InformationSnapshotTests`) carries all three.
+- **D-5's limitation** (what the security card does *not* tell you): the
+  firewall rows read the manager's **service state** only (`ActiveState` of
+  `firewalld`, `ufw` or `nftables`) and say so in their detail text. "Enabled"
+  means the service is running, not that any rules are loaded or that traffic
+  is being filtered, and a firewall configured some other way (raw `iptables`,
+  or `nft` rules loaded by hand or by another tool) is not assessed. SELinux
+  reads `unsupported` on Arch, which does not ship it. On the CachyOS install
+  this was checked against (2026-09-20), `ufw` and `firewalld` are not
+  installed and `nftables` is installed but disabled, so the card shows two
+  "not installed" rows and one "disabled", and none of that says the machine is
+  unprotected or protected. Reading the loaded ruleset would need privileged
+  access and is a separate feature, not a gap in this one.
+- **D-8** (decided 2026-09-16, recorded in
+  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md#s4-06-desktop-update-experience`):
+  `lyona-update` and its signed release tarballs remain the only update
+  mechanism. Upstream's GUI updater tracks the unreleased `main` branch with a
+  git revision, a managed-file hash manifest and a sandboxed build (`#318`–`#323`),
+  which would have made Lyona follow unreleased code, so the mechanism is
+  declined. Only its user-facing ideas were ported (Sprint 4 S4-06): a progress
+  popup and panel indicator that survive the Quickshell restart an apply
+  causes, a completion notification, and a bounded update-log viewer, backed by
+  a new `update.log` that `lyona-update` now writes. Issue `#311`'s acceptance
+  was re-verified against `tests/test-lyona-update.sh` rather than assumed.
 - Every Settings → System card (updates, regional, delegated administration,
   information, storage, security, diagnostics/recovery) renders and updates
   live through the real Quickshell runtime under

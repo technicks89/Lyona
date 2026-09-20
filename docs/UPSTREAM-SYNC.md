@@ -6,8 +6,9 @@ carries the survey, the exclusions, the rules that apply everywhere, the open
 decisions, and the **sprint plan**. Each sprint has its own document with
 literal code.
 
-**Current survey:** upstream `d4c6d89` (2026-09-16). Earlier survey points:
-`94ca1a4` (2026-09-05), `03b2195` (2026-09-06), `dd55e58` (2026-09-07).
+**Current survey:** upstream `d155edc` (2026-09-18), found by Sprint 4's S4-08
+re-survey. Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
+(2026-09-06), `dd55e58` (2026-09-07), `d4c6d89` (2026-09-16).
 
 ---
 
@@ -21,12 +22,14 @@ literal code.
 | **Sprint 1** ([`SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md)) | ✅ Done, merged `e947fa7` (#68) |
 | **Sprint 2** ([`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md)) | ✅ Done (2026-09-19) — closes `ROADMAP.md` Phase 6, see its own "Completion Evidence" |
 | **Sprint 3** ([`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md)) | ✅ Done, merged to `main` (through `ed5ba44`) |
-| **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **In progress.** S4-01 to S4-07 done. Left: S4-08 (re-survey and qualification), and three checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) |
+| **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **Code complete; qualification open.** S4-01 to S4-07 done, and S4-08's re-survey done (2026-09-20). Left, none of which can run in a sandbox: the manual **Full suite** workflow (sprint branch and `main`), and checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) |
+| **Sprint 5** ([`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md)) | 📋 **Planned.** From S4-08's re-survey (`d4c6d89..d155edc`, 12 commits): Settings panes stay hidden until their data loads (completes `#315`), verified Flathub before Flatpak installs, and floating-toggle shrink (**needs decision D-9**) |
 | Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 Ported through Sprint 3 and Sprint 4 S4-01…S4-07 |
 
 ## Sprint plan
 
-Four sprints. The request was 3 if possible and 5 at most. Three was ruled out
+Five sprints (Sprint 5 came from Sprint 4's re-survey). The request was 3 if
+possible and 5 at most. Three was ruled out
 by size: after declining the Fedora-only work and the git-based desktop
 updater (D-8), about 16k lines of port remain, and three sprints would put
 more than 5k lines of heavily diverged QML into each. Each sprint below is
@@ -37,11 +40,14 @@ sized to one reviewable branch per item.
 | **1** | [`SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md) | **Manual full-suite CI workflow**; close #33 tracking; native discovery/origins QML; confirmed delegated admin; regional settings model; shared clock; NTP sample, interruption recovery, `watch-time`; package progress; carried-over gaps (D-4, parser/owner harnesses) | `#251`Q, `#259`Q, `#261`, `#262`, `#266`–`#276`, `#291` (system) | — |
 | **2** | [`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) | System information, hardware, filesystems, security status, root encryption, screen-lock evidence, mount monitor, information card, Health navigation; **close `ROADMAP.md` Phase 6** | `#277`–`#288` + fixes | Sprint 1 (S1-03) |
 | **3** | [`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md) | Relative monitor placement, docked/undocked profiles, **`#310` battery gating (new)**, Control Center compaction, Settings readiness and lazy panes, **`#315` layout stability (new)**, Power menu / full-screen Settings / cursor reload / Blueman / Self-Heal, Appearance and typography, popup blur fix, pre-survey gaps | `#289`, `#290`, `c3e9a18`, `#291` (Settings), `#294`, `#295`, `#307`, `#324`, `#327`, `68a0d1f`, `#183`, `#188`, `#191` | — (one hunk touches Sprint 1's `SystemRegionalControls.qml`) |
+| **5** | [`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md) | Settings panes stay hidden until data loads (`#335`, completes `#315`), verified Flathub before Flatpak installs (`#334`), floating-toggle shrink (`#331`/`#333`, decision D-9) | `#329`–`#339` (issues `#330`, `#332`) | Sprint 3 (S5-01 replaces S3-05's placeholder) |
 | **4** | [`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md) | Configuration-backed Picom controls, **`#308` media/image defaults**, icon themes + theme convergence (the XSETTINGS lock fix, `#328`, turned out not to apply to Lyona), installer/session fixes, dwmterm (declined), desktop-update UX (D-8), N/A record, re-survey and qualification | `#312`–`#314`, `3d982b8`, `#317`, `#301`, `#328`, `#283`, `#255`, `#318`–`#323`, Fedora-only commits | Sprint 3 (S3-07) for S4-01 |
 
 Sprints 1→2 and 3→4 are ordered. **The two pairs are independent**, so
-Sprint 3 can run before or alongside Sprint 2. A **Sprint 5** is only needed
-if S4-08's re-survey finds new upstream work.
+Sprint 3 can run before or alongside Sprint 2. **Sprint 5** exists because
+S4-08's re-survey found new upstream work; it follows Sprint 3 and is
+independent of the rest of Sprint 4. A **Sprint 6** is only needed if a later
+re-survey finds more.
 
 The GitHub milestones and issues for these sprints are created by
 [`sync-sprints-github.sh`](sync-sprints-github.sh). See its header for usage.
@@ -59,6 +65,7 @@ Every open item blocks **implementation** of the listed item, not the plan.
 | **D-6** | Self-Heal default when `~/.config/lyona/self-heal.path` is unset | S3-06 | — | **Decided (2026-09-16), asked of the user directly**: upstream parity — stays user-configured only, no default script. No `dwm-system-health` auto-wiring |
 | **D-7** | Upstream `#327` scales spacing by font scale and divides by `devicePixelRatio`; Lyona scales geometry by DPI through `Theme.dp()` | S3-07 | — | **Decided (2026-09-16), asked of the user directly**: port desktop typography and font-size scaling (`scaledFontSize()`) only; `Theme.dp()` stays the one geometry scale, `scaledSize()` is not ported. Verify `devicePixelRatio == 1.0` at 144 DPI before starting, as originally planned. **Amended (2026-09-20), asked of the user directly, when the port reached `AppearanceModel.qml`:** `applySharedTypography()`/`desktopFont*` read `font` and `text-size` selections from upstream's personalization provider, and Lyona's `dwm-settings-toolkit` only has `cursor icon gtk qt` (typography lives in the separate `dwm-settings-font` managed-shell backend, GTK/Qt font policy out of scope). Decision: **keep the managed shell font and text scale**; don't port `desktopFont*`/`applySharedTypography()`, the `personalization.conf`/`gsettings monitor` watchers, or upstream's removal of the "duplicate" font controls (in Lyona they are the only font controls). Still ported: `scaledFontSize()` and the 0.75–2.0 clamp, every per-surface fix (`Theme.dp()` in place of `scaledSize()`), the wallpaper hunks. `devicePixelRatio` was verified to be 1.0 at 144 DPI under Lyona's `QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1` launch |
 | **D-8** | Upstream's git-`main` desktop updater (`#318`–`#323`, issue `#311`) vs Lyona's release-tarball `lyona-update` | S4-06 | — | **Decided (2026-09-16), asked of the user directly**: decline the mechanism; port the four UX ideas (restart-surviving progress window, panel indicator, completion notification, bounded log viewer) onto `UpdateModel.qml` against `lyona-update`'s existing status file |
+| **D-9** | Upstream `#331`/`#333` make toggling floating (and switching to the floating layout) shrink the window to 85% and center it; Lyona floats at the current tile size, so nothing visibly happens | S5-03 | — | **Open.** Lyona has upstream's exact pre-fix `dwm.c`, so the change applies cleanly. Options: port as upstream (recommended), port with another factor, or decline. Ask the user before S5-03 |
 | — | Converge Lyona's #33 regional/delegated UI onto upstream's `#261`–`#269` structure | S1-03…S1-05 | — | **Decided in the Sprint 1 plan** (2026-09-16): converge. Lyona's `launchDelegated()` skips the confirmation `ROADMAP.md` Phase 6 requires, and every later upstream PR builds on upstream's shape |
 | D-3 | Arch targets for `accounts-open`/`sources-open` | — | — | **Decided** 2026-09-15: permanent `unsupported` |
 | — | Option A/B/C for the system-management helper | — | — | **Decided** 2026-09-08: Option A (adopt upstream's Python helper) |
@@ -168,7 +175,6 @@ complete list, including planned ones:
 | `scripts/dwm-cursor-reload` | `check-cursor-reload` | Sprint 3 S3-06 |
 | `scripts/dwm-xkbset` | `check-xkbset` | AUR removal (`docs/AUR-PACKAGES.md`); replaces the AUR-only `xkbset` |
 | `scripts/dwm-settings-picom` | `check-picom`, `check-picom-xvfb` | Sprint 4 S4-01 |
-| `scripts/dwm-settings-picom` | `check-picom`, `check-picom-xvfb` | Sprint 4 S4-01 |
 
 Don't add another without a row here.
 
@@ -215,7 +221,9 @@ are open.
 | `#309` Config-based Picom opacity + GPU-aware backend | closed by `#312`–`#314` | Sprint 4 S4-01 |
 | `#310` Hide dock profiles without a battery | **open, no upstream code** | Sprint 3 S3-03, Lyona's own implementation |
 | `#311` Configuration update detection and sync | closed by `#318`–`#323` | Sprint 4 S4-06 (D-8); `lyona-update` covers it. Acceptance re-verified 2026-09-20 in `tests/test-lyona-update.sh`: up to date reports `current`; outdated reports `behind` and offers it; **deferring (answering no) leaves the install record, backups and `update.conf` unchanged (this had no test; added)**; an unreachable network reports `offline` without failing |
-| `#315` No layout shift while Settings panels load | **open, no upstream code** | Sprint 3 S3-05, Lyona's own implementation |
+| `#315` No layout shift while Settings panels load | closed by `#335` (2026-09-19) | Sprint 3 S3-05 covered only the component load, Lyona's own implementation; upstream's data-load fix → **Sprint 5 S5-01** |
+| `#330` Kickstart: default boot partitions, one partition for `/` and `/home` | closed | N/A (Fedora kickstart) |
+| `#332` Flatpak and Flathub before any Flatpak install | closed by `#334` | Sprint 5 S5-02 |
 
 Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
 
@@ -235,17 +243,23 @@ Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
 | `#289`, `#290`, `#291`, `#294`, `#295`, `#307`, `#324`, `#327` | Sprint 3 (`#291`'s system half → S1-09) |
 | `#296`, `#299`, `#300` | Merge PRs for `44800ba`/`a218d63`/`536e4a5`, `975174d`, `c679937`: N/A except the hunks named in S3-06, S4-02 and S4-04 |
 | `#312`–`#314`, `#317`, `#318`–`#319`, `#321`–`#323`, `#325`, `#326`, `#328` | Sprint 4, or excluded/done as listed |
+| `#329` | N/A: upstream's git-`main` desktop updater (D-8) |
+| `#331`, `#333` | Sprint 5 S5-03 (decision D-9) |
+| `#334` | Sprint 5 S5-02 |
+| `#335` | Sprint 5 S5-01 |
+| `#336`, `#337`, `#338`, `#339` | N/A: Fedora installer defaults, Cloudflare ISO links, 0.7.1 changelog and docs |
 
 ---
 
 ## Commit coverage since `dd55e58`
 
-Every non-merge upstream commit from `dd55e58..d4c6d89`, and where it goes.
-The 20 merge commits in the range (`3f962b7`, `abe0d97`, …) carry no content
-of their own. To list anything newer than this survey:
+Every non-merge upstream commit from `dd55e58..d155edc`, and where it goes.
+The 20 merge commits in the first range (`3f962b7`, `abe0d97`, …) and the 8
+in `d4c6d89..d155edc` carry no content of their own. To list anything newer
+than this survey:
 
 ```bash
-git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' --date=short d4c6d89..origin/main
+git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' --date=short d155edc..origin/main
 ```
 
 | Upstream | Date | Subject | Lyona |
@@ -328,6 +342,18 @@ git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' 
 | `68a0d1f` | 2026-09-14 | fix: avoid decoding the full wallpaper collection on reload | S3-07 |
 | `a5b829d` | 2026-09-16 | Simplify Appearance and unify desktop font scaling (#327) | S3-07 |
 | `d4c6d89` | 2026-09-16 | fix: prevent XSETTINGS from retaining installation locks (#328) | S4-03: **not needed, pinned by a test.** Lyona has no `dwm-xsettings`, `theme-apply.sh` never starts `xsettingsd` (it edits the config and sends `SIGHUP`), and no install path holds a lock descriptor. Verified by running the real script under a held lock with real `gsettings`/`xfconf-query`: the lock is free afterwards and no process holds it. `tests/test-theme-apply-install-lock.sh` keeps it true |
+| `5c7140f` | 2026-09-17 | fix: allow approved desktop updates to replace system contents (#329) | N/A (upstream's git-`main` updater, D-8) |
+| `2e77c11` | 2026-09-18 | fix: make floating toggles visibly shrink windows (#331) | S5-03 (D-9) |
+| `841d3cd` | 2026-09-18 | fix: shrink tiled windows when entering floating layout (#333) | S5-03 (D-9) |
+| `f0abbdb` | 2026-09-18 | fix: preserve shared root and home in Fedora installer defaults | N/A (Fedora installer) |
+| `dd64bbf` | 2026-09-18 | fix: prepare verified Flathub before Flatpak installs for 0.7.1 | S5-02 |
+| `709bcd0` | 2026-09-18 | fix: stabilize Settings layout during initial provider reads | S5-01 |
+| `f02d965` | 2026-09-18 | fix: require explicit disk selection in public installers | N/A (Fedora installer) |
+| `af7cc1d` | 2026-09-18 | docs: clarify Anaconda disk preselection and storage review | N/A (Fedora installer) |
+| `4b0d438` | 2026-09-18 | fix: wait for all initial Settings reads and queued refreshes | S5-01 |
+| `222378b` | 2026-09-18 | docs: use stable Cloudflare ISO download names | N/A (Cloudflare ISO links) |
+| `4e05248` | 2026-09-18 | docs: finalize 0.7.1 changelog | N/A (dwm-titus release notes) |
+| `f31a7b9` | 2026-09-18 | docs: finish migrating ISO references to universal download URLs | N/A (Cloudflare ISO links) |
 
 ---
 

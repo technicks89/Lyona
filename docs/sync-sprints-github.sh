@@ -56,6 +56,7 @@ sprints=(
 	"2|Sync Sprint 2 — System information|SYNC-SPRINT-2-SYSTEM-INFORMATION.md"
 	"3|Sync Sprint 3 — Displays and Settings|SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md"
 	"4|Sync Sprint 4 — Compositor, defaults, release|SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md"
+	"5|Sync Sprint 5 — Settings load stability, Flathub, floating toggles|SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -94,6 +95,9 @@ items=(
 	"4|S4-06|s4-06-desktop-update-experience|Desktop update experience (decide D-8)|#318–#323 (issue #311)"
 	"4|S4-07|s4-07-declined-fedora-image-and-release-work|Record declined Fedora/image/release work|various"
 	"4|S4-08|s4-08-re-survey-and-release-qualification|Re-survey upstream and release qualification|—"
+	"5|S5-01|s5-01-settings-panes-stay-hidden-until-their-data-has-loaded|Settings panes stay hidden until their data has loaded|#335, completes #315"
+	"5|S5-02|s5-02-verify-the-flathub-remote-before-a-flatpak-install|Verify the Flathub remote before a Flatpak install|#332, #334"
+	"5|S5-03|s5-03-floating-toggles-visibly-shrink-the-window|Floating toggles visibly shrink the window (decision D-9)|#331, #333"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \
