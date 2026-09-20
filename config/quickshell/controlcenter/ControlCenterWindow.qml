@@ -17,6 +17,7 @@ ClickAwayPopup {
     required property var updateModel
 
     readonly property int cardWidth: Theme.controlCenterWidth
+    readonly property int compactRowHeight: Math.max(Theme.dp(28), Theme.fontBodySize + Theme.dp(12))
     readonly property int maximumHeight: panelWindow && panelWindow.screen
         ? Math.max(240, panelWindow.screen.height - Theme.panelHeight - Theme.popupMargin)
         : 240
@@ -137,7 +138,7 @@ ClickAwayPopup {
         property bool active: false
         signal activated()
 
-        implicitHeight: 28
+        implicitHeight: Math.max(Theme.dp(26), Theme.fontBodySize + Theme.dp(10))
         radius: Theme.smallRadius
         activeFocusOnTab: presetButton.enabled
         color: !presetButton.enabled ? Theme.controlDisabledFill
@@ -185,7 +186,7 @@ ClickAwayPopup {
 
         anchors.fill: parent
         implicitHeight: menuColumn.implicitHeight + margin * 2
-        margin: 10
+        margin: Theme.spacingLg
         focus: true
 
         Keys.onPressed: function(event) {
@@ -208,7 +209,7 @@ ClickAwayPopup {
                 id: menuColumn
 
                 width: menuFlick.width
-                spacing: 4
+                spacing: Theme.compactSpacing
 
                 MenuHeader {
                     Layout.fillWidth: true
@@ -232,83 +233,88 @@ ClickAwayPopup {
                 ColumnLayout {
                     Layout.fillWidth: true
                     visible: root.controlCenterModel.page === "overview"
-                    spacing: 2
-
-                    SectionLabel { label: "Launch" }
+                    spacing: Theme.compactSpacing
 
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Applications"
                         onActivated: root.openApplications()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Power"
                         navigates: true
                         onActivated: root.openSessionPower()
                     }
 
                     PanelSeparator {
-                        Layout.topMargin: 3
-                        Layout.bottomMargin: 3
+                        Layout.topMargin: Theme.compactSpacing
+                        Layout.bottomMargin: Theme.compactSpacing
                     }
-
-                    SectionLabel { label: "Desktop" }
 
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Bar Widgets"
                         navigates: true
                         onActivated: root.controlCenterModel.openWidgets()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Quick Actions"
                         navigates: true
                         onActivated: root.controlCenterModel.openActions()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Appearance"
                         navigates: true
                         onActivated: root.controlCenterModel.openAppearance()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Power Settings"
                         navigates: true
                         onActivated: root.controlCenterModel.openPower()
                     }
 
                     PanelSeparator {
-                        Layout.topMargin: 3
-                        Layout.bottomMargin: 3
+                        Layout.topMargin: Theme.compactSpacing
+                        Layout.bottomMargin: Theme.compactSpacing
                     }
-
-                    SectionLabel { label: "Utilities" }
 
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Settings"
                         onActivated: root.openSettings()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "System Health"
                         onActivated: root.openSystemHealth()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Keybinds"
                         onActivated: root.openKeybinds()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "System Info"
                         onActivated: root.openSystemInfo()
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "lyona version"
                         detail: root.updateModel.installedVersion.length > 0
                             ? root.updateModel.installedVersion : "Unknown"
@@ -316,6 +322,7 @@ ClickAwayPopup {
                     }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         visible: root.updateModel.updateAvailable
                         label: "Update available: " + root.updateModel.availableVersion
                         navigates: true
@@ -335,6 +342,7 @@ ClickAwayPopup {
                             required property string modelData
 
                             Layout.fillWidth: true
+                            implicitHeight: root.compactRowHeight
                             label: modelData
                             detail: root.controlCenterModel.widgetEnabled(modelData) ? "On" : "Off"
                             active: root.controlCenterModel.widgetEnabled(modelData)
@@ -358,6 +366,7 @@ ClickAwayPopup {
                             required property var modelData
 
                             Layout.fillWidth: true
+                            implicitHeight: root.compactRowHeight
                             label: modelData.label
                             enabled: !root.controlCenterModel.busy
                             onActivated: root.controlCenterModel.runAction(modelData.id)
@@ -377,6 +386,7 @@ ClickAwayPopup {
                             required property var modelData
 
                             Layout.fillWidth: true
+                            implicitHeight: root.compactRowHeight
                             label: modelData.name
                             detail: modelData.status === "active" ? "Active" : ""
                             active: modelData.status === "active"
@@ -389,19 +399,14 @@ ClickAwayPopup {
                 ColumnLayout {
                     Layout.fillWidth: true
                     visible: root.controlCenterModel.page === "power"
-                    spacing: 6
+                    spacing: Theme.spacingSm
 
-                    UiText {
-                        Layout.fillWidth: true
-                        text: root.powerModel.dpmsEnabled
-                            ? "Screen off after " + Theme.formatDuration(root.powerModel.dpmsTimeout)
-                            : "Screen timeout disabled"
-                        color: Theme.textMuted
-                    }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Screen Timeout"
-                        detail: root.powerModel.dpmsEnabled ? "On" : "Off"
+                        detail: root.powerModel.dpmsEnabled
+                            ? Theme.formatDuration(root.powerModel.dpmsTimeout) : "Off"
                         active: root.powerModel.dpmsEnabled
                         enabled: root.powerModel.dpmsAvailable && !root.powerModel.busy
                         onActivated: root.powerModel.setDpms(!root.powerModel.dpmsEnabled, "controlcenter")
@@ -409,8 +414,8 @@ ClickAwayPopup {
                     GridLayout {
                         Layout.fillWidth: true
                         columns: 3
-                        columnSpacing: 6
-                        rowSpacing: 6
+                        columnSpacing: Theme.spacingSm
+                        rowSpacing: Theme.spacingSm
 
                         Repeater {
                             model: root.powerPresets
@@ -429,22 +434,16 @@ ClickAwayPopup {
                     }
 
                     PanelSeparator {
-                        Layout.topMargin: 3
-                        Layout.bottomMargin: 3
+                        Layout.topMargin: Theme.compactSpacing
+                        Layout.bottomMargin: Theme.compactSpacing
                     }
 
-                    UiText {
-                        Layout.fillWidth: true
-                        text: root.powerModel.lockEnabled
-                            ? "Lock after " + Theme.formatDuration(root.powerModel.lockTimeout)
-                            : "Auto lock disabled"
-                        color: Theme.textMuted
-                    }
                     MenuRow {
                         Layout.fillWidth: true
+                        implicitHeight: root.compactRowHeight
                         label: "Auto Lock"
                         detail: !root.powerModel.lockAvailable ? "Unknown"
-                            : root.powerModel.lockEnabled ? "On" : "Off"
+                            : root.powerModel.lockEnabled ? Theme.formatDuration(root.powerModel.lockTimeout) : "Off"
                         active: root.powerModel.lockEnabled
                         enabled: root.powerModel.lockAvailable && !root.powerModel.busy
                         onActivated: root.powerModel.setLock(!root.powerModel.lockEnabled, "controlcenter")
@@ -452,8 +451,8 @@ ClickAwayPopup {
                     GridLayout {
                         Layout.fillWidth: true
                         columns: 3
-                        columnSpacing: 6
-                        rowSpacing: 6
+                        columnSpacing: Theme.spacingSm
+                        rowSpacing: Theme.spacingSm
 
                         Repeater {
                             model: root.powerPresets

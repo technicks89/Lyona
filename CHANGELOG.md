@@ -8,6 +8,33 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Changed
+
+- Compact the Control Center and Settings detail pane (Sync Sprint 3 S3-04,
+  `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
+  `c3e9a18` "refactor(quickshell): compact control surfaces", open since the
+  first survey): remove the Control Center overview's redundant "Launch"/
+  "Desktop"/"Utilities" section headers and the Power page's duplicate
+  status text lines (their information now lives in each row's own
+  `detail`, which shows the remaining duration instead of a bare On/Off),
+  tighten row heights via a new `compactRowHeight` token, margins, and
+  spacing throughout, and shrink the Settings detail pane's header and
+  capability cards to match.
+  Lyona adaptations: `Theme.compactSpacing` already existed, so no new
+  token was needed; every new pixel constant (`compactRowHeight`, the
+  `PresetButton` height) is wrapped in `Theme.dp()`, matching this sprint's
+  established convention; duration formatting uses Lyona's own
+  `Theme.formatDuration()` (not upstream's local `root.formatDuration()`,
+  which Lyona hoisted into `Theme.qml` earlier); the Auto Lock row keeps
+  Lyona's own "Unknown" state for an unavailable lock backend alongside
+  upstream's new duration-when-enabled behavior. Two `xdotool` click
+  coordinates in `tests/test-quickshell-health-xvfb.sh` needed updating for
+  the now-shorter rows; rather than porting upstream's own new coordinates
+  (tuned to its own layout), the correct values for Lyona's real rendering
+  were read directly off a live xvfb run instrumented with a temporary
+  `mapToGlobal()` probe, then verified end to end against the genuine
+  compacted UI.
+
 ### Added
 
 - Hide the Docked/Undocked automatic-layout controls when no system battery
