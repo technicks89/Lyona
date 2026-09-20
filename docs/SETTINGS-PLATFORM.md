@@ -34,6 +34,12 @@ class, provider, state, and recovery detail. Unsupported and restricted cards
 stay visible when their explanation helps the user; a missing provider never
 prevents another section from opening.
 
+Autostart overrides keep `OnlyShowIn` and `NotShowIn` mutually exclusive.
+When a vendor entry has `OnlyShowIn`, installation removes only the `X-DWM`
+and `dwm` tokens instead of adding `NotShowIn`; other desktop choices remain
+intact. Existing user overrides are preserved and require an explicit repair
+if an older installation produced conflicting keys.
+
 ## Helper Protocol
 
 The Phase 1 capability snapshot invokes only `dwm-settings-provider discover`

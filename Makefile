@@ -618,6 +618,9 @@ check-quickshell-tray:
 check-quickshell-health-xvfb:
 	tests/test-quickshell-health-xvfb.sh
 
+check-quickshell-settings-responsiveness-xvfb:
+	tests/test-quickshell-settings-responsiveness-xvfb.sh
+
 check-quickshell-qml:
 	scripts/quickshell-qmllint --root config/quickshell
 
@@ -801,6 +804,7 @@ check:
 	$(MAKE) check-quickshell-update-model
 	$(MAKE) check-quickshell-appearance-model
 	$(MAKE) check-quickshell-settings-xvfb
+	$(MAKE) check-quickshell-settings-responsiveness-xvfb
 	$(MAKE) check-desktop-smoke-xvfb
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
@@ -849,5 +853,5 @@ check:
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall

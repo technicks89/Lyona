@@ -548,6 +548,7 @@ wait_for_display
 
 DISPLAY=$display \
 	HOME=$home \
+	XDG_CONFIG_HOME="$home/.config" \
 	XDG_DATA_HOME="$home/.local/share" \
 	PATH="$repo:$PATH" \
 	"$repo/dwm" >"$work/dwm.log" 2>&1 &
