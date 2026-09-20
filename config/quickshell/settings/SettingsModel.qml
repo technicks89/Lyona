@@ -147,6 +147,8 @@ Scope {
     }
 
     function capabilityById(id) {
+        if (root.discoveryState !== "ready" || root.capabilityRefreshPending)
+            return { "status": "unavailable", "detail": "Capability discovery is still refreshing" };
         for (const capability of root.capabilities) {
             if (capability.id === id) return capability;
         }

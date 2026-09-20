@@ -45,9 +45,12 @@ Scope {
     property string wallpaperDetail: "Wallpaper state has not been loaded"
     property string wallpaperProviderState: "idle"
     property string wallpaperProviderDetail: "Wallpaper provider has not been checked"
+    property string wallpaperMutationState: "idle"
     property bool wallpaperMutationReady: false
     property string wallpaperMutationDetail: "Wallpaper changes have not been checked"
+    property string wallpaperResetState: "idle"
     property bool wallpaperResetReady: false
+    property string wallpaperResetDetail: "Wallpaper reset readiness has not been checked"
     property bool wallpaperBusy: false
     property bool wallpaperReconcilePending: false
     readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running
@@ -141,6 +144,7 @@ Scope {
     property string previewDetail: ""
     property int previewZeroRetryAttempts: 0
     property bool previewStatusParsed: false
+    property bool previewStatusManualOnly: false
     property string recoveryState: "none"
     property string recoveryAction: ""
     property string recoveryTheme: ""
@@ -508,7 +512,8 @@ Scope {
         snapshotProcess.running = true;
     }
 
-    function refreshPreviewStatus() {
+    function refreshPreviewStatus(force) {
+        if (root.previewStatusManualOnly && force !== true) return;
         if (!previewStatusProcess.running && !actionProcess.running) {
             root.previewStatusParsed = false;
             previewStatusProcess.running = true;
@@ -584,10 +589,10 @@ Scope {
         inventoryProcess.running = true;
     }
 
-    function refreshAll() {
+    function refreshAll(forcePreviewStatus) {
         root.refreshSnapshot();
         root.refreshInventory();
-        root.refreshPreviewStatus();
+        root.refreshPreviewStatus(forcePreviewStatus === true);
         root.refreshRecoveryStatus();
         root.refreshMutationReadiness();
         root.refreshWallpaperStatus();
@@ -605,7 +610,7 @@ Scope {
         if (!wallpaperReadinessProcess.running)
             wallpaperReadinessProcess.running = true;
         root.startInventoryWatcher(true);
-        root.refreshAll();
+        root.refreshAll(true);
     }
 
     function startInventoryWatcher(restartIfRunning) {
@@ -1149,9 +1154,12 @@ Scope {
         root.wallpaperPath = "";
         root.wallpaperFit = "fill";
         root.wallpaperDetail = detail;
+        root.wallpaperMutationState = "unavailable";
         root.wallpaperMutationReady = false;
         root.wallpaperMutationDetail = detail;
+        root.wallpaperResetState = "unavailable";
         root.wallpaperResetReady = false;
+        root.wallpaperResetDetail = detail;
         if (!preservePreview) {
             root.wallpaperPreviewState = "none";
             root.wallpaperPreviewToken = "";
@@ -1214,9 +1222,12 @@ Scope {
         root.wallpaperPath = selection.path;
         root.wallpaperFit = selection.fit;
         root.wallpaperDetail = selection.detail;
+        root.wallpaperMutationState = mutation.state;
         root.wallpaperMutationReady = mutation.state === "available";
         root.wallpaperMutationDetail = mutation.detail;
+        root.wallpaperResetState = reset.state;
         root.wallpaperResetReady = reset.state === "available";
+        root.wallpaperResetDetail = reset.detail;
         root.wallpaperPreviewState = preview.state;
         root.wallpaperPreviewToken = preview.token;
         root.wallpaperPreviewRemaining = preview.remaining;
@@ -1447,6 +1458,7 @@ Scope {
         if (root.actionSucceeded) {
             if (root.actionKind === "preview") {
                 root.previewState = "active";
+                root.previewStatusManualOnly = false;
                 root.previewToken = root.actionToken;
                 root.previewTheme = root.actionTheme;
                 root.previewRemaining = 30;
@@ -1457,6 +1469,7 @@ Scope {
                 if (root.actionKind === "keep" || root.actionKind === "revert"
                         || root.actionKind === "abandon") {
                     root.previewState = "none";
+                    root.previewStatusManualOnly = false;
                     root.previewToken = "";
                     root.previewTheme = "";
                     root.previewRemaining = 0;
@@ -1753,6 +1766,7 @@ Scope {
                 const record = lines[1].split("\t");
                 if (record[0] === "result" && record[1] === "none") {
                     root.previewStatusParsed = true;
+                    root.previewStatusManualOnly = false;
                     const wasActive = root.previewState === "active";
                     root.previewState = "none";
                     root.previewToken = "";
@@ -1766,6 +1780,7 @@ Scope {
                     }
                 } else if (record[0] === "result" && record[1] === "expired") {
                     root.previewStatusParsed = true;
+                    root.previewStatusManualOnly = false;
                     root.previewState = "none";
                     root.previewToken = "";
                     root.previewTheme = "";
@@ -1786,16 +1801,21 @@ Scope {
                             && remaining[0] === "preview-remaining" && /^[0-9]+$/.test(remaining[1])
                             ? Number(remaining[1]) : 0;
                     } else root.previewRemaining = 0;
-                    if (root.previewRemaining > 0) root.previewZeroRetryAttempts = 0;
+                    if (root.previewRemaining > 0) {
+                        root.previewZeroRetryAttempts = 0;
+                        root.previewStatusManualOnly = false;
+                    }
                     else {
                         root.previewZeroRetryAttempts++;
                         if (root.previewZeroRetryAttempts > 3) {
+                            root.previewStatusManualOnly = true;
                             root.message = "Automatic rollback status needs a manual refresh";
                             root.messageSeverity = "warning";
                         }
                     }
                 } else if (record.length === 3 && record[0] === "preview-failed") {
                     root.previewStatusParsed = true;
+                    root.previewStatusManualOnly = false;
                     root.previewState = "failed";
                     root.previewToken = record[1];
                     root.previewDetail = record[2];
@@ -1812,6 +1832,7 @@ Scope {
             if (!root.previewStatusParsed) root.previewZeroRetryAttempts++;
             if (root.previewZeroRetryAttempts <= 3) previewZeroRetryTimer.restart();
             else {
+                root.previewStatusManualOnly = true;
                 root.message = "Automatic rollback status needs a manual refresh";
                 root.messageSeverity = "warning";
             }

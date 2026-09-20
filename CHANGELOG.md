@@ -10,6 +10,43 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Qualify that missing optional components stay capability-scoped, and coalesce
+  capability refreshes (Sync Sprint 3 S3-09, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  ported from upstream `#188`/`c8f574b` and `#191`/`4d776bc`, pre-survey gaps).
+  A new `make check-phase5-optional-components` target and a combined
+  optional-loss scenario in the Settings xvfb suite remove the wallpaper
+  folder, Feh, cursor/icon/GTK assets, the Qt backend and Picom at once and
+  check that only those capabilities degrade while the font and toolkit
+  providers, terminal integrations, inventory watch and theme controls keep
+  reporting what they did when healthy, then that everything recovers. The
+  Appearance model now exposes wallpaper mutation and reset state and detail,
+  and `shell.qml` gains read-only probes for them. Capability discovery
+  requested while a provider run is in flight is queued as one follow-up
+  run, and `capabilityById()` reports "Capability discovery is still
+  refreshing" instead of a stale answer; the accessibility text-scale
+  grouping from `#191` stays diverged by decision. The wallpaper preview
+  watchdog now allows up to about one second (100 tries at 10 ms, was 20) to
+  confirm its process identity, so a loaded machine no longer fails a preview
+  that had started correctly.
+  Lyona adaptations: upstream's personalization test is not ported because
+  Lyona's toolkit has no delegate records; instead
+  `tests/test-dwm-settings-toolkit.sh` checks that a missing `qt5ct`/`qt6ct`
+  stays scoped to Qt, run against a PATH without them so it holds whether or
+  not the host has them installed. The scenario probes `toolkit*` and the
+  managed-font provider where upstream probed personalization, and the
+  fixture now installs `dwm-settings-toolkit`, which it previously omitted.
+  Fixture names follow Lyona's (`Lyona-nord`, not `Nordic`).
+
+- Stop automatic theme-preview status retries once their bounded failure
+  budget is exhausted (Sync Sprint 3 S3-09, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  ported from upstream `#183`/`e91d018`, a pre-survey gap): after more than
+  three zero-remaining or unparseable `preview-status` reads Appearance stops
+  polling and reports that rollback status needs a manual refresh. Opening
+  Appearance or pressing Refresh still performs one explicit retry, and every
+  definitive result (none, expired, failed, a positive remaining time, or a
+  finished keep/revert/abandon) re-arms automatic observation. Applied
+  unchanged.
+
 - Keep the panel sharp under popups, and make shell surfaces usable at large
   text (Sync Sprint 3 S3-07 and S3-08, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#324`/`c44dae4` and the surface fixes of `#327`/`a5b829d`).

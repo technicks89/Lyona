@@ -648,6 +648,14 @@ check-appearance:
 	tests/test-dwm-settings-theme.sh
 	tests/test-dwm-settings-toolkit.sh
 
+check-phase5-optional-components:
+	tests/test-dwm-settings-appearance.sh
+	tests/test-dwm-settings-appearance-inventory.sh
+	tests/test-dwm-settings-toolkit.sh
+	tests/test-dwm-settings-wallpaper.sh
+	tests/test-quickshell-appearance-model.sh
+	tests/test-quickshell-controlcenter.sh
+
 check-quickshell-settings-xvfb: all
 	tests/test-quickshell-settings-xvfb.sh
 
@@ -831,6 +839,7 @@ check:
 	$(MAKE) check-system-management
 	$(MAKE) check-settings
 	$(MAKE) check-appearance
+	$(MAKE) check-phase5-optional-components
 	$(MAKE) check-quickshell-network
 	$(MAKE) check-quickshell-connectivity
 	$(MAKE) check-terminal
@@ -855,7 +864,7 @@ check:
 	$(MAKE) check-lightdm-config
 	$(MAKE) release-check
 
-.PHONY: clean all check check-accessibility check-appearance check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
+.PHONY: clean all check check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-cursor-reload \
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \

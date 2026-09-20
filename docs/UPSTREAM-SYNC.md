@@ -85,6 +85,7 @@ so they aren't re-applied.
 | DPI hot reload | `2a49ffd` | Lyona-only. `Theme.uiScale`/`Theme.dp()` don't exist upstream. See D-7 |
 | `82abbf9` (`#326`) *CI: desktop smoke only* | `CHANGELOG.md` "Reduce hosted CI to one Arch build and desktop smoke job" | **Done.** Sprint 1 S1-01 adds the manual full-suite workflow beside it |
 | `4d776bc` (`#191`) *group accessibility settings* | — | Grouping **diverged by decision** (sync Phase 6). Refresh coalescing ported in S3-09 |
+| `c8f574b` (`#188`) *qualify optional component isolation* | `check-phase5-optional-components`, `tests/test-quickshell-settings-xvfb.sh` | **Ported in S3-09, adapted.** `dwm-settings-personalization` maps to `dwm-settings-toolkit` (no delegate or text-size records in Lyona), so the qualification compares the toolkit and managed-font providers instead; `docs/P5-OPTIONAL-COMPONENTS.md` and `docs/P5-STATUS.md` are not ported |
 | Fedora image, kickstart, Anaconda, offline-image, release commits: `40cbdc8` (`#293`), `0c5daf0` (`#292`), `44800ba` (Fedora half), `a218d63`, `536e4a5`, `975174d`, `c679937` (image half), `f956582` (`#325`), `c2a98ae`, `5c875cc` | archiso, `build-iso.yml` | **N/A.** Details in Sprint 4 S4-07 |
 | `45063de`, `a08985a`, `639c5b4` | — | Empty chore commits |
 
