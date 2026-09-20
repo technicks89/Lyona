@@ -13,6 +13,7 @@ Scope {
     property string selectedSectionId: "displays"
     property string discoveryState: "idle"
     property string message: ""
+    property bool capabilityRefreshPending: false
     property string platformId: "unknown"
     property string platformFamily: "unknown"
     property string platformName: "Unknown Linux"
@@ -724,11 +725,15 @@ Scope {
     }
 
     function setSearch(value) {
+        if (root.searchQuery === value) return;
         root.searchQuery = value;
         root.selectedIndex = 0;
         if (root.filteredSections.length > 0) {
-            root.selectedSectionId = root.filteredSections[0].id;
-            root.activateSection(root.selectedSectionId);
+            const id = root.filteredSections[0].id;
+            if (root.selectedSectionId !== id) {
+                root.selectedSectionId = id;
+                root.activateSection(id);
+            }
         }
     }
 
@@ -745,8 +750,10 @@ Scope {
         for (let index = 0; index < root.filteredSections.length; index++) {
             if (root.filteredSections[index].id === id) {
                 root.selectedIndex = index;
-                root.selectedSectionId = id;
-                root.activateSection(id);
+                if (root.selectedSectionId !== id) {
+                    root.selectedSectionId = id;
+                    root.activateSection(id);
+                }
                 return;
             }
         }
@@ -756,8 +763,11 @@ Scope {
         const sections = root.filteredSections;
         if (sections.length === 0) return;
         root.selectedIndex = (root.selectedIndex + delta + sections.length) % sections.length;
-        root.selectedSectionId = sections[root.selectedIndex].id;
-        root.activateSection(root.selectedSectionId);
+        const id = sections[root.selectedIndex].id;
+        if (root.selectedSectionId !== id) {
+            root.selectedSectionId = id;
+            root.activateSection(id);
+        }
     }
 
     function parseDiscovery(text) {
@@ -800,13 +810,24 @@ Scope {
     }
 
     function refresh() {
+        if (root.selectedSectionId === "displays") root.refreshDisplays();
+        if (root.selectedSectionId === "input") root.refreshInput();
         if (root.visible && root.selectedSectionId === "appearance" && root.accessibilityModel)
             root.accessibilityModel.refresh();
         if (root.visible && root.selectedSectionId === "appearance" && root.panelSettingsModel)
             root.panelSettingsModel.refresh();
         if (root.visible && root.selectedSectionId === "system" && root.systemManagementModel)
             root.systemManagementModel.refresh();
-        if (!root.visible || providerProcess.running) return;
+        root.refreshCapabilities();
+    }
+
+    function refreshCapabilities() {
+        if (!root.visible) return;
+        if (providerProcess.running) {
+            root.capabilityRefreshPending = true;
+            return;
+        }
+        root.capabilityRefreshPending = false;
         root.busy = true;
         root.discoveryState = "loading";
         root.message = "Discovering capabilities...";
@@ -826,7 +847,7 @@ Scope {
         }
         root.selectedIndex = targetIndex;
         root.selectedSectionId = targetId;
-        root.refresh();
+        root.refreshCapabilities();
         root.activateSection(root.selectedSectionId);
 		root.recoverDisplayPreview();
 		root.recoverInputPreview();
@@ -857,6 +878,7 @@ Scope {
 			}
 		}
         providerProcess.running = false;
+        root.capabilityRefreshPending = false;
         root.displayRefreshPending = false;
         displayDiscoverProcess.running = false;
         automaticDisplayStatusProcess.running = false;
@@ -900,6 +922,15 @@ Scope {
             onStreamFinished: {
                 const error = this.text.trim();
                 if (error.length > 0) root.message = error;
+            }
+        }
+
+        onRunningChanged: {
+            if (!running && root.capabilityRefreshPending && root.visible) {
+                root.capabilityRefreshPending = false;
+                Qt.callLater(function() {
+                    if (!providerProcess.running) root.refreshCapabilities();
+                });
             }
         }
     }

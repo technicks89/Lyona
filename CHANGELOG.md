@@ -37,6 +37,48 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Reduce Settings startup work and readiness (Sync Sprint 3 S3-05,
+  `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream `#291`
+  (Settings half of `d359a4f`), `#294`/`080b39e`, and Lyona's own fix for
+  open issue `#315`): every Settings pane is now lazily loaded through a new
+  `DeferredSettingsPane.qml` (`Loader { active: visited }`) that stays
+  instantiated once visited, so switching sections preserves drafts, scroll
+  positions, and each pane's own operation model instead of recreating it;
+  `SettingsModel.qml` skips re-activating an already-selected section (three
+  call sites) and opens with a new, narrower `refreshCapabilities()` instead
+  of a full `refresh()`, since `activateSection()` already refreshes the
+  newly-selected section on its own. `InputSettingsPane.qml`'s label column
+  now wraps instead of pushing controls off-screen for long labels.
+  `scripts/seed-autostart-overrides.sh` now strips stray `X-DWM`/`dwm`
+  tokens out of a vendor entry's `OnlyShowIn` (which otherwise silently wins
+  over `NotShowIn` and defeats the exclusion after a user-service restart
+  reseeds it) and refuses to scope an entry that has both keys, rather than
+  producing an ambiguous result.
+  For open issue `#315` (no upstream fix; Lyona's own implementation):
+  `DeferredSettingsPane` reserves the pane's layout space and shows a
+  "Loading…" placeholder while its `Loader` is still async-instantiating,
+  then fades the real content in (`Theme.reducedMotion`-aware), instead of
+  popping in and reflowing the window on first visit.
+  Lyona adaptations: `refreshCapabilities()` and its `capabilityRefreshPending`
+  debounce didn't exist in Lyona yet (upstream had already split them out of
+  `refresh()` before Sprint 3's own scope) — added them as the minimal
+  dependency this port actually needs, without porting the unrelated
+  `capabilityById()` staleness guard that came bundled with them upstream,
+  since nothing in this diff touches that function. New
+  `tests/test-quickshell-settings-responsiveness-xvfb.sh` (with
+  `tests/fixtures/settings-responsiveness.py` and
+  `tests/qml/SettingsResponsiveness.inc`) verified passing end to end against
+  the real `quickshell` runtime. Upstream's `#295`/`8df119c` (a race fix for
+  a "restart quickshell, verify notification policy persisted" test) was
+  **not ported**: that test scenario doesn't exist in Lyona, which already
+  tests notification-policy persistence a different, race-free way (through
+  `ipc`-polled `policyState` assertions in
+  `tests/test-quickshell-large-surfaces-xvfb.sh`, tracing back to Lyona's own
+  history rather than upstream's `#204`) — there is nothing for the fix to
+  apply to. `.github/PULL_REQUEST_TEMPLATE.md`, `AGENTS.md`, `CONTRIBUTING.md`,
+  `TASKS.md`, and `docs/PRE-P7-MAINTENANCE.md` changes were not ported
+  (review-process wording and Lyona's own separately-maintained planning
+  docs).
 - Hide the Docked/Undocked automatic-layout controls when no system battery
   is present (Sync Sprint 3 S3-03, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   upstream issue `#310`, still open upstream — no upstream code exists, this
