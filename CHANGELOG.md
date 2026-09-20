@@ -37,6 +37,52 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Polish the Power menu, Settings, cursor updates, tray, and Quick Actions
+  (Sync Sprint 3 S3-06, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
+  from upstream `#307`/`56ec27b`, closing issues `#302`–`#306`, plus the
+  focused-screen hunk from `44800ba`): Power menu labels simplify ("Log Out"
+  → "Logout") and unavailable actions stay selectable so choosing one can
+  explain why, instead of just disappearing from tab order. Settings opens
+  fullscreen on the focused screen like System Health — reversing this same
+  Unreleased section's earlier 1180x760-clamped window size. Appearance now
+  scrolls vertically without diagonal drift or overscroll bounce. The system
+  tray hides Blueman's redundant icon while keeping the Bluetooth widget
+  itself. Quick Actions gains Self-Heal, running a user-configured script in
+  a terminal with its progress and any authorization prompts visible; with
+  no script configured it explains that rather than silently doing nothing
+  (decision D-6: upstream parity, no default script ships, not auto-wired to
+  `dwm-system-health`'s own repair flow — filed in `ROADMAP.md` Future
+  Evaluation). Cursor theme/size changes now take effect immediately: a new
+  `scripts/dwm-cursor-reload` (ctypes against libX11/libXcursor/libXfixes,
+  no new Python dependency) replaces named cursors already held by existing
+  X11 clients, and the choice is published through xsettingsd for GTK
+  applications, without requiring a reboot or re-login.
+  Lyona adaptations: Lyona has no `dwm-xsettings`, so cursor publication was
+  built on top of `scripts/dwm-settings-display`'s existing DPI xsettingsd
+  writer instead of a separate daemon-lifecycle helper — its atomic,
+  symlink-safe write-and-reload logic is now a small shared, sourced
+  function (`scripts/dwm-xsettings-config.sh`) so both DPI and cursor keys
+  can edit the same `xsettingsd.conf` without clobbering each other, verified
+  directly: writing a cursor key preserves an existing `Xft/DPI` line and
+  vice versa. `scripts/theme-apply.sh` calls the new
+  `scripts/dwm-cursor-reload` after applying a theme; since Lyona's
+  theme-apply.sh has no upstream `STRICT_PERSONALIZATION`/`XSETTINGS_HELPER`
+  concept, a failed live cursor refresh logs a warning rather than failing
+  the whole apply, matching this script's existing tolerant style for other
+  best-effort desktop-integration steps (gsettings, xfconf-query). Verified
+  live against this sandbox's real X11 session: `dwm-cursor-reload` updates
+  73–122 named cursors across runs with no errors, and the full X11
+  cursor-replacement/rollback round trip (`tests/test-cursor-reload.py`,
+  ported minus the `dwm-xsettings`-specific XSETTINGS-publication half,
+  which doesn't apply) passes end to end under `xvfb-run`, matching the
+  ported `check-cursor-reload` Makefile target. Caught and fixed along the
+  way: `tests/test-dwm-settings-theme.sh`'s real `theme-apply.sh` calls were
+  unintentionally reaching this sandbox's real DISPLAY, since the tests
+  never explicitly isolated it, which would have live-mutated real cursor
+  state on every run wherever DISPLAY happens to be set — the whole file now
+  defaults `DWM_APPEARANCE_CURSOR_HELPER` to a no-op, matching a similar
+  isolation fix upstream made independently in `tests/test-install-preservation.sh`
+  (also ported).
 - Reduce Settings startup work and readiness (Sync Sprint 3 S3-05,
   `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream `#291`
   (Settings half of `d359a4f`), `#294`/`080b39e`, and Lyona's own fix for
@@ -828,10 +874,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   a hosted CI job; local validation and independent review remain the merge
   gate. The previous full desktop suite, `clang-build`, and `quickshell-qml`
   hosted jobs are removed; `workflow_dispatch` now runs the same smoke job.
-- Increase the Settings window to 1180x760 and tighten its navigation rows,
-  pane margins, capability cards, and display controls so more options remain
-  visible without reducing the configured text scale. Clamp the enlarged
-  window to the active screen on smaller outputs.
+- Open Settings full screen on the active screen, like System Health (Sync
+  Sprint 3 S3-06 `#302`, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  upstream `#307`/`56ec27b`), and tighten its navigation rows, pane margins,
+  capability cards, and display controls so more options remain visible
+  without reducing the configured text scale. This supersedes the earlier
+  1180x760-with-clamping window size from this same Unreleased section.
 
 ### Fixed
 

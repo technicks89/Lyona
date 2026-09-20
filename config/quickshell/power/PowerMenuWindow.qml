@@ -105,7 +105,10 @@ ClickAwayPopup {
 
                         navigates: modelData.confirm
 
+                        // Unavailable actions remain selectable so the model can
+                        // explain the reason without adding text to every row.
                         enabled: !root.powerMenuModel.busy && !root.foreignConfirmation
+                        Accessible.description: modelData.available ? "" : modelData.detail
                         onActivated: root.powerMenuModel.requestAction(modelData, root.actionOrigin)
                     }
                 }

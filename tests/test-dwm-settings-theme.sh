@@ -4,6 +4,11 @@ set -euo pipefail
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 helper=$repo/scripts/dwm-settings-theme
+# S3-06 #304: theme-apply.sh now tries a live X11 cursor refresh whenever
+# DISPLAY is set, which it may be inherited from this test's own environment.
+# No-op it everywhere by default; individual cases below override it locally
+# to exercise the real behavior.
+export DWM_APPEARANCE_CURSOR_HELPER=/usr/bin/true
 work=$(mktemp -d)
 cleanup() {
 	rm -rf "$work"
@@ -1280,5 +1285,57 @@ wait "$concurrent_a"
 wait "$concurrent_b"
 [[ $(grep -Fc 'active-theme.toml' "$concurrent_config/alacritty/alacritty.toml") == 1 ]]
 [[ $(grep -Fxc 'include active-theme.conf' "$concurrent_config/kitty/kitty.conf") == 1 ]]
+
+# S3-06 #304: cursor theme/size join Xft/DPI in the shared xsettingsd.conf
+# writer, and a live X11 cursor refresh runs after apply. Lyona has no
+# dwm-xsettings/STRICT_PERSONALIZATION machinery, so unlike upstream this
+# failure is a warning, not a hard failure of the whole apply.
+cursor_home=$work/cursor-home
+cursor_config=$cursor_home/.config
+mkdir -p "$cursor_config/lyona" "$cursor_home/.local/share"
+cp "$themes_fixture" "$cursor_config/lyona/themes.toml"
+chmod 640 "$cursor_config/lyona/themes.toml"
+cursor_bin=$work/cursor-bin
+mkdir -p "$cursor_bin"
+for side_effect_command in dbus-update-activation-environment gsettings kitty pgrep qt6ct systemctl xfconf-query xrdb; do
+	printf '#!/bin/sh\nexit 0\n' >"$cursor_bin/$side_effect_command"
+	chmod +x "$cursor_bin/$side_effect_command"
+done
+cat >"$cursor_bin/xsettingsd" <<'SH'
+#!/bin/sh
+exit 0
+SH
+chmod +x "$cursor_bin/xsettingsd"
+cursor_xsettingsd_config=$work/cursor-xsettingsd.conf
+cursor_reload_ok=$work/cursor-reload-ok
+cat >"$cursor_reload_ok" <<'SH'
+#!/bin/sh
+printf '%s %s\n' "$1" "$2" >>"${DWM_TEST_CURSOR_RELOAD_LOG:?}"
+SH
+chmod +x "$cursor_reload_ok"
+PATH=$cursor_bin:$PATH HOME=$cursor_home XDG_CONFIG_HOME=$cursor_config \
+	XDG_DATA_HOME=$cursor_home/.local/share XDG_RUNTIME_DIR=$runtime_dir \
+	DWM_XSETTINGS_CONFIG=$cursor_xsettingsd_config \
+	DWM_APPEARANCE_CURSOR_HELPER=$cursor_reload_ok \
+	DWM_TEST_CURSOR_RELOAD_LOG=$work/cursor-reload.log \
+	DISPLAY=:0 \
+	"$repo/scripts/theme-apply.sh" >"$work/cursor-apply.out" 2>"$work/cursor-apply.err"
+grep -Eq '^Gtk/CursorThemeName "' "$cursor_xsettingsd_config"
+grep -Eq '^Gtk/CursorThemeSize [0-9]+$' "$cursor_xsettingsd_config"
+[[ -s $work/cursor-reload.log ]]
+
+cursor_reload_fail=$work/cursor-reload-fail
+cat >"$cursor_reload_fail" <<'SH'
+#!/bin/sh
+exit 1
+SH
+chmod +x "$cursor_reload_fail"
+PATH=$cursor_bin:$PATH HOME=$cursor_home XDG_CONFIG_HOME=$cursor_config \
+	XDG_DATA_HOME=$cursor_home/.local/share XDG_RUNTIME_DIR=$runtime_dir \
+	DWM_XSETTINGS_CONFIG=$cursor_xsettingsd_config \
+	DWM_APPEARANCE_CURSOR_HELPER=$cursor_reload_fail \
+	DISPLAY=:0 \
+	"$repo/scripts/theme-apply.sh" >"$work/cursor-apply-fail.out" 2>"$work/cursor-apply-fail.err"
+grep -Fq 'theme-apply: live X11 cursor refresh failed' "$work/cursor-apply-fail.err"
 
 printf 'dwm settings theme tests passed\n'

@@ -494,3 +494,10 @@ After the Arch phases are stable, evaluate additional accessibility work,
 sharing and peripheral workflows, and whether a Wayland successor should be a
 separate project. The distribution scope remains Arch Linux-only; expanding it is
 outside this roadmap.
+
+Quick Actions' Self-Heal (Sync Sprint 3 S3-06, decision D-6, decided
+2026-09-16) stays user-configured only, matching upstream parity: no default
+`dwm-self-heal` script ships, and `dwm-system-health`'s own `repair-user`/
+`repair-system` flow is not auto-wired to it. Evaluate whether to build a
+default script or wire the two together only after the Arch phases are
+stable.

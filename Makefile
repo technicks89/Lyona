@@ -59,6 +59,8 @@ INSTALL_COMMANDS = \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
 	scripts/dwm-simple-watch.sh \
+	scripts/dwm-xsettings-config.sh \
+	scripts/dwm-cursor-reload \
 	scripts/dwm-watchdog.sh \
 	scripts/lyona-gtk-theme \
 	scripts/lyona-release \
@@ -615,6 +617,9 @@ check-quickshell-notifications:
 check-quickshell-tray:
 	tests/test-quickshell-tray.sh
 
+check-cursor-reload:
+	xvfb-run -a /usr/bin/python3 tests/test-cursor-reload.py
+
 check-quickshell-health-xvfb:
 	tests/test-quickshell-health-xvfb.sh
 
@@ -820,6 +825,7 @@ check:
 	$(MAKE) check-quickshell-update-ui-xvfb
 	$(MAKE) check-quickshell-notifications
 	$(MAKE) check-quickshell-tray
+	$(MAKE) check-cursor-reload
 	$(MAKE) check-system-health
 	$(MAKE) check-system-management
 	$(MAKE) check-settings
@@ -849,6 +855,7 @@ check:
 	$(MAKE) release-check
 
 .PHONY: clean all check check-accessibility check-appearance check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
+	check-cursor-reload \
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \

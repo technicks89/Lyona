@@ -30,8 +30,9 @@ FloatingWindow {
     title: "dwm settings"
     visible: settingsModel.visible
     screen: settingsModel.targetScreen
-    implicitWidth: Math.min(1180, root.screen ? Math.max(1, root.screen.width - 32) : 1180)
-    implicitHeight: Math.min(760, root.screen ? Math.max(1, root.screen.height - 32) : 760)
+    fullscreen: true
+    implicitWidth: root.screen ? root.screen.width : 1180
+    implicitHeight: root.screen ? root.screen.height : 760
     color: Theme.transparent
 
     function focusSearch() {
@@ -49,6 +50,7 @@ FloatingWindow {
 
     ShellSurface {
         anchors.fill: parent
+        radius: 0
         margin: Theme.largeSurfaceMargin
 
         Item {
