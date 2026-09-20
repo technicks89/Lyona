@@ -189,6 +189,7 @@ no_partial_files
 
 media_line=$(grep -n '^	dwm_install_package_profile media$' "$repo/install.sh" | head -n 1 | cut -d: -f1)
 seed_line=$(grep -n 'scripts/seed-default-apps.sh' "$repo/install.sh" | head -n 1 | cut -d: -f1)
+# shellcheck disable=SC2016 # matching install.sh's literal text, not expanding it
 gearlever_line=$(grep -n 'if "$REPO_DIR/scripts/install-gearlever"; then' "$repo/install.sh" | head -n 1 | cut -d: -f1)
 [[ -n $media_line && -n $seed_line && -n $gearlever_line ]] ||
 	fail 'install.sh no longer installs media, seeds defaults and sets up Gear Lever'
