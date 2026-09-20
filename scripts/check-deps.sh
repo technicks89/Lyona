@@ -127,14 +127,16 @@ echo ""
 
 echo "Terminal Emulators (at least one required):"
 TERM_FOUND=0
-for term in alacritty kitty st; do
+# Detect every terminal dwm-terminal can launch (st and warp-terminal are not in
+# the official repositories, so they are recognised but never recommended).
+for term in alacritty kitty st warp-terminal xterm; do
 	if command -v "$term" &>/dev/null; then
 		printf "  ${GREEN}✓${NC} %s\n" "$term"
 		TERM_FOUND=1
 	fi
 done
 if [ $TERM_FOUND -eq 0 ]; then
-	printf "  ${RED}✗${NC} No supported terminal found ${YELLOW}(install alacritty, kitty, or st)${NC}\n"
+	printf "  ${RED}✗${NC} No supported terminal found ${YELLOW}(install alacritty, kitty, or xterm)${NC}\n"
 	MISSING=$((MISSING + 1))
 fi
 if command -v herdr &>/dev/null; then
