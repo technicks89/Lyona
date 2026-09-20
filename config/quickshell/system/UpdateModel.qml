@@ -40,6 +40,25 @@ Scope {
     property var backups: []
     property bool backupsLoaded: false
 
+    // Whether the progress surfaces (the popup and the panel indicator) should
+    // be showing. Unlike `busy` this is age-aware: the status file keeps its
+    // last outcome forever, and a "pending" one can be left behind by a crash,
+    // and neither should greet the user again at every login.
+    property bool progressShown: false
+    // The popup can be hidden while an update keeps running; the panel
+    // indicator (progressShown) stays as the way back to it. A new outcome
+    // always reopens it, because that is worth seeing.
+    property bool popupClosed: false
+    readonly property int recentOutcomeMs: 10 * 60 * 1000
+    readonly property int stalePendingMs: 60 * 60 * 1000
+
+    // The last 64 KiB of the log lyona-update writes for apply and rollback.
+    // Bounded on the reading side so a huge build log cannot balloon the shell.
+    property string logText: ""
+    property string logState: "idle" // idle | loading | ready | empty | unavailable
+    property bool logTruncated: false
+    readonly property int logTailBytes: 64 * 1024
+
     readonly property string homeDir: Quickshell.env("HOME") || ""
     readonly property string configuredConfigHome: Quickshell.env("XDG_CONFIG_HOME") || ""
     readonly property string configHome: root.configuredConfigHome.startsWith("/")
@@ -49,6 +68,7 @@ Scope {
         ? root.configuredStateHome : root.homeDir + "/.local/state"
     readonly property string updateConfPath: root.configHome + "/lyona/update.conf"
     readonly property string statusPath: root.stateHome + "/lyona/update.status"
+    readonly property string logPath: root.stateHome + "/lyona/update.log"
 
     readonly property var validUpdateStates: ["current", "behind", "ahead",
         "downgrade-offered", "unknown", "offline", "unavailable"]
@@ -227,6 +247,8 @@ Scope {
     function apply(version) {
         if (root.busy || !version || version.length === 0) return;
         root.busy = true;
+        root.progressShown = true;
+        root.popupClosed = false;
         root.actionSucceeded = false;
         root.phase = "downloading";
         root.progressDetail = "Starting update to " + version;
@@ -238,6 +260,8 @@ Scope {
     function rollback(backupId) {
         if (root.busy || !backupId || backupId.length === 0) return;
         root.busy = true;
+        root.progressShown = true;
+        root.popupClosed = false;
         root.actionSucceeded = false;
         root.phase = "restarting";
         root.progressDetail = "Starting rollback";
@@ -255,7 +279,7 @@ Scope {
     function parseStatusFile(text) {
         const lines = text.trim().length > 0 ? text.trim().split("\n") : [];
         let validProtocol = false;
-        let phaseValue = "", phaseDetail = "", outcome = "", outcomeMessage = "";
+        let phaseValue = "", phaseDetail = "", outcome = "", outcomeMessage = "", timestamp = "";
         for (const line of lines) {
             const fields = line.split("\t");
             if (fields[0] === "lyona-update-status-protocol" && fields[1] === "1") {
@@ -266,14 +290,20 @@ Scope {
             } else if (fields[0] === "outcome" && fields.length >= 2) {
                 outcome = fields[1];
                 outcomeMessage = fields.length >= 3 ? fields[2] : "";
+            } else if (fields[0] === "timestamp" && fields.length >= 2) {
+                timestamp = fields[1];
             }
         }
         if (!validProtocol) return;
+        const ageMs = root.statusAgeMs(timestamp);
 
         if (outcome === "pending") {
             root.busy = true;
             root.phase = phaseValue.length > 0 ? phaseValue : "idle";
             root.progressDetail = phaseDetail;
+            // An update that is genuinely running writes a new status every
+            // few seconds; one this old was left behind by a crash.
+            root.progressShown = ageMs <= root.stalePendingMs;
             return;
         }
 
@@ -287,7 +317,47 @@ Scope {
         root.message = outcome === "succeeded"
             ? "Update complete"
             : (outcomeMessage.length > 0 ? outcomeMessage : "The last update attempt failed");
+        // Show how it ended only while that is news: right after an update
+        // that restarted this shell, not for one that finished days ago.
+        root.progressShown = ageMs <= root.recentOutcomeMs;
+        root.popupClosed = false;
         if (outcome === "succeeded") Qt.callLater(root.refresh);
+    }
+
+    // Milliseconds since the status file's UTC timestamp, or Infinity when it
+    // is missing or unreadable (so an unknown age never counts as recent).
+    function statusAgeMs(timestamp) {
+        const written = Date.parse(timestamp);
+        return isFinite(written) ? Date.now() - written : Infinity;
+    }
+
+    function showProgress() {
+        root.progressShown = true;
+        root.popupClosed = false;
+    }
+
+    function closePopup() {
+        root.popupClosed = true;
+    }
+
+    function dismissProgress() {
+        root.progressShown = false;
+    }
+
+    function refreshLog() {
+        if (logProcess.running) return;
+        root.logState = "loading";
+        logProcess.running = true;
+    }
+
+    function parseLog(text) {
+        // tail limits bytes, this counts characters: leave room for multibyte text.
+        root.logTruncated = text.length > root.logTailBytes - 1024;
+        // A tail can start mid-line; drop that fragment rather than show half of it.
+        const body = root.logTruncated && text.indexOf("\n") >= 0
+            ? text.slice(text.indexOf("\n") + 1) : text;
+        root.logText = body;
+        root.logState = body.trim().length > 0 ? "ready" : "empty";
     }
 
     Component.onCompleted: {
@@ -295,6 +365,30 @@ Scope {
         statusFile.reload();
         root.refresh();
         loginCheckJitter.restart();
+    }
+
+    Process {
+        id: logProcess
+        command: ["tail", "-c", String(root.logTailBytes), root.logPath]
+        running: false
+        stdout: StdioCollector { onStreamFinished: root.parseLog(this.text) }
+        stderr: StdioCollector {}
+        onExited: exitCode => {
+            if (exitCode !== 0) {
+                root.logText = "";
+                root.logTruncated = false;
+                root.logState = "unavailable";
+            }
+        }
+    }
+
+    // A finished update is good news that needs no click; a failed one stays
+    // until it is dismissed, because that is the one worth reading.
+    Timer {
+        interval: 20000
+        running: root.progressShown && !root.busy && root.actionSucceeded
+        repeat: false
+        onTriggered: root.dismissProgress()
     }
 
     FileView {

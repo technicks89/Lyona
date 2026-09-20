@@ -181,7 +181,7 @@ are open.
 | `#308` Celluloid, mpv, sxiv + media defaults | **open** (Fedora-only fix `3d982b8`) | Sprint 4 S4-02 |
 | `#309` Config-based Picom opacity + GPU-aware backend | closed by `#312`–`#314` | Sprint 4 S4-01 |
 | `#310` Hide dock profiles without a battery | **open, no upstream code** | Sprint 3 S3-03, Lyona's own implementation |
-| `#311` Configuration update detection and sync | closed by `#318`–`#323` | Sprint 4 S4-06 (D-8); `lyona-update` covers it |
+| `#311` Configuration update detection and sync | closed by `#318`–`#323` | Sprint 4 S4-06 (D-8); `lyona-update` covers it. Acceptance re-verified 2026-09-20 in `tests/test-lyona-update.sh`: up to date reports `current`; outdated reports `behind` and offers it; **deferring (answering no) leaves the install record, backups and `update.conf` unchanged (this had no test; added)**; an unreachable network reports `offline` without failing |
 | `#315` No layout shift while Settings panels load | **open, no upstream code** | Sprint 3 S3-05, Lyona's own implementation |
 
 Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
@@ -277,15 +277,15 @@ git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' 
 | `9859fb2` | 2026-09-13 | Fix Picom import rollback and explicit-root review findings (#314) | S4-01 |
 | `e5d8325` | 2026-09-13 | Fix sxiv and Feh discovery in image defaults (#317) | S4-02 |
 | `a1cb86c` | 2026-09-14 | update README (#316) | N/A (S4-07) |
-| `fa74a18` | 2026-09-13 | Add desktop updates with progress to System Settings (#318) | S4-06 (D-8) |
-| `32011b8` | 2026-09-13 | Fix desktop update authorization visibility and live status (#319) | S4-06 (D-8) |
+| `fa74a18` | 2026-09-13 | Add desktop updates with progress to System Settings (#318) | S4-06 (D-8): mechanism covered by `lyona-update`; completion notification ported |
+| `32011b8` | 2026-09-13 | Fix desktop update authorization visibility and live status (#319) | S4-06 (D-8): mechanism covered by `lyona-update` (status file, polkit) |
 | `45063de` | 2026-09-13 | chore: trigger desktop update button test | N/A (empty chore) |
-| `7a51070` | 2026-09-14 | fix: reuse one authorization for desktop updates | S4-06 (D-8) |
+| `7a51070` | 2026-09-14 | fix: reuse one authorization for desktop updates | S4-06 (D-8): verified, nothing to port. Apply asks once (its two `run_privileged` sites are release vs checkout), rollback once; a failed step is not re-prompted. Pinned by `tests/test-lyona-update.sh` |
 | `a08985a` | 2026-09-14 | chore: trigger desktop update button test | N/A (empty chore) |
-| `fbee78f` | 2026-09-14 | feat: keep desktop update progress visible (#321) | S4-06 (D-8) |
+| `fbee78f` | 2026-09-14 | feat: keep desktop update progress visible (#321) | S4-06 (D-8): UX ported as `UpdateProgressWindow.qml` and a `DwmPanel` indicator driven by `UpdateModel`; mechanism covered. Tested by `tests/test-quickshell-update-progress-xvfb.sh` |
 | `639c5b4` | 2026-09-14 | chore: trigger desktop update button test | N/A (empty chore) |
-| `42aefbe` | 2026-09-14 | fix: simplify desktop update actions (#322) | S4-06 (D-8) |
-| `6097491` | 2026-09-14 | fix: simplify update progress and log actions (#323) | S4-06 (D-8) |
+| `42aefbe` | 2026-09-14 | fix: simplify desktop update actions (#322) | S4-06 (D-8): mechanism covered by `lyona-update` |
+| `6097491` | 2026-09-14 | fix: simplify update progress and log actions (#323) | S4-06 (D-8): bounded log viewer ported. `lyona-update` did not write a log (the plan assumed it did), so it now writes `update.log`, and the model reads only its last 64 KiB |
 | `c44dae4` | 2026-09-14 | fix: keep panel outside blurred popup surfaces (#324) | S3-08 |
 | `2dec690` | 2026-09-14 | ci: bump github/codeql-action from 4.37.9 to 4.38.0 (#320) | N/A (S4-07) |
 | `f956582` | 2026-09-14 | docs: update install guide for refreshed offline ISOs (#325) | N/A (S4-07) |

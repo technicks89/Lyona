@@ -19,6 +19,15 @@ user_record=$state_home/lyona/install.state
 mkdir -p "$home" "$config_home" "$data_home" "$state_home" "$cache_home" \
 	"$bin_dir" "$responses_dir"
 
+# A real notify-send would pop up notifications on the machine running the
+# tests, so it is always a stub here.
+notify_log=$work/notify.log
+: >"$notify_log"
+stub_command notify-send <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${DWM_TEST_NOTIFY_LOG:?}"
+SH
+
 github_api=https://stub.invalid
 github_repo=test/lyona
 
@@ -27,7 +36,7 @@ run_update() {
 		XDG_CONFIG_HOME="$config_home" XDG_DATA_HOME="$data_home" \
 		XDG_STATE_HOME="$state_home" XDG_CACHE_HOME="$cache_home" \
 		DWM_TEST_SYSTEM_RECORD="$system_record" DWM_TEST_SYSTEM_OWNER="$(id -u)" \
-		DWM_TEST_USER_RECORD="$user_record" \
+		DWM_TEST_USER_RECORD="$user_record" DWM_TEST_NOTIFY_LOG="$notify_log" \
 		LYONA_UPDATE_GITHUB_API="$github_api" LYONA_UPDATE_GITHUB_REPO="$github_repo" \
 		LYONA_UPDATE_CACHE_TTL="${LYONA_UPDATE_CACHE_TTL:-300}" \
 		"$helper" "$@"
@@ -359,6 +368,7 @@ reset_curl_responses
 valid_user_record 0000.00.0 | write_user_record
 status_file="$state_home/lyona/update.status"
 rm -f "$status_file"
+: >"$notify_log"
 if run_update apply --from-checkout "$repo" --allow-downgrade --yes \
 	>"$work/out" 2>&1; then
 	fail "apply unexpectedly succeeded with no privileged helper installed"
@@ -367,12 +377,163 @@ assert_file "$status_file"
 assert_contains "$status_file" "$(printf 'outcome\tfailed')"
 assert_not_contains "$status_file" "$(printf 'outcome\tpending')"
 
+# The failed apply left a log a person can read after Quickshell has restarted,
+# readable only by its owner, and told them so.
+log_file="$state_home/lyona/update.log"
+assert_file "$log_file"
+assert_equals 600 "$(stat -c %a "$log_file")" "update.log mode"
+assert_contains "$log_file" ' apply started'
+assert_contains "$log_file" 'privileged'
+assert_equals 1 "$(grep -c . "$notify_log")" "notifications after one failed apply"
+assert_contains "$notify_log" '--urgency=critical'
+assert_contains "$notify_log" 'Lyona: update failed'
+assert_contains "$notify_log" "$log_file"
+
+# A dry run installs nothing: it keeps the last real log and notifies no one.
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+before=$(cksum <"$log_file")
+run_update apply --from-checkout "$repo" --allow-downgrade --dry-run >/dev/null
+assert_equals "$before" "$(cksum <"$log_file")" "update.log after a dry run"
+assert_equals 1 "$(grep -c . "$notify_log")" "notifications after a dry run"
+
+# check only reads; it never notifies or replaces the log.
+run_update check >/dev/null 2>&1 || true
+assert_equals "$before" "$(cksum <"$log_file")" "update.log after check"
+assert_equals 1 "$(grep -c . "$notify_log")" "notifications after check"
+
 # ── apply --dry-run: leaves no status file (nothing to report) ─────────
 reset_curl_responses
 valid_user_record 0000.00.0 | write_user_record
 rm -f "$status_file"
 run_update apply --from-checkout "$repo" --allow-downgrade --dry-run >/dev/null
 assert_no_file "$status_file"
+
+# ── apply: deferring leaves the system exactly as it was ────────────────
+#
+# Issue #311: declining the confirmation must not change anything. The build
+# happens before the prompt, so this is the point where a careless "n" could
+# still cost something.
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+rm -rf "$state_home/lyona/live-update-backups"
+cp "$user_record" "$work/record.before"
+# A real user's update.conf exists by now (the first check seeds it).
+run_update check >/dev/null 2>&1 || true
+assert_file "$config_home/lyona/update.conf"
+conf_before=$(cksum <"$config_home/lyona/update.conf")
+: >"$notify_log"
+if printf 'n\n' | run_update apply --from-checkout "$repo" --allow-downgrade \
+	>"$work/out" 2>&1; then
+	fail "declining the confirmation unexpectedly succeeded"
+fi
+assert_contains "$work/out" 'not confirmed'
+assert_no_file "$state_home/lyona/live-update-backups"
+cmp "$work/record.before" "$user_record" || fail "declining changed the install record"
+assert_equals "$conf_before" "$(cksum <"$config_home/lyona/update.conf")" "update.conf after declining"
+# The status ends terminal, so a progress surface does not spin on "pending"...
+assert_contains "$state_home/lyona/update.status" "$(printf 'outcome\tfailed')"
+# ...but a deliberate "no" is not announced as a failure.
+assert_equals 0 "$(grep -c . "$notify_log")" "notifications after declining"
+
+# ── completion notifications, by outcome ────────────────────────────────
+#
+# A successful apply needs the root helper, which does not exist here, so the
+# success path is exercised through the same functions the script calls.
+
+extract_function() {
+	sed -n "/^$1() {\$/,/^}\$/p" "$helper"
+}
+probe=$work/status-probe.sh
+{
+	printf 'set -eu\nself=lyona-update\nlog_file=/state/lyona/update.log\nstatus_file=%s\n' "$work/probe.status"
+	extract_function write_status_file
+	extract_function notify_outcome
+	extract_function write_status
+} >"$probe"
+[ -s "$probe" ] || fail 'could not extract the status functions from lyona-update'
+run_status_probe() {
+	PATH="$bin_dir:$PATH" DWM_TEST_NOTIFY_LOG="$notify_log" bash -c '. "$1"; shift; write_status "$@"' bash "$probe" "$@"
+}
+
+: >"$notify_log"
+run_status_probe restarting 'Update complete' 2026.10.0 succeeded ''
+assert_equals 1 "$(grep -c . "$notify_log")" "notifications after a successful update"
+assert_contains "$notify_log" 'Lyona: Update complete'
+assert_contains "$notify_log" 'Version 2026.10.0 is installed.'
+assert_contains "$notify_log" '--urgency=normal'
+
+: >"$notify_log"
+run_status_probe restarting 'Rollback complete' 20260301T000000Z-2 succeeded ''
+assert_contains "$notify_log" 'Lyona: Rollback complete'
+assert_contains "$notify_log" 'Restored backup 20260301T000000Z-2.'
+
+: >"$notify_log"
+run_status_probe installing 'Installing' 2026.10.0 failed 'the privileged install step failed (exit 3)'
+assert_contains "$notify_log" '--urgency=critical'
+assert_contains "$notify_log" 'the privileged install step failed (exit 3)'
+assert_contains "$notify_log" 'Details: /state/lyona/update.log'
+
+# Progress is never announced, only how it ended.
+: >"$notify_log"
+run_status_probe downloading 'Downloading' 2026.10.0 pending ''
+assert_equals 0 "$(grep -c . "$notify_log")" "notifications for a pending phase"
+
+# No notification daemon or notify-send: the status still writes, nothing fails.
+if ! PATH="$work/no-such-bin" /usr/bin/bash -c '. "$1"; write_status restarting "Update complete" 2026.10.0 succeeded ""' bash "$probe" 2>/dev/null; then
+	fail 'a missing notify-send made the status write fail'
+fi
+
+# ── one authorization per privileged step ───────────────────────────────
+#
+# apply asks once (its two call sites are release vs. checkout mode, never
+# both) and rollback asks once. A step that ran and failed is not retried
+# through a second prompt; only a polkit that could not run at all falls back.
+
+body_of() {
+	sed -n "/^$1() {\$/,/^}\$/p" "$helper"
+}
+assert_equals 2 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileged sites in cmd_apply"
+assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "release site"
+assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system checkout')" "checkout site"
+assert_equals 1 "$(body_of cmd_rollback | grep -c 'run_privileged ')" "run_privileged sites in cmd_rollback"
+outside=$(grep -n 'pkexec "\|sudo "' "$helper" | grep -v '^[0-9]*:[[:space:]]*#' || true)
+assert_equals 2 "$(printf '%s\n' "$outside" | grep -c .)" "pkexec/sudo invocations in lyona-update"
+first_escalation=$(sed -n "$(printf '%s\n' "$outside" | head -n1 | cut -d: -f1)p" "$helper")
+case $first_escalation in
+*pkexec*) ;;
+*) fail 'the first escalation is not pkexec' ;;
+esac
+
+priv_probe=$work/priv-probe.sh
+priv_log=$work/priv.log
+{
+	printf "warn() { printf '%%s\\n' \"\$*\" >&2; }\ndie() { warn \"\$*\"; exit 1; }\n"
+	printf "trusted_root_helper() { printf '%%s\\n' /bin/true; }\n"
+	extract_function run_privileged
+} >"$priv_probe"
+for tool in pkexec sudo; do
+	stub_command "$tool" <<'SH'
+#!/bin/sh
+name=$(basename "$0")
+printf '%s\n' "$name" >>"${DWM_TEST_PRIV_LOG:?}"
+if [ "$name" = pkexec ]; then exit "${DWM_TEST_PKEXEC_STATUS:-0}"; fi
+exit 0
+SH
+done
+run_priv() {
+	: >"$priv_log"
+	PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="${2-:0}" \
+		bash -c '. "$1"; run_privileged install-system release' bash "$priv_probe" >/dev/null 2>&1
+}
+run_priv 0 ':0'
+assert_equals pkexec "$(cat "$priv_log")" "escalation when polkit authorizes"
+if run_priv 1 ':0'; then fail 'a failed privileged step was reported as success'; fi
+assert_equals pkexec "$(cat "$priv_log")" "a failed step must not prompt a second time"
+run_priv 126 ':0'
+assert_equals "$(printf 'pkexec\nsudo')" "$(cat "$priv_log")" "fallback when polkit cannot run"
+run_priv 0 ''
+assert_equals sudo "$(cat "$priv_log")" "escalation with no graphical session"
 
 # ── --help / usage ───────────────────────────────────────────────────────
 status=$(run_update --help)

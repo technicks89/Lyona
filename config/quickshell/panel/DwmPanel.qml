@@ -36,6 +36,7 @@ PanelWindow {
     required property var panelSettingsModel
     required property var powerModel
     required property var powerMenuModel
+    required property var updateModel
     required property bool primaryPanel
 
     implicitHeight: Theme.panelHeight
@@ -218,6 +219,42 @@ PanelWindow {
                             id: batteryMouse
                             anchors.fill: parent
                             hoverEnabled: true
+                        }
+                    }
+
+                    // Shown while lyona-update runs, and briefly after it ends, so a
+                    // hidden progress popup (or one closed by the Quickshell restart an
+                    // apply causes) can always be brought back with a click.
+                    PanelPill {
+                        id: updatePill
+                        objectName: "updatePill"
+                        visible: root.updateModel.progressShown
+                        Layout.preferredWidth: updateRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
+                        Layout.preferredHeight: Theme.compactWidgetSize
+                        active: root.updateModel.busy
+                        hovered: updateMouse.containsMouse
+                        Accessible.name: root.updateModel.busy ? "Update in progress"
+                            : root.updateModel.actionSucceeded ? "Update finished" : "Update failed"
+
+                        RowLayout {
+                            id: updateRow
+                            anchors.centerIn: parent
+                            spacing: Theme.compactSpacing
+
+                            IconText {
+                                text: "󰚰"
+                                color: root.updateModel.busy ? Theme.accent
+                                    : root.updateModel.actionSucceeded ? Theme.success : Theme.danger
+                            }
+                        }
+
+                        MouseArea {
+                            id: updateMouse
+                            objectName: "updatePillArea"
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.updateModel.showProgress()
                         }
                     }
 

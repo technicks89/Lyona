@@ -105,4 +105,35 @@ grep -Fq 'set-channel' "$lyona_update"
 # that already existed.
 grep -Fq 'emit_capability system updates' "$provider"
 
+# Progress surfaces (Sync Sprint 4 S4-06). The popup and the panel indicator
+# are driven by the model and exercised end to end by
+# test-quickshell-update-progress-xvfb.sh; these pin the pieces it relies on.
+update_progress=$repo/config/quickshell/system/UpdateProgressWindow.qml
+update_log_view=$repo/config/quickshell/system/UpdateLogView.qml
+panel=$repo/config/quickshell/panel/DwmPanel.qml
+grep -Fq 'property bool progressShown: false' "$update_model"
+grep -Fq 'property bool popupClosed: false' "$update_model"
+grep -Fq 'readonly property int recentOutcomeMs: 10 * 60 * 1000' "$update_model"
+grep -Fq 'readonly property int stalePendingMs: 60 * 60 * 1000' "$update_model"
+grep -Fq 'root.progressShown = ageMs <= root.recentOutcomeMs;' "$update_model"
+grep -Fq 'root.progressShown = ageMs <= root.stalePendingMs;' "$update_model"
+grep -Fq 'readonly property string logPath: root.stateHome + "/lyona/update.log"' "$update_model"
+# The log is read with tail on a fixed byte budget, never whole.
+grep -Fq 'readonly property int logTailBytes: 64 * 1024' "$update_model"
+grep -Fq 'command: ["tail", "-c", String(root.logTailBytes), root.logPath]' "$update_model"
+grep -Fq 'UpdateProgressWindow {' "$shell_qml"
+grep -Fq 'updateModel: updateModel' "$shell_qml"
+grep -Fq 'required property var updateModel' "$update_progress"
+grep -Fq 'required property var updateModel' "$panel"
+grep -Fq 'visible: root.updateModel.progressShown' "$panel"
+grep -Fq 'onClicked: root.updateModel.showProgress()' "$panel"
+grep -Fq 'UpdateLogView {' "$system_pane"
+grep -Fq 'UpdateLogView {' "$update_progress"
+grep -Fq 'required property var model' "$update_log_view"
+# lyona-update writes the log the viewer reads, and notifies on the outcome.
+# shellcheck disable=SC2016 # matching the script's literal text, not expanding it
+grep -Fq 'log_file=$state_home/lyona/update.log' "$lyona_update"
+grep -Fq 'start_operation_log rollback' "$lyona_update"
+grep -Fq 'notify_outcome' "$lyona_update"
+
 printf 'Quickshell update model contract: PASS\n'

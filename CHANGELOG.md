@@ -123,6 +123,47 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Desktop update experience (Sync Sprint 4 S4-06,
+  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, decision D-8: upstream's
+  mechanism for `#318`-`#323` is declined because `lyona-update`'s signed
+  release tarballs already cover it, and only its user-facing ideas are ported).
+  Progress is now visible outside Settings and survives the Quickshell restart
+  an apply causes: a **progress popup** under the panel shows the current step
+  with a **View log** button, and a **panel indicator** next to the battery
+  brings the popup back after **Hide**. When the shell restarts mid-update both
+  reappear by themselves, still in progress or showing how it ended. Only news is
+  shown: a finished update does not reappear at a login ten minutes later, and a
+  status left "in progress" by a crash more than an hour ago does not spin
+  forever. A successful update dismisses itself after 20 seconds; a failed one
+  stays until dismissed. `lyona-update` now sends a desktop **notification**
+  when an apply or rollback ends (critical, and naming the log, for a failure),
+  from the same place it writes the terminal status, and only after Quickshell
+  has been restarted so the notification reaches the new shell rather than the
+  one being replaced. Declining the confirmation prompt is not announced as a
+  failure. **Update log:** the plan assumed `lyona-update` already wrote a log;
+  it did not (the model only held the output in memory, which the restart
+  destroys), so each apply or rollback now writes `update.log` with its full
+  output, readable only by its owner and replaced on the next run, while a dry
+  run keeps the previous log. The model reads at most the last 64 KiB, cut at a
+  line boundary, and **Settings > System** has a matching **View update log**.
+  Nothing new was needed for "one authorization per update": apply asks once
+  (its two privileged call sites are release versus checkout mode) and rollback
+  once, and a step that ran and failed is not retried through a second prompt;
+  that is now pinned by a test. Issue `#311`'s acceptance was re-verified against
+  `tests/test-lyona-update.sh`: up to date reports `current`, outdated reports
+  `behind` and offers it, an unreachable network reports `offline`, and
+  deferring leaves the install record, backups and `update.conf` unchanged,
+  which had no test until now.
+  Lyona adaptations: the popup is centered under the panel like the notification
+  stack (so it needs no new dwm window rule) instead of a window of its own, the
+  new tests never run a real `notify-send`, and the mechanism-side upstream
+  commits are recorded as covered in `docs/UPSTREAM-SYNC.md`.
+  Verified by `tests/test-lyona-update.sh` (log, notifications, defer,
+  authorization count) and the new `tests/test-quickshell-update-progress-xvfb.sh`,
+  which runs an isolated copy of the shell against real status and log files and
+  was mutation-checked four ways.
+
+
 - Icon themes and first-login theme convergence (Sync Sprint 4 S4-03,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
   `#301`/`69240ea`; `#328`/`d4c6d89` recorded as not needed): the `theme`
