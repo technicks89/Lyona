@@ -1055,6 +1055,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Fix two installer and session start-up problems (Sync Sprint 4 S4-04,
+  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
+  `#283`/`378f06e` and the autostart hunk of `44800ba`). `dev-sync-install.sh`
+  no longer demands a dwm restart after a reinstall that leaves the running
+  binary's bytes unchanged: reinstalling unlinks the running executable, and
+  the old check treated that unlinked (`(deleted)`) file as a mismatch before
+  ever comparing bytes, though `/proc/PID/exe` still exposes the inode.
+  It now compares the bytes even when the file is deleted. Separately,
+  `autostart.sh` runs `systemctl --user daemon-reload` before starting
+  `wm-graphical-session.service` every time, instead of only after a failed
+  start, so autostart exclusions an installer seeded after the user manager
+  began apply on the very first login. The new dev-sync test uses a private
+  child process running a deleted copy of a binary, never the host window
+  manager, and registers its cleanup through `lib.sh`'s stack in place of
+  upstream's hand-written trap. Both new assertions were confirmed to fail on
+  the previous code. Upstream's `test-fedora-packages.sh` hunk is not
+  applicable.
+
 - Fix `scripts/webapp-launch`, which never worked for a user-scoped browser
   install: unquoted brace expansion ran before tilde expansion, so
   `~/.local/share/applications` and `~/.nix-profile/share/applications` were
