@@ -364,6 +364,9 @@ install-user:
 			find "${CFG_DIR}/$$b" \( -name '*.sh' -o -name '*.py' \) -print0 2>/dev/null | xargs -0 -r chmod +x; \
 		fi; \
 	done
+	@echo "==> Applying initial theme convergence..."
+	HOME="${USER_HOME}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" scripts/theme-apply.sh || \
+		echo "  Warning: initial theme convergence failed; run scripts/theme-apply.sh after logging in." >&2
 	$(MAKE) stamp-user
 	@echo ""
 	@echo "  dwm installed successfully."
@@ -659,6 +662,7 @@ check-appearance:
 	tests/test-dwm-settings-wallpaper.sh
 	tests/test-dwm-settings-theme.sh
 	tests/test-dwm-settings-toolkit.sh
+	tests/test-theme-apply-install-lock.sh
 
 check-phase5-optional-components:
 	tests/test-dwm-settings-appearance.sh

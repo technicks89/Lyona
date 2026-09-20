@@ -123,6 +123,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Icon themes and first-login theme convergence (Sync Sprint 4 S4-03,
+  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
+  `#301`/`69240ea`; `#328`/`d4c6d89` recorded as not needed): the `theme`
+  package profile now includes `adwaita-icon-theme` and `papirus-icon-theme`
+  next to `dconf` (all in official `extra`, and on the live ISO, which now
+  also carries `dconf` for first-login theming), so GTK applications have
+  icons on a fresh install. `make install-user` now runs `scripts/theme-apply.sh`
+  before recording the install, so first login already has the selected theme
+  applied instead of waiting for a manual theme change. A failure there is a
+  warning rather than an aborted install. The ISO package list is now the union
+  of the `required`, `desktop`, `theme`, `media` and `iso` profiles.
+  Upstream `#328` fixed `xsettingsd` inheriting an installer's lock descriptors
+  through `dwm-xsettings`. Lyona has no `dwm-xsettings`, `theme-apply.sh` never
+  starts `xsettingsd` (it edits its configuration and sends `SIGHUP`;
+  `autostart.sh` starts it at login and already closes the descriptors it
+  owns), and no install path holds a lock, so the plan's Python launcher wrapper
+  was not ported. That was checked, not assumed: the real script was run under
+  a held lock with real `gsettings` and `xfconf-query` on a private D-Bus
+  session, the lock was free afterwards and no process held it. The new
+  `tests/test-theme-apply-install-lock.sh` (in `check-appearance`) pins this and
+  fails if `theme-apply.sh` ever launches the daemon with an inherited lock.
+
 - Media and image defaults on fresh installs (Sync Sprint 4 S4-02,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream issue
   `#308` and the fixes `#317` and the MIME hunk of `c679937`): the recommended and

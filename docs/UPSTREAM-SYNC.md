@@ -294,7 +294,7 @@ git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' 
 | `5c875cc` | 2026-09-14 | test: remove obsolete hosted QML job assertions | N/A (S4-07) |
 | `68a0d1f` | 2026-09-14 | fix: avoid decoding the full wallpaper collection on reload | S3-07 |
 | `a5b829d` | 2026-09-16 | Simplify Appearance and unify desktop font scaling (#327) | S3-07 |
-| `d4c6d89` | 2026-09-16 | fix: prevent XSETTINGS from retaining installation locks (#328) | S4-03 |
+| `d4c6d89` | 2026-09-16 | fix: prevent XSETTINGS from retaining installation locks (#328) | S4-03: **not needed, pinned by a test.** Lyona has no `dwm-xsettings`, `theme-apply.sh` never starts `xsettingsd` (it edits the config and sends `SIGHUP`), and no install path holds a lock descriptor. Verified by running the real script under a held lock with real `gsettings`/`xfconf-query`: the lock is free afterwards and no process holds it. `tests/test-theme-apply-install-lock.sh` keeps it true |
 
 ---
 
