@@ -100,6 +100,85 @@ process_identity_alive() (
 	[ "$current_identity" = "$identity" ]
 )
 
+# One read-only Settings probe. A model that is still refreshing may not answer
+# yet, so an unanswered call reads as empty rather than failing the test.
+settings_ipc_once() {
+	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings "$@" 2>/dev/null || true
+}
+
+settings_ipc_select() {
+	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings select "$1" >/dev/null
+}
+
+# Every probe the optional-component qualification compares, one per line.
+appearance_probe_list() {
+	cat <<'PROBES'
+appearanceProviderStatus
+appearanceProviderDetail
+appearanceApplicationState
+appearanceMutationReady
+appearanceInventoryProviderState
+appearanceInventoryWatchState
+appearanceInventoryState wallpaper
+appearanceInventoryState font
+appearanceInventoryState cursor
+appearanceInventoryState icon
+appearanceInventoryState gtk
+appearanceInventoryState qt
+appearanceInventoryState compositor
+appearanceInventoryCandidateState gtk Adwaita
+appearanceInventoryCandidateState gtk Adwaita-dark
+appearanceInventoryCandidateState qt gtk3
+appearanceIntegrationState gtk
+appearanceIntegrationState qt
+appearanceIntegrationState cursor
+appearanceIntegrationState alacritty
+appearanceIntegrationState kitty
+appearanceIntegrationState compositor
+appearanceIntegrationDetail gtk
+appearanceIntegrationDetail qt
+appearanceIntegrationDetail cursor
+appearanceIntegrationDetail alacritty
+appearanceIntegrationDetail kitty
+appearanceIntegrationDetail compositor
+appearanceErrorCode gtk
+appearanceErrorCode qt
+appearanceErrorCode cursor
+appearanceErrorCode compositor
+appearanceWallpaperProviderState
+appearanceWallpaperProviderDetail
+appearanceWallpaperState
+appearanceWallpaperDetail
+appearanceWallpaperMutationState
+appearanceWallpaperMutationDetail
+appearanceWallpaperResetState
+appearanceWallpaperResetDetail
+appearanceFontState
+appearanceFontMutationReady
+appearanceFontScale
+appearanceToolkitProviderState
+appearanceToolkitMutationReady
+appearanceToolkitState cursor
+appearanceToolkitState icon
+appearanceToolkitState gtk
+appearanceToolkitState qt
+PROBES
+}
+
+# "probe args=value" lines for every probe above.
+appearance_probe_dump() {
+	appearance_probe_list | while IFS= read -r probe; do
+		# shellcheck disable=SC2086 # the probe line is a name plus arguments
+		printf '%s=%s\n' "$probe" "$(settings_ipc_once $probe)"
+	done
+}
+
+dump_value() {
+	printf '%s\n' "$1" | awk -v key="$2" 'index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }'
+}
+
 terminate_process_identity() {
 	terminate_identity=$1
 	[ -n "$terminate_identity" ] || return 0
@@ -282,6 +361,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-appearance" "$repo/scripts/dwm-settings-wallpaper" \
 	"$repo/scripts/dwm-settings-font" \
 	"$repo/scripts/dwm-settings-theme" "$repo/scripts/dwm-cursor-reload" \
+	"$repo/scripts/dwm-settings-toolkit" \
 	"$repo/scripts/dwm-accessibility-settings" \
 	"$repo/scripts/theme-apply.sh" \
 	"$repo/scripts/dwm-xsettings-config.sh" \
@@ -297,8 +377,70 @@ cat >"$data_home/lyona/scripts/dwm-settings-appearance" <<'SH'
 #!/bin/sh
 set -eu
 fixture=${DWM_SETTINGS_TEST_APPEARANCE_FAILURE:-}
+if [ "${1:-}" = inventory ] && [ -f "$fixture" ] &&
+	[ "$(cat "$fixture")" = optional-loss ]; then
+	"$(dirname -- "$0")/dwm-settings-appearance.real" "$@" | awk -F '\t' 'BEGIN { OFS = "\t" }
+		$1 == "candidate" && ($2 == "wallpaper" || $2 == "cursor" || $2 == "icon" ||
+			$2 == "compositor") { next }
+		$1 == "candidate" && $2 == "gtk" && $4 != "Adwaita" && $4 != "Adwaita-dark" { next }
+		$1 == "candidate" && $2 == "qt" && $4 != "gtk3" { next }
+		$1 == "selection" && $2 == "font" {
+			$3 = "available";
+			if ($4 == "") $4 = "sans-serif";
+			if ($5 == "") $5 = $4;
+			$6 = "Desktop font inventory remains available";
+		}
+		$1 == "selection" && $2 == "wallpaper" {
+			$3 = "unavailable"; $6 = "Wallpaper folder is unavailable";
+		}
+		$1 == "selection" && ($2 == "cursor" || $2 == "icon" || $2 == "gtk") {
+			$3 = "unavailable"; $6 = "Configured selection is not installed";
+		}
+		$1 == "selection" && $2 == "qt" {
+			$3 = "partial"; $4 = "qt6ct"; $5 = "";
+			$6 = "Configured Qt platform theme backend is not installed";
+		}
+		$1 == "selection" && $2 == "compositor" {
+			$3 = "unavailable"; $4 = ""; $5 = "missing";
+			$6 = "Picom is optional and not installed";
+		}
+		{ print }'
+	exit 0
+fi
 if [ "${1:-}" = snapshot ] && [ -f "$fixture" ]; then
 	case $(cat "$fixture") in
+	optional-loss)
+		"$(dirname -- "$0")/dwm-settings-appearance.real" "$@" | awk -F '\t' 'BEGIN { OFS = "\t" }
+			$1 == "provider" && $2 == "appearance" {
+				$3 = "partial"; $5 = "Optional appearance integrations are unavailable";
+			}
+			$1 == "integration" && $2 == "gtk" {
+				$3 = "partial"; $4 = "Lyona-nord";
+				$5 = "Requested GTK theme is missing; built-in fallbacks remain available";
+			}
+			$1 == "integration" && $2 == "qt" {
+				$3 = "partial"; $4 = "qt6ct";
+				$5 = "Configured Qt backend is not installed; gtk3 remains available";
+			}
+			$1 == "integration" && $2 == "cursor" {
+				$3 = "unavailable"; $4 = "Missing-Cursor";
+				$5 = "Managed cursor theme is missing";
+			}
+			$1 == "integration" && $2 == "compositor" {
+				$3 = "unavailable"; $4 = "missing";
+				$5 = "Picom is optional and not installed";
+			}
+			$1 == "error" && ($2 == "gtk" || $2 == "qt" || $2 == "cursor" ||
+				$2 == "compositor") { next }
+			{ print }
+			END {
+				print "error", "gtk", "missing-theme", "Requested GTK theme is not installed";
+				print "error", "qt", "missing-backend", "Configured Qt backend is not installed";
+				print "error", "cursor", "missing-theme", "Managed cursor theme is not installed";
+				print "error", "compositor", "missing", "Picom is optional and not installed";
+			}'
+		exit 0
+		;;
 	silent) exit 1 ;;
 	truncated)
 		"$(dirname -- "$0")/dwm-settings-appearance.real" "$@" | awk 'NR <= 5'
@@ -334,6 +476,24 @@ set -eu
 fixture=${DWM_SETTINGS_TEST_WALLPAPER_STATUS:-}
 if [ "${1:-}" = status ] && [ "${2:-}" = --read-only ] &&
 	[ -n "$fixture" ] && [ -f "$fixture" ]; then
+	if [ "$(cat "$fixture")" = optional-loss ]; then
+		"$(dirname -- "$0")/dwm-settings-wallpaper.real" "$@" | awk -F '\t' 'BEGIN { OFS = "\t" }
+			$1 == "provider" {
+				$3 = "partial"; $5 = "Feh is optional and is not installed";
+			}
+			$1 == "selection" {
+				$2 = "unavailable"; $3 = ""; $4 = "fill";
+				$5 = "Wallpaper folder is unavailable";
+			}
+			$1 == "mutation" {
+				$2 = "restricted"; $3 = "Feh is optional and is not installed";
+			}
+			$1 == "reset" {
+				$2 = "restricted"; $3 = "No managed wallpaper state exists";
+			}
+			{ print }'
+		exit 0
+	fi
 	printf 'wallpaper-protocol\t1\t0\n'
 	exit 0
 fi
@@ -2316,6 +2476,152 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 [ "$appearance_count" -eq 15 ]
+
+# Optional components (Feh, the wallpaper folder, toolkit assets, a Qt backend,
+# Picom) can all be missing at once. The loss has to stay attributed to the
+# components that are actually absent: the font and toolkit providers, terminal
+# integrations, inventory watch and theme controls keep reporting exactly what
+# they did while healthy, and everything recovers once the components return.
+test_stage='capturing healthy appearance baseline'
+settings_ipc_select audio
+settings_ipc_select appearance
+baseline_dump=
+previous_dump=
+baseline_stable=0
+i=0
+while [ "$i" -lt 60 ]; do
+	baseline_dump=$(appearance_probe_dump)
+	if [ "$baseline_dump" = "$previous_dump" ] &&
+		[ "$(settings_ipc_once appearanceToolkitStatusBusy)" = false ] &&
+		[ "$(settings_ipc_once appearanceWallpaperStatusBusy)" = false ]; then
+		baseline_stable=$((baseline_stable + 1))
+	else
+		baseline_stable=0
+	fi
+	previous_dump=$baseline_dump
+	[ "$baseline_stable" -ge 2 ] && break
+	i=$((i + 1))
+done
+if [ "$baseline_stable" -lt 2 ] ||
+	[ "$(dump_value "$baseline_dump" appearanceInventoryWatchState)" != available ] ||
+	[ "$(dump_value "$baseline_dump" appearanceFontMutationReady)" != true ] ||
+	[ "$(dump_value "$baseline_dump" appearanceToolkitMutationReady)" != true ] ||
+	[ "$(dump_value "$baseline_dump" appearanceMutationReady)" != true ]; then
+	printf 'Healthy appearance baseline did not settle or is not ready:\n%s\n' "$baseline_dump" >&2
+	exit 1
+fi
+
+# What the combined loss must look like, and what it must leave untouched.
+optional_loss_expected() {
+	cat <<'EXPECT'
+appearanceProviderStatus=partial
+appearanceProviderDetail=Optional appearance integrations are unavailable
+appearanceApplicationState=partial
+appearanceInventoryProviderState=available
+appearanceInventoryState wallpaper=unavailable
+appearanceInventoryState font=available
+appearanceInventoryState cursor=unavailable
+appearanceInventoryState icon=unavailable
+appearanceInventoryState gtk=unavailable
+appearanceInventoryState qt=partial
+appearanceInventoryState compositor=unavailable
+appearanceInventoryCandidateState gtk Adwaita=available
+appearanceInventoryCandidateState gtk Adwaita-dark=available
+appearanceInventoryCandidateState qt gtk3=available
+appearanceIntegrationState gtk=partial
+appearanceIntegrationState qt=partial
+appearanceIntegrationState cursor=unavailable
+appearanceIntegrationState compositor=unavailable
+appearanceIntegrationDetail gtk=Requested GTK theme is missing; built-in fallbacks remain available
+appearanceIntegrationDetail qt=Configured Qt backend is not installed; gtk3 remains available
+appearanceIntegrationDetail cursor=Managed cursor theme is missing
+appearanceIntegrationDetail compositor=Picom is optional and not installed
+appearanceErrorCode gtk=missing-theme
+appearanceErrorCode qt=missing-backend
+appearanceErrorCode cursor=missing-theme
+appearanceErrorCode compositor=missing
+appearanceWallpaperProviderState=partial
+appearanceWallpaperProviderDetail=Feh is optional and is not installed
+appearanceWallpaperState=unavailable
+appearanceWallpaperDetail=Wallpaper folder is unavailable
+appearanceWallpaperMutationState=restricted
+appearanceWallpaperMutationDetail=Feh is optional and is not installed
+appearanceWallpaperResetState=restricted
+appearanceWallpaperResetDetail=No managed wallpaper state exists
+EXPECT
+}
+
+optional_loss_unchanged() {
+	cat <<'UNCHANGED'
+appearanceMutationReady
+appearanceInventoryWatchState
+appearanceIntegrationState alacritty
+appearanceIntegrationState kitty
+appearanceIntegrationDetail alacritty
+appearanceIntegrationDetail kitty
+appearanceFontState
+appearanceFontMutationReady
+appearanceFontScale
+appearanceToolkitProviderState
+appearanceToolkitMutationReady
+appearanceToolkitState cursor
+appearanceToolkitState icon
+appearanceToolkitState gtk
+appearanceToolkitState qt
+UNCHANGED
+}
+
+# Prints one line per expectation that does not hold; empty means all hold.
+optional_loss_mismatches() {
+	optional_loss_expected | while IFS= read -r expectation; do
+		key=${expectation%%=*}
+		want=${expectation#*=}
+		got=$(dump_value "$1" "$key")
+		[ "$got" = "$want" ] || printf '  %s: got "%s", want "%s"\n' "$key" "$got" "$want"
+	done
+	optional_loss_unchanged | while IFS= read -r key; do
+		got=$(dump_value "$1" "$key")
+		want=$(dump_value "$baseline_dump" "$key")
+		[ "$got" = "$want" ] || printf '  %s: got "%s", healthy baseline "%s"\n' "$key" "$got" "$want"
+	done
+}
+
+test_stage='validating combined optional-component loss isolation'
+printf '%s\n' optional-loss >"$appearance_failure_fixture"
+printf '%s\n' optional-loss >"$wallpaper_status_fixture"
+settings_ipc_select audio
+settings_ipc_select appearance
+loss_mismatches='not yet checked'
+i=0
+while [ "$i" -lt 60 ]; do
+	loss_dump=$(appearance_probe_dump)
+	loss_mismatches=$(optional_loss_mismatches "$loss_dump")
+	[ -z "$loss_mismatches" ] && break
+	i=$((i + 1))
+done
+if [ -n "$loss_mismatches" ]; then
+	printf 'Combined optional loss did not stay capability-scoped:\n%s\n' "$loss_mismatches" >&2
+	exit 1
+fi
+process_identity_alive "$quickshell_identity"
+
+test_stage='validating recovery from combined optional-component loss'
+rm -f "$appearance_failure_fixture" "$wallpaper_status_fixture"
+settings_ipc_select audio
+settings_ipc_select appearance
+i=0
+while [ "$i" -lt 60 ]; do
+	recovered_dump=$(appearance_probe_dump)
+	[ "$recovered_dump" = "$baseline_dump" ] && break
+	i=$((i + 1))
+done
+if [ "$recovered_dump" != "$baseline_dump" ]; then
+	printf 'Optional loss did not recover to the healthy baseline:\n' >&2
+	printf '%s\n' "$baseline_dump" >"$work/appearance-baseline.dump"
+	printf '%s\n' "$recovered_dump" >"$work/appearance-recovered.dump"
+	diff -u "$work/appearance-baseline.dump" "$work/appearance-recovered.dump" >&2 || true
+	exit 1
+fi
 
 test_stage='validating restored appearance integration state'
 printf '# inactive integration watch fixture\n' >"$config_home/lyona/theme-env.sh"

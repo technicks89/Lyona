@@ -790,9 +790,39 @@ ShellRoot {
             return appearanceModel.applicationState;
         }
 
+        function appearanceInventoryState(capability: string): string {
+            const selection = appearanceModel.inventorySelections[capability];
+            return selection ? selection.state : "";
+        }
+
+        function appearanceInventoryProviderState(): string {
+            return appearanceModel.inventoryProviderState;
+        }
+
+        function appearanceInventoryWatchState(): string {
+            return appearanceModel.inventoryWatchState;
+        }
+
+        function appearanceInventoryCandidateState(capability: string, token: string): string {
+            const match = appearanceModel.inventoryCandidates.find(function(item) {
+                return item.id === capability && item.token === token;
+            });
+            return match ? match.state : "";
+        }
+
         function appearanceIntegrationState(integrationId: string): string {
             const match = appearanceModel.integrations.find(function(item) { return item.id === integrationId; });
             return match ? match.state : "";
+        }
+
+        function appearanceIntegrationDetail(integrationId: string): string {
+            const match = appearanceModel.integrations.find(function(item) { return item.id === integrationId; });
+            return match ? match.detail : "";
+        }
+
+        function appearanceErrorCode(scope: string): string {
+            const match = appearanceModel.errors.find(function(item) { return item.scope === scope; });
+            return match ? match.code : "";
         }
 
         function appearanceActiveTheme(): string {
@@ -808,7 +838,11 @@ ShellRoot {
         }
 
         function appearanceRefresh(): void {
-            appearanceModel.refreshAll();
+            appearanceModel.refreshAll(true);
+        }
+
+        function capabilityStatus(capabilityId: string): string {
+            return settingsModel.capabilityById(capabilityId).status;
         }
 
         function appearancePreviewState(): string {
@@ -821,6 +855,30 @@ ShellRoot {
 
         function appearanceWallpaperState(): string {
             return appearanceModel.wallpaperState;
+        }
+
+        function appearanceWallpaperProviderState(): string {
+            return appearanceModel.wallpaperProviderState;
+        }
+
+        function appearanceWallpaperProviderDetail(): string {
+            return appearanceModel.wallpaperProviderDetail;
+        }
+
+        function appearanceWallpaperDetail(): string {
+            return appearanceModel.wallpaperDetail;
+        }
+
+        function appearanceWallpaperMutationState(): string {
+            return appearanceModel.wallpaperMutationState;
+        }
+
+        function appearanceWallpaperResetState(): string {
+            return appearanceModel.wallpaperResetState;
+        }
+
+        function appearanceWallpaperResetDetail(): string {
+            return appearanceModel.wallpaperResetDetail;
         }
 
         function appearanceWallpaperPath(): string {
@@ -877,6 +935,22 @@ ShellRoot {
 
         function appearanceFontPreviewRemaining(): int {
             return appearanceModel.fontPreviewRemaining;
+        }
+
+        function appearanceToolkitProviderState(): string {
+            return appearanceModel.toolkitProviderState;
+        }
+
+        function appearanceToolkitMutationReady(): bool {
+            return appearanceModel.toolkitMutationReady;
+        }
+
+        function appearanceToolkitStatusBusy(): bool {
+            return appearanceModel.toolkitStatusBusy;
+        }
+
+        function appearanceToolkitState(capability: string): string {
+            return appearanceModel.toolkitSelectionFor(capability).state;
         }
 
         function appearanceMessage(): string {

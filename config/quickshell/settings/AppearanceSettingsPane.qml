@@ -311,7 +311,7 @@ Flickable {
             ShellButton {
                 label: root.appearanceBusy ? "Working..." : "Refresh"
                 enabled: !root.appearanceBusy
-                onActivated: root.appearanceModel.refreshAll()
+                onActivated: root.appearanceModel.refreshAll(true)
             }
         }
 

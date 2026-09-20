@@ -301,6 +301,51 @@ grep -Fq $'selection\tgtk\tpartial' <<<"$status" ||
 
 rm -f -- "$config"
 
+# ── a missing optional Qt backend stays scoped to Qt ─────────────────────
+#
+# qt5ct and qt6ct are optional. Without them the cursor, icon and GTK controls
+# must still report state and accept changes; only choosing the absent backend
+# is refused. Run against a PATH that has everything except the two tools, so
+# the case is exercised whether or not the host has them installed.
+
+no_qt_bin=$work/no-qt-bin
+mkdir -p "$no_qt_bin"
+for tool in /usr/bin/*; do
+	case ${tool##*/} in qt5ct | qt6ct) continue ;; esac
+	ln -s -- "$tool" "$no_qt_bin/${tool##*/}"
+done
+toolkit_without_qt() {
+	PATH=$no_qt_bin toolkit "$@"
+}
+
+status=$(toolkit_without_qt status) || fail 'status died without a Qt backend'
+grep -Eq $'^provider\ttoolkit\t' <<<"$status" ||
+	fail 'status has no provider record without a Qt backend'
+for capability in cursor icon gtk qt; do
+	grep -Eq "^selection	$capability	available	follow-(theme|system)	" <<<"$status" ||
+		fail "status lost the $capability selection without a Qt backend"
+done
+grep -Fqx $'candidate\tqt\tgtk3' <<<"$status" ||
+	fail 'the always-available Qt choice disappeared without a Qt backend'
+if grep -Eq $'^candidate\tqt\tqt[56]ct$' <<<"$status"; then
+	fail 'a missing Qt backend is still offered as a candidate'
+fi
+grep -Fq $'mutation\tready\t' <<<"$status" ||
+	fail 'mutations became unavailable without a Qt backend'
+grep -Fqx $'complete\t1' <<<"$status" ||
+	fail 'status is not terminated without a Qt backend'
+toolkit_without_qt apply gtk Lyona-nord >/dev/null ||
+	fail 'apply gtk failed without a Qt backend'
+toolkit_without_qt reset gtk >/dev/null || fail 'reset gtk failed without a Qt backend'
+toolkit_without_qt apply qt gtk3 >/dev/null || fail 'apply qt gtk3 failed without a Qt backend'
+toolkit_without_qt reset qt >/dev/null || fail 'reset qt failed without a Qt backend'
+for backend in qt5ct qt6ct; do
+	if toolkit_without_qt apply qt "$backend" >/dev/null 2>&1; then
+		fail "apply qt $backend succeeded although $backend is not installed"
+	fi
+done
+assert_no_file "$config" 'refused or reverted Qt changes leave no configuration behind'
+
 # ── an override whose theme is uninstalled afterwards ────────────────────
 
 toolkit apply gtk Lyona-nord >/dev/null

@@ -209,6 +209,49 @@ test "$(grep -Fc 'onTriggered: if (root.settingsVisible) root.refreshAll()' "$mo
 grep -Fq 'running: root.previewState === "active" && root.previewRemaining > 0' "$model"
 grep -Fq 'previewZeroRetryTimer.restart()' "$model"
 grep -Fq 'if (!root.previewStatusParsed) root.previewZeroRetryAttempts++' "$model"
+grep -Fq 'if (root.previewStatusManualOnly && force !== true) return;' "$model"
+grep -Fq 'root.previewStatusManualOnly = true;' "$model"
+grep -Fq 'root.previewStatusManualOnly = false;' "$model"
+grep -Fq 'root.appearanceModel.refreshAll(true)' "$pane"
+# Capability discovery requested while a provider run is in flight is
+# coalesced into one follow-up run, and a discovery that is refreshing reports
+# itself as such rather than as a stale answer (#191).
+grep -Fq 'property bool capabilityRefreshPending: false' "$settings_model"
+grep -Fq 'function refreshCapabilities()' "$settings_model"
+grep -Fq 'root.capabilityRefreshPending = true;' "$settings_model"
+grep -Fq 'if (root.discoveryState !== "ready" || root.capabilityRefreshPending)' "$settings_model"
+grep -Fq '"detail": "Capability discovery is still refreshing"' "$settings_model"
+grep -Fq 'function capabilityById(id)' "$settings_model"
+grep -Fq 'function appearanceRefresh(): void' "$shell_qml"
+grep -Fq 'appearanceModel.refreshAll(true);' "$shell_qml"
+grep -Fq 'function capabilityStatus(capabilityId: string): string' "$shell_qml"
+# The follow-up run is queued only after the pending flag is cleared and only
+# if the provider is still idle when the deferred call fires.
+awk '
+	/id: providerProcess/ { in_provider = 1 }
+	in_provider && /onRunningChanged: \{/ {
+		in_handler = 1
+		depth = 0
+	}
+	in_handler {
+		line = $0
+		opens = gsub(/\{/, "", line)
+		closes = gsub(/\}/, "", line)
+		depth += opens - closes
+		if (/root.capabilityRefreshPending = false;/ && !cleared) cleared = NR
+		if (/Qt.callLater\(function\(\) \{/ && !deferred) deferred = NR
+		if (/if \(!providerProcess.running\) root.refreshCapabilities\(\);/ && !guarded) guarded = NR
+		if (depth == 0) {
+			in_handler = 0
+			verified = cleared && deferred && guarded && cleared < deferred && deferred < guarded
+		}
+	}
+	END {
+		exit !verified
+	}
+' "$settings_model"
+finish_action=$(sed -n '/function finishAction()/,/^    }/p' "$model")
+test "$(printf '%s\n' "$finish_action" | grep -Fc 'root.previewStatusManualOnly = false;')" -eq 2
 grep -Fq 'root.snapshotParsed = false' "$model"
 grep -Fq 'root.snapshotRunGeneration === root.snapshotGeneration' "$model"
 grep -Fq '&& !root.snapshotParsed' "$model"
