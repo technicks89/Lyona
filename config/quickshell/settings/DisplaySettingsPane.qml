@@ -208,6 +208,7 @@ Flickable {
 
         Text {
             Layout.fillWidth: true
+            visible: root.settingsModel.automaticDisplaysRelevant
             text: root.settingsModel.automaticDisplayMessage || "Edit a saved layout below, or save the current draft. Docked matches monitor identities; Undocked enables only the built-in screen. No administrator approval is needed."
             color: Theme.textMuted
             font.family: Theme.fontFamily
@@ -251,6 +252,7 @@ Flickable {
 
         Text {
             Layout.fillWidth: true
+            visible: root.settingsModel.automaticDisplaysRelevant
             text: "Editing: " + root.settingsModel.displayEditingRole + " draft - not applied until you choose Apply changes"
             color: Theme.textStrong
             font.family: Theme.fontFamily
