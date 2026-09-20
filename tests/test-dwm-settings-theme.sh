@@ -9,6 +9,7 @@ helper=$repo/scripts/dwm-settings-theme
 # No-op it everywhere by default; individual cases below override it locally
 # to exercise the real behavior.
 export DWM_APPEARANCE_CURSOR_HELPER=/usr/bin/true
+export DWM_APPEARANCE_PICOM_HELPER=/usr/bin/true
 work=$(mktemp -d)
 cleanup() {
 	rm -rf "$work"

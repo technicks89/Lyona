@@ -70,8 +70,9 @@ jobs:
                 xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
             } | awk 'NF' | sort -u
           )
-          # desktop-optional/gaming entries may be AUR-only; install what the
-          # repositories have and let the owning tests skip the rest.
+          # The hosted runner may lack some optional entries (for example the
+          # multilib gaming packages); install what its repositories have and
+          # let the owning tests skip the rest.
           available=()
           for package in "${packages[@]}"; do
             pacman -Si -- "$package" >/dev/null 2>&1 && available+=("$package")

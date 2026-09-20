@@ -117,7 +117,7 @@ root-owned installed helper.
 
 | Action | Description |
 |--------|-------------|
-| Restart Picom | Kill and relaunch the compositor |
+| Restart Picom | Restart the compositor through `dwm-settings-picom`, which picks the backend for this GPU |
 | Restart Quickshell | Reload the managed Quickshell shell |
 | Reload Wallpaper | Randomize from `~/Pictures/backgrounds/` |
 | Restart NetworkManager | `sudo systemctl restart NetworkManager` |

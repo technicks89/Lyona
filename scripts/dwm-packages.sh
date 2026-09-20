@@ -29,23 +29,22 @@ dwm_packages() {
 		;;
 	arch:desktop)
 		printf '%s\n' \
-			quickshell picom feh dex mate-polkit \
+			quickshell picom python feh dex mate-polkit \
 			alsa-utils brightnessctl inotify-tools jq libpulse pipewire pavucontrol \
 			pipewire-pulse wireplumber libnotify light-locker xf86-input-libinput \
 			bluez bluez-utils blueman playerctl upower power-profiles-daemon flatpak xdg-desktop-portal-gtk \
 			pciutils gum
 		;;
 	arch:desktop-optional)
-		# xkbset (XKB AccessX controls -- sticky/slow/bounce/mouse keys) has
-		# no official-repo package; it is AUR-only. Listing it here, not in
-		# `desktop`, means the availability pre-check silently skips it
-		# instead of failing the whole required-package transaction.
-		# dwm-settings-input/dwm-settings-provider already degrade cleanly
-		# when it is absent; check-deps.sh reports it as missing.
+		# Every package here is in the official repositories; none depends
+		# on the AUR (docs/AUR-PACKAGES.md, enforced by check-no-aur). The XKB
+		# AccessX controls (sticky/slow/bounce/mouse keys) used to need the
+		# AUR-only xkbset; they are now served by the in-tree
+		# scripts/dwm-xkbset.
 		printf '%s\n' \
 			thunar gvfs gvfs-smb tumbler thunar-archive-plugin file-roller \
 			xdg-user-dirs gnome-keyring networkmanager \
-			rsync xkbset autorandr
+			rsync autorandr
 		;;
 	arch:system-management)
 		# PackageKit on Arch is a first-class alpm frontend: the `packagekit`

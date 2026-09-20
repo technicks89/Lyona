@@ -422,16 +422,16 @@ emit_accessibility_capabilities() {
 		emit_capability appearance accessibility-notifications 'Notification policy' unavailable read-only \
 			dbus 'No notification D-Bus owner is observable in this session'
 	fi
-	if [ "$input_discovery_state" = available ] && provider_available xkbset &&
-		input_accessibility_snapshot_valid && run_bounded_probe xkbset q; then
+	if [ "$input_discovery_state" = available ] && provider_available dwm-xkbset &&
+		input_accessibility_snapshot_valid && run_bounded_probe dwm-xkbset q; then
 		emit_capability appearance accessibility-input 'Keyboard and pointer access' available user-session \
 			dwm-settings-input 'Persistent XKB accessibility controls are available'
-	elif [ "$input_discovery_state" = available ] && provider_available xkbset; then
+	elif [ "$input_discovery_state" = available ] && provider_available dwm-xkbset; then
 		emit_capability appearance accessibility-input 'Keyboard and pointer access' unavailable user-session x11 \
-			'xkbset is installed, but no complete responsive XKB state is available'
+			'dwm-xkbset is installed, but no complete responsive XKB state is available'
 	elif [ "$input_discovery_state" = available ]; then
 		emit_capability appearance accessibility-input 'Keyboard and pointer access' unavailable user-session x11 \
-			'Install xkbset to manage XKB accessibility controls'
+			'dwm-xkbset is not installed; reinstall Lyona to manage XKB accessibility controls'
 	elif [ "$input_discovery_state" = unready ]; then
 		emit_capability appearance accessibility-input 'Keyboard and pointer access' unavailable read-only x11 \
 			'Input tools are installed, but no responsive XInput session is available'

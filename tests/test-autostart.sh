@@ -226,6 +226,15 @@ for name in feh picom dwm-status dwm-lock-watch light-locker dex dex-autostart; 
 	make_mock_command "$name"
 done
 
+# Autostart starts the compositor through dwm-settings-picom, which in turn
+# launches picom unless this display already has one.
+cat >"$work/bin/dwm-settings-picom" <<'EOF'
+#!/bin/sh
+[ "$1" = start ] || exit 1
+[ -f "${TEST_STATE:?}/picom.running" ] || picom
+EOF
+chmod +x "$work/bin/dwm-settings-picom"
+
 cat >"$work/bin/dwm-status" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

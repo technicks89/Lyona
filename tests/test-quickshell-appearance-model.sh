@@ -66,7 +66,7 @@ if grep -Fq 'Commands.checkedCommand(Commands.settingsAppearanceCommand("invento
 	exit 1
 fi
 grep -Fq 'Commands.settingsAppearanceCommand("watch-inventory", [])' "$model"
-grep -Fq 'Commands.settingsAppearanceCommand("watch-compositor", [])' "$model"
+grep -Fq 'PicomModel { id: picomModel; active: root.settingsVisible }' "$model"
 grep -Fq 'function startInventoryWatcher(restartIfRunning)' "$model"
 sed -n '/function startInventoryWatcher(restartIfRunning)/,/^    }/p' "$model" |
 	grep -Fq 'if (!root.settingsVisible) return;'
@@ -81,19 +81,20 @@ grep -Fq 'root.refreshInventory(true)' "$model"
 grep -Fq 'root.inventoryWatchFailed = true' "$model"
 grep -Fq 'root.inventoryWatchState = "unavailable"' "$model"
 grep -Fq '&& !root.inventoryWatchFailed' "$model"
-# The compositor watcher is a WatchedProcess now; its settle handler is the
-# component's signal rather than a Timer this file declares.
-assert_contains "$model" 'onSettled: root.refreshInventory(true)'
-assert_contains "$model" 'active: root.settingsVisible && root.compositorWatchReady'
-assert_contains "$model" 'settleInterval: 100'
+# The compositor is configuration-backed (PicomModel watches the Picom
+# configuration itself), so the model no longer runs a compositor process
+# watcher of its own.
+grep -Fq 'picomModel.refresh();' "$model"
+if grep -Eq 'compositorWatch|watch-compositor' "$model"; then
+	printf 'AppearanceModel still carries the old compositor process watcher\n' >&2
+	exit 1
+fi
 grep -Fq 'if (!root.settingsVisible) return;' "$model"
 grep -Fq 'inventoryWatchProcess.running = false' "$model"
-assert_contains "$model" 'compositorWatcher.stop()'
-assert_contains "$model" 'compositorWatcher.start()'
 # Upstream f4f477c hardens their appearance watcher so a helper that dies
 # while the surface is open gets restarted, and a burst of change lines
 # coalesces into one refresh. Lyona already has both properties in the
-# shared WatchedProcess component the compositor watcher above uses --
+# shared WatchedProcess component the other models' watchers use --
 # verify that instead of porting a second, inline copy.
 assert_contains "$watched_process" 'if (!running && root.active)'
 assert_contains "$watched_process" 'restartTimer.restart()'
