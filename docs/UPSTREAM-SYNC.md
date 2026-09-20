@@ -20,7 +20,9 @@ literal code.
 | System-management Sync Phases 1–9 (upstream `#207`–`#265`) | ✅ Done, through `92ec6e2` (PR #33). Tracking for #33 closes in [Sprint 1 S1-02](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-02-close-the-sync-phase-9-tracking-gap) |
 | **Sprint 1** ([`SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md)) | ✅ Done, merged `e947fa7` (#68) |
 | **Sprint 2** ([`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md)) | ✅ Done (2026-09-19) — closes `ROADMAP.md` Phase 6, see its own "Completion Evidence" |
-| Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 **Planned: Sprints 3–4**, below |
+| **Sprint 3** ([`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md)) | ✅ Done, merged to `main` (through `ed5ba44`) |
+| **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **In progress.** S4-01 to S4-07 done. Left: S4-08 (re-survey and qualification), and three checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) |
+| Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 Ported through Sprint 3 and Sprint 4 S4-01…S4-07 |
 
 ## Sprint plan
 
@@ -35,7 +37,7 @@ sized to one reviewable branch per item.
 | **1** | [`SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md) | **Manual full-suite CI workflow**; close #33 tracking; native discovery/origins QML; confirmed delegated admin; regional settings model; shared clock; NTP sample, interruption recovery, `watch-time`; package progress; carried-over gaps (D-4, parser/owner harnesses) | `#251`Q, `#259`Q, `#261`, `#262`, `#266`–`#276`, `#291` (system) | — |
 | **2** | [`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) | System information, hardware, filesystems, security status, root encryption, screen-lock evidence, mount monitor, information card, Health navigation; **close `ROADMAP.md` Phase 6** | `#277`–`#288` + fixes | Sprint 1 (S1-03) |
 | **3** | [`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md) | Relative monitor placement, docked/undocked profiles, **`#310` battery gating (new)**, Control Center compaction, Settings readiness and lazy panes, **`#315` layout stability (new)**, Power menu / full-screen Settings / cursor reload / Blueman / Self-Heal, Appearance and typography, popup blur fix, pre-survey gaps | `#289`, `#290`, `c3e9a18`, `#291` (Settings), `#294`, `#295`, `#307`, `#324`, `#327`, `68a0d1f`, `#183`, `#188`, `#191` | — (one hunk touches Sprint 1's `SystemRegionalControls.qml`) |
-| **4** | [`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md) | Configuration-backed Picom controls, **`#308` media/image defaults**, icon themes + theme convergence + XSETTINGS lock fix, installer/session fixes, dwmterm (declined), desktop-update UX (D-8), N/A record, re-survey and qualification | `#312`–`#314`, `3d982b8`, `#317`, `#301`, `#328`, `#283`, `#255`, `#318`–`#323`, Fedora-only commits | Sprint 3 (S3-07) for S4-01 |
+| **4** | [`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md) | Configuration-backed Picom controls, **`#308` media/image defaults**, icon themes + theme convergence (the XSETTINGS lock fix, `#328`, turned out not to apply to Lyona), installer/session fixes, dwmterm (declined), desktop-update UX (D-8), N/A record, re-survey and qualification | `#312`–`#314`, `3d982b8`, `#317`, `#301`, `#328`, `#283`, `#255`, `#318`–`#323`, Fedora-only commits | Sprint 3 (S3-07) for S4-01 |
 
 Sprints 1→2 and 3→4 are ordered. **The two pairs are independent**, so
 Sprint 3 can run before or alongside Sprint 2. A **Sprint 5** is only needed
@@ -86,8 +88,39 @@ so they aren't re-applied.
 | `82abbf9` (`#326`) *CI: desktop smoke only* | `CHANGELOG.md` "Reduce hosted CI to one Arch build and desktop smoke job" | **Done.** Sprint 1 S1-01 adds the manual full-suite workflow beside it |
 | `4d776bc` (`#191`) *group accessibility settings* | — | Grouping **diverged by decision** (sync Phase 6). Refresh coalescing ported in S3-09 |
 | `c8f574b` (`#188`) *qualify optional component isolation* | `check-phase5-optional-components`, `tests/test-quickshell-settings-xvfb.sh` | **Ported in S3-09, adapted.** `dwm-settings-personalization` maps to `dwm-settings-toolkit` (no delegate or text-size records in Lyona), so the qualification compares the toolkit and managed-font providers instead; `docs/P5-OPTIONAL-COMPONENTS.md` and `docs/P5-STATUS.md` are not ported |
-| Fedora image, kickstart, Anaconda, offline-image, release commits: `40cbdc8` (`#293`), `0c5daf0` (`#292`), `44800ba` (Fedora half), `a218d63`, `536e4a5`, `975174d`, `c679937` (image half), `f956582` (`#325`), `c2a98ae`, `5c875cc` | archiso, `build-iso.yml` | **N/A.** Details in Sprint 4 S4-07 |
+| Fedora image, kickstart, Anaconda, offline-image, release commits: `40cbdc8` (`#293`), `0c5daf0` (`#292`), `44800ba` (Fedora half), `a218d63`, `536e4a5`, `975174d`, `c679937` (image half), `f956582` (`#325`), `c2a98ae`, `5c875cc` | archiso, `build-iso.yml` | **N/A.** Reasons and evidence: [Declined Fedora, image and release work](#declined-fedora-image-and-release-work-s4-07) |
 | `45063de`, `a08985a`, `639c5b4` | — | Empty chore commits |
+
+### Declined Fedora, image and release work (S4-07)
+
+Recorded with reasons so the decisions outlive the sprint plan. Every claim
+about Lyona below was re-checked on 2026-09-20; none of this is code.
+
+| Upstream | Why it is not taken | Evidence in Lyona |
+| --- | --- | --- |
+| `0c5daf0` (`#292`) | Fedora kickstart `%post` only | Lyona installs through `install.sh`; there is no kickstart |
+| `40cbdc8` (`#293`) | Anaconda installer branding | The ISO is built on archiso with Lyona's own themes: `scripts/lyona-grub-theme`, `scripts/lyona-plymouth-theme`, layered onto the releng profile by `scripts/build-lyona-arch-iso.sh` |
+| `44800ba` | Fedora 44 image qualification | Its non-Fedora hunks were ported: focused-screen Settings in S3-06, the `daemon-reload` before the graphical session in S4-04 |
+| `a218d63`, `536e4a5` | Upstream v0.7.0 release notes and source-upgrade pinning | Lyona has its own calendar versions, `docs/RELEASING.md` and `docs/RELEASE-NOTES-*.md` |
+| `975174d`, `f956582` (`#325`) | Offline Fedora system images on Cloudflare downloads | `.github/workflows/build-iso.yml` attaches the ISO and `SHA256SUMS` to a GitHub release (`gh release upload` / `gh release create`) |
+| `c679937` (`#300`), image half | `scripts/image/*`, `build-dwm-fedora-*`, PackageKit image checks, `docs/P8-*` | Fedora image tooling. The MIME hunk went to S4-02 |
+| `a1cb86c` (`#316`), `46837e5` | Upstream README | Lyona's own README (`b85539b`) |
+| `e2137c2`, `2dec690` (`#320`) | `codeql-action` bumps | No CodeQL workflow exists: `.github/workflows/` holds `build-iso.yml`, `c-cpp.yml`, `docs.yaml` and `full-suite.yml`, and `.github/` only `dependabot.yml` |
+| `c2a98ae`, `5c875cc` | Fedora CI job and hosted QML-job assertions | Lyona's CI is its own (`c-cpp.yml`, `full-suite.yml`) |
+| `82abbf9` (`#326`) | Hosted CI reduced to a desktop smoke job | **Already done**: `CHANGELOG.md` "Reduce hosted CI to one Arch build and desktop smoke job" |
+| `45063de`, `a08985a`, `639c5b4` | "trigger desktop update button test" chores | Verified empty: no files changed in any of the three |
+| AGENTS / CONTRIBUTING / PR-template hunks of `d359a4f`, `080b39e` | Upstream's own agent review workflow | Lyona has its own review process |
+
+**`config/starship/starship.toml` (+18, from `c679937`): reviewed, not taken.**
+The rule was to take it only if Lyona's prompt lacked the same modules. It has
+them: `mybash`'s `starship.toml` (the shell profile `install-mybash` installs)
+already configures `directory`, `git_branch` and `git_status`, in a fuller
+powerline layout. The one real difference is how colors are chosen. Upstream's
+file uses named terminal colors, so the prompt follows the terminal theme by
+itself; `mybash` uses hex palettes picked with its `starship-theme` helper (13
+of them, including `nord`, `dracula` and `tokyonight`), which do not follow
+Lyona's active theme automatically. Making the prompt follow the theme is a
+change to `technicks89/mybash`, not a port, so it is left there.
 
 ### Lyona-only assets the port must reuse rather than duplicate
 
