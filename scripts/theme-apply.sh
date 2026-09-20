@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/dwm-xsettings-config.sh
+. "$script_dir/dwm-xsettings-config.sh"
+
 THEME_DISCOVERY_HOME=${DWM_APPEARANCE_DISCOVERY_HOME:-$HOME}
 [[ $THEME_DISCOVERY_HOME == /* ]] || {
 	echo "theme-apply: theme discovery home must be an absolute path" >&2
@@ -583,6 +587,16 @@ if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 ]]; then
 	printf 'Xcursor.theme: %s\nXcursor.size: %s\n' \
 		"$CURSOR_THEME" "$CURSOR_SIZE" >"$CURSOR_XRESOURCES"
 fi
+
+XSETTINGSD_CONFIG="${DWM_XSETTINGS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/lyona/xsettingsd.conf}"
+if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 ]]; then
+	XSETTINGS_CURSOR_THEME=${CURSOR_THEME//\\/\\\\}
+	XSETTINGS_CURSOR_THEME=${XSETTINGS_CURSOR_THEME//\"/\\\"}
+	xsettingsd_write_line "$XSETTINGSD_CONFIG" '^[[:space:]]*Gtk/CursorThemeName[[:space:]]' \
+		"Gtk/CursorThemeName \"$XSETTINGS_CURSOR_THEME\""
+	xsettingsd_write_line "$XSETTINGSD_CONFIG" '^[[:space:]]*Gtk/CursorThemeSize[[:space:]]' \
+		"Gtk/CursorThemeSize $CURSOR_SIZE"
+fi
 if [[ $RUNTIME_ONLY == 0 && $TRANSACTIONAL_APPLY == 0 ]] &&
 	command -v xrdb &>/dev/null && [[ -n "${DISPLAY:-}" ]]; then
 	printf 'Xcursor.theme: %s\nXcursor.size: %s\n' "$CURSOR_THEME" "$CURSOR_SIZE" |
@@ -636,6 +650,15 @@ if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 &&
 		else
 			sed -i "/^\[Appearance\]/a color_scheme_path=${QT_CT_SCHEME}" "$QT_CT_CONF"
 		fi
+	fi
+fi
+
+# Refresh cached named cursors in existing clients as well as the root window.
+if [[ $RUNTIME_ONLY == 0 && $TRANSACTIONAL_APPLY == 0 && -n ${DISPLAY:-} ]]; then
+	CURSOR_RELOAD_HELPER=${DWM_APPEARANCE_CURSOR_HELPER:-$script_dir/dwm-cursor-reload}
+	if [[ ! -x $CURSOR_RELOAD_HELPER ]] ||
+		! "$CURSOR_RELOAD_HELPER" "$CURSOR_THEME" "$CURSOR_SIZE"; then
+		echo 'theme-apply: live X11 cursor refresh failed' >&2
 	fi
 fi
 
