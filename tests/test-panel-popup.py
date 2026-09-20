@@ -3,7 +3,9 @@
 import os, shutil, subprocess, tempfile, time
 from pathlib import Path
 repo=Path(__file__).resolve().parents[1]
-with tempfile.TemporaryDirectory(prefix='panel-popup-', dir=os.environ.get('TMPDIR', str(Path.home()/'tmp'))) as temp:
+temp_root = Path(os.environ.get('DWM_TEST_TMP_ROOT') or os.environ.get('TMPDIR') or Path.home()/'tmp')
+temp_root.mkdir(parents=True, exist_ok=True)
+with tempfile.TemporaryDirectory(prefix='panel-popup-', dir=str(temp_root)) as temp:
  base=Path(temp); config=base/'config'; qml=config/'quickshell'; qml.mkdir(parents=True)
  runtime=base/'runtime'; runtime.mkdir(mode=0o700)
  shutil.copytree(repo/'config/quickshell/core',qml/'core')

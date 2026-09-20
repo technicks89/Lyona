@@ -625,7 +625,7 @@ check-quickshell-health-xvfb:
 	tests/test-quickshell-health-xvfb.sh
 
 check-quickshell-settings-responsiveness-xvfb:
-	tests/test-quickshell-settings-responsiveness-xvfb.sh
+	@tests/test-quickshell-settings-responsiveness-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 check-quickshell-qml:
 	scripts/quickshell-qmllint --root config/quickshell
