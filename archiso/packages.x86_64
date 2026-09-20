@@ -1,3 +1,4 @@
+adwaita-icon-theme
 alsa-utils
 base-devel
 blueman
@@ -7,6 +8,7 @@ brightnessctl
 celluloid
 curl
 dbus
+dconf
 desktop-file-utils
 dex
 feh
@@ -30,6 +32,7 @@ light-locker
 make
 mate-polkit
 mpv
+papirus-icon-theme
 pavucontrol
 pciutils
 picom

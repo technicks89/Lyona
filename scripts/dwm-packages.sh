@@ -71,7 +71,9 @@ dwm_packages() {
 		fi
 		;;
 	arch:theme)
-		printf '%s\n' dconf
+		# The icon themes give every GTK application icons on a fresh install
+		# (upstream #301); theme-apply.sh selects between them.
+		printf '%s\n' dconf adwaita-icon-theme papirus-icon-theme
 		;;
 	arch:theme-gtk)
 		printf '%s\n' \

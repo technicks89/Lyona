@@ -16,6 +16,7 @@ mapfile -t expected < <(
 	{
 		dwm_packages arch required
 		dwm_packages arch desktop
+		dwm_packages arch theme
 		dwm_packages arch media
 		dwm_packages arch iso
 	} | awk 'NF' | sort -u
@@ -23,9 +24,9 @@ mapfile -t expected < <(
 mapfile -t actual < <(awk 'NF' "$repo/archiso/packages.x86_64" | sort -u)
 
 if [[ "${expected[*]}" != "${actual[*]}" ]]; then
-	printf 'archiso/packages.x86_64 is out of sync with the arch required+desktop+media package map.\n' >&2
+	printf 'archiso/packages.x86_64 is out of sync with the arch required+desktop+theme+media package map.\n' >&2
 	printf 'Regenerate with:\n' >&2
-	printf '  source scripts/dwm-packages.sh && { dwm_packages arch required; dwm_packages arch desktop; dwm_packages arch media; dwm_packages arch iso; } | sort -u > archiso/packages.x86_64\n' >&2
+	printf '  source scripts/dwm-packages.sh && { dwm_packages arch required; dwm_packages arch desktop; dwm_packages arch theme; dwm_packages arch media; dwm_packages arch iso; } | sort -u > archiso/packages.x86_64\n' >&2
 	exit 1
 fi
 
