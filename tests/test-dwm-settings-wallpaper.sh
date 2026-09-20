@@ -249,40 +249,13 @@ grep -Fqx $'selection\tpartial\t\tfill\tNo managed wallpaper selection; session 
 grep -Fqx $'mutation\tavailable\tWallpaper preview and user-session changes are available' <<<"$status"
 run_helper mutation-ready
 
+# Opening Appearance must never start a decoder, even one that would stall.
 loadable_block_pid_file=$work/loadable-block.pid
 export DWM_TEST_FEH_LOADABLE_BLOCK_PID_FILE=$loadable_block_pid_file
 run_helper mutation-ready
+run_helper status --read-only >/dev/null
 unset DWM_TEST_FEH_LOADABLE_BLOCK_PID_FILE
-loadable_block_pid=$(cat "$loadable_block_pid_file")
-if process_running "$loadable_block_pid"; then
-	printf 'Wallpaper readiness probe leaked its bounded Feh scan\n' >&2
-	exit 1
-fi
-
-loadable_cancel_pid_file=$work/loadable-cancel.pid
-export DWM_TEST_FEH_LOADABLE_BLOCK_PID_FILE=$loadable_cancel_pid_file
-DISPLAY=:915 HOME=$home XDG_CONFIG_HOME=$config_home XDG_STATE_HOME=$state_home \
-	XDG_RUNTIME_DIR=$runtime DWM_APPEARANCE_WALLPAPER_DIR=$wallpaper_dir \
-	DWM_TEST_FEH_LOG=$log PATH="$bin_dir:$PATH" "$helper" status --read-only \
-	>"$work/cancelled-status.out" 2>"$work/cancelled-status.err" &
-cancelled_status_pid=$!
-for _ in {1..100}; do
-	[[ ! -s $loadable_cancel_pid_file ]] || break
-	sleep 0.01
-done
-[[ -s $loadable_cancel_pid_file ]]
-loadable_cancel_pid=$(cat "$loadable_cancel_pid_file")
-kill -TERM "$cancelled_status_pid"
-wait "$cancelled_status_pid" || [[ $? -eq 143 ]]
-unset DWM_TEST_FEH_LOADABLE_BLOCK_PID_FILE
-for _ in {1..100}; do
-	process_running "$loadable_cancel_pid" || break
-	sleep 0.01
-done
-if process_running "$loadable_cancel_pid"; then
-	printf 'Terminated wallpaper status left its Feh scan running\n' >&2
-	exit 1
-fi
+test ! -e "$loadable_block_pid_file"
 
 invalid_baseline=$wallpaper_dir/invalid$'\034'.png
 printf 'invalid image path\n' >"$invalid_baseline"
@@ -316,12 +289,14 @@ grep -Fqx 'arg=--' "$log"
 grep -Fqx "arg=$first" "$log"
 test ! -e "$home/.fehbg"
 
+# Read-only status lists file metadata without decoding the configured image
+# or any of the fallback inventory.
 loadable_count_file=$work/loadable-count
 printf '0\n' >"$loadable_count_file"
 export DWM_TEST_FEH_LOADABLE_COUNT_FILE=$loadable_count_file
 run_helper status --read-only >/dev/null
 unset DWM_TEST_FEH_LOADABLE_COUNT_FILE
-grep -Fqx '1' "$loadable_count_file"
+grep -Fqx '0' "$loadable_count_file"
 
 # The default selection must name the candidates it might actually use, not
 # hand feh the wallpaper folder. Probing the folder made --loadable decode
@@ -481,7 +456,7 @@ done
 test -f "$state_home/lyona/appearance/wallpaper/selection.owner"
 run_helper session-apply
 ready_status=$(run_helper status --read-only)
-grep -Fqx $'selection\tavailable\t'"$second"$'\ttile\tManaged wallpaper selection is ready for this and future sessions' \
+grep -Fqx $'selection\tavailable\t'"$second"$'\ttile\tManaged wallpaper file is readable; image decoding is checked when applied' \
 	<<<"$ready_status"
 test ! -e "$state_home/lyona/appearance/wallpaper/selection.failed"
 test ! -e "$state_home/lyona/appearance/wallpaper/selection.owner"
@@ -501,7 +476,7 @@ test ! -e "$state_home/lyona/appearance/wallpaper/selection.owner"
 export DWM_TEST_FEH_FAIL_PATH=$second
 undecodable_status=$(run_helper status --read-only)
 unset DWM_TEST_FEH_FAIL_PATH
-grep -Fqx $'selection\tpartial\t'"$second"$'\ttile\tConfigured wallpaper is missing or undecodable; session startup falls back to the legacy random wallpaper' \
+grep -Fqx $'selection\tavailable\t'"$second"$'\ttile\tManaged wallpaper file is readable; image decoding is checked when applied' \
 	<<<"$undecodable_status"
 test ! -e "$state_home/lyona/appearance/wallpaper/preview.current"
 for _ in {1..40}; do
@@ -669,7 +644,7 @@ printf 'second image\n' >"$second"
 
 rm -f "$second"
 missing_status=$(run_helper status)
-grep -Fqx $'selection\tpartial\t'"$second"$'\tcenter\tConfigured wallpaper is missing or undecodable; session startup falls back to the legacy random wallpaper' \
+grep -Fqx $'selection\tpartial\t'"$second"$'\tcenter\tConfigured wallpaper is missing or unreadable; session startup falls back to the legacy random wallpaper' \
 	<<<"$missing_status"
 : >"$log"
 mkdir -p "$wallpaper_dir/nested"

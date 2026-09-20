@@ -17,7 +17,12 @@ PopupWindow {
     visible: panelWindow !== null && panelWindow.screen !== null
         && notificationModel.notifications.length > 0
     implicitWidth: popupWidth
-    implicitHeight: notificationsColumn.implicitHeight
+    // Cap the stack at the space below the panel so a burst of notifications
+    // (or large text) scrolls instead of running off the screen.
+    readonly property int maxStackHeight: panelWindow && panelWindow.screen
+        ? Math.max(0, panelWindow.screen.height - Theme.panelHeight - edgeMargin * 2)
+        : 0
+    implicitHeight: Math.min(notificationsColumn.implicitHeight, maxStackHeight)
     anchor.window: panelWindow
     anchor.rect.x: panelWindow
         ? Math.max(edgeMargin, panelWindow.width - popupWidth - edgeMargin)
@@ -25,24 +30,33 @@ PopupWindow {
     anchor.rect.y: Theme.panelHeight
     color: Theme.transparent
 
-    ColumnLayout {
-        id: notificationsColumn
-
+    Flickable {
         anchors.fill: parent
-        opacity: 1.0
-        spacing: Theme.spacingLg
+        contentWidth: width
+        contentHeight: notificationsColumn.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: contentHeight > height
 
-        Repeater {
-            model: root.notificationModel.notifications
+        ColumnLayout {
+            id: notificationsColumn
 
-            delegate: NotificationCard {
-                id: notificationCard
+            width: parent.width
+            opacity: 1.0
+            spacing: Theme.spacingLg
 
-                required property var modelData
+            Repeater {
+                model: root.notificationModel.notifications
 
-                item: notificationCard.modelData
-                onDismiss: root.notificationModel.dismiss(notificationCard.modelData.key)
-                onExpired: root.notificationModel.expire(notificationCard.modelData.key)
+                delegate: NotificationCard {
+                    id: notificationCard
+
+                    required property var modelData
+
+                    item: notificationCard.modelData
+                    onDismiss: root.notificationModel.dismiss(notificationCard.modelData.key)
+                    onExpired: root.notificationModel.expire(notificationCard.modelData.key)
+                }
             }
         }
     }

@@ -284,6 +284,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-theme" "$repo/scripts/dwm-cursor-reload" \
 	"$repo/scripts/dwm-accessibility-settings" \
 	"$repo/scripts/theme-apply.sh" \
+	"$repo/scripts/dwm-xsettings-config.sh" \
 	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
 	"$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-watchdog.sh" \
 	"$repo/scripts/dwm-simple-watch.sh" \

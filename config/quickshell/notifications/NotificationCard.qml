@@ -12,7 +12,7 @@ Rectangle {
     signal expired
 
     Layout.fillWidth: true
-    Layout.preferredHeight: Math.max(82, content.implicitHeight + 28)
+    Layout.preferredHeight: Math.max(Theme.dp(82), content.implicitHeight + Theme.dp(28))
 
     opacity: 1.0
     radius: Theme.largeSurfaceCardRadius
@@ -31,7 +31,7 @@ Rectangle {
         id: content
 
         anchors.fill: parent
-        anchors.margins: 14
+        anchors.margins: Theme.dp(14)
         spacing: Theme.spacingXxl
 
         Rectangle {

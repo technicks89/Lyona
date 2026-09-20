@@ -15,8 +15,8 @@ PanelPill {
         id: logoImage
 
         anchors.centerIn: parent
-        width: 24
-        height: 24
+        width: Theme.dp(24)
+        height: Theme.dp(24)
         source: Qt.resolvedUrl("../assets/lyona-icon.png")
         fillMode: Image.PreserveAspectFit
         asynchronous: true
