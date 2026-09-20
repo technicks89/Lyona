@@ -52,6 +52,7 @@ cache_file=$cache_home/lyona/update-index.json
 updates_root=$state_home/lyona/updates
 backups_root=$state_home/lyona/live-update-backups
 status_file=$state_home/lyona/update.status
+log_file=$state_home/lyona/update.log
 
 # An apply restarts Quickshell (and rollback now does too, see cmd_rollback),
 # destroying whatever in-memory state the UpdateModel held. This file is how
@@ -59,7 +60,7 @@ status_file=$state_home/lyona/update.status
 # transition, read back on Component.onCompleted. Best-effort throughout --
 # a status write failing (disk full, an unwritable state dir) must never be
 # what turns an otherwise-successful apply into a reported failure.
-write_status() {
+write_status_file() {
 	local phase=$1 detail=$2 target=${3:-} outcome=${4:-pending} message=${5:-} dir tmp
 	dir=$(dirname -- "$status_file") || return 0
 	mkdir -p "$dir" 2>/dev/null || return 0
@@ -77,6 +78,65 @@ write_status() {
 	fi
 	chmod 600 "$tmp" 2>/dev/null || :
 	mv -fT "$tmp" "$status_file" 2>/dev/null || :
+}
+
+# Tell the person who started an update how it ended, from the one place the
+# terminal status is written, so the notification and the status file cannot
+# disagree. By the time a successful apply reaches its final write, Quickshell
+# has already been restarted (runtime_verify), so the notification reaches the
+# new shell's server rather than the one being replaced. Best effort and
+# bounded: a missing notification daemon must never fail or stall an update.
+notify_outcome() {
+	local detail=$1 target=$2 outcome=$3 message=$4 title body urgency=normal
+	command -v notify-send >/dev/null 2>&1 || return 0
+	# Declining the confirmation prompt is a choice, not a failure worth a
+	# critical notification; the status still records that nothing was done.
+	[[ ${status_quiet:-false} != true ]] || return 0
+	case $outcome in
+	succeeded)
+		title="Lyona: $detail"
+		case $detail in
+		Rollback*) body="Restored backup $target." ;;
+		*) body="Version $target is installed." ;;
+		esac
+		;;
+	failed)
+		title='Lyona: update failed'
+		urgency=critical
+		body="${message:-The update did not finish.} Details: $log_file"
+		;;
+	*) return 0 ;;
+	esac
+	local -a notify=(notify-send --app-name=Lyona --icon=system-software-update --urgency="$urgency" -- "$title" "$body")
+	if command -v timeout >/dev/null 2>&1; then
+		timeout 5 "${notify[@]}" >/dev/null 2>&1 || :
+	else
+		"${notify[@]}" >/dev/null 2>&1 || :
+	fi
+}
+
+write_status() {
+	write_status_file "$@"
+	case ${4:-pending} in
+	succeeded | failed) notify_outcome "$2" "${3:-}" "$4" "${5:-}" ;;
+	esac
+	return 0
+}
+
+# apply and rollback are the operations worth keeping a record of: they restart
+# Quickshell, which takes the UpdateModel's in-memory copy of their output with
+# it, and the build output is the first thing anyone debugging a failure needs.
+# Each run starts a fresh log (so it stays bounded) and tees stdout and stderr
+# into it, leaving the machine-readable stdout protocol exactly as it was.
+# Best effort: no log is better than no update.
+start_operation_log() {
+	local operation=$1 dir
+	dir=$(dirname -- "$log_file")
+	mkdir -p "$dir" 2>/dev/null || return 0
+	command -v tee >/dev/null 2>&1 || return 0
+	(umask 077 && : >"$log_file") 2>/dev/null || return 0
+	printf '%s %s started\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$operation" >>"$log_file" 2>/dev/null || return 0
+	exec > >(tee -a "$log_file") 2> >(tee -a "$log_file" >&2)
 }
 
 # Set as an EXIT trap by cmd_apply/cmd_rollback once they have real work to
@@ -516,8 +576,10 @@ cmd_apply() {
 	done
 	[[ -z $file_path || -z $from_checkout ]] || die "--file and --from-checkout are mutually exclusive"
 
-	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false
+	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false status_quiet=false
 	trap report_status_failure EXIT
+	# A dry run installs nothing, so it must not replace the last real log.
+	[[ $dry_run == true ]] || start_operation_log apply
 
 	read_config
 	read_installed
@@ -645,7 +707,10 @@ cmd_apply() {
 		IFS= read -r answer || answer=
 		case $answer in
 		y | Y | yes | YES) ;;
-		*) die "not confirmed; the staged, built update in $staging_dir was left in place" ;;
+		*)
+			status_quiet=true
+			die "not confirmed; the staged, built update in $staging_dir was left in place"
+			;;
 		esac
 	fi
 
@@ -808,8 +873,9 @@ cmd_rollback() {
 	esac
 	[[ -d $backup_dir && ! -L $backup_dir ]] || die "backup not found: $backup_id"
 
-	local status_phase=restarting status_detail="Verifying backup $backup_id" status_target=$backup_id status_written=false
+	local status_phase=restarting status_detail="Verifying backup $backup_id" status_target=$backup_id status_written=false status_quiet=false
 	trap report_status_failure EXIT
+	start_operation_log rollback
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 
 	verify_backup_checksums "$backup_dir"
@@ -832,7 +898,10 @@ cmd_rollback() {
 		IFS= read -r answer || answer=
 		case $answer in
 		y | Y | yes | YES) ;;
-		*) die "not confirmed" ;;
+		*)
+			status_quiet=true
+			die "not confirmed"
+			;;
 		esac
 	fi
 

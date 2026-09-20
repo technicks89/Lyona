@@ -1005,6 +1005,50 @@ ShellRoot {
             updateModel.apply(version);
         }
 
+        function updateProgressShown(): bool {
+            return updateModel.progressShown;
+        }
+
+        function updatePopupClosed(): bool {
+            return updateModel.popupClosed;
+        }
+
+        function updateShowProgress(): void {
+            updateModel.showProgress();
+        }
+
+        function updateClosePopup(): void {
+            updateModel.closePopup();
+        }
+
+        function updateDismissProgress(): void {
+            updateModel.dismissProgress();
+        }
+
+        function updateOutcomeSucceeded(): bool {
+            return updateModel.actionSucceeded;
+        }
+
+        function updateMessage(): string {
+            return updateModel.message;
+        }
+
+        function updateRefreshLog(): void {
+            updateModel.refreshLog();
+        }
+
+        function updateLogState(): string {
+            return updateModel.logState;
+        }
+
+        function updateLogText(): string {
+            return updateModel.logText;
+        }
+
+        function updateLogTruncated(): bool {
+            return updateModel.logTruncated;
+        }
+
         function systemManagementUpdateCount(): int {
             return systemManagementModel.updates.length;
         }
@@ -1316,6 +1360,7 @@ ShellRoot {
             panelSettingsModel: panelSettingsModel
             powerModel: powerModel
             powerMenuModel: powerMenuModel
+            updateModel: updateModel
             primaryPanel: modelData === Quickshell.screens[0]
             onPopupRequested: (panel, popupId) => root.selectPanelPopup(panel, popupId)
         }
@@ -1358,6 +1403,12 @@ ShellRoot {
 
     UtilityDetailWindow {
         controlCenterModel: controlCenterModel
+    }
+
+    UpdateProgressWindow {
+        id: updateProgressWindow
+        updateModel: updateModel
+        panelWindow: root.activePanelWindow
     }
 
     SystemHealthWindow {

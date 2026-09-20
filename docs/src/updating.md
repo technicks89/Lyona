@@ -54,6 +54,33 @@ Declining the privileged-step confirmation, or a build failure, leaves the
 live install completely untouched and exits non-zero — never a half-applied
 system.
 
+### Watching an update
+
+An apply takes a few minutes and restarts Quickshell part way through, so the
+progress is shown outside Settings and survives that restart:
+
+- A **progress popup** appears under the panel while an update runs, showing
+  the current step (downloading, verifying, building, installing, restarting).
+  **Hide** tucks it away without stopping anything.
+- A **panel indicator** appears next to the battery while an update runs and
+  stays after it ends until you dismiss it; a successful update dismisses
+  itself after 20 seconds, a failed one never does. Click it to bring the popup
+  back. When the shell restarts mid-update, both reappear on their own, still
+  in progress or showing how it ended. A shell that starts up more than ten
+  minutes after an update ended does not show it, and neither does one left
+  "in progress" for over an hour by a crash.
+- A **notification** reports how an update or rollback ended. A failure is
+  critical and names the log; declining the confirmation prompt is not
+  treated as a failure and sends nothing.
+- **View log** in the popup, or **View update log** under Settings -> System,
+  shows the last 64 KiB of `$XDG_STATE_HOME/lyona/update.log`. Each apply or
+  rollback starts a fresh log holding its full output (build output included),
+  readable only by you; a dry run leaves the previous log alone.
+
+The whole apply asks you to authenticate once: the installation of system files
+is a single privileged step, and a step that ran and failed is never retried
+through a second prompt.
+
 Useful flags:
 
 - `--allow-downgrade` — required to install a version older than what is

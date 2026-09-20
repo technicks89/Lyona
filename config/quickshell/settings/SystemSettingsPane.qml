@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.core
+import qs.system
 
 pragma ComponentBehavior: Bound
 
@@ -11,6 +12,7 @@ Flickable {
     required property var systemManagementModel
     property var capabilities: []
     property string confirmVersion: ""
+    property bool showUpdateLog: false
     // Sync Sprint 1 S1-06 (#270): the shared clock's formatted settings text,
     // shown beside the timezone row below.
     property string clockText: ""
@@ -190,6 +192,20 @@ Flickable {
             text: root.updateModel.message
             color: root.updateModel.actionSucceeded ? Theme.success : Theme.menuMutedText
             wrapMode: Text.WordWrap
+        }
+
+        SectionLabel { label: "Update log" }
+
+        ShellButton {
+            Layout.alignment: Qt.AlignLeft
+            label: root.showUpdateLog ? "Hide update log" : "View update log"
+            onActivated: root.showUpdateLog = !root.showUpdateLog
+        }
+
+        UpdateLogView {
+            Layout.fillWidth: true
+            visible: root.showUpdateLog
+            model: root.updateModel
         }
 
         SectionLabel { label: "Channel" }
