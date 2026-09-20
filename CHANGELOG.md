@@ -10,6 +10,26 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Replace the Displays pane's raw X/Y position inputs with relative
+  placement (Sync Sprint 3 S3-01, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  ported from upstream `#289`/`55dbd76`, plus `6b7548b`'s driver-quirk fix to
+  `discover()` pulled in early since it affects placement too): a new pure
+  `config/quickshell/settings/DisplayLayout.js` computes placement math and a
+  numbered, proportionally-scaled layout preview from monitor geometry; each
+  output card now has a "position relative to" selector and Left of/Right
+  of/Above/Below buttons instead of numeric X/Y fields.
+  `scripts/dwm-settings-display discover()` emits new `mode-size` records
+  parsed from `xrandr --verbose`, since RandR mode labels are driver-arbitrary
+  strings that can't reliably be parsed for pixel dimensions.
+  Lyona adaptations: the upstream diff was ported into Lyona's existing
+  `DisplaySettingsPane.qml` and `SettingsModel.qml` rather than taking
+  upstream's files, since Lyona's pane already carries the resolution
+  countdown, `ShellButton` primary/pending states, and DPI-decoupling
+  workflow from an earlier sync phase; every new pixel constant in the
+  preview tile is wrapped in `Theme.dp()`. Verified against this sandbox's
+  real dual-monitor hardware (`DisplayPort-0` 2560x1440 normal/primary,
+  `DisplayPort-1` 1920x1080 rotated right at x=2560): `discover()` emits
+  correct `mode-size` records for both real outputs.
 - Close `ROADMAP.md` Phase 6 (System Management) (Sync Sprint 2 S2-07,
   `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, upstream closed its own Phase 6
   with docs-only commits whose Fedora-44-evidence prose isn't ported; used as

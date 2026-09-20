@@ -722,10 +722,12 @@ grep -Fq 'label: root.settingsModel.previewRollbackFailed ? "Keep current" : "Ke
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
 grep -Fq 'onActivated: root.settingsModel.keepPreview()' \
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
-grep -Fq 'onTextEdited: if (acceptableInput)' \
+grep -Fq 'root.settingsModel.placeDisplay(outputCard.index, outputCard.anchorIndex, modelData.direction)' \
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
-test "$(grep -Fc 'onTextEdited: if (acceptableInput)' \
-	"$repo/config/quickshell/settings/DisplaySettingsPane.qml")" -eq 2
+if grep -Eq 'xPositionInput|yPositionInput' "$repo/config/quickshell/settings/DisplaySettingsPane.qml"; then
+	printf 'Display placement must not require raw coordinates.\n' >&2
+	exit 1
+fi
 grep -Fq 'function keepPreview() {' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runDisplay("keep", [root.previewToken]);' \
