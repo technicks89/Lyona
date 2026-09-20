@@ -80,7 +80,11 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
 - `recommended`: `core` plus the recommended desktop layer such as Quickshell,
   Picom, Feh, Dex, fonts, theming, screenshot, audio, Bluetooth control and
   tray tools, brightness tools, Flatpak, and the GTK desktop portal. It also
-  adds Flathub for the target user, installs Gear Lever as the default AppImage
+  installs Celluloid, mpv, and sxiv, and gives a fresh account Celluloid for
+  audio and video and sxiv for images (Thunar for folders) through
+  `scripts/seed-default-apps.sh`. An existing MIME preference file is never
+  replaced; change these in Settings > Defaults when updating an existing
+  account. It also adds Flathub for the target user, installs Gear Lever as the default AppImage
   manager, and installs the available Arch GTK theme packages. A matching GTK
   theme is generated for every palette in `config/themes.toml`, so GTK
   applications follow the active theme without a downloaded theme pack.

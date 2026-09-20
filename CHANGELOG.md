@@ -123,6 +123,34 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Media and image defaults on fresh installs (Sync Sprint 4 S4-02,
+  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream issue
+  `#308` and the fixes `#317` and the MIME hunk of `c679937`): the recommended and
+  full install profiles now install Celluloid, mpv, and sxiv (all in official
+  `extra`, and on the live ISO too), and a new `scripts/seed-default-apps.sh`
+  makes Celluloid the handler for audio and video, sxiv the handler for images,
+  and Thunar the handler for folders on a fresh account. It runs before Gear
+  Lever, which writes its own AppImage MIME preference file, and does nothing
+  when a `mimeapps.list`, a desktop-specific `*-mimeapps.list`, or a legacy
+  `defaults.list` already exists. Every handler is validated before anything is
+  written, the file is published atomically, and a preference written while the
+  script runs is kept rather than replaced. Settings > Defaults now lists menu-hidden
+  handlers such as sxiv (its desktop entry sets `NoDisplay=true`), which used to
+  be excluded, while still excluding disabled entries and missing executables and
+  keeping menu-visibility filtering for the browser, file-manager and terminal
+  roles. GIF, BMP and TIFF join the supported image types.
+  Lyona adaptations: upstream's browser seeding is dropped (Lyona does not ship
+  Brave), the seed runs inside the recommended branch of `install.sh` just before
+  Gear Lever instead of moving the Gear Lever block, and the ISO package list is
+  now the union of the `required`, `desktop`, `media` and `iso` profiles. `python`
+  and the four new packages were checked against the official repositories with
+  `make check-no-aur`. The `.desktop` IDs were confirmed from the shipped Arch
+  packages (`sxiv.desktop` sets `NoDisplay=true`; Celluloid is
+  `io.github.celluloid_player.Celluloid.desktop`). Not yet verified: the
+  acceptance in the sprint doc that a fresh ISO install (standard and NVIDIA) and an
+  existing-system `install.sh` both open `.mkv` in Celluloid and `.png` in sxiv
+  from Thunar, and still do after logout and reboot, which needs real installs.
+
 - Configuration-backed Picom controls (Sync Sprint 4 S4-01,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
   `#312`/`#313`/`#314`, closing upstream issue `#309`): **Settings > Appearance >

@@ -121,6 +121,14 @@ dwm_packages() {
 	arch:terminal-primary)
 		printf '%s\n' alacritty
 		;;
+	arch:media)
+		# Fresh-install media and image defaults (upstream #308): Celluloid
+		# plays audio and video, sxiv views images, and desktop-file-utils
+		# keeps the desktop database current. seed-default-apps.sh makes them
+		# the handlers on a new account. nsxiv is the maintained fork, but
+		# #308 names sxiv, so this keeps parity.
+		printf '%s\n' celluloid mpv sxiv desktop-file-utils
+		;;
 	arch:screenshot-optional)
 		printf '%s\n' maim
 		;;
@@ -131,6 +139,7 @@ dwm_packages() {
 		;;
 	arch:recommended)
 		dwm_packages "$family" desktop
+		dwm_packages "$family" media
 		dwm_packages "$family" system-management
 		dwm_packages "$family" screenshot-optional
 		dwm_packages "$family" theme
