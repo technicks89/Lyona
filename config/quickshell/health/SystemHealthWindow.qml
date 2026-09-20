@@ -104,8 +104,8 @@ FloatingWindow {
                             readonly property color accentColor: root.stateColor(modelData.status)
 
                             objectName: "healthSummaryTile"
-                            width: Math.min(summaryTiles.width, Math.max(145, summaryContent.implicitWidth + 26))
-                            height: 48
+                            width: Math.min(summaryTiles.width, Math.max(Theme.dp(145), summaryContent.implicitWidth + Theme.dp(26)))
+                            height: Theme.dp(48)
                             color: Theme.controlNormalFill
                             border.color: Theme.controlNormalBorder
                             border.width: Theme.controlBorderWidth
@@ -187,7 +187,7 @@ FloatingWindow {
                                     readonly property bool selected: root.healthModel.selectedCategory === modelData.id
 
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 46
+                                    Layout.preferredHeight: Theme.dp(46)
                                     color: selected ? Theme.menuSelectedBackground
                                         : categoryMouse.containsMouse ? Theme.menuHoverBackground : Theme.transparent
                                     border.color: selected ? Theme.controlSelectedBorder : Theme.transparent

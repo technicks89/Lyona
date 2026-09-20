@@ -11,7 +11,8 @@ PopupWindow {
     required property var notificationModel
     required property var panelWindow
 
-    readonly property int popupWidth: 400
+    readonly property int popupWidth: Math.min(Theme.dp(400),
+        panelWindow ? Math.max(1, panelWindow.width - edgeMargin * 2) : Theme.dp(400))
     readonly property int edgeMargin: Theme.rowSpacing
 
     visible: panelWindow !== null && panelWindow.screen !== null
@@ -31,12 +32,16 @@ PopupWindow {
     color: Theme.transparent
 
     Flickable {
+        id: viewport
+        objectName: "notificationViewport"
         anchors.fill: parent
         contentWidth: width
         contentHeight: notificationsColumn.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
+        onVisibleChanged: if (visible) contentY = 0
 
         ColumnLayout {
             id: notificationsColumn

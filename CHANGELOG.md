@@ -19,7 +19,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   The Wi-Fi password dialog grows with its content, wraps its hint text, and
   scrolls when it would exceed the screen. Notification stacks, System Health,
   the Controls and Bluetooth windows and the panel icon glyphs size from the
-  text scale. Font sizes go through the new `Theme.scaledFontSize()` and the
+  text scale; launcher, Wi-Fi and Bluetooth rows grow with their text instead
+  of clipping it, the notification stack is clamped to the panel width and
+  scrolls in its own viewport, and Health summary tiles wrap. Font sizes go through the new `Theme.scaledFontSize()` and the
   shell text scale accepts 0.75–2.0 (was 0.8–1.5). Status and rollback
   readiness for the wallpaper now list files by name and metadata only and
   never start an image decoder; the decode check moves to apply/preview.
@@ -33,6 +35,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   decodes only a sample. `devicePixelRatio` was confirmed to be 1.0 at 144 DPI
   under Lyona's `QT_ENABLE_HIGHDPI_SCALING=0` launch, so no native-scale
   compensation is needed.
+  `tests/qml/SettingsResponsiveness.inc` now renders these surfaces at 200
+  percent text and checks that text stays inside its row, popups and the
+  Wi-Fi prompt stay on screen and scroll, and the last notification's dismiss
+  control is reachable.
 
 - Compact the Control Center and Settings detail pane (Sync Sprint 3 S3-04,
   `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
