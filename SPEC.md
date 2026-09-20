@@ -195,10 +195,18 @@ The supported installation flow must:
 7. Install the binary, man page, X session file, scripts, and default
    configuration.
 8. Seed missing user configuration while preserving existing files.
-9. Set ownership to the invoking user for files in that user's home.
-10. Support repeated execution without destructive side effects.
-11. Print a summary, skipped optional features, and actionable next steps.
-12. Offer interactive Xorg display setup when installation runs inside an
+9. In the recommended and full profiles, install Celluloid, mpv, and sxiv and
+   seed fresh-account audio/video and image MIME defaults using Celluloid and
+   sxiv respectively, with Thunar for folders when installed. Seeding runs
+   before Gear Lever, which writes its own AppImage MIME preference file, and
+   preserves any existing preference file: `mimeapps.list`, a desktop-specific
+   `*-mimeapps.list`, or a legacy `defaults.list`. It validates every handler
+   before writing, publishes atomically, and never replaces a preference
+   written while it runs.
+10. Set ownership to the invoking user for files in that user's home.
+11. Support repeated execution without destructive side effects.
+12. Print a summary, skipped optional features, and actionable next steps.
+13. Offer interactive Xorg display setup when installation runs inside an
     active X11 session. The setup must support resolution, refresh rate,
     position, rotation, primary-output selection, and compatible TearFree
     drivers; preview changes with rollback; and preserve existing system Xorg

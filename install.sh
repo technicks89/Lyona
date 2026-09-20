@@ -756,6 +756,7 @@ ok "Required build and runtime dependencies installed."
 if install_recommended_profile; then
 	info "Installing recommended desktop dependencies..."
 	dwm_install_package_profile desktop
+	dwm_install_package_profile media
 	dwm_install_package_profile system-management
 	if ! env -u DWM_TEST_MODE -u DWM_TEST_QUICKSHELL_VERSION \
 		"$REPO_DIR/scripts/dwm-quickshell-version-check"; then
@@ -776,6 +777,13 @@ if install_recommended_profile; then
 	# that fallback is never reached. It also covers fastfetch, which the
 	# linked .bashrc runs at startup and that script does not install at all.
 	dwm_install_package_profile shell
+	# Seed the media and image defaults before Gear Lever, which writes its own
+	# AppImage MIME preference file; the seed leaves any existing preference alone.
+	if bash "$REPO_DIR/scripts/seed-default-apps.sh"; then
+		ok "Media and image defaults are set."
+	else
+		warn "Media and image defaults were not seeded; set them in Settings > Defaults."
+	fi
 	info "Setting up Gear Lever for AppImage management..."
 	if "$REPO_DIR/scripts/install-gearlever"; then
 		ok "Gear Lever is installed."

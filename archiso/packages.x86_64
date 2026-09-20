@@ -4,8 +4,10 @@ blueman
 bluez
 bluez-utils
 brightnessctl
+celluloid
 curl
 dbus
+desktop-file-utils
 dex
 feh
 flatpak
@@ -27,6 +29,7 @@ libxrender
 light-locker
 make
 mate-polkit
+mpv
 pavucontrol
 pciutils
 picom
@@ -40,6 +43,7 @@ procps-ng
 psmisc
 python
 quickshell
+sxiv
 unzip
 upower
 util-linux

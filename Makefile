@@ -480,6 +480,7 @@ check-lock:
 
 check-default-apps:
 	tests/test-dwm-default-apps.sh
+	tests/test-seed-default-apps.sh
 
 check-xdg-autostart:
 	tests/test-dwm-xdg-autostart.sh
