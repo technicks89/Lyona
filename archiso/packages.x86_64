@@ -38,6 +38,7 @@ plymouth
 power-profiles-daemon
 procps-ng
 psmisc
+python
 quickshell
 unzip
 upower

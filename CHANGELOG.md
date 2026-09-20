@@ -10,6 +10,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Stop depending on AUR-based packages, and audit the repository for any
+  (`docs/AUR-PACKAGES.md`). The one package Lyona needed from the AUR,
+  `xkbset` (sticky, slow, bounce and mouse keys and the AccessX shortcuts in
+  Settings), is replaced by the in-tree `scripts/dwm-xkbset`: a Python helper
+  over libX11's XKB calls, using `ctypes` like `dwm-cursor-reload`, so it adds
+  no package. It speaks the subset of `xkbset` that Settings used, so
+  `dwm-settings-input` and `dwm-settings-provider` only changed the command
+  name and their messages; a checkout that has not been installed finds it
+  beside the script. `xkbset` is dropped from the `desktop-optional` profile
+  and from `check-deps.sh`. The AUR helper (`yay`) that `install.sh`
+  bootstraps stays, by decision; no package Lyona installs uses it. All 107
+  packages in the profiles and the live ISO resolve in `core`, `extra` or
+  `multilib`. Two new checks: `make check-xkbset` runs the helper against a
+  real X server and compares its masks with the system `XKB.h`, and
+  `make check-no-aur` fails if an AUR helper installs a package, if anything
+  but `install.sh` reaches the AUR, or if a profile names a package outside
+  the official repositories. As a side effect the Settings xvfb suite no
+  longer skips on hosts without `xkbset`.
+
 - Qualify that missing optional components stay capability-scoped, and coalesce
   capability refreshes (Sync Sprint 3 S3-09, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#188`/`c8f574b` and `#191`/`4d776bc`, pre-survey gaps).
@@ -103,6 +122,42 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   compacted UI.
 
 ### Added
+
+- Configuration-backed Picom controls (Sync Sprint 4 S4-01,
+  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
+  `#312`/`#313`/`#314`, closing upstream issue `#309`): **Settings > Appearance >
+  Compositor** now has foreground and background opacity sliders, a backend
+  selector (Automatic, XRender, GLX, experimental EGL) and start/stop, driven by
+  the Picom configuration file instead of process polling, so the controls no
+  longer appear and disappear. The new `scripts/dwm-settings-picom` (Python,
+  JSON protocol 1) edits `picom.conf` while preserving comments, unrelated
+  settings and included files, validates before publishing, keeps the ten most
+  recent backups and rolls back a failed activation. Automatic picks GLX for an
+  accelerated Intel/AMD renderer and XRender otherwise (NVIDIA adds
+  `--xrender-sync-fence`), retrying XRender once if automatic GLX fails to start.
+  Autostart, the Control Center's Restart Picom and Toggle Compositor, and
+  `theme-apply.sh` all go through the helper, so the backend no longer differs
+  between login and a manual restart (the Control Center used to start Picom
+  without `--backend`); theme changes reapply opacity without storing it in
+  themes. The old process watcher and its `dwm-settings-appearance
+  watch-compositor` command are gone, and the compositor inventory and
+  integration now report "controls use its configuration file". `python` is now
+  listed in the `desktop` profile and the live ISO because login starts the
+  compositor through the helper.
+  Lyona adaptations: state, backup and include paths use `lyona`, not
+  `dwm-titus`; every new pixel constant in the pane uses `Theme` tokens.
+  **Race fixed beyond upstream:** the helper's `picom --diagnostics` status probe
+  claims the compositor selection for a moment, so a Settings refresh landing
+  during `start` made Picom refuse with "Another composite manager is already
+  running". `launch()` now waits up to two seconds for that owner to release
+  the selection and retries up to three times, while a real second compositor
+  (which keeps the selection) still fails immediately. The Picom runtime test
+  failed in four of six runs before this and passes six of six after, and three
+  new unit tests cover the retry, the real-second-compositor case and the bound.
+  Not yet verified: the NVIDIA image (`auto` should resolve to XRender with
+  `--xrender-sync-fence`, and `picom --diagnostics` must work without a running
+  compositor on the proprietary driver) needs a check on real hardware, to be
+  recorded in `docs/evidence/`.
 
 - Polish the Power menu, Settings, cursor updates, tray, and Quick Actions
   (Sync Sprint 3 S3-06, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported

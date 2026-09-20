@@ -172,7 +172,7 @@ grep -Fq "case \${XDG_CONFIG_HOME:-} in" "$provider"
 grep -Fq "*) config_home=\${HOME:-}/.config ;;" "$provider"
 
 for command_name in xrandr nmcli bluetoothctl pactl xset gsettings light-locker \
-	xdg-settings xdg-mime xinput xkbset; do
+	xdg-settings xdg-mime xinput dwm-xkbset; do
 	make_stub "$arch_bin/$command_name"
 done
 make_notification_bus_stub "$arch_bin/busctl"
@@ -409,23 +409,28 @@ printf '%s\n' "$missing_accessibility_input_output" | grep -Fqx \
 printf '%s\n' "$missing_accessibility_input_output" | grep -Fqx \
 	'capability	input	input-devices	Input devices	unavailable	user-session	dwm-settings-input	Install xinput and the managed input Settings provider'
 
+# The provider also looks beside itself for helpers, so run a copy that has no
+# dwm-xkbset sibling to see the genuinely missing case.
 missing_xkbset_bin=$work/missing-xkbset-bin
 cp -a "$arch_bin" "$missing_xkbset_bin"
-rm -f "$missing_xkbset_bin/xkbset"
+rm -f "$missing_xkbset_bin/dwm-xkbset"
+missing_xkbset_scripts=$work/missing-xkbset-scripts
+mkdir -p "$missing_xkbset_scripts"
+cp "$provider" "$missing_xkbset_scripts/dwm-settings-provider"
 missing_xkbset_output=$(PATH="$missing_xkbset_bin" \
 	XDG_CONFIG_HOME="$work/arch-config" \
-	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$missing_xkbset_scripts/dwm-settings-provider" discover)
 printf '%s\n' "$missing_xkbset_output" | grep -Fqx \
-	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	user-session	x11	Install xkbset to manage XKB accessibility controls'
+	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	user-session	x11	dwm-xkbset is not installed; reinstall Lyona to manage XKB accessibility controls'
 
 unready_xkbset_bin=$work/unready-xkbset-bin
 cp -a "$arch_bin" "$unready_xkbset_bin"
-make_failing_stub "$unready_xkbset_bin/xkbset"
+make_failing_stub "$unready_xkbset_bin/dwm-xkbset"
 unready_xkbset_output=$(PATH="$unready_xkbset_bin" \
 	XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
 printf '%s\n' "$unready_xkbset_output" | grep -Fqx \
-	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	user-session	x11	xkbset is installed, but no complete responsive XKB state is available'
+	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	user-session	x11	dwm-xkbset is installed, but no complete responsive XKB state is available'
 
 incomplete_xkb_input_bin=$work/incomplete-xkb-input-bin
 cp -a "$arch_bin" "$incomplete_xkb_input_bin"
@@ -436,7 +441,7 @@ incomplete_xkb_input_output=$(PATH="$incomplete_xkb_input_bin" \
 printf '%s\n' "$incomplete_xkb_input_output" | grep -Fqx \
 	'capability	input	input-devices	Input devices	available	user-session	dwm-settings-input	Stable device discovery, preview, reset, and persistence are available'
 printf '%s\n' "$incomplete_xkb_input_output" | grep -Fqx \
-	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	user-session	x11	xkbset is installed, but no complete responsive XKB state is available'
+	'capability	appearance	accessibility-input	Keyboard and pointer access	unavailable	user-session	x11	dwm-xkbset is installed, but no complete responsive XKB state is available'
 
 unready_accessibility_input_bin=$work/unready-accessibility-input-bin
 cp -a "$arch_bin" "$unready_accessibility_input_bin"

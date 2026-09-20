@@ -132,7 +132,7 @@ case " $* " in
 esac
 EOF
 
-cat >"$work/bin/xkbset" <<'EOF'
+cat >"$work/bin/dwm-xkbset" <<'EOF'
 #!/bin/sh
 set -eu
 command_arg=${1:-}
@@ -171,7 +171,7 @@ m) mouse=1 ;;
 *) exit 2 ;;
 esac
 printf '%s %s %s %s %s\n' "$accessx" "$sticky" "$slow" "$bounce" "$mouse" >"$state"
-printf 'xkbset %s\n' "$command_arg" >>"$TEST_LOG"
+printf 'dwm-xkbset %s\n' "$command_arg" >>"$TEST_LOG"
 EOF
 
 cat >"$work/bin/udevadm" <<'EOF'
@@ -272,7 +272,7 @@ grep -Fqx $'setting\taccessx\tmouse-keys\tMouse keys\tboolean\t0\t0\t0\t1' "$wor
 
 env "${env_common[@]}" TEST_XKBSET_INCOMPLETE=1 "$helper" discover \
 	>"$work/discover-incomplete-xkbset"
-grep -Fqx $'unsupported\taccessx\tbounce-keys\txkbset did not report this XKB control' \
+grep -Fqx $'unsupported\taccessx\tbounce-keys\tdwm-xkbset did not report this XKB control' \
 	"$work/discover-incomplete-xkbset"
 grep -Fq $'setting\taccessx\tsticky-keys\tSticky keys\tboolean' \
 	"$work/discover-incomplete-xkbset"
@@ -281,7 +281,7 @@ env "${env_common[@]}" TEST_XKBSET_EMPTY=1 "$helper" discover \
 [ "$(grep -Fc $'unsupported\taccessx\t' "$work/discover-empty-xkbset")" = 5 ]
 env "${env_common[@]}" TEST_XKBSET_HANG=1 "$helper" discover \
 	>"$work/discover-hanging-xkbset"
-grep -Fqx $'unsupported\taccessx\taccessx\tInstall xkbset and open Settings from X11' \
+grep -Fqx $'unsupported\taccessx\taccessx\tKeyboard accessibility controls need dwm-xkbset and an X11 session' \
 	"$work/discover-hanging-xkbset"
 grep -Fq $'pointer\tMouse, Wild [Name]' "$work/discover-hanging-xkbset"
 grep -Fq $'pointer	Mouse, Wild [Name]' "$work/discover"
@@ -322,7 +322,7 @@ grep -Fq $'unsupported\t'"$keyboard_key"$'\tkeyboard-layout\tsetxkbmap is unavai
 	"$work/discover-no-setxkbmap"
 grep -Fq $'unsupported\t'"$keyboard_key"$'\tmodifier-options\tsetxkbmap is unavailable' \
 	"$work/discover-no-setxkbmap"
-grep -Fqx $'unsupported\taccessx\taccessx\tInstall xkbset and open Settings from X11' \
+grep -Fqx $'unsupported\taccessx\taccessx\tKeyboard accessibility controls need dwm-xkbset and an X11 session' \
 	"$work/discover-no-setxkbmap"
 env "${env_common[@]}" TEST_FAIL_QUERY=1 "$helper" discover >"$work/discover-query-failure"
 grep -Fq $'unsupported\t'"$keyboard_key"$'\tkeyboard-layout\tsetxkbmap could not query this keyboard' \

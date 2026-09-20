@@ -45,16 +45,28 @@ need_setxkbmap() {
 	command -v setxkbmap >/dev/null 2>&1 || die "setxkbmap is unavailable"
 }
 
+# dwm-xkbset is Lyona's own XKB accessibility helper (xkbset is AUR-only). It
+# is normally on PATH; a checkout that has not been installed keeps it beside
+# this script.
+xkbset_path() {
+	if command -v dwm-xkbset 2>/dev/null; then
+		return 0
+	fi
+	local sibling="${BASH_SOURCE[0]%/*}/dwm-xkbset"
+	[[ -x $sibling ]] && printf '%s\n' "$sibling"
+}
+
 need_xkbset() {
-	command -v xkbset >/dev/null 2>&1 || die "xkbset is unavailable"
+	xkbset_path >/dev/null || die "dwm-xkbset is unavailable"
 	command -v timeout >/dev/null 2>&1 || die "timeout is unavailable"
 	[[ -n ${DISPLAY:-} ]] || die "DISPLAY is not set"
 }
 
 run_xkbset() {
-	local timeout_path
+	local timeout_path xkbset
 	timeout_path=$(command -v timeout) || return 127
-	"$timeout_path" --signal=TERM --kill-after=1 2 xkbset "$@"
+	xkbset=$(xkbset_path) || return 127
+	"$timeout_path" --signal=TERM --kill-after=1 2 "$xkbset" "$@"
 }
 
 accessibility_label() {
@@ -240,7 +252,7 @@ discover() {
 	scan_devices
 	printf 'input-protocol\t1\n'
 	printf 'device\t%s\tsession\taccessibility\tKeyboard accessibility\n' "$accessibility_key"
-	if command -v xkbset >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 &&
+	if xkbset_path >/dev/null && command -v timeout >/dev/null 2>&1 &&
 		accessibility_query=$(LC_ALL=C run_xkbset q 2>/dev/null); then
 		for setting in accessx-shortcuts sticky-keys slow-keys bounce-keys mouse-keys; do
 			case $setting in
@@ -254,11 +266,11 @@ discover() {
 				if ! default=$(persisted_default "$accessibility_key" "$setting"); then default=$value; fi
 				emit_setting "$accessibility_key" "$setting" "$label" boolean "$value" "$default" 0 1
 			else
-				emit_unsupported "$accessibility_key" "$setting" "xkbset did not report this XKB control"
+				emit_unsupported "$accessibility_key" "$setting" "dwm-xkbset did not report this XKB control"
 			fi
 		done
 	else
-		emit_unsupported "$accessibility_key" accessx "Install xkbset and open Settings from X11"
+		emit_unsupported "$accessibility_key" accessx "Keyboard accessibility controls need dwm-xkbset and an X11 session"
 	fi
 	for index in "${!device_ids[@]}"; do
 		id=${device_ids[$index]}

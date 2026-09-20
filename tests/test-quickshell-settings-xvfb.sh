@@ -12,7 +12,7 @@ screen_dimensions=${screen_geometry#*x}
 expected_window_height=${DWM_SETTINGS_EXPECTED_WINDOW_HEIGHT:-${screen_dimensions%%x*}}
 
 for command_name in Xvfb dbus-monitor dbus-run-session glib-compile-schemas \
-	gsettings inotifywait python3 quickshell xdotool xinput xkbset xprop pgrep getconf; do
+	gsettings inotifywait python3 quickshell xdotool xinput xprop pgrep getconf; do
 	if ! command -v "$command_name" >/dev/null 2>&1; then
 		printf 'SKIP: %s is unavailable\n' "$command_name"
 		exit 77
@@ -361,7 +361,8 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-appearance" "$repo/scripts/dwm-settings-wallpaper" \
 	"$repo/scripts/dwm-settings-font" \
 	"$repo/scripts/dwm-settings-theme" "$repo/scripts/dwm-cursor-reload" \
-	"$repo/scripts/dwm-settings-toolkit" \
+	"$repo/scripts/dwm-settings-toolkit" "$repo/scripts/dwm-xkbset" \
+	"$repo/scripts/dwm-settings-picom" \
 	"$repo/scripts/dwm-accessibility-settings" \
 	"$repo/scripts/theme-apply.sh" \
 	"$repo/scripts/dwm-xsettings-config.sh" \
@@ -1230,7 +1231,7 @@ input_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_
 # reset -- end to end through the real dwm-settings-input helper, not a
 # hand-written state file. See docs (Phase 7, done -- CHANGELOG.md).
 xkb_sticky_value() {
-	sticky_state=$(DISPLAY=$display LC_ALL=C xkbset q |
+	sticky_state=$(DISPLAY=$display LC_ALL=C "$repo/scripts/dwm-xkbset" q |
 		awk -F ' = ' '$1 == "Sticky-Keys" { print $2 }')
 	case $sticky_state in On) printf '1\n' ;; Off) printf '0\n' ;; *) return 1 ;; esac
 }
@@ -1323,9 +1324,9 @@ done
 [ -z "$preview_state" ]
 [ "$sticky_value" = "$sticky_expected" ]
 
-# apply-saved must actually re-drive xkbset with the persisted value, not
+# apply-saved must actually re-drive dwm-xkbset with the persisted value, not
 # just trust that the live state already matches.
-if [ "$sticky_baseline" = 1 ]; then DISPLAY=$display xkbset st; else DISPLAY=$display xkbset -st; fi
+if [ "$sticky_baseline" = 1 ]; then DISPLAY=$display "$repo/scripts/dwm-xkbset" st; else DISPLAY=$display "$repo/scripts/dwm-xkbset" -st; fi
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 	"$data_home/lyona/scripts/dwm-settings-input" apply-saved
 sticky_live=$(xkb_sticky_value)

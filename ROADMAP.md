@@ -355,6 +355,9 @@ Make the desktop appearance and interaction model configurable as one system.
   - `check-quickshell-settings-xvfb` `SKIP`s in this sandbox because `xkbset`
     (AUR-only, no AUR helper here) is unavailable — an environment gap, not a
     Phase 5 defect; confirmed unchanged from `main` before this branch.
+    *Resolved:* Lyona no longer uses `xkbset`; the in-tree `scripts/dwm-xkbset`
+    replaces it, so this suite runs without an AUR package
+    (`docs/AUR-PACKAGES.md`).
 
 ## Phase 6: System Management
 
@@ -457,7 +460,8 @@ without turning Quickshell into an unrestricted administration console.
     on real Arch/CachyOS hardware before relying on this as a substitute.
   - `check-quickshell-settings-xvfb` still `SKIP`s in this sandbox because
     `xkbset` (AUR-only, no AUR helper here) is unavailable — carried forward
-    from Phase 5, unchanged, not a Phase 6 defect.
+    from Phase 5, unchanged, not a Phase 6 defect. *Resolved:* the in-tree
+    `scripts/dwm-xkbset` replaces `xkbset` (`docs/AUR-PACKAGES.md`).
   - Screenshots of the new information/storage/security/recovery views are
     not committed alongside this evidence (unlike upstream's own
     `docs/evidence/p6-*-view.png`); take Lyona's own before release if

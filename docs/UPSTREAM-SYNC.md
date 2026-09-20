@@ -133,6 +133,8 @@ complete list, including planned ones:
 | `scripts/dwm-system-management` | `check-system-management` | Sync Phase 1 |
 | `scripts/dwm-settings-display-profiles` | `check-display-profiles` | Sprint 3 S3-02 |
 | `scripts/dwm-cursor-reload` | `check-cursor-reload` | Sprint 3 S3-06 |
+| `scripts/dwm-xkbset` | `check-xkbset` | AUR removal (`docs/AUR-PACKAGES.md`); replaces the AUR-only `xkbset` |
+| `scripts/dwm-settings-picom` | `check-picom`, `check-picom-xvfb` | Sprint 4 S4-01 |
 | `scripts/dwm-settings-picom` | `check-picom`, `check-picom-xvfb` | Sprint 4 S4-01 |
 
 Don't add another without a row here.

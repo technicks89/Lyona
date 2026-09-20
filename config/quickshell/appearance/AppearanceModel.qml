@@ -38,7 +38,8 @@ Scope {
     property bool inventoryWatchSawEvent: false
     property bool inventoryWatchFailed: false
     property bool inventoryWatchRestartPending: false
-    property bool compositorWatchReady: false
+    readonly property alias picom: picomModel
+    PicomModel { id: picomModel; active: root.settingsVisible }
     property string wallpaperState: "idle"
     property string wallpaperPath: ""
     property string wallpaperFit: "fill"
@@ -333,10 +334,8 @@ Scope {
         root.inventoryWatchSawEvent = false;
         root.inventoryWatchFailed = true;
         root.inventoryWatchRestartPending = false;
-        root.compositorWatchReady = false;
         inventoryWatchRestartTimer.stop();
         inventoryWatchProcess.running = false;
-        compositorWatcher.stop();
     }
 
     function parseInventory(text) {
@@ -401,17 +400,12 @@ Scope {
         }
         root.inventorySelections = selections;
         root.inventoryCandidates = candidates;
-        root.compositorWatchReady = selections.compositor.value === "picom";
         if (root.settingsVisible && !root.inventoryWatchFailed && watch.state === "available")
             root.startInventoryWatcher();
         if (watch.state !== "available") {
             inventoryWatchRestartTimer.stop();
             inventoryWatchProcess.running = false;
         }
-        if (root.settingsVisible && root.compositorWatchReady)
-            compositorWatcher.start();
-        if (!root.compositorWatchReady)
-            compositorWatcher.stop();
     }
 
     function parseSnapshot(text) {
@@ -590,6 +584,7 @@ Scope {
     }
 
     function refreshAll(forcePreviewStatus) {
+        picomModel.refresh();
         root.refreshSnapshot();
         root.refreshInventory();
         root.refreshPreviewStatus(forcePreviewStatus === true);
@@ -632,7 +627,6 @@ Scope {
         inventoryWatchProcess.running = false;
         root.inventoryWatchReady = false;
         root.inventoryWatchSawEvent = false;
-        compositorWatcher.stop();
         inventoryProcess.running = false;
         wallpaperStatusProcess.running = false;
         root.wallpaperStatusPending = false;
@@ -1744,15 +1738,6 @@ Scope {
                         || root.inventoryWatchState === "idle")) inventoryWatchRestartTimer.restart();
             }
         }
-    }
-
-    WatchedProcess {
-        id: compositorWatcher
-
-        command: Commands.settingsAppearanceCommand("watch-compositor", [])
-        active: root.settingsVisible && root.compositorWatchReady
-        settleInterval: 100
-        onSettled: root.refreshInventory(true)
     }
 
     Process {

@@ -1,0 +1,189 @@
+#!/usr/bin/python3
+"""Query and toggle the XKB accessibility controls: AccessX shortcuts and
+sticky, slow, bounce and mouse keys.
+
+Lyona ships this in tree instead of depending on `xkbset`, which is only
+available from the AUR. It speaks the small subset of `xkbset` that Settings
+uses, so `dwm-xkbset q` prints `Label = On|Off` lines and `dwm-xkbset st` /
+`dwm-xkbset -st` turn a control on or off. It talks to the X server through
+libX11's XKB calls with ctypes, like dwm-cursor-reload, so no extra package
+is needed.
+"""
+
+import ctypes as c
+import sys
+
+# X11/extensions/XKB.h: the enabled-controls bits this helper manages.
+XKB_SLOW_KEYS = 1 << 1
+XKB_BOUNCE_KEYS = 1 << 2
+XKB_STICKY_KEYS = 1 << 3
+XKB_MOUSE_KEYS = 1 << 4
+XKB_ACCESSX_KEYS = 1 << 6
+XKB_USE_CORE_KBD = 0x0100
+XKB_ALL_CONTROLS_MASK = 0xF8001FFF
+
+# option -> (control bit, label printed by `q`), in the order `q` prints them.
+CONTROLS = {
+    "a": (XKB_ACCESSX_KEYS, "Accessibility Features (AccessX)"),
+    "st": (XKB_STICKY_KEYS, "Sticky-Keys"),
+    "sl": (XKB_SLOW_KEYS, "Slow-Keys"),
+    "bo": (XKB_BOUNCE_KEYS, "Bounce-Keys"),
+    "m": (XKB_MOUSE_KEYS, "Mouse-Keys"),
+}
+
+USAGE = """usage: dwm-xkbset [q] [OPTION | -OPTION]...
+
+  q       print the state of each control as "Label = On|Off"
+  a       AccessX shortcuts       st  sticky keys
+  sl      slow keys               bo  bounce keys
+  m       mouse keys
+
+An option turns the control on; the same option with a leading "-" turns it
+off. Options are applied in order, then `q` reports the resulting state.
+"""
+
+
+class Mods(c.Structure):
+    _fields_ = [
+        ("mask", c.c_ubyte),
+        ("real_mods", c.c_ubyte),
+        ("vmods", c.c_ushort),
+    ]
+
+
+class ControlsHead(c.Structure):
+    """XkbControlsRec up to enabled_ctrls; only that prefix is ever read."""
+
+    _fields_ = [
+        ("mk_dflt_btn", c.c_ubyte),
+        ("num_groups", c.c_ubyte),
+        ("groups_wrap", c.c_ubyte),
+        ("internal", Mods),
+        ("ignore_lock", Mods),
+        ("enabled_ctrls", c.c_uint),
+    ]
+
+
+class DescHead(c.Structure):
+    """XkbDescRec up to ctrls; only that prefix is ever read."""
+
+    _fields_ = [
+        ("dpy", c.c_void_p),
+        ("flags", c.c_ushort),
+        ("device_spec", c.c_ushort),
+        ("min_key_code", c.c_ubyte),
+        ("max_key_code", c.c_ubyte),
+        ("ctrls", c.POINTER(ControlsHead)),
+    ]
+
+
+def binding(lib, name, result, *args):
+    fn = getattr(lib, name)
+    fn.restype, fn.argtypes = result, args
+    return fn
+
+
+def parse(arguments):
+    """Return (changes, query) or raise ValueError for an unknown option."""
+    changes, query = [], False
+    for argument in arguments:
+        if argument == "q":
+            query = True
+            continue
+        enable = not argument.startswith("-")
+        name = argument if enable else argument[1:]
+        if name not in CONTROLS:
+            raise ValueError(f"unknown option: {argument}")
+        changes.append((CONTROLS[name][0], enable))
+    return changes, query
+
+
+def run(changes, query):
+    x11 = c.CDLL("libX11.so.6")
+    display = binding(x11, "XOpenDisplay", c.c_void_p, c.c_char_p)(None)
+    if not display:
+        raise RuntimeError("cannot open DISPLAY")
+    close = binding(x11, "XCloseDisplay", c.c_int, c.c_void_p)
+    try:
+        major, minor = c.c_int(1), c.c_int(0)
+        supported = binding(
+            x11,
+            "XkbQueryExtension",
+            c.c_int,
+            c.c_void_p,
+            c.c_void_p,
+            c.c_void_p,
+            c.c_void_p,
+            c.POINTER(c.c_int),
+            c.POINTER(c.c_int),
+        )(display, None, None, None, c.byref(major), c.byref(minor))
+        if not supported:
+            raise RuntimeError("the X server has no XKB extension")
+        change = binding(
+            x11,
+            "XkbChangeEnabledControls",
+            c.c_int,
+            c.c_void_p,
+            c.c_uint,
+            c.c_uint,
+            c.c_uint,
+        )
+        for bit, enable in changes:
+            if not change(display, XKB_USE_CORE_KBD, bit, bit if enable else 0):
+                raise RuntimeError("the X server rejected the control change")
+        binding(x11, "XSync", c.c_int, c.c_void_p, c.c_int)(display, 0)
+        if not query:
+            return []
+        allocate = binding(x11, "XkbAllocKeyboard", c.POINTER(DescHead))
+        get_controls = binding(
+            x11,
+            "XkbGetControls",
+            c.c_int,
+            c.c_void_p,
+            c.c_uint,
+            c.POINTER(DescHead),
+        )
+        free = binding(
+            x11, "XkbFreeKeyboard", None, c.POINTER(DescHead), c.c_uint, c.c_int
+        )
+        description = allocate()
+        if not description:
+            raise RuntimeError("cannot allocate an XKB description")
+        try:
+            if get_controls(display, XKB_ALL_CONTROLS_MASK, description) != 0:
+                raise RuntimeError("cannot read the XKB controls")
+            enabled = description.contents.ctrls.contents.enabled_ctrls
+        finally:
+            free(description, XKB_ALL_CONTROLS_MASK, 1)
+        return [
+            f"{label} = {'On' if enabled & bit else 'Off'}"
+            for bit, label in CONTROLS.values()
+        ]
+    finally:
+        close(display)
+
+
+def main(arguments):
+    if any(argument in ("-h", "--help") for argument in arguments):
+        sys.stdout.write(USAGE)
+        return 0
+    try:
+        changes, query = parse(arguments)
+    except ValueError as error:
+        sys.stderr.write(f"dwm-xkbset: {error}\n{USAGE}")
+        return 2
+    if not changes and not query:
+        sys.stderr.write(USAGE)
+        return 2
+    try:
+        lines = run(changes, query)
+    except (OSError, RuntimeError) as error:
+        sys.stderr.write(f"dwm-xkbset: {error}\n")
+        return 1
+    for line in lines:
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
