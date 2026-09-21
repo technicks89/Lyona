@@ -52,6 +52,18 @@ for relative, visible in (("defaults/AutostartModel.qml", "settingsVisible"),
                         "    onSnapshotPendingChanged: if (!snapshotPending && !snapshotProcess.running && "
                         + visible + ") testQueuedGap = true")
     path.write_text(text)
+# The 200 percent checks measure text against fixed-size rows, so they depend on
+# the font's line height: Noto Sans (installed on the CI image and on Lyona
+# systems) is about 1.36 times its size, FreeSans (a common fallback) about 1.2.
+# Pin every UiText to Noto Sans's line height so a run gives the same answer on
+# any host instead of passing where the font happens to be short.
+ui_text = qml / "core/UiText.qml"
+ui_text.write_text(replace_once(
+    ui_text.read_text(), "    verticalAlignment: Text.AlignVCenter\n",
+    "    verticalAlignment: Text.AlignVCenter\n"
+    "    lineHeightMode: Text.FixedHeight\n"
+    "    lineHeight: Math.ceil(font.pixelSize * 1.362)\n",
+))
 shell = qml / "shell.qml"
 text = shell.read_text()
 if not text.rstrip().endswith("}"):

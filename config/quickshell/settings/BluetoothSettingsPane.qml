@@ -66,13 +66,17 @@ ColumnLayout {
             readonly property bool thisBusy: root.bluetoothModel.busy
                 && root.bluetoothModel.actionAddress === modelData.address
             width: deviceList.width
-            height: Theme.dp(68)
+            // The two text lines scale with the font, so the row grows with them
+            // instead of clipping the address line at large text sizes.
+            height: Math.max(Theme.dp(68), rowContent.implicitHeight + Theme.spacingSm * 2)
             color: Theme.controlNormalFill
             border.color: thisBusy ? Theme.accent : Theme.controlNormalBorder
             border.width: Theme.controlBorderWidth
             radius: Theme.controlRadius
 
             RowLayout {
+                id: rowContent
+
                 anchors.fill: parent
                 anchors.margins: Theme.spacingSm
                 spacing: Theme.spacingSm

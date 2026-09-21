@@ -1146,6 +1146,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings > Bluetooth device rows no longer clip their address line at large
+  text sizes. The row had a fixed height (`Theme.dp(68)`) while its two text
+  lines scale with the font, so at 200 percent text with Noto Sans (a line
+  height of about 1.36, against about 1.2 for the FreeSans fallback) the second
+  line ran a few pixels past the row. The row now grows with its content, never
+  below the old height. The responsiveness harness had passed only where the
+  host's font is short, and failed in the full suite's CI image; its fixture now
+  pins every `UiText` to Noto Sans's line height so a local run answers the same
+  way as CI.
 - `tests/test-seed-default-apps.sh` no longer depends on the host lacking a real
   Celluloid. Its "handler whose program is not installed" case only removed a
   stub from its own `PATH`, so on a machine with Celluloid installed (the full
