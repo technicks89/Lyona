@@ -282,6 +282,7 @@ main(int argc, char **argv)
 	const char *popup_type = NULL;
 	int swallow_terminal = 0;
 	int fixed_size = 0;
+	int extreme_aspect = 0;
 	pid_t child_pid = -1;
 
 	signal(SIGTERM, stop);
@@ -450,6 +451,8 @@ main(int argc, char **argv)
 		swallow_terminal = 1;
 	else if (argc == 2 && strcmp(argv[1], "fixed") == 0)
 		fixed_size = 1;
+	else if (argc == 2 && strcmp(argv[1], "extreme-aspect") == 0)
+		extreme_aspect = 1;
 
 	win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
 		panel ? 1 : 20, panel ? 1 : 20,
@@ -493,6 +496,17 @@ main(int argc, char **argv)
 	}
 	if (transient_for != None)
 		XSetTransientForHint(dpy, win, transient_for);
+	if (extreme_aspect) {
+		/* An aspect window so narrow that the aspect clamp rounds one side to 0. */
+		XSizeHints hints = {0};
+
+		hints.flags = PAspect;
+		hints.min_aspect.x = 1;
+		hints.min_aspect.y = 1;
+		hints.max_aspect.x = 1;
+		hints.max_aspect.y = 2000000000;
+		XSetWMNormalHints(dpy, win, &hints);
+	}
 	if (fixed_size) {
 		XSizeHints hints = {0};
 

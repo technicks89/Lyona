@@ -683,6 +683,10 @@ applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact)
 		if (c->maxh)
 			*h = MIN(*h, c->maxh);
 	}
+	/* The aspect clamp above can round a side to 0 (a tiny max aspect), and a
+	 * zero-sized configure is a BadValue that ends the session. */
+	*w = MAX(1, *w);
+	*h = MAX(1, *h);
 	return *x != c->x || *y != c->y || *w != c->w || *h != c->h;
 }
 

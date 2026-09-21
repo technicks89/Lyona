@@ -1153,6 +1153,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A Settings pane can no longer be hidden forever by a read that never finishes
+  (#76). Since the loading gate (S5-01) a pane stays hidden and disabled until
+  every read it waits on has finished, with no upper bound, so one hung helper
+  left it on "Loading settings..." for as long as it hung (the System pane can
+  wait about 12 s on its own when a discovery watch is slow).
+  `DeferredSettingsPane` now has a `loadingTimeoutMs` cap (5 s): when it passes
+  with the pane selected and its component ready, the pane is presented with
+  what it has. The fast path is unchanged. New stages in the responsiveness
+  harness create a pane whose reads never finish and check that it is hidden
+  until its cap and usable after; removing the cap fails them.
+
 - `tests/test-quickshell-system-management-xvfb.sh` no longer races the
   discovery subscriptions. It asserted the native provider and state statuses
   (`available`) before waiting for each discovery domain to connect, so on a
@@ -1203,6 +1214,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   watches that Sync Sprint 2 added. It rejected them as invalid arguments, so
   `make check-quickshell-update-ui-xvfb` had failed since the Sprint 2 merge even
   though every QML assertion passed.
+- The full-suite workflow and `scripts/ci-local.sh` pick the installable packages
+  with one `pacman -Slq` query instead of one `pacman -Si` per package (#79).
+  For the 114 packages in the list the loop took 22 s in the CI image and the
+  single call under a second, and both select the same 111 (the three multilib
+  gaming packages are absent from the container's repositories either way). The
+  workflow step was run as the workflow's shell runs it and the generated
+  Dockerfile was built with a list of real, bogus and multilib names.
+
 - The Gear Lever installer now verifies the Flathub remote before it installs
   (Sync Sprint 5 S5-02, ported from upstream `#334` `dd64bbf`, issue `#332`).
   It refused a `flathub` remote with the wrong URL already, but accepted one
@@ -1213,9 +1232,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   and verifies it again, and `scripts/install-gearlever` calls it right before
   `flatpak install`. Lyona adaptation: an app that is already installed exits
   before the helper, so a remote problem never makes an installed app report a
-  setup failure. Not verified against a real Flatpak here (it is not installed
-  on the development machine); the tests script the `flatpak remotes` output
-  in upstream's column format.
+  setup failure. The tests script the `flatpak remotes` output in upstream's
+  column format; that format was then checked against real Flatpak 1.18.2 in
+  the CI image (it prints `disabled,no-gpg-verify` comma-joined, as parsed), and
+  the helper refused an unsigned, a disabled and a wrong-URL `flathub` remote
+  and added then verified the official one (#80).
 - `check-deps.sh` now recognises every terminal `dwm-terminal` can launch
   (Sync Sprint 4 S4-05, ported in part from upstream `#255`/`902a138`). Its
   fallback list stopped at Alacritty, Kitty and st, so a machine whose only
@@ -1227,6 +1248,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   declined: it is packaged in neither the official repositories nor the AUR
   (re-checked 2026-09-20), and promoting it to the first probe would make
   `dwm-terminal` miss on every launch. The default stays `alacritty`.
+
+- `scripts/install-gearlever` now finds `dwm-flatpak-setup` with `CDPATH=''`,
+  like the repo's other scripts. With `CDPATH` exported and a matching
+  directory on it, `cd` printed a path, the helper lookup returned two lines and
+  the helper was not found (exit 127), which `install.sh` only reports as a
+  warning (#80). New case in `tests/test-install-gearlever.sh`.
 
 - Fix two installer and session start-up problems (Sync Sprint 4 S4-04,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
@@ -1276,6 +1303,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   process substitution, which captures its PID synchronously and keeps it
   valid regardless of whether the process has since exited. The scan also no
   longer inherits the parent shell's stdin.
+- dwm no longer exits when an X client asks for an extreme aspect ratio
+  (`applysizehints()`, an issue that predates Sprint 5). With a tiny maximum
+  aspect and no minimum size the aspect clamp rounded a side to 0, the
+  zero-sized `XConfigureWindow` came back as BadValue, and `xerror()` treated it
+  as fatal, so any X client could end the session (#81). The result is now
+  floored at 1x1. New `extreme-aspect` client mode and case in
+  `tests/test-xvfb-runtime.sh`, which fails on the unpatched build.
+
 - Document the command menu's `menu open|close|toggle|summon` IPC surface,
   which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
   asserted the documentation but nothing had ever satisfied it, so

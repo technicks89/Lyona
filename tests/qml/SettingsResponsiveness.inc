@@ -9,6 +9,8 @@
     property int loadingFrames: 0
     property var loadingBounds: []
     property int responseStage: 0
+    property var capPane: null
+    property double capStarted: 0
     property int scrollFrames: 0
     property real scrollStartY: 0
     property var scrollPane: null
@@ -23,6 +25,11 @@
     property var scaleOversizedPopup: null
     property var scaleRows: []
     property var scaleBluetoothPane: null
+    // The content of the pane the loading-cap stage creates.
+    Component {
+        id: capProbe
+        Rectangle { width: 10; height: 10 }
+    }
     function responseCheck(ok, detail) {
         if (!ok) {
             console.error("Responsiveness FAILED: " + detail);
@@ -364,6 +371,32 @@
                 for (const row of root.scaleRows) row.destroy();
                 root.scaleBluetoothPane.destroy();
                 settingsModel.close();
+                root.responseStage = 19;
+            } else if (root.responseStage === 19) {
+                // The loading gate has an upper bound: a pane whose reads never
+                // finish is presented anyway once its cap passes. A fresh loader
+                // is needed (every real pane has presented by now), held loading
+                // for good and given a short cap of its own.
+                const capComponent = Qt.createComponent("settings/DeferredSettingsPane.qml");
+                root.capPane = capComponent.createObject(settingsWindow.contentItem, {
+                    selected: true, windowVisible: true, dataLoading: true,
+                    loadingTimeoutMs: 800, sourceComponent: capProbe});
+                root.responseCheck(root.capPane !== null, "The loading-cap probe pane was created");
+                root.capStarted = Date.now();
+                root.responseStage = 20;
+            } else if (root.responseStage === 20) {
+                const pane = root.capPane;
+                const elapsed = Date.now() - root.capStarted;
+                if (!pane.presented) {
+                    root.responseCheck(pane.item === null || (pane.item.opacity === 0 && !pane.item.enabled),
+                        "A pane still loading stays hidden and disabled until its cap");
+                    root.responseCheck(elapsed < 4000, "A pane whose reads never finish was never presented");
+                    return;
+                }
+                root.responseCheck(elapsed >= 700, "The pane was presented before its cap: " + elapsed + " ms");
+                root.responseCheck(pane.item !== null && pane.item.opacity === 1 && pane.item.enabled,
+                    "The pane presented by its cap is visible and usable");
+                pane.destroy();
                 console.info("Settings responsiveness: PASS");
                 Qt.quit();
             }
