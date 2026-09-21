@@ -1203,6 +1203,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   watches that Sync Sprint 2 added. It rejected them as invalid arguments, so
   `make check-quickshell-update-ui-xvfb` had failed since the Sprint 2 merge even
   though every QML assertion passed.
+- The full-suite workflow and `scripts/ci-local.sh` pick the installable packages
+  with one `pacman -Slq` query instead of one `pacman -Si` per package (#79).
+  For the 114 packages in the list the loop took 22 s in the CI image and the
+  single call under a second, and both select the same 111 (the three multilib
+  gaming packages are absent from the container's repositories either way). The
+  workflow step was run as the workflow's shell runs it and the generated
+  Dockerfile was built with a list of real, bogus and multilib names.
+
 - The Gear Lever installer now verifies the Flathub remote before it installs
   (Sync Sprint 5 S5-02, ported from upstream `#334` `dd64bbf`, issue `#332`).
   It refused a `flathub` remote with the wrong URL already, but accepted one
