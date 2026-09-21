@@ -1153,6 +1153,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A Settings pane can no longer be hidden forever by a read that never finishes
+  (#76). Since the loading gate (S5-01) a pane stays hidden and disabled until
+  every read it waits on has finished, with no upper bound, so one hung helper
+  left it on "Loading settings..." for as long as it hung (the System pane can
+  wait about 12 s on its own when a discovery watch is slow).
+  `DeferredSettingsPane` now has a `loadingTimeoutMs` cap (5 s): when it passes
+  with the pane selected and its component ready, the pane is presented with
+  what it has. The fast path is unchanged. New stages in the responsiveness
+  harness create a pane whose reads never finish and check that it is hidden
+  until its cap and usable after; removing the cap fails them.
+
 - `tests/test-quickshell-system-management-xvfb.sh` no longer races the
   discovery subscriptions. It asserted the native provider and state statuses
   (`available`) before waiting for each discovery domain to connect, so on a
