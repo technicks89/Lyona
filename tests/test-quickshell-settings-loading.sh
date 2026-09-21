@@ -58,6 +58,11 @@ for relative, expression in (
      "|| root.toolkitStatusPending || root.fontStatusPending || picomModel.statusBusy"),
 ):
     need(relative, f"readonly property bool initialLoading: {expression}", "initialLoading")
+need("system/UpdateModel.qml",
+     "readonly property bool initialLoading: versionProcess.running || backupsProcess.running", "the update card's reads")
+need("settings/SettingsWindow.qml",
+     "dataLoading: root.systemManagementModel.initialLoading || root.updateModel.initialLoading",
+     "the System pane waits for the update card")
 need("appearance/PicomModel.qml",
      "readonly property bool statusBusy: statusProcess.running || root.pending", "statusBusy")
 need("settings/SettingsModel.qml",

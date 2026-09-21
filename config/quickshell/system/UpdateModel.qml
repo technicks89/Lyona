@@ -6,6 +6,10 @@ import qs.core
 Scope {
     id: root
 
+    // The local reads the update card shows (installed version, backups). Not the
+    // network `check`, which can be slow and is not needed for a first paint.
+    readonly property bool initialLoading: versionProcess.running || backupsProcess.running
+
     // Provider: can lyona-update/lyona-version be reached and trusted at all.
     property string providerState: "idle" // idle | available | offline | unknown | unavailable
     property string providerDetail: "Loading update status"

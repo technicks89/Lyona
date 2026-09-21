@@ -50,8 +50,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   which a refresh is about to run but nothing reports it. Lyona adaptations:
   the Appearance pane also waits on the toolkit provider and Picom (Lyona has
   no personalization provider), and upstream's `desktopUpdateModel` term is
-  dropped because that git-`main` updater is declined (D-8); the update card's
-  own reads happen at shell start. The responsiveness harness now delays the
+  dropped because that git-`main` updater is declined (D-8). (Lyona's own update
+  card is gated separately: see the System pane fix below.) The responsiveness harness now delays the
   display and input preview-recovery reads, the accessibility, panel and
   System-management reads and the notification policy, and asserts each pane
   stays hidden with an unchanged viewport until its data arrives, that no pane
@@ -1181,6 +1181,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `full-suite.yml`, so `make check` failed there. It now requires each workflow
   to take its packages from the right profile and to hard-code neither
   `quickshell` nor `qt6-declarative`.
+- The Settings > System pane now waits for the update card's own reads (#77).
+  Entering the section re-runs `updateModel.refresh()` and `refreshBackups()`,
+  but the pane only waited on the system-management model, so the installed
+  version and the "Available: ..." row could still change after the pane had
+  presented. `UpdateModel` has a read-only `initialLoading` for its local
+  reads (`versionProcess`, `backupsProcess`; not the network check) and the
+  System pane's `dataLoading` includes it. This also corrects the Sprint 5
+  entry above, which said those reads only happen at shell start. The
+  responsiveness harness delays the version read past the System snapshot and
+  checks the pane stays hidden until it finishes.
+
 - Settings > Bluetooth device rows no longer clip their address line at large
   text sizes. The row had a fixed height (`Theme.dp(68)`) while its two text
   lines scale with the font, so at 200 percent text with Noto Sans (a line

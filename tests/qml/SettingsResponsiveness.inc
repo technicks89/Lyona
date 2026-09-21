@@ -4,6 +4,7 @@
     property bool checkedInputRecovery: false
     property bool checkedPolicyRead: false
     property bool checkedSystemRead: false
+    property bool checkedUpdateRead: false
     property string delayedSection: ""
     property int delayedFrames: 0
     property int loadingFrames: 0
@@ -121,6 +122,7 @@
                     root.delayedFrames = 0;
                     if (section.id === "input") settingsModel.recoverInputPreview();
                     if (section.id === "appearance") notificationModel.policyState = "loading";
+                    if (section.id === "system") settingsModel.testIgnoreSystemModel = true;
                     settingsModel.selectSection(section.id);
                     if (section.id === "system") systemManagementModel.refresh();
                     if (section.id === "defaults") {
@@ -157,6 +159,14 @@
                     root.checkedSystemRead = true;
                     root.delayedFrames++;
                 }
+                if (pane && section.id === "system" && !pane.parent.presented && updateModel.initialLoading) {
+                    // The System pane's own model is ignored for this stage (the
+                    // fixture switch), so only the update card's version read can
+                    // be what keeps the pane hidden.
+                    root.responseCheck(pane.opacity === 0 && !pane.enabled,
+                        "The update card's version read keeps System hidden");
+                    root.checkedUpdateRead = true;
+                }
                 if (section.id === "appearance" && pane && !pane.parent.presented
                         && !appearanceModel.initialLoading && !settingsModel.busy
                         && !settingsModel.capabilityRefreshPending
@@ -180,6 +190,8 @@
                 root.responseCheck(!settingsWindow.testEarlyPresentation, "First presentation waits for every pending provider");
                 root.responseCheck(root.checkedDisplayRecovery && root.checkedInputRecovery,
                     "Exercised both delayed preview-recovery reads");
+                root.responseCheck(root.checkedUpdateRead,
+                    "Exercised the update card's version read finishing after the System snapshot");
                 root.responseCheck(root.checkedPolicyRead && root.checkedSystemRead,
                     "Exercised the notification policy and System snapshot initial reads");
                 root.responseCheck(!autostartModel.testQueuedGap && !defaultsModel.testQueuedGap

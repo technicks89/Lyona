@@ -12,7 +12,7 @@ def replace_once(text, old, new):
 qml = Path(sys.argv[1])
 model = qml / "settings/SettingsModel.qml"
 text = replace_once(model.read_text(), "id: root",
-                    "id: root\n    property bool testInitialLoading: false")
+                    "id: root\n    property bool testInitialLoading: false\n    property bool testIgnoreSystemModel: false")
 for method, counter in (
     ("activateSection(id)", "testActivations"),
     ("refreshDisplays()", "testDisplayReads"),
@@ -40,6 +40,7 @@ text = replace_once(
     'if (action === "preview-status" && (helper === "dwm-settings-display" || helper === "dwm-settings-input")) return ["sleep", "0.75"];\n'
     '        if (action === "status" && (helper === "dwm-accessibility-settings" || helper === "dwm-panel-settings")) return ["sleep", "0.75"];\n'
     '        if (helper === "dwm-system-management" && action.indexOf("snapshot") === 0) return ["sleep", "0.75"];\n'
+    '        if (helper === "lyona-version" && action === "status") return ["sleep", "3"];\n'
     '        return ["true"];\n        const argv = args || [];',
 )
 commands.write_text(text)
@@ -76,6 +77,10 @@ shell.write_text(text[:end] + Path(sys.argv[2]).read_text() + text[end:])
 window = qml / "settings/SettingsWindow.qml"
 text = window.read_text().replace(
     "dataLoading: ", "dataLoading: root.settingsModel.testInitialLoading || ")
+# The System pane also waits on its own model, which stays busy for seconds in
+# this harness; the harness can drop that term to see the update card's alone.
+text = replace_once(text, "root.systemManagementModel.initialLoading || root.updateModel.initialLoading",
+                    "(!root.settingsModel.testIgnoreSystemModel && root.systemManagementModel.initialLoading) || root.updateModel.initialLoading")
 text = replace_once(text, "id: root", """id: root
     property bool testEarlyPresentation: false
     function testPresentation(item) {
@@ -85,7 +90,7 @@ text = replace_once(text, "id: root", """id: root
         if (type.startsWith("InputSettingsPane")) pending = settingsModel.inputActionBusy || settingsModel.inputRefreshPending;
         if (type.startsWith("AppearanceSettingsPane")) pending = appearanceModel.initialLoading
             || accessibilityModel.initialLoading || panelSettingsModel.initialLoading || notificationModel.initialLoading;
-        if (type.startsWith("SystemSettingsPane")) pending = systemManagementModel.initialLoading;
+        if (type.startsWith("SystemSettingsPane")) pending = (!settingsModel.testIgnoreSystemModel && systemManagementModel.initialLoading) || updateModel.initialLoading;
         if (pending) {
             testEarlyPresentation = true;
             console.error("Responsiveness FAILED: First presentation preceded provider completion: " + type);
