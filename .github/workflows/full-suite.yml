@@ -73,10 +73,11 @@ jobs:
           # The hosted runner may lack some optional entries (for example the
           # multilib gaming packages); install what its repositories have and
           # let the owning tests skip the rest.
-          available=()
-          for package in "${packages[@]}"; do
-            pacman -Si -- "$package" >/dev/null 2>&1 && available+=("$package")
-          done
+          # One database query, not one `pacman -Si` per package (about 20 s).
+          mapfile -t available < <(
+            LC_ALL=C comm -12 <(pacman -Slq | LC_ALL=C sort -u) \
+              <(printf '%s\n' "${packages[@]}" | LC_ALL=C sort -u)
+          )
           pacman -S --noconfirm --needed "${available[@]}"
 
       - name: Prepare unprivileged runner

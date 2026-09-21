@@ -100,7 +100,9 @@ if ((refresh)) || ! docker image inspect "$image" >/dev/null 2>&1; then
 FROM $base_image
 COPY packages.txt /packages.txt
 RUN pacman -Syu --noconfirm --needed git \\
- && available=\$(for p in \$(cat /packages.txt); do pacman -Si -- "\$p" >/dev/null 2>&1 && printf '%s\\n' "\$p"; done) \\
+ && pacman -Slq | LC_ALL=C sort -u >/tmp/repo-packages.txt \\
+ && LC_ALL=C sort -u /packages.txt >/tmp/wanted-packages.txt \\
+ && available=\$(LC_ALL=C comm -12 /tmp/repo-packages.txt /tmp/wanted-packages.txt) \\
  && pacman -S --noconfirm --needed \$available \\
  && rm -rf /var/cache/pacman/pkg/*
 EOF
