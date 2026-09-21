@@ -37,13 +37,13 @@ without changing state. It also compares the mask constants with the system
 
 ## Everything else comes from the official repositories
 
-111 unique package names across every profile in `scripts/dwm-packages.sh` and
+113 unique package names across every profile in `scripts/dwm-packages.sh` and
 `archiso/packages.x86_64`:
 
 | Repository | Packages |
 | --- | --- |
 | `core` | 11 |
-| `extra` | 97 |
+| `extra` | 99 |
 | `multilib` | 3 (`steam`, `lib32-gamemode`, `lib32-mangohud`, the x86_64 gaming profile) |
 | AUR or anywhere else | **0** |
 

@@ -20,7 +20,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   name and their messages; a checkout that has not been installed finds it
   beside the script. `xkbset` is dropped from the `desktop-optional` profile
   and from `check-deps.sh`. The AUR helper (`yay`) that `install.sh`
-  bootstraps stays, by decision; no package Lyona installs uses it. All 107
+  bootstraps stays, by decision; no package Lyona installs uses it. All 113
   packages in the profiles and the live ISO resolve in `core`, `extra` or
   `multilib`. Two new checks: `make check-xkbset` runs the helper against a
   real X server and compares its masks with the system `XKB.h`, and
@@ -192,7 +192,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   full install profiles now install Celluloid, mpv, and sxiv (all in official
   `extra`, and on the live ISO too), and a new `scripts/seed-default-apps.sh`
   makes Celluloid the handler for audio and video, sxiv the handler for images,
-  and Thunar the handler for folders on a fresh account. It runs before Gear
+  and, when Thunar is installed, Thunar the handler for folders on a fresh
+  account. It runs before Gear
   Lever, which writes its own AppImage MIME preference file, and does nothing
   when a `mimeapps.list`, a desktop-specific `*-mimeapps.list`, or a legacy
   `defaults.list` already exists. Every handler is validated before anything is
