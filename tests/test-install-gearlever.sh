@@ -265,6 +265,19 @@ printf '\n' >"$state/user-remote"
 run_setup --user >"$work/user-setup.out"
 grep -Fq 'Flatpak and user Flathub are ready.' "$work/user-setup.out"
 
+# The helper is found by its own path even when CDPATH makes `cd` print one:
+# with a scripts directory earlier on CDPATH, an unguarded lookup lands in the
+# wrong directory and yields two lines.
+reset_flatpak
+printf '\n' >"$state/user-remote"
+mkdir -p "$work/cdpath/scripts"
+: >"$log"
+(cd "$repo" && CDPATH="$work/cdpath" PATH="$mock_bin:$PATH" \
+	MOCK_FLATPAK_LOG="$log" MOCK_FLATPAK_STATE="$state" MOCK_XDG_MIME_LOG="$mime_log" \
+	bash scripts/install-gearlever) >"$work/cdpath.out" 2>"$work/cdpath.err" ||
+	fail "install-gearlever failed with CDPATH set: $(cat "$work/cdpath.err")"
+grep -Eq '^install ' "$log" || fail 'install-gearlever did not install with CDPATH set'
+
 "$repo/install.sh" --dry-run --non-interactive --profile recommended \
 	>"$work/install-plan.out"
 grep -Fq 'Gear Lever: user-scoped Flathub install (it.mijorus.gearlever)' \
