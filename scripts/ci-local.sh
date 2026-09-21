@@ -94,7 +94,7 @@ mapfile -t packages < <(
 image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
 
 logdir=$(mktemp -d "${TMPDIR:-/tmp}/lyona-ci-local.XXXXXX")
-name=lyona-ci-$(date +%s)-$$
+name=lyona-ci-$(basename "$logdir")
 max_life=14400
 
 # What this run created, so the EXIT trap removes those and nothing else: the
@@ -233,6 +233,7 @@ if ((each)); then
 	' || status=$?
 	docker cp "$name:$test_root/each" "$logdir/each" >/dev/null 2>&1 || true
 	if ((status != 0)); then
+		[[ -d $logdir/each && ! -L $logdir/each ]] || exit "$status"
 		for log in "$logdir"/each/*.log; do
 			[[ -f $log && ! -L $log ]] || continue
 			grep -q . "$log" 2>/dev/null || continue
