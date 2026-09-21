@@ -133,13 +133,33 @@ assert_no_file "$mimeapps" 'a failed seed left a partial MIME file'
 no_partial_files
 mv "$work/sxiv.desktop" "$XDG_DATA_DIRS/applications/sxiv.desktop"
 
-# A desktop entry without its program is just as missing.
-mv "$work/bin/celluloid" "$work/celluloid.bin"
-if "$seed" >/dev/null 2>&1; then
+# A desktop entry without its program is just as missing. That is judged
+# against PATH, so run it with a PATH holding only the tools the script needs
+# and stub programs: a real Celluloid installed on the host (CI installs the
+# whole profile) must not be able to satisfy it.
+hermetic=$work/hermetic
+mkdir -p "$hermetic/tools" "$hermetic/programs"
+for tool in id python3 mkdir mktemp rm ln; do
+	ln -s "$(command -v "$tool")" "$hermetic/tools/$tool"
+done
+for app in celluloid sxiv thunar; do
+	cp "$work/bin/$app" "$hermetic/programs/$app"
+done
+run_hermetic() { PATH=$hermetic/tools:$hermetic/programs "$seed"; }
+rm -f "$mimeapps"
+# Control: with every program present, the hermetic PATH is enough to seed.
+run_hermetic >/dev/null 2>"$work/hermetic.err" ||
+	fail "seeding failed with the hermetic PATH: $(cat "$work/hermetic.err")"
+assert_file "$mimeapps"
+rm -f "$mimeapps"
+rm "$hermetic/programs/celluloid"
+if run_hermetic >/dev/null 2>"$work/noprogram.err"; then
 	fail 'a handler whose program is not installed was accepted'
 fi
+grep -Fq 'Missing default application: io.github.celluloid_player.Celluloid.desktop (celluloid)' \
+	"$work/noprogram.err" || fail 'the missing program was not named'
 assert_no_file "$mimeapps" 'a missing program left a partial MIME file'
-mv "$work/celluloid.bin" "$work/bin/celluloid"
+no_partial_files
 
 # A handler that advertises none of the wanted types is refused, not guessed at.
 cp "$XDG_DATA_DIRS/applications/sxiv.desktop" "$work/sxiv.saved"

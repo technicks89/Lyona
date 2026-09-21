@@ -1146,6 +1146,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `tests/test-seed-default-apps.sh` no longer depends on the host lacking a real
+  Celluloid. Its "handler whose program is not installed" case only removed a
+  stub from its own `PATH`, so on a machine with Celluloid installed (the full
+  suite's CI image) the real one satisfied the check and the case failed with
+  "a handler whose program is not installed was accepted". It now runs that case
+  with a `PATH` of only the tools the script needs plus stub programs, after a
+  control run proving the setup is sufficient.
 - A tiled selected window no longer covers floating windows and popups
   (`dwm.c` `raiseselectedclient()`, from the "updating floating windows" work
   of 2026-08-29). Every restack raised the selected client above the floating
