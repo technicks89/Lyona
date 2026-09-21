@@ -459,7 +459,9 @@ check-release-helper:
 	tests/test-release-helper.sh
 
 check-xvfb-runtime: all
-	tests/test-xvfb-runtime.sh
+	status=0; tests/test-xvfb-runtime.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
 
 check-build-config:
 	tests/test-configure-build.sh
@@ -641,7 +643,9 @@ check-quickshell-health-xvfb:
 	tests/test-quickshell-health-xvfb.sh
 
 check-quickshell-settings-loading:
-	tests/test-quickshell-settings-loading.sh
+	status=0; tests/test-quickshell-settings-loading.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
 
 check-quickshell-settings-responsiveness-xvfb:
 	@tests/test-quickshell-settings-responsiveness-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
