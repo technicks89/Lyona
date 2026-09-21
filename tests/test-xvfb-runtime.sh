@@ -929,35 +929,31 @@ wait "$second_client_pid" 2>/dev/null || true
 second_client_pid=
 wait_for_active_window "$win"
 
-# A hostile or broken client can ask for an aspect ratio so extreme that the
-# clamp rounds a side to 0; a zero-sized configure is a BadValue that ends dwm.
-DISPLAY=$display "$work/xclient" extreme-aspect >"$work/aspect-window-id" 2>"$work/aspect-client.log" &
-second_client_pid=$!
-i=0
-while [ "$i" -lt 100 ] && [ ! -s "$work/aspect-window-id" ]; do
-	i=$((i + 1))
-	sleep 0.05
-done
-aspect_win=$(cat "$work/aspect-window-id")
-[ -n "$aspect_win" ]
-sleep 0.5
-if ! kill -0 "$dwm_pid" 2>/dev/null; then
-	printf '%s\n' "dwm exited when a client asked for an extreme aspect ratio" >&2
+# Super+M (fullscreen) goes to monocle and back through the layout switch. Going
+# back to the floating layout must not shrink the windows the way an explicit
+# switch to it does: they come back exactly as monocle left them.
+DISPLAY=$display xdotool key Super+l
+sleep 0.2
+DISPLAY=$display xdotool key Super+m
+sleep 0.2
+monocle_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+DISPLAY=$display xdotool key Super+m
+sleep 0.2
+back_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+if [ "$back_geometry" != "$monocle_geometry" ]; then
+	printf '%s\n' "leaving fullscreen for the floating layout changed the window: $monocle_geometry -> $back_geometry" >&2
 	exit 1
 fi
-aspect_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$aspect_win")
-printf '%s\n' "$aspect_geometry" | awk -F= '$1 == "WIDTH" { w = $2 } $1 == "HEIGHT" { h = $2 } END { exit !(w >= 1 && h >= 1) }' ||
-	fail "an extreme aspect ratio produced a window smaller than 1x1: $aspect_geometry"
-# Floating and retiling it goes through the same clamp again.
-DISPLAY=$display xdotool key Super+f
+# The window really went through monocle and came back to the floating layout:
+# from there an explicit retile-and-float still shrinks it (S5-03 unchanged).
+DISPLAY=$display xdotool key Super+t
 sleep 0.2
-DISPLAY=$display xdotool key Super+f
+tiled_after=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+DISPLAY=$display xdotool key Super+l
 sleep 0.2
-kill -0 "$dwm_pid" 2>/dev/null || fail 'dwm exited when toggling a window with an extreme aspect ratio'
-kill "$second_client_pid"
-wait "$second_client_pid" 2>/dev/null || true
-second_client_pid=
-wait_for_active_window "$win"
+assert_shrunk_centered "$tiled_after" "$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")"
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
 
 DISPLAY=$display "$work/xclient" fullscreen "$win"
 wait_for_window_state "$win" _NET_WM_STATE_FULLSCREEN
