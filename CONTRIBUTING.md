@@ -67,8 +67,10 @@ uncommitted edits are included. `make check` stops at its first failure, so
 and lists all the failures at the end. Name a target to rerun one gate, add
 `--keep` to leave the container up for debugging, `--clang` for the workflow's
 clang build, and `--refresh` to rebuild the cached package image from a fresh
-base (do that now and then: CI always starts from the newest one). The first
-run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
+base (do that now and then: CI always starts from the newest one). It runs
+the tree's own scripts and tests, with the container's seccomp and AppArmor
+profiles off as in the workflow, so use it on code you trust rather than on an
+unreviewed branch. The first run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
 pass takes about half an hour. It needs Docker and about 6 GB of disk.
 
 ## Change Guidelines
