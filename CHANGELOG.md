@@ -15,8 +15,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `togglefloating` used to float a window at its current tile size, so
   `Super+Space` seemed to do nothing. An explicit toggle (a key or button
   binding) now pops a tiled window out at 85 percent of its tile, centered and
-  clamped to the monitor's work area through a new `shrinkfloating()` that
-  respects the window's size hints; toggling back retiles it. Switching a
+  clamped to the monitor's work area through a new `shrinkfloating()`, as far as
+  the window's size hints allow: a minimum size larger than the work area wins,
+  and the window then starts at the work area's top-left corner and extends past
+  it. Toggling back retiles it. Switching a
   monitor to the floating layout, from tiling or monocle, shrinks each visible
   tiled window the same way, once: choosing the floating layout again does not
   shrink them again, and `Super+T` retiles. Windows already floated

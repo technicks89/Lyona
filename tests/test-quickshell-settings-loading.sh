@@ -49,7 +49,8 @@ for relative, expression in (
     ("notifications/NotificationModel.qml",
      'policyState === "loading" || policyState === "defaults" || policySaving'),
     ("systemmanagement/SystemManagementModel.qml",
-     "root.settingsVisible && (!root.discoveryReady() || root.snapshotOwned || root.snapshotPending)"),
+     "root.settingsVisible && (!root.discoveryReady() || root.snapshotOwned || root.snapshotPending "
+     "|| root.requiredPending)"),
     ("appearance/AppearanceModel.qml",
      "snapshotProcess.running || root.snapshotPending || readinessProcess.running "
      "|| root.mutationReadinessPending || previewStatusProcess.running || recoveryStatusProcess.running "

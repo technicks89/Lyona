@@ -46,7 +46,7 @@ Scope {
     id: root
 
     readonly property bool initialLoading: root.settingsVisible && (!root.discoveryReady()
-        || root.snapshotOwned || root.snapshotPending)
+        || root.snapshotOwned || root.snapshotPending || root.requiredPending)
 
     signal confirmationInvalidated()
     signal healthOpened()
