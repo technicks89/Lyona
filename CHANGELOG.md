@@ -1260,10 +1260,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `xinput --list --short` failed outright, instead of surfacing the failure.
   It now checks the command's exit status before parsing its output and
   exits with `die` on failure.
-- `make check-xvfb-runtime` and `make check-quickshell-settings-loading` now
-  turn their tests' "skipped" exit status (77: Xvfb/xdotool or python3 missing)
-  into success like the other Xvfb targets do, instead of failing a plain
-  `make check` on such a host (#82). A real failure still fails.
+- `make check-xvfb-runtime` now turns its test's "skipped" exit status (77:
+  Xvfb/xdotool missing) into success like the other Xvfb targets do.
+  `make check-quickshell-settings-loading` does the same when python3 is
+  unavailable, like the other dependency-dependent checks, instead of failing
+  a plain `make check` on such a host (#82). A real failure still fails.
 
 - Fix a race in `dwm-settings-appearance`'s inventory scanner: a named
   coprocess's PID and file-descriptor bookkeeping could be unset by bash
