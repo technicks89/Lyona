@@ -1208,6 +1208,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   "a handler whose program is not installed was accepted". It now runs that case
   with a `PATH` of only the tools the script needs plus stub programs, after a
   control run proving the setup is sufficient.
+- `scripts/ci-local.sh` fails loudly and cleans up after itself (#78). A failing
+  `git ls-files` used to be hidden by a process substitution, so tar copied only
+  `.git` and the run tested an empty tree; the file list is now written to a
+  file, checked, and any files tar could not copy are reported. The build
+  context and file list are removed by the EXIT trap even when `docker build`
+  fails; the container has a unique name, `--init`, a `lyona-ci` label and
+  `--rm`, and lives at most four hours, and the trap removes only a container
+  this run started (a reused PID used to make it delete an older `--keep`
+  container). Logs go in a `mktemp -d` directory instead of a predictable
+  `/tmp` path, host-side reads skip symlinks a test left behind, and the usage
+  text and CONTRIBUTING say the tool runs the tree's own code, for trusted
+  branches only. It also works from a linked git worktree now: `.git` there is
+  a one-line pointer file, so the container got no repository and every
+  target that reads git history failed (`check-release-helper`: "not a git
+  repository"); the shared repository is shipped as `.git` with the worktree's
+  own HEAD and index.
+
 - A tiled selected window no longer covers floating windows and popups
   (`dwm.c` `raiseselectedclient()`, from the "updating floating windows" work
   of 2026-08-29). Every restack raised the selected client above the floating

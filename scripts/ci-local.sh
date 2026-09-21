@@ -16,8 +16,14 @@
 #              the way `make check` does
 #   --clang    also build dwm with clang, like the workflow's second job
 #   --keep     leave the container running afterwards for a look around
-#              (docker exec -it NAME bash); it is named in the output
+#              (docker exec -it NAME bash); it is named in the output and
+#              removes itself after four hours
 #   --refresh  rebuild the cached package image from a fresh base image
+#
+# It runs this tree's own scripts and tests, on the host (it sources
+# scripts/dwm-packages.sh) and in a container whose seccomp and AppArmor
+# profiles are off, as the workflow's are: use it on code you trust, not on an
+# unreviewed branch.
 #
 # The package layer is cached as the image lyona-ci:<hash of the package list>,
 # so only the first run (or a run after the package list changed) installs
@@ -87,14 +93,32 @@ mapfile -t packages < <(
 )
 image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
 
-logdir=${TMPDIR:-/tmp}/lyona-ci-local/$(date +%Y%m%d-%H%M%S)
-mkdir -p "$logdir"
-name=lyona-ci-$$
+logdir=$(mktemp -d "${TMPDIR:-/tmp}/lyona-ci-local.XXXXXX")
+name=lyona-ci-$(basename "$logdir")
+max_life=14400
+
+# What this run created, so the EXIT trap removes those and nothing else: the
+# build context, the file list, and the container once it has been started.
+context=
+filelist=
+container=
+# shellcheck disable=SC2329 # runs from the EXIT trap
+cleanup() {
+	[[ -z $context ]] || rm -rf "$context"
+	[[ -z $filelist ]] || rm -f "$filelist"
+	[[ -n $container ]] || return 0
+	if ((keep)); then
+		printf '==> Container kept: docker exec -it %s bash   (remove with: docker rm -f %s)\n' "$container" "$container"
+	else
+		docker rm -f "$container" >/dev/null 2>&1 || true
+	fi
+}
+trap cleanup EXIT
 
 if ((refresh)) || ! docker image inspect "$image" >/dev/null 2>&1; then
 	printf '==> Building %s (%d packages; this is the slow part, and it is cached)\n' \
 		"$image" "${#packages[@]}"
-	context=$(mktemp -d)
+	context=$(mktemp -d "${TMPDIR:-/tmp}/lyona-ci-context.XXXXXX")
 	printf '%s\n' "${packages[@]}" >"$context/packages.txt"
 	cat >"$context/Dockerfile" <<EOF
 FROM $base_image
@@ -110,31 +134,57 @@ EOF
 	((refresh)) && build_flags+=(--pull --no-cache)
 	docker build "${build_flags[@]}" -t "$image" "$context"
 	rm -rf "$context"
+	context=
 fi
 
-# shellcheck disable=SC2329 # runs from the EXIT trap
-cleanup() {
-	if ((keep)); then
-		printf '==> Container kept: docker exec -it %s bash   (remove with: docker rm -f %s)\n' "$name" "$name"
-	else
-		docker rm -f "$name" >/dev/null 2>&1 || true
-	fi
-}
-trap cleanup EXIT
-
 printf '==> Starting %s from %s\n' "$name" "$image"
-docker run -d --name "$name" \
+# --rm and a finite sleep: if this script is killed before its trap runs, the
+# container still goes away by itself.
+docker run -d --rm --init --label lyona-ci=1 --name "$name" \
 	--security-opt seccomp=unconfined --security-opt apparmor=unconfined \
 	-e DWM_TEST_TMP_ROOT="$test_root" \
-	"$image" sleep infinity >/dev/null
+	"$image" sleep "$max_life" >/dev/null
+container=$name
 
 # Copy the working tree as it is now: files git knows about or would add, and
 # .git itself (some tests read the history). Files deleted since the last
 # commit are simply absent.
 docker exec "$name" mkdir -p "$workspace"
-tar -C "$repo" --ignore-failed-read --null -T <(git -C "$repo" ls-files -z --cached --others --exclude-standard) \
-	-cf - .git 2>/dev/null |
-	docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
+filelist=$(mktemp "${TMPDIR:-/tmp}/lyona-ci-files.XXXXXX")
+# The list goes to a file so a failing git is seen (a process substitution
+# would hide it and tar would quietly copy only .git).
+git -C "$repo" ls-files -z --cached --others --exclude-standard >"$filelist" || {
+	printf 'git ls-files failed; not testing an incomplete tree\n' >&2
+	exit 1
+}
+[[ -s $filelist ]] || {
+	printf 'git ls-files listed no files; not testing an empty tree\n' >&2
+	exit 1
+}
+tar_errors=$logdir/tar.err
+# --ignore-failed-read: a file deleted since the last commit is still listed.
+# In a linked worktree .git is a one-line pointer file, not a repository, so
+# ship the shared repository as .git and this worktree's own HEAD and index.
+gitdir=$(git -C "$repo" rev-parse --absolute-git-dir)
+commondir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
+if [[ $gitdir == "$commondir" ]]; then
+	tar -C "$repo" --ignore-failed-read --null -T "$filelist" -cf - .git 2>"$tar_errors" |
+		docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
+else
+	tar -C "$repo" --ignore-failed-read --null -T "$filelist" -cf - 2>"$tar_errors" |
+		docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
+	tar -C "$commondir" -cf - --transform 's,^\.,.git,' . |
+		docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
+	for state_file in HEAD index; do
+		[[ ! -f $gitdir/$state_file ]] ||
+			docker exec -i "$name" tee "$workspace/.git/$state_file" <"$gitdir/$state_file" >/dev/null
+	done
+fi
+if [[ -s $tar_errors ]]; then
+	printf '==> warning: some files were not copied into the container (%s):\n' \
+		"$(wc -l <"$tar_errors") message(s)" >&2
+	head -n 5 "$tar_errors" >&2
+fi
 
 docker exec "$name" bash -c "
 	git config --global --add safe.directory '$workspace'
@@ -185,7 +235,9 @@ if ((each)); then
 	' || status=$?
 	docker cp "$name:$test_root/each" "$logdir/each" >/dev/null 2>&1 || true
 	if ((status != 0)); then
+		[[ -d $logdir/each && ! -L $logdir/each ]] || exit "$status"
 		for log in "$logdir"/each/*.log; do
+			[[ -f $log && ! -L $log ]] || continue
 			grep -q . "$log" 2>/dev/null || continue
 			target_name=$(basename "$log" .log)
 			grep -q "^FAIL $target_name " "$logdir/each.log" || continue
