@@ -1266,6 +1266,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   process substitution, which captures its PID synchronously and keeps it
   valid regardless of whether the process has since exited. The scan also no
   longer inherits the parent shell's stdin.
+- dwm no longer exits when an X client asks for an extreme aspect ratio
+  (`applysizehints()`, an issue that predates Sprint 5). With a tiny maximum
+  aspect and no minimum size the aspect clamp rounded a side to 0, the
+  zero-sized `XConfigureWindow` came back as BadValue, and `xerror()` treated it
+  as fatal, so any X client could end the session (#81). The result is now
+  floored at 1x1. New `extreme-aspect` client mode and case in
+  `tests/test-xvfb-runtime.sh`, which fails on the unpatched build.
+
 - Document the command menu's `menu open|close|toggle|summon` IPC surface,
   which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
   asserted the documentation but nothing had ever satisfied it, so

@@ -282,6 +282,7 @@ main(int argc, char **argv)
 	const char *popup_type = NULL;
 	int swallow_terminal = 0;
 	int fixed_size = 0;
+	int extreme_aspect = 0;
 	pid_t child_pid = -1;
 
 	signal(SIGTERM, stop);
@@ -450,6 +451,8 @@ main(int argc, char **argv)
 		swallow_terminal = 1;
 	else if (argc == 2 && strcmp(argv[1], "fixed") == 0)
 		fixed_size = 1;
+	else if (argc == 2 && strcmp(argv[1], "extreme-aspect") == 0)
+		extreme_aspect = 1;
 
 	win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
 		panel ? 1 : 20, panel ? 1 : 20,
@@ -493,6 +496,17 @@ main(int argc, char **argv)
 	}
 	if (transient_for != None)
 		XSetTransientForHint(dpy, win, transient_for);
+	if (extreme_aspect) {
+		/* An aspect window so narrow that the aspect clamp rounds one side to 0. */
+		XSizeHints hints = {0};
+
+		hints.flags = PAspect;
+		hints.min_aspect.x = 1;
+		hints.min_aspect.y = 1;
+		hints.max_aspect.x = 1;
+		hints.max_aspect.y = 2000000000;
+		XSetWMNormalHints(dpy, win, &hints);
+	}
 	if (fixed_size) {
 		XSizeHints hints = {0};
 
@@ -910,6 +924,36 @@ for fixed_key in f l t; do
 		exit 1
 	fi
 done
+kill "$second_client_pid"
+wait "$second_client_pid" 2>/dev/null || true
+second_client_pid=
+wait_for_active_window "$win"
+
+# A hostile or broken client can ask for an aspect ratio so extreme that the
+# clamp rounds a side to 0; a zero-sized configure is a BadValue that ends dwm.
+DISPLAY=$display "$work/xclient" extreme-aspect >"$work/aspect-window-id" 2>"$work/aspect-client.log" &
+second_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/aspect-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+aspect_win=$(cat "$work/aspect-window-id")
+[ -n "$aspect_win" ]
+sleep 0.5
+if ! kill -0 "$dwm_pid" 2>/dev/null; then
+	printf '%s\n' "dwm exited when a client asked for an extreme aspect ratio" >&2
+	exit 1
+fi
+aspect_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$aspect_win")
+printf '%s\n' "$aspect_geometry" | awk -F= '$1 == "WIDTH" { w = $2 } $1 == "HEIGHT" { h = $2 } END { exit !(w >= 1 && h >= 1) }' ||
+	fail "an extreme aspect ratio produced a window smaller than 1x1: $aspect_geometry"
+# Floating and retiling it goes through the same clamp again.
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+kill -0 "$dwm_pid" 2>/dev/null || fail 'dwm exited when toggling a window with an extreme aspect ratio'
 kill "$second_client_pid"
 wait "$second_client_pid" 2>/dev/null || true
 second_client_pid=
