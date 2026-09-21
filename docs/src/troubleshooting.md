@@ -19,6 +19,11 @@ application setup from an installed lyona checkout, run:
 install-gearlever
 ```
 
+It refuses a `flathub` remote that has signature verification disabled, is
+disabled, or points at an unofficial URL, and says which. Fix or remove that
+remote (`flatpak remote-modify`, `flatpak remote-delete --user flathub`) and run
+it again; `dwm-flatpak-setup --user` checks the remote on its own.
+
 Run the dependency checker first — it covers most common issues:
 
 ```bash

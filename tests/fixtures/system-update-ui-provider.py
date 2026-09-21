@@ -92,10 +92,17 @@ def snapshot():
 
 def main():
     if tuple(sys.argv[1:]) in (("watch-time",), ("watch-regional", "locale"),
-                              ("watch-accounts",), ("watch-units", "printers")):
+                              ("watch-accounts",), ("watch-units", "printers"),
+                              ("watch-units", "security")):
         prefix = "time-event" if sys.argv[1] == "watch-time" else "regional-event" if sys.argv[1] == "watch-regional" else (
             "accounts-event" if sys.argv[1] == "watch-accounts" else "units-event")
         row(prefix, "ready")
+        signal.pause()
+        return 0
+    if sys.argv[1:] == ["watch-mounts"]:
+        # The storage domain's bare mount stream (S2-04, #284); unlike the
+        # other watches its readiness line has no prefix.
+        row("mount-monitor-ready")
         signal.pause()
         return 0
     command = sys.argv[1]

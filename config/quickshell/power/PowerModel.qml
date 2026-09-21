@@ -7,6 +7,8 @@ import qs.core
 Scope {
     id: root
 
+    readonly property bool initialLoading: snapshotProcess.running || root.snapshotPending
+
     property bool settingsVisible: false
     property bool controlCenterVisible: false
     property bool sessionMenuVisible: false
@@ -274,9 +276,9 @@ Scope {
             root.snapshotPending = true;
             return;
         }
-        root.snapshotPending = false;
         root.snapshotGeneration = root.mutationGeneration;
         snapshotProcess.running = true;
+        root.snapshotPending = false;
     }
 
     function parseSnapshot(text) {
@@ -535,7 +537,6 @@ Scope {
         }
         onRunningChanged: {
             if (!running && root.snapshotPending && root.sectionVisible) {
-                root.snapshotPending = false;
                 Qt.callLater(root.refresh);
             }
         }

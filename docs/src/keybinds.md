@@ -70,11 +70,24 @@ launcher hides the ChatGPT web entry while a native desktop entry is installed.
 | Keys | Action |
 |------|--------|
 | `Super` + `T` | Tiling layout |
+| `Super` + `F` | Floating layout |
 | `Super` + `M` | Fullscreen (monocle) |
 | `Super` + `Space` | Toggle floating for window |
 | `Super` + `Shift` + `M` | Toggle floating for window |
 | `Super` + `Shift` + `Y` | Fake fullscreen (bar stays) |
 | `Super` + `Shift` + `B` | Toggle bar visibility |
+
+Floating a tiled window with `Super` + `Space` (or `Super` + `Shift` + `M`, or
+`Super` + Middle click) pops it out of its tile at 85 percent of the tile's
+size, centered on it and kept inside the work area, so the change is visible.
+A window whose minimum size is larger than the work area keeps that size,
+starting at the work area's top-left corner and extending past it. Toggle
+again to return it to the tile. `Super` + `F` applies the same shrink to
+each visible tiled window when it switches to the floating layout, including
+from monocle, and `Super` + `T` retiles them. Choosing the floating layout
+again leaves the sizes alone, and windows already floated individually keep
+their size and position. Fixed-size windows are never resized. Mouse dragging
+and resizing keep the geometry they start from.
 
 ## Tags (Workspaces)
 

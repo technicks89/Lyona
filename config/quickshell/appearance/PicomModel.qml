@@ -9,6 +9,7 @@ Scope {
     id: root
     property bool active: false
     property bool pending: false
+    readonly property bool statusBusy: statusProcess.running || root.pending
     property bool busy: false
     property string message: ""
     property string statusFailure: ""
@@ -40,8 +41,8 @@ Scope {
             root.pending = true;
             return;
         }
-        root.pending = false;
         statusProcess.running = true;
+        root.pending = false;
     }
 
     function mutate(action, args, revision) {
