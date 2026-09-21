@@ -439,7 +439,7 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 selected: root.settingsModel.selectedSectionId === "system"
-                                dataLoading: root.systemManagementModel.initialLoading
+                                dataLoading: root.systemManagementModel.initialLoading || root.updateModel.initialLoading
                                 windowVisible: root.visible
                                 sourceComponent: SystemSettingsPane {
                                     clockText: root.clock.settingsText
