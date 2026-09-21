@@ -433,7 +433,7 @@ app that is already installed exits without calling the helper.
 Upstream `#331` (`2e77c11`) and `#333` (`841d3cd`, which moves the shared
 math into `shrinkfloating()`).
 
-### Decision D-9 — ask the user before starting
+### Decision D-9 — decided 2026-09-20: port as upstream
 
 This changes how the window manager behaves, not just how it is built.
 Today, `togglefloating` on a tiled window floats it at its **current tile

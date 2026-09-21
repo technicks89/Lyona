@@ -138,6 +138,22 @@ An already-enabled `multilib` counts as approval, since nothing in
 `pacman.conf` has to change -- this is what installs from the lyona ISO get,
 because the ISO ships `multilib` enabled.
 
+### Flatpak prerequisites
+
+The recommended and full profiles install the `flatpak` package, then Gear Lever
+sets up the official Flathub remote for the target user before it installs
+anything. The remote is verified, not just present: setup stops with an error
+if a `flathub` remote points anywhere but `https://dl.flathub.org/repo`, has
+signature verification disabled, or is disabled. If there is no `flathub`
+remote it adds the official one and checks it again. Repeated setup keeps
+existing apps and remotes, and an app that is already installed never needs the
+remote, so it reports as installed even when the remote is not healthy.
+
+After fixing a setup error, retry `scripts/install-gearlever` from the source
+checkout. To prepare and verify only the user remote, run
+`scripts/dwm-flatpak-setup --user`. If Flatpak is missing, rerun
+`./install.sh --profile recommended` first.
+
 ### CachyOS repositories and kernel
 
 Installs from the lyona ISO get this automatically and are not asked about

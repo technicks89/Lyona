@@ -14,6 +14,30 @@ require_cmd() {
 	done
 }
 
+# assert_shrunk_centered TILE POPPED: two `xdotool getwindowgeometry --shell`
+# outputs. The second must be 80-90% of the first in each dimension and
+# centered on it (S5-03, upstream #331/#333).
+assert_shrunk_centered() {
+	printf '%s\n---\n%s\n' "$1" "$2" | awk -F= '
+		$0 == "---" { popped = 1; next }
+		!popped { before[$1] = $2; next }
+		{ after[$1] = $2 }
+		END {
+			if (after["WIDTH"] >= before["WIDTH"] * 0.9 ||
+			    after["HEIGHT"] >= before["HEIGHT"] * 0.9 ||
+			    after["WIDTH"] < before["WIDTH"] * 0.8 ||
+			    after["HEIGHT"] < before["HEIGHT"] * 0.8)
+				exit 1
+			dx = 2 * (after["X"] - before["X"]) + after["WIDTH"] - before["WIDTH"]
+			dy = 2 * (after["Y"] - before["Y"]) + after["HEIGHT"] - before["HEIGHT"]
+			if (dx < -8 || dx > 8 || dy < -8 || dy > 8)
+				exit 1
+		}' || {
+		printf '%s\n' "floating toggle did not shrink and center the tile" >&2
+		exit 1
+	}
+}
+
 wait_for_display() {
 	i=0
 	while [ "$i" -lt 100 ]; do
@@ -257,6 +281,7 @@ main(int argc, char **argv)
 	const char *popup_state = NULL;
 	const char *popup_type = NULL;
 	int swallow_terminal = 0;
+	int fixed_size = 0;
 	pid_t child_pid = -1;
 
 	signal(SIGTERM, stop);
@@ -274,6 +299,29 @@ main(int argc, char **argv)
 			return 3;
 		}
 		printf("override_redirect=%d\n", attributes.override_redirect);
+		XCloseDisplay(dpy);
+		return 0;
+	}
+	if (argc == 3 && strcmp(argv[1], "border") == 0) {
+		XWindowAttributes attributes;
+
+		win = strtoul(argv[2], NULL, 0);
+		if (!XGetWindowAttributes(dpy, win, &attributes)) {
+			XCloseDisplay(dpy);
+			return 3;
+		}
+		printf("border_width=%d\n", attributes.border_width);
+		XCloseDisplay(dpy);
+		return 0;
+	}
+	if (argc == 5 && strcmp(argv[1], "min-size") == 0) {
+		XSizeHints hints = {0};
+
+		win = strtoul(argv[2], NULL, 0);
+		hints.flags = PMinSize;
+		hints.min_width = atoi(argv[3]);
+		hints.min_height = atoi(argv[4]);
+		XSetWMNormalHints(dpy, win, &hints);
 		XCloseDisplay(dpy);
 		return 0;
 	}
@@ -400,6 +448,8 @@ main(int argc, char **argv)
 	}
 	else if (argc == 2 && strcmp(argv[1], "swallow-terminal") == 0)
 		swallow_terminal = 1;
+	else if (argc == 2 && strcmp(argv[1], "fixed") == 0)
+		fixed_size = 1;
 
 	win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
 		panel ? 1 : 20, panel ? 1 : 20,
@@ -443,6 +493,14 @@ main(int argc, char **argv)
 	}
 	if (transient_for != None)
 		XSetTransientForHint(dpy, win, transient_for);
+	if (fixed_size) {
+		XSizeHints hints = {0};
+
+		hints.flags = PMinSize | PMaxSize;
+		hints.min_width = hints.max_width = 300;
+		hints.min_height = hints.max_height = 200;
+		XSetWMNormalHints(dpy, win, &hints);
+	}
 	if (initial_many_states) {
 		Atom states[65];
 		char name[64];
@@ -592,6 +650,7 @@ printf '%s\n' \
 	'  { mod="SUPER", key="o", desc="Xvfb monocle", func="setlayout", layout_idx=2 },' \
 	'  { mod="SUPER", key="t", desc="Xvfb tile", func="setlayout", layout_idx=0 },' \
 	'  { mod="SUPER", key="f", desc="Xvfb toggle floating", func="togglefloating" },' \
+	'  { mod="SUPER", key="l", desc="Xvfb floating layout", func="setlayout", layout_idx=1 },' \
 	'  { mod="SUPER", key="k", desc="Xvfb focus previous", func="focusstack", i=-1 },' \
 	'  { mod="SUPER", key="v", desc="Xvfb mouse resize", func="resizemouse" },' \
 	'  { mod="SUPER", key="u", desc="Xvfb reload tag", func="view", ui=16 },' \
@@ -689,6 +748,168 @@ if [ "$two_floating_width" -ge "$two_tiled_width" ] || [ "$two_floating_height" 
 	exit 1
 fi
 
+kill "$second_client_pid"
+wait "$second_client_pid" 2>/dev/null || true
+second_client_pid=
+wait_for_active_window "$win"
+
+# S5-03 (upstream #331/#333): an explicit floating toggle pops a tiled window
+# out at 85 percent, centered on its tile, and toggling back retiles it exactly.
+# The mouse-resize checks above cover the other half: a drag calls
+# togglefloating(NULL) and must keep the geometry it started from.
+tiled_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+for toggle_cycle in 1 2; do
+	DISPLAY=$display xdotool key Super+f
+	sleep 0.2
+	popped_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+	assert_shrunk_centered "$tiled_geometry" "$popped_geometry"
+	DISPLAY=$display xdotool key Super+f
+	sleep 0.2
+	restored_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+	if [ "$restored_geometry" != "$tiled_geometry" ]; then
+		printf '%s\n' "floating toggle did not restore tiled geometry (cycle $toggle_cycle)" >&2
+		exit 1
+	fi
+done
+
+# Entering the floating layout shrinks every visible tiled client once, from
+# the tile layout and from monocle alike; asking for it again does not shrink
+# them again, and retiling restores the tile geometry.
+DISPLAY=$display "$work/xclient" >"$work/layout-window-id" 2>"$work/layout-client.log" &
+second_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/layout-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+layout_win=$(cat "$work/layout-window-id")
+[ -n "$layout_win" ]
+wait_for_active_window "$layout_win"
+sleep 0.2
+first_tiled_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+second_tiled_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")
+for layout_key in t o; do
+	DISPLAY=$display xdotool key "Super+$layout_key"
+	sleep 0.2
+	first_tile=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+	second_tile=$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")
+	DISPLAY=$display xdotool key Super+l
+	sleep 0.2
+	first_float=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+	second_float=$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")
+	assert_shrunk_centered "$first_tile" "$first_float"
+	assert_shrunk_centered "$second_tile" "$second_float"
+	DISPLAY=$display xdotool key Super+l
+	sleep 0.2
+	if [ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")" != "$first_float" ] ||
+		[ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")" != "$second_float" ]; then
+		printf '%s\n' "choosing the floating layout again shrank the windows a second time" >&2
+		exit 1
+	fi
+	DISPLAY=$display xdotool key Super+t
+	sleep 0.2
+	if [ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")" != "$first_tiled_geometry" ] ||
+		[ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")" != "$second_tiled_geometry" ]; then
+		printf '%s\n' "retiling after the floating layout did not restore the tile geometry" >&2
+		exit 1
+	fi
+done
+
+# A window floated on its own keeps its geometry across layout changes.
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+individual_float=$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")
+DISPLAY=$display xdotool key Super+l
+sleep 0.2
+if [ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")" != "$individual_float" ]; then
+	printf '%s\n' "a window floated on its own changed when the floating layout was chosen" >&2
+	exit 1
+fi
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
+if [ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")" != "$individual_float" ]; then
+	printf '%s\n' "a window floated on its own was retiled by the tile layout" >&2
+	exit 1
+fi
+# Stacking: in the tile layout a selected tiled window does not cover a
+# floating one, while in the floating layout the selected window comes to the
+# front of the floating ones.
+DISPLAY=$display xdotool key Super+k
+wait_for_active_window "$win"
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
+wait_for_window_above "$layout_win" "$win"
+DISPLAY=$display xdotool key Super+l
+sleep 0.2
+wait_for_window_above "$win" "$layout_win"
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
+DISPLAY=$display xdotool key Super+k
+wait_for_active_window "$layout_win"
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+
+# A new minimum-size hint can exceed the tile, or the whole work area: the
+# popped window is clamped to the screen instead of leaving it.
+tile_top=$(printf '%s\n' "$second_tiled_geometry" | awk -F= '$1 == "Y" { print $2 }')
+for min_dimensions in '900 700' '1200 900'; do
+	min_width=${min_dimensions% *}
+	min_height=${min_dimensions#* }
+	DISPLAY=$display "$work/xclient" min-size "$layout_win" "$min_width" "$min_height"
+	sleep 0.2
+	DISPLAY=$display xdotool key Super+f
+	sleep 0.2
+	hinted_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$layout_win")
+	hinted_attributes=$(DISPLAY=$display "$work/xclient" border "$layout_win")
+	printf '%s\n%s\n' "$hinted_geometry" "$hinted_attributes" |
+		awk -F= -v minw="$min_width" -v minh="$min_height" -v tile_top="$tile_top" '
+			{ geometry[$1] = $2 }
+			END {
+				x = geometry["X"]; y = geometry["Y"]
+				w = geometry["WIDTH"]; h = geometry["HEIGHT"]
+				bw = geometry["border_width"]
+				if (x < 0 || y < 0 || w < minw || h < minh)
+					exit 1
+				if (minw < 1024 && (x + w + 2 * bw > 1024 || y + h + 2 * bw > 768))
+					exit 1
+				if (minw > 1024 && (x != 0 || y > tile_top))
+					exit 1
+			}' || {
+		printf '%s\n' "floating size hints left the window outside the work area" >&2
+		exit 1
+	}
+	DISPLAY=$display "$work/xclient" min-size "$layout_win" 0 0
+	sleep 0.2
+	DISPLAY=$display xdotool key Super+f
+	sleep 0.2
+done
+kill "$second_client_pid"
+wait "$second_client_pid" 2>/dev/null || true
+second_client_pid=
+wait_for_active_window "$win"
+
+# A fixed-size window is always floating: toggling it and changing layout must
+# leave its size and place alone.
+DISPLAY=$display "$work/xclient" fixed >"$work/fixed-window-id" 2>"$work/fixed-client.log" &
+second_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/fixed-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+fixed_win=$(cat "$work/fixed-window-id")
+[ -n "$fixed_win" ]
+wait_for_active_window "$fixed_win"
+sleep 0.2
+fixed_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$fixed_win")
+for fixed_key in f l t; do
+	DISPLAY=$display xdotool key "Super+$fixed_key"
+	sleep 0.2
+	if [ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$fixed_win")" != "$fixed_geometry" ]; then
+		printf '%s\n' "a fixed-size window was resized by Super+$fixed_key" >&2
+		exit 1
+	fi
+done
 kill "$second_client_pid"
 wait "$second_client_pid" 2>/dev/null || true
 second_client_pid=

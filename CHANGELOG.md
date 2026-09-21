@@ -10,6 +10,53 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Floating a tiled window now visibly changes it (Sync Sprint 5 S5-03, decision
+  D-9, ported from upstream `#331` `2e77c11` and `#333` `841d3cd`).
+  `togglefloating` used to float a window at its current tile size, so
+  `Super+Space` seemed to do nothing. An explicit toggle (a key or button
+  binding) now pops a tiled window out at 85 percent of its tile, centered and
+  clamped to the monitor's work area through a new `shrinkfloating()` that
+  respects the window's size hints; toggling back retiles it. Switching a
+  monitor to the floating layout, from tiling or monocle, shrinks each visible
+  tiled window the same way, once: choosing the floating layout again does not
+  shrink them again, and `Super+T` retiles. Windows already floated
+  individually, fixed-size windows, and fullscreen windows (other than fake
+  fullscreen) are left alone, and mouse drags, which call `togglefloating` with
+  no argument, keep their geometry. `tests/test-xvfb-runtime.sh` covers the
+  toggle cycles, both layout transitions, individually floated and fixed-size
+  windows and windows whose minimum size exceeds the work area; it gained a
+  `Super+L` floating-layout key in its own hotkeys and `border`, `min-size` and
+  `fixed` modes in its X client.
+
+- Settings panes stay hidden until their data has loaded (Sync Sprint 5
+  S5-01, `docs/SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`, ported from
+  upstream `#335` `709bcd0` and `4b0d438`; completes Lyona's `#315` work from
+  Sprint 3). A pane used to fade in as soon as its component loaded, so cards
+  still appeared and reflowed inside a visible pane while its first reads
+  finished. `DeferredSettingsPane.qml` (now upstream's file) takes a
+  `dataLoading` input from `SettingsWindow.qml` and keeps the pane invisible
+  and disabled, behind a fixed "Loading settings..." message, until its
+  component is ready and `dataLoading` is false; it then presents once, and
+  later refreshes never hide controls again. Every model behind a pane reports
+  its finite initial reads as a read-only `initialLoading` (never a resident
+  watch subscription), and `SettingsModel` adds `displayActionBusy` and
+  `inputActionBusy` so a preview-recovery read holds the Display and Input
+  panes. Each queued-refresh flag (`snapshotPending`, `refreshPending`,
+  `capabilityRefreshPending`, and the display, input, appearance, font,
+  toolkit and Picom ones) now clears only after the process it queued has
+  started, and no longer inside `onRunningChanged`, so there is no frame in
+  which a refresh is about to run but nothing reports it. Lyona adaptations:
+  the Appearance pane also waits on the toolkit provider and Picom (Lyona has
+  no personalization provider), and upstream's `desktopUpdateModel` term is
+  dropped because that git-`main` updater is declined (D-8); the update card's
+  own reads happen at shell start. The responsiveness harness now delays the
+  display and input preview-recovery reads, the accessibility, panel and
+  System-management reads and the notification policy, and asserts each pane
+  stays hidden with an unchanged viewport until its data arrives, that no pane
+  presents while one of its models is still loading, and that a queued flag is
+  never cleared while nothing is running; the new
+  `make check-quickshell-settings-loading` pins the wiring in the source.
+
 - Stop depending on AUR-based packages, and audit the repository for any
   (`docs/AUR-PACKAGES.md`). The one package Lyona needed from the AUR,
   `xkbset` (sticky, slow, bounce and mouse keys and the AccessX shortcuts in
@@ -1097,6 +1144,36 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A tiled selected window no longer covers floating windows and popups
+  (`dwm.c` `raiseselectedclient()`, from the "updating floating windows" work
+  of 2026-08-29). Every restack raised the selected client above the floating
+  clients it had just raised, and above popups an application had raised itself,
+  even when the selected client was tiled. It now raises the selected client only
+  where `restack()` itself does: when it is floating or the layout is floating,
+  which is what that change needed so a selected window is not left under the
+  floats. Found because `make check-xvfb-runtime` had failed since that commit
+  (an override window raised by an application was buried after a layout
+  change); the test now passes end to end, and gained checks that a floating
+  window stays above a selected tiled one and that the selected window comes to
+  the front in the floating layout.
+- The System update UI test fixture (`tests/fixtures/system-update-ui-provider.py`)
+  now answers the storage (`watch-mounts`) and security (`watch-units security`)
+  watches that Sync Sprint 2 added. It rejected them as invalid arguments, so
+  `make check-quickshell-update-ui-xvfb` had failed since the Sprint 2 merge even
+  though every QML assertion passed.
+- The Gear Lever installer now verifies the Flathub remote before it installs
+  (Sync Sprint 5 S5-02, ported from upstream `#334` `dd64bbf`, issue `#332`).
+  It refused a `flathub` remote with the wrong URL already, but accepted one
+  with signature verification disabled or one that was disabled, and did not
+  check a remote it had just added. A new `scripts/dwm-flatpak-setup
+  --user|--system` checks the official URL, `no-gpg-verify` and `disabled`
+  (reading disabled remotes too), adds the official remote when there is none
+  and verifies it again, and `scripts/install-gearlever` calls it right before
+  `flatpak install`. Lyona adaptation: an app that is already installed exits
+  before the helper, so a remote problem never makes an installed app report a
+  setup failure. Not verified against a real Flatpak here (it is not installed
+  on the development machine); the tests script the `flatpak remotes` output
+  in upstream's column format.
 - `check-deps.sh` now recognises every terminal `dwm-terminal` can launch
   (Sync Sprint 4 S4-05, ported in part from upstream `#255`/`902a138`). Its
   fallback list stopped at Alacritty, Kitty and st, so a machine whose only

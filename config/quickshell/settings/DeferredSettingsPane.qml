@@ -6,36 +6,60 @@ Loader {
 
     required property bool selected
     required property bool windowVisible
+    property bool dataLoading: false
     property bool visited: false
+    property bool presented: false
 
-    // Keep visited items alive: switching sections must preserve local drafts,
-    // scroll positions and bindings to the independently owned operation models.
+    // Keep visited items alive to preserve drafts and scroll positions. Reserve
+    // the whole pane while its initial asynchronous snapshot and layout settle.
     active: visited
     asynchronous: true
     visible: selected
     focus: true
 
-    // #315: reserve the pane's space while it loads, so the first visit
-    // fades in instead of popping in and reflowing the window.
-    Rectangle {
-        anchors.fill: parent
-        visible: root.selected && root.status !== Loader.Ready
-        color: "transparent"
-        Text {
-            anchors.centerIn: parent
-            text: "Loading…"
-            color: Theme.textMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.smallFontSize
+    function updatePresentation() {
+        if (!windowVisible || !selected) return;
+        visited = true;
+        if (!presented && status === Loader.Ready && !dataLoading)
+            presentationTimer.restart();
+    }
+    onSelectedChanged: updatePresentation()
+    onWindowVisibleChanged: updatePresentation()
+    onDataLoadingChanged: updatePresentation()
+    onStatusChanged: updatePresentation()
+    Component.onCompleted: updatePresentation()
+
+    // Opacity keeps the loaded layout participating in polish while hiding
+    // intermediate geometry. Later refreshes never hide usable controls.
+    Binding {
+        target: root.item
+        property: "opacity"
+        value: root.presented ? 1 : 0
+        when: root.item !== null
+    }
+    Binding {
+        target: root.item
+        property: "enabled"
+        value: root.presented
+        when: root.item !== null
+    }
+    Timer {
+        id: presentationTimer
+        interval: 0
+        onTriggered: {
+            if (root.windowVisible && root.selected && root.status === Loader.Ready
+                    && !root.dataLoading)
+                root.presented = true;
         }
     }
-    onLoaded: if (item) { item.opacity = 0; fadeIn.target = item; fadeIn.start(); }
-    NumberAnimation { id: fadeIn; property: "opacity"; to: 1; duration: Theme.reducedMotion ? 0 : 120 }
-
-    function loadIfSelected() {
-        if (windowVisible && selected) visited = true;
+    UiText {
+        anchors.centerIn: parent
+        width: Math.max(0, parent.width - Theme.spacingXl * 2)
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        visible: !root.presented
+        text: root.status === Loader.Error ? "This settings panel could not be loaded."
+            : "Loading settings..."
+        color: Theme.menuMutedText
     }
-    onSelectedChanged: loadIfSelected()
-    onWindowVisibleChanged: loadIfSelected()
-    Component.onCompleted: loadIfSelected()
 }
