@@ -34,7 +34,7 @@ if flatpak info --system "$APP_ID" >/dev/null 2>&1; then
 	exit 0
 fi
 
-helper_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+helper_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # Verified, not just present: an unofficial, disabled or unsigned remote stops
 # the install before anything is fetched from it. Only a new install needs
 # this, so an app that is already installed never fails on the remote.

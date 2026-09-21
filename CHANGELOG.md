@@ -1232,9 +1232,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   and verifies it again, and `scripts/install-gearlever` calls it right before
   `flatpak install`. Lyona adaptation: an app that is already installed exits
   before the helper, so a remote problem never makes an installed app report a
-  setup failure. Not verified against a real Flatpak here (it is not installed
-  on the development machine); the tests script the `flatpak remotes` output
-  in upstream's column format.
+  setup failure. The tests script the `flatpak remotes` output in upstream's
+  column format; that format was then checked against real Flatpak 1.18.2 in
+  the CI image (it prints `disabled,no-gpg-verify` comma-joined, as parsed), and
+  the helper refused an unsigned, a disabled and a wrong-URL `flathub` remote
+  and added then verified the official one (#80).
 - `check-deps.sh` now recognises every terminal `dwm-terminal` can launch
   (Sync Sprint 4 S4-05, ported in part from upstream `#255`/`902a138`). Its
   fallback list stopped at Alacritty, Kitty and st, so a machine whose only
@@ -1246,6 +1248,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   declined: it is packaged in neither the official repositories nor the AUR
   (re-checked 2026-09-20), and promoting it to the first probe would make
   `dwm-terminal` miss on every launch. The default stays `alacritty`.
+
+- `scripts/install-gearlever` now finds `dwm-flatpak-setup` with `CDPATH=''`,
+  like the repo's other scripts. With `CDPATH` exported and a matching
+  directory on it, `cd` printed a path, the helper lookup returned two lines and
+  the helper was not found (exit 127), which `install.sh` only reports as a
+  warning (#80). New case in `tests/test-install-gearlever.sh`.
 
 - Fix two installer and session start-up problems (Sync Sprint 4 S4-04,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
