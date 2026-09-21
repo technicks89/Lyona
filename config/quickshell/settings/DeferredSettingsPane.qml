@@ -7,6 +7,10 @@ Loader {
     required property bool selected
     required property bool windowVisible
     property bool dataLoading: false
+    // A read that never finishes must not hide a pane for good: after this long
+    // the pane is presented with whatever it has. Long enough not to cut short
+    // a normal first read, short enough that a hung helper is not a dead end.
+    property int loadingTimeoutMs: 5000
     property bool visited: false
     property bool presented: false
 
@@ -20,9 +24,12 @@ Loader {
     function updatePresentation() {
         if (!windowVisible || !selected) return;
         visited = true;
-        if (!presented && status === Loader.Ready && !dataLoading)
-            presentationTimer.restart();
+        if (!presented && status === Loader.Ready) {
+            if (!dataLoading) presentationTimer.restart();
+            else if (!loadingCap.running) loadingCap.start();
+        }
     }
+    onPresentedChanged: if (presented) loadingCap.stop()
     onSelectedChanged: updatePresentation()
     onWindowVisibleChanged: updatePresentation()
     onDataLoadingChanged: updatePresentation()
@@ -42,6 +49,14 @@ Loader {
         property: "enabled"
         value: root.presented
         when: root.item !== null
+    }
+    Timer {
+        id: loadingCap
+        interval: root.loadingTimeoutMs
+        onTriggered: {
+            if (root.windowVisible && root.selected && root.status === Loader.Ready)
+                root.presented = true;
+        }
     }
     Timer {
         id: presentationTimer

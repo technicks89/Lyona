@@ -121,7 +121,8 @@ if panes != 9 or loading != panes:
 if "desktopUpdateModel" in window:
     failures.append("settings/SettingsWindow.qml: names upstream's declined desktopUpdateModel (D-8)")
 pane = source("settings/DeferredSettingsPane.qml")
-for fragment in ("property bool dataLoading: false", "property bool presented: false", "!dataLoading"):
+for fragment in ("property bool dataLoading: false", "property bool presented: false", "!dataLoading",
+                 "property int loadingTimeoutMs: 5000", "id: loadingCap"):
     if fragment not in pane:
         failures.append(f"settings/DeferredSettingsPane.qml: missing `{fragment}`")
 if "fadeIn" in pane or "NumberAnimation" in pane:
