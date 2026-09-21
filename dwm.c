@@ -259,6 +259,7 @@ static void setfocus(Client *c);
 static void setfullscreen(Client *c, int fullscreen);
 static void fullscreen(const Arg *arg);
 static void setlayout(const Arg *arg);
+static void setlayoutshrink(const Arg *arg, int shrink);
 static void shrinkfloating(Client *c);
 static void setcfact(const Arg *arg);
 static void setmfact(const Arg *arg);
@@ -3284,15 +3285,25 @@ fullscreen(const Arg *arg)
 	if (selmon->showbar || last_layout == NULL) {
 		for (monocle_pos = 0, last_layout = (Layout *)layouts; !last_layout->arrange || last_layout->arrange != &monocle; monocle_pos++, last_layout++ );
 		for (last_layout = (Layout *)layouts; last_layout != selmon->lt[selmon->sellt]; last_layout++);
-		setlayout(&((Arg) { .v = &layouts[monocle_pos] }));
+		setlayoutshrink(&((Arg) { .v = &layouts[monocle_pos] }), 0);
 	} else {
-		setlayout(&((Arg) { .v = last_layout }));
+		setlayoutshrink(&((Arg) { .v = last_layout }), 0);
 	}
 	togglebar(arg);
 }
 
 void
 setlayout(const Arg *arg)
+{
+	setlayoutshrink(arg, 1);
+}
+
+/* shrink: shrink the visible tiled windows when the layout goes from an
+ * arranged one to the floating one. An explicit choice of the floating layout
+ * does; fullscreen()'s round trip through monocle does not, or leaving
+ * fullscreen would leave the windows at 85% of their monocle size. */
+void
+setlayoutshrink(const Arg *arg, int shrink)
 {
 	Client *c;
 	int wasarranged = selmon->lt[selmon->sellt]->arrange != NULL;
@@ -3305,7 +3316,7 @@ setlayout(const Arg *arg)
 		selmon->pertag->ltidxs[selmon->pertag->curtag][selmon->sellt] = (Layout *)arg->v;
 	selmon->lt[selmon->sellt] = selmon->pertag->ltidxs[selmon->pertag->curtag][selmon->sellt];
 
-	if (wasarranged && !selmon->lt[selmon->sellt]->arrange)
+	if (shrink && wasarranged && !selmon->lt[selmon->sellt]->arrange)
 		for (c = selmon->clients; c; c = c->next)
 			if (ISVISIBLE(c) && !c->isfloating && !c->isfixed
 			    && (!c->isfullscreen || c->fakefullscreen == 1))

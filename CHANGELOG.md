@@ -1256,6 +1256,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `Exec=` parsing, and URL validation. A bare `Super+A` ChatGPT launch now
   prefers an installed desktop app and falls back to the web app only when
   asked to, without risking recursion back through the launcher.
+- Super+M (fullscreen) no longer shrinks windows when it returns to the floating
+  layout (#83). `fullscreen()` switches to monocle and back with the layout
+  switch, and since the floating-toggle change (S5-03) that switch shrinks
+  every visible tiled window by 15% when it enters the floating layout, so a
+  round trip from the floating layout came back at 85% of the monocle size.
+  `setlayout()` now takes its shrink from a `shrink` flag: the key and button
+  entry point still shrinks, `fullscreen()` does not. New case in
+  `tests/test-xvfb-runtime.sh` (it fails on the previous build, and checks that
+  an explicit switch still shrinks).
+
 - Fix `dwm-settings-input`'s device scan silently reporting zero devices when
   `xinput --list --short` failed outright, instead of surfacing the failure.
   It now checks the command's exit status before parsing its output and

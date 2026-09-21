@@ -915,6 +915,32 @@ wait "$second_client_pid" 2>/dev/null || true
 second_client_pid=
 wait_for_active_window "$win"
 
+# Super+M (fullscreen) goes to monocle and back through the layout switch. Going
+# back to the floating layout must not shrink the windows the way an explicit
+# switch to it does: they come back exactly as monocle left them.
+DISPLAY=$display xdotool key Super+l
+sleep 0.2
+DISPLAY=$display xdotool key Super+m
+sleep 0.2
+monocle_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+DISPLAY=$display xdotool key Super+m
+sleep 0.2
+back_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+if [ "$back_geometry" != "$monocle_geometry" ]; then
+	printf '%s\n' "leaving fullscreen for the floating layout changed the window: $monocle_geometry -> $back_geometry" >&2
+	exit 1
+fi
+# The window really went through monocle and came back to the floating layout:
+# from there an explicit retile-and-float still shrinks it (S5-03 unchanged).
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
+tiled_after=$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")
+DISPLAY=$display xdotool key Super+l
+sleep 0.2
+assert_shrunk_centered "$tiled_after" "$(DISPLAY=$display xdotool getwindowgeometry --shell "$win")"
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
+
 DISPLAY=$display "$work/xclient" fullscreen "$win"
 wait_for_window_state "$win" _NET_WM_STATE_FULLSCREEN
 
