@@ -57,6 +57,20 @@ target (for example `check-system-management`) to rerun a single gate. The
 log is attached to the run as `full-suite-log`. A passing manual run does not
 replace local `scripts/run-tests make check` before merge.
 
+### The same run in local Docker
+
+`scripts/ci-local.sh` runs that manual job in a local Docker container, without
+a push: the same `archlinux:base-devel` image, the same package set, and the
+same unprivileged `nobody` runner, on a copy of your working tree, so
+uncommitted edits are included. `make check` stops at its first failure, so
+`scripts/ci-local.sh --each` runs every target of the `check` recipe on its own
+and lists all the failures at the end. Name a target to rerun one gate, add
+`--keep` to leave the container up for debugging, `--clang` for the workflow's
+clang build, and `--refresh` to rebuild the cached package image from a fresh
+base (do that now and then: CI always starts from the newest one). The first
+run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
+pass takes about half an hour. It needs Docker and about 6 GB of disk.
+
 ## Change Guidelines
 
 - Preserve the C99 style and avoid new mandatory dependencies unless they are

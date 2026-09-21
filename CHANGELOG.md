@@ -172,6 +172,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- `scripts/ci-local.sh` runs the "Full suite (manual)" workflow's job in a local
+  Docker container (see `CONTRIBUTING.md`): the same base image, package set
+  and unprivileged runner, on a copy of the working tree, so a CI-only failure
+  can be found and fixed without a push. `--each` runs every target of the
+  `check` recipe separately and lists all failures in one pass, where `make
+  check` stops at the first. Running it found and reproduced the failure below.
+
 - Desktop update experience (Sync Sprint 4 S4-06,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, decision D-8: upstream's
   mechanism for `#318`-`#323` is declined because `lyona-update`'s signed
@@ -1146,6 +1153,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `tests/test-quickshell-system-management-xvfb.sh` no longer races the
+  discovery subscriptions. It asserted the native provider and state statuses
+  (`available`) before waiting for each discovery domain to connect, so on a
+  slower host they read `partial` and it failed in the full-suite CI image; it
+  now waits for every domain first. Its D-3 check also asked
+  `prepareDelegate(accounts-open)` once, straight after the timezone dispatch,
+  and got the shared operation model's "busy" message when that was still
+  settling; it now asks again until the D-3 reason appears, still requiring
+  every attempt to be refused with nothing pending. It failed 4 of 4 runs in
+  the CI container before and passed 5 of 5 after.
+- `tests/test-quickshell-design-system.sh` checks the CI layout as it is now.
+  It still expected the hosted `c-cpp.yml` job to name the `qml-validation`
+  package profile twice, which stopped being true when that job became the
+  desktop smoke test (it installs `ci-smoke`) and QML validation moved to
+  `full-suite.yml`, so `make check` failed there. It now requires each workflow
+  to take its packages from the right profile and to hard-code neither
+  `quickshell` nor `qt6-declarative`.
 - Settings > Bluetooth device rows no longer clip their address line at large
   text sizes. The row had a fixed height (`Theme.dp(68)`) while its two text
   lines scale with the font, so at 200 percent text with Noto Sans (a line

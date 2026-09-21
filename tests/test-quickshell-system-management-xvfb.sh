@@ -412,6 +412,32 @@ if [ -z "$settings_clock" ]; then
 	exit 1
 fi
 
+test_stage='validating the six native discovery domains reach ready (#261, extended S2-05 #286)'
+# A native record is only reported fresh (available) once its own discovery
+# domain has connected, so wait for every domain here, before asserting any
+# provider or state status below. Asserting first made these checks race the
+# subscriptions: a slower host still saw `partial`.
+# openSettings() opened all discovery models together (#261); the update one
+# already proved ready above via the loaded snapshot -- these six are new
+# (storage and security joined in S2-05). Each one's own stub watch-* command
+# (added alongside these assertions) must actually be reached, not just
+# tolerated as "failed" by discoveryReady()'s deliberately permissive batch
+# gate.
+for domain in time locale accounts printers storage security; do
+	native_discovery_status=
+	i=0
+	while [ "$i" -lt 100 ]; do
+		native_discovery_status=$(ipc settings systemManagementNativeDiscoveryStatus "$domain" 2>/dev/null || true)
+		case $native_discovery_status in idle:ready) break ;; esac
+		i=$((i + 1))
+		sleep 0.05
+	done
+	if [ "$native_discovery_status" != idle:ready ]; then
+		printf '%s discovery did not reach idle:ready: %s\n' "$domain" "$native_discovery_status" >&2
+		exit 1
+	fi
+done
+
 test_stage='validating protocol minor 1 native content (#259)'
 # The stub's four native providers, five native states, one account and one
 # repository record all parse and reconcile cleanly -- proving compose
@@ -447,28 +473,6 @@ test_stage='validating protocol minor 2 information/storage/security content (S2
 [ "$(ipc settings systemManagementNativeStateValue screen-lock)" = 'available:enabled' ]
 [ "$(ipc settings systemManagementNativeStateValue filesystem-summary)" = 'available:1' ]
 [ "$(ipc settings systemManagementFilesystemsCount)" -eq 1 ]
-
-test_stage='validating the six native discovery domains reach ready (#261, extended S2-05 #286)'
-# openSettings() opened all discovery models together (#261); the update one
-# already proved ready above via the loaded snapshot -- these six are new
-# (storage and security joined in S2-05). Each one's own stub watch-* command
-# (added alongside these assertions) must actually be reached, not just
-# tolerated as "failed" by discoveryReady()'s deliberately permissive batch
-# gate.
-for domain in time locale accounts printers storage security; do
-	native_discovery_status=
-	i=0
-	while [ "$i" -lt 100 ]; do
-		native_discovery_status=$(ipc settings systemManagementNativeDiscoveryStatus "$domain" 2>/dev/null || true)
-		case $native_discovery_status in idle:ready) break ;; esac
-		i=$((i + 1))
-		sleep 0.05
-	done
-	if [ "$native_discovery_status" != idle:ready ]; then
-		printf '%s discovery did not reach idle:ready: %s\n' "$domain" "$native_discovery_status" >&2
-		exit 1
-	fi
-done
 
 test_stage='sampling idle CPU with all seven watch-* domains subscribed (S2-07 qualification)'
 # Every domain above (updates, time, locale, accounts, printers -- plus
@@ -801,18 +805,31 @@ test_stage='validating that accounts-open is D-3 unsupported, not merely busy'
 # it permanently unsupported, so prepareDelegate() itself must refuse it and
 # report the helper's own reason text, matching delegated_command()'s exact
 # "No account-management tool is packaged for Arch" message.
-if [ "$(ipc settings systemManagementPrepareDelegate accounts-open)" != false ]; then
-	printf 'systemManagementPrepareDelegate(accounts-open) prepared despite D-3\n' >&2
-	exit 1
-fi
-if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
-	printf 'prepareDelegate(accounts-open) left a pending confirmation despite being refused\n' >&2
-	exit 1
-fi
-case $(ipc settings systemManagementNativeConfirmationMessage) in
+# While the timezone-set dispatch above is still settling, the shared
+# operation model refuses with a "busy" message instead, so ask again until the
+# D-3 reason appears. Every attempt must still be refused with nothing pending.
+d3_message=
+i=0
+while [ "$i" -lt 100 ]; do
+	if [ "$(ipc settings systemManagementPrepareDelegate accounts-open)" != false ]; then
+		printf 'systemManagementPrepareDelegate(accounts-open) prepared despite D-3\n' >&2
+		exit 1
+	fi
+	if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+		printf 'prepareDelegate(accounts-open) left a pending confirmation despite being refused\n' >&2
+		exit 1
+	fi
+	d3_message=$(ipc settings systemManagementNativeConfirmationMessage)
+	case $d3_message in
+	*"No account-management tool is packaged for Arch"*) break ;;
+	esac
+	i=$((i + 1))
+	sleep 0.05
+done
+case $d3_message in
 *"No account-management tool is packaged for Arch"*) ;;
 *)
-	printf 'prepareDelegate(accounts-open) did not surface the D-3 reason text\n' >&2
+	printf 'prepareDelegate(accounts-open) did not surface the D-3 reason text: %s\n' "$d3_message" >&2
 	exit 1
 	;;
 esac

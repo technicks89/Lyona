@@ -14,13 +14,22 @@ qml_packages=$(bash -c '. "$1"; dwm_packages arch qml-validation' sh \
 [ "$(printf '%s\n' "$qml_packages" | wc -l)" -eq 2 ]
 printf '%s\n' "$qml_packages" | grep -Fx quickshell >/dev/null
 printf '%s\n' "$qml_packages" | grep -Fx qt6-declarative >/dev/null
-[ "$(grep -Fc 'dwm_packages arch qml-validation' "$repo/.github/workflows/c-cpp.yml")" -eq 2 ]
-for package in quickshell qt6-declarative; do
-	if grep -Eq "(^|[^[:alnum:]_+-])$package([^[:alnum:]_+-]|-[0-9]|$)" \
-		"$repo/.github/workflows/c-cpp.yml"; then
-		printf '%s\n' "CI hard-codes $package instead of using the qml-validation profile." >&2
-		exit 1
-	fi
+# CI takes its package sets from these profiles rather than lists of its own:
+# the hosted desktop-smoke job installs ci-smoke (which starts Quickshell), and
+# the full suite, which runs the QML validation, adds qml-validation.
+ci_smoke_packages=$(bash -c '. "$1"; dwm_packages arch ci-smoke' sh \
+	"$repo/scripts/dwm-packages.sh")
+printf '%s\n' "$ci_smoke_packages" | grep -Fx quickshell >/dev/null
+[ "$(grep -Fc 'dwm_packages arch ci-smoke' "$repo/.github/workflows/c-cpp.yml")" -eq 1 ]
+[ "$(grep -Fc 'dwm_packages arch qml-validation' "$repo/.github/workflows/full-suite.yml")" -eq 1 ]
+for workflow in c-cpp full-suite; do
+	for package in quickshell qt6-declarative; do
+		if grep -Eq "(^|[^[:alnum:]_+-])$package([^[:alnum:]_+-]|-[0-9]|$)" \
+			"$repo/.github/workflows/$workflow.yml"; then
+			printf '%s\n' "$workflow.yml hard-codes $package instead of using the package profiles." >&2
+			exit 1
+		fi
+	done
 done
 
 for token in \
