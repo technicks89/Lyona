@@ -101,10 +101,11 @@ to port — Chris opened this the same day as `#348`/`#349` with no PR yet.
 This is the largest item in this survey by far and needs its own design pass
 (a new Quickshell surface, dwm-side IPC or root-property exposure of
 cross-tag window state, keyboard navigation, multi-monitor handling) before
-any implementation estimate is meaningful. **Not started; recommend scoping
-as its own follow-up document (`design/CROSS-TAG-OVERVIEW.md` or similar)
-once someone picks it up, rather than folding a large new-surface design into
-this sprint doc.**
+any implementation estimate is meaningful. **Design done, implementation not started:**
+see [`docs/design/CROSS-TAG-WINDOW-OVERVIEW.md`](design/CROSS-TAG-WINDOW-OVERVIEW.md)
+for the proposed shape (no `dwm.c` change needed -- it reuses `_NET_CLIENT_LIST`,
+`_NET_WM_DESKTOP` and the existing `dwm-quickshell-state watch` stream), phased
+into five independently landable pieces.
 
 ---
 
