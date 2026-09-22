@@ -524,6 +524,10 @@ check-shell-contracts:
 check-test-lib:
 	tests/test-lib.sh
 
+.PHONY: check-ci-schedule
+check-ci-schedule:
+	tests/test-ci-schedule.sh
+
 check-dwm-roundtrips:
 	tests/test-dwm-x-roundtrips.sh
 
@@ -827,6 +831,7 @@ check:
 	$(MAKE) check-diagnostics
 	$(MAKE) check-status
 	$(MAKE) check-test-lib
+	$(MAKE) check-ci-schedule
 	$(MAKE) check-shell-contracts
 	$(MAKE) check-gtk-theme
 	$(MAKE) check-plymouth-theme

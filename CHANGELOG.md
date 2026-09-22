@@ -523,6 +523,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   own evidence window sizes); the full `tests/test-quickshell-system-management-xvfb.sh`
   integration suite and full-tree qmllint (still the same 15-warning
   baseline) both stayed clean after wiring the new card into the live pane.
+- `scripts/ci-local.sh --each --jobs N` runs the check targets on N containers at once
+  (#86). The targets are dealt longest first to the least-loaded worker, using the
+  durations the previous run recorded (`scripts/ci-schedule.sh`, unit-tested by
+  `make check-ci-schedule` without Docker), the output is prefixed `[wN]`, and the
+  summary lists every failure plus any target that did not run because its worker
+  died, with a ready-to-paste `--targets "..."` line to rerun them. N is capped by
+  the cores and the target count. The run says up front that a parallel pass is a
+  weaker signal than a serial one, since timing-sensitive tests can fail under the extra load.
+
 - Wire the information/storage/security readers from S2-01 through S2-04
   into the system-management snapshot protocol as minor `2`, both on the
   Python provider and the Quickshell consumer (Sync Sprint 2 S2-05,

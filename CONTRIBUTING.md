@@ -64,7 +64,10 @@ a push: the same `archlinux:base-devel` image, the same package set, and the
 same unprivileged `nobody` runner, on a copy of your working tree, so
 uncommitted edits are included. `make check` stops at its first failure, so
 `scripts/ci-local.sh --each` runs every target of the `check` recipe on its own
-and lists all the failures at the end. Name a target to rerun one gate, add
+and lists all the failures at the end. `--each --jobs N` runs the targets on N
+containers at once (about N times faster, but a weaker signal: a timing-sensitive
+test can fail only under the extra load, so rerun a failure serially before you
+believe it), and `--each --targets "A B"` reruns just those. Name a target to rerun one gate, add
 `--keep` to leave the container up for debugging, `--clang` for the workflow's
 clang build, and `--refresh` to rebuild the cached package image from a fresh
 base (do that now and then: CI always starts from the newest one). It runs
