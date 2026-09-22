@@ -38,6 +38,15 @@ TestCase {
             "A left-aligned tooltip near the far edge must not run past the window");
     }
 
+    function test_fractional_width_stays_inside_the_right_edge() {
+        const windowWidth = 1024;
+        const tooltipWidth = 80.5;
+        const x = TooltipPosition.clampedX(windowWidth, tooltipWidth, 1020, false);
+        compare(x, 943, "The fractional right boundary must be floored");
+        verify(x + tooltipWidth <= windowWidth,
+            "A fractional-width tooltip must not extend past the window");
+    }
+
     function test_a_narrower_window_reflows_the_same_anchor_point() {
         // The same anchor point, after the window narrows (a DPI change, a
         // monitor hot-plug): the tooltip must reflow to the new width, not
