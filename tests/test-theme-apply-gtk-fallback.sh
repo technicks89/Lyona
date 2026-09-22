@@ -29,7 +29,8 @@ done
 chmod +x "$bin"/*
 
 run_apply() {
-	HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share \
+	local data_home=${1:-$home/.local/share}
+	HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$data_home \
 		XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
 		PATH=$bin:/usr/bin:/bin \
 		"$repo/scripts/theme-apply.sh" >"$work/apply.out" 2>&1
@@ -96,13 +97,12 @@ grep -Fq 'gtk-theme-name=Adwaita-dark' "$home/.config/gtk-3.0/settings.ini" ||
 rm -f "$home/.config/lyona/personalization.conf"
 printf 'a personalized GTK theme never triggers on-demand generation: PASS\n'
 
-# 3. Generation genuinely failing (a read-only home, standing in for "the
-# generator itself broke") must still fall back to something that is
-# actually dark, not a theme name nothing provides.
+# 3. Generation genuinely failing (an invalid data home, standing in for "the
+# generator itself broke") must still fall back to something that is actually
+# dark, not a theme name nothing provides. /dev/null is a non-directory, so
+# this blocks output creation even when the test runs as root.
 rm -rf "$home/.local/share/themes"
-chmod 500 "$home/.local/share"
-run_apply || true
-chmod 700 "$home/.local/share"
+run_apply /dev/null || true
 if grep -Fq 'gtk-theme-name=Adwaita-dark' "$home/.config/gtk-3.0/settings.ini"; then
 	fail 'fell back to the literal name "Adwaita-dark", which recent GTK does not ship as a separate theme'
 fi
