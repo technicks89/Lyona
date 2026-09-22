@@ -246,6 +246,7 @@ static void raisefullscreenclients(Client *c);
 static void raisealwaysontopclients(Client *c);
 static void raisefloatingclients(Client *c);
 static void raiseselectedclient(Monitor *m);
+static int restackraisesselected(Monitor *m);
 static void restackprioritywindows(void);
 static void restack(Monitor *m);
 static unsigned int scaledpx(unsigned int value);
@@ -260,6 +261,7 @@ static void setfullscreen(Client *c, int fullscreen);
 static void fullscreen(const Arg *arg);
 static void setlayout(const Arg *arg);
 static void setlayoutshrink(const Arg *arg, int shrink);
+static void setfloating(Client *c, int shrink);
 static void shrinkfloating(Client *c);
 static void setcfact(const Arg *arg);
 static void setmfact(const Arg *arg);
@@ -430,6 +432,11 @@ static const char *altbarclass = "quickshell";
 static const char *alttrayname = "tray";
 
 #include "config.h"
+
+/* Older config.h files (lyona-update builds with the user's own) predate this. */
+#ifndef FLOATSHRINKPCT
+#define FLOATSHRINKPCT 85
+#endif
 
 static Key          *rt_keys  = NULL;
 static int           rt_nkeys = 0;
@@ -2110,7 +2117,7 @@ movemouse(const Arg *arg)
 				ny = selmon->wy + selmon->wh - HEIGHT(c);
 			if (!c->isfloating && selmon->lt[selmon->sellt]->arrange
 			&& (abs(nx - c->x) > (int)dyn_snap || abs(ny - c->y) > (int)dyn_snap))
-				togglefloating(NULL);
+				setfloating(selmon->sel, 0);
 			if (!selmon->lt[selmon->sellt]->arrange || c->isfloating)
 				resize(c, nx, ny, c->w, c->h, 1);
 			break;
@@ -2518,7 +2525,7 @@ resizemouse(const Arg *arg)
 			{
 				if (!c->isfloating && selmon->lt[selmon->sellt]->arrange
 				&& (abs(nw - c->w) > (int)dyn_snap || abs(nh - c->h) > (int)dyn_snap)) {
-					togglefloating(NULL);
+					setfloating(selmon->sel, 0);
 				}
 			}
 			if (!selmon->lt[selmon->sellt]->arrange || c->isfloating) {
@@ -2630,7 +2637,7 @@ restack(Monitor *m)
 		restackprioritywindows();
 		return;
 	}
-	if (m->sel->isfloating || !m->lt[m->sellt]->arrange)
+	if (restackraisesselected(m))
 		XRaiseWindow(dpy, m->sel->win);
 	if (m->lt[m->sellt]->arrange) {
 		sibling = m->barwin;
@@ -2676,6 +2683,14 @@ raisefullscreenclients(Client *c)
 	raisefullscreenclients(c->snext);
 	if (isvisiblefullscreen(c))
 		XRaiseWindow(dpy, c->win);
+}
+
+/* Whether restack() raises the selected client of m: it is floating, or the
+ * layout is the floating one. raiseselectedclient() must agree with this. */
+int
+restackraisesselected(Monitor *m)
+{
+	return m->sel && (m->sel->isfloating || !m->lt[m->sellt]->arrange);
 }
 
 void
@@ -2738,11 +2753,11 @@ raiseselectedclient(Monitor *m)
 		return;
 	if (c->alwaysontop || c->ewmhabove || isvisiblefullscreen(c))
 		return;
-	/* Only where restack() itself raises the selected client (floating, or in
-	 * the floating layout), so that it is not left under the floating clients
-	 * raised just before it. A tiled selected client stays below floating
-	 * clients and below popups an application raised itself. */
-	if (!c->isfloating && m->lt[m->sellt]->arrange)
+	/* Only where restack() itself raises the selected client, so that it is not
+	 * left under the floating clients raised just before it. A tiled selected
+	 * client stays below floating clients and below popups an application
+	 * raised itself. */
+	if (!restackraisesselected(m))
 		return;
 	XRaiseWindow(dpy, c->win);
 }
@@ -4658,8 +4673,8 @@ shrinkfloating(Client *c)
 
 	x = c->x;
 	y = c->y;
-	w = MAX(1, c->w * 85 / 100);
-	h = MAX(1, c->h * 85 / 100);
+	w = MAX(1, c->w * FLOATSHRINKPCT / 100);
+	h = MAX(1, c->h * FLOATSHRINKPCT / 100);
 	applysizehints(c, &x, &y, &w, &h, 0);
 	x = c->x + (c->w - w) / 2;
 	y = c->y + (c->h - h) / 2;
@@ -4668,10 +4683,12 @@ shrinkfloating(Client *c)
 	resizeclient(c, x, y, w, h);
 }
 
+/* Toggle c between tiled and floating. shrink is the policy: an explicit
+ * toggle pops a tiled client out at FLOATSHRINKPCT percent of its tile, while a
+ * mouse drag (shrink = 0) keeps the geometry it started from. */
 void
-togglefloating(const Arg *arg)
+setfloating(Client *c, int shrink)
 {
-	Client *c = selmon->sel;
 	int wasfloating;
 
 	if (!c)
@@ -4681,14 +4698,18 @@ togglefloating(const Arg *arg)
 	wasfloating = c->isfloating;
 	c->isfloating = !wasfloating || c->isfixed;
 	if (c->isfloating) {
-		if (arg && !wasfloating && !c->isfixed && c->mon->lt[c->mon->sellt]->arrange) {
-			/* Explicit toggles pop out of the tile; mouse drags keep their geometry. */
+		if (shrink && !wasfloating && !c->isfixed && c->mon->lt[c->mon->sellt]->arrange)
 			shrinkfloating(c);
-		} else {
+		else
 			resize(c, c->x, c->y, c->w, c->h, 0);
-		}
 	}
 	arrange(selmon);
+}
+
+void
+togglefloating(const Arg *arg)
+{
+	setfloating(selmon->sel, 1);
 }
 
 void
