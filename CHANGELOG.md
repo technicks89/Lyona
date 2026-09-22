@@ -286,6 +286,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   existing-system `install.sh` both open `.mkv` in Celluloid and `.png` in sxiv
   from Thunar, and still do after logout and reboot, which needs real installs.
 
+- The application launcher hides desktop entries scoped to other desktops (#104,
+  ported in part from upstream PR #340). `scripts/dwm-quickshell-launcher` now
+  reads `OnlyShowIn` and `NotShowIn` and compares them with the tokens of
+  `XDG_CURRENT_DESKTOP` (a Lyona session exports `X-DWM` and `dwm`; unset means
+  the same), so other environments' preference panels, such as the XFCE panel
+  settings that Thunar pulls in, no longer appear. Any one matching token is
+  enough, the comparison is case sensitive, an empty `OnlyShowIn` shows the
+  entry nowhere, and GLib-compatible ordered token handling checks
+  `OnlyShowIn` before `NotShowIn` for each token (falling back to the existing
+  behavior when no token matches). A key inside an action group never scopes
+  the whole entry. Opening a panel popup now also closes the launcher, the
+  notification history and the Control Center utility window instead of
+  leaving them open behind it. The rest of upstream's PR (screen-sized
+  click-away windows, square corners, 1 px focus borders) was declined and
+  Lyona keeps its behaviour. New cases in `tests/test-quickshell-launcher.sh`
+  and `tests/test-quickshell-command-menu.sh`.
+
 - Configuration-backed Picom controls (Sync Sprint 4 S4-01,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
   `#312`/`#313`/`#314`, closing upstream issue `#309`): **Settings > Appearance >
