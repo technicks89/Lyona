@@ -41,6 +41,9 @@ text = replace_once(
     '        if (action === "status" && (helper === "dwm-accessibility-settings" || helper === "dwm-panel-settings")) return ["sleep", "0.75"];\n'
     '        if (helper === "dwm-system-management" && action.indexOf("snapshot") === 0) return ["sleep", "0.75"];\n'
     '        if (helper === "lyona-version" && action === "status") return ["sleep", "3"];\n'
+    '        if (action === "snapshot" && (helper === "dwm-quickshell-network" || helper === "dwm-default-apps" || helper === "dwm-xdg-autostart")) return ["sleep", "0.75"];\n'
+    '        if ((action === "bluetooth-snapshot" || action === "audio-snapshot") && helper === "dwm-quickshell-controls") return ["sleep", "0.75"];\n'
+    '        if (action === "power-snapshot" && helper === "dwm-quickshell-controlcenter") return ["sleep", "0.75"];\n'
     '        return ["true"];\n        const argv = args || [];',
 )
 commands.write_text(text)
@@ -88,6 +91,11 @@ text = replace_once(text, "id: root", """id: root
         let pending = false;
         if (type.startsWith("DisplaySettingsPane")) pending = settingsModel.displayActionBusy || settingsModel.displayRefreshPending || settingsModel.automaticDisplayRefreshPending;
         if (type.startsWith("InputSettingsPane")) pending = settingsModel.inputActionBusy || settingsModel.inputRefreshPending;
+        if (type.startsWith("NetworkSettingsPane")) pending = networkModel.initialLoading;
+        if (type.startsWith("BluetoothSettingsPane")) pending = bluetoothModel.initialLoading;
+        if (type.startsWith("AudioSettingsPane")) pending = controlsModel.initialLoading;
+        if (type.startsWith("PowerSettingsPane")) pending = powerModel.initialLoading;
+        if (type.startsWith("DefaultsSettingsPane")) pending = defaultsModel.initialLoading || autostartModel.initialLoading;
         if (type.startsWith("AppearanceSettingsPane")) pending = appearanceModel.initialLoading
             || accessibilityModel.initialLoading || panelSettingsModel.initialLoading || notificationModel.initialLoading;
         if (type.startsWith("SystemSettingsPane")) pending = (!settingsModel.testIgnoreSystemModel && systemManagementModel.initialLoading) || updateModel.initialLoading;
