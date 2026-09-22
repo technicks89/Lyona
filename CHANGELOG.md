@@ -10,6 +10,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- `PanelTooltip.qml`'s horizontal position is now a live property binding
+  (Sync Sprint 6 S6-01, `docs/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`,
+  small portable fix from upstream `#343` `2461027`), not only recomputed from
+  `anchor.onAnchoring`, an event that does not necessarily fire on every
+  geometry-relevant change. The clamping math moves to a small pure function,
+  `PanelTooltipPosition.js`'s `clampedX()`, unit-tested directly
+  (`tests/qml/tst_panel_tooltip_position.qml`, via `qmltestrunner`) instead of
+  only through the six panel widgets that use `PanelTooltip`.
+
 - Floating a tiled window now visibly changes it (Sync Sprint 5 S5-03, decision
   D-9, ported from upstream `#331` `2e77c11` and `#333` `841d3cd`).
   `togglefloating` used to float a window at its current tile size, so
