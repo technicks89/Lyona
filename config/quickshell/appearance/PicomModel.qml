@@ -20,6 +20,10 @@ Scope {
         active: 100, inactive: 100, policy: "auto", effective: "", override: "",
         revision: "", path: "", detail: "Loading Picom configuration", copyable: false })
     property var actionArguments: []
+    // What the watcher reported when its watches went live: the revision it saw
+    // (empty when it could not say), waiting to be checked against a status read.
+    property bool watchReadyPending: false
+    property string watchReadyRevision: ""
     property string action: "status"
     readonly property bool editable: root.snapshot.editable && !root.busy
 
@@ -43,6 +47,17 @@ Scope {
         }
         statusProcess.running = true;
         root.pending = false;
+    }
+
+    // The watcher is live from the moment it said ready, and the status read
+    // may predate that, so an edit in between would go unseen. If the revision
+    // the watcher saw is the one the snapshot holds nothing was missed and no
+    // second read is needed; otherwise (or when it could not say) read again.
+    function verifyWatchReady() {
+        if (!root.watchReadyPending || statusProcess.running || root.pending) return;
+        root.watchReadyPending = false;
+        if (root.watchReadyRevision === "" || root.watchReadyRevision !== root.snapshot.revision)
+            settle.restart();
     }
 
     function mutate(action, args, revision) {
@@ -84,6 +99,7 @@ Scope {
                 } catch (error) { root.statusFailure = String(error); }
             } else root.pending = true;
             if (root.pending && !root.busy) settle.restart();
+            root.verifyWatchReady();
         }
     }
 
@@ -109,8 +125,13 @@ Scope {
         running: root.active
         stdout: SplitParser {
             onRead: data => {
-                if (data === "ready") root.watchFailure = "";
-                if (data === "changed" || data === "ready") settle.restart();
+                if (data === "changed") settle.restart();
+                else if (data === "ready" || data.indexOf("ready\t") === 0) {
+                    root.watchFailure = "";
+                    root.watchReadyRevision = data.substring(6);
+                    root.watchReadyPending = true;
+                    root.verifyWatchReady();
+                }
             }
         }
         stderr: StdioCollector { id: watchError }

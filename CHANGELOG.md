@@ -145,6 +145,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   Wi-Fi prompt stay on screen and scroll, and the last notification's dismiss
   control is reachable.
 
+- Settings > Appearance reads the Picom configuration once when nothing changed, not
+  twice (#85). The watcher used to say `ready` right after starting `inotifywait`,
+  before its watches existed, and the model answered every `ready` with a second
+  `dwm-settings-picom status` (about 0.2 s of Python start-up) to close the gap; the
+  compositor term of the pane's loading gate could flap false then true 150 ms
+  apart. `dwm-settings-picom watch` now waits for `inotifywait`'s "Watches
+  established." and says `ready<TAB>revision` with the configuration revision as of
+  that moment, and `PicomModel` reads again only when that revision differs from the
+  one it already holds (or the watcher could not give one, or the first read
+  failed), so an edit made between the first read and the watcher going live is
+  still shown. Covered by two helper tests in `tests/test-picom.py` (an edit right
+  after `ready` is never missed) and the new `make check-quickshell-picom-model-xvfb`,
+  which plays eight watcher scenarios against the real model and counts the reads:
+  opening Settings went from 2 reads to 1 when nothing changed.
+
 - Compact the Control Center and Settings detail pane (Sync Sprint 3 S3-04,
   `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
   `c3e9a18` "refactor(quickshell): compact control surfaces", open since the
