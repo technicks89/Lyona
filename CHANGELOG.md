@@ -743,6 +743,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   exclusion where an update confirmation in flight did not block starting a
   delegated one, and a live confirmation-invalidation signal did not clear
   a pending delegated confirmation.
+- `scripts/ci-local.sh --clang` now runs the workflow's clang job the way the
+  workflow does (#87): a clean container with only the `build` profile and clang,
+  as root, `make clean all CC=clang`. It was `pacman -S clang` into a container
+  that already had every package, which could hide a build dependency missing from
+  the `build` profile and re-downloaded clang on every run. That container's image
+  is cached as `lyona-ci-clang:<hash>` (about 2 GB, built in a minute, rebuilt when
+  the `build` profile changes or with `--refresh`), and the suite's image is
+  untouched. `--clang-only` runs just this leg. Checked by dropping `libxft` from
+  the `build` profile: the leg now fails on the missing `xft`.
+
 - Share one timezone-aware minute clock between the panel and Settings
   (Sync Sprint 1 S1-06, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
   from upstream `#270`): the new `config/quickshell/core/ClockModel.qml`
