@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import "DwmStateWindows.js" as WindowsLib
 
 Scope {
     id: root
@@ -148,6 +149,16 @@ Scope {
             : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
     }
 
+    // Resolves each entry in `windows` to the tag/monitor it belongs to, for
+    // the overview popup (Sprint 7 S7-03) to group by. The actual math is
+    // DwmStateWindows.js's own pure workspaceIndexesForMonitor() range
+    // check -- the same split monitorWorkspaceRows/workspaceNames already
+    // describe -- kept out of this Scope so it stays directly unit-testable.
+    function windowsByTag() {
+        return WindowsLib.windowsByTag(root.windows, root.monitorWorkspaceRows, root.workspaceNames.length,
+            root.monitorCount());
+    }
+
     function focusedScreen() {
         if (root.focusedMonitorIndex >= 0) {
             return root.screenForMonitorIndex(root.focusedMonitorIndex);
@@ -162,6 +173,11 @@ Scope {
         return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
     }
 
+    function monitorCount() {
+        return Math.max(1, root.monitorWorkspaceRows.length > 0
+            ? root.monitorWorkspaceRows.length : Quickshell.screens.length);
+    }
+
     function workspaceIndexes(screen) {
         const indexes = [];
         const workspaceCount = root.workspaceNames.length;
@@ -170,8 +186,7 @@ Scope {
             return indexes;
         }
 
-        const screenCount = Math.max(1, root.monitorWorkspaceRows.length > 0
-            ? root.monitorWorkspaceRows.length : Quickshell.screens.length);
+        const screenCount = root.monitorCount();
         const logicalIndex = Math.min(root.screenIndex(screen), screenCount - 1);
         const workspacesPerScreen = Math.max(1, Math.floor(workspaceCount / screenCount));
         let start = logicalIndex * workspacesPerScreen;

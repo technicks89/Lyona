@@ -77,7 +77,7 @@ case "\$window:\$*" in
 	# root-owned: must be skipped from windows= the same as apps=, but its
 	# desktop still counts as occupied.
 	printf '_NET_WM_DESKTOP(CARDINAL) = 7\n'
-	printf '_NET_WM_PID(CARDINAL) = $root_pid\n'
+	printf '_NET_WM_PID(CARDINAL) = %s\n' "$root_pid"
 	printf 'WM_CLASS(STRING) = "rootapp", "RootApp"\n'
 	printf '_NET_WM_NAME(UTF8_STRING) = "Root App"\n'
 	;;
@@ -118,7 +118,14 @@ expect 'status=AC | VOL 15%'
 expect 'occupied=0|1|3|7'
 
 # apps keeps first-seen order, de-duplicates by class, and drops root-owned
-expect 'apps=0xaa:alacritty|0xbb:firefox'
+expect 'apps=0xaa:alacritty dev edition|0xbb:firefox'
+
+# windows= is per-window, never deduplicated by class (0xaa and 0xcc share
+# one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
+# WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
+# leaves an empty title rather than the literal "not found." text (0xcc),
+# and the root-owned window (0xdd) is excluded the same as apps= excludes it.
+expect 'windows=0xaa:3:alacritty dev edition:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty dev edition:'
 
 # windows= is per-window, never deduplicated by class (0xaa and 0xcc share
 # one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
@@ -132,7 +139,7 @@ expect 'fullscreen_monitors=0|1'
 
 # the active window's title has its whitespace collapsed
 expect 'title=a title with spaces'
-expect 'class=alacritty'
+expect 'class=alacritty dev edition'
 
 # One xprop for every root property, then exactly one per client window,
 # plus the active window's title and class. Anything more is a regression.
