@@ -219,8 +219,11 @@ make_scoped_entry only-dwm 'DWM Only App' 'OnlyShowIn=XFCE;dwm;'
 make_scoped_entry only-xdwm 'X-DWM Only App' 'OnlyShowIn=X-DWM;'
 make_scoped_entry not-dwm 'Not DWM App' 'NotShowIn=dwm;'
 make_scoped_entry not-kde 'Not KDE App' 'NotShowIn=KDE;'
-make_scoped_entry both-excluded 'Both Keys Excluded' 'OnlyShowIn=dwm;' 'NotShowIn=dwm;'
+make_scoped_entry only-before-not 'Only Before Not App' 'OnlyShowIn=X-DWM;' 'NotShowIn=dwm;'
+make_scoped_entry not-before-only 'Not Before Only App' 'OnlyShowIn=dwm;' 'NotShowIn=X-DWM;'
 make_scoped_entry both-shown 'Both Keys Shown' 'OnlyShowIn=dwm;' 'NotShowIn=KDE;'
+make_scoped_entry whitespace-only 'Whitespace Only App' 'OnlyShowIn =  dwm;'
+make_scoped_entry whitespace-not 'Whitespace Not App' 'NotShowIn =  dwm;'
 make_scoped_entry empty-only 'Empty Only App' 'OnlyShowIn='
 make_scoped_entry empty-not 'Empty Not App' 'NotShowIn='
 make_scoped_entry wrong-case 'Wrong Case App' 'OnlyShowIn=DWM;'
@@ -269,19 +272,20 @@ expect_hidden() {
 for desktop in 'X-DWM:dwm' -; do
 	scoped_output=$(list_for_desktop "$desktop")
 	expect_listed "$scoped_output" "$desktop" 'DWM Only App' 'X-DWM Only App' 'Not KDE App' \
-		'Both Keys Shown' 'Empty Not App' 'Action Scope App'
-	expect_hidden "$scoped_output" "$desktop" 'XFCE Only App' 'Not DWM App' 'Both Keys Excluded' \
-		'Empty Only App' 'Wrong Case App'
+		'Only Before Not App' 'Both Keys Shown' 'Whitespace Only App' 'Empty Not App' 'Action Scope App'
+	expect_hidden "$scoped_output" "$desktop" 'XFCE Only App' 'Not DWM App' 'Not Before Only App' \
+		'Whitespace Not App' 'Empty Only App' 'Wrong Case App'
 done
 # Another desktop sees its own entries and not this one's.
 scoped_output=$(list_for_desktop XFCE)
 expect_listed "$scoped_output" XFCE 'XFCE Only App' 'DWM Only App' 'Not DWM App' 'Not KDE App' \
-	'Empty Not App' 'Action Scope App'
-expect_hidden "$scoped_output" XFCE 'X-DWM Only App' 'Both Keys Excluded' 'Both Keys Shown' 'Empty Only App'
+	'Whitespace Not App' 'Empty Not App' 'Action Scope App'
+expect_hidden "$scoped_output" XFCE 'X-DWM Only App' 'Only Before Not App' 'Not Before Only App' \
+	'Both Keys Shown' 'Whitespace Only App' 'Empty Only App'
 # Any one of several tokens is enough.
 scoped_output=$(list_for_desktop 'GNOME:dwm')
-expect_listed "$scoped_output" 'GNOME:dwm' 'DWM Only App'
-expect_hidden "$scoped_output" 'GNOME:dwm' 'XFCE Only App'
+expect_listed "$scoped_output" 'GNOME:dwm' 'DWM Only App' 'Not Before Only App' 'Whitespace Only App'
+expect_hidden "$scoped_output" 'GNOME:dwm' 'XFCE Only App' 'Only Before Not App' 'Whitespace Not App'
 
 cat >"$work/bin/dex" <<'SH'
 #!/bin/sh

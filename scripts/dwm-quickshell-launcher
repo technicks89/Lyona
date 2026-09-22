@@ -99,29 +99,30 @@ desktop_entry_summary() {
 			}
 		}
 
-		# True when any desktop named in the colon list matches any of the
-		# semicolon-separated names in list_str (a comparison that is case
-		# sensitive, as the Desktop Entry specification has it).
-		function desktop_matches(list_str, n_desktops, n_names, desktops, names, i, j) {
-			n_desktops = split(current_desktop, desktops, ":")
+		# True when desktop matches a name in the semicolon-separated list
+		# (a comparison that is case sensitive, as the Desktop Entry
+		# specification has it).
+		function desktop_matches(desktop, list_str, n_names, names, j) {
 			n_names = split(list_str, names, ";")
-			for (i = 1; i <= n_desktops; i++) {
-				if (desktops[i] == "") continue
-				for (j = 1; j <= n_names; j++) {
-					if (names[j] == desktops[i]) return 1
-				}
+			for (j = 1; j <= n_names; j++) {
+				if (names[j] == desktop) return 1
 			}
 			return 0
 		}
 
-		# OnlyShowIn and NotShowIn scope an entry to desktops. Both, when both
-		# are present, must allow it (what GLib does; the autostart helper
-		# refuses such an entry instead, because it decides what to run). An
-		# empty OnlyShowIn lists no desktop, so it shows the entry nowhere.
-		function shown_on_this_desktop() {
-			if (has_onlyshowin && !desktop_matches(onlyshowin)) return 0
-			if (has_notshowin && desktop_matches(notshowin)) return 0
-			return 1
+		# OnlyShowIn and NotShowIn scope an entry to desktops. GLib evaluates
+		# the XDG_CURRENT_DESKTOP tokens in order, preferring OnlyShowIn over
+		# NotShowIn for each token. An empty OnlyShowIn lists no desktop, so it
+		# shows the entry nowhere.
+		function shown_on_this_desktop(n_desktops, desktops, i, desktop) {
+			n_desktops = split(current_desktop, desktops, ":")
+			for (i = 1; i <= n_desktops; i++) {
+				desktop = desktops[i]
+				if (desktop == "") continue
+				if (has_onlyshowin && desktop_matches(desktop, onlyshowin)) return 1
+				if (has_notshowin && desktop_matches(desktop, notshowin)) return 0
+			}
+			return !has_onlyshowin
 		}
 
 		function desktop_entry_visible() {
@@ -239,14 +240,16 @@ desktop_entry_summary() {
 			next
 		}
 
-		entry && $0 ~ /^OnlyShowIn=/ {
-			onlyshowin = substr($0, 12)
+		entry && $0 ~ /^OnlyShowIn[[:space:]]*=/ {
+			onlyshowin = key_value($0)
+			sub(/^[[:space:]]+/, "", onlyshowin)
 			has_onlyshowin = 1
 			next
 		}
 
-		entry && $0 ~ /^NotShowIn=/ {
-			notshowin = substr($0, 11)
+		entry && $0 ~ /^NotShowIn[[:space:]]*=/ {
+			notshowin = key_value($0)
+			sub(/^[[:space:]]+/, "", notshowin)
 			has_notshowin = 1
 			next
 		}
