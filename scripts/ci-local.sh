@@ -8,9 +8,8 @@
 # it is (tracked and untracked files, uncommitted edits included), so nothing
 # has to be committed or pushed first.
 #
-# Usage: scripts/ci-local.sh [--each [--jobs N] [--targets "A B"]] [--clang] [--keep]
-#                            [--refresh] [TARGET]
-# Usage: scripts/ci-local.sh [--each] [--clang | --clang-only] [--keep] [--refresh] [TARGET]
+# Usage: scripts/ci-local.sh [--each [--jobs N] [--targets "A B"]]
+#                            [--clang | --clang-only] [--keep] [--refresh] [TARGET]
 #
 #   TARGET     make target to run (default: check, the whole suite)
 #   --each     run every target of the `check` recipe on its own and list all
@@ -23,7 +22,6 @@
 #   --targets "A B"
 #              with --each, run just these targets instead of the whole check
 #              recipe (to rerun what failed)
-#   --clang    also build dwm with clang, like the workflow's second job
 #   --clang    also build dwm with clang, like the workflow's second job: in a
 #              fresh container that has only the `build` packages and clang
 #              (cached as its own small image), so a build dependency missing
@@ -130,15 +128,6 @@ docker info >/dev/null 2>&1 || {
 source "$repo/scripts/dwm-packages.sh"
 # shellcheck source=scripts/ci-schedule.sh
 source "$repo/scripts/ci-schedule.sh"
-mapfile -t packages < <(
-	{
-		dwm_packages arch full
-		dwm_packages arch ci-smoke
-		dwm_packages arch qml-validation
-		printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
-			xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
-	} | awk 'NF' | sort -u
-)
 mapfile -t packages < <(dwm_packages arch ci-full | awk 'NF' | sort -u)
 image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
 # The workflow's clang job installs the build profile and clang in a clean
@@ -166,25 +155,17 @@ cleanup() {
 	local cname
 	[[ -z $context ]] || rm -rf "$context"
 	[[ -z $filelist ]] || rm -f "$filelist"
-	for cname in "${containers[@]}"; do
+	for cname in ${containers[@]+"${containers[@]}"}; do
 		if ((keep)); then
 			printf '==> Container kept: docker exec -it %s bash   (remove with: docker rm -f %s)\n' "$cname" "$cname"
 		else
 			docker rm -f "$cname" >/dev/null 2>&1 || true
-	local one
-	[[ -z $context ]] || rm -rf "$context"
-	[[ -z $filelist ]] || rm -f "$filelist"
-	for one in ${containers[@]+"${containers[@]}"}; do
-		if ((keep)); then
-			printf '==> Container kept: docker exec -it %s bash   (remove with: docker rm -f %s)\n' "$one" "$one"
-		else
-			docker rm -f "$one" >/dev/null 2>&1 || true
 		fi
 	done
 }
 trap cleanup EXIT
 
-# ensure_image IMAGE STRICT PACKAGE...: build the cached image unless it exists
+# ensure_image TAG STRICT PACKAGE...: build the cached image unless it exists
 # (--refresh rebuilds it). STRICT=0 drops the names the repositories lack, as
 # the full suite's install step does. STRICT=1 installs the clang build and tool
 # profiles as independent layers without filtering unavailable package names,
@@ -230,20 +211,14 @@ EOF
 	rm -rf "$context"
 	context=
 }
-fi
 
-# The files to copy: those git knows about or would add, and .git itself (some
-# tests read the history). Files deleted since the last commit are simply
-# absent. The list goes to a file so a failing git is seen (a process
-# substitution would hide it and tar would quietly copy only .git).
-printf '==> Starting %s from %s\n' "$name" "$image"
-# --rm and a finite sleep: if this script is killed before its trap runs, the
-# container still goes away by itself.
-docker run -d --rm --init --label lyona-ci=1 --name "$name" \
-	"${CI_SECURITY_OPTS[@]}" \
-	-e DWM_TEST_TMP_ROOT="$test_root" \
-	"$image" sleep "$max_life" >/dev/null
-container=$name
+# warn_tar_errors FILE: say so if tar could not copy some files.
+warn_tar_errors() {
+	[[ -s $1 ]] || return 0
+	printf '==> warning: some files were not copied into the container (%s):\n' \
+		"$(wc -l <"$1") message(s)" >&2
+	head -n 5 "$1" >&2
+}
 
 # The files git knows about or would add: the working tree as it is now. Files
 # deleted since the last commit are simply absent. The list goes to a file so a
@@ -269,7 +244,7 @@ commondir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
 start_container() {
 	local cname=$1
 	docker run -d --rm --init --label lyona-ci=1 --name "$cname" \
-		--security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+		"${CI_SECURITY_OPTS[@]}" \
 		-e DWM_TEST_TMP_ROOT="$test_root" \
 		"$image" sleep "$max_life" >/dev/null
 	containers+=("$cname")
@@ -295,10 +270,12 @@ copy_tree_into() {
 	fi
 }
 
+# prepare_container NAME: safe.directory, the runner's home/runtime/test
+# directories, and ownership, the way the workflow's job does for `nobody`.
 prepare_container() {
 	docker exec "$1" bash -c "
 		git config --global --add safe.directory '$workspace'
-		install -d -m 0700 -o nobody -g nobody /home/dwm-ci /run/dwm-ci '$test_root'
+		install -d -m 0700 -o nobody -g nobody '$CI_HOME' '$CI_RUNTIME_DIR' '$test_root'
 		chown -R nobody:nobody '$workspace'"
 }
 
@@ -308,9 +285,10 @@ as_nobody_in() {
 	local cname=$1
 	shift
 	docker exec -w "$workspace" "$cname" \
-		runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+		runuser -u nobody -- env HOME="$CI_HOME" XDG_RUNTIME_DIR="$CI_RUNTIME_DIR" \
 		DWM_TEST_TMP_ROOT="$test_root" "$@"
 }
+# shellcheck disable=SC2329 # runs through run_logged
 as_nobody() { as_nobody_in "$name" "$@"; }
 
 # The targets --each runs: the ones named, or the Makefile's own check recipe.
@@ -332,85 +310,28 @@ if ((each && jobs > 1)); then
 	((workers == jobs)) || printf '==> --jobs %d becomes %d (the cores and the number of targets cap it)\n' "$jobs" "$workers"
 fi
 
+# The suite container(s): built, started, and populated, unless this run is
+# only the clang leg.
 worker_names=()
-if ((workers > 1)); then
-	for ((i = 1; i <= workers; i++)); do worker_names+=("$name-w$i"); done
-	printf '==> Starting %d containers from %s\n' "$workers" "$image"
-	for cname in "${worker_names[@]}"; do
-		start_container "$cname"
-		copy_tree_into "$cname"
-		prepare_container "$cname"
-	done
-	name=${worker_names[0]} # the clang leg, if asked for, runs in the first
-else
-	printf '==> Starting %s from %s\n' "$name" "$image"
-	start_container "$name"
-	copy_tree_into "$name"
-	prepare_container "$name"
-fi
-if [[ -s $tar_errors ]]; then
-
-# warn_tar_errors FILE: say so if tar could not copy some files.
-warn_tar_errors() {
-	[[ -s $1 ]] || return 0
-	printf '==> warning: some files were not copied into the container (%s):\n' \
-		"$(wc -l <"$1") message(s)" >&2
-	head -n 5 "$1" >&2
-}
-
-# The container the suite runs in: the full image, the tree, and .git itself
-# (some tests read the history).
-start_suite_container() {
-	local state_file
+if ((! clang_only)); then
 	ensure_image "$image" 0 "${packages[@]}"
-	printf '==> Starting %s from %s\n' "$name" "$image"
-	# --rm and a finite sleep: if this script is killed before its trap runs, the
-	# container still goes away by itself.
-	docker run -d --rm --init --label lyona-ci=1 --name "$name" \
-		--security-opt seccomp=unconfined --security-opt apparmor=unconfined \
-		-e DWM_TEST_TMP_ROOT="$test_root" \
-		"$image" sleep "$max_life" >/dev/null
-	containers+=("$name")
-	docker exec "$name" mkdir -p "$workspace"
-	tar_errors=$logdir/tar.err
-	# --ignore-failed-read: a file deleted since the last commit is still listed.
-	# In a linked worktree .git is a one-line pointer file, not a repository, so
-	# ship the shared repository as .git and this worktree's own HEAD and index.
-	gitdir=$(git -C "$repo" rev-parse --absolute-git-dir)
-	commondir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
-	if [[ $gitdir == "$commondir" ]]; then
-		tar -C "$repo" --ignore-failed-read --null -T "$filelist" -cf - .git 2>"$tar_errors" |
-			docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
-	else
-		tar -C "$repo" --ignore-failed-read --null -T "$filelist" -cf - 2>"$tar_errors" |
-			docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
-		tar -C "$commondir" -cf - --transform 's,^\.,.git,' . |
-			docker exec -i "$name" tar --no-same-owner -xf - -C "$workspace"
-		for state_file in HEAD index; do
-			[[ ! -f $gitdir/$state_file ]] ||
-				docker exec -i "$name" tee "$workspace/.git/$state_file" <"$gitdir/$state_file" >/dev/null
+	if ((workers > 1)); then
+		for ((i = 1; i <= workers; i++)); do worker_names+=("$name-w$i"); done
+		printf '==> Starting %d containers from %s\n' "$workers" "$image"
+		for cname in "${worker_names[@]}"; do
+			start_container "$cname"
+			copy_tree_into "$cname"
+			prepare_container "$cname"
 		done
+		name=${worker_names[0]} # the clang leg, if asked for, runs in the first
+	else
+		printf '==> Starting %s from %s\n' "$name" "$image"
+		start_container "$name"
+		copy_tree_into "$name"
+		prepare_container "$name"
 	fi
 	warn_tar_errors "$tar_errors"
-
-	docker exec "$name" bash -c "
-		git config --global --add safe.directory '$workspace'
-		install -d -m 0700 -o nobody -g nobody /home/dwm-ci /run/dwm-ci '$test_root'
-		chown -R nobody:nobody '$workspace'"
-}
-((clang_only)) || start_suite_container
-docker exec "$name" bash -c "
-	git config --global --add safe.directory '$workspace'
-	install -d -m 0700 -o nobody -g nobody '$CI_HOME' '$CI_RUNTIME_DIR' '$test_root'
-	chown -R nobody:nobody '$workspace'"
-
-# Run a command the way the workflow does: as nobody, in the workspace.
-# shellcheck disable=SC2329 # runs through run_logged
-as_nobody() {
-	docker exec -w "$workspace" "$name" \
-		runuser -u nobody -- env HOME="$CI_HOME" XDG_RUNTIME_DIR="$CI_RUNTIME_DIR" \
-		DWM_TEST_TMP_ROOT="$test_root" "$@"
-}
+fi
 
 # run_logged LOG COMMAND...: show the output and keep it in LOG, and return
 # the command's own status (a plain `| tee` would report tee's).
@@ -425,9 +346,6 @@ run_logged() {
 }
 
 status=0
-if ((each)); then
-	# Each worker runs its targets one after another as nobody, keeping one log
-	# per target inside its container; the host reads the PASS/FAIL lines.
 if ((clang_only)); then
 	:
 elif ((each)); then
