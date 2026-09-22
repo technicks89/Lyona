@@ -14,7 +14,7 @@ is nothing to port) rather than ports.
 | Item | Upstream | Kind | Size |
 | --- | --- | --- | --- |
 | [S6-01](#s6-01-live-panel-tooltip-position-on-window-resize) | `2461027` (`#343`) | Port, small | ~+5 code |
-| [S6-02](#s6-02-thunar-and-other-gtk-apps-stay-light-under-dark-themes) | issue `#348` | Lyona's own fix (no upstream code) | unscoped until reproduced |
+| [S6-02](#s6-02-thunar-and-other-gtk-apps-stay-light-under-dark-themes) | issue `#348` | Lyona's own fix (no upstream code) | ~+15 code, ~+80 tests — done |
 | [S6-03](#s6-03-hover-states-that-hide-text-in-light-themes) | issue `#349` | Lyona's own fix (no upstream code) | unscoped until reproduced |
 | [S6-04](#s6-04-cross-tag-window-overview) | issue `#350` | Lyona's own feature (no upstream code) | large; needs its own design pass |
 
@@ -66,11 +66,67 @@ test ends up covering it.
 Issue `#348`. Reported against Dracula and "a few other dark presets"; no
 upstream fix exists yet (issue is open, unassigned).
 
-**Investigated (2026-09-22), not reproduced.** Ran `scripts/theme-apply.sh` for
-real (not stubbed) under an isolated `HOME`/XDG set, for every one of the 10
-shipped dark presets (`nord`, `dracula`, `gruvbox`, `catppuccin`, `tokyonight`,
-`onedark`, `solarized`, `rosepine`, `everforest`, `monochrome`), after
-generating their GTK themes with `lyona-gtk-theme generate-all`:
+**Fixed (2026-09-22).** First investigated without reproducing it (see below
+for why that investigation gave a false negative), then reproduced for real
+against the maintainer's own live desktop (Tokyo Night, Thunar light) and
+root-caused there.
+
+**Root cause:** `lyona-gtk-theme generate-all`, which builds each palette's
+`Lyona-<theme>` GTK theme, is only ever invoked from
+`tests/test-lyona-gtk-theme.sh` and from `make install-system`'s
+`install-gtk-themes` step — nothing else in the tree calls it, including
+`scripts/dev-sync-install.sh`'s own `sudo make install`, which should reach
+it but had not produced the theme on the machine this was reproduced on. On
+a live system where that step has not run (or has not run since a palette
+was added to `themes.toml`), `Lyona-<theme>` genuinely does not exist
+anywhere `theme_apply.sh`'s `gtk_theme_available()` looks, and
+`theme-apply.sh` fell back to a literal `gtk-theme-name=Adwaita-dark` — a
+name recent GTK3/GTK4 does not resolve to any installed theme (the dark
+variant of Adwaita is the `gtk-application-prefer-dark-theme` hint, not a
+second theme with its own name), so it silently rendered light regardless of
+`$DARK_MODE`.
+
+This is why the first investigation pass (below) did not reproduce anything:
+it manually ran `lyona-gtk-theme generate-all` before every `theme-apply.sh`
+call, which is exactly the step the real bug was that nothing does
+automatically — the reproduction rig accidentally worked around its own bug.
+
+**Fix, in `scripts/theme-apply.sh`:**
+
+- If the palette's own `Lyona-<theme>` GTK theme is not found, generate it on
+  demand (`lyona-gtk-theme generate`) before falling back to anything, so a
+  live system self-heals on the next theme switch regardless of whether an
+  install step ever ran.
+- The genuine last-resort fallback (generation itself fails) is now plain
+  `Adwaita`, not the nonexistent `Adwaita-dark` — `gtk-application-prefer-dark-theme`
+  (already set correctly) is what actually gets Adwaita's dark rendering.
+- A user's own GTK theme override (Settings → Toolkit) is left alone by both
+  of the above, the same as it already won over the palette's own default —
+  this needed its own explicit guard once the generated theme became more
+  often actually present to compete with it (caught by a broader regression
+  sweep, `check-appearance`, before it went anywhere: mutation-testing this
+  fix without that regression sweep would not have caught it, since the
+  narrow new test alone did not exercise a *pre-existing* theme colliding
+  with a personalization override).
+
+New `make check-theme-apply-gtk-fallback` (5 cases): a missing theme is
+generated on demand; an existing one is not needlessly regenerated; a
+personalization override survives both when the generated theme already
+exists and when it does not; the corrected fallback name. All 5 confirmed to
+fail against the pre-fix script first. `check-appearance` (which exercises
+`dwm-settings-toolkit`'s personalization round-trip) re-run clean after the
+personalization-guard fix.
+
+**What follows is the original investigation, which did not reproduce the
+bug — kept for the record of what was checked and why it gave a false
+negative, not because any of it turned out wrong:**
+
+Ran `scripts/theme-apply.sh` for real (not stubbed) under an isolated
+`HOME`/XDG set, for every one of the 10 shipped dark presets (`nord`,
+`dracula`, `gruvbox`, `catppuccin`, `tokyonight`, `onedark`, `solarized`,
+`rosepine`, `everforest`, `monochrome`), **after generating their GTK themes
+with `lyona-gtk-theme generate-all`** — the step whose absence turned out to
+be the actual bug:
 
 - Every preset's `[theme.<id>]` section has both `dark_mode = true` and a
   matching `gtk_theme = "Lyona-<id>"` — no missing or misspelled key for any
@@ -82,44 +138,17 @@ generating their GTK themes with `lyona-gtk-theme generate-all`:
   `~/.config/gtk-3.0/settings.ini` and `~/.config/gtk-4.0/settings.ini`, and
   also set `org.gnome.desktop.interface gtk-theme`/`color-scheme` via
   `gsettings` and `/Net/ThemeName` via `xfconf-query`, for all 10 presets — no
-  outlier.
+  outlier, *once the theme had been generated first*.
 - The generated `Lyona-<id>/gtk-3.0/gtk.css` imports Adwaita's own
   `gtk-contained-dark.css` as its base and only recolours named custom
   properties on top, so it inherits Adwaita-dark's full widget coverage
-  (including whatever Thunar-specific styling Adwaita-dark already has)
   rather than being a partial theme with gaps.
 
-In other words: every mechanism Lyona has for telling a GTK app "use this dark
-theme" is wired correctly and fires for every dark preset, confirmed by
-reading the actual files/settings a fresh GTK3/4 process reads at startup.
 Launching a real `thunar` process under Xvfb to visually confirm the render
-was attempted but blocked on getting an unconfigured `dwm` (no `hotkeys.toml`/
-window rules in the sandbox) to actually map and size Thunar's window for a
-screenshot — an artifact of the throwaway test rig, not evidence about the
-theme code. **Given the config-writing side is now verified correct**, the
-two remaining explanations worth checking on a real desktop are:
-
-1. **An already-running Thunar doesn't live-reload.** GTK3/4 apps pick up
-   `gtk-theme-name` from `settings.ini` at startup and from `gsettings` live
-   *if* they're watching that schema; Thunar's own behaviour here is unverified.
-   The issue's own acceptance criteria already anticipates this
-   ("with any required application restart clearly explained"), which is a
-   strong hint upstream expects this to be at least part of the answer.
-2. **Something specific to the reporter's real environment** (a stale user
-   `~/.config` from before a preset switch, a distro Thunar build with its own
-   theme override, GVFS/xfconfd differences) that this isolated reproduction
-   cannot surface.
-
-**Next step, and how to confirm nothing breaks:** a maintainer with a real
-session should select Dracula, restart Thunar, and screenshot it — much
-faster there than continuing to fight a throwaway Xvfb+dwm rig here for the
-same answer. If it turns out to be (1), the fix is documentation (surface the
-"restart to apply" note somewhere in Settings > Appearance) plus, optionally,
-a `pkill -HUP thunar`-style nudge in `theme-apply.sh` if XFCE session tooling
-makes that safe. If a real screenshot instead shows an actual rendering gap,
-narrow it to the specific preset(s) and widget(s) first, then a test that
-applies that preset and asserts the GTK/Thunar-visible setting (already
-proven correct here) *and* the process's rendered pixels.
+was also attempted, and was blocked on getting an unconfigured `dwm` (no
+`hotkeys.toml`/window rules in the sandbox) to actually map and size
+Thunar's window for a screenshot; that part of the investigation stayed
+inconclusive until the real-desktop reproduction above settled it directly.
 
 ## S6-03: Hover states that hide text in light themes
 
