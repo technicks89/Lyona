@@ -106,6 +106,10 @@ client_snapshot() {
 			sub(/ $/, "", value)
 			return value
 		}
+		function sanitize_class(value) {
+			gsub(/[|:]/, " ", value)
+			return value
+		}
 		function flush(   value) {
 			if (window == "") {
 				return
@@ -133,7 +137,7 @@ client_snapshot() {
 			sub(/^[^=]*= */, "")
 			gsub(/"/, "")
 			split($0, classes, /, /)
-			class = tolower(classes[2])
+			class = tolower(sanitize_class(classes[2]))
 			next
 		}
 		# A property the window does not set prints "PROP:  not found." (no
@@ -229,7 +233,13 @@ window_class() {
 	window_id=$1
 	[ -n "$window_id" ] || return 1
 	xprop -id "$window_id" WM_CLASS 2>/dev/null |
-		awk -F'= ' '/^WM_CLASS/ { gsub(/"/, "", $2); split($2, classes, /, /); print tolower(classes[2]); exit }'
+		awk -F'= ' '
+			function sanitize_class(value) {
+				gsub(/[|:]/, " ", value)
+				return value
+			}
+			/^WM_CLASS/ { gsub(/"/, "", $2); split($2, classes, /, /); print tolower(sanitize_class(classes[2])); exit }
+		'
 }
 
 root_snapshot() {

@@ -86,7 +86,16 @@ TestCase {
 
     function test_resolveWindowLocation_no_rows_at_all_treats_everything_as_one_monitor() {
         compare(WindowsLib.resolveWindowLocation(5, [], 9), { "tagIndex": 5, "monitorIndex": 0 },
-            "With no monitorWorkspaceRows fixture, every workspace belongs to a single monitor 0");
+            "Without a fallback count, every workspace belongs to a single monitor 0");
+    }
+
+    function test_resolveWindowLocation_no_rows_uses_screen_count_fallback() {
+        compare(WindowsLib.resolveWindowLocation(3, [], 9, 2),
+            { "tagIndex": 3, "monitorIndex": 0 });
+        compare(WindowsLib.resolveWindowLocation(4, [], 9, 2),
+            { "tagIndex": 4, "monitorIndex": 1 });
+        compare(WindowsLib.resolveWindowLocation(8, twoMonitorRows(), 9, 3),
+            { "tagIndex": 8, "monitorIndex": 1 }, "Reported rows override the fallback screen count");
     }
 
     function test_windowsByTag_decorates_each_window_without_losing_its_fields() {
@@ -102,6 +111,15 @@ TestCase {
         compare(resolved[0].monitorIndex, 0);
 
         compare(resolved[1].windowId, "0xbb");
+        compare(resolved[1].tagIndex, 7);
+        compare(resolved[1].monitorIndex, 1);
+    }
+
+    function test_windowsByTag_uses_screen_count_when_rows_are_empty() {
+        const windows = WindowsLib.parseWindows("0xaa:3:alacritty:Term|0xbb:7:firefox:Web");
+        const resolved = WindowsLib.windowsByTag(windows, [], 9, 2);
+
+        compare(resolved[0].monitorIndex, 0);
         compare(resolved[1].tagIndex, 7);
         compare(resolved[1].monitorIndex, 1);
     }

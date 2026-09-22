@@ -64,12 +64,13 @@ function workspaceIndexesForMonitor(monitorIndex, screenCount, workspaceCount) {
 // A window's raw desktop number is already a global tag index -- the same
 // number DwmPanel.qml's own workspaceIndexes(screen) model iterates and hands
 // straight to DwmState.switchWorkspace() -- so resolving it only needs to
-// find which monitor's range contains it. A desktop that matches no row (a
-// stale window mid monitor-layout change, or no rows at all) falls back to
-// tag 0 / monitor 0, the same defensive pattern DwmState.qml's own
-// screenForMonitorIndex() already uses for an out-of-range index.
-function resolveWindowLocation(desktop, monitorWorkspaceRows, workspaceCount) {
-    const screenCount = Math.max(1, monitorWorkspaceRows.length);
+// find which monitor's range contains it. When rows are empty, use the
+// caller's Quickshell screen count instead. A desktop that matches no range
+// (a stale window mid monitor-layout change) falls back to tag 0 / monitor 0,
+// the same defensive pattern DwmState.qml's screenForMonitorIndex() uses.
+function resolveWindowLocation(desktop, monitorWorkspaceRows, workspaceCount, fallbackScreenCount) {
+    const screenCount = Math.max(1, monitorWorkspaceRows.length > 0
+        ? monitorWorkspaceRows.length : (fallbackScreenCount || 0));
 
     for (let monitorIndex = 0; monitorIndex < screenCount; monitorIndex++) {
         if (workspaceIndexesForMonitor(monitorIndex, screenCount, workspaceCount).indexOf(desktop) !== -1) {
@@ -83,9 +84,9 @@ function resolveWindowLocation(desktop, monitorWorkspaceRows, workspaceCount) {
 // Decorates each parsed window entry with its resolved {tagIndex,
 // monitorIndex}, ready for the overview popup (Sprint 7 S7-03) to group by
 // tag without repeating this math.
-function windowsByTag(windows, monitorWorkspaceRows, workspaceCount) {
+function windowsByTag(windows, monitorWorkspaceRows, workspaceCount, fallbackScreenCount) {
     return windows.map(function(win) {
-        const location = resolveWindowLocation(win.desktop, monitorWorkspaceRows, workspaceCount);
+        const location = resolveWindowLocation(win.desktop, monitorWorkspaceRows, workspaceCount, fallbackScreenCount);
 
         return {
             "windowId": win.windowId,
