@@ -117,12 +117,22 @@ for relative in ("defaults/AutostartModel.qml", "defaults/DefaultAppsModel.qml",
             line = text.count("\n", 0, opening) + 1
             failures.append(f"{relative}:{line}: onRunningChanged clears `{found.group(0)}`")
 
-# The window holds each pane until its models report ready.
+# The window holds each pane until its models report ready, one pane per
+# section SettingsModel actually offers (not a count restated here, which a
+# added or removed section would leave stale).
+settings_model_text = (root / "settings/SettingsModel.qml").read_text()
+sections_match = re.search(r"readonly property var sections: \[(.*?)\n    \]", settings_model_text, re.S)
+if not sections_match:
+    failures.append("settings/SettingsModel.qml: could not find the `sections` list")
+    section_count = -1
+else:
+    section_count = len(re.findall(r'\{\s*"id":', sections_match.group(1)))
 window = (root / "settings/SettingsWindow.qml").read_text()
 panes = window.count("DeferredSettingsPane {")
 loading = len(re.findall(r"^\s+dataLoading: ", window, re.M))
-if panes != 9 or loading != panes:
-    failures.append(f"settings/SettingsWindow.qml: {panes} panes but {loading} dataLoading lines")
+if panes != section_count or loading != panes:
+    failures.append(f"settings/SettingsWindow.qml: {panes} panes but {loading} dataLoading lines "
+                     f"(SettingsModel.qml lists {section_count} sections)")
 if "desktopUpdateModel" in window:
     failures.append("settings/SettingsWindow.qml: names upstream's declined desktopUpdateModel (D-8)")
 pane = source("settings/DeferredSettingsPane.qml")

@@ -326,6 +326,17 @@ main(int argc, char **argv)
 		XCloseDisplay(dpy);
 		return 0;
 	}
+	if (argc == 5 && strcmp(argv[1], "fixed-size") == 0) {
+		XSizeHints hints = {0};
+
+		win = strtoul(argv[2], NULL, 0);
+		hints.flags = PMinSize | PMaxSize;
+		hints.min_width = hints.max_width = atoi(argv[3]);
+		hints.min_height = hints.max_height = atoi(argv[4]);
+		XSetWMNormalHints(dpy, win, &hints);
+		XCloseDisplay(dpy);
+		return 0;
+	}
 	if (argc == 3 && strcmp(argv[1], "map-state") == 0) {
 		XWindowAttributes attributes;
 
@@ -924,6 +935,56 @@ for fixed_key in f l t; do
 		exit 1
 	fi
 done
+kill "$second_client_pid"
+wait "$second_client_pid" 2>/dev/null || true
+second_client_pid=
+wait_for_active_window "$win"
+
+# A tiled window that only later gains a min==max hint (unlike the "fixed"
+# client above, which starts fixed and so is always floating): togglefloating
+# must recognise isfixed at that point and pop it out at exactly that fixed
+# size, not run it through shrinkfloating's 85 percent the way an ordinary
+# tiled window is popped out (#93 -- this path was unreachable through the
+# "fixed" client, which is never tiled to begin with).
+DISPLAY=$display xdotool key Super+t
+sleep 0.2
+DISPLAY=$display "$work/xclient" >"$work/tile-fixed-window-id" 2>"$work/tile-fixed-client.log" &
+second_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/tile-fixed-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+tile_fixed_win=$(cat "$work/tile-fixed-window-id")
+[ -n "$tile_fixed_win" ]
+wait_for_active_window "$tile_fixed_win"
+sleep 0.2
+tile_fixed_tiled_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$tile_fixed_win")
+DISPLAY=$display "$work/xclient" fixed-size "$tile_fixed_win" 300 200
+sleep 0.2
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+tile_fixed_floated_geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$tile_fixed_win")
+tile_fixed_tiled_x=$(printf '%s\n' "$tile_fixed_tiled_geometry" | awk -F= '$1 == "X" { print $2 }')
+tile_fixed_tiled_y=$(printf '%s\n' "$tile_fixed_tiled_geometry" | awk -F= '$1 == "Y" { print $2 }')
+tile_fixed_floated_x=$(printf '%s\n' "$tile_fixed_floated_geometry" | awk -F= '$1 == "X" { print $2 }')
+tile_fixed_floated_y=$(printf '%s\n' "$tile_fixed_floated_geometry" | awk -F= '$1 == "Y" { print $2 }')
+if [ "$tile_fixed_tiled_x" -ne "$tile_fixed_floated_x" ] || [ "$tile_fixed_tiled_y" -ne "$tile_fixed_floated_y" ]; then
+	printf '%s\n' "a tiled window that gained a min==max hint moved on Super+f (shrinkfloating recentres; a fixed window must keep its top-left corner)" >&2
+	exit 1
+fi
+tile_fixed_width=$(printf '%s\n' "$tile_fixed_floated_geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+tile_fixed_height=$(printf '%s\n' "$tile_fixed_floated_geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+if [ "$tile_fixed_width" -ne 300 ] || [ "$tile_fixed_height" -ne 200 ]; then
+	printf '%s\n' "a tiled window that gained a min==max hint was not popped out at exactly that size (${tile_fixed_width}x${tile_fixed_height}, wanted 300x200 -- shrinkfloating's 85 percent would give a different pair)" >&2
+	exit 1
+fi
+DISPLAY=$display xdotool key Super+f
+sleep 0.2
+if [ "$(DISPLAY=$display xdotool getwindowgeometry --shell "$tile_fixed_win")" != "$tile_fixed_floated_geometry" ]; then
+	printf '%s\n' "a fixed window changed size or moved on a second Super+f (it can never go back to tiling)" >&2
+	exit 1
+fi
 kill "$second_client_pid"
 wait "$second_client_pid" 2>/dev/null || true
 second_client_pid=

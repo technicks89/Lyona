@@ -1144,6 +1144,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   a hosted CI job; local validation and independent review remain the merge
   gate. The previous full desktop suite, `clang-build`, and `quickshell-qml`
   hosted jobs are removed; `workflow_dispatch` now runs the same smoke job.
+- Three of the test-harness coupling problems from #93 are fixed. `tests/test-quickshell-settings-loading.sh`'s pane count is
+  derived from `SettingsModel.qml`'s `sections` list instead of a hard-coded `9`, so an added or removed section (with a
+  matching pane) needs no test edit and a mismatched one is still caught. `tests/test-quickshell-appearance-model.sh` no longer
+  restates the S5-01 pending-flag ordering rule with its own awk block; the settings-loading test's generic rule is the one
+  place that checks it. `make check-xvfb-runtime` gained the case the issue named: a tiled window that only later gains a
+  min==max hint (the existing "fixed" client is fixed from creation, so it is never tiled to begin with, and the
+  `!c->isfixed` branch in `togglefloating` was unreachable). It pops out at exactly that fixed size and keeps its top-left
+  corner, rather than being shrunk and recentred through `shrinkfloating`'s 85 percent the way an ordinary tiled window is
+  (both produce the same 300x200 for a min==max client, since `applysizehints` clamps either way, so the position, not the
+  size, is what the case actually has to check). Not done in this pass: the larger, more invasive change of replacing the
+  harness's text-patching (blind `"dataLoading: "`/`"DeferredSettingsPane {"`/`"id: root"` replacement, the `core/UiText.qml`
+  patch) with production test hooks -- a bigger surface better suited to its own follow-up than folding into this one.
+
 - Open Settings full screen on the active screen, like System Health (Sync
   Sprint 3 S3-06 `#302`, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   upstream `#307`/`56ec27b`), and tighten its navigation rows, pane margins,

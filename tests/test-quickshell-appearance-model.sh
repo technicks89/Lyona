@@ -227,35 +227,11 @@ grep -Fq 'function appearanceRefresh(): void' "$shell_qml"
 grep -Fq 'appearanceModel.refreshAll(true);' "$shell_qml"
 grep -Fq 'function capabilityStatus(capabilityId: string): string' "$shell_qml"
 # The follow-up run is queued only if the provider is still idle when the
-# deferred call fires. The pending flag is deliberately NOT cleared here (S5-01):
-# it clears in refreshCapabilities() once the next run has started, so Settings
-# never sees a frame with a queued refresh and nothing reporting it.
-awk '
-	/id: providerProcess/ { in_provider = 1 }
-	in_provider && /onRunningChanged: \{/ {
-		in_handler = 1
-		depth = 0
-	}
-	in_handler {
-		line = $0
-		opens = gsub(/\{/, "", line)
-		closes = gsub(/\}/, "", line)
-		depth += opens - closes
-		if (/root.capabilityRefreshPending = false;/) cleared = NR
-		if (/Qt.callLater\(function\(\) \{/ && !deferred) deferred = NR
-		if (/if \(!providerProcess.running\) root.refreshCapabilities\(\);/ && !guarded) guarded = NR
-		if (depth == 0) {
-			in_handler = 0
-			verified = !cleared && deferred && guarded && deferred < guarded
-		}
-	}
-	END {
-		exit !verified
-	}
-' "$settings_model"
-refresh_capabilities=$(sed -n '/function refreshCapabilities()/,/^    }/p' "$settings_model")
-printf '%s\n' "$refresh_capabilities" | tr -s ' \n' ' ' |
-	grep -Fq 'providerProcess.running = true; root.capabilityRefreshPending = false;'
+# deferred call fires, and the pending flag clears only once the next run has
+# started, so Settings never sees a frame with a queued refresh and nothing
+# reporting it (S5-01). tests/test-quickshell-settings-loading.sh is the one
+# place that checks this ordering rule, for every model that has it, so it is
+# not restated here with its own awk.
 finish_action=$(sed -n '/function finishAction()/,/^    }/p' "$model")
 test "$(printf '%s\n' "$finish_action" | grep -Fc 'root.previewStatusManualOnly = false;')" -eq 2
 grep -Fq 'root.snapshotParsed = false' "$model"
