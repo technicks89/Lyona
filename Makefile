@@ -570,6 +570,10 @@ check-quickshell-session-actions:
 check-quickshell-defaults-model:
 	tests/test-quickshell-defaults-model.sh
 
+.PHONY: check-quickshell-queued-run-xvfb
+check-quickshell-queued-run-xvfb:
+	@tests/test-quickshell-queued-run-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 check-quickshell-update-model:
 	tests/test-quickshell-update-model.sh
 
@@ -859,6 +863,7 @@ check:
 	$(MAKE) check-quickshell-power-model
 	$(MAKE) check-quickshell-session-actions
 	$(MAKE) check-quickshell-defaults-model
+	$(MAKE) check-quickshell-queued-run-xvfb
 	$(MAKE) check-quickshell-update-model
 	$(MAKE) check-quickshell-appearance-model
 	$(MAKE) check-quickshell-settings-loading

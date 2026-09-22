@@ -41,12 +41,7 @@ Scope {
 
     function refresh() {
         if (!root.active) return;
-        if (root.busy || statusProcess.running) {
-            root.pending = true;
-            return;
-        }
-        statusProcess.running = true;
-        root.pending = false;
+        QueuedRun.startOrQueue(statusProcess, root, "pending", root.busy);
     }
 
     // The watcher is live from the moment it said ready, and the status read

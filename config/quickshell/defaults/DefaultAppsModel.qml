@@ -181,13 +181,9 @@ Scope {
 
     function refresh() {
         if (!root.settingsVisible) return;
-        if (snapshotProcess.running) {
-            root.snapshotPending = true;
-            return;
-        }
-        root.snapshotGeneration = root.mutationGeneration;
-        snapshotProcess.running = true;
-        root.snapshotPending = false;
+        QueuedRun.startOrQueue(snapshotProcess, root, "snapshotPending", false, function() {
+            root.snapshotGeneration = root.mutationGeneration;
+        });
     }
 
     function runAction(action, scope, desktopId, origin) {

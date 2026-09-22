@@ -5,7 +5,7 @@ set -eu
 # every model behind it has finished its first read. The xvfb harness proves the
 # behaviour; this proves the wiring it depends on is still in the source: each
 # model's initialLoading expression, and that a queued-refresh flag is only ever
-# cleared after the process it queued has started.
+# cleared by core/QueuedRun.qml, after the process it queued has started.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -70,38 +70,37 @@ need("settings/SettingsModel.qml",
 need("settings/SettingsModel.qml",
      "readonly property bool inputActionBusy: inputActionProcess.running", "inputActionBusy")
 
-# The clear comes after the start, in the refresh function that starts it.
-for relative, start, clear in (
-    ("defaults/AutostartModel.qml", "snapshotProcess.running = true;", "root.snapshotPending = false;"),
-    ("defaults/DefaultAppsModel.qml", "snapshotProcess.running = true;", "root.snapshotPending = false;"),
-    ("power/PowerModel.qml", "snapshotProcess.running = true;", "root.snapshotPending = false;"),
-    ("accessibility/AccessibilityModel.qml", "statusProcess.running = true;", "root.refreshPending = false;"),
-    ("panel/PanelSettingsModel.qml", "statusProcess.running = true;", "root.refreshPending = false;"),
-    ("appearance/PicomModel.qml", "statusProcess.running = true;", "root.pending = false;"),
-    ("appearance/AppearanceModel.qml", "snapshotProcess.running = true;", "root.snapshotPending = false;"),
-    ("appearance/AppearanceModel.qml", "readinessProcess.running = true;", "root.mutationReadinessPending = false;"),
-    ("appearance/AppearanceModel.qml", "wallpaperStatusProcess.running = true;", "root.wallpaperStatusPending = false;"),
-    ("appearance/AppearanceModel.qml", "fontStatusProcess.running = true;", "root.fontStatusPending = false;"),
-    ("appearance/AppearanceModel.qml", "toolkitStatusProcess.running = true;", "root.toolkitStatusPending = false;"),
-    ("appearance/AppearanceModel.qml", "inventoryProcess.running = true;", "root.inventoryPending = false;"),
-    ("settings/SettingsModel.qml", "automaticDisplayStatusProcess.running = true;", "root.automaticDisplayRefreshPending = false;"),
-    ("settings/SettingsModel.qml", "displayDiscoverProcess.running = true;", "root.displayRefreshPending = false;"),
-    ("settings/SettingsModel.qml", "inputDiscoverProcess.running = true;", "root.inputRefreshPending = false;"),
-    ("settings/SettingsModel.qml", "providerProcess.running = true;", "root.capabilityRefreshPending = false;"),
-):
-    need(relative, f"{start} {clear}", "the queued flag must clear after the start")
+# The rule for a queued-refresh flag lives in one place, core/QueuedRun.qml, and
+# no list of files or flags below has to know about a new model.
+helper = (root / "core/QueuedRun.qml").read_text()
+if not re.search(r"process\.running = true;\s+owner\[flag\] = false;", helper):
+    failures.append("core/QueuedRun.qml: the flag must clear right after the start, and nowhere before it")
+if not re.search(r"if \(blocked \|\| process\.running\) \{\s+owner\[flag\] = true;\s+return false;", helper):
+    failures.append("core/QueuedRun.qml: a blocked or running process must queue and not start")
+if helper.count("owner[flag] = false;") != 1:
+    failures.append("core/QueuedRun.qml: the flag is cleared in more than one place")
 
-# ...and never inside a process's onRunningChanged, which would clear it while
-# the retry that will start the next read is still only scheduled.
-queued = ("snapshotPending", "refreshPending", "capabilityRefreshPending", "displayRefreshPending",
-          "inputRefreshPending", "automaticDisplayRefreshPending", "mutationReadinessPending",
-          "wallpaperStatusPending", "inventoryPending", "inventoryPendingAllowUnwatched",
-          "fontStatusPending", "toolkitStatusPending", "pending")
-clear = re.compile(r"root\.(" + "|".join(queued) + r") = false;")
-for relative in ("defaults/AutostartModel.qml", "defaults/DefaultAppsModel.qml", "power/PowerModel.qml",
-                 "accessibility/AccessibilityModel.qml", "panel/PanelSettingsModel.qml",
-                 "appearance/AppearanceModel.qml", "appearance/PicomModel.qml", "settings/SettingsModel.qml"):
-    text = (root / relative).read_text()
+pending = re.compile(r"\w*[Pp]ending")
+for path in sorted(root.rglob("*.qml")):
+    relative = path.relative_to(root).as_posix()
+    if relative == "core/QueuedRun.qml":
+        continue
+    text = path.read_text()
+    # The old hand-written idiom: a start followed by clearing the queue flag. A
+    # model that does this again has stopped using the one place that gets it right.
+    for match in re.finditer(r"\.running = true;\s*root\.(" + pending.pattern + r") = false;", text):
+        line = text.count("\n", 0, match.start()) + 1
+        failures.append(f"{relative}:{line}: clears `{match.group(1)}` by hand after a start; use QueuedRun.startOrQueue")
+    # Every flag handed to the helper is a real property of that model: a typo
+    # would create a plain JavaScript property and queue nothing.
+    queued = set()
+    for match in re.finditer(r'QueuedRun\.startOrQueue\(\s*\w+,\s*root,\s*"(\w+)"', text):
+        queued.add(match.group(1))
+        if not re.search(r"property bool " + match.group(1) + r"\b", text):
+            line = text.count("\n", 0, match.start()) + 1
+            failures.append(f"{relative}:{line}: QueuedRun flag `{match.group(1)}` is not a `property bool` of this model")
+    # ...and never inside a process's onRunningChanged, which would clear it while
+    # the retry that will start the next read is still only scheduled.
     for match in re.finditer(r"onRunningChanged:", text):
         opening = text.find("{", match.end())
         if opening < 0 or "\n" in text[match.end():opening]:
@@ -113,9 +112,14 @@ for relative in ("defaults/AutostartModel.qml", "defaults/DefaultAppsModel.qml",
             if depth == 0:
                 break
         block = text[opening:index]
-        for found in clear.finditer(block):
+        for found in re.finditer(r"root\.(" + "|".join(sorted(queued) or ["(?!)"]) + r") = false;", block):
             line = text.count("\n", 0, opening) + 1
             failures.append(f"{relative}:{line}: onRunningChanged clears `{found.group(0)}`")
+
+# The two exit handlers that retry a queued inventory read share one named
+# function: two closures ran the read twice in a tick and bumped its generation twice.
+if re.search(r"Qt\.callLater\(function\(\) \{ root\.refreshInventory", (root / "appearance/AppearanceModel.qml").read_text()):
+    failures.append("appearance/AppearanceModel.qml: an anonymous closure retries the inventory read again")
 
 # The window holds each pane until its models report ready.
 window = (root / "settings/SettingsWindow.qml").read_text()
