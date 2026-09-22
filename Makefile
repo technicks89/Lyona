@@ -463,6 +463,10 @@ check-xvfb-runtime: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+.PHONY: check-ci-parity
+check-ci-parity:
+	tests/test-ci-parity.sh
+
 check-build-config:
 	tests/test-configure-build.sh
 
@@ -823,6 +827,7 @@ check:
 	$(MAKE) check-arch-platform
 	$(MAKE) check-dev-sync-install
 	$(MAKE) check-default-apps
+	$(MAKE) check-ci-parity
 	$(MAKE) check-xdg-autostart
 	$(MAKE) check-diagnostics
 	$(MAKE) check-status

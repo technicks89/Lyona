@@ -16,12 +16,15 @@ printf '%s\n' "$qml_packages" | grep -Fx quickshell >/dev/null
 printf '%s\n' "$qml_packages" | grep -Fx qt6-declarative >/dev/null
 # CI takes its package sets from these profiles rather than lists of its own:
 # the hosted desktop-smoke job installs ci-smoke (which starts Quickshell), and
-# the full suite, which runs the QML validation, adds qml-validation.
+# the full suite, which runs the QML validation, installs ci-full (which
+# includes qml-validation; tests/test-ci-parity.sh pins that composition).
 ci_smoke_packages=$(bash -c '. "$1"; dwm_packages arch ci-smoke' sh \
 	"$repo/scripts/dwm-packages.sh")
 printf '%s\n' "$ci_smoke_packages" | grep -Fx quickshell >/dev/null
 [ "$(grep -Fc 'dwm_packages arch ci-smoke' "$repo/.github/workflows/c-cpp.yml")" -eq 1 ]
-[ "$(grep -Fc 'dwm_packages arch qml-validation' "$repo/.github/workflows/full-suite.yml")" -eq 1 ]
+[ "$(grep -Fc 'dwm_packages arch ci-full' "$repo/.github/workflows/full-suite.yml")" -eq 1 ]
+ci_full_packages=$(bash -c '. "$1"; dwm_packages arch ci-full' sh "$repo/scripts/dwm-packages.sh")
+printf '%s\n' "$ci_full_packages" | grep -Fx qt6-declarative >/dev/null
 for workflow in c-cpp full-suite; do
 	for package in quickshell qt6-declarative; do
 		if grep -Eq "(^|[^[:alnum:]_+-])$package([^[:alnum:]_+-]|-[0-9]|$)" \
