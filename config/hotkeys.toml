@@ -61,6 +61,10 @@ keys = [
 
   # ── Launchers ────────────────────────────────────────────────────────────────
   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call launcher toggle" },
+  # SUPER+Tab is already "Previous tag" (dwm's own func="view" below); o for
+  # "overview" is free and mnemonic, but pick your own if you'd rather have it
+  # somewhere else -- Sync Sprint 7 S7-03, docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md.
+  { mod="SUPER",            key="o",       desc="Window overview",         func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call overview toggle" },
   { mod="SUPER",            key="x",       desc="Terminal",                 func="spawn",       exec=["$terminal"] },
   { mod="SUPER",            key="w",       desc="Looking Glass (VM)",      func="spawn",       cmd="looking-glass-client -F" },
   { mod="SUPER SHIFT",      key="w",       desc="Randomize wallpaper",     func="spawn",       cmd="dwm-quickshell-controlcenter action reload-wallpaper" },
