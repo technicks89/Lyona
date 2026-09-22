@@ -4,6 +4,9 @@
 import importlib.machinery
 import importlib.util
 import os
+import select
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -19,6 +22,8 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 picom = importlib.util.module_from_spec(spec)
 sys.dont_write_bytecode = True
 loader.exec_module(picom)
+# The tests patch shutil.which; the watch tests need the real inotifywait.
+INOTIFYWAIT = shutil.which("inotifywait")
 
 
 class PicomTests(unittest.TestCase):
@@ -56,6 +61,49 @@ class PicomTests(unittest.TestCase):
 
     def apply(self, config, active=90, inactive=75):
         return picom.mutate("set-opacity", [active, inactive], config.revision())
+
+    def watcher(self):
+        process = subprocess.Popen(
+            [str(Path(loader.path)), "watch"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+        )
+
+        def stop():
+            process.terminate()
+            process.wait()
+            process.stdout.close()
+            process.stderr.close()
+
+        self.addCleanup(stop)
+
+        def line():
+            if not select.select([process.stdout], [], [], 10)[0]:
+                self.fail("the watcher said nothing for 10 seconds")
+            return process.stdout.readline().decode().rstrip("\n")
+
+        return line
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_reports_the_revision_once_the_watches_are_live(self):
+        self.write("active-opacity=.8;")
+        line = self.watcher()
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+        # "ready" means live: an edit made the moment it is said is never missed,
+        # and the ready that follows carries the new revision.
+        for attempt in range(10):
+            self.path.write_text(f"active-opacity=.{attempt + 1};")
+            self.assertEqual(line(), "changed")
+            self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_says_plain_ready_when_the_configuration_cannot_be_read(self):
+        self.write("active-opacity=.8;")
+        self.path.write_text("malformed configuration")
+        with self.assertRaises(picom.Error):
+            picom.Configuration()
+        self.assertEqual(self.watcher()(), "ready")
 
     def test_display_screen_identity(self):
         self.assertEqual(picom.display_name(":0.0"), picom.display_name("unix:0"))

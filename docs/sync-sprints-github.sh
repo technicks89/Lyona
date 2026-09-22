@@ -57,6 +57,7 @@ sprints=(
 	"3|Sync Sprint 3 — Displays and Settings|SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md"
 	"4|Sync Sprint 4 — Compositor, defaults, release|SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md"
 	"5|Sync Sprint 5 — Settings load stability, Flathub, floating toggles|SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md"
+	"6|Sync Sprint 6 — Theme consistency and window overview|SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -98,6 +99,10 @@ items=(
 	"5|S5-01|s5-01-settings-panes-stay-hidden-until-their-data-has-loaded|Settings panes stay hidden until their data has loaded|#335, completes #315"
 	"5|S5-02|s5-02-verify-the-flathub-remote-before-a-flatpak-install|Verify the Flathub remote before a Flatpak install|#332, #334"
 	"5|S5-03|s5-03-floating-toggles-visibly-shrink-the-window|Floating toggles visibly shrink the window (decision D-9)|#331, #333"
+	"6|S6-01|s6-01-live-panel-tooltip-position-on-window-resize|Live panel tooltip position on window resize|#343 (2461027)"
+	"6|S6-02|s6-02-thunar-and-other-gtk-apps-stay-light-under-dark-themes|Thunar and other GTK apps stay light under dark themes|issue #348"
+	"6|S6-03|s6-03-hover-states-that-hide-text-in-light-themes|Hover states that hide text in light themes|issue #349"
+	"6|S6-04|s6-04-cross-tag-window-overview|Cross-tag window overview|issue #350"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \

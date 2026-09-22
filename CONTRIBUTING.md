@@ -64,14 +64,30 @@ a push: the same `archlinux:base-devel` image, the same package set, and the
 same unprivileged `nobody` runner, on a copy of your working tree, so
 uncommitted edits are included. `make check` stops at its first failure, so
 `scripts/ci-local.sh --each` runs every target of the `check` recipe on its own
-and lists all the failures at the end. Name a target to rerun one gate, add
+and lists all the failures at the end. `--each --jobs N` runs the targets on N
+containers at once (about N times faster, but a weaker signal: a timing-sensitive
+test can fail only under the extra load, so rerun a failure serially before you
+believe it), and `--each --targets "A B"` reruns just those. Name a target to rerun one gate, add
 `--keep` to leave the container up for debugging, `--clang` for the workflow's
 clang build, and `--refresh` to rebuild the cached package image from a fresh
 base (do that now and then: CI always starts from the newest one). It runs
+and lists all the failures at the end. Name a target to rerun one gate, add
+`--keep` to leave the container up for debugging, `--clang` (or `--clang-only`)
+for the workflow's clang build, which runs in its own clean container with just
+the `build` packages and clang, and `--refresh` to rebuild the cached package
+images from a fresh base (do that now and then: CI always starts from the newest one). It runs
 the tree's own scripts and tests, with the container's seccomp and AppArmor
 profiles off as in the workflow, so use it on code you trust rather than on an
 unreviewed branch. The first run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
 pass takes about half an hour. It needs Docker and about 6 GB of disk.
+
+Before merging changes to parallel scheduling, run
+`scripts/ci-validate-parallel.sh REPORT_DIRECTORY`. It performs one serial
+`--each` run and five `--each --jobs 4` runs, retains every raw log, and writes
+`comparison.tsv` with every target's outcome and timing from every run. The
+comparison fails when a target is missing, fails, or has a different outcome;
+timing differences are flagged in the report. Fix each outcome difference or
+explicitly exclude and document that target from the parallel set before merge.
 
 ## Change Guidelines
 

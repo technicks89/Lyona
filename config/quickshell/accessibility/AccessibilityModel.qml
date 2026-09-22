@@ -31,13 +31,9 @@ Scope {
     }
 
     function refresh() {
-        if (statusProcess.running) {
-            root.refreshPending = true;
-            return;
-        }
-        root.statusParsed = false;
-        statusProcess.running = true;
-        root.refreshPending = false;
+        QueuedRun.startOrQueue(statusProcess, root, "refreshPending", false, function() {
+            root.statusParsed = false;
+        });
     }
 
     function parseStatus(text) {

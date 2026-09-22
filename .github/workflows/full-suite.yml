@@ -61,15 +61,7 @@ jobs:
       - name: Install full validation dependencies
         run: |
           source scripts/dwm-packages.sh
-          mapfile -t packages < <(
-            {
-              dwm_packages arch full
-              dwm_packages arch ci-smoke
-              dwm_packages arch qml-validation
-              printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
-                xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
-            } | awk 'NF' | sort -u
-          )
+          mapfile -t packages < <(dwm_packages arch ci-full | awk 'NF' | sort -u)
           # The hosted runner may lack some optional entries (for example the
           # multilib gaming packages); install what its repositories have and
           # let the owning tests skip the rest.

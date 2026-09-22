@@ -3997,12 +3997,25 @@ class MountMonitorTests(unittest.TestCase):
         while time.monotonic() < deadline:
             try:
                 state = pathlib.Path(f"/proc/{child}/stat").read_text().rsplit(") ", 1)[1].split()[0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # ENOENT: the entry is gone. ESRCH: the process exited while
+                # the file was being read. Either way the child is gone.
                 return
             if state == "Z":  # An orphan awaits the host's reaper after parent KILL.
                 return
             time.sleep(0.01)
         self.fail("mount child remains running")
+
+    def test_gone_treats_a_process_that_exits_mid_read_as_gone(self):
+        # Reading /proc/PID/stat of a process that exits during the read fails
+        # with ESRCH rather than ENOENT; either way the child is gone.
+        error = ProcessLookupError(errno.ESRCH, "No such process")
+        with mock.patch.object(pathlib.Path, "read_text", side_effect=error):
+            self.gone(2**22 + 1)
+
+    def test_gone_still_fails_for_a_process_that_stays_alive(self):
+        with self.assertRaises(AssertionError):
+            self.gone(os.getpid())
 
     def test_readiness_precedes_queued_events_and_all_fixed_actions_are_preserved(self):
         process, child = self.start("os.write(1, b'mount\\numount\\nmove\\nremount\\n')")

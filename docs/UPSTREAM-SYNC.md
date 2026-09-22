@@ -6,9 +6,9 @@ carries the survey, the exclusions, the rules that apply everywhere, the open
 decisions, and the **sprint plan**. Each sprint has its own document with
 literal code.
 
-**Current survey:** upstream `d155edc` (2026-09-18), found by Sprint 4's S4-08
-re-survey. Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
-(2026-09-06), `dd55e58` (2026-09-07), `d4c6d89` (2026-09-16).
+**Current survey:** upstream `6258133` (2026-09-21), found by a maintainer-requested
+re-survey (Sprint 6). Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
+(2026-09-06), `dd55e58` (2026-09-07), `d4c6d89` (2026-09-16), `d155edc` (2026-09-18).
 
 ---
 
@@ -24,6 +24,7 @@ re-survey. Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
 | **Sprint 3** ([`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md)) | ✅ Done, merged to `main` (through `ed5ba44`) |
 | **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **Code complete; qualification open.** S4-01 to S4-07 done, and S4-08's re-survey done (2026-09-20). Left, none of which can run in a sandbox: the manual **Full suite** workflow (sprint branch and `main`), and checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) |
 | **Sprint 5** ([`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md)) | 🚧 **Code complete; qualification open.** From S4-08's re-survey (`d4c6d89..d155edc`, 12 commits): S5-01 (Settings panes stay hidden until their data loads, completes `#315`), S5-02 (verified Flathub before Flatpak installs) and S5-03 (floating-toggle shrink, decision D-9: port as upstream) are done. Left, none of which can run in a sandbox: the manual **Full suite** workflow on the sprint branch and on `main`, and a hands-on check of the floating toggles and Settings panes on a real desktop (S5-01, S5-03) |
+| **Sprint 6** ([`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md)) | 📋 **Not started.** From a re-survey (`d155edc..6258133`, 4 commits, 2 dependabot excluded): S6-01 (a small, portable fix), and three freshly opened Chris issues with no upstream fix yet to port (S6-02 dark-theme Thunar mismatch, S6-03 light-theme hover text, S6-04 a cross-tag window overview — the largest item, needs its own design pass) |
 | Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 Ported through Sprint 3 and Sprint 4 S4-01…S4-07 |
 
 ## Sprint plan
@@ -41,13 +42,15 @@ sized to one reviewable branch per item.
 | **2** | [`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) | System information, hardware, filesystems, security status, root encryption, screen-lock evidence, mount monitor, information card, Health navigation; **close `ROADMAP.md` Phase 6** | `#277`–`#288` + fixes | Sprint 1 (S1-03) |
 | **3** | [`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md) | Relative monitor placement, docked/undocked profiles, **`#310` battery gating (new)**, Control Center compaction, Settings readiness and lazy panes, **`#315` layout stability (new)**, Power menu / full-screen Settings / cursor reload / Blueman / Self-Heal, Appearance and typography, popup blur fix, pre-survey gaps | `#289`, `#290`, `c3e9a18`, `#291` (Settings), `#294`, `#295`, `#307`, `#324`, `#327`, `68a0d1f`, `#183`, `#188`, `#191` | — (one hunk touches Sprint 1's `SystemRegionalControls.qml`) |
 | **5** | [`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md) | Settings panes stay hidden until data loads (`#335`, completes `#315`), verified Flathub before Flatpak installs (`#334`), floating-toggle shrink (`#331`/`#333`, decision D-9) | `#329`–`#339` (issues `#330`, `#332`) | Sprint 3 (S5-01 replaces S3-05's placeholder) |
+| **6** | [`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md) | Live panel tooltip position (small port), dark-theme Thunar mismatch, light-theme hover text, cross-tag window overview (all three: Lyona's own fix/feature, no upstream code yet) | `#343`, issues `#348`–`#350` | — |
 | **4** | [`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md) | Configuration-backed Picom controls, **`#308` media/image defaults**, icon themes + theme convergence (the XSETTINGS lock fix, `#328`, turned out not to apply to Lyona), installer/session fixes, dwmterm (declined), desktop-update UX (D-8), N/A record, re-survey and qualification | `#312`–`#314`, `3d982b8`, `#317`, `#301`, `#328`, `#283`, `#255`, `#318`–`#323`, Fedora-only commits | Sprint 3 (S3-07) for S4-01 |
 
 Sprints 1→2 and 3→4 are ordered. **The two pairs are independent**, so
 Sprint 3 can run before or alongside Sprint 2. **Sprint 5** exists because
 S4-08's re-survey found new upstream work; it follows Sprint 3 and is
-independent of the rest of Sprint 4. A **Sprint 6** is only needed if a later
-re-survey finds more.
+independent of the rest of Sprint 4. **Sprint 6** exists because a later
+re-survey (2026-09-21) found more, as anticipated here; it is independent of
+every earlier sprint.
 
 The GitHub milestones and issues for these sprints are created by
 [`sync-sprints-github.sh`](sync-sprints-github.sh). See its header for usage.
@@ -205,7 +208,9 @@ Don't add another without a row here.
 
 Every issue and PR opened by `ChrisTitusTech` on `ChrisTitusTech/dwm-titus`
 since the fork (2026-08-27) is accounted for. All his PRs are merged; none
-are open.
+are open. As of the 2026-09-21 re-survey, four of his issues are open:
+`#310` (tracked, Sprint 3 S3-03), and `#344`–`#347` (Fedora `DNF`/kickstart-only,
+N/A for Arch-based Lyona, not tracked further).
 
 ### Issues
 
@@ -225,6 +230,13 @@ are open.
 | `#315` No layout shift while Settings panels load | closed by `#335` (2026-09-19) | Sprint 3 S3-05 covered only the component load, Lyona's own implementation; upstream's data-load fix ported in **Sprint 5 S5-01** |
 | `#330` Kickstart: default boot partitions, one partition for `/` and `/home` | closed | N/A (Fedora kickstart) |
 | `#332` Flatpak and Flathub before any Flatpak install | closed by `#334` | Sprint 5 S5-02 |
+| `#344` Fresh install: DNF updates after connectivity | **open** | N/A (Fedora `DNF`) |
+| `#345` Kickstart: include fastfetch | **open** | N/A (Fedora kickstart) |
+| `#346` DNF: default update prompts to Yes | **open** | N/A (Fedora `DNF`) |
+| `#347` Optimize DNF mirrors before initial update | **open** | N/A (Fedora `DNF`) |
+| `#348` Dark themes: Thunar stays light (Dracula and others) | **open, no upstream code** | Sprint 6 S6-02, Lyona's own fix once reproduced |
+| `#349` Light themes: dark hover backgrounds obscure text | **open, no upstream code** | Sprint 6 S6-03, Lyona's own fix once reproduced |
+| `#350` Cross-tag Mission-Control-style window overview | **open, no upstream code** | Sprint 6 S6-04, Lyona's own feature, needs its own design pass |
 
 Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
 
@@ -355,6 +367,10 @@ git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' 
 | `222378b` | 2026-09-18 | docs: use stable Cloudflare ISO download names | N/A (Cloudflare ISO links) |
 | `4e05248` | 2026-09-18 | docs: finalize 0.7.1 changelog | N/A (dwm-titus release notes) |
 | `f31a7b9` | 2026-09-18 | docs: finish migrating ISO references to universal download URLs | N/A (Cloudflare ISO links) |
+| `2461027` | 2026-09-21 | fix: restore Fedora Quickshell lint and validation gates (#343) | Sprint 6 S6-01 (one hunk); rest N/A (Fedora `qmllint` conformance, or code Lyona does not have) |
+| `58d10b82` | 2026-09-21 | ci: bump github/codeql-action (dependabot) | N/A (not Chris's; Lyona manages its own action pins) |
+| `513d4103` | 2026-09-21 | ci: bump withastro/action (dependabot) | N/A (not Chris's) |
+| `6258133` | 2026-09-21 | chore: test update delivery | N/A (empty commit, no file changes) |
 
 ---
 

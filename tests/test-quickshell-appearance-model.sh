@@ -47,8 +47,7 @@ grep -Fq 'Commands.checkedCommand(Commands.settingsThemeCommand(action, args))' 
 grep -Fq 'Commands.settingsThemeCommand("mutation-ready", [])' "$model"
 grep -Fq 'property bool mutationReadinessPending: false' "$model"
 grep -Fq 'root.mutationReady = false;' "$model"
-grep -Fq 'if (readinessProcess.running || actionProcess.running) {' "$model"
-grep -Fq 'root.mutationReadinessPending = true;' "$model"
+grep -Fq 'QueuedRun.startOrQueue(readinessProcess, root, "mutationReadinessPending", actionProcess.running);' "$model"
 grep -Fq 'if (!running && root.mutationReadinessPending && !actionProcess.running) {' "$model"
 grep -Fq 'onStreamFinished: root.mutationReady = !root.mutationReadinessPending' "$model"
 for mutation_function in startPreview applyTheme resetTheme; do
@@ -75,7 +74,8 @@ grep -Fq 'if (restartIfRunning === true) root.inventoryWatchRestartPending = tru
 grep -Fq 'root.inventoryWatchSawEvent = false' "$model"
 grep -Fq 'if (!root.inventoryWatchReady && !root.inventoryWatchFailed' "$model"
 grep -Fq 'root.inventoryPendingAllowUnwatched = root.inventoryPendingAllowUnwatched' "$model"
-grep -Fq 'root.refreshInventory(allowUnwatched)' "$model"
+grep -Fq 'root.refreshInventory(root.inventoryPendingAllowUnwatched)' "$model"
+grep -Fq 'Qt.callLater(root.retryInventoryRefresh)' "$model"
 grep -Fq 'if (line === "ready\tinventory")' "$model"
 grep -Fq 'root.refreshInventory(true)' "$model"
 grep -Fq 'root.inventoryWatchFailed = true' "$model"
@@ -157,7 +157,7 @@ grep -Fq 'provider = { "state": fields[2], "detail": fields[4] }' "$model"
 grep -Fq 'root.wallpaperProviderDetail = provider.detail' "$model"
 grep -Fq 'root.wallpaperMutationDetail = mutation.detail' "$model"
 grep -Fq 'root.wallpaperResetReady = reset.state === "available"' "$model"
-grep -Fq 'root.wallpaperStatusPending = true' "$model"
+grep -Fq 'QueuedRun.startOrQueue(wallpaperStatusProcess, root, "wallpaperStatusPending",' "$model"
 grep -Fq '|| wallpaperActionProcess.running || inventoryProcess.running' "$model"
 grep -Fq 'if (wallpaperStatusProcess.running || wallpaperActionProcess.running) {' "$model"
 grep -Fq 'if (!running && root.settingsVisible && root.inventoryPending) {' "$model"
@@ -165,7 +165,7 @@ grep -Fq '} else if (!running && root.settingsVisible && root.wallpaperStatusPen
 grep -Fq 'if (!running && root.wallpaperStatusPending && root.settingsVisible) {' "$model"
 grep -Fq 'readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running' "$model"
 grep -Fq 'Commands.settingsWallpaperCommand("reset-ready", [])' "$model"
-grep -Fq 'if (wallpaperReadinessProcess.running || wallpaperStatusProcess.running' "$model"
+grep -Fq 'wallpaperReadinessProcess.running || wallpaperActionProcess.running || inventoryProcess.running,' "$model"
 if grep -Fq '|| (inventoryWatchProcess.running && !root.inventoryWatchReady)) {' "$model"; then
 	printf 'Wallpaper status discovery is still gated on inventory watcher startup\n' >&2
 	exit 1
@@ -219,7 +219,7 @@ grep -Fq 'root.appearanceModel.refreshAll(true)' "$pane"
 # itself as such rather than as a stale answer (#191).
 grep -Fq 'property bool capabilityRefreshPending: false' "$settings_model"
 grep -Fq 'function refreshCapabilities()' "$settings_model"
-grep -Fq 'root.capabilityRefreshPending = true;' "$settings_model"
+grep -Fq 'QueuedRun.startOrQueue(providerProcess, root, "capabilityRefreshPending"' "$settings_model"
 grep -Fq 'if (root.discoveryState !== "ready" || root.capabilityRefreshPending)' "$settings_model"
 grep -Fq '"detail": "Capability discovery is still refreshing"' "$settings_model"
 grep -Fq 'function capabilityById(id)' "$settings_model"
@@ -227,11 +227,35 @@ grep -Fq 'function appearanceRefresh(): void' "$shell_qml"
 grep -Fq 'appearanceModel.refreshAll(true);' "$shell_qml"
 grep -Fq 'function capabilityStatus(capabilityId: string): string' "$shell_qml"
 # The follow-up run is queued only if the provider is still idle when the
-# deferred call fires, and the pending flag clears only once the next run has
-# started, so Settings never sees a frame with a queued refresh and nothing
-# reporting it (S5-01). tests/test-quickshell-settings-loading.sh is the one
-# place that checks this ordering rule, for every model that has it, so it is
-# not restated here with its own awk.
+# deferred call fires. The pending flag is deliberately NOT cleared here (S5-01):
+# it clears in refreshCapabilities() once the next run has started, so Settings
+# never sees a frame with a queued refresh and nothing reporting it.
+awk '
+	/id: providerProcess/ { in_provider = 1 }
+	in_provider && /onRunningChanged: \{/ {
+		in_handler = 1
+		depth = 0
+	}
+	in_handler {
+		line = $0
+		opens = gsub(/\{/, "", line)
+		closes = gsub(/\}/, "", line)
+		depth += opens - closes
+		if (/root.capabilityRefreshPending = false;/) cleared = NR
+		if (/Qt.callLater\(function\(\) \{/ && !deferred) deferred = NR
+		if (/if \(!providerProcess.running\) root.refreshCapabilities\(\);/ && !guarded) guarded = NR
+		if (depth == 0) {
+			in_handler = 0
+			verified = !cleared && deferred && guarded && deferred < guarded
+		}
+	}
+	END {
+		exit !verified
+	}
+' "$settings_model"
+refresh_capabilities=$(sed -n '/function refreshCapabilities()/,/^    }/p' "$settings_model")
+printf '%s\n' "$refresh_capabilities" |
+	grep -Fq 'QueuedRun.startOrQueue(providerProcess, root, "capabilityRefreshPending"'
 finish_action=$(sed -n '/function finishAction()/,/^    }/p' "$model")
 test "$(printf '%s\n' "$finish_action" | grep -Fc 'root.previewStatusManualOnly = false;')" -eq 2
 grep -Fq 'root.snapshotParsed = false' "$model"

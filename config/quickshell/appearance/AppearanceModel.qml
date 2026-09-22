@@ -503,14 +503,10 @@ Scope {
 
     function refreshSnapshot() {
         root.snapshotGeneration++;
-        if (snapshotProcess.running) {
-            root.snapshotPending = true;
-            return;
-        }
-        root.snapshotRunGeneration = root.snapshotGeneration;
-        root.snapshotParsed = false;
-        snapshotProcess.running = true;
-        root.snapshotPending = false;
+        QueuedRun.startOrQueue(snapshotProcess, root, "snapshotPending", false, function() {
+            root.snapshotRunGeneration = root.snapshotGeneration;
+            root.snapshotParsed = false;
+        });
     }
 
     function refreshPreviewStatus(force) {
@@ -528,25 +524,15 @@ Scope {
 
     function refreshMutationReadiness() {
         root.mutationReady = false;
-        if (readinessProcess.running || actionProcess.running) {
-            root.mutationReadinessPending = true;
-            return;
-        }
-        readinessProcess.running = true;
-        root.mutationReadinessPending = false;
+        QueuedRun.startOrQueue(readinessProcess, root, "mutationReadinessPending", actionProcess.running);
     }
 
     function refreshWallpaperStatus() {
         if (!root.settingsVisible) return;
         if (root.wallpaperReconcilePending) root.tryReconcileWallpaperPreview();
-        if (wallpaperReadinessProcess.running || wallpaperStatusProcess.running
-                || wallpaperActionProcess.running || inventoryProcess.running) {
-            root.wallpaperStatusPending = true;
-            return;
-        }
-        root.wallpaperStatusParsed = false;
-        wallpaperStatusProcess.running = true;
-        root.wallpaperStatusPending = false;
+        QueuedRun.startOrQueue(wallpaperStatusProcess, root, "wallpaperStatusPending",
+            wallpaperReadinessProcess.running || wallpaperActionProcess.running || inventoryProcess.running,
+            function() { root.wallpaperStatusParsed = false; });
     }
 
     function refreshFontStatus() {
@@ -554,13 +540,8 @@ Scope {
             root.fontMutationReady = false;
             fontReadinessProcess.running = true;
         }
-        if (fontStatusProcess.running || fontActionProcess.running) {
-            root.fontStatusPending = true;
-            return;
-        }
-        root.fontStatusParsed = false;
-        fontStatusProcess.running = true;
-        root.fontStatusPending = false;
+        QueuedRun.startOrQueue(fontStatusProcess, root, "fontStatusPending", fontActionProcess.running,
+            function() { root.fontStatusParsed = false; });
     }
 
     function refreshInventory(allowUnwatched) {
@@ -577,17 +558,23 @@ Scope {
             return;
         }
         root.inventoryGeneration++;
-        if (inventoryProcess.running) {
-            root.inventoryPending = true;
+        const started = QueuedRun.startOrQueue(inventoryProcess, root, "inventoryPending", false, function() {
+            root.inventoryRunGeneration = root.inventoryGeneration;
+            root.inventoryParsed = false;
+        });
+        if (started) {
+            root.inventoryPendingAllowUnwatched = false;
+        } else {
             root.inventoryPendingAllowUnwatched = root.inventoryPendingAllowUnwatched
                 || allowUnwatched === true;
-            return;
         }
-        root.inventoryRunGeneration = root.inventoryGeneration;
-        root.inventoryParsed = false;
-        inventoryProcess.running = true;
-        root.inventoryPending = false;
-        root.inventoryPendingAllowUnwatched = false;
+    }
+
+    // The retry of a queued inventory read. One named function, so that two
+    // process exits in the same tick schedule one retry (Qt.callLater coalesces
+    // by function) instead of bumping inventoryGeneration twice.
+    function retryInventoryRefresh() {
+        root.refreshInventory(root.inventoryPendingAllowUnwatched);
     }
 
     function refreshAll(forcePreviewStatus) {
@@ -827,13 +814,8 @@ Scope {
     }
 
     function refreshToolkitStatus() {
-        if (toolkitStatusProcess.running || toolkitActionProcess.running) {
-            root.toolkitStatusPending = true;
-            return;
-        }
-        root.toolkitStatusParsed = false;
-        toolkitStatusProcess.running = true;
-        root.toolkitStatusPending = false;
+        QueuedRun.startOrQueue(toolkitStatusProcess, root, "toolkitStatusPending", toolkitActionProcess.running,
+            function() { root.toolkitStatusParsed = false; });
     }
 
     function parseToolkitStatus(text) {
@@ -1355,6 +1337,17 @@ Scope {
             root.wallpaperPreviewFit, root.wallpaperPreviewToken);
     }
 
+    // A reconcile that found something blocking it stays queued. Retry it as soon
+    // as anything that can have been blocking it clears, so it does not depend on
+    // a later status poll (or a watcher event) happening to come along.
+    function retryQueuedWallpaperReconcile() {
+        if (root.wallpaperReconcilePending) Qt.callLater(root.tryReconcileWallpaperPreview);
+    }
+    onBusyChanged: if (!root.busy) root.retryQueuedWallpaperReconcile()
+    onFontBusyChanged: if (!root.fontBusy) root.retryQueuedWallpaperReconcile()
+    onWallpaperBusyChanged: if (!root.wallpaperBusy) root.retryQueuedWallpaperReconcile()
+    onWallpaperStatusBusyChanged: if (!root.wallpaperStatusBusy) root.retryQueuedWallpaperReconcile()
+
     function parseWallpaperAction(text) {
         if (root.wallpaperActionKind === "reconcile") {
             root.wallpaperStatusParsed = false;
@@ -1655,8 +1648,7 @@ Scope {
                     : "Wallpaper helper failed before returning a valid status");
             }
             if (!running && root.settingsVisible && root.inventoryPending) {
-                const allowUnwatched = root.inventoryPendingAllowUnwatched;
-                Qt.callLater(function() { root.refreshInventory(allowUnwatched); });
+                Qt.callLater(root.retryInventoryRefresh);
             } else if (!running && root.settingsVisible && root.wallpaperStatusPending) {
                 Qt.callLater(root.refreshWallpaperStatus);
             }
@@ -1682,8 +1674,7 @@ Scope {
                     : "Appearance inventory failed before returning a valid snapshot");
             }
             if (!running && root.inventoryPending && root.settingsVisible) {
-                const allowUnwatched = root.inventoryPendingAllowUnwatched;
-                Qt.callLater(function() { root.refreshInventory(allowUnwatched); });
+                Qt.callLater(root.retryInventoryRefresh);
             } else if (!running && root.wallpaperStatusPending && root.settingsVisible) {
                 Qt.callLater(root.refreshWallpaperStatus);
             }

@@ -156,6 +156,48 @@ Regression coverage:
 - `make check-install-preservation` validates user runtime TOML preservation
   during repeated installs.
 
+## Stacking and floating geometry
+
+Owner: `restack()` and `restackprioritywindows()` (with `raisefloatingclients`,
+`raiseselectedclient`, `raisealwaysontopclients`, `raisefullscreenclients` and
+`restackraisesselected`), and, for geometry, `setfloating()`,
+`shrinkfloating()` and `setlayoutshrink()` in `dwm.c`.
+
+Invariants:
+
+- `restackprioritywindows()` raises in a fixed order, later steps ending up on
+  top: floating clients (except always-on-top, `_NET_WM_STATE_ABOVE` and visible
+  fullscreen ones), the selected client where `restack()` raises it, always-on-top
+  and EWMH-above clients, the bar and tray of every monitor without a visible
+  fullscreen client, override windows flagged to raise, and visible fullscreen
+  clients last.
+- "`restack()` raises the selected client" is one predicate,
+  `restackraisesselected()`: the client is floating, or the layout is the
+  floating one. `restack()` and `raiseselectedclient()` both use it, so they
+  cannot disagree. A tiled selected client stays below floating clients and
+  below popups an application raised itself.
+- The mechanism and the policy of going floating are separate:
+  `setfloating(c, shrink)` toggles the client, and `shrink` alone decides whether
+  a tiled client pops out smaller. Keys and buttons (`togglefloating`) pass 1;
+  the mouse-drag paths pass 0 and keep the geometry the drag started from. No
+  caller signals the policy through a NULL `Arg`.
+- A tiled client that pops out (explicitly, or when the floating layout is chosen
+  from an arranged one) is scaled to `FLOATSHRINKPCT` percent (85 by default,
+  `config.def.h`; `dwm.c` falls back to 85 for an older `config.h`), kept
+  inside the work area and within its size hints, and centred on the tile it had.
+  Fixed-size and fullscreen clients are not shrunk, and choosing the floating
+  layout again does not shrink the windows a second time.
+
+Regression coverage:
+
+- `make check-xvfb-runtime` validates the pop-out size and centring, retiling,
+  the floating-layout shrink, and the stacking order in a live Xvfb session.
+- `make check-dwm-roundtrips` pins that the selected client is raised after the
+  floating pass.
+- `make check-dwm-floating-guards` pins the structure above: the shared
+  predicate, `setfloating` and its callers, the named constant and its default,
+  and that a `config.h` without the constant still builds.
+
 ## Phase 4 Refactor Rules
 
 - Preserve the existing test coverage before extracting code.
