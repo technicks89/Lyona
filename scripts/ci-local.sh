@@ -428,7 +428,7 @@ elif ((each)); then
 			[[ ! -f $durations_file ]] || cat "$durations_file"
 			awk '$1 == "PASS" || $1 == "FAIL" { t = $3; sub(/s$/, "", t); print $2, t }' "$logdir/each.log"
 		} | awk '{ last[$1] = $2 } END { for (k in last) print k, last[k] }' | LC_ALL=C sort >"$durations_file.tmp" &&
-			mv -f "$durations_file.tmp" "$durations_file" || true
+			mv -fT "$durations_file.tmp" "$durations_file" || true
 	fi
 	if ((status != 0)); then
 		[[ -d $logdir/each && ! -L $logdir/each ]] || exit "$status"

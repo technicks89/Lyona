@@ -711,13 +711,13 @@ grep -Fq 'readonly property bool displayHasPendingChanges:' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'property bool displayRefreshPending: false' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'root.displayRefreshPending = true;' \
+grep -Fq 'QueuedRun.startOrQueue(displayDiscoverProcess, root, "displayRefreshPending", false,' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'if (!running && root.displayRefreshPending && root.visible) {' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'property bool inputRefreshPending: false' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'root.inputRefreshPending = true;' \
+grep -Fq 'QueuedRun.startOrQueue(inputDiscoverProcess, root, "inputRefreshPending", false,' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'if (!running && root.inputRefreshPending && root.visible) {' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
