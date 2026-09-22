@@ -392,17 +392,40 @@ else
 fi
 GTK_THEME_NAME="$(theme_get gtk_theme)"
 [[ -n "$GTK_THEME_NAME" ]] || GTK_THEME_NAME="$(default_gtk_theme)"
-# A user override wins over the palette's own choice.
-[[ -z ${PERSONALIZATION[gtk]:-} ]] || GTK_THEME_NAME="${PERSONALIZATION[gtk]}"
+# A user override wins over the palette's own choice, including over the
+# generate-on-demand fallback below: if they asked for a specific name, an
+# unrelated one (even the palette's own) must never silently replace it.
+GTK_THEME_PERSONALIZED=0
+if [[ -n ${PERSONALIZATION[gtk]:-} ]]; then
+	GTK_THEME_NAME="${PERSONALIZATION[gtk]}"
+	GTK_THEME_PERSONALIZED=1
+fi
 # A themes.toml carried over from an older install may still name a theme we
 # no longer ship, such as the Nordic clone; prefer this palette's generated
-# theme over dropping all the way back to stock Adwaita.
-if ! gtk_theme_available "$GTK_THEME_NAME" && gtk_theme_available "Lyona-$THEME_NAME"; then
+# theme over dropping all the way back to stock Adwaita. `lyona-gtk-theme
+# generate-all` is normally an install-time step (Makefile's
+# `install-gtk-themes`); a live system that has never run it, or whose
+# themes.toml grew a palette since, would otherwise render every dark preset
+# in a fallback that is not actually dark (see below) -- generate the one
+# palette actually in use on demand instead.
+if ((! GTK_THEME_PERSONALIZED)) && [[ $RUNTIME_ONLY == 0 ]] &&
+	! gtk_theme_available "$GTK_THEME_NAME" && ! gtk_theme_available "Lyona-$THEME_NAME"; then
+	"$script_dir/lyona-gtk-theme" generate "$THEME_NAME" "$THEMES_FILE" \
+		"${XDG_DATA_HOME:-$HOME/.local/share}/themes/Lyona-$THEME_NAME" >/dev/null 2>&1 || true
+fi
+if ((! GTK_THEME_PERSONALIZED)) && ! gtk_theme_available "$GTK_THEME_NAME" &&
+	gtk_theme_available "Lyona-$THEME_NAME"; then
 	GTK_THEME_NAME="Lyona-$THEME_NAME"
 fi
-if ! gtk_theme_available "$GTK_THEME_NAME"; then
+if ((! GTK_THEME_PERSONALIZED)) && ! gtk_theme_available "$GTK_THEME_NAME"; then
+	# Not "Adwaita-dark": recent GTK3/GTK4 has no theme by that name to find
+	# (Adwaita's dark variant is the "prefer dark" hint below, not a second
+	# theme), so that literal name resolved to nothing and rendered light
+	# regardless of $DARK_MODE. Plain "Adwaita" plus the hint already set
+	# below is the correct, always-available dark fallback. A personalized
+	# choice that does not exist is left as-is rather than substituted: it is
+	# the user's own pick, same as an override that does resolve.
 	GTK_THEME_FALLBACK="Adwaita"
-	[[ "$DARK_MODE" == "true" ]] && GTK_THEME_FALLBACK="Adwaita-dark"
 	echo "theme-apply: GTK theme '$GTK_THEME_NAME' not found; falling back to '$GTK_THEME_FALLBACK'" >&2
 	GTK_THEME_NAME="$GTK_THEME_FALLBACK"
 fi

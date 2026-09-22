@@ -516,6 +516,10 @@ check-session-launch:
 check-gtk-theme:
 	tests/test-lyona-gtk-theme.sh
 
+.PHONY: check-theme-apply-gtk-fallback
+check-theme-apply-gtk-fallback:
+	tests/test-theme-apply-gtk-fallback.sh
+
 check-plymouth-theme:
 	tests/test-lyona-plymouth-theme.sh
 
@@ -855,6 +859,7 @@ check:
 	$(MAKE) check-ci-schedule
 	$(MAKE) check-shell-contracts
 	$(MAKE) check-gtk-theme
+	$(MAKE) check-theme-apply-gtk-fallback
 	$(MAKE) check-plymouth-theme
 	$(MAKE) check-grub-theme
 	$(MAKE) check-session-launch

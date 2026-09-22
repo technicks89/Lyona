@@ -1276,6 +1276,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Dark presets (Dracula, Tokyo Night, Nord, and every other shipped dark theme) could render Thunar and other plain GTK apps
+  light instead of dark (#348). `lyona-gtk-theme generate-all`, which builds each palette's `Lyona-<theme>` GTK theme, is an
+  install-time step (`make install-system`'s `install-gtk-themes`); on any live system where that step has not run, or whose
+  `themes.toml` grew a palette since, the generated theme genuinely does not exist, and `theme-apply.sh` fell back to a
+  literal `gtk-theme-name=Adwaita-dark` -- a name recent GTK3/GTK4 has no theme by (the dark variant of Adwaita is the
+  `gtk-application-prefer-dark-theme` hint, not a second named theme), so it resolved to nothing and rendered light
+  regardless of the preset. `theme-apply.sh` now generates the one palette actually in use on demand when it is missing, and
+  the fallback (when generation itself fails) is plain `Adwaita` with the hint already set, which is always available. A
+  user's own GTK theme override (Settings > Toolkit) is unaffected either way -- it already won over the palette's choice,
+  and still does, now that the generated theme is more often actually present to compete with it. New
+  `make check-theme-apply-gtk-fallback` (5 cases: on-demand generation, no needless regeneration, a personalization override
+  surviving both with and without the generated theme present, and the corrected fallback).
+
 - A Settings pane can no longer be hidden forever by a read that never finishes
   (#76). Since the loading gate (S5-01) a pane stays hidden and disabled until
   every read it waits on has finished, with no upper bound, so one hung helper
