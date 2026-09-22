@@ -5,7 +5,7 @@
     property int reconcileStage: 0
     property double reconcileStageStarted: Date.now()
     property int reconcileBefore: 0
-    readonly property var reconcileBlockers: ["busy", "fontBusy", "wallpaperBusy"]
+    readonly property var reconcileBlockers: ["busy", "fontBusy", "wallpaperBusy", "wallpaperStatusPending"]
 
     function reconcileCheck(ok, detail) {
         if (!ok) {
@@ -28,6 +28,11 @@
             const model = appearanceModel;
             if (root.reconcileStage === 0) {
                 if (waited < 800) return;
+                const idle = !model.busy && !model.fontBusy && !model.wallpaperBusy
+                    && !model.wallpaperStatusBusy;
+                root.reconcileCheck(idle || waited < 8000,
+                    "the appearance model did not become idle before wallpaper reconciliation");
+                if (!idle) return;
                 root.reconcileNext();
                 return;
             }
