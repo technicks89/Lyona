@@ -463,6 +463,10 @@ check-xvfb-runtime: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+.PHONY: check-ci-parity
+check-ci-parity:
+	tests/test-ci-parity.sh
+
 check-build-config:
 	tests/test-configure-build.sh
 
@@ -531,6 +535,10 @@ check-ci-schedule:
 check-dwm-roundtrips:
 	tests/test-dwm-x-roundtrips.sh
 
+.PHONY: check-dwm-floating-guards
+check-dwm-floating-guards:
+	tests/test-dwm-floating-guards.sh
+
 check-monitor-tags:
 	tests/test-monitor-tag-switching.sh
 
@@ -565,6 +573,10 @@ check-quickshell-session-actions:
 
 check-quickshell-defaults-model:
 	tests/test-quickshell-defaults-model.sh
+
+.PHONY: check-quickshell-queued-run-xvfb
+check-quickshell-queued-run-xvfb:
+	@tests/test-quickshell-queued-run-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 check-quickshell-update-model:
 	tests/test-quickshell-update-model.sh
@@ -642,6 +654,10 @@ check-picom:
 
 check-picom-xvfb:
 	$(call run_managed_test,/usr/bin/python3 tests/test-picom-xvfb.py)
+
+.PHONY: check-quickshell-picom-model-xvfb
+check-quickshell-picom-model-xvfb:
+	@tests/test-quickshell-picom-model-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 check-quickshell-health-xvfb:
 	tests/test-quickshell-health-xvfb.sh
@@ -827,6 +843,7 @@ check:
 	$(MAKE) check-arch-platform
 	$(MAKE) check-dev-sync-install
 	$(MAKE) check-default-apps
+	$(MAKE) check-ci-parity
 	$(MAKE) check-xdg-autostart
 	$(MAKE) check-diagnostics
 	$(MAKE) check-status
@@ -838,6 +855,7 @@ check:
 	$(MAKE) check-grub-theme
 	$(MAKE) check-session-launch
 	$(MAKE) check-dwm-roundtrips
+	$(MAKE) check-dwm-floating-guards
 	$(MAKE) check-display-profile
 	$(MAKE) check-display-profiles
 	$(MAKE) check-display-setup
@@ -850,6 +868,7 @@ check:
 	$(MAKE) check-quickshell-power-model
 	$(MAKE) check-quickshell-session-actions
 	$(MAKE) check-quickshell-defaults-model
+	$(MAKE) check-quickshell-queued-run-xvfb
 	$(MAKE) check-quickshell-update-model
 	$(MAKE) check-quickshell-appearance-model
 	$(MAKE) check-quickshell-settings-loading
@@ -876,6 +895,7 @@ check:
 	$(MAKE) check-xkbset
 	$(MAKE) check-picom
 	$(MAKE) check-picom-xvfb
+	$(MAKE) check-quickshell-picom-model-xvfb
 	$(MAKE) check-system-health
 	$(MAKE) check-system-management
 	$(MAKE) check-settings

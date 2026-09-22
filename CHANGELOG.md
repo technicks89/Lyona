@@ -145,6 +145,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   Wi-Fi prompt stay on screen and scroll, and the last notification's dismiss
   control is reachable.
 
+- Settings > Appearance reads the Picom configuration once when nothing changed, not
+  twice (#85). The watcher used to say `ready` right after starting `inotifywait`,
+  before its watches existed, and the model answered every `ready` with a second
+  `dwm-settings-picom status` (about 0.2 s of Python start-up) to close the gap; the
+  compositor term of the pane's loading gate could flap false then true 150 ms
+  apart. `dwm-settings-picom watch` now waits for `inotifywait`'s "Watches
+  established." and says `ready<TAB>revision` with the configuration revision as of
+  that moment, and `PicomModel` reads again only when that revision differs from the
+  one it already holds (or the watcher could not give one, or the first read
+  failed), so an edit made between the first read and the watcher going live is
+  still shown. Covered by two helper tests in `tests/test-picom.py` (an edit right
+  after `ready` is never missed) and the new `make check-quickshell-picom-model-xvfb`,
+  which plays eight watcher scenarios against the real model and counts the reads:
+  opening Settings went from 2 reads to 1 when nothing changed.
+
 - Compact the Control Center and Settings detail pane (Sync Sprint 3 S3-04,
   `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
   `c3e9a18` "refactor(quickshell): compact control surfaces", open since the
@@ -270,6 +285,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   acceptance in the sprint doc that a fresh ISO install (standard and NVIDIA) and an
   existing-system `install.sh` both open `.mkv` in Celluloid and `.png` in sxiv
   from Thunar, and still do after logout and reboot, which needs real installs.
+
+- The application launcher hides desktop entries scoped to other desktops (#104,
+  ported in part from upstream PR #340). `scripts/dwm-quickshell-launcher` now
+  reads `OnlyShowIn` and `NotShowIn` and compares them with the tokens of
+  `XDG_CURRENT_DESKTOP` (a Lyona session exports `X-DWM` and `dwm`; unset means
+  the same), so other environments' preference panels, such as the XFCE panel
+  settings that Thunar pulls in, no longer appear. Any one matching token is
+  enough, the comparison is case sensitive, an empty `OnlyShowIn` shows the
+  entry nowhere, and GLib-compatible ordered token handling checks
+  `OnlyShowIn` before `NotShowIn` for each token (falling back to the existing
+  behavior when no token matches). A key inside an action group never scopes
+  the whole entry. Opening a panel popup now also closes the launcher, the
+  notification history and the Control Center utility window instead of
+  leaving them open behind it. The rest of upstream's PR (screen-sized
+  click-away windows, square corners, 1 px focus borders) was declined and
+  Lyona keeps its behaviour. New cases in `tests/test-quickshell-launcher.sh`
+  and `tests/test-quickshell-command-menu.sh`.
 
 - Configuration-backed Picom controls (Sync Sprint 4 S4-01,
   `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
@@ -439,6 +471,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `check-display-profiles` Makefile target rather than folding into
   `check-settings` as upstream does. `scripts/autostart.sh` runs no
   competing profile-apply at login, so no autostart change was needed.
+- The CI package set and environment now have one source each (#92). The
+  full-suite workflow and `scripts/ci-local.sh` each assembled the package list
+  by hand (three profiles plus a literal list of extras) and repeated the job's
+  environment (image, security options, the `nobody` runner's directories). A
+  new `ci-full` profile in `scripts/dwm-packages.sh` (with `ci-tools` for the
+  extras) is now what both install, and a new `scripts/ci-env.sh` holds the
+  constants that `ci-local.sh` uses; the workflow, being YAML, repeats the values
+  and the new `make check-ci-parity` fails if the workflow, `ci-local.sh` and
+  `ci-env.sh` drift apart, or if either one grows a package list of its own. The
+  generated list is byte-identical to the old one (114 packages), so the
+  cached `ci-local.sh` image stays valid.
+
 - Replace the Displays pane's raw X/Y position inputs with relative
   placement (Sync Sprint 3 S3-01, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#289`/`55dbd76`, plus `6b7548b`'s driver-quirk fix to
@@ -738,6 +782,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   D-3 (`accounts-open`/`sources-open` permanently `unsupported` on Arch, no
   `lxqt-admin-user`/`dnfdragora` equivalent) is unchanged; their launch
   buttons stay disabled and now show the helper's own reason text.
+- `dwm.c` floating code separates mechanism from policy, and names its shared
+  pieces (#91; no behaviour change). `setfloating(c, shrink)` does the toggle and
+  `shrink` alone decides whether a tiled client pops out smaller: `togglefloating`
+  (keys and buttons) passes 1 and the two mouse-drag paths pass 0, where before
+  `togglefloating(NULL)` meant "this is a drag" by an unenforced convention.
+  `restack()` and `raiseselectedclient()` share `restackraisesselected()` instead
+  of each spelling out "floating, or the floating layout". The pop-out percentage
+  is `FLOATSHRINKPCT` in `config.def.h` (default 85; `dwm.c` falls back to 85, so
+  a `config.h` written before it existed still builds), and
+  `docs/PATCH-OWNERSHIP.md` gains a "Stacking and floating geometry" section.
+  `make check-dwm-floating-guards` pins the structure and the default; compared
+  at `-O0`, `shrinkfloating` compiles to identical code and the mouse paths differ
+  only at the call.
+
 - Give regional (timezone/locale/NTP) preview and confirmation its own model
   (Sync Sprint 1 S1-05, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
   from upstream `#268`/`#269`): the new
@@ -754,6 +812,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   exclusion where an update confirmation in flight did not block starting a
   delegated one, and a live confirmation-invalidation signal did not clear
   a pending delegated confirmation.
+- `scripts/ci-local.sh --clang` now runs the workflow's clang job the way the
+  workflow does (#87): a clean container with only the `build` profile and clang,
+  as root, `make clean all CC=clang`. It was `pacman -S clang` into a container
+  that already had every package, which could hide a build dependency missing from
+  the `build` profile and re-downloaded clang on every run. That container's image
+  is cached as `lyona-ci-clang:<hash>` (about 2 GB, built in a minute, rebuilt when
+  the `build` profile changes or with `--refresh`), and the suite's image is
+  untouched. `--clang-only` runs just this leg. Checked by dropping `libxft` from
+  the `build` profile: the leg now fails on the missing `xft`.
+
 - Share one timezone-aware minute clock between the panel and Settings
   (Sync Sprint 1 S1-06, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
   from upstream `#270`): the new `config/quickshell/core/ClockModel.qml`
@@ -1311,6 +1379,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   upstream's hand-written trap. Both new assertions were confirmed to fail on
   the previous code. Upstream's `test-fedora-packages.sh` hunk is not
   applicable.
+
+- `MountMonitorTests.gone()` in `tests/test-system-management.py` no longer races
+  a process that exits while `/proc/PID/stat` is being read (#94). That read
+  raises `ProcessLookupError` (ESRCH), which the helper did not treat as "gone",
+  so `test_signal_cleanup_and_parent_death` errored about once in three runs in
+  the full-suite CI container. New cases pin both outcomes (an ESRCH read counts
+  as gone; a process that stays alive still fails).
 
 - Fix `scripts/webapp-launch`, which never worked for a user-scoped browser
   install: unquoted brace expansion ran before tilde expansion, so

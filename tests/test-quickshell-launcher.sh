@@ -200,6 +200,93 @@ if printf '%s\n' "$output" | grep -F "$chatgpt_web_desktop"; then
 	exit 1
 fi
 
+# Entries scoped to other desktops are not listed (Desktop Entry spec: OnlyShowIn,
+# NotShowIn against the XDG_CURRENT_DESKTOP tokens), so another environment's
+# preference panels do not appear in the launcher.
+mkdir -p "$work/desktops/applications"
+make_scoped_entry() {
+	# make_scoped_entry FILE NAME [KEY=VALUE]... (the extra lines go in the main group)
+	scoped_file=$work/desktops/applications/$1.desktop
+	scoped_name=$2
+	shift 2
+	{
+		printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n' "$scoped_name" "$1-exec"
+		printf '%s\n' "$@"
+	} >"$scoped_file"
+}
+make_scoped_entry only-xfce 'XFCE Only App' 'OnlyShowIn=XFCE;'
+make_scoped_entry only-dwm 'DWM Only App' 'OnlyShowIn=XFCE;dwm;'
+make_scoped_entry only-xdwm 'X-DWM Only App' 'OnlyShowIn=X-DWM;'
+make_scoped_entry not-dwm 'Not DWM App' 'NotShowIn=dwm;'
+make_scoped_entry not-kde 'Not KDE App' 'NotShowIn=KDE;'
+make_scoped_entry only-before-not 'Only Before Not App' 'OnlyShowIn=X-DWM;' 'NotShowIn=dwm;'
+make_scoped_entry not-before-only 'Not Before Only App' 'OnlyShowIn=dwm;' 'NotShowIn=X-DWM;'
+make_scoped_entry both-shown 'Both Keys Shown' 'OnlyShowIn=dwm;' 'NotShowIn=KDE;'
+make_scoped_entry whitespace-only 'Whitespace Only App' 'OnlyShowIn =  dwm;'
+make_scoped_entry whitespace-not 'Whitespace Not App' 'NotShowIn =  dwm;'
+make_scoped_entry empty-only 'Empty Only App' 'OnlyShowIn='
+make_scoped_entry empty-not 'Empty Not App' 'NotShowIn='
+make_scoped_entry wrong-case 'Wrong Case App' 'OnlyShowIn=DWM;'
+# A key inside an action group scopes the action, never the whole entry.
+make_scoped_entry action-scope 'Action Scope App' 'Actions=new;'
+printf '\n[Desktop Action new]\nName=New\nExec=action-scope-exec --new\nOnlyShowIn=XFCE;\n' >>"$work/desktops/applications/action-scope.desktop"
+
+list_for_desktop() {
+	# list_for_desktop TOKENS ("-" leaves XDG_CURRENT_DESKTOP unset)
+	if [ "$1" = - ]; then
+		env -u XDG_CURRENT_DESKTOP LANG=en_US.UTF-8 HOME="$work/home" \
+			XDG_DATA_HOME="$work/empty" XDG_DATA_DIRS="$work/desktops" \
+			"$repo/scripts/dwm-quickshell-launcher" list
+	else
+		XDG_CURRENT_DESKTOP=$1 LANG=en_US.UTF-8 HOME="$work/home" \
+			XDG_DATA_HOME="$work/empty" XDG_DATA_DIRS="$work/desktops" \
+			"$repo/scripts/dwm-quickshell-launcher" list
+	fi
+}
+listed_name() {
+	# The name is the whole first column, so "DWM Only App" does not match "X-DWM Only App".
+	printf '%s\n' "$1" | awk -F'\t' -v n="$2" '$1 == n { found = 1 } END { exit !found }'
+}
+expect_listed() {
+	# expect_listed OUTPUT DESKTOP NAME...
+	scoped_output=$1
+	scoped_desktop=$2
+	shift 2
+	for scoped_name in "$@"; do
+		listed_name "$scoped_output" "$scoped_name" ||
+			fail "'$scoped_name' should be listed for XDG_CURRENT_DESKTOP=$scoped_desktop"
+	done
+}
+expect_hidden() {
+	scoped_output=$1
+	scoped_desktop=$2
+	shift 2
+	for scoped_name in "$@"; do
+		if listed_name "$scoped_output" "$scoped_name"; then
+			fail "'$scoped_name' should not be listed for XDG_CURRENT_DESKTOP=$scoped_desktop"
+		fi
+	done
+}
+
+# In a Lyona session the tokens are X-DWM and dwm; unset means the same.
+for desktop in 'X-DWM:dwm' -; do
+	scoped_output=$(list_for_desktop "$desktop")
+	expect_listed "$scoped_output" "$desktop" 'DWM Only App' 'X-DWM Only App' 'Not KDE App' \
+		'Only Before Not App' 'Both Keys Shown' 'Whitespace Only App' 'Empty Not App' 'Action Scope App'
+	expect_hidden "$scoped_output" "$desktop" 'XFCE Only App' 'Not DWM App' 'Not Before Only App' \
+		'Whitespace Not App' 'Empty Only App' 'Wrong Case App'
+done
+# Another desktop sees its own entries and not this one's.
+scoped_output=$(list_for_desktop XFCE)
+expect_listed "$scoped_output" XFCE 'XFCE Only App' 'DWM Only App' 'Not DWM App' 'Not KDE App' \
+	'Whitespace Not App' 'Empty Not App' 'Action Scope App'
+expect_hidden "$scoped_output" XFCE 'X-DWM Only App' 'Only Before Not App' 'Not Before Only App' \
+	'Both Keys Shown' 'Whitespace Only App' 'Empty Only App'
+# Any one of several tokens is enough.
+scoped_output=$(list_for_desktop 'GNOME:dwm')
+expect_listed "$scoped_output" 'GNOME:dwm' 'DWM Only App' 'Not Before Only App' 'Whitespace Only App'
+expect_hidden "$scoped_output" 'GNOME:dwm' 'XFCE Only App' 'Only Before Not App' 'Whitespace Not App'
+
 cat >"$work/bin/dex" <<'SH'
 #!/bin/sh
 printf '%s\n' "$1" >"$DWM_TEST_DEX_LOG"
