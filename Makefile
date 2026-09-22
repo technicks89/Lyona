@@ -647,6 +647,10 @@ check-picom:
 check-picom-xvfb:
 	$(call run_managed_test,/usr/bin/python3 tests/test-picom-xvfb.py)
 
+.PHONY: check-quickshell-picom-model-xvfb
+check-quickshell-picom-model-xvfb:
+	@tests/test-quickshell-picom-model-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 check-quickshell-health-xvfb:
 	tests/test-quickshell-health-xvfb.sh
 
@@ -881,6 +885,7 @@ check:
 	$(MAKE) check-xkbset
 	$(MAKE) check-picom
 	$(MAKE) check-picom-xvfb
+	$(MAKE) check-quickshell-picom-model-xvfb
 	$(MAKE) check-system-health
 	$(MAKE) check-system-management
 	$(MAKE) check-settings

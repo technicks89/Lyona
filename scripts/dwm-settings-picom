@@ -1128,8 +1128,22 @@ def mutate(action, args, revision):
             ) from exc
 
 
+def watched_revision():
+    try:
+        return Configuration().revision()
+    except (Error, OSError, ValueError):
+        return ""
+
+
 def watch():
-    """Inotify watches are active only while Settings is open; no process polling."""
+    """Inotify watches are active only while Settings is open; no process polling.
+
+    Prints "changed" when a watched file changes, and "ready<TAB>REVISION" once the
+    watches are really live, REVISION being the configuration revision `status`
+    reports as of that moment (plain "ready" when it cannot be read). A reader that
+    already holds a status with the same revision knows the watches missed nothing
+    since its read and needs no second one.
+    """
     if not shutil.which("inotifywait"):
         raise Error("Install inotify-tools for live Picom configuration updates")
     child = None
@@ -1166,17 +1180,22 @@ def watch():
         child = subprocess.Popen(
             [
                 "inotifywait",
-                "-q",
                 "-e",
                 "close_write,create,delete,moved_to,moved_from,delete_self,move_self",
                 *sorted(parents),
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
             preexec_fn=lambda: libc.prctl(1, signal.SIGTERM, 0, 0, 0),  # noqa: PLW1509 - this CLI has no threads
         )
         try:
-            print("ready", flush=True)
+            # Not -q: inotifywait says "Watches established." on stderr once it is
+            # watching, and only then can the revision below be trusted to mean
+            # that any later edit is reported as "changed".
+            if any(line.startswith("Watches established") for line in child.stderr):
+                revision = watched_revision()
+                print("ready\t" + revision if revision else "ready", flush=True)
             code = child.wait()
         finally:
             if child.poll() is None:
