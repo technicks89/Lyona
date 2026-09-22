@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import "DwmStateWindows.js" as WindowsLib
 
 Scope {
     id: root
@@ -11,6 +12,7 @@ Scope {
     property var occupiedWorkspaces: []
     property var fullscreenMonitorIndexes: []
     property var runningApps: []
+    property var windows: []
     property string activeWindowTitle: "Desktop"
     property string activeWindowClass: "application-x-executable"
     property string statusText: ""
@@ -69,6 +71,8 @@ Scope {
                     const separator = app.indexOf(":");
                     return { "windowId": app.slice(0, separator), "appClass": app.slice(separator + 1) };
                 }) : [];
+            } else if (key === "windows") {
+                root.windows = WindowsLib.parseWindows(value);
             } else if (key === "title") {
                 root.activeWindowTitle = value.length > 0 ? value : "Desktop";
             } else if (key === "class") {
@@ -135,6 +139,15 @@ Scope {
         return monitorIndex < Quickshell.screens.length
             ? Quickshell.screens[monitorIndex]
             : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
+    }
+
+    // Resolves each entry in `windows` to the tag/monitor it belongs to, for
+    // the overview popup (Sprint 7 S7-03) to group by. The actual math is
+    // DwmStateWindows.js's own pure workspaceIndexesForMonitor() range
+    // check -- the same split monitorWorkspaceRows/workspaceNames already
+    // describe -- kept out of this Scope so it stays directly unit-testable.
+    function windowsByTag() {
+        return WindowsLib.windowsByTag(root.windows, root.monitorWorkspaceRows, root.workspaceNames.length);
     }
 
     function focusedScreen() {
