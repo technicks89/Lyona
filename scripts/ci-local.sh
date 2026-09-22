@@ -354,6 +354,22 @@ if ((each)); then
 		rerun=("${failed[@]}" "${missing[@]}")
 		printf 'rerun just these: scripts/ci-local.sh --each --targets "%s"\n' "${rerun[*]}"
 	fi
+	# The repeated serial/parallel qualification helper sets both variables.
+	# Keep this machine-readable evidence separate from the human console log.
+	if [[ -n ${CI_LOCAL_VALIDATION_RESULTS:-} || -n ${CI_LOCAL_VALIDATION_RUN:-} ]]; then
+		if [[ -z ${CI_LOCAL_VALIDATION_RESULTS:-} || -z ${CI_LOCAL_VALIDATION_RUN:-} ]]; then
+			printf 'CI_LOCAL_VALIDATION_RESULTS and CI_LOCAL_VALIDATION_RUN must be set together\n' >&2
+			status=1
+		else
+			validation_mode=serial
+			((workers == 1)) || validation_mode=parallel
+			if ! ci_record_run "$CI_LOCAL_VALIDATION_RUN" "$validation_mode" "$workers" \
+				"$logdir/each.log" >>"$CI_LOCAL_VALIDATION_RESULTS"; then
+				printf 'could not record validation run %s\n' "$CI_LOCAL_VALIDATION_RUN" >&2
+				status=1
+			fi
+		fi
+	fi
 	# Remember how long each took, to balance the next parallel run.
 	if mkdir -p "$(dirname "$durations_file")" 2>/dev/null; then
 		{

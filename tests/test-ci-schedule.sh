@@ -75,4 +75,38 @@ junk=$(ci_schedule 2 "$work/junk" check-a check-b check-c check-d)
 [[ $(ci_clamp_jobs 2 16 100) -eq 2 ]] || fail 'a reasonable job count was changed'
 [[ $(ci_clamp_jobs 0 16 100) -eq 1 ]] || fail 'zero jobs should become one'
 
+# Validation records preserve every outcome and timing, and comparison requires
+# the issue #86 evidence set: one serial run plus at least five four-worker runs.
+printf '%s\n' 'PASS check-a 10s' 'PASS check-b 20s' >"$work/run.log"
+records=$work/results.tsv
+ci_record_run serial serial 1 "$work/run.log" >"$records"
+for run in 1 2 3 4 5; do
+	printf '%s\n' 'PASS check-a 10s' "PASS check-b $((20 + run))s" >"$work/run.log"
+	ci_record_run "parallel-$run" parallel 4 "$work/run.log" >>"$records"
+done
+ci_compare_runs "$records" 5 >"$work/comparison.tsv" || fail 'passing repeated runs did not compare cleanly'
+grep -Fq $'check-a\tPASS\t10\tPASS\t10' "$work/comparison.tsv" ||
+	fail 'the comparison omitted a stable target'
+grep -Fq $'check-b\tPASS\t20\tPASS\t21' "$work/comparison.tsv" ||
+	fail 'the comparison omitted timing differences'
+grep -Fq $'\tno\tyes' "$work/comparison.tsv" ||
+	fail 'a timing-only difference was not reported'
+
+head -n -2 "$records" >"$work/too-few.tsv"
+if ci_compare_runs "$work/too-few.tsv" 5 >"$work/too-few.out" 2>/dev/null; then
+	fail 'four parallel runs satisfied the five-run evidence requirement'
+else
+	[[ $? -eq 2 ]] || fail 'an incomplete evidence set returned the wrong status'
+fi
+
+sed 's/parallel-5\tparallel\t4\tcheck-b\tPASS/parallel-5\tparallel\t4\tcheck-b\tFAIL/' \
+	"$records" >"$work/difference.tsv"
+if ci_compare_runs "$work/difference.tsv" 5 >"$work/difference.out"; then
+	fail 'an outcome difference passed validation'
+else
+	[[ $? -eq 1 ]] || fail 'an outcome difference returned the wrong status'
+fi
+grep -Fq $'check-b\tPASS\t20' "$work/difference.out" || fail 'the differing target was not reported'
+grep -Fq $'\tyes\tyes' "$work/difference.out" || fail 'the outcome difference was not flagged'
+
 printf 'CI schedule: PASS\n'

@@ -76,6 +76,14 @@ profiles off as in the workflow, so use it on code you trust rather than on an
 unreviewed branch. The first run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
 pass takes about half an hour. It needs Docker and about 6 GB of disk.
 
+Before merging changes to parallel scheduling, run
+`scripts/ci-validate-parallel.sh REPORT_DIRECTORY`. It performs one serial
+`--each` run and five `--each --jobs 4` runs, retains every raw log, and writes
+`comparison.tsv` with every target's outcome and timing from every run. The
+comparison fails when a target is missing, fails, or has a different outcome;
+timing differences are flagged in the report. Fix each outcome difference or
+explicitly exclude and document that target from the parallel set before merge.
+
 ## Change Guidelines
 
 - Preserve the C99 style and avoid new mandatory dependencies unless they are

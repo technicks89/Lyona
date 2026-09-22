@@ -531,6 +531,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   died, with a ready-to-paste `--targets "..."` line to rerun them. N is capped by
   the cores and the target count. The run says up front that a parallel pass is a
   weaker signal than a serial one, since timing-sensitive tests can fail under the extra load.
+  `scripts/ci-validate-parallel.sh` records the required serial comparison and five
+  four-worker runs, including every per-target outcome and timing.
 
 - Wire the information/storage/security readers from S2-01 through S2-04
   into the system-management snapshot protocol as minor `2`, both on the
