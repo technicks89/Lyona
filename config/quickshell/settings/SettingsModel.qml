@@ -615,9 +615,7 @@ Scope {
 
     function refreshAutomaticDisplays() {
         if (!root.visible) return;
-        if (automaticDisplayStatusProcess.running) { root.automaticDisplayRefreshPending = true; return; }
-        automaticDisplayStatusProcess.running = true;
-        root.automaticDisplayRefreshPending = false;
+        QueuedRun.startOrQueue(automaticDisplayStatusProcess, root, "automaticDisplayRefreshPending", false);
     }
 
     function installDisplayProfile(name) {
@@ -708,24 +706,14 @@ Scope {
     function refreshDisplays() {
         if (!root.visible) return;
         root.refreshAutomaticDisplays();
-        if (displayDiscoverProcess.running) {
-            root.displayRefreshPending = true;
-            return;
-        }
-        root.displayState = "loading";
-        displayDiscoverProcess.running = true;
-        root.displayRefreshPending = false;
+        QueuedRun.startOrQueue(displayDiscoverProcess, root, "displayRefreshPending", false,
+            function() { root.displayState = "loading"; });
     }
 
     function refreshInput() {
         if (!root.visible) return;
-        if (inputDiscoverProcess.running) {
-            root.inputRefreshPending = true;
-            return;
-        }
-        root.inputState = "loading";
-        inputDiscoverProcess.running = true;
-        root.inputRefreshPending = false;
+        QueuedRun.startOrQueue(inputDiscoverProcess, root, "inputRefreshPending", false,
+            function() { root.inputState = "loading"; });
     }
 
     function setSearch(value) {
@@ -827,15 +815,11 @@ Scope {
 
     function refreshCapabilities() {
         if (!root.visible) return;
-        if (providerProcess.running) {
-            root.capabilityRefreshPending = true;
-            return;
-        }
-        root.busy = true;
-        root.discoveryState = "loading";
-        root.message = "Discovering capabilities...";
-        providerProcess.running = true;
-        root.capabilityRefreshPending = false;
+        QueuedRun.startOrQueue(providerProcess, root, "capabilityRefreshPending", false, function() {
+            root.busy = true;
+            root.discoveryState = "loading";
+            root.message = "Discovering capabilities...";
+        });
     }
 
     function openWindow(sectionId) {
