@@ -42,9 +42,11 @@ usage() {
 }
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-base_image=archlinux:base-devel
-workspace=/__w/Lyona/Lyona
-test_root=/var/tmp/lyona-ci
+# shellcheck source=scripts/ci-env.sh
+source "$repo/scripts/ci-env.sh"
+base_image=$CI_BASE_IMAGE
+workspace=$CI_WORKSPACE
+test_root=$CI_TEST_ROOT
 target=check
 each=0
 clang=0
@@ -91,15 +93,7 @@ docker info >/dev/null 2>&1 || {
 # which the image build does too).
 # shellcheck source=scripts/dwm-packages.sh
 source "$repo/scripts/dwm-packages.sh"
-mapfile -t packages < <(
-	{
-		dwm_packages arch full
-		dwm_packages arch ci-smoke
-		dwm_packages arch qml-validation
-		printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
-			xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
-	} | awk 'NF' | sort -u
-)
+mapfile -t packages < <(dwm_packages arch ci-full | awk 'NF' | sort -u)
 image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
 # The workflow's clang job installs the build profile and clang in a clean
 # container, and nothing more. Keep the profiles separate for Docker layer
@@ -182,6 +176,16 @@ EOF
 	rm -rf "$context"
 	context=
 }
+fi
+
+printf '==> Starting %s from %s\n' "$name" "$image"
+# --rm and a finite sleep: if this script is killed before its trap runs, the
+# container still goes away by itself.
+docker run -d --rm --init --label lyona-ci=1 --name "$name" \
+	"${CI_SECURITY_OPTS[@]}" \
+	-e DWM_TEST_TMP_ROOT="$test_root" \
+	"$image" sleep "$max_life" >/dev/null
+container=$name
 
 # The files git knows about or would add: the working tree as it is now. Files
 # deleted since the last commit are simply absent. The list goes to a file so a
@@ -246,12 +250,16 @@ start_suite_container() {
 		chown -R nobody:nobody '$workspace'"
 }
 ((clang_only)) || start_suite_container
+docker exec "$name" bash -c "
+	git config --global --add safe.directory '$workspace'
+	install -d -m 0700 -o nobody -g nobody '$CI_HOME' '$CI_RUNTIME_DIR' '$test_root'
+	chown -R nobody:nobody '$workspace'"
 
 # Run a command the way the workflow does: as nobody, in the workspace.
 # shellcheck disable=SC2329 # runs through run_logged
 as_nobody() {
 	docker exec -w "$workspace" "$name" \
-		runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+		runuser -u nobody -- env HOME="$CI_HOME" XDG_RUNTIME_DIR="$CI_RUNTIME_DIR" \
 		DWM_TEST_TMP_ROOT="$test_root" "$@"
 }
 

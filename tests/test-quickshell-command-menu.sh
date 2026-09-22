@@ -46,6 +46,15 @@ grep -Fq 'root.focusedMonitorIndex >= 0' "$repo/config/quickshell/state/DwmState
 grep -Fq 'if (visible) commandMenuModel.close();' "$shell"
 select_panel_popup_body=$(sed -n '/function selectPanelPopup(panel, popupId)/,/^    }$/p' "$shell")
 printf '%s\n' "$select_panel_popup_body" | grep -Fq 'commandMenuModel.close();'
+# Opening a panel popup also closes the other floating surfaces, so the launcher,
+# the notification history and the Control Center utility window do not stay
+# open behind it.
+for floating_close in 'launcherModel.close();' 'notificationModel.closeHistory();' 'controlCenterModel.closeUtility();'; do
+	printf '%s\n' "$select_panel_popup_body" | grep -Fq "$floating_close" || {
+		printf 'selectPanelPopup does not call %s\n' "$floating_close" >&2
+		exit 1
+	}
+done
 open_menu_body=$(sed -n '/function openCommandMenu(screen)/,/^    }$/p' "$shell")
 for popup_model in networkModel bluetoothModel controlCenterModel controlsModel; do
 	printf '%s\n' "$open_menu_body" | grep -Fq "$popup_model.close();"

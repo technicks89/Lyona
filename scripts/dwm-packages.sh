@@ -27,6 +27,21 @@ dwm_packages() {
 		dwm_packages "$family" fonts
 		printf '%s\n' quickshell xorg-server-xvfb inotify-tools jq
 		;;
+	arch:ci-tools)
+		# What the full-suite CI job needs beyond the desktop: linters, the
+		# ISO builder, and the Xvfb/dbus/X11 tools the acceptance tests drive.
+		printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
+			xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
+		;;
+	arch:ci-full)
+		# Everything the full-suite workflow installs, and what
+		# scripts/ci-local.sh installs into its image: one definition, so the
+		# two cannot drift (tests/test-ci-parity.sh).
+		dwm_packages "$family" full
+		dwm_packages "$family" ci-smoke
+		dwm_packages "$family" qml-validation
+		dwm_packages "$family" ci-tools
+		;;
 	arch:desktop)
 		printf '%s\n' \
 			quickshell picom python feh dex mate-polkit \

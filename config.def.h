@@ -5,6 +5,9 @@ static const unsigned int enable_noborder = 1;
 static const int cursorwarp         = 1;
 static const unsigned int snap      = 32;
 static const int swallowfloating    = 0;
+/* Percent of its tile a tiled window keeps when floated with a key or button, and
+ * when the floating layout is chosen. */
+#define FLOATSHRINKPCT                85
 
 static const int showbar            = 1;
 static const int topbar             = 1;
