@@ -26,7 +26,7 @@ function parseWindows(value) {
         return {
             "windowId": fields[0],
             "desktop": parseInt(fields[1], 10),
-            "appClass": fields[2],
+            "appClass": fields[2].replace(/%7C/gi, "|").replace(/%3A/gi, ":").replace(/%25/gi, "%"),
             "title": fields.slice(3).join(":")
         };
     });

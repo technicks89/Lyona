@@ -54,6 +54,19 @@ TestCase {
         compare(windows[0].title, "12:34 PM", "Only the first three colons are field separators");
     }
 
+    function test_parseWindows_decodes_only_class_delimiters() {
+        const windows = WindowsLib.parseWindows(
+            "0xaa:3:edge%3Acase%7Cwith%257c:12:34 PM|0xbb:1:firefox:Unchanged");
+
+        compare(windows.length, 2);
+        compare(windows[0].windowId, "0xaa");
+        compare(windows[0].desktop, 3);
+        compare(windows[0].appClass, "edge:case|with%7c");
+        compare(windows[0].title, "12:34 PM");
+        compare(windows[1].appClass, "firefox");
+        compare(windows[1].title, "Unchanged");
+    }
+
     function twoMonitorRows() {
         // Only .length matters to the resolution math (it derives monitor
         // count from the row count, mirroring DwmState.qml's own
