@@ -65,9 +65,10 @@ same unprivileged `nobody` runner, on a copy of your working tree, so
 uncommitted edits are included. `make check` stops at its first failure, so
 `scripts/ci-local.sh --each` runs every target of the `check` recipe on its own
 and lists all the failures at the end. Name a target to rerun one gate, add
-`--keep` to leave the container up for debugging, `--clang` for the workflow's
-clang build, and `--refresh` to rebuild the cached package image from a fresh
-base (do that now and then: CI always starts from the newest one). It runs
+`--keep` to leave the container up for debugging, `--clang` (or `--clang-only`)
+for the workflow's clang build, which runs in its own clean container with just
+the `build` packages and clang, and `--refresh` to rebuild the cached package
+images from a fresh base (do that now and then: CI always starts from the newest one). It runs
 the tree's own scripts and tests, with the container's seccomp and AppArmor
 profiles off as in the workflow, so use it on code you trust rather than on an
 unreviewed branch. The first run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
