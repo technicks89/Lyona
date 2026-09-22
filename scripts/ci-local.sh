@@ -31,9 +31,10 @@
 # unreviewed branch.
 #
 # The package layer is cached as the image lyona-ci:<hash of the package list>
-# (the clang build's as lyona-ci-clang:<hash>), so only the first run (or a run
-# after a package list changed) installs packages. Use --refresh now and then:
-# CI always starts from the newest image.
+# (the clang build's as lyona-ci-clang:<hash>). The clang image keeps its stable
+# build profile and compiler in separate layers, so compiler-list changes reuse
+# the build dependencies. Use --refresh now and then: CI always starts from the
+# newest image.
 set -euo pipefail
 
 usage() {
@@ -101,10 +102,13 @@ mapfile -t packages < <(
 )
 image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
 # The workflow's clang job installs the build profile and clang in a clean
-# container, and nothing more.
+# container, and nothing more. Keep the profiles separate for Docker layer
+# caching, then retain the complete list for the image tag and status output.
+mapfile -t clang_build_packages < <(dwm_packages arch build | awk 'NF' | sort -u)
+clang_tool_packages=(clang)
 mapfile -t clang_packages < <({
-	dwm_packages arch build
-	printf '%s\n' clang
+	printf '%s\n' "${clang_build_packages[@]}"
+	printf '%s\n' "${clang_tool_packages[@]}"
 } | awk 'NF' | sort -u)
 clang_image=lyona-ci-clang:$(printf '%s\n' "${clang_packages[@]}" | sha256sum | cut -c1-12)
 
@@ -134,8 +138,9 @@ trap cleanup EXIT
 
 # ensure_image IMAGE STRICT PACKAGE...: build the cached image unless it exists
 # (--refresh rebuilds it). STRICT=0 drops the names the repositories lack, as
-# the full suite's install step does; STRICT=1 installs the list as it is, so a
-# name pacman does not know fails the build, as it does in the clang job.
+# the full suite's install step does. STRICT=1 installs the clang build and tool
+# profiles as independent layers without filtering unavailable package names,
+# so a name pacman does not know still fails as it does in the clang job.
 ensure_image() {
 	local tag=$1 strict=$2
 	shift 2
@@ -144,16 +149,21 @@ ensure_image() {
 	fi
 	printf '==> Building %s (%d packages; this is the slow part, and it is cached)\n' "$tag" "$#"
 	context=$(mktemp -d "${TMPDIR:-/tmp}/lyona-ci-context.XXXXXX")
-	printf '%s\n' "$@" >"$context/packages.txt"
 	if ((strict)); then
+		printf '%s\n' "${clang_build_packages[@]}" >"$context/build-packages.txt"
+		printf '%s\n' "${clang_tool_packages[@]}" >"$context/tool-packages.txt"
 		cat >"$context/Dockerfile" <<EOF
 FROM $base_image
-COPY packages.txt /packages.txt
-RUN pacman -Syu --noconfirm --needed git \\
- && pacman -S --noconfirm --needed \$(cat /packages.txt) \\
+RUN pacman -Syu --noconfirm
+COPY build-packages.txt /build-packages.txt
+RUN pacman -S --noconfirm --needed \$(cat /build-packages.txt) \\
+ && rm -rf /var/cache/pacman/pkg/*
+COPY tool-packages.txt /tool-packages.txt
+RUN pacman -S --noconfirm --needed \$(cat /tool-packages.txt) \\
  && rm -rf /var/cache/pacman/pkg/*
 EOF
 	else
+		printf '%s\n' "$@" >"$context/packages.txt"
 		cat >"$context/Dockerfile" <<EOF
 FROM $base_image
 COPY packages.txt /packages.txt
