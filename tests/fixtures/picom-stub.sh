@@ -25,6 +25,12 @@ status)
 			exit 1
 		fi
 		;;
+	failed-matching-revision)
+		if [ "$(wc -l <"$ctl/status.log")" -eq 2 ]; then
+			printf 'Picom status failed\n' >&2
+			exit 1
+		fi
+		;;
 	esac
 	printf '{"protocol":1,"editable":true,"installed":true,"running":true,"active":100,"inactive":100,"policy":"auto","effective":"","override":"","revision":"%s","path":"/tmp/picom.conf","detail":"","copyable":false}\n' "$revision"
 	: >"$ctl/status.done"
@@ -59,6 +65,19 @@ watch)
 		wait_for status.log
 		sleep 0.3
 		printf 'ready\n'
+		;;
+	failed-matching-revision)
+		# Preserve a real snapshot, then make the next status read fail. The
+		# watcher reports the snapshot's revision again, so the model must retry
+		# because the status result failed rather than treating revisions as enough.
+		wait_for status.done
+		sleep 0.3
+		printf 'ready\tr1\n'
+		sleep 0.3
+		printf 'changed\n'
+		while [ "$(wc -l <"$ctl/status.log")" -lt 2 ]; do sleep 0.02; done
+		sleep 0.3
+		printf 'ready\tr1\n'
 		;;
 	bare-ready)
 		# A watcher that cannot say what it saw: the model must read again.

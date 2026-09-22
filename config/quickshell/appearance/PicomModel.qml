@@ -51,12 +51,14 @@ Scope {
 
     // The watcher is live from the moment it said ready, and the status read
     // may predate that, so an edit in between would go unseen. If the revision
-    // the watcher saw is the one the snapshot holds nothing was missed and no
-    // second read is needed; otherwise (or when it could not say) read again.
+    // the watcher saw is the one the snapshot holds, and the status read
+    // succeeded, nothing was missed and no second read is needed; otherwise
+    // (or when it could not say) read again.
     function verifyWatchReady() {
         if (!root.watchReadyPending || statusProcess.running || root.pending) return;
         root.watchReadyPending = false;
-        if (root.watchReadyRevision === "" || root.watchReadyRevision !== root.snapshot.revision)
+        if (root.statusFailure !== "" || root.watchReadyRevision === ""
+                || root.watchReadyRevision !== root.snapshot.revision)
             settle.restart();
     }
 

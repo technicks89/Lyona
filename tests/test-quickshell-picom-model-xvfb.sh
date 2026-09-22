@@ -98,6 +98,7 @@ run_scenario slow-unchanged 4000 1 r1 'ready arrived during the first read and m
 run_scenario slow-edited 5000 2 r2 'an edit during the first read must be shown'
 run_scenario bare-ready 3000 2 r1 'a watcher that cannot say what it saw means read again'
 run_scenario failed-read 3000 2 r1 'a failed first read is retried once the watcher is ready'
+run_scenario failed-matching-revision 4000 3 r1 'a failed read with a matching watcher revision is retried'
 run_scenario changed-only 4000 2 r3 'one change, one read, and no read loop'
 run_scenario changed-real 4000 2 r3 'a change followed by the re-armed ready is still one read'
 printf 'Picom model: PASS\n'
