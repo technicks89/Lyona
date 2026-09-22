@@ -14,6 +14,7 @@ import qs.health
 import qs.launcher
 import qs.network
 import qs.notifications
+import qs.overview
 import qs.panel
 import qs.power
 import qs.settings
@@ -49,7 +50,25 @@ ShellRoot {
         if (popupId !== "controls") controlsModel.close();
         if (popupId !== "network") networkModel.close();
         if (popupId !== "power") powerMenuModel.close("panel");
+        if (popupId !== "overview") overviewModel.close();
         root.selectedPanelWindow = panel;
+    }
+
+    function openOverview(screen) {
+        const panel = root.panelForScreen(screen || dwmState.focusedScreen());
+
+        commandMenuModel.close();
+        launcherModel.close();
+        if (panel) root.selectPanelPopup(panel, "overview");
+        overviewModel.open(panel ? panel.screen : screen);
+    }
+
+    function toggleOverview(screen) {
+        if (overviewModel.visible) {
+            overviewModel.close();
+        } else {
+            root.openOverview(screen);
+        }
     }
 
     function openCommandMenu(screen) {
@@ -59,6 +78,7 @@ ShellRoot {
         controlsModel.close();
         powerMenuModel.close("panel");
         launcherModel.close();
+        overviewModel.close();
         if (screen) commandMenuModel.openOnScreen(screen); else commandMenuModel.open();
     }
 
@@ -121,7 +141,10 @@ ShellRoot {
         id: launcherModel
 
         onVisibleChanged: {
-            if (visible) commandMenuModel.close();
+            if (visible) {
+                commandMenuModel.close();
+                overviewModel.close();
+            }
         }
     }
 
@@ -232,6 +255,11 @@ ShellRoot {
 
     ControlsModel {
         id: controlsModel
+    }
+
+    OverviewModel {
+        id: overviewModel
+        dwmState: dwmState
     }
 
     BluetoothModel {
@@ -437,6 +465,28 @@ ShellRoot {
 
         function volumeUp(): void {
             controlsModel.volumeUp();
+        }
+    }
+
+    IpcHandler {
+        target: "overview"
+
+        function close(): void {
+            overviewModel.close();
+        }
+
+        function open(): void {
+            root.openOverview(null);
+        }
+
+        function toggle(): void {
+            root.toggleOverview(null);
+        }
+
+        function windowCount(): int {
+            return overviewModel.groups.reduce(function(total, group) {
+                return total + group.windows.length;
+            }, 0);
         }
     }
 
@@ -1385,6 +1435,11 @@ ShellRoot {
 
     ControlsWindow {
         controlsModel: controlsModel
+        panelWindow: root.activePanelWindow
+    }
+
+    WindowOverview {
+        overviewModel: overviewModel
         panelWindow: root.activePanelWindow
     }
 

@@ -17,7 +17,7 @@ fail() {
 
 # A root-owned pid is skipped; a pid this test owns is kept. Using real
 # processes keeps the /proc uid lookup honest instead of stubbing it.
-root_pid=1
+root_pid=${TEST_ROOT_PID:-1}
 own_pid=$$
 [[ $(awk '/^Uid:/ { print $2; exit }' "/proc/$root_pid/status") == 0 ]] ||
 	fail "expected pid $root_pid to be root-owned; cannot exercise the uid skip"
@@ -28,12 +28,29 @@ cat >"$bin/xprop" <<EOF
 #!/bin/sh
 # -root <props...>  |  -id <window> <props...>
 printf '%s\n' "\$*" >>"$work/xprop.log"
+if [ "\$1" = "-root" ] && [ "\$2" = "-spy" ]; then
+	exec sleep 30
+fi
+if [ "\$1" = "-id" ] && [ "\$3" = "-spy" ]; then
+	if [ "\$2" = "0xaa" ]; then
+		while [ ! -f "$work/title-changed" ]; do sleep 0.05; done
+		printf '_NET_WM_NAME(UTF8_STRING) = "Updated title"\n'
+	elif [ "\$2" = "0xbb" ]; then
+		while [ ! -f "$work/fallback-title-changed" ]; do sleep 0.05; done
+		printf 'WM_NAME(STRING) = "Firefox Updated"\n'
+	fi
+	exec sleep 30
+fi
 if [ "\$1" = "-root" ]; then
+	if [ "\$2" = "_NET_CLIENT_LIST" ]; then
+		printf '_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee\n'
+		exit 0
+	fi
 	cat <<'ROOT'
 _NET_CURRENT_DESKTOP(CARDINAL) = 2
 _NET_NUMBER_OF_DESKTOPS(CARDINAL) = 9
 _NET_DESKTOP_NAMES(UTF8_STRING) = "one", "two", "three"
-_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd
+_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee
 _DWM_FULLSCREEN_MONITORS(STRING) = "1, 0, 1"
 _DWM_MONITOR_DESKTOPS(STRING) = "0, 1, 2"
 _DWM_SELECTED_MONITOR(CARDINAL) = 1
@@ -115,7 +132,7 @@ expect 'status=AC | VOL 15%'
 
 # occupied is numerically sorted and de-duplicated, and includes the desktop
 # of the root-owned window even though that window is not a running app
-expect 'occupied=0|1|3|7'
+expect 'occupied=0|1|2|3|7'
 
 # apps keeps first-seen order, de-duplicates by class, and drops root-owned
 expect 'apps=0xaa:alacritty dev edition|0xbb:firefox'
@@ -150,7 +167,41 @@ per_window=$(grep -c '^-id .* _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME 
 [[ $per_window -eq 4 ]] ||
 	fail "expected 1 batched xprop per client window (4), got $per_window" "$work/xprop.log"
 total=$(wc -l <"$work/xprop.log")
-[[ $total -le 7 ]] ||
-	fail "expected at most 7 xprop calls for 4 windows, got $total" "$work/xprop.log"
+[[ $total -le 8 ]] ||
+	fail "expected at most 8 xprop calls for 5 windows, got $total" "$work/xprop.log"
+
+watch_pid=
+cleanup_add 'if [[ -n $watch_pid ]]; then kill "$watch_pid" 2>/dev/null || true; wait "$watch_pid" 2>/dev/null || true; fi'
+PATH="$bin:$PATH" "$helper" watch >"$work/watch-out" 2>"$work/watch-err" &
+watch_pid=$!
+initial='windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+fallback_updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox Updated|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+for attempt in {1..100}; do
+	grep -Fqx "$initial" "$work/watch-out" && break
+	sleep 0.05
+done
+grep -Fqx "$initial" "$work/watch-out" || fail 'watch did not emit initial titles' "$work/watch-err"
+touch "$work/title-changed"
+for attempt in {1..100}; do
+	grep -Fqx "$updated" "$work/watch-out" && break
+	sleep 0.05
+done
+grep -Fqx "$updated" "$work/watch-out" || fail 'watch ignored a title-only change' "$work/xprop.log"
+touch "$work/fallback-title-changed"
+for attempt in {1..100}; do
+	grep -Fqx "$fallback_updated" "$work/watch-out" && break
+	sleep 0.05
+done
+grep -Fqx "$fallback_updated" "$work/watch-out" || fail 'watch ignored a WM_NAME-only change' "$work/watch-out"
+grep -Fq -- '-id 0xaa -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP' "$work/xprop.log" ||
+	fail 'watch did not subscribe to client title properties' "$work/xprop.log"
+kill "$watch_pid"
+wait "$watch_pid" 2>/dev/null || true
+watch_pid=
+
+PATH="$bin:$PATH" "$helper" state >"$work/reopened-out" 2>"$work/reopened-err" ||
+	fail 'fresh state after title change exited non-zero' "$work/reopened-err"
+grep -Fqx "$fallback_updated" "$work/reopened-out" || fail 'fresh snapshot kept the old title' "$work/reopened-out"
 
 printf 'Quickshell state bridge: PASS\n'

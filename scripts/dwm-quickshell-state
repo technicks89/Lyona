@@ -174,6 +174,25 @@ client_snapshot() {
 			}
 			next
 		}
+		# A property the window does not set prints "PROP:  not found." (no
+		# "(" after the name), never a real value; only a line with "(" is a
+		# genuine title, the same distinction window_title() makes with its
+		# own -F"= " split (where a "not found" line leaves $2 empty).
+		/^_NET_WM_NAME\(/ {
+			sub(/^[^=]*= */, "")
+			gsub(/"/, "")
+			title = $0
+			have_net_wm_name = 1
+			next
+		}
+		/^WM_NAME\(/ {
+			if (!have_net_wm_name) {
+				sub(/^[^=]*= */, "")
+				gsub(/"/, "")
+				title = $0
+			}
+			next
+		}
 		END {
 			flush()
 
@@ -393,8 +412,15 @@ ROOT_SNAPSHOT
 }
 
 watch_state() {
-	show_state
-	printf '\n'
+	watch_dir=$(mktemp -d)
+	client_pids=
+	root_pid=
+	trap 'watch_cleanup' EXIT
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	mkfifo "$watch_dir/events"
+	exec 3<>"$watch_dir/events"
 
 	if xprop -root _DWM_MONITOR_DESKTOPS >/dev/null 2>&1; then
 		xprop -root -spy \
@@ -406,7 +432,7 @@ watch_state() {
 			_NET_ACTIVE_WINDOW \
 			_NET_CLIENT_LIST \
 			_DWM_FULLSCREEN_MONITORS \
-			WM_NAME 2>/dev/null
+			WM_NAME >&3 2>/dev/null &
 	else
 		xprop -root -spy \
 			DWM_TAG_UPDATE \
@@ -416,12 +442,50 @@ watch_state() {
 			_NET_ACTIVE_WINDOW \
 			_NET_CLIENT_LIST \
 			_DWM_FULLSCREEN_MONITORS \
-			WM_NAME 2>/dev/null
-	fi |
-		while IFS= read -r _event; do
-			show_state
-			printf '\n'
-		done
+			WM_NAME >&3 2>/dev/null &
+	fi
+	root_pid=$!
+	watch_clients
+	show_state
+	printf '\n'
+
+	while IFS= read -r event <&3; do
+		case $event in
+		_NET_CLIENT_LIST*) watch_clients ;;
+		esac
+		show_state
+		printf '\n'
+	done
+}
+
+watch_clients() {
+	for watcher_pid in $client_pids; do
+		kill "$watcher_pid" 2>/dev/null || true
+		wait "$watcher_pid" 2>/dev/null || true
+	done
+	client_pids=
+	client_list=$(root_property_value _NET_CLIENT_LIST)
+	old_ifs=$IFS
+	IFS=,
+	for window_id in $client_list; do
+		window_id=${window_id##* }
+		[ -n "$window_id" ] || continue
+		xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP >&3 2>/dev/null &
+		client_pids="$client_pids $!"
+	done
+	IFS=$old_ifs
+}
+
+watch_cleanup() {
+	trap - EXIT HUP INT TERM
+	for watcher_pid in $client_pids $root_pid; do
+		[ -n "$watcher_pid" ] || continue
+		kill "$watcher_pid" 2>/dev/null || true
+		wait "$watcher_pid" 2>/dev/null || true
+	done
+	exec 3>&-
+	rm -f "$watch_dir/events"
+	rmdir "$watch_dir"
 }
 
 switch_workspace() {
