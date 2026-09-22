@@ -106,10 +106,6 @@ client_snapshot() {
 			sub(/ $/, "", value)
 			return value
 		}
-		function sanitize_class(value) {
-			gsub(/[|:]/, " ", value)
-			return value
-		}
 		function flush(   value) {
 			if (window == "") {
 				return
@@ -138,6 +134,25 @@ client_snapshot() {
 			gsub(/"/, "")
 			split($0, classes, /, /)
 			class = tolower(sanitize_class(classes[2]))
+			next
+		}
+		# A property the window does not set prints "PROP:  not found." (no
+		# "(" after the name), never a real value; only a line with "(" is a
+		# genuine title, the same distinction window_title() makes with its
+		# own -F"= " split (where a "not found" line leaves $2 empty).
+		/^_NET_WM_NAME\(/ {
+			sub(/^[^=]*= */, "")
+			gsub(/"/, "")
+			title = $0
+			have_net_wm_name = 1
+			next
+		}
+		/^WM_NAME\(/ {
+			if (!have_net_wm_name) {
+				sub(/^[^=]*= */, "")
+				gsub(/"/, "")
+				title = $0
+			}
 			next
 		}
 		# A property the window does not set prints "PROP:  not found." (no

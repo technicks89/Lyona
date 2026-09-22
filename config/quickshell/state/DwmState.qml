@@ -12,7 +12,7 @@ Scope {
     property var occupiedWorkspaces: []
     property var fullscreenMonitorIndexes: []
     property var runningApps: []
-    property var windows: []
+    property var windowStates: []
     property string activeWindowTitle: "Desktop"
     property string activeWindowClass: "application-x-executable"
     property string statusText: ""
@@ -72,7 +72,15 @@ Scope {
                     return { "windowId": app.slice(0, separator), "appClass": app.slice(separator + 1) };
                 }) : [];
             } else if (key === "windows") {
-                root.windows = WindowsLib.parseWindows(value);
+                root.windowStates = value.length > 0 ? value.split("|").map(function(windowState) {
+                    const fields = windowState.split(":");
+                    return {
+                        "windowId": fields[0],
+                        "desktop": parseInt(fields[1], 10),
+                        "appClass": fields[2],
+                        "title": fields.slice(3).join(":")
+                    };
+                }) : [];
             } else if (key === "title") {
                 root.activeWindowTitle = value.length > 0 ? value : "Desktop";
             } else if (key === "class") {

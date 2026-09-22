@@ -199,18 +199,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - `scripts/dwm-quickshell-state` gains a `windows=` field alongside `apps=` (Sync Sprint 7 S7-01,
   `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, part of the cross-tag window overview, issue `#350`): one entry per managed
   window (`id:desktop:class:title`), never deduplicated by class the way `apps=` is for the panel's running-apps row, which
-  it leaves untouched. Adds one `xprop` atom (`_NET_WM_NAME`, falling back to `WM_NAME`) to the same per-window query
+  it leaves untouched. Adds both title atoms (`_NET_WM_NAME`, preferred, and `WM_NAME` as the fallback) to the same per-window query
   `apps=`/`occupied=` already make, so this rides the existing `watch` loop for free rather than adding a new round trip.
-
-- `DwmState.qml` gains a `windows` property (Sync Sprint 7 S7-02,
-  `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, part of the cross-tag window overview, issue `#350`), parsed from S7-01's
-  `windows=` field the same way `apps` is parsed today, and a `windowsByTag()` helper that resolves each window's raw
-  `desktop` number to `{tagIndex, monitorIndex}` using the existing `monitorWorkspaceRows` split the panel's own workspace
-  rows already use. The parsing/resolution math lives in a new pure library, `DwmStateWindows.js` (`.pragma library`, no
-  QML/Process dependency, the same split `PanelTooltipPosition.js` established in S6-01), unit-tested directly via
-  `tests/qml/tst_dwm_state_windows.qml` under `qmltestrunner` rather than only through the live `DwmState` Scope, whose
-  `watch` Process would otherwise run for real the moment a test instantiated it. No new data collection and no UI yet
-  (Sprint 7 S7-03).
 
 - `scripts/ci-local.sh` runs the "Full suite (manual)" workflow's job in a local
   Docker container (see `CONTRIBUTING.md`): the same base image, package set

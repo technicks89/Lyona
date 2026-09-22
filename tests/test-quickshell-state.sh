@@ -48,7 +48,7 @@ case "\$window:\$*" in
 0xaa:*WM_CLASS*)
 	printf '_NET_WM_DESKTOP(CARDINAL) = 3\n'
 	printf '_NET_WM_PID(CARDINAL) = $own_pid\n'
-	printf 'WM_CLASS(STRING) = "alacritty", "Alacritty|Dev:Edition"\n'
+	printf 'WM_CLASS(STRING) = "alacritty", "Alacritty"\n'
 	# Both present: _NET_WM_NAME must win over the stale WM_NAME, and its
 	# "|" (the windows= field separator) must not survive into the field.
 	printf '_NET_WM_NAME(UTF8_STRING) = "Term|one"\n'
@@ -69,7 +69,7 @@ case "\$window:\$*" in
 	# crash and not the literal "not found." text.
 	printf '_NET_WM_DESKTOP(CARDINAL) = 0\n'
 	printf '_NET_WM_PID(CARDINAL) = $own_pid\n'
-	printf 'WM_CLASS(STRING) = "alacritty", "Alacritty|Dev:Edition"\n'
+	printf 'WM_CLASS(STRING) = "alacritty", "Alacritty"\n'
 	printf '_NET_WM_NAME:  not found.\n'
 	printf 'WM_NAME:  not found.\n'
 	;;
@@ -126,6 +126,13 @@ expect 'apps=0xaa:alacritty dev edition|0xbb:firefox'
 # leaves an empty title rather than the literal "not found." text (0xcc),
 # and the root-owned window (0xdd) is excluded the same as apps= excludes it.
 expect 'windows=0xaa:3:alacritty dev edition:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty dev edition:'
+
+# windows= is per-window, never deduplicated by class (0xaa and 0xcc share
+# one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
+# WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
+# leaves an empty title rather than the literal "not found." text (0xcc),
+# and the root-owned window (0xdd) is excluded the same as apps= excludes it.
+expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:'
 
 # fullscreen monitors are de-duplicated and sorted
 expect 'fullscreen_monitors=0|1'
