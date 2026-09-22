@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.core
+import "PanelTooltipPosition.js" as TooltipPosition
 
 PopupWindow {
     id: root
@@ -19,7 +20,10 @@ PopupWindow {
     mask: Region {}
 
     anchor.window: root.anchorWindow
-    anchor.rect.x: 0
+    // A live binding, not only set from onAnchoring: it must stay correct if the
+    // anchor window's width changes (a DPI change, a monitor hot-plug) between
+    // anchoring passes, not just clip until the next one happens to run.
+    anchor.rect.x: TooltipPosition.clampedX(root.anchorWindow.width, root.width, root.anchorX, root.rightAligned)
     anchor.rect.y: root.anchorY
     anchor.edges: Edges.Left | Edges.Top
     anchor.gravity: Edges.Right | Edges.Bottom
@@ -29,8 +33,6 @@ PopupWindow {
         const screenX = root.anchorWindow.screen && root.anchorWindow.screen.x !== undefined
             ? root.anchorWindow.screen.x : 0;
         root.anchorX = point.x - screenX;
-        anchor.rect.x = Math.round(Math.max(0, Math.min(root.anchorWindow.width - root.width,
-                                                       root.rightAligned ? root.anchorX - root.width : root.anchorX))) | 0;
     }
 
     PanelPill {
