@@ -650,6 +650,10 @@ check-quickshell-settings-loading:
 check-quickshell-settings-responsiveness-xvfb:
 	@tests/test-quickshell-settings-responsiveness-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
+.PHONY: check-quickshell-wallpaper-reconcile-xvfb
+check-quickshell-wallpaper-reconcile-xvfb:
+	@tests/test-quickshell-wallpaper-reconcile-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 check-quickshell-update-progress-xvfb:
 	@tests/test-quickshell-update-progress-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
@@ -851,6 +855,7 @@ check:
 	$(MAKE) check-quickshell-settings-xvfb
 	$(MAKE) check-quickshell-settings-responsiveness-xvfb
 	$(MAKE) check-quickshell-update-progress-xvfb
+	$(MAKE) check-quickshell-wallpaper-reconcile-xvfb
 	$(MAKE) check-desktop-smoke-xvfb
 	$(MAKE) check-xvfb-runtime
 	$(MAKE) check-quickshell-design-system

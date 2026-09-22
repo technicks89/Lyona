@@ -1355,6 +1355,17 @@ Scope {
             root.wallpaperPreviewFit, root.wallpaperPreviewToken);
     }
 
+    // A reconcile that found something blocking it stays queued. Retry it as soon
+    // as anything that can have been blocking it clears, so it does not depend on
+    // a later status poll (or a watcher event) happening to come along.
+    function retryQueuedWallpaperReconcile() {
+        if (root.wallpaperReconcilePending) Qt.callLater(root.tryReconcileWallpaperPreview);
+    }
+    onBusyChanged: if (!root.busy) root.retryQueuedWallpaperReconcile()
+    onFontBusyChanged: if (!root.fontBusy) root.retryQueuedWallpaperReconcile()
+    onWallpaperBusyChanged: if (!root.wallpaperBusy) root.retryQueuedWallpaperReconcile()
+    onWallpaperStatusBusyChanged: if (!root.wallpaperStatusBusy) root.retryQueuedWallpaperReconcile()
+
     function parseWallpaperAction(text) {
         if (root.wallpaperActionKind === "reconcile") {
             root.wallpaperStatusParsed = false;
