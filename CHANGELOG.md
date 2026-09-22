@@ -439,6 +439,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `check-display-profiles` Makefile target rather than folding into
   `check-settings` as upstream does. `scripts/autostart.sh` runs no
   competing profile-apply at login, so no autostart change was needed.
+- The CI package set and environment now have one source each (#92). The
+  full-suite workflow and `scripts/ci-local.sh` each assembled the package list
+  by hand (three profiles plus a literal list of extras) and repeated the job's
+  environment (image, security options, the `nobody` runner's directories). A
+  new `ci-full` profile in `scripts/dwm-packages.sh` (with `ci-tools` for the
+  extras) is now what both install, and a new `scripts/ci-env.sh` holds the
+  constants that `ci-local.sh` uses; the workflow, being YAML, repeats the values
+  and the new `make check-ci-parity` fails if the workflow, `ci-local.sh` and
+  `ci-env.sh` drift apart, or if either one grows a package list of its own. The
+  generated list is byte-identical to the old one (114 packages), so the
+  cached `ci-local.sh` image stays valid.
+
 - Replace the Displays pane's raw X/Y position inputs with relative
   placement (Sync Sprint 3 S3-01, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#289`/`55dbd76`, plus `6b7548b`'s driver-quirk fix to
