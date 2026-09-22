@@ -727,6 +727,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   D-3 (`accounts-open`/`sources-open` permanently `unsupported` on Arch, no
   `lxqt-admin-user`/`dnfdragora` equivalent) is unchanged; their launch
   buttons stay disabled and now show the helper's own reason text.
+- `dwm.c` floating code separates mechanism from policy, and names its shared
+  pieces (#91; no behaviour change). `setfloating(c, shrink)` does the toggle and
+  `shrink` alone decides whether a tiled client pops out smaller: `togglefloating`
+  (keys and buttons) passes 1 and the two mouse-drag paths pass 0, where before
+  `togglefloating(NULL)` meant "this is a drag" by an unenforced convention.
+  `restack()` and `raiseselectedclient()` share `restackraisesselected()` instead
+  of each spelling out "floating, or the floating layout". The pop-out percentage
+  is `FLOATSHRINKPCT` in `config.def.h` (default 85; `dwm.c` falls back to 85, so
+  a `config.h` written before it existed still builds), and
+  `docs/PATCH-OWNERSHIP.md` gains a "Stacking and floating geometry" section.
+  `make check-dwm-floating-guards` pins the structure and the default; compared
+  at `-O0`, `shrinkfloating` compiles to identical code and the mouse paths differ
+  only at the call.
+
 - Give regional (timezone/locale/NTP) preview and confirmation its own model
   (Sync Sprint 1 S1-05, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
   from upstream `#268`/`#269`): the new

@@ -527,6 +527,10 @@ check-test-lib:
 check-dwm-roundtrips:
 	tests/test-dwm-x-roundtrips.sh
 
+.PHONY: check-dwm-floating-guards
+check-dwm-floating-guards:
+	tests/test-dwm-floating-guards.sh
+
 check-monitor-tags:
 	tests/test-monitor-tag-switching.sh
 
@@ -833,6 +837,7 @@ check:
 	$(MAKE) check-grub-theme
 	$(MAKE) check-session-launch
 	$(MAKE) check-dwm-roundtrips
+	$(MAKE) check-dwm-floating-guards
 	$(MAKE) check-display-profile
 	$(MAKE) check-display-profiles
 	$(MAKE) check-display-setup
