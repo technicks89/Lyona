@@ -1072,6 +1072,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   automatically only when already resolvable, and every code path degrades
   cleanly to an explicit unsupported state when it is absent.
 
+- Each Settings section's `dataLoading:` line is now exactly one or more
+  `<model>.initialLoading` / `settingsModel.<x>Loading` terms, never a
+  SettingsModel internal (a `*Pending` flag, a `*Busy` flag, `busy`, a `*State`
+  string) inlined and recomposed in `SettingsWindow.qml` (#90). Displays and
+  Input each get a new `SettingsModel` readonly property (`displaysLoading`,
+  `inputLoading`), and Appearance's two loose terms (`busy`,
+  `capabilityRefreshPending`) fold into `capabilitiesLoading`.
+  `tests/test-quickshell-settings-loading.sh` pins the rule generically instead
+  of trusting the file to stay that way. `AppearanceModel.qml` documents what
+  `initialLoading` means (every read a model starts or has queued, never a
+  resident subscription once it is confirmed live) and the one deliberate
+  exception: `wallpaperStatusBusy` also counts the inventory watcher's own
+  not-yet-live handshake, for the same reason an unconfirmed Picom watch could
+  miss an edit (#85). The dynamic responsiveness harness gained the coverage the
+  static rule alone cannot give: a delayed read now keeps Network, Bluetooth,
+  Audio, Power and Defaults hidden until it ends, the same way Displays, Input,
+  Appearance and System were already covered (Audio's own case is a known gap --
+  its snapshot also runs once at shell startup for the tray volume control, and
+  a stub delay long enough to still be in flight when Settings reaches it was
+  not reliably reproducible in the harness; the static rule is what actually
+  protects it, and its `dataLoading` line was not changed by this refactor).
+
 - Add a managed notification policy: Do Not Disturb and a configurable popup
   duration (4/6/10 seconds), in a new Settings → Appearance → Notifications
   section. The existing D-Bus notification owner is never touched -- the

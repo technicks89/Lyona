@@ -14,6 +14,9 @@ Scope {
     property string discoveryState: "idle"
     property string message: ""
     property bool capabilityRefreshPending: false
+    // What DeferredSettingsPane waits on for capability-backed sections
+    // (Appearance today): a capability discovery run in flight or queued.
+    readonly property bool capabilitiesLoading: root.busy || root.capabilityRefreshPending
     property string platformId: "unknown"
     property string platformFamily: "unknown"
     property string platformName: "Unknown Linux"
@@ -43,6 +46,10 @@ Scope {
     property string displayEditingRole: "live"
     property bool automaticDisplayRefreshPending: false
     readonly property bool automaticDisplayBusy: automaticDisplaySaveProcess.running || automaticDisplayStatusProcess.running
+    // What DeferredSettingsPane waits on for Displays: any read the section itself
+    // starts or queues (never the resident live-profile watcher).
+    readonly property bool displaysLoading: root.displayState === "loading" || root.displayRefreshPending
+        || root.automaticDisplayBusy || root.automaticDisplayRefreshPending || root.displayActionBusy
     property string displayState: "idle"
     property string displayMessage: ""
     property string displayBaseline: ""
@@ -86,6 +93,9 @@ Scope {
     property string inputMessage: ""
     property bool inputRefreshPending: false
     readonly property bool inputActionBusy: inputActionProcess.running
+    // What DeferredSettingsPane waits on for Input, for the same reason.
+    readonly property bool inputLoading: root.inputState === "loading" || root.inputRefreshPending
+        || root.inputActionBusy
     property string previewKind: ""
     property string previewToken: ""
     property int previewSeconds: 0

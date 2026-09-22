@@ -9,7 +9,13 @@ Scope {
     id: root
 
     property bool settingsVisible: false
-    // Only finite initial reads belong here, never resident subscriptions.
+    // What DeferredSettingsPane waits on before it presents: every read this
+    // model itself starts or has queued, running or about to run. Not "the
+    // first read only" (a later refresh gates the pane again, same as the
+    // first) and not "nothing else is happening" (a resident subscription like
+    // inventoryWatchProcess does not belong here once it is confirmed live --
+    // see wallpaperStatusBusy below for the one deliberate exception, its own
+    // not-yet-live handshake).
     readonly property bool initialLoading: snapshotProcess.running || root.snapshotPending
         || readinessProcess.running || root.mutationReadinessPending
         || previewStatusProcess.running || recoveryStatusProcess.running
@@ -61,6 +67,11 @@ Scope {
     property string wallpaperResetDetail: "Wallpaper reset readiness has not been checked"
     property bool wallpaperBusy: false
     property bool wallpaperReconcilePending: false
+    // inventoryWatchProcess is a resident subscription, normally excluded from
+    // "loading" (see initialLoading above). Its startup handshake is the one
+    // deliberate exception: until it says "ready", an edit made in that window
+    // could go unseen the way an unconfirmed Picom watch could (#85), so the
+    // pane stays gated until the handshake completes, not only while a read runs.
     readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running
         || wallpaperStatusProcess.running || inventoryProcess.running
         || root.wallpaperStatusPending || root.inventoryPending

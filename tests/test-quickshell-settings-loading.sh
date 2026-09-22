@@ -123,6 +123,19 @@ panes = window.count("DeferredSettingsPane {")
 loading = len(re.findall(r"^\s+dataLoading: ", window, re.M))
 if panes != 9 or loading != panes:
     failures.append(f"settings/SettingsWindow.qml: {panes} panes but {loading} dataLoading lines")
+# The pane-to-models mapping lives in one place: each dataLoading line is one or
+# more "<model>.initialLoading" or "settingsModel.<x>Loading" terms, joined only
+# by ||, never a SettingsModel internal (a *Pending flag, *Busy flag, busy, or a
+# *State string) inlined and recomposed here (#90).
+dataloading_pattern = re.compile(r"^[ \t]+dataLoading: (.+(?:\n[ \t]+\|\|.+)*)$", re.M)
+for match in dataloading_pattern.finditer(window):
+    line = window.count("\n", 0, match.start()) + 1
+    terms = [t.strip() for t in match.group(1).split("||")]
+    for term in terms:
+        if not re.fullmatch(r"root\.\w+\.(initialLoading|\w+Loading)", term):
+            failures.append(f"settings/SettingsWindow.qml:{line}: dataLoading term `{term}` "
+                             "is not a <model>.initialLoading or <x>Loading property")
+
 if "desktopUpdateModel" in window:
     failures.append("settings/SettingsWindow.qml: names upstream's declined desktopUpdateModel (D-8)")
 pane = source("settings/DeferredSettingsPane.qml")
