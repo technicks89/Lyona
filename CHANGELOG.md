@@ -1271,6 +1271,22 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   responsiveness harness delays the version read past the System snapshot and
   checks the pane stays hidden until it finishes.
 
+- A wallpaper preview reconcile that found something blocking it is now retried
+  when that clears (#95). `tryReconcileWallpaperPreview()` leaves the request
+  queued while the model is busy, a font change is running or another wallpaper
+  action is in flight, but the only retry was `refreshWallpaperStatus()`, which
+  runs on watcher events or when a status refresh was itself queued. If none
+  came along, the preview stayed `failed` for good, which is what made
+  `check-quickshell-settings-xvfb` fail intermittently at "wallpaper watchdog
+  reconciliation" (also on `main`). `AppearanceModel` now retries when `busy`,
+  `fontBusy`, `wallpaperBusy` or `wallpaperStatusBusy` clears. New
+  `make check-quickshell-wallpaper-reconcile-xvfb` blocks the reconcile with
+  each of those, releases it, and requires exactly one reconcile to start (it
+  fails on the previous model, and removing any one handler fails its case); the
+  settings test's final check now reports the state it saw instead of failing
+  silently. The flake itself could not be reproduced on demand, so this closes
+  the lost-retry path rather than proving it was the only cause.
+
 - Settings > Bluetooth device rows no longer clip their address line at large
   text sizes. The row had a fixed height (`Theme.dp(68)`) while its two text
   lines scale with the font, so at 200 percent text with Noto Sans (a line
