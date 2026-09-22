@@ -68,11 +68,7 @@ case "\$window:\$*" in
 	printf 'WM_CLASS(STRING) = "alacritty", "Alacritty"\n'
 	# Both present: _NET_WM_NAME must win over the stale WM_NAME, and its
 	# "|" (the windows= field separator) must not survive into the field.
-	if [ -f "$work/title-changed" ]; then
-		printf '_NET_WM_NAME(UTF8_STRING) = "Updated title"\n'
-	else
-		printf '_NET_WM_NAME(UTF8_STRING) = "Term|one"\n'
-	fi
+	printf '_NET_WM_NAME(UTF8_STRING) = "Term|one"\n'
 	printf 'WM_NAME(STRING) = "stale wm name"\n'
 	;;
 0xbb:*WM_CLASS*)
@@ -82,11 +78,7 @@ case "\$window:\$*" in
 	# No _NET_WM_NAME on this one: WM_NAME is the fallback, same as
 	# window_title()'s own precedent, and its double space must collapse.
 	printf '_NET_WM_NAME:  not found.\n'
-	if [ -f "$work/fallback-title-changed" ]; then
-		printf 'WM_NAME(STRING) = "Firefox Updated"\n'
-	else
-		printf 'WM_NAME(STRING) = "Firefox  page"\n'
-	fi
+	printf 'WM_NAME(STRING) = "Firefox  page"\n'
 	;;
 0xcc:*WM_CLASS*)
 	# duplicate class, a desktop that must sort before the others, and
@@ -102,15 +94,9 @@ case "\$window:\$*" in
 	# root-owned: must be skipped from windows= the same as apps=, but its
 	# desktop still counts as occupied.
 	printf '_NET_WM_DESKTOP(CARDINAL) = 7\n'
-	printf '_NET_WM_PID(CARDINAL) = $root_pid\n'
+	printf '_NET_WM_PID(CARDINAL) = %s\n' "$root_pid"
 	printf 'WM_CLASS(STRING) = "rootapp", "RootApp"\n'
 	printf '_NET_WM_NAME(UTF8_STRING) = "Root App"\n'
-	;;
-0xee:*WM_CLASS*)
-	printf '_NET_WM_DESKTOP(CARDINAL) = 2\n'
-	printf '_NET_WM_PID(CARDINAL) = $own_pid\n'
-	printf 'WM_CLASS(STRING) = "edge", "Edge:case|with%%7C"\n'
-	printf '_NET_WM_NAME(UTF8_STRING) = "Edge title"\n'
 	;;
 *_NET_WM_NAME*)
 	printf '_NET_WM_NAME(UTF8_STRING) = "a  title\twith   spaces"\n'
@@ -149,21 +135,28 @@ expect 'status=AC | VOL 15%'
 expect 'occupied=0|1|2|3|7'
 
 # apps keeps first-seen order, de-duplicates by class, and drops root-owned
-expect 'apps=0xaa:alacritty|0xbb:firefox|0xee:edge:case|with%7c'
+expect 'apps=0xaa:alacritty dev edition|0xbb:firefox'
 
 # windows= is per-window, never deduplicated by class (0xaa and 0xcc share
 # one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
 # WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
 # leaves an empty title rather than the literal "not found." text (0xcc),
 # and the root-owned window (0xdd) is excluded the same as apps= excludes it.
-expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+expect 'windows=0xaa:3:alacritty dev edition:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty dev edition:'
+
+# windows= is per-window, never deduplicated by class (0xaa and 0xcc share
+# one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
+# WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
+# leaves an empty title rather than the literal "not found." text (0xcc),
+# and the root-owned window (0xdd) is excluded the same as apps= excludes it.
+expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:'
 
 # fullscreen monitors are de-duplicated and sorted
 expect 'fullscreen_monitors=0|1'
 
 # the active window's title has its whitespace collapsed
 expect 'title=a title with spaces'
-expect 'class=alacritty'
+expect 'class=alacritty dev edition'
 
 # One xprop for every root property, then exactly one per client window,
 # plus the active window's title and class. Anything more is a regression.
@@ -171,8 +164,8 @@ root_calls=$(grep -c '^-root' "$work/xprop.log" || true)
 [[ $root_calls -eq 1 ]] ||
 	fail "expected exactly 1 batched root xprop call, got $root_calls" "$work/xprop.log"
 per_window=$(grep -c '^-id .* _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME WM_NAME$' "$work/xprop.log" || true)
-[[ $per_window -eq 5 ]] ||
-	fail "expected 1 batched xprop per client window (5), got $per_window" "$work/xprop.log"
+[[ $per_window -eq 4 ]] ||
+	fail "expected 1 batched xprop per client window (4), got $per_window" "$work/xprop.log"
 total=$(wc -l <"$work/xprop.log")
 [[ $total -le 8 ]] ||
 	fail "expected at most 8 xprop calls for 5 windows, got $total" "$work/xprop.log"

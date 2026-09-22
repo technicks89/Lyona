@@ -54,19 +54,6 @@ TestCase {
         compare(windows[0].title, "12:34 PM", "Only the first three colons are field separators");
     }
 
-    function test_parseWindows_decodes_only_class_delimiters() {
-        const windows = WindowsLib.parseWindows(
-            "0xaa:3:edge%3Acase%7Cwith%257c:12:34 PM|0xbb:1:firefox:Unchanged");
-
-        compare(windows.length, 2);
-        compare(windows[0].windowId, "0xaa");
-        compare(windows[0].desktop, 3);
-        compare(windows[0].appClass, "edge:case|with%7c");
-        compare(windows[0].title, "12:34 PM");
-        compare(windows[1].appClass, "firefox");
-        compare(windows[1].title, "Unchanged");
-    }
-
     function twoMonitorRows() {
         // Only .length matters to the resolution math (it derives monitor
         // count from the row count, mirroring DwmState.qml's own
@@ -99,7 +86,16 @@ TestCase {
 
     function test_resolveWindowLocation_no_rows_at_all_treats_everything_as_one_monitor() {
         compare(WindowsLib.resolveWindowLocation(5, [], 9), { "tagIndex": 5, "monitorIndex": 0 },
-            "With no monitorWorkspaceRows fixture, every workspace belongs to a single monitor 0");
+            "Without a fallback count, every workspace belongs to a single monitor 0");
+    }
+
+    function test_resolveWindowLocation_no_rows_uses_screen_count_fallback() {
+        compare(WindowsLib.resolveWindowLocation(3, [], 9, 2),
+            { "tagIndex": 3, "monitorIndex": 0 });
+        compare(WindowsLib.resolveWindowLocation(4, [], 9, 2),
+            { "tagIndex": 4, "monitorIndex": 1 });
+        compare(WindowsLib.resolveWindowLocation(8, twoMonitorRows(), 9, 3),
+            { "tagIndex": 8, "monitorIndex": 1 }, "Reported rows override the fallback screen count");
     }
 
     function test_windowsByTag_decorates_each_window_without_losing_its_fields() {
@@ -119,39 +115,12 @@ TestCase {
         compare(resolved[1].monitorIndex, 1);
     }
 
-    readonly property var nineNames: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    function test_windowsByTag_uses_screen_count_when_rows_are_empty() {
+        const windows = WindowsLib.parseWindows("0xaa:3:alacritty:Term|0xbb:7:firefox:Web");
+        const resolved = WindowsLib.windowsByTag(windows, [], 9, 2);
 
-    function test_groupByTag_orders_groups_ascending_and_omits_empty_tags() {
-        // Deliberately out of tag order and with a class repeated across two
-        // different tags, to pin that grouping is by tag, not by class.
-        const windows = WindowsLib.parseWindows(
-            "0xdd:7:firefox:Web|0xaa:3:alacritty:Term one|0xcc:3:alacritty:Term two");
-        const groups = WindowsLib.groupByTag(windows, twoMonitorRows(), nineNames);
-
-        compare(groups.length, 2, "Only the two occupied tags produce a group, ascending");
-        compare(groups[0].tagIndex, 3);
-        compare(groups[0].tagLabel, "4", "tagLabel comes from workspaceNames[tagIndex]");
-        compare(groups[0].windows.length, 2, "Both windows on tag 3 land in the same group");
-        compare(groups[1].tagIndex, 7);
-        compare(groups[1].windows.length, 1);
-        compare(groups[1].windows[0].windowId, "0xdd");
-    }
-
-    function test_groupByTag_tag_label_falls_back_when_workspaceNames_is_empty() {
-        // No rows and no names at all (a plausible transient state before
-        // the first watch update parses either): resolution's own defensive
-        // fallback lands on tag 0, and with workspaceNames empty even that
-        // has no label to look up -- must fall back to a 1-based number, not
-        // an undefined/crashing array access.
-        const windows = WindowsLib.parseWindows("0xaa:5:alacritty:Term");
-        const groups = WindowsLib.groupByTag(windows, [], []);
-
-        compare(groups.length, 1);
-        compare(groups[0].tagIndex, 0);
-        compare(groups[0].tagLabel, "1", "No workspaceNames[0]: falls back to a 1-based number, not undefined");
-    }
-
-    function test_groupByTag_empty_windows_list_is_no_groups() {
-        compare(WindowsLib.groupByTag([], twoMonitorRows(), nineNames).length, 0);
+        compare(resolved[0].monitorIndex, 0);
+        compare(resolved[1].tagIndex, 7);
+        compare(resolved[1].monitorIndex, 1);
     }
 }

@@ -12,7 +12,7 @@ Scope {
     property var occupiedWorkspaces: []
     property var fullscreenMonitorIndexes: []
     property var runningApps: []
-    property var windows: []
+    property var windowStates: []
     property string activeWindowTitle: "Desktop"
     property string activeWindowClass: "application-x-executable"
     property string statusText: ""
@@ -72,7 +72,15 @@ Scope {
                     return { "windowId": app.slice(0, separator), "appClass": app.slice(separator + 1) };
                 }) : [];
             } else if (key === "windows") {
-                root.windows = WindowsLib.parseWindows(value);
+                root.windowStates = value.length > 0 ? value.split("|").map(function(windowState) {
+                    const fields = windowState.split(":");
+                    return {
+                        "windowId": fields[0],
+                        "desktop": parseInt(fields[1], 10),
+                        "appClass": fields[2],
+                        "title": fields.slice(3).join(":")
+                    };
+                }) : [];
             } else if (key === "title") {
                 root.activeWindowTitle = value.length > 0 ? value : "Desktop";
             } else if (key === "class") {
@@ -147,7 +155,8 @@ Scope {
     // check -- the same split monitorWorkspaceRows/workspaceNames already
     // describe -- kept out of this Scope so it stays directly unit-testable.
     function windowsByTag() {
-        return WindowsLib.windowsByTag(root.windows, root.monitorWorkspaceRows, root.workspaceNames.length);
+        return WindowsLib.windowsByTag(root.windows, root.monitorWorkspaceRows, root.workspaceNames.length,
+            root.monitorCount());
     }
 
     function focusedScreen() {
@@ -164,6 +173,11 @@ Scope {
         return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
     }
 
+    function monitorCount() {
+        return Math.max(1, root.monitorWorkspaceRows.length > 0
+            ? root.monitorWorkspaceRows.length : Quickshell.screens.length);
+    }
+
     function workspaceIndexes(screen) {
         const indexes = [];
         const workspaceCount = root.workspaceNames.length;
@@ -172,8 +186,7 @@ Scope {
             return indexes;
         }
 
-        const screenCount = Math.max(1, root.monitorWorkspaceRows.length > 0
-            ? root.monitorWorkspaceRows.length : Quickshell.screens.length);
+        const screenCount = root.monitorCount();
         const logicalIndex = Math.min(root.screenIndex(screen), screenCount - 1);
         const workspacesPerScreen = Math.max(1, Math.floor(workspaceCount / screenCount));
         let start = logicalIndex * workspacesPerScreen;
