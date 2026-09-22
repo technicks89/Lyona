@@ -1342,6 +1342,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the previous code. Upstream's `test-fedora-packages.sh` hunk is not
   applicable.
 
+- `MountMonitorTests.gone()` in `tests/test-system-management.py` no longer races
+  a process that exits while `/proc/PID/stat` is being read (#94). That read
+  raises `ProcessLookupError` (ESRCH), which the helper did not treat as "gone",
+  so `test_signal_cleanup_and_parent_death` errored about once in three runs in
+  the full-suite CI container. New cases pin both outcomes (an ESRCH read counts
+  as gone; a process that stays alive still fails).
+
 - Fix `scripts/webapp-launch`, which never worked for a user-scoped browser
   install: unquoted brace expansion ran before tilde expansion, so
   `~/.local/share/applications` and `~/.nix-profile/share/applications` were
