@@ -199,7 +199,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - `scripts/dwm-quickshell-state` gains a `windows=` field alongside `apps=` (Sync Sprint 7 S7-01,
   `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, part of the cross-tag window overview, issue `#350`): one entry per managed
   window (`id:desktop:class:title`), never deduplicated by class the way `apps=` is for the panel's running-apps row, which
-  it leaves untouched. Adds one `xprop` atom (`_NET_WM_NAME`, falling back to `WM_NAME`) to the same per-window query
+  it leaves untouched. Adds both title atoms (`_NET_WM_NAME`, preferred, and `WM_NAME` as the fallback) to the same per-window query
   `apps=`/`occupied=` already make, so this rides the existing `watch` loop for free rather than adding a new round trip.
 
 - `scripts/ci-local.sh` runs the "Full suite (manual)" workflow's job in a local
