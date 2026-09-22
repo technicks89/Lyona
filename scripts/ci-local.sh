@@ -8,12 +8,22 @@
 # it is (tracked and untracked files, uncommitted edits included), so nothing
 # has to be committed or pushed first.
 #
+# Usage: scripts/ci-local.sh [--each [--jobs N] [--targets "A B"]] [--clang] [--keep]
+#                            [--refresh] [TARGET]
 # Usage: scripts/ci-local.sh [--each] [--clang | --clang-only] [--keep] [--refresh] [TARGET]
 #
 #   TARGET     make target to run (default: check, the whole suite)
 #   --each     run every target of the `check` recipe on its own and list all
 #              the failures at the end, instead of stopping at the first one
 #              the way `make check` does
+#   --jobs N   with --each, run the targets on N containers at once (default 1).
+#              Faster, but a weaker signal: timing-sensitive tests can fail only
+#              under the extra load, so rerun a failure serially before believing
+#              it. N is capped by the cores and by the number of targets.
+#   --targets "A B"
+#              with --each, run just these targets instead of the whole check
+#              recipe (to rerun what failed)
+#   --clang    also build dwm with clang, like the workflow's second job
 #   --clang    also build dwm with clang, like the workflow's second job: in a
 #              fresh container that has only the `build` packages and clang
 #              (cached as its own small image), so a build dependency missing
@@ -49,6 +59,8 @@ workspace=$CI_WORKSPACE
 test_root=$CI_TEST_ROOT
 target=check
 each=0
+jobs=1
+only_targets=
 clang=0
 clang_only=0
 keep=0
@@ -57,6 +69,14 @@ refresh=0
 while (($#)); do
 	case $1 in
 	--each) each=1 ;;
+	--jobs)
+		jobs=${2:?--jobs needs a number}
+		shift
+		;;
+	--targets)
+		only_targets=${2:?--targets needs a list of targets}
+		shift
+		;;
 	--clang) clang=1 ;;
 	--clang-only) clang=1 clang_only=1 ;;
 	--keep) keep=1 ;;
@@ -73,6 +93,21 @@ while (($#)); do
 	*) target=$1 ;;
 	esac
 	shift
+done
+
+[[ $jobs =~ ^[1-9][0-9]*$ ]] || {
+	printf 'invalid --jobs: %s (a positive number)\n' "$jobs" >&2
+	exit 2
+}
+if ((! each)) && { ((jobs > 1)) || [[ -n $only_targets ]]; }; then
+	printf -- '--jobs and --targets need --each\n' >&2
+	exit 2
+fi
+for each_target in $only_targets; do
+	[[ $each_target =~ ^[A-Za-z0-9_.-]+$ ]] || {
+		printf 'invalid target in --targets: %s\n' "$each_target" >&2
+		exit 2
+	}
 done
 
 # The workflow keeps the input out of the shell grammar the same way.
@@ -93,6 +128,17 @@ docker info >/dev/null 2>&1 || {
 # which the image build does too).
 # shellcheck source=scripts/dwm-packages.sh
 source "$repo/scripts/dwm-packages.sh"
+# shellcheck source=scripts/ci-schedule.sh
+source "$repo/scripts/ci-schedule.sh"
+mapfile -t packages < <(
+	{
+		dwm_packages arch full
+		dwm_packages arch ci-smoke
+		dwm_packages arch qml-validation
+		printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
+			xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
+	} | awk 'NF' | sort -u
+)
 mapfile -t packages < <(dwm_packages arch ci-full | awk 'NF' | sort -u)
 image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
 # The workflow's clang job installs the build profile and clang in a clean
@@ -117,6 +163,14 @@ filelist=
 containers=()
 # shellcheck disable=SC2329 # runs from the EXIT trap
 cleanup() {
+	local cname
+	[[ -z $context ]] || rm -rf "$context"
+	[[ -z $filelist ]] || rm -f "$filelist"
+	for cname in "${containers[@]}"; do
+		if ((keep)); then
+			printf '==> Container kept: docker exec -it %s bash   (remove with: docker rm -f %s)\n' "$cname" "$cname"
+		else
+			docker rm -f "$cname" >/dev/null 2>&1 || true
 	local one
 	[[ -z $context ]] || rm -rf "$context"
 	[[ -z $filelist ]] || rm -f "$filelist"
@@ -178,6 +232,10 @@ EOF
 }
 fi
 
+# The files to copy: those git knows about or would add, and .git itself (some
+# tests read the history). Files deleted since the last commit are simply
+# absent. The list goes to a file so a failing git is seen (a process
+# substitution would hide it and tar would quietly copy only .git).
 printf '==> Starting %s from %s\n' "$name" "$image"
 # --rm and a finite sleep: if this script is killed before its trap runs, the
 # container still goes away by itself.
@@ -200,6 +258,97 @@ git -C "$repo" ls-files -z --cached --others --exclude-standard >"$filelist" || 
 	printf 'git ls-files listed no files; not testing an empty tree\n' >&2
 	exit 1
 }
+tar_errors=$logdir/tar.err
+# In a linked worktree .git is a one-line pointer file, not a repository, so
+# ship the shared repository as .git and this worktree's own HEAD and index.
+gitdir=$(git -C "$repo" rev-parse --absolute-git-dir)
+commondir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
+
+# start_container NAME: --rm and a finite sleep, so that if this script is
+# killed before its trap runs the container still goes away by itself.
+start_container() {
+	local cname=$1
+	docker run -d --rm --init --label lyona-ci=1 --name "$cname" \
+		--security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+		-e DWM_TEST_TMP_ROOT="$test_root" \
+		"$image" sleep "$max_life" >/dev/null
+	containers+=("$cname")
+}
+
+# copy_tree_into NAME: the working tree as it is now (--ignore-failed-read: a
+# file deleted since the last commit is still listed).
+copy_tree_into() {
+	local cname=$1 state_file
+	docker exec "$cname" mkdir -p "$workspace"
+	if [[ $gitdir == "$commondir" ]]; then
+		tar -C "$repo" --ignore-failed-read --null -T "$filelist" -cf - .git 2>>"$tar_errors" |
+			docker exec -i "$cname" tar --no-same-owner -xf - -C "$workspace"
+	else
+		tar -C "$repo" --ignore-failed-read --null -T "$filelist" -cf - 2>>"$tar_errors" |
+			docker exec -i "$cname" tar --no-same-owner -xf - -C "$workspace"
+		tar -C "$commondir" -cf - --transform 's,^\.,.git,' . |
+			docker exec -i "$cname" tar --no-same-owner -xf - -C "$workspace"
+		for state_file in HEAD index; do
+			[[ ! -f $gitdir/$state_file ]] ||
+				docker exec -i "$cname" tee "$workspace/.git/$state_file" <"$gitdir/$state_file" >/dev/null
+		done
+	fi
+}
+
+prepare_container() {
+	docker exec "$1" bash -c "
+		git config --global --add safe.directory '$workspace'
+		install -d -m 0700 -o nobody -g nobody /home/dwm-ci /run/dwm-ci '$test_root'
+		chown -R nobody:nobody '$workspace'"
+}
+
+# as_nobody_in NAME COMMAND...: run a command the way the workflow does, as
+# nobody, in the workspace.
+as_nobody_in() {
+	local cname=$1
+	shift
+	docker exec -w "$workspace" "$cname" \
+		runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+		DWM_TEST_TMP_ROOT="$test_root" "$@"
+}
+as_nobody() { as_nobody_in "$name" "$@"; }
+
+# The targets --each runs: the ones named, or the Makefile's own check recipe.
+targets=()
+if ((each)); then
+	if [[ -n $only_targets ]]; then
+		read -r -a targets <<<"$only_targets"
+	else
+		mapfile -t targets < <(awk '/^check:/{f=1;next} f&&/^\t\$\(MAKE\) /{print $2} f&&!/^\t/{f=0}' "$repo/Makefile")
+	fi
+	((${#targets[@]} > 0)) || {
+		printf 'no targets to run (the check recipe is empty)\n' >&2
+		exit 2
+	}
+fi
+workers=1
+if ((each && jobs > 1)); then
+	workers=$(ci_clamp_jobs "$jobs" "$(nproc 2>/dev/null || echo 1)" "${#targets[@]}")
+	((workers == jobs)) || printf '==> --jobs %d becomes %d (the cores and the number of targets cap it)\n' "$jobs" "$workers"
+fi
+
+worker_names=()
+if ((workers > 1)); then
+	for ((i = 1; i <= workers; i++)); do worker_names+=("$name-w$i"); done
+	printf '==> Starting %d containers from %s\n' "$workers" "$image"
+	for cname in "${worker_names[@]}"; do
+		start_container "$cname"
+		copy_tree_into "$cname"
+		prepare_container "$cname"
+	done
+	name=${worker_names[0]} # the clang leg, if asked for, runs in the first
+else
+	printf '==> Starting %s from %s\n' "$name" "$image"
+	start_container "$name"
+	copy_tree_into "$name"
+	prepare_container "$name"
+fi
+if [[ -s $tar_errors ]]; then
 
 # warn_tar_errors FILE: say so if tar could not copy some files.
 warn_tar_errors() {
@@ -276,31 +425,93 @@ run_logged() {
 }
 
 status=0
+if ((each)); then
+	# Each worker runs its targets one after another as nobody, keeping one log
+	# per target inside its container; the host reads the PASS/FAIL lines.
 if ((clang_only)); then
 	:
 elif ((each)); then
 	printf '==> Running every target of make check on its own\n'
 	# The list comes from the Makefile's own check recipe.
 	# shellcheck disable=SC2016 # this script is for the shell in the container
-	run_logged "$logdir/each.log" as_nobody bash -c '
-		targets=$(awk "/^check:/{f=1;next} f&&/^\t\\\$\(MAKE\) /{print \$2} f&&!/^\t/{f=0}" Makefile)
-		[[ -n $targets ]] || { echo "no targets found in the check recipe" >&2; exit 2; }
+	each_script='
 		mkdir -p "$DWM_TEST_TMP_ROOT/each"
-		failed=()
-		for t in $targets; do
+		for t in "$@"; do
 			start=$SECONDS
 			if scripts/run-tests make "$t" >"$DWM_TEST_TMP_ROOT/each/$t.log" 2>&1; then
 				printf "PASS %-52s %4ds\n" "$t" "$((SECONDS - start))"
 			else
 				printf "FAIL %-52s %4ds\n" "$t" "$((SECONDS - start))"
-				failed+=("$t")
 			fi
+		done'
+	durations_file=${XDG_STATE_HOME:-$HOME/.local/state}/lyona/ci-local-durations
+	mkdir -p "$logdir/each"
+	if ((workers > 1)); then
+		printf '==> Running %d targets on %d containers (a weaker signal than one; rerun any failure serially)\n' \
+			"${#targets[@]}" "$workers"
+		schedule=$(ci_schedule "$workers" "$durations_file" "${targets[@]}")
+		pids=()
+		for ((i = 1; i <= workers; i++)); do
+			mapfile -t mine < <(printf '%s\n' "$schedule" | awk -v w="$i" '$1 == w { print $2 }')
+			(as_nobody_in "${worker_names[i - 1]}" bash -c "$each_script" bash "${mine[@]}" 2>&1 |
+				tee "$logdir/worker-$i.out" | sed -u "s/^/[w$i] /") &
+			pids+=($!)
 		done
-		printf "\n%d target(s), %d failed\n" "$(wc -w <<<"$targets")" "${#failed[@]}"
-		((${#failed[@]} == 0)) || printf "failed: %s\n" "${failed[*]}"
-		exit "$((${#failed[@]} > 0))"
-	' || status=$?
-	docker cp "$name:$test_root/each" "$logdir/each" >/dev/null 2>&1 || true
+		for pid in "${pids[@]}"; do wait "$pid" || true; done
+		cat "$logdir"/worker-*.out >"$logdir/each.log"
+		for cname in "${worker_names[@]}"; do
+			docker cp "$cname:$test_root/each/." "$logdir/each/" >/dev/null 2>&1 || true
+		done
+	else
+		printf '==> Running %d target(s) of make check, each on its own\n' "${#targets[@]}"
+		run_logged "$logdir/each.log" as_nobody bash -c "$each_script" bash "${targets[@]}" || true
+		docker cp "$name:$test_root/each/." "$logdir/each/" >/dev/null 2>&1 || true
+	fi
+	# The summary comes from the PASS/FAIL lines; a target with none did not run
+	# (its worker died), which counts as a failure.
+	failed=()
+	missing=()
+	for each_target in "${targets[@]}"; do
+		result=$(awk -v t="$each_target" '$2 == t { print $1 }' "$logdir/each.log" | head -n 1)
+		case $result in
+		PASS) ;;
+		FAIL) failed+=("$each_target") ;;
+		*) missing+=("$each_target") ;;
+		esac
+	done
+	printf '\n%d target(s), %d failed' "${#targets[@]}" "$((${#failed[@]} + ${#missing[@]}))"
+	((${#missing[@]} == 0)) || printf ' (%d did not run: %s)' "${#missing[@]}" "${missing[*]}"
+	printf '\n'
+	((${#failed[@]} == 0)) || printf 'failed: %s\n' "${failed[*]}"
+	if ((${#failed[@]} + ${#missing[@]} > 0)); then
+		status=1
+		rerun=("${failed[@]}" "${missing[@]}")
+		printf 'rerun just these: scripts/ci-local.sh --each --targets "%s"\n' "${rerun[*]}"
+	fi
+	# The repeated serial/parallel qualification helper sets both variables.
+	# Keep this machine-readable evidence separate from the human console log.
+	if [[ -n ${CI_LOCAL_VALIDATION_RESULTS:-} || -n ${CI_LOCAL_VALIDATION_RUN:-} ]]; then
+		if [[ -z ${CI_LOCAL_VALIDATION_RESULTS:-} || -z ${CI_LOCAL_VALIDATION_RUN:-} ]]; then
+			printf 'CI_LOCAL_VALIDATION_RESULTS and CI_LOCAL_VALIDATION_RUN must be set together\n' >&2
+			status=1
+		else
+			validation_mode=serial
+			((workers == 1)) || validation_mode=parallel
+			if ! ci_record_run "$CI_LOCAL_VALIDATION_RUN" "$validation_mode" "$workers" \
+				"$logdir/each.log" >>"$CI_LOCAL_VALIDATION_RESULTS"; then
+				printf 'could not record validation run %s\n' "$CI_LOCAL_VALIDATION_RUN" >&2
+				status=1
+			fi
+		fi
+	fi
+	# Remember how long each took, to balance the next parallel run.
+	if mkdir -p "$(dirname "$durations_file")" 2>/dev/null; then
+		{
+			[[ ! -f $durations_file ]] || cat "$durations_file"
+			awk '$1 == "PASS" || $1 == "FAIL" { t = $3; sub(/s$/, "", t); print $2, t }' "$logdir/each.log"
+		} | awk '{ last[$1] = $2 } END { for (k in last) print k, last[k] }' | LC_ALL=C sort >"$durations_file.tmp" &&
+			mv -f "$durations_file.tmp" "$durations_file" || true
+	fi
 	if ((status != 0)); then
 		[[ -d $logdir/each && ! -L $logdir/each ]] || exit "$status"
 		for log in "$logdir"/each/*.log; do
