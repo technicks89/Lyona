@@ -88,7 +88,7 @@ for path in sorted(root.rglob("*.qml")):
     text = path.read_text()
     # The old hand-written idiom: a start followed by clearing the queue flag. A
     # model that does this again has stopped using the one place that gets it right.
-    for match in re.finditer(r"\.running = true;\s*\n\s*root\.(" + pending.pattern + r") = false;", text):
+    for match in re.finditer(r"\.running = true;\s*root\.(" + pending.pattern + r") = false;", text):
         line = text.count("\n", 0, match.start()) + 1
         failures.append(f"{relative}:{line}: clears `{match.group(1)}` by hand after a start; use QueuedRun.startOrQueue")
     # Every flag handed to the helper is a real property of that model: a typo

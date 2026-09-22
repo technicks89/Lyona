@@ -60,7 +60,10 @@
                 root.queueNext();
                 return;
             case 3:
-                if (waited < 1500) return;
+                if (model.initialLoading) {
+                    root.queueCheck(waited < 2500, "the queued read never finished");
+                    return;
+                }
                 root.queueCheck(model.testStarts === 2, "a read started with nothing queued: " + model.testStarts);
                 root.queueCheck(!model.initialLoading, "the pane is still loading with no read running or queued");
                 model.refresh();
