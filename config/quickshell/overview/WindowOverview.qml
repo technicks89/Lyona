@@ -30,11 +30,14 @@ ClickAwayPopup {
     popupY: Theme.panelHeight
     onDismissed: overviewModel.close()
 
+    function focusSearch() {
+        overviewSearch.forceActiveFocus();
+        overviewSearch.cursorPosition = overviewSearch.text.length;
+    }
+
     onVisibleChanged: {
         if (visible) {
-            Qt.callLater(function() {
-                content.forceActiveFocus();
-            });
+            Qt.callLater(root.focusSearch);
         } else {
             root.overviewModel.close();
         }
@@ -82,10 +85,79 @@ ClickAwayPopup {
                     + (root.overviewModel.groups.length === 1 ? "" : "s")
             }
 
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Theme.controlHeight
+                color: overviewSearch.activeFocus ? Theme.controlFocusFill : Theme.controlNormalFill
+                border.color: overviewSearch.activeFocus ? Theme.controlFocusBorder : Theme.controlNormalBorder
+                border.width: overviewSearch.activeFocus ? Theme.controlFocusBorderWidth : Theme.controlBorderWidth
+                radius: Theme.controlRadius
+
+                UiText {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "/"
+                    color: overviewSearch.activeFocus ? Theme.menuActionText : Theme.menuMutedText
+                    font.bold: true
+                }
+
+                TextInput {
+                    id: overviewSearch
+
+                    anchors.fill: parent
+                    anchors.leftMargin: 38
+                    anchors.rightMargin: 14
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: Theme.controlFocusText
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.accentText
+                    text: root.overviewModel.query
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.inputFontSize
+                    clip: true
+
+                    onTextChanged: root.overviewModel.setQuery(text)
+
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Escape) {
+                            root.overviewModel.close();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Down) {
+                            root.overviewModel.selectRelative(1);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Up) {
+                            root.overviewModel.selectRelative(-1);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Home) {
+                            root.overviewModel.selectAbsolute(0);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_End) {
+                            root.overviewModel.selectAbsolute(root.overviewModel.flatCards.length - 1);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            root.overviewModel.activateSelected();
+                            event.accepted = true;
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 38
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: overviewSearch.text.length === 0
+                    text: "Search windows"
+                    color: Theme.placeholder
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.inputFontSize
+                }
+            }
+
             Text {
                 Layout.fillWidth: true
                 visible: root.overviewModel.groups.length === 0
-                text: "No open windows"
+                text: root.overviewModel.query.length > 0 ? "No windows match" : "No open windows"
                 color: Theme.textMuted
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.panelFontSize
@@ -136,6 +208,7 @@ ClickAwayPopup {
                                         root.overviewModel.dwmState.focusWindow(windowId);
                                         root.overviewModel.close();
                                     }
+                                    onCloseRequested: windowId => root.overviewModel.closeCard(windowId)
                                 }
                             }
                         }

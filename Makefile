@@ -741,6 +741,9 @@ check-cachyos:
 check-quickshell-state:
 	tests/test-quickshell-state.sh
 
+check-quickshell-state-close:
+	tests/test-quickshell-state-close.sh
+
 check-install: check-install-manifest
 
 check-install-manifest: all
@@ -930,6 +933,7 @@ check:
 	$(MAKE) check-archiso
 	$(MAKE) check-cachyos
 	$(MAKE) check-quickshell-state
+	$(MAKE) check-quickshell-state-close
 	$(MAKE) check-arch-packages
 	$(MAKE) check-no-aur
 	$(MAKE) check-install

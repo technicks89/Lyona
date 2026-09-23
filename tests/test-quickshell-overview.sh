@@ -18,6 +18,9 @@ state=$repo/config/quickshell/state
 for component in OverviewModel OverviewCard WindowOverview; do
 	test -f "$overview/$component.qml"
 done
+for library in OverviewSelection OverviewFilter; do
+	test -f "$overview/$library.js"
+done
 
 # ClickAwayPopup-based, the same base ControlsWindow/NetworkWindow/
 # PowerMenuWindow use -- inherits the click-away dismiss for free.

@@ -261,6 +261,16 @@ Scope {
         focusWindowProcess.running = true;
     }
 
+    // Closing a card from the overview (Sync Sprint 8 S8-04,
+    // docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, the
+    // only client dwm.c's own killclient() ever closes -- most cards are
+    // not the focused window. No dwm.c change: dwm-quickshell-state's own
+    // "close" action sends a plain WM_DELETE_WINDOW directly to the target.
+    function closeWindow(windowId) {
+        closeWindowProcess.command = ["dwm-quickshell-state", "close", windowId];
+        closeWindowProcess.running = true;
+    }
+
     Process {
         command: ["dwm-quickshell-state", "watch"]
         running: true
@@ -284,6 +294,13 @@ Scope {
         id: focusWindowProcess
 
         command: ["dwm-quickshell-state", "focus", "0"]
+        running: false
+    }
+
+    Process {
+        id: closeWindowProcess
+
+        command: ["dwm-quickshell-state", "close", "0"]
         running: false
     }
 }
