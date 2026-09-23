@@ -68,7 +68,15 @@ case "\$window:\$*" in
 	printf 'WM_CLASS(STRING) = "alacritty", "Alacritty"\n'
 	# Both present: _NET_WM_NAME must win over the stale WM_NAME, and its
 	# "|" (the windows= field separator) must not survive into the field.
-	printf '_NET_WM_NAME(UTF8_STRING) = "Term|one"\n'
+	# Once title-changed exists, this regular (non-spy) query must also
+	# report the new title -- a real X server would too, once the property
+	# actually changed -- matching what watch_state()'s own re-poll after a
+	# -spy wakeup expects to see.
+	if [ -f "$work/title-changed" ]; then
+		printf '_NET_WM_NAME(UTF8_STRING) = "Updated title"\n'
+	else
+		printf '_NET_WM_NAME(UTF8_STRING) = "Term|one"\n'
+	fi
 	printf 'WM_NAME(STRING) = "stale wm name"\n'
 	;;
 0xbb:*WM_CLASS*)
@@ -77,8 +85,14 @@ case "\$window:\$*" in
 	printf 'WM_CLASS(STRING) = "firefox", "firefox"\n'
 	# No _NET_WM_NAME on this one: WM_NAME is the fallback, same as
 	# window_title()'s own precedent, and its double space must collapse.
+	# Once fallback-title-changed exists, this regular query must also
+	# report the new WM_NAME, the same real-server reasoning as 0xaa above.
 	printf '_NET_WM_NAME:  not found.\n'
-	printf 'WM_NAME(STRING) = "Firefox  page"\n'
+	if [ -f "$work/fallback-title-changed" ]; then
+		printf 'WM_NAME(STRING) = "Firefox Updated"\n'
+	else
+		printf 'WM_NAME(STRING) = "Firefox  page"\n'
+	fi
 	;;
 0xcc:*WM_CLASS*)
 	# duplicate class, a desktop that must sort before the others, and
@@ -97,6 +111,17 @@ case "\$window:\$*" in
 	printf '_NET_WM_PID(CARDINAL) = %s\n' "$root_pid"
 	printf 'WM_CLASS(STRING) = "rootapp", "RootApp"\n'
 	printf '_NET_WM_NAME(UTF8_STRING) = "Root App"\n'
+	;;
+0xee:*WM_CLASS*)
+	# A class containing this wire format's own separators (":", "|") and a
+	# literal "%" must round-trip through sanitize_class()'s percent-encoding
+	# and DwmStateWindows.js's decodeClass() without corruption. Passed via
+	# printf's %s argument, not embedded in the format string, since a raw
+	# "%7c" inside the format string itself would be a conversion, not text.
+	printf '_NET_WM_DESKTOP(CARDINAL) = 2\n'
+	printf '_NET_WM_PID(CARDINAL) = $own_pid\n'
+	printf '%s\n' 'WM_CLASS(STRING) = "edge-instance", "Edge:Case|With%7c"'
+	printf '_NET_WM_NAME(UTF8_STRING) = "Edge title"\n'
 	;;
 *_NET_WM_NAME*)
 	printf '_NET_WM_NAME(UTF8_STRING) = "a  title\twith   spaces"\n'
@@ -135,28 +160,23 @@ expect 'status=AC | VOL 15%'
 expect 'occupied=0|1|2|3|7'
 
 # apps keeps first-seen order, de-duplicates by class, and drops root-owned
-expect 'apps=0xaa:alacritty dev edition|0xbb:firefox'
+expect 'apps=0xaa:alacritty|0xbb:firefox|0xee:edge%3Acase%7Cwith%257c'
 
 # windows= is per-window, never deduplicated by class (0xaa and 0xcc share
 # one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
 # WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
-# leaves an empty title rather than the literal "not found." text (0xcc),
-# and the root-owned window (0xdd) is excluded the same as apps= excludes it.
-expect 'windows=0xaa:3:alacritty dev edition:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty dev edition:'
-
-# windows= is per-window, never deduplicated by class (0xaa and 0xcc share
-# one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
-# WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
-# leaves an empty title rather than the literal "not found." text (0xcc),
-# and the root-owned window (0xdd) is excluded the same as apps= excludes it.
-expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:'
+# leaves an empty title rather than the literal "not found." text (0xcc), the
+# root-owned window (0xdd) is excluded the same as apps= excludes it, and a
+# class containing ":", "|" and a literal "%" round-trips through percent
+# encoding intact (0xee).
+expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 
 # fullscreen monitors are de-duplicated and sorted
 expect 'fullscreen_monitors=0|1'
 
 # the active window's title has its whitespace collapsed
 expect 'title=a title with spaces'
-expect 'class=alacritty dev edition'
+expect 'class=alacritty'
 
 # One xprop for every root property, then exactly one per client window,
 # plus the active window's title and class. Anything more is a regression.
@@ -164,34 +184,42 @@ root_calls=$(grep -c '^-root' "$work/xprop.log" || true)
 [[ $root_calls -eq 1 ]] ||
 	fail "expected exactly 1 batched root xprop call, got $root_calls" "$work/xprop.log"
 per_window=$(grep -c '^-id .* _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME WM_NAME$' "$work/xprop.log" || true)
-[[ $per_window -eq 4 ]] ||
-	fail "expected 1 batched xprop per client window (4), got $per_window" "$work/xprop.log"
+[[ $per_window -eq 5 ]] ||
+	fail "expected 1 batched xprop per client window (5), got $per_window" "$work/xprop.log"
 total=$(wc -l <"$work/xprop.log")
 [[ $total -le 8 ]] ||
 	fail "expected at most 8 xprop calls for 5 windows, got $total" "$work/xprop.log"
 
 watch_pid=
+# shellcheck disable=SC2016 # deferred by design: cleanup_add's argument is
+# eval'd later by lyona_run_cleanup, once $watch_pid actually holds a value.
 cleanup_add 'if [[ -n $watch_pid ]]; then kill "$watch_pid" 2>/dev/null || true; wait "$watch_pid" 2>/dev/null || true; fi'
 PATH="$bin:$PATH" "$helper" watch >"$work/watch-out" 2>"$work/watch-err" &
 watch_pid=$!
 initial='windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 fallback_updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox Updated|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
-for attempt in {1..100}; do
+i=0
+while [ "$i" -lt 100 ]; do
 	grep -Fqx "$initial" "$work/watch-out" && break
 	sleep 0.05
+	i=$((i + 1))
 done
 grep -Fqx "$initial" "$work/watch-out" || fail 'watch did not emit initial titles' "$work/watch-err"
 touch "$work/title-changed"
-for attempt in {1..100}; do
+i=0
+while [ "$i" -lt 100 ]; do
 	grep -Fqx "$updated" "$work/watch-out" && break
 	sleep 0.05
+	i=$((i + 1))
 done
 grep -Fqx "$updated" "$work/watch-out" || fail 'watch ignored a title-only change' "$work/xprop.log"
 touch "$work/fallback-title-changed"
-for attempt in {1..100}; do
+i=0
+while [ "$i" -lt 100 ]; do
 	grep -Fqx "$fallback_updated" "$work/watch-out" && break
 	sleep 0.05
+	i=$((i + 1))
 done
 grep -Fqx "$fallback_updated" "$work/watch-out" || fail 'watch ignored a WM_NAME-only change' "$work/watch-out"
 grep -Fq -- '-id 0xaa -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP' "$work/xprop.log" ||

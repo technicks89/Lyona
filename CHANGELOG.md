@@ -196,6 +196,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Keyboard navigation for the cross-tag window overview (Sync Sprint 8 S8-01,
+  `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`): the exact
+  `Keys.onPressed` shape `LauncherWindow.qml` already has (arrows/Home/End move the selection, Enter activates it;
+  Escape already closed the popup since S7-03). `OverviewModel.qml` gains `selectedIndex`, `flatCards` (the tag-grouped
+  card list flattened into keyboard-navigation order, using a new `flatIndex` `DwmStateWindows.js`'s `groupByTag()` now
+  assigns to each window in render order), `selectRelative()`/`selectAbsolute()`/`activateSelected()`. The wrap-around
+  and clamping math itself lives in a new pure library, `OverviewSelection.js` (`.pragma library`, the same split
+  `PanelTooltipPosition.js` and `DwmStateWindows.js` already established), unit-tested directly via
+  `tests/qml/tst_overview_selection.qml` under `qmltestrunner` rather than only through `OverviewModel.qml`, which
+  cannot be instantiated live there (it imports `Quickshell`, unavailable outside a real Quickshell process). The
+  selected card gets a visible highlight, the same `Theme.menuSelectedBackground`/`controlSelectedBorder` styling
+  `LauncherResultDelegate.qml`'s own `selected` state already uses, distinct from mouse hover since the two can
+  disagree (arrow keys move the selection without the mouse moving). Multi-monitor label polish and the
+  window-closes-while-open edge case remain the rest of S8-02, not this item.
+
 - `scripts/dwm-quickshell-state` gains a `windows=` field alongside `apps=` (Sync Sprint 7 S7-01,
   `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, part of the cross-tag window overview, issue `#350`): one entry per managed
   window (`id:desktop:class:title`), never deduplicated by class the way `apps=` is for the panel's running-apps row, which
@@ -1514,6 +1529,41 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
   asserted the documentation but nothing had ever satisfied it, so
   `make check` failed on a from-scratch checkout).
+
+### Fixed
+
+- The cross-tag window overview (Sync Sprint 7 S7-01 through S7-03, issue `#350`) was broken end to end since
+  `scripts/dwm-quickshell-state` and `DwmState.qml` gained a `windowStates`/percent-encoding rework: `client_snapshot()`'s
+  awk script called `sanitize_class()` without defining it, a fatal awk error that crashed `windows=`/`apps=` output
+  outright whenever any client window existed; `DwmState.windowsByTag()` and `OverviewModel.qml`'s own `groups` property
+  both still read a `root.windows`/`root.dwmState.windows` property that had been renamed to `windowStates`, so both threw
+  `is not a function`/`undefined` errors even once the crash above was fixed; and `DwmStateWindows.js`'s `groupByTag()` --
+  the function `OverviewModel.groups` actually calls -- had been dropped entirely. `client_snapshot()`'s awk script also
+  carried three literal duplicate copies of its `_NET_WM_NAME`/`WM_NAME` title-parsing rules, a harmless but clearly
+  accidental leftover, now down to one. Finished the in-progress percent-encoding a `WM_CLASS` needs to survive this
+  wire format's own `:`/`|` separators intact rather than losing information (unlike a title's own lossy space
+  replacement): `sanitize_class()` now actually escapes `%`/`:`/`|` (order matters: `%` first, so the `%` its own
+  escaping introduces is never re-escaped), restored consistently in both `client_snapshot()` and `window_class()`, and
+  a new `DwmStateWindows.js` `decodeClass()` reverses it on the QML side (`DwmState.qml`'s `apps`/`class` parsing and
+  `parseWindows()`'s `appClass`), the same safe try/catch pattern `Icons.qml`'s own `decodeIconPart()` already uses.
+  `tests/test-quickshell-state.sh` had its own problems compounding all of this: two contradictory `expect 'windows=...'`
+  blocks (one with a class value neither code path ever produced), a fifth `0xee` client window referenced by its
+  live-`watch` assertions but never actually given a case in the xprop stub (silently falling through to a generic
+  catch-all), and a live-title-update scenario that could never pass because only the stub's `-spy` branch reacted to
+  its own touch-file signals, not the regular re-poll a real X server would also reflect after an actual property
+  change. Rewritten to be internally consistent, with `0xee` now a real percent-encoding round-trip case, and two
+  `check-shell`-failing shellcheck issues in the same file (an unused loop variable in three `for attempt in {1..100}`
+  polling loops, converted to the codebase's own `i=0`/`while` idiom; a deferred single-quoted `cleanup_add` expansion
+  that is correct by design, now annotated) fixed alongside it -- `make check-shell` itself was failing on `main`.
+  `tests/qml/tst_dwm_state_windows.qml` gained matching coverage for `groupByTag()` and `decodeClass()` (9 new tests,
+  6/6 mutations caught across both fixes). `tests/test-quickshell-overview.sh` (Sprint 7 S7-03's own structural-pin
+  test, which had merged but never actually run since: its last assertion pinned `groupByTag()`'s old 3-argument
+  signature, so it always failed silently) is fixed and grown four more pins that would have caught the `windowStates`
+  rename and the undefined `sanitize_class()` immediately, including one that greps `client_snapshot()`'s own awk block
+  specifically -- the exact per-invocation scoping mistake that let `sanitize_class()` compile fine as a whole file
+  while still being undefined where it was actually called. Found by trying to build Sprint 8 on top of what `main`
+  already had, not by a report -- every one of these was reproduced directly (a real awk crash, a real qmltestrunner
+  `is not a function`, a real shellcheck failure) before being fixed, not inferred from reading the diff.
 
 ## [2026.08.0-beta.1] - 2026-08-28
 

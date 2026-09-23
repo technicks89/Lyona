@@ -106,6 +106,21 @@ client_snapshot() {
 			sub(/ $/, "", value)
 			return value
 		}
+		# A WM_CLASS is not free text like a title: unlike sanitize_title,
+		# whose lossy space-replacement is fine for display, a class needs to
+		# round-trip exactly (it feeds Icons.launcherIcon lookups and is
+		# matched against elsewhere), so a "%"/":"/"|" collision with this
+		# wire format own separators is escaped rather than destroyed --
+		# percent-encoded the way encodeURIComponent would, and decoded back
+		# on the QML side via DwmStateWindows.js decodeClass. "%" must be
+		# escaped first so the "%" introduced by escaping ":"/"|" is never
+		# itself re-escaped.
+		function sanitize_class(value) {
+			gsub(/%/, "%25", value)
+			gsub(/:/, "%3A", value)
+			gsub(/\|/, "%7C", value)
+			return value
+		}
 		function flush(   value) {
 			if (window == "") {
 				return
@@ -133,45 +148,7 @@ client_snapshot() {
 			sub(/^[^=]*= */, "")
 			gsub(/"/, "")
 			split($0, classes, /, /)
-			class = tolower(sanitize_class(classes[2]))
-			next
-		}
-		# A property the window does not set prints "PROP:  not found." (no
-		# "(" after the name), never a real value; only a line with "(" is a
-		# genuine title, the same distinction window_title() makes with its
-		# own -F"= " split (where a "not found" line leaves $2 empty).
-		/^_NET_WM_NAME\(/ {
-			sub(/^[^=]*= */, "")
-			gsub(/"/, "")
-			title = $0
-			have_net_wm_name = 1
-			next
-		}
-		/^WM_NAME\(/ {
-			if (!have_net_wm_name) {
-				sub(/^[^=]*= */, "")
-				gsub(/"/, "")
-				title = $0
-			}
-			next
-		}
-		# A property the window does not set prints "PROP:  not found." (no
-		# "(" after the name), never a real value; only a line with "(" is a
-		# genuine title, the same distinction window_title() makes with its
-		# own -F"= " split (where a "not found" line leaves $2 empty).
-		/^_NET_WM_NAME\(/ {
-			sub(/^[^=]*= */, "")
-			gsub(/"/, "")
-			title = $0
-			have_net_wm_name = 1
-			next
-		}
-		/^WM_NAME\(/ {
-			if (!have_net_wm_name) {
-				sub(/^[^=]*= */, "")
-				gsub(/"/, "")
-				title = $0
-			}
+			class = sanitize_class(tolower(classes[2]))
 			next
 		}
 		# A property the window does not set prints "PROP:  not found." (no
@@ -268,11 +245,18 @@ window_class() {
 	[ -n "$window_id" ] || return 1
 	xprop -id "$window_id" WM_CLASS 2>/dev/null |
 		awk -F'= ' '
+			# Same scheme as client_snapshot() own sanitize_class(): this
+			# feeds the single active window class= line, which shares
+			# DwmState.qml activeWindowClass parsing with DwmStateWindows.js
+			# decodeClass(), so both must escape the same way for a WM_CLASS
+			# containing "%"/":"/"|" to round-trip.
 			function sanitize_class(value) {
-				gsub(/[|:]/, " ", value)
+				gsub(/%/, "%25", value)
+				gsub(/:/, "%3A", value)
+				gsub(/\|/, "%7C", value)
 				return value
 			}
-			/^WM_CLASS/ { gsub(/"/, "", $2); split($2, classes, /, /); print tolower(sanitize_class(classes[2])); exit }
+			/^WM_CLASS/ { gsub(/"/, "", $2); split($2, classes, /, /); print sanitize_class(tolower(classes[2])); exit }
 		'
 }
 

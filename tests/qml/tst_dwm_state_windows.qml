@@ -54,6 +54,32 @@ TestCase {
         compare(windows[0].title, "12:34 PM", "Only the first three colons are field separators");
     }
 
+    // decodeClass()/parseWindows() -- a class is percent-encoded by
+    // dwm-quickshell-state's own sanitize_class() before it reaches this
+    // wire format (":" -> %3A, "|" -> %7C, "%" -> %25), never space-replaced
+    // the way a title is, so it must decode back exactly here.
+    function test_decodeClass_reverses_percent_encoding() {
+        compare(WindowsLib.decodeClass("edge%3Acase%7Cwith%257c"), "edge:case|with%7c");
+    }
+
+    function test_decodeClass_plain_value_is_unchanged() {
+        compare(WindowsLib.decodeClass("alacritty"), "alacritty", "No encoded sequences: a safe no-op");
+    }
+
+    function test_decodeClass_malformed_percent_sequence_does_not_throw() {
+        // decodeURIComponent() throws URIError on "%" not followed by two hex
+        // digits; a malformed value must fall back to itself, not crash the
+        // whole apps=/windows= parse over one bad entry.
+        compare(WindowsLib.decodeClass("bad%zzvalue"), "bad%zzvalue");
+    }
+
+    function test_parseWindows_decodes_a_percent_encoded_class() {
+        const windows = WindowsLib.parseWindows("0xee:2:edge%3Acase%7Cwith%257c:Edge title");
+
+        compare(windows[0].appClass, "edge:case|with%7c");
+        compare(windows[0].title, "Edge title", "Only appClass is decoded; title is unaffected");
+    }
+
     function twoMonitorRows() {
         // Only .length matters to the resolution math (it derives monitor
         // count from the row count, mirroring DwmState.qml's own
@@ -122,5 +148,94 @@ TestCase {
         compare(resolved[0].monitorIndex, 0);
         compare(resolved[1].tagIndex, 7);
         compare(resolved[1].monitorIndex, 1);
+    }
+
+    readonly property var nineNames: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+    // groupByTag() is what OverviewModel.qml's own `groups` property calls
+    // (config/quickshell/overview/OverviewModel.qml) -- without it defined
+    // here, OverviewModel.groups throws every time it evaluates, which is
+    // constantly, since OverviewModel is instantiated unconditionally in
+    // shell.qml. These tests exist specifically to keep that call site real.
+    function test_groupByTag_orders_groups_ascending_and_omits_empty_tags() {
+        // Deliberately out of tag order and with a class repeated across two
+        // different tags, to pin that grouping is by tag, not by class.
+        const windows = WindowsLib.parseWindows(
+            "0xdd:7:firefox:Web|0xaa:3:alacritty:Term one|0xcc:3:alacritty:Term two");
+        const groups = WindowsLib.groupByTag(windows, twoMonitorRows(), nineNames);
+
+        compare(groups.length, 2, "Only the two occupied tags produce a group, ascending");
+        compare(groups[0].tagIndex, 3);
+        compare(groups[0].tagLabel, "4", "tagLabel comes from workspaceNames[tagIndex]");
+        compare(groups[0].windows.length, 2, "Both windows on tag 3 land in the same group");
+        compare(groups[1].tagIndex, 7);
+        compare(groups[1].windows.length, 1);
+        compare(groups[1].windows[0].windowId, "0xdd");
+    }
+
+    function test_groupByTag_tag_label_falls_back_when_workspaceNames_is_empty() {
+        // No rows and no names at all (a plausible transient state before
+        // the first watch update parses either): resolution's own defensive
+        // fallback lands on tag 0, and with workspaceNames empty even that
+        // has no label to look up -- must fall back to a 1-based number, not
+        // an undefined/crashing array access.
+        const windows = WindowsLib.parseWindows("0xaa:5:alacritty:Term");
+        const groups = WindowsLib.groupByTag(windows, [], []);
+
+        compare(groups.length, 1);
+        compare(groups[0].tagIndex, 0);
+        compare(groups[0].tagLabel, "1", "No workspaceNames[0]: falls back to a 1-based number, not undefined");
+    }
+
+    function test_groupByTag_empty_windows_list_is_no_groups() {
+        compare(WindowsLib.groupByTag([], twoMonitorRows(), nineNames).length, 0);
+    }
+
+    function test_groupByTag_honours_the_fallback_screen_count_like_windowsByTag_does() {
+        const windows = WindowsLib.parseWindows("0xaa:4:alacritty:Term");
+        const groups = WindowsLib.groupByTag(windows, [], nineNames, 2);
+
+        compare(groups.length, 1);
+        compare(groups[0].tagIndex, 4);
+        compare(groups[0].windows[0].monitorIndex, 1);
+    }
+
+    function test_groupByTag_decodes_a_percent_encoded_class_via_parseWindows() {
+        const windows = WindowsLib.parseWindows("0xee:2:edge%3Acase%7Cwith%257c:Edge title");
+        const groups = WindowsLib.groupByTag(windows, twoMonitorRows(), nineNames);
+
+        compare(groups[0].windows[0].appClass, "edge:case|with%7c");
+    }
+
+    // flatIndex (Sync Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md):
+    // a sequential index across the whole groups list, in the exact order
+    // WindowOverview.qml's nested Repeaters render it, so keyboard navigation
+    // can select "the next card" without re-deriving the traversal order.
+    function test_groupByTag_assigns_flatIndex_sequentially_across_groups() {
+        const windows = WindowsLib.parseWindows(
+            "0xdd:7:firefox:Web|0xaa:3:alacritty:One|0xcc:3:alacritty:Two|0xbb:0:firefox:Three");
+        const groups = WindowsLib.groupByTag(windows, twoMonitorRows(), nineNames);
+
+        compare(groups.length, 3, "Three occupied tags: 0, 3, 7");
+        compare(groups[0].tagIndex, 0);
+        compare(groups[0].windows[0].flatIndex, 0);
+        compare(groups[1].tagIndex, 3);
+        compare(groups[1].windows[0].flatIndex, 1, "Continues from the previous group, not reset per tag");
+        compare(groups[1].windows[1].flatIndex, 2);
+        compare(groups[2].tagIndex, 7);
+        compare(groups[2].windows[0].flatIndex, 3);
+    }
+
+    function test_groupByTag_flatIndex_does_not_disturb_other_fields() {
+        const windows = WindowsLib.parseWindows("0xaa:3:alacritty:Term one");
+        const groups = WindowsLib.groupByTag(windows, twoMonitorRows(), nineNames);
+        const win = groups[0].windows[0];
+
+        compare(win.windowId, "0xaa");
+        compare(win.appClass, "alacritty");
+        compare(win.title, "Term one");
+        compare(win.tagIndex, 3);
+        compare(win.monitorIndex, 0);
+        compare(win.flatIndex, 0);
     }
 }
