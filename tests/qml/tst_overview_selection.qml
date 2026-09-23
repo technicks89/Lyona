@@ -60,27 +60,4 @@ TestCase {
     function test_selectAbsolute_empty_list_resets_to_zero() {
         compare(Selection.selectAbsolute(2, 0), 0);
     }
-
-    // isValidIndex() (Sync Sprint 8 S8-02): OverviewModel.activateSelected()'s
-    // own guard against a selectedIndex left stale by a window closing while
-    // the popup is open -- must refuse to act rather than focus whatever
-    // windowId now happens to sit at a reused array index.
-    function test_isValidIndex_true_within_bounds() {
-        compare(Selection.isValidIndex(2, 5), true);
-        compare(Selection.isValidIndex(0, 5), true, "The first index is valid");
-        compare(Selection.isValidIndex(4, 5), true, "The last index is valid");
-    }
-
-    function test_isValidIndex_false_at_or_past_cardCount() {
-        compare(Selection.isValidIndex(5, 5), false, "cardCount itself is one past the last valid index");
-        compare(Selection.isValidIndex(99, 5), false);
-    }
-
-    function test_isValidIndex_false_negative() {
-        compare(Selection.isValidIndex(-1, 5), false);
-    }
-
-    function test_isValidIndex_false_when_cardCount_is_zero() {
-        compare(Selection.isValidIndex(0, 0), false, "Index 0 is not valid when there is nothing to select");
-    }
 }

@@ -10,18 +10,12 @@ import qs.core
 // S8-01) is the keyboard-navigated card, styled the same way
 // LauncherResultDelegate.qml's own `selected` state already is -- a
 // distinct fill/border from mouse hover, since the two can disagree (arrow
-// keys move `selected` without the mouse moving at all). `monitorCount`
-// (Sync Sprint 8 S8-02) hides the monitor label on a single-monitor system,
-// where every card would otherwise say the same redundant "Monitor 1". The
-// close affordance (Sync Sprint 8 S8-04) is a small "x" shown on card
-// hover. cardMouse is declared before the row so the row's close control
-// stays above the full-card click area.
+// keys move `selected` without the mouse moving at all).
 Rectangle {
     id: root
 
     required property var window
     required property bool selected
-    required property int monitorCount
     signal focusRequested(string windowId)
     signal closeRequested(string windowId)
 
