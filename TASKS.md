@@ -171,11 +171,13 @@ every sprint item to also land a `TASKS.md`/`CHANGELOG.md`/`docs/evidence/`
 update in the same PR, so completed items are pinned here too, not only in
 `CHANGELOG.md`.
 
-- [x] Sync Sprint 8 S8-01 — cross-tag window overview keyboard navigation
+- [ ] Sync Sprint 8 S8-01 — cross-tag window overview keyboard navigation
   (arrow keys, Home/End move the selection, Enter activates it; selection
   wraps and clamps; the selected card gets a visible highlight), issue
   `#350` — `tests/qml/tst_overview_selection.qml` (pure selection math,
   `qmltestrunner`), `tests/test-quickshell-overview.sh` (wiring pins).
-  Evidence: `docs/evidence/s8-01-overview-keyboard-nav.md`. The rest of
-  S8-02 (multi-monitor label polish, the window-closes-while-open edge
-  case) is not done.
+  Evidence: `docs/evidence/s8-01-overview-keyboard-nav.md`. Keep this item
+  unchecked until that evidence records a passing `qmltestrunner` run for
+  `tests/qml/tst_overview_selection.qml`; before Sprint 8 closes, it must also
+  record the **Full suite (manual)** run URL. The rest of S8-02 (multi-monitor
+  label polish, the window-closes-while-open edge case) is not done.
