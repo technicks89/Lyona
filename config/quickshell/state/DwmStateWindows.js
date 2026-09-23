@@ -10,11 +10,28 @@
 // tst_system_information_protocol.qml's own precedent for testing a
 // pure-logic library this way.
 
+// A WM_CLASS is percent-encoded by dwm-quickshell-state's own
+// sanitize_class() before it reaches windows=/apps=/class= ("%" -> %25,
+// ":" -> %3A, "|" -> %7C, so a class value can never collide with this wire
+// format's own field/record separators) and must be decoded back here, the
+// same way Icons.qml's own decodeIconPart() already unwraps a percent-encoded
+// icon name. A class with no encoded sequences (the common case) round-trips
+// through decodeURIComponent() unchanged.
+function decodeClass(value) {
+    try {
+        return decodeURIComponent(value);
+    } catch (error) {
+        return value;
+    }
+}
+
 // windows=<id>:<desktop>:<class>:<title>|... (dwm-quickshell-state's own
 // shape, S7-01). A title may itself contain ":" (a clock, a path), so
 // everything after the third colon is rejoined rather than taken as a single
 // field; "|" and control characters were already stripped from the title by
 // dwm-quickshell-state's own sanitize_title() before it reached this line.
+// class is decoded (never stripped) since it is percent-encoded, not
+// space-replaced, so it always has exactly one colon-delimited field.
 function parseWindows(value) {
     if (!value || value.length === 0) {
         return [];
@@ -26,7 +43,7 @@ function parseWindows(value) {
         return {
             "windowId": fields[0],
             "desktop": parseInt(fields[1], 10),
-            "appClass": fields[2],
+            "appClass": decodeClass(fields[2]),
             "title": fields.slice(3).join(":")
         };
     });
@@ -95,6 +112,48 @@ function windowsByTag(windows, monitorWorkspaceRows, workspaceCount, fallbackScr
             "title": win.title,
             "tagIndex": location.tagIndex,
             "monitorIndex": location.monitorIndex
+        };
+    });
+}
+
+// Groups a parsed windows list by resolved tag, in ascending tag order, for
+// the overview popup (Sprint 7 S7-03, OverviewModel.qml) to render one
+// SectionLabel per occupied tag -- an empty tag is simply absent, never an
+// empty group, since there is nothing to show a heading for. OverviewModel.qml
+// calls this directly; without it defined, its own `groups` property throws
+// every time it evaluates, which is constantly (a real bug found and fixed
+// alongside this file's other issues -- see CHANGELOG). Each window is also
+// decorated with a `flatIndex`, a sequential 0-based index across the whole
+// groups list in the exact order WindowOverview.qml's nested Repeaters render
+// it (group by group, ascending tag, windows within a group in their
+// existing order) -- Sprint 8 S8-01's keyboard navigation selects by this
+// index rather than duplicating the traversal order in two places.
+function groupByTag(windows, monitorWorkspaceRows, workspaceNames, fallbackScreenCount) {
+    const resolved = windowsByTag(windows, monitorWorkspaceRows, workspaceNames.length, fallbackScreenCount);
+    const byTag = {};
+    const order = [];
+
+    for (const win of resolved) {
+        if (!(win.tagIndex in byTag)) {
+            byTag[win.tagIndex] = [];
+            order.push(win.tagIndex);
+        }
+        byTag[win.tagIndex].push(win);
+    }
+
+    order.sort(function(a, b) { return a - b; });
+
+    let flatIndex = 0;
+
+    return order.map(function(tagIndex) {
+        const windowsInTag = byTag[tagIndex].map(function(win) {
+            return Object.assign({}, win, { "flatIndex": flatIndex++ });
+        });
+
+        return {
+            "tagIndex": tagIndex,
+            "tagLabel": tagIndex < workspaceNames.length ? workspaceNames[tagIndex] : String(tagIndex + 1),
+            "windows": windowsInTag
         };
     });
 }

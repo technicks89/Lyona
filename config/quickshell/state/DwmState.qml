@@ -69,22 +69,18 @@ Scope {
             } else if (key === "apps") {
                 root.runningApps = value.length > 0 ? value.split("|").map(function(app) {
                     const separator = app.indexOf(":");
-                    return { "windowId": app.slice(0, separator), "appClass": app.slice(separator + 1) };
+                    return { "windowId": app.slice(0, separator), "appClass": WindowsLib.decodeClass(app.slice(separator + 1)) };
                 }) : [];
             } else if (key === "windows") {
-                root.windowStates = value.length > 0 ? value.split("|").map(function(windowState) {
-                    const fields = windowState.split(":");
-                    return {
-                        "windowId": fields[0],
-                        "desktop": parseInt(fields[1], 10),
-                        "appClass": fields[2],
-                        "title": fields.slice(3).join(":")
-                    };
-                }) : [];
+                // Delegates to WindowsLib.parseWindows() (DwmStateWindows.js)
+                // rather than repeating its field-splitting inline, so this
+                // stays exactly what tst_dwm_state_windows.qml already covers
+                // -- including decodeClass() for a percent-encoded class.
+                root.windowStates = WindowsLib.parseWindows(value);
             } else if (key === "title") {
                 root.activeWindowTitle = value.length > 0 ? value : "Desktop";
             } else if (key === "class") {
-                root.activeWindowClass = value.length > 0 ? value : "application-x-executable";
+                root.activeWindowClass = value.length > 0 ? WindowsLib.decodeClass(value) : "application-x-executable";
             } else if (key === "status") {
                 root.statusText = value;
                 root.updateStatusSegments();
@@ -155,7 +151,7 @@ Scope {
     // check -- the same split monitorWorkspaceRows/workspaceNames already
     // describe -- kept out of this Scope so it stays directly unit-testable.
     function windowsByTag() {
-        return WindowsLib.windowsByTag(root.windows, root.monitorWorkspaceRows, root.workspaceNames.length,
+        return WindowsLib.windowsByTag(root.windowStates, root.monitorWorkspaceRows, root.workspaceNames.length,
             root.monitorCount());
     }
 
