@@ -14,9 +14,8 @@ import qs.core
 // (Sync Sprint 8 S8-02) hides the monitor label on a single-monitor system,
 // where every card would otherwise say the same redundant "Monitor 1". The
 // close affordance (Sync Sprint 8 S8-04) is a small "x" shown on card
-// hover, given an explicit z above cardMouse's own full-card MouseArea (it
-// sits inside the same RowLayout cardMouse overlaps, and cardMouse -- the
-// later sibling -- would otherwise intercept its clicks first).
+// hover. cardMouse is declared before the row so the row's close control
+// stays above the full-card click area.
 Rectangle {
     id: root
 
@@ -34,6 +33,15 @@ Rectangle {
     border.color: root.selected ? Theme.controlSelectedBorder
         : cardMouse.containsMouse ? Theme.controlHoverBorder : Theme.controlNormalBorder
     border.width: Theme.controlBorderWidth
+
+    MouseArea {
+        id: cardMouse
+
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.focusRequested(root.window.windowId)
+    }
 
     RowLayout {
         anchors.fill: parent
@@ -68,8 +76,7 @@ Rectangle {
         Rectangle {
             id: closeButton
 
-            z: 1
-            visible: cardMouse.containsMouse
+            visible: cardMouse.containsMouse || closeMouse.containsMouse
             Layout.preferredWidth: Theme.dp(24)
             Layout.preferredHeight: Theme.dp(24)
             radius: Theme.controlRadius
@@ -109,12 +116,4 @@ Rectangle {
         }
     }
 
-    MouseArea {
-        id: cardMouse
-
-        anchors.fill: parent
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.focusRequested(root.window.windowId)
-    }
 }

@@ -215,6 +215,13 @@ grep -Fq 'root.dwmState.closeWindow(windowId)' "$overview/OverviewModel.qml"
 grep -Fq 'function excludeIds(windows, ids)' "$overview/OverviewFilter.js"
 grep -Fq 'signal closeRequested(string windowId)' "$overview/OverviewCard.qml"
 grep -Fq 'Accessible.name: "Close " + ' "$overview/OverviewCard.qml"
+grep -Fq 'visible: cardMouse.containsMouse || closeMouse.containsMouse' "$overview/OverviewCard.qml"
+card_mouse_line=$(grep -n 'id: cardMouse' "$overview/OverviewCard.qml" | cut -d: -f1)
+row_layout_line=$(grep -n 'RowLayout {' "$overview/OverviewCard.qml" | head -n 1 | cut -d: -f1)
+if [ "$card_mouse_line" -ge "$row_layout_line" ]; then
+	printf 'OverviewCard cardMouse must be declared before the RowLayout so closeButton receives clicks.\n' >&2
+	exit 1
+fi
 grep -Fq 'onCloseRequested: windowId => root.overviewModel.closeCard(windowId)' "$overview/WindowOverview.qml"
 grep -Fq 'function closeWindow(windowId)' "$state/DwmState.qml"
 grep -Fq 'closeWindowProcess.command = ["dwm-quickshell-state", "close", windowId]' "$state/DwmState.qml"
