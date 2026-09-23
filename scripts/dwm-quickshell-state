@@ -509,6 +509,32 @@ focus_window() {
 	fi
 }
 
+# Closing a card from the overview popup (Sync Sprint 8 S8-04,
+# docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, which is
+# the only client dwm.c's own killclient() closes -- most cards are not the
+# focused window. A plain ICCCM WM_DELETE_WINDOW client message sent
+# directly to the target id (the same graceful-close request killclient()
+# itself sends first) needs no dwm.c change and no new EWMH property; it is
+# routed by the X server, not the window manager.
+close_window() {
+	target=${1:-}
+	case $target in
+	0x[0-9a-fA-F]* | [0-9]*) ;;
+	*)
+		printf 'usage: %s close <window-id>\n' "$0" >&2
+		return 2
+		;;
+	esac
+	if command -v xdotool >/dev/null 2>&1; then
+		xdotool windowclose "$target"
+	elif command -v wmctrl >/dev/null 2>&1; then
+		wmctrl -ic "$target"
+	else
+		printf 'xdotool or wmctrl is required to close a window\n' >&2
+		return 127
+	fi
+}
+
 case ${1:-state} in
 state)
 	show_state
@@ -522,8 +548,11 @@ switch)
 focus)
 	focus_window "${2:-}"
 	;;
+close)
+	close_window "${2:-}"
+	;;
 *)
-	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>]\n' "$0" >&2
+	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>|close <window-id>]\n' "$0" >&2
 	exit 2
 	;;
 esac

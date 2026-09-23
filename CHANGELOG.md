@@ -196,6 +196,57 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Close a window from its card in the cross-tag window overview (Sync Sprint 8 S8-04,
+  `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`, not in the design
+  doc's first version but a standard companion action every comparable overview - GNOME Overview, macOS Mission
+  Control/Exposé - already offers, and explicitly not the drag-and-drop retagging the issue itself rules out).
+  `dwm.c`'s own `killclient()` only ever closes `selmon->sel`, the focused client, which most cards are not, so
+  `scripts/dwm-quickshell-state` gains a `close <window-id>` action - a plain ICCCM `WM_DELETE_WINDOW` message sent
+  directly to the target id (`xdotool windowclose`, falling back to `wmctrl -ic`, the same fallback shape
+  `switch`/`focus` already use) - routed by the X server, no `dwm.c` change. New `tests/test-quickshell-state-close.sh`
+  (argument validation, both backends, and the "neither available" error case; deliberately uses an isolated `PATH`
+  rather than `"$bin:$PATH"`, since this machine's own real `xdotool` is reachable on the outer `PATH` and would
+  otherwise send a real close request to this session's real, live X display the moment a case here removes the local
+  stub to exercise the `wmctrl` fallback - found by actually hitting a real `BadWindow` X error against the live
+  desktop before fixing the test). `DwmState.closeWindow(windowId)` mirrors `focusWindow()`'s own `Process`-per-action
+  shape exactly. A small "×" close affordance appears on card hover (`OverviewCard.qml`, `Accessible.name: "Close " +
+  <title>` for screen readers, given an explicit `z` above the card's own full-area click-to-focus `MouseArea`, which
+  would otherwise intercept its clicks first) and removes the card immediately rather than waiting for the next watch
+  update to notice: a new pure `excludeIds()` in `OverviewFilter.js` (unit-tested and mutation-checked the same way
+  `filterWindows()` already is) hides closed ids client-side the moment `closeCard()` requests them, composed with
+  S8-03's own filter in `OverviewModel.groups`'s single call site rather than as a second, independent filtering path.
+  The popup itself stays open on whatever tag/window it already had, matching the design doc's own "does not otherwise
+  change tag/focus" requirement. A keyboard equivalent (matching S8-01's own navigation) remains a reasonable follow-up,
+  not required to land this item - mouse-only closing is an acceptable first cut, the same way S7-03 itself landed
+  mouse-only card activation before S8-01 added keyboard navigation.
+
+- Type-to-filter for the cross-tag window overview (Sync Sprint 8 S8-03,
+  `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`, not in the design
+  doc's first version but every "grid of many things, pick one" surface Lyona ships already supports it). The exact
+  search-box shape `LauncherWindow.qml` already has: a `TextInput`, always focused while the popup is open (no separate
+  hotkey to start typing - `ClickAwayPopup`'s own `grabFocus: true` already keeps keyboard input inside the popup, the
+  same way the launcher's own window already works), filtering by title/class case-insensitive substring - the
+  launcher's own matching convention. `OverviewModel.qml` gains `query`/`setQuery()`; the actual matching lives in a new
+  pure library, `OverviewFilter.js` (`.pragma library`, the same split `OverviewSelection.js` already established),
+  unit-tested directly via `tests/qml/tst_overview_filter.qml`. Filtering runs before `groupByTag()`, not after, so a
+  tag with nothing left in it after filtering is simply absent - `groupByTag()`'s own existing "no empty groups"
+  behaviour, no separate case needed. Arrow-key navigation (S8-01) already operates on the filtered list for free,
+  since `flatCards` is built from `groups`, which is now query-filtered. A filter matching nothing shows "No windows
+  match" (distinct from "No open windows" when there is truly nothing running) and Enter is a no-op, the same
+  `activateSelected()` guard S8-02 already added for a window closing mid-use.
+
+- Multi-monitor labels and window-closes-mid-use safety for the cross-tag window overview (Sync Sprint 8 S8-02,
+  `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`). Each card's
+  monitor label (`OverviewCard.qml`) is now shown only when there is more than one monitor - a single-monitor system no
+  longer sees a redundant "Monitor 1" on every card - via a new `monitorCount` property, fed by `DwmState.monitorCount()`.
+  A window closing while the popup is open cannot act on a stale id: `groups`/`flatCards` already re-derive themselves
+  live from the same `DwmState.windowStates` watch stream everything else uses, so a closed window's card simply stops
+  rendering with no new IPC, `activateSelected()`'s own bounds check (a new pure `isValidIndex()` in
+  `OverviewSelection.js`, unit-tested the same way `selectRelative()`/`selectAbsolute()` already are) refuses to focus
+  whatever window id now happens to sit at a reused array index, and `selectedIndex` re-clamps itself via a new
+  `onFlatCardsChanged` handler the moment the list shrinks, rather than leaving the keyboard selection pointing at
+  nothing until the next arrow key.
+
 - Keyboard navigation for the cross-tag window overview (Sync Sprint 8 S8-01,
   `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`): the exact
   `Keys.onPressed` shape `LauncherWindow.qml` already has (arrows/Home/End move the selection, Enter activates it;

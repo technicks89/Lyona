@@ -18,6 +18,9 @@ state=$repo/config/quickshell/state
 for component in OverviewModel OverviewCard WindowOverview; do
 	test -f "$overview/$component.qml"
 done
+for library in OverviewSelection OverviewFilter; do
+	test -f "$overview/$library.js"
+done
 
 # ClickAwayPopup-based, the same base ControlsWindow/NetworkWindow/
 # PowerMenuWindow use -- inherits the click-away dismiss for free.
@@ -48,7 +51,7 @@ grep -Fq 'source: Icons.launcherIcon(root.window.appClass)' "$overview/OverviewC
 # plugin, unavailable to plain qmltestrunner), so a stale reference like this
 # only surfaced at runtime, on the real desktop.
 grep -Fq 'import "../state/DwmStateWindows.js" as WindowsLib' "$overview/OverviewModel.qml"
-grep -Fq 'WindowsLib.groupByTag(root.dwmState.windowStates,' "$overview/OverviewModel.qml"
+grep -Fq 'readonly property var groups: WindowsLib.groupByTag(' "$overview/OverviewModel.qml"
 if grep -Eq 'function (resolveWindowLocation|workspaceIndexesForMonitor)\(' "$overview/OverviewModel.qml"; then
 	printf 'OverviewModel.qml must not duplicate DwmStateWindows.js resolution logic.\n' >&2
 	exit 1
@@ -147,7 +150,6 @@ grep -Fq 'property int selectedIndex: 0' "$overview/OverviewModel.qml"
 # The wrap-around/clamp math itself lives in a pure library, directly
 # unit-tested (tests/qml/tst_overview_selection.qml) since OverviewModel.qml
 # cannot be instantiated live in plain qmltestrunner -- not duplicated inline.
-test -f "$overview/OverviewSelection.js"
 grep -Fq 'import "OverviewSelection.js" as Selection' "$overview/OverviewModel.qml"
 grep -Fq 'Selection.selectRelative(root.selectedIndex, delta, root.flatCards.length)' "$overview/OverviewModel.qml"
 grep -Fq 'Selection.selectAbsolute(index, root.flatCards.length)' "$overview/OverviewModel.qml"
@@ -166,5 +168,67 @@ grep -Fq 'selected: cardDelegate.modelData.flatIndex === root.overviewModel.sele
 # view or the model -- confirm the one real place it is assigned still
 # exists.
 grep -Fq '"flatIndex": flatIndex++' "$state/DwmStateWindows.js"
+
+# Sync Sprint 8 S8-02: the monitor label is shown only when there is more
+# than one monitor -- a single-monitor system should not see a redundant
+# "Monitor 1" on every card.
+grep -Fq 'required property int monitorCount' "$overview/OverviewCard.qml"
+grep -Fq 'visible: root.monitorCount > 1' "$overview/OverviewCard.qml"
+grep -Fq 'monitorCount: root.overviewModel.dwmState.monitorCount()' "$overview/WindowOverview.qml"
+
+# S8-02: a window closing while the popup is open must not error or act on
+# a stale id. activateSelected()'s own guard is isValidIndex() -- the same
+# pure, unit-tested function selectRelative()/selectAbsolute() below it live
+# next to -- not a re-derived bounds check; and selectedIndex re-clamps
+# itself the moment flatCards changes, not only the next time a selection
+# function happens to run.
+grep -Fq 'Selection.isValidIndex(root.selectedIndex, cards.length)' "$overview/OverviewModel.qml"
+grep -Fq 'onFlatCardsChanged:' "$overview/OverviewModel.qml"
+grep -Fq 'function isValidIndex(index, cardCount)' "$overview/OverviewSelection.js"
+
+# Type-to-filter (Sync Sprint 8 S8-03, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md):
+# the exact search-box shape LauncherWindow.qml already has (a TextInput
+# always focused while the popup is open, no separate hotkey needed since
+# ClickAwayPopup already grabs keyboard focus), filtering by title/class
+# case-insensitive substring via a pure library, the same split
+# OverviewSelection.js already established.
+grep -Fq 'function filterWindows(windows, query)' "$overview/OverviewFilter.js"
+grep -Fq 'import "OverviewFilter.js" as Filter' "$overview/OverviewModel.qml"
+grep -Fq 'property string query: ""' "$overview/OverviewModel.qml"
+grep -Fq 'function setQuery(text)' "$overview/OverviewModel.qml"
+grep -Fq 'onTextChanged: root.overviewModel.setQuery(text)' "$overview/WindowOverview.qml"
+grep -Fq 'text: root.overviewModel.query' "$overview/WindowOverview.qml"
+
+# Sync Sprint 8 S8-04: closing a card that is not the focused window --
+# dwm.c's own killclient() only ever closes selmon->sel, so this needs the
+# new dwm-quickshell-state "close" action, not a dwm.c change (a plain
+# ICCCM client message the X server routes directly to the target id).
+# groups' own call site is the single place both S8-03's filter and S8-04's
+# close-hiding must compose correctly, so it is pinned as one literal shape
+# rather than two independent substrings that could each be present while
+# nested in the wrong order.
+grep -Fq 'Filter.filterWindows(Filter.excludeIds(root.dwmState.windowStates, root.closingWindowIds), root.query)' \
+	"$overview/OverviewModel.qml"
+grep -Fq 'property var closingWindowIds: []' "$overview/OverviewModel.qml"
+grep -Fq 'function closeCard(windowId)' "$overview/OverviewModel.qml"
+grep -Fq 'root.dwmState.closeWindow(windowId)' "$overview/OverviewModel.qml"
+grep -Fq 'function excludeIds(windows, ids)' "$overview/OverviewFilter.js"
+grep -Fq 'signal closeRequested(string windowId)' "$overview/OverviewCard.qml"
+grep -Fq 'Accessible.name: "Close " + ' "$overview/OverviewCard.qml"
+grep -Fq 'onCloseRequested: windowId => root.overviewModel.closeCard(windowId)' "$overview/WindowOverview.qml"
+grep -Fq 'function closeWindow(windowId)' "$state/DwmState.qml"
+grep -Fq 'closeWindowProcess.command = ["dwm-quickshell-state", "close", windowId]' "$state/DwmState.qml"
+
+# close_window() is defined and dispatched the same way switch_workspace()/
+# focus_window() already are, and does not touch dwm.c.
+helper=$repo/scripts/dwm-quickshell-state
+grep -Fq 'close_window() {' "$helper"
+# shellcheck disable=SC2016 # the literal shell source text is what we look for
+grep -Fq 'xdotool windowclose "$target"' "$helper"
+# shellcheck disable=SC2016 # the literal shell source text is what we look for
+grep -Fq 'wmctrl -ic "$target"' "$helper"
+grep -Fq 'close)' "$helper"
+# shellcheck disable=SC2016 # the literal shell source text is what we look for
+grep -Fq 'close_window "${2:-}"' "$helper"
 
 printf 'Quickshell window overview: PASS\n'

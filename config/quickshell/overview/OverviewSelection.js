@@ -28,3 +28,14 @@ function selectAbsolute(index, cardCount) {
 
     return Math.max(0, Math.min(index, cardCount - 1));
 }
+
+// OverviewModel.qml's own activateSelected() guard (Sync Sprint 8 S8-02): a
+// window can close while the popup is open, and DwmState.windowStates'
+// shrinking is the only signal of that -- selectedIndex itself is not
+// touched until a selection function runs, so it can be transiently
+// out-of-range. Enter (or any future activation path) must refuse to act on
+// that rather than focusing whatever windowId now happens to sit at a
+// reused array index.
+function isValidIndex(index, cardCount) {
+    return cardCount > 0 && index >= 0 && index < cardCount;
+}

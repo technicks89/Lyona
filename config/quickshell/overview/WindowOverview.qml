@@ -6,13 +6,15 @@ pragma ComponentBehavior: Bound
 
 // The cross-tag window overview popup (Sync Sprint 7 S7-03, docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md,
 // design doc "A new popup"/"Opening it", keyboard navigation added in Sync
-// Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md). ClickAwayPopup-based
-// the same way ControlsWindow is, so it inherits the click-away dismiss the
-// transparent surface already gives every popup built on it; Escape is
-// handled explicitly below, the same way ControlsWindow's own content does.
-// The rest of the key handling is the exact Keys.onPressed shape
-// LauncherWindow.qml already has: arrows/Home/End move OverviewModel's own
-// selectedIndex, Enter activates it.
+// Sprint 8 S8-01 and type-to-filter in S8-03, both
+// docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md). ClickAwayPopup-based the same
+// way ControlsWindow is, so it inherits the click-away dismiss the
+// transparent surface already gives every popup built on it. The search
+// field and its Keys.onPressed are the exact shape LauncherWindow.qml
+// already has: the field is always focused while the popup is open (no
+// separate hotkey needed to start typing -- ClickAwayPopup's own
+// grabFocus: true already keeps keyboard input inside the popup), arrows/
+// Home/End/Enter navigate OverviewModel's own selection, and Escape closes.
 ClickAwayPopup {
     id: root
 
@@ -30,11 +32,14 @@ ClickAwayPopup {
     popupY: Theme.panelHeight
     onDismissed: overviewModel.close()
 
+    function focusSearch() {
+        overviewSearch.forceActiveFocus();
+        overviewSearch.cursorPosition = overviewSearch.text.length;
+    }
+
     onVisibleChanged: {
         if (visible) {
-            Qt.callLater(function() {
-                content.forceActiveFocus();
-            });
+            Qt.callLater(root.focusSearch);
         } else {
             root.overviewModel.close();
         }
@@ -44,29 +49,6 @@ ClickAwayPopup {
         id: content
 
         anchors.fill: parent
-        focus: true
-
-        Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Escape) {
-                root.overviewModel.close();
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Down) {
-                root.overviewModel.selectRelative(1);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Up) {
-                root.overviewModel.selectRelative(-1);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Home) {
-                root.overviewModel.selectAbsolute(0);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_End) {
-                root.overviewModel.selectAbsolute(root.overviewModel.flatCards.length - 1);
-                event.accepted = true;
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                root.overviewModel.activateSelected();
-                event.accepted = true;
-            }
-        }
 
         ColumnLayout {
             id: overviewColumn
@@ -82,10 +64,79 @@ ClickAwayPopup {
                     + (root.overviewModel.groups.length === 1 ? "" : "s")
             }
 
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Theme.controlHeight
+                color: overviewSearch.activeFocus ? Theme.controlFocusFill : Theme.controlNormalFill
+                border.color: overviewSearch.activeFocus ? Theme.controlFocusBorder : Theme.controlNormalBorder
+                border.width: overviewSearch.activeFocus ? Theme.controlFocusBorderWidth : Theme.controlBorderWidth
+                radius: Theme.controlRadius
+
+                UiText {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "/"
+                    color: overviewSearch.activeFocus ? Theme.menuActionText : Theme.menuMutedText
+                    font.bold: true
+                }
+
+                TextInput {
+                    id: overviewSearch
+
+                    anchors.fill: parent
+                    anchors.leftMargin: 38
+                    anchors.rightMargin: 14
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: Theme.controlFocusText
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.accentText
+                    text: root.overviewModel.query
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.inputFontSize
+                    clip: true
+
+                    onTextChanged: root.overviewModel.setQuery(text)
+
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Escape) {
+                            root.overviewModel.close();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Down) {
+                            root.overviewModel.selectRelative(1);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Up) {
+                            root.overviewModel.selectRelative(-1);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Home) {
+                            root.overviewModel.selectAbsolute(0);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_End) {
+                            root.overviewModel.selectAbsolute(root.overviewModel.flatCards.length - 1);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            root.overviewModel.activateSelected();
+                            event.accepted = true;
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 38
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: overviewSearch.text.length === 0
+                    text: "Search windows"
+                    color: Theme.placeholder
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.inputFontSize
+                }
+            }
+
             Text {
                 Layout.fillWidth: true
                 visible: root.overviewModel.groups.length === 0
-                text: "No open windows"
+                text: root.overviewModel.query.length > 0 ? "No windows match" : "No open windows"
                 color: Theme.textMuted
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.panelFontSize
@@ -132,10 +183,12 @@ ClickAwayPopup {
                                     Layout.fillWidth: true
                                     window: cardDelegate.modelData
                                     selected: cardDelegate.modelData.flatIndex === root.overviewModel.selectedIndex
+                                    monitorCount: root.overviewModel.dwmState.monitorCount()
                                     onFocusRequested: windowId => {
                                         root.overviewModel.dwmState.focusWindow(windowId);
                                         root.overviewModel.close();
                                     }
+                                    onCloseRequested: windowId => root.overviewModel.closeCard(windowId)
                                 }
                             }
                         }
