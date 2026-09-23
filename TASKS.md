@@ -161,3 +161,21 @@ Acceptance:
   networking, suspend, NVIDIA) has either a qualification result or an
   explicit, precise "untested"/"unsupported" statement — never left silently
   unstated.
+
+## Parallel Track: Quickshell Upstream Sync
+
+Tracked independently of the Phase 7 checklist above: `docs/UPSTREAM-SYNC.md`
+and its per-sprint `docs/SYNC-SPRINT-N-*.md` documents own the day-to-day
+detail. `docs/UPSTREAM-SYNC.md`'s own "Commit and tracking" section requires
+every sprint item to also land a `TASKS.md`/`CHANGELOG.md`/`docs/evidence/`
+update in the same PR, so completed items are pinned here too, not only in
+`CHANGELOG.md`.
+
+- [x] Sync Sprint 8 S8-01 — cross-tag window overview keyboard navigation
+  (arrow keys, Home/End move the selection, Enter activates it; selection
+  wraps and clamps; the selected card gets a visible highlight), issue
+  `#350` — `tests/qml/tst_overview_selection.qml` (pure selection math,
+  `qmltestrunner`), `tests/test-quickshell-overview.sh` (wiring pins).
+  Evidence: `docs/evidence/s8-01-overview-keyboard-nav.md`. The rest of
+  S8-02 (multi-monitor label polish, the window-closes-while-open edge
+  case) is not done.
