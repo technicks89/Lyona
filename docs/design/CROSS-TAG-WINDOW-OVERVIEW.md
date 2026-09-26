@@ -95,12 +95,19 @@ per-window loop rather than writing a second one:
   window's `desktop` to `{tagIndex, monitorIndex}` — this is new glue code,
   not new data collection, since the raw desktop-to-monitor mapping already
   exists for the panel's own workspace rows.
-- `focusWindow(windowId)` already exists and already does "switch to the
-  window's tag, focus and raise it" as a single dwm-side action (that's what
-  the `dwm-quickshell-state focus` helper already does for the panel's
-  running-apps clicks) — the overview's card click handler is a direct reuse
-  of `RunningAppsArea.qml`'s existing `onFocusRequested: windowId =>
-  root.state.focusWindow(windowId)`, not new plumbing.
+- Add a separate `activateOverviewWindow(windowId)` action for card clicks
+  and keyboard activation, backed by a new helper action. Resolve the
+  window's current tag and owning monitor, switch to that tag and monitor,
+  then focus and raise the window before dismissing the overview. Sequence
+  these steps so focus waits for the workspace switch to complete, and
+  handle a window disappearing during activation without acting on stale
+  data. Navigate to the window without moving it or changing its tags.
+- Keep `focusWindow(windowId)` and the existing helper `focus` action
+  unchanged for panel clicks and other callers. They use `xdotool
+  windowactivate` or `wmctrl -ia`, which request `_NET_ACTIVE_WINDOW`;
+  dwm's `clientmessage()` handler only marks the target urgent. The new
+  overview action must explicitly focus and raise the window after
+  navigation; reusing that activation request is insufficient.
 
 ### A new popup: `config/quickshell/overview/WindowOverview.qml`
 
@@ -186,8 +193,11 @@ already does for every sprint that adds a watcher).
 - An xvfb harness opening several `xclient`-style windows across more than
   one tag (the pattern `tests/test-xvfb-runtime.sh` already uses for
   multi-window scenarios) and asserting the overview's model lists all of
-  them, grouped correctly, and that activating a card's `focusWindow` lands
-  on the right tag with the right window focused — reusing
+  them, grouped correctly, and that `activateOverviewWindow` from a card or
+  keyboard activation selects the target tag and monitor, focuses and raises
+  the window, and preserves its tags and monitor assignment. Cover a hidden
+  tag and a window on another monitor, and verify existing `focusWindow`
+  callers retain their behavior, reusing
   `wait_for_active_window`/`wait_for_current_desktop`, both of which already
   exist in that file's helper library.
 - A closed-popup idle-CPU baseline (per `docs/UPSTREAM-SYNC.md`'s existing
@@ -209,8 +219,9 @@ enormous PR:
 
 1. `scripts/dwm-quickshell-state windows` + the `windows=` watch field, with
    its own test coverage, no QML changes yet.
-2. `DwmState.qml`'s `windows` property and tag/monitor resolution, with a
-   small headless (non-visual) test of the resolution logic, still no UI.
+2. `DwmState.qml`'s `windows` property, tag/monitor resolution, and separate
+   overview activation action, with a small headless (non-visual) test of the
+   resolution logic and an X11 activation test, still no UI.
 3. `WindowOverview.qml` + `OverviewModel.qml` + the IPC handler + hotkey,
    mouse-only first (click a card, click away, Escape).
 4. Keyboard navigation.
