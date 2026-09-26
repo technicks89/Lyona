@@ -267,8 +267,8 @@ Scope {
     // not the focused window. No dwm.c change: dwm-quickshell-state's own
     // "close" action sends a plain WM_DELETE_WINDOW directly to the target.
     function closeWindow(windowId) {
-        closeWindowProcess.command = ["dwm-quickshell-state", "close", windowId];
-        closeWindowProcess.running = true;
+        // Each request owns its command, even while an earlier close is running.
+        Quickshell.execDetached(["dwm-quickshell-state", "close", windowId]);
     }
 
     Process {
@@ -294,13 +294,6 @@ Scope {
         id: focusWindowProcess
 
         command: ["dwm-quickshell-state", "focus", "0"]
-        running: false
-    }
-
-    Process {
-        id: closeWindowProcess
-
-        command: ["dwm-quickshell-state", "close", "0"]
         running: false
     }
 }

@@ -77,7 +77,7 @@ Scope {
     }
 
     // Close a card's window without closing the popup: hide the card now,
-    // then ask dwm-quickshell-state to send WM_DELETE_WINDOW.
+    // then ask DwmState to launch an independent close command for this id.
     function closeCard(windowId) {
         root.closingIds = root.closingIds.concat([windowId]);
         root.dwmState.closeWindow(windowId);

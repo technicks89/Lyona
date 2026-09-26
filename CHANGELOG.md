@@ -1320,6 +1320,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Rapid overview card closes now launch independent commands so each requested
+  window is processed even while an earlier close command is running.
+
 - Dark presets (Dracula, Tokyo Night, Nord, and every other shipped dark theme) could render Thunar and other plain GTK apps
   light instead of dark (#348). `lyona-gtk-theme generate-all`, which builds each palette's `Lyona-<theme>` GTK theme, is an
   install-time step (`make install-system`'s `install-gtk-themes`); on any live system where that step has not run, or whose

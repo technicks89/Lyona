@@ -25,10 +25,9 @@ green), then S10-03, S10-04, S10-05, then S10-06 last among the code items
 because it needs the earlier ones. S10-07 and S10-08 are docs and can go
 any time.
 
-**Status:** S10-01 to S10-05 and S10-08 are implemented in the working tree of
-branch `docs/sprint-10-completion-audit` (nothing committed or pushed) and
-validated locally as described under each item. S10-06 needs this merged and
-the workflow run. S10-07 needs real hardware.
+**Status:** This PR includes S10-01 through S10-05 and S10-08, validated
+locally as described under each item. S10-06 remains open: it needs this
+merged and the workflow run. S10-07 remains open: it needs real hardware.
 
 ---
 
