@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import "DwmStateWindows.js" as WindowsLib
 
 Scope {
     id: root
@@ -11,6 +12,7 @@ Scope {
     property var occupiedWorkspaces: []
     property var fullscreenMonitorIndexes: []
     property var runningApps: []
+    property var windowStates: []
     property string activeWindowTitle: "Desktop"
     property string activeWindowClass: "application-x-executable"
     property string statusText: ""
@@ -67,12 +69,18 @@ Scope {
             } else if (key === "apps") {
                 root.runningApps = value.length > 0 ? value.split("|").map(function(app) {
                     const separator = app.indexOf(":");
-                    return { "windowId": app.slice(0, separator), "appClass": app.slice(separator + 1) };
+                    return { "windowId": app.slice(0, separator), "appClass": WindowsLib.decodeClass(app.slice(separator + 1)) };
                 }) : [];
+            } else if (key === "windows") {
+                // Delegates to WindowsLib.parseWindows() (DwmStateWindows.js)
+                // rather than repeating its field-splitting inline, so this
+                // stays exactly what tst_dwm_state_windows.qml already covers
+                // -- including decodeClass() for a percent-encoded class.
+                root.windowStates = WindowsLib.parseWindows(value);
             } else if (key === "title") {
                 root.activeWindowTitle = value.length > 0 ? value : "Desktop";
             } else if (key === "class") {
-                root.activeWindowClass = value.length > 0 ? value : "application-x-executable";
+                root.activeWindowClass = value.length > 0 ? WindowsLib.decodeClass(value) : "application-x-executable";
             } else if (key === "status") {
                 root.statusText = value;
                 root.updateStatusSegments();
@@ -137,6 +145,16 @@ Scope {
             : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
     }
 
+    // Resolves each entry in `windows` to the tag/monitor it belongs to, for
+    // the overview popup (Sprint 7 S7-03) to group by. The actual math is
+    // DwmStateWindows.js's own pure workspaceIndexesForMonitor() range
+    // check -- the same split monitorWorkspaceRows/workspaceNames already
+    // describe -- kept out of this Scope so it stays directly unit-testable.
+    function windowsByTag() {
+        return WindowsLib.windowsByTag(root.windowStates, root.monitorWorkspaceRows, root.workspaceNames.length,
+            root.monitorCount());
+    }
+
     function focusedScreen() {
         if (root.focusedMonitorIndex >= 0) {
             return root.screenForMonitorIndex(root.focusedMonitorIndex);
@@ -151,6 +169,11 @@ Scope {
         return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
     }
 
+    function monitorCount() {
+        return Math.max(1, root.monitorWorkspaceRows.length > 0
+            ? root.monitorWorkspaceRows.length : Quickshell.screens.length);
+    }
+
     function workspaceIndexes(screen) {
         const indexes = [];
         const workspaceCount = root.workspaceNames.length;
@@ -159,8 +182,7 @@ Scope {
             return indexes;
         }
 
-        const screenCount = Math.max(1, root.monitorWorkspaceRows.length > 0
-            ? root.monitorWorkspaceRows.length : Quickshell.screens.length);
+        const screenCount = root.monitorCount();
         const logicalIndex = Math.min(root.screenIndex(screen), screenCount - 1);
         const workspacesPerScreen = Math.max(1, Math.floor(workspaceCount / screenCount));
         let start = logicalIndex * workspacesPerScreen;
@@ -239,6 +261,16 @@ Scope {
         focusWindowProcess.running = true;
     }
 
+    // Closing a card from the overview (Sync Sprint 8 S8-04,
+    // docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, the
+    // only client dwm.c's own killclient() ever closes -- most cards are
+    // not the focused window. No dwm.c change: dwm-quickshell-state's own
+    // "close" action sends a plain WM_DELETE_WINDOW directly to the target.
+    function closeWindow(windowId) {
+        closeWindowProcess.command = ["dwm-quickshell-state", "close", windowId];
+        closeWindowProcess.running = true;
+    }
+
     Process {
         command: ["dwm-quickshell-state", "watch"]
         running: true
@@ -262,6 +294,13 @@ Scope {
         id: focusWindowProcess
 
         command: ["dwm-quickshell-state", "focus", "0"]
+        running: false
+    }
+
+    Process {
+        id: closeWindowProcess
+
+        command: ["dwm-quickshell-state", "close", "0"]
         running: false
     }
 }

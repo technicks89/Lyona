@@ -14,7 +14,7 @@ is nothing to port) rather than ports.
 | Item | Upstream | Kind | Size |
 | --- | --- | --- | --- |
 | [S6-01](#s6-01-live-panel-tooltip-position-on-window-resize) | `2461027` (`#343`) | Port, small | ~+5 code |
-| [S6-02](#s6-02-thunar-and-other-gtk-apps-stay-light-under-dark-themes) | issue `#348` | Lyona's own fix (no upstream code) | unscoped until reproduced |
+| [S6-02](#s6-02-thunar-and-other-gtk-apps-stay-light-under-dark-themes) | issue `#348` | Lyona's own fix (no upstream code) | ~+15 code, ~+80 tests — done |
 | [S6-03](#s6-03-hover-states-that-hide-text-in-light-themes) | issue `#349` | Lyona's own fix (no upstream code) | unscoped until reproduced |
 | [S6-04](#s6-04-cross-tag-window-overview) | issue `#350` | Lyona's own feature (no upstream code) | large; needs its own design pass |
 
@@ -64,33 +64,129 @@ test ends up covering it.
 ## S6-02: Thunar and other GTK apps stay light under dark themes
 
 Issue `#348`. Reported against Dracula and "a few other dark presets"; no
-upstream fix exists yet (issue is open, unassigned). **Not started**: needs
-reproduction on a real or nested X11 session with Lyona's actual shipped
-theme presets (`scripts/lyona-gtk-theme` and friends) before any fix is
-designed, since the issue itself says the affected preset list is still being
-narrowed. Likely area: `scripts/lyona-gtk-theme` / `scripts/theme-apply.sh`'s
-GTK3/GTK4 mapping for Dracula-family presets, and whether Thunar's own
-`gsettings`/`xfconf` schema picks up the applied `gtk-theme-name` the same way
-other GTK apps do.
+upstream fix exists yet (issue is open, unassigned).
 
-**How to confirm nothing breaks:** reproduce first (screenshot evidence, per
-the issue's own acceptance criteria), then a test that applies each shipped
-dark preset and asserts the GTK/Thunar-visible setting matches, plus a
-regression case for whichever preset(s) turn out affected.
+**Fixed (2026-09-22).** First investigated without reproducing it (see below
+for why that investigation gave a false negative), then reproduced for real
+against the maintainer's own live desktop (Tokyo Night, Thunar light) and
+root-caused there.
+
+**Root cause:** `lyona-gtk-theme generate-all`, which builds each palette's
+`Lyona-<theme>` GTK theme, is only ever invoked from
+`tests/test-lyona-gtk-theme.sh` and from `make install-system`'s
+`install-gtk-themes` step — nothing else in the tree calls it, including
+`scripts/dev-sync-install.sh`'s own `sudo make install`, which should reach
+it but had not produced the theme on the machine this was reproduced on. On
+a live system where that step has not run (or has not run since a palette
+was added to `themes.toml`), `Lyona-<theme>` genuinely does not exist
+anywhere `theme_apply.sh`'s `gtk_theme_available()` looks, and
+`theme-apply.sh` fell back to a literal `gtk-theme-name=Adwaita-dark` — a
+name recent GTK3/GTK4 does not resolve to any installed theme (the dark
+variant of Adwaita is the `gtk-application-prefer-dark-theme` hint, not a
+second theme with its own name), so it silently rendered light regardless of
+`$DARK_MODE`.
+
+This is why the first investigation pass (below) did not reproduce anything:
+it manually ran `lyona-gtk-theme generate-all` before every `theme-apply.sh`
+call, which is exactly the step the real bug was that nothing does
+automatically — the reproduction rig accidentally worked around its own bug.
+
+**Fix, in `scripts/theme-apply.sh`:**
+
+- If the palette's own `Lyona-<theme>` GTK theme is not found, generate it on
+  demand (`lyona-gtk-theme generate`) before falling back to anything, so a
+  live system self-heals on the next theme switch regardless of whether an
+  install step ever ran.
+- The genuine last-resort fallback (generation itself fails) is now plain
+  `Adwaita`, not the nonexistent `Adwaita-dark` — `gtk-application-prefer-dark-theme`
+  (already set correctly) is what actually gets Adwaita's dark rendering.
+- A user's own GTK theme override (Settings → Toolkit) is left alone by both
+  of the above, the same as it already won over the palette's own default —
+  this needed its own explicit guard once the generated theme became more
+  often actually present to compete with it (caught by a broader regression
+  sweep, `check-appearance`, before it went anywhere: mutation-testing this
+  fix without that regression sweep would not have caught it, since the
+  narrow new test alone did not exercise a *pre-existing* theme colliding
+  with a personalization override).
+
+New `make check-theme-apply-gtk-fallback` (5 cases): a missing theme is
+generated on demand; an existing one is not needlessly regenerated; a
+personalization override survives both when the generated theme already
+exists and when it does not; the corrected fallback name. All 5 confirmed to
+fail against the pre-fix script first. `check-appearance` (which exercises
+`dwm-settings-toolkit`'s personalization round-trip) re-run clean after the
+personalization-guard fix.
+
+**What follows is the original investigation, which did not reproduce the
+bug — kept for the record of what was checked and why it gave a false
+negative, not because any of it turned out wrong:**
+
+Ran `scripts/theme-apply.sh` for real (not stubbed) under an isolated
+`HOME`/XDG set, for every one of the 10 shipped dark presets (`nord`,
+`dracula`, `gruvbox`, `catppuccin`, `tokyonight`, `onedark`, `solarized`,
+`rosepine`, `everforest`, `monochrome`), **after generating their GTK themes
+with `lyona-gtk-theme generate-all`** — the step whose absence turned out to
+be the actual bug:
+
+- Every preset's `[theme.<id>]` section has both `dark_mode = true` and a
+  matching `gtk_theme = "Lyona-<id>"` — no missing or misspelled key for any
+  of them.
+- `lyona-gtk-theme generate-all` produced a `gtk-3.0/` and `gtk-4.0/` directory
+  for every one of the 10 (`gtk_theme_available()` finds all of them).
+- `theme-apply.sh` wrote `gtk-theme-name=Lyona-<id>` and
+  `gtk-application-prefer-dark-theme=1` into both
+  `~/.config/gtk-3.0/settings.ini` and `~/.config/gtk-4.0/settings.ini`, and
+  also set `org.gnome.desktop.interface gtk-theme`/`color-scheme` via
+  `gsettings` and `/Net/ThemeName` via `xfconf-query`, for all 10 presets — no
+  outlier, *once the theme had been generated first*.
+- The generated `Lyona-<id>/gtk-3.0/gtk.css` imports Adwaita's own
+  `gtk-contained-dark.css` as its base and only recolours named custom
+  properties on top, so it inherits Adwaita-dark's full widget coverage
+  rather than being a partial theme with gaps.
+
+Launching a real `thunar` process under Xvfb to visually confirm the render
+was also attempted, and was blocked on getting an unconfigured `dwm` (no
+`hotkeys.toml`/window rules in the sandbox) to actually map and size
+Thunar's window for a screenshot; that part of the investigation stayed
+inconclusive until the real-desktop reproduction above settled it directly.
 
 ## S6-03: Hover states that hide text in light themes
 
-Issue `#349`. Same shape as S6-02: reported, not yet reproduced against
-Lyona's presets, no upstream fix to port. Likely area: `Theme.qml`'s
-light-preset hover color tokens (`Theme.controlHoverFill` or equivalent) and
-whatever text-color token is expected to stay legible over it; Lyona's own
-Quickshell theme system is independent of upstream's GTK-only theming, so
-this may not even reproduce the same way here — reproduction decides that.
+Issue `#349`. Same shape as S6-02.
 
-**How to confirm nothing breaks:** reproduce across the shipped light presets
-first; a `tests/test-quickshell-design-system.sh`-style contrast check (Lyona
-already has precedent for contrast assertions from the accessibility work)
-for hover-state foreground/background pairs would give this permanent
+**Investigated (2026-09-22), not reproduced, one candidate found.** Checked
+the generated GTK CSS for all 5 shipped light presets (`catppuccin-latte`,
+`gruvbox-light`, `solarized-light`, `rosepine-dawn`, `tokyonight-day`):
+
+- Every light preset correctly imports Adwaita's *light* `gtk-contained.css`
+  (not the dark variant) as its base.
+- The explicit `button:hover`/`menuitem:hover` rules the generator writes use
+  palette-derived colours (`@lyona_overlay`, `@lyona_accent`) for every
+  preset, not a hardcoded dark value — nothing obviously wrong there.
+- None of the 5 presets define their own `row:hover`/`treeview:hover` rule at
+  all, so list/icon-view hover (what a file manager's own listing mostly
+  uses) falls through entirely to Adwaita's own light-mode hover, which
+  computes a low-opacity tint from `@theme_fg_color` — a colour every one of
+  these presets *does* override (`normfgcolor`, all reasonably muted dark
+  tones, `#3C3836`-`#657B83`-ish; no outlier that stands out as too saturated
+  or too dark relative to the others).
+
+Nothing here points at an obvious bug in what Lyona generates; the remaining,
+unverified possibility is that Adwaita's own light-mode row-hover alpha,
+combined with a *specific* preset's fg/bg pairing, crosses a contrast
+threshold that a plain colour-token read doesn't catch (this needs a real
+render, not just CSS values, to settle) or that the issue is really about
+Quickshell's own panel/pane hover states (`Theme.qml`) rather than GTK apps at
+all — the issue doesn't say which.
+
+**Next step, and how to confirm nothing breaks:** a maintainer reproduction
+(screenshot, which preset(s) and which specific control) is what actually
+unblocks a fix here, the same as S6-02. Once narrowed: for the GTK side, a
+computed-contrast check across `row:hover`/`button:hover` pairs added to
+`tests/test-lyona-gtk-theme.sh`; for the Quickshell side, a
+`tests/test-quickshell-design-system.sh`-style contrast check (Lyona already
+has precedent for contrast assertions from the accessibility work) for
+hover-state foreground/background pairs would give this permanent
 coverage instead of a one-off visual check.
 
 ## S6-04: Cross-tag window overview
@@ -98,14 +194,22 @@ coverage instead of a one-off visual check.
 Issue `#350`, a genuinely new feature (a "Mission Control"-style overview of
 windows across every tag, click to switch and focus). No upstream code exists
 to port — Chris opened this the same day as `#348`/`#349` with no PR yet.
-This is the largest item in this survey by far and needs its own design pass
-(a new Quickshell surface, dwm-side IPC or root-property exposure of
-cross-tag window state, keyboard navigation, multi-monitor handling) before
-any implementation estimate is meaningful. **Design done, implementation not started:**
-see [`docs/design/CROSS-TAG-WINDOW-OVERVIEW.md`](design/CROSS-TAG-WINDOW-OVERVIEW.md)
-for the proposed shape (no `dwm.c` change needed -- it reuses `_NET_CLIENT_LIST`,
-`_NET_WM_DESKTOP` and the existing `dwm-quickshell-state watch` stream), phased
-into five independently landable pieces.
+This is the largest item in this survey by far and needed its own design
+pass before any implementation estimate was meaningful. **Design done, and
+grown into its own three-sprint arc** rather than staying a single Sprint 6
+item, once the design made clear how much real surface area it has: see
+[`docs/design/CROSS-TAG-WINDOW-OVERVIEW.md`](design/CROSS-TAG-WINDOW-OVERVIEW.md)
+for the technical shape (no `dwm.c` change needed — it reuses
+`_NET_CLIENT_LIST`, `_NET_WM_DESKTOP` and the existing `dwm-quickshell-state
+watch` stream), and
+[`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md),
+[`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)
+and
+[`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md) for
+the implementation plan: the design doc's own version-one phasing (Sprint 7),
+finishing what the issue actually asked for plus two small, low-risk
+additions (Sprint 8), then real previews, motion, accessibility and
+performance validation, all explicitly beyond a first version (Sprint 9).
 
 ---
 

@@ -578,6 +578,14 @@ grep -Fq 'mask: Region {}' "$repo/config/quickshell/core/PanelTooltip.qml"
 grep -Fq 'anchor.edges: Edges.Left | Edges.Top' "$repo/config/quickshell/core/PanelTooltip.qml"
 grep -Fq 'anchor.gravity: Edges.Right | Edges.Bottom' "$repo/config/quickshell/core/PanelTooltip.qml"
 grep -Fq 'root.anchorItem.mapToGlobal(edge, 0)' "$repo/config/quickshell/core/PanelTooltip.qml"
+# anchor.rect.x is a live binding (a DPI change or monitor hot-plug between
+# anchoring passes must not leave it stale), not only set from onAnchoring (#343).
+grep -Fq 'anchor.rect.x: TooltipPosition.clampedX(root.anchorWindow.width, root.width, root.anchorX, root.rightAligned)' \
+	"$repo/config/quickshell/core/PanelTooltip.qml"
+if sed -n '/anchor.onAnchoring: {/,/^    }/p' "$repo/config/quickshell/core/PanelTooltip.qml" | grep -Fq 'anchor.rect.x ='; then
+	printf 'PanelTooltip.qml still sets anchor.rect.x imperatively from onAnchoring\n' >&2
+	exit 1
+fi
 grep -Fq 'opacity: 1.0' "$repo/config/quickshell/core/PanelPill.qml"
 grep -Fq 'opacity: 1.0' "$repo/config/quickshell/core/ShellSurface.qml"
 grep -Fq 'opacity: 1.0' "$repo/config/quickshell/core/ClickAwayPopup.qml"

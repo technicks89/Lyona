@@ -24,7 +24,10 @@ re-survey (Sprint 6). Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
 | **Sprint 3** ([`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md)) | ✅ Done, merged to `main` (through `ed5ba44`) |
 | **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **Code complete; qualification open.** S4-01 to S4-07 done, and S4-08's re-survey done (2026-09-20). Left, none of which can run in a sandbox: the manual **Full suite** workflow (sprint branch and `main`), and checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) |
 | **Sprint 5** ([`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md)) | 🚧 **Code complete; qualification open.** From S4-08's re-survey (`d4c6d89..d155edc`, 12 commits): S5-01 (Settings panes stay hidden until their data loads, completes `#315`), S5-02 (verified Flathub before Flatpak installs) and S5-03 (floating-toggle shrink, decision D-9: port as upstream) are done. Left, none of which can run in a sandbox: the manual **Full suite** workflow on the sprint branch and on `main`, and a hands-on check of the floating toggles and Settings panes on a real desktop (S5-01, S5-03) |
-| **Sprint 6** ([`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md)) | 📋 **Not started.** From a re-survey (`d155edc..6258133`, 4 commits, 2 dependabot excluded): S6-01 (a small, portable fix), and three freshly opened Chris issues with no upstream fix yet to port (S6-02 dark-theme Thunar mismatch, S6-03 light-theme hover text, S6-04 a cross-tag window overview — the largest item, needs its own design pass) |
+| **Sprint 6** ([`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md)) | 🚧 **In progress.** S6-01 (panel tooltip position) and S6-02 (dark-theme Thunar mismatch — root-caused as a missing GTK theme generation step, fixed) done. S6-03 (light-theme hover text) investigated, not reproduced yet; needs a maintainer screenshot. S6-04 (cross-tag window overview) designed and grown into Sprints 7–9 below |
+| **Sprint 7** ([`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md)) | 📋 **Not started.** Cross-tag window overview (issue `#350`, no upstream code), version-one foundation: per-window data, `DwmState.qml` resolution, a mouse-only popup |
+| **Sprint 8** ([`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)) | 📋 **Not started.** Same feature: keyboard navigation, multi-monitor labels, a window closing mid-use, plus type-to-filter and closing a window from its card |
+| **Sprint 9** ([`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md)) | 📋 **Not started.** Same feature, beyond version one: a live-thumbnail spike, motion, an accessibility pass, formal idle-CPU/performance validation at scale |
 | Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 Ported through Sprint 3 and Sprint 4 S4-01…S4-07 |
 
 ## Sprint plan
@@ -42,15 +45,21 @@ sized to one reviewable branch per item.
 | **2** | [`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) | System information, hardware, filesystems, security status, root encryption, screen-lock evidence, mount monitor, information card, Health navigation; **close `ROADMAP.md` Phase 6** | `#277`–`#288` + fixes | Sprint 1 (S1-03) |
 | **3** | [`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md) | Relative monitor placement, docked/undocked profiles, **`#310` battery gating (new)**, Control Center compaction, Settings readiness and lazy panes, **`#315` layout stability (new)**, Power menu / full-screen Settings / cursor reload / Blueman / Self-Heal, Appearance and typography, popup blur fix, pre-survey gaps | `#289`, `#290`, `c3e9a18`, `#291` (Settings), `#294`, `#295`, `#307`, `#324`, `#327`, `68a0d1f`, `#183`, `#188`, `#191` | — (one hunk touches Sprint 1's `SystemRegionalControls.qml`) |
 | **5** | [`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md) | Settings panes stay hidden until data loads (`#335`, completes `#315`), verified Flathub before Flatpak installs (`#334`), floating-toggle shrink (`#331`/`#333`, decision D-9) | `#329`–`#339` (issues `#330`, `#332`) | Sprint 3 (S5-01 replaces S3-05's placeholder) |
-| **6** | [`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md) | Live panel tooltip position (small port), dark-theme Thunar mismatch, light-theme hover text, cross-tag window overview (all three: Lyona's own fix/feature, no upstream code yet) | `#343`, issues `#348`–`#350` | — |
+| **6** | [`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md) | Live panel tooltip position (small port), dark-theme Thunar mismatch, light-theme hover text, and the cross-tag window overview's design pass (all Lyona's own fix/feature, no upstream code yet) | `#343`, issues `#348`–`#350` | — |
 | **4** | [`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md) | Configuration-backed Picom controls, **`#308` media/image defaults**, icon themes + theme convergence (the XSETTINGS lock fix, `#328`, turned out not to apply to Lyona), installer/session fixes, dwmterm (declined), desktop-update UX (D-8), N/A record, re-survey and qualification | `#312`–`#314`, `3d982b8`, `#317`, `#301`, `#328`, `#283`, `#255`, `#318`–`#323`, Fedora-only commits | Sprint 3 (S3-07) for S4-01 |
+| **7** | [`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md) | Cross-tag window overview, version-one foundation: per-window data (`dwm-quickshell-state`), `DwmState.qml` resolution, a mouse-only popup | issue `#350` (from S6-04's design pass) | Sprint 6 (S6-04's design) |
+| **8** | [`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) | Same feature: keyboard navigation, multi-monitor labels, a window closing mid-use, type-to-filter, closing a window from its card | issue `#350` | Sprint 7 |
+| **9** | [`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md) | Same feature, beyond version one: a live-thumbnail spike, motion, an accessibility pass, idle-CPU/performance validation at scale | issue `#350` | Sprint 8 |
 
 Sprints 1→2 and 3→4 are ordered. **The two pairs are independent**, so
 Sprint 3 can run before or alongside Sprint 2. **Sprint 5** exists because
 S4-08's re-survey found new upstream work; it follows Sprint 3 and is
 independent of the rest of Sprint 4. **Sprint 6** exists because a later
 re-survey (2026-09-21) found more, as anticipated here; it is independent of
-every earlier sprint.
+every earlier sprint. **Sprints 7-9** exist because Sprint 6's own S6-04 item
+(the cross-tag window overview) turned out too large for one sprint once
+designed; they are strictly ordered (7→8→9), each depending on the one
+before it, and independent of every other sprint.
 
 The GitHub milestones and issues for these sprints are created by
 [`sync-sprints-github.sh`](sync-sprints-github.sh). See its header for usage.
@@ -236,7 +245,7 @@ N/A for Arch-based Lyona, not tracked further).
 | `#347` Optimize DNF mirrors before initial update | **open** | N/A (Fedora `DNF`) |
 | `#348` Dark themes: Thunar stays light (Dracula and others) | **open, no upstream code** | Sprint 6 S6-02, Lyona's own fix once reproduced |
 | `#349` Light themes: dark hover backgrounds obscure text | **open, no upstream code** | Sprint 6 S6-03, Lyona's own fix once reproduced |
-| `#350` Cross-tag Mission-Control-style window overview | **open, no upstream code** | Sprint 6 S6-04, Lyona's own feature, needs its own design pass |
+| `#350` Cross-tag Mission-Control-style window overview | **open, no upstream code** | Designed in Sprint 6 S6-04, implemented across Sprints 7–9, Lyona's own feature |
 
 Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
 

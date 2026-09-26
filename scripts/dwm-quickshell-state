@@ -70,7 +70,7 @@ active_window_id() {
 client_snapshot() {
 	client_list=$1
 	[ -n "$client_list" ] || {
-		printf 'occupied=\napps=\n'
+		printf 'occupied=\napps=\nwindows=\n'
 		return 0
 	}
 
@@ -81,7 +81,7 @@ client_snapshot() {
 			window_id=${window_id##* }
 			[ -n "$window_id" ] || continue
 			printf 'LYONA-WINDOW %s\n' "$window_id"
-			xprop -id "$window_id" _NET_WM_DESKTOP _NET_WM_PID WM_CLASS 2>/dev/null || true
+			xprop -id "$window_id" _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
 		done
 		IFS=$snapshot_ifs
 	} | awk '
@@ -98,12 +98,39 @@ client_snapshot() {
 			close(status_path)
 			return uid
 		}
+		function sanitize_title(value) {
+			gsub(/\|/, " ", value)
+			gsub(/[\t\r\n]/, " ", value)
+			gsub(/  +/, " ", value)
+			sub(/^ /, "", value)
+			sub(/ $/, "", value)
+			return value
+		}
+		# A WM_CLASS is not free text like a title: unlike sanitize_title,
+		# whose lossy space-replacement is fine for display, a class needs to
+		# round-trip exactly (it feeds Icons.launcherIcon lookups and is
+		# matched against elsewhere), so a "%"/":"/"|" collision with this
+		# wire format own separators is escaped rather than destroyed --
+		# percent-encoded the way encodeURIComponent would, and decoded back
+		# on the QML side via DwmStateWindows.js decodeClass. "%" must be
+		# escaped first so the "%" introduced by escaping ":"/"|" is never
+		# itself re-escaped.
+		function sanitize_class(value) {
+			gsub(/%/, "%25", value)
+			gsub(/:/, "%3A", value)
+			gsub(/\|/, "%7C", value)
+			return value
+		}
 		function flush(   value) {
 			if (window == "") {
 				return
 			}
 			if (desktop != "" && desktop ~ /^[0-9]+$/ && desktop != 4294967295) {
 				desktops[desktop] = 1
+			}
+			if (!(pid != "" && owner_uid(pid) == 0)) {
+				value = window ":" desktop ":" class ":" sanitize_title(title)
+				windows[++nwindows] = value
 			}
 			if (class != "" && !(pid != "" && owner_uid(pid) == 0)) {
 				if (!((("|" class "|")) in seen)) {
@@ -112,7 +139,7 @@ client_snapshot() {
 					apps[++napps] = value
 				}
 			}
-			window = ""; desktop = ""; pid = ""; class = ""
+			window = ""; desktop = ""; pid = ""; class = ""; title = ""; have_net_wm_name = 0
 		}
 		/^LYONA-WINDOW / { flush(); window = $2; next }
 		/^_NET_WM_DESKTOP/ { sub(/^[^=]*= */, ""); desktop = $0; next }
@@ -121,7 +148,26 @@ client_snapshot() {
 			sub(/^[^=]*= */, "")
 			gsub(/"/, "")
 			split($0, classes, /, /)
-			class = tolower(classes[2])
+			class = sanitize_class(tolower(classes[2]))
+			next
+		}
+		# A property the window does not set prints "PROP:  not found." (no
+		# "(" after the name), never a real value; only a line with "(" is a
+		# genuine title, the same distinction window_title() makes with its
+		# own -F"= " split (where a "not found" line leaves $2 empty).
+		/^_NET_WM_NAME\(/ {
+			sub(/^[^=]*= */, "")
+			gsub(/"/, "")
+			title = $0
+			have_net_wm_name = 1
+			next
+		}
+		/^WM_NAME\(/ {
+			if (!have_net_wm_name) {
+				sub(/^[^=]*= */, "")
+				gsub(/"/, "")
+				title = $0
+			}
 			next
 		}
 		END {
@@ -149,6 +195,12 @@ client_snapshot() {
 				out = out (i > 1 ? "|" : "") apps[i]
 			}
 			printf "apps=%s\n", out
+
+			out = ""
+			for (i = 1; i <= nwindows; i++) {
+				out = out (i > 1 ? "|" : "") windows[i]
+			}
+			printf "windows=%s\n", out
 		}
 	'
 }
@@ -192,7 +244,20 @@ window_class() {
 	window_id=$1
 	[ -n "$window_id" ] || return 1
 	xprop -id "$window_id" WM_CLASS 2>/dev/null |
-		awk -F'= ' '/^WM_CLASS/ { gsub(/"/, "", $2); split($2, classes, /, /); print tolower(classes[2]); exit }'
+		awk -F'= ' '
+			# Same scheme as client_snapshot() own sanitize_class(): this
+			# feeds the single active window class= line, which shares
+			# DwmState.qml activeWindowClass parsing with DwmStateWindows.js
+			# decodeClass(), so both must escape the same way for a WM_CLASS
+			# containing "%"/":"/"|" to round-trip.
+			function sanitize_class(value) {
+				gsub(/%/, "%25", value)
+				gsub(/:/, "%3A", value)
+				gsub(/\|/, "%7C", value)
+				return value
+			}
+			/^WM_CLASS/ { gsub(/"/, "", $2); split($2, classes, /, /); print sanitize_class(tolower(classes[2])); exit }
+		'
 }
 
 root_snapshot() {
@@ -300,13 +365,19 @@ ROOT_SNAPSHOT
 	class=${class:-application-x-executable}
 	occupied=
 	apps=
+	windows=
 	snapshot=$(client_snapshot "$clients")
 	occupied=${snapshot%%
 *}
 	occupied=${occupied#occupied=}
-	apps=${snapshot#*
+	rest=${snapshot#*
 }
+	apps=${rest%%
+*}
 	apps=${apps#apps=}
+	windows=${rest#*
+}
+	windows=${windows#windows=}
 	monitor_desktops=${monitor_desktops:-$current}
 
 	printf 'current=%s\n' "$current"
@@ -317,6 +388,7 @@ ROOT_SNAPSHOT
 	printf 'occupied=%s\n' "$occupied"
 	printf 'fullscreen_monitors=%s\n' "$fullscreen_monitors"
 	printf 'apps=%s\n' "$apps"
+	printf 'windows=%s\n' "$windows"
 	printf 'active_window=%s\n' "$window_id"
 	printf 'title=%s\n' "$title"
 	printf 'class=%s\n' "$class"
@@ -324,8 +396,15 @@ ROOT_SNAPSHOT
 }
 
 watch_state() {
-	show_state
-	printf '\n'
+	watch_dir=$(mktemp -d)
+	client_pids=
+	root_pid=
+	trap 'watch_cleanup' EXIT
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	mkfifo "$watch_dir/events"
+	exec 3<>"$watch_dir/events"
 
 	if xprop -root _DWM_MONITOR_DESKTOPS >/dev/null 2>&1; then
 		xprop -root -spy \
@@ -337,7 +416,7 @@ watch_state() {
 			_NET_ACTIVE_WINDOW \
 			_NET_CLIENT_LIST \
 			_DWM_FULLSCREEN_MONITORS \
-			WM_NAME 2>/dev/null
+			WM_NAME >&3 2>/dev/null &
 	else
 		xprop -root -spy \
 			DWM_TAG_UPDATE \
@@ -347,12 +426,50 @@ watch_state() {
 			_NET_ACTIVE_WINDOW \
 			_NET_CLIENT_LIST \
 			_DWM_FULLSCREEN_MONITORS \
-			WM_NAME 2>/dev/null
-	fi |
-		while IFS= read -r _event; do
-			show_state
-			printf '\n'
-		done
+			WM_NAME >&3 2>/dev/null &
+	fi
+	root_pid=$!
+	watch_clients
+	show_state
+	printf '\n'
+
+	while IFS= read -r event <&3; do
+		case $event in
+		_NET_CLIENT_LIST*) watch_clients ;;
+		esac
+		show_state
+		printf '\n'
+	done
+}
+
+watch_clients() {
+	for watcher_pid in $client_pids; do
+		kill "$watcher_pid" 2>/dev/null || true
+		wait "$watcher_pid" 2>/dev/null || true
+	done
+	client_pids=
+	client_list=$(root_property_value _NET_CLIENT_LIST)
+	old_ifs=$IFS
+	IFS=,
+	for window_id in $client_list; do
+		window_id=${window_id##* }
+		[ -n "$window_id" ] || continue
+		xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP >&3 2>/dev/null &
+		client_pids="$client_pids $!"
+	done
+	IFS=$old_ifs
+}
+
+watch_cleanup() {
+	trap - EXIT HUP INT TERM
+	for watcher_pid in $client_pids $root_pid; do
+		[ -n "$watcher_pid" ] || continue
+		kill "$watcher_pid" 2>/dev/null || true
+		wait "$watcher_pid" 2>/dev/null || true
+	done
+	exec 3>&-
+	rm -f "$watch_dir/events"
+	rmdir "$watch_dir"
 }
 
 switch_workspace() {
@@ -392,6 +509,32 @@ focus_window() {
 	fi
 }
 
+# Closing a card from the overview popup (Sync Sprint 8 S8-04,
+# docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, which is
+# the only client dwm.c's own killclient() closes -- most cards are not the
+# focused window. A plain ICCCM WM_DELETE_WINDOW client message sent
+# directly to the target id (the same graceful-close request killclient()
+# itself sends first) needs no dwm.c change and no new EWMH property; it is
+# routed by the X server, not the window manager.
+close_window() {
+	target=${1:-}
+	case $target in
+	0x[0-9a-fA-F]* | [0-9]*) ;;
+	*)
+		printf 'usage: %s close <window-id>\n' "$0" >&2
+		return 2
+		;;
+	esac
+	if command -v xdotool >/dev/null 2>&1; then
+		xdotool windowclose "$target"
+	elif command -v wmctrl >/dev/null 2>&1; then
+		wmctrl -ic "$target"
+	else
+		printf 'xdotool or wmctrl is required to close a window\n' >&2
+		return 127
+	fi
+}
+
 case ${1:-state} in
 state)
 	show_state
@@ -405,8 +548,11 @@ switch)
 focus)
 	focus_window "${2:-}"
 	;;
+close)
+	close_window "${2:-}"
+	;;
 *)
-	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>]\n' "$0" >&2
+	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>|close <window-id>]\n' "$0" >&2
 	exit 2
 	;;
 esac
