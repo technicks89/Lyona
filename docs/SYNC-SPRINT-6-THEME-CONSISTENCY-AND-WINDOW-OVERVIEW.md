@@ -194,13 +194,22 @@ coverage instead of a one-off visual check.
 Issue `#350`, a genuinely new feature (a "Mission Control"-style overview of
 windows across every tag, click to switch and focus). No upstream code exists
 to port — Chris opened this the same day as `#348`/`#349` with no PR yet.
-This is the largest item in this survey by far and needs its own design pass
-(a new Quickshell surface, dwm-side IPC or root-property exposure of
-cross-tag window state, keyboard navigation, multi-monitor handling) before
-any implementation estimate is meaningful. **Not started; recommend scoping
-as its own follow-up document (`design/CROSS-TAG-OVERVIEW.md` or similar)
-once someone picks it up, rather than folding a large new-surface design into
-this sprint doc.**
+This is the largest item in this survey by far and needed its own design
+pass before any implementation estimate was meaningful. **Design done, and
+grown into its own three-sprint arc** rather than staying a single Sprint 6
+item, once the design made clear how much real surface area it has: see
+[`docs/design/CROSS-TAG-WINDOW-OVERVIEW.md`](design/CROSS-TAG-WINDOW-OVERVIEW.md)
+for the technical shape (no `dwm.c` change needed — it reuses
+`_NET_CLIENT_LIST`, `_NET_WM_DESKTOP` and the existing `dwm-quickshell-state
+watch` stream), and
+[`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md),
+[`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)
+and
+[`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md) for
+the implementation plan: the design doc's own version-one phasing (Sprint 7),
+finishing what the issue actually asked for plus two small, low-risk
+additions (Sprint 8), then real previews, motion, accessibility and
+performance validation, all explicitly beyond a first version (Sprint 9).
 
 ---
 
