@@ -43,7 +43,9 @@ grep -Fq 'ipcActionRequested(string target, string action, string argument, var 
 grep -Fq 'function focusedScreen()' "$repo/config/quickshell/state/DwmState.qml"
 grep -Fq 'property int focusedMonitorIndex: -1' "$repo/config/quickshell/state/DwmState.qml"
 grep -Fq 'root.focusedMonitorIndex >= 0' "$repo/config/quickshell/state/DwmState.qml"
-grep -Fq 'if (visible) commandMenuModel.close();' "$shell"
+launcher_visible_body=$(awk '/LauncherModel \{/{f=1} f&&/onVisibleChanged/{g=1} g{print} g&&/^        \}/{exit}' "$shell")
+printf '%s\n' "$launcher_visible_body" | grep -Fq 'commandMenuModel.close();'
+printf '%s\n' "$launcher_visible_body" | grep -Fq 'overviewModel.close();'
 select_panel_popup_body=$(sed -n '/function selectPanelPopup(panel, popupId)/,/^    }$/p' "$shell")
 printf '%s\n' "$select_panel_popup_body" | grep -Fq 'commandMenuModel.close();'
 # Opening a panel popup also closes the other floating surfaces, so the launcher,

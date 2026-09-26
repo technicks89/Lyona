@@ -171,13 +171,22 @@ every sprint item to also land a `TASKS.md`/`CHANGELOG.md`/`docs/evidence/`
 update in the same PR, so completed items are pinned here too, not only in
 `CHANGELOG.md`.
 
-- [ ] Sync Sprint 8 S8-01 — cross-tag window overview keyboard navigation
+- [x] Sync Sprint 8 S8-01 — cross-tag window overview keyboard navigation
   (arrow keys, Home/End move the selection, Enter activates it; selection
   wraps and clamps; the selected card gets a visible highlight), issue
   `#350` — `tests/qml/tst_overview_selection.qml` (pure selection math,
   `qmltestrunner`), `tests/test-quickshell-overview.sh` (wiring pins).
-  Evidence: `docs/evidence/s8-01-overview-keyboard-nav.md`. Keep this item
-  unchecked until that evidence records a passing `qmltestrunner` run for
-  `tests/qml/tst_overview_selection.qml`; before Sprint 8 closes, it must also
-  record the **Full suite (manual)** run URL. The rest of S8-02 (multi-monitor
-  label polish, the window-closes-while-open edge case) is not done.
+  Evidence: `docs/evidence/s8-01-overview-keyboard-nav.md`, which records a
+  passing Qt 6 `qmltestrunner` run (11 selection tests, 148 in the suite).
+- [ ] Sync Sprint 8 S8-02 to S8-04 — multi-monitor labels, type-to-filter and
+  close-from-card, issue `#350`. Implemented (UI in #138, model in Sprint 10
+  S10-01) and verified locally by `tests/test-quickshell-overview-xvfb.sh`
+  (`make check-quickshell-overview-xvfb`, 22 assertions) and
+  `tests/qml/tst_overview_filter.qml`. Keep unchecked until the **Full suite
+  (manual)** run URL is recorded (Sprint 10 S10-06). Not tested: real key
+  presses and mouse clicks against the popup, and a multi-monitor label check.
+- [ ] Sync Sprint 10 — completion audit
+  (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md`). Done in the working tree:
+  S10-01 to S10-05, S10-08. Open: S10-06 (Full suite green on `main`, needs
+  the branch merged and the workflow run) and S10-07 (hardware qualification
+  ledger; needs real hardware).

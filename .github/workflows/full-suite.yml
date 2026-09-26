@@ -93,6 +93,26 @@ jobs:
           path: /var/tmp/lyona-ci/full-suite.log
           if-no-files-found: ignore
 
+  display-security:
+    name: display helper security (root, disposable container)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: archlinux:base-devel
+    env:
+      # tests/test-settings-display-security.sh installs and rewrites system
+      # paths, so it refuses to run anywhere but a disposable root container.
+      DWM_SECURITY_CONTAINER: "1"
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the display helper security test
+        run: make check-settings-display-security
+
   clang-build:
     name: clang build
     if: inputs.clang
