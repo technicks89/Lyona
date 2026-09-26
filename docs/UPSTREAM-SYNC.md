@@ -22,12 +22,13 @@ re-survey (Sprint 6). Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
 | **Sprint 1** ([`SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md)) | ✅ Done, merged `e947fa7` (#68) |
 | **Sprint 2** ([`SYNC-SPRINT-2-SYSTEM-INFORMATION.md`](SYNC-SPRINT-2-SYSTEM-INFORMATION.md)) | ✅ Done (2026-09-19) — closes `ROADMAP.md` Phase 6, see its own "Completion Evidence" |
 | **Sprint 3** ([`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md)) | ✅ Done, merged to `main` (through `ed5ba44`) |
-| **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **Code complete; qualification open.** S4-01 to S4-07 done, and S4-08's re-survey done (2026-09-20). Left, none of which can run in a sandbox: the manual **Full suite** workflow (sprint branch and `main`), and checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) |
-| **Sprint 5** ([`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md)) | 🚧 **Code complete; qualification open.** From S4-08's re-survey (`d4c6d89..d155edc`, 12 commits): S5-01 (Settings panes stay hidden until their data loads, completes `#315`), S5-02 (verified Flathub before Flatpak installs) and S5-03 (floating-toggle shrink, decision D-9: port as upstream) are done. Left, none of which can run in a sandbox: the manual **Full suite** workflow on the sprint branch and on `main`, and a hands-on check of the floating toggles and Settings panes on a real desktop (S5-01, S5-03) |
+| **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **Code complete; qualification open.** S4-01 to S4-07 done, and S4-08's re-survey done (2026-09-20). Left, none of which can run in a sandbox: the manual **Full suite** workflow (sprint branch and `main`), and checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) Tracked in [Sprint 10](SYNC-SPRINT-10-COMPLETION-AUDIT.md) S10-07, not by the closed milestone |
+| **Sprint 5** ([`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md)) | 🚧 **Code complete; qualification open.** From S4-08's re-survey (`d4c6d89..d155edc`, 12 commits): S5-01 (Settings panes stay hidden until their data loads, completes `#315`), S5-02 (verified Flathub before Flatpak installs) and S5-03 (floating-toggle shrink, decision D-9: port as upstream) are done. Left, none of which can run in a sandbox: the manual **Full suite** workflow on the sprint branch and on `main`, and a hands-on check of the floating toggles and Settings panes on a real desktop (S5-01, S5-03) Tracked in [Sprint 10](SYNC-SPRINT-10-COMPLETION-AUDIT.md) S10-07, not by the closed milestone |
 | **Sprint 6** ([`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md)) | 🚧 **In progress.** S6-01 (panel tooltip position) and S6-02 (dark-theme Thunar mismatch — root-caused as a missing GTK theme generation step, fixed) done. S6-03 (light-theme hover text) investigated, not reproduced yet; needs a maintainer screenshot. S6-04 (cross-tag window overview) designed and grown into Sprints 7–9 below |
-| **Sprint 7** ([`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md)) | 📋 **Not started.** Cross-tag window overview (issue `#350`, no upstream code), version-one foundation: per-window data, `DwmState.qml` resolution, a mouse-only popup |
-| **Sprint 8** ([`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)) | 📋 **Not started.** Same feature: keyboard navigation, multi-monitor labels, a window closing mid-use, plus type-to-filter and closing a window from its card |
+| **Sprint 7** ([`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md)) | ✅ **Done** (#134, #135, plus Sprint 10 S10-02/S10-05). Cross-tag window overview (issue `#350`, no upstream code), version-one foundation: per-window data, `DwmState.qml` resolution, a mouse-only popup. The popup originally shipped with `check-quickshell-command-menu` red and no changelog entries for S7-02/S7-03; both fixed in Sprint 10 |
+| **Sprint 8** ([`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)) | 🚧 **Code complete; Full suite run open.** S8-01 keyboard navigation (#137), S8-02 to S8-04 monitor labels, type-to-filter and close-from-card (UI in #138; the model half was missing and landed in Sprint 10 S10-01). Verified by `check-quickshell-overview-xvfb`. Left: the **Full suite (manual)** run URL (S10-06); real key/mouse events and a multi-monitor label check are untested |
 | **Sprint 9** ([`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md)) | 📋 **Not started.** Same feature, beyond version one: a live-thumbnail spike, motion, an accessibility pass, formal idle-CPU/performance validation at scale |
+| **Sprint 10** ([`SYNC-SPRINT-10-COMPLETION-AUDIT.md`](SYNC-SPRINT-10-COMPLETION-AUDIT.md)) | 🚧 **In progress.** Completion audit of `main` at `8448bb5`. S10-01 to S10-05 and S10-08 done. Left: S10-06 (a green **Full suite** run on `main`, needs this merged first) and S10-07 (hardware qualification ledger, needs real hardware) |
 | Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 Ported through Sprint 3 and Sprint 4 S4-01…S4-07 |
 
 ## Sprint plan
@@ -50,6 +51,7 @@ sized to one reviewable branch per item.
 | **7** | [`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md) | Cross-tag window overview, version-one foundation: per-window data (`dwm-quickshell-state`), `DwmState.qml` resolution, a mouse-only popup | issue `#350` (from S6-04's design pass) | Sprint 6 (S6-04's design) |
 | **8** | [`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) | Same feature: keyboard navigation, multi-monitor labels, a window closing mid-use, type-to-filter, closing a window from its card | issue `#350` | Sprint 7 |
 | **9** | [`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md) | Same feature, beyond version one: a live-thumbnail spike, motion, an accessibility pass, idle-CPU/performance validation at scale | issue `#350` | Sprint 8 |
+| **10** | [`SYNC-SPRINT-10-COMPLETION-AUDIT.md`](SYNC-SPRINT-10-COMPLETION-AUDIT.md) | Restore the overview model (filter, close-from-card), repair the command-menu test, run the tests `make check` skips, real-input overview tests, Sprint 7/8 tracking, a green recorded Full suite, hardware-qualification ledger | audit of Sprints 1-9 | Sprint 8 (S10-01, S10-04, S10-05); otherwise none |
 
 Sprints 1→2 and 3→4 are ordered. **The two pairs are independent**, so
 Sprint 3 can run before or alongside Sprint 2. **Sprint 5** exists because
@@ -59,7 +61,9 @@ re-survey (2026-09-21) found more, as anticipated here; it is independent of
 every earlier sprint. **Sprints 7-9** exist because Sprint 6's own S6-04 item
 (the cross-tag window overview) turned out too large for one sprint once
 designed; they are strictly ordered (7→8→9), each depending on the one
-before it, and independent of every other sprint.
+before it, and independent of every other sprint. **Sprint 10** exists because an audit of `main` (2026-09-25) found
+items marked done that are not; it depends on Sprint 8 only for the overview
+items and is otherwise independent.
 
 The GitHub milestones and issues for these sprints are created by
 [`sync-sprints-github.sh`](sync-sprints-github.sh). See its header for usage.
@@ -423,9 +427,11 @@ doc says so. Each item updates `TASKS.md`, `CHANGELOG.md` and
 `AGENTS.md`. Sync Phase 5 and #33 both missed this, and Sprint 1 S1-02
 exists only to clean up after it.
 
-When a sprint's items are all merged, delete its `SYNC-SPRINT-N-*.md`
-document, per this project's convention that plans are removed once
-implemented, and mark it ✅ in the sprint plan table above.
+When a sprint's items are all merged, mark it ✅ in the sprint plan table
+above. Its `SYNC-SPRINT-N-*.md` document is **kept**: code comments,
+`CHANGELOG.md` entries and `docs/evidence/` cite these by path, and no
+sprint document has been removed. Only the earlier phase-numbered plans
+below were retired.
 
 ### Retired plan documents
 

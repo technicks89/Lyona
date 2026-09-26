@@ -61,6 +61,7 @@ sprints=(
 	"7|Sync Sprint 7 — Cross-tag overview: foundation|SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md"
 	"8|Sync Sprint 8 — Cross-tag overview: interaction|SYNC-SPRINT-8-OVERVIEW-INTERACTION.md"
 	"9|Sync Sprint 9 — Cross-tag overview: polish|SYNC-SPRINT-9-OVERVIEW-POLISH.md"
+	"10|Sync Sprint 10 - Completion audit|SYNC-SPRINT-10-COMPLETION-AUDIT.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -117,6 +118,14 @@ items=(
 	"9|S9-02|s9-02-motion-and-visual-polish|Motion and visual polish|issue #350"
 	"9|S9-03|s9-03-accessibility-pass|Accessibility pass|issue #350"
 	"9|S9-04|s9-04-idle-cpu-and-many-window-performance|Idle-CPU and many-window performance|issue #350"
+	"10|S10-01|s10-01-restore-the-overview-model-behind-type-to-filter-and-close-from-card|Restore the overview model behind type-to-filter and close-from-card|completion audit"
+	"10|S10-02|s10-02-repair-the-command-menu-pin-that-the-overview-popup-broke|Repair the command-menu pin that the overview popup broke|completion audit"
+	"10|S10-03|s10-03-run-the-tests-that-make-check-never-ran|Run the tests that make check never ran|completion audit"
+	"10|S10-04|s10-04-drive-the-overview-through-real-input-under-xvfb|Drive the overview through real input under Xvfb|completion audit"
+	"10|S10-05|s10-05-backfill-sprint-7-and-8-tracking|Backfill Sprint 7 and 8 tracking|completion audit"
+	"10|S10-06|s10-06-get-the-full-suite-green-on-main-and-record-it|Get the Full suite green on main and record it|completion audit"
+	"10|S10-07|s10-07-qualification-ledger-for-sprints-closed-with-hardware-checks-open|Qualification ledger for sprints closed with hardware checks open|completion audit"
+	"10|S10-08|s10-08-correct-the-status-tables|Correct the status tables|completion audit"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \

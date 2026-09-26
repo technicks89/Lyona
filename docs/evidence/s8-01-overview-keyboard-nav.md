@@ -39,6 +39,10 @@ case.
 
 ## Plan-document note
 
+**Superseded:** `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md` was added to the
+repository afterwards (PR #140), so the paragraph below is history, not a
+current gap.
+
 The CHANGELOG entry and the new source comments cite
 `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md` as this item's plan document.
 That file does not exist anywhere in this repository (checked the working
@@ -113,3 +117,26 @@ result here.
 No CI run URL is recorded here either, for the same reason
 `docs/UPSTREAM-SYNC.md#verification` asks for one: this environment cannot
 trigger the **Full suite (manual)** GitHub Actions workflow.
+
+## Verification run on a host with the tooling (Sync Sprint 10 S10-05)
+
+The sandbox above had no `qmltestrunner`, so this item was closed (issue
+`#125`) before its own test had ever run. Run 2026-09-25 on CachyOS with
+Qt 6 (`/usr/lib/qt6/bin/qmltestrunner`; on a host with Qt 5 also installed,
+plain `qmltestrunner` is the Qt 5 binary and exits 1 with no output, which
+is why `tests/test-quickshell-system-discovery-cycle.sh` uses the Qt 6 path):
+
+```
+$ QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests/qml
+Totals: 148 passed, 0 failed, 0 skipped, 0 blacklisted
+  OverviewSelection 11, OverviewFilter 12, DwmStateWindows 22,
+  PanelTooltipPosition 9, DisplayLayout 9, SystemDiscoveryCycle 16,
+  SystemInformationProtocol 17, SystemOperationProtocol 18,
+  SystemRegionalPreflightProtocol 34
+```
+
+`tests/test-quickshell-overview.sh` (wiring pins), `test-quickshell-state.sh`
+and `test-quickshell-state-close.sh` also pass on that host. The **Full suite
+(manual)** run URL is still not recorded; the workflow has not passed since it
+was introduced (Sprint 10 S10-06).
+

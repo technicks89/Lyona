@@ -196,6 +196,29 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Multi-monitor labels, type-to-filter and close-from-card for the cross-tag window overview (Sync Sprint 8 S8-02
+  through S8-04, `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, issue `#350`; the model half landed in Sync Sprint 10
+  S10-01, see "Fixed"). `OverviewCard.qml` shows a monitor label only when more than one monitor is present; a search
+  box in `WindowOverview.qml` narrows the cards by title or class through `OverviewFilter.js`'s `filterWindows()`
+  (case-insensitive substring, the launcher's own convention); each card has a close button that sends
+  `WM_DELETE_WINDOW` through `dwm-quickshell-state close` (`DwmState.closeWindow()`) and hides the card at once via
+  `OverviewFilter.js`'s `excludeIds()`, without waiting for the next `_NET_CLIENT_LIST` update. A window that ignores
+  the close request stays hidden until the popup is reopened. `tests/test-quickshell-overview-xvfb.sh` (new,
+  `make check-quickshell-overview-xvfb`) loads the real `OverviewModel` and `WindowOverview` under Xvfb against a stub
+  `dwmState` and asserts filtering, selection clamping, close-from-card, a window vanishing mid-use, and a clean
+  reopen (22 assertions, mutation-checked against three broken models); real key presses and mouse clicks are not
+  simulated, the model calls their handlers make are.
+
+- `DwmState.qml` exposes the per-window list as `windowStates` and resolves each window to a tag and monitor through
+  `DwmStateWindows.js` (`windowsByTag()`, `groupByTag()`) (Sync Sprint 7 S7-02,
+  `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, issue `#350`), covered by `tests/qml/tst_dwm_state_windows.qml`.
+  Recorded here after the fact: the original PR (#134) carried no changelog entry.
+
+- A cross-tag window overview popup (`config/quickshell/overview/`): one card per open window grouped by tag, click to
+  switch tag and focus the window, Escape or click-away to close (Sync Sprint 7 S7-03,
+  `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, issue `#350`). Recorded here after the fact: the original PR (#135)
+  carried no changelog entry.
+
 - Keyboard navigation for the cross-tag window overview (Sync Sprint 8 S8-01,
   `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`): the exact
   `Keys.onPressed` shape `LauncherWindow.qml` already has (arrows/Home/End move the selection, Enter activates it;
@@ -1531,6 +1554,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `make check` failed on a from-scratch checkout).
 
 ### Fixed
+
+- The cross-tag window overview's type-to-filter and close-from-card did nothing, and the popup logged
+  `WindowOverview.qml: Unable to assign [undefined] to QString` and `TypeError: Cannot read property 'length' of
+  undefined` as soon as the shell loaded (Sync Sprint 10 S10-01). PR #138 merged `WindowOverview.qml`,
+  `OverviewCard.qml` and `OverviewFilter.js` but not the model half: `OverviewModel.qml` defined no `query`,
+  `setQuery()` or `closeCard()` and never imported `OverviewFilter.js`. It now has `query`, `closingIds`,
+  `visibleWindows` (the filtered list `groups` is built from), `setQuery()`, `closeCard()`, and clamps `selectedIndex`
+  whenever the card list shrinks; `open()`/`close()` reset the query and pending closes. The same error failed
+  `check-quickshell-queued-run-xvfb`, `-picom-model-xvfb`, `-settings-responsiveness-xvfb`, `-update-progress-xvfb`
+  and `-wallpaper-reconcile-xvfb`, which load the real shell, so `make check` stopped at the first of them and never
+  reached the rest. `tests/test-quickshell-overview.sh` now also fails when any member the overview QML reads off the
+  model is not defined on it, which is the check that was missing.
+- `check-quickshell-command-menu` had been failing since the overview popup landed (#135), which changed
+  `shell.qml`'s launcher `onVisibleChanged` block from a one-line `if` to a block that also closes the overview; the
+  test pinned the old one-line text. It now pins the behavior (opening the launcher closes the command menu and the
+  overview) instead of the formatting (Sync Sprint 10 S10-02).
+- `make check` never ran `check-quickshell-health-navigation-xvfb`, `check-quickshell-information-ui-xvfb` or
+  `check-quickshell-health-xvfb`, although Sprint 2 and `ROADMAP.md` Phase 6 cite them as evidence; it now does. The
+  root-only, container-only `tests/test-settings-display-security.sh` was referenced nowhere; it now has
+  `make check-settings-display-security` (skips outside a container, exit 77 convention) and a `display-security` job
+  in the manual **Full suite** workflow that runs it as root in a disposable `archlinux:base-devel` container (Sync
+  Sprint 10 S10-03).
 
 - The cross-tag window overview (Sync Sprint 7 S7-01 through S7-03, issue `#350`) was broken end to end since
   `scripts/dwm-quickshell-state` and `DwmState.qml` gained a `windowStates`/percent-encoding rework: `client_snapshot()`'s

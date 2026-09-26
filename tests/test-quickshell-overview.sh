@@ -51,7 +51,22 @@ grep -Fq 'source: Icons.launcherIcon(root.window.appClass)' "$overview/OverviewC
 # plugin, unavailable to plain qmltestrunner), so a stale reference like this
 # only surfaced at runtime, on the real desktop.
 grep -Fq 'import "../state/DwmStateWindows.js" as WindowsLib' "$overview/OverviewModel.qml"
-grep -Fq 'WindowsLib.groupByTag(root.dwmState.windowStates,' "$overview/OverviewModel.qml"
+grep -Fq 'WindowsLib.groupByTag(root.visibleWindows,' "$overview/OverviewModel.qml"
+# The filtered list must still start from windowStates (never the renamed-away
+# `windows`), and every member WindowOverview.qml and OverviewCard.qml read off
+# the model must actually be defined on it. A member used but never defined
+# (query, setQuery, closeCard) shipped once already and only failed at runtime.
+grep -Fq 'Filter.filterWindows(root.dwmState.windowStates, root.query)' "$overview/OverviewModel.qml"
+grep -Fq 'import "OverviewFilter.js" as Filter' "$overview/OverviewModel.qml"
+undefined_members=$(grep -ohE 'overviewModel\.[A-Za-z_]+' "$overview"/*.qml | sed 's/^overviewModel\.//' | sort -u |
+	while IFS= read -r member; do
+		case $member in dwmState) continue ;; esac
+		grep -Eq "(property [a-z]+ $member\b|function $member\()" "$overview/OverviewModel.qml" || printf '%s\n' "$member"
+	done)
+if [ -n "$undefined_members" ]; then
+	printf 'OverviewModel.qml does not define what the overview QML uses:\n%s\n' "$undefined_members" >&2
+	exit 1
+fi
 if grep -Eq 'function (resolveWindowLocation|workspaceIndexesForMonitor)\(' "$overview/OverviewModel.qml"; then
 	printf 'OverviewModel.qml must not duplicate DwmStateWindows.js resolution logic.\n' >&2
 	exit 1

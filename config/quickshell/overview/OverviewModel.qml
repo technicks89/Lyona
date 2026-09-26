@@ -1,5 +1,6 @@
 import Quickshell
 import "../state/DwmStateWindows.js" as WindowsLib
+import "OverviewFilter.js" as Filter
 import "OverviewSelection.js" as Selection
 
 // Presentation-level state for the cross-tag window overview popup (Sync
@@ -18,14 +19,26 @@ Scope {
     property bool visible: false
     property var targetScreen: null
     property int selectedIndex: 0
+    property string query: ""
+    // Window ids a card close was requested for. Filtered out immediately
+    // (OverviewFilter.excludeIds) rather than waiting for the next watch
+    // update; reset whenever the popup opens or closes so a window that
+    // refuses to close reappears next time instead of staying hidden.
+    property var closingIds: []
 
     // Occupied tags only, in ascending tag order, each holding the windows
     // resolved to it. Always live (not gated on visible) so an IPC caller
     // can ask "how many windows" without opening the popup first, and the
     // work itself is cheap -- grouping an already-resolved list, not a
     // Process spawn the way LauncherModel's application index is.
-    readonly property var groups: WindowsLib.groupByTag(root.dwmState.windowStates, root.dwmState.monitorWorkspaceRows,
+    readonly property var visibleWindows: Filter.excludeIds(
+        Filter.filterWindows(root.dwmState.windowStates, root.query), root.closingIds)
+
+    readonly property var groups: WindowsLib.groupByTag(root.visibleWindows, root.dwmState.monitorWorkspaceRows,
         root.dwmState.workspaceNames, root.dwmState.monitorCount())
+
+    // Filtering or closing a card can shrink the list under the selection.
+    onFlatCardsChanged: root.selectedIndex = Selection.selectAbsolute(root.selectedIndex, root.flatCards.length)
 
     // A flat, tag-grouped-order card list for keyboard navigation (Sync
     // Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) -- moving
@@ -47,11 +60,27 @@ Scope {
     function open(screen) {
         root.targetScreen = screen || null;
         root.selectedIndex = 0;
+        root.query = "";
+        root.closingIds = [];
         root.visible = true;
     }
 
     function close() {
         root.visible = false;
+        root.query = "";
+        root.closingIds = [];
+    }
+
+    function setQuery(value) {
+        root.query = value;
+        root.selectedIndex = 0;
+    }
+
+    // Close a card's window without closing the popup: hide the card now,
+    // then ask dwm-quickshell-state to send WM_DELETE_WINDOW.
+    function closeCard(windowId) {
+        root.closingIds = root.closingIds.concat([windowId]);
+        root.dwmState.closeWindow(windowId);
     }
 
     function toggle(screen) {
