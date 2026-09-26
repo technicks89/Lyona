@@ -109,12 +109,14 @@ macOS Mission Control/Exposé), not the thing the issue ruled out.
   or similar, `Accessible.name: "Close " + card.title`). `dwm.c`'s own
   `killclient()` only closes `selmon->sel` (the focused client), which most
   cards are not, so this needs a new `dwm-quickshell-state close WINDOWID`
-  action — `xdotool windowclose "$window_id"` (sends `WM_DELETE_WINDOW`, the
-  same graceful-close request `killclient()` itself sends first, just to an
-  arbitrary id instead of the focused one), matching the existing
-  `xdotool`-with-a-fallback pattern the `switch` action already uses. No
-  `dwm.c` change: this is a plain ICCCM client message sent directly to the
-  target window, not something the window manager needs to route.
+  action. Use a small Xlib helper that checks the target window's
+  `WM_PROTOCOLS` for `WM_DELETE_WINDOW`, then sends it a `ClientMessage`
+  with `message_type=WM_PROTOCOLS`, `format=32`, and
+  `data.l[0]=WM_DELETE_WINDOW` / `data.l[1]=CurrentTime` via
+  `XSendEvent` with `NoEventMask`, as `killclient()`'s `sendevent()` does.
+  Report stale or unsupported window ids without destroying the client;
+  do not use `xdotool windowclose` or `XKillClient` as a fallback. No
+  `dwm.c` change is needed: the ICCCM request goes directly to the target.
 - The card removes itself (or the list re-derives, same as S8-02's
   window-closes-mid-use handling — this item and that one should share
   code, not duplicate it) rather than waiting for a full `watch` re-poll to
@@ -122,9 +124,11 @@ macOS Mission Control/Exposé), not the thing the issue ruled out.
   from the same live stream shortly after regardless.
 
 **Verification:** an xvfb case opening the overview, clicking a card's close
-affordance, asserting the target window's process actually exits (not just
-that the card visually disappears) and the overview does not otherwise
-change tag/focus. A keyboard-equivalent (matching S8-01's navigation) is a
+affordance, and using a test client that records receipt of the
+`WM_PROTOCOLS` / `WM_DELETE_WINDOW` client message before it exits. Assert
+both that receipt and the target process's exit (not just that the card
+visually disappears), and that the overview does not otherwise change
+tag/focus. A keyboard-equivalent (matching S8-01's navigation) is a
 reasonable follow-up but not required to land this item — mouse-only close
 is an acceptable first cut the way S7-03 landed mouse-only card activation.
 
