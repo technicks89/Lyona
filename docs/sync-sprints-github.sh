@@ -58,6 +58,9 @@ sprints=(
 	"4|Sync Sprint 4 — Compositor, defaults, release|SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md"
 	"5|Sync Sprint 5 — Settings load stability, Flathub, floating toggles|SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md"
 	"6|Sync Sprint 6 — Theme consistency and window overview|SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md"
+	"7|Sync Sprint 7 — Cross-tag overview: foundation|SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md"
+	"8|Sync Sprint 8 — Cross-tag overview: interaction|SYNC-SPRINT-8-OVERVIEW-INTERACTION.md"
+	"9|Sync Sprint 9 — Cross-tag overview: polish|SYNC-SPRINT-9-OVERVIEW-POLISH.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -103,6 +106,17 @@ items=(
 	"6|S6-02|s6-02-thunar-and-other-gtk-apps-stay-light-under-dark-themes|Thunar and other GTK apps stay light under dark themes|issue #348"
 	"6|S6-03|s6-03-hover-states-that-hide-text-in-light-themes|Hover states that hide text in light themes|issue #349"
 	"6|S6-04|s6-04-cross-tag-window-overview|Cross-tag window overview|issue #350"
+	"7|S7-01|s7-01-per-window-data-in-dwm-quickshell-state|Per-window data in dwm-quickshell-state|issue #350"
+	"7|S7-02|s7-02-dwmstateqml-gains-the-window-list|DwmState.qml gains the window list|issue #350"
+	"7|S7-03|s7-03-the-overview-popup-mouse-only|The overview popup, mouse-only|issue #350"
+	"8|S8-01|s8-01-keyboard-navigation|Keyboard navigation|issue #350"
+	"8|S8-02|s8-02-multi-monitor-labels-and-a-window-closing-mid-use|Multi-monitor labels and a window closing mid-use|issue #350"
+	"8|S8-03|s8-03-type-to-filter|Type-to-filter|issue #350"
+	"8|S8-04|s8-04-close-a-window-from-its-card|Close a window from its card|issue #350"
+	"9|S9-01|s9-01-live-per-window-thumbnails-a-spike|Live per-window thumbnails (a spike)|issue #350"
+	"9|S9-02|s9-02-motion-and-visual-polish|Motion and visual polish|issue #350"
+	"9|S9-03|s9-03-accessibility-pass|Accessibility pass|issue #350"
+	"9|S9-04|s9-04-idle-cpu-and-many-window-performance|Idle-CPU and many-window performance|issue #350"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \
