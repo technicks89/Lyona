@@ -147,7 +147,25 @@ if [ -n "$process_lines" ]; then
 		file=${hit%%:*}
 		line=${hit#*:}
 		line=${line%%:*}
-		next_id=$(sed -n "$((line + 1)),$((line + 2))p" "$file" | grep -om1 'id: [A-Za-z]*' | cut -d' ' -f2)
+		next_id=$(sed -n "1,$((line + 2))p" "$file" | awk -v process_line="$line" '
+			{
+				if (NR == process_line && comment) exit
+				if (NR > process_line && !comment && match($0, /^[[:space:]]*id:[[:space:]]*[A-Za-z_][A-Za-z0-9_]*/)) {
+					id = substr($0, RSTART, RLENGTH)
+					sub(/^[[:space:]]*id:[[:space:]]*/, "", id)
+					print id
+					exit
+				}
+				remaining = $0
+				while (match(remaining, /\/\*|\*\/|\/\//)) {
+					marker = substr(remaining, RSTART, 2)
+					if (!comment && marker == "//") break
+					if (!comment && marker == "/*") comment = 1
+					else if (comment && marker == "*/") comment = 0
+					remaining = substr(remaining, RSTART + 2)
+				}
+			}
+		')
 		case $next_id in
 		availableProcess | captureProcess | purgeProcess) ;;
 		*)
