@@ -760,14 +760,16 @@ wait_for_current_desktop 0
 
 # The invalid configuration is reported at least once, and the report was captured
 # here. dwm reloads on the file change (its watcher) and again on USR1, so it
-# reports once per load.
+# reports once per load. On a live reload it keeps the keys it already had (the
+# Super+u and Super+1 presses above still worked), and says so (Sync Sprint 12
+# S12-04; tests/test-dwm-config-fallback.sh covers startup).
 i=0
 while [ "$i" -lt 100 ] &&
-	! grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults' "$work/notifications.log"; do
+	! grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - kept the previous config' "$work/notifications.log"; do
 	i=$((i + 1))
 	sleep 0.05
 done
-grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults' "$work/notifications.log" || {
+grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - kept the previous config' "$work/notifications.log" || {
 	printf '%s\n' 'missing captured invalid-config notification' >&2
 	cat "$work/notifications.log" >&2
 	exit 1

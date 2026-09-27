@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -129,10 +132,34 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 	return p;
 }
 
+/* A config file is a regular file of a sane size. Opened without blocking, so a
+ * FIFO cannot stall dwm at open, then checked, so a device (a symlink to
+ * /dev/zero, say) or a huge file cannot keep the parser reading forever. */
+#define TOML_MAX_FILE_BYTES (1024L * 1024L)
+
+static FILE *
+toml_open(const char *path)
+{
+	struct stat st;
+	FILE *f;
+	int fd, flags;
+
+	if ((fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)) < 0)
+		return NULL;
+	if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode) || st.st_size > TOML_MAX_FILE_BYTES
+	    || (flags = fcntl(fd, F_GETFL)) < 0 || fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) < 0) {
+		close(fd);
+		return NULL;
+	}
+	if (!(f = fdopen(fd, "r")))
+		close(fd);
+	return f;
+}
+
 int
 toml_parse(const char *path, TomlDoc *doc)
 {
-	FILE *f = fopen(path, "r");
+	FILE *f = toml_open(path);
 	if (!f) return 0;
 	doc->n = 0;
 	char line[4096];

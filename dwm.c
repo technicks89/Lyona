@@ -22,6 +22,7 @@
  */
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -328,6 +329,8 @@ static void runautostop(void);
 static void scan(void);
 static void sigchld(int unused);
 static void sigusr2_handler(int sig);
+static void sig_wake_drain(void);
+static void sig_wake_setup(void);
 static void sigstatusbar(const Arg *arg);
 static void setup(void);
 static void unmapnotify(XEvent *e);
@@ -362,8 +365,6 @@ static int xerror(Display *dpy, XErrorEvent *ee);
 static int xerrordummy(Display *dpy, XErrorEvent *ee);
 static int xerrorstart(Display *dpy, XErrorEvent *ee);
 
-static int toml_load_with_fallback(TomlDoc *doc, const char *user_path,
-                                   const char *default_path, const char *what);
 static void load_hotkeys_toml(const char *user_path, const char *default_path);
 static void load_themes_toml(const char *user_path, const char *default_path);
 static void load_rules_toml(const char *user_path, const char *default_path);
@@ -468,6 +469,10 @@ static char          toml_themes_path[PATH_MAX];
 static char          toml_rules_path[PATH_MAX];
 
 static volatile sig_atomic_t sig_reload_pending = 0;
+/* Written to by the SIGUSR1/SIGUSR2 handlers and watched by run()'s select(), so
+ * a signal that lands between the checks and select() still wakes the loop
+ * (Sync Sprint 12 S12-04). -1 when the pipe could not be made. */
+static int sig_wake_fd[2] = { -1, -1 };
 
 #define TOML_ARENA_CAP 65536u
 static char   toml_arena_buf[TOML_ARENA_CAP];
@@ -2797,11 +2802,19 @@ run(void)
 			if (config_fd > maxfd)
 				maxfd = config_fd;
 		}
+		if (sig_wake_fd[0] >= 0) {
+			FD_SET(sig_wake_fd[0], &rfds);
+			if (sig_wake_fd[0] > maxfd)
+				maxfd = sig_wake_fd[0];
+		}
 
 		if (select(maxfd + 1, &rfds, NULL, NULL, NULL) < 0) {
 			if (errno == EINTR) continue;
 			break;
 		}
+		/* The flags it woke us for are handled at the top of the loop. */
+		if (sig_wake_fd[0] >= 0 && FD_ISSET(sig_wake_fd[0], &rfds))
+			sig_wake_drain();
 
 		if (config_fd >= 0 && FD_ISSET(config_fd, &rfds))
 			runtime_config_poll_inotify();
@@ -3395,10 +3408,54 @@ setmfact(const Arg *arg)
 }
 
 static void
+sig_wake(void)
+{
+	int saved_errno = errno;
+
+	if (sig_wake_fd[1] >= 0 && write(sig_wake_fd[1], "", 1) < 0) {
+		/* Full pipe: a wake-up is already pending, which is all we need. */
+	}
+	errno = saved_errno;
+}
+
+static void
+sig_wake_setup(void)
+{
+	int i, flags;
+
+	if (pipe(sig_wake_fd) < 0) {
+		perror("dwm: signal wake pipe");
+		sig_wake_fd[0] = sig_wake_fd[1] = -1;
+		return;
+	}
+	for (i = 0; i < 2; i++) {
+		if ((flags = fcntl(sig_wake_fd[i], F_GETFL)) < 0
+		    || fcntl(sig_wake_fd[i], F_SETFL, flags | O_NONBLOCK) < 0
+		    || fcntl(sig_wake_fd[i], F_SETFD, FD_CLOEXEC) < 0) {
+			perror("dwm: signal wake pipe");
+			close(sig_wake_fd[0]);
+			close(sig_wake_fd[1]);
+			sig_wake_fd[0] = sig_wake_fd[1] = -1;
+			return;
+		}
+	}
+}
+
+static void
+sig_wake_drain(void)
+{
+	char buf[64];
+
+	while (sig_wake_fd[0] >= 0 && read(sig_wake_fd[0], buf, sizeof(buf)) > 0)
+		;
+}
+
+static void
 sigusr1_handler(int sig)
 {
 	(void)sig;
 	runtime_config_mark_reload_pending();
+	sig_wake();
 }
 
 static void
@@ -3406,6 +3463,7 @@ sigusr2_handler(int sig)
 {
 	(void)sig;
 	running = 0;
+	sig_wake();
 }
 
 static void *
@@ -3498,12 +3556,11 @@ notify_bad_config(const char *filename, const char *reason)
 	const char *base = strrchr(filename, '/');
 	base = base ? base + 1 : filename;
 	char msg[768];
-	int len = snprintf(msg, sizeof(msg), "%s: %s - loaded defaults",
-	                   base, reason);
+	int len = snprintf(msg, sizeof(msg), "%s: %s", base, reason);
 	if (len < 0)
 		return;
 	if ((size_t)len >= sizeof(msg))
-		copystr(msg, sizeof(msg), "config error - loaded defaults");
+		copystr(msg, sizeof(msg), reason);
 	pid_t pid = fork();
 	if (pid == 0) {
 		execlp("notify-send", "notify-send", "-u", "critical",
@@ -3629,38 +3686,104 @@ build_arg(const char *func_name, const TomlDoc *doc,
 	return arg;
 }
 
+/* Whether a parsed document holds anything worth loading. NULL: any entry. */
+typedef int (*TomlUsable)(const TomlDoc *doc);
+
+static int
+toml_doc_ok(const char *path, TomlDoc *doc, TomlUsable usable)
+{
+	return path && path[0] && toml_parse(path, doc) && doc->n > 0
+	       && (!usable || usable(doc));
+}
+
+/* Load the user's file, or else the shipped default (Sync Sprint 12 S12-04).
+ * A user file that does not load is reported. On a live reload (have_previous)
+ * the config already in use is kept, so a half-saved edit never takes the keys
+ * away; at startup the shipped default is loaded instead of nothing. Returns 1
+ * when doc holds a config to apply. */
 static int
 toml_load_with_fallback(TomlDoc *doc, const char *user_path,
-                        const char *default_path, const char *what)
+                        const char *default_path, const char *what,
+                        TomlUsable usable, int have_previous)
 {
-	int parsed = 0;
+	int user_exists = user_path && user_path[0] && access(user_path, F_OK) == 0;
 
-	if (user_path && user_path[0] && access(user_path, F_OK) == 0) {
-		parsed = toml_parse(user_path, doc) && doc->n > 0;
-		if (!parsed) {
-			/* The user wrote this file, so say so rather than
-			 * silently falling back to the shipped default. */
-			notify_bad_config(user_path, "invalid config");
+	if (user_exists) {
+		if (toml_doc_ok(user_path, doc, usable))
+			return 1;
+		if (have_previous) {
+			notify_bad_config(user_path, "invalid config - kept the previous config");
 			return 0;
 		}
 	}
-	if (!parsed) {
-		if (!default_path || !default_path[0] || !toml_parse(default_path, doc)) {
-			fprintf(stderr, "dwm: cannot load %s (no user or default config)\n",
-			        what);
-			return 0;
-		}
+	if (toml_doc_ok(default_path, doc, usable)) {
+		if (user_exists)
+			notify_bad_config(user_path, "invalid config - loaded defaults");
+		return 1;
 	}
-	return 1;
+	if (user_exists)
+		notify_bad_config(user_path, "invalid config - and the default did not load");
+	fprintf(stderr, "dwm: cannot load %s (no usable user or default config)\n", what);
+	return 0;
+}
+
+/* A hotkeys document is usable when at least one binding in it could be
+ * grabbed: a known key and function, or a tag key for a tag that exists. */
+static int
+hotkeys_doc_usable(const TomlDoc *doc)
+{
+	int i, n;
+
+	n = toml_table_count(doc, "keys");
+	for (i = 0; i < n; i++) {
+		const TomlValue *vkey  = toml_table_get(doc, "keys", i, "key");
+		const TomlValue *vfunc = toml_table_get(doc, "keys", i, "func");
+		if (vkey && vkey->type == TOML_STRING && vfunc && vfunc->type == TOML_STRING
+		    && XStringToKeysym(vkey->s) != NoSymbol && lookup_func(vfunc->s))
+			return 1;
+	}
+	n = toml_table_count(doc, "tag_keys");
+	for (i = 0; i < n; i++) {
+		const TomlValue *vkey = toml_table_get(doc, "tag_keys", i, "key");
+		const TomlValue *vtag = toml_table_get(doc, "tag_keys", i, "tag");
+		if (vkey && vkey->type == TOML_STRING && vtag && vtag->type == TOML_INT
+		    && vtag->i >= 0 && vtag->i < (long)LENGTH(tags)
+		    && XStringToKeysym(vkey->s) != NoSymbol)
+			return 1;
+	}
+	return 0;
+}
+
+/* Used only when neither the user's hotkeys.toml nor the shipped default loads
+ * at startup, so the session always keeps a way to open a terminal and quit. */
+static const char *emergency_termcmd[] = { "dwm-terminal", NULL };
+static const Key emergency_keys[] = {
+	{ MODKEY,           XK_x, spawn, { .v = emergency_termcmd } },
+	{ MODKEY|ShiftMask, XK_q, quit,  { 0 } },
+};
+
+static void
+use_emergency_keys(const char *user_path)
+{
+	rt_keys  = (Key *)emergency_keys;
+	rt_nkeys = LENGTH(emergency_keys);
+	fprintf(stderr, "dwm: no usable hotkeys; only Super+x (terminal) and Super+Shift+q (quit)\n");
+	notify_bad_config(user_path && user_path[0] ? user_path : "hotkeys.toml",
+	                  "no usable hotkeys - only Super+x (terminal) and Super+Shift+q (quit) work");
 }
 
 static void
 load_hotkeys_toml(const char *user_path, const char *default_path)
 {
 	static TomlDoc doc;
+	static int from_config;
 
-	if (!toml_load_with_fallback(&doc, user_path, default_path, "hotkeys"))
+	if (!toml_load_with_fallback(&doc, user_path, default_path, "hotkeys",
+	                             hotkeys_doc_usable, from_config)) {
+		if (!from_config)
+			use_emergency_keys(user_path);
 		return;
+	}
 	int nregular = toml_table_count(&doc, "keys");
 	int ntag     = toml_table_count(&doc, "tag_keys");
 	int total    = nregular + ntag * 4;
@@ -3714,9 +3837,14 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 		const TomlValue *vtag = toml_table_get(&doc, "tag_keys", i, "tag");
 		if (!vkey || vkey->type != TOML_STRING) continue;
 		if (!vtag || vtag->type != TOML_INT) continue;
+		if (vtag->i < 0 || vtag->i >= (long)LENGTH(tags)) {
+			fprintf(stderr, "dwm: tag_keys tag %ld is not a tag (0-%d)\n",
+			        vtag->i, (int)LENGTH(tags) - 1);
+			continue;
+		}
 		KeySym ks = XStringToKeysym(vkey->s);
 		if (ks == NoSymbol) continue;
-		unsigned int tag_bit = (unsigned int)(1 << vtag->i);
+		unsigned int tag_bit = 1u << vtag->i;
 		for (int j = 0; j < 4 && nk < total; j++) {
 			Arg tmp_arg;
 			tmp_arg.ui = tag_bit;
@@ -3728,8 +3856,16 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 		}
 	}
 
+	if (nk == 0) {
+		/* Every binding was refused (for example spawns with nothing to run).
+		 * The arena was reused, so the previous keys are gone too. */
+		from_config = 0;
+		use_emergency_keys(user_path);
+		return;
+	}
 	rt_keys  = newkeys;
 	rt_nkeys = nk;
+	from_config = 1;
 
 	{
 		int nbtn = toml_table_count(&doc, "buttons");
@@ -3778,9 +3914,11 @@ static void
 load_themes_toml(const char *user_path, const char *default_path)
 {
 	static TomlDoc doc;
+	static int from_config;
 
-	if (!toml_load_with_fallback(&doc, user_path, default_path, "themes"))
+	if (!toml_load_with_fallback(&doc, user_path, default_path, "themes", NULL, from_config))
 		return;
+	from_config = 1;
 
 	static char c_normborder[8], c_normbg[8], c_normfg[8];
 	static char c_selborder[8],  c_selbg[8],  c_selfg[8];
@@ -3870,9 +4008,11 @@ static void
 load_rules_toml(const char *user_path, const char *default_path)
 {
 	static TomlDoc doc;
+	static int from_config;
 
-	if (!toml_load_with_fallback(&doc, user_path, default_path, "rules"))
+	if (!toml_load_with_fallback(&doc, user_path, default_path, "rules", NULL, from_config))
 		return;
+	from_config = 1;
 	int n = toml_table_count(&doc, "rules");
 	if (n > TOML_RULES_MAX) n = TOML_RULES_MAX;
 	int nk = 0;
@@ -4213,6 +4353,7 @@ setup(void)
 
 	sigchld(0);
 
+	sig_wake_setup();
 	signal(SIGUSR2, sigusr2_handler);
 	dyn_borderpx = 1;
 

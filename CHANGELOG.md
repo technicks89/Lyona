@@ -1701,6 +1701,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- dwm always starts with working keys, and a config file can no longer hang it (Sync Sprint 12 S12-04, issue `#167`).
+  An empty, all-comment or otherwise unusable `~/.config/lyona/hotkeys.toml` at login left dwm with no key bindings at
+  all, not even quit, while the notification said "loaded defaults". dwm now loads the shipped default instead and says
+  so; a file with entries but nothing dwm can bind counts as unusable. On a live reload it keeps the configuration it
+  already had and now says "kept the previous config" instead of "loaded defaults". If neither the user file nor the
+  default loads at startup, two built-in keys remain (Super+x opens `dwm-terminal`, Super+Shift+q quits). The TOML
+  parser opens files without blocking and accepts only regular files up to 1 MiB, so a `hotkeys.toml` that is a
+  symlink to `/dev/zero` (which kept dwm at about 54% CPU and stopped it managing windows) or a FIFO falls back to the
+  default instead. A `tag_keys` tag outside 0-8 is skipped with a message instead of shifting by an out-of-range
+  amount. A SIGUSR1 (reload) or SIGUSR2 (quit) that arrived just before dwm waited for input was not handled until the
+  next X event; the handlers now also write to a pipe that the wait watches. New `tests/test-dwm-config-fallback.sh`
+  (`make check-dwm-config-fallback`, part of `make check`); `tests/test-xvfb-runtime.sh` expects the live-reload
+  message. `docs/src/troubleshooting.md` no longer says invalid TOML fails silently or suggests a `config.h` fallback
+  that does not exist.
+
 - Qt applications follow the selected palette when `qt6ct` or `qt5ct` is installed, and GTK 2 applications can find
   the generated theme (Sync Sprint 11 S11-06, upstream `#352`, app-theme half). `theme-apply.sh` used to write only
   `color_scheme_path` into the tool's config, and only if that config already existed; `qt6ct` ignores that path
