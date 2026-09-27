@@ -611,6 +611,17 @@ if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 ]]; then
 		"$CURSOR_THEME" "$CURSOR_SIZE" >"$CURSOR_XRESOURCES"
 fi
 
+# A theme name goes into xsettingsd's config as a quoted string: refuse anything
+# that could break out of the line or is unreasonably long, and escape the rest.
+xsettings_string_ok() {
+	[[ ${#1} -le 1024 && $1 != *$'\r'* && $1 != *$'\n'* ]]
+}
+
+xsettings_escape() {
+	local value=${1//\\/\\\\}
+	printf '%s' "${value//\"/\\\"}"
+}
+
 XSETTINGSD_CONFIG="${DWM_XSETTINGS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/lyona/xsettingsd.conf}"
 if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 ]]; then
 	XSETTINGS_CURSOR_THEME=${CURSOR_THEME//\\/\\\\}
@@ -619,6 +630,25 @@ if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 ]]; then
 		"Gtk/CursorThemeName \"$XSETTINGS_CURSOR_THEME\""
 	xsettingsd_write_line "$XSETTINGSD_CONFIG" '^[[:space:]]*Gtk/CursorThemeSize[[:space:]]' \
 		"Gtk/CursorThemeSize $CURSOR_SIZE"
+	# Broadcast the GTK and icon theme too, so GTK 3 applications that are already
+	# running repaint on a theme switch instead of waiting for a restart (Sync
+	# Sprint 11 S11-02, upstream #351). The icon-theme rule mirrors gtk2_set above.
+	if xsettings_string_ok "$GTK_THEME_NAME"; then
+		xsettingsd_write_line "$XSETTINGSD_CONFIG" '^[[:space:]]*Net/ThemeName[[:space:]]' \
+			"Net/ThemeName \"$(xsettings_escape "$GTK_THEME_NAME")\""
+	else
+		echo "theme-apply: not broadcasting an invalid GTK theme name over XSETTINGS" >&2
+	fi
+	if [[ -n $ICON_THEME_EFFECTIVE ]]; then
+		if xsettings_string_ok "$ICON_THEME_EFFECTIVE"; then
+			xsettingsd_write_line "$XSETTINGSD_CONFIG" '^[[:space:]]*Net/IconThemeName[[:space:]]' \
+				"Net/IconThemeName \"$(xsettings_escape "$ICON_THEME_EFFECTIVE")\""
+		else
+			echo "theme-apply: not broadcasting an invalid icon theme name over XSETTINGS" >&2
+		fi
+	elif [[ $TOOLKIT_BASELINE_ICON_PRESENT == 1 ]]; then
+		xsettingsd_write_line "$XSETTINGSD_CONFIG" '^[[:space:]]*Net/IconThemeName[[:space:]]' ''
+	fi
 fi
 if [[ $RUNTIME_ONLY == 0 && $TRANSACTIONAL_APPLY == 0 ]] &&
 	command -v xrdb &>/dev/null && [[ -n "${DISPLAY:-}" ]]; then
@@ -659,21 +689,52 @@ EOF
 
 fi
 
+# Set one key in the [Appearance] section of a qt5ct/qt6ct config, keeping every
+# other key and section. Values here are paths and booleans from this script.
+qt_ct_set() {
+	local file=$1 key=$2 value=$3
+	value=${value//\\/\\\\}
+	value=${value//&/\\&}
+	value=${value//|/\\|}
+	if grep -q "^$key=" "$file"; then
+		sed -i "s|^$key=.*|$key=$value|" "$file"
+	elif grep -q '^\[Appearance\]' "$file"; then
+		sed -i "/^\[Appearance\]/a $key=$value" "$file"
+	else
+		printf '\n[Appearance]\n%s=%s\n' "$key" "$value" >>"$file"
+	fi
+}
+
+# qt5ct/qt6ct only use color_scheme_path when custom_palette=true (checked with
+# qt6ct 0.11: the path alone leaves Qt on its default light palette), so both
+# keys are written. The palette's own generated scheme wins; without one, dark
+# presets fall back to the tool's generic dark scheme.
 if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 &&
 	("$QT_PLATFORM_THEME" == "qt5ct" || "$QT_PLATFORM_THEME" == "qt6ct") ]]; then
 	QT_CT_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/${QT_PLATFORM_THEME}/${QT_PLATFORM_THEME}.conf"
-	if [[ -f "$QT_CT_CONF" ]]; then
-		if [[ "$DARK_MODE" == "true" ]]; then
-			QT_CT_SCHEME="/usr/share/${QT_PLATFORM_THEME}/colors/darker.conf"
-		else
-			QT_CT_SCHEME=""
+	QT_CT_SCHEME=""
+	for QT_CT_CANDIDATE in \
+		"${XDG_DATA_HOME:-$HOME/.local/share}/themes/Lyona-$THEME_NAME/qt/colors.conf" \
+		"/usr/share/themes/Lyona-$THEME_NAME/qt/colors.conf"; do
+		if [[ -f $QT_CT_CANDIDATE ]]; then
+			QT_CT_SCHEME=$QT_CT_CANDIDATE
+			break
 		fi
-		if grep -q '^color_scheme_path' "$QT_CT_CONF"; then
-			sed -i "s|^color_scheme_path=.*|color_scheme_path=$QT_CT_SCHEME|" "$QT_CT_CONF"
-		else
-			sed -i "/^\[Appearance\]/a color_scheme_path=${QT_CT_SCHEME}" "$QT_CT_CONF"
-		fi
+	done
+	if [[ -z $QT_CT_SCHEME && $DARK_MODE == "true" ]]; then
+		QT_CT_SCHEME="/usr/share/${QT_PLATFORM_THEME}/colors/darker.conf"
 	fi
+	if [[ -n $QT_CT_SCHEME ]]; then
+		QT_CT_CUSTOM=true
+	else
+		QT_CT_CUSTOM=false
+	fi
+	if [[ ! -f $QT_CT_CONF ]]; then
+		mkdir -p "${QT_CT_CONF%/*}"
+		printf '[Appearance]\n' >"$QT_CT_CONF"
+	fi
+	qt_ct_set "$QT_CT_CONF" color_scheme_path "$QT_CT_SCHEME"
+	qt_ct_set "$QT_CT_CONF" custom_palette "$QT_CT_CUSTOM"
 fi
 
 # Refresh cached named cursors in existing clients as well as the root window.

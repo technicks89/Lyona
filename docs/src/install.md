@@ -20,6 +20,8 @@ Use `core` for the required build/X11/session packages and Alacritty,
 such as file-manager integration, keyring login integration, wallpapers, and
 display-manager setup. On x86_64 Arch, `full` can also install Steam,
 Gamescope, GameMode, and MangoHud after repository approval.
+See [Dependencies and Package Profiles](./dependencies.md) for exactly which
+packages each profile installs.
 The installer separately asks before enabling the `multilib` repository for
 Steam, Gamescope, GameMode, and MangoHud. Declining skips the gaming subset
 without affecting other full-profile extras.

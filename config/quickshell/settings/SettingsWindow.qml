@@ -231,7 +231,7 @@ FloatingWindow {
 
                                         UiText {
                                             text: String(sectionButton.index + 1).padStart(2, "0")
-                                            color: sectionButton.selected ? Theme.menuActionText : Theme.menuMutedText
+                                            color: sectionButton.selected ? Theme.menuSelectedText : sectionMouse.containsMouse ? Theme.menuHoverText : Theme.menuMutedText
                                             font.pixelSize: Theme.fontCaptionSize
                                             font.bold: true
                                         }
@@ -243,7 +243,7 @@ FloatingWindow {
                                             UiText {
                                                 Layout.fillWidth: true
                                                 text: sectionButton.modelData.label
-                                                color: sectionButton.selected ? Theme.menuSelectedText : Theme.menuText
+                                                color: sectionButton.selected ? Theme.menuSelectedText : sectionMouse.containsMouse ? Theme.menuHoverText : Theme.menuText
                                                 font.pixelSize: Theme.fontBodySize
                                                 font.bold: sectionButton.selected
                                                 elide: Text.ElideRight
@@ -252,7 +252,7 @@ FloatingWindow {
                                             UiText {
                                                 Layout.fillWidth: true
                                                 text: sectionButton.modelData.description
-                                                color: Theme.menuMutedText
+                                                color: sectionButton.selected ? Theme.menuSelectedText : sectionMouse.containsMouse ? Theme.menuHoverText : Theme.menuMutedText
                                                 font.pixelSize: Theme.fontCaptionSize
                                                 elide: Text.ElideRight
                                             }
@@ -261,7 +261,7 @@ FloatingWindow {
                                         UiText {
                                             visible: sectionButton.selected
                                             text: ">"
-                                            color: Theme.menuActionText
+                                            color: Theme.menuSelectedText
                                             font.bold: true
                                         }
                                     }

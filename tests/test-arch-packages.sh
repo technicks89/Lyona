@@ -148,5 +148,21 @@ grep -Fq 'unavailable in enabled repositories: absent-two' "$work/optional.err"
 
 "$repo/install.sh" --dry-run --non-interactive --profile core >/dev/null
 
+# docs/src/dependencies.md documents every package the map can install (Sync
+# Sprint 11 S11-05). The misses are collected in a variable and tested afterwards:
+# an exit inside a pipeline would only leave that pipeline's subshell.
+undocumented=$(
+	for profile in full iso terminal terminal-primary lightdm qml-development qml-validation; do
+		dwm_packages arch "$profile"
+	done | awk 'NF' | sort -u |
+		while IFS= read -r package; do
+			grep -Fq -- "\`$package\`" "$repo/docs/src/dependencies.md" || printf '%s\n' "$package"
+		done
+)
+if [[ -n $undocumented ]]; then
+	printf 'docs/src/dependencies.md does not mention:\n%s\n' "$undocumented" >&2
+	exit 1
+fi
+
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

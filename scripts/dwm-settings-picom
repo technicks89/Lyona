@@ -35,6 +35,8 @@ BACKENDS = ("auto", "xrender", "glx", "egl")
 # owner that exits a moment later. Retry that refusal rather than fail the user.
 TRANSIENT_REFUSAL = "Another composite manager is already running"
 LAUNCH_RETRIES = 3
+# Largest window corner radius the helper will write, in pixels.
+CORNER_RADIUS_MAX = 32
 BEGIN = "# lyona opacity defaults begin"
 END = "# lyona opacity defaults end"
 
@@ -444,6 +446,20 @@ class Configuration:
             raise Error("Picom opacity must be between 0 and 1")
         return result
 
+    def corner_radius(self):
+        value = self.scalar("corner-radius", 0)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value != int(value)
+            or not 0 <= value <= CORNER_RADIUS_MAX
+        ):
+            raise Error(
+                f"Picom corner radius must be a whole number from 0 to {CORNER_RADIUS_MAX}"
+            )
+        return int(value)
+
     def changes(self, values):
         edits = {}
         for key, value in values.items():
@@ -801,6 +817,7 @@ def status(detect=True):
         "editable": False,
         "active": 100,
         "inactive": 100,
+        "corner_radius": 0,
         "policy": "auto",
         "effective": "",
         "override": "",
@@ -816,6 +833,7 @@ def status(detect=True):
         result["revision"] = config.revision()
         active, inactive = config.opacity()
         result.update(active=active * 100, inactive=inactive * 100)
+        result["corner_radius"] = config.corner_radius()
         policy, effective, override, gpu = backend(
             config, detect and result["installed"]
         )
@@ -827,7 +845,11 @@ def status(detect=True):
             override=override,
             renderer=gpu,
         )
-        details = ["Global opacity; custom window rules may override these defaults."]
+        details = [
+            "Global opacity; custom window rules may override these defaults.",
+            "Corner radius applies to every window except fullscreen ones; per-window "
+            "rules can override it, and it does not combine well with transparent-clipping.",
+        ]
         if not config.path.exists():
             details.append("No configuration yet; the first edit creates it.")
         if not result["running"]:
@@ -968,6 +990,19 @@ def mutate(action, args, revision):
             if any(not math.isfinite(v) or not 0 <= v <= 100 for v in args):
                 raise Error("Opacity must be between 0 and 100 percent")
             changes = config.opacity_changes(*(v / 100 for v in args))
+        elif action == "set-corner-radius":
+            radius = args[0]
+            if (
+                not math.isfinite(radius)
+                or radius != int(radius)
+                or not 0 <= radius <= CORNER_RADIUS_MAX
+            ):
+                raise Error(
+                    f"Corner radius must be a whole number from 0 to {CORNER_RADIUS_MAX} pixels"
+                )
+            if any(option(p["args"], ("--corner-radius",)) for p in processes()):
+                raise Error("Remove the command-line corner radius override before editing")
+            changes = config.changes({"corner-radius": None if radius == 0 else int(radius)})
         elif action == "set-backend":
             if os.environ.get("PICOM_BACKEND"):
                 raise Error(
@@ -1215,6 +1250,9 @@ def main():
     opacity.add_argument("active", type=float)
     opacity.add_argument("inactive", type=float)
     opacity.add_argument("revision")
+    corner = subs.add_parser("set-corner-radius")
+    corner.add_argument("radius", type=float)
+    corner.add_argument("revision")
     selector = subs.add_parser("set-backend")
     selector.add_argument("backend", choices=BACKENDS)
     selector.add_argument("revision")
@@ -1225,10 +1263,12 @@ def main():
         print(json.dumps(status()))
     elif args.action == "watch":
         watch()
-    elif args.action in ("set-opacity", "set-backend", "copy-config"):
+    elif args.action in ("set-opacity", "set-corner-radius", "set-backend", "copy-config"):
         values = (
             [args.active, args.inactive]
             if args.action == "set-opacity"
+            else [args.radius]
+            if args.action == "set-corner-radius"
             else [args.backend]
             if args.action == "set-backend"
             else []

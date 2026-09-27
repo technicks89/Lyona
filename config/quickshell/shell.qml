@@ -1450,6 +1450,7 @@ ShellRoot {
 
     ControlCenterWindow {
         controlCenterModel: controlCenterModel
+        dwmState: dwmState
         launcherModel: launcherModel
         panelWindow: root.activePanelWindow
         powerMenuModel: powerMenuModel

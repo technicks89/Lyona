@@ -269,6 +269,7 @@ root_snapshot() {
 		_DWM_FULLSCREEN_MONITORS \
 		_DWM_MONITOR_DESKTOPS \
 		_DWM_SELECTED_MONITOR \
+		_DWM_LAYOUT \
 		WM_NAME 2>/dev/null |
 		awk '
 			function value(   text) {
@@ -333,10 +334,11 @@ root_snapshot() {
 			}
 			/^_DWM_MONITOR_DESKTOPS/ { desktops = value(); gsub(/[[:space:]"]/, "", desktops); next }
 			/^_DWM_SELECTED_MONITOR/ { split(value(), f, /[[:space:]]+/); selected = f[1]; next }
+			/^_DWM_LAYOUT/ { split(value(), f, /[[:space:]]+/); layout = f[1]; next }
 			/^WM_NAME/ { status = collapse(unquote(value())); next }
 			END {
-				printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
-					current, count, names, clients, fullscreen, desktops, selected, status
+				printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+					current, count, names, clients, fullscreen, desktops, selected, layout, status
 			}
 		'
 }
@@ -350,6 +352,7 @@ show_state() {
 		IFS= read -r fullscreen_monitors
 		IFS= read -r monitor_desktops
 		IFS= read -r focused_monitor
+		IFS= read -r layout
 		IFS= read -r status
 	} <<ROOT_SNAPSHOT
 $(root_snapshot)
@@ -383,6 +386,7 @@ ROOT_SNAPSHOT
 	printf 'current=%s\n' "$current"
 	printf 'monitor_desktops=%s\n' "$monitor_desktops"
 	printf 'focused_monitor=%s\n' "$focused_monitor"
+	printf 'layout=%s\n' "$layout"
 	printf 'count=%s\n' "$count"
 	printf 'names=%s\n' "$names"
 	printf 'occupied=%s\n' "$occupied"
@@ -411,6 +415,7 @@ watch_state() {
 			DWM_TAG_UPDATE \
 			_DWM_MONITOR_DESKTOPS \
 			_DWM_SELECTED_MONITOR \
+			_DWM_LAYOUT \
 			_NET_NUMBER_OF_DESKTOPS \
 			_NET_DESKTOP_NAMES \
 			_NET_ACTIVE_WINDOW \
@@ -470,6 +475,21 @@ watch_cleanup() {
 	exec 3>&-
 	rm -f "$watch_dir/events"
 	rmdir "$watch_dir"
+}
+
+# Ask dwm for a layout by index into its layouts[] (the index hotkeys.toml's
+# layout_idx uses). dwm reads and clears this root property, and ignores an
+# index outside its layouts, so the range is enforced there; only the shape is
+# checked here.
+set_layout() {
+	index=${1:-}
+	case $index in
+	'' | *[!0-9]* | ???*)
+		printf 'usage: %s layout <index>\n' "$0" >&2
+		return 2
+		;;
+	esac
+	xprop -root -f _DWM_SET_LAYOUT 32c -set _DWM_SET_LAYOUT "$index"
 }
 
 switch_workspace() {
@@ -548,11 +568,14 @@ switch)
 focus)
 	focus_window "${2:-}"
 	;;
+layout)
+	set_layout "${2:-}"
+	;;
 close)
 	close_window "${2:-}"
 	;;
 *)
-	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>|close <window-id>]\n' "$0" >&2
+	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>|close <window-id>|layout <index>]\n' "$0" >&2
 	exit 2
 	;;
 esac

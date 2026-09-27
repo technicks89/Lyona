@@ -8,6 +8,7 @@ ClickAwayPopup {
     id: root
 
     required property var controlCenterModel
+    required property var dwmState
     required property var healthModel
     required property var launcherModel
     required property var panelWindow
@@ -22,6 +23,12 @@ ClickAwayPopup {
         ? Math.max(240, panelWindow.screen.height - Theme.panelHeight - Theme.popupMargin)
         : 240
     readonly property var powerPresets: root.powerModel.timeoutPresets
+    // Mirrors dwm's layouts[] (config.def.h): the index is what dwm expects.
+    readonly property var layoutChoices: [
+        { "label": "Tile", "index": 0 },
+        { "label": "Floating", "index": 1 },
+        { "label": "Monocle", "index": 2 }
+    ]
 
     function pageTitle() {
         if (controlCenterModel.page === "widgets") return "Bar Widgets";
@@ -164,7 +171,8 @@ ClickAwayPopup {
             text: presetButton.label
             color: !presetButton.enabled ? Theme.controlDisabledText
                 : presetButton.activeFocus ? Theme.controlFocusText
-                : presetButton.active ? Theme.controlSelectedText : Theme.controlNormalText
+                : presetButton.active ? Theme.controlSelectedText
+                : presetMouse.containsMouse ? Theme.controlHoverText : Theme.controlNormalText
         }
 
         MouseArea {
@@ -247,6 +255,37 @@ ClickAwayPopup {
                         label: "Power"
                         navigates: true
                         onActivated: root.openSessionPower()
+                    }
+
+                    PanelSeparator {
+                        Layout.topMargin: Theme.compactSpacing
+                        Layout.bottomMargin: Theme.compactSpacing
+                    }
+
+                    UiText {
+                        Layout.fillWidth: true
+                        text: "Window layout"
+                        color: Theme.textMuted
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 3
+                        columnSpacing: Theme.spacingSm
+                        rowSpacing: Theme.spacingSm
+
+                        Repeater {
+                            model: root.layoutChoices
+
+                            delegate: PresetButton {
+                                required property var modelData
+
+                                Layout.fillWidth: true
+                                label: modelData.label
+                                active: root.dwmState.layoutIndex === modelData.index
+                                enabled: root.dwmState.layoutIndex >= 0
+                                onActivated: root.dwmState.setLayout(modelData.index)
+                            }
+                        }
                     }
 
                     PanelSeparator {

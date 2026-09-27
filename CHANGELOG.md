@@ -10,6 +10,26 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Clicking the empty part of the top bar closes the launcher, the command menu, notification history and the control
+  center's utility windows as well as open panel popups (Sync Sprint 11 S11-03, upstream `#340` click-away half).
+  `DwmPanel.qml` gets a background `MouseArea` that calls `popupRequested(root, "")`, and `selectPanelPopup()` already
+  closes all of those for an empty id. Panel popups already dismissed on a bar click through their input grab
+  (`tests/test-panel-popup.py` asserts it); the floating windows hold no grab, so they stayed open.
+  `test-quickshell-panel-menus.sh` pins the `MouseArea` and the four closers. Not verified: an interaction test
+  against the real `DwmPanel` (it needs eleven models), or that buttons in the bar still receive their own clicks;
+  check by hand.
+
+- Popups and notification cards are square, and the keyboard focus ring is 1 px (Sync Sprint 11 S11-07, decision D-10,
+  upstream `#340` geometry half). `Theme.popupRadius` and `Theme.notificationAccentRadius` are `0`, so every surface
+  built on `ShellSurface` (13 QML files) is square; `NotificationCard.qml` and `NotificationHistoryWindow.qml` take
+  `Theme.popupRadius` instead of `largeSurfaceCardRadius`. `Theme.controlFocusBorderWidth` is now
+  `controlBorderWidth`, so the focus ring matches the idle border (1 px, or 2 px in high-contrast mode, was 2 px and 3
+  px) and focus is shown by the border colour alone. Controls inside a square popup (`controlRadius`,
+  `largeSurfaceCardRadius`) keep their rounded corners. Five places apply `controlFocusBorderWidth` unconditionally as
+  an emphasis border, not on focus (`PanelSlider.qml:83` and `AppearanceSettingsPane.qml` lines 361, 502, 737, 934),
+  so they thin from 2 px to 1 px too; check them by eye. The accessibility pin for the focus width changed with it,
+  and `test-quickshell-design-system.sh` now pins the three radius values.
+
 - `PanelTooltip.qml`'s horizontal position is now a live property binding
   (Sync Sprint 6 S6-01, `docs/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`,
   small portable fix from upstream `#343` `2461027`), not only recomputed from
@@ -195,6 +215,53 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   compacted UI.
 
 ### Added
+
+- A layout switcher in the Control Center (Sync Sprint 11 S11-08, decision D-12, the layout half of upstream issue
+  `#297`). The main page has a "Window layout" row of Tile, Floating and Monocle buttons; the current layout is
+  highlighted and follows the hotkeys, and layouts stay per tag. It needed a small change to the dwm core: dwm
+  publishes the selected monitor's layout for its current tag as the root property `_DWM_LAYOUT` (an index into
+  `layouts[]`, written only when it changes) and takes a request through `_DWM_SET_LAYOUT`, which it reads, deletes,
+  range-checks and applies with `setlayout()`; out of range and negative values are ignored. `dwm-quickshell-state`
+  gains a `layout=` field, watches the property, and has a `layout <index>` command that sets it with `xprop`;
+  `DwmState.qml` gains `layoutIndex` and `setLayout()`. An older dwm publishes nothing, so the buttons are disabled.
+  Any local X client could already set root properties or send key events, so this adds no new capability. Tests: the
+  dwm harness (`check-xvfb-runtime`) sets, ignores, consumes and per-tag checks the property and fails against the
+  original `dwm.c`; `check-quickshell-state` covers the `layout=` field and command; `check-quickshell-panel-menus`
+  pins the wiring and that the button list has one entry per layout in `config.def.h`. Not verified: the buttons under
+  a real mouse, more than one monitor, or a `config.h` with different layouts (the button list is static).
+
+- A window corner-radius slider in Settings > Appearance > Compositor (Sync Sprint 11 S11-09, decision D-12, the
+  corner half of upstream issue `#297`). It sets Picom's `corner-radius` from 0 to 32 px through a new
+  `dwm-settings-picom set-corner-radius <px> <revision>` action that follows `set-backend`: comments and formatting
+  are preserved, a value in an included file is changed at its source, a stale revision is refused, a fractional,
+  negative, non-finite or over-range value is refused, editing is refused while Picom runs with a command-line
+  `--corner-radius`, and `0` removes the entry. `status` reports `corner_radius`, and its detail text notes that
+  fullscreen windows stay square, per-window rules can override it and it does not combine well with
+  `transparent-clipping`. `PicomModel.qml` validates and sets it and `PicomSettingsPane.qml` adds the slider with the
+  same debounce as the opacity sliders. No dwm change. Picom itself does not type-check the value (`--diagnostics`
+  exits 0 for a string), so the helper's own check is the guard. Tests: 5 new helper tests (56 in the file,
+  mutation-checked) and a case in `test-picom-xvfb.py` that sets, replaces and clears the radius through the real
+  helper and the real pane (fails when the model's command name is broken). Not verified: the rounding itself (Xvfb
+  cannot composite), how Picom clips dwm's 1 px border at a rounded corner, or the slider under a mouse.
+
+- A "Dependencies and Package Profiles" page in the book (Sync Sprint 11 S11-05, upstream `2a0e9b3`, written for
+  Arch). `docs/src/dependencies.md` explains what the `core`, `recommended` and `full` installer profiles install, how
+  the groups in `scripts/dwm-packages.sh` are composed, and lists every group's packages with its purpose;
+  `install.md` links to it and `SUMMARY.md` includes it. The package lists were generated from the map, and
+  `tests/test-arch-packages.sh` now fails if a package that `full`, `iso`, `terminal`, `lightdm` or the QML groups can
+  install is missing from the page (verified by removing one). Upstream's page describes Fedora package names and an
+  Astro site, so nothing was copied. Not checked: the mdBook build (`mdbook` is not installed here).
+
+- Switching theme now tells already-running GTK 3 applications (Sync Sprint 11 S11-02, upstream `#351` live-broadcast
+  half). `theme-apply.sh` writes `Net/ThemeName` (and `Net/IconThemeName`) into `xsettingsd.conf` next to the cursor
+  keys, through the shared `xsettingsd_write_line()` writer, so the daemon reloads and applications such as Thunar
+  repaint without a restart; the earlier `xfconf-query` call is not read by `xsettingsd`. Each line replaces its own
+  previous line, other keys survive, a quote or backslash in the name is escaped, and a name containing a carriage
+  return or newline, or over 1024 characters, is refused with a warning and the previous value is kept. The icon theme
+  follows the same set, replace or remove rule as the GTK 2 branch. Upstream's dark-theme name resolution is not
+  ported: Lyona generates its own `Lyona-<theme>` (S6-02) and already knows the name. `test-dwm-settings-theme.sh`
+  covers the broadcast, replace-not-duplicate, escaping and rejection, and fails against the original
+  `theme-apply.sh`. Not verified: a running GTK application actually repainting.
 
 - Multi-monitor labels, type-to-filter and close-from-card for the cross-tag window overview (Sync Sprint 8 S8-02
   through S8-04, `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, issue `#350`; the model half landed in Sync Sprint 10
@@ -1557,6 +1624,47 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `make check` failed on a from-scratch checkout).
 
 ### Fixed
+
+- Qt applications follow the selected palette when `qt6ct` or `qt5ct` is installed, and GTK 2 applications can find
+  the generated theme (Sync Sprint 11 S11-06, upstream `#352`, app-theme half). `theme-apply.sh` used to write only
+  `color_scheme_path` into the tool's config, and only if that config already existed; `qt6ct` ignores that path
+  unless `custom_palette=true` (verified: with the path alone Qt reported its default light palette, with both keys it
+  reported the generated Dracula colours), so installing the tool left Qt light on a dark desktop. It now sets both
+  keys, creates a minimal `[Appearance]` config when none exists (`dwm-settings-theme` already snapshots both files,
+  so a created one is removed on rollback), preserves every other key and section, points at the palette's own scheme
+  (falling back to the tool's `darker.conf` for a dark preset with no generated scheme), and leaves the config alone
+  on a runtime-only apply. `scripts/lyona-gtk-theme` now also writes `Lyona-<id>/qt/colors.conf` (the 21 QPalette
+  roles, highlighted text picked by contrast, placeholder text readable at 3:1 or better) and
+  `Lyona-<id>/gtk-2.0/gtkrc`, and the `check-install` inventory lists them. New tests: `check-app-palettes` (structure
+  and contrast for all 15 presets), `check-qt-palette-xvfb` (the generated scheme really becomes Qt's palette under
+  `qt6ct`, with a negative control for `custom_palette`), and `check-theme-apply-qt-palette` (the real
+  `theme-apply.sh`; fails against the original). Without `qt6ct`/`qt5ct`, Qt already followed the generated GTK theme.
+  Not verified: GTK 2 rendering (not installed here), `qt5ct` beyond its config (same keys, only `qt6ct` was run), or
+  a rendered Qt app.
+
+- Shell text is readable on hover and selected surfaces in every palette (Sync Sprint 11 S11-01, completes Sync Sprint
+  6 S6-03 and issue `#116`, ported from upstream `#352`). The shell's hover surface came from the palette's
+  `term_color8`, ANSI bright-black, which is a terminal foreground and not a UI surface, and hover text was the plain
+  foreground on top of it. Computed from `config/themes.toml`, all 5 light presets and 6 of the 10 dark ones fell
+  below 4.5:1 on hover, and Solarized Light's strong text on hover was 1.00:1. `Theme.qml` now derives a light hover
+  surface from the light background (`lightHover()`), and picks each hover, focus, selected and action text role with
+  `readableText()` and `readableTextOnSurfaces()`, which keep the palette colour when it reaches 4.5:1 and fall back
+  to black or white otherwise (`luminance()` also reads a `#AARRGGBB` string). 13 components take upstream's patch
+  unchanged and `LauncherResultDelegate.qml` and `ControlsWindow.qml` needed small hand merges. New `make
+  check-quickshell-theme-contrast` loads the real `Theme` singleton for all 15 palettes (built with the key mapping
+  read from `dwm-settings-appearance`, so it cannot drift), asserts 174 role/surface pairs at 4.5:1 with its own
+  independent contrast maths, and checks a dark-to-light-to-dark switch in one process; against the original
+  `Theme.qml` it fails 105 of the 174 assertions across 14 presets. Not verified by eye: check a light preset
+  (Solarized Light, Catppuccin Latte) and a dark one on the launcher, control center, network and Settings surfaces.
+
+- `tests/test-xvfb-runtime.sh` no longer raises a critical "dwm: bad config" notification on the real desktop (Sync
+  Sprint 11 S11-04, upstream `#354` test half). The test writes a deliberately invalid `hotkeys.toml`, and dwm reports
+  it through `notify-send`; the test's separate X display still inherited the caller's D-Bus session, so every run of
+  `make check` on a live desktop showed a critical notification. A fake `notify-send` now goes first on dwm's `PATH`
+  and logs its arguments, and the test asserts that a valid configuration emits nothing and that the invalid one is
+  reported as `-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults`. dwm reports once per load
+  (its file watcher and the test's `USR1` each reload), so the assertion is "at least once". No other test that
+  launches dwm writes an invalid configuration.
 
 - The cross-tag window overview's type-to-filter and close-from-card did nothing, and the popup logged
   `WindowOverview.qml: Unable to assign [undefined] to QString` and `TypeError: Cannot read property 'length' of

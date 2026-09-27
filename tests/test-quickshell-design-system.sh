@@ -47,6 +47,12 @@ done
 
 grep -Fq 'Theme.popupBackground' "$core/ShellSurface.qml"
 grep -Fq 'Theme.popupBorder' "$core/ShellSurface.qml"
+# Popups and notification cards are square (Sync Sprint 11 S11-07, decision D-10).
+grep -Fq 'readonly property int popupRadius: 0' "$theme"
+grep -Fq 'readonly property int notificationAccentRadius: 0' "$theme"
+grep -Fq 'radius: Theme.popupRadius' "$core/ShellSurface.qml"
+grep -Fq 'radius: Theme.popupRadius' "$repo/config/quickshell/notifications/NotificationCard.qml"
+grep -Fq 'radius: Theme.popupRadius' "$repo/config/quickshell/notifications/NotificationHistoryWindow.qml"
 grep -Fq 'Theme.controlNormalFill' "$core/ShellButton.qml"
 grep -Fq 'Theme.controlFocusBorder' "$core/ShellButton.qml"
 grep -Fq 'Theme.menuHoverBackground' "$core/MenuRow.qml"

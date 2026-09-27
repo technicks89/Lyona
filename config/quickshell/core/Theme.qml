@@ -25,6 +25,7 @@ Singleton {
     property string accent: "#81A1C1"
     property string accentSecondary: "#81A1C1"
     property string accentText: "#2E3440"
+    readonly property string accentHoverText: readableText(accentText, accentSecondary)
     property string success: "#A3BE8C"
     property string warning: "#EBCB8B"
     property string danger: "#BF616A"
@@ -35,35 +36,81 @@ Singleton {
     readonly property string popupBorder: highContrast ? textStrong : borderStrong
     readonly property string popupText: text
     readonly property string menuBackground: bg
-    readonly property string menuText: text
-    readonly property string menuMutedText: textMuted
-    readonly property string menuActionText: accent
+    readonly property string menuText: dark ? text : readableTextOnSurfaces(text, [menuBackground, menuHoverBackground])
+    readonly property string menuMutedText: dark ? textMuted : readableTextOnSurfaces(textMuted, [menuBackground, menuHoverBackground])
+    readonly property string menuActionText: readableText(accent, menuBackground)
     readonly property string menuHoverBackground: surfaceHover
-    readonly property string menuHoverText: textStrong
+    readonly property string menuHoverText: readableText(textStrong, menuHoverBackground)
     readonly property string menuSelectedBackground: surfaceActive
-    readonly property string menuSelectedText: accentSecondary
+    readonly property string menuSelectedText: readableText(accentSecondary, menuSelectedBackground)
     readonly property string controlNormalFill: surface
     readonly property string controlNormalBorder: highContrast ? textStrong : border
-    readonly property string controlNormalText: text
+    readonly property string controlNormalText: dark ? readableText(text, controlNormalFill) : readableTextOnSurfaces(text, [controlNormalFill, controlHoverFill])
     readonly property string controlHoverFill: surfaceHover
     readonly property string controlHoverBorder: highContrast ? textStrong : borderStrong
-    readonly property string controlHoverText: text
+    readonly property string controlHoverText: readableText(text, controlHoverFill)
     readonly property string controlFocusFill: surface
     readonly property string controlFocusBorder: highContrast ? textStrong : accent
-    readonly property string controlFocusText: text
+    readonly property string controlFocusText: readableText(text, controlFocusFill)
     readonly property string controlSelectedFill: surfaceActive
     readonly property string controlSelectedBorder: highContrast ? textStrong : accentSecondary
-    readonly property string controlSelectedText: accentSecondary
+    readonly property string controlSelectedText: readableText(accentSecondary, controlSelectedFill)
     readonly property string controlDisabledFill: barBackground
     readonly property string controlDisabledBorder: highContrast ? textStrong : border
     readonly property string controlDisabledText: textMuted
+
+    // WCAG relative luminance of "#RRGGBB", or "#AARRGGBB" (how QML stringifies a
+    // colour that has alpha; the alpha byte is skipped).
+    function luminance(color) {
+        const rgb = color.length === 9 ? color.slice(3) : color.slice(1);
+        const channels = [0, 2, 4].map(function(offset) {
+            const value = parseInt(rgb.slice(offset, offset + 2), 16) / 255;
+            return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+        });
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    }
+
+    // The foreground itself when it reads at 4.5:1 on the background, otherwise
+    // black or white, whichever is the better fit.
+    function readableText(foreground, background) {
+        const fg = luminance(foreground);
+        const bg = luminance(background);
+        if ((Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05) >= 4.5)
+            return foreground;
+        return bg > 0.179 ? "#000000" : "#ffffff";
+    }
+
+    function readableTextOnSurfaces(foreground, backgrounds) {
+        // Some controls intentionally keep one text role while their fill
+        // changes on hover. Check that role against both actual surfaces.
+        function minimumContrast(color) {
+            const fg = luminance(color);
+            return Math.min.apply(null, backgrounds.map(function(background) {
+                const bg = luminance(background);
+                return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+            }));
+        }
+        if (minimumContrast(foreground) >= 4.5)
+            return foreground;
+        return minimumContrast("#000000") > minimumContrast("#ffffff") ? "#000000" : "#ffffff";
+    }
+
+    function lightHover(background, foreground) {
+        // ANSI bright-black is a terminal foreground, not a light UI surface.
+        return "#" + [1, 3, 5].map(function(offset) {
+            const bg = parseInt(background.slice(offset, offset + 2), 16);
+            const fg = parseInt(foreground.slice(offset, offset + 2), 16);
+            return Math.round(bg * 0.92 + fg * 0.08).toString(16).padStart(2, "0");
+        }).join("");
+    }
 
     function applyAppearanceColors(colors, darkMode) {
         root.dark = darkMode;
         root.bg = colors.background;
         root.barBackground = colors["bar-background"];
         root.surface = colors.surface;
-        root.surfaceHover = colors["surface-hover"];
+        root.surfaceHover = darkMode ? colors["surface-hover"]
+            : lightHover(colors.background, colors["text-strong"]);
         root.surfaceActive = colors["surface-active"];
         root.border = colors.border;
         root.borderStrong = colors["border-strong"];
@@ -73,7 +120,7 @@ Singleton {
         root.placeholder = colors.placeholder;
         root.accent = colors.accent;
         root.accentSecondary = colors["accent-secondary"];
-        root.accentText = colors["accent-text"];
+        root.accentText = readableText(colors["accent-text"], colors.accent);
         root.success = colors.success;
         root.warning = colors.warning;
         root.danger = colors.danger;
@@ -137,11 +184,11 @@ Singleton {
     readonly property int controlRowHeight: dp(32)
     readonly property int controlPaddingX: dp(9)
     readonly property int controlBorderWidth: dp(highContrast ? 2 : 1)
-    readonly property int controlFocusBorderWidth: dp(highContrast ? 3 : 2)
+    readonly property int controlFocusBorderWidth: controlBorderWidth
     readonly property int controlRadius: dp(6)
     readonly property int menuHeaderHeight: dp(26)
     readonly property int popupPadding: spacingHuge
-    readonly property int popupRadius: controlRadius
+    readonly property int popupRadius: 0
     readonly property int panelHeroIconSize: dp(32)
     readonly property real panelMetaLetterSpacing: 1.2 * uiScale
     readonly property int panelSliderHeight: dp(32)
@@ -183,7 +230,7 @@ Singleton {
     readonly property int compactButtonHeight: dp(40)
     readonly property int confirmButtonHeight: dp(48)
     readonly property int notificationAccentWidth: dp(4)
-    readonly property int notificationAccentRadius: dp(2)
+    readonly property int notificationAccentRadius: 0
     readonly property int largeSurfaceMargin: dp(22)
     readonly property int largeSurfaceNavWidth: dp(248)
     readonly property int settingsNavWidth: dp(232)

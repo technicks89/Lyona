@@ -38,6 +38,8 @@ for dir in "$out"/Lyona-*; do
 	assert_file "$dir/index.theme"
 	assert_file "$dir/gtk-3.0/gtk.css"
 	assert_file "$dir/gtk-4.0/gtk.css"
+	assert_file "$dir/gtk-2.0/gtkrc"
+	assert_file "$dir/qt/colors.conf"
 	assert_contains "$dir/index.theme" "GtkTheme=$name"
 
 	for css in "$dir/gtk-3.0/gtk.css" "$dir/gtk-4.0/gtk.css"; do

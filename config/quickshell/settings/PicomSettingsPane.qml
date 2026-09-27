@@ -10,18 +10,25 @@ ColumnLayout {
     required property var model
     property real activeOpacity: 100
     property real inactiveOpacity: 100
+    property real cornerRadius: 0
     property bool changed: false
+    property bool radiusChanged: false
     property string editRevision: ""
+    property string radiusRevision: ""
     Layout.fillWidth: true
     spacing: Theme.spacingXl
 
     function synchronize() {
         if (!root.model.snapshot.editable) {
             keyboardDelay.stop();
+            radiusDelay.stop();
             root.changed = false;
-        } else if (foreground.pressed || background.pressed || root.changed) return;
+            root.radiusChanged = false;
+        } else if (foreground.pressed || background.pressed || corners.pressed
+                || root.changed || root.radiusChanged) return;
         root.activeOpacity = root.model.snapshot.active;
         root.inactiveOpacity = root.model.snapshot.inactive;
+        root.cornerRadius = root.model.snapshot.corner_radius || 0;
     }
 
     function applyOpacity() {
@@ -36,6 +43,18 @@ ColumnLayout {
         root.model.setOpacity(root.activeOpacity, root.inactiveOpacity, root.editRevision);
     }
 
+    function applyCornerRadius() {
+        radiusDelay.stop();
+        if (!root.radiusChanged) return;
+        if (!root.model.snapshot.editable) {
+            root.synchronize();
+            return;
+        }
+        if (root.model.busy) return;
+        root.radiusChanged = false;
+        root.model.setCornerRadius(root.cornerRadius, root.radiusRevision);
+    }
+
     Component.onCompleted: root.synchronize()
     Connections {
         target: root.model
@@ -43,6 +62,7 @@ ColumnLayout {
         function onBusyChanged() {
             if (!root.model.busy) {
                 if (root.changed) keyboardDelay.restart();
+                else if (root.radiusChanged) radiusDelay.restart();
                 else root.synchronize();
             }
         }
@@ -106,6 +126,28 @@ ColumnLayout {
         onPressedChanged: { if (!pressed) root.applyOpacity(); }
     }
     UiText {
+        text: "Window corner radius: " + Math.round(root.cornerRadius) + " px"
+        color: Theme.menuText
+    }
+    Controls.Slider {
+        id: corners
+        objectName: "picomCornerRadius"
+        Accessible.name: "Window corner radius"
+        palette.highlight: Theme.accent
+        palette.button: Theme.controlNormalFill
+        Layout.fillWidth: true
+        from: 0; to: 32; stepSize: 1
+        value: root.cornerRadius
+        enabled: root.model.editable
+        onMoved: {
+            if (!root.radiusChanged) root.radiusRevision = root.model.snapshot.revision;
+            root.cornerRadius = value;
+            root.radiusChanged = true;
+            if (!pressed) radiusDelay.restart();
+        }
+        onPressedChanged: { if (!pressed) root.applyCornerRadius(); }
+    }
+    UiText {
         text: "Backend" + (root.model.snapshot.effective ? " (current: " + root.model.snapshot.effective + ")" : "")
         color: Theme.menuText
     }
@@ -145,5 +187,10 @@ ColumnLayout {
         id: keyboardDelay
         interval: 250
         onTriggered: root.applyOpacity()
+    }
+    Timer {
+        id: radiusDelay
+        interval: 250
+        onTriggered: root.applyCornerRadius()
     }
 }

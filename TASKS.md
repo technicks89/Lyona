@@ -189,3 +189,33 @@ update in the same PR, so completed items are pinned here too, not only in
   (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md`). Done: S10-01 to S10-06 and
   S10-08. Open: S10-07 (hardware qualification ledger; needs real hardware,
   D-4 needs a real CachyOS install).
+- [x] Sync Sprint 11 S11-04 -- keep the xvfb runtime test's "bad config" notification off the real desktop, issue `#155`
+  -- `tests/test-xvfb-runtime.sh`. Evidence: `docs/evidence/s11-04-notification-capture.md`.
+- [x] Sync Sprint 11 S11-01 -- shell text stays readable on hover and selected surfaces (completes S6-03, closes `#116`),
+  issue `#152` -- `config/quickshell/core/Theme.qml` and 15 components; `tests/test-quickshell-theme-contrast-xvfb.sh`
+  (`make check-quickshell-theme-contrast`). Evidence: `docs/evidence/s11-01-theme-contrast.md`. Not verified by eye.
+- [x] Sync Sprint 11 S11-06 -- Qt palettes for qt5ct/qt6ct and a GTK 2 theme, issue `#157` -- `scripts/lyona-gtk-theme`,
+  `scripts/theme-apply.sh`; `tests/test-app-palettes.py`, `tests/test-qt-palette-xvfb.sh`,
+  `tests/test-theme-apply-qt-palette.sh`. Evidence: `docs/evidence/s11-06-qt-gtk2-palettes.md`. GTK 2 rendering not
+  verified.
+- [x] Sync Sprint 11 S11-07 -- square popups and a 1 px focus ring (decision D-10), issue `#158` --
+  `config/quickshell/core/Theme.qml`, two notification files; pins in `tests/test-quickshell-design-system.sh` and
+  `tests/test-quickshell-accessibility.sh`. Evidence: `docs/evidence/s11-07-square-popups.md`. Not verified by eye.
+- [x] Sync Sprint 11 S11-02 -- broadcast the GTK and icon theme over XSETTINGS (upstream #351), issue `#153` --
+  `scripts/theme-apply.sh`; `tests/test-dwm-settings-theme.sh`. Evidence:
+  `docs/evidence/s11-02-xsettings-broadcast.md`. A live GTK application repainting is not verified.
+- [x] Sync Sprint 11 S11-03 -- clicking the empty panel closes open popups and floating windows (upstream #340), issue
+  `#154` -- `config/quickshell/panel/DwmPanel.qml`; pins in `tests/test-quickshell-panel-menus.sh`. Evidence:
+  `docs/evidence/s11-03-panel-click-away.md`. Bar buttons keeping their clicks is not verified.
+- [x] Sync Sprint 11 S11-05 -- document desktop dependencies and install profiles for Arch (upstream 2a0e9b3), issue
+  `#156` -- `docs/src/dependencies.md`; drift check in `tests/test-arch-packages.sh`. Evidence:
+  `docs/evidence/s11-05-dependencies-page.md`. The mdBook build was not run.
+- [x] Sync Sprint 11 S11-09 -- a Picom window corner-radius slider (D-12), issue `#160` -- `scripts/dwm-settings-picom`,
+  `config/quickshell/appearance/PicomModel.qml`, `config/quickshell/settings/PicomSettingsPane.qml`; tests in
+  `tests/test-picom.py`, `tests/test-picom-xvfb.py`. Evidence: `docs/evidence/s11-09-picom-corner-radius.md`. Rounded
+  corners not verified on a real compositor.
+- [x] Sync Sprint 11 S11-08 -- a layout switcher in the Control Center (D-12), issue `#159` -- `dwm.c`,
+  `scripts/dwm-quickshell-state`, `config/quickshell/state/DwmState.qml`,
+  `config/quickshell/controlcenter/ControlCenterWindow.qml`; tests in `tests/test-xvfb-runtime.sh`,
+  `tests/test-quickshell-state.sh`, `tests/test-quickshell-panel-menus.sh`. Evidence:
+  `docs/evidence/s11-08-layout-switcher.md`. The UI was not run by hand.

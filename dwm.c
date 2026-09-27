@@ -83,7 +83,7 @@ enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
        NetWMWindowTypeMenu, NetWMWindowTypePopupMenu, NetWMWindowTypeDropdownMenu,
        NetWMWindowTypeCombo, NetWMWindowTypeDnd,
        NetClientList, NetDesktopNames, NetDesktopViewport, NetNumberOfDesktops, NetCurrentDesktop,
-       NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetLast };
+       NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmLayout, NetDwmSetLayout, NetLast };
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast };
 enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
        ClkClientWin, ClkRootWin, ClkLast };
@@ -348,6 +348,8 @@ static void setnumdesktops(void);
 static void setviewport(void);
 static void updatecurrentdesktop(void);
 static void updateselectedmonitor(void);
+static void updatelayoutprop(void);
+static void applylayoutrequest(void);
 
 static void managealtbar(Window win, XWindowAttributes *wa);
 static void managetray(Window win, XWindowAttributes *wa);
@@ -1357,6 +1359,7 @@ focus(Client *c)
 	}
 	selmon->sel = c;
 	updateselectedmonitor();
+	updatelayoutprop();
 	// drawbars();
 }
 
@@ -2367,6 +2370,9 @@ propertynotify(XEvent *e)
 		updatestatus();
 	} else if ((ev->window == root) && (ev->atom == XA_RESOURCE_MANAGER)) {
 		updatedpi(0);
+	} else if ((ev->window == root) && (ev->atom == netatom[NetDwmSetLayout])) {
+		if (ev->state == PropertyNewValue)
+			applylayoutrequest();
 	} else if (ev->state == PropertyDelete) {
 		return;
 	} else if ((c = wintoclient(ev->window))) {
@@ -3343,6 +3349,7 @@ setlayoutshrink(const Arg *arg, int shrink)
 
 	copystr(selmon->ltsymbol, sizeof selmon->ltsymbol,
 	        selmon->lt[selmon->sellt]->symbol);
+	updatelayoutprop();
 	if (selmon->sel)
 		arrange(selmon);
 	// else
@@ -4262,6 +4269,8 @@ setup(void)
 	netatom[NetWMDesktop] = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
 	netatom[NetDwmMonitorDesktops] = XInternAtom(dpy, "_DWM_MONITOR_DESKTOPS", False);
 	netatom[NetDwmSelectedMonitor] = XInternAtom(dpy, "_DWM_SELECTED_MONITOR", False);
+	netatom[NetDwmLayout] = XInternAtom(dpy, "_DWM_LAYOUT", False);
+	netatom[NetDwmSetLayout] = XInternAtom(dpy, "_DWM_SET_LAYOUT", False);
 	dwmfullscreenmonitorsatom = XInternAtom(dpy, "_DWM_FULLSCREEN_MONITORS", False);
 	dwmtagupdateatom = XInternAtom(dpy, "DWM_TAG_UPDATE", False);
 
@@ -5164,6 +5173,7 @@ updatecurrentdesktop(void)
 	free(monitor_desktops);
 	updateselectedmonitor();
 	updatefullscreenmonitors();
+	updatelayoutprop();
 }
 
 void
@@ -5182,6 +5192,52 @@ updateselectedmonitor(void)
 	ewmh_replace_root_cardinal(netatom[NetDwmSelectedMonitor], data, 1);
 	selectedmonitorcache = logicalindex;
 	selectedmonitorcachevalid = 1;
+}
+
+/* Publish the selected monitor's layout for the current tag as an index into
+ * layouts[] (the same index hotkeys.toml's layout_idx uses), so a status
+ * client can show and highlight it. Written only when the value changes: a
+ * status client watches this property. */
+void
+updatelayoutprop(void)
+{
+	static long cache = -1;
+	long data[] = { 0 };
+	long idx;
+
+	if (!selmon)
+		return;
+	idx = (long)(selmon->lt[selmon->sellt] - layouts);
+	if (idx < 0 || idx >= (long)LENGTH(layouts) || idx == cache)
+		return;
+	data[0] = idx;
+	ewmh_replace_root_cardinal(netatom[NetDwmLayout], data, 1);
+	cache = idx;
+}
+
+/* A status client asks for a layout by setting the root property
+ * _DWM_SET_LAYOUT to an index into layouts[]. The request is consumed
+ * (deleted) and range-checked, then applied to the selected monitor exactly as
+ * the setlayout hotkey would. Any X client can set a root property, which is
+ * the same trust the EWMH messages dwm already accepts carry. */
+void
+applylayoutrequest(void)
+{
+	Atom type;
+	int format;
+	unsigned long n, after;
+	unsigned char *data = NULL;
+	long idx;
+
+	if (XGetWindowProperty(dpy, root, netatom[NetDwmSetLayout], 0, 1, True,
+	    XA_CARDINAL, &type, &format, &n, &after, &data) != Success || !data)
+		return;
+	if (type == XA_CARDINAL && format == 32 && n == 1) {
+		idx = *(long *)data;
+		if (idx >= 0 && idx < (long)LENGTH(layouts))
+			setlayout(&(Arg){ .v = &layouts[idx] });
+	}
+	XFree(data);
 }
 
 #if SHOWWINICON

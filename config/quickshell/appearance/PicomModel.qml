@@ -17,7 +17,7 @@ Scope {
     property string actionFailure: ""
     readonly property string failure: actionFailure || statusFailure || watchFailure
     property var snapshot: ({ protocol: 1, editable: false, installed: false,
-        active: 100, inactive: 100, policy: "auto", effective: "", override: "",
+        active: 100, inactive: 100, corner_radius: 0, policy: "auto", effective: "", override: "",
         revision: "", path: "", detail: "Loading Picom configuration", copyable: false })
     property var actionArguments: []
     // What the watcher reported when its watches went live: the revision it saw
@@ -34,6 +34,8 @@ Scope {
                 || typeof value.path !== "string" || typeof value.override !== "string"
                 || !Number.isFinite(value.active) || !Number.isFinite(value.inactive)
                 || value.active < 0 || value.active > 100 || value.inactive < 0 || value.inactive > 100
+                || (value.corner_radius !== undefined
+                    && (!Number.isInteger(value.corner_radius) || value.corner_radius < 0 || value.corner_radius > 32))
                 || ["auto", "xrender", "glx", "egl"].indexOf(value.policy) < 0)
             throw new Error("Invalid Picom settings response");
         root.snapshot = value;
@@ -70,6 +72,10 @@ Scope {
 
     function setOpacity(active, inactive, revision) {
         root.mutate("set-opacity", [String(active), String(inactive)], revision);
+    }
+
+    function setCornerRadius(radius, revision) {
+        root.mutate("set-corner-radius", [String(radius)], revision);
     }
 
     onActiveChanged: {
