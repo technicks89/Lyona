@@ -1,6 +1,6 @@
 # Updating and Rollback
 
-lyona updates itself in place from signed release tarballs, either through
+lyona updates itself in place from release tarballs, either through
 Settings -> System or from a terminal with `lyona-update`. Both paths use the
 same helper, so anything you can do from Settings you can also do from a
 terminal — including the one thing Settings cannot help with: recovering a
