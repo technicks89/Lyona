@@ -98,7 +98,26 @@ if grep -q 'pkexec\|sudo' "$system_pane"; then
 	printf 'SystemSettingsPane must not invoke privilege escalation directly.\n' >&2
 	exit 1
 fi
+# shellcheck disable=SC2016
 grep -Fq 'lyona-update-root' "$lyona_update_root"
+# Sync Sprint 12 S12-02: the release is hashed and extracted from one root-owned
+# copy, and that copy and config.h are read with the invoking user's permissions.
+# (A swap between two reads cannot be reproduced reliably in a test; these pin the
+# single-copy shape. tests/test-lyona-update-root-backups.sh covers the rest.)
+# shellcheck disable=SC2016 # the patterns match the literal source text
+grep -Fq 'runuser -u "$invoking_user" -- cat -- "$tarball_path" >"$verified_tarball"' "$lyona_update_root"
+# shellcheck disable=SC2016
+grep -Fq 'actual_sha256=$(sha256sum -- "$verified_tarball"' "$lyona_update_root"
+# shellcheck disable=SC2016
+grep -Fq 'extract_verified_tree "$verified_tarball" "$verified_dir"' "$lyona_update_root"
+# shellcheck disable=SC2016
+grep -Fq 'runuser -u "$invoking_user" -- cat -- "$config_h_path" >"$verified_dir/config.h"' "$lyona_update_root"
+# shellcheck disable=SC2016
+if grep -Fq 'sha256sum -- "$tarball_path"' "$lyona_update_root" ||
+	grep -Fq 'extract_verified_tree "$tarball_path"' "$lyona_update_root"; then
+	printf 'lyona-update-root must hash and extract its own copy, never the user-owned tarball path.\n' >&2
+	exit 1
+fi
 grep -Fq 'set-channel' "$lyona_update"
 
 # Capability registration: a fourth "system" capability alongside the three

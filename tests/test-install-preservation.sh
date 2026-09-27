@@ -408,6 +408,33 @@ if [[ $(grep -Fxc -- '-f' "$WORK_DIR/fc-cache.log") -ne 3 ]]; then
 	exit 1
 fi
 cmp "$TEST_REPO/config/Thunar/uca.xml" "$FRESH_CONFIG_HOME/Thunar/uca.xml"
+# Sync Sprint 12 S12-02 (decision D-18): lyona-update builds releases with
+# ~/.config/lyona/config.h. install-user never seeds a plain copy of the default
+# (it would only go stale), copies a customised checkout config.h once, and never
+# overwrites one that is already there.
+# (The fresh home above got a copy: this test's checkout config.h carries a marker.)
+cmp "$TEST_REPO/config.h" "$FRESH_CONFIG_HOME/lyona/config.h"
+install_into() {
+	run_as_owner env HOME="$1" make -C "$TEST_REPO" install-user \
+		USER_HOME="$1" OWNER="$OWNER" \
+		XDG_CONFIG_HOME="$1/.config" XDG_CONFIG_DIRS="$FRESH_CONFIG_DIRS" \
+		XDG_DATA_HOME="$1/.local/share" XDG_STATE_HOME="$1/.local/state" \
+		>"$WORK_DIR/config-h-install.log" 2>&1
+}
+cp -p "$TEST_REPO/config.h" "$WORK_DIR/config.h.saved"
+cp -p "$TEST_REPO/config.def.h" "$TEST_REPO/config.h"
+install_into "$WORK_DIR/default-config-home"
+test ! -e "$WORK_DIR/default-config-home/.config/lyona/config.h"
+CUSTOM_HOME="$WORK_DIR/custom-config-home"
+printf '/* lyona-test: customised */\n' >>"$TEST_REPO/config.h"
+install_custom() { install_into "$CUSTOM_HOME"; }
+install_custom
+cmp "$TEST_REPO/config.h" "$CUSTOM_HOME/.config/lyona/config.h"
+printf '/* lyona-test: edited by the user */\n' >>"$CUSTOM_HOME/.config/lyona/config.h"
+cp -p "$CUSTOM_HOME/.config/lyona/config.h" "$WORK_DIR/user-config.h"
+install_custom
+cmp "$WORK_DIR/user-config.h" "$CUSTOM_HOME/.config/lyona/config.h"
+cp -p "$WORK_DIR/config.h.saved" "$TEST_REPO/config.h"
 grep -Fqx '    <command>alacritty --working-directory %f</command>' \
 	"$FRESH_CONFIG_HOME/Thunar/uca.xml"
 for user_path in \

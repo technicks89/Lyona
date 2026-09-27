@@ -211,9 +211,9 @@ backup_system_files() {
 }
 
 # Everything below this point that ends up executed -- a Makefile recipe, a
-# script invoked by one -- must come from a tree this process itself
-# extracted from a tarball it just re-hashed, never from a directory the
-# invoking user has had write access to at any point. A staging directory
+# script invoked by one -- must come from a tree this process itself extracted
+# from its own root-owned copy of the tarball, hashed after copying, never from
+# a file or directory the invoking user has had write access to since. A staging directory
 # the unprivileged caller built and handed us is fine as a *data* source
 # (a prebuilt "dwm" is inert until the user's own session later runs it,
 # same as anything else in their PATH already), but it must never be the
@@ -249,32 +249,41 @@ install-system)
 		[[ $expected_sha256 =~ ^[0-9a-fA-F]{64}$ ]] || die "malformed expected checksum"
 		[[ $requested_version =~ ^[0-9][0-9A-Za-z.+_-]*$ ]] || die "malformed version"
 
-		actual_sha256=$(sha256sum -- "$tarball_path" | awk '{ print $1 }')
-		# Re-verified here, immediately before extraction, rather than
-		# trusted from the unprivileged caller's earlier check: that check
-		# and this one straddle an arbitrary amount of time (build,
-		# confirmation prompt) during which the tarball sits in a
-		# directory the invoking user can still write to.
-		[[ ${actual_sha256,,} == "${expected_sha256,,}" ]] ||
-			die "tarball checksum does not match the expected release digest; refusing to install"
-
 		if [[ $config_h_path != - ]]; then
 			user_owned_file "$config_h_path" "$invoking_uid" ||
 				die "config.h is not a safe, user-owned file"
 		fi
+		command -v runuser >/dev/null 2>&1 || die "runuser is unavailable"
 
 		verified_dir=$(mktemp -d) || die "could not create a scratch directory"
+		verified_tarball=$(mktemp) || die "could not create a scratch file"
 		chmod 700 "$verified_dir"
-		trap 'rm -rf "$verified_dir"' EXIT
+		chmod 600 "$verified_tarball"
+		trap 'rm -rf "$verified_dir" "$verified_tarball"' EXIT
 
-		extract_verified_tree "$tarball_path" "$verified_dir"
+		# Sync Sprint 12 S12-02: one root-owned copy is hashed, extracted and built,
+		# so nothing can swap the file between the hash and the build. The copy is
+		# read with the invoking user's own permissions, so a path, symlink or swap
+		# can never make root read a file the user could not read themselves.
+		runuser -u "$invoking_user" -- cat -- "$tarball_path" >"$verified_tarball" ||
+			die "could not read the tarball as the invoking user"
+		actual_sha256=$(sha256sum -- "$verified_tarball" | awk '{ print $1 }')
+		# The expected digest comes from the invoking user's side, which fetched
+		# it from the release page (or its own cache), so a match only proves the
+		# download is intact, not that it is genuine: the administrator's approval
+		# is the boundary. Releases are not signed yet (decision D-14).
+		[[ ${actual_sha256,,} == "${expected_sha256,,}" ]] ||
+			die "tarball checksum does not match the expected release digest; refusing to install"
+
+		extract_verified_tree "$verified_tarball" "$verified_dir"
 		staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$verified_dir/config.mk")
 		[[ -n $staged_version ]] || die "could not read VERSION from the verified release's config.mk"
 		[[ $staged_version == "$requested_version" ]] ||
 			die "the verified release is version $staged_version, not the requested $requested_version"
 
 		if [[ $config_h_path != - ]]; then
-			cp -a "$config_h_path" "$verified_dir/config.h"
+			runuser -u "$invoking_user" -- cat -- "$config_h_path" >"$verified_dir/config.h" ||
+				die "could not read config.h as the invoking user"
 		fi
 
 		# The compiled binary is rebuilt here, from source this process

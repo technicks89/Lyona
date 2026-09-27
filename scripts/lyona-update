@@ -584,7 +584,7 @@ cmd_apply() {
 	read_config
 	read_installed
 
-	local staging_dir tarball checksum install_mode config_h_arg=-
+	local staging_dir tarball checksum install_mode config_h_arg=- live_config_h=
 	if [[ -n $from_checkout ]]; then
 		valid_absolute_path "$from_checkout" || die "--from-checkout must be an absolute path"
 		[[ -f $from_checkout/config.mk ]] || die "not a lyona checkout: $from_checkout"
@@ -660,9 +660,18 @@ cmd_apply() {
 			rm -rf "$staging_dir"
 			die "failed to unpack $tarball"
 		fi
-		local live_config_h=${script_dir%/*}/config.h
-		if [[ -f $live_config_h ]]; then
-			cp -a "$live_config_h" "$staging_dir/config.h"
+		# Compile-time options (Sync Sprint 12 S12-02, decision D-18): the user's own
+		# $XDG_CONFIG_HOME/lyona/config.h first, then a checkout's config.h next to
+		# this script. Resolved, because the privileged step refuses a symlink.
+		local candidate
+		for candidate in "$config_home/lyona/config.h" "${script_dir%/*}/config.h"; do
+			[[ -f $candidate ]] || continue
+			live_config_h=$(readlink -f -- "$candidate")
+			break
+		done
+		if [[ -n $live_config_h ]]; then
+			warn "building with compile-time options from $live_config_h"
+			cp -- "$live_config_h" "$staging_dir/config.h"
 			config_h_arg=$live_config_h
 		fi
 	fi
@@ -681,6 +690,8 @@ cmd_apply() {
 		die "failed to clean the staging tree"
 	fi
 	if ! make -C "$staging_dir" all; then
+		[[ -z $live_config_h ]] ||
+			warn "this build used $live_config_h; if $requested_version added compile-time options, merge them in from its config.def.h"
 		die "build failed for $requested_version; the live install is untouched"
 	fi
 

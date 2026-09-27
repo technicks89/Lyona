@@ -256,6 +256,31 @@ fi
 assert_contains "$work/out" 'refusing to install an unverified tarball'
 go_online
 
+# ── apply --file: builds with the user's own config.h (S12-02, D-18) ───
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+release_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$repo/config.mk")
+source_tree=$work/source/lyona-$release_version
+rm -rf "$work/source"
+mkdir -p "$work/source"
+cp -a "$repo" "$source_tree"
+rm -rf "$source_tree/.git" "$source_tree/release" "$source_tree/config.h"
+make -s -C "$source_tree" clean >/dev/null
+tar -C "$work/source" -czf "$work/source.tar.gz" "lyona-$release_version"
+seed_release "$release_version" "$(sha256sum "$work/source.tar.gz" | awk '{ print $1 }')"
+mkdir -p "$config_home/lyona"
+{
+	cat "$repo/config.def.h"
+	printf '/* lyona-test: the user config.h */\n'
+} >"$config_home/lyona/config.h"
+status=$(run_update apply --file "$work/source.tar.gz" --version "$release_version" --dry-run 2>"$work/err")
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_contains "$work/err" "building with compile-time options from $config_home/lyona/config.h"
+assert_equals "$(cat "$config_home/lyona/config.h")" \
+	"$(cat "$state_home/lyona/updates/$release_version/config.h")" "the staged build uses the user's config.h"
+rm -f "$config_home/lyona/config.h"
+rm -rf "$state_home/lyona/updates/$release_version" "$work/source" "$work/source.tar.gz"
+
 # ── apply: downgrade refused without --allow-downgrade ─────────────────
 reset_curl_responses
 valid_user_record 2026.09.0 | write_user_record

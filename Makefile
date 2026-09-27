@@ -333,6 +333,13 @@ install-user:
 	test -f ${CFG_DIR}/lyona/hotkeys.toml || install -Dm644 config/hotkeys.toml ${CFG_DIR}/lyona/hotkeys.toml
 	test -f ${CFG_DIR}/lyona/themes.toml  || install -Dm644 config/themes.toml  ${CFG_DIR}/lyona/themes.toml
 	test -f ${CFG_DIR}/lyona/window-rules.toml || install -Dm644 config/window-rules.toml ${CFG_DIR}/lyona/window-rules.toml
+	@# lyona-update builds releases with ~/.config/lyona/config.h (decision D-18).
+	@# Only a customised checkout config.h is copied, never over an existing one;
+	@# a plain copy of the default would only go stale as config.def.h changes.
+	if [ -f config.h ] && ! cmp -s config.h config.def.h && [ ! -e ${CFG_DIR}/lyona/config.h ]; then \
+		install -Dm644 config.h ${CFG_DIR}/lyona/config.h; \
+		echo "  Copied your customised config.h to ${CFG_DIR}/lyona/config.h; lyona-update builds with it."; \
+	fi
 	@echo "==> Migrating legacy graphical-session startup..."
 	HOME="${USER_HOME}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" scripts/migrate-graphical-session.sh
 	@echo "==> Installing Meslo font aliases..."

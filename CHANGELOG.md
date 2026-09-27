@@ -10,6 +10,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Updates keep your compile-time options (Sync Sprint 12 S12-02, decision D-18). `lyona-update` looked for `config.h`
+  only next to its own scripts directory, so updates from Settings or from the installed command always built from
+  `config.def.h` and silently dropped compile-time changes. It now builds with
+  `${XDG_CONFIG_HOME:-$HOME/.config}/lyona/config.h` first, then a checkout's `config.h`, says which one it used, and
+  names it if the build fails. `make install-user` copies a customised checkout `config.h` there once and never
+  overwrites an existing one (an unchanged default is not copied). `docs/src/configuration.md` now leads with the TOML
+  files as the way to customise and lists the few compile-time options `config.h` still holds; it still described
+  `rules[]`, `keys[]`, `colors[]` and `autostart[]` in `config.h`, which no longer exist.
+
 - The window overview now fades out before hiding, with immediate closure under reduced motion.
   Overview load tests enforce absolute CPU and timing budgets only with `DWM_OVERVIEW_STRICT=1`.
 
@@ -1350,6 +1359,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   already running no longer reports a stale `mutationReady` value.
 
 ### Security
+
+- The privileged release install hashes, unpacks and builds one root-owned copy of the tarball (Sync Sprint 12 S12-02,
+  issue `#165`). `lyona-update-root install-system release` used to hash the user-owned tarball in
+  `~/.local/state/lyona/updates/` and then extract it by reading the same path again, so it could be swapped between
+  the two reads, and it copied `config.h` with `cp -a` as root. It now reads the tarball and `config.h` with the invoking
+  user's own permissions (`runuser ... cat`) into files only root can reach, checks the digest on that copy, and
+  extracts and builds only that copy, so no swap, symlink or path can make root read or build anything the user could
+  not read themselves. `docs/src/updating.md` now says what the digest proves: the download is intact, not that the
+  release is genuine, since releases are not signed yet (decision D-14) and the administrator prompt is the boundary.
+  It also no longer claims the build never runs with elevated privileges; the privileged step rebuilds its own copy.
+  Tested as root in a disposable container (`make check-update-root-backups`) and pinned in
+  `tests/test-quickshell-update-model.sh`.
 
 - Rolling back an update no longer installs anything from the user's home directory as root (Sync Sprint 12 S12-01,
   issue `#164`). `lyona-update-root restore-system` used to extract `system-files.tar` from
