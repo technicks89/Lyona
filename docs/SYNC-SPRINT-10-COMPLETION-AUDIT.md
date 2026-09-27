@@ -25,9 +25,12 @@ green), then S10-03, S10-04, S10-05, then S10-06 last among the code items
 because it needs the earlier ones. S10-07 and S10-08 are docs and can go
 any time.
 
-**Status:** S10-01 through S10-06 and S10-08 are merged (#149) and verified;
-the Full suite (manual) passed on `main` at `90f20f1` (https://github.com/technicks89/Lyona/actions/runs/36242445295). Only
-S10-07 remains open, and it needs real hardware.
+**Status:** Done. S10-01 through S10-06 and S10-08 are merged (#149) and verified;
+the Full suite (manual) passed on `main` at `90f20f1` (https://github.com/technicks89/Lyona/actions/runs/36242445295).
+S10-07's own ledger (below) is also complete: it exists to make Sprint 4/5 and Phase 5-7's
+hardware-gated checks visible and tracked instead of implied-done by a closed milestone, and
+now does. The checks the table names remain individually open and need real hardware or a
+real install; closing that gap was never this item's job.
 
 ---
 

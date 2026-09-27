@@ -13,6 +13,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - The window overview now fades out before hiding, with immediate closure under reduced motion.
   Overview load tests enforce absolute CPU and timing budgets only with `DWM_OVERVIEW_STRICT=1`.
 
+- A qualification ledger closes Sprint 10 (Sync Sprint 10 S10-07, issue `#147`,
+  `docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md#s10-07-qualification-ledger-for-sprints-closed-with-hardware-checks-open`). Sprints 4, 5 and Phases 5 to 7 were left
+  with checks that need real hardware, a real install, or elevated access (the Picom NVIDIA
+  backend, fresh-install media defaults on both ISOs, a full privileged `lyona-update` run,
+  Settings panes and floating toggles on a slow provider, a Flathub-remote refusal, a fresh
+  LightDM login, a live PackageKit transaction, a live polkit denial, D-4's read-only
+  `pacman.lck` check), and those closed milestones did not say so. Nothing here can run in this
+  sandbox and none of it is done by this entry; the ledger table in the plan doc is the one
+  place all of it is now tracked instead of implied-done by a closed issue. `docs/UPSTREAM-SYNC.md`'s
+  Sprint 10 row and D-4's "Open decisions" row now point at it, and `TASKS.md` marks the sprint done
+  on that basis.
+
 - Clicking the empty part of the top bar closes the launcher, the command menu, notification history and the control
   center's utility windows as well as open panel popups (Sync Sprint 11 S11-03, upstream `#340` click-away half).
   `DwmPanel.qml` gets a background `MouseArea` that calls `popupRequested(root, "")`, and `selectPanelPopup()` already
