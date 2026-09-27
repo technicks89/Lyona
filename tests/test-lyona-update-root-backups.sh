@@ -189,13 +189,13 @@ chown "$uid:$uid" "$tarball"
 chmod 0644 "$tarball"
 sha=$(sha256sum "$tarball" | awk '{ print $1 }')
 
-# Six older backups, so pruning to five is visible.
+# Six backups dated after the new one, so pruning must reserve its slot.
 install -d -o root -g root -m 0700 "$store"
 for n in 1 2 3 4 5 6; do
 	install -d -o root -g root -m 0700 "$store/20000101T00000${n}Z-1"
 done
 
-new_id=$(date -u +%Y%m%dT%H%M%SZ)-$$
+new_id=19990101T000000Z-$$
 refuses 'malformed backup id' install-system release "$tarball" "$sha" "$version" - ../x
 refuses 'requires a tarball' install-system release "$tarball" "$sha" "$version" -
 run_helper install-system release "$tarball" "$sha" "$version" - "$new_id" >"$work/install.out" 2>&1 || {
@@ -215,7 +215,7 @@ grep -Fxq "${helper#/}" "$work/backup-list" ||
 ! grep -Fxq '# live-before-update' "$live" || fail 'the update did not replace the live file'
 kept=$(find "$store" -mindepth 1 -maxdepth 1 -type d | wc -l)
 [[ $kept == 5 ]] || fail "pruning kept $kept backups, not 5"
-[[ -d $store/$new_id ]] || fail 'pruning removed the newest backup'
+[[ -d $store/$new_id ]] || fail 'pruning removed the newly created backup'
 
 run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
 	cat "$work/err" >&2

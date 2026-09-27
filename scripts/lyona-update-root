@@ -142,9 +142,10 @@ installed_version() {
 }
 
 prune_system_backups() {
-	local id count=0
+	local current_id=$1 id count=1
 	while IFS= read -r id; do
 		valid_backup_id "$id" || continue
+		[[ $id == "$current_id" ]] && continue
 		count=$((count + 1))
 		if ((count > system_backups_keep)); then
 			rm -rf -- "${system_backups_root:?}/$id"
@@ -206,7 +207,7 @@ backup_system_files() {
 		die "could not write the system backup"
 	fi
 	printf 'version=%s\n' "$(installed_version)" >"$dir/backup.txt"
-	prune_system_backups
+	prune_system_backups "$id"
 }
 
 # Everything below this point that ends up executed -- a Makefile recipe, a
