@@ -239,3 +239,9 @@ update in the same PR, so completed items are pinned here too, not only in
 - [x] Sync Sprint 9 S9-04 -- overview idle-CPU and many-window test, issue `#350` -- `tests/test-overview-load-xvfb.py`.
   Evidence: `docs/evidence/s9-04-overview-load.md`. Virtualization is not needed up to 600 windows; idle windows are
   10 s, not the plan's 30 s.
+- [ ] Sync Sprint 12 -- whole-repo review findings
+  (`docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md`), 18 items, all findings recorded
+  unreviewed; awaiting maintainer review. D-13 (blank and lock after 10 min),
+  D-14 (no release signing for now) and D-17a (one ISO, NVIDIA detected) are
+  decided, as are D-15 (remove checkout mode), D-16 (system copy only, plus a
+  developer override) and D-17b (keep per-screen panels). No item is gated.
