@@ -684,6 +684,14 @@ set_layout_property -1
 sleep 0.2
 wait_for_layout 2
 DISPLAY=$display xprop -root _DWM_SET_LAYOUT 2>&1 | grep -q 'not found'
+# Wrong types and extra values must also be consumed without applying the
+# first value (which would otherwise switch away from layout 2).
+for format in 32c 32i 8s; do
+	DISPLAY=$display xprop -root -f _DWM_SET_LAYOUT "$format" -set _DWM_SET_LAYOUT '0, 1'
+	sleep 0.2
+	wait_for_layout 2
+	DISPLAY=$display xprop -root _DWM_SET_LAYOUT 2>&1 | grep -q 'not found'
+done
 # Layouts are per tag: another tag has its own.
 DISPLAY=$display xdotool set_desktop 1
 wait_for_layout 0

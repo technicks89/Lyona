@@ -5224,19 +5224,23 @@ void
 applylayoutrequest(void)
 {
 	Atom type;
-	int format;
+	int format, status;
 	unsigned long n, after;
 	unsigned char *data = NULL;
 	long idx;
 
-	if (XGetWindowProperty(dpy, root, netatom[NetDwmSetLayout], 0, 1, True,
-	    XA_CARDINAL, &type, &format, &n, &after, &data) != Success || !data)
+	status = XGetWindowProperty(dpy, root, netatom[NetDwmSetLayout], 0, 1, False,
+	    XA_CARDINAL, &type, &format, &n, &after, &data);
+	XDeleteProperty(dpy, root, netatom[NetDwmSetLayout]);
+	if (status != Success || !data ||
+	    type != XA_CARDINAL || format != 32 || n != 1 || after != 0) {
+		if (data)
+			XFree(data);
 		return;
-	if (type == XA_CARDINAL && format == 32 && n == 1) {
-		idx = *(long *)data;
-		if (idx >= 0 && idx < (long)LENGTH(layouts))
-			setlayout(&(Arg){ .v = &layouts[idx] });
 	}
+	idx = *(long *)data;
+	if (idx >= 0 && idx < (long)LENGTH(layouts))
+		setlayout(&(Arg){ .v = &layouts[idx] });
 	XFree(data);
 }
 

@@ -34,7 +34,7 @@ The groups are made of smaller groups:
 | `optional` | theme-optional + desktop-optional + system-management-optional |
 | `full` | required + recommended + optional + gaming |
 
-The `optional` group, and everything in `full`, are conveniences. The desktop starts
+The `optional` and `gaming` additions in `full` are conveniences. The desktop starts
 without Picom, a wallpaper, Thunar or a preferred terminal, and dwm does not depend
 on any of them.
 

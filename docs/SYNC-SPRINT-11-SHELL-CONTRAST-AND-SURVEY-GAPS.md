@@ -3,13 +3,15 @@
 Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md). Independent of Sprints 7 to 10.
 It comes from a re-survey of `ChrisTitusTech/dwm-titus` (2026-09-26, upstream
 `e5bbddc`, tag `v0.7.2`), plus a full-range check of every upstream commit,
-issue and PR since the fork against what our docs account for. **Nothing in
-this document has been started.** It waits for maintainer review. All three
-design decisions are made (D-10 square popups and a 1 px focus ring, D-11 Qt
+issue and PR since the fork against what our docs account for. **This document
+preserves the original plan; all nine items are now implemented, as recorded
+under Implementation status below.** When the plan was written, no item had
+started and it awaited maintainer review. All three
+design decisions had been made (D-10 square popups and a 1 px focus ring, D-11 Qt
 and GTK 2 theming, D-12 a layout switcher and a Picom corner-radius slider), so
-no item is gated. Code in this document that says "validated" was run in a
-scratch copy of the repository or in a throwaway worktree; none of it has been
-applied to the repository.
+no item was gated. Validation described in the original plan was run in a
+scratch copy of the repository or in a throwaway worktree; at that point none
+of it had been applied to the repository.
 
 | Item | Kind | Gate |
 | --- | --- | --- |
@@ -29,10 +31,10 @@ tree, uncommitted, each with its tests, CHANGELOG entry, `TASKS.md` bullet and
 Where implementation contradicted this plan (S11-01's failure counts, S11-03's cause,
 S11-05's profile names) the text below was corrected.
 
-Every item can start as soon as this is approved, and they are independent. If
-you want an order: S11-04 (a test that leaks notifications) and S11-01 (the
-contrast bug) first, S11-06 (Qt theming is broken for `qt6ct` users today) next,
-then the rest. S11-08 is the only item that changes the dwm C core.
+The original plan treated the items as independent and ready to start after
+approval. Its suggested order was S11-04 (a test that leaked notifications)
+and S11-01 (the contrast bug) first, S11-06 (Qt theming was broken for `qt6ct`
+users) next, then the rest. S11-08 was the only planned change to the dwm C core.
 
 ---
 

@@ -453,11 +453,9 @@ class Configuration:
             or not isinstance(value, (int, float))
             or not math.isfinite(value)
             or value != int(value)
-            or not 0 <= value <= CORNER_RADIUS_MAX
+            or value < 0
         ):
-            raise Error(
-                f"Picom corner radius must be a whole number from 0 to {CORNER_RADIUS_MAX}"
-            )
+            raise Error("Picom corner radius must be a non-negative whole number")
         return int(value)
 
     def changes(self, values):
@@ -810,6 +808,10 @@ def activate(config, action):
         raise
 
 
+def corner_radius_override(running):
+    return any(option(p["args"], ("--corner-radius",)) for p in running)
+
+
 def status(detect=True):
     result = {
         "protocol": PROTOCOL,
@@ -817,7 +819,7 @@ def status(detect=True):
         "editable": False,
         "active": 100,
         "inactive": 100,
-        "corner_radius": 0,
+        "radius_editable": False,
         "policy": "auto",
         "effective": "",
         "override": "",
@@ -833,7 +835,11 @@ def status(detect=True):
         result["revision"] = config.revision()
         active, inactive = config.opacity()
         result.update(active=active * 100, inactive=inactive * 100)
-        result["corner_radius"] = config.corner_radius()
+        radius_error = ""
+        try:
+            result["corner_radius"] = config.corner_radius()
+        except (Error, OSError, ValueError) as exc:
+            radius_error = str(exc)
         policy, effective, override, gpu = backend(
             config, detect and result["installed"]
         )
@@ -847,9 +853,16 @@ def status(detect=True):
         )
         details = [
             "Global opacity; custom window rules may override these defaults.",
-            "Corner radius applies to every window except fullscreen ones; per-window "
-            "rules can override it, and it does not combine well with transparent-clipping.",
+            "Corner radius excludes fullscreen windows only when no rules block is present. "
+            "With rules configured, fullscreen windows use the global radius unless a matching "
+            "rule overrides it. Per-window rules can override the radius, and it does not "
+            "combine well with transparent-clipping.",
         ]
+        if radius_error:
+            details.append(radius_error)
+        radius_override = corner_radius_override(running)
+        if radius_override:
+            details.append("Remove the command-line corner radius override before editing the radius.")
         if not config.path.exists():
             details.append("No configuration yet; the first edit creates it.")
         if not result["running"]:
@@ -873,6 +886,9 @@ def status(detect=True):
                 result["detail"] += (
                     " Remove command-line opacity overrides before editing."
                 )
+            result["radius_editable"] = (
+                result["editable"] and not radius_error and not radius_override
+            )
         except Error as exc:
             result["detail"] += " " + str(exc)
             try:
@@ -1000,7 +1016,7 @@ def mutate(action, args, revision):
                 raise Error(
                     f"Corner radius must be a whole number from 0 to {CORNER_RADIUS_MAX} pixels"
                 )
-            if any(option(p["args"], ("--corner-radius",)) for p in processes()):
+            if corner_radius_override(processes()):
                 raise Error("Remove the command-line corner radius override before editing")
             changes = config.changes({"corner-radius": None if radius == 0 else int(radius)})
         elif action == "set-backend":

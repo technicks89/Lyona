@@ -42,7 +42,7 @@ run_apply() {
 }
 
 conf_value() {
-	sed -n "s/^$2=//p" "$1" | head -n 1
+	sed -n '/^\[Appearance\]$/,/^\[/p' "$1" | sed -n "s/^$2=//p" | head -n 1
 }
 
 # 1. A dark preset, qt6ct installed, and no qt6ct.conf yet: the config is created
@@ -76,6 +76,28 @@ grep -Fqx 'general="Sans,10"' "$conf" || fail 'an unrelated qt6ct setting was lo
 [[ $(grep -c '^color_scheme_path=' "$conf") == 1 ]] || fail 'color_scheme_path was duplicated'
 [[ $(grep -c '^custom_palette=' "$conf") == 1 ]] || fail 'custom_palette was duplicated'
 printf 'a light preset switches the scheme and keeps the rest of the config: PASS\n'
+
+# Matching keys outside [Appearance] must survive, whether the section has
+# its own keys already, has none, or must itself be created.
+for appearance in \
+	$'[Appearance]\ncustom_palette=false\ncolor_scheme_path=/old/scheme.conf' \
+	$'[Appearance]\nstyle=Fusion' \
+	''; do
+	printf '[Before]\ncustom_palette=before\ncolor_scheme_path=/before\n%s\n[After]\ncustom_palette=after\ncolor_scheme_path=/after\n' "$appearance" >"$conf"
+	run_apply
+	run_apply
+	assert_equals true "$(conf_value "$conf" custom_palette)" 'Appearance custom_palette'
+	assert_equals "$home/.local/share/themes/Lyona-catppuccin-latte/qt/colors.conf" \
+		"$(conf_value "$conf" color_scheme_path)" 'Appearance color_scheme_path'
+	for section in Before After; do
+		actual=$(sed -n "/^\[$section\]$/,/^\[/p" "$conf" | sed '/^\[/d; /^$/d')
+		expected=$(printf 'custom_palette=%s\ncolor_scheme_path=/%s' "${section,,}" "${section,,}")
+		assert_equals "$expected" "$actual" "$section settings are preserved"
+	done
+	[[ $(grep -c '^custom_palette=' "$conf") == 3 ]] || fail 'custom_palette was duplicated'
+	[[ $(grep -c '^color_scheme_path=' "$conf") == 3 ]] || fail 'color_scheme_path was duplicated'
+done
+printf 'Qt palette keys are confined to Appearance and remain idempotent: PASS\n'
 
 # 3. qt5ct chosen explicitly gets its own config the same way.
 printf 'toolkit-protocol\t1\t0\nqt\tqt5ct\n' >"$home/.config/lyona/personalization.conf"
