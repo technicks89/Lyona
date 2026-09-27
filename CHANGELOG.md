@@ -216,6 +216,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Two overview tests (Sync Sprint 9 S9-03, S9-04): `check-overview-keyboard-xvfb` drives the popup with real key
+  events and no mouse, and `check-overview-load-xvfb` runs it over 60 windows on 9 tags and checks the closed
+  Quickshell CPU before and after opening, open, filter and navigation time budgets, and that the selection scrolls to
+  the top and bottom. Measured up to 600 windows: the card list needs no virtualization. The tests exit 77 (skip)
+  without xdotool, quickshell or a built dwm.
+
+- The window overview is keyboard-operable, accessible and animated (Sync Sprint 9 S9-02, S9-03). Ctrl+W closes the
+  selected card (from the popup and from the search box), a keyboard selection scrolls into view, each card is an
+  accessible list item with the window title as its name and "Tag N, class, monitor M" as its description, the close
+  button and search box are named, and the popup is a named dialog. Card colours are Theme tokens only, including the
+  text roles, and state changes and the popup fade use Theme.animationFast/Normal, so they are instant under reduced
+  motion. Fixes the monitor label, which never rendered on a multi-monitor setup because the card read a count nothing
+  provided. Not verified: a screen reader, how the motion looks, or two real monitors.
+
 - A layout switcher in the Control Center (Sync Sprint 11 S11-08, decision D-12, the layout half of upstream issue
   `#297`). The main page has a "Window layout" row of Tile, Floating and Monocle buttons; the current layout is
   highlighted and follows the hotkeys, and layouts stay per tag. It needed a small change to the dwm core: dwm

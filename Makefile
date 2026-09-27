@@ -646,6 +646,16 @@ check-quickshell-theme-contrast: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+check-overview-load-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-overview-load-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-overview-keyboard-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-overview-keyboard-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 check-quickshell-overview-xvfb: all
 	status=0; tests/test-quickshell-overview-xvfb.sh || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
@@ -926,6 +936,8 @@ check:
 	$(MAKE) check-quickshell-panel-menus
 	$(MAKE) check-quickshell-overview
 	$(MAKE) check-quickshell-overview-xvfb
+	$(MAKE) check-overview-keyboard-xvfb
+	$(MAKE) check-overview-load-xvfb
 	$(MAKE) check-quickshell-theme-contrast
 	$(MAKE) check-quickshell-panel-settings
 	$(MAKE) check-accessibility
@@ -982,5 +994,5 @@ check:
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall

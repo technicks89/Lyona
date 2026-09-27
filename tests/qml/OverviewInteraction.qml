@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
+import qs.core
 import qs.overview
 
 // Runtime harness for the cross-tag window overview (Sync Sprint 10 S10-04,
@@ -15,6 +17,7 @@ ShellRoot {
     id: root
 
     property int assertions: 0
+    property string savedSurfaceActive: ""
     property var focused: []
     property var closed: []
 
@@ -94,8 +97,141 @@ ShellRoot {
         // Every monitor-labelled card reports its monitor; single monitor: no labels needed.
         root.check(model.flatCards[0].monitorIndex === 0, "cards carry a resolved monitor index");
 
-        console.info("Overview interaction tests: PASS (" + root.assertions + " assertions)");
-        Qt.quit();
+        // Ctrl+W's model call (Sprint 9 S9-03): closes the selected card's window
+        // without closing the popup, and does nothing on an empty list.
+        model.selectAbsolute(0);
+        root.closed = [];
+        model.closeSelected();
+        root.check(root.closed.length === 1 && root.closed[0] === "0x1", "closeSelected closes the selected window");
+        root.check(model.visible, "closeSelected keeps the popup open");
+        model.setQuery("zzz");
+        root.closed = [];
+        model.closeSelected();
+        root.check(root.closed.length === 0, "closeSelected on an empty overview does nothing");
+        model.setQuery("");
+
+        // The model reports the monitor count the cards need (Sprint 9 S9-03); before
+        // it existed the card read an undefined property and never showed its label.
+        root.check(model.monitorCount === 1, "one monitor reports 1");
+        dwm.monitors = 2;
+        root.check(model.monitorCount === 2, "a second monitor is reported: " + model.monitorCount);
+        dwm.monitors = 1;
+
+        // Let the card's window show first: a Behavior only runs in a shown window.
+        cardStart.start();
+    }
+
+    Timer {
+        id: cardStart
+
+        interval: 500
+        onTriggered: root.cardChecks()
+    }
+
+    function find(item, name) {
+        if (item.objectName === name) return item;
+        for (const child of item.children) {
+            const found = root.find(child, name);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    // One card on its own: accessibility, the monitor label, colour tokens and motion
+    // (Sprint 9 S9-02, S9-03).
+    function cardChecks() {
+        // In the default palette the selected and normal fills are the same colour, so
+        // there would be no transition to observe; make them differ for these checks.
+        root.savedSurfaceActive = Theme.surfaceActive;
+        Theme.surfaceActive = "#aa3333";
+        const info = { "windowId": "0x9", "desktop": 2, "appClass": "firefox", "title": "docs", "tagIndex": 2, "monitorIndex": 1 };
+
+        cardOne.window = info;
+        cardOne.tagLabel = "web";
+        cardOne.monitorCount = 1;
+        root.check(cardOne.Accessible.role === Accessible.ListItem, "a card is an accessible list item");
+        root.check(cardOne.Accessible.name === "docs", "the accessible name is the window title");
+        root.check(cardOne.Accessible.description === "Tag web, firefox",
+            "the description names the tag and app: " + cardOne.Accessible.description);
+        root.check(!root.find(cardOne, "overviewMonitorLabel").visible, "no monitor label on a single monitor");
+
+        cardOne.monitorCount = 2;
+        root.check(cardOne.Accessible.description === "Tag web, firefox, monitor 2",
+            "the description names the monitor when there are several: " + cardOne.Accessible.description);
+        root.check(root.find(cardOne, "overviewMonitorLabel").visible, "the monitor label shows with two monitors");
+        root.check(root.find(cardOne, "overviewMonitorLabel").text === "Mon 2", "the label names the right monitor");
+
+        // A new object: assigning the same reference to a var property notifies nobody.
+        cardOne.window = Object.assign({}, info, { "title": "" });
+        root.check(cardOne.Accessible.name === "firefox", "a window with no title is named by its class");
+
+        // Selected and hovered states use the Theme roles that were checked for contrast.
+        cardOne.selected = false;
+        root.check(!root.find(cardOne, "overviewCloseButton").visible, "no close button on an idle card");
+        cardOne.selected = true;
+        // Positive control: with motion on, the colour is still travelling straight
+        // after the change. If this fails the harness is not animating at all.
+        root.check(!Qt.colorEqual(cardOne.color, Theme.menuSelectedBackground),
+            "with motion on, selecting eases the card colour instead of jumping");
+        root.check(root.find(cardOne, "overviewCloseButton").visible, "the selected card shows its close button");
+        root.check(root.find(cardOne, "overviewCloseButton").Accessible.role === Accessible.Button,
+            "the close button is an accessible button");
+        root.check(root.find(cardOne, "overviewCloseButton").Accessible.name === "Close firefox",
+            "the close button says what it closes");
+
+        // Reduced motion makes the transition an instant change, not a skipped one.
+        root.check(Theme.animationFast === 120, "motion is on by default: " + Theme.animationFast);
+        Theme.applyAccessibility(false, true);
+        root.check(Theme.animationFast === 0 && Theme.animationNormal === 0, "reduced motion zeroes both durations");
+        cardOne.selected = false;
+        motionCheck.start();
+    }
+
+    Timer {
+        id: motionCheck
+
+        interval: 60
+        onTriggered: {
+            // With no animation the state change has already landed.
+            root.check(Qt.colorEqual(cardOne.color, Theme.controlNormalFill),
+                "reduced motion: deselecting changed the card colour instantly: " + cardOne.color);
+            cardOne.selected = true;
+            motionCheckSelected.start();
+        }
+    }
+
+    Timer {
+        id: motionCheckSelected
+
+        interval: 60
+        onTriggered: {
+            root.check(Qt.colorEqual(cardOne.color, Theme.menuSelectedBackground),
+                "reduced motion: selecting changed the card colour instantly: " + cardOne.color);
+            Theme.applyAccessibility(false, false);
+            root.check(Theme.animationFast === 120, "motion returns when reduced motion is off");
+            Theme.surfaceActive = root.savedSurfaceActive;
+            console.info("Overview interaction tests: PASS (" + root.assertions + " assertions)");
+            Qt.quit();
+        }
+    }
+
+    // The card lives in a real window: QML does not run a Behavior for an item that
+    // has no window, which would make every motion assertion below vacuous.
+    FloatingWindow {
+        visible: true
+        implicitWidth: 420
+        implicitHeight: 120
+
+        ColumnLayout {
+            anchors.fill: parent
+
+            OverviewCard {
+                id: cardOne
+
+                window: { "windowId": "0x0", "desktop": 0, "appClass": "kitty", "title": "x", "tagIndex": 0, "monitorIndex": 0 }
+                selected: false
+            }
+        }
     }
 
     QtObject {
@@ -104,9 +240,10 @@ ShellRoot {
         property var windowStates: []
         property var monitorWorkspaceRows: []
         property var workspaceNames: ["1", "2", "3"]
+        property int monitors: 1
 
         function monitorCount() {
-            return 1;
+            return dwm.monitors;
         }
 
         function focusWindow(windowId) {

@@ -34,6 +34,10 @@ Scope {
     readonly property var visibleWindows: Filter.excludeIds(
         Filter.filterWindows(root.dwmState.windowStates, root.query), root.closingIds)
 
+    // How many monitors there are. Cards label their monitor only when it is more
+    // than one, and the accessible description names it then (Sprint 9 S9-03).
+    readonly property int monitorCount: root.dwmState.monitorCount()
+
     readonly property var groups: WindowsLib.groupByTag(root.visibleWindows, root.dwmState.monitorWorkspaceRows,
         root.dwmState.workspaceNames, root.dwmState.monitorCount())
 
@@ -81,6 +85,19 @@ Scope {
     function closeCard(windowId) {
         root.closingIds = root.closingIds.concat([windowId]);
         root.dwmState.closeWindow(windowId);
+    }
+
+    // Ctrl+W in the popup: the keyboard form of the close button, which only
+    // appears on hover (Sprint 9 S9-03). Same guard as activateSelected(): an empty
+    // list or a stale index does nothing.
+    function closeSelected() {
+        const cards = root.flatCards;
+
+        if (cards.length === 0 || root.selectedIndex < 0 || root.selectedIndex >= cards.length) {
+            return;
+        }
+
+        root.closeCard(cards[root.selectedIndex].windowId);
     }
 
     function toggle(screen) {

@@ -38,10 +38,11 @@ question:
 - A mapped window under a compositor (Lyona ships and configures Picom)
   keeps a live backing pixmap even while positioned off-screen, since
   compositing works per-window, not per-visible-region.
-- `scripts/dwm-screenshot` already shells out to `maim`, which supports
-  `maim --window <id>`-style capture of a specific window by id, not only a
-  screen region — the exact capability this needs, already a dependency,
-  already proven to work in this codebase for a different purpose.
+- ~~`scripts/dwm-screenshot` already shells out to `maim`, which supports
+  `maim --window <id>`-style capture~~ **Wrong, found while doing the
+  spike:** `dwm-screenshot` captures by geometry or selection, and `maim` is
+  optional and not installed by default. The working call is plain
+  `XGetImage`, which needs only libX11.
 
 Put together, per-window thumbnail capture for an off-tag window may
 already work with the tools Lyona has, **without** the "second capture
@@ -75,7 +76,16 @@ whole item exists for); the idle-cost check from S9-04 re-run with the
 overview open and several thumbnails cached, to catch a spike's `maim`/
 capture calls turning out more expensive than assumed.
 
+**Outcome (2026-09-27):** feasible only with Picom running; not
+implemented. Off-tag `XGetImage` returned a real image with Picom and
+`BadMatch` without a compositor; the XComposite name-window-pixmap path
+returned black. It would be a best-effort enhancement over the icon-and-title
+card, with privacy and staleness questions for the maintainer. Numbers and
+the decision list: `docs/evidence/s9-01-thumbnail-spike.md`.
+
 ## S9-02: motion and visual polish
+
+**Done** -- `docs/evidence/s9-02-overview-motion.md`.
 
 - Open/close transitions and hover/selection state changes consistent with
   the motion language Lyona already uses elsewhere (the launcher, panel
@@ -94,6 +104,10 @@ transitions (an instant state change, not a skipped one — the same contract
 `Theme.applyAccessibility()`'s existing consumers already have to meet).
 
 ## S9-03: accessibility pass
+
+**Done** -- `docs/evidence/s9-03-overview-accessibility.md`. The audit found
+the monitor label had never rendered and that a card could not be closed from
+the keyboard (now Ctrl+W).
 
 Lyona already has an established accessibility convention — `Accessible.role`/
 `Accessible.name`/`Accessible.description` on `PanelToggleSwitch.qml`,
@@ -125,6 +139,10 @@ open-filter-navigate-activate/close-dismiss sequence with no mouse events
 sent at all.
 
 ## S9-04: idle-CPU and many-window performance
+
+**Done** -- `docs/evidence/s9-04-overview-load.md`. Deviation: the idle
+windows are 10 s by default (`DWM_OVERVIEW_CPU_SECONDS=30` gives the plan's
+length). Answer to the virtualization question: not needed up to 600 windows.
 
 The design doc already flagged the idle-CPU requirement and a closed-popup
 baseline as something to check once built (Sprint 7 took one manual

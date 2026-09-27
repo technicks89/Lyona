@@ -178,6 +178,34 @@ grep -Fq 'function selectAbsolute(index, cardCount)' "$overview/OverviewSelectio
 grep -Fq 'required property bool selected' "$overview/OverviewCard.qml"
 grep -Fq 'Theme.menuSelectedBackground' "$overview/OverviewCard.qml"
 grep -Fq 'Theme.controlSelectedBorder' "$overview/OverviewCard.qml"
+
+# Sprint 9 S9-02: the card's colours are Theme tokens only (the text roles that
+# check-quickshell-theme-contrast covers, so light palettes stay readable), and
+# its transitions use the tokens that are 0 under reduced motion.
+if grep -nE '"#[0-9A-Fa-f]{3,8}"' "$overview/OverviewCard.qml" "$overview/WindowOverview.qml"; then
+	printf 'The overview uses a literal colour instead of a Theme token\n' >&2
+	exit 1
+fi
+grep -Fq 'Theme.menuSelectedText' "$overview/OverviewCard.qml"
+grep -Fq 'Theme.controlHoverText' "$overview/OverviewCard.qml"
+grep -Fq 'Theme.controlNormalText' "$overview/OverviewCard.qml"
+grep -Fq 'Behavior on color { ColorAnimation { duration: Theme.animationFast } }' "$overview/OverviewCard.qml"
+grep -Fq 'Behavior on border.color { ColorAnimation { duration: Theme.animationFast } }' "$overview/OverviewCard.qml"
+grep -Fq 'duration: Theme.animationNormal' "$overview/WindowOverview.qml"
+if grep -nE 'duration: [0-9]+' "$overview/OverviewCard.qml" "$overview/WindowOverview.qml"; then
+	printf 'The overview animates with a fixed duration instead of Theme.animationFast/Normal\n' >&2
+	exit 1
+fi
+
+# Sprint 9 S9-03: the monitor label had no count to read (the card read an
+# undefined property), Ctrl+W closes the selected card, and a keyboard selection
+# scrolls into view.
+grep -Fq 'readonly property int monitorCount: root.dwmState.monitorCount()' "$overview/OverviewModel.qml"
+grep -Fq 'function closeSelected()' "$overview/OverviewModel.qml"
+grep -Fq 'monitorCount: root.overviewModel.monitorCount' "$overview/WindowOverview.qml"
+grep -Fq 'tagLabel: groupDelegate.modelData.tagLabel' "$overview/WindowOverview.qml"
+grep -Fq 'function revealCard(card, above)' "$overview/WindowOverview.qml"
+grep -Fq 'root.revealCard(cardDelegate, cardDelegate.index === 0 ? groupDelegate : null);' "$overview/WindowOverview.qml"
 grep -Fq 'selected: cardDelegate.modelData.flatIndex === root.overviewModel.selectedIndex' "$overview/WindowOverview.qml"
 
 # flatIndex is groupByTag()'s own render-order index, not re-derived in the

@@ -19,6 +19,9 @@ ClickAwayPopup {
     required property var overviewModel
     required property var panelWindow
 
+    // The scrolling list, exposed read-only so tests can observe scrolling and the
+    // laid-out height (tests/test-overview-load-xvfb.py, Sprint 9 S9-04).
+    readonly property var overviewFlickable: overviewFlick
     readonly property int cardWidth: Theme.dp(420)
     readonly property int cardHeight: Math.max(Theme.dp(320), overviewColumn.implicitHeight + Theme.popupPadding * 2)
 
@@ -29,6 +32,29 @@ ClickAwayPopup {
     popupX: panelWindow ? Math.max(Theme.rowSpacing, (panelWindow.width - root.cardWidth) / 2) : Theme.rowSpacing
     popupY: Theme.panelHeight
     onDismissed: overviewModel.close()
+
+    // Keep the keyboard-selected card on screen: with more windows than fit, arrow
+    // keys otherwise move the selection out of the viewport (Sprint 9 S9-03).
+    // `above` is the item to keep in view together with the card when it is the
+    // first of its tag: the group, so its heading is not scrolled out from above it.
+    function revealCard(card, above) {
+        const bottom = card.mapToItem(overviewFlick.contentItem, 0, 0).y + card.height;
+        const top = (above || card).mapToItem(overviewFlick.contentItem, 0, 0).y;
+        let target = overviewFlick.contentY;
+
+        if (top < overviewFlick.contentY) {
+            target = top;
+        } else if (bottom > overviewFlick.contentY + overviewFlick.height) {
+            target = bottom - overviewFlick.height;
+        }
+        target = Math.max(0, Math.min(target, Math.max(0, overviewFlick.contentHeight - overviewFlick.height)));
+        if (target === overviewFlick.contentY) {
+            return;
+        }
+        scrollAnimation.stop();
+        scrollAnimation.to = target;
+        scrollAnimation.restart();
+    }
 
     function focusSearch() {
         overviewSearch.forceActiveFocus();
@@ -48,6 +74,19 @@ ClickAwayPopup {
 
         anchors.fill: parent
         focus: true
+        Accessible.role: Accessible.Dialog
+        Accessible.name: "Window overview"
+
+        // A short fade in when the popup opens. Theme.animationNormal is 0 under
+        // reduced motion, which makes it an instant change, not a skipped one.
+        // Closing is instant: the popup's window is hidden with the model.
+        NumberAnimation on opacity {
+            running: root.visible
+            from: 0
+            to: 1
+            duration: Theme.animationNormal
+            easing.type: Easing.OutCubic
+        }
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
@@ -67,6 +106,9 @@ ClickAwayPopup {
                 event.accepted = true;
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 root.overviewModel.activateSelected();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_W && (event.modifiers & Qt.ControlModifier)) {
+                root.overviewModel.closeSelected();
                 event.accepted = true;
             }
         }
@@ -113,6 +155,7 @@ ClickAwayPopup {
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.accentText
                     text: root.overviewModel.query
+                    Accessible.name: "Search windows"
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.inputFontSize
                     clip: true
@@ -137,6 +180,9 @@ ClickAwayPopup {
                             event.accepted = true;
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             root.overviewModel.activateSelected();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_W && (event.modifiers & Qt.ControlModifier)) {
+                            root.overviewModel.closeSelected();
                             event.accepted = true;
                         }
                     }
@@ -165,12 +211,23 @@ ClickAwayPopup {
             }
 
             Flickable {
+                id: overviewFlick
+
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 contentWidth: width
                 contentHeight: groupsColumn.implicitHeight
+
+                NumberAnimation {
+                    id: scrollAnimation
+
+                    target: overviewFlick
+                    property: "contentY"
+                    duration: Theme.animationFast
+                    easing.type: Easing.OutCubic
+                }
 
                 ColumnLayout {
                     id: groupsColumn
@@ -200,10 +257,18 @@ ClickAwayPopup {
                                     id: cardDelegate
 
                                     required property var modelData
+                                    required property int index
 
                                     Layout.fillWidth: true
                                     window: cardDelegate.modelData
                                     selected: cardDelegate.modelData.flatIndex === root.overviewModel.selectedIndex
+                                    monitorCount: root.overviewModel.monitorCount
+                                    tagLabel: groupDelegate.modelData.tagLabel
+                                    onSelectedChanged: {
+                                        if (selected) {
+                                            root.revealCard(cardDelegate, cardDelegate.index === 0 ? groupDelegate : null);
+                                        }
+                                    }
                                     onFocusRequested: windowId => {
                                         root.overviewModel.dwmState.focusWindow(windowId);
                                         root.overviewModel.close();
@@ -214,6 +279,14 @@ ClickAwayPopup {
                         }
                     }
                 }
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                text: "Up/Down move, Enter switch, Ctrl+W close, Esc dismiss"
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontCaptionSize
+                horizontalAlignment: Text.AlignHCenter
             }
         }
     }
