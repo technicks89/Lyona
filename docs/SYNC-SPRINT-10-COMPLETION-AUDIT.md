@@ -25,9 +25,9 @@ green), then S10-03, S10-04, S10-05, then S10-06 last among the code items
 because it needs the earlier ones. S10-07 and S10-08 are docs and can go
 any time.
 
-**Status:** This PR includes S10-01 through S10-05 and S10-08, validated
-locally as described under each item. S10-06 remains open: it needs this
-merged and the workflow run. S10-07 remains open: it needs real hardware.
+**Status:** S10-01 through S10-06 and S10-08 are merged (#149) and verified;
+the Full suite (manual) passed on `main` at `90f20f1` (https://github.com/technicks89/Lyona/actions/runs/36242445295). Only
+S10-07 remains open, and it needs real hardware.
 
 ---
 
@@ -439,21 +439,17 @@ that variable is set. So on this evidence the suite is clean wherever
 the host, not the repository. That is inference from a partial rerun, not a
 full `run-tests` pass in that image.
 
-Still to do, after merge:
+**Result on `main`.** After #149 merged, **Full suite (manual)** ran on
+`main` at `90f20f1` (2026-09-26): https://github.com/technicks89/Lyona/actions/runs/36242445295. All three jobs passed: `make check`
+(686 `test-system-management.py` tests `OK`, so the CI container needs no
+extra package for PackageKit; `Overview interaction tests: PASS (22
+assertions)`), `display helper security (root, disposable container)`
+(`Privileged display-helper trust and authorization denial: PASS`, actually
+run, not skipped), and the clang build. It had failed on all three earlier
+runs. `check-session-guards` did not fail in this clean run, so the one batched
+local failure during the audit is treated as interference, not a defect.
 
-1. `scripts/run-tests make clean all check-shell check-format check-quickshell-qml`.
-2. Start **Actions -> Full suite (manual)** on `main` (default target
-   `check`). It now also runs the `display-security` job. Record the URL in
-   `CHANGELOG.md` and the S8-01 evidence.
-3. If `check-system-management` fails in the CI container on
-   `PackageKitGlib`, add `packagekit` to the workflow's package step (and to
-   `dwm_packages arch` if it is a real test dependency); do not skip it.
-4. Re-run `check-session-guards` in that clean run. It failed once inside a
-   batched run during the audit and passed alone and in the full branch run;
-   open an issue if it recurs.
-
-Done when a Full suite run on `main` is green and its URL is recorded.
-Until then no sprint may cite "Full suite passed".
+Done. The URL is recorded in `CHANGELOG.md`, `TASKS.md` and the S8-01 evidence.
 
 ## S10-07: Qualification ledger for sprints closed with hardware checks open
 

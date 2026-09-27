@@ -178,15 +178,14 @@ update in the same PR, so completed items are pinned here too, not only in
   `qmltestrunner`), `tests/test-quickshell-overview.sh` (wiring pins).
   Evidence: `docs/evidence/s8-01-overview-keyboard-nav.md`, which records a
   passing Qt 6 `qmltestrunner` run (11 selection tests, 148 in the suite).
-- [ ] Sync Sprint 8 S8-02 to S8-04 — multi-monitor labels, type-to-filter and
-  close-from-card, issue `#350`. Implemented (UI in #138, model in Sprint 10
-  S10-01) and verified locally by `tests/test-quickshell-overview-xvfb.sh`
-  (`make check-quickshell-overview-xvfb`, 22 assertions) and
-  `tests/qml/tst_overview_filter.qml`. Keep unchecked until the **Full suite
-  (manual)** run URL is recorded (Sprint 10 S10-06). Not tested: real key
-  presses and mouse clicks against the popup, and a multi-monitor label check.
+- [x] Sync Sprint 8 S8-02 to S8-04 — multi-monitor labels, type-to-filter and
+  close-from-card, issue `#350`. UI in #138, model in Sprint 10 S10-01. Verified
+  by `tests/test-quickshell-overview-xvfb.sh` (`make check-quickshell-overview-xvfb`,
+  22 assertions), `tests/qml/tst_overview_filter.qml`, and the **Full suite
+  (manual)** run on `main`: https://github.com/technicks89/Lyona/actions/runs/36242445295. Not tested: real key presses and mouse
+  clicks against the popup, and a multi-monitor label check (single stub
+  monitor only).
 - [ ] Sync Sprint 10 — completion audit
-  (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md`). Done in the working tree:
-  S10-01 to S10-05, S10-08. Open: S10-06 (Full suite green on `main`, needs
-  the branch merged and the workflow run) and S10-07 (hardware qualification
-  ledger; needs real hardware).
+  (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md`). Done: S10-01 to S10-06 and
+  S10-08. Open: S10-07 (hardware qualification ledger; needs real hardware,
+  D-4 needs a real CachyOS install).

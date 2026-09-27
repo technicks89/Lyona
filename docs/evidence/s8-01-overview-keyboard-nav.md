@@ -137,6 +137,6 @@ Totals: 148 passed, 0 failed, 0 skipped, 0 blacklisted
 
 `tests/test-quickshell-overview.sh` (wiring pins), `test-quickshell-state.sh`
 and `test-quickshell-state-close.sh` also pass on that host. The **Full suite
-(manual)** run URL is still not recorded; the workflow has not passed since it
-was introduced (Sprint 10 S10-06).
+(manual)** workflow passed on `main` at `90f20f1` (2026-09-26): https://github.com/technicks89/Lyona/actions/runs/36242445295
+(all three jobs: `make check`, `display-security`, clang build). Sprint 10 S10-06.
 

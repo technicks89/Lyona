@@ -1580,6 +1580,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   in the manual **Full suite** workflow that runs it as root in a disposable `archlinux:base-devel` container (Sync
   Sprint 10 S10-03).
 
+- The manual **Full suite** workflow passed on `main` at `90f20f1` on 2026-09-26 (https://github.com/technicks89/Lyona/actions/runs/36242445295): `make check`
+  (including the 686 `tests/test-system-management.py` tests and `check-quickshell-overview-xvfb`), the new
+  `display-security` job, and the clang build all green. It had failed on all three earlier runs (2026-09-21) and had
+  not been run since; this is the first passing run since the workflow was introduced (Sync Sprint 10 S10-06).
+
 - The cross-tag window overview (Sync Sprint 7 S7-01 through S7-03, issue `#350`) was broken end to end since
   `scripts/dwm-quickshell-state` and `DwmState.qml` gained a `windowStates`/percent-encoding rework: `client_snapshot()`'s
   awk script called `sanitize_class()` without defining it, a fatal awk error that crashed `windows=`/`apps=` output
