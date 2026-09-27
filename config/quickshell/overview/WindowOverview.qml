@@ -25,7 +25,10 @@ ClickAwayPopup {
     readonly property int cardWidth: Theme.dp(420)
     readonly property int cardHeight: Math.max(Theme.dp(320), overviewColumn.implicitHeight + Theme.popupPadding * 2)
 
-    visible: panelWindow !== null && panelWindow.screen !== null && overviewModel.visible
+    // Keep the window mapped until the closing fade reaches zero.
+    visible: panelWindow !== null && panelWindow.screen !== null
+        && (overviewModel.visible || (!Theme.reducedMotion && content.opacity > 0))
+    grabFocus: overviewModel.visible
     targetWindow: panelWindow
     popupWidth: root.cardWidth
     popupHeight: root.cardHeight
@@ -121,21 +124,23 @@ ClickAwayPopup {
 
     ShellSurface {
         id: content
+        objectName: "overviewContent"
 
         anchors.fill: parent
         focus: true
         Accessible.role: Accessible.Dialog
         Accessible.name: "Window overview"
 
-        // A short fade in when the popup opens. Theme.animationNormal is 0 under
-        // reduced motion, which makes it an instant change, not a skipped one.
-        // Closing is instant: the popup's window is hidden with the model.
-        NumberAnimation on opacity {
-            running: root.visible
-            from: 0
-            to: 1
-            duration: Theme.animationNormal
-            easing.type: Easing.OutCubic
+        // Animate both directions, including a reopen during the closing fade.
+        // Reduced motion applies the final opacity immediately.
+        opacity: root.overviewModel.visible ? 1 : 0
+        enabled: root.overviewModel.visible
+        Behavior on opacity {
+            enabled: !Theme.reducedMotion
+            NumberAnimation {
+                duration: Theme.animationNormal
+                easing.type: Easing.OutCubic
+            }
         }
 
         Keys.onPressed: function(event) {

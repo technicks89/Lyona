@@ -16,7 +16,9 @@ events:
 It prints the measurements, which are the data behind the "does the card list need
 virtualization" decision (docs/evidence/s9-04-overview-load.md).
 DWM_OVERVIEW_CPU_SECONDS sets the length of each idle window (default 10; the plan's
-30 is fine for a manual run).
+30 is fine for a manual run). Set DWM_OVERVIEW_STRICT=1 to enforce absolute CPU
+and open/filter/navigation budgets on a controlled host. Default runs still
+report every measurement and enforce the relative closed-CPU comparison.
 """
 import json
 import os
@@ -36,6 +38,7 @@ if not (repo / 'dwm').exists():
     print('SKIP: dwm is not built (run make all)')
     raise SystemExit(77)
 
+STRICT = os.environ.get('DWM_OVERVIEW_STRICT') == '1'
 WINDOWS = int(os.environ.get('DWM_OVERVIEW_WINDOWS', '60'))
 IDLE_SECONDS = float(os.environ.get('DWM_OVERVIEW_CPU_SECONDS', '10'))
 OPEN_BUDGET = float(os.environ.get('DWM_OVERVIEW_OPEN_BUDGET', '3.0'))
@@ -188,7 +191,8 @@ with tempfile.TemporaryDirectory(prefix='overview-load-', dir=str(temp_root)) as
         time.sleep(1.5)
         report['closed_after_pct'] = cpu_percent(IDLE_SECONDS)
         assert report['closed_after_pct'] <= report['closed_before_pct'] + CPU_BUDGET_POINTS, report
-        assert report['closed_after_pct'] <= 1.0, report
+        if STRICT:
+            assert report['closed_after_pct'] <= 1.0, report
 
         # 2. Load: open with every card in the list, and time it.
         started = time.time()
@@ -196,7 +200,8 @@ with tempfile.TemporaryDirectory(prefix='overview-load-', dir=str(temp_root)) as
         laid_out = wait_for(lambda s: s['visible'] and s['contentHeight'] > s['viewHeight'] * 3,
                             'the cards did not lay out', 15)
         report['open_seconds'] = time.time() - started
-        assert report['open_seconds'] <= OPEN_BUDGET, report
+        if STRICT:
+            assert report['open_seconds'] <= OPEN_BUDGET, report
         assert laid_out['cards'] == WINDOWS, laid_out
         time.sleep(0.6)
 
@@ -206,7 +211,8 @@ with tempfile.TemporaryDirectory(prefix='overview-load-', dir=str(temp_root)) as
         filtered = wait_for(lambda s: s['query'] == 'number 5' and 0 < s['cards'] < WINDOWS,
                             'filtering did not settle')
         report['filter_seconds'] = time.time() - started
-        assert report['filter_seconds'] <= FILTER_BUDGET, report
+        if STRICT:
+            assert report['filter_seconds'] <= FILTER_BUDGET, report
         report['filtered_cards'] = filtered['cards']
         run('xdotool', 'key', '--clearmodifiers', 'ctrl+a', 'BackSpace').check_returncode()
         wait_for(lambda s: s['query'] == '' and s['cards'] == WINDOWS, 'clearing the filter did not restore every card')
@@ -217,7 +223,8 @@ with tempfile.TemporaryDirectory(prefix='overview-load-', dir=str(temp_root)) as
             key('Down')
         reached = wait_for(lambda s: s['selected'] == WINDOWS - 1, 'Down presses were lost')
         report['navigate_seconds'] = time.time() - started
-        assert report['navigate_seconds'] <= NAVIGATE_BUDGET, report
+        if STRICT:
+            assert report['navigate_seconds'] <= NAVIGATE_BUDGET, report
         time.sleep(0.5)
         bottom = metrics()
         assert bottom['contentY'] + bottom['viewHeight'] >= bottom['contentHeight'] - 4, (

@@ -10,6 +10,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The window overview now fades out before hiding, with immediate closure under reduced motion.
+  Overview load tests enforce absolute CPU and timing budgets only with `DWM_OVERVIEW_STRICT=1`.
+
 - Clicking the empty part of the top bar closes the launcher, the command menu, notification history and the control
   center's utility windows as well as open panel popups (Sync Sprint 11 S11-03, upstream `#340` click-away half).
   `DwmPanel.qml` gets a background `MouseArea` that calls `popupRequested(root, "")`, and `selectPanelPopup()` already

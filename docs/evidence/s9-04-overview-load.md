@@ -5,7 +5,9 @@ Plan: `docs/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-04`. Issue `#350`.
 `tests/test-overview-load-xvfb.py` (`make check-overview-load-xvfb`) runs the real dwm and Quickshell in Xvfb with the
 real `OverviewModel` and `WindowOverview` over a stub `dwmState` holding N windows across 9 tags. Knobs:
 `DWM_OVERVIEW_WINDOWS` (60), `DWM_OVERVIEW_CPU_SECONDS` (10), and `..._OPEN_BUDGET`, `..._FILTER_BUDGET`,
-`..._NAVIGATE_BUDGET`, `..._CPU_BUDGET`.
+`..._NAVIGATE_BUDGET`, `..._CPU_BUDGET`. Absolute CPU and timing budgets are enforced only with
+`DWM_OVERVIEW_STRICT=1` on a controlled host. Default runs report all measurements and still require closed CPU
+within `DWM_OVERVIEW_CPU_BUDGET` percentage points of the baseline.
 
 ## Results (2026-09-27, CachyOS, Xvfb, key events sent one `xdotool` process at a time)
 

@@ -210,6 +210,63 @@ ShellRoot {
             Theme.applyAccessibility(false, false);
             root.check(Theme.animationFast === 120, "motion returns when reduced motion is off");
             Theme.surfaceActive = root.savedSurfaceActive;
+            root.check(popup.visible, "the overview is open before the close transition");
+            model.close();
+            root.check(popup.visible, "closing keeps the popup visible for its fade-out");
+            root.check(!popup.grabFocus, "closing releases the popup's focus grab");
+            popupFading.start();
+        }
+    }
+
+    Timer {
+        id: popupFading
+
+        interval: 60
+        onTriggered: {
+            const surface = root.find(popup.contentItem, "overviewContent");
+            root.check(popup.visible && surface.opacity > 0 && surface.opacity < 1,
+                "the popup fades through an intermediate opacity while closing");
+            popupClosed.start();
+        }
+    }
+
+    Timer {
+        id: popupClosed
+
+        interval: 400
+        onTriggered: {
+            root.check(!popup.visible, "the popup hides after its fade-out completes");
+            model.open(null);
+            popupReopen.start();
+        }
+    }
+
+    Timer {
+        id: popupReopen
+
+        interval: 400
+        onTriggered: {
+            model.close();
+            root.check(popup.visible, "a second close also animates");
+            model.open(null);
+            popupReopened.start();
+        }
+    }
+
+    Timer {
+        id: popupReopened
+
+        interval: 400
+        onTriggered: {
+            root.check(model.visible && popup.visible && popup.grabFocus,
+                "reopening during a close keeps the popup open and focused");
+            Theme.applyAccessibility(false, true);
+            model.close();
+            root.check(!popup.visible, "reduced motion closes the popup immediately");
+            model.open(null);
+            root.check(popup.visible, "reduced motion still opens the popup");
+            model.close();
+            root.check(!popup.visible, "reduced motion closes immediately after reopening too");
             console.info("Overview interaction tests: PASS (" + root.assertions + " assertions)");
             Qt.quit();
         }
@@ -275,6 +332,8 @@ ShellRoot {
     // The real popup, bound to the same model. Loading it is what surfaces a
     // member it reads that the model does not define.
     WindowOverview {
+        id: popup
+
         overviewModel: model
         panelWindow: panel
     }
