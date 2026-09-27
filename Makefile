@@ -115,7 +115,13 @@ RELEASE_NAME = lyona-${VERSION}
 RELEASE_ARCHIVE = release/${RELEASE_NAME}.tar.gz
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '0')
 
-all: dwm
+# dwm-window-thumb captures window previews for the overview (Sync Sprint 9
+# S9-01). It is a separate program, not part of the window manager, and needs
+# only libX11.
+THUMB = dwm-window-thumb
+THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11)
+
+all: dwm ${THUMB}
 
 .c.o:
 	${CC} ${CPPFLAGS} ${CFLAGS} -c $<
@@ -132,6 +138,9 @@ config.h:
 dwm: check-build-deps ${OBJ}
 	${CC} -o $@ ${OBJ} ${LDFLAGS} ${LDLIBS}
 
+${THUMB}: check-build-deps ${THUMB}.c config.mk Makefile
+	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${THUMB}.c ${LDFLAGS} ${THUMB_LIBS}
+
 check-build-deps:
 	@command -v "${PKG_CONFIG}" >/dev/null 2>&1 || { \
 		echo "Missing required command: ${PKG_CONFIG}" >&2; \
@@ -147,7 +156,7 @@ check-build-deps:
 	fi
 
 clean:
-	rm -f dwm ${OBJ} *.orig *.rej
+	rm -f dwm ${THUMB} ${OBJ} *.orig *.rej
 
 native:
 	$(MAKE) clean
@@ -198,6 +207,8 @@ install:
 
 install-system:
 	@test -x dwm || { echo "dwm is not built. Run make before install-system." >&2; exit 1; }
+	@test -x ${THUMB} || { echo "${THUMB} is not built. Run make before install-system." >&2; exit 1; }
+	@test ! ${THUMB}.c -nt ${THUMB} || { echo "${THUMB} is stale. Run make before install-system." >&2; exit 1; }
 	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h config.h config.mk Makefile; do \
 		test -e "$$input" || { echo "dwm build input is missing: $$input. Run make before install-system." >&2; exit 1; }; \
 		test ! "$$input" -nt dwm || { echo "dwm is stale. Run make before install-system." >&2; exit 1; }; \
@@ -208,6 +219,7 @@ install-system:
 	@echo ""
 	@echo "==> Installing system files..."
 	install -Dm755 dwm ${DESTDIR}${PREFIX}/bin/dwm
+	install -Dm755 ${THUMB} ${DESTDIR}${PREFIX}/bin/${THUMB}
 	sed "s/VERSION/${VERSION}/g" dwm.1 | install -Dm644 /dev/stdin ${DESTDIR}${MANPREFIX}/man1/dwm.1
 	sed "s|@PREFIX@|${PREFIX}|g" dwm.desktop | \
 		install -Dm644 /dev/stdin ${DESTDIR}${XSESSIONSDIR}/dwm.desktop
@@ -394,6 +406,7 @@ stamp-user:
 
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/dwm \
+		${DESTDIR}${PREFIX}/bin/${THUMB} \
 		${DESTDIR}${MANPREFIX}/man1/dwm.1 \
 		${DESTDIR}${XSESSIONSDIR}/dwm.desktop \
 		${DESTDIR}/etc/lyona-release
@@ -419,12 +432,13 @@ uninstall:
 		rm -f ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$name; \
 	done
 
-release: dwm
+release: dwm ${THUMB}
 	@work="$$(mktemp -d)"; \
 	trap 'rm -rf "$$work"' EXIT; \
 	root="$$work/${RELEASE_NAME}"; \
 	mkdir -p "$$root" release; \
 	install -Dm755 dwm "$$root/dwm"; \
+	install -Dm755 ${THUMB} "$$root/${THUMB}"; \
 	install -Dm644 scripts/.xinitrc "$$root/.xinitrc"; \
 	sed "s|@PREFIX@|${PREFIX}|g" dwm.desktop > "$$root/dwm.desktop"; \
 	cp -a assets config scripts "$$root/"; \
@@ -646,6 +660,16 @@ check-quickshell-theme-contrast: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+check-overview-load-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-overview-load-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-overview-keyboard-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-overview-keyboard-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 check-quickshell-overview-xvfb: all
 	status=0; tests/test-quickshell-overview-xvfb.sh || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
@@ -786,6 +810,7 @@ check-install-manifest: all
 		printf '%s\n' \
 			pre-existing \
 			usr/bin/dwm \
+			usr/bin/${THUMB} \
 			usr/share/man/man1/dwm.1 \
 			usr/share/xsessions/dwm.desktop \
 			etc/lyona-release; \
@@ -814,7 +839,7 @@ check-install-manifest: all
 	} | sort > "$$expected"; \
 	find "$$stage" \( -type f -o -type l \) -printf '%P\n' | sort > "$$actual"; \
 	cmp "$$expected" "$$actual"; \
-	for name in dwm ${INSTALL_COMMAND_NAMES}; do \
+	for name in dwm ${THUMB} ${INSTALL_COMMAND_NAMES}; do \
 		test -x "$$stage/usr/bin/$$name"; \
 	done; \
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
@@ -926,6 +951,8 @@ check:
 	$(MAKE) check-quickshell-panel-menus
 	$(MAKE) check-quickshell-overview
 	$(MAKE) check-quickshell-overview-xvfb
+	$(MAKE) check-overview-keyboard-xvfb
+	$(MAKE) check-overview-load-xvfb
 	$(MAKE) check-quickshell-theme-contrast
 	$(MAKE) check-quickshell-panel-settings
 	$(MAKE) check-accessibility
@@ -982,5 +1009,5 @@ check:
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall

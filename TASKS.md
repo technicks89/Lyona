@@ -219,3 +219,16 @@ update in the same PR, so completed items are pinned here too, not only in
   `config/quickshell/controlcenter/ControlCenterWindow.qml`; tests in `tests/test-xvfb-runtime.sh`,
   `tests/test-quickshell-state.sh`, `tests/test-quickshell-panel-menus.sh`. Evidence:
   `docs/evidence/s11-08-layout-switcher.md`. The UI was not run by hand.
+- [ ] Sync Sprint 9 S9-01 -- live per-window thumbnails, spike only (issue `#350`) -- feasible only with Picom running
+  (off-tag `XGetImage` works with it, fails with BadMatch without it; name-window-pixmap returned black); not
+  implemented, maintainer decision needed. Evidence: `docs/evidence/s9-01-thumbnail-spike.md`.
+- [x] Sync Sprint 9 S9-02 -- overview motion and visual polish, issue `#350` --
+  `config/quickshell/overview/OverviewCard.qml`, `WindowOverview.qml`; pins in `tests/test-quickshell-overview.sh`;
+  cases in `tests/qml/OverviewInteraction.qml`. Evidence: `docs/evidence/s9-02-overview-motion.md`. Not judged by eye.
+- [x] Sync Sprint 9 S9-03 -- overview accessibility and keyboard-only pass, issue `#350` -- `OverviewModel.qml`,
+  `OverviewCard.qml`, `WindowOverview.qml`; `tests/test-quickshell-accessibility.sh`,
+  `tests/test-overview-keyboard-xvfb.py`. Evidence: `docs/evidence/s9-03-overview-accessibility.md`. No screen reader
+  or second monitor tried.
+- [x] Sync Sprint 9 S9-04 -- overview idle-CPU and many-window test, issue `#350` -- `tests/test-overview-load-xvfb.py`.
+  Evidence: `docs/evidence/s9-04-overview-load.md`. Virtualization is not needed up to 600 windows; idle windows are
+  10 s, not the plan's 30 s.

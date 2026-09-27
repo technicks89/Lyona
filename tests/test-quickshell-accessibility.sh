@@ -166,4 +166,28 @@ assert_contains "$provider" 'if ! provider_available dwm-accessibility-settings;
 assert_contains "$provider" 'accessibility_state=missing'
 assert_contains "$provider" 'accessibility_state=invalid'
 
+# The window overview (Sync Sprint 9 S9-03): every card is an accessible list item a
+# screen reader can tell apart from another window of the same app, its close
+# button and the search box are named, and the popup is a named dialog. The
+# keyboard path to close a card is Ctrl+W (the close button only shows on hover).
+overview=$repo/config/quickshell/overview
+overview_card=$overview/OverviewCard.qml
+assert_contains "$overview_card" 'Accessible.role: Accessible.ListItem'
+assert_contains "$overview_card" 'Accessible.name: root.windowLabel'
+assert_contains "$overview_card" 'Accessible.description: "Tag " + root.tagLabel + ", " + root.window.appClass'
+assert_contains "$overview_card" '(root.monitorCount > 1 ? ", monitor " + (root.window.monitorIndex + 1) : "")'
+assert_contains "$overview_card" 'Accessible.selected: root.selected'
+assert_contains "$overview_card" 'Accessible.onPressAction: root.focusRequested(root.window.windowId)'
+assert_contains "$overview_card" 'Accessible.role: Accessible.Button'
+assert_contains "$overview_card" 'Accessible.name: "Close " + root.windowLabel'
+assert_contains "$overview_card" 'Accessible.onPressAction: root.closeRequested(root.window.windowId)'
+assert_contains "$overview/WindowOverview.qml" 'Accessible.role: Accessible.Dialog'
+assert_contains "$overview/WindowOverview.qml" 'Accessible.name: "Window overview"'
+assert_contains "$overview/WindowOverview.qml" 'Accessible.name: "Search windows"'
+[ "$(grep -c 'event.key === Qt.Key_W && (event.modifiers & Qt.ControlModifier)' "$overview/WindowOverview.qml")" = 2 ] ||
+	{
+		printf 'Ctrl+W must close the selected card from both the popup and the search box\n' >&2
+		exit 1
+	}
+
 printf 'Quickshell accessibility policy model: PASS\n'
