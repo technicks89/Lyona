@@ -339,7 +339,7 @@ class PicomTests(unittest.TestCase):
             with self.assertRaises(picom.Error):
                 picom.mutate("set-corner-radius", [value], config.revision())
         self.assertEqual(self.path.read_text(), "corner-radius = 4;\n")
-        for text in ("corner-radius = oops;\n", 'corner-radius = "5";\n', "corner-radius = 99;\n"):
+        for text in ("corner-radius = oops;\n", 'corner-radius = "5";\n', "corner-radius = -1;\n"):
             with self.assertRaises(picom.Error):
                 self.write(text).corner_radius()
 
@@ -360,9 +360,36 @@ class PicomTests(unittest.TestCase):
         self.assertNotIn("corner-radius", self.path.read_text())
 
     def test_status_reports_the_corner_radius(self):
-        self.write("corner-radius = 6;\n")
-        with patch.object(picom, "renderer", return_value="intel"):
-            self.assertEqual(picom.status(False)["corner_radius"], 6)
+        for radius in (0, 6, 99):
+            self.write(f"corner-radius = {radius};\n")
+            state = picom.status(False)
+            self.assertEqual(state["corner_radius"], radius)
+            self.assertTrue(state["editable"])
+            self.assertTrue(state["radius_editable"])
+
+    def test_unreadable_radius_does_not_disable_other_settings(self):
+        self.write('corner-radius = "custom"; active-opacity = 0.8; backend = "xrender";\n')
+        state = picom.status(False)
+        self.assertNotIn("corner_radius", state)
+        self.assertFalse(state["radius_editable"])
+        self.assertTrue(state["editable"])
+        self.assertEqual(state["active"], 80)
+        self.assertEqual(state["policy"], "xrender")
+        self.assertIn("non-negative whole number", state["detail"])
+        picom.mutate("set-opacity", [90, 75], state["revision"])
+        picom.mutate("set-backend", ["glx"], picom.Configuration().revision())
+        self.assertIn('corner-radius = "custom";', self.path.read_text())
+
+    def test_status_radius_editability_matches_command_line_override(self):
+        config = self.write("corner-radius = 6;\n")
+        for args in (["--corner-radius", "0"], ["--corner-radius=6"]):
+            with patch.object(picom, "processes", return_value=[{"args": ["picom", *args], "pid": 1}]):
+                state = picom.status(False)
+                self.assertTrue(state["editable"])
+                self.assertFalse(state["radius_editable"])
+                self.assertIn("command-line corner radius override", state["detail"])
+                with self.assertRaisesRegex(picom.Error, "corner radius override"):
+                    picom.mutate("set-corner-radius", [4], config.revision())
 
     def test_backend_precedence_and_auto(self):
         config = self.write('backend="glx"; # preserve\n')

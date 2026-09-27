@@ -120,7 +120,7 @@ palette in this file, and that generated theme is what a palette falls back to.
 Regenerate one by hand with:
 
 ```bash
-scripts/lyona-gtk-theme generate mytheme config/themes.toml ~/.local/share/themes/Lyona-mytheme
+scripts/lyona-gtk-theme generate mytheme config/themes.toml ~/.themes/Lyona-mytheme
 ```
 
 Applications built on libadwaita ignore custom GTK themes by design and stay in

@@ -696,10 +696,10 @@ qt_ct_set() {
 	value=${value//\\/\\\\}
 	value=${value//&/\\&}
 	value=${value//|/\\|}
-	if grep -q "^$key=" "$file"; then
-		sed -i "s|^$key=.*|$key=$value|" "$file"
-	elif grep -q '^\[Appearance\]' "$file"; then
-		sed -i "/^\[Appearance\]/a $key=$value" "$file"
+	if sed -n '/^\[Appearance\]$/,/^\[/p' "$file" | grep "^$key=" >/dev/null; then
+		sed -i "/^\[Appearance\]$/,/^\[/s|^$key=.*|$key=$value|" "$file"
+	elif grep -q '^\[Appearance\]$' "$file"; then
+		sed -i "/^\[Appearance\]$/a $key=$value" "$file"
 	else
 		printf '\n[Appearance]\n%s=%s\n' "$key" "$value" >>"$file"
 	fi

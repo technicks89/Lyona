@@ -15,10 +15,16 @@ ColumnLayout {
     property bool radiusChanged: false
     property string editRevision: ""
     property string radiusRevision: ""
+    property string submittedEdit: ""
+    property string submittedRevision: ""
     Layout.fillWidth: true
     spacing: Theme.spacingXl
 
     function synchronize() {
+        if (!root.model.snapshot.radius_editable) {
+            radiusDelay.stop();
+            root.radiusChanged = false;
+        }
         if (!root.model.snapshot.editable) {
             keyboardDelay.stop();
             radiusDelay.stop();
@@ -40,18 +46,22 @@ ColumnLayout {
         }
         if (root.model.busy) return;
         root.changed = false;
+        root.submittedEdit = "opacity";
+        root.submittedRevision = root.editRevision;
         root.model.setOpacity(root.activeOpacity, root.inactiveOpacity, root.editRevision);
     }
 
     function applyCornerRadius() {
         radiusDelay.stop();
         if (!root.radiusChanged) return;
-        if (!root.model.snapshot.editable) {
+        if (!root.model.snapshot.radius_editable) {
             root.synchronize();
             return;
         }
         if (root.model.busy) return;
         root.radiusChanged = false;
+        root.submittedEdit = "radius";
+        root.submittedRevision = root.radiusRevision;
         root.model.setCornerRadius(root.cornerRadius, root.radiusRevision);
     }
 
@@ -61,6 +71,17 @@ ColumnLayout {
         function onSnapshotChanged() { root.synchronize(); }
         function onBusyChanged() {
             if (!root.model.busy) {
+                // Only our successful save advances the other edit's base.
+                // An edit already based on an older snapshot must stay stale.
+                if (!root.model.actionFailure) {
+                    if (root.submittedEdit === "opacity" && root.radiusChanged
+                            && root.radiusRevision === root.submittedRevision)
+                        root.radiusRevision = root.model.snapshot.revision;
+                    else if (root.submittedEdit === "radius" && root.changed
+                            && root.editRevision === root.submittedRevision)
+                        root.editRevision = root.model.snapshot.revision;
+                }
+                root.submittedEdit = "";
                 if (root.changed) keyboardDelay.restart();
                 else if (root.radiusChanged) radiusDelay.restart();
                 else root.synchronize();
@@ -138,7 +159,7 @@ ColumnLayout {
         Layout.fillWidth: true
         from: 0; to: 32; stepSize: 1
         value: root.cornerRadius
-        enabled: root.model.editable
+        enabled: root.model.snapshot.radius_editable && !root.model.busy
         onMoved: {
             if (!root.radiusChanged) root.radiusRevision = root.model.snapshot.revision;
             root.cornerRadius = value;
