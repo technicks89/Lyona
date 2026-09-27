@@ -257,6 +257,8 @@ capture(Display *dpy, Window win)
 		goto done;
 	snprintf(tmp, sizeof tmp, ".tmp-%ld", (long)getpid());
 	snprintf(name, sizeof name, "%lx.ppm", (unsigned long)win);
+	if (unlinkat(dfd, tmp, 0) < 0 && errno != ENOENT)
+		goto done;
 	if ((ofd = openat(dfd, tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600)) < 0)
 		goto done;
 	if (!(f = fdopen(ofd, "wb")))

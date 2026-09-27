@@ -82,6 +82,7 @@ Scope {
     // earlier showing is dropped instead of appearing in the next one.
     property int thumbnailGeneration: 0
     property int thumbnailStartedGeneration: 0
+    property int availableStartedGeneration: 0
     property bool thumbnailsStored: false
 
     function resetThumbnails() {
@@ -153,7 +154,10 @@ Scope {
         root.closingIds = [];
         root.resetThumbnails();
         root.visible = true;
-        availableProcess.running = true;
+        if (!availableProcess.running) {
+            root.availableStartedGeneration = root.thumbnailGeneration;
+            availableProcess.running = true;
+        }
     }
 
     function close() {
@@ -175,6 +179,13 @@ Scope {
 
         command: [root.thumbnailHelper, "available"]
         onExited: (exitCode, exitStatus) => {
+            if (root.availableStartedGeneration !== root.thumbnailGeneration) {
+                if (root.visible) {
+                    root.availableStartedGeneration = root.thumbnailGeneration;
+                    availableProcess.running = true;
+                }
+                return;
+            }
             root.thumbnailsAvailable = exitCode === 0 && root.visible;
             root.pumpThumbnails();
         }

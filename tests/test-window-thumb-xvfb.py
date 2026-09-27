@@ -167,6 +167,13 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
         assert stat.S_IMODE(visible_path.stat().st_mode) == 0o600
         assert stored() == [visible_path.name], stored()  # no stray temporary file
 
+        # A reused PID may collide with a temp file left by an interrupted capture.
+        result = subprocess.run(
+            ['sh', '-c', 'printf stale > "$XDG_RUNTIME_DIR/lyona/overview-thumbs/.tmp-$$"; exec "$@"',
+             'sh', str(helper), 'capture', window], env=env, capture_output=True, text=True)
+        assert result.returncode == 0, ('stale temp blocked capture', result.returncode, result.stderr)
+        assert stored() == [visible_path.name], stored()
+
         # The same window on another tag, where dwm has moved it off screen.
         subprocess.run(['xdotool', 'set_desktop', '1'], env=env, check=True)
         for _ in range(60):
