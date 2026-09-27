@@ -269,9 +269,11 @@ install-cursors:
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_DARK_THEME}" \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_LIGHT_THEME}"
 	mkdir -p "${DESTDIR}${DATADIR}/icons"
-	cp -a "assets/cursors/${CAPITAINE_DARK_THEME}" \
+	@# --no-preserve=ownership: run as root, cp -a would keep the building user's
+	@# ownership, leaving system cursor themes that user could rewrite.
+	cp -a --no-preserve=ownership "assets/cursors/${CAPITAINE_DARK_THEME}" \
 		"${DESTDIR}${DATADIR}/icons/"
-	cp -a "assets/cursors/${CAPITAINE_LIGHT_THEME}" \
+	cp -a --no-preserve=ownership "assets/cursors/${CAPITAINE_LIGHT_THEME}" \
 		"${DESTDIR}${DATADIR}/icons/"
 	install -Dm644 assets/cursors/COPYING \
 		"${DESTDIR}${CAPITAINE_LICENSE_DIR}/COPYING"

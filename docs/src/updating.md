@@ -98,9 +98,10 @@ Useful flags:
   installing anything.
 - `--file PATH` — install an already-downloaded tarball (for an offline
   machine); still requires `--version` and still verifies the checksum.
-- `--from-checkout DIR` — install directly from a local development checkout
-  instead of a published release. This carries the same trust level as
-  running `sudo make install-system` from that checkout yourself.
+- `--from-checkout DIR` — **removed.** The privileged step installs only
+  releases it has verified itself. To install a local development checkout, run
+  `sudo make install-system && make install-user` in it, or
+  `scripts/dev-sync-install.sh`, where you type the command that runs as root.
 - `--yes` — skip the interactive confirmation prompt (Settings always passes
   this, since it shows its own confirmation first).
 

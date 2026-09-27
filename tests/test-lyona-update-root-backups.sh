@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Sync Sprint 12 S12-01: lyona-update-root keeps its own, root-only system
+# Sync Sprint 12 S12-01 to S12-03: lyona-update-root keeps its own, root-only system
 # backups, and a rollback restores only those. Runs the real helper as root, so
 # it refuses to run anywhere but a disposable container (the same rule as
 # tests/test-settings-display-security.sh).
@@ -147,12 +147,29 @@ refuses 'symlink outside the cursor themes' restore-system "$bad_id"
 rm -rf "${store:?}/$bad_id"
 
 # A good backup restores the live file exactly as it was recorded.
+chown -R "$uid:$uid" "$home/.local"
 run_helper restore-system "$good_id" >/dev/null 2>"$work/err" || {
 	cat "$work/err" >&2
 	fail 'a good root-held backup did not restore'
 }
 [[ $(cat "$bin_file") == v1 ]] || fail 'restore did not bring back the backed-up contents'
 [[ $(stat -c '%u %a' "$bin_file") == '0 755' ]] || fail "restored owner/mode: $(stat -c '%u %a' "$bin_file")"
+
+# S12-03: the helper's log, in the user's home, is written as the user, so a
+# symlink planted there never makes root create or append to another file.
+log=$home/.local/state/lyona/update.log
+[[ -f $log && $(stat -c '%u %a' "$log") == "$uid 600" ]] ||
+	fail "the helper log is not the user's own 0600 file: $(stat -c '%u %a' "$log" 2>&1)"
+grep -Fq "$(printf 'restore-system\tunknown\t%s\tsucceeded' "$good_id")" "$log" ||
+	fail 'the helper did not log the restore'
+rm -f "$log"
+ln -s /etc/lyona-planted-log "$log"
+run_helper restore-system "$good_id" >/dev/null 2>"$work/err" || {
+	cat "$work/err" >&2
+	fail 'a restore with a planted log symlink failed'
+}
+[[ ! -e /etc/lyona-planted-log ]] || fail 'root wrote through a symlink planted at the log path'
+rm -f "$log"
 printf 'restore-system checks: PASS\n'
 
 # --- Part 2: install-system release takes the backup -------------------------
@@ -171,6 +188,13 @@ make -s -C "$src" clean >/dev/null
 # The live install the update will replace, with a marker the release lacks.
 make -s -C "$src" all >/dev/null
 make -s -C "$src" install-system >/dev/null
+# S12-03: the source tree is owned by the building user, not root; the cursor
+# themes it installs as root must still come out root-owned.
+[[ $(stat -c %u "$src/assets/cursors") != 0 ]] || chown -R "$uid:$uid" "$src/assets/cursors"
+make -s -C "$src" install-cursors >/dev/null
+not_root=$(find "$prefix/share/icons/Capitaine-Cursors" "$prefix/share/icons/Capitaine-Cursors-White" \
+	! -uid 0 -print -quit)
+[[ -z $not_root ]] || fail "install-cursors left a file not owned by root: $not_root"
 install_helper
 live=$prefix/bin/dwm-status
 printf '# live-before-update\n' >>"$live"

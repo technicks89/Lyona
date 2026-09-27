@@ -220,6 +220,10 @@ before any extraction.
 
 **Source:** S (Medium), A (High), E. **Verified** (log write, checkout mode).
 
+**Implemented (2026-09-27):** all three parts. The log is written as the invoking
+user, checkout mode is removed on both sides (D-15), and `install-cursors` installs
+root-owned files. Evidence: `docs/evidence/s12-03-root-helper-paths.md`.
+
 1. **Log through a user symlink.** `log_outcome` (`scripts/lyona-update-root:62-70`)
    runs `mkdir -p` and `>>"$log_file"` as root on
    `$state_home/lyona/update.log` (`:98`), inside the user's home. A symlink there,
@@ -673,6 +677,13 @@ idle the screen turns off and the desktop locks.
    `config/polkit/*.policy` (with `@PREFIX@` unexpanded) and `config/systemd/` land
    in `~/.config/polkit/` and `~/.config/systemd/`. Skip `polkit` (and check whether
    `systemd` is meant to be seeded).
+6a. **`--file` from outside the updates directory (historical; fixed).** Found during
+   S12-03: an earlier updater passed the `--file` path itself to `lyona-update-root
+   install-system release`, which accepts only tarballs under
+   `~/.local/state/lyona/updates/`. The current updater (`75bb338`) copies an external
+   archive into that directory as `lyona-<version>.tar.gz` before calling the helper,
+   and reuses an archive already staged there; `tests/test-lyona-update.sh` covers
+   both. Nothing left to do here.
 6. **The offline hint is wrong** (reported). `lyona-update:606` suggests `--file` for
    an offline install, but `--file` still calls `resolve_release` for a checksum
    (`:611-640`) and refuses without one. Say so, or accept a `--sha256`.

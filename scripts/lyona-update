@@ -25,7 +25,7 @@ die() {
 usage() {
 	cat <<'EOF'
 Usage: lyona-update check       [--channel stable|preview] [--json]
-       lyona-update apply       [--version V] [--file PATH] [--from-checkout DIR]
+       lyona-update apply       [--version V] [--file PATH]
                                 [--allow-downgrade] [--dry-run] [--yes]
        lyona-update rollback    [--backup ID] [--list] [--yes]
        lyona-update backups     [--json]
@@ -541,7 +541,7 @@ sha256_of() {
 }
 
 cmd_apply() {
-	local requested_version='' file_path='' from_checkout='' allow_downgrade=false dry_run=false yes=false
+	local requested_version='' file_path='' allow_downgrade=false dry_run=false yes=false
 	while (($# > 0)); do
 		case $1 in
 		--version)
@@ -555,9 +555,10 @@ cmd_apply() {
 			shift 2
 			;;
 		--from-checkout)
-			(($# >= 2)) || die "--from-checkout requires a value"
-			from_checkout=$2
-			shift 2
+			# Removed (Sync Sprint 12 S12-03, decision D-15): the privileged step
+			# only installs verified releases. Install from a checkout with
+			# `sudo make install-system` or scripts/dev-sync-install.sh.
+			die "--from-checkout was removed; from a checkout, run sudo make install-system or scripts/dev-sync-install.sh"
 			;;
 		--allow-downgrade)
 			allow_downgrade=true
@@ -574,7 +575,6 @@ cmd_apply() {
 		*) die "unknown option: $1" ;;
 		esac
 	done
-	[[ -z $file_path || -z $from_checkout ]] || die "--file and --from-checkout are mutually exclusive"
 
 	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false status_quiet=false
 	trap report_status_failure EXIT
@@ -584,96 +584,96 @@ cmd_apply() {
 	read_config
 	read_installed
 
-	local staging_dir tarball checksum install_mode config_h_arg=- live_config_h=
-	if [[ -n $from_checkout ]]; then
-		valid_absolute_path "$from_checkout" || die "--from-checkout must be an absolute path"
-		[[ -f $from_checkout/config.mk ]] || die "not a lyona checkout: $from_checkout"
-		requested_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$from_checkout/config.mk")
-		[[ -n $requested_version ]] || die "could not read VERSION from $from_checkout/config.mk"
+	local staging_dir tarball checksum config_h_arg=- live_config_h=
+	if [[ -n $file_path ]]; then
+		valid_absolute_path "$file_path" || die "--file must be an absolute path"
+		[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
+		[[ -n $requested_version ]] || die "--file requires --version to confirm what it contains"
+		valid_version "$requested_version" || die "not a valid version: $requested_version"
 		status_target=$requested_version
-		staging_dir=$from_checkout
-		install_mode=checkout
-	else
-		install_mode=release
-		if [[ -n $file_path ]]; then
-			valid_absolute_path "$file_path" || die "--file must be an absolute path"
-			[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
-			tarball=$file_path
-			[[ -n $requested_version ]] || die "--file requires --version to confirm what it contains"
-			status_target=$requested_version
-		else
-			[[ -n $requested_version ]] || {
-				resolve_release "$channel" || die "could not reach the update server; pass --file for an offline install"
-				requested_version=$release_version
-			}
-			status_target=$requested_version
-			valid_version "$requested_version" || die "not a valid version: $requested_version"
-			[[ $requested_version == "${release_version:-}" ]] || resolve_release "$channel" ||
-				die "could not look up release $requested_version"
-			[[ $requested_version == "$release_version" ]] ||
-				die "requested version $requested_version does not match the resolved release $release_version"
-			checksum=$release_checksum
-			[[ $checksum != unknown ]] || die "no published checksum for $requested_version; refusing to install unverified"
-
-			ensure_owned_directory "$updates_root" "updates"
-			tarball=$updates_root/lyona-$requested_version.tar.gz
-			[[ -n $release_asset_url ]] || die "release $requested_version has no source archive asset"
-			status_detail="Downloading lyona-$requested_version.tar.gz"
-			write_status "$status_phase" "$status_detail" "$status_target" pending ''
-			warn "$status_detail"
+		ensure_owned_directory "$updates_root" "updates"
+		tarball=$updates_root/lyona-$requested_version.tar.gz
+		if [[ $file_path != "$tarball" ]]; then
 			local tmp_tarball
 			tmp_tarball=$(mktemp "$updates_root/.lyona-$requested_version.tar.gz.XXXXXX")
-			if ! curl --fail --silent --show-error --location \
-				--retry 3 --connect-timeout 10 --max-time 300 \
-				"$release_asset_url" --output "$tmp_tarball"; then
+			if ! cp -- "$file_path" "$tmp_tarball"; then
 				rm -f "$tmp_tarball"
-				die "failed to download $release_asset_url"
+				die "failed to stage tarball: $file_path"
 			fi
 			mv -fT "$tmp_tarball" "$tarball"
 		fi
+	else
+		[[ -n $requested_version ]] || {
+			resolve_release "$channel" || die "could not reach the update server; pass --file for an offline install"
+			requested_version=$release_version
+		}
+		status_target=$requested_version
+		valid_version "$requested_version" || die "not a valid version: $requested_version"
+		[[ $requested_version == "${release_version:-}" ]] || resolve_release "$channel" ||
+			die "could not look up release $requested_version"
+		[[ $requested_version == "$release_version" ]] ||
+			die "requested version $requested_version does not match the resolved release $release_version"
+		checksum=$release_checksum
+		[[ $checksum != unknown ]] || die "no published checksum for $requested_version; refusing to install unverified"
 
-		if [[ -n ${checksum:-} ]] && [[ $checksum != unknown ]]; then
-			:
-		elif [[ -n $file_path ]]; then
-			resolve_release "$channel" && [[ $requested_version == "$release_version" ]] && checksum=$release_checksum
-			checksum=${checksum:-unknown}
-		fi
-		status_phase=verifying status_detail='Verifying release checksum'
+		ensure_owned_directory "$updates_root" "updates"
+		tarball=$updates_root/lyona-$requested_version.tar.gz
+		[[ -n $release_asset_url ]] || die "release $requested_version has no source archive asset"
+		status_detail="Downloading lyona-$requested_version.tar.gz"
 		write_status "$status_phase" "$status_detail" "$status_target" pending ''
-		if [[ ${checksum:-unknown} != unknown ]]; then
-			warn "verifying checksum"
-			local actual_checksum
-			actual_checksum=$(sha256_of "$tarball")
-			[[ $actual_checksum == "$checksum" ]] ||
-				die "checksum mismatch for $tarball: expected $checksum, got $actual_checksum"
-		else
-			warn "no checksum available for $tarball; proceeding without verification is not supported"
-			die "refusing to install an unverified tarball"
+		warn "$status_detail"
+		local tmp_tarball
+		tmp_tarball=$(mktemp "$updates_root/.lyona-$requested_version.tar.gz.XXXXXX")
+		if ! curl --fail --silent --show-error --location \
+			--retry 3 --connect-timeout 10 --max-time 300 \
+			"$release_asset_url" --output "$tmp_tarball"; then
+			rm -f "$tmp_tarball"
+			die "failed to download $release_asset_url"
 		fi
+		mv -fT "$tmp_tarball" "$tarball"
+	fi
 
-		status_detail="Unpacking lyona-$requested_version.tar.gz"
-		write_status "$status_phase" "$status_detail" "$status_target" pending ''
-		staging_dir=$updates_root/$requested_version
+	if [[ -n ${checksum:-} ]] && [[ $checksum != unknown ]]; then
+		:
+	elif [[ -n $file_path ]]; then
+		resolve_release "$channel" && [[ $requested_version == "$release_version" ]] && checksum=$release_checksum
+		checksum=${checksum:-unknown}
+	fi
+	status_phase=verifying status_detail='Verifying release checksum'
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	if [[ ${checksum:-unknown} != unknown ]]; then
+		warn "verifying checksum"
+		local actual_checksum
+		actual_checksum=$(sha256_of "$tarball")
+		[[ $actual_checksum == "$checksum" ]] ||
+			die "checksum mismatch for $tarball: expected $checksum, got $actual_checksum"
+	else
+		warn "no checksum available for $tarball; proceeding without verification is not supported"
+		die "refusing to install an unverified tarball"
+	fi
+
+	status_detail="Unpacking lyona-$requested_version.tar.gz"
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	staging_dir=$updates_root/$requested_version
+	rm -rf "$staging_dir"
+	mkdir -p "$staging_dir"
+	if ! tar -xzf "$tarball" -C "$staging_dir" --strip-components=1; then
 		rm -rf "$staging_dir"
-		mkdir -p "$staging_dir"
-		if ! tar -xzf "$tarball" -C "$staging_dir" --strip-components=1; then
-			rm -rf "$staging_dir"
-			die "failed to unpack $tarball"
-		fi
-		# Compile-time options (Sync Sprint 12 S12-02, decision D-18): the user's own
-		# $XDG_CONFIG_HOME/lyona/config.h first, then a checkout's config.h next to
-		# this script. Resolved, because the privileged step refuses a symlink.
-		local candidate
-		for candidate in "$config_home/lyona/config.h" "${script_dir%/*}/config.h"; do
-			[[ -f $candidate ]] || continue
-			live_config_h=$(readlink -f -- "$candidate")
-			break
-		done
-		if [[ -n $live_config_h ]]; then
-			warn "building with compile-time options from $live_config_h"
-			cp -- "$live_config_h" "$staging_dir/config.h"
-			config_h_arg=$live_config_h
-		fi
+		die "failed to unpack $tarball"
+	fi
+	# Compile-time options (Sync Sprint 12 S12-02, decision D-18): the user's own
+	# $XDG_CONFIG_HOME/lyona/config.h first, then a checkout's config.h next to
+	# this script. Resolved, because the privileged step refuses a symlink.
+	local candidate
+	for candidate in "$config_home/lyona/config.h" "${script_dir%/*}/config.h"; do
+		[[ -f $candidate ]] || continue
+		live_config_h=$(readlink -f -- "$candidate")
+		break
+	done
+	if [[ -n $live_config_h ]]; then
+		warn "building with compile-time options from $live_config_h"
+		cp -- "$live_config_h" "$staging_dir/config.h"
+		config_h_arg=$live_config_h
 	fi
 
 	local installed_rank requested_rank
@@ -741,15 +741,7 @@ cmd_apply() {
 	status_detail="Installing $requested_version (authentication required)"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "$status_detail"
-	local privileged_install_ok=true
-	if [[ $install_mode == release ]]; then
-		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" ||
-			privileged_install_ok=false
-	else
-		run_privileged install-system checkout "$staging_dir" "$requested_version" "$backup_id" ||
-			privileged_install_ok=false
-	fi
-	if [[ $privileged_install_ok != true ]]; then
+	if ! run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id"; then
 		die "the privileged install step failed or was declined; the live install is untouched, and the staged, built update in $staging_dir was left in place"
 	fi
 	if ! make -C "$staging_dir" install-user \
