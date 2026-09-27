@@ -185,10 +185,17 @@ update in the same PR, so completed items are pinned here too, not only in
   (manual)** run on `main`: https://github.com/technicks89/Lyona/actions/runs/36242445295. Not tested: real key presses and mouse
   clicks against the popup, and a multi-monitor label check (single stub
   monitor only).
-- [ ] Sync Sprint 10 — completion audit
-  (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md`). Done: S10-01 to S10-06 and
-  S10-08. Open: S10-07 (hardware qualification ledger; needs real hardware,
-  D-4 needs a real CachyOS install).
+- [x] Sync Sprint 10 — completion audit
+  (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md`). S10-01 to S10-06 and S10-08
+  done; S10-07 (issue `#147`) done on its own terms — the plan only asks for
+  a ledger making hardware-gated checks visible, not for running them. Its
+  table (`docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md#s10-07-qualification-ledger-for-sprints-closed-with-hardware-checks-open`) is the standing tracker for what still needs real
+  hardware or a real install: the Picom NVIDIA backend, fresh-install media
+  defaults on both ISOs, a full privileged `lyona-update` run, Settings panes
+  and floating toggles on a slow provider, a Flathub-remote refusal, a fresh
+  LightDM login, a live PackageKit transaction, a live polkit denial, and
+  D-4's read-only `pacman.lck` check on a real CachyOS install. None of that
+  is done; only its visibility is.
 - [x] Sync Sprint 11 S11-04 -- keep the xvfb runtime test's "bad config" notification off the real desktop, issue `#155`
   -- `tests/test-xvfb-runtime.sh`. Evidence: `docs/evidence/s11-04-notification-capture.md`.
 - [x] Sync Sprint 11 S11-01 -- shell text stays readable on hover and selected surfaces (completes S6-03, closes `#116`),
