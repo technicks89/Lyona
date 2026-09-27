@@ -79,7 +79,7 @@ assert_contains "$theme" 'readonly property int animationNormal: reducedMotion ?
 # Lyona wraps border widths in dp() -- a bare highContrast ? 2 : 1 would be a
 # hairline at high DPI, the opposite of what high contrast is for.
 assert_contains "$theme" 'readonly property int controlBorderWidth: dp(highContrast ? 2 : 1)'
-assert_contains "$theme" 'readonly property int controlFocusBorderWidth: dp(highContrast ? 3 : 2)'
+assert_contains "$theme" 'readonly property int controlFocusBorderWidth: controlBorderWidth'
 assert_contains "$theme" 'readonly property string controlNormalBorder: highContrast ? textStrong : border'
 assert_contains "$theme" 'readonly property string popupBorder: highContrast ? textStrong : borderStrong'
 assert_contains "$theme" 'function applyAccessibility(highContrastEnabled, reducedMotionEnabled)'

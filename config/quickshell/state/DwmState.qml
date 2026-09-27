@@ -7,6 +7,9 @@ Scope {
 
     property int currentWorkspace: 0
     property int focusedMonitorIndex: -1
+    // Index into dwm's layouts[] for the selected monitor's current tag
+    // (0 tile, 1 floating, 2 monocle), or -1 until dwm publishes _DWM_LAYOUT.
+    property int layoutIndex: -1
     property var monitorWorkspaceRows: []
     property var workspaceNames: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
     property var occupiedWorkspaces: []
@@ -56,6 +59,10 @@ Scope {
                 const parsed = parseInt(value, 10);
 
                 root.focusedMonitorIndex = isNaN(parsed) ? -1 : parsed;
+            } else if (key === "layout") {
+                const parsed = parseInt(value, 10);
+
+                root.layoutIndex = isNaN(parsed) ? -1 : parsed;
             } else if (key === "names") {
                 root.workspaceNames = value.length > 0 ? value.split("|") : [];
             } else if (key === "occupied") {
@@ -269,6 +276,12 @@ Scope {
     function closeWindow(windowId) {
         // Each request owns its command, even while an earlier close is running.
         Quickshell.execDetached(["dwm-quickshell-state", "close", windowId]);
+    }
+
+    // Ask dwm to switch the selected monitor's current tag to a layout, by index
+    // into its layouts[]. dwm ignores an index it does not have.
+    function setLayout(index) {
+        Quickshell.execDetached(["dwm-quickshell-state", "layout", String(index)]);
     }
 
     Process {

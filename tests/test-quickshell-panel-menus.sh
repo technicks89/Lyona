@@ -20,6 +20,31 @@ grep -Fq 'readonly property int panelHeight: dp(30)' "$core/Theme.qml"
 grep -Fq 'exclusiveZone: Theme.panelHeight' "$panel/DwmPanel.qml"
 grep -Fq 'aboveWindows: root.state.fullscreenMonitorIndexes.indexOf(' "$panel/DwmPanel.qml"
 grep -Fq 'signal popupRequested(var panelWindow, string popupId)' "$panel/DwmPanel.qml"
+# The control center's "Window layout" row (Sync Sprint 11 S11-08) is wired to
+# dwm through DwmState, and its list has one entry per layout dwm has.
+grep -Fq 'required property var dwmState' "$controlcenter/ControlCenterWindow.qml"
+grep -Fq 'onActivated: root.dwmState.setLayout(modelData.index)' "$controlcenter/ControlCenterWindow.qml"
+grep -Fq 'property int layoutIndex: -1' "$repo/config/quickshell/state/DwmState.qml"
+grep -Fq 'key === "layout"' "$repo/config/quickshell/state/DwmState.qml"
+grep -Fq 'function setLayout(index)' "$repo/config/quickshell/state/DwmState.qml"
+select_cc_body=$(sed -n '/^    ControlCenterWindow {/,/^    }/p' "$repo/config/quickshell/shell.qml")
+printf '%s\n' "$select_cc_body" | grep -Fq 'dwmState: dwmState'
+qml_layouts=$(grep -c '"index": [0-9]' "$controlcenter/ControlCenterWindow.qml")
+c_layouts=$(awk '/^static const Layout layouts\[\]/,/^};/' "$repo/config.def.h" | grep -c '^[[:space:]]*{ *"')
+[ "$qml_layouts" = "$c_layouts" ] || {
+	printf 'ControlCenterWindow.qml lists %s layouts, config.def.h defines %s\n' "$qml_layouts" "$c_layouts" >&2
+	exit 1
+}
+# Clicking the empty part of the bar asks for the empty popup id (Sync Sprint 11
+# S11-03), and selectPanelPopup() closes every popup and floating window for it,
+# including the ones that hold no input grab (launcher, command menu, notification
+# history, control-center utility windows).
+grep -Fq 'onClicked: root.popupRequested(root, "")' "$panel/DwmPanel.qml"
+select_popup_body=$(sed -n '/function selectPanelPopup(panel, popupId)/,/^    }$/p' "$repo/config/quickshell/shell.qml")
+for closer in 'commandMenuModel.close();' 'launcherModel.close();' \
+	'notificationModel.closeHistory();' 'controlCenterModel.closeUtility();'; do
+	printf '%s\n' "$select_popup_body" | grep -Fq "$closer"
+done
 grep -Fq 'model: root.state.workspaceIndexes(root.screen)' "$panel/DwmPanel.qml"
 grep -Fq 'sourceComponent: TrayArea {}' "$panel/DwmPanel.qml"
 grep -Fq 'RunningAppsArea { state: root.state }' "$panel/DwmPanel.qml"

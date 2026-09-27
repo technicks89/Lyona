@@ -13,6 +13,13 @@ Bar Widgets, Quick Actions, Appearance, and Power Settings replace the menu
 contents in the same card and provide a Back control. Press <kbd>Esc</kbd> or
 click outside the card to close it from any page.
 
+The main menu also has a **Window layout** row of three buttons, Tile, Floating and
+Monocle, for people who do not know the layout keybindings. The button for the current
+layout is highlighted and follows the keyboard, so pressing <kbd>Super</kbd> + <kbd>T</kbd>
+or <kbd>Super</kbd> + <kbd>F</kbd> moves the highlight. Layouts are per tag, and the row
+acts on the tag and monitor that currently have focus. The buttons are disabled when dwm
+does not report its layout (an older dwm build).
+
 The Utilities section opens the unified Settings application directly. Phase
 1 Settings is a read-only capability overview with section search and
 keyboard/mouse navigation. It can also be opened with `dwm-settings open`.

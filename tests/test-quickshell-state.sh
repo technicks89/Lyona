@@ -41,6 +41,10 @@ if [ "\$1" = "-id" ] && [ "\$3" = "-spy" ]; then
 	fi
 	exec sleep 30
 fi
+if [ "\$1" = "-root" ] && [ "\$2" = "-f" ]; then
+	printf '%s\n' "\$*" >>"$work/xprop-set.log"
+	exit 0
+fi
 if [ "\$1" = "-root" ]; then
 	if [ "\$2" = "_NET_CLIENT_LIST" ]; then
 		printf '_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee\n'
@@ -54,6 +58,7 @@ _NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee
 _DWM_FULLSCREEN_MONITORS(STRING) = "1, 0, 1"
 _DWM_MONITOR_DESKTOPS(STRING) = "0, 1, 2"
 _DWM_SELECTED_MONITOR(CARDINAL) = 1
+_DWM_LAYOUT(CARDINAL) = 2
 WM_NAME(STRING) = "AC  |   VOL 15%"
 ROOT
 	exit 0
@@ -152,6 +157,7 @@ expect 'current=2'
 expect 'count=9'
 expect 'names=one|two|three'
 expect 'focused_monitor=1'
+expect 'layout=2'
 expect 'monitor_desktops=0,1,2'
 expect 'status=AC | VOL 15%'
 
@@ -189,6 +195,19 @@ per_window=$(grep -c '^-id .* _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME 
 total=$(wc -l <"$work/xprop.log")
 [[ $total -le 8 ]] ||
 	fail "expected at most 8 xprop calls for 5 windows, got $total" "$work/xprop.log"
+
+# Asking for a layout sets the _DWM_SET_LAYOUT root property; a malformed index
+# is refused before anything is sent.
+: >"$work/xprop-set.log"
+PATH="$bin:$PATH" "$helper" layout 2 || fail 'layout 2 was refused'
+grep -Fqx -- '-root -f _DWM_SET_LAYOUT 32c -set _DWM_SET_LAYOUT 2' "$work/xprop-set.log" ||
+	fail 'layout did not set _DWM_SET_LAYOUT' "$work/xprop-set.log"
+for bad in '' abc -1 100 '1 2'; do
+	if PATH="$bin:$PATH" "$helper" layout "$bad" 2>/dev/null; then
+		fail "layout accepted a malformed index: $bad"
+	fi
+done
+[[ $(wc -l <"$work/xprop-set.log") -eq 1 ]] || fail 'a refused layout still reached xprop' "$work/xprop-set.log"
 
 watch_pid=
 # shellcheck disable=SC2016 # deferred by design: cleanup_add's argument is

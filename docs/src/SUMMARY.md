@@ -1,6 +1,7 @@
 # Summary
 
 - [Installation](./install.md)
+- [Dependencies and Package Profiles](./dependencies.md)
 - [Getting Started](./getting-started.md)
 - [Keybindings](./keybinds.md)
 - [Configuration](./configuration.md)

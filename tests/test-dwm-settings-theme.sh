@@ -1325,6 +1325,13 @@ grep -Eq '^Gtk/CursorThemeName "' "$cursor_xsettingsd_config"
 grep -Eq '^Gtk/CursorThemeSize [0-9]+$' "$cursor_xsettingsd_config"
 [[ -s $work/cursor-reload.log ]]
 
+# S11-02 (upstream #351): the GTK theme is broadcast next to the cursor theme, so
+# GTK 3 applications that are already running repaint on a theme switch.
+grep -Eq '^Net/ThemeName "[^"]+"$' "$cursor_xsettingsd_config"
+broadcast_theme=$(sed -n 's/^Net\/ThemeName "\(.*\)"$/\1/p' "$cursor_xsettingsd_config")
+grep -Fqx "gtk-theme-name=$broadcast_theme" "$cursor_config/gtk-3.0/settings.ini"
+[[ $(grep -c '^Net/ThemeName ' "$cursor_xsettingsd_config") == 1 ]]
+
 cursor_reload_fail=$work/cursor-reload-fail
 cat >"$cursor_reload_fail" <<'SH'
 #!/bin/sh
@@ -1338,5 +1345,52 @@ PATH=$cursor_bin:$PATH HOME=$cursor_home XDG_CONFIG_HOME=$cursor_config \
 	DISPLAY=:0 \
 	"$repo/scripts/theme-apply.sh" >"$work/cursor-apply-fail.out" 2>"$work/cursor-apply-fail.err"
 grep -Fq 'theme-apply: live X11 cursor refresh failed' "$work/cursor-apply-fail.err"
+
+# S11-02: the broadcast replaces its own line, keeps the other keys, escapes a
+# quote or backslash, refuses a name that could break the line, and follows the
+# icon theme (set, replaced, and removed again once the baseline was empty).
+apply_for_xsettings() {
+	PATH=$cursor_bin:$PATH HOME=$cursor_home XDG_CONFIG_HOME=$cursor_config \
+		XDG_DATA_HOME=$cursor_home/.local/share XDG_RUNTIME_DIR=$runtime_dir \
+		DWM_XSETTINGS_CONFIG=$cursor_xsettingsd_config \
+		DWM_APPEARANCE_CURSOR_HELPER=$cursor_reload_ok \
+		DWM_TEST_CURSOR_RELOAD_LOG=$work/cursor-reload.log \
+		DISPLAY=:0 \
+		"$repo/scripts/theme-apply.sh" >"$work/xs-apply.out" 2>"$work/xs-apply.err"
+}
+printf 'Xft/DPI 96\n' >>"$cursor_xsettingsd_config"
+
+printf 'toolkit-protocol\t1\t0\ngtk\tFirst Theme\nicon\tFirst Icons\n' >"$cursor_config/lyona/personalization.conf"
+apply_for_xsettings
+grep -Fqx 'Net/ThemeName "First Theme"' "$cursor_xsettingsd_config"
+grep -Fqx 'Net/IconThemeName "First Icons"' "$cursor_xsettingsd_config"
+
+printf 'toolkit-protocol\t1\t0\ngtk\tSecond Theme\nicon\tSecond Icons\n' >"$cursor_config/lyona/personalization.conf"
+apply_for_xsettings
+grep -Fqx 'Net/ThemeName "Second Theme"' "$cursor_xsettingsd_config"
+grep -Fqx 'Net/IconThemeName "Second Icons"' "$cursor_xsettingsd_config"
+[[ $(grep -c '^Net/ThemeName ' "$cursor_xsettingsd_config") == 1 ]]
+[[ $(grep -c '^Net/IconThemeName ' "$cursor_xsettingsd_config") == 1 ]]
+grep -Fqx 'Xft/DPI 96' "$cursor_xsettingsd_config"
+grep -Eq '^Gtk/CursorThemeName "' "$cursor_xsettingsd_config"
+
+printf 'toolkit-protocol\t1\t0\ngtk\tWe"ird\\Name\n' >"$cursor_config/lyona/personalization.conf"
+apply_for_xsettings
+grep -Fqx 'Net/ThemeName "We\"ird\\Name"' "$cursor_xsettingsd_config" ||
+	{
+		cat "$cursor_xsettingsd_config" >&2
+		exit 1
+	}
+
+# A name that would end the line early is refused, and the previous value stays.
+printf 'toolkit-protocol\t1\t0\ngtk\tGood Theme\n' >"$cursor_config/lyona/personalization.conf"
+apply_for_xsettings
+grep -Fqx 'Net/ThemeName "Good Theme"' "$cursor_xsettingsd_config"
+# (personalization.conf already refuses values over 128 characters; the length limit
+# in theme-apply.sh covers a gtk_theme that comes from themes.toml instead.)
+printf 'toolkit-protocol\t1\t0\ngtk\tBad\rName\n' >"$cursor_config/lyona/personalization.conf"
+apply_for_xsettings
+grep -Fq 'not broadcasting an invalid GTK theme name' "$work/xs-apply.err"
+grep -Fqx 'Net/ThemeName "Good Theme"' "$cursor_xsettingsd_config"
 
 printf 'dwm settings theme tests passed\n'

@@ -364,6 +364,14 @@ ShellRoot {
         function state(): string { return JSON.stringify(provider.snapshot); }
         function error(): string { return provider.failure; }
         function opacity(a: int, b: int): void { provider.setOpacity(a, b); }
+        function cornerRadius(n: int): void { provider.setCornerRadius(n); }
+        function paneRadius(): string { return String(pane.cornerRadius); }
+        function sliderRadius(n: int): void {
+            pane.radiusRevision = provider.snapshot.revision;
+            pane.cornerRadius = n;
+            pane.radiusChanged = true;
+            pane.applyCornerRadius();
+        }
         function enabled(value: bool): void { provider.active = value; }
         function refresh(): void { provider.refresh(); }
         function injectFailures(): void {
@@ -476,6 +484,30 @@ ShellRoot {
                 ipc("error").stdout,
                 conf.read_text(),
             )
+            # Corner radius (Sync Sprint 11 S11-09): through the model, then through
+            # the pane's own slider path, then cleared again.
+            assert ipc("cornerRadius", "8").returncode == 0
+            wait_until(
+                lambda: ui_matches("corner_radius", 8),
+                "QML corner radius mutation did not converge",
+            )
+            assert helper("status")["corner_radius"] == 8
+            assert "corner-radius = 8;" in conf.read_text(), conf.read_text()
+            assert ipc("paneRadius").stdout.strip() == "8"
+            assert ipc("sliderRadius", "12").returncode == 0
+            wait_until(
+                lambda: ui_matches("corner_radius", 12),
+                "The slider edit did not reach the configuration",
+            )
+            assert conf.read_text().count("corner-radius") == 1, conf.read_text()
+            assert ipc("sliderRadius", "0").returncode == 0
+            wait_until(
+                lambda: ui_matches("corner_radius", 0),
+                "Clearing the corner radius did not converge",
+            )
+            assert "corner-radius" not in conf.read_text(), conf.read_text()
+            assert ui_matches("active", 80) and helper("status")["inactive"] == 60
+            print("PASS: corner radius is set, replaced and cleared through the pane", flush=True)
             conf.write_text(
                 conf.read_text().replace("opacity = 0.8;", "opacity = 0.7;")
             )

@@ -629,11 +629,25 @@ Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 xvfb_pid=$!
 wait_for_display
 
+# dwm posts "dwm: bad config" through notify-send when a config fails to load.
+# A separate X display still inherits the caller's D-Bus session, so capture the
+# call instead of raising a critical notification on the real desktop (Sync
+# Sprint 11 S11-04).
+mkdir -p "$work/bin"
+: >"$work/notifications.log"
+cat >"$work/bin/notify-send" <<'NOTIFY'
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >>"${DWM_XVFB_NOTIFICATION_LOG:?}"
+NOTIFY
+chmod 755 "$work/bin/notify-send"
+
 DISPLAY=$display \
 	HOME=$home \
 	XDG_CONFIG_HOME="$home/.config" \
 	XDG_DATA_HOME="$home/.local/share" \
-	PATH="$repo:$PATH" \
+	PATH="$work/bin:$repo:$PATH" \
+	DWM_XVFB_NOTIFICATION_LOG="$work/notifications.log" \
 	"$repo/dwm" >"$work/dwm.log" 2>&1 &
 dwm_pid=$!
 
@@ -645,6 +659,38 @@ wait_for_root_property _DWM_FULLSCREEN_MONITORS
 wait_for_current_desktop 0
 wait_for_monitor_desktops 0,0,1024,768,0
 DISPLAY=$display xprop -root _DWM_SELECTED_MONITOR | grep -Eq '= 0$'
+
+# Sync Sprint 11 S11-08: dwm publishes the selected monitor's layout for the
+# current tag as _DWM_LAYOUT and takes a request through _DWM_SET_LAYOUT.
+wait_for_layout() {
+	i=0
+	while [ "$i" -lt 100 ]; do
+		[ "$(DISPLAY=$display xprop -root _DWM_LAYOUT 2>/dev/null | sed 's/.*= //')" = "$1" ] && return 0
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf 'expected _DWM_LAYOUT %s\n' "$1" >&2
+	return 1
+}
+set_layout_property() {
+	DISPLAY=$display xprop -root -f _DWM_SET_LAYOUT 32c -set _DWM_SET_LAYOUT "$1"
+}
+wait_for_layout 0
+set_layout_property 2
+wait_for_layout 2
+# Out-of-range and negative requests change nothing, and a request is consumed.
+set_layout_property 7
+set_layout_property -1
+sleep 0.2
+wait_for_layout 2
+DISPLAY=$display xprop -root _DWM_SET_LAYOUT 2>&1 | grep -q 'not found'
+# Layouts are per tag: another tag has its own.
+DISPLAY=$display xdotool set_desktop 1
+wait_for_layout 0
+DISPLAY=$display xdotool set_desktop 0
+wait_for_layout 2
+set_layout_property 0
+wait_for_layout 0
 wait_for_fullscreen_monitors ''
 DISPLAY=$display xprop -root _NET_SUPPORTED | grep -q _NET_WM_STATE_ABOVE
 DISPLAY=$display xprop -root _NET_SUPPORTED | grep -q _NET_WM_STATE_STAYS_ON_TOP
@@ -689,6 +735,13 @@ wait_for_current_desktop 4
 DISPLAY=$display xdotool key Super+1
 wait_for_current_desktop 0
 
+# Loading the default and the valid reloaded configuration raised no notification.
+[ ! -s "$work/notifications.log" ] || {
+	printf '%s\n' 'a valid configuration emitted a notification:' >&2
+	cat "$work/notifications.log" >&2
+	exit 1
+}
+
 printf '%s\n' '=' >"$home/.config/lyona/hotkeys.toml"
 kill -USR1 "$dwm_pid"
 sleep 0.2
@@ -696,6 +749,21 @@ DISPLAY=$display xdotool key Super+u
 wait_for_current_desktop 4
 DISPLAY=$display xdotool key Super+1
 wait_for_current_desktop 0
+
+# The invalid configuration is reported at least once, and the report was captured
+# here. dwm reloads on the file change (its watcher) and again on USR1, so it
+# reports once per load.
+i=0
+while [ "$i" -lt 100 ] &&
+	! grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults' "$work/notifications.log"; do
+	i=$((i + 1))
+	sleep 0.05
+done
+grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults' "$work/notifications.log" || {
+	printf '%s\n' 'missing captured invalid-config notification' >&2
+	cat "$work/notifications.log" >&2
+	exit 1
+}
 
 wait_for_active_window "$win"
 DISPLAY=$display xdotool key Super+o

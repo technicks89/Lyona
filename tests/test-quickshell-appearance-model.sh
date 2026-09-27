@@ -85,6 +85,12 @@ grep -Fq '&& !root.inventoryWatchFailed' "$model"
 # configuration itself), so the model no longer runs a compositor process
 # watcher of its own.
 grep -Fq 'picomModel.refresh();' "$model"
+# The window corner radius slider (Sync Sprint 11 S11-09): the helper's command,
+# the model's setter, and a slider that covers the helper's range.
+grep -Fq 'root.mutate("set-corner-radius", [String(radius)], revision);' "$repo/config/quickshell/appearance/PicomModel.qml"
+grep -Fq 'objectName: "picomCornerRadius"' "$repo/config/quickshell/settings/PicomSettingsPane.qml"
+grep -Fq 'from: 0; to: 32; stepSize: 1' "$repo/config/quickshell/settings/PicomSettingsPane.qml"
+grep -Fq 'CORNER_RADIUS_MAX = 32' "$repo/scripts/dwm-settings-picom"
 if grep -Eq 'compositorWatch|watch-compositor' "$model"; then
 	printf 'AppearanceModel still carries the old compositor process watcher\n' >&2
 	exit 1

@@ -126,6 +126,14 @@ scripts/lyona-gtk-theme generate mytheme config/themes.toml ~/.local/share/theme
 Applications built on libadwaita ignore custom GTK themes by design and stay in
 their own light or dark palette regardless of this setting.
 
+The same generated directory carries a GTK 2 theme (`gtk-2.0/gtkrc`) and a Qt
+colour scheme (`qt/colors.conf`). With `qt6ct` or `qt5ct` installed, applying a
+theme points the tool at that scheme and turns its custom palette on, creating
+`~/.config/qt6ct/qt6ct.conf` (or the `qt5ct` one) if it does not exist yet, so
+Qt applications follow the palette. Without either tool, Qt uses the GTK theme.
+If you would rather pick your own Qt scheme, choose another platform theme under
+Settings > Appearance, or set `qt` in `personalization.conf`.
+
 ---
 
 ## Applying Themes via Control Center
@@ -214,6 +222,14 @@ background (inactive) window opacity. Sliders save when released; keyboard edits
 save after a short pause. Values stay the same when switching themes. Custom
 Picom rules can override these defaults for individual windows.
 
+The same section has a **Window corner radius** slider, from 0 to 32 pixels, that
+rounds the corners of every window (dwm draws square borders, so rounding comes from
+Picom's `corner-radius` option). At 0 the setting is removed from the configuration.
+Picom leaves fullscreen windows square by default, and a per-window `corner-radius` in
+a Picom rule overrides the slider. Picom's manual says rounded corners do not combine
+well with `transparent-clipping`, so leave that off if you use them. It needs a running
+compositor to show; with Picom stopped the value applies the next time it starts.
+
 The controls read the active Picom configuration, normally `~/.config/picom.conf`
 or `~/.config/picom/picom.conf`, and observe external edits. With no configuration,
 they show 100% and create a minimal file on the first edit. A system configuration
@@ -233,7 +249,8 @@ renderer matters, not an unused or passthrough GPU installed in the machine.
 `PICOM_BACKEND` remains a session override. Unset it before selecting a different
 backend in Settings. `DWM_PICOM_CONFIG=/absolute/path/picom.conf` can select a
 custom configuration; an existing Picom `--config` argument is also respected.
-Command-line opacity overrides must be removed before editing opacity in Settings.
+Command-line opacity and `--corner-radius` overrides must be removed before editing them in
+Settings.
 
 ```bash
 dwm-settings-picom status

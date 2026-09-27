@@ -317,6 +317,53 @@ class PicomTests(unittest.TestCase):
             )
         self.assertEqual(child.read_text(), "active-opacity=.8;")
 
+    def test_corner_radius_is_set_replaced_and_cleared(self):
+        config = self.write("# keep\nactive-opacity = 0.8;\n")
+        self.assertEqual(config.corner_radius(), 0)
+        picom.mutate("set-corner-radius", [8], config.revision())
+        text = self.path.read_text()
+        self.assertIn("# keep", text)
+        self.assertIn("corner-radius = 8;", text)
+        self.assertEqual(picom.Configuration().corner_radius(), 8)
+        picom.mutate("set-corner-radius", [12], picom.Configuration().revision())
+        self.assertEqual(self.path.read_text().count("corner-radius"), 1)
+        self.assertEqual(picom.Configuration().corner_radius(), 12)
+        picom.mutate("set-corner-radius", [0], picom.Configuration().revision())
+        self.assertNotIn("corner-radius", self.path.read_text())
+        self.assertIn("# keep", self.path.read_text())
+        self.assertIn("active-opacity = 0.8;", self.path.read_text())
+
+    def test_corner_radius_rejects_bad_values_and_unreadable_config(self):
+        config = self.write("corner-radius = 4;\n")
+        for value in (-1, picom.CORNER_RADIUS_MAX + 1, 2.5, float("nan"), float("inf")):
+            with self.assertRaises(picom.Error):
+                picom.mutate("set-corner-radius", [value], config.revision())
+        self.assertEqual(self.path.read_text(), "corner-radius = 4;\n")
+        for text in ("corner-radius = oops;\n", 'corner-radius = "5";\n', "corner-radius = 99;\n"):
+            with self.assertRaises(picom.Error):
+                self.write(text).corner_radius()
+
+    def test_corner_radius_refuses_a_command_line_override(self):
+        config = self.write("")
+        running = [{"args": ["picom", "--corner-radius", "6"], "pid": 1}]
+        with patch.object(picom, "processes", return_value=running):
+            with self.assertRaisesRegex(picom.Error, "corner radius override"):
+                picom.mutate("set-corner-radius", [4], config.revision())
+        self.assertEqual(self.path.read_text(), "")
+
+    def test_corner_radius_in_an_include_is_changed_at_its_source(self):
+        include = self.config / "extra.conf"
+        include.write_text("corner-radius = 3;\n")
+        config = self.write('@include "extra.conf"\n')
+        picom.mutate("set-corner-radius", [7], config.revision())
+        self.assertIn("corner-radius = 7;", include.read_text())
+        self.assertNotIn("corner-radius", self.path.read_text())
+
+    def test_status_reports_the_corner_radius(self):
+        self.write("corner-radius = 6;\n")
+        with patch.object(picom, "renderer", return_value="intel"):
+            self.assertEqual(picom.status(False)["corner_radius"], 6)
+
     def test_backend_precedence_and_auto(self):
         config = self.write('backend="glx"; # preserve\n')
         with patch.object(picom, "renderer", return_value="nvidia"):

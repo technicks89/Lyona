@@ -23,6 +23,12 @@ applied to the repository.
 | [S11-08](#s11-08-a-layout-switcher-in-the-control-center) | New feature (issue `#297`) | none (D-12 decided) |
 | [S11-09](#s11-09-a-picom-window-corner-radius-slider) | New feature (issue `#297`) | none (D-12 decided) |
 
+**Implementation status (2026-09-26):** all nine items are implemented in a working
+tree, uncommitted, each with its tests, CHANGELOG entry, `TASKS.md` bullet and
+`docs/evidence/s11-*.md` file, which record what was verified and what was not.
+Where implementation contradicted this plan (S11-01's failure counts, S11-03's cause,
+S11-05's profile names) the text below was corrected.
+
 Every item can start as soon as this is approved, and they are independent. If
 you want an order: S11-04 (a test that leaks notifications) and S11-01 (the
 contrast bug) first, S11-06 (Qt theming is broken for `qt6ct` users today) next,
@@ -256,8 +262,9 @@ these pairs: `menuHoverText` on `menuHoverBackground`, `controlHoverText` on
 `accentSecondary`, plus a dark-to-light switch in one process. Build the colour
 maps in the shell wrapper by reading the mapping array out of
 `emit_color_records()` in `scripts/dwm-settings-appearance`, so the test cannot
-drift from the real key mapping. Before the fix this test fails for the 11
-presets in the table above, which is its own mutation check.
+drift from the real key mapping. As implemented (174 assertions over 15 presets),
+against the original `Theme.qml` it fails 105 assertions across 14 presets: the 11
+in the table above on hover, plus selected and action text on others.
 
 Add the target to `check` and the `.PHONY` list. Not prototyped: the harness
 itself has not been written or run.
@@ -325,10 +332,12 @@ manual check for the PR.
 
 ## S11-03: Clicking the empty panel closes open popups
 
-Upstream `#340` (the "universal click-away" part). By the code, clicking outside
-a popup dismisses it, but the transparent click-away surface starts below the
-panel (`ClickAwayPopup.qml`, `panelOffset`), so clicking the empty part of the
-top bar itself does nothing. Not reproduced by hand.
+Upstream `#340` (the "universal click-away" part). This plan first said an
+outside click on the bar does nothing. Implementing it showed that a click on the
+bar already dismisses a `ClickAwayPopup` (they hold an input grab;
+`tests/test-panel-popup.py` asserts it). What stayed open were the plain floating
+windows: the launcher, the command menu, notification history and the control
+center's utility windows. The `MouseArea` below is what closes those.
 Add a background `MouseArea` in `config/quickshell/panel/DwmPanel.qml`, right
 after the `PillShadow` line inside the `island` rectangle. The patch from
 `ebe57c6` applies cleanly (`git apply --check`, 2026-09-26):
@@ -1419,7 +1428,8 @@ emitted a new block when the layout changed.
 
 **3. Quickshell.** Not run; these are small and follow existing patterns
 (`closeWindow()` for the command, `PresetButton` in a `GridLayout` as the power
-presets use, `SectionLabel` as the Appearance pane uses).
+presets use, and a muted `UiText` caption: `test-quickshell-controlcenter.sh` forbids
+`SectionLabel` headers on the overview page, which the first version of this plan used).
 
 `config/quickshell/state/DwmState.qml`:
 
@@ -1490,7 +1500,11 @@ and on the overview page, between the "Power" row and the separator after it:
 +                        Layout.bottomMargin: Theme.compactSpacing
 +                    }
 +
-+                    SectionLabel { label: "Window layout" }
++                    UiText {
++                        Layout.fillWidth: true
++                        text: "Window layout"
++                        color: Theme.textMuted
++                    }
 +                    GridLayout {
 +                        Layout.fillWidth: true
 +                        columns: 3

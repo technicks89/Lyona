@@ -516,9 +516,19 @@ check-session-launch:
 check-gtk-theme:
 	tests/test-lyona-gtk-theme.sh
 
+check-app-palettes:
+	/usr/bin/python3 tests/test-app-palettes.py
+
+check-qt-palette-xvfb:
+	@tests/test-qt-palette-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 .PHONY: check-theme-apply-gtk-fallback
 check-theme-apply-gtk-fallback:
 	tests/test-theme-apply-gtk-fallback.sh
+
+.PHONY: check-theme-apply-qt-palette
+check-theme-apply-qt-palette:
+	tests/test-theme-apply-qt-palette.sh
 
 check-plymouth-theme:
 	tests/test-lyona-plymouth-theme.sh
@@ -628,6 +638,11 @@ check-quickshell-health-navigation-xvfb: all
 
 check-quickshell-information-ui-xvfb: all
 	status=0; tests/test-quickshell-information-ui-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-quickshell-theme-contrast: all
+	status=0; tests/test-quickshell-theme-contrast-xvfb.sh || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -786,7 +801,7 @@ check-install-manifest: all
 		find "assets/cursors/${CAPITAINE_LIGHT_THEME}" \
 			\( -type f -o -type l \) \
 			-printf 'usr/share/icons/${CAPITAINE_LIGHT_THEME}/%P\n'; \
-		awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print "usr/share/themes/Lyona-" id "/index.theme"; print "usr/share/themes/Lyona-" id "/gtk-3.0/gtk.css"; print "usr/share/themes/Lyona-" id "/gtk-4.0/gtk.css"; }' config/themes.toml; \
+		awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print "usr/share/themes/Lyona-" id "/index.theme"; print "usr/share/themes/Lyona-" id "/gtk-2.0/gtkrc"; print "usr/share/themes/Lyona-" id "/gtk-3.0/gtk.css"; print "usr/share/themes/Lyona-" id "/gtk-4.0/gtk.css"; print "usr/share/themes/Lyona-" id "/qt/colors.conf"; }' config/themes.toml; \
 		find "assets/grub/${GRUB_THEME_NAME}" \
 			\( -type f -o -type l \) \
 			-printf 'usr/share/grub/themes/${GRUB_THEME_NAME}/%P\n'; \
@@ -874,7 +889,10 @@ check:
 	$(MAKE) check-ci-schedule
 	$(MAKE) check-shell-contracts
 	$(MAKE) check-gtk-theme
+	$(MAKE) check-app-palettes
+	$(MAKE) check-qt-palette-xvfb
 	$(MAKE) check-theme-apply-gtk-fallback
+	$(MAKE) check-theme-apply-qt-palette
 	$(MAKE) check-plymouth-theme
 	$(MAKE) check-grub-theme
 	$(MAKE) check-session-launch
@@ -908,6 +926,7 @@ check:
 	$(MAKE) check-quickshell-panel-menus
 	$(MAKE) check-quickshell-overview
 	$(MAKE) check-quickshell-overview-xvfb
+	$(MAKE) check-quickshell-theme-contrast
 	$(MAKE) check-quickshell-panel-settings
 	$(MAKE) check-accessibility
 	$(MAKE) check-quickshell-command-menu
@@ -962,6 +981,6 @@ check:
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-herdr-install check-mybash-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
-	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall
