@@ -723,16 +723,19 @@ cmd_apply() {
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "$status_detail"
 	backup_live_install
+	# The same id names the privileged helper's own copy of the system files,
+	# which it takes, as root, just before installing (Sync Sprint 12 S12-01).
+	local backup_id=${backup_dir##*/}
 
 	status_detail="Installing $requested_version (authentication required)"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "$status_detail"
 	local privileged_install_ok=true
 	if [[ $install_mode == release ]]; then
-		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" ||
+		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" ||
 			privileged_install_ok=false
 	else
-		run_privileged install-system checkout "$staging_dir" "$requested_version" ||
+		run_privileged install-system checkout "$staging_dir" "$requested_version" "$backup_id" ||
 			privileged_install_ok=false
 	fi
 	if [[ $privileged_install_ok != true ]]; then
@@ -908,7 +911,9 @@ cmd_rollback() {
 	status_detail="Restoring backup $backup_id"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "restoring system files (this step requires authentication)"
-	run_privileged restore-system "$backup_dir" ||
+	# System files come from the privileged helper's own root-held copy, named by
+	# id; this directory only holds the user-side trees.
+	run_privileged restore-system "$backup_id" ||
 		die "the privileged restore step failed or was declined"
 
 	if [[ -f $backup_dir/lyona-data.tar ]]; then

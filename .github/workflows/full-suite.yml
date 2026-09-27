@@ -113,6 +113,34 @@ jobs:
       - name: Run the display helper security test
         run: make check-settings-display-security
 
+  update-helper-backups:
+    name: update helper backups (root, disposable container)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux:base-devel
+    env:
+      # tests/test-lyona-update-root-backups.sh runs lyona-update-root as root and
+      # writes system paths, so it refuses to run anywhere but a disposable root
+      # container. Part 2 builds and installs a release, so it needs the build
+      # dependencies.
+      DWM_SECURITY_CONTAINER: "1"
+    steps:
+      - name: Install checkout dependency
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          source scripts/dwm-packages.sh
+          mapfile -t packages < <(dwm_packages arch build | awk 'NF' | sort -u)
+          pacman -S --noconfirm --needed "${packages[@]}"
+
+      - name: Run the update helper backup test
+        run: make check-update-root-backups
+
   clang-build:
     name: clang build
     if: inputs.clang

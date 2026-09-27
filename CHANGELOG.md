@@ -1351,6 +1351,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Security
 
+- Rolling back an update no longer installs anything from the user's home directory as root (Sync Sprint 12 S12-01,
+  issue `#164`). `lyona-update-root restore-system` used to extract `system-files.tar` from
+  `~/.local/state/lyona/live-update-backups/<id>/` as root with `tar -xpf`, keeping the archive's owners and modes and
+  checking only member paths, so any program running as the user could plant a backup whose next authenticated
+  rollback put root-owned files of its choosing into `/usr/local/bin` or replaced the helper itself. The helper now
+  makes the system backup itself, as root, just before `install-system` installs (release and checkout modes), from the
+  live files into `/var/lib/lyona/backups/<id>/` (0700, root-owned), and keeps the newest 5. `restore-system` takes a
+  backup id, not a path, and restores only that root-owned archive; the member checks stay as defence in depth. The
+  backup now also covers `dwm-window-thumb` and `/etc/lyona-release`, and cursor-theme symlinks no longer abort a
+  restore (every restore of a backup that held the cursor themes used to fail on them). **Migration:** backups taken
+  before this change have no system half, and `lyona-update rollback` refuses them with a message saying so. Tested
+  as root in a disposable container by `tests/test-lyona-update-root-backups.sh` (`make check-update-root-backups`,
+  and a new `update-helper-backups` job in the manual Full suite workflow).
+
 - `install-mybash`'s Starship fallback no longer pipes a remote script
   straight into `sudo sh` on a transient `pacman` failure: it now downloads
   `https://starship.rs/install.sh` to a temp file, verifies it against a
