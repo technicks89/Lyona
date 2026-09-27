@@ -1,60 +1,81 @@
 # Configuration
 
 lyona keeps user configuration under
-`${XDG_CONFIG_HOME:-$HOME/.config}/lyona/`. Hotkeys and themes
-**live-reload on save** — no recompile needed for most changes.
+`${XDG_CONFIG_HOME:-$HOME/.config}/lyona/`. **Customise lyona with these files.**
+They are read at runtime, **live-reload on save**, belong to you alone, and survive
+every update and rollback unchanged. No recompile is needed.
 
 | File | Purpose |
 |------|---------|
-| `config/hotkeys.toml` | All keybindings |
-| `config/themes.toml` | Colors, themes, border size |
-| `power.conf` | Control Center screen DPMS and auto-lock choices |
+| `hotkeys.toml` | All keybindings, including the tag keys |
+| `themes.toml` | Colors, themes, border size |
+| `window-rules.toml` | Per-app window rules: tag, floating, terminal swallowing, always on top, monitor |
+| `power.conf` | Control Center screen blanking and auto-lock choices |
 
-For deeper changes (window rules, fonts, refresh rate), edit `config.h` and
-run the complete developer synchronization command:
+## Window rules
 
-```bash
-./scripts/dev-sync-install.sh
+`window-rules.toml` holds one rule per line, and every matching rule applies, in
+order. Find a window's class, instance and title with
+`xprop | grep -E "WM_CLASS|WM_NAME"`.
+
+```toml
+rules = [
+  { class="Gimp",    isfloating=1 },
+  { class="firefox", tags=2 },
+  { class="kitty",   isterminal=1 },
+]
 ```
 
-It rebuilds dwm, updates all installed commands and managed Quickshell/data
-files when needed, verifies parity, and reports whether the dwm session must be
-restarted. When a session restart is already required, it activates Quickshell
-there so the tray host starts before tray clients. Use
-`./scripts/dev-sync-install.sh --check` for a non-mutating audit.
+Fields: `class`, `instance`, `title` (omit to match anything), `tags` (1-9; 0 or
+omitted follows the current tag), `isfloating`, `isterminal`, `alwaysontop`,
+`noswallow` (1 or 0), and `monitor` (-1 for any). Write flags as `1` or `0`.
 
 ---
 
-## config.h Essentials
+## config.h (compile-time options)
 
-`config.h` is your personal copy of `config.def.h`. It is created automatically by `make` if it doesn't exist.
+A few options are compiled into dwm and have no TOML equivalent yet: the bar font,
+the tag names, the layouts, the default master size and count, the refresh rate, the
+window icon size, the floating-toggle shrink and whether the bar is shown. These live
+in `config.h`, your copy of `config.def.h` in the checkout, which `make` creates if it
+does not exist.
 
 ```bash
 $EDITOR config.h
 ./scripts/dev-sync-install.sh
 ```
 
-### Key Options
+`dev-sync-install.sh` rebuilds dwm, updates all installed commands and managed
+Quickshell/data files when needed, verifies parity, and reports whether the dwm
+session must be restarted. When a session restart is already required, it activates
+Quickshell there so the tray host starts before tray clients. Use
+`./scripts/dev-sync-install.sh --check` for a non-mutating audit.
+
+**How updates treat `config.h`.** `lyona-update` (and the Settings update pane)
+builds each release with your own
+`${XDG_CONFIG_HOME:-$HOME/.config}/lyona/config.h`, and falls back to a checkout's
+`config.h` when you run `./scripts/lyona-update` from one. With neither, a release
+builds from its `config.def.h`. `make install-user` (run by `install.sh`) copies a
+customised checkout `config.h` there once, and never overwrites one that is already
+there; it does not copy an unchanged default, which would only go stale.
+
+When a release adds a compile-time option, merge it into your copy from the
+release's `config.def.h`; if the build fails, `lyona-update` names the `config.h` it
+used and leaves the live install untouched. dwm is installed once for the whole
+machine, so the person who runs the update decides these options for everyone. Keep
+personal choices in the TOML files above, which are per user and always survive an
+update.
 
 | Setting | Description |
 |---------|-------------|
-| `refresh_rate` | Match your monitor (default 60; set 120 for high-refresh) |
 | `fonts[]` | Font family and size used in the bar |
-| `colors[]` | Managed by `themes.toml` — rarely edit directly |
-| `autostart[]` | Programs launched on dwm start |
-| `rules[]` | Per-app window rules (floating, tag assignment, terminal flag) |
-| `keys[]` | Fallback static keybinds (prefer `hotkeys.toml`) |
-| `MODKEY` | `Mod4Mask` = Super, `Mod1Mask` = Alt |
-
-### Window Rules
-
-Rules in `config.h` let you assign windows to specific tags or force float:
-
-```c
-/* class      instance  title   tags mask  isfloating  isterminal  noswallow  monitor */
-{ "Gimp",     NULL,     NULL,   0,         1,          0,           0,        -1 },
-{ "Firefox",  NULL,     NULL,   1 << 1,    0,          0,          -1,        -1 },
-```
+| `tags[]` | Tag names |
+| `layouts[]` | Available layouts (switch with the keys, or the Control Center's layout row) |
+| `mfact`, `nmaster` | Default master area size and count |
+| `refresh_rate` | Match your monitor (default 60; set 120 for high-refresh) |
+| `FLOATSHRINKPCT` | How far a window shrinks when toggled to floating (default 85%) |
+| `ICONSIZE`, `SHOWWINICON` | Window icon size, and whether it is shown |
+| `MODKEY` | The modifier the tag keys in `hotkeys.toml` use: `Mod4Mask` = Super, `Mod1Mask` = Alt |
 
 ---
 

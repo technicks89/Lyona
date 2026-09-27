@@ -9,10 +9,11 @@ set -euo pipefail
 # Part 1 needs only the helper and tar: restore-system refuses a path, a bad id,
 # a backup store or backup that is not private to root, a non-root-owned archive
 # and members outside the managed locations, and restores a good backup exactly.
-# Part 2 builds a real release and runs install-system release: the helper backs
-# up the live files as root before installing, prunes old backups, and a rollback
-# brings the live file back. Part 2 needs the build dependencies; without them it
-# is skipped and says so.
+# Part 2 builds a real release and runs install-system release: the helper reads
+# the tarball and config.h only with the invoking user's permissions into its own
+# copy and refuses a wrong digest (S12-02), backs up the live files as root before
+# installing, prunes old backups, and a rollback brings the live file back. Part 2
+# needs the build dependencies; without them it is skipped and says so.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -198,7 +199,26 @@ done
 new_id=19990101T000000Z-$$
 refuses 'malformed backup id' install-system release "$tarball" "$sha" "$version" - ../x
 refuses 'requires a tarball' install-system release "$tarball" "$sha" "$version" -
-run_helper install-system release "$tarball" "$sha" "$version" - "$new_id" >"$work/install.out" 2>&1 || {
+
+# S12-02: the digest is checked on root's own copy, and both inputs are read with
+# the invoking user's permissions. Root could read a mode-000 file; the user cannot.
+wrong_sha=$(printf '%064d' 0)
+refuses 'checksum does not match' install-system release "$tarball" "$wrong_sha" "$version" - "$new_id"
+chmod 0000 "$tarball"
+refuses 'could not read the tarball as the invoking user' \
+	install-system release "$tarball" "$sha" "$version" - "$new_id"
+chmod 0644 "$tarball"
+ln -s "$tarball" "$updates/linked.tar.gz"
+refuses 'not a safe, user-owned file' install-system release "$updates/linked.tar.gz" "$sha" "$version" - "$new_id"
+rm "$updates/linked.tar.gz"
+config_h=$home/config.h
+install -o "$uid" -g "$uid" -m 0000 "$repo/config.def.h" "$config_h"
+refuses 'could not read config.h as the invoking user' \
+	install-system release "$tarball" "$sha" "$version" "$config_h" "$new_id"
+chmod 0644 "$config_h"
+[[ ! -e $store/$new_id ]] || fail 'a refused install left a system backup behind'
+
+run_helper install-system release "$tarball" "$sha" "$version" "$config_h" "$new_id" >"$work/install.out" 2>&1 || {
 	tail -40 "$work/install.out" >&2
 	fail 'install-system release failed'
 }
@@ -222,5 +242,5 @@ run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
 	fail 'rolling back to the new backup failed'
 }
 grep -Fxq '# live-before-update' "$live" || fail 'the rollback did not bring the live file back'
-printf 'install-system release backups: PASS\n'
+printf 'install-system release inputs and backups: PASS\n'
 printf 'Update-helper backups: PASS\n'

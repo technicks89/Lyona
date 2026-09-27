@@ -155,6 +155,7 @@ items=(
 	"12|S12-16|s12-16-split-dwm-system-management-and-move-test-ipc-out-of-the-shell|Split dwm-system-management and move test IPC out of the shell|whole-repo review"
 	"12|S12-17|s12-17-docs-and-specs-agree-with-the-code|Docs and specs agree with the code|whole-repo review"
 	"12|S12-18|s12-18-smaller-hardening|Smaller hardening|whole-repo review"
+	"12|S12-19|s12-19-release-updates-can-install-the-published-release-asset|Release updates can install the published release asset|found testing S12-01"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \

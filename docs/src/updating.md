@@ -1,6 +1,6 @@
 # Updating and Rollback
 
-lyona updates itself in place from signed release tarballs, either through
+lyona updates itself in place from release tarballs, either through
 Settings -> System or from a terminal with `lyona-update`. Both paths use the
 same helper, so anything you can do from Settings you can also do from a
 terminal — including the one thing Settings cannot help with: recovering a
@@ -36,13 +36,22 @@ recoverable:
 1. Download the release tarball to `$XDG_STATE_HOME/lyona/updates/`.
 2. Verify its SHA-256 against the published release digest **before**
    unpacking it.
-3. Unpack it, and copy your live `config.h` into the build.
-4. Build it, unprivileged. A compile failure costs you nothing but time — it
-   never happens with elevated privileges held.
+3. Unpack it, and copy your `config.h` into the build: `~/.config/lyona/config.h`,
+   or a checkout's `config.h` when run from one (see Configuration).
+4. Build it, unprivileged, so a compile failure costs you nothing but time.
 5. Back up the live install.
-6. Install the built system files through one confirmed privileged step
+6. Install the system files through one confirmed privileged step
    (`lyona-update-root`, authenticated through polkit), then install the
-   user-level files.
+   user-level files. The privileged step does not trust the unprivileged build:
+   it makes its own root-owned copy of the tarball (read with your permissions),
+   checks the digest again on that copy, then unpacks and rebuilds only that copy
+   before backing up the system files and installing.
+
+**What the digest proves.** The SHA-256 digest comes from the release page (or a
+short-lived cache in `~/.cache/lyona/`), fetched by the unprivileged side, so a
+match proves the download is intact, not that the release is genuine. Releases
+are not signed yet (decision D-14), so the administrator password prompt in step
+6 is the real boundary: approve it only for an update you started.
 7. Verify every installed file matches what was staged.
 8. Rewrite the provenance record (`/etc/lyona-release`,
    `$XDG_STATE_HOME/lyona/install.state`) — last, and only after step 7

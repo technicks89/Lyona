@@ -240,7 +240,7 @@ update in the same PR, so completed items are pinned here too, not only in
   Evidence: `docs/evidence/s9-04-overview-load.md`. Virtualization is not needed up to 600 windows; idle windows are
   10 s, not the plan's 30 s.
 - [ ] Sync Sprint 12 -- whole-repo review findings
-  (`docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md`), 18 items, all findings recorded
+  (`docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md`), 19 items, all findings recorded
   unreviewed; awaiting maintainer review. D-13 (blank and lock after 10 min),
   D-14 (no release signing for now) and D-17a (one ISO, NVIDIA detected) are
   decided, as are D-15 (remove checkout mode), D-16 (system copy only, plus a
@@ -249,3 +249,8 @@ update in the same PR, so completed items are pinned here too, not only in
   `scripts/lyona-update`, `docs/src/updating.md`; tests in `tests/test-lyona-update-root-backups.sh`
   (`make check-update-root-backups`, container-only, and a Full suite job) and `tests/test-lyona-update.sh`. Evidence:
   `docs/evidence/s12-01-rollback-restore.md`. A real polkit prompt and a rollback on real hardware are not tested.
+- [x] Sync Sprint 12 S12-02 -- release install hashes and builds one root-owned copy, issue `#165` --
+  `scripts/lyona-update-root`, `docs/src/updating.md`; tests in `tests/test-lyona-update-root-backups.sh` (container) and
+  `tests/test-quickshell-update-model.sh`. Evidence: `docs/evidence/s12-02-release-install.md`. Step 3 (signatures) is
+  deferred by D-14; step 4 decided as D-18 (keep the user's `config.h`, now read from `~/.config/lyona/config.h`,
+  and document TOML as the way to customise).

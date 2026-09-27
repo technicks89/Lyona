@@ -41,6 +41,7 @@ starts.
 | [S12-16](#s12-16-split-dwm-system-management-and-move-test-ipc-out-of-the-shell) | `#179` | Architecture | Low | none |
 | [S12-17](#s12-17-docs-and-specs-agree-with-the-code) | `#180` | Docs | Medium | none (D-17a, D-17b decided) |
 | [S12-18](#s12-18-smaller-hardening) | `#181` | Security, hardening | Low | none |
+| [S12-19](#s12-19-release-updates-can-install-the-published-release-asset) | `#184` | Correctness, updater | High | none |
 
 **Suggested order:** S12-01 to S12-03 first (the privileged update helper, found
 independently by three reviews), then S12-04 and S12-06, then the idle-cost items
@@ -62,6 +63,7 @@ root the next time the user authenticates a routine update or rollback.
 | **D-15** | Keep `lyona-update-root install-system checkout` (root runs `make` from a user-owned checkout)? | S12-03 | **Decided (2026-09-27), asked of the user directly:** option A, remove it. Developers use `sudo make install-system` or `dev-sync-install.sh`. Updates and rollbacks without root are a future sprint (`ROADMAP.md` Future Evaluation) |
 | **D-16** | Make `/usr` (or `libexec/lyona`) the only runtime source for helpers, instead of also `~/.local/share/lyona/scripts`? | S12-13 | **Decided (2026-09-27), asked of the user directly:** option 3, the system copy is the only runtime source, plus one explicit developer override for live testing from a checkout |
 | **D-17a** | One ISO, or separate standard and NVIDIA images? | S12-17 item 2 | **Decided (2026-09-27), asked of the user directly:** one ISO that detects NVIDIA hardware and installs the proprietary driver when it is needed. AGENTS.md and SPEC 9.4 change to match SPEC section 4 |
+| **D-18** | Build the system-wide dwm with the updating user's `config.h`? (S12-02 step 4) | S12-02 | **Decided (2026-09-27), asked of the user directly:** yes, keep it, and make the runtime TOML files the documented way to customise; `config.h` is for the few compile-time options only |
 | **D-17b** | Per-screen `Variants` panels (SPEC.md) or one `PanelWindow` (AGENTS.md)? | S12-17 item 1 | **Decided (2026-09-27), asked of the user directly:** keep per-screen panels (every monitor needs a bar; state is already shared); AGENTS.md changes to match SPEC.md |
 
 ---
@@ -151,6 +153,17 @@ extracted.
 ## S12-02: Release install hashes and builds one root-owned copy
 
 **Source:** S (Medium), E (High). **Verified** (the double read and the caller-supplied digest).
+
+**Implemented (2026-09-27): steps 1 and 2.** Step 1 goes further than the diff below:
+root reads the tarball and `config.h` with the invoking user's permissions
+(`runuser -u "$invoking_user" -- cat`) into its own copies, so a path or symlink can
+never make root read a file the user could not. Step 3 is deferred (D-14). **Step 4 decided (D-18, 2026-09-27, asked of the user
+directly):** keep building with the updating user's `config.h`, and make the TOML files
+the documented way to customise (`docs/src/configuration.md`). While documenting it,
+it turned out a `config.h` was only picked up when `lyona-update` ran from a checkout;
+fixed here: it now builds with `~/.config/lyona/config.h` first, and `install-user`
+copies a customised checkout `config.h` there once. Evidence:
+`docs/evidence/s12-02-release-install.md`.
 
 `install-system release` (`scripts/lyona-update-root:124-186`):
 
@@ -884,6 +897,53 @@ existing installs) in its own file before starting, as its first task.
 5. **`lyona-cachyos`** receives the signing key by long ID and checks only the
    `tail -n1` of the listing (`scripts/lyona-cachyos:164-173`). Receive by the full
    fingerprint and compare with `--with-colons` output.
+
+## S12-19: Release updates can install the published release asset
+
+**Source:** found while testing S12-01 (2026-09-27). **Verified.** Not one of the four
+reviews' findings.
+
+`scripts/lyona-release` publishes the output of `make release` as
+`lyona-<version>.tar.gz` (`scripts/lyona-release:194,249-252`). That archive is a
+runtime bundle: the built `dwm`, `dwm.desktop`, `.xinitrc`, `assets/`, `config/` and
+`scripts/` (`Makefile` `release`), with no `Makefile`, `config.mk` or C sources;
+`make release-check` (`Makefile:881-905`) pins exactly that layout. But both halves of
+the updater treat the asset as a source tree:
+
+- `lyona-update apply` extracts it into `~/.local/state/lyona/updates/<version>/` and
+  runs `make -C "$staging_dir" clean`, then `make all` (`scripts/lyona-update:656-683`).
+- `lyona-update-root install-system release` reads `VERSION` from `config.mk`, then
+  runs `make clean all install-system` on the extracted tree
+  (`scripts/lyona-update-root`, `install-system release`).
+
+So installing a published release through `lyona-update` (or the Settings update
+pane) fails at the first `make`, and it cannot have worked since the release asset
+took this form. Nothing else consumes the bundle: the ISO builds from a copy of the
+repository. `tests/test-lyona-update.sh` exercises apply with `--from-checkout`
+(removed by S12-03) and never with a real release asset, which is why no test caught
+it; S12-01's container test builds a source tarball for the same reason.
+
+**Options.**
+
+1. **Publish a source archive and install from it (recommended).** Make the release
+   asset a source tree (every tracked file, no `config.h`, objects or `release/`),
+   built reproducibly the way `make release` is now, and change `release-check` to pin
+   `config.mk`, `Makefile` and the sources, and to reject a built `dwm`. The updater
+   and the root helper already build from source, so they need no change. The cost is
+   that a release is built on the user's machine, which it already is.
+2. **Install the bundle as built.** Keep the bundle, and teach the updater and the root
+   helper to install its prebuilt files without `make`. That removes building as root,
+   but it means a second install path beside `make install-system` that has to install
+   exactly what the Makefile does, and it gives up building against the user's
+   `config.h`.
+
+The ROADMAP's future plan (a signed pacman package) replaces this path; option 1 is
+the small fix until then.
+
+**Verification:** a test that runs `lyona-update apply --file` against the output of
+the real release target (not a hand-made tarball), with the root helper stubbed as in
+`tests/test-lyona-update.sh`, and asserts it builds and reaches the privileged install
+step; and the S12-01 container test switched to the real release archive.
 
 ---
 
