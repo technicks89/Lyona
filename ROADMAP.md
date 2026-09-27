@@ -528,3 +528,52 @@ Quick Actions' Self-Heal (Sync Sprint 3 S3-06, decision D-6, decided
 `repair-system` flow is not auto-wired to it. Evaluate whether to build a
 default script or wire the two together only after the Arch phases are
 stable.
+
+Updates and rollbacks without an administrator password (requested
+2026-09-27, when decision D-15 removed `lyona-update-root`'s checkout mode) are a
+future sprint, tabled for the current work. Two decisions shape it: D-16 makes the
+root-owned system copy the only runtime source, so an update always writes where
+only root can; and D-14 declined release signing for now, which leaves the
+administrator's approval as the only proof that a release is genuine. Removing the
+password prompt is only safe once something else provides that proof, so this
+sprint reopens D-14.
+
+Recommended design (2026-09-27): ship Lyona as a signed pacman package.
+
+- Publish a small signed pacman repository (the repo database and packages can live
+  on GitHub Releases). `install.sh` and the ISO add the repo and its signing key
+  once, the way `scripts/lyona-cachyos` already adds the CachyOS repo.
+- Updates go through pacman, like the rest of the system: `pacman -Syu` or the
+  existing System Updates pane, which already uses PackageKit. pacman verifies
+  every package's signature, tracks every installed file, and installs prebuilt
+  files, so root never runs `make` on a source tree.
+- Rollback of the system half reinstalls a previous signed package from pacman's
+  root-owned cache (`/var/cache/pacman/pkg`), checked again by pacman. No
+  user-writable archive ever reaches root. Allow only a few versions back, and
+  never below a minimum version recorded in signed release metadata, so a hostile
+  program cannot push the system back to a release with a known hole.
+- No password: ship a polkit rule that lets an active local administrator (`wheel`)
+  run the Lyona package update and rollback without a prompt. That is safe because
+  only signed packages from the known repo can be installed; the worst a hostile
+  session program can do is trigger an install of a genuine release. Keep the rule
+  that narrow.
+- The per-user half (managed Quickshell config and seed data under D-16) never
+  needs root: after an update the session sees that the system version is newer
+  than the user's seed and refreshes it, and rollback reverses that step using the
+  user-side backups `lyona-update` already takes.
+- Most of `lyona-update-root` (tarball hashing, building as root, backup-archive
+  validation) then goes away. Sprint 12's S12-01 to S12-03 fix the helper that
+  exists today and should stay minimal for that reason.
+
+Costs: a PKGBUILD and a repository-publishing step in `scripts/lyona-release`; a
+signing key the maintainer keeps (simplest: off CI, signing each release locally);
+and compile-time `config.h` customisation no longer reaches the system dwm, so
+users customise through the runtime TOML files, which already cover keys, rules and
+themes.
+
+Alternative considered: a root-owned update service that downloads and
+signature-checks release tarballs itself, builds them as an unprivileged throwaway
+user, keeps backups in root-only `/var/lib/lyona/backups`, and accepts only "update
+to latest" or "roll back one version". It works, but it reimplements what pacman
+already does (signatures, file tracking, rollback from a cache) as more privileged
+code, and adds a second update system alongside pacman.

@@ -63,6 +63,7 @@ sprints=(
 	"9|Sync Sprint 9 — Cross-tag overview: polish|SYNC-SPRINT-9-OVERVIEW-POLISH.md"
 	"10|Sync Sprint 10 - Completion audit|SYNC-SPRINT-10-COMPLETION-AUDIT.md"
 	"11|Sync Sprint 11 - Shell contrast and survey gaps|SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md"
+	"12|Sync Sprint 12 - Whole-repo review|SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -136,6 +137,24 @@ items=(
 	"11|S11-07|s11-07-square-popups-and-a-1-px-focus-ring|Square popups and a 1 px focus ring|upstream #340"
 	"11|S11-08|s11-08-a-layout-switcher-in-the-control-center|A layout switcher in the Control Center|upstream #297"
 	"11|S11-09|s11-09-a-picom-window-corner-radius-slider|A Picom window corner-radius slider|upstream #297"
+	"12|S12-01|s12-01-rollback-restores-only-what-root-has-checked|Rollback restores only what root has checked|whole-repo review"
+	"12|S12-02|s12-02-release-install-hashes-and-builds-one-root-owned-copy|Release install hashes and builds one root-owned copy|whole-repo review"
+	"12|S12-03|s12-03-the-root-helper-writes-and-builds-nothing-through-user-paths|The root helper writes and builds nothing through user paths|whole-repo review"
+	"12|S12-04|s12-04-dwm-always-starts-with-working-keys-and-a-config-file-cannot-hang-it|dwm always starts with working keys, and a config file cannot hang it|whole-repo review"
+	"12|S12-05|s12-05-the-toml-parser-handles-comments-same-line-arrays-and-booleans|The TOML parser handles comments, same-line arrays and booleans|whole-repo review"
+	"12|S12-06|s12-06-untrusted-text-renders-as-plain-text|Untrusted text renders as plain text|whole-repo review"
+	"12|S12-07|s12-07-watchers-stop-polling-for-their-parent|Watchers stop polling for their parent|whole-repo review"
+	"12|S12-08|s12-08-the-state-bridge-coalesces-events-and-stops-forking-per-window|The state bridge coalesces events and stops forking per window|whole-repo review"
+	"12|S12-09|s12-09-stop-needless-work-on-events|Stop needless work on events|whole-repo review"
+	"12|S12-10|s12-10-power-and-memory-defaults|Power and memory defaults|whole-repo review"
+	"12|S12-11|s12-11-install-and-update-correctness|Install and update correctness|whole-repo review"
+	"12|S12-12|s12-12-overview-close-asks-the-window-hidden-windows-and-thumbnail-tests|Overview close asks the window, hidden windows, and thumbnail tests|whole-repo review"
+	"12|S12-13|s12-13-one-runtime-source-for-helpers|One runtime source for helpers|whole-repo review"
+	"12|S12-14|s12-14-one-reader-per-shared-format-one-copy-of-shared-safety-logic|One reader per shared format, one copy of shared safety logic|whole-repo review"
+	"12|S12-15|s12-15-privileged-helper-consistency-the-package-map-and-lint-coverage|Privileged-helper consistency, the package map, and lint coverage|whole-repo review"
+	"12|S12-16|s12-16-split-dwm-system-management-and-move-test-ipc-out-of-the-shell|Split dwm-system-management and move test IPC out of the shell|whole-repo review"
+	"12|S12-17|s12-17-docs-and-specs-agree-with-the-code|Docs and specs agree with the code|whole-repo review"
+	"12|S12-18|s12-18-smaller-hardening|Smaller hardening|whole-repo review"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \
