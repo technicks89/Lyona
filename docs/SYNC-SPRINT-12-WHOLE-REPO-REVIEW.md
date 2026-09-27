@@ -677,12 +677,13 @@ idle the screen turns off and the desktop locks.
    `config/polkit/*.policy` (with `@PREFIX@` unexpanded) and `config/systemd/` land
    in `~/.config/polkit/` and `~/.config/systemd/`. Skip `polkit` (and check whether
    `systemd` is meant to be seeded).
-6a. **`--file` from outside the updates directory cannot install** (found during
-   S12-03, verified in code). `lyona-update apply --file PATH` passes `PATH` itself to
-   `lyona-update-root install-system release`, which refuses any tarball not under
-   `~/.local/state/lyona/updates/`. So an offline install of a file anywhere else fails
-   at the privileged step. Copy the file into the updates directory first (as the
-   download path already does), or document the requirement.
+6a. **`--file` from outside the updates directory (historical; fixed).** Found during
+   S12-03: an earlier updater passed the `--file` path itself to `lyona-update-root
+   install-system release`, which accepts only tarballs under
+   `~/.local/state/lyona/updates/`. The current updater (`75bb338`) copies an external
+   archive into that directory as `lyona-<version>.tar.gz` before calling the helper,
+   and reuses an archive already staged there; `tests/test-lyona-update.sh` covers
+   both. Nothing left to do here.
 6. **The offline hint is wrong** (reported). `lyona-update:606` suggests `--file` for
    an offline install, but `--file` still calls `resolve_release` for a checksum
    (`:611-640`) and refuses without one. Say so, or accept a `--sha256`.

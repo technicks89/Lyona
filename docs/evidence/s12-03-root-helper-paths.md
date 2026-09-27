@@ -57,12 +57,14 @@ Issue `#166`. Decision D-15 (remove checkout mode). Builds on S12-01 and S12-02.
   - `install-cursors` without `--no-preserve=ownership`.
 - `check-shell`, `check-format`: PASS.
 
-## Found while testing, not fixed here
+## Found while testing (historical; since fixed)
 
-`lyona-update apply --file PATH` passes `PATH` to the privileged step, which accepts
-only tarballs under `~/.local/state/lyona/updates/`. So an offline install of a file
-kept anywhere else fails at the privileged step. The unprivileged tests do not reach
-that step, which is why none caught it. It is recorded under S12-11 as item 6a.
+An earlier updater passed the `lyona-update apply --file` path directly to the
+privileged step, which accepts only tarballs under `~/.local/state/lyona/updates/`.
+The current updater (`75bb338`) copies an external archive into that directory before
+calling `lyona-update-root`, and reuses one already staged there;
+`tests/test-lyona-update.sh` covers both. Recorded under S12-11 as item 6a, marked
+historical.
 
 ## Not verified
 
