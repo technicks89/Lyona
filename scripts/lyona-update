@@ -588,9 +588,20 @@ cmd_apply() {
 	if [[ -n $file_path ]]; then
 		valid_absolute_path "$file_path" || die "--file must be an absolute path"
 		[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
-		tarball=$file_path
 		[[ -n $requested_version ]] || die "--file requires --version to confirm what it contains"
+		valid_version "$requested_version" || die "not a valid version: $requested_version"
 		status_target=$requested_version
+		ensure_owned_directory "$updates_root" "updates"
+		tarball=$updates_root/lyona-$requested_version.tar.gz
+		if [[ $file_path != "$tarball" ]]; then
+			local tmp_tarball
+			tmp_tarball=$(mktemp "$updates_root/.lyona-$requested_version.tar.gz.XXXXXX")
+			if ! cp -- "$file_path" "$tmp_tarball"; then
+				rm -f "$tmp_tarball"
+				die "failed to stage tarball: $file_path"
+			fi
+			mv -fT "$tmp_tarball" "$tarball"
+		fi
 	else
 		[[ -n $requested_version ]] || {
 			resolve_release "$channel" || die "could not reach the update server; pass --file for an offline install"

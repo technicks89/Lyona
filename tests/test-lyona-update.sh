@@ -292,6 +292,13 @@ assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
 assert_contains "$work/err" "building with compile-time options from $config_home/lyona/config.h"
 assert_equals "$(cat "$config_home/lyona/config.h")" \
 	"$(cat "$state_home/lyona/updates/$source_version/config.h")" "the staged build uses the user's config.h"
+staged_tarball=$state_home/lyona/updates/lyona-$source_version.tar.gz
+cmp -s "$source_tarball" "$staged_tarball" || fail '--file did not stage the source archive'
+staged_inode=$(stat -c %i "$staged_tarball")
+status=$(run_update apply --file "$staged_tarball" --version "$source_version" --dry-run)
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_equals "$staged_inode" "$(stat -c %i "$staged_tarball")" \
+	"an already staged --file archive was not copied again"
 rm -f "$config_home/lyona/config.h"
 rm -rf "$state_home/lyona/updates/$source_version"
 
