@@ -4,9 +4,11 @@ import Quickshell.Widgets
 import qs.core
 
 // One window's card in the overview popup (Sync Sprint 7 S7-03): icon,
-// title, and a monitor label -- no thumbnail (the Sprint 9 S9-01 spike found one
-// only works with Picom running; docs/evidence/s9-01-thumbnail-spike.md). Mirrors RunningAppItem.qml's own icon/click shape, just laid out as a
-// row instead of a panel pill. `selected` (Sync Sprint 8 S8-01) is the
+// title, and a monitor label. Mirrors RunningAppItem.qml's own icon/click shape,
+// just laid out as a row instead of a panel pill. When the model can capture
+// previews (Sprint 9 S9-01: only with a compositor running, see
+// docs/evidence/s9-01-thumbnail-spike.md) the card is taller and starts with a
+// preview of the window, showing its icon until the capture arrives. `selected` (Sync Sprint 8 S8-01) is the
 // keyboard-navigated card, styled the same way LauncherResultDelegate.qml's own
 // `selected` state already is -- a distinct fill/border from mouse hover, since
 // the two can disagree (arrow keys move `selected` without the mouse moving).
@@ -25,13 +27,19 @@ Rectangle {
     // this card is grouped under, for the accessible description.
     property int monitorCount: 1
     property string tagLabel: ""
+    // Preview of the window (Sprint 9 S9-01). `thumbnailsEnabled` is whether previews
+    // can be captured at all; `thumbnailSource` is the captured image, or "" until it
+    // arrives (or when this window could not be captured).
+    property bool thumbnailsEnabled: false
+    property string thumbnailSource: ""
     readonly property string windowLabel: root.window.title.length > 0 ? root.window.title : root.window.appClass
     readonly property bool hovered: cardMouse.containsMouse || closeMouse.containsMouse
     signal focusRequested(string windowId)
     signal closeRequested(string windowId)
 
+    objectName: "overviewCard"
     Layout.fillWidth: true
-    Layout.preferredHeight: Theme.dp(48)
+    Layout.preferredHeight: root.thumbnailsEnabled ? Theme.dp(64) : Theme.dp(48)
     radius: Theme.controlRadius
     color: root.selected ? Theme.menuSelectedBackground
         : root.hovered ? Theme.controlHoverFill : Theme.controlNormalFill
@@ -65,20 +73,71 @@ Rectangle {
         anchors.rightMargin: Theme.rowSpacing
         spacing: Theme.rowSpacing
 
-        IconImage {
-            Layout.preferredWidth: Theme.trayIconSize
-            Layout.preferredHeight: Theme.trayIconSize
-            source: Icons.launcherIcon(root.window.appClass)
+        // The window's icon, or with previews on a frame holding its preview. The
+        // preview is decoration: the card already carries the name and description.
+        Item {
+            Layout.preferredWidth: root.thumbnailsEnabled ? Theme.dp(88) : Theme.trayIconSize
+            Layout.preferredHeight: root.thumbnailsEnabled ? Theme.dp(52) : Theme.trayIconSize
+
+            Rectangle {
+                objectName: "overviewPreviewFrame"
+                anchors.fill: parent
+                visible: root.thumbnailsEnabled
+                radius: Theme.controlRadius
+                color: Theme.surface
+                border.color: Theme.controlNormalBorder
+                border.width: Theme.controlBorderWidth
+            }
+
+            Image {
+                id: preview
+
+                objectName: "overviewPreview"
+                anchors.fill: parent
+                anchors.margins: Theme.controlBorderWidth
+                visible: root.thumbnailsEnabled && status === Image.Ready
+                source: root.thumbnailsEnabled ? root.thumbnailSource : ""
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                // The file is replaced by the next capture and deleted when the overview
+                // closes, so the image must not outlive it in Qt's cache.
+                cache: false
+                Accessible.ignored: true
+            }
+
+            IconImage {
+                anchors.centerIn: parent
+                width: Theme.trayIconSize
+                height: Theme.trayIconSize
+                visible: !preview.visible
+                source: Icons.launcherIcon(root.window.appClass)
+            }
         }
 
-        Text {
+        ColumnLayout {
             Layout.fillWidth: true
-            text: root.windowLabel
-            color: root.selected ? Theme.menuSelectedText
-                : root.hovered ? Theme.controlHoverText : Theme.controlNormalText
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.panelFontSize
-            elide: Text.ElideRight
+            spacing: 0
+
+            Text {
+                Layout.fillWidth: true
+                text: root.windowLabel
+                color: root.selected ? Theme.menuSelectedText
+                    : root.hovered ? Theme.controlHoverText : Theme.controlNormalText
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.panelFontSize
+                elide: Text.ElideRight
+            }
+
+            // With previews the icon is no longer beside the title, so name the app.
+            Text {
+                Layout.fillWidth: true
+                visible: root.thumbnailsEnabled
+                text: root.window.appClass
+                color: Theme.menuMutedText
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontCaptionSize
+                elide: Text.ElideRight
+            }
         }
 
         Text {

@@ -56,6 +56,56 @@ ClickAwayPopup {
         scrollAnimation.restart();
     }
 
+    // Ask for the previews of the cards that are on screen (Sprint 9 S9-01), with a
+    // little margin so the next card is ready as it scrolls in. Run through
+    // thumbnailRequest below, after the layout has settled, not from a timer that
+    // keeps running: nothing calls this while the popup is closed.
+    function requestVisibleThumbnails() {
+        if (!root.visible || !root.overviewModel.thumbnailsAvailable) {
+            return;
+        }
+
+        const margin = Theme.dp(48);
+        const top = overviewFlick.contentY - margin;
+        const bottom = overviewFlick.contentY + overviewFlick.height + margin;
+
+        for (const group of groupsColumn.children) {
+            for (const card of group.children) {
+                if (card.objectName !== "overviewCard") {
+                    continue;
+                }
+
+                const y = card.mapToItem(overviewFlick.contentItem, 0, 0).y;
+
+                if (y + card.height >= top && y <= bottom) {
+                    root.overviewModel.requestThumbnail(card.window.windowId);
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: thumbnailRequest
+
+        interval: 60
+        repeat: false
+        onTriggered: root.requestVisibleThumbnails()
+    }
+
+    Connections {
+        target: root.overviewModel
+
+        function onThumbnailsAvailableChanged() { thumbnailRequest.restart(); }
+        function onFlatCardsChanged() { thumbnailRequest.restart(); }
+    }
+
+    Connections {
+        target: overviewFlick
+
+        function onContentYChanged() { thumbnailRequest.restart(); }
+        function onContentHeightChanged() { thumbnailRequest.restart(); }
+    }
+
     function focusSearch() {
         overviewSearch.forceActiveFocus();
         overviewSearch.cursorPosition = overviewSearch.text.length;
@@ -264,6 +314,8 @@ ClickAwayPopup {
                                     selected: cardDelegate.modelData.flatIndex === root.overviewModel.selectedIndex
                                     monitorCount: root.overviewModel.monitorCount
                                     tagLabel: groupDelegate.modelData.tagLabel
+                                    thumbnailsEnabled: root.overviewModel.thumbnailsAvailable
+                                    thumbnailSource: root.overviewModel.thumbnails[cardDelegate.modelData.windowId] || ""
                                     onSelectedChanged: {
                                         if (selected) {
                                             root.revealCard(cardDelegate, cardDelegate.index === 0 ? groupDelegate : null);

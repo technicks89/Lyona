@@ -1,4 +1,6 @@
+import QtQml
 import Quickshell
+import Quickshell.Io
 import "../state/DwmStateWindows.js" as WindowsLib
 import "OverviewFilter.js" as Filter
 import "OverviewSelection.js" as Selection
@@ -61,18 +63,137 @@ Scope {
         return cards;
     }
 
+    // Window previews (Sync Sprint 9 S9-01, docs/evidence/s9-01-thumbnail-spike.md).
+    // dwm-window-thumb captures one window at a time, and only works while a
+    // compositor runs, so previews are an extra: `thumbnailsAvailable` is false (and
+    // the cards keep their icon and title) whenever it exits non-zero or is not
+    // installed. Nothing is captured while the popup is closed, only cards that are on
+    // screen are requested (WindowOverview.qml), and the files the helper wrote are
+    // deleted when the popup closes because they show windows the user put out of sight.
+    property string thumbnailHelper: "dwm-window-thumb"
+    property bool thumbnailsAvailable: false
+    // Window id -> URL of its preview image. Replaced, not edited, so bindings update.
+    property var thumbnails: ({})
+    property var thumbnailQueue: []
+    property var thumbnailRequested: ({})
+    property string thumbnailWindow: ""
+    property int thumbnailSerial: 0
+    // Bumped whenever the popup opens or closes, so a capture that finishes for an
+    // earlier showing is dropped instead of appearing in the next one.
+    property int thumbnailGeneration: 0
+    property int thumbnailStartedGeneration: 0
+    property bool thumbnailsStored: false
+
+    function resetThumbnails() {
+        root.thumbnailGeneration++;
+        root.thumbnailsAvailable = false;
+        root.thumbnails = ({});
+        root.thumbnailQueue = [];
+        root.thumbnailRequested = ({});
+    }
+
+    // Ask for a window's preview. Idempotent: each window is captured at most once
+    // per showing, and captures run one after another, never side by side.
+    function requestThumbnail(windowId) {
+        if (!root.visible || !root.thumbnailsAvailable || root.thumbnailRequested[windowId] === true) {
+            return;
+        }
+
+        root.thumbnailRequested = Object.assign({}, root.thumbnailRequested, { [windowId]: true });
+        root.thumbnailQueue = root.thumbnailQueue.concat([windowId]);
+        root.pumpThumbnails();
+    }
+
+    function pumpThumbnails() {
+        if (!root.visible || !root.thumbnailsAvailable || root.thumbnailQueue.length === 0
+                || captureProcess.running || purgeProcess.running) {
+            return;
+        }
+
+        root.thumbnailWindow = root.thumbnailQueue[0];
+        root.thumbnailQueue = root.thumbnailQueue.slice(1);
+        root.thumbnailStartedGeneration = root.thumbnailGeneration;
+        root.thumbnailsStored = true;
+        captureProcess.command = [root.thumbnailHelper, "capture", root.thumbnailWindow];
+        captureProcess.running = true;
+    }
+
+    function finishCapture(exitCode, output) {
+        const path = output.trim();
+
+        if (root.thumbnailStartedGeneration === root.thumbnailGeneration && root.visible) {
+            if (exitCode === 0 && path.length > 0) {
+                root.thumbnailSerial++;
+                root.thumbnails = Object.assign({}, root.thumbnails,
+                    { [root.thumbnailWindow]: "file://" + path + "?" + root.thumbnailSerial });
+            } else if (exitCode === 3 || exitCode === 4) {
+                // The compositor stopped, or previews were switched off, while open.
+                root.thumbnailsAvailable = false;
+                root.thumbnailQueue = [];
+            }
+        }
+
+        root.purgeThumbnails();
+        root.pumpThumbnails();
+    }
+
+    function purgeThumbnails() {
+        if (root.visible || !root.thumbnailsStored || captureProcess.running || purgeProcess.running) {
+            return;
+        }
+
+        root.thumbnailsStored = false;
+        purgeProcess.running = true;
+    }
+
     function open(screen) {
         root.targetScreen = screen || null;
         root.selectedIndex = 0;
         root.query = "";
         root.closingIds = [];
+        root.resetThumbnails();
         root.visible = true;
+        availableProcess.running = true;
     }
 
     function close() {
         root.visible = false;
         root.query = "";
         root.closingIds = [];
+        root.resetThumbnails();
+        root.purgeThumbnails();
+    }
+
+    Component.onCompleted: {
+        // A shell that crashed while the popup was open left its previews behind.
+        root.thumbnailsStored = true;
+        root.purgeThumbnails();
+    }
+
+    Process {
+        id: availableProcess
+
+        command: [root.thumbnailHelper, "available"]
+        onExited: (exitCode, exitStatus) => {
+            root.thumbnailsAvailable = exitCode === 0 && root.visible;
+            root.pumpThumbnails();
+        }
+    }
+
+    Process {
+        id: captureProcess
+
+        stdout: StdioCollector {
+            id: captureOutput
+        }
+        onExited: (exitCode, exitStatus) => root.finishCapture(exitCode, captureOutput.text)
+    }
+
+    Process {
+        id: purgeProcess
+
+        command: [root.thumbnailHelper, "purge"]
+        onExited: (exitCode, exitStatus) => root.pumpThumbnails()
     }
 
     function setQuery(value) {
