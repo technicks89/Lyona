@@ -84,7 +84,11 @@ ShellRoot {
 
     IpcHandler {
         target: "ov"
-        function setWindows(json: string): void { dwm.windowStates = JSON.parse(json); }
+        // A bare JSON array as the argument is mis-split by quickshell's own IPC CLI (a
+        // top-level "[...]" value is expanded into several call arguments instead of
+        // staying one string, so a multi-window array never reaches this function at
+        // all); wrapping it in an object keeps it intact as a single argument.
+        function setWindows(payload: string): void { dwm.windowStates = JSON.parse(payload).windows; }
         function open(): void { model.open(null); }
         function close(): void { model.close(); }
         function state(): string {
@@ -246,7 +250,7 @@ with tempfile.TemporaryDirectory(prefix='overview-thumbs-', dir=str(temp_root)) 
 
         shell = spawn('quickshell', '--no-duplicate', stdout=log, stderr=log)
         wait_for(lambda s: True, 'IPC unavailable', 15)
-        assert run('quickshell', 'ipc', 'call', 'ov', 'setWindows', json.dumps(windows)).returncode == 0
+        assert run('quickshell', 'ipc', 'call', 'ov', 'setWindows', json.dumps({'windows': windows})).returncode == 0
         time.sleep(1.0)
 
         # Before any capturing, the closed shell is idle.
@@ -344,7 +348,7 @@ with tempfile.TemporaryDirectory(prefix='overview-thumbs-', dir=str(temp_root)) 
         assert shutil.which('dwm-window-thumb', path=env['PATH']) is None
         shell = spawn('quickshell', '--no-duplicate', stdout=log, stderr=log)
         wait_for(lambda s: True, 'IPC unavailable', 15)
-        assert run('quickshell', 'ipc', 'call', 'ov', 'setWindows', json.dumps(windows)).returncode == 0
+        assert run('quickshell', 'ipc', 'call', 'ov', 'setWindows', json.dumps({'windows': windows})).returncode == 0
         assert run('quickshell', 'ipc', 'call', 'ov', 'open').returncode == 0
         time.sleep(1.0)
         missing = wait_for(lambda s: s['visible'] and len(s['cards']) > 0, 'the overview did not list windows without the helper')

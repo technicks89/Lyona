@@ -135,9 +135,30 @@ if grep -REn 'Quickshell\.(Wayland|Hyprland)|WlrLayershell|hyprctl|uwsm-app|wl-c
 	exit 1
 fi
 
-if grep -REn '(^|[[:space:]])Process[[:space:]]*\{' "$overview"; then
-	printf 'The overview popup must not own its own helper process: it only reads DwmState, which already owns the single watch Process.\n' >&2
-	exit 1
+# The overview must not grow a second resident watcher alongside DwmState's own
+# single "watch" Process (Sprint 7/8's own rule). Sprint 9 S9-01 added three
+# on-demand, foreground ones for dwm-window-thumb (available/capture/purge, run
+# only while the popup is open, never a resident timer): allowlisted by id so a
+# new, unreviewed Process block -- a duplicate watcher, in particular -- still
+# fails this check.
+process_lines=$(grep -REn '(^|[[:space:]])Process[[:space:]]*\{' "$overview") || true
+if [ -n "$process_lines" ]; then
+	while IFS= read -r hit; do
+		file=${hit%%:*}
+		line=${hit#*:}
+		line=${line%%:*}
+		next_id=$(sed -n "$((line + 1)),$((line + 2))p" "$file" | grep -om1 'id: [A-Za-z]*' | cut -d' ' -f2)
+		case $next_id in
+		availableProcess | captureProcess | purgeProcess) ;;
+		*)
+			printf 'The overview popup must not own an unreviewed helper process (%s:%s): only DwmState owns the watch Process, plus S9-01'"'"'s allowlisted dwm-window-thumb ones.\n' \
+				"$file" "$line" >&2
+			exit 1
+			;;
+		esac
+	done <<EOF
+$process_lines
+EOF
 fi
 
 # groupByTag() itself is a pure function, covered directly (with mutation
