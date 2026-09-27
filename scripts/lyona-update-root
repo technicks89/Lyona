@@ -33,22 +33,8 @@ trusted_file() {
 	find "$canonical" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
 }
 
-# A directory that a specific unprivileged user owns and controls, and that
-# no other unprivileged user could have written into. This is the whole
-# security boundary for a staging/backup directory: it must be provably the
-# invoking user's own, never a shared or world-writable location this helper
-# was tricked into trusting.
-user_owned_dir() {
-	local path=$1 want_uid=$2 mode
-	[[ $path == /* && $path != */../* && $path != *'/..' ]] || return 1
-	[[ -d $path && ! -L $path ]] || return 1
-	[[ $(stat -c %u -- "$path") == "$want_uid" ]] || return 1
-	mode=$(stat -c %a -- "$path")
-	((($((8#$mode)) & 8#022) == 0)) || return 1
-	return 0
-}
-
-# Same shape, for a single regular file rather than a directory.
+# A regular file (not a symlink) that the invoking user owns and no other
+# unprivileged user could have written.
 user_owned_file() {
 	local path=$1 want_uid=$2 mode
 	[[ $path == /* && $path != */../* && $path != *'/..' ]] || return 1
@@ -59,14 +45,20 @@ user_owned_file() {
 	return 0
 }
 
+# The log lives in the invoking user's home, where they control every path
+# component, so it is written as them, never as root (Sync Sprint 12 S12-03): a
+# symlink there must not make root create or append to any other file.
+# Control characters in the target are replaced so a crafted path cannot forge
+# log lines.
 log_outcome() {
 	local verb=$1 version=$2 target=$3 outcome=$4
 	[[ -n $log_file ]] || return 0
-	umask 077
-	mkdir -p "$(dirname -- "$log_file")" 2>/dev/null || return 0
+	target=${target//[$'\001'-$'\037'$'\177']/?}
+	# shellcheck disable=SC2016 # the inner sh expands them, as the user
 	printf '%s\t%s\t%s\t%s\t%s\n' \
-		"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$verb" "$version" "$target" "$outcome" \
-		>>"$log_file" 2>/dev/null || :
+		"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$verb" "$version" "$target" "$outcome" |
+		runuser -u "$invoking_user" -- sh -c \
+			'umask 077 && mkdir -p -- "${1%/*}" && cat >>"$1"' sh "$log_file" 2>/dev/null || :
 }
 
 [[ $EUID == 0 ]] || die "this helper must run as root"
@@ -309,40 +301,8 @@ install-system)
 		fi
 		log_outcome install-system "$requested_version" "$tarball_path" succeeded
 		;;
-	checkout)
-		[[ $# == 5 ]] || die "install-system checkout requires a checkout directory, its version, and a backup id"
-		staging_dir=$3
-		requested_version=$4
-		backup_id=$5
-		valid_backup_id "$backup_id" || die "malformed backup id: $backup_id"
-
-		# No release tarball exists for a local developer checkout to
-		# re-verify against; this mode carries the same trust level as
-		# the invoking user running "sudo make install-system" themselves
-		# directly from that same checkout -- not a weaker one introduced
-		# by going through lyona-update.
-		user_owned_dir "$staging_dir" "$invoking_uid" ||
-			die "checkout directory is not a safe, user-owned directory"
-		[[ -x $staging_dir/dwm && -f $staging_dir/dwm ]] ||
-			die "checkout directory has no built dwm binary"
-		[[ -f $staging_dir/config.mk ]] || die "checkout directory has no config.mk"
-		staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$staging_dir/config.mk")
-		[[ -n $staged_version ]] || die "could not read VERSION from the checkout's config.mk"
-		[[ $staged_version == "$requested_version" ]] ||
-			die "checkout version ($staged_version) does not match the requested version ($requested_version)"
-		backup_system_files "$staging_dir" "$backup_id"
-
-		if ! "$make_path" -C "$staging_dir" install-system \
-			USER_HOME="$invoking_home" \
-			OWNER="$invoking_user" \
-			XDG_STATE_HOME="$state_home"; then
-			log_outcome install-system "$requested_version" "$staging_dir" failed
-			die "install-system failed"
-		fi
-		log_outcome install-system "$requested_version" "$staging_dir" succeeded
-		;;
 	*)
-		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID | install-system checkout CHECKOUT_DIR VERSION BACKUP_ID"
+		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID"
 		;;
 	esac
 	;;
@@ -421,6 +381,6 @@ restore-system)
 	log_outcome restore-system unknown "$backup_id" succeeded
 	;;
 *)
-	die "usage: lyona-update-root install-system release|checkout ... | restore-system BACKUP_ID"
+	die "usage: lyona-update-root install-system release ... | restore-system BACKUP_ID"
 	;;
 esac

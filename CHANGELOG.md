@@ -1360,6 +1360,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Security
 
+- The privileged update helper no longer builds a user's checkout as root or writes through paths in their home
+  (Sync Sprint 12 S12-03, issue `#166`, decision D-15). `lyona-update apply --from-checkout DIR` and
+  `lyona-update-root install-system checkout` are removed: after one password prompt, root ran `make install-system` in a
+  directory the user owned, so any program running as the user could change the Makefile or its scripts first. To
+  install a checkout, run `sudo make install-system` (or `scripts/dev-sync-install.sh`), where you type what runs as
+  root; `lyona-update apply --from-checkout` now says so. The helper also wrote `~/.local/state/lyona/update.log` as
+  root, so a symlink there made root create or append to any file; it now writes the log as the invoking user, with
+  control characters in the logged path replaced. `make install-cursors` copied the cursor themes with `cp -a`, which as
+  root kept the building user's ownership; it now installs them root-owned, like the GRUB theme. Tested as root in a
+  disposable container (`make check-update-root-backups`) and in `tests/test-lyona-update.sh`, whose apply cases now
+  install a source tarball with `--file`.
+
 - The privileged release install hashes, unpacks and builds one root-owned copy of the tarball (Sync Sprint 12 S12-02,
   issue `#165`). `lyona-update-root install-system release` used to hash the user-owned tarball in
   `~/.local/state/lyona/updates/` and then extract it by reading the same path again, so it could be swapped between

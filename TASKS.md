@@ -254,3 +254,7 @@ update in the same PR, so completed items are pinned here too, not only in
   `tests/test-quickshell-update-model.sh`. Evidence: `docs/evidence/s12-02-release-install.md`. Step 3 (signatures) is
   deferred by D-14; step 4 decided as D-18 (keep the user's `config.h`, now read from `~/.config/lyona/config.h`,
   and document TOML as the way to customise).
+- [x] Sync Sprint 12 S12-03 -- the root helper writes and builds nothing through user paths (D-15), issue `#166` --
+  `scripts/lyona-update-root`, `scripts/lyona-update`, `Makefile` (`install-cursors`), `docs/src/updating.md`; tests in
+  `tests/test-lyona-update-root-backups.sh` (container) and `tests/test-lyona-update.sh`. Evidence:
+  `docs/evidence/s12-03-root-helper-paths.md`. A real polkit prompt is not tested.
