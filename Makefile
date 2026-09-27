@@ -610,6 +610,12 @@ check-quickshell-queued-run-xvfb:
 check-settings-display-security:
 	@tests/test-settings-display-security.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
+# Root-only and container-only, like the display helper test above: it runs
+# lyona-update-root as root and writes system paths (Sync Sprint 12 S12-01).
+.PHONY: check-update-root-backups
+check-update-root-backups:
+	@tests/test-lyona-update-root-backups.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 check-quickshell-update-model:
 	tests/test-quickshell-update-model.sh
 

@@ -68,7 +68,13 @@ root the next time the user authenticates a routine update or rollback.
 
 ## S12-01: Rollback restores only what root has checked
 
-**Source:** S (High), E (High). **Verified.**
+**Source:** S (High), E (High). **Verified.** **Implemented (2026-09-27)** as the
+longer-term fix below, not the first diff: root makes and keeps the system backups
+in `/var/lib/lyona/backups/<id>/`, and `restore-system` takes an id. The first diff
+would have left the archive's contents under the user's control, and refusing
+`libexec` members would have failed every genuine rollback. Evidence, and a new
+finding (the published release asset cannot be installed by `lyona-update`):
+`docs/evidence/s12-01-rollback-restore.md`.
 
 `lyona-update-root restore-system` restores `system-files.tar` from the user's own
 `~/.local/state/lyona/live-update-backups/<id>/`, as root:

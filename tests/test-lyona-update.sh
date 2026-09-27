@@ -497,6 +497,18 @@ assert_equals 2 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileg
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "release site"
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system checkout')" "checkout site"
 assert_equals 1 "$(body_of cmd_rollback | grep -c 'run_privileged ')" "run_privileged sites in cmd_rollback"
+# Sync Sprint 12 S12-01: root keeps its own system backups. A rollback names one
+# by id and never passes root a path into the user's backup directory, and both
+# install modes pass the id so root backs up the live files before installing.
+# shellcheck disable=SC2016 # the patterns match the literal source text
+assert_equals 1 "$(body_of cmd_rollback | grep -c 'run_privileged restore-system "$backup_id"')" \
+	"rollback passes the privileged helper a backup id"
+# shellcheck disable=SC2016
+assert_equals 0 "$(body_of cmd_rollback | grep -c 'run_privileged restore-system "$backup_dir"')" \
+	"rollback never passes the privileged helper a backup path"
+# shellcheck disable=SC2016
+assert_equals 2 "$(body_of cmd_apply | grep -c 'run_privileged install-system .*"$backup_id"')" \
+	"both install modes pass the backup id"
 outside=$(grep -n 'pkexec "\|sudo "' "$helper" | grep -v '^[0-9]*:[[:space:]]*#' || true)
 assert_equals 2 "$(printf '%s\n' "$outside" | grep -c .)" "pkexec/sudo invocations in lyona-update"
 first_escalation=$(sed -n "$(printf '%s\n' "$outside" | head -n1 | cut -d: -f1)p" "$helper")

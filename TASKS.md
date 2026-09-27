@@ -245,3 +245,7 @@ update in the same PR, so completed items are pinned here too, not only in
   D-14 (no release signing for now) and D-17a (one ISO, NVIDIA detected) are
   decided, as are D-15 (remove checkout mode), D-16 (system copy only, plus a
   developer override) and D-17b (keep per-screen panels). No item is gated.
+- [x] Sync Sprint 12 S12-01 -- rollback restores only what root has checked, issue `#164` -- `scripts/lyona-update-root`,
+  `scripts/lyona-update`, `docs/src/updating.md`; tests in `tests/test-lyona-update-root-backups.sh`
+  (`make check-update-root-backups`, container-only, and a Full suite job) and `tests/test-lyona-update.sh`. Evidence:
+  `docs/evidence/s12-01-rollback-restore.md`. A real polkit prompt and a rollback on real hardware are not tested.

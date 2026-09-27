@@ -99,6 +99,116 @@ log_file=$state_home/lyona/update.log
 
 make_path=$(command -v make) || die "make is unavailable"
 
+# System backups are made and kept by this helper, in a directory only root can
+# read or write (Sync Sprint 12 S12-01). A rollback names a backup by its id; it
+# never hands root an archive the invoking user could have written, so what a
+# rollback restores is exactly what was installed when the backup was taken.
+system_backups_root=/var/lib/lyona/backups
+system_backups_keep=5
+
+# The id lyona-update gives both halves of one backup (its own user-side
+# directory and this helper's system-side one): a UTC timestamp and a pid.
+valid_backup_id() {
+	[[ $1 =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]]
+}
+
+# A real directory (not a symlink) that root owns and no one else can read,
+# write or enter.
+root_private_dir() {
+	local path=$1
+	[[ -d $path && ! -L $path ]] || return 1
+	[[ $(stat -c %u -- "$path") == 0 ]] || return 1
+	find "$path" -maxdepth 0 -type d ! -perm /077 -print -quit 2>/dev/null | grep -q .
+}
+
+prepare_system_backups_root() {
+	if [[ ! -e $system_backups_root && ! -L $system_backups_root ]]; then
+		(umask 077 && mkdir -p -- "$system_backups_root") || return 1
+	fi
+	root_private_dir "$system_backups_root"
+}
+
+# Print the words TREE's Makefile expands EXPR to, one per line.
+tree_make_values() {
+	local tree=$1 expr=$2
+	"$make_path" -s -C "$tree" --no-print-directory \
+		--eval="lyona-root-print: ; @printf '%s\\n' $expr" lyona-root-print
+}
+
+installed_version() {
+	local version
+	version=$(awk -F= '$1 == "LYONA_VERSION" { print $2; exit }' /etc/lyona-release 2>/dev/null || true)
+	printf '%s\n' "${version:-unknown}"
+}
+
+prune_system_backups() {
+	local id count=0
+	while IFS= read -r id; do
+		valid_backup_id "$id" || continue
+		count=$((count + 1))
+		if ((count > system_backups_keep)); then
+			rm -rf -- "${system_backups_root:?}/$id"
+		fi
+	done < <(find "$system_backups_root" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r)
+}
+
+# Back up the managed system files that installing TREE is about to replace.
+# The file list comes from TREE's Makefile (the lists install-system installs
+# from); the contents come from the live system, read by root.
+backup_system_files() {
+	local tree=$1 id=$2 dir name path out
+	local -a names helpers themes
+	valid_backup_id "$id" || die "malformed backup id: $id"
+	prepare_system_backups_root ||
+		die "$system_backups_root is not a private root-owned directory; refusing to back up into it"
+	dir=$system_backups_root/$id
+	[[ ! -e $dir && ! -L $dir ]] || die "a system backup with id $id already exists"
+
+	# shellcheck disable=SC2016 # expanded by make, not the shell
+	out=$(tree_make_values "$tree" 'dwm $(THUMB) $(INSTALL_COMMAND_NAMES)') ||
+		die "could not read the installed command list from the new release"
+	mapfile -t names < <(awk 'NF' <<<"$out")
+	# shellcheck disable=SC2016
+	out=$(tree_make_values "$tree" '$(notdir $(PRIVILEGED_HELPERS))') ||
+		die "could not read the privileged helper list from the new release"
+	mapfile -t helpers < <(awk 'NF' <<<"$out")
+	# shellcheck disable=SC2016
+	out=$(tree_make_values "$tree" '$(CAPITAINE_DARK_THEME) $(CAPITAINE_LIGHT_THEME)') ||
+		die "could not read the cursor theme names from the new release"
+	mapfile -t themes < <(awk 'NF' <<<"$out")
+	((${#names[@]} > 1)) || die "the new release reported no installed commands"
+
+	mkdir -m 0700 -- "$dir" || die "could not create the system backup directory"
+
+	{
+		for name in "${names[@]}"; do
+			printf '%s\n' "${install_prefix#/}/bin/$name"
+		done
+		for name in "${helpers[@]}"; do
+			printf '%s\n' "${install_prefix#/}/libexec/lyona/$name"
+		done
+		for name in "${themes[@]}"; do
+			printf '%s\n' "${install_datadir#/}/icons/$name"
+		done
+		printf '%s\n' "${install_manprefix#/}/man1/dwm.1" \
+			"${install_xsessionsdir#/}/dwm.desktop" \
+			"${install_datadir#/}/licenses/lyona" \
+			etc/lyona-release
+	} | while IFS= read -r path; do
+		[[ $path != */../* && $path != ../* && -n ${path##*/} ]] || continue
+		if [[ -e /$path || -L /$path ]]; then
+			printf '%s\n' "$path"
+		fi
+	done >"$dir/manifest"
+
+	if ! tar -C / --numeric-owner -cpf "$dir/system-files.tar" -T "$dir/manifest"; then
+		rm -rf -- "$dir"
+		die "could not write the system backup"
+	fi
+	printf 'version=%s\n' "$(installed_version)" >"$dir/backup.txt"
+	prune_system_backups
+}
+
 # Everything below this point that ends up executed -- a Makefile recipe, a
 # script invoked by one -- must come from a tree this process itself
 # extracted from a tarball it just re-hashed, never from a directory the
@@ -119,12 +229,14 @@ case ${1:-} in
 install-system)
 	case ${2:-} in
 	release)
-		[[ $# == 6 ]] ||
-			die "install-system release requires a tarball, its checksum, the version, and a config.h path (or -)"
+		[[ $# == 7 ]] ||
+			die "install-system release requires a tarball, its checksum, the version, a config.h path (or -), and a backup id"
 		tarball_path=$3
 		expected_sha256=$4
 		requested_version=$5
 		config_h_path=$6
+		backup_id=$7
+		valid_backup_id "$backup_id" || die "malformed backup id: $backup_id"
 		updates_root=$state_home/lyona/updates
 
 		case $tarball_path in
@@ -176,6 +288,7 @@ install-system)
 		if ! "$make_path" -C "$verified_dir" all; then
 			die "failed to build the verified release"
 		fi
+		backup_system_files "$verified_dir" "$backup_id"
 
 		if ! "$make_path" -C "$verified_dir" install-system \
 			USER_HOME="$invoking_home" \
@@ -187,9 +300,11 @@ install-system)
 		log_outcome install-system "$requested_version" "$tarball_path" succeeded
 		;;
 	checkout)
-		[[ $# == 4 ]] || die "install-system checkout requires a checkout directory and its version"
+		[[ $# == 5 ]] || die "install-system checkout requires a checkout directory, its version, and a backup id"
 		staging_dir=$3
 		requested_version=$4
+		backup_id=$5
+		valid_backup_id "$backup_id" || die "malformed backup id: $backup_id"
 
 		# No release tarball exists for a local developer checkout to
 		# re-verify against; this mode carries the same trust level as
@@ -205,6 +320,7 @@ install-system)
 		[[ -n $staged_version ]] || die "could not read VERSION from the checkout's config.mk"
 		[[ $staged_version == "$requested_version" ]] ||
 			die "checkout version ($staged_version) does not match the requested version ($requested_version)"
+		backup_system_files "$staging_dir" "$backup_id"
 
 		if ! "$make_path" -C "$staging_dir" install-system \
 			USER_HOME="$invoking_home" \
@@ -216,92 +332,85 @@ install-system)
 		log_outcome install-system "$requested_version" "$staging_dir" succeeded
 		;;
 	*)
-		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- | install-system checkout CHECKOUT_DIR VERSION"
+		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID | install-system checkout CHECKOUT_DIR VERSION BACKUP_ID"
 		;;
 	esac
 	;;
 restore-system)
-	[[ $# == 2 ]] || die "restore-system requires a backup directory"
-	backup_dir=$2
-	backups_root=$state_home/lyona/live-update-backups
-	case $backup_dir in
-	"$backups_root"/*) ;;
-	*) die "backup directory is not under the invoking user's managed backups area" ;;
-	esac
-	user_owned_dir "$backup_dir" "$invoking_uid" ||
-		die "backup directory is not a safe, user-owned directory"
-	sums_file=$backup_dir/SHA256SUMS
-	[[ -f $sums_file && ! -L $sums_file ]] || die "backup has no checksum manifest"
+	[[ $# == 2 ]] || die "restore-system requires a backup id"
+	backup_id=$2
+	valid_backup_id "$backup_id" ||
+		die "malformed backup id: $backup_id (a backup is named by its id, never by a path)"
+	root_private_dir "$system_backups_root" ||
+		die "$system_backups_root is missing or not a private root-owned directory; nothing to restore"
+	backup_dir=$system_backups_root/$backup_id
+	root_private_dir "$backup_dir" ||
+		die "no system backup was kept for $backup_id (backups made before system backups moved to $system_backups_root cannot restore system files)"
 	system_archive=$backup_dir/system-files.tar
-	if [[ -e $system_archive ]]; then
-		[[ -f $system_archive && ! -L $system_archive ]] || die "unsafe system-files archive"
-		# This only catches accidental corruption, not a deliberate
-		# tamperer: SHA256SUMS lives in the same user-writable directory
-		# as the archive it checks, so both can be regenerated together.
-		# The member-path allowlist below is what actually bounds a
-		# hostile archive's blast radius.
-		(cd "$backup_dir" && sha256sum --quiet --check <(grep -F 'system-files.tar' SHA256SUMS)) ||
-			die "system-files.tar failed checksum verification; refusing to restore"
+	[[ -f $system_archive && ! -L $system_archive && $(stat -c %u -- "$system_archive") == 0 ]] ||
+		die "the system backup archive for $backup_id is missing or not root-owned"
 
-		# Never trust an archive member's path, type, or mode: an archive
-		# built (or replaced) by the invoking user could otherwise plant
-		# a member anywhere on the filesystem ("../../etc/cron.d/x", an
-		# absolute path), or a symlink/hardlink/device/fifo/socket that
-		# resolves outside the managed locations at extraction time, or
-		# a setuid/setgid root binary at an already-allowed path ("dwm"
-		# with the setuid bit is a root shell for every user on the
-		# machine, since dwm can spawn arbitrary configured commands) --
-		# and GNU tar preserves all of that by default when run as root.
-		# --numeric-owner avoids trusting archive-supplied user/group
-		# names for anything, including as a parsing surface.
-		bin_dir_rel=${install_prefix#/}/bin
-		libexec_dir_rel=${install_prefix#/}/libexec/lyona
-		man_dir_rel=${install_manprefix#/}/man1
-		xsessions_dir_rel=${install_xsessionsdir#/}
-		icons_dir_rel=${install_datadir#/}/icons
-		licenses_dir_rel=${install_datadir#/}/licenses/lyona
-		while IFS= read -r listing_line; do
-			[[ -n $listing_line ]] || continue
-			member_type=${listing_line:0:1}
-			member_mode=${listing_line:1:9}
-			member_path=$(awk '{ for (i = 6; i <= NF; i++) printf "%s%s", (i > 6 ? " " : ""), $i }' <<<"$listing_line")
-			[[ -n $member_path ]] || die "could not parse a backup archive listing line: $listing_line"
+	# The archive is this helper's own, made from the live system in a directory
+	# only root can reach, so its contents, owners and modes are trusted and are
+	# restored as recorded. The member checks below are defence in depth: they
+	# still refuse anything outside the managed install locations, any
+	# setuid/setgid/sticky member, and any member that is not a file or a
+	# directory (symlinks only inside the cursor themes, which ship them).
+	# --numeric-owner avoids trusting archive-supplied user/group names.
+	bin_dir_rel=${install_prefix#/}/bin
+	libexec_dir_rel=${install_prefix#/}/libexec/lyona
+	man_dir_rel=${install_manprefix#/}/man1
+	xsessions_dir_rel=${install_xsessionsdir#/}
+	icons_dir_rel=${install_datadir#/}/icons
+	licenses_dir_rel=${install_datadir#/}/licenses/lyona
+	while IFS= read -r listing_line; do
+		[[ -n $listing_line ]] || continue
+		member_type=${listing_line:0:1}
+		member_mode=${listing_line:1:9}
+		member_path=$(awk '{ for (i = 6; i <= NF; i++) printf "%s%s", (i > 6 ? " " : ""), $i }' <<<"$listing_line")
+		[[ $member_type != l ]] || member_path=${member_path%% -> *}
+		[[ -n $member_path ]] || die "could not parse a backup archive listing line: $listing_line"
 
-			case $member_type in
-			- | d) ;;
-			*) die "backup archive contains a non-regular member (type '$member_type'): $member_path" ;;
-			esac
-			case $member_mode in
-			*[sStT]*) die "backup archive contains a member with setuid, setgid, or sticky permissions: $member_path" ;;
-			esac
+		case $member_type in
+		- | d) ;;
+		l)
 			case $member_path in
-			/* | *..*) die "backup archive contains an unsafe path: $member_path" ;;
+			"$icons_dir_rel/"?*) ;;
+			*) die "backup archive contains a symlink outside the cursor themes: $member_path" ;;
 			esac
+			;;
+		*) die "backup archive contains a non-regular member (type '$member_type'): $member_path" ;;
+		esac
+		case $member_mode in
+		*[sStT]*) die "backup archive contains a member with setuid, setgid, or sticky permissions: $member_path" ;;
+		esac
+		case $member_path in
+		/* | *..*) die "backup archive contains an unsafe path: $member_path" ;;
+		esac
 
-			case $member_path in
-			"$bin_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
-			"$bin_dir_rel/" | "$bin_dir_rel/"*) ;;
-			"$libexec_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
-			"$libexec_dir_rel/" | "$libexec_dir_rel/"*) ;;
-			"$man_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
-			"$man_dir_rel/" | "$man_dir_rel/"*) ;;
-			"$xsessions_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
-			"$xsessions_dir_rel/" | "$xsessions_dir_rel/"*) ;;
-			"$icons_dir_rel/" | "$icons_dir_rel/"*) ;;
-			"$licenses_dir_rel/" | "$licenses_dir_rel/"*) ;;
-			etc/lyona-release) ;;
-			*) die "backup archive contains a path outside the managed install locations: $member_path" ;;
-			esac
-		done < <(tar --numeric-owner -tvf "$system_archive")
+		case $member_path in
+		"$bin_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+		"$bin_dir_rel/" | "$bin_dir_rel/"*) ;;
+		"$libexec_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+		"$libexec_dir_rel/" | "$libexec_dir_rel/"*) ;;
+		"$man_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+		"$man_dir_rel/" | "$man_dir_rel/"*) ;;
+		"$xsessions_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+		"$xsessions_dir_rel/" | "$xsessions_dir_rel/"*) ;;
+		"$icons_dir_rel/" | "$icons_dir_rel/"*) ;;
+		"$licenses_dir_rel/" | "$licenses_dir_rel/"*) ;;
+		etc/lyona-release) ;;
+		*) die "backup archive contains a path outside the managed install locations: $member_path" ;;
+		esac
+	done < <(tar --numeric-owner -tvf "$system_archive")
 
-		if ! tar -C / -xpf "$system_archive"; then
-			log_outcome restore-system unknown "$backup_dir" failed
-			die "restoring system-files.tar failed"
-		fi
+	if ! tar -C / --numeric-owner -xpf "$system_archive"; then
+		log_outcome restore-system unknown "$backup_id" failed
+		die "restoring the system backup $backup_id failed"
 	fi
-	log_outcome restore-system unknown "$backup_dir" succeeded
+	log_outcome restore-system unknown "$backup_id" succeeded
 	;;
 *)
-	die "usage: lyona-update-root install-system release|checkout ... | restore-system BACKUP_DIR"
+	die "usage: lyona-update-root install-system release|checkout ... | restore-system BACKUP_ID"
 	;;
 esac

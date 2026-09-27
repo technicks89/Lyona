@@ -117,10 +117,20 @@ lyona-update rollback --backup 20260828T153709Z-1472673
 ```
 
 Every `apply` backs up the live install first, before writing anything, so
-`rollback` always has something to restore to. It refuses to restore a backup
-whose checksums do not match, or one taken against a different install
-environment (prefix, config, or data directory) than the one it would be
-restored into — it will not guess.
+`rollback` always has something to restore to. A backup has two halves under the
+same id: your own files (the managed Quickshell config and the Lyona data
+directory) in `~/.local/state/lyona/live-update-backups/<id>/`, and the system
+files, which the privileged helper copies as root, just before installing, into
+`/var/lib/lyona/backups/<id>/`, readable only by root. A rollback restores the
+system files from that root-only copy and never from anything in your home
+directory, so nothing another program running as you could have changed is ever
+installed as root. The helper keeps the newest 5 system backups.
+
+It refuses to restore a backup whose checksums do not match, or one taken against
+a different install environment (prefix, config, or data directory) than the one
+it would be restored into — it will not guess. A backup taken before system
+backups moved to `/var/lib/lyona/backups` has no system half, and `rollback`
+refuses it rather than restore only your own files.
 
 ## Rolling back from a TTY when the desktop will not start
 
