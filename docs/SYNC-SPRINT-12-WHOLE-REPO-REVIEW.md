@@ -473,7 +473,12 @@ children's CPU (not only Quickshell's own) within 0.5 points of zero over 30 s.
 +		clients_changed=0
 +		case $event in _NET_CLIENT_LIST*) clients_changed=1 ;; esac
 +		# One rebuild per burst: a tag switch alone fires 3-4 property events.
-+		while IFS= read -r -t 0.05 event <&3; do
++		deadline_us=$(( ${EPOCHREALTIME/./} + 50000 ))
++		while :; do
++			remaining_us=$((deadline_us - ${EPOCHREALTIME/./}))
++			(( remaining_us > 0 )) || break
++			printf -v read_timeout '0.%06d' "$remaining_us"
++			IFS= read -r -t "$read_timeout" event <&3 || break
 +			case $event in _NET_CLIENT_LIST*) clients_changed=1 ;; esac
 +		done
 +		[ "$clients_changed" = 0 ] || watch_clients
@@ -482,10 +487,11 @@ children's CPU (not only Quickshell's own) within 0.5 points of zero over 30 s.
  	done
 ```
 
-   `read -t` with a fraction needs bash; the script is POSIX `sh` today, so either
-   move it to bash (AGENTS.md allows bash when a feature needs it) or use a
-   `timeout`-free equivalent. Also have `watch_clients` start watchers only for new
-   windows and stop them only for gone ones, instead of restarting all.
+   Fractional `read -t` and `EPOCHREALTIME` need bash 5+; the script is POSIX
+   `sh` today, so either move it to bash (AGENTS.md allows bash when a feature
+   needs it) or use a `timeout`-free equivalent. Also have `watch_clients`
+   start watchers only for new windows and stop them only for gone ones, instead
+   of restarting all.
 2. Cache `updatefullscreenmonitors` like `updatelayoutprop` (write only on change),
    and collapse `setclientdesktop`'s writes where they are redundant.
 3. In `DwmState.parseState`, compare each key's raw text with the last one and skip
