@@ -6,9 +6,10 @@ carries the survey, the exclusions, the rules that apply everywhere, the open
 decisions, and the **sprint plan**. Each sprint has its own document with
 literal code.
 
-**Current survey:** upstream `6258133` (2026-09-21), found by a maintainer-requested
-re-survey (Sprint 6). Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
-(2026-09-06), `dd55e58` (2026-09-07), `d4c6d89` (2026-09-16), `d155edc` (2026-09-18).
+**Current survey:** upstream `e5bbddc` (2026-09-24, tag `v0.7.2`), found by a
+maintainer-requested re-survey and full-range audit (2026-09-26, Sprint 11).
+Earlier survey points: `94ca1a4` (2026-09-05), `03b2195` (2026-09-06), `dd55e58`
+(2026-09-07), `d4c6d89` (2026-09-16), `d155edc` (2026-09-18), `6258133` (2026-09-21).
 
 ---
 
@@ -24,11 +25,12 @@ re-survey (Sprint 6). Earlier survey points: `94ca1a4` (2026-09-05), `03b2195`
 | **Sprint 3** ([`SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`](SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md)) | ✅ Done, merged to `main` (through `ed5ba44`) |
 | **Sprint 4** ([`SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`](SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md)) | 🚧 **Code complete; qualification open.** S4-01 to S4-07 done, and S4-08's re-survey done (2026-09-20). Left, none of which can run in a sandbox: the manual **Full suite** workflow (sprint branch and `main`), and checks that need real hardware or installs: the Picom NVIDIA backend (S4-01), the fresh-install media defaults on both ISOs (S4-02), and a full privileged `lyona-update` run (S4-06) Tracked in [Sprint 10](SYNC-SPRINT-10-COMPLETION-AUDIT.md) S10-07, not by the closed milestone |
 | **Sprint 5** ([`SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`](SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md)) | 🚧 **Code complete; qualification open.** From S4-08's re-survey (`d4c6d89..d155edc`, 12 commits): S5-01 (Settings panes stay hidden until their data loads, completes `#315`), S5-02 (verified Flathub before Flatpak installs) and S5-03 (floating-toggle shrink, decision D-9: port as upstream) are done. Left, none of which can run in a sandbox: the manual **Full suite** workflow on the sprint branch and on `main`, and a hands-on check of the floating toggles and Settings panes on a real desktop (S5-01, S5-03) Tracked in [Sprint 10](SYNC-SPRINT-10-COMPLETION-AUDIT.md) S10-07, not by the closed milestone |
-| **Sprint 6** ([`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md)) | 🚧 **In progress.** S6-01 (panel tooltip position) and S6-02 (dark-theme Thunar mismatch — root-caused as a missing GTK theme generation step, fixed) done. S6-03 (light-theme hover text) investigated, not reproduced yet; needs a maintainer screenshot. S6-04 (cross-tag window overview) designed and grown into Sprints 7–9 below |
+| **Sprint 6** ([`SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md)) | 🚧 **In progress.** S6-01 (panel tooltip position) and S6-02 (dark-theme Thunar mismatch — root-caused as a missing GTK theme generation step, fixed) done. S6-03 (light-theme hover text) **reproduced 2026-09-26** without a screenshot: the cause is the shell's hover surface (`term_color8`) in `Theme.qml`, and all 5 light and 6 of 10 dark presets fall below 4.5:1; the fix moved to [Sprint 11](SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md) S11-01, which closes `#116`. S6-04 (cross-tag window overview) designed (done, `#139`) and delivered by Sprints 7–8; Sprint 9 is its optional polish |
 | **Sprint 7** ([`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md)) | ✅ **Done** (#134, #135, plus Sprint 10 S10-02/S10-05). Cross-tag window overview (issue `#350`, no upstream code), version-one foundation: per-window data, `DwmState.qml` resolution, a mouse-only popup. The popup originally shipped with `check-quickshell-command-menu` red and no changelog entries for S7-02/S7-03; both fixed in Sprint 10 |
 | **Sprint 8** ([`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)) | ✅ **Done.** S8-01 keyboard navigation (#137), S8-02 to S8-04 monitor labels, type-to-filter and close-from-card (UI in #138; the model half landed in Sprint 10 S10-01). Verified by `check-quickshell-overview-xvfb` and a passing Full suite on `main` (https://github.com/technicks89/Lyona/actions/runs/36242445295). Untested: real key/mouse events against the popup and a multi-monitor label check |
 | **Sprint 9** ([`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md)) | 📋 **Not started.** Same feature, beyond version one: a live-thumbnail spike, motion, an accessibility pass, formal idle-CPU/performance validation at scale |
 | **Sprint 10** ([`SYNC-SPRINT-10-COMPLETION-AUDIT.md`](SYNC-SPRINT-10-COMPLETION-AUDIT.md)) | 🚧 **In progress.** Completion audit of `main` at `8448bb5`. S10-01 to S10-06 and S10-08 done (#149; Full suite green on `main`, https://github.com/technicks89/Lyona/actions/runs/36242445295). Left: S10-07, the hardware qualification ledger, which needs real hardware |
+| **Sprint 11** ([`SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md`](SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md)) | 📋 **Planned, awaiting review; nothing started.** From the 2026-09-26 re-survey (`d155edc..e5bbddc`) and full-range audit: shell text contrast on hover (completes S6-03 / `#116`), live GTK theme broadcast (`#351`), panel click-away (`#340`), a test that leaks a critical notification onto the real desktop (`#354`), an Arch dependencies doc, Qt and GTK 2 theming (a real fault for `qt6ct` users), a layout switcher and a Picom corner-radius slider (`#297`). All decisions made (D-10, D-11, D-12); nothing gated |
 | Upstream since `dd55e58`: 98 commits (78 non-merge, ~22k lines of applicable code and tests), Chris's issues `#302`–`#315`, plus 7 older PRs found unported | 📋 Ported through Sprint 3 and Sprint 4 S4-01…S4-07 |
 
 ## Sprint plan
@@ -52,6 +54,7 @@ sized to one reviewable branch per item.
 | **8** | [`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) | Same feature: keyboard navigation, multi-monitor labels, a window closing mid-use, type-to-filter, closing a window from its card | issue `#350` | Sprint 7 |
 | **9** | [`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md) | Same feature, beyond version one: a live-thumbnail spike, motion, an accessibility pass, idle-CPU/performance validation at scale | issue `#350` | Sprint 8 |
 | **10** | [`SYNC-SPRINT-10-COMPLETION-AUDIT.md`](SYNC-SPRINT-10-COMPLETION-AUDIT.md) | Restore the overview model (filter, close-from-card), repair the command-menu test, run the tests `make check` skips, real-input overview tests, Sprint 7/8 tracking, a green recorded Full suite, hardware-qualification ledger | audit of Sprints 1-9 | Sprint 8 (S10-01, S10-04, S10-05); otherwise none |
+| **11** | [`SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md`](SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md) | Shell hover/selected text contrast (S6-03), XSETTINGS theme broadcast, panel click-away, test notification isolation, Arch dependencies doc; Qt and GTK 2 palettes (D-11), square popups and a 1 px focus ring (D-10), a layout switcher and a Picom radius slider (D-12) | `#340`, `#349`, `#351`, `#352`, `#354`, `2a0e9b3` | none (independent of Sprints 7-10) |
 
 Sprints 1→2 and 3→4 are ordered. **The two pairs are independent**, so
 Sprint 3 can run before or alongside Sprint 2. **Sprint 5** exists because
@@ -63,7 +66,9 @@ every earlier sprint. **Sprints 7-9** exist because Sprint 6's own S6-04 item
 designed; they are strictly ordered (7→8→9), each depending on the one
 before it, and independent of every other sprint. **Sprint 10** exists because an audit of `main` (2026-09-25) found
 items marked done that are not; it depends on Sprint 8 only for the overview
-items and is otherwise independent.
+items and is otherwise independent. **Sprint 11** exists because a re-survey
+(2026-09-26) found 6 new upstream commits and an audit found upstream work and
+contributor items no sprint tracked; it is independent of every other sprint.
 
 The GitHub milestones and issues for these sprints are created by
 [`sync-sprints-github.sh`](sync-sprints-github.sh). See its header for usage.
@@ -82,6 +87,9 @@ Every open item blocks **implementation** of the listed item, not the plan.
 | **D-7** | Upstream `#327` scales spacing by font scale and divides by `devicePixelRatio`; Lyona scales geometry by DPI through `Theme.dp()` | S3-07 | — | **Decided (2026-09-16), asked of the user directly**: port desktop typography and font-size scaling (`scaledFontSize()`) only; `Theme.dp()` stays the one geometry scale, `scaledSize()` is not ported. Verify `devicePixelRatio == 1.0` at 144 DPI before starting, as originally planned. **Amended (2026-09-20), asked of the user directly, when the port reached `AppearanceModel.qml`:** `applySharedTypography()`/`desktopFont*` read `font` and `text-size` selections from upstream's personalization provider, and Lyona's `dwm-settings-toolkit` only has `cursor icon gtk qt` (typography lives in the separate `dwm-settings-font` managed-shell backend, GTK/Qt font policy out of scope). Decision: **keep the managed shell font and text scale**; don't port `desktopFont*`/`applySharedTypography()`, the `personalization.conf`/`gsettings monitor` watchers, or upstream's removal of the "duplicate" font controls (in Lyona they are the only font controls). Still ported: `scaledFontSize()` and the 0.75–2.0 clamp, every per-surface fix (`Theme.dp()` in place of `scaledSize()`), the wallpaper hunks. `devicePixelRatio` was verified to be 1.0 at 144 DPI under Lyona's `QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1` launch |
 | **D-8** | Upstream's git-`main` desktop updater (`#318`–`#323`, issue `#311`) vs Lyona's release-tarball `lyona-update` | S4-06 | — | **Decided (2026-09-16), asked of the user directly**: decline the mechanism; port the four UX ideas (restart-surviving progress window, panel indicator, completion notification, bounded log viewer) onto `UpdateModel.qml` against `lyona-update`'s existing status file |
 | **D-9** | Upstream `#331`/`#333` make toggling floating (and switching to the floating layout) shrink the window to 85% and center it; Lyona floats at the current tile size, so nothing visibly happens | S5-03 | 2026-09-20 | **Decided: port as upstream** (85%, centered, clamped to the work area as far as the window's size hints allow, on explicit toggles and on entering the floating layout). Lyona had upstream's exact pre-fix `dwm.c`, so it applied cleanly |
+| **D-10** | Upstream `#340` makes popups square (and shrinks the keyboard focus border to 1 px); Lyona had rounded popups and a 2 px focus ring | Sprint 11 S11-07 | — | **Decided (2026-09-26): square popups** (`popupRadius` and `notificationAccentRadius` to 0, notification cards follow) **and a 1 px focus ring** (`controlFocusBorderWidth: controlBorderWidth`) |
+| **D-11** | Qt apps under `qt5ct`/`qt6ct` stay on Qt's default light palette because `theme-apply.sh` writes `color_scheme_path` without `custom_palette=true` (verified with qt6ct 0.11); upstream `#352` ships per-preset Qt and GTK 2 files as 105 checked-in files | Sprint 11 S11-06 | Option C: Qt palettes and GTK 2 through our generator; drop `gtk-dark.css` | **Decided (2026-09-26): option C** |
+| **D-12** | Upstream issue `#297` (open, no code) asks for a Quickshell dwm layout switcher and gap/radius sliders. dwm publishes no current layout and accepts no set-layout request; it has no gaps at all | Sprint 11 S11-08, S11-09 | Layout switcher plus a Picom corner-radius slider; no gaps, no border-width slider | **Decided (2026-09-26)**: layout switcher (`_DWM_LAYOUT`/`_DWM_SET_LAYOUT` root properties) and a Picom `corner-radius` slider |
 | — | Converge Lyona's #33 regional/delegated UI onto upstream's `#261`–`#269` structure | S1-03…S1-05 | — | **Decided in the Sprint 1 plan** (2026-09-16): converge. Lyona's `launchDelegated()` skips the confirmation `ROADMAP.md` Phase 6 requires, and every later upstream PR builds on upstream's shape |
 | D-3 | Arch targets for `accounts-open`/`sources-open` | — | — | **Decided** 2026-09-15: permanent `unsupported` |
 | — | Option A/B/C for the system-management helper | — | — | **Decided** 2026-09-08: Option A (adopt upstream's Python helper) |
@@ -219,11 +227,13 @@ Don't add another without a row here.
 
 ## Chris Titus issues and PRs
 
-Every issue and PR opened by `ChrisTitusTech` on `ChrisTitusTech/dwm-titus`
-since the fork (2026-08-27) is accounted for. All his PRs are merged; none
-are open. As of the 2026-09-21 re-survey, four of his issues are open:
-`#310` (tracked, Sprint 3 S3-03), and `#344`–`#347` (Fedora `DNF`/kickstart-only,
-N/A for Arch-based Lyona, not tracked further).
+Every issue and PR on `ChrisTitusTech/dwm-titus` since the fork (2026-08-27),
+**by any author**, is accounted for as of the 2026-09-26 audit. Before that,
+this section covered only `ChrisTitusTech`'s own items and missed contributor
+work (`#340`, `#351`, `#353`, `#356`, `#357`, `#297`, `#298`, `#187`, `#192`).
+Upstream now has 286 PRs and 71 issues from 59 authors. Open upstream: issues
+`#310` (tracked, Sprint 3 S3-03), `#344`–`#347` (Fedora `DNF`/kickstart-only,
+N/A), `#297`, `#298`, `#350`, `#356`, and PR `#357` (Fedora packaging, N/A).
 
 ### Issues
 
@@ -247,9 +257,14 @@ N/A for Arch-based Lyona, not tracked further).
 | `#345` Kickstart: include fastfetch | **open** | N/A (Fedora kickstart) |
 | `#346` DNF: default update prompts to Yes | **open** | N/A (Fedora `DNF`) |
 | `#347` Optimize DNF mirrors before initial update | **open** | N/A (Fedora `DNF`) |
-| `#348` Dark themes: Thunar stays light (Dracula and others) | **open, no upstream code** | Sprint 6 S6-02, Lyona's own fix once reproduced |
-| `#349` Light themes: dark hover backgrounds obscure text | **open, no upstream code** | Sprint 6 S6-03, Lyona's own fix once reproduced |
+| `#348` Dark themes: Thunar stays light (Dracula and others) | closed by `#351` (2026-09-22) | Sprint 6 S6-02 (Lyona's own fix, done); live-broadcast half of `#351` → Sprint 11 S11-02 |
+| `#349` Light themes: dark hover backgrounds obscure text | closed by `#352` (2026-09-23) | Sprint 6 S6-03, reproduced 2026-09-26; fix → Sprint 11 S11-01 |
 | `#350` Cross-tag Mission-Control-style window overview | **open, no upstream code** | Designed in Sprint 6 S6-04, implemented across Sprints 7–9, Lyona's own feature |
+| `#187` 2K 200Hz monitor not working (contributor) | closed, no fix | N/A: hardware report against an upstream install, no code |
+| `#192` Wifi issues (contributor) | closed | N/A: Fedora `NetworkManager-wifi` packaging, see `#356` |
+| `#297` Layout and scale settings in Quickshell (contributor) | **open, no code** | Decided (D-12): layout switcher → Sprint 11 S11-08, Picom corner-radius slider → S11-09; no gaps |
+| `#298` AI agent skills for configuration (contributor) | **open** | Declined: upstream is pulling skills from a separate repo; Lyona has `AGENTS.md` |
+| `#356` Wi-Fi stays unmanaged after installation (contributor) | **open** | N/A for Arch: `networkmanager` 1.58.1 depends on `wpa_supplicant` and ships Wi-Fi support (`pacman -Si`); not tested on real Wi-Fi hardware |
 
 Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
 
@@ -274,18 +289,25 @@ Earlier issues (`#73`, `#142`–`#147`, `#150`) predate the fork.
 | `#334` | Sprint 5 S5-02 |
 | `#335` | Sprint 5 S5-01 |
 | `#336`, `#337`, `#338`, `#339` | N/A: Fedora installer defaults, Cloudflare ISO links, 0.7.1 changelog and docs |
+| `#340` (contributor) | Launcher `OnlyShowIn`/`NotShowIn` done (`#104`); panel click-away → Sprint 11 S11-03; square popups → Sprint 11 S11-07 (D-10 decided) |
+| `#341`, `#342` | N/A: bumps for `codeql-action` and `withastro/action`, neither used as a workflow file here |
+| `#343` | Sprint 6 S6-01 (one hunk); rest N/A |
+| `#351` (contributor) | Superseded by S6-02 (generated themes); XSETTINGS broadcast → Sprint 11 S11-02 |
+| `#352` | Quickshell hover contrast → Sprint 11 S11-01; Qt and GTK 2 palettes → Sprint 11 S11-06 (D-11 decided; `gtk-dark.css` dropped as unneeded) |
+| `#353` (contributor, closed), `#355`, `#357` (contributor, open) | N/A: Fedora `dnf` defaults, initial-update service, kickstarts, `NetworkManager-wifi` |
+| `#354` | Desktop updater half N/A (D-8); test-notification capture → Sprint 11 S11-04 |
 
 ---
 
 ## Commit coverage since `dd55e58`
 
-Every non-merge upstream commit from `dd55e58..d155edc`, and where it goes.
+Every non-merge upstream commit from `dd55e58..e5bbddc` (plus one older commit the 2026-09-26 audit found uncited), and where it goes.
 The 20 merge commits in the first range (`3f962b7`, `abe0d97`, …) and the 8
 in `d4c6d89..d155edc` carry no content of their own. To list anything newer
 than this survey:
 
 ```bash
-git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' --date=short d155edc..origin/main
+git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' --date=short e5bbddc..origin/main
 ```
 
 | Upstream | Date | Subject | Lyona |
@@ -384,6 +406,13 @@ git -C "$U" fetch && git -C "$U" log --no-merges --reverse --format='%h %ad %s' 
 | `58d10b82` | 2026-09-21 | ci: bump github/codeql-action (dependabot) | N/A (not Chris's; Lyona manages its own action pins) |
 | `513d4103` | 2026-09-21 | ci: bump withastro/action (dependabot) | N/A (not Chris's) |
 | `6258133` | 2026-09-21 | chore: test update delivery | N/A (empty commit, no file changes) |
+| `498ebf5` | 2026-09-22 | fix(appearance): resolve dark GTK themes and broadcast via xsettings (#351) | Theme-resolution half superseded by S6-02; `Net/ThemeName` broadcast half **Sprint 11 S11-02** |
+| `ebe57c6` | 2026-09-22 | fix(quickshell): zero-radius geometry, unified 1px borders, and universal click-away dismissal (#340) | Launcher filter done (`#104`); click-away **S11-03**; geometry **S11-07** (D-10 decided: square popups) |
+| `b3c8f3d` | 2026-09-23 | Fix light theme hover contrast and install GTK/Qt palettes (#352) | Shell contrast **S11-01** (completes S6-03); Qt and GTK 2 palettes **S11-06** (D-11 decided) |
+| `cb96c25` | 2026-09-24 | fix: unblock desktop updates and capture test notifications (#354) | Updater N/A (D-8); test capture **S11-04** |
+| `2a0e9b3` | 2026-09-24 | docs: document desktop dependencies and install profiles | **S11-05** (Arch analog; upstream's page is Fedora/Astro) |
+| `e5bbddc` | 2026-09-24 | Prepare 0.7.2: Fedora initial updates, mirror selection, and image defaults (#355) | N/A (Fedora `dnf` defaults, initial-update service, kickstarts; implements upstream issues `#344`-`#347`) |
+| `37600c1` | 2026-08-29 | test(quickshell): isolate missing nwg-look case | Already solved: `tests/test-quickshell-controlcenter.sh` restricts `PATH` to a `safe-bin`. Found by the 2026-09-26 full-range audit; no earlier doc cited it |
 
 ---
 

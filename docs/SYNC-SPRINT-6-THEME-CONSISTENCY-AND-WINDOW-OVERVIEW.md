@@ -154,6 +154,20 @@ inconclusive until the real-desktop reproduction above settled it directly.
 
 Issue `#349`. Same shape as S6-02.
 
+**Update 2026-09-26: reproduced, and the fix moved to Sprint 11.** The
+investigation below looked at generated GTK CSS and found nothing, and named
+"Quickshell's own panel/pane hover states (`Theme.qml`)" as the unverified
+alternative. That alternative is the cause. Upstream fixed `#349` in `#352`
+(`b3c8f3d`, 2026-09-23) after finding the shell's hover surface used terminal
+bright-black with the regular foreground. Lyona has the same structure
+(`Theme.surfaceHover` from `term_color8`, `scripts/dwm-settings-appearance:1673`),
+and computed from `config/themes.toml` all 5 light presets and 6 of 10 dark
+presets fall below 4.5:1 on hover, including Solarized Light at 1.00:1. No
+screenshot was needed. The fix, with literal code and a per-preset contrast
+test, is [Sprint 11 S11-01](SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-01-shell-text-stays-readable-on-hover-and-selected-surfaces),
+which closes issue `#116`. The rest of this section is the original
+investigation, kept as history.
+
 **Investigated (2026-09-22), not reproduced, one candidate found.** Checked
 the generated GTK CSS for all 5 shipped light presets (`catppuccin-latte`,
 `gruvbox-light`, `solarized-light`, `rosepine-dawn`, `tokyonight-day`):
@@ -210,6 +224,11 @@ the implementation plan: the design doc's own version-one phasing (Sprint 7),
 finishing what the issue actually asked for plus two small, low-risk
 additions (Sprint 8), then real previews, motion, accessibility and
 performance validation, all explicitly beyond a first version (Sprint 9).
+
+**Status (2026-09-26): done.** The design pass merged as `#139`. What the
+issue asked for shipped in Sprints 7 and 8 and passed the Full suite on `main`
+(`docs/UPSTREAM-SYNC.md`, Sprint 8 row). Sprint 9 is optional polish beyond
+that and is tracked by its own issues, so `#117` does not wait for it.
 
 ---
 

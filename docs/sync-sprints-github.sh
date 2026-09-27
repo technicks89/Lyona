@@ -62,6 +62,7 @@ sprints=(
 	"8|Sync Sprint 8 — Cross-tag overview: interaction|SYNC-SPRINT-8-OVERVIEW-INTERACTION.md"
 	"9|Sync Sprint 9 — Cross-tag overview: polish|SYNC-SPRINT-9-OVERVIEW-POLISH.md"
 	"10|Sync Sprint 10 - Completion audit|SYNC-SPRINT-10-COMPLETION-AUDIT.md"
+	"11|Sync Sprint 11 - Shell contrast and survey gaps|SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -126,6 +127,15 @@ items=(
 	"10|S10-06|s10-06-get-the-full-suite-green-on-main-and-record-it|Get the Full suite green on main and record it|completion audit"
 	"10|S10-07|s10-07-qualification-ledger-for-sprints-closed-with-hardware-checks-open|Qualification ledger for sprints closed with hardware checks open|completion audit"
 	"10|S10-08|s10-08-correct-the-status-tables|Correct the status tables|completion audit"
+	"11|S11-01|s11-01-shell-text-stays-readable-on-hover-and-selected-surfaces|Shell text stays readable on hover and selected surfaces|issue #349"
+	"11|S11-02|s11-02-broadcast-the-gtk-and-icon-theme-over-xsettings|Broadcast the GTK and icon theme over XSETTINGS|upstream #351"
+	"11|S11-03|s11-03-clicking-the-empty-panel-closes-open-popups|Clicking the empty panel closes open popups|upstream #340"
+	"11|S11-04|s11-04-keep-a-tests-bad-config-notification-off-the-real-desktop|Keep a test's bad-config notification off the real desktop|upstream #354"
+	"11|S11-05|s11-05-document-desktop-dependencies-and-install-profiles-for-arch|Document desktop dependencies and install profiles for Arch|upstream 2a0e9b3"
+	"11|S11-06|s11-06-qt-palettes-for-qt5ctqt6ct-and-a-gtk-2-theme|Qt palettes for qt5ct/qt6ct and a GTK 2 theme|upstream #352"
+	"11|S11-07|s11-07-square-popups-and-a-1-px-focus-ring|Square popups and a 1 px focus ring|upstream #340"
+	"11|S11-08|s11-08-a-layout-switcher-in-the-control-center|A layout switcher in the Control Center|upstream #297"
+	"11|S11-09|s11-09-a-picom-window-corner-radius-slider|A Picom window corner-radius slider|upstream #297"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \
