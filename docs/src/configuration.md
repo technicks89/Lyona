@@ -12,6 +12,11 @@ every update and rollback unchanged. No recompile is needed.
 | `window-rules.toml` | Per-app window rules: tag, floating, terminal swallowing, always on top, monitor |
 | `power.conf` | Control Center screen blanking and auto-lock choices |
 
+If one of these files cannot be used (a typo, an empty file, nothing dwm can bind),
+dwm tells you with a "dwm: bad config" notification. At login it falls back to the
+shipped default for that file; when you save a broken file while dwm is running, it
+keeps the configuration it already had until the file is fixed.
+
 ## Window rules
 
 `window-rules.toml` holds one rule per line, and every matching rule applies, in

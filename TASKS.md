@@ -258,3 +258,7 @@ update in the same PR, so completed items are pinned here too, not only in
   `scripts/lyona-update-root`, `scripts/lyona-update`, `Makefile` (`install-cursors`), `docs/src/updating.md`; tests in
   `tests/test-lyona-update-root-backups.sh` (container) and `tests/test-lyona-update.sh`. Evidence:
   `docs/evidence/s12-03-root-helper-paths.md`. A real polkit prompt is not tested.
+- [x] Sync Sprint 12 S12-04 -- dwm always starts with working keys, and a config file cannot hang it, issue `#167` --
+  `dwm.c`, `tomlparser.c`, `docs/src/configuration.md`, `docs/src/troubleshooting.md`; tests in
+  `tests/test-dwm-config-fallback.sh` (`make check-dwm-config-fallback`) and `tests/test-xvfb-runtime.sh`. Evidence:
+  `docs/evidence/s12-04-dwm-key-fallback.md`. The signal race itself is not reproducible in a test.

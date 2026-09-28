@@ -278,6 +278,14 @@ root-owned files. Evidence: `docs/evidence/s12-03-root-helper-paths.md`.
 
 **Source:** E (High), S (Low, measured). **Verified.**
 
+**Implemented (2026-09-27):** all four parts. Deviations from the diff below: the
+fallback is to the default at startup but to the previous config on a live reload
+(so a half-saved edit never removes keys), a hotkeys file with entries but nothing
+bindable counts as unusable, the parser also refuses a FIFO (opened without
+blocking), and the signal race uses a self-pipe rather than `pselect`, because
+blocking the signals would be inherited by every child dwm forks. Evidence:
+`docs/evidence/s12-04-dwm-key-fallback.md`.
+
 1. **No keys at all from a bad hotkeys file.** `toml_load_with_fallback`
    (`dwm.c:3632-3654`) returns 0 when the user file exists but does not parse or
    has no entries, without trying `default_path`. `load_hotkeys_toml` (`:3658`)

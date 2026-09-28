@@ -486,6 +486,13 @@ check-xvfb-runtime: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# Sync Sprint 12 S12-04: dwm starts with working keys whatever hotkeys.toml holds.
+.PHONY: check-dwm-config-fallback
+check-dwm-config-fallback: all
+	status=0; tests/test-dwm-config-fallback.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 .PHONY: check-ci-parity
 check-ci-parity:
 	tests/test-ci-parity.sh
@@ -960,6 +967,7 @@ check:
 	$(MAKE) check-quickshell-wallpaper-reconcile-xvfb
 	$(MAKE) check-desktop-smoke-xvfb
 	$(MAKE) check-xvfb-runtime
+	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb
