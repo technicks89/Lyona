@@ -100,20 +100,28 @@ with tempfile.TemporaryDirectory(prefix='overview-close-') as temp:
         deadline = time.time() + 5
         while not (base / 'asked').exists() and time.time() < deadline:
             time.sleep(0.05)
+        # Not a settle delay: the window has refused, and must still be open a
+        # moment later (a close that asked and then destroyed it anyway would pass
+        # the marker check alone).
         time.sleep(0.5)
         result = {'helper_asked': (base / 'asked').exists(), 'helper_window_kept': exists(asked_win)}
         # Then the old command, on the other window. Destroying a window under Tk
         # can end the whole client, so this comes last.
         subprocess.run(['xdotool', 'windowclose', destroyed_win], env=env, check=True)
-        time.sleep(1)
+        deadline = time.time() + 5
+        while exists(destroyed_win) and time.time() < deadline:
+            time.sleep(0.05)
         result['windowclose_asked'] = (base / 'destroyed').exists()
         result['windowclose_window_kept'] = exists(destroyed_win)
         print('Overview close: %s' % result)
-        if not result['helper_asked'] or not result['helper_window_kept']:
-            fail('dwm-quickshell-state close did not ask the window (it must run its close handler and '
-                 'stay open when that refuses)')
-        if result['windowclose_asked'] or result['windowclose_window_kept']:
-            fail('the comparison did not hold: xdotool windowclose was expected to destroy without asking')
+        if not result['helper_asked']:
+            fail('dwm-quickshell-state close did not ask the window (its close handler did not run)')
+        if not result['helper_window_kept']:
+            fail('dwm-quickshell-state close closed a window that refused')
+        if result['windowclose_asked']:
+            fail('the comparison did not hold: xdotool windowclose asked the window')
+        if result['windowclose_window_kept']:
+            fail('the comparison did not hold: xdotool windowclose left the window open')
     finally:
         for proc in reversed(procs):
             try:
