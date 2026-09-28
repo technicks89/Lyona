@@ -29,8 +29,26 @@ jobs:
       DWM_TEST_TMP_ROOT: /var/tmp/lyona-ci
 
     steps:
+      # The image's mirror list can leave one mirror as the only source, and one
+      # bad moment on it fails the job before anything is built. More servers let
+      # pacman fetch a failed file from the next one, and the installs retry.
+      - name: Configure pacman mirrors
+        run: |
+          {
+            printf 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n'
+            printf 'Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch\n'
+            printf 'Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch\n'
+            printf 'Server = https://fastly.mirror.pkgbuild.com/$repo/os/$arch\n'
+          } >/etc/pacman.d/mirrorlist
+
       - name: Install checkout dependency
-        run: pacman -Syu --noconfirm --needed git
+        run: |
+          for attempt in 1 2 3; do
+            pacman -Syu --noconfirm --needed git && exit 0
+            echo "pacman failed (attempt $attempt); retrying" >&2
+            sleep 15
+          done
+          exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,10 +58,16 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install build and smoke dependencies
+        shell: bash
         run: |
           source scripts/dwm-packages.sh
           mapfile -t packages < <(dwm_packages arch ci-smoke | awk 'NF' | sort -u)
-          pacman -Syu --noconfirm --needed "${packages[@]}"
+          for attempt in 1 2 3; do
+            pacman -Syu --noconfirm --needed "${packages[@]}" && exit 0
+            echo "pacman failed (attempt $attempt); retrying" >&2
+            sleep 15
+          done
+          exit 1
 
       - name: Build dwm
         run: |

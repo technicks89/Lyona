@@ -615,6 +615,22 @@ check-app-palettes:
 check-qt-palette-xvfb:
 	@tests/test-qt-palette-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
+# dwm-window-thumb and the overview's previews (Sync Sprint 9 S9-01), wired in by
+# Sync Sprint 12 S12-12: both start their own Xvfb and skip (77) without it.
+.PHONY: check-window-thumb-xvfb check-overview-thumbnails-xvfb check-overview-close-xvfb
+check-window-thumb-xvfb: all
+	@/usr/bin/python3 tests/test-window-thumb-xvfb.py; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+check-overview-thumbnails-xvfb: all
+	@/usr/bin/python3 tests/test-overview-thumbnails-xvfb.py; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+# The overview's close asks the window (WM_DELETE_WINDOW through dwm's
+# _NET_CLOSE_WINDOW), so a window with unsaved work can refuse (S12-12).
+check-overview-close-xvfb: all
+	@status=0; xvfb-run -a /usr/bin/python3 tests/test-overview-close-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 .PHONY: check-theme-apply-gtk-fallback
 check-theme-apply-gtk-fallback:
 	tests/test-theme-apply-gtk-fallback.sh
@@ -1010,6 +1026,9 @@ check:
 	$(MAKE) check-gtk-theme
 	$(MAKE) check-app-palettes
 	$(MAKE) check-qt-palette-xvfb
+	$(MAKE) check-window-thumb-xvfb
+	$(MAKE) check-overview-thumbnails-xvfb
+	$(MAKE) check-overview-close-xvfb
 	$(MAKE) check-theme-apply-gtk-fallback
 	$(MAKE) check-theme-apply-qt-palette
 	$(MAKE) check-plymouth-theme

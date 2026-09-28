@@ -829,6 +829,11 @@ their build path, so `$2 == want` would have broken them. Evidence:
 
 **Source:** S (Low), E (Medium). **Verified.**
 
+**Implemented (2026-09-28)**, all three items. Item 1 also needed dwm: with a window
+manager running, `xdotool windowquit` sends `_NET_CLOSE_WINDOW`, which dwm ignored.
+It now handles it through `closeclient`, shared with the close key. Item 2 lists
+every managed window. Evidence: `docs/evidence/s12-12-overview-close.md`.
+
 1. **Close destroys the window.** `close_window` (`scripts/dwm-quickshell-state:549`)
    runs `xdotool windowclose`, which the xdotool manual defines as "destroy the
    window" without asking the client. The comment at `:533-539` promises

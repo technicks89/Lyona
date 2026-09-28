@@ -10,6 +10,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Overview close, hidden windows and the thumbnail tests (Sync Sprint 12 S12-12, issue `#175`).
+  - Closing a window from the overview now asks it to close, as the close key does, so an application can ask about
+    unsaved work or refuse. It used `xdotool windowclose`, which destroys the window without asking. dwm now handles
+    the standard `_NET_CLOSE_WINDOW` request (what `xdotool windowquit` and `wmctrl -c` send). Before, dwm ignored it,
+    so those tools did nothing under Lyona.
+  - Every managed window is listed in the overview and the panel's task list. Windows whose `_NET_WM_PID` named a
+    root-owned process were left out: any window could hide itself that way, and graphical tools run as root never
+    appeared.
+  - The window-preview tests run as part of `make check` (`make check-window-thumb-xvfb`,
+    `make check-overview-thumbnails-xvfb`); no target ran them before. New `tests/test-overview-close-xvfb.py`
+    (`make check-overview-close-xvfb`).
+
 - Install and update correctness (Sync Sprint 12 S12-11, issue `#174`).
   - `lyona-update apply` checks the packages the new release needs, from the release's own package list, before it
     builds. A missing required package stops the update with nothing changed and prints the command to install it
