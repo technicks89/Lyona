@@ -173,6 +173,7 @@ reset_curl_responses
 stub_command pacman <<SH
 #!/bin/sh
 [ "\$1" = -T ] || exit 1
+[ ! -e "$work/pacman-fails" ] || exit 1
 shift
 status=0
 for package in "\$@"; do
@@ -389,6 +390,13 @@ status=$(apply_source --dry-run 2>"$work/err") || {
 assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
 assert_contains "$work/err" 'desktop packages not installed (features that use them stay unavailable): picom'
 : >"$work/pacman-missing"
+# A failed query is an error, never read as "nothing is missing".
+: >"$work/pacman-fails"
+if apply_source --dry-run >"$work/out" 2>&1; then
+	fail 'an update went ahead although pacman -T failed'
+fi
+assert_contains "$work/out" 'could not check which packages are installed'
+rm -f "$work/pacman-fails"
 rm -rf "$state_home/lyona/updates/$source_version"
 
 # ── apply --from-checkout: removed, and says what to use instead ───────
@@ -489,6 +497,19 @@ if PREFIX=/usr/local run_update rollback --backup 20260101T000000Z-1 --yes \
 	fail "rollback into a mismatched environment unexpectedly succeeded"
 fi
 assert_contains "$work/out" 'different environment'
+
+# ── rollback: a bad user archive stops before anything is restored ────
+# The checksums match and the environment does, but quickshell.tar is not an
+# archive of quickshell/: refused before the privileged system restore (S12-11).
+printf 'version=2026.01.0\n' >"$backup_dir2/checkout.txt"
+if run_update rollback --backup 20260101T000000Z-1 --yes >"$work/out" 2>&1; then
+	fail 'rollback with an unreadable user archive unexpectedly succeeded'
+fi
+assert_contains "$work/out" 'quickshell.tar is unreadable or holds more than quickshell/; nothing was restored'
+if grep -Fq 'privileged' "$work/out"; then
+	lyona_show_file "$work/out"
+	fail 'the privileged restore was reached with a bad user archive'
+fi
 
 # ── set-channel: seeds, persists, preserves other keys, rejects garbage ──
 reset_curl_responses
@@ -667,6 +688,40 @@ if restore "$work/restore/two.tar" "$work/restore/live/quickshell" 2>/dev/null; 
 	fail 'restore_user_tree accepted an archive with more than the tree'
 fi
 assert_equals 'old shell' "$(cat "$work/restore/live/quickshell/shell.qml")" 'a refused restore keeps the tree'
+# The swap fails and so does moving the old tree back: the old tree is kept
+# (in the staging folder) rather than deleted with it.
+cat >"$work/restore-mv.sh" <<'EOF'
+mv() {
+	calls=$(($(cat "$MV_COUNT" 2>/dev/null || printf 0) + 1))
+	printf '%s\n' "$calls" >"$MV_COUNT"
+	[ "$calls" -eq 1 ] || return 1
+	command mv "$@"
+}
+EOF
+rm -f "$work/restore/mv.count"
+if MV_COUNT=$work/restore/mv.count bash -c 'warn() { printf "%s\n" "$*" >&2; }; . "$1"; . "$2"; restore_user_tree "$3" "$4"' \
+	sh "$work/restore.sh" "$work/restore-mv.sh" "$work/restore/quickshell.tar" "$work/restore/live/quickshell" \
+	2>"$work/restore/mv.err"; then
+	fail 'restore_user_tree reported success although both moves failed'
+fi
+kept=$(find "$work/restore/live" -path '*/.previous/shell.qml' | head -n1)
+[ -n "$kept" ] || fail 'the old tree was deleted when it could not be put back'
+assert_equals 'old shell' "$(cat "$kept")" 'the kept copy is the old tree'
+assert_contains "$work/restore/mv.err" 'the previous copy is kept in'
+rm -rf "$work/restore/live"
+
+# valid_user_archive: readable, and everything under the one expected folder.
+body_of valid_user_archive >"$work/valid-archive.sh"
+[ -s "$work/valid-archive.sh" ] || fail 'valid_user_archive not found'
+valid_archive() { bash -c '. "$1"; valid_user_archive "$2" "$3"' sh "$work/valid-archive.sh" "$1" "$2"; }
+valid_archive "$work/restore/quickshell.tar" quickshell || fail 'a good user archive was refused'
+if valid_archive "$work/restore/two.tar" quickshell; then fail 'an archive with a stray top-level entry was accepted'; fi
+mkdir -p "$work/restore/dotdot/quickshell"
+printf 'x\n' >"$work/restore/dotdot/escape"
+tar -C "$work/restore/dotdot" -cpf "$work/restore/dotdot.tar" quickshell/../escape
+if valid_archive "$work/restore/dotdot.tar" quickshell; then fail 'an archive with .. entries was accepted'; fi
+printf 'not an archive\n' >"$work/restore/bogus.tar"
+if valid_archive "$work/restore/bogus.tar" quickshell; then fail 'an unreadable archive was accepted'; fi
 
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileged sites in cmd_apply"
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "release site"

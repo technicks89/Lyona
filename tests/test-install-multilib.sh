@@ -20,6 +20,7 @@ sed -n '/^configure_arch_multilib_repository() {$/,/^}$/p' "$repo/install.sh" >"
 run_case() {
 	: >"$work/sudo.log"
 	rm -f "$work/enabled"
+	[[ ${ALREADY_ENABLED:-0} != 1 ]] || : >"$work/enabled"
 	(
 		DISTRO_ID=arch INSTALL_PROFILE=full ARCH=x86_64 ARCH_GAMING_REPOS_APPROVED=true
 		ok() { :; }
@@ -50,5 +51,16 @@ grep -Fq 'info Upgrading the system' "$work/sudo.log" || fail 'the upgrade is no
 
 PACMAN_FAILS=1 run_case && fail 'a failed upgrade was reported as success'
 grep -Fq 'warn Could not upgrade the system' "$work/sudo.log" || fail 'a failed upgrade is not reported'
+
+# multilib already enabled (a rerun after a failed upgrade, or enabled by hand):
+# the upgrade still runs before the gaming packages, and pacman.conf is left alone.
+ALREADY_ENABLED=1 run_case || fail 'the already-enabled case failed'
+grep -Fqx 'pacman -Syu' "$work/sudo.log" || {
+	lyona_show_file "$work/sudo.log"
+	fail 'an already-enabled multilib skipped the upgrade'
+}
+if grep -q '^sed ' "$work/sudo.log"; then
+	fail 'pacman.conf was edited although multilib was already enabled'
+fi
 
 printf '%s\n' 'install.sh multilib upgrade (pacman -Syu, never -Sy): PASS'

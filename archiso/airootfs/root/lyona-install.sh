@@ -335,13 +335,16 @@ EOF
 # The credentials archinstall reads, built by jq rather than by interpolation
 # (Sync Sprint 12 S12-11): a passphrase with a '"' broke the file, and one with a
 # backslash escape silently became a different passphrase, which locked the user
-# out of the new install. Every value goes in as a jq string argument.
+# out of the new install. Every value is a jq string, never parsed as JSON. The
+# hash and the disk passphrase come in on stdin, NUL-separated, so they are
+# never in argv, where any process can read them; the username is not secret.
 write_credentials_json() {
 	local encrypt=false
 	[[ $ENCRYPT != 1 ]] || encrypt=true
-	jq -n --arg user "$USERNAME" --arg hash "$1" --arg passphrase "${ENCRYPTION_PASSWORD:-}" \
-		--argjson encrypt "$encrypt" '
-			{users: [{sudo: true, username: $user, enc_password: $hash}], root_enc_password: $hash}
+	printf '%s\0%s' "$1" "${ENCRYPTION_PASSWORD:-}" |
+		jq -Rs --arg user "$USERNAME" --argjson encrypt "$encrypt" '
+			split("\u0000") as [$hash, $passphrase]
+			| {users: [{sudo: true, username: $user, enc_password: $hash}], root_enc_password: $hash}
 			+ (if $encrypt then {encryption_password: $passphrase} else {} end)'
 }
 

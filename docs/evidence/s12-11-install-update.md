@@ -76,6 +76,38 @@ Each new test fails against the old code:
 - `test-install-preservation.sh` needs a built checkout (`make all`), because
   `install-system` checks for `dwm-window-thumb` first. That is unchanged.
 
+### Review round (2026-09-28)
+
+All six findings were valid and are fixed. Each new test fails with the earlier
+behaviour put back.
+
+- **The hash and the disk passphrase were in `jq`'s argv.** They now reach jq on
+  stdin, NUL-separated (`jq -Rs`, `split("\u0000")`). The test also checks that
+  neither goes in as a `--arg`.
+- **The docs example digest (`3f9c...a1`) was not usable.** It is now a `HASH`
+  placeholder, explained as the 64-character first field of the tarball's
+  `SHA256SUMS` line.
+- **A rerun skipped the upgrade.** If a run enabled multilib and its `-Syu` failed,
+  the next run found multilib enabled and returned early. It then installed the
+  gaming packages on a partial upgrade. The upgrade now runs in both cases. New test
+  case: already enabled means `-Syu` runs and `pacman.conf` is not edited.
+- **`restore_user_tree` could delete the only copy.** When the swap and the
+  move-back both failed, `rm -rf "$staging"` removed the old tree, which was then
+  only in `staging/.previous`. It now keeps staging and names the path. New test
+  case: an `mv` that fails after the first move leaves the old tree in
+  `.previous`.
+- **A bad user archive was found only after the system restore.** `rollback` now
+  checks both archives with `valid_user_archive` before `restore-system`: readable,
+  everything under the one folder, no `..`. The swap checks each again.
+  - New tests: a rollback whose `quickshell.tar` is not an archive stops with
+    "nothing was restored" and never reaches the privileged step.
+    `valid_user_archive` accepts a good archive and refuses a stray entry, `..`
+    entries and a non-archive.
+- **A failed `pacman -T` was read as "nothing missing".** `missing_packages` runs
+  `pacman -T` directly and reads its status: 0 means nothing missing, 127 means
+  packages are missing, and anything else stops the update. New test case: a
+  failing query stops a dry run.
+
 ## Not verified
 
 - **A real install from the ISO** with such a passphrase (the JSON is checked, not
