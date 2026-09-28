@@ -84,7 +84,8 @@ enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
        NetWMWindowTypeMenu, NetWMWindowTypePopupMenu, NetWMWindowTypeDropdownMenu,
        NetWMWindowTypeCombo, NetWMWindowTypeDnd,
        NetClientList, NetDesktopNames, NetDesktopViewport, NetNumberOfDesktops, NetCurrentDesktop,
-       NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmLayout, NetDwmSetLayout, NetLast };
+       NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmLayout, NetDwmSetLayout,
+       NetCloseWindow, NetLast };
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast };
 enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
        ClkClientWin, ClkRootWin, ClkLast };
@@ -224,6 +225,7 @@ static void incnmaster(const Arg *arg);
 static int isaltbar(Window win, XWindowAttributes *wa);
 static int istransientforbar(Window win);
 static int isdescprocess(pid_t p, pid_t c);
+static void closeclient(Client *c);
 static void killclient(const Arg *arg);
 static void manage(Window w, XWindowAttributes *wa);
 static void mapnotify(XEvent *e);
@@ -904,6 +906,10 @@ clientmessage(XEvent *e)
 	}
 	if (!c)
 		return;
+	if (cme->message_type == netatom[NetCloseWindow]) {
+		closeclient(c);
+		return;
+	}
 	if (cme->message_type == netatom[NetWMState]) {
 		if (cme->data.l[1] == netatom[NetWMFullscreen]
 		|| cme->data.l[2] == netatom[NetWMFullscreen]) {
@@ -1823,12 +1829,22 @@ killclient(const Arg *arg)
 {
 	if (!selmon->sel)
 		return;
+	closeclient(selmon->sel);
+}
 
-	if (!sendevent(selmon->sel, wmatom[WMDelete])) {
+/* Asks the client to close (WM_DELETE_WINDOW), so it can ask about unsaved work;
+ * only a client that does not support that is killed. The close key and a
+ * _NET_CLOSE_WINDOW request both come here: the overview's close sends one
+ * (xdotool windowquit sends _NET_CLOSE_WINDOW when a window manager runs), as
+ * does wmctrl -c (Sync Sprint 12 S12-12). */
+void
+closeclient(Client *c)
+{
+	if (!sendevent(c, wmatom[WMDelete])) {
 		XGrabServer(dpy);
 		XSetErrorHandler(xerrordummy);
 		XSetCloseDownMode(dpy, DestroyAll);
-		XKillClient(dpy, selmon->sel->win);
+		XKillClient(dpy, c->win);
 		XSync(dpy, False);
 		XSetErrorHandler(xerror);
 		XUngrabServer(dpy);
@@ -4382,6 +4398,7 @@ setup(void)
 	wmatom[WMState] = XInternAtom(dpy, "WM_STATE", False);
 	wmatom[WMTakeFocus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	netatom[NetActiveWindow] = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+	netatom[NetCloseWindow] = XInternAtom(dpy, "_NET_CLOSE_WINDOW", False);
 	netatom[NetSupported] = XInternAtom(dpy, "_NET_SUPPORTED", False);
 	netatom[NetWMName] = XInternAtom(dpy, "_NET_WM_NAME", False);
 	netatom[NetWMPid] = XInternAtom(dpy, "_NET_WM_PID", False);

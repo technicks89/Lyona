@@ -15,14 +15,10 @@ fail() {
 	exit 1
 }
 
-# A root-owned pid is skipped; a pid this test owns is kept. Using real
-# processes keeps the /proc uid lookup honest instead of stubbing it.
-root_pid=${TEST_ROOT_PID:-1}
+# A window's _NET_WM_PID does not decide whether it is listed (Sync Sprint 12
+# S12-12): 0xdd claims pid 1 (root's) and is listed like the others.
+root_pid=1
 own_pid=$$
-[[ $(awk '/^Uid:/ { print $2; exit }' "/proc/$root_pid/status") == 0 ]] ||
-	fail "expected pid $root_pid to be root-owned; cannot exercise the uid skip"
-[[ $(awk '/^Uid:/ { print $2; exit }' "/proc/$own_pid/status") != 0 ]] ||
-	fail 'this test must not run as root'
 
 cat >"$bin/xprop" <<EOF
 #!/bin/sh
@@ -110,8 +106,7 @@ case "\$window:\$*" in
 	printf 'WM_NAME:  not found.\n'
 	;;
 0xdd:*WM_CLASS*)
-	# root-owned: must be skipped from windows= the same as apps=, but its
-	# desktop still counts as occupied.
+	# Claims a root-owned pid: listed all the same, and its desktop counts.
 	printf '_NET_WM_DESKTOP(CARDINAL) = 7\n'
 	printf '_NET_WM_PID(CARDINAL) = %s\n' "$root_pid"
 	printf 'WM_CLASS(STRING) = "rootapp", "RootApp"\n'
@@ -161,21 +156,20 @@ expect 'layout=2'
 expect 'monitor_desktops=0,1,2'
 expect 'status=AC | VOL 15%'
 
-# occupied is numerically sorted and de-duplicated, and includes the desktop
-# of the root-owned window even though that window is not a running app
+# occupied is numerically sorted and de-duplicated
 expect 'occupied=0|1|2|3|7'
 
-# apps keeps first-seen order, de-duplicates by class, and drops root-owned
-expect 'apps=0xaa:alacritty|0xbb:firefox|0xee:edge%3Acase%7Cwith%257c'
+# apps keeps first-seen order and de-duplicates by class; a window claiming a
+# root-owned pid (0xdd) is listed like any other
+expect 'apps=0xaa:alacritty|0xbb:firefox|0xdd:rootapp|0xee:edge%3Acase%7Cwith%257c'
 
 # windows= is per-window, never deduplicated by class (0xaa and 0xcc share
 # one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
 # WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
-# leaves an empty title rather than the literal "not found." text (0xcc), the
-# root-owned window (0xdd) is excluded the same as apps= excludes it, and a
-# class containing ":", "|" and a literal "%" round-trips through percent
-# encoding intact (0xee).
-expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+# leaves an empty title rather than the literal "not found." text (0xcc), a
+# window claiming a root-owned pid (0xdd) is listed, and a class containing
+# ":", "|" and a literal "%" round-trips through percent encoding intact (0xee).
+expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 
 # fullscreen monitors are de-duplicated and sorted
 expect 'fullscreen_monitors=0|1'
@@ -189,7 +183,7 @@ expect 'class=alacritty'
 root_calls=$(grep -c '^-root' "$work/xprop.log" || true)
 [[ $root_calls -eq 1 ]] ||
 	fail "expected exactly 1 batched root xprop call, got $root_calls" "$work/xprop.log"
-per_window=$(grep -c '^-id .* _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME WM_NAME$' "$work/xprop.log" || true)
+per_window=$(grep -c '^-id .* _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME$' "$work/xprop.log" || true)
 [[ $per_window -eq 5 ]] ||
 	fail "expected 1 batched xprop per client window (5), got $per_window" "$work/xprop.log"
 total=$(wc -l <"$work/xprop.log")
@@ -215,9 +209,9 @@ watch_pid=
 cleanup_add 'if [[ -n $watch_pid ]]; then kill "$watch_pid" 2>/dev/null || true; wait "$watch_pid" 2>/dev/null || true; fi'
 PATH="$bin:$PATH" "$helper" watch >"$work/watch-out" 2>"$work/watch-err" &
 watch_pid=$!
-initial='windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
-updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
-fallback_updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox Updated|0xcc:0:alacritty:|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+initial='windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
+fallback_updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox Updated|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 i=0
 while [ "$i" -lt 100 ]; do
 	grep -Fqx "$initial" "$work/watch-out" && break

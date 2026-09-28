@@ -32,15 +32,15 @@ fail() {
 cat >"$bin/xdotool" <<EOF
 #!/bin/sh
 printf '%s\n' "\$*" >>"$work/xdotool.log"
-[ "\$1" = "windowclose" ] && exit 0
+[ "\$1" = "windowquit" ] && exit 0
 exit 1
 EOF
 chmod +x "$bin/xdotool"
 
 PATH="$bin" "$helper" close 0xdeadbeef >"$work/out" 2>"$work/err" ||
 	fail 'close exited non-zero for a valid window id' "$work/err"
-grep -Fqx 'windowclose 0xdeadbeef' "$work/xdotool.log" ||
-	fail 'close did not call xdotool windowclose with the target id' "$work/xdotool.log"
+grep -Fqx 'windowquit 0xdeadbeef' "$work/xdotool.log" ||
+	fail 'close did not ask the window to close (xdotool windowquit) with the target id' "$work/xdotool.log"
 
 # A decimal window id (xprop -root sometimes reports one, and DwmState.qml's
 # own windowId is passed through verbatim) is accepted the same way
@@ -48,8 +48,8 @@ grep -Fqx 'windowclose 0xdeadbeef' "$work/xdotool.log" ||
 : >"$work/xdotool.log"
 PATH="$bin" "$helper" close 123456 >"$work/out" 2>"$work/err" ||
 	fail 'close exited non-zero for a decimal window id' "$work/err"
-grep -Fqx 'windowclose 123456' "$work/xdotool.log" ||
-	fail 'close did not call xdotool windowclose with a decimal id' "$work/xdotool.log"
+grep -Fqx 'windowquit 123456' "$work/xdotool.log" ||
+	fail 'close did not ask the window to close (xdotool windowquit) with a decimal id' "$work/xdotool.log"
 
 # A missing or malformed argument is a usage error, not an xdotool call.
 : >"$work/xdotool.log"

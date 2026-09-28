@@ -83,23 +83,10 @@ client_snapshot() {
 			window_id=${window_id##* }
 			[ -n "$window_id" ] || continue
 			printf 'LYONA-WINDOW %s\n' "$window_id"
-			xprop -id "$window_id" _NET_WM_DESKTOP _NET_WM_PID WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
+			xprop -id "$window_id" _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
 		done
 		IFS=$snapshot_ifs
 	} | awk '
-		function owner_uid(process_id,   line, parts, uid, status_path) {
-			uid = -1
-			status_path = "/proc/" process_id "/status"
-			while ((getline line < status_path) > 0) {
-				if (line ~ /^Uid:/) {
-					split(line, parts, /[[:space:]]+/)
-					uid = parts[2]
-					break
-				}
-			}
-			close(status_path)
-			return uid
-		}
 		function sanitize_title(value) {
 			gsub(/\|/, " ", value)
 			gsub(/[\t\r\n]/, " ", value)
@@ -130,22 +117,23 @@ client_snapshot() {
 			if (desktop != "" && desktop ~ /^[0-9]+$/ && desktop != 4294967295) {
 				desktops[desktop] = 1
 			}
-			if (!(pid != "" && owner_uid(pid) == 0)) {
-				value = window ":" desktop ":" class ":" sanitize_title(title)
-				windows[++nwindows] = value
-			}
-			if (class != "" && !(pid != "" && owner_uid(pid) == 0)) {
+			# Every managed window is listed. Windows whose _NET_WM_PID named a
+			# root-owned process used to be left out, which a client could claim
+			# to hide from the overview and the task list, and which hid real
+			# root GUI tools (Sync Sprint 12 S12-12).
+			value = window ":" desktop ":" class ":" sanitize_title(title)
+			windows[++nwindows] = value
+			if (class != "") {
 				if (!((("|" class "|")) in seen)) {
 					seen["|" class "|"] = 1
 					value = window ":" class
 					apps[++napps] = value
 				}
 			}
-			window = ""; desktop = ""; pid = ""; class = ""; title = ""; have_net_wm_name = 0
+			window = ""; desktop = ""; class = ""; title = ""; have_net_wm_name = 0
 		}
 		/^LYONA-WINDOW / { flush(); window = $2; next }
 		/^_NET_WM_DESKTOP/ { sub(/^[^=]*= */, ""); desktop = $0; next }
-		/^_NET_WM_PID/ { sub(/^[^=]*= */, ""); pid = $0; next }
 		/^WM_CLASS/ {
 			sub(/^[^=]*= */, "")
 			gsub(/"/, "")
@@ -596,7 +584,10 @@ close_window() {
 		;;
 	esac
 	if command -v xdotool >/dev/null 2>&1; then
-		xdotool windowclose "$target"
+		# windowquit sends that WM_DELETE_WINDOW request, so the application can
+		# ask about unsaved work; windowclose would destroy the window outright
+		# (Sync Sprint 12 S12-12).
+		xdotool windowquit "$target"
 	elif command -v wmctrl >/dev/null 2>&1; then
 		wmctrl -ic "$target"
 	else

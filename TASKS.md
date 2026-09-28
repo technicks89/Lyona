@@ -308,3 +308,9 @@ update in the same PR, so completed items are pinned here too, not only in
   `tests/test-iso-install-credentials.sh`, `tests/test-lyona-update.sh` and `tests/test-install-preservation.sh`.
   Evidence: `docs/evidence/s12-11-install-update.md`. Not verified: a real ISO install, a real privileged rollback,
   and the package check against a real `pacman -T`.
+- [x] Sync Sprint 12 S12-12 -- overview close asks the window, hidden windows, and thumbnail tests, issue `#175` --
+  `scripts/dwm-quickshell-state` (`xdotool windowquit`; every managed window listed), `dwm.c` (`_NET_CLOSE_WINDOW`
+  through the new `closeclient`, which the close key shares), `Makefile` (the thumbnail tests in `make check`). Tests:
+  `tests/test-overview-close-xvfb.py` (new), `tests/test-quickshell-state-close.sh`, `tests/test-quickshell-state.sh`.
+  Evidence: `docs/evidence/s12-12-overview-close.md`. Found while testing: dwm ignored `_NET_CLOSE_WINDOW`, so
+  `windowquit` alone did not ask the window. Not verified: a real application with unsaved work.
