@@ -169,8 +169,16 @@ toml_parse(const char *path, TomlDoc *doc)
 	int  ml_active = 0;
 	char ml_section[TOML_MAX_STR] = "";
 	int  ml_tidx   = 0;
+	long total     = 0;
 
 	while (fgets(line, sizeof(line), f)) {
+		/* toml_open checked the size, but the file can still grow while it is
+		 * read; stop at the same limit rather than read without end. */
+		total += (long)strlen(line);
+		if (total > TOML_MAX_FILE_BYTES) {
+			fclose(f);
+			return 0;
+		}
 		char *p = strtrim(line);
 
 		if (ml_active) {

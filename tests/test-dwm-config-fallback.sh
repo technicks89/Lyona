@@ -95,14 +95,22 @@ wait_exit() { # LABEL: dwm must be gone within 5 s
 	dwm_pid=
 }
 
-expect_defaults() { # LABEL: the shipped keys work, and the fallback was reported
-	DISPLAY=$display xdotool key Super+2
+# dwm publishes _NET_CURRENT_DESKTOP before it loads the config and grabs the
+# keys, so start_dwm can return before the grab exists and a single press can be
+# lost. Press again every half second while waiting; a binding that is really
+# missing still fails after every press.
+press_until_desktop() { # KEYS DESKTOP FAILURE-MESSAGE
 	i=0
-	until [ "$(current_desktop)" = 1 ]; do
+	until [ "$(current_desktop)" = "$2" ]; do
+		[ $((i % 10)) != 0 ] || DISPLAY=$display xdotool key "$1"
 		i=$((i + 1))
-		[ "$i" -lt 100 ] || fail "the shipped keys are not grabbed ($1)"
+		[ "$i" -lt 100 ] || fail "$3"
 		sleep 0.05
 	done
+}
+
+expect_defaults() { # LABEL: the shipped keys work, and the fallback was reported
+	press_until_desktop Super+2 1 "the shipped keys are not grabbed ($1)"
 	i=0
 	until grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults' \
 		"$work/notifications.log"; do
@@ -130,11 +138,43 @@ printf '[meta]\nversion = 1\ntag_keys = [\n  { key="1", tag=40 },\n]\n' >"$user_
 start_dwm unusable
 expect_defaults unusable
 
+# The only binding is a spawn with nothing to run, which the loader refuses.
+printf 'keys = [\n  { mod="SUPER", key="x", func="spawn" },\n]\n' >"$work/spawn-only.toml"
+cp "$work/spawn-only.toml" "$user_hotkeys"
+start_dwm spawn-only
+expect_defaults spawn-only
+
+# A live reload to that file keeps the keys already in use, and says so.
+cp "$repo/config/hotkeys.toml" "$user_hotkeys"
+start_dwm reload-spawn-only
+cp "$work/spawn-only.toml" "$user_hotkeys"
+kill -USR1 "$dwm_pid"
+i=0
+until grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - kept the previous config' \
+	"$work/notifications.log"; do
+	i=$((i + 1))
+	[ "$i" -lt 100 ] || fail "no 'kept the previous config' notification: $(cat "$work/notifications.log")"
+	sleep 0.05
+done
+press_until_desktop Super+2 1 'a reload to an unusable file lost the keys in use'
+kill -USR2 "$dwm_pid"
+wait_exit reload-spawn-only
+
 # A device used to hang dwm in the parser (about 54% CPU, no new windows).
 rm -f "$user_hotkeys"
 ln -s /dev/zero "$user_hotkeys"
 start_dwm /dev/zero
 expect_defaults /dev/zero
+
+# Over the 1 MiB limit: refused rather than read to the end.
+rm -f "$user_hotkeys"
+{
+	cat "$repo/config/hotkeys.toml"
+	head -c 1100000 /dev/zero | tr '\0' '#'
+	printf '\n'
+} >"$user_hotkeys"
+start_dwm oversized
+expect_defaults oversized
 
 # A FIFO would block dwm at open.
 rm -f "$user_hotkeys"
@@ -149,8 +189,14 @@ rm -rf "$default_dir"
 start_dwm emergency
 grep -Fq 'no usable hotkeys' "$work/notifications.log" ||
 	fail "no emergency-keys notification: $(cat "$work/notifications.log")"
-DISPLAY=$display xdotool key Super+shift+q
+i=0
+while kill -0 "$dwm_pid" 2>/dev/null; do
+	[ $((i % 10)) != 0 ] || DISPLAY=$display xdotool key Super+shift+q
+	i=$((i + 1))
+	[ "$i" -lt 100 ] || fail 'the emergency Super+Shift+q did not quit dwm'
+	sleep 0.05
+done
 wait_exit 'emergency Super+Shift+q'
 seed_defaults
 
-printf 'dwm config fallback (empty, comments, unusable, /dev/zero, FIFO, emergency keys): PASS\n'
+printf 'dwm config fallback (empty, comments, unusable, spawn-only, reload, /dev/zero, oversized, FIFO, emergency keys): PASS\n'

@@ -3617,6 +3617,19 @@ expand_var_to(const char *src, const TomlDoc *doc, char *dst, size_t dstsz)
 	dst[di] = '\0';
 }
 
+/* Whether a spawn binding has something to run: the same exec-or-cmd test
+ * build_spawn_arg applies, without allocating, so hotkeys_doc_usable can tell
+ * before the key arena is reused. */
+static int
+spawn_has_command(const TomlDoc *doc, const char *section, int tidx)
+{
+	const TomlValue *vexec = toml_table_get(doc, section, tidx, "exec");
+	const TomlValue *vcmd  = toml_table_get(doc, section, tidx, "cmd");
+
+	return (vexec && vexec->type == TOML_ARRAY && vexec->a.len > 0)
+	       || (vcmd && vcmd->type == TOML_STRING);
+}
+
 static Arg
 build_spawn_arg(const TomlDoc *doc, const char *section, int tidx)
 {
@@ -3738,9 +3751,14 @@ hotkeys_doc_usable(const TomlDoc *doc)
 	for (i = 0; i < n; i++) {
 		const TomlValue *vkey  = toml_table_get(doc, "keys", i, "key");
 		const TomlValue *vfunc = toml_table_get(doc, "keys", i, "func");
-		if (vkey && vkey->type == TOML_STRING && vfunc && vfunc->type == TOML_STRING
-		    && XStringToKeysym(vkey->s) != NoSymbol && lookup_func(vfunc->s))
-			return 1;
+		void (*fn)(const Arg *);
+		if (!vkey || vkey->type != TOML_STRING || !vfunc || vfunc->type != TOML_STRING
+		    || XStringToKeysym(vkey->s) == NoSymbol || !(fn = lookup_func(vfunc->s)))
+			continue;
+		/* The loader refuses a spawn with nothing to run. */
+		if (fn == spawn && !spawn_has_command(doc, "keys", i))
+			continue;
+		return 1;
 	}
 	n = toml_table_count(doc, "tag_keys");
 	for (i = 0; i < n; i++) {
