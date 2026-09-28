@@ -36,6 +36,7 @@ Rectangle {
             spacing: Theme.tightSpacing
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.title
                 color: Theme.textStrong
@@ -46,6 +47,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.detail
                 color: Theme.textMuted

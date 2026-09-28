@@ -144,6 +144,11 @@ an untested package or installation path.
   APIs over QML polling timers. Polling is allowed only for inherently sampled
   values such as a clock or CPU load, or when a documented fallback has no
   event source.
+- Shell text is plain text. Every QML `Text` (and `UiText`, which everything else
+  builds on) sets `textFormat: Text.PlainText`: window titles, notifications and
+  network or device names come from other programs, and Qt's default `AutoText`
+  would render them as markup, fetching remote `<img>` sources.
+  `tests/test-quickshell-plain-text.sh` enforces it.
 - Quickshell must not be an idle resource hog. Avoid resident hidden launcher
   models, overlapping `Process` launches from timers, and duplicate shell
   providers such as running DMS alongside the lyona managed shell. On X11,

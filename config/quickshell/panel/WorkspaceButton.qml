@@ -20,6 +20,7 @@ Rectangle {
     border.width: selected || workspaceMouse.containsMouse ? Theme.pillBorderWidth : 0
 
     Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         text: root.label
         color: root.selected ? Theme.controlSelectedText

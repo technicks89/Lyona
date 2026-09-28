@@ -70,6 +70,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.controlsModel.message.length > 0
                 text: root.controlsModel.message
@@ -101,6 +102,7 @@ ClickAwayPopup {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.preferredWidth: root.volumePercentWidth
                     text: Math.round(volumeSlider.dragging ? volumeSlider.liveValue : root.controlsModel.volumePercent) + "%"
                     color: Theme.text
@@ -125,6 +127,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.controlsModel.outputDevices.length === 0
                 text: "OUTPUT unavailable"
@@ -164,6 +167,7 @@ ClickAwayPopup {
                             spacing: root.rowSpacing
 
                             Text {
+                                textFormat: Text.PlainText
                                 Layout.fillWidth: true
                                 text: outputDeviceRow.modelData.description
                                 color: Theme.readableText(Theme.text, String(outputDeviceRow.color))
@@ -175,6 +179,7 @@ ClickAwayPopup {
                             }
 
                             Text {
+                                textFormat: Text.PlainText
                                 Layout.preferredWidth: Theme.dp(58)
                                 text: outputDeviceRow.modelData.isDefault ? "Default" : "Set"
                                 color: Theme.readableText(outputDeviceRow.modelData.isDefault ? Theme.controlSelectedText : Theme.textMuted, String(outputDeviceRow.color))
@@ -209,6 +214,7 @@ ClickAwayPopup {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     text: root.controlsModel.micText
                     color: root.controlsModel.micText === "MIC muted" ? Theme.danger : Theme.text
                     font.family: Theme.fontFamily
@@ -240,6 +246,7 @@ ClickAwayPopup {
                     spacing: Theme.compactSpacing
 
                     Text {
+                        textFormat: Text.PlainText
                         width: parent.width
                         text: root.controlsModel.mediaText
                         color: Theme.text
@@ -250,6 +257,7 @@ ClickAwayPopup {
                     }
 
                     Text {
+                        textFormat: Text.PlainText
                         width: parent.width
                         visible: root.controlsModel.mediaPlayer.length > 0
                         text: root.controlsModel.mediaPlayer

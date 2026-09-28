@@ -27,6 +27,7 @@ Rectangle {
     }
 
     Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         text: root.label
         color: !root.enabled ? Theme.controlDisabledText

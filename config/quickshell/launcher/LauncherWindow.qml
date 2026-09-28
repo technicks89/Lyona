@@ -110,6 +110,7 @@ FloatingWindow {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     anchors.left: parent.left
                     anchors.leftMargin: 38
                     anchors.verticalCenter: parent.verticalCenter

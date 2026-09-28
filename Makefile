@@ -486,6 +486,16 @@ check-xvfb-runtime: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# Sync Sprint 12 S12-06: nothing in the shell renders markup from other programs.
+.PHONY: check-quickshell-plain-text check-quickshell-plain-text-xvfb
+check-quickshell-plain-text:
+	tests/test-quickshell-plain-text.sh
+
+check-quickshell-plain-text-xvfb: all
+	status=0; tests/test-quickshell-plain-text-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 # Sync Sprint 12 S12-05: unit tests for the TOML parser dwm uses for all three
 # runtime files.
 .PHONY: check-tomlparser
@@ -975,6 +985,8 @@ check:
 	$(MAKE) check-xvfb-runtime
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-tomlparser
+	$(MAKE) check-quickshell-plain-text
+	$(MAKE) check-quickshell-plain-text-xvfb
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb

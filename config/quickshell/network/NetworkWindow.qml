@@ -72,6 +72,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.networkModel.message.length > 0
                 text: root.networkModel.message
@@ -106,6 +107,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.networkModel.activeConnections.length === 0
                 text: "No active connections"
@@ -144,6 +146,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.networkModel.wifiNetworks.length === 0
                 text: "No visible Wi-Fi networks"
@@ -175,6 +178,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.networkModel.savedProfiles.length === 0
                 text: "No saved Ethernet, Wi-Fi, or VPN profiles"
@@ -259,6 +263,7 @@ ClickAwayPopup {
                         spacing: Theme.popupSpacing
 
                         Text {
+                            textFormat: Text.PlainText
                             Layout.fillWidth: true
                             text: {
                                 const network = root.networkModel.selectedWifiNetwork();
@@ -272,6 +277,7 @@ ClickAwayPopup {
                         }
 
                         Text {
+                            textFormat: Text.PlainText
                             Layout.fillWidth: true
                             text: "Enter the network password."
                             color: Theme.textMuted
@@ -326,6 +332,7 @@ ClickAwayPopup {
                                 }
 
                                 Text {
+                                    textFormat: Text.PlainText
                                     anchors.left: parent.left
                                     anchors.leftMargin: Theme.rowSpacing
                                     anchors.verticalCenter: parent.verticalCenter

@@ -244,6 +244,7 @@ ClickAwayPopup {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     anchors.left: parent.left
                     anchors.leftMargin: 38
                     anchors.verticalCenter: parent.verticalCenter
@@ -256,6 +257,7 @@ ClickAwayPopup {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.overviewModel.groups.length === 0
                 text: root.overviewModel.query.length > 0 ? "No windows match" : "No open windows"

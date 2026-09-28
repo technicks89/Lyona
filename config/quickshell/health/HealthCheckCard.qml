@@ -64,6 +64,7 @@ Rectangle {
                 spacing: Theme.tightSpacing
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.rowData.title
                     color: Theme.textStrong
@@ -74,6 +75,7 @@ Rectangle {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.rowData.summary
                     color: Theme.textMuted
@@ -85,6 +87,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 text: root.rowData.status.toUpperCase()
                 color: root.statusColor
                 font.family: Theme.fontFamily
@@ -142,6 +145,7 @@ Rectangle {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: root.expanded && root.rowData.evidence.length > 0
             text: root.rowData.evidence

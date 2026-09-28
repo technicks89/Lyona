@@ -265,3 +265,6 @@ update in the same PR, so completed items are pinned here too, not only in
 - [x] Sync Sprint 12 S12-05 -- the TOML parser handles comments, same-line arrays and booleans, issue `#168` --
   `tomlparser.c`, `dwm.c` (`load_rules_toml`), `docs/src/configuration.md`; tests in `tests/test-tomlparser.c`
   (`make check-tomlparser`) and `tests/test-dwm-config-fallback.sh`. Evidence: `docs/evidence/s12-05-toml-parser.md`.
+- [x] Sync Sprint 12 S12-06 -- untrusted text renders as plain text, issue `#169` -- 91 `Text` elements in 23 files under
+  `config/quickshell/` (including `core/UiText.qml`), `AGENTS.md`; tests in `tests/test-quickshell-plain-text.sh` and
+  `tests/test-quickshell-plain-text-xvfb.sh`. Evidence: `docs/evidence/s12-06-plain-text.md`. Not judged by eye.

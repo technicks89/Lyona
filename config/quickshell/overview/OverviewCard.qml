@@ -119,6 +119,7 @@ Rectangle {
             spacing: 0
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.windowLabel
                 color: root.selected ? Theme.menuSelectedText
@@ -130,6 +131,7 @@ Rectangle {
 
             // With previews the icon is no longer beside the title, so name the app.
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.thumbnailsEnabled
                 text: root.window.appClass
@@ -141,6 +143,7 @@ Rectangle {
         }
 
         Text {
+            textFormat: Text.PlainText
             objectName: "overviewMonitorLabel"
             visible: root.monitorCount > 1
             text: "Mon " + (root.window.monitorIndex + 1)
@@ -168,6 +171,7 @@ Rectangle {
             Accessible.onPressAction: root.closeRequested(root.window.windowId)
 
             Text {
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: "×"
                 color: closeMouse.containsMouse ? Theme.readableText(Theme.textStrong, Theme.danger) : Theme.menuMutedText

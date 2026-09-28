@@ -19,7 +19,7 @@ Flickable {
 
         RowLayout {
             Layout.fillWidth: true
-            Text { Layout.fillWidth: true; text: root.settingsModel.inputMessage; color: root.settingsModel.inputState === "failure" ? Theme.danger : Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.smallFontSize }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.settingsModel.inputMessage; color: root.settingsModel.inputState === "failure" ? Theme.danger : Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.smallFontSize }
             ShellButton { label: "Refresh"; enabled: root.settingsModel.inputState !== "loading"; onActivated: root.settingsModel.refreshInput() }
         }
 
@@ -33,6 +33,7 @@ Flickable {
             RowLayout {
                 anchors.fill: parent; anchors.margins: 7
 				Text {
+					textFormat: Text.PlainText
 					Layout.fillWidth: true
 					text: root.settingsModel.previewSeconds > 0
 						? "Input preview reverts in " + root.settingsModel.previewSeconds + " seconds"
@@ -74,8 +75,9 @@ Flickable {
                     id: deviceColumn
                     anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
                     anchors.leftMargin: 16; anchors.rightMargin: 10; anchors.topMargin: 10
-                    Text { text: deviceCard.modelData.name + " (" + deviceCard.modelData.kind + ")"; color: Theme.textStrong; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: deviceCard.modelData.name + " (" + deviceCard.modelData.kind + ")"; color: Theme.textStrong; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize; font.bold: true }
                     Text {
+                        textFormat: Text.PlainText
                         Layout.fillWidth: true
                         visible: deviceCard.modelData.kind === "accessibility"
                         text: "Session-wide XKB controls use a 15-second preview. Keep the change to restore it at the next login."
@@ -94,6 +96,7 @@ Flickable {
                             onModelDataChanged: editValue = modelData.value
 
                             Text {
+                                textFormat: Text.PlainText
                                 Layout.preferredWidth: Theme.dp(150)
                                 Layout.maximumWidth: Theme.dp(150)
                                 text: settingRow.modelData.label
@@ -124,6 +127,7 @@ Flickable {
                     Repeater {
                         model: deviceCard.unsupported
                         delegate: Text {
+                            textFormat: Text.PlainText
                             required property var modelData
                             Layout.fillWidth: true
                             text: modelData.id + ": " + modelData.detail
@@ -138,6 +142,7 @@ Flickable {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: root.settingsModel.inputDevices.length === 0
             text: root.settingsModel.inputState === "loading" ? "Discovering input devices..." : "No supported XInput devices were found"

@@ -369,6 +369,12 @@ files round-tripping unchanged. Today no test exercises the parser directly.
 
 **Source:** S (Medium, measured). **Verified.**
 
+**Implemented (2026-09-27)** more widely than listed below: rather than choosing
+which elements show outside text, every `Text` in the managed shell sets
+`Text.PlainText` (91 elements in 23 files, `UiText` and `SectionLabel` included),
+since nothing uses markup, and a static test keeps it that way. Evidence:
+`docs/evidence/s12-06-plain-text.md`.
+
 Notification summaries and bodies, window titles, the overview card title and
 SSIDs are drawn with Qt's default `Text.AutoText`, which renders markup:
 

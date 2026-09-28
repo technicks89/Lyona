@@ -51,6 +51,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: root.modelData.kind === "submenu" ? ">" : root.modelData.current ? "*" : "-"
                 visible: root.modelData.kind !== "application"
@@ -66,6 +67,7 @@ Rectangle {
             spacing: Theme.tightSpacing
 
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: root.modelData.label
                 color: root.selected ? Theme.menuSelectedText : mouseArea.containsMouse ? Theme.menuHoverText : Theme.menuText
@@ -76,6 +78,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: root.modelData.detail || ""
                 color: root.selected ? Theme.menuSelectedText : mouseArea.containsMouse ? Theme.menuHoverText : Theme.menuMutedText
@@ -87,6 +90,7 @@ Rectangle {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.alignment: Qt.AlignVCenter
             text: root.modelData.kind === "submenu" ? ">" : root.modelData.current ? "Current" : ""
             color: root.selected ? Theme.menuSelectedText : mouseArea.containsMouse ? Theme.menuHoverText : Theme.menuMutedText

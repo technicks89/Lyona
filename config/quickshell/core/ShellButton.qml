@@ -46,6 +46,7 @@ Rectangle {
 
     Text {
         id: buttonLabel
+        textFormat: Text.PlainText
 
         anchors.centerIn: parent
         text: root.label

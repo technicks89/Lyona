@@ -46,6 +46,7 @@ Rectangle {
             spacing: Theme.tightSpacing
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.item.appName
                 color: root.item.urgency === NotificationUrgency.Critical ? Theme.danger : Theme.menuActionText
@@ -57,6 +58,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.item.summary || root.item.urgencyName
                 color: Theme.popupText
@@ -67,6 +69,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: text.length > 0
                 text: root.item.body || ""
@@ -88,6 +91,7 @@ Rectangle {
             border.width: Theme.controlBorderWidth
 
             Text {
+                textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: "x"
                 color: closeMouse.containsMouse ? Theme.controlHoverText : Theme.menuMutedText

@@ -47,6 +47,7 @@ FloatingWindow {
                 Layout.fillWidth: true
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.commandMenuModel.breadcrumb
                     color: Theme.text
@@ -57,6 +58,7 @@ FloatingWindow {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     text: root.commandMenuModel.rows.length === 1
                         ? "1 item" : root.commandMenuModel.rows.length + " items"
                     color: Theme.textMuted
@@ -125,6 +127,7 @@ FloatingWindow {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.controlPaddingX + Theme.spacingSm
                     anchors.verticalCenter: parent.verticalCenter
@@ -169,6 +172,7 @@ FloatingWindow {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Enter select  |  Left/Backspace back  |  Esc close"
                 color: Theme.textMuted

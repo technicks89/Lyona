@@ -41,6 +41,7 @@ Flickable {
 
                 Text {
                     id: launcherCategoryLabel
+                    textFormat: Text.PlainText
 
                     anchors.centerIn: parent
                     text: categoryDelegate.modelData.label + " " + categoryDelegate.modelData.count
