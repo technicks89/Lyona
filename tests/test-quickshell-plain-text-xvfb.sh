@@ -5,11 +5,12 @@ set -eu
 # Sync Sprint 12 S12-06: text from other programs is shown as text, never as
 # markup. Runs dwm and the full managed Quickshell on an isolated Xvfb and D-Bus
 # session with a local HTTP listener, then sends a notification whose summary and
-# body carry <img src> tags pointing at the listener, and opens a window whose
-# title carries one. With Qt's default Text.AutoText the shell fetched both images
-# (a tracking beacon) and parsed the title as markup; now nothing reaches the
-# listener and Qt logs no <img> handling. Positive controls: the notification did
-# reach the shell (it is in the history), and the listener does log a request.
+# body carry <img src> tags pointing at the listener, opens a window whose title
+# carries one, and opens the overview, which lists that title. With Qt's default
+# Text.AutoText the shell fetched the images (a tracking beacon) and parsed the
+# title as markup; now nothing reaches the listener and Qt logs no <img> handling.
+# Positive controls: the notification did reach the shell (it is in the history),
+# and the listener does log a request.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -129,7 +130,20 @@ until DISPLAY=$display xdotool search --name 'lyona-title' >/dev/null 2>&1; do
 	sleep 0.05
 done
 
-# Give the popup, the history and the panel title time to render.
+# The overview lists the window with its title (OverviewCard.qml).
+ipc_ok=0
+i=0
+while [ "$i" -lt 100 ]; do
+	if run_env quickshell ipc --path "$home/.config/quickshell/shell.qml" call overview open >/dev/null 2>&1; then
+		ipc_ok=1
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$ipc_ok" = 1 ] || fail 'could not open the overview'
+
+# Give the popup, the history, the panel title and the overview time to render.
 sleep 3
 
 [ ! -s "$work/requests" ] || fail "the shell fetched markup images: $(tr '\n' ' ' <"$work/requests")"
@@ -139,4 +153,4 @@ sleep 3
 curl -s -o /dev/null "http://127.0.0.1:$port/control.png" || :
 grep -Fxq '/control.png' "$work/requests" || fail 'the listener does not log requests'
 
-printf 'Quickshell plain text (notification summary and body, window title): PASS\n'
+printf 'Quickshell plain text (notification summary and body, window title in the panel and overview): PASS\n'

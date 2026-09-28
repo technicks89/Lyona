@@ -28,7 +28,8 @@ Issue `#169`.
   - Runs real dwm and the full managed shell on an isolated Xvfb and D-Bus session,
     with a local HTTP listener.
   - Sends a notification whose summary and body carry `<img src>` tags aimed at the
-    listener, and opens a feh window whose title carries one.
+    listener, opens a feh window whose title carries one, and opens the overview
+    over IPC, so the title is also shown by `OverviewCard.qml` (from review).
   - **Before the change it fails**, with the listener logging `/body.png` and
     `/summary.png` fetched by the shell.
   - **After the change it passes**: no request arrives, and Qt logs no
@@ -37,15 +38,23 @@ Issue `#169`.
     logs a request that `curl` makes.
 - **`tests/test-quickshell-plain-text.sh`** (new, `make check-quickshell-plain-text`):
   PASS.
-  - It reads every tracked QML file, counts braces to find each `Text` block, and
-    fails on any block without `Text.PlainText`, or on any file that asks for
-    `RichText`, `StyledText`, `AutoText` or `MarkdownText`.
+  - It reads every QML file on disk, tracked or not (`find`, from review). It strips
+    `//` and `/* */` comments first, so a commented-out `textFormat` does not count.
+    It keeps a stack of open `Text` blocks, so a `textFormat` only counts for the
+    innermost `Text` it sits directly in, and a nested `Text` needs its own (from
+    review).
+  - It fails on any `Text` block without `Text.PlainText`, and on any file that asks
+    for `RichText`, `StyledText`, `AutoText` or `MarkdownText`.
+  - It checks itself first against fixtures it must flag (a `//` comment, a `/* */`
+    comment, a nested `Text`, a `Text` beside a sibling's `textFormat`) and one it
+    must pass. It also flags an untracked new QML file.
   - Against the old tree it reports the missing elements.
 - **Mutation checks**, each caught by both tests:
   - removing `PlainText` from the notification summary (the xvfb test sees
     `/summary.png` fetched);
   - removing it from the body (`/body.png`);
-  - removing it from `UiText` (Qt parses the panel's window title as `StyledText`).
+  - removing it from `UiText` (Qt parses the panel's window title as `StyledText`);
+  - removing it from `OverviewCard.qml` alone (Qt parses the overview's title).
 - **The rest of the suite:**
   - The 31 other static Quickshell and Settings checks from `make check`,
     `check-quickshell-overview-xvfb` and `check-quickshell-large-surfaces-xvfb`: PASS.
