@@ -219,7 +219,7 @@ grep -Fq '"watch-units"' "$provider_discovery"
 # timer, parser line, or exit signal from a retired Process can never be
 # mistaken for a replacement one's -- the command assignment and deadline
 # Timers moved from the single static Process into that per-launch Component.
-grep -Fq 'command: Commands.systemManagementCommand(selected.action, selected.args)' "$provider_discovery"
+grep -Fq 'command: Commands.watchCommand(Commands.systemManagementCommand(selected.action, selected.args))' "$provider_discovery"
 grep -Fq 'interval: owner.identity.storage ? 3000 : 12000' "$provider_discovery"
 grep -Fq 'interval: owner.identity.storage ? 2000 : 1500' "$provider_discovery"
 grep -Fq 'process.signal(15)' "$provider_discovery"

@@ -76,6 +76,8 @@ cleanup() {
 	[ -n "${quickshell_pid:-}" ] && kill "$quickshell_pid" 2>/dev/null
 	[ -n "${dwm_pid:-}" ] && kill "$dwm_pid" 2>/dev/null
 	[ -n "${xvfb_pid:-}" ] && kill "$xvfb_pid" 2>/dev/null
+	# What the session detached or orphaned (autostart, helpers, D-Bus services).
+	kill_session_tree "${home:-}"
 	if [ -n "${runtime_alias_dir:-}" ]; then
 		rm -f -- "$runtime_alias_dir/runtime"
 		rmdir -- "$runtime_alias_dir" 2>/dev/null || true
@@ -102,7 +104,12 @@ if [ "${#runtime}" -gt 64 ]; then
 fi
 cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
 cp "$repo/config/"*.toml "$config_home/lyona/"
+# The display and input watchers too, or the Settings shell falls back to the
+# installed copies on PATH (a different version, outside this test's workspace).
 cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
+	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
+	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-simple-watch.sh" \
+	"$repo/scripts/dwm-xsettings-config.sh" "$repo/scripts/dwm-xkbset" \
 	"$data_home/lyona/scripts/"
 
 # A stub dwm-system-management: one pending kernel update (exercising the
@@ -348,6 +355,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 	QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
+	PATH="$data_home/lyona/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 config=$config_home/quickshell/shell.qml

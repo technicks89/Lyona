@@ -490,6 +490,7 @@ check-xvfb-runtime: all
 # and media watchers in the QML models neither drop changes nor respawn forever.
 .PHONY: check-dwm-watchdog check-quickshell-watchers-xvfb check-quickshell-idle-watchers-xvfb
 .PHONY: check-quickshell-state-bridge-xvfb check-quickshell-state-model-xvfb
+.PHONY: check-dwm-reload-theme-xvfb check-quickshell-watcher-lifetime-xvfb
 check-dwm-watchdog:
 	status=0; /usr/bin/python3 tests/test-dwm-watchdog.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
@@ -515,6 +516,18 @@ check-quickshell-state-bridge-xvfb: all
 
 check-quickshell-state-model-xvfb:
 	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-state-model-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# A config reload runs theme-apply.sh only for themes.toml, start-up and SIGUSR1.
+check-dwm-reload-theme-xvfb: all
+	status=0; xvfb-run -a /usr/bin/python3 tests/test-dwm-reload-theme-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# No watcher outlives a Quickshell that is killed (the full shell, every Settings section).
+check-quickshell-watcher-lifetime-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-watcher-lifetime-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1024,6 +1037,8 @@ check:
 	$(MAKE) check-quickshell-idle-watchers-xvfb
 	$(MAKE) check-quickshell-state-bridge-xvfb
 	$(MAKE) check-quickshell-state-model-xvfb
+	$(MAKE) check-dwm-reload-theme-xvfb
+	$(MAKE) check-quickshell-watcher-lifetime-xvfb
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb

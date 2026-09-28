@@ -324,11 +324,14 @@ discover() {
 	local query properties capabilities verbose profile
 	command -v xrandr >/dev/null 2>&1 || die "xrandr is unavailable"
 	[[ -n ${DISPLAY:-} ]] || die "DISPLAY is not set"
-	query=$(mktemp)
-	properties=$(mktemp)
-	capabilities=$(mktemp)
-	verbose=$(mktemp)
-	trap 'rm -f "$query" "$properties" "$capabilities" "$verbose"' RETURN
+	discover_dir=$(mktemp -d)
+	# EXIT too: die() exits, and a RETURN trap does not run on exit. discover is
+	# the whole run (the "discover" action), so no other EXIT trap is replaced.
+	trap '[[ -z ${discover_dir:-} ]] || rm -rf -- "$discover_dir"; discover_dir=' RETURN EXIT
+	query=$discover_dir/query
+	properties=$discover_dir/properties
+	capabilities=$discover_dir/capabilities
+	verbose=$discover_dir/verbose
 	xrandr --query >"$query"
 	grep -q '^Screen [0-9][0-9]*:' "$query" || die "xrandr returned malformed display state"
 	grep -Eq '^[A-Za-z0-9_.:+-]+ connected([[:space:]]|$)' "$query" || die "xrandr reported no connected outputs"

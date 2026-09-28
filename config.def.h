@@ -38,4 +38,3 @@ static const Layout layouts[] = {
 };
 
 #define MODKEY Mod4Mask
-#define STATUSBAR "dwmblocks"

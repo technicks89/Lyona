@@ -22,6 +22,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 repo = Path(__file__).resolve().parents[1]
 if not shutil.which('quickshell') or not os.environ.get('DISPLAY'):
     print('SKIP: quickshell or an X display is unavailable')

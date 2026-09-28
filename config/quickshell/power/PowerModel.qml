@@ -541,7 +541,7 @@ Scope {
     WatchedProcess {
         id: watcher
 
-        command: Commands.powerHelperCommand("power-watch")
+        command: Commands.watchCommand(Commands.powerHelperCommand("power-watch"))
         active: root.sectionVisible
         onSettled: root.refresh()
     }

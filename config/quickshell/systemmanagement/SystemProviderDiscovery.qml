@@ -184,7 +184,7 @@ Scope {
             storage: root.domain === "storage", prefix: selected.prefix });
         const owner = monitorComponent.createObject(root, { identity: identity,
             callbacks: root.monitorCallbacks(identity),
-            command: Commands.systemManagementCommand(selected.action, selected.args) });
+            command: Commands.watchCommand(Commands.systemManagementCommand(selected.action, selected.args)) });
         if (owner === null) {
             root.failed = true;
             root.invalidated();

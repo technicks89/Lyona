@@ -186,7 +186,7 @@ Scope {
     }
 
     Process {
-        command: ["sh", "-c", "command -v busctl >/dev/null 2>&1 && exec busctl --system monitor org.bluez"]
+        command: Commands.watchCommand(["sh", "-c", "command -v busctl >/dev/null 2>&1 && exec busctl --system monitor org.bluez"])
         running: true
         stdout: SplitParser { onRead: monitorSettleTimer.restart() }
     }

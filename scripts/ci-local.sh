@@ -141,7 +141,11 @@ mapfile -t clang_packages < <({
 } | awk 'NF' | sort -u)
 clang_image=lyona-ci-clang:$(printf '%s\n' "${clang_packages[@]}" | sha256sum | cut -c1-12)
 
-logdir=$(mktemp -d "${TMPDIR:-/tmp}/lyona-ci-local.XXXXXX")
+# Under the test root (AGENTS.md), not /tmp. The log folder is kept: its path is
+# printed at the end so the logs can be read.
+ci_tmp=${TMPDIR:-${DWM_TEST_TMP_ROOT:-${HOME:?HOME is required}/tmp}}
+mkdir -p -- "$ci_tmp"
+logdir=$(mktemp -d "$ci_tmp/lyona-ci-local.XXXXXX")
 name=lyona-ci-$(basename "$logdir")
 max_life=14400
 
@@ -177,7 +181,7 @@ ensure_image() {
 		return 0
 	fi
 	printf '==> Building %s (%d packages; this is the slow part, and it is cached)\n' "$tag" "$#"
-	context=$(mktemp -d "${TMPDIR:-/tmp}/lyona-ci-context.XXXXXX")
+	context=$(mktemp -d "$ci_tmp/lyona-ci-context.XXXXXX")
 	if ((strict)); then
 		printf '%s\n' "${clang_build_packages[@]}" >"$context/build-packages.txt"
 		printf '%s\n' "${clang_tool_packages[@]}" >"$context/tool-packages.txt"
@@ -224,7 +228,7 @@ warn_tar_errors() {
 # deleted since the last commit are simply absent. The list goes to a file so a
 # failing git is seen (a process substitution would hide it and tar would
 # quietly copy only .git).
-filelist=$(mktemp "${TMPDIR:-/tmp}/lyona-ci-files.XXXXXX")
+filelist=$(mktemp "$ci_tmp/lyona-ci-files.XXXXXX")
 git -C "$repo" ls-files -z --cached --others --exclude-standard >"$filelist" || {
 	printf 'git ls-files failed; not testing an incomplete tree\n' >&2
 	exit 1

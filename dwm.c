@@ -217,7 +217,6 @@ static int atomlistcontains(const Atom *atoms, unsigned long nitems, Atom atom);
 static unsigned long getatomproplist(Client *c, Atom prop, Atom *atoms, unsigned long maxitems, int *truncated);
 static unsigned long getwinatomproplist(Window win, Atom prop, Atom *atoms, unsigned long maxitems, int *truncated);
 static long getstate(Window w);
-static pid_t getstatusbarpid();
 static int gettextprop(Window w, Atom atom, char *text, unsigned int size);
 static void grabbuttons(Client *c, int focused);
 static void grabkeys(void);
@@ -333,7 +332,6 @@ static void sigchld(int unused);
 static void sigusr2_handler(int sig);
 static void sig_wake_drain(void);
 static void sig_wake_setup(void);
-static void sigstatusbar(const Arg *arg);
 static void setup(void);
 static void unmapnotify(XEvent *e);
 
@@ -372,12 +370,12 @@ static void load_themes_toml(const char *user_path, const char *default_path);
 static void load_rules_toml(const char *user_path, const char *default_path);
 static void notify_bad_config(const char *filename, const char *reason);
 static int pathjoin(char *dst, size_t dstsz, const char *dir, const char *name);
-static void reload_config(void);
+static void reload_config(int applytheme);
 static int runtime_config_fd(void);
 static void runtime_config_mark_reload_pending(void);
 static void runtime_config_poll_inotify(void);
 static void runtime_config_ensure_user_watch(void);
-static void runtime_config_reload(void);
+static void runtime_config_reload(int applytheme);
 static void runtime_config_reload_if_pending(void);
 static void runtime_config_setup(void);
 static void setup_inotify(void);
@@ -390,8 +388,6 @@ static const char dwmdir[] = "lyona";
 static const char localshare[] = ".local/share";
 static char stext[256];
 static int statusw;
-static int statussig;
-static pid_t statuspid = -1;
 static int screen;
 static int sw, sh;
 static int bh;
@@ -805,7 +801,6 @@ buttonpress(XEvent *e)
 		else if (ev->x > selmon->ww - statusw) {
 			x = selmon->ww - statusw;
 			click = ClkStatusText;
-			statussig = 0;
 			for (text = s = stext; *s && x <= ev->x; s++) {
 				if ((unsigned char)(*s) < ' ') {
 					ch = *s;
@@ -815,7 +810,6 @@ buttonpress(XEvent *e)
 					text = s + 1;
 					if (x >= ev->x)
 						break;
-					statussig = ch;
 				}
 			}
 		} else
@@ -1665,36 +1659,6 @@ getparentprocess(pid_t p)
 #endif
 
 	return (pid_t)v;
-}
-
-pid_t
-getstatusbarpid()
-{
-	char buf[32], *str = buf, *c;
-	FILE *fp;
-
-	if (statuspid > 0) {
-		snprintf(buf, sizeof(buf), "/proc/%u/cmdline", statuspid);
-		if ((fp = fopen(buf, "r"))) {
-			if (fgets(buf, sizeof(buf), fp)) {
-				while ((c = strchr(str, '/')))
-					str = c + 1;
-				fclose(fp);
-				if (!strcmp(str, STATUSBAR))
-					return statuspid;
-			} else {
-				fclose(fp);
-			}
-		}
-	}
-	if (!(fp = popen("pidof -s "STATUSBAR, "r")))
-		return -1;
-	if (!fgets(buf, sizeof(buf), fp)) {
-		pclose(fp);
-		return -1;
-	}
-	pclose(fp);
-	return strtol(buf, NULL, 10);
 }
 
 int
@@ -3556,7 +3520,6 @@ static void (*lookup_func(const char *name))(const Arg *)
 	if (strcmp(name, "tagmon")               == 0) return tagmon;
 	if (strcmp(name, "moveorplace")          == 0) return moveorplace;
 	if (strcmp(name, "resizemouse")          == 0) return resizemouse;
-	if (strcmp(name, "sigstatusbar")         == 0) return sigstatusbar;
 	return NULL;
 }
 
@@ -4093,15 +4056,18 @@ load_rules_toml(const char *user_path, const char *default_path)
 	fprintf(stderr, "dwm: loaded %d window rules from config\n", nk);
 }
 
+/* applytheme: also run theme-apply.sh, which regenerates the GTK, Qt, terminal
+ * and other application themes from themes.toml. A change to hotkeys.toml or
+ * window-rules.toml alone does not need it. */
 static void
-reload_config(void)
+reload_config(int applytheme)
 {
 	load_hotkeys_toml(toml_hotkeys_path, toml_hotkeys_default_path);
 	load_themes_toml(toml_themes_path,   toml_themes_default_path);
 	load_rules_toml(toml_rules_path,     toml_rules_default_path);
 	if (dpy) grabkeys();
 
-	{
+	if (applytheme) {
 		pid_t pid = fork();
 		if (pid == 0) {
 
@@ -4135,7 +4101,7 @@ runtime_config_poll_inotify(void)
 {
 	char ibuf[4096];
 	ssize_t nr = read(inotify_fd, ibuf, sizeof(ibuf));
-	int need_reload = 0;
+	int need_reload = 0, themes_changed = 0;
 	char *ptr = ibuf;
 	char *end;
 
@@ -4152,17 +4118,19 @@ runtime_config_poll_inotify(void)
 		     strcmp(ie->name, "themes.toml")       == 0 ||
 		     strcmp(ie->name, "window-rules.toml") == 0))
 			need_reload = 1;
+		if (ie->len > 0 && strcmp(ie->name, "themes.toml") == 0)
+			themes_changed = 1;
 		ptr += sizeof(struct inotify_event) + ie->len;
 	}
 	if (need_reload)
-		runtime_config_reload();
+		runtime_config_reload(themes_changed);
 }
 
 static void
-runtime_config_reload(void)
+runtime_config_reload(int applytheme)
 {
 	runtime_config_ensure_user_watch();
-	reload_config();
+	reload_config(applytheme);
 }
 
 static void
@@ -4186,7 +4154,7 @@ runtime_config_reload_if_pending(void)
 	if (!sig_reload_pending)
 		return;
 	sig_reload_pending = 0;
-	runtime_config_reload();
+	runtime_config_reload(1);
 }
 
 static void
@@ -4501,7 +4469,7 @@ setup(void)
 
 	signal(SIGUSR1, sigusr1_handler);
 	runtime_config_setup();
-	runtime_config_reload();
+	runtime_config_reload(1);
 	grabkeys();
 	focus(NULL);
 }
@@ -4549,20 +4517,6 @@ sigchld(int unused)
 	if (signal(SIGCHLD, sigchld) == SIG_ERR)
 		die("can't install SIGCHLD handler:");
 	while (waitpid(-1, NULL, WNOHANG) > 0);
-}
-
-void
-sigstatusbar(const Arg *arg)
-{
-	union sigval sv;
-
-	if (!statussig)
-		return;
-	sv.sival_int = arg->i;
-	if ((statuspid = getstatusbarpid()) <= 0)
-		return;
-
-	sigqueue(statuspid, SIGRTMIN+statussig, sv);
 }
 
 int
@@ -5596,7 +5550,6 @@ updatestatus(void)
 				statusw += TEXTW(text) - lrpad;
 				*s = ch;
 				text = s + 1;
-				statussig = ch;
 			}
 		}
 		statusw += TEXTW(text) - lrpad + 2;

@@ -241,7 +241,7 @@ Scope {
     WatchedProcess {
         id: watcher
 
-        command: Commands.defaultsHelperCommand("watch", [])
+        command: Commands.watchCommand(Commands.defaultsHelperCommand("watch", []))
         active: root.settingsVisible
         onSettled: root.refresh()
     }

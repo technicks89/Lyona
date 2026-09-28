@@ -8,6 +8,8 @@ import sys
 import unittest
 from unittest.mock import patch
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 
 sys.dont_write_bytecode = True
 loader = importlib.machinery.SourceFileLoader(

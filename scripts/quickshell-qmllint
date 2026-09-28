@@ -214,7 +214,10 @@ fi
 }
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 imports=$(
 	printf '%s\n' "$files" |
@@ -258,4 +261,7 @@ done <<EOF
 $files
 EOF
 
-exec "$qmllint" "$@"
+# Not exec: the EXIT trap above must still remove the lint-only import tree.
+status=0
+"$qmllint" "$@" || status=$?
+exit "$status"

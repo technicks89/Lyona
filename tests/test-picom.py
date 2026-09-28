@@ -14,6 +14,8 @@ from itertools import chain, count, repeat
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 loader = importlib.machinery.SourceFileLoader(
     "picom_settings",
     str(Path(__file__).resolve().parents[1] / "scripts/dwm-settings-picom"),

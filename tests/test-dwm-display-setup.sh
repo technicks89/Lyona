@@ -534,6 +534,9 @@ grep -Fq 'output is not connected' "$work/output-error"
 
 settings_env=(
 	"${env_common[@]}"
+	# The watcher's owner-death backstop is 5 s by default; the owner-exit case
+	# tests that it works, not how long it waits.
+	LYONA_PARENT_BOUND_INTERVAL=0.2
 	DWM_DISPLAY_SETUP="$HELPER"
 	DWM_DISPLAY_PROFILE_DIR="$work/home/.config/lyona/display-profiles"
 	XDG_RUNTIME_DIR="$work/runtime"
@@ -757,6 +760,42 @@ for identity in "${watch_test_identities[@]}"; do
 		exit 1
 	fi
 done
+watch_test_identities=()
+
+# The watcher itself killed outright, as Quickshell stops one it no longer needs:
+# its udevadm monitor is bound to it and must not be left running (S12-09).
+rm -f "$work/watch-helper.id" "$work/watch-helper.id.owner" \
+	"$work/watch-monitor.id" "$work/watch-output"
+env "${settings_env[@]}" TEST_WATCH_MONITOR_ID="$work/watch-monitor.id" \
+	TEST_SLEEP_BIN="$(command -v sleep)" "$work/watch-owner" "$work/watch-helper.id" \
+	"$BASH_BIN" "$SETTINGS_HELPER" watch >"$work/watch-output" &
+watch_test_launcher_pid=$!
+for _ in {1..50}; do
+	[[ -s $work/watch-helper.id.owner && -s $work/watch-helper.id && -s $work/watch-monitor.id ]] &&
+		grep -Fqx changed "$work/watch-output" && break
+	sleep 0.05
+done
+owner_identity=$(<"$work/watch-helper.id.owner")
+watch_test_owner_identity=$owner_identity
+watch_test_owner_pid=${owner_identity%%:*}
+helper_identity=$(<"$work/watch-helper.id")
+monitor_identity=$(<"$work/watch-monitor.id")
+# For cleanup_test, should this case stop early.
+watch_test_identities+=("$helper_identity" "$monitor_identity")
+identity_is_live "$monitor_identity"
+kill -KILL "${helper_identity%%:*}"
+for _ in {1..20}; do
+	identity_is_live "$monitor_identity" || break
+	sleep 0.05
+done
+if identity_is_live "$monitor_identity"; then
+	printf 'display event monitor survived its killed watcher: %s\n' "$monitor_identity" >&2
+	exit 1
+fi
+kill -KILL "$watch_test_owner_pid" 2>/dev/null || true
+wait "$watch_test_owner_pid" 2>/dev/null || true
+watch_test_owner_pid=
+watch_test_owner_identity=
 watch_test_identities=()
 
 sleep_bin=$(command -v sleep)

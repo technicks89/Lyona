@@ -262,7 +262,7 @@ Scope {
     WatchedProcess {
         id: watcher
 
-        command: Commands.autostartHelperCommand("watch", [])
+        command: Commands.watchCommand(Commands.autostartHelperCommand("watch", []))
         active: root.settingsVisible
         onSettled: root.refresh()
     }

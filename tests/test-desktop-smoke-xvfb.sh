@@ -89,6 +89,8 @@ cleanup() {
 	terminate_process_identity "${quickshell_identity:-}"
 	terminate_process_identity "${dwm_identity:-}"
 	terminate_process_identity "${xvfb_identity:-}"
+	# What the session detached or orphaned (autostart, helpers, D-Bus services).
+	kill_session_tree "${home:-}"
 	rm -rf "$work"
 	trap - EXIT HUP INT TERM
 	exit "$cleanup_status"

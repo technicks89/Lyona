@@ -124,7 +124,7 @@ Scope {
     WatchedProcess {
         id: accessibilityWatcher
 
-        command: Commands.accessibilitySettingsCommand("watch", [])
+        command: Commands.watchCommand(Commands.accessibilitySettingsCommand("watch", []))
         active: true
         settleInterval: 100
         onSettled: root.refresh()

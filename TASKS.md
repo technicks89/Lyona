@@ -283,3 +283,13 @@ update in the same PR, so completed items are pinned here too, not only in
   tag switch causes one rebuild (was 3-5) and opening 10 windows 10 (was 286); the plan's 30 s check measured 1.07% of
   a core (old script: 30.17%). The plan's step 4 (structured root
   property or xcb watcher) is not done; multi-monitor was not run.
+- [x] Sync Sprint 12 S12-09 -- stop needless work on events, issue `#172` -- `scripts/dwm-status` (power only,
+  on change, exits with its display), `dwm.c` (`theme-apply.sh` only for `themes.toml`; dwmblocks removed),
+  `config.def.h`, `dwm-window-thumb.c`; items 5-6 added: test leftovers (`scripts/quickshell-qmllint`,
+  `tests/lib.sh` `TMPDIR` and `kill_session_tree`, `tests/lyona_tmp.py`, `scripts/ci-local.sh`,
+  `scripts/dwm-settings-display`, `scripts/dwm-settings-input`, `scripts/dwm-simple-watch.sh`) and every resident
+  watcher bound to Quickshell (`Commands.watchCommand`, 16 launches). Tests: `tests/test-dwm-status.sh`,
+  `tests/test-dwm-reload-theme-xvfb.py`, `tests/test-quickshell-watcher-lifetime-xvfb.py`,
+  `tests/test-dwm-display-setup.sh`. Evidence: `docs/evidence/s12-09-needless-work.md`. After a Quickshell SIGKILL
+  0 of 20 processes are left (was 12); full suite PASS. Not measured: the thumbnail round trips saved and the
+  display/input watchers' CPU.
