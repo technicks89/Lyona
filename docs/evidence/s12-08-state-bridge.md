@@ -55,16 +55,23 @@ watcher binary) is not done.
   | | Before (`main`) | After |
   |---|---|---|
   | Opening 10 windows (0.3 s apart): rebuilds | 286 | 10 |
-  | Opening 10 windows: watcher CPU | 9.12 s in 8.6 s | 0.31 s in 4.0 s |
+  | Opening 10 windows: watcher CPU | 9.12 s in 8.6 s (106% of a core) | 0.31 s in 4.0 s; 3.3% over the 10 s from the first window |
   | Tag switch and back: rebuilds | 3 and 5 | 1 and 1 |
   | 10 title changes, 1 a second: rebuilds | 20 | 10 |
   | Root properties dwm writes for one tag switch | `_NET_ACTIVE_WINDOW`, `_DWM_MONITOR_DESKTOPS`, `_DWM_FULLSCREEN_MONITORS` | the first two |
   | Move a window to the tag it is on: property writes | 2 | 0 |
 
+  - **The plan's 30 s check** (`DWM_STATE_BRIDGE_SECONDS=30`, CPU over the 30 s from the
+    first of 10 windows opening): **1.07%** of a core, 10 rebuilds, PASS. The old script
+    on the same (new) dwm: **30.17%**, 266 rebuilds, and 2 and 4 rebuilds per tag switch
+    (one fewer event than on `main`, because dwm no longer rewrites the fullscreen
+    list): FAIL. The review measured 9.7% over the same window with its own
+    workload.
   - It also checks that the last block is right: the switched tag, all 10 windows and
     the last title.
   - It checks that SIGTERM, which is how Quickshell stops the watcher, ends it and all
-    11 `xprop` watchers.
+    11 `xprop` watchers. `make check-quickshell-state-bridge-xvfb`: 11 resident, 0 left
+    after SIGTERM, PASS.
   - Against the old dwm (with the new script) it fails on the fullscreen rewrite and
     the same-tag move. Against the old script it fails on the rebuild counts.
 - **`tests/test-quickshell-state-model-xvfb.py`** (new,
