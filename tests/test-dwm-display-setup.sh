@@ -780,6 +780,8 @@ watch_test_owner_identity=$owner_identity
 watch_test_owner_pid=${owner_identity%%:*}
 helper_identity=$(<"$work/watch-helper.id")
 monitor_identity=$(<"$work/watch-monitor.id")
+# For cleanup_test, should this case stop early.
+watch_test_identities+=("$helper_identity" "$monitor_identity")
 identity_is_live "$monitor_identity"
 kill -KILL "${helper_identity%%:*}"
 for _ in {1..20}; do
@@ -794,6 +796,7 @@ kill -KILL "$watch_test_owner_pid" 2>/dev/null || true
 wait "$watch_test_owner_pid" 2>/dev/null || true
 watch_test_owner_pid=
 watch_test_owner_identity=
+watch_test_identities=()
 
 sleep_bin=$(command -v sleep)
 "$sleep_bin" 0.1 &

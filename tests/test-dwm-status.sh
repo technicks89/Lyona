@@ -83,12 +83,18 @@ exec sleep 60
 SH
 chmod +x "$work/bin/udevadm"
 
-# The display check on a tick with nothing new to publish; it fails once the
-# test has marked the display gone.
+# The read-back on a tick with nothing new to publish: the last name written, or
+# another client's once (the stub consumes the marker) after the test has marked it
+# overwritten; it fails once the test has marked the display gone.
 cat >"$work/bin/xprop" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"$DWM_STATUS_TEST_STATE/xprop.calls"
-[ ! -e "$DWM_STATUS_TEST_STATE/display-gone" ]
+[ ! -e "$DWM_STATUS_TEST_STATE/display-gone" ] || exit 1
+if rm "$DWM_STATUS_TEST_STATE/overwritten" 2>/dev/null; then
+	printf 'WM_NAME = "%s"\n' 'someone else'
+else
+	printf 'WM_NAME = "%s"\n' "$(tail -n 1 "$DWM_STATUS_TEST_LOG" 2>/dev/null)"
+fi
 SH
 chmod +x "$work/bin/xprop"
 
@@ -307,6 +313,37 @@ if kill -0 "$xsetroot_pid" 2>/dev/null; then
 	xsetroot_state=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[1] }' "/proc/$xsetroot_pid/stat" 2>/dev/null || true)
 	[ "$xsetroot_state" = Z ]
 fi
+
+# Another client overwrote WM_NAME: the next quiet tick reads it back and writes
+# the power state again, once.
+: >"$work/overwrite-status.log"
+PATH="$work/bin:/usr/bin:/bin" DISPLAY=:205 \
+	DWM_STATUS_TEST_LOG="$work/overwrite-status.log" DWM_STATUS_TEST_STATE="$work" \
+	DWM_STATUS_POWER_SUPPLY_DIR="$work/power" DWM_STATUS_POWER_POLL_INTERVAL=0.1 \
+	XDG_RUNTIME_DIR="$work/runtime" "$repo/scripts/dwm-status" &
+overwrite_runner=$!
+track_runner "$overwrite_runner"
+for _ in $(seq 1 50); do
+	[ -s "$work/overwrite-status.log" ] && break
+	sleep 0.02
+done
+sleep 0.3
+[ "$(wc -l <"$work/overwrite-status.log")" -eq 1 ]
+: >"$work/overwritten"
+for _ in $(seq 1 50); do
+	[ "$(wc -l <"$work/overwrite-status.log")" -ge 2 ] && break
+	sleep 0.02
+done
+sleep 0.3
+[ "$(wc -l <"$work/overwrite-status.log")" -eq 2 ] || {
+	printf 'An overwritten WM_NAME was not restored exactly once:\n' >&2
+	cat "$work/overwrite-status.log" >&2
+	exit 1
+}
+[ "$(sed -n 2p "$work/overwrite-status.log")" = "$(sed -n 1p "$work/overwrite-status.log")" ]
+kill -TERM "$overwrite_runner"
+wait "$overwrite_runner" || overwrite_status=$?
+[ "${overwrite_status:-0}" -eq 143 ]
 
 # Its X server gone (as after a killed session): the next quiet tick's display
 # check fails and dwm-status exits, taking its providers with it.

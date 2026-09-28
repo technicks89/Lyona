@@ -16,8 +16,11 @@ repository's test leftovers in `~/tmp` and `/tmp`.
    - **Found while planning:** the periodic rewrite was also how an orphaned
      `dwm-status` noticed that its X server had gone. The Xvfb smoke test, which kills
      dwm rather than quitting it, left one running. On a tick with nothing new, it now
-     reads `WM_NAME` with `xprop` (no write), and exits when that fails. The 30 s tick
+     reads `WM_NAME` back with `xprop`, and exits when that fails. The 30 s tick
      stays: battery capacity is a sampled value.
+   - **Review:** if the value read back differs (another client wrote `WM_NAME`), it
+     writes the power state again. New test case: after an outside overwrite, the name
+     is restored exactly once. A version that ignores the value read back fails it.
    - `tests/test-dwm-status.sh`: the restart and churn cases now drive the `udevadm`
      source, which shares the restart code. New cases: three ticks with the same
      battery write nothing (but do check the display), and a lost display makes it
@@ -128,7 +131,19 @@ Each new test fails against the old code:
 `tests/test-window-thumb-xvfb.py` passes: the visible and off-tag captures are
 unchanged. It is not in the Makefile; S12-12 covers the thumbnail tests.
 
-**Full suite** (`scripts/run-tests`): PASS on the third run.
+**Review changes to the lifetime test:**
+- A failed `settings select` fails the test.
+- Each section with an on-demand watcher must show it within 5 s: display, input,
+  the notification owner (`busctl --user monitor`, which `dwm-settings-provider`
+  execs), and `dwm-system-management`.
+- Before killing Quickshell, the test waits until the process set has not changed for
+  2 s. With the quicker walk, a one-shot `dwm-system-management snapshot` was
+  sometimes still running at the kill. It is bounded by its own timeouts and gone
+  within 20 s, so it is a one-shot, not a resident watcher.
+- It still fails with `watchCommand` disabled: 8 processes left.
+
+**Full suite** (`scripts/run-tests`): PASS on the third run, and again after the review
+changes.
 - The first run failed in `check-display-setup`. Its owner-exit case expects the
   watcher gone within 4 s, and the backstop is now 5 s, so the test (like
   `test-settings-input.sh`) now sets `LYONA_PARENT_BOUND_INTERVAL=0.2`.
@@ -156,6 +171,11 @@ form: `test-quickshell-system-management.sh` and `test-quickshell-accessibility.
   early unlink cannot cover. With no `XDG_RUNTIME_DIR` (`test-dwm-display-setup.sh`
   sets none) the folder lands in `TMPDIR`. A real session always has
   `XDG_RUNTIME_DIR`, which logout clears.
+- **Two more fifo folders under `TMPDIR`.** `dwm-quickshell-state watch` (`tmp.*/events`)
+  and the appearance-inventory watcher (`dwm-appearance-inventory.*`) create theirs under
+  `${TMPDIR:-/tmp}`. A SIGKILL, which runs no trap, leaves the folder behind. The
+  lifetime test's teardown hit this (it now sends TERM first). The display and input
+  watchers got the fix (runtime directory, early unlink); these two did not.
 - **Preview rollback watchdogs** (`dwm-settings-input _watch`) started by
   `tests/test-settings.sh` outlive the test by their timeout (a few seconds), then
   revert and exit on their own. Unchanged.

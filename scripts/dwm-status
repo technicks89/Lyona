@@ -169,17 +169,22 @@ stop_child() {
 
 # The root WM_NAME carries the power state only: the shell has its own volume and
 # network models, and every write wakes its state bridge, so only a change is
-# written. On a tick with nothing new, the display is still checked (without
-# writing to it): that is how a dwm-status whose X server has gone away exits.
+# written. On a tick with nothing new, WM_NAME is read back instead: a failed read
+# is how a dwm-status whose X server has gone away exits, and a value another
+# client wrote is replaced.
 publish() {
-	local text
+	local text current
 
 	text=$(power_text)
 	if [[ $text == "$last_published" ]]; then
-		timeout --kill-after=0.2 "$publish_timeout" \
-			xprop -root -notype WM_NAME >/dev/null 2>&1 && return 0
-		((signal_exit != 0)) && return 0
-		return 1
+		if ! current=$(timeout --kill-after=0.2 "$publish_timeout" \
+			xprop -root -notype WM_NAME 2>/dev/null); then
+			((signal_exit != 0)) && return 0
+			return 1
+		fi
+		# 'WM_NAME = "text"', or 'WM_NAME:  not found.' when nothing set it.
+		[[ $current == 'WM_NAME = "'*'"' ]] && current=${current#WM_NAME = \"} && current=${current%\"}
+		[[ $current != "$text" ]] || return 0
 	fi
 	if ! timeout --kill-after=0.2 "$publish_timeout" \
 		xsetroot -name "$text" 2>/dev/null; then

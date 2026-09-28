@@ -30,6 +30,14 @@ if not shutil.which('quickshell') or not os.environ.get('DISPLAY') or not (repo 
 
 GRACE = float(os.environ.get('DWM_WATCHER_LIFETIME_GRACE', '3'))
 SECTIONS = ['displays', 'input', 'network', 'bluetooth', 'audio', 'power', 'defaults', 'appearance', 'system']
+# The watcher each section starts on demand (the others have none of their own),
+# as it appears in the command line: the helper and its action.
+ON_DEMAND = {
+    'displays': 'dwm-settings-display watch',
+    'input': 'dwm-settings-input watch',
+    'appearance': 'busctl --user --no-pager monitor',  # dwm-settings-provider execs it
+    'system': 'dwm-system-management watch',
+}
 
 
 def stat(pid):
@@ -65,6 +73,14 @@ def identity(pid):
         return None
     words = [os.path.basename(a.decode(errors='replace')) for a in args if a][:4]
     return pid, fields[19], ' '.join(words)
+
+
+def command_line(pid):
+    try:
+        args = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
+    except (FileNotFoundError, ProcessLookupError):
+        return ''
+    return ' '.join(os.path.basename(a.decode(errors='replace')) for a in args if a)
 
 
 def alive(ident):
@@ -141,13 +157,39 @@ with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
             raise SystemExit(1)
         started = {}
         for section in SECTIONS:
-            ipc('settings', 'select', section)
-            time.sleep(1.5)
-            for pid in tree(shell):
-                ident = identity(pid)
-                if ident:
-                    started[ident[:2]] = ident
-        time.sleep(1)
+            selected = ipc('settings', 'select', section)
+            if selected.returncode != 0:
+                print('FAIL: selecting the %s section failed: %s' % (section, selected.stderr.strip()),
+                      file=sys.stderr)
+                raise SystemExit(1)
+            wanted = ON_DEMAND.get(section)
+            deadline = time.time() + (5 if wanted else 1.5)
+            while True:
+                running = tree(shell)
+                for pid in running:
+                    ident = identity(pid)
+                    if ident:
+                        started[ident[:2]] = ident
+                if not wanted and time.time() >= deadline:
+                    break
+                if wanted and any(wanted in command_line(pid) for pid in running):
+                    break
+                if time.time() >= deadline:
+                    print('FAIL: the %s section did not start its watcher (%s)' % (section, wanted),
+                          file=sys.stderr)
+                    raise SystemExit(1)
+                time.sleep(0.1)
+        # Let one-shot helpers still in flight (a snapshot, a checked command) finish:
+        # they end on their own, bounded by their own timeouts. What is left once the
+        # set has not changed for 2 s is what stays resident.
+        last, since, deadline = None, time.time(), time.time() + 15
+        while time.time() < deadline:
+            now = frozenset(ident[:2] for ident in map(identity, tree(shell)) if ident)
+            if now != last:
+                last, since = now, time.time()
+            elif time.time() - since >= 2:
+                break
+            time.sleep(0.25)
         for pid in tree(shell):  # what is running now, the section just left included
             ident = identity(pid)
             if ident:
@@ -164,11 +206,17 @@ with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
             names[ident[2]] = names.get(ident[2], 0) + 1
         report['left_by_name'] = names
     finally:
-        for pid in tree(wm.pid) | carrying(str(base).encode()):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+        # TERM first, so the shell autostart relaunched and its watchers run their
+        # own cleanup (their fifo folders); KILL whatever is left after 3 s.
+        for sig, wait in ((signal.SIGTERM, 3), (signal.SIGKILL, 0)):
+            for pid in tree(wm.pid) | carrying(str(base).encode()):
+                try:
+                    os.kill(pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            deadline = time.time() + wait
+            while time.time() < deadline and (tree(wm.pid) | carrying(str(base).encode())):
+                time.sleep(0.1)
         wm.wait()
         log.close()
 
