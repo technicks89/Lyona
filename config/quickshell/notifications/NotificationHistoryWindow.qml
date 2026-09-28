@@ -59,6 +59,7 @@ FloatingWindow {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 visible: root.notificationModel.history.length === 0
                 text: "No notifications"
@@ -120,6 +121,7 @@ FloatingWindow {
                                     spacing: Theme.listSpacing * 2
 
                                     Text {
+                                        textFormat: Text.PlainText
                                         Layout.fillWidth: true
                                         text: historyEntry.modelData.appName || "Notification"
                                         color: historyEntry.modelData.urgencyName === "critical" ? Theme.danger : Theme.menuActionText
@@ -131,6 +133,7 @@ FloatingWindow {
                                     }
 
                                     Text {
+                                        textFormat: Text.PlainText
                                         text: Qt.formatTime(new Date(historyEntry.modelData.timestamp || Date.now()), "hh:mm")
                                         color: Theme.menuMutedText
                                         font.family: Theme.fontFamily
@@ -139,6 +142,7 @@ FloatingWindow {
                                 }
 
                                 Text {
+                                    textFormat: Text.PlainText
                                     Layout.fillWidth: true
                                     text: historyEntry.modelData.summary || historyEntry.modelData.urgencyName || ""
                                     color: Theme.popupText
@@ -149,6 +153,7 @@ FloatingWindow {
                                 }
 
                                 Text {
+                                    textFormat: Text.PlainText
                                     Layout.fillWidth: true
                                     visible: text.length > 0
                                     text: historyEntry.modelData.body || ""

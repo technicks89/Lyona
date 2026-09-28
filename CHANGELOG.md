@@ -1360,6 +1360,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Security
 
+- The shell shows text from other programs as text, never as markup (Sync Sprint 12 S12-06, issue `#169`). Qt's default
+  `Text.AutoText` rendered notification summaries and bodies, window titles, and network, device and application names
+  as rich text: a notification carrying `<img src="http://...">` made the shell fetch it (a tracking beacon, and remote
+  images fed to Qt's decoders), and a window title could restyle the panel. `UiText`, `SectionLabel` and every other
+  `Text` in the managed shell (91 elements in 23 files) now set `textFormat: Text.PlainText`; nothing in the shell used
+  markup, so nothing else changes. New `tests/test-quickshell-plain-text.sh` (`make check-quickshell-plain-text`)
+  fails on any `Text` without it or any request for another format, and `tests/test-quickshell-plain-text-xvfb.sh`
+  (`make check-quickshell-plain-text-xvfb`) sends a notification and opens a window whose text points `<img>` tags at a
+  local listener, and asserts nothing is fetched and Qt parses no markup. Both are part of `make check`.
+
 - The privileged update helper no longer builds a user's checkout as root or writes through paths in their home
   (Sync Sprint 12 S12-03, issue `#166`, decision D-15). `lyona-update apply --from-checkout DIR` and
   `lyona-update-root install-system checkout` are removed: after one password prompt, root ran `make install-system` in a

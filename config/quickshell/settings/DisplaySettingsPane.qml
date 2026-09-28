@@ -97,6 +97,7 @@ Flickable {
             visible: root.settingsModel.automaticDisplaysRelevant
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: "Automatic layouts - login and dock connection"
             color: Theme.textStrong
@@ -106,6 +107,7 @@ Flickable {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: root.settingsModel.automaticDisplayState.error || ("Matching hardware: "
                 + (root.settingsModel.automaticDisplayState.detected.join(", ") || "no saved match")
@@ -141,6 +143,7 @@ Flickable {
                         anchors.margins: Theme.dp(8)
                         spacing: Theme.tightSpacing
                         Text {
+                            textFormat: Text.PlainText
                             Layout.fillWidth: true
                             text: automaticCard.modelData === "undocked" ? "Undocked - built-in only" : "Docked - saved monitors"
                             color: Theme.textStrong
@@ -167,6 +170,7 @@ Flickable {
                                     border.color: Theme.accent
                                     radius: Theme.controlRadius
                                     Text {
+                                        textFormat: Text.PlainText
                                         anchors.centerIn: parent
                                         text: savedTile.modelData.number
                                         color: Theme.textStrong
@@ -177,6 +181,7 @@ Flickable {
                             }
                         }
                         Text {
+                            textFormat: Text.PlainText
                             Layout.fillWidth: true
                             text: root.settingsModel.automaticDisplaySummary(automaticCard.modelData)
                             color: automaticCard.profile.error ? Theme.warning : Theme.textMuted
@@ -207,6 +212,7 @@ Flickable {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: root.settingsModel.automaticDisplaysRelevant
             text: root.settingsModel.automaticDisplayMessage || "Edit a saved layout below, or save the current draft. Docked matches monitor identities; Undocked enables only the built-in screen. No administrator approval is needed."
@@ -230,6 +236,7 @@ Flickable {
                 anchors.top: parent.top
                 anchors.margins: Theme.dp(8)
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: "Save the draft below as " + root.saveAutomaticRole
                         + " for autorandr at login and connection changes? This replaces that saved layout with a backup, without applying it now. Autorandr will ignore session-specific CRTC assignments and output properties. Test with Apply changes first."
@@ -251,6 +258,7 @@ Flickable {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: root.settingsModel.automaticDisplaysRelevant
             text: "Editing: " + root.settingsModel.displayEditingRole + " draft - not applied until you choose Apply changes"
@@ -263,6 +271,7 @@ Flickable {
             Layout.fillWidth: true
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.settingsModel.displayMessage
                 color: root.settingsModel.displayState === "failure" ? Theme.danger : Theme.textMuted
@@ -294,6 +303,7 @@ Flickable {
                 anchors.fill: parent
                 anchors.margins: 7
 				Text {
+					textFormat: Text.PlainText
 					Layout.fillWidth: true
 					text: root.settingsModel.previewSeconds > 0
 						? "Keep these display settings? Reverting in " + root.settingsModel.previewSeconds + " seconds."
@@ -324,6 +334,7 @@ Flickable {
                 Math.min((width - Theme.dp(32)) / layout.width, (height - Theme.dp(48)) / layout.height))
 
             Text {
+                textFormat: Text.PlainText
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.margins: Theme.spacingLg
@@ -352,6 +363,7 @@ Flickable {
                         radius: Theme.controlRadius
                         Accessible.name: "Monitor " + modelData.number + " - " + modelData.name + (modelData.primary ? " - primary" : "")
                         Text {
+                            textFormat: Text.PlainText
                             anchors.centerIn: parent
                             text: monitorTile.modelData.number
                             color: Theme.textStrong
@@ -406,8 +418,9 @@ Flickable {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { Layout.fillWidth: true; text: "Monitor " + (outputCard.index + 1) + " - " + outputCard.modelData.name; color: Theme.textStrong; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize; font.bold: true }
+                        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Monitor " + (outputCard.index + 1) + " - " + outputCard.modelData.name; color: Theme.textStrong; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize; font.bold: true }
                         Text {
+                            textFormat: Text.PlainText
                             text: outputCard.modelData.fullCompositionPipeline === "available"
                                 ? "NVIDIA anti-tearing available at next login"
                                 : (outputCard.modelData.tearfree === "available" ? "TearFree available" : "Anti-tearing unsupported")
@@ -428,6 +441,7 @@ Flickable {
                             spacing: Theme.tightSpacing
 
                             Text {
+                                textFormat: Text.PlainText
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Resolution"
                                 color: Theme.textMuted
@@ -452,6 +466,7 @@ Flickable {
                             spacing: Theme.tightSpacing
 
                             Text {
+                                textFormat: Text.PlainText
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "Refresh rate"
                                 color: Theme.textMuted
@@ -475,6 +490,7 @@ Flickable {
                                 }
                             }
                             Text {
+                                textFormat: Text.PlainText
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: refreshRateSelector.rateChoices.length <= 1
                                 text: outputCard.modelData.rate + " Hz"
@@ -523,6 +539,7 @@ Flickable {
                         }
                     }
                     Text {
+                        textFormat: Text.PlainText
                         visible: outputCard.modelData.enabled && outputCard.placementTargets.length === 0
                         text: "Enable another monitor to arrange it beside this one."
                         color: Theme.textMuted
@@ -549,8 +566,9 @@ Flickable {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Text { text: "Scaling"; color: Theme.textStrong; font.family: Theme.fontFamily; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: "Scaling"; color: Theme.textStrong; font.family: Theme.fontFamily; font.bold: true }
                     Text {
+                        textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: "Xft DPI " + root.settingsModel.minDisplayDpi + "-" + root.settingsModel.maxDisplayDpi
                         color: Theme.textMuted
@@ -609,6 +627,7 @@ Flickable {
                 }
 
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.scalingDetail
                     color: Theme.textMuted
@@ -621,7 +640,7 @@ Flickable {
 
         RowLayout {
             Layout.fillWidth: true
-            Text { text: "Layout name"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize }
+            Text { textFormat: Text.PlainText; text: "Layout name"; color: Theme.textMuted; font.family: Theme.fontFamily; font.pixelSize: Theme.bodyFontSize }
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(Theme.controlHeight,
@@ -639,6 +658,7 @@ Flickable {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: !root.settingsModel.displayPersistenceAvailable
             text: root.settingsModel.displayPersistenceCapability.detail
@@ -659,6 +679,7 @@ Flickable {
                 id: confirmationRow
                 anchors.fill: parent; anchors.margins: 8
                 Text {
+                    textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.confirmation === "install"
                         ? "Use saved layout '" + root.profileName + "' automatically at the next login? Administrator approval is required; the previous next-login layout will be backed up."
@@ -695,6 +716,7 @@ Flickable {
         Repeater {
             model: root.settingsModel.displayUnsupportedProfiles
             delegate: Text {
+                textFormat: Text.PlainText
                 required property var modelData
                 Layout.fillWidth: true
                 text: "Saved layout " + modelData.name + ": " + modelData.detail

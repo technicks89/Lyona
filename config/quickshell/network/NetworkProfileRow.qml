@@ -36,6 +36,7 @@ Rectangle {
             spacing: Theme.compactSpacing
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.profile.name
                 color: Theme.readableText(Theme.textStrong, String(root.color))
@@ -45,6 +46,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.active ? root.profile.type + " on " + root.profile.device : root.profile.type
                 color: Theme.readableText(Theme.textMuted, String(root.color))

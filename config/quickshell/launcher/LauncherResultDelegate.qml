@@ -56,6 +56,7 @@ Rectangle {
             spacing: Theme.tightSpacing
 
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: root.modelData.name
                 color: root.selected ? Theme.menuSelectedText : root.hovered ? Theme.menuHoverText : Theme.menuText
@@ -66,6 +67,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 width: parent.width
                 text: {
                     const detail = root.modelData.generic.length > 0 ? root.modelData.generic : root.modelData.comment;

@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.core
 
 Text {
+    textFormat: Text.PlainText
     required property string label
 
     Layout.fillWidth: true

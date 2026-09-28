@@ -43,6 +43,7 @@ Rectangle {
             spacing: Theme.compactSpacing
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.network.ssid
                 color: Theme.readableText(Theme.textStrong, String(root.color))
@@ -52,6 +53,7 @@ Rectangle {
             }
 
             Text {
+                textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: (root.network.security.length > 0 ? root.network.security : "Open") + " - " + root.network.signal + "% - " + root.network.device
                 color: Theme.readableText(Theme.textMuted, String(root.color))
@@ -62,6 +64,7 @@ Rectangle {
         }
 
         Text {
+            textFormat: Text.PlainText
             Layout.preferredWidth: 54
             text: root.network.active ? "Active" : ""
             color: Theme.readableText(Theme.controlSelectedText, String(root.color))

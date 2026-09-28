@@ -67,6 +67,7 @@ Rectangle {
     }
 
     Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: !trayIcon.visible
         text: {
