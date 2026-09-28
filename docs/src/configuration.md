@@ -33,7 +33,9 @@ rules = [
 
 Fields: `class`, `instance`, `title` (omit to match anything), `tags` (1-9; 0 or
 omitted follows the current tag), `isfloating`, `isterminal`, `alwaysontop`,
-`noswallow` (1 or 0), and `monitor` (-1 for any). Write flags as `1` or `0`.
+`noswallow` (`1`/`true` or `0`/`false`), and `monitor` (-1 for any). A rule needs at
+least one of `class`, `instance` or `title`; one with none would match every window,
+so dwm skips it and says so in its log.
 
 ---
 

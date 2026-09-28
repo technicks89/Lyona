@@ -4063,6 +4063,12 @@ load_rules_toml(const char *user_path, const char *default_path)
 		} else {
 			r->title = NULL;
 		}
+		/* A rule with nothing to match would apply to every window and reset
+		 * the flags every earlier rule set (Sync Sprint 12 S12-05). */
+		if (!r->class && !r->instance && !r->title) {
+			fprintf(stderr, "dwm: window rule %d has no class, instance or title; skipped\n", i + 1);
+			continue;
+		}
 		r->tags       = (vtag  && vtag->type  == TOML_INT && vtag->i >= 1 && vtag->i <= 9)
 		                ? (unsigned int)(1 << (vtag->i - 1)) : 0;
 		r->isfloating = (vfl   && vfl->type   == TOML_INT) ? (int)vfl->i           : 0;

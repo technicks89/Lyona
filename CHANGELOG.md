@@ -1701,6 +1701,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The TOML parser no longer corrupts window rules or drops sections (Sync Sprint 12 S12-05, issue `#168`). In a
+  multi-line array, a `{` inside a trailing comment (`{ class="a" }, # see {docs}`) opened a phantom table: a window rule
+  with no class, instance or title, which matched every window and reset `isterminal`, `noswallow`, `isfloating` and
+  `alwaysontop`, undoing earlier rules such as terminal swallowing. Comments are now stripped from array lines. Closing
+  an array on the line of its last table (`{ ... } ]`) left the parser in array mode, so every later section, such as
+  `[active] theme`, was lost; an array whose first table sat on the opening line lost the rest. `true` and `false` were
+  read as `0.0` inside tables and as strings elsewhere, so `isfloating=true` did nothing; they now parse as `1` and
+  `0`. A `#` after an escaped quote inside a string no longer cuts the string. dwm also skips any window rule with no
+  class, instance or title and logs it. New `tests/test-tomlparser.c` (`make check-tomlparser`, part of `make check`),
+  the first test of the parser itself, covers each case and checks that the shipped `hotkeys.toml`,
+  `window-rules.toml` and `themes.toml` parse to exactly the tables they contain; `tests/test-dwm-config-fallback.sh`
+  checks the rule skip in a running dwm.
+
 - dwm always starts with working keys, and a config file can no longer hang it (Sync Sprint 12 S12-04, issue `#167`).
   An empty, all-comment or otherwise unusable `~/.config/lyona/hotkeys.toml` at login left dwm with no key bindings at
   all, not even quit, while the notification said "loaded defaults". dwm now loads the shipped default instead and says

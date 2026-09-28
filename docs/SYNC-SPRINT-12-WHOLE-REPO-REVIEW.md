@@ -337,6 +337,11 @@ still manages a new window.
 
 **Source:** E (Medium, confirmed by the reviewer with a test program). **Code verified.**
 
+**Implemented (2026-09-27):** all four fixes, plus two found while writing the test:
+an array whose first table is on the opening line lost every later line, and a `#`
+after an escaped quote cut a string short. Evidence:
+`docs/evidence/s12-05-toml-parser.md`.
+
 `tomlparser.c` (used for all three runtime files):
 
 1. In a multi-line array (`ml_active`, `:149-161`) comments are not stripped, so

@@ -262,3 +262,6 @@ update in the same PR, so completed items are pinned here too, not only in
   `dwm.c`, `tomlparser.c`, `docs/src/configuration.md`, `docs/src/troubleshooting.md`; tests in
   `tests/test-dwm-config-fallback.sh` (`make check-dwm-config-fallback`) and `tests/test-xvfb-runtime.sh`. Evidence:
   `docs/evidence/s12-04-dwm-key-fallback.md`. The signal race itself is not reproducible in a test.
+- [x] Sync Sprint 12 S12-05 -- the TOML parser handles comments, same-line arrays and booleans, issue `#168` --
+  `tomlparser.c`, `dwm.c` (`load_rules_toml`), `docs/src/configuration.md`; tests in `tests/test-tomlparser.c`
+  (`make check-tomlparser`) and `tests/test-dwm-config-fallback.sh`. Evidence: `docs/evidence/s12-05-toml-parser.md`.

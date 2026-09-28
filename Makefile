@@ -486,6 +486,12 @@ check-xvfb-runtime: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# Sync Sprint 12 S12-05: unit tests for the TOML parser dwm uses for all three
+# runtime files.
+.PHONY: check-tomlparser
+check-tomlparser:
+	tests/test-tomlparser.sh
+
 # Sync Sprint 12 S12-04: dwm starts with working keys whatever hotkeys.toml holds.
 .PHONY: check-dwm-config-fallback
 check-dwm-config-fallback: all
@@ -968,6 +974,7 @@ check:
 	$(MAKE) check-desktop-smoke-xvfb
 	$(MAKE) check-xvfb-runtime
 	$(MAKE) check-dwm-config-fallback
+	$(MAKE) check-tomlparser
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb
