@@ -105,12 +105,13 @@ Useful flags:
   installing anything.
 - `--file PATH` — install an already-downloaded tarball; still requires
   `--version` and still verifies the checksum, which it looks up online. For a
-  machine with no network, add `--sha256 HASH`, the tarball's line in the
-  release's `lyona-<version>-SHA256SUMS`:
+  machine with no network, add `--sha256 HASH`, where `HASH` is the
+  64-character hexadecimal value on the tarball's line in the release's
+  `lyona-<version>-SHA256SUMS` (the first field):
 
   ```sh
   lyona-update apply --file ~/lyona-2026.10.0.tar.gz --version 2026.10.0 \
-      --sha256 3f9c...a1
+      --sha256 HASH
   ```
 - `--from-checkout DIR` — **removed.** The privileged step installs only
   releases it has verified itself. To install a local development checkout, run

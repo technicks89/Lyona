@@ -562,16 +562,34 @@ check_release_packages() {
 		return 0
 	fi
 	command -v pacman >/dev/null 2>&1 || die "pacman not found; lyona runs on Arch Linux only"
-	missing=$(release_packages "$map" build x11 runtime-required | xargs -r pacman -T 2>/dev/null) || true
+	missing=$(missing_packages "$map" build x11 runtime-required) ||
+		die "could not check which packages are installed (pacman -T failed)"
 	if [[ -n $missing ]]; then
-		missing=$(printf '%s\n' "$missing" | paste -sd ' ' -)
 		warn "release $requested_version needs packages that are not installed: $missing"
 		die "install them first, then update again: sudo pacman -S --needed $missing"
 	fi
-	missing=$(release_packages "$map" desktop | xargs -r pacman -T 2>/dev/null) || true
+	missing=$(missing_packages "$map" desktop) ||
+		die "could not check which packages are installed (pacman -T failed)"
 	if [[ -n $missing ]]; then
-		warn "desktop packages not installed (features that use them stay unavailable): $(printf '%s\n' "$missing" | paste -sd ' ' -)"
+		warn "desktop packages not installed (features that use them stay unavailable): $missing"
 	fi
+}
+
+# Arguments: MAP GROUP.... Prints the named groups' packages that are not
+# installed, on one line. pacman -T exits 0 when all are installed and 127 when
+# it printed some that are not; anything else is a failed query, returned as
+# such rather than read as "nothing missing".
+missing_packages() {
+	local -a packages=()
+	local out status=0
+	mapfile -t packages < <(release_packages "$@")
+	((${#packages[@]} > 0)) || return 0
+	out=$(pacman -T "${packages[@]}" 2>/dev/null) || status=$?
+	case $status in
+	0) ;;
+	127) printf '%s\n' "$out" | awk 'NF' | paste -sd ' ' - ;;
+	*) return 1 ;;
+	esac
 }
 
 # Arguments: MAP GROUP..., the named groups of the release's package map, one
@@ -910,6 +928,22 @@ verify_backup_checksums() {
 # so files a newer version added do not stay behind, as they did when it was
 # unpacked over the current tree (Sync Sprint 12 S12-11). The current tree is kept
 # until the new one is in place, and put back if the swap fails.
+# Arguments: ARCHIVE NAME. True when the archive can be read and every entry is
+# under the one top-level folder NAME (no absolute paths, no ".."). Checked for
+# both user archives before the privileged system restore, so a bad one never
+# leaves the system files restored and the user files not.
+valid_user_archive() {
+	local listing
+	listing=$(tar -tf "$1" 2>/dev/null) || return 1
+	[[ -n $listing ]] || return 1
+	awk -v name="$2" '
+		{ entry = $0; sub(/\/$/, "", entry) }
+		entry != name && index(entry, name "/") != 1 { bad = 1 }
+		entry ~ /(^|\/)\.\.(\/|$)/ { bad = 1 }
+		END { exit bad }
+	' <<<"$listing"
+}
+
 # Arguments: ARCHIVE TARGET.
 restore_user_tree() {
 	local archive=$1 target=$2 parent name staging previous
@@ -933,7 +967,11 @@ restore_user_tree() {
 		}
 	fi
 	if ! mv -T "$staging/$name" "$target"; then
-		[[ -z $previous ]] || mv -T "$previous" "$target"
+		if [[ -n $previous ]] && ! mv -T "$previous" "$target"; then
+			# The original tree is only in staging now: keep it.
+			warn "could not put $target back; the previous copy is kept in $previous"
+			return 1
+		fi
 		rm -rf "$staging"
 		return 1
 	fi
@@ -1006,6 +1044,17 @@ cmd_rollback() {
 			die "not confirmed"
 			;;
 		esac
+	fi
+
+	# Both user archives are checked before anything is restored (the swap checks
+	# each again as it restores it).
+	if [[ -f $backup_dir/lyona-data.tar ]]; then
+		valid_user_archive "$backup_dir/lyona-data.tar" lyona ||
+			die "backup $backup_id: lyona-data.tar is unreadable or holds more than lyona/; nothing was restored"
+	fi
+	if [[ -f $backup_dir/quickshell.tar ]]; then
+		valid_user_archive "$backup_dir/quickshell.tar" quickshell ||
+			die "backup $backup_id: quickshell.tar is unreadable or holds more than quickshell/; nothing was restored"
 	fi
 
 	status_detail="Restoring backup $backup_id"

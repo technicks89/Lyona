@@ -49,6 +49,11 @@ for passphrase in 'plain' 'quote"inside' 'back\slash' 'escape\n\t\u0041' "it's" 
 done
 check_round_trip lyona "$hash" 'unused' 0
 
+# The hash and the disk passphrase reach jq on stdin, never as arguments.
+if grep -Eq -- '--arg (hash|passphrase)' "$work/creds.sh"; then
+	fail 'the password hash or the disk passphrase is passed to jq in argv'
+fi
+
 # The password reaches openssl on stdin, never as an argument.
 grep -Fq "| openssl passwd -6 -stdin" "$installer" || fail 'openssl passwd does not read the password from stdin'
 # shellcheck disable=SC2016 # matches the source text

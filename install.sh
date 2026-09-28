@@ -396,29 +396,31 @@ configure_arch_multilib_repository() {
 
 	if arch_multilib_enabled; then
 		ok "The multilib repository is already enabled."
-		return 0
-	fi
+	else
+		if [[ ! -f $pacman_conf ]]; then
+			warn "pacman.conf not found; cannot enable the multilib repository."
+			return 1
+		fi
 
-	if [[ ! -f $pacman_conf ]]; then
-		warn "pacman.conf not found; cannot enable the multilib repository."
-		return 1
+		info "Enabling the multilib repository..."
+		if ! sudo sed -i \
+			-e '/^#\[multilib\]/,/^#Include/ s/^#//' \
+			"$pacman_conf"; then
+			warn "Could not enable the multilib repository; skipping Arch gaming packages."
+			return 1
+		fi
+		if ! arch_multilib_enabled; then
+			warn "multilib section not found in pacman.conf; skipping Arch gaming packages."
+			return 1
+		fi
 	fi
-
-	info "Enabling the multilib repository..."
-	if ! sudo sed -i \
-		-e '/^#\[multilib\]/,/^#Include/ s/^#//' \
-		"$pacman_conf"; then
-		warn "Could not enable the multilib repository; skipping Arch gaming packages."
-		return 1
-	fi
-	if ! arch_multilib_enabled; then
-		warn "multilib section not found in pacman.conf; skipping Arch gaming packages."
-		return 1
-	fi
-	# -Syu, never -Sy: packages are installed from the refreshed databases next,
-	# and Arch does not support a sync without the matching upgrade (a partial
-	# upgrade). The upgrade is shown, as every package change here is.
-	info "Upgrading the system to sync the new multilib repository (pacman -Syu)..."
+	# -Syu, never -Sy, and also when multilib was already enabled: the gaming
+	# packages are installed from the refreshed databases next, and Arch does not
+	# support a sync without the matching upgrade (a partial upgrade). A run whose
+	# upgrade failed after enabling multilib leaves exactly that, and the next run
+	# finds multilib enabled, so it must still upgrade. The upgrade is shown, as
+	# every package change here is.
+	info "Upgrading the system to sync the multilib repository (pacman -Syu)..."
 	if ! sudo pacman -Syu; then
 		warn "Could not upgrade the system after enabling multilib."
 		return 1
