@@ -10,6 +10,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Screens turn off and the desktop locks when idle, by default (Sync Sprint 12 S12-10, issue `#173`, decision
+  D-13). After 10 minutes idle the screen turns off (DPMS), and light-locker locks the desktop 5 seconds later;
+  before, both were off by default, so screens never blanked. The Control Center's Power Settings card turns either
+  off or changes the timeout. With no Control Center helper, autostart now blanks the screen at 10 minutes instead of
+  turning blanking off.
+  - **Migration:** a choice already saved in `~/.config/lyona/power.conf` (`dpms_enabled`, `lock_enabled`) is kept.
+    The new defaults only apply where nothing was saved.
+  - The automatic lock needs LightDM; in a `startx` session the screen still turns off.
+
 - Less needless work on events, and no processes left behind (Sync Sprint 12 S12-09, issue `#172`).
   - `dwm-status` sets the root window name to the power state only (`BAT 82% Discharging` or `AC`), and only when
     it changes. The unused volume half and its `pactl` watcher are gone. A `dwm-status` whose X server has gone

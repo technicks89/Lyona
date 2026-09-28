@@ -42,6 +42,7 @@ starts.
 | [S12-17](#s12-17-docs-and-specs-agree-with-the-code) | `#180` | Docs | Medium | none (D-17a, D-17b decided) |
 | [S12-18](#s12-18-smaller-hardening) | `#181` | Security, hardening | Low | none |
 | [S12-19](#s12-19-release-updates-can-install-the-published-release-asset) | `#184` | Correctness, updater | High | none |
+| [S12-20](#s12-20-calendar-and-weather-panel-widgets) | `#193` | Feature, panel | Low | D-19 (weather only) |
 
 **Suggested order:** S12-01 to S12-03 first (the privileged update helper, found
 independently by three reviews), then S12-04 and S12-06, then the idle-cost items
@@ -65,6 +66,7 @@ root the next time the user authenticates a routine update or rollback.
 | **D-17a** | One ISO, or separate standard and NVIDIA images? | S12-17 item 2 | **Decided (2026-09-27), asked of the user directly:** one ISO that detects NVIDIA hardware and installs the proprietary driver when it is needed. AGENTS.md and SPEC 9.4 change to match SPEC section 4 |
 | **D-18** | Build the system-wide dwm with the updating user's `config.h`? (S12-02 step 4) | S12-02 | **Decided (2026-09-27), asked of the user directly:** yes, keep it, and make the runtime TOML files the documented way to customise; `config.h` is for the few compile-time options only |
 | **D-17b** | Per-screen `Variants` panels (SPEC.md) or one `PanelWindow` (AGENTS.md)? | S12-17 item 1 | **Decided (2026-09-27), asked of the user directly:** keep per-screen panels (every monitor needs a bar; state is already shared); AGENTS.md changes to match SPEC.md |
+| **D-19** | Weather widget: which provider, where the location comes from, and whether it is on by default? It is the shell's first feature that sends data (a location) to a third party | S12-20 weather half | **Open.** Recommendation: off by default, a location the user types (never IP geolocation), one keyless HTTPS provider (Open-Meteo, or wttr.in as upstream's prototype uses), refreshed at most every 30 minutes, and the calendar shipped without waiting for this |
 
 ---
 
@@ -687,6 +689,9 @@ from a cleanup of this repository's test leftovers. Evidence:
 **Source:** F (High for DPMS). **Verified.** **D-13 decided:** after 10 minutes
 idle the screen turns off and the desktop locks.
 
+**Implemented (2026-09-28):** item 1. Item 2 is tabled and item 3 is dropped, both
+asked of the user directly. Evidence: `docs/evidence/s12-10-power-memory-defaults.md`.
+
 1. **Screens never blank by default.** `read_power_config`
    (`scripts/dwm-quickshell-controlcenter:84-85`) defaults `power_dpms_enabled=0`, so
    `power-apply` runs `xset -dpms` (`:295-302`), and `autostart.sh:322-326` does the
@@ -739,11 +744,25 @@ idle the screen turns off and the desktop locks.
    and fading on), and NVIDIA falls back to xrender (`dwm-settings-picom:563`).
    Consider a lean default (no blur, fading off, `vsync` on, `glx` where it works).
    Needs a by-eye check; S10-07 already tracks the NVIDIA backend on real hardware.
+   **Tabled (2026-09-28), asked of the user directly:** not in this sprint. It changes
+   how the desktop looks, and it needs a by-eye check on real hardware.
 3. **Settings panes stay loaded after Settings closes.** `DeferredSettingsPane.qml:14-19`
    keeps `visited` true for the session, on purpose, to keep drafts and scroll
    positions; measured, opening all four popups took Quickshell from 289 MB to
    418 MB and it never returned. Release panes a grace period (say 5 minutes) after
    the Settings window closes, keeping any pane that has an unsaved draft.
+   **Dropped (2026-09-28), asked of the user directly, after measuring.** It was built:
+   each pane reported unsaved input, and a pane without any was unloaded after
+   Settings closed. The release worked (all 9 panes unloaded in the full shell), but
+   Quickshell's RSS did not come down.
+   - Under Xvfb: 156 MiB idle, 183 MiB with every section opened, and 183 MiB after
+     the release. `main` measured 152, 178 and 179 MiB.
+   - Neither eager glibc trimming nor a forced `gc()` changed it. The memory is held
+     by the QML engine (compiled component types, the JS heap, the allocator), not by
+     the pane objects.
+   - Unloading would only have cost a reload and lost scroll positions, for no gain
+     that could be measured. `docs/evidence/s12-10-power-memory-defaults.md` has the
+     numbers.
 
 ## S12-11: Install and update correctness
 
@@ -1062,6 +1081,63 @@ the real release target (not a hand-made tarball), with the root helper stubbed 
 step; and the S12-01 container test switched to the real release archive.
 
 ---
+
+## S12-20: Calendar and weather panel widgets
+
+**Issue:** `#193`. **Source:** upstream feature request [ChrisTitusTech/dwm-titus#358](https://github.com/ChrisTitusTech/dwm-titus/issues/358)
+(2026-09-28). Added on request, not one of the four reviews' findings. **Verified** against
+the code. The reporter shared a working local prototype as a reference, not as a patch:
+Calendar and Weather buttons on the panel, On/Off toggles in Control Center, Bar Widgets,
+and a popup for each (a month calendar; current weather from wttr.in).
+
+**The request, checked against Lyona:**
+
+- **Bar Widgets** has five switches, and `scripts/dwm-panel-settings` knows exactly five
+  ids (`readonly widget_ids='workspaces volume bluetooth network power'`, `:18`, validated at
+  `:46`). An unknown id makes `panel-widgets.conf` malformed. That is why the prototype
+  kept the calendar and weather switches in QML-only state. Here the two ids go into the
+  helper, its protocol and its tests, so the choice persists like the other five.
+- **The panel already shows a clock** (`panel/DwmPanel.qml:147-159`, `ClockModel.panelText`).
+  The calendar opens from the clock: click the clock pill to open a month calendar in a
+  popup. A second calendar icon would only duplicate it.
+- **Popups** follow the existing pattern: a model with `open()`/`toggle()`, a window on the
+  `ClickAwayPopup` pattern of Bluetooth and Network, and `selectPanelPopup` in `shell.qml`.
+  Only one panel popup is open at a time.
+
+**Steps.**
+
+1. **Calendar** (no gate).
+   - `CalendarModel` holds the shown month, today and the first weekday from the locale.
+     There is no timer while the popup is closed; the clock already ticks, and the month
+     grid is computed when the popup opens.
+   - The popup has previous and next month and a "today" button, and full keyboard
+     navigation like the overview.
+   - Text is plain (S12-06).
+   - A `calendar` id in `dwm-panel-settings`, the Bar Widgets list and `widgetIds`. When
+     it is off, clicking the clock does nothing, as today.
+2. **Weather** (gated by D-19).
+   - A helper does the fetching, not QML: a new `lyona-weather` action with a bounded
+     `curl` timeout. It prints one parsed line and caches the result under
+     `$XDG_CACHE_HOME`.
+   - It refreshes at most every 30 minutes, and only while the widget is on, so there
+     is no request at all when it is off.
+   - Failure is visible and harmless: a panel pill that shows "unavailable" never
+     blocks or retries in a loop.
+   - The location is a user setting. There is no IP geolocation.
+   - The provider and the default follow D-19.
+   - AGENTS.md: network downloads are optional, clearly reported and failure-tolerant.
+3. **Settings and docs.** Both switches in Control Center, Bar Widgets. The weather
+   location field goes in Settings. The user guide and `CHANGELOG.md`.
+
+**Verification.**
+
+- `tests/test-quickshell-panel-settings.sh` covers the two new ids: a file listing them is valid,
+  and a missing id defaults to on for the original five and off for weather.
+- An Xvfb test opens the clock's calendar and moves between months, and checks the popup
+  closes on Escape and on a click outside.
+- A stub `curl` checks the weather helper's timeout, cache and failure output, and that
+  nothing is fetched while the widget is off.
+- The idle cost with both popups closed is unchanged (the S12-07 measurement).
 
 ## Not in scope
 

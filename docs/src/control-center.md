@@ -148,6 +148,14 @@ The Power Settings card retains the existing persisted screen-DPMS and
 auto-lock controls. Each feature can be enabled or disabled and assigned a
 5-minute, 10-minute, 15-minute, 30-minute, or 1-hour timeout.
 
+Both are **on by default**. After 10 minutes idle the screen turns off, and the
+desktop locks 5 seconds later; moving the mouse in those 5 seconds cancels without
+a password. Turning either off, or picking another timeout, is saved in
+`~/.config/lyona/power.conf` and wins over the default. A choice you saved before
+this default changed is kept. The lock uses light-locker, which locks through
+LightDM (Lyona's display manager). In a `startx` session the screen still turns off,
+but the automatic lock needs LightDM.
+
 The full Settings Power page also shows battery, external-power, profile,
 suspend, and lid capabilities. Its Lock, Log Out, Suspend, Reboot, and Shutdown
 buttons use the same shared root QML action model and confirmation policy as

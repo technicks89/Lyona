@@ -319,10 +319,12 @@ apply_power_settings() {
 		return 0
 	fi
 
+	# Only reached when no Control Center helper exists: blank at 10 minutes
+	# (D-13). Locking needs light-locker, which the helper starts.
 	if command -v xset >/dev/null 2>&1; then
-		xset s off
-		xset s noblank
-		xset -dpms
+		xset s 600
+		xset +dpms
+		xset dpms 600 600 600
 	fi
 }
 
