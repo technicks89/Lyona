@@ -639,12 +639,16 @@ fi
 rm "$work/config/lyona/power.conf"
 mv "$work/power-target.conf" "$work/config/lyona/power.conf"
 
+# The owner crashes below and the helper is not killed with it, so the watchdog's
+# backstop loop ends the watcher; it checks every 5 s by default (Sync Sprint 12
+# S12-07), and a short interval keeps these cases quick.
 (
 	HOME="$work/home" \
 		XDG_CONFIG_HOME="$work/config" \
 		DWM_POWER_TEST_STATE="$work/state" \
 		DWM_POWER_TEST_LOG="$work/actions.log" \
 		DWM_POWER_TEST_SETTINGS_MONITOR_IGNORE_TERM=1 \
+		LYONA_PARENT_BOUND_INTERVAL=0.2 \
 		PATH="$work/bin:/usr/bin:/bin" \
 		"$repo/scripts/dwm-quickshell-controlcenter" power-watch >"$work/watch.out" 2>&1 &
 	printf '%s\n' "$!" >"$work/helper.pid"
@@ -712,6 +716,7 @@ rm -f "$work/state/monitor.pid" "$work/state/settings-get.pid" \
 		DWM_POWER_TEST_LOG="$work/actions.log" \
 		DWM_POWER_TEST_GSETTINGS_GET_HANG=1 \
 		DWM_POWER_TEST_GSETTINGS_GET_IGNORE_TERM=1 \
+		LYONA_PARENT_BOUND_INTERVAL=0.2 \
 		PATH="$work/bin:/usr/bin:/bin" \
 		"$repo/scripts/dwm-quickshell-controlcenter" power-watch >/dev/null 2>&1 &
 	printf '%s\n' "$!" >"$work/hung-helper.pid"

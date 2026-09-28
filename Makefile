@@ -486,6 +486,19 @@ check-xvfb-runtime: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# Sync Sprint 12 S12-07: the parent-bound watchdog does not poll, and the network
+# and media watchers in the QML models neither drop changes nor respawn forever.
+.PHONY: check-dwm-watchdog check-quickshell-watchers-xvfb
+check-dwm-watchdog:
+	status=0; /usr/bin/python3 tests/test-dwm-watchdog.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-quickshell-watchers-xvfb:
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-watchers-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 # Sync Sprint 12 S12-06: nothing in the shell renders markup from other programs.
 .PHONY: check-quickshell-plain-text check-quickshell-plain-text-xvfb
 check-quickshell-plain-text:
@@ -987,6 +1000,8 @@ check:
 	$(MAKE) check-tomlparser
 	$(MAKE) check-quickshell-plain-text
 	$(MAKE) check-quickshell-plain-text-xvfb
+	$(MAKE) check-dwm-watchdog
+	$(MAKE) check-quickshell-watchers-xvfb
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb

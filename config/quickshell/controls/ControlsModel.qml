@@ -13,6 +13,10 @@ Scope {
     property bool visible: false
     property bool settingsVisible: false
     property bool busy: false
+    // Set when the media helper reports that playerctl is not installed: the
+    // watcher is then not restarted every 3 s for the whole session (Sync Sprint
+    // 12 S12-07). A shell restart looks again.
+    property bool mediaWatchUnavailable: false
     property string volumeText: "VOL unavailable"
     property int volumePercent: 0
     property bool volumeMuted: false
@@ -219,6 +223,8 @@ Scope {
     function parseMedia(text) {
         const trimmed = text.trim();
 
+        if (trimmed === "MEDIA unavailable")
+            root.mediaWatchUnavailable = true;
         if (trimmed.length === 0 || trimmed.indexOf("MEDIA ") === 0) {
             root.mediaText = trimmed.length > 0 ? trimmed : "MEDIA none";
             root.mediaPlayer = "";
@@ -554,7 +560,7 @@ Scope {
             }
         }
         onRunningChanged: {
-            if (!running) mediaWatchRestartTimer.restart();
+            if (!running && !root.mediaWatchUnavailable) mediaWatchRestartTimer.restart();
         }
     }
 
