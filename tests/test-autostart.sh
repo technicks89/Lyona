@@ -1025,13 +1025,27 @@ cat >"$fallback/bin/xset" <<'EOF'
 printf '%s\n' "$*" >>"$XSET_LOG"
 EOF
 chmod +x "$fallback/bin/xset"
+ln -s "$(command -v tr)" "$fallback/bin/tr" # read_power_config's parsing
 sed -n '/^apply_power_settings() {$/,/^}$/p' "$repo/scripts/autostart.sh" >"$fallback/power.sh"
 printf 'apply_power_settings\n' >>"$fallback/power.sh"
-XSET_LOG=$fallback/xset.log PATH=$fallback/bin /bin/sh "$fallback/power.sh"
-[ "$(cat "$fallback/xset.log")" = "$(printf 's 600\n+dpms\ndpms 600 600 600')" ] || {
-	printf 'autostart power fallback ran:\n' >&2
-	cat "$fallback/xset.log" >&2
-	exit 1
+fallback_run() {
+	: >"$fallback/xset.log"
+	XSET_LOG=$fallback/xset.log XDG_CONFIG_HOME=$fallback/config PATH=$fallback/bin \
+		/bin/sh "$fallback/power.sh"
+	[ "$(cat "$fallback/xset.log")" = "$1" ] || {
+		printf 'autostart power fallback (%s) ran:\n' "$2" >&2
+		cat "$fallback/xset.log" >&2
+		exit 1
+	}
 }
+fallback_run "$(printf 's 600\n+dpms\ndpms 600 600 600')" 'no saved config'
+# A saved choice is honoured, as the helper honours it: both turned off...
+mkdir -p "$fallback/config/lyona"
+printf 'dpms_enabled=0\nlock_enabled = off # by hand\n' >"$fallback/config/lyona/power.conf"
+fallback_run "$(printf 's off\ns noblank\n-dpms')" 'both off'
+# ...and saved timeouts, kept within the helper's 60-86400 s.
+printf 'dpms_enabled=yes\ndpms_timeout=900\nlock_enabled=1\nlock_timeout=30\n' \
+	>"$fallback/config/lyona/power.conf"
+fallback_run "$(printf 's 60\n+dpms\ndpms 900 900 900')" 'saved timeouts'
 
 printf '%s\n' "Autostart duplicate and missing-optional command guards: PASS"

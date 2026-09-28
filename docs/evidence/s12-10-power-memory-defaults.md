@@ -15,9 +15,15 @@ desktop locks.
      starts light-locker. Moving the mouse in the 5 s grace cancels without a password.
    - A value saved in `~/.config/lyona/power.conf` still wins: the defaults apply only
      to keys that were never saved, so a user who turned either off keeps it off.
-   - With no Control Center helper, `scripts/autostart.sh` now blanks the screen at
-     600 s (`xset s 600`, `+dpms`, `dpms 600 600 600`) instead of turning blanking off.
-     Locking needs light-locker, which only the helper starts.
+   - With no Control Center helper, `scripts/autostart.sh` applies the same settings
+     itself instead of turning blanking off. It reads `power.conf` by the helper's
+     rules: the same keys and boolean words, and timeouts kept within 60-86400 s.
+     - DPMS on: `+dpms` and `dpms T T T`; off: `-dpms`.
+     - Lock on: `xset s T`; off: `s off` and `s noblank`.
+     - Nothing saved: the D-13 defaults.
+     - Locking needs light-locker, which only the helper starts.
+     - Review (2026-09-28): the first version always blanked at 600 s, overriding a
+       saved "off".
    - **No double prompt.** `dwm-lock`, the explicit lock action, locks through
      `light-locker-command` and starts light-locker only if none is running, so it
      reuses the one `power-apply` started.
@@ -44,8 +50,12 @@ desktop locks.
   - A display-manager session now starts light-locker exactly once. The test used to
     assert that it did not start at all.
   - New case: `apply_power_settings` run on its own, with no helper beside it and a
-    `PATH` holding only a logging `xset`. It must run `s 600`, `+dpms` and
-    `dpms 600 600 600`. The old code ran `s off`, `s noblank` and `-dpms`, and fails.
+    `PATH` holding only a logging `xset` (and `tr`). It runs three times:
+    - no saved config: `s 600`, `+dpms`, `dpms 600 600 600`;
+    - both saved off: `s off`, `s noblank`, `-dpms`;
+    - saved timeouts, one below the minimum: `s 60`, `+dpms`, `dpms 900 900 900`.
+  - The old code ran `s off`, `s noblank` and `-dpms` in every case, and fails. A
+    version that ignores `power.conf` fails the "both off" run.
 - `check-quickshell-controlcenter`, `check-quickshell-power-backend`,
   `check-quickshell-power-model`, `check-session-guards`, `check-shell` and
   `check-format`: PASS.
