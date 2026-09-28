@@ -10,6 +10,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Install and update correctness (Sync Sprint 12 S12-11, issue `#174`).
+  - `lyona-update apply` checks the packages the new release needs, from the release's own package list, before it
+    builds. A missing required package stops the update with nothing changed and prints the command to install it
+    (`sudo pacman -S --needed ...`); a missing desktop package only warns. It used to install helpers that then
+    failed at runtime.
+  - `apply --file PATH --version V --sha256 HASH` installs with no network at all. Before, `--file` still looked
+    the checksum up online, so the offline install its own error message suggested could not work.
+  - The release checksum is taken from the asset's exact file name; the name used to be a pattern, where "." matched
+    any character.
+  - A rollback replaces the Quickshell config and the Lyona data directory whole, instead of unpacking the backup over
+    them, which left behind files a newer version had added.
+  - `install.sh` upgrades the system (`pacman -Syu`, shown) after enabling multilib, instead of a database refresh
+    alone (`-Sy`), which left a partial upgrade before packages were installed.
+  - `make install-user` no longer copies the polkit action templates into `~/.config/polkit`.
+  - The ISO installer builds its credentials file with `jq` and hashes the password through stdin. A passphrase with a
+    `"` broke the install, and one with a backslash escape silently became a different passphrase, which locked the
+    user out.
+
 - Screens turn off and the desktop locks when idle, by default (Sync Sprint 12 S12-10, issue `#173`, decision
   D-13). After 10 minutes idle the screen turns off (DPMS), and light-locker locks the desktop 5 seconds later;
   before, both were off by default, so screens never blanked. The Control Center's Power Settings card turns either

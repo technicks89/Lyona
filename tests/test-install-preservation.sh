@@ -408,6 +408,15 @@ if [[ $(grep -Fxc -- '-f' "$WORK_DIR/fc-cache.log") -ne 3 ]]; then
 	exit 1
 fi
 cmp "$TEST_REPO/config/Thunar/uca.xml" "$FRESH_CONFIG_HOME/Thunar/uca.xml"
+# Sync Sprint 12 S12-11: the polkit action templates (system files, @PREFIX@ not
+# yet expanded) are not seeded into ~/.config. The systemd user unit is, because
+# autostart starts wm-graphical-session.service from there.
+if [[ -e $FRESH_CONFIG_HOME/polkit ]]; then
+	printf 'install-user seeded the polkit action templates into %s\n' "$FRESH_CONFIG_HOME/polkit" >&2
+	exit 1
+fi
+cmp "$TEST_REPO/config/systemd/user/wm-graphical-session.service" \
+	"$FRESH_CONFIG_HOME/systemd/user/wm-graphical-session.service"
 # Sync Sprint 12 S12-02 (decision D-18): lyona-update builds releases with
 # ~/.config/lyona/config.h. install-user never seeds a plain copy of the default
 # (it would only go stale), copies a customised checkout config.h once, and never

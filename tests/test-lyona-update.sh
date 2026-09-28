@@ -168,6 +168,23 @@ apply_source() {
 stub_curl
 reset_curl_responses
 
+# pacman -T (deptest) prints the arguments that are not installed. Here "not
+# installed" is whatever the test lists in pacman-missing; empty by default.
+stub_command pacman <<SH
+#!/bin/sh
+[ "\$1" = -T ] || exit 1
+shift
+status=0
+for package in "\$@"; do
+	if grep -Fqx -- "\$package" "$work/pacman-missing" 2>/dev/null; then
+		printf '%s\n' "\$package"
+		status=127
+	fi
+done
+exit \$status
+SH
+: >"$work/pacman-missing"
+
 # ── check: installed matches the channel ────────────────────────────────
 valid_user_record 2026.09.0 | write_user_record
 seed_release 2026.09.0
@@ -267,6 +284,27 @@ fi
 assert_contains "$work/out" 'checksum mismatch'
 assert_no_file "$state_home/lyona/updates/2026.09.0"
 
+# ── apply: the checksum is the asset's own line, by exact file name ────
+# A look-alike name listed first (the "." of the version used to match any
+# character, and the match was unanchored) must not be taken for the asset.
+reset_curl_responses
+valid_user_record 2026.08.0 | write_user_record
+seed_release 2026.09.0
+asset_sha=$(printf '%s\n' 'not a real tarball, only used where the checksum itself is under test' |
+	sha256sum | awk '{ print $1 }')
+canned_response "$sums_url" <<EOF
+deadbeef00000000000000000000000000000000000000000000000000dead  /build/release/xlyona-2026a09.0.tar.gz
+$asset_sha  /build/release/lyona-2026.09.0.tar.gz
+EOF
+if run_update apply --version 2026.09.0 --yes >"$work/out" 2>&1; then
+	fail "apply of a stub tarball unexpectedly succeeded"
+fi
+if grep -Fq 'checksum mismatch' "$work/out"; then
+	lyona_show_file "$work/out"
+	fail 'the checksum of a look-alike file name was used'
+fi
+assert_contains "$work/out" 'failed to unpack'
+
 # ── apply --file: unverifiable tarball is refused outright ─────────────
 reset_curl_responses
 valid_user_record 2026.08.0 | write_user_record
@@ -277,6 +315,32 @@ if run_update apply --file "$work/local.tar.gz" --version 2026.09.0 --yes \
 	fail "unverified --file apply unexpectedly succeeded"
 fi
 assert_contains "$work/out" 'refusing to install an unverified tarball'
+
+# ── apply --file --sha256: an install with no network (S12-11) ─────────
+# The tarball's checksum given on the command line: nothing is looked up.
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+status=$(run_update apply --file "$source_tarball" --version "$source_version" \
+	--sha256 "$source_sha" --dry-run 2>"$work/err") || {
+	lyona_show_file "$work/err"
+	fail 'an offline --file apply with --sha256 failed'
+}
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+rm -rf "$state_home/lyona/updates/$source_version"
+if run_update apply --file "$source_tarball" --version "$source_version" --yes \
+	--sha256 "$(printf '%064d' 0)" >"$work/out" 2>&1; then
+	fail 'an offline --file apply with the wrong --sha256 succeeded'
+fi
+assert_contains "$work/out" 'checksum mismatch'
+if run_update apply --version "$source_version" --sha256 "$source_sha" --yes >"$work/out" 2>&1; then
+	fail '--sha256 without --file was accepted'
+fi
+assert_contains "$work/out" '--sha256 is for --file'
+# The hint for an unreachable server names the option that works offline.
+if run_update apply --yes >"$work/out" 2>&1; then
+	fail 'an apply with no server and no --file succeeded'
+fi
+assert_contains "$work/out" '--sha256 HASH'
 go_online
 
 # ── apply --file: builds with the user's own config.h (S12-02, D-18) ───
@@ -300,6 +364,31 @@ assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
 assert_equals "$staged_inode" "$(stat -c %i "$staged_tarball")" \
 	"an already staged --file archive was not copied again"
 rm -f "$config_home/lyona/config.h"
+rm -rf "$state_home/lyona/updates/$source_version"
+
+# ── apply: the release's required packages are checked first (S12-11) ─
+# From the release's own package map. A missing required package stops the
+# update before anything is built or installed, and says how to install it.
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+printf 'xdotool\n' >"$work/pacman-missing"
+if apply_source --dry-run >"$work/out" 2>&1; then
+	fail 'an update with a missing required package went ahead'
+fi
+assert_contains "$work/out" 'needs packages that are not installed: xdotool'
+assert_contains "$work/out" 'sudo pacman -S --needed xdotool'
+if grep -Fq "building $source_version" "$work/out"; then
+	fail 'the release was built despite a missing required package'
+fi
+# A missing desktop package only warns.
+printf 'picom\n' >"$work/pacman-missing"
+status=$(apply_source --dry-run 2>"$work/err") || {
+	lyona_show_file "$work/err"
+	fail 'a missing desktop package blocked the update'
+}
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_contains "$work/err" 'desktop packages not installed (features that use them stay unavailable): picom'
+: >"$work/pacman-missing"
 rm -rf "$state_home/lyona/updates/$source_version"
 
 # ── apply --from-checkout: removed, and says what to use instead ───────
@@ -549,6 +638,36 @@ fi
 body_of() {
 	sed -n "/^$1() {\$/,/^}\$/p" "$helper"
 }
+# Sync Sprint 12 S12-11: rollback swaps a user tree in whole. Run on its own
+# (a real rollback needs the privileged helper).
+body_of restore_user_tree >"$work/restore.sh"
+[ -s "$work/restore.sh" ] || fail 'restore_user_tree not found'
+restore() { # ARCHIVE TARGET
+	bash -c 'warn() { printf "%s\n" "$*" >&2; }; . "$1"; restore_user_tree "$2" "$3"' \
+		sh "$work/restore.sh" "$1" "$2"
+}
+mkdir -p "$work/restore/saved/quickshell" "$work/restore/live/quickshell"
+printf 'old shell\n' >"$work/restore/saved/quickshell/shell.qml"
+tar -C "$work/restore/saved" -cpf "$work/restore/quickshell.tar" quickshell
+printf 'new shell\n' >"$work/restore/live/quickshell/shell.qml"
+printf 'added by the newer version\n' >"$work/restore/live/quickshell/NewerPane.qml"
+restore "$work/restore/quickshell.tar" "$work/restore/live/quickshell" ||
+	fail 'restore_user_tree failed'
+assert_equals 'old shell' "$(cat "$work/restore/live/quickshell/shell.qml")" 'the backup content is restored'
+assert_no_file "$work/restore/live/quickshell/NewerPane.qml" 'a file the newer version added is gone'
+[ "$(find "$work/restore/live" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] ||
+	fail 'restore_user_tree left its staging behind'
+restore "$work/restore/quickshell.tar" "$work/restore/fresh/quickshell" ||
+	fail 'restore_user_tree into a missing target failed'
+assert_file "$work/restore/fresh/quickshell/shell.qml"
+# An archive that does not hold exactly the tree is refused, the current tree kept.
+mkdir -p "$work/restore/other/stray"
+tar -C "$work/restore/saved" -cpf "$work/restore/two.tar" quickshell -C "$work/restore/other" stray
+if restore "$work/restore/two.tar" "$work/restore/live/quickshell" 2>/dev/null; then
+	fail 'restore_user_tree accepted an archive with more than the tree'
+fi
+assert_equals 'old shell' "$(cat "$work/restore/live/quickshell/shell.qml")" 'a refused restore keeps the tree'
+
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileged sites in cmd_apply"
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "release site"
 # Sync Sprint 12 S12-03 (decision D-15): no checkout mode, on either side.

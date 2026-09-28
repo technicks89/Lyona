@@ -415,8 +415,12 @@ configure_arch_multilib_repository() {
 		warn "multilib section not found in pacman.conf; skipping Arch gaming packages."
 		return 1
 	fi
-	if ! sudo pacman -Sy; then
-		warn "Could not refresh pacman databases after enabling multilib."
+	# -Syu, never -Sy: packages are installed from the refreshed databases next,
+	# and Arch does not support a sync without the matching upgrade (a partial
+	# upgrade). The upgrade is shown, as every package change here is.
+	info "Upgrading the system to sync the new multilib repository (pacman -Syu)..."
+	if ! sudo pacman -Syu; then
+		warn "Could not upgrade the system after enabling multilib."
 		return 1
 	fi
 }

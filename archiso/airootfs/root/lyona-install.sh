@@ -247,7 +247,8 @@ generate_configs() {
 	fi
 
 	local pass_hash
-	pass_hash=$(openssl passwd -6 "$PASSWORD")
+	# The password on stdin, never in argv, where other processes can read it.
+	pass_hash=$(printf '%s\n' "$PASSWORD" | openssl passwd -6 -stdin)
 
 	local esp_id root_id
 	esp_id=$(cat /proc/sys/kernel/random/uuid)
@@ -328,12 +329,20 @@ ${disk_encryption_json}  "hostname": "$HOSTNAME",
 }
 EOF
 
-	cat >"$CREDS_JSON" <<EOF
-{
-  "users": [{"sudo": true, "username": "$USERNAME", "enc_password": "$pass_hash"}],
-  "root_enc_password": "$pass_hash"$([[ $ENCRYPT == 1 ]] && printf ',\n  "encryption_password": "%s"' "$ENCRYPTION_PASSWORD")
+	write_credentials_json "$pass_hash" >"$CREDS_JSON"
 }
-EOF
+
+# The credentials archinstall reads, built by jq rather than by interpolation
+# (Sync Sprint 12 S12-11): a passphrase with a '"' broke the file, and one with a
+# backslash escape silently became a different passphrase, which locked the user
+# out of the new install. Every value goes in as a jq string argument.
+write_credentials_json() {
+	local encrypt=false
+	[[ $ENCRYPT != 1 ]] || encrypt=true
+	jq -n --arg user "$USERNAME" --arg hash "$1" --arg passphrase "${ENCRYPTION_PASSWORD:-}" \
+		--argjson encrypt "$encrypt" '
+			{users: [{sudo: true, username: $user, enc_password: $hash}], root_enc_password: $hash}
+			+ (if $encrypt then {encryption_password: $passphrase} else {} end)'
 }
 
 run_archinstall() {
