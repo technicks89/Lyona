@@ -293,3 +293,10 @@ update in the same PR, so completed items are pinned here too, not only in
   `tests/test-dwm-display-setup.sh`. Evidence: `docs/evidence/s12-09-needless-work.md`. After a Quickshell SIGKILL
   0 of 20 processes are left (was 12); full suite PASS. Not measured: the thumbnail round trips saved and the
   display/input watchers' CPU.
+- [x] Sync Sprint 12 S12-10 -- power and memory defaults, issue `#173` -- item 1 (D-13): the screen turns off after
+  10 minutes idle and the desktop locks 5 s later by default (`scripts/dwm-quickshell-controlcenter`,
+  `scripts/autostart.sh`, `docs/src/control-center.md`); tests in `tests/test-quickshell-controlcenter.sh` and
+  `tests/test-autostart.sh`. Item 2 (lean Picom default) tabled; item 3 (release Settings panes) built, measured
+  (RSS unchanged at 183 MiB after release) and dropped, both asked of the user. Evidence:
+  `docs/evidence/s12-10-power-memory-defaults.md`. Not verified on a real display: blanking and locking with a real
+  light-locker and LightDM.

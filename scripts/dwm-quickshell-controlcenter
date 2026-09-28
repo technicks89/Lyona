@@ -82,9 +82,11 @@ power_bool() {
 }
 
 read_power_config() {
-	power_dpms_enabled=0
+	# D-13 (Sync Sprint 12 S12-10): after 10 minutes idle the screen turns off and
+	# the desktop locks, unless a saved power config says otherwise.
+	power_dpms_enabled=1
 	power_dpms_timeout=600
-	power_lock_enabled=0
+	power_lock_enabled=1
 	power_lock_managed=0
 	power_lock_timeout=600
 	power_lock_after=5

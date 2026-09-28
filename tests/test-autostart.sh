@@ -506,10 +506,11 @@ run_duplicate_case() {
 		printf 'autostart spawned a feh probe with no wallpapers present\n' >&2
 		exit 1
 	fi
-	for name in picom dwm-status dwm-lock-watch quickshell; do
+	# light-locker too: with no saved power config the desktop locks after 10
+	# minutes idle (Sync Sprint 12 S12-10, D-13), and power-apply starts it once.
+	for name in picom dwm-status dwm-lock-watch quickshell light-locker; do
 		test "$(cat "$state/$name.count")" -eq 1
 	done
-	test ! -e "$state/light-locker.count"
 	test ! -e "$state/dex.count"
 	test ! -e "$state/dex-autostart.count"
 	awk '
@@ -1013,5 +1014,38 @@ grep -Fq '"$wallpaper_helper" session-apply >/dev/null 2>&1 ||' \
 # shellcheck disable=SC2016
 grep -Fq 'feh --no-fehbg --randomize --bg-fill "$HOME/Pictures/backgrounds"' \
 	"$repo/scripts/autostart.sh"
+
+# No Control Center helper beside the script or on PATH: the fallback still blanks
+# the screen after 10 minutes idle (Sync Sprint 12 S12-10, D-13), where it used to
+# turn blanking off. PATH is only the stub, so an installed helper is never found.
+fallback=$work/power-fallback
+mkdir -p "$fallback/bin"
+cat >"$fallback/bin/xset" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$XSET_LOG"
+EOF
+chmod +x "$fallback/bin/xset"
+ln -s "$(command -v tr)" "$fallback/bin/tr" # read_power_config's parsing
+sed -n '/^apply_power_settings() {$/,/^}$/p' "$repo/scripts/autostart.sh" >"$fallback/power.sh"
+printf 'apply_power_settings\n' >>"$fallback/power.sh"
+fallback_run() {
+	: >"$fallback/xset.log"
+	XSET_LOG=$fallback/xset.log XDG_CONFIG_HOME=$fallback/config PATH=$fallback/bin \
+		/bin/sh "$fallback/power.sh"
+	[ "$(cat "$fallback/xset.log")" = "$1" ] || {
+		printf 'autostart power fallback (%s) ran:\n' "$2" >&2
+		cat "$fallback/xset.log" >&2
+		exit 1
+	}
+}
+fallback_run "$(printf 's 600\n+dpms\ndpms 600 600 600')" 'no saved config'
+# A saved choice is honoured, as the helper honours it: both turned off...
+mkdir -p "$fallback/config/lyona"
+printf 'dpms_enabled=0\nlock_enabled = off # by hand\n' >"$fallback/config/lyona/power.conf"
+fallback_run "$(printf 's off\ns noblank\n-dpms')" 'both off'
+# ...and saved timeouts, kept within the helper's 60-86400 s.
+printf 'dpms_enabled=yes\ndpms_timeout=900\nlock_enabled=1\nlock_timeout=30\n' \
+	>"$fallback/config/lyona/power.conf"
+fallback_run "$(printf 's 60\n+dpms\ndpms 900 900 900')" 'saved timeouts'
 
 printf '%s\n' "Autostart duplicate and missing-optional command guards: PASS"

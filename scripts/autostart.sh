@@ -319,9 +319,56 @@ apply_power_settings() {
 		return 0
 	fi
 
-	if command -v xset >/dev/null 2>&1; then
+	# Only reached when no Control Center helper exists. It honours a saved
+	# power.conf the way the helper's read_power_config does (same keys, same
+	# boolean words, timeouts kept within 60-86400 s), and otherwise the D-13
+	# defaults: blank at 10 minutes. Locking needs light-locker, which only the
+	# helper starts.
+	command -v xset >/dev/null 2>&1 || return 0
+	power_dpms_enabled=1
+	power_dpms_timeout=600
+	power_lock_enabled=1
+	power_lock_timeout=600
+	power_config=${XDG_CONFIG_HOME:-${HOME:-}/.config}/lyona/power.conf
+	if [ -r "$power_config" ]; then
+		while IFS='=' read -r power_key power_value || [ -n "$power_key" ]; do
+			power_key=$(printf '%s' "$power_key" | tr -d '[:space:]')
+			power_value=${power_value%%#*}
+			power_value=$(printf '%s' "$power_value" | tr -d '[:space:]')
+			case $power_key in
+			dpms_enabled | lock_enabled)
+				case $(printf '%s' "$power_value" | tr '[:upper:]' '[:lower:]') in
+				1 | true | yes | on | enabled) power_value=1 ;;
+				*) power_value=0 ;;
+				esac
+				;;
+			dpms_timeout | lock_timeout)
+				case $power_value in
+				'' | *[!0123456789]*) continue ;;
+				esac
+				[ "$power_value" -ge 60 ] || power_value=60
+				[ "$power_value" -le 86400 ] || power_value=86400
+				;;
+			*) continue ;;
+			esac
+			case $power_key in
+			dpms_enabled) power_dpms_enabled=$power_value ;;
+			dpms_timeout) power_dpms_timeout=$power_value ;;
+			lock_enabled) power_lock_enabled=$power_value ;;
+			lock_timeout) power_lock_timeout=$power_value ;;
+			esac
+		done <"$power_config"
+	fi
+	if [ "$power_lock_enabled" = 1 ]; then
+		xset s "$power_lock_timeout"
+	else
 		xset s off
 		xset s noblank
+	fi
+	if [ "$power_dpms_enabled" = 1 ]; then
+		xset +dpms
+		xset dpms "$power_dpms_timeout" "$power_dpms_timeout" "$power_dpms_timeout"
+	else
 		xset -dpms
 	fi
 }

@@ -291,11 +291,23 @@ printf '%s\n' "$power" | grep -Fqx 'lock_enabled	0'
 
 : >"$work/power-state/light-locker.running"
 : >"$work/actions.log"
+test ! -e "$work/config/lyona/power.conf"
 run_helper power-apply
 test -e "$work/power-state/light-locker.running"
 if grep -Fq 'pkill -u ' "$work/actions.log"; then
 	exit 1
 fi
+# No saved power config: the D-13 defaults (Sync Sprint 12 S12-10). The screen
+# turns off after 10 minutes idle and the desktop locks 5 seconds later.
+grep -Fqx 'xset +dpms' "$work/actions.log"
+grep -Fqx 'xset dpms 600 600 600' "$work/actions.log"
+grep -Fqx 'xset s 600' "$work/actions.log"
+grep -Fqx 'gsettings set apps.light-locker lock-after-screensaver 5' "$work/actions.log"
+grep -Fqx 'gsettings set apps.light-locker lock-on-suspend true' "$work/actions.log"
+power=$(run_helper power-status)
+printf '%s\n' "$power" | grep -Fqx 'dpms_enabled	1'
+printf '%s\n' "$power" | grep -Fqx 'lock_enabled	1'
+test ! -e "$work/config/lyona/power.conf"
 rm -f "$work/power-state/light-locker.running"
 
 : >"$work/actions.log"

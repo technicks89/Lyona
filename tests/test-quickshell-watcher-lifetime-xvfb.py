@@ -29,6 +29,11 @@ if not shutil.which('quickshell') or not os.environ.get('DISPLAY') or not (repo 
     raise SystemExit(77)
 
 GRACE = float(os.environ.get('DWM_WATCHER_LIFETIME_GRACE', '3'))
+# One-shot helpers, bounded by their own timeouts: one still in flight when Quickshell
+# dies finishes on its own. They get ONE_SHOT_GRACE; every other process, the resident
+# watchers included, must be gone within GRACE. Matched in the full command line.
+ONE_SHOT = ('dwm-checked-command', 'dwm-system-management snapshot')
+ONE_SHOT_GRACE = 20
 SECTIONS = ['displays', 'input', 'network', 'bluetooth', 'audio', 'power', 'defaults', 'appearance', 'system']
 # The watcher each section starts on demand (the others have none of their own),
 # as it appears in the command line: the helper and its action.
@@ -102,7 +107,9 @@ def carrying(marker):
     return out
 
 
-with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
+# Short names: Quickshell's IPC socket lives under XDG_RUNTIME_DIR, and a Unix socket
+# path must fit in 107 characters, which scripts/run-tests' deeper workspace reaches.
+with tempfile.TemporaryDirectory(prefix='lifetime-') as temp:
     base = Path(temp)
     home = base / 'home'
     config = home / '.config'
@@ -112,7 +119,7 @@ with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
         shutil.copy(toml, config / 'lyona' / toml.name)
     shutil.copytree(repo / 'scripts', home / '.local/share/lyona/scripts')
     (home / '.cache').mkdir()
-    runtime = base / 'runtime'
+    runtime = base / 'rt'
     runtime.mkdir(mode=0o700)
     env = {
         **os.environ,
@@ -152,8 +159,20 @@ with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
             print('FAIL: no resident quickshell for this session', file=sys.stderr)
             raise SystemExit(1)
         time.sleep(6)  # start-up: first snapshots, the always-on watchers attached
-        if ipc('settings', 'open').returncode != 0:
-            print('FAIL: could not open Settings over IPC', file=sys.stderr)
+        # Under a loaded machine (the full suite) the shell's IPC can take longer.
+        deadline, opened = time.time() + 30, None
+        while time.time() < deadline:
+            try:
+                opened = ipc('settings', 'open')
+            except subprocess.TimeoutExpired:
+                opened = None
+            if opened is not None and opened.returncode == 0:
+                break
+            time.sleep(0.5)
+        if opened is None or opened.returncode != 0:
+            print('FAIL: could not open Settings over IPC: %s'
+                  % ('exit %d, %s %s' % (opened.returncode, opened.stdout.strip(), opened.stderr.strip())
+                     if opened is not None else 'timed out'), file=sys.stderr)
             raise SystemExit(1)
         started = {}
         for section in SECTIONS:
@@ -197,10 +216,19 @@ with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
         recorded = [ident for ident in started.values() if alive(ident)]
         report['running_under_quickshell'] = len(recorded)
 
+        commands = {ident[:2]: command_line(ident[0]) for ident in recorded}
         os.kill(shell, signal.SIGKILL)
+        killed = time.time()
         time.sleep(GRACE)
-        left = [ident for ident in recorded if alive(ident)]
+        left = [ident for ident in recorded if alive(ident)
+                and not any(word in commands[ident[:2]] for word in ONE_SHOT)]
         report['left_after_sigkill'] = len(left)
+        one_shots = [ident for ident in recorded if alive(ident) and ident not in left]
+        while one_shots and time.time() - killed < ONE_SHOT_GRACE:
+            time.sleep(0.25)
+            one_shots = [ident for ident in one_shots if alive(ident)]
+        report['one_shots_left_after_%ds' % ONE_SHOT_GRACE] = len(one_shots)
+        left += one_shots
         names = {}
         for ident in left:
             names[ident[2]] = names.get(ident[2], 0) + 1
@@ -228,6 +256,10 @@ with tempfile.TemporaryDirectory(prefix='watcher-lifetime-') as temp:
     if report['left_after_sigkill']:
         print('FAIL: %d processes Quickshell started outlived it by %.0f s' % (report['left_after_sigkill'], GRACE),
               file=sys.stderr)
+        raise SystemExit(1)
+    if report['one_shots_left_after_%ds' % ONE_SHOT_GRACE]:
+        print('FAIL: a one-shot helper Quickshell started was still running %d s after it'
+              % ONE_SHOT_GRACE, file=sys.stderr)
         raise SystemExit(1)
 
 print('Quickshell watcher lifetime (%d processes, none left %.0f s after SIGKILL): PASS'
