@@ -23,6 +23,56 @@ strtrim(char *s)
 	return s;
 }
 
+static const char *parse_inline_table(const char *p, TomlDoc *doc,
+                                      const char *section, int tidx);
+
+/* Cut a "#" comment off a line, but not a "#" inside a double-quoted string
+ * (where a backslash escapes the next character). Sync Sprint 12 S12-05. */
+static void
+strip_comment(char *s)
+{
+	int in_str = 0;
+
+	for (; *s; s++) {
+		if (in_str && *s == '\\' && s[1]) {
+			s++;
+			continue;
+		}
+		if (*s == '"')
+			in_str = !in_str;
+		else if (!in_str && *s == '#') {
+			*s = '\0';
+			return;
+		}
+	}
+}
+
+/* TOML's true and false, as the integers the dwm loaders read. */
+static int
+parse_bool(const char *s, long *out)
+{
+	if (strcmp(s, "true") == 0) { *out = 1; return 1; }
+	if (strcmp(s, "false") == 0) { *out = 0; return 1; }
+	return 0;
+}
+
+/* Parse the tables on one line of a multi-line array, from sp. Returns 1 when
+ * the line also closes the array with "]". */
+static int
+parse_array_line(const char *sp, TomlDoc *doc, const char *section, int *tidx)
+{
+	while (*sp) {
+		if (*sp == ']')
+			return 1;
+		if (*sp == '{') {
+			sp = parse_inline_table(sp + 1, doc, section, (*tidx)++);
+			continue;
+		}
+		sp++;
+	}
+	return 0;
+}
+
 int
 toml_table_count(const TomlDoc *doc, const char *section)
 {
@@ -114,8 +164,11 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 				nbuf[ni++] = *p++;
 			nbuf[ni] = '\0';
 			char *ep;
-			long iv = strtol(nbuf, &ep, 10);
-			if (ep != nbuf && *ep == '\0') {
+			long iv;
+			if (parse_bool(nbuf, &iv)) {
+				ent->val.type = TOML_INT;
+				ent->val.i = iv;
+			} else if ((iv = strtol(nbuf, &ep, 10)), ep != nbuf && *ep == '\0') {
 				ent->val.type = TOML_INT;
 				ent->val.i = iv;
 			} else {
@@ -182,17 +235,9 @@ toml_parse(const char *path, TomlDoc *doc)
 		char *p = strtrim(line);
 
 		if (ml_active) {
-			if (!*p || *p == '#') continue;
-			if (p[0] == ']') { ml_active = 0; continue; }
-
-			const char *sp = p;
-			while (*sp) {
-				while (*sp && *sp != '{') sp++;
-				if (!*sp) break;
-				sp++;
-				sp = parse_inline_table(sp, doc, ml_section, ml_tidx);
-				ml_tidx++;
-			}
+			strip_comment(p);
+			if (parse_array_line(p, doc, ml_section, &ml_tidx))
+				ml_active = 0;
 			continue;
 		}
 
@@ -232,14 +277,8 @@ toml_parse(const char *path, TomlDoc *doc)
 
 		char *v = strtrim(eq + 1);
 
-		{
-			int in_str = 0;
-			for (char *cp = v; *cp; cp++) {
-				if (*cp == '"') in_str = !in_str;
-				if (!in_str && *cp == '#') { *cp = '\0'; break; }
-			}
-			v = strtrim(v);
-		}
+		strip_comment(v);
+		v = strtrim(v);
 
 		if (*v == '[') {
 			const char *after = v + 1;
@@ -255,15 +294,13 @@ toml_parse(const char *path, TomlDoc *doc)
 			}
 
 			if (*after == '{') {
-
-				const char *sp = v + 1;
 				int tidx_local = 0;
-				while (*sp && *sp != ']') {
-					while (*sp && *sp != '{' && *sp != ']') sp++;
-					if (*sp == '{') {
-						sp++;
-						sp = parse_inline_table(sp, doc, key, tidx_local++);
-					}
+
+				/* Not closed on this line: the rest of the array follows. */
+				if (!parse_array_line(v + 1, doc, key, &tidx_local)) {
+					copystr(ml_section, sizeof(ml_section), key);
+					ml_tidx   = tidx_local;
+					ml_active = 1;
 				}
 				continue;
 			}
@@ -299,8 +336,11 @@ toml_parse(const char *path, TomlDoc *doc)
 
 		} else {
 			char *ep;
-			long iv = strtol(v, &ep, 10);
-			if (ep != v && (*ep == '\0' || *ep == '#' || isspace((unsigned char)*ep))) {
+			long iv;
+			if (parse_bool(v, &iv)) {
+				ent->val.type = TOML_INT;
+				ent->val.i = iv;
+			} else if ((iv = strtol(v, &ep, 10)), ep != v && (*ep == '\0' || *ep == '#' || isspace((unsigned char)*ep))) {
 				ent->val.type = TOML_INT;
 				ent->val.i = iv;
 			} else {

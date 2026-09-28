@@ -183,6 +183,23 @@ start_dwm fifo
 expect_defaults fifo
 rm -f "$user_hotkeys"
 
+# Sync Sprint 12 S12-05: a window rule with nothing to match (it would apply to
+# every window and reset the flags earlier rules set) is skipped; the rest load.
+user_rules=$home/.config/lyona/window-rules.toml
+printf 'rules = [\n  { isfloating=1 }, # {no match}\n  { class="Gimp", isfloating=true },\n]\n' >"$user_rules"
+start_dwm empty-rule
+i=0
+until grep -Fq 'dwm: loaded 1 window rules from config' "$work/dwm.log"; do
+	i=$((i + 1))
+	[ "$i" -lt 100 ] || fail "the empty rule was not skipped: $(grep 'window rule' "$work/dwm.log")"
+	sleep 0.05
+done
+grep -Fq 'window rule 1 has no class, instance or title; skipped' "$work/dwm.log" ||
+	fail 'dwm did not say it skipped the empty rule'
+kill -USR2 "$dwm_pid"
+wait_exit empty-rule
+rm -f "$user_rules"
+
 # Neither the user's file nor the default loads: the emergency keys still quit.
 printf '=\n' >"$user_hotkeys"
 rm -rf "$default_dir"
@@ -199,4 +216,4 @@ done
 wait_exit 'emergency Super+Shift+q'
 seed_defaults
 
-printf 'dwm config fallback (empty, comments, unusable, spawn-only, reload, /dev/zero, oversized, FIFO, emergency keys): PASS\n'
+printf 'dwm config fallback (empty, comments, unusable, spawn-only, reload, /dev/zero, oversized, FIFO, empty rule, emergency keys): PASS\n'
