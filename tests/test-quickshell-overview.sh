@@ -31,7 +31,7 @@ grep -Fq 'event.key === Qt.Key_Escape' "$overview/WindowOverview.qml"
 # Cards grouped by tag via SectionLabel, the launcher's own "Categories"
 # component reused, not reinvented.
 grep -Fq 'SectionLabel {' "$overview/WindowOverview.qml"
-grep -Fq 'model: root.overviewModel.groups' "$overview/WindowOverview.qml"
+grep -Fq 'model: root.visible ? root.overviewModel.groups : []' "$overview/WindowOverview.qml"
 
 # Card click calls DwmState.focusWindow(windowId) directly -- the exact
 # function RunningAppsArea.qml's own click handler already calls -- and then

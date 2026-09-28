@@ -489,6 +489,7 @@ check-xvfb-runtime: all
 # Sync Sprint 12 S12-07: the parent-bound watchdog does not poll, and the network
 # and media watchers in the QML models neither drop changes nor respawn forever.
 .PHONY: check-dwm-watchdog check-quickshell-watchers-xvfb check-quickshell-idle-watchers-xvfb
+.PHONY: check-quickshell-state-bridge-xvfb check-quickshell-state-model-xvfb
 check-dwm-watchdog:
 	status=0; /usr/bin/python3 tests/test-dwm-watchdog.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
@@ -503,6 +504,17 @@ check-quickshell-watchers-xvfb:
 # plan's 30 s with DWM_IDLE_WATCHERS_SECONDS=30.
 check-quickshell-idle-watchers-xvfb: all
 	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-idle-watchers-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# The state bridge with real dwm and windows: one rebuild per burst of events.
+check-quickshell-state-bridge-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-state-bridge-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-quickshell-state-model-xvfb:
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-state-model-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1010,6 +1022,8 @@ check:
 	$(MAKE) check-dwm-watchdog
 	$(MAKE) check-quickshell-watchers-xvfb
 	$(MAKE) check-quickshell-idle-watchers-xvfb
+	$(MAKE) check-quickshell-state-bridge-xvfb
+	$(MAKE) check-quickshell-state-model-xvfb
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb
