@@ -1,5 +1,7 @@
-#!/bin/sh
-set -eu
+#!/bin/bash
+# Bash for watch: read -t with a fractional timeout, EPOCHREALTIME and an
+# associative array of per-window watchers.
+set -euo pipefail
 
 print_default_names() {
 	count=${1:-9}
@@ -290,6 +292,9 @@ root_snapshot() {
 				sub(/"$/, "", text)
 				return text
 			}
+			# An unset property prints "NAME:  not found." (or "no such atom on
+			# any window." for an atom nobody has created): no value.
+			/^[A-Za-z_]+:[[:space:]]+(not found|no such atom on any window)\.$/ { next }
 			/^_NET_CURRENT_DESKTOP/ { split(value(), f, /[[:space:]]+/); current = f[1]; next }
 			/^_NET_NUMBER_OF_DESKTOPS/ { split(value(), f, /[[:space:]]+/); count = f[1]; next }
 			/^_NET_DESKTOP_NAMES/ {
@@ -344,24 +349,22 @@ root_snapshot() {
 }
 
 show_state() {
-	{
-		IFS= read -r current
-		IFS= read -r count
-		IFS= read -r names
-		IFS= read -r clients
-		IFS= read -r fullscreen_monitors
-		IFS= read -r monitor_desktops
-		IFS= read -r focused_monitor
-		IFS= read -r layout
-		IFS= read -r status
-	} <<ROOT_SNAPSHOT
-$(root_snapshot)
-ROOT_SNAPSHOT
+	local -a root_fields=()
+	mapfile -t root_fields < <(root_snapshot)
+	current=${root_fields[0]:-}
+	count=${root_fields[1]:-}
+	names=${root_fields[2]:-}
+	clients=${root_fields[3]:-}
+	fullscreen_monitors=${root_fields[4]:-}
+	monitor_desktops=${root_fields[5]:-}
+	focused_monitor=${root_fields[6]:-}
+	layout=${root_fields[7]:-}
+	status=${root_fields[8]:-}
 
 	current=${current:-0}
 	count=${count:-9}
 	[ -n "$names" ] || names=$(print_default_names "$count")
-	window_id=$(active_window_id)
+	window_id=$(active_window_id || true)
 	title=$(window_title "$window_id" || true)
 	title=${title:-Desktop}
 	class=$(window_class "$window_id" || true)
@@ -399,9 +402,14 @@ ROOT_SNAPSHOT
 	printf 'status=%s\n' "$status"
 }
 
+# Every property watcher writes its lines to one fifo; each burst of lines (a tag
+# switch alone changes 3 or 4 properties) becomes one rebuild. Windows get one
+# resident "xprop -spy" each, started when a window appears and stopped when it
+# goes, never restarted wholesale.
 watch_state() {
 	watch_dir=$(mktemp -d)
-	client_pids=
+	declare -gA client_watchers=()
+	clients_changed=0
 	root_pid=
 	trap 'watch_cleanup' EXIT
 	trap 'exit 129' HUP
@@ -434,40 +442,82 @@ watch_state() {
 			WM_NAME >&3 2>/dev/null &
 	fi
 	root_pid=$!
-	watch_clients
+	sync_client_watchers
 	show_state
 	printf '\n'
 
 	while IFS= read -r event <&3; do
-		case $event in
-		_NET_CLIENT_LIST*) watch_clients ;;
-		esac
+		clients_changed=0
+		note_event "$event"
+		drain_events
+		# The drain after starting new watchers may see the list change again.
+		while [ "$clients_changed" = 1 ]; do
+			clients_changed=0
+			sync_client_watchers
+		done
 		show_state
 		printf '\n'
 	done
 }
 
-watch_clients() {
-	for watcher_pid in $client_pids; do
-		kill "$watcher_pid" 2>/dev/null || true
-		wait "$watcher_pid" 2>/dev/null || true
+note_event() {
+	case $1 in
+	_NET_CLIENT_LIST*) clients_changed=1 ;;
+	esac
+}
+
+# Take every event that arrives in the next 50 ms into the same rebuild.
+drain_events() {
+	local deadline remaining timeout event rest
+	deadline=$((${EPOCHREALTIME//[!0-9]/} + 50000))
+	while :; do
+		remaining=$((deadline - ${EPOCHREALTIME//[!0-9]/}))
+		((remaining > 0)) || return 0
+		printf -v timeout '0.%06d' "$remaining"
+		event=
+		if ! IFS= read -r -t "$timeout" event <&3; then
+			[ -n "$event" ] || return 0
+			# Timed out mid-line: the rest of the line is on its way.
+			IFS= read -r rest <&3 || true
+			event=$event$rest
+		fi
+		note_event "$event"
 	done
-	client_pids=
-	client_list=$(root_property_value _NET_CLIENT_LIST)
-	old_ifs=$IFS
-	IFS=,
+}
+
+# Start a watcher for each window that has none, stop the watchers of windows
+# that are gone. A new watcher prints the window's properties at once; the
+# drain takes those into the rebuild that follows instead of a rebuild each.
+sync_client_watchers() {
+	local window_id client_list started=0
+	local -A wanted=()
+	client_list=$(root_property_value _NET_CLIENT_LIST || true)
+	local IFS=,
 	for window_id in $client_list; do
 		window_id=${window_id##* }
-		[ -n "$window_id" ] || continue
-		xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP >&3 2>/dev/null &
-		client_pids="$client_pids $!"
+		case $window_id in
+		0x[0-9a-fA-F]*) wanted[$window_id]=1 ;;
+		esac
 	done
-	IFS=$old_ifs
+	IFS=$' \t\n'
+	for window_id in "${!client_watchers[@]}"; do
+		[ -z "${wanted[$window_id]:-}" ] || continue
+		kill "${client_watchers[$window_id]}" 2>/dev/null || true
+		wait "${client_watchers[$window_id]}" 2>/dev/null || true
+		unset 'client_watchers[$window_id]'
+	done
+	for window_id in "${!wanted[@]}"; do
+		[ -z "${client_watchers[$window_id]:-}" ] || continue
+		xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP >&3 2>/dev/null &
+		client_watchers[$window_id]=$!
+		started=1
+	done
+	[ "$started" = 0 ] || drain_events
 }
 
 watch_cleanup() {
 	trap - EXIT HUP INT TERM
-	for watcher_pid in $client_pids $root_pid; do
+	for watcher_pid in "${client_watchers[@]}" $root_pid; do
 		[ -n "$watcher_pid" ] || continue
 		kill "$watcher_pid" 2>/dev/null || true
 		wait "$watcher_pid" 2>/dev/null || true

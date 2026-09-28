@@ -485,6 +485,11 @@ children's CPU (not only Quickshell's own) within 0.5 points of zero over 30 s.
 
 **Source:** F (High, measured), A (Medium). **Verified** (code paths).
 
+**Implemented (2026-09-28)**, steps 1-3. The script moved to bash (a fixed 50 ms
+drain, and per-window watchers kept in an associative array). The overview gates its
+card `Repeater` on visibility rather than gating `groups`, which the `windowCount`
+IPC reads. Step 4 is not done. Evidence: `docs/evidence/s12-08-state-bridge.md`.
+
 1. `dwm-quickshell-state watch` (`scripts/dwm-quickshell-state:441-447`) runs a full
    `show_state` for every line any `xprop -spy` prints. That costs about N+8
    process starts for N windows (a root `xprop`, `xdotool`, two `xprop` for the

@@ -10,6 +10,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The panel's dwm state bridge no longer rebuilds on every property event (Sync Sprint 12 S12-08, issue `#171`).
+  `dwm-quickshell-state watch` (now bash) takes every event that arrives within 50 ms of the first into one rebuild,
+  and keeps one `xprop -spy` per window, starting and stopping watchers only for windows that appear or go instead
+  of restarting all of them on every client-list change. With 10 windows, a tag switch now causes one rebuild (was
+  3 to 5), and opening 10 windows causes 10 (was 286, over a full core for several seconds). dwm writes
+  `_DWM_FULLSCREEN_MONITORS` only when it changes and publishes a window's desktop only when its tags do. The shell
+  skips state keys whose text is unchanged, so unchanged lists no longer rebuild their views, and the closed window
+  overview no longer recreates a card per window on every update. With no windows open, the bridge no longer
+  reports a phantom window named "found." or a status of "not found.". New `tests/test-quickshell-state-bridge-xvfb.py`
+  (`make check-quickshell-state-bridge-xvfb`) and `tests/test-quickshell-state-model-xvfb.py`
+  (`make check-quickshell-state-model-xvfb`), both in `make check`.
+
 - The always-on shell watchers stop polling (Sync Sprint 12 S12-07, issue `#170`). `run_parent_bound`
   (`scripts/dwm-watchdog.sh`), which keeps `nmcli monitor`, `pactl subscribe`, `playerctl --follow` and the control
   center's power watcher tied to Quickshell, checked its parent every 0.25 s by running `sed`, `awk` and `sleep`:

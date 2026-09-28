@@ -118,6 +118,8 @@ struct Client {
 	int basew, baseh, incw, inch, maxw, maxh, minw, minh;
 	int bw, oldbw;
 	unsigned int tags;
+	unsigned int publishedtags; /* tags last published for publishedwin */
+	Window publishedwin; /* None until setclientdesktop first publishes */
 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen, isterminal, noswallow, alwaysontop, ewmhabove;
 	int issteam;
 	// int beingmoved; /* disabled: written by placemouse(), never read */
@@ -3202,6 +3204,12 @@ setclientdesktop(Client *c)
 
     if (!c)
         return;
+    /* Unchanged tags publish nothing: every write wakes the status clients
+     * watching these properties. Monitor moves still re-check fullscreen. */
+    if (c->publishedwin == c->win && c->publishedtags == c->tags) {
+        updatefullscreenmonitors();
+        return;
+    }
 
     for (i = 0; i < TAGSLENGTH && !(c->tags & (1 << i)); i++);
 
@@ -3212,6 +3220,8 @@ setclientdesktop(Client *c)
     }
 
 	ewmh_replace_window_cardinal(c->win, netatom[NetWMDesktop], data, 1);
+	c->publishedwin = c->win;
+	c->publishedtags = c->tags;
 	updatefullscreenmonitors();
 	data[0] = ++tagupdatesequence;
 	ewmh_replace_root_cardinal(dwmtagupdateatom, data, 1);
@@ -5271,9 +5281,14 @@ updateclientlist(void)
 	updatefullscreenmonitors();
 }
 
+/* Written only when the list changes, like updatelayoutprop: it is called on
+ * every tag switch and client-list update, and a status client watches it. */
 void
 updatefullscreenmonitors(void)
 {
+	static long *cache;
+	static unsigned int cachelen;
+	static int cachevalid;
 	Monitor *m;
 	long *monitors;
 	int logicalindex;
@@ -5290,9 +5305,17 @@ updatefullscreenmonitors(void)
 		if (logicalindex >= 0)
 			monitors[count++] = logicalindex;
 	}
+	if (cachevalid && count == cachelen
+	&& (count == 0 || memcmp(monitors, cache, count * sizeof(*monitors)) == 0)) {
+		free(monitors);
+		return;
+	}
 	XChangeProperty(dpy, root, dwmfullscreenmonitorsatom, XA_CARDINAL, 32,
 		PropModeReplace, (unsigned char *)monitors, count);
-	free(monitors);
+	free(cache);
+	cache = monitors;
+	cachelen = count;
+	cachevalid = 1;
 }
 
 void

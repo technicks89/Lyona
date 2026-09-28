@@ -23,6 +23,9 @@ Scope {
     property bool batteryAvailable: false
     property int batteryPercent: 0
     property string batteryStatus: ""
+    // The last raw text of each key. The watcher sends the whole state on every
+    // change, and reassigning an unchanged list would still rebuild every view of it.
+    property var rawValues: ({})
 
     function parseState(text) {
         const lines = text.trim().split("\n");
@@ -36,6 +39,11 @@ Scope {
 
             const key = line.slice(0, separator);
             const value = line.slice(separator + 1);
+
+            if (root.rawValues[key] === value) {
+                continue;
+            }
+            root.rawValues[key] = value;
 
             if (key === "current") {
                 const parsed = parseInt(value, 10);

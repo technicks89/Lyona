@@ -275,3 +275,11 @@ update in the same PR, so completed items are pinned here too, not only in
   `tests/test-quickshell-power-backend.sh`. Evidence: `docs/evidence/s12-07-watcher-polling.md`. The plan's 30 s
   full-shell check (dwm plus the managed Quickshell under Xvfb): 0.07% of a core in the watchers, within 0.5 points
   of zero; the old watchdog measured 1.70% and fails it.
+- [x] Sync Sprint 12 S12-08 -- the state bridge coalesces events and stops forking per window, issue `#171` --
+  `scripts/dwm-quickshell-state` (now bash), `dwm.c` (`updatefullscreenmonitors`, `setclientdesktop`),
+  `config/quickshell/state/DwmState.qml`, `config/quickshell/overview/WindowOverview.qml`; tests in
+  `tests/test-quickshell-state-bridge-xvfb.py`, `tests/test-quickshell-state-model-xvfb.py` and
+  `tests/test-quickshell-overview.sh`. Evidence: `docs/evidence/s12-08-state-bridge.md`. With 10 real windows, a
+  tag switch causes one rebuild (was 3-5) and opening 10 windows 10 (was 286); the plan's 30 s check measured 1.07% of
+  a core (old script: 30.17%). The plan's step 4 (structured root
+  property or xcb watcher) is not done; multi-monitor was not run.

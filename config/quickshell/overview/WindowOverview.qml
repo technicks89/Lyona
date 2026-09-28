@@ -292,8 +292,11 @@ ClickAwayPopup {
                     width: parent.width
                     spacing: Theme.popupSpacing
 
+                    // No cards while closed: the groups stay live for the
+                    // windowCount IPC, but a hidden popup must not rebuild a
+                    // card per window on every state change.
                     Repeater {
-                        model: root.overviewModel.groups
+                        model: root.visible ? root.overviewModel.groups : []
 
                         ColumnLayout {
                             id: groupDelegate
