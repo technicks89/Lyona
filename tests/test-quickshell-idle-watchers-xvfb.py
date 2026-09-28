@@ -78,6 +78,20 @@ def names(found):
     return out
 
 
+def network_monitor(root):
+    """Identify the live nmcli monitor under Quickshell by PID and start time."""
+    for pid in tree(root):
+        try:
+            fields = stat(pid)
+            args = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
+            if fields[0] != 'Z' and os.path.basename(args[0]) == b'nmcli' \
+                    and args[1:2] == [b'monitor']:
+                return pid, fields[19]
+        except (FileNotFoundError, ProcessLookupError, PermissionError, IndexError):
+            pass
+    return None
+
+
 def carrying(marker):
     """Every process whose command line or environment mentions marker."""
     out = set()
@@ -129,6 +143,12 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
                 return pid
         return None
 
+    def fail_session(message):
+        log.flush()
+        print((base / 'session.log').read_text()[-2000:], file=sys.stderr)
+        print('FAIL: ' + message, file=sys.stderr)
+        raise SystemExit(1)
+
     try:
         shell = None
         deadline = time.time() + 20
@@ -137,10 +157,10 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
             time.sleep(0.2)
         time.sleep(8)  # start-up: first snapshots, watchers attached
         if shell is None or resident() != shell:
-            log.flush()
-            print((base / 'session.log').read_text()[-2000:], file=sys.stderr)
-            print('FAIL: no resident quickshell for this session', file=sys.stderr)
-            raise SystemExit(1)
+            fail_session('no resident quickshell for this session')
+        monitor = network_monitor(shell)
+        if monitor is None:
+            fail_session('network watcher (nmcli monitor) is not running before the idle sample')
         before = tree(shell)
         seen = set(before)
         started_names = {}
@@ -154,6 +174,8 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
             time.sleep(0.05)
         end_ticks, elapsed = cost(shell), time.time() - started
         resident_names = names(tree(shell))
+        if network_monitor(shell) != monitor:
+            fail_session('network watcher (nmcli monitor) did not stay running through the idle sample')
     finally:
         for pid in tree(wm.pid) | carrying(marker):
             try:
