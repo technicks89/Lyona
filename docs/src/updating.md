@@ -63,6 +63,13 @@ Declining the privileged-step confirmation, or a build failure, leaves the
 live install completely untouched and exits non-zero — never a half-applied
 system.
 
+Before it builds, an apply checks the packages the new release needs, from the
+release's own package list. If one it requires is missing, it stops, changes
+nothing, and prints the command to install it, for example
+`sudo pacman -S --needed xdotool`. Run that, then update again; Settings shows the
+same message. A missing desktop package (Picom, light-locker, ...) is only a
+warning: the features that use it stay unavailable.
+
 ### Watching an update
 
 An apply takes a few minutes and restarts Quickshell part way through, so the
@@ -96,8 +103,15 @@ Useful flags:
   installed.
 - `--dry-run` — builds and reports exactly what would be written, without
   installing anything.
-- `--file PATH` — install an already-downloaded tarball (for an offline
-  machine); still requires `--version` and still verifies the checksum.
+- `--file PATH` — install an already-downloaded tarball; still requires
+  `--version` and still verifies the checksum, which it looks up online. For a
+  machine with no network, add `--sha256 HASH`, the tarball's line in the
+  release's `lyona-<version>-SHA256SUMS`:
+
+  ```sh
+  lyona-update apply --file ~/lyona-2026.10.0.tar.gz --version 2026.10.0 \
+      --sha256 3f9c...a1
+  ```
 - `--from-checkout DIR` — **removed.** The privileged step installs only
   releases it has verified itself. To install a local development checkout, run
   `sudo make install-system && make install-user` in it, or
@@ -134,7 +148,9 @@ files, which the privileged helper copies as root, just before installing, into
 `/var/lib/lyona/backups/<id>/`, readable only by root. A rollback restores the
 system files from that root-only copy and never from anything in your home
 directory, so nothing another program running as you could have changed is ever
-installed as root. The helper keeps the newest 5 system backups.
+installed as root. The helper keeps the newest 5 system backups. Your own files
+are restored whole: the backed-up Quickshell config and data directory replace
+the current ones, so nothing a newer version added is left behind.
 
 It refuses to restore a backup whose checksums do not match, or one taken against
 a different install environment (prefix, config, or data directory) than the one

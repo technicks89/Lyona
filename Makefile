@@ -308,9 +308,11 @@ install-user:
 	fi
 	@echo "==> Seeding application config without overwriting user files..."
 	mkdir -p ${CFG_DIR}
+	@# quickshell is installed wholesale below; polkit holds the system polkit
+	@# actions (POLKIT_ACTIONS, @PREFIX@ unexpanded), which are never user config.
 	for dir in config/*/; do \
 		b=$$(basename "$$dir"); \
-		if [ "$$b" = quickshell ]; then \
+		if [ "$$b" = quickshell ] || [ "$$b" = polkit ]; then \
 			continue; \
 		fi; \
 		dst=${CFG_DIR}/$$b; \
@@ -946,6 +948,15 @@ check-install-manifest: all
 check-install-preservation:
 	tests/test-install-preservation.sh
 
+.PHONY: check-install-multilib check-iso-install-credentials
+check-install-multilib:
+	tests/test-install-multilib.sh
+
+check-iso-install-credentials:
+	status=0; tests/test-iso-install-credentials.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 check-lyona-version:
 	tests/test-lyona-version.sh
 
@@ -1091,6 +1102,8 @@ check:
 	$(MAKE) check-no-aur
 	$(MAKE) check-install
 	$(MAKE) check-install-preservation
+	$(MAKE) check-install-multilib
+	$(MAKE) check-iso-install-credentials
 	$(MAKE) check-lyona-version
 	$(MAKE) check-lyona-update
 	$(MAKE) check-test-runner

@@ -300,3 +300,11 @@ update in the same PR, so completed items are pinned here too, not only in
   (RSS unchanged at 183 MiB after release) and dropped, both asked of the user. Evidence:
   `docs/evidence/s12-10-power-memory-defaults.md`. Not verified on a real display: blanking and locking with a real
   light-locker and LightDM.
+- [x] Sync Sprint 12 S12-11 -- install and update correctness, issue `#174` -- `install.sh` (`pacman -Syu` after
+  multilib), `scripts/lyona-update` (release package check, exact checksum match, whole-tree rollback, `--sha256`
+  for offline `--file`), `Makefile` (no polkit templates in `~/.config`),
+  `archiso/airootfs/root/lyona-install.sh` (credentials via `jq`, password via stdin), `docs/src/updating.md`. Item 2
+  decided with the maintainer: refuse and list the fix. Tests in `tests/test-install-multilib.sh`,
+  `tests/test-iso-install-credentials.sh`, `tests/test-lyona-update.sh` and `tests/test-install-preservation.sh`.
+  Evidence: `docs/evidence/s12-11-install-update.md`. Not verified: a real ISO install, a real privileged rollback,
+  and the package check against a real `pacman -T`.

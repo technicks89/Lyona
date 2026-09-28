@@ -768,6 +768,13 @@ asked of the user directly. Evidence: `docs/evidence/s12-10-power-memory-default
 
 **Source:** E (Medium, Low), A (High for 2), S (Low for 7). **Verified** unless noted.
 
+**Implemented (2026-09-28)**, all items. Item 2, decided with the maintainer: refuse
+and list the fix (`sudo pacman -S --needed ...`) for the required groups, and only warn
+for desktop packages. There is no privileged package installation, and the install
+profile is not recorded. Item 4 matches the file name part: releases list assets by
+their build path, so `$2 == want` would have broken them. Evidence:
+`docs/evidence/s12-11-install-update.md`.
+
 1. **Partial upgrade.** `install.sh:418` runs `sudo pacman -Sy` after enabling
    multilib, and later installs with `pacman -S --needed`
    (`scripts/dwm-utils.sh:26-28`). Arch does not support `-Sy` without `-u`.

@@ -25,7 +25,7 @@ die() {
 usage() {
 	cat <<'EOF'
 Usage: lyona-update check       [--channel stable|preview] [--json]
-       lyona-update apply       [--version V] [--file PATH]
+       lyona-update apply       [--version V] [--file PATH [--sha256 HASH]]
                                 [--allow-downgrade] [--dry-run] [--yes]
        lyona-update rollback    [--backup ID] [--list] [--yes]
        lyona-update backups     [--json]
@@ -381,8 +381,15 @@ resolve_release() {
 	checksums_url=$(jq -r --arg name "$checksums_name" \
 		'.assets[]? | select(.name == $name) | .browser_download_url' <<<"$release_json")
 	if [[ -n $checksums_url ]]; then
+		# The file name, exactly. A release lists its assets by the path they were
+		# hashed at (an absolute build path, or ./name), with the "*" sha256sum adds
+		# in binary mode. Never a pattern (Sync Sprint 12 S12-11): the name's "."
+		# matched any character, and the match was not anchored at the start.
 		release_checksum=$(fetch_url "$checksums_url" 2>/dev/null |
-			awk -v want="$release_asset_name" '$0 ~ want"$" { print $1; exit }')
+			awk -v want="$release_asset_name" '
+				{ name = $2; sub(/^\*/, "", name); sub(/^.*\//, "", name) }
+				name == want { print $1; exit }
+			')
 		[[ -n $release_checksum ]] || release_checksum=unknown
 	fi
 
@@ -540,8 +547,47 @@ sha256_of() {
 	sha256sum -- "$1" | awk '{ print $1 }'
 }
 
+# The packages the release being installed needs, from its own package map, not
+# the installed one: a release that adds a dependency otherwise installs helpers
+# that fail at runtime (Sync Sprint 12 S12-11, decided with the maintainer: refuse
+# and show the fix, no privileged package installation). The required groups
+# block the update before anything changes; missing desktop packages only warn,
+# since the install profile is not recorded and a user may have left some out.
+# pacman -T resolves provides the way an install would.
+# Arguments: STAGING_DIR.
+check_release_packages() {
+	local map=$1/scripts/dwm-packages.sh missing
+	if [[ ! -f $map ]]; then
+		warn "release has no scripts/dwm-packages.sh; package dependencies not checked"
+		return 0
+	fi
+	command -v pacman >/dev/null 2>&1 || die "pacman not found; lyona runs on Arch Linux only"
+	missing=$(release_packages "$map" build x11 runtime-required | xargs -r pacman -T 2>/dev/null) || true
+	if [[ -n $missing ]]; then
+		missing=$(printf '%s\n' "$missing" | paste -sd ' ' -)
+		warn "release $requested_version needs packages that are not installed: $missing"
+		die "install them first, then update again: sudo pacman -S --needed $missing"
+	fi
+	missing=$(release_packages "$map" desktop | xargs -r pacman -T 2>/dev/null) || true
+	if [[ -n $missing ]]; then
+		warn "desktop packages not installed (features that use them stay unavailable): $(printf '%s\n' "$missing" | paste -sd ' ' -)"
+	fi
+}
+
+# Arguments: MAP GROUP..., the named groups of the release's package map, one
+# package per line, each once.
+release_packages() {
+	local map=$1
+	shift
+	(
+		# shellcheck source=scripts/dwm-packages.sh
+		. "$map" && for group in "$@"; do dwm_packages arch "$group"; done
+	) | awk 'NF && !seen[$0]++'
+}
+
 cmd_apply() {
 	local requested_version='' file_path='' allow_downgrade=false dry_run=false yes=false
+	local given_checksum=''
 	while (($# > 0)); do
 		case $1 in
 		--version)
@@ -552,6 +598,14 @@ cmd_apply() {
 		--file)
 			(($# >= 2)) || die "--file requires a value"
 			file_path=$2
+			shift 2
+			;;
+		--sha256)
+			# The tarball's line in the release's SHA256SUMS, for an install with
+			# no network: without it, --file looks the checksum up online.
+			(($# >= 2)) || die "--sha256 requires a value"
+			[[ $2 =~ ^[0-9a-fA-F]{64}$ ]] || die "--sha256 must be 64 hexadecimal digits"
+			given_checksum=${2,,}
 			shift 2
 			;;
 		--from-checkout)
@@ -575,6 +629,8 @@ cmd_apply() {
 		*) die "unknown option: $1" ;;
 		esac
 	done
+	[[ -z $given_checksum || -n $file_path ]] ||
+		die "--sha256 is for --file; a download is verified against the release's published SHA256SUMS"
 
 	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false status_quiet=false
 	trap report_status_failure EXIT
@@ -587,6 +643,7 @@ cmd_apply() {
 	local staging_dir tarball checksum config_h_arg=- live_config_h=
 	if [[ -n $file_path ]]; then
 		valid_absolute_path "$file_path" || die "--file must be an absolute path"
+		[[ -z $given_checksum ]] || checksum=$given_checksum
 		[[ -f $file_path && ! -L $file_path ]] || die "tarball not found: $file_path"
 		[[ -n $requested_version ]] || die "--file requires --version to confirm what it contains"
 		valid_version "$requested_version" || die "not a valid version: $requested_version"
@@ -604,7 +661,8 @@ cmd_apply() {
 		fi
 	else
 		[[ -n $requested_version ]] || {
-			resolve_release "$channel" || die "could not reach the update server; pass --file for an offline install"
+			resolve_release "$channel" ||
+				die "could not reach the update server; for an offline install pass --file PATH --version V --sha256 HASH (the tarball's line in the release's SHA256SUMS)"
 			requested_version=$release_version
 		}
 		status_target=$requested_version
@@ -682,6 +740,10 @@ cmd_apply() {
 	if [[ $requested_rank < $installed_rank && $allow_downgrade != true ]]; then
 		die "requested version $requested_version is older than the installed $installed_version; pass --allow-downgrade to proceed"
 	fi
+
+	status_detail="Checking the packages $requested_version needs"
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	check_release_packages "$staging_dir"
 
 	status_phase=building status_detail="Building $requested_version"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
@@ -843,6 +905,41 @@ verify_backup_checksums() {
 	done
 }
 
+# Restores one user tree (~/.local/share/lyona or ~/.config/quickshell) from its
+# backup archive, whole: the archive is unpacked beside the target and swapped in,
+# so files a newer version added do not stay behind, as they did when it was
+# unpacked over the current tree (Sync Sprint 12 S12-11). The current tree is kept
+# until the new one is in place, and put back if the swap fails.
+# Arguments: ARCHIVE TARGET.
+restore_user_tree() {
+	local archive=$1 target=$2 parent name staging previous
+	parent=$(dirname "$target")
+	name=$(basename "$target")
+	mkdir -p "$parent" || return 1
+	staging=$(mktemp -d "$parent/.$name.restore.XXXXXX") || return 1
+	if ! tar -C "$staging" -xpf "$archive" ||
+		[[ ! -d $staging/$name || -L $staging/$name ]] ||
+		[[ $(find "$staging" -mindepth 1 -maxdepth 1 | wc -l) -ne 1 ]]; then
+		rm -rf "$staging"
+		warn "backup archive $archive does not hold exactly $name"
+		return 1
+	fi
+	previous=
+	if [[ -e $target || -L $target ]]; then
+		previous=$staging/.previous
+		mv -T "$target" "$previous" || {
+			rm -rf "$staging"
+			return 1
+		}
+	fi
+	if ! mv -T "$staging/$name" "$target"; then
+		[[ -z $previous ]] || mv -T "$previous" "$target"
+		rm -rf "$staging"
+		return 1
+	fi
+	rm -rf "$staging"
+}
+
 cmd_rollback() {
 	local backup_id='' list_only=false yes=false
 	while (($# > 0)); do
@@ -920,10 +1017,12 @@ cmd_rollback() {
 		die "the privileged restore step failed or was declined"
 
 	if [[ -f $backup_dir/lyona-data.tar ]]; then
-		tar -C "$(dirname "$data_home/lyona")" -xpf "$backup_dir/lyona-data.tar"
+		restore_user_tree "$backup_dir/lyona-data.tar" "$data_home/lyona" ||
+			die "could not restore $data_home/lyona from backup $backup_id"
 	fi
 	if [[ -f $backup_dir/quickshell.tar ]]; then
-		tar -C "$(dirname "$config_home/quickshell")" -xpf "$backup_dir/quickshell.tar"
+		restore_user_tree "$backup_dir/quickshell.tar" "$config_home/quickshell" ||
+			die "could not restore $config_home/quickshell from backup $backup_id"
 	fi
 
 	local restored_version
