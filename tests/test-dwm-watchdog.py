@@ -12,7 +12,11 @@ dwm-quickshell-network, -controls and -controlcenter do. Checks:
    backstop loop;
 4. a shell-function child (power_watch_sources) is still cleaned up on SIGTERM;
 5. idle, the watchdog starts no processes: the old loop ran sed, awk and sleep
-   every 0.25 s, about 12 process starts a second per watcher.
+   every 0.25 s, about 12 process starts a second per watcher;
+6. the startup guard runs a bound command only while its parent is still the
+   process that started it (setpriv arms the signal before exec, so a parent that
+   died first would never send it);
+7. an interval that is zero or malformed falls back to 5 s instead of spinning.
 """
 import atexit
 import os
@@ -180,4 +184,41 @@ esac
     if started:
         fail('the idle watchdog started %d processes in 3 s' % len(started))
 
-print('dwm-watchdog run_parent_bound (status, helper SIGKILL, parent crash, function child, idle): PASS')
+    # 6. The guard: the command runs only under the expected parent.
+    guard = subprocess.run(['sh', '-c', '. "$0"; printf %s "$parent_bound_guard"', str(watchdog)],
+                           capture_output=True, text=True, check=True).stdout
+    # "; :" keeps the outer shell from exec'ing the inner one, so it really is the parent.
+    here = subprocess.run(['sh', '-c', 'sh -c "$1" sh "$$" echo ran; :', 'sh', guard], capture_output=True, text=True)
+    if here.stdout.strip() != 'ran':
+        fail('the guard refused its real parent: %r' % here.stdout)
+    wrong = subprocess.run(['sh', '-c', 'sh -c "$1" sh 1 echo ran; :', 'sh', guard], capture_output=True, text=True)
+    if wrong.stdout.strip() or wrong.returncode != 0:
+        fail('the guard ran a command whose parent is not the one it was given: %r' % wrong.stdout)
+
+    # 7. Intervals: the backstop loop's own argument shows what it was given.
+    def loop_interval(helper_pid):
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            for pid in descendants(helper_pid):
+                try:
+                    cmd = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
+                except FileNotFoundError:
+                    continue
+                if len(cmd) > 7 and cmd[0] == b'sh' and cmd[1] == b'-c' and b'parent_identity' in cmd[2]:
+                    return cmd[7].decode()
+            time.sleep(0.05)
+        fail('the backstop loop did not start')
+
+    for given, want in (('0', '5'), ('0.0', '5'), ('00', '5'), ('1.2.3', '5'), ('5.', '5'), ('.5', '5'),
+                        ('abc', '5'), ('', '5'), ('0.2', '0.2'), ('10', '10')):
+        parent, helper_pid, child = start('program', interval=given)
+        got = loop_interval(helper_pid)
+        os.kill(helper_pid, signal.SIGTERM)
+        wait_gone(child, 3)
+        parent.kill()
+        parent.wait()
+        if got != want:
+            fail('LYONA_PARENT_BOUND_INTERVAL=%r ran the loop with %r, not %r' % (given, got, want))
+
+print('dwm-watchdog run_parent_bound (status, helper SIGKILL, parent crash, function child, idle, guard, '
+      'intervals): PASS')

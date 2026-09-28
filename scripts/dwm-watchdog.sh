@@ -65,6 +65,14 @@ parent_bound_record() {
 #   this shell by pdeathsig, so it can never outlive it.
 #
 # Without setpriv both still work, as a plain child and a plain loop.
+#
+# setpriv arms the signal and then execs, so a parent that dies before the signal
+# is armed would never send it. Each bound process therefore starts through
+# parent_bound_guard, which, with the signal armed, checks its parent is still
+# the process that started it and exits if not, then execs the real command.
+# shellcheck disable=SC2016 # expanded by the guard's own shell
+parent_bound_guard='[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"'
+
 run_parent_bound() {
 	parent_pid=$PPID
 	parent_record=$(parent_bound_record "$parent_pid") || return 1
@@ -74,18 +82,29 @@ run_parent_bound() {
 	case $parent_state in
 	Z) return 1 ;;
 	esac
+	# A positive number of seconds (digits, at most one "." with digits on both
+	# sides); anything else, zero included, would make the backstop loop spin.
 	parent_bound_interval=${LYONA_PARENT_BOUND_INTERVAL:-5}
 	case $parent_bound_interval in
-	'' | *[!0-9.]* | .*) parent_bound_interval=5 ;;
+	'' | *[!0-9.]* | .* | *. | *.*.*) parent_bound_interval=5 ;;
+	esac
+	case $parent_bound_interval in
+	*[1-9]*) ;;
+	*) parent_bound_interval=5 ;;
 	esac
 	parent_bound_wrap=
 	command -v setpriv >/dev/null 2>&1 && parent_bound_wrap=setpriv
+	# This shell's own pid, which is what its children see as their parent even
+	# when run_parent_bound runs in a subshell ($$ would be the main shell's): the
+	# read builtin opens /proc/self in this very process.
+	parent_bound_self=
+	IFS=' ' read -r parent_bound_self _ 2>/dev/null </proc/self/stat || parent_bound_self=
 
 	# A function cannot be exec'd by setpriv; it runs as a plain child.
 	case $(command -v "$1" 2>/dev/null) in
 	/*)
-		if [ -n "$parent_bound_wrap" ]; then
-			setpriv --pdeathsig TERM -- "$@" &
+		if [ -n "$parent_bound_wrap" ] && [ -n "$parent_bound_self" ]; then
+			setpriv --pdeathsig TERM -- sh -c "$parent_bound_guard" sh "$parent_bound_self" "$@" &
 		else
 			"$@" &
 		fi
@@ -102,7 +121,9 @@ run_parent_bound() {
 	trap cleanup_parent_bound EXIT HUP INT TERM
 	# shellcheck disable=SC2016 # expanded by the loop's own shell
 	parent_bound_loop='
-		parent_pid=$1 parent_identity=$2 child_pid=$3 interval=$4 nap=$5
+		parent_pid=$1 parent_identity=$2 child_pid=$3 interval=$4 guard=$5 bound=$6
+		self=
+		IFS=" " read -r self _ </proc/self/stat
 		while :; do
 			line=
 			IFS= read -r line 2>/dev/null <"/proc/$parent_pid/stat" || line=
@@ -112,18 +133,24 @@ run_parent_bound() {
 				kill -TERM "$child_pid" 2>/dev/null || :
 				exit 0
 			}
-			# shellcheck disable=SC2086 # nap is "sleep" or "setpriv ... sleep"
-			$nap "$interval"
+			# The sleep is bound to this loop too, through the same guard.
+			if [ "$bound" = bound ] && [ -n "$self" ]; then
+				setpriv --pdeathsig TERM -- sh -c "$guard" sh "$self" sleep "$interval"
+			else
+				sleep "$interval"
+			fi
 		done'
 	# The loop's sleep is bound to the loop the same way, so a stopped loop never
 	# leaves a sleep behind for the rest of its interval.
-	if [ -n "$parent_bound_wrap" ]; then
-		setpriv --pdeathsig TERM -- sh -c "$parent_bound_loop" sh \
+	if [ -n "$parent_bound_wrap" ] && [ -n "$parent_bound_self" ]; then
+		setpriv --pdeathsig TERM -- sh -c "$parent_bound_guard" sh "$parent_bound_self" \
+			sh -c "$parent_bound_loop" sh \
 			"$parent_pid" "$parent_identity" "$child_pid" "$parent_bound_interval" \
-			'setpriv --pdeathsig TERM -- sleep' &
+			"$parent_bound_guard" bound &
 	else
 		sh -c "$parent_bound_loop" sh \
-			"$parent_pid" "$parent_identity" "$child_pid" "$parent_bound_interval" sleep &
+			"$parent_pid" "$parent_identity" "$child_pid" "$parent_bound_interval" \
+			"$parent_bound_guard" sleep &
 	fi
 	watchdog_pid=$!
 

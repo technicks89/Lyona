@@ -488,7 +488,7 @@ check-xvfb-runtime: all
 
 # Sync Sprint 12 S12-07: the parent-bound watchdog does not poll, and the network
 # and media watchers in the QML models neither drop changes nor respawn forever.
-.PHONY: check-dwm-watchdog check-quickshell-watchers-xvfb
+.PHONY: check-dwm-watchdog check-quickshell-watchers-xvfb check-quickshell-idle-watchers-xvfb
 check-dwm-watchdog:
 	status=0; /usr/bin/python3 tests/test-dwm-watchdog.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
@@ -496,6 +496,13 @@ check-dwm-watchdog:
 
 check-quickshell-watchers-xvfb:
 	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-watchers-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# The full shell's watchers, idle: within 0.5 points of zero CPU. 10 s here; the
+# plan's 30 s with DWM_IDLE_WATCHERS_SECONDS=30.
+check-quickshell-idle-watchers-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-idle-watchers-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1002,6 +1009,7 @@ check:
 	$(MAKE) check-quickshell-plain-text-xvfb
 	$(MAKE) check-dwm-watchdog
 	$(MAKE) check-quickshell-watchers-xvfb
+	$(MAKE) check-quickshell-idle-watchers-xvfb
 	$(MAKE) check-quickshell-design-system
 	$(MAKE) check-quickshell-large-surfaces
 	$(MAKE) check-quickshell-large-surfaces-xvfb
