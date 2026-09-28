@@ -476,7 +476,7 @@ Scope {
 
     Process {
         id: fallbackWatchProcess
-        command: Commands.controlsHelperCommand("audio-watch")
+        command: Commands.watchCommand(Commands.controlsHelperCommand("audio-watch"))
         running: false
         stdout: SplitParser {
             onRead: function(data) {
@@ -551,7 +551,7 @@ Scope {
 
     Process {
         id: mediaWatchProcess
-        command: Commands.controlsHelperCommand("media-watch")
+        command: Commands.watchCommand(Commands.controlsHelperCommand("media-watch"))
         running: true
 
         stdout: SplitParser {

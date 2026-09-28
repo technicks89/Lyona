@@ -17,6 +17,49 @@ tests_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 1
 repo=$(CDPATH='' cd -- "$tests_dir/.." && pwd) || exit 1
 test_name=${0##*/}
 
+# Workspaces go under ${DWM_TEST_TMP_ROOT:-$HOME/tmp} (AGENTS.md), including for a
+# test run on its own (a plain `make check-...`), not only under scripts/run-tests,
+# which points TMPDIR at its per-run workspace. Without this, mktemp uses /tmp.
+if [ -z "${TMPDIR:-}" ]; then
+	TMPDIR=${DWM_TEST_TMP_ROOT:-${HOME:-}/tmp}
+	mkdir -p -- "$TMPDIR" || exit 1
+	export TMPDIR
+fi
+
+# The HOME this test was started with, which kill_session_tree never touches.
+lyona_real_home=${HOME:-}
+
+# ── Session teardown ─────────────────────────────────────────────────────
+#
+# kill_session_tree HOME: stop every process whose environment has exactly this
+# HOME. An Xvfb test gives its session a HOME of its own, so this reaches what
+# stopping dwm and Quickshell does not: what dwm's autostart detached (setsid),
+# what a killed Quickshell orphaned, and the D-Bus services started for it.
+# TERM first, KILL whatever is left after 2 s. Refuses the test's own HOME, / and
+# an empty path.
+
+kill_session_tree_pids() {
+	grep -Flxz -- "HOME=$1" /proc/[0-9]*/environ 2>/dev/null |
+		sed -n 's#^/proc/\([0-9][0-9]*\)/environ$#\1#p' | grep -vx -- "$$"
+}
+
+kill_session_tree() {
+	kst_home=$1
+	case $kst_home in '' | / | "$lyona_real_home") return 0 ;; esac
+	kst_pids=$(kill_session_tree_pids "$kst_home") || return 0
+	# shellcheck disable=SC2086 # one pid per word
+	kill -TERM $kst_pids 2>/dev/null
+	kst_try=0
+	while [ "$kst_try" -lt 20 ]; do
+		kst_pids=$(kill_session_tree_pids "$kst_home") || return 0
+		sleep 0.1
+		kst_try=$((kst_try + 1))
+	done
+	# shellcheck disable=SC2086 # one pid per word
+	kill -KILL $kst_pids 2>/dev/null
+	return 0
+}
+
 # ── Failure reporting ────────────────────────────────────────────────────
 #
 # The dominant style in these tests is a bare `grep` under `set -e`, which

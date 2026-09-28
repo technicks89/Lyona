@@ -23,6 +23,20 @@ Singleton {
         return command.concat(argv);
     }
 
+    // A resident watcher ends with Quickshell, however Quickshell ends: a crash
+    // or SIGKILL runs none of its own cleanup (Sync Sprint 12 S12-09). setpriv
+    // arms a parent-death signal (SIGTERM, which each watcher traps to stop its
+    // children) and execs the guard dwm-watchdog.sh's run_parent_bound uses: the
+    // parent may have died before the signal was armed, so the guard checks it is
+    // still the Quickshell that started it, then execs the watcher. Without
+    // setpriv (util-linux) the watcher runs as before.
+    function watchCommand(command) {
+        const guard = '[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"';
+        const script = 'command -v setpriv >/dev/null 2>&1 || exec "$@"; '
+            + 'exec setpriv --pdeathsig TERM -- sh -c \'' + guard + '\' sh "$PPID" "$@"';
+        return ["sh", "-c", script, "dwm-parent-bound"].concat(command);
+    }
+
     function checkedCommand(command) {
 
         const script = 'output=$("$@"); status=$?; [ "$status" -eq 0 ] || exit "$status"; printf "%s\\n" "$output"';

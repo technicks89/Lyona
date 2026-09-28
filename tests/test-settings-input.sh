@@ -250,6 +250,9 @@ EOF
 chmod +x "$work/watch-owner"
 
 env_common=(
+	# The owner-death backstop is 5 s by default; the owner-exit cases below test
+	# that it works, not how long it waits.
+	LYONA_PARENT_BOUND_INTERVAL=0.2
 	DISPLAY=:88
 	HOME="$work/home"
 	XDG_CONFIG_HOME="$work/home/.config"

@@ -42,7 +42,7 @@ assert_contains "$model" 'Theme.applyAccessibility(false, false)'
 # lifecycle upstream carries. Verify the substitution instead of porting
 # upstream's watchReady/watchSetupFailures assertions, which describe an
 # implementation this file does not have.
-assert_contains "$model" 'command: Commands.accessibilitySettingsCommand("watch", [])'
+assert_contains "$model" 'command: Commands.watchCommand(Commands.accessibilitySettingsCommand("watch", []))'
 assert_contains "$model" 'active: true'
 assert_contains "$model" 'settleInterval: 100'
 assert_contains "$model" 'onSettled: root.refresh()'

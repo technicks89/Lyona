@@ -96,39 +96,63 @@ simple_watch_cleanup() {
 # NOUN appears in the diagnostics and in the temporary directory name.
 simple_watch_events() {
 	local subsystem=$1 noun=$2 owner_pid=$3 owner_starttime=$4
-	local identity line read_status simple_watch_signal=0
+	local identity line read_status interval
 	command -v udevadm >/dev/null 2>&1 || die "udevadm is unavailable"
 	[[ $owner_pid =~ ^[1-9][0-9]*$ && $owner_starttime =~ ^[1-9][0-9]*$ ]] ||
 		die "invalid $noun watch owner identity"
 	simple_watch_identity_is_live "$owner_pid:$owner_starttime" ||
 		die "$noun watch owner is unavailable"
-	simple_watch_fifo_dir=$(mktemp -d "${TMPDIR:-/tmp}/dwm-settings-$noun-watch.XXXXXX")
+	# In the session's runtime directory, like dwm-status: cleared at logout, so a
+	# watcher killed before it can clean up leaves nothing in /tmp.
+	simple_watch_fifo_dir=$(mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dwm-settings-$noun-watch.XXXXXX")
 	trap simple_watch_cleanup EXIT
-	trap 'simple_watch_signal=129' HUP
-	trap 'simple_watch_signal=130' INT
-	trap 'simple_watch_signal=143' TERM
+	# Exit, not just note the signal: a trap that returns leaves a blocked read
+	# waiting for its timeout, and SIGTERM is how the watcher is stopped (its
+	# parent-death signal included, Commands.watchCommand).
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
 	mkfifo -m 600 "$simple_watch_fifo_dir/events"
 
-	udevadm monitor --udev --subsystem-match="$subsystem" --property \
-		>"$simple_watch_fifo_dir/events" 2>/dev/null &
+	# The monitor ends with this watcher however the watcher ends: Quickshell stops
+	# a watcher it no longer needs (a Settings section left) without waiting for
+	# its cleanup. The guard is Commands.watchCommand's; the signal is KILL, as the
+	# monitor has nothing to clean up and must not be able to ignore it.
+	if command -v setpriv >/dev/null 2>&1; then
+		# shellcheck disable=SC2016 # expanded by the guard's own shell
+		setpriv --pdeathsig KILL -- sh -c '[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"' sh "$$" \
+			udevadm monitor --udev --subsystem-match="$subsystem" --property \
+			>"$simple_watch_fifo_dir/events" 2>/dev/null &
+	else
+		udevadm monitor --udev --subsystem-match="$subsystem" --property \
+			>"$simple_watch_fifo_dir/events" 2>/dev/null &
+	fi
 	simple_watch_monitor_pid=$!
 	identity=$(simple_watch_capture_child "$simple_watch_monitor_pid") ||
 		die "cannot identify the $noun event monitor"
 	simple_watch_children+=("$identity")
-	((simple_watch_signal == 0)) || return "$simple_watch_signal"
 
+	# A backstop only: the watcher is bound to its owner by a parent-death signal
+	# and is woken by every event; this catches an owner that died unseen (no
+	# setpriv). Same setting and default as dwm-watchdog.sh's run_parent_bound.
+	interval=${LYONA_PARENT_BOUND_INTERVAL:-5}
+	[[ $interval =~ ^[0-9]+([.][0-9]+)?$ && $interval =~ [1-9] ]] || interval=5
 	exec {simple_watch_fd}<"$simple_watch_fifo_dir/events"
-	while ((simple_watch_signal == 0)) &&
-		simple_watch_identity_is_live "$owner_pid:$owner_starttime" &&
+	# Opening a fifo to read waits for its writer, so both ends are open now and
+	# the name is no longer needed: a watcher that is killed outright (SIGKILL,
+	# which runs no trap) then leaves nothing behind in the temporary directory.
+	rm -f -- "$simple_watch_fifo_dir/events"
+	rmdir -- "$simple_watch_fifo_dir" 2>/dev/null || true
+	simple_watch_fifo_dir=
+	while simple_watch_identity_is_live "$owner_pid:$owner_starttime" &&
 		simple_watch_identity_is_live "$identity" "$$"; do
-		if IFS= read -r -t 0.1 line <&"$simple_watch_fd"; then
+		if IFS= read -r -t "$interval" line <&"$simple_watch_fd"; then
 			case $line in ACTION=*) printf 'changed\n' ;; esac
 		else
 			read_status=$?
 			((read_status > 128)) || break
 		fi
 	done
-	((simple_watch_signal == 0)) || return "$simple_watch_signal"
 	simple_watch_identity_is_live "$owner_pid:$owner_starttime" || return 0
 	if ! simple_watch_identity_is_live "$identity" "$$"; then
 		if wait "${identity%%:*}"; then

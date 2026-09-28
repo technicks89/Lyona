@@ -222,8 +222,9 @@ capture(Display *dpy, Window win)
 		for (j = 0; j < ny; j++) {
 			/* One row at a time, so a 4K window is never held whole in memory. */
 			y = y0 + (j * (y1 - y0)) / ny;
+			/* XGetImage waits for its reply, and an error for it reaches
+			 * onxerror before it returns: no XSync (a second round trip). */
 			row = XGetImage(dpy, win, 0, y, wa.width, 1, AllPlanes, ZPixmap);
-			XSync(dpy, False);
 			if (!row || x_error) {
 				if (row)
 					XDestroyImage(row);

@@ -12,18 +12,18 @@
   </p>
 </div>
 
-![The lyona desktop with its Quickshell panel](./lyona-qs-4x.webp)
+![The Lyona desktop with its Quickshell panel](./lyona-qs-4x.webp)
 
 This is a fork of [dwm-titus](https://github.com/ChrisTitusTech/dwm-titus). It is designed to run on Arch Linux rather than Fedora. 
-lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy). 
-Claude is used to help storyboard, build sprints, fix my code when needed, and build documentation
+Lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy). 
+Claude is used to help storyboard, build sprints, fix code where needed, and build documentation
 
-lyona is a complete, lightweight X11 desktop with sensible defaults,
+Lyona is a complete, lightweight X11 desktop with sensible defaults,
 guided installation, and powerful customization. It is designed for people who
 want a responsive keyboard-first workflow without having to assemble every
 part themselves.
 
-**lyona is an Arch Linux-only distribution.** Arch Linux is the sole
+**Lyona is an Arch Linux-only desktop.** Arch Linux is the sole
 supported platform for installation, runtime behavior, package resolution,
 testing, and release qualification. Use either the Arch installer image or
 the existing-system installer on Arch Linux.
@@ -39,7 +39,7 @@ the existing-system installer on Arch Linux.
 | **Panel customization** | Show or hide individual panel widgets (workspace, volume, Bluetooth, network, power) from Settings, with the choice persisted across every monitor and a fresh session. |
 | **Two installation paths** | A ready-to-install Arch image or an installer for an existing Arch system. |
 
-> lyona is an X11 desktop. A Wayland-native session is not currently part
+> Lyona is an X11 desktop. A Wayland-native session is not currently part
 > of the project scope.
 
 ## Recent Changes
@@ -112,7 +112,7 @@ Write the resulting ISO to a USB drive and boot it (UEFI only). The
 `lyona-install` wizard launches automatically — arrow-key menus for
 disk/keyboard, a few prompts for user/hostname/timezone, no
 desktop-environment picker — then drives `archinstall` unattended and
-automatically finishes installing lyona. ISO installs get the `multilib`
+automatically finishes installing Lyona. ISO installs get the `multilib`
 and [CachyOS](https://cachyos.org) repositories and both the `linux-cachyos`
 and `linux-cachyos-lts` kernels without being asked; the stock Arch kernel
 stays the default boot entry, so the CachyOS ones are there to select, not
@@ -224,7 +224,7 @@ safe customization paths.
 - [Control Center](https://dwm.technicks89.com/control-center.html)
 - [Settings](https://dwm.technicks89.com/settings.html)
 - [Updating and Rollback](https://dwm.technicks89.com/updating.html)
-- [How lyona Works](https://dwm.technicks89.com/patches.html)
+- [How Lyona Works](https://dwm.technicks89.com/patches.html)
 - [Troubleshooting](https://dwm.technicks89.com/troubleshooting.html)
 
 The technical guide explains the project architecture, what dwm is, and how

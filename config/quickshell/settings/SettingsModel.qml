@@ -1008,21 +1008,21 @@ Scope {
 
     Process {
         id: displayWatchProcess
-        command: Commands.settingsDisplayCommand("watch", root.watchOwnerArguments())
+        command: Commands.watchCommand(Commands.settingsDisplayCommand("watch", root.watchOwnerArguments()))
         running: false
         stdout: SplitParser { onRead: root.refreshDisplays() }
     }
 
     Process {
         id: inputWatchProcess
-        command: Commands.settingsInputCommand("watch", root.watchOwnerArguments())
+        command: Commands.watchCommand(Commands.settingsInputCommand("watch", root.watchOwnerArguments()))
         running: false
 			stdout: SplitParser { onRead: inputSettleTimer.restart() }
     }
 
     Process {
         id: notificationOwnerWatchProcess
-        command: Commands.settingsProviderCommand("watch-notifications", [])
+        command: Commands.watchCommand(Commands.settingsProviderCommand("watch-notifications", []))
         running: false
         stdout: SplitParser { onRead: notificationOwnerSettleTimer.restart() }
     }

@@ -15,6 +15,17 @@ self="$script_dir/${BASH_SOURCE[0]##*/}"
 accessibility_key=accessx
 
 declare -a device_ids=() device_keys=() device_kinds=() device_names=() device_persistable=()
+# The one-shot actions keep xinput output in a per-run scratch folder, removed on
+# exit (a signal included): a RETURN trap does not run when the helper is stopped
+# part-way through a scan, which left its files behind.
+input_scratch=
+input_tempfile() {
+	if [[ -n $input_scratch ]]; then
+		mktemp "$input_scratch/properties.XXXXXX"
+	else
+		mktemp
+	fi
+}
 watch_event_fifo=
 watch_monitor_pid=
 watch_session_guard_pid=
@@ -172,7 +183,7 @@ scan_devices() {
 		if [[ $line =~ id=([0-9]+)[[:space:]]+\[(slave|floating)[[:space:]]+(pointer|keyboard) ]]; then
 			id=${BASH_REMATCH[1]}
 			kind=${BASH_REMATCH[3]}
-			properties=$(mktemp)
+			properties=$(input_tempfile)
 			xinput list-props "$id" >"$properties" 2>/dev/null || {
 				rm -f "$properties"
 				continue
@@ -277,7 +288,7 @@ discover() {
 		key=${device_keys[$index]}
 		kind=${device_kinds[$index]}
 		name=${device_names[$index]}
-		properties=$(mktemp)
+		properties=$(input_tempfile)
 		if ! xinput list-props "$id" >"$properties" 2>/dev/null; then
 			rm -f "$properties"
 			continue
@@ -379,7 +390,7 @@ read_value() {
 		;;
 	*)
 		property=$(setting_property "$setting") || die "unsupported setting: $setting"
-		properties=$(mktemp)
+		properties=$(input_tempfile)
 		trap 'rm -f "$properties"' RETURN
 		xinput list-props "$id" >"$properties"
 		value=$(property_value "$properties" "$property")
@@ -638,7 +649,7 @@ reset_setting() {
 	esac
 	if [[ -z ${default+x} ]]; then
 		id=$(resolve_device "$key") || return 1
-		properties=$(mktemp)
+		properties=$(input_tempfile)
 		trap 'rm -f "$properties"' RETURN
 		xinput list-props "$id" >"$properties"
 		default=$(property_value "$properties" "$default_name")
@@ -703,6 +714,7 @@ cleanup_watch_apply() {
 		wait "$watch_monitor_pid" 2>/dev/null || true
 	fi
 	[[ -z $watch_event_fifo ]] || rm -f "$watch_event_fifo"
+	[[ -z $input_scratch ]] || rm -rf -- "$input_scratch"
 }
 
 watch_events() {
@@ -769,6 +781,19 @@ watch_apply_events() {
 		esac
 	done
 }
+
+# Every action but watch, whose shared watcher sets its own EXIT trap and never
+# reads xinput (watch-apply removes the folder in cleanup_watch_apply).
+case ${1:-} in
+watch) ;;
+*)
+	input_scratch=$(mktemp -d)
+	trap 'rm -rf -- "$input_scratch"' EXIT
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	;;
+esac
 
 case ${1:-} in
 discover)

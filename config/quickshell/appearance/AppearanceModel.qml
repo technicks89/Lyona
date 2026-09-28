@@ -1694,7 +1694,7 @@ Scope {
 
     Process {
         id: inventoryWatchProcess
-        command: Commands.settingsAppearanceCommand("watch-inventory", [])
+        command: Commands.watchCommand(Commands.settingsAppearanceCommand("watch-inventory", []))
         running: false
         stdout: SplitParser {
             onRead: line => {

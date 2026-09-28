@@ -132,7 +132,7 @@ Scope {
             root.progress = active;
             root.state = "observing";
             root.detail = "Observing " + target.actionId;
-            watchProcess.command = Commands.systemManagementCommand("watch-operation", [target.id]);
+            watchProcess.command = Commands.watchCommand(Commands.systemManagementCommand("watch-operation", [target.id]));
             Qt.callLater(function() { if (root.streamOwned) watchProcess.running = true; });
         } else {
             root.retries = 0;

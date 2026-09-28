@@ -517,7 +517,7 @@ Scope {
 
     Process {
         id: networkMonitorProcess
-        command: Commands.networkHelperCommand("monitor")
+        command: Commands.watchCommand(Commands.networkHelperCommand("monitor"))
         running: true
 
         // A burst of monitor lines (one change prints several) is one refresh,

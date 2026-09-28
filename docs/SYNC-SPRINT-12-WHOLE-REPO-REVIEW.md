@@ -563,6 +563,10 @@ tag switch causes one rebuild, not four.
 
 **Source:** F (Medium), E (Low), A (Low). **Verified.**
 
+**Implemented (2026-09-28)**, items 1-6. Items 5 and 6 were added while planning,
+from a cleanup of this repository's test leftovers. Evidence:
+`docs/evidence/s12-09-needless-work.md`.
+
 1. **`dwm-status` rewrites WM_NAME when nothing changed** (`scripts/dwm-status:176-186`,
    loop at `:328-362`). It publishes every 30 s and on every `pactl` sink event
    (dragging a volume slider is dozens a second), about 6 process starts each, and
@@ -594,6 +598,26 @@ tag switch causes one rebuild, not four.
    then remove `volume_text` and the `pactl` source, and read battery through
    UPower or udev only. Check first that no consumer other than `DwmState.qml`
    reads `VOL`/`NET` (the diagnostics and `dwm-status` tests).
+
+   **Found while planning (2026-09-28): the rewrite is also `dwm-status`'s only
+   liveness check.** Today an orphaned `dwm-status` (its X server gone, as after the
+   Xvfb smoke test, which kills dwm rather than quitting it, so `autostop.sh` never
+   runs) exits on its next `xsetroot` failure. Publishing only changes would leave it
+   running forever. The 30 s power tick stays (battery capacity is a sampled value),
+   and on a tick with nothing to publish it checks the display without writing to it:
+
+```diff
++	# Nothing to publish: still notice a display that has gone away.
++	[ "$text" != "${last_published-}" ] || {
++		timeout --kill-after=0.2 "$publish_timeout" xprop -root -notype WM_NAME \
++			>/dev/null 2>&1 && return 0
++		((signal_exit != 0)) && return 0
++		return 1
++	}
+```
+
+   The restart and churn cases in `tests/test-dwm-status.sh` drive the `pactl`
+   source today; they move to the `udevadm` source, which shares the restart code.
 2. **Every config reload runs `theme-apply.sh`** (`dwm.c:3930-3943`), including for
    a change to `window-rules.toml` or `hotkeys.toml` only. It is serialised with
    `flock`, so it is safe, just wasted work. Fork it only when `themes.toml` changed
@@ -607,6 +631,56 @@ tag switch causes one rebuild, not four.
    calls `XSync` after each `XGetImage`, which is already synchronous: about 640
    extra round trips per capture. Remove the `XSync` and check `x_error` once after
    the loop.
+5. **Tests leave files and processes behind** (added 2026-09-28, from a cleanup of
+   `~/tmp` and `/tmp`: 19 folders in `~/tmp`, about 270 entries in `/tmp` and 156
+   orphaned processes, all from this repository's tests).
+   - **`scripts/quickshell-qmllint` ends with `exec "$qmllint" "$@"`,** so its
+     `trap 'rm -rf "$tmp"' EXIT` never runs: every `make check-quickshell-qml`
+     leaves a `tmp.*/qs` import tree (114 of them in `/tmp`).
+
+```diff
+-exec "$qmllint" "$@"
++status=0
++"$qmllint" "$@" || status=$?
++exit "$status"
+```
+
+   - **Tests run outside `scripts/run-tests` write to `/tmp`.** `run-tests` exports
+     `TMPDIR` to its workspace, but a plain `make check-...` does not, so `mktemp`
+     and Python's `tempfile` fall back to `/tmp` (`plain-text.*`, `idle-watchers-*`,
+     the `xrandr`/`xinput` stub files, `lyona-ci-local.*`). AGENTS.md requires
+     `${DWM_TEST_TMP_ROOT:-$HOME/tmp}`. `tests/lib.sh` sets `TMPDIR` to that root
+     when it is unset; the Python tests and `scripts/ci-local.sh` use the same root.
+   - **Xvfb tests stop their session's first process and leave the rest.** dwm's
+     autostart detaches its children (`setsid`), and helpers started by a killed
+     Quickshell are orphaned. The smoke test left `dwm-status` and `udevadm monitor`
+     running against its dead display; the Settings test left its `busctl` stub
+     looping `sleep 1` for good, and those processes recreated the deleted folders.
+     `tests/lib.sh` gains `kill_session_tree HOME`, which stops every process whose
+     environment has that `HOME`: the test's own marker, never the real session's.
+     `test-desktop-smoke-xvfb.sh`, `test-quickshell-settings-xvfb.sh` and
+     `test-quickshell-system-management-xvfb.sh` call it in their cleanup.
+6. **Most resident shell watchers are not bound to Quickshell** (added 2026-09-28,
+   found through item 5). S12-07 bound the four `run_parent_bound` callers; ten more
+   are started straight from QML and outlive a Quickshell that crashes or is killed:
+   `BluetoothModel` (`busctl --system monitor org.bluez`, inline), and the `watch`
+   actions of `dwm-settings-picom`, `dwm-settings-appearance` (`watch-inventory`),
+   the autostart, defaults, display, input, accessibility and notification (`busctl
+   --user monitor`) helpers, and `dwm-quickshell-state watch`. Each leaks a process
+   (and often an `inotifywait` or a D-Bus match rule) until logout. Fix in one place:
+   `Commands.watchCommand(command)` starts a watcher through the S12-07 guard
+   (`setpriv --pdeathsig TERM`, then a check that its parent is still the one that
+   started it), and each watcher's own TERM handling is checked to stop its children.
+   Verification: start the full shell under Xvfb, SIGKILL Quickshell, and assert that
+   no process it started is left within the TERM grace period.
+
+   The display and input watchers (`scripts/dwm-simple-watch.sh`) also poll: a
+   `read -t 0.1` loop checks their owner is alive, 10 wake-ups a second each while
+   the section is open. The 0.1 s is also how quickly they stop: their TERM trap only
+   records the signal, and bash runs such a trap without ending a blocked `read`
+   (measured: `read -t 5` returned after 5 s). Once they are bound, the traps exit
+   (the EXIT cleanup still runs) and the owner check becomes a backstop every
+   `LYONA_PARENT_BOUND_INTERVAL` seconds (default 5, as in S12-07).
 
 ## S12-10: Power and memory defaults
 

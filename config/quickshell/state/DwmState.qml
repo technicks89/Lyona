@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import qs.core
 import "DwmStateWindows.js" as WindowsLib
 
 Scope {
@@ -293,7 +294,7 @@ Scope {
     }
 
     Process {
-        command: ["dwm-quickshell-state", "watch"]
+        command: Commands.watchCommand(["dwm-quickshell-state", "watch"])
         running: true
 
         stdout: SplitParser {

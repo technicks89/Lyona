@@ -28,6 +28,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 repo = Path(__file__).resolve().parents[1]
 watchdog = repo / 'scripts/dwm-watchdog.sh'
 if not shutil.which('setpriv'):

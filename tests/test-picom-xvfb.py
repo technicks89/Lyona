@@ -19,6 +19,8 @@ from pathlib import Path
 
 from PIL import ImageGrab
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 repo = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader(
     "picom_runtime", str(repo / "scripts/dwm-settings-picom")

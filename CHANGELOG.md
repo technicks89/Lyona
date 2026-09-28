@@ -10,6 +10,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Less needless work on events, and no processes left behind (Sync Sprint 12 S12-09, issue `#172`).
+  - `dwm-status` sets the root window name to the power state only (`BAT 82% Discharging` or `AC`), and only when
+    it changes. The unused volume half and its `pactl` watcher are gone. A `dwm-status` whose X server has gone
+    away now exits instead of running on.
+  - dwm runs `theme-apply.sh` on a config reload only when `themes.toml` changed (still at start-up and on
+    `SIGUSR1`), not for a `hotkeys.toml` or `window-rules.toml` edit.
+  - The unused dwmblocks support is removed, with its `popen("pidof ...")` in the event loop. A `hotkeys.toml`
+    binding for `sigstatusbar` is now ignored as an unknown function.
+  - `dwm-window-thumb` no longer adds a server round trip per captured row.
+  - Every resident shell watcher now ends with Quickshell, a crash or SIGKILL included (`Commands.watchCommand`).
+    Before, 12 of 20 processes lived on until logout.
+  - The Settings display and input watchers no longer wake 10 times a second.
+  - The display and input helpers no longer leave temporary files in `/tmp` when they fail or are stopped.
+  - The tests keep their workspaces under `${DWM_TEST_TMP_ROOT:-$HOME/tmp}` and stop everything their sessions
+    started. `make check-quickshell-qml` no longer leaves a folder behind on every run.
+  - New `tests/test-dwm-reload-theme-xvfb.py` (`make check-dwm-reload-theme-xvfb`) and
+    `tests/test-quickshell-watcher-lifetime-xvfb.py` (`make check-quickshell-watcher-lifetime-xvfb`), both in
+    `make check`.
+
 - The panel's dwm state bridge no longer rebuilds on every property event (Sync Sprint 12 S12-08, issue `#171`).
   `dwm-quickshell-state watch` (now bash) takes every event that arrives within 50 ms of the first into one rebuild,
   and keeps one `xprop -spy` per window, starting and stopping watchers only for windows that appear or go instead

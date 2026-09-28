@@ -237,6 +237,8 @@ cleanup() {
 	done
 	terminate_process_identity "${dwm_identity:-}"
 	terminate_process_identity "${xvfb_identity:-}"
+	# What the session detached or orphaned (autostart, helpers, D-Bus services).
+	kill_session_tree "${home:-}"
 	if [ -n "${runtime_alias_dir:-}" ]; then
 		rm -f -- "$runtime_alias_dir/runtime"
 		rmdir -- "$runtime_alias_dir" 2>/dev/null || true

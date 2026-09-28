@@ -6,15 +6,11 @@ fifo_dir=
 identity_file=
 identity_value=
 pids=()
-pactl_provider_pid=
-pactl_provider_starttime=
-pactl_parser_pid=
-pactl_parser_starttime=
+last_published=
 udev_provider_pid=
 udev_provider_starttime=
 udev_parser_pid=
 udev_parser_starttime=
-pactl_restart_count=0
 udev_restart_count=0
 provider_restart_limit=${DWM_STATUS_PROVIDER_RESTART_LIMIT:-3}
 publish_timeout=${DWM_STATUS_PUBLISH_TIMEOUT:-0.5}
@@ -149,8 +145,6 @@ cleanup() {
 
 rebuild_pids() {
 	pids=()
-	[[ -z $pactl_provider_pid ]] || pids+=("$pactl_provider_pid:$pactl_provider_starttime")
-	[[ -z $pactl_parser_pid ]] || pids+=("$pactl_parser_pid:$pactl_parser_starttime")
 	[[ -z $udev_provider_pid ]] || pids+=("$udev_provider_pid:$udev_provider_starttime")
 	[[ -z $udev_parser_pid ]] || pids+=("$udev_parser_pid:$udev_parser_starttime")
 }
@@ -173,49 +167,26 @@ stop_child() {
 	wait "$child_pid" 2>/dev/null || true
 }
 
+# The root WM_NAME carries the power state only: the shell has its own volume and
+# network models, and every write wakes its state bridge, so only a change is
+# written. On a tick with nothing new, the display is still checked (without
+# writing to it): that is how a dwm-status whose X server has gone away exits.
 publish() {
-	local power volume
+	local text
 
-	power=$(power_text)
-	volume=$(volume_text)
-
-	if ! timeout --kill-after=0.2 "$publish_timeout" \
-		xsetroot -name "$power | $volume" 2>/dev/null; then
+	text=$(power_text)
+	if [[ $text == "$last_published" ]]; then
+		timeout --kill-after=0.2 "$publish_timeout" \
+			xprop -root -notype WM_NAME >/dev/null 2>&1 && return 0
 		((signal_exit != 0)) && return 0
 		return 1
 	fi
-}
-
-volume_text() {
-	local mute volume
-
-	if command -v pactl >/dev/null 2>&1; then
-		mute=$(timeout --kill-after=0.2 "$publish_timeout" \
-			pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | awk '{ print $2 }')
-		volume=$(timeout --kill-after=0.2 "$publish_timeout" \
-			pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null |
-			awk 'match($0, /[0-9]+%/) { print substr($0, RSTART, RLENGTH); exit }')
-		if [[ $mute == yes ]]; then
-			printf 'VOL muted\n'
-		else
-			printf 'VOL %s\n' "${volume:-n/a}"
-		fi
-	elif command -v wpctl >/dev/null 2>&1; then
-		timeout --kill-after=0.2 "$publish_timeout" \
-			wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null |
-			awk '
-				{
-					volume = int(($2 * 100) + 0.5) "%"
-					if ($3 == "[MUTED]") {
-						print "VOL muted"
-					} else {
-						print "VOL " volume
-					}
-				}
-			' || printf 'VOL n/a\n'
-	else
-		printf 'VOL n/a\n'
+	if ! timeout --kill-after=0.2 "$publish_timeout" \
+		xsetroot -name "$text" 2>/dev/null; then
+		((signal_exit != 0)) && return 0
+		return 1
 	fi
+	last_published=$text
 }
 
 power_text() {
@@ -232,46 +203,10 @@ power_text() {
 	printf 'AC\n'
 }
 
-watch_pactl_events() {
-	while IFS= read -r event; do
-		case $event in
-		*" on sink"* | *" on server"* | *" on card"*)
-			printf 'audio\n' >"$fifo"
-			;;
-		esac
-	done
-}
-
 watch_power_events() {
 	while IFS= read -r _event; do
 		printf 'power\n' >"$fifo"
 	done
-}
-
-start_pactl_source() {
-	pactl subscribe >"$pactl_fifo" 2>/dev/null &
-	pactl_provider_pid=$!
-	if ! pactl_provider_starttime=$(capture_child_starttime "$pactl_provider_pid"); then
-		kill -TERM "$pactl_provider_pid" 2>/dev/null || true
-		wait "$pactl_provider_pid" 2>/dev/null || true
-		pactl_provider_pid=
-		return 1
-	fi
-	(
-		watch_pactl_events <"$pactl_fifo"
-		printf 'restart-pactl\n' >"$fifo"
-	) &
-	pactl_parser_pid=$!
-	if ! pactl_parser_starttime=$(capture_child_starttime "$pactl_parser_pid"); then
-		kill -TERM "$pactl_parser_pid" 2>/dev/null || true
-		wait "$pactl_parser_pid" 2>/dev/null || true
-		stop_child "$pactl_provider_pid" "$pactl_provider_starttime"
-		pactl_provider_pid=
-		pactl_provider_starttime=
-		pactl_parser_pid=
-		return 1
-	fi
-	rebuild_pids
 }
 
 start_udev_source() {
@@ -310,12 +245,6 @@ trap 'signal_exit=143' TERM
 register_identity
 publish
 ((signal_exit == 0)) || exit "$signal_exit"
-if command -v pactl >/dev/null 2>&1; then
-	pactl_fifo=$fifo_dir/pactl
-	mkfifo "$pactl_fifo"
-	start_pactl_source || true
-	((signal_exit == 0)) || exit "$signal_exit"
-fi
 if command -v udevadm >/dev/null 2>&1; then
 	udev_fifo=$fifo_dir/udev
 	mkfifo "$udev_fifo"
@@ -331,20 +260,6 @@ while :; do
 	IFS= read -r -t "$power_poll_interval" _event <&3 || true
 	((signal_exit == 0)) || break
 	case $_event in
-	restart-pactl)
-		stop_child "$pactl_provider_pid" "$pactl_provider_starttime"
-		stop_child "$pactl_parser_pid" "$pactl_parser_starttime"
-		pactl_provider_pid=
-		pactl_provider_starttime=
-		pactl_parser_pid=
-		pactl_parser_starttime=
-		rebuild_pids
-		((pactl_restart_count < provider_restart_limit)) || continue
-		pactl_restart_count=$((pactl_restart_count + 1))
-		sleep 1
-		((signal_exit == 0)) || break
-		start_pactl_source || true
-		;;
 	restart-udev)
 		stop_child "$udev_provider_pid" "$udev_provider_starttime"
 		stop_child "$udev_parser_pid" "$udev_parser_starttime"

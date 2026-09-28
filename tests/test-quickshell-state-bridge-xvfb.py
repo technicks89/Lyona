@@ -30,6 +30,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 repo = Path(__file__).resolve().parents[1]
 for tool in ('xprop', 'xdotool'):
     if not shutil.which(tool):

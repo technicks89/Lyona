@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 REPO = Path(__file__).resolve().parents[1]
 GENERATOR = REPO / "scripts/lyona-gtk-theme"
 THEMES = REPO / "config/themes.toml"

@@ -124,7 +124,7 @@ Scope {
 
     Process {
         id: watcher
-        command: Commands.helperCommand("dwm-settings-picom", "watch", [], true)
+        command: Commands.watchCommand(Commands.helperCommand("dwm-settings-picom", "watch", [], true))
         running: root.active
         stdout: SplitParser {
             onRead: data => {

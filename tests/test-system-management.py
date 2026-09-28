@@ -39,6 +39,8 @@ import unittest
 from dataclasses import replace
 from unittest import mock
 
+import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 PROVIDER_PATH = REPO / "scripts" / "dwm-system-management"
