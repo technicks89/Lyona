@@ -10,6 +10,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The always-on shell watchers stop polling (Sync Sprint 12 S12-07, issue `#170`). `run_parent_bound`
+  (`scripts/dwm-watchdog.sh`), which keeps `nmcli monitor`, `pactl subscribe`, `playerctl --follow` and the control
+  center's power watcher tied to Quickshell, checked its parent every 0.25 s by running `sed`, `awk` and `sleep`:
+  about 12 process starts and 4 wake-ups a second per watcher, for the whole session (the efficiency review measured
+  1.7% of a core idle with the network watcher alone). A program child now runs under `setpriv --pdeathsig TERM`
+  (util-linux), so the kernel ends it the moment its helper exits, however it exits; the loop that remains only
+  covers Quickshell crashing without taking its helpers along, reads `/proc` with shell builtins every 5 s
+  (`LYONA_PARENT_BOUND_INTERVAL`), and is bound to its helper the same way, sleep included. A Quickshell crash is
+  now noticed within 5 s instead of 0.25 s. The media watcher is no longer restarted every 3 s for the whole
+  session when `playerctl` is missing, and the network model debounces monitor bursts (300 ms, like Bluetooth's)
+  and no longer drops a change that arrives while a snapshot is running. Each bound process
+  checks, once the signal is armed, that its parent is still the one that started it, so a helper dying mid-start
+  leaves nothing behind; a zero or malformed interval falls back to 5 s instead of spinning. Idle, the full shell's
+  watchers now use 0.07% of a core over 30 s (1.70% before). New `tests/test-dwm-watchdog.py`
+  (`make check-dwm-watchdog`), `tests/test-quickshell-watchers-xvfb.py` (`make check-quickshell-watchers-xvfb`) and
+  `tests/test-quickshell-idle-watchers-xvfb.py` (`make check-quickshell-idle-watchers-xvfb`), all in `make check`.
+
 - Updates keep your compile-time options (Sync Sprint 12 S12-02, decision D-18). `lyona-update` looked for `config.h`
   only next to its own scripts directory, so updates from Settings or from the installed command always built from
   `config.def.h` and silently dropped compile-time changes. It now builds with

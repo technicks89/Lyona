@@ -416,6 +416,13 @@ local listener and asserts no request arrives.
 
 **Source:** F (High, measured). **Verified.**
 
+**Implemented (2026-09-27)** as the plan's "better still" target rather than its
+diff: program children run under `setpriv --pdeathsig TERM`, so they end with their
+helper without any polling, and only a crash backstop loop remains (builtins, every
+5 s, itself pdeathsig-bound). There are four callers, not two (`pactl subscribe` and
+the power watcher too). Mpris was not adopted: `playerctl` stays. Evidence:
+`docs/evidence/s12-07-watcher-polling.md`.
+
 `run_parent_bound` (`scripts/dwm-watchdog.sh:63-73`) checks every 0.25 s whether
 its parent is alive by running `sed`, `awk` and `sleep`: about 12 process starts
 and 4 wakeups a second, for the whole session, per always-on watcher. The callers

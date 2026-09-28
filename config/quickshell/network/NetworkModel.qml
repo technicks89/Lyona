@@ -11,6 +11,10 @@ Scope {
     property bool visible: false
     property bool settingsVisible: false
     property bool busy: false
+    // A refresh asked for while a snapshot is running, kept so it runs once the
+    // snapshot ends instead of being dropped (Sync Sprint 12 S12-07).
+    property bool refreshPending: false
+    property bool refreshPendingRescan: false
     property bool editorAvailable: false
     property bool actionUsesPasswordStdin: false
     property bool wifiPasswordPromptVisible: false
@@ -95,7 +99,12 @@ Scope {
     }
 
     function refresh(rescanWifi, origin) {
-        if (!root.active || snapshotProcess.running) return;
+        if (!root.active) return;
+        if (snapshotProcess.running) {
+            root.refreshPending = true;
+            root.refreshPendingRescan = root.refreshPendingRescan || rescanWifi === true;
+            return;
+        }
         root.providerState = "loading";
         root.snapshotOrigin = origin || (root.visible ? "panel" : "shared");
         snapshotProcess.command = Commands.networkHelperCommand("snapshot", ["--rescan", rescanWifi ? "yes" : "no"]);
@@ -408,7 +417,16 @@ Scope {
                 }
             }
         }
-        onRunningChanged: if (!running) root.snapshotOrigin = ""
+        onRunningChanged: {
+            if (running) return;
+            root.snapshotOrigin = "";
+            if (root.refreshPending) {
+                const rescan = root.refreshPendingRescan;
+                root.refreshPending = false;
+                root.refreshPendingRescan = false;
+                Qt.callLater(root.refresh, rescan, "shared");
+            }
+        }
     }
 
     Process {
@@ -502,12 +520,21 @@ Scope {
         command: Commands.networkHelperCommand("monitor")
         running: true
 
+        // A burst of monitor lines (one change prints several) is one refresh,
+        // after the lines settle, like BluetoothModel's monitor.
         stdout: SplitParser {
-            onRead: root.refresh(false)
+            onRead: networkMonitorSettleTimer.restart()
         }
         onRunningChanged: {
             if (!running) networkMonitorRestartTimer.restart();
         }
+    }
+
+    Timer {
+        id: networkMonitorSettleTimer
+        interval: 300
+        repeat: false
+        onTriggered: root.refresh(false, "shared")
     }
 
     Timer {

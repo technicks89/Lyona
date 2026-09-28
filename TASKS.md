@@ -268,3 +268,10 @@ update in the same PR, so completed items are pinned here too, not only in
 - [x] Sync Sprint 12 S12-06 -- untrusted text renders as plain text, issue `#169` -- 91 `Text` elements in 23 files under
   `config/quickshell/` (including `core/UiText.qml`), `AGENTS.md`; tests in `tests/test-quickshell-plain-text.sh` and
   `tests/test-quickshell-plain-text-xvfb.sh`. Evidence: `docs/evidence/s12-06-plain-text.md`. Not judged by eye.
+- [x] Sync Sprint 12 S12-07 -- watchers stop polling for their parent, issue `#170` -- `scripts/dwm-watchdog.sh`,
+  `config/quickshell/controls/ControlsModel.qml`, `config/quickshell/network/NetworkModel.qml`; tests in
+  `tests/test-dwm-watchdog.py`, `tests/test-quickshell-watchers-xvfb.py`,
+  `tests/test-quickshell-idle-watchers-xvfb.py`, and the crash cases of `tests/test-quickshell-network.sh` and
+  `tests/test-quickshell-power-backend.sh`. Evidence: `docs/evidence/s12-07-watcher-polling.md`. The plan's 30 s
+  full-shell check (dwm plus the managed Quickshell under Xvfb): 0.07% of a core in the watchers, within 0.5 points
+  of zero; the old watchdog measured 1.70% and fails it.

@@ -345,7 +345,10 @@ PATH="$work/bin:$PATH" "$repo/scripts/dwm-quickshell-network" monitor >"$work/mo
 grep -Fqx "wlan0: connected" "$work/monitor.out"
 grep -Fqx "Networkmanager is now connected" "$work/monitor.out"
 
-DWM_TEST_MONITOR_HOLD=1 DWM_TEST_MONITOR_CHILD="$work/monitor-child.pid" \
+# The owner crashes (SIGKILL) and the helper is not killed with it: the watchdog's
+# backstop loop ends the monitor. It checks every 5 s by default (Sync Sprint 12
+# S12-07); a short interval keeps this test quick.
+DWM_TEST_MONITOR_HOLD=1 DWM_TEST_MONITOR_CHILD="$work/monitor-child.pid" LYONA_PARENT_BOUND_INTERVAL=0.2 \
 	PATH="$work/bin:$PATH" sh -c '"$1" monitor & echo $! >"$2"; wait' sh \
 	"$repo/scripts/dwm-quickshell-network" "$work/monitor-helper.pid" &
 monitor_owner=$!
