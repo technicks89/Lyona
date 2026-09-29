@@ -3,8 +3,12 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=$script_dir
+[[ -f $lyona_lib/dwm-xsettings-config.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xsettings-config.sh
-. "$script_dir/dwm-xsettings-config.sh"
+. "$lyona_lib/dwm-xsettings-config.sh"
 
 THEME_DISCOVERY_HOME=${DWM_APPEARANCE_DISCOVERY_HOME:-$HOME}
 [[ $THEME_DISCOVERY_HOME == /* ]] || {

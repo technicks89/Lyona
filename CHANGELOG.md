@@ -10,6 +10,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- One runtime source for helpers, step 1 (Sync Sprint 12 S12-13).
+  - The shared shell code the commands source (`dwm-paths.sh`, `dwm-utils.sh`, `dwm-packages.sh`,
+    `dwm-watchdog.sh`, `dwm-simple-watch.sh`, `dwm-xsettings-config.sh`, `dev-sync-install.sh`) installs to
+    `PREFIX/lib/lyona`, mode 0644, instead of `PREFIX/bin`. These files are not commands and no longer sit on `PATH`.
+    `make install-system` removes the old copies from `PREFIX/bin`; `make uninstall` removes both.
+  - A command finds the shared code beside itself in a checkout, and in `../lib/lyona` once installed.
+  - `scripts/dev-sync-install.sh --check` verifies the libraries in `PREFIX/lib/lyona` and reports a copy left in
+    `PREFIX/bin` as stale.
+
 - Overview close, hidden windows and the thumbnail tests (Sync Sprint 12 S12-12, issue `#175`).
   - Closing a window from the overview now asks it to close, as the close key does, so an application can ask about
     unsaved work or refuse. It used `xdotool windowclose`, which destroys the window without asking. dwm now handles

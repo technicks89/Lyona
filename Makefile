@@ -34,7 +34,6 @@ INSTALL_COMMANDS = \
 	scripts/active-audio \
 	scripts/dwm-accessibility-settings \
 	scripts/check-deps.sh \
-	scripts/dev-sync-install.sh \
 	scripts/disable-powersaving \
 	scripts/dwm-controlcenter \
 	scripts/dwm-default-apps \
@@ -56,14 +55,9 @@ INSTALL_COMMANDS = \
 	scripts/dwm-system-health \
 	scripts/dwm-system-management \
 	scripts/dwm-polkit \
-	scripts/dwm-packages.sh \
-	scripts/dwm-paths.sh \
-	scripts/dwm-simple-watch.sh \
-	scripts/dwm-xsettings-config.sh \
 	scripts/dwm-cursor-reload \
 	scripts/dwm-xkbset \
 	scripts/dwm-settings-picom \
-	scripts/dwm-watchdog.sh \
 	scripts/lyona-gtk-theme \
 	scripts/lyona-release \
 	scripts/dwm-screenshot \
@@ -79,7 +73,6 @@ INSTALL_COMMANDS = \
 	scripts/dwm-settings-toolkit \
 	scripts/dwm-settings-provider \
 	scripts/dwm-terminal \
-	scripts/dwm-utils.sh \
 	scripts/dwm-xdg-autostart \
 	scripts/dwm-flatpak-setup \
 	scripts/install-gearlever \
@@ -103,6 +96,19 @@ INSTALL_COMMANDS = \
 	scripts/xdg-enable-autostart.sh \
 	scripts/xscreensaver-setup.sh
 INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
+# Shell code the commands source, not commands: installed to PREFIX/lib/lyona,
+# beside PREFIX/bin, where a command finds it relative to itself (a checkout
+# keeps it beside the scripts). Sync Sprint 12 S12-13 step 1.
+INSTALL_LIBS = \
+	scripts/dev-sync-install.sh \
+	scripts/dwm-packages.sh \
+	scripts/dwm-paths.sh \
+	scripts/dwm-simple-watch.sh \
+	scripts/dwm-utils.sh \
+	scripts/dwm-watchdog.sh \
+	scripts/dwm-xsettings-config.sh
+INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})
+LIB_DIR = ${PREFIX}/lib/lyona
 PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/lyona-update-root
 PRIVILEGED_HELPER_DIR = ${PREFIX}/libexec/lyona
 POLKIT_ACTIONS = config/polkit/com.lyona.settings-display.policy \
@@ -226,6 +232,14 @@ install-system:
 	@echo "==> Installing scripts to PATH..."
 	for f in ${INSTALL_COMMANDS}; do \
 		install -Dm755 "$$f" ${DESTDIR}${PREFIX}/bin/$$(basename "$$f"); \
+	done
+	@echo "==> Installing shared shell code..."
+	for f in ${INSTALL_LIBS}; do \
+		install -Dm644 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
+	done
+	@# From before S12-13, these were installed as commands.
+	for name in ${INSTALL_LIB_NAMES}; do \
+		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
 	@echo "==> Installing privileged helpers..."
 	for f in ${PRIVILEGED_HELPERS}; do \
@@ -433,9 +447,13 @@ uninstall:
 		| while IFS= read -r id; do \
 			rm -rf "${DESTDIR}${DATADIR}/themes/Lyona-$$id"; \
 		done
-	for name in ${INSTALL_COMMAND_NAMES}; do \
+	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
+	for name in ${INSTALL_LIB_NAMES}; do \
+		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
+	done
+	-rmdir ${DESTDIR}${LIB_DIR} 2>/dev/null
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		rm -f ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$name; \
 	done
@@ -917,6 +935,9 @@ check-install-manifest: all
 			etc/lyona-release; \
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
+		done; \
+		for name in ${INSTALL_LIB_NAMES}; do \
+			printf 'usr/lib/lyona/%s\n' "$$name"; \
 		done; \
 		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 			printf 'usr/libexec/lyona/%s\n' "$$name"; \

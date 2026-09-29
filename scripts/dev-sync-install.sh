@@ -161,6 +161,7 @@ else
 	trap 'rm -rf "$work"' EXIT HUP INT TERM
 fi
 install_sources_file=$work/install-sources
+lib_sources_file=$work/lib-sources
 expected_man=$work/dwm.1
 expected_xsession=$work/dwm.desktop
 privileged_helpers_file=$work/privileged-helpers
@@ -174,6 +175,13 @@ prepare_expected_files() {
 		dwm-dev-print-install-sources >"$install_sources_file"
 	[ -s "$install_sources_file" ] ||
 		die "Makefile did not report any installed commands"
+
+	# shellcheck disable=SC2016
+	"$make_path" -s -C "$repo_dir" --no-print-directory \
+		--eval='dwm-dev-print-lib-sources: ; @printf "%s\n" $(INSTALL_LIBS)' \
+		dwm-dev-print-lib-sources >"$lib_sources_file"
+	[ -s "$lib_sources_file" ] ||
+		die "Makefile did not report any installed libraries"
 
 	# shellcheck disable=SC2016
 	"$make_path" -s -C "$repo_dir" --no-print-directory \
@@ -256,6 +264,19 @@ verify_install() {
 		verify_executable "$repo_dir/$install_source" "$prefix/bin/$install_name" \
 			"installed command $install_name"
 	done <"$install_sources_file"
+	# Shared shell code lives in PREFIX/lib/lyona, off PATH (S12-13); a copy
+	# left in PREFIX/bin by an older install is stale.
+	while IFS= read -r lib_source; do
+		[ -n "$lib_source" ] || continue
+		lib_name=${lib_source##*/}
+		verify_file "$repo_dir/$lib_source" "$prefix/lib/lyona/$lib_name" \
+			"installed library $lib_name"
+		if [ -e "$prefix/bin/$lib_name" ] || [ -L "$prefix/bin/$lib_name" ]; then
+			printf 'STALE: library %s is still installed in %s\n' \
+				"$lib_name" "$prefix/bin" >&2
+			verification_failed=1
+		fi
+	done <"$lib_sources_file"
 	verify_privileged_helper_trust=1
 	if [ "${DWM_DEV_SYNC_SKIP_PRIVILEGED_TRUST:-0}" = 1 ]; then
 		verify_privileged_helper_trust=0
@@ -336,6 +357,13 @@ backup_live_install() {
 		[ -n "$install_source" ] || continue
 		add_system_backup_path "$prefix/bin/${install_source##*/}"
 	done <"$install_sources_file"
+	# Both places: the install removes a library's old copy from bin, so the
+	# backup keeps that one too.
+	while IFS= read -r lib_source; do
+		[ -n "$lib_source" ] || continue
+		add_system_backup_path "$prefix/bin/${lib_source##*/}"
+		add_system_backup_path "$prefix/lib/lyona/${lib_source##*/}"
+	done <"$lib_sources_file"
 	while IFS= read -r privileged_helper; do
 		[ -n "$privileged_helper" ] || continue
 		add_system_backup_path "$privileged_helper_dir/${privileged_helper##*/}"

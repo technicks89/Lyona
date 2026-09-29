@@ -50,34 +50,51 @@ assert_file "$work/destination/source" 'bare mv -f moves into a directory'
 
 # ── Sourced helpers travel with their callers ────────────────────────────
 #
-# A helper is looked up beside $0, so a script that sources one and is
-# installed without it does not run at all -- it fails at load, before any
-# argument handling. Anything installed onto PATH must bring its helpers.
+# A helper is looked up in $lyona_lib (beside the caller in a checkout,
+# PREFIX/lib/lyona once installed; Sync Sprint 12 S12-13), so a script that
+# sources one and is installed without it does not run at all -- it fails at
+# load, before any argument handling. Anything installed onto PATH must bring
+# its helpers, and they must be installed as libraries, not as commands.
+make_list() {
+	make -s -C "$repo" --no-print-directory \
+		--eval="test-print-list: ; @printf '%s\\n' \$($1)" test-print-list
+}
 installed=$work/installed
-sed -n '/^INSTALL_COMMANDS = /,/^$/p' "$repo/Makefile" |
-	tr -d '\134' | tr ' \t' '\n' | grep '^scripts/' >"$installed" || true
+libraries=$work/libraries
+make_list INSTALL_COMMANDS >"$installed"
+make_list INSTALL_LIBS >"$libraries"
 [ -s "$installed" ] || fail 'could not read INSTALL_COMMANDS from the Makefile'
+[ -s "$libraries" ] || fail 'could not read INSTALL_LIBS from the Makefile'
 
 for script in "$repo"/scripts/*; do
 	[ -f "$script" ] || continue
 	name=scripts/$(basename "$script")
 	grep -Fqx "$name" "$installed" || continue
 	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
-	sed -n 's|^\. "\$script_dir/\([A-Za-z0-9_.-]*\)".*|\1|p' "$script" |
+	sed -n -E 's#^[[:space:]]*(\.|source) "\$lyona_lib/([A-Za-z0-9_.-]*)".*#\2#p' "$script" |
 		while IFS= read -r helper; do
 			[ -n "$helper" ] || continue
 			[ -f "$repo/scripts/$helper" ] ||
 				fail "$name sources scripts/$helper, which does not exist"
-			grep -Fqx "scripts/$helper" "$installed" ||
-				fail "$name is installed but scripts/$helper is not; it would fail at load"
+			grep -Fqx "scripts/$helper" "$libraries" ||
+				fail "$name is installed but scripts/$helper is not in INSTALL_LIBS; it would fail at load"
 		done
+	# The old form looked beside $0, which an install no longer satisfies.
+	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
+	if grep -Eq '^[[:space:]]*(\.|source) "\$(script_dir|SCRIPT_DIR)/[A-Za-z0-9_.-]+\.sh"' "$script"; then
+		fail "$name sources a helper beside itself; use \$lyona_lib"
+	fi
 done
+while IFS= read -r library; do
+	! grep -Fqx "$library" "$installed" ||
+		fail "$library is in both INSTALL_COMMANDS and INSTALL_LIBS"
+done <"$libraries"
 
 # Vacuity check: at least one script really does source a helper this way.
 # shellcheck disable=SC2016 # the $ is literal source text, not an expansion
-sourcing=$(grep -l '^\. "\$script_dir/' "$repo"/scripts/* 2>/dev/null | wc -l)
+sourcing=$(grep -El '^[[:space:]]*(\.|source) "\$lyona_lib/' "$repo"/scripts/* 2>/dev/null | wc -l)
 [ "$sourcing" -ge 1 ] ||
-	fail 'no script sources a sibling helper; the check above proves nothing'
+	fail 'no script sources a helper through lyona_lib; the check above proves nothing'
 
 # ── Path safety is defined once ──────────────────────────────────────────
 #

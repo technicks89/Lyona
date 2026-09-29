@@ -894,7 +894,10 @@ Related (A, Low):
   `dwm-diagnostics` and `lyona-update status` so a forgotten override is visible.
   It must never be honoured by anything running as root.
 - `lyona-update` stops sourcing `dev-sync-install.sh`; the shared functions move to
-  `lib/`. Scripts that compute XDG paths inline source `dwm-paths.sh` instead.
+  `lib/`. (Scripts that compute XDG paths inline sourcing `dwm-paths.sh` instead moved
+  to S12-14, 2026-09-28.)
+
+**Step-by-step plan:** `docs/SYNC-SPRINT-12-S12-13-RUNTIME-SOURCE.md`.
 - `dev-sync-install.sh` and `lyona-update` lose the verification code that exists
   only to detect drift between the two copies.
 
@@ -926,6 +929,29 @@ existing installs) in its own file before starting, as its first task.
 4. **`WatchedProcess.qml`** is the right abstraction for watchers, but 4 of about 95
    `Process` uses adopt it. Move the resident watchers to it (it also gives S12-07's
    back-off one home).
+
+
+**Added from S12-13 (2026-09-28, asked of the user directly): XDG paths from one place.**
+
+`dwm-paths.sh` gains `lyona_xdg_dirs`, which sets `config_home`, `data_home`,
+`state_home` and `cache_home` from the XDG variables or `$HOME`. It uses the
+validation `lyona-update:41-48` does today: an absolute path or the fallback. The 32
+scripts that compute them inline switch to it:
+
+`theme-apply.sh` (26 sites), `autostart.sh`, `lyona-update`, `dwm-settings-toolkit`,
+`dwm-system-health`, `dwm-settings-theme`, `dwm-settings-appearance`,
+`dwm-default-apps`, `dev-sync-install.sh`, `seed-default-apps.sh`, `lyona-version`,
+`dwm-settings-wallpaper`, `dwm-settings`, `dwm-settings-font`, `dwm-session-launch`,
+`dwm-quickshell-controlcenter`, `dwm-keybinds`, `dwm-controlcenter`,
+`seed-autostart-overrides.sh`, `migrate-graphical-session.sh`, `dwm-xdg-autostart`,
+`dwm-terminal`, `dwm-settings-provider`, `dwm-settings-input`, `dwm-settings-display`,
+`dwm-screenshot`, `dwm-quickshell-launcher`, `dwm-panel-settings`,
+`dwm-display-profile`, `dwm-diagnostics`, `dwm-accessibility-settings`, `ci-local.sh`.
+
+POSIX `sh` scripts cannot source a bash library. For them it is a small
+`dwm-paths-posix.sh`, or they stay inline with a comment; that is decided per script
+when the step starts. This step changes no behaviour, only where the code lives, and
+it moved here from S12-13 to keep that item smaller.
 
 ## S12-15: Privileged-helper consistency, the package map, and lint coverage
 
