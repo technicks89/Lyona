@@ -100,14 +100,18 @@ INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
 # beside PREFIX/bin, where a command finds it relative to itself (a checkout
 # keeps it beside the scripts). Sync Sprint 12 S12-13 step 1.
 INSTALL_LIBS = \
-	scripts/dev-sync-install.sh \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-utils.sh \
 	scripts/dwm-watchdog.sh \
-	scripts/dwm-xsettings-config.sh
+	scripts/dwm-xsettings-config.sh \
+	scripts/lyona-install-verify.sh
 INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})
+# Installed by an earlier S12-13 step and no longer: the developer tool
+# dev-sync-install.sh runs from a checkout, and lyona-update now sources
+# lyona-install-verify.sh.
+RETIRED_LIB_NAMES = dev-sync-install.sh
 # The session scripts dwm runs at login and logout, not commands: executable,
 # in LIB_DIR, where dwm finds them from its own location (S12-13 step 3). Before,
 # only a per-user copy existed, so an account that never ran install-user had
@@ -258,8 +262,11 @@ install-system:
 		install -Dm644 "$$f" ${DESTDIR}${SHARE_DIR}/config/$$(basename "$$f"); \
 	done
 	@# From before S12-13, these were installed as commands.
-	for name in ${INSTALL_LIB_NAMES}; do \
+	for name in ${INSTALL_LIB_NAMES} ${RETIRED_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
+	done
+	for name in ${RETIRED_LIB_NAMES}; do \
+		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	@echo "==> Installing privileged helpers..."
 	for f in ${PRIVILEGED_HELPERS}; do \
@@ -334,11 +341,13 @@ install-user:
 	else \
 		echo "  Preserving existing ${USER_HOME}/.xinitrc"; \
 	fi
-	@echo "==> Syncing local repo to data dir..."
-	mkdir -p ${DATA_DIR}
-	if [ "$$(realpath .)" != "$$(realpath ${DATA_DIR})" ]; then \
+	@echo "==> Removing the old per-user copy of the scripts and defaults..."
+	@# The system copy in ${LIB_DIR} and ${SHARE_DIR} is the only runtime source
+	@# (S12-13). Both trees were replaced wholesale on every earlier install, so
+	@# nothing of the user's is in them; the rest of ${DATA_DIR} is untouched.
+	@# A checkout that is itself the data directory is never deleted.
+	if [ ! -e "${DATA_DIR}" ] || [ "$$(realpath .)" != "$$(realpath ${DATA_DIR})" ]; then \
 		rm -rf "${DATA_DIR}/config" "${DATA_DIR}/scripts"; \
-		cp -aL --no-preserve=ownership config scripts "${DATA_DIR}/"; \
 	fi
 	@echo "==> Seeding application config without overwriting user files..."
 	mkdir -p ${CFG_DIR}
@@ -415,7 +424,6 @@ install-user:
 	fi
 	fc-cache -f >/dev/null 2>&1 || true
 	@echo "==> Fixing executable permissions..."
-	find ${DATA_DIR} \( -name '*.sh' -o -name '*.py' \) -print0 | xargs -0 -r chmod +x
 	for dir in config/*/; do \
 		b=$$(basename $$dir); \
 		if [ ! -L "${CFG_DIR}/$$b" ]; then \
@@ -470,7 +478,7 @@ uninstall:
 	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
-	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES}; do \
+	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	-rmdir ${DESTDIR}${LIB_DIR} 2>/dev/null

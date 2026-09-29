@@ -150,13 +150,12 @@ start_operation_log() {
 # frames below where they were declared -- there is no need to thread them
 # through explicitly.
 report_status_failure() {
-	# dev_sync_exit_status: set by dev-sync-install.sh's own trap chaining
-	# when it is sourced mid-apply/rollback, since $? by the time this runs
-	# as part of that chain is "rm -rf"'s (always 0), not the status that
+	# install_verify_exit_status: set by lyona-install-verify.sh's own trap
+	# chaining when it is sourced mid-apply/rollback, since $? by the time this
+	# runs as part of that chain is "rm -rf"'s (always 0), not the status that
 	# actually triggered the trap. Falls back to $? directly when this fires
-	# as the sole EXIT trap (a failure before dev-sync-install.sh is ever
-	# sourced).
-	local exit_status=${dev_sync_exit_status:-$?}
+	# as the sole EXIT trap (a failure before the library is ever sourced).
+	local exit_status=${install_verify_exit_status:-$?}
 	[[ ${status_written:-false} == true ]] && return 0
 	write_status "${status_phase:-idle}" "${status_detail:-}" "${status_target:-}" \
 		failed "${status_detail:-} (exit $exit_status)"
@@ -809,9 +808,8 @@ cmd_apply() {
 		esac
 	fi
 
-	# shellcheck source=scripts/dev-sync-install.sh
-	DEV_SYNC_INSTALL_LIB_ONLY=1 DEV_SYNC_INSTALL_REPO_DIR=$staging_dir \
-		. "$lyona_lib/dev-sync-install.sh"
+	# shellcheck source=scripts/lyona-install-verify.sh
+	LYONA_INSTALL_REPO_DIR=$staging_dir . "$lyona_lib/lyona-install-verify.sh"
 	prepare_expected_files
 
 	status_phase=installing status_detail='Backing up the live installation'
@@ -1092,9 +1090,8 @@ cmd_rollback() {
 	# gets its own explicit instruction below instead.
 	status_phase=restarting status_detail='Restarting Quickshell'
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
-	# shellcheck source=scripts/dev-sync-install.sh
-	DEV_SYNC_INSTALL_LIB_ONLY=1 DEV_SYNC_INSTALL_REPO_DIR=$backup_dir \
-		. "$lyona_lib/dev-sync-install.sh"
+	# shellcheck source=scripts/lyona-install-verify.sh
+	LYONA_INSTALL_REPO_DIR=$backup_dir . "$lyona_lib/lyona-install-verify.sh"
 	if [[ -z ${DISPLAY:-} ]]; then
 		printf 'Log in now to start using %s.\n' "${restored_version:-the restored version}"
 	else

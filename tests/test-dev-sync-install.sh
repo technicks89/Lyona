@@ -50,6 +50,10 @@ make -s -C "$test_repo" --no-print-directory \
 	test-print-session-sources >"$work/session-sources"
 # shellcheck disable=SC2016
 make -s -C "$test_repo" --no-print-directory \
+	--eval='test-print-default-sources: ; @printf "%s\n" $(INSTALL_DEFAULTS)' \
+	test-print-default-sources >"$work/default-sources"
+# shellcheck disable=SC2016
+make -s -C "$test_repo" --no-print-directory \
 	--eval='test-print-privileged-helpers: ; @printf "%s\n" $(PRIVILEGED_HELPERS)' \
 	test-print-privileged-helpers >"$privileged_helpers"
 
@@ -74,14 +78,17 @@ while IFS= read -r session_source; do
 	install -Dm755 "$test_repo/$session_source" \
 		"$prefix/lib/lyona/${session_source##*/}"
 done <"$work/session-sources"
+while IFS= read -r default_source; do
+	[ -n "$default_source" ] || continue
+	install -Dm644 "$test_repo/$default_source" \
+		"$prefix/share/lyona/config/${default_source##*/}"
+done <"$work/default-sources"
 
 version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$test_repo/config.mk")
 sed "s/VERSION/$version/g" "$test_repo/dwm.1" >"$manprefix/man1/dwm.1"
 sed "s|@PREFIX@|$prefix|g" "$test_repo/dwm.desktop" >"$xsessions_dir/dwm.desktop"
-# Mirror `make install-user`, which dereferences so the shipped trees hold
+# Mirror `make install-user`, which dereferences so the managed shell holds
 # real files rather than links back into the repo checkout.
-cp -aL "$test_repo/config" "$data_dir/config"
-cp -a "$test_repo/scripts" "$data_dir/scripts"
 cp -aL "$test_repo/config/quickshell" "$config_home/quickshell"
 printf '%s\n' '# preserved custom user unit' \
 	>"$config_home/systemd/user/wm-graphical-session.service"
@@ -137,6 +144,24 @@ grep -Fq 'STALE: library dwm-paths.sh is still installed in' "$output"
 mv "$prefix/bin/dwm-paths.sh" "$prefix/lib/lyona/dwm-paths.sh"
 run_check >"$output"
 
+# The shipped defaults are verified in share/lyona, and a per-user copy an older
+# install left is reported until install-user removes it (S12-13 step 4).
+rm "$prefix/share/lyona/config/themes.toml"
+if run_check >"$output" 2>&1; then
+	printf '%s\n' 'Missing shipped default unexpectedly passed.' >&2
+	exit 1
+fi
+grep -Fq 'MISSING INSTALL: shipped default themes.toml' "$output"
+install -Dm644 "$test_repo/config/themes.toml" "$prefix/share/lyona/config/themes.toml"
+mkdir -p "$data_dir/scripts"
+if run_check >"$output" 2>&1; then
+	printf '%s\n' 'A leftover per-user copy unexpectedly passed.' >&2
+	exit 1
+fi
+grep -Fq "STALE: per-user copy $data_dir/scripts is still present" "$output"
+rmdir "$data_dir/scripts"
+run_check >"$output"
+
 "$test_repo/scripts/dev-sync-install.sh" --help >"$output"
 grep -Fq 'Usage: scripts/dev-sync-install.sh [--check]' "$output"
 if "$test_repo/scripts/dev-sync-install.sh" --unknown >"$output" 2>&1; then
@@ -150,7 +175,7 @@ grep -Fq 'unknown option: --unknown' "$output"
 runtime_bin="$work/runtime-bin"
 runtime_probe="$work/runtime-probe"
 mkdir "$runtime_bin"
-sed -n '/^runtime_verify() {$/,/^}$/p' "$test_repo/scripts/dev-sync-install.sh" >"$runtime_probe"
+sed -n '/^runtime_verify() {$/,/^}$/p' "$test_repo/scripts/lyona-install-verify.sh" >"$runtime_probe"
 cat >"$runtime_bin/pgrep" <<'EOF'
 #!/bin/sh
 case "$*" in

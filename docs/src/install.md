@@ -36,8 +36,8 @@ cp config.def.h config.h
 ```
 
 For later source-checkout updates, run the same command so the binary,
-installed helpers, managed Quickshell configuration, and data copy stay at one
-revision. Run `./scripts/dev-sync-install.sh --check` after any requested
+installed helpers, shipped defaults and managed Quickshell configuration stay at
+one revision. Run `./scripts/dev-sync-install.sh --check` after any requested
 session restart to verify the active runtime.
 
 ### Automated Installer
