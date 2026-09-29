@@ -372,7 +372,9 @@ static void load_themes_toml(const char *user_path, const char *default_path);
 static void load_rules_toml(const char *user_path, const char *default_path);
 static void notify_bad_config(const char *filename, const char *reason);
 static int pathjoin(char *dst, size_t dstsz, const char *dir, const char *name);
+static int exe_dir(char *out, size_t size);
 static int default_config_dir(char *out, size_t size);
+static int session_script(char *out, size_t size, const char *name);
 static void reload_config(int applytheme);
 static int runtime_config_fd(void);
 static void runtime_config_mark_reload_pending(void);
@@ -384,11 +386,9 @@ static void runtime_config_setup(void);
 static void setup_inotify(void);
 static void *toml_alloc(size_t sz);
 
-static const char autostartsh[] = "scripts/autostart.sh";
-static const char autostopsh[] = "scripts/autostop.sh";
+static const char autostartsh[] = "autostart.sh";
+static const char autostopsh[] = "autostop.sh";
 static const char broken[] = "broken";
-static const char dwmdir[] = "lyona";
-static const char localshare[] = ".local/share";
 static char stext[256];
 static int statusw;
 static int screen;
@@ -481,7 +481,6 @@ static size_t toml_arena_pos = 0;
 
 static char          dwm_config_home_dir[PATH_MAX];
 static char          dwm_data_home_dir[PATH_MAX];
-static char          dwm_data_dir[PATH_MAX];
 static char          toml_default_dir[PATH_MAX];
 static char          toml_hotkeys_default_path[PATH_MAX];
 static char          toml_themes_default_path[PATH_MAX];
@@ -550,24 +549,62 @@ pathjoin(char *dst, size_t dstsz, const char *dir, const char *name)
 static int
 default_config_dir(char *out, size_t size)
 {
-	char exe[PATH_MAX], *slash;
+	char dir[PATH_MAX], *slash;
 	struct stat st;
-	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe));
 
-	if (n <= 0 || (size_t)n >= sizeof(exe))
+	if (!exe_dir(dir, sizeof(dir)))
 		return 0;
-	exe[n] = '\0';
-	if (!(slash = strrchr(exe, '/')))
-		return 0;
-	*slash = '\0';                   /* the directory dwm runs from */
-	if ((slash = strrchr(exe, '/'))) {
+	if ((slash = strrchr(dir, '/'))) {
 		*slash = '\0';           /* PREFIX */
-		if (pathjoin(out, size, exe, "share/lyona/config")
+		if (pathjoin(out, size, dir, "share/lyona/config")
 		    && stat(out, &st) == 0 && S_ISDIR(st.st_mode))
 			return 1;
 		*slash = '/';
 	}
-	return pathjoin(out, size, exe, "config");
+	return pathjoin(out, size, dir, "config");
+}
+
+/* The directory dwm runs from: PREFIX/bin once installed. */
+static int
+exe_dir(char *out, size_t size)
+{
+	char *slash;
+	ssize_t n = readlink("/proc/self/exe", out, size);
+
+	if (n <= 0 || (size_t)n >= size)
+		return 0;
+	out[n] = '\0';
+	if (!(slash = strrchr(out, '/')))
+		return 0;
+	*slash = '\0';
+	return 1;
+}
+
+/* One runtime source for the session scripts (Sync Sprint 12 S12-13): the
+ * developer override LYONA_DEV_SCRIPTS, a checkout's scripts/ that no install
+ * sets, when it holds an executable NAME; else PREFIX/lib/lyona beside the
+ * installed dwm. The override is never honoured as root, so a user-writable
+ * copy is never run with root's rights. */
+static int
+session_script(char *out, size_t size, const char *name)
+{
+	const char *dev = getenv("LYONA_DEV_SCRIPTS");
+	char dir[PATH_MAX], lib[PATH_MAX], *slash;
+
+	if (dev && *dev) {
+		if (geteuid() == 0)
+			fprintf(stderr, "dwm: ignoring LYONA_DEV_SCRIPTS as root\n");
+		else if (pathjoin(out, size, dev, name) && access(out, X_OK) == 0)
+			return 1;
+		else
+			fprintf(stderr, "dwm: LYONA_DEV_SCRIPTS=%s has no executable %s; "
+			        "using the installed one\n", dev, name);
+	}
+	if (!exe_dir(dir, sizeof(dir)) || !(slash = strrchr(dir, '/')))
+		return 0;
+	*slash = '\0';                   /* PREFIX */
+	return pathjoin(lib, sizeof(lib), dir, "lib/lyona")
+	       && pathjoin(out, size, lib, name);
 }
 
 void
@@ -2834,58 +2871,11 @@ run(void)
 pid_t
 runautoscript(const char *script)
 {
-	char *pathpfx;
-	char *path;
-	char *xdgdatahome;
-	char *home;
+	char path[PATH_MAX];
 	pid_t pid = 0;
-	struct stat sb;
 
-	if ((home = getenv("HOME")) == NULL)
-
+	if (!session_script(path, sizeof(path), script))
 		return 0;
-
-	xdgdatahome = getenv("XDG_DATA_HOME");
-	if (xdgdatahome != NULL && *xdgdatahome != '\0') {
-
-		pathpfx = ecalloc(1, strlen(xdgdatahome) + strlen(dwmdir) + 2);
-
-		if (sprintf(pathpfx, "%s/%s", xdgdatahome, dwmdir) <= 0) {
-			free(pathpfx);
-			return 0;
-		}
-	} else {
-
-		pathpfx = ecalloc(1, strlen(home) + strlen(localshare)
-							 + strlen(dwmdir) + 3);
-
-		if (sprintf(pathpfx, "%s/%s/%s", home, localshare, dwmdir) < 0) {
-			free(pathpfx);
-			return 0;
-		}
-	}
-
-	if (! (stat(pathpfx, &sb) == 0 && S_ISDIR(sb.st_mode))) {
-
-		char *pathpfx_new = realloc(pathpfx, strlen(home) + strlen(dwmdir) + 3);
-		if(pathpfx_new == NULL) {
-			free(pathpfx);
-			return 0;
-		}
-		pathpfx = pathpfx_new;
-
-		if (sprintf(pathpfx, "%s/.%s", home, dwmdir) <= 0) {
-			free(pathpfx);
-			return 0;
-		}
-	}
-
-	path = ecalloc(1, strlen(pathpfx) + strlen(script) + 2);
-	if (sprintf(path, "%s/%s", pathpfx, script) <= 0) {
-		free(path);
-		free(pathpfx);
-		return 0;
-	}
 
 	if (access(path, X_OK) == 0) {
 		pid = fork();
@@ -2908,8 +2898,6 @@ runautoscript(const char *script)
 
 	}
 
-	free(pathpfx);
-	free(path);
 	return pid;
 }
 
@@ -4112,19 +4100,22 @@ reload_config(int applytheme)
 	if (dpy) grabkeys();
 
 	if (applytheme) {
-		pid_t pid = fork();
-		if (pid == 0) {
+		/* theme-apply.sh is a command, installed beside dwm; the override
+		 * holds a checkout's copy (Sync Sprint 12 S12-13). */
+		char script[PATH_MAX], dir[PATH_MAX];
+		const char *dev = geteuid() != 0 ? getenv("LYONA_DEV_SCRIPTS") : NULL;
+		int found = dev && *dev
+		            && pathjoin(script, sizeof(script), dev, "theme-apply.sh")
+		            && access(script, X_OK) == 0;
 
-			char script[PATH_MAX];
-			if (dwm_data_dir[0] != '\0' &&
-			    pathjoin(script, sizeof(script), dwm_data_dir,
-			             "scripts/theme-apply.sh") &&
-			    setenv("DWM_THEME_APPLY_AUTOMATIC", "1", 1) == 0) {
+		if (!found)
+			found = exe_dir(dir, sizeof(dir))
+			        && pathjoin(script, sizeof(script), dir, "theme-apply.sh");
+		if (found && fork() == 0) {
+			if (setenv("DWM_THEME_APPLY_AUTOMATIC", "1", 1) == 0)
 				execl(script, script, (char *)NULL);
-			}
 			_exit(0);
 		}
-
 	}
 }
 
@@ -4258,11 +4249,6 @@ setup_inotify(void)
 		return;
 	}
 
-	if (!pathjoin(dwm_data_dir, sizeof(dwm_data_dir),
-	              data_home, "lyona")) {
-		fprintf(stderr, "dwm: data path exceeds PATH_MAX\n");
-		return;
-	}
 	if (!default_config_dir(toml_default_dir, sizeof(toml_default_dir))) {
 		/* Empty paths: the loaders treat them as missing, and the watch
 		 * below fails harmlessly. */

@@ -12,7 +12,7 @@ def replace_once(text, old, new):
 qml = Path(sys.argv[1])
 # Every helper except the Picom one becomes `true`, so nothing installed on the
 # machine running the test can be started by the shell. The Picom helper is
-# found the normal way, in $XDG_DATA_HOME/lyona/scripts, where the test puts its stub.
+# found the normal way, through LYONA_DEV_SCRIPTS, which names the test's stub.
 commands = qml / "core/Commands.qml"
 commands.write_text(replace_once(
     commands.read_text(), "const argv = args || [];",

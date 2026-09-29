@@ -28,6 +28,30 @@ scripts/run-tests
 Use `./install.sh --dry-run --non-interactive --profile core` to inspect the
 dependency plan without changing the system.
 
+### Running a session from the checkout
+
+An installed session runs one copy of everything:
+- the commands in `/usr/bin`;
+- the session scripts (`autostart.sh`, `autostop.sh`) and shared shell code in
+  `/usr/lib/lyona`;
+- the shipped default config in `/usr/share/lyona/config`.
+
+To try script changes without reinstalling, point the session at your checkout
+before dwm starts, in `~/.xinitrc` or your display manager's session
+environment:
+
+```sh
+export LYONA_DEV_SCRIPTS="$HOME/Repos/Lyona/scripts"
+```
+
+- **What it covers:** dwm then runs `autostart.sh`, `autostop.sh` and
+  `theme-apply.sh` from that directory, and the shell runs its helpers from it.
+  Anything the directory lacks comes from the install, and dwm logs a line saying
+  so.
+- **Root:** dwm ignores the override when it runs as root.
+- **Undoing it:** no install sets it. Remove the line to go back to the installed
+  copy.
+
 ## Validation
 
 Run the smallest relevant checks while developing and the aggregate gate before

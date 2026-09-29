@@ -361,6 +361,85 @@ from the text above:
    - With `LYONA_DEV_SCRIPTS` set, a stub `autostart.sh` there is the one that runs.
    - With dwm run as root in a container, the override is ignored.
 
+**Implemented (2026-09-28, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **`preferManaged` is gone, not ignored.** Dropping the fourth argument from its 25
+  call sites in `Commands.qml` and 3 in `PicomModel.qml` was a mechanical edit.
+  `tests/test-dwm-lock.sh` greps the call's source and was updated with it.
+- **The helper's name is the script's `$0`:**
+  `[ -n "${LYONA_DEV_SCRIPTS:-}" ] && [ -x "$LYONA_DEV_SCRIPTS/$0" ] && exec "$LYONA_DEV_SCRIPTS/$0" "$@"; exec "$0" "$@"`.
+  Nothing is spliced into the shell text. The fixtures that patch `Commands.qml`
+  anchor on `const argv = args || [];`, which is unchanged.
+- **dwm** (`session_script`, `exe_dir`):
+  - `runautoscript` no longer needs `HOME` or builds paths by hand.
+  - The override is used when it holds an executable of that name. Otherwise
+    dwm logs `LYONA_DEV_SCRIPTS=... has no executable NAME; using the installed
+    one`. As root it logs `ignoring LYONA_DEV_SCRIPTS as root`.
+  - `dwm_data_dir`, `dwmdir` and `localshare` are removed.
+- **`theme-apply.sh` too.** `reload_config` ran it from the per-user copy as
+  well; the plan missed that. It now comes from the override, or from beside dwm
+  (`PREFIX/bin`), where `theme-apply.sh` is installed as a command.
+- **`INSTALL_SESSION_SCRIPTS`** (`autostart.sh`, `autostop.sh`) install to
+  `PREFIX/lib/lyona` with mode 0755:
+  - the staged-layout check, `uninstall` and `dev-sync-install.sh --check`
+    (`verify_executable`) cover them;
+  - `migrate-graphical-session.sh` is not installed: only `install-user` runs
+    it, from the checkout.
+- **Step 6 is folded in.** Dropping the per-user lookup breaks every test that
+  staged helpers there, so they move in the same change:
+  - the shell tests export `LYONA_DEV_SCRIPTS` pointing at the same directory;
+  - the system-management preflight shells pass their own;
+  - the Python tests add it to `env`;
+  - `test-quickshell-session-actions.sh` and `test-xvfb-runtime.sh` pass it to
+    dwm.
+
+  The directories keep their old names; step 6's remaining cleanup is only
+  renaming them.
+- **New `tests/test-session-scripts-xvfb.sh`** (`make check-session-scripts-xvfb`,
+  in `make check`) runs a copy of dwm from an installed layout, with no
+  `~/.local/share/lyona`:
+  - the install's `autostart.sh` and `autostop.sh` run, and no per-user
+    directory is created;
+  - with the override, its `autostart.sh` runs and the missing `autostop.sh`
+    comes from the install, with the log line;
+  - an override naming a missing directory falls back entirely;
+  - under `unshare -r` (root in a user namespace) the override is ignored, with
+    the log line.
+
+  It fails against `main`'s dwm (`no autostart.sh ran (installed)`); that dwm
+  was built in a scratch worktree, and the build was checked.
+- **Docs:**
+  - `CONTRIBUTING.md` has a "Running a session from the checkout" section.
+  - `dwm.1` still described the upstream autostart patch (`$XDG_DATA_HOME/dwm`,
+    `~/.dwm`, an `autostart_blocking.sh` Lyona never had). Its FILES section now
+    names `PREFIX/lib/lyona` and `PREFIX/share/lyona/config`, and a new
+    ENVIRONMENT section covers `LYONA_DEV_SCRIPTS`.
+- **Staged full session.** `make install-system DESTDIR=... PREFIX=/usr` was run
+  for an account that never ran `install-user`: no `~/.local/share/lyona`, only
+  `~/.config/quickshell` seeded, as `install-user` does. The session ran under
+  Xvfb and `dbus-run-session`, with `PATH=<stage>/usr/bin:/usr/bin` and a
+  private `XDG_RUNTIME_DIR`:
+  - dwm read its defaults from the stage and ran the staged `autostart.sh`;
+  - Quickshell started, and its watchers (`dwm-quickshell-state watch`,
+    `dwm-quickshell-network monitor`, `dwm-accessibility-settings watch`,
+    `dwm-status`) ran from `<stage>/usr/bin`;
+  - no per-user copy was created.
+
+  This is the case that had no session startup before.
+- **Checks.**
+  - `quickshell-qmllint` on `Commands.qml` and `PicomModel.qml` gave only the
+    existing `QProcess::ExitStatus` type warning.
+  - `shellcheck` and `shfmt` pass on every changed script and test, and
+    `check-install-manifest` passes.
+  - `scripts/run-tests`: PASS in one run. An earlier run stopped at the known
+    `check-quickshell-watcher-lifetime-xvfb` flake (an `xprop -spy` from
+    `dwm-quickshell-state`, unchanged here). That test passed three times out
+    of three alone, and so did the full rerun.
+- **Not verified:**
+  - a real login through a display manager, or `startx`, on an installed system;
+  - `LYONA_DEV_SCRIPTS` set from `~/.xinitrc` in a real session.
+
 ### Step 4 -- no more per-user copy
 
 1. `install-user` stops copying:

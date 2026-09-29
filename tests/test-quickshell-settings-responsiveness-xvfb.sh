@@ -28,6 +28,9 @@ trap 'exit 143' TERM
 
 mkdir -p "$work/qml" "$work/home/.config/lyona" \
 	"$work/data/lyona/scripts" "$work/runtime" "$work/state"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$work/data/lyona/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"

@@ -89,7 +89,7 @@ Scope {
 
     Process {
         id: statusProcess
-        command: Commands.helperCommand("dwm-settings-picom", "status", [], true)
+        command: Commands.helperCommand("dwm-settings-picom", "status", [])
         stdout: StdioCollector { id: statusOutput }
         stderr: StdioCollector { id: statusError }
         onExited: (exitCode, exitStatus) => {
@@ -108,7 +108,7 @@ Scope {
 
     Process {
         id: actionProcess
-        command: Commands.helperCommand("dwm-settings-picom", root.action, root.actionArguments, true)
+        command: Commands.helperCommand("dwm-settings-picom", root.action, root.actionArguments)
         stdout: StdioCollector { id: actionOutput }
         stderr: StdioCollector { id: actionError }
         onExited: (exitCode, exitStatus) => {
@@ -124,7 +124,7 @@ Scope {
 
     Process {
         id: watcher
-        command: Commands.watchCommand(Commands.helperCommand("dwm-settings-picom", "watch", [], true))
+        command: Commands.watchCommand(Commands.helperCommand("dwm-settings-picom", "watch", []))
         running: root.active
         stdout: SplitParser {
             onRead: data => {

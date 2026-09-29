@@ -3,17 +3,14 @@ pragma Singleton
 import Quickshell
 
 Singleton {
-    function helperCommand(helper, action, args, preferManaged) {
+    // One runtime source (Sync Sprint 12 S12-13): the developer override
+    // LYONA_DEV_SCRIPTS (a checkout's scripts/, never set by an install) when it
+    // holds the helper, else the installed command on PATH. The helper's name is
+    // the script's $0, so nothing is spliced into the shell text.
+    function helperCommand(helper, action, args) {
         const argv = args || [];
-        const managedScript = "\"$data_dir/scripts/" + helper + "\"";
-        const dataDir = "data_dir=${XDG_DATA_HOME:-$HOME/.local/share}/lyona";
-        const runManaged = "[ -x " + managedScript + " ] && exec " + managedScript + " \"$@\"";
-        const runPath = "command -v " + helper + " >/dev/null 2>&1 && exec " + helper + " \"$@\"";
-        const fallback = "exec " + managedScript + " \"$@\"";
-        const orderedChecks = preferManaged
-            ? [runManaged, runPath, fallback]
-            : [runPath, runManaged, fallback];
-        const script = [dataDir].concat(orderedChecks).join("; ");
+        const script = '[ -n "${LYONA_DEV_SCRIPTS:-}" ] && [ -x "$LYONA_DEV_SCRIPTS/$0" ] '
+            + '&& exec "$LYONA_DEV_SCRIPTS/$0" "$@"; exec "$0" "$@"';
 
         const command = ["sh", "-c", script, helper];
         if (action !== undefined && action !== null) {
@@ -85,27 +82,27 @@ Singleton {
     }
 
     function launcherHelperCommand(action, args) {
-        return helperCommand("dwm-quickshell-launcher", action, args, true);
+        return helperCommand("dwm-quickshell-launcher", action, args);
     }
 
     function networkHelperCommand(action, args) {
-        return helperCommand("dwm-quickshell-network", action, args, false);
+        return helperCommand("dwm-quickshell-network", action, args);
     }
 
     function pointerHelperCommand(action) {
-        return helperCommand("dwm-quickshell-pointer", action, [], true);
+        return helperCommand("dwm-quickshell-pointer", action, []);
     }
 
     function controlsHelperCommand(action, args) {
-        return helperCommand("dwm-quickshell-controls", action, args, true);
+        return helperCommand("dwm-quickshell-controls", action, args);
     }
 
     function controlCenterHelperCommand(action, args) {
-        return helperCommand("dwm-quickshell-controlcenter", action, args, true);
+        return helperCommand("dwm-quickshell-controlcenter", action, args);
     }
 
     function powerHelperCommand(action, args) {
-        return helperCommand("dwm-quickshell-controlcenter", action, args, true);
+        return helperCommand("dwm-quickshell-controlcenter", action, args);
     }
 
     function sessionActionCommand(action) {
@@ -113,78 +110,78 @@ Singleton {
     }
 
     function defaultsHelperCommand(action, args) {
-        return helperCommand("dwm-default-apps", action, args, true);
+        return helperCommand("dwm-default-apps", action, args);
     }
 
     function autostartHelperCommand(action, args) {
-        return helperCommand("dwm-xdg-autostart", action, args, true);
+        return helperCommand("dwm-xdg-autostart", action, args);
     }
 
     function lockHelperCommand() {
-        return helperCommand("dwm-lock", undefined, [], true);
+        return helperCommand("dwm-lock", undefined, []);
     }
 
     function screenshotHelperCommand(action) {
-        return helperCommand("dwm-screenshot", action, [], true);
+        return helperCommand("dwm-screenshot", action, []);
     }
 
     function systemHealthHelperCommand(action, args) {
-        return helperCommand("dwm-system-health", action, args, true);
+        return helperCommand("dwm-system-health", action, args);
     }
 
     function systemManagementCommand(action, args) {
-        return helperCommand("dwm-system-management", action, args, true);
+        return helperCommand("dwm-system-management", action, args);
     }
 
     function settingsProviderCommand(action, args) {
-        return helperCommand("dwm-settings-provider", action, args, true);
+        return helperCommand("dwm-settings-provider", action, args);
     }
 
     function settingsDisplayCommand(action, args) {
-        return helperCommand("dwm-settings-display", action, args, true);
+        return helperCommand("dwm-settings-display", action, args);
     }
 
     function settingsDisplayProfilesCommand(action, args) {
-        return helperCommand("dwm-settings-display-profiles", action, args, true);
+        return helperCommand("dwm-settings-display-profiles", action, args);
     }
 
     function settingsInputCommand(action, args) {
-        return helperCommand("dwm-settings-input", action, args, true);
+        return helperCommand("dwm-settings-input", action, args);
     }
 
     function settingsAppearanceCommand(action, args) {
-        return helperCommand("dwm-settings-appearance", action, args, true);
+        return helperCommand("dwm-settings-appearance", action, args);
     }
 
     function settingsWallpaperCommand(action, args) {
-        return helperCommand("dwm-settings-wallpaper", action, args, true);
+        return helperCommand("dwm-settings-wallpaper", action, args);
     }
 
     function settingsFontCommand(action, args) {
-        return helperCommand("dwm-settings-font", action, args, true);
+        return helperCommand("dwm-settings-font", action, args);
     }
 
     function settingsThemeCommand(action, args) {
-        return helperCommand("dwm-settings-theme", action, args, true);
+        return helperCommand("dwm-settings-theme", action, args);
     }
 
     function settingsToolkitCommand(action, args) {
-        return helperCommand("dwm-settings-toolkit", action, args, true);
+        return helperCommand("dwm-settings-toolkit", action, args);
     }
 
     function panelSettingsCommand(action, args) {
-        return helperCommand("dwm-panel-settings", action, args, true);
+        return helperCommand("dwm-panel-settings", action, args);
     }
 
     function accessibilitySettingsCommand(action, args) {
-        return helperCommand("dwm-accessibility-settings", action, args, true);
+        return helperCommand("dwm-accessibility-settings", action, args);
     }
 
     function updateCommand(action, args) {
-        return helperCommand("lyona-update", action, args, true);
+        return helperCommand("lyona-update", action, args);
     }
 
     function versionCommand(action, args) {
-        return helperCommand("lyona-version", action, args, true);
+        return helperCommand("lyona-version", action, args);
     }
 }

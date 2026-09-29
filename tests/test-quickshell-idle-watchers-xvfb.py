@@ -125,6 +125,9 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
     env = {
         **os.environ,
         'HOME': str(home), 'XDG_CONFIG_HOME': str(config), 'XDG_DATA_HOME': str(home / '.local/share'),
+        # dwm and the shell run the session scripts and helpers from this copy of
+        # the checkout, through the developer override (Sync Sprint 12 S12-13).
+        'LYONA_DEV_SCRIPTS': str(home / '.local/share/lyona/scripts'),
         'XDG_CACHE_HOME': str(home / '.cache'), 'XDG_RUNTIME_DIR': str(runtime),
         'QSG_RHI_BACKEND': 'software', 'QT_QUICK_BACKEND': 'software', 'QT_QPA_PLATFORMTHEME': '',
         'DWM_AUTOSTART_NO_INPUT_WATCH': '1', 'PATH': '%s:%s' % (repo / 'scripts', os.environ['PATH']),

@@ -642,10 +642,13 @@ printf '%s\n' "$*" >>"${DWM_XVFB_NOTIFICATION_LOG:?}"
 NOTIFY
 chmod 755 "$work/bin/notify-send"
 
+# The autostop.sh stub written below is found through the developer override,
+# looked up when dwm quits (Sync Sprint 12 S12-13).
 DISPLAY=$display \
 	HOME=$home \
 	XDG_CONFIG_HOME="$home/.config" \
 	XDG_DATA_HOME="$home/.local/share" \
+	LYONA_DEV_SCRIPTS="$home/.local/share/lyona/scripts" \
 	PATH="$work/bin:$repo:$PATH" \
 	DWM_XVFB_NOTIFICATION_LOG="$work/notifications.log" \
 	"$repo/dwm" >"$work/dwm.log" 2>&1 &

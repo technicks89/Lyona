@@ -96,6 +96,9 @@ config_home=$home/.config
 data_home=$home/.local/share
 mkdir -p "$config_home/quickshell" "$config_home/lyona" "$home/.cache" \
 	"$data_home/lyona/scripts" "$runtime"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
 chmod 700 "$runtime_storage"
 if [ "${#runtime}" -gt 64 ]; then
 	runtime_alias_dir=$(mktemp -d /tmp/dwm-system-management-runtime.XXXXXX)
@@ -912,7 +915,8 @@ for preflight_mode in regional time-status ntp-sample; do
 			preflight_data="$work/preflight-missing-data"
 		fi
 		timeout --foreground --kill-after=2s 45s env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
-			XDG_DATA_HOME="$preflight_data" XDG_RUNTIME_DIR="$runtime" QT_QPA_PLATFORMTHEME= PATH="$preflight_path" \
+			XDG_DATA_HOME="$preflight_data" LYONA_DEV_SCRIPTS="$preflight_data/lyona/scripts" \
+			XDG_RUNTIME_DIR="$runtime" QT_QPA_PLATFORMTHEME= PATH="$preflight_path" \
 			DWM_PREFLIGHT_DIRECTORY="$preflight_directory" DWM_PREFLIGHT_SCENARIO="$preflight_scenario" DWM_PREFLIGHT_MODE="$preflight_mode" \
 			"$preflight_quickshell" --no-duplicate --path "$work/regional-preflight-owner/shell.qml" \
 			>"$preflight_directory/output.log" 2>&1 &
