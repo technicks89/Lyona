@@ -282,8 +282,8 @@ with headers for every installed kernel.
 
 A source-checkout update of an existing live installation must use the complete
 supported install path. Updating only the `dwm` executable is not a supported
-upgrade because it can leave installed helpers, session scripts, the managed
-Quickshell tree, and the user data copy at a different repository revision.
+upgrade because it can leave installed helpers, session scripts, shipped
+defaults and the managed Quickshell tree at a different repository revision.
 When development is performed on a machine running lyona, the
 repository-owned `scripts/dev-sync-install.sh` command must synchronize the
 checkout to that machine's local live installation before the work is handed
@@ -292,13 +292,16 @@ contract for every developer deployment. Every live update must:
 
 1. Build the checked-out revision successfully before replacing installed
    files.
-2. Install the system files and refresh
-   `${XDG_DATA_HOME:-$HOME/.local/share}/lyona/` and the managed
+2. Install the system files (commands in `PREFIX/bin`, shared shell code and
+   session scripts in `PREFIX/lib/lyona`, shipped defaults in
+   `PREFIX/share/lyona`) and refresh the managed
    `${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/` tree from that same
-   revision while preserving the user-owned dwm TOML files.
-3. Verify the installed binary and the managed Quickshell, data, and script
-   trees against the checkout instead of inferring freshness from a clean Git
-   worktree.
+   revision while preserving the user-owned dwm TOML files. The system copy
+   is the only runtime source (decision D-16); no per-user copy of the
+   scripts or defaults is kept, and one left by an older install is removed.
+3. Verify the installed binary, commands, libraries, session scripts, shipped
+   defaults and managed Quickshell tree against the checkout instead of
+   inferring freshness from a clean Git worktree.
 4. Restart Quickshell through the managed control path and verify its process,
    IPC endpoints, and tray host when no full session restart is pending. If the
    running dwm executable was replaced, defer Quickshell activation to the

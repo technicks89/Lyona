@@ -301,6 +301,13 @@ snapshot_file "$XDG_CONFIG_HOME/Thunar/uca.xml" "$WORK_DIR/thunar-uca.before"
 snapshot_file "$XDG_CONFIG_HOME/autostart/picom.desktop" "$WORK_DIR/picom-autostart.before"
 snapshot_file "$XDG_CONFIG_HOME/systemd/user/custom.service" "$WORK_DIR/custom-service.before"
 
+# An older install's per-user copy of the scripts and defaults, beside a file of
+# the user's own (Sync Sprint 12 S12-13 step 4).
+mkdir -p "$XDG_DATA_HOME/lyona/scripts" "$XDG_DATA_HOME/lyona/config"
+printf 'old\n' >"$XDG_DATA_HOME/lyona/scripts/autostart.sh"
+printf 'old\n' >"$XDG_DATA_HOME/lyona/config/hotkeys.toml"
+printf 'mine\n' >"$XDG_DATA_HOME/lyona/user-note.txt"
+
 if [[ $(id -u) -eq 0 ]]; then
 	chown -R "$OWNER:$OWNER_GROUP" "$WORK_DIR"
 fi
@@ -325,6 +332,16 @@ test "$(stat -c %a "$STATE_STAMP")" = 600
 test "$(grep -Fc 'LYONA_VERSION=' "$STATE_STAMP")" -eq 1
 grep -Fq "LYONA_DATA_DIR=$XDG_DATA_HOME/lyona" "$STATE_STAMP"
 grep -Fq "LYONA_CONFIG_DIR=$XDG_CONFIG_HOME" "$STATE_STAMP"
+
+# The per-user copy is gone; the system copy is the only runtime source. The
+# user's own file beside it is kept.
+for stale_tree in "$XDG_DATA_HOME/lyona/scripts" "$XDG_DATA_HOME/lyona/config"; do
+	if [[ -e $stale_tree ]]; then
+		printf 'install-user left the per-user copy %s\n' "$stale_tree" >&2
+		exit 1
+	fi
+done
+grep -Fqx mine "$XDG_DATA_HOME/lyona/user-note.txt"
 
 assert_preserved config-h "$TEST_REPO/config.h" "$WORK_DIR/config-h.before"
 assert_preserved xinitrc "$TEST_HOME/.xinitrc" "$WORK_DIR/xinitrc.before"
@@ -408,6 +425,8 @@ if [[ $(grep -Fxc -- '-f' "$WORK_DIR/fc-cache.log") -ne 3 ]]; then
 	exit 1
 fi
 cmp "$TEST_REPO/config/Thunar/uca.xml" "$FRESH_CONFIG_HOME/Thunar/uca.xml"
+# A fresh account gets no per-user copy at all (S12-13).
+[[ ! -e $FRESH_DATA_HOME/lyona/scripts && ! -e $FRESH_DATA_HOME/lyona/config ]]
 # Sync Sprint 12 S12-11: the polkit action templates (system files, @PREFIX@ not
 # yet expanded) are not seeded into ~/.config. The systemd user unit is, because
 # autostart starts wm-graphical-session.service from there.
@@ -450,8 +469,7 @@ for user_path in \
 	"$FRESH_HOME/.local" \
 	"$FRESH_DATA_HOME" \
 	"$FRESH_CONFIG_HOME" \
-	"$FRESH_CONFIG_HOME/lyona" \
-	"$FRESH_DATA_HOME/lyona"; do
+	"$FRESH_CONFIG_HOME/lyona"; do
 	test "$(stat -c %U "$user_path")" = "$OWNER"
 	test "$(stat -c %G "$user_path")" = "$OWNER_GROUP"
 done
@@ -492,13 +510,14 @@ test ! -e "$EMPTY_CONFIG_HOME/autostart/polkit-mate-authentication-agent-1.deskt
 
 # UPDATE-001: a failed install-user must leave no stamp claiming success.
 # stamp-user is the last recipe line, so any earlier failure -- here, a
-# regular file obstructing the data-dir mkdir -- aborts before it runs.
+# regular file obstructing the ~/.config/lyona mkdir (install-user no longer
+# creates the data directory, S12-13) -- aborts before it runs.
 FAIL_HOME="$WORK_DIR/fail-home"
 FAIL_CONFIG_HOME="$FAIL_HOME/.config"
 FAIL_DATA_HOME="$FAIL_HOME/.local/share"
 FAIL_CONFIG_DIRS="$WORK_DIR/fail-etc-xdg"
-mkdir -p "$FAIL_HOME/.local/share" "$FAIL_CONFIG_DIRS/autostart"
-: >"$FAIL_DATA_HOME/lyona"
+mkdir -p "$FAIL_CONFIG_HOME" "$FAIL_DATA_HOME" "$FAIL_CONFIG_DIRS/autostart"
+: >"$FAIL_CONFIG_HOME/lyona"
 if [[ $(id -u) -eq 0 ]]; then
 	chown -R "$OWNER:$OWNER_GROUP" "$FAIL_HOME" "$FAIL_CONFIG_DIRS"
 fi
@@ -509,7 +528,7 @@ if run_as_owner env HOME="$FAIL_HOME" make -C "$TEST_REPO" install-user \
 	XDG_CONFIG_DIRS="$FAIL_CONFIG_DIRS" \
 	XDG_DATA_HOME="$FAIL_DATA_HOME" \
 	XDG_STATE_HOME="$FAIL_HOME/.local/state" >"$WORK_DIR/failed-install-user.log" 2>&1; then
-	printf 'install-user succeeded despite an obstructed data directory.\n' >&2
+	printf 'install-user succeeded despite an obstructed config directory.\n' >&2
 	cat "$WORK_DIR/failed-install-user.log" >&2
 	exit 1
 fi

@@ -489,6 +489,74 @@ from the text above:
      library.
    - `lyona-update` no longer mentions `dev-sync-install.sh`.
 
+**Implemented (2026-09-28, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **Decision 2 was revisited: a rollback does not strip** (asked of the user
+  2026-09-28). Only backups taken before this step hold `lyona-data.tar`. They
+  roll back to a dwm that starts its session from that copy's `scripts/`, so
+  stripping it would leave the restored session with no autostart. The copy is
+  restored as it is, and the next update's `install-user` removes it again.
+  `restore_user_tree` is unchanged.
+- **`LYONA_DATA_DIR` in the user record is unchanged.** It is the user-scope
+  record, and `~/.local/share/lyona` is still the user's data directory; naming
+  `PREFIX/share/lyona` there would label a system path as user state.
+  `lyona-version` and its test did not change.
+- **`install-user`** removes `DATA_DIR/{config,scripts}`, keeping the old guard:
+  a checkout that is itself the data directory is never deleted. It no longer
+  creates `DATA_DIR`, and the `find DATA_DIR ... chmod +x` pass is gone (it would
+  fail on a missing directory).
+- **`scripts/lyona-install-verify.sh`** holds everything from the `die` guard
+  through `runtime_verify`:
+  - it is configured by `LYONA_INSTALL_REPO_DIR` alone, and the
+    `DEV_SYNC_INSTALL_LIB_ONLY` switch is gone;
+  - `dev_sync_exit_status` is renamed `install_verify_exit_status`, and
+    `lyona-update`'s trap reads the new name;
+  - it replaces `dev-sync-install.sh` in `INSTALL_LIBS`.
+
+  `dev-sync-install.sh` keeps its CLI (`die`, `note`, options, `owner`) and
+  sources the library from beside itself. It is no longer installed:
+  `RETIRED_LIB_NAMES` makes `install-system` and `uninstall` remove the copy
+  step 1 put in `PREFIX/lib/lyona`.
+- **`verify_install`:**
+  - it verifies each `INSTALL_DEFAULTS` file in `PREFIX/share/lyona/config`,
+    and backs them up;
+  - it reports a leftover `DATA_DIR/scripts` or `DATA_DIR/config` as `STALE`,
+    instead of comparing those trees with the checkout.
+
+  `backup_live_install` no longer writes `lyona-data.tar`.
+- **`lyona-update`** still names `dev-sync-install.sh` in one message, which
+  tells a checkout user what to run instead; it no longer sources it.
+- **Tests:**
+  - `test-install-preservation.sh`: a seeded older `scripts/` and `config/` are
+    removed while a user file beside them stays, and a fresh account gets no
+    copy. The failure-injection case obstructs `~/.config/lyona` instead of the
+    data directory, which `install-user` no longer creates.
+  - `test-dev-sync-install.sh` installs the defaults. It checks that a missing
+    default is `MISSING INSTALL`, that a leftover per-user `scripts/` is
+    `STALE`, and it reads `runtime_verify` from the new library.
+- **Docs:**
+  - `SPEC.md`'s live-update contract (items 2 and 3) no longer requires
+    refreshing or verifying a per-user copy, per D-16;
+  - `docs/src/{configuration,install,control-center,updating}.md`;
+  - a CHANGELOG entry with the migration note.
+- **Checks:** PASS: `check-shell`, `check-format`, `check-install-manifest`,
+  `release-check`, `check-install-preservation`, `check-dev-sync-install`,
+  `check-lyona-update`, `check-lyona-version` and `check-shell-contracts`.
+  - **Staged install:** a `dev-sync-install.sh` planted in `usr/lib/lyona` is
+    removed by the next `install-system`, and `uninstall` leaves no
+    `usr/lib/lyona`, `usr/share/lyona` or commands.
+  - `scripts/run-tests`: PASS, run alone. A first run stopped at
+    `check-quickshell-watcher-lifetime-xvfb`, with the same two survivors as in
+    step 1 (an `xprop -spy` from `dwm-quickshell-state` and an `inotifywait`),
+    while a staged install ran alongside it.
+    - This flake has now stopped 3 of 7 full runs across S12-13, each time under
+      extra load. It predates this item, which does not touch those scripts.
+    - It likely needs a longer grace, or a fix in how those two watchers stop;
+      worth its own item.
+- **Not verified:** a real `lyona-update apply` or `rollback` on an installed
+  system, including a rollback to a pre-S12-13 backup.
+
 ### Step 5 -- the override is visible
 
 1. `dwm-diagnostics` prints `LYONA_DEV_SCRIPTS=<path>` (or `not set`).

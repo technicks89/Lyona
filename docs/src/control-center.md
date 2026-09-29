@@ -115,7 +115,7 @@ make
 sudo make install-system
 ```
 
-The managed copy under `~/.local/share/lyona` is never elevated itself. If
+A checkout's copy of a helper is never elevated. If
 the installed helper is unavailable, cached or `NOPASSWD` sudo can still run
 the validated root-owned system commands. Polkit authorization requires the
 root-owned installed helper.

@@ -18,6 +18,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   - A command finds the shared code beside itself in a checkout, and in `../lib/lyona` once installed.
   - `scripts/dev-sync-install.sh --check` verifies the libraries in `PREFIX/lib/lyona` and reports a copy left in
     `PREFIX/bin` as stale.
+- One runtime source for helpers, step 4 (Sync Sprint 12 S12-13).
+  - `make install-user` (and so `lyona-update apply`) no longer copies `scripts/` and `config/` into
+    `~/.local/share/lyona`, and removes the copies an earlier install left. Nothing reads them any more. Both trees
+    were replaced wholesale on every install, so they held nothing of yours; the rest of `~/.local/share/lyona` is
+    untouched.
+  - **Migration:** if you ran a modified script from `~/.local/share/lyona/scripts`, run it from a checkout with
+    `LYONA_DEV_SCRIPTS` set (see `CONTRIBUTING.md`).
+  - `lyona-update` shares its verification and backup code with `scripts/dev-sync-install.sh` through the new
+    library `lyona-install-verify.sh` in `PREFIX/lib/lyona`. `dev-sync-install.sh` is a checkout tool again and is
+    no longer installed; the copy an earlier install put in `PREFIX/lib/lyona` is removed.
+  - The live-install check verifies the shipped defaults in `PREFIX/share/lyona/config`, and reports a leftover
+    per-user copy as stale, instead of comparing that copy with the checkout.
+  - New backups no longer include `lyona-data.tar`. A rollback to an older backup still restores it as it is,
+    because the version it restores runs its session from that copy.
 - One runtime source for helpers, step 3 (Sync Sprint 12 S12-13).
   - `autostart.sh` and `autostop.sh` install to `PREFIX/lib/lyona`, and dwm runs them from there. They used to exist
     only in each user's copy under `~/.local/share/lyona/scripts`, so an account that never ran `make install-user`

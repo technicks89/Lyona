@@ -143,15 +143,19 @@ lyona-update rollback --backup 20260828T153709Z-1472673
 
 Every `apply` backs up the live install first, before writing anything, so
 `rollback` always has something to restore to. A backup has two halves under the
-same id: your own files (the managed Quickshell config and the Lyona data
-directory) in `~/.local/state/lyona/live-update-backups/<id>/`, and the system
+same id: your own files (the managed Quickshell config, and in backups taken
+before the S12-13 change the Lyona data directory) in
+`~/.local/state/lyona/live-update-backups/<id>/`, and the system
 files, which the privileged helper copies as root, just before installing, into
 `/var/lib/lyona/backups/<id>/`, readable only by root. A rollback restores the
 system files from that root-only copy and never from anything in your home
 directory, so nothing another program running as you could have changed is ever
 installed as root. The helper keeps the newest 5 system backups. Your own files
-are restored whole: the backed-up Quickshell config and data directory replace
-the current ones, so nothing a newer version added is left behind.
+are restored whole: the backed-up Quickshell config, and the data directory when
+the backup holds one, replace the current ones, so nothing a newer version added
+is left behind. An older backup's data directory still holds that version's
+session scripts and defaults, which the restored version needs; the next update
+removes them again.
 
 It refuses to restore a backup whose checksums do not match, or one taken against
 a different install environment (prefix, config, or data directory) than the one

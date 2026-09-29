@@ -56,9 +56,9 @@ $EDITOR config.h
 ./scripts/dev-sync-install.sh
 ```
 
-`dev-sync-install.sh` rebuilds dwm, updates all installed commands and managed
-Quickshell/data files when needed, verifies parity, and reports whether the dwm
-session must be restarted. When a session restart is already required, it activates
+`dev-sync-install.sh` rebuilds dwm, updates the installed commands, shared code,
+shipped defaults and managed Quickshell configuration when needed, verifies parity,
+and reports whether the dwm session must be restarted. When a session restart is already required, it activates
 Quickshell there so the tray host starts before tray clients. Use
 `./scripts/dev-sync-install.sh --check` for a non-mutating audit.
 
