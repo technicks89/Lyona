@@ -53,7 +53,9 @@ with tempfile.TemporaryDirectory(prefix='reload-theme-', dir=str(temp_root)) as 
     runtime = base / 'runtime'
     runtime.mkdir(mode=0o700)
     env = {**os.environ, 'HOME': str(base), 'XDG_CONFIG_HOME': str(base / 'config'),
-           'XDG_DATA_HOME': str(base / 'data'), 'XDG_RUNTIME_DIR': str(runtime)}
+           'XDG_DATA_HOME': str(base / 'data'), 'XDG_RUNTIME_DIR': str(runtime),
+           # dwm runs theme-apply.sh from the developer override (S12-13).
+           'LYONA_DEV_SCRIPTS': str(scripts)}
     log_path = base / 'dwm.log'
     log = log_path.open('w')
     wm = subprocess.Popen([str(repo / 'dwm')], env=env, stdout=log, stderr=log, start_new_session=True)

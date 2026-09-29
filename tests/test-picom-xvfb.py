@@ -59,6 +59,8 @@ def main():
             "XDG_CONFIG_HOME": str(config),
             "XDG_CONFIG_DIRS": str(work / "vendor"),
             "XDG_DATA_HOME": str(data),
+            # The shell runs the Picom helper staged below from the override.
+            "LYONA_DEV_SCRIPTS": str(data / "lyona/scripts"),
             "XDG_STATE_HOME": str(work / "state"),
             "XDG_RUNTIME_DIR": str(runtime),
             "DWM_PICOM_CONFIG": "",

@@ -113,6 +113,9 @@ cp "$repo"/config/*.toml "$config_home/lyona/"
 mkdir -p "$data_home/lyona/assets"
 cp -a "$repo/assets/logo" "$data_home/lyona/assets/logo"
 ln -s "$repo/scripts" "$data_home/lyona/scripts"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
 
 smoke_marker=$work/launched
 cat >"$data_home/applications/dwm-smoke.desktop" <<EOF

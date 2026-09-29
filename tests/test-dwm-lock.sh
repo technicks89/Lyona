@@ -69,7 +69,7 @@ test ! -e "$work/light-locker.running"
 grep -Fq 'Commands.sessionActionCommand(requestedAction.id)' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml"
 grep -Fq 'run_helper session-action lock' "$repo/tests/test-quickshell-session-actions.sh"
-grep -Fq 'return helperCommand("dwm-lock", undefined, [], true)' \
+grep -Fq 'return helperCommand("dwm-lock", undefined, [])' \
 	"$repo/config/quickshell/core/Commands.qml"
 
 cat >"$work/bin/loginctl" <<'SCRIPT'

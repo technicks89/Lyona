@@ -95,6 +95,9 @@ data_home=$home/.local/share
 bin=$work/bin
 mkdir -p "$config_home/quickshell" "$config_home/lyona" "$home/.cache" \
 	"$data_home/lyona/scripts" "$data_home/applications" "$runtime" "$bin"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
 chmod 700 "$runtime_storage"
 if [ "${#runtime}" -gt 64 ]; then
 	runtime_alias_dir=$(mktemp -d /tmp/dwm-large-surface-runtime.XXXXXX)

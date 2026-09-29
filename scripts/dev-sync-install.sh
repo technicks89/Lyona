@@ -162,6 +162,7 @@ else
 fi
 install_sources_file=$work/install-sources
 lib_sources_file=$work/lib-sources
+session_sources_file=$work/session-sources
 expected_man=$work/dwm.1
 expected_xsession=$work/dwm.desktop
 privileged_helpers_file=$work/privileged-helpers
@@ -182,6 +183,13 @@ prepare_expected_files() {
 		dwm-dev-print-lib-sources >"$lib_sources_file"
 	[ -s "$lib_sources_file" ] ||
 		die "Makefile did not report any installed libraries"
+
+	# shellcheck disable=SC2016
+	"$make_path" -s -C "$repo_dir" --no-print-directory \
+		--eval='dwm-dev-print-session-sources: ; @printf "%s\n" $(INSTALL_SESSION_SCRIPTS)' \
+		dwm-dev-print-session-sources >"$session_sources_file"
+	[ -s "$session_sources_file" ] ||
+		die "Makefile did not report any session scripts"
 
 	# shellcheck disable=SC2016
 	"$make_path" -s -C "$repo_dir" --no-print-directory \
@@ -277,6 +285,12 @@ verify_install() {
 			verification_failed=1
 		fi
 	done <"$lib_sources_file"
+	while IFS= read -r session_source; do
+		[ -n "$session_source" ] || continue
+		verify_executable "$repo_dir/$session_source" \
+			"$prefix/lib/lyona/${session_source##*/}" \
+			"session script ${session_source##*/}"
+	done <"$session_sources_file"
 	verify_privileged_helper_trust=1
 	if [ "${DWM_DEV_SYNC_SKIP_PRIVILEGED_TRUST:-0}" = 1 ]; then
 		verify_privileged_helper_trust=0
@@ -364,6 +378,10 @@ backup_live_install() {
 		add_system_backup_path "$prefix/bin/${lib_source##*/}"
 		add_system_backup_path "$prefix/lib/lyona/${lib_source##*/}"
 	done <"$lib_sources_file"
+	while IFS= read -r session_source; do
+		[ -n "$session_source" ] || continue
+		add_system_backup_path "$prefix/lib/lyona/${session_source##*/}"
+	done <"$session_sources_file"
 	while IFS= read -r privileged_helper; do
 		[ -n "$privileged_helper" ] || continue
 		add_system_backup_path "$privileged_helper_dir/${privileged_helper##*/}"

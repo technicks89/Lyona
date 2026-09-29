@@ -266,6 +266,9 @@ mkdir -p "$config_home/quickshell" "$config_home/lyona" \
 	"$state_home/lyona/appearance" \
 	"$home/Pictures/backgrounds" \
 	"$runtime_storage" "$schema_dir" "$helper_tmp"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
 chmod 700 "$runtime_storage"
 cat >"$fixture_feh" <<'EOF'
 #!/bin/sh

@@ -46,6 +46,10 @@ make -s -C "$test_repo" --no-print-directory \
 	test-print-lib-sources >"$work/lib-sources"
 # shellcheck disable=SC2016
 make -s -C "$test_repo" --no-print-directory \
+	--eval='test-print-session-sources: ; @printf "%s\n" $(INSTALL_SESSION_SCRIPTS)' \
+	test-print-session-sources >"$work/session-sources"
+# shellcheck disable=SC2016
+make -s -C "$test_repo" --no-print-directory \
 	--eval='test-print-privileged-helpers: ; @printf "%s\n" $(PRIVILEGED_HELPERS)' \
 	test-print-privileged-helpers >"$privileged_helpers"
 
@@ -65,6 +69,11 @@ while IFS= read -r lib_source; do
 	install -Dm644 "$test_repo/$lib_source" \
 		"$prefix/lib/lyona/${lib_source##*/}"
 done <"$work/lib-sources"
+while IFS= read -r session_source; do
+	[ -n "$session_source" ] || continue
+	install -Dm755 "$test_repo/$session_source" \
+		"$prefix/lib/lyona/${session_source##*/}"
+done <"$work/session-sources"
 
 version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$test_repo/config.mk")
 sed "s/VERSION/$version/g" "$test_repo/dwm.1" >"$manprefix/man1/dwm.1"

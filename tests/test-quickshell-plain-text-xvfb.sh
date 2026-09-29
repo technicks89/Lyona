@@ -56,6 +56,9 @@ chmod 700 "$runtime"
 cp -a "$repo/config/quickshell/." "$home/.config/quickshell/"
 cp "$repo/config/"*.toml "$home/.config/lyona/"
 cp -a "$repo/scripts" "$home/.local/share/lyona/scripts"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$home/.local/share/lyona/scripts"
 
 # The listener: every request is logged to $work/requests.
 python3 - "$work/port" "$work/requests" <<'PY' &

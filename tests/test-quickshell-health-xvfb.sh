@@ -31,6 +31,9 @@ runtime=$work/runtime
 config_home=$home/.config
 data_home=$home/.local/share
 mkdir -p "$config_home/quickshell" "$config_home/lyona" "$data_home/lyona/scripts" "$runtime"
+# Helpers are no longer looked up in a per-user copy; the developer override
+# names the directory holding this test's helpers (Sync Sprint 12 S12-13).
+export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
 chmod 700 "$runtime"
 cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
 cp "$repo/config/"*.toml "$config_home/lyona/"

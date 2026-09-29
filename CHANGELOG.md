@@ -18,6 +18,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   - A command finds the shared code beside itself in a checkout, and in `../lib/lyona` once installed.
   - `scripts/dev-sync-install.sh --check` verifies the libraries in `PREFIX/lib/lyona` and reports a copy left in
     `PREFIX/bin` as stale.
+- One runtime source for helpers, step 3 (Sync Sprint 12 S12-13).
+  - `autostart.sh` and `autostop.sh` install to `PREFIX/lib/lyona`, and dwm runs them from there. They used to exist
+    only in each user's copy under `~/.local/share/lyona/scripts`, so an account that never ran `make install-user`
+    had no session startup at all. dwm no longer looks in `~/.local/share/lyona/scripts` or `~/.lyona`.
+  - The shell runs every helper as the installed command on `PATH`. It no longer prefers a per-user copy for 23 of
+    them.
+  - Developers: set `LYONA_DEV_SCRIPTS` to a checkout's `scripts/` to run the session scripts, `theme-apply.sh`
+    and the shell's helpers from it. No install sets it. dwm ignores it when running as root, and logs when it
+    falls back to the installed copy of a script the override lacks.
+  - dwm runs `theme-apply.sh` on a theme reload from beside its own executable (`PREFIX/bin`), or from the
+    override.
 - One runtime source for helpers, step 2 (Sync Sprint 12 S12-13).
   - The shipped default TOMLs (`hotkeys.toml`, `themes.toml`, `window-rules.toml`) install to
     `PREFIX/share/lyona/config`. dwm, `theme-apply.sh`, `dwm-settings-appearance`, `dwm-settings-theme` and the

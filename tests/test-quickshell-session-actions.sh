@@ -350,7 +350,10 @@ SH
 		sleep 0.02
 	done
 
-	DWM_SESSION_TEST_AUTOSTOP_MARKER="$work/autostop.marker" \
+	# dwm runs its session scripts and theme-apply.sh from the developer
+	# override, the stubs above (Sync Sprint 12 S12-13).
+	LYONA_DEV_SCRIPTS="$runtime_data_home/lyona/scripts" \
+		DWM_SESSION_TEST_AUTOSTOP_MARKER="$work/autostop.marker" \
 		DWM_SESSION_TEST_THEME_APPLY_MARKER="$work/theme-apply.marker" \
 		DWM_SESSION_TEST_THEME_ENV_MARKER="$work/theme-env.marker" \
 		DISPLAY=$runtime_display HOME="$runtime_home" \
@@ -370,14 +373,14 @@ SH
 	done
 	initial_theme_loads=$(grep -Fc 'dwm: loaded theme from config' "$work/dwm.log" || true)
 	[ "$initial_theme_loads" -ge 1 ] || {
-		printf '%s\n' 'Nested DWM did not load its XDG_DATA_HOME theme fallback.' >&2
+		printf '%s\n' 'Nested DWM did not load its shipped theme fallback.' >&2
 		exit 1
 	}
 	i=0
 	while [ ! -f "$work/theme-apply.marker" ] || [ ! -f "$work/theme-env.marker" ]; do
 		i=$((i + 1))
 		[ "$i" -lt 100 ] || {
-			printf '%s\n' 'Nested DWM did not run theme-apply from XDG_DATA_HOME.' >&2
+			printf '%s\n' 'Nested DWM did not run theme-apply from LYONA_DEV_SCRIPTS.' >&2
 			exit 1
 		}
 		sleep 0.02
@@ -402,7 +405,7 @@ SH
 	while [ "$(wc -c <"$work/theme-apply.marker")" -le "$initial_theme_applies" ]; do
 		i=$((i + 1))
 		[ "$i" -lt 100 ] || {
-			printf '%s\n' 'Nested DWM did not run theme-apply from XDG_DATA_HOME.' >&2
+			printf '%s\n' 'Nested DWM did not run theme-apply from LYONA_DEV_SCRIPTS.' >&2
 			exit 1
 		}
 		sleep 0.02

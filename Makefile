@@ -108,6 +108,12 @@ INSTALL_LIBS = \
 	scripts/dwm-watchdog.sh \
 	scripts/dwm-xsettings-config.sh
 INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})
+# The session scripts dwm runs at login and logout, not commands: executable,
+# in LIB_DIR, where dwm finds them from its own location (S12-13 step 3). Before,
+# only a per-user copy existed, so an account that never ran install-user had
+# no session startup at all.
+INSTALL_SESSION_SCRIPTS = scripts/autostart.sh scripts/autostop.sh
+INSTALL_SESSION_SCRIPT_NAMES = $(notdir ${INSTALL_SESSION_SCRIPTS})
 LIB_DIR = ${PREFIX}/lib/lyona
 # The shipped default TOMLs, read-only, which dwm and the theme helpers fall
 # back to. In PREFIX/share/lyona, found from the executable like LIB_DIR (not
@@ -242,6 +248,10 @@ install-system:
 	@echo "==> Installing shared shell code..."
 	for f in ${INSTALL_LIBS}; do \
 		install -Dm644 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
+	done
+	@echo "==> Installing session scripts..."
+	for f in ${INSTALL_SESSION_SCRIPTS}; do \
+		install -Dm755 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
 	done
 	@echo "==> Installing shipped default config..."
 	for f in ${INSTALL_DEFAULTS}; do \
@@ -460,7 +470,7 @@ uninstall:
 	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
-	for name in ${INSTALL_LIB_NAMES}; do \
+	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	-rmdir ${DESTDIR}${LIB_DIR} 2>/dev/null
@@ -580,6 +590,14 @@ check-quickshell-plain-text-xvfb: all
 .PHONY: check-tomlparser
 check-tomlparser:
 	tests/test-tomlparser.sh
+
+# Sync Sprint 12 S12-13: dwm runs its session scripts from the install, or from
+# LYONA_DEV_SCRIPTS, and never from that override as root.
+.PHONY: check-session-scripts-xvfb
+check-session-scripts-xvfb: all
+	status=0; tests/test-session-scripts-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
 
 # Sync Sprint 12 S12-04: dwm starts with working keys whatever hotkeys.toml holds.
 .PHONY: check-dwm-config-fallback
@@ -950,7 +968,7 @@ check-install-manifest: all
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
 		done; \
-		for name in ${INSTALL_LIB_NAMES}; do \
+		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES}; do \
 			printf 'usr/lib/lyona/%s\n' "$$name"; \
 		done; \
 		for name in ${INSTALL_DEFAULT_NAMES}; do \
@@ -983,6 +1001,9 @@ check-install-manifest: all
 	done; \
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		test -x "$$stage/usr/libexec/lyona/$$name"; \
+	done; \
+	for name in ${INSTALL_SESSION_SCRIPT_NAMES}; do \
+		test -x "$$stage/usr/lib/lyona/$$name"; \
 	done; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-settings-display-root' \
 		"$$stage/usr/share/polkit-1/actions/com.lyona.settings-display.policy"; \
@@ -1097,6 +1118,7 @@ check:
 	$(MAKE) check-desktop-smoke-xvfb
 	$(MAKE) check-xvfb-runtime
 	$(MAKE) check-dwm-config-fallback
+	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser
 	$(MAKE) check-quickshell-plain-text
 	$(MAKE) check-quickshell-plain-text-xvfb
