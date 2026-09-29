@@ -195,7 +195,9 @@ Scope {
     readonly property var fontCandidates: root.inventoryCandidates.filter(function(candidate) {
         return candidate.id === "font";
     })
-    readonly property string managedThemesPath: root.dataHome + "/lyona/config/themes.toml"
+    // The shipped themes.toml, as the helper reports it (Sync Sprint 12 S12-13):
+    // it lives beside the installed helpers, which only the helper can find.
+    property string managedThemesPath: ""
     readonly property var wallpaperCandidates: root.inventoryCandidates.filter(function(candidate) {
         return candidate.id === "wallpaper";
     })
@@ -431,6 +433,7 @@ Scope {
         let protocolValid = false;
         let provider = null;
         let source = null;
+        let managedPath = "";
         let active = null;
         const themes = [];
         const colors = {};
@@ -450,6 +453,9 @@ Scope {
                     && ((fields[1] === "user" || fields[1] === "managed")
                         || (fields[1] === "none" && fields[2] === "unavailable"))) {
                 source = { "kind": fields[1], "path": fields[2] };
+            } else if (fields[0] === "managed" && fields.length === 2
+                    && fields[1].startsWith("/")) {
+                managedPath = fields[1];
             } else if (fields[0] === "active" && fields.length === 4
                     && root.validProviderActiveLabel(fields[1])
                     && root.validProviderThemeId(fields[2])
@@ -492,6 +498,7 @@ Scope {
         root.providerDetail = provider.detail;
         root.sourceKind = source.kind;
         root.sourcePath = source.path;
+        root.managedThemesPath = managedPath;
         root.activeTheme = active.theme;
         root.resolvedTheme = active.resolved;
         root.activeState = active.state;

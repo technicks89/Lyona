@@ -19,6 +19,12 @@ script_dir=$(cd "${script_path%/*}" && pwd -P) || {
 	printf 'dwm-settings-appearance: executable path could not be resolved\n' >&2
 	exit 1
 }
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=$script_dir
+[[ -f $lyona_lib/dwm-paths.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-paths.sh
+. "$lyona_lib/dwm-paths.sh"
 config_home=${XDG_CONFIG_HOME:-}
 data_home=${XDG_DATA_HOME:-}
 state_home=${XDG_STATE_HOME:-}
@@ -27,7 +33,10 @@ state_home=${XDG_STATE_HOME:-}
 [[ $state_home == /* ]] || state_home=${HOME:?HOME is required for XDG_STATE_HOME fallback}/.local/state
 config_dir=$config_home/lyona
 themes_file=${DWM_APPEARANCE_THEMES_FILE:-$config_home/lyona/themes.toml}
-managed_themes_file=${DWM_APPEARANCE_MANAGED_THEMES_FILE:-$data_home/lyona/config/themes.toml}
+# The shipped themes: PREFIX/share/lyona in an install, config/ in a checkout
+# (Sync Sprint 12 S12-13).
+default_config_dir=$(lyona_default_config_dir "$lyona_lib") || default_config_dir=
+managed_themes_file=${DWM_APPEARANCE_MANAGED_THEMES_FILE:-${default_config_dir:+$default_config_dir/themes.toml}}
 readonly max_themes_size=1048576
 readonly max_theme_count=128
 readonly max_error_count=256
@@ -1845,6 +1854,9 @@ snapshot() {
 	printf 'appearance-protocol\t1\t0\n'
 	printf 'provider\tappearance\t%s\tread-only\tShared theme inventory and integration state\n' "$provider_state"
 	printf 'source\t%s\t%s\n' "${source_kind:-none}" "$(clean_field "${source_report_file:-unavailable}")"
+	# Always the shipped file, even while the user's own is the source: the shell
+	# watches it, and only this helper knows where it is installed.
+	printf 'managed\t%s\n' "$(clean_field "${managed_themes_file:-unavailable}")"
 	printf 'active\t%s\t%s\t%s\n' \
 		"$(clean_field "$selected_label")" \
 		"$(clean_field "$resolved_label")" \

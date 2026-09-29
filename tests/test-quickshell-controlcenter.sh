@@ -253,11 +253,13 @@ fi
 grep -Fq 'theme is unavailable, invalid, or the source is unsafe to mutate: missing-theme' \
 	"$work/theme-set.err"
 
-mkdir -p "$work/prefix/bin"
-# The sourced helper has to travel with the script: it is looked up beside
-# $0, so a deployment that ships one without the other does not run at all.
-cp "$repo/scripts/dwm-quickshell-controlcenter" \
-	"$repo/scripts/dwm-watchdog.sh" "$work/prefix/bin/"
+# The installed layout (Sync Sprint 12 S12-13): the command in PREFIX/bin, the
+# library it sources in PREFIX/lib/lyona, and the shipped themes, which it
+# falls back to without a user file, in PREFIX/share/lyona/config.
+mkdir -p "$work/prefix/bin" "$work/prefix/lib/lyona" "$work/prefix/share/lyona/config"
+cp "$repo/scripts/dwm-quickshell-controlcenter" "$work/prefix/bin/"
+cp "$repo/scripts/dwm-watchdog.sh" "$work/prefix/lib/lyona/"
+cp "$work/data/lyona/config/themes.toml" "$work/prefix/share/lyona/config/"
 rm "$work/config/lyona/themes.toml"
 installed_themes=$(HOME="$work/home" XDG_CONFIG_HOME="$work/config" \
 	XDG_DATA_HOME="$work/data" "$work/prefix/bin/dwm-quickshell-controlcenter" themes)

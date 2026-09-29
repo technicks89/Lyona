@@ -35,12 +35,18 @@ state_home=$work/state
 runtime_dir=$work/runtime
 home_dir=$work/home
 themes_file=$config_home/lyona/themes.toml
-managed_file=$data_home/lyona/config/themes.toml
+# The shipped themes are found beside the installed helper (Sync Sprint 12
+# S12-13), so the helper runs from an installed layout holding the fixture.
+prefix=$work/prefix
+managed_file=$prefix/share/lyona/config/themes.toml
 apply_stub=$work/apply-theme
 reload_stub=$work/reload-theme
 
-mkdir -p "$config_home/lyona" "$data_home/lyona/config" "$state_home" \
-	"$runtime_dir" "$home_dir"
+mkdir -p "$config_home/lyona" "$data_home/lyona" "$state_home" \
+	"$runtime_dir" "$home_dir" "$prefix/bin" "$prefix/lib/lyona" "${managed_file%/*}"
+cp "$repo/scripts/dwm-settings-theme" "$repo/scripts/dwm-settings-appearance" "$prefix/bin/"
+cp "$repo/scripts/dwm-paths.sh" "$prefix/lib/lyona/"
+helper=$prefix/bin/dwm-settings-theme
 cp "$themes_fixture" "$managed_file"
 
 cat >"$apply_stub" <<'SH'

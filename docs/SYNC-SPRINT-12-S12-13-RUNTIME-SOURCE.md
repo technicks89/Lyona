@@ -243,6 +243,74 @@ from the text above:
    with the default hotkeys loaded (the existing reload test's log line) and themes
    applying from the system copy.
 
+**Implemented (2026-09-28, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **Only the three TOMLs are installed** (`INSTALL_DEFAULTS`, to
+  `PREFIX/share/lyona/config`, mode 0644). The Quickshell tree and `assets/`
+  are not:
+  - nothing reads either from a system copy yet: `install-user` copies the shell
+    from the checkout;
+  - no session script reads `assets/` from the data directory;
+  - whichever step first reads them installs them.
+- **dwm** (`default_config_dir`):
+  - It uses `PREFIX/share/lyona/config` when that directory exists, else
+    `dirname(exe)/config`.
+  - If `/proc/self/exe` cannot be read, the default paths stay empty. The loaders
+    treat an empty path as missing, and the watch is skipped.
+  - It logs `dwm: shipped defaults from <dir>`.
+- **Shell readers.**
+  - `lyona_default_config_dir LIB`, in `dwm-paths.sh`, maps `lib/lyona` to
+    `../../share/lyona/config`, and anything else to `../config`. It prints the
+    directory resolved with `cd -P`, or fails. Its subshell body keeps the
+    caller's working directory.
+  - `theme-apply.sh`, `dwm-settings-appearance` and `dwm-settings-theme` use it;
+    the latter two now source `dwm-paths.sh`.
+  - `dwm-quickshell-controlcenter` is POSIX `sh`, so it has its own copy of the
+    lookup. `theme_set` no longer passes `DWM_APPEARANCE_MANAGED_THEMES_FILE`,
+    since the theme helper finds the file itself.
+  - `DWM_APPEARANCE_MANAGED_THEMES_FILE` still overrides the lookup.
+- **Found in the survey: the shell watched the per-user copy.**
+  `AppearanceModel.qml` watched `dataHome/lyona/config/themes.toml`, and nothing
+  in QML can find `PREFIX`.
+  - The appearance snapshot now has a `managed\t<path>` record, and the model
+    takes its watch path from that.
+  - Older parsers ignore unknown records.
+- **The stale Quickshell path** is removed from `dwm-controlcenter`,
+  `dwm-keybinds`, `dwm-settings` and `docs/src/control-center.md`.
+- **Tests.** The tests that seeded `~/.local/share/lyona/config` to exercise the
+  default lookup now run from an installed layout (`bin`, `lib/lyona`,
+  `share/lyona/config`):
+  - `test-dwm-config-fallback.sh` runs a copied dwm. It checks the log line for
+    the installed layout and for `./dwm` in the checkout, and still removes the
+    defaults for the emergency-keys case.
+  - `test-dwm-settings-appearance.sh`: a dracula copy left in the per-user
+    directory is ignored in favour of the installed nord file. It also checks the
+    `managed` record.
+  - `test-dwm-settings-theme.sh` and `test-quickshell-controlcenter.sh`.
+
+  Tests that still seed the per-user copy (`test-xvfb-runtime.sh`,
+  `test-quickshell-session-actions.sh` and others) seed files identical to the
+  checkout's, so it is dead setup. Step 6 removes it.
+- **Staged install** (`make install-system DESTDIR=... PREFIX=/usr`, empty `HOME`):
+  - under Xvfb, dwm logged `shipped defaults from <stage>/usr/share/lyona/config`,
+    and Super+2 switched to tag 2;
+  - the staged `dwm-settings-appearance` reported `source managed` and `managed`
+    with the staged file, and `dwm-quickshell-controlcenter themes` read it;
+  - `theme-apply.sh` applied the default theme;
+  - no `~/.local/share/lyona` was created.
+- **Checks.**
+  - `quickshell-qmllint` on `AppearanceModel.qml`: clean.
+  - PASS: `check-shell`, `check-format`, `check-install-manifest`,
+    `release-check`, `check-install-preservation`, `check-dev-sync-install`,
+    `check-lyona-update`, `check-quickshell-appearance-model`, `check-settings`
+    and `check-quickshell-settings-xvfb`.
+  - `scripts/run-tests`: PASS, in one run.
+- **Not verified:**
+  - a live session with the real Settings window, including a watched change to
+    the shipped `themes.toml` reloading the Appearance page;
+  - an upgrade of a real install.
+
 ### Step 3 -- one lookup for helpers and session scripts
 
 1. `Commands.qml` loses `preferManaged`. One order for every helper: the override,

@@ -194,7 +194,7 @@ dwm-controlcenter
 The script is a compatibility wrapper around the Quickshell IPC target:
 
 ```bash
-quickshell ipc --path "${XDG_DATA_HOME:-$HOME/.local/share}/lyona/config/quickshell/shell.qml" call controlcenter toggle
+quickshell ipc --path "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml" call controlcenter toggle
 ```
 
 Open or refresh System Health directly through its IPC target:

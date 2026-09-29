@@ -109,6 +109,12 @@ INSTALL_LIBS = \
 	scripts/dwm-xsettings-config.sh
 INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})
 LIB_DIR = ${PREFIX}/lib/lyona
+# The shipped default TOMLs, read-only, which dwm and the theme helpers fall
+# back to. In PREFIX/share/lyona, found from the executable like LIB_DIR (not
+# DATADIR, which install.sh sets only at install time). S12-13 step 2.
+INSTALL_DEFAULTS = config/hotkeys.toml config/themes.toml config/window-rules.toml
+INSTALL_DEFAULT_NAMES = $(notdir ${INSTALL_DEFAULTS})
+SHARE_DIR = ${PREFIX}/share/lyona
 PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/lyona-update-root
 PRIVILEGED_HELPER_DIR = ${PREFIX}/libexec/lyona
 POLKIT_ACTIONS = config/polkit/com.lyona.settings-display.policy \
@@ -236,6 +242,10 @@ install-system:
 	@echo "==> Installing shared shell code..."
 	for f in ${INSTALL_LIBS}; do \
 		install -Dm644 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
+	done
+	@echo "==> Installing shipped default config..."
+	for f in ${INSTALL_DEFAULTS}; do \
+		install -Dm644 "$$f" ${DESTDIR}${SHARE_DIR}/config/$$(basename "$$f"); \
 	done
 	@# From before S12-13, these were installed as commands.
 	for name in ${INSTALL_LIB_NAMES}; do \
@@ -454,6 +464,10 @@ uninstall:
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	-rmdir ${DESTDIR}${LIB_DIR} 2>/dev/null
+	for name in ${INSTALL_DEFAULT_NAMES}; do \
+		rm -f ${DESTDIR}${SHARE_DIR}/config/$$name; \
+	done
+	-rmdir ${DESTDIR}${SHARE_DIR}/config ${DESTDIR}${SHARE_DIR} 2>/dev/null
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		rm -f ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$name; \
 	done
@@ -938,6 +952,9 @@ check-install-manifest: all
 		done; \
 		for name in ${INSTALL_LIB_NAMES}; do \
 			printf 'usr/lib/lyona/%s\n' "$$name"; \
+		done; \
+		for name in ${INSTALL_DEFAULT_NAMES}; do \
+			printf 'usr/share/lyona/config/%s\n' "$$name"; \
 		done; \
 		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 			printf 'usr/libexec/lyona/%s\n' "$$name"; \

@@ -7,18 +7,26 @@ repo_dir=$(
 )
 
 config_home=${XDG_CONFIG_HOME:-${HOME:-}/.config}
-data_home=${XDG_DATA_HOME:-${HOME:-}/.local/share}
 dwm_config_dir=$config_home/lyona
-managed_config_dir=$data_home/lyona/config
+
+# The shipped defaults: PREFIX/share/lyona/config beside an installed
+# PREFIX/lib/lyona, else config/ in a checkout (Sync Sprint 12 S12-13). The POSIX
+# form of lyona_default_config_dir in dwm-paths.sh, which is Bash; a missing
+# directory is printed as it is, so an error names it.
+default_config_dir() (
+	case $lyona_lib in
+	*lib/lyona) dir=$lyona_lib/../../share/lyona/config ;;
+	*) dir=$lyona_lib/../config ;;
+	esac
+	CDPATH='' cd -P -- "$dir" 2>/dev/null && pwd || printf '%s\n' "$dir"
+)
 
 config_file() {
 	name=$1
 	if [ -f "$dwm_config_dir/$name" ]; then
 		printf '%s\n' "$dwm_config_dir/$name"
-	elif [ -f "$managed_config_dir/$name" ]; then
-		printf '%s\n' "$managed_config_dir/$name"
 	else
-		printf '%s\n' "$repo_dir/config/$name"
+		printf '%s/%s\n' "$(default_config_dir)" "$name"
 	fi
 }
 
@@ -1478,23 +1486,15 @@ themes() {
 
 theme_set() {
 	name=$1
+	# The helper finds the shipped themes itself, beside its own libraries.
 	theme_helper=$repo_dir/scripts/dwm-settings-theme
-	theme_managed_source=
-	if [ -x "$theme_helper" ] && [ -f "$repo_dir/config/themes.toml" ]; then
-		theme_managed_source=$repo_dir/config/themes.toml
-	else
+	[ -x "$theme_helper" ] ||
 		theme_helper=$(command -v dwm-settings-theme 2>/dev/null || true)
-	fi
 	if [ -z "$theme_helper" ]; then
 		printf 'dwm-settings-theme is unavailable\n' >&2
 		return 1
 	fi
-	if [ -n "$theme_managed_source" ]; then
-		DWM_APPEARANCE_MANAGED_THEMES_FILE=$theme_managed_source \
-			"$theme_helper" apply "$name" >/dev/null || return 1
-	else
-		"$theme_helper" apply "$name" >/dev/null || return 1
-	fi
+	"$theme_helper" apply "$name" >/dev/null || return 1
 
 	notify "Theme changed" "$name"
 	printf 'theme\t%s\n' "$name"

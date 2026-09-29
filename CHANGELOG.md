@@ -18,6 +18,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   - A command finds the shared code beside itself in a checkout, and in `../lib/lyona` once installed.
   - `scripts/dev-sync-install.sh --check` verifies the libraries in `PREFIX/lib/lyona` and reports a copy left in
     `PREFIX/bin` as stale.
+- One runtime source for helpers, step 2 (Sync Sprint 12 S12-13).
+  - The shipped default TOMLs (`hotkeys.toml`, `themes.toml`, `window-rules.toml`) install to
+    `PREFIX/share/lyona/config`. dwm, `theme-apply.sh`, `dwm-settings-appearance`, `dwm-settings-theme` and the
+    Control Center read them there, found from their own location, instead of from the per-user copy in
+    `~/.local/share/lyona/config`. That copy is no longer read. A checkout run in place uses its own `config/`.
+  - dwm logs where it found the defaults (`dwm: shipped defaults from ...`).
+  - The appearance snapshot adds a `managed` record naming the shipped `themes.toml`, which the shell watches.
+  - `dwm-controlcenter`, `dwm-keybinds` and `dwm-settings` no longer fall back to
+    `~/.local/share/lyona/config/quickshell/shell.qml`; the managed shell is only in `~/.config/quickshell`.
 
 - Overview close, hidden windows and the thumbnail tests (Sync Sprint 12 S12-12, issue `#175`).
   - Closing a window from the overview now asks it to close, as the close key does, so an application can ask about
