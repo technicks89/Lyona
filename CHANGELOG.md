@@ -22,6 +22,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   - `dwm-diagnostics` prints a "Runtime source" section naming it, or "not set".
   - `lyona-update check` adds `override\tdev-scripts\t<path>` (JSON: `devScripts`, `null` when unset).
   - Settings -> System shows a "Helpers: Development checkout" card with the path while it is set.
+  - dwm logs `running autostart.sh from LYONA_DEV_SCRIPTS=...` each time it runs a session script from it.
 - One runtime source for helpers, step 4 (Sync Sprint 12 S12-13).
   - `make install-user` (and so `lyona-update apply`) no longer copies `scripts/` and `config/` into
     `~/.local/share/lyona`, and removes the copies an earlier install left. Nothing reads them any more. Both trees

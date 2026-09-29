@@ -51,14 +51,14 @@ fail() {
 
 home=$work/home
 runtime=$work/runtime
-mkdir -p "$home/.config/quickshell" "$home/.config/lyona" "$home/.cache" "$home/.local/share/lyona" "$runtime"
+mkdir -p "$home/.config/quickshell" "$home/.config/lyona" "$home/.cache" "$home/.local/share/checkout" "$runtime"
 chmod 700 "$runtime"
 cp -a "$repo/config/quickshell/." "$home/.config/quickshell/"
 cp "$repo/config/"*.toml "$home/.config/lyona/"
-cp -a "$repo/scripts" "$home/.local/share/lyona/scripts"
+cp -a "$repo/scripts" "$home/.local/share/checkout/scripts"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$home/.local/share/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$home/.local/share/checkout/scripts"
 
 # The listener: every request is logged to $work/requests.
 python3 - "$work/port" "$work/requests" <<'PY' &

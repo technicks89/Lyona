@@ -5,9 +5,10 @@ Issue `#176`. Decision **D-16, option 3**: the system copy is the only runtime s
 plus one explicit developer override.
 
 This file is S12-13's first task. The item says to write its step-by-step plan, with
-the migration for existing installs, before starting. Nothing here is implemented
-yet. Each step below is reviewable and testable on its own, and later steps depend on
-earlier ones.
+the migration for existing installs, before starting. Each step below is reviewable
+and testable on its own, and later steps depend on earlier ones. Steps 1-6 are
+implemented; each has an "Implemented" note saying where it differs from its plan,
+and "Verification (whole item)" at the end records what was and was not checked.
 
 ## What exists today (surveyed 2026-09-28, `main` at `34a33e1`)
 
@@ -625,6 +626,37 @@ The ones that start dwm with `XDG_DATA_HOME` pointing at a scratch data home (th
 reload, lifetime and idle tests) need the scratch `scripts/` there to hold
 `autostart.sh`, which they already copy.
 
+**Implemented (2026-09-29, working tree, nothing committed).** The override
+itself went in with step 3: dropping the per-user lookup broke these tests, so
+they could not wait. The list above also names four tests that never staged
+helpers there (`test-lyona-version.sh`, `test-settings.sh`,
+`test-dwm-config-fallback.sh` and `test-dwm-settings-theme.sh`); step 2 moved
+the last two to an installed layout. This step renames what was left.
+
+- **The staging directories are a fake checkout.** Each test's
+  `.../lyona/scripts` became `.../checkout/scripts`, in 18 test files. The two
+  parents that were created under the old name (`test-quickshell-plain-text-xvfb.sh`,
+  `test-desktop-smoke-xvfb.sh`) now create `checkout`.
+- **Its `config/` sibling is live, not dead**, where helpers are copied rather
+  than stubbed:
+  - since step 2, a helper run from `$LYONA_DEV_SCRIPTS` takes its shipped
+    defaults from `../config`, as in a real checkout;
+  - `test-quickshell-settings-xvfb.sh` removes that `themes.toml` to reach
+    "provider unavailable", so its `$data_home/lyona/config` became
+    `$data_home/checkout/config` with it.
+- **Dead setup removed:**
+  - `test-quickshell-session-actions.sh` seeded default TOMLs that dwm never
+    reads (it takes them from beside its executable);
+  - `test-desktop-smoke-xvfb.sh` created a `lyona/config` that nothing used.
+- **The whole-item search.** `rg '\.local/share/lyona/scripts|data_dir/scripts|lyona/scripts'`
+  now finds only:
+  - `lyona-install-verify.sh`'s stale-copy check and the migration tests in
+    `test-install-preservation.sh` and `test-dev-sync-install.sh`;
+  - the ISO's `/root/lyona/scripts`, a checkout path.
+
+  The migration note is in CHANGELOG, which the search excludes; the old-backup
+  restore names no path.
+
 ### Step 7 -- moved to S12-14
 
 Moving the 32 scripts that compute XDG paths inline onto one `dwm-paths.sh` function
@@ -650,3 +682,40 @@ moved to S12-14 ("one copy of shared safety logic"), decided with the maintainer
 - `rg '\.local/share/lyona/scripts|data_dir/scripts'` finds nothing outside the
   migration note and the old-backup restore.
 - The full suite passes.
+
+**Results (2026-09-29).**
+
+- **Staged install, fresh account: verified** (step 3). The account never ran
+  `install-user`; only its `~/.config/quickshell` was seeded, as `install-user`
+  does. dwm, `autostart.sh`, Quickshell and its watchers ran from the stage
+  under Xvfb, and no per-user copy was created.
+- **Container install: verified** (2026-09-29). This used `scripts/ci-local.sh --keep all`,
+  the CI `archlinux:base-devel` image with the CI package set, on the working
+  tree.
+  - As root: a real `make install-system PREFIX=/usr DATADIR=/usr/share`.
+  - As `nobody`, which never ran `install-user`, with only `~/.config/quickshell`
+    seeded: a session under Xvfb and `dbus-run-session`, with `PATH=/usr/bin`.
+  - dwm logged `shipped defaults from /usr/share/lyona/config`, and ran the
+    installed `autostart.sh`.
+  - The session had picom, the portals and Quickshell running, with its
+    watchers (`dwm-quickshell-state watch`, `dwm-quickshell-controls
+    media-watch`, `dwm-accessibility-settings watch`, `dwm-status`) from
+    `/usr/bin`. Quickshell's tray IPC answered.
+  - No `~/.local/share/lyona/scripts` was created.
+  - The container was removed afterwards.
+- **The override:** verified.
+  - `tests/test-session-scripts-xvfb.sh` covers the installed scripts, the
+    override, a partial or missing override, and root (via `unshare -r`).
+  - dwm logs `running NAME from LYONA_DEV_SCRIPTS=...` whenever it uses the
+    override; this line was added in step 6, since until then dwm logged only
+    fallbacks.
+  - `dwm-diagnostics`, `lyona-update check` and Settings -> System report it
+    (step 5).
+- **The search:** clean apart from the migration checks (step 6).
+- **The full suite:** PASS, and the four dwm session tests pass after the log
+  line was added.
+- **Not verified on a real system:**
+  - a display-manager or `startx` login;
+  - `lyona-update apply` and `rollback`, including a rollback to a
+    pre-S12-13 backup;
+  - the Settings card in a live session.

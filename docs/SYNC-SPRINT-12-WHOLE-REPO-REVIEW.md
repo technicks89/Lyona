@@ -861,7 +861,15 @@ every managed window. Evidence: `docs/evidence/s12-12-overview-close.md`.
 
 ## S12-13: One runtime source for helpers
 
-**Source:** A (High). **D-16 decided: option 3.**
+**Source:** A (High). **D-16 decided: option 3.** **Implemented (2026-09-28 to
+2026-09-29): steps 1-6** of `docs/SYNC-SPRINT-12-S12-13-RUNTIME-SOURCE.md`, which
+records each step's deviations and the whole-item verification.
+- The system copy (`PREFIX/bin`, `PREFIX/lib/lyona`, `PREFIX/share/lyona`) is the
+  only runtime source, with `LYONA_DEV_SCRIPTS` as the one developer override.
+- Verified on a staged install and in the CI container for a fresh account that
+  never ran `install-user`.
+- `lyona-update apply` and `rollback` on a real system are not verified.
+- Found while testing: the watcher-lifetime flake, now Sprint 13 S13-01.
 
 dwm runs autostart from `$XDG_DATA_HOME/lyona/scripts/` (`dwm.c:383-386,2825-2860`),
 and `core/Commands.qml:6-24` prefers that per-user copy for nearly every helper

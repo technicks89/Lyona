@@ -262,13 +262,13 @@ state_home=$home/.local/state
 export XDG_STATE_HOME="$state_home"
 mkdir -p "$config_home/quickshell" "$config_home/lyona" \
 	"$config_home/autostart" "$data_home/applications" \
-	"$data_home/lyona/config" "$data_home/lyona/scripts" \
+	"$data_home/checkout/config" "$data_home/checkout/scripts" \
 	"$state_home/lyona/appearance" \
 	"$home/Pictures/backgrounds" \
 	"$runtime_storage" "$schema_dir" "$helper_tmp"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
 chmod 700 "$runtime_storage"
 cat >"$fixture_feh" <<'EOF'
 #!/bin/sh
@@ -319,10 +319,10 @@ cp "$repo/config/quickshell/assets/lyona-icon.png" "$home/Pictures/backgrounds/t
 sed -i 's/readonly property var nativeBattery: UPower.displayDevice/readonly property var nativeBattery: null/' \
 	"$config_home/quickshell/power/PowerModel.qml"
 cp "$repo/config/"*.toml "$config_home/lyona/"
-cp "$repo/config/themes.toml" "$data_home/lyona/config/themes.toml"
+cp "$repo/config/themes.toml" "$data_home/checkout/config/themes.toml"
 sed -i '0,/^theme = "[^"]*"/s//theme = "nord"/' \
 	"$config_home/lyona/themes.toml" \
-	"$data_home/lyona/config/themes.toml"
+	"$data_home/checkout/config/themes.toml"
 printf '# inactive integration watch fixture\n' >"$config_home/lyona/theme-env.sh"
 cat >"$data_home/applications/kitty.desktop" <<'EOF'
 [Desktop Entry]
@@ -374,12 +374,12 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
 	"$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-watchdog.sh" \
 	"$repo/scripts/dwm-simple-watch.sh" \
-	"$data_home/lyona/scripts/"
+	"$data_home/checkout/scripts/"
 
 appearance_failure_fixture=$work/appearance-snapshot-failure
-mv "$data_home/lyona/scripts/dwm-settings-appearance" \
-	"$data_home/lyona/scripts/dwm-settings-appearance.real"
-cat >"$data_home/lyona/scripts/dwm-settings-appearance" <<'SH'
+mv "$data_home/checkout/scripts/dwm-settings-appearance" \
+	"$data_home/checkout/scripts/dwm-settings-appearance.real"
+cat >"$data_home/checkout/scripts/dwm-settings-appearance" <<'SH'
 #!/bin/sh
 set -eu
 fixture=${DWM_SETTINGS_TEST_APPEARANCE_FAILURE:-}
@@ -471,12 +471,12 @@ if [ "${1:-}" = snapshot ] && [ -f "$fixture" ]; then
 fi
 exec "$(dirname -- "$0")/dwm-settings-appearance.real" "$@"
 SH
-chmod +x "$data_home/lyona/scripts/dwm-settings-appearance"
+chmod +x "$data_home/checkout/scripts/dwm-settings-appearance"
 
 wallpaper_status_fixture=$work/wallpaper-status
-mv "$data_home/lyona/scripts/dwm-settings-wallpaper" \
-	"$data_home/lyona/scripts/dwm-settings-wallpaper.real"
-cat >"$data_home/lyona/scripts/dwm-settings-wallpaper" <<'SH'
+mv "$data_home/checkout/scripts/dwm-settings-wallpaper" \
+	"$data_home/checkout/scripts/dwm-settings-wallpaper.real"
+cat >"$data_home/checkout/scripts/dwm-settings-wallpaper" <<'SH'
 #!/bin/sh
 set -eu
 fixture=${DWM_SETTINGS_TEST_WALLPAPER_STATUS:-}
@@ -505,12 +505,12 @@ if [ "${1:-}" = status ] && [ "${2:-}" = --read-only ] &&
 fi
 exec "$(dirname -- "$0")/dwm-settings-wallpaper.real" "$@"
 SH
-chmod +x "$data_home/lyona/scripts/dwm-settings-wallpaper"
+chmod +x "$data_home/checkout/scripts/dwm-settings-wallpaper"
 
 theme_status_fixture=$work/theme-preview-status
-mv "$data_home/lyona/scripts/dwm-settings-theme" \
-	"$data_home/lyona/scripts/dwm-settings-theme.real"
-cat >"$data_home/lyona/scripts/dwm-settings-theme" <<'SH'
+mv "$data_home/checkout/scripts/dwm-settings-theme" \
+	"$data_home/checkout/scripts/dwm-settings-theme.real"
+cat >"$data_home/checkout/scripts/dwm-settings-theme" <<'SH'
 #!/bin/sh
 set -eu
 fixture=${DWM_SETTINGS_TEST_THEME_STATUS:-}
@@ -569,7 +569,7 @@ if [ "${1:-}" = mutation-ready ] && [ -f "$fixture.mutation-delay" ]; then
 fi
 exec "$(dirname -- "$0")/dwm-settings-theme.real" "$@"
 SH
-chmod +x "$data_home/lyona/scripts/dwm-settings-theme"
+chmod +x "$data_home/checkout/scripts/dwm-settings-theme"
 
 # UpdateModel: a fixed "behind" check response, and an apply stub that
 # writes update.status through several phases (matching the real helper's
@@ -600,7 +600,7 @@ LYONA_PREFIX=/usr/local
 LYONA_INSTALL_DATE=2026-08-01T00:00:00Z
 EOF
 chmod 644 "$update_provenance_system_record"
-cat >"$data_home/lyona/scripts/lyona-update" <<'SH'
+cat >"$data_home/checkout/scripts/lyona-update" <<'SH'
 #!/bin/sh
 set -eu
 case "${1:-}" in
@@ -648,12 +648,12 @@ set-channel)
 	;;
 esac
 SH
-chmod +x "$data_home/lyona/scripts/lyona-update"
+chmod +x "$data_home/checkout/scripts/lyona-update"
 
 malformed_power_snapshot=$work/malformed-power-snapshot
-mv "$data_home/lyona/scripts/dwm-quickshell-controlcenter" \
-	"$data_home/lyona/scripts/dwm-quickshell-controlcenter.real"
-cat >"$data_home/lyona/scripts/dwm-quickshell-controlcenter" <<'SH'
+mv "$data_home/checkout/scripts/dwm-quickshell-controlcenter" \
+	"$data_home/checkout/scripts/dwm-quickshell-controlcenter.real"
+cat >"$data_home/checkout/scripts/dwm-quickshell-controlcenter" <<'SH'
 #!/bin/sh
 set -eu
 fixture=${DWM_SETTINGS_TEST_MALFORMED_POWER_SNAPSHOT:?}
@@ -686,18 +686,18 @@ if [ "${1:-}" = power-snapshot ] && [ -r "$fixture" ]; then
 fi
 exec "$(dirname -- "$0")/dwm-quickshell-controlcenter.real" "$@"
 SH
-chmod +x "$data_home/lyona/scripts/dwm-quickshell-controlcenter"
-cat >"$data_home/lyona/scripts/kitty" <<'EOF'
+chmod +x "$data_home/checkout/scripts/dwm-quickshell-controlcenter"
+cat >"$data_home/checkout/scripts/kitty" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
-cat >"$data_home/lyona/scripts/alacritty" <<'EOF'
+cat >"$data_home/checkout/scripts/alacritty" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
-chmod +x "$data_home/lyona/scripts/kitty" "$data_home/lyona/scripts/alacritty"
+chmod +x "$data_home/checkout/scripts/kitty" "$data_home/checkout/scripts/alacritty"
 
-cat >"$data_home/lyona/scripts/dbus-monitor" <<'SH'
+cat >"$data_home/checkout/scripts/dbus-monitor" <<'SH'
 #!/bin/sh
 trap 'exit 0' HUP INT TERM
 printf 'signal\n'
@@ -705,11 +705,11 @@ while :; do
 	sleep 1
 done
 SH
-cat >"$data_home/lyona/scripts/light-locker" <<'SH'
+cat >"$data_home/checkout/scripts/light-locker" <<'SH'
 #!/bin/sh
 exit 0
 SH
-cat >"$data_home/lyona/scripts/nmcli" <<'SH'
+cat >"$data_home/checkout/scripts/nmcli" <<'SH'
 #!/bin/sh
 set -eu
 while [ "$#" -gt 0 ]; do
@@ -735,7 +735,7 @@ case $* in
 *) exit 2 ;;
 esac
 SH
-cat >"$data_home/lyona/scripts/bluetoothctl" <<'SH'
+cat >"$data_home/checkout/scripts/bluetoothctl" <<'SH'
 #!/bin/sh
 set -eu
 case $* in
@@ -748,7 +748,7 @@ devices) ;;
 *) exit 2 ;;
 esac
 SH
-cat >"$data_home/lyona/scripts/busctl" <<'SH'
+cat >"$data_home/checkout/scripts/busctl" <<'SH'
 #!/bin/sh
 set -eu
 case $* in
@@ -770,18 +770,18 @@ JSON
 *) exit 1 ;;
 esac
 SH
-chmod +x "$data_home/lyona/scripts/dbus-monitor" \
-	"$data_home/lyona/scripts/light-locker" \
-	"$data_home/lyona/scripts/nmcli" \
-	"$data_home/lyona/scripts/bluetoothctl" \
-	"$data_home/lyona/scripts/busctl"
+chmod +x "$data_home/checkout/scripts/dbus-monitor" \
+	"$data_home/checkout/scripts/light-locker" \
+	"$data_home/checkout/scripts/nmcli" \
+	"$data_home/checkout/scripts/bluetoothctl" \
+	"$data_home/checkout/scripts/busctl"
 
 power_state=$work/power-state
 mkdir -p "$power_state"
 printf '1\n' >"$power_state/dpms-enabled"
 printf '600\n' >"$power_state/dpms-timeout"
 printf '600\n' >"$power_state/saver-timeout"
-cat >"$data_home/lyona/scripts/xset" <<'SH'
+cat >"$data_home/checkout/scripts/xset" <<'SH'
 #!/bin/sh
 set -eu
 state=${DWM_SETTINGS_TEST_POWER_STATE:?}
@@ -820,7 +820,7 @@ s)
 *) exit 2 ;;
 esac
 SH
-chmod +x "$data_home/lyona/scripts/xset"
+chmod +x "$data_home/checkout/scripts/xset"
 
 Xvfb "$display" -screen 0 "$screen_geometry" -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
@@ -853,7 +853,7 @@ HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 # at startup; a path that does not exist yet when the watch is first bound is
 # not reliably picked up later, so this has to land before the launch below.
 DISPLAY=$display XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-display" dpi-apply-saved >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-display" dpi-apply-saved >/dev/null
 
 env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_RUNTIME_DIR="$runtime" \
@@ -867,7 +867,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	DWM_TEST_SYSTEM_RECORD="$update_provenance_system_record" DWM_TEST_SYSTEM_OWNER="$(id -u)" \
 	DWM_TEST_USER_RECORD="$update_provenance_record" \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
-	PATH="$data_home/lyona/scripts:$dwm_bin_dir:$PATH" \
+	PATH="$data_home/checkout/scripts:$dwm_bin_dir:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 quickshell_identity=$(capture_process_identity "$quickshell_pid")
@@ -882,8 +882,8 @@ settings_power_watch_count() {
 		[ -n "$monitor_parent" ] && [ -r "/proc/$monitor_parent/cmdline" ] || continue
 		monitor_command=$(tr '\0' ' ' <"/proc/$monitor_parent/cmdline")
 		case $monitor_command in
-		*"$data_home/lyona/scripts/dwm-quickshell-controlcenter power-watch"* | \
-			*"$data_home/lyona/scripts/dwm-quickshell-controlcenter.real power-watch"*)
+		*"$data_home/checkout/scripts/dwm-quickshell-controlcenter power-watch"* | \
+			*"$data_home/checkout/scripts/dwm-quickshell-controlcenter.real power-watch"*)
 			watch_count=$((watch_count + 1))
 			;;
 		esac
@@ -899,8 +899,8 @@ settings_power_gsettings_watch_count() {
 		[ -n "$monitor_parent" ] && [ -r "/proc/$monitor_parent/cmdline" ] || continue
 		monitor_command=$(tr '\0' ' ' <"/proc/$monitor_parent/cmdline")
 		case $monitor_command in
-		*"$data_home/lyona/scripts/dwm-quickshell-controlcenter power-watch"* | \
-			*"$data_home/lyona/scripts/dwm-quickshell-controlcenter.real power-watch"*)
+		*"$data_home/checkout/scripts/dwm-quickshell-controlcenter power-watch"* | \
+			*"$data_home/checkout/scripts/dwm-quickshell-controlcenter.real power-watch"*)
 			watch_count=$((watch_count + 1))
 			;;
 		esac
@@ -917,7 +917,7 @@ settings_defaults_watch_count() {
 }
 
 settings_autostart_watch_count() {
-	expected="$data_home/lyona/scripts/dwm-xdg-autostart watch"
+	expected="$data_home/checkout/scripts/dwm-xdg-autostart watch"
 	count=0
 	for watch_pid in $(pgrep -f '[d]wm-xdg-autostart watch$' 2>/dev/null || true); do
 		[ -r "/proc/$watch_pid/cmdline" ] || continue
@@ -1103,7 +1103,7 @@ ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOM
 # file), matching how a resolution or display-settings change reaches the
 # shell in production.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-display" dpi-set 192 >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-display" dpi-set 192 >/dev/null
 
 # dpiStateWatch coalesces file-change notifications, so poll rather than
 # sleeping a fixed interval.
@@ -1122,7 +1122,7 @@ theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HO
 
 # Restore, so nothing later in this file observes the previewed DPI.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-display" dpi-set 144 >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-display" dpi-set 144 >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1138,7 +1138,7 @@ done
 # this file (mouse clicks, window geometry) assumes. Nothing past this point
 # exercises DPI scaling itself.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-display" dpi-reset >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-display" dpi-reset >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1153,7 +1153,7 @@ done
 # must not clear the override. This is the whole reason Theme.qml's
 # paletteTextMuted split exists -- see docs/SYNC-P5-CONTRAST-MOTION.md.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-accessibility-settings" set contrast high >/dev/null
+	"$data_home/checkout/scripts/dwm-accessibility-settings" set contrast high >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	high_contrast=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1170,7 +1170,7 @@ before_text=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_
 # Apply a theme with a demonstrably different palette and require that the
 # palette moved, the override survived, and muted text stayed pinned to text.
 XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-theme" apply dracula >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-theme" apply dracula >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	after_text=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1190,7 +1190,7 @@ text_muted=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_H
 
 # With the override off, muted text must follow the theme again.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-accessibility-settings" set contrast standard >/dev/null
+	"$data_home/checkout/scripts/dwm-accessibility-settings" set contrast standard >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	text_muted=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1203,9 +1203,9 @@ done
 
 # Restore, so nothing later in this file observes the previewed theme or override.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-accessibility-settings" reset >/dev/null
+	"$data_home/checkout/scripts/dwm-accessibility-settings" reset >/dev/null
 XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-theme" apply nord >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-theme" apply nord >/dev/null
 
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
@@ -1333,7 +1333,7 @@ done
 # just trust that the live state already matches.
 if [ "$sticky_baseline" = 1 ]; then DISPLAY=$display "$repo/scripts/dwm-xkbset" st; else DISPLAY=$display "$repo/scripts/dwm-xkbset" -st; fi
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
-	"$data_home/lyona/scripts/dwm-settings-input" apply-saved
+	"$data_home/checkout/scripts/dwm-settings-input" apply-saved
 sticky_live=$(xkb_sticky_value)
 [ "$sticky_live" = "$sticky_expected" ]
 
@@ -1454,7 +1454,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings close >/dev/null
 sleep 0.1
 if ! pgrep -af '[d]wm-quickshell-controlcenter([.]real)? power-dpms off$' |
-	grep -F "$data_home/lyona/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
 	printf 'Power mutation did not survive Settings closure\n' >&2
 	exit 1
 fi
@@ -1697,7 +1697,7 @@ done
 [ "$terminal_id" = Alacritty.desktop ]
 grep -Fqx 'terminal = "alacritty"' "$config_home/lyona/hotkeys.toml"
 
-defaults_helper=$data_home/lyona/scripts/dwm-default-apps
+defaults_helper=$data_home/checkout/scripts/dwm-default-apps
 mv "$defaults_helper" "$defaults_helper.real"
 cat >"$defaults_helper" <<'EOF'
 #!/bin/sh
@@ -1766,7 +1766,7 @@ if grep -Eq '^NotShowIn=.*X-DWM' "$config_home/autostart/dwm-test-autostart.desk
 	exit 1
 fi
 
-autostart_helper=$data_home/lyona/scripts/dwm-xdg-autostart
+autostart_helper=$data_home/checkout/scripts/dwm-xdg-autostart
 mv "$autostart_helper" "$autostart_helper.real"
 cat >"$autostart_helper" <<'EOF'
 #!/bin/sh
@@ -1846,14 +1846,14 @@ done
 i=0
 while [ "$i" -lt 100 ]; do
 	if ! pgrep -af '[d]wm-quickshell-controlcenter([.]real)? (power-snapshot|power-watch)$' |
-		grep -F "$data_home/lyona/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+		grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
 		break
 	fi
 	i=$((i + 1))
 	sleep 0.05
 done
 if pgrep -af '[d]wm-quickshell-controlcenter([.]real)? (power-snapshot|power-watch)$' |
-	grep -F "$data_home/lyona/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
 	printf 'Settings-owned power work remained active after leaving Power\n' >&2
 	exit 1
 fi
@@ -1913,7 +1913,7 @@ available | partial) ;;
 		"$appearance_status" "$appearance_detail" >&2
 	HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 		DWM_SETTINGS_TEST_APPEARANCE_FAILURE="$appearance_failure_fixture" \
-		"$data_home/lyona/scripts/dwm-settings-appearance" snapshot >&2 || true
+		"$data_home/checkout/scripts/dwm-settings-appearance" snapshot >&2 || true
 	exit 1
 	;;
 esac
@@ -1987,7 +1987,7 @@ while IFS= read -r candidate; do
 done <"$font_candidates"
 [ -n "$test_font" ]
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime "$data_home/lyona/scripts/dwm-settings-font" \
+	XDG_RUNTIME_DIR=$runtime "$data_home/checkout/scripts/dwm-settings-font" \
 	apply "$test_font" 1.25 >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
@@ -2006,7 +2006,7 @@ if [ "$font_family" != "$test_font" ] || [ "$font_scale" != 1.25 ]; then
 fi
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime "$data_home/lyona/scripts/dwm-settings-font" \
+	XDG_RUNTIME_DIR=$runtime "$data_home/checkout/scripts/dwm-settings-font" \
 	preview nested-font 60 "$test_font" 1.50 >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
@@ -2035,7 +2035,7 @@ if [ "$font_remaining_after" -ge "$font_remaining_before" ]; then
 fi
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime "$data_home/lyona/scripts/dwm-settings-font" revert nested-font >/dev/null
+	XDG_RUNTIME_DIR=$runtime "$data_home/checkout/scripts/dwm-settings-font" revert nested-font >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	font_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -2052,7 +2052,7 @@ if [ "$font_preview" != none ] || [ "$font_scale" != 1.25 ]; then
 fi
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime "$data_home/lyona/scripts/dwm-settings-font" reset >/dev/null
+	XDG_RUNTIME_DIR=$runtime "$data_home/checkout/scripts/dwm-settings-font" reset >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	font_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -2069,7 +2069,7 @@ fi
 # the fixture on an exact system family after proving reset, so later aggregate
 # appearance assertions isolate the state they are intended to test.
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime "$data_home/lyona/scripts/dwm-settings-font" \
+	XDG_RUNTIME_DIR=$runtime "$data_home/checkout/scripts/dwm-settings-font" \
 	apply "$test_font" 1.00 >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
@@ -2088,7 +2088,7 @@ test_stage='validating wallpaper Settings lifecycle and recovery'
 test_wallpaper=$home/Pictures/backgrounds/test-wallpaper.png
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime DWM_APPEARANCE_WALLPAPER_DIR=$home/Pictures/backgrounds \
-	"$data_home/lyona/scripts/dwm-settings-wallpaper" apply "$test_wallpaper" max >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-wallpaper" apply "$test_wallpaper" max >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -2109,7 +2109,7 @@ done
 wallpaper_preview_timeout=60
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime DWM_APPEARANCE_WALLPAPER_DIR=$home/Pictures/backgrounds \
-	"$data_home/lyona/scripts/dwm-settings-wallpaper" \
+	"$data_home/checkout/scripts/dwm-settings-wallpaper" \
 	preview nested-wallpaper "$wallpaper_preview_timeout" "$test_wallpaper" center >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
@@ -2281,7 +2281,7 @@ if [ "$wallpaper_state" != available ]; then
 fi
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime DWM_APPEARANCE_WALLPAPER_DIR=$home/Pictures/backgrounds \
-	"$data_home/lyona/scripts/dwm-settings-wallpaper" revert nested-wallpaper >/dev/null
+	"$data_home/checkout/scripts/dwm-settings-wallpaper" revert nested-wallpaper >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -2812,7 +2812,7 @@ rm -f "$theme_status_fixture.mutation-delay" "$theme_status_fixture.mutation-sta
 	"$theme_status_fixture.mutation-release" "$theme_status_fixture.mutation-calls"
 
 mv "$config_home/lyona/themes.toml" "$work/named-themes.toml"
-mv "$data_home/lyona/config/themes.toml" "$work/managed-themes.toml"
+mv "$data_home/checkout/config/themes.toml" "$work/managed-themes.toml"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -2880,38 +2880,38 @@ if pgrep -f '[d]wm-settings-provider discover$' >/dev/null; then
 	exit 1
 fi
 if pgrep -af '[d]wm-settings-display watch [0-9]+ [0-9]+$' |
-	grep -F "$data_home/lyona/scripts/dwm-settings-display" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-settings-display" >/dev/null; then
 	printf 'Settings display watcher remained active after close\n' >&2
 	exit 1
 fi
 if pgrep -af '[d]wm-settings-input watch [0-9]+ [0-9]+$' |
-	grep -F "$data_home/lyona/scripts/dwm-settings-input" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-settings-input" >/dev/null; then
 	printf 'Settings input watcher remained active after close\n' >&2
 	exit 1
 fi
 
 if pgrep -af '[d]wm-quickshell-network (snapshot|wifi-scan|wifi-connect|connect|disconnect|forget)' |
-	grep -F "$data_home/lyona/scripts/dwm-quickshell-network" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-quickshell-network" >/dev/null; then
 	printf 'Settings-owned network work remained active after close\n' >&2
 	exit 1
 fi
 if pgrep -af '[d]wm-quickshell-controls (bluetooth-snapshot|bluetooth-scan|bluetooth-power|bluetooth-pair|bluetooth-trust|bluetooth-connect|bluetooth-disconnect|bluetooth-remove)' |
-	grep -F "$data_home/lyona/scripts/dwm-quickshell-controls" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-quickshell-controls" >/dev/null; then
 	printf 'Settings-owned Bluetooth work remained active after close\n' >&2
 	exit 1
 fi
 if pgrep -af '[d]wm-quickshell-controlcenter([.]real)? (power-snapshot|power-watch|power-profile-set|power-dpms|power-dpms-timeout|power-lock|power-lock-timeout)' |
-	grep -F "$data_home/lyona/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
 	printf 'Settings-owned power work remained active after close\n' >&2
 	exit 1
 fi
 if pgrep -af '[d]wm-default-apps (snapshot|watch|set-role|set-mime|reset-role|reset-mime)' |
-	grep -F "$data_home/lyona/scripts/dwm-default-apps" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-default-apps" >/dev/null; then
 	printf 'Settings-owned Defaults work remained active after close\n' >&2
 	exit 1
 fi
 if pgrep -af '[d]wm-xdg-autostart (snapshot|watch|set|reset)' |
-	grep -F "$data_home/lyona/scripts/dwm-xdg-autostart" >/dev/null; then
+	grep -F "$data_home/checkout/scripts/dwm-xdg-autostart" >/dev/null; then
 	printf 'Settings-owned autostart work remained active after close\n' >&2
 	exit 1
 fi

@@ -27,18 +27,18 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 mkdir -p "$work/qml" "$work/home/.config/lyona" \
-	"$work/data/lyona/scripts" "$work/runtime" "$work/state"
+	"$work/data/checkout/scripts" "$work/runtime" "$work/state"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$work/data/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/settings" \
 	"$repo/config/quickshell/systemmanagement" "$repo/config/quickshell/network" \
 	"$repo/config/quickshell/system" "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
 cp "$repo/tests/qml/SystemUpdateUi.qml" "$work/qml/shell.qml"
-cp "$repo/tests/fixtures/system-update-ui-provider.py" "$work/data/lyona/scripts/dwm-system-management"
-chmod +x "$work/data/lyona/scripts/dwm-system-management"
+cp "$repo/tests/fixtures/system-update-ui-provider.py" "$work/data/checkout/scripts/dwm-system-management"
+chmod +x "$work/data/checkout/scripts/dwm-system-management"
 Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!

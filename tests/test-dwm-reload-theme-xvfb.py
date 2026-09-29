@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='reload-theme-', dir=str(temp_root)) as 
     config.mkdir(parents=True)
     for toml in ('hotkeys.toml', 'themes.toml', 'window-rules.toml'):
         shutil.copy(repo / 'config' / toml, config / toml)
-    scripts = base / 'data/lyona/scripts'
+    scripts = base / 'data/checkout/scripts'
     scripts.mkdir(parents=True)
     runs = base / 'theme-apply.log'
     runs.touch()

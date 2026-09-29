@@ -64,6 +64,7 @@ sprints=(
 	"10|Sync Sprint 10 - Completion audit|SYNC-SPRINT-10-COMPLETION-AUDIT.md"
 	"11|Sync Sprint 11 - Shell contrast and survey gaps|SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md"
 	"12|Sync Sprint 12 - Whole-repo review|SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md"
+	"13|Sync Sprint 13 - Watcher lifetime under load|SYNC-SPRINT-13-WATCHER-LIFETIME-FLAKE.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -156,6 +157,7 @@ items=(
 	"12|S12-17|s12-17-docs-and-specs-agree-with-the-code|Docs and specs agree with the code|whole-repo review"
 	"12|S12-18|s12-18-smaller-hardening|Smaller hardening|whole-repo review"
 	"12|S12-19|s12-19-release-updates-can-install-the-published-release-asset|Release updates can install the published release asset|found testing S12-01"
+	"13|S13-01|s13-01-a-watchers-children-end-with-the-shell-however-busy-the-machine|A watcher's children end with the shell, however busy the machine|found running S12-13"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \

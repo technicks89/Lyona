@@ -95,10 +95,10 @@ runtime=$runtime_storage
 config_home=$home/.config
 data_home=$home/.local/share
 mkdir -p "$config_home/quickshell" "$config_home/lyona" "$home/.cache" \
-	"$data_home/lyona/scripts" "$runtime"
+	"$data_home/checkout/scripts" "$runtime"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
 chmod 700 "$runtime_storage"
 if [ "${#runtime}" -gt 64 ]; then
 	runtime_alias_dir=$(mktemp -d /tmp/dwm-system-management-runtime.XXXXXX)
@@ -113,7 +113,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
 	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-simple-watch.sh" \
 	"$repo/scripts/dwm-xsettings-config.sh" "$repo/scripts/dwm-xkbset" \
-	"$data_home/lyona/scripts/"
+	"$data_home/checkout/scripts/"
 
 # A stub dwm-system-management: one pending kernel update (exercising the
 # restart heuristic's "system" branch, docs/SYNC-P2-UPDATE-SNAPSHOT.md
@@ -124,7 +124,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 # regional-preview/timezone-set/ntp-set/locale-set/*-open responses, so
 # SystemRegionalControls has real content for a full preview -> confirm ->
 # dispatch -> verified-result cycle, not just idle defaults.
-cat >"$data_home/lyona/scripts/dwm-system-management" <<'SH'
+cat >"$data_home/checkout/scripts/dwm-system-management" <<'SH'
 #!/bin/sh
 set -eu
 generation='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -336,7 +336,7 @@ password-open | printers-open)
 	;;
 esac
 SH
-chmod +x "$data_home/lyona/scripts/dwm-system-management"
+chmod +x "$data_home/checkout/scripts/dwm-system-management"
 
 Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
@@ -358,7 +358,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 	QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
-	PATH="$data_home/lyona/scripts:$PATH" \
+	PATH="$data_home/checkout/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 config=$config_home/quickshell/shell.qml
@@ -893,12 +893,12 @@ test_stage='running the regional preflight owner lifecycle harness'
 # against the bespoke tests/qml/SystemRegionalPreflightOwner.qml harness,
 # the same mechanism upstream uses. This closes the coverage gap Sync
 # Phase 9 deferred.
-mkdir -p "$work/regional-preflight-owner" "$work/preflight-data/lyona/scripts" "$work/preflight-empty-path"
+mkdir -p "$work/regional-preflight-owner" "$work/preflight-data/checkout/scripts" "$work/preflight-empty-path"
 mkdir -p "$work/preflight-shell-path" "$work/preflight-missing-data"
 ln -s "$(command -v sh)" "$work/preflight-shell-path/sh"
 cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/systemmanagement" "$work/regional-preflight-owner/"
 cp "$repo/tests/qml/SystemRegionalPreflightOwner.qml" "$work/regional-preflight-owner/shell.qml"
-preflight_helper="$work/preflight-data/lyona/scripts/dwm-system-management"
+preflight_helper="$work/preflight-data/checkout/scripts/dwm-system-management"
 cp "$repo/tests/fixtures/system-regional-preflight-provider.py" "$preflight_helper"
 chmod +x "$preflight_helper"
 preflight_quickshell=$(command -v quickshell)
@@ -915,7 +915,7 @@ for preflight_mode in regional time-status ntp-sample; do
 			preflight_data="$work/preflight-missing-data"
 		fi
 		timeout --foreground --kill-after=2s 45s env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
-			XDG_DATA_HOME="$preflight_data" LYONA_DEV_SCRIPTS="$preflight_data/lyona/scripts" \
+			XDG_DATA_HOME="$preflight_data" LYONA_DEV_SCRIPTS="$preflight_data/checkout/scripts" \
 			XDG_RUNTIME_DIR="$runtime" QT_QPA_PLATFORMTHEME= PATH="$preflight_path" \
 			DWM_PREFLIGHT_DIRECTORY="$preflight_directory" DWM_PREFLIGHT_SCENARIO="$preflight_scenario" DWM_PREFLIGHT_MODE="$preflight_mode" \
 			"$preflight_quickshell" --no-duplicate --path "$work/regional-preflight-owner/shell.qml" \
