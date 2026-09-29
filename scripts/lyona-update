@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-paths.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-paths.sh
-. "${BASH_SOURCE[0]%/*}/dwm-paths.sh"
+. "$lyona_lib/dwm-paths.sh"
 export LC_ALL=C
 
 self=lyona-update
@@ -807,7 +811,7 @@ cmd_apply() {
 
 	# shellcheck source=scripts/dev-sync-install.sh
 	DEV_SYNC_INSTALL_LIB_ONLY=1 DEV_SYNC_INSTALL_REPO_DIR=$staging_dir \
-		. "$script_dir/dev-sync-install.sh"
+		. "$lyona_lib/dev-sync-install.sh"
 	prepare_expected_files
 
 	status_phase=installing status_detail='Backing up the live installation'
@@ -1090,7 +1094,7 @@ cmd_rollback() {
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	# shellcheck source=scripts/dev-sync-install.sh
 	DEV_SYNC_INSTALL_LIB_ONLY=1 DEV_SYNC_INSTALL_REPO_DIR=$backup_dir \
-		. "$script_dir/dev-sync-install.sh"
+		. "$lyona_lib/dev-sync-install.sh"
 	if [[ -z ${DISPLAY:-} ]]; then
 		printf 'Log in now to start using %s.\n' "${restored_version:-the restored version}"
 	else

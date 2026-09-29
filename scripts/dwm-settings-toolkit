@@ -2,8 +2,12 @@
 
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-paths.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-paths.sh
-. "${BASH_SOURCE[0]%/*}/dwm-paths.sh"
+. "$lyona_lib/dwm-paths.sh"
 
 # Capabilities the user may override independently of the active theme, and
 # the sentinel that hands each one back to the theme.

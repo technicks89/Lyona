@@ -36,8 +36,12 @@ bounded_foreground=0
 # the script is executed, including through a PATH lookup.
 script_dir=${0%/*}
 [ "$script_dir" != "$0" ] || script_dir=.
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=$script_dir
+[ -f "$lyona_lib/dwm-watchdog.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-watchdog.sh
-. "$script_dir/dwm-watchdog.sh"
+. "$lyona_lib/dwm-watchdog.sh"
 
 is_uint() {
 	case ${1:-} in

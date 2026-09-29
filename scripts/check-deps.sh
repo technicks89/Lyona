@@ -2,10 +2,14 @@
 # shellcheck disable=SC2059
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=$SCRIPT_DIR
+[[ -f $lyona_lib/dwm-utils.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/dwm-utils.sh"
+source "$lyona_lib/dwm-utils.sh"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/dwm-packages.sh"
+source "$lyona_lib/dwm-packages.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -42,6 +42,10 @@ make -s -C "$test_repo" --no-print-directory \
 	test-print-install-sources >"$install_sources"
 # shellcheck disable=SC2016
 make -s -C "$test_repo" --no-print-directory \
+	--eval='test-print-lib-sources: ; @printf "%s\n" $(INSTALL_LIBS)' \
+	test-print-lib-sources >"$work/lib-sources"
+# shellcheck disable=SC2016
+make -s -C "$test_repo" --no-print-directory \
 	--eval='test-print-privileged-helpers: ; @printf "%s\n" $(PRIVILEGED_HELPERS)' \
 	test-print-privileged-helpers >"$privileged_helpers"
 
@@ -56,6 +60,11 @@ while IFS= read -r install_source; do
 	install -Dm755 "$test_repo/$install_source" \
 		"$prefix/bin/${install_source##*/}"
 done <"$install_sources"
+while IFS= read -r lib_source; do
+	[ -n "$lib_source" ] || continue
+	install -Dm644 "$test_repo/$lib_source" \
+		"$prefix/lib/lyona/${lib_source##*/}"
+done <"$work/lib-sources"
 
 version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$test_repo/config.mk")
 sed "s/VERSION/$version/g" "$test_repo/dwm.1" >"$manprefix/man1/dwm.1"
@@ -105,6 +114,19 @@ if run_check >"$output" 2>&1; then
 	exit 1
 fi
 grep -Fq 'MISSING INSTALL: installed command dwm-status' "$output"
+install -Dm755 "$test_repo/scripts/dwm-status" "$prefix/bin/dwm-status"
+
+# A library belongs in lib/lyona; one missing there, or left in bin by an older
+# install, fails the check (Sync Sprint 12 S12-13).
+mv "$prefix/lib/lyona/dwm-paths.sh" "$prefix/bin/dwm-paths.sh"
+if run_check >"$output" 2>&1; then
+	printf '%s\n' 'Library installed in bin unexpectedly passed.' >&2
+	exit 1
+fi
+grep -Fq 'MISSING INSTALL: installed library dwm-paths.sh' "$output"
+grep -Fq 'STALE: library dwm-paths.sh is still installed in' "$output"
+mv "$prefix/bin/dwm-paths.sh" "$prefix/lib/lyona/dwm-paths.sh"
+run_check >"$output"
 
 "$test_repo/scripts/dev-sync-install.sh" --help >"$output"
 grep -Fq 'Usage: scripts/dev-sync-install.sh [--check]' "$output"

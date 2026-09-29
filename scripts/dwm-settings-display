@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-simple-watch.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-simple-watch.sh
-. "${BASH_SOURCE[0]%/*}/dwm-simple-watch.sh"
+. "$lyona_lib/dwm-simple-watch.sh"
 # shellcheck source=scripts/dwm-xsettings-config.sh
-. "${BASH_SOURCE[0]%/*}/dwm-xsettings-config.sh"
+. "$lyona_lib/dwm-xsettings-config.sh"
 
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/lyona"
 profile_dir="${DWM_DISPLAY_PROFILE_DIR:-$config_dir/display-profiles}"
