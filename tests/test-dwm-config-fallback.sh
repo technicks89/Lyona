@@ -51,8 +51,13 @@ done
 
 home=$work/home
 user_hotkeys=$home/.config/lyona/hotkeys.toml
-default_dir=$home/.local/share/lyona/config
-mkdir -p "$work/bin" "$(dirname "$user_hotkeys")"
+# dwm finds the shipped defaults beside its executable, in PREFIX/share/lyona
+# (Sync Sprint 12 S12-13), so it runs from an installed layout whose defaults
+# the emergency case below can take away.
+prefix=$work/prefix
+default_dir=$prefix/share/lyona/config
+mkdir -p "$work/bin" "$(dirname "$user_hotkeys")" "$prefix/bin"
+cp "$repo/dwm" "$prefix/bin/dwm"
 cat >"$work/bin/notify-send" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"${DWM_TEST_NOTIFICATION_LOG:?}"
@@ -73,7 +78,7 @@ start_dwm() {
 	: >"$work/notifications.log"
 	DISPLAY=$display HOME=$home XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
 		PATH="$work/bin:$PATH" DWM_TEST_NOTIFICATION_LOG="$work/notifications.log" \
-		"$repo/dwm" >"$work/dwm.log" 2>&1 &
+		"$prefix/bin/dwm" >"$work/dwm.log" 2>&1 &
 	dwm_pid=$!
 	i=0
 	until [ "$(current_desktop)" = 0 ]; do
@@ -123,6 +128,28 @@ expect_defaults() { # LABEL: the shipped keys work, and the fallback was reporte
 }
 
 seed_defaults
+
+# The defaults come from the installed layout, not the per-user data directory.
+start_dwm location
+grep -Fqx "dwm: shipped defaults from $default_dir" "$work/dwm.log" ||
+	fail "dwm did not take its defaults from $default_dir"
+kill -USR2 "$dwm_pid"
+wait_exit location
+# A checkout build run in place uses the checkout's own config/.
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
+	PATH="$work/bin:$PATH" DWM_TEST_NOTIFICATION_LOG="$work/notifications.log" \
+	"$repo/dwm" >"$work/dwm.log" 2>&1 &
+dwm_pid=$!
+i=0
+until grep -Fq 'dwm: shipped defaults from' "$work/dwm.log"; do
+	i=$((i + 1))
+	[ "$i" -lt 100 ] || fail 'the checkout dwm did not report its defaults'
+	sleep 0.05
+done
+grep -Fqx "dwm: shipped defaults from $(CDPATH='' cd -P -- "$repo" && pwd)/config" "$work/dwm.log" ||
+	fail "the checkout dwm did not take its defaults from $repo/config"
+kill -USR2 "$dwm_pid"
+wait_exit checkout
 
 # An empty file, and one that is only comments, used to leave dwm with no keys.
 : >"$user_hotkeys"

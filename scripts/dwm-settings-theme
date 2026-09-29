@@ -32,7 +32,10 @@ themes_file=${DWM_APPEARANCE_THEMES_FILE:-$config_home/lyona/themes.toml}
 # Adding the file to integration_path_list_for() would be the wrong fix: a
 # theme revert would then silently undo the user's toolkit choices.
 personalization_file=${DWM_APPEARANCE_PERSONALIZATION_FILE:-$config_home/lyona/personalization.conf}
-managed_themes_file=${DWM_APPEARANCE_MANAGED_THEMES_FILE:-$data_home/lyona/config/themes.toml}
+# The shipped themes: PREFIX/share/lyona in an install, config/ in a checkout
+# (Sync Sprint 12 S12-13).
+default_config_dir=$(lyona_default_config_dir "$lyona_lib") || default_config_dir=
+managed_themes_file=${DWM_APPEARANCE_MANAGED_THEMES_FILE:-${default_config_dir:+$default_config_dir/themes.toml}}
 runtime_base=${XDG_RUNTIME_DIR:-}
 if [[ -z $runtime_base ]]; then
 	runtime_base=/tmp/lyona-$UID
@@ -139,6 +142,7 @@ validate_user_theme_file() {
 }
 
 validate_managed_theme_file() {
+	[[ -n $managed_themes_file ]] || die 'the shipped themes.toml is not installed'
 	[[ $managed_themes_file == /* ]] || die 'managed theme path must be absolute'
 	[[ -f $managed_themes_file && ! -L $managed_themes_file && -r $managed_themes_file ]] ||
 		die "managed theme file is unavailable: $managed_themes_file"

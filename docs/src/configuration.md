@@ -17,6 +17,10 @@ dwm tells you with a "dwm: bad config" notification. At login it falls back to t
 shipped default for that file; when you save a broken file while dwm is running, it
 keeps the configuration it already had until the file is fixed.
 
+The shipped defaults are read-only, in `/usr/share/lyona/config/` (under your
+`PREFIX` for another install location). They are replaced on every update, so
+change your own copy in `~/.config/lyona/`, never these.
+
 ## Window rules
 
 `window-rules.toml` holds one rule per line, and every matching rule applies, in

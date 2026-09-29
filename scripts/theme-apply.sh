@@ -9,6 +9,8 @@ lyona_lib=$script_dir
 [[ -f $lyona_lib/dwm-xsettings-config.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xsettings-config.sh
 . "$lyona_lib/dwm-xsettings-config.sh"
+# shellcheck source=scripts/dwm-paths.sh
+. "$lyona_lib/dwm-paths.sh"
 
 THEME_DISCOVERY_HOME=${DWM_APPEARANCE_DISCOVERY_HOME:-$HOME}
 [[ $THEME_DISCOVERY_HOME == /* ]] || {
@@ -95,7 +97,10 @@ else
 fi
 
 THEMES_FILE="${DWM_APPEARANCE_THEMES_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/lyona/themes.toml}"
-MANAGED_THEMES_FILE="${DWM_APPEARANCE_MANAGED_THEMES_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/lyona/config/themes.toml}"
+# The shipped themes: PREFIX/share/lyona in an install, config/ in a checkout
+# (Sync Sprint 12 S12-13).
+default_config_dir=$(lyona_default_config_dir "$lyona_lib") || default_config_dir=
+MANAGED_THEMES_FILE="${DWM_APPEARANCE_MANAGED_THEMES_FILE:-${default_config_dir:+$default_config_dir/themes.toml}}"
 if [[ -e "$THEMES_FILE" || -L "$THEMES_FILE" ]]; then
 	if [[ ! -f "$THEMES_FILE" || ! -r "$THEMES_FILE" ]]; then
 		echo "theme-apply: user theme source is not a regular file: $THEMES_FILE" >&2

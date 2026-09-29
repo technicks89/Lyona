@@ -1,11 +1,12 @@
 # shellcheck shell=bash
 #
-# Path-safety checks shared by the scripts that write user state. Bash, since
-# every caller is; sourced with the directory the caller lives in, which is
-# scripts/ in the repo and PREFIX/bin once installed:
+# Path-safety checks shared by the scripts that write user state, and where the
+# shipped defaults live. Bash, since every caller is; sourced from lyona_lib,
+# which is scripts/ in the repo and PREFIX/lib/lyona once installed:
 #
-#     script_dir=${BASH_SOURCE[0]%/*}
-#     . "$script_dir/dwm-paths.sh"
+#     lyona_lib=${BASH_SOURCE[0]%/*}
+#     [[ -f $lyona_lib/dwm-paths.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+#     . "$lyona_lib/dwm-paths.sh"
 #
 # Caller contract: ensure_owned_directory reports through die, so a caller
 # must define one before using it. Nothing here has any other side effect --
@@ -108,3 +109,17 @@ ensure_owned_directory() {
 	[[ $(stat -c %u -- "$path" 2>/dev/null) == "$UID" ]] ||
 		die "$label directory is not owned by the current user: $path"
 }
+
+# The shipped default config for a caller whose libraries are in LIB (its
+# lyona_lib): PREFIX/share/lyona/config beside an installed PREFIX/lib/lyona,
+# else config/ beside the checkout's scripts/ (Sync Sprint 12 S12-13). Prints
+# the directory as an absolute path with no symlinks, or fails if it is missing.
+# A subshell body, so the cd never moves the caller.
+lyona_default_config_dir() (
+	lib=$1
+	case $lib in
+	*lib/lyona) dir=$lib/../../share/lyona/config ;;
+	*) dir=$lib/../config ;;
+	esac
+	CDPATH='' cd -P -- "$dir" 2>/dev/null && pwd
+)

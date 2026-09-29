@@ -557,12 +557,28 @@ managed=$(PATH=$bin_dir XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_root \
 	"$helper" snapshot)
 grep -Fqx $'source\tmanaged\t'"$work/managed-themes.toml" <<<"$managed"
 grep -Fqx $'active\tnord\tnord\tselected' <<<"$managed"
+grep -Fqx $'managed\t'"$work/managed-themes.toml" <<<"$managed"
 
-mkdir -p "$data_root/lyona/config"
-cp "$work/managed-themes.toml" "$data_root/lyona/config/themes.toml"
+# Installed, the shipped themes are beside the helper's libraries, in
+# PREFIX/share/lyona (Sync Sprint 12 S12-13). A copy in the per-user data
+# directory, where they used to be, is no longer read.
+prefix=$work/prefix
+installed_themes=$prefix/share/lyona/config/themes.toml
+mkdir -p "$prefix/bin" "$prefix/lib/lyona" "${installed_themes%/*}" "$data_root/lyona/config"
+cp "$helper" "$prefix/bin/"
+cp "$repo/scripts/dwm-paths.sh" "$prefix/lib/lyona/"
+cp "$work/managed-themes.toml" "$installed_themes"
+sed '0,/^theme = "[^"]*"/s//theme = "dracula"/' "$work/managed-themes.toml" \
+	>"$data_root/lyona/config/themes.toml"
+installed_helper=$prefix/bin/${helper##*/}
 installed_managed=$(PATH=$bin_dir XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_root \
-	DWM_APPEARANCE_DATA_DIRS=$data_root "$helper" snapshot)
-grep -Fqx $'source\tmanaged\t'"$data_root/lyona/config/themes.toml" <<<"$installed_managed"
+	DWM_APPEARANCE_DATA_DIRS=$data_root "$installed_helper" snapshot)
+grep -Fqx $'source\tmanaged\t'"$installed_themes" <<<"$installed_managed"
+grep -Fqx $'managed\t'"$installed_themes" <<<"$installed_managed"
+grep -Fqx $'active\tnord\tnord\tselected' <<<"$installed_managed"
+# From a checkout, the checkout's own config/.
+checkout_managed=$(snapshot)
+grep -Fqx $'source\tmanaged\t'"$repo/config/themes.toml" <<<"$checkout_managed"
 
 mkdir "$config_home/lyona/themes.toml"
 set +e
@@ -579,10 +595,11 @@ grep -Fq $'error\tsource\tunreadable\tUser theme file is not a readable regular 
 rmdir "$config_home/lyona/themes.toml"
 
 ln -s "$work/missing-user-theme.toml" "$config_home/lyona/themes.toml"
-dangling_user=$(snapshot)
+dangling_user=$(PATH=$bin_dir GTK_THEME='' XCURSOR_THEME='' XDG_CONFIG_HOME=$config_home \
+	XDG_DATA_HOME=$data_root DWM_APPEARANCE_DATA_DIRS=$data_root "$installed_helper" snapshot)
 grep -Fqx $'provider\tappearance\tpartial\tread-only\tShared theme inventory and integration state' \
 	<<<"$dangling_user"
-grep -Fqx $'source\tmanaged\t'"$data_root/lyona/config/themes.toml" <<<"$dangling_user"
+grep -Fqx $'source\tmanaged\t'"$installed_themes" <<<"$dangling_user"
 grep -Fqx $'active\tnord\tnord\tselected' <<<"$dangling_user"
 grep -Fq $'error\tsource\tdangling-user\tIgnoring dangling user theme symlink and trying the managed source: ' \
 	<<<"$dangling_user"

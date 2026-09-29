@@ -372,6 +372,7 @@ static void load_themes_toml(const char *user_path, const char *default_path);
 static void load_rules_toml(const char *user_path, const char *default_path);
 static void notify_bad_config(const char *filename, const char *reason);
 static int pathjoin(char *dst, size_t dstsz, const char *dir, const char *name);
+static int default_config_dir(char *out, size_t size);
 static void reload_config(int applytheme);
 static int runtime_config_fd(void);
 static void runtime_config_mark_reload_pending(void);
@@ -540,6 +541,33 @@ pathjoin(char *dst, size_t dstsz, const char *dir, const char *name)
 	dst[dirlen] = '/';
 	memcpy(dst + dirlen + 1, name, namelen + 1);
 	return 1;
+}
+
+/* The shipped default TOMLs (Sync Sprint 12 S12-13): PREFIX/share/lyona/config
+ * beside an installed PREFIX/bin/dwm, else the config/ of a checkout running
+ * ./dwm in place. Found from the executable at run time rather than compiled
+ * in, because install.sh builds and installs with different DATADIR values. */
+static int
+default_config_dir(char *out, size_t size)
+{
+	char exe[PATH_MAX], *slash;
+	struct stat st;
+	ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe));
+
+	if (n <= 0 || (size_t)n >= sizeof(exe))
+		return 0;
+	exe[n] = '\0';
+	if (!(slash = strrchr(exe, '/')))
+		return 0;
+	*slash = '\0';                   /* the directory dwm runs from */
+	if ((slash = strrchr(exe, '/'))) {
+		*slash = '\0';           /* PREFIX */
+		if (pathjoin(out, size, exe, "share/lyona/config")
+		    && stat(out, &st) == 0 && S_ISDIR(st.st_mode))
+			return 1;
+		*slash = '/';
+	}
+	return pathjoin(out, size, exe, "config");
 }
 
 void
@@ -4231,10 +4259,16 @@ setup_inotify(void)
 	}
 
 	if (!pathjoin(dwm_data_dir, sizeof(dwm_data_dir),
-	              data_home, "lyona")
-	    || !pathjoin(toml_default_dir, sizeof(toml_default_dir),
-	                 dwm_data_dir, "config")
-	    || !pathjoin(toml_hotkeys_default_path,
+	              data_home, "lyona")) {
+		fprintf(stderr, "dwm: data path exceeds PATH_MAX\n");
+		return;
+	}
+	if (!default_config_dir(toml_default_dir, sizeof(toml_default_dir))) {
+		/* Empty paths: the loaders treat them as missing, and the watch
+		 * below fails harmlessly. */
+		fprintf(stderr, "dwm: cannot find the shipped default config\n");
+		toml_default_dir[0] = '\0';
+	} else if (!pathjoin(toml_hotkeys_default_path,
 	                 sizeof(toml_hotkeys_default_path),
 	                 toml_default_dir, "hotkeys.toml")
 	    || !pathjoin(toml_themes_default_path,
@@ -4245,6 +4279,8 @@ setup_inotify(void)
 	                 toml_default_dir, "window-rules.toml")) {
 		fprintf(stderr, "dwm: default config path exceeds PATH_MAX\n");
 		return;
+	} else {
+		fprintf(stderr, "dwm: shipped defaults from %s\n", toml_default_dir);
 	}
 
 	inotify_fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
@@ -4257,8 +4293,10 @@ setup_inotify(void)
 		inotify_wd = -1;
 	}
 
-	inotify_wd3 = inotify_add_watch(inotify_fd, toml_default_dir,
-	                                IN_CLOSE_WRITE | IN_MOVED_TO);
+	inotify_wd3 = toml_default_dir[0]
+	              ? inotify_add_watch(inotify_fd, toml_default_dir,
+	                                  IN_CLOSE_WRITE | IN_MOVED_TO)
+	              : -1;
 
 	if (inotify_wd < 0 && inotify_wd3 < 0) {
 
