@@ -205,6 +205,18 @@ main() {
 	check_path_optional xinitrc "$HOME/.xinitrc"
 	check_path_optional quickshell-config "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml"
 
+	# The developer override (Sync Sprint 12 S12-13): shown, so a forgotten one
+	# does not go unnoticed.
+	if [[ $format == human ]]; then
+		printf '\nRuntime source\n'
+		if [[ -n ${LYONA_DEV_SCRIPTS:-} ]]; then
+			printf '  LYONA_DEV_SCRIPTS=%s (helpers from a development checkout)\n' \
+				"${LYONA_DEV_SCRIPTS//[$'\t\r\n']/ }"
+		else
+			printf '  LYONA_DEV_SCRIPTS not set (installed helpers)\n'
+		fi
+	fi
+
 	if [[ $format == human ]]; then
 		printf '\nSummary\n'
 		printf '  required_failures=%d\n' "$required_fail"

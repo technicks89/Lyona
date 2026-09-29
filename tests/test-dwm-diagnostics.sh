@@ -36,6 +36,11 @@ grep -Fqx "  required_failures=0" "$work/ok"
 grep -Fq "Optional desktop" "$work/ok"
 grep -Fq "degraded quickshell" "$work/ok"
 grep -Fq "degraded maim" "$work/ok"
+# The developer override is always reported (Sync Sprint 12 S12-13).
+grep -Fqx "  LYONA_DEV_SCRIPTS not set (installed helpers)" "$work/ok"
+env HOME="$work/home" PATH="$work/bin" LYONA_DEV_SCRIPTS="$work/checkout/scripts" \
+	"$BASH_BIN" "$HELPER" >"$work/dev"
+grep -Fqx "  LYONA_DEV_SCRIPTS=$work/checkout/scripts (helpers from a development checkout)" "$work/dev"
 
 rm -f "$work/bin/alacritty" "$work/bin/Xorg"
 

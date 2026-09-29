@@ -566,6 +566,41 @@ from the text above:
 3. **Test.** `test-lyona-update.sh` checks the line with the variable set and its
    absence without it. A QML check covers the note's visibility.
 
+**Implemented (2026-09-29, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **Settings reads the variable itself.** `UpdateModel.qml`'s new `devScripts`
+  is `Quickshell.env("LYONA_DEV_SCRIPTS")`, not a field of the `lyona-update
+  check` output.
+  - Check runs only on demand and needs the network, and the note must show
+    without it.
+  - The shell's own environment is exactly what the helpers it starts inherit.
+  - `SystemSettingsPane.qml` shows a `StatusCard` (`objectName:
+    devScriptsCard`, state `partial`) under "Installed", visible only while the
+    variable is set.
+- **`lyona-update check`** prints `override\tdev-scripts\t<path>` before
+  `complete`, with tabs and newlines replaced. JSON gains `devScripts`, `null`
+  when unset. The QML parser ignores the new line.
+- **`dwm-diagnostics`** has a "Runtime source" section in its human format. It
+  uses a Bash substitution rather than `sanitize_field`, whose `tr` and `cut`
+  may be missing from a minimal `PATH`. `health-tsv` is unchanged: System
+  Health has no row kind for it, and the Settings card covers it.
+- **Tests:**
+  - `test-lyona-update.sh`: no `override` line and JSON `null` without the
+    variable; the line and the JSON path with it.
+  - `test-dwm-diagnostics.sh`: both lines.
+  - `tests/qml/SystemUpdateUi.qml`, which `test-quickshell-update-ui-xvfb.sh`
+    runs with the variable set since step 3, finds `devScriptsCard` in the real
+    `SystemSettingsPane` and checks that it is visible. Mutation-checked: with
+    the card forced to `visible: false`, the harness fails with "The
+    development-checkout note is shown while LYONA_DEV_SCRIPTS is set".
+- **Checks:**
+  - `quickshell-qmllint` on both QML files gives only the existing
+    `QProcess::ExitStatus` warning.
+  - `scripts/run-tests`: PASS, in one run.
+- **Not verified:** the card in a live Settings window of a real session started
+  with `LYONA_DEV_SCRIPTS` from `~/.xinitrc`.
+
 ### Step 6 -- the tests use the override
 
 The 24 tests that put stubs in `$XDG_DATA_HOME/lyona/scripts` keep that directory
