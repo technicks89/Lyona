@@ -8,6 +8,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve legacy data trees when their directory overlaps the source checkout,
+  and include them in live-install backups so rollback can restore them.
+- Run live-install verification cleanup and chained EXIT handlers once on
+  interruption, preserving signal exit statuses and caller-owned signal traps.
+
 ### Changed
 
 - One runtime source for helpers, step 1 (Sync Sprint 12 S12-13).

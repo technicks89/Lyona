@@ -345,8 +345,14 @@ install-user:
 	@# The system copy in ${LIB_DIR} and ${SHARE_DIR} is the only runtime source
 	@# (S12-13). Both trees were replaced wholesale on every earlier install, so
 	@# nothing of the user's is in them; the rest of ${DATA_DIR} is untouched.
-	@# A checkout that is itself the data directory is never deleted.
-	if [ ! -e "${DATA_DIR}" ] || [ "$$(realpath .)" != "$$(realpath ${DATA_DIR})" ]; then \
+	@# Preserve both trees whenever the checkout and data directory overlap.
+	cleanup_data=1; \
+	if [ -e "${DATA_DIR}" ]; then \
+		checkout_path=$$(realpath .) && data_path=$$(realpath "${DATA_DIR}") || exit 1; \
+		case "$${checkout_path%/}/" in "$${data_path%/}/"*) cleanup_data=0 ;; esac; \
+		case "$${data_path%/}/" in "$${checkout_path%/}/"*) cleanup_data=0 ;; esac; \
+	fi; \
+	if [ "$$cleanup_data" -eq 1 ]; then \
 		rm -rf "${DATA_DIR}/config" "${DATA_DIR}/scripts"; \
 	fi
 	@echo "==> Seeding application config without overwriting user files..."
@@ -623,6 +629,7 @@ check-build-config:
 
 check-dev-sync-install:
 	tests/test-dev-sync-install.sh
+	tests/test-install-cleanup.sh
 
 check-terminal:
 	tests/test-dwm-terminal.sh
