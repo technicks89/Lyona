@@ -594,9 +594,11 @@ session_script(char *out, size_t size, const char *name)
 	if (dev && *dev) {
 		if (geteuid() == 0)
 			fprintf(stderr, "dwm: ignoring LYONA_DEV_SCRIPTS as root\n");
-		else if (pathjoin(out, size, dev, name) && access(out, X_OK) == 0)
+		else if (pathjoin(out, size, dev, name) && access(out, X_OK) == 0) {
+			/* Said every time, so a forgotten override shows in the log. */
+			fprintf(stderr, "dwm: running %s from LYONA_DEV_SCRIPTS=%s\n", name, dev);
 			return 1;
-		else
+		} else
 			fprintf(stderr, "dwm: LYONA_DEV_SCRIPTS=%s has no executable %s; "
 			        "using the installed one\n", dev, name);
 	}

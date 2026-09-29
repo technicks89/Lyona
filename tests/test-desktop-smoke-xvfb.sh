@@ -104,7 +104,7 @@ data_home=$home/.local/share
 state_home=$home/.local/state
 runtime=$work/runtime
 mkdir -p "$config_home/autostart" "$config_home/lyona" "$data_home/applications" \
-	"$data_home/lyona/config" "$state_home/lyona" "$runtime"
+	"$data_home/checkout" "$state_home/lyona" "$runtime"
 chmod 700 "$runtime"
 cp -a "$repo/config/quickshell" "$config_home/quickshell"
 rm -f "$config_home/quickshell/assets/lyona-icon.png"
@@ -112,10 +112,10 @@ cp "$repo/assets/logo/lyona-icon.png" "$config_home/quickshell/assets/lyona-icon
 cp "$repo"/config/*.toml "$config_home/lyona/"
 mkdir -p "$data_home/lyona/assets"
 cp -a "$repo/assets/logo" "$data_home/lyona/assets/logo"
-ln -s "$repo/scripts" "$data_home/lyona/scripts"
+ln -s "$repo/scripts" "$data_home/checkout/scripts"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
 
 smoke_marker=$work/launched
 cat >"$data_home/applications/dwm-smoke.desktop" <<EOF
@@ -153,7 +153,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_DATA_DIRS="$data_home" XDG_RUNTIME_DIR="$runtime" \
 	QT_QPA_PLATFORM=xcb QT_QUICK_BACKEND=software \
 	QT_QPA_PLATFORMTHEME= QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
-	PATH="$data_home/lyona/scripts:$PATH" \
+	PATH="$data_home/checkout/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 quickshell_identity=$(capture_process_identity "$quickshell_pid")

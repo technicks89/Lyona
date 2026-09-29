@@ -60,7 +60,7 @@ def main():
             "XDG_CONFIG_DIRS": str(work / "vendor"),
             "XDG_DATA_HOME": str(data),
             # The shell runs the Picom helper staged below from the override.
-            "LYONA_DEV_SCRIPTS": str(data / "lyona/scripts"),
+            "LYONA_DEV_SCRIPTS": str(data / "checkout/scripts"),
             "XDG_STATE_HOME": str(work / "state"),
             "XDG_RUNTIME_DIR": str(runtime),
             "DWM_PICOM_CONFIG": "",
@@ -344,7 +344,7 @@ def main():
             # Use the actual managed-path QML model and controls, with IPC for assertions.
             qml = config / "quickshell"
             shutil.copytree(repo / "config/quickshell", qml)
-            scripts = data / "lyona/scripts"
+            scripts = data / "checkout/scripts"
             scripts.mkdir(parents=True)
             shutil.copy2(repo / "scripts/dwm-settings-picom", scripts)
             (qml / "shell.qml").write_text("""import QtQuick

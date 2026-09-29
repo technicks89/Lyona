@@ -648,7 +648,7 @@ DISPLAY=$display \
 	HOME=$home \
 	XDG_CONFIG_HOME="$home/.config" \
 	XDG_DATA_HOME="$home/.local/share" \
-	LYONA_DEV_SCRIPTS="$home/.local/share/lyona/scripts" \
+	LYONA_DEV_SCRIPTS="$home/.local/share/checkout/scripts" \
 	PATH="$work/bin:$repo:$PATH" \
 	DWM_XVFB_NOTIFICATION_LOG="$work/notifications.log" \
 	"$repo/dwm" >"$work/dwm.log" 2>&1 &
@@ -1462,13 +1462,13 @@ kill "$stack_client_pid"
 wait "$stack_client_pid" 2>/dev/null || true
 stack_client_pid=
 
-mkdir -p "$home/.local/share/lyona/scripts"
-cat >"$home/.local/share/lyona/scripts/autostop.sh" <<EOF
+mkdir -p "$home/.local/share/checkout/scripts"
+cat >"$home/.local/share/checkout/scripts/autostop.sh" <<EOF
 #!/bin/sh
 sleep 0.2
 : >"$work/autostop.called"
 EOF
-chmod +x "$home/.local/share/lyona/scripts/autostop.sh"
+chmod +x "$home/.local/share/checkout/scripts/autostop.sh"
 cp "$repo/config/hotkeys.toml" "$home/.config/lyona/hotkeys.toml"
 kill -USR1 "$dwm_pid"
 sleep 0.2

@@ -32,15 +32,15 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 mkdir -p "$work/qml" "$work/home/.config/lyona" \
-	"$work/data/lyona/scripts" "$work/runtime" "$work/state/lyona"
+	"$work/data/checkout/scripts" "$work/runtime" "$work/state/lyona"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$work/data/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-cp "$repo/tests/fixtures/queued-run-stub.sh" "$work/data/lyona/scripts/dwm-xdg-autostart"
-chmod +x "$work/data/lyona/scripts/dwm-xdg-autostart"
+cp "$repo/tests/fixtures/queued-run-stub.sh" "$work/data/checkout/scripts/dwm-xdg-autostart"
+chmod +x "$work/data/checkout/scripts/dwm-xdg-autostart"
 python3 "$repo/tests/fixtures/queued-run.py" "$work/qml" "$repo/tests/qml/QueuedRun.inc"
 
 Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \

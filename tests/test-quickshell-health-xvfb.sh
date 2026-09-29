@@ -30,10 +30,10 @@ home=$work/home
 runtime=$work/runtime
 config_home=$home/.config
 data_home=$home/.local/share
-mkdir -p "$config_home/quickshell" "$config_home/lyona" "$data_home/lyona/scripts" "$runtime"
+mkdir -p "$config_home/quickshell" "$config_home/lyona" "$data_home/checkout/scripts" "$runtime"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
 chmod 700 "$runtime"
 cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
 cp "$repo/config/"*.toml "$config_home/lyona/"
@@ -47,7 +47,7 @@ cp "$repo/scripts/dwm-system-health" "$repo/scripts/dwm-diagnostics" \
 	"$repo/scripts/dwm-quickshell-controlcenter" "$repo/scripts/dwm-quickshell-controls" \
 	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-quickshell-network" \
 	"$repo/scripts/dwm-quickshell-pointer" \
-	"$data_home/lyona/scripts/"
+	"$data_home/checkout/scripts/"
 
 Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
@@ -69,7 +69,7 @@ dwm_pid=$!
 env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_RUNTIME_DIR="$runtime" \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
-	PATH="$data_home/lyona/scripts:$PATH" \
+	PATH="$data_home/checkout/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 
@@ -125,14 +125,14 @@ fi
 i=0
 while [ "$i" -lt 200 ]; do
 	scan_processes=$(pgrep -af '[d]wm-system-health (scan-user|scan-system)' || true)
-	if ! printf '%s\n' "$scan_processes" | grep -F "$data_home/lyona/scripts/dwm-system-health" >/dev/null; then
+	if ! printf '%s\n' "$scan_processes" | grep -F "$data_home/checkout/scripts/dwm-system-health" >/dev/null; then
 		break
 	fi
 	i=$((i + 1))
 	sleep 0.05
 done
 scan_processes=$(pgrep -af '[d]wm-system-health (scan-user|scan-system)' || true)
-if printf '%s\n' "$scan_processes" | grep -F "$data_home/lyona/scripts/dwm-system-health" >/dev/null; then
+if printf '%s\n' "$scan_processes" | grep -F "$data_home/checkout/scripts/dwm-system-health" >/dev/null; then
 	printf 'System Health scan remained active after close\n' >&2
 	exit 1
 fi

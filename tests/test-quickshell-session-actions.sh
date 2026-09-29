@@ -316,25 +316,23 @@ if command -v Xvfb >/dev/null 2>&1 && [ -x "$repo/dwm" ]; then
 	runtime_home=$work/runtime-home
 	runtime_data_home=$runtime_home/.local/share
 	runtime_config_home=$runtime_home/.config
-	mkdir -p "$runtime_data_home/lyona/scripts" \
-		"$runtime_data_home/lyona/config"
-	cp "$repo/config/hotkeys.toml" "$repo/config/themes.toml" \
-		"$repo/config/window-rules.toml" "$runtime_data_home/lyona/config/"
-	cat >"$runtime_data_home/lyona/scripts/autostart.sh" <<'SH'
+	# dwm takes its shipped defaults from the checkout it runs from (S12-13).
+	mkdir -p "$runtime_data_home/checkout/scripts"
+	cat >"$runtime_data_home/checkout/scripts/autostart.sh" <<'SH'
 #!/bin/sh
 exit 0
 SH
-	cat >"$runtime_data_home/lyona/scripts/autostop.sh" <<'SH'
+	cat >"$runtime_data_home/checkout/scripts/autostop.sh" <<'SH'
 #!/bin/sh
 : >"${DWM_SESSION_TEST_AUTOSTOP_MARKER:?}"
 SH
-	cat >"$runtime_data_home/lyona/scripts/theme-apply.sh" <<'SH'
+	cat >"$runtime_data_home/checkout/scripts/theme-apply.sh" <<'SH'
 #!/bin/sh
 printf x >>"${DWM_SESSION_TEST_THEME_APPLY_MARKER:?}"
 printf '%s\n%s\n' "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" \
 	>"${DWM_SESSION_TEST_THEME_ENV_MARKER:?}"
 SH
-	chmod +x "$runtime_data_home/lyona/scripts/"*.sh
+	chmod +x "$runtime_data_home/checkout/scripts/"*.sh
 
 	Xvfb "$runtime_display" -screen 0 800x600x24 -nolisten tcp \
 		>"$work/xvfb.log" 2>&1 &
@@ -352,7 +350,7 @@ SH
 
 	# dwm runs its session scripts and theme-apply.sh from the developer
 	# override, the stubs above (Sync Sprint 12 S12-13).
-	LYONA_DEV_SCRIPTS="$runtime_data_home/lyona/scripts" \
+	LYONA_DEV_SCRIPTS="$runtime_data_home/checkout/scripts" \
 		DWM_SESSION_TEST_AUTOSTOP_MARKER="$work/autostop.marker" \
 		DWM_SESSION_TEST_THEME_APPLY_MARKER="$work/theme-apply.marker" \
 		DWM_SESSION_TEST_THEME_ENV_MARKER="$work/theme-env.marker" \

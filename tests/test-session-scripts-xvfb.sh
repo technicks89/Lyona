@@ -108,6 +108,8 @@ run_session override LYONA_DEV_SCRIPTS="$dev"
 expect_ran override "$(printf 'override:autostart.sh\ninstalled:autostop.sh')"
 grep -Fqx "dwm: LYONA_DEV_SCRIPTS=$dev has no executable autostop.sh; using the installed one" \
 	"$work/dwm.log" || fail 'dwm did not report the missing override script'
+grep -Fqx "dwm: running autostart.sh from LYONA_DEV_SCRIPTS=$dev" "$work/dwm.log" ||
+	fail 'dwm did not report running a script from the override'
 
 # An override that is not a directory of scripts at all falls back entirely.
 run_session bad-override LYONA_DEV_SCRIPTS="$work/missing"

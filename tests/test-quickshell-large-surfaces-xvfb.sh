@@ -94,10 +94,10 @@ config_home=$home/.config
 data_home=$home/.local/share
 bin=$work/bin
 mkdir -p "$config_home/quickshell" "$config_home/lyona" "$home/.cache" \
-	"$data_home/lyona/scripts" "$data_home/applications" "$runtime" "$bin"
+	"$data_home/checkout/scripts" "$data_home/applications" "$runtime" "$bin"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
-export LYONA_DEV_SCRIPTS="$data_home/lyona/scripts"
+export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
 chmod 700 "$runtime_storage"
 if [ "${#runtime}" -gt 64 ]; then
 	runtime_alias_dir=$(mktemp -d /tmp/dwm-large-surface-runtime.XXXXXX)
@@ -111,7 +111,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-quickshell-controlcenter" \
 	"$repo/scripts/dwm-quickshell-controls" "$repo/scripts/dwm-quickshell-network" \
 	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-diagnostics" \
-	"$repo/scripts/dwm-lock" "$data_home/lyona/scripts/"
+	"$repo/scripts/dwm-lock" "$data_home/checkout/scripts/"
 
 cat >"$data_home/applications/dwm-large-surface-test.desktop" <<'DESKTOP'
 [Desktop Entry]
@@ -150,7 +150,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 	QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
-	DWM_LARGE_SURFACE_DEX_LOG="$work/dex.log" PATH="$bin:$data_home/lyona/scripts:$PATH" \
+	DWM_LARGE_SURFACE_DEX_LOG="$work/dex.log" PATH="$bin:$data_home/checkout/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
 config=$config_home/quickshell/shell.qml
