@@ -87,8 +87,8 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/lyona-install-verify.XXXXXX")
 # -- the same class of fix as die()'s command -v guard above, for traps
 # instead of functions.
 # shellcheck disable=SC3045 # trap -p is not POSIX Base, but this project's
-# /bin/sh is bash on its only supported platform (Arch), and dash supports it
-# too; there is no portable alternative for reading back an existing trap.
+# /bin/sh is bash on its only supported platform (Arch); there is no portable
+# alternative for reading back an existing trap.
 install_verify_previous_exit_trap=$(trap -p EXIT | sed -n "s/^trap -- '\\(.*\\)' EXIT\$/\\1/p")
 if [ -n "$install_verify_previous_exit_trap" ]; then
 	# install_verify_exit_status is captured before "rm -rf" runs and left in the
@@ -99,10 +99,18 @@ if [ -n "$install_verify_previous_exit_trap" ]; then
 	# captured trap command are both already fully resolved, and must be
 	# baked into the chained trap string as it is set, not re-evaluated
 	# later against whatever $work/$install_verify_previous_exit_trap then hold.
-	trap "install_verify_exit_status=\$?; rm -rf \"$work\"; $install_verify_previous_exit_trap" EXIT HUP INT TERM
+	trap "install_verify_exit_status=\$?; rm -rf \"$work\"; $install_verify_previous_exit_trap" EXIT
 else
-	trap 'rm -rf "$work"' EXIT HUP INT TERM
+	trap 'rm -rf "$work"' EXIT
 fi
+# Let caller-owned signal handlers keep their behavior. Otherwise terminate
+# with the signal status, leaving cleanup and the chained handler to EXIT.
+# shellcheck disable=SC3045 # trap -p is supported by Arch's /bin/sh (bash).
+case $(trap -p HUP) in "" | "trap -- - HUP") trap 'exit 129' HUP ;; esac
+# shellcheck disable=SC3045
+case $(trap -p INT) in "" | "trap -- - INT") trap 'exit 130' INT ;; esac
+# shellcheck disable=SC3045
+case $(trap -p TERM) in "" | "trap -- - TERM") trap 'exit 143' TERM ;; esac
 install_sources_file=$work/install-sources
 lib_sources_file=$work/lib-sources
 session_sources_file=$work/session-sources
@@ -322,9 +330,13 @@ backup_live_install() {
 		tar -C "$(dirname "$quickshell_dir")" -cpf \
 			"$backup_dir/quickshell.tar" "$(basename "$quickshell_dir")"
 	fi
-	# No lyona-data.tar any more: the per-user data directory holds no managed
-	# copy to put back (S12-13). lyona-update rollback still restores one from
-	# an older backup, whose release needs it.
+	# An upgrade removes legacy runtime trees; rollback must be able to put
+	# them back for the previous release, including symlinked trees.
+	if [ -e "$data_dir/scripts" ] || [ -L "$data_dir/scripts" ] ||
+		[ -e "$data_dir/config" ] || [ -L "$data_dir/config" ]; then
+		tar -C "$(dirname "$data_dir")" -cpf \
+			"$backup_dir/lyona-data.tar" "$(basename "$data_dir")"
+	fi
 
 	system_manifest=$work/system-files
 	: >"$system_manifest"
