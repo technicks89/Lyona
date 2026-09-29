@@ -211,6 +211,13 @@ ShellRoot {
         } else if (root.stage === 19 && model.operation.result !== null && root.fresh()) {
             root.check(model.operation.result.state === "canceled" && model.operation.audit !== null,
                 "Cancellation UI waits for the verified canceled result");
+            // The test runs the shell with LYONA_DEV_SCRIPTS set, so the System
+            // pane must say it is running a checkout's helpers (S12-13).
+            const devCard = root.button("devScriptsCard", window.contentItem);
+            root.check(updateModel.devScripts.length > 0
+                && updateModel.devScripts === Quickshell.env("LYONA_DEV_SCRIPTS")
+                && devCard !== null && devCard.visible,
+                "The development-checkout note is shown while LYONA_DEV_SCRIPTS is set");
             root.done = true;
             console.info("Update UI native tests: PASS (" + root.assertions + " assertions)");
             Qt.quit();

@@ -49,6 +49,9 @@ export LYONA_DEV_SCRIPTS="$HOME/Repos/Lyona/scripts"
   Anything the directory lacks comes from the install, and dwm logs a line saying
   so.
 - **Root:** dwm ignores the override when it runs as root.
+- **Seeing it:** while it is set, Settings -> System shows a "Development
+  checkout" card, `dwm-diagnostics` names it, and `lyona-update check` reports it,
+  so a forgotten override is noticed.
 - **Undoing it:** no install sets it. Remove the line to go back to the installed
   copy.
 

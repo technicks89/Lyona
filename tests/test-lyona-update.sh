@@ -191,6 +191,18 @@ valid_user_record 2026.09.0 | write_user_record
 seed_release 2026.09.0
 status=$(run_update check)
 assert_string_contains "$status" "$(printf 'state\tcurrent')"
+# The developer override is reported only while it is set (Sync Sprint 12 S12-13).
+case $status in
+*override*)
+	printf 'check reported an override that is not set:\n%s\n' "$status" >&2
+	exit 1
+	;;
+esac
+[ "$(run_update check --json | jq -r .devScripts)" = null ]
+status=$(LYONA_DEV_SCRIPTS="$work/checkout/scripts" run_update check)
+assert_string_contains "$status" "$(printf 'override\tdev-scripts\t%s' "$work/checkout/scripts")"
+assert_equals "$work/checkout/scripts" \
+	"$(LYONA_DEV_SCRIPTS="$work/checkout/scripts" run_update check --json | jq -r .devScripts)"
 
 # ── check: installed is older ───────────────────────────────────────────
 reset_curl_responses

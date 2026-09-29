@@ -64,6 +64,10 @@ Scope {
     readonly property int logTailBytes: 64 * 1024
 
     readonly property string homeDir: Quickshell.env("HOME") || ""
+    // The developer override (Sync Sprint 12 S12-13): set, the shell runs its
+    // helpers from a checkout instead of the installed commands. The shell's own
+    // environment is what its helpers inherit, so it is read here, directly.
+    readonly property string devScripts: Quickshell.env("LYONA_DEV_SCRIPTS") || ""
     readonly property string configuredConfigHome: Quickshell.env("XDG_CONFIG_HOME") || ""
     readonly property string configHome: root.configuredConfigHome.startsWith("/")
         ? root.configuredConfigHome : root.homeDir + "/.config"

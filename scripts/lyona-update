@@ -480,8 +480,10 @@ cmd_check() {
 			--arg assetName "${release_asset_name:-}" \
 			--arg assetChecksum "${release_checksum:-unknown}" \
 			--arg assetSize "${release_asset_size:-unknown}" \
+			--arg devScripts "${LYONA_DEV_SCRIPTS:-}" \
 			'{
 				state: $state, message: $message, channel: $channel,
+				devScripts: (if $devScripts == "" then null else $devScripts end),
 				installed: {version: $installedVersion, commit: $installedCommit},
 				available: (if $reached == "true" then {
 					version: $availableVersion, commit: $availableCommit,
@@ -501,6 +503,11 @@ cmd_check() {
 		printf 'asset\t%s\t%s\t%s\n' "$release_asset_name" "$release_checksum" "$release_asset_size"
 	else
 		printf 'channel\t%s\n' "$requested_channel"
+	fi
+	# The developer override (Sync Sprint 12 S12-13): the helpers this session
+	# runs are a checkout's, whatever version is installed.
+	if [[ -n ${LYONA_DEV_SCRIPTS:-} ]]; then
+		printf 'override\tdev-scripts\t%s\n' "${LYONA_DEV_SCRIPTS//[$'\t\n']/ }"
 	fi
 	printf 'complete\tcheck\n'
 }

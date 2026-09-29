@@ -90,6 +90,16 @@ Flickable {
                 : "Installed records disagree: " + root.updateModel.installedMismatchDetail
         }
 
+        StatusCard {
+            objectName: "devScriptsCard"
+            visible: root.updateModel.devScripts.length > 0
+            label: "Helpers"
+            statusState: "partial"
+            value: "Development checkout"
+            detail: "Running helpers from a development checkout: " + root.updateModel.devScripts
+                + ". Unset LYONA_DEV_SCRIPTS to use the installed ones."
+        }
+
         SectionLabel { label: "Update status" }
 
         StatusCard {

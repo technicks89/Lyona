@@ -18,6 +18,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   - A command finds the shared code beside itself in a checkout, and in `../lib/lyona` once installed.
   - `scripts/dev-sync-install.sh --check` verifies the libraries in `PREFIX/lib/lyona` and reports a copy left in
     `PREFIX/bin` as stale.
+- One runtime source for helpers, step 5 (Sync Sprint 12 S12-13): a set `LYONA_DEV_SCRIPTS` is always visible.
+  - `dwm-diagnostics` prints a "Runtime source" section naming it, or "not set".
+  - `lyona-update check` adds `override\tdev-scripts\t<path>` (JSON: `devScripts`, `null` when unset).
+  - Settings -> System shows a "Helpers: Development checkout" card with the path while it is set.
 - One runtime source for helpers, step 4 (Sync Sprint 12 S12-13).
   - `make install-user` (and so `lyona-update apply`) no longer copies `scripts/` and `config/` into
     `~/.local/share/lyona`, and removes the copies an earlier install left. Nothing reads them any more. Both trees
