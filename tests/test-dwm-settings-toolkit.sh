@@ -202,6 +202,25 @@ toolkit apply gtk Lyona-nord >/dev/null
 assert_equals "$before_preview" "$(sha256sum <"$config")" \
 	'the configuration round-tripped through preview and back'
 
+# ── expiry and tokens ────────────────────────────────────────────────────
+#
+# The rollback machinery is shared with dwm-settings-font, in dwm-preview.sh
+# (Sync Sprint 12 S12-14). These drive it through this helper's own clock hook,
+# DWM_SETTINGS_TOOLKIT_NOW, which the library reads by name.
+
+DWM_SETTINGS_TOOLKIT_NOW=5000 toolkit preview tok-late 5 gtk Adwaita-dark >/dev/null ||
+	fail 'a timed preview failed'
+assert_line "$config" $'gtk\tAdwaita-dark'
+if DWM_SETTINGS_TOOLKIT_NOW=5006 toolkit keep tok-late >/dev/null 2>"$work/late-keep.err"; then
+	fail 'a keep after the deadline was accepted'
+fi
+grep -Fqx 'toolkit preview has expired' "$work/late-keep.err" ||
+	fail "a late keep did not report expiry: $(cat "$work/late-keep.err")"
+assert_line "$config" $'gtk\tLyona-nord'
+refuses 'a token with a path in it' preview '../escape' 30 gtk Adwaita-dark
+# A safe file name, but longer than valid_token allows: only that check refuses it.
+refuses 'an over-long preview token' preview "$(printf 'a%.0s' $(seq 97))" 30 gtk Adwaita-dark
+
 # ── the theme transaction gate ───────────────────────────────────────────
 #
 # dwm-settings-theme snapshots the files theme-apply.sh derives and refuses to
@@ -231,7 +250,7 @@ toolkit apply gtk Adwaita-dark >/dev/null ||
 
 stub_dir=$work/stub
 mkdir -p "$stub_dir"
-cp -- "$helper" "$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-xdg.sh" "$stub_dir/"
+cp -- "$helper" "$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-preview.sh" "$stub_dir/"
 
 write_stub_applier() {
 	cat >"$stub_dir/theme-apply.sh" <<STUB

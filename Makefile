@@ -102,6 +102,7 @@ INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
 INSTALL_LIBS = \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
+	scripts/dwm-preview.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-utils.sh \
 	scripts/dwm-trust.sh \

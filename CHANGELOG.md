@@ -17,6 +17,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- One preview state machine for font and toolkit, S12-14 step 5 (Sync Sprint 12 S12-14).
+  - The preview, keep, revert and automatic-rollback machinery of the Settings font and toolkit pages
+    (`dwm-settings-font`, `dwm-settings-toolkit`) lives once, in the new `dwm-preview.sh` (in `PREFIX/lib/lyona`).
+    That covers the mutation lock, the preview tokens, the rollback watchdog, expiry, and the atomic config exchange.
+    The two helpers had 37 copies of these functions, identical but for their labels, so a fix in one never reached
+    the other. Messages, state files and behaviour are unchanged.
+  - The display, input, wallpaper and theme helpers have different state machines and keep their own.
 - The scripts read `themes.toml` as dwm does, S12-14 step 4 (Sync Sprint 12 S12-14, D-20).
   - `theme-apply.sh`, `lyona-gtk-theme`, the Control Center and the Settings appearance provider read `themes.toml`
     through `lyona-toml`, dwm's own parser, instead of three separate awk readers and a Bash one. A file now means

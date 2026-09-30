@@ -599,6 +599,62 @@ from the text above:
    - `test-shell-contracts.sh` gains a check that none of the eleven functions
      is defined outside `dwm-preview.sh`.
 
+**Implemented (2026-09-30, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **37 functions, not eleven.** The two helpers share 50 function names.
+  - **Moved:** the 23 byte-identical ones (all but `die`, which each helper
+    needs before it sources anything), and the 14 that differ only in the word
+    "font" or "toolkit", the config file's name and the test-hook prefix.
+  - **Stayed, as domain code:**
+    - `start_preview` and `finish_preview`: toolkit re-reads its config, runs
+      `theme-apply`, and releases the icon baseline;
+    - `mutation_ready`: font also checks for `fc-match`;
+    - the models: `read_config`, `write_config`, `write_meta`,
+      `selection_hash`, `apply_selection`, `reset_selection`, `emit_status`,
+      `validate_selection` and `usage`.
+- **Four parameters**, set before sourcing: `preview_program`,
+  `preview_label`, `preview_config_name` and `preview_env`. The plan's three
+  hooks (`preview_capture`, `preview_apply`, `preview_describe`) were not
+  needed: the moved functions already call each helper's own `read_config`,
+  `write_config` and the rest by name.
+- **How the text was moved:**
+  - it was extracted by a script from `dwm-settings-toolkit` and
+    parameterised by an explicit list of 18 line replacements;
+  - single-quoted messages became double-quoted to take `$preview_label`;
+  - the two test hooks are read by name (`${!now_var}`).
+
+  Instantiating the library with each helper's values and diffing it against
+  that helper's originals shows only quoting and equivalent `printf`
+  arguments: the same 24 line pairs for each, with identical output text.
+- **Found: the toolkit test never exercised expiry or token validation.**
+  Mutation checks in a scratch copy:
+  - with `expire_preview_locked` returning at once, the font test failed and
+    the toolkit test passed;
+  - with `valid_token` accepting anything, both passed.
+
+  `test-dwm-settings-toolkit.sh` gains an "expiry and tokens" case, driving the
+  shared code through its own `DWM_SETTINGS_TOOLKIT_NOW`:
+  - a keep after a 5 s deadline is refused ("toolkit preview has expired") and
+    the config is rolled back;
+  - a `../escape` token is refused;
+  - a 97-character token, a safe file name that only `valid_token` refuses, is
+    refused.
+
+  Both mutations now fail it.
+- **Contract test:** neither helper may define a function `dwm-preview.sh`
+  holds, and both must source it. Mutation-checked with a stray
+  `clear_preview` in `dwm-settings-font`.
+- **No comment was stranded:** none of the moved functions had one above it.
+- **`test-quickshell-settings-xvfb.sh`'s fake checkout** needed `dwm-preview.sh`.
+  Without it, the Settings font page reported font changes as unavailable, and
+  the test failed on that ("Font mutation readiness did not become available").
+  That is the third time in this item that a staged helper went without a
+  library it sources. The guard noted in step 2 now has three instances.
+- **Checks:** PASS: `check-shell`, `check-format`, `check-install-manifest`,
+  `check-dev-sync-install` and `check-shell-contracts`. `scripts/run-tests`:
+  PASS, in one run.
+
 ### Step 6 -- the preview countdown in QML (part 2, QML)
 
 It starts with a survey, since the review's premise did not hold (see "What

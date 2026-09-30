@@ -199,4 +199,21 @@ for helper in trusted_parent_chain trusted_file; do
 	fi
 done
 
+# ── One preview state machine for font and toolkit ───────────────────────
+#
+# Sync Sprint 12 S12-14: dwm-preview.sh holds the lock, token, watchdog, expiry
+# and atomic-exchange machinery the two helpers share; neither may define its
+# own copy. (Other helpers have different machines, some with the same names.)
+grep -oE '^[a-z_]+\(\) \{' "$repo/scripts/dwm-preview.sh" | sed 's/() {$//' >"$work/preview-functions"
+[ "$(wc -l <"$work/preview-functions")" -ge 30 ] || fail 'could not read dwm-preview.sh functions'
+for preview_helper in dwm-settings-font dwm-settings-toolkit; do
+	while IFS= read -r preview_function; do
+		! grep -q "^$preview_function() {" "$repo/scripts/$preview_helper" ||
+			fail "$preview_helper defines $preview_function, which dwm-preview.sh holds"
+	done <"$work/preview-functions"
+	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
+	grep -Fq '. "$lyona_lib/dwm-preview.sh"' "$repo/scripts/$preview_helper" ||
+		fail "$preview_helper does not source dwm-preview.sh"
+done
+
 printf '%s\n' 'Shell contracts: PASS'
