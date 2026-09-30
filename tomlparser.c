@@ -115,7 +115,10 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 
 		while (isspace((unsigned char)*p) || *p == ',') p++;
 		if (*p == '}' || *p == '\0') break;
-		if (doc->n >= TOML_MAX_ENTRIES) break;
+		if (doc->n >= TOML_MAX_ENTRIES) {
+			doc->truncated = 1;
+			break;
+		}
 
 		const char *kstart = p;
 		while (*p && *p != '=' && !isspace((unsigned char)*p) && *p != '}') p++;
@@ -127,6 +130,7 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 		while (isspace((unsigned char)*p)) p++;
 
 		TomlEntry *ent = &doc->entries[doc->n];
+		ent->val.is_bool = 0;
 		strncpy(ent->section, section, TOML_MAX_STR - 1);
 		ent->section[TOML_MAX_STR - 1] = '\0';
 		ent->table_idx = tidx;
@@ -167,6 +171,7 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 			long iv;
 			if (parse_bool(nbuf, &iv)) {
 				ent->val.type = TOML_INT;
+				ent->val.is_bool = 1;
 				ent->val.i = iv;
 			} else if ((iv = strtol(nbuf, &ep, 10)), ep != nbuf && *ep == '\0') {
 				ent->val.type = TOML_INT;
@@ -215,6 +220,7 @@ toml_parse(const char *path, TomlDoc *doc)
 	FILE *f = toml_open(path);
 	if (!f) return 0;
 	doc->n = 0;
+	doc->truncated = 0;
 	char line[4096];
 	char cur_section[TOML_MAX_STR] = "";
 	int  cur_tidx = -1;
@@ -306,8 +312,13 @@ toml_parse(const char *path, TomlDoc *doc)
 			}
 		}
 
-		if (doc->n >= TOML_MAX_ENTRIES) continue;
+		/* Recorded, not silent: dwm and lyona-toml report it (S12-14). */
+		if (doc->n >= TOML_MAX_ENTRIES) {
+			doc->truncated = 1;
+			continue;
+		}
 		TomlEntry *ent = &doc->entries[doc->n];
+		ent->val.is_bool = 0;
 		copystr(ent->section, sizeof(ent->section), cur_section);
 		ent->table_idx = cur_tidx;
 		copystr(ent->key, sizeof(ent->key), key);
@@ -339,6 +350,7 @@ toml_parse(const char *path, TomlDoc *doc)
 			long iv;
 			if (parse_bool(v, &iv)) {
 				ent->val.type = TOML_INT;
+				ent->val.is_bool = 1;
 				ent->val.i = iv;
 			} else if ((iv = strtol(v, &ep, 10)), ep != v && (*ep == '\0' || *ep == '#' || isspace((unsigned char)*ep))) {
 				ent->val.type = TOML_INT;

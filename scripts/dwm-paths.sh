@@ -9,8 +9,9 @@
 #     . "$lyona_lib/dwm-paths.sh"
 #
 # Caller contract: ensure_owned_directory reports through die, so a caller
-# must define one before using it. Nothing here has any other side effect --
-# no variables set, no environment read.
+# must define one before using it. lyona_toml reads the caller's lyona_lib.
+# Nothing here has any other side effect -- no variables set, no environment
+# read.
 
 # An absolute path with nothing in it that would confuse a later parse or walk
 # somewhere else: no newline, carriage return or tab, and no . or .. component.
@@ -123,3 +124,14 @@ lyona_default_config_dir() (
 	esac
 	CDPATH='' cd -P -- "$dir" 2>/dev/null && pwd
 )
+
+# The one TOML reader (Sync Sprint 12 S12-14, D-20): PREFIX/lib/lyona/lyona-toml
+# beside an installed caller's libraries, else the checkout's built one beside
+# scripts/. Runs it with the arguments given; see lyona-toml.c for its output and
+# exit status.
+lyona_toml() {
+	local lib=${lyona_lib:?lyona_toml needs lyona_lib set by the caller}
+	local tool=$lib/lyona-toml
+	[[ -x $tool ]] || tool=$lib/../lyona-toml
+	"$tool" "$@"
+}

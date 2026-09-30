@@ -3712,8 +3712,14 @@ typedef int (*TomlUsable)(const TomlDoc *doc);
 static int
 toml_doc_ok(const char *path, TomlDoc *doc, TomlUsable usable)
 {
-	return path && path[0] && toml_parse(path, doc) && doc->n > 0
-	       && (!usable || usable(doc));
+	if (!path || !path[0] || !toml_parse(path, doc))
+		return 0;
+	/* The parser keeps the first TOML_MAX_ENTRIES and drops the rest; say so,
+	 * or themes at the end of a long file vanish without a word (S12-14). */
+	if (doc->truncated)
+		fprintf(stderr, "dwm: %s has more than %d entries; the rest were ignored\n",
+		        path, TOML_MAX_ENTRIES);
+	return doc->n > 0 && (!usable || usable(doc));
 }
 
 /* Load the user's file, or else the shipped default (Sync Sprint 12 S12-04).

@@ -17,6 +17,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- `lyona-toml`, one TOML reader for scripts, S12-14 step 3 (Sync Sprint 12 S12-14, D-20).
+  - A small tool built from dwm's own parser and installed in `PREFIX/lib/lyona`. `lyona-toml dump FILE` prints one
+    entry per line (section, table index, key and value, tab-separated, with tabs and newlines escaped), and
+    `lyona-toml get FILE SECTION KEY` prints one value, as dwm finds it. Step 4 moves the scripts' own parsers onto
+    it.
+  - **Fixed:** dwm keeps the first 512 entries of a TOML file and used to drop the rest without a word, so the themes
+    at the end of a long `themes.toml` could vanish. The shipped file has 407 entries, so four or five extra themes
+    were enough. dwm now logs `<file> has more than 512 entries; the rest were ignored`, and `lyona-toml` exits
+    with status 4.
 - One copy of the trust checks, S12-14 step 2 (Sync Sprint 12 S12-14).
   - `trusted_parent_chain` and `trusted_file`, which decide whether a file is safe to run with more rights than
     the caller, live in the new `dwm-trust.sh` (in `PREFIX/lib/lyona`). `dwm-settings-display`,

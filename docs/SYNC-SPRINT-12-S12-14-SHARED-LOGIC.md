@@ -402,6 +402,55 @@ from the text above:
    - escaped output, and the exit codes;
    - a 600-entry file exits 4, and dwm logs the truncation warning.
 
+**Implemented (2026-09-30, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **Booleans keep their form.** The parser stored `true` and `false` as a
+  `TOML_INT` of 1 and 0, so a dump would have printed `0` where
+  `theme-apply.sh` compares `dark_mode` against `false`.
+  - `TomlValue` gains `is_bool`, set in both boolean branches and cleared for
+    every new entry, since entries are reused between loads.
+  - dwm's own reads of the type are unchanged.
+- **The tool links `util.o` too**: `tomlparser.c` uses `copystr`. The rule
+  depends on `tomlparser.o`, `util.o` and both headers, and `install-system`
+  refuses a stale build as it does for `dwm-window-thumb`.
+- **The release archive** gets `lyona-toml` beside `scripts/`, the checkout
+  layout, where step 4's scripts will look.
+- **The format as built:**
+  - numbers are written `%ld`, and floats `%.17g`, exactly as parsed;
+  - array items are joined by US (0x1f);
+  - backslash, tab, newline and carriage return are escaped in the section, the
+    key and the value.
+
+  `get` of a key that is absent from a truncated file exits 4, not 1, since the
+  key may be among the dropped entries.
+- **dwm's warning** comes from `toml_doc_ok`, so it covers the user file and
+  the shipped default alike, on every load and reload.
+- **`lyona_toml`**, in `dwm-paths.sh`, falls back to `$lyona_lib/../lyona-toml`
+  rather than stripping `/scripts`, because a checkout's `lyona_lib` can be the
+  relative `scripts`. It needs `lyona_lib`, and says so if the caller has none.
+- **The live-install check** (`lyona-install-verify.sh`) verifies and backs up
+  `PREFIX/lib/lyona/lyona-toml`, as it does `dwm`.
+- **Tests:**
+  - `tests/test-tomlparser.c` gains `truncation`: 522 plain entries keep 512 and
+    set the flag; an inline-table array sets it too; the next parse clears it;
+    `true` is `is_bool` and `1` is not. Mutation-checked: removing either site
+    that sets the flag fails it.
+  - New `tests/test-lyona-toml.sh` (`make check-lyona-toml`, in `make check`)
+    covers:
+    - the S12-05 grammar (a trailing comment, a boolean, a same-line array,
+      an inline-table array);
+    - the escaping, and exactly four fields per line;
+    - `get`, and exit codes 1, 2, 3 and 4 (600 entries print 512 lines);
+    - the three shipped files;
+    - `lyona_toml` finding the tool installed and in a checkout.
+  - `test-dwm-config-fallback.sh` starts dwm with a 557-entry user
+    `themes.toml` and requires the warning line in its log.
+- **Checks:** PASS: `check-install-manifest`, `release-check`,
+  `check-dev-sync-install`, `check-install-preservation`, `check-shell`,
+  `check-format`, `check-shell-contracts` and `check-lyona-update`.
+  - `scripts/run-tests`: PASS, in one run.
+
 ### Step 4 -- the scripts use `lyona-toml` (part 1, the readers)
 
 1. **Readers that switch:**
