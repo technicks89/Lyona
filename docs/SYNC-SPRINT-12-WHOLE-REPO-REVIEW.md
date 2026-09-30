@@ -43,7 +43,7 @@ starts.
 | [S12-18](#s12-18-smaller-hardening) | `#181` | Security, hardening | Low | none |
 | [S12-19](#s12-19-release-updates-can-install-the-published-release-asset) | `#184` | Correctness, updater | High | none |
 | [S12-20](#s12-20-calendar-and-weather-panel-widgets) | `#193` | Feature, panel | Low | D-19 (weather only) |
-| [S12-21](#s12-21-a-staged-helper-always-brings-its-libraries) | (not yet created) | Test reliability | Medium | none |
+| [S12-21](#s12-21-a-staged-helper-always-brings-its-libraries) | `#199` | Test reliability | Medium | none |
 
 **Suggested order:** S12-01 to S12-03 first (the privileged update helper, found
 independently by three reviews), then S12-04 and S12-06, then the idle-cost items
@@ -1194,7 +1194,7 @@ and a popup for each (a month calendar; current weather from wttr.in).
 
 ## S12-21: A staged helper always brings its libraries
 
-**Source:** found while implementing S12-14 (2026-09-30), added on request. **Verified**
+**Issue:** `#199`. **Source:** found while implementing S12-14 (2026-09-30), added on request. **Verified**
 three times in that item.
 
 **The problem.** Tests that run a helper from their own layout copy it by hand: a fake
