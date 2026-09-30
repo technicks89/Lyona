@@ -111,7 +111,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-quickshell-controlcenter" \
 	"$repo/scripts/dwm-quickshell-controls" "$repo/scripts/dwm-quickshell-network" \
 	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-diagnostics" \
-	"$repo/scripts/dwm-lock" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-watchdog.sh" \
+	"$repo/scripts/dwm-lock" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-watchdog.sh" "$repo/scripts/dwm-trust.sh" \
 	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xsettings-config.sh" \
 	"$data_home/checkout/scripts/"
 

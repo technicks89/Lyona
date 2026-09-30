@@ -8,6 +8,8 @@ lyona_lib=$SCRIPT_DIR
 [[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-trust.sh
+. "$lyona_lib/dwm-trust.sh"
 COMMAND_TIMEOUT=${DWM_HEALTH_COMMAND_TIMEOUT:-12}
 
 usage() {
@@ -175,7 +177,7 @@ find_sibling_command() {
 
 trusted_system_command() {
 	local name=$1
-	local candidate resolved owner
+	local candidate resolved
 
 	candidate=$(command -v "$name" 2>/dev/null || true)
 	if [[ ${DWM_HEALTH_TEST_ROOT:-0} == 1 && -n $candidate && -x $candidate ]]; then
@@ -197,27 +199,8 @@ trusted_system_command() {
 	# list, not the XDG rule in dwm-xdg.sh (S12-14).
 	"${HOME:-/nonexistent}"/* | "${XDG_DATA_HOME:-${HOME:-/nonexistent}/.local/share}"/* | "${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}"/*) return 1 ;;
 	esac
-	trusted_parent_chain "$resolved" || return 1
-	owner=$(stat -c %u -- "$resolved" 2>/dev/null || printf 1)
-	[[ $owner == 0 ]] || return 1
-	find "$resolved" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q . || return 1
+	trusted_file "$resolved" || return 1
 	printf '%s\n' "$resolved"
-}
-
-trusted_parent_chain() {
-	local candidate=$1
-	local parent=${candidate%/*}
-	local owner
-
-	while :; do
-		[[ -d $parent && ! -L $parent ]] || return 1
-		owner=$(stat -c %u -- "$parent" 2>/dev/null || printf 1)
-		[[ $owner == 0 ]] || return 1
-		find "$parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null | grep -q . || return 1
-		[[ $parent == / ]] && return 0
-		parent=${parent%/*}
-		[[ -n $parent ]] || parent=/
-	done
 }
 
 privilege_mode() {
@@ -778,7 +761,7 @@ scan_system() {
 }
 
 trusted_system_helper() {
-	local candidate resolved owner
+	local candidate resolved
 	local candidates=()
 
 	if [[ ${DWM_HEALTH_TEST_ROOT:-0} != 1 ]]; then
@@ -795,10 +778,7 @@ trusted_system_helper() {
 		# deny list, not the XDG rule in dwm-xdg.sh (S12-14).
 		"${HOME:-/nonexistent}"/* | "${XDG_DATA_HOME:-${HOME:-/nonexistent}/.local/share}"/* | "${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}"/*) continue ;;
 		esac
-		trusted_parent_chain "$resolved" || continue
-		owner=$(stat -c %u -- "$resolved" 2>/dev/null || printf 1)
-		[[ $owner == 0 ]] || continue
-		find "$resolved" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q . || continue
+		trusted_file "$resolved" || continue
 		printf '%s\n' "$resolved"
 		return 0
 	done

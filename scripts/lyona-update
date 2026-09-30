@@ -44,6 +44,8 @@ done
 
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-trust.sh
+. "$lyona_lib/dwm-trust.sh"
 lyona_xdg_dirs
 
 config_file=$config_home/lyona/update.conf
@@ -510,16 +512,14 @@ cmd_check() {
 # --- shared helpers for apply / rollback ------------------------------
 
 trusted_root_helper() {
-	local candidate canonical derived=
+	local candidate derived=
 	derived=${script_dir%/bin}/libexec/lyona/$root_helper_name
 	for candidate in "$derived" /usr/local/libexec/lyona/$root_helper_name \
 		/usr/libexec/lyona/$root_helper_name; do
 		[[ -n $candidate ]] || continue
-		canonical=$(readlink -f -- "$candidate" 2>/dev/null || true)
-		[[ -n $canonical && $canonical == "$candidate" ]] || continue
-		[[ -f $candidate && ! -L $candidate && -x $candidate ]] || continue
-		[[ $(stat -c %u -- "$candidate") == 0 ]] || continue
-		find "$candidate" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q . || continue
+		# trusted_file also checks the directory chain, which this lookup
+		# used to skip (Sync Sprint 12 S12-14).
+		trusted_file "$candidate" || continue
 		printf '%s\n' "$candidate"
 		return 0
 	done

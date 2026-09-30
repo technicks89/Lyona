@@ -373,7 +373,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-xsettings-config.sh" \
 	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
 	"$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-watchdog.sh" \
-	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xdg.sh" \
+	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
 	"$data_home/checkout/scripts/"
 
 appearance_failure_fixture=$work/appearance-snapshot-failure

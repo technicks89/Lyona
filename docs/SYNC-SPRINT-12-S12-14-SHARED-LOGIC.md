@@ -286,6 +286,57 @@ from the text above:
    - Mutation: flip one character in a root helper's copy, and the contract test
      fails.
 
+**Implemented (2026-09-29, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **Two more copies than the survey counted.** `lyona-update`'s
+  `trusted_root_helper` and `dwm-settings-display`'s repeated `trusted_file`'s
+  checks inline in their loops. Both now call `trusted_file`.
+  - **Found: `lyona-update`'s copy never checked the directory chain.** It
+    checked the file's owner and mode, but not that every directory above it
+    is root-owned and not writable by others. With a custom `PREFIX`, it could
+    have handed `pkexec` a root helper in a user-writable directory.
+    `trusted_file` closes that.
+- **`dwm-system-health`'s two wrappers** (`trusted_system_command`,
+  `trusted_system_helper`) resolve symlinks first and keep their deny list.
+  Their owner, mode and chain checks on the resolved path are now
+  `trusted_file "$resolved"`. That adds an executable check to the helper
+  lookup, which only checked `-f` before.
+- **`dwm-settings-provider`'s `trusted_installed_file`** was `trusted_file`
+  under another name. Its three calls use the library.
+- **The pinned copy** in each root helper sits between `# BEGIN dwm-trust.sh`
+  and `# END dwm-trust.sh`, after a three-line header. It is the library's text
+  from `# Every directory from PATH's parent up to` to the end. The root helpers
+  gain the stricter `stat` failure handling and the `--` separators with it.
+- **Tests that stage their own copies** of the provider, health or display
+  helper gained `dwm-trust.sh`: `test-settings.sh`,
+  `test-quickshell-settings-xvfb.sh`, `-health-xvfb.sh` and
+  `-large-surfaces-xvfb.sh`.
+  - **Found: `test-quickshell-system-management-xvfb.sh` ran broken helpers.**
+    It passed after step 1 without `dwm-xdg.sh` beside its copies, so the
+    provider, health and display helpers it stages were failing at load, and
+    the shell showed them as unavailable without failing the test. It now
+    stages both libraries.
+  - A guard against that whole class (a staged helper whose libraries are
+    missing) is not added here; it is noted for S12-14's verification.
+- **Contract test:**
+  - each root helper's pinned text must equal the library's;
+  - neither function may be defined anywhere else.
+
+  Mutation-checked: `-perm /022` changed to `/002` in `lyona-update-root`'s
+  copy, and a stray `trusted_file` in another script, each fail it.
+- **Source pins** in `test-system-health.sh` and `test-settings.sh` named the
+  old functions; they now pin the `trusted_file` calls.
+- **Root helpers, run as root:**
+  - `check-settings-display-security` and `check-update-root-backups` skip
+    outside a container, so they were run as S10-03 documents: `docker run
+    --rm --network none -e DWM_SECURITY_CONTAINER=1` on the CI image, with the
+    working tree mounted read-only. Both passed.
+  - `check-shell-contracts`, `check-system-health` and `check-settings` also
+    pass in the CI container (`scripts/ci-local.sh --each`).
+- **`scripts/run-tests`:** PASS, in one run. The watcher-lifetime test passed
+  this time.
+
 ### Step 3 -- `lyona-toml`, the one reader (part 1, the tool)
 
 1. `tomlparser.c` records truncation. `TomlDoc` gains `int truncated`, set where

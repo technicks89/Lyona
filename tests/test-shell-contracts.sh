@@ -172,4 +172,31 @@ if env -i /bin/sh -c '. "$1"; lyona_xdg_dirs; exit 0' sh "$repo/scripts/dwm-xdg.
 	fail 'lyona_xdg_dirs without HOME did not fail'
 fi
 
+# ── The trust checks are defined once ────────────────────────────────────
+#
+# Sync Sprint 12 S12-14 (D-21): dwm-trust.sh holds trusted_parent_chain and
+# trusted_file. The two root helpers source nothing at run time, so each keeps a
+# verbatim copy between its BEGIN and END markers, which must equal the
+# library's functions exactly.
+trust_lib=$repo/scripts/dwm-trust.sh
+sed -n "/^# Every directory from PATH's parent up to/,\$p" "$trust_lib" >"$work/trust-lib"
+[ -s "$work/trust-lib" ] || fail 'could not read the functions from dwm-trust.sh'
+for root_helper in lyona-update-root dwm-settings-display-root; do
+	sed -n '/^# BEGIN dwm-trust.sh/,/^# END dwm-trust.sh$/p' "$repo/scripts/$root_helper" |
+		sed '1,/^# tests\/test-shell-contracts.sh fails if this copy differs/d; $d' >"$work/trust-copy"
+	cmp -s "$work/trust-lib" "$work/trust-copy" || {
+		printf '%s: %s trust checks differ from dwm-trust.sh:\n' "$test_name" "$root_helper" >&2
+		diff "$work/trust-lib" "$work/trust-copy" >&2 || true
+		exit 1
+	}
+done
+for helper in trusted_parent_chain trusted_file; do
+	duplicate=$(grep -l "^$helper() {" "$repo"/scripts/* 2>/dev/null |
+		grep -vE '/(dwm-trust\.sh|lyona-update-root|dwm-settings-display-root)$' || true)
+	if [ -n "$duplicate" ]; then
+		printf '%s: %s is defined outside dwm-trust.sh:\n%s\n' "$test_name" "$helper" "$duplicate" >&2
+		exit 1
+	fi
+done
+
 printf '%s\n' 'Shell contracts: PASS'

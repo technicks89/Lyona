@@ -104,6 +104,7 @@ INSTALL_LIBS = \
 	scripts/dwm-paths.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-utils.sh \
+	scripts/dwm-trust.sh \
 	scripts/dwm-watchdog.sh \
 	scripts/dwm-xdg.sh \
 	scripts/dwm-xsettings-config.sh \

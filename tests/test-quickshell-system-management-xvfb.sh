@@ -113,6 +113,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
 	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-simple-watch.sh" \
 	"$repo/scripts/dwm-xsettings-config.sh" "$repo/scripts/dwm-xkbset" \
+	"$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
 	"$data_home/checkout/scripts/"
 
 # A stub dwm-system-management: one pending kernel update (exercising the

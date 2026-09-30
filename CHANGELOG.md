@@ -17,6 +17,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- One copy of the trust checks, S12-14 step 2 (Sync Sprint 12 S12-14).
+  - `trusted_parent_chain` and `trusted_file`, which decide whether a file is safe to run with more rights than
+    the caller, live in the new `dwm-trust.sh` (in `PREFIX/lib/lyona`). `dwm-settings-display`,
+    `dwm-system-health`, `dwm-settings-provider` and `lyona-update` source it; five hand-written copies are gone.
+  - The two root helpers, which source nothing at run time, keep a verbatim copy that a test pins to the library.
+  - **Fixed:** `lyona-update` checked its root helper's own owner and mode but not the directories above it. It
+    now refuses a helper in a directory an ordinary user can write to, like the other callers.
 - XDG directories from one place, S12-14 step 1 (Sync Sprint 12 S12-14).
   - 29 scripts that computed `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME` inline now
     call `lyona_xdg_dirs` from the new `dwm-xdg.sh` (in `PREFIX/lib/lyona`). It uses a set value only when it is
