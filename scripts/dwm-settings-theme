@@ -413,6 +413,11 @@ prepare_active_theme() {
 		append_managed_theme "$target"
 	fi
 	chmod "$mode" -- "$prepared_theme_file"
+	# The edit keeps the file's own layout, so it is done here, line by line;
+	# whether dwm reads the result as intended is checked with dwm's own parser
+	# (Sync Sprint 12 S12-14, D-20).
+	[[ $(lyona_toml get "$prepared_theme_file" active theme 2>/dev/null) == "$target" ]] ||
+		die "the edited theme file does not select $target as dwm reads it"
 	prepared_theme_hash=$(file_hash "$prepared_theme_file")
 }
 

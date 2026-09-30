@@ -151,24 +151,16 @@ if [[ $RUNTIME_ONLY_EXPLICIT == false ]]; then
 	fi
 fi
 
+# themes.toml is read once, by lyona-toml on dwm's own parser, so a file means
+# the same here as to dwm (Sync Sprint 12 S12-14, D-20). Loaded here, in this
+# shell: toml_get runs in $(...) subshells, which inherit the map.
+lyona_toml_load "$THEMES_FILE" || [[ $? == 4 ]] || {
+	echo "theme-apply: cannot read $THEMES_FILE" >&2
+	exit 1
+}
+
 toml_get() {
-	local section="$1" key="$2" file="$3"
-	awk -v sec="[$section]" -v key="$key" '
-	        /^[[:space:]]*\[/ {
-	            header = $0
-	            sub(/^[[:space:]]*/, "", header)
-	            sub(/[[:space:]]*#.*/, "", header)
-	            sub(/[[:space:]]+$/, "", header)
-	            in_sec = (header == sec)
-	        }
-        in_sec && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-            sub(/^[^=]*=[[:space:]]*/, "")
-            gsub(/"/, "")
-            gsub(/[[:space:]]+#.*$/, "")
-            sub(/[[:space:]]+$/, "")
-            print; exit
-        }
-    ' "$file"
+	lyona_toml_value "$1" "$2"
 }
 
 THEME_NAME="$(toml_get "active" "theme" "$THEMES_FILE")"

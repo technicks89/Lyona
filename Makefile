@@ -617,6 +617,13 @@ check-quickshell-plain-text-xvfb: all
 
 # Sync Sprint 12 S12-05: unit tests for the TOML parser dwm uses for all three
 # runtime files.
+# Sync Sprint 12 S12-14: every themes.toml reader sees what dwm sees.
+.PHONY: check-theme-readers
+check-theme-readers: ${TOML_TOOL}
+	status=0; tests/test-theme-readers.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 # Sync Sprint 12 S12-14: lyona-toml, the scripts' reader on dwm's parser.
 .PHONY: check-lyona-toml
 check-lyona-toml: ${TOML_TOOL}
@@ -1159,6 +1166,7 @@ check:
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser
 	$(MAKE) check-lyona-toml
+	$(MAKE) check-theme-readers
 	$(MAKE) check-quickshell-plain-text
 	$(MAKE) check-quickshell-plain-text-xvfb
 	$(MAKE) check-dwm-watchdog

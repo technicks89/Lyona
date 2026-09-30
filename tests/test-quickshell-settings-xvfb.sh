@@ -269,6 +269,8 @@ mkdir -p "$config_home/quickshell" "$config_home/lyona" \
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
+# The checkout layout: the built TOML reader sits beside scripts/ (S12-14).
+cp "$repo/lyona-toml" "$data_home/checkout/scripts/.."
 chmod 700 "$runtime_storage"
 cat >"$fixture_feh" <<'EOF'
 #!/bin/sh

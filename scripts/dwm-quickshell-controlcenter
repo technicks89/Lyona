@@ -1446,45 +1446,33 @@ info() {
 	printf 'Theme\t%s\n' "$(active_theme)"
 }
 
-active_theme() {
-	awk '
-		{
-			header = $0
-			sub(/^[[:space:]]*/, "", header)
-			sub(/[[:space:]]*#.*/, "", header)
-			sub(/[[:space:]]+$/, "", header)
-		}
-		header == "[active]" { active = 1; next }
-		header ~ /^\[/ { active = 0 }
-		active && $1 == "theme" {
-			value = $0
-			sub(/^[^=]*=[[:space:]]*/, "", value)
-			sub(/[[:space:]]*#.*/, "", value)
-			gsub(/"/, "", value)
-			gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-			print value
-			exit
-		}
-	' "$(config_file themes.toml)"
+# themes.toml through lyona-toml, on dwm's own parser (Sync Sprint 12 S12-14,
+# D-20): the POSIX form of dwm-paths.sh's lyona_toml, installed beside the
+# libraries or built beside a checkout's scripts/.
+lyona_toml() {
+	if [ -x "$lyona_lib/lyona-toml" ]; then
+		"$lyona_lib/lyona-toml" "$@"
+	else
+		"$lyona_lib/../lyona-toml" "$@"
+	fi
 }
 
+active_theme() {
+	lyona_toml get "$(config_file themes.toml)" active theme 2>/dev/null || true
+}
+
+# The [theme.<id>] sections that hold at least one entry, in file order.
 themes() {
 	active=$(active_theme)
-	awk -v active="$active" '
-		{
-			header = $0
-			sub(/^[[:space:]]*/, "", header)
-			sub(/[[:space:]]*#.*/, "", header)
-			sub(/[[:space:]]+$/, "", header)
-		}
-		header ~ /^\[theme\.[^]]+\]$/ {
-			name = header
-			sub(/^\[theme\./, "", name)
-			sub(/\]$/, "", name)
+	lyona_toml dump "$(config_file themes.toml)" 2>/dev/null | awk -F'\t' -v active="$active" '
+		$2 == -1 && $1 ~ /^theme\./ {
+			name = $1
+			sub(/^theme\./, "", name)
+			if (seen[name]++) next
 			status = name == active ? "active" : "available"
 			printf "%s\t%s\n", status, name
 		}
-	' "$(config_file themes.toml)"
+	'
 }
 
 theme_set() {

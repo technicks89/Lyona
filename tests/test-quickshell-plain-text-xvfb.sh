@@ -59,6 +59,8 @@ cp -a "$repo/scripts" "$home/.local/share/checkout/scripts"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$home/.local/share/checkout/scripts"
+# The checkout layout: the built TOML reader sits beside scripts/ (S12-14).
+cp "$repo/lyona-toml" "$home/.local/share/checkout/scripts/.."
 
 # The listener: every request is logged to $work/requests.
 python3 - "$work/port" "$work/requests" <<'PY' &

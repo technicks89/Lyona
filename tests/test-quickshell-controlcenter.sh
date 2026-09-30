@@ -258,7 +258,7 @@ grep -Fq 'theme is unavailable, invalid, or the source is unsafe to mutate: miss
 # falls back to without a user file, in PREFIX/share/lyona/config.
 mkdir -p "$work/prefix/bin" "$work/prefix/lib/lyona" "$work/prefix/share/lyona/config"
 cp "$repo/scripts/dwm-quickshell-controlcenter" "$work/prefix/bin/"
-cp "$repo/scripts/dwm-watchdog.sh" "$repo/scripts/dwm-xdg.sh" "$work/prefix/lib/lyona/"
+cp "$repo/scripts/dwm-watchdog.sh" "$repo/scripts/dwm-xdg.sh" "$repo/lyona-toml" "$work/prefix/lib/lyona/"
 cp "$work/data/lyona/config/themes.toml" "$work/prefix/share/lyona/config/"
 rm "$work/config/lyona/themes.toml"
 installed_themes=$(HOME="$work/home" XDG_CONFIG_HOME="$work/config" \

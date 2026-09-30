@@ -482,6 +482,87 @@ from the text above:
      through dwm's own `load_themes_toml` and every script, and requires the
      same active theme and colours. It fails against `main`.
 
+**Implemented (2026-09-30, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **Nine readers, not seven.** `lyona-plymouth-theme` and
+  `lyona-console-theme` each carry a copy of the same awk reader. Neither was
+  in the survey.
+- **One load, not one process per value.** `theme-apply.sh` and
+  `lyona-gtk-theme` would have run `lyona-toml get` about 25 times each. The
+  new `lyona_toml_load` (in `dwm-paths.sh`) runs one `dump` into a map, and
+  `lyona_toml_value` reads it:
+  - the first plain entry of a key wins, as in dwm;
+  - fields are split by parameter expansion, since `IFS` splitting would
+    collapse an empty top-level section;
+  - values are unescaped with `%b`, which is exact because the dump doubles
+    every backslash.
+
+  Each script loads once, in its own shell, since `toml_get` runs in
+  `$(...)`.
+- **`lyona-gtk-theme`'s output is byte-identical** to `main`'s for all 17
+  generated themes. `theme_ids` now skips a `[theme.x]` header that holds no
+  entries, which used to produce an empty theme.
+- **The Control Center**'s `active_theme` and `themes` read through a POSIX
+  `lyona_toml`. Its output matches `main`'s on the shipped file.
+- **The appearance provider, decided with the user** (the plan's "the Bash
+  grammar goes" did not hold: `parse_themes` is also the linter behind Settings'
+  diagnostics, which the dump cannot express):
+  - `parse_themes` stays, as the linter.
+  - `apply_dwm_reading` then takes every value from `lyona-toml`, but only for
+    a file dwm would apply: one whose `[active] theme` names a theme dwm also
+    reads.
+  - For such a file it lifts the grammar-only "invalid theme" marks, turns a
+    grammar-only "unavailable" into "partial", and adds the themes the linter
+    skipped after stopping early.
+  - `validate_themes`' colour and completeness checks are unchanged. A file dwm
+    would not apply (such as an unterminated array that swallows `[active]`)
+    keeps the linter's verdict.
+  - If `lyona-toml` cannot run, the linter's view stands.
+- **Four `test-dwm-settings-appearance.sh` cases changed to the new contract**,
+  each keeping its warning:
+  - `[theme.dracula] trailing`, which dwm reads as `[theme.dracula]`;
+  - an array closed on the line it opens, where the test assumed dwm's parser
+    got stuck (S12-05 fixed that);
+  - a 4095-byte line, where dwm splits it and reads on;
+  - a duplicate `[theme.nord]`, where dwm keeps the first values.
+
+  The split-duplicate case still ends in recovery, since the merged theme is
+  incomplete.
+- **`dwm-settings-theme`'s editor** now fails the edit if `lyona-toml get` of
+  the edited file does not name the target. The test installed layouts for
+  `test-dwm-settings-theme.sh` and `-appearance.sh` gained `lyona-toml`.
+- **The readers that stay** are pinned in the new test, and their comments say
+  why:
+  - `lyona-plymouth-theme` and `lyona-console-theme` run only in
+    `build-lyona-arch-iso.sh`, on the shipped file, where nothing builds
+    `lyona-toml`;
+  - the two `Makefile` awks read the shipped file at install time.
+- **New `tests/test-theme-readers.sh`** (`make check-theme-readers`, in
+  `make check`):
+  - three `[active]` forms (no spaces, a trailing comment, a commented
+    header) must give the Control Center, Settings and `theme-apply.sh`
+    the active theme `lyona-toml` reads. It fails against `main`: "the
+    control center read '', dwm reads 'dracula'";
+  - the two generators' `toml_get` must return `lyona-toml`'s value for
+    every plain entry of every shipped theme. Mutation-checked: without the
+    quote-stripping `gsub`, the plymouth pin fails;
+  - the Makefile's id list must equal the dump's.
+- **Checks:** PASS: `check-theme-readers`, `check-lyona-toml`, `check-shell`,
+  `check-format`, `check-shell-contracts` and `check-install-manifest`. The
+  existing theme-apply, GTK, Control Center, theme and appearance tests pass.
+- **Tests that stage their own helpers needed the tool too:**
+  - `test-quickshell-controlcenter.sh`'s installed layout;
+  - the fake checkouts of the health, large-surfaces, Settings,
+    system-management and plain-text Xvfb tests, plus the watcher-lifetime and
+    idle-watcher tests, which now put `lyona-toml` beside `scripts/`.
+- **Found:** without the tool, two of the new readers fail quietly. The Control
+  Center lists no themes, and the appearance provider keeps the linter's view;
+  `theme-apply.sh` and `dwm-settings-theme` fail loudly. That is the same class
+  as step 2's finding, a staged helper whose dependency is missing, and it goes
+  to the same guard in S12-14's verification.
+- **`scripts/run-tests`:** PASS, in one run.
+
 ### Step 5 -- one preview state machine for font and toolkit (part 2, shell)
 
 1. New `scripts/dwm-preview.sh`, a Bash library in `INSTALL_LIBS`, holding the

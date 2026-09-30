@@ -17,6 +17,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The scripts read `themes.toml` as dwm does, S12-14 step 4 (Sync Sprint 12 S12-14, D-20).
+  - `theme-apply.sh`, `lyona-gtk-theme`, the Control Center and the Settings appearance provider read `themes.toml`
+    through `lyona-toml`, dwm's own parser, instead of three separate awk readers and a Bash one. A file now means
+    the same to all of them as to dwm. Before, for example, the Control Center missed `theme="dracula"` written
+    without spaces.
+  - **Behaviour change in Settings:** when dwm would apply a `themes.toml`, Settings no longer rejects it over
+    something only its own stricter checker objected to. Four cases changed:
+    - a header with trailing text (`[theme.dracula] trailing`);
+    - an array closed on the line it opens;
+    - an over-long line;
+    - a duplicate theme section.
+
+    Each is still reported, with its line number, but as a warning. Colour and completeness checks are unchanged,
+    and a file dwm would not apply keeps its old verdict.
+  - `dwm-settings-theme` still edits `themes.toml` line by line, keeping its layout. It now also checks, with dwm's
+    parser, that the edited file selects the intended theme.
+  - The ISO-build boot splash and console palette generators and the Makefile keep their own readers, because they
+    run where `lyona-toml` may not be built yet. A test pins that they read the shipped file exactly as dwm does.
 - `lyona-toml`, one TOML reader for scripts, S12-14 step 3 (Sync Sprint 12 S12-14, D-20).
   - A small tool built from dwm's own parser and installed in `PREFIX/lib/lyona`. `lyona-toml dump FILE` prints one
     entry per line (section, table index, key and value, tab-separated, with tabs and newlines escaped), and

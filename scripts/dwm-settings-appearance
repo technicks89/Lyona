@@ -462,6 +462,81 @@ valid_color() {
 	[[ $1 =~ ^#[0-9A-Fa-f]{6}$ ]]
 }
 
+# What dwm reads decides the snapshot (Sync Sprint 12 S12-14, D-20, asked of the
+# user directly): parse_themes above is the linter, which reports what it finds
+# with line numbers, and this replaces its values with lyona-toml's, dwm's own
+# parser. When dwm would apply the file (it reads an [active] theme naming a
+# theme it also read), a theme dwm reads is never invalid, nor the provider
+# unavailable, on the linter's grammar alone: those findings stay as warnings
+# (partial). A file dwm would not apply keeps the linter's verdict. The colour
+# checks in validate_themes still apply, since they are about content.
+apply_dwm_reading() {
+	local file=$1 state_before=$2 dump status=0 line section index key parsed id raw
+	local dwm_active=
+	local -A dwm_seen=() dwm_themes=() dwm_value=()
+	local -a dwm_order=()
+
+	dump=$(lyona_toml dump "$file" 2>/dev/null) || status=$?
+	[[ $status == 0 || $status == 4 ]] || return 0
+	while IFS= read -r line; do
+		section=${line%%$'\t'*}
+		line=${line#*$'\t'}
+		index=${line%%$'\t'*}
+		line=${line#*$'\t'}
+		key=${line%%$'\t'*}
+		parsed=${line#*$'\t'}
+		[[ $index == -1 ]] || continue
+		case $section in
+		theme.*)
+			id=${section#theme.}
+			if [[ ! $id =~ ^[A-Za-z0-9._-]+$ ]] || ((${#id} > max_theme_name_length)); then
+				continue
+			fi
+			theme_key_supported "$key" || continue
+			;;
+		colors)
+			id=$legacy_theme_id
+			theme_key_supported "$key" || continue
+			;;
+		active)
+			id=__active
+			[[ $key == theme ]] || continue
+			;;
+		appearance) id=__appearance ;;
+		*) continue ;;
+		esac
+		raw=$id$key_separator$key
+		[[ -z ${dwm_seen[$raw]+x} ]] || continue
+		dwm_seen[$raw]=1
+		printf -v parsed '%b' "$parsed"
+		dwm_value[$raw]=$parsed
+		[[ $id != __active ]] || dwm_active=$parsed
+		if [[ $id != __* && -z ${dwm_themes[$id]+x} ]]; then
+			dwm_themes[$id]=1
+			dwm_order+=("$id")
+		fi
+	done <<<"$dump"
+	[[ -n $dwm_active && -n ${dwm_themes[$dwm_active]+x} ]] || return 0
+
+	for raw in "${!dwm_value[@]}"; do
+		value[$raw]=${dwm_value[$raw]}
+	done
+
+	for id in "${!theme_invalid[@]}"; do
+		[[ -z ${dwm_themes[$id]+x} ]] || unset 'theme_invalid[$id]'
+	done
+	# The linter stops early on some findings; dwm read on past them.
+	for id in "${dwm_order[@]}"; do
+		[[ -z ${section_count[$id]+x} ]] || continue
+		((${#theme_order[@]} < max_theme_count)) || break
+		section_count[$id]=1
+		theme_order+=("$id")
+	done
+	if [[ $provider_state == unavailable && $state_before != unavailable ]]; then
+		provider_state=partial
+	fi
+}
+
 validate_themes() {
 	local theme key color dark first_missing missing_count invalid_count
 	local -a keys_to_validate=()
@@ -1825,11 +1900,14 @@ emit_integrations() {
 
 snapshot() {
 	local active_state=unresolved selected_label=none resolved_label=none source_fd source_snapshot
+	local provider_state_before
 	select_source
 	if [[ -n $source_file ]]; then
 		if exec {source_fd}<"$source_file"; then
 			source_snapshot=/proc/self/fd/$source_fd
+			provider_state_before=$provider_state
 			parse_themes "$source_snapshot"
+			apply_dwm_reading "$source_snapshot" "$provider_state_before"
 			exec {source_fd}<&-
 			validate_themes
 			resolve_active_theme

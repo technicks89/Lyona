@@ -34,9 +34,10 @@ EOF
 	exit 2
 }
 
-# Copied from lyona-gtk-theme, which copied it from theme-apply.sh: none of
-# the three has a sourceable form, and a shared file would need an install
-# path and a runtime lookup for no gain.
+# Its own reader, not lyona-toml (Sync Sprint 12 S12-14): this runs only in
+# build-lyona-arch-iso.sh, on the shipped config/themes.toml, where nothing
+# builds lyona-toml first. tests/test-theme-readers.sh pins that it reads every
+# shipped theme value as lyona-toml, and so dwm, does.
 toml_get() {
 	local section="$1" key="$2" file="$3"
 	awk -v sec="[$section]" -v key="$key" '
