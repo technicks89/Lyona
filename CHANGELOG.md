@@ -17,6 +17,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- One preview countdown in the shell, S12-14 step 6 (Sync Sprint 12 S12-14).
+  - The five "reverts in N seconds" countdowns (theme, wallpaper, font and toolkit previews in Appearance, and the
+    display and input previews) use one new component, `core/PreviewCountdown.qml`, instead of five hand-written
+    timers. When each runs, and what happens when it reaches zero, is unchanged.
 - One preview state machine for font and toolkit, S12-14 step 5 (Sync Sprint 12 S12-14).
   - The preview, keep, revert and automatic-rollback machinery of the Settings font and toolkit pages
     (`dwm-settings-font`, `dwm-settings-toolkit`) lives once, in the new `dwm-preview.sh` (in `PREFIX/lib/lyona`).

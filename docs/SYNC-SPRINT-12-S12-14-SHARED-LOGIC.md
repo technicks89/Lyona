@@ -666,6 +666,47 @@ exists today"). If two or more surfaces run the same countdown, it goes into one
 
 If only `AppearanceModel` does, this step records that and changes nothing.
 
+**Implemented (2026-09-30, working tree, nothing committed).**
+
+- **The survey above was wrong, and the review was right.** Searching for
+  timers with a countdown-like `id` found none, because none has an `id`. By
+  what they do, there are five countdown timers:
+  - theme, wallpaper, font and toolkit in `AppearanceModel.qml`;
+  - one shared by the display and input previews in `SettingsModel.qml`.
+
+  Each ticks a "seconds left" property down once a second while its preview is
+  active, and at zero asks its helper what happened, since the helper owns the
+  deadline and the rollback.
+- **New `core/PreviewCountdown.qml`:** a `Timer` with `remaining`, `active`
+  and an `expired` signal. It runs while active and above zero, clamps at zero,
+  and emits `expired` there.
+  - Each model's property became an `alias` to its countdown's `remaining`,
+    so every existing assignment and reader works unchanged.
+  - Each model's zero handler became its `onExpired`.
+  - `quickshell-qmllint` maps `qs.core` from the directory, so the new file
+    needed no registration.
+- **Gating as before:**
+  - the wallpaper, font and toolkit countdowns stop while Settings is hidden;
+  - the theme countdown does not: at zero it also refreshes the snapshot,
+    whose colours `Theme.applyAppearanceColors` gives the whole shell;
+  - the display/input countdown ran whenever time was left (`active: true`).
+- **The step's premise of `token`, `start()`, `keep()` and `revert()` was not
+  needed:** the helpers own those. The shared part is only the countdown.
+- **Tests:**
+  - `test-quickshell-appearance-model.sh` pinned the old timer text
+    (`root.fontPreviewRemaining--` and the `running:` lines). The pins now
+    check each countdown's `active:` gate and its alias.
+  - Runtime: `test-quickshell-settings-xvfb.sh` checks, in a real Quickshell,
+    that the font and wallpaper countdowns drop after a second, and that the
+    theme's reads 0 once done. It passes, as does `test-settings.sh`. Closed
+    Settings idled at 0.067% CPU.
+- **Checks:**
+  - `quickshell-qmllint` on the three files gives only the existing
+    `QProcess::ExitStatus` warning.
+  - Every `make check` target passes except the Sprint 13 flake (S13-01,
+    `#197`, the same `xprop -spy` survivor): the first 63 in a full run, and the
+    59 after the lifetime test run directly.
+
 ### Step 7 -- resident watchers on `WatchedProcess` (part 4)
 
 1. `WatchedProcess.qml` gains what the line-parsing watchers need:

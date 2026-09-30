@@ -98,7 +98,7 @@ Scope {
         || root.inputActionBusy
     property string previewKind: ""
     property string previewToken: ""
-    property int previewSeconds: 0
+    property alias previewSeconds: previewCountdown.remaining
     property int displayPreviewStatusAttempts: 0
 	property int inputPreviewStatusAttempts: 0
     property bool previewRollbackFailed: false
@@ -1129,16 +1129,14 @@ Scope {
         }
     }
 
-    Timer {
-        interval: 1000
-        repeat: true
-        running: root.previewSeconds > 0
-        onTriggered: {
-            root.previewSeconds = Math.max(0, root.previewSeconds - 1);
-            if (root.previewSeconds === 0) {
-				if (root.previewKind === "display") root.pollDisplayPreviewStatus();
-				else root.pollInputPreviewStatus();
-            }
+    // The display and input previews share one countdown: only one runs at a
+    // time, and previewKind says which.
+    PreviewCountdown {
+        id: previewCountdown
+        active: true
+        onExpired: {
+            if (root.previewKind === "display") root.pollDisplayPreviewStatus();
+            else root.pollInputPreviewStatus();
         }
     }
 

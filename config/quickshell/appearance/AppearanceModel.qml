@@ -82,7 +82,7 @@ Scope {
     property string wallpaperPreviewToken: ""
     property string wallpaperPreviewPath: ""
     property string wallpaperPreviewFit: "fill"
-    property int wallpaperPreviewRemaining: 0
+    property alias wallpaperPreviewRemaining: wallpaperCountdown.remaining
     property string wallpaperPreviewDetail: ""
     property string wallpaperActionKind: ""
     property string wallpaperActionToken: ""
@@ -109,7 +109,7 @@ Scope {
     property string fontPreviewToken: ""
     property string fontPreviewFamily: ""
     property real fontPreviewScale: 1.0
-    property int fontPreviewRemaining: 0
+    property alias fontPreviewRemaining: fontCountdown.remaining
     property string fontPreviewDetail: ""
     property string fontActionKind: ""
     property string fontActionToken: ""
@@ -133,7 +133,7 @@ Scope {
     property string toolkitPreviewToken: ""
     property string toolkitPreviewCapability: ""
     property string toolkitPreviewValue: ""
-    property int toolkitPreviewRemaining: 0
+    property alias toolkitPreviewRemaining: toolkitCountdown.remaining
     property string toolkitPreviewDetail: ""
     property string toolkitActionKind: ""
     property string toolkitActionCapability: ""
@@ -159,7 +159,7 @@ Scope {
     property string previewState: "none"
     property string previewToken: ""
     property string previewTheme: ""
-    property int previewRemaining: 0
+    property alias previewRemaining: themeCountdown.remaining
     property string previewDetail: ""
     property int previewZeroRetryAttempts: 0
     property bool previewStatusParsed: false
@@ -1918,16 +1918,10 @@ Scope {
         onRunningChanged: if (!running && root.toolkitBusy) root.finishToolkitAction()
     }
 
-    Timer {
-        interval: 1000
-        repeat: true
-        running: root.settingsVisible && root.toolkitPreviewState === "active"
-            && root.toolkitPreviewRemaining > 0
-        onTriggered: {
-            root.toolkitPreviewRemaining--;
-            if (root.toolkitPreviewRemaining === 0)
-                Qt.callLater(root.refreshToolkitStatus);
-        }
+    PreviewCountdown {
+        id: toolkitCountdown
+        active: root.settingsVisible && root.toolkitPreviewState === "active"
+        onExpired: Qt.callLater(root.refreshToolkitStatus)
     }
 
     Timer {
@@ -1937,16 +1931,10 @@ Scope {
         onTriggered: root.refreshPreviewStatus()
     }
 
-    Timer {
-        interval: 1000
-        repeat: true
-        running: root.settingsVisible && root.wallpaperPreviewState === "active"
-            && root.wallpaperPreviewRemaining > 0
-        onTriggered: {
-            root.wallpaperPreviewRemaining--;
-            if (root.wallpaperPreviewRemaining === 0)
-                Qt.callLater(root.refreshWallpaperStatus);
-        }
+    PreviewCountdown {
+        id: wallpaperCountdown
+        active: root.settingsVisible && root.wallpaperPreviewState === "active"
+        onExpired: Qt.callLater(root.refreshWallpaperStatus)
     }
 
     Timer {
@@ -1995,27 +1983,20 @@ Scope {
         onTriggered: if (root.settingsVisible) root.refreshAll()
     }
 
-    Timer {
-        interval: 1000
-        repeat: true
-        running: root.previewState === "active" && root.previewRemaining > 0
-        onTriggered: {
-            root.previewRemaining--;
-            if (root.previewRemaining === 0) {
-                Qt.callLater(root.refreshPreviewStatus);
-                Qt.callLater(root.refreshSnapshot);
-            }
+    // Not gated on visibility, unlike the other three, as its Timer was not: at
+    // zero it also refreshes the snapshot, whose colours the whole shell uses.
+    PreviewCountdown {
+        id: themeCountdown
+        active: root.previewState === "active"
+        onExpired: {
+            Qt.callLater(root.refreshPreviewStatus);
+            Qt.callLater(root.refreshSnapshot);
         }
     }
 
-    Timer {
-        interval: 1000
-        repeat: true
-        running: root.settingsVisible && root.fontPreviewState === "active"
-            && root.fontPreviewRemaining > 0
-        onTriggered: {
-            root.fontPreviewRemaining--;
-            if (root.fontPreviewRemaining === 0) Qt.callLater(root.refreshFontStatus);
-        }
+    PreviewCountdown {
+        id: fontCountdown
+        active: root.settingsVisible && root.fontPreviewState === "active"
+        onExpired: Qt.callLater(root.refreshFontStatus)
     }
 }
