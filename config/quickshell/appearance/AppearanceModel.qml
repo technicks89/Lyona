@@ -1699,6 +1699,8 @@ Scope {
         }
     }
 
+    // Not WatchedProcess (Sync Sprint 12 S12-14): its restart depends on
+    // whether it saw an event and whether it failed, and it reports its stderr.
     Process {
         id: inventoryWatchProcess
         command: Commands.watchCommand(Commands.settingsAppearanceCommand("watch-inventory", []))

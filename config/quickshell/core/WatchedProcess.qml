@@ -36,6 +36,11 @@ Scope {
     /* Emitted once the helper's output has been quiet for settleInterval. */
     signal settled
 
+    /* Emitted for each line the helper writes, before the settle timer
+     * restarts. A watcher that reads its lines connects here instead of
+     * owning its own Process (Sync Sprint 12 S12-14). */
+    signal line(string text)
+
     function start() {
         if (!watchProcess.running)
             watchProcess.running = true;
@@ -53,7 +58,10 @@ Scope {
         command: root.command
         running: false
         stdout: SplitParser {
-            onRead: settleTimer.restart()
+            onRead: data => {
+                root.line(data);
+                settleTimer.restart();
+            }
         }
         onRunningChanged: {
             if (!running && root.active)

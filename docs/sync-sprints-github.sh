@@ -157,6 +157,7 @@ items=(
 	"12|S12-17|s12-17-docs-and-specs-agree-with-the-code|Docs and specs agree with the code|whole-repo review"
 	"12|S12-18|s12-18-smaller-hardening|Smaller hardening|whole-repo review"
 	"12|S12-19|s12-19-release-updates-can-install-the-published-release-asset|Release updates can install the published release asset|found testing S12-01"
+	"12|S12-21|s12-21-a-staged-helper-always-brings-its-libraries|A staged helper always brings its libraries|found implementing S12-14"
 	"13|S13-01|s13-01-a-watchers-children-end-with-the-shell-however-busy-the-machine|A watcher's children end with the shell, however busy the machine|found running S12-13"
 )
 

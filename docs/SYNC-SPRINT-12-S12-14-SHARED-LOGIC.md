@@ -746,6 +746,71 @@ If only `AppearanceModel` does, this step records that and changes nothing.
      pass, since they measure exactly these processes. A real or nested X11
      session is required before the runtime is called verified (AGENTS.md).
 
+**Implemented (2026-09-30, working tree, nothing committed).** Where it differs
+from the text above:
+
+- **`WatchedProcess` gains only the `line` signal.**
+  - The step's "`settleInterval: 0` means no settle" was not needed. A watcher
+    that acts on every line connects to `line` and ignores `settled`.
+  - Starting stays explicit, through `start()` and `stop()`, so each migrated
+    watcher starts exactly where it did.
+- **Moved: five watchers, not the plan's eight.**
+  - `NetworkModel`'s monitor: always on, restart after 3 s, settle 300 ms.
+  - `ControlsModel`'s media watch: every line parsed; restarted unless the
+    helper said it was unavailable (`active: !root.mediaWatchUnavailable`).
+  - `SettingsModel`'s display, input and notification watches. Each is active
+    while Settings is visible on its section. `selectedSectionId` is set
+    before `activateSection` runs, so the binding is right when `start()` is
+    called.
+    - The input and notification watches keep their own settle timers, since
+      the input timer re-arms itself while discovery runs.
+    - **Behaviour change:** a watch that exits while its section is open is now
+      restarted after 3 s. Before, it stayed down until the section was opened
+      again.
+- **Not moved, each with a comment saying why:**
+  - `ControlsModel`'s fallback audio watch: each start carries a source
+    generation that its lines and restarts are checked against.
+  - `BluetoothModel`'s `busctl` monitor: it is never restarted, and
+    `WatchedProcess` would respawn it every 3 s forever on a machine without
+    `busctl`, which is the idle cost AGENTS.md forbids.
+  - `PicomModel`'s watch: a failure is reported, with its stderr, and left for
+    Refresh.
+  - `AppearanceModel`'s inventory watch: its restart depends on events seen and
+    failures, and it reports stderr.
+  - `DwmState`, and the per-discovery and per-operation system-management
+    watches, as the plan said.
+- **Tests:**
+  - New `tests/qml/WatchedProcessLines.qml`, run in a real Quickshell by the new
+    `tests/test-quickshell-watched-process-xvfb.sh`
+    (`make check-quickshell-watched-process-xvfb`, in `make check`):
+    - three lines arrive in order as three `line` signals and one `settled`;
+    - a helper that exits while active is restarted;
+    - an inactive one is not.
+
+    Mutation-checked: without the `root.line(data)` call it fails ("each line
+    arrives, in order: ").
+  - The source pins in `test-quickshell-connectivity.sh` and
+    `test-settings.sh` now pin the new ids and calls.
+- **Runtime, in nested X11 sessions (Xvfb):**
+  - `check-quickshell-watchers-xvfb`, which tests exactly the migrated
+    behaviour: the media watch is not respawned when unavailable, and a network
+    burst is debounced;
+  - `check-quickshell-idle-watchers-xvfb`: the managed shell under
+    `--no-duplicate`, with the launcher closed, idled at 0.00% CPU over 10 s;
+  - `check-quickshell-settings-xvfb`: closed Settings idled at 0.067%;
+  - `check-quickshell-controlcenter`.
+
+  `check-quickshell-watcher-lifetime-xvfb` failed once, on the Sprint 13
+  flake (`DwmState`'s `xprop -spy`, which kept its own `Process`), then passed
+  5 of 5.
+- **Checks:** `quickshell-qmllint` on the ten changed files gives only the
+  existing `QProcess::ExitStatus` warnings, and one `owner.start()` warning in
+  `SystemProviderDiscovery.qml`. That one is present in the committed version
+  too; only a comment was added there.
+- **`scripts/run-tests`:** PASS, in one run. Its idle samples: power lifecycle
+  +0.033 points; Settings closed 0.067%; idle watchers 0.00%; large surfaces
+  closed 0.00%; all seven `watch-*` domains subscribed 0.00%.
+
 ## Verification (whole item)
 
 - `rg` finds no `themes.toml` grammar outside `tomlparser.c`,
@@ -757,3 +822,35 @@ If only `AppearanceModel` does, this step records that and changes nothing.
   named wrappers.
 - The full suite passes. The watcher change is validated in a nested X11
   session, including the idle CPU check AGENTS.md asks for.
+
+**Results (2026-09-30).**
+
+- **`themes.toml` grammars:** the search finds, as intended:
+  - `dwm-settings-appearance`'s linter (step 4, asked of the user);
+  - `dwm-settings-theme`'s editors, whose result is checked with
+    `lyona-toml`;
+  - the ISO-build generators and the `Makefile` awks, pinned to dwm's reading
+    by `test-theme-readers.sh`.
+
+  The `toml_get` left in `theme-apply.sh` and `lyona-gtk-theme` is a wrapper
+  over `lyona_toml_value`.
+- **Trust checks:** `test-shell-contracts.sh` enforces one definition, plus the
+  two pinned root-helper copies.
+- **Preview functions:** `test-shell-contracts.sh` enforces that neither
+  `dwm-settings-font` nor `dwm-settings-toolkit` defines one.
+- **XDG directories:** `test-shell-contracts.sh` enforces `dwm-xdg.sh` and the
+  named exceptions.
+- **Suite and runtime:** the full suite passes. The watcher change was
+  validated in nested X11 sessions with the idle checks above.
+- **Found three times, not fixed here:** a test that stages some helpers
+  without a library they source, so the helper fails to load and the shell
+  reports "unavailable" instead of the test failing:
+  - steps 2 and 4: `test-quickshell-system-management-xvfb.sh` and the other
+    fake checkouts;
+  - step 5: `test-quickshell-settings-xvfb.sh`.
+
+  The guard is now Sprint 12 item S12-21 (2026-09-30, asked of the user): a
+  `tests/lib.sh` helper that stages a helper together with every
+  `$lyona_lib/...` file it sources, and checks that it loads.
+- **Not verified:** a real login session on an installed system, and the
+  Settings pages in one.

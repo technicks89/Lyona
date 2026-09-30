@@ -185,6 +185,9 @@ Scope {
         }
     }
 
+    // Not WatchedProcess (Sync Sprint 12 S12-14): it is never restarted, and
+    // WatchedProcess would restart it every 3 s -- forever, on a machine
+    // without busctl, where the command exits at once.
     Process {
         command: Commands.watchCommand(["sh", "-c", "command -v busctl >/dev/null 2>&1 && exec busctl --system monitor org.bluez"])
         running: true

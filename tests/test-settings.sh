@@ -636,9 +636,9 @@ grep -Fq 'Commands.settingsInputCommand("watch", root.watchOwnerArguments())' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'Commands.settingsProviderCommand("watch-notifications", [])' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'stdout: SplitParser { onRead: notificationOwnerSettleTimer.restart() }' \
+grep -Fq 'onLine: notificationOwnerSettleTimer.restart()' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'notificationOwnerWatchProcess.running = id === "appearance" && root.visible;' \
+grep -Fq 'root.setWatch(notificationOwnerWatch, id === "appearance" && root.visible);' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 if ! grep -Fq 'if (id === "appearance") root.refresh();' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"; then
@@ -760,11 +760,11 @@ fi
 grep -Fq 'migrate or remove it before installing a managed display profile' \
 	"$repo/scripts/dwm-settings-display-root"
 grep -Fq 'watch-apply' "$repo/scripts/autostart.sh"
-grep -Fq 'displayWatchProcess.running = false' "$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'inputWatchProcess.running = false' "$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'notificationOwnerWatchProcess.running = false' \
+grep -Fq 'displayWatch.stop();' "$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'inputWatch.stop();' "$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'notificationOwnerWatch.stop();' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
-grep -Fq 'stdout: SplitParser { onRead: inputSettleTimer.restart() }' \
+grep -Fq 'onLine: inputSettleTimer.restart()' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.searchQuery = ""' "$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'activeFocusOnTab: root.enabled' "$repo/config/quickshell/core/ShellButton.qml"

@@ -17,6 +17,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Resident watchers on one supervisor, S12-14 step 7 (Sync Sprint 12 S12-14).
+  - The network monitor, the media watch, and Settings' display, input and notification watches run on the shared
+    `WatchedProcess` component, which gains a per-line signal, instead of each owning a process and timers.
+  - A Settings display, input or notification watch that exits while its section is open is now restarted after 3 s.
+    Before, it stayed down until the section was reopened.
+  - Watchers with their own restart or failure rules keep them, each with a comment saying why: the fallback audio
+    watch, the Bluetooth monitor, the Picom and appearance-inventory watches, the dwm state bridge, and System
+    management.
 - One preview countdown in the shell, S12-14 step 6 (Sync Sprint 12 S12-14).
   - The five "reverts in N seconds" countdowns (theme, wallpaper, font and toolkit previews in Appearance, and the
     display and input previews) use one new component, `core/PreviewCountdown.qml`, instead of five hand-written

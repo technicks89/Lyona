@@ -182,6 +182,8 @@ Scope {
         // instruction was wrong for this streaming case.
         const identity = Object.freeze({ generation: root.generation, serial: ++root.launchSequence,
             storage: root.domain === "storage", prefix: selected.prefix });
+        // Not WatchedProcess (Sync Sprint 12 S12-14): one monitor per discovery,
+        // created and owned by generation, not a supervised surface watcher.
         const owner = monitorComponent.createObject(root, { identity: identity,
             callbacks: root.monitorCallbacks(identity),
             command: Commands.watchCommand(Commands.systemManagementCommand(selected.action, selected.args)) });

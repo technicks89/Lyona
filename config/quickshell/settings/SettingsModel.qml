@@ -176,10 +176,15 @@ Scope {
         return [Quickshell.processId.toString(), /^[1-9][0-9]*$/.test(starttime) ? starttime : ""];
     }
 
+    function setWatch(watch, wanted) {
+        if (wanted) watch.start();
+        else watch.stop();
+    }
+
     function activateSection(id) {
-        displayWatchProcess.running = id === "displays" && root.visible;
-        inputWatchProcess.running = id === "input" && root.visible;
-        notificationOwnerWatchProcess.running = id === "appearance" && root.visible;
+        root.setWatch(displayWatch, id === "displays" && root.visible);
+        root.setWatch(inputWatch, id === "input" && root.visible);
+        root.setWatch(notificationOwnerWatch, id === "appearance" && root.visible);
 			if (id !== "input") inputSettleTimer.stop();
         if (root.networkModel) {
             const wantNetwork = id === "network" && root.visible;
@@ -883,9 +888,9 @@ Scope {
         root.automaticDisplayRefreshPending = false;
         root.inputRefreshPending = false;
         inputDiscoverProcess.running = false;
-        displayWatchProcess.running = false;
-        inputWatchProcess.running = false;
-        notificationOwnerWatchProcess.running = false;
+        displayWatch.stop();
+        inputWatch.stop();
+        notificationOwnerWatch.stop();
 		if (root.networkModel) root.networkModel.closeSettings();
 		if (root.bluetoothModel) root.bluetoothModel.closeSettings();
 		if (root.controlsModel) root.controlsModel.closeSettings();
@@ -1006,25 +1011,30 @@ Scope {
         }
     }
 
-    Process {
-        id: displayWatchProcess
+    // Each runs while its section is open, and is now restarted 3 s after an
+    // unexpected exit while it still is (Sync Sprint 12 S12-14: on
+    // WatchedProcess). Each keeps its own handling of a line: the input and
+    // notification watches keep their settle timers, whose conditions go beyond
+    // a plain settle.
+    WatchedProcess {
+        id: displayWatch
         command: Commands.watchCommand(Commands.settingsDisplayCommand("watch", root.watchOwnerArguments()))
-        running: false
-        stdout: SplitParser { onRead: root.refreshDisplays() }
+        active: root.visible && root.selectedSectionId === "displays"
+        onLine: root.refreshDisplays()
     }
 
-    Process {
-        id: inputWatchProcess
+    WatchedProcess {
+        id: inputWatch
         command: Commands.watchCommand(Commands.settingsInputCommand("watch", root.watchOwnerArguments()))
-        running: false
-			stdout: SplitParser { onRead: inputSettleTimer.restart() }
+        active: root.visible && root.selectedSectionId === "input"
+        onLine: inputSettleTimer.restart()
     }
 
-    Process {
-        id: notificationOwnerWatchProcess
+    WatchedProcess {
+        id: notificationOwnerWatch
         command: Commands.watchCommand(Commands.settingsProviderCommand("watch-notifications", []))
-        running: false
-        stdout: SplitParser { onRead: notificationOwnerSettleTimer.restart() }
+        active: root.visible && root.selectedSectionId === "appearance"
+        onLine: notificationOwnerSettleTimer.restart()
     }
 
     Process {

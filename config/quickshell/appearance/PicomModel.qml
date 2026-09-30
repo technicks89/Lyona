@@ -122,6 +122,8 @@ Scope {
         }
     }
 
+    // Not WatchedProcess (Sync Sprint 12 S12-14): a failed watch is reported,
+    // with its stderr, and left for the user's Refresh, not restarted.
     Process {
         id: watcher
         command: Commands.watchCommand(Commands.helperCommand("dwm-settings-picom", "watch", []))

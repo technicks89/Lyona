@@ -12,7 +12,9 @@ bluetooth_pane=$repo/config/quickshell/settings/BluetoothSettingsPane.qml
 
 grep -Fq 'run_parent_bound nmcli monitor' "$repo/scripts/dwm-quickshell-network"
 grep -Fq 'run_parent_bound playerctl --follow' "$repo/scripts/dwm-quickshell-controls"
-grep -Fq 'networkMonitorRestartTimer.restart()' "$network_model"
+# The monitor is a WatchedProcess, which restarts it (Sync Sprint 12 S12-14).
+grep -Fq 'id: networkMonitor' "$network_model"
+grep -Fq 'Component.onCompleted: networkMonitor.start()' "$network_model"
 
 for pattern in \
 	'fields[0] === "connectivity-protocol"' \
