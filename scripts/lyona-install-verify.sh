@@ -53,6 +53,9 @@ prefix=${PREFIX:-/usr/local}
 manprefix=${MANPREFIX:-$prefix/share/man}
 xsessions_dir=${XSESSIONSDIR:-/usr/share/xsessions}
 data_root=${DATADIR:-/usr/share}
+# Not dwm-xdg.sh (S12-14): these fall back under USER_HOME, not HOME, and
+# validate_live_root below refuses a relative value outright, since they name
+# the live install being checked.
 config_home=${XDG_CONFIG_HOME:-$user_home/.config}
 xdg_data_home=${XDG_DATA_HOME:-$user_home/.local/share}
 state_home=${XDG_STATE_HOME:-$user_home/.local/state}

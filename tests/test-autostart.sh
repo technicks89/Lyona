@@ -893,7 +893,7 @@ run_theme_resume_retry_case() {
 	state="$case_dir/state"
 	minimal_bin="$case_dir/bin"
 	mkdir -p "$case_dir/scripts" "$home" "$state" "$minimal_bin"
-	cp "$repo/scripts/autostart.sh" "$case_dir/scripts/autostart.sh"
+	cp "$repo/scripts/autostart.sh" "$repo/scripts/dwm-xdg.sh" "$case_dir/scripts/"
 	cat >"$case_dir/scripts/dwm-settings-theme" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >"${TEST_STATE:?}/theme-resume.args.tmp"
@@ -941,7 +941,7 @@ run_input_watcher_fallback_case() {
 	home="$case_dir/home"
 	state="$case_dir/state"
 	mkdir -p "$case_dir/scripts" "$home" "$state"
-	cp "$repo/scripts/autostart.sh" "$case_dir/scripts/autostart.sh"
+	cp "$repo/scripts/autostart.sh" "$repo/scripts/dwm-xdg.sh" "$case_dir/scripts/"
 	cat >"$case_dir/scripts/dwm-settings-input" <<'EOF'
 #!/bin/sh
 case ${1:-} in
@@ -1026,7 +1026,9 @@ printf '%s\n' "$*" >>"$XSET_LOG"
 EOF
 chmod +x "$fallback/bin/xset"
 ln -s "$(command -v tr)" "$fallback/bin/tr" # read_power_config's parsing
-sed -n '/^apply_power_settings() {$/,/^}$/p' "$repo/scripts/autostart.sh" >"$fallback/power.sh"
+# The function reads the config_home autostart.sh sets at its top (S12-14).
+printf '. "%s"\nlyona_xdg_dirs lenient\n' "$repo/scripts/dwm-xdg.sh" >"$fallback/power.sh"
+sed -n '/^apply_power_settings() {$/,/^}$/p' "$repo/scripts/autostart.sh" >>"$fallback/power.sh"
 printf 'apply_power_settings\n' >>"$fallback/power.sh"
 fallback_run() {
 	: >"$fallback/xset.log"

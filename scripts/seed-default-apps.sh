@@ -11,8 +11,13 @@ set -euo pipefail
 	exit 2
 }
 
-config_home=${XDG_CONFIG_HOME:-$HOME/.config}
-data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
 
 # Desktop-specific files take precedence over the generic MIME file too.
 shopt -s nullglob

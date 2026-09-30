@@ -105,6 +105,7 @@ INSTALL_LIBS = \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-utils.sh \
 	scripts/dwm-watchdog.sh \
+	scripts/dwm-xdg.sh \
 	scripts/dwm-xsettings-config.sh \
 	scripts/lyona-install-verify.sh
 INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})

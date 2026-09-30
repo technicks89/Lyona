@@ -66,6 +66,8 @@ root the next time the user authenticates a routine update or rollback.
 | **D-17a** | One ISO, or separate standard and NVIDIA images? | S12-17 item 2 | **Decided (2026-09-27), asked of the user directly:** one ISO that detects NVIDIA hardware and installs the proprietary driver when it is needed. AGENTS.md and SPEC 9.4 change to match SPEC section 4 |
 | **D-18** | Build the system-wide dwm with the updating user's `config.h`? (S12-02 step 4) | S12-02 | **Decided (2026-09-27), asked of the user directly:** yes, keep it, and make the runtime TOML files the documented way to customise; `config.h` is for the few compile-time options only |
 | **D-17b** | Per-screen `Variants` panels (SPEC.md) or one `PanelWindow` (AGENTS.md)? | S12-17 item 1 | **Decided (2026-09-27), asked of the user directly:** keep per-screen panels (every monitor needs a bar; state is already shared); AGENTS.md changes to match SPEC.md |
+| **D-20** | What is the one `themes.toml` reader for scripts? | S12-14 part 1 | **Decided (2026-09-29), asked of the user directly:** a C tool, `lyona-toml`, built from dwm's own `tomlparser.c` |
+| **D-21** | Do the root helpers source the shared trust checks? | S12-14 part 3 | **Decided (2026-09-29), asked of the user directly:** no; they keep a self-contained copy that a contract test pins to the library |
 | **D-19** | Weather widget: which provider, where the location comes from, and whether it is on by default? It is the shell's first feature that sends data (a location) to a third party | S12-20 weather half | **Open.** Recommendation: off by default, a location the user types (never IP geolocation), one keyless HTTPS provider (Open-Meteo, or wttr.in as upstream's prototype uses), refreshed at most every 30 minutes, and the calendar shipped without waiting for this |
 
 ---
@@ -914,7 +916,10 @@ existing installs) in its own file before starting, as its first task.
 
 ## S12-14: One reader per shared format, one copy of shared safety logic
 
-**Source:** A (Medium). **Reported.**
+**Source:** A (Medium). **Reported.** **Step-by-step plan:**
+`docs/SYNC-SPRINT-12-S12-14-SHARED-LOGIC.md` (2026-09-29), with decisions D-20 (the
+canonical reader is `lyona-toml`, built from dwm's `tomlparser.c`) and D-21 (the root
+helpers keep test-pinned copies of the trust checks).
 
 1. **At least seven `themes.toml` parsers:** `tomlparser.c`,
    `scripts/theme-apply.sh:143`, `scripts/dwm-settings-theme:156,380`,

@@ -366,7 +366,10 @@ elif ((each)); then
 				printf "FAIL %-52s %4ds\n" "$t" "$((SECONDS - start))"
 			fi
 		done'
-	durations_file=${XDG_STATE_HOME:-$HOME/.local/state}/lyona/ci-local-durations
+	# shellcheck source=scripts/dwm-xdg.sh
+	. "$repo/scripts/dwm-xdg.sh"
+	lyona_xdg_dirs
+	durations_file=$state_home/lyona/ci-local-durations
 	mkdir -p "$logdir/each"
 	if ((workers > 1)); then
 		printf '==> Running %d targets on %d containers (a weaker signal than one; rerun any failure serially)\n' \

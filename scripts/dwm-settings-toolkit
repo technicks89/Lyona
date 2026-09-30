@@ -21,10 +21,10 @@ declare -A capability_default=(
 protocol_header=$'toolkit-protocol\t1\t0'
 action_header=$'toolkit-action-protocol\t1\t0'
 home_dir=${HOME:-}
-config_home=${XDG_CONFIG_HOME:-}
-state_home=${XDG_STATE_HOME:-}
-[[ $config_home == /* ]] || config_home=${home_dir:+$home_dir/.config}
-[[ $state_home == /* ]] || state_home=${home_dir:+$home_dir/.local/state}
+# Lenient: a missing HOME is reported by require_paths, through the protocol.
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs lenient
 config_dir=$config_home/lyona
 config_file=$config_dir/personalization.conf
 state_base=$state_home/lyona
@@ -136,7 +136,7 @@ valid_value_syntax() {
 # applier can resolve cannot drift apart.
 theme_roots() {
 	printf '%s\n' \
-		"${XDG_DATA_HOME:-$home_dir/.local/share}/themes" \
+		"$data_home/themes" \
 		"$home_dir/.themes" \
 		/usr/local/share/themes \
 		/usr/share/themes
@@ -144,7 +144,7 @@ theme_roots() {
 
 icon_roots() {
 	printf '%s\n' \
-		"${XDG_DATA_HOME:-$home_dir/.local/share}/icons" \
+		"$data_home/icons" \
 		"$home_dir/.icons" \
 		/usr/local/share/icons \
 		/usr/share/icons

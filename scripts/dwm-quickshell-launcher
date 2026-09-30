@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+
 usage() {
 	printf 'usage: %s list|launch <desktop-file>\n' "$0" >&2
 }
@@ -25,11 +33,9 @@ data_dirs() {
 		seen=$seen$1:
 	}
 
-	if [ -n "${XDG_DATA_HOME:-}" ]; then
-		add_dir "$XDG_DATA_HOME"
-	elif [ -n "${HOME:-}" ]; then
-		add_dir "$HOME/.local/share"
-	fi
+	# Lenient: without HOME there is no user data directory to list.
+	lyona_xdg_dirs lenient
+	[ -z "$data_home" ] || add_dir "$data_home"
 
 	if [ -n "${HOME:-}" ]; then
 		add_dir "$HOME/.local/share/flatpak/exports/share"

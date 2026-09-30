@@ -17,6 +17,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- XDG directories from one place, S12-14 step 1 (Sync Sprint 12 S12-14).
+  - 29 scripts that computed `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME` inline now
+    call `lyona_xdg_dirs` from the new `dwm-xdg.sh` (in `PREFIX/lib/lyona`). It uses a set value only when it is
+    absolute, as the XDG Base Directory spec requires.
+  - **Behaviour change:** a relative `XDG_*_HOME` is now ignored everywhere, falling back to the directory under
+    `HOME`. Most scripts used to take it relative to their working directory; `lyona-update` and a few Settings
+    helpers already ignored it.
+  - `autostart.sh`, the control center and the other helpers that must not stop without `HOME` use the lenient
+    form, which leaves a directory empty instead of exiting.
+  - Still inline, each with a comment saying why: `dwm-system-health`'s deny list, `lyona-install-verify.sh`
+    (which works under `USER_HOME`), and three one-line wrappers.
+
 - One runtime source for helpers, step 1 (Sync Sprint 12 S12-13).
   - The shared shell code the commands source (`dwm-paths.sh`, `dwm-utils.sh`, `dwm-packages.sh`,
     `dwm-watchdog.sh`, `dwm-simple-watch.sh`, `dwm-xsettings-config.sh`, `dev-sync-install.sh`) installs to

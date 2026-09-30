@@ -8,7 +8,10 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 # shellcheck source=scripts/dwm-simple-watch.sh
 . "$lyona_lib/dwm-simple-watch.sh"
 
-config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/lyona"
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
+config_dir=$config_home/lyona
 settings_file="${DWM_INPUT_SETTINGS_FILE:-$config_dir/input-settings.conf}"
 settings_dir=${settings_file%/*}
 [[ $settings_dir != "$settings_file" ]] || settings_dir=.

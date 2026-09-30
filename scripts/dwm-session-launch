@@ -8,6 +8,14 @@
 # the three variables, and execs the requested command.
 #
 #     dwm-session-launch COMMAND [ARGUMENT ...]
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
 #
 # The parser is deliberately strict: this runs on every application launch, so
 # a damaged file must not be able to inject an environment. A file that fails
@@ -86,11 +94,9 @@ parse_theme_environment() {
 # confirmed choice, where unsetting would drop every application back to the
 # stock cursor for the duration of the preview.
 theme_preview_pending() {
-	preview_state_home=${XDG_STATE_HOME:-}
-	case $preview_state_home in
-	/*) ;;
-	*) preview_state_home=${HOME:-}/.local/state ;;
-	esac
+	# Lenient: without HOME there is no preview to find.
+	lyona_xdg_dirs lenient
+	preview_state_home=$state_home
 	[ -n "$preview_state_home" ] || return 1
 	for preview_marker in \
 		"$preview_state_home/lyona/appearance/preview.current" \
@@ -107,11 +113,7 @@ refresh_theme_environment() {
 	if theme_preview_pending; then
 		return 0
 	fi
-	config_home=${XDG_CONFIG_HOME:-}
-	case $config_home in
-	/*) ;;
-	*) config_home=${HOME:?HOME is required}/.config ;;
-	esac
+	lyona_xdg_dirs
 	theme_env=$config_home/lyona/theme-env.sh
 	session_uid=$(id -u) || return 1
 	runtime_base=${XDG_RUNTIME_DIR:-/tmp/lyona-$session_uid}

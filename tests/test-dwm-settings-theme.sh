@@ -45,7 +45,7 @@ reload_stub=$work/reload-theme
 mkdir -p "$config_home/lyona" "$data_home/lyona" "$state_home" \
 	"$runtime_dir" "$home_dir" "$prefix/bin" "$prefix/lib/lyona" "${managed_file%/*}"
 cp "$repo/scripts/dwm-settings-theme" "$repo/scripts/dwm-settings-appearance" "$prefix/bin/"
-cp "$repo/scripts/dwm-paths.sh" "$prefix/lib/lyona/"
+cp "$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-xdg.sh" "$prefix/lib/lyona/"
 helper=$prefix/bin/dwm-settings-theme
 cp "$themes_fixture" "$managed_file"
 

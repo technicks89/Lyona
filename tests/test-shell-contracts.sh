@@ -144,4 +144,32 @@ done
 assert_contains "$repo/scripts/dwm-settings-display" 'simple_watch_events drm display'
 assert_contains "$repo/scripts/dwm-settings-input" 'simple_watch_events input input'
 
+# ── XDG directories come from one place ──────────────────────────────────
+#
+# Sync Sprint 12 S12-14: dwm-xdg.sh holds the rule (an absolute value, else the
+# fallback under HOME). The exceptions each say why: dwm-system-health's deny
+# list must never fail, lyona-install-verify.sh falls back under USER_HOME and
+# refuses relative values, and three one-variable wrappers stay inline.
+xdg_inline=$(grep -nE '\$\{XDG_(CONFIG|DATA|STATE|CACHE)_HOME:[-+]|case \$\{XDG_(CONFIG|DATA|STATE|CACHE)_HOME' \
+	"$repo"/scripts/* 2>/dev/null |
+	grep -vE '^[^:]*/scripts/(dwm-xdg\.sh|dwm-system-health|lyona-install-verify\.sh|dwm-controlcenter|dwm-keybinds|dwm-settings):' || true)
+if [ -n "$xdg_inline" ]; then
+	printf '%s: XDG directories computed outside dwm-xdg.sh:\n%s\n' "$test_name" "$xdg_inline" >&2
+	exit 1
+fi
+# shellcheck disable=SC2016 # expanded by the inner shell
+xdg_result=$(env -i HOME=/h XDG_CONFIG_HOME=relative XDG_DATA_HOME=/d /bin/sh -c \
+	'. "$1"; lyona_xdg_dirs; printf "%s %s %s %s" "$config_home" "$data_home" "$state_home" "$cache_home"' \
+	sh "$repo/scripts/dwm-xdg.sh")
+[ "$xdg_result" = '/h/.config /d /h/.local/state /h/.cache' ] ||
+	fail "lyona_xdg_dirs gave '$xdg_result'; a relative value must fall back"
+# shellcheck disable=SC2016 # expanded by the inner shell
+xdg_result=$(env -i /bin/sh -c '. "$1"; lyona_xdg_dirs lenient; printf "[%s]" "$config_home"' \
+	sh "$repo/scripts/dwm-xdg.sh")
+[ "$xdg_result" = '[]' ] || fail "lyona_xdg_dirs lenient without HOME gave $xdg_result"
+# shellcheck disable=SC2016 # expanded by the inner shell
+if env -i /bin/sh -c '. "$1"; lyona_xdg_dirs; exit 0' sh "$repo/scripts/dwm-xdg.sh" 2>/dev/null; then
+	fail 'lyona_xdg_dirs without HOME did not fail'
+fi
+
 printf '%s\n' 'Shell contracts: PASS'

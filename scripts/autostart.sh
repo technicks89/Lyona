@@ -1,5 +1,15 @@
 #!/bin/sh
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# Lenient: a session must still start without HOME; what needs it is skipped.
+lyona_xdg_dirs lenient
+
 start_once() {
 	process_name=$1
 	shift
@@ -329,7 +339,7 @@ apply_power_settings() {
 	power_dpms_timeout=600
 	power_lock_enabled=1
 	power_lock_timeout=600
-	power_config=${XDG_CONFIG_HOME:-${HOME:-}/.config}/lyona/power.conf
+	power_config=$config_home/lyona/power.conf
 	if [ -r "$power_config" ]; then
 		while IFS='=' read -r power_key power_value || [ -n "$power_key" ]; do
 			power_key=$(printf '%s' "$power_key" | tr -d '[:space:]')
@@ -446,10 +456,10 @@ fi
 if command -v xsettingsd >/dev/null 2>&1 &&
 	! pgrep -u "$(id -u)" -x xsettingsd >/dev/null 2>&1; then
 	if [ "${DWM_AUTOSTART_NO_SETSID:-0}" != 1 ] && command -v setsid >/dev/null 2>&1; then
-		setsid -f xsettingsd -c "${XDG_CONFIG_HOME:-$HOME/.config}/lyona/xsettingsd.conf" \
+		setsid -f xsettingsd -c "$config_home/lyona/xsettingsd.conf" \
 			>/dev/null 2>&1 || true
 	else
-		xsettingsd -c "${XDG_CONFIG_HOME:-$HOME/.config}/lyona/xsettingsd.conf" \
+		xsettingsd -c "$config_home/lyona/xsettingsd.conf" \
 			>/dev/null 2>&1 &
 	fi
 fi
@@ -458,7 +468,7 @@ if [ -n "$display_helper" ]; then
 	"$display_helper" dpi-apply-saved >/dev/null 2>&1 || true
 fi
 
-THEME_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/lyona/theme-env.sh"
+THEME_ENV="$config_home/lyona/theme-env.sh"
 # shellcheck disable=SC1090
 [ -f "$THEME_ENV" ] && . "$THEME_ENV"
 
@@ -503,11 +513,7 @@ fi
 [ -z "$systemctl_import_pid" ] || wait "$systemctl_import_pid"
 [ -z "$dbus_import_pid" ] || wait "$dbus_import_pid"
 
-case ${XDG_CONFIG_HOME:-} in
-/*) quickshell_config_home=$XDG_CONFIG_HOME ;;
-*) quickshell_config_home=${HOME:?HOME is required for XDG_CONFIG_HOME fallback}/.config ;;
-esac
-QUICKSHELL_CONFIG=$quickshell_config_home/quickshell/shell.qml
+QUICKSHELL_CONFIG=$config_home/quickshell/shell.qml
 if [ -f "$QUICKSHELL_CONFIG" ]; then
 	quickshell_check=
 	quickshell_compatible=0
