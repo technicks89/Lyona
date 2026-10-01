@@ -102,9 +102,12 @@ INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
 INSTALL_LIBS = \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
+	scripts/dwm-preview.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-utils.sh \
+	scripts/dwm-trust.sh \
 	scripts/dwm-watchdog.sh \
+	scripts/dwm-xdg.sh \
 	scripts/dwm-xsettings-config.sh \
 	scripts/lyona-install-verify.sh
 INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})
@@ -143,7 +146,11 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '0')
 THUMB = dwm-window-thumb
 THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11)
 
-all: dwm ${THUMB}
+# lyona-toml, the scripts' one reader of the TOML files, built on dwm's own
+# parser (Sync Sprint 12 S12-14, D-20). Installed in LIB_DIR, off PATH.
+TOML_TOOL = lyona-toml
+
+all: dwm ${THUMB} ${TOML_TOOL}
 
 .c.o:
 	${CC} ${CPPFLAGS} ${CFLAGS} -c $<
@@ -163,6 +170,9 @@ dwm: check-build-deps ${OBJ}
 ${THUMB}: check-build-deps ${THUMB}.c config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${THUMB}.c ${LDFLAGS} ${THUMB_LIBS}
 
+${TOML_TOOL}: ${TOML_TOOL}.c tomlparser.o util.o tomlparser.h util.h config.mk Makefile
+	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${TOML_TOOL}.c tomlparser.o util.o ${LDFLAGS}
+
 check-build-deps:
 	@command -v "${PKG_CONFIG}" >/dev/null 2>&1 || { \
 		echo "Missing required command: ${PKG_CONFIG}" >&2; \
@@ -178,7 +188,7 @@ check-build-deps:
 	fi
 
 clean:
-	rm -f dwm ${THUMB} ${OBJ} *.orig *.rej
+	rm -f dwm ${THUMB} ${TOML_TOOL} ${OBJ} *.orig *.rej
 
 native:
 	$(MAKE) clean
@@ -231,6 +241,10 @@ install-system:
 	@test -x dwm || { echo "dwm is not built. Run make before install-system." >&2; exit 1; }
 	@test -x ${THUMB} || { echo "${THUMB} is not built. Run make before install-system." >&2; exit 1; }
 	@test ! ${THUMB}.c -nt ${THUMB} || { echo "${THUMB} is stale. Run make before install-system." >&2; exit 1; }
+	@test -x ${TOML_TOOL} || { echo "${TOML_TOOL} is not built. Run make before install-system." >&2; exit 1; }
+	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h tomlparser.o util.c util.h util.o config.h config.mk Makefile; do \
+		test ! "$$input" -nt ${TOML_TOOL} || { echo "${TOML_TOOL} is stale. Run make before install-system." >&2; exit 1; }; \
+	done
 	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h config.h config.mk Makefile; do \
 		test -e "$$input" || { echo "dwm build input is missing: $$input. Run make before install-system." >&2; exit 1; }; \
 		test ! "$$input" -nt dwm || { echo "dwm is stale. Run make before install-system." >&2; exit 1; }; \
@@ -253,6 +267,8 @@ install-system:
 	for f in ${INSTALL_LIBS}; do \
 		install -Dm644 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
 	done
+	@echo "==> Installing the TOML reader..."
+	install -Dm755 ${TOML_TOOL} ${DESTDIR}${LIB_DIR}/${TOML_TOOL}
 	@echo "==> Installing session scripts..."
 	for f in ${INSTALL_SESSION_SCRIPTS}; do \
 		install -Dm755 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
@@ -484,7 +500,7 @@ uninstall:
 	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
-	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES}; do \
+	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	-rmdir ${DESTDIR}${LIB_DIR} 2>/dev/null
@@ -499,13 +515,14 @@ uninstall:
 		rm -f ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$name; \
 	done
 
-release: dwm ${THUMB}
+release: dwm ${THUMB} ${TOML_TOOL}
 	@work="$$(mktemp -d)"; \
 	trap 'rm -rf "$$work"' EXIT; \
 	root="$$work/${RELEASE_NAME}"; \
 	mkdir -p "$$root" release; \
 	install -Dm755 dwm "$$root/dwm"; \
 	install -Dm755 ${THUMB} "$$root/${THUMB}"; \
+	install -Dm755 ${TOML_TOOL} "$$root/${TOML_TOOL}"; \
 	install -Dm644 scripts/.xinitrc "$$root/.xinitrc"; \
 	sed "s|@PREFIX@|${PREFIX}|g" dwm.desktop > "$$root/dwm.desktop"; \
 	cp -a assets config scripts "$$root/"; \
@@ -601,6 +618,27 @@ check-quickshell-plain-text-xvfb: all
 
 # Sync Sprint 12 S12-05: unit tests for the TOML parser dwm uses for all three
 # runtime files.
+# Sync Sprint 12 S12-14: WatchedProcess, which the resident watchers share.
+.PHONY: check-quickshell-watched-process-xvfb
+check-quickshell-watched-process-xvfb:
+	status=0; tests/test-quickshell-watched-process-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# Sync Sprint 12 S12-14: every themes.toml reader sees what dwm sees.
+.PHONY: check-theme-readers
+check-theme-readers: ${TOML_TOOL}
+	status=0; tests/test-theme-readers.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# Sync Sprint 12 S12-14: lyona-toml, the scripts' reader on dwm's parser.
+.PHONY: check-lyona-toml
+check-lyona-toml: ${TOML_TOOL}
+	status=0; tests/test-lyona-toml.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 .PHONY: check-tomlparser
 check-tomlparser:
 	tests/test-tomlparser.sh
@@ -983,7 +1021,7 @@ check-install-manifest: all
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
 		done; \
-		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES}; do \
+		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL}; do \
 			printf 'usr/lib/lyona/%s\n' "$$name"; \
 		done; \
 		for name in ${INSTALL_DEFAULT_NAMES}; do \
@@ -1017,7 +1055,7 @@ check-install-manifest: all
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		test -x "$$stage/usr/libexec/lyona/$$name"; \
 	done; \
-	for name in ${INSTALL_SESSION_SCRIPT_NAMES}; do \
+	for name in ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL}; do \
 		test -x "$$stage/usr/lib/lyona/$$name"; \
 	done; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-settings-display-root' \
@@ -1135,6 +1173,9 @@ check:
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser
+	$(MAKE) check-lyona-toml
+	$(MAKE) check-theme-readers
+	$(MAKE) check-quickshell-watched-process-xvfb
 	$(MAKE) check-quickshell-plain-text
 	$(MAKE) check-quickshell-plain-text-xvfb
 	$(MAKE) check-dwm-watchdog

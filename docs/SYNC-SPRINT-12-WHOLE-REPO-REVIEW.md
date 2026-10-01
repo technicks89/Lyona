@@ -43,6 +43,7 @@ starts.
 | [S12-18](#s12-18-smaller-hardening) | `#181` | Security, hardening | Low | none |
 | [S12-19](#s12-19-release-updates-can-install-the-published-release-asset) | `#184` | Correctness, updater | High | none |
 | [S12-20](#s12-20-calendar-and-weather-panel-widgets) | `#193` | Feature, panel | Low | D-19 (weather only) |
+| [S12-21](#s12-21-a-staged-helper-always-brings-its-libraries) | `#199` | Test reliability | Medium | none |
 
 **Suggested order:** S12-01 to S12-03 first (the privileged update helper, found
 independently by three reviews), then S12-04 and S12-06, then the idle-cost items
@@ -66,6 +67,8 @@ root the next time the user authenticates a routine update or rollback.
 | **D-17a** | One ISO, or separate standard and NVIDIA images? | S12-17 item 2 | **Decided (2026-09-27), asked of the user directly:** one ISO that detects NVIDIA hardware and installs the proprietary driver when it is needed. AGENTS.md and SPEC 9.4 change to match SPEC section 4 |
 | **D-18** | Build the system-wide dwm with the updating user's `config.h`? (S12-02 step 4) | S12-02 | **Decided (2026-09-27), asked of the user directly:** yes, keep it, and make the runtime TOML files the documented way to customise; `config.h` is for the few compile-time options only |
 | **D-17b** | Per-screen `Variants` panels (SPEC.md) or one `PanelWindow` (AGENTS.md)? | S12-17 item 1 | **Decided (2026-09-27), asked of the user directly:** keep per-screen panels (every monitor needs a bar; state is already shared); AGENTS.md changes to match SPEC.md |
+| **D-20** | What is the one `themes.toml` reader for scripts? | S12-14 part 1 | **Decided (2026-09-29), asked of the user directly:** a C tool, `lyona-toml`, built from dwm's own `tomlparser.c` |
+| **D-21** | Do the root helpers source the shared trust checks? | S12-14 part 3 | **Decided (2026-09-29), asked of the user directly:** no; they keep a self-contained copy that a contract test pins to the library |
 | **D-19** | Weather widget: which provider, where the location comes from, and whether it is on by default? It is the shell's first feature that sends data (a location) to a third party | S12-20 weather half | **Open.** Recommendation: off by default, a location the user types (never IP geolocation), one keyless HTTPS provider (Open-Meteo, or wttr.in as upstream's prototype uses), refreshed at most every 30 minutes, and the calendar shipped without waiting for this |
 
 ---
@@ -914,7 +917,11 @@ existing installs) in its own file before starting, as its first task.
 
 ## S12-14: One reader per shared format, one copy of shared safety logic
 
-**Source:** A (Medium). **Reported.**
+**Source:** A (Medium). **Implemented (2026-09-29 to 2026-09-30): all seven steps**
+of `docs/SYNC-SPRINT-12-S12-14-SHARED-LOGIC.md`, whose notes record each step's
+deviations and the whole-item verification. That file is the step-by-step plan (2026-09-29), with decisions D-20 (the
+canonical reader is `lyona-toml`, built from dwm's `tomlparser.c`) and D-21 (the root
+helpers keep test-pinned copies of the trust checks).
 
 1. **At least seven `themes.toml` parsers:** `tomlparser.c`,
    `scripts/theme-apply.sh:143`, `scripts/dwm-settings-theme:156,380`,
@@ -1184,6 +1191,65 @@ and a popup for each (a month calendar; current weather from wttr.in).
 - A stub `curl` checks the weather helper's timeout, cache and failure output, and that
   nothing is fetched while the widget is off.
 - The idle cost with both popups closed is unchanged (the S12-07 measurement).
+
+## S12-21: A staged helper always brings its libraries
+
+**Issue:** `#199`. **Source:** found while implementing S12-14 (2026-09-30), added on request. **Verified**
+three times in that item.
+
+**The problem.** Tests that run a helper from their own layout copy it by hand: a fake
+checkout (`$data_home/checkout/scripts/`, named by `LYONA_DEV_SCRIPTS`), a hand-built
+`PREFIX` (`bin`, `lib/lyona`, `share/lyona`), or a stub directory. Each copy lists the
+libraries the helper sources, and nothing checks the list. When a helper gains a library
+(S12-13 and S12-14 added `dwm-xdg.sh`, `dwm-trust.sh`, `dwm-preview.sh` and
+`lyona-toml`), every list that copies it goes stale. The helper then fails at load. The
+shell shows its feature as "unavailable", and the test often still passes, because it
+never looked at that feature.
+
+- **S12-14 step 2:** `test-quickshell-system-management-xvfb.sh` had passed since step 1
+  with the provider, health and display helpers failing at load.
+- **S12-14 step 4:** the Control Center listed no themes, and the appearance provider fell
+  back to its linter, in six fake checkouts without `lyona-toml`.
+- **S12-14 step 5:** `test-quickshell-settings-xvfb.sh` failed only because it happened to
+  check font readiness.
+
+13 tests stage copies this way: `test-autostart.sh`, `test-dwm-settings-appearance.sh`,
+`test-dwm-settings-theme.sh`, `test-dwm-settings-toolkit.sh`, `test-lyona-toml.sh`,
+`test-quickshell-controlcenter.sh`, `test-quickshell-health-xvfb.sh`,
+`test-quickshell-idle-watchers-xvfb.py`, `test-quickshell-large-surfaces-xvfb.sh`,
+`test-quickshell-settings-xvfb.sh`, `test-quickshell-system-management-xvfb.sh`,
+`test-quickshell-watcher-lifetime-xvfb.py` and `test-settings.sh`. Those that copy all of
+`scripts/` are safe from this, but not from a missing built `lyona-toml`.
+
+**Steps.**
+
+1. **One staging helper in `tests/lib.sh`**, `stage_helpers LAYOUT DEST HELPER...`:
+   - `LAYOUT` is `checkout` or `prefix`;
+   - it copies each helper, then every library the helper sources through
+     `$lyona_lib/...` (followed recursively, since libraries source libraries);
+   - in a checkout, it puts `lyona-toml` beside `scripts/`; in a prefix, in
+     `lib/lyona`.
+
+   The list of libraries a helper sources is read from its source the way
+   `test-shell-contracts.sh` already reads it. The Python tests get the same helper
+   in `tests/lyona_tmp.py`, or call the shell one.
+2. **The 13 tests switch to it** in place of their hand-written lists. A test that
+   stages a stub instead of a real helper keeps doing so; only the libraries' part
+   changes.
+3. **A load check.** After staging, `stage_helpers` runs each staged helper once with a
+   harmless argument (`--help`, or a usage error, which still proves it loaded). It fails
+   the test at once if a helper cannot load, rather than leaving the shell to show
+   "unavailable".
+4. **A contract check** in `test-shell-contracts.sh`: no test outside `tests/lib.sh`
+   copies a single `scripts/dwm-*.sh` or `lyona-*.sh` library by name, so a new
+   hand-written list is caught in review.
+
+**Test.**
+
+- Remove `dwm-xdg.sh` from a scratch copy of `scripts/`. Every test that stages a helper
+  sourcing it must fail at staging, naming the helper and the missing file, not further
+  on.
+- The full suite passes.
 
 ## Not in scope
 

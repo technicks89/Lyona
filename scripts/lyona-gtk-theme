@@ -29,38 +29,32 @@ EOF
 	exit 2
 }
 
-# Copied from theme-apply.sh rather than sourced: that script has no
-# sourceable form, and a shared file would need an install path and a runtime
-# lookup for no gain.
-toml_get() {
-	local section="$1" key="$2" file="$3"
-	awk -v sec="[$section]" -v key="$key" '
-		/^[[:space:]]*\[/ {
-			header = $0
-			sub(/^[[:space:]]*/, "", header)
-			sub(/[[:space:]]*#.*/, "", header)
-			sub(/[[:space:]]+$/, "", header)
-			in_sec = (header == sec)
-		}
-		in_sec && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-			sub(/^[^=]*=[[:space:]]*/, "")
-			gsub(/"/, "")
-			gsub(/[[:space:]]+#.*$/, "")
-			sub(/[[:space:]]+$/, "")
-			print; exit
-		}
-	' "$file"
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-paths.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-paths.sh
+. "$lyona_lib/dwm-paths.sh"
+
+# themes.toml is read by lyona-toml, on dwm's own parser (Sync Sprint 12 S12-14,
+# D-20). Each command loads the file once, in this shell, before resolving.
+load_themes() {
+	lyona_toml_load "$1" || [[ $? == 4 ]] || die "cannot read themes file: $1"
 }
 
+toml_get() {
+	lyona_toml_value "$1" "$2"
+}
+
+# The [theme.<id>] sections that hold at least one entry, in file order.
 theme_ids() {
-	awk '
-		/^[[:space:]]*\[theme\./ {
-			header = $0
-			sub(/^[[:space:]]*\[theme\./, "", header)
-			sub(/\].*$/, "", header)
-			print header
+	lyona_toml dump "$1" 2>/dev/null | awk -F'\t' '
+		$2 == -1 && $1 ~ /^theme\./ {
+			id = $1
+			sub(/^theme\./, "", id)
+			if (!seen[id]++) print id
 		}
-	' "$1"
+	'
 }
 
 valid_theme_id() {
@@ -458,11 +452,14 @@ generate_one() {
 case ${1:-} in
 generate)
 	[[ $# -eq 4 ]] || usage
+	[[ -f $3 ]] || die "themes file not found: $3"
+	load_themes "$3"
 	generate_one "$2" "$3" "$4"
 	;;
 generate-all)
 	[[ $# -eq 3 ]] || usage
 	[[ -f $2 ]] || die "themes file not found: $2"
+	load_themes "$2"
 	generated=0
 	while IFS= read -r theme_id; do
 		[[ -n $theme_id ]] || continue

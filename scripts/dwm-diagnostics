@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+
 format=human
 required_fail=0
 optional_fail=0
@@ -203,7 +210,8 @@ main() {
 	check_any_optional_cmd "XDG autostart runner" dex dex-autostart
 	check_any_optional_cmd "audio control" pactl wpctl amixer
 	check_path_optional xinitrc "$HOME/.xinitrc"
-	check_path_optional quickshell-config "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml"
+	lyona_xdg_dirs
+	check_path_optional quickshell-config "$config_home/quickshell/shell.qml"
 
 	# The developer override (Sync Sprint 12 S12-13): shown, so a forgotten one
 	# does not go unnoticed.

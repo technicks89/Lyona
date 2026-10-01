@@ -34,6 +34,8 @@ mkdir -p "$config_home/quickshell" "$config_home/lyona" "$data_home/checkout/scr
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
+# The checkout layout: the built TOML reader sits beside scripts/ (S12-14).
+cp "$repo/lyona-toml" "$data_home/checkout/scripts/.."
 chmod 700 "$runtime"
 cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
 cp "$repo/config/"*.toml "$config_home/lyona/"
@@ -46,7 +48,8 @@ grep -Fqx '  { title="dwm control center",         isfloating=1, alwaysontop=1 }
 cp "$repo/scripts/dwm-system-health" "$repo/scripts/dwm-diagnostics" \
 	"$repo/scripts/dwm-quickshell-controlcenter" "$repo/scripts/dwm-quickshell-controls" \
 	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-quickshell-network" \
-	"$repo/scripts/dwm-quickshell-pointer" \
+	"$repo/scripts/dwm-quickshell-pointer" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
+	"$repo/scripts/dwm-watchdog.sh" \
 	"$data_home/checkout/scripts/"
 
 Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &

@@ -9,8 +9,8 @@
 #     . "$lyona_lib/dwm-paths.sh"
 #
 # Caller contract: ensure_owned_directory reports through die, so a caller
-# must define one before using it. Nothing here has any other side effect --
-# no variables set, no environment read.
+# must define one before using it. lyona_toml reads the caller's lyona_lib,
+# and lyona_toml_load sets LYONA_TOML. Nothing else here has a side effect.
 
 # An absolute path with nothing in it that would confuse a later parse or walk
 # somewhere else: no newline, carriage return or tab, and no . or .. component.
@@ -123,3 +123,47 @@ lyona_default_config_dir() (
 	esac
 	CDPATH='' cd -P -- "$dir" 2>/dev/null && pwd
 )
+
+# The one TOML reader (Sync Sprint 12 S12-14, D-20): PREFIX/lib/lyona/lyona-toml
+# beside an installed caller's libraries, else the checkout's built one beside
+# scripts/. Runs it with the arguments given; see lyona-toml.c for its output and
+# exit status.
+lyona_toml() {
+	local lib=${lyona_lib:?lyona_toml needs lyona_lib set by the caller}
+	local tool=$lib/lyona-toml
+	[[ -x $tool ]] || tool=$lib/../lyona-toml
+	"$tool" "$@"
+}
+
+# Read FILE once into LYONA_TOML, a map of "section<FS>key" to value for its
+# plain entries (not [[array-of-tables]] ones); the first entry of a key wins, as
+# in dwm's toml_get. Fields are split by parameter expansion, not IFS, since
+# consecutive tabs would collapse an empty top-level section name, and the dump
+# doubles every backslash, so %b gives back exactly each value. Returns
+# lyona-toml's status: 0, or 4 when entries past dwm's limit were dropped (the
+# map still holds what dwm reads). Load in the calling shell, not in $(...):
+# the map is lost with the subshell.
+lyona_toml_load() {
+	local file=$1 line section index key value dump status=0
+	declare -gA LYONA_TOML=()
+	dump=$(lyona_toml dump "$file") || status=$?
+	[[ $status == 0 || $status == 4 ]] || return "$status"
+	while IFS= read -r line; do
+		section=${line%%$'\t'*}
+		line=${line#*$'\t'}
+		index=${line%%$'\t'*}
+		line=${line#*$'\t'}
+		key=${line%%$'\t'*}
+		value=${line#*$'\t'}
+		[[ $index == -1 ]] || continue
+		[[ -z ${LYONA_TOML["$section"$'\034'"$key"]+x} ]] || continue
+		printf -v value '%b' "$value"
+		LYONA_TOML["$section"$'\034'"$key"]=$value
+	done <<<"$dump"
+	return "$status"
+}
+
+# The value lyona_toml_load read for SECTION and KEY, or nothing.
+lyona_toml_value() {
+	printf '%s\n' "${LYONA_TOML["$1"$'\034'"$2"]:-}"
+}

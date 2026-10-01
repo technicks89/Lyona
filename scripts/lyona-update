@@ -42,14 +42,11 @@ for required_command in awk curl jq mktemp sha256sum sort tar; do
 		die "required command not found: $required_command"
 done
 
-config_home=${XDG_CONFIG_HOME:-}
-data_home=${XDG_DATA_HOME:-}
-state_home=${XDG_STATE_HOME:-}
-cache_home=${XDG_CACHE_HOME:-}
-[[ $config_home == /* ]] || config_home=${HOME:?HOME is required for XDG_CONFIG_HOME fallback}/.config
-[[ $data_home == /* ]] || data_home=${HOME:?HOME is required for XDG_DATA_HOME fallback}/.local/share
-[[ $state_home == /* ]] || state_home=${HOME:?HOME is required for XDG_STATE_HOME fallback}/.local/state
-[[ $cache_home == /* ]] || cache_home=${HOME:?HOME is required for XDG_CACHE_HOME fallback}/.cache
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-trust.sh
+. "$lyona_lib/dwm-trust.sh"
+lyona_xdg_dirs
 
 config_file=$config_home/lyona/update.conf
 cache_file=$cache_home/lyona/update-index.json
@@ -515,16 +512,14 @@ cmd_check() {
 # --- shared helpers for apply / rollback ------------------------------
 
 trusted_root_helper() {
-	local candidate canonical derived=
+	local candidate derived=
 	derived=${script_dir%/bin}/libexec/lyona/$root_helper_name
 	for candidate in "$derived" /usr/local/libexec/lyona/$root_helper_name \
 		/usr/libexec/lyona/$root_helper_name; do
 		[[ -n $candidate ]] || continue
-		canonical=$(readlink -f -- "$candidate" 2>/dev/null || true)
-		[[ -n $canonical && $canonical == "$candidate" ]] || continue
-		[[ -f $candidate && ! -L $candidate && -x $candidate ]] || continue
-		[[ $(stat -c %u -- "$candidate") == 0 ]] || continue
-		find "$candidate" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q . || continue
+		# trusted_file also checks the directory chain, which this lookup
+		# used to skip (Sync Sprint 12 S12-14).
+		trusted_file "$candidate" || continue
 		printf '%s\n' "$candidate"
 		return 0
 	done

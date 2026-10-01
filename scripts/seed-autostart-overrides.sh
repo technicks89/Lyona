@@ -2,7 +2,14 @@
 
 set -eu
 
-config_home=${XDG_CONFIG_HOME:-${HOME:?HOME is not set}/.config}
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
 config_dirs=${XDG_CONFIG_DIRS:-/etc/xdg}
 destination_dir=$config_home/autostart
 target_owner=${DWM_INSTALL_OWNER:-}

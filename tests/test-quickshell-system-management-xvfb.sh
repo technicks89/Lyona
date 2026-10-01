@@ -99,6 +99,8 @@ mkdir -p "$config_home/quickshell" "$config_home/lyona" "$home/.cache" \
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
+# The checkout layout: the built TOML reader sits beside scripts/ (S12-14).
+cp "$repo/lyona-toml" "$data_home/checkout/scripts/.."
 chmod 700 "$runtime_storage"
 if [ "${#runtime}" -gt 64 ]; then
 	runtime_alias_dir=$(mktemp -d /tmp/dwm-system-management-runtime.XXXXXX)
@@ -113,6 +115,7 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
 	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-simple-watch.sh" \
 	"$repo/scripts/dwm-xsettings-config.sh" "$repo/scripts/dwm-xkbset" \
+	"$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
 	"$data_home/checkout/scripts/"
 
 # A stub dwm-system-management: one pending kernel update (exercising the

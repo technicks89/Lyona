@@ -406,10 +406,11 @@ grep -Fqx $'provider\tappearance\tpartial\tread-only\tShared theme inventory and
 	<<<"$malformed_header"
 grep -Fq $'error\tparser\tmalformed-section\tMalformed theme section header at line ' \
 	<<<"$malformed_header"
-if grep -Fq $'theme\tdracula\t' <<<"$malformed_header"; then
-	printf 'Malformed theme section was inventoried\n' >&2
-	exit 1
-fi
+# dwm reads "[theme.dracula] trailing" as [theme.dracula] and applies it, so
+# Settings lists it too, and the finding above stays a warning (Sync Sprint 12
+# S12-14: what dwm reads decides).
+grep -Fq $'theme\tdracula\tavailable\tvalid\t' <<<"$malformed_header" ||
+	fail 'a theme dwm reads was left out of the inventory'
 
 cp "$themes_fixture" "$config_home/lyona/themes.toml"
 sed -i 's/^\[active\]$/[active/' "$config_home/lyona/themes.toml"
@@ -481,19 +482,18 @@ grep -Fqx $'error\tparser\tunterminated-complex-value\tAn unrelated multi-line a
 	printf '[ignored]\nextra = [\n  {x=1}, {x=2}]\n'
 	cat "$themes_fixture"
 } >"$config_home/lyona/themes.toml"
-set +e
+# dwm's parser closes an array on the line that ends it (S12-05), so it reads
+# every theme after this one and applies the file. Settings follows dwm: the
+# linter's finding stays a warning, and the themes are listed (Sync Sprint 12
+# S12-14: what dwm reads decides).
 runtime_stuck_array=$(snapshot)
-runtime_stuck_array_status=$?
-set -e
-[[ $runtime_stuck_array_status -eq 3 ]]
-grep -Fqx $'provider\tappearance\tunavailable\tread-only\tShared theme inventory and integration state' \
+grep -Fqx $'provider\tappearance\tpartial\tread-only\tShared theme inventory and integration state' \
 	<<<"$runtime_stuck_array"
 grep -Fqx $'error\tparser\tunterminated-complex-value\tAn unrelated multi-line array was not terminated before the end of the theme configuration' \
 	<<<"$runtime_stuck_array"
-if grep -Fq $'theme\tnord\t' <<<"$runtime_stuck_array"; then
-	printf 'Provider parsed a theme section hidden by the runtime multi-line array state\n' >&2
-	exit 1
-fi
+grep -Fq $'theme\tnord\t' <<<"$runtime_stuck_array" ||
+	fail 'a theme dwm reads after a closed array was left out'
+grep -Fqx $'active\tnord\tnord\tselected' <<<"$runtime_stuck_array"
 for runtime_array_snapshot in "$inline_table" "$direct_inline_table" "$scalar_array" \
 	"$multiline_array" "$unterminated_array" "$runtime_stuck_array"; do
 	if grep -Fq $'error\tparser\tunsupported-complex-value\t' <<<"$runtime_array_snapshot"; then
@@ -566,7 +566,7 @@ prefix=$work/prefix
 installed_themes=$prefix/share/lyona/config/themes.toml
 mkdir -p "$prefix/bin" "$prefix/lib/lyona" "${installed_themes%/*}" "$data_root/lyona/config"
 cp "$helper" "$prefix/bin/"
-cp "$repo/scripts/dwm-paths.sh" "$prefix/lib/lyona/"
+cp "$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-xdg.sh" "$repo/lyona-toml" "$prefix/lib/lyona/"
 cp "$work/managed-themes.toml" "$installed_themes"
 sed '0,/^theme = "[^"]*"/s//theme = "dracula"/' "$work/managed-themes.toml" \
 	>"$data_root/lyona/config/themes.toml"
@@ -683,13 +683,15 @@ grep -Fqx $'error\tactive\tname-too-long\tActive theme name exceeds the runtime 
 	printf '"\n'
 	cat "$work/managed-themes.toml"
 } >"$config_home/lyona/themes.toml"
-set +e
+# dwm splits the over-long line, skips its tail, and reads every theme after
+# it, so it applies the file; Settings follows dwm, and the finding stays a
+# warning (Sync Sprint 12 S12-14: what dwm reads decides).
 long_line=$(snapshot)
-long_line_status=$?
-set -e
-[[ $long_line_status -eq 3 ]]
+grep -Fqx $'provider\tappearance\tpartial\tread-only\tShared theme inventory and integration state' \
+	<<<"$long_line"
 grep -Fqx $'error\tparser\tline-too-long\tTheme configuration contains a physical line that exceeds the runtime reader limit' \
 	<<<"$long_line"
+grep -Fqx $'active\tnord\tnord\tselected' <<<"$long_line"
 
 cp "$work/managed-themes.toml" "$config_home/lyona/themes.toml"
 sed -i '0,/theme = "nord"/s//theme = "dracula"/' "$config_home/lyona/themes.toml"
@@ -720,9 +722,11 @@ grep -Fqx $'color\taccent\t#81A1C1\tselbordercolor' <<<"$unknown"
 cp "$work/managed-themes.toml" "$config_home/lyona/themes.toml"
 printf '\n[theme.nord]\nterm_bg = "#000000"\n' >>"$config_home/lyona/themes.toml"
 duplicate=$(snapshot)
-grep -Fqx $'active\tnord\tnord\trecovery' <<<"$duplicate"
+# dwm keeps the first value of each key and applies nord, so Settings selects it
+# too; the duplicate stays a warning (Sync Sprint 12 S12-14).
+grep -Fqx $'active\tnord\tnord\tselected' <<<"$duplicate"
 grep -Fq $'error\ttheme:nord\tduplicate\tDuplicate theme section at line ' <<<"$duplicate"
-grep -Fqx $'theme\tnord\tselected\tinvalid\ttrue\tLyona-nord\tTheme record is duplicate, malformed, or incomplete' <<<"$duplicate"
+grep -Fqx $'theme\tnord\tselected\tvalid\ttrue\tLyona-nord\tTheme record is complete' <<<"$duplicate"
 grep -Fqx $'color\tbackground\t#2E3440\tterm_bg' <<<"$duplicate"
 
 cat >"$config_home/lyona/themes.toml" <<'EOF'

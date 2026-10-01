@@ -13,7 +13,9 @@ readonly protocol_minor=0
 readonly max_desktop_size=262144
 readonly confirm_token=confirm-session-critical
 
-config_home=${XDG_CONFIG_HOME:-${HOME:?HOME is not set}/.config}
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
 config_dirs=${XDG_CONFIG_DIRS:-/etc/xdg}
 autostart_dir=$config_home/autostart
 

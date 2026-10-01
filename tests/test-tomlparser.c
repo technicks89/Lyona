@@ -6,6 +6,7 @@
  * WORKDIR receives the small files each case writes. The remaining arguments are
  * the shipped files and the number of tables tests/test-tomlparser.sh counted in
  * each array, which the parser must reproduce exactly. */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -160,6 +161,61 @@ regressions(const char *dir)
 }
 
 static void
+append_text(char *text, size_t size, size_t *off, const char *format, ...)
+{
+	va_list args;
+	int written;
+
+	if (*off >= size) {
+		fprintf(stderr, "TOML test fixture buffer exhausted\n");
+		exit(2);
+	}
+	va_start(args, format);
+	written = vsnprintf(text + *off, size - *off, format, args);
+	va_end(args);
+	if (written < 0 || (size_t)written >= size - *off) {
+		fprintf(stderr, "TOML test fixture formatting failed or was truncated\n");
+		exit(2);
+	}
+	*off += (size_t)written;
+}
+
+/* Sync Sprint 12 S12-14: entries past TOML_MAX_ENTRIES are dropped, and the
+ * document says so; before, they vanished without a trace. Both paths that
+ * store an entry, a plain key and an inline table, set the flag. A boolean is
+ * a TOML_INT marked is_bool, so lyona-toml can write it back as true/false. */
+static void
+truncation(const char *dir)
+{
+	static char text[TOML_MAX_ENTRIES * 32 + 256];
+	size_t off = 0;
+	int i;
+
+	CHECK(parse_text(dir, "small", "[a]\nx = true\ny = 1\n"), "a small file did not parse");
+	CHECK(!doc.truncated, "a small file was marked truncated");
+	CHECK(toml_get(&doc, "a", "x") && toml_get(&doc, "a", "x")->is_bool, "true is not marked is_bool");
+	CHECK(toml_get(&doc, "a", "y") && !toml_get(&doc, "a", "y")->is_bool, "1 is marked is_bool");
+
+	append_text(text, sizeof text, &off, "[a]\n");
+	for (i = 0; i < TOML_MAX_ENTRIES + 10; i++)
+		append_text(text, sizeof text, &off, "k%d = %d\n", i, i);
+	CHECK(parse_text(dir, "long", text), "a long file did not parse");
+	CHECK(doc.n == TOML_MAX_ENTRIES, "kept %d entries, not %d", doc.n, TOML_MAX_ENTRIES);
+	CHECK(doc.truncated, "dropped entries were not recorded");
+
+	off = 0;
+	append_text(text, sizeof text, &off, "keys = [\n");
+	for (i = 0; i < TOML_MAX_ENTRIES / 2 + 10; i++)
+		append_text(text, sizeof text, &off, "  { a=\"x\", b=%d },\n", i);
+	append_text(text, sizeof text, &off, "]\n");
+	CHECK(parse_text(dir, "long-tables", text), "a long table array did not parse");
+	CHECK(doc.truncated, "entries dropped from inline tables were not recorded");
+
+	CHECK(parse_text(dir, "small-again", "[a]\nx = 1\n") && !doc.truncated,
+	      "the flag survived into the next parse");
+}
+
+static void
 shipped(const char *hotkeys, int keys, int tag_keys, int buttons,
         const char *rules_file, int rules, const char *themes)
 {
@@ -206,6 +262,7 @@ main(int argc, char *argv[])
 	booleans(argv[1]);
 	escaped_quote(argv[1]);
 	regressions(argv[1]);
+	truncation(argv[1]);
 	shipped(argv[2], atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), argv[6], atoi(argv[7]), argv[8]);
 	if (failures) {
 		fprintf(stderr, "tomlparser: %d check(s) failed\n", failures);

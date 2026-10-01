@@ -6,7 +6,19 @@ repo_dir=$(
 	cd -- "$(dirname -- "$0")/.." && pwd
 )
 
-config_home=${XDG_CONFIG_HOME:-${HOME:-}/.config}
+# Parameter expansion rather than dirname: these run on every panel poll, and
+# the directory prefix of $0 is all that is needed. $0 carries a path whenever
+# the script is executed, including through a PATH lookup.
+script_dir=${0%/*}
+[ "$script_dir" != "$0" ] || script_dir=.
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=$script_dir
+[ -f "$lyona_lib/dwm-watchdog.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# Lenient: every panel poll runs this, and a missing HOME must not end it.
+lyona_xdg_dirs lenient
 dwm_config_dir=$config_home/lyona
 
 # The shipped defaults: PREFIX/share/lyona/config beside an installed
@@ -39,15 +51,6 @@ power_profiles_interface=org.freedesktop.UPower.PowerProfiles
 # information reader's own timeout-owned process group instead of escaping it.
 bounded_foreground=0
 
-# Parameter expansion rather than dirname: these run on every panel poll, and
-# the directory prefix of $0 is all that is needed. $0 carries a path whenever
-# the script is executed, including through a PATH lookup.
-script_dir=${0%/*}
-[ "$script_dir" != "$0" ] || script_dir=.
-# A checkout keeps the shared shell code beside the scripts; an install keeps it
-# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
-lyona_lib=$script_dir
-[ -f "$lyona_lib/dwm-watchdog.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-watchdog.sh
 . "$lyona_lib/dwm-watchdog.sh"
 
@@ -1443,45 +1446,33 @@ info() {
 	printf 'Theme\t%s\n' "$(active_theme)"
 }
 
-active_theme() {
-	awk '
-		{
-			header = $0
-			sub(/^[[:space:]]*/, "", header)
-			sub(/[[:space:]]*#.*/, "", header)
-			sub(/[[:space:]]+$/, "", header)
-		}
-		header == "[active]" { active = 1; next }
-		header ~ /^\[/ { active = 0 }
-		active && $1 == "theme" {
-			value = $0
-			sub(/^[^=]*=[[:space:]]*/, "", value)
-			sub(/[[:space:]]*#.*/, "", value)
-			gsub(/"/, "", value)
-			gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-			print value
-			exit
-		}
-	' "$(config_file themes.toml)"
+# themes.toml through lyona-toml, on dwm's own parser (Sync Sprint 12 S12-14,
+# D-20): the POSIX form of dwm-paths.sh's lyona_toml, installed beside the
+# libraries or built beside a checkout's scripts/.
+lyona_toml() {
+	if [ -x "$lyona_lib/lyona-toml" ]; then
+		"$lyona_lib/lyona-toml" "$@"
+	else
+		"$lyona_lib/../lyona-toml" "$@"
+	fi
 }
 
+active_theme() {
+	lyona_toml get "$(config_file themes.toml)" active theme 2>/dev/null || true
+}
+
+# The [theme.<id>] sections that hold at least one entry, in file order.
 themes() {
 	active=$(active_theme)
-	awk -v active="$active" '
-		{
-			header = $0
-			sub(/^[[:space:]]*/, "", header)
-			sub(/[[:space:]]*#.*/, "", header)
-			sub(/[[:space:]]+$/, "", header)
-		}
-		header ~ /^\[theme\.[^]]+\]$/ {
-			name = header
-			sub(/^\[theme\./, "", name)
-			sub(/\]$/, "", name)
+	lyona_toml dump "$(config_file themes.toml)" 2>/dev/null | awk -F'\t' -v active="$active" '
+		$2 == -1 && $1 ~ /^theme\./ {
+			name = $1
+			sub(/^theme\./, "", name)
+			if (seen[name]++) next
 			status = name == active ? "active" : "available"
 			printf "%s\t%s\n", status, name
 		}
-	' "$(config_file themes.toml)"
+	'
 }
 
 theme_set() {

@@ -30,7 +30,12 @@ added in S12-09) failed in 3 of the 9 full-suite runs during S12-13.
   in all. The failures came under the full suite's load, twice with a staged
   install running alongside.
 - The first failure was on S12-13 step 1, which touched none of these scripts,
-  so the fault predates S12-13. `make check` stops at its first failure, so each
+  so the fault predates S12-13.
+- **2026-09-29, alone and without load:** the test failed 2 of 5 runs on `main`
+  (`d356657`, a clean worktree), and 1 of 5 on S12-14's working tree, each time
+  with `xprop -root -spy DWM_TAG_UPDATE` left. So it does not need the full
+  suite's load, and step 1's "rerun alone" will reproduce it without the
+  harness. `make check` stops at its first failure, so each
   failure also hid every test after it.
 
 ### What is known

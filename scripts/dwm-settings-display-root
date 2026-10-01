@@ -10,27 +10,35 @@ die() {
 	exit 1
 }
 
+# BEGIN dwm-trust.sh -- a verbatim copy of scripts/dwm-trust.sh's functions. A
+# root helper sources nothing at run time (Sync Sprint 12 S12-14, D-21), and
+# tests/test-shell-contracts.sh fails if this copy differs from the library.
+# Every directory from PATH's parent up to / is a real directory, owned by root
+# and not group- or other-writable. A stat that fails counts as untrusted.
 trusted_parent_chain() {
-	local parent=${1%/*}
+	lyona_trust_parent=${1%/*}
 	while :; do
-		[[ -d $parent && ! -L $parent ]] || return 1
-		[[ $(stat -c %u "$parent") == 0 ]] || return 1
-		find "$parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null | grep -q . || return 1
-		[[ $parent == / ]] && return 0
-		parent=${parent%/*}
-		[[ -n $parent ]] || parent=/
+		[ -d "$lyona_trust_parent" ] && [ ! -L "$lyona_trust_parent" ] || return 1
+		[ "$(stat -c %u -- "$lyona_trust_parent" 2>/dev/null || printf 1)" = 0 ] || return 1
+		find "$lyona_trust_parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null |
+			grep -q . || return 1
+		[ "$lyona_trust_parent" = / ] && return 0
+		lyona_trust_parent=${lyona_trust_parent%/*}
+		[ -n "$lyona_trust_parent" ] || lyona_trust_parent=/
 	done
 }
 
+# PATH is already canonical (no symlink anywhere in it), and names a root-owned
+# executable that nobody else can write, in a trusted directory chain.
 trusted_file() {
-	local path=$1 canonical
-	canonical=$(readlink -f -- "$path" 2>/dev/null || true)
-	[[ -n $canonical && $canonical == "$path" ]] || return 1
-	trusted_parent_chain "$canonical" || return 1
-	[[ -f $canonical && ! -L $canonical && -x $canonical ]] || return 1
-	[[ $(stat -c %u "$canonical") == 0 ]] || return 1
-	find "$canonical" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
+	lyona_trust_path=$(readlink -f -- "$1" 2>/dev/null) || return 1
+	[ -n "$lyona_trust_path" ] && [ "$lyona_trust_path" = "$1" ] || return 1
+	trusted_parent_chain "$lyona_trust_path" || return 1
+	[ -f "$lyona_trust_path" ] && [ ! -L "$lyona_trust_path" ] && [ -x "$lyona_trust_path" ] || return 1
+	[ "$(stat -c %u -- "$lyona_trust_path" 2>/dev/null || printf 1)" = 0 ] || return 1
+	find "$lyona_trust_path" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
 }
+# END dwm-trust.sh
 
 [[ $EUID == 0 && ${PKEXEC_UID:-} =~ ^[0-9]+$ ]] ||
 	die "this helper must run through polkit as root"

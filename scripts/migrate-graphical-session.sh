@@ -2,7 +2,15 @@
 
 set -eu
 
-systemd_user_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
+systemd_user_dir="$config_home/systemd/user"
 legacy_unit="$systemd_user_dir/dwm-graphical-session.service"
 legacy_wants="$systemd_user_dir/default.target.wants/dwm-graphical-session.service"
 renamed_wants="$systemd_user_dir/default.target.wants/wm-graphical-session.service"

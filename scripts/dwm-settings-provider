@@ -5,6 +5,14 @@ script_dir=$(
 	unset CDPATH
 	cd -- "$(dirname -- "$0")" && pwd
 )
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=$script_dir
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-trust.sh
+. "$lyona_lib/dwm-trust.sh"
 usage() {
 	printf 'usage: %s discover|watch-notifications\n' "$0" >&2
 }
@@ -86,10 +94,8 @@ notification_owner_pid() {
 
 notification_process_is_managed() {
 	notification_process_pid=$1
-	case ${XDG_CONFIG_HOME:-} in
-	/*) config_home=$XDG_CONFIG_HOME ;;
-	*) config_home=${HOME:-}/.config ;;
-	esac
+	# Lenient: without HOME, no process is one of ours.
+	lyona_xdg_dirs lenient
 	case $config_home in /*) ;; *) return 1 ;; esac
 	case $notification_process_pid in '' | *[!0-9]* | 0) return 1 ;; esac
 	process_executable=$(readlink "/proc/$notification_process_pid/exe" 2>/dev/null) || return 1
@@ -484,32 +490,10 @@ trusted_health_helper() {
 	path_candidate=$(command -v dwm-system-health 2>/dev/null || true)
 	for candidate in "$path_candidate" /usr/local/bin/dwm-system-health /usr/bin/dwm-system-health; do
 		[ -n "$candidate" ] || continue
-		trusted_installed_file "$candidate" || continue
+		trusted_file "$candidate" || continue
 		return 0
 	done
 	return 1
-}
-
-trusted_parent_chain() {
-	parent=${1%/*}
-	while :; do
-		[ -d "$parent" ] && [ ! -L "$parent" ] || return 1
-		[ "$(stat -c %u -- "$parent" 2>/dev/null || printf 1)" = 0 ] || return 1
-		find "$parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null | grep -q . || return 1
-		[ "$parent" = / ] && return 0
-		parent=${parent%/*}
-		[ -n "$parent" ] || parent=/
-	done
-}
-
-trusted_installed_file() {
-	candidate=$1
-	canonical=$(readlink -f -- "$candidate" 2>/dev/null || true)
-	[ -n "$canonical" ] && [ "$canonical" = "$candidate" ] || return 1
-	trusted_parent_chain "$canonical" || return 1
-	[ -f "$canonical" ] && [ ! -L "$canonical" ] && [ -x "$canonical" ] || return 1
-	[ "$(stat -c %u -- "$canonical" 2>/dev/null || printf 1)" = 0 ] || return 1
-	find "$canonical" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
 }
 
 trusted_display_helper() {
@@ -523,9 +507,9 @@ trusted_display_helper() {
 	for candidate in "$display_helper" /usr/local/libexec/lyona/dwm-settings-display-root \
 		/usr/libexec/lyona/dwm-settings-display-root; do
 		[ -n "$candidate" ] || continue
-		trusted_installed_file "$candidate" || continue
+		trusted_file "$candidate" || continue
 		setup_candidate=${candidate%/libexec/lyona/dwm-settings-display-root}/bin/dwm-display-setup
-		trusted_installed_file "$setup_candidate" || continue
+		trusted_file "$setup_candidate" || continue
 		return 0
 	done
 	return 1

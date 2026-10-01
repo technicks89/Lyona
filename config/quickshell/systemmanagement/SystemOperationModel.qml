@@ -132,6 +132,8 @@ Scope {
             root.progress = active;
             root.state = "observing";
             root.detail = "Observing " + target.actionId;
+            // Not WatchedProcess (Sync Sprint 12 S12-14): one watch per operation,
+            // started and retried by this model's own stream ownership.
             watchProcess.command = Commands.watchCommand(Commands.systemManagementCommand("watch-operation", [target.id]));
             Qt.callLater(function() { if (root.streamOwned) watchProcess.running = true; });
         } else {

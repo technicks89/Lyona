@@ -151,6 +151,24 @@ grep -Fqx "dwm: shipped defaults from $(CDPATH='' cd -P -- "$repo" && pwd)/confi
 kill -USR2 "$dwm_pid"
 wait_exit checkout
 
+# A file with more entries than the parser keeps: dwm says so, rather than
+# silently dropping the themes at the end (Sync Sprint 12 S12-14).
+user_themes=$home/.config/lyona/themes.toml
+{
+	cat "$repo/config/themes.toml"
+	i=0
+	while [ "$i" -lt 150 ]; do
+		printf '[theme.extra%d]\nnormfgcolor = "#ffffff"\n' "$i"
+		i=$((i + 1))
+	done
+} >"$user_themes"
+start_dwm truncated
+grep -Fqx "dwm: $user_themes has more than 512 entries; the rest were ignored" "$work/dwm.log" ||
+	fail "dwm did not report the truncated $user_themes: $(grep 'entries' "$work/dwm.log")"
+kill -USR2 "$dwm_pid"
+wait_exit truncated
+rm -f "$user_themes"
+
 # An empty file, and one that is only comments, used to leave dwm with no keys.
 : >"$user_hotkeys"
 start_dwm empty

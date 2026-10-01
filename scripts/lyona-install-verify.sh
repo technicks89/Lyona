@@ -53,6 +53,9 @@ prefix=${PREFIX:-/usr/local}
 manprefix=${MANPREFIX:-$prefix/share/man}
 xsessions_dir=${XSESSIONSDIR:-/usr/share/xsessions}
 data_root=${DATADIR:-/usr/share}
+# Not dwm-xdg.sh (S12-14): these fall back under USER_HOME, not HOME, and
+# validate_live_root below refuses a relative value outright, since they name
+# the live install being checked.
 config_home=${XDG_CONFIG_HOME:-$user_home/.config}
 xdg_data_home=${XDG_DATA_HOME:-$user_home/.local/share}
 state_home=${XDG_STATE_HOME:-$user_home/.local/state}
@@ -225,6 +228,7 @@ verify_install() {
 	verification_failed=0
 
 	verify_executable "$repo_dir/dwm" "$binary_target" "dwm binary"
+	verify_executable "$repo_dir/lyona-toml" "$prefix/lib/lyona/lyona-toml" "TOML reader"
 	while IFS= read -r install_source; do
 		[ -n "$install_source" ] || continue
 		install_name=${install_source##*/}
@@ -341,6 +345,7 @@ backup_live_install() {
 	system_manifest=$work/system-files
 	: >"$system_manifest"
 	add_system_backup_path "$binary_target"
+	add_system_backup_path "$prefix/lib/lyona/lyona-toml"
 	add_system_backup_path "$man_target"
 	add_system_backup_path "$xsession_target"
 	while IFS= read -r install_source; do

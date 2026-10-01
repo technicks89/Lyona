@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-profile_dir="${DWM_DISPLAY_PROFILE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/lyona/display-profiles}"
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
+profile_dir="${DWM_DISPLAY_PROFILE_DIR:-$config_home/lyona/display-profiles}"
 
 usage() {
 	cat <<EOF

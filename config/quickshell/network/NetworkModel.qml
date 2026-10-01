@@ -515,35 +515,16 @@ Scope {
         }
     }
 
-    Process {
-        id: networkMonitorProcess
+    // Always on, and restarted 3 s after it exits. A burst of monitor lines (one
+    // change prints several) is one refresh, after the lines settle for 300 ms
+    // (Sync Sprint 12 S12-14: on WatchedProcess, not its own Process and timers).
+    WatchedProcess {
+        id: networkMonitor
         command: Commands.watchCommand(Commands.networkHelperCommand("monitor"))
-        running: true
-
-        // A burst of monitor lines (one change prints several) is one refresh,
-        // after the lines settle, like BluetoothModel's monitor.
-        stdout: SplitParser {
-            onRead: networkMonitorSettleTimer.restart()
-        }
-        onRunningChanged: {
-            if (!running) networkMonitorRestartTimer.restart();
-        }
-    }
-
-    Timer {
-        id: networkMonitorSettleTimer
-        interval: 300
-        repeat: false
-        onTriggered: root.refresh(false, "shared")
-    }
-
-    Timer {
-        id: networkMonitorRestartTimer
-        interval: 3000
-        repeat: false
-        onTriggered: {
-            if (!networkMonitorProcess.running) networkMonitorProcess.running = true;
-        }
+        active: true
+        settleInterval: 300
+        onSettled: root.refresh(false, "shared")
+        Component.onCompleted: networkMonitor.start()
     }
 
     Process {

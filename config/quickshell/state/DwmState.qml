@@ -293,6 +293,8 @@ Scope {
         Quickshell.execDetached(["dwm-quickshell-state", "layout", String(index)]);
     }
 
+    // Not WatchedProcess (Sync Sprint 12 S12-14): always on, with its own
+    // restart and snapshot handling below.
     Process {
         command: Commands.watchCommand(["dwm-quickshell-state", "watch"])
         running: true

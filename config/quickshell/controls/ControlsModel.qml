@@ -474,6 +474,8 @@ Scope {
         stdout: StdioCollector { onStreamFinished: root.parseAudioSnapshot(this.text) }
     }
 
+    // Not WatchedProcess (Sync Sprint 12 S12-14): each start is tagged with the
+    // audio source generation, which its lines and restarts are checked against.
     Process {
         id: fallbackWatchProcess
         command: Commands.watchCommand(Commands.controlsHelperCommand("audio-watch"))
@@ -549,28 +551,15 @@ Scope {
         }
     }
 
-    Process {
-        id: mediaWatchProcess
+    // Always on, each line parsed as it arrives; restarted 3 s after it exits
+    // unless the helper reported media control unavailable (Sync Sprint 12
+    // S12-14: on WatchedProcess).
+    WatchedProcess {
+        id: mediaWatch
         command: Commands.watchCommand(Commands.controlsHelperCommand("media-watch"))
-        running: true
-
-        stdout: SplitParser {
-            onRead: function(data) {
-                root.parseMedia(data);
-            }
-        }
-        onRunningChanged: {
-            if (!running && !root.mediaWatchUnavailable) mediaWatchRestartTimer.restart();
-        }
-    }
-
-    Timer {
-        id: mediaWatchRestartTimer
-        interval: 3000
-        repeat: false
-        onTriggered: {
-            if (!mediaWatchProcess.running) mediaWatchProcess.running = true;
-        }
+        active: !root.mediaWatchUnavailable
+        onLine: text => root.parseMedia(text)
+        Component.onCompleted: mediaWatch.start()
     }
 
     Process {

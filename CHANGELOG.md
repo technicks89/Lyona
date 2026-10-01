@@ -17,6 +17,71 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Resident watchers on one supervisor, S12-14 step 7 (Sync Sprint 12 S12-14).
+  - The network monitor, the media watch, and Settings' display, input and notification watches run on the shared
+    `WatchedProcess` component, which gains a per-line signal, instead of each owning a process and timers.
+  - A Settings display, input or notification watch that exits while its section is open is now restarted after 3 s.
+    Before, it stayed down until the section was reopened.
+  - Watchers with their own restart or failure rules keep them, each with a comment saying why: the fallback audio
+    watch, the Bluetooth monitor, the Picom and appearance-inventory watches, the dwm state bridge, and System
+    management.
+- One preview countdown in the shell, S12-14 step 6 (Sync Sprint 12 S12-14).
+  - The five "reverts in N seconds" countdowns (theme, wallpaper, font and toolkit previews in Appearance, and the
+    display and input previews) use one new component, `core/PreviewCountdown.qml`, instead of five hand-written
+    timers. When each runs, and what happens when it reaches zero, is unchanged.
+- One preview state machine for font and toolkit, S12-14 step 5 (Sync Sprint 12 S12-14).
+  - The preview, keep, revert and automatic-rollback machinery of the Settings font and toolkit pages
+    (`dwm-settings-font`, `dwm-settings-toolkit`) lives once, in the new `dwm-preview.sh` (in `PREFIX/lib/lyona`).
+    That covers the mutation lock, the preview tokens, the rollback watchdog, expiry, and the atomic config exchange.
+    The two helpers had 37 copies of these functions, identical but for their labels, so a fix in one never reached
+    the other. Messages, state files and behaviour are unchanged.
+  - The display, input, wallpaper and theme helpers have different state machines and keep their own.
+- The scripts read `themes.toml` as dwm does, S12-14 step 4 (Sync Sprint 12 S12-14, D-20).
+  - `theme-apply.sh`, `lyona-gtk-theme`, the Control Center and the Settings appearance provider read `themes.toml`
+    through `lyona-toml`, dwm's own parser, instead of three separate awk readers and a Bash one. A file now means
+    the same to all of them as to dwm. Before, for example, the Control Center missed `theme="dracula"` written
+    without spaces.
+  - **Behaviour change in Settings:** when dwm would apply a `themes.toml`, Settings no longer rejects it over
+    something only its own stricter checker objected to. Four cases changed:
+    - a header with trailing text (`[theme.dracula] trailing`);
+    - an array closed on the line it opens;
+    - an over-long line;
+    - a duplicate theme section.
+
+    Each is still reported, with its line number, but as a warning. Colour and completeness checks are unchanged,
+    and a file dwm would not apply keeps its old verdict.
+  - `dwm-settings-theme` still edits `themes.toml` line by line, keeping its layout. It now also checks, with dwm's
+    parser, that the edited file selects the intended theme.
+  - The ISO-build boot splash and console palette generators and the Makefile keep their own readers, because they
+    run where `lyona-toml` may not be built yet. A test pins that they read the shipped file exactly as dwm does.
+- `lyona-toml`, one TOML reader for scripts, S12-14 step 3 (Sync Sprint 12 S12-14, D-20).
+  - A small tool built from dwm's own parser and installed in `PREFIX/lib/lyona`. `lyona-toml dump FILE` prints one
+    entry per line (section, table index, key and value, tab-separated, with tabs and newlines escaped), and
+    `lyona-toml get FILE SECTION KEY` prints one value, as dwm finds it. Step 4 moves the scripts' own parsers onto
+    it.
+  - **Fixed:** dwm keeps the first 512 entries of a TOML file and used to drop the rest without a word, so the themes
+    at the end of a long `themes.toml` could vanish. The shipped file has 407 entries, so four or five extra themes
+    were enough. dwm now logs `<file> has more than 512 entries; the rest were ignored`, and `lyona-toml` exits
+    with status 4.
+- One copy of the trust checks, S12-14 step 2 (Sync Sprint 12 S12-14).
+  - `trusted_parent_chain` and `trusted_file`, which decide whether a file is safe to run with more rights than
+    the caller, live in the new `dwm-trust.sh` (in `PREFIX/lib/lyona`). `dwm-settings-display`,
+    `dwm-system-health`, `dwm-settings-provider` and `lyona-update` source it; five hand-written copies are gone.
+  - The two root helpers, which source nothing at run time, keep a verbatim copy that a test pins to the library.
+  - **Fixed:** `lyona-update` checked its root helper's own owner and mode but not the directories above it. It
+    now refuses a helper in a directory an ordinary user can write to, like the other callers.
+- XDG directories from one place, S12-14 step 1 (Sync Sprint 12 S12-14).
+  - 29 scripts that computed `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME` inline now
+    call `lyona_xdg_dirs` from the new `dwm-xdg.sh` (in `PREFIX/lib/lyona`). It uses a set value only when it is
+    absolute, as the XDG Base Directory spec requires.
+  - **Behaviour change:** a relative `XDG_*_HOME` is now ignored everywhere, falling back to the directory under
+    `HOME`. Most scripts used to take it relative to their working directory; `lyona-update` and a few Settings
+    helpers already ignored it.
+  - `autostart.sh`, the control center and the other helpers that must not stop without `HOME` use the lenient
+    form, which leaves a directory empty instead of exiting.
+  - Still inline, each with a comment saying why: `dwm-system-health`'s deny list, `lyona-install-verify.sh`
+    (which works under `USER_HOME`), and three one-line wrappers.
+
 - One runtime source for helpers, step 1 (Sync Sprint 12 S12-13).
   - The shared shell code the commands source (`dwm-paths.sh`, `dwm-utils.sh`, `dwm-packages.sh`,
     `dwm-watchdog.sh`, `dwm-simple-watch.sh`, `dwm-xsettings-config.sh`, `dev-sync-install.sh`) installs to

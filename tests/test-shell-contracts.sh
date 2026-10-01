@@ -144,4 +144,76 @@ done
 assert_contains "$repo/scripts/dwm-settings-display" 'simple_watch_events drm display'
 assert_contains "$repo/scripts/dwm-settings-input" 'simple_watch_events input input'
 
+# ── XDG directories come from one place ──────────────────────────────────
+#
+# Sync Sprint 12 S12-14: dwm-xdg.sh holds the rule (an absolute value, else the
+# fallback under HOME). The exceptions each say why: dwm-system-health's deny
+# list must never fail, lyona-install-verify.sh falls back under USER_HOME and
+# refuses relative values, and three one-variable wrappers stay inline.
+xdg_inline=$(grep -nE '\$\{XDG_(CONFIG|DATA|STATE|CACHE)_HOME:[-+]|case \$\{XDG_(CONFIG|DATA|STATE|CACHE)_HOME' \
+	"$repo"/scripts/* 2>/dev/null |
+	grep -vE '^[^:]*/scripts/(dwm-xdg\.sh|dwm-system-health|lyona-install-verify\.sh|dwm-controlcenter|dwm-keybinds|dwm-settings):' || true)
+if [ -n "$xdg_inline" ]; then
+	printf '%s: XDG directories computed outside dwm-xdg.sh:\n%s\n' "$test_name" "$xdg_inline" >&2
+	exit 1
+fi
+# shellcheck disable=SC2016 # expanded by the inner shell
+xdg_result=$(env -i HOME=/h XDG_CONFIG_HOME=relative XDG_DATA_HOME=/d /bin/sh -c \
+	'. "$1"; lyona_xdg_dirs; printf "%s %s %s %s" "$config_home" "$data_home" "$state_home" "$cache_home"' \
+	sh "$repo/scripts/dwm-xdg.sh")
+[ "$xdg_result" = '/h/.config /d /h/.local/state /h/.cache' ] ||
+	fail "lyona_xdg_dirs gave '$xdg_result'; a relative value must fall back"
+# shellcheck disable=SC2016 # expanded by the inner shell
+xdg_result=$(env -i /bin/sh -c '. "$1"; lyona_xdg_dirs lenient; printf "[%s]" "$config_home"' \
+	sh "$repo/scripts/dwm-xdg.sh")
+[ "$xdg_result" = '[]' ] || fail "lyona_xdg_dirs lenient without HOME gave $xdg_result"
+# shellcheck disable=SC2016 # expanded by the inner shell
+if env -i /bin/sh -c '. "$1"; lyona_xdg_dirs; exit 0' sh "$repo/scripts/dwm-xdg.sh" 2>/dev/null; then
+	fail 'lyona_xdg_dirs without HOME did not fail'
+fi
+
+# ── The trust checks are defined once ────────────────────────────────────
+#
+# Sync Sprint 12 S12-14 (D-21): dwm-trust.sh holds trusted_parent_chain and
+# trusted_file. The two root helpers source nothing at run time, so each keeps a
+# verbatim copy between its BEGIN and END markers, which must equal the
+# library's functions exactly.
+trust_lib=$repo/scripts/dwm-trust.sh
+sed -n "/^# Every directory from PATH's parent up to/,\$p" "$trust_lib" >"$work/trust-lib"
+[ -s "$work/trust-lib" ] || fail 'could not read the functions from dwm-trust.sh'
+for root_helper in lyona-update-root dwm-settings-display-root; do
+	sed -n '/^# BEGIN dwm-trust.sh/,/^# END dwm-trust.sh$/p' "$repo/scripts/$root_helper" |
+		sed '1,/^# tests\/test-shell-contracts.sh fails if this copy differs/d; $d' >"$work/trust-copy"
+	cmp -s "$work/trust-lib" "$work/trust-copy" || {
+		printf '%s: %s trust checks differ from dwm-trust.sh:\n' "$test_name" "$root_helper" >&2
+		diff "$work/trust-lib" "$work/trust-copy" >&2 || true
+		exit 1
+	}
+done
+for helper in trusted_parent_chain trusted_file; do
+	duplicate=$(grep -l "^$helper() {" "$repo"/scripts/* 2>/dev/null |
+		grep -vE '/(dwm-trust\.sh|lyona-update-root|dwm-settings-display-root)$' || true)
+	if [ -n "$duplicate" ]; then
+		printf '%s: %s is defined outside dwm-trust.sh:\n%s\n' "$test_name" "$helper" "$duplicate" >&2
+		exit 1
+	fi
+done
+
+# ── One preview state machine for font and toolkit ───────────────────────
+#
+# Sync Sprint 12 S12-14: dwm-preview.sh holds the lock, token, watchdog, expiry
+# and atomic-exchange machinery the two helpers share; neither may define its
+# own copy. (Other helpers have different machines, some with the same names.)
+grep -oE '^[a-z_]+\(\) \{' "$repo/scripts/dwm-preview.sh" | sed 's/() {$//' >"$work/preview-functions"
+[ "$(wc -l <"$work/preview-functions")" -ge 30 ] || fail 'could not read dwm-preview.sh functions'
+for preview_helper in dwm-settings-font dwm-settings-toolkit; do
+	while IFS= read -r preview_function; do
+		! grep -q "^$preview_function() {" "$repo/scripts/$preview_helper" ||
+			fail "$preview_helper defines $preview_function, which dwm-preview.sh holds"
+	done <"$work/preview-functions"
+	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
+	grep -Fq '. "$lyona_lib/dwm-preview.sh"' "$repo/scripts/$preview_helper" ||
+		fail "$preview_helper does not source dwm-preview.sh"
+done
+
 printf '%s\n' 'Shell contracts: PASS'

@@ -38,6 +38,7 @@ if [ "$(id -u)" -eq 0 ] && [ "${DWM_SETTINGS_XVFB_UNPRIVILEGED:-0}" != 1 ]; then
 	mkdir -p "$fixture_repo/assets"
 	cp -a "$repo/assets/logo" "$fixture_repo/assets/logo"
 	cp "$repo/dwm" "$fixture_repo/dwm"
+	cp "$repo/lyona-toml" "$fixture_repo/lyona-toml"
 	cp "$0" "$fixture_repo/tests/test-quickshell-settings-xvfb.sh"
 	chown -R "$unprivileged_uid:$unprivileged_gid" "$root_runner_work"
 	chmod 700 "$fixture_repo/dwm" "$root_runner_work/runtime"
@@ -269,6 +270,8 @@ mkdir -p "$config_home/quickshell" "$config_home/lyona" \
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
+# The checkout layout: the built TOML reader sits beside scripts/ (S12-14).
+cp "$repo/lyona-toml" "$data_home/checkout/scripts/.."
 chmod 700 "$runtime_storage"
 cat >"$fixture_feh" <<'EOF'
 #!/bin/sh
@@ -373,7 +376,8 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-xsettings-config.sh" \
 	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
 	"$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-watchdog.sh" \
-	"$repo/scripts/dwm-simple-watch.sh" \
+	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
+	"$repo/scripts/dwm-preview.sh" \
 	"$data_home/checkout/scripts/"
 
 appearance_failure_fixture=$work/appearance-snapshot-failure

@@ -19,6 +19,7 @@ typedef enum {
 
 typedef struct {
 	TomlType type;
+	int      is_bool; /* a TOML_INT that was written true or false */
 	char     s[TOML_MAX_STR];
 	long     i;
 	double   d;
@@ -38,6 +39,7 @@ typedef struct {
 typedef struct {
 	TomlEntry entries[TOML_MAX_ENTRIES];
 	int       n;
+	int       truncated; /* entries past TOML_MAX_ENTRIES were dropped */
 } TomlDoc;
 
 int toml_parse(const char *path, TomlDoc *doc);

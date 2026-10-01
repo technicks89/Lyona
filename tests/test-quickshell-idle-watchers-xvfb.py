@@ -119,6 +119,8 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
     for toml in (repo / 'config').glob('*.toml'):
         shutil.copy(toml, config / 'lyona' / toml.name)
     shutil.copytree(repo / 'scripts', home / '.local/share/checkout/scripts')
+    # The checkout layout: the built TOML reader beside scripts/ (S12-14).
+    shutil.copy2(repo / 'lyona-toml', home / '.local/share/checkout/lyona-toml')
     (home / '.cache').mkdir()
     runtime = base / 'runtime'
     runtime.mkdir(mode=0o700)

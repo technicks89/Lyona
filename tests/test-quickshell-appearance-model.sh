@@ -140,8 +140,9 @@ if sed -n '/function clearFontStatus(detail)/,/^    }/p' "$model" |
 	exit 1
 fi
 test "$(grep -Fc 'root.refreshFontStatus();' "$model")" -eq 3
-grep -Fq 'running: root.settingsVisible && root.fontPreviewState === "active"' "$model"
-grep -Fq 'root.fontPreviewRemaining--' "$model"
+# The countdowns are PreviewCountdown components (Sync Sprint 12 S12-14).
+grep -Fq 'active: root.settingsVisible && root.fontPreviewState === "active"' "$model"
+grep -Fq 'property alias fontPreviewRemaining: fontCountdown.remaining' "$model"
 grep -Fq 'Commands.settingsWallpaperCommand("status", ["--read-only"])' "$model"
 if grep -Fq 'Commands.checkedCommand(Commands.settingsWallpaperCommand("status"' "$model"; then
 	printf 'Wallpaper status remained behind the orphan-prone checked-command wrapper\n' >&2
@@ -203,8 +204,8 @@ grep -Fq 'if (root.inventoryWatchSawEvent) inventoryWatchRestartTimer.restart();
 grep -Fq 'if (!previewWasActive && preview.state === "active") {' "$model"
 grep -Fq 'root.wallpaperPreviewState = "none";' "$model"
 grep -Fq 'Qt.callLater(root.refreshWallpaperStatus)' "$model"
-grep -Fq 'running: root.settingsVisible && root.wallpaperPreviewState === "active"' "$model"
-grep -Fq 'root.wallpaperPreviewRemaining--' "$model"
+grep -Fq 'active: root.settingsVisible && root.wallpaperPreviewState === "active"' "$model"
+grep -Fq 'property alias wallpaperPreviewRemaining: wallpaperCountdown.remaining' "$model"
 if grep -Fq 'onTriggered: root.refreshWallpaperStatus()' "$model"; then
 	printf 'Wallpaper preview countdown still polls the full status helper every second\n' >&2
 	exit 1
@@ -213,7 +214,8 @@ grep -Fq 'model: root.settingsVisible ? root.statusWatchPaths : []' "$model"
 grep -Fq 'watchChanges: root.settingsVisible' "$model"
 grep -Fq 'onTriggered: if (root.settingsVisible) root.refreshAll()' "$model"
 test "$(grep -Fc 'onTriggered: if (root.settingsVisible) root.refreshAll()' "$model")" -eq 2
-grep -Fq 'running: root.previewState === "active" && root.previewRemaining > 0' "$model"
+grep -Fq 'active: root.previewState === "active"' "$model"
+grep -Fq 'property alias previewRemaining: themeCountdown.remaining' "$model"
 grep -Fq 'previewZeroRetryTimer.restart()' "$model"
 grep -Fq 'if (!root.previewStatusParsed) root.previewZeroRetryAttempts++' "$model"
 grep -Fq 'if (root.previewStatusManualOnly && force !== true) return;' "$model"

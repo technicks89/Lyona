@@ -34,7 +34,8 @@ cp -a \
 	"$repo/assets" \
 	"$test_repo/"
 printf '%s\n' 'test dwm binary' >"$test_repo/dwm"
-chmod 755 "$test_repo/dwm"
+printf '%s\n' 'test lyona-toml binary' >"$test_repo/lyona-toml"
+chmod 755 "$test_repo/dwm" "$test_repo/lyona-toml"
 
 # shellcheck disable=SC2016
 make -s -C "$test_repo" --no-print-directory \
@@ -58,6 +59,7 @@ make -s -C "$test_repo" --no-print-directory \
 	test-print-privileged-helpers >"$privileged_helpers"
 
 install -Dm755 "$test_repo/dwm" "$prefix/bin/dwm"
+install -Dm755 "$test_repo/lyona-toml" "$prefix/lib/lyona/lyona-toml"
 while IFS= read -r privileged_helper; do
 	[ -n "$privileged_helper" ] || continue
 	sed "s|@PREFIX@|$prefix|g" "$test_repo/$privileged_helper" |

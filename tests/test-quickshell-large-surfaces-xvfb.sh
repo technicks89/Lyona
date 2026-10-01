@@ -98,6 +98,8 @@ mkdir -p "$config_home/quickshell" "$config_home/lyona" "$home/.cache" \
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
+# The checkout layout: the built TOML reader sits beside scripts/ (S12-14).
+cp "$repo/lyona-toml" "$data_home/checkout/scripts/.."
 chmod 700 "$runtime_storage"
 if [ "${#runtime}" -gt 64 ]; then
 	runtime_alias_dir=$(mktemp -d /tmp/dwm-large-surface-runtime.XXXXXX)
@@ -111,7 +113,9 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-quickshell-controlcenter" \
 	"$repo/scripts/dwm-quickshell-controls" "$repo/scripts/dwm-quickshell-network" \
 	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-diagnostics" \
-	"$repo/scripts/dwm-lock" "$data_home/checkout/scripts/"
+	"$repo/scripts/dwm-lock" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-watchdog.sh" "$repo/scripts/dwm-trust.sh" \
+	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xsettings-config.sh" \
+	"$data_home/checkout/scripts/"
 
 cat >"$data_home/applications/dwm-large-surface-test.desktop" <<'DESKTOP'
 [Desktop Entry]
