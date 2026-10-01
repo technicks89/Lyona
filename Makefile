@@ -242,7 +242,7 @@ install-system:
 	@test -x ${THUMB} || { echo "${THUMB} is not built. Run make before install-system." >&2; exit 1; }
 	@test ! ${THUMB}.c -nt ${THUMB} || { echo "${THUMB} is stale. Run make before install-system." >&2; exit 1; }
 	@test -x ${TOML_TOOL} || { echo "${TOML_TOOL} is not built. Run make before install-system." >&2; exit 1; }
-	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h util.c util.h; do \
+	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h tomlparser.o util.c util.h util.o config.h config.mk Makefile; do \
 		test ! "$$input" -nt ${TOML_TOOL} || { echo "${TOML_TOOL} is stale. Run make before install-system." >&2; exit 1; }; \
 	done
 	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h config.h config.mk Makefile; do \

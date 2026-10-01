@@ -3,7 +3,7 @@
 Parent: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-14-one-reader-per-shared-format-one-copy-of-shared-safety-logic`.
 Issue `#177`. Five parts: four from the review, and one (XDG paths) added from
 S12-13. Each step below is reviewable and testable on its own; the order puts the
-mechanical, no-behaviour-change steps first. Nothing here is implemented yet.
+mechanical, no-behaviour-change steps first. Implementation is recorded in the steps below.
 
 ## What exists today (surveyed 2026-09-29, `main` at `d356657`)
 
@@ -178,7 +178,7 @@ from the text above:
   - `dwm-settings-provider`'s process check, where a missing HOME now means "not
     ours" rather than trusting `/.config`;
   - `dwm-quickshell-launcher`'s data directory.
-- **Migrated: 29 scripts.**
+- **Migrated: 28 scripts.**
   - Bash: the 20 listed in the parent item.
   - POSIX `sh`: `autostart.sh`, `lyona-version`,
     `seed-autostart-overrides.sh`, `migrate-graphical-session.sh`,

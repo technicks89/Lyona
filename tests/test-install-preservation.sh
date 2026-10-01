@@ -177,7 +177,23 @@ test ! -e "$WORK_DIR/stale-stage"
 for object in drw.o dwm.o util.o tomlparser.o; do
 	install -Dm644 /dev/null "$TEST_REPO/$object"
 done
+# The object fixtures are newer than the copied TOML reader.
+touch "$TEST_REPO/lyona-toml"
 install -Dm755 /bin/true "$TEST_REPO/dwm"
+for input in tomlparser.o util.o config.h config.mk Makefile; do
+	touch -r "$TEST_REPO/lyona-toml" -d '+1 second' "$TEST_REPO/$input"
+	touch -r "$TEST_REPO/$input" "$TEST_REPO/dwm"
+	if make -C "$TEST_REPO" install-system \
+		DESTDIR="$WORK_DIR/stale-stage" >"$WORK_DIR/stale-toml-install.log" 2>&1; then
+		printf 'System install accepted a TOML reader older than %s.\n' "$input" >&2
+		exit 1
+	fi
+	grep -Fq 'lyona-toml is stale. Run make before install-system.' \
+		"$WORK_DIR/stale-toml-install.log"
+	test ! -e "$WORK_DIR/stale-stage"
+	touch -r "$TEST_REPO/lyona-toml" "$TEST_REPO/$input"
+done
+touch "$TEST_REPO/dwm"
 mv "$TEST_REPO/config.h" "$TEST_REPO/config.h.saved"
 if make -C "$TEST_REPO" install-system \
 	DESTDIR="$WORK_DIR/stale-stage" >"$WORK_DIR/missing-input-install.log" 2>&1; then

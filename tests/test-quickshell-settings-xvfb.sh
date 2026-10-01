@@ -38,6 +38,7 @@ if [ "$(id -u)" -eq 0 ] && [ "${DWM_SETTINGS_XVFB_UNPRIVILEGED:-0}" != 1 ]; then
 	mkdir -p "$fixture_repo/assets"
 	cp -a "$repo/assets/logo" "$fixture_repo/assets/logo"
 	cp "$repo/dwm" "$fixture_repo/dwm"
+	cp "$repo/lyona-toml" "$fixture_repo/lyona-toml"
 	cp "$0" "$fixture_repo/tests/test-quickshell-settings-xvfb.sh"
 	chown -R "$unprivileged_uid:$unprivileged_gid" "$root_runner_work"
 	chmod 700 "$fixture_repo/dwm" "$root_runner_work/runtime"

@@ -346,7 +346,7 @@ expire_preview_locked() {
 				;;
 			esac
 		fi
-		mark_failed "$token" 'Font configuration changed outside Settings; automatic rollback was not applied'
+		mark_failed "$token" "${preview_label^} configuration changed outside Settings; automatic rollback was not applied"
 		return 1
 	fi
 	if [[ $current_boot == "$boot_id" ]]; then

@@ -221,6 +221,16 @@ refuses 'a token with a path in it' preview '../escape' 30 gtk Adwaita-dark
 # A safe file name, but longer than valid_token allows: only that check refuses it.
 refuses 'an over-long preview token' preview "$(printf 'a%.0s' $(seq 97))" 30 gtk Adwaita-dark
 
+# External changes must survive rollback and identify the toolkit configuration.
+toolkit preview tok-external 30 gtk Adwaita-dark >/dev/null
+sed -i 's/^gtk\tAdwaita-dark$/gtk\tLyona-nord/' "$config"
+external_hash=$(sha256sum <"$config")
+toolkit status >"$work/external-status"
+grep -Fq $'preview\tfailed\ttok-external\t\t\t0\tToolkit configuration changed outside Settings; automatic rollback was not applied' \
+	"$work/external-status" || fail 'external change reported the wrong configuration'
+assert_equals "$external_hash" "$(sha256sum <"$config")" 'external edit was preserved'
+toolkit abandon tok-external >/dev/null
+
 # ── the theme transaction gate ───────────────────────────────────────────
 #
 # dwm-settings-theme snapshots the files theme-apply.sh derives and refuses to
