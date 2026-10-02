@@ -169,6 +169,12 @@ dwm_packages() {
 	arch:xscreensaver)
 		printf '%s\n' xscreensaver
 		;;
+	arch:rust-toolchain)
+		# rustup, for cargo: Topgrade is built with it (Sync Sprint 15 S15-06,
+		# decision D-28), as it is AUR-only. rustup conflicts with Arch's
+		# rust and cargo packages; install.sh leaves an installed rust alone.
+		printf '%s\n' rustup
+		;;
 	arch:shell)
 		# The interactive shell configuration from technicks89/mybash. Its own
 		# setup.sh pipes an installer from starship.rs and pulls an unpinned
@@ -228,6 +234,7 @@ dwm_packages() {
 		dwm_packages "$family" theme-gtk
 		dwm_packages "$family" fonts
 		dwm_packages "$family" shell
+		dwm_packages "$family" rust-toolchain
 		;;
 	arch:optional)
 		dwm_packages "$family" theme-optional

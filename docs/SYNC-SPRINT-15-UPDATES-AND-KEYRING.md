@@ -20,6 +20,7 @@ and the login keyring", issues `#214` to `#218`.
 | [S15-03](#s15-03-flatpak-updates) | `#216` | Feature | S15-02 |
 | [S15-04](#s15-04-system-updates-in-a-terminal) | `#217` | Feature | none (D-26 decided) |
 | [S15-05](#s15-05-validate-in-a-live-session) | `#218` | Validation | S15-01 to S15-04, live session |
+| [S15-06](#s15-06-topgrade-built-with-cargo-from-rustup) | -- | Feature | none (D-28 decided) |
 
 ---
 
@@ -275,6 +276,36 @@ instead. `#363` builds an Update Center on top of that declined updater.
     `docs/AUR-PACKAGES.md`, `CHANGELOG.md` (with the migration note).
   - **Validation:** the focused targets and the full `scripts/run-tests`
     suite passed (2026-10-02).
+- **S15-06 (2026-10-02, branch `s15-06-topgrade`):**
+  - **The installer:** `scripts/install-topgrade` builds the pinned Topgrade
+    17.12.3 with `cargo install --locked --version 17.12.3 topgrade` into
+    `~/.cargo/bin`.
+    - **The toolchain:** when no toolchain is set, rustup's stable toolchain is
+      installed (minimal profile) and made the default; one already set is left
+      alone.
+    - **Already installed:** a matching version is not rebuilt (`--force`
+      rebuilds). `--dry-run` changes nothing. It refuses root.
+  - **The package:** `install.sh` installs `rustup` through a new
+    `arch:rust-toolchain` profile, part of `recommended`, then runs the
+    installer after mybash, which puts `~/.cargo/bin` on `PATH`.
+    - **Arch's `rust`:** `rustup` conflicts with `rust` and `cargo`, so an
+      installed `rust` is kept and its `cargo` used. `pacman -Qq` resolves
+      provides (it prints `rustup` for `rust`), so the names are compared
+      exactly.
+    - **A failed build** warns and the install carries on.
+  - **Tests:** `tests/test-install-topgrade.sh` (`make check-topgrade-install`):
+    - the toolchain steps and the pinned `--locked` build;
+    - no rebuild when installed, `--force`, an older version upgraded, and a
+      dry run;
+    - a failed build, a wrong version and no cargo;
+    - `install.sh`: rustup from the map, an installed `rust` kept, the order
+      after mybash, the plan line, and no Topgrade for `core`.
+  - **Docs:** `docs/src/install.md`, `docs/src/dependencies.md`,
+    `docs/AUR-PACKAGES.md` (kept out of the AUR), `CHANGELOG.md`.
+  - **Not tested:** a real build from crates.io on a fresh install. This
+    machine already has Topgrade 17.12.2 in `~/.cargo/bin`, from rustup.
+  - **Validation:** the focused targets and the full `scripts/run-tests`
+    suite passed (2026-10-02).
 - **S15-05:** partly run. The read-only checks passed on a real Arch
   install: the real `checkupdates`, the NetworkManager subscription, the
   keyring diagnostic, and LightDM's PAM lines. Everything that changes the
@@ -380,6 +411,22 @@ From `#363`. Decided by D-26.
 - **Tests:** a stub terminal and stub `pacman`/`yay`: the command line, no
   `--noconfirm`, success, failure, a declined plan, an early close, and
   `yay` missing.
+
+## S15-06: Topgrade, built with cargo from rustup
+
+Added 2026-10-02 at the maintainer's request. Decided by D-28.
+
+Topgrade updates everything (packages, Flatpak, cargo crates, firmware and
+more) with one command. It is AUR-only on Arch (`topgrade`, `topgrade-bin`), so
+it is built with `cargo install` from crates.io instead, from a `rustup`
+toolchain rather than Arch's `rust` package.
+
+- Install `rustup` (in `extra`) through the package map, for `recommended`, and
+  never over an installed `rust`.
+- Build a pinned release with `--locked`, into `~/.cargo/bin`, after mybash
+  puts that on `PATH`. Set the stable toolchain only when none is set.
+- The network is needed; a failure is reported and does not stop the install.
+- Tests against a stub cargo and rustup, and the docs.
 
 ## S15-05: Validate in a live session
 

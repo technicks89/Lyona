@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Topgrade, the one command that updates everything (Sync Sprint 15 S15-06,
+# decision D-28). Topgrade is AUR-only on Arch, so it is built from crates.io
+# with cargo instead, from a rustup toolchain rather than Arch's rust package.
+#
+# - The version is pinned, and --locked builds it with the dependency versions
+#   its release was tested with. cargo checks every crate against the
+#   checksums in the crates.io index.
+# - The toolchain: when cargo is rustup's and no toolchain is set, the stable
+#   toolchain is installed with the minimal profile and made the default. A
+#   toolchain the user already chose is left alone.
+# - The binary goes to cargo's own ~/.cargo/bin, which the mybash shell
+#   configuration puts on PATH.
+#
+# Needs the network (the toolchain and the crates). install.sh runs this for
+# the recommended profile and carries on when it fails.
+
+readonly TOPGRADE_VERSION=17.12.3
+
+usage() {
+	cat <<EOF
+Usage: install-topgrade [--dry-run] [--force]
+
+Build and install Topgrade ${TOPGRADE_VERSION} with cargo, from a rustup toolchain.
+
+Options:
+  --dry-run  Print what would be installed, and change nothing.
+  --force    Rebuild even when this version is already installed.
+  -h, --help Show this help.
+EOF
+}
+
+say() { printf 'install-topgrade: %s\n' "$*"; }
+die() {
+	printf 'install-topgrade: %s\n' "$*" >&2
+	exit 1
+}
+
+dry_run=false
+force=false
+while (($# > 0)); do
+	case $1 in
+	--dry-run) dry_run=true ;;
+	--force) force=true ;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		printf 'install-topgrade: unknown option: %s\n' "$1" >&2
+		usage >&2
+		exit 2
+		;;
+	esac
+	shift
+done
+
+[[ $(id -u) -ne 0 || ${TOPGRADE_ALLOW_ROOT:-0} == 1 ]] || die 'run as the target user, not as root'
+[[ -n ${HOME:-} ]] || die 'HOME is not set'
+
+cargo_home=${CARGO_HOME:-$HOME/.cargo}
+target=$cargo_home/bin/topgrade
+
+# `topgrade --version` prints "topgrade 17.12.3".
+installed_version() {
+	local output
+	[[ -x $target ]] || return 1
+	output=$("$target" --version 2>/dev/null) || return 1
+	printf '%s' "${output##* }"
+}
+
+if ! $force && [[ $(installed_version || :) == "$TOPGRADE_VERSION" ]]; then
+	say "Topgrade $TOPGRADE_VERSION is already installed at $target."
+	exit 0
+fi
+
+if $dry_run; then
+	say "would build Topgrade $TOPGRADE_VERSION with: cargo install --locked --version $TOPGRADE_VERSION topgrade"
+	say "into $target, using rustup's stable toolchain (minimal profile) if no toolchain is set"
+	exit 0
+fi
+
+command -v cargo >/dev/null 2>&1 ||
+	die 'cargo is not installed; install rustup first (sudo pacman -S rustup)'
+
+# rustup's cargo has no toolchain until one is installed; choose stable then.
+if command -v rustup >/dev/null 2>&1 && ! rustup show active-toolchain >/dev/null 2>&1; then
+	say 'no Rust toolchain is set; installing the stable toolchain (minimal profile)...'
+	rustup toolchain install stable --profile minimal || die 'could not install the stable Rust toolchain'
+	rustup default stable >/dev/null || die 'could not make stable the default Rust toolchain'
+fi
+
+say "building Topgrade $TOPGRADE_VERSION; this takes a few minutes..."
+cargo install --locked --version "$TOPGRADE_VERSION" topgrade ||
+	die "cargo could not build Topgrade $TOPGRADE_VERSION"
+[[ $(installed_version || :) == "$TOPGRADE_VERSION" ]] ||
+	die "Topgrade was built, but $target does not report version $TOPGRADE_VERSION"
+say "Topgrade $TOPGRADE_VERSION is installed at $target; run topgrade in a new shell."

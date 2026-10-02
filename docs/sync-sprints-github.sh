@@ -170,6 +170,7 @@ items=(
 	"15|S15-03|s15-03-flatpak-updates|Flatpak updates|upstream #363"
 	"15|S15-04|s15-04-system-updates-in-a-terminal|System updates in a terminal (D-26)|upstream #363"
 	"15|S15-05|s15-05-validate-in-a-live-session|Validate in a live session|upstream #363, #365"
+	"15|S15-06|s15-06-topgrade-built-with-cargo-from-rustup|Topgrade, built with cargo from rustup (D-28)|maintainer request"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \

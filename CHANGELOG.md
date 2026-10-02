@@ -537,6 +537,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- A `recommended` install now includes Topgrade, which updates everything with one command (Sync Sprint 15 S15-06,
+  decision D-28). It is AUR-only on Arch, so it is built with `cargo install --locked` at a pinned version (17.12.3),
+  using `rustup`'s stable toolchain (minimal profile), not Arch's `rust` package. An installed `rust` is kept and its
+  `cargo` used. It installs to `~/.cargo/bin`, and a failed build does not stop the install. On an existing install,
+  run `scripts/install-topgrade`.
 - Settings > System can update packages and Flatpak apps in your terminal (Sync Sprint 15 S15-03 and S15-04, from
   upstream `#363`, decision D-26). Packages use `yay -Syu` when `yay` is installed, so AUR packages such as the legacy
   NVIDIA drivers update too, and `sudo pacman -Syu` otherwise. Flatpak updates the system and user installations each

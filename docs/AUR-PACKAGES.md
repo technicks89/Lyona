@@ -20,6 +20,12 @@ Where the AUR is used today:
 | Legacy NVIDIA drivers, for older cards (Sync Sprint 14) | Arch dropped every pre-Turing driver | `install_legacy_nvidia_driver` in the live medium's postinstall | the CachyOS repository first; otherwise pinned, reviewed PKGBUILDs |
 | The user's own package update (Sync Sprint 15, D-26) | AUR-built packages, such as the drivers above, are not updated by `pacman -Syu` | `run_system` in `scripts/lyona-update-terminal`: `yay -Syu` when `yay` is installed | the exact full upgrade, started by the user in their terminal; it names no packages, so it installs nothing new |
 
+Kept out of the AUR:
+
+- **Topgrade** (Sync Sprint 15 S15-06, decision D-28): AUR-only on Arch. It is
+  built instead with `cargo install --locked` at a pinned version, from
+  crates.io, by `scripts/install-topgrade`, using `rustup` from `extra`.
+
 ## Legacy NVIDIA drivers (Sync Sprint 14)
 
 The legacy NVIDIA drivers for older cards, which have no driver in `core`,
