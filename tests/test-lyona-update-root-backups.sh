@@ -199,17 +199,15 @@ install_helper
 live=$prefix/bin/dwm-status
 printf '# live-before-update\n' >>"$live"
 version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$src/config.mk")
-# install-system release builds from a source tree (it reads config.mk and runs
-# make), so the test gives it one. (`make release` produces a runtime bundle with
-# no Makefile; that mismatch is tracked separately, not by this test.)
-make -s -C "$src" clean >/dev/null
-cp -a "$src" "$work/lyona-$version"
-rm -rf "$work/lyona-$version/.git" "$work/lyona-$version/release"
+# The real release asset (Sync Sprint 12 S12-19): make release's source archive,
+# which install-system release builds and installs. The copy keeps its owner from
+# the checkout, so git is told, for this one call, to trust it as root.
 updates=$home/.local/state/lyona/updates
 install -d -o "$uid" -g "$uid" -m 0700 "$home/.local" "$home/.local/state" \
 	"$home/.local/state/lyona" "$updates"
 tarball=$updates/lyona-$version.tar.gz
-tar -C "$work" -czf "$tarball" "lyona-$version"
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$src" \
+	make -s -C "$src" release RELEASE_ARCHIVE="$tarball" >/dev/null
 chown "$uid:$uid" "$tarball"
 chmod 0644 "$tarball"
 sha=$(sha256sum "$tarball" | awk '{ print $1 }')

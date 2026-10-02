@@ -10,6 +10,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `lyona-update` can install a published release again (Sync Sprint 12 S12-19). The release asset was a runtime bundle
+  with no `Makefile`, which both the updater and its root helper build from, so every release install failed at the
+  first `make`. The asset is now a reproducible source archive of the repository. `make release-check` builds it from
+  the extracted archive alone, and the update tests install the real archive.
 - Preserve existing CachyOS signing keys when key verification fails, and stop
   on keyring listing errors.
 - Remove partial web-app icon downloads and create the app without an icon

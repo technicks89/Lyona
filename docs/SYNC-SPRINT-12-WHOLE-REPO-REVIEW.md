@@ -1240,6 +1240,31 @@ details are in [`SYNC-SPRINT-12-S12-16-SPLIT.md`](SYNC-SPRINT-12-S12-16-SPLIT.md
 
 **Source:** found while testing S12-01 (2026-09-27). **Verified.** Not one of the four
 reviews' findings.
+**Implemented (2026-10-02): option 1, the recommended one.**
+
+- **The release target:** `make release` now writes a source archive: git's
+  file list (tracked, plus untracked files not ignored, which a release never has
+  because `lyona-release` requires a clean tree) under `lyona-VERSION/`. It is
+  reproducible (sorted, fixed mtime, owner and mode).
+  `RELEASE_ARCHIVE=PATH` writes it elsewhere, so tests don't touch the
+  checkout's `release/`.
+- **`release-check`:**
+  - checks reproducibility;
+  - checks for the sources and build files, and rejects binaries, `config.h`,
+    objects, `.git` and `release/`;
+  - extracts the archive alone and builds it.
+- **No updater change:** the updater and the root helper already build from
+  source, unchanged.
+- **Verification:**
+  - `tests/test-lyona-update.sh` installs the real `make release` output with
+    `apply --file`. It builds and reaches the privileged step in two cases,
+    where the test's absent root helper stops it. The broken-build case keeps
+    `.git`, so its broken `dwm.c` is archived.
+  - The S12-01 container test (`check-update-root-backups`) runs
+    `install-system release` on the real archive, as root in the CI image, and
+    passes. Its copy of the checkout keeps the host user as owner, so git is
+    given `safe.directory` for that one call.
+  - The workflows already set `safe.directory` for the workspace.
 
 `scripts/lyona-release` publishes the output of `make release` as
 `lyona-<version>.tar.gz` (`scripts/lyona-release:194,249-252`). That archive is a
