@@ -15,9 +15,25 @@ pkill -9 -f 'CrUtilityMain'
 pkill -9 -f 'CrBrowserMain'
 pkill -9 -f 'CrRendererMain'
 
+# A name alone also matches unrelated programs (REAPER, the audio workstation,
+# runs as "reaper"), so only kill a process whose executable is inside a Steam,
+# Proton or Lutris install.
+proton_owned() {
+	local exe
+	exe=$(readlink -- "/proc/$1/exe" 2>/dev/null) || return 1
+	case $exe in
+	*/steamapps/common/* | */compatibilitytools.d/* | */ubuntu12_32/* | */ubuntu12_64/* | */lutris/runners/*) return 0 ;;
+	esac
+	return 1
+}
+
 PROTONCORE=(pv-bwrap pressure-vessel reaper wineserver winedevice services.exe explorer.exe)
 for PROG in "${PROTONCORE[@]}"; do
-	killall -9 "$PROG" 2>/dev/null
+	for pid in $(pgrep -x -- "$PROG"); do
+		if proton_owned "$pid"; then
+			kill -9 "$pid" 2>/dev/null
+		fi
+	done
 done
 
 echo "Final sweep of wine/proton prefixes..."
