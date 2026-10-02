@@ -62,9 +62,11 @@ What a running session needs: D-Bus, `xdotool` and `xprop` (the Quickshell state
 
 ### `desktop`
 
-The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak and the GTK desktop portal.
+The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, and the login keyring.
 
-`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum`
+`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `gnome-keyring`
+
+`gnome-keyring` (the `keyring` group) stores secrets for browsers, NetworkManager and other applications. It includes `pam_gnome_keyring.so`, which Arch's LightDM PAM stack already loads, so a password login unlocks the keyring; there is no separate PAM package. Under `startx` the keyring is unlocked on first use instead. `dwm-diagnostics` and System Health flag it when it is missing.
 
 ### `media`
 
@@ -110,9 +112,9 @@ The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfe
 
 ### `desktop-optional`
 
-Thunar with SMB browsing and archive support, thumbnails, the keyring, NetworkManager, `rsync` and `autorandr`. Every package is in the official repositories (no AUR).
+Thunar with SMB browsing and archive support, thumbnails, NetworkManager, `rsync` and `autorandr`. Every package is in the official repositories (no AUR).
 
-`thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `gnome-keyring` `networkmanager` `rsync` `autorandr`
+`thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `networkmanager` `rsync` `autorandr`
 
 ### `theme-optional`
 

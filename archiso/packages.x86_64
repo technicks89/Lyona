@@ -17,6 +17,7 @@ fontconfig
 freetype2
 gcc
 git
+gnome-keyring
 gum
 imlib2
 inotify-tools

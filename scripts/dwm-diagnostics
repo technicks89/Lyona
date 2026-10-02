@@ -7,6 +7,8 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 [[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-packages.sh
+. "$lyona_lib/dwm-packages.sh"
 
 format=human
 required_fail=0
@@ -170,6 +172,31 @@ check_herdr() {
 	fi
 }
 
+# The login keyring's packages (Sync Sprint 15 S15-01). They are in the desktop
+# group, so a missing one is a warning, as lyona-update gives (decision D-24).
+# pacman -T exits 0 when a package is installed and 127 when it is not.
+check_keyring() {
+	local package status
+
+	while IFS= read -r package; do
+		[[ -n $package ]] || continue
+		if ! have_cmd pacman; then
+			optional_missing "dependency-package-$package" "$package" "Could not check $package: pacman not found"
+			continue
+		fi
+		status=0
+		pacman -T "$package" >/dev/null 2>&1 || status=$?
+		case $status in
+		0) ok "dependency-package-$package" "$package" "$package is installed" ;;
+		127)
+			optional_missing "dependency-package-$package" "$package" \
+				"Install $package for secret storage and the keyring unlock at password login; then log out and back in"
+			;;
+		*) optional_missing "dependency-package-$package" "$package" "Could not check $package (pacman -T failed)" ;;
+		esac
+	done < <(dwm_packages arch keyring)
+}
+
 check_path_optional() {
 	local id=$1
 	local path=$2
@@ -209,6 +236,7 @@ main() {
 	check_optional_cmd blueman-applet
 	check_any_optional_cmd "XDG autostart runner" dex dex-autostart
 	check_any_optional_cmd "audio control" pactl wpctl amixer
+	check_keyring
 	check_path_optional xinitrc "$HOME/.xinitrc"
 	lyona_xdg_dirs
 	check_path_optional quickshell-config "$config_home/quickshell/shell.qml"

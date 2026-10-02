@@ -31,8 +31,41 @@ exit 1
 SCRIPT
 chmod +x "$work/bin/pkg-config"
 
+# pacman -T: 0 when installed, 127 when not (Sync Sprint 15 S15-01).
+cat >"$work/bin/pacman" <<'SCRIPT'
+#!/bin/sh
+test "$1" = "-T" || exit 1
+case " ${FAKE_PACMAN_MISSING:-} " in
+*" $2 "*) printf '%s\n' "$2"; exit 127 ;;
+esac
+exit "${FAKE_PACMAN_STATUS:-0}"
+SCRIPT
+chmod +x "$work/bin/pacman"
+for cmd in tr cut; do
+	ln -s "$(command -v "$cmd")" "$work/bin/$cmd"
+done
+
 env HOME="$work/home" PATH="$work/bin" "$BASH_BIN" "$HELPER" >"$work/ok"
 grep -Fqx "  required_failures=0" "$work/ok"
+grep -Fqx "  ok      gnome-keyring" "$work/ok"
+# A missing keyring is a warning, as for the rest of the desktop group (D-24).
+env HOME="$work/home" PATH="$work/bin" FAKE_PACMAN_MISSING=gnome-keyring \
+	"$BASH_BIN" "$HELPER" >"$work/keyring-missing"
+grep -Fqx "  degraded gnome-keyring" "$work/keyring-missing"
+grep -Fqx "  required_failures=0" "$work/keyring-missing"
+env HOME="$work/home" PATH="$work/bin" FAKE_PACMAN_MISSING=gnome-keyring \
+	"$BASH_BIN" "$HELPER" --format health-tsv >"$work/keyring-missing.tsv"
+grep -F "$(printf '\twarn\tdependency-package-gnome-keyring\tgnome-keyring\tInstall gnome-keyring for secret storage')" \
+	"$work/keyring-missing.tsv" >/dev/null ||
+	fail "no warn row for a missing gnome-keyring in health-tsv"
+env HOME="$work/home" PATH="$work/bin" "$BASH_BIN" "$HELPER" --format health-tsv >"$work/keyring-ok.tsv"
+grep -F "$(printf '\tok\tdependency-package-gnome-keyring\t')" "$work/keyring-ok.tsv" >/dev/null ||
+	fail "no ok row for an installed gnome-keyring in health-tsv"
+# A failed query is reported as such, never as installed.
+env HOME="$work/home" PATH="$work/bin" FAKE_PACMAN_STATUS=1 \
+	"$BASH_BIN" "$HELPER" --format health-tsv >"$work/keyring-error.tsv"
+grep -F "Could not check gnome-keyring (pacman -T failed)" "$work/keyring-error.tsv" >/dev/null ||
+	fail "a failed pacman -T was not reported"
 grep -Fq "Optional desktop" "$work/ok"
 grep -Fq "degraded quickshell" "$work/ok"
 grep -Fq "degraded maim" "$work/ok"

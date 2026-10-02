@@ -148,6 +148,16 @@ grep -Fq 'unavailable in enabled repositories: absent-two' "$work/optional.err"
 
 "$repo/install.sh" --dry-run --non-interactive --profile core >/dev/null
 
+# The login keyring is part of the desktop group, not an optional extra (Sync
+# Sprint 15 S15-01, decision D-24), and is listed once.
+dwm_packages arch keyring | grep -Fxq gnome-keyring
+dwm_packages arch desktop | grep -Fxq gnome-keyring
+if dwm_packages arch desktop-optional | grep -Fxq gnome-keyring; then
+	printf 'gnome-keyring is still in desktop-optional.\n' >&2
+	exit 1
+fi
+[[ $(dwm_packages arch full | grep -Fxc gnome-keyring) -eq 1 ]]
+
 # docs/src/dependencies.md documents every package the map can install (Sync
 # Sprint 11 S11-05). The misses are collected in a variable and tested afterwards:
 # an exit inside a pipeline would only leave that pipeline's subshell.

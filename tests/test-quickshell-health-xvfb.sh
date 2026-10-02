@@ -50,6 +50,13 @@ stage_helpers checkout "$data_home/checkout/scripts" dwm-system-health dwm-diagn
 	dwm-quickshell-controlcenter dwm-quickshell-controls dwm-quickshell-launcher \
 	dwm-quickshell-network dwm-quickshell-pointer
 
+# The staged Health backend reports the login keyring (Sync Sprint 15 S15-01):
+# dwm-diagnostics found the package map beside it. ok or warn, by this host.
+HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	"$data_home/checkout/scripts/dwm-diagnostics" --format health-tsv >"$work/dependencies.tsv" || true
+grep -E "$(printf '\t(ok|warn)\tdependency-package-gnome-keyring\t')" "$work/dependencies.tsv" >/dev/null ||
+	fail "the staged diagnostics report no gnome-keyring row"
+
 Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 

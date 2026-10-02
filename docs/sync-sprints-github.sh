@@ -66,6 +66,7 @@ sprints=(
 	"12|Sync Sprint 12 - Whole-repo review|SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md"
 	"13|Sync Sprint 13 - Watcher lifetime under load|SYNC-SPRINT-13-WATCHER-LIFETIME-FLAKE.md"
 	"14|Sync Sprint 14 - Older NVIDIA GPUs|SYNC-SPRINT-14-LEGACY-NVIDIA.md"
+	"15|Sync Sprint 15 - Update discovery and the login keyring|SYNC-SPRINT-15-UPDATES-AND-KEYRING.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -164,6 +165,11 @@ items=(
 	"14|S14-02|s14-02-tell-which-driver-branch-a-card-needs|Tell which driver branch a card needs|maintainer request"
 	"14|S14-03|s14-03-install-the-legacy-driver-from-the-live-medium|Install the legacy driver from the live medium|maintainer request"
 	"14|S14-04|s14-04-validate-on-real-legacy-hardware|Validate on real legacy hardware|maintainer request"
+	"15|S15-01|s15-01-the-login-keyring-is-required-and-diagnosed|The login keyring is required and diagnosed (D-24)|upstream #365"
+	"15|S15-02|s15-02-an-updates-available-indicator-in-the-panel|An updates-available indicator in the panel (D-25)|upstream #363"
+	"15|S15-03|s15-03-flatpak-updates|Flatpak updates|upstream #363"
+	"15|S15-04|s15-04-system-updates-in-a-terminal|System updates in a terminal (D-26)|upstream #363"
+	"15|S15-05|s15-05-validate-in-a-live-session|Validate in a live session|upstream #363, #365"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \

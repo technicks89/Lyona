@@ -10,6 +10,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A `recommended` install now includes GNOME Keyring, so a password login through the display manager unlocks the
+  login keyring (Sync Sprint 15 S15-01, from upstream `#365`). It used to come only with the `full` profile, and
+  nothing reported it missing. Diagnostics and System Health now flag a missing `gnome-keyring`, and `lyona-update`
+  warns about it. On an existing install, add it with `sudo pacman -S --needed gnome-keyring`, then log out and back
+  in.
 - Check every NVIDIA display device before choosing a driver; mixed driver
   branches keep nouveau.
 - Clean up legacy NVIDIA packages newly installed by a failed CachyOS
