@@ -144,6 +144,7 @@ export LEGACY_NVIDIA_PINS='580xx	nvidia-580xx-utils	3d31a20c08a1e6c11c1abe953954
 install_legacy_nvidia_driver() {
 	local branch=$1 device=$2 base ref kernel_pkg build srcinfo package file
 	local -a packages kernel_pkgs headers=() built=() needed=() own=()
+	local -a legacy_packages absent_before=() newly_installed=()
 
 	mapfile -t packages < <(dwm_packages arch "gpu-nvidia-$branch")
 	mapfile -t kernel_pkgs < <(installed_kernels)
@@ -153,9 +154,31 @@ install_legacy_nvidia_driver() {
 	done
 
 	if [[ -e $CACHYOS_MARKER ]]; then
+		# Track both legacy branches, including DKMS packages so their utils
+		# can be removed without ignoring dependencies or removing old packages.
+		mapfile -t legacy_packages < <(
+			dwm_packages arch gpu-nvidia-580xx
+			dwm_packages arch gpu-nvidia-470xx
+		)
+		for package in "${legacy_packages[@]}"; do
+			if ! arch-chroot "$TARGET" pacman -Qq "$package" >/dev/null 2>&1; then
+				absent_before+=("$package")
+			fi
+		done
 		printf 'Installing the NVIDIA %s driver for GPU 10de:%s from the CachyOS repository...\n' "$branch" "$device"
 		if arch-chroot "$TARGET" pacman -S --noconfirm --needed "${packages[@]/#/cachyos/}" "${headers[@]}"; then
 			return 0
+		fi
+		# A failed transaction can still have installed nouveau-blacklisting
+		# utils. Remove only packages added by this attempt before falling back.
+		for package in "${absent_before[@]}"; do
+			if arch-chroot "$TARGET" pacman -Qq "$package" >/dev/null 2>&1; then
+				newly_installed+=("$package")
+			fi
+		done
+		if ((${#newly_installed[@]} > 0)); then
+			arch-chroot "$TARGET" pacman -R --noconfirm "${newly_installed[@]}" ||
+				printf 'lyona-postinstall: could not remove the newly installed legacy NVIDIA packages.\n'
 		fi
 		printf 'lyona-postinstall: the CachyOS repository could not supply it; building it from the AUR instead.\n'
 	fi

@@ -187,8 +187,13 @@ if [ "$#" = 0 ]; then
 	fi
 	exit 0
 fi
-[ "$*" = "-n -mm -d 10de::0300" ] || exit 0
-for id in $FAKE_NVIDIA_IDS; do
+case "$*" in
+'-n -mm -d 10de::0300') ids=$FAKE_NVIDIA_IDS ;;
+'-n -mm -d 10de::0302') ids=${FAKE_NVIDIA_3D_IDS:-} ;;
+'-n -mm -d 10de::0380') ids=${FAKE_NVIDIA_DISPLAY_IDS:-} ;;
+*) exit 9 ;;
+esac
+for id in $ids; do
 	printf '01:00.0 "0300" "10de" "%s" -ra1 "1458" "3717"\n' "$id"
 done
 SCRIPT
@@ -216,8 +221,21 @@ gpu_branch_case '580xx 1d81' 1d81       # Titan V, Volta
 gpu_branch_case '580xx 1380' 1380       # GTX 750 Ti, Maxwell
 gpu_branch_case '470xx 0fc6' 0fc6       # GTX 650, Kepler
 gpu_branch_case 'unsupported 06c0' 06c0 # GTX 480, Fermi
-gpu_branch_case 'open 2684' 2684 1b80   # the first card lspci lists
-gpu_branch_case none                    # no device ID read
+gpu_branch_case 'unsupported 1b80' 2684 1b80
+gpu_branch_case 'unsupported 1b80' 1b80 2684
+gpu_branch_case 'unsupported 0fc6' 1b80 0fc6
+gpu_branch_case 'unsupported 0fc6' 0fc6 1b80
+gpu_branch_case 'unsupported 06c0' 2684 06c0 0fc6
+gpu_branch_case 'unsupported 06c0' 06c0 2684
+gpu_branch_case 'open 1e07' 1E07 2684
+gpu_branch_case '580xx 1b80' 1B80 1380
+gpu_branch_case '470xx 0fc6' 0FC6 0fc6
+gpu_branch_case 'open 2684' invalid 2684
+FAKE_NVIDIA_3D_IDS=0fc6 gpu_branch_case 'unsupported 0fc6' 2684
+FAKE_NVIDIA_DISPLAY_IDS=06c0 gpu_branch_case 'unsupported 06c0' 1b80
+FAKE_NVIDIA_3D_IDS=1B80 gpu_branch_case '580xx 1b80'
+FAKE_NVIDIA_DISPLAY_IDS=2684 gpu_branch_case 'open 2684'
+gpu_branch_case none # no device ID read
 
 # One image for every GPU (D-17a, S12-17): the installer recommends the
 # proprietary driver the card needs, nvidia-open or a legacy one (Sprint 14),

@@ -36,11 +36,26 @@ shift
 printf '%s\n' "$*" >>"$STUB_LOG"
 case $1 in
 pacman)
-	if [[ " $* " == *" -Qq "* ]]; then
-		printf 'linux\nlinux-cachyos\nlinux-firmware\n'
+	if [[ $2 == -Qq ]]; then
+		if (($# > 2)); then
+			[[ -e $root/packages/$3 ]] || exit 1
+			printf '%s\n' "$3"
+		else
+			printf 'linux\nlinux-cachyos\nlinux-firmware\n'
+		fi
 		exit 0
 	fi
-	[[ -n ${STUB_PACMAN_FAIL:-} && " $* " == *"$STUB_PACMAN_FAIL"* ]] && exit 1
+	if [[ -n ${STUB_PACMAN_FAIL:-} && " $* " == *"$STUB_PACMAN_FAIL"* ]]; then
+		for package in ${STUB_PARTIAL_INSTALL:-}; do
+			: >"$root/packages/$package"
+		done
+		exit 1
+	fi
+	if [[ $2 == -R ]]; then
+		[[ -z ${STUB_REMOVE_FAIL:-} ]] || exit 1
+		shift 3
+		for package in "$@"; do rm -f -- "$root/packages/$package"; done
+	fi
 	exit 0
 	;;
 rm) rm -rf -- "$root${*: -1}" ;;
@@ -87,7 +102,11 @@ printf '%s\n' 'pkgbase = nvidia-580xx-utils' $'\tpkgver = 1.0' $'\tmakedepends =
 target=$work/target
 legacy() { # BRANCH, with the stub's settings in the environment
 	rm -rf "$target" "$work/log" "$work/aur-marker"
-	mkdir -p "$target"
+	mkdir -p "$target/packages"
+	local package
+	for package in ${STUB_PREINSTALLED:-}; do
+		: >"$target/packages/$package"
+	done
 	: >"$work/log"
 	# shellcheck disable=SC2016 # $1 to $3 are the inner bash's
 	env STUB_LOG="$work/log" STUB_SRCINFO="$work/srcinfo" STUB_BRANCH="$1" PATH="$stub/bin:$PATH" \
@@ -113,6 +132,31 @@ assert_string_contains "$out" 'from the CachyOS repository'
 out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ legacy 580xx)
 assert_string_contains "$out" 'building it from the AUR instead'
 grep -q 'makepkg --noconfirm' "$work/log" || fail 'no AUR build after the CachyOS repository failed'
+
+# Failed transactions clean up only newly installed legacy packages, before
+# an AUR build that can also fail. Existing packages and other deps survive.
+grep -q '^pacman -R' "$work/log" && fail 'removed packages after an atomic failure'
+for branch in 580xx 470xx; do
+	out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_MAKEPKG_FAIL=1 \
+		STUB_PREINSTALLED="nvidia-470xx-utils linux-headers" \
+		STUB_PARTIAL_INSTALL="nvidia-580xx-dkms nvidia-580xx-utils nvidia-470xx-dkms linux-cachyos-headers" legacy "$branch")
+	assert_equals 'pacman -R --noconfirm nvidia-580xx-dkms nvidia-580xx-utils nvidia-470xx-dkms' \
+		"$(grep '^pacman -R' "$work/log")" 'remove only newly installed legacy packages'
+	assert_file "$target/packages/nvidia-470xx-utils" 'pre-existing legacy utils'
+	assert_file "$target/packages/linux-headers" 'pre-existing headers'
+	assert_file "$target/packages/linux-cachyos-headers" 'new unrelated headers'
+	assert_no_file "$target/packages/nvidia-580xx-utils" 'new nouveau blacklist removed'
+	assert_string_contains "$out" 'leaving the open-source nouveau driver in place'
+	awk '/^pacman -R/ { cleaned=1 } /makepkg/ && !cleaned { exit 1 }' "$work/log" || fail 'cleanup ran after AUR build'
+done
+out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_MAKEPKG_FAIL=1 \
+	STUB_PREINSTALLED='nvidia-580xx-utils' STUB_PARTIAL_INSTALL='nvidia-470xx-utils' legacy 580xx)
+assert_file "$target/packages/nvidia-580xx-utils" 'pre-existing 580xx utils'
+assert_no_file "$target/packages/nvidia-470xx-utils" 'new 470xx utils removed'
+out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_REMOVE_FAIL=1 \
+	STUB_PARTIAL_INSTALL='nvidia-580xx-utils' legacy 580xx)
+assert_string_contains "$out" 'could not remove the newly installed legacy NVIDIA packages'
+grep -q 'makepkg --noconfirm' "$work/log" || fail 'cleanup failure stopped AUR fallback'
 
 # ── the pinned AUR build, as the new user ───────────────────────────────
 out=$(legacy 580xx)

@@ -32,17 +32,28 @@ lyona_nvidia_branch() {
 	printf '%s\n' "$branch"
 }
 
-# nvidia_gpu_branch: the branch for this machine's NVIDIA GPU, the first one
-# lspci lists when there are several, and its device ID, as "BRANCH DEVICE".
+# nvidia_gpu_branch: inspect every NVIDIA display device. Mixed branches are
+# unsupported; report the device requiring the oldest branch as "BRANCH DEVICE".
 # Fails when no NVIDIA display device is found.
 nvidia_gpu_branch() {
-	local class device
+	local class device branch rank oldest_rank=4 oldest_branch='' oldest_device='' mixed=false
 	for class in 0300 0302 0380; do
-		device=$(lspci -n -mm -d "10de::$class" 2>/dev/null | awk '{ gsub(/"/, "", $4); print $4; exit }')
-		if [[ $device =~ ^[0-9a-fA-F]{4}$ ]]; then
-			printf '%s %s\n' "$(lyona_nvidia_branch "$device")" "${device,,}"
-			return 0
-		fi
+		while IFS= read -r device; do
+			[[ $device =~ ^[0-9a-fA-F]{4}$ ]] || continue
+			branch=$(lyona_nvidia_branch "$device")
+			[[ -z $oldest_branch || $branch == "$oldest_branch" ]] || mixed=true
+			case $branch in
+			unsupported) rank=0 ;;
+			470xx) rank=1 ;;
+			580xx) rank=2 ;;
+			open) rank=3 ;;
+			esac
+			if ((rank < oldest_rank)); then
+				oldest_rank=$rank oldest_branch=$branch oldest_device=${device,,}
+			fi
+		done < <(lspci -n -mm -d "10de::$class" 2>/dev/null | awk '{ gsub(/"/, "", $4); print $4 }')
 	done
-	return 1
+	[[ -n $oldest_device ]] || return 1
+	[[ $mixed == false ]] || oldest_branch=unsupported
+	printf '%s %s\n' "$oldest_branch" "$oldest_device"
 }

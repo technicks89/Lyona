@@ -10,6 +10,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Check every NVIDIA display device before choosing a driver; mixed driver
+  branches keep nouveau.
+- Clean up legacy NVIDIA packages newly installed by a failed CachyOS
+  transaction before trying the AUR, preserving pre-existing packages.
 - The shell's watchers no longer leave an `xprop -spy` or `inotifywait` running after Quickshell crashes or is killed,
   however busy the machine (Sync Sprint 13 S13-01). Each one is now bound to its watcher by the kernel, so it ends the
   moment the watcher does. This also stops the watcher-lifetime test failing under load.

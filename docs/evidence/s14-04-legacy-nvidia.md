@@ -11,7 +11,7 @@ driver at the prompt.
 | Check | Pascal card (580xx) | Kepler card (470xx) |
 | --- | --- | --- |
 | The prompt offered the legacy driver, and the summary named it | not run | not run |
-| With the CachyOS repository: the driver came from `cachyos/` (`pacman -Qi nvidia-*xx-dkms`, Repository) | not run | not run |
+| With the CachyOS repository: the driver came from `cachyos/` (save the successful installation transaction output showing `cachyos/nvidia-580xx-dkms` or `cachyos/nvidia-470xx-dkms` and completion) | not run | not run |
 | Without it (repository setup failed or blocked): the AUR build finished, and the closing message said to update with `yay` | not run | not run |
 | The driver is in use: `nvidia-smi` runs, and `lsmod` lists `nvidia`, not `nouveau` | not run | not run |
 | The session reaches the desktop, with Picom on | not run | not run |

@@ -43,8 +43,10 @@ have no driver in `core`, `extra` or `multilib` since Arch moved to
   update it, and the user's `yay` does; the install says so. A driver from the
   CachyOS repository updates with `pacman` as usual.
 - **The guard:** `tests/test-no-aur.sh` allows AUR access and `makepkg` only
-  inside `install_legacy_nvidia_driver`. It requires each package in the two
-  profiles to be built by a pinned base, and still fails on any other AUR use.
+  in `install.sh` (the helper bootstrap) and inside
+  `install_legacy_nvidia_driver` (the legacy driver fallback). It requires each
+  package in the two legacy profiles to be built by a pinned base, and still
+  fails on any other AUR use.
 
 The 390xx driver (Fermi) is not included (D-23); those cards keep nouveau.
 
@@ -115,9 +117,12 @@ performs). None of them is named anywhere in this repository.
 `make check-no-aur` (`tests/test-no-aur.sh`) fails when:
 
 - an AUR helper is invoked to install packages (`yay -S`, `paru -S`, and so on);
-- anything other than `install.sh` reaches `aur.archlinux.org` or runs `makepkg`;
+- code outside `install.sh` (the helper bootstrap) or
+  `install_legacy_nvidia_driver` in `archiso/airootfs/root/lyona-postinstall.sh`
+  (the legacy driver fallback) reaches `aur.archlinux.org` or runs `makepkg`;
 - a package named by any profile or the ISO is not in `core`, `extra` or
-  `multilib` (a group such as `base-devel` also counts as found).
+  `multilib`, except the two pinned legacy NVIDIA profiles above (a group such
+  as `base-devel` also counts as found).
 
 The repository check needs the official repositories synced. On a host that
 cannot answer, it says so and passes the rest, so it never fails on a machine
