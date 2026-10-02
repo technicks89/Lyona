@@ -2,14 +2,15 @@
 """Interrupt actual native CLI children against private services and journals."""
 
 import os
-import runpy
 import signal
 import sys
 
 os.environ["DBUS_SYSTEM_BUS_ADDRESS"] = os.environ["DBUS_SESSION_BUS_ADDRESS"]
 from gi.repository import Gio, GLib
 
-provider = runpy.run_path(sys.argv[1], run_name="regional_interruption_fixture")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lyona_provider  # noqa: E402  (the package beside the launcher; S12-16)
+provider = vars(lyona_provider.load(sys.argv[1]))
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 time_name = "org.freedesktop.timedate1"
 locale_name = "org.freedesktop.locale1"

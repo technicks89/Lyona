@@ -216,4 +216,33 @@ for preview_helper in dwm-settings-font dwm-settings-toolkit; do
 		fail "$preview_helper does not source dwm-preview.sh"
 done
 
+# Sync Sprint 12 S12-16: the product shell's settings IPC target has only the
+# commands dwm-settings and the command menu use. The tests' getters and
+# drivers are on settingsTest, which shell.qml creates only under
+# LYONA_SHELL_TEST_IPC=1.
+shell_qml=$repo/config/quickshell/shell.qml
+settings_functions=$(awk '
+	/^    IpcHandler \{$/ { handler = 1; target = ""; next }
+	handler && /^        target: / { target = $2 }
+	handler && target == "\"settings\"" && /^        function / {
+		sub(/^        function /, ""); sub(/\(.*/, ""); print
+	}
+	/^    }$/ { handler = 0 }
+' "$shell_qml" | LC_ALL=C sort | tr '\n' ' ')
+[ "$settings_functions" = "close open refresh select status toggle " ] ||
+	fail "the settings IPC target has: $settings_functions(only the six product commands belong there)"
+case_line=$(grep -E '^open \| close \| toggle \| refresh \| status\) ;;$' "$repo/scripts/dwm-settings" || true)
+[ -n "$case_line" ] || fail 'dwm-settings accepts commands other than open, close, toggle, refresh and status'
+menu_actions=$(grep -oE '"target": "settings", "action": "[a-z]+"' \
+	"$repo/config/quickshell/launcher/CommandMenuCatalog.js" | sed 's/.*"action": "//; s/"$//' | LC_ALL=C sort -u | tr '\n' ' ')
+[ "$menu_actions" = "open select " ] ||
+	fail "the command menu calls settings actions: $menu_actions"
+grep -Fq 'active: Quickshell.env("LYONA_SHELL_TEST_IPC") === "1"' "$shell_qml" ||
+	fail 'shell.qml does not gate SettingsTestIpc on LYONA_SHELL_TEST_IPC'
+grep -Fqx '        target: "settingsTest"' "$repo/config/quickshell/settings/SettingsTestIpc.qml" ||
+	fail 'SettingsTestIpc.qml is not the settingsTest target'
+! grep -rn 'LYONA_SHELL_TEST_IPC' "$repo/scripts" "$repo/config" "$repo/install.sh" "$repo/archiso" 2>/dev/null |
+	grep -v 'config/quickshell/shell.qml' | grep -v 'config/quickshell/settings/SettingsTestIpc.qml' | grep -q . ||
+	fail 'something outside the shell and the tests sets or reads LYONA_SHELL_TEST_IPC'
+
 printf '%s\n' 'Shell contracts: PASS'

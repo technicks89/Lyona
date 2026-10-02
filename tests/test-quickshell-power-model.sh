@@ -9,6 +9,8 @@ settings=$repo/config/quickshell/settings/SettingsModel.qml
 control_center=$repo/config/quickshell/controlcenter/ControlCenterModel.qml
 panel=$repo/config/quickshell/panel/DwmPanel.qml
 shell=$repo/config/quickshell/shell.qml
+# The settings target's test getters (Sync Sprint 12 S12-16).
+settings_test_ipc=$repo/config/quickshell/settings/SettingsTestIpc.qml
 
 grep -Fq 'import Quickshell.Services.UPower' "$model"
 grep -Fq 'readonly property var nativeBattery: UPower.displayDevice' "$model"
@@ -89,10 +91,10 @@ grep -Fq 'setProfile(profileButton.modelData.id, "settings")' "$pane"
 grep -Fq 'setDpms(!root.powerModel.dpmsEnabled, "settings")' "$pane"
 grep -Fq 'setLock(!root.powerModel.lockEnabled, "settings")' "$pane"
 grep -Fq 'root.powerModel.messageFor("settings")' "$pane"
-grep -Fq 'function powerBusy(): bool' "$shell"
-grep -Fq 'function powerMessage(): string' "$shell"
-grep -Fq 'function powerSetDpms(enabled: bool): void' "$shell"
-grep -Fq 'powerModel.setDpms(enabled, "settings")' "$shell"
+grep -Fq 'function powerBusy(): bool' "$settings_test_ipc"
+grep -Fq 'function powerMessage(): string' "$settings_test_ipc"
+grep -Fq 'function powerSetDpms(enabled: bool): void' "$settings_test_ipc"
+grep -Fq 'root.powerModel.setDpms(enabled, "settings")' "$settings_test_ipc"
 
 [ "$(grep -Fc 'PowerModel {' "$shell")" -eq 1 ]
 grep -Fq 'powerModel: powerModel' "$shell"

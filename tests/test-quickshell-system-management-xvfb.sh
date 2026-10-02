@@ -361,6 +361,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 	QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
+	LYONA_SHELL_TEST_IPC=1 \
 	PATH="$data_home/checkout/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
@@ -383,12 +384,12 @@ ipc settings status >/dev/null
 test_stage='loading the system-management snapshot'
 ipc settings open >/dev/null
 ipc settings select system >/dev/null
-[ "$(ipc settings currentSection)" = system ]
+[ "$(ipc settingsTest currentSection)" = system ]
 
 snapshot_state=
 i=0
 while [ "$i" -lt 100 ]; do
-	snapshot_state=$(ipc settings systemManagementSnapshotState 2>/dev/null || true)
+	snapshot_state=$(ipc settingsTest systemManagementSnapshotState 2>/dev/null || true)
 	[ "$snapshot_state" = loaded ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -399,11 +400,11 @@ if [ "$snapshot_state" != loaded ]; then
 fi
 
 test_stage='validating parsed snapshot content'
-[ "$(ipc settings systemManagementUpdateCount)" -eq 1 ]
-[ "$(ipc settings systemManagementPackageChangeCount)" -eq 1 ]
+[ "$(ipc settingsTest systemManagementUpdateCount)" -eq 1 ]
+[ "$(ipc settingsTest systemManagementPackageChangeCount)" -eq 1 ]
 # Confirms the Arch-only restart heuristic's "system" value (a linux-cachyos
 # update pending) round-trips through the model's own enum validation.
-[ "$(ipc settings systemManagementRestartState)" = 'available:system' ]
+[ "$(ipc settingsTest systemManagementRestartState)" = 'available:system' ]
 
 test_stage='validating the shared clock (#270): the stub timezone reached ClockModel'
 # ClockModel.timezoneState is bound to systemManagementModel.nativeStates.timezone
@@ -411,8 +412,8 @@ test_stage='validating the shared clock (#270): the stub timezone reached ClockM
 # "Etc/UTC" timezone state, the clock must have observed it and produced real
 # formatted text through the real Quickshell runtime -- this can't be unit
 # tested directly (import Quickshell resolves only inside the real binary).
-panel_clock=$(ipc settings clockPanelText)
-settings_clock=$(ipc settings clockSettingsText)
+panel_clock=$(ipc settingsTest clockPanelText)
+settings_clock=$(ipc settingsTest clockSettingsText)
 # "ddd dd MMM - HH:mm", e.g. "Tue 16 Sep - 14:32".
 case $panel_clock in
 ???" "[0-9][0-9]" "???" - "[0-9][0-9]":"[0-9][0-9]) ;;
@@ -441,7 +442,7 @@ for domain in time locale accounts printers storage security; do
 	native_discovery_status=
 	i=0
 	while [ "$i" -lt 100 ]; do
-		native_discovery_status=$(ipc settings systemManagementNativeDiscoveryStatus "$domain" 2>/dev/null || true)
+		native_discovery_status=$(ipc settingsTest systemManagementNativeDiscoveryStatus "$domain" 2>/dev/null || true)
 		case $native_discovery_status in idle:ready) break ;; esac
 		i=$((i + 1))
 		sleep 0.05
@@ -457,36 +458,36 @@ test_stage='validating protocol minor 1 native content (#259)'
 # repository record all parse and reconcile cleanly -- proving compose
 # cumulative native discovery (#259) is wired end to end, not just that the
 # update domain still works.
-[ "$(ipc settings systemManagementNativeProviderStatus regional)" = available ]
-[ "$(ipc settings systemManagementNativeProviderStatus accounts)" = available ]
-[ "$(ipc settings systemManagementNativeProviderStatus printers)" = available ]
-[ "$(ipc settings systemManagementNativeProviderStatus sources)" = available ]
-[ "$(ipc settings systemManagementNativeStateValue timezone)" = 'available:Etc/UTC' ]
-[ "$(ipc settings systemManagementNativeStateValue ntp-enabled)" = 'available:yes' ]
-[ "$(ipc settings systemManagementNativeStateValue locale)" = 'available:C' ]
-[ "$(ipc settings systemManagementNativeStateValue accounts-count)" = 'available:1' ]
-[ "$(ipc settings systemManagementNativeStateValue cups-service)" = 'available:stopped' ]
-[ "$(ipc settings systemManagementAccountsCount)" -eq 1 ]
-[ "$(ipc settings systemManagementRepositoriesCount)" -eq 1 ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus regional)" = available ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus accounts)" = available ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus printers)" = available ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus sources)" = available ]
+[ "$(ipc settingsTest systemManagementNativeStateValue timezone)" = 'available:Etc/UTC' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue ntp-enabled)" = 'available:yes' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue locale)" = 'available:C' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue accounts-count)" = 'available:1' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue cups-service)" = 'available:stopped' ]
+[ "$(ipc settingsTest systemManagementAccountsCount)" -eq 1 ]
+[ "$(ipc settingsTest systemManagementRepositoriesCount)" -eq 1 ]
 
 test_stage='validating protocol minor 2 information/storage/security content (S2-05 #286)'
 # The stub's information/storage/security block and one filesystem record
 # all parse cleanly at minor 2 -- proving the QML side actually activates
 # the cumulative minor once storage's own watch-mounts subscription is
 # ready, not just that the Python provider can emit it.
-[ "$(ipc settings systemManagementNativeProviderStatus information)" = available ]
-[ "$(ipc settings systemManagementNativeProviderStatus storage)" = available ]
-[ "$(ipc settings systemManagementNativeProviderStatus security)" = available ]
-[ "$(ipc settings systemManagementNativeProviderStatus diagnostics)" = available ]
-[ "$(ipc settings systemManagementNativeStateValue os-name)" = 'available:Fixture Linux' ]
-[ "$(ipc settings systemManagementNativeStateValue selinux)" = 'available:disabled' ]
-[ "$(ipc settings systemManagementNativeStateValue firewalld)" = 'available:disabled' ]
-[ "$(ipc settings systemManagementNativeStateValue ufw)" = 'available:disabled' ]
-[ "$(ipc settings systemManagementNativeStateValue nftables)" = 'available:disabled' ]
-[ "$(ipc settings systemManagementNativeStateValue root-encryption)" = 'available:unencrypted' ]
-[ "$(ipc settings systemManagementNativeStateValue screen-lock)" = 'available:enabled' ]
-[ "$(ipc settings systemManagementNativeStateValue filesystem-summary)" = 'available:1' ]
-[ "$(ipc settings systemManagementFilesystemsCount)" -eq 1 ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus information)" = available ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus storage)" = available ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus security)" = available ]
+[ "$(ipc settingsTest systemManagementNativeProviderStatus diagnostics)" = available ]
+[ "$(ipc settingsTest systemManagementNativeStateValue os-name)" = 'available:Fixture Linux' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue selinux)" = 'available:disabled' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue firewalld)" = 'available:disabled' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue ufw)" = 'available:disabled' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue nftables)" = 'available:disabled' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue root-encryption)" = 'available:unencrypted' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue screen-lock)" = 'available:enabled' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue filesystem-summary)" = 'available:1' ]
+[ "$(ipc settingsTest systemManagementFilesystemsCount)" -eq 1 ]
 
 test_stage='sampling idle CPU with all seven watch-* domains subscribed (S2-07 qualification)'
 # Every domain above (updates, time, locale, accounts, printers -- plus
@@ -518,34 +519,34 @@ test_stage='validating time reconciliation settles after the stubbed owner arriv
 reconciliation_blocked=
 i=0
 while [ "$i" -lt 200 ]; do
-	reconciliation_blocked=$(ipc settings systemManagementTimeReconciliationBlocked 2>/dev/null || true)
+	reconciliation_blocked=$(ipc settingsTest systemManagementTimeReconciliationBlocked 2>/dev/null || true)
 	[ "$reconciliation_blocked" = false ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 if [ "$reconciliation_blocked" != false ]; then
 	printf 'Time reconciliation never settled after the stubbed owner arrival: %s (%s)\n' \
-		"$reconciliation_blocked" "$(ipc settings systemManagementTimeReconciliationDetail)" >&2
+		"$reconciliation_blocked" "$(ipc settingsTest systemManagementTimeReconciliationDetail)" >&2
 	exit 1
 fi
-[ "$(ipc settings systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
 
 test_stage='validating an on-demand network time sample settles cleanly (S1-08 #276)'
-ipc settings systemManagementTimeSampleNow >/dev/null
+ipc settingsTest systemManagementTimeSampleNow >/dev/null
 reconciliation_blocked=
 i=0
 while [ "$i" -lt 200 ]; do
-	reconciliation_blocked=$(ipc settings systemManagementTimeReconciliationBlocked 2>/dev/null || true)
+	reconciliation_blocked=$(ipc settingsTest systemManagementTimeReconciliationBlocked 2>/dev/null || true)
 	[ "$reconciliation_blocked" = false ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 if [ "$reconciliation_blocked" != false ]; then
 	printf 'On-demand network time sample never settled: %s (%s)\n' \
-		"$reconciliation_blocked" "$(ipc settings systemManagementTimeReconciliationDetail)" >&2
+		"$reconciliation_blocked" "$(ipc settingsTest systemManagementTimeReconciliationDetail)" >&2
 	exit 1
 fi
-[ "$(ipc settings systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
+[ "$(ipc settingsTest systemManagementNativeStateValue ntp-synchronized)" = 'available:yes' ]
 
 test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
 # The stub reports recovery as unsupported and both update actions as
@@ -556,14 +557,14 @@ test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
 # What this does prove: SystemOperationModel and SystemUpdateControls mount
 # and settle to their idle defaults against a real Quickshell process,
 # without a binding error or crash.
-[ "$(ipc settings systemManagementOperationState)" = idle ]
-[ "$(ipc settings systemManagementOperationResult)" = '' ]
+[ "$(ipc settingsTest systemManagementOperationState)" = idle ]
+[ "$(ipc settingsTest systemManagementOperationResult)" = '' ]
 
 # The snapshot only loaded because the discovery monitor reached ready and
 # coalesced the read through it (SystemManagementModel no longer fires a
 # read directly on open) -- confirm the monitor itself is actually up, not
 # just that a read eventually happened some other way.
-discovery_status=$(ipc settings systemManagementDiscoveryStatus)
+discovery_status=$(ipc settingsTest systemManagementDiscoveryStatus)
 case $discovery_status in
 idle:ready) ;;
 *)
@@ -589,11 +590,11 @@ esac
 
 test_stage='validating that closing the section resets settingsVisible'
 ipc settings select displays >/dev/null
-[ "$(ipc settings systemManagementSettingsVisible)" = false ]
+[ "$(ipc settingsTest systemManagementSettingsVisible)" = false ]
 ipc settings select system >/dev/null
-[ "$(ipc settings systemManagementSettingsVisible)" = true ]
+[ "$(ipc settingsTest systemManagementSettingsVisible)" = true ]
 ipc settings select displays >/dev/null
-if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
+if [ "$(ipc settingsTest systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after navigating away from "system"\n' >&2
 	exit 1
 fi
@@ -606,9 +607,9 @@ test_stage='validating that closing the whole Settings window resets settingsVis
 # while the window stays closed.
 ipc settings open >/dev/null
 ipc settings select system >/dev/null
-[ "$(ipc settings systemManagementSettingsVisible)" = true ]
+[ "$(ipc settingsTest systemManagementSettingsVisible)" = true ]
 ipc settings close >/dev/null
-if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
+if [ "$(ipc settingsTest systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after closing the Settings window\n' >&2
 	exit 1
 fi
@@ -624,14 +625,14 @@ ipc settings select system >/dev/null
 snapshot_state=
 i=0
 while [ "$i" -lt 100 ]; do
-	snapshot_state=$(ipc settings systemManagementSnapshotState 2>/dev/null || true)
+	snapshot_state=$(ipc settingsTest systemManagementSnapshotState 2>/dev/null || true)
 	[ "$snapshot_state" = loaded ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$snapshot_state" = loaded ]
-[ "$(ipc settings systemManagementOpenHealth)" = true ]
-if [ "$(ipc settings systemManagementSettingsVisible)" != false ]; then
+[ "$(ipc settingsTest systemManagementOpenHealth)" = true ]
+if [ "$(ipc settingsTest systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after systemManagementOpenHealth\n' >&2
 	exit 1
 fi
@@ -665,14 +666,14 @@ fi
 test_stage='reopening Settings for the regional preview/confirm cycle'
 ipc settings open >/dev/null
 ipc settings select system >/dev/null
-[ "$(ipc settings systemManagementSettingsVisible)" = true ]
+[ "$(ipc settingsTest systemManagementSettingsVisible)" = true ]
 
 test_stage='loading the timezone choices catalog (#268: prepare() requires a loaded, matching catalog)'
-[ "$(ipc settings systemManagementRegionalRequestChoices timezone)" = true ]
+[ "$(ipc settingsTest systemManagementRegionalRequestChoices timezone)" = true ]
 timezone_choices=0
 i=0
 while [ "$i" -lt 100 ]; do
-	timezone_choices=$(ipc settings systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
+	timezone_choices=$(ipc settingsTest systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
 	[ "$timezone_choices" -gt 0 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -686,14 +687,14 @@ test_stage='validating the regional confirmation step itself (#268): prepare the
 # Regional preview/confirm now lives on SystemRegionalSettingsModel, the
 # same split S1-04 already gave delegated actions -- prove discard() clears
 # a pending preview without ever dispatching, before proving confirm() does.
-if [ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" != true ]; then
+if [ "$(ipc settingsTest systemManagementRegionalPreview timezone-set America/Chicago)" != true ]; then
 	printf 'systemManagementRegionalPreview(timezone-set, America/Chicago) did not accept the read\n' >&2
 	exit 1
 fi
 discard_preview=
 i=0
 while [ "$i" -lt 100 ]; do
-	discard_preview=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+	discard_preview=$(ipc settingsTest systemManagementRegionalPreviewResult 2>/dev/null || true)
 	[ -n "$discard_preview" ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -702,23 +703,23 @@ if [ "$discard_preview" != 'timezone-set:Etc/UTC:America/Chicago' ]; then
 	printf 'Regional preview (discard path) did not report the expected current/target: %s\n' "$discard_preview" >&2
 	exit 1
 fi
-ipc settings systemManagementRegionalDiscard >/dev/null
-discard_result=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+ipc settingsTest systemManagementRegionalDiscard >/dev/null
+discard_result=$(ipc settingsTest systemManagementRegionalPreviewResult 2>/dev/null || true)
 if [ -n "$discard_result" ]; then
 	printf 'systemManagementRegionalDiscard did not clear the pending preview: %s\n' "$discard_result" >&2
 	exit 1
 fi
-if [ "$(ipc settings systemManagementOperationResult)" = 'timezone-set:succeeded' ]; then
+if [ "$(ipc settingsTest systemManagementOperationResult)" = 'timezone-set:succeeded' ]; then
 	printf 'discardRegional() dispatched an operation instead of discarding it\n' >&2
 	exit 1
 fi
 
 test_stage='reloading timezone choices (discard()/invalidate("") also clears the loaded catalog)'
-[ "$(ipc settings systemManagementRegionalRequestChoices timezone)" = true ]
+[ "$(ipc settingsTest systemManagementRegionalRequestChoices timezone)" = true ]
 timezone_choices=0
 i=0
 while [ "$i" -lt 100 ]; do
-	timezone_choices=$(ipc settings systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
+	timezone_choices=$(ipc settingsTest systemManagementRegionalChoicesCount timezone 2>/dev/null || echo 0)
 	[ "$timezone_choices" -gt 0 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -729,12 +730,12 @@ if [ "$timezone_choices" -eq 0 ]; then
 fi
 
 test_stage='requesting a regional preview'
-[ "$(ipc settings systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
+[ "$(ipc settingsTest systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
 
 preview_result=
 i=0
 while [ "$i" -lt 100 ]; do
-	preview_result=$(ipc settings systemManagementRegionalPreviewResult 2>/dev/null || true)
+	preview_result=$(ipc settingsTest systemManagementRegionalPreviewResult 2>/dev/null || true)
 	[ -n "$preview_result" ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -745,12 +746,12 @@ if [ "$preview_result" != 'timezone-set:Etc/UTC:America/Chicago' ]; then
 fi
 
 test_stage='confirming and dispatching the regional change'
-[ "$(ipc settings systemManagementRegionalConfirm)" = true ]
+[ "$(ipc settingsTest systemManagementRegionalConfirm)" = true ]
 
 operation_result=
 i=0
 while [ "$i" -lt 100 ]; do
-	operation_result=$(ipc settings systemManagementOperationResult 2>/dev/null || true)
+	operation_result=$(ipc settingsTest systemManagementOperationResult 2>/dev/null || true)
 	[ "$operation_result" = 'timezone-set:succeeded' ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -769,7 +770,7 @@ test_stage='validating the delegated confirmation step itself (#266): prepare th
 prepared=false
 i=0
 while [ "$i" -lt 100 ]; do
-	if [ "$(ipc settings systemManagementPrepareDelegate printers-open)" = true ]; then
+	if [ "$(ipc settingsTest systemManagementPrepareDelegate printers-open)" = true ]; then
 		prepared=true
 		break
 	fi
@@ -780,16 +781,16 @@ if [ "$prepared" != true ]; then
 	printf 'systemManagementPrepareDelegate(printers-open) never became preparable\n' >&2
 	exit 1
 fi
-if [ "$(ipc settings systemManagementNativeConfirmationPending)" != true ]; then
+if [ "$(ipc settingsTest systemManagementNativeConfirmationPending)" != true ]; then
 	printf 'prepareDelegate(printers-open) did not leave a pending confirmation\n' >&2
 	exit 1
 fi
-ipc settings systemManagementDiscardDelegate >/dev/null
-if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+ipc settingsTest systemManagementDiscardDelegate >/dev/null
+if [ "$(ipc settingsTest systemManagementNativeConfirmationPending)" != false ]; then
 	printf 'discardDelegate() did not clear the pending confirmation\n' >&2
 	exit 1
 fi
-if [ "$(ipc settings systemManagementOperationResult)" = 'printers-open:succeeded' ]; then
+if [ "$(ipc settingsTest systemManagementOperationResult)" = 'printers-open:succeeded' ]; then
 	printf 'discardDelegate() dispatched an operation instead of discarding it\n' >&2
 	exit 1
 fi
@@ -798,7 +799,7 @@ test_stage='validating the delegated confirmation step itself: prepare then conf
 prepared=false
 i=0
 while [ "$i" -lt 100 ]; do
-	if [ "$(ipc settings systemManagementPrepareDelegate printers-open)" = true ]; then
+	if [ "$(ipc settingsTest systemManagementPrepareDelegate printers-open)" = true ]; then
 		prepared=true
 		break
 	fi
@@ -809,7 +810,7 @@ if [ "$prepared" != true ]; then
 	printf 'systemManagementPrepareDelegate(printers-open) never became preparable (second attempt)\n' >&2
 	exit 1
 fi
-if [ "$(ipc settings systemManagementConfirmDelegate)" != true ]; then
+if [ "$(ipc settingsTest systemManagementConfirmDelegate)" != true ]; then
 	printf 'systemManagementConfirmDelegate() did not dispatch a prepared confirmation\n' >&2
 	exit 1
 fi
@@ -825,15 +826,15 @@ test_stage='validating that accounts-open is D-3 unsupported, not merely busy'
 d3_message=
 i=0
 while [ "$i" -lt 100 ]; do
-	if [ "$(ipc settings systemManagementPrepareDelegate accounts-open)" != false ]; then
+	if [ "$(ipc settingsTest systemManagementPrepareDelegate accounts-open)" != false ]; then
 		printf 'systemManagementPrepareDelegate(accounts-open) prepared despite D-3\n' >&2
 		exit 1
 	fi
-	if [ "$(ipc settings systemManagementNativeConfirmationPending)" != false ]; then
+	if [ "$(ipc settingsTest systemManagementNativeConfirmationPending)" != false ]; then
 		printf 'prepareDelegate(accounts-open) left a pending confirmation despite being refused\n' >&2
 		exit 1
 	fi
-	d3_message=$(ipc settings systemManagementNativeConfirmationMessage)
+	d3_message=$(ipc settingsTest systemManagementNativeConfirmationMessage)
 	case $d3_message in
 	*"No account-management tool is packaged for Arch"*) break ;;
 	esac
@@ -857,7 +858,7 @@ test_stage='validating delegated-launch availability matches D-3'
 launched=false
 i=0
 while [ "$i" -lt 100 ]; do
-	if [ "$(ipc settings systemManagementDelegatedLaunch printers-open)" = true ]; then
+	if [ "$(ipc settingsTest systemManagementDelegatedLaunch printers-open)" = true ]; then
 		launched=true
 		break
 	fi
@@ -872,7 +873,7 @@ fi
 delegated_result=
 i=0
 while [ "$i" -lt 100 ]; do
-	delegated_result=$(ipc settings systemManagementOperationResult 2>/dev/null || true)
+	delegated_result=$(ipc settingsTest systemManagementOperationResult 2>/dev/null || true)
 	[ "$delegated_result" = 'printers-open:succeeded' ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -882,7 +883,7 @@ if [ "$delegated_result" != 'printers-open:succeeded' ]; then
 	exit 1
 fi
 
-if [ "$(ipc settings systemManagementDelegatedLaunch accounts-open)" != false ]; then
+if [ "$(ipc settingsTest systemManagementDelegatedLaunch accounts-open)" != false ]; then
 	printf 'systemManagementDelegatedLaunch(accounts-open) dispatched despite D-3\n' >&2
 	exit 1
 fi

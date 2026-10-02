@@ -4,6 +4,8 @@ set -eu
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 shell_qml=$repo/config/quickshell/shell.qml
+# The settings target's test getters (Sync Sprint 12 S12-16).
+settings_test_ipc=$repo/config/quickshell/settings/SettingsTestIpc.qml
 theme=$repo/config/quickshell/core/Theme.qml
 icon_text=$repo/config/quickshell/core/IconText.qml
 panel=$repo/config/quickshell/panel/DwmPanel.qml
@@ -231,9 +233,9 @@ grep -Fq 'QueuedRun.startOrQueue(providerProcess, root, "capabilityRefreshPendin
 grep -Fq 'if (root.discoveryState !== "ready" || root.capabilityRefreshPending)' "$settings_model"
 grep -Fq '"detail": "Capability discovery is still refreshing"' "$settings_model"
 grep -Fq 'function capabilityById(id)' "$settings_model"
-grep -Fq 'function appearanceRefresh(): void' "$shell_qml"
-grep -Fq 'appearanceModel.refreshAll(true);' "$shell_qml"
-grep -Fq 'function capabilityStatus(capabilityId: string): string' "$shell_qml"
+grep -Fq 'function appearanceRefresh(): void' "$settings_test_ipc"
+grep -Fq 'root.appearanceModel.refreshAll(true);' "$settings_test_ipc"
+grep -Fq 'function capabilityStatus(capabilityId: string): string' "$settings_test_ipc"
 # The follow-up run is queued only if the provider is still idle when the
 # deferred call fires. The pending flag is deliberately NOT cleared here (S5-01):
 # it clears in refreshCapabilities() once the next run has started, so Settings
@@ -305,8 +307,8 @@ grep -Fq 'settingInput.implicitHeight + 14' "$input_pane"
 # Phase 7: XKB input accessibility (done -- see CHANGELOG.md).
 grep -Fq 'deviceCard.modelData.kind === "accessibility"' "$input_pane"
 grep -Fq 'accessibleDescription: settingRow.modelData.label + ". Starts a timed preview."' "$input_pane"
-grep -Fq 'if (settingsModel.previewKind !== "input") return;' "$shell_qml"
-grep -Fq 'if (settingsModel.previewOperationLocked) return;' "$shell_qml"
+grep -Fq 'if (root.settingsModel.previewKind !== "input") return;' "$settings_test_ipc"
+grep -Fq 'if (root.settingsModel.previewOperationLocked) return;' "$settings_test_ipc"
 if grep -Eq 'FileView|themes\.toml|function applyThemes' "$theme"; then
 	printf 'Theme.qml still owns theme file parsing instead of the shared AppearanceModel\n' >&2
 	exit 1
@@ -360,12 +362,12 @@ grep -Fq 'onActivated: root.appearanceModel.recover()' "$pane"
 grep -Fq 'Selected appearance is only partially applied' "$pane"
 grep -Fq 'root.appearanceModel.integrations' "$pane"
 grep -Fq 'root.appearanceModel.errors' "$pane"
-grep -Fq 'function appearanceIntegrationState(integrationId: string): string' "$shell_qml"
-grep -Fq 'function appearanceWallpaperReconcile(): void' "$shell_qml"
-grep -Fq 'function appearanceWallpaperStatusBusy(): bool' "$shell_qml"
-grep -Fq 'function appearanceFontFamily(): string' "$shell_qml"
-grep -Fq 'function appearanceFontScale(): string' "$shell_qml"
-grep -Fq 'function appearanceFontPreviewState(): string' "$shell_qml"
+grep -Fq 'function appearanceIntegrationState(integrationId: string): string' "$settings_test_ipc"
+grep -Fq 'function appearanceWallpaperReconcile(): void' "$settings_test_ipc"
+grep -Fq 'function appearanceWallpaperStatusBusy(): bool' "$settings_test_ipc"
+grep -Fq 'function appearanceFontFamily(): string' "$settings_test_ipc"
+grep -Fq 'function appearanceFontScale(): string' "$settings_test_ipc"
+grep -Fq 'function appearanceFontPreviewState(): string' "$settings_test_ipc"
 test "$(grep -Fc 'root.selectedTheme.valid && root.selectedTheme.mutable' "$pane")" -eq 2
 
 # Cursor, icon, GTK and Qt overrides.

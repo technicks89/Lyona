@@ -17,6 +17,8 @@ assert_executable "$helper"
 
 model=$repo/config/quickshell/panel/PanelSettingsModel.qml
 shell=$repo/config/quickshell/shell.qml
+# The settings target's test getters (Sync Sprint 12 S12-16).
+settings_test_ipc=$repo/config/quickshell/settings/SettingsTestIpc.qml
 panel=$repo/config/quickshell/panel/DwmPanel.qml
 control_model=$repo/config/quickshell/controlcenter/ControlCenterModel.qml
 control_window=$repo/config/quickshell/controlcenter/ControlCenterWindow.qml
@@ -331,8 +333,8 @@ assert_contains "$shell" 'PanelSettingsModel {'
 assert_equals 1 "$(grep -Fc 'PanelSettingsModel {' "$shell")" \
 	'PanelSettingsModel must be instantiated exactly once'
 assert_contains "$shell" 'panelSettingsModel: panelSettingsModel'
-assert_contains "$shell" 'function panelWidgetEnabled(widget: string): bool'
-assert_contains "$shell" 'function panelWidgetSet(widget: string, enabled: bool): void'
+assert_contains "$settings_test_ipc" 'function panelWidgetEnabled(widget: string): bool'
+assert_contains "$settings_test_ipc" 'function panelWidgetSet(widget: string, enabled: bool): void'
 
 assert_contains "$panel" 'required property var panelSettingsModel'
 for widget in workspaces volume bluetooth network power; do

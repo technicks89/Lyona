@@ -4,6 +4,8 @@ set -eu
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 shell_qml=$repo/config/quickshell/shell.qml
+# The settings target's test getters (Sync Sprint 12 S12-16).
+settings_test_ipc=$repo/config/quickshell/settings/SettingsTestIpc.qml
 settings_model=$repo/config/quickshell/settings/SettingsModel.qml
 settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
 system_pane=$repo/config/quickshell/settings/SystemSettingsPane.qml
@@ -11,7 +13,7 @@ system_model=$repo/config/quickshell/systemmanagement/SystemManagementModel.qml
 discovery_cycle=$repo/config/quickshell/systemmanagement/SystemDiscoveryCycle.js
 provider_discovery=$repo/config/quickshell/systemmanagement/SystemProviderDiscovery.qml
 update_discovery=$repo/config/quickshell/systemmanagement/SystemUpdateDiscovery.qml
-provider_root=$repo/scripts/dwm-system-management
+provider_package=$repo/scripts/lyona_system_management
 commands=$repo/config/quickshell/core/Commands.qml
 provider=$repo/scripts/dwm-settings-provider
 
@@ -230,14 +232,14 @@ grep -Fq 'root.monitor.signal(9);' "$provider_discovery"
 # are never tolerated.
 grep -Fq 'else root.failMonitor();' "$provider_discovery"
 
-grep -Fq 'function systemManagementDiscoveryStatus(): string' "$shell_qml"
+grep -Fq 'function systemManagementDiscoveryStatus(): string' "$settings_test_ipc"
 
 # The Python side: a bounded, read-only event stream, not a transaction.
-grep -Fq 'class UpdateEventMonitor:' "$provider_root"
-grep -Fq 'def watch_update_events() -> int:' "$provider_root"
-grep -Fq 'list(argv) == ["watch-updates"]' "$provider_root"
-if awk '/^class UpdateEventMonitor:/,/^def watch_update_events\(\) -> int:/' "$provider_root" |
-	awk '/^def watch_update_events\(\) -> int:/{exit} {print}' |
+grep -Fq 'class UpdateEventMonitor:' "$provider_package/event_monitors.py"
+grep -Fq 'def watch_update_events() -> int:' "$provider_package/watch_commands.py"
+grep -Fq 'list(argv) == ["watch-updates"]' "$provider_package/cli.py"
+# The class body alone: from its line to the next top-level definition.
+if awk '/^class UpdateEventMonitor:/{body=1; next} body && /^(class|def) /{exit} body' "$provider_package/event_monitors.py" |
 	grep -q 'PackageKitGlib'; then
 	printf 'UpdateEventMonitor must not touch PackageKitGlib transaction machinery.\n' >&2
 	exit 1
@@ -279,8 +281,8 @@ grep -Fq 'root.model.confirmUpdate()' "$update_controls"
 grep -Fq 'root.model.discardUpdate()' "$update_controls"
 grep -Fq 'root.model.operation.requestCancel()' "$update_controls"
 
-grep -Fq 'function systemManagementOperationState(): string' "$shell_qml"
-grep -Fq 'function systemManagementOperationResult(): string' "$shell_qml"
+grep -Fq 'function systemManagementOperationState(): string' "$settings_test_ipc"
+grep -Fq 'function systemManagementOperationResult(): string' "$settings_test_ipc"
 
 # Sync Sprint 1 S1-04 (#266, #267): delegated actions (accounts-open/
 # password-open/printers-open/sources-open) get the same visible
@@ -326,10 +328,10 @@ if grep -q 'systemManagementModel.startNative' "$shell_qml"; then
 	exit 1
 fi
 
-grep -Fq 'function systemManagementPrepareDelegate(action: string): bool' "$shell_qml"
-grep -Fq 'function systemManagementConfirmDelegate(): bool' "$shell_qml"
-grep -Fq 'function systemManagementDiscardDelegate(): void' "$shell_qml"
-grep -Fq 'function systemManagementNativeConfirmationPending(): bool' "$shell_qml"
+grep -Fq 'function systemManagementPrepareDelegate(action: string): bool' "$settings_test_ipc"
+grep -Fq 'function systemManagementConfirmDelegate(): bool' "$settings_test_ipc"
+grep -Fq 'function systemManagementDiscardDelegate(): void' "$settings_test_ipc"
+grep -Fq 'function systemManagementNativeConfirmationPending(): bool' "$settings_test_ipc"
 
 # Sync Sprint 1 S1-05 (#268, #269): regional preview/confirm state moved off
 # SystemManagementModel into its own SystemRegionalSettingsModel
@@ -380,11 +382,11 @@ grep -Fq 'root.regional.confirm()' "$regional_controls"
 grep -Fq 'SystemRegionalControls {' "$system_pane"
 grep -Fq 'viewportHeight: root.height' "$system_pane"
 
-grep -Fq 'function systemManagementRegionalPreview(action: string, argument: string): bool' "$shell_qml"
-grep -Fq 'function systemManagementRegionalConfirm(): bool' "$shell_qml"
-grep -Fq 'function systemManagementRegionalDiscard(): void' "$shell_qml"
-grep -Fq 'function systemManagementRegionalRequestChoices(kind: string): bool' "$shell_qml"
-grep -Fq 'function systemManagementRegionalChoicesCount(kind: string): int' "$shell_qml"
+grep -Fq 'function systemManagementRegionalPreview(action: string, argument: string): bool' "$settings_test_ipc"
+grep -Fq 'function systemManagementRegionalConfirm(): bool' "$settings_test_ipc"
+grep -Fq 'function systemManagementRegionalDiscard(): void' "$settings_test_ipc"
+grep -Fq 'function systemManagementRegionalRequestChoices(kind: string): bool' "$settings_test_ipc"
+grep -Fq 'function systemManagementRegionalChoicesCount(kind: string): int' "$settings_test_ipc"
 
 # Sync Sprint 1 S1-06 (#270): one shared, timezone-aware minute clock for the
 # panel and Settings, replacing a bare SystemClock neither of which noticed
@@ -409,8 +411,8 @@ grep -Fq 'clockText: root.clock.settingsText' "$settings_window"
 grep -Fq 'clock: clock' "$shell_qml"
 grep -Fq 'property string clockText: ""' "$system_pane"
 grep -Fq 'objectName: "systemLocalTime"' "$system_pane"
-grep -Fq 'function clockPanelText(): string' "$shell_qml"
-grep -Fq 'function clockSettingsText(): string' "$shell_qml"
+grep -Fq 'function clockPanelText(): string' "$settings_test_ipc"
+grep -Fq 'function clockSettingsText(): string' "$settings_test_ipc"
 
 # Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation):
 # the information/storage/security/diagnostics card and Health navigation.
@@ -435,8 +437,8 @@ grep -Fq 'root.healthAction.status === "available"' "$information_controls"
 grep -Fq 'healthModel: systemHealthModel' "$shell_qml"
 grep -Fq 'targetScreen: settingsWindow.screen || settingsModel.targetScreen || root.activePanelScreen' "$shell_qml"
 grep -Fq 'onHealthOpened: settingsModel.close()' "$shell_qml"
-grep -Fq 'function systemManagementOpenHealth(): bool' "$shell_qml"
-grep -Fq 'function systemManagementFilesystemsCount(): int' "$shell_qml"
+grep -Fq 'function systemManagementOpenHealth(): bool' "$settings_test_ipc"
+grep -Fq 'function systemManagementFilesystemsCount(): int' "$settings_test_ipc"
 # Recovery guidance must name Arch/Lyona tooling, never upstream's own
 # Fedora-specific package/rescue tools.
 if grep -qE 'dnf|rpm |Fedora|Anaconda' "$information_controls"; then
