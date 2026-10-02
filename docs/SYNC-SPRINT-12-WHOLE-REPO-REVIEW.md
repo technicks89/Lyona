@@ -1098,9 +1098,13 @@ details are in [`SYNC-SPRINT-12-S12-16-SPLIT.md`](SYNC-SPRINT-12-S12-16-SPLIT.md
     nouveau without a prompt.
   - The summary says which driver the install gets, and gives the reason when
     it is nouveau on an older card, or when no NVIDIA GPU is present.
+  - Dismissing or failing the prompt aborts the wizard, as every other prompt
+    does, so the proprietary driver is installed only when it is chosen (review
+    round).
   - `test-arch-iso-builder.sh` runs `ask_nvidia` against a fake `lspci` and
-    `gum` in five cases: no NVIDIA, recommended, dismissed, nouveau chosen, and
-    an older card.
+    `gum` in five cases: no NVIDIA, recommended, nouveau chosen, an older card,
+    and a dismissed prompt, which must abort. The dismissed case fails against
+    the old `|| true` handling.
 - **Part 3:** the whole SPEC 5.8 table had Fedora names, not just two. It now
   lists the Arch build profile's packages.
 - **Part 4:**
@@ -1115,6 +1119,9 @@ details are in [`SYNC-SPRINT-12-S12-16-SPLIT.md`](SYNC-SPRINT-12-S12-16-SPLIT.md
     The test docstring now names Lyona's record instead.
   - `test-shell-contracts.sh` now fails on a cited document that is missing,
     or on a commit that does not hold it. Planted examples of both are caught.
+  - The scan also covers `docs/UPSTREAM-SYNC.md` and
+    `docs/P6-SYSTEM-MANAGEMENT.md` (review round). That found two upstream
+    documents written as Lyona paths; they are now named as upstream's.
 - **Part 5:** S12-01, S12-02 and S12-12 had already corrected the comments they
   named. One still overclaimed: the release build's comment in
   `lyona-update-root` said root builds only verified source, but the invoking

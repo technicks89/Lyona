@@ -21,6 +21,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   driver supports, with nouveau as the alternative. It is one image for every GPU (decision D-17a; Sync Sprint 12
   S12-17).
   - An older NVIDIA card keeps nouveau without a prompt.
+  - Dismissing the driver prompt aborts the wizard, as every other prompt does. The proprietary driver is installed
+    only when it is chosen.
   - The install summary says which driver each machine gets, and why.
 - AGENTS.md, SPEC.md and `docs/RELEASING.md` now match the code (Sync Sprint 12 S12-17):
   - one image for every GPU;

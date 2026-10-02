@@ -645,7 +645,7 @@ NVIDIA-only packages or kernel arguments.
 
 Static archiso profile checks (package-map sync, script syntax) are necessary
 but not sufficient. A released image must record its build host, archiso
-version, architecture, firmware mode, variant, package-resolution result,
+version, architecture, firmware mode, GPU and driver path, package-resolution result,
 completed base install and postinstall run, first boot, and hardware
 limitations. As of this writing the archiso path is best-effort and has not
 been boot-tested — see `docs/RELEASING.md`.

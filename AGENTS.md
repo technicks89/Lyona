@@ -26,8 +26,9 @@ acceptance criteria.
 ## Arch Support Contract
 
 The sole supported platform is Arch Linux. The archiso-based lyona install
-medium is the current documented image base: one image for every GPU, which
-detects an NVIDIA GPU and installs its driver when the card supports it. The
+medium is the current documented image base: one image for every GPU, whose
+installer detects an NVIDIA GPU and offers its driver, recommended, when the
+card supports it. The
 existing-system installer also supports Arch Linux.
 Every other operating-system identity must fail clearly instead of entering
 an untested package or installation path.

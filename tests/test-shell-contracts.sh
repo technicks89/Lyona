@@ -253,7 +253,8 @@ in_git=0
 git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 && in_git=1
 doc_refs=$(cd "$repo" && grep -rhoE '([0-9a-f]{7,40}:)?docs/[A-Za-z0-9_./-]+\.md' \
 	scripts config tests archiso install.sh Makefile README.md SPEC.md AGENTS.md \
-	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md 2>/dev/null | sort -u)
+	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md docs/UPSTREAM-SYNC.md \
+	docs/P6-SYSTEM-MANAGEMENT.md 2>/dev/null | sort -u)
 printf '%s\n' "$doc_refs" >"$work/doc-refs"
 while IFS= read -r reference; do
 	[ -n "$reference" ] || continue

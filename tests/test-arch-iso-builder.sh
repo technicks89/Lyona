@@ -232,8 +232,17 @@ ask_nvidia_case() { # WANT-OPT-IN WANT-SUMMARY GUM-CHOICE DEVICE-IDS...
 }
 ask_nvidia_case 0 'not needed (no NVIDIA GPU detected)' ''
 ask_nvidia_case 1 'proprietary (recommended)' 'nvidia (proprietary, recommended)' 2684
-ask_nvidia_case 1 'proprietary (recommended)' '' 2684 # dismissed: the recommendation
 ask_nvidia_case 0 nouveau 'nouveau (open-source)' 2684
+# A dismissed prompt aborts the wizard, like every other prompt, so no
+# proprietary opt-in ever reaches the postinstall.
+dismissed_status=0
+dismissed=$(FAKE_NVIDIA_IDS=2684 FAKE_GUM_CHOICE='' PATH="$work/nvidia-bin:$PATH" \
+	LYONA_INSTALL_LIB=1 LYONA_UI_LIB="$repo/archiso/airootfs/root/lyona-ui.sh" \
+	LYONA_NVIDIA_LIB="$nvidia_lib" \
+	bash -c '. "$1"; ask_nvidia; printf "%s" "$NVIDIA_OPT_IN"' \
+	sh "$repo/archiso/airootfs/root/lyona-install.sh" 2>/dev/null) || dismissed_status=$?
+[[ $dismissed_status != 0 && $dismissed != 1 ]] ||
+	fail "a dismissed NVIDIA prompt did not abort (status $dismissed_status, opt-in '$dismissed')"
 # No prompt on an older card: the answer offered here is never read.
 ask_nvidia_case 0 'nouveau (this GPU predates the current NVIDIA driver)' \
 	'nvidia (proprietary, recommended)' 1b80

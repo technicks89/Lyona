@@ -195,11 +195,17 @@ ask_nvidia() {
 		return 0
 	fi
 
+	# Like every other prompt here, a dismissed or failed prompt aborts: the
+	# proprietary driver is installed only when it was chosen.
 	local choice
 	choice=$(gum choose \
 		"nvidia (proprietary, recommended)" "nouveau (open-source)" \
-		--header "NVIDIA GPU detected. Select driver:") || true
-	[[ $choice == "nouveau (open-source)" ]] || NVIDIA_OPT_IN=1
+		--header "NVIDIA GPU detected. Select driver:") || fail "aborted."
+	case $choice in
+	"nvidia (proprietary, recommended)") NVIDIA_OPT_IN=1 ;;
+	"nouveau (open-source)") ;;
+	*) fail "aborted." ;;
+	esac
 	return 0
 }
 
