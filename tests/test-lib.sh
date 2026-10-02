@@ -212,4 +212,55 @@ assert_line "$DWM_TEST_LOG" 'logged-tool alpha beta'
 
 run_case "work=; stub_command anything </dev/null" 'needs a workspace'
 
+# Staging preserves complete paths while following recursive dependencies and
+# checking syntax, in both layouts. Backslashes must survive read as well.
+stage_repo=$work/stage-repo
+mkdir -p "$stage_repo/scripts/lyona_system_management"
+cat >"$stage_repo/scripts/helper with spaces" <<'SH'
+#!/bin/sh
+. "$lyona_lib/first.sh"
+SH
+cat >"$stage_repo/scripts/first.sh" <<'SH'
+# shellcheck shell=sh
+. "$lyona_lib/second.sh"
+SH
+cat >"$stage_repo/scripts/second.sh" <<'SH'
+# shellcheck shell=sh
+# Uses lyona_toml and lyona_system_management.
+SH
+printf '#!/bin/sh\nexit 0\n' >"$stage_repo/lyona-toml"
+chmod +x "$stage_repo/lyona-toml"
+: >"$stage_repo/scripts/lyona_system_management/__init__.py"
+
+for layout in checkout prefix; do
+	stage_dest="$work/$layout with spaces\\literal"
+	(
+		repo=$stage_repo
+		stage_helpers "$layout" "$stage_dest" 'helper with spaces'
+	)
+	case $layout in
+	checkout)
+		stage_bin=$stage_dest
+		stage_lib=$stage_dest
+		stage_tool=$stage_dest/../lyona-toml
+		stage_python=$stage_dest
+		;;
+	prefix)
+		stage_bin=$stage_dest/bin
+		stage_lib=$stage_dest/lib/lyona
+		stage_tool=$stage_lib/lyona-toml
+		stage_python=$stage_lib/python
+		;;
+	esac
+	assert_file "$stage_bin/helper with spaces"
+	assert_file "$stage_lib/first.sh"
+	assert_file "$stage_lib/second.sh"
+	assert_executable "$stage_tool"
+	assert_file "$stage_python/lyona_system_management/__init__.py"
+
+	printf '#!/bin/sh\nif\n' >"$stage_repo/scripts/broken helper"
+	run_case "repo='$stage_repo'; stage_helpers '$layout' '$stage_dest' 'broken helper'" \
+		'broken helper does not parse'
+done
+
 printf '%s\n' 'Shared test library: PASS'
