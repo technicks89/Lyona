@@ -637,8 +637,13 @@ NVIDIA-only packages or kernel arguments.
   `LYONA_NVIDIA_DRIVER=1`.
 - **What the driver brings:** it may install the documented NVIDIA driver
   packages, blacklist Nouveau, and configure NVIDIA DRM modesetting.
-- **Older cards:** a GPU the current driver no longer supports keeps nouveau,
-  and the installer says so. It must never end with no working driver.
+- **Older cards:** a Maxwell to Volta card gets the legacy 580xx driver, and a
+  Kepler card the 470xx one (decision D-23). It comes from the CachyOS
+  repository when the image added it, and is otherwise built from a pinned,
+  reviewed AUR PKGBUILD as the new user. This is the project's one AUR
+  exception (`docs/AUR-PACKAGES.md`, decision D-22). A card no packaged driver
+  supports keeps nouveau, and the installer says so. The install must never end
+  with no working driver.
 - **Third-party repositories:** the image may enable the documented ones needed
   by the selected desktop package set. Choosing the lyona image is the user's
   consent to that policy.

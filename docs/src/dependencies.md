@@ -176,6 +176,8 @@ project's own test jobs and are not part of an install.
 ## Repositories and the AUR
 
 Every package above is in the official Arch repositories. Nothing depends on the AUR
-(see `docs/AUR-PACKAGES.md`, enforced by `make check-no-aur`). Steam and its
+(see `docs/AUR-PACKAGES.md`, enforced by `make check-no-aur`), with one exception: on
+the live medium, an older NVIDIA card's legacy driver is built from a pinned AUR
+PKGBUILD when the CachyOS repository cannot supply it. Steam and its
 libraries need the `multilib` repository, which the installer enables only after
 separate approval.

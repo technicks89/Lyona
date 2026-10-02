@@ -150,9 +150,19 @@ is detected, a driver choice. There is one image for every GPU (SPEC.md).
   choice recommends the proprietary driver, with open-source nouveau as the
   alternative. The driver is `nvidia-open`, or `nvidia-open-dkms` with any
   other kernel.
-- **An older card** keeps nouveau without a prompt, and the summary says why.
-  Arch no longer ships a driver for older cards outside the AUR; Sync Sprint
-  14 adds them.
+- **An older card (Sync Sprint 14):** a Maxwell, Pascal or Volta card (GTX
+  750 to GTX 10xx) is offered the legacy 580xx driver, and a Kepler card (GTX
+  600 and 700) the 470xx one.
+  - The device ID decides, through `config/nvidia-legacy-gpus.tsv`, generated
+    from NVIDIA's own table by `scripts/lyona-nvidia-gpu-table`.
+  - The driver comes from the CachyOS repository when the medium added it, and
+    is otherwise built from a pinned AUR PKGBUILD (`docs/AUR-PACKAGES.md`).
+  - An AUR-built driver is not updated by `pacman -Syu`; the user updates it
+    with `yay`, and the install's closing message says so.
+- **A card no packaged driver supports** (Fermi and older) keeps nouveau
+  without a prompt, and the summary says why.
+- **Not yet hardware-tested:** the legacy driver path has been tested only
+  against a stub chroot (S14-04).
 
 There is no
 desktop-environment or package picker; this always installs lyona.

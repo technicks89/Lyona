@@ -523,6 +523,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The live medium installs a working proprietary driver on older NVIDIA cards (Sync Sprint 14):
+  - Maxwell, Pascal and Volta cards (GTX 750 to GTX 10xx) get the 580xx driver, and Kepler cards (GTX 600 and 700)
+    the 470xx one. The card's device ID decides, from a table generated from NVIDIA's own list.
+  - The driver comes from the CachyOS repository when it is available, and is otherwise built from a pinned, reviewed
+    AUR PKGBUILD. That is the project's one AUR exception (`docs/AUR-PACKAGES.md`).
+  - Fermi and older cards keep nouveau. Not yet tested on real hardware.
 - Calendar and weather panel widgets (Sync Sprint 12 S12-20, upstream `#358`):
   - **Calendar:** click the clock for a month calendar, with keyboard navigation. It can be turned off, and has a
     `calendar` IPC target.

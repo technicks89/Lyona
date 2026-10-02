@@ -7,6 +7,8 @@ export LOG_FILE=/var/log/lyona-postinstall.log
 export CACHYOS_HELPER=/usr/local/bin/lyona-cachyos
 export CACHYOS_KERNELS="linux-cachyos linux-cachyos-lts"
 export CACHYOS_MARKER=/run/lyona-cachyos-ready
+# Left when the NVIDIA driver was built from the AUR, for the closing message.
+export NVIDIA_AUR_MARKER=${NVIDIA_AUR_MARKER:-/run/lyona-nvidia-aur}
 
 fail() {
 	printf 'lyona-postinstall: %s\n' "$1" >&2
@@ -123,6 +125,89 @@ install_nvidia_driver() {
 	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}" "${headers[@]}"
 }
 
+# The one AUR exception (Sync Sprint 14, docs/AUR-PACKAGES.md): the legacy NVIDIA
+# drivers, when the CachyOS repository cannot supply them (decision D-22). Each
+# branch's packages come from one AUR base, pinned to a commit whose PKGBUILD was
+# reviewed: its sources download from download.nvidia.com over HTTPS, each with
+# a checksum, and its install script does no more than Arch's own nvidia-utils.
+# Re-pin only after reviewing the diff since the last pin.
+# branch<TAB>AUR base<TAB>commit
+export LEGACY_NVIDIA_PINS='580xx	nvidia-580xx-utils	3d31a20c08a1e6c11c1abe953954f44158c9a592
+470xx	nvidia-470xx-utils	af0b7617132e32dd39174779aa8ced2a726afc51'
+
+# install_legacy_nvidia_driver BRANCH DEVICE: the 580xx or 470xx driver, with the
+# headers of every installed kernel (they are DKMS-only). From the CachyOS
+# repository when the medium added it; otherwise built from the pinned AUR
+# PKGBUILD as the new user (makepkg never runs as root), its dependencies
+# installed by root first. Any failure leaves nouveau in place and the rest of
+# the install going: it returns 0 either way, having said which.
+install_legacy_nvidia_driver() {
+	local branch=$1 device=$2 base ref kernel_pkg build srcinfo package file
+	local -a packages kernel_pkgs headers=() built=() needed=() own=()
+
+	mapfile -t packages < <(dwm_packages arch "gpu-nvidia-$branch")
+	mapfile -t kernel_pkgs < <(installed_kernels)
+	((${#kernel_pkgs[@]} > 0)) || kernel_pkgs=(linux)
+	for kernel_pkg in "${kernel_pkgs[@]}"; do
+		headers+=("${kernel_pkg}-headers")
+	done
+
+	if [[ -e $CACHYOS_MARKER ]]; then
+		printf 'Installing the NVIDIA %s driver for GPU 10de:%s from the CachyOS repository...\n' "$branch" "$device"
+		if arch-chroot "$TARGET" pacman -S --noconfirm --needed "${packages[@]/#/cachyos/}" "${headers[@]}"; then
+			return 0
+		fi
+		printf 'lyona-postinstall: the CachyOS repository could not supply it; building it from the AUR instead.\n'
+	fi
+
+	IFS=$'\t' read -r _ base ref < <(awk -F '\t' -v branch="$branch" '$1 == branch' <<<"$LEGACY_NVIDIA_PINS") || :
+	if [[ -z ${base:-} || ! ${ref:-} =~ ^[0-9a-f]{40}$ ]]; then
+		printf 'lyona-postinstall: no pinned AUR source for the NVIDIA %s driver; leaving nouveau in place.\n' "$branch"
+		return 0
+	fi
+	printf 'Building the NVIDIA %s driver for GPU 10de:%s from the AUR (%s at %s)...\n' \
+		"$branch" "$device" "$base" "${ref:0:12}"
+	build=/var/tmp/lyona-nvidia-$branch
+	as_user() {
+		arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" "$@"
+	}
+	# shellcheck disable=SC2016 # $1 is the inner sh's, in both makepkg calls
+	if arch-chroot "$TARGET" pacman -S --noconfirm --needed --asdeps base-devel git &&
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${headers[@]}" &&
+		arch-chroot "$TARGET" rm -rf -- "$build" &&
+		arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build" &&
+		as_user git clone --quiet -- "https://aur.archlinux.org/$base.git" "$build/src" &&
+		as_user git -C "$build/src" checkout --quiet --detach "$ref" &&
+		srcinfo=$(as_user sh -c 'cd "$1" && makepkg --printsrcinfo' sh "$build/src"); then
+		# The dependencies, less the packages this base itself builds, by name.
+		mapfile -t own < <(sed -n -E 's/^pkgname = (.+)$/\1/p' <<<"$srcinfo")
+		while IFS= read -r package; do
+			package=${package%%[<>=]*}
+			[[ -n $package && " ${own[*]} " != *" $package "* && " ${needed[*]} " != *" $package "* ]] &&
+				needed+=("$package")
+		done < <(sed -n -E 's/^[[:space:]]+(make)?depends = (.+)$/\2/p' <<<"$srcinfo")
+		# shellcheck disable=SC2016 # $1 is the inner sh's
+		if { ((${#needed[@]} == 0)) || arch-chroot "$TARGET" pacman -S --noconfirm --needed --asdeps "${needed[@]}"; } &&
+			as_user sh -c 'cd "$1" && makepkg --noconfirm --nocheck' sh "$build/src"; then
+			for package in "${packages[@]}"; do
+				for file in "$TARGET$build/src/$package"-[0-9]*.pkg.tar.*; do
+					[[ -f $file && $file != *.sig ]] && built+=("${file#"$TARGET"}")
+				done
+			done
+		fi
+	fi
+	if ((${#built[@]} == ${#packages[@]})) &&
+		arch-chroot "$TARGET" pacman -U --noconfirm --needed "${built[@]}"; then
+		arch-chroot "$TARGET" rm -rf -- "$build"
+		printf 'lyona-postinstall: the NVIDIA %s driver was built from the AUR. pacman -Syu does not update it; update it with yay.\n' "$branch"
+		: >"$NVIDIA_AUR_MARKER"
+		return 0
+	fi
+	arch-chroot "$TARGET" rm -rf -- "$build" || :
+	printf 'lyona-postinstall: the NVIDIA %s driver could not be built; leaving the open-source nouveau driver in place.\n' "$branch"
+	return 0
+}
+
 install_gpu_drivers() {
 	if ! command -v lspci >/dev/null 2>&1; then
 		printf 'lyona-postinstall: lspci not found; skipping GPU driver detection.\n'
@@ -135,11 +220,14 @@ install_gpu_drivers() {
 
 	if grep -qE "NVIDIA|GeForce" <<<"$gpu_info"; then
 		if [[ ${LYONA_NVIDIA_DRIVER:-} == 1 ]]; then
-			if nvidia_open_supported; then
-				install_nvidia_driver
-			else
-				printf 'lyona-postinstall: leaving the open-source nouveau driver in place; drivers for older NVIDIA GPUs are planned (Sync Sprint 14).\n'
-			fi
+			# The driver this card needs (Sync Sprint 14 S14-02).
+			local branch device
+			read -r branch device < <(nvidia_gpu_branch || printf 'unsupported unknown\n')
+			case $branch in
+			open) install_nvidia_driver ;;
+			580xx | 470xx) install_legacy_nvidia_driver "$branch" "$device" ;;
+			*) printf 'lyona-postinstall: no packaged NVIDIA driver supports GPU 10de:%s; leaving the open-source nouveau driver in place.\n' "$device" ;;
+			esac
 		else
 			printf 'lyona-postinstall: NVIDIA GPU detected; leaving the open-source nouveau driver in place.\n'
 			printf 'lyona-postinstall: re-run with LYONA_NVIDIA_DRIVER=1 to opt into the proprietary NVIDIA driver instead.\n'
@@ -215,7 +303,8 @@ install_qemu_guest_utils() {
 }
 
 export -f dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
-	install_microcode nvidia_open_supported install_nvidia_driver install_gpu_drivers \
+	install_microcode lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
+	install_legacy_nvidia_driver install_gpu_drivers \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."
@@ -230,6 +319,8 @@ target_user=$(
 
 target_home=$(arch-chroot "$TARGET" getent passwd "$target_user" | cut -d: -f6)
 target_group=$(arch-chroot "$TARGET" id -gn "$target_user")
+# The steps run in fresh shells (run_logged); the legacy NVIDIA build needs these.
+export target_user target_home target_group lyona_nvidia_table
 target_repo_dir="$target_home/.local/share/lyona"
 
 set_total_steps 9
@@ -292,6 +383,11 @@ say --border rounded --border-foreground $COLOR_OK --foreground $COLOR_OK --bold
 	"lyona installed into $TARGET for $target_user." \
 	"Rebooting automatically in 15 seconds."
 echo
+if [[ -e $NVIDIA_AUR_MARKER ]]; then
+	say --foreground "$COLOR_ACCENT" \
+		"The NVIDIA driver was built from the AUR: pacman -Syu does not update it. Update it with yay."
+	echo
+fi
 say --foreground $COLOR_DANGER \
 	"If the live medium is still attached and boots before the disk, this will land back in the installer instead of the new system. Detach/eject it now, or Ctrl+C to cancel the reboot."
 

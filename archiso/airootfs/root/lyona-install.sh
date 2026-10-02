@@ -177,32 +177,31 @@ ask_timezone() {
 	[[ -n $TIMEZONE && -f /usr/share/zoneinfo/$TIMEZONE ]] || fail "unknown timezone: '$TIMEZONE'"
 }
 
-# One image for every GPU (D-17a, Sync Sprint 12 S12-17): on an NVIDIA GPU the
-# current driver supports, the proprietary driver is the recommended choice and
-# nouveau the alternative. An older card keeps nouveau, which the summary says;
-# Sync Sprint 14 adds the legacy drivers.
+# One image for every GPU (D-17a, Sync Sprint 12 S12-17): on an NVIDIA GPU a
+# packaged driver supports, the proprietary driver is the recommended choice and
+# nouveau the alternative. Which driver comes from the card's device ID (Sync
+# Sprint 14 S14-02): nvidia-open, or the legacy 580xx or 470xx driver for an
+# older card. A card no packaged driver supports keeps nouveau without asking.
+# Like every other prompt here, a dismissed or failed prompt aborts.
 ask_nvidia() {
 	NVIDIA_OPT_IN=0
 	NVIDIA_DETECTED=0
-	NVIDIA_OLDER_GPU=0
+	NVIDIA_BRANCH=
 	command -v lspci >/dev/null 2>&1 || return 0
 	if ! lspci | grep -E "VGA|3D|Display" | grep -qE "NVIDIA|GeForce"; then
 		return 0
 	fi
 	NVIDIA_DETECTED=1
-	if ! nvidia_open_supported >/dev/null; then
-		NVIDIA_OLDER_GPU=1
-		return 0
-	fi
+	read -r NVIDIA_BRANCH _ < <(nvidia_gpu_branch || printf 'unsupported\n')
+	[[ $NVIDIA_BRANCH != unsupported ]] || return 0
 
-	# Like every other prompt here, a dismissed or failed prompt aborts: the
-	# proprietary driver is installed only when it was chosen.
-	local choice
-	choice=$(gum choose \
-		"nvidia (proprietary, recommended)" "nouveau (open-source)" \
+	local choice proprietary="nvidia (proprietary, recommended)"
+	[[ $NVIDIA_BRANCH == open ]] ||
+		proprietary="nvidia $NVIDIA_BRANCH (proprietary legacy driver, recommended)"
+	choice=$(gum choose "$proprietary" "nouveau (open-source)" \
 		--header "NVIDIA GPU detected. Select driver:") || fail "aborted."
 	case $choice in
-	"nvidia (proprietary, recommended)") NVIDIA_OPT_IN=1 ;;
+	"$proprietary") NVIDIA_OPT_IN=1 ;;
 	"nouveau (open-source)") ;;
 	*) fail "aborted." ;;
 	esac
@@ -212,10 +211,12 @@ ask_nvidia() {
 nvidia_summary() {
 	if [[ ${NVIDIA_DETECTED:-0} != 1 ]]; then
 		echo "not needed (no NVIDIA GPU detected)"
-	elif [[ $NVIDIA_OPT_IN == 1 ]]; then
+	elif [[ $NVIDIA_OPT_IN == 1 && $NVIDIA_BRANCH == open ]]; then
 		echo "proprietary (recommended)"
-	elif [[ ${NVIDIA_OLDER_GPU:-0} == 1 ]]; then
-		echo "nouveau (this GPU predates the current NVIDIA driver)"
+	elif [[ $NVIDIA_OPT_IN == 1 ]]; then
+		echo "proprietary $NVIDIA_BRANCH legacy driver (from CachyOS, or built from the AUR)"
+	elif [[ $NVIDIA_BRANCH == unsupported ]]; then
+		echo "nouveau (no packaged NVIDIA driver supports this GPU)"
 	else
 		echo "nouveau"
 	fi

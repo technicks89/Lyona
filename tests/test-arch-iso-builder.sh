@@ -200,25 +200,29 @@ cat >"$work/nvidia-bin/gum" <<'SCRIPT'
 printf '%s\n' "$FAKE_GUM_CHOICE"
 SCRIPT
 chmod +x "$work/nvidia-bin/lspci" "$work/nvidia-bin/gum"
-nvidia_open_case() { # EXPECTED-STATUS DEVICE-IDS...
-	local want=$1 status=0
+# The branch for this machine's card, from the device table (Sync Sprint 14).
+export LYONA_NVIDIA_TABLE=$repo/config/nvidia-legacy-gpus.tsv
+gpu_branch_case() { # WANT DEVICE-IDS...
+	local want=$1 got
 	shift
-	FAKE_NVIDIA_IDS="$*" PATH="$work/nvidia-bin:$PATH" \
-		bash -c '. "$1"; nvidia_open_supported' sh "$nvidia_lib" >/dev/null || status=$?
-	[[ $status == "$want" ]] ||
-		fail "nvidia_open_supported for '$*' returned $status, expected $want"
+	got=$(FAKE_NVIDIA_IDS="$*" PATH="$work/nvidia-bin:$PATH" \
+		bash -c '. "$1"; nvidia_gpu_branch || printf "none\n"' sh "$nvidia_lib")
+	[[ $got == "$want" ]] || fail "nvidia_gpu_branch for '$*' gave '$got', expected '$want'"
 }
-nvidia_open_case 0 1e07      # RTX 2080 Ti, Turing
-nvidia_open_case 0 2684      # RTX 4090, Ada
-nvidia_open_case 1 1b80      # GTX 1080, Pascal
-nvidia_open_case 1 1d81      # Titan V, Volta
-nvidia_open_case 1 1380      # GTX 750 Ti, Maxwell
-nvidia_open_case 1 2684 1b80 # one older card is enough to keep nouveau
-nvidia_open_case 1           # no device ID read: do not guess
+gpu_branch_case 'open 1e07' 1e07        # RTX 2080 Ti, Turing
+gpu_branch_case 'open 2684' 2684        # RTX 4090, Ada
+gpu_branch_case '580xx 1b80' 1b80       # GTX 1080, Pascal
+gpu_branch_case '580xx 1d81' 1d81       # Titan V, Volta
+gpu_branch_case '580xx 1380' 1380       # GTX 750 Ti, Maxwell
+gpu_branch_case '470xx 0fc6' 0fc6       # GTX 650, Kepler
+gpu_branch_case 'unsupported 06c0' 06c0 # GTX 480, Fermi
+gpu_branch_case 'open 2684' 2684 1b80   # the first card lspci lists
+gpu_branch_case none                    # no device ID read
 
 # One image for every GPU (D-17a, S12-17): the installer recommends the
-# proprietary driver on a supported NVIDIA card, keeps nouveau without asking on
-# an older one, and its summary says which.
+# proprietary driver the card needs, nvidia-open or a legacy one (Sprint 14),
+# keeps nouveau without asking when no packaged driver supports the card, and
+# its summary says which.
 ask_nvidia_case() { # WANT-OPT-IN WANT-SUMMARY GUM-CHOICE DEVICE-IDS...
 	local want=$1 summary=$2 choice=$3 got
 	shift 3
@@ -243,9 +247,12 @@ dismissed=$(FAKE_NVIDIA_IDS=2684 FAKE_GUM_CHOICE='' PATH="$work/nvidia-bin:$PATH
 	sh "$repo/archiso/airootfs/root/lyona-install.sh" 2>/dev/null) || dismissed_status=$?
 [[ $dismissed_status != 0 && $dismissed != 1 ]] ||
 	fail "a dismissed NVIDIA prompt did not abort (status $dismissed_status, opt-in '$dismissed')"
-# No prompt on an older card: the answer offered here is never read.
-ask_nvidia_case 0 'nouveau (this GPU predates the current NVIDIA driver)' \
-	'nvidia (proprietary, recommended)' 1b80
+# An older card is offered its legacy driver.
+ask_nvidia_case 1 'proprietary 580xx legacy driver (from CachyOS, or built from the AUR)' \
+	'nvidia 580xx (proprietary legacy driver, recommended)' 1b80
+# No prompt for a card no packaged driver supports: the answer is never read.
+ask_nvidia_case 0 'nouveau (no packaged NVIDIA driver supports this GPU)' \
+	'nvidia (proprietary, recommended)' 06c0
 
 awk '
 	/^\[multilib\]$/ { found = 1; next }
