@@ -99,6 +99,15 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   `~/.local/bin/starship-theme`. An existing `~/.bashrc` is kept as
   `~/.bashrc.bak`. The clone is replaced on every run, so edit the files it
   links to rather than the clone itself.
+  - **Topgrade.** It also installs [Topgrade](https://github.com/topgrade-rs/topgrade),
+    which updates everything with one `topgrade` command. Topgrade is only in
+    the AUR on Arch, so the installer builds a pinned release with
+    `cargo install --locked`, using `rustup`'s stable toolchain rather than
+    Arch's `rust` package.
+  - **Where it goes:** `~/.cargo/bin/topgrade`, which mybash puts on `PATH`.
+  - **If you already have Arch's `rust`:** it is kept, and its `cargo` is used.
+  - **If the build fails** (it needs the network, and takes a few minutes), the
+    install carries on. Rerun `scripts/install-topgrade` later.
 - `full`: `recommended` plus optional extras such as Thunar with SMB-share
   browsing, network tray utilities,
   wallpapers, and display-manager setup. x86_64 Arch full installs also

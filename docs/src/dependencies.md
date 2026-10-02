@@ -112,6 +112,12 @@ The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfe
 
 `starship` `zoxide` `fzf` `fastfetch` `bat` `tree` `trash-cli` `bash-completion`
 
+### `rust-toolchain`
+
+`rustup`, whose `cargo` builds Topgrade (`scripts/install-topgrade`). Topgrade is AUR-only on Arch, so it is built from crates.io at a pinned version instead. `rustup` conflicts with Arch's `rust` and `cargo` packages; when `rust` is already installed, the installer keeps it and uses its `cargo`.
+
+`rustup`
+
 ### `desktop-optional`
 
 Thunar with SMB browsing and archive support, thumbnails, NetworkManager, `rsync` and `autorandr`. Every package is in the official repositories.

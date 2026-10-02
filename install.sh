@@ -509,6 +509,7 @@ print_install_summary() {
 	if install_recommended_profile; then
 		print_summary_profile "Recommended packages" recommended
 		printf '  Gear Lever: user-scoped Flathub install (%s)\n' 'it.mijorus.gearlever'
+		printf '  Topgrade: built with cargo from crates.io (%s, rustup toolchain)\n' "$(sed -n 's/^readonly TOPGRADE_VERSION=//p' "$REPO_DIR/scripts/install-topgrade")"
 	else
 		printf '  Recommended packages: skipped\n'
 	fi
@@ -850,6 +851,23 @@ if install_recommended_profile; then
 		ok "mybash shell configuration installed; open a new shell to pick it up."
 	else
 		warn "The mybash shell configuration was not installed; the default bash prompt remains."
+	fi
+
+	# Topgrade (Sync Sprint 15 S15-06, decision D-28): AUR-only on Arch, so it is
+	# built with cargo, from rustup rather than Arch's rust package. rustup
+	# conflicts with rust and cargo, so an installed rust is kept and its cargo
+	# used. pacman -Qq resolves provides, so the names are compared exactly.
+	if [[ $(pacman -Qq rust 2>/dev/null) == rust || $(pacman -Qq cargo 2>/dev/null) == cargo ]]; then
+		warn "Arch's rust package is installed; Topgrade is built with its cargo. To use rustup instead: sudo pacman -S rustup"
+	else
+		info "Installing rustup for Topgrade..."
+		dwm_install_package_profile rust-toolchain
+	fi
+	info "Installing Topgrade with cargo (this needs the network and takes a few minutes)..."
+	if "$REPO_DIR/scripts/install-topgrade"; then
+		ok "Topgrade is installed in ~/.cargo/bin; run topgrade in a new shell."
+	else
+		warn "Topgrade was not installed; retry with scripts/install-topgrade when the network is reachable."
 	fi
 fi
 
