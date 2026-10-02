@@ -191,6 +191,11 @@ Singleton {
         return helperCommand("lyona-update-indicator", action, args);
     }
 
+    // Updates in a terminal, from Settings > System (Sync Sprint 15 S15-04).
+    function updateTerminalCommand(action, args) {
+        return helperCommand("lyona-update-terminal", action, args);
+    }
+
     function versionCommand(action, args) {
         return helperCommand("lyona-version", action, args);
     }

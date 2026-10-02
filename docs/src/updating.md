@@ -27,8 +27,8 @@ applies anything on its own.
 ## The panel's update icon
 
 When updates are available, the panel shows an update icon with a count, left
-of the Bluetooth icon. The count is the system packages waiting to be installed,
-plus one when a new lyona release is out. Hover it for the details; click it to
+of the Bluetooth icon. The count is the system packages and Flatpak apps waiting
+to be updated, plus one when a new lyona release is out. Hover it for the details; click it to
 open Settings -> System, where updates are run. The panel itself installs
 nothing.
 
@@ -36,6 +36,9 @@ nothing.
   a private copy of the package databases and never takes pacman's lock, so
   counting cannot interfere with a running `pacman`. Packages from the AUR are
   not counted.
+- **Flatpak apps are counted with `flatpak remote-ls --updates`**, for the
+  system and the user installation each. If one cannot be checked, Settings
+  says which.
 - **When it checks:**
   - a few minutes after you log in;
   - every 6 hours (choose 1, 3, 6, 12 or 24 in Settings -> System);
@@ -51,6 +54,38 @@ nothing.
 - **Its settings** are in `~/.config/lyona/update-indicator.conf`, private to
   you, written by `lyona-update-indicator`. Run `lyona-update-indicator check`
   to see what the panel would count.
+
+## Updating in a terminal
+
+Settings -> System -> **Update in a terminal** runs an update in your own
+terminal, where you see the full plan and output and answer the tool's own
+confirmation. Nothing is confirmed for you. This sits beside the PackageKit
+preview further down the page; use whichever you prefer.
+
+- **Update packages** runs `yay -Syu` when `yay` is installed, so packages built
+  from the AUR (such as the legacy NVIDIA drivers) update too, and
+  `sudo pacman -Syu` otherwise.
+- **Update Flatpak apps** runs `flatpak update --system`, then
+  `flatpak update --user`. If one fails, the other still runs, and the result
+  says which did not update. The system installation asks for authorization
+  through Flatpak's own prompt.
+- **The result** comes from the command, not from the window. Settings shows
+  "Updated", "Not updated" with the exit status (declining the plan counts), or
+  that the terminal closed before the update finished. The window stays open
+  after the update until you press Enter. The panel count is read again when it
+  closes.
+- **Floating:** the terminal tiles. Turn on **Float the update terminal** to
+  float it. That uses the window class `lyona-update-float`, which a new
+  install's `window-rules.toml` floats. An existing file is never edited for
+  you; if yours predates this, Settings shows the line to add inside its `rules`
+  array:
+
+  ```toml
+  { class="lyona-update-float", isfloating=1 },
+  ```
+
+  Saving the file applies it through dwm's hot reload. Terminals other than
+  Alacritty, kitty, st and xterm cannot be given the class, and always tile.
 
 ## Applying an update
 

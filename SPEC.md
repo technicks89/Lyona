@@ -432,6 +432,12 @@ The maintained Arch dependency map covers these capabilities:
 These are capability mappings, not immutable package lists. Availability must
 be validated against the supported Arch release.
 
+The AUR is limited to where it is needed (decision D-27). A package comes from
+the official repositories, or the CachyOS repository where the image adds it,
+whenever one of them can do the job. Each AUR use is listed in
+`docs/AUR-PACKAGES.md`, pinned or otherwise bounded, reviewed, and allowed by
+`make check-aur-policy`, which fails on any other. A new use needs a decision.
+
 Runtime dependencies are classified as:
 
 - Core: an X11 server/session, D-Bus session support, one usable terminal
@@ -566,12 +572,22 @@ The planned Settings surface covers:
   recovery guidance.
 
 The panel shows an updates-available indicator: the pending system package
-count (from `checkupdates`, which never takes pacman's lock) plus the lyona
+count (from `checkupdates`, which never takes pacman's lock), the pending
+Flatpak updates for the system and user installations, and the lyona
 release. It is hidden when there is nothing to install unless the user asks for
 it. It checks a few minutes after login, at a user-set interval of 1 to 24 hours
 (remote repositories have no change signal), when NetworkManager reports a
 connection, and by hand from Settings only; one check runs at a time. A click
 opens Settings > System, which remains the one place updates are run.
+
+Settings > System can also run an update in the user's terminal, beside the
+PackageKit preview: `yay -Syu` when `yay` is installed (so AUR packages update
+too), otherwise `sudo pacman -Syu`, and `flatpak update` for each installation.
+The tool's own plan and confirmation are shown, and nothing is confirmed for
+the user. The reported result comes from the command's exit status; a terminal
+closed early is reported as interrupted, never as success. The terminal tiles
+unless the user chooses to float it, which uses a window class the shipped
+`window-rules.toml` floats. An existing user rules file is never edited.
 
 Advanced partitioning, unrestricted service control, firewall policy editing,
 and similarly high-risk administration remain delegated unless a later
@@ -653,8 +669,8 @@ NVIDIA-only packages or kernel arguments.
 - **Older cards:** a Maxwell to Volta card gets the legacy 580xx driver, and a
   Kepler card the 470xx one (decision D-23). It comes from the CachyOS
   repository when the image added it, and is otherwise built from a pinned,
-  reviewed AUR PKGBUILD as the new user. This is the project's one AUR
-  exception (`docs/AUR-PACKAGES.md`, decision D-22). A card no packaged driver
+  reviewed AUR PKGBUILD as the new user (`docs/AUR-PACKAGES.md`, decision
+  D-22). A card no packaged driver
   supports keeps nouveau, and the installer says so. The install must never end
   with no working driver.
 - **Third-party repositories:** the image may enable the documented ones needed

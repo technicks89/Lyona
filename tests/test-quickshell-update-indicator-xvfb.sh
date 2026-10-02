@@ -14,6 +14,9 @@ set -eu
 # - A second connection event soon after does not check again.
 # - "Show when current", set through the real helper, shows it with nothing to
 #   install.
+# - "Update packages" runs the real lyona-update-terminal, in a stub terminal
+#   with a stub yay; the result reaches the shell, and the counts are read again
+#   (S15-04).
 # - The shell stays near idle while nothing happens.
 
 # shellcheck source=tests/lib.sh
@@ -96,6 +99,20 @@ watch-network)
 esac
 STUB
 chmod +x "$scripts/lyona-update-indicator"
+# A terminal and yay for "Update packages": the terminal runs the command it is
+# given, and yay logs its arguments.
+mkdir -p "$work/bin"
+cat >"$work/bin/alacritty" <<'STUB'
+#!/bin/bash
+while (($# > 0)) && [[ $1 != -e ]]; do shift; done
+shift
+"$@" </dev/null
+STUB
+cat >"$work/bin/yay" <<STUB
+#!/bin/sh
+printf 'yay %s\n' "\$*" >>"$work/yay.log"
+STUB
+chmod +x "$work/bin/alacritty" "$work/bin/yay"
 # The release check: current, so the count is the packages alone.
 cat >"$scripts/lyona-update" <<'STUB'
 #!/bin/sh
@@ -119,7 +136,8 @@ run_env() {
 	env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
 		XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 		QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software QT_QPA_PLATFORMTHEME= \
-		DWM_AUTOSTART_NO_INPUT_WATCH=1 LYONA_SHELL_TEST_IPC=1 PATH="$repo/scripts:$PATH" "$@"
+		DWM_AUTOSTART_NO_INPUT_WATCH=1 LYONA_SHELL_TEST_IPC=1 DWM_TERMINAL=alacritty \
+		PATH="$work/bin:$repo/scripts:$PATH" "$@"
 }
 run_env "$repo/dwm" >"$work/dwm.log" 2>&1 &
 pids="$pids $!"
@@ -175,6 +193,20 @@ run_env "$scripts/lyona-update-indicator" set-show-when-current yes >/dev/null
 wait_for "shown${tab}0${tab}current${tab}6${tab}yes" 'show when current' ipc updateIndicatorTest status
 [ "$(stat -c %a "$home/.config/lyona/update-indicator.conf")" = 600 ] || fail 'the settings file is not private'
 
+# "Update packages" in a terminal: the real helper, the tool's own command, the
+# result in the shell, and a check once the terminal closes.
+before_checks=$(checks)
+ipc updateIndicatorTest updateInTerminal system >/dev/null
+wait_for "idle${tab}system${tab}succeeded${tab}0${tab}tile${tab}rule" 'an update in a terminal' \
+	ipc updateIndicatorTest terminalStatus
+[ "$(cat "$work/yay.log")" = 'yay -Syu' ] || fail "yay was run as: $(cat "$work/yay.log" 2>/dev/null)"
+i=0
+until [ "$(checks)" -gt "$before_checks" ]; do
+	i=$((i + 1))
+	[ "$i" -lt 200 ] || fail 'the counts were not read again after the terminal closed'
+	sleep 0.05
+done
+
 # Near idle with nothing happening: under 5% of one CPU over three seconds.
 ticks() { awk '{ print $14 + $15 }' "/proc/$shell_pid/stat"; }
 sleep 1
@@ -188,4 +220,4 @@ hz=$(getconf CLK_TCK)
 grep -Eq 'ReferenceError|TypeError|Binding loop' "$work/quickshell.log" &&
 	fail "the shell logged a QML error: $(grep -Em1 'ReferenceError|TypeError|Binding loop' "$work/quickshell.log")"
 
-printf 'Quickshell update indicator: a connection checks, updates show a count, a click opens Settings > System, nothing to install hides it, a flapping connection does not re-check, show-when-current shows it, idle: PASS\n'
+printf 'Quickshell update indicator: a connection checks, updates show a count, a click opens Settings > System, nothing to install hides it, a flapping connection does not re-check, show-when-current shows it, an update in a terminal reports its result, idle: PASS\n'

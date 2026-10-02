@@ -8,7 +8,8 @@ two upstream pull requests in `ChrisTitusTech/dwm-titus`:
 - **`#363`** "feat: integrate dwm-update-center" (merged 2026-10-01,
   +9176/-98, 37 commits).
 
-**Status:** started 2026-10-02; S15-01 on branch `s15-01-keyring`; D-24 to
+**Status:** S15-01 to S15-04 implemented 2026-10-02; S15-05 partly run
+(`docs/evidence/s15-05-updates-and-keyring.md`). Started on branch `s15-01-keyring`; D-24 to
 D-26 decided 2026-10-02. GitHub: milestone "Sync Sprint 15 - Update discovery
 and the login keyring", issues `#214` to `#218`.
 
@@ -212,6 +213,73 @@ instead. `#363` builds an Update Center on top of that declined updater.
     - more than one screen, although the model is a single shared instance.
 
     S15-05 covers these.
+
+- **S15-03, S15-04 (2026-10-02, branch `s15-03-05-flatpak-terminal`, one
+  branch as asked):**
+  - **Flatpak discovery:** a `flatpak` provider in `lyona-update-indicator
+    check`, from `flatpak remote-ls --updates --columns=application,branch` for
+    each installation. A failing installation is an error that names it.
+    Flatpak not installed is `unavailable`, not an error. The panel count and
+    its tooltip include it.
+  - **Updates in a terminal:** a new helper, `scripts/lyona-update-terminal
+    launch system|flatpak`, run from Settings > System, "Update in a terminal".
+    - **The commands:** packages use `yay -Syu` when `yay` is installed, else
+      `sudo pacman -Syu`. Flatpak runs `flatpak update --system`, then
+      `--user`, each on its own. Nothing is confirmed for the user.
+    - **The result** comes from the command, through a private result file:
+      `succeeded`, `not-updated` (any non-zero exit, a declined plan
+      included), `interrupted` (the terminal closed mid-update), or
+      `not-started`.
+    - **Afterwards:** the window waits for Enter after recording the result,
+      and the counts are read again when it closes. One run at a time.
+    - **The terminal:** `dwm-terminal`'s choice, given the window class
+      `lyona-update` or, when "Float the update terminal" is on,
+      `lyona-update-float`.
+  - **Where it differs from the plan:**
+    - **Floating:** dwm has no way to float a window after it maps except a
+      rule, and rules come only from `window-rules.toml`, which install copies
+      only when absent.
+      - The shipped file gains `{ class="lyona-update-float", isfloating=1 }`.
+      - An existing file is never edited. `lyona-update-indicator status`
+        reports whether the rule is there (`float-rule`), and Settings shows
+        the line to add when it is not, as Settings already does for its own
+        rule.
+      - The preference is stored in `update-indicator.conf` (`float-terminal`).
+    - **A declined plan** cannot be told from a failure by exit status, so
+      both are "Not updated" with the status.
+  - **Tests:**
+    - **`test-lyona-update-indicator.sh`, extended:** each installation
+      asked, both, one, one failing, Flatpak missing, and the float setting
+      and rule detection (missing, commented out, not floating, the shipped
+      file, never written).
+    - **`test-lyona-update-terminal.sh`, new:** `yay`, then `sudo pacman`
+      without it; never a `--noconfirm` or `-y`; a declined plan; a terminal
+      closed mid-update; a terminal that never ran it; no terminal; Flatpak's
+      installations each on their own, the user one still running after the
+      system one fails; the float class; and no leftover result files.
+    - **The Xvfb test, extended:** "Update packages" through the real helper
+      with a stub terminal and `yay`. The result reaches the shell, and a
+      check follows.
+  - **The AUR policy (decision D-27):** the policy changed from "no AUR" to
+    "limit the AUR to where it is needed".
+    - **The guard:** renamed `tests/test-aur-policy.sh` and `make
+      check-aur-policy`; `check-no-aur` still runs it.
+    - **The allowed uses:** the helper bootstrap, the legacy driver build,
+      and the exact `yay -Syu` inside `run_system`.
+    - **Still failing:** `yay -S` there, or `yay -Syu` in any other function.
+    - **The record:** `docs/AUR-PACKAGES.md` lists every use and why, and
+      SPEC.md 5.8 states the policy.
+  - **A bug the tests found:** reading the float setting through
+    `grep -q` under `pipefail` ended the pipe early and read as "tile".
+  - **Docs:** SPEC.md 5.10, `docs/src/updating.md`, `docs/src/settings.md`,
+    `docs/AUR-PACKAGES.md`, `CHANGELOG.md` (with the migration note).
+  - **Validation:** the focused targets and the full `scripts/run-tests`
+    suite passed (2026-10-02).
+- **S15-05:** partly run. The read-only checks passed on a real Arch
+  install: the real `checkupdates`, the NetworkManager subscription, the
+  keyring diagnostic, and LightDM's PAM lines. Everything that changes the
+  machine or needs a fresh install is listed as not run, in
+  `docs/evidence/s15-05-updates-and-keyring.md`.
 
 ## S15-01: The login keyring is required and diagnosed
 

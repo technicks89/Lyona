@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+# Updates in a terminal (Sync Sprint 15 S15-03 and S15-04, decision D-26), from
+# Settings > System. The update runs in the user's own terminal with the tool's
+# full output and its own confirmation; nothing here answers yes for the user.
+# The privileged helper is not involved: sudo, or Flatpak's polkit prompt for
+# the system installation, is the authorization, as for any command the user
+# runs.
+#
+#   lyona-update-terminal launch system|flatpak
+#
+# launch opens the terminal, waits for it to close, and prints:
+#   update-terminal-protocol  1  0
+#   result  system|flatpak  succeeded|not-updated|interrupted|not-started  CODE  DETAIL
+#   complete  launch
+#
+# - system: `yay -Syu` when yay is installed, so packages built from the AUR
+#   (such as the legacy NVIDIA drivers, Sprint 14) update too; otherwise
+#   `sudo pacman -Syu`.
+# - flatpak: `flatpak update --system`, then `flatpak update --user`, each on
+#   its own, so one installation failing leaves the other's result.
+# - The result comes from the command, never from the terminal closing:
+#   not-updated is a non-zero exit (a declined plan included), interrupted is
+#   a terminal closed before the command finished, and not-started is a
+#   terminal that never ran it.
+# - The terminal tiles, or floats when float-terminal is set
+#   (lyona-update-indicator) and window-rules.toml has the rule for the
+#   lyona-update-float class.
+#
+# `run PROVIDER RESULT-FILE` is what runs inside the terminal.
+
+readonly protocol_header=$'update-terminal-protocol\t1\t0'
+readonly title='lyona update'
+
+die() {
+	printf 'lyona-update-terminal: %s\n' "$*" >&2
+	exit 1
+}
+
+usage() {
+	printf 'usage: lyona-update-terminal launch system|flatpak\n' >&2
+	exit 2
+}
+
+# A sibling helper: beside this one in a checkout, or on PATH when installed.
+sibling() {
+	local here=${BASH_SOURCE[0]%/*}
+	if [[ -x $here/$1 ]]; then
+		printf '%s\n' "$here/$1"
+	else
+		command -v "$1"
+	fi
+}
+
+emit() { # PROVIDER RESULT CODE DETAIL
+	printf '%s\n' "$protocol_header"
+	printf 'result\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4"
+	printf 'complete\tlaunch\n'
+}
+
+# ---- inside the terminal ---------------------------------------------------
+
+run_system() {
+	if command -v yay >/dev/null 2>&1; then
+		printf '==> yay -Syu (official repositories and AUR packages)\n\n'
+		yay -Syu
+	elif command -v sudo >/dev/null 2>&1; then
+		printf '==> sudo pacman -Syu\n\n'
+		sudo pacman -Syu
+	else
+		printf 'Neither yay nor sudo is installed; run pacman -Syu as root.\n'
+		return 1
+	fi
+}
+
+run_flatpak() {
+	local scope status failed=()
+	if ! command -v flatpak >/dev/null 2>&1; then
+		printf 'Flatpak is not installed.\n'
+		return 1
+	fi
+	for scope in system user; do
+		printf '==> flatpak update --%s\n\n' "$scope"
+		status=0
+		flatpak update "--$scope" || status=$?
+		((status == 0)) || failed+=("$scope")
+		printf '\n'
+	done
+	if ((${#failed[@]} > 0)); then
+		printf 'The %s installation was not updated.\n' "${failed[*]}"
+		return 1
+	fi
+}
+
+run() { # PROVIDER RESULT-FILE
+	local provider=$1 result=$2 status=0
+	printf 'started\n' >"$result"
+	# The terminal closing (SIGHUP) or the command being stopped is an
+	# interruption, recorded as such.
+	trap 'printf "interrupted\n" >>"$result"; exit 129' HUP
+	trap 'printf "interrupted\n" >>"$result"; exit 130' INT
+	trap 'printf "interrupted\n" >>"$result"; exit 143' TERM
+	case $provider in
+	system) run_system || status=$? ;;
+	flatpak) run_flatpak || status=$? ;;
+	esac
+	trap - HUP INT TERM
+	# Recorded before the prompt, so closing the window now loses nothing.
+	printf 'exit %d\n' "$status" >>"$result"
+	if ((status == 0)); then
+		printf '\nDone.'
+	else
+		printf '\nNot updated (exit %d).' "$status"
+	fi
+	printf ' Press Enter to close this window.\n'
+	read -r _ || :
+}
+
+# ---- launching -------------------------------------------------------------
+
+# The terminal command line for CLASS, running the rest of the arguments. Each
+# terminal names its window class its own way; one without a known option runs
+# without a class (it tiles).
+terminal_argv() { # TERMINAL CLASS COMMAND...
+	local terminal=$1 class=$2
+	shift 2
+	case ${terminal##*/} in
+	alacritty) printf '%s\0' "$terminal" --class "$class,$class" --title "$title" -e "$@" ;;
+	kitty) printf '%s\0' "$terminal" --class "$class" --title "$title" "$@" ;;
+	st) printf '%s\0' "$terminal" -c "$class" -t "$title" -e "$@" ;;
+	xterm) printf '%s\0' "$terminal" -class "$class" -T "$title" -e "$@" ;;
+	*) printf '%s\0' "$terminal" -e "$@" ;;
+	esac
+}
+
+launch() { # PROVIDER
+	local provider=$1 terminal launcher indicator settings class=lyona-update result line state=not-started code=-1
+	local -a argv=()
+	{ launcher=$(sibling dwm-terminal) && terminal=$("$launcher" --print-command 2>/dev/null); } || {
+		emit "$provider" not-started -1 'No supported terminal is installed'
+		return
+	}
+	# Read whole, not piped into grep -q, which would end the pipe early.
+	if indicator=$(sibling lyona-update-indicator) && settings=$("$indicator" status 2>/dev/null) &&
+		[[ $'\n'$settings$'\n' == *$'\nsetting\tfloat-terminal\tyes\n'* ]]; then
+		class=lyona-update-float
+	fi
+	result=$(mktemp "${TMPDIR:-/tmp}/lyona-update-terminal.XXXXXX") || die 'cannot create a result file'
+	# shellcheck disable=SC2064 # the path is fixed now
+	trap "rm -f -- '$result'" EXIT
+	mapfile -d '' -t argv < <(terminal_argv "$terminal" "$class" "${BASH_SOURCE[0]}" run "$provider" "$result")
+	"${argv[@]}" </dev/null >/dev/null 2>&1 || :
+	while IFS= read -r line; do
+		case $line in
+		started) state=interrupted ;;
+		interrupted) state=interrupted ;;
+		'exit '*)
+			code=${line#exit }
+			[[ $code =~ ^[0-9]+$ ]] || code=-1
+			if [[ $code == 0 ]]; then state=succeeded; else state=not-updated; fi
+			;;
+		esac
+	done <"$result"
+	case $state in
+	succeeded) emit "$provider" succeeded 0 'Updated' ;;
+	not-updated) emit "$provider" not-updated "$code" "Not updated: the command exited with status $code" ;;
+	interrupted) emit "$provider" interrupted -1 'The terminal closed before the update finished' ;;
+	*) emit "$provider" not-started -1 'The terminal did not start the update' ;;
+	esac
+}
+
+case ${1:-} in
+launch)
+	(($# == 2)) || usage
+	[[ $2 == system || $2 == flatpak ]] || usage
+	launch "$2"
+	;;
+run)
+	(($# == 3)) || usage
+	[[ $2 == system || $2 == flatpak ]] || usage
+	[[ -f $3 && ! -L $3 ]] || die 'run needs the result file launch created'
+	run "$2" "$3"
+	;;
+*) usage ;;
+esac

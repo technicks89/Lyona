@@ -15,16 +15,21 @@ umask 077
 #   lyona-update-indicator status                      the settings
 #   lyona-update-indicator set-interval 1|3|6|12|24    hours between checks
 #   lyona-update-indicator set-show-when-current yes|no
+#   lyona-update-indicator set-float-terminal yes|no   float the update terminal
 #   lyona-update-indicator watch-network               connection events
 #
-# check prints, after the header, one line per provider, then a completion line:
+# check prints, after the header, one line per provider (system packages, then
+# Flatpak apps, S15-03), then a completion line:
 #   update-indicator-protocol  1  0
-#   provider  system  available|current|unavailable|error  COUNT  DETAIL
+#   provider  system|flatpak  available|current|unavailable|error  COUNT  DETAIL
 #   complete  check
-# status prints:
+# status prints the settings, and whether window-rules.toml has the rule that
+# floats the update terminal (S15-04; never added to a user's file for them):
 #   update-indicator-protocol  1  0
 #   setting  interval-hours  HOURS
 #   setting  show-when-current  yes|no
+#   setting  float-terminal  yes|no
+#   setting  float-rule  present|missing
 #   complete  status
 # watch-network prints "network-event ready" once it is subscribed, then
 # "network-event connected" each time NetworkManager reaches full connectivity
@@ -40,6 +45,10 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 lyona_xdg_dirs
 
 config_file=$config_home/lyona/update-indicator.conf
+rules_file=$config_home/lyona/window-rules.toml
+# The window class the update terminal gets when it should float, and the rule
+# in config/window-rules.toml that floats it (lyona-update-terminal).
+readonly float_class=lyona-update-float
 readonly protocol_header=$'update-indicator-protocol\t1\t0'
 readonly intervals='1 3 6 12 24'
 readonly default_interval=6
@@ -53,7 +62,7 @@ die() {
 }
 
 usage() {
-	printf 'usage: lyona-update-indicator check | status | set-interval 1|3|6|12|24 | set-show-when-current yes|no | watch-network\n' >&2
+	printf 'usage: lyona-update-indicator check | status | set-interval 1|3|6|12|24 | set-show-when-current yes|no | set-float-terminal yes|no | watch-network\n' >&2
 	exit 2
 }
 
@@ -89,13 +98,35 @@ show_setting() {
 	printf '%s' "$value"
 }
 
-write_settings() { # INTERVAL SHOW
+float_setting() {
+	local value
+	value=$(read_setting float-terminal no)
+	[[ $value == yes ]] || value=no
+	printf '%s' "$value"
+}
+
+# An uncommented rule for the float class that floats it.
+float_rule() {
+	local line
+	if [[ -f $rules_file && ! -L $rules_file ]]; then
+		while IFS= read -r line || [[ -n $line ]]; do
+			line=${line%%#*}
+			if [[ $line == *"class=\"$float_class\""* && $line =~ isfloating[[:space:]]*=[[:space:]]*1 ]]; then
+				printf present
+				return
+			fi
+		done <"$rules_file"
+	fi
+	printf missing
+}
+
+write_settings() { # INTERVAL SHOW FLOAT
 	local temporary
 	[[ ! -L $config_file ]] || die 'refusing to replace a symlinked update-indicator.conf'
 	mkdir -p -- "${config_file%/*}"
 	temporary=$(mktemp "${config_file%/*}/.update-indicator.conf.XXXXXX") ||
 		die 'cannot write the update indicator settings'
-	if ! printf 'interval-hours=%s\nshow-when-current=%s\n' "$1" "$2" >"$temporary" ||
+	if ! printf 'interval-hours=%s\nshow-when-current=%s\nfloat-terminal=%s\n' "$1" "$2" "$3" >"$temporary" ||
 		! chmod 600 -- "$temporary" || ! mv -fT -- "$temporary" "$config_file"; then
 		rm -f -- "$temporary"
 		die 'cannot write the update indicator settings'
@@ -106,6 +137,8 @@ status() {
 	printf '%s\n' "$protocol_header"
 	printf 'setting\tinterval-hours\t%s\n' "$(interval_setting)"
 	printf 'setting\tshow-when-current\t%s\n' "$(show_setting)"
+	printf 'setting\tfloat-terminal\t%s\n' "$(float_setting)"
+	printf 'setting\tfloat-rule\t%s\n' "$(float_rule)"
 	printf 'complete\tstatus\n'
 }
 
@@ -133,9 +166,41 @@ system_provider() {
 	esac
 }
 
+# Flatpak apps (Sync Sprint 15 S15-03), each installation scope on its own: a
+# scope that fails is named, and never read as up to date. Flatpak not being
+# installed is not an error. Without a terminal, remote-ls prints one
+# tab-separated row per pending update and no header.
+flatpak_provider() {
+	local scope output status count total=0 failed=()
+	if ! command -v flatpak >/dev/null 2>&1; then
+		printf 'provider\tflatpak\tunavailable\t0\tFlatpak is not installed\n'
+		return
+	fi
+	for scope in system user; do
+		status=0
+		output=$(timeout --kill-after=10 "$check_seconds" \
+			flatpak remote-ls --updates "--$scope" --columns=application,branch </dev/null 2>/dev/null) || status=$?
+		if ((status != 0)); then
+			failed+=("$scope")
+			continue
+		fi
+		count=$(printf '%s\n' "$output" | awk 'NF { n++ } END { print n + 0 }')
+		total=$((total + count))
+	done
+	if ((${#failed[@]} > 0)); then
+		printf 'provider\tflatpak\terror\t0\tThe Flatpak check failed for the %s installation; it will be tried again\n' \
+			"${failed[*]}"
+	elif ((total > 0)); then
+		printf 'provider\tflatpak\tavailable\t%d\t%d Flatpak updates\n' "$total" "$total"
+	else
+		printf 'provider\tflatpak\tcurrent\t0\tFlatpak apps are up to date\n'
+	fi
+}
+
 check() {
 	printf '%s\n' "$protocol_header"
 	system_provider
+	flatpak_provider
 	printf 'complete\tcheck\n'
 }
 
@@ -198,13 +263,19 @@ status)
 set-interval)
 	(($# == 2)) || usage
 	valid_interval "$2" || die "the interval must be one of: $intervals (hours)"
-	write_settings "$2" "$(show_setting)"
+	write_settings "$2" "$(show_setting)" "$(float_setting)"
 	status
 	;;
 set-show-when-current)
 	(($# == 2)) || usage
 	[[ $2 == yes || $2 == no ]] || die 'show-when-current must be yes or no'
-	write_settings "$(interval_setting)" "$2"
+	write_settings "$(interval_setting)" "$2" "$(float_setting)"
+	status
+	;;
+set-float-terminal)
+	(($# == 2)) || usage
+	[[ $2 == yes || $2 == no ]] || die 'float-terminal must be yes or no'
+	write_settings "$(interval_setting)" "$(show_setting)" "$2"
 	status
 	;;
 watch-network)

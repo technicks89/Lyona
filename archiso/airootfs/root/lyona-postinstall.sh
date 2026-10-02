@@ -125,7 +125,7 @@ install_nvidia_driver() {
 	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}" "${headers[@]}"
 }
 
-# The one AUR exception (Sync Sprint 14, docs/AUR-PACKAGES.md): the legacy NVIDIA
+# A listed AUR use (Sync Sprint 14, docs/AUR-PACKAGES.md): the legacy NVIDIA
 # drivers, when the CachyOS repository cannot supply them (decision D-22). Each
 # branch's packages come from one AUR base, pinned to a commit whose PKGBUILD was
 # reviewed: its sources download from download.nvidia.com over HTTPS, each with
