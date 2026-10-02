@@ -208,7 +208,7 @@ From `#363`. Decided by D-25.
   - when NetworkManager reports a new connection, through its D-Bus signal
     (event-driven, no polling). An unavailable NetworkManager does not stop
     the interval checks;
-  - by hand, from the popup or Settings.
+  - by hand, from Settings only.
 - **Where a click goes:** Settings > System (D-25). The panel has no update
   controls of its own.
 - **Cost:** no resident hidden model; the check is a bounded `Process`. Closed
