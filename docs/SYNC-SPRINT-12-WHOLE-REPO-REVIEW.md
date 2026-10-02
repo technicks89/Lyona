@@ -1265,6 +1265,16 @@ reviews' findings.
     passes. Its copy of the checkout keeps the host user as owner, so git is
     given `safe.directory` for that one call.
   - The workflows already set `safe.directory` for the workspace.
+- **Review round:**
+  - **Symlinks:** the prefix now goes on member names only (tar's `S` flag).
+    Without it, all 129 cursor-theme symlinks pointed at `lyona-VERSION/<target>`,
+    which would have broken the cursors installed from a release.
+  - **Modes:** they are normalised to 0644 or 0755 (`u=rwX,go=rX`).
+  - **Failures:** tar and gzip write to temporary files, so a failure leaves
+    no partial archive.
+  - **`release-check`** now also rejects a rewritten symlink target or any
+    other mode. With the `S` flag removed it fails; a failing tar exits
+    non-zero and leaves nothing behind.
 
 `scripts/lyona-release` publishes the output of `make release` as
 `lyona-<version>.tar.gz` (`scripts/lyona-release:194,249-252`). That archive is a

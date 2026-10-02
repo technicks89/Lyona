@@ -534,25 +534,35 @@ uninstall:
 # The release asset is a source archive (Sync Sprint 12 S12-19): the files git
 # knows about -- tracked, plus untracked ones not ignored, which a release never
 # has because lyona-release requires a clean tree -- under lyona-VERSION/.
-# lyona-update and lyona-update-root build and install from it as a checkout
-# does. It never holds a built binary, config.h or objects. Byte-for-byte
+# The prefix goes on member names only (tar's S flag): a symlink's target, such
+# as the cursor themes' relative links, stays as git has it. Every mode is
+# normalised to 0644 or 0755, keeping only the executable bit git records. tar
+# and gzip write to temporary files, so a failure never leaves a partial
+# archive. lyona-update and lyona-update-root build and install from it as a
+# checkout does. It never holds a built binary, config.h or objects. Byte-for-byte
 # reproducible from the same tree and SOURCE_DATE_EPOCH.
 release:
 	@set -eu; \
 	git rev-parse --is-inside-work-tree >/dev/null 2>&1 || \
 		{ echo "make release must run in a git checkout: the archive is git's file list" >&2; exit 1; }; \
 	list="$$(mktemp)"; \
-	trap 'rm -f "$$list"' EXIT; \
+	archive_tar="$$(mktemp)"; \
+	trap 'rm -f "$$list" "$$archive_tar" "${RELEASE_ARCHIVE}.partial"' EXIT; \
 	git ls-files -z --cached --others --exclude-standard | LC_ALL=C sort -zu >"$$list"; \
 	mkdir -p "$$(dirname -- "${RELEASE_ARCHIVE}")"; \
-	tar --null -T "$$list" \
-		--transform 's,^,${RELEASE_NAME}/,' \
+	if ! tar --null -T "$$list" \
+		--transform 's,^,${RELEASE_NAME}/,S' \
 		--sort=name \
 		--mtime="@${SOURCE_DATE_EPOCH}" \
 		--owner=0 --group=0 --numeric-owner \
-		--mode='u+rw,go-w' \
+		--mode='u=rwX,go=rX' \
 		--format=gnu \
-		-cf - | gzip -n > "${RELEASE_ARCHIVE}"; \
+		-cf "$$archive_tar" || \
+		! gzip -n -c "$$archive_tar" >"${RELEASE_ARCHIVE}.partial"; then \
+		echo "make release: could not create ${RELEASE_ARCHIVE}" >&2; \
+		exit 1; \
+	fi; \
+	mv -f -- "${RELEASE_ARCHIVE}.partial" "${RELEASE_ARCHIVE}"; \
 	echo "==> Created ${RELEASE_ARCHIVE}"
 
 # Every shell script under scripts/, found by its shebang rather than kept by
@@ -1162,6 +1172,13 @@ release-check:
 		"$$work/listing"; then \
 		echo "Release archive contains build output, local configuration or git data." >&2; \
 		exit 1; \
+	fi; \
+	tar -tvzf "${RELEASE_ARCHIVE}" > "$$work/long-listing"; \
+	if grep -F ' -> ${RELEASE_NAME}/' "$$work/long-listing" | grep -q .; then \
+		echo "Release archive rewrote a symlink target." >&2; exit 1; \
+	fi; \
+	if awk '$$1 !~ /^(-rw-r--r--|-rwxr-xr-x|lrwxr-xr-x|lrwxrwxrwx)$$/' "$$work/long-listing" | grep -q .; then \
+		echo "Release archive has a mode other than 0644 or 0755." >&2; exit 1; \
 	fi; \
 	tar -xzf "${RELEASE_ARCHIVE}" -C "$$work"; \
 	$(MAKE) -s -C "$$work/${RELEASE_NAME}" all >/dev/null; \
