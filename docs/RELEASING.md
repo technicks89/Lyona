@@ -74,9 +74,20 @@ The helper validates and hashes local artifacts before it creates a remote tag
 or release. `--version` confirms the version already committed in `config.mk`;
 it does not rewrite release source.
 
-`make release-check` builds the archive twice and verifies identical bytes,
-the generated desktop-session path, required archive entries, and the absence
-of `config.h` and object files.
+The release asset is a source archive (Sync Sprint 12 S12-19): the repository's
+files under `lyona-VERSION/`, which `lyona-update` and `lyona-update-root` build
+and install the way a checkout installs. `make release` takes git's file list,
+so it runs in a checkout, and the release helper requires that checkout to be
+clean.
+
+`make release-check`:
+
+- builds the archive twice and checks the bytes are identical;
+- checks for the build files and sources (`Makefile`, `config.mk`,
+  `config.def.h`, the C sources and the scripts);
+- checks that nothing is built or local: no binaries, no `config.h`, no
+  objects, no `.git` or `release/`;
+- extracts the archive alone and builds it.
 
 ## Arch installer ISO
 

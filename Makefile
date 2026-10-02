@@ -531,23 +531,28 @@ uninstall:
 		rm -f ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$name; \
 	done
 
-release: dwm ${THUMB} ${TOML_TOOL}
-	@work="$$(mktemp -d)"; \
-	trap 'rm -rf "$$work"' EXIT; \
-	root="$$work/${RELEASE_NAME}"; \
-	mkdir -p "$$root" release; \
-	install -Dm755 dwm "$$root/dwm"; \
-	install -Dm755 ${THUMB} "$$root/${THUMB}"; \
-	install -Dm755 ${TOML_TOOL} "$$root/${TOML_TOOL}"; \
-	install -Dm644 scripts/.xinitrc "$$root/.xinitrc"; \
-	sed "s|@PREFIX@|${PREFIX}|g" dwm.desktop > "$$root/dwm.desktop"; \
-	cp -a assets config scripts "$$root/"; \
-	find "$$root" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +; \
-	tar --sort=name \
+# The release asset is a source archive (Sync Sprint 12 S12-19): the files git
+# knows about -- tracked, plus untracked ones not ignored, which a release never
+# has because lyona-release requires a clean tree -- under lyona-VERSION/.
+# lyona-update and lyona-update-root build and install from it as a checkout
+# does. It never holds a built binary, config.h or objects. Byte-for-byte
+# reproducible from the same tree and SOURCE_DATE_EPOCH.
+release:
+	@set -eu; \
+	git rev-parse --is-inside-work-tree >/dev/null 2>&1 || \
+		{ echo "make release must run in a git checkout: the archive is git's file list" >&2; exit 1; }; \
+	list="$$(mktemp)"; \
+	trap 'rm -f "$$list"' EXIT; \
+	git ls-files -z --cached --others --exclude-standard | LC_ALL=C sort -zu >"$$list"; \
+	mkdir -p "$$(dirname -- "${RELEASE_ARCHIVE}")"; \
+	tar --null -T "$$list" \
+		--transform 's,^,${RELEASE_NAME}/,' \
+		--sort=name \
 		--mtime="@${SOURCE_DATE_EPOCH}" \
 		--owner=0 --group=0 --numeric-owner \
-		--format=ustar \
-		-C "$$work" -cf - "${RELEASE_NAME}" | gzip -n > "${RELEASE_ARCHIVE}"; \
+		--mode='u+rw,go-w' \
+		--format=gnu \
+		-cf - | gzip -n > "${RELEASE_ARCHIVE}"; \
 	echo "==> Created ${RELEASE_ARCHIVE}"
 
 # Every shell script under scripts/, found by its shebang rather than kept by
@@ -1132,30 +1137,36 @@ check-lyona-update:
 check-test-runner:
 	@$(call run_managed_test,tests/test-run-tests.sh)
 
-release-check: all
+# The archive is reproducible, holds the sources and no build output, and builds
+# on its own: extracted alone, `make all` produces dwm (S12-19).
+release-check:
 	@set -eu; \
-	first="$$(mktemp)"; \
-	listing="$$(mktemp)"; \
-	trap 'rm -f "$$first" "$$listing"' EXIT; \
+	work="$$(mktemp -d)"; \
+	trap 'rm -rf "$$work"' EXIT; \
 	$(MAKE) release; \
 	test -f "${RELEASE_ARCHIVE}"; \
-	cp "${RELEASE_ARCHIVE}" "$$first"; \
+	cp "${RELEASE_ARCHIVE}" "$$work/first.tar.gz"; \
 	$(MAKE) release; \
-	cmp "$$first" "${RELEASE_ARCHIVE}"; \
-	tar -tzf "${RELEASE_ARCHIVE}" > "$$listing"; \
-	grep -Fqx '${RELEASE_NAME}/dwm' "$$listing"; \
-	grep -Fqx '${RELEASE_NAME}/dwm.desktop' "$$listing"; \
-	grep -Fqx '${RELEASE_NAME}/.xinitrc' "$$listing"; \
-	grep -Fqx '${RELEASE_NAME}/config/' "$$listing"; \
-	grep -Fqx '${RELEASE_NAME}/scripts/' "$$listing"; \
-	grep -Fqx '${RELEASE_NAME}/assets/' "$$listing"; \
-	if grep -Eq '(^|/)config\.h$$|\.o$$' "$$listing"; then \
-		echo "Release archive contains local configuration or object files." >&2; \
+	cmp "$$work/first.tar.gz" "${RELEASE_ARCHIVE}"; \
+	tar -tzf "${RELEASE_ARCHIVE}" > "$$work/listing"; \
+	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c \
+		${TOML_TOOL}.c ${THUMB}.c dwm.desktop install.sh scripts/dwm-system-management \
+		scripts/lyona_system_management/cli.py config/themes.toml; do \
+		grep -Fqx "${RELEASE_NAME}/$$path" "$$work/listing" || \
+			{ echo "Release archive is missing $$path." >&2; exit 1; }; \
+	done; \
+	if grep -Ev '^${RELEASE_NAME}/' "$$work/listing" | grep -q .; then \
+		echo "Release archive has entries outside ${RELEASE_NAME}/." >&2; exit 1; \
+	fi; \
+	if grep -Eq '(^|/)config\.h$$|\.o$$|^${RELEASE_NAME}/(dwm|${THUMB}|${TOML_TOOL})$$|^${RELEASE_NAME}/(release|\.git)/' \
+		"$$work/listing"; then \
+		echo "Release archive contains build output, local configuration or git data." >&2; \
 		exit 1; \
 	fi; \
-	tar -xOzf "${RELEASE_ARCHIVE}" '${RELEASE_NAME}/dwm.desktop' | \
-		grep -Fqx 'Exec=${PREFIX}/bin/dwm'; \
-	echo "==> Release archive validated."
+	tar -xzf "${RELEASE_ARCHIVE}" -C "$$work"; \
+	$(MAKE) -s -C "$$work/${RELEASE_NAME}" all >/dev/null; \
+	test -x "$$work/${RELEASE_NAME}/dwm"; \
+	echo "==> Release archive validated: a reproducible source archive that builds."
 
 check:
 	$(MAKE) clean

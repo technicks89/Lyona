@@ -142,19 +142,13 @@ not a real tarball, only used where the checksum itself is under test
 EOF
 }
 
-# A source release of a tree, installed with `apply --file` the way a published
-# release would be (Sync Sprint 12 S12-03 removed --from-checkout, which these
-# cases used to take). Built once; apply_source re-seeds the stubbed release
-# with its checksum, since each case resets the canned responses.
+# The real release asset, from the release target (Sync Sprint 12 S12-19),
+# installed with `apply --file` the way a published release is. Built once;
+# apply_source re-seeds the stubbed release with its checksum, since each case
+# resets the canned responses. The archive goes to the workspace, not the
+# checkout's release/.
 make_source_tarball() { # TREE OUT
-	mst_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$1/config.mk")
-	mst_dir=$(mktemp -d "$work/source.XXXXXX")
-	cp -a "$1" "$mst_dir/lyona-$mst_version"
-	rm -rf "$mst_dir/lyona-$mst_version/.git" "$mst_dir/lyona-$mst_version/release" \
-		"$mst_dir/lyona-$mst_version/config.h"
-	make -s -C "$mst_dir/lyona-$mst_version" clean >/dev/null
-	tar -C "$mst_dir" -czf "$2" "lyona-$mst_version"
-	rm -rf "$mst_dir"
+	make -s -C "$1" release RELEASE_ARCHIVE="$2" >/dev/null
 }
 source_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$repo/config.mk")
 source_tarball=$work/lyona-source.tar.gz
@@ -441,7 +435,8 @@ valid_user_record 0000.00.0 | write_user_record
 broken_checkout=$work/broken-checkout
 rm -rf "$broken_checkout"
 cp -a "$repo" "$broken_checkout"
-rm -rf "$broken_checkout/.git"
+# The release archive takes git's file list and the working tree's contents, so
+# the copy keeps .git and the broken dwm.c is what gets archived.
 printf 'this is not valid C\n' >"$broken_checkout/dwm.c"
 make_source_tarball "$broken_checkout" "$work/broken.tar.gz"
 seed_release "$source_version" "$(sha256sum "$work/broken.tar.gz" | awk '{ print $1 }')"
