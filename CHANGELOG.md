@@ -10,6 +10,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Preserve existing CachyOS signing keys when key verification fails, and stop
+  on keyring listing errors.
+- Remove partial web-app icon downloads and create the app without an icon
+  when curl or wget fails.
 - Preserve legacy data trees when their directory overlaps the source checkout,
   and include them in live-install backups so rollback can restore them.
 - Run live-install verification cleanup and chained EXIT handlers once on

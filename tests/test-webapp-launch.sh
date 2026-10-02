@@ -173,4 +173,43 @@ check_exec 'https://e.com/back\slash' 'launcher-x "https://e.com/back\\\\slash"'
 grep -Fq 'wget -q --https-only' "$repo/scripts/webapp-create" ||
 	fail 'webapp-create fetches icons with wget without --https-only'
 
+# Exercise both downloader branches without using the network or host curl.
+for downloader in curl wget; do
+	download_bin="$work/download-$downloader"
+	mkdir -p "$download_bin"
+	for utility in mkdir tr sed cat rm; do
+		ln -s "$(command -v "$utility")" "$download_bin/$utility"
+	done
+	cat >"$download_bin/$downloader" <<'SH'
+#!/bin/sh
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-o | -O)
+		shift
+		printf 'downloaded bytes' >"$1"
+		;;
+	esac
+	shift
+done
+exit "${DOWNLOAD_STATUS:?}"
+SH
+	chmod +x "$download_bin/$downloader"
+	for status in 0 1; do
+		PATH="$download_bin" HOME="$create_home" DOWNLOAD_STATUS=$status \
+			"$repo/scripts/webapp-create" create 'Icon Test' 'https://example.com' \
+			'https://example.com/icon.png' launcher-x >"$work/icon.out" 2>&1 ||
+			fail "webapp-create failed with $downloader status $status"
+		icon_file="$create_home/.local/share/icons/icon-test.png"
+		desktop_file="$create_home/.local/share/applications/icon-test.desktop"
+		if [ "$status" = 0 ]; then
+			[ -s "$icon_file" ] || fail "$downloader success lost the icon"
+			assert_line "$desktop_file" "Icon=$icon_file"
+		else
+			[ ! -e "$icon_file" ] || fail "$downloader failure left a partial icon"
+			assert_line "$desktop_file" 'Icon='
+			assert_contains "$work/icon.out" 'continuing without an icon'
+		fi
+	done
+done
+
 printf 'Legacy ChatGPT web-app compatibility: PASS\n'

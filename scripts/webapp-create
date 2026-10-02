@@ -51,9 +51,17 @@ create_webapp() {
 	if [[ -n "$icon_url" ]]; then
 		echo "Downloading icon..."
 		if command -v curl >/dev/null 2>&1; then
-			curl -s --proto '=https' --max-filesize 10485760 -o "$icon_path" "$icon_url"
+			if ! curl -fsS --proto '=https' --max-filesize 10485760 -o "$icon_path" "$icon_url"; then
+				rm -f -- "$icon_path"
+				icon_path=
+				echo "Icon download failed; continuing without an icon." >&2
+			fi
 		elif command -v wget >/dev/null 2>&1; then
-			wget -q --https-only -O "$icon_path" "$icon_url"
+			if ! wget -q --https-only -O "$icon_path" "$icon_url"; then
+				rm -f -- "$icon_path"
+				icon_path=
+				echo "Icon download failed; continuing without an icon." >&2
+			fi
 		fi
 	fi
 
