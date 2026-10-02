@@ -179,6 +179,98 @@ Flickable {
             }
         }
 
+        // Updates in a terminal (Sync Sprint 15 S15-03, S15-04, decision D-26),
+        // beside PackageKit's preview below: the full output, and the tool's own
+        // confirmation. yay updates AUR packages too when it is installed.
+        SectionLabel {
+            visible: root.updateModel.indicator !== null
+            label: "Update in a terminal"
+        }
+
+        ColumnLayout {
+            objectName: "terminalUpdateSettings"
+            Layout.fillWidth: true
+            visible: root.updateModel.indicator !== null
+            spacing: Theme.spacingSm
+
+            UiText {
+                Layout.fillWidth: true
+                text: "Runs the update in your terminal, where you read the plan and confirm it. "
+                    + "Packages use yay when it is installed (AUR packages included), otherwise pacman, which asks for your password."
+                color: Theme.menuMutedText
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                ShellButton {
+                    label: root.updateModel.indicator && root.updateModel.indicator.terminalBusy
+                        && root.updateModel.indicator.terminalProvider === "system"
+                        ? "Updating packages..." : "Update packages"
+                    enabled: root.updateModel.indicator !== null && !root.updateModel.indicator.terminalBusy
+                        && !root.updateModel.busy
+                    onActivated: root.updateModel.indicator.updateInTerminal("system")
+                }
+
+                ShellButton {
+                    visible: root.updateModel.indicator !== null
+                        && root.updateModel.indicator.flatpakState !== "unavailable"
+                    label: root.updateModel.indicator && root.updateModel.indicator.terminalBusy
+                        && root.updateModel.indicator.terminalProvider === "flatpak"
+                        ? "Updating Flatpak apps..."
+                        : root.updateModel.indicator && root.updateModel.indicator.flatpakCount > 0
+                        ? "Update Flatpak apps (" + root.updateModel.indicator.flatpakCount + ")"
+                        : "Update Flatpak apps"
+                    enabled: root.updateModel.indicator !== null && !root.updateModel.indicator.terminalBusy
+                    onActivated: root.updateModel.indicator.updateInTerminal("flatpak")
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                visible: root.updateModel.indicator !== null && root.updateModel.indicator.terminalResult.length > 0
+                text: root.updateModel.indicator ? root.updateModel.indicator.terminalDetail : ""
+                color: root.updateModel.indicator && root.updateModel.indicator.terminalResult === "succeeded"
+                    ? Theme.success : Theme.menuText
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: "Float the update terminal"
+                    color: Theme.menuText
+                }
+
+                PanelToggleSwitch {
+                    checked: root.updateModel.indicator !== null && root.updateModel.indicator.floatTerminal
+                    busy: root.updateModel.indicator !== null && root.updateModel.indicator.settingsBusy
+                    enabled: root.updateModel.indicator !== null
+                    accessibleName: "Float the update terminal"
+                    accessibleDescription: "Open the update terminal as a floating window instead of tiling it"
+                    onToggled: root.updateModel.indicator.setFloatTerminal(!checked)
+                }
+            }
+
+            // Lyona never edits a window-rules.toml it did not install; it says
+            // what to add instead.
+            UiText {
+                objectName: "floatRuleHint"
+                Layout.fillWidth: true
+                visible: root.updateModel.indicator !== null && root.updateModel.indicator.floatTerminal
+                    && !root.updateModel.indicator.floatRulePresent
+                text: "For the terminal to float, add this rule to ~/.config/lyona/window-rules.toml: "
+                    + "{ class=\"lyona-update-float\", isfloating=1 },"
+                color: Theme.menuMutedText
+                wrapMode: Text.WordWrap
+            }
+        }
+
         StatusCard {
             label: root.updateModel.channel === "preview" ? "Channel: preview" : "Channel: stable"
             statusState: root.updateModel.updateState === "current" ? "available"

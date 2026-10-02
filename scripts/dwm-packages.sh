@@ -67,8 +67,9 @@ dwm_packages() {
 		printf '%s\n' pacman-contrib
 		;;
 	arch:desktop-optional)
-		# Every package here is in the official repositories; none depends
-		# on the AUR (docs/AUR-PACKAGES.md, enforced by check-no-aur). The XKB
+		# Every package here is in the official repositories (the AUR is
+		# limited to the uses docs/AUR-PACKAGES.md lists, enforced by
+		# check-aur-policy). The XKB
 		# AccessX controls (sticky/slow/bounce/mouse keys) used to need the
 		# AUR-only xkbset; they are now served by the in-tree
 		# scripts/dwm-xkbset.
@@ -141,7 +142,7 @@ dwm_packages() {
 		;;
 	# The legacy drivers for older cards (Sync Sprint 14, decision D-23): from the
 	# CachyOS repository when the medium added it, else built from pinned AUR
-	# PKGBUILDs (the one AUR exception; docs/AUR-PACKAGES.md). DKMS only.
+	# PKGBUILDs (a listed AUR use; docs/AUR-PACKAGES.md). DKMS only.
 	arch:gpu-nvidia-580xx)
 		printf '%s\n' nvidia-580xx-dkms nvidia-580xx-utils
 		;;

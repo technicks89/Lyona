@@ -114,7 +114,7 @@ The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfe
 
 ### `desktop-optional`
 
-Thunar with SMB browsing and archive support, thumbnails, NetworkManager, `rsync` and `autorandr`. Every package is in the official repositories (no AUR).
+Thunar with SMB browsing and archive support, thumbnails, NetworkManager, `rsync` and `autorandr`. Every package is in the official repositories.
 
 `thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `networkmanager` `rsync` `autorandr`
 
@@ -179,9 +179,14 @@ project's own test jobs and are not part of an install.
 
 ## Repositories and the AUR
 
-Every package above is in the official Arch repositories. Nothing depends on the AUR
-(see `docs/AUR-PACKAGES.md`, enforced by `make check-no-aur`), with one exception: on
-the live medium, an older NVIDIA card's legacy driver is built from a pinned AUR
-PKGBUILD when the CachyOS repository cannot supply it. Steam and its
+Every package above is in the official Arch repositories. Lyona limits the AUR to
+where no official package can do the job (`docs/AUR-PACKAGES.md`, enforced by
+`make check-aur-policy`). Today that is three places:
+
+- the `yay` helper `install.sh` installs for you;
+- on the live medium, an older NVIDIA card's legacy driver, built from a pinned AUR
+  PKGBUILD when the CachyOS repository cannot supply it;
+- Settings -> System -> **Update packages**, which runs your own `yay -Syu` when `yay`
+  is installed. Steam and its
 libraries need the `multilib` repository, which the installer enables only after
 separate approval.

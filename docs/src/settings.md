@@ -72,6 +72,10 @@ predates Settings, add this entry inside its `rules` array:
 Saving the file applies the rule through dwm's normal hot reload. A customized
 rule with the same title can be retained instead.
 
+The same applies to the update terminal Settings -> System can open: to float
+it in an older file, add `{ class="lyona-update-float", isfloating=1 },` (see
+Updating and Rollback).
+
 The **Use at next login** display action writes only the managed
 `90-lyona-display.conf` fragment after a separate confirmation and polkit
 authorization. The installed helper accepts validated display records only,

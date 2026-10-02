@@ -229,8 +229,10 @@ An AUR helper (`yay`) is installed automatically for you as a standing
 convenience tool, independent of the package profiles above — none of the
 required, recommended, or optional packages need it, since everything the
 installer selects is available directly through official `pacman` repos
-(`core`/`extra`/`multilib`). The one exception is the live medium's driver for
-an older NVIDIA card (see `docs/AUR-PACKAGES.md`).
+(`core`/`extra`/`multilib`). Lyona limits the AUR to where it is needed: today,
+the live medium's driver for an older NVIDIA card, and the `yay -Syu` that
+Settings -> System -> **Update packages** runs for you (see
+`docs/AUR-PACKAGES.md`).
 
 ### GRUB boot menu theme
 

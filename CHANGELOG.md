@@ -38,6 +38,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The AUR policy is now "limit the AUR to where it is needed", not "no AUR" (decision D-27). Packages still come from
+  the official repositories, or the CachyOS repository, whenever one can do the job. Each AUR use is listed in
+  `docs/AUR-PACKAGES.md` and allowed by the guard, which fails on any other. The uses today are the `yay` helper, the
+  legacy NVIDIA drivers, and the user's own `yay -Syu` from Settings. The guard is now `make check-aur-policy`
+  (`tests/test-aur-policy.sh`); `make check-no-aur` still runs it.
 - Smaller hardening (Sync Sprint 12 S12-18):
   - **Display setup:** a mode timing the X server reports is checked before it is written into the system Xorg
     configuration. A mode with extra tokens or a non-numeric field is refused.
@@ -532,6 +537,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Settings > System can update packages and Flatpak apps in your terminal (Sync Sprint 15 S15-03 and S15-04, from
+  upstream `#363`, decision D-26). Packages use `yay -Syu` when `yay` is installed, so AUR packages such as the legacy
+  NVIDIA drivers update too, and `sudo pacman -Syu` otherwise. Flatpak updates the system and user installations each
+  on its own. You see the tool's plan and confirm it yourself, and the result shown is the command's. The PackageKit
+  preview stays beside it. The panel's count now includes pending Flatpak updates.
+  - **Migration:** the terminal can float through a new default rule,
+    `{ class="lyona-update-float", isfloating=1 }`. An existing `window-rules.toml` is not changed; add the rule to
+    float it, as Settings explains.
 - The panel shows an update icon with a count when updates are available (Sync Sprint 15 S15-02, from upstream
   `#363`). The count is the pending system packages, counted with `checkupdates`, plus one for a new lyona release. A
   click opens Settings > System, where updates are run. It checks a few minutes after login, every 6 hours by default,

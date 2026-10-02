@@ -703,6 +703,17 @@ ShellRoot {
                     updateIndicator.check(true);
                 }
 
+                function updateInTerminal(provider: string): void {
+                    updateIndicator.updateInTerminal(provider);
+                }
+
+                function terminalStatus(): string {
+                    return [updateIndicator.terminalBusy ? "busy" : "idle", updateIndicator.terminalProvider,
+                        updateIndicator.terminalResult, updateIndicator.flatpakCount,
+                        updateIndicator.floatTerminal ? "float" : "tile",
+                        updateIndicator.floatRulePresent ? "rule" : "no-rule"].join("\t");
+                }
+
                 function pillCenter(): string {
                     const panel = panelVariants.instances[0];
                     const pill = panel ? panel.findItem("updateAvailablePill") : null;
