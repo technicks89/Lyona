@@ -554,6 +554,27 @@ extract_modeline() {
 	' "$verbose_file"
 }
 
+# Mode timings come from the X server (xrandr --verbose), and any X client in
+# the session can create a RandR mode, so a mode line is checked before it is
+# written into the system Xorg configuration (Sync Sprint 12 S12-18): the
+# integer fields are digits, the clock, sync and rate are decimals, and the
+# flags are Modeline flags RandR reports.
+valid_timing() {
+	local clock=$1 flags=${10} hsync=${11} rate=${12} field flag
+	for field in "${@:2:8}"; do
+		[[ $field =~ ^[0-9]{1,6}$ ]] || return 1
+	done
+	for field in "$clock" "$hsync" "$rate"; do
+		[[ $field =~ ^[0-9]{1,6}(\.[0-9]{1,6})?$ ]] || return 1
+	done
+	for flag in $flags; do
+		case $flag in
+		+HSync | -HSync | +VSync | -VSync | +CSync | -CSync | Interlace | DoubleScan) ;;
+		*) return 1 ;;
+		esac
+	done
+}
+
 reset_config_arrays() {
 	cfg_outputs=()
 	cfg_enabled=()
@@ -820,6 +841,9 @@ generate_config() {
 			mode_name=${cfg_mode_names[$index]}
 			timing=${cfg_timings[$index]}
 			IFS='|' read -r clock hdisplay hstart hend htotal vdisplay vstart vend vtotal flags hsync rate <<<"$timing"
+			valid_timing "$clock" "$hdisplay" "$hstart" "$hend" "$htotal" \
+				"$vdisplay" "$vstart" "$vend" "$vtotal" "$flags" "$hsync" "$rate" ||
+				die "the X server reported an unexpected timing for $output mode $mode_name; refusing to write it"
 			read -r hlow hhigh < <(awk -v value="$hsync" 'BEGIN { printf "%.2f %.2f\n", value - 0.50, value + 0.50 }')
 			read -r vlow vhigh < <(awk -v value="$rate" 'BEGIN { printf "%.2f %.2f\n", value - 0.50, value + 0.50 }')
 			printf '\tHorizSync %s-%s\n' "$hlow" "$hhigh"

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KEY_ID=F3B607488DB35A47
 KEYSERVER=keyserver.ubuntu.com
 # Cross-checked against a live keyserver.ubuntu.com query and an independent
 # CachyOS-provisioned machine's already-trusted pacman keyring; both agreed.
@@ -158,22 +157,29 @@ write_repo_blocks() {
 }
 
 import_key() {
-	local received_fp
+	local gpg_dir listing primaries received_fp
 
 	info "Importing the CachyOS package signing key..."
-	run_root pacman-key --recv-keys "$KEY_ID" --keyserver "$KEYSERVER" || {
-		err "Could not receive the CachyOS signing key $KEY_ID."
+	# By the full fingerprint, and checked in gpg's machine-readable listing
+	# (Sync Sprint 12 S12-18): exactly one primary key, whose fingerprint is
+	# the pinned one. A long key ID can match more than one key, and the
+	# human-readable listing's last line need not be that key's fingerprint.
+	run_root pacman-key --recv-keys "$KEY_FINGERPRINT" --keyserver "$KEYSERVER" || {
+		err "Could not receive the CachyOS signing key $KEY_FINGERPRINT."
 		return 1
 	}
-	received_fp=$(pacman-key --list-keys "$KEY_ID" 2>/dev/null |
-		command grep -A1 '^pub' | tail -n1 | tr -d '[:space:]')
-	if [[ ${received_fp^^} != "$KEY_FINGERPRINT" ]]; then
+	gpg_dir=$(pacman-conf GPGDir 2>/dev/null) || gpg_dir=/etc/pacman.d/gnupg
+	listing=$(run_root gpg --homedir "$gpg_dir" --batch --no-permission-warning \
+		--with-colons --list-keys "$KEY_FINGERPRINT" 2>/dev/null) || listing=
+	primaries=$(awk -F: '$1 == "pub"' <<<"$listing" | wc -l)
+	received_fp=$(awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; exit }' <<<"$listing")
+	if [[ $primaries != 1 || ${received_fp^^} != "$KEY_FINGERPRINT" ]]; then
 		err "CachyOS key fingerprint mismatch — refusing to trust it."
-		run_root pacman-key --delete "$KEY_ID" 2>/dev/null || true
+		run_root pacman-key --delete "$KEY_FINGERPRINT" 2>/dev/null || true
 		return 1
 	fi
-	run_root pacman-key --lsign-key "$KEY_ID" || {
-		err "Could not locally sign the CachyOS signing key $KEY_ID."
+	run_root pacman-key --lsign-key "$KEY_FINGERPRINT" || {
+		err "Could not locally sign the CachyOS signing key $KEY_FINGERPRINT."
 		return 1
 	}
 }

@@ -107,6 +107,11 @@ run_env() {
 		QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software QT_QPA_PLATFORMTHEME= \
 		DWM_AUTOSTART_NO_INPUT_WATCH=1 PATH="$repo/scripts:$PATH" "$@"
 }
+# Sync Sprint 12 S12-18: the history is private even under the default umask
+# and a cache directory an older install left world-readable.
+umask 022
+mkdir -p "$home/.cache/lyona"
+chmod 755 "$home/.cache/lyona"
 run_env "$repo/dwm" >"$work/dwm.log" 2>&1 &
 pids="$pids $!"
 run_env quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
@@ -123,6 +128,11 @@ until [ -f "$history" ] && grep -Fq 'lyona-plain-text-summary' "$history"; do
 	[ "$i" -lt 400 ] || fail 'the notification never reached the shell'
 	sleep 0.05
 done
+
+[ "$(stat -c %a "$home/.cache/lyona")" = 700 ] ||
+	fail "the notification cache directory is $(stat -c %a "$home/.cache/lyona"), not 700"
+[ "$(stat -c %a "$history")" = 600 ] ||
+	fail "the notification history is $(stat -c %a "$history"), not 600"
 
 # A focused window whose title carries markup, shown by the panel.
 python3 -c 'from PIL import Image; Image.new("RGB", (64, 64), (40, 80, 120)).save("'"$work"'/pic.png")'

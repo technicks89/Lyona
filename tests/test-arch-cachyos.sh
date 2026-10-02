@@ -43,6 +43,19 @@ case "$1" in
 esac
 exit 0
 EOF
+# The keyring's machine-readable listing: the received key, plus a second
+# primary key when LYONA_TEST_CACHYOS_EXTRA_KEY is set (S12-18).
+cat >"$bin/gpg" <<'EOF'
+#!/bin/sh
+printf 'gpg %s\n' "$*" >>"${LYONA_TEST_LOG:?}"
+printf 'pub:-:3072:1:F3B607488DB35A47:1628553600:::-:::scSC::::::23::0:\n'
+printf 'fpr:::::::::%s:\n' "${LYONA_TEST_CACHYOS_KEY_FP:-882DCFE48E2051D48E2562ABF3B607488DB35A47}"
+if [ -n "${LYONA_TEST_CACHYOS_EXTRA_KEY:-}" ]; then
+	printf 'pub:-:3072:1:1111111111111111:1628553600:::-:::scSC::::::23::0:\n'
+	printf 'fpr:::::::::%s:\n' "$LYONA_TEST_CACHYOS_EXTRA_KEY"
+fi
+exit 0
+EOF
 cat >"$bin/grub-mkconfig" <<'EOF'
 #!/bin/sh
 printf 'grub-mkconfig %s\n' "$*" >>"${LYONA_TEST_LOG:?}"
@@ -104,6 +117,7 @@ run_helper() {
 		LYONA_TEST_INSTALLED="${installed:-}" \
 		LYONA_TEST_MARCH="${march:-x86-64}" \
 		LYONA_TEST_CACHYOS_KEY_FP="${cachyos_key_fp:-}" \
+		LYONA_TEST_CACHYOS_EXTRA_KEY="${cachyos_extra_key:-}" \
 		LYONA_CACHYOS_PACMAN_CONF="$case_dir/pacman.conf" \
 		LYONA_CACHYOS_BOOT_DIR="$case_dir/boot" \
 		LYONA_CACHYOS_LDSO="$case_dir/ldso" \
@@ -154,9 +168,9 @@ backup=$(printf '%s\n' "$case_dir/pacman.conf.lyona-backup-"* | head -n1)
 cmp -s "$backup" "$case_dir/pacman.conf.orig" ||
 	fail 'the backup does not match the original pacman.conf'
 
-grep -Fq 'pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com' \
+grep -Fq 'pacman-key --recv-keys 882DCFE48E2051D48E2562ABF3B607488DB35A47 --keyserver keyserver.ubuntu.com' \
 	"$case_dir/calls.log" || fail 'the signing key was not received' "$case_dir/calls.log"
-grep -Fq 'pacman-key --lsign-key F3B607488DB35A47' "$case_dir/calls.log" ||
+grep -Fq 'pacman-key --lsign-key 882DCFE48E2051D48E2562ABF3B607488DB35A47' "$case_dir/calls.log" ||
 	fail 'the signing key was not locally signed' "$case_dir/calls.log"
 
 mapfile -t pacman_calls < <(grep '^pacman ' "$case_dir/calls.log")
@@ -174,12 +188,22 @@ case_dir=$(new_case bad-fingerprint)
 cachyos_key_fp=0000000000000000000000000000000000000000 \
 	run_helper "$case_dir" add-repos >"$case_dir/out" 2>&1 &&
 	fail 'add-repos succeeded despite a signing-key fingerprint mismatch' "$case_dir/out"
-grep -Fq 'pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com' \
+grep -Fq 'pacman-key --recv-keys 882DCFE48E2051D48E2562ABF3B607488DB35A47 --keyserver keyserver.ubuntu.com' \
 	"$case_dir/calls.log" || fail 'the signing key was not received' "$case_dir/calls.log"
-grep -Fq 'pacman-key --delete F3B607488DB35A47' "$case_dir/calls.log" ||
+grep -Fq 'pacman-key --delete 882DCFE48E2051D48E2562ABF3B607488DB35A47' "$case_dir/calls.log" ||
 	fail 'the untrusted key was not deleted' "$case_dir/calls.log"
-grep -Fq 'pacman-key --lsign-key F3B607488DB35A47' "$case_dir/calls.log" &&
+grep -Fq 'pacman-key --lsign-key 882DCFE48E2051D48E2562ABF3B607488DB35A47' "$case_dir/calls.log" &&
 	fail 'a fingerprint mismatch must not be locally signed' "$case_dir/calls.log"
+
+# --- a second primary key in the listing is refused too (S12-18) -------------
+case_dir=$(new_case two-keys)
+cachyos_extra_key=1111111111111111111111111111111111111111 \
+	run_helper "$case_dir" add-repos >"$case_dir/out" 2>&1 &&
+	fail 'add-repos trusted a listing with two primary keys' "$case_dir/out"
+grep -Fq 'pacman-key --lsign-key' "$case_dir/calls.log" &&
+	fail 'a listing with two primary keys must not be locally signed' "$case_dir/calls.log"
+grep -Fq -- '--with-colons --list-keys 882DCFE48E2051D48E2562ABF3B607488DB35A47' "$case_dir/calls.log" ||
+	fail 'the key was not checked in the machine-readable listing' "$case_dir/calls.log"
 
 # --- --no-upgrade syncs but does not upgrade the running system --------------
 case_dir=$(new_case no-upgrade)

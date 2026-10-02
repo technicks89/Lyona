@@ -3,6 +3,22 @@
 APPS_DIR="$HOME/.local/share/applications"
 ICONS_DIR="$HOME/.local/share/icons"
 
+# One Exec= argument, as the desktop-entry spec requires (Sync Sprint 12 S12-18):
+# a literal % becomes %%; an argument with a reserved character is put in
+# double quotes, with ", `, $ and \ escaped by a backslash inside them; then
+# the key file's own escaping doubles every backslash.
+desktop_exec_arg() {
+	local arg=${1//%/%%}
+	if [[ $arg =~ [[:space:]\"\'\\\>\<\~\|\&\;\$\*\?\#\(\)\`] ]]; then
+		arg=${arg//\\/\\\\}
+		arg=${arg//\"/\\\"}
+		arg=${arg//\`/\\\`}
+		arg=${arg//\$/\\\$}
+		arg="\"$arg\""
+	fi
+	printf '%s' "${arg//\\/\\\\}"
+}
+
 create_webapp() {
 	local name="$1"
 	local url="$2"
@@ -37,14 +53,14 @@ create_webapp() {
 		if command -v curl >/dev/null 2>&1; then
 			curl -s --proto '=https' --max-filesize 10485760 -o "$icon_path" "$icon_url"
 		elif command -v wget >/dev/null 2>&1; then
-			wget -q -O "$icon_path" "$icon_url"
+			wget -q --https-only -O "$icon_path" "$icon_url"
 		fi
 	fi
 
 	cat >"$desktop_file" <<EOF
 [Desktop Entry]
 Name=$name
-Exec=$browser $url
+Exec=$browser $(desktop_exec_arg "$url")
 Icon=$icon_path
 Type=Application
 Categories=Network;WebApp;

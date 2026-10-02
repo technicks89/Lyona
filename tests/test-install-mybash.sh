@@ -96,6 +96,14 @@ grep -Fq 'mv "$OLD_BASHRC" "$HOME/.bashrc.bak"' "$installer" ||
 
 # ── It is reached, and only for the recommended profile ──────────────────
 
+# Sync Sprint 12 S12-18: the clone that becomes ~/.bashrc is pinned to a
+# reviewed commit, not taken at HEAD.
+grep -Eq '^MYBASH_REF="[0-9a-f]{40}"$' "$installer" ||
+	fail 'install-mybash does not pin mybash to a full commit hash'
+# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
+grep -Fq 'checkout --quiet --detach "$MYBASH_REF"' "$installer" ||
+	fail 'install-mybash does not check out the pinned mybash commit'
+
 assert_contains "$repo/install.sh" 'scripts/install-mybash'
 grep -Fq 'install-mybash' "$repo/Makefile" ||
 	fail 'install-mybash is not installed onto PATH'

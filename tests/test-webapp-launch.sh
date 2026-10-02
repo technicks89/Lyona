@@ -152,4 +152,25 @@ done
 assert_contains "$repo/scripts/dwm-quickshell-launcher" \
 	'DWM_CHATGPT_WEB_FALLBACK=1 webapp-launch https://chatgpt.com'
 
+# ── webapp-create writes a spec-quoted Exec line (Sync Sprint 12 S12-18) ──
+#
+# The expected lines were checked against GLib: its key-file reader and shell
+# parser give back exactly the URL as one argument.
+create_home=$work/create-home
+mkdir -p "$create_home"
+check_exec() { # URL EXPECTED-EXEC
+	HOME=$create_home "$repo/scripts/webapp-create" create 'Quote Test' "$1" '' launcher-x >/dev/null
+	actual=$(sed -n 's/^Exec=//p' "$create_home/.local/share/applications/quote-test.desktop")
+	[ "$actual" = "$2" ] || fail "webapp-create wrote Exec=$actual for $1, expected Exec=$2"
+}
+check_exec 'https://example.com/' 'launcher-x https://example.com/'
+check_exec 'https://example.com/?a=1&b=2' 'launcher-x "https://example.com/?a=1&b=2"'
+# shellcheck disable=SC2016 # literal $ and backquote, the characters under test
+check_exec 'https://e.com/$x"y`z' 'launcher-x "https://e.com/\\$x\\"y\\`z"'
+check_exec 'https://e.com/%20' 'launcher-x https://e.com/%%20'
+check_exec 'https://e.com/back\slash' 'launcher-x "https://e.com/back\\\\slash"'
+# The wget fallback, like curl's, fetches the icon over HTTPS only.
+grep -Fq 'wget -q --https-only' "$repo/scripts/webapp-create" ||
+	fail 'webapp-create fetches icons with wget without --https-only'
+
 printf 'Legacy ChatGPT web-app compatibility: PASS\n'

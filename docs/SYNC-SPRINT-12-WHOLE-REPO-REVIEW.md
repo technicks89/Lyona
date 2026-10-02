@@ -1178,6 +1178,41 @@ details are in [`SYNC-SPRINT-12-S12-16-SPLIT.md`](SYNC-SPRINT-12-S12-16-SPLIT.md
 ## S12-18: Smaller hardening
 
 **Source:** S (Low). **Reported** unless noted.
+**Implemented (2026-10-02), all five parts.**
+
+1. **Xorg timings:** `dwm-display-setup`'s `valid_timing` checks each mode
+   before `generate_config` writes it.
+   - Fields: the integer ones are digits; the clock, sync and rate are decimals.
+   - Flags: each must be one of `±HSync`, `±VSync`, `±CSync`, `Interlace` or
+     `DoubleScan`. `CSync` is there too because RandR reports it.
+   - Otherwise the run stops in the private work directory, before anything
+     reaches `/etc/X11`.
+   - `test-dwm-display-setup.sh` refuses an injected `EndSection` and a
+     non-numeric field, and fails with the check removed.
+2. **Notification history:** the shell's startup step now creates
+   `~/.cache/lyona` 0700 and the history 0600.
+   - It also `chmod`s an existing directory, including a 0755 one left by an
+     older install.
+   - `test-quickshell-plain-text-xvfb.sh` starts from umask 022 and a 0755
+     directory. It checks both modes on the file the real shell wrote, and
+     fails against the old `mkdir -p`.
+3. **`webapp-create`:**
+   - `wget` gets `--https-only`.
+   - The URL in `Exec=` is quoted per the desktop-entry spec: `%%`, double
+     quotes with backslash escapes, then the key file's own doubling. Eight
+     URLs round-trip exactly through GLib's key-file and shell parsers.
+   - `test-webapp-launch.sh` pins the expected lines.
+4. **`install-mybash`** pins `mybash` to `d5284b2`, checked out detached. Its
+   linked files run nothing from the network at shell startup.
+   `test-install-mybash.sh` requires a full-hash pin.
+5. **`lyona-cachyos`** receives the key by its full fingerprint, and checks
+   gpg's `--with-colons` listing of pacman's keyring.
+   - It needs exactly one primary key, with the pinned fingerprint, and
+     deletes and lsigns by fingerprint.
+   - On this host's real keyring the parse gives one primary key and the
+     pinned fingerprint.
+   - `test-arch-cachyos.sh` adds a two-primary-keys case, which fails without
+     the check.
 
 1. **Xorg config written from X-server strings.** `scripts/dwm-display-setup:519-556`
    and `:736-843` copy `flags`, `clock` and the other timing fields from
