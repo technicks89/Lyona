@@ -108,14 +108,11 @@ if [ "${#runtime}" -gt 64 ]; then
 fi
 cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
 cp "$repo/config/"*.toml "$config_home/lyona/"
-cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
-	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
-	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-quickshell-controlcenter" \
-	"$repo/scripts/dwm-quickshell-controls" "$repo/scripts/dwm-quickshell-network" \
-	"$repo/scripts/dwm-quickshell-launcher" "$repo/scripts/dwm-diagnostics" \
-	"$repo/scripts/dwm-lock" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-watchdog.sh" "$repo/scripts/dwm-trust.sh" \
-	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xsettings-config.sh" \
-	"$data_home/checkout/scripts/"
+# The helpers this test runs, and every library they source (S12-21).
+stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-system-health \
+	dwm-settings-display dwm-settings-input dwm-display-setup dwm-quickshell-controlcenter \
+	dwm-quickshell-controls dwm-quickshell-network dwm-quickshell-launcher dwm-diagnostics \
+	dwm-lock
 
 cat >"$data_home/applications/dwm-large-surface-test.desktop" <<'DESKTOP'
 [Desktop Entry]

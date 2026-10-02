@@ -565,8 +565,7 @@ grep -Fqx $'managed\t'"$work/managed-themes.toml" <<<"$managed"
 prefix=$work/prefix
 installed_themes=$prefix/share/lyona/config/themes.toml
 mkdir -p "$prefix/bin" "$prefix/lib/lyona" "${installed_themes%/*}" "$data_root/lyona/config"
-cp "$helper" "$prefix/bin/"
-cp "$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-xdg.sh" "$repo/lyona-toml" "$prefix/lib/lyona/"
+stage_helpers prefix "$prefix" "${helper##*/}"
 cp "$work/managed-themes.toml" "$installed_themes"
 sed '0,/^theme = "[^"]*"/s//theme = "dracula"/' "$work/managed-themes.toml" \
 	>"$data_root/lyona/config/themes.toml"

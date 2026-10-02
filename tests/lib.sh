@@ -225,3 +225,103 @@ stub_logging_command() {
 printf '%s %s\n' "$(basename "$0")" "$*" >>"$DWM_TEST_LOG"
 SH
 }
+
+# ── Staging helpers into a test's own layout ─────────────────────────────
+#
+# stage_helpers LAYOUT DEST HELPER...: copy each helper from scripts/, and what
+# it needs to load, into a layout a test runs it from (Sync Sprint 12 S12-21).
+# Before this, each test listed the libraries by hand, and a helper that gained
+# one failed at load in every test whose list went stale, often silently.
+#
+#   checkout  DEST is a fake checkout's scripts/: helpers and libraries go in
+#             it, lyona-toml beside it (DEST/..), as in a real checkout.
+#   prefix    DEST is a PREFIX: helpers go to bin/, libraries and lyona-toml to
+#             lib/lyona/, the Python package to lib/lyona/python/.
+#
+# A file's libraries are the ones it sources through $lyona_lib, plus the one it
+# tests for (`-f $lyona_lib/X`) to find that directory, followed recursively
+# because libraries source libraries. lyona-toml is staged when a staged file
+# uses it, and the system-management package when a staged file imports it.
+# Then a load check: every $lyona_lib reference in every staged file must
+# resolve, and every staged shell file must parse. It is static, so it runs
+# nothing a helper would do on load. A failure names the helper and the file.
+stage_helpers() {
+	sh_layout=$1
+	sh_dest=$2
+	shift 2
+	case $sh_layout in
+	checkout)
+		sh_bin=$sh_dest
+		sh_lib=$sh_dest
+		sh_tool_dir=$sh_dest/..
+		sh_python_dir=$sh_dest
+		;;
+	prefix)
+		sh_bin=$sh_dest/bin
+		sh_lib=$sh_dest/lib/lyona
+		sh_tool_dir=$sh_lib
+		sh_python_dir=$sh_lib/python
+		;;
+	*) fail "stage_helpers: unknown layout '$sh_layout' (checkout or prefix)" ;;
+	esac
+	mkdir -p "$sh_bin" "$sh_lib" || fail "stage_helpers: cannot create $sh_dest"
+	sh_pending=
+	for sh_helper in "$@"; do
+		[ -f "$repo/scripts/$sh_helper" ] || fail "stage_helpers: scripts/$sh_helper does not exist"
+		cp -p "$repo/scripts/$sh_helper" "$sh_bin/$sh_helper" ||
+			fail "stage_helpers: cannot copy $sh_helper"
+		sh_pending="$sh_pending $sh_bin/$sh_helper"
+	done
+	sh_staged=$sh_pending
+	sh_needs_tool=0
+	sh_needs_python=0
+	while [ -n "$sh_pending" ]; do
+		sh_next=
+		for sh_file in $sh_pending; do
+			grep -Eq 'lyona_toml|lyona-toml' "$sh_file" && sh_needs_tool=1
+			grep -q 'lyona_system_management' "$sh_file" && sh_needs_python=1
+			for sh_library in $(stage_helper_libraries "$sh_file"); do
+				[ -e "$sh_lib/$sh_library" ] && continue
+				[ -f "$repo/scripts/$sh_library" ] ||
+					fail "stage_helpers: ${sh_file##*/} needs scripts/$sh_library, which does not exist"
+				cp -p "$repo/scripts/$sh_library" "$sh_lib/$sh_library" ||
+					fail "stage_helpers: cannot copy $sh_library"
+				sh_next="$sh_next $sh_lib/$sh_library"
+				sh_staged="$sh_staged $sh_lib/$sh_library"
+			done
+		done
+		sh_pending=$sh_next
+	done
+	if [ "$sh_needs_tool" = 1 ]; then
+		[ -x "$repo/lyona-toml" ] ||
+			fail 'stage_helpers: a staged helper uses lyona-toml, which is not built (run make all)'
+		cp -p "$repo/lyona-toml" "$sh_tool_dir/lyona-toml" || fail 'stage_helpers: cannot copy lyona-toml'
+	fi
+	if [ "$sh_needs_python" = 1 ]; then
+		if ! mkdir -p "$sh_python_dir/lyona_system_management" ||
+			! cp -p "$repo/scripts/lyona_system_management/"*.py "$sh_python_dir/lyona_system_management/"; then
+			fail 'stage_helpers: cannot copy the lyona_system_management package'
+		fi
+	fi
+	# The load check.
+	for sh_file in $sh_staged; do
+		for sh_library in $(stage_helper_libraries "$sh_file"); do
+			[ -f "$sh_lib/$sh_library" ] ||
+				fail "stage_helpers: ${sh_file##*/} would not load: $sh_lib/$sh_library is missing"
+		done
+		case $(head -n 1 -- "$sh_file") in
+		*bash*) bash -n "$sh_file" || fail "stage_helpers: ${sh_file##*/} does not parse" ;;
+		'#!'*/sh | '#!'*/sh' '* | '# shellcheck shell=sh'*) sh -n "$sh_file" || fail "stage_helpers: ${sh_file##*/} does not parse" ;;
+		esac
+	done
+}
+
+# The libraries FILE reaches through $lyona_lib: sourced, or tested for as the
+# marker of that directory. One name per line.
+stage_helper_libraries() {
+	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
+	sed -n -E \
+		-e 's#^[[:space:]]*(\.|source) "\$lyona_lib/([A-Za-z0-9_.-]+)".*#\2#p' \
+		-e 's#.*-f "?\$lyona_lib/([A-Za-z0-9_.-]+)"?.*#\1#p' \
+		"$1" | grep -vx 'lyona-toml' | LC_ALL=C sort -u
+}

@@ -260,7 +260,7 @@ toolkit apply gtk Adwaita-dark >/dev/null ||
 
 stub_dir=$work/stub
 mkdir -p "$stub_dir"
-cp -- "$helper" "$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-preview.sh" "$stub_dir/"
+stage_helpers checkout "$stub_dir" dwm-settings-toolkit
 
 write_stub_applier() {
 	cat >"$stub_dir/theme-apply.sh" <<STUB

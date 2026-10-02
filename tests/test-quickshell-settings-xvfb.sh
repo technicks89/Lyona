@@ -360,25 +360,13 @@ Type=Application
 Name=Plus ID Autostart Fixture
 Exec=/usr/bin/true
 EOF
-cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
-	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
-	"$repo/scripts/dwm-display-setup" \
-	"$repo/scripts/dwm-quickshell-controlcenter" "$repo/scripts/dwm-quickshell-controls" \
-	"$repo/scripts/dwm-quickshell-network" "$repo/scripts/dwm-diagnostics" \
-	"$repo/scripts/dwm-default-apps" "$repo/scripts/dwm-xdg-autostart" \
-	"$repo/scripts/dwm-settings-appearance" "$repo/scripts/dwm-settings-wallpaper" \
-	"$repo/scripts/dwm-settings-font" \
-	"$repo/scripts/dwm-settings-theme" "$repo/scripts/dwm-cursor-reload" \
-	"$repo/scripts/dwm-settings-toolkit" "$repo/scripts/dwm-xkbset" \
-	"$repo/scripts/dwm-settings-picom" \
-	"$repo/scripts/dwm-accessibility-settings" \
-	"$repo/scripts/theme-apply.sh" \
-	"$repo/scripts/dwm-xsettings-config.sh" \
-	"$repo/scripts/dwm-terminal" "$repo/scripts/dwm-lock" "$repo/scripts/lyona-version" \
-	"$repo/scripts/dwm-paths.sh" "$repo/scripts/dwm-watchdog.sh" \
-	"$repo/scripts/dwm-simple-watch.sh" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
-	"$repo/scripts/dwm-preview.sh" \
-	"$data_home/checkout/scripts/"
+# The helpers this test runs, and every library they source (S12-21).
+stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-system-health \
+	dwm-settings-display dwm-settings-input dwm-display-setup dwm-quickshell-controlcenter \
+	dwm-quickshell-controls dwm-quickshell-network dwm-diagnostics dwm-default-apps \
+	dwm-xdg-autostart dwm-settings-appearance dwm-settings-wallpaper dwm-settings-font \
+	dwm-settings-theme dwm-cursor-reload dwm-settings-toolkit dwm-xkbset dwm-settings-picom \
+	dwm-accessibility-settings theme-apply.sh dwm-terminal dwm-lock lyona-version
 
 appearance_failure_fixture=$work/appearance-snapshot-failure
 mv "$data_home/checkout/scripts/dwm-settings-appearance" \

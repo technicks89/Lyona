@@ -270,4 +270,22 @@ while IFS= read -r reference; do
 	esac
 done <"$work/doc-refs"
 
+# Sync Sprint 12 S12-21: a test stages a helper with stage_helpers (tests/lib.sh),
+# which brings every library it sources. A cp or install that names a library
+# itself is a hand-written list that goes stale when a helper gains one. A
+# command continued over several lines is read as one.
+hand_copies=$(for test_file in "$repo"/tests/*.sh "$repo"/tests/*.py; do
+	[ "${test_file##*/}" != lib.sh ] || continue
+	awk -v file="${test_file##*/}" '
+		{ line = $0 }
+		joined != "" { line = joined " " line; joined = "" }
+		/\\$/ { joined = substr(line, 1, length(line) - 1); next }
+		line ~ /^[[:space:]]*(cp|install)[[:space:]]/ && line ~ /scripts\/(dwm|lyona)-[a-z0-9-]+\.sh/ {
+			print file ": " substr(line, 1, 120)
+		}
+	' "$test_file"
+done)
+[ -z "$hand_copies" ] ||
+	fail "tests copy libraries by name; use stage_helpers (tests/lib.sh): $hand_copies"
+
 printf '%s\n' 'Shell contracts: PASS'
