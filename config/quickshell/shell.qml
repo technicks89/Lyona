@@ -7,6 +7,7 @@ import Quickshell.Services.SystemTray
 import qs.core
 import qs.accessibility
 import qs.appearance
+import qs.calendar
 import qs.controlcenter
 import qs.controls
 import qs.defaults
@@ -20,6 +21,7 @@ import qs.power
 import qs.settings
 import qs.state
 import qs.system
+import qs.weather
 import qs.systemmanagement
 
 pragma ComponentBehavior: Bound
@@ -46,6 +48,8 @@ ShellRoot {
         notificationModel.closeHistory();
         controlCenterModel.closeUtility();
         if (popupId !== "bluetooth") bluetoothModel.close();
+        if (popupId !== "calendar") calendarModel.close();
+        if (popupId !== "weather") weatherModel.close();
         if (popupId !== "controlcenter") controlCenterModel.close();
         if (popupId !== "controls") controlsModel.close();
         if (popupId !== "network") networkModel.close();
@@ -74,6 +78,8 @@ ShellRoot {
     function openCommandMenu(screen) {
         networkModel.close();
         bluetoothModel.close();
+        calendarModel.close();
+        weatherModel.close();
         controlCenterModel.close();
         controlsModel.close();
         powerMenuModel.close("panel");
@@ -135,6 +141,16 @@ ShellRoot {
     ClockModel {
         id: clock
         timezoneState: systemManagementModel.nativeStates.timezone || null
+    }
+
+    CalendarModel {
+        id: calendarModel
+        clock: clock
+    }
+
+    WeatherModel {
+        id: weatherModel
+        panelSettingsModel: panelSettingsModel
     }
 
     LauncherModel {
@@ -602,6 +618,34 @@ ShellRoot {
         }
     }
 
+    // The clock's month calendar (Sync Sprint 12 S12-20). status is "closed", or
+    // "open", the shown month (YYYY-MM) and the selected day, tab-separated.
+    IpcHandler {
+        id: calendarIpc
+
+        target: "calendar"
+
+        function close(): void {
+            calendarModel.close();
+        }
+
+        function open(): void {
+            root.selectPanelPopup(root.activePanelWindow, "calendar");
+            calendarModel.open(0);
+        }
+
+        function status(): string {
+            if (!calendarModel.visible) return "closed";
+            const month = String(calendarModel.shownMonth + 1).padStart(2, "0");
+            return "open\t" + calendarModel.shownYear + "-" + month + "\t" + calendarModel.selectedDay;
+        }
+
+        function toggle(): void {
+            if (calendarModel.visible) calendarModel.close();
+            else calendarIpc.open();
+        }
+    }
+
     IpcHandler {
         target: "settings"
 
@@ -717,6 +761,8 @@ ShellRoot {
             networkModel: networkModel
             controlsModel: controlsModel
             bluetoothModel: bluetoothModel
+            calendarModel: calendarModel
+            weatherModel: weatherModel
             controlCenterModel: controlCenterModel
             panelSettingsModel: panelSettingsModel
             powerModel: powerModel
@@ -753,6 +799,16 @@ ShellRoot {
 
     BluetoothWindow {
         bluetoothModel: bluetoothModel
+        panelWindow: root.activePanelWindow
+    }
+
+    CalendarWindow {
+        calendarModel: calendarModel
+        panelWindow: root.activePanelWindow
+    }
+
+    WeatherWindow {
+        weatherModel: weatherModel
         panelWindow: root.activePanelWindow
     }
 
@@ -798,6 +854,7 @@ ShellRoot {
         accessibilityModel: accessibilityModel
         notificationModel: notificationModel
         panelSettingsModel: panelSettingsModel
+        weatherModel: weatherModel
         updateModel: updateModel
         systemManagementModel: systemManagementModel
     }

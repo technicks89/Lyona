@@ -23,7 +23,9 @@ Scope {
         "volume": true,
         "bluetooth": true,
         "network": true,
-        "power": true
+        "power": true,
+        "calendar": true,
+        "weather": false
     })
     readonly property string homeDir: Quickshell.env("HOME") || ""
     readonly property string configuredConfigHome: Quickshell.env("XDG_CONFIG_HOME")
@@ -36,16 +38,21 @@ Scope {
         { "id": "volume", "label": "Volume" },
         { "id": "bluetooth", "label": "Bluetooth" },
         { "id": "network", "label": "Network" },
-        { "id": "power", "label": "Power" }
+        { "id": "power", "label": "Power" },
+        // Sync Sprint 12 S12-20: the clock's month calendar, and the weather,
+        // which is off until turned on (decision D-19).
+        { "id": "calendar", "label": "Calendar" },
+        { "id": "weather", "label": "Weather" }
     ]
 
     function validWidget(id) {
         return id === "workspaces" || id === "volume" || id === "bluetooth"
-            || id === "network" || id === "power";
+            || id === "network" || id === "power" || id === "calendar" || id === "weather";
     }
 
     function widgetEnabled(id) {
-        return root.validWidget(id) ? root.values[id] !== false : true;
+        if (!root.validWidget(id)) return true;
+        return id === "weather" ? root.values[id] === true : root.values[id] !== false;
     }
 
     function useDefaults() {
@@ -54,7 +61,9 @@ Scope {
             "volume": true,
             "bluetooth": true,
             "network": true,
-            "power": true
+            "power": true,
+            "calendar": true,
+            "weather": false
         });
     }
 
@@ -66,14 +75,15 @@ Scope {
 
     function parseStatus(text) {
         const lines = text.trim().split("\n");
-        if (lines.length !== 8 || lines[0] !== "panel-settings-protocol\t1\t0"
-                || lines[7] !== "complete\tstatus") return;
+        const count = root.widgets.length;
+        if (lines.length !== count + 3 || lines[0] !== "panel-settings-protocol\t1\t0"
+                || lines[count + 2] !== "complete\tstatus") return;
         const state = lines[1].split("\t");
         if (state.length !== 3 || state[0] !== "state"
                 || ["available", "defaults", "partial", "unavailable"].indexOf(state[1]) < 0)
             return;
         const parsed = {};
-        for (let index = 2; index < 7; index++) {
+        for (let index = 2; index < count + 2; index++) {
             const fields = lines[index].split("\t");
             if (fields.length !== 3 || fields[0] !== "widget" || !root.validWidget(fields[1])
                     || (fields[2] !== "enabled" && fields[2] !== "disabled")
@@ -108,7 +118,7 @@ Scope {
         if (root.busy || !root.mutationReady) return;
         root.busy = true;
         root.pendingWidget = "all";
-        root.pendingValue = "enabled";
+        root.pendingValue = "defaults";
         root.actionSucceeded = false;
         actionProcess.command = Commands.checkedCommand(Commands.panelSettingsCommand("reset", []));
         actionProcess.running = true;
@@ -124,7 +134,7 @@ Scope {
                 && fields[3] === root.pendingValue;
         else if (fields[1] === "reset")
             root.actionSucceeded = root.pendingWidget === "all"
-                && fields[2] === "all" && fields[3] === "enabled";
+                && fields[2] === "all" && fields[3] === "defaults";
     }
 
     Component.onCompleted: root.refresh()

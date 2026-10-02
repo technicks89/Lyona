@@ -173,6 +173,11 @@ Singleton {
         return helperCommand("dwm-panel-settings", action, args);
     }
 
+    // The panel weather (Sync Sprint 12 S12-20).
+    function weatherCommand(action, args) {
+        return helperCommand("lyona-weather", action, args);
+    }
+
     function accessibilitySettingsCommand(action, args) {
         return helperCommand("dwm-accessibility-settings", action, args);
     }

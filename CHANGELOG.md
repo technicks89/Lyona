@@ -520,6 +520,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Calendar and weather panel widgets (Sync Sprint 12 S12-20, upstream `#358`):
+  - **Calendar:** click the clock for a month calendar, with keyboard navigation. It can be turned off, and has a
+    `calendar` IPC target.
+  - **Weather:** it shows the current temperature from Open-Meteo for a location you type in Settings, Appearance.
+    It is off by default, and nothing is sent until it is turned on and given a location (decision D-19).
+  - **How it fetches:** at most every 30 minutes, with units from the locale unless set. Failures show
+    "Unavailable", with no retry loop.
+  - **Bar Widgets:** both switches are in Control Center's Bar Widgets and in Settings. An existing
+    `panel-widgets.conf` keeps its choices.
 - Two overview tests (Sync Sprint 9 S9-03, S9-04): `check-overview-keyboard-xvfb` drives the popup with real key
   events and no mouse, and `check-overview-load-xvfb` runs it over 60 windows on 9 tags and checks the closed
   Quickshell CPU before and after opening, open, filter and navigation time budgets, and that the selection scrolls to

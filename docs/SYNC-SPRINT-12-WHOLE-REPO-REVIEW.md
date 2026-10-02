@@ -69,7 +69,7 @@ root the next time the user authenticates a routine update or rollback.
 | **D-17b** | Per-screen `Variants` panels (SPEC.md) or one `PanelWindow` (AGENTS.md)? | S12-17 item 1 | **Decided (2026-09-27), asked of the user directly:** keep per-screen panels (every monitor needs a bar; state is already shared); AGENTS.md changes to match SPEC.md |
 | **D-20** | What is the one `themes.toml` reader for scripts? | S12-14 part 1 | **Decided (2026-09-29), asked of the user directly:** a C tool, `lyona-toml`, built from dwm's own `tomlparser.c` |
 | **D-21** | Do the root helpers source the shared trust checks? | S12-14 part 3 | **Decided (2026-09-29), asked of the user directly:** no; they keep a self-contained copy that a contract test pins to the library |
-| **D-19** | Weather widget: which provider, where the location comes from, and whether it is on by default? It is the shell's first feature that sends data (a location) to a third party | S12-20 weather half | **Open.** Recommendation: off by default, a location the user types (never IP geolocation), one keyless HTTPS provider (Open-Meteo, or wttr.in as upstream's prototype uses), refreshed at most every 30 minutes, and the calendar shipped without waiting for this |
+| **D-19** | Weather widget: which provider, where the location comes from, and whether it is on by default? It is the shell's first feature that sends data (a location) to a third party | S12-20 weather half | **Decided (2026-10-02), asked of the user directly:** Open-Meteo (no key; its limits are per client IP, and an install makes at most about 48 calls a day); off by default; the location is typed by the user and resolved once through Open-Meteo's geocoding; temperature units follow the locale (Fahrenheit in the US and the few other Fahrenheit regions), with a Settings override; the calendar ships first. Recommendation was: off by default, a location the user types (never IP geolocation), one keyless HTTPS provider (Open-Meteo, or wttr.in as upstream's prototype uses), refreshed at most every 30 minutes, and the calendar shipped without waiting for this |
 
 ---
 
@@ -1321,6 +1321,51 @@ step; and the S12-01 container test switched to the real release archive.
 ---
 
 ## S12-20: Calendar and weather panel widgets
+
+**Implemented (2026-10-02), both halves; D-19 decided** (Open-Meteo, off by
+default, units from the locale).
+
+- **Panel settings:** `dwm-panel-settings` knows `calendar` (default on) and
+  `weather` (default off).
+  - A saved file needs only the original five, so a file from before keeps its
+    choices; it now writes all seven.
+  - The reset result is `reset all defaults`, and "Show all widgets" is now
+    "Restore defaults".
+  - The model, Control Center's Bar Widgets and the Appearance switches show
+    both.
+- **Calendar:**
+  - `calendar/CalendarModel.qml` computes the six-week grid only while open,
+    with no timer.
+  - `CalendarWindow.qml` is a click-away popup under the clock. Arrows, Page
+    Up and Down, Home and Escape work; clicking a day selects it.
+  - A `calendar` IPC target (`open`, `close`, `toggle`, `status`).
+- **Weather:** the `scripts/lyona-weather` helper, installed as a command.
+  - It uses curl (`--proto =https`, `--max-time 10`, a size cap) and jq.
+  - The place is geocoded once and cached, the result for 30 minutes, and
+    after a failure there is a 10-minute wait.
+  - Settings live in `weather.conf`, and the settings and cache are private.
+  - `weather/WeatherModel.qml` calls it only while the switch is on: once on
+    turning on, then on a 30-minute timer that runs only then.
+  - A panel pill and a popup; the location and units are in Settings,
+    Appearance.
+- **Tests:**
+  - `test-quickshell-panel-settings.sh` covers the old five-line file, the
+    seven-line file, a missing original id, an unknown id, and reset.
+  - `test-lyona-weather.sh` (stub curl) covers no location, the fetch flags,
+    the cache, the units by locale and by setting, the failure wait, an unknown
+    place, an unexpected answer, a hostile place name and file modes.
+  - `test-quickshell-calendar-xvfb.sh` (real dwm and shell): the calendar opens
+    on today; real keys move it, and Escape and a click outside close it. The
+    shell does not ask for the weather while it is off, and asks once when
+    turned on.
+  - Mutations of the Escape handling, the name cleaning and the off guarantee
+    each fail their test.
+- **A live check** against Open-Meteo gave `16.8 C Overcast` for Berlin, then
+  the cached result.
+- **The existing Xvfb suites pass:** Settings, System Management, Large
+  Surfaces, watcher lifetime and plain text.
+- **Idle cost:** Settings' closed-idle sample is 0.033% CPU, against 0.067% in
+  S12-16, so no new idle work.
 
 **Issue:** `#193`. **Source:** upstream feature request [ChrisTitusTech/dwm-titus#358](https://github.com/ChrisTitusTech/dwm-titus/issues/358)
 (2026-09-28). Added on request, not one of the four reviews' findings. **Verified** against

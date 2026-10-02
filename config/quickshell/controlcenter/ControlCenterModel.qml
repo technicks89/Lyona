@@ -17,7 +17,9 @@ Scope {
         "Volume": "volume",
         "Bluetooth": "bluetooth",
         "Network": "network",
-        "Power": "power"
+        "Power": "power",
+        "Calendar": "calendar",
+        "Weather": "weather"
     })
     readonly property bool showVolumeWidget: root.panelSettingsModel
         ? root.panelSettingsModel.widgetEnabled("volume") : true
@@ -89,7 +91,9 @@ Scope {
 
     function widgetEnabled(name) {
         const id = root.widgetIds[name];
-        if (!root.panelSettingsModel || id === undefined) return true;
+        if (id === undefined) return true;
+        // The weather is off until it is turned on (D-19, Sync Sprint 12 S12-20).
+        if (!root.panelSettingsModel) return id !== "weather";
         return root.panelSettingsModel.widgetEnabled(id);
     }
 

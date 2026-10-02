@@ -20,6 +20,8 @@ FloatingWindow {
     required property var accessibilityModel
     required property var notificationModel
     required property var panelSettingsModel
+    // Optional: a harness without the weather leaves its settings out (S12-20).
+    property var weatherModel: null
     required property var updateModel
     required property var systemManagementModel
     // Sync Sprint 1 S1-06 (#270): the shared ClockModel instance, so
@@ -424,6 +426,7 @@ FloatingWindow {
                                     notificationCapability: root.settingsModel.capabilityById(
                                         "accessibility-notifications")
                                     panelSettingsModel: root.panelSettingsModel
+                                    weatherModel: root.weatherModel
                                     capabilities: root.settingsModel.capabilitiesForSection("appearance")
                                         .filter(function(capability) {
                                             // These three are drawn by the pane itself;

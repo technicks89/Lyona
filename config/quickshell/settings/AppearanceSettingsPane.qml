@@ -14,6 +14,8 @@ Flickable {
     required property var notificationModel
     required property var notificationCapability
     required property var panelSettingsModel
+    // The panel weather's settings (Sync Sprint 12 S12-20); absent in harnesses.
+    property var weatherModel: null
     required property var capabilities
     property string selectedThemeId: ""
     property string selectedWallpaperPath: ""
@@ -1059,9 +1061,101 @@ Flickable {
             }
 
             ShellButton {
-                label: "Show all widgets"
+                label: "Restore defaults"
                 enabled: root.panelSettingsModel.mutationReady && !root.panelSettingsModel.busy
                 onActivated: root.panelSettingsModel.reset()
+            }
+        }
+
+        // The weather's location and units (Sync Sprint 12 S12-20, D-19). The
+        // location is sent to Open-Meteo only while the Weather widget is on.
+        SectionLabel {
+            visible: root.weatherModel !== null
+            label: "Weather"
+        }
+
+        UiText {
+            Layout.fillWidth: true
+            visible: root.weatherModel !== null
+            text: "The location is sent to Open-Meteo only while the Weather widget is on, at most every 30 minutes."
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.weatherModel !== null
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.max(Theme.controlHeight, weatherLocationInput.implicitHeight + 12)
+                color: Theme.controlNormalFill
+                border.color: weatherLocationInput.activeFocus ? Theme.controlFocusBorder : Theme.controlNormalBorder
+                border.width: Theme.controlBorderWidth
+                radius: Theme.controlRadius
+
+                TextInput {
+                    id: weatherLocationInput
+
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    text: root.weatherModel ? root.weatherModel.location : ""
+                    color: Theme.textStrong
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.inputFontSize
+                    maximumLength: 100
+                    clip: true
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: "Weather location"
+                    onAccepted: root.weatherModel.setLocation(text)
+                }
+
+                UiText {
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    visible: weatherLocationInput.text.length === 0 && !weatherLocationInput.activeFocus
+                    text: "City, for example Berlin"
+                    color: Theme.menuMutedText
+                }
+            }
+
+            ShellButton {
+                label: "Save location"
+                enabled: root.weatherModel !== null && !root.weatherModel.busy
+                onActivated: root.weatherModel.setLocation(weatherLocationInput.text)
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.weatherModel !== null
+
+            UiText {
+                Layout.fillWidth: true
+                text: root.weatherModel && root.weatherModel.message.length > 0
+                    ? root.weatherModel.message
+                    : "Units: " + (root.weatherModel && root.weatherModel.units !== "auto"
+                        ? root.weatherModel.units
+                        : "from the locale (" + (root.weatherModel ? root.weatherModel.resolvedUnits : "") + ")")
+                color: Theme.menuMutedText
+                wrapMode: Text.WordWrap
+            }
+
+            Repeater {
+                model: [
+                    { "id": "auto", "label": "From locale" },
+                    { "id": "celsius", "label": "Celsius" },
+                    { "id": "fahrenheit", "label": "Fahrenheit" }
+                ]
+
+                delegate: ShellButton {
+                    required property var modelData
+
+                    label: modelData.label
+                    primary: root.weatherModel !== null && root.weatherModel.units === modelData.id
+                    enabled: root.weatherModel !== null && !root.weatherModel.busy
+                    onActivated: root.weatherModel.setUnits(modelData.id)
+                }
             }
         }
 

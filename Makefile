@@ -84,6 +84,7 @@ INSTALL_COMMANDS = \
 	scripts/lyona-plymouth-theme \
 	scripts/lyona-update \
 	scripts/lyona-version \
+	scripts/lyona-weather \
 	scripts/nvidia-gpu \
 	scripts/nvidia-suspend-test.sh \
 	scripts/nvidia-temp \
@@ -656,6 +657,14 @@ check-quickshell-plain-text-xvfb: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# The clock's month calendar on a real shell: keys move it, Escape and a click
+# outside close it (Sync Sprint 12 S12-20).
+.PHONY: check-quickshell-calendar-xvfb
+check-quickshell-calendar-xvfb: all
+	status=0; tests/test-quickshell-calendar-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 # Sync Sprint 12 S12-05: unit tests for the TOML parser dwm uses for all three
 # runtime files.
 # Sync Sprint 12 S12-14: WatchedProcess, which the resident watchers share.
@@ -1144,6 +1153,10 @@ check-lyona-version:
 check-lyona-update:
 	tests/test-lyona-update.sh
 
+# The panel weather helper against a stub curl (Sync Sprint 12 S12-20).
+check-lyona-weather:
+	@tests/test-lyona-weather.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 check-test-runner:
 	@$(call run_managed_test,tests/test-run-tests.sh)
 
@@ -1244,6 +1257,7 @@ check:
 	$(MAKE) check-quickshell-watched-process-xvfb
 	$(MAKE) check-quickshell-plain-text
 	$(MAKE) check-quickshell-plain-text-xvfb
+	$(MAKE) check-quickshell-calendar-xvfb
 	$(MAKE) check-dwm-watchdog
 	$(MAKE) check-quickshell-watchers-xvfb
 	$(MAKE) check-quickshell-idle-watchers-xvfb
@@ -1307,6 +1321,7 @@ check:
 	$(MAKE) check-iso-install-credentials
 	$(MAKE) check-lyona-version
 	$(MAKE) check-lyona-update
+	$(MAKE) check-lyona-weather
 	$(MAKE) check-test-runner
 	$(MAKE) check-lightdm-config
 	$(MAKE) release-check
