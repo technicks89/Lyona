@@ -138,10 +138,34 @@ gpu_step=$(grep -n '^run_logged "Installing GPU drivers' "$postinstall" | cut -d
 }
 
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
-grep -Fq 'nvidia-dkms nvidia-utils "${headers[@]}"' "$postinstall" || {
+if ! grep -Fq 'mapfile -t driver < <(dwm_packages arch gpu-nvidia-dkms)' "$postinstall" ||
+	! grep -Fq '"${driver[@]}" "${headers[@]}"' "$postinstall"; then
 	printf 'lyona-postinstall.sh does not build the NVIDIA driver for every installed kernel.\n' >&2
 	exit 1
-}
+fi
+
+# Sync Sprint 12 S12-15: the postinstall takes its package names from the shared
+# map, like every other installer. Each profile it uses must be in the map and
+# used, and no pacman line may name one of its packages directly.
+pacman_lines=$(grep -E 'pacman -(S|Qq)' "$postinstall")
+for profile in microcode-intel microcode-amd gpu-nvidia gpu-nvidia-dkms gpu-amd gpu-intel network vm-guest; do
+	mapfile -t profile_packages < <(dwm_packages arch "$profile")
+	((${#profile_packages[@]} > 0)) || {
+		printf 'the package map has no arch:%s profile.\n' "$profile" >&2
+		exit 1
+	}
+	grep -Fq "dwm_packages arch $profile" "$postinstall" || {
+		printf 'lyona-postinstall.sh does not use the arch:%s profile.\n' "$profile" >&2
+		exit 1
+	}
+	for package in "${profile_packages[@]}"; do
+		if grep -Eq "(^|[[:space:]])$package([[:space:]]|\$|$)" <<<"$pacman_lines"; then
+			printf 'lyona-postinstall.sh names %s directly; use dwm_packages arch %s.\n' \
+				"$package" "$profile" >&2
+			exit 1
+		fi
+	done
+done
 
 awk '
 	/^\[multilib\]$/ { found = 1; next }

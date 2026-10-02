@@ -75,8 +75,11 @@ monitor. It starts two read-only scans: session checks run immediately, and a
 privileged scan completes current-boot journal, kernel, system-service, and
 drive checks. If cached or `NOPASSWD` sudo access is available, the scan runs
 without a prompt. Otherwise the running polkit agent requests graphical
-authorization. Cancelling the prompt leaves a partial report and marks its
-coverage as incomplete.
+authorization for the root-owned `${PREFIX}/libexec/lyona/dwm-system-health-root`,
+under its own action (`com.lyona.system-health.manage`, "Authentication is
+required to read system logs and repair system services"). That helper accepts
+only the privileged scan and the listed service repairs. Cancelling the prompt
+leaves a partial report and marks its coverage as incomplete.
 
 The dashboard groups checks into:
 

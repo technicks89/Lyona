@@ -15,6 +15,11 @@ fail() {
 
 # shellcheck source=lyona-ui.sh
 source /root/lyona-ui.sh
+# Package names come from the shared map, as everywhere else (Sync Sprint 12
+# S12-15). The functions below run in fresh shells, so dwm_packages is exported
+# with them.
+# shellcheck source=scripts/dwm-packages.sh
+source "$REPO_SRC/scripts/dwm-packages.sh"
 require_gum
 : >"$LOG_FILE"
 install_error_trap "$@"
@@ -23,9 +28,9 @@ show_logo
 install_microcode() {
 	local pkg
 	if grep -q GenuineIntel /proc/cpuinfo; then
-		pkg=intel-ucode
+		pkg=$(dwm_packages arch microcode-intel)
 	elif grep -q AuthenticAMD /proc/cpuinfo; then
-		pkg=amd-ucode
+		pkg=$(dwm_packages arch microcode-amd)
 	else
 		printf 'lyona-postinstall: could not determine CPU vendor; skipping microcode.\n'
 		return 0
@@ -95,24 +100,25 @@ installed_kernels() {
 }
 
 install_nvidia_driver() {
-	local -a kernel_pkgs headers=()
+	local -a kernel_pkgs headers=() driver
 	local kernel_pkg
 
 	mapfile -t kernel_pkgs < <(installed_kernels)
 	((${#kernel_pkgs[@]} > 0)) || kernel_pkgs=(linux)
 
 	if ((${#kernel_pkgs[@]} == 1)) && [[ ${kernel_pkgs[0]} == linux ]]; then
-		printf 'Installing NVIDIA driver (nvidia) for kernel linux...\n'
-		arch-chroot "$TARGET" pacman -S --noconfirm --needed nvidia nvidia-utils
+		printf 'Installing NVIDIA driver (nvidia-open) for kernel linux...\n'
+		mapfile -t driver < <(dwm_packages arch gpu-nvidia)
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}"
 		return 0
 	fi
 
 	for kernel_pkg in "${kernel_pkgs[@]}"; do
 		headers+=("${kernel_pkg}-headers")
 	done
-	printf 'Installing NVIDIA driver (nvidia-dkms) for kernels: %s...\n' "${kernel_pkgs[*]}"
-	arch-chroot "$TARGET" pacman -S --noconfirm --needed \
-		nvidia-dkms nvidia-utils "${headers[@]}"
+	printf 'Installing NVIDIA driver (nvidia-open-dkms) for kernels: %s...\n' "${kernel_pkgs[*]}"
+	mapfile -t driver < <(dwm_packages arch gpu-nvidia-dkms)
+	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}" "${headers[@]}"
 }
 
 install_gpu_drivers() {
@@ -122,6 +128,7 @@ install_gpu_drivers() {
 	fi
 
 	local gpu_info
+	local -a driver
 	gpu_info=$(lspci | grep -E "VGA|3D|Display" || true)
 
 	if grep -qE "NVIDIA|GeForce" <<<"$gpu_info"; then
@@ -133,19 +140,23 @@ install_gpu_drivers() {
 		fi
 	elif grep -qE "Radeon|AMD" <<<"$gpu_info"; then
 		printf 'Installing AMD GPU driver...\n'
-		arch-chroot "$TARGET" pacman -S --noconfirm --needed xf86-video-amdgpu
+		mapfile -t driver < <(dwm_packages arch gpu-amd)
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}"
 	elif grep -qiE "Intel" <<<"$gpu_info"; then
 		printf 'Installing Intel GPU driver...\n'
-		arch-chroot "$TARGET" pacman -S --noconfirm --needed mesa vulkan-intel libva-intel-driver
+		mapfile -t driver < <(dwm_packages arch gpu-intel)
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}"
 	else
 		printf 'lyona-postinstall: no known GPU vendor detected; skipping driver install.\n'
 	fi
 }
 
 install_networkmanager() {
-	if ! arch-chroot "$TARGET" pacman -Qq networkmanager >/dev/null 2>&1; then
+	local -a network
+	mapfile -t network < <(dwm_packages arch network)
+	if ! arch-chroot "$TARGET" pacman -Qq "${network[@]}" >/dev/null 2>&1; then
 		printf 'Installing NetworkManager...\n'
-		arch-chroot "$TARGET" pacman -S --noconfirm --needed networkmanager
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${network[@]}"
 	fi
 	arch-chroot "$TARGET" systemctl enable NetworkManager.service
 }
@@ -190,13 +201,14 @@ install_qemu_guest_utils() {
 	esac
 
 	printf 'QEMU/KVM detected; installing guest utilities...\n'
-	arch-chroot "$TARGET" pacman -S --noconfirm --needed \
-		virtiofsd qemu-guest-agent spice-vdagent qemu-hw-display-virtio-vga
+	local -a guest
+	mapfile -t guest < <(dwm_packages arch vm-guest)
+	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${guest[@]}"
 	arch-chroot "$TARGET" systemctl enable qemu-guest-agent.service
 	arch-chroot "$TARGET" systemctl enable spice-vdagentd.service
 }
 
-export -f add_cachyos_repositories install_cachyos_kernels installed_kernels \
+export -f dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
 	install_microcode install_nvidia_driver install_gpu_drivers \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils
 

@@ -104,6 +104,45 @@ dwm_packages() {
 		# and fonts that nothing else here uses.
 		printf '%s\n' plymouth
 		;;
+	# The live medium's postinstall installs these onto the target by what it
+	# detects (Sync Sprint 12 S12-15): CPU microcode, a GPU driver, NetworkManager
+	# and the QEMU/KVM guest tools. The NVIDIA DKMS driver also needs each
+	# installed kernel's -headers, which the postinstall derives from the kernels.
+	# Arch replaced nvidia and nvidia-dkms with the open kernel modules, which
+	# support Turing (GTX 16xx, RTX 20xx) and newer; older cards need the
+	# AUR-only nvidia-580xx and stay on nouveau.
+	arch:microcode-intel)
+		printf '%s\n' intel-ucode
+		;;
+	arch:microcode-amd)
+		printf '%s\n' amd-ucode
+		;;
+	arch:gpu-nvidia)
+		printf '%s\n' nvidia-open nvidia-utils
+		;;
+	arch:gpu-nvidia-dkms)
+		printf '%s\n' nvidia-open-dkms nvidia-utils
+		;;
+	arch:gpu-amd)
+		printf '%s\n' xf86-video-amdgpu
+		;;
+	arch:gpu-intel)
+		printf '%s\n' mesa vulkan-intel libva-intel-driver
+		;;
+	arch:network)
+		printf '%s\n' networkmanager
+		;;
+	arch:vm-guest)
+		printf '%s\n' virtiofsd qemu-guest-agent spice-vdagent qemu-hw-display-virtio-vga
+		;;
+	# What scripts/install-mybash checks for and installs before it clones the
+	# configuration (S12-15); install.sh installs arch:shell first.
+	arch:mybash-bootstrap)
+		printf '%s\n' bash bash-completion tar bat tree unzip fontconfig git fzf
+		;;
+	arch:xscreensaver)
+		printf '%s\n' xscreensaver
+		;;
 	arch:shell)
 		# The interactive shell configuration from technicks89/mybash. Its own
 		# setup.sh pipes an installer from starship.rs and pulls an unpinned

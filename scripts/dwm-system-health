@@ -760,26 +760,18 @@ scan_system() {
 	emit_meta overview ok scan-system-complete "Privileged scan" "Complete" "Snapshot finished at $(date --iso-8601=seconds 2>/dev/null || date)"
 }
 
+# The root half, dwm-system-health-root, under its own polkit action (Sync
+# Sprint 12 S12-15). It used to be this same script, run through pkexec from
+# PREFIX/bin with no action of its own; the root helper allows only scan-system
+# and a checked repair-system, and runs the installed copy of this script.
 trusted_system_helper() {
-	local candidate resolved
-	local candidates=()
-
-	if [[ ${DWM_HEALTH_TEST_ROOT:-0} != 1 ]]; then
-		command -v dwm-system-health >/dev/null 2>&1 && candidates+=("$(command -v dwm-system-health)")
-		candidates+=(/usr/local/bin/dwm-system-health /usr/bin/dwm-system-health)
-	fi
-
-	for candidate in "${candidates[@]}"; do
-		[[ -e $candidate ]] || continue
-		resolved=$(readlink -f -- "$candidate" 2>/dev/null || true)
-		[[ -n $resolved && -f $resolved ]] || continue
-		case $resolved in
-		# Deliberately the raw values, even relative ones, and never fatal: a
-		# deny list, not the XDG rule in dwm-xdg.sh (S12-14).
-		"${HOME:-/nonexistent}"/* | "${XDG_DATA_HOME:-${HOME:-/nonexistent}/.local/share}"/* | "${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}"/*) continue ;;
-		esac
-		trusted_file "$resolved" || continue
-		printf '%s\n' "$resolved"
+	local candidate
+	[[ ${DWM_HEALTH_TEST_ROOT:-0} != 1 ]] || return 1
+	for candidate in "${SCRIPT_DIR%/bin}/libexec/lyona/dwm-system-health-root" \
+		/usr/local/libexec/lyona/dwm-system-health-root \
+		/usr/libexec/lyona/dwm-system-health-root; do
+		trusted_file "$candidate" || continue
+		printf '%s\n' "$candidate"
 		return 0
 	done
 	return 1

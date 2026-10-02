@@ -185,7 +185,7 @@ ask_nvidia() {
 	local choice
 	choice=$(gum choose \
 		"nouveau (open-source, default)" "nvidia (proprietary)" \
-		--header "NVIDIA GPU detected. Select driver:") || true
+		--header "NVIDIA GPU detected. Select driver (nvidia needs a GTX 16xx/RTX 20xx or newer):") || true
 	[[ $choice == "nvidia (proprietary)" ]] && NVIDIA_OPT_IN=1
 	return 0
 }

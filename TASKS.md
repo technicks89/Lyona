@@ -72,8 +72,10 @@ and merge each before starting the next:
   this sandbox has never actually invoked `mkarchiso`, only the staging step.
 - [ ] Confirm the NVIDIA opt-in path in `lyona-install.sh`/
   `lyona-postinstall.sh` (`LYONA_NVIDIA_DRIVER=1`) actually installs a working
-  proprietary driver stack against the current Arch `nvidia`/`nvidia-dkms`
-  packages, not just that the flag is threaded through correctly.
+  proprietary driver stack against the current Arch `nvidia-open`/
+  `nvidia-open-dkms` packages, not just that the flag is threaded through
+  correctly. (Arch dropped `nvidia`/`nvidia-dkms`; the open modules need a
+  Turing or newer GPU, and older cards stay on nouveau.)
 - [ ] Re-validate the `archinstall` JSON schema in `lyona-install.sh` against
   whatever `archinstall` version the current `releng` profile actually pulls
   in — `docs/RELEASING.md` already flags this as version-sensitive and known
