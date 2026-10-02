@@ -187,6 +187,7 @@ where no official package can do the job (`docs/AUR-PACKAGES.md`, enforced by
 - on the live medium, an older NVIDIA card's legacy driver, built from a pinned AUR
   PKGBUILD when the CachyOS repository cannot supply it;
 - Settings -> System -> **Update packages**, which runs your own `yay -Syu` when `yay`
-  is installed. Steam and its
-libraries need the `multilib` repository, which the installer enables only after
+  is installed. 
+
+Steam and its libraries need the `multilib` repository, which the installer enables only after
 separate approval.
