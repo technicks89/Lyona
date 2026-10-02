@@ -181,7 +181,7 @@ fi
 trust_lib=$repo/scripts/dwm-trust.sh
 sed -n "/^# Every directory from PATH's parent up to/,\$p" "$trust_lib" >"$work/trust-lib"
 [ -s "$work/trust-lib" ] || fail 'could not read the functions from dwm-trust.sh'
-for root_helper in lyona-update-root dwm-settings-display-root; do
+for root_helper in lyona-update-root dwm-settings-display-root dwm-system-health-root; do
 	sed -n '/^# BEGIN dwm-trust.sh/,/^# END dwm-trust.sh$/p' "$repo/scripts/$root_helper" |
 		sed '1,/^# tests\/test-shell-contracts.sh fails if this copy differs/d; $d' >"$work/trust-copy"
 	cmp -s "$work/trust-lib" "$work/trust-copy" || {
@@ -192,7 +192,7 @@ for root_helper in lyona-update-root dwm-settings-display-root; do
 done
 for helper in trusted_parent_chain trusted_file; do
 	duplicate=$(grep -l "^$helper() {" "$repo"/scripts/* 2>/dev/null |
-		grep -vE '/(dwm-trust\.sh|lyona-update-root|dwm-settings-display-root)$' || true)
+		grep -vE '/(dwm-trust\.sh|lyona-update-root|dwm-settings-display-root|dwm-system-health-root)$' || true)
 	if [ -n "$duplicate" ]; then
 		printf '%s: %s is defined outside dwm-trust.sh:\n%s\n' "$test_name" "$helper" "$duplicate" >&2
 		exit 1

@@ -971,6 +971,52 @@ it moved here from S12-13 to keep that item smaller.
 ## S12-15: Privileged-helper consistency, the package map, and lint coverage
 
 **Source:** A (Medium), S. **Verified** (lint list, system-health, package names).
+**Implemented (2026-09-30), all three parts.** Where it differs from the text below:
+
+- **Part 1:**
+  - New `scripts/dwm-system-health-root` (in `PRIVILEGED_HELPERS`) and
+    `config/polkit/com.lyona.system-health.policy` (in `POLKIT_ACTIONS`, with
+    `exec.path` pinned).
+  - The helper carries the D-21 pinned copy of the trust checks, which
+    `test-shell-contracts.sh` now checks in all three root helpers. It makes the
+    display helper's self-checks.
+  - It allows `scan-system`, and `repair-system` with an allowlisted action whose
+    unit matches `^[A-Za-z0-9:_.@\\-]+[.]service$`. It runs
+    `@PREFIX@/bin/dwm-system-health`, which must pass `trusted_file`, under
+    `env -i`.
+  - `dwm-system-health`'s `trusted_system_helper` now finds the root helper
+    instead of its own `/usr/bin` copy.
+  - New `tests/test-system-health-root-security.sh`
+    (`make check-system-health-root-security`) runs root-only in a container,
+    added to the `display-security` CI job. It covers the repository copy, a
+    missing `PKEXEC_UID`, writable copies, eight malformed requests and the
+    accepted ones with their clean environment. Run with
+    `docker run --network none -e DWM_SECURITY_CONTAINER=1` on the CI image, it
+    passed, and it fails with `valid_repair` gutted.
+- **Part 2:**
+  - Profiles `arch:microcode-intel`, `-amd`, `gpu-nvidia`, `gpu-nvidia-dkms`,
+    `gpu-amd`, `gpu-intel`, `network`, `vm-guest`, `mybash-bootstrap` and
+    `xscreensaver`, each with exactly the names the scripts used.
+  - The NVIDIA DKMS driver's `-headers` stay computed from the installed kernels.
+  - **The NVIDIA profiles use `nvidia-open` and `nvidia-open-dkms`.**
+    `check-no-aur` found that Arch had dropped `nvidia` and `nvidia-dkms`. The
+    user chose to switch: the open modules need Turing or newer, and older cards
+    stay on nouveau. The installer prompt, `docs/RELEASING.md` and the
+    TASKS.md NVIDIA item say so.
+  - The postinstall sources the map from the checkout on the medium and exports
+    `dwm_packages` to its `run_logged` steps.
+  - `install-mybash` is POSIX, and the map is Bash, so it asks `bash` for the
+    list.
+  - `test-arch-iso-builder.sh` requires each profile to exist and be used, and no
+    `pacman` line to name its packages. It fails if `xf86-video-amdgpu` is put
+    back literally.
+- **Part 3:**
+  - `SHELL_SCRIPTS` in the `Makefile` is `scripts/*.sh` plus every `scripts/*`
+    whose shebang names `sh` or `bash`: 84 files.
+  - The 13 newly covered scripts: five were reformatted, whitespace only apart
+    from shfmt splitting one-line `case` arms, and three SC2155s were fixed in
+    `webapp-create`.
+- **Not verified:** a real polkit prompt for the new action in a live session.
 
 1. **Three privileged patterns.** Display and update use `libexec/lyona` with an
    explicit polkit action and `exec.path`. `dwm-system-health` is installed in

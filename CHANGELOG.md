@@ -17,6 +17,31 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Privileged-helper consistency, the package map, and lint coverage (Sync Sprint 12 S12-15).
+  - **System Health's privileged scan and repairs** go through a new root-owned helper,
+    `libexec/lyona/dwm-system-health-root`, under its own polkit action (`com.lyona.system-health.manage`) with a
+    specific prompt and an `exec.path` pin, like the display and update helpers. Before, `dwm-system-health` ran
+    `pkexec` on itself from `/usr/bin`, with the generic prompt and no action of its own.
+    - The helper accepts only `scan-system`, and `repair-system` with one of the listed repairs, a service verb
+      (`start`, `stop`, `restart`, `enable`, `disable`) and a well-formed `.service` name. It runs the installed
+      `dwm-system-health` with a clean environment.
+    - The passwordless-`sudo` path is unchanged.
+  - **Package names** that installers wrote out by hand now come from the shared map in `scripts/dwm-packages.sh`:
+    - the live medium's postinstall: microcode, the NVIDIA, AMD and Intel GPU drivers, NetworkManager, and the
+      QEMU/KVM guest tools;
+    - `install-mybash` and `xscreensaver-setup.sh`.
+
+    The same packages are installed as before, apart from NVIDIA (below). `tests/test-arch-iso-builder.sh` fails if
+    the postinstall names one of them directly again.
+  - **The live medium's NVIDIA option installs `nvidia-open`** (or `nvidia-open-dkms` with any other kernel). Arch
+    dropped `nvidia` and `nvidia-dkms`, so the option had been failing with "target not found"; `make check-no-aur`
+    caught it once the names were in the map.
+    - The open modules need a Turing (GTX 16xx, RTX 20xx) or newer GPU, and the installer's driver prompt now says
+      so. Older cards need the AUR-only `nvidia-580xx` and stay on nouveau.
+  - **`make check-shell` and `make check-format`** now lint every shell script under `scripts/`, found by its
+    shebang. The hand-kept lists had missed 13, including the privileged `dwm-settings-display-root`. Those 13 now
+    pass: five were reformatted, whitespace only, and `webapp-create` no longer hides command failures in `local`
+    assignments.
 - Resident watchers on one supervisor, S12-14 step 7 (Sync Sprint 12 S12-14).
   - The network monitor, the media watch, and Settings' display, input and notification watches run on the shared
     `WatchedProcess` component, which gains a per-line signal, instead of each owning a process and timers.

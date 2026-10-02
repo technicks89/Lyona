@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The root half of System Health (Sync Sprint 12 S12-15). The unprivileged
+# dwm-system-health asks for it through pkexec, under its own polkit action
+# (com.lyona.system-health.manage, pinned to this path by exec.path), instead
+# of running pkexec on itself from PREFIX/bin. It allows two requests, checks
+# their arguments, and runs the root-owned installed dwm-system-health for them
+# with a clean environment; that script repeats its own checks before acting.
+
+install_prefix='@PREFIX@'
+
+die() {
+	printf 'dwm-system-health-root: %s\n' "$*" >&2
+	exit 1
+}
+
+# BEGIN dwm-trust.sh -- a verbatim copy of scripts/dwm-trust.sh's functions. A
+# root helper sources nothing at run time (Sync Sprint 12 S12-14, D-21), and
+# tests/test-shell-contracts.sh fails if this copy differs from the library.
+# Every directory from PATH's parent up to / is a real directory, owned by root
+# and not group- or other-writable. A stat that fails counts as untrusted.
+trusted_parent_chain() {
+	lyona_trust_parent=${1%/*}
+	while :; do
+		[ -d "$lyona_trust_parent" ] && [ ! -L "$lyona_trust_parent" ] || return 1
+		[ "$(stat -c %u -- "$lyona_trust_parent" 2>/dev/null || printf 1)" = 0 ] || return 1
+		find "$lyona_trust_parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null |
+			grep -q . || return 1
+		[ "$lyona_trust_parent" = / ] && return 0
+		lyona_trust_parent=${lyona_trust_parent%/*}
+		[ -n "$lyona_trust_parent" ] || lyona_trust_parent=/
+	done
+}
+
+# PATH is already canonical (no symlink anywhere in it), and names a root-owned
+# executable that nobody else can write, in a trusted directory chain.
+trusted_file() {
+	lyona_trust_path=$(readlink -f -- "$1" 2>/dev/null) || return 1
+	[ -n "$lyona_trust_path" ] && [ "$lyona_trust_path" = "$1" ] || return 1
+	trusted_parent_chain "$lyona_trust_path" || return 1
+	[ -f "$lyona_trust_path" ] && [ ! -L "$lyona_trust_path" ] && [ -x "$lyona_trust_path" ] || return 1
+	[ "$(stat -c %u -- "$lyona_trust_path" 2>/dev/null || printf 1)" = 0 ] || return 1
+	find "$lyona_trust_path" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
+}
+# END dwm-trust.sh
+
+[[ $EUID == 0 && ${PKEXEC_UID:-} =~ ^[0-9]+$ ]] ||
+	die "this helper must run through polkit as root"
+self=$(readlink -f "${BASH_SOURCE[0]}")
+[[ $self == "$install_prefix/libexec/lyona/dwm-system-health-root" ]] ||
+	die "helper is not running from its trusted installed path"
+trusted_file "$self" || die "helper is not a trusted root-owned executable"
+
+health="$install_prefix/bin/dwm-system-health"
+trusted_file "$health" || die "trusted dwm-system-health is unavailable"
+
+# The repairs dwm-system-health offers; manage-system-service names a verb and
+# a unit, which it also checks against the failed units before acting.
+valid_repair() {
+	local action=$1 prefix verb unit extra
+	case $action in
+	restart-networkmanager | restart-bluetooth | repair-time-sync) return 0 ;;
+	manage-system-service\|*) ;;
+	*) return 1 ;;
+	esac
+	IFS='|' read -r prefix verb unit extra <<<"$action"
+	[[ $prefix == manage-system-service && -z ${extra:-} ]] || return 1
+	case $verb in
+	start | stop | restart | disable | enable) ;;
+	*) return 1 ;;
+	esac
+	[[ $unit =~ ^[A-Za-z0-9:_.@\\-]+[.]service$ ]]
+}
+
+run_health() {
+	exec env -i PATH=/usr/bin:/bin HOME=/root LC_ALL=C "$health" "$@"
+}
+
+case ${1:-} in
+scan-system)
+	[[ $# == 1 ]] || die "scan-system takes no arguments"
+	run_health scan-system
+	;;
+repair-system)
+	[[ $# == 2 ]] || die "repair-system takes one action"
+	[[ $2 != *$'\n'* && $2 != *$'\r'* ]] || die "invalid repair action"
+	valid_repair "$2" || die "unsupported system repair: $2"
+	run_health repair-system "$2"
+	;;
+*) die "usage: dwm-system-health-root scan-system | repair-system ACTION" ;;
+esac

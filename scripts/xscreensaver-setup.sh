@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-packages.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-packages.sh
+. "$lyona_lib/dwm-packages.sh"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -34,7 +41,9 @@ header "Installing xscreensaver"
 install_pkg() {
 	command -v pacman >/dev/null 2>&1 || fail "pacman is required; lyona supports Arch Linux only."
 	info "Installing with pacman"
-	sudo pacman -S --needed --noconfirm xscreensaver
+	local -a packages
+	mapfile -t packages < <(dwm_packages arch xscreensaver)
+	sudo pacman -S --needed --noconfirm "${packages[@]}"
 }
 
 if command -v xscreensaver &>/dev/null; then

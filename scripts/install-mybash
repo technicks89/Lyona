@@ -2,6 +2,12 @@
 
 gitpath="$HOME/.local/share/mybash"
 
+# The packages come from the shared map (Sync Sprint 12 S12-15), which is Bash:
+# this script is POSIX, so it asks bash for the list rather than sourcing it.
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-packages.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+
 # Upstream's setup.sh defines this and it did not come across with the rest.
 # Without it every call returned "command not found", which is falsy, so each
 # `! command_exists X` was always true: the "already installed" branches were
@@ -21,7 +27,9 @@ command_exists() {
 installDepend() {
 	if [ ! -f "/usr/share/bash-completion/bash_completion" ] || ! command_exists bash tar bat tree unzip fc-list git; then
 		printf "%b\n" "Installing Bash..."
-		sudo pacman -S --needed --noconfirm bash bash-completion tar bat tree unzip fontconfig git fzf
+		# shellcheck disable=SC2046 # one package name per word, by design
+		sudo pacman -S --needed --noconfirm $(bash -c '. "$1" && dwm_packages arch mybash-bootstrap' \
+			sh "$lyona_lib/dwm-packages.sh")
 	fi
 }
 

@@ -128,9 +128,11 @@ LIB_DIR = ${PREFIX}/lib/lyona
 INSTALL_DEFAULTS = config/hotkeys.toml config/themes.toml config/window-rules.toml
 INSTALL_DEFAULT_NAMES = $(notdir ${INSTALL_DEFAULTS})
 SHARE_DIR = ${PREFIX}/share/lyona
-PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/lyona-update-root
+PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/dwm-system-health-root \
+	scripts/lyona-update-root
 PRIVILEGED_HELPER_DIR = ${PREFIX}/libexec/lyona
 POLKIT_ACTIONS = config/polkit/com.lyona.settings-display.policy \
+	config/polkit/com.lyona.system-health.policy \
 	config/polkit/com.lyona.update.policy
 # polkit does not search PREFIX-relative paths; this is a fixed system path
 # regardless of PREFIX.
@@ -534,11 +536,20 @@ release: dwm ${THUMB} ${TOML_TOOL}
 		-C "$$work" -cf - "${RELEASE_NAME}" | gzip -n > "${RELEASE_ARCHIVE}"; \
 	echo "==> Created ${RELEASE_ARCHIVE}"
 
+# Every shell script under scripts/, found by its shebang rather than kept by
+# hand (Sync Sprint 12 S12-15): a hand-kept list had missed 13, including the
+# privileged dwm-settings-display-root. The sourced libraries (*.sh) start with
+# a "# shellcheck shell=" line, not a shebang, so they are added by name.
+HASH := \#
+SHELL_SCRIPTS = $(sort $(wildcard scripts/*.sh) $(shell for f in scripts/*; do \
+	[ -f "$$f" ] && head -n 1 -- "$$f" | grep -Eq '^$(HASH)!.*(/|env )(ba)?sh([[:space:]]|$$)' && \
+	printf '%s\n' "$$f"; done))
+
 check-shell:
-	shellcheck install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/dwm-flatpak-setup scripts/install-gearlever scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-update scripts/lyona-update-root scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shellcheck install.sh ${SHELL_SCRIPTS} tests/*.sh
 
 check-format:
-	shfmt -d install.sh scripts/dwm-accessibility-settings scripts/lyona-gtk-theme scripts/lyona-console-theme scripts/lyona-grub-theme scripts/lyona-plymouth-theme scripts/dwm-settings-toolkit scripts/dwm-session-launch scripts/dwm-default-apps scripts/dwm-diagnostics scripts/dwm-display-profile scripts/dwm-display-setup scripts/dwm-lock scripts/dwm-lock-watch scripts/dwm-keybinds scripts/dwm-panel-settings scripts/dwm-quickshell-launcher scripts/webapp-launch scripts/dwm-quickshell-controls scripts/dwm-quickshell-controlcenter scripts/dwm-quickshell-network scripts/dwm-quickshell-pointer scripts/dwm-quickshell-state scripts/dwm-quickshell-version-check scripts/dwm-settings scripts/dwm-settings-appearance scripts/dwm-settings-font scripts/dwm-settings-wallpaper scripts/dwm-settings-theme scripts/dwm-settings-provider scripts/dwm-status scripts/dwm-system-health scripts/dwm-terminal scripts/dwm-xdg-autostart scripts/dwm-flatpak-setup scripts/install-gearlever scripts/install-herdr scripts/install-mybash scripts/lyona-cachyos scripts/lyona-update scripts/lyona-update-root scripts/lyona-version scripts/quickshell-qmllint scripts/run-tests scripts/*.sh tests/*.sh
+	shfmt -d install.sh ${SHELL_SCRIPTS} tests/*.sh
 
 check-session-guards:
 	tests/test-autostart.sh
@@ -808,6 +819,12 @@ check-quickshell-queued-run-xvfb:
 check-settings-display-security:
 	@tests/test-settings-display-security.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
+# Root-only and container-only, like the display helper test above: the System
+# Health root helper's trust and request checks (Sync Sprint 12 S12-15).
+.PHONY: check-system-health-root-security
+check-system-health-root-security:
+	@tests/test-system-health-root-security.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 # Root-only and container-only, like the display helper test above: it runs
 # lyona-update-root as root and writes system paths (Sync Sprint 12 S12-01).
 .PHONY: check-update-root-backups
@@ -1060,6 +1077,8 @@ check-install-manifest: all
 	done; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-settings-display-root' \
 		"$$stage/usr/share/polkit-1/actions/com.lyona.settings-display.policy"; \
+	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-system-health-root' \
+		"$$stage/usr/share/polkit-1/actions/com.lyona.system-health.policy"; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/lyona-update-root' \
 		"$$stage/usr/share/polkit-1/actions/com.lyona.update.policy"; \
 	grep -Fqx 'Exec=/usr/bin/dwm' \

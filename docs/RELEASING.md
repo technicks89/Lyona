@@ -134,7 +134,10 @@ It's a short, opinionated wizard styled after linutil's `server-setup.sh`
 then keyboard layout, target disk, username/password,
 hostname, timezone (auto-detected and confirmed), and, only if an NVIDIA GPU
 is detected, a driver choice (default: open-source nouveau — the standard
-image never auto-installs proprietary drivers, per SPEC.md). There is no
+image never auto-installs proprietary drivers, per SPEC.md). The NVIDIA
+choice installs `nvidia-open` (or `nvidia-open-dkms` with any other kernel),
+which needs a Turing (GTX 16xx, RTX 20xx) or newer GPU; Arch no longer ships
+a driver for older cards outside the AUR, so those stay on nouveau. There is no
 desktop-environment or package picker; this always installs lyona.
 After a final "type yes to wipe `$DISK`" confirmation, it generates an
 `archinstall` JSON config (single btrfs root + ESP, systemd-boot, zram

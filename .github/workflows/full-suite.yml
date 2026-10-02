@@ -113,6 +113,11 @@ jobs:
       - name: Run the display helper security test
         run: make check-settings-display-security
 
+      # The same disposable root container suits the System Health root helper
+      # (Sync Sprint 12 S12-15).
+      - name: Run the system-health helper security test
+        run: make check-system-health-root-security
+
   update-helper-backups:
     name: update helper backups (root, disposable container)
     runs-on: ubuntu-latest

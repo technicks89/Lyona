@@ -191,6 +191,12 @@ fi
 grep -Fq 'unsupported system repair' "$work/system-repair.err"
 
 grep -Fq "trusted_file \"\$resolved\" || return 1" "$HELPER"
-grep -Fq "trusted_file \"\$resolved\" || continue" "$HELPER"
+# pkexec runs the root helper, never this script itself (Sync Sprint 12 S12-15).
+grep -Fq '/libexec/lyona/dwm-system-health-root' "$HELPER"
+# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
+if grep -Eq '"\$pkexec_command" "\$(SCRIPT_DIR|0)' "$HELPER"; then
+	printf 'dwm-system-health runs pkexec on itself\n' >&2
+	exit 1
+fi
 
 printf 'System health helper: PASS\n'
