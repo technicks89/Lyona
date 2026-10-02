@@ -132,7 +132,7 @@ grep -Fq 'validErrorCode.indexOf' "$system_model"
 grep -Fq 'seenUpdateIds[fields[1]]' "$system_model"
 grep -Fq 'maxListRecords' "$system_model"
 
-# The restart-guidance heuristic (docs/SYNC-P2-UPDATE-SNAPSHOT.md section 5)
+# The restart-guidance heuristic (92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md section 5)
 # must never be collapsed to a boolean here -- "unknown" is a distinct,
 # legitimate value from "none", not an error state.
 grep -Fq '"unknown"' "$system_model"
@@ -190,7 +190,7 @@ grep -Fq 'emit_capability system authorization' "$provider"
 test "$(grep -c 'SystemSettingsPane {' "$settings_window")" -eq 1
 test "$(grep -c '!== "system"' "$settings_window")" -eq 1
 
-# Sync Phase 4 (docs/SYNC-P4-DISCOVERY-EVENTS.md): live discovery monitoring.
+# Sync Phase 4 (92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md): live discovery monitoring.
 grep -Fq 'function create()' "$discovery_cycle"
 grep -Fq 'function owns(cycle, token)' "$discovery_cycle"
 grep -Fq 'unresolved: false' "$discovery_cycle"
@@ -213,7 +213,7 @@ grep -Fq '"watch-units"' "$provider_discovery"
 # batch at shutdown). helperCommand's own script already execs the real
 # helper, so this Process's PID already *is* the helper and monitor.signal()
 # reaches it directly -- no orphaning risk to guard against here. This
-# corrects docs/SYNC-P4-DISCOVERY-EVENTS.md's own terminatingCheckedCommand
+# corrects 92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md's own terminatingCheckedCommand
 # instruction, found wrong when the xvfb test's snapshot never left "idle"
 # with a real (non-instantly-exiting) watch-updates stub.
 # Sync Sprint 2 S2-05 (#286): each launch now gets its own dynamically
@@ -249,7 +249,7 @@ fi
 # phase document's exact wording ("Reload status to retry/reconcile").
 grep -Fq 'root.systemManagementModel.discoveryDetail' "$system_pane"
 
-# Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): confirmed dispatch and
+# Sync Phase 7 (92ec6e2:docs/SYNC-P7-OPERATION-SURFACE.md): confirmed dispatch and
 # the process/journal-control lifecycle for one operation at a time.
 operation_model=$repo/config/quickshell/systemmanagement/SystemOperationModel.qml
 operation_protocol=$repo/config/quickshell/systemmanagement/SystemOperationProtocol.js

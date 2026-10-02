@@ -235,7 +235,7 @@ class PackageKitBackend:
         """Keep discovery readable while rejecting an unknown or vulnerable daemon.
 
         Arch has no RPM database and no distribution backport to
-        disambiguate (docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate).
+        disambiguate (92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate).
         The running daemon's own D-Bus version properties are the whole gate;
         Arch ships PackageKit 1.3.6 in `extra`, above the floor.
         """

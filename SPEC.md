@@ -32,8 +32,9 @@ distributions are outside the supported product and validation contract.
 - A Wayland compositor or Wayland-native session.
 - Pixel-identical behavior across every theme, driver, display manager, or
   third-party desktop utility.
-- Automatic installation of proprietary GPU drivers without an explicit
-  per-install opt-in (interactive prompt or `LYONA_NVIDIA_DRIVER=1`).
+- Installation of proprietary GPU drivers without a per-install choice: the
+  installer's prompt, which recommends the NVIDIA driver on a supported NVIDIA
+  GPU, or `LYONA_NVIDIA_DRIVER=1` for the standalone postinstall.
 - Automatic firewall or kernel changes, or automatic changes to which entry
   the bootloader boots, outside a dedicated image flow that documents and
   validates them. Boot *appearance* -- the Plymouth splash and the GRUB menu
@@ -52,7 +53,7 @@ The primary release target is the Arch Linux desktop image:
 | --- | --- |
 | Base media | lyona Arch installer image (archiso-based; see `docs/RELEASING.md`) |
 | Session | Xorg with dwm and the managed Quickshell shell |
-| Variants | One standard image; proprietary NVIDIA driver is a per-install opt-in, not a separate image |
+| Variants | One image for every GPU; the installer recommends the proprietary NVIDIA driver on a supported NVIDIA GPU, with nouveau as the alternative |
 | Initial release architecture | x86_64 |
 
 Arch aarch64 is not currently a supported release target. Architecture-aware
@@ -277,7 +278,7 @@ unreachable CachyOS mirror leaves the install on the stock Arch repositories
 rather than failing it. The kernels installed there must not become the
 default boot entry, and the stock Arch kernel must remain installed and
 bootable. When
-more than one kernel is installed, the NVIDIA opt-in must use the DKMS driver
+more than one kernel is installed, the NVIDIA driver must be the DKMS driver
 with headers for every installed kernel.
 
 A source-checkout update of an existing live installation must use the complete
@@ -420,13 +421,13 @@ The maintained Arch dependency map covers these capabilities:
 
 | Capability | Arch package examples |
 | --- | --- |
-| Compiler and make | `gcc`, `make`, `pkgconf-pkg-config` |
-| Xlib development | `libX11-devel` |
-| Xft and fonts | `libXft-devel`, `fontconfig-devel`, `freetype-devel` |
-| Xinerama | `libXinerama-devel` |
-| Xrender | `libXrender-devel` |
-| Imlib2 | `imlib2-devel` |
-| XCB | `libxcb-devel`, `xcb-util-devel` |
+| Compiler and make | `gcc`, `make`, `pkgconf`, `base-devel` |
+| Xlib development | `libx11` |
+| Xft and fonts | `libxft`, `fontconfig`, `freetype2` |
+| Xinerama | `libxinerama` |
+| Xrender | `libxrender` |
+| Imlib2 | `imlib2` |
+| XCB | `libxcb`, `xcb-util` |
 
 These are capability mappings, not immutable package lists. Availability must
 be validated against the supported Arch release.
@@ -610,7 +611,7 @@ root shell that automatically launches `lyona-install`
 (`archiso/airootfs/root/lyona-install.sh`) — no command to type. It is a
 short wizard styled after linutil's `server-setup.sh` (arrow-key
 `select_option` menus, a redrawn banner between steps, the CTT logo): keyboard,
-disk, user, hostname, timezone, and an NVIDIA opt-in prompt when applicable,
+disk, user, hostname, timezone, and an NVIDIA driver choice when applicable,
 with no desktop-environment or package picker, that generates an
 `archinstall` JSON config and runs it fully unattended (`--silent`) — the
 base install (disk partitioning, filesystem, systemd-boot, user account) is
@@ -627,14 +628,20 @@ not automation: Arch has no first-party unattended installer service, so
 this project generates and drives `archinstall`'s own non-interactive config
 format itself rather than relying on an upstream automation contract.
 
-The standard image must not include NVIDIA-only packages or kernel arguments.
-Installing the proprietary NVIDIA driver is an explicit per-install opt-in
-(the `lyona-install` wizard's prompt, or `LYONA_NVIDIA_DRIVER=1` for
-the standalone postinstall script) and may install the documented NVIDIA
-driver packages, blacklist Nouveau, and configure NVIDIA DRM modesetting.
-Any variant may enable the documented third-party
-repositories needed by the selected desktop package set; choosing the
-dedicated image is the user's consent to that image policy.
+There is one image for every GPU (decision D-17a). It must not include
+NVIDIA-only packages or kernel arguments.
+
+- **The NVIDIA choice:** on an NVIDIA GPU the current driver supports, the
+  `lyona-install` wizard recommends the proprietary driver, with nouveau as the
+  alternative. The standalone postinstall script installs it only with
+  `LYONA_NVIDIA_DRIVER=1`.
+- **What the driver brings:** it may install the documented NVIDIA driver
+  packages, blacklist Nouveau, and configure NVIDIA DRM modesetting.
+- **Older cards:** a GPU the current driver no longer supports keeps nouveau,
+  and the installer says so. It must never end with no working driver.
+- **Third-party repositories:** the image may enable the documented ones needed
+  by the selected desktop package set. Choosing the lyona image is the user's
+  consent to that policy.
 
 Static archiso profile checks (package-map sync, script syntax) are necessary
 but not sufficient. A released image must record its build host, archiso
@@ -788,13 +795,13 @@ In a real or nested X11 session:
   the upstream `releng` boot behavior.
 - The build host's `archiso` package version and the resulting image checksum
   are recorded.
-- At least the standard image completes a base Arch install and the
-  postinstall script in a VM, reboots, reaches LightDM and a usable dwm
-  session, and starts the managed Quickshell shell.
-- NVIDIA image behavior is not described as hardware-verified unless tested on
+- The image completes a base Arch install and the postinstall script in a VM,
+  reboots, reaches LightDM and a usable dwm session, and starts the managed
+  Quickshell shell.
+- The NVIDIA driver path is not described as hardware-verified unless tested on
   representative NVIDIA hardware.
-- The validation record states firmware mode, architecture, image variant,
-  Arch release, and any untested paths.
+- The validation record states firmware mode, architecture, GPU and driver
+  path, Arch release, and any untested paths.
 
 ## 10. Current Gap
 

@@ -6,7 +6,7 @@ import "SystemDiscoveryCycle.js" as Cycle
 
 /*
  * Generic lifecycle over a fixed set of bounded `watch-*` event streams.
- * Sync Phase 4 (docs/SYNC-P4-DISCOVERY-EVENTS.md), ported from upstream's
+ * Sync Phase 4 (92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md), ported from upstream's
  * `a6d65c08` (#260) refactor -- the generic form is ported directly rather
  * than writing an updates-only version and refactoring later. Only the
  * "updates" domain has a helper behind it at this boundary (SystemUpdateDiscovery);
@@ -177,7 +177,7 @@ Scope {
         // own script chain runs the real helper via `exec`, so this Process's
         // PID already *is* the helper (no intermediate command-substitution
         // fork to orphan), and monitor.signal() below reaches it directly.
-        // See docs/SYNC-P4-DISCOVERY-EVENTS.md's "Correction, found during
+        // See 92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md's "Correction, found during
         // implementation" note -- the doc's own terminatingCheckedCommand
         // instruction was wrong for this streaming case.
         const identity = Object.freeze({ generation: root.generation, serial: ++root.launchSequence,

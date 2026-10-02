@@ -4,7 +4,7 @@ import "../../config/quickshell/systemmanagement/SystemDiscoveryCycle.js" as Cyc
 
 /*
  * Direct, non-UI tests for the pure discovery-cycle state machine
- * (Sync Phase 4, docs/SYNC-P4-DISCOVERY-EVENTS.md). Cycle.js is plain
+ * (Sync Phase 4, 92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md). Cycle.js is plain
  * functions over a plain object with no QML property signals inside the
  * completion handoff -- exactly what makes it safe to test as pure logic,
  * without a Process, a helper, or a display, per the phase document's own

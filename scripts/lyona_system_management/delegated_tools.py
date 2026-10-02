@@ -27,7 +27,7 @@ DELEGATED_TOOLS = {
 PASSWORD_TERMINALS = {"alacritty": ("-e",), "kitty": (), "st": ("-e",), "xterm": ("-e",)}
 
 
-# Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §3): delegated
+# Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §3): delegated
 # administration for accounts/password/printers/software-sources.
 # `password-open` has no fixed executable -- it resolves the user's already
 # -configured terminal via Lyona's own `dwm-terminal --print-command`

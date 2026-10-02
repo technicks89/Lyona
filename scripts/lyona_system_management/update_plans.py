@@ -312,7 +312,7 @@ def _restart_heuristic_hint(update_rows: Sequence[UpdateRow]) -> str:
     """Arch-only fallback for a backend that reports no restart signal at all.
 
     Fedora's PackageKit backend always emits RequireRestart. Whether the alpm
-    backend does the same is unverified (docs/SYNC-P2-UPDATE-SNAPSHOT.md
+    backend does the same is unverified (92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md
     section 5); this only runs when a transaction succeeded with pending
     updates but zero RequireRestart signals were seen. Reporting "none" in
     that situation would tell a user it is safe to skip a reboot after a

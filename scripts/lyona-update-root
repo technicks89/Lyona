@@ -286,12 +286,15 @@ install-system)
 				die "could not read config.h as the invoking user"
 		fi
 
-		# The compiled binary is rebuilt here, from source this process
-		# just verified, rather than trusted from the unprivileged
-		# caller's own prior build: a "dwm" copied in from the staging
-		# directory would be installed system-wide, where every user who
-		# selects it at login runs whatever the invoking user last put
-		# there -- not only their own session.
+		# The compiled binary is rebuilt here, rather than trusted from the
+		# unprivileged caller's own prior build: a "dwm" copied in from the
+		# staging directory would be installed system-wide, where every user
+		# who selects it at login runs whatever the invoking user last put
+		# there. The release source is the one verified above. The invoking
+		# user's config.h, copied in just before, is not verified: it is C,
+		# compiled into the dwm every user runs. That is decision D-18 (the
+		# runtime TOML files are the way to customise); approving the update
+		# approves that config.h too (Sync Sprint 12 S12-17).
 		if ! "$make_path" -C "$verified_dir" clean; then
 			die "failed to clean the verified build tree"
 		fi

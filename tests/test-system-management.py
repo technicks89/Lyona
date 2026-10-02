@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 """Contract tests for the bounded, read-only update snapshot and discovery.
 
-Sync Phase 2 (docs/SYNC-P2-UPDATE-SNAPSHOT.md). Ported from upstream's
+Sync Phase 2 (92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md). Ported from upstream's
 tests/test-system-management.py at PR #208 (bd87fd3c) and retargeted:
 Fedora/RPM cases dropped (this provider never had them — see the phase
 document's "Correction, found during implementation" note), plus new
 coverage for the Arch-only restart heuristic. Sync Phase 4
-(docs/SYNC-P4-DISCOVERY-EVENTS.md) adds UpdateEventMonitorTests, ported
+(92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md) adds UpdateEventMonitorTests, ported
 from upstream's `a30f5fed` (#238) nearly unchanged — the monitor is
 distro-neutral (it never touches PackageKit's alpm-vs-dnf backend, only
 the manager's own D-Bus signals).
@@ -1855,7 +1855,8 @@ with mock.patch.dict(provider["ntp_sample_output"].__globals__,
 
 
 class RegionalMutationTests(unittest.TestCase):
-    """Sync Phase 9 (docs/SYNC-P9-REGIONAL-DELEGATION.md), ported from upstream's
+    """Sync Phase 9 (upstream's regional delegation; Lyona's record is the retired
+    92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md), ported from upstream's
     0eae066d nearly unchanged: RegionalMutation's lifecycle is distro-neutral
     (timedate1/locale1 D-Bus contracts, not a package-manager concern). The one
     real divergence is upstream's `read_fedora_identity()` precondition on
@@ -10055,7 +10056,7 @@ class SnapshotValidationTests(unittest.TestCase):
 
 
 class PackageKitSafetyTests(unittest.TestCase):
-    """docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate: Arch has no RPM
+    """92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md#3b-the-rpm-version-gate: Arch has no RPM
     database and no distribution backport to disambiguate. The whole upstream
     RPM/backport-identity gate (packagekit_security_floor(),
     _require_running_backport_identity(), read_fedora_identity()) is deleted

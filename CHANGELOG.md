@@ -17,6 +17,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The live medium's installer now recommends the proprietary NVIDIA driver when it detects an NVIDIA GPU the current
+  driver supports, with nouveau as the alternative. It is one image for every GPU (decision D-17a; Sync Sprint 12
+  S12-17).
+  - An older NVIDIA card keeps nouveau without a prompt.
+  - The install summary says which driver each machine gets, and why.
+- AGENTS.md, SPEC.md and `docs/RELEASING.md` now match the code (Sync Sprint 12 S12-17):
+  - one image for every GPU;
+  - per-screen panels;
+  - Arch package names in SPEC 5.8, which still listed Fedora's;
+  - citations of retired design documents now name a commit that holds them, and a contract test keeps them
+    resolvable.
 - `dwm-system-management` is now a short launcher over the `lyona_system_management` Python package, installed to
   `PREFIX/lib/lyona/python` (Sync Sprint 12 S12-16).
   - The package is 14 modules, one per domain, instead of one 10,379-line file. Behaviour is unchanged.

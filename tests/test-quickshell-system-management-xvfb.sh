@@ -119,10 +119,10 @@ cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
 	"$data_home/checkout/scripts/"
 
 # A stub dwm-system-management: one pending kernel update (exercising the
-# restart heuristic's "system" branch, docs/SYNC-P2-UPDATE-SNAPSHOT.md
+# restart heuristic's "system" branch, 92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md
 # section 5) and one dependency-preview row, so the pane's counts and IPC
 # probes have real content to assert against without a live PackageKit
-# daemon. Sync Phase 9 follow-up (docs/SYNC-P9-REGIONAL-MUTATION.md §5.7)
+# daemon. Sync Phase 9 follow-up (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §5.7)
 # adds protocol minor 1's native rows plus fixed regional-choices/
 # regional-preview/timezone-set/ntp-set/locale-set/*-open responses, so
 # SystemRegionalControls has real content for a full preview -> confirm ->
@@ -553,7 +553,7 @@ test_stage='validating the Sync Phase 7 operation surface mounted cleanly'
 # unavailable, so operationModel never has evidence to recover and
 # SystemUpdateControls' prepare buttons stay disabled -- this stub cannot
 # exercise a live confirm/dispatch/watch/cancel/ack cycle (that needs a
-# PackageKit-transaction-capable stub, tracked in docs/SYNC-P7-OPERATION-SURFACE.md).
+# PackageKit-transaction-capable stub, tracked in 92ec6e2:docs/SYNC-P7-OPERATION-SURFACE.md).
 # What this does prove: SystemOperationModel and SystemUpdateControls mount
 # and settle to their idle defaults against a real Quickshell process,
 # without a binding error or crash.
@@ -658,7 +658,7 @@ if [ "$still_running" -eq 1 ]; then
 	exit 1
 fi
 
-# Sync Phase 9 follow-up (docs/SYNC-P9-REGIONAL-MUTATION.md §5.7): a full
+# Sync Phase 9 follow-up (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §5.7): a full
 # preview -> confirm -> dispatch -> verified-result cycle, and delegated-
 # launch availability matching D-3 -- run last, after every existing
 # assertion above, since operationModel/discoveryModel are shared with the
