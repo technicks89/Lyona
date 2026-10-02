@@ -465,7 +465,7 @@ visible so a closed milestone stops implying they happened.
 | --- | --- | --- | --- |
 | S1-10 / D-4 | `pacman -Sup --dbpath "$CHECKUPDATES_DB"` stays read-only (no root, no live `pacman.lck`) | Real CachyOS install; `strace -f -e trace=openat,flock` | Result in `UPSTREAM-SYNC.md` "Open decisions" |
 | S4-01 | Picom NVIDIA backend | NVIDIA hardware | Backend chosen, tearing/flicker notes |
-| S4-02 | Media/image defaults on a fresh install, both ISOs | Fresh installs of standard and NVIDIA ISO | `xdg-mime query` output |
+| S4-02 | Media/image defaults on a fresh install, both ISOs (one image since S12-17, D-17a) | Fresh installs of the ISO on a machine without and with an NVIDIA GPU | `xdg-mime query` output |
 | S4-06 | Full privileged `lyona-update` run | Real installed system | Before/after version, rollback result |
 | S5-01, S5-03 | Settings panes stay put while loading; floating toggles shrink to 85% | Real desktop, slow provider | Short manual log |
 | S5-02 | `install-gearlever` refuses an unverified Flathub remote | Real Flatpak setup | Command output |

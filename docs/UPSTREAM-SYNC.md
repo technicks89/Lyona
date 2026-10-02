@@ -132,7 +132,7 @@ so they aren't re-applied.
 | DPI hot reload | `2a49ffd` | Lyona-only. `Theme.uiScale`/`Theme.dp()` don't exist upstream. See D-7 |
 | `82abbf9` (`#326`) *CI: desktop smoke only* | `CHANGELOG.md` "Reduce hosted CI to one Arch build and desktop smoke job" | **Done.** Sprint 1 S1-01 adds the manual full-suite workflow beside it |
 | `4d776bc` (`#191`) *group accessibility settings* | — | Grouping **diverged by decision** (sync Phase 6). Refresh coalescing ported in S3-09 |
-| `c8f574b` (`#188`) *qualify optional component isolation* | `check-phase5-optional-components`, `tests/test-quickshell-settings-xvfb.sh` | **Ported in S3-09, adapted.** `dwm-settings-personalization` maps to `dwm-settings-toolkit` (no delegate or text-size records in Lyona), so the qualification compares the toolkit and managed-font providers instead; `docs/P5-OPTIONAL-COMPONENTS.md` and `docs/P5-STATUS.md` are not ported |
+| `c8f574b` (`#188`) *qualify optional component isolation* | `check-phase5-optional-components`, `tests/test-quickshell-settings-xvfb.sh` | **Ported in S3-09, adapted.** `dwm-settings-personalization` maps to `dwm-settings-toolkit` (no delegate or text-size records in Lyona), so the qualification compares the toolkit and managed-font providers instead; upstream's `P5-OPTIONAL-COMPONENTS.md` and `P5-STATUS.md` docs are not ported |
 | Fedora image, kickstart, Anaconda, offline-image, release commits: `40cbdc8` (`#293`), `0c5daf0` (`#292`), `44800ba` (Fedora half), `a218d63`, `536e4a5`, `975174d`, `c679937` (image half), `f956582` (`#325`), `c2a98ae`, `5c875cc` | archiso, `build-iso.yml` | **N/A.** Reasons and evidence: [Declined Fedora, image and release work](#declined-fedora-image-and-release-work-s4-07) |
 | `45063de`, `a08985a`, `639c5b4` | — | Empty chore commits |
 
@@ -460,7 +460,7 @@ The only way to catch DPI, compositor and real-service interactions:
 3. High contrast + reduced motion, then hot-reload a theme. The palette changes **and** the overrides survive.
 4. Closed-CPU baseline: 30 s closed vs 30 s with Settings open and with the Control Center open. New watchers (time, locale, accounts, printers, mounts, Picom) must leave it flat.
 5. `make install` / `make uninstall` round-trip, which proves every new helper reached `INSTALL_COMMANDS`.
-6. Standard **and** NVIDIA ISO installs (Sprint 4).
+6. ISO installs on a machine without and with an NVIDIA GPU (Sprint 4; one image since S12-17, D-17a).
 
 ## Commit and tracking
 
@@ -478,8 +478,11 @@ below were retired.
 
 ### Retired plan documents
 
-Removed on 2026-09-16 once implemented. Code comments that still cite them
-resolve from git history (`git show 92ec6e2:docs/<name>`):
+Removed on 2026-09-16 once implemented. Code comments that still cite one write
+it as a `git show` argument, `<commit>:docs/<name>`, naming a commit that holds
+it; `92ec6e2` holds all of these (Sync Sprint 12 S12-17).
+`tests/test-shell-contracts.sh` fails on a citation of a missing document
+without a commit, or with a commit that does not hold it:
 
 `SYNC-P1-SYSTEM-PROVIDER-DECISION.md`, `SYNC-P2-UPDATE-SNAPSHOT.md`,
 `SYNC-P3-SYSTEM-PANE.md`, `SYNC-P4-DISCOVERY-EVENTS.md`,
@@ -488,7 +491,8 @@ resolve from git history (`git show 92ec6e2:docs/<name>`):
 `SYNC-P9-REGIONAL-MUTATION.md`, `P6-UPDATE-OVERVIEW.md`,
 `P6-UPDATE-HELPER.md`, `P6-UPDATE-SURFACE.md`.
 
-Earlier: `SYNC-P0-DPI-GATE.md`, `SYNC-P1-STANDALONE.md`,
+Earlier (cited as `4783fe1:docs/SYNC-P0-DPI-GATE.md` and
+`4294dc9:docs/SYNC-P5-CONTRAST-MOTION.md`): `SYNC-P0-DPI-GATE.md`, `SYNC-P1-STANDALONE.md`,
 `P5-PANEL-WIDGETS-PORT.md`, `P5-SETTINGS-LAYOUT-PORT.md`,
 `SYNC-P4-A11Y-CAPABILITIES.md`, `SYNC-P5-CONTRAST-MOTION.md`,
 `SYNC-P6-A11Y-CONTROLS.md`, `SYNC-P7-XKB-INPUT.md`, `SYNC-P8-NOTIFICATIONS.md`,

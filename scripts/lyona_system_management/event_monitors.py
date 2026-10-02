@@ -199,7 +199,7 @@ class UpdateEventMonitor:
         return self.exit_code
 
 
-# Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §4): the generic
+# Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §4): the generic
 # authenticated-owner pattern watch-regional/watch-accounts/watch-units share,
 # extending UpdateEventMonitor's bounded-setup/dirty-flag shape. Each fixed
 # name owner is authenticated (GetNameOwner, matched) before enabling

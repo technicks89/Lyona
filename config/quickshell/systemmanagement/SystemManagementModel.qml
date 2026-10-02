@@ -7,30 +7,30 @@ import "SystemInformationProtocol.js" as Information
 /*
  * Bounded, read-only Arch update snapshot from dwm-system-management.
  *
- * Sync Phase 3 (docs/SYNC-P3-SYSTEM-PANE.md) added the on-demand `snapshot`
+ * Sync Phase 3 (92ec6e2:docs/SYNC-P3-SYSTEM-PANE.md) added the on-demand `snapshot`
  * fetch, gated by settingsVisible the same way every other Settings-only
  * model in this shell already is -- never polled, and closing the section
  * stops any fetch this model owns. Sync Phase 4
- * (docs/SYNC-P4-DISCOVERY-EVENTS.md) replaces "click Reload and hope" with
+ * (92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md) replaces "click Reload and hope" with
  * a bounded live subscription (SystemUpdateDiscovery) that coalesces reads:
  * while the pane is open, the helper watches PackageKit's manager signals
  * and this model re-reads only when told to, never per signal. Sync Phase 4
  * was the last read-only phase before the recovery journal (Sync Phase 5)
  * and confirmed mutation (Sync Phase 6, below).
  *
- * The helper is bounded (docs/SYNC-P2-UPDATE-SNAPSHOT.md), but this model is
+ * The helper is bounded (92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md), but this model is
  * the second line of defence: every record is re-validated against explicit
  * allowlists rather than passed through to the UI, a missing mandatory
  * record fails the whole snapshot instead of rendering a partial one, and a
  * snapshot without a trailing `complete\tsnapshot` is discarded whole.
  *
- * Sync Phase 6 (docs/SYNC-P6-UPDATE-EXECUTION.md) turns the journal into a
+ * Sync Phase 6 (92ec6e2:docs/SYNC-P6-UPDATE-EXECUTION.md) turns the journal into a
  * working execution owner: `active-operation`/`terminal-handoff` records
  * (from the helper's `build_managed_snapshot()`) report an in-progress or
  * unacknowledged-result operation so a Quickshell restart mid-update can
  * reattach via `watch-operation` rather than showing nothing.
  *
- * Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md) adds the confirm/cancel
+ * Sync Phase 7 (92ec6e2:docs/SYNC-P7-OPERATION-SURFACE.md) adds the confirm/cancel
  * surface: `updateActionReason()`/`prepareUpdate()`/`confirmUpdate()`/
  * `discardUpdate()` own visible confirmation as a captured snapshot (the
  * generation, this model's own read counter, and the discovery cycle epoch
@@ -205,7 +205,7 @@ Scope {
     readonly property var validErrorCode: ["malformed", "timeout", "missing-provider", "permission-denied",
         "unsupported", "network", "repository", "conflict", "signature", "internal", "package", "canceled"]
 
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md): protocol minor 1's
+    // Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md): protocol minor 1's
     // regional/accounts/printers/sources records. Four fixed owners, each
     // failing independently -- a malformed regional record must not blank
     // the accounts list, matching the helper's own per-owner build_native_

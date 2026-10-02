@@ -15,6 +15,8 @@ fail() {
 
 # shellcheck source=lyona-ui.sh
 source "${LYONA_UI_LIB:-/root/lyona-ui.sh}"
+# shellcheck source=lyona-nvidia.sh
+source "${LYONA_NVIDIA_LIB:-/root/lyona-nvidia.sh}"
 
 require_uefi() {
 	if [[ ! -d /sys/firmware/efi ]]; then
@@ -175,19 +177,48 @@ ask_timezone() {
 	[[ -n $TIMEZONE && -f /usr/share/zoneinfo/$TIMEZONE ]] || fail "unknown timezone: '$TIMEZONE'"
 }
 
+# One image for every GPU (D-17a, Sync Sprint 12 S12-17): on an NVIDIA GPU the
+# current driver supports, the proprietary driver is the recommended choice and
+# nouveau the alternative. An older card keeps nouveau, which the summary says;
+# Sync Sprint 14 adds the legacy drivers.
 ask_nvidia() {
 	NVIDIA_OPT_IN=0
+	NVIDIA_DETECTED=0
+	NVIDIA_OLDER_GPU=0
 	command -v lspci >/dev/null 2>&1 || return 0
 	if ! lspci | grep -E "VGA|3D|Display" | grep -qE "NVIDIA|GeForce"; then
 		return 0
 	fi
+	NVIDIA_DETECTED=1
+	if ! nvidia_open_supported >/dev/null; then
+		NVIDIA_OLDER_GPU=1
+		return 0
+	fi
 
+	# Like every other prompt here, a dismissed or failed prompt aborts: the
+	# proprietary driver is installed only when it was chosen.
 	local choice
 	choice=$(gum choose \
-		"nouveau (open-source, default)" "nvidia (proprietary)" \
-		--header "NVIDIA GPU detected. Select driver (nvidia needs a GTX 16xx/RTX 20xx or newer):") || true
-	[[ $choice == "nvidia (proprietary)" ]] && NVIDIA_OPT_IN=1
+		"nvidia (proprietary, recommended)" "nouveau (open-source)" \
+		--header "NVIDIA GPU detected. Select driver:") || fail "aborted."
+	case $choice in
+	"nvidia (proprietary, recommended)") NVIDIA_OPT_IN=1 ;;
+	"nouveau (open-source)") ;;
+	*) fail "aborted." ;;
+	esac
 	return 0
+}
+
+nvidia_summary() {
+	if [[ ${NVIDIA_DETECTED:-0} != 1 ]]; then
+		echo "not needed (no NVIDIA GPU detected)"
+	elif [[ $NVIDIA_OPT_IN == 1 ]]; then
+		echo "proprietary (recommended)"
+	elif [[ ${NVIDIA_OLDER_GPU:-0} == 1 ]]; then
+		echo "nouveau (this GPU predates the current NVIDIA driver)"
+	else
+		echo "nouveau"
+	fi
 }
 
 confirm_and_proceed() {
@@ -200,7 +231,7 @@ Hostname:   $HOSTNAME
 Username:   $USERNAME
 Keyboard:   $KEYMAP
 Timezone:   $TIMEZONE
-NVIDIA driver: $([[ $NVIDIA_OPT_IN == 1 ]] && echo "proprietary (opt-in)" || echo "nouveau (default)")
+NVIDIA driver: $(nvidia_summary)
 EOF
 		)"
 	echo

@@ -1081,6 +1081,51 @@ details are in [`SYNC-SPRINT-12-S12-16-SPLIT.md`](SYNC-SPRINT-12-S12-16-SPLIT.md
 ## S12-17: Docs and specs agree with the code
 
 **Source:** A (Medium), F, S. **Verified.** D-17a and D-17b decided.
+**Implemented (2026-10-02).** Where it differs from the text below:
+
+- **Part 1:** AGENTS.md now says the managed shell has one panel per screen
+  (SPEC.md), that the panels share state, and that the idle check covers more
+  than one screen when a change touches the panels.
+- **Part 2:**
+  - The documents now describe one image: AGENTS.md (the contract, the image
+    rules, the evidence), SPEC.md (the non-goal, the variants row, 5.11, 9.4),
+    `docs/RELEASING.md`, and the two live qualification trackers
+    (`UPSTREAM-SYNC.md` verification step 6, the S10-07 ledger row).
+  - The installer recommends the proprietary driver only on a card the current
+    driver supports. The device-ID check from S12-15 moved to
+    `archiso/airootfs/root/lyona-nvidia.sh`, which the installer and the
+    postinstall both source and the builder stages. An older card keeps
+    nouveau without a prompt.
+  - The summary says which driver the install gets, and gives the reason when
+    it is nouveau on an older card, or when no NVIDIA GPU is present.
+  - Dismissing or failing the prompt aborts the wizard, as every other prompt
+    does, so the proprietary driver is installed only when it is chosen (review
+    round).
+  - `test-arch-iso-builder.sh` runs `ask_nvidia` against a fake `lspci` and
+    `gum` in five cases: no NVIDIA, recommended, nouveau chosen, an older card,
+    and a dismissed prompt, which must abort. The dismissed case fails against
+    the old `|| true` handling.
+- **Part 3:** the whole SPEC 5.8 table had Fedora names, not just two. It now
+  lists the Arch build profile's packages.
+- **Part 4:**
+  - `docs/UPSTREAM-SYNC.md` already records that these documents were retired on
+    purpose. So the citations name a commit that holds them, as a `git show`
+    argument, `92ec6e2:docs/<name>.md`, and nothing was restored. The P0 DPI
+    gate record is cited from `4783fe1`, and P5 contrast and motion from
+    `4294dc9`.
+  - 39 citations changed, including `SYNC-P8-REGIONAL-READERS.md`, which the
+    review missed. `SECURITY.md`'s note on the P11 record now names `fcd007a`.
+  - `SYNC-P9-REGIONAL-DELEGATION.md` never existed in Lyona; it was upstream's.
+    The test docstring now names Lyona's record instead.
+  - `test-shell-contracts.sh` now fails on a cited document that is missing,
+    or on a commit that does not hold it. Planted examples of both are caught.
+  - The scan also covers `docs/UPSTREAM-SYNC.md` and
+    `docs/P6-SYSTEM-MANAGEMENT.md` (review round). That found two upstream
+    documents written as Lyona paths; they are now named as upstream's.
+- **Part 5:** S12-01, S12-02 and S12-12 had already corrected the comments they
+  named. One still overclaimed: the release build's comment in
+  `lyona-update-root` said root builds only verified source, but the invoking
+  user's `config.h` is compiled in too. It now says so, and cites D-18.
 
 1. **Per-screen panels. D-17b decided: keep them.** SPEC.md `:118-121` requires a
    per-screen Quickshell `Variants` panel (which `shell.qml:1398` implements);

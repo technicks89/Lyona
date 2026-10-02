@@ -4,7 +4,7 @@ import "../../config/quickshell/systemmanagement/SystemRegionalPreflightProtocol
 
 /*
  * Direct, non-UI tests for the pure regional-preflight stream parser
- * (Sync Phase 9, docs/SYNC-P9-REGIONAL-MUTATION.md). Protocol.js is plain
+ * (Sync Phase 9, 92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md). Protocol.js is plain
  * functions over a plain object with no QML dependency -- test it directly,
  * matching tst_system_discovery_cycle.qml's own precedent for testing a
  * pure library this way rather than only through SystemRegionalPreflightModel.

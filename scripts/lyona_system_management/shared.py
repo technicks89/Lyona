@@ -119,7 +119,7 @@ SYSTEMD_NAME = "org.freedesktop.systemd1"
 SYSTEMD_PATH = "/org/freedesktop/systemd1"
 SYSTEMD_MANAGER = "org.freedesktop.systemd1.Manager"
 CUPS_UNITS = ("cups.service", "cups.socket")
-# Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §4): both entries are
+# Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §4): both entries are
 # dispatchable from main() below, matching upstream. "security" is left out
 # of SystemProviderDiscovery.qml's domainDefinition table only -- no provider,
 # state, or action for a "security" domain exists anywhere in this file's

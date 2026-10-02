@@ -1156,7 +1156,7 @@ done
 
 # A theme change must still apply while a contrast override is active, and
 # must not clear the override. This is the whole reason Theme.qml's
-# paletteTextMuted split exists -- see docs/SYNC-P5-CONTRAST-MOTION.md.
+# paletteTextMuted split exists -- see 4294dc9:docs/SYNC-P5-CONTRAST-MOTION.md.
 XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 	"$data_home/checkout/scripts/dwm-accessibility-settings" set contrast high >/dev/null
 i=0

@@ -30,7 +30,7 @@ and privileged repair actions remain allowlisted and bounded.
 
 - **2026-09-06** — closed a read-only security audit of `scripts/`, `config/`,
   `install.sh`, and `config.mk` (see `CHANGELOG.md`'s "Security" section;
-  its planning document, `docs/SYNC-P11-SECURITY-HARDENING.md`, was removed
+  its planning document, `fcd007a:docs/SYNC-P11-SECURITY-HARDENING.md`, was removed
   once implemented): removed the last
   unverified `curl | sudo sh` and unpinned-clone-then-root-install paths in
   the installer (`install-mybash`'s Starship/fzf/zoxide fallbacks,

@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.core
 import "SystemRegionalPreflightProtocol.js" as Protocol
 
-// Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md), ported from upstream's
+// Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md), ported from upstream's
 // 0eae066d (PR #264) unchanged -- a read-only lifecycle model for the
 // `regional-choices`/`regional-preview` CLI streams, mirroring
 // SystemOperationModel.qml's Process/Timer/StdioCollector shape. One request

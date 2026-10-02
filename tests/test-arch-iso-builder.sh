@@ -168,25 +168,43 @@ for profile in microcode-intel microcode-amd gpu-nvidia gpu-nvidia-dkms gpu-amd 
 done
 
 # nvidia-open supports Turing and newer only; an older card (device ID below
-# 0x1e00) keeps nouveau rather than getting a driver that cannot load. Run the
-# postinstall's own check against a fake lspci.
-nvidia_check=$(awk '/^nvidia_open_supported\(\) \{$/, /^}$/' "$postinstall")
-[[ -n $nvidia_check ]] || fail 'lyona-postinstall.sh has no nvidia_open_supported'
+# 0x1e00) keeps nouveau rather than getting a driver that cannot load. The
+# check is shared by the installer and the postinstall (S12-15, S12-17); run it
+# against a fake lspci.
+nvidia_lib=$repo/archiso/airootfs/root/lyona-nvidia.sh
+grep -Fqx 'source /root/lyona-nvidia.sh' "$postinstall" ||
+	fail 'lyona-postinstall.sh does not source lyona-nvidia.sh'
 mkdir -p "$work/nvidia-bin"
 cat >"$work/nvidia-bin/lspci" <<'SCRIPT'
 #!/bin/sh
-# Answers only the VGA class query, the way lspci -n -mm -d 10de::0300 does.
+# Plain lspci: one NVIDIA VGA line when FAKE_NVIDIA_IDS is set, else Intel.
+# lspci -n -mm -d 10de::0300: one line per FAKE_NVIDIA_IDS entry.
+if [ "$#" = 0 ]; then
+	if [ -n "$FAKE_NVIDIA_IDS" ]; then
+		printf '01:00.0 VGA compatible controller: NVIDIA Corporation Device\n'
+	else
+		printf '00:02.0 VGA compatible controller: Intel Corporation Device\n'
+	fi
+	exit 0
+fi
 [ "$*" = "-n -mm -d 10de::0300" ] || exit 0
 for id in $FAKE_NVIDIA_IDS; do
 	printf '01:00.0 "0300" "10de" "%s" -ra1 "1458" "3717"\n' "$id"
 done
 SCRIPT
-chmod +x "$work/nvidia-bin/lspci"
+# gum choose answers FAKE_GUM_CHOICE; an empty one is the prompt dismissed.
+cat >"$work/nvidia-bin/gum" <<'SCRIPT'
+#!/bin/sh
+[ "$1" = choose ] || exit 0
+[ -n "$FAKE_GUM_CHOICE" ] || exit 1
+printf '%s\n' "$FAKE_GUM_CHOICE"
+SCRIPT
+chmod +x "$work/nvidia-bin/lspci" "$work/nvidia-bin/gum"
 nvidia_open_case() { # EXPECTED-STATUS DEVICE-IDS...
 	local want=$1 status=0
 	shift
 	FAKE_NVIDIA_IDS="$*" PATH="$work/nvidia-bin:$PATH" \
-		bash -c "$nvidia_check"$'\nnvidia_open_supported' >/dev/null || status=$?
+		bash -c '. "$1"; nvidia_open_supported' sh "$nvidia_lib" >/dev/null || status=$?
 	[[ $status == "$want" ]] ||
 		fail "nvidia_open_supported for '$*' returned $status, expected $want"
 }
@@ -197,6 +215,37 @@ nvidia_open_case 1 1d81      # Titan V, Volta
 nvidia_open_case 1 1380      # GTX 750 Ti, Maxwell
 nvidia_open_case 1 2684 1b80 # one older card is enough to keep nouveau
 nvidia_open_case 1           # no device ID read: do not guess
+
+# One image for every GPU (D-17a, S12-17): the installer recommends the
+# proprietary driver on a supported NVIDIA card, keeps nouveau without asking on
+# an older one, and its summary says which.
+ask_nvidia_case() { # WANT-OPT-IN WANT-SUMMARY GUM-CHOICE DEVICE-IDS...
+	local want=$1 summary=$2 choice=$3 got
+	shift 3
+	got=$(FAKE_NVIDIA_IDS="$*" FAKE_GUM_CHOICE="$choice" PATH="$work/nvidia-bin:$PATH" \
+		LYONA_INSTALL_LIB=1 LYONA_UI_LIB="$repo/archiso/airootfs/root/lyona-ui.sh" \
+		LYONA_NVIDIA_LIB="$nvidia_lib" \
+		bash -c '. "$1"; ask_nvidia; printf "%s|%s" "$NVIDIA_OPT_IN" "$(nvidia_summary)"' \
+		sh "$repo/archiso/airootfs/root/lyona-install.sh")
+	[[ $got == "$want|$summary" ]] ||
+		fail "ask_nvidia for '$*' answering '$choice' gave '$got', expected '$want|$summary'"
+}
+ask_nvidia_case 0 'not needed (no NVIDIA GPU detected)' ''
+ask_nvidia_case 1 'proprietary (recommended)' 'nvidia (proprietary, recommended)' 2684
+ask_nvidia_case 0 nouveau 'nouveau (open-source)' 2684
+# A dismissed prompt aborts the wizard, like every other prompt, so no
+# proprietary opt-in ever reaches the postinstall.
+dismissed_status=0
+dismissed=$(FAKE_NVIDIA_IDS=2684 FAKE_GUM_CHOICE='' PATH="$work/nvidia-bin:$PATH" \
+	LYONA_INSTALL_LIB=1 LYONA_UI_LIB="$repo/archiso/airootfs/root/lyona-ui.sh" \
+	LYONA_NVIDIA_LIB="$nvidia_lib" \
+	bash -c '. "$1"; ask_nvidia; printf "%s" "$NVIDIA_OPT_IN"' \
+	sh "$repo/archiso/airootfs/root/lyona-install.sh" 2>/dev/null) || dismissed_status=$?
+[[ $dismissed_status != 0 && $dismissed != 1 ]] ||
+	fail "a dismissed NVIDIA prompt did not abort (status $dismissed_status, opt-in '$dismissed')"
+# No prompt on an older card: the answer offered here is never read.
+ask_nvidia_case 0 'nouveau (this GPU predates the current NVIDIA driver)' \
+	'nvidia (proprietary, recommended)' 1b80
 
 awk '
 	/^\[multilib\]$/ { found = 1; next }
@@ -225,6 +274,7 @@ generate_installer_configs() {
 	PATH="$installer_bin:$PATH" \
 		LYONA_INSTALL_LIB=1 \
 		LYONA_UI_LIB="$repo/archiso/airootfs/root/lyona-ui.sh" \
+		LYONA_NVIDIA_LIB="$repo/archiso/airootfs/root/lyona-nvidia.sh" \
 		ENCRYPT="$encrypt" OUT_DIR="$out_dir" \
 		TEST_CACHYOS_PACKAGES="${cachyos_packages:-}" \
 		bash -c '
@@ -590,6 +640,12 @@ fi
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
 grep -Fq 'Wipe $DISK and install' "$repo/archiso/airootfs/root/lyona-install.sh" || {
 	printf 'the installer no longer confirms before wiping the disk.\n' >&2
+	exit 1
+}
+
+# The installer and the postinstall source the GPU check from the medium.
+[[ -f $work/staged/profile/airootfs/root/lyona-nvidia.sh ]] || {
+	printf 'lyona-nvidia.sh was not staged onto the live medium.\n' >&2
 	exit 1
 }
 

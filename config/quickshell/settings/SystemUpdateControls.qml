@@ -6,7 +6,7 @@ import qs.core
 pragma ComponentBehavior: Bound
 
 /*
- * Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): the visible confirm/
+ * Sync Phase 7 (92ec6e2:docs/SYNC-P7-OPERATION-SURFACE.md): the visible confirm/
  * cancel surface for SystemManagementModel's update actions. Confirmation
  * itself is owned by the model (prepareUpdate()/confirmUpdate()) -- this
  * component only renders `updateConfirmation` and forwards user intent, so

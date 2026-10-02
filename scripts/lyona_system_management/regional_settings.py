@@ -43,7 +43,7 @@ REGIONAL_MUTATION_SECONDS = 60
 REGIONAL_CALLBACK_LIMIT = 64
 
 
-# Sync Phase 8 (docs/SYNC-P8-REGIONAL-READERS.md): five bounded, read-only
+# Sync Phase 8 (92ec6e2:docs/SYNC-P8-REGIONAL-READERS.md): five bounded, read-only
 # `Gio` service readers -- system timezone/NTP, locale, the local
 # AccountsService account list, CUPS's running state, and the PackageKit
 # repository list. No mutation, no D-Bus write of any kind. Each is its own

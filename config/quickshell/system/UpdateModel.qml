@@ -15,7 +15,7 @@ Scope {
     property string providerDetail: "Loading update status"
 
     // Installed, from lyona-version (a separate helper from lyona-update,
-    // per docs/P6-UPDATE-SURFACE.md -- consistent especially must come from
+    // per 92ec6e2:docs/P6-UPDATE-SURFACE.md -- consistent especially must come from
     // there, since it is the one signal that an install is damaged).
     property string installedVersion: ""
     property string installedCommit: ""
@@ -280,7 +280,7 @@ Scope {
 
     // Written by lyona-update at every phase transition of apply/rollback,
     // both of which can restart Quickshell (destroying this model instance
-    // mid-action by design -- see docs/P6-UPDATE-SURFACE.md). Watching this
+    // mid-action by design -- see 92ec6e2:docs/P6-UPDATE-SURFACE.md). Watching this
     // file, rather than only the launching Process, is what lets a fresh
     // model instance report the outcome of an update that completed across
     // its own restart instead of that success looking like a crash.

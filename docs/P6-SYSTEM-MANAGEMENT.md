@@ -128,7 +128,7 @@ deadline (120 seconds for the discovery/simulate path, matching a
 here waits indefinitely on PackageKit.
 
 **Deliberate exclusions from the ported snapshot layer** (Sync Phase 2,
-`docs/SYNC-P2-UPDATE-SNAPSHOT.md`):
+`92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md`):
 
 - **DNF5 install-preview preservation.** Upstream's `#232` widens
   `normalize_plan()`'s requested/represented reconciliation so a DNF5
@@ -427,7 +427,7 @@ because they are correct independent of distro:
   (deadline expired after the mutating call was sent, before verification
   could complete) is `interrupted` — never success, never cancellation. This
   becomes a named contract exception in
-  [`SYNC-P9-REGIONAL-MUTATION.md`](SYNC-P9-REGIONAL-MUTATION.md), where it
+  `92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md` (retired), where it
   matters most (there is no `pacman.log`-equivalent for a `timedate1` call to
   fall back on).
 

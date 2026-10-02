@@ -36,7 +36,7 @@ NATIVE_WATCH_SECONDS = 120
 def control_output_writer(output, resources: contextlib.ExitStack) -> Callable[[bytes], int] | None:
     """Never set file-status flags on an inherited open-file description.
 
-    Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §4): ported from upstream's
+    Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §4): ported from upstream's
     0eae066d, promoted from "general robustness, out of scope" to required --
     the plain os.set_blocking(fd, False) this replaces mutates the *shared*
     open-file description an inherited stdout pipe/tty points at, which is

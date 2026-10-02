@@ -51,7 +51,7 @@ Scope {
         // Pure reads over Theme's own state, distinct from displayDpi() above
         // (which reads the helper-reported value via settingsModel). These
         // prove the DPI hot-reload path actually reached Theme.uiScale, not
-        // just that the helper discovered a DPI. See docs/SYNC-P0-DPI-GATE.md.
+        // just that the helper discovered a DPI. See 4783fe1:docs/SYNC-P0-DPI-GATE.md.
         function themeDisplayDpi(): int {
             return Theme.displayDpi;
         }
@@ -556,7 +556,7 @@ Scope {
             return result === null ? "" : result.actionId + ":" + result.state;
         }
 
-        // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.6): the preview
+        // Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §5.6): the preview
         // read is async (a real Process), so this returns whether the
         // request was accepted, matching updateApply()'s fire-and-forget
         // shape -- systemManagementRegionalPreviewResult() below is the

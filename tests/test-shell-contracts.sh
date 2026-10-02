@@ -245,4 +245,29 @@ grep -Fqx '        target: "settingsTest"' "$repo/config/quickshell/settings/Set
 	grep -v 'config/quickshell/shell.qml' | grep -v 'config/quickshell/settings/SettingsTestIpc.qml' | grep -q . ||
 	fail 'something outside the shell and the tests sets or reads LYONA_SHELL_TEST_IPC'
 
+# Sync Sprint 12 S12-17: a document the code or the user-facing docs cite must
+# exist, or, once retired, be cited as a `git show` argument naming a commit
+# that holds it: <commit>:docs/<name>.md (docs/UPSTREAM-SYNC.md, "Retired plan
+# documents"). The commit form is checked only in a git checkout.
+in_git=0
+git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 && in_git=1
+doc_refs=$(cd "$repo" && grep -rhoE '([0-9a-f]{7,40}:)?docs/[A-Za-z0-9_./-]+\.md' \
+	scripts config tests archiso install.sh Makefile README.md SPEC.md AGENTS.md \
+	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md docs/UPSTREAM-SYNC.md \
+	docs/P6-SYSTEM-MANAGEMENT.md 2>/dev/null | sort -u)
+printf '%s\n' "$doc_refs" >"$work/doc-refs"
+while IFS= read -r reference; do
+	[ -n "$reference" ] || continue
+	case $reference in
+	*:docs/*)
+		[ "$in_git" = 0 ] || git -C "$repo" cat-file -e "$reference" 2>/dev/null ||
+			fail "$reference: that commit does not hold that document"
+		;;
+	*)
+		[ -e "$repo/$reference" ] ||
+			fail "$reference is cited but does not exist; cite a retired one as <commit>:$reference"
+		;;
+	esac
+done <"$work/doc-refs"
+
 printf '%s\n' 'Shell contracts: PASS'

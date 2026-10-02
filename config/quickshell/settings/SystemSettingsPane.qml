@@ -39,7 +39,7 @@ Flickable {
         informationControls.revealFocusedControl();
     }
 
-    // Sync Phase 7 (docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
+    // Sync Phase 7 (92ec6e2:docs/SYNC-P7-OPERATION-SURFACE.md): SystemUpdateControls
     // moves keyboard/tab focus onto its own buttons and scroll lists, which
     // this Flickable does not know about on its own -- reveal() keeps that
     // focus target on screen the same way this pane already scrolls itself

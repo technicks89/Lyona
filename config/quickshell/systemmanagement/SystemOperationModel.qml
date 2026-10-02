@@ -152,7 +152,7 @@ Scope {
         return root.startOperation(action, "", generation);
     }
 
-    // Sync Phase 9 (docs/SYNC-P9-REGIONAL-MUTATION.md §5.1): regional and
+    // Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §5.1): regional and
     // delegated actions land in the same journal watch-operation/
     // ack-operation already serve, so they reuse this model's existing
     // recovery/watch/acknowledge machinery unchanged -- only a way to start

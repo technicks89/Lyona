@@ -133,11 +133,17 @@ It's a short, opinionated wizard styled after linutil's `server-setup.sh`
 `archinstall`'s own menu system: a `gum`-drawn LYONA wordmark banner,
 then keyboard layout, target disk, username/password,
 hostname, timezone (auto-detected and confirmed), and, only if an NVIDIA GPU
-is detected, a driver choice (default: open-source nouveau — the standard
-image never auto-installs proprietary drivers, per SPEC.md). The NVIDIA
-choice installs `nvidia-open` (or `nvidia-open-dkms` with any other kernel),
-which needs a Turing (GTX 16xx, RTX 20xx) or newer GPU; Arch no longer ships
-a driver for older cards outside the AUR, so those stay on nouveau. There is no
+is detected, a driver choice. There is one image for every GPU (SPEC.md).
+
+- **A supported card:** on a Turing (GTX 16xx, RTX 20xx) or newer GPU, the
+  choice recommends the proprietary driver, with open-source nouveau as the
+  alternative. The driver is `nvidia-open`, or `nvidia-open-dkms` with any
+  other kernel.
+- **An older card** keeps nouveau without a prompt, and the summary says why.
+  Arch no longer ships a driver for older cards outside the AUR; Sync Sprint
+  14 adds them.
+
+There is no
 desktop-environment or package picker; this always installs lyona.
 After a final "type yes to wipe `$DISK`" confirmation, it generates an
 `archinstall` JSON config (single btrfs root + ESP, systemd-boot, zram
@@ -158,8 +164,9 @@ run `archinstall` yourself, then run `/root/lyona-postinstall.sh`
 directly — it only requires a mounted target at `/mnt` with a regular user
 already created, and works the same whether `lyona-install` or a manual
 `archinstall` run got you there. It also handles CPU microcode, a GPU
-driver, NetworkManager, and low-memory swap (`LYONA_NVIDIA_DRIVER=1` for
-the same NVIDIA opt-in), before installing the lyona package profile
+driver, NetworkManager, and low-memory swap (`LYONA_NVIDIA_DRIVER=1` installs
+the proprietary NVIDIA driver, which the wizard would have recommended),
+before installing the lyona package profile
 itself.
 
 Install the image in a KVM virtual machine before treating it as

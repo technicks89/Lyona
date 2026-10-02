@@ -308,6 +308,8 @@ install -Dm755 "$repo_dir/archiso/airootfs/root/lyona-postinstall.sh" \
 info "Installing shared installer UI helpers..."
 install -Dm644 "$repo_dir/archiso/airootfs/root/lyona-ui.sh" \
 	"$profile_dir/airootfs/root/lyona-ui.sh"
+install -Dm644 "$repo_dir/archiso/airootfs/root/lyona-nvidia.sh" \
+	"$profile_dir/airootfs/root/lyona-nvidia.sh"
 install -Dm644 "$repo_dir/archiso/airootfs/root/lyona-logo.txt" \
 	"$profile_dir/airootfs/root/lyona-logo.txt"
 

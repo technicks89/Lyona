@@ -26,8 +26,10 @@ acceptance criteria.
 ## Arch Support Contract
 
 The sole supported platform is Arch Linux. The archiso-based lyona install
-medium is the current documented image base, with separate standard and
-NVIDIA variants. The existing-system installer also supports Arch Linux.
+medium is the current documented image base: one image for every GPU, whose
+installer detects an NVIDIA GPU and offers its driver, recommended, when the
+card supports it. The
+existing-system installer also supports Arch Linux.
 Every other operating-system identity must fail clearly instead of entering
 an untested package or installation path.
 
@@ -69,15 +71,18 @@ an untested package or installation path.
 
 - Base released images on the archiso profile documented in `SPEC.md` and
   `docs/RELEASING.md`, layered onto the system `releng` profile.
-- Preserve separate standard and NVIDIA image variants. Proprietary NVIDIA
-  changes belong only to the explicitly selected NVIDIA image.
+- Build one image for every GPU. The installer detects an NVIDIA GPU and
+  recommends the proprietary driver when the current driver supports the card,
+  with nouveau as the alternative; an older card keeps nouveau. NVIDIA-only
+  packages and kernel arguments are installed only on a machine that gets the
+  driver, never shipped in the image.
 - Keep `archiso/packages.x86_64` synced with the shared dependency map (see
   `tests/test-arch-iso-builder.sh`).
 - Run `make check-archiso` for archiso or ISO-builder changes, then validate a
   real or virtual install before claiming the image boots or reaches a usable
   desktop.
 - Record the archiso build-host version, resulting image checksum,
-  architecture, firmware mode, image variant, and untested hardware in
+  architecture, firmware mode, GPU and driver path, and untested hardware in
   release evidence.
 - This image path is best-effort and has not been boot-tested on real
   hardware or in a VM — do not claim it works until it has been.
@@ -151,12 +156,13 @@ an untested package or installation path.
   `tests/test-quickshell-plain-text.sh` enforces it.
 - Quickshell must not be an idle resource hog. Avoid resident hidden launcher
   models, overlapping `Process` launches from timers, and duplicate shell
-  providers such as running DMS alongside the lyona managed shell. On X11,
-  avoid per-screen `Variants { model: Quickshell.screens }` panels unless a
-  live CPU sample proves they idle cleanly; prefer a single `PanelWindow` for
-  the managed shell. After Quickshell changes, validate `quickshell --no-duplicate`
-  in a real or nested X11 session and confirm the Quickshell process is near
-  idle when the launcher is closed.
+  providers such as running DMS alongside the lyona managed shell. On X11, the
+  managed shell has one panel per screen, through `Variants { model:
+  Quickshell.screens }` (SPEC.md). The panels share state: no per-panel models
+  or `Process` watchers. After Quickshell changes, validate `quickshell
+  --no-duplicate` in a real or nested X11 session and confirm the Quickshell
+  process is near idle when the launcher is closed, with more than one screen
+  attached when the change touches the panels.
 - For Quickshell QML linting, stock `qmllint` must be given explicit Qt and
   Quickshell QML import roots, such as `/usr/lib/qt6/qml`, and a lint-only
   `qs.core/qmldir` module map when checking
