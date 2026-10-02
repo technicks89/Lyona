@@ -252,13 +252,13 @@ with tempfile.TemporaryDirectory(prefix='lifetime-') as temp:
                 parent_state = stat(parent)[0]
             except (FileNotFoundError, ProcessLookupError, IndexError):
                 parent_state = 'gone'
-            survivors.append({'name': ident[2], 'state': fields[0], 'parent': parent,
-                              'parent_command': command_line(parent), 'parent_state': parent_state})
+            survivors.append((ident, {'name': ident[2], 'state': fields[0], 'parent': parent,
+                                     'parent_command': command_line(parent), 'parent_state': parent_state}))
         if survivors:
             time.sleep(10)
-            for survivor, ident in zip(survivors, left):
+            for ident, survivor in survivors:
                 survivor['alive_10s_later'] = alive(ident)
-        report['survivors'] = survivors
+        report['survivors'] = [survivor for ident, survivor in survivors]
     finally:
         # TERM first, so the shell autostart relaunched and its watchers run their
         # own cleanup (their fifo folders); KILL whatever is left after 3 s.

@@ -56,33 +56,37 @@ parent_bound_record() {
 # with sed, awk and sleep, about 12 process starts and 4 wake-ups a second per
 # always-on watcher. Now:
 #
-# - A program child runs under `setpriv --pdeathsig TERM` (util-linux), so the
-#   kernel sends it SIGTERM the moment this shell exits, however it exits. A
-#   shell function child (power_watch_sources) runs as before and cleans up its
-#   own children on SIGTERM.
+# - When setpriv is available, a program child runs under
+#   `setpriv --pdeathsig TERM` (util-linux), so the kernel sends it SIGTERM the
+#   moment this shell exits, however it exits. A shell function child
+#   (power_watch_sources) runs as before and cleans up its own children on SIGTERM.
 # - A backstop loop covers the parent dying without taking this shell with it (a
 #   crash): it reads /proc with builtins every $LYONA_PARENT_BOUND_INTERVAL
-#   seconds (default 5), one `sleep` and nothing else, and it too is bound to
-#   this shell by pdeathsig, so it can never outlive it.
+#   seconds (default 5), one `sleep` and nothing else. When setpriv is available,
+#   it too is bound to this shell by pdeathsig.
 #
-# Without setpriv both still work, as a plain child and a plain loop.
+# Without setpriv both run as a plain child and a plain loop, relying on cleanup;
+# they may outlive this shell if cleanup does not run.
 #
 # setpriv arms the signal and then execs, so a parent that dies before the signal
-# is armed would never send it. Each bound process therefore starts through
-# parent_bound_guard, which, with the signal armed, checks its parent is still
-# the process that started it and exits if not, then execs the real command.
+# is armed would never send it. When setpriv is used, each bound process therefore
+# starts through parent_bound_guard, which, with the signal armed, checks its
+# parent is still the process that started it and exits if not, then execs the
+# real command.
 # shellcheck disable=SC2016 # expanded by the guard's own shell
 parent_bound_guard='[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"'
 
 # bound_to_this_shell PROGRAM ARGS...: always started in the background, with
-# `&`, it becomes PROGRAM, bound to this shell by the kernel: the moment this
-# shell exits, however it exits, PROGRAM gets SIGTERM (Sync Sprint 13 S13-01).
+# `&`, it becomes PROGRAM. When setpriv is available, it is bound to this shell
+# by the kernel: the moment this shell exits, however it exits, PROGRAM gets
+# SIGTERM (Sync Sprint 13 S13-01).
 # A watcher's EXIT trap stops its children too, but under load a watcher was
 # seen to die without its trap reaching them, leaving an `xprop -spy` or an
 # `inotifywait` to the init process. $! is PROGRAM's pid, as with a plain `&`,
 # so a caller's own cleanup still works. In the background subshell, $$ is this
-# shell, which the guard checks is still the parent once the signal is armed.
-# Without setpriv it is a plain background child. Never call it without `&`:
+# shell, which the guard checks is still the parent once setpriv arms the signal.
+# Without setpriv it is a plain background child and may outlive this shell if
+# cleanup does not run. Never call it without `&`:
 # it would replace this shell.
 bound_to_this_shell() {
 	if command -v setpriv >/dev/null 2>&1; then
@@ -151,15 +155,15 @@ run_parent_bound() {
 				kill -TERM "$child_pid" 2>/dev/null || :
 				exit 0
 			}
-			# The sleep is bound to this loop too, through the same guard.
+			# When setpriv is used, the sleep is bound to this loop too, through the same guard.
 			if [ "$bound" = bound ] && [ -n "$self" ]; then
 				setpriv --pdeathsig TERM -- sh -c "$guard" sh "$self" sleep "$interval"
 			else
 				sleep "$interval"
 			fi
 		done'
-	# The loop's sleep is bound to the loop the same way, so a stopped loop never
-	# leaves a sleep behind for the rest of its interval.
+	# When setpriv is used, the loop's sleep is bound to the loop the same way,
+	# so a stopped loop never leaves a sleep behind for the rest of its interval.
 	if [ -n "$parent_bound_wrap" ] && [ -n "$parent_bound_self" ]; then
 		setpriv --pdeathsig TERM -- sh -c "$parent_bound_guard" sh "$parent_bound_self" \
 			sh -c "$parent_bound_loop" sh \

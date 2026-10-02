@@ -204,7 +204,8 @@ watch_config() {
 	trap 'exit 143' HUP INT TERM
 	mkfifo -- "$watch_work/events"
 	: >"$watch_work/ready"
-	# Bound to this shell by the kernel, so it never outlives it (S13-01).
+	# When setpriv is available, the kernel binds inotifywait to this shell (S13-01).
+	# Without it, the child may outlive this shell if cleanup does not run.
 	bound_to_this_shell inotifywait -m -P \
 		-e attrib,close_write,create,delete,delete_self,moved_from,moved_to,move_self \
 		--format $'changed\t%e\t%f' -- "$config_dir" >"$watch_work/events" 2>"$watch_work/ready" &

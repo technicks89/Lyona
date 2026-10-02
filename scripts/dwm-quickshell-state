@@ -413,8 +413,9 @@ watch_state() {
 	mkfifo "$watch_dir/events"
 	exec 3<>"$watch_dir/events"
 
-	# Each xprop -spy is bound to this shell by the kernel, so none outlives it
-	# however it ends (Sync Sprint 13 S13-01).
+	# When setpriv is available, the kernel binds each xprop -spy to this shell
+	# (Sync Sprint 13 S13-01). Without it, children may outlive this shell if
+	# cleanup does not run.
 	if xprop -root _DWM_MONITOR_DESKTOPS >/dev/null 2>&1; then
 		bound_to_this_shell xprop -root -spy \
 			DWM_TAG_UPDATE \

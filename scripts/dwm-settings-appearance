@@ -1401,7 +1401,8 @@ watch_inventory() {
 	exec {inventory_watch_fd}<>"$inventory_watch_work/events"
 	trap inventory_watch_cleanup EXIT
 	trap 'exit 143' HUP INT TERM
-	# Bound to this shell by the kernel, so it never outlives it (S13-01).
+	# When setpriv is available, the kernel binds inotifywait to this shell (S13-01).
+	# Without it, the child may outlive this shell if cleanup does not run.
 	bound_to_this_shell inotifywait -m -P \
 		-e attrib -e close_write -e create -e delete -e moved_to -e moved_from \
 		-e delete_self -e move_self --format $'%e\t%w%f' -- \
