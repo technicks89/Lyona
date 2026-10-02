@@ -1,24 +1,59 @@
 # shellcheck shell=bash
-# Which NVIDIA GPUs the current Arch driver supports, for the installer and the
-# postinstall (Sync Sprint 12 S12-15, S12-17). Sourced, not run.
+# Which driver an NVIDIA GPU needs, for the installer and the postinstall (Sync
+# Sprint 12 S12-15 and S12-17, Sync Sprint 14 S14-02). Sourced, not run.
+#
+# The answer is one of:
+#   open         nvidia-open (Turing, GTX 16xx and RTX 20xx, or newer)
+#   580xx 470xx  a legacy driver the medium installs (Maxwell to Volta; Kepler)
+#   unsupported  no packaged driver supports it, so nouveau stays
+#
+# config/nvidia-legacy-gpus.tsv maps the device IDs NVIDIA lists as legacy. An
+# ID it does not list is open, unless it is below 0x1e00, the first Turing ID:
+# every newer card than the table is open, and an older card the table somehow
+# lacks keeps nouveau rather than getting a driver that cannot load
+# (nvidia-utils blacklists nouveau, which would leave it with none).
 
-# nvidia-open needs Turing (GTX 16xx, RTX 20xx) or newer. Every older NVIDIA GPU
-# has a PCI device ID below 0x1e00, and every Turing or newer one is at or above
-# it. Until Sync Sprint 14 S14-02's table lands, this keeps the older cards on
-# nouveau: nvidia-utils blacklists nouveau, so installing a driver that can't
-# load would leave them with none.
-nvidia_open_supported() {
-	local class device seen=0
+lyona_nvidia_table=${LYONA_NVIDIA_TABLE:-/root/lyona/config/nvidia-legacy-gpus.tsv}
+
+# lyona_nvidia_branch DEVICE: the branch for one PCI device ID (4 hex digits).
+lyona_nvidia_branch() {
+	local device=${1,,} branch=
+	if [[ ! $device =~ ^[0-9a-f]{4}$ ]]; then
+		printf 'unsupported\n'
+		return
+	fi
+	if [[ -r $lyona_nvidia_table ]]; then
+		branch=$(awk -F '\t' -v device="$device" '$1 == device { print $2; exit }' "$lyona_nvidia_table")
+	fi
+	case $branch in
+	580xx | 470xx | unsupported) ;;
+	*) if ((16#$device < 16#1e00)); then branch=unsupported; else branch=open; fi ;;
+	esac
+	printf '%s\n' "$branch"
+}
+
+# nvidia_gpu_branch: inspect every NVIDIA display device. Mixed branches are
+# unsupported; report the device requiring the oldest branch as "BRANCH DEVICE".
+# Fails when no NVIDIA display device is found.
+nvidia_gpu_branch() {
+	local class device branch rank oldest_rank=4 oldest_branch='' oldest_device='' mixed=false
 	for class in 0300 0302 0380; do
-		while read -r device; do
-			[[ $device =~ ^[0-9a-f]{4}$ ]] || continue
-			seen=1
-			if ((16#$device < 16#1e00)); then
-				printf 'lyona: NVIDIA GPU 10de:%s predates Turing; nvidia-open does not support it.\n' "$device"
-				return 1
+		while IFS= read -r device; do
+			[[ $device =~ ^[0-9a-fA-F]{4}$ ]] || continue
+			branch=$(lyona_nvidia_branch "$device")
+			[[ -z $oldest_branch || $branch == "$oldest_branch" ]] || mixed=true
+			case $branch in
+			unsupported) rank=0 ;;
+			470xx) rank=1 ;;
+			580xx) rank=2 ;;
+			open) rank=3 ;;
+			esac
+			if ((rank < oldest_rank)); then
+				oldest_rank=$rank oldest_branch=$branch oldest_device=${device,,}
 			fi
 		done < <(lspci -n -mm -d "10de::$class" 2>/dev/null | awk '{ gsub(/"/, "", $4); print $4 }')
 	done
-	((seen)) || printf 'lyona: could not read the NVIDIA GPU device ID.\n'
-	((seen))
+	[[ -n $oldest_device ]] || return 1
+	[[ $mixed == false ]] || oldest_branch=unsupported
+	printf '%s %s\n' "$oldest_branch" "$oldest_device"
 }

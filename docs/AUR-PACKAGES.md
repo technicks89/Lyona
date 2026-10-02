@@ -4,8 +4,51 @@ Audit of 2026-09-20 on a CachyOS host with `core`, `extra` and `multilib`
 synced. Branch `no-aur-native-packages`, based on `origin/main` at `ed5ba44`.
 
 **Policy.** An AUR helper stays installed for the user, but **no package Lyona
-installs depends on the AUR.** Every package the profiles and the live ISO name
-comes from the official repositories, and `make check-no-aur` keeps it that way.
+installs depends on the AUR**, with one exception, below. Every other package the
+profiles and the live ISO name comes from the official repositories, and
+`make check-no-aur` keeps it that way.
+
+## Exception: legacy NVIDIA drivers (Sync Sprint 14)
+
+The one exception. It covers the legacy NVIDIA drivers for older cards, which
+have no driver in `core`, `extra` or `multilib` since Arch moved to
+`nvidia-open` (Turing and newer):
+
+| Branch | Cards | Packages (`scripts/dwm-packages.sh`) | AUR base | Pinned commit |
+| --- | --- | --- | --- | --- |
+| 580xx | Maxwell, Pascal, Volta (GTX 750 to GTX 10xx, Titan V) | `nvidia-580xx-dkms`, `nvidia-580xx-utils` (`arch:gpu-nvidia-580xx`) | `nvidia-580xx-utils` | `3d31a20c08a1e6c11c1abe953954f44158c9a592` (580.178.04-2) |
+| 470xx | Kepler (GTX 600 and 700) | `nvidia-470xx-dkms`, `nvidia-470xx-utils` (`arch:gpu-nvidia-470xx`) | `nvidia-470xx-utils` | `af0b7617132e32dd39174779aa8ced2a726afc51` (470.256.02-8.03) |
+
+- **When:** only on the live medium, only after the user picks the NVIDIA
+  driver, and only on a card the device table
+  (`config/nvidia-legacy-gpus.tsv`) maps to that branch.
+- **From where (decision D-22):** the CachyOS repository's prebuilt, signed
+  packages when the medium added that repository. Only otherwise does the AUR
+  come in.
+- **How:** `install_legacy_nvidia_driver` in
+  `archiso/airootfs/root/lyona-postinstall.sh` clones the pinned commit as the
+  new user. It installs the PKGBUILD's dependencies as root, runs `makepkg` as
+  that user (never as root, never through `yay`), and installs the built
+  packages with `pacman -U`. Any failure leaves nouveau.
+- **What was reviewed at each pin:**
+  - every source downloads from `download.nvidia.com` over HTTPS or ships in
+    the repository, and has a checksum (no `SKIP`);
+  - nothing pipes to a shell, uses `sudo` or clones more code;
+  - the install script does no more than Arch's own `nvidia-utils`: the 580xx
+    one enables NVIDIA's suspend and resume services, and the 470xx one prints
+    a hint.
+
+  Re-pin only after reviewing the diff since the last pin.
+- **Updates:** an AUR-built driver is a foreign package. `pacman -Syu` does not
+  update it, and the user's `yay` does; the install says so. A driver from the
+  CachyOS repository updates with `pacman` as usual.
+- **The guard:** `tests/test-no-aur.sh` allows AUR access and `makepkg` only
+  in `install.sh` (the helper bootstrap) and inside
+  `install_legacy_nvidia_driver` (the legacy driver fallback). It requires each
+  package in the two legacy profiles to be built by a pinned base, and still
+  fails on any other AUR use.
+
+The 390xx driver (Fermi) is not included (D-23); those cards keep nouveau.
 
 ## AUR packages that existed
 
@@ -74,9 +117,12 @@ performs). None of them is named anywhere in this repository.
 `make check-no-aur` (`tests/test-no-aur.sh`) fails when:
 
 - an AUR helper is invoked to install packages (`yay -S`, `paru -S`, and so on);
-- anything other than `install.sh` reaches `aur.archlinux.org` or runs `makepkg`;
+- code outside `install.sh` (the helper bootstrap) or
+  `install_legacy_nvidia_driver` in `archiso/airootfs/root/lyona-postinstall.sh`
+  (the legacy driver fallback) reaches `aur.archlinux.org` or runs `makepkg`;
 - a package named by any profile or the ISO is not in `core`, `extra` or
-  `multilib` (a group such as `base-devel` also counts as found).
+  `multilib`, except the two pinned legacy NVIDIA profiles above (a group such
+  as `base-devel` also counts as found).
 
 The repository check needs the official repositories synced. On a host that
 cannot answer, it says so and passes the rest, so it never fails on a machine

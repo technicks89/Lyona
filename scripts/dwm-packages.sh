@@ -123,6 +123,15 @@ dwm_packages() {
 	arch:gpu-nvidia-dkms)
 		printf '%s\n' nvidia-open-dkms nvidia-utils
 		;;
+	# The legacy drivers for older cards (Sync Sprint 14, decision D-23): from the
+	# CachyOS repository when the medium added it, else built from pinned AUR
+	# PKGBUILDs (the one AUR exception; docs/AUR-PACKAGES.md). DKMS only.
+	arch:gpu-nvidia-580xx)
+		printf '%s\n' nvidia-580xx-dkms nvidia-580xx-utils
+		;;
+	arch:gpu-nvidia-470xx)
+		printf '%s\n' nvidia-470xx-dkms nvidia-470xx-utils
+		;;
 	arch:gpu-amd)
 		printf '%s\n' xf86-video-amdgpu
 		;;

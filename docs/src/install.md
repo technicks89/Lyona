@@ -228,7 +228,8 @@ An AUR helper (`yay`) is installed automatically for you as a standing
 convenience tool, independent of the package profiles above — none of the
 required, recommended, or optional packages need it, since everything the
 installer selects is available directly through official `pacman` repos
-(`core`/`extra`/`multilib`).
+(`core`/`extra`/`multilib`). The one exception is the live medium's driver for
+an older NVIDIA card (see `docs/AUR-PACKAGES.md`).
 
 ### GRUB boot menu theme
 

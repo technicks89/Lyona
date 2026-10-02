@@ -1042,6 +1042,11 @@ check-arch-packages:
 check-no-aur:
 	tests/test-no-aur.sh
 
+# The live medium's driver for older NVIDIA cards, against a stub chroot (Sync
+# Sprint 14).
+check-legacy-nvidia:
+	tests/test-legacy-nvidia.sh
+
 check-cachyos:
 	tests/test-arch-cachyos.sh
 
@@ -1315,6 +1320,7 @@ check:
 	$(MAKE) check-quickshell-state-close
 	$(MAKE) check-arch-packages
 	$(MAKE) check-no-aur
+	$(MAKE) check-legacy-nvidia
 	$(MAKE) check-install
 	$(MAKE) check-install-preservation
 	$(MAKE) check-install-multilib

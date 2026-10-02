@@ -65,6 +65,7 @@ sprints=(
 	"11|Sync Sprint 11 - Shell contrast and survey gaps|SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md"
 	"12|Sync Sprint 12 - Whole-repo review|SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md"
 	"13|Sync Sprint 13 - Watcher lifetime under load|SYNC-SPRINT-13-WATCHER-LIFETIME-FLAKE.md"
+	"14|Sync Sprint 14 - Older NVIDIA GPUs|SYNC-SPRINT-14-LEGACY-NVIDIA.md"
 )
 
 # Sprint | item id | heading anchor | title | upstream refs
@@ -159,6 +160,10 @@ items=(
 	"12|S12-19|s12-19-release-updates-can-install-the-published-release-asset|Release updates can install the published release asset|found testing S12-01"
 	"12|S12-21|s12-21-a-staged-helper-always-brings-its-libraries|A staged helper always brings its libraries|found implementing S12-14"
 	"13|S13-01|s13-01-a-watchers-children-end-with-the-shell-however-busy-the-machine|A watcher's children end with the shell, however busy the machine|found running S12-13"
+	"14|S14-01|s14-01-the-aur-exception-written-down-and-enforced-narrowly|The AUR exception, written down and enforced narrowly|maintainer request"
+	"14|S14-02|s14-02-tell-which-driver-branch-a-card-needs|Tell which driver branch a card needs|maintainer request"
+	"14|S14-03|s14-03-install-the-legacy-driver-from-the-live-medium|Install the legacy driver from the live medium|maintainer request"
+	"14|S14-04|s14-04-validate-on-real-legacy-hardware|Validate on real legacy hardware|maintainer request"
 )
 
 run gh label create "$label" --repo "$repo" --color 5319e7 \
