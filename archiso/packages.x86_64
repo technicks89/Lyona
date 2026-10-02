@@ -33,6 +33,7 @@ light-locker
 make
 mate-polkit
 mpv
+pacman-contrib
 papirus-icon-theme
 pavucontrol
 pciutils

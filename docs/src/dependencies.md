@@ -64,9 +64,11 @@ What a running session needs: D-Bus, `xdotool` and `xprop` (the Quickshell state
 
 The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, and the login keyring.
 
-`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `gnome-keyring`
+`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `gnome-keyring` `pacman-contrib`
 
 `gnome-keyring` (the `keyring` group) stores secrets for browsers, NetworkManager and other applications. It includes `pam_gnome_keyring.so`, which Arch's LightDM PAM stack already loads, so a password login unlocks the keyring; there is no separate PAM package. Under `startx` the keyring is unlocked on first use instead. `dwm-diagnostics` and System Health flag it when it is missing.
+
+`pacman-contrib` (the `update-indicator` group) provides `checkupdates`, which the panel's update icon counts pending package updates with. It never takes pacman's lock.
 
 ### `media`
 

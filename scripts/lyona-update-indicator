@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Everything this writes (the settings) is private to the user.
+umask 077
+
+# The panel's updates-available indicator (Sync Sprint 15 S15-02, decision
+# D-25). It counts pending updates and changes nothing. System packages are
+# counted by checkupdates (pacman-contrib), which syncs a private copy of the
+# package databases and never takes pacman's lock; the shell counts the lyona
+# release itself, through `lyona-update check`. The shell runs `check` a while
+# after login, at the interval set here, and when NetworkManager reports a
+# connection; by hand, only from Settings.
+#
+#   lyona-update-indicator check                       one parsed result
+#   lyona-update-indicator status                      the settings
+#   lyona-update-indicator set-interval 1|3|6|12|24    hours between checks
+#   lyona-update-indicator set-show-when-current yes|no
+#   lyona-update-indicator watch-network               connection events
+#
+# check prints, after the header, one line per provider, then a completion line:
+#   update-indicator-protocol  1  0
+#   provider  system  available|current|unavailable|error  COUNT  DETAIL
+#   complete  check
+# status prints:
+#   update-indicator-protocol  1  0
+#   setting  interval-hours  HOURS
+#   setting  show-when-current  yes|no
+#   complete  status
+# watch-network prints "network-event ready" once it is subscribed, then
+# "network-event connected" each time NetworkManager reaches full connectivity
+# from a lower state. When the system bus cannot be watched it prints
+# "network-event unavailable" and exits, and the shell stops asking.
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
+
+config_file=$config_home/lyona/update-indicator.conf
+readonly protocol_header=$'update-indicator-protocol\t1\t0'
+readonly intervals='1 3 6 12 24'
+readonly default_interval=6
+# checkupdates downloads the repository databases; a stalled mirror must not
+# hold the check open.
+readonly check_seconds=180
+
+die() {
+	printf 'lyona-update-indicator: %s\n' "$*" >&2
+	exit 1
+}
+
+usage() {
+	printf 'usage: lyona-update-indicator check | status | set-interval 1|3|6|12|24 | set-show-when-current yes|no | watch-network\n' >&2
+	exit 2
+}
+
+valid_interval() {
+	[[ " $intervals " == *" $1 "* ]]
+}
+
+read_setting() { # KEY DEFAULT
+	local line value=$2
+	[[ -f $config_file && ! -L $config_file ]] || {
+		printf '%s' "$value"
+		return
+	}
+	while IFS= read -r line || [[ -n $line ]]; do
+		[[ $line == "$1="* ]] && value=${line#*=}
+	done <"$config_file"
+	printf '%s' "$value"
+}
+
+# The settings as they apply: a missing, hand-edited or unknown value is the
+# default, never an error.
+interval_setting() {
+	local value
+	value=$(read_setting interval-hours "$default_interval")
+	valid_interval "$value" || value=$default_interval
+	printf '%s' "$value"
+}
+
+show_setting() {
+	local value
+	value=$(read_setting show-when-current no)
+	[[ $value == yes ]] || value=no
+	printf '%s' "$value"
+}
+
+write_settings() { # INTERVAL SHOW
+	local temporary
+	[[ ! -L $config_file ]] || die 'refusing to replace a symlinked update-indicator.conf'
+	mkdir -p -- "${config_file%/*}"
+	temporary=$(mktemp "${config_file%/*}/.update-indicator.conf.XXXXXX") ||
+		die 'cannot write the update indicator settings'
+	if ! printf 'interval-hours=%s\nshow-when-current=%s\n' "$1" "$2" >"$temporary" ||
+		! chmod 600 -- "$temporary" || ! mv -fT -- "$temporary" "$config_file"; then
+		rm -f -- "$temporary"
+		die 'cannot write the update indicator settings'
+	fi
+}
+
+status() {
+	printf '%s\n' "$protocol_header"
+	printf 'setting\tinterval-hours\t%s\n' "$(interval_setting)"
+	printf 'setting\tshow-when-current\t%s\n' "$(show_setting)"
+	printf 'complete\tstatus\n'
+}
+
+# checkupdates exits 0 with one line per pending update, 2 when there is none,
+# and 1 when the check itself failed.
+system_provider() {
+	local output status=0 count
+	if ! command -v checkupdates >/dev/null 2>&1; then
+		printf 'provider\tsystem\tunavailable\t0\tInstall pacman-contrib to count package updates\n'
+		return
+	fi
+	output=$(timeout --kill-after=10 "$check_seconds" checkupdates --nocolor 2>/dev/null) || status=$?
+	case $status in
+	0)
+		count=$(printf '%s\n' "$output" | awk 'NF { n++ } END { print n + 0 }')
+		if ((count > 0)); then
+			printf 'provider\tsystem\tavailable\t%d\t%d package updates\n' "$count" "$count"
+		else
+			printf 'provider\tsystem\tcurrent\t0\tPackages are up to date\n'
+		fi
+		;;
+	2) printf 'provider\tsystem\tcurrent\t0\tPackages are up to date\n' ;;
+	124 | 137) printf 'provider\tsystem\terror\t0\tThe package check timed out; it will be tried again\n' ;;
+	*) printf 'provider\tsystem\terror\t0\tThe package check failed; it will be tried again\n' ;;
+	esac
+}
+
+check() {
+	printf '%s\n' "$protocol_header"
+	system_provider
+	printf 'complete\tcheck\n'
+}
+
+# NetworkManager's StateChanged signal, through GDBus: a machine interface, not
+# nmcli's text. 70 is NM_STATE_CONNECTED_GLOBAL.
+watch_network() {
+	exec python3 -c '
+import sys
+
+def say(event):
+    try:
+        print("network-event\t" + event, flush=True)
+    except (BrokenPipeError, OSError):
+        sys.exit(0)
+
+try:
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+except Exception:
+    say("unavailable")
+    sys.exit(0)
+
+CONNECTED_GLOBAL = 70
+NAME = "org.freedesktop.NetworkManager"
+PATH = "/org/freedesktop/NetworkManager"
+last = [None]
+
+def changed(_connection, _sender, _path, _interface, _signal, parameters):
+    state = parameters.unpack()[0]
+    if state == CONNECTED_GLOBAL and last[0] != CONNECTED_GLOBAL:
+        say("connected")
+    last[0] = state
+
+bus.signal_subscribe(NAME, NAME, "StateChanged", PATH, None, Gio.DBusSignalFlags.NONE, changed)
+# The current state, so that only a change to "connected" counts. NetworkManager
+# not running yet is fine: the subscription follows the name when it appears.
+try:
+    reply = bus.call_sync(NAME, PATH, "org.freedesktop.DBus.Properties", "Get",
+                          GLib.Variant("(ss)", (NAME, "State")), GLib.VariantType("(v)"),
+                          Gio.DBusCallFlags.NONE, 2000, None)
+    last[0] = reply.unpack()[0]
+except GLib.Error:
+    pass
+say("ready")
+GLib.MainLoop().run()
+'
+}
+
+case ${1:-} in
+check)
+	(($# == 1)) || usage
+	check
+	;;
+status)
+	(($# == 1)) || usage
+	status
+	;;
+set-interval)
+	(($# == 2)) || usage
+	valid_interval "$2" || die "the interval must be one of: $intervals (hours)"
+	write_settings "$2" "$(show_setting)"
+	status
+	;;
+set-show-when-current)
+	(($# == 2)) || usage
+	[[ $2 == yes || $2 == no ]] || die 'show-when-current must be yes or no'
+	write_settings "$(interval_setting)" "$2"
+	status
+	;;
+watch-network)
+	(($# == 1)) || usage
+	watch_network
+	;;
+*) usage ;;
+esac

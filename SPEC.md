@@ -565,6 +565,14 @@ The planned Settings surface covers:
   printer entry points, system information, storage overview, diagnostics, and
   recovery guidance.
 
+The panel shows an updates-available indicator: the pending system package
+count (from `checkupdates`, which never takes pacman's lock) plus the lyona
+release. It is hidden when there is nothing to install unless the user asks for
+it. It checks a few minutes after login, at a user-set interval of 1 to 24 hours
+(remote repositories have no change signal), when NetworkManager reports a
+connection, and by hand from Settings only; one check runs at a time. A click
+opens Settings > System, which remains the one place updates are run.
+
 Advanced partitioning, unrestricted service control, firewall policy editing,
 and similarly high-risk administration remain delegated unless a later
 specification defines a narrow safe interface.

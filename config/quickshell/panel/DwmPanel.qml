@@ -9,6 +9,20 @@ PanelWindow {
     id: root
 
     signal popupRequested(var panelWindow, string popupId)
+    // Opens Settings on a section (Sync Sprint 15 S15-02: the update indicator).
+    signal settingsRequested(var panelWindow, string sectionId)
+
+    // The first item under the panel with this objectName, for the shell's test
+    // IPC; undefined when there is none.
+    function findItem(name) {
+        const pending = [island];
+        while (pending.length > 0) {
+            const item = pending.shift();
+            if (item.objectName === name) return item;
+            for (const child of item.children || []) pending.push(child);
+        }
+        return undefined;
+    }
 
     function batteryIcon(percent, status) {
         if (status.toLowerCase() === "charging") {
@@ -41,6 +55,8 @@ PanelWindow {
     required property var powerMenuModel
     required property var updateModel
     required property bool primaryPanel
+    // Null in a harness whose UpdateModel has no indicator (S15-02).
+    readonly property var updateIndicator: root.updateModel ? root.updateModel.indicator : null
 
     implicitHeight: Theme.panelHeight
     color: Theme.barBackground
@@ -282,6 +298,46 @@ PanelWindow {
                         }
                     }
 
+                    // Updates are available (Sync Sprint 15 S15-02, decision D-25): a
+                    // count, and a click opens Settings > System, where they are run.
+                    // Hidden when everything is current, unless the user asks for it.
+                    PanelPill {
+                        id: updateAvailablePill
+                        objectName: "updateAvailablePill"
+                        visible: root.updateIndicator !== null && root.updateIndicator.shown
+                        Layout.preferredWidth: updateAvailableRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
+                        Layout.preferredHeight: Theme.compactWidgetSize
+                        hovered: updateAvailableMouse.containsMouse
+                        Accessible.name: root.updateIndicator ? root.updateIndicator.summary : ""
+
+                        RowLayout {
+                            id: updateAvailableRow
+                            anchors.centerIn: parent
+                            spacing: Theme.compactSpacing
+
+                            IconText {
+                                text: "󰚰"
+                                color: root.updateIndicator && root.updateIndicator.count > 0
+                                    ? Theme.accent : Theme.textStrong
+                            }
+
+                            UiText {
+                                visible: root.updateIndicator !== null && root.updateIndicator.count > 0
+                                text: root.updateIndicator ? root.updateIndicator.count.toString() : ""
+                                color: Theme.textStrong
+                                font.pixelSize: Theme.panelFontSize
+                            }
+                        }
+
+                        MouseArea {
+                            id: updateAvailableMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.settingsRequested(root, "system")
+                        }
+                    }
+
                     // Shown while lyona-update runs, and briefly after it ends, so a
                     // hidden progress popup (or one closed by the Quickshell restart an
                     // apply causes) can always be brought back with a click.
@@ -470,6 +526,15 @@ PanelWindow {
         anchorWindow: root
         anchorItem: batteryPill
         label: root.powerModel.batteryPercent.toString() + "% - " + root.powerModel.batteryStatus
+        anchorY: Theme.panelHeight
+        rightAligned: true
+    }
+
+    PanelTooltip {
+        visible: updateAvailablePill.visible && updateAvailableMouse.containsMouse
+        anchorWindow: root
+        anchorItem: updateAvailableMouse
+        label: root.updateIndicator ? root.updateIndicator.summary : ""
         anchorY: Theme.panelHeight
         rightAligned: true
     }

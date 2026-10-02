@@ -75,7 +75,11 @@ Flickable {
             ShellButton {
                 label: root.updateModel.busy ? "Checking..." : "Check for updates"
                 enabled: !root.updateModel.busy
-                onActivated: root.updateModel.refresh()
+                onActivated: {
+                    root.updateModel.refresh();
+                    // The panel's count too (S15-02): by hand, only from here.
+                    if (root.updateModel.indicator) root.updateModel.indicator.check(true);
+                }
             }
         }
 
@@ -101,6 +105,79 @@ Flickable {
         }
 
         SectionLabel { label: "Update status" }
+
+        // The panel's updates-available indicator (Sync Sprint 15 S15-02, D-25).
+        ColumnLayout {
+            objectName: "updateIndicatorSettings"
+            Layout.fillWidth: true
+            visible: root.updateModel.indicator !== null
+            spacing: Theme.spacingSm
+
+            StatusCard {
+                label: "Panel indicator"
+                statusState: !root.updateModel.indicator ? "available"
+                    : root.updateModel.indicator.count > 0 ? "partial"
+                    : root.updateModel.indicator.systemState === "error"
+                        || root.updateModel.indicator.systemState === "unavailable" ? "restricted" : "available"
+                value: !root.updateModel.indicator ? ""
+                    : root.updateModel.indicator.checking ? "Checking..."
+                    : root.updateModel.indicator.count > 0
+                        ? root.updateModel.indicator.count + " available" : "Nothing to install"
+                detail: root.updateModel.indicator ? root.updateModel.indicator.summary : ""
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: "Check every"
+                    color: Theme.menuText
+                }
+
+                Repeater {
+                    model: [1, 3, 6, 12, 24]
+
+                    delegate: ShellButton {
+                        required property int modelData
+
+                        label: modelData + " h"
+                        primary: root.updateModel.indicator !== null
+                            && root.updateModel.indicator.intervalHours === modelData
+                        enabled: root.updateModel.indicator !== null && !root.updateModel.indicator.settingsBusy
+                        onActivated: root.updateModel.indicator.setIntervalHours(modelData)
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: "Show the panel icon when everything is up to date"
+                    color: Theme.menuText
+                    wrapMode: Text.WordWrap
+                }
+
+                PanelToggleSwitch {
+                    checked: root.updateModel.indicator !== null && root.updateModel.indicator.showWhenCurrent
+                    busy: root.updateModel.indicator !== null && root.updateModel.indicator.settingsBusy
+                    enabled: root.updateModel.indicator !== null
+                    accessibleName: "Show the update icon when current"
+                    accessibleDescription: "Keep the panel's update icon visible when nothing needs updating"
+                    onToggled: root.updateModel.indicator.setShowWhenCurrent(!checked)
+                }
+            }
+
+            UiText {
+                Layout.fillWidth: true
+                visible: root.updateModel.indicator !== null && root.updateModel.indicator.message.length > 0
+                text: root.updateModel.indicator ? root.updateModel.indicator.message : ""
+                color: Theme.menuMutedText
+                wrapMode: Text.WordWrap
+            }
+        }
 
         StatusCard {
             label: root.updateModel.channel === "preview" ? "Channel: preview" : "Channel: stable"

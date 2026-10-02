@@ -159,6 +159,59 @@ instead. `#363` builds an Update Center on top of that declined updater.
     `CHANGELOG.md`.
   - **Not tested:** a real LightDM password login unlocking the keyring, which
     S15-05 covers.
+  - **Validation:** the focused targets and the full `scripts/run-tests`
+    suite passed (2026-10-02).
+- **S15-02 (2026-10-02, branch `s15-02-update-indicator`):**
+  - **System packages:** a new helper, `scripts/lyona-update-indicator`,
+    counts them with `checkupdates` (`pacman-contrib`, a new `update-indicator`
+    group in `desktop`). It syncs a private copy of the package databases and
+    never takes pacman's lock. The check is bounded at 180 s. A failure or a
+    timeout is an error, never "current".
+  - **The lyona release:** the shell's existing `UpdateModel` check. It is
+    re-checked on the interval and on reconnect only while `check_on_login`
+    allows automatic checks.
+  - **The model:** `config/quickshell/system/UpdateIndicatorModel.qml`, one
+    instance in `shell.qml`, reached through `UpdateModel.indicator` (null in
+    harnesses).
+    - **When it checks:** 2 to 5 minutes after login (jittered); every 1, 3,
+      6 (default), 12 or 24 hours; and on a NetworkManager connection.
+    - **Guards:** a check never starts while one runs. An automatic check also
+      waits 10 minutes after a successful one.
+    - **The reconnect watch:** `lyona-update-indicator watch-network`
+      subscribes to NetworkManager's `StateChanged` through GDBus (no `nmcli`
+      text). It reports a connection only on reaching full connectivity from
+      below. Without a system bus it says so once, and is not restarted.
+  - **The panel:** an `updateAvailablePill` with the count, hidden when
+    nothing can be updated (unless "show when current") and while an update
+    runs. Its tooltip gives the details, and a click opens Settings > System
+    (`settingsRequested`).
+  - **Settings > System:** "Check for updates" also runs the indicator's check
+    (the only manual path). A "Panel indicator" card, the interval buttons, and
+    the "show when current" switch. The settings are in
+    `~/.config/lyona/update-indicator.conf` (0600, never written through a
+    symlink, bad values read as defaults).
+  - **Tests:**
+    - **`test-lyona-update-indicator.sh`:** counts, current, failure, timeout,
+      no `checkupdates`, the settings and their validation, the symlink
+      refusal, and `watch-network` against a fake NetworkManager on a private
+      bus, including no bus.
+    - **`test-quickshell-update-indicator-xvfb.sh`** (real shell and dwm):
+      - a connection event checks, and the pill shows the count;
+      - a real click opens Settings on System;
+      - a check by hand finding nothing hides it;
+      - a second connection event within the gap does not check again;
+      - "show when current" through the real helper shows it;
+      - the shell uses under 5% CPU while idle.
+
+      Removing the gap, or ignoring connection events, each fails it.
+  - **Docs:** SPEC.md 5.10, `docs/src/updating.md`,
+    `docs/src/dependencies.md`, `CHANGELOG.md`.
+  - **Not tested:**
+    - a real NetworkManager reconnect;
+    - `checkupdates` against a slow or unreachable mirror on a real install;
+    - more than one screen, although the model is a single shared instance.
+
+    S15-05 covers these.
 
 ## S15-01: The login keyring is required and diagnosed
 
