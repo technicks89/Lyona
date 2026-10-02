@@ -44,6 +44,10 @@ Scope {
     property var backups: []
     property bool backupsLoaded: false
 
+    // The panel's updates-available indicator (UpdateIndicatorModel, Sync Sprint
+    // 15 S15-02). The shell sets it; a harness without one leaves it null.
+    property var indicator: null
+
     // Whether the progress surfaces (the popup and the panel indicator) should
     // be showing. Unlike `busy` this is age-aware: the status file keeps its
     // last outcome forever, and a "pending" one can be left behind by a crash,

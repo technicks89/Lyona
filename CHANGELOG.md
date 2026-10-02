@@ -532,6 +532,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The panel shows an update icon with a count when updates are available (Sync Sprint 15 S15-02, from upstream
+  `#363`). The count is the pending system packages, counted with `checkupdates`, plus one for a new lyona release. A
+  click opens Settings > System, where updates are run. It checks a few minutes after login, every 6 hours by default,
+  and on reconnecting. Settings > System sets the interval and whether the icon stays when everything is current. This
+  adds `pacman-contrib` to the desktop packages.
 - The live medium installs a working proprietary driver on older NVIDIA cards (Sync Sprint 14):
   - Maxwell, Pascal and Volta cards (GTX 750 to GTX 10xx) get the 580xx driver, and Kepler cards (GTX 600 and 700)
     the 470xx one. The card's device ID decides, from a table generated from NVIDIA's own list.

@@ -24,6 +24,34 @@ time does not all hit the update server at once. It never runs more than once
 per session, and a `behind` result only surfaces a notification — it never
 applies anything on its own.
 
+## The panel's update icon
+
+When updates are available, the panel shows an update icon with a count, left
+of the Bluetooth icon. The count is the system packages waiting to be installed,
+plus one when a new lyona release is out. Hover it for the details; click it to
+open Settings -> System, where updates are run. The panel itself installs
+nothing.
+
+- **Packages are counted with `checkupdates`** (from `pacman-contrib`). It syncs
+  a private copy of the package databases and never takes pacman's lock, so
+  counting cannot interfere with a running `pacman`. Packages from the AUR are
+  not counted.
+- **When it checks:**
+  - a few minutes after you log in;
+  - every 6 hours (choose 1, 3, 6, 12 or 24 in Settings -> System);
+  - when NetworkManager reports that you are connected again;
+  - when you press **Check for updates** in Settings -> System.
+
+  One check runs at a time. After a successful check, a reconnect within 10
+  minutes does not check again. The lyona release is re-checked this way only
+  while `check_on_login` is `true`.
+- **When it shows:** only while something can be updated, and not while an
+  update is running (the progress icon shows then). Turn on "Show the panel
+  icon when everything is up to date" in Settings -> System to keep it.
+- **Its settings** are in `~/.config/lyona/update-indicator.conf`, private to
+  you, written by `lyona-update-indicator`. Run `lyona-update-indicator check`
+  to see what the panel would count.
+
 ## Applying an update
 
 ```sh

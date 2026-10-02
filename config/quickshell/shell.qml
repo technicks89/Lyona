@@ -229,6 +229,14 @@ ShellRoot {
 
     UpdateModel {
         id: updateModel
+        indicator: updateIndicator
+    }
+
+    // The panel's updates-available indicator (Sync Sprint 15 S15-02): one
+    // instance, shared by every screen's panel.
+    UpdateIndicatorModel {
+        id: updateIndicator
+        updateModel: updateModel
     }
 
     SystemManagementModel {
@@ -675,6 +683,37 @@ ShellRoot {
         }
     }
 
+    // The update indicator's test getters and driver (Sync Sprint 15 S15-02),
+    // created only when LYONA_SHELL_TEST_IPC=1. pillCenter is the indicator's
+    // centre on the first screen, for a real click.
+    LazyLoader {
+        active: Quickshell.env("LYONA_SHELL_TEST_IPC") === "1"
+
+        component: Scope {
+            IpcHandler {
+                target: "updateIndicatorTest"
+
+                function status(): string {
+                    return [updateIndicator.shown ? "shown" : "hidden", updateIndicator.count,
+                        updateIndicator.systemState, updateIndicator.intervalHours,
+                        updateIndicator.showWhenCurrent ? "yes" : "no"].join("\t");
+                }
+
+                function check(): void {
+                    updateIndicator.check(true);
+                }
+
+                function pillCenter(): string {
+                    const panel = panelVariants.instances[0];
+                    const pill = panel ? panel.findItem("updateAvailablePill") : null;
+                    if (!pill || !pill.visible) return "";
+                    const point = pill.mapToItem(null, pill.width / 2, pill.height / 2);
+                    return Math.round(point.x) + " " + Math.round(point.y);
+                }
+            }
+        }
+    }
+
     // The settings target's test getters and drivers (Sync Sprint 12 S12-16):
     // created only when LYONA_SHELL_TEST_IPC=1, which nothing in a normal
     // session sets.
@@ -770,6 +809,10 @@ ShellRoot {
             updateModel: updateModel
             primaryPanel: modelData === Quickshell.screens[0]
             onPopupRequested: (panel, popupId) => root.selectPanelPopup(panel, popupId)
+            onSettingsRequested: (panel, sectionId) => {
+                root.selectPanelPopup(panel, "");
+                settingsModel.openOnScreen(panel.screen, sectionId);
+            }
         }
     }
 

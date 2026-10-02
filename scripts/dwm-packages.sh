@@ -50,6 +50,7 @@ dwm_packages() {
 			bluez bluez-utils blueman playerctl upower power-profiles-daemon flatpak xdg-desktop-portal-gtk \
 			pciutils gum
 		dwm_packages "$family" keyring
+		dwm_packages "$family" update-indicator
 		;;
 	arch:keyring)
 		# Secret storage, and the login keyring's unlock at a password login.
@@ -57,6 +58,13 @@ dwm_packages() {
 		# separate PAM package), and the display manager's PAM stack loads it
 		# (Sync Sprint 15 S15-01; in desktop by decision D-24).
 		printf '%s\n' gnome-keyring
+		;;
+	arch:update-indicator)
+		# checkupdates, which the panel's update indicator counts package
+		# updates with: it syncs a private copy of the package databases and
+		# never takes pacman's lock. Its fakeroot comes from base-devel, in
+		# build (Sync Sprint 15 S15-02).
+		printf '%s\n' pacman-contrib
 		;;
 	arch:desktop-optional)
 		# Every package here is in the official repositories; none depends

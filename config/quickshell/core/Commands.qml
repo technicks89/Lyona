@@ -186,6 +186,11 @@ Singleton {
         return helperCommand("lyona-update", action, args);
     }
 
+    // The panel's updates-available indicator (Sync Sprint 15 S15-02).
+    function updateIndicatorCommand(action, args) {
+        return helperCommand("lyona-update-indicator", action, args);
+    }
+
     function versionCommand(action, args) {
         return helperCommand("lyona-version", action, args);
     }
