@@ -83,7 +83,9 @@ in Settings, Appearance, Weather.
 - **When it fails:** the panel shows "Unavailable" and tries again later.
 - **The helper:** the panel uses `lyona-weather`, which keeps its settings in
   `~/.config/lyona/weather.conf` and its cache in `~/.cache/lyona/weather/`,
-  both private to you. The redesigned panel retains the
+  both private to you.
+
+The redesigned panel retains the
 active-window title, status segments, and system tray, and shows all nine dwm
 tags (workspaces). Hovering icon-only panel controls displays a text tooltip.
 
