@@ -49,6 +49,14 @@ dwm_packages() {
 			pipewire-pulse wireplumber libnotify light-locker xf86-input-libinput \
 			bluez bluez-utils blueman playerctl upower power-profiles-daemon flatpak xdg-desktop-portal-gtk \
 			pciutils gum
+		dwm_packages "$family" keyring
+		;;
+	arch:keyring)
+		# Secret storage, and the login keyring's unlock at a password login.
+		# pam_gnome_keyring.so ships in gnome-keyring itself (Arch has no
+		# separate PAM package), and the display manager's PAM stack loads it
+		# (Sync Sprint 15 S15-01; in desktop by decision D-24).
+		printf '%s\n' gnome-keyring
 		;;
 	arch:desktop-optional)
 		# Every package here is in the official repositories; none depends
@@ -58,7 +66,7 @@ dwm_packages() {
 		# scripts/dwm-xkbset.
 		printf '%s\n' \
 			thunar gvfs gvfs-smb tumbler thunar-archive-plugin file-roller \
-			xdg-user-dirs gnome-keyring networkmanager \
+			xdg-user-dirs networkmanager \
 			rsync autorandr
 		;;
 	arch:system-management)

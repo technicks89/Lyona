@@ -440,8 +440,13 @@ Runtime dependencies are classified as:
   chain retained when Alacritty is unavailable.
 - Recommended desktop: Alacritty, Quickshell, Picom, Feh, Dex, a polkit agent,
   notification tools, audio controls, screenshot tooling, Nerd/emoji fonts,
-  Flatpak with its GTK portal, and Gear Lever from a user-scoped Flathub
-  remote.
+  Flatpak with its GTK portal, Gear Lever from a user-scoped Flathub
+  remote, and GNOME Keyring (`gnome-keyring`) for secret storage.
+  `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
+  stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
+  password login. A `startx` session has no such stack; its keyring stays locked
+  until first use. Diagnostics and System Health report a missing keyring as a
+  degraded desktop, and `lyona-update` warns about it without refusing.
 - Optional: the Herdr terminal workspace, file manager, network tray, theme
   utilities, display-manager greeter customization, wallpapers, and
   hardware-specific helpers.

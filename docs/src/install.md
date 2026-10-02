@@ -17,7 +17,7 @@ package names from the shared map:
 
 Use `core` for the required build/X11/session packages and Alacritty,
 `recommended` for the complete desktop layer, or `full` for optional extras
-such as file-manager integration, keyring login integration, wallpapers, and
+such as file-manager integration, wallpapers, and
 display-manager setup. On x86_64 Arch, `full` can also install Steam,
 Gamescope, GameMode, and MangoHud after repository approval.
 See [Dependencies and Package Profiles](./dependencies.md) for exactly which
@@ -81,7 +81,8 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   skipped unless `--install-herdr` is provided.
 - `recommended`: `core` plus the recommended desktop layer such as Quickshell,
   Picom, Feh, Dex, fonts, theming, screenshot, audio, Bluetooth control and
-  tray tools, brightness tools, Flatpak, and the GTK desktop portal. It also
+  tray tools, brightness tools, Flatpak, the GTK desktop portal, and GNOME
+  Keyring, which a display-manager login unlocks. It also
   installs Celluloid, mpv, and sxiv, and gives a fresh account Celluloid for
   audio and video and sxiv for images through `scripts/seed-default-apps.sh`,
   which also makes Thunar the folder handler when Thunar is installed. An
@@ -99,7 +100,7 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   `~/.bashrc.bak`. The clone is replaced on every run, so edit the files it
   links to rather than the clone itself.
 - `full`: `recommended` plus optional extras such as Thunar with SMB-share
-  browsing, network tray utilities, keyring login integration,
+  browsing, network tray utilities,
   wallpapers, and display-manager setup. x86_64 Arch full installs also
   include Steam, Gamescope, and 64-bit and 32-bit GameMode and MangoHud support
   after separate repository approval.
