@@ -30,7 +30,7 @@ The groups are made of smaller groups:
 | Group | Made of |
 | --- | --- |
 | `required` | build + x11 + runtime-required |
-| `recommended` | desktop + media + system-management + screenshot-optional + theme + theme-gtk + fonts + shell |
+| `recommended` | desktop + media + system-management + screenshot-optional + theme + theme-gtk + fonts + shell + rust-toolchain |
 | `optional` | theme-optional + desktop-optional + system-management-optional |
 | `full` | required + recommended + optional + gaming |
 
