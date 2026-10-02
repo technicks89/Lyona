@@ -320,7 +320,7 @@ cp -a "$arch_bin" "$missing_font_bin"
 rm -f "$missing_font_bin/dwm-settings-font"
 missing_font_provider_dir=$work/missing-font-provider
 mkdir "$missing_font_provider_dir"
-cp "$provider" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" "$missing_font_provider_dir/"
+stage_helpers checkout "$missing_font_provider_dir" dwm-settings-provider
 missing_font_output=$(PATH="$missing_font_bin" XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
 	"$missing_font_provider_dir/dwm-settings-provider" discover)
@@ -388,7 +388,7 @@ cp -a "$arch_bin" "$missing_accessibility_bin"
 rm -f "$missing_accessibility_bin/dwm-accessibility-settings"
 missing_accessibility_provider_dir=$work/missing-accessibility-provider
 mkdir "$missing_accessibility_provider_dir"
-cp "$provider" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" "$missing_accessibility_provider_dir/"
+stage_helpers checkout "$missing_accessibility_provider_dir" dwm-settings-provider
 missing_accessibility_output=$(PATH="$missing_accessibility_bin" XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
 	"$missing_accessibility_provider_dir/dwm-settings-provider" discover)
@@ -417,7 +417,7 @@ cp -a "$arch_bin" "$missing_xkbset_bin"
 rm -f "$missing_xkbset_bin/dwm-xkbset"
 missing_xkbset_scripts=$work/missing-xkbset-scripts
 mkdir -p "$missing_xkbset_scripts"
-cp "$provider" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" "$missing_xkbset_scripts/"
+stage_helpers checkout "$missing_xkbset_scripts" dwm-settings-provider
 missing_xkbset_output=$(PATH="$missing_xkbset_bin" \
 	XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$missing_xkbset_scripts/dwm-settings-provider" discover)
@@ -510,7 +510,7 @@ cp -a "$arch_bin" "$read_only_appearance_bin"
 rm -f "$read_only_appearance_bin/dwm-settings-theme"
 read_only_provider_dir=$work/read-only-provider
 mkdir "$read_only_provider_dir"
-cp "$provider" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" "$read_only_provider_dir/"
+stage_helpers checkout "$read_only_provider_dir" dwm-settings-provider
 read_only_appearance_output=$(PATH="$read_only_appearance_bin" XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
 	"$read_only_provider_dir/dwm-settings-provider" discover)
@@ -581,7 +581,7 @@ cp -a "$arch_bin" "$missing_appearance_bin"
 rm -f "$missing_appearance_bin/dwm-settings-appearance"
 isolated_provider_dir=$work/isolated-provider
 mkdir "$isolated_provider_dir"
-cp "$provider" "$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" "$isolated_provider_dir/"
+stage_helpers checkout "$isolated_provider_dir" dwm-settings-provider
 missing_appearance_output=$(PATH="$missing_appearance_bin" XDG_CONFIG_HOME="$work/arch-config" \
 	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" \
 	"$isolated_provider_dir/dwm-settings-provider" discover)

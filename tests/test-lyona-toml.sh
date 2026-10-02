@@ -101,8 +101,8 @@ done
 
 # dwm-paths.sh's lyona_toml finds the tool in both layouts: beside an installed
 # caller's libraries in PREFIX/lib/lyona, and beside scripts/ in a checkout.
-mkdir -p "$work/prefix/lib/lyona"
-cp "$tool" "$repo/scripts/dwm-paths.sh" "$work/prefix/lib/lyona/"
+# A caller of lyona_toml, staged as installed, brings dwm-paths.sh and the tool.
+stage_helpers prefix "$work/prefix" dwm-settings-theme
 # shellcheck disable=SC2016 # expanded by the inner shell
 assert_equals nord "$(bash -c '. "$1/dwm-paths.sh"; lyona_lib=$1; lyona_toml get "$2" active theme' \
 	sh "$work/prefix/lib/lyona" "$work/sample.toml")" 'lyona_toml, installed'

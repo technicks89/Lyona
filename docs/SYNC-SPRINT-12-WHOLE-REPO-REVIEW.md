@@ -9,10 +9,13 @@ Picom in an isolated Xvfb session (own display, `dbus-run-session`, private HOME
 and XDG directories; never the live desktop), so their measurements are real,
 though on llvmpipe with no PipeWire, UPower or playerctl.
 
-**This document records every finding, unreviewed.** The maintainer asked for all
-of them to be written down first and reviewed afterwards, so nothing here is
-approved, and no item has started. Items marked with a decision gate need that
-decision before implementation.
+**Status (2026-10-02): all 21 items implemented; closing out.** Each item's
+section records what was built and how it was checked. What the sprint
+deliberately leaves, and what is left before sign-off, is in [Close-out](#close-out)
+at the end.
+
+The findings were first recorded unreviewed, as the maintainer asked; they were
+reviewed and decided item by item as each one started.
 
 Source of each finding: **A** architecture, **E** engineering, **F** efficiency,
 **S** security. **Verified** means the finding was re-checked against the code
@@ -1424,6 +1427,41 @@ and a popup for each (a month calendar; current weather from wttr.in).
 
 ## S12-21: A staged helper always brings its libraries
 
+**Implemented (2026-10-02).** Where it differs from the text below:
+
+- **`stage_helpers LAYOUT DEST HELPER...`** in `tests/lib.sh` (POSIX sh):
+  - `checkout` or `prefix`;
+  - it follows `. "$lyona_lib/X"`, `source "$lyona_lib/X"` and the marker each
+    helper tests for (`-f $lyona_lib/X`), recursively;
+  - it stages `lyona-toml` when a staged file uses it, and fails if it is not
+    built;
+  - it stages the `lyona_system_management` package when a staged file imports
+    it.
+- **The load check is static.** Every `$lyona_lib` reference in every staged
+  file must resolve, and every staged shell file must parse. Running each helper
+  once was the plan, but some helpers do work before they parse arguments, and
+  tests run with the caller's environment. The static check catches what this
+  item is about, a missing library, with no side effects. Staged helpers did
+  run and reach their usage message when tried.
+- **The tests:**
+  - 11 shell tests switched. For each Xvfb test, staging its new list was first
+    compared with the files it copied by hand: identical, nothing missing or
+    extra.
+  - The two Python tests already copy all of `scripts/` and the built
+    `lyona-toml`, and fail loudly if it is not built, so they are unchanged.
+  - `test-lyona-toml.sh` no longer copies `dwm-paths.sh`: it stages a caller of
+    it as installed.
+- **The contract check** in `test-shell-contracts.sh` joins continued lines and
+  fails on any `cp` or `install` in a test that names a `scripts/dwm-*.sh` or
+  `lyona-*.sh` library. It catches the old multi-line copy in
+  `test-quickshell-health-xvfb.sh`.
+- **The item's test:** `dwm-xdg.sh` was removed from a scratch copy, and all 11
+  converted tests failed.
+  - Six failed at staging, naming the helper and the missing file.
+  - Five run the checkout's helper directly before staging, and failed at its
+    load.
+  - None passed.
+
 **Issue:** `#199`. **Source:** found while implementing S12-14 (2026-09-30), added on request. **Verified**
 three times in that item.
 
@@ -1504,3 +1542,39 @@ security items (S12-01 to S12-03) need a root-in-container test job; the pattern
 S10-03's `display-security` job. Each item records its evidence in
 `docs/evidence/s12-*.md`, and what could not be tested (real hardware, a real
 polkit prompt) goes into S10-07's ledger.
+
+## Close-out
+
+**2026-10-02.** S12-01 to S12-21 are implemented, each recorded in its own
+section, and GitHub issues `#164` to `#199` are closed, except `#199` (S12-21),
+which closes with its PR.
+
+**Deliberately not done, by decision:**
+
+- **S12-02 step 3, signed releases (D-14):** declined for now. The future
+  no-password update sprint (`ROADMAP.md` Future Evaluation) reopens it.
+- **S12-10 item 2 (Picom):** tabled.
+- **S12-10 item 3 (Settings pane release):** dropped.
+- **S12-17's review round:** keeping `config.h` out of the system-wide build was
+  raised and left as D-18 decided; it is the maintainer's to reopen.
+
+**Carried into other sprints:**
+
+- **Sprint 13 (S13-01, `#197`):** the watcher-lifetime test's flake under load.
+  It still showed during this sprint, always as one `xprop -spy` or
+  `inotifywait` that outlived Quickshell.
+- **Sprint 14 (`#201` to `#204`):** drivers for pre-Turing NVIDIA cards. Since
+  S12-15 and S12-17 they keep nouveau, with the reason shown.
+
+**Left before sign-off:**
+
+- **A green Full suite (manual) run on `main`**, as every sprint needs. Full
+  local runs passed apart from the S13-01 flake. The last two items (S12-17,
+  S12-18) ran targeted checks only, at the maintainer's request.
+- **Checks only real hardware or a live session can make**, for S10-07's
+  ledger:
+  - a real polkit prompt for System Health's action (S12-15);
+  - the ISO install path, including the NVIDIA prompt and driver (S12-15,
+    S12-17);
+  - the calendar and weather in a real desktop session (S12-20, run only under
+    Xvfb).

@@ -257,8 +257,7 @@ grep -Fq 'theme is unavailable, invalid, or the source is unsafe to mutate: miss
 # libraries it sources in PREFIX/lib/lyona, and the shipped themes, which it
 # falls back to without a user file, in PREFIX/share/lyona/config.
 mkdir -p "$work/prefix/bin" "$work/prefix/lib/lyona" "$work/prefix/share/lyona/config"
-cp "$repo/scripts/dwm-quickshell-controlcenter" "$work/prefix/bin/"
-cp "$repo/scripts/dwm-watchdog.sh" "$repo/scripts/dwm-xdg.sh" "$repo/lyona-toml" "$work/prefix/lib/lyona/"
+stage_helpers prefix "$work/prefix" dwm-quickshell-controlcenter
 cp "$work/data/lyona/config/themes.toml" "$work/prefix/share/lyona/config/"
 rm "$work/config/lyona/themes.toml"
 installed_themes=$(HOME="$work/home" XDG_CONFIG_HOME="$work/config" \

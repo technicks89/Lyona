@@ -893,7 +893,7 @@ run_theme_resume_retry_case() {
 	state="$case_dir/state"
 	minimal_bin="$case_dir/bin"
 	mkdir -p "$case_dir/scripts" "$home" "$state" "$minimal_bin"
-	cp "$repo/scripts/autostart.sh" "$repo/scripts/dwm-xdg.sh" "$case_dir/scripts/"
+	stage_helpers checkout "$case_dir/scripts" autostart.sh
 	cat >"$case_dir/scripts/dwm-settings-theme" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >"${TEST_STATE:?}/theme-resume.args.tmp"
@@ -941,7 +941,7 @@ run_input_watcher_fallback_case() {
 	home="$case_dir/home"
 	state="$case_dir/state"
 	mkdir -p "$case_dir/scripts" "$home" "$state"
-	cp "$repo/scripts/autostart.sh" "$repo/scripts/dwm-xdg.sh" "$case_dir/scripts/"
+	stage_helpers checkout "$case_dir/scripts" autostart.sh
 	cat >"$case_dir/scripts/dwm-settings-input" <<'EOF'
 #!/bin/sh
 case ${1:-} in

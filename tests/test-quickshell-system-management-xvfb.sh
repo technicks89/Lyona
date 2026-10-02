@@ -111,12 +111,9 @@ cp -a "$repo/config/quickshell/." "$config_home/quickshell/"
 cp "$repo/config/"*.toml "$config_home/lyona/"
 # The display and input watchers too, or the Settings shell falls back to the
 # installed copies on PATH (a different version, outside this test's workspace).
-cp "$repo/scripts/dwm-settings-provider" "$repo/scripts/dwm-system-health" \
-	"$repo/scripts/dwm-settings-display" "$repo/scripts/dwm-settings-input" \
-	"$repo/scripts/dwm-display-setup" "$repo/scripts/dwm-simple-watch.sh" \
-	"$repo/scripts/dwm-xsettings-config.sh" "$repo/scripts/dwm-xkbset" \
-	"$repo/scripts/dwm-xdg.sh" "$repo/scripts/dwm-trust.sh" \
-	"$data_home/checkout/scripts/"
+# The helpers this test runs, and every library they source (S12-21).
+stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-system-health \
+	dwm-settings-display dwm-settings-input dwm-display-setup dwm-xkbset
 
 # A stub dwm-system-management: one pending kernel update (exercising the
 # restart heuristic's "system" branch, 92ec6e2:docs/SYNC-P2-UPDATE-SNAPSHOT.md
