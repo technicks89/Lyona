@@ -3,6 +3,13 @@
 # associative array of per-window watchers.
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-watchdog.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-watchdog.sh
+. "$lyona_lib/dwm-watchdog.sh"
+
 print_default_names() {
 	count=${1:-9}
 	i=1
@@ -406,8 +413,10 @@ watch_state() {
 	mkfifo "$watch_dir/events"
 	exec 3<>"$watch_dir/events"
 
+	# Each xprop -spy is bound to this shell by the kernel, so none outlives it
+	# however it ends (Sync Sprint 13 S13-01).
 	if xprop -root _DWM_MONITOR_DESKTOPS >/dev/null 2>&1; then
-		xprop -root -spy \
+		bound_to_this_shell xprop -root -spy \
 			DWM_TAG_UPDATE \
 			_DWM_MONITOR_DESKTOPS \
 			_DWM_SELECTED_MONITOR \
@@ -419,7 +428,7 @@ watch_state() {
 			_DWM_FULLSCREEN_MONITORS \
 			WM_NAME >&3 2>/dev/null &
 	else
-		xprop -root -spy \
+		bound_to_this_shell xprop -root -spy \
 			DWM_TAG_UPDATE \
 			_NET_CURRENT_DESKTOP \
 			_NET_NUMBER_OF_DESKTOPS \
@@ -496,7 +505,8 @@ sync_client_watchers() {
 	done
 	for window_id in "${!wanted[@]}"; do
 		[ -z "${client_watchers[$window_id]:-}" ] || continue
-		xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP >&3 2>/dev/null &
+		bound_to_this_shell xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP \
+			>&3 2>/dev/null &
 		client_watchers[$window_id]=$!
 		started=1
 	done

@@ -8,6 +8,8 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 [[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-watchdog.sh
+. "$lyona_lib/dwm-watchdog.sh"
 lyona_xdg_dirs
 config_dir=$config_home/lyona
 config_file=$config_dir/accessibility.conf
@@ -202,7 +204,8 @@ watch_config() {
 	trap 'exit 143' HUP INT TERM
 	mkfifo -- "$watch_work/events"
 	: >"$watch_work/ready"
-	inotifywait -m -P \
+	# Bound to this shell by the kernel, so it never outlives it (S13-01).
+	bound_to_this_shell inotifywait -m -P \
 		-e attrib,close_write,create,delete,delete_self,moved_from,moved_to,move_self \
 		--format $'changed\t%e\t%f' -- "$config_dir" >"$watch_work/events" 2>"$watch_work/ready" &
 	watch_child=$!

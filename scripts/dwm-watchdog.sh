@@ -10,7 +10,8 @@
 #     [ "$script_dir" != "$0" ] || script_dir=.
 #     . "$script_dir/dwm-watchdog.sh"
 #
-# Defines run_bounded and run_parent_bound; sets nothing else.
+# Defines run_bounded, run_parent_bound and bound_to_this_shell; sets nothing
+# else.
 #
 # run_bounded honors a caller-set $bounded_foreground=1 (unset/0 otherwise,
 # preserving every existing caller's behavior) to keep a nested timeout in
@@ -72,6 +73,23 @@ parent_bound_record() {
 # the process that started it and exits if not, then execs the real command.
 # shellcheck disable=SC2016 # expanded by the guard's own shell
 parent_bound_guard='[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"'
+
+# bound_to_this_shell PROGRAM ARGS...: always started in the background, with
+# `&`, it becomes PROGRAM, bound to this shell by the kernel: the moment this
+# shell exits, however it exits, PROGRAM gets SIGTERM (Sync Sprint 13 S13-01).
+# A watcher's EXIT trap stops its children too, but under load a watcher was
+# seen to die without its trap reaching them, leaving an `xprop -spy` or an
+# `inotifywait` to the init process. $! is PROGRAM's pid, as with a plain `&`,
+# so a caller's own cleanup still works. In the background subshell, $$ is this
+# shell, which the guard checks is still the parent once the signal is armed.
+# Without setpriv it is a plain background child. Never call it without `&`:
+# it would replace this shell.
+bound_to_this_shell() {
+	if command -v setpriv >/dev/null 2>&1; then
+		exec setpriv --pdeathsig TERM -- sh -c "$parent_bound_guard" sh "$$" "$@"
+	fi
+	exec "$@"
+}
 
 run_parent_bound() {
 	parent_pid=$PPID
