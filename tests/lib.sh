@@ -265,19 +265,21 @@ stage_helpers() {
 	*) fail "stage_helpers: unknown layout '$sh_layout' (checkout or prefix)" ;;
 	esac
 	mkdir -p "$sh_bin" "$sh_lib" || fail "stage_helpers: cannot create $sh_dest"
+	# One path per line, preserving spaces and backslashes in destinations.
 	sh_pending=
 	for sh_helper in "$@"; do
 		[ -f "$repo/scripts/$sh_helper" ] || fail "stage_helpers: scripts/$sh_helper does not exist"
 		cp -p "$repo/scripts/$sh_helper" "$sh_bin/$sh_helper" ||
 			fail "stage_helpers: cannot copy $sh_helper"
-		sh_pending="$sh_pending $sh_bin/$sh_helper"
+		sh_pending="${sh_pending:+$sh_pending
+}$sh_bin/$sh_helper"
 	done
 	sh_staged=$sh_pending
 	sh_needs_tool=0
 	sh_needs_python=0
 	while [ -n "$sh_pending" ]; do
 		sh_next=
-		for sh_file in $sh_pending; do
+		while IFS= read -r sh_file; do
 			grep -Eq 'lyona_toml|lyona-toml' "$sh_file" && sh_needs_tool=1
 			grep -q 'lyona_system_management' "$sh_file" && sh_needs_python=1
 			for sh_library in $(stage_helper_libraries "$sh_file"); do
@@ -286,10 +288,14 @@ stage_helpers() {
 					fail "stage_helpers: ${sh_file##*/} needs scripts/$sh_library, which does not exist"
 				cp -p "$repo/scripts/$sh_library" "$sh_lib/$sh_library" ||
 					fail "stage_helpers: cannot copy $sh_library"
-				sh_next="$sh_next $sh_lib/$sh_library"
-				sh_staged="$sh_staged $sh_lib/$sh_library"
+				sh_next="${sh_next:+$sh_next
+}$sh_lib/$sh_library"
+				sh_staged="$sh_staged
+$sh_lib/$sh_library"
 			done
-		done
+		done <<EOF
+$sh_pending
+EOF
 		sh_pending=$sh_next
 	done
 	if [ "$sh_needs_tool" = 1 ]; then
@@ -304,7 +310,8 @@ stage_helpers() {
 		fi
 	fi
 	# The load check.
-	for sh_file in $sh_staged; do
+	while IFS= read -r sh_file; do
+		[ -n "$sh_file" ] || continue
 		for sh_library in $(stage_helper_libraries "$sh_file"); do
 			[ -f "$sh_lib/$sh_library" ] ||
 				fail "stage_helpers: ${sh_file##*/} would not load: $sh_lib/$sh_library is missing"
@@ -313,7 +320,9 @@ stage_helpers() {
 		*bash*) bash -n "$sh_file" || fail "stage_helpers: ${sh_file##*/} does not parse" ;;
 		'#!'*/sh | '#!'*/sh' '* | '# shellcheck shell=sh'*) sh -n "$sh_file" || fail "stage_helpers: ${sh_file##*/} does not parse" ;;
 		esac
-	done
+	done <<EOF
+$sh_staged
+EOF
 }
 
 # The libraries FILE reaches through $lyona_lib: sourced, or tested for as the
