@@ -10,6 +10,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Preserve existing CachyOS signing keys when key verification fails, and stop
+  on keyring listing errors.
+- Remove partial web-app icon downloads and create the app without an icon
+  when curl or wget fails.
 - Preserve legacy data trees when their directory overlaps the source checkout,
   and include them in live-install backups so rollback can restore them.
 - Run live-install verification cleanup and chained EXIT handlers once on
@@ -17,6 +21,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Smaller hardening (Sync Sprint 12 S12-18):
+  - **Display setup:** a mode timing the X server reports is checked before it is written into the system Xorg
+    configuration. A mode with extra tokens or a non-numeric field is refused.
+  - **Notification history:** it is private, 0600 in a 0700 `~/.cache/lyona`, even when an older install left the
+    directory world-readable.
+  - **`webapp-create`:** it quotes the URL in `Exec=` as the desktop-entry spec requires, and its `wget` fallback
+    fetches icons over HTTPS only.
+  - **`install-mybash`:** it checks out a pinned, reviewed `mybash` commit instead of the latest one.
+  - **`lyona-cachyos`:** it receives the CachyOS signing key by its full fingerprint, and accepts it only when the
+    keyring shows exactly that one key.
 - The live medium's installer now recommends the proprietary NVIDIA driver when it detects an NVIDIA GPU the current
   driver supports, with nouveau as the alternative. It is one image for every GPU (decision D-17a; Sync Sprint 12
   S12-17).

@@ -1,6 +1,12 @@
 #!/bin/sh -e
 
 gitpath="$HOME/.local/share/mybash"
+# Reviewed mybash commit (Sync Sprint 12 S12-18): its .bashrc becomes the
+# user's, so it is pinned like install.sh's yay-bin. At this commit nothing in
+# the linked files downloads or runs remote code at shell startup. Re-pin only
+# after reviewing the diff since the last pin.
+MYBASH_URL="https://github.com/technicks89/mybash.git"
+MYBASH_REF="d5284b2c5fcbfcd266bab8bac6541e2b54bac109"
 
 # The packages come from the shared map (Sync Sprint 12 S12-15), which is Bash:
 # this script is POSIX, so it asks bash for the list rather than sourcing it.
@@ -39,7 +45,8 @@ cloneMyBash() {
 		rm -rf "$gitpath"
 	fi
 	mkdir -p "$HOME/.local/share" # Only create the dir if it doesn't exist.
-	cd "$HOME" && git clone https://github.com/technicks89/mybash.git "$gitpath"
+	cd "$HOME" && git clone --quiet "$MYBASH_URL" "$gitpath" &&
+		git -C "$gitpath" checkout --quiet --detach "$MYBASH_REF"
 }
 
 installFont() {

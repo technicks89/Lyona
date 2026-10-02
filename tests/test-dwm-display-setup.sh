@@ -348,6 +348,25 @@ grep -Fq 'Option "Position" "1920 0"' "$work/generated-60.conf"
 grep -Fq 'Option "Rotate" "left"' "$work/generated-60.conf"
 grep -Fq 'Option "Enable" "false"' "$work/generated-60.conf"
 
+# Sync Sprint 12 S12-18: mode timings come from the X server, where any client
+# can create a RandR mode, so a mode line with extra tokens or a non-numeric
+# field is refused rather than written into the system Xorg configuration.
+sed 's|  1920x1080 (0x47) 148.500MHz +HSync +VSync \*current +preferred|  1920x1080 (0x47) 148.500MHz +HSync +VSync EndSection Section "Device" *current +preferred|' \
+	"$work/verbose" >"$work/verbose-hostile-flags"
+sed 's|        h: width  1920 start 2008 end 2052 total 2200 skew    0 clock  67.50KHz|        h: width  1920 start 2008x end 2052 total 2200 skew    0 clock  67.50KHz|' \
+	"$work/verbose" >"$work/verbose-hostile-field"
+for hostile in flags field; do
+	cmp -s "$work/verbose" "$work/verbose-hostile-$hostile" &&
+		fail "the hostile $hostile fixture did not change the mode"
+	if env "${env_common[@]}" TEST_VERBOSE="$work/verbose-hostile-$hostile" "$BASH_BIN" "$HELPER" generate \
+		"$work/profile-60.conf" >"$work/generated-hostile-$hostile.conf" 2>"$work/generated-hostile-$hostile.err"; then
+		fail "a hostile mode ($hostile) was written into the Xorg configuration"
+	fi
+	grep -Fq 'refusing to write it' "$work/generated-hostile-$hostile.err"
+	! grep -Fq 'Modeline "1920x1080_60"' "$work/generated-hostile-$hostile.conf" ||
+		fail "a hostile mode ($hostile) reached a Modeline"
+done
+
 env "${env_common[@]}" TEST_PROPERTIES="$work/properties-unsupported" \
 	"$BASH_BIN" "$HELPER" generate "$work/profile-60.conf" >"$work/generated-ddx-tearfree.conf"
 grep -Fq 'Option "TearFree" "true"' "$work/generated-ddx-tearfree.conf"

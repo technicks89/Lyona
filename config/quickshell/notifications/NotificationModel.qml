@@ -43,7 +43,14 @@ Scope {
     readonly property string cacheDir: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/lyona"
     readonly property string historyPath: cacheDir + "/notification-history.json"
 
-    Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", configDir, cacheDir])
+    // The history holds other programs' notification text, so only this user can
+    // read it (Sync Sprint 12 S12-18). The cache directory is lyona's own: it is
+    // made 0700 even when an older install left it 0755, and the history file
+    // 0600. FileView rewrites the file in place, so the mode stays.
+    Component.onCompleted: Quickshell.execDetached(["sh", "-c",
+        'umask 077 && mkdir -p -- "$1" "$2" && chmod 700 -- "$2" && '
+        + '{ [ -e "$3" ] || printf "%s\\n" "{\\"notifications\\": []}" >"$3"; } && chmod 600 -- "$3"',
+        "sh", configDir, cacheDir, historyPath])
 
     function validPopupTimeout(value) {
         return root.popupTimeoutOptions.indexOf(value) >= 0;
