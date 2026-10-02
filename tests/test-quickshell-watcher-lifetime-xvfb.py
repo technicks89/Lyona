@@ -238,6 +238,27 @@ with tempfile.TemporaryDirectory(prefix='lifetime-') as temp:
         for ident in left:
             names[ident[2]] = names.get(ident[2], 0) + 1
         report['left_by_name'] = names
+        # Sync Sprint 13 S13-01: why each one survived. A survivor whose watcher
+        # (its parent) is still alive and that goes on its own within 10 s was
+        # only slow; one still there, its watcher gone, was missed by the cleanup.
+        survivors = []
+        for ident in left:
+            try:
+                fields = stat(ident[0])
+            except (FileNotFoundError, ProcessLookupError, IndexError):
+                continue
+            parent = int(fields[1])
+            try:
+                parent_state = stat(parent)[0]
+            except (FileNotFoundError, ProcessLookupError, IndexError):
+                parent_state = 'gone'
+            survivors.append((ident, {'name': ident[2], 'state': fields[0], 'parent': parent,
+                                     'parent_command': command_line(parent), 'parent_state': parent_state}))
+        if survivors:
+            time.sleep(10)
+            for ident, survivor in survivors:
+                survivor['alive_10s_later'] = alive(ident)
+        report['survivors'] = [survivor for ident, survivor in survivors]
     finally:
         # TERM first, so the shell autostart relaunched and its watchers run their
         # own cleanup (their fifo folders); KILL whatever is left after 3 s.

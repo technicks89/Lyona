@@ -27,6 +27,8 @@ lyona_lib=$script_dir
 . "$lyona_lib/dwm-paths.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-watchdog.sh
+. "$lyona_lib/dwm-watchdog.sh"
 lyona_xdg_dirs
 config_dir=$config_home/lyona
 themes_file=${DWM_APPEARANCE_THEMES_FILE:-$config_home/lyona/themes.toml}
@@ -1399,7 +1401,9 @@ watch_inventory() {
 	exec {inventory_watch_fd}<>"$inventory_watch_work/events"
 	trap inventory_watch_cleanup EXIT
 	trap 'exit 143' HUP INT TERM
-	inotifywait -m -P \
+	# When setpriv is available, the kernel binds inotifywait to this shell (S13-01).
+	# Without it, the child may outlive this shell if cleanup does not run.
+	bound_to_this_shell inotifywait -m -P \
 		-e attrib -e close_write -e create -e delete -e moved_to -e moved_from \
 		-e delete_self -e move_self --format $'%e\t%w%f' -- \
 		"${inventory_watch_dirs[@]}" >"$inventory_watch_work/events" \

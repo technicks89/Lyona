@@ -1568,9 +1568,11 @@ which closes with its PR.
 
 **Left before sign-off:**
 
-- **A green Full suite (manual) run on `main`**, as every sprint needs. Full
-  local runs passed apart from the S13-01 flake. The last two items (S12-17,
-  S12-18) ran targeted checks only, at the maintainer's request.
+- **A green Full suite (manual) run on `main`**, as every sprint needs, on
+  GitHub. Locally, the full suite passed end to end on 2026-10-02, on Sprint 13's
+  branch, the first run since the S13-01 flake was fixed. That branch holds all
+  of Sprint 12, so this also covers S12-17 and S12-18, which had run targeted
+  checks only.
 - **Checks only real hardware or a live session can make**, for S10-07's
   ledger:
   - a real polkit prompt for System Health's action (S12-15);

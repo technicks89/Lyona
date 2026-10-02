@@ -10,6 +10,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The shell's watchers no longer leave an `xprop -spy` or `inotifywait` running after Quickshell crashes or is killed,
+  however busy the machine (Sync Sprint 13 S13-01). Each one is now bound to its watcher by the kernel, so it ends the
+  moment the watcher does. This also stops the watcher-lifetime test failing under load.
 - `lyona-update` can install a published release again (Sync Sprint 12 S12-19). The release asset was a runtime bundle
   with no `Makefile`, which both the updater and its root helper build from, so every release install failed at the
   first `make`. The asset is now a reproducible source archive of the repository. `make release-check` builds it from

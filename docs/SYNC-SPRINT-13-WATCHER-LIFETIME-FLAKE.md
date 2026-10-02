@@ -4,8 +4,7 @@ Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md). Independent of every other sprint
 It comes from Sprint 12 S12-13, whose full-suite runs kept stopping on one
 test.
 
-**Status:** planned 2026-09-29, not started, awaiting maintainer review. No
-decision gates it. GitHub: milestone "Sync Sprint 13 - Watcher lifetime under
+**Status:** implemented 2026-10-02. S13-01 is done; see its Result section. GitHub: milestone "Sync Sprint 13 - Watcher lifetime under
 load" (due 2026-10-25), issue `#197`.
 
 | Item | Issue | Kind | Gate |
@@ -15,6 +14,48 @@ load" (due 2026-10-25), issue `#197`.
 ---
 
 ## S13-01: A watcher's children end with the shell, however busy the machine
+
+### Result (2026-10-02)
+
+- **Step 1, the diagnosis: fault 2, missed.** The lifetime test now records,
+  for each survivor, its state, its parent and that parent's command and state,
+  and whether it is still alive 10 s later.
+  - Unloaded, eight runs passed.
+  - With one busy loop per core (12), 3 of 6 runs failed. In every one, each
+    survivor (`xprop -root -spy DWM_TAG_UPDATE`, or an `inotifywait -m`) had
+    been reparented to PID 1: its watcher was gone. It was still alive 10 s
+    later.
+  - So the watcher died without its EXIT trap reaching the child. It was not a
+    slow cleanup.
+- **Step 2, the fix:** `dwm-watchdog.sh` gains `bound_to_this_shell`. A watcher
+  starts each long-lived child with it, in the background with `&`.
+  - In the background subshell it `exec`s `setpriv --pdeathsig TERM` through the
+    existing `parent_bound_guard`, with the watcher's `$$` as the expected
+    parent.
+  - The kernel then sends the child SIGTERM the moment the watcher exits,
+    however it exits.
+  - `$!` is still the child, so each watcher's own cleanup is unchanged.
+  - Bound: `dwm-quickshell-state`'s root and per-window `xprop -spy`, and the
+    `inotifywait` watches in `dwm-settings-appearance` and
+    `dwm-accessibility-settings`. `dwm-quickshell-state` now sources
+    `dwm-watchdog.sh` through `$lyona_lib`, and so do the other two.
+  - A bound `sleep` whose parent shell was SIGKILLed, so no trap could run, was
+    gone at once.
+- **Step 3:** the 3 s grace is unchanged.
+- **Step 4, the test:**
+  - 20 runs in a row passed under the same load (12 busy loops) that failed 3
+    of 6 before.
+  - Against a bridge whose root `xprop` is unbound and whose cleanup kills
+    nothing (a scratch copy), the test fails, naming
+    `xprop -root -spy DWM_TAG_UPDATE`, reparented to PID 1 and alive 10 s later.
+  - The state bridge, accessibility, appearance, theme and Settings tests pass,
+    as do shell contracts, `check-shell` and `check-format`.
+  - **The full suite (`scripts/run-tests`) passed end to end, 2026-10-02.**
+    Before this, every full run during Sprint 12 had stopped at this test at
+    least once.
+- **Not done:** why the watcher's trap missed under load. Bash runs a trap only
+  between commands, and the bound child no longer depends on it, so this was
+  not pursued.
 
 ### The symptom
 
