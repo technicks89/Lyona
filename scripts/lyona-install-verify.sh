@@ -116,6 +116,7 @@ case $(trap -p INT) in "" | "trap -- - INT") trap 'exit 130' INT ;; esac
 case $(trap -p TERM) in "" | "trap -- - TERM") trap 'exit 143' TERM ;; esac
 install_sources_file=$work/install-sources
 lib_sources_file=$work/lib-sources
+python_sources_file=$work/python-sources
 session_sources_file=$work/session-sources
 default_sources_file=$work/default-sources
 expected_man=$work/dwm.1
@@ -138,6 +139,13 @@ prepare_expected_files() {
 		dwm-dev-print-lib-sources >"$lib_sources_file"
 	[ -s "$lib_sources_file" ] ||
 		die "Makefile did not report any installed libraries"
+
+	# shellcheck disable=SC2016
+	"$make_path" -s -C "$repo_dir" --no-print-directory \
+		--eval='dwm-dev-print-python-sources: ; @printf "%s\n" $(INSTALL_PYTHON)' \
+		dwm-dev-print-python-sources >"$python_sources_file"
+	[ -s "$python_sources_file" ] ||
+		die "Makefile did not report the system-management package"
 
 	# shellcheck disable=SC2016
 	"$make_path" -s -C "$repo_dir" --no-print-directory \
@@ -248,6 +256,22 @@ verify_install() {
 			verification_failed=1
 		fi
 	done <"$lib_sources_file"
+	# The Python package behind dwm-system-management (S12-16), file by file:
+	# a checkout's package directory may also hold __pycache__.
+	python_dir=$prefix/lib/lyona/python/lyona_system_management
+	while IFS= read -r python_source; do
+		[ -n "$python_source" ] || continue
+		verify_file "$repo_dir/$python_source" "$python_dir/${python_source##*/}" \
+			"system-management module ${python_source##*/}"
+	done <"$python_sources_file"
+	for installed_module in "$python_dir"/*.py; do
+		[ -e "$installed_module" ] || continue
+		if ! grep -Fqx "scripts/lyona_system_management/${installed_module##*/}" "$python_sources_file"; then
+			printf 'STALE: system-management module %s is no longer shipped\n' \
+				"${installed_module##*/}" >&2
+			verification_failed=1
+		fi
+	done
 	while IFS= read -r session_source; do
 		[ -n "$session_source" ] || continue
 		verify_executable "$repo_dir/$session_source" \
@@ -359,6 +383,7 @@ backup_live_install() {
 		add_system_backup_path "$prefix/bin/${lib_source##*/}"
 		add_system_backup_path "$prefix/lib/lyona/${lib_source##*/}"
 	done <"$lib_sources_file"
+	add_system_backup_path "$prefix/lib/lyona/python/lyona_system_management"
 	while IFS= read -r session_source; do
 		[ -n "$session_source" ] || continue
 		add_system_backup_path "$prefix/lib/lyona/${session_source##*/}"

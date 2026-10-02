@@ -17,17 +17,13 @@ def write_pid(filename, pid):
 
 mode = sys.argv[1]
 if mode == "collector":
-    import importlib.machinery
-    import importlib.util
     import subprocess
     from unittest import mock
 
     sys.dont_write_bytecode = True
-    spec = importlib.util.spec_from_loader("locale_provider",
-        importlib.machinery.SourceFileLoader("locale_provider", sys.argv[2]))
-    provider = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = provider
-    spec.loader.exec_module(provider)
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import lyona_provider  # noqa: E402  (the package beside the launcher; S12-16)
+    provider = lyona_provider.load(sys.argv[2])
     popen = subprocess.Popen
 
     def launch(command, **options):

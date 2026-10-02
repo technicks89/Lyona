@@ -8,6 +8,8 @@ watched_process=$repo/config/quickshell/core/WatchedProcess.qml
 theme=$repo/config/quickshell/core/Theme.qml
 commands=$repo/config/quickshell/core/Commands.qml
 shell_qml=$repo/config/quickshell/shell.qml
+# The settings target's test getters (Sync Sprint 12 S12-16).
+settings_test_ipc=$repo/config/quickshell/settings/SettingsTestIpc.qml
 pane=$repo/config/quickshell/settings/AppearanceSettingsPane.qml
 settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
 settings_model=$repo/config/quickshell/settings/SettingsModel.qml
@@ -98,8 +100,8 @@ fi
 assert_contains "$commands" 'function accessibilitySettingsCommand(action, args)'
 assert_contains "$shell_qml" 'import qs.accessibility'
 assert_contains "$shell_qml" 'AccessibilityModel {'
-assert_contains "$shell_qml" 'function themeColor(role: string): string {'
-assert_contains "$shell_qml" 'function themeHighContrast(): bool {'
+assert_contains "$settings_test_ipc" 'function themeColor(role: string): string {'
+assert_contains "$settings_test_ipc" 'function themeHighContrast(): bool {'
 assert_contains "$shell_qml" 'accessibilityModel: accessibilityModel'
 
 # ── Phase 6: reachable Settings controls, not just a working policy ─────

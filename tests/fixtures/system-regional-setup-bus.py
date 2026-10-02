@@ -2,13 +2,14 @@
 """Inject real directly addressed signals at controlled service setup barriers."""
 
 import os
-import runpy
 import sys
 
 os.environ["DBUS_SYSTEM_BUS_ADDRESS"] = os.environ["DBUS_SESSION_BUS_ADDRESS"]
 from gi.repository import Gio, GLib, GLibUnix
 
-provider = runpy.run_path(sys.argv[1], run_name="regional_setup_fixture")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lyona_provider  # noqa: E402  (the package beside the launcher; S12-16)
+provider = vars(lyona_provider.load(sys.argv[1]))
 accounts = len(sys.argv) == 3 and sys.argv[2] == "accounts"
 address = os.environ["DBUS_SESSION_BUS_ADDRESS"]
 flags = Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION

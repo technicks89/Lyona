@@ -17,6 +17,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- `dwm-system-management` is now a short launcher over the `lyona_system_management` Python package, installed to
+  `PREFIX/lib/lyona/python` (Sync Sprint 12 S12-16).
+  - The package is 14 modules, one per domain, instead of one 10,379-line file. Behaviour is unchanged.
+  - The package's docstring now says what the helper does, including the updates and settings changes it makes. The
+    old one called it read-only.
+  - Installs verify each module, and report one the release no longer ships. The pre-update backup includes the
+    package.
+- The shell's `settings` IPC target now has only the commands the desktop uses: `open`, `close`, `toggle`, `refresh`,
+  `select` and `status`. The test suite's 159 getters and drivers moved to a `settingsTest` target, which the shell
+  creates only when `LYONA_SHELL_TEST_IPC=1` (Sync Sprint 12 S12-16). `shell.qml` is 714 lines shorter.
 - Privileged-helper consistency, the package map, and lint coverage (Sync Sprint 12 S12-15).
   - **System Health's privileged scan and repairs** go through a new root-owned helper,
     `libexec/lyona/dwm-system-health-root`, under its own polkit action (`com.lyona.system-health.manage`) with a

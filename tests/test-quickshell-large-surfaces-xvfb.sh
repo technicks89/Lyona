@@ -154,6 +154,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
 	QSG_RHI_BACKEND=software QT_QUICK_BACKEND=software \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
+	LYONA_SHELL_TEST_IPC=1 \
 	DWM_LARGE_SURFACE_DEX_LOG="$work/dex.log" PATH="$bin:$data_home/checkout/scripts:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
@@ -278,7 +279,7 @@ else
 	i=0
 	section=
 	while [ "$i" -lt 100 ]; do
-		section=$(ipc settings currentSection 2>/dev/null || true)
+		section=$(ipc settingsTest currentSection 2>/dev/null || true)
 		[ "$section" = input ] && break
 		i=$((i + 1))
 		sleep 0.05

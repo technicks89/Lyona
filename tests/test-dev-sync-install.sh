@@ -47,6 +47,10 @@ make -s -C "$test_repo" --no-print-directory \
 	test-print-lib-sources >"$work/lib-sources"
 # shellcheck disable=SC2016
 make -s -C "$test_repo" --no-print-directory \
+	--eval='test-print-python-sources: ; @printf "%s\n" $(INSTALL_PYTHON)' \
+	test-print-python-sources >"$work/python-sources"
+# shellcheck disable=SC2016
+make -s -C "$test_repo" --no-print-directory \
 	--eval='test-print-session-sources: ; @printf "%s\n" $(INSTALL_SESSION_SCRIPTS)' \
 	test-print-session-sources >"$work/session-sources"
 # shellcheck disable=SC2016
@@ -75,6 +79,11 @@ while IFS= read -r lib_source; do
 	install -Dm644 "$test_repo/$lib_source" \
 		"$prefix/lib/lyona/${lib_source##*/}"
 done <"$work/lib-sources"
+python_dir="$prefix/lib/lyona/python/lyona_system_management"
+while IFS= read -r python_source; do
+	[ -n "$python_source" ] || continue
+	install -Dm644 "$test_repo/$python_source" "$python_dir/${python_source##*/}"
+done <"$work/python-sources"
 while IFS= read -r session_source; do
 	[ -n "$session_source" ] || continue
 	install -Dm755 "$test_repo/$session_source" \
@@ -144,6 +153,18 @@ fi
 grep -Fq 'MISSING INSTALL: installed library dwm-paths.sh' "$output"
 grep -Fq 'STALE: library dwm-paths.sh is still installed in' "$output"
 mv "$prefix/bin/dwm-paths.sh" "$prefix/lib/lyona/dwm-paths.sh"
+run_check >"$output"
+
+# The system-management package is verified module by module, and a module the
+# checkout no longer ships is reported (Sync Sprint 12 S12-16).
+mv "$python_dir/cli.py" "$python_dir/retired.py"
+if run_check >"$output" 2>&1; then
+	printf '%s\n' 'A missing and a retired module unexpectedly passed.' >&2
+	exit 1
+fi
+grep -Fq 'MISSING INSTALL: system-management module cli.py' "$output"
+grep -Fq 'STALE: system-management module retired.py is no longer shipped' "$output"
+mv "$python_dir/retired.py" "$python_dir/cli.py"
 run_check >"$output"
 
 # The shipped defaults are verified in share/lyona, and a per-user copy an older

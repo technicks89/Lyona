@@ -1042,6 +1042,30 @@ it moved here from S12-13 to keep that item smaller.
 ## S12-16: Split dwm-system-management and move test IPC out of the shell
 
 **Source:** A (Medium, Low). **Verified** (size, docstring).
+**Implemented (2026-10-02), all three steps.** The plan, the split tool and the
+details are in [`SYNC-SPRINT-12-S12-16-SPLIT.md`](SYNC-SPRINT-12-S12-16-SPLIT.md).
+
+- **Step 1:** `scripts/dwm-system-management` is a launcher over the
+  `lyona_system_management` package, installed to `PREFIX/lib/lyona/python`,
+  and the docstring is corrected.
+- **Step 2:** the package is 14 modules, one per domain, behind a read-only
+  facade. Tests patch the module that defines a name; patching the package
+  raises.
+- **Step 3:** the `settings` IPC target keeps its six product commands. The
+  tests' 159 getters and drivers are on `settingsTest`
+  (`settings/SettingsTestIpc.qml`), created only when `LYONA_SHELL_TEST_IPC=1`.
+- **Validation:**
+  - 691 unit tests (686 and 5 new) pass.
+  - Before and after the split, five commands' output agrees.
+  - The install, release and lint checks pass.
+  - The four Xvfb shell tests pass.
+  - The real shell in Xvfb has no `settingsTest` target without the flag, and
+    idles at 0.000% CPU.
+  - The full suite passes, except for the known watcher-lifetime flake (S13-01, `#197`). It showed its usual
+    signature: one `xprop -root -spy DWM_TAG_UPDATE` outlived Quickshell. The test passed in its own run on this
+    branch. `make check` stops at the first failure, so the 59 targets after it were run one by one, and all pass.
+- **Not tested:** a desktop session on real hardware. The shell ran only under
+  Xvfb.
 
 1. `scripts/dwm-system-management` is one 10,379-line Python file covering updates,
    PackageKit transactions, regional and time settings, accounts, printers, storage

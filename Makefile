@@ -122,6 +122,11 @@ RETIRED_LIB_NAMES = dev-sync-install.sh
 INSTALL_SESSION_SCRIPTS = scripts/autostart.sh scripts/autostop.sh
 INSTALL_SESSION_SCRIPT_NAMES = $(notdir ${INSTALL_SESSION_SCRIPTS})
 LIB_DIR = ${PREFIX}/lib/lyona
+# The Python package behind dwm-system-management (Sync Sprint 12 S12-16):
+# installed to PREFIX/lib/lyona/python, where the command finds it.
+PYTHON_PACKAGE = lyona_system_management
+INSTALL_PYTHON = $(sort $(wildcard scripts/${PYTHON_PACKAGE}/*.py))
+PYTHON_LIB_DIR = ${LIB_DIR}/python
 # The shipped default TOMLs, read-only, which dwm and the theme helpers fall
 # back to. In PREFIX/share/lyona, found from the executable like LIB_DIR (not
 # DATADIR, which install.sh sets only at install time). S12-13 step 2.
@@ -268,6 +273,13 @@ install-system:
 	@echo "==> Installing shared shell code..."
 	for f in ${INSTALL_LIBS}; do \
 		install -Dm644 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
+	done
+	@echo "==> Installing the system-management package..."
+	@# The directory is lyona's: replaced whole, so a module removed in a later
+	@# release does not linger.
+	rm -rf ${DESTDIR}${PYTHON_LIB_DIR}/${PYTHON_PACKAGE}
+	for f in ${INSTALL_PYTHON}; do \
+		install -Dm644 "$$f" ${DESTDIR}${PYTHON_LIB_DIR}/${PYTHON_PACKAGE}/$$(basename "$$f"); \
 	done
 	@echo "==> Installing the TOML reader..."
 	install -Dm755 ${TOML_TOOL} ${DESTDIR}${LIB_DIR}/${TOML_TOOL}
@@ -505,6 +517,8 @@ uninstall:
 	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
+	rm -rf ${DESTDIR}${PYTHON_LIB_DIR}/${PYTHON_PACKAGE}
+	-rmdir ${DESTDIR}${PYTHON_LIB_DIR} 2>/dev/null
 	-rmdir ${DESTDIR}${LIB_DIR} 2>/dev/null
 	for name in ${INSTALL_DEFAULT_NAMES}; do \
 		rm -f ${DESTDIR}${SHARE_DIR}/config/$$name; \
@@ -1041,6 +1055,9 @@ check-install-manifest: all
 		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL}; do \
 			printf 'usr/lib/lyona/%s\n' "$$name"; \
 		done; \
+		for name in $(notdir ${INSTALL_PYTHON}); do \
+			printf 'usr/lib/lyona/python/${PYTHON_PACKAGE}/%s\n' "$$name"; \
+		done; \
 		for name in ${INSTALL_DEFAULT_NAMES}; do \
 			printf 'usr/share/lyona/config/%s\n' "$$name"; \
 		done; \
@@ -1075,6 +1092,8 @@ check-install-manifest: all
 	for name in ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL}; do \
 		test -x "$$stage/usr/lib/lyona/$$name"; \
 	done; \
+	status=0; PYTHONDONTWRITEBYTECODE=1 "$$stage/usr/bin/dwm-system-management" >/dev/null 2>&1 || status=$$?; \
+	test "$$status" = 2; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-settings-display-root' \
 		"$$stage/usr/share/polkit-1/actions/com.lyona.settings-display.policy"; \
 	grep -Fq 'org.freedesktop.policykit.exec.path">/usr/libexec/lyona/dwm-system-health-root' \

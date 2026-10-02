@@ -3,7 +3,6 @@
 
 import os
 import pathlib
-import runpy
 import subprocess
 import sys
 import tempfile
@@ -13,7 +12,9 @@ os.environ["DBUS_SYSTEM_BUS_ADDRESS"] = os.environ["DBUS_SESSION_BUS_ADDRESS"]
 from gi.repository import Gio, GLib
 
 provider_path = str(pathlib.Path(sys.argv[1]).resolve())
-p = runpy.run_path(provider_path, run_name="regional_owner_fixture")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lyona_provider  # noqa: E402  (the package beside the launcher; S12-16)
+p = vars(lyona_provider.load(provider_path))
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 registrations = []
 calls = []

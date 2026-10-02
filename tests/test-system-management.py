@@ -17,8 +17,6 @@ from __future__ import annotations
 import contextlib
 import errno
 import hashlib
-import importlib.util
-import importlib.machinery
 import io
 import json
 import os
@@ -45,15 +43,8 @@ import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
 REPO = pathlib.Path(__file__).resolve().parent.parent
 PROVIDER_PATH = REPO / "scripts" / "dwm-system-management"
 sys.dont_write_bytecode = True
-SPEC = importlib.util.spec_from_loader(
-    "dwm_system_management",
-    importlib.machinery.SourceFileLoader("dwm_system_management", str(PROVIDER_PATH)),
-)
-if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("cannot load dwm-system-management")
-provider = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = provider
-SPEC.loader.exec_module(provider)
+import lyona_provider  # noqa: E402  (the package beside the launcher; S12-16)
+provider = lyona_provider.load(PROVIDER_PATH)
 
 
 class FixtureBackend:
@@ -125,7 +116,7 @@ class InformationSnapshotTests(unittest.TestCase):
         return source
 
     def test_complete_records_and_exact_counters_without_admission(self):
-        with mock.patch.object(provider, "open_journal_directory", side_effect=AssertionError("Journal opened")):
+        with mock.patch.object(provider.operation_journal, "open_journal_directory", side_effect=AssertionError("Journal opened")):
             result = provider.build_information_snapshot(self.sources())
         self.assertEqual(len(rows(result, "provider")), 4)
         self.assertEqual(len(rows(result, "state")), 21)
@@ -180,13 +171,13 @@ class InformationSnapshotTests(unittest.TestCase):
 
     def test_unmonitored_storage_mode_does_not_start_the_filesystem_reader(self):
         source = provider.InformationSnapshotSources(storage_ready=False)
-        with mock.patch.object(provider, "read_filesystem_information", side_effect=AssertionError("Unmonitored read")) as read:
+        with mock.patch.object(provider.system_information, "read_filesystem_information", side_effect=AssertionError("Unmonitored read")) as read:
             value = source.filesystems()
         read.assert_not_called()
         self.assertEqual((value.summary.status, value.summary.value, value.rows), ("partial", "unknown", ()))
 
     def test_fixed_snapshot_modes_reject_extra_arguments_before_backend_reads(self):
-        with mock.patch.object(provider, "PackageKitBackend") as backend, contextlib.redirect_stderr(io.StringIO()):
+        with mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, contextlib.redirect_stderr(io.StringIO()):
             for command in ("snapshot", "snapshot-core", "snapshot-without-storage"):
                 self.assertEqual(provider.main([command, "arbitrary"]), 2)
         backend.assert_not_called()
@@ -265,14 +256,14 @@ class LocalInformationTests(unittest.TestCase):
             return {"side_effect": value} if isinstance(value, Exception) else {"return_value": value}
 
         output = io.StringIO()
-        with mock.patch.object(provider, "open", open_source, create=True), \
+        with mock.patch.object(provider.system_information, "open", open_source, create=True), \
                 mock.patch.object(provider.os, "uname", **response(identity)), \
                 mock.patch.object(provider.os, "cpu_count", **response(count)), \
                 mock.patch.object(provider.time, "clock_gettime", **response(uptime)) as clock, \
                 mock.patch.object(provider.subprocess, "Popen", side_effect=AssertionError("Unexpected subprocess")), \
                 mock.patch.object(provider.os, "system", side_effect=AssertionError("Unexpected shell")), \
                 mock.patch.object(provider.ServiceRead, "run", side_effect=AssertionError("Unexpected service read")), \
-                mock.patch.object(provider, "open_journal_directory", side_effect=AssertionError("Unexpected journal")), \
+                mock.patch.object(provider.operation_journal, "open_journal_directory", side_effect=AssertionError("Unexpected journal")), \
                 contextlib.redirect_stdout(output):
             result = provider.read_local_information()
             if getattr(provider.time, "CLOCK_BOOTTIME", None) is not None:
@@ -445,12 +436,12 @@ class LocalSecurityTests(unittest.TestCase):
             return stream
         efi = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o755) if efi is None else efi
         stat_options = {"side_effect": efi} if isinstance(efi, Exception) else {"return_value": efi}
-        with mock.patch.object(provider, "open", source, create=True), \
+        with mock.patch.object(provider.system_information, "open", source, create=True), \
                 mock.patch.object(provider.os, "stat", **stat_options) as source_stat, \
                 mock.patch.object(provider.os, "listdir", side_effect=AssertionError("Unexpected enumeration")), \
                 mock.patch.object(provider.os, "scandir", side_effect=AssertionError("Unexpected enumeration")), \
                 mock.patch.object(provider.subprocess, "Popen", side_effect=AssertionError("Unexpected subprocess")), \
-                mock.patch.object(provider, "open_journal_directory", side_effect=AssertionError("Unexpected journal")):
+                mock.patch.object(provider.operation_journal, "open_journal_directory", side_effect=AssertionError("Unexpected journal")):
             result = provider.read_selinux_status() if kind == "selinux" else provider.read_secure_boot_status()
         self.assertTrue(all(stream.closed for stream in streams))
         self.assertEqual(len(opened), len(set(opened)))
@@ -534,7 +525,7 @@ class LocalSecurityTests(unittest.TestCase):
 
     def test_source_selector_is_closed_before_open(self):
         for kind in ("other", "/etc/passwd", [], None):
-            with mock.patch.object(provider, "open", create=True) as source, \
+            with mock.patch.object(provider.system_information, "open", create=True) as source, \
                     self.assertRaises(provider.SnapshotFailure):
                 provider.read_security_bytes(kind)
             source.assert_not_called()
@@ -674,7 +665,7 @@ class ScreenLockTests(unittest.TestCase):
     def test_fixed_power_helper_preserves_session_and_requires_complete_success(self):
         for code, value, status in ((0, "enabled", "available"), (1, "unknown", "unavailable"), (124, "unknown", "unavailable")):
             with self.process(f"import sys; sys.stdout.buffer.write({self.record()!r}); sys.exit({code})"), \
-                    mock.patch.object(provider, "open_journal_directory") as journal:
+                    mock.patch.object(provider.operation_journal, "open_journal_directory") as journal:
                 state = provider.read_screen_lock()
             self.assertEqual((state.value, state.status), (value, status))
             journal.assert_not_called()
@@ -909,7 +900,7 @@ class FilesystemProcessTests(unittest.TestCase):
 
     def test_fixed_fresh_command_and_exact_combined_budget(self):
         with self.source() as processes, mock.patch.dict(os.environ, {"LC_ALL": "invalid"}), \
-                mock.patch.object(provider, "open_journal_directory") as journal:
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal:
             for _ in range(2):
                 result = provider.read_filesystem_information()
                 self.assertEqual((result.summary.status, result.summary.value), ("available", "1"))
@@ -971,7 +962,7 @@ class FilesystemProcessTests(unittest.TestCase):
                     raise provider.SnapshotFailure("malformed", "Late failure")
                 return provider.FilesystemInformation(provider.InformationState("available", "0", "Fixture"))
             with self.source(), mock.patch.object(provider.time, "monotonic", side_effect=lambda: monotonic() + offset[0]), \
-                    mock.patch.object(provider, "parse_filesystem_information", side_effect=decode):
+                    mock.patch.object(provider.system_information, "parse_filesystem_information", side_effect=decode):
                 result = provider.read_filesystem_information()
             self.assertEqual(result.summary.error_code, "timeout")
             self.assertEqual(result.rows, ())
@@ -991,7 +982,7 @@ class FilesystemProcessTests(unittest.TestCase):
                 if number is not None:
                     signal.raise_signal(number)
                 raise provider.SnapshotFailure("timeout", "Private cleanup detail", "unavailable")
-            with self.source(expect_cleanup=False), mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+            with self.source(expect_cleanup=False), mock.patch.object(provider.regional_settings, "close_locale_process", side_effect=cleanup):
                 if number is not None:
                     with self.assertRaises(SystemExit) as caught:
                         provider.read_filesystem_information()
@@ -1026,7 +1017,7 @@ class RootEncryptionProcessTests(unittest.TestCase):
 
     def test_fixed_fresh_command_and_exact_shared_output_budget(self):
         with self.source() as processes, mock.patch.dict(os.environ, {"LC_ALL": "invalid"}), \
-                mock.patch.object(provider, "open_journal_directory") as journal:
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal:
             for _ in range(2):
                 state = provider.read_root_encryption()
                 self.assertEqual((state.status, state.value), ("available", "unencrypted"))
@@ -1079,7 +1070,7 @@ class RootEncryptionProcessTests(unittest.TestCase):
                     raise provider.SnapshotFailure("malformed", "Late failure")
                 return provider.InformationState("available", "encrypted", "Fixture")
             with self.source(), mock.patch.object(provider.time, "monotonic", side_effect=lambda: monotonic() + offset[0]), \
-                    mock.patch.object(provider, "parse_root_encryption", side_effect=decode):
+                    mock.patch.object(provider.system_information, "parse_root_encryption", side_effect=decode):
                 state = provider.read_root_encryption()
             self.assertEqual((state.value, state.error_code), ("unknown", "timeout"))
 
@@ -1096,7 +1087,7 @@ class RootEncryptionProcessTests(unittest.TestCase):
                 if number is not None:
                     signal.raise_signal(number)
                 raise provider.SnapshotFailure("timeout", "Private cleanup detail", "unavailable")
-            with self.source(expect_cleanup=False), mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+            with self.source(expect_cleanup=False), mock.patch.object(provider.regional_settings, "close_locale_process", side_effect=cleanup):
                 if number is not None:
                     with self.assertRaises(SystemExit) as caught:
                         provider.read_root_encryption()
@@ -1577,7 +1568,7 @@ class TimeStatusCommandTests(unittest.TestCase):
             for enabled in (False, True):
                 for synchronized in (False, True):
                     state = provider.RegionalTimeState("Etc/UTC", can_ntp, enabled, synchronized)
-                    with mock.patch.object(provider, "RegionalRead") as reader:
+                    with mock.patch.object(provider.regional_settings, "RegionalRead") as reader:
                         reader.return_value.run.return_value = state
                         output, code = provider.time_status_output()
                     reader.assert_called_once_with("time-state")
@@ -1590,7 +1581,7 @@ class TimeStatusCommandTests(unittest.TestCase):
                       provider.RegionalTimeState("UTC", True, "yes", True),
                       provider.RegionalTimeState("UTC", True, True, 0),
                       provider.RegionalTimeState("UTC\nrecord", True, True, True)):
-            with mock.patch.object(provider, "RegionalRead") as reader:
+            with mock.patch.object(provider.regional_settings, "RegionalRead") as reader:
                 reader.return_value.run.return_value = state
                 output, code = provider.time_status_output()
             self.assertEqual(code, 1)
@@ -1599,7 +1590,7 @@ class TimeStatusCommandTests(unittest.TestCase):
 
     def test_scoped_error_bounds_and_fixed_cli(self):
         for error_code in (*sorted(provider.NTP_SAMPLE_ERROR_CODES), "other"):
-            with mock.patch.object(provider, "RegionalRead", side_effect=provider.SnapshotFailure(
+            with mock.patch.object(provider.regional_settings, "RegionalRead", side_effect=provider.SnapshotFailure(
                     error_code, "failure\n\t\x00\ud800" + "é" * 600)):
                 output, code = provider.time_status_output()
             self.assertEqual(code, 1)
@@ -1608,10 +1599,10 @@ class TimeStatusCommandTests(unittest.TestCase):
                 + ("internal" if error_code == "other" else error_code) + "\t"))
             self.assertTrue(output.endswith(self.complete))
             self.assertLessEqual(len(output.encode()), provider.TIME_STATUS_STREAM_BYTES)
-        with mock.patch.object(provider, "RegionalRead") as reader, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
-                mock.patch.object(provider, "open_journal_directory") as journal, \
-                mock.patch.object(provider, "native_command") as mutation, \
+        with mock.patch.object(provider.regional_settings, "RegionalRead") as reader, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal, \
+                mock.patch.object(provider.cli, "native_command") as mutation, \
                 contextlib.redirect_stdout(io.StringIO()) as output, \
                 contextlib.redirect_stderr(io.StringIO()):
             reader.return_value.run.return_value = provider.RegionalTimeState("UTC", True, False, True)
@@ -1627,7 +1618,7 @@ class TimeStatusCommandTests(unittest.TestCase):
     def test_interruption_never_reports_success(self):
         for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             previous = signal.getsignal(signum)
-            with mock.patch.object(provider, "RegionalRead") as reader, \
+            with mock.patch.object(provider.regional_settings, "RegionalRead") as reader, \
                     contextlib.redirect_stdout(io.StringIO()) as output:
                 def stop():
                     signal.raise_signal(signum)
@@ -1642,9 +1633,11 @@ class TimeStatusCommandTests(unittest.TestCase):
 
     def test_actual_command_handles_missing_output_and_unused_diagnostics(self):
         code = """
-import os, runpy, sys
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
 from unittest import mock
-provider = runpy.run_path(sys.argv[1], run_name="time_output_fixture")
+provider = vars(lyona_provider.load(sys.argv[1]))
 mode = sys.argv[2]
 descriptor = 2 if mode.startswith("stderr") else 1
 if mode.endswith("readonly"):
@@ -1663,7 +1656,7 @@ else:
             sys.stderr = None
 output = "time-status-protocol\\t1\\t0\\ntime\\tUTC\\tyes\\tno\\tyes\\ncomplete\\ttime-status\\n"
 reader = (lambda: (output, 0)) if descriptor == 2 else mock.Mock(side_effect=AssertionError("Read without output"))
-with mock.patch.dict(provider["main"].__globals__, time_status_output=reader):
+with mock.patch.dict(provider["time_status_output"].__globals__, time_status_output=reader):
     raise SystemExit(provider["main"](["time-status"]))
 """
         for mode in ("stdout-closed", "stdout-readonly", "stdout-none", "stdout-stream-closed",
@@ -1695,7 +1688,7 @@ class NtpSampleCommandTests(unittest.TestCase):
     def test_all_boolean_pairs_have_one_exact_bounded_stream(self):
         for can_ntp in (False, True):
             for synchronized in (False, True):
-                with mock.patch.object(provider, "NtpRead") as reader:
+                with mock.patch.object(provider.regional_settings, "NtpRead") as reader:
                     reader.return_value.run.return_value = provider.NtpSample(can_ntp, synchronized)
                     output, code = provider.ntp_sample_output()
                 self.assertEqual(code, 0)
@@ -1708,7 +1701,7 @@ class NtpSampleCommandTests(unittest.TestCase):
     def test_invalid_values_never_coerce_to_a_successful_sample(self):
         for value in (None, (True, True), provider.NtpSample(1, True),
                       provider.NtpSample(True, "yes")):
-            with mock.patch.object(provider, "NtpRead") as reader:
+            with mock.patch.object(provider.regional_settings, "NtpRead") as reader:
                 reader.return_value.run.return_value = value
                 output, code = provider.ntp_sample_output()
             self.assertEqual(code, 1)
@@ -1718,7 +1711,7 @@ class NtpSampleCommandTests(unittest.TestCase):
     def test_typed_errors_are_bounded_and_cannot_inject_records(self):
         for error_code in (*sorted(provider.NTP_SAMPLE_ERROR_CODES), "unrecognized"):
             failure = provider.SnapshotFailure(error_code, "denied\t\n\r\x00\ud800" + "é" * 600)
-            with mock.patch.object(provider, "NtpRead", side_effect=failure):
+            with mock.patch.object(provider.regional_settings, "NtpRead", side_effect=failure):
                 output, code = provider.ntp_sample_output()
             self.assertEqual(code, 1)
             self.assertEqual(len(output.splitlines()), 3)
@@ -1730,10 +1723,10 @@ class NtpSampleCommandTests(unittest.TestCase):
             self.assertTrue(output.splitlines()[1].split("\t")[3].isprintable())
 
     def test_fixed_cli_never_enters_packagekit_journal_or_mutation_paths(self):
-        with mock.patch.object(provider, "NtpRead") as reader, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
-                mock.patch.object(provider, "open_journal_directory") as journal, \
-                mock.patch.object(provider, "native_command") as mutation, \
+        with mock.patch.object(provider.regional_settings, "NtpRead") as reader, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal, \
+                mock.patch.object(provider.cli, "native_command") as mutation, \
                 contextlib.redirect_stdout(io.StringIO()) as output, \
                 contextlib.redirect_stderr(io.StringIO()):
             reader.return_value.run.return_value = provider.NtpSample(True, False)
@@ -1748,9 +1741,11 @@ class NtpSampleCommandTests(unittest.TestCase):
 
     def test_unused_stderr_does_not_prevent_stdout_sampling(self):
         code = """
-import os, runpy, sys
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
 from unittest import mock
-provider = runpy.run_path(sys.argv[1], run_name="ntp_output_fixture")
+provider = vars(lyona_provider.load(sys.argv[1]))
 if sys.argv[2] == "readonly":
     descriptor = os.open("/dev/null", os.O_RDONLY)
     os.dup2(descriptor, 2)
@@ -1775,9 +1770,11 @@ with mock.patch.dict(provider["ntp_sample_output"].__globals__,
 
     def test_unavailable_stdout_is_a_controlled_failure(self):
         code = """
-import os, runpy, sys
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
 from unittest import mock
-provider = runpy.run_path(sys.argv[1], run_name="ntp_output_fixture")
+provider = vars(lyona_provider.load(sys.argv[1]))
 mode = sys.argv[2]
 if mode == "readonly":
     descriptor = os.open("/dev/null", os.O_RDONLY)
@@ -1806,7 +1803,7 @@ with mock.patch.dict(provider["ntp_sample_output"].__globals__,
         handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
         for signum in handlers:
             with contextlib.redirect_stdout(io.StringIO()) as output, \
-                    contextlib.redirect_stderr(io.StringIO()), mock.patch.object(provider, "NtpRead") as reader:
+                    contextlib.redirect_stderr(io.StringIO()), mock.patch.object(provider.regional_settings, "NtpRead") as reader:
                 def signal_read():
                     signal.raise_signal(signum)
                     signal.raise_signal(signum)
@@ -1842,7 +1839,7 @@ with mock.patch.dict(provider["ntp_sample_output"].__globals__,
             read.loop = types.SimpleNamespace(run=start, quit=loop.quit)
             guard = GLib.timeout_add(200, guarded_stop)
             try:
-                with mock.patch.object(provider, "NtpRead", return_value=read), \
+                with mock.patch.object(provider.regional_settings, "NtpRead", return_value=read), \
                         contextlib.redirect_stdout(io.StringIO()) as output, \
                         contextlib.redirect_stderr(io.StringIO()) as diagnostic:
                     self.assertEqual(provider.ntp_sample_command(), 1)
@@ -1951,7 +1948,7 @@ class RegionalMutationTests(unittest.TestCase):
         return client
 
     def run_client(self, client, *, interruptible=False):
-        with mock.patch.object(provider, "read_locale_choices", return_value=("C", "en_US.utf8")), \
+        with mock.patch.object(provider.regional_settings, "read_locale_choices", return_value=("C", "en_US.utf8")), \
                 mock.patch.object(provider.time, "monotonic", side_effect=lambda: self.clock):
             if interruptible:
                 with contextlib.ExitStack() as retained:
@@ -2341,8 +2338,8 @@ class RegionalPreflightTests(unittest.TestCase):
         for action, argument in (("timezone-set", "../UTC"), ("ntp-set", "yes"),
                                  ("locale-set", "LC_TIME=C"), ("locale-set", "LANG=C\n"),
                                  ("arbitrary", "command")):
-            with mock.patch.object(provider, "RegionalRead") as reader, \
-                    mock.patch.object(provider, "read_locale_choices") as locales:
+            with mock.patch.object(provider.regional_settings, "RegionalRead") as reader, \
+                    mock.patch.object(provider.regional_settings, "read_locale_choices") as locales:
                 with self.assertRaises(provider.SnapshotFailure):
                     provider.read_regional_preview(action, argument)
                 reader.assert_not_called()
@@ -2364,11 +2361,11 @@ class RegionalPreflightTests(unittest.TestCase):
     def test_preflight_uses_only_fresh_fixed_readers(self):
         states = {"time-state": self.time_state(), "timezone-choices": ("UTC", "Etc/UTC"),
                   "locale-state": provider.parse_locale_configuration(["LANG=C"])}
-        with mock.patch.object(provider, "RegionalRead", side_effect=lambda kind: mock.Mock(
+        with mock.patch.object(provider.regional_settings, "RegionalRead", side_effect=lambda kind: mock.Mock(
                 run=mock.Mock(return_value=states[kind]))) as reader, \
-                mock.patch.object(provider, "read_locale_choices", return_value=("C", "en_US.utf8")) as locales, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
-                mock.patch.object(provider, "open_journal_directory") as journal:
+                mock.patch.object(provider.regional_settings, "read_locale_choices", return_value=("C", "en_US.utf8")) as locales, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal:
             for _ in range(2):
                 provider.read_regional_preview("timezone-set", "Etc/UTC")
                 provider.read_regional_preview("ntp-set", "enabled")
@@ -2381,7 +2378,7 @@ class RegionalPreflightTests(unittest.TestCase):
 
     def test_choice_streams_are_sorted_complete_and_independently_versioned(self):
         for kind in ("timezone", "locale"):
-            with mock.patch.object(provider, "regional_choices", return_value=("UTC", "C")):
+            with mock.patch.object(provider.regional_settings, "regional_choices", return_value=("UTC", "C")):
                 output, code = provider.regional_preflight_output("regional-choices", [kind])
             self.assertEqual(code, 0)
             self.assertEqual(output.splitlines(), [f"regional-choices-protocol\t1\t0\t{kind}",
@@ -2397,7 +2394,7 @@ class RegionalPreflightTests(unittest.TestCase):
         self.assertEqual(provider.validate_locale_catalog(maximum), maximum)
         for kind, patch, value in (("locale", "read_locale_choices", ("C", "C")),
                                    ("timezone", "RegionalRead", mock.Mock(run=mock.Mock(return_value=("UTC", "UTC"))))):
-            with mock.patch.object(provider, patch, return_value=value):
+            with mock.patch.object(provider.regional_settings, patch, return_value=value):
                 output, code = provider.regional_preflight_output("regional-choices", [kind])
             self.assertEqual(code, 1)
             self.assertIn("error\tregional\tmalformed\t", output)
@@ -2405,14 +2402,14 @@ class RegionalPreflightTests(unittest.TestCase):
 
     def test_preview_stream_and_errors_never_publish_partial_evidence(self):
         preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
-        with mock.patch.object(provider, "read_regional_preview", return_value=preview):
+        with mock.patch.object(provider.regional_settings, "read_regional_preview", return_value=preview):
             output, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
         self.assertEqual((code, output.splitlines()), (0, ["regional-preview-protocol\t1\t0",
             "\t".join(preview.fields()), "complete\tregional-preview"]))
         for command, args, helper in (("regional-preview", ["ntp-set", "enabled"], "read_regional_preview"),
                                      ("regional-choices", ["locale"], "regional_choices")):
             for code in ("timeout", "permission-denied", "missing-provider", "malformed"):
-                with mock.patch.object(provider, helper, side_effect=provider.SnapshotFailure(code, "Fixture failure")):
+                with mock.patch.object(provider.regional_settings, helper, side_effect=provider.SnapshotFailure(code, "Fixture failure")):
                     output, status = provider.regional_preflight_output(command, args)
                 self.assertEqual(status, 1)
                 self.assertEqual(len(output.splitlines()), 3)
@@ -2422,15 +2419,15 @@ class RegionalPreflightTests(unittest.TestCase):
 
     def test_full_encoded_stream_limits_include_newlines(self):
         preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
-        with mock.patch.object(provider, "read_regional_preview", return_value=preview):
+        with mock.patch.object(provider.regional_settings, "read_regional_preview", return_value=preview):
             output, _ = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
             for limit, expected in ((len(output.encode()), 0), (len(output.encode()) - 1, 1)):
-                with mock.patch.object(provider, "REGIONAL_PREVIEW_STREAM_BYTES", limit):
+                with mock.patch.object(provider.regional_settings, "REGIONAL_PREVIEW_STREAM_BYTES", limit):
                     bounded, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
                 self.assertEqual(code, expected)
                 if code:
                     self.assertNotIn("\npreview\t", bounded)
-        with mock.patch.object(provider, "regional_choices", return_value=("UTC",)):
+        with mock.patch.object(provider.regional_settings, "regional_choices", return_value=("UTC",)):
             output, _ = provider.regional_preflight_output("regional-choices", ["timezone"])
             for limit, expected in ((len(output.encode()), 0), (len(output.encode()) - 1, 1)):
                 with mock.patch.dict(provider.REGIONAL_CHOICE_STREAM_BYTES, timezone=limit):
@@ -2442,11 +2439,11 @@ class RegionalPreflightTests(unittest.TestCase):
     def test_non_utf8_or_oversized_preview_fields_are_not_emitted(self):
         preview = provider.make_regional_preview("ntp-set", "enabled", self.time_state())
         for detail in ("x" * 513, "é" * 257, "bad\nfield", "bad\0field", "bad\ud800field", "bad\x1bfield", None):
-            with mock.patch.object(provider, "read_regional_preview", return_value=replace(preview, detail=detail)):
+            with mock.patch.object(provider.regional_settings, "read_regional_preview", return_value=replace(preview, detail=detail)):
                 output, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
             self.assertEqual(code, 1)
             self.assertNotIn("\npreview\t", output)
-        with mock.patch.object(provider, "read_regional_preview", side_effect=provider.SnapshotFailure(
+        with mock.patch.object(provider.regional_settings, "read_regional_preview", side_effect=provider.SnapshotFailure(
                 "unrecognized\ncode", "bad\ud800\0detail")):
             output, code = provider.regional_preflight_output("regional-preview", ["ntp-set", "enabled"])
         self.assertEqual(code, 1)
@@ -2455,12 +2452,15 @@ class RegionalPreflightTests(unittest.TestCase):
 
     def test_closed_preflight_consumer_exits_without_traceback_or_shutdown_flush(self):
         program = """
-import io, runpy, sys
+import io, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
 if int(sys.argv[2]) > 8192:
     sys.stdout = io.TextIOWrapper(io.FileIO(sys.stdout.fileno(), "w", closefd=False),
                                 encoding="utf-8", write_through=True)
-main = runpy.run_path(sys.argv[1])["main"]
-main.__globals__["regional_preflight_output"] = lambda *_: ("x" * int(sys.argv[2]), 0)
+package = lyona_provider.load(sys.argv[1])
+main = package.main
+package.regional_settings.regional_preflight_output = lambda *_: ("x" * int(sys.argv[2]), 0)
 raise SystemExit(main(["regional-choices", "locale"]))
 """
         for size in (32, 65536):
@@ -2481,10 +2481,10 @@ raise SystemExit(main(["regional-choices", "locale"]))
                    ["regional-preview", "arbitrary", "value"], ["regional-preview", "ntp-set", "enabled", "extra"],
                    ["timezone-set", "UTC"], ["ntp-set", "enabled", "A" * 64],
                    ["locale-set", "LC_TIME=C", "a" * 64])
-        with mock.patch.object(provider, "RegionalRead") as reader, \
-                mock.patch.object(provider, "read_locale_choices") as locales, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
-                mock.patch.object(provider, "open_journal_directory") as journal, \
+        with mock.patch.object(provider.regional_settings, "RegionalRead") as reader, \
+                mock.patch.object(provider.regional_settings, "read_locale_choices") as locales, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal, \
                 contextlib.redirect_stdout(io.StringIO()) as output, contextlib.redirect_stderr(io.StringIO()):
             for args in invalid:
                 self.assertEqual(provider.main(args), 2, args)
@@ -2501,7 +2501,7 @@ raise SystemExit(main(["regional-choices", "locale"]))
                 self.assertIn("error\tregional\tmalformed\t", output.getvalue())
             for mocked in (reader, locales, backend, journal):
                 mocked.assert_not_called()
-        with mock.patch.object(provider, "regional_choices", return_value=("C",)), \
+        with mock.patch.object(provider.regional_settings, "regional_choices", return_value=("C",)), \
                 contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(provider.main(["regional-choices", "locale"]), 0)
             self.assertIn("choice\tC\n", output.getvalue())
@@ -2601,7 +2601,7 @@ class LocaleEnumerationTests(unittest.TestCase):
                 return ("C",)
             with self.subTest(malformed=malformed), self.catalog(), \
                     mock.patch.object(provider.time, "monotonic", side_effect=lambda: monotonic() + offset[0]), \
-                    mock.patch.object(provider, "validate_locale_choices", side_effect=decode):
+                    mock.patch.object(provider.regional_settings, "validate_locale_choices", side_effect=decode):
                 with self.assertRaises(provider.SnapshotFailure) as caught:
                     provider.read_locale_choices()
             self.assertEqual(caught.exception.code, "timeout")
@@ -2675,7 +2675,7 @@ class LocaleEnumerationTests(unittest.TestCase):
             self.assertEqual(signal.getsignal(number), handler)
 
     def test_cleanup_failure_cannot_publish_a_valid_catalog(self):
-        with self.catalog(), mock.patch.object(provider, "close_locale_process",
+        with self.catalog(), mock.patch.object(provider.regional_settings, "close_locale_process",
                 side_effect=provider.SnapshotFailure("timeout", "Fixture cleanup failure")):
             with self.assertRaises(provider.SnapshotFailure) as caught:
                 provider.read_locale_choices()
@@ -2691,7 +2691,7 @@ class LocaleEnumerationTests(unittest.TestCase):
                     raise provider.SnapshotFailure("timeout", "Fixture cleanup failure")
                 with self.subTest(number=number, during_cleanup=during_cleanup), \
                         self.catalog(signal_number=None if during_cleanup else number), \
-                        mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+                        mock.patch.object(provider.regional_settings, "close_locale_process", side_effect=cleanup):
                     with self.assertRaises(SystemExit) as caught:
                         provider.read_locale_choices()
                     self.assertEqual(caught.exception.code, 128 + number)
@@ -2699,7 +2699,7 @@ class LocaleEnumerationTests(unittest.TestCase):
 
     def test_lost_child_ownership_never_signals_a_possibly_reused_group(self):
         process = mock.Mock(pid=123)
-        with mock.patch.object(provider, "locale_process_status", side_effect=ChildProcessError), \
+        with mock.patch.object(provider.regional_settings, "locale_process_status", side_effect=ChildProcessError), \
                 mock.patch.object(provider.os, "killpg") as kill:
             with self.assertRaises(provider.SnapshotFailure) as caught:
                 provider.close_locale_process(process)
@@ -2800,16 +2800,16 @@ class DelegatedToolTests(unittest.TestCase):
     def test_fixed_tool_paths_and_password_argv(self):
         for action, path in provider.DELEGATED_TOOLS.items():
             path = path[0]
-            with self.subTest(action=action), mock.patch.object(provider, "trusted_delegated_executable", side_effect=lambda path, _name: path) as trusted, \
-                    mock.patch.object(provider, "read_terminal_selection") as selector:
+            with self.subTest(action=action), mock.patch.object(provider.delegated_tools, "trusted_delegated_executable", side_effect=lambda path, _name: path) as trusted, \
+                    mock.patch.object(provider.delegated_tools, "read_terminal_selection") as selector:
                 self.assertEqual(provider.delegated_command(action)[0], (path,))
                 trusted.assert_called_once_with(path, os.path.basename(path))
                 selector.assert_not_called()
         for name, arguments in provider.PASSWORD_TERMINALS.items():
             with self.subTest(name=name), \
-                    mock.patch.object(provider, "trusted_delegated_executable", side_effect=lambda path, _name: path), \
-                    mock.patch.object(provider, "terminal_selection_environment", return_value=self.environment), \
-                    mock.patch.object(provider, "read_terminal_selection", return_value=name), \
+                    mock.patch.object(provider.delegated_tools, "trusted_delegated_executable", side_effect=lambda path, _name: path), \
+                    mock.patch.object(provider.delegated_tools, "terminal_selection_environment", return_value=self.environment), \
+                    mock.patch.object(provider.delegated_tools, "read_terminal_selection", return_value=name), \
                     mock.patch.object(provider.shutil, "which", side_effect=["/usr/local/bin/dwm-terminal", "/usr/bin/" + name]):
                 self.assertEqual(provider.delegated_command("password-open"),
                     (("/usr/bin/" + name, *arguments, "/usr/bin/passwd"), "Password change"))
@@ -2820,8 +2820,8 @@ class DelegatedToolTests(unittest.TestCase):
         # terminal-selection I/O -- there is no fallback tool to resolve.
         for action in ("accounts-open", "sources-open"):
             with self.subTest(action=action), \
-                    mock.patch.object(provider, "trusted_delegated_executable") as trusted, \
-                    mock.patch.object(provider, "read_terminal_selection") as selector:
+                    mock.patch.object(provider.delegated_tools, "trusted_delegated_executable") as trusted, \
+                    mock.patch.object(provider.delegated_tools, "read_terminal_selection") as selector:
                 with self.assertRaises(provider.SnapshotFailure) as caught:
                     provider.delegated_command(action)
                 self.assertEqual(caught.exception.code, "unsupported")
@@ -2830,15 +2830,15 @@ class DelegatedToolTests(unittest.TestCase):
 
     def test_unknown_actions_and_unsupported_terminals_never_launch_or_fall_back(self):
         for action in ("health-open", "password-open user", "accounts-open --root", None, []):
-            with self.subTest(action=action), mock.patch.object(provider, "trusted_delegated_executable") as target:
+            with self.subTest(action=action), mock.patch.object(provider.delegated_tools, "trusted_delegated_executable") as target:
                 with self.assertRaises(provider.SnapshotFailure):
                     provider.delegated_command(action)
                 target.assert_not_called()
         for selected in ("warp-terminal", "kitty -e sh", "bash", "/usr/bin/foot"):
             with self.subTest(selected=selected), \
-                    mock.patch.object(provider, "trusted_delegated_executable", side_effect=lambda path, _name: path), \
-                    mock.patch.object(provider, "terminal_selection_environment", return_value=self.environment), \
-                    mock.patch.object(provider, "read_terminal_selection", return_value=selected), \
+                    mock.patch.object(provider.delegated_tools, "trusted_delegated_executable", side_effect=lambda path, _name: path), \
+                    mock.patch.object(provider.delegated_tools, "terminal_selection_environment", return_value=self.environment), \
+                    mock.patch.object(provider.delegated_tools, "read_terminal_selection", return_value=selected), \
                     mock.patch.object(provider.shutil, "which", return_value="/usr/local/bin/dwm-terminal") as which:
                 with self.assertRaises(provider.SnapshotFailure) as caught:
                     provider.delegated_command("password-open")
@@ -2925,7 +2925,7 @@ class DelegatedToolTests(unittest.TestCase):
 
     def test_missing_closefrom_fails_before_open_or_spawn(self):
         unavailable = types.SimpleNamespace(open=mock.Mock(), posix_spawn=mock.Mock())
-        with mock.patch.object(provider, "os", unavailable):
+        with mock.patch.object(provider.delegated_tools, "os", unavailable):
             with self.assertRaises(provider.SnapshotFailure) as caught:
                 provider.launch_delegated_tool(("/usr/bin/kitty", "/usr/bin/passwd"))
         self.assertEqual(caught.exception.code, "unsupported")
@@ -2967,7 +2967,7 @@ class DelegatedToolTests(unittest.TestCase):
         def cleanup(process):
             original(process)
             raise provider.SnapshotFailure("timeout", "Fixture cleanup failed")
-        with self.selection(), mock.patch.object(provider, "close_locale_process", side_effect=cleanup):
+        with self.selection(), mock.patch.object(provider.regional_settings, "close_locale_process", side_effect=cleanup):
             with self.assertRaises(provider.SnapshotFailure) as caught:
                 self.read_selection()
             self.assertEqual(caught.exception.code, "timeout")
@@ -3204,7 +3204,7 @@ class AccountReadTests(unittest.TestCase):
                                 if malformed:
                                     raise provider.SnapshotFailure("malformed", "late decode")
                             return original(value)
-                        with mock.patch.object(provider, "account_object_path", side_effect=decode):
+                        with mock.patch.object(provider.user_accounts, "account_object_path", side_effect=decode):
                             result, read, calls, *_ = self.collect(["/cached"])
                     self.assertEqual((result.status, self.codes(result)), ("partial", {"timeout"}))
                     self.assertEqual(result.records, ())
@@ -3441,7 +3441,7 @@ class CupsReadTests(unittest.TestCase):
                     raise provider.SnapshotFailure("malformed", "late")
                 return state
             with mock.patch.object(provider.time, "monotonic", return_value=2), \
-                    mock.patch.object(provider, "decode_unit_state", side_effect=late):
+                    mock.patch.object(provider.system_services, "decode_unit_state", side_effect=late):
                 read.replied(connection, object(), "cups.service")
             self.assertEqual(read.value.units, ())
             self.assertEqual([error.code for error in read.value.errors], ["timeout"])
@@ -3544,13 +3544,13 @@ class FirewallUnitReadTests(unittest.TestCase):
                 def delayed(reply):
                     read.deadline = time.monotonic() - 1
                     return decode(reply)
-                with mock.patch.object(provider, "decode_unit_state", side_effect=delayed):
+                with mock.patch.object(provider.system_services, "decode_unit_state", side_effect=delayed):
                     read.replied(connection, object(), None)
             else:
                 read.replied(connection, object(), None)
         read.loop.run.side_effect = run
-        with mock.patch.object(provider, "FirewallUnitRead", return_value=read), \
-                mock.patch.object(provider, "open_journal_directory") as journal:
+        with mock.patch.object(provider.system_services, "FirewallUnitRead", return_value=read), \
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal:
             result = provider.read_firewall_status(kind)
         journal.assert_not_called()
         connection.close_sync.assert_not_called()
@@ -3601,11 +3601,11 @@ class FirewallUnitReadTests(unittest.TestCase):
 
     def test_missing_bindings_and_interruption(self):
         for kind in provider.FIREWALL_UNITS:
-            with mock.patch.object(provider, "FirewallUnitRead", side_effect=provider.SnapshotFailure(
+            with mock.patch.object(provider.system_services, "FirewallUnitRead", side_effect=provider.SnapshotFailure(
                     "missing-provider", "Bindings unavailable", "unavailable")):
                 self.assertEqual(provider.read_firewall_status(kind).status, "unavailable")
-            with mock.patch.object(provider, "FirewallUnitRead"), \
-                    mock.patch.object(provider, "run_interruptible_read", side_effect=InterruptedError):
+            with mock.patch.object(provider.system_services, "FirewallUnitRead"), \
+                    mock.patch.object(provider.regional_settings, "run_interruptible_read", side_effect=InterruptedError):
                 with self.assertRaises(InterruptedError):
                     provider.read_firewall_status(kind)
 
@@ -3838,7 +3838,7 @@ class RepositoryReadTests(unittest.TestCase):
         self.assertEqual(failure.code, "malformed")
         size = provider.encoded_record_size(provider.decode_repository_row(record(0)).fields())
         for limit, success in ((size, True), (size - 1, False)):
-            with mock.patch.object(provider, "REPOSITORY_MAX_BYTES", limit):
+            with mock.patch.object(provider.shared, "REPOSITORY_MAX_BYTES", limit):
                 value, failure, *_ = self.collect(records=[record(0)])
             self.assertEqual(failure is None, success)
 
@@ -3912,7 +3912,7 @@ class RepositoryReadTests(unittest.TestCase):
                 nonlocal current
                 current = read
             current = None
-            with mock.patch.object(provider, "decode_repository_row", side_effect=decode_late):
+            with mock.patch.object(provider.system_services, "decode_repository_row", side_effect=decode_late):
                 value, failure, read, *_ = self.collect(transform=capture)
             self.assertIsNone(value)
             self.assertEqual(failure.code, "timeout")
@@ -3965,7 +3965,8 @@ class MountMonitorTests(unittest.TestCase):
         code = provider.MOUNT_MONITOR_EXEC.replace(
             "os.execv('/usr/bin/findmnt', ['findmnt', '--poll', '--raw', '--noheadings', '--output', 'ACTION'])",
             fixture)
-        runner = (f"import runpy,sys\np=runpy.run_path({str(PROVIDER_PATH)!r})\n"
+        runner = (f"import sys\nsys.path.insert(0, {str(REPO / 'tests')!r})\nimport lyona_provider\n"
+                  f"p=vars(lyona_provider.load({str(PROVIDER_PATH)!r}))\n"
                   f"p['watch_mount_events'].__globals__['MOUNT_MONITOR_EXEC']={code!r}\n"
                   "sys.exit(p['watch_mount_events']())\n")
         process = subprocess.Popen([sys.executable, "-c", runner], stdout=subprocess.PIPE,
@@ -4201,11 +4202,11 @@ FILE *fopen64(const char *path, const char *mode) {
 
     def test_proc_identity_change_and_exited_child_are_rejected(self):
         process = types.SimpleNamespace(pid=123)
-        with mock.patch.object(provider, "locale_process_status", return_value=None), \
+        with mock.patch.object(provider.regional_settings, "locale_process_status", return_value=None), \
                 mock.patch.object(provider.os, "stat", return_value=types.SimpleNamespace(st_dev=1, st_ino=3)):
             with self.assertRaises(OSError):
                 provider.mount_baseline_ready(process, (1, 2))
-        with mock.patch.object(provider, "locale_process_status", return_value=object()):
+        with mock.patch.object(provider.regional_settings, "locale_process_status", return_value=object()):
             with self.assertRaises(OSError):
                 provider.mount_baseline_ready(process, (1, 2))
 
@@ -4379,8 +4380,8 @@ class UpdateEventMonitorTests(unittest.TestCase):
         self.assertEqual(gio.bus_get.call_args.args[0], gio.BusType.SYSTEM)
 
     def test_watch_cli_is_argument_free_and_does_not_open_the_backend(self):
-        with mock.patch.object(provider, "watch_update_events", return_value=0) as watch, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
+        with mock.patch.object(provider.watch_commands, "watch_update_events", return_value=0) as watch, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
                 contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(provider.main(["watch-updates"]), 0)
             for arguments in (["watch-updates", "extra"], ["watch-updates", "--system"]):
@@ -4580,8 +4581,8 @@ class RegionalEventMonitorTests(unittest.TestCase):
         self.assertEqual(gio.bus_get.call_count, 1)
 
     def test_closed_cli_and_real_private_bus_lifecycle(self):
-        with mock.patch.object(provider, "watch_regional_events", return_value=0) as watch, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
+        with mock.patch.object(provider.watch_commands, "watch_regional_events", return_value=0) as watch, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
                 contextlib.redirect_stderr(io.StringIO()):
             for kind in ("time", "locale"):
                 self.assertEqual(provider.main(["watch-regional", kind]), 0)
@@ -4650,8 +4651,8 @@ class TimeEventMonitorTests(unittest.TestCase):
         self.assertEqual(monitor.exit_code, 1)
 
     def test_fixed_cli_and_real_private_bus_lifecycle(self):
-        with mock.patch.object(provider, "watch_service_events", return_value=0) as watch, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
+        with mock.patch.object(provider.watch_commands, "watch_service_events", return_value=0) as watch, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
                 contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(provider.main(["watch-time"]), 0)
             for args in (["time"], ["locale"], ["--system"], ["extra", "argument"]):
@@ -4801,8 +4802,8 @@ class AccountEventMonitorTests(unittest.TestCase):
         self.assertEqual(gio.bus_get.call_count, 1)
 
     def test_cli_is_argument_free_and_private_bus_lifecycle_and_unicast_pass(self):
-        with mock.patch.object(provider, "watch_account_events", return_value=0) as watch, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
+        with mock.patch.object(provider.watch_commands, "watch_account_events", return_value=0) as watch, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
                 contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(provider.main(["watch-accounts"]), 0)
             for extra in ("user", "--system", "/users/Selected"):
@@ -4974,8 +4975,8 @@ class UnitEventMonitorTests(unittest.TestCase):
         self.assertTrue(monitor.stopped)
 
     def test_cli_grammar_and_real_private_bus_lifecycle(self):
-        with mock.patch.object(provider, "watch_service_events", return_value=0) as watch, \
-                mock.patch.object(provider, "PackageKitBackend") as backend, \
+        with mock.patch.object(provider.watch_commands, "watch_service_events", return_value=0) as watch, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
                 contextlib.redirect_stderr(io.StringIO()):
             for kind in ("printers", "security"):
                 self.assertEqual(provider.main(["watch-units", kind]), 0)
@@ -5112,7 +5113,7 @@ class HardwareReadTests(unittest.TestCase):
         def run():
             read.connected(None, object(), None)
             self.reply(read, connection, variant, "HardwareModel")
-            with mock.patch.object(provider, "information_text", side_effect=decode):
+            with mock.patch.object(provider.system_information, "information_text", side_effect=decode):
                 self.reply(read, connection, variant, "HardwareVendor")
         read.loop.run.side_effect = run
         result = read.run()
@@ -5162,16 +5163,16 @@ class HardwareReadTests(unittest.TestCase):
         self.assertNotIn("private bus failure", repr(result))
         connection.call.assert_not_called()
         failure = provider.SnapshotFailure("missing-provider", "Bindings unavailable", "unavailable")
-        with mock.patch.object(provider, "HardwareRead", side_effect=failure), \
-                mock.patch.object(provider, "open_journal_directory") as journal:
+        with mock.patch.object(provider.system_information, "HardwareRead", side_effect=failure), \
+                mock.patch.object(provider.operation_journal, "open_journal_directory") as journal:
             result = provider.read_hardware_information()
         self.assertEqual(len(result), 2)
         self.assertTrue(all(state.error_code == "missing-provider" for state in result.values()))
         journal.assert_not_called()
 
     def test_wrapper_keeps_cooperative_interruption(self):
-        with mock.patch.object(provider, "HardwareRead") as reader, \
-                mock.patch.object(provider, "run_interruptible_read", side_effect=InterruptedError) as run:
+        with mock.patch.object(provider.system_information, "HardwareRead") as reader, \
+                mock.patch.object(provider.regional_settings, "run_interruptible_read", side_effect=InterruptedError) as run:
             with self.assertRaises(InterruptedError):
                 provider.read_hardware_information()
             run.assert_called_once_with(reader.return_value)
@@ -6916,7 +6917,7 @@ class JournalFileTests(unittest.TestCase):
                     return image
 
                 with mock.patch.object(
-                    provider, "_read_journal_image", side_effect=mismatched_readback
+                    provider.operation_journal, "_read_journal_image", side_effect=mismatched_readback
                 ):
                     with self.assertRaisesRegex(
                         provider.JournalCommitError, "indeterminate"
@@ -7113,14 +7114,14 @@ class JournalLayoutTests(unittest.TestCase):
             try:
                 with (
                     mock.patch.object(
-                        provider,
+                        provider.operation_journal,
                         "_validate_initialized_journal_path_unlocked",
                         side_effect=provider.JournalLayoutError(
                             "injected primary layout error"
                         ),
                     ),
                     mock.patch.object(
-                        provider,
+                        provider.operation_journal,
                         "_close_descriptors",
                         side_effect=close_descriptors_then_fail,
                     ),
@@ -7154,7 +7155,7 @@ class JournalLayoutTests(unittest.TestCase):
                     raise RuntimeError("outer handled error")
                 except RuntimeError:
                     with mock.patch.object(
-                        provider,
+                        provider.operation_journal,
                         "_close_descriptors",
                         side_effect=close_descriptors_then_fail,
                     ):
@@ -7480,7 +7481,7 @@ class JournalLayoutTests(unittest.TestCase):
             previous_umask = os.umask(0o777)
             try:
                 with mock.patch.object(
-                    provider,
+                    provider.operation_journal,
                     "_initialize_journal_file_unlocked",
                     side_effect=provider.JournalFrameError(
                         "injected initialization interruption"
@@ -7608,7 +7609,7 @@ class JournalStateLoadTests(unittest.TestCase):
                         side_effect=AssertionError("directory enumeration is forbidden"),
                     ),
                     mock.patch.object(
-                        provider,
+                        provider.operation_journal,
                         "_read_journal_file_unlocked",
                         side_effect=observe_first_read,
                     ),
@@ -7702,7 +7703,7 @@ class JournalStateLoadTests(unittest.TestCase):
                 with (
                     mock.patch.object(provider.os, "open", side_effect=track_open),
                     mock.patch.object(
-                        provider,
+                        provider.operation_journal,
                         "decode_journal_state",
                         side_effect=provider.JournalRecordError(
                             "injected primary record error"
@@ -7875,7 +7876,7 @@ class JournalStateLoadTests(unittest.TestCase):
 
             try:
                 with mock.patch.object(
-                    provider,
+                    provider.operation_journal,
                     "_read_journal_file_unlocked",
                     side_effect=replace_active,
                 ):
@@ -7903,7 +7904,7 @@ class JournalStateLoadTests(unittest.TestCase):
 
             try:
                 with mock.patch.object(
-                    provider, "decode_journal_state", side_effect=replace_state
+                    provider.operation_journal, "decode_journal_state", side_effect=replace_state
                 ):
                     with self.assertRaisesRegex(
                         provider.JournalLayoutError, "state is unsafe"
@@ -7949,7 +7950,7 @@ class JournalWritableOpenTests(unittest.TestCase):
             try:
                 with (
                     mock.patch.object(provider.os, "open", side_effect=track_open),
-                    mock.patch.object(provider, "_journal_lock", side_effect=observe_lock),
+                    mock.patch.object(provider.operation_journal, "_journal_lock", side_effect=observe_lock),
                     mock.patch.object(
                         provider.os,
                         "listdir",
@@ -8086,7 +8087,7 @@ class JournalWritableOpenTests(unittest.TestCase):
 
             try:
                 with mock.patch.object(
-                    provider,
+                    provider.operation_journal,
                     "_close_descriptors",
                     side_effect=close_descriptors_then_fail,
                 ):
@@ -8116,7 +8117,7 @@ class JournalWritableOpenTests(unittest.TestCase):
                     raise RuntimeError("outer handled error")
                 except RuntimeError:
                     with mock.patch.object(
-                        provider,
+                        provider.operation_journal,
                         "_close_descriptors",
                         side_effect=close_descriptors_then_fail,
                     ):
@@ -8208,7 +8209,7 @@ class JournalWritableCommitTests(unittest.TestCase):
                 ):
                     with provider.open_writable_journal(chain) as journal:
                         with mock.patch.object(
-                            provider,
+                            provider.operation_journal,
                             "_commit_journal_file_unlocked",
                             side_effect=replace_after_commit,
                         ):
@@ -8248,7 +8249,7 @@ class JournalWritableCommitTests(unittest.TestCase):
                 ):
                     with provider.open_writable_journal(chain) as journal:
                         with mock.patch.object(
-                            provider,
+                            provider.operation_journal,
                             "_commit_journal_file_unlocked",
                             side_effect=replace_after_commit,
                         ):
@@ -8285,7 +8286,7 @@ class JournalWritableCommitTests(unittest.TestCase):
                 with self.assertRaises(provider.JournalCommitError) as caught:
                     with provider.open_writable_journal(chain) as journal:
                         with mock.patch.object(
-                            provider,
+                            provider.operation_journal,
                             "_commit_journal_file_unlocked",
                             side_effect=fail_after_replacement,
                         ):
@@ -8330,7 +8331,7 @@ class JournalRetainedSessionTests(unittest.TestCase):
                 pass
             with provider.lock_writable_journal(journal):
                 operation = self.begin(journal)
-                with mock.patch.object(provider, "JOURNAL_LOCK_DEADLINE_SECONDS", 0.01):
+                with mock.patch.object(provider.operation_journal, "JOURNAL_LOCK_DEADLINE_SECONDS", 0.01):
                     with self.assertRaises(provider.JournalLockError):
                         with provider._journal_lock(chain.directory_descriptor, exclusive=True):
                             self.fail("checkpoint lock did not exclude another writer")
@@ -8450,7 +8451,7 @@ class JournalRetainedSessionTests(unittest.TestCase):
         with self.session() as (_path, chain, journal):
             with provider._journal_lock(chain.directory_descriptor, exclusive=True):
                 started = time.monotonic()
-                with mock.patch.object(provider, "JOURNAL_LOCK_DEADLINE_SECONDS", 0.01):
+                with mock.patch.object(provider.operation_journal, "JOURNAL_LOCK_DEADLINE_SECONDS", 0.01):
                     with self.assertRaises(provider.JournalLockError):
                         with provider.lock_writable_journal(journal):
                             self.fail("contended interval was entered")
@@ -8560,10 +8561,10 @@ class NativeJournalOwnerTests(unittest.TestCase):
         for failure in ("body", "unlock", "close"):
             with self.subTest(failure=failure), self.session() as (_path, _chain, journal):
                 if failure == "unlock":
-                    patch = mock.patch.object(provider, "_unlock_native_owner",
+                    patch = mock.patch.object(provider.operation_journal, "_unlock_native_owner",
                         side_effect=provider.JournalLockError("unlock fixture"))
                 elif failure == "close":
-                    patch = mock.patch.object(provider, "_close_descriptors", side_effect=close_failure)
+                    patch = mock.patch.object(provider.operation_journal, "_close_descriptors", side_effect=close_failure)
                 else:
                     patch = contextlib.nullcontext()
                 with self.assertRaisesRegex(RuntimeError if failure == "body" else provider.JournalLockError,
@@ -8609,7 +8610,7 @@ class NativeJournalOwnerTests(unittest.TestCase):
                     operation = self.begin(journal)
                     with mock.patch.object(provider.os, "open", side_effect=opened):
                         if fail:
-                            with mock.patch.object(provider, "_try_native_owner_lock",
+                            with mock.patch.object(provider.operation_journal, "_try_native_owner_lock",
                                     side_effect=provider.JournalLockError("fixture")):
                                 with self.assertRaises(provider.JournalLockError):
                                     with provider.retain_native_journal_owner(journal, operation):
@@ -8677,7 +8678,7 @@ class NativeJournalOwnerTests(unittest.TestCase):
                 operation = self.begin(journal)
             before = (path / "active").read_bytes()
             backend = mock.Mock()
-            with mock.patch.object(provider, "_try_native_owner_lock",
+            with mock.patch.object(provider.operation_journal, "_try_native_owner_lock",
                     side_effect=provider.JournalLockError("probe fixture")):
                 with self.assertRaises(provider.JournalLockError):
                     provider.recover_journal_active(journal, backend, boot_id=self.boot_id)
@@ -8702,8 +8703,10 @@ class NativeJournalOwnerTests(unittest.TestCase):
 
     def test_process_exit_and_sigkill_release_ownership_before_orphan_recovery(self):
         program = """
-import contextlib, runpy, sys
-p = runpy.run_path(sys.argv[1])
+import contextlib, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
+p = vars(lyona_provider.load(sys.argv[1]))
 with p["open_journal_directory_chain"](sys.argv[2]) as chain:
     with p["retain_writable_journal"](chain) as journal, contextlib.ExitStack() as owner:
         with p["lock_writable_journal"](journal):
@@ -8805,7 +8808,7 @@ class JournalLifecycleTests(unittest.TestCase):
 
     def test_invalid_admission_arguments_never_commit(self):
         with self.journal() as journal:
-            with mock.patch.object(provider, "commit_writable_journal_path") as commit:
+            with mock.patch.object(provider.operation_journal, "commit_writable_journal_path") as commit:
                 for action, args in (
                     ("unknown", {}),
                     ("updates-refresh", {"transaction_path": "/arbitrary"}),
@@ -8934,7 +8937,7 @@ class JournalLifecycleTests(unittest.TestCase):
                             return result
 
                         with mock.patch.object(
-                            provider, "commit_writable_journal_path", side_effect=crash
+                            provider.operation_journal, "commit_writable_journal_path", side_effect=crash
                         ):
                             with self.assertRaises(provider.JournalCommitError):
                                 provider.complete_journal_terminal(
@@ -9013,7 +9016,7 @@ class JournalLifecycleTests(unittest.TestCase):
                             real_commit(journal, name, payload)
                         raise provider.JournalCommitError("indeterminate commit")
 
-                    with mock.patch.object(provider, "commit_writable_journal_path", side_effect=fail):
+                    with mock.patch.object(provider.operation_journal, "commit_writable_journal_path", side_effect=fail):
                         with self.assertRaises(provider.JournalCommitError):
                             if target == "active":
                                 self.begin(journal)
@@ -9083,7 +9086,7 @@ class JournalLifecycleTests(unittest.TestCase):
                     provider.acknowledge_journal_handoff(journal, terminal.operation_id)
                 pending = self.begin(journal, "updates-install-all")
                 real_commit = provider.commit_writable_journal_path
-                with mock.patch.object(provider, "commit_writable_journal_path", wraps=real_commit) as commits:
+                with mock.patch.object(provider.operation_journal, "commit_writable_journal_path", wraps=real_commit) as commits:
                     provider.prune_journal_restart(journal, self.boot_id, 150)
                     if prune_before_terminal:
                         provider.prune_journal_restart(journal, self.boot_id, 250)
@@ -9478,7 +9481,7 @@ class JournalAdmissionTests(unittest.TestCase):
                 ):
                     with provider.open_writable_journal(chain) as journal:
                         with mock.patch.object(
-                            provider,
+                            provider.operation_journal,
                             "decode_journal_state",
                             side_effect=replace_active,
                         ):
@@ -9620,7 +9623,7 @@ class JournalDirectoryChainTests(unittest.TestCase):
             previous_umask = os.umask(0o777)
             try:
                 with mock.patch.object(
-                    provider,
+                    provider.operation_journal,
                     "_chmod_directory_descriptor",
                     side_effect=provider.JournalLayoutError(
                         "injected mode update interruption"
@@ -10760,7 +10763,7 @@ class NativeJournalWatchTests(unittest.TestCase):
     @contextlib.contextmanager
     def events(self, callback):
         waiter = types.SimpleNamespace(wait=callback)
-        with mock.patch.object(provider, "NativeJournalEvents",
+        with mock.patch.object(provider.watch_commands, "NativeJournalEvents",
                 return_value=contextlib.nullcontext(waiter)):
             yield
 
@@ -10817,7 +10820,7 @@ class NativeJournalWatchTests(unittest.TestCase):
                         self.checkpoint(journal, "succeeded")
                     yield types.SimpleNamespace(wait=mock.Mock(side_effect=AssertionError("unneeded wait")))
                 chunks = []
-                with mock.patch.object(provider, "NativeJournalEvents", side_effect=events):
+                with mock.patch.object(provider.watch_commands, "NativeJournalEvents", side_effect=events):
                     self.watch(journal, operation, chunks.append)
                 self.assertEqual(rows("".join(chunks).splitlines(), "operation")[-1][4],
                     "succeeded" if completed else "interrupted")
@@ -10888,7 +10891,7 @@ class NativeJournalWatchTests(unittest.TestCase):
                             provider.encode_journal_operation(changed))
                     before.update({name: (path / name).read_bytes() for name in provider.JOURNAL_NAMES})
                     yield types.SimpleNamespace(wait=mock.Mock(side_effect=AssertionError("unneeded wait")))
-                with mock.patch.object(provider, "NativeJournalEvents", side_effect=events):
+                with mock.patch.object(provider.watch_commands, "NativeJournalEvents", side_effect=events):
                     with self.assertRaises(provider.JournalAdmissionError):
                         self.watch(journal, operation, chunks.append)
                 for name, content in before.items():
@@ -10908,7 +10911,7 @@ class NativeJournalWatchTests(unittest.TestCase):
                 self.checkpoint(journal, "succeeded")
                 before.update({name: (path / name).read_bytes() for name in provider.JOURNAL_NAMES})
                 yield types.SimpleNamespace(wait=mock.Mock(side_effect=AssertionError("unneeded wait")))
-            with mock.patch.object(provider, "NativeJournalEvents", side_effect=events):
+            with mock.patch.object(provider.watch_commands, "NativeJournalEvents", side_effect=events):
                 with self.assertRaises(provider.JournalAdmissionError):
                     self.watch(journal, operation, chunks.append)
             for name, content in before.items():
@@ -10981,8 +10984,10 @@ class NativeJournalWatchTests(unittest.TestCase):
 
     def test_real_cli_watch_observes_completion_and_owner_sigkill(self):
         owner_program = """
-import contextlib, dataclasses, runpy, sys
-p = runpy.run_path(sys.argv[1])
+import contextlib, dataclasses, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
+p = vars(lyona_provider.load(sys.argv[1]))
 with p["open_journal_directory_chain"](sys.argv[2]) as chain:
     with p["retain_writable_journal"](chain) as journal, contextlib.ExitStack() as owner:
         with p["lock_writable_journal"](journal):
@@ -10998,9 +11003,11 @@ with p["open_journal_directory_chain"](sys.argv[2]) as chain:
             p["complete_journal_terminal"](journal)
 """
         watch_program = """
-import runpy, sys
-p = runpy.run_path(sys.argv[1])
-p["main"].__globals__["NATIVE_WATCH_SECONDS"] = 1
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))), "tests"))
+import lyona_provider
+p = vars(lyona_provider.load(sys.argv[1]))
+p["watch_commands"].NATIVE_WATCH_SECONDS = 1
 def unexpected(*args, **kwargs):
     raise AssertionError("Native watch must not open PackageKit")
 p["PackageKitBackend"].__init__ = unexpected
@@ -11341,9 +11348,9 @@ class RegionalOwnerTests(unittest.TestCase):
         if configure is not None:
             configure()
         output = []
-        with mock.patch.object(provider, "RegionalMutation", side_effect=factory) as client, \
-                mock.patch.object(provider, "RegionalRead") as fresh, \
-                mock.patch.object(provider, "PackageKitBackend") as packagekit:
+        with mock.patch.object(provider.regional_settings, "RegionalMutation", side_effect=factory) as client, \
+                mock.patch.object(provider.regional_settings, "RegionalRead") as fresh, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as packagekit:
             terminal = provider.run_regional_mutation(journal, action, argument, generation,
                 output.append if write is None else write, on_admission=on_admission)
             packagekit.assert_not_called()
@@ -11409,8 +11416,8 @@ class RegionalOwnerTests(unittest.TestCase):
                     provider._unlock_native_owner(journal.descriptor("active"))
                     self.assertTrue(output[-1].endswith("complete\toperation\n"))
                     raise provider.SnapshotFailure("permission-denied", "Fresh read unavailable")
-                with mock.patch.object(provider, "RegionalMutation", side_effect=factory), \
-                        mock.patch.object(provider, "RegionalRead") as reader:
+                with mock.patch.object(provider.regional_settings, "RegionalMutation", side_effect=factory), \
+                        mock.patch.object(provider.regional_settings, "RegionalRead") as reader:
                     reader.return_value.run.side_effect = reread
                     terminal = provider.run_regional_mutation(journal, "timezone-set", "Etc/UTC",
                         generation, output.append)
@@ -11465,8 +11472,8 @@ class RegionalOwnerTests(unittest.TestCase):
                         signal.raise_signal(signum)
                     return unlock(descriptor)
                 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
-                        mock.patch.object(provider, "advance_journal_operation", side_effect=commit), \
-                        mock.patch.object(provider, "_unlock_native_owner", side_effect=release):
+                        mock.patch.object(provider.operation_journal, "advance_journal_operation", side_effect=commit), \
+                        mock.patch.object(provider.operation_journal, "_unlock_native_owner", side_effect=release):
                     terminal, _output, fresh = self.invoke(journal, configure=configure)
                 self.assertEqual(terminal.state, "interrupted")
                 fresh.assert_not_called()
@@ -11483,7 +11490,7 @@ class RegionalOwnerTests(unittest.TestCase):
                 def handoff(*args, **kwargs):
                     signal.raise_signal(signum)
                     return complete(*args, **kwargs)
-                with mock.patch.object(provider, "complete_journal_terminal", side_effect=handoff):
+                with mock.patch.object(provider.operation_journal, "complete_journal_terminal", side_effect=handoff):
                     terminal, _output, fresh = self.invoke(journal, mode="timeout")
                 self.assertEqual((terminal.state, terminal.error_code), ("interrupted", "timeout"))
                 self.assertTrue(self.client.local_interrupted)
@@ -11518,8 +11525,8 @@ class RegionalOwnerTests(unittest.TestCase):
                 guard = GLib.timeout_add(1000, guard_stop)
                 trigger_source = GLib.idle_add(trigger)
                 try:
-                    with mock.patch.object(provider, "RegionalMutation", side_effect=factory), \
-                            mock.patch.object(provider, "RegionalRead", return_value=read), \
+                    with mock.patch.object(provider.regional_settings, "RegionalMutation", side_effect=factory), \
+                            mock.patch.object(provider.regional_settings, "RegionalRead", return_value=read), \
                             contextlib.redirect_stdout(io.StringIO()), \
                             contextlib.redirect_stderr(io.StringIO()) as diagnostic:
                         terminal = provider.run_regional_mutation(journal, "timezone-set", "Etc/UTC",
@@ -11568,7 +11575,7 @@ class RegionalOwnerTests(unittest.TestCase):
                                 original(current_journal, current, following, **kwargs)
                             raise provider.JournalCommitError("Fixture sync failure")
                         return original(current_journal, current, following, **kwargs)
-                    with mock.patch.object(provider, "advance_journal_operation", side_effect=advance), \
+                    with mock.patch.object(provider.operation_journal, "advance_journal_operation", side_effect=advance), \
                             self.assertRaises(provider.JournalCommitError):
                         self.invoke(journal, write=output.append)
                     self.assertNotIn("complete\toperation", "".join(output))
@@ -11596,13 +11603,13 @@ class RegionalOwnerTests(unittest.TestCase):
     def test_native_cli_routes_only_fixed_valid_arguments(self):
         for args in (["timezone-set", "UTC", "a" * 64], ["ntp-set", "enabled", "b" * 64],
                      ["locale-set", "LANG=C", "c" * 64]):
-            with mock.patch.object(provider, "native_command", return_value=0) as command:
+            with mock.patch.object(provider.cli, "native_command", return_value=0) as command:
                 self.assertEqual(provider.main(args), 0)
                 command.assert_called_once_with(*args)
         for args in (["timezone-set"], ["timezone-set", "../UTC", "a" * 64],
                      ["ntp-set", "true", "a" * 64], ["locale-set", "LANG=C", "A" * 64],
                      ["locale-set", "LANG=C", "a" * 64, "extra"]):
-            with mock.patch.object(provider, "native_command") as command, \
+            with mock.patch.object(provider.cli, "native_command") as command, \
                     contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(provider.main(args), 2)
                 command.assert_not_called()
@@ -11631,10 +11638,10 @@ class RegionalCommandTests(unittest.TestCase):
     def invoke(self, journal, mode="success"):
         factory, generation = self.setup_client(journal, mode)
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
-                mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
-                mock.patch.object(provider, "RegionalMutation", side_effect=factory), \
-                mock.patch.object(provider, "RegionalRead"), \
-                mock.patch.object(provider, "PackageKitBackend") as packagekit, \
+                mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
+                mock.patch.object(provider.regional_settings, "RegionalMutation", side_effect=factory), \
+                mock.patch.object(provider.regional_settings, "RegionalRead"), \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as packagekit, \
                 contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
             code = provider.native_command("timezone-set", "Etc/UTC", generation)
             packagekit.assert_not_called()
@@ -11682,7 +11689,7 @@ class RegionalCommandTests(unittest.TestCase):
                         if after:
                             original(*args, **kwargs)
                         raise provider.JournalCommitError("Fixture private detail")
-                    with mock.patch.object(provider, name, side_effect=fail):
+                    with mock.patch.object(provider.operation_journal, name, side_effect=fail):
                         code, output, diagnostic = self.invoke(journal)
                     self.assertEqual(code, 1)
                     self.assertNotIn("complete\toperation", output)
@@ -11725,9 +11732,9 @@ class DelegatedOwnerTests(unittest.TestCase):
                 pass
             if failure is not None:
                 raise provider.SnapshotFailure(failure, "Fixture launch result")
-        with mock.patch.object(provider, "delegated_command", return_value=(("/usr/bin/fixture",), "Fixture tool")), \
-                mock.patch.object(provider, "launch_delegated_tool", side_effect=launch) as launcher, \
-                mock.patch.object(provider, "PackageKitBackend") as packagekit:
+        with mock.patch.object(provider.delegated_tools, "delegated_command", return_value=(("/usr/bin/fixture",), "Fixture tool")), \
+                mock.patch.object(provider.delegated_tools, "launch_delegated_tool", side_effect=launch) as launcher, \
+                mock.patch.object(provider.packagekit, "PackageKitBackend") as packagekit:
             result = provider.run_delegated_launch(journal, action, output.append if write is None else write,
                 on_admission=admitted)
             packagekit.assert_not_called()
@@ -11768,8 +11775,8 @@ class DelegatedOwnerTests(unittest.TestCase):
                     if "\t" + phase + "\t" in chunk:
                         raise BrokenPipeError()
                     output.append(chunk)
-                with mock.patch.object(provider, "delegated_command", return_value=(("/usr/bin/fixture",), "Fixture")), \
-                        mock.patch.object(provider, "launch_delegated_tool") as launch, self.assertRaises(BrokenPipeError):
+                with mock.patch.object(provider.delegated_tools, "delegated_command", return_value=(("/usr/bin/fixture",), "Fixture")), \
+                        mock.patch.object(provider.delegated_tools, "launch_delegated_tool") as launch, self.assertRaises(BrokenPipeError):
                     provider.run_delegated_launch(journal, "printers-open", write)
                 self.assertEqual(launch.call_count, int(phase == "succeeded"))
                 state = provider.load_journal_state(journal.chain)
@@ -11786,8 +11793,8 @@ class DelegatedOwnerTests(unittest.TestCase):
                     with provider.lock_writable_journal(journal):
                         provider.begin_journal_operation(journal, "ntp-set", "2026-09-06T23:00:00Z", "Competing")
                     return ("/usr/bin/fixture",), "Fixture"
-                with mock.patch.object(provider, "delegated_command", side_effect=resolve), \
-                        mock.patch.object(provider, "launch_delegated_tool") as launch, \
+                with mock.patch.object(provider.delegated_tools, "delegated_command", side_effect=resolve), \
+                        mock.patch.object(provider.delegated_tools, "launch_delegated_tool") as launch, \
                         self.assertRaises(provider.JournalAdmissionError if race else provider.SnapshotFailure):
                     provider.run_delegated_launch(journal, "accounts-open", output.append, on_admission=admitted)
                 admitted.assert_not_called()
@@ -11804,7 +11811,7 @@ class DelegatedOwnerTests(unittest.TestCase):
                         if after:
                             original(*args, **kwargs)
                         raise provider.JournalCommitError("Uncertain fixture write")
-                    with mock.patch.object(provider, stage, side_effect=fail), self.assertRaises(provider.JournalCommitError):
+                    with mock.patch.object(provider.operation_journal, stage, side_effect=fail), self.assertRaises(provider.JournalCommitError):
                         self.invoke(journal, write=output.append, admitted=admitted)
                     admitted.assert_called_once()
                     self.assertNotIn("complete\toperation", "".join(output))
@@ -11813,17 +11820,17 @@ class DelegatedOwnerTests(unittest.TestCase):
 
     def test_cli_fixed_grammar_and_preflight_rejection(self):
         for action in provider.DELEGATED_ACTIONS:
-            with mock.patch.object(provider, "native_command", return_value=0) as command:
+            with mock.patch.object(provider.cli, "native_command", return_value=0) as command:
                 self.assertEqual(provider.main([action]), 0)
                 command.assert_called_once_with(action)
-            with mock.patch.object(provider, "native_command") as command, contextlib.redirect_stderr(io.StringIO()):
+            with mock.patch.object(provider.cli, "native_command") as command, contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(provider.main([action, "unexpected"]), 2)
                 command.assert_not_called()
             with self.session() as (path, _chain, journal), \
                     mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(path.parents[1])}), \
-                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
-                    mock.patch.object(provider, "delegated_command", side_effect=provider.SnapshotFailure("missing-provider", "Fixture tool missing")), \
-                    mock.patch.object(provider, "launch_delegated_tool") as launch, \
+                    mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
+                    mock.patch.object(provider.delegated_tools, "delegated_command", side_effect=provider.SnapshotFailure("missing-provider", "Fixture tool missing")), \
+                    mock.patch.object(provider.delegated_tools, "launch_delegated_tool") as launch, \
                     contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
                 self.assertEqual(provider.main([action]), 1)
                 self.assertIn("no administration tool was launched", stdout.getvalue())
@@ -11848,7 +11855,7 @@ class DelegatedOwnerTests(unittest.TestCase):
                         raise BrokenPipeError()
                     output.append(chunk)
                 try:
-                    with mock.patch.object(provider, "delegated_command", return_value=(command, "Fixture")), \
+                    with mock.patch.object(provider.delegated_tools, "delegated_command", return_value=(command, "Fixture")), \
                             mock.patch.object(provider.os, "posix_spawn", side_effect=spawn):
                         if mode == "lost-output":
                             with self.assertRaises(BrokenPipeError):
@@ -11875,7 +11882,7 @@ class DelegatedOwnerTests(unittest.TestCase):
                         self.assertEqual(os.waitstatus_to_exitcode(status), 42)
                         self.assertEqual(provider.load_journal_state(journal.chain).terminals[terminal.slot], terminal)
                     replay = []
-                    with mock.patch.object(provider, "launch_delegated_tool", side_effect=AssertionError("Unexpected relaunch")):
+                    with mock.patch.object(provider.delegated_tools, "launch_delegated_tool", side_effect=AssertionError("Unexpected relaunch")):
                         provider.watch_journal_operation(journal, terminal.operation_id, replay.append, boot_id=self.boot_id)
                     self.assertTrue("".join(replay).endswith("complete\toperation\n"))
                 finally:
@@ -11920,8 +11927,8 @@ class NativeSnapshotTests(unittest.TestCase):
                 fixture.begin(journal, "timezone")
             recovery = provider.RecoverySnapshot(None if missing_state else provider.load_journal_state(journal.chain),
                 failures=(recovery_failure,) if recovery_failure else ())
-            with mock.patch.object(provider, "read_recovery_snapshot", return_value=recovery), \
-                    mock.patch.object(provider, "launch_delegated_tool") as launch:
+            with mock.patch.object(provider.update_plans, "read_recovery_snapshot", return_value=recovery), \
+                    mock.patch.object(provider.delegated_tools, "launch_delegated_tool") as launch:
                 output = provider.build_managed_snapshot(backend, native_sources=sources)
             launch.assert_not_called()
             return output
@@ -12073,7 +12080,7 @@ class NativeSnapshotTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}):
                 provider.NativeSnapshotSources().admission()
             self.assertEqual(before, {name: os.pread(journal.descriptor(name), provider.JOURNAL_FILE_SIZE, 0) for name in provider.JOURNAL_NAMES})
-            with mock.patch.object(provider, "open_journal_directory", side_effect=OSError("fixture unavailable")):
+            with mock.patch.object(provider.operation_journal, "open_journal_directory", side_effect=OSError("fixture unavailable")):
                 with self.assertRaises(provider.SnapshotFailure):
                     provider.NativeSnapshotSources().admission()
 
@@ -12228,7 +12235,7 @@ class OperationRecoveryTests(unittest.TestCase):
             operation = self.begin(journal)
             backend = self.backend()
             def probe(_operation, *, on_restart, on_running):
-                with mock.patch.object(provider, "commit_writable_journal_path", side_effect=provider.JournalFileError("Fault")):
+                with mock.patch.object(provider.operation_journal, "commit_writable_journal_path", side_effect=provider.JournalFileError("Fault")):
                     on_restart(6)
                 self.fail("A persistence failure must stop recovered success")
             backend.probe_operation.side_effect = probe
@@ -12916,7 +12923,7 @@ class OperationWatchTests(unittest.TestCase):
         with self.journal() as journal:
             operation = self.begin(journal)
             def noise(bus):
-                with mock.patch.object(provider, "load_writable_journal_state", side_effect=AssertionError("Noise reloaded journal")):
+                with mock.patch.object(provider.operation_journal, "load_writable_journal_state", side_effect=AssertionError("Noise reloaded journal")):
                     for _ in range(100):
                         self.emit(bus, "Package", "(uss)", (12, self.package_id, "Package"))
                         self.emit(bus, "Packages", "(a(uss))", ([(12, self.package_id, "Package")],))
@@ -13082,8 +13089,8 @@ class OperationWatchTests(unittest.TestCase):
                 self.assertEqual(provider.main(args), 2)
                 self.assertEqual(stdout.getvalue(), "")
         for command, diagnostic in (("watch-operation", "watch"), ("ack-operation", "ack"), ("updates-cancel", "cancel")):
-            with self.subTest(command=command), mock.patch.object(provider, "open_journal_directory", side_effect=provider.JournalLayoutError("Unsafe raw text")), \
-                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+            with self.subTest(command=command), mock.patch.object(provider.operation_journal, "open_journal_directory", side_effect=provider.JournalLayoutError("Unsafe raw text")), \
+                    mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
                     contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
                 self.assertEqual(provider.main([command, "op-" + "a" * 32]), 3)
                 self.assertEqual(stdout.getvalue(), "")
@@ -13121,7 +13128,7 @@ class OperationWatchTests(unittest.TestCase):
                 provider.advance_journal_operation(journal, operation, terminal)
             state_home = str(pathlib.Path(journal.chain.path).parents[1])
             with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state_home}), \
-                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
+                    mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
                     mock.patch.object(provider.PackageKitBackend, "__init__", side_effect=AssertionError("Unexpected service")), \
                     contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
                 self.assertEqual(provider.main(["watch-operation", operation.operation_id]), 0)
@@ -13171,8 +13178,8 @@ class UpdateCommandTests(unittest.TestCase):
 
     def invoke(self, journal, args, backend, output=None, boot_id=None):
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
-                mock.patch.object(provider, "read_boot_id", return_value=boot_id or self.boot_id), \
-                mock.patch.object(provider, "PackageKitBackend", **({"side_effect": backend} if isinstance(backend, Exception) else {"return_value": backend})), \
+                mock.patch.object(provider.update_plans, "read_boot_id", return_value=boot_id or self.boot_id), \
+                mock.patch.object(provider.packagekit, "PackageKitBackend", **({"side_effect": backend} if isinstance(backend, Exception) else {"return_value": backend})), \
                 contextlib.redirect_stdout(io.StringIO() if output is None else output) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
             code = provider.main(args)
         return code, stdout.getvalue(), stderr.getvalue()
@@ -13181,8 +13188,8 @@ class UpdateCommandTests(unittest.TestCase):
         for args in (["updates-refresh", "extra"], ["updates-install-all"], ["updates-install-all", "bad"],
                      ["updates-install-all", "A" * 64], ["updates-install-all", "a" * 64, "extra"],
                      ["updates-install-all", "--force"], ["--updates-refresh"]):
-            with self.subTest(args=args), mock.patch.object(provider, "open_journal_directory") as journal, \
-                    mock.patch.object(provider, "PackageKitBackend") as backend, \
+            with self.subTest(args=args), mock.patch.object(provider.operation_journal, "open_journal_directory") as journal, \
+                    mock.patch.object(provider.packagekit, "PackageKitBackend") as backend, \
                     contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(provider.main(args), 2)
                 journal.assert_not_called()
@@ -13329,7 +13336,7 @@ class UpdateCommandTests(unittest.TestCase):
                     if after_commit:
                         begin(*args, **kwargs)
                     raise provider.JournalCommitError("Uncertain commit")
-                with mock.patch.object(provider, "begin_journal_operation", side_effect=fail):
+                with mock.patch.object(provider.operation_journal, "begin_journal_operation", side_effect=fail):
                     code, output, diagnostic = self.invoke(journal, ["updates-refresh"], backend)
                 self.assertEqual((code, output), (1, ""))
                 self.assertIn("refresh status and observe the existing operation", diagnostic)
@@ -13354,7 +13361,7 @@ class UpdateCommandTests(unittest.TestCase):
             with self.subTest(stage=stage), self.journal() as journal:
                 failure = provider.SnapshotFailure("missing-provider", "Backend unavailable")
                 name = "open_journal_directory" if stage == "open" else "generate_journal_operation_id"
-                with mock.patch.object(provider, name, side_effect=provider.JournalLayoutError("Raw unsafe diagnostic")):
+                with mock.patch.object(provider.operation_journal, name, side_effect=provider.JournalLayoutError("Raw unsafe diagnostic")):
                     code, output, diagnostic = self.invoke(journal, ["updates-refresh"], failure)
                 self.assertEqual((code, output), (1, ""))
                 self.assertEqual(diagnostic, "operation result could not be confirmed; refresh status and observe the existing operation\n")
@@ -13395,7 +13402,7 @@ class UpdateCommandTests(unittest.TestCase):
                     "2026-09-05T01:00:00Z", failure, output.append)
             self.assertEqual(output, [])
         output = []
-        with mock.patch.object(provider, "encode_journal_operation", side_effect=AssertionError("Must not fabricate a transaction")):
+        with mock.patch.object(provider.operation_journal, "encode_journal_operation", side_effect=AssertionError("Must not fabricate a transaction")):
             provider.reject_unadmitted_operation("op-" + "1" * 32, "updates-install-all",
                 "2026-09-05T01:00:00Z", provider.SnapshotFailure("conflict", "Changed preview"), output.append)
         self.assertEqual(rows("".join(output).splitlines(), "audit")[0][2:5], ["updates-install-all", "update", "failed"])
@@ -13438,8 +13445,8 @@ class OperationCancelTests(unittest.TestCase):
 
     def cli(self, journal, operation_id, backend):
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
-                mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
-                mock.patch.object(provider, "PackageKitBackend", return_value=backend), \
+                mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
+                mock.patch.object(provider.packagekit, "PackageKitBackend", return_value=backend), \
                 contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
             code = provider.main(["updates-cancel", operation_id])
         return code, stdout.getvalue(), stderr.getvalue()
@@ -13585,7 +13592,7 @@ class OperationCancelTests(unittest.TestCase):
     def test_cancel_persistence_failure_retains_observation_guidance(self):
         with self.journal() as journal:
             operation = self.begin(journal, state="running")
-            with mock.patch.object(provider, "advance_journal_operation", side_effect=provider.JournalCommitError("Injected write failure")):
+            with mock.patch.object(provider.operation_journal, "advance_journal_operation", side_effect=provider.JournalCommitError("Injected write failure")):
                 result = self.cli(journal, operation.operation_id, self.backend(journal))
             self.assertEqual(result[0], 1)
             self.assertEqual(result[1], "")
@@ -13629,7 +13636,7 @@ class RecoverySnapshotTests(unittest.TestCase):
     def snapshot(self, journal, backend, *, boot_id=None):
         state_home = str(pathlib.Path(journal.chain.path).parents[1])
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": state_home}), \
-                mock.patch.object(provider, "read_boot_id", return_value=boot_id or self.boot_id):
+                mock.patch.object(provider.update_plans, "read_boot_id", return_value=boot_id or self.boot_id):
             return provider.build_managed_snapshot(backend)
 
     def restart(self, journal, **changes):
@@ -13658,13 +13665,13 @@ class RecoverySnapshotTests(unittest.TestCase):
         for method in ("time_state", "locale_state", "accounts", "printers", "repositories", "delegate"):
             getattr(sources, method).side_effect = failure
         sources.admission.return_value = None
-        return mock.patch.object(provider, "NativeSnapshotSources", return_value=sources)
+        return mock.patch.object(provider.snapshots, "NativeSnapshotSources", return_value=sources)
 
     def test_cli_initializes_only_its_fixed_journal_and_offers_safe_refresh(self):
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}), \
-                mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
-                mock.patch.object(provider, "PackageKitBackend", return_value=self.backend()), \
+                mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
+                mock.patch.object(provider.packagekit, "PackageKitBackend", return_value=self.backend()), \
                 self.unavailable_native_sources(), \
                 contextlib.redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(provider.main(["snapshot"]), 0)
@@ -13814,7 +13821,7 @@ class RecoverySnapshotTests(unittest.TestCase):
     def test_read_only_journal_failure_preserves_validated_prior_guidance(self):
         with self.journal() as journal:
             self.restart(journal, system="security-system")
-            with mock.patch.object(provider, "initialize_journal_layout", side_effect=OSError(errno.EROFS, "Read-only fixture")):
+            with mock.patch.object(provider.operation_journal, "initialize_journal_layout", side_effect=OSError(errno.EROFS, "Read-only fixture")):
                 output = self.snapshot(journal, self.backend())
             self.assertEqual(self.restart_row(output)[2:4], ["partial", "security-system"])
 
@@ -13886,7 +13893,7 @@ class RecoverySnapshotTests(unittest.TestCase):
             self.restart(journal, session="security-session", session_cutoff=100)
             backend = self.backend()
             backend.session_started.return_value = 200
-            with mock.patch.object(provider, "commit_writable_journal_path", side_effect=provider.JournalCommitError("Injected write failure")):
+            with mock.patch.object(provider.operation_journal, "commit_writable_journal_path", side_effect=provider.JournalCommitError("Injected write failure")):
                 output = self.snapshot(journal, backend)
             self.assertEqual(self.restart_row(output)[2:4], ["partial", "security-session"])
             self.assertEqual(rows(output, "active-operation") + rows(output, "terminal-handoff"), [])
@@ -13915,12 +13922,60 @@ class RecoverySnapshotTests(unittest.TestCase):
                 provider.advance_journal_operation(journal, operation, replace(operation,
                     state="failed", error_code="internal", finished_at="2026-09-05T01:00:00Z", terminal_monotonic=100))
             with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(pathlib.Path(journal.chain.path).parents[1])}), \
-                    mock.patch.object(provider, "read_boot_id", return_value=self.boot_id), \
-                    mock.patch.object(provider, "PackageKitBackend", side_effect=provider.SnapshotFailure("missing-provider", "Bindings missing")), \
+                    mock.patch.object(provider.update_plans, "read_boot_id", return_value=self.boot_id), \
+                    mock.patch.object(provider.packagekit, "PackageKitBackend", side_effect=provider.SnapshotFailure("missing-provider", "Bindings missing")), \
                     self.unavailable_native_sources(), \
                     contextlib.redirect_stdout(io.StringIO()) as stdout:
                 self.assertEqual(provider.main(["snapshot"]), 0)
             self.assertEqual(rows(stdout.getvalue().splitlines(), "terminal-handoff")[0][1], operation.operation_id)
+
+
+class PackageLayoutTests(unittest.TestCase):
+    """Sync Sprint 12 S12-16: the helper is a package of modules, behind a facade."""
+
+    MODULES = ("cli", "delegated_tools", "event_monitors", "native_operations", "operation_journal",
+               "packagekit", "regional_settings", "shared", "snapshots", "system_information",
+               "system_services", "update_plans", "user_accounts", "watch_commands")
+
+    def test_package_has_exactly_the_modules(self):
+        package = REPO / "scripts" / "lyona_system_management"
+        self.assertEqual(sorted(path.stem for path in package.glob("*.py") if path.stem != "__init__"),
+                         sorted(self.MODULES))
+
+    def test_every_module_imports_first(self):
+        # Whichever module loads first, nothing it needs while loading may come
+        # from a module that is still loading.
+        for module in self.MODULES:
+            with self.subTest(module=module):
+                result = subprocess.run(
+                    [sys.executable, "-B", "-c", f"import lyona_system_management.{module}"],
+                    cwd=REPO / "scripts", capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_every_defined_name_is_on_its_module_and_the_facade(self):
+        for name, module in provider._DEFINED_IN.items():
+            with self.subTest(name=name):
+                self.assertIs(getattr(provider, name), getattr(getattr(provider, module), name))
+
+    def test_facade_is_read_only_and_names_the_module(self):
+        with self.assertRaises(AttributeError) as caught:
+            with mock.patch.object(provider, "PackageKitBackend"):
+                pass
+        self.assertIn("lyona_system_management.packagekit", str(caught.exception))
+        self.assertIs(provider.PackageKitBackend, provider.packagekit.PackageKitBackend)
+        with self.assertRaises(AttributeError):
+            provider.os = None
+        with self.assertRaises(AttributeError):
+            del provider.main
+
+    def test_a_patch_on_the_defining_module_reaches_other_modules(self):
+        # cli calls regional_settings.regional_preflight_output; patching that module is enough.
+        with mock.patch.object(provider.regional_settings, "regional_preflight_output",
+                               return_value=("patched\n", 0)) as patched, \
+                mock.patch.object(provider.cli.sys, "stdout", io.StringIO()) as stdout:
+            self.assertEqual(provider.main(["regional-choices", "locale"]), 0)
+        patched.assert_called_once()
+        self.assertEqual(stdout.getvalue(), "patched\n")
 
 
 if __name__ == "__main__":

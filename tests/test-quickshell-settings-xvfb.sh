@@ -105,7 +105,7 @@ process_identity_alive() (
 # yet, so an unanswered call reads as empty rather than failing the test.
 settings_ipc_once() {
 	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings "$@" 2>/dev/null || true
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest "$@" 2>/dev/null || true
 }
 
 settings_ipc_select() {
@@ -871,6 +871,7 @@ env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
 	DWM_TEST_SYSTEM_RECORD="$update_provenance_system_record" DWM_TEST_SYSTEM_OWNER="$(id -u)" \
 	DWM_TEST_USER_RECORD="$update_provenance_record" \
 	QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
+	LYONA_SHELL_TEST_IPC=1 \
 	PATH="$data_home/checkout/scripts:$dwm_bin_dir:$PATH" \
 	quickshell --no-duplicate >"$work/quickshell.log" 2>&1 &
 quickshell_pid=$!
@@ -967,7 +968,7 @@ fi
 
 update_ipc() {
 	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings "$@"
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest "$@"
 }
 
 # UpdateModel refreshes unconditionally on startup (matching
@@ -1064,21 +1065,21 @@ done
 i=0
 while [ "$i" -lt 100 ]; do
 	display_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings displayStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest displayStatus 2>/dev/null || true)
 	[ "$display_status" = ready ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$display_status" = ready ]
 display_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings displayCount)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest displayCount)
 [ "$display_count" -ge 1 ]
 
 display_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings displayDpi)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest displayDpi)
 [ "$display_dpi" = 144 ]
 display_dpi_source=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings displayDpiSource)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest displayDpiSource)
 [ "$display_dpi_source" = saved ]
 
 # DPI hot-reload gate: prove dwm-settings-display -> dpi.current ->
@@ -1093,14 +1094,14 @@ display_dpi_source=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XD
 i=0
 while [ "$i" -lt 100 ]; do
 	theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeDisplayDpi 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeDisplayDpi 2>/dev/null || true)
 	[ "$theme_dpi" = 144 ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$theme_dpi" = 144 ]
 ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeUiScale)
 [ "$ui_scale" = 1.5000 ]
 
 # Drive a live DPI change through the real helper (not a hand-written state
@@ -1114,13 +1115,13 @@ XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 i=0
 while [ "$i" -lt 100 ]; do
 	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeUiScale 2>/dev/null || true)
 	[ "$ui_scale" != 1.5000 ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 theme_dpi=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeDisplayDpi)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeDisplayDpi)
 [ "$theme_dpi" = 192 ]
 [ "$ui_scale" = 2.0000 ]
 
@@ -1130,7 +1131,7 @@ XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 i=0
 while [ "$i" -lt 100 ]; do
 	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeUiScale 2>/dev/null || true)
 	[ "$ui_scale" = 1.5000 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1146,7 +1147,7 @@ XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 i=0
 while [ "$i" -lt 100 ]; do
 	ui_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeUiScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeUiScale 2>/dev/null || true)
 	[ "$ui_scale" = 1.0000 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1161,7 +1162,7 @@ XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 i=0
 while [ "$i" -lt 100 ]; do
 	high_contrast=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeHighContrast 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeHighContrast 2>/dev/null || true)
 	[ "$high_contrast" = true ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1169,7 +1170,7 @@ done
 [ "$high_contrast" = true ]
 
 before_text=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor text)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeColor text)
 
 # Apply a theme with a demonstrably different palette and require that the
 # palette moved, the override survived, and muted text stayed pinned to text.
@@ -1178,7 +1179,7 @@ XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 i=0
 while [ "$i" -lt 100 ]; do
 	after_text=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor text 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeColor text 2>/dev/null || true)
 	[ -n "$after_text" ] && [ "$after_text" != "$before_text" ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1186,10 +1187,10 @@ done
 [ -n "$after_text" ] && [ "$after_text" != "$before_text" ]
 
 high_contrast=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeHighContrast)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeHighContrast)
 [ "$high_contrast" = true ]
 text_muted=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor textMuted)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeColor textMuted)
 [ "$text_muted" = "$after_text" ]
 
 # With the override off, muted text must follow the theme again.
@@ -1198,7 +1199,7 @@ XDG_CONFIG_HOME=$config_home XDG_RUNTIME_DIR=$runtime \
 i=0
 while [ "$i" -lt 100 ]; do
 	text_muted=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings themeColor textMuted 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest themeColor textMuted 2>/dev/null || true)
 	[ "$text_muted" != "$after_text" ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1212,13 +1213,13 @@ XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 	"$data_home/checkout/scripts/dwm-settings-theme" apply nord >/dev/null
 
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = displays ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings select audio >/dev/null
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = audio ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1226,14 +1227,14 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	input_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputStatus 2>/dev/null || true)
 	[ "$input_status" = ready ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$input_status" = ready ]
 input_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputCount)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputCount)
 [ "$input_count" -ge 1 ]
 
 # XKB accessibility preview, revert, keep/persist, live apply-saved, and
@@ -1246,7 +1247,7 @@ xkb_sticky_value() {
 }
 
 sticky_baseline=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputAccessibilityValue sticky-keys)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputAccessibilityValue sticky-keys)
 case $sticky_baseline in
 0)
 	sticky_preview=true
@@ -1264,12 +1265,12 @@ esac
 sticky_record=$(printf 'accessx\tsticky-keys\t%s\t%s' "$sticky_expected" "$sticky_baseline")
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest \
 	inputAccessibilityPreview sticky-keys "$sticky_preview" >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	preview_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputPreviewState)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputPreviewState)
 	sticky_live=$(xkb_sticky_value 2>/dev/null || true)
 	[ "$preview_state" = input ] && [ "$sticky_live" = "$sticky_expected" ] && break
 	i=$((i + 1))
@@ -1279,13 +1280,13 @@ done
 [ "$sticky_live" = "$sticky_expected" ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputPreviewAction revert >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputPreviewAction revert >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	preview_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputPreviewState)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputPreviewState)
 	sticky_value=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputAccessibilityValue sticky-keys)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputAccessibilityValue sticky-keys)
 	sticky_live=$(xkb_sticky_value 2>/dev/null || true)
 	[ -z "$preview_state" ] && [ "$sticky_value" = "$sticky_baseline" ] &&
 		[ "$sticky_live" = "$sticky_baseline" ] && break
@@ -1297,12 +1298,12 @@ done
 [ "$sticky_live" = "$sticky_baseline" ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest \
 	inputAccessibilityPreview sticky-keys "$sticky_preview" >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	preview_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputPreviewState)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputPreviewState)
 	sticky_live=$(xkb_sticky_value 2>/dev/null || true)
 	[ "$preview_state" = input ] && [ "$sticky_live" = "$sticky_expected" ] && break
 	i=$((i + 1))
@@ -1312,7 +1313,7 @@ done
 [ "$sticky_live" = "$sticky_expected" ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputPreviewAction keep >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputPreviewAction keep >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	grep -Fqx "$sticky_record" "$config_home/lyona/input-settings.conf" 2>/dev/null && break
@@ -1323,9 +1324,9 @@ grep -Fqx "$sticky_record" "$config_home/lyona/input-settings.conf"
 i=0
 while [ "$i" -lt 100 ]; do
 	preview_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputPreviewState)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputPreviewState)
 	sticky_value=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputAccessibilityValue sticky-keys)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputAccessibilityValue sticky-keys)
 	[ -z "$preview_state" ] && [ "$sticky_value" = "$sticky_expected" ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1342,11 +1343,11 @@ sticky_live=$(xkb_sticky_value)
 [ "$sticky_live" = "$sticky_expected" ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputAccessibilityReset sticky-keys >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputAccessibilityReset sticky-keys >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	sticky_value=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings inputAccessibilityValue sticky-keys)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest inputAccessibilityValue sticky-keys)
 	sticky_live=$(xkb_sticky_value 2>/dev/null || true)
 	[ "$sticky_value" = "$sticky_baseline" ] && [ "$sticky_live" = "$sticky_baseline" ] && break
 	i=$((i + 1))
@@ -1369,7 +1370,7 @@ test_stage='waiting for keyboard navigation to Power'
 i=0
 while [ "$i" -lt 100 ]; do
 	section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection \
 		2>/dev/null || true)
 	[ "$section" = power ] && break
 	i=$((i + 1))
@@ -1381,14 +1382,14 @@ test_stage='validating power settings'
 i=0
 while [ "$i" -lt 100 ]; do
 	power_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerProviderStatus 2>/dev/null || true)
 	[ "$power_status" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$power_status" = available ]
 power_dpms_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerDpmsStatus)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerDpmsStatus)
 case $power_dpms_status in
 available | partial | restricted | unavailable) ;;
 *)
@@ -1415,14 +1416,14 @@ done
 [ "$power_gsettings_watch_count" -eq 1 ]
 
 power_lock_enabled=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockEnabled)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockEnabled)
 [ "$power_lock_enabled" = true ]
 HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	gsettings set apps.light-locker lock-after-screensaver 0
 i=0
 while [ "$i" -lt 100 ]; do
 	power_lock_enabled=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockEnabled 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockEnabled 2>/dev/null || true)
 	[ "$power_lock_enabled" = false ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1433,7 +1434,7 @@ HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 i=0
 while [ "$i" -lt 100 ]; do
 	power_lock_enabled=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockEnabled 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockEnabled 2>/dev/null || true)
 	[ "$power_lock_enabled" = true ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1441,14 +1442,14 @@ done
 [ "$power_lock_enabled" = true ]
 
 power_enabled=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerDpmsEnabled)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerDpmsEnabled)
 [ "$power_enabled" = true ]
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerSetDpms false >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerSetDpms false >/dev/null
 i=0
 while [ "$i" -lt 100 ]; do
 	power_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerBusy 2>/dev/null || true)
 	[ "$power_busy" = true ] && break
 	i=$((i + 1))
 	sleep 0.02
@@ -1465,7 +1466,7 @@ fi
 i=0
 while [ "$i" -lt 200 ]; do
 	power_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerBusy 2>/dev/null || true)
 	[ "$power_busy" = false ] && break
 	i=$((i + 1))
 	sleep 0.02
@@ -1473,7 +1474,7 @@ done
 [ "$power_busy" = false ]
 [ "$(cat "$power_state/dpms-enabled")" = 0 ]
 power_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerMessage)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerMessage)
 [ "$power_message" = 'Power setting updated' ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1481,14 +1482,14 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings select power >/dev/null
 power_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerMessage)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerMessage)
 [ "$power_message" = 'Power setting updated' ]
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerSetDpms true >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerSetDpms true >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	power_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerBusy 2>/dev/null || true)
 	[ "$power_busy" = false ] && break
 	i=$((i + 1))
 	sleep 0.02
@@ -1504,7 +1505,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	power_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerProviderStatus 2>/dev/null || true)
 	[ "$power_status" = unavailable ] && break
 	i=$((i + 1))
 	sleep 0.02
@@ -1519,11 +1520,11 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	power_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerProviderStatus 2>/dev/null || true)
 	power_dpms_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerDpmsStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerDpmsStatus 2>/dev/null || true)
 	power_lock_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockStatus 2>/dev/null || true)
 	[ "$power_status" = available ] && [ "$power_dpms_status" = unavailable ] &&
 		[ "$power_lock_status" = unavailable ] && break
 	i=$((i + 1))
@@ -1533,9 +1534,9 @@ done
 [ "$power_dpms_status" = unavailable ]
 [ "$power_lock_status" = unavailable ]
 power_enabled=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerDpmsEnabled)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerDpmsEnabled)
 power_timeout=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerDpmsTimeout)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerDpmsTimeout)
 [ "$power_enabled" = false ]
 [ "$power_timeout" -eq 0 ]
 
@@ -1551,16 +1552,16 @@ for lock_record_status in available partial unavailable restricted unsupported; 
 	i=0
 	while [ "$i" -lt 100 ]; do
 		power_lock_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockStatus 2>/dev/null || true)
+			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockStatus 2>/dev/null || true)
 		[ "$power_lock_status" = "$expected_lock_status" ] && break
 		i=$((i + 1))
 		sleep 0.02
 	done
 	[ "$power_lock_status" = "$expected_lock_status" ]
 	power_lock_enabled=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockEnabled)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockEnabled)
 	power_lock_timeout=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerLockTimeout)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerLockTimeout)
 	if [ "$expected_lock_status" = available ]; then
 		[ "$power_lock_enabled" = true ] && [ "$power_lock_timeout" -eq 600 ]
 	else
@@ -1576,9 +1577,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	power_battery_available=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerBatteryAvailable 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerBatteryAvailable 2>/dev/null || true)
 	power_battery_percent=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerBatteryPercent 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerBatteryPercent 2>/dev/null || true)
 	[ "$power_battery_available" = true ] && [ "$power_battery_percent" = 73 ] && break
 	i=$((i + 1))
 	sleep 0.02
@@ -1594,7 +1595,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	power_dpms_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings powerDpmsStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest powerDpmsStatus 2>/dev/null || true)
 	[ "$power_dpms_status" = available ] && break
 	i=$((i + 1))
 	sleep 0.02
@@ -1607,11 +1608,11 @@ test_stage='validating defaults and autostart settings'
 i=0
 while [ "$i" -lt 200 ]; do
 	defaults_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsProviderStatus 2>/dev/null || true)
 	defaults_role_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsRoleCount 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsRoleCount 2>/dev/null || true)
 	autostart_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartProviderStatus 2>/dev/null || true)
 	case $defaults_status:$autostart_status:$defaults_role_count in
 	available:ready:3 | available:degraded:3 | partial:ready:3 | partial:degraded:3) break ;;
 	esac
@@ -1624,7 +1625,7 @@ case $autostart_status in ready | degraded) : ;; *) exit 1 ;; esac
 [ "$(settings_defaults_watch_count)" -eq 1 ]
 [ "$(settings_autostart_watch_count)" -eq 1 ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest \
 	autostartEntryName vendor-app+variant.desktop)" = 'Plus ID Autostart Fixture' ]
 
 sed -i 's/Name=dwm Test Autostart/Name=dwm Test Autostart Changed/' \
@@ -1632,20 +1633,20 @@ sed -i 's/Name=dwm Test Autostart/Name=dwm Test Autostart Changed/' \
 i=0
 while [ "$i" -lt 200 ]; do
 	autostart_name=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryName dwm-test-autostart.desktop 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryName dwm-test-autostart.desktop 2>/dev/null || true)
 	[ "$autostart_name" = 'dwm Test Autostart Changed' ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$autostart_name" = 'dwm Test Autostart Changed' ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryOrigin dwm-test-autostart.desktop)" = user-only ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryOrigin dwm-test-autostart.desktop)" = user-only ]
 
 sed -i 's/terminal = "alacritty"/terminal = "kitty"/' "$config_home/lyona/hotkeys.toml"
 i=0
 while [ "$i" -lt 200 ]; do
 	terminal_id=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsRoleDesktopId terminal 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsRoleDesktopId terminal 2>/dev/null || true)
 	[ "$terminal_id" = kitty.desktop ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1655,7 +1656,7 @@ sed -i 's/terminal = "kitty"/terminal = "alacritty"/' "$config_home/lyona/hotkey
 i=0
 while [ "$i" -lt 200 ]; do
 	terminal_id=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsRoleDesktopId terminal 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsRoleDesktopId terminal 2>/dev/null || true)
 	[ "$terminal_id" = Alacritty.desktop ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1663,20 +1664,20 @@ done
 [ "$terminal_id" = Alacritty.desktop ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSetSearch picom >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSetSearch picom >/dev/null
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartFilteredCount)" -eq 1 ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartFilteredCount)" -eq 1 ]
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSetSearch '' >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSetSearch '' >/dev/null
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsSetRole terminal kitty.desktop >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsSetRole terminal kitty.desktop >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	defaults_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsBusy 2>/dev/null || true)
 	terminal_id=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsRoleDesktopId terminal 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsRoleDesktopId terminal 2>/dev/null || true)
 	[ "$defaults_busy" = false ] && [ "$terminal_id" = kitty.desktop ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1686,13 +1687,13 @@ done
 grep -Fqx 'terminal = "kitty"' "$config_home/lyona/hotkeys.toml"
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsResetRole terminal >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsResetRole terminal >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	defaults_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsBusy 2>/dev/null || true)
 	terminal_id=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsRoleDesktopId terminal 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsRoleDesktopId terminal 2>/dev/null || true)
 	[ "$defaults_busy" = false ] && [ "$terminal_id" = Alacritty.desktop ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1716,33 +1717,33 @@ esac
 EOF
 chmod +x "$defaults_helper"
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsSetRole terminal kitty.desktop >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsSetRole terminal kitty.desktop >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	defaults_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsBusy 2>/dev/null || true)
 	[ "$defaults_busy" = false ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$defaults_busy" = false ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsMessage)" = \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsMessage)" = \
 	'Defaults helper did not confirm the requested change' ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings defaultsRoleDesktopId terminal)" = \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsRoleDesktopId terminal)" = \
 	Alacritty.desktop ]
 rm "$defaults_helper"
 mv "$defaults_helper.real" "$defaults_helper"
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSet dwm-test-autostart.desktop false >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet dwm-test-autostart.desktop false >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	autostart_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartBusy 2>/dev/null || true)
 	autostart_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryState dwm-test-autostart.desktop 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryState dwm-test-autostart.desktop 2>/dev/null || true)
 	[ "$autostart_busy" = false ] && [ "$autostart_state" = disabled ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1752,13 +1753,13 @@ done
 grep -Eq '^NotShowIn=.*X-DWM' "$config_home/autostart/dwm-test-autostart.desktop"
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSet dwm-test-autostart.desktop true >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet dwm-test-autostart.desktop true >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	autostart_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartBusy 2>/dev/null || true)
 	autostart_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryState dwm-test-autostart.desktop 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryState dwm-test-autostart.desktop 2>/dev/null || true)
 	[ "$autostart_busy" = false ] && [ "$autostart_state" = enabled ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1786,45 +1787,45 @@ esac
 EOF
 chmod +x "$autostart_helper"
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSet dwm-test-autostart.desktop false >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet dwm-test-autostart.desktop false >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	autostart_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartBusy 2>/dev/null || true)
 	[ "$autostart_busy" = false ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$autostart_busy" = false ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartMessage)" = \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartMessage)" = \
 	'Autostart helper did not confirm the requested change' ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryState dwm-test-autostart.desktop)" = \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryState dwm-test-autostart.desktop)" = \
 	enabled ]
 rm "$autostart_helper"
 mv "$autostart_helper.real" "$autostart_helper"
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSet picom.desktop false >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet picom.desktop false >/dev/null
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartConfirming)" = true ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartConfirming)" = true ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryState picom.desktop)" = enabled ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryState picom.desktop)" = enabled ]
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartCancel >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartCancel >/dev/null
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartConfirming)" = false ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartConfirming)" = false ]
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartSet picom.desktop false >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet picom.desktop false >/dev/null
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartConfirm >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartConfirm >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	autostart_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartBusy 2>/dev/null || true)
 	autostart_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings autostartEntryState picom.desktop 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryState picom.desktop 2>/dev/null || true)
 	[ "$autostart_busy" = false ] && [ "$autostart_state" = disabled ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1836,7 +1837,7 @@ DISPLAY=$display xdotool windowactivate --sync "$window"
 
 DISPLAY=$display xdotool mousemove "$((x + 120))" "$((y + 210))" click 1
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = displays ]
 i=0
 while [ "$i" -lt 100 ]; do
@@ -1867,20 +1868,20 @@ DISPLAY=$display xdotool windowactivate --sync "$window"
 DISPLAY=$display xdotool type --delay 20 network
 test_stage='validating network and Bluetooth settings'
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = network ]
 
 i=0
 while [ "$i" -lt 100 ]; do
 	network_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings networkProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest networkProviderStatus 2>/dev/null || true)
 	[ "$network_status" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$network_status" = available ]
 network_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings networkDeviceCount)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest networkDeviceCount)
 [ "$network_count" -ge 1 ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1888,7 +1889,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	bluetooth_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings bluetoothProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest bluetoothProviderStatus 2>/dev/null || true)
 	[ "$bluetooth_status" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1901,7 +1902,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	case $appearance_status in
 	available | partial) break ;;
 	esac
@@ -1912,7 +1913,7 @@ case $appearance_status in
 available | partial) ;;
 *)
 	appearance_detail=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderDetail 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderDetail 2>/dev/null || true)
 	printf 'Appearance provider did not become readable: %s (%s)\n' \
 		"$appearance_status" "$appearance_detail" >&2
 	HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1925,7 +1926,7 @@ wallpaper_reset_ready=false
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_reset_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperResetReady 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperResetReady 2>/dev/null || true)
 	[ "$wallpaper_reset_ready" = true ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1937,15 +1938,15 @@ if [ "$wallpaper_reset_ready" != true ] ||
 	exit 1
 fi
 appearance_theme=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceActiveTheme)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceActiveTheme)
 appearance_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceThemeCount)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceThemeCount)
 appearance_application=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceApplicationState)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceApplicationState)
 appearance_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewState)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewState)
 appearance_recovery=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceRecoveryState)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceRecoveryState)
 [ "$appearance_theme" = nord ]
 [ "$appearance_count" -eq 15 ]
 [ "$appearance_application" = partial ]
@@ -1957,7 +1958,7 @@ font_mutation_ready=false
 i=0
 while [ "$i" -lt 100 ]; do
 	font_mutation_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontMutationReady 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontMutationReady 2>/dev/null || true)
 	[ "$font_mutation_ready" = true ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -1996,9 +1997,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	font_family=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontFamily 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontFamily 2>/dev/null || true)
 	font_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontScale 2>/dev/null || true)
 	[ "$font_family" = "$test_font" ] && [ "$font_scale" = 1.25 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2015,9 +2016,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	font_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewState 2>/dev/null || true)
 	font_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontScale 2>/dev/null || true)
 	[ "$font_preview" = active ] && [ "$font_scale" = 1.50 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2027,11 +2028,11 @@ if [ "$font_preview" != active ] || [ "$font_scale" != 1.50 ]; then
 	exit 1
 fi
 font_remaining_before=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontPreviewRemaining)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewRemaining)
 [ "$font_remaining_before" -gt 0 ]
 sleep 1
 font_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontPreviewRemaining)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewRemaining)
 if [ "$font_remaining_after" -ge "$font_remaining_before" ]; then
 	printf 'Font preview countdown did not advance: %s -> %s\n' \
 		"$font_remaining_before" "$font_remaining_after" >&2
@@ -2043,9 +2044,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	font_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewState 2>/dev/null || true)
 	font_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontScale 2>/dev/null || true)
 	[ "$font_preview" = none ] && [ "$font_scale" = 1.25 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2060,7 +2061,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	font_scale=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontScale 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontScale 2>/dev/null || true)
 	[ "$font_scale" = 1.00 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2078,7 +2079,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	font_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceFontState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontState 2>/dev/null || true)
 	[ "$font_state" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2096,11 +2097,11 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperState 2>/dev/null || true)
 	wallpaper_path=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPath 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPath 2>/dev/null || true)
 	wallpaper_fit=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperFit 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperFit 2>/dev/null || true)
 	[ "$wallpaper_state" = available ] && [ "$wallpaper_path" = "$test_wallpaper" ] &&
 		[ "$wallpaper_fit" = max ] && break
 	i=$((i + 1))
@@ -2118,17 +2119,17 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewState 2>/dev/null || true)
 	[ "$wallpaper_preview" = active ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$wallpaper_preview" = active ]
 wallpaper_remaining_before=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewRemaining)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewRemaining)
 [ "$wallpaper_remaining_before" -gt 0 ]
 wallpaper_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMessage)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage)
 case $wallpaper_message in
 "Wallpaper preview active; keep it within "*" seconds or it will revert") ;;
 *)
@@ -2141,7 +2142,7 @@ wallpaper_message_remaining=${wallpaper_message#*within }
 wallpaper_message_remaining=${wallpaper_message_remaining%% seconds*}
 sleep 1.2
 wallpaper_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewRemaining)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewRemaining)
 [ "$wallpaper_remaining_after" -lt "$wallpaper_remaining_before" ]
 case $wallpaper_message_remaining in
 '' | *[!0-9]*)
@@ -2202,9 +2203,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 200 ]; do
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewState 2>/dev/null || true)
 	wallpaper_status_busy=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperStatusBusy 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperStatusBusy 2>/dev/null || true)
 	[ "$wallpaper_preview" = failed ] && [ "$wallpaper_status_busy" = false ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2215,7 +2216,7 @@ if [ "$wallpaper_preview" != failed ] || [ "$wallpaper_status_busy" != false ]; 
 	exit 1
 fi
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperReconcile >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperReconcile >/dev/null
 i=0
 # Reconciliation is a queued retry (it waits out any in-flight background
 # status poll before re-firing), and each retry attempt is itself a fresh
@@ -2224,7 +2225,7 @@ i=0
 # than the simpler single-round-trip waits elsewhere in this file.
 while [ "$i" -lt 300 ]; do
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewState 2>/dev/null || true)
 	[ "$wallpaper_preview" = active ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2233,13 +2234,13 @@ if [ "$wallpaper_preview" != active ]; then
 	printf 'Wallpaper preview did not become active after reconcile: state=%s message=%s busy=%s\n' \
 		"$wallpaper_preview" \
 		"$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMessage 2>&1)" \
+			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage 2>&1)" \
 		"$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperStatusBusy 2>&1)" >&2
+			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperStatusBusy 2>&1)" >&2
 	exit 1
 fi
 wallpaper_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMessage)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage)
 if [ "$wallpaper_message" != 'Wallpaper preview recovery reconciled' ]; then
 	printf 'Unexpected wallpaper reconcile message: %s\n' "$wallpaper_message" >&2
 	exit 1
@@ -2254,9 +2255,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperState 2>/dev/null || true)
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewState 2>/dev/null || true)
 	[ "$wallpaper_state" = unavailable ] && [ "$wallpaper_preview" = active ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2274,7 +2275,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperState 2>/dev/null || true)
 	[ "$wallpaper_state" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2289,7 +2290,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 200 ]; do
 	wallpaper_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperPreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewState 2>/dev/null || true)
 	[ "$wallpaper_preview" = none ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2308,15 +2309,15 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	wallpaper_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperState 2>/dev/null || true)
 	[ "$wallpaper_state" = partial ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 wallpaper_mutation_detail=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperMutationDetail)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperMutationDetail)
 wallpaper_reset_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceWallpaperResetReady)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperResetReady)
 if [ "$wallpaper_state" != partial ] ||
 	[ "$wallpaper_mutation_detail" != 'Wallpaper changes require a recoverable current or default wallpaper' ] ||
 	[ "$wallpaper_reset_ready" != true ]; then
@@ -2338,7 +2339,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewState 2>/dev/null || true)
 	[ "$appearance_preview" = active ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2349,14 +2350,14 @@ rm -f "$transaction_state_file"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewState 2>/dev/null || true)
 	[ "$appearance_preview" = none ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$appearance_preview" = none ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMessage)" = \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage)" = \
 	'Theme preview completed outside Settings' ]
 
 printf '%s\n' external-failed >"$theme_status_fixture"
@@ -2369,7 +2370,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewState 2>/dev/null || true)
 	[ "$appearance_preview" = failed ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2380,7 +2381,7 @@ rm -f "$transaction_state_file"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewState 2>/dev/null || true)
 	[ "$appearance_preview" = none ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2393,9 +2394,9 @@ printf '# trigger silent provider failure\n' >>"$config_home/lyona/themes.toml"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	appearance_detail=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderDetail 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderDetail 2>/dev/null || true)
 	[ "$appearance_status" = unavailable ] &&
 		[ "$appearance_detail" = 'Appearance provider failed before returning a valid snapshot' ] && break
 	i=$((i + 1))
@@ -2411,7 +2412,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	case $appearance_status in available | partial) break ;; esac
 	i=$((i + 1))
 	sleep 0.05
@@ -2423,9 +2424,9 @@ printf '# trigger truncated provider failure\n' >>"$config_home/lyona/themes.tom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	appearance_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceThemeCount 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceThemeCount 2>/dev/null || true)
 	[ "$appearance_status" = unavailable ] && [ "$appearance_count" -eq 0 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2440,7 +2441,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	case $appearance_status in available | partial) break ;; esac
 	i=$((i + 1))
 	sleep 0.05
@@ -2452,7 +2453,7 @@ printf 'export QT_QPA_PLATFORMTHEME=gtk3\n' >"$config_home/lyona/theme-env.sh"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_qt=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceIntegrationState qt 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceIntegrationState qt 2>/dev/null || true)
 	[ "$appearance_qt" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2465,9 +2466,9 @@ printf '# trigger inventory-only provider fixture\n' >>"$config_home/lyona/theme
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	appearance_application=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceApplicationState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceApplicationState 2>/dev/null || true)
 	[ "$appearance_status" = partial ] && [ "$appearance_application" = available ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2477,7 +2478,7 @@ if [ "$appearance_status" != partial ] || [ "$appearance_application" != availab
 		"$appearance_status" "$appearance_application" >&2
 	for integration_id in gtk qt cursor alacritty kitty compositor; do
 		integration_state=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings \
+			XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest \
 			appearanceIntegrationState "$integration_id" 2>/dev/null || true)
 		printf '  %s: %s\n' "$integration_id" "$integration_state" >&2
 	done
@@ -2488,7 +2489,7 @@ printf '# restore real provider snapshot\n' >>"$config_home/lyona/themes.toml"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceThemeCount 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceThemeCount 2>/dev/null || true)
 	[ "$appearance_count" -eq 15 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2646,7 +2647,7 @@ printf '# inactive integration watch fixture\n' >"$config_home/lyona/theme-env.s
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_qt=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceIntegrationState qt 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceIntegrationState qt 2>/dev/null || true)
 	[ "$appearance_qt" = unavailable ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2663,9 +2664,9 @@ sed -i '0,/theme = "nord"/s//theme = "missing theme"/' \
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_theme=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceActiveTheme 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceActiveTheme 2>/dev/null || true)
 	appearance_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceThemeCount 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceThemeCount 2>/dev/null || true)
 	[ "$appearance_theme" = 'missing theme' ] && [ "$appearance_count" -eq 15 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2673,14 +2674,14 @@ done
 [ "$appearance_theme" = 'missing theme' ]
 [ "$appearance_count" -eq 15 ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus)" = partial ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus)" = partial ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceApplicationState)" = partial ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceApplicationState)" = partial ]
 cp "$work/valid-themes.toml" "$config_home/lyona/themes.toml"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_theme=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceActiveTheme 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceActiveTheme 2>/dev/null || true)
 	[ "$appearance_theme" = nord ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2693,9 +2694,9 @@ sed -i '0,/dark_mode       = true/s//dark_mode       = "bogus"/' \
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	appearance_count=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceThemeCount 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceThemeCount 2>/dev/null || true)
 	[ "$appearance_status" = partial ] && [ "$appearance_count" -eq 15 ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2703,12 +2704,12 @@ done
 [ "$appearance_status" = partial ]
 [ "$appearance_count" -eq 15 ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceActiveTheme)" = nord ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceActiveTheme)" = nord ]
 cp "$work/valid-themes.toml" "$config_home/lyona/themes.toml"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	case $appearance_status in available | partial) break ;; esac
 	i=$((i + 1))
 	sleep 0.05
@@ -2723,9 +2724,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_preview=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewState 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewState 2>/dev/null || true)
 	appearance_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMessage 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage 2>/dev/null || true)
 	[ "$appearance_preview" = none ] &&
 		[ "$appearance_message" = 'Theme preview completed outside Settings' ] && break
 	i=$((i + 1))
@@ -2734,7 +2735,7 @@ done
 [ "$appearance_preview" = none ]
 [ "$appearance_message" = 'Theme preview completed outside Settings' ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearancePreviewRemaining)" -eq 0 ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearancePreviewRemaining)" -eq 0 ]
 
 test_stage='validating bounded appearance preview retries'
 rm -f "$theme_status_fixture.started" "$theme_status_fixture.calls"
@@ -2746,7 +2747,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMessage 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage 2>/dev/null || true)
 	[ "$appearance_message" = 'Automatic rollback status needs a manual refresh' ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2778,7 +2779,7 @@ rm -f "$theme_status_fixture.mutation-started" "$theme_status_fixture.mutation-r
 : >"$theme_status_fixture.mutation-calls"
 : >"$theme_status_fixture.mutation-delay"
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceRefresh >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceRefresh >/dev/null
 i=0
 while [ "$i" -lt 200 ]; do
 	[ -f "$theme_status_fixture.mutation-started" ] && break
@@ -2790,9 +2791,9 @@ if [ ! -f "$theme_status_fixture.mutation-started" ]; then
 	exit 1
 fi
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceRefresh >/dev/null
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceRefresh >/dev/null
 readiness_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMutationReady 2>/dev/null || true)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMutationReady 2>/dev/null || true)
 if [ "$readiness_ready" != false ]; then
 	printf 'Theme mutation remained ready while a refresh retry was pending\n' >&2
 	exit 1
@@ -2802,7 +2803,7 @@ i=0
 while [ "$i" -lt 200 ]; do
 	readiness_calls=$(wc -c <"$theme_status_fixture.mutation-calls")
 	readiness_ready=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMutationReady 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMutationReady 2>/dev/null || true)
 	[ "$readiness_calls" -ge 2 ] && [ "$readiness_ready" = true ] && break
 	i=$((i + 1))
 	sleep 0.05
@@ -2820,9 +2821,9 @@ mv "$data_home/checkout/config/themes.toml" "$work/managed-themes.toml"
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_status=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus 2>/dev/null || true)
 	appearance_detail=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderDetail 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderDetail 2>/dev/null || true)
 	[ "$appearance_status" = unavailable ] &&
 		[ "$appearance_detail" = 'Shared theme inventory and integration state' ] && break
 	i=$((i + 1))
@@ -2831,9 +2832,9 @@ done
 [ "$appearance_status" = unavailable ]
 [ "$appearance_detail" = 'Shared theme inventory and integration state' ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceMutationReady)" = false ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMutationReady)" = false ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceActiveTheme)" = none ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceActiveTheme)" = none ]
 
 cat >"$config_home/lyona/themes.toml" <<'EOF'
 [colors]
@@ -2847,21 +2848,21 @@ EOF
 i=0
 while [ "$i" -lt 100 ]; do
 	appearance_theme=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceActiveTheme 2>/dev/null || true)
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceActiveTheme 2>/dev/null || true)
 	[ "$appearance_theme" = @legacy-colors ] && break
 	i=$((i + 1))
 	sleep 0.05
 done
 [ "$appearance_theme" = @legacy-colors ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceProviderStatus)" = partial ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceProviderStatus)" = partial ]
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings appearanceThemeCount)" -eq 1 ]
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceThemeCount)" -eq 1 ]
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings select audio >/dev/null
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings currentSection)
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = audio ]
 
 DISPLAY=$display xdotool key Escape
