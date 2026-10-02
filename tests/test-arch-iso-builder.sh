@@ -167,6 +167,37 @@ for profile in microcode-intel microcode-amd gpu-nvidia gpu-nvidia-dkms gpu-amd 
 	done
 done
 
+# nvidia-open supports Turing and newer only; an older card (device ID below
+# 0x1e00) keeps nouveau rather than getting a driver that cannot load. Run the
+# postinstall's own check against a fake lspci.
+nvidia_check=$(awk '/^nvidia_open_supported\(\) \{$/, /^}$/' "$postinstall")
+[[ -n $nvidia_check ]] || fail 'lyona-postinstall.sh has no nvidia_open_supported'
+mkdir -p "$work/nvidia-bin"
+cat >"$work/nvidia-bin/lspci" <<'SCRIPT'
+#!/bin/sh
+# Answers only the VGA class query, the way lspci -n -mm -d 10de::0300 does.
+[ "$*" = "-n -mm -d 10de::0300" ] || exit 0
+for id in $FAKE_NVIDIA_IDS; do
+	printf '01:00.0 "0300" "10de" "%s" -ra1 "1458" "3717"\n' "$id"
+done
+SCRIPT
+chmod +x "$work/nvidia-bin/lspci"
+nvidia_open_case() { # EXPECTED-STATUS DEVICE-IDS...
+	local want=$1 status=0
+	shift
+	FAKE_NVIDIA_IDS="$*" PATH="$work/nvidia-bin:$PATH" \
+		bash -c "$nvidia_check"$'\nnvidia_open_supported' >/dev/null || status=$?
+	[[ $status == "$want" ]] ||
+		fail "nvidia_open_supported for '$*' returned $status, expected $want"
+}
+nvidia_open_case 0 1e07      # RTX 2080 Ti, Turing
+nvidia_open_case 0 2684      # RTX 4090, Ada
+nvidia_open_case 1 1b80      # GTX 1080, Pascal
+nvidia_open_case 1 1d81      # Titan V, Volta
+nvidia_open_case 1 1380      # GTX 750 Ti, Maxwell
+nvidia_open_case 1 2684 1b80 # one older card is enough to keep nouveau
+nvidia_open_case 1           # no device ID read: do not guess
+
 awk '
 	/^\[multilib\]$/ { found = 1; next }
 	found && /^Include = \/etc\/pacman.d\/mirrorlist$/ { ok = 1 }

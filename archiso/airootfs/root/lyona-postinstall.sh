@@ -121,6 +121,27 @@ install_nvidia_driver() {
 	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${driver[@]}" "${headers[@]}"
 }
 
+# nvidia-open needs Turing (GTX 16xx, RTX 20xx) or newer. Every older NVIDIA GPU
+# has a PCI device ID below 0x1e00, and every Turing or newer one is at or above
+# it. Until Sync Sprint 14 S14-02's table lands, this keeps the older cards on
+# nouveau: nvidia-utils blacklists nouveau, so installing a driver that can't
+# load would leave them with none.
+nvidia_open_supported() {
+	local class device seen=0
+	for class in 0300 0302 0380; do
+		while read -r device; do
+			[[ $device =~ ^[0-9a-f]{4}$ ]] || continue
+			seen=1
+			if ((16#$device < 16#1e00)); then
+				printf 'lyona-postinstall: NVIDIA GPU 10de:%s predates Turing; nvidia-open does not support it.\n' "$device"
+				return 1
+			fi
+		done < <(lspci -n -mm -d "10de::$class" 2>/dev/null | awk '{ gsub(/"/, "", $4); print $4 }')
+	done
+	((seen)) || printf 'lyona-postinstall: could not read the NVIDIA GPU device ID.\n'
+	((seen))
+}
+
 install_gpu_drivers() {
 	if ! command -v lspci >/dev/null 2>&1; then
 		printf 'lyona-postinstall: lspci not found; skipping GPU driver detection.\n'
@@ -133,7 +154,11 @@ install_gpu_drivers() {
 
 	if grep -qE "NVIDIA|GeForce" <<<"$gpu_info"; then
 		if [[ ${LYONA_NVIDIA_DRIVER:-} == 1 ]]; then
-			install_nvidia_driver
+			if nvidia_open_supported; then
+				install_nvidia_driver
+			else
+				printf 'lyona-postinstall: leaving the open-source nouveau driver in place; drivers for older NVIDIA GPUs are planned (Sync Sprint 14).\n'
+			fi
 		else
 			printf 'lyona-postinstall: NVIDIA GPU detected; leaving the open-source nouveau driver in place.\n'
 			printf 'lyona-postinstall: re-run with LYONA_NVIDIA_DRIVER=1 to opt into the proprietary NVIDIA driver instead.\n'
@@ -209,7 +234,7 @@ install_qemu_guest_utils() {
 }
 
 export -f dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
-	install_microcode install_nvidia_driver install_gpu_drivers \
+	install_microcode nvidia_open_supported install_nvidia_driver install_gpu_drivers \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."

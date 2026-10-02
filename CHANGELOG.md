@@ -38,6 +38,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
     caught it once the names were in the map.
     - The open modules need a Turing (GTX 16xx, RTX 20xx) or newer GPU, and the installer's driver prompt now says
       so. Older cards need the AUR-only `nvidia-580xx` and stay on nouveau.
+    - The postinstall checks the card's PCI device ID first. On a GTX 10xx or older card it installs nothing and says
+      why, so the card keeps nouveau: `nvidia-utils` blacklists nouveau, so the old behaviour left those cards with
+      no working driver. Sprint 14 adds their drivers.
+- `protonrestart` no longer kills unrelated programs that share a name with a Proton process (`reaper` is also
+  REAPER, the audio workstation). It kills those names only when the executable is inside a Steam, Proton or Lutris
+  install.
   - **`make check-shell` and `make check-format`** now lint every shell script under `scripts/`, found by its
     shebang. The hand-kept lists had missed 13, including the privileged `dwm-settings-display-root`. Those 13 now
     pass: five were reformatted, whitespace only, and `webapp-create` no longer hides command failures in `local`
