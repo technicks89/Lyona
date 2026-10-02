@@ -20,11 +20,16 @@ lock_file=$runtime_base/dwm-panel-settings.lock
 readonly max_config_size=4096
 readonly max_restore_attempts=8
 readonly protocol_header=$'panel-settings-protocol\t1\t0'
-readonly widget_ids='workspaces volume bluetooth network power'
+# The original five must all be in a saved file. calendar and weather came later
+# (Sync Sprint 12 S12-20), so a file without them keeps its other choices and they
+# take their defaults: the calendar on, the weather off (decision D-19: nothing is
+# sent anywhere until the user turns it on).
+readonly widget_ids='workspaces volume bluetooth network power calendar weather'
+readonly required_widget_ids='workspaces volume bluetooth network power'
 
 declare -A widget_values=()
 config_state=defaults
-config_detail='Using safe all-on defaults; the first change creates persistent state'
+config_detail='Using safe defaults; the first change creates persistent state'
 mutation_baseline_kind=absent
 mutation_baseline_hash=''
 mutation_baseline_mode=600
@@ -44,11 +49,12 @@ set_defaults() {
 	for widget in $widget_ids; do
 		widget_values[$widget]=enabled
 	done
+	widget_values[weather]=disabled
 }
 
 valid_widget() {
 	case $1 in
-	workspaces | volume | bluetooth | network | power) return 0 ;;
+	workspaces | volume | bluetooth | network | power | calendar | weather) return 0 ;;
 	*) return 1 ;;
 	esac
 }
@@ -75,12 +81,12 @@ config_dir_safe() {
 }
 
 load_config() {
-	local line first=true widget value count=0
+	local line first=true widget value
 	local -A seen=()
 	set_defaults
 	if [[ -e $config_dir || -L $config_dir ]] && ! config_dir_safe; then
 		config_state=unavailable
-		config_detail='Persistent panel state directory is unsafe; using all-on defaults'
+		config_detail='Persistent panel state directory is unsafe; using safe defaults'
 		return 1
 	fi
 	if [[ ! -e $config_file && ! -L $config_file ]]; then
@@ -88,7 +94,7 @@ load_config() {
 	fi
 	if ! config_file_safe; then
 		config_state=unavailable
-		config_detail='Persistent panel state is unsafe; using all-on defaults'
+		config_detail='Persistent panel state is unsafe; using safe defaults'
 		return 1
 	fi
 	while IFS= read -r line || [[ -n $line ]]; do
@@ -96,9 +102,9 @@ load_config() {
 			if [[ $line != "$protocol_header" ]]; then
 				config_state=partial
 				if [[ $line == panel-settings-protocol$'\t'* ]]; then
-					config_detail='Unsupported panel settings version was preserved; using all-on defaults'
+					config_detail='Unsupported panel settings version was preserved; using safe defaults'
 				else
-					config_detail='Malformed panel settings were preserved; using all-on defaults'
+					config_detail='Malformed panel settings were preserved; using safe defaults'
 				fi
 				return 1
 			fi
@@ -107,7 +113,7 @@ load_config() {
 		fi
 		if [[ $line != *$'\t'* || ${line#*$'\t'} == *$'\t'* ]]; then
 			config_state=partial
-			config_detail='Malformed panel settings were preserved; using all-on defaults'
+			config_detail='Malformed panel settings were preserved; using safe defaults'
 			set_defaults
 			return 1
 		fi
@@ -116,17 +122,19 @@ load_config() {
 		if ! valid_widget "$widget" || [[ $value != enabled && $value != disabled ]] ||
 			[[ -n ${seen[$widget]+x} ]]; then
 			config_state=partial
-			config_detail='Malformed panel settings were preserved; using all-on defaults'
+			config_detail='Malformed panel settings were preserved; using safe defaults'
 			set_defaults
 			return 1
 		fi
 		seen[$widget]=1
 		widget_values[$widget]=$value
-		((count += 1))
 	done <"$config_file"
-	if [[ $first == true || $count -ne 5 ]]; then
+	for widget in $required_widget_ids; do
+		[[ -n ${seen[$widget]+x} ]] || first=true
+	done
+	if [[ $first == true ]]; then
 		config_state=partial
-		config_detail='Incomplete panel settings were preserved; using all-on defaults'
+		config_detail='Incomplete panel settings were preserved; using safe defaults'
 		set_defaults
 		return 1
 	fi
@@ -387,7 +395,7 @@ reset_settings() {
 	mutation_baseline_unchanged || die_mutation_baseline_changed
 	set_defaults
 	write_config
-	printf 'panel-settings-action-protocol\t1\t0\nresult\treset\tall\tenabled\n'
+	printf 'panel-settings-action-protocol\t1\t0\nresult\treset\tall\tdefaults\n'
 }
 
 case ${1:-} in

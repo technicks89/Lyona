@@ -57,7 +57,7 @@ wait_for() {
 status=$(run_helper status)
 assert_string_contains "$status" $'panel-settings-protocol\t1\t0'
 assert_string_contains "$status" \
-	$'state\tdefaults\tUsing safe all-on defaults; the first change creates persistent state'
+	$'state\tdefaults\tUsing safe defaults; the first change creates persistent state'
 for widget in workspaces volume bluetooth network power; do
 	assert_string_contains "$status" "widget	$widget	enabled"
 done
@@ -114,7 +114,7 @@ assert_line "$state_file" $'network\tdisabled'
 chmod 666 "$state_file"
 unsafe_mode=$(run_helper status)
 assert_string_contains "$unsafe_mode" \
-	$'state\tunavailable\tPersistent panel state is unsafe; using all-on defaults'
+	$'state\tunavailable\tPersistent panel state is unsafe; using safe defaults'
 if run_helper set network enabled >"$work/unsafe-mode.out" 2>"$work/unsafe-mode.err"; then
 	fail 'set accepted a writable-by-others state file'
 fi
@@ -126,7 +126,7 @@ chmod 640 "$state_file"
 printf 'panel-settings-protocol\t2\t0\nvolume\tdisabled\n' >"$state_file"
 future=$(run_helper status)
 assert_string_contains "$future" \
-	$'state\tpartial\tUnsupported panel settings version was preserved; using all-on defaults'
+	$'state\tpartial\tUnsupported panel settings version was preserved; using safe defaults'
 for widget in workspaces volume bluetooth network power; do
 	assert_string_contains "$future" "widget	$widget	enabled"
 done
@@ -137,7 +137,7 @@ assert_line "$state_file" $'panel-settings-protocol\t2\t0'
 printf 'broken\n' >"$state_file"
 malformed=$(run_helper status)
 assert_string_contains "$malformed" \
-	$'state\tpartial\tMalformed panel settings were preserved; using all-on defaults'
+	$'state\tpartial\tMalformed panel settings were preserved; using safe defaults'
 assert_line "$state_file" 'broken'
 
 for malformed_record in "volume		disabled" "	volume	disabled" "volume	disabled	"; do
@@ -148,7 +148,7 @@ for malformed_record in "volume		disabled" "	volume	disabled" "volume	disabled	"
 	} >"$state_file"
 	malformed=$(run_helper status)
 	assert_string_contains "$malformed" \
-		$'state\tpartial\tMalformed panel settings were preserved; using all-on defaults'
+		$'state\tpartial\tMalformed panel settings were preserved; using safe defaults'
 	for widget in workspaces volume bluetooth network power; do
 		assert_string_contains "$malformed" "widget	$widget	enabled"
 	done
@@ -275,7 +275,7 @@ mv "$state_file" "$work/real-state"
 ln -s "$work/real-state" "$state_file"
 unsafe=$(run_helper status)
 assert_string_contains "$unsafe" \
-	$'state\tunavailable\tPersistent panel state is unsafe; using all-on defaults'
+	$'state\tunavailable\tPersistent panel state is unsafe; using safe defaults'
 if run_helper set volume disabled >"$work/unsafe.out" 2>"$work/unsafe.err"; then
 	fail 'set accepted a symlinked state file'
 fi
@@ -290,7 +290,7 @@ ln -s "$unsafe_dir_target" "$unsafe_config/lyona"
 unsafe_dir_status=$(HOME="$home" XDG_CONFIG_HOME="$unsafe_config" XDG_RUNTIME_DIR="$runtime" \
 	"$helper" status)
 assert_string_contains "$unsafe_dir_status" \
-	$'state\tunavailable\tPersistent panel state directory is unsafe; using all-on defaults'
+	$'state\tunavailable\tPersistent panel state directory is unsafe; using safe defaults'
 
 writable_config=$work/writable-config
 mkdir -p "$writable_config/lyona"
@@ -298,7 +298,7 @@ chmod 777 "$writable_config/lyona"
 writable_dir_status=$(HOME="$home" XDG_CONFIG_HOME="$writable_config" XDG_RUNTIME_DIR="$runtime" \
 	"$helper" status)
 assert_string_contains "$writable_dir_status" \
-	$'state\tunavailable\tPersistent panel state directory is unsafe; using all-on defaults'
+	$'state\tunavailable\tPersistent panel state directory is unsafe; using safe defaults'
 if HOME="$home" XDG_CONFIG_HOME="$writable_config" XDG_RUNTIME_DIR="$runtime" \
 	"$helper" set volume disabled >"$work/writable-dir.out" 2>"$work/writable-dir.err"; then
 	fail 'set accepted a world-writable state directory'
@@ -369,5 +369,52 @@ assert_contains "$appearance_pane" 'root.panelSettingsModel.providerState !== "a
 assert_contains "$appearance_pane" '&& !root.panelSettingsModel.actionSucceeded'
 assert_contains "$appearance_pane" \
 	'onToggled: root.panelSettingsModel.toggleWidget(panelWidgetRow.modelData.id)'
+
+# ── calendar and weather (Sync Sprint 12 S12-20) ─────────────────────────
+#
+# A file from before them keeps its choices; they take their defaults, the
+# calendar on and the weather off (D-19). A file with all seven is valid, one
+# missing an original id is incomplete, and an unknown id is malformed.
+write_state() {
+	printf 'panel-settings-protocol\t1\t0\n' >"$state_file"
+	printf '%s\n' "$@" >>"$state_file"
+	chmod 600 "$state_file"
+}
+# Earlier cases leave the state unsafe on purpose; start these from a fresh one.
+rm -rf "${config:?}/lyona"
+mkdir -m 700 "$config/lyona"
+write_state $'workspaces\tenabled' $'volume\tdisabled' $'bluetooth\tenabled' \
+	$'network\tenabled' $'power\tenabled'
+status=$(run_helper status)
+assert_string_contains "$status" $'state\tavailable\t'
+assert_string_contains "$status" $'widget\tvolume\tdisabled'
+assert_string_contains "$status" $'widget\tcalendar\tenabled'
+assert_string_contains "$status" $'widget\tweather\tdisabled'
+write_state $'workspaces\tenabled' $'volume\tenabled' $'bluetooth\tenabled' \
+	$'network\tenabled' $'power\tenabled' $'calendar\tdisabled' $'weather\tenabled'
+status=$(run_helper status)
+assert_string_contains "$status" $'state\tavailable\t'
+assert_string_contains "$status" $'widget\tcalendar\tdisabled'
+assert_string_contains "$status" $'widget\tweather\tenabled'
+write_state $'workspaces\tenabled' $'volume\tenabled' $'bluetooth\tenabled' \
+	$'network\tenabled' $'calendar\tenabled' $'weather\tenabled'
+assert_string_contains "$(run_helper status)" \
+	$'state\tpartial\tIncomplete panel settings were preserved; using safe defaults'
+write_state $'workspaces\tenabled' $'volume\tenabled' $'bluetooth\tenabled' \
+	$'network\tenabled' $'power\tenabled' $'clock\tenabled'
+assert_string_contains "$(run_helper status)" \
+	$'state\tpartial\tMalformed panel settings were preserved; using safe defaults'
+# reset returns to the defaults, the weather off included, and says so.
+assert_equals $'panel-settings-action-protocol\t1\t0\nresult\treset\tall\tdefaults' \
+	"$(run_helper reset)" 'reset result'
+assert_contains "$state_file" $'calendar\tenabled'
+assert_contains "$state_file" $'weather\tdisabled'
+assert_equals 8 "$(wc -l <"$state_file")" 'a reset writes the header and all seven widgets'
+# The model reads the seven-widget status and the reset's result.
+assert_contains "$model" '{ "id": "calendar", "label": "Calendar" }'
+assert_contains "$model" '{ "id": "weather", "label": "Weather" }'
+assert_contains "$model" '&& fields[2] === "all" && fields[3] === "defaults";'
+assert_contains "$control_window" \
+	'model: ["Volume", "Bluetooth", "Network", "Power", "Workspaces", "Calendar", "Weather"]'
 
 printf 'Quickshell panel settings persistence: PASS\n'

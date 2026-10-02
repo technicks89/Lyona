@@ -32,6 +32,9 @@ PanelWindow {
     required property var networkModel
     required property var controlsModel
     required property var bluetoothModel
+    // Optional: a harness without the calendar leaves the clock inert (S12-20).
+    property var calendarModel: null
+    property var weatherModel: null
     required property var controlCenterModel
     required property var panelSettingsModel
     required property var powerModel
@@ -145,9 +148,13 @@ PanelWindow {
             }
 
             PanelPill {
+                id: clockPill
+
                 Layout.preferredWidth: clockLabel.implicitWidth + Theme.pillHorizontalPadding * 2
                 Layout.preferredHeight: Theme.pillHeight
                 outlined: true
+                active: root.calendarModel !== null && root.calendarModel.visible
+                hovered: clockMouse.containsMouse
 
                 UiText {
                     id: clockLabel
@@ -156,6 +163,54 @@ PanelWindow {
                     text: root.clock.panelText
                     color: Theme.textStrong
                     font.bold: true
+                }
+
+                // The clock opens the month calendar (Sync Sprint 12 S12-20), when
+                // its Bar Widgets switch is on; otherwise it does nothing, as before.
+                MouseArea {
+                    id: clockMouse
+
+                    anchors.fill: parent
+                    enabled: root.calendarModel !== null && root.panelSettingsModel.widgetEnabled("calendar")
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: {
+                        root.popupRequested(root, "calendar");
+                        root.calendarModel.toggle(clockPill.mapToItem(null, 0, 0).x);
+                    }
+                }
+            }
+
+            // The weather (Sync Sprint 12 S12-20), shown only when its Bar Widgets
+            // switch is on, which it is not until the user turns it on (D-19).
+            PanelPill {
+                id: weatherPill
+
+                visible: root.weatherModel !== null && root.weatherModel.enabled
+                Layout.preferredWidth: weatherLabel.implicitWidth + Theme.pillHorizontalPadding * 2
+                Layout.preferredHeight: Theme.pillHeight
+                outlined: true
+                active: root.weatherModel !== null && root.weatherModel.visible
+                hovered: weatherMouse.containsMouse
+
+                UiText {
+                    id: weatherLabel
+
+                    anchors.centerIn: parent
+                    text: root.weatherModel ? root.weatherModel.panelText : ""
+                    color: Theme.textStrong
+                }
+
+                MouseArea {
+                    id: weatherMouse
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        root.popupRequested(root, "weather");
+                        root.weatherModel.toggle(weatherPill.mapToItem(null, 0, 0).x);
+                    }
                 }
             }
 

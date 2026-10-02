@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Everything this writes (the settings, the cache) is private to the user.
+umask 077
+
+# The panel's weather (Sync Sprint 12 S12-20, decision D-19). Open-Meteo, no key:
+# a place name the user typed is resolved once through its geocoding endpoint,
+# and the current temperature is fetched at most every 30 minutes. Nothing is
+# sent anywhere until a location is set; the panel switch starts off. The shell
+# calls `current` only while the widget is on.
+#
+#   lyona-weather current              one parsed result (the protocol below)
+#   lyona-weather status               the settings
+#   lyona-weather set-location TEXT    an empty TEXT clears it
+#   lyona-weather set-units auto|celsius|fahrenheit
+#
+# current prints, after the header, one state line, then for "available" one
+# weather line, then a completion line:
+#   weather-protocol 1 0
+#   state  available|unconfigured|unavailable  DETAIL
+#   weather  TEMPERATURE  UNIT  CODE  DESCRIPTION  PLACE  OBSERVED
+#   complete  current
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
+config_file=$config_home/lyona/weather.conf
+cache_dir=$cache_home/lyona/weather
+place_cache=$cache_dir/place.tsv
+current_cache=$cache_dir/current.tsv
+failure_mark=$cache_dir/failed
+
+readonly geocoding_url=https://geocoding-api.open-meteo.com/v1/search
+readonly forecast_url=https://api.open-meteo.com/v1/forecast
+readonly refresh_seconds=1800
+readonly retry_seconds=600
+readonly max_location=100
+readonly protocol_header=$'weather-protocol\t1\t0'
+
+die() {
+	printf 'lyona-weather: %s\n' "$*" >&2
+	exit 1
+}
+
+now() {
+	date +%s
+}
+
+# One line of plain text: no tabs, newlines or other control characters, and
+# bounded, so a place name can never break the protocol.
+clean_field() {
+	local text=${1//[$'\001'-$'\037'$'\177']/ }
+	printf '%s' "${text:0:$2}"
+}
+
+read_setting() { # KEY DEFAULT
+	local line value=$2
+	[[ -f $config_file && ! -L $config_file ]] || {
+		printf '%s' "$value"
+		return
+	}
+	while IFS= read -r line || [[ -n $line ]]; do
+		[[ $line == "$1="* ]] && value=${line#*=}
+	done <"$config_file"
+	printf '%s' "$value"
+}
+
+write_settings() { # LOCATION UNITS
+	local temporary
+	(umask 077 && mkdir -p -- "${config_file%/*}")
+	temporary=$(umask 077 && mktemp "${config_file%/*}/.weather.conf.XXXXXX") ||
+		die 'cannot write the weather settings'
+	printf 'location=%s\nunits=%s\n' "$1" "$2" >"$temporary"
+	chmod 600 -- "$temporary"
+	mv -fT -- "$temporary" "$config_file"
+	rm -f -- "$place_cache" "$current_cache" "$failure_mark"
+}
+
+# Fahrenheit in the US and the few other regions that use it; Celsius elsewhere.
+locale_units() {
+	local locale=${LC_ALL:-${LC_MEASUREMENT:-${LANG:-}}} region
+	region=${locale%%.*}
+	region=${region#*_}
+	case $region in
+	US | BS | BZ | KY | LR | PW | FM | MH) printf fahrenheit ;;
+	*) printf celsius ;;
+	esac
+}
+
+resolved_units() {
+	local units
+	units=$(read_setting units auto)
+	case $units in
+	celsius | fahrenheit) printf '%s' "$units" ;;
+	*) locale_units ;;
+	esac
+}
+
+fetch() { # URL
+	curl -fsS --proto '=https' --tlsv1.2 --max-time 10 --max-filesize 262144 -- "$1"
+}
+
+# WMO weather interpretation codes, as Open-Meteo reports them.
+describe() {
+	case $1 in
+	0) printf 'Clear sky' ;;
+	1) printf 'Mainly clear' ;;
+	2) printf 'Partly cloudy' ;;
+	3) printf 'Overcast' ;;
+	45 | 48) printf 'Fog' ;;
+	51 | 53 | 55) printf 'Drizzle' ;;
+	56 | 57) printf 'Freezing drizzle' ;;
+	61 | 63 | 65) printf 'Rain' ;;
+	66 | 67) printf 'Freezing rain' ;;
+	71 | 73 | 75) printf 'Snow' ;;
+	77) printf 'Snow grains' ;;
+	80 | 81 | 82) printf 'Rain showers' ;;
+	85 | 86) printf 'Snow showers' ;;
+	95) printf 'Thunderstorm' ;;
+	96 | 99) printf 'Thunderstorm with hail' ;;
+	*) printf 'Unknown' ;;
+	esac
+}
+
+emit() { # STATE DETAIL [WEATHER-LINE]
+	printf '%s\n' "$protocol_header"
+	printf 'state\t%s\t%s\n' "$1" "$(clean_field "$2" 200)"
+	[[ -z ${3:-} ]] || printf '%s\n' "$3"
+	printf 'complete\tcurrent\n'
+}
+
+unavailable() {
+	(umask 077 && mkdir -p -- "$cache_dir") && : >"$failure_mark"
+	emit unavailable "$1"
+	exit 0
+}
+
+# The place for LOCATION: from the cache, or resolved once and cached.
+resolve_place() {
+	local location=$1 query result latitude longitude name
+	if [[ -f $place_cache && ! -L $place_cache ]]; then
+		IFS=$'\t' read -r query latitude longitude name <"$place_cache" || :
+		if [[ $query == "$location" && -n ${name:-} ]]; then
+			printf '%s\t%s\t%s\n' "$latitude" "$longitude" "$name"
+			return
+		fi
+	fi
+	query=$(jq -rn --arg value "$location" '$value | @uri')
+	result=$(fetch "$geocoding_url?name=$query&count=1&language=en&format=json") || return 1
+	latitude=$(jq -r '.results[0].latitude // empty' <<<"$result") || return 1
+	longitude=$(jq -r '.results[0].longitude // empty' <<<"$result") || return 1
+	name=$(jq -r '[.results[0].name, .results[0].admin1, .results[0].country_code]
+		| map(select(. != null and . != "")) | join(", ")' <<<"$result") || return 1
+	[[ $latitude =~ ^-?[0-9]{1,3}(\.[0-9]+)?$ && $longitude =~ ^-?[0-9]{1,3}(\.[0-9]+)?$ ]] || return 2
+	name=$(clean_field "$name" 80)
+	printf '%s\t%s\t%s\t%s\n' "$location" "$latitude" "$longitude" "$name" >"$place_cache"
+	printf '%s\t%s\t%s\n' "$latitude" "$longitude" "$name"
+}
+
+current() {
+	local location units fetched cached_location cached_units weather place latitude longitude
+	local name result temperature code observed status=0 line
+	location=$(read_setting location '')
+	if [[ -z $location ]]; then
+		emit unconfigured 'Set a location in Settings to show the weather'
+		return
+	fi
+	units=$(resolved_units)
+
+	# A result from the last 30 minutes, for the same place and units, is reused.
+	if [[ -f $current_cache && ! -L $current_cache ]]; then
+		IFS=$'\t' read -r fetched cached_location cached_units weather <"$current_cache" || :
+		if [[ ${fetched:-} =~ ^[0-9]+$ && $cached_location == "$location" && $cached_units == "$units" ]] &&
+			(($(now) - fetched < refresh_seconds)); then
+			emit available 'Cached' "$weather"
+			return
+		fi
+	fi
+	# After a failure, wait before trying again, so nothing retries in a loop.
+	if [[ -f $failure_mark ]] && (($(now) - $(stat -c %Y -- "$failure_mark") < retry_seconds)); then
+		emit unavailable 'Weather is unavailable; it will be retried shortly'
+		return
+	fi
+	command -v jq >/dev/null 2>&1 || unavailable 'Weather needs jq, which is not installed'
+	command -v curl >/dev/null 2>&1 || unavailable 'Weather needs curl, which is not installed'
+	(umask 077 && mkdir -p -- "$cache_dir")
+	chmod 700 -- "$cache_dir"
+
+	place=$(resolve_place "$location") || status=$?
+	if ((status == 2)) || [[ -z $place && $status == 0 ]]; then
+		unavailable "No place matches \"$location\""
+	elif ((status != 0)); then
+		unavailable 'Could not reach the weather service'
+	fi
+	IFS=$'\t' read -r latitude longitude name <<<"$place"
+	result=$(fetch "$forecast_url?latitude=$latitude&longitude=$longitude&current=temperature_2m,weather_code&temperature_unit=$units&timezone=auto") ||
+		unavailable 'Could not reach the weather service'
+	temperature=$(jq -r '.current.temperature_2m // empty' <<<"$result" 2>/dev/null) || temperature=
+	code=$(jq -r '.current.weather_code // empty' <<<"$result" 2>/dev/null) || code=
+	observed=$(jq -r '.current.time // empty' <<<"$result" 2>/dev/null) || observed=
+	[[ $temperature =~ ^-?[0-9]{1,3}(\.[0-9]+)?$ && $code =~ ^[0-9]{1,2}$ ]] ||
+		unavailable 'The weather service sent an unexpected answer'
+	line=$(printf 'weather\t%s\t%s\t%s\t%s\t%s\t%s' "$temperature" \
+		"$([[ $units == fahrenheit ]] && printf F || printf C)" "$code" "$(describe "$code")" \
+		"$name" "$(clean_field "$observed" 32)")
+	printf '%s\t%s\t%s\t%s\n' "$(now)" "$location" "$units" "$line" >"$current_cache"
+	rm -f -- "$failure_mark"
+	emit available 'Updated' "$line"
+}
+
+status() {
+	printf 'weather-settings-protocol\t1\t0\n'
+	printf 'setting\tlocation\t%s\n' "$(clean_field "$(read_setting location '')" "$max_location")"
+	printf 'setting\tunits\t%s\n' "$(read_setting units auto)"
+	printf 'setting\tresolved-units\t%s\n' "$(resolved_units)"
+	printf 'complete\tstatus\n'
+}
+
+case ${1:-} in
+current)
+	[[ $# == 1 ]] || die 'current takes no arguments'
+	current
+	;;
+status)
+	[[ $# == 1 ]] || die 'status takes no arguments'
+	status
+	;;
+set-location)
+	[[ $# == 2 ]] || die 'set-location takes one location (empty to clear)'
+	location=$2
+	[[ ${#location} -le $max_location ]] || die "a location is at most $max_location characters"
+	[[ $location != *[$'\001'-$'\037'$'\177']* ]] || die 'a location is one line of text'
+	write_settings "$location" "$(read_setting units auto)"
+	printf 'weather-action-protocol\t1\t0\nresult\tset-location\tok\n'
+	;;
+set-units)
+	[[ $# == 2 ]] || die 'set-units takes auto, celsius or fahrenheit'
+	case $2 in auto | celsius | fahrenheit) ;; *) die 'units are auto, celsius or fahrenheit' ;; esac
+	write_settings "$(read_setting location '')" "$2"
+	printf 'weather-action-protocol\t1\t0\nresult\tset-units\t%s\n' "$2"
+	;;
+*)
+	printf 'usage: lyona-weather current | status | set-location TEXT | set-units auto|celsius|fahrenheit\n' >&2
+	exit 2
+	;;
+esac

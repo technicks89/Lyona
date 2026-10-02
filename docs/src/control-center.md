@@ -53,10 +53,37 @@ paired device, and disconnect a connected device through `bluetoothctl`.
 ## Panel Widgets
 
 The Bar Widgets page can show or hide the workspace, volume, Bluetooth,
-network, and power widgets. Those choices are stored in the project-owned
-`~/.config/lyona/panel-widgets.conf` state and apply to every monitor and
-future Quickshell session. Settings Appearance exposes the same shared controls
-and can restore the safe all-on default. The redesigned panel retains the
+network, power, calendar and weather widgets. Those choices are stored in the
+project-owned `~/.config/lyona/panel-widgets.conf` state and apply to every
+monitor and future Quickshell session. Settings Appearance exposes the same
+shared controls and can restore the defaults: everything on except the weather.
+
+### Calendar
+
+Click the panel clock to open a month calendar.
+
+- **Keys:** the arrows move a day or a week, Page Up and Page Down a month, and
+  Home returns to today.
+- **Closing:** Escape or a click outside closes it.
+- **Off:** with the Calendar switch off, the clock does nothing when clicked.
+- **IPC:** `quickshell ipc --path ~/.config/quickshell/shell.qml call calendar
+  toggle` opens it from a hotkey too.
+
+### Weather
+
+The weather is off until you turn its Bar Widgets switch on and set a location
+in Settings, Appearance, Weather.
+
+- **What is sent:** the shell then asks Open-Meteo for the current temperature,
+  at most every 30 minutes, and only while the widget is on. No account or key
+  is needed. The location you typed is sent to Open-Meteo and nothing else is;
+  your position is never guessed from your IP address.
+- **Units:** they follow your locale (Fahrenheit in the US and a few other
+  regions) unless you choose Celsius or Fahrenheit there.
+- **When it fails:** the panel shows "Unavailable" and tries again later.
+- **The helper:** the panel uses `lyona-weather`, which keeps its settings in
+  `~/.config/lyona/weather.conf` and its cache in `~/.cache/lyona/weather/`,
+  both private to you. The redesigned panel retains the
 active-window title, status segments, and system tray, and shows all nine dwm
 tags (workspaces). Hovering icon-only panel controls displays a text tooltip.
 
