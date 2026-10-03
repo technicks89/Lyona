@@ -52,7 +52,6 @@ EOF
 cat >"$work/bin/cargo" <<'EOF'
 #!/bin/bash
 printf 'cargo %s\n' "$*" >>"$STUB_DIR/log"
-[[ ${STUB_CARGO:-} != fail ]] || exit 101
 [[ $1 == install ]] || exit 0
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
@@ -62,8 +61,11 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 	--target-dir) target=${args[i + 1]} ;;
 	esac
 done
-mkdir -p "$target" "$root/bin" "$root/registry/cache"
+# A real cargo has fetched crates into the registry before a build fails.
+mkdir -p "$target" "$root/registry/cache"
 printf '%s\n' "$target" >"$STUB_DIR/target-dir"
+[[ ${STUB_CARGO:-} != fail ]] || exit 101
+mkdir -p "$root/bin"
 printf '#!/bin/sh\necho "topgrade %s"\n' "${STUB_BUILT_VERSION:-$version}" >"$root/bin/topgrade"
 chmod +x "$root/bin/topgrade"
 EOF
@@ -187,6 +189,11 @@ for case in 'STUB_CURL=fail' 'STUB_LATEST=' 'STUB_LATEST=17.13.0-beta.1' 'STUB_L
 	*) ! built_by_cargo || fail "it built with $case" ;;
 	esac
 done
+# A failed build still removes its build directory and the crate downloads it made.
+reset
+if STUB_CARGO=fail run >/dev/null 2>&1; then fail 'a failed build was reported as installed'; fi
+[[ -s $work/target-dir && ! -e $(cat "$work/target-dir") ]] || fail 'a failed build left its build directory'
+[[ ! -e $work/home/.cargo/registry ]] || fail 'a failed build left the crate downloads it made'
 reset
 out=$(env HOME="$work/home" PATH="$work/sys" "$helper" 2>&1) && fail 'it succeeded without curl and cargo'
 [[ $out == *'curl is not installed'* ]] || fail "without curl: $out"
@@ -278,5 +285,31 @@ if [[ -z $removed || -z $topgrade ]] || ((topgrade <= removed)); then
 fi
 grep -Eq '^[[:space:]]+install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade$' "$postinstall" ||
 	fail 'install_topgrade is not exported for run_logged'
+# The postinstall's own install_topgrade, against a stub arch-chroot: rustup only
+# when the target has no other Rust toolchain, and the build as the user either way.
+awk '/^install_topgrade\(\) \{$/ { f = 1 } f { print } f && /^}$/ { exit }' "$postinstall" >"$work/install_topgrade.sh"
+grep -q '^}$' "$work/install_topgrade.sh" || fail 'could not find install_topgrade in the postinstall'
+cat >"$work/bin/arch-chroot" <<'EOF'
+#!/bin/bash
+shift
+printf 'chroot %s\n' "$*" >>"$STUB_DIR/chroot.log"
+if [[ $1 == bash ]]; then
+	[[ -n ${STUB_TARGET_RUST:-} ]] || exit 1
+	printf '%s\n' "$STUB_TARGET_RUST"
+fi
+EOF
+chmod +x "$work/bin/arch-chroot"
+postinstall_topgrade() { # TARGET-RUST
+	rm -f "$work/chroot.log"
+	# shellcheck disable=SC2016 # expanded by the inner shell
+	env PATH="$work/bin:$work/sys" STUB_TARGET_RUST="$1" TARGET=/mnt target_user=alice target_home=/home/alice \
+		bash -c '. "$1"; . "$2"; install_topgrade' _ "$repo/scripts/dwm-packages.sh" "$work/install_topgrade.sh" >/dev/null
+}
+postinstall_topgrade '' || fail 'the postinstall Topgrade step failed'
+grep -Fqx 'chroot pacman -S --noconfirm --needed rustup' "$work/chroot.log" ||
+	fail "the postinstall did not install rustup: $(cat "$work/chroot.log")"
+postinstall_topgrade rust || fail 'the postinstall Topgrade step failed beside Arch rust'
+! grep -Fq 'pacman -S' "$work/chroot.log" || fail "the postinstall installed rustup beside Arch's rust"
+grep -Fq 'su - alice -c' "$work/chroot.log" || fail 'the postinstall did not build Topgrade as the user beside Arch rust'
 
 printf 'install-topgrade: PASS\n'

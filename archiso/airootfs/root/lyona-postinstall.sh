@@ -333,8 +333,17 @@ install_qemu_guest_utils() {
 # desktop.
 install_topgrade() {
 	local -a toolchain
-	mapfile -t toolchain < <(dwm_packages arch rust-toolchain)
-	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${toolchain[@]}"
+	local other
+	# A target that already has another Rust toolchain (Arch's rust, say) keeps
+	# it, and its cargo builds Topgrade: the shared rule, asked inside the target.
+	# shellcheck disable=SC2016 # $1 is the inner bash's
+	if other=$(arch-chroot "$TARGET" bash -c '. "$1" && dwm_other_rust_toolchain' _ \
+		"$target_home/.local/share/lyona/scripts/dwm-packages.sh"); then
+		printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other"
+	else
+		mapfile -t toolchain < <(dwm_packages arch rust-toolchain)
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${toolchain[@]}"
+	fi
 	# shellcheck disable=SC2016 # $HOME is the user's, expanded in their login shell
 	arch-chroot "$TARGET" su - "$target_user" -c '"$HOME/.local/share/lyona/scripts/install-topgrade"'
 }

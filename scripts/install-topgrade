@@ -152,15 +152,19 @@ if command -v rustup >/dev/null 2>&1 && ! rustup show active-toolchain >/dev/nul
 	rustup default stable >/dev/null || die 'could not make stable the default Rust toolchain'
 fi
 
+registry_was_there=false
+[[ ! -e $cargo_home/registry ]] || registry_was_there=true
 lyona_xdg_dirs
 cache_dir=$cache_home/lyona
 mkdir -p -- "$cache_dir"
 build=$(mktemp -d "$cache_dir/topgrade-build.XXXXXX") || die "cannot create a build directory in $cache_dir"
-# shellcheck disable=SC2064 # the path is fixed now
-trap "rm -rf -- '$build'" EXIT
-
-registry_was_there=false
-[[ ! -e $cargo_home/registry ]] || registry_was_there=true
+# On every exit, a failed or timed-out build included: the build directory, and
+# the crate downloads when this build created the registry.
+cleanup() {
+	rm -rf -- "$build"
+	$registry_was_there || rm -rf -- "${cargo_home:?}/registry"
+}
+trap cleanup EXIT
 if [[ -n $installed ]]; then
 	say "upgrading Topgrade $installed to $latest; this takes a few minutes..."
 else
@@ -171,7 +175,6 @@ fi
 timeout --kill-after=30 "$build_seconds" \
 	cargo install --locked --force --version "$latest" --root "$cargo_home" --target-dir "$build/target" topgrade ||
 	die "cargo could not build Topgrade $latest"
-$registry_was_there || rm -rf -- "${cargo_home:?}/registry"
 [[ $(version_of "$target" || :) == "$latest" ]] ||
 	die "Topgrade was built, but $target does not report version $latest"
 say "Topgrade $latest is installed at $target."
