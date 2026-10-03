@@ -22,7 +22,8 @@ use `make native` for published binaries.
 9. Record the tested Arch release, architectures, X11 environments, known
    limitations, and SHA-256 checksum in the release notes.
 10. Tag the release only after all applicable `SPEC.md` acceptance criteria
-    and required GitHub checks pass.
+    and required GitHub checks pass. The ISO workflow (see "Automated ISO
+    builds and releases" below) creates the tag; run it only then.
 
 `scripts/run-tests` creates an isolated directory below
 `${DWM_TEST_TMP_ROOT:-$HOME/tmp}` and removes it on success, failure, or
@@ -202,23 +203,48 @@ mode, architecture, package-resolution result, first-boot result, and
 untested hardware. A container can validate package availability, but it
 cannot replace the required boot and first-session VM qualification.
 
-### Automated ISO builds (CI)
+### Automated ISO builds and releases (CI)
 
-`.github/workflows/build-iso.yml` runs the same build script in a privileged
-`archlinux:base-devel` container. It is manually triggered (never on tag
-push) — run it from the Actions tab or:
-
-```sh
-gh workflow run build-iso.yml -f tag=v2026.08.0
-```
-
-`tag` must be an existing release tag (i.e. `scripts/lyona-release` has
-already run for that version). The workflow builds the ISO, uploads it as a
-workflow artifact, and attaches it plus a `SHA256SUMS` file to that tag's
-GitHub release as a **pre-release** — GitHub only shows the newest
-non-prerelease as "Latest", so this never displaces the current qualified
-release. After boot-qualifying the ISO in a VM as above, promote it:
+`.github/workflows/build-iso.yml` builds the ISO in a privileged
+`archlinux:base-devel` container, then creates the tag and the release. It is
+run by hand, from the Actions tab or:
 
 ```sh
-gh release edit v2026.08.0 --prerelease=false --latest
+gh workflow run build-iso.yml -f channel=main
+gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.08.0-beta.1.md
 ```
+
+It asks for the channel:
+- **beta:** `VERSION` in `config.mk` must have an `-alpha.N`, `-beta.N` or
+  `-rc.N` suffix.
+- **main:** `VERSION` must be a plain `YYYY.MM.PATCH`.
+
+A mismatch fails in seconds, before anything is built. So commit the new
+`VERSION` (and `CHANGELOG.md`) first, and push it.
+
+What it does:
+- **The ISO:** builds it, and keeps it and its `SHA256SUMS` as a workflow
+  artifact.
+- **The tag and the release:** only once the ISO has built, it runs
+  `scripts/lyona-release` with `--prerelease`. That creates `vVERSION` at the
+  run's commit, with the source archive `lyona-update` installs from, the ISO,
+  and a `SHA256SUMS` of both. `notes` is an optional release notes file in the
+  repository.
+- **Every release starts as a pre-release.** A beta stays one. A main release
+  stays one until you promote it, once its ISO has passed the VM
+  qualification above.
+- **Reruns:** rerunning for a `VERSION` already tagged at the same commit
+  replaces the release's assets. A `VERSION` tagged at another commit is
+  refused; bump `VERSION` to release again.
+
+To promote a qualified main release, run `.github/workflows/promote-releases.yml`
+by hand with its tag:
+
+```sh
+gh workflow run promote-releases.yml -f tag=v2026.10.0
+```
+
+It makes the release a normal one, and the latest unless a newer stable release
+already is. It refuses a beta tag, a tag with no release, and a draft, and does
+nothing for a release that is already normal. Nothing promotes a release
+automatically.

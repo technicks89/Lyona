@@ -18,6 +18,9 @@ Options:
                           Accepts 2026.08.0 or v2026.08.0.
   --iso PATH              Upload an installer ISO alongside the source archive.
   --notes FILE            Use FILE as release notes.
+  --prerelease            Publish as a GitHub pre-release even without a
+                          version suffix. The ISO workflow uses this so a
+                          stable release stays one until it is promoted.
   --dry-run               Print the planned commands only.
   --skip-checks           Skip make release-check.
   -h, --help              Show this help.
@@ -93,6 +96,7 @@ iso_path=
 notes_file=
 dry_run=false
 skip_checks=false
+force_prerelease=false
 
 while (($# > 0)); do
 	case "$1" in
@@ -138,6 +142,10 @@ while (($# > 0)); do
 		;;
 	--skip-checks)
 		skip_checks=true
+		shift
+		;;
+	--prerelease)
+		force_prerelease=true
 		shift
 		;;
 	-h | --help)
@@ -289,7 +297,7 @@ if [[ $release_exists == true ]]; then
 	run gh release upload "$tag" "${assets[@]}" --clobber
 else
 	gh_args=(release create "$tag" "${assets[@]}" --title "lyona $tag" --verify-tag)
-	if [[ -n $prerelease ]]; then
+	if [[ -n $prerelease || $force_prerelease == true ]]; then
 		# A pre-release must not be published as the latest stable release.
 		gh_args+=(--prerelease)
 	fi

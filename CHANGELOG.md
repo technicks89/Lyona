@@ -38,6 +38,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The ISO workflow (`build-iso.yml`) now creates the release tag itself. It asks whether the release is beta or main,
+  checks that against `VERSION` in `config.mk`, builds the ISO, then creates the tag and the release through
+  `scripts/lyona-release`. Every release starts as a pre-release. A main release becomes a normal release, and the
+  latest, only when the new `promote-releases.yml` is run by hand for its tag. `scripts/lyona-release` gains
+  `--prerelease`.
 - The AUR policy is now "limit the AUR to where it is needed", not "no AUR" (decision D-27). Packages still come from
   the official repositories, or the CachyOS repository, whenever one can do the job. Each AUR use is listed in
   `docs/AUR-PACKAGES.md` and allowed by the guard, which fails on any other. The uses today are the `yay` helper, the
