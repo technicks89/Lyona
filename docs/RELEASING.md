@@ -237,6 +237,38 @@ What it does:
   replaces the release's assets. A `VERSION` tagged at another commit is
   refused; bump `VERSION` to release again.
 
+#### Who can release, and the release token
+
+Only the repository's **admins and maintainers** can run either release
+workflow. Each starts with an `authorize` job, which asks GitHub for the role of
+whoever started the run and refuses anything but `admin` or `maintain`. It
+follows the collaborator list as it changes.
+
+The tag needs an admin's token. The "Lock Tags" ruleset lets only admins
+create, move or delete tags, and the workflow's own `GITHUB_TOKEN` is not an
+admin. On a personal repository the ruleset's bypass list cannot name GitHub
+Actions. So the release step uses `RELEASE_TOKEN`: an admin's fine-grained
+personal access token, kept as a secret of the `release` environment.
+`build-iso.yml` fails before building anything when that secret is missing.
+
+To set it up, once, and again when the token expires:
+
+1. **Create the token** (GitHub -> Settings -> Developer settings -> Personal
+   access tokens -> Fine-grained tokens):
+   - Repository access: only `technicks89/Lyona`.
+   - Repository permissions: Contents, read and write. Nothing else.
+   - Expiration: your choice; note the date.
+2. **The environment:** Settings -> Environments -> `release`, with deployment
+   branches limited to `main`. A run from any other branch cannot use it.
+3. **Store the token** in that environment, not as a repository secret:
+
+   ```sh
+   gh secret set RELEASE_TOKEN --env release
+   ```
+
+Maintainers can run the release, and it uses the token, but cannot read it.
+Only admins can change the environment or its secret.
+
 To promote a qualified main release, run `.github/workflows/promote-releases.yml`
 by hand with its tag:
 

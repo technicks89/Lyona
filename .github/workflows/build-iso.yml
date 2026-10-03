@@ -13,6 +13,12 @@ name: Build ISO and release
 #
 # Rerunning for a VERSION already tagged at this commit replaces the assets; a
 # VERSION tagged at another commit is refused, so bump config.mk first.
+#
+# Who can release: only the repository's admins and maintainers (the authorize
+# job). The tag is created with RELEASE_TOKEN, an admin's fine-grained token
+# kept as a secret of the "release" environment, which only main can use: the
+# "Lock Tags" ruleset lets only admins create tags, and the workflow's own
+# token is not one (docs/RELEASING.md).
 
 on:
   workflow_dispatch:
@@ -37,7 +43,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Only the repository's admins and maintainers may release. Whoever started
+  # the run is asked about, through the API, so this follows the collaborator
+  # list as it changes; anyone else is refused before anything else runs.
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ACTOR: ${{ github.triggering_actor }}
+    steps:
+      - name: Allow only admins and maintainers
+        run: |
+          set -euo pipefail
+          role=$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq .role_name) || {
+            echo "::error::Could not look up $ACTOR's permission on $GH_REPO."
+            exit 1
+          }
+          case $role in
+          admin | maintain) echo "$ACTOR is a repository $role; allowed." ;;
+          *)
+            echo "::error::Only the repository's admins and maintainers can run this; $ACTOR is a repository ${role:-collaborator of unknown role}."
+            exit 1
+            ;;
+          esac
+
   build-iso:
+    needs: authorize
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
@@ -52,6 +88,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       CHANNEL: ${{ github.event.inputs.channel }}
       NOTES: ${{ github.event.inputs.notes }}
+      RELEASE_TOKEN_SET: ${{ secrets.RELEASE_TOKEN != '' }}
 
     steps:
       # github-cli lands here rather than with the build dependencies below:
@@ -98,6 +135,10 @@ jobs:
             fi
             echo "$tag already points at this commit; its release assets will be replaced."
           fi
+          if [[ $RELEASE_TOKEN_SET != true ]]; then
+            echo "::error::The release environment has no RELEASE_TOKEN secret; see docs/RELEASING.md."
+            exit 1
+          fi
           if [[ -n $NOTES && ! -f $NOTES ]]; then
             echo "::error::Release notes file not found: $NOTES"
             exit 1
@@ -132,7 +173,10 @@ jobs:
 
       # Every release starts as a pre-release: a beta stays one, and a main
       # release stays one until promote-releases.yml is run for it.
+      # With the admin's token: the "Lock Tags" ruleset lets only admins create tags.
       - name: Create the tag and the release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           iso=("$RUNNER_TEMP"/iso/*.iso)
