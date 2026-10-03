@@ -17,6 +17,10 @@ qualification status.
 
 ### Fixed
 
+- The ISO builds again with archiso 91, which ends each boot entry with a `%KERNEL_PARAMS%` placeholder. The step
+  that quiets the primary boot entries matched a line ending at `archisosearchuuid`, found none, and stopped the build.
+  It now accepts the placeholder, still leaves the accessibility entries as they are, and the test stages both
+  formats and the archiso profile installed on the build host.
 - A `recommended` install now includes GNOME Keyring, so a password login through the display manager unlocks the
   login keyring (Sync Sprint 15 S15-01, from upstream `#365`). It used to come only with the `full` profile, and
   nothing reported it missing. Diagnostics and System Health now flag a missing `gnome-keyring`, and `lyona-update`

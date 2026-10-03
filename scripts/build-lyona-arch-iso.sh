@@ -191,11 +191,14 @@ for key in iso_name iso_label iso_version iso_application; do
 done
 
 info "Quieting the primary boot entries' console output..."
-sed -i \
-	'/^options.*archisosearchuuid=%ARCHISO_UUID%$/ s/$/ quiet splash loglevel=3 vt.global_cursor_default=0/' \
+# The primary entry's parameters end at archisosearchuuid, then, since archiso
+# 91, a %KERNEL_PARAMS% placeholder. The accessibility entry's go on to
+# accessibility=on, so it stays as releng wrote it.
+sed -E -i \
+	'/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ quiet splash loglevel=3 vt.global_cursor_default=0/' \
 	"$profile_dir/efiboot/loader/entries/01-archiso-linux.conf"
-sed -i \
-	'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%$/ s/$/ quiet splash loglevel=3 vt.global_cursor_default=0/' \
+sed -E -i \
+	'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ quiet splash loglevel=3 vt.global_cursor_default=0/' \
 	"$profile_dir/syslinux/archiso_sys-linux.cfg"
 
 grep -q 'quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
