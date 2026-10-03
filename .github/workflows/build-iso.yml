@@ -43,6 +43,11 @@ jobs:
     container:
       image: archlinux:base-devel
       options: --privileged
+    # A container job's steps run with sh by default; these use bash's [[ ]],
+    # arrays, mapfile and pipefail.
+    defaults:
+      run:
+        shell: bash
     env:
       GH_TOKEN: ${{ github.token }}
       CHANNEL: ${{ github.event.inputs.channel }}
