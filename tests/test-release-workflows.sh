@@ -124,7 +124,8 @@ if release >/dev/null 2>&1; then fail 'the release step accepted two ISOs'; fi
 
 # ---- promotion --------------------------------------------------------------
 # gh: the named release (STUB_RELEASE: prerelease, draft, published; none when
-# unset), the latest release's publish time (STUB_LATEST), and edits.
+# unset), the latest release's publish time (STUB_LATEST; GitHub's 404 when
+# unset, a server error when "error"), and edits.
 cat >"$work/bin/gh" <<'EOF'
 #!/bin/bash
 case "$1 $2" in
@@ -133,7 +134,13 @@ case "$1 $2" in
 	printf '%s\n' "$STUB_RELEASE"
 	;;
 api\ *)
-	[[ -n ${STUB_LATEST:-} ]] || exit 1
+	if [[ -z ${STUB_LATEST:-} ]]; then
+		printf 'gh: Not Found (HTTP 404)\n' >&2
+		exit 1
+	elif [[ $STUB_LATEST == error ]]; then
+		printf 'gh: Bad Gateway (HTTP 502)\n' >&2
+		exit 1
+	fi
 	printf '%s\n' "$STUB_LATEST"
 	;;
 'release edit') printf '%s\n' "$*" >>"$STUB_DIR/edits" ;;
@@ -159,6 +166,12 @@ STUB_LATEST=$(ago 30) STUB_RELEASE="true${tab}false${tab}$(ago 2)" promote v2026
 STUB_LATEST=$(ago 1) STUB_RELEASE="true${tab}false${tab}$(ago 10)" promote v2026.09.0 || fail 'the promotion failed'
 [[ $(cat "$work/edits") == 'release edit v2026.09.0 --prerelease=false --latest=false' ]] ||
 	fail "beside a newer latest: $(cat "$work/edits")"
+# The latest release cannot be looked up (anything but a 404): nothing is edited.
+if STUB_LATEST=error STUB_RELEASE="true${tab}false${tab}$(ago 2)" promote v2026.10.0; then
+	fail 'promoted although the latest release could not be looked up'
+fi
+[[ ! -e $work/edits ]] || fail "a failed lookup still edited: $(cat "$work/edits")"
+grep -Fq 'Could not look up the latest release' "$work/promote.out" || fail "a failed lookup: $(cat "$work/promote.out")"
 # Already a normal release: nothing to do.
 STUB_RELEASE="false${tab}false${tab}$(ago 10)" promote v2026.09.0 || fail 'promoting a normal release failed'
 [[ ! -e $work/edits ]] || fail "a normal release was edited: $(cat "$work/edits")"
