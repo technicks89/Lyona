@@ -46,6 +46,8 @@ assert "tag" not in build[True]["workflow_dispatch"]["inputs"], "the tag is stil
 assert "schedule" not in promote[True], "promotion must not run on a schedule"
 assert promote[True]["workflow_dispatch"]["inputs"]["tag"]["required"] is True, promote[True]
 assert build["permissions"]["contents"] == "write" and promote["permissions"]["contents"] == "write"
+# The container job's steps are bash scripts; a container defaults to sh.
+assert build["jobs"]["build-iso"]["defaults"]["run"]["shell"] == "bash", build["jobs"]["build-iso"].get("defaults")
 PY
 step "$build_workflow" 'Check the version and the tag' "$work/check.sh"
 step "$build_workflow" 'Create the tag and the release' "$work/release.sh"

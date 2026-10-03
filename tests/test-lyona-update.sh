@@ -414,8 +414,10 @@ assert_contains "$work/out" '--from-checkout was removed'
 assert_contains "$work/out" 'sudo make install-system'
 
 # ── apply: downgrade refused without --allow-downgrade ─────────────────
+# Installed is newer than any config.mk VERSION the source can carry, so this
+# stays a downgrade whatever the release being cut.
 reset_curl_responses
-valid_user_record 2026.09.0 | write_user_record
+valid_user_record 2099.01.0 | write_user_record
 if apply_source --dry-run >"$work/out" 2>&1; then
 	fail "downgrade apply unexpectedly succeeded without --allow-downgrade"
 fi

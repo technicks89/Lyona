@@ -8,6 +8,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.1] - 2026-10-03
+
+Second beta of the Arch Linux line: everything since `2026.08.0-beta.1`, Sync
+Phases 6 to 9 and Sync Sprints 1 to 15. See
+`docs/RELEASE-NOTES-2026.10.0-beta.1.md` for the highlights, artifacts and
+qualification status.
+
 ### Fixed
 
 - A `recommended` install now includes GNOME Keyring, so a password login through the display manager unlocks the
@@ -2254,5 +2261,6 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.08.0-beta.1...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.1...HEAD
+[2026.10.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.08.0-beta.1...v2026.10.0-beta.1
 [2026.08.0-beta.1]: https://github.com/technicks89/Lyona/releases/tag/v2026.08.0-beta.1
