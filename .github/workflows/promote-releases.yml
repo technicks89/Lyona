@@ -51,11 +51,17 @@ jobs:
             echo "$TAG is already a normal release; nothing to do."
             exit 0
           fi
-          # The latest only when no newer stable release already is.
+          # The latest only when no newer stable release already is. GitHub
+          # answers 404 when there is no stable release yet; any other failure
+          # stops here, before the edit could wrongly mark this one latest.
           make_latest=true
-          if latest=$(gh api "repos/$GH_REPO/releases/latest" --jq .published_at 2>/dev/null) && [[ -n $latest ]] &&
-            (($(date -u -d "$latest" +%s) > $(date -u -d "$published" +%s))); then
-            make_latest=false
+          if latest=$(gh api "repos/$GH_REPO/releases/latest" --jq .published_at 2>latest.err); then
+            if [[ -n $latest ]] && (($(date -u -d "$latest" +%s) > $(date -u -d "$published" +%s))); then
+              make_latest=false
+            fi
+          elif ! grep -Fq 'HTTP 404' latest.err; then
+            echo "::error::Could not look up the latest release: $(cat latest.err)"
+            exit 1
           fi
           echo "Promoting $TAG (latest: $make_latest)."
           gh release edit "$TAG" --prerelease=false --latest="$make_latest"

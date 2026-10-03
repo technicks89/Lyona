@@ -47,6 +47,8 @@ stable=$work/stable
 mkdir -p "$stable/scripts"
 cp "$helper" "$stable/scripts/lyona-release"
 printf 'VERSION = 2026.10.0\n' >"$stable/config.mk"
+# As in the real repository, the release output is not part of the worktree.
+printf '/release\n' >"$stable/.gitignore"
 git -C "$stable" init -q
 git -C "$stable" add -A
 git -C "$stable" -c user.name=t -c user.email=t@example.invalid commit -qm stable
@@ -59,5 +61,52 @@ if plan | grep -Fq -- '--prerelease'; then
 	printf '%s\n' 'release helper planned a stable version as a pre-release without --prerelease' >&2
 	exit 1
 fi
+
+# A real run against a release that already exists: --prerelease replaces a
+# pre-release's assets, but refuses a release already promoted to a normal one.
+mkdir -p "$work/live-bin"
+cat >"$work/live-bin/gh" <<'EOF'
+#!/bin/sh
+set -eu
+case "$1 $2" in
+'release view')
+	case "$*" in
+	*isPrerelease*) printf '%s\n' "$STUB_IS_PRERELEASE" ;;
+	esac
+	;;
+'release upload') printf '%s\n' "$*" >>"$STUB_DIR/uploads" ;;
+'release create') printf '%s\n' "$*" >>"$STUB_DIR/uploads" ;;
+esac
+exit 0
+EOF
+cat >"$work/live-bin/make" <<'EOF'
+#!/bin/sh
+set -eu
+mkdir -p release && : >release/lyona-2026.10.0.tar.gz
+EOF
+chmod +x "$work/live-bin/gh" "$work/live-bin/make"
+live() { (cd "$stable" && env PATH="$work/live-bin:$PATH" STUB_DIR="$work" "$stable/scripts/lyona-release" --skip-checks --iso "$work/lyona.iso" "$@"); }
+rm -f "$work/uploads"
+STUB_IS_PRERELEASE=true live --prerelease >/dev/null 2>&1 || {
+	printf '%s\n' 'release helper refused to replace a pre-release'"'"'s assets' >&2
+	exit 1
+}
+grep -q '^release upload v2026.10.0 ' "$work/uploads" || {
+	printf '%s\n' 'release helper did not replace the pre-release'"'"'s assets' >&2
+	exit 1
+}
+rm -f "$work/uploads"
+if STUB_IS_PRERELEASE=false live --prerelease >/dev/null 2>"$work/promoted.err"; then
+	printf '%s\n' 'release helper replaced the assets of a promoted release' >&2
+	exit 1
+fi
+grep -Fq 'already a normal release' "$work/promoted.err"
+[ ! -e "$work/uploads" ] || {
+	printf '%s\n' 'release helper uploaded to a promoted release' >&2
+	exit 1
+}
+# Without --prerelease, a manual rerun keeps replacing assets as before.
+STUB_IS_PRERELEASE=false live >/dev/null 2>&1
+grep -q '^release upload v2026.10.0 ' "$work/uploads"
 
 printf '%s\n' 'Release helper preflight and remote-write ordering: PASS'

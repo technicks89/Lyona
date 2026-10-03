@@ -294,6 +294,14 @@ else
 fi
 
 if [[ $release_exists == true ]]; then
+	# --prerelease (the ISO workflow) only ever replaces a pre-release's assets,
+	# never those of a release that has already been promoted.
+	if [[ $force_prerelease == true ]] &&
+		[[ $(gh release view "$tag" --json isPrerelease --jq .isPrerelease) != true ]]; then
+		err "$tag is already a normal release; --prerelease will not replace its assets"
+		err "bump VERSION in config.mk to publish a new release"
+		exit 1
+	fi
 	run gh release upload "$tag" "${assets[@]}" --clobber
 else
 	gh_args=(release create "$tag" "${assets[@]}" --title "lyona $tag" --verify-tag)
