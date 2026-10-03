@@ -8,9 +8,9 @@ two upstream pull requests in `ChrisTitusTech/dwm-titus`:
 - **`#363`** "feat: integrate dwm-update-center" (merged 2026-10-01,
   +9176/-98, 37 commits).
 
-**Status:** S15-01 to S15-04 implemented 2026-10-02; S15-05 partly run
+**Status:** S15-01 to S15-04 and S15-06 implemented 2026-10-02; S15-05 partly run
 (`docs/evidence/s15-05-updates-and-keyring.md`). Started on branch `s15-01-keyring`; D-24 to
-D-26 decided 2026-10-02. GitHub: milestone "Sync Sprint 15 - Update discovery
+D-28 decided 2026-10-02. GitHub: milestone "Sync Sprint 15 - Update discovery
 and the login keyring", issues `#214` to `#218`.
 
 | Item | Issue | Kind | Gate |
@@ -19,7 +19,7 @@ and the login keyring", issues `#214` to `#218`.
 | [S15-02](#s15-02-an-updates-available-indicator-in-the-panel) | `#215` | Feature | none (D-25 decided) |
 | [S15-03](#s15-03-flatpak-updates) | `#216` | Feature | S15-02 |
 | [S15-04](#s15-04-system-updates-in-a-terminal) | `#217` | Feature | none (D-26 decided) |
-| [S15-05](#s15-05-validate-in-a-live-session) | `#218` | Validation | S15-01 to S15-04, live session |
+| [S15-05](#s15-05-validate-in-a-live-session) | `#218` | Validation | S15-01 to S15-04 and S15-06, live session |
 | [S15-06](#s15-06-topgrade-built-with-cargo-from-rustup) | -- | Feature | none (D-28 decided) |
 
 ---
@@ -136,6 +136,8 @@ instead. `#363` builds an Update Center on top of that declined updater.
 | **D-24** | Where does `gnome-keyring` go: `runtime-required` (as upstream; `lyona-update` then refuses until it is installed), `desktop` (recommended; `lyona-update` warns), or stays optional with only a diagnostic? | **Decided (2026-10-02), asked of the user directly:** `desktop`. Every recommended and full install gets it, diagnostics flag it, and an update only warns. |
 | **D-25** | Where do pending updates show: a panel icon that opens a popup listing the providers (as upstream), a panel icon that opens Settings > System, or Settings only (as now)? | **Decided (2026-10-02), asked of the user directly:** a panel icon that opens Settings > System. Settings stays the one update surface. |
 | **D-26** | How do system package updates run: keep PackageKit with its preview (as now), `pacman -Syu` in a terminal (as upstream), or both, with the terminal also updating foreign packages through `yay` when it is installed? | **Decided (2026-10-02), asked of the user directly:** both. PackageKit's preview stays; "Update in a terminal" is added, using `yay -Syu` when `yay` is installed. |
+| **D-27** | The AUR policy: "no AUR" with exceptions, or "limit the AUR to where it is needed"? | **Decided (2026-10-02), asked of the user directly:** limit the AUR when possible. Each use is listed in `docs/AUR-PACKAGES.md`, bounded, reviewed, and allowed by `make check-aur-policy`. |
+| **D-28** | Topgrade is AUR-only on Arch: from the AUR, or built with cargo, and from Arch's `rust` or `rustup`? | **Decided (2026-10-02), asked of the user directly:** built with cargo, from `rustup` by preference; another Rust toolchain already installed is kept and its `cargo` used; always the newest release from crates.io. |
 
 ---
 
@@ -276,36 +278,86 @@ instead. `#363` builds an Update Center on top of that declined updater.
     `docs/AUR-PACKAGES.md`, `CHANGELOG.md` (with the migration note).
   - **Validation:** the focused targets and the full `scripts/run-tests`
     suite passed (2026-10-02).
-- **S15-06 (2026-10-02, branch `s15-06-topgrade`):**
-  - **The installer:** `scripts/install-topgrade` builds the pinned Topgrade
-    17.12.3 with `cargo install --locked --version 17.12.3 topgrade` into
-    `~/.cargo/bin`.
-    - **The toolchain:** when no toolchain is set, rustup's stable toolchain is
-      installed (minimal profile) and made the default; one already set is left
-      alone.
-    - **Already installed:** a matching version is not rebuilt (`--force`
-      rebuilds). `--dry-run` changes nothing. It refuses root.
-  - **The package:** `install.sh` installs `rustup` through a new
-    `arch:rust-toolchain` profile, part of `recommended`, then runs the
-    installer after mybash, which puts `~/.cargo/bin` on `PATH`.
-    - **Arch's `rust`:** `rustup` conflicts with `rust` and `cargo`, so an
-      installed `rust` is kept and its `cargo` used. `pacman -Qq` resolves
-      provides (it prints `rustup` for `rust`), so the names are compared
-      exactly.
-    - **A failed build** warns and the install carries on.
-  - **Tests:** `tests/test-install-topgrade.sh` (`make check-topgrade-install`):
-    - the toolchain steps and the pinned `--locked` build;
-    - no rebuild when installed, `--force`, an older version upgraded, and a
-      dry run;
-    - a failed build, a wrong version and no cargo;
-    - `install.sh`: rustup from the map, an installed `rust` kept, the order
-      after mybash, the plan line, and no Topgrade for `core`.
-  - **Docs:** `docs/src/install.md`, `docs/src/dependencies.md`,
-    `docs/AUR-PACKAGES.md` (kept out of the AUR), `CHANGELOG.md`.
-  - **Not tested:** a real build from crates.io on a fresh install. This
-    machine already has Topgrade 17.12.2 in `~/.cargo/bin`, from rustup.
+- **S15-06 (2026-10-02):** first on `main` as `05d4aac` (and `ec87c20`), then
+  reworked after an architecture, engineering, security, efficiency and
+  documentation review, on branch `s15-06-topgrade-review-fixes`.
+  - **The installer:** `scripts/install-topgrade` builds the newest Topgrade
+    release from crates.io.
+    - **The version:** looked up each run (`max_stable_version` from the
+      crates.io API, over HTTPS, with a user agent), then built with
+      `cargo install --locked --version` into `${CARGO_HOME:-~/.cargo}/bin`,
+      with `--root` so the location and the check agree.
+    - **The build:** in a private directory under `~/.cache` (on disk, not a
+      tmpfs `/tmp`), bounded at an hour, and removed afterwards. A crate cache
+      the build created is removed too; one the user had is kept.
+    - **Always the newest (asked of the maintainer, 2026-10-02):** after the
+      review, the installer pinned 17.12.1 with its crate SHA-256 and a 7-day
+      minimum age. The maintainer chose always the newest release instead, so
+      the pin, the hash and the age rule were removed. A rerun upgrades an
+      older Topgrade, and does nothing when the newest is there.
+    - **What it leaves alone:** a Topgrade installed another way, unless
+      `--force`.
+    - **Its options:** `--print-plan` gives `install.sh` its plan line, and
+      `--dry-run` changes nothing. It refuses root, with no override.
+  - **The toolchain:** `rustup` by preference, from a new `arch:rust-toolchain`
+    profile in `recommended`.
+    - **The rule:** `dwm_other_rust_toolchain` in `scripts/dwm-packages.sh`
+      finds Arch's `rust`, any other provider (`pacman -Qq` prints the
+      provider, such as `rust-nightly-bin`), or a rustup.rs `cargo` on PATH.
+      `dwm_install_package_profile` then leaves `rustup` out, as it does for
+      `power-profiles-daemon`, and that toolchain's `cargo` is used.
+      `check-deps.sh` notes this beside its suggestions.
+    - **Stable is unpinned:** with no toolchain set, stable (minimal) is set
+      up. Accepted: rustup verifies it against the channel manifest, and a
+      future stable failing on the locked tree fails the build, which only
+      warns.
+  - **`install.sh`:**
+    - **The toolchain install** happens with the other packages, guarded, so
+      a failure skips Topgrade and not the install.
+    - **The build runs last,** after every privileged step, with `sudo -k`
+      first, so the crates' build scripts cannot reuse the sudo timestamp.
+    - **Opting out:** `--skip-topgrade` or `DWM_INSTALL_TOPGRADE=false`; the
+      plan line says so.
+  - **The live medium:** `install.sh` runs with `--skip-topgrade`. After the
+    install's passwordless sudoers file is removed, `install_topgrade` installs
+    `rustup` as root and builds Topgrade as the user. A failure prints a
+    reminder to run `install-topgrade`.
+  - **Tests:** `tests/test-install-topgrade.sh` runs against stub `curl` (the
+    crates.io answer), `cargo`, `rustup`, `pacman` and `id`. It covers:
+    - the lookup (HTTPS only, with a user agent), the locked build of that
+      version, the toolchain steps, the clean-up, and the PATH hint;
+    - the newest already there (nothing built), an upgrade when a newer
+      release appears, `--force`, one installed another way, and a custom
+      `CARGO_HOME`;
+    - Arch's `rust` without rustup, and `--print-plan`;
+    - a failed lookup, an empty, pre-release or malformed version, a failed
+      build and a wrong version, none of which reports success;
+    - no curl, no cargo, root, and a dry run;
+    - the shared rule (Arch `rust`, another provider, a rustup.rs `cargo`,
+      none, and rustup itself);
+    - `install.sh`'s skip flag, plan line, guarded toolchain, and build order
+      after `sudo -k` and the last `sudo`;
+    - the live medium's order after the sudoers removal.
+  - **A real build:** run 2026-10-02 in an isolated `HOME` and `CARGO_HOME`,
+    with this machine's rustup toolchain and the live crates.io.
+    - **The build:** the lookup found 17.12.3, the locked build finished in
+      about 2 minutes, and `topgrade --version` printed `topgrade 17.12.3`.
+    - **The clean-up:** the build directory and the crate cache were removed,
+      leaving about 17 MB.
+    - **A rerun** said the newest was already installed, and built nothing.
+  - **Docs:**
+    - `docs/src/install.md`, `docs/src/updating.md` (Topgrade beside Settings);
+    - `docs/src/dependencies.md`;
+    - `docs/AUR-PACKAGES.md` (always the newest, and what checks it);
+    - `docs/RELEASING.md` (the live medium);
+    - SPEC.md 5.5 (step 10), 5.8 and 9.3;
+    - `README.md`, `CHANGELOG.md` (with the migration).
+  - **Not tested:** a live-medium install that builds Topgrade (S15-05).
   - **Validation:** the focused targets and the full `scripts/run-tests`
-    suite passed (2026-10-02).
+    suite passed (2026-10-02), with the pinned version and again with the
+    newest-release lookup. Removing the rustup skip, `sudo -k`, the live
+    medium's `--skip-topgrade`, or the upgrade check each fails the test.
+
 - **S15-05:** partly run. The read-only checks passed on a real Arch
   install: the real `checkupdates`, the NetworkManager subscription, the
   keyring diagnostic, and LightDM's PAM lines. Everything that changes the
@@ -412,6 +464,24 @@ From `#363`. Decided by D-26.
   `--noconfirm`, success, failure, a declined plan, an early close, and
   `yay` missing.
 
+## S15-05: Validate in a live session
+
+Gate: S15-01 to S15-04 and S15-06, a live X11 session.
+
+- A `recommended` install on a clean Arch VM gets `gnome-keyring`. After a
+  LightDM password login, the login keyring is unlocked
+  (`secret-tool` stores and reads a value without a prompt).
+- Removing `gnome-keyring` shows the Health row; reinstalling clears it.
+- The panel icon appears with a pending update and hides once current. A
+  reconnect triggers a check. Closed-popup idle CPU is near zero.
+- A real `pacman -Syu` and a Flatpak update run in the terminal in both window
+  modes. A declined plan reports "not updated".
+- An install from the live medium builds Topgrade after its sudoers file is
+  removed, and `topgrade --version` prints the newest release in a new shell
+  (S15-06).
+- Record what was not tested (hardware, other display managers) in
+  `docs/evidence/s15-05-updates-and-keyring.md`.
+
 ## S15-06: Topgrade, built with cargo from rustup
 
 Added 2026-10-02 at the maintainer's request. Decided by D-28.
@@ -427,18 +497,3 @@ toolchain rather than Arch's `rust` package.
   puts that on `PATH`. Set the stable toolchain only when none is set.
 - The network is needed; a failure is reported and does not stop the install.
 - Tests against a stub cargo and rustup, and the docs.
-
-## S15-05: Validate in a live session
-
-Gate: S15-01 to S15-04, a live X11 session.
-
-- A `recommended` install on a clean Arch VM gets `gnome-keyring`. After a
-  LightDM password login, the login keyring is unlocked
-  (`secret-tool` stores and reads a value without a prompt).
-- Removing `gnome-keyring` shows the Health row; reinstalling clears it.
-- The panel icon appears with a pending update and hides once current. A
-  reconnect triggers a check. Closed-popup idle CPU is near zero.
-- A real `pacman -Syu` and a Flatpak update run in the terminal in both window
-  modes. A declined plan reports "not updated".
-- Record what was not tested (hardware, other display managers) in
-  `docs/evidence/s15-05-updates-and-keyring.md`.

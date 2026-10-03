@@ -101,13 +101,28 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   links to rather than the clone itself.
   - **Topgrade.** It also installs [Topgrade](https://github.com/topgrade-rs/topgrade),
     which updates everything with one `topgrade` command. Topgrade is only in
-    the AUR on Arch, so the installer builds a pinned release with
-    `cargo install --locked`, using `rustup`'s stable toolchain rather than
-    Arch's `rust` package.
-  - **Where it goes:** `~/.cargo/bin/topgrade`, which mybash puts on `PATH`.
-  - **If you already have Arch's `rust`:** it is kept, and its `cargo` is used.
-  - **If the build fails** (it needs the network, and takes a few minutes), the
-    install carries on. Rerun `scripts/install-topgrade` later.
+    the AUR on Arch, so the installer builds the newest release from crates.io
+    with `cargo install --locked`. It looks up the newest version each time it
+    runs.
+  - **The toolchain:** `rustup` by preference. If no Rust toolchain is set
+    up, the stable one is installed (minimal profile). Another Rust toolchain
+    you already have, such as Arch's `rust` package, is kept and its `cargo`
+    used; `rustup` is then not installed, since the two conflict.
+  - **Where it goes:** `${CARGO_HOME:-~/.cargo}/bin/topgrade`, which mybash
+    puts on `PATH`. Without mybash, add it yourself:
+    `export PATH="$HOME/.cargo/bin:$PATH"`.
+  - **When:** it is built last, after every step that needs `sudo`, and
+    the `sudo` timestamp is closed first, because the build runs many
+    third-party build scripts. It needs the network and takes a few minutes.
+    If it fails, the install carries on.
+  - **Skipping it:** pass `--skip-topgrade` (or set `DWM_INSTALL_TOPGRADE=false`).
+  - **Later, or on an existing install:** run
+    `sudo pacman -S --needed rustup` (skip this if another Rust toolchain is
+    installed), then `install-topgrade` (or `scripts/install-topgrade` from the
+    checkout). Rerun it any time to upgrade to the newest release; it does
+    nothing when you already have it. A Topgrade installed another way (such
+    as an AUR package) is left alone. `install-topgrade --force` builds
+    anyway, and `--dry-run` shows what it would do.
 - `full`: `recommended` plus optional extras such as Thunar with SMB-share
   browsing, network tray utilities,
   wallpapers, and display-manager setup. x86_64 Arch full installs also

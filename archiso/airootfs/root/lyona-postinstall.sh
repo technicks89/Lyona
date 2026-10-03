@@ -325,10 +325,33 @@ install_qemu_guest_utils() {
 	arch-chroot "$TARGET" systemctl enable spice-vdagentd.service
 }
 
+# Topgrade (Sync Sprint 15 S15-06, decision D-28), built only after the install's
+# passwordless sudo is gone (install.sh runs with --skip-topgrade): the build
+# runs a few hundred crates' build scripts as the new user, and none of them may
+# reach root. rustup comes from the map, installed as root; the build runs as
+# the user. A failure leaves the machine without Topgrade, never without a
+# desktop.
+install_topgrade() {
+	local -a toolchain
+	local other
+	# A target that already has another Rust toolchain (Arch's rust, say) keeps
+	# it, and its cargo builds Topgrade: the shared rule, asked inside the target.
+	# shellcheck disable=SC2016 # $1 is the inner bash's
+	if other=$(arch-chroot "$TARGET" bash -c '. "$1" && dwm_other_rust_toolchain' _ \
+		"$target_home/.local/share/lyona/scripts/dwm-packages.sh"); then
+		printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other"
+	else
+		mapfile -t toolchain < <(dwm_packages arch rust-toolchain)
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${toolchain[@]}"
+	fi
+	# shellcheck disable=SC2016 # $HOME is the user's, expanded in their login shell
+	arch-chroot "$TARGET" su - "$target_user" -c '"$HOME/.local/share/lyona/scripts/install-topgrade"'
+}
+
 export -f dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
 	install_microcode lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers \
-	install_networkmanager setup_swap_if_needed install_qemu_guest_utils
+	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."
 [[ -d $REPO_SRC ]] || fail "checkout not found at $REPO_SRC (this script expects to run from the lyona live medium)."
@@ -387,9 +410,13 @@ install -Dm644 /etc/lyona-iso-release "$TARGET/etc/lyona-iso-release" 2>/dev/nul
 
 run_logged "Running install.sh --profile full as $target_user..." \
 	arch-chroot "$TARGET" su - "$target_user" -c \
-	"cd \"\$HOME/.local/share/lyona\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full"
+	"cd \"\$HOME/.local/share/lyona\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full --skip-topgrade"
 
 rm -f "$install_sudoers"
+
+if ! run_logged "Building Topgrade as $target_user (this takes a few minutes)..." install_topgrade; then
+	say --foreground "$COLOR_DANGER" -- "-> Topgrade was not installed; after logging in, run install-topgrade."
+fi
 
 arch-chroot "$TARGET" bash -c '
 	find /usr/share/xsessions -mindepth 1 -maxdepth 1 -type f ! -name dwm.desktop -delete 2>/dev/null || true

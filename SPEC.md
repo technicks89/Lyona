@@ -204,10 +204,21 @@ The supported installation flow must:
    `*-mimeapps.list`, or a legacy `defaults.list`. It validates every handler
    before writing, publishes atomically, and never replaces a preference
    written while it runs.
-10. Set ownership to the invoking user for files in that user's home.
-11. Support repeated execution without destructive side effects.
-12. Print a summary, skipped optional features, and actionable next steps.
-13. Offer interactive Xorg display setup when installation runs inside an
+10. In the recommended and full profiles, unless `--skip-topgrade`, build
+    Topgrade (decision D-28) as the last step, after every privileged step and
+    with the `sudo` timestamp closed.
+    - **The source:** the newest release on crates.io, looked up when it runs,
+      built with `cargo install --locked` into the user's cargo bin directory.
+      A rerun upgrades an older build to the newest.
+    - **The toolchain:** `rustup` by preference. Another installed Rust toolchain
+      is kept and used instead.
+    - **On the live medium:** this runs only after the install's passwordless
+      `sudo` rule is removed.
+    - **Failure:** a failed build is reported and does not stop the install.
+11. Set ownership to the invoking user for files in that user's home.
+12. Support repeated execution without destructive side effects.
+13. Print a summary, skipped optional features, and actionable next steps.
+14. Offer interactive Xorg display setup when installation runs inside an
     active X11 session. The setup must support resolution, refresh rate,
     position, rotation, primary-output selection, and compatible TearFree
     drivers; preview changes with rollback; and preserve existing system Xorg
@@ -447,7 +458,8 @@ Runtime dependencies are classified as:
 - Recommended desktop: Alacritty, Quickshell, Picom, Feh, Dex, a polkit agent,
   notification tools, audio controls, screenshot tooling, Nerd/emoji fonts,
   Flatpak with its GTK portal, Gear Lever from a user-scoped Flathub
-  remote, and GNOME Keyring (`gnome-keyring`) for secret storage.
+  remote, Topgrade built with cargo (from `rustup`, or a Rust toolchain already
+  installed), and GNOME Keyring (`gnome-keyring`) for secret storage.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
   password login. A `startx` session has no such stack; its keyring stays locked
@@ -819,6 +831,9 @@ In a real or nested X11 session:
   through `maim`.
 - Recommended and full installs expose Gear Lever in the application launcher,
   and it opens a visible window in the supported X11 session.
+- Recommended and full installs, unless `--skip-topgrade`, have the newest
+  Topgrade in the user's cargo bin directory, and `topgrade --version` runs in a
+  new shell. A failed Topgrade build leaves the rest of the install complete.
 
 ### 9.4 Arch Image Validation
 

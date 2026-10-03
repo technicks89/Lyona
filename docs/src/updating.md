@@ -87,6 +87,26 @@ preview further down the page; use whichever you prefer.
   Saving the file applies it through dwm's hot reload. Terminals other than
   Alacritty, kitty, st and xterm cannot be given the class, and always tile.
 
+## Topgrade
+
+A `recommended` or `full` install also has [Topgrade](https://github.com/topgrade-rs/topgrade).
+Run `topgrade` in a terminal to update everything it finds in one go:
+- system packages, through `yay` or `pacman`;
+- Flatpak apps;
+- cargo and rustup;
+- firmware;
+- and more.
+
+It is a separate path from Settings -> System:
+- **Settings** previews package updates through PackageKit, or runs them in a
+  terminal, and keeps the panel's update count current.
+- **Topgrade** goes further than packages, with its own prompts. It does not
+  update lyona itself; use `lyona-update` or Settings for that.
+
+The installed Topgrade is built with cargo, so `pacman -Syu` does not upgrade it.
+Run `install-topgrade` to upgrade it to the newest release; it does nothing when
+you already have the newest.
+
 ## Applying an update
 
 ```sh

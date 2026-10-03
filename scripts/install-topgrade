@@ -3,32 +3,59 @@ set -euo pipefail
 
 # Topgrade, the one command that updates everything (Sync Sprint 15 S15-06,
 # decision D-28). Topgrade is AUR-only on Arch, so it is built from crates.io
-# with cargo instead, from a rustup toolchain rather than Arch's rust package.
+# with cargo instead, from rustup by preference (or the Rust toolchain already
+# installed; see dwm_other_rust_toolchain).
 #
-# - The version is pinned, and --locked builds it with the dependency versions
-#   its release was tested with. cargo checks every crate against the
-#   checksums in the crates.io index.
-# - The toolchain: when cargo is rustup's and no toolchain is set, the stable
-#   toolchain is installed with the minimal profile and made the default. A
-#   toolchain the user already chose is left alone.
-# - The binary goes to cargo's own ~/.cargo/bin, which the mybash shell
+# - The version is always the newest release on crates.io, looked up at run
+#   time (decided with the maintainer, 2026-10-02). --locked builds it with the
+#   dependency versions in its published Cargo.lock, and cargo checks every
+#   crate against the checksums in the crates.io index.
+# - A rerun upgrades an older Topgrade to the newest, and leaves the newest
+#   alone. One installed some other way (such as an AUR package) is left alone
+#   unless --force.
+# - It builds in a private directory under ~/.cache, on disk rather than in a
+#   tmpfs /tmp, and removes it afterwards. The build is bounded in time. The
+#   crate downloads cargo keeps in $CARGO_HOME/registry (about 300 MB) are
+#   removed too, when this build created them; a registry that was already
+#   there is the user's, and is left alone.
+# - The toolchain: with rustup and no toolchain set, the stable toolchain is
+#   installed (minimal profile) and made the default. A toolchain the user set
+#   up is used as it is.
+# - The binary goes to ${CARGO_HOME:-~/.cargo}/bin, which the mybash shell
 #   configuration puts on PATH.
 #
-# Needs the network (the toolchain and the crates). install.sh runs this for
-# the recommended profile and carries on when it fails.
+# Needs the network. install.sh runs this for the recommended and full
+# profiles (unless --skip-topgrade), after every privileged step, and carries
+# on when it fails.
 
-readonly TOPGRADE_VERSION=17.12.3
+readonly crates_api=https://crates.io/api/v1/crates/topgrade
+# crates.io asks API clients to identify themselves.
+readonly user_agent='lyona-install-topgrade (https://github.com/technicks89/Lyona)'
+readonly build_seconds=3600
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-packages.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-packages.sh
+. "$lyona_lib/dwm-packages.sh"
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
 
 usage() {
 	cat <<EOF
-Usage: install-topgrade [--dry-run] [--force]
+Usage: install-topgrade [--dry-run] [--force] [--print-plan]
 
-Build and install Topgrade ${TOPGRADE_VERSION} with cargo, from a rustup toolchain.
+Build and install the newest Topgrade release from crates.io with cargo, using
+rustup (or the Rust toolchain already installed). An older Topgrade it
+installed is upgraded.
 
 Options:
-  --dry-run  Print what would be installed, and change nothing.
-  --force    Rebuild even when this version is already installed.
-  -h, --help Show this help.
+  --dry-run     Print what would be done, and change nothing.
+  --force       Build even when the newest Topgrade, or one installed another
+                way, is already there.
+  --print-plan  Print one line describing the install, for install.sh.
+  -h, --help    Show this help.
 EOF
 }
 
@@ -40,10 +67,12 @@ die() {
 
 dry_run=false
 force=false
+print_plan=false
 while (($# > 0)); do
 	case $1 in
 	--dry-run) dry_run=true ;;
 	--force) force=true ;;
+	--print-plan) print_plan=true ;;
 	-h | --help)
 		usage
 		exit 0
@@ -57,33 +86,64 @@ while (($# > 0)); do
 	shift
 done
 
-[[ $(id -u) -ne 0 || ${TOPGRADE_ALLOW_ROOT:-0} == 1 ]] || die 'run as the target user, not as root'
+# The toolchain the build will use, in words.
+toolchain_words() {
+	local other
+	if other=$(dwm_other_rust_toolchain); then
+		printf 'the installed Rust toolchain (%s)' "$other"
+	else
+		printf 'rustup'
+	fi
+}
+
+if $print_plan; then
+	printf 'the newest release from crates.io, built with cargo, using %s\n' "$(toolchain_words)"
+	exit 0
+fi
+
+(($(id -u) != 0)) || die 'run as the target user, not as root'
 [[ -n ${HOME:-} ]] || die 'HOME is not set'
 
 cargo_home=${CARGO_HOME:-$HOME/.cargo}
 target=$cargo_home/bin/topgrade
 
 # `topgrade --version` prints "topgrade 17.12.3".
-installed_version() {
+version_of() {
 	local output
-	[[ -x $target ]] || return 1
-	output=$("$target" --version 2>/dev/null) || return 1
+	[[ -x $1 ]] || return 1
+	output=$("$1" --version 2>/dev/null) || return 1
 	printf '%s' "${output##* }"
 }
 
-if ! $force && [[ $(installed_version || :) == "$TOPGRADE_VERSION" ]]; then
-	say "Topgrade $TOPGRADE_VERSION is already installed at $target."
+# A Topgrade installed some other way is the user's: left alone.
+if ! $force && other=$(command -v topgrade 2>/dev/null) && [[ $other != "$target" ]]; then
+	say "Topgrade is already installed at $other ($(version_of "$other" || printf 'unknown version')); leaving it. Use --force to build another in $target."
 	exit 0
 fi
 
 if $dry_run; then
-	say "would build Topgrade $TOPGRADE_VERSION with: cargo install --locked --version $TOPGRADE_VERSION topgrade"
-	say "into $target, using rustup's stable toolchain (minimal profile) if no toolchain is set"
+	say "would look up the newest Topgrade release on crates.io, and build it with"
+	say "cargo install --locked into $target, using $(toolchain_words), unless that version is already there"
+	exit 0
+fi
+
+command -v curl >/dev/null 2>&1 || die 'curl is not installed'
+command -v jq >/dev/null 2>&1 || die 'jq is not installed'
+
+# The newest release: crates.io's newest stable, not yanked, version.
+say 'looking up the newest Topgrade release on crates.io...'
+latest=$(curl -fsS --proto '=https' --tlsv1.2 --max-time 30 -A "$user_agent" -- "$crates_api" |
+	jq -r '.crate.max_stable_version // empty') || die 'could not look up the newest Topgrade release on crates.io'
+[[ $latest =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "crates.io reported an unexpected newest version: '$latest'"
+
+installed=$(version_of "$target" || :)
+if ! $force && [[ $installed == "$latest" ]]; then
+	say "Topgrade $latest, the newest release, is already installed at $target."
 	exit 0
 fi
 
 command -v cargo >/dev/null 2>&1 ||
-	die 'cargo is not installed; install rustup first (sudo pacman -S rustup)'
+	die 'cargo is not installed; install rustup first (sudo pacman -S --needed rustup), unless another Rust toolchain is installed'
 
 # rustup's cargo has no toolchain until one is installed; choose stable then.
 if command -v rustup >/dev/null 2>&1 && ! rustup show active-toolchain >/dev/null 2>&1; then
@@ -92,9 +152,33 @@ if command -v rustup >/dev/null 2>&1 && ! rustup show active-toolchain >/dev/nul
 	rustup default stable >/dev/null || die 'could not make stable the default Rust toolchain'
 fi
 
-say "building Topgrade $TOPGRADE_VERSION; this takes a few minutes..."
-cargo install --locked --version "$TOPGRADE_VERSION" topgrade ||
-	die "cargo could not build Topgrade $TOPGRADE_VERSION"
-[[ $(installed_version || :) == "$TOPGRADE_VERSION" ]] ||
-	die "Topgrade was built, but $target does not report version $TOPGRADE_VERSION"
-say "Topgrade $TOPGRADE_VERSION is installed at $target; run topgrade in a new shell."
+registry_was_there=false
+[[ ! -e $cargo_home/registry ]] || registry_was_there=true
+lyona_xdg_dirs
+cache_dir=$cache_home/lyona
+mkdir -p -- "$cache_dir"
+build=$(mktemp -d "$cache_dir/topgrade-build.XXXXXX") || die "cannot create a build directory in $cache_dir"
+# On every exit, a failed or timed-out build included: the build directory, and
+# the crate downloads when this build created the registry.
+cleanup() {
+	rm -rf -- "$build"
+	$registry_was_there || rm -rf -- "${cargo_home:?}/registry"
+}
+trap cleanup EXIT
+if [[ -n $installed ]]; then
+	say "upgrading Topgrade $installed to $latest; this takes a few minutes..."
+else
+	say "building Topgrade $latest; this takes a few minutes..."
+fi
+# --force replaces an older build, including one from before this script
+# looked up the newest release.
+timeout --kill-after=30 "$build_seconds" \
+	cargo install --locked --force --version "$latest" --root "$cargo_home" --target-dir "$build/target" topgrade ||
+	die "cargo could not build Topgrade $latest"
+[[ $(version_of "$target" || :) == "$latest" ]] ||
+	die "Topgrade was built, but $target does not report version $latest"
+say "Topgrade $latest is installed at $target."
+case ":$PATH:" in
+*":$cargo_home/bin:"*) say 'run topgrade in a new shell.' ;;
+*) say "$cargo_home/bin is not on PATH; add it (export PATH=\"$cargo_home/bin:\$PATH\") or run $target." ;;
+esac

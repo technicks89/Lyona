@@ -34,6 +34,7 @@ Each check here changes the machine, or needs a fresh install, so none was run.
 | Closing the terminal mid-update reports that it closed early | not run |
 | **Update Flatpak apps** with real Flatpak updates in both installations | not run (Flatpak is not installed on the machine above) |
 | `flatpak remote-ls --updates --columns=application,branch` prints one row per update and no header when not attached to a terminal | not run against a real Flatpak; the tests use a stub that assumes it |
+| An install from the live medium builds Topgrade after its sudoers file is removed, and `topgrade --version` prints the newest release in a new shell (S15-06) | not run; a real build (of 17.12.1, when it was pinned) passed in an isolated home on 2026-10-02 |
 
 Record, for each run:
 - the machine, or the VM and its image;
