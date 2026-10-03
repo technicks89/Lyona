@@ -537,11 +537,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
-- A `recommended` install now includes Topgrade, which updates everything with one command (Sync Sprint 15 S15-06,
-  decision D-28). It is AUR-only on Arch, so it is built with `cargo install --locked` at a pinned version (17.12.3),
-  using `rustup`'s stable toolchain (minimal profile), not Arch's `rust` package. An installed `rust` is kept and its
-  `cargo` used. It installs to `~/.cargo/bin`, and a failed build does not stop the install. On an existing install,
-  run `scripts/install-topgrade`.
+- A `recommended` or `full` install now includes Topgrade, which updates everything with one command (Sync Sprint 15
+  S15-06, decision D-28).
+  - **How it is built:** Topgrade is AUR-only on Arch, so its newest crates.io release is built with
+    `cargo install --locked`; rerunning `install-topgrade` upgrades to the newest. It is built with `rustup` by
+    preference, which sets up the stable toolchain (minimal profile) when none is set. Another Rust toolchain already
+    installed, such as Arch's `rust`, is kept and its `cargo` used.
+  - **When it runs:** last, after every step that needs `sudo`, with the `sudo` timestamp closed. On the live medium it
+    runs after the install's passwordless `sudo` rule is removed.
+  - **What it leaves:** the binary goes to `${CARGO_HOME:-~/.cargo}/bin`. Its build directory, and a crate cache it
+    created, are removed.
+  - **Opting out:** `--skip-topgrade` (or `DWM_INSTALL_TOPGRADE=false`) skips it. A failed build does not stop the
+    install.
+  - **Migration:** on an existing install, run `sudo pacman -S --needed rustup` (skip this if another Rust toolchain is
+    installed), then `install-topgrade`.
 - Settings > System can update packages and Flatpak apps in your terminal (Sync Sprint 15 S15-03 and S15-04, from
   upstream `#363`, decision D-26). Packages use `yay -Syu` when `yay` is installed, so AUR packages such as the legacy
   NVIDIA drivers update too, and `sudo pacman -Syu` otherwise. Flatpak updates the system and user installations each

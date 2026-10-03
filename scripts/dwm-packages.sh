@@ -172,7 +172,8 @@ dwm_packages() {
 	arch:rust-toolchain)
 		# rustup, for cargo: Topgrade is built with it (Sync Sprint 15 S15-06,
 		# decision D-28), as it is AUR-only. rustup conflicts with Arch's
-		# rust and cargo packages; install.sh leaves an installed rust alone.
+		# rust and cargo packages, so dwm_install_package_profile leaves it out
+		# when another Rust toolchain is installed (dwm_other_rust_toolchain).
 		printf '%s\n' rustup
 		;;
 	arch:shell)
@@ -257,7 +258,7 @@ dwm_packages() {
 dwm_install_package_profile() {
 	local profile
 	local packages=()
-	local package
+	local package other_rust
 	local -A queued=()
 
 	for profile in "$@"; do
@@ -267,6 +268,10 @@ dwm_install_package_profile() {
 			if [[ $package == power-profiles-daemon ]] && dwm_power_profiles_provider_installed; then
 				printf '%s\n' \
 					'Retaining installed Power Profiles provider (ppd-service); skipping power-profiles-daemon.' >&2
+				continue
+			fi
+			if [[ $package == rustup ]] && other_rust=$(dwm_other_rust_toolchain); then
+				printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other_rust" >&2
 				continue
 			fi
 			queued[$package]=1
@@ -284,6 +289,27 @@ dwm_install_package_profile() {
 dwm_power_profiles_provider_installed() {
 	command -v pacman >/dev/null 2>&1 &&
 		pacman -Qq power-profiles-daemon >/dev/null 2>&1
+}
+
+# A Rust toolchain other than Arch's rustup package, by name, when one is
+# installed (Sync Sprint 15 S15-06, decision D-28): Arch's rust, any other
+# package providing rust or cargo (pacman -Qq resolves provides, so it prints
+# the provider, such as rust-nightly-bin), or a cargo from rustup.rs on PATH.
+# rustup conflicts with those packages, and would only duplicate the other, so
+# the rust-toolchain profile is skipped and that toolchain's cargo is used.
+dwm_other_rust_toolchain() {
+	local name provider cargo
+	if command -v pacman >/dev/null 2>&1; then
+		for name in rust cargo; do
+			provider=$(pacman -Qq "$name" 2>/dev/null) || continue
+			provider=${provider%%$'\n'*}
+			[[ $provider != rustup ]] || return 1
+			printf '%s\n' "$provider"
+			return 0
+		done
+	fi
+	cargo=$(command -v cargo 2>/dev/null) || return 1
+	printf '%s\n' "$cargo"
 }
 
 # Installs whatever of the profile is actually available, as one transaction:

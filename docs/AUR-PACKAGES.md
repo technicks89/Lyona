@@ -23,8 +23,20 @@ Where the AUR is used today:
 Kept out of the AUR:
 
 - **Topgrade** (Sync Sprint 15 S15-06, decision D-28): AUR-only on Arch. It is
-  built instead with `cargo install --locked` at a pinned version, from
-  crates.io, by `scripts/install-topgrade`, using `rustup` from `extra`.
+  built instead from its crates.io release by `scripts/install-topgrade`, using
+  `rustup` from `extra`, or another Rust toolchain already installed.
+  - **The version:** always the newest release on crates.io, looked up each
+    time it runs (decided with the maintainer, 2026-10-02).
+  - **What checks it:** `--locked` builds the dependency versions in the
+    release's published `Cargo.lock`, and cargo checks every crate it downloads
+    against the checksums in the crates.io index.
+  - **What it does not do:** no version or hash is pinned in this repository,
+    and a release is used as soon as it is published. That was chosen over a
+    pinned, reviewed version, so that installs are always current. The trust
+    rests on crates.io and Topgrade's maintainers.
+  - **The guard:** `make check-aur-policy` fails if `topgrade` or
+    `topgrade-bin` is ever named in a package profile, because neither is in
+    the official repositories.
 
 ## Legacy NVIDIA drivers (Sync Sprint 14)
 

@@ -114,7 +114,7 @@ The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfe
 
 ### `rust-toolchain`
 
-`rustup`, whose `cargo` builds Topgrade (`scripts/install-topgrade`). Topgrade is AUR-only on Arch, so it is built from crates.io at a pinned version instead. `rustup` conflicts with Arch's `rust` and `cargo` packages; when `rust` is already installed, the installer keeps it and uses its `cargo`.
+`rustup`, whose `cargo` builds Topgrade (`scripts/install-topgrade`). Topgrade is AUR-only on Arch, so its newest crates.io release is built with cargo instead. `rustup` conflicts with Arch's `rust` and `cargo` packages. When another Rust toolchain is installed (Arch's `rust`, another package providing it, or a `cargo` from rustup.rs), the installer leaves `rustup` out and uses that toolchain's `cargo`. `check-deps.sh` notes this beside its package suggestions.
 
 `rustup`
 

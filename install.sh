@@ -26,6 +26,7 @@ Options:
   --yes                  Accept the interactive install summary.
   --install-herdr        Install verified Herdr as an optional workspace.
   --skip-herdr           Do not install Herdr.
+  --skip-topgrade        Do not build Topgrade (recommended and full profiles).
   --enable-arch-gaming-repos
                          Approve enabling the multilib repository for gaming.
   --enable-cachyos-repos Add the CachyOS repositories for this CPU, replacing
@@ -66,6 +67,7 @@ YAY_BIN_URL="https://aur.archlinux.org/yay-bin.git"
 YAY_BIN_REF="13e0a4754d106a9252b7479bf1b370fbe454fc48"
 INSTALL_PROFILE="${DWM_INSTALL_PROFILE:-full}"
 HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
+TOPGRADE_INSTALL_MODE="${DWM_INSTALL_TOPGRADE:-true}"
 NON_INTERACTIVE=false
 ASSUME_YES=false
 ARCH_GAMING_REPOS_APPROVED=false
@@ -105,6 +107,10 @@ while (($# > 0)); do
 		;;
 	--skip-herdr)
 		HERDR_INSTALL_MODE=false
+		shift
+		;;
+	--skip-topgrade)
+		TOPGRADE_INSTALL_MODE=false
 		shift
 		;;
 	--enable-arch-gaming-repos)
@@ -164,6 +170,16 @@ auto)
 *)
 	err "Unsupported DWM_INSTALL_HERDR: $HERDR_INSTALL_MODE"
 	err "Supported values: auto, true, false"
+	exit 1
+	;;
+esac
+
+case $TOPGRADE_INSTALL_MODE in
+1 | true | yes) TOPGRADE_INSTALL_MODE=true ;;
+0 | false | no) TOPGRADE_INSTALL_MODE=false ;;
+*)
+	err "Unsupported DWM_INSTALL_TOPGRADE: $TOPGRADE_INSTALL_MODE"
+	err "Supported values: true, false"
 	exit 1
 	;;
 esac
@@ -230,6 +246,12 @@ herdr_arch_supported() {
 		return 1
 		;;
 	esac
+}
+
+# Topgrade (Sync Sprint 15 S15-06, decision D-28): built with cargo for the
+# recommended and full profiles, unless --skip-topgrade.
+install_topgrade_profile() {
+	install_recommended_profile && [[ $TOPGRADE_INSTALL_MODE == true ]]
 }
 
 install_herdr_profile() {
@@ -509,7 +531,11 @@ print_install_summary() {
 	if install_recommended_profile; then
 		print_summary_profile "Recommended packages" recommended
 		printf '  Gear Lever: user-scoped Flathub install (%s)\n' 'it.mijorus.gearlever'
-		printf '  Topgrade: built with cargo from crates.io (%s, rustup toolchain)\n' "$(sed -n 's/^readonly TOPGRADE_VERSION=//p' "$REPO_DIR/scripts/install-topgrade")"
+		if install_topgrade_profile; then
+			printf '  Topgrade: %s\n' "$("$REPO_DIR/scripts/install-topgrade" --print-plan)"
+		else
+			printf '  Topgrade: skipped (--skip-topgrade)\n'
+		fi
 	else
 		printf '  Recommended packages: skipped\n'
 	fi
@@ -853,21 +879,18 @@ if install_recommended_profile; then
 		warn "The mybash shell configuration was not installed; the default bash prompt remains."
 	fi
 
-	# Topgrade (Sync Sprint 15 S15-06, decision D-28): AUR-only on Arch, so it is
-	# built with cargo, from rustup rather than Arch's rust package. rustup
-	# conflicts with rust and cargo, so an installed rust is kept and its cargo
-	# used. pacman -Qq resolves provides, so the names are compared exactly.
-	if [[ $(pacman -Qq rust 2>/dev/null) == rust || $(pacman -Qq cargo 2>/dev/null) == cargo ]]; then
-		warn "Arch's rust package is installed; Topgrade is built with its cargo. To use rustup instead: sudo pacman -S rustup"
+fi
+
+# The toolchain for Topgrade, with the other packages (S15-06, D-28): rustup by
+# preference. The map leaves it out when another Rust toolchain is installed,
+# whose cargo is used instead. A failure skips Topgrade, never the install.
+topgrade_toolchain_ready=false
+if install_topgrade_profile; then
+	info "Installing the Rust toolchain for Topgrade..."
+	if dwm_install_package_profile rust-toolchain; then
+		topgrade_toolchain_ready=true
 	else
-		info "Installing rustup for Topgrade..."
-		dwm_install_package_profile rust-toolchain
-	fi
-	info "Installing Topgrade with cargo (this needs the network and takes a few minutes)..."
-	if "$REPO_DIR/scripts/install-topgrade"; then
-		ok "Topgrade is installed in ~/.cargo/bin; run topgrade in a new shell."
-	else
-		warn "Topgrade was not installed; retry with scripts/install-topgrade when the network is reachable."
+		warn "rustup could not be installed; Topgrade will be skipped. Install rustup, then run install-topgrade."
 	fi
 fi
 
@@ -978,6 +1001,19 @@ make install-user \
 	"${provenance_args[@]}"
 apply_grub_theme
 configure_displays_after_install
+
+# Topgrade is built last, after every privileged step, with the sudo timestamp
+# closed first: the build runs a few hundred crates' build scripts as the user,
+# and none of them may reuse that authorization (S15-06).
+if [[ $topgrade_toolchain_ready == true ]]; then
+	sudo -k 2>/dev/null || :
+	info "Building Topgrade with cargo (this needs the network and takes a few minutes)..."
+	if "$REPO_DIR/scripts/install-topgrade"; then
+		ok "Topgrade is installed; run topgrade in a new shell."
+	else
+		warn "Topgrade was not installed; run install-topgrade later to try again."
+	fi
+fi
 
 echo ""
 echo "╔═══════════════════════════════════════════╗"
