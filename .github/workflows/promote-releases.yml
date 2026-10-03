@@ -1,0 +1,61 @@
+name: Promote release
+
+# Run by hand, once a main release has been qualified (docs/RELEASING.md): it
+# makes the named pre-release that build-iso.yml published a normal release,
+# and the latest one unless a newer stable release already is. Only main
+# releases (a stable vYYYY.MM.PATCH tag) are promoted; beta releases (-alpha,
+# -beta, -rc) stay pre-releases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The main release to promote (e.g. v2026.10.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.event.inputs.tag }}
+
+    steps:
+      - name: Promote the release
+        run: |
+          set -euo pipefail
+          [[ $TAG =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]+$ ]] || {
+            echo "::error::$TAG is not a main release tag (vYYYY.MM.PATCH); beta releases stay pre-releases."
+            exit 1
+          }
+          release=$(gh release view "$TAG" --json isPrerelease,isDraft,publishedAt \
+            --jq '[.isPrerelease, .isDraft, .publishedAt] | @tsv') || {
+            echo "::error::There is no release for $TAG."
+            exit 1
+          }
+          IFS=$'\t' read -r prerelease draft published <<<"$release"
+          if [[ $draft == true ]]; then
+            echo "::error::$TAG is still a draft; publish it first."
+            exit 1
+          fi
+          if [[ $prerelease != true ]]; then
+            echo "$TAG is already a normal release; nothing to do."
+            exit 0
+          fi
+          # The latest only when no newer stable release already is.
+          make_latest=true
+          if latest=$(gh api "repos/$GH_REPO/releases/latest" --jq .published_at 2>/dev/null) && [[ -n $latest ]] &&
+            (($(date -u -d "$latest" +%s) > $(date -u -d "$published" +%s))); then
+            make_latest=false
+          fi
+          echo "Promoting $TAG (latest: $make_latest)."
+          gh release edit "$TAG" --prerelease=false --latest="$make_latest"
