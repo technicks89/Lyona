@@ -46,14 +46,30 @@ assert "tag" not in build[True]["workflow_dispatch"]["inputs"], "the tag is stil
 assert "schedule" not in promote[True], "promotion must not run on a schedule"
 assert promote[True]["workflow_dispatch"]["inputs"]["tag"]["required"] is True, promote[True]
 assert build["permissions"]["contents"] == "write" and promote["permissions"]["contents"] == "write"
+# Only admins and maintainers: both workflows start with the authorize job, and
+# their work waits for it.
+for wf in (build, promote):
+    assert "authorize" in wf["jobs"], wf["jobs"].keys()
+assert build["jobs"]["build-iso"]["needs"] == "authorize"
+assert promote["jobs"]["promote"]["needs"] == "authorize"
+# The tag is created with the release environment's admin token, and only there.
+job = build["jobs"]["build-iso"]
+assert job["environment"] == "release", job.get("environment")
+release_step = [s for s in job["steps"] if s.get("name") == "Create the tag and the release"][0]
+assert release_step["env"]["GH_TOKEN"] == "${{ secrets.RELEASE_TOKEN }}", release_step.get("env")
+assert job["env"]["GH_TOKEN"] == "${{ github.token }}", "the other steps must keep the workflow's own token"
+assert job["env"]["RELEASE_TOKEN_SET"] == "${{ secrets.RELEASE_TOKEN != '' }}", job["env"]
 # The container job's steps are bash scripts; a container defaults to sh.
 assert build["jobs"]["build-iso"]["defaults"]["run"]["shell"] == "bash", build["jobs"]["build-iso"].get("defaults")
 PY
 step "$build_workflow" 'Check the version and the tag' "$work/check.sh"
 step "$build_workflow" 'Create the tag and the release' "$work/release.sh"
 step "$promote_workflow" 'Promote the release' "$work/promote.sh"
+step "$build_workflow" 'Allow only admins and maintainers' "$work/authorize.sh"
+step "$promote_workflow" 'Allow only admins and maintainers' "$work/authorize-promote.sh"
+cmp -s "$work/authorize.sh" "$work/authorize-promote.sh" || fail 'the two workflows check who may run them differently'
 if command -v shellcheck >/dev/null 2>&1; then
-	for script in check release promote; do
+	for script in check release promote authorize; do
 		shellcheck -s bash "$work/$script.sh" || fail "the $script step does not pass shellcheck"
 	done
 fi
@@ -67,6 +83,25 @@ steps = [s.get("name") for s in yaml.safe_load(open(sys.argv[1]))["jobs"]["build
 assert steps.index("Build ISO") < steps.index("Create the tag and the release"), steps
 assert steps.index("Check the version and the tag") < steps.index("Install build dependencies"), steps
 PY
+
+# ---- who may run them -------------------------------------------------------
+# gh api repos/R/collaborators/ACTOR/permission --jq .role_name: STUB_ROLE, or a
+# failure when it is "error".
+cat >"$work/bin/gh" <<'EOF'
+#!/bin/sh
+[ "$STUB_ROLE" != error ] || exit 1
+printf '%s\n' "$STUB_ROLE"
+EOF
+chmod +x "$work/bin/gh"
+authorize() { env PATH="$work/bin:$PATH" STUB_ROLE="$1" GH_REPO=owner/lyona ACTOR=someone bash "$work/authorize.sh" >"$work/authorize.out" 2>&1; }
+for role in admin maintain; do
+	authorize "$role" || fail "a repository $role was refused: $(cat "$work/authorize.out")"
+done
+for role in write triage read none error ''; do
+	if authorize "$role"; then fail "a repository '$role' was allowed to release"; fi
+done
+grep -Fq "Only the repository's admins and maintainers" "$work/authorize.out" ||
+	fail "a refusal does not say who may release: $(cat "$work/authorize.out")"
 
 # ---- the version and tag check ----------------------------------------------
 cat >"$work/bin/gh" <<'EOF'
@@ -87,6 +122,7 @@ check() { # CHANNEL VERSION [NOTES]
 	git -C "$checkout" -c user.name=t -c user.email=t@example.invalid commit -q -m "v$2" --allow-empty
 	: >"$work/github-env"
 	(cd "$checkout" && env PATH="$work/bin:$PATH" CHANNEL="$1" NOTES="${3:-}" GITHUB_ENV="$work/github-env" \
+		RELEASE_TOKEN_SET="${RELEASE_TOKEN_SET:-true}" \
 		bash "$work/check.sh") >"$work/check.out" 2>&1
 }
 check beta 2026.10.0-beta.1 || fail "a beta VERSION was refused: $(cat "$work/check.out")"
@@ -99,6 +135,9 @@ for refused in 'beta 2026.10.0' 'main 2026.10.0-rc.2' 'stable 2026.10.0' 'main 2
 	if check $refused; then fail "check accepted '$refused'"; fi
 done
 if check main 2026.10.0 notes/absent.md; then fail 'check accepted a missing notes file'; fi
+# No release token in the release environment: refused before anything is built.
+if RELEASE_TOKEN_SET=false check main 2026.10.0; then fail 'check accepted a missing RELEASE_TOKEN'; fi
+grep -Fq 'no RELEASE_TOKEN secret' "$work/check.out" || fail "a missing token: $(cat "$work/check.out")"
 # A tag at another commit is refused; at this one, it is a rerun.
 if STUB_TAG_SHA=0123456789abcdef0123456789abcdef01234567 check main 2026.10.1; then
 	fail 'check accepted a tag at another commit'

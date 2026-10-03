@@ -4,7 +4,8 @@ name: Promote release
 # makes the named pre-release that build-iso.yml published a normal release,
 # and the latest one unless a newer stable release already is. Only main
 # releases (a stable vYYYY.MM.PATCH tag) are promoted; beta releases (-alpha,
-# -beta, -rc) stay pre-releases.
+# -beta, -rc) stay pre-releases. Only the repository's admins and maintainers
+# can run it (the authorize job).
 
 on:
   workflow_dispatch:
@@ -21,7 +22,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Only the repository's admins and maintainers may release. Whoever started
+  # the run is asked about, through the API, so this follows the collaborator
+  # list as it changes; anyone else is refused before anything else runs.
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ACTOR: ${{ github.triggering_actor }}
+    steps:
+      - name: Allow only admins and maintainers
+        run: |
+          set -euo pipefail
+          role=$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq .role_name) || {
+            echo "::error::Could not look up $ACTOR's permission on $GH_REPO."
+            exit 1
+          }
+          case $role in
+          admin | maintain) echo "$ACTOR is a repository $role; allowed." ;;
+          *)
+            echo "::error::Only the repository's admins and maintainers can run this; $ACTOR is a repository ${role:-collaborator of unknown role}."
+            exit 1
+            ;;
+          esac
+
   promote:
+    needs: authorize
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

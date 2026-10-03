@@ -8,6 +8,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Changed
+
+- Only the repository's admins and maintainers can run the release workflows (`build-iso.yml`,
+  `promote-releases.yml`). Each starts with a job that checks the role of whoever started the run. The tag is created
+  with `RELEASE_TOKEN`, an admin's fine-grained token kept as a secret of the `release` environment. The "Lock Tags"
+  ruleset lets only admins create tags, which the workflow's own token is not (`docs/RELEASING.md`).
+
 ## [2026.10.0-beta.1] - 2026-10-03
 
 Second beta of the Arch Linux line: everything since `2026.08.0-beta.1`, Sync
