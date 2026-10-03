@@ -545,6 +545,61 @@ grep -Fqx 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% 
 	exit 1
 }
 
+# archiso 91 ends each boot line with a %KERNEL_PARAMS% placeholder: the primary
+# entries are still quieted (after it), and the speech entries still are not.
+releng91=$work/releng91
+cp -a "$releng" "$releng91"
+sed -i -E 's/^((options|APPEND) .*archisosearchuuid=%ARCHISO_UUID%.*)$/\1 %KERNEL_PARAMS%/' \
+	"$releng91/efiboot/loader/entries/01-archiso-linux.conf" \
+	"$releng91/efiboot/loader/entries/02-archiso-speech-linux.conf" \
+	"$releng91/syslinux/archiso_sys-linux.cfg"
+grep -q '%KERNEL_PARAMS%$' "$releng91/efiboot/loader/entries/01-archiso-linux.conf" || {
+	printf 'could not stage the archiso 91 boot entries.\n' >&2
+	exit 1
+}
+LYONA_RELENG_DIR="$releng91" \
+	"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --output "$work/staged91" \
+	>"$work/profile91.out" 2>&1 || {
+	printf 'staging an archiso 91 profile failed:\n' >&2
+	cat "$work/profile91.out" >&2
+	exit 1
+}
+staged91=$work/staged91/profile
+grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% quiet splash loglevel=3 vt.global_cursor_default=0' \
+	"$staged91/efiboot/loader/entries/01-archiso-linux.conf" || {
+	printf 'the archiso 91 UEFI boot entry was not quieted.\n' >&2
+	exit 1
+}
+grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% accessibility=on %KERNEL_PARAMS%' \
+	"$staged91/efiboot/loader/entries/02-archiso-speech-linux.conf" || {
+	printf 'the archiso 91 UEFI speech entry should be left untouched.\n' >&2
+	exit 1
+}
+grep -Fqx 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% quiet splash loglevel=3 vt.global_cursor_default=0' \
+	"$staged91/syslinux/archiso_sys-linux.cfg" || {
+	printf 'the archiso 91 BIOS boot entry was not quieted.\n' >&2
+	exit 1
+}
+grep -Fqx 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% accessibility=on %KERNEL_PARAMS%' \
+	"$staged91/syslinux/archiso_sys-linux.cfg" || {
+	printf 'the archiso 91 BIOS speech entry should be left untouched.\n' >&2
+	exit 1
+}
+
+# The releng profile actually installed here, when archiso is: its format, not
+# just the fixtures', must stage, so a change in archiso shows up in this test
+# before it reaches the ISO workflow.
+installed_releng=/usr/share/archiso/configs/releng
+if [[ -f $installed_releng/profiledef.sh ]]; then
+	LYONA_RELENG_DIR="$installed_releng" \
+		"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --output "$work/staged-installed" \
+		>"$work/profile-installed.out" 2>&1 || {
+		printf 'staging the installed archiso releng profile failed:\n' >&2
+		cat "$work/profile-installed.out" >&2
+		exit 1
+	}
+fi
+
 # The installer is centred as one block against the wordmark.
 #
 # gum's interactive widgets take no --padding argument, so the only way to
