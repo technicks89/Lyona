@@ -54,9 +54,10 @@ and merge each before starting the next:
 ### ARCH-001: Archiso Profile and Package-Manifest Qualification
 
 - [x] `archiso/packages.x86_64`/`archiso/pacman.conf` exist and
-  `dwm_packages arch required|desktop|iso` (`scripts/dwm-packages.sh`) stays
-  in sync with them — `check-arch-packages` (67 packages, passing in this
-  sandbox as of 2026-09-19).
+  `dwm_packages arch iso` (`scripts/dwm-packages.sh`) stays in sync with
+  them — `check-archiso`. Since #229 the image carries only what the live
+  medium runs (6 packages on top of `releng`); the desktop was 66 packages the
+  new system downloads anyway.
 - [x] `scripts/build-lyona-arch-iso.sh --profile-only` stages the branded
   profile and stamps `VERSION`/commit/label into every required field without
   needing root or `mkarchiso` — `tests/test-arch-iso-builder.sh` (passing in

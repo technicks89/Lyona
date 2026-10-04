@@ -850,9 +850,11 @@ In a real or nested X11 session:
 
 ### 9.4 Arch Image Validation
 
-- `archiso/packages.x86_64` stays in sync with the `arch:required`+
-  `arch:desktop` package map, and the postinstall script and ISO builder pass
-  their structural checks (`make check-archiso`).
+- `archiso/packages.x86_64` stays in sync with the `arch:iso` package map,
+  what the live medium itself runs on top of `releng`; the desktop packages are
+  not on the image, as the new system downloads every package it installs. The
+  postinstall script and ISO builder pass their structural checks
+  (`make check-archiso`).
 - The ISO builder embeds the checkout and postinstall script without dropping
   the upstream `releng` boot behavior.
 - The build host's `archiso` package version and the resulting image checksum

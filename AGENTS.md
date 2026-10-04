@@ -79,8 +79,10 @@ an untested package or installation path.
   with nouveau as the alternative; an older card keeps nouveau. NVIDIA-only
   packages and kernel arguments are installed only on a machine that gets the
   driver, never shipped in the image.
-- Keep `archiso/packages.x86_64` synced with the shared dependency map (see
-  `tests/test-arch-iso-builder.sh`).
+- Keep `archiso/packages.x86_64` synced with the `arch:iso` profile of the
+  shared dependency map (see `tests/test-arch-iso-builder.sh`): what the live
+  medium itself runs. The desktop is not on the image; the new system
+  downloads every package it installs.
 - Run `make check-archiso` for archiso or ISO-builder changes, then validate a
   real or virtual install before claiming the image boots or reaches a usable
   desktop.
