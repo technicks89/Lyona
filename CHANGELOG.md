@@ -10,6 +10,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Windows that open fullscreen keep their monitor bounds instead of being shifted below the panel.
 - **Restart Quickshell** (Control Center, System Health) left no shell at all: it ran as a child of the Quickshell it
   stopped, which killed it before it could start the new one. The restart now runs in its own session.
 - **A resolution chosen in Settings is kept across logins:** Keep lasted only for the session unless you also chose
