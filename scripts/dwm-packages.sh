@@ -115,11 +115,15 @@ dwm_packages() {
 		printf '%s\n' qt6ct qt5ct
 		;;
 	arch:iso)
-		# Only the live medium needs these. plymouth draws the boot splash over
-		# the `quiet splash` console the ISO boots with; an installed system has
-		# no splash configured, and the package pulls in ~13 MiB of cairo, pango
-		# and fonts that nothing else here uses.
-		printf '%s\n' plymouth
+		# What the live medium itself runs, layered onto releng: the image's
+		# whole package list (archiso/packages.x86_64). The desktop is not on it:
+		# the new system downloads every package it installs, so the image's copy
+		# was never used, and left out it is about 700 MB smaller (#229).
+		# - plymouth: the boot splash over the `quiet splash` console;
+		# - gum: the wizard's screens; jq: the credentials file;
+		# - curl: the network check, the timezone and the CachyOS setup;
+		# - openssl: the password hash; pciutils: lspci, for the GPU.
+		printf '%s\n' plymouth gum jq curl openssl pciutils
 		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): CPU microcode, a GPU driver, NetworkManager

@@ -761,10 +761,6 @@ printf '%s\n' "$source_packages" | grep -Fqx upower
 printf '%s\n' "$source_packages" | grep -Fqx power-profiles-daemon
 required_packages=$(bash -c '. "$1"; dwm_packages arch required' _ "$repo/scripts/dwm-packages.sh")
 printf '%s\n' "$required_packages" | grep -Fqx dbus
-archiso_packages="$repo/archiso/packages.x86_64"
-grep -Fqx upower "$archiso_packages"
-grep -Fqx power-profiles-daemon "$archiso_packages"
-grep -Fqx dbus "$archiso_packages"
 
 # Sync Sprint 16 R16-37: the watch checks its children each second with
 # builtins, never awk, and by identity (PID and start time).

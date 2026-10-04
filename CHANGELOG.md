@@ -25,6 +25,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **The install image is estimated to be about 700 MB smaller:** it no longer carries the desktop's 66 packages, which the live medium
+  never used, as the new system downloads every package it installs. It keeps what the wizard runs on top of `releng`
+  (`gum`, `jq`, `curl`, `openssl`, `pciutils`, `plymouth`). Neither the install nor its time change, and the image
+  is expected to build faster (#229).
 - **Settings and System Health open below the panel,** filling the rest of the screen, instead of fullscreen over it.
   dwm now centers a new floating window in the area below the bar, not on the whole monitor, so a window as tall as
   that area sits right below the bar instead of half over it (#231).
