@@ -24,6 +24,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **Settings and System Health open below the panel,** filling the rest of the screen, instead of fullscreen over it.
+  dwm now centers a new floating window in the area below the bar, not on the whole monitor, so a window as tall as
+  that area sits right below the bar instead of half over it (#231).
+
 - **Image installs boot `linux-cachyos` by default;** the stock Arch kernel stays in the boot menu as the fallback.
   `lyona-cachyos install-kernel --make-default` does this; an existing system's `--cachyos-kernel` still leaves the
   default alone.

@@ -99,8 +99,8 @@ changed.
 
 ### System Health
 
-System Health opens as a separate full-screen dashboard on the current
-monitor. It starts two read-only scans: session checks run immediately, and a
+System Health opens as a separate dashboard filling the current monitor below
+the panel, which stays visible. It starts two read-only scans: session checks run immediately, and a
 privileged scan completes current-boot journal, kernel, system-service, and
 drive checks. If cached or `NOPASSWD` sudo access is available, the scan runs
 without a prompt. Otherwise the running polkit agent requests graphical

@@ -532,6 +532,10 @@ sharing and peripheral workflows, and whether a Wayland successor should be a
 separate project. The distribution scope remains Arch Linux-only; expanding it is
 outside this roadmap.
 
+Searchable keybinds (#232, requested 2026-10-04): typing in the keybind viewer
+(Super + /) narrows the bindings by key or by action, as the launcher and the
+window overview do. A feature request, not scheduled yet.
+
 Quick Actions' Self-Heal (Sync Sprint 3 S3-06, decision D-6, decided
 2026-09-16) stays user-configured only, matching upstream parity: no default
 `dwm-self-heal` script ships, and `dwm-system-health`'s own `repair-user`/

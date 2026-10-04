@@ -478,8 +478,8 @@ Runtime dependencies are classified as:
 
 ### 5.9 System Health Dashboard
 
-The Control Center must open System Health as a separate full-screen
-Quickshell window on the selected X11 monitor. The dashboard must remain
+The Control Center must open System Health as a separate Quickshell window
+filling the selected X11 monitor below the panel, which stays visible (#231). The dashboard must remain
 on-demand: opening or explicitly refreshing it starts a bounded snapshot, and
 closing it stops active diagnostics. It must not add idle polling.
 
@@ -526,8 +526,9 @@ needed for a bounded scan or confirmed repair.
 ### 5.10 Desktop Settings Platform
 
 The managed Quickshell layer must grow into one discoverable Settings
-application. Settings opens fullscreen on the selected monitor, matching
-System Health. Appearance scrolling stays within vertical content bounds;
+application. Settings fills the selected monitor below the panel, which stays
+visible, matching System Health (#231; fullscreen until then, which put the
+panel below it). Appearance scrolling stays within vertical content bounds;
 cursor changes update existing named X11 cursors and toolkit settings without
 requiring a reboot. The application must use a hybrid integration model:
 

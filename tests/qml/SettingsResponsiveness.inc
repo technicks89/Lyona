@@ -219,7 +219,9 @@
                 root.responseCheck(root.responsePaneItems().indexOf(root.responseFirstPane) >= 0, "First pane identity survives navigation and close");
                 root.responseCheck(root.responseFirstPane.profileName === "Unsaved display profile", "Unsaved profile name survives navigation and close");
                 root.responseCheck(root.responsePanes.every(item => root.responsePaneItems().indexOf(item) >= 0), "Every visited pane survives");
-                root.responseCheck(settingsWindow.fullscreen, "Settings requests fullscreen like System Health");
+                root.responseCheck(!settingsWindow.fullscreen && settingsWindow.screen
+                    && settingsWindow.implicitHeight === settingsWindow.screen.height - Theme.panelHeight,
+                    "Settings, like System Health, fills the screen below the panel");
                 settingsModel.selectSection("appearance");
                 root.scrollPane = root.responsePaneItems().find(item => item.objectName === "appearanceSettingsPane");
                 root.responseCheck(root.scrollPane !== undefined, "Appearance scroll surface is available");

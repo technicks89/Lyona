@@ -4,12 +4,12 @@ set -eu
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 screen_geometry=${DWM_SETTINGS_TEST_SCREEN_GEOMETRY:-1280x800x24}
-# Settings opens full screen on its target screen (S3-06 #302), so the
-# expected window size must track screen_geometry's width/height, not a
-# fixed default that can silently drift out of sync with it.
+# Settings fills its target screen below the panel, which stays visible (#231;
+# fullscreen before, S3-06 #302): the screen's width, and from the panel's
+# bottom edge to the screen's. The panel's height follows the DPI.
 expected_window_width=${DWM_SETTINGS_EXPECTED_WINDOW_WIDTH:-${screen_geometry%%x*}}
 screen_dimensions=${screen_geometry#*x}
-expected_window_height=${DWM_SETTINGS_EXPECTED_WINDOW_HEIGHT:-${screen_dimensions%%x*}}
+screen_height=${screen_dimensions%%x*}
 
 for command_name in Xvfb dbus-monitor dbus-run-session glib-compile-schemas \
 	gsettings inotifywait python3 quickshell xdotool xinput xprop pgrep getconf; do
@@ -1050,8 +1050,13 @@ width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
 height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
 x=$(printf '%s\n' "$geometry" | awk -F= '$1 == "X" { print $2 }')
 y=$(printf '%s\n' "$geometry" | awk -F= '$1 == "Y" { print $2 }')
-[ "$width" = "$expected_window_width" ]
-[ "$height" = "$expected_window_height" ]
+# Right below the panel (not over it, so y is past it), to the screen's bottom.
+if [ "$y" -le 0 ] || [ "$x" -lt 0 ] || [ "$width" != "$expected_window_width" ] ||
+	[ $((y + height)) -ne "$screen_height" ]; then
+	printf 'Settings is %sx%s at %s,%s, not %s wide from below the panel to the bottom\n' \
+		"$width" "$height" "$x" "$y" "$expected_window_width" >&2
+	exit 1
+fi
 
 i=0
 while [ "$i" -lt 100 ]; do
