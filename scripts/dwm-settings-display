@@ -24,6 +24,10 @@ minimum_dpi=72
 maximum_dpi=384
 runtime_base="${XDG_RUNTIME_DIR:-/tmp/lyona-$UID}"
 state_dir="$runtime_base/dwm-settings-display"
+# The layout last kept in Settings, which the next login applies again: Keep
+# alone lasted only for the session, so a chosen resolution was back to the
+# default at every login.
+kept_layout="${DWM_DISPLAY_KEPT_LAYOUT:-$state_home/lyona/display-kept.conf}"
 dpi_state="$state_dir/dpi.current"
 managed_config="${DWM_XORG_CONFIG:-/etc/X11/xorg.conf.d/90-lyona-display.conf}"
 
@@ -38,6 +42,7 @@ usage: dwm-settings-display discover|watch OWNER_PID OWNER_START
        dwm-settings-display preview TOKEN SECONDS SPEC...
        dwm-settings-display preview-profile TOKEN SECONDS NAME
        dwm-settings-display keep TOKEN [NAME]
+       dwm-settings-display apply-kept
        dwm-settings-display revert TOKEN
        dwm-settings-display preview-status [TOKEN]
        dwm-settings-display install-profile NAME
@@ -582,9 +587,34 @@ keep_preview() {
 	if [[ -n $name ]]; then
 		atomic_save "$proposed" "$name"
 	fi
+	save_kept_layout "$proposed"
 	cleanup_preview "$token"
 	trap - RETURN EXIT
 	printf 'result\tkept\t%s\n' "$token"
+}
+
+# Best effort: a layout that could not be remembered still stays for the session.
+save_kept_layout() {
+	local source=$1 temporary
+	mkdir -p "${kept_layout%/*}" 2>/dev/null || return 0
+	temporary=$(mktemp "${kept_layout%/*}/.display-kept.XXXXXX" 2>/dev/null) || return 0
+	if install -m 600 "$source" "$temporary" 2>/dev/null; then
+		mv -fT "$temporary" "$kept_layout" 2>/dev/null || rm -f "$temporary"
+	else
+		rm -f "$temporary"
+	fi
+}
+
+# At login: the kept layout again, only when exactly the outputs it names are
+# connected, so a laptop away from its desk keeps the layout X chose.
+apply_kept_layout() {
+	local kept connected
+	[[ -f $kept_layout && ! -L $kept_layout ]] || return 0
+	command -v xrandr >/dev/null 2>&1 || return 0
+	kept=$(awk '{ sub(/#.*/, "") } NF { print $1 }' "$kept_layout" | sort -u)
+	connected=$(xrandr --query 2>/dev/null | awk '$2 == "connected" { print $1 }' | sort -u)
+	[[ -n $kept && $kept == "$connected" ]] || return 0
+	"$setup_helper" apply "$kept_layout" --tearfree off >/dev/null
 }
 
 revert_preview() {
@@ -676,6 +706,10 @@ preview-profile)
 keep)
 	[[ $# == 2 || $# == 3 ]] || die "keep requires token and optional profile name"
 	keep_preview "$2" "${3:-}"
+	;;
+apply-kept)
+	[[ $# == 1 ]] || die "apply-kept takes no arguments"
+	apply_kept_layout
 	;;
 revert)
 	[[ $# == 2 ]] || die "revert requires token"

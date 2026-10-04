@@ -365,8 +365,22 @@ grep -Fqx 'false' "$work/power-state/lock_on_suspend"
 grep -Fqx "pkill -u $test_uid -x light-locker --env DISPLAY=$DISPLAY" "$work/actions.log"
 test ! -e "$work/power-state/light-locker.running"
 
+# The restart runs in its own session, so stopping the Quickshell that started
+# it does not end it before it starts the new one. This setsid runs the
+# detached copy in the foreground, so the test sees both halves.
+stub_command setsid <<'SH'
+#!/bin/sh
+printf 'setsid %s\n' "$*" >>"${DWM_TEST_LOG:?}"
+[ "${1:-}" != -f ] || shift
+"$@"
+SH
 : >"$work/actions.log"
 run_helper action restart-quickshell >"$work/quickshell.out"
+grep -Fq 'setsid -f env LYONA_QUICKSHELL_RESTART_DETACHED=1 ' "$work/actions.log" ||
+	{
+		printf 'restart-quickshell did not detach before stopping the shell\n' >&2
+		exit 1
+	}
 grep -Fqx 'action	restart-quickshell' "$work/quickshell.out"
 if DWM_TEST_QUICKSHELL_VERSION=0.2.1 run_helper action restart-quickshell \
 	>"$work/quickshell-outdated.out" 2>"$work/quickshell-outdated.err"; then

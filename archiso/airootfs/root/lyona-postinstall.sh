@@ -105,7 +105,7 @@ install_cachyos_kernels() {
 
 	read -r -a kernels <<<"$CACHYOS_KERNELS"
 	if ! arch-chroot "$TARGET" env LYONA_CACHYOS_NONINTERACTIVE=1 \
-		"$CACHYOS_HELPER" install-kernel "${kernels[@]}"; then
+		"$CACHYOS_HELPER" install-kernel --make-default "${kernels[@]}"; then
 		note_warning 'The CachyOS kernels could not be installed; the stock kernel remains in place.'
 	fi
 }

@@ -59,8 +59,9 @@ For a new, dedicated machine. The image is UEFI only.
    install**. Cancelling at any point changes nothing; run `lyona-install` to
    start again.
 4. **It installs on its own:** Arch with `archinstall`, then lyona's full
-   profile as your user, the CachyOS repositories and kernels (the stock
-   kernel stays the default boot entry), and Topgrade. A progress bar shows
+   profile as your user, the CachyOS repositories and kernels
+   (`linux-cachyos` boots by default; the stock kernel stays in the boot menu
+   as the fallback), and Topgrade. A progress bar shows
    each step. If something did not go as chosen (a driver that could not be
    installed, for example), the last screen lists it and waits for Enter;
    otherwise it reboots after 15 seconds. Leave the USB stick in until then; if
@@ -271,9 +272,9 @@ so `pacstrap` fetches the optimized packages directly instead of installing
 Arch builds and replacing them afterwards -- the base system is downloaded
 once, not twice. The installed system inherits the live medium's `pacman.conf`
 along with the CachyOS mirrorlists and keyring, and the postinstall step then
-installs `linux-cachyos` and `linux-cachyos-lts`. The stock Arch kernel
-remains installed and remains the default boot entry -- the CachyOS kernels
-are added to the boot menu for you to select. If the CachyOS mirror cannot be
+installs `linux-cachyos` and `linux-cachyos-lts`. `linux-cachyos` is the
+default boot entry; the stock Arch kernel stays installed and in the boot
+menu, as the fallback if the CachyOS kernel does not boot. If the CachyOS mirror cannot be
 reached, the install continues on the stock Arch repositories instead of
 failing.
 

@@ -288,9 +288,10 @@ without prompting, using the same `scripts/lyona-cachyos` contract. The
 installed system must receive the CachyOS mirrorlists and keyring, because a
 `pacman.conf` that includes a missing file does not parse at all. Both steps are non-fatal: an
 unreachable CachyOS mirror leaves the install on the stock Arch repositories
-rather than failing it. The kernels installed there must not become the
+rather than failing it. On an image install, `linux-cachyos` becomes the
 default boot entry, and the stock Arch kernel must remain installed and
-bootable. When
+bootable as the fallback. On an existing system, an installed CachyOS kernel
+never becomes the default boot entry. When
 more than one kernel is installed, the NVIDIA driver must be the DKMS driver
 with headers for every installed kernel.
 

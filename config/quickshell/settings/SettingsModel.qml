@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import qs.core
 import "DisplayLayout.js" as DisplayLayout
+import "SettingsSearch.js" as SettingsSearch
 import "../core/Protocol.js" as Protocol
 
 Scope {
@@ -121,26 +122,8 @@ Scope {
     readonly property bool displayHasPendingChanges: root.displayBaseline.length > 0
         && root.displayLayoutKey(root.displayOutputs) !== root.displayBaseline
 
-    readonly property var sections: [
-        { "id": "displays", "label": "Displays", "description": "Resolution, refresh rate, and layouts" },
-        { "id": "input", "label": "Input", "description": "Keyboard, pointer, and touchpad" },
-        { "id": "network", "label": "Network", "description": "Connections and VPN providers" },
-        { "id": "bluetooth", "label": "Bluetooth", "description": "Adapters and devices" },
-        { "id": "audio", "label": "Audio", "description": "Outputs, inputs, and streams" },
-        { "id": "power", "label": "Power", "description": "DPMS, locking, and session policy" },
-        { "id": "defaults", "label": "Defaults", "description": "Applications and autostart" },
-        { "id": "appearance", "label": "Appearance", "description": "Themes and accessibility" },
-        { "id": "system", "label": "System", "description": "Health and administration" }
-    ]
-
-    readonly property var filteredSections: {
-        const query = root.searchQuery.trim().toLowerCase();
-        if (query.length === 0) return root.sections;
-        return root.sections.filter(function(section) {
-            return section.label.toLowerCase().indexOf(query) >= 0
-                || section.description.toLowerCase().indexOf(query) >= 0;
-        });
-    }
+    readonly property var sections: SettingsSearch.sections
+    readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
 
     function sectionById(id) {
         for (const section of root.sections) {

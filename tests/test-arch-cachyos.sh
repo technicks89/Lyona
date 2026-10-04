@@ -416,6 +416,35 @@ run_helper "$case_dir" install-kernel >"$case_dir/out" 2>&1 ||
 cmp -s "$case_dir/boot/loader/loader.conf" "$case_dir/loader.orig" ||
 	fail 'install-kernel rewrote an explicit default boot entry'
 
+# --- --make-default: the image install boots CachyOS by default -------------
+# The first kernel named becomes the default, replacing an explicit default;
+# the stock kernel stays in the menu, and the rest of loader.conf is kept.
+case_dir=$(new_case kernel-make-default)
+run_helper "$case_dir" add-repos >/dev/null 2>&1
+entries="$case_dir/boot/loader/entries"
+mkdir -p "$entries"
+cat >"$entries/2026-08-26_10-00-00_linux.conf" <<'EOF'
+title	Arch Linux (linux)
+linux	/vmlinuz-linux
+initrd	/initramfs-linux.img
+EOF
+printf 'default 2026-08-26_10-00-00_linux.conf\ntimeout 3\n' >"$case_dir/boot/loader/loader.conf"
+run_helper "$case_dir" install-kernel --make-default linux-cachyos linux-cachyos-lts >"$case_dir/out" 2>&1 ||
+	fail 'install-kernel --make-default failed' "$case_dir/out"
+if [[ $(grep -c '^default ' "$case_dir/boot/loader/loader.conf") -ne 1 ]] ||
+	! grep -Fqx 'default 2026-08-26_10-00-00_linux-cachyos.conf' "$case_dir/boot/loader/loader.conf"; then
+	fail 'the CachyOS kernel is not the one default entry' "$case_dir/boot/loader/loader.conf"
+fi
+grep -Fqx 'timeout 3' "$case_dir/boot/loader/loader.conf" ||
+	fail 'making CachyOS the default discarded the rest of loader.conf'
+test -f "$entries/2026-08-26_10-00-00_linux.conf" ||
+	fail 'the stock kernel entry is gone'
+# Again, with the entries there: still linux-cachyos, never the -lts one.
+run_helper "$case_dir" install-kernel --make-default linux-cachyos linux-cachyos-lts >"$case_dir/out2" 2>&1 ||
+	fail 'a second install-kernel --make-default failed' "$case_dir/out2"
+grep -Fqx 'default 2026-08-26_10-00-00_linux-cachyos.conf' "$case_dir/boot/loader/loader.conf" ||
+	fail 'a rerun moved the default off linux-cachyos' "$case_dir/boot/loader/loader.conf"
+
 # --- several kernels can be installed at once --------------------------------
 case_dir=$(new_case kernel-multiple)
 run_helper "$case_dir" add-repos >/dev/null 2>&1

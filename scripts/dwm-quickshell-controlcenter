@@ -1568,6 +1568,15 @@ restart_quickshell() {
 		printf 'quickshell is not installed\n' >&2
 		return 1
 	fi
+	# The Control Center runs this as a child of the Quickshell it stops, and
+	# Quickshell kills its children as it exits: stopped there, this never got
+	# to start it again, and the shell just disappeared. Once the checks above
+	# have passed, a copy in its own session does the restart.
+	if [ "${LYONA_QUICKSHELL_RESTART_DETACHED:-0}" != 1 ] && command -v setsid >/dev/null 2>&1; then
+		setsid -f env LYONA_QUICKSHELL_RESTART_DETACHED=1 "$script_dir/${0##*/}" action restart-quickshell \
+			</dev/null >/dev/null 2>&1
+		return
+	fi
 	# As autostart does (Sync Sprint 16 R16-49): only the managed instance, by
 	# identity, then started again with --path, the instance the keys address.
 	# shellcheck source=scripts/dwm-quickshell-lifecycle.sh

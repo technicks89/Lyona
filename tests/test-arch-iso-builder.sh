@@ -74,7 +74,8 @@ grep -Fq '"$CACHYOS_HELPER" add-repos' "$postinstall" || {
 	exit 1
 }
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
-grep -Fq '"$CACHYOS_HELPER" install-kernel "${kernels[@]}"' "$postinstall" || {
+# The image boots linux-cachyos by default; the stock kernel stays installed.
+grep -Fq '"$CACHYOS_HELPER" install-kernel --make-default "${kernels[@]}"' "$postinstall" || {
 	printf 'lyona-postinstall.sh does not install the CachyOS kernel.\n' >&2
 	exit 1
 }

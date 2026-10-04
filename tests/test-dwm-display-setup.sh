@@ -691,6 +691,36 @@ rmdir "$work/runtime/dwm-settings-display/settings-test.claim"
 env "${settings_env[@]}" "$BASH_BIN" "$SETTINGS_HELPER" revert settings-test >"$work/settings-revert"
 grep -Fqx 'result	reverted	settings-test' "$work/settings-revert"
 
+# Keep remembers the layout, and the next login applies it again, but only with
+# exactly the same outputs connected: Keep alone used to last for the session.
+kept=$work/state/lyona/display-kept.conf
+env "${settings_env[@]}" "$BASH_BIN" "$SETTINGS_HELPER" preview kept-test 5 \
+	"$spec_hdmi" "$spec_dp1" "$spec_dp2" >/dev/null
+env "${settings_env[@]}" DWM_DISPLAY_KEPT_LAYOUT="$kept" \
+	"$BASH_BIN" "$SETTINGS_HELPER" keep kept-test >"$work/settings-keep"
+grep -Fqx 'result	kept	kept-test' "$work/settings-keep"
+test -f "$kept" || {
+	printf 'Keep did not remember the layout for the next login\n' >&2
+	exit 1
+}
+[[ $(stat -c %a "$kept") == 600 ]]
+grep -Eq '^DP-1 .*--mode 2560x1440' "$kept"
+rm -f "$work/xrandr.log"
+env "${settings_env[@]}" DWM_DISPLAY_KEPT_LAYOUT="$kept" "$BASH_BIN" "$SETTINGS_HELPER" apply-kept
+grep -Fq -- '--output DP-1' "$work/xrandr.log" || {
+	printf 'apply-kept did not apply the kept layout\n' >&2
+	exit 1
+}
+rm -f "$work/xrandr.log"
+env "${settings_env[@]}" DWM_DISPLAY_KEPT_LAYOUT="$kept" TEST_QUERY="$work/query-single" \
+	"$BASH_BIN" "$SETTINGS_HELPER" apply-kept
+if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
+	printf 'apply-kept applied a layout for outputs that are not all connected\n' >&2
+	exit 1
+fi
+# Nothing kept: nothing to do, and no failure.
+env "${settings_env[@]}" DWM_DISPLAY_KEPT_LAYOUT="$work/none.conf" "$BASH_BIN" "$SETTINGS_HELPER" apply-kept
+
 env "${settings_env[@]}" TEST_FAIL_DP_NORMAL=1 \
 	"$BASH_BIN" "$SETTINGS_HELPER" preview rollback-failure 1 \
 	"$spec_hdmi" "$spec_dp1" "$spec_dp2" >"$work/settings-timeout-preview"

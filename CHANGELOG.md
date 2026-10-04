@@ -8,6 +8,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Fixed
+
+- **Restart Quickshell** (Control Center, System Health) left no shell at all: it ran as a child of the Quickshell it
+  stopped, which killed it before it could start the new one. The restart now runs in its own session.
+- **A resolution chosen in Settings is kept across logins:** Keep lasted only for the session unless you also chose
+  "Use at next login". The kept layout is saved for your account and applied again at login, when exactly the same
+  monitors are connected.
+- **The wallpaper is redrawn after a resolution or layout change,** instead of staying drawn for the old size.
+- **Settings search finds what each section holds:** "weather", "battery", "wifi", "timezone" and others found
+  nothing, as only the section names and descriptions were searched.
+- **The image install's closing screen lists only what went wrong:** the GameMode re-login, the deferred display setup
+  and the Picom tooltip rule (which Picom 13's syntax never matches, and which does not reach Quickshell's windows)
+  are notes now, not warnings.
+
+### Changed
+
+- **Image installs boot `linux-cachyos` by default;** the stock Arch kernel stays in the boot menu as the fallback.
+  `lyona-cachyos install-kernel --make-default` does this; an existing system's `--cachyos-kernel` still leaves the
+  default alone.
+- **The weather popup asks for a location** when none is set, or the one set was not found, with a field and a Set
+  location button, instead of sending you to Settings.
+
 ## [2026.10.0-beta.2] - 2026-10-04
 
 Third beta of the Arch Linux line, and the first signed release. Sync Sprint 16: the fixes from the 2026-10-03

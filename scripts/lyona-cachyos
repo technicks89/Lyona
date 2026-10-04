@@ -32,11 +32,12 @@ Commands:
                   Add the CachyOS repositories matching this CPU's ISA level.
                   --no-upgrade syncs the databases but skips the system
                   upgrade, for callers that only need the repositories.
-  install-kernel [--with-headers] [KERNEL...]
+  install-kernel [--with-headers] [--make-default] [KERNEL...]
                   Install $DEFAULT_KERNEL (or the named kernels) and make them
-                  bootable without changing the default boot entry. Headers
-                  are installed only with --with-headers, or when DKMS is
-                  already present.
+                  bootable without changing the default boot entry, unless
+                  --make-default: then the first one boots by default
+                  (systemd-boot). Headers are installed only with
+                  --with-headers, or when DKMS is already present.
   -h, --help      Show this help.
 
 Environment:
@@ -326,6 +327,9 @@ add_boot_entry() {
 
 	if command grep -rlq "vmlinuz-$kernel" "$entries" 2>/dev/null; then
 		ok "A boot entry for $kernel already exists."
+		if [[ ${make_default_kernel:-} == "$kernel" ]]; then
+			set_default_entry "$(basename -- "$(command grep -rlE "vmlinuz-${kernel}[[:space:]]*\$" "$entries" | head -n1)")"
+		fi
 		return 0
 	fi
 
@@ -365,7 +369,26 @@ add_boot_entry() {
 		warn "$boot_dir/vmlinuz-$kernel does not exist yet; check the entry before rebooting."
 	fi
 	ok "Added the systemd-boot entry $target for $kernel."
-	keep_default_entry "$(basename -- "$source_entry")"
+	if [[ ${make_default_kernel:-} == "$kernel" ]]; then
+		set_default_entry "$target"
+	else
+		keep_default_entry "$(basename -- "$source_entry")"
+	fi
+}
+
+# The image install boots the CachyOS kernel by default; the stock kernel stays
+# in the menu as the fallback.
+set_default_entry() {
+	local entry=$1 loader_conf="$boot_dir/loader/loader.conf" tmp
+
+	tmp=$(mktemp)
+	if [[ -f $loader_conf ]]; then
+		command sed -E '/^default[[:space:]]/d' "$loader_conf" >"$tmp"
+	fi
+	printf 'default %s\n' "$entry" >>"$tmp"
+	run_root install -D -m 0644 "$tmp" "$loader_conf"
+	rm -f "$tmp"
+	ok "The default boot entry is now $entry."
 }
 
 keep_default_entry() {
@@ -388,12 +411,17 @@ keep_default_entry() {
 }
 
 install_kernel() {
-	local kernels=() kernel packages=() with_headers=false
+	local kernels=() kernel packages=() with_headers=false make_default=false
+	make_default_kernel=
 
 	while (($# > 0)); do
 		case $1 in
 		--with-headers)
 			with_headers=true
+			shift
+			;;
+		--make-default)
+			make_default=true
 			shift
 			;;
 		--)
@@ -420,6 +448,7 @@ install_kernel() {
 	fi
 
 	((${#kernels[@]} > 0)) || kernels=("$DEFAULT_KERNEL")
+	[[ $make_default != true ]] || make_default_kernel=${kernels[0]}
 
 	# Headers are only needed to build out-of-tree modules. Ship them when
 	# asked, or when DKMS is already installed and would want to build
@@ -444,8 +473,12 @@ install_kernel() {
 	for kernel in "${kernels[@]}"; do
 		add_boot_entry "$kernel"
 	done
-	ok "${kernels[*]} installed. The previous kernel stays the default; select the"
-	ok "CachyOS kernel at boot to use it."
+	if [[ $make_default == true ]]; then
+		ok "${kernels[*]} installed; $make_default_kernel boots by default."
+	else
+		ok "${kernels[*]} installed. The previous kernel stays the default; select the"
+		ok "CachyOS kernel at boot to use it."
+	fi
 }
 
 status() {

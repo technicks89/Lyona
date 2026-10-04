@@ -94,9 +94,9 @@ the hostname, the timezone (detected, for you to confirm), and, on an NVIDIA
 GPU, which driver. Nothing is written until you confirm the summary. It then
 drives `archinstall` unattended and finishes installing Lyona. ISO installs get the `multilib`
 and [CachyOS](https://cachyos.org) repositories and both the `linux-cachyos`
-and `linux-cachyos-lts` kernels without being asked; the stock Arch kernel
-stays the default boot entry, so the CachyOS ones are there to select, not
-to surprise you. See the
+and `linux-cachyos-lts` kernels without being asked. `linux-cachyos` boots by
+default, and the stock Arch kernel stays in the boot menu as the fallback. See
+the
 [Installation Guide](https://dwm.technicks89.com/install.html) for details.
 
 ### Existing System

@@ -472,7 +472,8 @@ configure_arch_gamemode_access() {
 
 	info "Adding $target_user to the gamemode group..."
 	sudo usermod -aG gamemode "$target_user"
-	warn "Log out and back in before using GameMode privileged tuning."
+	# A note, not a fault: the image install's closing screen lists warnings.
+	info "Log out and back in before using GameMode privileged tuning."
 }
 
 ensure_yay_installed() {
@@ -697,7 +698,10 @@ configure_quickshell_picom_opacity() {
 		return
 	fi
 	if ! sudo grep -Eq "$tooltip_rule" "$config"; then
-		warn "Recognized Picom tooltip opacity rule not found; preserving $config."
+		# Picom 13 writes its rules in another syntax, and Quickshell's windows are
+		# not tooltips there, so its tooltip opacity does not reach them: nothing
+		# to change, and not a warning.
+		info "Picom's tooltip opacity rule was not found; $config is left as it is."
 		return
 	fi
 
@@ -722,8 +726,7 @@ configure_displays_after_install() {
 	local answer
 
 	if [[ $NON_INTERACTIVE == true ]]; then
-		warn "Display setup deferred for non-interactive installation."
-		warn "Run dwm-display-setup from an X11 session after login."
+		info "Display setup is left for later: run dwm-display-setup after logging in to change it."
 		return 0
 	fi
 	if [[ -z ${DISPLAY:-} ]] || ! command -v xrandr >/dev/null 2>&1; then

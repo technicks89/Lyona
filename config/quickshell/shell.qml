@@ -805,6 +805,44 @@ ShellRoot {
         panelWindow: root.activePanelWindow
     }
 
+    // feh draws the wallpaper for the screens' size when it is set, so after a
+    // resolution or layout change it was left stretched or cut. The screens'
+    // geometry is a binding: when it changes, draw the session's wallpaper
+    // again, once the change has settled (one helper run, not one per output).
+    readonly property string screenLayout: Quickshell.screens
+        .map(screen => screen.x + "," + screen.y + " " + screen.width + "x" + screen.height).join(";")
+    // The first layout is the one the session started with: autostart has set
+    // the wallpaper for it.
+    property string redrawnScreenLayout: ""
+    onScreenLayoutChanged: {
+        if (root.redrawnScreenLayout.length === 0) root.redrawnScreenLayout = root.screenLayout;
+        else if (root.screenLayout !== root.redrawnScreenLayout) wallpaperRedrawTimer.restart();
+    }
+
+    Timer {
+        id: wallpaperRedrawTimer
+
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            // Changed and changed back while settling: nothing to redraw.
+            if (root.screenLayout === root.redrawnScreenLayout) return;
+            if (wallpaperRedraw.running) {
+                wallpaperRedrawTimer.restart();
+            } else {
+                root.redrawnScreenLayout = root.screenLayout;
+                wallpaperRedraw.running = true;
+            }
+        }
+    }
+
+    Process {
+        id: wallpaperRedraw
+
+        command: Commands.settingsWallpaperCommand("session-apply")
+        running: false
+    }
+
     Variants {
         id: panelVariants
 

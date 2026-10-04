@@ -364,6 +364,8 @@ if command -v xsettingsd >/dev/null 2>&1 &&
 fi
 
 if [ -n "$display_helper" ]; then
+	# The layout last kept in Settings, when the same monitors are connected.
+	"$display_helper" apply-kept >/dev/null 2>&1 || true
 	"$display_helper" dpi-apply-saved >/dev/null 2>&1 || true
 fi
 

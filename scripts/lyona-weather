@@ -166,7 +166,7 @@ current() {
 	local name result temperature code observed status=0 line
 	location=$(read_setting location '')
 	if [[ -z $location ]]; then
-		emit unconfigured 'Set a location in Settings to show the weather'
+		emit unconfigured 'Set a location to show the weather'
 		return
 	fi
 	units=$(resolved_units)
