@@ -1,4 +1,4 @@
-VERSION = 2026.10.0-beta.2
+VERSION = 2026.10.0-beta.3
 
 PREFIX ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man

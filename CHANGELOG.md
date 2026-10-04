@@ -8,36 +8,40 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.3] - 2026-10-04
+
+Fourth beta of the Arch Linux line: a smaller install image that boots the CachyOS kernel, and fixes for the desktop
+session and Settings found in `2026.10.0-beta.2` (#229, #230, #231). See `docs/RELEASE-NOTES-2026.10.0-beta.3.md`.
+
 ### Fixed
 
 - Windows that open fullscreen keep their monitor bounds instead of being shifted below the panel.
 - **Restart Quickshell** (Control Center, System Health) left no shell at all: it ran as a child of the Quickshell it
-  stopped, which killed it before it could start the new one. The restart now runs in its own session.
+  stopped, which killed it before it could start the new one. The restart now runs in its own session (#230).
 - **A resolution chosen in Settings is kept across logins:** Keep lasted only for the session unless you also chose
   "Use at next login". The kept layout is saved for your account and applied again at login, when exactly the same
-  monitors are connected.
-- **The wallpaper is redrawn after a resolution or layout change,** instead of staying drawn for the old size.
+  monitors are connected (#230).
+- **The wallpaper is redrawn after a resolution or layout change,** instead of staying drawn for the old size (#230).
 - **Settings search finds what each section holds:** "weather", "battery", "wifi", "timezone" and others found
-  nothing, as only the section names and descriptions were searched.
+  nothing, as only the section names and descriptions were searched (#231).
 - **The image install's closing screen lists only what went wrong:** the GameMode re-login, the deferred display setup
   and the Picom tooltip rule (which Picom 13's syntax never matches, and which does not reach Quickshell's windows)
-  are notes now, not warnings.
+  are notes now, not warnings (#229).
 
 ### Changed
 
-- **The install image is estimated to be about 700 MB smaller:** it no longer carries the desktop's 66 packages, which the live medium
-  never used, as the new system downloads every package it installs. It keeps what the wizard runs on top of `releng`
-  (`gum`, `jq`, `curl`, `openssl`, `pciutils`, `plymouth`). Neither the install nor its time change, and the image
-  is expected to build faster (#229).
+- **The install image is estimated to be about 700 MB smaller:** it no longer carries the desktop's 66 packages, which
+  the live medium never used, as the new system downloads every package it installs. It keeps what the wizard runs on
+  top of `releng` (`gum`, `jq`, `curl`, `openssl`, `pciutils`, `plymouth`). Neither the install nor its time change,
+  and the image is expected to build faster (#229).
 - **Settings and System Health open below the panel,** filling the rest of the screen, instead of fullscreen over it.
   dwm now centers a new floating window in the area below the bar, not on the whole monitor, so a window as tall as
   that area sits right below the bar instead of half over it (#231).
-
 - **Image installs boot `linux-cachyos` by default;** the stock Arch kernel stays in the boot menu as the fallback.
   `lyona-cachyos install-kernel --make-default` does this; an existing system's `--cachyos-kernel` still leaves the
-  default alone.
+  default alone (#229).
 - **The weather popup asks for a location** when none is set, or the one set was not found, with a field and a Set
-  location button, instead of sending you to Settings.
+  location button, instead of sending you to Settings (#231).
 
 ## [2026.10.0-beta.2] - 2026-10-04
 
@@ -2407,7 +2411,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.2...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...HEAD
+[2026.10.0-beta.3]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.2...v2026.10.0-beta.3
 [2026.10.0-beta.2]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.1...v2026.10.0-beta.2
 [2026.10.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.08.0-beta.1...v2026.10.0-beta.1
 [2026.08.0-beta.1]: https://github.com/technicks89/Lyona/releases/tag/v2026.08.0-beta.1
