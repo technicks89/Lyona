@@ -40,7 +40,7 @@ set it by hand each time).
 ### Pre-releases
 
 A version may carry an `-alpha.N`, `-beta.N` or `-rc.N` suffix, for example
-`2026.08.0-beta.1`. The suffix is part of the one `VERSION` in `config.mk`, so
+`2026.10.0-beta.1`. The suffix is part of the one `VERSION` in `config.mk`, so
 it reaches the source archive, the compiled `dwm -v` string, the tag, and the
 installer image together — there is no separate pre-release switch to forget.
 
@@ -51,25 +51,26 @@ rejected, as is any other word.
 
 An ISO9660 volume identifier admits only `A-Z`, `0-9` and `_` and is capped at
 32 characters, so the volume label drops the suffix punctuation:
-`2026.08.0-beta.1` produces `LYONA_2026_08_0_BETA1`. The ISO filename and
+`2026.10.0-beta.1` produces `LYONA_2026_10_0_BETA1`. The ISO filename and
 `/etc/lyona-iso-release` keep the full version.
 
 A pre-release is still a release: everything in the checklist above applies,
 and step 9 must state plainly which parts are unqualified.
 
-To create the GitHub release:
+Release through the ISO workflow ("Automated ISO builds and releases" below).
+It signs the source archive and the ISO before anything is published, which
+`lyona-update` requires ("Signed releases" below); a release made by hand
+cannot be signed. The workflow runs `scripts/lyona-release` as:
 
 ```sh
-scripts/lyona-release --version v2026.08.0 --iso ~/Downloads/lyona.iso --notes RELEASE_NOTES.md
+scripts/lyona-release --version v2026.10.0-beta.2 --iso lyona-2026.10.0-beta.2-x86_64.iso \
+	--bundle BUNDLE --notes docs/RELEASE-NOTES-2026.10.0-beta.2.md --prerelease --skip-checks
 ```
 
-For a pre-release, pass the suffixed version — it must match `config.mk`:
-
-```sh
-scripts/lyona-release --version v2026.08.0-beta.1 \
-	--iso release/lyona-2026.08.0-beta.1-x86_64.iso \
-	--notes docs/RELEASE-NOTES-2026.08.0-beta.1.md
-```
+`BUNDLE` is the signing step's bundle. The version must match `config.mk`; a
+stable one has no suffix, such as `v2026.10.0`. Run by
+hand, use `--dry-run` to see the plan; without `--bundle` it publishes a
+release that `lyona-update` refuses.
 
 The helper validates and hashes local artifacts before it creates a remote tag
 or release. `--version` confirms the version already committed in `config.mk`;
@@ -108,11 +109,11 @@ checkout onto the system's archiso `releng` profile, then runs `mkarchiso`.
 The build reads `VERSION` from `config.mk` — `--version` overrides it for test
 images — and produces:
 
-| Artifact | Value at 2026.08.0 | Value at 2026.08.0-beta.1 |
+| Artifact | Value at 2026.10.0 | Value at 2026.10.0-beta.1 |
 | --- | --- | --- |
-| ISO filename | `lyona-2026.08.0-x86_64.iso` | `lyona-2026.08.0-beta.1-x86_64.iso` |
-| Volume label (`iso_label`) | `LYONA_2026_08_0` | `LYONA_2026_08_0_BETA1` |
-| `iso_application` | `lyona 2026.08.0 Arch Linux install medium` | `lyona 2026.08.0-beta.1 Arch Linux install medium` |
+| ISO filename | `lyona-2026.10.0-x86_64.iso` | `lyona-2026.10.0-beta.1-x86_64.iso` |
+| Volume label (`iso_label`) | `LYONA_2026_10_0` | `LYONA_2026_10_0_BETA1` |
+| `iso_application` | `lyona 2026.10.0 Arch Linux install medium` | `lyona 2026.10.0-beta.1 Arch Linux install medium` |
 | On-medium stamp | `/etc/lyona-iso-release` | `/etc/lyona-iso-release` |
 
 `/etc/lyona-iso-release` records `LYONA_ISO_VERSION`,
@@ -125,9 +126,57 @@ root or `mkarchiso`; `tests/test-arch-iso-builder.sh` uses that path to verify
 the version reaches every field above. Set `LYONA_RELENG_DIR` if the
 `releng` profile is not at `/usr/share/archiso/configs/releng`.
 
-This build has been verified to produce a bootable ISO on Arch Linux, but
-**it has not been boot-tested end-to-end on real hardware or in a VM** — do
-not treat it as release-qualified until it has been.
+The build produces an ISO on Arch Linux (the release workflow builds one for
+every release). **VM qualification, 2026-10-03:** images built on the
+maintainer's host were installed in a QEMU/KVM virtual machine three times,
+each run finding faults fixed before the next (`CHANGELOG.md`,
+`2026.10.0-beta.2`). The last run:
+- **Image:** `lyona-2026.10.0-beta.1-x86_64.iso` built at the pre-`beta.2`
+  commit of this work, SHA-256
+  `19341b4cbb95cfe58a90b77de90660e277b27bb2a3418915f5fb15e1a3f17beb`,
+  `archiso` 91-1, Arch with the CachyOS repositories.
+- **Machine:** x86_64, UEFI (OVMF), a standard VGA adapter, no NVIDIA GPU,
+  4 GiB, a 30 GiB virtio disk, btrfs, no encryption.
+- **Result:** packages resolved and the wizard completed with no manual
+  help; the installed system booted to LightDM, and dwm and the managed
+  shell came up (the launcher, the power menu).
+
+**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS,
+ext4, the manual `archinstall` fallback, an image built by the release
+workflow, and `lyona-update` from one release to the next. Do not treat a
+release as qualified on hardware until it has been.
+
+### Signed releases
+
+The release workflow signs what users install, the ISO and the source archive,
+from `2026.10.0-beta.2` on (decision D-31, reversing D-14). It records one
+build-provenance attestation for both, signed keylessly through Sigstore with
+the run's GitHub identity. There is no signing key to keep or rotate: the
+signature names the repository, the workflow file, the branch (`main`) and the
+commit it was built from.
+
+The files are signed before anything is published. `scripts/lyona-release
+--bundle` then publishes the signature as `lyona-VERSION.sigstore.json`, and
+refuses a bundle that does not name the digests of the archive and the ISO it
+uploads; the archive is reproducible, so its rebuild is the file that was
+signed. The attestation is also kept in the repository's attestation store.
+
+`lyona-update` checks the signature with `cosign` before it unpacks a release,
+and refuses one that does not verify or has no bundle. To check a download by
+hand, with `cosign`:
+
+```sh
+cosign verify-blob-attestation --bundle lyona-VERSION.sigstore.json \
+	--type https://slsa.dev/provenance/v1 \
+	--certificate-oidc-issuer https://token.actions.githubusercontent.com \
+	--certificate-identity https://github.com/technicks89/Lyona/.github/workflows/build-iso.yml@refs/heads/main \
+	lyona-VERSION-x86_64.iso
+```
+
+Or, logged in to the GitHub CLI: `gh attestation verify FILE --repo
+technicks89/Lyona`. Either succeeds only for a file this repository's workflow
+built. A release made by hand with `scripts/lyona-release` and no `--bundle` is
+not signed, and `lyona-update` refuses it: publish through the workflow.
 
 ### Using the ISO
 
@@ -140,12 +189,11 @@ type. (A `/root/.lyona-install-done` sentinel, written once the base
 install succeeds, stops it from relaunching and re-wiping the disk on a
 later tty1 relogin; re-run `lyona-install` by hand if you ever want to.)
 
-It's a short, opinionated wizard styled after linutil's `server-setup.sh`
-(arrow-key `select_option` menus, a redrawn banner between steps), not
-`archinstall`'s own menu system: a `gum`-drawn LYONA wordmark banner,
-then keyboard layout, target disk, username/password,
-hostname, timezone (auto-detected and confirmed), and, only if an NVIDIA GPU
-is detected, a driver choice. There is one image for every GPU (SPEC.md).
+It's a short, opinionated wizard drawn with `gum`, not `archinstall`'s own
+menu system: a LYONA wordmark banner, then keyboard layout, target disk, btrfs
+or ext4 (each with optional LUKS encryption), username/password, hostname,
+timezone (auto-detected and confirmed), and, only if an NVIDIA GPU is detected,
+a driver choice. There is one image for every GPU (SPEC.md).
 
 - **A supported card:** on a Turing (GTX 16xx, RTX 20xx) or newer GPU, the
   choice recommends the proprietary driver, with open-source nouveau as the
@@ -167,9 +215,10 @@ is detected, a driver choice. There is one image for every GPU (SPEC.md).
 
 There is no
 desktop-environment or package picker; this always installs lyona.
-After a final "type yes to wipe `$DISK`" confirmation, it generates an
-`archinstall` JSON config (single btrfs root + ESP, systemd-boot, zram
-swap, NetworkManager) and runs `archinstall --config ... --creds ...
+After a summary and a final "Wipe `$DISK` and install" confirmation, it
+generates an `archinstall` JSON config (an ESP and a root of the chosen
+filesystem, encrypted when chosen; systemd-boot, zram swap, NetworkManager)
+and runs `archinstall --config ... --creds ...
 --silent` fully unattended — no menus to navigate. Once that completes, it
 automatically runs `lyona-postinstall.sh` to finish the lyona
 install.
@@ -211,7 +260,7 @@ run by hand, from the Actions tab or:
 
 ```sh
 gh workflow run build-iso.yml -f channel=main
-gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.08.0-beta.1.md
+gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.10.0-beta.1.md
 ```
 
 It asks for the channel:

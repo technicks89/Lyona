@@ -4,7 +4,7 @@ import "../../config/quickshell/overview/OverviewFilter.js" as Filter
 
 /*
  * Direct, non-UI tests for the pure type-to-filter matching (Sync Sprint 8
- * S8-03, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md), split out of
+ * S8-03, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md), split out of
  * OverviewModel.qml the same way tst_overview_selection.qml tests
  * OverviewSelection.js directly rather than through a live QML component --
  * here because OverviewModel.qml imports Quickshell and cannot be

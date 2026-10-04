@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -91,7 +92,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "connectivity-protocol") {
-                protocolValid = fields.length >= 3 && fields[1] === "1";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider") {
                 if (fields.length < 5 || fields[1] !== "bluetooth") { malformed = true; continue; }
                 providerSeen = true;
@@ -187,9 +188,12 @@ Scope {
 
     // Not WatchedProcess (Sync Sprint 12 S12-14): it is never restarted, and
     // WatchedProcess would restart it every 3 s -- forever, on a machine
-    // without busctl, where the command exits at once.
+    // without gdbus, where the command exits at once. gdbus subscribes to
+    // BlueZ's signals as any user may; `busctl monitor` needs BecomeMonitor,
+    // which the system bus refuses an unprivileged user, so it never saw a
+    // change (Sync Sprint 16 R16-35).
     Process {
-        command: Commands.watchCommand(["sh", "-c", "command -v busctl >/dev/null 2>&1 && exec busctl --system monitor org.bluez"])
+        command: Commands.watchCommand(["sh", "-c", "command -v gdbus >/dev/null 2>&1 && exec gdbus monitor --system --dest org.bluez"])
         running: true
         stdout: SplitParser { onRead: monitorSettleTimer.restart() }
     }

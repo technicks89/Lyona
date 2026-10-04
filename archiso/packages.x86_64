@@ -6,6 +6,7 @@ bluez
 bluez-utils
 brightnessctl
 celluloid
+cosign
 curl
 dbus
 dconf

@@ -4,7 +4,7 @@ import "../../config/quickshell/systemmanagement/SystemInformationProtocol.js" a
 
 /*
  * Direct, non-UI tests for the pure information/storage/security protocol
- * library (Sync Sprint 2 S2-05, docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md).
+ * library (Sync Sprint 2 S2-05, docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md).
  * Protocol.js is plain functions with no QML dependency -- test it directly,
  * matching tst_system_regional_preflight_protocol.qml's own precedent for
  * testing a pure library this way rather than only through

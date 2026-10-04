@@ -766,4 +766,19 @@ grep -Fqx upower "$archiso_packages"
 grep -Fqx power-profiles-daemon "$archiso_packages"
 grep -Fqx dbus "$archiso_packages"
 
+# Sync Sprint 16 R16-37: the watch checks its children each second with
+# builtins, never awk, and by identity (PID and start time).
+controlcenter=$repo/scripts/dwm-quickshell-controlcenter
+sed -n '/^power_watch_child_alive() {$/,/^}$/p' "$controlcenter" >"$work/child-alive"
+[ -s "$work/child-alive" ] || fail 'power_watch_child_alive is missing'
+if grep -Eq 'awk|sed|cut|\$\(' "$work/child-alive"; then
+	fail 'power_watch_child_alive starts a process'
+fi
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fq 'while power_watch_child_alive "$power_dbus_watch_identity" &&' "$controlcenter" ||
+	fail 'the power watch loop does not check its children by identity'
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fq 'sleep "${DWM_POWER_WATCH_CHECK_SECONDS:-1}"' "$controlcenter" ||
+	fail 'the power watch loop does not wait a second between checks'
+
 printf 'Quickshell power backend: PASS\n'

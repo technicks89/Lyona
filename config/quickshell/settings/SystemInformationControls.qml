@@ -5,14 +5,14 @@ import qs.core
 pragma ComponentBehavior: Bound
 
 /*
- * Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation),
+ * Sync Sprint 2 S2-06 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation),
  * ported from upstream's cc96efd (#287) -- the visible system information,
  * storage overview, privacy/security status, and diagnostics/recovery
  * surface for the minor-2 records SystemManagementModel.qml now parses
  * (S2-01 through S2-05).
  *
  * Lyona adaptations:
- * - D-5 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02): the security list
+ * - D-5 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers): the security list
  *   carries firewalld/ufw/nftables as three distinct rows, not upstream's
  *   single "Firewall service" row -- read_firewall_status(kind) reports
  *   each one independently since a default Arch/CachyOS install runs none

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 // The panel's updates-available indicator (Sync Sprint 15 S15-02, decision
 // D-25). It counts what can be updated and links to Settings > System, which
@@ -47,9 +48,9 @@ Scope {
     property bool settingsBusy: false
     property string message: ""
 
-    // Whether NetworkManager can be watched; false once the helper says it
-    // cannot, so the watcher is not restarted for nothing.
-    property bool networkWatched: true
+    // The shell's NetworkModel: a check when it comes online (Sync Sprint 16
+    // R16-34), where a resident python3 used to watch NetworkManager for this.
+    property var networkModel: null
 
     // The update in a terminal (S15-04): which provider, and its last result.
     property string terminalProvider: ""
@@ -93,7 +94,7 @@ Scope {
             root.systemDetail = "The update check returned invalid data";
         };
         const lines = text.trim().split("\n");
-        if (lines.length < 3 || lines[0] !== "update-indicator-protocol\t1\t0"
+        if (lines.length < 3 || !Protocol.isHeader(lines[0].split("\t"), "update-indicator-protocol", 1)
                 || lines[lines.length - 1] !== "complete\tcheck") {
             invalid();
             return;
@@ -129,7 +130,7 @@ Scope {
 
     function parseSettings(text) {
         const lines = text.trim().split("\n");
-        if (lines.length !== 6 || lines[0] !== "update-indicator-protocol\t1\t0"
+        if (lines.length !== 6 || !Protocol.isHeader(lines[0].split("\t"), "update-indicator-protocol", 1)
                 || lines[5] !== "complete\tstatus") return false;
         let interval = -1, show = "", floating = "", rule = "";
         for (const line of lines.slice(1, 5)) {
@@ -150,9 +151,11 @@ Scope {
         return true;
     }
 
-    function networkEvent(text) {
-        if (text === "network-event\tconnected") root.check(false);
-        else if (text === "network-event\tunavailable") root.networkWatched = false;
+    // A connection coming up, not the state found at login, as the start-up
+    // check covers that.
+    function networkChanged() {
+        if (root.networkModel === null || !root.networkModel.stateKnown) return;
+        if (root.networkModel.online) root.check(false);
     }
 
     function runSetting(action, value) {
@@ -188,7 +191,7 @@ Scope {
     function parseTerminal(text) {
         const lines = text.trim().split("\n");
         const fields = lines.length === 3 ? lines[1].split("\t") : [];
-        if (lines[0] !== "update-terminal-protocol\t1\t0" || lines[2] !== "complete\tlaunch"
+        if (!Protocol.isHeader(lines[0].split("\t"), "update-terminal-protocol", 1) || lines[2] !== "complete\tlaunch"
                 || fields.length !== 5 || fields[0] !== "result" || fields[1] !== root.terminalProvider
                 || ["succeeded", "not-updated", "interrupted", "not-started"].indexOf(fields[2]) < 0) {
             root.terminalResult = "not-started";
@@ -201,7 +204,6 @@ Scope {
 
     Component.onCompleted: {
         statusProcess.running = true;
-        networkWatch.start();
         startTimer.restart();
     }
 
@@ -221,11 +223,10 @@ Scope {
         onTriggered: root.check(false)
     }
 
-    WatchedProcess {
-        id: networkWatch
-        active: root.networkWatched
-        command: Commands.watchCommand(Commands.updateIndicatorCommand("watch-network", []))
-        onLine: text => root.networkEvent(text)
+    // Only a change to online counts, after the first snapshot (networkChanged).
+    Connections {
+        target: root.networkModel
+        function onOnlineChanged() { root.networkChanged(); }
     }
 
     Process {

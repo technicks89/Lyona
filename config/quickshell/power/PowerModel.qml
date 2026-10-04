@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -298,8 +299,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "power-protocol") {
-                protocolValid = fields.length >= 3 && fields[1] === "1"
-                    && root.boundedInteger(fields[2], 0, 2147483647) >= 0;
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length >= 5 && fields[1] === "power"
                     && root.validState(fields[2]) && root.validCapabilityClass(fields[3])) {
                 providerSeen = true;

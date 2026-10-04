@@ -15,7 +15,7 @@ from typing import Mapping
 from . import regional_settings, shared
 
 
-# D-3 (docs/UPSTREAM-SYNC.md#open-decisions), decided 2026-09-15: neither
+# D-3 (docs/sprints/UPSTREAM-SYNC.md#open-decisions), decided 2026-09-15: neither
 # upstream's lxqt-admin-user (accounts-open) nor dnfdragora (sources-open)
 # exists in Arch's official repositories. Both ship permanent `unavailable`
 # (see delegated_command()) rather than an unverified AUR dependency or a

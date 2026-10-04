@@ -14,7 +14,9 @@ rebuild. It counts the blocks, and the CPU of the watcher and everything it runs
 4. The last block is still right: the current tag and all 10 windows.
 5. dwm's own writes: a tag switch changes each spied root property at most once,
    and moving a window to the tag it is on writes nothing.
-6. SIGTERM, which is how Quickshell stops it, ends the watcher and every xprop.
+6. One resident watcher for every window, dwm-xwatch (Sync Sprint 16 R16-40),
+   where there used to be one `xprop -spy` per window plus the root's; SIGTERM,
+   which is how Quickshell stops it, ends the watcher and everything it runs.
 
 Case 1 measures CPU over DWM_STATE_BRIDGE_SECONDS from the first window (default
 10; the plan's check is 30). DWM_STATE_BRIDGE_SCRIPT runs another copy of the
@@ -246,8 +248,12 @@ with tempfile.TemporaryDirectory(prefix='state-bridge-', dir=os.environ.get('DWM
 
         # 6. Stopped the way Quickshell stops it.
         watchers = tree(watch.pid)
-        report['resident_xprops'] = sum(1 for pid in watchers if Path('/proc/%d/comm' % pid).exists()
-                                        and Path('/proc/%d/comm' % pid).read_text().strip() == 'xprop')
+
+        def resident(name):
+            return sum(1 for pid in watchers if Path('/proc/%d/comm' % pid).exists()
+                       and Path('/proc/%d/comm' % pid).read_text().strip() == name)
+        report['resident_xprops'] = resident('xprop')
+        report['resident_xwatch'] = resident('dwm-xwatch')
         watch.send_signal(signal.SIGTERM)
         watch.wait(timeout=5)
         time.sleep(0.3)
@@ -256,9 +262,9 @@ with tempfile.TemporaryDirectory(prefix='state-bridge-', dir=os.environ.get('DWM
         if os.environ.get('DWM_STATE_BRIDGE_DEBUG'):
             print(out_path.read_text()[-3000:], (base / 'session.log').read_text()[-3000:])
 
-        if report['resident_xprops'] != WINDOWS + 1 or report['left_after_sigterm']:
-            fail('%d xprop watchers for %d windows; %d processes left after SIGTERM'
-                 % (report['resident_xprops'], WINDOWS, report['left_after_sigterm']))
+        if report['resident_xwatch'] != 1 or report['resident_xprops'] or report['left_after_sigterm']:
+            fail('%d dwm-xwatch and %d xprop watchers for %d windows; %d processes left after SIGTERM'
+                 % (report['resident_xwatch'], report['resident_xprops'], WINDOWS, report['left_after_sigterm']))
         if not complete:
             fail('the last block is incomplete')
         if 'current=3' not in switched.splitlines() and not any(

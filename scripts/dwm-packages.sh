@@ -48,7 +48,7 @@ dwm_packages() {
 			alsa-utils brightnessctl inotify-tools jq libpulse pipewire pavucontrol \
 			pipewire-pulse wireplumber libnotify light-locker xf86-input-libinput \
 			bluez bluez-utils blueman playerctl upower power-profiles-daemon flatpak xdg-desktop-portal-gtk \
-			pciutils gum
+			pciutils gum cosign
 		dwm_packages "$family" keyring
 		dwm_packages "$family" update-indicator
 		;;
@@ -255,6 +255,22 @@ dwm_packages() {
 }
 
 # Accepts one or more profiles and installs them as a single transaction.
+# The commands check-deps.sh and dwm-diagnostics check, by tier, so the two
+# agree (Sync Sprint 16 R16-45; SPEC 5.8). Required: the X11 session and the
+# tools core keybindings need, beside the build tools and a terminal, which
+# both check on their own. Desktop: the recommended desktop's commands, whose
+# absence degrades it but does not break the session.
+dwm_command_tier() { # required|desktop
+	case $1 in
+	required) printf '%s\n' startx xrandr xset xsetroot xclip xdotool ;;
+	desktop)
+		printf '%s\n' quickshell picom feh maim xdg-open notify-send amixer brightnessctl \
+			light-locker gsettings xprop jq bluetoothctl blueman-applet cosign
+		;;
+	*) return 2 ;;
+	esac
+}
+
 dwm_install_package_profile() {
 	local profile
 	local packages=()
@@ -314,6 +330,36 @@ dwm_other_rust_toolchain() {
 
 # Installs whatever of the profile is actually available, as one transaction:
 # a single availability query for the whole profile, then a single install.
+# The Vulkan drivers for this machine's GPUs, 64- and 32-bit: Steam depends on
+# the virtual vulkan-driver and lib32-vulkan-driver, and with --noconfirm pacman
+# takes the first provider listed. With the CachyOS repositories that was
+# mesa-git, which conflicts with mesa, so the gaming install failed (Sync Sprint
+# 16, found in a VM). Installed first, these meet both dependencies. NVIDIA: the
+# installed driver branch's utilities, else nouveau's; no known GPU (a VM, say):
+# the software rasterizer.
+dwm_vulkan_driver_packages() {
+	local gpus driver
+	local -a packages=()
+	gpus=$(lspci 2>/dev/null | grep -E 'VGA|3D|Display' || true)
+	# Not "ATI": case-insensitively, that matches "Corporation".
+	if grep -qE 'AMD|Radeon' <<<"$gpus"; then
+		packages+=(vulkan-radeon lib32-vulkan-radeon)
+	fi
+	if grep -qi 'Intel' <<<"$gpus"; then
+		packages+=(vulkan-intel lib32-vulkan-intel)
+	fi
+	if grep -qiE 'NVIDIA|GeForce' <<<"$gpus"; then
+		driver=$(pacman -Qq 2>/dev/null | grep -Ex 'nvidia(-[0-9]+xx)?-utils' | head -n 1 || true)
+		if [[ -n $driver ]]; then
+			packages+=("$driver" "lib32-$driver")
+		else
+			packages+=(vulkan-nouveau lib32-vulkan-nouveau)
+		fi
+	fi
+	((${#packages[@]} > 0)) || packages=(vulkan-swrast lib32-vulkan-swrast)
+	printf '%s\n' "${packages[@]}"
+}
+
 dwm_install_available_package_profile() {
 	local profile=$1
 	local package

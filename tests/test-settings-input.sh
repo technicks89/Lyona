@@ -517,7 +517,7 @@ exec 9>&-
 sleep 1 &
 session_pid=$!
 session_start=$(awk '{ print $22 }' "/proc/$session_pid/stat")
-env "${env_common[@]}" TEST_UDEV_BLOCK=1 \
+env "${env_common[@]}" TEST_UDEV_BLOCK=1 DWM_INPUT_SESSION_POLL_SECONDS=0.2 \
 	DWM_INPUT_SESSION_PID="$session_pid" DWM_INPUT_SESSION_START="$session_start" \
 	"$helper" watch-apply &
 session_watcher_pid=$!
@@ -758,5 +758,16 @@ if env "${env_common[@]}" "$helper" preview invalid 5 "$mouse_key" pointer-speed
 	exit 1
 fi
 grep -Fq 'invalid value' "$work/invalid.err"
+
+# Sync Sprint 16 R16-32: the session guard runs all session, so it starts no
+# process to check its parent, and checks every 5 s.
+guard=$(sed -n '/^session_parent_alive() {$/,/^}$/p' "$helper")
+[[ -n $guard ]] || fail 'session_parent_alive is missing'
+if grep -Eq '\$\(|awk|sed|cut' <<<"$guard"; then
+	fail "session_parent_alive starts a process: $guard"
+fi
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fq 'session_poll_seconds=${DWM_INPUT_SESSION_POLL_SECONDS:-5}' "$helper" ||
+	fail 'the session guard does not default to 5 s'
 
 printf 'Settings input discovery, stable IDs, preview, rollback, and persistence: PASS\n'

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Sync Sprint 10 S10-04 (docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md): loads the
+# Sync Sprint 10 S10-04 (docs/sprints/completed/SYNC-SPRINT-10-COMPLETION-AUDIT.md): loads the
 # real OverviewModel and WindowOverview under Xvfb against a stub dwmState and
 # fails on any runtime error, which tests/test-quickshell-overview.sh's source
 # greps cannot see.

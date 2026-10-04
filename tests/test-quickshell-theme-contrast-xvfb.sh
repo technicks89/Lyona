@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Sync Sprint 11 S11-01 (docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md):
+# Sync Sprint 11 S11-01 (docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md):
 # every text role of the real Theme singleton reads on its surface at 4.5:1 for
 # every palette in config/themes.toml. Against the original Theme.qml this fails
 # 105 of 174 assertions across 14 of the 15 presets: the hover surface came from

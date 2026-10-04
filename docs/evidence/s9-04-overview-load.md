@@ -1,6 +1,6 @@
 # S9-04 -- overview idle cost and many-window performance
 
-Plan: `docs/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-04`. Issue `#350`.
+Plan: `docs/sprints/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-04-idle-cpu-and-many-window-performance`. Issue `#350`.
 
 `tests/test-overview-load-xvfb.py` (`make check-overview-load-xvfb`) runs the real dwm and Quickshell in Xvfb with the
 real `OverviewModel` and `WindowOverview` over a stub `dwmState` holding N windows across 9 tags. Knobs:

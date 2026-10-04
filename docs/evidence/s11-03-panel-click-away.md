@@ -1,6 +1,6 @@
 # S11-03 -- clicking the empty panel closes open popups
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-03`. Issue `#154`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-03-clicking-the-empty-panel-closes-open-popups`. Issue `#154`.
 
 ## What it actually changes
 

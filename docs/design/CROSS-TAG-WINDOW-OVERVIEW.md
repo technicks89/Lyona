@@ -1,6 +1,6 @@
 # Design: cross-tag window overview (Sprint 6 S6-04)
 
-Index: [`docs/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](../SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md#s6-04-cross-tag-window-overview).
+Index: [`docs/sprints/completed/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`](../sprints/completed/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md#s6-04-cross-tag-window-overview).
 Upstream issue `#350`, no upstream code. This is a design pass only, per the
 sprint doc's own recommendation — no implementation in this document, and
 none of it has been built yet.
@@ -178,7 +178,7 @@ The only genuinely new idle cost is the small amount of additional `xprop`
 work per client-list-changing event (one more atom fetched per window, in a
 loop that already runs); that should be validated empirically once built
 (the same `check-desktop-smoke-xvfb`-adjacent close-vs-open idle CPU
-comparison `docs/UPSTREAM-SYNC.md`'s own manual-qualification checklist
+comparison `docs/sprints/UPSTREAM-SYNC.md`'s own manual-qualification checklist
 already does for every sprint that adds a watcher).
 
 ## Verification plan (once implemented)
@@ -200,7 +200,7 @@ already does for every sprint that adds a watcher).
   callers retain their behavior, reusing
   `wait_for_active_window`/`wait_for_current_desktop`, both of which already
   exist in that file's helper library.
-- A closed-popup idle-CPU baseline (per `docs/UPSTREAM-SYNC.md`'s existing
+- A closed-popup idle-CPU baseline (per `docs/sprints/UPSTREAM-SYNC.md`'s existing
   manual qualification checklist item 4) before and after this lands, to
   confirm the "no significant idle resource use" requirement.
 - Escape/click-away leaves tag and focus unchanged: an xvfb case opening the

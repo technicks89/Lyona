@@ -32,7 +32,7 @@ cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/systemmanagement" 
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
 cp "$repo/tests/qml/SystemHealthNavigation.qml" "$work/qml/shell.qml"
 
-# Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md, upstream
+# Sync Sprint 2 S2-06 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md, upstream
 # 0c9d07c/#287): the harness's SystemManagementModel exercises openHealth()
 # for real, but targetScreen's actual fallback chain lives only in
 # config/quickshell/shell.qml, which cannot be loaded standalone (it wires

@@ -1,6 +1,6 @@
 # S11-09 -- a Picom window corner-radius slider
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-09`. Issue `#160`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-09-a-picom-window-corner-radius-slider`. Issue `#160`.
 Decision D-12 (2026-09-26): a corner-radius slider, no dwm change.
 
 ## Change

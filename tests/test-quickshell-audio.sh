@@ -18,6 +18,12 @@ grep -Fq 'repeat: false' "$model"
 grep -Fq 'root.fallbackProcessGeneration === root.audioSourceGeneration' "$model"
 grep -Fq 'fallbackRestartTimer.restart()' "$model"
 grep -Fq 'if (fallbackWatchProcess.running) fallbackWatchProcess.running = false;' "$model"
+# Sync Sprint 16 R16-38: a burst of pactl lines is one snapshot once it settles,
+# and a change during a snapshot is read again after it.
+grep -Fq 'fallbackSettleTimer.restart();' "$model"
+sed -n '/stdout: SplitParser {/,/^        }/p' "$model" | grep -Fq 'root.refreshAudioInventory();' &&
+	fail 'a pactl line still refreshes at once'
+grep -Fq 'root.audioRefreshPending = true;' "$model"
 [ "$(grep -Fc 'Commands.controlsHelperCommand("audio-watch")' "$model")" -eq 1 ]
 if grep -Fq 'repeat: true' "$model"; then
 	exit 1

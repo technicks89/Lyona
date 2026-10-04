@@ -68,6 +68,17 @@ mkdir -p "$work/live-bin"
 cat >"$work/live-bin/gh" <<'EOF'
 #!/bin/sh
 set -eu
+case "$*" in
+*git/ref/tags/*)
+	# The remote tag: STUB_TAG_SHA, or GitHub's 404 when it is unset.
+	if [ -n "${STUB_TAG_SHA:-}" ]; then
+		printf 'commit %s\n' "$STUB_TAG_SHA"
+		exit 0
+	fi
+	printf 'gh: Not Found (HTTP 404)\n' >&2
+	exit 1
+	;;
+esac
 case "$1 $2" in
 'release view')
 	case "$*" in
@@ -108,5 +119,73 @@ grep -Fq 'already a normal release' "$work/promoted.err"
 # Without --prerelease, a manual rerun keeps replacing assets as before.
 STUB_IS_PRERELEASE=false live >/dev/null 2>&1
 grep -q '^release upload v2026.10.0 ' "$work/uploads"
+
+# SHA256SUMS names each file by its name, so it checks the downloaded files.
+sums=$stable/release/lyona-2026.10.0-SHA256SUMS
+[ -f "$sums" ] || {
+	printf '%s\n' 'release helper wrote no SHA256SUMS' >&2
+	exit 1
+}
+if grep -q '/' "$sums"; then
+	printf 'SHA256SUMS lists paths, not file names: %s\n' "$(cat "$sums")" >&2
+	exit 1
+fi
+mkdir -p "$work/downloads"
+command cp "$stable/release/lyona-2026.10.0.tar.gz" "$work/lyona.iso" "$sums" "$work/downloads/"
+(cd "$work/downloads" && sha256sum -c --quiet "$(basename "$sums")") || {
+	printf '%s\n' 'sha256sum -c failed on the downloaded assets' >&2
+	exit 1
+}
+
+# A tag at another commit: refused, and nothing is uploaded or created.
+rm -f "$work/uploads"
+if STUB_TAG_SHA=0123456789abcdef0123456789abcdef01234567 STUB_IS_PRERELEASE=true live --prerelease \
+	>/dev/null 2>"$work/other-commit.err"; then
+	printf '%s\n' 'release helper published under a tag that names another commit' >&2
+	exit 1
+fi
+grep -Fq 'already exists at 0123456789abcdef0123456789abcdef01234567' "$work/other-commit.err"
+[ ! -e "$work/uploads" ] || {
+	printf '%s\n' 'release helper uploaded under a tag at another commit' >&2
+	exit 1
+}
+# The tag at this very commit: a rerun, which replaces the assets.
+STUB_TAG_SHA=$(git -C "$stable" rev-parse HEAD) STUB_IS_PRERELEASE=true live --prerelease >/dev/null 2>&1
+grep -q '^release upload v2026.10.0 ' "$work/uploads"
+
+# --bundle (decision D-31): published as lyona-VERSION.sigstore.json, but only
+# when its statement signs exactly the archive and the ISO being published.
+printf 'an image\n' >"$work/lyona.iso"
+digest() { sha256sum "$1" | awk '{ print $1 }'; }
+make_bundle() { # OUT DIGEST...
+	out=$1
+	shift
+	subjects=$(for d in "$@"; do printf '{"digest":{"sha256":"%s"}}\n' "$d"; done | jq -sc .)
+	payload=$(jq -cn --argjson s "$subjects" '{_type: "https://in-toto.io/Statement/v1", subject: $s}' | base64 -w0)
+	jq -n --arg p "$payload" '{dsseEnvelope: {payload: $p}}' >"$out"
+}
+archive_digest=$(digest "$stable/release/lyona-2026.10.0.tar.gz")
+make_bundle "$work/good.json" "$archive_digest" "$(digest "$work/lyona.iso")"
+make_bundle "$work/partial.json" "$archive_digest"
+rm -f "$work/uploads"
+STUB_IS_PRERELEASE=true live --prerelease --bundle "$work/good.json" >/dev/null 2>&1 || {
+	printf '%s\n' 'release helper refused a bundle that signs what it publishes' >&2
+	exit 1
+}
+grep -Fq 'release/lyona-2026.10.0.sigstore.json' "$work/uploads" || {
+	printf '%s\n' 'release helper did not publish the signature bundle' >&2
+	exit 1
+}
+cmp -s "$work/good.json" "$stable/release/lyona-2026.10.0.sigstore.json"
+rm -f "$work/uploads"
+if STUB_IS_PRERELEASE=true live --prerelease --bundle "$work/partial.json" >/dev/null 2>"$work/partial.err"; then
+	printf '%s\n' 'release helper published a bundle that does not sign the ISO' >&2
+	exit 1
+fi
+grep -Fq 'does not sign lyona.iso' "$work/partial.err"
+[ ! -e "$work/uploads" ] || {
+	printf '%s\n' 'release helper uploaded with a bundle that does not sign the ISO' >&2
+	exit 1
+}
 
 printf '%s\n' 'Release helper preflight and remote-write ordering: PASS'

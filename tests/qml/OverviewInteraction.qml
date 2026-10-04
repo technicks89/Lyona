@@ -5,7 +5,7 @@ import qs.core
 import qs.overview
 
 // Runtime harness for the cross-tag window overview (Sync Sprint 10 S10-04,
-// the interaction cases docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md required
+// the interaction cases docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md required
 // and that only ever existed as source greps). It loads the real
 // OverviewModel, the real OverviewFilter/OverviewSelection/DwmStateWindows
 // libraries and the real WindowOverview popup against a stub dwmState, so a

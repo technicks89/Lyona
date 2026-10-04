@@ -170,16 +170,19 @@ replay so returning devices regain saved values. Repeating the apply is safe.
 The replay watcher is scoped to the owning dwm process and exits at logout,
 including when dwm was launched through `startx`.
 
-Power settings are managed from Control Center -> Power. The generated
-`power.conf` is authoritative once created and persists screen DPMS state,
-display-off timing, and automatic idle and suspend locking. Startup reapplies
-this file before background session services are launched. Manual locking
-remains available when automatic locking is disabled. The screen locker runs
-only while automatic locking is enabled or for the duration of an explicit
-manual lock, so DPMS display-off events remain independent from locking.
-External `loginctl lock-session` requests are forwarded to `dwm-lock` by an
-event-driven session listener. Until `power.conf` exists, lyona leaves any
-user or Arch-managed locker untouched.
+Power settings are managed from Control Center -> Power. Out of the box
+(decision D-13), the screen turns off after 10 minutes idle and the desktop
+locks: lyona sets light-locker to lock 5 seconds after the screen blanks and on
+suspend, and starts it. Changing anything there writes `power.conf`, which is
+then authoritative and persists screen DPMS state, display-off timing, and
+automatic idle and suspend locking. Startup reapplies it (or the defaults)
+before background session services are launched. Manual locking remains
+available when automatic locking is disabled. The screen locker runs only
+while automatic locking is enabled or for the duration of an explicit manual
+lock, so DPMS display-off events remain independent from locking. External
+`loginctl lock-session` requests are forwarded to `dwm-lock` by an
+event-driven session listener. Until `power.conf` exists, lyona never stops or
+disables a locker it did not start.
 
 ### Modifier Syntax
 

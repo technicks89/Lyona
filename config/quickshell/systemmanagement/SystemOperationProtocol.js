@@ -1,4 +1,5 @@
 .pragma library
+.import "../core/Protocol.js" as Protocol
 
 /**
  * Create a parser for one cumulative StdioCollector byte stream.
@@ -107,8 +108,10 @@ function acceptLine(parser, line) {
     const type = fields[0];
     if (!type) return fail(parser, "Empty operation record type");
     if (!parser.header) {
-        if (type !== "system-management-protocol" || !fieldsFit(fields, 3)
-                || fields[1] !== "1" || fields[2] !== "0")
+        // The shared header rule, on the first three fields: this protocol
+        // allows trailing extension fields on every line. Only minor 0.
+        if (!fieldsFit(fields, 3) || !Protocol.isHeader(fields.slice(0, 3), "system-management-protocol", 1)
+                || fields[2] !== "0")
             return fail(parser, "Unsupported or missing operation protocol header");
         parser.header = true;
         return true;

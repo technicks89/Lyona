@@ -9,10 +9,19 @@ export CACHYOS_KERNELS="linux-cachyos linux-cachyos-lts"
 export CACHYOS_MARKER=/run/lyona-cachyos-ready
 # Left when the NVIDIA driver was built from the AUR, for the closing message.
 export NVIDIA_AUR_MARKER=${NVIDIA_AUR_MARKER:-/run/lyona-nvidia-aur}
+# What did not go as chosen, one line each, for the closing screen (Sync Sprint
+# 16 R16-22): the steps' output only reaches the log.
+export LYONA_WARNINGS=${LYONA_WARNINGS:-/run/lyona-install-warnings}
 
 fail() {
 	printf 'lyona-postinstall: %s\n' "$1" >&2
 	exit 1
+}
+
+# note_warning MESSAGE: said in the log as before, and kept for the closing screen.
+note_warning() {
+	printf 'lyona-postinstall: %s\n' "$1"
+	printf '%s\n' "$1" >>"$LYONA_WARNINGS"
 }
 
 # shellcheck source=lyona-ui.sh
@@ -68,7 +77,10 @@ add_cachyos_repositories() {
 	if arch-chroot "$TARGET" "$CACHYOS_HELPER" status 2>/dev/null |
 		grep -Fqx 'cachyos-repos: configured'; then
 		printf 'lyona-postinstall: CachyOS repositories already present on the target.\n'
-		arch-chroot "$TARGET" pacman-key --populate cachyos >/dev/null 2>&1 || true
+		# Without the key every sync fails, so a failure here is not hidden.
+		if ! arch-chroot "$TARGET" pacman-key --populate cachyos >/dev/null 2>&1; then
+			note_warning 'Could not trust the CachyOS signing key on the new system; package updates will fail until it is (pacman-key --populate cachyos).'
+		fi
 		: >"$CACHYOS_MARKER"
 		return 0
 	fi
@@ -77,7 +89,7 @@ add_cachyos_repositories() {
 	# followed by this script by hand).
 	if ! arch-chroot "$TARGET" env LYONA_CACHYOS_NONINTERACTIVE=1 \
 		"$CACHYOS_HELPER" add-repos; then
-		printf 'lyona-postinstall: CachyOS repository setup failed; continuing with the stock Arch repositories.\n'
+		note_warning 'CachyOS repository setup failed; continuing with the stock Arch repositories.'
 		return 0
 	fi
 	: >"$CACHYOS_MARKER"
@@ -94,7 +106,7 @@ install_cachyos_kernels() {
 	read -r -a kernels <<<"$CACHYOS_KERNELS"
 	if ! arch-chroot "$TARGET" env LYONA_CACHYOS_NONINTERACTIVE=1 \
 		"$CACHYOS_HELPER" install-kernel "${kernels[@]}"; then
-		printf 'lyona-postinstall: the CachyOS kernels could not be installed; the stock kernel remains in place.\n'
+		note_warning 'The CachyOS kernels could not be installed; the stock kernel remains in place.'
 	fi
 }
 
@@ -178,14 +190,14 @@ install_legacy_nvidia_driver() {
 		done
 		if ((${#newly_installed[@]} > 0)); then
 			arch-chroot "$TARGET" pacman -R --noconfirm "${newly_installed[@]}" ||
-				printf 'lyona-postinstall: could not remove the newly installed legacy NVIDIA packages.\n'
+				note_warning 'Could not remove the newly installed legacy NVIDIA packages.'
 		fi
 		printf 'lyona-postinstall: the CachyOS repository could not supply it; building it from the AUR instead.\n'
 	fi
 
 	IFS=$'\t' read -r _ base ref < <(awk -F '\t' -v branch="$branch" '$1 == branch' <<<"$LEGACY_NVIDIA_PINS") || :
 	if [[ -z ${base:-} || ! ${ref:-} =~ ^[0-9a-f]{40}$ ]]; then
-		printf 'lyona-postinstall: no pinned AUR source for the NVIDIA %s driver; leaving nouveau in place.\n' "$branch"
+		note_warning "No pinned AUR source for the NVIDIA $branch driver; the open-source nouveau driver is in use instead."
 		return 0
 	fi
 	printf 'Building the NVIDIA %s driver for GPU 10de:%s from the AUR (%s at %s)...\n' \
@@ -227,7 +239,7 @@ install_legacy_nvidia_driver() {
 		return 0
 	fi
 	arch-chroot "$TARGET" rm -rf -- "$build" || :
-	printf 'lyona-postinstall: the NVIDIA %s driver could not be built; leaving the open-source nouveau driver in place.\n' "$branch"
+	note_warning "The NVIDIA $branch driver could not be built; the open-source nouveau driver is in use instead."
 	return 0
 }
 
@@ -249,7 +261,7 @@ install_gpu_drivers() {
 			case $branch in
 			open) install_nvidia_driver ;;
 			580xx | 470xx) install_legacy_nvidia_driver "$branch" "$device" ;;
-			*) printf 'lyona-postinstall: no packaged NVIDIA driver supports GPU 10de:%s; leaving the open-source nouveau driver in place.\n' "$device" ;;
+			*) note_warning "No packaged NVIDIA driver supports GPU 10de:$device; the open-source nouveau driver is in use instead." ;;
 			esac
 		else
 			printf 'lyona-postinstall: NVIDIA GPU detected; leaving the open-source nouveau driver in place.\n'
@@ -338,17 +350,17 @@ install_topgrade() {
 	# it, and its cargo builds Topgrade: the shared rule, asked inside the target.
 	# shellcheck disable=SC2016 # $1 is the inner bash's
 	if other=$(arch-chroot "$TARGET" bash -c '. "$1" && dwm_other_rust_toolchain' _ \
-		"$target_home/.local/share/lyona/scripts/dwm-packages.sh"); then
+		"$target_home/$checkout_rel/scripts/dwm-packages.sh"); then
 		printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other"
 	else
 		mapfile -t toolchain < <(dwm_packages arch rust-toolchain)
 		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${toolchain[@]}"
 	fi
 	# shellcheck disable=SC2016 # $HOME is the user's, expanded in their login shell
-	arch-chroot "$TARGET" su - "$target_user" -c '"$HOME/.local/share/lyona/scripts/install-topgrade"'
+	arch-chroot "$TARGET" su - "$target_user" -c '"$HOME/'"$checkout_rel"'/scripts/install-topgrade"'
 }
 
-export -f dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
+export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
 	install_microcode lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade
@@ -363,15 +375,30 @@ target_user=$(
 )
 [[ -n $target_user ]] || fail "No regular user was found in $TARGET/etc/passwd. Create one (archinstall does this) before running this script."
 
+# Root has no password of its own and cannot log in: the user administers
+# through sudo (decision R16-18). Locked whatever the base system's default.
+arch-chroot "$TARGET" passwd -l root >/dev/null
 target_home=$(arch-chroot "$TARGET" getent passwd "$target_user" | cut -d: -f6)
 target_group=$(arch-chroot "$TARGET" id -gn "$target_user")
 # The steps run in fresh shells (run_logged); the legacy NVIDIA build needs these.
-export target_user target_home target_group lyona_nvidia_table
-target_repo_dir="$target_home/.local/share/lyona"
+# The new user's copy of this checkout, relative to their home: a source
+# directory, not ~/.local/share/lyona, which holds lyona's per-user data and
+# which updates back up (Sync Sprint 16 R16-54).
+checkout_rel=.local/src/lyona
+export target_user target_home target_group lyona_nvidia_table checkout_rel
+target_repo_dir="$target_home/$checkout_rel"
 
-set_total_steps 9
-run_logged "Syncing package databases..." arch-chroot "$TARGET" pacman -Sy --noconfirm
+# A Retry starts a fresh list.
+: >"$LYONA_WARNINGS"
+# Every run_logged step below, the install.sh and Topgrade ones too (Sync
+# Sprint 16 R16-29).
+set_total_steps 10
+# The CachyOS step first: the new system's pacman.conf already lists the CachyOS
+# repositories (archinstall copied this medium's), and this step trusts their
+# key there. Updating first failed every sync with "unknown trust" (Sync Sprint
+# 16, found in a VM once the wizard's CachyOS step ran again).
 run_logged "Adding the CachyOS repositories..." add_cachyos_repositories
+run_logged "Updating the new system..." arch-chroot "$TARGET" pacman -Syu --noconfirm
 run_logged "Installing the CachyOS kernels..." install_cachyos_kernels
 run_logged "Installing CPU microcode..." install_microcode
 run_logged "Installing GPU drivers..." install_gpu_drivers
@@ -383,7 +410,7 @@ chmod +x "$REPO_SRC/install.sh"
 find "$REPO_SRC/scripts" -maxdepth 1 -type f -exec chmod +x {} +
 
 say --foreground $COLOR_ACCENT -- "-> Copying checkout to $TARGET$target_repo_dir..."
-for xdg_dir in "$target_home/.local" "$target_home/.local/share" "$target_home/.config"; do
+for xdg_dir in "$target_home/.local" "$target_home/.local/share" "$target_home/.local/src" "$target_home/.config"; do
 	install -d -m 0755 "$TARGET$xdg_dir"
 	arch-chroot "$TARGET" chown "$target_user:$target_group" "$xdg_dir"
 done
@@ -391,9 +418,15 @@ rm -rf "${TARGET:?}$target_repo_dir"
 cp -a "$REPO_SRC" "$TARGET$target_repo_dir"
 arch-chroot "$TARGET" chown -R "$target_user:$target_group" "$target_repo_dir"
 
+# Passwordless sudo, only while install.sh runs as the new user. It is removed
+# however the run ends (lyona-ui.sh's clean-up), and a stale copy from an
+# earlier, failed run is removed first (Sync Sprint 16 R16-01).
 install_sudoers="$TARGET/etc/sudoers.d/90-lyona-install"
+LYONA_CLEANUP_FILES+=("$install_sudoers")
+rm -f -- "$install_sudoers"
 install -m 0440 /dev/null "$install_sudoers"
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$target_user" >"$install_sudoers"
+LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET, but lyona is not finished. Choose Retry to run the lyona install again. Or reboot, log in as $target_user, and run ~/$checkout_rel/install.sh."
 
 # UPDATE-001 install provenance: the live medium's own build already computed
 # a commit for /etc/lyona-iso-release (scripts/build-lyona-arch-iso.sh); carry
@@ -408,14 +441,21 @@ if [[ -r /etc/lyona-iso-release ]]; then
 fi
 install -Dm644 /etc/lyona-iso-release "$TARGET/etc/lyona-iso-release" 2>/dev/null || true
 
+# install.sh's own warnings, from what it adds to the log.
+log_mark=$(wc -l <"$LOG_FILE" 2>/dev/null || printf '0')
 run_logged "Running install.sh --profile full as $target_user..." \
 	arch-chroot "$TARGET" su - "$target_user" -c \
-	"cd \"\$HOME/.local/share/lyona\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full --skip-topgrade"
+	"cd \"\$HOME/$checkout_rel\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full --skip-topgrade"
 
-rm -f "$install_sudoers"
+rm -f -- "$install_sudoers"
+tail -n "+$((log_mark + 1))" "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' |
+	sed -n 's/^\[WARN\] /install.sh: /p' >>"$LYONA_WARNINGS" || :
+# shellcheck disable=SC2034 # read by lyona-ui.sh's recovery menu
+LYONA_RECOVER_HINT="lyona is installed on $TARGET. Only the last steps failed; after rebooting, log in as $target_user."
 
 if ! run_logged "Building Topgrade as $target_user (this takes a few minutes)..." install_topgrade; then
 	say --foreground "$COLOR_DANGER" -- "-> Topgrade was not installed; after logging in, run install-topgrade."
+	note_warning 'Topgrade was not installed; after logging in, run install-topgrade.' >/dev/null
 fi
 
 arch-chroot "$TARGET" bash -c '
@@ -428,18 +468,41 @@ arch-chroot "$TARGET" bash -c '
 	systemctl set-default graphical.target
 '
 
+# The log, root-only, where it can be read after the reboot.
+install -Dm600 "$LOG_FILE" "$TARGET/var/log/lyona-postinstall.log" 2>/dev/null || :
+
 echo
+if [[ -s $LYONA_WARNINGS ]]; then
+	reboot_note="Read the notes below, then press Enter to reboot."
+else
+	reboot_note="Rebooting automatically in 15 seconds."
+fi
 say --border rounded --border-foreground $COLOR_OK --foreground $COLOR_OK --bold --padding "1 2" \
 	"lyona installed into $TARGET for $target_user." \
-	"Rebooting automatically in 15 seconds."
+	"$reboot_note"
 echo
+if [[ -s $LYONA_WARNINGS ]]; then
+	say --foreground "$COLOR_DANGER" --bold "Not everything went as chosen:"
+	while IFS= read -r warning; do
+		say --foreground "$COLOR_DANGER" "  - $warning"
+	done <"$LYONA_WARNINGS"
+	say --foreground "$COLOR_DIM" "The full log is /var/log/lyona-postinstall.log on the new system (root only)."
+	echo
+fi
 if [[ -e $NVIDIA_AUR_MARKER ]]; then
 	say --foreground "$COLOR_ACCENT" \
 		"The NVIDIA driver was built from the AUR: pacman -Syu does not update it. Update it with yay."
 	echo
 fi
-say --foreground $COLOR_DANGER \
-	"If the live medium is still attached and boots before the disk, this will land back in the installer instead of the new system. Detach/eject it now, or Ctrl+C to cancel the reboot."
+# Not "remove it now": this live system may still be running from the medium,
+# and pulling it out before the reboot crashed the reboot (Sync Sprint 16,
+# found in a VM). The new disk comes first in the boot order archinstall sets.
+say --foreground "$COLOR_DIM" \
+	"Leave the install medium in until the screen goes dark. If the installer starts again instead of lyona, remove the medium and restart."
 
-sleep 15
+if [[ -s $LYONA_WARNINGS ]]; then
+	read -r -p "Press Enter to reboot. " _ || :
+else
+	sleep 15
+fi
 systemctl reboot

@@ -841,4 +841,27 @@ if env "${settings_env[@]}" TEST_WATCH_MONITOR_EXIT=1 \
 	exit 1
 fi
 
+# The Xorg logs it reads (Sync Sprint 16 R16-13): run as the user, the system
+# log and a rootless server's own log; as root, the system log alone, so a user
+# cannot choose what the privileged setup writes.
+helper_fn=$(awk '/^xorg_log_candidates\(\) \{$/ { f = 1 } f { print } f && /^}$/ { exit }' "$HELPER")
+[ -n "$helper_fn" ] || {
+	printf '%s\n' 'xorg_log_candidates is missing from dwm-display-setup' >&2
+	exit 1
+}
+logs=$(HOME=/home/someone bash -c "$helper_fn
+xorg_log_candidates 0")
+[ "$logs" = "$(printf '/var/log/Xorg.0.log\n/home/someone/.local/share/xorg/Xorg.0.log')" ] || {
+	printf 'the user-run log list is: %s\n' "$logs" >&2
+	exit 1
+}
+# As root: EUID is read-only, so the check is made with a stand-in for it.
+logs=$(HOME=/home/someone bash -c "${helper_fn//EUID/FAKE_EUID}
+FAKE_EUID=0
+xorg_log_candidates 0")
+[ "$logs" = /var/log/Xorg.0.log ] || {
+	printf 'the root-run log list is: %s\n' "$logs" >&2
+	exit 1
+}
+
 printf '%s\n' 'Display detection, Xorg generation, anti-tearing policy, preview, install, and rollback: PASS'

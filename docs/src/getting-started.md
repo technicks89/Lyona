@@ -37,7 +37,22 @@ Three layouts are available — switch between them instantly.
 | Layout | Keys |
 |--------|------|
 | Tiling (master + stack) | `Super` + `T` |
-| Floating | `Super` + `Shift` + `M` |
-| Fullscreen (monocle) | `Super` + `M` |
+| Floating | `Super` + `F` |
+| Monocle (one window at a time) | the Control Center; no default key |
+
+The Control Center (`Super` + `F1`) has a **Window layout** row with all three:
+the current layout is highlighted, and each tag keeps its own.
+
+For one window rather than the whole layout: `Super` + `M` makes the focused
+window fullscreen, and `Super` + `Shift` + `M` floats it, or tiles it again.
+
+### The window overview
+
+`Super` + `O` shows every open window, on every tag and monitor, as a card with
+a preview. Type to narrow the cards by title or class; `Up`, `Down`, `Home` and
+`End` move the selection; `Enter` or a click goes to that window, on its tag;
+`Ctrl` + `W` or a card's close button asks the window to close, as `Super` +
+`Q` would; `Escape` closes the overview. With more than one monitor, each card
+says which monitor its window is on.
 
 See [Keybindings](./keybinds.md) for the full reference.

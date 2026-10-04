@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -38,7 +39,7 @@ Scope {
 
     function parseStatus(text) {
         const lines = text.trim().split("\n");
-        if (lines.length < 6 || lines[0] !== "accessibility-settings-protocol\t1\t0"
+        if (lines.length < 6 || !Protocol.isHeader(lines[0].split("\t"), "accessibility-settings-protocol", 1)
                 || lines[lines.length - 1] !== "complete\tstatus") return;
         let state = null;
         let mutation = null;
@@ -105,7 +106,7 @@ Scope {
     function parseAction(text) {
         const lines = text.trim().split("\n");
         if (lines.length !== 2
-                || lines[0] !== "accessibility-settings-action-protocol\t1\t0") return;
+                || !Protocol.isHeader(lines[0].split("\t"), "accessibility-settings-action-protocol", 1)) return;
         const fields = lines[1].split("\t");
         if (fields.length !== 4 || fields[0] !== "result") return;
         if (fields[1] === "set")

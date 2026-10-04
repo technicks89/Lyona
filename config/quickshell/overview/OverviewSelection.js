@@ -1,7 +1,7 @@
 .pragma library
 
 // Pure keyboard-navigation math for the overview popup's flat, tag-grouped
-// card list (Sync Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md).
+// card list (Sync Sprint 8 S8-01, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md).
 // OverviewModel.qml is a QML component (it imports Quickshell), so it cannot
 // be instantiated directly in plain qmltestrunner the way DwmStateWindows.js
 // already is -- these two functions exist specifically so the actual

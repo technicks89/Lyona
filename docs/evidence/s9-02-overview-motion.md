@@ -1,6 +1,6 @@
 # S9-02 -- overview motion and visual polish
 
-Plan: `docs/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-02`. Issue `#350`.
+Plan: `docs/sprints/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-02-motion-and-visual-polish`. Issue `#350`.
 
 ## Change
 

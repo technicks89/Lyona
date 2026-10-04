@@ -1,6 +1,6 @@
 # S11-02 -- broadcast the GTK and icon theme over XSETTINGS
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-02`. Issue `#153`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-02-broadcast-the-gtk-and-icon-theme-over-xsettings`. Issue `#153`.
 
 ## Change
 

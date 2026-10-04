@@ -1,6 +1,6 @@
 # S12-10 -- power and memory defaults
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-10-power-and-memory-defaults`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-10-power-and-memory-defaults`.
 Issue `#173`. Decision D-13: after 10 minutes idle the screen turns off and the
 desktop locks.
 

@@ -35,7 +35,8 @@ cp -a \
 	"$test_repo/"
 printf '%s\n' 'test dwm binary' >"$test_repo/dwm"
 printf '%s\n' 'test lyona-toml binary' >"$test_repo/lyona-toml"
-chmod 755 "$test_repo/dwm" "$test_repo/lyona-toml"
+printf '%s\n' 'test dwm-xwatch binary' >"$test_repo/dwm-xwatch"
+chmod 755 "$test_repo/dwm" "$test_repo/lyona-toml" "$test_repo/dwm-xwatch"
 
 # shellcheck disable=SC2016
 make -s -C "$test_repo" --no-print-directory \
@@ -64,6 +65,7 @@ make -s -C "$test_repo" --no-print-directory \
 
 install -Dm755 "$test_repo/dwm" "$prefix/bin/dwm"
 install -Dm755 "$test_repo/lyona-toml" "$prefix/lib/lyona/lyona-toml"
+install -Dm755 "$test_repo/dwm-xwatch" "$prefix/lib/lyona/dwm-xwatch"
 while IFS= read -r privileged_helper; do
 	[ -n "$privileged_helper" ] || continue
 	sed "s|@PREFIX@|$prefix|g" "$test_repo/$privileged_helper" |

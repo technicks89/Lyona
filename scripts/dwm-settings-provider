@@ -497,22 +497,11 @@ trusted_health_helper() {
 }
 
 trusted_display_helper() {
-	display_command=$(command -v dwm-settings-display 2>/dev/null || true)
-	display_helper=
-	case $display_command in
-	*/bin/dwm-settings-display)
-		display_helper=${display_command%/bin/dwm-settings-display}/libexec/lyona/dwm-settings-display-root
-		;;
-	esac
-	for candidate in "$display_helper" /usr/local/libexec/lyona/dwm-settings-display-root \
-		/usr/libexec/lyona/dwm-settings-display-root; do
-		[ -n "$candidate" ] || continue
-		trusted_file "$candidate" || continue
-		setup_candidate=${candidate%/libexec/lyona/dwm-settings-display-root}/bin/dwm-display-setup
-		trusted_file "$setup_candidate" || continue
-		return 0
-	done
-	return 1
+	display_command=$(command -v dwm-settings-display 2>/dev/null) || return 1
+	candidate=$(trusted_root_helper_path dwm-settings-display-root "$display_command" dwm-settings-display) ||
+		return 1
+	setup_candidate=${candidate%/libexec/lyona/dwm-settings-display-root}/bin/dwm-display-setup
+	trusted_file "$setup_candidate"
 }
 
 discover() {

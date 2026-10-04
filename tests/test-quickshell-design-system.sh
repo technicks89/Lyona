@@ -112,7 +112,7 @@ watched=$core/WatchedProcess.qml
 grep -Fq 'stdout: SplitParser' "$watched"
 grep -Fq 'interval: root.settleInterval' "$watched"
 grep -Fq 'interval: root.restartInterval' "$watched"
-grep -Fq 'if (!running && root.active)' "$watched"
+grep -Fq 'if (!root.active)' "$watched"
 grep -Fq 'if (root.active && !watchProcess.running)' "$watched"
 # A watcher is event-driven; a repeating timer here would be a poll.
 if grep -Fq 'repeat: true' "$watched"; then
@@ -149,6 +149,17 @@ if grep -REn \
 	-e '(^|[^[:alnum:]_-])(hyprctl|uwsm-app|wl-copy|wl-paste)([^[:alnum:]_-]|$)' \
 	"$shell"; then
 	printf '%s\n' 'Managed Quickshell configuration contains a forbidden Wayland or Hyprland dependency.' >&2
+	exit 1
+fi
+
+# Sync Sprint 16 R16-53: one rule for a protocol header, core/Protocol.js. A
+# model that compares a header's fields or whole line itself has its own rule.
+shell_dir=$repo/config/quickshell
+hand_parsed=$(grep -rnE --include='*.qml' --include='*.js' \
+	-- '-protocol" && fields\[1\]|protocolValid = fields|-protocol\\t1\\t0"' "$shell_dir" |
+	grep -v 'core/Protocol.js' || true)
+if [ -n "$hand_parsed" ]; then
+	printf 'a protocol header is parsed without core/Protocol.js:\n%s\n' "$hand_parsed" >&2
 	exit 1
 fi
 

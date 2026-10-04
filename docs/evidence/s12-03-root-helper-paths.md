@@ -1,6 +1,6 @@
 # S12-03 -- the root helper writes and builds nothing through user paths
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-03-the-root-helper-writes-and-builds-nothing-through-user-paths`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-03-the-root-helper-writes-and-builds-nothing-through-user-paths`.
 Issue `#166`. Decision D-15 (remove checkout mode). Builds on S12-01 and S12-02.
 
 ## Change

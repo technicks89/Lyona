@@ -104,7 +104,9 @@ grep -Fq 'inventoryWatchProcess.running = false' "$model"
 # coalesces into one refresh. Lyona already has both properties in the
 # shared WatchedProcess component the other models' watchers use --
 # verify that instead of porting a second, inline copy.
-assert_contains "$watched_process" 'if (!running && root.active)'
+# Restarted only while active, after a delay that backs off (Sync Sprint 16 R16-36).
+assert_contains "$watched_process" 'if (!root.active)'
+assert_contains "$watched_process" 'restartTimer.interval = root.restartDelay;'
 assert_contains "$watched_process" 'restartTimer.restart()'
 assert_contains "$watched_process" 'if (root.active && !watchProcess.running)'
 assert_contains "$watched_process" 'onTriggered: root.settled()'

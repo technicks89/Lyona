@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -120,7 +121,7 @@ Scope {
 
         for (const line of lines) {
             const fields = line.split("\t");
-            if (fields[0] === "lyona-update-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "lyona-update-protocol", 1)) {
                 validProtocol = true;
             } else if (fields[0] === "state" && fields.length >= 3) {
                 state = fields[1];
@@ -182,7 +183,7 @@ Scope {
         let consistentValue = true;
         for (const line of lines) {
             const fields = line.split("\t");
-            if (fields[0] === "lyona-version-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "lyona-version-protocol", 1)) {
                 validProtocol = true;
             } else if (fields[0] === "system" && fields.length >= 4) {
                 systemVersion = fields[1];
@@ -222,7 +223,7 @@ Scope {
         let validProtocol = false;
         for (const line of lines) {
             const fields = line.split("\t");
-            if (fields[0] === "lyona-update-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "lyona-update-protocol", 1)) {
                 validProtocol = true;
             } else if (fields[0] === "backup" && fields.length >= 3) {
                 list.push({ "id": fields[1], "version": fields[2], "date": fields[1].split("-")[0] });
@@ -294,7 +295,7 @@ Scope {
         let phaseValue = "", phaseDetail = "", outcome = "", outcomeMessage = "", timestamp = "";
         for (const line of lines) {
             const fields = line.split("\t");
-            if (fields[0] === "lyona-update-status-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "lyona-update-status-protocol", 1)) {
                 validProtocol = true;
             } else if (fields[0] === "phase" && fields.length >= 3) {
                 phaseValue = fields[1];

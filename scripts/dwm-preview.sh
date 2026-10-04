@@ -225,7 +225,9 @@ watchdog() {
 	done
 	prepare_state
 	exec 9>"$lock_file"
-	until flock -w 5 -x 9; do
+	# Two minutes in all by default; DWM_PREVIEW_LOCK_WAIT shortens each wait
+	# for tests (Sync Sprint 16 R16-42).
+	until flock -w "${DWM_PREVIEW_LOCK_WAIT:-5}" -x 9; do
 		((attempts += 1))
 		((attempts < 24)) || exit 1
 	done

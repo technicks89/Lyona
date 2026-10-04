@@ -207,7 +207,9 @@ watch_pid=
 # shellcheck disable=SC2016 # deferred by design: cleanup_add's argument is
 # eval'd later by lyona_run_cleanup, once $watch_pid actually holds a value.
 cleanup_add 'if [[ -n $watch_pid ]]; then kill "$watch_pid" 2>/dev/null || true; wait "$watch_pid" 2>/dev/null || true; fi'
-PATH="$bin:$PATH" "$helper" watch >"$work/watch-out" 2>"$work/watch-err" &
+# The per-window xprop -spy way, which these stubs fake; dwm-xwatch, which needs
+# a real display, is covered by test-quickshell-state-bridge-xvfb.py.
+PATH="$bin:$PATH" DWM_STATE_WATCHER=spies "$helper" watch >"$work/watch-out" 2>"$work/watch-err" &
 watch_pid=$!
 initial='windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'

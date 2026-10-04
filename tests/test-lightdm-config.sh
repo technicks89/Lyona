@@ -120,4 +120,23 @@ for key in logo other-monitors-logo; do
 	}
 done
 
+# The greeter theme needs the built lyona-toml, so install.sh deploys the
+# LightDM config only after `make` (Sync Sprint 16: a fresh image install
+# failed here). And the Makefile says so, rather than failing deep inside.
+build_line=$(grep -nx 'make' "$repo/install.sh" | head -n 1 | cut -d: -f1)
+deploy_line=$(grep -nx '	install_lightdm_config' "$repo/install.sh" | head -n 1 | cut -d: -f1)
+[[ -n $build_line && -n $deploy_line ]] || {
+	printf 'could not find the build or the LightDM deploy in install.sh\n' >&2
+	exit 1
+}
+((deploy_line > build_line)) || {
+	printf 'install.sh deploys the LightDM config (line %s) before building lyona-toml (line %s)\n' \
+		"$deploy_line" "$build_line" >&2
+	exit 1
+}
+grep -Fq '[ -x ../lyona-toml ] ||' "$repo/lightdm/Makefile" || {
+	printf 'lightdm/Makefile does not check for the built lyona-toml\n' >&2
+	exit 1
+}
+
 printf 'LightDM config rendering: PASS\n'

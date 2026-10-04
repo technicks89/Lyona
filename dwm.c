@@ -464,6 +464,10 @@ static int           dpi_value = DEFAULTDPI;
 static int           inotify_fd = -1;
 static int           inotify_wd = -1;
 static int           inotify_wd3 = -1;
+/* The config home (~/.config) itself, so that a lyona directory created or
+ * recreated after login is watched too (Sync Sprint 16 R16-09). */
+static int           inotify_wd_parent = -1;
+#define USER_CONFIG_WATCH (IN_CLOSE_WRITE | IN_MOVED_TO | IN_MOVE_SELF)
 static char          toml_config_dir[PATH_MAX];
 static char          toml_hotkeys_path[PATH_MAX];
 static char          toml_themes_path[PATH_MAX];
@@ -580,28 +584,42 @@ exe_dir(char *out, size_t size)
 	return 1;
 }
 
+/* The developer override LYONA_DEV_SCRIPTS, a checkout's scripts/ that no
+ * install sets: OUT is its NAME when that is executable. Never honoured as
+ * root, so a user-writable copy is never run with root's rights. The one copy
+ * of this rule, for the session scripts and theme-apply.sh alike (Sync Sprint
+ * 16 R16-50). */
+static int
+dev_override(char *out, size_t size, const char *name)
+{
+	const char *dev = getenv("LYONA_DEV_SCRIPTS");
+
+	if (!dev || !*dev)
+		return 0;
+	if (geteuid() == 0) {
+		fprintf(stderr, "dwm: ignoring LYONA_DEV_SCRIPTS as root\n");
+		return 0;
+	}
+	if (pathjoin(out, size, dev, name) && access(out, X_OK) == 0) {
+		/* Said every time, so a forgotten override shows in the log. */
+		fprintf(stderr, "dwm: running %s from LYONA_DEV_SCRIPTS=%s\n", name, dev);
+		return 1;
+	}
+	fprintf(stderr, "dwm: LYONA_DEV_SCRIPTS=%s has no executable %s; "
+	        "using the installed one\n", dev, name);
+	return 0;
+}
+
 /* One runtime source for the session scripts (Sync Sprint 12 S12-13): the
- * developer override LYONA_DEV_SCRIPTS, a checkout's scripts/ that no install
- * sets, when it holds an executable NAME; else PREFIX/lib/lyona beside the
- * installed dwm. The override is never honoured as root, so a user-writable
- * copy is never run with root's rights. */
+ * developer override when it holds NAME; else PREFIX/lib/lyona beside the
+ * installed dwm. */
 static int
 session_script(char *out, size_t size, const char *name)
 {
-	const char *dev = getenv("LYONA_DEV_SCRIPTS");
 	char dir[PATH_MAX], lib[PATH_MAX], *slash;
 
-	if (dev && *dev) {
-		if (geteuid() == 0)
-			fprintf(stderr, "dwm: ignoring LYONA_DEV_SCRIPTS as root\n");
-		else if (pathjoin(out, size, dev, name) && access(out, X_OK) == 0) {
-			/* Said every time, so a forgotten override shows in the log. */
-			fprintf(stderr, "dwm: running %s from LYONA_DEV_SCRIPTS=%s\n", name, dev);
-			return 1;
-		} else
-			fprintf(stderr, "dwm: LYONA_DEV_SCRIPTS=%s has no executable %s; "
-			        "using the installed one\n", dev, name);
-	}
+	if (dev_override(out, size, name))
+		return 1;
 	if (!exe_dir(dir, sizeof(dir)) || !(slash = strrchr(dir, '/')))
 		return 0;
 	*slash = '\0';                   /* PREFIX */
@@ -4111,10 +4129,7 @@ reload_config(int applytheme)
 		/* theme-apply.sh is a command, installed beside dwm; the override
 		 * holds a checkout's copy (Sync Sprint 12 S12-13). */
 		char script[PATH_MAX], dir[PATH_MAX];
-		const char *dev = geteuid() != 0 ? getenv("LYONA_DEV_SCRIPTS") : NULL;
-		int found = dev && *dev
-		            && pathjoin(script, sizeof(script), dev, "theme-apply.sh")
-		            && access(script, X_OK) == 0;
+		int found = dev_override(script, sizeof(script), "theme-apply.sh");
 
 		if (!found)
 			found = exe_dir(dir, sizeof(dir))
@@ -4156,6 +4171,25 @@ runtime_config_poll_inotify(void)
 		struct inotify_event *ie = (struct inotify_event *)ptr;
 		if (ptr + sizeof(struct inotify_event) + ie->len > end)
 			break;
+		/* The lyona directory was deleted (the kernel drops the watch) or moved
+		 * away (the watch would follow it): forget it, so the parent watch
+		 * below can watch the directory that replaces it. */
+		if (ie->wd == inotify_wd && (ie->mask & (IN_IGNORED | IN_MOVE_SELF))) {
+			if (!(ie->mask & IN_IGNORED))
+				inotify_rm_watch(inotify_fd, inotify_wd);
+			inotify_wd = -1;
+			ptr += sizeof(struct inotify_event) + ie->len;
+			continue;
+		}
+		/* A lyona directory appeared in the config home: watch it, and load it. */
+		if (ie->wd == inotify_wd_parent) {
+			if (ie->len > 0 && (ie->mask & IN_ISDIR) && strcmp(ie->name, "lyona") == 0) {
+				runtime_config_ensure_user_watch();
+				need_reload = themes_changed = 1;
+			}
+			ptr += sizeof(struct inotify_event) + ie->len;
+			continue;
+		}
 		if (ie->len > 0 &&
 		    (strcmp(ie->name, "hotkeys.toml")      == 0 ||
 		     strcmp(ie->name, "themes.toml")       == 0 ||
@@ -4185,8 +4219,7 @@ runtime_config_ensure_user_watch(void)
 		setup_inotify();
 		return;
 	}
-	inotify_wd = inotify_add_watch(inotify_fd, toml_config_dir,
-	                               IN_CLOSE_WRITE | IN_MOVED_TO);
+	inotify_wd = inotify_add_watch(inotify_fd, toml_config_dir, USER_CONFIG_WATCH);
 	if (inotify_wd < 0)
 		inotify_wd = -1;
 }
@@ -4280,19 +4313,22 @@ setup_inotify(void)
 	inotify_fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
 	if (inotify_fd < 0) { perror("dwm: inotify_init1"); return; }
 
-	inotify_wd = inotify_add_watch(inotify_fd, toml_config_dir,
-	                               IN_CLOSE_WRITE | IN_MOVED_TO);
+	inotify_wd = inotify_add_watch(inotify_fd, toml_config_dir, USER_CONFIG_WATCH);
 	if (inotify_wd < 0) {
 
 		inotify_wd = -1;
 	}
+	inotify_wd_parent = dwm_config_home_dir[0]
+	                    ? inotify_add_watch(inotify_fd, dwm_config_home_dir,
+	                                        IN_CREATE | IN_MOVED_TO | IN_ONLYDIR)
+	                    : -1;
 
 	inotify_wd3 = toml_default_dir[0]
 	              ? inotify_add_watch(inotify_fd, toml_default_dir,
 	                                  IN_CLOSE_WRITE | IN_MOVED_TO)
 	              : -1;
 
-	if (inotify_wd < 0 && inotify_wd3 < 0) {
+	if (inotify_wd < 0 && inotify_wd3 < 0 && inotify_wd_parent < 0) {
 
 		close(inotify_fd);
 		inotify_fd = -1;

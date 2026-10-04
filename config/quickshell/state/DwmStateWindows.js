@@ -2,7 +2,7 @@
 
 // Pure parsing/resolution helpers for the windows= field DwmState.qml's watch
 // stream carries as of Sync Sprint 7 S7-01
-// (docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md). Split out of DwmState.qml the
+// (docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md). Split out of DwmState.qml the
 // same way Sprint 6 S6-01 split PanelTooltipPosition.js out of
 // PanelTooltip.qml: plain functions with no QML/Process dependency, so they
 // are directly testable via qmltestrunner without instantiating a live

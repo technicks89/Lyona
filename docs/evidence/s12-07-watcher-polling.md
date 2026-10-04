@@ -1,6 +1,6 @@
 # S12-07 -- watchers stop polling for their parent
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-07-watchers-stop-polling-for-their-parent`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-07-watchers-stop-polling-for-their-parent`.
 Issue `#170`.
 
 ## Change

@@ -6,7 +6,7 @@ import qs.core
 pragma ComponentBehavior: Bound
 
 /*
- * Sync Sprint 1 S1-05 (docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-05-regional-settings-model-and-controls),
+ * Sync Sprint 1 S1-05 (docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-05-regional-settings-model-and-controls),
  * ported from upstream's #269 -- the visible timezone/locale/NTP surface for
  * SystemRegionalSettingsModel (systemManagementModel.regional). Replaces
  * Lyona's own earlier version (Sync Phase 9's PR #33), which read/wrote

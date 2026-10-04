@@ -49,25 +49,38 @@ cloneMyBash() {
 		git -C "$gitpath" checkout --quiet --detach "$MYBASH_REF"
 }
 
+# The font install.sh installs, pinned to the same release and checksum (Sync
+# Sprint 16 R16-15); tests/test-download-pins.sh keeps the two in step. A
+# download that fails or does not match is skipped, not installed.
+MESLO_VERSION="3.4.0"
+MESLO_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v${MESLO_VERSION}/Meslo.zip"
+MESLO_SHA256="13b502ac8c2bd9d3161018064560e23cd42b175bb730780a270975265a19ad57"
+
 installFont() {
-	# Check to see if the MesloLGS Nerd Font is installed (Change this to whatever font you would like)
 	FONT_NAME="MesloLGS Nerd Font Mono"
 	if fc-list :family | grep -iq "$FONT_NAME"; then
 		printf "%b\n" "Font '$FONT_NAME' is installed."
-	else
-		printf "%b\n" "Installing font '$FONT_NAME'"
-		# Change this URL to correspond with the correct font
-		FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Meslo.zip"
-		FONT_DIR="$HOME/.local/share/fonts"
-		TEMP_DIR=$(mktemp -d)
-		curl -sSLo "$TEMP_DIR"/"${FONT_NAME}".zip "$FONT_URL"
-		unzip "$TEMP_DIR"/"${FONT_NAME}".zip -d "$TEMP_DIR"
-		mkdir -p "$FONT_DIR"/"$FONT_NAME"
-		mv "${TEMP_DIR}"/*.ttf "$FONT_DIR"/"$FONT_NAME"
-		fc-cache -fv
-		rm -rf "${TEMP_DIR}"
-		printf "%b\n" "'$FONT_NAME' installed successfully."
+		return
 	fi
+	printf "%b\n" "Installing font '$FONT_NAME' (Meslo Nerd Font v$MESLO_VERSION)"
+	FONT_DIR="$HOME/.local/share/fonts"
+	TEMP_DIR=$(mktemp -d)
+	if ! curl --fail --location --show-error --silent "$MESLO_URL" --output "$TEMP_DIR/Meslo.zip"; then
+		printf "%b\n" "Could not download the font; skipping it."
+		rm -rf "$TEMP_DIR"
+		return
+	fi
+	if ! printf '%s  %s\n' "$MESLO_SHA256" "$TEMP_DIR/Meslo.zip" | sha256sum --check --status; then
+		printf "%b\n" "The font download does not match its pinned checksum; skipping it."
+		rm -rf "$TEMP_DIR"
+		return
+	fi
+	unzip -q "$TEMP_DIR/Meslo.zip" -d "$TEMP_DIR"
+	mkdir -p "$FONT_DIR/$FONT_NAME"
+	mv "$TEMP_DIR"/*.ttf "$FONT_DIR/$FONT_NAME"
+	fc-cache -f
+	rm -rf "$TEMP_DIR"
+	printf "%b\n" "'$FONT_NAME' installed successfully."
 }
 
 # Pinned SHA-256 of the current https://starship.rs/install.sh, captured and
@@ -143,41 +156,44 @@ installZoxide() {
 	}
 }
 
-linkConfig() {
-	OLD_BASHRC="$HOME/.bashrc"
-	if [ -e "$OLD_BASHRC" ] && [ ! -e "$HOME/.bashrc.bak" ]; then
-		printf "%b\n" "Moving old bash config file to $HOME/.bashrc.bak"
-		if ! mv "$OLD_BASHRC" "$HOME/.bashrc.bak"; then
-			printf "%b\n" "Can't move the old bash config file!"
-			exit 1
-		fi
+# link_with_backup SOURCE DEST: DEST becomes a link to SOURCE. Whatever was at
+# DEST before, a file or another link, is kept as DEST.bak.TIMESTAMP, so no run
+# ever loses one (Sync Sprint 16 R16-23). A DEST that already links to SOURCE is
+# left alone, so re-running install.sh adds no backups.
+link_with_backup() {
+	if [ -L "$2" ] && [ "$(readlink -- "$2")" = "$1" ]; then
+		printf "%b\n" "$2 already links to mybash."
+		return
 	fi
-
-	printf "%b\n" "Linking new bash config file..."
-	ln -svf "$gitpath/.bashrc" "$HOME/.bashrc" || {
-		printf "%b\n" "Failed to create symbolic link for .bashrc"
+	if [ -e "$2" ] || [ -L "$2" ]; then
+		backup="$2.bak.$(date +%Y%m%d-%H%M%S)"
+		n=1
+		while [ -e "$backup" ] || [ -L "$backup" ]; do
+			backup="$2.bak.$(date +%Y%m%d-%H%M%S).$n"
+			n=$((n + 1))
+		done
+		printf "%b\n" "Keeping the previous $2 as $backup"
+		mv -- "$2" "$backup" || {
+			printf "%b\n" "Can't move $2 aside!"
+			exit 1
+		}
+	fi
+	mkdir -p "$(dirname -- "$2")"
+	ln -s -- "$1" "$2" || {
+		printf "%b\n" "Failed to create the symbolic link $2"
 		exit 1
 	}
+}
 
-	mkdir -p "$HOME/.config"
-	ln -svf "$gitpath/starship.toml" "$HOME/.config/starship.toml" || {
-		printf "%b\n" "Failed to create symbolic link for starship.toml"
-		exit 1
-	}
+linkConfig() {
+	printf "%b\n" "Linking the mybash configuration..."
+	link_with_backup "$gitpath/.bashrc" "$HOME/.bashrc"
+	link_with_backup "$gitpath/starship.toml" "$HOME/.config/starship.toml"
 	# fastfetch reads this at startup and starship-theme is the palette
 	# switcher; without these two the prompt works but uses stock defaults.
 	# ~/.local/bin is already on PATH via the linked .bashrc.
-	mkdir -p "$HOME/.config/fastfetch"
-	ln -svf "$gitpath/config.jsonc" "$HOME/.config/fastfetch/config.jsonc" || {
-		printf "%b\n" "Failed to create symbolic link for config.jsonc"
-		exit 1
-	}
-
-	mkdir -p "$HOME/.local/bin"
-	ln -svf "$gitpath/starship-theme" "$HOME/.local/bin/starship-theme" || {
-		printf "%b\n" "Failed to create symbolic link for starship-theme"
-		exit 1
-	}
+	link_with_backup "$gitpath/config.jsonc" "$HOME/.config/fastfetch/config.jsonc"
+	link_with_backup "$gitpath/starship-theme" "$HOME/.local/bin/starship-theme"
 
 	printf "%b\n" "Done! restart your shell to see the changes."
 }

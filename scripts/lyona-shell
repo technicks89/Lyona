@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+# Opens a part of the managed shell (Sync Sprint 16 R16-47). Keybinds call this
+# rather than Quickshell's IPC: hotkeys.toml is seeded once and never updated,
+# while this command is, so the IPC target, its functions and the config path
+# can change without editing anyone's hotkeys.toml. Only the pairs below are
+# passed on.
+
+usage() {
+	cat >&2 <<'EOF'
+usage: lyona-shell TARGET ACTION
+
+  launcher toggle              the app launcher
+  overview toggle              the window overview
+  controlcenter open|toggle    the Control Center
+  controlcenter openKeybinds   the keybinds cheatsheet
+  power toggle                 the power menu
+  power confirm logout|reboot  the power menu, at that action's confirmation
+EOF
+	exit 2
+}
+
+[ "$#" -ge 2 ] || usage
+case "$1 $2 ${3:-}" in
+'launcher toggle ' | 'overview toggle ' | 'controlcenter open ' | 'controlcenter toggle ' | \
+	'controlcenter openKeybinds ' | 'power toggle ') [ "$#" -eq 2 ] || usage ;;
+'power confirm logout' | 'power confirm reboot') [ "$#" -eq 3 ] || usage ;;
+*) usage ;;
+esac
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona (Sync Sprint 12 S12-13).
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+lyona_xdg_dirs
+# The managed shell lives only here; install-user replaces it wholesale.
+config=$config_home/quickshell/shell.qml
+
+exec quickshell ipc --path "$config" call "$@"

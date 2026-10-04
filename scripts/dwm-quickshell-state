@@ -367,7 +367,11 @@ show_state() {
 	occupied=
 	apps=
 	windows=
-	snapshot=$(client_snapshot "$clients")
+	if [[ ${state_cache:-0} == 1 ]]; then
+		cached_client_snapshot "$clients"
+	else
+		snapshot=$(client_snapshot "$clients")
+	fi
 	occupied=${snapshot%%
 *}
 	occupied=${occupied#occupied=}
@@ -397,11 +401,130 @@ show_state() {
 	printf 'status=%s\n' "$status"
 }
 
+# dwm-xwatch: installed beside the other private tools, or built in a checkout.
+xwatch_path() {
+	local candidate
+	for candidate in "$lyona_lib/dwm-xwatch" "$lyona_lib/../dwm-xwatch"; do
+		[[ -x $candidate ]] || continue
+		printf '%s\n' "$candidate"
+		return 0
+	done
+	return 1
+}
+
+# The client part of the state from the per-window cache (Sync Sprint 16
+# R16-40): only the windows marked stale are read again, with the same parser
+# as client_snapshot, and the occupied, apps and windows lines are rebuilt here
+# in the client list's order, exactly as client_snapshot builds them. Sets
+# snapshot.
+cached_client_snapshot() {
+	local client_list=$1 window_id entry rest desktop class stale=() occupied_out='' apps_out='' windows_out=''
+	local -a order=()
+	local -A present=() seen_class=() desktops=()
+	local IFS=,
+	for window_id in $client_list; do
+		window_id=${window_id##* }
+		[[ $window_id == 0x[0-9a-fA-F]* ]] || continue
+		order+=("$window_id")
+		present[$window_id]=1
+	done
+	IFS=$' \t\n'
+	for window_id in "${!window_cache[@]}"; do
+		[[ -n ${present[$window_id]:-} ]] || unset 'window_cache[$window_id]'
+	done
+	for window_id in "${order[@]}"; do
+		[[ -n ${window_cache[$window_id]:-} && -z ${window_stale[$window_id]:-} ]] || stale+=("$window_id")
+	done
+	window_stale=()
+	if ((${#stale[@]} > 0)); then
+		local fresh list
+		list=$(printf '%s,' "${stale[@]}")
+		fresh=$(client_snapshot "${list%,}")
+		fresh=${fresh##*windows=}
+		local -a entries=()
+		IFS='|' read -r -a entries <<<"$fresh"
+		IFS=$' \t\n'
+		for entry in "${entries[@]}"; do
+			[[ -n $entry ]] && window_cache[${entry%%:*}]=$entry
+		done
+	fi
+	for window_id in "${order[@]}"; do
+		entry=${window_cache[$window_id]:-}
+		[[ -n $entry ]] || continue
+		rest=${entry#*:}
+		desktop=${rest%%:*}
+		rest=${rest#*:}
+		class=${rest%%:*}
+		if [[ $desktop =~ ^[0-9]+$ && $desktop != 4294967295 ]]; then
+			desktops[$((10#$desktop))]=1
+		fi
+		if [[ -n $class && -z ${seen_class["|$class|"]:-} ]]; then
+			seen_class["|$class|"]=1
+			apps_out+=${apps_out:+|}$window_id:$class
+		fi
+		windows_out+=${windows_out:+|}$entry
+	done
+	for desktop in $(printf '%s\n' "${!desktops[@]}" | sort -n); do
+		occupied_out+=${occupied_out:+|}$desktop
+	done
+	printf -v snapshot 'occupied=%s\napps=%s\nwindows=%s' "$occupied_out" "$apps_out" "$windows_out"
+}
+
+# One dwm-xwatch for the root window and every client (Sync Sprint 16 R16-40):
+# it says which window changed, so a change re-reads that window alone, where
+# a resident "xprop -spy" per window, whose lines did not say which window they
+# came from, made every change re-read them all. Without the helper, or without
+# a display it can open, watch_state_spies keeps the old way.
+watch_state() {
+	local xwatch event
+	# DWM_STATE_WATCHER=spies keeps the old way: tests that fake xprop -spy
+	# use it, as dwm-xwatch would watch a real display instead.
+	if [[ ${DWM_STATE_WATCHER:-} == spies ]] || ! xwatch=$(xwatch_path); then
+		watch_state_spies
+		return
+	fi
+	watch_dir=$(mktemp -d)
+	declare -gA client_watchers=() window_cache=() window_stale=()
+	root_pid=
+	trap 'watch_cleanup' EXIT
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	mkfifo "$watch_dir/events"
+	exec 3<>"$watch_dir/events"
+	bound_to_this_shell "$xwatch" >&3 2>/dev/null &
+	root_pid=$!
+	if ! IFS= read -r -t 2 event <&3 || [[ $event != ready ]]; then
+		watch_cleanup
+		trap - EXIT HUP INT TERM
+		watch_state_spies
+		return
+	fi
+	state_cache=1
+	show_state
+	printf '\n'
+
+	while IFS= read -r event <&3; do
+		note_window_event "$event"
+		drain_events note_window_event
+		show_state
+		printf '\n'
+	done
+}
+
+# "window 0xID": that window is read again; root changes and the client list
+# are read with the root snapshot on every rebuild anyway.
+note_window_event() {
+	case $1 in
+	'window 0x'*) window_stale[${1#window }]=1 ;;
+	esac
+}
+
 # Every property watcher writes its lines to one fifo; each burst of lines (a tag
 # switch alone changes 3 or 4 properties) becomes one rebuild. Windows get one
 # resident "xprop -spy" each, started when a window appears and stopped when it
-# goes, never restarted wholesale.
-watch_state() {
+# goes, never restarted wholesale. The way without dwm-xwatch.
+watch_state_spies() {
 	watch_dir=$(mktemp -d)
 	declare -gA client_watchers=()
 	clients_changed=0
@@ -464,9 +587,10 @@ note_event() {
 	esac
 }
 
-# Take every event that arrives in the next 50 ms into the same rebuild.
+# Take every event that arrives in the next 50 ms into the same rebuild, noting
+# each with HANDLER (note_event by default).
 drain_events() {
-	local deadline remaining timeout event rest
+	local handler=${1:-note_event} deadline remaining timeout event rest
 	deadline=$((${EPOCHREALTIME//[!0-9]/} + 50000))
 	while :; do
 		remaining=$((deadline - ${EPOCHREALTIME//[!0-9]/}))
@@ -479,7 +603,7 @@ drain_events() {
 			IFS= read -r rest <&3 || true
 			event=$event$rest
 		fi
-		note_event "$event"
+		"$handler" "$event"
 	done
 }
 
@@ -579,7 +703,7 @@ focus_window() {
 }
 
 # Closing a card from the overview popup (Sync Sprint 8 S8-04,
-# docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, which is
+# docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, which is
 # the only client dwm.c's own killclient() closes -- most cards are not the
 # focused window. A plain ICCCM WM_DELETE_WINDOW client message sent
 # directly to the target id (the same graceful-close request killclient()

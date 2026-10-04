@@ -5,7 +5,7 @@ workflow publishes every release with `--prerelease`, and a beta is never
 promoted to Latest.
 
 It collects everything since `2026.08.0-beta.1`: Sync Phases 6 to 9 and Sync
-Sprints 1 to 15 (`docs/UPSTREAM-SYNC.md`). The headline items are below.
+Sprints 1 to 15 (`docs/sprints/UPSTREAM-SYNC.md`). The headline items are below.
 `CHANGELOG.md` has the complete list.
 
 ## Artifacts
@@ -147,9 +147,13 @@ Sprints 1 to 15 (`docs/UPSTREAM-SYNC.md`). The headline items are below.
 1. Write `lyona-2026.10.0-beta.1-x86_64.iso` to a USB stick and boot it.
 2. Run `lyona-install`. It asks for:
    - the keyboard layout;
-   - the disk, and the filesystem (optionally encrypted with LUKS);
+   - the disk, and the filesystem: btrfs or ext4, optionally encrypted with
+     LUKS;
    - the user, and the hostname;
+   - the timezone, detected for you to confirm;
    - the NVIDIA driver, when a card is detected.
+
+   Nothing is written until you confirm its summary.
 
    It then runs an unattended `archinstall`, followed by the lyona postinstall.
    - **Manual fallback** (BIOS, or custom partitioning): run `archinstall`
@@ -215,7 +219,7 @@ Verified on the build host (Arch, CachyOS repositories) before this release:
   one row per update and no header when not attached to a terminal. It has
   not been run against a real Flatpak.
 - **Sign-off checks from earlier sprints** that need real hardware or a live
-  session are still open; `docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md` lists
+  session are still open; `docs/sprints/completed/SYNC-SPRINT-10-COMPLETION-AUDIT.md` lists
   them.
 - **Signing:** releases are not signed (decision D-14). A matching SHA-256
   proves the download is intact, not that it is genuine.

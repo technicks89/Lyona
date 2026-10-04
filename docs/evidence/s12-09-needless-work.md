@@ -1,6 +1,6 @@
 # S12-09 -- stop needless work on events
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-09-stop-needless-work-on-events`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-09-stop-needless-work-on-events`.
 Issue `#172`. Items 5 and 6 were added on 2026-09-28, from a cleanup of this
 repository's test leftovers in `~/tmp` and `/tmp`.
 

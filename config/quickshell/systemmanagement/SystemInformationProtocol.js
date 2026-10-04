@@ -1,13 +1,13 @@
 .pragma library
 
-// Sync Sprint 2 S2-05 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md), ported from
+// Sync Sprint 2 S2-05 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md), ported from
 // upstream's 177e3c3 (#286) nearly unchanged -- pure functions over the
 // information/storage/security state and record shapes
 // build_information_snapshot() emits, mirrored so SystemManagementModel.qml's
 // protocol parser and this file agree on ownership and value validity
 // without duplicating either list.
 //
-// Lyona adaptation (D-5, docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02):
+// Lyona adaptation (D-5, docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers):
 // upstream's securityIds() lists only "firewalld"; Lyona's read_firewall_status()
 // covers firewalld, ufw, and nftables as three distinct identifiers, since a
 // default Arch/CachyOS install runs none of them. validValue()'s generic

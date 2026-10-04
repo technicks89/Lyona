@@ -30,7 +30,8 @@ check_round_trip() { # USERNAME HASH PASSPHRASE ENCRYPT
 	jq -e . "$work/creds.json" >/dev/null || fail "not valid JSON for passphrase: $3"
 	[[ $(jq -r '.users[0].username' "$work/creds.json") == "$1" ]] || fail 'the username changed'
 	[[ $(jq -r '.users[0].enc_password' "$work/creds.json") == "$2" ]] || fail 'the user hash changed'
-	[[ $(jq -r '.root_enc_password' "$work/creds.json") == "$2" ]] || fail 'the root hash changed'
+	# Root gets no password: the user administers through sudo (decision R16-18).
+	[[ $(jq -r 'has("root_enc_password")' "$work/creds.json") == false ]] || fail 'root was given a password'
 	[[ $(jq -r '.users[0].sudo' "$work/creds.json") == true ]] || fail 'the user lost sudo'
 	if [[ $4 == 1 ]]; then
 		[[ $(jq -r '.encryption_password' "$work/creds.json") == "$3" ]] ||
@@ -60,5 +61,30 @@ grep -Fq "| openssl passwd -6 -stdin" "$installer" || fail 'openssl passwd does 
 if grep -Eq 'openssl passwd -6 "\$PASSWORD"' "$installer"; then
 	fail 'the password is still passed to openssl in argv'
 fi
+
+# The host name is RFC 1123 before it goes into the JSON (Sync Sprint 16 R16-17).
+sed -n '/^valid_hostname() {$/,/^}$/p' "$installer" >"$work/hostname.sh"
+[[ -s $work/hostname.sh ]] || fail 'valid_hostname not found in lyona-install.sh'
+# shellcheck disable=SC1091 # generated above
+. "$work/hostname.sh"
+long_label=$(printf 'a%.0s' {1..63})
+# 253 characters, the longest a name may be.
+longest=$(printf 'abcdefgh.%.0s' {1..28})x
+for name in lyona my-pc PC01 a host.example.org "$long_label" "$longest"; do
+	valid_hostname "$name" || fail "a valid host name was refused: $name"
+done
+for name in '' '-pc' 'pc-' 'my pc' 'pc"x' 'pc\x' 'a..b' '.pc' 'pc.' 'pc_1' "${long_label}a" \
+	"${longest}y" $'pc\nx'; do
+	if valid_hostname "$name"; then
+		fail "an invalid host name was accepted: $name"
+	fi
+done
+# shellcheck disable=SC2016 # the literal text in the installer
+grep -Fq 'valid_hostname "$name" && break' "$installer" || fail 'ask_hostname does not validate the name'
+
+# The postinstall locks root on the new system (R16-18).
+# shellcheck disable=SC2016 # the literal text in the postinstall
+grep -Fqx 'arch-chroot "$TARGET" passwd -l root >/dev/null' "$repo/archiso/airootfs/root/lyona-postinstall.sh" ||
+	fail 'the postinstall does not lock root'
 
 printf '%s\n' 'ISO installer credentials (jq-built JSON, passphrases round-trip, password via stdin): PASS'

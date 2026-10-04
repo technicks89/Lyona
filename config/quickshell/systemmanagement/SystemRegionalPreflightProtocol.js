@@ -1,4 +1,5 @@
 .pragma library
+.import "../core/Protocol.js" as Protocol
 
 // Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md), ported from upstream's
 // 0eae066d (PR #263) unchanged -- a pure, distro-neutral parser for the
@@ -67,8 +68,11 @@ function acceptLine(parser, line) {
     const choices = parser.command === "regional-choices";
     const observation = parser.command === "time-status" || parser.command === "ntp-sample";
     if (!parser.header) {
-        const expected = parser.command + "-protocol\t1\t0" + (choices ? "\t" + parser.selection : "");
-        if (line !== expected) return fail(parser, "Unsupported preflight header");
+        // The shared header rule on the first three fields, minor 0, then the
+        // selection the request named, echoed back for regional choices.
+        if (!Protocol.isHeader(fields.slice(0, 3), parser.command + "-protocol", 1) || fields[2] !== "0"
+                || fields.length !== (choices ? 4 : 3) || (choices && fields[3] !== parser.selection))
+            return fail(parser, "Unsupported preflight header");
         parser.header = true;
     } else if (fields[0] === "choice" && choices) {
         const count = parser.selection === "timezone" ? 2048 : 4096;

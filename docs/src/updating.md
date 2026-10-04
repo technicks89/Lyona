@@ -16,7 +16,9 @@ Reports the installed version, the version available on your configured
 channel, and one of `current`, `behind`, `ahead`, `downgrade-offered`,
 `unknown`, or `offline`. `offline` is a normal outcome, not an error: if the
 update server cannot be reached, `check` still reports the installed version
-and exits successfully. Nothing is written to disk by `check`.
+and exits successfully. `unknown` with "Nothing has been published on the
+CHANNEL channel yet" means the server answered but has no release there; see
+[Channels](#channels). Nothing is written to disk by `check`.
 
 `check_on_login=true` (the default) runs one check shortly after Quickshell
 starts, jittered so a machine with several users logging in around the same
@@ -57,10 +59,13 @@ nothing.
 
 ## Updating in a terminal
 
-Settings -> System -> **Update in a terminal** runs an update in your own
-terminal, where you see the full plan and output and answer the tool's own
+Settings -> System -> **System packages and Flatpak** runs an update in your
+own terminal, where you see the full plan and output and answer the tool's own
 confirmation. Nothing is confirmed for you. This sits beside the PackageKit
-preview further down the page; use whichever you prefer.
+preview further down the page (**System updates**); use whichever you prefer.
+While a PackageKit update runs, **Update packages** is unavailable, so the two
+never contend for the package database. lyona's own releases have their own
+section, **lyona**, above.
 
 - **Update packages** runs `yay -Syu` when `yay` is installed, so packages built
   from the AUR (such as the legacy NVIDIA drivers) update too, and
@@ -117,8 +122,8 @@ Nine steps, in this exact order, so an interruption at any point is always
 recoverable:
 
 1. Download the release tarball to `$XDG_STATE_HOME/lyona/updates/`.
-2. Verify its SHA-256 against the published release digest **before**
-   unpacking it.
+2. Verify its SHA-256 against the published release digest, and its
+   signature with `cosign`, **before** unpacking it.
 3. Unpack it, and copy your `config.h` into the build: `~/.config/lyona/config.h`,
    or a checkout's `config.h` when run from one (see Configuration).
 4. Build it, unprivileged, so a compile failure costs you nothing but time.
@@ -130,11 +135,15 @@ recoverable:
    checks the digest again on that copy, then unpacks and rebuilds only that copy
    before backing up the system files and installing.
 
-**What the digest proves.** The SHA-256 digest comes from the release page (or a
-short-lived cache in `~/.cache/lyona/`), fetched by the unprivileged side, so a
-match proves the download is intact, not that the release is genuine. Releases
-are not signed yet (decision D-14), so the administrator password prompt in step
-6 is the real boundary: approve it only for an update you started.
+**What the checks prove.** The SHA-256 digest comes from the release page (or a
+short-lived cache in `~/.cache/lyona/`), so a match proves the download is
+intact. The signature proves it is genuine: from `2026.10.0-beta.2` on, each
+release is signed by lyona's own release workflow on GitHub (decision D-31),
+and `lyona-update` refuses one whose signature is missing or does not verify.
+It needs `cosign`, which the install provides, and the network, for Sigstore's
+trust root. A release from before signing is installed on its digest alone,
+and says so. The privileged step re-checks the digest the unprivileged side
+verified; approve its password prompt only for an update you started.
 7. Verify every installed file matches what was staged.
 8. Rewrite the provenance record (`/etc/lyona-release`,
    `$XDG_STATE_HOME/lyona/install.state`) — last, and only after step 7
@@ -187,10 +196,17 @@ Useful flags:
 - `--dry-run` — builds and reports exactly what would be written, without
   installing anything.
 - `--file PATH` — install an already-downloaded tarball; still requires
-  `--version` and still verifies the checksum, which it looks up online. For a
-  machine with no network, add `--sha256 HASH`, where `HASH` is the
-  64-character hexadecimal value on the tarball's line in the release's
-  `lyona-<version>-SHA256SUMS` (the first field):
+  `--version`, and still verifies the checksum and the signature, which it
+  downloads. Give the signature you downloaded with the tarball with
+  `--bundle FILE` (the release's `lyona-<version>.sigstore.json`); it is
+  needed for a version that is not the newest on your channel. Checking a
+  signature still needs the network, for Sigstore's trust root.
+
+  `--sha256 HASH` gives the checksum yourself: `HASH` is the 64-character
+  hexadecimal value on the tarball's line in the release's
+  `lyona-<version>-SHA256SUMS` (the first field). With `--bundle` too, both
+  are checked. Given alone, for a machine with no network, the signature is
+  not checked: you vouch for the file.
 
   ```sh
   lyona-update apply --file ~/lyona-2026.10.0.tar.gz --version 2026.10.0 \
@@ -214,7 +230,20 @@ published release including pre-releases, which are not release-qualified —
 see [Releasing](https://github.com/technicks89/Lyona/blob/main/docs/RELEASING.md)
 for what that means in practice. The channel is stored in
 `~/.config/lyona/update.conf`, seeded on first use and never overwritten
-except by `set-channel` itself.
+except by `set-channel` itself. Settings -> System sets it too, under
+**Channel**.
+
+While lyona is in beta, every release is a pre-release, so the `stable`
+channel has nothing to offer yet. A pre-release install (a version such as
+`2026.10.0-beta.1`) is seeded on `preview` for that reason; one already on
+`stable` gets `unknown` and "Nothing has been published on the stable channel
+yet", with the command to switch:
+
+```sh
+lyona-update set-channel preview
+```
+
+`offline`, by contrast, means the release server could not be reached at all.
 
 ## Rolling back
 

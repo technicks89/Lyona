@@ -331,6 +331,17 @@ output_has_tearfree_property() {
 	' "$properties_file"
 }
 
+# The Xorg logs to read for DISPLAY_NUMBER. As root (through the privileged
+# setup), only the system log: the one under the user's home is the user's to
+# write, and must not choose what goes into the system Xorg configuration (Sync
+# Sprint 16 R16-13). Run as the user, a rootless X server's own log too.
+xorg_log_candidates() {
+	printf '%s\n' "/var/log/Xorg.$1.log"
+	if ((EUID != 0)); then
+		printf '%s\n' "$HOME/.local/share/xorg/Xorg.$1.log"
+	fi
+}
+
 current_xorg_driver() {
 	local display_number log candidate
 
@@ -340,9 +351,9 @@ current_xorg_driver() {
 	fi
 	display_number=${DISPLAY#:}
 	display_number=${display_number%%.*}
-	for candidate in \
-		"/var/log/Xorg.${display_number}.log" \
-		"$HOME/.local/share/xorg/Xorg.${display_number}.log"; do
+	local -a xorg_logs
+	mapfile -t xorg_logs < <(xorg_log_candidates "$display_number")
+	for candidate in "${xorg_logs[@]}"; do
 		[[ -r $candidate ]] || continue
 		log=$candidate
 		if grep -q 'AMDGPU(0):' "$log"; then
@@ -393,9 +404,9 @@ xorg_uses_driver() {
 	fi
 	display_number=${DISPLAY#:}
 	display_number=${display_number%%.*}
-	for candidate in \
-		"/var/log/Xorg.${display_number}.log" \
-		"$HOME/.local/share/xorg/Xorg.${display_number}.log"; do
+	local -a xorg_logs
+	mapfile -t xorg_logs < <(xorg_log_candidates "$display_number")
+	for candidate in "${xorg_logs[@]}"; do
 		[[ -r $candidate ]] || continue
 		case $driver in
 		nvidia)

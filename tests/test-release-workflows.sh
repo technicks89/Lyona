@@ -45,7 +45,29 @@ assert trigger["type"] == "choice" and trigger["options"] == ["beta", "main"], t
 assert "tag" not in build[True]["workflow_dispatch"]["inputs"], "the tag is still an input"
 assert "schedule" not in promote[True], "promotion must not run on a schedule"
 assert promote[True]["workflow_dispatch"]["inputs"]["tag"]["required"] is True, promote[True]
-assert build["permissions"]["contents"] == "write" and promote["permissions"]["contents"] == "write"
+# The ISO workflow's own token only reads (the release uses RELEASE_TOKEN);
+# promotion edits a release with the workflow's token.
+assert build["permissions"]["contents"] == "read", build["permissions"]
+assert promote["permissions"]["contents"] == "write"
+steps = [s.get("name") for s in build["jobs"]["build-iso"]["steps"]]
+# release-check runs before the token is in reach, and lyona-release skips it.
+assert steps.index("Check the release archive") < steps.index("Create the tag and the release"), steps
+# Signed releases (D-31): the archive and the ISO are attested before anything
+# is published, with only the permissions signing needs, and the bundle is
+# published with them, for lyona-update's check.
+job = build["jobs"]["build-iso"]
+assert job["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}, job["permissions"]
+assert steps.index("Check the release archive") < steps.index("Sign the release files") < steps.index("Create the tag and the release"), steps
+assert steps.index("Build ISO") < steps.index("Sign the release files"), steps
+sign = next(s for s in job["steps"] if s.get("name") == "Sign the release files")
+assert sign["uses"].startswith("actions/attest-build-provenance@"), sign
+assert len(sign["uses"].split("@")[1]) == 40, "the signing action is not pinned to a commit"
+assert sign.get("id") == "sign", sign
+for subject in ("/iso/*.iso", "release/lyona-*.tar.gz"):
+    assert subject in sign["with"]["subject-path"], subject
+publish = next(s for s in job["steps"] if s.get("name") == "Create the tag and the release")
+assert publish["env"]["BUNDLE"] == "${{ steps.sign.outputs.bundle-path }}", publish["env"]
+assert '--bundle "$BUNDLE"' in publish["run"], publish["run"]
 # Only admins and maintainers: both workflows start with the authorize job, and
 # their work waits for it.
 for wf in (build, promote):
@@ -107,8 +129,15 @@ grep -Fq "Only the repository's admins and maintainers" "$work/authorize.out" ||
 cat >"$work/bin/gh" <<'EOF'
 #!/bin/sh
 # gh api repos/:owner/:repo/commits/TAG --jq .sha: STUB_TAG_SHA, or "head" for
-# the checkout's own HEAD; no tag when it is unset.
-[ -n "${STUB_TAG_SHA:-}" ] || exit 1
+# the checkout's own HEAD; GitHub's 422 for a missing tag when it is unset, and
+# a server error when it is "error".
+if [ -z "${STUB_TAG_SHA:-}" ]; then
+	printf 'gh: No commit found for SHA: v0 (HTTP 422)\n' >&2
+	exit 1
+elif [ "$STUB_TAG_SHA" = error ]; then
+	printf 'gh: Bad Gateway (HTTP 502)\n' >&2
+	exit 1
+fi
 if [ "$STUB_TAG_SHA" = head ]; then git rev-parse HEAD; else printf '%s\n' "$STUB_TAG_SHA"; fi
 EOF
 chmod +x "$work/bin/gh"
@@ -121,7 +150,9 @@ check() { # CHANNEL VERSION [NOTES]
 	git -C "$checkout" add -A
 	git -C "$checkout" -c user.name=t -c user.email=t@example.invalid commit -q -m "v$2" --allow-empty
 	: >"$work/github-env"
+	mkdir -p "$work/runner-temp"
 	(cd "$checkout" && env PATH="$work/bin:$PATH" CHANNEL="$1" NOTES="${3:-}" GITHUB_ENV="$work/github-env" \
+		RUNNER_TEMP="$work/runner-temp" \
 		RELEASE_TOKEN_SET="${RELEASE_TOKEN_SET:-true}" \
 		bash "$work/check.sh") >"$work/check.out" 2>&1
 }
@@ -143,6 +174,12 @@ if STUB_TAG_SHA=0123456789abcdef0123456789abcdef01234567 check main 2026.10.1; t
 	fail 'check accepted a tag at another commit'
 fi
 grep -Fq 'Bump VERSION in config.mk' "$work/check.out" || fail "a tag at another commit: $(cat "$work/check.out")"
+# A tag lookup that fails for any other reason stops the release.
+if STUB_TAG_SHA=error check main 2026.10.3; then fail 'check passed although the tag could not be looked up'; fi
+grep -Fq 'Could not look up v2026.10.3' "$work/check.out" || fail "a failed tag lookup: $(cat "$work/check.out")"
+# Nothing the check writes lands in the checkout, which lyona-release needs clean.
+[[ -z $(git -C "$checkout" status --porcelain --untracked-files=normal) ]] ||
+	fail "the check left files in the checkout: $(git -C "$checkout" status --porcelain)"
 STUB_TAG_SHA="head" check main 2026.10.2 ||
 	fail "a rerun at the tagged commit was refused: $(cat "$work/check.out")"
 
@@ -154,12 +191,12 @@ printf '%s\n' "$*" >"$STUB_DIR/release.args"
 EOF
 chmod +x "$work/release/scripts/lyona-release"
 : >"$work/runner/iso/lyona-2026.10.0-x86_64.iso"
-release() { (cd "$work/release" && env STUB_DIR="$work" RUNNER_TEMP="$work/runner" VERSION=2026.10.0 NOTES="${1:-}" bash "$work/release.sh"); }
+release() { (cd "$work/release" && env STUB_DIR="$work" RUNNER_TEMP="$work/runner" VERSION=2026.10.0 BUNDLE="$work/runner/bundle.json" NOTES="${1:-}" bash "$work/release.sh"); }
 release || fail 'the release step failed'
-[[ $(cat "$work/release.args") == "--version 2026.10.0 --iso $work/runner/iso/lyona-2026.10.0-x86_64.iso --prerelease" ]] ||
+[[ $(cat "$work/release.args") == "--version 2026.10.0 --iso $work/runner/iso/lyona-2026.10.0-x86_64.iso --bundle $work/runner/bundle.json --prerelease --skip-checks" ]] ||
 	fail "lyona-release was run as: $(cat "$work/release.args")"
 release notes/release.md || fail 'the release step with notes failed'
-[[ $(cat "$work/release.args") == *' --prerelease --notes notes/release.md' ]] || fail "with notes: $(cat "$work/release.args")"
+[[ $(cat "$work/release.args") == *' --prerelease --skip-checks --notes notes/release.md' ]] || fail "with notes: $(cat "$work/release.args")"
 : >"$work/runner/iso/second.iso"
 if release >/dev/null 2>&1; then fail 'the release step accepted two ISOs'; fi
 

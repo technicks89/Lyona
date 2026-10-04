@@ -124,7 +124,8 @@ for kernel in linux-cachyos linux-cachyos-lts; do
 done
 
 step_total=$(awk '/^set_total_steps /{print $2; exit}' "$postinstall")
-step_calls=$(grep -c '^run_logged ' "$postinstall")
+# Every step, the Topgrade one too, which runs as `if ! run_logged` (Sync Sprint 16 R16-29).
+step_calls=$(grep -cE '^(if ! )?run_logged ' "$postinstall")
 [[ $step_total == "$step_calls" ]] || {
 	printf 'lyona-postinstall.sh reports %s steps but runs %s.\n' "$step_total" "$step_calls" >&2
 	exit 1
@@ -430,6 +431,9 @@ iso_publisher="Arch Linux <https://archlinux.org>"
 iso_application="Arch Linux Live/Rescue CD"
 iso_version="$(date +%Y.%m.%d)"
 install_dir="arch"
+file_permissions=(
+  ["/etc/shadow"]="0:0:400"
+)
 EOF
 printf 'base\n' >"$releng/packages.x86_64"
 printf '[options]\n' >"$releng/pacman.conf"
@@ -910,6 +914,19 @@ EOF
 		exit 1
 	fi
 	grep -Fq 'mkarchiso must run as root.' "$work/norun.out"
+fi
+
+# Sync Sprint 16: mkarchiso makes every file not listed in file_permissions mode
+# 644, so each executable file of the embedded checkout is listed, and only those.
+for executable in scripts/lyona-cachyos install.sh scripts/lyona-update; do
+	grep -Fqx "  [\"/root/lyona/$executable\"]=\"0:0:755\"" "$profiledef" || {
+		printf 'the image would lose the executable bit of %s\n' "$executable" >&2
+		exit 1
+	}
+done
+if grep -Fq '"/root/lyona/README.md"' "$profiledef"; then
+	printf 'a file that is not executable was made executable in the image\n' >&2
+	exit 1
 fi
 
 printf 'Arch ISO builder structural checks: PASS\n'

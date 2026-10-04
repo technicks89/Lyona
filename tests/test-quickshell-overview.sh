@@ -6,7 +6,7 @@ set -eu
 overview=$repo/config/quickshell/overview
 state=$repo/config/quickshell/state
 
-# Sync Sprint 7 S7-03 (docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md, part of the
+# Sync Sprint 7 S7-03 (docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md, part of the
 # cross-tag window overview, issue #350): structural pins for the popup's own
 # files, matching test-quickshell-panel-menus.sh's convention of literal
 # `grep -Fq` checks against the other ClickAwayPopup-based windows
@@ -126,8 +126,9 @@ grep -Fq 'function toggleOverview(screen)' "$shell"
 grep -Fq 'overviewModel.close();' "$shell"
 grep -Fq 'target: "overview"' "$shell"
 
-# hotkeys.toml: a real binding, calling the IPC target/action above.
-grep -Fq 'call overview toggle' "$repo/config/hotkeys.toml"
+# hotkeys.toml: a real binding, calling the IPC target/action above through
+# the installed wrapper (Sync Sprint 16 R16-47).
+grep -Fq 'exec=["lyona-shell", "overview", "toggle"]' "$repo/config/hotkeys.toml"
 
 if grep -REn 'Quickshell\.(Wayland|Hyprland)|WlrLayershell|hyprctl|uwsm-app|wl-copy|wl-paste' \
 	"$overview"; then
@@ -186,7 +187,7 @@ fi
 # windowsByTag()'s own).
 grep -Fq 'function groupByTag(windows, monitorWorkspaceRows, workspaceNames, fallbackScreenCount)' "$state/DwmStateWindows.js"
 
-# Keyboard navigation (Sync Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md):
+# Keyboard navigation (Sync Sprint 8 S8-01, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md):
 # the exact Keys.onPressed shape LauncherWindow.qml already has (arrows,
 # Home/End, Enter), driving OverviewModel's own selection state rather than
 # inventing separate keyboard-handling logic in the view.

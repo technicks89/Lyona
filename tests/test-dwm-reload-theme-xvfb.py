@@ -11,6 +11,8 @@ files in its config home. Checked:
    running theme-apply.sh.
 3. Rewriting themes.toml runs it.
 4. SIGUSR1, an explicit reload request, runs it.
+5. The lyona directory moved away and created again is watched again: dwm loads
+   the new one, and reloads on edits to it (Sync Sprint 16 R16-09).
 """
 import os
 import shutil
@@ -96,6 +98,17 @@ with tempfile.TemporaryDirectory(prefix='reload-theme-', dir=str(temp_root)) as 
         wait_for(lambda: count_runs() == 3, 'SIGUSR1 did not run theme-apply.sh')
         if set(runs.read_text().split()) != {'1'}:
             fail('theme-apply.sh ran without DWM_THEME_APPLY_AUTOMATIC=1')
+
+        before = reloads()
+        shutil.move(str(config), str(base / 'config/lyona.old'))
+        config.mkdir()
+        for toml in ('hotkeys.toml', 'themes.toml', 'window-rules.toml'):
+            shutil.copy(repo / 'config' / toml, config / toml)
+        wait_for(lambda: reloads() > before, 'a recreated lyona directory was not loaded')
+        time.sleep(0.5)
+        before = reloads()
+        rewrite('hotkeys.toml')
+        wait_for(lambda: reloads() == before + 1, 'an edit in the recreated lyona directory was not reloaded')
         if wm.poll() is not None:
             fail('dwm exited', log_path)
     finally:
@@ -106,4 +119,4 @@ with tempfile.TemporaryDirectory(prefix='reload-theme-', dir=str(temp_root)) as 
         wm.wait()
         log.close()
 
-print('dwm reload (theme-apply.sh on start-up, themes.toml and SIGUSR1 only): PASS')
+print('dwm reload (theme-apply.sh on start-up, themes.toml and SIGUSR1 only; a recreated config directory is watched): PASS')

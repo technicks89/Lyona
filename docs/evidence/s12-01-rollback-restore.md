@@ -1,6 +1,6 @@
 # S12-01 -- rollback restores only what root has checked
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-01-rollback-restores-only-what-root-has-checked`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-01-rollback-restores-only-what-root-has-checked`.
 Issue `#164`.
 
 ## Why the plan's diff was not enough

@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # Sync Sprint 15 S15-02: scripts/lyona-update-indicator against a stub
-# checkupdates and a fake NetworkManager on a private bus. A count is reported
-# for pending updates, current for none, and a failure or a timeout as an error,
-# never as current; the settings take only the allowed values, default
-# otherwise, and are private; watch-network reports a connection only when the
-# state reaches full connectivity from below.
+# checkupdates. A count is reported for pending updates, current for none, and
+# a failure or a timeout as an error, never as current; the settings take only
+# the allowed values, default otherwise, and are private. Sync Sprint 16
+# R16-34: there is no network watcher any more (the shell's NetworkModel says
+# when the connection comes up), so no resident python3.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -114,12 +114,21 @@ if run set-float-terminal 1 >/dev/null 2>&1; then fail 'set-float-terminal accep
 # The rule that floats it is read from window-rules.toml, never written.
 rules=$XDG_CONFIG_HOME/lyona/window-rules.toml
 float_rule() { run status | awk -F '\t' '$2 == "float-rule" { print $3 }'; }
-printf '  { class="Alacritty", isterminal=1 },\n' >"$rules"
+# Read as dwm reads it, through lyona-toml (Sync Sprint 16 R16-44).
+rules_file() { printf 'rules = [\n%s\n]\n' "$1" >"$rules"; }
+rules_file '  { class="Alacritty", isterminal=1 },'
 [[ $(float_rule) == missing ]] || fail 'a rules file without the rule read as present'
-printf '  # { class="lyona-update-float", isfloating=1 },\n' >"$rules"
+rules_file '  # { class="lyona-update-float", isfloating=1 },'
 [[ $(float_rule) == missing ]] || fail 'a commented-out rule read as present'
-printf '  { class="lyona-update-float", isfloating=0 },\n' >"$rules"
+rules_file '  { class="lyona-update-float", isfloating=0 },'
 [[ $(float_rule) == missing ]] || fail 'a rule that does not float read as present'
+rules_file '  { class="lyona-update-float" },
+  { class="Other", isfloating=1 },'
+[[ $(float_rule) == missing ]] || fail 'the class and isfloating from different rules read as present'
+printf 'other = [\n  { class="lyona-update-float", isfloating=1 },\n]\n' >"$rules"
+[[ $(float_rule) == missing ]] || fail 'a rule outside the rules array read as present'
+rules_file '  { isfloating = 1, class = "lyona-update-float" },'
+[[ $(float_rule) == present ]] || fail 'a floating rule written another way read as missing'
 cp "$repo/config/window-rules.toml" "$rules"
 [[ $(float_rule) == present ]] || fail 'the shipped rules file lacks the float rule'
 cmp -s "$repo/config/window-rules.toml" "$rules" || fail 'status changed window-rules.toml'
@@ -137,79 +146,12 @@ if run set-interval 3 >/dev/null 2>&1; then fail 'wrote through a symlinked sett
 rm -f "$conf"
 if run frobnicate >/dev/null 2>&1; then fail 'an unknown action succeeded'; fi
 
-# watch-network against a fake NetworkManager, on a private bus standing in for
-# the system bus.
-if ! command -v dbus-run-session >/dev/null 2>&1 || ! python3 -c 'import gi; gi.require_version("Gio", "2.0")' 2>/dev/null; then
-	printf 'lyona-update-indicator: PASS (watch-network skipped: dbus-run-session or python-gobject missing)\n'
-	exit 0
+# No network watcher: the command is gone, and no python3 is left in the helper.
+status=0
+run watch-network >/dev/null 2>&1 || status=$?
+[[ $status == 2 ]] || fail "watch-network is still accepted (status $status)"
+if grep -n 'python' "$helper" | grep -q .; then
+	fail "the helper still runs python: $(grep -n python "$helper")"
 fi
-cat >"$work/fake-nm.py" <<'EOF'
-import sys
-import gi
-gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib
-
-NAME = "org.freedesktop.NetworkManager"
-PATH = "/org/freedesktop/NetworkManager"
-XML = """<node><interface name="org.freedesktop.NetworkManager">
-<property name="State" type="u" access="read"/>
-<signal name="StateChanged"><arg type="u"/></signal></interface></node>"""
-state = [int(sys.argv[1])]
-bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-info = Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0]
-
-def get_property(_c, _s, _p, _i, name):
-    return GLib.Variant("u", state[0]) if name == "State" else None
-
-bus.register_object(PATH, info, None, get_property, None)
-
-def command(channel, _condition):
-    line = channel.readline()
-    if not line:
-        loop.quit()
-        return False
-    state[0] = int(line)
-    bus.emit_signal(None, PATH, NAME, "StateChanged", GLib.Variant("(u)", (state[0],)))
-    bus.flush_sync(None)
-    return True
-
-def acquired(_connection, _name):
-    print("owned", flush=True)
-
-Gio.bus_own_name_on_connection(bus, NAME, Gio.BusNameOwnerFlags.NONE, acquired, None)
-loop = GLib.MainLoop()
-GLib.io_add_watch(GLib.IOChannel.unix_new(sys.stdin.fileno()), GLib.IO_IN | GLib.IO_HUP, command)
-loop.run()
-EOF
-cat >"$work/watch.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-work=$1 helper=$2
-export DBUS_SYSTEM_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS
-mkfifo "$work/nm.in"
-# Already connected: the first full-connectivity reading is not a reconnect.
-python3 -W ignore::DeprecationWarning "$work/fake-nm.py" 70 <"$work/nm.in" >"$work/nm.out" &
-exec 3>"$work/nm.in"
-for _ in $(seq 100); do grep -q owned "$work/nm.out" 2>/dev/null && break; sleep 0.05; done
-grep -q owned "$work/nm.out"
-"$helper" watch-network >"$work/events" &
-watcher=$!
-for _ in $(seq 100); do grep -q ready "$work/events" 2>/dev/null && break; sleep 0.05; done
-# Connected again (no change), then a drop, then back: one event.
-printf '70\n20\n50\n70\n' >&3
-for _ in $(seq 100); do grep -q connected "$work/events" 2>/dev/null && break; sleep 0.05; done
-sleep 0.3
-kill "$watcher"
-exec 3>&-
-wait
-EOF
-chmod +x "$work/watch.sh"
-timeout 30 dbus-run-session -- "$work/watch.sh" "$work" "$helper" || fail 'the watch-network run failed'
-expected=$'network-event\tready\nnetwork-event\tconnected'
-[[ $(cat "$work/events") == "$expected" ]] || fail "network events: $(cat "$work/events")"
-# No bus at all: unavailable, and the helper exits.
-out=$(DBUS_SYSTEM_BUS_ADDRESS=unix:path=$work/no-such-socket timeout 10 "$helper" watch-network) ||
-	fail 'watch-network did not exit without a bus'
-[[ $out == $'network-event\tunavailable' ]] || fail "no bus: $out"
 
 printf 'lyona-update-indicator: PASS\n'

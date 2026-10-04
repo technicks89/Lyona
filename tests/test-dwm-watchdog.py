@@ -98,6 +98,8 @@ case $1 in
 status) run_parent_bound sh -c 'exit 3'; echo "status=$?" >"$2" ;;
 program) echo $$ >"$2"; run_parent_bound sleep 1000 ;;
 function) echo $$ >"$2"; run_parent_bound long_function ;;
+bound) echo $$ >"$2"; LYONA_PARENT_BOUND_SELF=$$; export LYONA_PARENT_BOUND_SELF; run_parent_bound sleep 1000 ;;
+elsewhere) echo $$ >"$2"; LYONA_PARENT_BOUND_SELF=1; export LYONA_PARENT_BOUND_SELF; run_parent_bound sleep 1000 ;;
 esac
 ''' % watchdog)
     helper.chmod(0o755)
@@ -222,5 +224,29 @@ esac
         if got != want:
             fail('LYONA_PARENT_BOUND_INTERVAL=%r ran the loop with %r, not %r' % (given, got, want))
 
+    # 8. Sync Sprint 16 R16-43: a helper that Quickshell's watchCommand bound
+    # (LYONA_PARENT_BOUND_SELF is its own pid) starts no backstop loop; one that
+    # names another process, as a subshell would see, still does.
+    def has_loop(helper_pid):
+        time.sleep(0.5)
+        for pid in descendants(helper_pid):
+            try:
+                cmd = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
+            except FileNotFoundError:
+                continue
+            if len(cmd) > 2 and cmd[1] == b'-c' and b'parent_identity' in cmd[2]:
+                return True
+        return False
+
+    for kind, want in (('bound', False), ('elsewhere', True)):
+        parent, helper_pid, child = start(kind)
+        got = has_loop(helper_pid)
+        os.kill(helper_pid, signal.SIGTERM)
+        wait_gone(child, 3)
+        parent.kill()
+        parent.wait()
+        if got != want:
+            fail('%s: the backstop loop %s' % (kind, 'ran' if got else 'did not run'))
+
 print('dwm-watchdog run_parent_bound (status, helper SIGKILL, parent crash, function child, idle, guard, '
-      'intervals): PASS')
+      'intervals, no backstop when bound): PASS')

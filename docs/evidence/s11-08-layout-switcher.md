@@ -1,6 +1,6 @@
 # S11-08 -- a layout switcher in the Control Center
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-08`. Issue `#159`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-08-a-layout-switcher-in-the-control-center`. Issue `#159`.
 Decision D-12 (2026-09-26). The only Sprint 11 item that changes the dwm C core.
 
 ## Change

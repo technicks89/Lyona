@@ -4,7 +4,7 @@ import "../../config/quickshell/settings/DisplayLayout.js" as Layout
 
 /*
  * Direct, non-UI tests for the pure display-placement math library (Sync
- * Sprint 3 S3-01, docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md, ported from
+ * Sprint 3 S3-01, docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md, ported from
  * upstream's 55dbd76 (#289) tests/quickshell-display-layout.qml -- an
  * ad-hoc QtObject/Component.onCompleted script upstream runs outside
  * qmltestrunner. Converted here into Lyona's own tst_*.qml/TestCase

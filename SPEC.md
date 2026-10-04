@@ -75,6 +75,8 @@ The installed session must provide:
 - Standard dwm tiling, floating, monocle, tagging, focus, and monitor behavior.
 - Per-tag layout state and sizing.
 - EWMH desktop and active-window integration for external bars and tools.
+  dwm's own root properties for the managed shell, and the DPI state file, are
+  specified in `docs/SHELL-STATE-PROTOCOL.md`.
 - Xinerama multi-monitor support.
 - Window swallowing.
 - Per-client size factors and stack reordering.
@@ -465,6 +467,10 @@ Runtime dependencies are classified as:
   password login. A `startx` session has no such stack; its keyring stays locked
   until first use. Diagnostics and System Health report a missing keyring as a
   degraded desktop, and `lyona-update` warns about it without refusing.
+  `cosign` checks the Sigstore signature of lyona's own releases: from
+  `2026.10.0-beta.2` on, `lyona-update` refuses a release whose signature is
+  missing or does not verify, and refuses to update without `cosign`
+  (decision D-31).
 - Optional: the Herdr terminal workspace, file manager, network tray, theme
   utilities, display-manager greeter customization, wallpapers, and
   hardware-specific helpers.
@@ -601,6 +607,11 @@ closed early is reported as interrupted, never as success. The terminal tiles
 unless the user chooses to float it, which uses a window class the shipped
 `window-rules.toml` floats. An existing user rules file is never edited.
 
+Topgrade (decision D-28) is outside this contract (Sync Sprint 16 R16-52): a
+tool the user runs from a terminal, of their own accord, which updates whatever
+it finds in its own ways. Settings neither runs it nor counts what it would
+update, and the panel's indicator does not include it.
+
 Advanced partitioning, unrestricted service control, firewall policy editing,
 and similarly high-risk administration remain delegated unless a later
 specification defines a narrow safe interface.
@@ -650,10 +661,11 @@ onto the system `releng` profile, via `scripts/build-lyona-arch-iso.sh`.
 The live medium embeds this repository, requires UEFI, and auto-logs into a
 root shell that automatically launches `lyona-install`
 (`archiso/airootfs/root/lyona-install.sh`) — no command to type. It is a
-short wizard styled after linutil's `server-setup.sh` (arrow-key
-`select_option` menus, a redrawn banner between steps, the CTT logo): keyboard,
-disk, user, hostname, timezone, and an NVIDIA driver choice when applicable,
-with no desktop-environment or package picker, that generates an
+short wizard drawn with `gum` (menus and prompts, the lyona banner redrawn
+between steps): keyboard, disk, btrfs or ext4 with optional LUKS encryption,
+user, hostname, timezone (detected, then confirmed), and an NVIDIA driver
+choice when applicable, then a summary to confirm, with no
+desktop-environment or package picker. It generates an
 `archinstall` JSON config and runs it fully unattended (`--silent`) — the
 base install (disk partitioning, filesystem, systemd-boot, user account) is
 not interactively menu-driven. A `/root/.lyona-install-done` sentinel,
@@ -862,7 +874,8 @@ Phase 3 NetworkManager, BlueZ, PipeWire, and media workflows, and Phase 4 power,
 session-action, default-application, MIME, and XDG autostart workflows. The
 remaining Settings mutation surface in Section 5.10 begins with Phase 5 themes,
 wallpaper, fonts, cursors, toolkit integration, notifications, and practical X11
-accessibility controls, sequenced in `ROADMAP.md` and defined in `TASKS.md`.
+accessibility controls, sequenced in `docs/roadmap/ROADMAP.md` and defined in
+`docs/roadmap/TASKS.md`.
 
 The installer contains an Arch Linux-only package map and rejects other
 systems. The build uses `pkg-config`, supports staged installation with

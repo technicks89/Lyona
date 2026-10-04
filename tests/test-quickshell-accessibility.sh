@@ -20,8 +20,9 @@ provider=$repo/scripts/dwm-settings-provider
 
 "$repo/scripts/quickshell-qmllint" --root "$repo/config/quickshell"
 
-assert_contains "$model" 'accessibility-settings-protocol\t1\t0'
-assert_contains "$model" 'accessibility-settings-action-protocol\t1\t0'
+# Both headers through the shared rule (Sync Sprint 16 R16-53).
+assert_contains "$model" '"accessibility-settings-protocol", 1)'
+assert_contains "$model" '"accessibility-settings-action-protocol", 1)'
 assert_contains "$model" 'readonly property bool mutationReady: root.mutationState === "available"'
 assert_contains "$model" 'property string mutationState: "unavailable"'
 assert_contains "$model" 'property string mutationDetail: "Loading accessibility policy"'
@@ -52,7 +53,7 @@ if grep -Fq 'watchReady' "$model" || grep -Fq 'watchSetupFailures' "$model"; the
 	printf 'Accessibility model reintroduced the inline watch-lifecycle bookkeeping WatchedProcess replaces\n' >&2
 	exit 1
 fi
-assert_contains "$watched_process" 'if (!running && root.active)'
+assert_contains "$watched_process" 'if (!root.active)'
 assert_contains "$watched_process" 'restartTimer.restart()'
 assert_contains "$watched_process" 'if (root.active && !watchProcess.running)'
 assert_contains "$watched_process" 'onTriggered: root.settled()'

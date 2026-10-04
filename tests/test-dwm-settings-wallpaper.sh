@@ -532,8 +532,8 @@ test "$new_rearm_pid" != "$$"
 kill -0 "$new_rearm_pid"
 run_helper revert rearm-me >/dev/null
 
-run_helper preview expire-me 2 "$first" scale >/dev/null
-sleep 2.25
+run_helper preview expire-me 1 "$first" scale >/dev/null
+sleep 1.25
 for _ in {1..80}; do
 	preview_status=$(run_helper status)
 	grep -Fqx $'preview\tnone\t\t0\t\tfill\tNo wallpaper preview is active' <<<"$preview_status" && break
@@ -542,8 +542,8 @@ done
 grep -Fqx $'preview\tnone\t\t0\t\tfill\tNo wallpaper preview is active' <<<"$preview_status"
 grep -Fqx "path=$second" "$config_home/lyona/wallpaper.conf"
 
-run_helper preview expired-keep 2 "$first" scale >/dev/null
-sleep 2.25
+run_helper preview expired-keep 1 "$first" scale >/dev/null
+sleep 1.25
 if run_helper keep expired-keep >"$work/expired-keep.out" 2>"$work/expired-keep.err"; then
 	printf 'Expired wallpaper preview was kept\n' >&2
 	exit 1
@@ -1014,9 +1014,13 @@ test -z "$(find "$state_home/lyona/appearance/wallpaper" -maxdepth 1 \
 	-name '.session-default.*' -print -quit)"
 test ! -e "$state_home/lyona/appearance/wallpaper/mutation.owner"
 
-cat >"$bin_dir/setsid" <<'EOF'
+# Only the watchdog's launch stalls; Feh still runs through the real setsid, as
+# it used to sit out this stub's 5 s too (R16-42).
+real_setsid=$(command -v setsid)
+cat >"$bin_dir/setsid" <<EOF
 #!/usr/bin/env bash
-sleep 5
+case " \$* " in *" preview-watchdog "*) exec sleep 5 ;; esac
+exec "$real_setsid" "\$@"
 EOF
 chmod +x "$bin_dir/setsid"
 : >"$log"
@@ -1306,7 +1310,9 @@ count=0
 printf '%s\n' "$count" >"$DWM_TEST_HASH_COUNT"
 if ((count == 5)); then
 	printf 'ready\n' >"$DWM_TEST_HASH_READY"
-	sleep 5
+	# Long enough for the test, which is waiting for "ready", to interrupt the
+	# apply; the helper's TERM trap runs once this returns (R16-42: was 5 s).
+	sleep 1
 fi
 exec "$DWM_TEST_REAL_SHA256SUM" "$@"
 EOF

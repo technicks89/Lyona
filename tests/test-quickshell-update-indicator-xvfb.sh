@@ -70,12 +70,19 @@ cp -a "$repo/scripts" "$scripts"
 cp "$repo/lyona-toml" "$scripts/.."
 export LYONA_DEV_SCRIPTS="$scripts"
 
-# The indicator's helper: check and watch-network are the test's; the settings
-# are the real helper's.
+# The indicator's helper: check is the test's; the settings are the real
+# helper's. The network helper is the test's: its snapshot reports the state in
+# $net_state, and its monitor prints what the test writes to the FIFO, which
+# makes the shell's NetworkModel read the snapshot again (Sync Sprint 16 R16-34:
+# the indicator follows NetworkModel, not a watcher of its own).
 mv "$scripts/lyona-update-indicator" "$scripts/lyona-update-indicator.real"
 log=$work/checks.log
 mode=$work/mode
 fifo=$work/network.fifo
+net_state=$work/network.state
+# Connected from the start: the state found at login is not a connection
+# coming up, so it does not check before the start delay.
+printf 'connected\n' >"$net_state"
 : >"$log"
 printf 'updates\n' >"$mode"
 mkfifo "$fifo"
@@ -91,14 +98,28 @@ check)
 	esac
 	printf 'complete\tcheck\n'
 	;;
-watch-network)
-	printf 'network-event\tready\n'
-	exec cat "$fifo"
-	;;
 *) exec "$scripts/lyona-update-indicator.real" "\$@" ;;
 esac
 STUB
 chmod +x "$scripts/lyona-update-indicator"
+cat >"$scripts/dwm-quickshell-network" <<STUB
+#!/bin/sh
+case \$1 in
+snapshot)
+	printf 'connectivity-protocol\t1\t0\n'
+	printf 'provider\tnetwork\tavailable\tdelegated\ttest\n'
+	printf 'network-state\t%s\n' "\$(cat "$net_state")"
+	;;
+monitor) exec cat "$fifo" ;;
+status) printf 'NET test\n' ;;
+esac
+STUB
+chmod +x "$scripts/dwm-quickshell-network"
+# connect|disconnect: the state NetworkManager would report, and a monitor line.
+network() {
+	if [ "$1" = connect ]; then printf 'connected\n'; else printf 'disconnected\n'; fi >"$net_state"
+	printf 'state changed\n' >&3
+}
 # A terminal and yay for "Update packages": the terminal runs the command it is
 # given, and yay logs its arguments.
 mkdir -p "$work/bin"
@@ -163,10 +184,15 @@ tab=$(printf '\t')
 
 wait_for "hidden${tab}0${tab}unknown${tab}6${tab}no" 'at start' ipc updateIndicatorTest status
 [ "$(checks)" = 0 ] || fail 'the shell checked at once, before its start delay'
-# The watcher holds the FIFO open for reading once it is running.
+# The monitor holds the FIFO open for reading once it is running.
 exec 3>"$fifo"
 
-printf 'network-event\tconnected\n' >&3
+# Give NetworkModel time to read the login state before it changes.
+sleep 1
+[ "$(checks)" = 0 ] || fail 'the connection found at login ran a check'
+network disconnect
+sleep 1
+network connect
 wait_for "shown${tab}3${tab}available${tab}6${tab}no" 'after a connection event' ipc updateIndicatorTest status
 [ "$(checks)" = 1 ] || fail "a connection event ran $(checks) checks, not one"
 
@@ -183,8 +209,10 @@ ipc updateIndicatorTest check >/dev/null
 wait_for "hidden${tab}0${tab}current${tab}6${tab}no" 'a check by hand finding nothing' ipc updateIndicatorTest status
 [ "$(checks)" = 2 ] || fail "expected two checks, saw $(checks)"
 
-# Soon after a successful check, a connection event does not check again.
-printf 'network-event\tconnected\n' >&3
+# Soon after a successful check, a connection coming back does not check again.
+network disconnect
+sleep 1
+network connect
 sleep 1
 [ "$(checks)" = 2 ] || fail 'a second connection event checked again within the gap'
 

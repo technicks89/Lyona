@@ -954,6 +954,19 @@ if ! DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$dat
 	exit 1
 fi
 
+# The logout and reboot keys call "power confirm ACTION" (Sync Sprint 16 R16-24):
+# the running shell offers it. (What it does is checked in
+# test-quickshell-session-actions.sh.)
+power_ipc=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" show 2>&1) || :
+case $power_ipc in
+*'function confirm(action: string): void'*) ;;
+*)
+	printf 'the running shell does not offer power confirm:\n%s\n' "$power_ipc" >&2
+	exit 1
+	;;
+esac
+
 update_ipc() {
 	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest "$@"

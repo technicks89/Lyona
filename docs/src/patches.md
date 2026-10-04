@@ -52,9 +52,9 @@ Three fullscreen modes available:
 
 | Mode | Keys | Description |
 |------|------|-------------|
-| True fullscreen | `Super` + `M` | Hides bar, takes full screen |
+| True fullscreen | `Super` + `M` | The focused window only: hides the bar, takes the full screen |
 | Fake fullscreen | `Super` + `Shift` + `Y` | Looks fullscreen, bar still usable |
-| Monocle layout | — | Single window view, bar visible |
+| Monocle layout | none (the Control Center's Window layout row) | A layout, for the tag: one window at a time, bar visible |
 
 ---
 
@@ -103,6 +103,7 @@ Save the file to apply a new theme instantly across supported apps.
 | Script | Description |
 |--------|-------------|
 | `dwm-controlcenter` | Quickshell control center (`Super`+`F1`) |
+| `lyona-shell` | Opens a part of the shell: `launcher toggle`, `overview toggle`, `controlcenter open\|toggle\|openKeybinds`, `power toggle`, `power confirm logout\|reboot`. The default keybinds call it; use it in your own `hotkeys.toml` rather than Quickshell's IPC, which can change between releases |
 | `dwm-keybinds` | Searchable keybind viewer (`Super`+`/`) |
 | `dwm-quickshell-launcher` | Indexes desktop entries and launches ChatGPT with a native-first web fallback |
 | `dwm-screenshot` | Cursor-free `maim` wrapper (screen, full, gui, clip modes) |

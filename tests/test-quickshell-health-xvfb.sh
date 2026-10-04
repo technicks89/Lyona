@@ -169,6 +169,19 @@ done
 
 if [ -z "$window" ]; then
 	printf 'Control Center popup did not open\n' >&2
+	# This has failed now and then in full runs and never alone: say what was
+	# on screen, so the next failure shows whether the popup never mapped or
+	# reused a window already counted as visible.
+	describe_windows() {
+		for id in $1; do
+			printf '  %s %s %s\n' "$id" "$(DISPLAY=$display xdotool getwindowname "$id" 2>/dev/null || printf '?')" \
+				"$(DISPLAY=$display xdotool getwindowgeometry --shell "$id" 2>/dev/null | tr '\n' ' ')" >&2
+		done
+	}
+	printf 'Quickshell windows visible before the open:\n' >&2
+	describe_windows "$visible_windows"
+	printf 'Quickshell windows visible now:\n' >&2
+	describe_windows "$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)"
 	tail -40 "$work/quickshell.log" >&2
 	exit 1
 fi

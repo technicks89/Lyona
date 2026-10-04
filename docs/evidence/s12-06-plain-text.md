@@ -1,6 +1,6 @@
 # S12-06 -- untrusted text renders as plain text
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-06-untrusted-text-renders-as-plain-text`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-06-untrusted-text-renders-as-plain-text`.
 Issue `#169`.
 
 ## Change

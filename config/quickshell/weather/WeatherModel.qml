@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 // The panel's weather (Sync Sprint 12 S12-20, decision D-19). The lyona-weather
 // helper fetches and caches; this asks it only while the Bar Widgets switch is
@@ -50,7 +51,7 @@ Scope {
 
     function parseCurrent(text) {
         const lines = text.trim().split("\n");
-        if (lines.length < 3 || lines[0] !== "weather-protocol\t1\t0"
+        if (lines.length < 3 || !Protocol.isHeader(lines[0].split("\t"), "weather-protocol", 1)
                 || lines[lines.length - 1] !== "complete\tcurrent") {
             root.weatherState = "unavailable";
             root.detail = "The weather helper returned invalid data";

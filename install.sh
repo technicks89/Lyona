@@ -60,6 +60,10 @@ MESLO_VERSION="3.4.0"
 MESLO_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v${MESLO_VERSION}/Meslo.zip"
 MESLO_SHA256="13b502ac8c2bd9d3161018064560e23cd42b175bb730780a270975265a19ad57"
 ARCH="$(uname -m)"
+# The wallpapers, pinned to a reviewed commit (Sync Sprint 16 R16-16): they are
+# fetched while sudo is cached. Re-pin after looking at what changed.
+WALLPAPERS_URL="https://github.com/technicks89/nord-background.git"
+WALLPAPERS_REF="8f3dc598c132eaabdba7e7af5dc0acb45fbaa2b3"
 YAY_BIN_URL="https://aur.archlinux.org/yay-bin.git"
 # Reviewed AUR PKGBUILD commit (yay-bin 13.0.1): downloads a checksummed
 # release tarball from github.com/Jguer/yay, no arbitrary build step. Re-pin
@@ -491,7 +495,12 @@ ensure_yay_installed() {
 		warn "Could not download yay; continuing without an AUR helper."
 		return 1
 	fi
-	if ! (cd "$tmp_dir/yay-bin" && makepkg -si); then
+	# pacman's "Proceed with installation?" is answered for a non-interactive
+	# run: the image install runs this behind a spinner, where nothing can answer
+	# it, and it waited there forever (Sync Sprint 16, found in a VM).
+	local -a makepkg_args=(-si --needed)
+	[[ $NON_INTERACTIVE != true ]] || makepkg_args+=(--noconfirm)
+	if ! (cd "$tmp_dir/yay-bin" && makepkg "${makepkg_args[@]}"); then
 		rm -rf "$tmp_dir"
 		warn "yay build failed; continuing without an AUR helper."
 		return 1
@@ -536,20 +545,36 @@ print_install_summary() {
 		else
 			printf '  Topgrade: skipped (--skip-topgrade)\n'
 		fi
+		# Every change it makes is listed (Sync Sprint 16 R16-28).
+		printf '  Shell configuration: mybash replaces ~/.bashrc, ~/.config/starship.toml, the fastfetch config and ~/.local/bin/starship-theme with links (previous files kept as .bak.<time>)\n'
 	else
 		printf '  Recommended packages: skipped\n'
 	fi
 	if install_optional_profile; then
 		print_summary_profile "Optional extras" optional
+		if [[ -d $BG_DIR ]]; then
+			printf '  Wallpapers: already present in %s\n' "$BG_DIR"
+		else
+			printf '  Wallpapers: downloaded into %s (pinned commit)\n' "$BG_DIR"
+		fi
+		local dm
+		dm=$(detect_display_manager)
+		if [[ -n $dm ]]; then
+			printf '  Display manager: %s, already installed\n' "$dm"
+		else
+			printf '  Display manager: LightDM, installed and enabled\n'
+		fi
 		if arch_gaming_profile; then
 			print_summary_profile "Arch gaming packages" gaming
+			# Arch's own [multilib], not a third-party repository.
 			if [[ $ARCH_GAMING_REPOS_APPROVED == true ]]; then
-				printf '  Third-party repositories: approved\n'
+				printf '  Arch [multilib] repository: approved\n'
 			elif arch_multilib_enabled; then
-				printf '  Third-party repositories: [multilib] already enabled\n'
+				printf '  Arch [multilib] repository: already enabled\n'
 			else
-				printf '  Third-party repositories: require separate confirmation\n'
+				printf '  Arch [multilib] repository: requires separate confirmation\n'
 			fi
+			printf '  gamemode group: %s is added to it, with the gaming packages\n' "$(id -un)"
 		fi
 	else
 		printf '  Optional extras: skipped\n'
@@ -582,6 +607,11 @@ print_install_summary() {
 		printf '  Herdr workspace: skipped (unsupported architecture: %s)\n' "$ARCH"
 	else
 		printf '  Herdr workspace: skipped (optional; use --install-herdr to enable)\n'
+	fi
+	if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
+		printf '  AUR helper: already installed\n'
+	else
+		printf '  AUR helper: yay-bin, built from its pinned AUR PKGBUILD with makepkg\n'
 	fi
 	echo ""
 }
@@ -818,7 +848,19 @@ if install_recommended_profile; then
 		warn "Media and image defaults were not seeded; set them in Settings > Defaults."
 	fi
 	info "Setting up Gear Lever for AppImage management..."
-	if "$REPO_DIR/scripts/install-gearlever"; then
+	# Flatpak cannot install for the user inside the image installer's chroot
+	# ("User 1000 does not exist"), so there it is left for the first login,
+	# whose session startup installs it (Sync Sprint 16, found in a VM). The image
+	# always runs this in arch-chroot (LYONA_SOURCE=iso), which systemd-detect-virt
+	# cannot see: it gives the chroot its own PID namespace.
+	if [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
+		gearlever_state=${XDG_STATE_HOME:-$HOME/.local/state}/lyona
+		if mkdir -p -- "$gearlever_state" && : >"$gearlever_state/pending-gearlever"; then
+			info "Gear Lever will be installed at your first login."
+		else
+			warn "Gear Lever was not set up; after logging in, run install-gearlever."
+		fi
+	elif "$REPO_DIR/scripts/install-gearlever"; then
 		ok "Gear Lever is installed."
 	else
 		warn "Gear Lever setup failed; retry with scripts/install-gearlever when Flathub is reachable."
@@ -842,6 +884,15 @@ if install_optional_profile; then
 			warn "Arch gaming packages were skipped because the multilib repository was not approved."
 		elif configure_arch_multilib_repository; then
 			info "Installing Arch gaming packages..."
+			# This machine's Vulkan drivers first, so pacman never picks one for
+			# Steam itself (Sync Sprint 16).
+			# Only those the enabled repositories have: a legacy NVIDIA branch's
+			# 32-bit utilities may come from elsewhere, or not at all.
+			mapfile -t vulkan_drivers < <(dwm_vulkan_driver_packages)
+			mapfile -t vulkan_drivers < <(available_packages "${vulkan_drivers[@]}")
+			if ((${#vulkan_drivers[@]} > 0)) && ! install_packages "${vulkan_drivers[@]}"; then
+				warn "The Vulkan drivers (${vulkan_drivers[*]}) could not be installed."
+			fi
 			if ! dwm_install_available_package_profile gaming; then
 				warn "Some Arch gaming packages were unavailable in the multilib repository."
 			fi
@@ -869,8 +920,8 @@ if install_recommended_profile; then
 	install_meslo_nerd_font
 	ok "Fonts installed."
 
-	# Replaces ~/.bashrc with a link, keeping the previous file as
-	# ~/.bashrc.bak, so this stays inside the recommended profile rather than
+	# Replaces ~/.bashrc with a link, keeping the previous file as a
+	# timestamped ~/.bashrc.bak.*, so this stays inside the recommended profile rather than
 	# running for a core install.
 	info "Installing the mybash shell configuration..."
 	if "$REPO_DIR/scripts/install-mybash"; then
@@ -942,11 +993,17 @@ if install_optional_profile; then
 		info "Downloading wallpapers..."
 		# Shallow, and without the repository itself: a full clone left ~139
 		# MiB of history sitting in the wallpaper folder for every tool that
-		# walks it, and nothing here ever pulls updates.
-		if git clone --depth 1 https://github.com/technicks89/nord-background.git "$BG_DIR" 2>/dev/null; then
-			rm -rf -- "$BG_DIR/.git"
+		# walks it, and nothing here ever pulls updates. Fetched beside it and
+		# moved in whole, so a failed download leaves no folder behind.
+		bg_tmp=
+		if bg_tmp=$(mktemp -d "$HOME/Pictures/.wallpapers.XXXXXX") &&
+			git -C "$bg_tmp" init --quiet &&
+			git -C "$bg_tmp" fetch --quiet --depth 1 "$WALLPAPERS_URL" "$WALLPAPERS_REF" 2>/dev/null &&
+			git -C "$bg_tmp" -c advice.detachedHead=false checkout --quiet FETCH_HEAD &&
+			rm -rf -- "$bg_tmp/.git" && mv -- "$bg_tmp" "$BG_DIR"; then
 			ok "Wallpapers downloaded to $BG_DIR"
 		else
+			[[ -z $bg_tmp ]] || rm -rf -- "$bg_tmp"
 			warn "Failed to download wallpapers. Add your own to $BG_DIR."
 		fi
 	else
@@ -968,17 +1025,21 @@ else
 	ok "LightDM installed and enabled."
 fi
 
-if [[ $currentdm == "lightdm" ]]; then
-	info "Deploying LightDM Slick Greeter config..."
-	install_lightdm_config
-	ok "LightDM config deployed."
-fi
-
 ensure_yay_installed || true
 
 cd "$REPO_DIR"
 make clean
 make
+
+# After the build: the greeter's GTK theme is generated from themes.toml with
+# lyona-toml, which `make` builds. Deployed before it, a fresh checkout failed
+# here and the image install stopped half-done (Sync Sprint 16, found booting
+# the 2026.10.0-beta.1 image in a VM).
+if [[ $currentdm == "lightdm" ]]; then
+	info "Deploying LightDM Slick Greeter config..."
+	install_lightdm_config
+	ok "LightDM config deployed."
+fi
 # UPDATE-001 install provenance: an ISO install passes LYONA_SOURCE/LYONA_COMMIT
 # through the environment (archiso/airootfs/root/lyona-postinstall.sh); an
 # existing-system install leaves both unset and the Makefile falls back to the

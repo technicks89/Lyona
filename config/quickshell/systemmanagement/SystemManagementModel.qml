@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import qs.core
 import "SystemInformationProtocol.js" as Information
+import "../core/Protocol.js" as Protocol
 
 /*
  * Bounded, read-only Arch update snapshot from dwm-system-management.
@@ -723,8 +724,10 @@ Scope {
         }
 
         const header = lines[0].split("\t");
-        if (header.length !== 3 || header[0] !== "system-management-protocol" || header[1] !== "1"
-                || (header[2] !== "0" && header[2] !== "1" && header[2] !== "2")) {
+        // The shared header rule, and a minor this model knows: the minor says
+        // which capabilities the helper has (the protocol-minor staging table).
+        if (header.length !== 3 || !Protocol.isHeader(header, "system-management-protocol", 1)
+                || Number(header[2]) > 2) {
             root.resetToFallback("System management provider returned an unsupported protocol");
             return false;
         }

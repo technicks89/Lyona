@@ -44,7 +44,14 @@ readonly max_theme_name_length=505
 readonly max_inventory_candidates=256
 readonly max_font_candidates=24
 readonly max_inventory_watch_dirs=128
-readonly max_inventory_scan_seconds=3
+# How long one inventory source may take. DWM_APPEARANCE_SCAN_SECONDS (1 to 30)
+# shortens it for tests (Sync Sprint 16 R16-42).
+max_inventory_scan_seconds=${DWM_APPEARANCE_SCAN_SECONDS:-3}
+[[ $max_inventory_scan_seconds =~ ^[1-9][0-9]?$ ]] && ((max_inventory_scan_seconds <= 30)) ||
+	max_inventory_scan_seconds=3
+readonly max_inventory_scan_seconds
+# The wallpaper helper's status may take a second longer than a scan: 4 s.
+readonly wallpaper_status_seconds=$((max_inventory_scan_seconds + 1))
 readonly key_separator=$'\034'
 readonly legacy_theme_id=$'\035legacy-colors'
 readonly legacy_theme_label='@legacy-colors'
@@ -784,7 +791,7 @@ emit_wallpaper_inventory() {
 	local selection_state=partial selection_path='' selection_fit=fill
 	local selection_detail='No managed wallpaper selection has been recorded yet'
 	if [[ -x $wallpaper_helper ]] &&
-		status_output=$(timeout --signal=TERM --kill-after=1 4 \
+		status_output=$(timeout --signal=TERM --kill-after=1 "$wallpaper_status_seconds" \
 			"$wallpaper_helper" status --read-only 2>/dev/null); then
 		while IFS= read -r line; do
 			((line_number += 1))
@@ -1331,7 +1338,7 @@ watch_inventory() {
 	add_inventory_watch_target "$wallpaper_dir"
 	wallpaper_helper=${DWM_SETTINGS_WALLPAPER_HELPER:-$script_dir/dwm-settings-wallpaper}
 	if [[ -x $wallpaper_helper ]] &&
-		wallpaper_status=$(timeout --signal=TERM --kill-after=1 4 \
+		wallpaper_status=$(timeout --signal=TERM --kill-after=1 "$wallpaper_status_seconds" \
 			"$wallpaper_helper" status --read-only 2>/dev/null); then
 		IFS= read -r wallpaper_protocol <<<"$wallpaper_status"
 		if [[ $wallpaper_protocol == $'wallpaper-protocol\t1\t0' ]]; then

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -77,7 +78,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "autostart-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 3
                     && (fields[1] === "ready" || fields[1] === "degraded"
                         || fields[1] === "unavailable")) {
@@ -228,7 +229,7 @@ Scope {
     function parseActionResult(text) {
         if (root.actionGeneration !== root.mutationGeneration) return;
         const lines = text.trim().split("\n");
-        if (lines.length !== 2 || lines[0] !== "autostart-protocol\t1\t0") {
+        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "autostart-protocol", 1)) {
             root.actionSucceeded = false;
             return;
         }

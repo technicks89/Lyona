@@ -91,6 +91,24 @@ grep -Fq 'root.checkOnLogin' "$update_model"
 # apply() without the pane's own confirmVersion gate.
 grep -Fq 'property string confirmVersion' "$system_pane"
 grep -Fq 'root.updateModel.apply(root.confirmVersion)' "$system_pane"
+# Rollback asks first too (Sync Sprint 16 R16-25): the backup's button only
+# chooses it, and rollback() runs from the confirmation alone.
+grep -Fq 'property var confirmBackup: null' "$system_pane"
+grep -Fq 'onActivated: root.confirmBackup = backupRow.modelData' "$system_pane"
+[ "$(grep -c 'root.updateModel.rollback(' "$system_pane")" = 1 ] ||
+	fail 'Settings calls rollback() from more than the confirmation'
+grep -Fq 'root.updateModel.rollback(root.confirmBackup.id);' "$system_pane"
+# Sync Sprint 16 R16-27: lyona's releases have their own heading, apart from
+# the terminal's packages and Flatpak, whose package update waits for PackageKit.
+grep -Fq 'SectionLabel { label: "lyona" }' "$system_pane"
+grep -Fq 'label: "System packages and Flatpak"' "$system_pane"
+lyona_line=$(grep -n 'SectionLabel { label: "lyona" }' "$system_pane" | cut -d: -f1)
+channel_line=$(grep -n 'label: root.updateModel.channel === "preview" ? "Channel: preview"' "$system_pane" | cut -d: -f1)
+terminal_line=$(grep -n 'label: "System packages and Flatpak"' "$system_pane" | cut -d: -f1)
+[ "$lyona_line" -lt "$channel_line" ] && [ "$channel_line" -lt "$terminal_line" ] ||
+	fail 'the lyona release card is not under the lyona heading'
+grep -Fq '&& !root.updateModel.busy && !root.packageKitBusy' "$system_pane" ||
+	fail 'Update packages is not disabled while PackageKit runs'
 
 # The privileged step is still the one confirmed step from UPDATE-002; the
 # pane never runs anything as root itself.

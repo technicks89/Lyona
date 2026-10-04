@@ -1,6 +1,6 @@
 # S12-11 -- install and update correctness
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-11-install-and-update-correctness`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-11-install-and-update-correctness`.
 Issue `#174`. Item 2's approach was decided with the maintainer on 2026-09-28: refuse
 and list the fix, with no privileged package installation.
 

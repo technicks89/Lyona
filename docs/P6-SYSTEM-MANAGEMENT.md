@@ -8,10 +8,10 @@ Lyona's own contract for the upstream-ported system-management subsystem
 (`scripts/dwm-system-management`), adapted from upstream's real
 `docs/P6-SYSTEM-MANAGEMENT.md` at `dd55e58` (2,492 lines, Fedora-scoped) for
 Arch/CachyOS, per
-[Sync Phase 1's decision](SYNC-P1-SYSTEM-PROVIDER-DECISION.md): **Option A —
+Sync Phase 1's decision (`92ec6e2:docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md`): **Option A —
 adopt the upstream Python helper**, with Arch substitutions for the
 Fedora-specific fraction of it. Index:
-[`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#the-system-management-port).
+[`UPSTREAM-SYNC.md`](sprints/UPSTREAM-SYNC.md#where-things-stand).
 
 This document establishes the contract before any of it is implemented — the
 same ordering upstream itself used, and the same reason: the journal, the
@@ -34,7 +34,7 @@ with the systemd/D-Bus service or trusted tool that already owns them —
 never with a project-invented privileged path.
 
 The implementation boundaries, mapped onto this project's own phase numbers
-(not upstream's — see [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#the-system-management-port)
+(not upstream's — see [`UPSTREAM-SYNC.md`](sprints/UPSTREAM-SYNC.md#where-things-stand)
 for the full dependency table):
 
 1. PackageKit-backed Arch update status and transactions — `SYNC-P2` through
@@ -73,7 +73,7 @@ delegated to an existing trusted tool or is reported `unsupported`.
 ## Selected Arch Interfaces
 
 Verified against Arch's live package databases during Sync Phase 1 (see
-[that document's package table](SYNC-P1-SYSTEM-PROVIDER-DECISION.md#the-second-finding-that-reframes-the-whole-port)
+that document's package table (`92ec6e2:docs/SYNC-P1-SYSTEM-PROVIDER-DECISION.md`, "The second finding that reframes the whole port")
 for the exact versions/repos): `packagekit`, `python-gobject`, `python`,
 `accountsservice`, `cups`, and `system-config-printer` are all in Arch's
 official `core`/`extra` repositories — none AUR-only.
@@ -264,7 +264,7 @@ at most 256 unique mount-ID records (`--uniq` collapses an over-mounted
 target to one row; the kernel mount ID is the record key). `filesystem-summary`
 is always exactly one state: `available` carries the emitted row count,
 `partial`/`unknown` accompanies a usable subset, anything else carries no
-rows. `watch-mounts` ([S2-04](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
+rows. `watch-mounts` ([S2-04](sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
 is the separate live-invalidation source; the reader above never polls.
 
 Security (`INFORMATION_SECURITY_IDS`, `read_selinux_status()`/
@@ -302,7 +302,7 @@ Security (`INFORMATION_SECURITY_IDS`, `read_selinux_status()`/
   never guessed either way. Verified against this sandbox's real block-device
   topology: `available`/`unencrypted`.
 - `screen-lock` — reuses `dwm-quickshell-controlcenter power-lock-snapshot`
-  ([`POWER-PROTOCOL.md`](POWER-PROTOCOL.md), [S2-03](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-03-automatic-screen-lock-evidence)),
+  ([`POWER-PROTOCOL.md`](POWER-PROTOCOL.md), [S2-03](sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-03-automatic-screen-lock-evidence)),
   never a second locker or GSettings probe. Lyona additionally autostarts
   `dwm-lock-watch` alongside `light-locker`; `configured_lock_running()`
   recognizes either as "running" evidence when `power_lock_managed=1`.
@@ -320,7 +320,7 @@ status), but the protocol-minor table below showed these were never actually
 shipped at that time.
 
 **That has since changed.** Upstream did ship this scope (`#277`–`#288`),
-and [Sync Sprint 2](SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
+and [Sync Sprint 2](sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md) is porting it —
 S2-01 through S2-06 (readers: local/hardware/filesystem information,
 SELinux, Secure Boot, firewall status extended to `ufw`/`nftables` per D-5,
 root encryption, automatic screen-lock evidence reused from the shared power
@@ -386,7 +386,7 @@ complete<TAB>snapshot|operation
 `filesystem` mirrors upstream's grammar exactly; minor `2` (S2-05) emits it
 for each mounted real filesystem the bounded, one-shot `findmnt --json`
 reader (`read_filesystem_information()`) observes at snapshot time.
-`watch-mounts` (`findmnt --poll`, [S2-04](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
+`watch-mounts` (`findmnt --poll`, [S2-04](sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-04-mount-change-monitor))
 is the separate live-invalidation source that triggers a fresh snapshot; it
 never supplies filesystem rows itself — see "Not implemented upstream" above.
 
@@ -472,7 +472,7 @@ contracts this port reuses rather than duplicates.
 
 ## Settings Information Card and Health Navigation
 
-[Sync Sprint 2 S2-06](SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation)
+[Sync Sprint 2 S2-06](sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation)
 gives minor `2` its visible surface:
 `config/quickshell/settings/SystemInformationControls.qml` renders the
 thirteen system-information values, bounded mounted-filesystem usage (a
@@ -526,7 +526,7 @@ production binding.
 
 ## Open decisions
 
-Two decisions from [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions):
+Two decisions from [`UPSTREAM-SYNC.md`](sprints/UPSTREAM-SYNC.md#open-decisions):
 
 - **D-3** — Arch delegated-tool targets for `accounts-open` and
   `sources-open`. Neither `lxqt-admin-user` nor `dnfdragora` exists in
@@ -535,9 +535,9 @@ Two decisions from [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions):
   permanent `unsupported` (`delegated_command()` in
   `scripts/dwm-system-management`); the Settings UI implementing this —
   `SystemDelegateControls.qml`'s confirmed launch surface — is
-  [Sync Sprint 1 S1-04](SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-04-confirmed-delegated-administration).
+  [Sync Sprint 1 S1-04](sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-04-confirmed-delegated-administration).
 - **D-4** — whether a read-only `pacman -Sup --dbpath`-style query genuinely
   stays lock-free/root-free on a live CachyOS install. Not relevant to the
   shipped PackageKit read path directly; recorded here only because it was
   raised alongside this decision. **Still open** — see
-  [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md#open-decisions).
+  [`UPSTREAM-SYNC.md`](sprints/UPSTREAM-SYNC.md#open-decisions).

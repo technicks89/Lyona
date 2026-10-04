@@ -1,6 +1,6 @@
 # S11-07 -- square popups and a 1 px focus ring
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-07`. Issue `#158`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-07-square-popups-and-a-1-px-focus-ring`. Issue `#158`.
 Decision D-10 (2026-09-26): square popups, and the focus ring goes to 1 px.
 
 ## Change

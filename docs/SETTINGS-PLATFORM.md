@@ -176,15 +176,15 @@ desktop and image profiles.
 
 | Capability | Arch source | Current image/map status | Missing behavior |
 | --- | --- | --- | --- |
-| Settings window | Quickshell 0.3 or newer | Included by both Kickstarts and `arch:desktop` | Settings is unavailable without Quickshell. |
+| Settings window | Quickshell 0.3 or newer | Included by `arch:desktop` and the lyona image | Settings is unavailable without Quickshell. |
 | Capability helper | POSIX shell and base utilities | Installed as a project command; no new package | Individual missing tools produce unavailable records. |
-| Display/default state | RandR and XDG utilities | Included by Kickstarts and required profiles | Missing tools disable only their controls. |
+| Display/default state | RandR and XDG utilities | Included by the required profiles and the lyona image | Missing tools disable only their controls. |
 | Network/Bluetooth/audio/power state | NetworkManager, BlueZ, PipeWire/WirePlumber, X11 tools, light-locker | Included by Arch package set | Missing optional providers produce unavailable or partial cards. |
 | Authorization discovery | Polkit agent and trusted installed helper | Arch package set includes an agent; helper installation remains project-owned | Missing authorization leaves read-only state available. |
-| QML development | Qt declarative development tools | `arch:qml-development` maps `qt6-qtdeclarative-devel`; excluded from runtime images | Developer tooling is opt-in. |
+| QML development | Qt declarative development tools | `arch:qml-development` maps `qt6-declarative`; excluded from runtime images | Developer tooling is opt-in. |
 
 The `qml-development` profile is opt-in developer tooling and is not part of
-`required`, `recommended`, `optional`, `full`, or either Kickstart. This avoids
+`required`, `recommended`, `optional`, `full`, or the lyona image. This avoids
 expanding the installed desktop for users who do not develop QML while keeping
 the Arch package name in one map.
 
@@ -196,7 +196,7 @@ the Arch package name in one map.
 | Arch discovery and clean fallback | `make check-settings` exercises Arch plus unavailable service fixtures | Run `dwm-settings-provider discover` on the Arch qualification host and record platform/provider rows. |
 | Privilege, rollback, errors, unsupported state | `make check-settings check-system-health check-display-setup` plus source assertions for the no-elevation boundary | Cancel or deny any future authorization prompt; verify readable state remains. Phase 1 has no privileged Settings action to authorize. |
 | Existing desktop compatibility | Existing launcher, Control Center, controls, network, health, runtime, install, and preservation checks in `make check` | Verify existing Control Center and hotkeys in the qualification session. |
-| Packaging and ownership | `make check-install check-install-manifest check-kickstart` | Verify installed helper ownership when a privileged Settings helper is introduced. None is introduced in Phase 1. |
+| Packaging and ownership | `make check-install check-install-manifest check-archiso` | Verify installed helper ownership when a privileged Settings helper is introduced. None is introduced in Phase 1. |
 
 The nested-X11 test must record window geometry, IPC navigation, keyboard and
 mouse selection, Escape close, provider cleanup, and a two-second CPU sample
@@ -208,6 +208,10 @@ entry path, discovered provider states, CPU/process sample, and limitations.
 Nested X11 does not prove real hardware providers.
 
 ## Phase 1 Qualification Evidence
+
+Historical: recorded on Fedora, before lyona became Arch-only. It stays as the
+record of what was checked then; it is not Arch qualification, which Phase 7
+owns (`docs/roadmap/ROADMAP.md`).
 
 Evidence recorded on 2026-07-21:
 
@@ -333,7 +337,7 @@ records only, then writes only
 repository copies, wrong ownership, writable files, symlinks, injected input,
 and authorization denial.
 
-Evidence recorded on 2026-08-15:
+Evidence recorded on 2026-08-15 (historical, on Fedora, as Phase 1's above):
 
 - Fedora Linux 44 x86_64 X11 discovered HDMI-0 and DP-0. A complete current
   two-monitor layout preview timed out and restored the exact captured layout.

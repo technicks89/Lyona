@@ -5,7 +5,7 @@ import qs.core
 pragma ComponentBehavior: Bound
 
 /*
- * Sync Sprint 1 S1-04 (docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-04-confirmed-delegated-administration),
+ * Sync Sprint 1 S1-04 (docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-04-confirmed-delegated-administration),
  * ported from upstream's #267 -- the visible accounts/password/printers/
  * software-sources launch surface for SystemManagementModel's delegated
  * actions. Confirmation itself is owned by the model
@@ -13,7 +13,7 @@ pragma ComponentBehavior: Bound
  * only renders `nativeConfirmation` and forwards user intent, matching
  * SystemUpdateControls.qml's and SystemRegionalControls.qml's own split.
  *
- * Arch adaptation (D-3, docs/UPSTREAM-SYNC.md#open-decisions): upstream's
+ * Arch adaptation (D-3, docs/sprints/UPSTREAM-SYNC.md#open-decisions): upstream's
  * tool list names Fedora-only targets (LXQt User Settings/lxqt-admin-user,
  * DNFDragora/dnfdragora). Neither is packaged for Arch, so accounts-open and
  * sources-open ship permanent "unsupported" from the helper

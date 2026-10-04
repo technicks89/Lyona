@@ -4,9 +4,9 @@ import qs.core
 
 pragma ComponentBehavior: Bound
 
-// The cross-tag window overview popup (Sync Sprint 7 S7-03, docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md,
+// The cross-tag window overview popup (Sync Sprint 7 S7-03, docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md,
 // design doc "A new popup"/"Opening it", keyboard navigation added in Sync
-// Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md). ClickAwayPopup-based
+// Sprint 8 S8-01, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md). ClickAwayPopup-based
 // the same way ControlsWindow is, so it inherits the click-away dismiss the
 // transparent surface already gives every popup built on it; Escape is
 // handled explicitly below, the same way ControlsWindow's own content does.
