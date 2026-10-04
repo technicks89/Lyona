@@ -164,9 +164,16 @@ The LightDM display manager and its greeter.
 
 ### `iso`
 
-Only the live install medium: `plymouth` draws its boot splash.
+What the live install medium itself runs, on top of archiso's `releng`
+profile: the whole package list of the install image. The desktop is not on
+it, as the new system downloads every package it installs (#229).
 
-`plymouth`
+- `plymouth` draws the boot splash;
+- `gum` draws the wizard, and `jq` writes its credentials file;
+- `curl` checks the network, looks up the timezone and sets up the CachyOS repositories;
+- `openssl` hashes the password, and `pciutils` (`lspci`) finds the GPU.
+
+`plymouth` `gum` `jq` `curl` `openssl` `pciutils`
 
 ### `qml-development`
 
