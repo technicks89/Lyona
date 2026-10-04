@@ -8,6 +8,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Changed
+
+- **Image installs boot with GRUB instead of systemd-boot,** on UEFI and legacy BIOS alike: the wizard refused every
+  machine that booted without UEFI. On UEFI, GRUB is installed in the removable fallback path, which firmware that
+  ignores boot entries (Apple's among it) still boots; on legacy BIOS the disk is MBR with an ext4 `/boot`. The menu
+  uses the CyberRe theme, and `linux-cachyos` is its default entry (`GRUB_TOP_LEVEL`); `lyona-cachyos install-kernel
+  --make-default` sets that under GRUB too. The installed system is about 45 MiB larger (#235).
+
+### Fixed
+
+- **The GRUB theme reaches the menu on UEFI:** `lyona-grub-theme` and `lyona-cachyos` looked for `/boot/grub` as the
+  user, but a UEFI `/boot` is the EFI system partition, which Arch mounts root-only, so the menu was never regenerated
+  with the theme. They now look as root. Found installing the GRUB image in a UEFI VM (#235).
+
 ## [2026.10.0-beta.3] - 2026-10-04
 
 Fourth beta of the Arch Linux line: a smaller install image that boots the CachyOS kernel, and fixes for the desktop

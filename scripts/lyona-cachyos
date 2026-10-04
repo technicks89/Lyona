@@ -13,6 +13,7 @@ MIRRORLIST_PACKAGES=(cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist ca
 
 pacman_conf=${LYONA_CACHYOS_PACMAN_CONF:-/etc/pacman.conf}
 boot_dir=${LYONA_CACHYOS_BOOT_DIR:-/boot}
+grub_defaults=${LYONA_CACHYOS_GRUB_DEFAULTS:-/etc/default/grub}
 ldso=${LYONA_CACHYOS_LDSO:-/lib/ld-linux-x86-64.so.2}
 noconfirm=${LYONA_CACHYOS_NONINTERACTIVE:-0}
 
@@ -35,8 +36,8 @@ Commands:
   install-kernel [--with-headers] [--make-default] [KERNEL...]
                   Install $DEFAULT_KERNEL (or the named kernels) and make them
                   bootable without changing the default boot entry, unless
-                  --make-default: then the first one boots by default
-                  (systemd-boot). Headers are installed only with
+                  --make-default: then the first one boots by default (GRUB
+                  or systemd-boot). Headers are installed only with
                   --with-headers, or when DKMS is already present.
   -h, --help      Show this help.
 
@@ -310,12 +311,16 @@ add_boot_entry() {
 	local kernel=$1 entries="$boot_dir/loader/entries"
 	local source_entry source_kernel target tmp
 
-	if [[ -d $boot_dir/grub ]] && command -v grub-mkconfig >/dev/null 2>&1; then
+	# As root: a UEFI /boot (the EFI system partition) is root-only (#235).
+	if command -v grub-mkconfig >/dev/null 2>&1 && run_root test -d "$boot_dir/grub"; then
+		[[ ${make_default_kernel:-} != "$kernel" ]] || set_grub_top_level "$kernel"
 		info "Regenerating the GRUB configuration..."
 		run_root grub-mkconfig -o "$boot_dir/grub/grub.cfg"
 		ok "GRUB now lists $kernel."
-		warn "GRUB may order $kernel above the previous kernel; pin the one you want"
-		warn "with GRUB_DEFAULT in /etc/default/grub if the menu order matters."
+		if [[ -z ${make_default_kernel:-} ]]; then
+			warn "GRUB may order $kernel above the previous kernel; pin the one you want"
+			warn "with GRUB_DEFAULT in $grub_defaults if the menu order matters."
+		fi
 		return 0
 	fi
 
@@ -374,6 +379,24 @@ add_boot_entry() {
 	else
 		keep_default_entry "$(basename -- "$source_entry")"
 	fi
+}
+
+# GRUB's first entry is KERNEL's (GRUB_TOP_LEVEL, GRUB 2.12 and later), and
+# GRUB_DEFAULT=0 boots the first entry: whatever version order grub-mkconfig
+# finds, the menu leads with KERNEL, and the others follow as fallbacks.
+set_grub_top_level() {
+	local kernel=$1 tmp
+	[[ -f $grub_defaults ]] || {
+		warn "$grub_defaults is missing; $kernel is not made the default."
+		return 0
+	}
+	tmp=$(mktemp)
+	command sed -E '/^GRUB_TOP_LEVEL=/d; s/^GRUB_DEFAULT=.*/GRUB_DEFAULT=0/' "$grub_defaults" >"$tmp"
+	command grep -q '^GRUB_DEFAULT=' "$tmp" || printf 'GRUB_DEFAULT=0\n' >>"$tmp"
+	printf 'GRUB_TOP_LEVEL="/boot/vmlinuz-%s"\n' "$kernel" >>"$tmp"
+	run_root install -m 0644 "$tmp" "$grub_defaults"
+	rm -f "$tmp"
+	ok "GRUB boots $kernel by default."
 }
 
 # The image install boots the CachyOS kernel by default; the stock kernel stays

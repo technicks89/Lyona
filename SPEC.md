@@ -268,8 +268,8 @@ that would disable the graphical terminal, and supply a `GRUB_GFXMODE` only
 when the user has not chosen one. It must never change which entry boots, the
 kernel command line, or the timeout.
 
-A machine that does not boot with GRUB -- including installs from the lyona
-image, which use systemd-boot -- must be reported and left untouched, and a
+Installs from the lyona image boot with GRUB (#235), so they get the theme. A
+machine that does not boot with GRUB must be reported and left untouched, and a
 failed theme step must not fail an otherwise successful install. The
 selection must be reversible from the installed system through
 `lyona-grub-theme remove`.
@@ -660,7 +660,8 @@ second compositor keeps the selection and still fails immediately.
 
 Released Arch images are built from an archiso profile (`archiso/`) layered
 onto the system `releng` profile, via `scripts/build-lyona-arch-iso.sh`.
-The live medium embeds this repository, requires UEFI, and auto-logs into a
+The live medium embeds this repository, boots on UEFI and legacy BIOS, and
+auto-logs into a
 root shell that automatically launches `lyona-install`
 (`archiso/airootfs/root/lyona-install.sh`) — no command to type. It is a
 short wizard drawn with `gum` (menus and prompts, the lyona banner redrawn
@@ -669,16 +670,19 @@ user, hostname, timezone (detected, then confirmed), and an NVIDIA driver
 choice when applicable, then a summary to confirm, with no
 desktop-environment or package picker. It generates an
 `archinstall` JSON config and runs it fully unattended (`--silent`) — the
-base install (disk partitioning, filesystem, systemd-boot, user account) is
-not interactively menu-driven. A `/root/.lyona-install-done` sentinel,
+base install (disk partitioning, filesystem, GRUB, user account) is not
+interactively menu-driven. GRUB boots both firmware types (#235): on UEFI it
+is installed in the removable fallback path of an EFI system partition mounted
+at `/boot`, which firmware that ignores boot entries still boots; on legacy BIOS
+`archinstall` partitions the disk as MBR, with an ext4 `/boot`. `/boot` is
+never encrypted, as GRUB reads the kernels from it. A `/root/.lyona-install-done` sentinel,
 written once the base install succeeds, prevents a later tty1 relogin from
 relaunching the wizard and re-wiping the disk. Once `archinstall` completes
 to the target root, `lyona-install` automatically runs
 `archiso/airootfs/root/lyona-postinstall.sh` to finish the lyona
 install. The postinstall script also remains runnable standalone against an
-already-completed base install (e.g. a manually-run `archinstall`, for BIOS
-systems or custom partitioning, which `lyona-install` cannot serve since
-systemd-boot requires UEFI). This differs from Anaconda/Kickstart in degree,
+already-completed base install (e.g. a manually-run `archinstall`, for custom
+partitioning). This differs from Anaconda/Kickstart in degree,
 not automation: Arch has no first-party unattended installer service, so
 this project generates and drives `archinstall`'s own non-interactive config
 format itself rather than relying on an upstream automation contract.

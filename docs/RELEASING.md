@@ -180,8 +180,9 @@ not signed, and `lyona-update` refuses it: publish through the workflow.
 
 ### Using the ISO
 
-**Requires UEFI.** The wizard installs systemd-boot, which cannot boot
-BIOS/legacy systems — see the manual fallback below if you're on BIOS.
+**UEFI or legacy BIOS.** The wizard installs GRUB, which boots both (#235):
+on UEFI, from an EFI system partition, in the removable fallback path; on a
+legacy BIOS, from an MBR disk with an ext4 `/boot`.
 
 Booting the image auto-logs into a root shell on tty1 (standard archiso
 behavior) and **automatically launches `lyona-install`** — no command to
@@ -217,7 +218,7 @@ There is no
 desktop-environment or package picker; this always installs lyona.
 After a summary and a final "Wipe `$DISK` and install" confirmation, it
 generates an `archinstall` JSON config (an ESP and a root of the chosen
-filesystem, encrypted when chosen; systemd-boot, zram swap, NetworkManager)
+filesystem, encrypted when chosen; GRUB, zram swap, NetworkManager)
 and runs `archinstall --config ... --creds ...
 --silent` fully unattended — no menus to navigate. Once that completes, it
 automatically runs `lyona-postinstall.sh` to finish the lyona
@@ -230,7 +231,7 @@ several fields). If this profile bumps the archinstall package version,
 re-validate the schema in `archiso/airootfs/root/lyona-install.sh`
 before trusting it again.
 
-**Manual fallback** (BIOS systems, or custom partitioning): boot the ISO,
+**Manual fallback** (custom partitioning): boot the ISO,
 run `archinstall` yourself, then run `/root/lyona-postinstall.sh`
 directly — it only requires a mounted target at `/mnt` with a regular user
 already created, and works the same whether `lyona-install` or a manual

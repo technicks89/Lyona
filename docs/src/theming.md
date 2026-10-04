@@ -211,9 +211,9 @@ Applying or removing a theme edits `/etc/default/grub` and regenerates
 `/boot/grub/grub.cfg`, so it needs root and backs the file up first. See
 [Install](install.md#grub-boot-menu-theme) for exactly which keys it changes.
 
-Machines that boot with systemd-boot -- which includes installs made from the
-lyona image -- have no GRUB menu to theme, and the commands above report that
-and do nothing.
+Machines that boot with systemd-boot have no GRUB menu to theme, and the
+commands above report that and do nothing. Installs made from the lyona image
+boot with GRUB, with this theme.
 
 ## Picom opacity and backend
 

@@ -131,6 +131,7 @@ run_helper() {
 		LYONA_TEST_CACHYOS_LIST_FAIL="${cachyos_list_fail:-}" \
 		LYONA_CACHYOS_PACMAN_CONF="$case_dir/pacman.conf" \
 		LYONA_CACHYOS_BOOT_DIR="$case_dir/boot" \
+		LYONA_CACHYOS_GRUB_DEFAULTS="$case_dir/etc-default-grub" \
 		LYONA_CACHYOS_LDSO="$case_dir/ldso" \
 		LYONA_CACHYOS_NONINTERACTIVE=1 \
 		"$helper" "$@"
@@ -497,6 +498,28 @@ run_helper "$case_dir" install-kernel >"$case_dir/out" 2>&1 ||
 	fail 'install-kernel failed with a GRUB layout' "$case_dir/out"
 grep -Fq "grub-mkconfig -o $case_dir/boot/grub/grub.cfg" "$case_dir/calls.log" ||
 	fail 'install-kernel did not regenerate the GRUB configuration' "$case_dir/calls.log"
+
+# --- --make-default under GRUB: GRUB_TOP_LEVEL leads the menu with it (#235) -
+case_dir=$(new_case kernel-grub-default)
+run_helper "$case_dir" add-repos >/dev/null 2>&1
+mkdir -p "$case_dir/boot/grub"
+printf 'GRUB_DEFAULT=saved\nGRUB_TIMEOUT=5\nGRUB_TOP_LEVEL="/boot/vmlinuz-linux"\n' >"$case_dir/etc-default-grub"
+: >"$case_dir/calls.log"
+run_helper "$case_dir" install-kernel --make-default linux-cachyos linux-cachyos-lts >"$case_dir/out" 2>&1 ||
+	fail 'install-kernel --make-default failed with a GRUB layout' "$case_dir/out"
+grep -Fqx 'GRUB_TOP_LEVEL="/boot/vmlinuz-linux-cachyos"' "$case_dir/etc-default-grub" ||
+	fail 'GRUB does not lead with linux-cachyos' "$case_dir/etc-default-grub"
+[[ $(grep -c '^GRUB_TOP_LEVEL=' "$case_dir/etc-default-grub") -eq 1 ]] ||
+	fail 'GRUB_TOP_LEVEL is set more than once' "$case_dir/etc-default-grub"
+grep -Fqx 'GRUB_DEFAULT=0' "$case_dir/etc-default-grub" ||
+	fail 'GRUB does not boot its first entry' "$case_dir/etc-default-grub"
+grep -Fqx 'GRUB_TIMEOUT=5' "$case_dir/etc-default-grub" ||
+	fail 'making linux-cachyos the default discarded the rest of the GRUB defaults'
+grep -Fq "grub-mkconfig -o $case_dir/boot/grub/grub.cfg" "$case_dir/calls.log" ||
+	fail 'the GRUB configuration was not regenerated' "$case_dir/calls.log"
+if grep -q 'GRUB may order' "$case_dir/out"; then
+	fail 'install-kernel --make-default still warned about the GRUB menu order' "$case_dir/out"
+fi
 
 # --- an unknown bootloader is reported, not guessed at -----------------------
 case_dir=$(new_case kernel-unknown-bootloader)

@@ -25,9 +25,22 @@ source "${LYONA_UI_LIB:-/root/lyona-ui.sh}"
 # shellcheck source=lyona-nvidia.sh
 source "${LYONA_NVIDIA_LIB:-/root/lyona-nvidia.sh}"
 
-require_uefi() {
-	if [[ ! -d /sys/firmware/efi ]]; then
-		fail "this machine booted in BIOS/legacy mode. lyona-install requires UEFI (it installs systemd-boot). Use 'archinstall' followed by '$POSTINSTALL' instead -- see docs/RELEASING.md."
+# GRUB boots both (#235): UEFI, from an EFI system partition, and legacy BIOS,
+# from an MBR disk, which archinstall uses when the medium booted without UEFI.
+# systemd-boot, before, refused every legacy-BIOS machine.
+detect_firmware() {
+	if [[ -d /sys/firmware/efi ]]; then
+		FIRMWARE=uefi
+	else
+		FIRMWARE=bios
+	fi
+}
+
+firmware_summary() {
+	if [[ $FIRMWARE == uefi ]]; then
+		echo "UEFI (GRUB)"
+	else
+		echo "legacy BIOS (GRUB)"
 	fi
 }
 
@@ -279,6 +292,7 @@ Hostname:   $HOSTNAME
 Username:   $USERNAME
 Keyboard:   $KEYMAP
 Timezone:   $TIMEZONE
+Boot:       $(firmware_summary)
 NVIDIA driver: $(nvidia_summary)
 EOF
 		)"
@@ -325,6 +339,14 @@ generate_configs() {
 		fail "$DISK is too small (need at least ~4.5GiB)."
 	fi
 
+	# /boot, outside any encryption, where GRUB reads the kernels: the EFI system
+	# partition on UEFI, an ext4 partition on legacy BIOS.
+	local boot_fs=fat32 boot_flags='["boot", "esp"]'
+	if [[ $FIRMWARE == bios ]]; then
+		boot_fs=ext4
+		boot_flags='["boot"]'
+	fi
+
 	local pass_hash
 	# The password on stdin, never in argv, where other processes can read it.
 	pass_hash=$(printf '%s\n' "$PASSWORD" | openssl passwd -6 -stdin)
@@ -348,7 +370,7 @@ EOF
 {
   "archinstall-language": "English",
   "audio_config": {"audio": "pipewire"},
-  "bootloader_config": {"bootloader": "Systemd-boot", "uki": false, "removable": false},
+  "bootloader_config": {"bootloader": "Grub", "uki": false, "removable": true},
   "debug": false,
   "disk_config": {
     "config_type": "default_layout",
@@ -360,8 +382,8 @@ EOF
           {
             "status": "create",
             "type": "primary",
-            "fs_type": "fat32",
-            "flags": ["boot", "esp"],
+            "fs_type": "$boot_fs",
+            "flags": $boot_flags,
             "mountpoint": "/boot",
             "mount_options": [],
             "btrfs": [],
@@ -442,7 +464,7 @@ main() {
 	: >"$LOG_FILE"
 	install_error_trap "$@"
 
-	require_uefi
+	detect_firmware
 	command -v archinstall >/dev/null 2>&1 || fail "archinstall not found on this live medium."
 	[[ -x $POSTINSTALL ]] || fail "$POSTINSTALL not found or not executable."
 

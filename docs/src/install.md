@@ -5,7 +5,8 @@
 
 ## Install from the image
 
-For a new, dedicated machine. The image is UEFI only.
+For a new, dedicated machine, with UEFI or a legacy BIOS. It installs GRUB,
+with the CyberRe boot menu theme.
 
 1. **Download** the newest image, `lyona-VERSION-x86_64.iso`, and its
    `SHA256SUMS` from the
@@ -71,7 +72,7 @@ For a new, dedicated machine. The image is UEFI only.
 If a step fails, a menu offers to retry it or to drop to a shell, and says what
 state the machine is in.
 
-**Without the wizard** (BIOS, or partitioning of your own): run `archinstall`
+**Without the wizard** (partitioning of your own): run `archinstall`
 yourself from the live medium, then `/root/lyona-postinstall.sh` to install
 lyona onto it.
 
@@ -365,8 +366,8 @@ Every one of those is printed as it happens. Replaced lines are commented out
 rather than deleted, so the previous values stay readable in the file next to
 the backup.
 
-Machines that do not boot with GRUB — including the lyona ISO's own installs,
-which use systemd-boot — are reported and left completely alone. A theme step
+The lyona image's own installs boot with GRUB, so they get the theme. Machines
+that do not boot with GRUB are reported and left completely alone. A theme step
 that fails does not fail the install.
 
 Skip the bootloader edit with `--skip-grub-theme` (or
