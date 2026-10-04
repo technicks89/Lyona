@@ -24,10 +24,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
-- **The install image is about 700 MB smaller:** it no longer carries the desktop's 66 packages, which the live medium
+- **The install image is estimated to be about 700 MB smaller:** it no longer carries the desktop's 66 packages, which the live medium
   never used, as the new system downloads every package it installs. It keeps what the wizard runs on top of `releng`
   (`gum`, `jq`, `curl`, `openssl`, `pciutils`, `plymouth`). Neither the install nor its time change, and the image
-  builds faster (#229).
+  is expected to build faster (#229).
 
 - **Image installs boot `linux-cachyos` by default;** the stock Arch kernel stays in the boot menu as the fallback.
   `lyona-cachyos install-kernel --make-default` does this; an existing system's `--cachyos-kernel` still leaves the
