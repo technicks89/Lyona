@@ -45,7 +45,7 @@ the existing-system installer on Arch Linux.
 ## Recent Changes
 
 The newest release's notes summarize what changed and what is still being
-qualified: [2026.10.0-beta.3](./docs/RELEASE-NOTES-2026.10.0-beta.3.md).
+qualified: [2026.10.0-beta.4](./docs/RELEASE-NOTES-2026.10.0-beta.4.md).
 [CHANGELOG.md](./CHANGELOG.md) has the complete list.
 
 ## Install

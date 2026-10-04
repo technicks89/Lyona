@@ -8,6 +8,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.4] - 2026-10-04
+
+Fifth beta of the Arch Linux line: image installs boot with GRUB instead of systemd-boot, on legacy BIOS and UEFI,
+with the CyberRe theme (#235). See `docs/RELEASE-NOTES-2026.10.0-beta.4.md`.
+
 ### Changed
 
 - **Image installs boot with GRUB instead of systemd-boot,** on UEFI and legacy BIOS alike: the wizard refused every
@@ -2425,7 +2430,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...HEAD
+[2026.10.0-beta.4]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...v2026.10.0-beta.4
 [2026.10.0-beta.3]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.2...v2026.10.0-beta.3
 [2026.10.0-beta.2]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.1...v2026.10.0-beta.2
 [2026.10.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.08.0-beta.1...v2026.10.0-beta.1
