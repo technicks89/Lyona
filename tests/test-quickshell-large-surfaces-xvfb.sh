@@ -288,7 +288,11 @@ fi
 ipc systemhealth open >/dev/null
 test_stage='validating System Health surface'
 health_window=$(wait_window '^dwm system health$')
-DISPLAY=$display xprop -id "$health_window" _NET_WM_STATE | grep -q '_NET_WM_STATE_FULLSCREEN'
+# Below the panel, not fullscreen over it (#231).
+if DISPLAY=$display xprop -id "$health_window" _NET_WM_STATE | grep -q '_NET_WM_STATE_FULLSCREEN'; then
+	printf 'System Health is fullscreen, over the panel\n' >&2
+	exit 1
+fi
 capture_window system-health "$health_window"
 if [ "${DWM_LARGE_SURFACE_CAPTURE_ONLY:-0}" = 1 ]; then
 	ipc systemhealth close >/dev/null

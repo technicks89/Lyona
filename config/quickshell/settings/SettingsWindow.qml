@@ -32,9 +32,10 @@ FloatingWindow {
     title: "dwm settings"
     visible: settingsModel.visible
     screen: settingsModel.targetScreen
-    fullscreen: true
+    // The screen below the panel, which stays visible (#231): fullscreen put the
+    // panel below it. dwm centers it in the area below the panel.
     implicitWidth: root.screen ? root.screen.width : 1180
-    implicitHeight: root.screen ? root.screen.height : 760
+    implicitHeight: root.screen ? root.screen.height - Theme.panelHeight : 760
     color: Theme.transparent
 
     function focusSearch() {

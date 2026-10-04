@@ -10,6 +10,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Windows that open fullscreen keep their monitor bounds instead of being shifted below the panel.
 - **Restart Quickshell** (Control Center, System Health) left no shell at all: it ran as a child of the Quickshell it
   stopped, which killed it before it could start the new one. The restart now runs in its own session.
 - **A resolution chosen in Settings is kept across logins:** Keep lasted only for the session unless you also chose
@@ -28,6 +29,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   never used, as the new system downloads every package it installs. It keeps what the wizard runs on top of `releng`
   (`gum`, `jq`, `curl`, `openssl`, `pciutils`, `plymouth`). Neither the install nor its time change, and the image
   is expected to build faster (#229).
+- **Settings and System Health open below the panel,** filling the rest of the screen, instead of fullscreen over it.
+  dwm now centers a new floating window in the area below the bar, not on the whole monitor, so a window as tall as
+  that area sits right below the bar instead of half over it (#231).
 
 - **Image installs boot `linux-cachyos` by default;** the stock Arch kernel stays in the boot menu as the fallback.
   `lyona-cachyos install-kernel --make-default` does this; an existing system's `--cachyos-kernel` still leaves the

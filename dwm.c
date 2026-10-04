@@ -1983,8 +1983,12 @@ manage(Window w, XWindowAttributes *wa)
 	updatewindowtype(c);
 	updatesizehints(c);
 	updatewmhints(c);
-	c->x = c->mon->mx + (c->mon->mw - WIDTH(c)) / 2;
-	c->y = c->mon->my + (c->mon->mh - HEIGHT(c)) / 2;
+	if (!c->isfullscreen) {
+		/* Centered in the area the bar leaves, not on the whole monitor, so a window
+		 * as tall as that area sits right below the bar instead of half over it. */
+		c->x = MAX(c->mon->wx, c->mon->wx + (c->mon->ww - WIDTH(c)) / 2);
+		c->y = MAX(c->mon->wy, c->mon->wy + (c->mon->wh - HEIGHT(c)) / 2);
+	}
 	XSelectInput(dpy, w, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
 	grabbuttons(c, 0);
 	if (!c->isfloating)

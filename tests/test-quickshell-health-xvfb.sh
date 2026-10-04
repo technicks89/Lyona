@@ -107,12 +107,26 @@ if [ -z "$window" ]; then
 	exit 1
 fi
 
-DISPLAY=$display xprop -id "$window" _NET_WM_STATE | grep -q '_NET_WM_STATE_FULLSCREEN'
-geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$window")
-width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
-height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
-[ "$width" = 1024 ]
-[ "$height" = 768 ]
+# Below the panel, which stays visible (#231): not fullscreen, the screen's
+# width, the height the 30-pixel panel leaves, and right below it.
+if DISPLAY=$display xprop -id "$window" _NET_WM_STATE | grep -q '_NET_WM_STATE_FULLSCREEN'; then
+	printf 'System Health is fullscreen, over the panel\n' >&2
+	exit 1
+fi
+i=0
+while [ "$i" -lt 100 ]; do
+	geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$window")
+	width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
+	height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
+	top=$(printf '%s\n' "$geometry" | awk -F= '$1 == "Y" { print $2 }')
+	[ "$width/$height/$top" = 1024/738/30 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$width/$height/$top" = 1024/738/30 ] || {
+	printf 'System Health is %sx%s at y=%s, not 1024x738 below the panel\n' "$width" "$height" "$top" >&2
+	exit 1
+}
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 	quickshell ipc --path "$config" call systemhealth close >/dev/null
