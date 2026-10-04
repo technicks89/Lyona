@@ -1,6 +1,6 @@
 # S12-08 -- the state bridge coalesces events and stops forking per window
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-08-the-state-bridge-coalesces-events-and-stops-forking-per-window`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-08-the-state-bridge-coalesces-events-and-stops-forking-per-window`.
 Issue `#171`.
 
 ## Change

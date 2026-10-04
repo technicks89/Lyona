@@ -4,7 +4,7 @@ import "../../config/quickshell/overview/OverviewSelection.js" as Selection
 
 /*
  * Direct, non-UI tests for the pure keyboard-navigation math
- * (Sync Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md),
+ * (Sync Sprint 8 S8-01, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md),
  * split out of OverviewModel.qml the same way tst_dwm_state_windows.qml
  * tests DwmStateWindows.js directly rather than through a live QML
  * component -- here because OverviewModel.qml imports Quickshell and cannot

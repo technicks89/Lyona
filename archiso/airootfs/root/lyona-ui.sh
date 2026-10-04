@@ -152,9 +152,25 @@ run_logged() {
 		bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE"; exit ${PIPESTATUS[0]}' _ "$@"
 }
 
+# Files a run must never leave behind, however it ends: the postinstall's
+# temporary passwordless sudoers rule (Sync Sprint 16 R16-01). They are removed
+# on exit, and before the recovery menu offers anything, because Retry re-runs
+# the script with exec, which skips EXIT traps.
+LYONA_CLEANUP_FILES=()
+# What has already happened to the machine, said when a run fails.
+LYONA_RECOVER_HINT=
+
+lyona_cleanup_files() {
+	local file
+	for file in "${LYONA_CLEANUP_FILES[@]}"; do
+		rm -f -- "$file"
+	done
+}
+
 _lyona_recover() {
 	local exit_code=$?
 	trap - ERR
+	lyona_cleanup_files
 
 	echo
 	gum style --foreground $COLOR_DANGER --bold "$SCRIPT_NAME failed (exit $exit_code)."
@@ -166,6 +182,10 @@ _lyona_recover() {
 		done
 	fi
 	echo
+	if [[ -n $LYONA_RECOVER_HINT ]]; then
+		gum style --foreground $COLOR_ACCENT "$LYONA_RECOVER_HINT"
+		echo
+	fi
 
 	while true; do
 		local choice
@@ -194,4 +214,8 @@ install_error_trap() {
 	SCRIPT_PATH=$0
 	SCRIPT_ARGS=("$@")
 	trap _lyona_recover ERR
+	# Ctrl+C and a kill end the run through exit, so the EXIT trap still cleans up.
+	trap lyona_cleanup_files EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
 }

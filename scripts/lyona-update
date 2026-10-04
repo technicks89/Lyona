@@ -18,6 +18,12 @@ root_helper_name=lyona-update-root
 # overridable only for the test suite, which stubs the GitHub API entirely.
 github_repo=${LYONA_UPDATE_GITHUB_REPO:-technicks89/Lyona}
 github_api_base=${LYONA_UPDATE_GITHUB_API:-https://api.github.com}
+# Signed releases (decision D-31): the release workflow attests each release's
+# files through Sigstore, as build-iso.yml run from main, and publishes the
+# bundle as lyona-VERSION.sigstore.json. Releases before this one were not.
+first_signed_version=2026.10.0-beta.2
+signer_identity=https://github.com/$github_repo/.github/workflows/build-iso.yml@refs/heads/main
+signer_issuer=https://token.actions.githubusercontent.com
 cache_ttl=${LYONA_UPDATE_CACHE_TTL:-300}
 
 warn() { printf '%s: %s\n' "$self" "$*" >&2; }
@@ -29,11 +35,30 @@ die() {
 usage() {
 	cat <<'EOF'
 Usage: lyona-update check       [--channel stable|preview] [--json]
-       lyona-update apply       [--version V] [--file PATH [--sha256 HASH]]
+       lyona-update apply       [--version V]
+                                [--file PATH [--bundle FILE | --sha256 HASH]]
                                 [--allow-downgrade] [--dry-run] [--yes]
        lyona-update rollback    [--backup ID] [--list] [--yes]
        lyona-update backups     [--json]
        lyona-update set-channel stable|preview
+
+Updates lyona itself, from its GitHub releases. Packages are updated by
+pacman, yay or Settings > System, not by this.
+
+  check        Says whether a newer lyona is published on your channel.
+  apply        Downloads, verifies and installs a release (the newest on
+               your channel, or --version V), after backing up the running
+               one. Asks first unless --yes; --dry-run only shows the plan.
+               A release's signature is checked with cosign, which needs the
+               network. --file installs a tarball you have; its signature is
+               downloaded unless you give it (--bundle, the release's
+               lyona-V.sigstore.json). With no network, --sha256 takes the
+               tarball's line in the release's SHA256SUMS instead, and the
+               signature is not checked.
+  rollback     Restores a backup (the newest, or --backup ID); --list shows
+               them. Asks first unless --yes.
+  backups      Lists the backups apply has made.
+  set-channel  stable: releases only. preview: pre-releases too.
 EOF
 }
 
@@ -199,7 +224,14 @@ keep_backups=5
 
 seed_config() {
 	[[ -e $config_file ]] && return 0
-	printf 'channel=stable\ncheck_on_login=true\nauto_apply=false\nkeep_backups=5\n' |
+	# A pre-release install starts on the preview channel: the stable channel
+	# only ever sees releases promoted out of pre-release, so a beta install
+	# on it would never be offered an update (Sync Sprint 16 R16-02).
+	local seeded=stable version
+	if [[ -x $version_helper ]] && version=$("$version_helper" print 2>/dev/null) && [[ $version == *-* ]]; then
+		seeded=preview
+	fi
+	printf 'channel=%s\ncheck_on_login=true\nauto_apply=false\nkeep_backups=5\n' "$seeded" |
 		install -Dm600 /dev/stdin "$config_file"
 }
 
@@ -301,9 +333,11 @@ fetch_release() {
 }
 
 # Populates release_version / release_commit / release_published / release_asset_name /
-# release_asset_url / release_asset_size / release_checksum. Returns 1 when the
-# remote could not be reached or has nothing published for the channel --
-# both are reported as "offline", never as an error.
+# release_asset_url / release_asset_size / release_checksum / release_bundle_url
+# (empty when the release has no signature). Returns 1 when the
+# remote could not be reached, and 2 when it answered with nothing published
+# for the channel (an HTTP error, which curl --fail exits 22 for, or an empty
+# release list). Neither is an error (Sync Sprint 16 R16-02).
 release_version=
 release_commit=unknown
 release_published=unknown
@@ -311,6 +345,7 @@ release_asset_name=
 release_asset_url=
 release_asset_size=unknown
 release_checksum=unknown
+release_bundle_url=
 
 # The cache stores every resolved field, not just the raw release listing --
 # a cache hit must not still hit the network for the checksum and tag-commit
@@ -333,6 +368,7 @@ load_cache() {
 	release_asset_url=$(jq -r '.assetUrl // empty' <<<"$cached")
 	release_asset_size=$(jq -r '.assetSize // "unknown"' <<<"$cached")
 	release_checksum=$(jq -r '.checksum // "unknown"' <<<"$cached")
+	release_bundle_url=$(jq -r '.bundleUrl // empty' <<<"$cached")
 	return 0
 }
 
@@ -349,9 +385,10 @@ save_cache() {
 		--arg assetUrl "$release_asset_url" \
 		--arg assetSize "$release_asset_size" \
 		--arg checksum "$release_checksum" \
+		--arg bundleUrl "$release_bundle_url" \
 		'{channel: $channel, version: $version, commit: $commit,
 		  publishedAt: $publishedAt, assetName: $assetName, assetUrl: $assetUrl,
-		  assetSize: $assetSize, checksum: $checksum}' >"$tmp"
+		  assetSize: $assetSize, checksum: $checksum, bundleUrl: $bundleUrl}' >"$tmp"
 	mv -fT "$tmp" "$cache_file"
 }
 
@@ -359,10 +396,14 @@ resolve_release() {
 	local requested_channel=$1 release_json tag_json
 	load_cache "$requested_channel" && return 0
 
-	if ! release_json=$(fetch_release "$requested_channel" 2>/dev/null) ||
-		[[ -z $release_json || $release_json == null ]]; then
+	local fetched=0
+	release_json=$(fetch_release "$requested_channel" 2>/dev/null) || fetched=$?
+	if ((fetched == 22)); then
+		return 2
+	elif ((fetched != 0)); then
 		return 1
 	fi
+	[[ -n $release_json && $release_json != null ]] || return 2
 
 	release_version=$(jq -r '.tag_name // empty' <<<"$release_json")
 	release_version=${release_version#v}
@@ -375,6 +416,8 @@ resolve_release() {
 	release_asset_size=$(jq -r --arg name "$release_asset_name" \
 		'.assets[]? | select(.name == $name) | .size' <<<"$release_json")
 	[[ -n $release_asset_size ]] || release_asset_size=unknown
+	release_bundle_url=$(jq -r --arg name "lyona-$release_version.sigstore.json" \
+		'.assets[]? | select(.name == $name) | .browser_download_url' <<<"$release_json")
 
 	local checksums_name checksums_url
 	checksums_name="lyona-$release_version-SHA256SUMS"
@@ -433,16 +476,24 @@ cmd_check() {
 
 	read_installed
 
-	local state message='' reached=false
+	local state message='' reached=false resolved=0
 	if [[ $installed_state == unavailable ]]; then
 		state=unavailable
 		message='The installed-version record is present but cannot be trusted.'
 	elif [[ $installed_state == defaults ]]; then
 		state=unknown
 		message='No install provenance record was found.'
-	elif ! resolve_release "$requested_channel"; then
-		state=offline
-		message='The update server could not be reached.'
+	elif ! { resolve_release "$requested_channel" || { resolved=$? && false; }; }; then
+		if ((resolved == 2)); then
+			state=unknown
+			message="Nothing has been published on the $requested_channel channel yet."
+			if [[ $requested_channel == stable ]]; then
+				message+=" lyona's releases so far are pre-releases; to be offered them, run: lyona-update set-channel preview"
+			fi
+		else
+			state=offline
+			message='The update server could not be reached.'
+		fi
 	else
 		reached=true
 		local installed_rank remote_rank
@@ -512,18 +563,7 @@ cmd_check() {
 # --- shared helpers for apply / rollback ------------------------------
 
 trusted_root_helper() {
-	local candidate derived=
-	derived=${script_dir%/bin}/libexec/lyona/$root_helper_name
-	for candidate in "$derived" /usr/local/libexec/lyona/$root_helper_name \
-		/usr/libexec/lyona/$root_helper_name; do
-		[[ -n $candidate ]] || continue
-		# trusted_file also checks the directory chain, which this lookup
-		# used to skip (Sync Sprint 12 S12-14).
-		trusted_file "$candidate" || continue
-		printf '%s\n' "$candidate"
-		return 0
-	done
-	return 1
+	trusted_root_helper_path "$root_helper_name" "$script_dir/lyona-update" lyona-update
 }
 
 # rollback is the path a user takes with no desktop running, so this must not
@@ -608,9 +648,57 @@ release_packages() {
 	) | awk 'NF && !seen[$0]++'
 }
 
+# VERSION was released signed: it is not older than the first signed release.
+signature_required() {
+	local rank first
+	rank=$(version_rank "$1") || return 0
+	first=$(version_rank "$first_signed_version")
+	[[ ! $rank < $first ]]
+}
+
+# Downloads release VERSION's signature bundle into the updates area, as
+# bundle_path, or fails saying why.
+download_bundle() {
+	local version=$1 bundle tmp
+	[[ $version == "${release_version:-}" ]] || resolve_release "$channel" ||
+		die "could not reach the update server for $version's signature; with no network, pass --sha256 HASH (the tarball's line in the release's SHA256SUMS)"
+	[[ $version == "$release_version" ]] ||
+		die "$version is not the newest release on the $channel channel; give its signature with --bundle FILE (lyona-$version.sigstore.json)"
+	[[ -n $release_bundle_url ]] ||
+		die "release $version has no signature (lyona-$version.sigstore.json); refusing to install it"
+	bundle=$updates_root/lyona-$version.sigstore.json
+	tmp=$(mktemp "$updates_root/.lyona-$version.sigstore.json.XXXXXX")
+	if ! curl --fail --silent --show-error --location \
+		--retry 3 --connect-timeout 10 --max-time 60 \
+		"$release_bundle_url" --output "$tmp"; then
+		rm -f "$tmp"
+		die "failed to download $release_bundle_url"
+	fi
+	mv -fT "$tmp" "$bundle"
+	bundle_path=$bundle
+}
+
+# TARBALL is release VERSION as the release workflow built and signed it: the
+# bundle's Sigstore certificate names build-iso.yml run from main, and its
+# build-provenance statement names TARBALL's digest. cosign fetches Sigstore's
+# trust root, so this needs the network.
+verify_signature() { # TARBALL VERSION BUNDLE
+	local tarball=$1 version=$2 bundle=$3 output
+	command -v cosign >/dev/null 2>&1 ||
+		die "cosign is needed to check $version's signature; install it with: sudo pacman -S cosign"
+	if ! output=$(cosign verify-blob-attestation --bundle "$bundle" \
+		--type https://slsa.dev/provenance/v1 \
+		--certificate-oidc-issuer "$signer_issuer" \
+		--certificate-identity "$signer_identity" \
+		"$tarball" 2>&1 >/dev/null); then
+		printf '%s\n' "$output" | tail -n 3 >&2
+		die "the signature of lyona-$version does not verify; refusing to install it"
+	fi
+}
+
 cmd_apply() {
 	local requested_version='' file_path='' allow_downgrade=false dry_run=false yes=false
-	local given_checksum=''
+	local given_checksum='' bundle_path=''
 	while (($# > 0)); do
 		case $1 in
 		--version)
@@ -629,6 +717,12 @@ cmd_apply() {
 			(($# >= 2)) || die "--sha256 requires a value"
 			[[ $2 =~ ^[0-9a-fA-F]{64}$ ]] || die "--sha256 must be 64 hexadecimal digits"
 			given_checksum=${2,,}
+			shift 2
+			;;
+		--bundle)
+			# The release's lyona-VERSION.sigstore.json, for --file.
+			(($# >= 2)) || die "--bundle requires a value"
+			bundle_path=$2
 			shift 2
 			;;
 		--from-checkout)
@@ -654,6 +748,14 @@ cmd_apply() {
 	done
 	[[ -z $given_checksum || -n $file_path ]] ||
 		die "--sha256 is for --file; a download is verified against the release's published SHA256SUMS"
+	[[ -z $bundle_path || -n $file_path ]] ||
+		die "--bundle is for --file; a download's signature is downloaded with it"
+	[[ -z $bundle_path || -z $given_checksum ]] ||
+		die "--bundle and --sha256 are alternatives: the signature, or with no network, the checksum"
+	if [[ -n $bundle_path ]]; then
+		valid_absolute_path "$bundle_path" || die "--bundle must be an absolute path"
+		[[ -f $bundle_path && ! -L $bundle_path ]] || die "signature bundle not found: $bundle_path"
+	fi
 
 	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false status_quiet=false
 	trap report_status_failure EXIT
@@ -731,6 +833,20 @@ cmd_apply() {
 	else
 		warn "no checksum available for $tarball; proceeding without verification is not supported"
 		die "refusing to install an unverified tarball"
+	fi
+
+	# The signature (decision D-31), once the file is known to be the one the
+	# release lists.
+	status_detail='Verifying release signature'
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	if ! signature_required "$requested_version"; then
+		warn "$requested_version was released before releases were signed; verified by its checksum only"
+	elif [[ -n $given_checksum ]]; then
+		warn "not checking the signature: --sha256 vouches for $file_path"
+	else
+		[[ -n $bundle_path ]] || download_bundle "$requested_version"
+		warn "verifying signature"
+		verify_signature "$tarball" "$requested_version" "$bundle_path"
 	fi
 
 	status_detail="Unpacking lyona-$requested_version.tar.gz"

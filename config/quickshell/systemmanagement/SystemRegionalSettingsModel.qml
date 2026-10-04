@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-// Sync Sprint 1 S1-05 (docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-05-regional-settings-model-and-controls),
+// Sync Sprint 1 S1-05 (docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-05-regional-settings-model-and-controls),
 // ported from upstream's #268 -- Settings-only preparation. The root
 // operation model owns every sent change. Takes over regional preview/
 // confirm state that used to live directly on SystemManagementModel (Sync

@@ -103,6 +103,32 @@ SH
 	sed -i "s|__RESPONSES__|$responses_dir|g" "$bin_dir/curl"
 }
 
+# A cosign stub (decision D-31): a bundle verifies when it reads
+# "good-signature", the identity is exactly the release workflow's on main, and
+# the file exists. Each call's arguments are logged.
+cosign_log=$work/cosign.log
+signer=https://github.com/$github_repo/.github/workflows/build-iso.yml@refs/heads/main
+stub_command cosign <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>__LOG__
+bundle= identity= prev= file=
+for a in "$@"; do
+	case $prev in
+	--bundle) bundle=$a ;;
+	--certificate-identity) identity=$a ;;
+	esac
+	prev=$a
+	file=$a
+done
+if [ "$(cat "$bundle" 2>/dev/null)" = good-signature ] && [ "$identity" = __SIGNER__ ] && [ -f "$file" ]; then
+	printf 'Verified OK\n' >&2
+	exit 0
+fi
+printf 'Error: none of the expected identities matched what was in the certificate\n' >&2
+exit 1
+SH
+sed -i -e "s|__LOG__|$cosign_log|" -e "s|__SIGNER__|$signer|" "$bin_dir/cosign"
+
 canned_response() {
 	key=$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')
 	cat >"$responses_dir/$key"
@@ -124,13 +150,16 @@ seed_release() {
 	sha=${3:-f4a2c8199999999999999999999999999999999}
 	asset_url="$github_api/assets/lyona-$version.tar.gz"
 	sums_url="$github_api/assets/lyona-$version-SHA256SUMS"
+	bundle_url="$github_api/assets/lyona-$version.sigstore.json"
 	canned_response "$github_api/repos/$github_repo/releases/latest" <<EOF
 {"tag_name":"v$version","published_at":"2026-09-14T09:22:07Z",
  "assets":[
    {"name":"lyona-$version.tar.gz","browser_download_url":"$asset_url","size":4718592},
-   {"name":"lyona-$version-SHA256SUMS","browser_download_url":"$sums_url","size":128}
+   {"name":"lyona-$version-SHA256SUMS","browser_download_url":"$sums_url","size":128},
+   {"name":"lyona-$version.sigstore.json","browser_download_url":"$bundle_url","size":9000}
  ]}
 EOF
+	printf 'good-signature\n' | canned_response "$bundle_url"
 	canned_response "$github_api/repos/$github_repo/git/ref/tags/v$version" <<EOF
 {"object":{"sha":"$sha"}}
 EOF
@@ -263,7 +292,9 @@ for pair in \
 	reset_curl_responses
 	valid_user_record "$installed" | write_user_record
 	seed_release "$available"
-	status=$(run_update check)
+	# The stable channel's fixture, whatever channel a pre-release install
+	# would seed (R16-02): this loop is about version order.
+	status=$(run_update check --channel stable)
 	assert_string_contains "$status" "$(printf 'state\t%s' "$expected")" \
 		"$installed vs $available"
 done
@@ -279,6 +310,38 @@ assert_contains "$config_home/lyona/update.conf" 'channel=stable'
 printf 'channel=preview\ncheck_on_login=true\nauto_apply=false\nkeep_backups=5\n' \
 	>"$config_home/lyona/update.conf"
 run_update check >/dev/null
+assert_contains "$config_home/lyona/update.conf" 'channel=preview'
+
+# ── check: a channel with nothing published is not "offline" (R16-02) ──
+# The stable channel answers 404 (curl --fail exits 22) while every release is
+# a pre-release: unknown, saying how to switch, not a network failure.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.1 | write_user_record
+printf 'channel=stable\ncheck_on_login=true\nauto_apply=false\nkeep_backups=5\n' |
+	install -Dm600 /dev/stdin "$config_home/lyona/update.conf"
+status=$(run_update check)
+assert_string_contains "$status" "$(printf 'state\tunknown')"
+assert_string_contains "$status" 'Nothing has been published on the stable channel yet.'
+assert_string_contains "$status" 'lyona-update set-channel preview'
+# An empty preview channel says so too, without the stable-only hint.
+canned_response "$github_api/repos/$github_repo/releases" <<'EOF'
+[]
+EOF
+status=$(run_update check --channel preview)
+assert_string_contains "$status" "$(printf 'state\tunknown')"
+assert_string_contains "$status" 'Nothing has been published on the preview channel yet.'
+case $status in
+*set-channel*) fail 'the preview channel suggested switching to preview' ;;
+esac
+# A real network failure is still offline.
+go_offline
+status=$(run_update check)
+assert_string_contains "$status" "$(printf 'state\toffline')"
+go_online
+# A pre-release install seeds the preview channel on first use.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.1 | write_user_record
+run_update check >/dev/null || :
 assert_contains "$config_home/lyona/update.conf" 'channel=preview'
 
 # ── apply: checksum mismatch aborts before unpacking ────────────────────
@@ -333,6 +396,8 @@ status=$(run_update apply --file "$source_tarball" --version "$source_version" \
 	fail 'an offline --file apply with --sha256 failed'
 }
 assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+# The checksum the user gave stands in for the signature, which needs the network.
+assert_contains "$work/err" "not checking the signature: --sha256 vouches for $source_tarball"
 rm -rf "$state_home/lyona/updates/$source_version"
 if run_update apply --file "$source_tarball" --version "$source_version" --yes \
 	--sha256 "$(printf '%064d' 0)" >"$work/out" 2>&1; then
@@ -349,6 +414,91 @@ if run_update apply --yes >"$work/out" 2>&1; then
 fi
 assert_contains "$work/out" '--sha256 HASH'
 go_online
+
+# ── apply: the release's signature (decision D-31) ─────────────────────
+# A download: the tarball, then its bundle, checked by cosign against the
+# release workflow's identity before anything is unpacked.
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+seed_release "$source_version" "$source_sha"
+cp "$source_tarball" "$responses_dir/$(printf '%s' "$asset_url" | tr -c 'A-Za-z0-9' '_')"
+: >"$cosign_log"
+status=$(run_update apply --version "$source_version" --dry-run 2>"$work/err") || {
+	lyona_show_file "$work/err"
+	fail 'a signed release did not install'
+}
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_contains "$work/err" 'verifying signature'
+assert_contains "$cosign_log" "--certificate-identity $signer"
+assert_contains "$cosign_log" '--certificate-oidc-issuer https://token.actions.githubusercontent.com'
+assert_contains "$cosign_log" "$state_home/lyona/updates/lyona-$source_version.tar.gz"
+rm -rf "$state_home/lyona/updates/$source_version"
+# A forged bundle: refused before the release is unpacked or built.
+printf 'forged\n' | canned_response "$bundle_url"
+rm -rf "$cache_home/lyona"
+if run_update apply --file "$source_tarball" --version "$source_version" --dry-run >"$work/out" 2>&1; then
+	fail 'a release with a forged signature was installed'
+fi
+assert_contains "$work/out" "the signature of lyona-$source_version does not verify"
+assert_contains "$work/out" 'none of the expected identities matched'
+assert_no_file "$state_home/lyona/updates/$source_version"
+# No bundle published: refused, never installed on its checksum alone.
+reset_curl_responses
+seed_release "$source_version" "$source_sha"
+canned_response "$github_api/repos/$github_repo/releases/latest" <<EOF
+{"tag_name":"v$source_version","published_at":"2026-09-14T09:22:07Z",
+ "assets":[
+   {"name":"lyona-$source_version.tar.gz","browser_download_url":"$asset_url","size":4718592},
+   {"name":"lyona-$source_version-SHA256SUMS","browser_download_url":"$sums_url","size":128}
+ ]}
+EOF
+if run_update apply --file "$source_tarball" --version "$source_version" --dry-run >"$work/out" 2>&1; then
+	fail 'a release without a signature was installed'
+fi
+assert_contains "$work/out" "release $source_version has no signature"
+# --bundle: the signature given with the tarball, nothing downloaded for it.
+reset_curl_responses
+seed_release "$source_version" "$source_sha"
+rm -f "$responses_dir/$(printf '%s' "$bundle_url" | tr -c 'A-Za-z0-9' '_')"
+printf 'good-signature\n' >"$work/given.sigstore.json"
+status=$(run_update apply --file "$source_tarball" --version "$source_version" \
+	--bundle "$work/given.sigstore.json" --dry-run 2>"$work/err") || {
+	lyona_show_file "$work/err"
+	fail 'an apply with --bundle failed'
+}
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_contains "$cosign_log" "--bundle $work/given.sigstore.json"
+rm -rf "$state_home/lyona/updates/$source_version"
+for refused in \
+	"--bundle $work/given.sigstore.json --version $source_version:--bundle is for --file" \
+	"--file $source_tarball --version $source_version --bundle $work/given.sigstore.json --sha256 $source_sha:--bundle and --sha256 are alternatives" \
+	"--file $source_tarball --version $source_version --bundle $work/missing.json:signature bundle not found"; do
+	# shellcheck disable=SC2086 # the arguments are split on purpose
+	if run_update apply ${refused%%:*} --dry-run >"$work/out" 2>&1; then
+		fail "apply ${refused%%:*} was accepted"
+	fi
+	assert_contains "$work/out" "${refused#*:}"
+done
+# A release from before signing is installed on its checksum, and says so.
+reset_curl_responses
+valid_user_record 2026.08.0 | write_user_record
+seed_release 2026.09.0 "$asset_sha"
+: >"$cosign_log"
+run_update apply --version 2026.09.0 --yes >"$work/out" 2>&1 || :
+assert_contains "$work/out" '2026.09.0 was released before releases were signed'
+[ ! -s "$cosign_log" ] || fail 'a release from before signing was checked for a signature'
+# Without cosign, a signed release is refused, and the message says how to get
+# it. Only where the machine has no cosign of its own.
+if ! command -v cosign >/dev/null 2>&1; then
+	reset_curl_responses
+	valid_user_record 0000.00.0 | write_user_record
+	mv "$bin_dir/cosign" "$work/cosign.off"
+	if apply_source --dry-run >"$work/out" 2>&1; then
+		fail 'a signed release was installed without cosign'
+	fi
+	mv "$work/cosign.off" "$bin_dir/cosign"
+	assert_contains "$work/out" 'sudo pacman -S cosign'
+fi
 
 # ── apply --file: builds with the user's own config.h (S12-02, D-18) ───
 reset_curl_responses

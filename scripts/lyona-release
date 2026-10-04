@@ -18,6 +18,11 @@ Options:
                           Accepts 2026.08.0 or v2026.08.0.
   --iso PATH              Upload an installer ISO alongside the source archive.
   --notes FILE            Use FILE as release notes.
+  --bundle FILE           Publish FILE, the Sigstore bundle that signs the
+                          source archive and the ISO, as
+                          lyona-VERSION.sigstore.json, which lyona-update
+                          checks (decision D-31). The ISO workflow signs
+                          before it publishes, and passes this.
   --prerelease            Publish as a GitHub pre-release even without a
                           version suffix. The ISO workflow uses this so a
                           stable release stays one until it is promoted.
@@ -41,8 +46,30 @@ run() {
 	fi
 }
 
-remote_tag_exists() {
-	gh api "repos/:owner/:repo/git/ref/tags/$tag" >/dev/null 2>&1
+# The commit the remote tag points at, following an annotated tag to its
+# commit; nothing when there is no such tag. Any failure but GitHub's 404 stops
+# the release, so a transient error can never pass for "no tag".
+remote_tag_commit() {
+	local ref type sha err
+	err=$(mktemp)
+	if ! ref=$(gh api "repos/:owner/:repo/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>"$err"); then
+		if grep -Fq 'HTTP 404' "$err"; then
+			rm -f -- "$err"
+			return 0
+		fi
+		err "could not look up the remote tag $tag: $(cat "$err")"
+		rm -f -- "$err"
+		exit 1
+	fi
+	rm -f -- "$err"
+	read -r type sha <<<"$ref"
+	if [[ $type == tag ]]; then
+		sha=$(gh api "repos/:owner/:repo/git/tags/$sha" --jq .object.sha) || {
+			err "could not resolve the annotated tag $tag"
+			exit 1
+		}
+	fi
+	printf '%s\n' "$sha"
 }
 
 remote_release_exists() {
@@ -94,6 +121,7 @@ default_iso_path="$repo_root/lyona.iso"
 release_version=
 iso_path=
 notes_file=
+bundle_path=
 dry_run=false
 skip_checks=false
 force_prerelease=false
@@ -135,6 +163,14 @@ while (($# > 0)); do
 	--notes=*)
 		notes_file=${1#*=}
 		shift
+		;;
+	--bundle)
+		if (($# < 2)); then
+			err "--bundle requires a value."
+			exit 1
+		fi
+		bundle_path=$2
+		shift 2
 		;;
 	--dry-run)
 		dry_run=true
@@ -228,6 +264,11 @@ if [[ -n $notes_file && ! -f $notes_file ]]; then
 	exit 1
 fi
 
+if [[ -n $bundle_path && ! -f $bundle_path ]]; then
+	err "signature bundle not found: $bundle_path"
+	exit 1
+fi
+
 if ! command -v gh >/dev/null 2>&1; then
 	err "missing required command: gh"
 	exit 1
@@ -268,9 +309,37 @@ if [[ $dry_run == true ]]; then
 	printf ' > %q\n' "$checksums"
 else
 	mkdir -p "$(dirname "$checksums")"
-	sha256sum "${assets[@]}" >"$checksums"
+	# By file name, as a download lays them out, so `sha256sum -c` works on the
+	# downloaded files (Sync Sprint 16 R16-07).
+	: >"$checksums"
+	for asset in "${assets[@]}"; do
+		(cd "$(dirname "$asset")" && sha256sum "$(basename "$asset")") >>"$checksums"
+	done
 fi
 assets+=("$checksums")
+
+# The signature, only for exactly the files being published: the archive was
+# rebuilt above, and a bundle that does not name its digest (and the ISO's)
+# would make lyona-update refuse the release.
+if [[ -n $bundle_path ]]; then
+	signed_bundle="$repo_root/release/lyona-$release_version.sigstore.json"
+	if [[ $dry_run != true ]]; then
+		signed=$(jq -r '.dsseEnvelope.payload' "$bundle_path" | base64 -d |
+			jq -r '.subject[].digest.sha256') || {
+			err "could not read the signed digests from $bundle_path"
+			exit 1
+		}
+		for asset in "$release_archive" ${iso_path:+"$iso_path"}; do
+			digest=$(sha256sum -- "$asset" | awk '{ print $1 }')
+			grep -Fqx -- "$digest" <<<"$signed" || {
+				err "$bundle_path does not sign $(basename -- "$asset") ($digest)"
+				exit 1
+			}
+		done
+	fi
+	run cp -- "$bundle_path" "$signed_bundle"
+	assets+=("$signed_bundle")
+fi
 
 if [[ $dry_run == true ]]; then
 	run gh api "repos/:owner/:repo/git/ref/tags/$tag"
@@ -279,8 +348,15 @@ if [[ $dry_run == true ]]; then
 		-f "sha=$head_sha"
 	run gh release view "$tag"
 else
-	if remote_tag_exists; then
-		printf 'Remote tag %s already exists.\n' "$tag"
+	tagged=$(remote_tag_commit) || exit 1
+	if [[ -n $tagged && $tagged != "$head_sha" ]]; then
+		# Never publish this commit's assets under a tag that names another
+		# (Sync Sprint 16 R16-04).
+		err "$tag already exists at $tagged, not at this commit ($head_sha)"
+		err "bump VERSION in config.mk to release this commit"
+		exit 1
+	elif [[ -n $tagged ]]; then
+		printf 'Remote tag %s already exists at this commit.\n' "$tag"
 	else
 		printf 'Remote tag %s does not exist; creating it at %s.\n' "$tag" "$head_sha"
 		run gh api -X POST repos/:owner/:repo/git/refs \

@@ -190,6 +190,27 @@ for root_helper in lyona-update-root dwm-settings-display-root dwm-system-health
 		exit 1
 	}
 done
+# Sync Sprint 16 R16-46: one root-helper lookup, in the installed prefix only.
+# No script lists other prefixes, and the lookup derives PREFIX/libexec/lyona
+# from the caller's PREFIX/bin, or from the installed command on PATH when run
+# from a checkout (trusted_file stubbed: the path is what is checked here).
+stray=$(grep -ln '/usr/local/libexec/lyona/\|/usr/libexec/lyona/' "$repo"/scripts/* 2>/dev/null || true)
+[ -z "$stray" ] || fail "root helpers are looked up outside dwm-trust.sh: $stray"
+mkdir -p "$work/prefix/bin" "$work/onpath/bin"
+: >"$work/onpath/bin/lyona-update"
+chmod +x "$work/onpath/bin/lyona-update"
+# shellcheck disable=SC2016 # expanded by the inner shell
+lookup='. "$0"; trusted_file() { [ "$1" = "$EXPECT" ]; }; trusted_root_helper_path "$@"'
+got=$(EXPECT="$work/prefix/libexec/lyona/lyona-update-root" sh -c "$lookup" "$trust_lib" \
+	lyona-update-root "$work/prefix/bin/lyona-update" lyona-update) || fail 'the installed lookup failed'
+[ "$got" = "$work/prefix/libexec/lyona/lyona-update-root" ] || fail "the installed lookup gave: $got"
+got=$(PATH="$work/onpath/bin:$PATH" EXPECT="$work/onpath/libexec/lyona/lyona-update-root" sh -c "$lookup" \
+	"$trust_lib" lyona-update-root "$repo/scripts/lyona-update" lyona-update) || fail 'the checkout lookup failed'
+[ "$got" = "$work/onpath/libexec/lyona/lyona-update-root" ] || fail "the checkout lookup gave: $got"
+if PATH="$repo/scripts:/usr/bin:/bin" EXPECT=x sh -c "$lookup" "$trust_lib" \
+	lyona-update-root "$repo/scripts/lyona-update" lyona-update >/dev/null; then
+	fail 'a checkout with no installed lyona found a root helper'
+fi
 for helper in trusted_parent_chain trusted_file; do
 	duplicate=$(grep -l "^$helper() {" "$repo"/scripts/* 2>/dev/null |
 		grep -vE '/(dwm-trust\.sh|lyona-update-root|dwm-settings-display-root|dwm-system-health-root)$' || true)
@@ -247,13 +268,13 @@ grep -Fqx '        target: "settingsTest"' "$repo/config/quickshell/settings/Set
 
 # Sync Sprint 12 S12-17: a document the code or the user-facing docs cite must
 # exist, or, once retired, be cited as a `git show` argument naming a commit
-# that holds it: <commit>:docs/<name>.md (docs/UPSTREAM-SYNC.md, "Retired plan
+# that holds it: <commit>:docs/<name>.md (docs/sprints/UPSTREAM-SYNC.md, "Retired plan
 # documents"). The commit form is checked only in a git checkout.
 in_git=0
 git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 && in_git=1
 doc_refs=$(cd "$repo" && grep -rhoE '([0-9a-f]{7,40}:)?docs/[A-Za-z0-9_./-]+\.md' \
 	scripts config tests archiso install.sh Makefile README.md SPEC.md AGENTS.md \
-	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md docs/UPSTREAM-SYNC.md \
+	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md docs/sprints/UPSTREAM-SYNC.md \
 	docs/P6-SYSTEM-MANAGEMENT.md 2>/dev/null | sort -u)
 printf '%s\n' "$doc_refs" >"$work/doc-refs"
 while IFS= read -r reference; do

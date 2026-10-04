@@ -63,7 +63,9 @@ jobs:
           source scripts/dwm-packages.sh
           mapfile -t packages < <(dwm_packages arch ci-smoke | awk 'NF' | sort -u)
           for attempt in 1 2 3; do
-            pacman -Syu --noconfirm --needed "${packages[@]}" && exit 0
+            # Synced and upgraded by the step above: one sync per job (Sync
+            # Sprint 16 R16-39).
+            pacman -S --noconfirm --needed "${packages[@]}" && exit 0
             echo "pacman failed (attempt $attempt); retrying" >&2
             sleep 15
           done

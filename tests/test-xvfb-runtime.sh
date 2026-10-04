@@ -1472,14 +1472,16 @@ chmod +x "$home/.local/share/checkout/scripts/autostop.sh"
 cp "$repo/config/hotkeys.toml" "$home/.config/lyona/hotkeys.toml"
 kill -USR1 "$dwm_pid"
 sleep 0.2
-DISPLAY=$display xdotool key Super+Shift+q
+# The direct quit (Sync Sprint 16 R16-24 moved it off Super+Shift+Q, which now
+# asks first in the power menu).
+DISPLAY=$display xdotool key Super+Ctrl+Shift+q
 i=0
 while [ "$i" -lt 100 ] && kill -0 "$dwm_pid" 2>/dev/null; do
 	i=$((i + 1))
 	sleep 0.05
 done
 if kill -0 "$dwm_pid" 2>/dev/null; then
-	printf '%s\n' 'Super+Shift+Q did not exit dwm' >&2
+	printf '%s\n' 'Super+Ctrl+Shift+Q did not exit dwm' >&2
 	exit 1
 fi
 wait "$dwm_pid"

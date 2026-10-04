@@ -105,6 +105,13 @@ unescape_into(const char *src, char *dst, int maxlen)
 		src++;
 	}
 	dst[si] = '\0';
+	/* A string longer than dst is truncated, but read to its closing quote,
+	 * so its tail is never parsed as keys or values (Sync Sprint 16 R16-08). */
+	while (*src && *src != '"') {
+		if (*src == '\\' && *(src + 1))
+			src++;
+		src++;
+	}
 	return src;
 }
 

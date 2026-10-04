@@ -237,6 +237,7 @@ verify_install() {
 
 	verify_executable "$repo_dir/dwm" "$binary_target" "dwm binary"
 	verify_executable "$repo_dir/lyona-toml" "$prefix/lib/lyona/lyona-toml" "TOML reader"
+	verify_executable "$repo_dir/dwm-xwatch" "$prefix/lib/lyona/dwm-xwatch" "X property watcher"
 	while IFS= read -r install_source; do
 		[ -n "$install_source" ] || continue
 		install_name=${install_source##*/}
@@ -370,6 +371,7 @@ backup_live_install() {
 	: >"$system_manifest"
 	add_system_backup_path "$binary_target"
 	add_system_backup_path "$prefix/lib/lyona/lyona-toml"
+	add_system_backup_path "$prefix/lib/lyona/dwm-xwatch"
 	add_system_backup_path "$man_target"
 	add_system_backup_path "$xsession_target"
 	while IFS= read -r install_source; do

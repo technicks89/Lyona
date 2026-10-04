@@ -174,5 +174,37 @@ if [[ -n $undocumented ]]; then
 	exit 1
 fi
 
+# Sync Sprint 16: Steam's Vulkan drivers, named for the GPU so pacman never picks
+# a provider (with the CachyOS repositories it picked mesa-git, which conflicts
+# with mesa). lspci and pacman are stubbed.
+vulkan_work=$(mktemp -d)
+trap 'rm -rf "$vulkan_work"' EXIT
+cat >"$vulkan_work/lspci" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${STUB_LSPCI:-}"
+EOF
+cat >"$vulkan_work/pacman" <<'EOF'
+#!/bin/sh
+printf '%s\n' ${STUB_PACMAN_Q:-}
+EOF
+chmod +x "$vulkan_work/lspci" "$vulkan_work/pacman"
+vulkan() {
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	env PATH="$vulkan_work:$PATH" STUB_LSPCI="$1" STUB_PACMAN_Q="${2:-}" bash -c \
+		'. "$0" && dwm_vulkan_driver_packages | tr "\n" " "' "$repo/scripts/dwm-packages.sh"
+}
+[[ $(vulkan '00:02.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 22') == 'vulkan-radeon lib32-vulkan-radeon ' ]]
+[[ $(vulkan '00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 630') == 'vulkan-intel lib32-vulkan-intel ' ]]
+[[ $(vulkan '01:00.0 VGA compatible controller: NVIDIA Corporation GA104' 'nvidia-utils') == 'nvidia-utils lib32-nvidia-utils ' ]]
+[[ $(vulkan '01:00.0 VGA compatible controller: NVIDIA Corporation GM204' 'nvidia-580xx-utils') == 'nvidia-580xx-utils lib32-nvidia-580xx-utils ' ]]
+[[ $(vulkan '01:00.0 VGA compatible controller: NVIDIA Corporation GK104') == 'vulkan-nouveau lib32-vulkan-nouveau ' ]]
+[[ $(vulkan '00:01.0 VGA compatible controller: Red Hat, Inc. Virtio 1.0 GPU') == 'vulkan-swrast lib32-vulkan-swrast ' ]]
+# A laptop with two GPUs gets both drivers.
+[[ $(vulkan $'00:02.0 VGA compatible controller: Intel Corporation\n01:00.0 3D controller: NVIDIA Corporation' 'nvidia-utils') == 'vulkan-intel lib32-vulkan-intel nvidia-utils lib32-nvidia-utils ' ]]
+# install.sh installs them before the gaming profile.
+vulkan_line=$(grep -n 'mapfile -t vulkan_drivers < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
+gaming_line=$(grep -n 'dwm_install_available_package_profile gaming;' "$repo/install.sh" | cut -d: -f1)
+[[ -n $vulkan_line && -n $gaming_line ]] && ((vulkan_line < gaming_line))
+
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

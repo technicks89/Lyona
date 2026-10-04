@@ -106,27 +106,22 @@ else
 	printf "  ${RED}✗${NC} Xorg or Xlibre ${YELLOW}(missing)${NC}\n"
 	MISSING=$((MISSING + 1))
 fi
-for command in startx xrandr xset xsetroot; do
+# The tiers dwm-diagnostics uses too, from the shared map (Sync Sprint 16
+# R16-45): a missing desktop command is a warning, not a missing dependency.
+while IFS= read -r command; do
 	check_cmd "$command"
-done
+done < <(dwm_command_tier required)
+echo ""
 
-echo "Runtime Dependencies (desktop experience):"
-check_cmd "quickshell"
-check_cmd "picom"
-check_cmd "feh"
-check_optional_cmd "maim"
-check_cmd "xclip"
-check_cmd "xdotool"
+echo "Desktop (recommended; the session runs without them):"
+while IFS= read -r command; do
+	check_optional_cmd "$command"
+done < <(dwm_command_tier desktop)
 if command -v dex &>/dev/null || command -v dex-autostart &>/dev/null; then
 	printf "  ${GREEN}✓${NC} XDG autostart runner\n"
 else
-	printf "  ${RED}✗${NC} dex or dex-autostart ${YELLOW}(missing)${NC}\n"
-	MISSING=$((MISSING + 1))
+	printf "  ${YELLOW}!${NC} dex or dex-autostart ${YELLOW}(optional, missing)${NC}\n"
 fi
-check_cmd "amixer"
-check_cmd "jq"
-check_cmd "bluetoothctl"
-check_cmd "blueman-applet"
 echo ""
 
 echo "Terminal Emulators (at least one required):"

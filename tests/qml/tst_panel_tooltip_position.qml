@@ -5,7 +5,7 @@ import "../../config/quickshell/core/PanelTooltipPosition.js" as TooltipPosition
 /*
  * Direct, non-UI tests for the pure tooltip-position math behind
  * PanelTooltip.qml's anchor.rect.x (Sync Sprint 6 S6-01,
- * docs/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md, small portable
+ * docs/sprints/completed/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md, small portable
  * fix from upstream's 2461027 (#343): the position now recomputes whenever
  * the anchor window's width, the tooltip's own width, or the anchor point
  * changes, as a live property binding, instead of only when Quickshell's

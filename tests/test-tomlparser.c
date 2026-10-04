@@ -139,6 +139,32 @@ escaped_quote(const char *dir)
 	CHECK(is_str(toml_get(&doc, "", "b"), "plain # text"), "hash inside a string");
 }
 
+/* A string longer than the parser's buffer is truncated, and read to its
+ * closing quote: its tail never becomes keys (Sync Sprint 16 R16-08). */
+static void
+long_string(const char *dir)
+{
+	char text[4096], filler[701];
+
+	memset(filler, 'x', 600);
+	filler[600] = '\0';
+	snprintf(text, sizeof(text),
+		"rules = [\n"
+		"  { class=\"%s, isfloating=1, tags=9\", monitor=2 },\n"
+		"]\n"
+		"title = \"%s \\\" still the string\"\n"
+		"after = 7\n", filler, filler);
+	CHECK(parse_text(dir, "long-string", text), "did not parse");
+	CHECK(toml_table_count(&doc, "rules") == 1, "rules: %d tables, want 1",
+	      toml_table_count(&doc, "rules"));
+	CHECK(!toml_table_get(&doc, "rules", 0, "isfloating"), "a long string's tail became an isfloating key");
+	CHECK(!toml_table_get(&doc, "rules", 0, "tags"), "a long string's tail became a tags key");
+	CHECK(is_int(toml_table_get(&doc, "rules", 0, "monitor"), 2), "the key after a long string was lost");
+	CHECK(table_str("rules", 0, "class") && strlen(table_str("rules", 0, "class")) == TOML_MAX_STR - 1,
+	      "the long string was not truncated to the buffer");
+	CHECK(is_int(toml_get(&doc, "", "after"), 7), "the key after a long top-level string was lost");
+}
+
 /* What already worked must keep working. */
 static void
 regressions(const char *dir)
@@ -261,6 +287,7 @@ main(int argc, char *argv[])
 	first_line_table(argv[1]);
 	booleans(argv[1]);
 	escaped_quote(argv[1]);
+	long_string(argv[1]);
 	regressions(argv[1]);
 	truncation(argv[1]);
 	shipped(argv[2], atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), argv[6], atoi(argv[7]), argv[8]);

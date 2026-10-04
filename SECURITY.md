@@ -2,9 +2,11 @@
 
 ## Supported Versions
 
-Security fixes are developed on `main` and included in the next release. The
-latest published release is the supported stable line. Older releases may be
-asked to upgrade before receiving a fix.
+Security fixes are developed on `main` and included in the next release. While
+lyona is in beta every release is a pre-release, so there is no stable line yet:
+the newest published release is the supported one
+(`lyona-update set-channel preview` follows them). Older releases may be asked
+to upgrade before receiving a fix.
 
 ## Reporting a Vulnerability
 
@@ -24,7 +26,10 @@ window before public disclosure.
 The installer and helpers must preserve the privilege and configuration rules
 in `SPEC.md`: package and system installation are explicit, user configuration
 is preserved, downloaded artifacts are verified where checksums are available,
-and privileged repair actions remain allowlisted and bounded.
+and privileged repair actions remain allowlisted and bounded. lyona's own
+releases are signed through Sigstore by the release workflow, and
+`lyona-update` refuses one whose signature does not verify (decision D-31,
+`docs/RELEASING.md`).
 
 ## Hardening Notes
 

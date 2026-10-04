@@ -96,12 +96,17 @@ chmod +x "$work/bin/curl" "$work/bin/cargo" "$work/bin/rustup" "$work/bin/pacman
 
 # Tools from the system, without any topgrade, cargo or rustup of its own.
 mkdir -p "$work/sys"
-for cmd in bash sh env sed grep awk sort head mkdir mktemp rm cp chmod timeout id cat dirname printf cut find jq; do
+for cmd in bash sh env sed grep awk sort head mkdir mktemp rm cp chmod timeout id cat dirname printf cut find jq nproc; do
 	ln -sf "$(command -v "$cmd")" "$work/sys/$cmd"
 done
 base_path=$work/bin:$work/sys
 
-run() { env HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" "$helper" "$@"; }
+# A machine with 5 GiB available, unless a test says otherwise: two jobs.
+printf 'MemTotal:       16000000 kB\nMemAvailable:    5242880 kB\n' >"$work/meminfo"
+run() {
+	env HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" \
+		INSTALL_TOPGRADE_MEMINFO="${STUB_MEMINFO:-$work/meminfo}" "$helper" "$@"
+}
 reset() {
 	rm -rf "${work:?}/home" "$work/log" "$work/toolchain" "$work/target-dir"
 	mkdir -p "$work/home"
@@ -117,8 +122,21 @@ grep -Eq '^curl .*--proto =https --tlsv1\.2 .*-A lyona-install-topgrade .*https:
 	fail "the lookup ran as: $(grep '^curl' "$work/log")"
 [[ $(grep -c '^rustup' "$work/log") == 3 ]] || fail "the toolchain steps: $(cat "$work/log")"
 grep -Fqx 'rustup toolchain install stable --profile minimal' "$work/log" || fail 'stable (minimal) was not installed'
-grep -Eq "^cargo install --locked --force --version 17\.12\.3 --root $work/home/.cargo --target-dir $work/home/.cache/lyona/topgrade-build\.[^ ]+/target topgrade$" "$work/log" ||
+jobs=2
+(($(nproc) >= 2)) || jobs=1
+grep -Eq "^cargo install --locked --force --jobs $jobs --version 17\.12\.3 --root $work/home/.cargo --target-dir $work/home/.cache/lyona/topgrade-build\.[^ ]+/target topgrade$" "$work/log" ||
 	fail "the build ran as: $(grep '^cargo' "$work/log")"
+# Sync Sprint 16 R16-33: the jobs follow the memory there is. Under 2 GiB: one.
+reset
+printf 'MemAvailable:    1048576 kB\n' >"$work/low-meminfo"
+STUB_MEMINFO=$work/low-meminfo run >/dev/null 2>&1 || fail 'the low-memory install failed'
+grep -q '^cargo install --locked --force --jobs 1 ' "$work/log" || fail "a low-memory build: $(grep '^cargo' "$work/log")"
+# A CARGO_BUILD_JOBS the user set is kept.
+reset
+CARGO_BUILD_JOBS=3 run >/dev/null 2>&1 || fail 'the install with CARGO_BUILD_JOBS failed'
+grep -q '^cargo install --locked --force --jobs 3 ' "$work/log" || fail "CARGO_BUILD_JOBS=3: $(grep '^cargo' "$work/log")"
+reset
+run >"$work/out" || fail "the install failed: $(cat "$work/out")"
 [[ $(installed_version) == 'topgrade 17.12.3' ]] || fail 'the newest Topgrade was not installed'
 [[ ! -e $(cat "$work/target-dir") ]] || fail 'the build directory was left behind'
 [[ -z $(find "$work/home/.cache/lyona" -mindepth 1 2>/dev/null) ]] || fail 'the cache directory was not cleaned'
@@ -278,7 +296,8 @@ postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
 grep -Fq './install.sh --non-interactive --profile full --skip-topgrade' "$postinstall" ||
 	fail 'the live medium does not skip Topgrade in install.sh'
 # shellcheck disable=SC2016 # the literal text in the postinstall
-removed=$(grep -n '^rm -f "$install_sudoers"$' "$postinstall" | cut -d: -f1)
+# The last removal: the one after install.sh (an earlier one clears a stale copy).
+removed=$(grep -n '^rm -f -- "$install_sudoers"$' "$postinstall" | tail -n 1 | cut -d: -f1)
 topgrade=$(grep -n 'run_logged "Building Topgrade' "$postinstall" | cut -d: -f1)
 if [[ -z $removed || -z $topgrade ]] || ((topgrade <= removed)); then
 	fail 'the live medium builds Topgrade before its sudoers file is removed'

@@ -25,6 +25,8 @@ print-config:
 	fi
 
 install:
+	@# The greeter theme is generated through lyona-toml (lyona-gtk-theme).
+	@[ -x ../lyona-toml ] || { echo "lightdm: build lyona first (make in the checkout): ../lyona-toml is missing" >&2; exit 1; }
 	tmp=$$(mktemp); \
 	trap 'rm -f "$$tmp"' EXIT; \
 	$(MAKE) --no-print-directory print-config >"$$tmp"; \

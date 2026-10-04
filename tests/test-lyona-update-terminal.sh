@@ -31,6 +31,14 @@ cat >"$work/bin/alacritty" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >>"$STUB_DIR/terminal.log"
 [[ ${STUB_TERMINAL:-} != broken ]] || exit 1
+# Hands the command to the background and returns at once, as gnome-terminal
+# and wezterm do (Sync Sprint 16 R16-06).
+if [[ ${STUB_TERMINAL:-} == detach ]]; then
+	while (($# > 0)) && [[ $1 != -e ]]; do shift; done
+	shift
+	(sleep 1 && "$@" </dev/null >/dev/null 2>&1) &
+	exit 0
+fi
 while (($# > 0)) && [[ $1 != -e ]]; do shift; done
 shift
 if [[ ${STUB_TERMINAL:-} == close ]]; then
@@ -70,7 +78,7 @@ launch() { PATH="$work/bin:$base_path" DWM_TERMINAL=alacritty "$helper" launch "
 result_line() { printf '%s\n' "$1" | sed -n 2p; }
 # A PATH with the system tools but none of the stubbed ones.
 mkdir -p "$work/base"
-for cmd in bash sh awk sed grep mktemp rm cat sleep kill mkdir chmod mv dirname tr cut head; do
+for cmd in bash sh awk sed grep mktemp rm cat sleep kill mkdir chmod mv dirname tr cut head flock; do
 	ln -sf "$(command -v "$cmd")" "$work/base/$cmd"
 done
 base_path=$work/base
@@ -102,6 +110,17 @@ reset
 out=$(STUB_TERMINAL=close launch system)
 [[ $(result_line "$out") == $'result\tsystem\tinterrupted\t-1\tThe terminal closed before the update finished' ]] ||
 	fail "an early close: $out"
+
+# A terminal that returns at once, before the update even starts: the result is
+# still the update's, after it ends.
+reset
+out=$(STUB_TERMINAL=detach launch system)
+[[ $(result_line "$out") == $'result\tsystem\tsucceeded\t0\tUpdated' ]] ||
+	fail "a terminal that returns at once: $out"
+reset
+out=$(STUB_TERMINAL=detach STUB_STATUS=1 launch system)
+[[ $(result_line "$out") == $'result\tsystem\tnot-updated\t1\tNot updated: the command exited with status 1' ]] ||
+	fail "a failed update in a terminal that returns at once: $out"
 
 # A terminal that never ran the update.
 reset
@@ -144,5 +163,24 @@ grep -Fq -- '--class lyona-update-float,lyona-update-float' "$work/terminal.log"
 if "$helper" launch pacman >/dev/null 2>&1; then fail 'launch accepted an unknown provider'; fi
 if "$helper" run system "$work/no-such-file" >/dev/null 2>&1; then fail 'run accepted a missing result file'; fi
 [[ -z $(ls -A "$TMPDIR") ]] || fail "result files were left: $(ls -A "$TMPDIR")"
+
+# Sync Sprint 16 R16-31: each update helper's --help says what every command
+# does, on stdout; a wrong call shows it on stderr and fails.
+for helper in lyona-update-terminal lyona-update-indicator lyona-update; do
+	help=$("$repo/scripts/$helper" --help) || fail "$helper --help failed"
+	case $helper in
+	lyona-update-terminal) words=('launch system' 'launch flatpak' 'AUR' 'pacman through sudo') ;;
+	lyona-update-indicator) words=('set-interval' 'How often, in hours' 'set-float-terminal') ;;
+	lyona-update) words=('Updates lyona itself' 'rollback     Restores a backup' 'set-channel  stable') ;;
+	esac
+	for word in "${words[@]}"; do
+		[[ $help == *"$word"* ]] || fail "$helper --help does not describe: $word"
+	done
+done
+for helper in lyona-update-terminal lyona-update-indicator; do
+	status=0
+	"$repo/scripts/$helper" bogus >/dev/null 2>"$work/usage.err" || status=$?
+	[[ $status == 2 && -s $work/usage.err ]] || fail "$helper with a wrong command: status $status"
+done
 
 printf 'lyona-update-terminal: PASS\n'

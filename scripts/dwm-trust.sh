@@ -8,6 +8,28 @@
 # fails if the copies differ. The variables are prefixed rather than local, so
 # the file stays POSIX.
 
+# The installed root helper NAME, from the prefix lyona is installed in:
+# PREFIX/libexec/lyona/NAME beside PREFIX/bin, the one path its polkit policy
+# names (Sync Sprint 16 R16-46: this was four copies, each also trying /usr/local
+# and /usr). CALLER is the calling command's own path; from a checkout, the
+# installed COMMAND on PATH gives the prefix instead. Prints the helper's path
+# when it passes trusted_file. Above the functions the root helpers copy, as
+# they never look a helper up.
+trusted_root_helper_path() { # NAME CALLER COMMAND
+	lyona_trust_bin=${2%/*}
+	case $lyona_trust_bin in
+	*/bin) ;;
+	*)
+		lyona_trust_bin=$(command -v "$3" 2>/dev/null) || return 1
+		lyona_trust_bin=${lyona_trust_bin%/*}
+		case $lyona_trust_bin in */bin) ;; *) return 1 ;; esac
+		;;
+	esac
+	lyona_trust_helper=${lyona_trust_bin%/bin}/libexec/lyona/$1
+	trusted_file "$lyona_trust_helper" || return 1
+	printf '%s\n' "$lyona_trust_helper"
+}
+
 # Every directory from PATH's parent up to / is a real directory, owned by root
 # and not group- or other-writable. A stat that fails counts as untrusted.
 trusted_parent_chain() {

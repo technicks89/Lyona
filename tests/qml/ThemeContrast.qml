@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import qs.core
 
-// Runtime harness for Sync Sprint 11 S11-01 (docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md).
+// Runtime harness for Sync Sprint 11 S11-01 (docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md).
 // tests/test-quickshell-theme-contrast-xvfb.sh replaces __PRESETS__ with one
 // colour map per preset in config/themes.toml, built with the same key mapping
 // scripts/dwm-settings-appearance uses. For every preset this loads the real

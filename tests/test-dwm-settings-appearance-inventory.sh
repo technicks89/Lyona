@@ -51,6 +51,11 @@ for command_name in awk bash chmod date find flock grep id mkdir mkfifo mktemp m
 done
 printf 'DISPLAY=:55\0' >"$proc_root/4242/environ"
 export DISPLAY=:55 DWM_APPEARANCE_PROC_ROOT=$proc_root
+# Each source may take 1 s here, not 3, so the slow-source cases wait 1 s (Sync
+# Sprint 16 R16-42). The default stays 3:
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fqx 'max_inventory_scan_seconds=${DWM_APPEARANCE_SCAN_SECONDS:-3}' "$helper"
+export DWM_APPEARANCE_SCAN_SECONDS=1
 
 cat >"$bin_dir/fc-list" <<'EOF'
 #!/bin/sh
@@ -311,7 +316,7 @@ grep -Fqx $'selection\twallpaper\tpartial\t\tfill\tWallpaper state helper did no
 
 cat >"$work/delayed-wallpaper-status-helper" <<'EOF'
 #!/bin/sh
-sleep 2.5
+sleep 0.5
 printf 'wallpaper-protocol\t1\t0\n'
 printf 'provider\twallpaper\tavailable\tuser-session\tManaged wallpaper state is readable\n'
 printf 'selection\tpartial\t\tfill\tDelayed bounded wallpaper status completed\n'
@@ -341,7 +346,7 @@ slow_wallpaper_inventory=$(HOME=$home PATH=$bin_dir XDG_CONFIG_HOME=$config_home
 	DWM_APPEARANCE_WALLPAPER_DIR=$wallpaper_dir QT_QPA_PLATFORMTHEME=qt6ct \
 	"$helper" inventory)
 elapsed=$(($(date +%s) - started))
-test "$elapsed" -lt 6
+test "$elapsed" -lt 4
 grep -Fqx $'selection\twallpaper\tpartial\t\tfill\tWallpaper state helper did not return a valid bounded response' \
 	<<<"$slow_wallpaper_inventory"
 rm -f "$config_home/lyona/wallpaper.conf"

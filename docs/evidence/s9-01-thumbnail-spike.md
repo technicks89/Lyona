@@ -1,6 +1,6 @@
 # S9-01 -- live per-window thumbnails: spike outcome
 
-Plan: `docs/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-01`. Issue `#350`. **Not implemented; a maintainer decision is
+Plan: `docs/sprints/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-01-live-per-window-thumbnails-a-spike`. Issue `#350`. **Not implemented; a maintainer decision is
 needed.** The spike answered the feasibility question only.
 
 ## What was tried (2026-09-27, Xvfb 1024x768 and 3840x2160, real dwm, feh test window, nothing committed)

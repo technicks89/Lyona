@@ -454,19 +454,7 @@ watch_events() {
 }
 
 trusted_root_helper() {
-	local candidate command_path derived=
-	command_path=$(command -v dwm-settings-display 2>/dev/null || true)
-	case $command_path in
-	*/bin/dwm-settings-display) derived=${command_path%/bin/dwm-settings-display}/libexec/lyona/dwm-settings-display-root ;;
-	esac
-	for candidate in "$derived" /usr/local/libexec/lyona/dwm-settings-display-root \
-		/usr/libexec/lyona/dwm-settings-display-root; do
-		[[ -n $candidate ]] || continue
-		trusted_file "$candidate" || continue
-		printf '%s\n' "$candidate"
-		return
-	done
-	return 1
+	trusted_root_helper_path dwm-settings-display-root "${BASH_SOURCE[0]}" dwm-settings-display
 }
 
 install_profile() {

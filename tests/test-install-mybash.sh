@@ -76,23 +76,42 @@ awk '/^linkConfig\(\) \{/, /^\}/' "$installer" >"$work/link_config"
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
 for target in '"$HOME/.bashrc"' '"$HOME/.config/starship.toml"' \
 	'"$HOME/.config/fastfetch/config.jsonc"' '"$HOME/.local/bin/starship-theme"'; do
-	grep -Fq "ln -svf" "$work/link_config" || fail 'linkConfig no longer links anything'
+	grep -Fq "link_with_backup " "$work/link_config" || fail 'linkConfig no longer links anything'
 	grep -Fq "$target" "$work/link_config" ||
 		fail "linkConfig does not link $target"
 done
 
-# Both new targets are in directories that may not exist yet.
-# shellcheck disable=SC2016 # the literal shell source text is what we look for
-for parent in '"$HOME/.config/fastfetch"' '"$HOME/.local/bin"'; do
-	grep -Fq "mkdir -p $parent" "$work/link_config" ||
-		fail "linkConfig links into $parent without creating it"
-done
-
 # ── The previous shell configuration is kept ─────────────────────────────
+#
+# Sync Sprint 16 R16-23: every file it replaces is kept with a timestamp, even
+# when an older backup is already there, and a link already in place is left
+# alone, so re-running install.sh adds no backups. Run against a scratch home.
 
-# shellcheck disable=SC2016 # the literal shell source text is what we look for
-grep -Fq 'mv "$OLD_BASHRC" "$HOME/.bashrc.bak"' "$installer" ||
-	fail 'install-mybash no longer preserves an existing .bashrc'
+awk '/^link_with_backup\(\) \{/, /^\}/' "$installer" >"$work/link_with_backup"
+[ -s "$work/link_with_backup" ] || fail 'link_with_backup is missing'
+home=$work/home
+mkdir -p "$home/.config" "$work/mybash"
+for file in .bashrc starship.toml; do printf 'mybash %s\n' "$file" >"$work/mybash/$file"; done
+printf 'my own bashrc\n' >"$home/.bashrc"
+printf 'an older backup\n' >"$home/.bashrc.bak"
+ln -s "$work/elsewhere.toml" "$home/.config/starship.toml"
+# shellcheck disable=SC1091 # extracted above
+link() { (. "$work/link_with_backup" && link_with_backup "$@") >/dev/null; }
+link "$work/mybash/.bashrc" "$home/.bashrc"
+link "$work/mybash/starship.toml" "$home/.config/starship.toml"
+# Into a directory that did not exist yet.
+link "$work/mybash/starship.toml" "$home/.local/bin/starship-theme"
+[ "$(readlink "$home/.bashrc")" = "$work/mybash/.bashrc" ] || fail '.bashrc was not linked'
+[ "$(cat "$home/.bashrc.bak")" = 'an older backup' ] || fail 'an older backup was overwritten'
+set -- "$home"/.bashrc.bak.*
+[ $# -eq 1 ] && [ "$(cat "$1")" = 'my own bashrc' ] || fail 'the replaced .bashrc was not kept'
+set -- "$home"/.config/starship.toml.bak.*
+[ $# -eq 1 ] && [ "$(readlink "$1")" = "$work/elsewhere.toml" ] || fail 'the replaced starship.toml link was not kept'
+[ -L "$home/.local/bin/starship-theme" ] || fail 'a link into a new directory was not made'
+# Again: nothing new is backed up.
+link "$work/mybash/.bashrc" "$home/.bashrc"
+set -- "$home"/.bashrc.bak.*
+[ $# -eq 1 ] || fail "a second run backed .bashrc up again: $*"
 
 # ── It is reached, and only for the recommended profile ──────────────────
 

@@ -67,7 +67,8 @@ grep -Fq 'root.refreshApplicationIndex()' "$repo/config/quickshell/launcher/Laun
 grep -Fq '{ title="dwm menu", isfloating=1, alwaysontop=1 },' "$repo/docs/OMARCHY-UI-ADAPTATION.md"
 grep -Fq 'menu open|close|toggle|summon' "$repo/CHANGELOG.md"
 grep -Fq 'target: "launcher"' "$shell"
-grep -Eq 'key="r".*call launcher toggle' "$repo/config/hotkeys.toml"
+# Through the installed wrapper (Sync Sprint 16 R16-47).
+grep -Eq 'key="r".*exec=\["lyona-shell", "launcher", "toggle"\]' "$repo/config/hotkeys.toml"
 if grep -Eq 'call menu (open|toggle|summon)' "$repo/config/hotkeys.toml"; then
 	printf '%s\n' 'Command menu unexpectedly replaced or added a default hotkey.' >&2
 	exit 1

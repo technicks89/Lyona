@@ -1,6 +1,6 @@
 # S12-12 -- overview close asks the window, hidden windows, and thumbnail tests
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-12-overview-close-asks-the-window-hidden-windows-and-thumbnail-tests`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-12-overview-close-asks-the-window-hidden-windows-and-thumbnail-tests`.
 Issue `#175`.
 
 ## Change

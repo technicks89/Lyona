@@ -1,6 +1,6 @@
 # S12-02 -- release install hashes and builds one root-owned copy
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-02-release-install-hashes-and-builds-one-root-owned-copy`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-02-release-install-hashes-and-builds-one-root-owned-copy`.
 Issue `#165`. Builds on S12-01 (`c5da716`, `6fa43de`).
 
 ## Change

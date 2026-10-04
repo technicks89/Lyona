@@ -6,7 +6,7 @@ import "OverviewFilter.js" as Filter
 import "OverviewSelection.js" as Selection
 
 // Presentation-level state for the cross-tag window overview popup (Sync
-// Sprint 7 S7-03, docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md, part of the
+// Sprint 7 S7-03, docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md, part of the
 // cross-tag window overview, issue #350). Deliberately thin: the actual
 // per-window tag/monitor resolution and grouping already lives in
 // DwmStateWindows.js's own groupByTag() (Sprint 7 S7-02's pure library, grown
@@ -47,7 +47,7 @@ Scope {
     onFlatCardsChanged: root.selectedIndex = Selection.selectAbsolute(root.selectedIndex, root.flatCards.length)
 
     // A flat, tag-grouped-order card list for keyboard navigation (Sync
-    // Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) -- moving
+    // Sprint 8 S8-01, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) -- moving
     // past the last card of one tag's group lands on the first of the next,
     // for free, since this is exactly WindowOverview.qml's own nested-Repeater
     // render order (groupByTag()'s own flatIndex already matches it).

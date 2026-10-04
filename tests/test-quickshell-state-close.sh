@@ -15,7 +15,7 @@ fail() {
 	exit 1
 }
 
-# Sync Sprint 8 S8-04 (docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md, part of the
+# Sync Sprint 8 S8-04 (docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md, part of the
 # cross-tag window overview, issue #350): the `close` action closing a card
 # that is not the focused window, the exact gap dwm.c's own killclient()
 # leaves (it only ever closes selmon->sel). No stub for xprop/dwm here --

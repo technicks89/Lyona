@@ -458,4 +458,29 @@ grep -Fq 'signal(SIGUSR2, sigusr2_handler);' "$repo/dwm.c"
 grep -Fq 'netatom[NetWMPid] = XInternAtom(dpy, "_NET_WM_PID", False);' "$repo/dwm.c"
 grep -Fq 'XChangeProperty(dpy, wmcheckwin, netatom[NetWMPid], XA_CARDINAL, 32,' "$repo/dwm.c"
 
+# Sync Sprint 16 R16-24: the logout and reboot keys open the menu at the
+# action's confirmation. askToConfirm only takes actions that ask first, so the
+# keys can never run one directly, and it is not the "yes" (confirmAction).
+sed -n '/function askToConfirm(actionId)/,/^    }/p' "$model" >"$work/ask-to-confirm"
+[ -s "$work/ask-to-confirm" ] || fail 'askToConfirm is missing from PowerMenuModel.qml'
+grep -Fq 'if (!requestedAction || !requestedAction.confirm) return;' "$work/ask-to-confirm" ||
+	fail 'askToConfirm accepts an action that does not ask first'
+grep -Fq 'root.requestAction(requestedAction, "panel");' "$work/ask-to-confirm" || fail 'askToConfirm does not ask'
+if grep -Eq 'runAction|confirmAction' "$work/ask-to-confirm"; then
+	fail 'askToConfirm runs the action instead of asking'
+fi
+[ "$(grep -c 'function confirmAction(' "$model")" = 1 ] || fail 'PowerMenuModel.qml has two confirmAction methods'
+grep -Fq 'powerMenuModel.askToConfirm(action);' "$repo/config/quickshell/shell.qml" ||
+	fail 'the power IPC does not offer confirm'
+hotkeys=$repo/config/hotkeys.toml
+grep -Eq '^  \{ mod="SUPER SHIFT", +key="q", .*exec=\["lyona-shell", "power", "confirm", "logout"\] \},$' "$hotkeys" ||
+	fail 'Super+Shift+Q does not ask before logging out'
+grep -Eq '^  \{ mod="SUPER CTRL SHIFT", +key="r", .*exec=\["lyona-shell", "power", "confirm", "reboot"\] \},$' "$hotkeys" ||
+	fail 'Super+Ctrl+Shift+R does not ask before rebooting'
+grep -Eq '^  \{ mod="SUPER CTRL SHIFT", +key="q", .*func="quit" \},$' "$hotkeys" ||
+	fail 'the direct quit is no longer bound'
+if grep -n 'systemctl reboot' "$hotkeys" | grep -q .; then
+	fail 'a key still reboots without asking'
+fi
+
 printf '%s\n' 'Quickshell session action model, backend, and graceful logout: PASS'

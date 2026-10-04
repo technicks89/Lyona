@@ -288,6 +288,11 @@ snapshot() {
 		: >"$work/wifi"
 		printf 'provider\tnetwork\trestricted\tdelegated\tWi-Fi scanning is unavailable; other NetworkManager state remains readable\n'
 	fi
+	# NetworkManager's overall state ("connected" is full connectivity), for the
+	# update indicator's check on connecting (Sync Sprint 16 R16-34).
+	if general=$(nmcli_tab -f STATE general 2>/dev/null) && [ -n "$general" ]; then
+		printf 'network-state\t%s\n' "$general"
+	fi
 	awk -F '\t' -v OFS='\t' 'NF >= 3 { connection = $4 != "" ? $4 : "-"; print "network-device", $1, $2, $3, connection }' "$work/devices"
 	awk -F '\t' -v OFS='\t' 'NF >= 4 { device = $5 != "" ? $5 : "-"; print "network-profile", $1, $2, $3, $4, device }' "$work/connections"
 	awk -F '\t' -v OFS='\t' 'NF >= 7 && $3 != "" { active = $1 != "" ? $1 : "-"; print "wifi-network", active, $2, $3, $4, $5, $6, $7 }' "$work/wifi"

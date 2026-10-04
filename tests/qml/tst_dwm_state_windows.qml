@@ -5,7 +5,7 @@ import "../../config/quickshell/state/DwmStateWindows.js" as WindowsLib
 /*
  * Direct, non-UI tests for the pure windows=-parsing and tag/monitor
  * resolution library (Sync Sprint 7 S7-02,
- * docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md), split out of DwmState.qml the
+ * docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md), split out of DwmState.qml the
  * same way tst_panel_tooltip_position.qml tests PanelTooltipPosition.js
  * directly rather than through the live PanelTooltip.qml component -- here
  * because DwmState.qml's own Process { running: true } would otherwise spawn
@@ -207,7 +207,7 @@ TestCase {
         compare(groups[0].windows[0].appClass, "edge:case|with%7c");
     }
 
-    // flatIndex (Sync Sprint 8 S8-01, docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md):
+    // flatIndex (Sync Sprint 8 S8-01, docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md):
     // a sequential index across the whole groups list, in the exact order
     // WindowOverview.qml's nested Repeaters render it, so keyboard navigation
     // can select "the next card" without re-deriving the traversal order.

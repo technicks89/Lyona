@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -39,6 +40,8 @@ Scope {
     property string audioSourceKind: "none"
     property int audioSourceGeneration: 0
     property int fallbackProcessGeneration: 0
+    // A refresh asked for while a snapshot was running (Sync Sprint 16 R16-38).
+    property bool audioRefreshPending: false
     property int mutationGeneration: 0
     property int appliedMutationGeneration: 0
     property int actionProcessGeneration: 0
@@ -140,7 +143,12 @@ Scope {
     }
 
     function refreshAudioInventory() {
-        if (!audioSnapshotProcess.running) audioSnapshotProcess.running = true;
+        if (audioSnapshotProcess.running) {
+            // Read again when this one ends: it may have missed the change.
+            root.audioRefreshPending = true;
+            return;
+        }
+        audioSnapshotProcess.running = true;
     }
 
     function parseAudioSnapshot(text) {
@@ -156,7 +164,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "audio-protocol") {
-                protocolValid = fields.length >= 3 && fields[1] === "1";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider") {
                 if (fields.length < 5 || fields[1] !== "audio") { malformed = true; continue; }
                 providerSeen = true;
@@ -472,6 +480,25 @@ Scope {
         command: Commands.controlsHelperCommand("audio-snapshot")
         running: false
         stdout: StdioCollector { onStreamFinished: root.parseAudioSnapshot(this.text) }
+        onRunningChanged: {
+            if (!running && root.audioRefreshPending) {
+                root.audioRefreshPending = false;
+                root.refreshAudioInventory();
+            }
+        }
+    }
+
+    // pactl prints several lines for one change: one snapshot once they settle
+    // (Sync Sprint 16 R16-38), as WatchedProcess does for the other watchers.
+    Timer {
+        id: fallbackSettleTimer
+        interval: 250
+        repeat: false
+        onTriggered: {
+            if (root.audioSourceKind === "fallback"
+                    && root.fallbackProcessGeneration === root.audioSourceGeneration)
+                root.refreshAudioInventory();
+        }
     }
 
     // Not WatchedProcess (Sync Sprint 12 S12-14): each start is tagged with the
@@ -484,7 +511,7 @@ Scope {
             onRead: function(data) {
                 if (root.audioSourceKind === "fallback"
                         && root.fallbackProcessGeneration === root.audioSourceGeneration) {
-                    root.refreshAudioInventory();
+                    fallbackSettleTimer.restart();
                 }
             }
         }

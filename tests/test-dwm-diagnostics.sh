@@ -6,10 +6,9 @@ set -euo pipefail
 HELPER="$repo/scripts/dwm-diagnostics"
 BASH_BIN="${BASH:-/usr/bin/bash}"
 
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-
-mkdir -p "$work/bin" "$work/home/.config"
+# The managed workspace, under DWM_TEST_TMP_ROOT (Sync Sprint 16 R16-10).
+make_workspace
+mkdir -p "$work/home/.config"
 
 for cmd in cc make Xorg startx xrandr xset xsetroot xclip xdotool alacritty; do
 	cat >"$work/bin/$cmd" <<'SCRIPT'
@@ -21,7 +20,8 @@ done
 
 cat >"$work/bin/pkg-config" <<'SCRIPT'
 #!/bin/sh
-test "$1" = "--exists"
+# Only "pkg-config --exists MODULE" is expected; anything else fails.
+test "$1" = "--exists" || exit 1
 case "$2" in
 	x11|xft|xinerama|xrender|imlib2|x11-xcb|xcb|xcb-res)
 		exit 0
@@ -85,3 +85,20 @@ fi
 grep -Fq "missing X11 server" "$work/fail"
 grep -Fq "missing terminal" "$work/fail"
 grep -Fq "Required failures must be fixed" "$work/err"
+
+# Sync Sprint 16 R16-45: check-deps.sh and dwm-diagnostics take their command
+# tiers from the shared map, so they cannot disagree again.
+for checker in "$repo/scripts/check-deps.sh" "$repo/scripts/dwm-diagnostics"; do
+	for tier in required desktop; do
+		grep -Fq "done < <(dwm_command_tier $tier)" "$checker" || fail "${checker##*/} does not check the $tier tier"
+	done
+	if grep -Eq '^[[:space:]]*(check_cmd|check_required_cmd|check_optional_cmd) "?(quickshell|picom|feh|xdotool|blueman-applet)"?$' "$checker"; then
+		fail "${checker##*/} still lists a tiered command by hand"
+	fi
+done
+for command in quickshell picom feh; do
+	(. "$repo/scripts/dwm-packages.sh" && dwm_command_tier desktop) | grep -Fxq "$command" ||
+		fail "$command is not in the desktop tier"
+done
+
+printf 'dwm-diagnostics: PASS\n'

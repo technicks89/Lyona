@@ -1,6 +1,6 @@
 .pragma library
 
-// Sync Sprint 3 S3-01 (docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md), ported
+// Sync Sprint 3 S3-01 (docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md), ported
 // from upstream's 55dbd76 (#289) unchanged -- pure layout geometry shared by
 // Settings and its regression tests.
 function size(output) {

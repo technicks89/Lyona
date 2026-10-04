@@ -18,7 +18,7 @@ grep -Fq 'Component.onCompleted: networkMonitor.start()' "$network_model"
 
 for pattern in \
 	'fields[0] === "connectivity-protocol"' \
-	'fields[1] === "1"' \
+	'protocolValid = Protocol.validHeader(fields, 1);' \
 	'!protocolValid || !providerSeen || malformed' \
 	'fields.length < 5' \
 	'root.providerState = "failure"'; do
@@ -55,6 +55,13 @@ if grep -Fq 'repeat: true' "$network_model" || grep -Fq 'repeat: true' "$bluetoo
 	exit 1
 fi
 grep -Fq 'stdout: SplitParser { onRead: monitorSettleTimer.restart() }' "$bluetooth_model"
+# Sync Sprint 16 R16-35: BlueZ's changes through gdbus, which subscribes as any
+# user may; busctl monitor needs BecomeMonitor, which the system bus refuses.
+grep -Fq '&& exec gdbus monitor --system --dest org.bluez"' "$bluetooth_model" ||
+	fail 'the Bluetooth watcher does not use gdbus monitor'
+if grep -Fq 'busctl --system monitor' "$bluetooth_model"; then
+	fail 'the Bluetooth watcher still uses busctl monitor'
+fi
 
 grep -Fq 'networkModel: networkModel' "$repo/config/quickshell/shell.qml"
 grep -Fq 'bluetoothModel: bluetoothModel' "$repo/config/quickshell/shell.qml"

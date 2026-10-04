@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -22,6 +23,12 @@ Scope {
     property int selectedIndex: 0
     property int selectedWifiIndex: -1
     property string statusText: "NET offline"
+    // NetworkManager reports full connectivity ("connected", not site or
+    // local only). Followed by the update indicator (Sync Sprint 16 R16-34).
+    property bool online: false
+    // Set once the first snapshot has been read, so that "online" changing
+    // from its default at login is not taken for a connection coming up.
+    property bool stateKnown: false
     property string message: ""
     property string providerState: "idle"
     property string providerDetail: ""
@@ -126,19 +133,22 @@ Scope {
         let providerSeen = false;
         let malformed = false;
         let connectedDevice = "";
+        let generalState = "";
         root.operationState = "read-only";
 
         for (const line of text.trim().split("\n")) {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "connectivity-protocol") {
-                protocolValid = fields.length >= 3 && fields[1] === "1";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider") {
                 if (fields.length < 5 || fields[1] !== "network") { malformed = true; continue; }
                 providerSeen = true;
                 root.providerState = fields[2];
                 root.operationState = fields[3];
                 root.providerDetail = fields[4];
+            } else if (fields[0] === "network-state") {
+                if (fields.length >= 2) generalState = fields[1];
             } else if (fields[0] === "network-device") {
                 if (fields.length < 5) { malformed = true; continue; }
                 devices.push({ "device": fields[1], "type": fields[2], "state": fields[3], "connection": fields[4] === "-" ? "" : fields[4] });
@@ -158,6 +168,8 @@ Scope {
             root.providerState = "failure";
             root.providerDetail = !protocolValid ? "Unsupported connectivity protocol" : "Malformed network provider record";
             root.statusText = "NET unavailable";
+            root.online = false;
+            root.stateKnown = true;
             root.devices = [];
             root.connections = [];
             root.wifiNetworks = [];
@@ -168,6 +180,8 @@ Scope {
         root.devices = devices;
         root.connections = connections;
         root.wifiNetworks = wifiNetworks;
+        root.online = generalState === "connected";
+        root.stateKnown = true;
         const stateReadable = root.providerState === "available" || root.providerState === "restricted";
         root.statusText = stateReadable ? (connectedDevice.length > 0 ? "NET " + connectedDevice : "NET offline") : "NET unavailable";
         if (root.providerState !== "available") root.message = root.providerDetail;

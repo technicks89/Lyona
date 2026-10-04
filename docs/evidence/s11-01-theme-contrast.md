@@ -1,6 +1,6 @@
 # S11-01 -- shell text readable on hover and selected surfaces
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-01`. Issue `#152`
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-01-shell-text-stays-readable-on-hover-and-selected-surfaces`. Issue `#152`
 (completes `#116`, Sync Sprint 6 S6-03).
 
 ## Cause

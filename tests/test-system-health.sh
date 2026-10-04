@@ -155,11 +155,26 @@ grep -Fq $'manage-system-service|example.service\tService actions\tsystem' "$wor
 grep -Fq $'check\tservices\twarn\ttime-sync' "$work/system.tsv"
 grep -Fq $'check\tservices\twarn\tnetworkmanager-service' "$work/system.tsv"
 
-DWM_HEALTH_TEST_ROOT=1 \
+# A cached sudo session is never used: without polkit the privileged scan is
+# restricted, and sudo is not even asked (Sync Sprint 16 R16-14).
+cat >"$work/bin/sudo" <<'SCRIPT'
+#!/bin/sh
+printf '%s\n' "$*" >>"${0%/bin/sudo}/sudo.log"
+[ "$*" = "-n -v" ]
+SCRIPT
+if DWM_HEALTH_TEST_ROOT=1 \
 	DWM_HEALTH_COMMAND_TIMEOUT=2 \
 	PATH="$work/bin:/usr/bin:/bin" \
-	"$HELPER" scan-privileged >"$work/privileged.tsv"
-grep -Fq $'meta\toverview\tok\tscan-system-complete' "$work/privileged.tsv"
+	"$HELPER" scan-privileged >"$work/privileged.tsv"; then
+	printf 'the privileged scan succeeded through a cached sudo session\n' >&2
+	exit 1
+fi
+# Restricted, whatever the reason given (whether the host has pkexec or not).
+grep -Fq $'meta\toverview\trestricted\tscan-system\tPrivileged scan\t' "$work/privileged.tsv"
+[[ ! -e $work/sudo.log ]] || {
+	printf 'the privileged scan asked sudo: %s\n' "$(cat "$work/sudo.log")" >&2
+	exit 1
+}
 
 cat >"$work/bin/sudo" <<'SCRIPT'
 #!/bin/sh
@@ -191,11 +206,22 @@ fi
 grep -Fq 'unsupported system repair' "$work/system-repair.err"
 
 grep -Fq "trusted_file \"\$resolved\" || return 1" "$HELPER"
-# pkexec runs the root helper, never this script itself (Sync Sprint 12 S12-15).
-grep -Fq '/libexec/lyona/dwm-system-health-root' "$HELPER"
+# pkexec runs the root helper, never this script itself (Sync Sprint 12 S12-15),
+# found by the one shared lookup in its installed prefix (Sync Sprint 16 R16-46).
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fq 'trusted_root_helper_path dwm-system-health-root "$SCRIPT_DIR/dwm-system-health" dwm-system-health' "$HELPER"
 # shellcheck disable=SC2016 # the $ is literal source text, not an expansion
 if grep -Eq '"\$pkexec_command" "\$(SCRIPT_DIR|0)' "$HELPER"; then
 	printf 'dwm-system-health runs pkexec on itself\n' >&2
+	exit 1
+fi
+
+# Privileged work goes through polkit only, never a cached sudo session (Sync
+# Sprint 16 R16-14). Comments and user-facing hints may name sudo.
+if grep -nE 'trusted_system_command sudo|DWM_HEALTH_ELEVATOR|sudo"? -n' "$repo/scripts/dwm-system-health" |
+	grep -vE '^[0-9]+:[[:space:]]*#' | grep -q .; then
+	printf 'dwm-system-health still elevates through sudo:\n%s\n' \
+		"$(grep -nE 'trusted_system_command sudo|DWM_HEALTH_ELEVATOR|sudo"? -n' "$repo/scripts/dwm-system-health")" >&2
 	exit 1
 fi
 

@@ -33,14 +33,30 @@ umask 077
 
 readonly protocol_header=$'update-terminal-protocol\t1\t0'
 readonly title='lyona update'
+# How long launch waits, in tenths of a second, for a terminal that returned at
+# once to start the update.
+start_tenths=${LYONA_UPDATE_TERMINAL_START_TENTHS:-600}
 
 die() {
 	printf 'lyona-update-terminal: %s\n' "$*" >&2
 	exit 1
 }
 
+help_text() {
+	cat <<'EOF'
+Usage: lyona-update-terminal launch system|flatpak
+
+Runs an update in your terminal, where you read the plan and confirm it, and
+prints the result for Settings when the terminal closes.
+
+  launch system   The system's packages, with yay when it is installed (AUR
+                  packages too), otherwise with pacman through sudo.
+  launch flatpak  Flatpak apps: the system installation, then the user's.
+EOF
+}
+
 usage() {
-	printf 'usage: lyona-update-terminal launch system|flatpak\n' >&2
+	help_text >&2
 	exit 2
 }
 
@@ -96,7 +112,11 @@ run_flatpak() {
 
 run() { # PROVIDER RESULT-FILE
 	local provider=$1 result=$2 status=0
-	printf 'started\n' >"$result"
+	# Held for as long as this runs, so launch can wait for the end even when
+	# the terminal returned at once (Sync Sprint 16 R16-06).
+	exec 9>>"$result"
+	flock 9
+	printf 'started\n' >>"$result"
 	# The terminal closing (SIGHUP) or the command being stopped is an
 	# interruption, recorded as such.
 	trap 'printf "interrupted\n" >>"$result"; exit 129' HUP
@@ -137,6 +157,7 @@ terminal_argv() { # TERMINAL CLASS COMMAND...
 
 launch() { # PROVIDER
 	local provider=$1 terminal launcher indicator settings class=lyona-update result line state=not-started code=-1
+	local terminal_status=0 waited=0
 	local -a argv=()
 	{ launcher=$(sibling dwm-terminal) && terminal=$("$launcher" --print-command 2>/dev/null); } || {
 		emit "$provider" not-started -1 'No supported terminal is installed'
@@ -151,7 +172,20 @@ launch() { # PROVIDER
 	# shellcheck disable=SC2064 # the path is fixed now
 	trap "rm -f -- '$result'" EXIT
 	mapfile -d '' -t argv < <(terminal_argv "$terminal" "$class" "${BASH_SOURCE[0]}" run "$provider" "$result")
-	"${argv[@]}" </dev/null >/dev/null 2>&1 || :
+	"${argv[@]}" </dev/null >/dev/null 2>&1 || terminal_status=$?
+	# A terminal that hands its window to a server process returns at once
+	# (gnome-terminal, wezterm, warp-terminal and others). Wait for the update to
+	# start, then for it to end: run holds a lock on the result file for as long
+	# as it runs (Sync Sprint 16 R16-06). A terminal that failed is not waited for.
+	if ((terminal_status == 0)); then
+		while [[ ! -s $result ]] && ((waited < start_tenths)); do
+			sleep 0.1
+			waited=$((waited + 1))
+		done
+	fi
+	if [[ -s $result ]]; then
+		{ flock 8; } 8<"$result"
+	fi
 	while IFS= read -r line; do
 		case $line in
 		started) state=interrupted ;;
@@ -172,6 +206,10 @@ launch() { # PROVIDER
 }
 
 case ${1:-} in
+-h | --help)
+	help_text
+	exit 0
+	;;
 launch)
 	(($# == 2)) || usage
 	[[ $2 == system || $2 == flatpak ]] || usage

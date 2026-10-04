@@ -12,7 +12,7 @@ import "SystemDiscoveryCycle.js" as Cycle
  * "updates" domain has a helper behind it at this boundary (SystemUpdateDiscovery);
  * the other four are Sync Phase 9.
  *
- * Sync Sprint 2 S2-05 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md), ported from
+ * Sync Sprint 2 S2-05 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md), ported from
  * upstream's 177e3c3/b19fb90 (#286): "storage" (watch-mounts, a bare
  * mount-monitor-ready/mount-change stream with its own shorter deadlines) and
  * "security" (watch-units security, reusing the units-event/firewalld prefix)

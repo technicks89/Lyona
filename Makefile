@@ -83,6 +83,7 @@ INSTALL_COMMANDS = \
 	scripts/lyona-console-theme \
 	scripts/lyona-grub-theme \
 	scripts/lyona-plymouth-theme \
+	scripts/lyona-shell \
 	scripts/lyona-update \
 	scripts/lyona-update-indicator \
 	scripts/lyona-update-terminal \
@@ -107,6 +108,7 @@ INSTALL_LIBS = \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
 	scripts/dwm-preview.sh \
+	scripts/dwm-quickshell-lifecycle.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-utils.sh \
 	scripts/dwm-trust.sh \
@@ -160,8 +162,12 @@ THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11)
 # lyona-toml, the scripts' one reader of the TOML files, built on dwm's own
 # parser (Sync Sprint 12 S12-14, D-20). Installed in LIB_DIR, off PATH.
 TOML_TOOL = lyona-toml
+# dwm-xwatch tells the state bridge which X properties changed (Sync Sprint 16
+# R16-40): one watcher for every window. Installed beside lyona-toml.
+XWATCH = dwm-xwatch
+XWATCH_LIBS = $(shell ${PKG_CONFIG} --libs x11)
 
-all: dwm ${THUMB} ${TOML_TOOL}
+all: dwm ${THUMB} ${TOML_TOOL} ${XWATCH}
 
 .c.o:
 	${CC} ${CPPFLAGS} ${CFLAGS} -c $<
@@ -181,6 +187,9 @@ dwm: check-build-deps ${OBJ}
 ${THUMB}: check-build-deps ${THUMB}.c config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${THUMB}.c ${LDFLAGS} ${THUMB_LIBS}
 
+${XWATCH}: check-build-deps ${XWATCH}.c config.mk Makefile
+	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${XWATCH}.c ${LDFLAGS} ${XWATCH_LIBS}
+
 ${TOML_TOOL}: ${TOML_TOOL}.c tomlparser.o util.o tomlparser.h util.h config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${TOML_TOOL}.c tomlparser.o util.o ${LDFLAGS}
 
@@ -199,7 +208,7 @@ check-build-deps:
 	fi
 
 clean:
-	rm -f dwm ${THUMB} ${TOML_TOOL} ${OBJ} *.orig *.rej
+	rm -f dwm ${THUMB} ${TOML_TOOL} ${XWATCH} ${OBJ} *.orig *.rej
 
 native:
 	$(MAKE) clean
@@ -252,6 +261,8 @@ install-system:
 	@test -x dwm || { echo "dwm is not built. Run make before install-system." >&2; exit 1; }
 	@test -x ${THUMB} || { echo "${THUMB} is not built. Run make before install-system." >&2; exit 1; }
 	@test ! ${THUMB}.c -nt ${THUMB} || { echo "${THUMB} is stale. Run make before install-system." >&2; exit 1; }
+	@test -x ${XWATCH} || { echo "${XWATCH} is not built. Run make before install-system." >&2; exit 1; }
+	@test ! ${XWATCH}.c -nt ${XWATCH} || { echo "${XWATCH} is stale. Run make before install-system." >&2; exit 1; }
 	@test -x ${TOML_TOOL} || { echo "${TOML_TOOL} is not built. Run make before install-system." >&2; exit 1; }
 	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h tomlparser.o util.c util.h util.o config.h config.mk Makefile; do \
 		test ! "$$input" -nt ${TOML_TOOL} || { echo "${TOML_TOOL} is stale. Run make before install-system." >&2; exit 1; }; \
@@ -287,6 +298,7 @@ install-system:
 	done
 	@echo "==> Installing the TOML reader..."
 	install -Dm755 ${TOML_TOOL} ${DESTDIR}${LIB_DIR}/${TOML_TOOL}
+	install -Dm755 ${XWATCH} ${DESTDIR}${LIB_DIR}/${XWATCH}
 	@echo "==> Installing session scripts..."
 	for f in ${INSTALL_SESSION_SCRIPTS}; do \
 		install -Dm755 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
@@ -518,7 +530,7 @@ uninstall:
 	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
-	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL}; do \
+	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL} ${XWATCH}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	rm -rf ${DESTDIR}${PYTHON_LIB_DIR}/${PYTHON_PACKAGE}
@@ -1104,7 +1116,7 @@ check-install-manifest: all
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
 		done; \
-		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL}; do \
+		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL} ${XWATCH}; do \
 			printf 'usr/lib/lyona/%s\n' "$$name"; \
 		done; \
 		for name in $(notdir ${INSTALL_PYTHON}); do \
@@ -1141,7 +1153,7 @@ check-install-manifest: all
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		test -x "$$stage/usr/libexec/lyona/$$name"; \
 	done; \
-	for name in ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL}; do \
+	for name in ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL} ${XWATCH}; do \
 		test -x "$$stage/usr/lib/lyona/$$name"; \
 	done; \
 	status=0; PYTHONDONTWRITEBYTECODE=1 "$$stage/usr/bin/dwm-system-management" >/dev/null 2>&1 || status=$$?; \
@@ -1166,7 +1178,9 @@ check-install-manifest: all
 check-install-preservation:
 	tests/test-install-preservation.sh
 
-.PHONY: check-install-multilib check-iso-install-credentials
+.PHONY: check-install-multilib check-iso-install-credentials check-live-medium-cleanup \
+	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary \
+	check-lyona-shell check-gearlever-first-login
 check-install-multilib:
 	tests/test-install-multilib.sh
 
@@ -1181,15 +1195,45 @@ check-lyona-version:
 check-lyona-update:
 	tests/test-lyona-update.sh
 
-# The update indicator's helper against a stub checkupdates and a fake
-# NetworkManager (Sync Sprint 15 S15-02).
-check-lyona-update-indicator:
+# The update indicator's helper against a stub checkupdates (Sync Sprint 15
+# S15-02). It reads window-rules.toml through lyona-toml (Sync Sprint 16 R16-44).
+check-lyona-update-indicator: ${TOML_TOOL}
 	tests/test-lyona-update-indicator.sh
 
 # Updates in a terminal against a stub terminal, yay, pacman and flatpak (Sync
 # Sprint 15 S15-03, S15-04).
 check-lyona-update-terminal:
 	tests/test-lyona-update-terminal.sh
+
+# Sync Sprint 16, from the 2026-10-03 whole-repo review.
+# R16-01: the live medium's passwordless sudoers rule never outlives the run.
+check-live-medium-cleanup:
+	tests/test-live-medium-cleanup.sh
+
+# R16-03, R16-48: installed helpers use installed paths, and QML runs helpers
+# through Commands.
+check-installed-helper-paths:
+	tests/test-installed-helper-paths.sh
+
+# R16-15, R16-16: what the installers download while sudo is cached is pinned.
+check-download-pins:
+	tests/test-download-pins.sh
+
+# R16-22, R16-29, R16-30: the image install's closing screen, steps and cancel.
+check-iso-install-warnings:
+	tests/test-iso-install-warnings.sh
+
+# R16-28: the installer's summary lists every change (a dry run; Arch only).
+check-install-summary:
+	@tests/test-install-summary.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+# R16-47: keybinds open the shell through lyona-shell.
+check-lyona-shell:
+	tests/test-lyona-shell.sh
+
+# An image install leaves Gear Lever for the first login.
+check-gearlever-first-login:
+	tests/test-gearlever-first-login.sh
 
 # The panel weather helper against a stub curl (Sync Sprint 12 S12-20).
 check-lyona-weather:
@@ -1211,7 +1255,7 @@ release-check:
 	cmp "$$work/first.tar.gz" "${RELEASE_ARCHIVE}"; \
 	tar -tzf "${RELEASE_ARCHIVE}" > "$$work/listing"; \
 	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c \
-		${TOML_TOOL}.c ${THUMB}.c dwm.desktop install.sh scripts/dwm-system-management \
+		${TOML_TOOL}.c ${THUMB}.c ${XWATCH}.c dwm.desktop install.sh scripts/dwm-system-management \
 		scripts/lyona_system_management/cli.py config/themes.toml; do \
 		grep -Fqx "${RELEASE_NAME}/$$path" "$$work/listing" || \
 			{ echo "Release archive is missing $$path." >&2; exit 1; }; \
@@ -1219,7 +1263,7 @@ release-check:
 	if grep -Ev '^${RELEASE_NAME}/' "$$work/listing" | grep -q .; then \
 		echo "Release archive has entries outside ${RELEASE_NAME}/." >&2; exit 1; \
 	fi; \
-	if grep -Eq '(^|/)config\.h$$|\.o$$|^${RELEASE_NAME}/(dwm|${THUMB}|${TOML_TOOL})$$|^${RELEASE_NAME}/(release|\.git)/' \
+	if grep -Eq '(^|/)config\.h$$|\.o$$|^${RELEASE_NAME}/(dwm|${THUMB}|${TOML_TOOL}|${XWATCH})$$|^${RELEASE_NAME}/(release|\.git)/' \
 		"$$work/listing"; then \
 		echo "Release archive contains build output, local configuration or git data." >&2; \
 		exit 1; \
@@ -1365,6 +1409,13 @@ check:
 	$(MAKE) check-lyona-update
 	$(MAKE) check-lyona-update-indicator
 	$(MAKE) check-lyona-update-terminal
+	$(MAKE) check-live-medium-cleanup
+	$(MAKE) check-installed-helper-paths
+	$(MAKE) check-download-pins
+	$(MAKE) check-iso-install-warnings
+	$(MAKE) check-install-summary
+	$(MAKE) check-lyona-shell
+	$(MAKE) check-gearlever-first-login
 	$(MAKE) check-lyona-weather
 	$(MAKE) check-test-runner
 	$(MAKE) check-lightdm-config

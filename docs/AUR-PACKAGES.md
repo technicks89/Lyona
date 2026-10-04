@@ -73,6 +73,11 @@ The legacy NVIDIA drivers for older cards, which have no driver in `core`,
   -> **Update packages** runs `yay -Syu` when `yay` is installed, so it updates
   the driver too (Sync Sprint 15 S15-04). A driver from the CachyOS repository
   updates with `pacman` as usual.
+- **What an update builds:** the pins cover only the first install. `yay -Syu`
+  (and so "Update packages") updates the driver, and `yay-bin` itself, from
+  each package's current AUR PKGBUILD, which nobody here has reviewed. Run it
+  yourself, read what it shows, and use yay's diff prompt when it offers one
+  (Sync Sprint 16 R16-12).
 - **The guard:** `tests/test-aur-policy.sh` allows AUR access and `makepkg`
   only in `install.sh` (the helper bootstrap) and inside
   `install_legacy_nvidia_driver` (the legacy driver fallback). It requires each

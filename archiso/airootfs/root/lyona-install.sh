@@ -13,6 +13,13 @@ fail() {
 	exit 1
 }
 
+# The wizard was cancelled: nothing has been changed, and it can be run again
+# (Sync Sprint 16 R16-30).
+cancelled() {
+	err "cancelled${1:+ -- $1}. Nothing on the disk was changed; run lyona-install to start again."
+	exit 1
+}
+
 # shellcheck source=lyona-ui.sh
 source "${LYONA_UI_LIB:-/root/lyona-ui.sh}"
 # shellcheck source=lyona-nvidia.sh
@@ -44,7 +51,7 @@ require_network() {
 			continue
 		fi
 		gum confirm --default=false "Continue without confirmed internet access?" && return 0
-		fail "aborted -- no internet connection."
+		cancelled "no internet connection"
 	done
 }
 
@@ -59,8 +66,8 @@ welcome() {
 ask_keymap() {
 	# shellcheck disable=SC1010
 	local options=(us by ca cf cz de dk es et fa fi fr gr hu il it lt lv mk nl no pl ro ru se sg si tr ua uk)
-	KEYMAP=$(gum choose "${options[@]}" --header "Select your keyboard layout:") || fail "aborted."
-	[[ -n $KEYMAP ]] || fail "aborted."
+	KEYMAP=$(gum choose "${options[@]}" --header "Select your keyboard layout:") || cancelled
+	[[ -n $KEYMAP ]] || cancelled
 }
 
 ask_disk() {
@@ -84,8 +91,8 @@ ask_disk() {
 
 	say --foreground $COLOR_DANGER --bold "THIS WILL FORMAT AND ERASE ALL DATA ON THE SELECTED DISK."
 	local choice
-	choice=$(gum choose "${disks[@]}" --header "Select the disk to install on:") || fail "aborted."
-	[[ -n $choice ]] || fail "aborted."
+	choice=$(gum choose "${disks[@]}" --header "Select the disk to install on:") || cancelled
+	[[ -n $choice ]] || cancelled
 	DISK=$(awk '{print $1}' <<<"$choice")
 }
 
@@ -93,7 +100,7 @@ ask_filesystem() {
 	local choice
 	choice=$(gum choose \
 		"btrfs (default)" "ext4" "btrfs + LUKS encryption" "ext4 + LUKS encryption" \
-		--header "Select the root filesystem:") || fail "aborted."
+		--header "Select the root filesystem:") || cancelled
 	case $choice in
 	"btrfs (default)")
 		FILESYSTEM=btrfs
@@ -111,7 +118,7 @@ ask_filesystem() {
 		FILESYSTEM=ext4
 		ENCRYPT=1
 		;;
-	*) fail "aborted." ;;
+	*) cancelled ;;
 	esac
 
 	[[ $ENCRYPT == 1 ]] && ask_encryption_password
@@ -122,8 +129,8 @@ ask_encryption_password() {
 	local password1 password2
 
 	while true; do
-		password1=$(gum input --password --header "LUKS encryption password:") || fail "aborted."
-		password2=$(gum input --password --header "Confirm encryption password:") || fail "aborted."
+		password1=$(gum input --password --header "LUKS encryption password:") || cancelled
+		password2=$(gum input --password --header "Confirm encryption password:") || cancelled
 		[[ -n $password1 && $password1 == "$password2" ]] && break
 		say --foreground $COLOR_DANGER "passwords empty or did not match"
 	done
@@ -134,47 +141,87 @@ ask_user_creds() {
 	local username password1 password2
 
 	while true; do
-		username=$(gum input --header "Username:") || fail "aborted."
+		username=$(gum input --header "Username:") || cancelled
 		[[ $username =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && break
 		say --foreground $COLOR_DANGER "invalid username: $username"
 	done
 	USERNAME=$username
 
 	while true; do
-		password1=$(gum input --password --header "Password:") || fail "aborted."
-		password2=$(gum input --password --header "Confirm password:") || fail "aborted."
+		password1=$(gum input --password --header "Password:") || cancelled
+		password2=$(gum input --password --header "Confirm password:") || cancelled
 		[[ -n $password1 && $password1 == "$password2" ]] && break
 		say --foreground $COLOR_DANGER "passwords empty or did not match"
 	done
 	PASSWORD=$password1
 }
 
+# An RFC 1123 host name: dot-separated labels of 1 to 63 letters, digits and
+# hyphens, neither starting nor ending with a hyphen, 253 characters in all. It
+# goes into the archinstall configuration and /etc/hostname (Sync Sprint 16
+# R16-17).
+valid_hostname() {
+	local label
+	local -a labels
+	((${#1} >= 1 && ${#1} <= 253)) || return 1
+	# The whole string, before read splits it: read stops at a newline.
+	[[ $1 =~ ^[A-Za-z0-9.-]+$ ]] || return 1
+	[[ $1 != .* && $1 != *. && $1 != *..* ]] || return 1
+	IFS=. read -r -a labels <<<"$1"
+	for label in "${labels[@]}"; do
+		[[ $label =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || return 1
+	done
+}
+
 ask_hostname() {
 	local name
-	name=$(gum input --header "Hostname:" --placeholder "lyona" --value "lyona") || true
-	HOSTNAME=${name:-lyona}
+	while true; do
+		name=$(gum input --header "Hostname:" --placeholder "lyona" --value "lyona") || true
+		name=${name:-lyona}
+		valid_hostname "$name" && break
+		say --foreground $COLOR_DANGER "invalid hostname: use letters, digits and hyphens (not at either end), up to 63 per part"
+	done
+	HOSTNAME=$name
+}
+
+# The timezone, detected from the connection and confirmed with a yes or no
+# (decision R16-19). One service alone failed too often: ipapi.co answers 429
+# when its free tier is used up, and the wizard then fell back to tzselect's
+# numbered menus. Each provider is tried in turn, over HTTPS, and only a zone
+# this medium knows is offered.
+detect_timezone() {
+	local url zone
+	for url in https://ipinfo.io/timezone https://ipapi.co/timezone; do
+		zone=$(curl -sfm 5 "$url" 2>/dev/null) || continue
+		zone=${zone//[[:space:]]/}
+		[[ -n $zone && $zone != *..* && -f /usr/share/zoneinfo/$zone ]] || continue
+		printf '%s\n' "$zone"
+		return 0
+	done
+	return 1
+}
+
+# Every zone, to type a few letters of and pick.
+choose_timezone() {
+	local zone
+	zone=$(timedatectl list-timezones 2>/dev/null |
+		gum filter --header "Type to find your timezone (a city or region):" \
+			--placeholder "e.g. New_York, Berlin, Tokyo") || cancelled
+	[[ -n $zone && -f /usr/share/zoneinfo/$zone ]] || fail "unknown timezone: '$zone'"
+	printf '%s\n' "$zone"
 }
 
 ask_timezone() {
-	local detected curl_status=0
-	detected=$(curl -sfm 5 https://ipapi.co/timezone) || curl_status=$?
-
-	if [[ $curl_status != 0 ]]; then
-		say --foreground $COLOR_DANGER \
-			"Could not reach https://ipapi.co (curl exit $curl_status) -- no network yet, or it's unreachable. Opening manual timezone selection."
-	elif [[ -z $detected ]]; then
-		say --foreground $COLOR_DANGER \
-			"Timezone lookup returned an empty response. Opening manual timezone selection."
-	elif [[ ! -f /usr/share/zoneinfo/$detected ]]; then
-		say --foreground $COLOR_DANGER \
-			"Timezone lookup returned '$detected', which isn't a recognized zone. Opening manual timezone selection."
-	elif gum confirm "Detected timezone: '$detected'. Is this correct?"; then
-		TIMEZONE=$detected
-		return
+	local detected
+	if detected=$(detect_timezone); then
+		if gum confirm --affirmative "Yes" --negative "No" "Detected timezone: $detected. Is this correct?"; then
+			TIMEZONE=$detected
+			return
+		fi
+	else
+		say --foreground "$COLOR_DIM" "Could not detect the timezone from the connection; choose it from the list."
 	fi
-
-	TIMEZONE=$(tzselect) || fail "aborted."
-	[[ -n $TIMEZONE && -f /usr/share/zoneinfo/$TIMEZONE ]] || fail "unknown timezone: '$TIMEZONE'"
+	TIMEZONE=$(choose_timezone)
 }
 
 # One image for every GPU (D-17a, Sync Sprint 12 S12-17): on an NVIDIA GPU a
@@ -199,11 +246,11 @@ ask_nvidia() {
 	[[ $NVIDIA_BRANCH == open ]] ||
 		proprietary="nvidia $NVIDIA_BRANCH (proprietary legacy driver, recommended)"
 	choice=$(gum choose "$proprietary" "nouveau (open-source)" \
-		--header "NVIDIA GPU detected. Select driver:") || fail "aborted."
+		--header "NVIDIA GPU detected. Select driver:") || cancelled
 	case $choice in
 	"$proprietary") NVIDIA_OPT_IN=1 ;;
 	"nouveau (open-source)") ;;
-	*) fail "aborted." ;;
+	*) cancelled ;;
 	esac
 	return 0
 }
@@ -237,7 +284,7 @@ EOF
 		)"
 	echo
 	gum confirm --default=false --affirmative "Wipe $DISK and install" --negative "Cancel" \
-		"Proceed?" || fail "aborted."
+		"Proceed?" || cancelled
 }
 
 setup_cachyos_repositories() {
@@ -376,7 +423,7 @@ write_credentials_json() {
 	printf '%s\0%s' "$1" "${ENCRYPTION_PASSWORD:-}" |
 		jq -Rs --arg user "$USERNAME" --argjson encrypt "$encrypt" '
 			split("\u0000") as [$hash, $passphrase]
-			| {users: [{sudo: true, username: $user, enc_password: $hash}], root_enc_password: $hash}
+			| {users: [{sudo: true, username: $user, enc_password: $hash}]}
 			+ (if $encrypt then {encryption_password: $passphrase} else {} end)'
 }
 

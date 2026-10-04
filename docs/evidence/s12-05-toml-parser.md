@@ -1,6 +1,6 @@
 # S12-05 -- the TOML parser handles comments, same-line arrays and booleans
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-05-the-toml-parser-handles-comments-same-line-arrays-and-booleans`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-05-the-toml-parser-handles-comments-same-line-arrays-and-booleans`.
 Issue `#168`.
 
 ## Change

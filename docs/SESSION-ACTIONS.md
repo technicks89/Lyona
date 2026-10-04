@@ -119,7 +119,8 @@ start a second repository-local Quickshell instance.
 
 Installing a new binary does not replace a running process image. An older DWM
 without `_NET_WM_PID` and the graceful signal endpoint causes Logout to fail
-with an explicit restart message. Use the existing `Super+Shift+Q` normal quit,
+with an explicit restart message. Use the direct quit, `Super+Ctrl+Shift+Q`
+(`Super+Shift+Q` in a `hotkeys.toml` from before 2026.10),
 log in or run `startx` again, and verify `/proc/PID/exe` resolves to the new
 installed binary before retrying.
 

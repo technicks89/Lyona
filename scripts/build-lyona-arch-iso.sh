@@ -179,7 +179,7 @@ sed -i \
 	-e 's/^iso_name=.*/iso_name="lyona"/' \
 	-e "s/^iso_label=.*/iso_label=\"$iso_label\"/" \
 	-e "s/^iso_version=.*/iso_version=\"$iso_version\"/" \
-	-e 's|^iso_publisher=.*|iso_publisher="lyona <https://github.com/technicks89/dwm-titus>"|' \
+	-e 's|^iso_publisher=.*|iso_publisher="lyona <https://github.com/technicks89/Lyona>"|' \
 	-e "s/^iso_application=.*/iso_application=\"lyona $iso_version Arch Linux install medium\"/" \
 	"$profile_dir/profiledef.sh"
 
@@ -250,6 +250,10 @@ grep -Fqx 'TIMEOUT 1' "$syslinux_sys" || {
 	exit 1
 }
 
+grep -q '^file_permissions=($' "$profile_dir/profiledef.sh" || {
+	err "releng's profiledef.sh has no file_permissions=( line; the archiso profile format changed."
+	exit 1
+}
 sed -i '/^file_permissions=($/a\
   ["/root/lyona-postinstall.sh"]="0:0:755"\
   ["/usr/local/bin/lyona-install"]="0:0:755"' \
@@ -307,6 +311,27 @@ rsync -a --delete \
 
 install -Dm755 "$repo_dir/archiso/airootfs/root/lyona-postinstall.sh" \
 	"$profile_dir/airootfs/root/lyona-postinstall.sh"
+
+# mkarchiso gives every file it does not find in file_permissions mode 644, so
+# the embedded checkout lost its executable bits: lyona-install then took the
+# CachyOS helper for missing (Sync Sprint 16, found installing in a VM). Each
+# file executable in the checkout keeps its bit, owned by root.
+info "Keeping the embedded checkout's executable files executable..."
+mapfile -d '' -t executables < <(cd "$profile_dir/airootfs" &&
+	find root/lyona -type f -perm -u+x -print0 | LC_ALL=C sort -z)
+((${#executables[@]} > 0)) || {
+	err "the embedded checkout has no executable files; its copy went wrong."
+	exit 1
+}
+permissions=
+for executable in "${executables[@]}"; do
+	permissions+="  [\"/$executable\"]=\"0:0:755\""$'\n'
+done
+awk -v entries="$permissions" '
+	{ print }
+	/^file_permissions=\($/ && !done { printf "%s", entries; done = 1 }
+' "$profile_dir/profiledef.sh" >"$profile_dir/profiledef.sh.new"
+mv -fT -- "$profile_dir/profiledef.sh.new" "$profile_dir/profiledef.sh"
 
 info "Installing shared installer UI helpers..."
 install -Dm644 "$repo_dir/archiso/airootfs/root/lyona-ui.sh" \

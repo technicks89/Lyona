@@ -268,35 +268,35 @@ Scope {
     }
 
     function switchWorkspace(index) {
-        switchWorkspaceProcess.command = ["dwm-quickshell-state", "switch", index.toString()];
+        switchWorkspaceProcess.command = Commands.stateHelperCommand("switch", [index.toString()]);
         switchWorkspaceProcess.running = true;
     }
 
     function focusWindow(windowId) {
-        focusWindowProcess.command = ["dwm-quickshell-state", "focus", windowId];
+        focusWindowProcess.command = Commands.stateHelperCommand("focus", [windowId]);
         focusWindowProcess.running = true;
     }
 
     // Closing a card from the overview (Sync Sprint 8 S8-04,
-    // docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, the
+    // docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, the
     // only client dwm.c's own killclient() ever closes -- most cards are
     // not the focused window. No dwm.c change: dwm-quickshell-state's own
     // "close" action sends a plain WM_DELETE_WINDOW directly to the target.
     function closeWindow(windowId) {
         // Each request owns its command, even while an earlier close is running.
-        Quickshell.execDetached(["dwm-quickshell-state", "close", windowId]);
+        Quickshell.execDetached(Commands.stateHelperCommand("close", [windowId]));
     }
 
     // Ask dwm to switch the selected monitor's current tag to a layout, by index
     // into its layouts[]. dwm ignores an index it does not have.
     function setLayout(index) {
-        Quickshell.execDetached(["dwm-quickshell-state", "layout", String(index)]);
+        Quickshell.execDetached(Commands.stateHelperCommand("layout", [String(index)]));
     }
 
     // Not WatchedProcess (Sync Sprint 12 S12-14): always on, with its own
     // restart and snapshot handling below.
     Process {
-        command: Commands.watchCommand(["dwm-quickshell-state", "watch"])
+        command: Commands.watchCommand(Commands.stateHelperCommand("watch"))
         running: true
 
         stdout: SplitParser {
@@ -310,14 +310,14 @@ Scope {
     Process {
         id: switchWorkspaceProcess
 
-        command: ["dwm-quickshell-state", "switch", root.currentWorkspace.toString()]
+        command: Commands.stateHelperCommand("switch", [root.currentWorkspace.toString()])
         running: false
     }
 
     Process {
         id: focusWindowProcess
 
-        command: ["dwm-quickshell-state", "focus", "0"]
+        command: Commands.stateHelperCommand("focus", ["0"])
         running: false
     }
 }

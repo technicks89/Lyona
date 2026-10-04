@@ -3,9 +3,89 @@
 > **lyona is Arch Linux-only.** Arch Linux with Xorg is required for
 > every supported installation, package, test, and release path.
 
-## Install
+## Install from the image
 
-### 1. Dependencies
+For a new, dedicated machine. The image is UEFI only.
+
+1. **Download** the newest image, `lyona-VERSION-x86_64.iso`, and its
+   `SHA256SUMS` from the
+   [Releases](https://github.com/technicks89/Lyona/releases) page. Images are
+   pre-releases while lyona is in beta. Check the download, in the folder that
+   holds both:
+
+   ```bash
+   sha256sum -c SHA256SUMS --ignore-missing
+   ```
+
+   Releases from `2026.10.0-beta.2` on are signed. With `cosign`, and the
+   release's `lyona-VERSION.sigstore.json` beside the image, check that it was
+   built by lyona's own release workflow:
+
+   ```bash
+   cosign verify-blob-attestation --bundle lyona-VERSION.sigstore.json \
+       --type https://slsa.dev/provenance/v1 \
+       --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+       --certificate-identity https://github.com/technicks89/Lyona/.github/workflows/build-iso.yml@refs/heads/main \
+       lyona-VERSION-x86_64.iso
+   ```
+
+   Logged in to the GitHub CLI, `gh attestation verify
+   lyona-VERSION-x86_64.iso --repo technicks89/Lyona` checks the same.
+
+   Or build one yourself (see [Releasing](https://github.com/technicks89/Lyona/blob/main/docs/RELEASING.md)).
+2. **Write it to a USB stick**, which erases the stick. Replace `/dev/sdX` with
+   the stick, as `lsblk` shows it:
+
+   ```bash
+   sudo dd if=lyona-VERSION-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync
+   ```
+
+3. **Boot it.** The `lyona-install` wizard starts on its own. It checks the
+   network first and says how to connect if there is none. Then it asks:
+   - the keyboard layout;
+   - the disk to install to, which it erases;
+   - the filesystem: btrfs (the default) or ext4, either optionally encrypted
+     with LUKS, which then asks for the encryption password;
+   - your user name and password, and the hostname. Your user administers the
+     machine with `sudo`; root has no password and cannot log in. A system
+     that will not boot is repaired from the live medium (`arch-chroot`), as
+     systemd's emergency shell needs root's password;
+   - the timezone, detected from your connection for you to confirm or change;
+   - on an NVIDIA GPU, the driver: the proprietary driver, recommended when it
+     supports the card (a legacy branch for an older card), or the open-source
+     nouveau.
+
+   It shows a summary, and nothing is written until you choose **Wipe DISK and
+   install**. Cancelling at any point changes nothing; run `lyona-install` to
+   start again.
+4. **It installs on its own:** Arch with `archinstall`, then lyona's full
+   profile as your user, the CachyOS repositories and kernels (the stock
+   kernel stays the default boot entry), and Topgrade. A progress bar shows
+   each step. If something did not go as chosen (a driver that could not be
+   installed, for example), the last screen lists it and waits for Enter;
+   otherwise it reboots after 15 seconds. Leave the USB stick in until then; if
+   the installer starts again instead of lyona, remove it and restart.
+   The full log is `/var/log/lyona-postinstall.log` on the new system.
+
+If a step fails, a menu offers to retry it or to drop to a shell, and says what
+state the machine is in.
+
+**Without the wizard** (BIOS, or partitioning of your own): run `archinstall`
+yourself from the live medium, then `/root/lyona-postinstall.sh` to install
+lyona onto it.
+
+## Install on an existing Arch system
+
+### 1. Clone
+
+Everything below runs from the checkout:
+
+```bash
+git clone https://github.com/technicks89/Lyona.git lyona
+cd lyona
+```
+
+### 2. Dependencies
 
 The supported dependency path is the installer because it resolves Arch
 package names from the shared map:
@@ -26,11 +106,11 @@ The installer separately asks before enabling the `multilib` repository for
 Steam, Gamescope, GameMode, and MangoHud. Declining skips the gaming subset
 without affecting other full-profile extras.
 
-### 2. Clone and Build
+### 3. Build
+
+From the same checkout:
 
 ```bash
-git clone https://github.com/technicks89/dwm-titus.git lyona
-cd lyona
 cp config.def.h config.h
 ./scripts/dev-sync-install.sh
 ```
@@ -96,9 +176,11 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   configuration: a Starship prompt, Fastfetch, `fzf` and `zoxide`, cloned into
   `~/.local/share/mybash` and linked from `~/.bashrc`,
   `~/.config/starship.toml`, `~/.config/fastfetch/config.jsonc`, and
-  `~/.local/bin/starship-theme`. An existing `~/.bashrc` is kept as
-  `~/.bashrc.bak`. The clone is replaced on every run, so edit the files it
-  links to rather than the clone itself.
+  `~/.local/bin/starship-theme`. Any of those files that was there before is
+  kept beside it, as for example `~/.bashrc.bak.20261003-142501`; re-running
+  the installer leaves links that are already in place alone. The clone is
+  replaced on every run, so edit the files it links to rather than the clone
+  itself.
   - **Topgrade.** It also installs [Topgrade](https://github.com/topgrade-rs/topgrade),
     which updates everything with one `topgrade` command. Topgrade is only in
     the AUR on Arch, so the installer builds the newest release from crates.io
@@ -370,7 +452,10 @@ hotplug events before replaying saved values for returning devices.
 startx
 ```
 
-The provided `.xinitrc` disables screen blanking, starts the configured Quickshell panel, and runs dwm.
+The provided `.xinitrc` only runs dwm inside a D-Bus session
+(`dbus-run-session`). Everything else, the panel, the wallpaper and the power
+settings among it, is dwm's own session startup (`autostart.sh`), the same as
+from a display manager.
 
 ## Minimal Session Profile
 

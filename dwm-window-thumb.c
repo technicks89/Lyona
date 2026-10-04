@@ -43,6 +43,10 @@
 #define THUMB_MAX_W 256
 #define THUMB_MAX_H 160
 #define SAMPLES 4 /* source pixels sampled per axis for each preview pixel */
+/* Each XGetImage fetches a band of rows of at most this many bytes: a few round
+ * trips per window rather than one per sampled row (up to 640), while a 4K
+ * window is still never held whole in memory (Sync Sprint 16 R16-41). */
+#define BAND_BYTES (4L << 20)
 
 enum { EXIT_USAGE = 2, EXIT_NOCOMP = 3, EXIT_OFF = 4, EXIT_GONE = 5, EXIT_FAIL = 6 };
 
@@ -179,11 +183,13 @@ static int
 capture(Display *dpy, Window win)
 {
 	XWindowAttributes wa;
-	XImage *row;
+	XImage *band;
 	unsigned char *out = NULL;
 	unsigned long *sum = NULL, *cnt = NULL;
 	int dfd = -1, ofd = -1, status = EXIT_FAIL;
-	int dw, dh, dx, dy, y, i, j, nx, ny, x0, x1, y0, y1, rs, gs, bs, hdr;
+	int dw, dh, dx, dy, dend, y, i, j, nx, ny, x0, x1, y0, y1, rs, gs, bs, hdr;
+	int bandtop, bandend;
+	long maxrows;
 	char tmp[64], name[32], header[32];
 	FILE *f = NULL;
 
@@ -211,48 +217,64 @@ capture(Display *dpy, Window win)
 	    || !(cnt = malloc(sizeof(unsigned long) * dw)))
 		goto done;
 
-	for (dy = 0; dy < dh; dy++) {
-		y0 = (int)((long)dy * wa.height / dh);
-		y1 = (int)((long)(dy + 1) * wa.height / dh);
-		if (y1 <= y0)
-			y1 = y0 + 1;
-		ny = y1 - y0 < SAMPLES ? y1 - y0 : SAMPLES;
-		memset(sum, 0, sizeof(unsigned long) * dw * 3);
-		memset(cnt, 0, sizeof(unsigned long) * dw);
-		for (j = 0; j < ny; j++) {
-			/* One row at a time, so a 4K window is never held whole in memory. */
-			y = y0 + (j * (y1 - y0)) / ny;
-			/* XGetImage waits for its reply, and an error for it reaches
-			 * onxerror before it returns: no XSync (a second round trip). */
-			row = XGetImage(dpy, win, 0, y, wa.width, 1, AllPlanes, ZPixmap);
-			if (!row || x_error) {
-				if (row)
-					XDestroyImage(row);
-				goto done;
-			}
-			rs = maskshift(row->red_mask);
-			gs = maskshift(row->green_mask);
-			bs = maskshift(row->blue_mask);
-			for (dx = 0; dx < dw; dx++) {
-				x0 = (int)((long)dx * wa.width / dw);
-				x1 = (int)((long)(dx + 1) * wa.width / dw);
-				if (x1 <= x0)
-					x1 = x0 + 1;
-				nx = x1 - x0 < SAMPLES ? x1 - x0 : SAMPLES;
-				for (i = 0; i < nx; i++) {
-					unsigned long p = XGetPixel(row, x0 + (i * (x1 - x0)) / nx, 0);
-					sum[dx * 3] += (p & row->red_mask) >> rs;
-					sum[dx * 3 + 1] += (p & row->green_mask) >> gs;
-					sum[dx * 3 + 2] += (p & row->blue_mask) >> bs;
-					cnt[dx]++;
+	/* The source rows output row K samples from: [SRCY0(K), SRCY1(K)). */
+#define SRCY0(k) ((int)((long)(k) * wa.height / dh))
+#define SRCY1(k) (SRCY0((k) + 1) > SRCY0(k) ? SRCY0((k) + 1) : SRCY0(k) + 1)
+	maxrows = BAND_BYTES / ((long)wa.width * 4);
+	if (maxrows < 1)
+		maxrows = 1;
+	for (dy = 0; dy < dh; ) {
+		/* The output rows whose source rows fit in one band (at least one). */
+		bandtop = SRCY0(dy);
+		for (dend = dy + 1; dend < dh && SRCY1(dend) - bandtop <= maxrows; dend++)
+			;
+		bandend = SRCY1(dend - 1);
+		if (bandend > wa.height)
+			bandend = wa.height;
+		/* XGetImage waits for its reply, and an error for it reaches
+		 * onxerror before it returns: no XSync (a second round trip). */
+		band = XGetImage(dpy, win, 0, bandtop, wa.width, bandend - bandtop, AllPlanes, ZPixmap);
+		if (!band || x_error) {
+			if (band)
+				XDestroyImage(band);
+			goto done;
+		}
+		rs = maskshift(band->red_mask);
+		gs = maskshift(band->green_mask);
+		bs = maskshift(band->blue_mask);
+		for (; dy < dend; dy++) {
+			y0 = SRCY0(dy);
+			y1 = SRCY1(dy);
+			if (y1 > bandend)
+				y1 = bandend;
+			ny = y1 - y0 < SAMPLES ? y1 - y0 : SAMPLES;
+			memset(sum, 0, sizeof(unsigned long) * dw * 3);
+			memset(cnt, 0, sizeof(unsigned long) * dw);
+			for (j = 0; j < ny; j++) {
+				y = y0 + (j * (y1 - y0)) / ny - bandtop;
+				for (dx = 0; dx < dw; dx++) {
+					x0 = (int)((long)dx * wa.width / dw);
+					x1 = (int)((long)(dx + 1) * wa.width / dw);
+					if (x1 <= x0)
+						x1 = x0 + 1;
+					nx = x1 - x0 < SAMPLES ? x1 - x0 : SAMPLES;
+					for (i = 0; i < nx; i++) {
+						unsigned long p = XGetPixel(band, x0 + (i * (x1 - x0)) / nx, y);
+						sum[dx * 3] += (p & band->red_mask) >> rs;
+						sum[dx * 3 + 1] += (p & band->green_mask) >> gs;
+						sum[dx * 3 + 2] += (p & band->blue_mask) >> bs;
+						cnt[dx]++;
+					}
 				}
 			}
-			XDestroyImage(row);
+			for (dx = 0; dx < dw; dx++)
+				for (i = 0; i < 3; i++)
+					out[((size_t)dy * dw + dx) * 3 + i] = (unsigned char)(sum[dx * 3 + i] / cnt[dx]);
 		}
-		for (dx = 0; dx < dw; dx++)
-			for (i = 0; i < 3; i++)
-				out[((size_t)dy * dw + dx) * 3 + i] = (unsigned char)(sum[dx * 3 + i] / cnt[dx]);
+		XDestroyImage(band);
 	}
+#undef SRCY0
+#undef SRCY1
 
 	if ((dfd = opendirsafe(1)) < 0)
 		goto done;

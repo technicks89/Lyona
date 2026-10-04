@@ -27,8 +27,12 @@ Singleton {
     // parent may have died before the signal was armed, so the guard checks it is
     // still the Quickshell that started it, then execs the watcher. Without
     // setpriv (util-linux) the watcher runs as before.
+    // LYONA_PARENT_BOUND_SELF names the process that is bound (the guard's,
+    // which exec keeps), so the helper's run_parent_bound can skip its own
+    // backstop loop there (Sync Sprint 16 R16-43).
     function watchCommand(command) {
-        const guard = '[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"';
+        const guard = '[ "$PPID" = "$1" ] || exit 0; shift; LYONA_PARENT_BOUND_SELF=$$; '
+            + 'export LYONA_PARENT_BOUND_SELF; exec "$@"';
         const script = 'command -v setpriv >/dev/null 2>&1 || exec "$@"; '
             + 'exec setpriv --pdeathsig TERM -- sh -c \'' + guard + '\' sh "$PPID" "$@"';
         return ["sh", "-c", script, "dwm-parent-bound"].concat(command);
@@ -83,6 +87,12 @@ Singleton {
 
     function launcherHelperCommand(action, args) {
         return helperCommand("dwm-quickshell-launcher", action, args);
+    }
+
+    // dwm's state bridge, through helperCommand like every other helper, so
+    // LYONA_DEV_SCRIPTS reaches it too (Sync Sprint 16 R16-48).
+    function stateHelperCommand(action, args) {
+        return helperCommand("dwm-quickshell-state", action, args);
     }
 
     function networkHelperCommand(action, args) {

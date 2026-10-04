@@ -7,10 +7,11 @@ target. Arch Linux is the sole supported distribution.
 ## Before You Start
 
 - Read `AGENTS.md` for repository conventions, `SPEC.md` for product scope,
-  `ROADMAP.md` for phase outcomes, and `TASKS.md` for active work.
+  `docs/roadmap/ROADMAP.md` for phase outcomes, and `docs/roadmap/TASKS.md`
+  for active work.
 - Search existing issues and pull requests before starting overlapping work.
 - Keep durable requirements in `SPEC.md`; do not copy future roadmap phases
-  into `TASKS.md` before they become active.
+  into `docs/roadmap/TASKS.md` before they become active.
 - Do not commit `config.h`, build products, release artifacts, ISO images, or
   generated mdBook output.
 

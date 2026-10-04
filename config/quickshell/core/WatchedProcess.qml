@@ -13,7 +13,12 @@ import Quickshell.Io
  *   settleTimer  coalesces a burst of change lines into one refresh, so a
  *                helper reporting ten events in a row costs one reload.
  *   restartTimer brings the watcher back if the helper dies while the surface
- *                is still open, without spinning when it dies immediately.
+ *                is still open, without spinning when it dies immediately:
+ *                each exit soon after starting doubles the wait, up to
+ *                maxRestartInterval, and a run of healthyRunInterval resets
+ *                it (Sync Sprint 16 R16-36). A helper that cannot run at all,
+ *                as without NetworkManager, is retried every few minutes
+ *                rather than every 3 s.
  *
  * Both are gated on `active`, so closing the surface stops the supervision
  * rather than leaving a timer to restart a process nobody is watching.
@@ -30,6 +35,12 @@ Scope {
 
     property int settleInterval: 250
     property int restartInterval: 3000
+    property int maxRestartInterval: 5 * 60 * 1000
+    property int healthyRunInterval: 60 * 1000
+
+    // The wait before the next restart, and when the current run started.
+    property int restartDelay: root.restartInterval
+    property real startedAt: 0
 
     readonly property bool running: watchProcess.running
 
@@ -42,6 +53,7 @@ Scope {
     signal line(string text)
 
     function start() {
+        root.restartDelay = root.restartInterval;
         if (!watchProcess.running)
             watchProcess.running = true;
     }
@@ -64,8 +76,17 @@ Scope {
             }
         }
         onRunningChanged: {
-            if (!running && root.active)
-                restartTimer.restart();
+            if (running) {
+                root.startedAt = Date.now();
+                return;
+            }
+            if (!root.active)
+                return;
+            if (Date.now() - root.startedAt >= root.healthyRunInterval)
+                root.restartDelay = root.restartInterval;
+            restartTimer.interval = root.restartDelay;
+            restartTimer.restart();
+            root.restartDelay = Math.min(root.restartDelay * 2, root.maxRestartInterval);
         }
     }
 
@@ -80,7 +101,7 @@ Scope {
     Timer {
         id: restartTimer
 
-        interval: root.restartInterval
+        interval: root.restartInterval  // set to restartDelay before each start
         repeat: false
         onTriggered: {
             if (root.active && !watchProcess.running)

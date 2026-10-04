@@ -1,6 +1,6 @@
 # S11-04 -- xvfb runtime test no longer notifies the real desktop
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-04`. Issue `#155`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-04-keep-a-tests-bad-config-notification-off-the-real-desktop`. Issue `#155`.
 
 ## Change
 

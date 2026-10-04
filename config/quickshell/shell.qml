@@ -23,6 +23,7 @@ import qs.state
 import qs.system
 import qs.weather
 import qs.systemmanagement
+import "core/Protocol.js" as Protocol
 
 pragma ComponentBehavior: Bound
 
@@ -237,6 +238,7 @@ ShellRoot {
     UpdateIndicatorModel {
         id: updateIndicator
         updateModel: updateModel
+        networkModel: networkModel
     }
 
     SystemManagementModel {
@@ -254,7 +256,7 @@ ShellRoot {
         let valid = false;
         for (const line of String(text).trim().split("\n")) {
             const fields = line.split("\t");
-            if (fields[0] === "dpi-state-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "dpi-state-protocol", 1)) {
                 valid = true;
             } else if (fields[0] === "dpi" && fields.length >= 2) {
                 dpi = Number(fields[1]);
@@ -401,6 +403,12 @@ ShellRoot {
 
         function toggle(): void {
             powerMenuModel.toggle();
+        }
+
+        // The menu at one action's confirmation: logout, reboot, suspend or
+        // shutdown (Sync Sprint 16 R16-24).
+        function confirm(action: string): void {
+            powerMenuModel.askToConfirm(action);
         }
     }
 

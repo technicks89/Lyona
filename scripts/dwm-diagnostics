@@ -221,19 +221,19 @@ main() {
 		check_pkg_config "$module"
 	done
 	check_any_required_cmd "X11 server" Xorg Xlibre
-	for cmd in startx xrandr xset xsetroot xclip xdotool; do
+	# The tiers check-deps.sh uses too, from the shared map (Sync Sprint 16 R16-45).
+	while IFS= read -r cmd; do
 		check_required_cmd "$cmd"
-	done
+	done < <(dwm_command_tier required)
 	check_terminal
 
 	if [[ $format == human ]]; then
 		printf '\nOptional desktop\n'
 	fi
-	for cmd in quickshell picom feh maim xdg-open notify-send amixer brightnessctl light-locker gsettings xprop; do
+	while IFS= read -r cmd; do
 		check_optional_cmd "$cmd"
-	done
+	done < <(dwm_command_tier desktop)
 	check_herdr
-	check_optional_cmd blueman-applet
 	check_any_optional_cmd "XDG autostart runner" dex dex-autostart
 	check_any_optional_cmd "audio control" pactl wpctl amixer
 	check_keyring

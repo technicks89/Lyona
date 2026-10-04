@@ -144,6 +144,7 @@ DISPLAY=$display xprop -root >/dev/null
 test_stage='starting dwm'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime DWM_AUTOSTART_NO_INPUT_WATCH=1 \
+	PATH="$data_home/checkout/scripts:$PATH" \
 	"$dwm_bin" >"$work/dwm.log" 2>&1 &
 dwm_pid=$!
 dwm_identity=$(capture_process_identity "$dwm_pid")

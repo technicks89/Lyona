@@ -35,8 +35,10 @@ on:
         required: false
         default: ""
 
+# The workflow's own token only reads; the release is created with
+# RELEASE_TOKEN (Sync Sprint 16 R16-11).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-iso-${{ github.ref }}
@@ -75,6 +77,12 @@ jobs:
     needs: authorize
     environment: release
     runs-on: ubuntu-latest
+    # Read-only, but for signing: the OIDC token Sigstore signs with, and the
+    # repository's attestation store (decision R16-20).
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     timeout-minutes: 90
     container:
       image: archlinux:base-devel
@@ -95,7 +103,7 @@ jobs:
       # the version and tag checks run before them, so a bad request fails in
       # seconds instead of after a full archiso install.
       - name: Install checkout and release-query dependencies
-        run: pacman -Sy --noconfirm --needed git github-cli
+        run: pacman -Syu --noconfirm --needed git github-cli
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,12 +136,17 @@ jobs:
           esac
           tag=v$version
           head=$(git rev-parse HEAD)
-          if tagged=$(gh api "repos/:owner/:repo/commits/$tag" --jq .sha 2>/dev/null); then
+          # GitHub answers 404 or 422 ("No commit found") for a tag that does not
+          # exist; any other failure stops here rather than passing for "no tag".
+          if tagged=$(gh api "repos/:owner/:repo/commits/$tag" --jq .sha 2>"$RUNNER_TEMP/tag.err"); then
             if [[ $tagged != "$head" ]]; then
               echo "::error::$tag already exists at ${tagged:0:12}, not this run's ${head:0:12}. Bump VERSION in config.mk to release again."
               exit 1
             fi
             echo "$tag already points at this commit; its release assets will be replaced."
+          elif ! grep -Eq 'HTTP (404|422)' "$RUNNER_TEMP/tag.err"; then
+            echo "::error::Could not look up $tag: $(cat "$RUNNER_TEMP/tag.err")"
+            exit 1
           fi
           if [[ $RELEASE_TOKEN_SET != true ]]; then
             echo "::error::The release environment has no RELEASE_TOKEN secret; see docs/RELEASING.md."
@@ -154,7 +167,15 @@ jobs:
           # shellcheck source=scripts/dwm-packages.sh
           . scripts/dwm-packages.sh
           mapfile -t build < <(dwm_packages arch build)
-          pacman -Sy --noconfirm --needed archiso rsync "${build[@]}"
+          # Synced and upgraded with git above: one sync per job (Sync Sprint
+          # 16 R16-39).
+          # jq: lyona-release reads the signed digests from the bundle.
+          pacman -S --noconfirm --needed archiso rsync jq "${build[@]}"
+
+      # Before the admin token is in reach: this builds and runs the release
+      # archive's code (Sync Sprint 16 R16-11). lyona-release then skips it.
+      - name: Check the release archive
+        run: make release-check
 
       # Outside the checkout: lyona-release requires a clean worktree.
       - name: Build ISO
@@ -171,12 +192,27 @@ jobs:
             ${{ runner.temp }}/iso/*.iso
             ${{ runner.temp }}/iso/SHA256SUMS
 
+      # Signed releases (decision D-31): a build-provenance attestation for the
+      # source archive (left by "Check the release archive", and rebuilt
+      # byte for byte by lyona-release) and the ISO, signed keylessly through
+      # Sigstore with this run's identity, so there is no signing key to keep.
+      # Signed before anything is published; the bundle is published with them
+      # as lyona-VERSION.sigstore.json, which lyona-update checks with cosign.
+      - name: Sign the release files
+        id: sign
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/iso/*.iso
+            release/lyona-*.tar.gz
+
       # Every release starts as a pre-release: a beta stays one, and a main
       # release stays one until promote-releases.yml is run for it.
       # With the admin's token: the "Lock Tags" ruleset lets only admins create tags.
       - name: Create the tag and the release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          BUNDLE: ${{ steps.sign.outputs.bundle-path }}
         run: |
           set -euo pipefail
           iso=("$RUNNER_TEMP"/iso/*.iso)
@@ -184,6 +220,7 @@ jobs:
             echo "::error::Expected one ISO, found ${#iso[@]}"
             exit 1
           }
-          args=(--version "$VERSION" --iso "${iso[0]}" --prerelease)
+          args=(--version "$VERSION" --iso "${iso[0]}" --bundle "$BUNDLE" --prerelease --skip-checks)
           [[ -z $NOTES ]] || args+=(--notes "$NOTES")
           scripts/lyona-release "${args[@]}"
+

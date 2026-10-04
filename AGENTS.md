@@ -51,15 +51,18 @@ an untested package or installation path.
 - `dwm.desktop`: display-manager X session entry.
 - `AGENTS.md`: durable engineering and agent-execution rules.
 - `SPEC.md`: product scope, interfaces, and acceptance criteria.
-- `ROADMAP.md`: ordered desktop-environment outcomes.
-- `TASKS.md`: implementation work for the active roadmap phase only.
+- `docs/roadmap/ROADMAP.md`: ordered desktop-environment outcomes.
+- `docs/roadmap/TASKS.md`: implementation work for the active roadmap phase only.
+- `docs/sprints/`: upstream-sync sprint plans and their index
+  (`UPSTREAM-SYNC.md`); finished sprints in `docs/sprints/completed/`.
+- `docs/reviews/`: dated whole-repo review reports.
 - `docs/`: user, contributor, and release documentation.
 
 ## Planning Workflow
 
 - Use `SPEC.md` for durable product requirements and compatibility contracts.
-- Use `ROADMAP.md` for ordered phase objectives and exit criteria.
-- Use `TASKS.md` only for detailed work in the active phase. Replace its task
+- Use `docs/roadmap/ROADMAP.md` for ordered phase objectives and exit criteria.
+- Use `docs/roadmap/TASKS.md` only for detailed work in the active phase. Replace its task
   set when a phase completes instead of accumulating historical checklists.
 - Record completed user-visible behavior in `CHANGELOG.md` and releases.
 - Do not mark a task or phase complete without its required validation or a

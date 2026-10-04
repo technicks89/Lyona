@@ -1,6 +1,6 @@
 # S11-05 -- dependencies and install profiles page
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-05`. Issue `#156`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-05-document-desktop-dependencies-and-install-profiles-for-arch`. Issue `#156`.
 
 ## Change
 

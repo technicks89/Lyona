@@ -2756,7 +2756,7 @@ class LocaleEnumerationTests(unittest.TestCase):
 
 class DelegatedToolTests(unittest.TestCase):
     """Sync Phase 9, ported from upstream's 0eae066d with the D-3 decision
-    (docs/UPSTREAM-SYNC.md#open-decisions) applied: Lyona's DELEGATED_TOOLS
+    (docs/sprints/UPSTREAM-SYNC.md#open-decisions) applied: Lyona's DELEGATED_TOOLS
     has only printers-open (system-config-printer, confirmed in Arch extra);
     accounts-open and sources-open ship permanent `unsupported` instead of
     upstream's lxqt-admin-user/dnfdragora, so their tool-path subtests are

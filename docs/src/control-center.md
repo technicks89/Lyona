@@ -223,7 +223,9 @@ as pressing <kbd>Super</kbd> + <kbd>/</kbd>.
 dwm-controlcenter
 ```
 
-The script is a compatibility wrapper around the Quickshell IPC target:
+The script is a compatibility wrapper around the Quickshell IPC target. For a
+key binding, prefer `lyona-shell controlcenter toggle` (or `open`), which the
+default bindings use and which follows the IPC when it changes:
 
 ```bash
 quickshell ipc --path "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml" call controlcenter toggle

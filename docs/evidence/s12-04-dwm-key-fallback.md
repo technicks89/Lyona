@@ -1,6 +1,6 @@
 # S12-04 -- dwm always starts with working keys, and a config file cannot hang it
 
-Plan: `docs/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-04-dwm-always-starts-with-working-keys-and-a-config-file-cannot-hang-it`.
+Plan: `docs/sprints/SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md#s12-04-dwm-always-starts-with-working-keys-and-a-config-file-cannot-hang-it`.
 Issue `#167`.
 
 ## Change

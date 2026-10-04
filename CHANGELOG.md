@@ -8,8 +8,113 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.2] - 2026-10-03
+
+Third beta of the Arch Linux line, and the first signed release. Sync Sprint 16: the fixes from the 2026-10-03
+whole-repo review (`docs/sprints/SYNC-SPRINT-16-REVIEW-FIXES.md`, which maps each to its test), and the image fixes a
+VM install of `2026.10.0-beta.1` found. See `docs/RELEASE-NOTES-2026.10.0-beta.2.md`.
+
+### Security
+
+- Releases are signed (D-31): the release workflow signs the ISO and the source archive through Sigstore, with no key
+  to keep, before anything is published, and publishes the signature as `lyona-VERSION.sigstore.json`.
+  - `lyona-update` checks it with `cosign` (now a `desktop` package) before it unpacks a release, and refuses a release
+    whose signature is missing or does not verify. A release from before signing is installed on its checksum alone,
+    and says so.
+  - `apply --file` downloads the signature, or takes it with `--bundle FILE`. `--sha256`, for a machine with no
+    network, skips the signature: `cosign` needs the network for Sigstore's trust root.
+  - Check a download by hand with `cosign verify-blob-attestation` (`docs/RELEASING.md`), or `gh attestation verify`.
+- Image installs give root no password and lock it; the new user administers with `sudo` (D-29).
+- The live medium never leaves its temporary passwordless `sudo` rule on the new system, however the install ends:
+  success, failure, Retry, a shell from the recovery menu, or an interrupt (R16-01).
+- System Health's privileged scan and repairs always ask through polkit; a cached `sudo` session is never used (R16-14).
+- As root, the display setup reads only the system Xorg log, never one in the user's home (R16-13).
+- What the installers download while `sudo` is cached is pinned: mybash's Meslo font (the release and checksum
+  `install.sh` uses; a mismatch is skipped) and the wallpapers (a reviewed commit) (R16-15, R16-16).
+- The ISO's hostname must be a valid host name (R16-17).
+- The ISO release job's own token is read-only, and the release archive is checked before the admin token is used
+  (R16-11). `lyona-release` refuses to publish under a tag that names another commit (R16-04).
+- The root-helper lookup is one function, and looks only in the prefix lyona is installed in (R16-46).
+
+### Fixed
+
+- **An image install reached a desktop no more:** `install.sh` deployed LightDM's greeter config before building the
+  `lyona-toml` it needs, so on a fresh checkout it failed there, and the installed system booted to a login that
+  failed ("Failed to start session"). The config is deployed after the build. Found booting `2026.10.0-beta.1` in a
+  VM; a fresh existing-system install with LightDM failed the same way.
+- **The image install hung** building `yay`: `makepkg` waited on pacman's "Proceed with installation?" behind the
+  progress spinner, where nothing could answer it. A non-interactive `install.sh` answers it (`--noconfirm`).
+- **An image install failed its first package update:** the new system already listed the CachyOS repositories, but
+  their signing key was trusted only by the step after. The CachyOS step runs first now, and a key it cannot trust is
+  reported.
+- **Steam's Vulkan driver is chosen for the GPU,** installed before the gaming packages: with `--noconfirm` pacman took
+  the first provider, which with the CachyOS repositories was `mesa-git`, conflicting with `mesa`, so the gaming
+  packages failed.
+- **Gear Lever is installed at the first login after an image install:** Flatpak cannot install it for the user inside
+  the installer's chroot ("User 1000 does not exist").
+- **The image's scripts lost their executable bit:** `mkarchiso` makes every file not in `file_permissions` mode 644,
+  so the wizard took the CachyOS helper for missing. The builder lists each executable file of the checkout.
+- **The closing screen no longer says to remove the install medium before rebooting,** which could crash the reboot
+  while the live system still ran from it; it says to remove it only if the installer starts again.
+- The image's timezone question works: it tries `ipinfo.io`, then `ipapi.co` (which often answers 429), and asks yes or
+  no; otherwise you type to find your zone in a list, instead of `tzselect`'s numbered menus (D-30).
+- `lyona-update check` on a channel with nothing published says so (`unknown`, and on stable how to switch to
+  preview) instead of "offline"; a pre-release install starts on the preview channel (R16-02).
+- The Control Center's dependency check and installer, System Health's install-dependencies repair and the default-apps
+  fallback work on an installed system, not only from a checkout (R16-03).
+- Updating in a terminal that returns at once (wezterm, gnome-terminal and others) waits for the update and reports its
+  real result (R16-06).
+- The release's `SHA256SUMS` names files, so `sha256sum -c` works on the downloads (R16-07).
+- A TOML string longer than 511 characters no longer spills into extra keys (R16-08).
+- dwm reloads config from a `~/.config/lyona` created, or deleted and recreated, after login (R16-09).
+- No partial upgrades: the ISO's target and the ISO build run `pacman -Syu` (R16-05).
+- The Bluetooth panel follows device changes: its watcher used `busctl monitor`, which the system bus refuses an
+  ordinary user (R16-35).
+- `restart-quickshell` restarts only the managed shell, by identity, and with `--path`, as login does (R16-49).
+- The image install's progress bar counts its ten steps (R16-29).
+
 ### Changed
 
+- **Keys:** Super+Shift+Q (log out) and Super+Ctrl+Shift+R (reboot) open the power menu at their confirmation. Quitting
+  dwm at once moved to Super+Ctrl+Shift+Q. New installs only: an existing `hotkeys.toml` keeps its keys; copy the
+  lines from the shipped `PREFIX/share/lyona/config/hotkeys.toml` (`/usr/local` by default) to take them (R16-24).
+- **`lyona-shell TARGET ACTION`,** a new command, opens the launcher, overview, Control Center or power menu; the
+  default keybinds call it rather than Quickshell's IPC (R16-47).
+- **The image install** lists anything that did not go as chosen (a driver, the CachyOS kernels, `install.sh`'s
+  warnings) on its last screen and waits for Enter, keeps the log on the new system, says what state the machine is in
+  when a step fails, and says how to start again after a cancel (R16-22, R16-30).
+- **Settings > System:** rolling back asks first; lyona's releases have their own heading, apart from system packages
+  and Flatpak; Update packages waits while a PackageKit update runs (R16-25, R16-27).
+- **The installer** keeps every shell file mybash replaces (`FILE.bak.TIME`), and its summary lists every change it
+  makes (R16-23, R16-28).
+- **Less idle work:** the input hotplug guard and the power watch check with builtins, not `awk` several times a
+  second; the update indicator follows the shell's network state instead of a resident python3; watchers that keep
+  exiting back off to 5 minutes; audio bursts make one refresh; a watcher Quickshell bound needs no backstop loop; the
+  Topgrade build's jobs follow available memory (R16-32 to R16-38, R16-43).
+- **One rule each:** `check-deps.sh` and `dwm-diagnostics` share their command tiers; the float-rule check reads TOML
+  with `lyona-toml`; the shell runs every helper through `Commands`; dwm has one developer-override lookup (R16-44,
+  R16-45, R16-48, R16-50).
+- **The state bridge** watches every window through one new helper, `dwm-xwatch`, and reads again only the window that
+  changed: with 10 windows, 1 resident process instead of 11 (R16-40). **Window previews** fetch bands of rows, a few
+  X round trips per window instead of up to 640 (R16-41). **The QML models** share one protocol-header rule,
+  `core/Protocol.js` (R16-53).
+- **The image** puts the user's checkout in `~/.local/src/lyona`, apart from lyona's data in `~/.local/share/lyona`
+  (R16-54). Existing installs keep theirs.
+- **Slow tests** wait less where the wait was not what they test (R16-42).
+- `book.toml` and `FUNDING.yml` name technicks89 (D-33).
+- **Docs:** installing from the image, the window overview, the layout row, the update channels, the lock defaults,
+  the shell state protocol (`docs/SHELL-STATE-PROTOCOL.md`), and SPEC on Topgrade; stale README, roadmap, settings,
+  release and security text corrected (R16-51, R16-52, R16-55 to R16-63).
+
+- The planning docs have their own folders.
+  - **`docs/roadmap/`:** `ROADMAP.md` and `TASKS.md`, moved from the repository root.
+  - **`docs/sprints/`:** the open sync sprints, their index (`UPSTREAM-SYNC.md`) and `sync-sprints-github.sh`.
+  - **`docs/sprints/completed/`:** the finished sprints.
+  - **`docs/reviews/`:** dated whole-repo reviews, starting with the six-reviewer review of 2026-10-03.
+  - **References:** every path citation and link is updated. Commit-pinned citations (`<commit>:docs/...`) still name
+    the old paths, as they should.
+  - **Removed:** `attic/` (two unreachable QML files).
+  - **Moved:** the README screenshot is now `assets/screenshots/lyona-qs-4x.webp`.
 - Only the repository's admins and maintainers can run the release workflows (`build-iso.yml`,
   `promote-releases.yml`). Each starts with a job that checks the role of whoever started the run. The tag is created
   with `RELEASE_TOKEN`, an admin's fine-grained token kept as a secret of the `release` environment. The "Lock Tags"
@@ -53,6 +158,371 @@ qualification status.
   and include them in live-install backups so rollback can restore them.
 - Run live-install verification cleanup and chained EXIT handlers once on
   interruption, preserving signal exit statuses and caller-owned signal traps.
+
+- Rapid overview card closes now launch independent commands so each requested
+  window is processed even while an earlier close command is running.
+
+- Dark presets (Dracula, Tokyo Night, Nord, and every other shipped dark theme) could render Thunar and other plain GTK apps
+  light instead of dark (#348). `lyona-gtk-theme generate-all`, which builds each palette's `Lyona-<theme>` GTK theme, is an
+  install-time step (`make install-system`'s `install-gtk-themes`); on any live system where that step has not run, or whose
+  `themes.toml` grew a palette since, the generated theme genuinely does not exist, and `theme-apply.sh` fell back to a
+  literal `gtk-theme-name=Adwaita-dark` -- a name recent GTK3/GTK4 has no theme by (the dark variant of Adwaita is the
+  `gtk-application-prefer-dark-theme` hint, not a second named theme), so it resolved to nothing and rendered light
+  regardless of the preset. `theme-apply.sh` now generates the one palette actually in use on demand when it is missing, and
+  the fallback (when generation itself fails) is plain `Adwaita` with the hint already set, which is always available. A
+  user's own GTK theme override (Settings > Toolkit) is unaffected either way -- it already won over the palette's choice,
+  and still does, now that the generated theme is more often actually present to compete with it. New
+  `make check-theme-apply-gtk-fallback` (5 cases: on-demand generation, no needless regeneration, a personalization override
+  surviving both with and without the generated theme present, and the corrected fallback).
+
+- A Settings pane can no longer be hidden forever by a read that never finishes
+  (#76). Since the loading gate (S5-01) a pane stays hidden and disabled until
+  every read it waits on has finished, with no upper bound, so one hung helper
+  left it on "Loading settings..." for as long as it hung (the System pane can
+  wait about 12 s on its own when a discovery watch is slow).
+  `DeferredSettingsPane` now has a `loadingTimeoutMs` cap (5 s): when it passes
+  with the pane selected and its component ready, the pane is presented with
+  what it has. The fast path is unchanged. New stages in the responsiveness
+  harness create a pane whose reads never finish and check that it is hidden
+  until its cap and usable after; removing the cap fails them.
+
+- `tests/test-quickshell-system-management-xvfb.sh` no longer races the
+  discovery subscriptions. It asserted the native provider and state statuses
+  (`available`) before waiting for each discovery domain to connect, so on a
+  slower host they read `partial` and it failed in the full-suite CI image; it
+  now waits for every domain first. Its D-3 check also asked
+  `prepareDelegate(accounts-open)` once, straight after the timezone dispatch,
+  and got the shared operation model's "busy" message when that was still
+  settling; it now asks again until the D-3 reason appears, still requiring
+  every attempt to be refused with nothing pending. It failed 4 of 4 runs in
+  the CI container before and passed 5 of 5 after.
+- `tests/test-quickshell-design-system.sh` checks the CI layout as it is now.
+  It still expected the hosted `c-cpp.yml` job to name the `qml-validation`
+  package profile twice, which stopped being true when that job became the
+  desktop smoke test (it installs `ci-smoke`) and QML validation moved to
+  `full-suite.yml`, so `make check` failed there. It now requires each workflow
+  to take its packages from the right profile and to hard-code neither
+  `quickshell` nor `qt6-declarative`.
+- The Settings > System pane now waits for the update card's own reads (#77).
+  Entering the section re-runs `updateModel.refresh()` and `refreshBackups()`,
+  but the pane only waited on the system-management model, so the installed
+  version and the "Available: ..." row could still change after the pane had
+  presented. `UpdateModel` has a read-only `initialLoading` for its local
+  reads (`versionProcess`, `backupsProcess`; not the network check) and the
+  System pane's `dataLoading` includes it. This also corrects the Sprint 5
+  entry above, which said those reads only happen at shell start. The
+  responsiveness harness delays the version read past the System snapshot and
+  checks the pane stays hidden until it finishes.
+
+- A wallpaper preview reconcile that found something blocking it is now retried
+  when that clears (#95). `tryReconcileWallpaperPreview()` leaves the request
+  queued while the model is busy, a font change is running or another wallpaper
+  action is in flight, but the only retry was `refreshWallpaperStatus()`, which
+  runs on watcher events or when a status refresh was itself queued. If none
+  came along, the preview stayed `failed` for good, which is what made
+  `check-quickshell-settings-xvfb` fail intermittently at "wallpaper watchdog
+  reconciliation" (also on `main`). `AppearanceModel` now retries when `busy`,
+  `fontBusy`, `wallpaperBusy` or `wallpaperStatusBusy` clears. New
+  `make check-quickshell-wallpaper-reconcile-xvfb` blocks the reconcile with
+  each of those, releases it, and requires exactly one reconcile to start (it
+  fails on the previous model, and removing any one handler fails its case); the
+  settings test's final check now reports the state it saw instead of failing
+  silently. The flake itself could not be reproduced on demand, so this closes
+  the lost-retry path rather than proving it was the only cause.
+
+- Settings > Bluetooth device rows no longer clip their address line at large
+  text sizes. The row had a fixed height (`Theme.dp(68)`) while its two text
+  lines scale with the font, so at 200 percent text with Noto Sans (a line
+  height of about 1.36, against about 1.2 for the FreeSans fallback) the second
+  line ran a few pixels past the row. The row now grows with its content, never
+  below the old height. The responsiveness harness had passed only where the
+  host's font is short, and failed in the full suite's CI image; its fixture now
+  pins every `UiText` to Noto Sans's line height so a local run answers the same
+  way as CI.
+- `tests/test-seed-default-apps.sh` no longer depends on the host lacking a real
+  Celluloid. Its "handler whose program is not installed" case only removed a
+  stub from its own `PATH`, so on a machine with Celluloid installed (the full
+  suite's CI image) the real one satisfied the check and the case failed with
+  "a handler whose program is not installed was accepted". It now runs that case
+  with a `PATH` of only the tools the script needs plus stub programs, after a
+  control run proving the setup is sufficient.
+- `scripts/ci-local.sh` fails loudly and cleans up after itself (#78). A failing
+  `git ls-files` used to be hidden by a process substitution, so tar copied only
+  `.git` and the run tested an empty tree; the file list is now written to a
+  file, checked, and any files tar could not copy are reported. The build
+  context and file list are removed by the EXIT trap even when `docker build`
+  fails; the container has a unique name, `--init`, a `lyona-ci` label and
+  `--rm`, and lives at most four hours, and the trap removes only a container
+  this run started (a reused PID used to make it delete an older `--keep`
+  container). Logs go in a `mktemp -d` directory instead of a predictable
+  `/tmp` path, host-side reads skip symlinks a test left behind, and the usage
+  text and CONTRIBUTING say the tool runs the tree's own code, for trusted
+  branches only. It also works from a linked git worktree now: `.git` there is
+  a one-line pointer file, so the container got no repository and every
+  target that reads git history failed (`check-release-helper`: "not a git
+  repository"); the shared repository is shipped as `.git` with the worktree's
+  own HEAD and index.
+
+- A tiled selected window no longer covers floating windows and popups
+  (`dwm.c` `raiseselectedclient()`, from the "updating floating windows" work
+  of 2026-08-29). Every restack raised the selected client above the floating
+  clients it had just raised, and above popups an application had raised itself,
+  even when the selected client was tiled. It now raises the selected client only
+  where `restack()` itself does: when it is floating or the layout is floating,
+  which is what that change needed so a selected window is not left under the
+  floats. Found because `make check-xvfb-runtime` had failed since that commit
+  (an override window raised by an application was buried after a layout
+  change); the test now passes end to end, and gained checks that a floating
+  window stays above a selected tiled one and that the selected window comes to
+  the front in the floating layout.
+- The System update UI test fixture (`tests/fixtures/system-update-ui-provider.py`)
+  now answers the storage (`watch-mounts`) and security (`watch-units security`)
+  watches that Sync Sprint 2 added. It rejected them as invalid arguments, so
+  `make check-quickshell-update-ui-xvfb` had failed since the Sprint 2 merge even
+  though every QML assertion passed.
+- The full-suite workflow and `scripts/ci-local.sh` pick the installable packages
+  with one `pacman -Slq` query instead of one `pacman -Si` per package (#79).
+  For the 114 packages in the list the loop took 22 s in the CI image and the
+  single call under a second, and both select the same 111 (the three multilib
+  gaming packages are absent from the container's repositories either way). The
+  workflow step was run as the workflow's shell runs it and the generated
+  Dockerfile was built with a list of real, bogus and multilib names.
+
+- The Gear Lever installer now verifies the Flathub remote before it installs
+  (Sync Sprint 5 S5-02, ported from upstream `#334` `dd64bbf`, issue `#332`).
+  It refused a `flathub` remote with the wrong URL already, but accepted one
+  with signature verification disabled or one that was disabled, and did not
+  check a remote it had just added. A new `scripts/dwm-flatpak-setup
+  --user|--system` checks the official URL, `no-gpg-verify` and `disabled`
+  (reading disabled remotes too), adds the official remote when there is none
+  and verifies it again, and `scripts/install-gearlever` calls it right before
+  `flatpak install`. Lyona adaptation: an app that is already installed exits
+  before the helper, so a remote problem never makes an installed app report a
+  setup failure. The tests script the `flatpak remotes` output in upstream's
+  column format; that format was then checked against real Flatpak 1.18.2 in
+  the CI image (it prints `disabled,no-gpg-verify` comma-joined, as parsed), and
+  the helper refused an unsigned, a disabled and a wrong-URL `flathub` remote
+  and added then verified the official one (#80).
+- `check-deps.sh` now recognises every terminal `dwm-terminal` can launch
+  (Sync Sprint 4 S4-05, ported in part from upstream `#255`/`902a138`). Its
+  fallback list stopped at Alacritty, Kitty and st, so a machine whose only
+  terminal was `warp-terminal` or `xterm` was reported as having none, though
+  `dwm-terminal` and `dwm-diagnostics` accept both. When no terminal is found the
+  hint recommends only terminals in the official repositories (Alacritty, Kitty,
+  xterm); `st` and `warp-terminal` are AUR-only, so they are detected but not
+  suggested, unlike upstream's wording. The `dwmterm` integration itself is
+  declined: it is packaged in neither the official repositories nor the AUR
+  (re-checked 2026-09-20), and promoting it to the first probe would make
+  `dwm-terminal` miss on every launch. The default stays `alacritty`.
+
+- `scripts/install-gearlever` now finds `dwm-flatpak-setup` with `CDPATH=''`,
+  like the repo's other scripts. With `CDPATH` exported and a matching
+  directory on it, `cd` printed a path, the helper lookup returned two lines and
+  the helper was not found (exit 127), which `install.sh` only reports as a
+  warning (#80). New case in `tests/test-install-gearlever.sh`.
+
+- Fix two installer and session start-up problems (Sync Sprint 4 S4-04,
+  `docs/sprints/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
+  `#283`/`378f06e` and the autostart hunk of `44800ba`). `dev-sync-install.sh`
+  no longer demands a dwm restart after a reinstall that leaves the running
+  binary's bytes unchanged: reinstalling unlinks the running executable, and
+  the old check treated that unlinked (`(deleted)`) file as a mismatch before
+  ever comparing bytes, though `/proc/PID/exe` still exposes the inode.
+  It now compares the bytes even when the file is deleted. Separately,
+  `autostart.sh` runs `systemctl --user daemon-reload` before starting
+  `wm-graphical-session.service` every time, instead of only after a failed
+  start, so autostart exclusions an installer seeded after the user manager
+  began apply on the very first login. The new dev-sync test uses a private
+  child process running a deleted copy of a binary, never the host window
+  manager, and registers its cleanup through `lib.sh`'s stack in place of
+  upstream's hand-written trap. Both new assertions were confirmed to fail on
+  the previous code. Upstream's `test-fedora-packages.sh` hunk is not
+  applicable.
+
+- `MountMonitorTests.gone()` in `tests/test-system-management.py` no longer races
+  a process that exits while `/proc/PID/stat` is being read (#94). That read
+  raises `ProcessLookupError` (ESRCH), which the helper did not treat as "gone",
+  so `test_signal_cleanup_and_parent_death` errored about once in three runs in
+  the full-suite CI container. New cases pin both outcomes (an ESRCH read counts
+  as gone; a process that stays alive still fails).
+
+- Fix `scripts/webapp-launch`, which never worked for a user-scoped browser
+  install: unquoted brace expansion ran before tilde expansion, so
+  `~/.local/share/applications` and `~/.nix-profile/share/applications` were
+  never actually searched, only `/usr/share/applications`. The browser
+  resolution was also unquoted (word-split a path containing a space) and
+  parsed `Exec=` with a `sed` pattern that mishandled quoted or
+  backslash-escaped values. Rewritten with proper quoting, spec-correct
+  `Exec=` parsing, and URL validation. A bare `Super+A` ChatGPT launch now
+  prefers an installed desktop app and falls back to the web app only when
+  asked to, without risking recursion back through the launcher.
+- Super+M (fullscreen) no longer shrinks windows when it returns to the floating
+  layout (#83). `fullscreen()` switches to monocle and back with the layout
+  switch, and since the floating-toggle change (S5-03) that switch shrinks
+  every visible tiled window by 15% when it enters the floating layout, so a
+  round trip from the floating layout came back at 85% of the monocle size.
+  `setlayout()` now takes its shrink from a `shrink` flag: the key and button
+  entry point still shrinks, `fullscreen()` does not. New case in
+  `tests/test-xvfb-runtime.sh` (it fails on the previous build, and checks that
+  an explicit switch still shrinks).
+
+- Fix `dwm-settings-input`'s device scan silently reporting zero devices when
+  `xinput --list --short` failed outright, instead of surfacing the failure.
+  It now checks the command's exit status before parsing its output and
+  exits with `die` on failure.
+- `make check-xvfb-runtime` now turns its test's "skipped" exit status (77:
+  Xvfb/xdotool missing) into success like the other Xvfb targets do.
+  `make check-quickshell-settings-loading` does the same when python3 is
+  unavailable, like the other dependency-dependent checks, instead of failing
+  a plain `make check` on such a host (#82). A real failure still fails.
+
+- Fix a race in `dwm-settings-appearance`'s inventory scanner: a named
+  coprocess's PID and file-descriptor bookkeeping could be unset by bash
+  before the caller read them, if the scan finished first. Replaced with
+  process substitution, which captures its PID synchronously and keeps it
+  valid regardless of whether the process has since exited. The scan also no
+  longer inherits the parent shell's stdin.
+- dwm no longer exits when an X client asks for an extreme aspect ratio
+  (`applysizehints()`, an issue that predates Sprint 5). With a tiny maximum
+  aspect and no minimum size the aspect clamp rounded a side to 0, the
+  zero-sized `XConfigureWindow` came back as BadValue, and `xerror()` treated it
+  as fatal, so any X client could end the session (#81). The result is now
+  floored at 1x1. New `extreme-aspect` client mode and case in
+  `tests/test-xvfb-runtime.sh`, which fails on the unpatched build.
+
+- Document the command menu's `menu open|close|toggle|summon` IPC surface,
+  which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
+  asserted the documentation but nothing had ever satisfied it, so
+  `make check` failed on a from-scratch checkout).
+
+- The TOML parser no longer corrupts window rules or drops sections (Sync Sprint 12 S12-05, issue `#168`). In a
+  multi-line array, a `{` inside a trailing comment (`{ class="a" }, # see {docs}`) opened a phantom table: a window rule
+  with no class, instance or title, which matched every window and reset `isterminal`, `noswallow`, `isfloating` and
+  `alwaysontop`, undoing earlier rules such as terminal swallowing. Comments are now stripped from array lines. Closing
+  an array on the line of its last table (`{ ... } ]`) left the parser in array mode, so every later section, such as
+  `[active] theme`, was lost; an array whose first table sat on the opening line lost the rest. `true` and `false` were
+  read as `0.0` inside tables and as strings elsewhere, so `isfloating=true` did nothing; they now parse as `1` and
+  `0`. A `#` after an escaped quote inside a string no longer cuts the string. dwm also skips any window rule with no
+  class, instance or title and logs it. New `tests/test-tomlparser.c` (`make check-tomlparser`, part of `make check`),
+  the first test of the parser itself, covers each case and checks that the shipped `hotkeys.toml`,
+  `window-rules.toml` and `themes.toml` parse to exactly the tables they contain; `tests/test-dwm-config-fallback.sh`
+  checks the rule skip in a running dwm.
+
+- dwm always starts with working keys, and a config file can no longer hang it (Sync Sprint 12 S12-04, issue `#167`).
+  An empty, all-comment or otherwise unusable `~/.config/lyona/hotkeys.toml` at login left dwm with no key bindings at
+  all, not even quit, while the notification said "loaded defaults". dwm now loads the shipped default instead and says
+  so; a file with entries but nothing dwm can bind counts as unusable. On a live reload it keeps the configuration it
+  already had and now says "kept the previous config" instead of "loaded defaults". If neither the user file nor the
+  default loads at startup, two built-in keys remain (Super+x opens `dwm-terminal`, Super+Shift+q quits). The TOML
+  parser opens files without blocking and accepts only regular files up to 1 MiB, so a `hotkeys.toml` that is a
+  symlink to `/dev/zero` (which kept dwm at about 54% CPU and stopped it managing windows) or a FIFO falls back to the
+  default instead. A `tag_keys` tag outside 0-8 is skipped with a message instead of shifting by an out-of-range
+  amount. A SIGUSR1 (reload) or SIGUSR2 (quit) that arrived just before dwm waited for input was not handled until the
+  next X event; the handlers now also write to a pipe that the wait watches. New `tests/test-dwm-config-fallback.sh`
+  (`make check-dwm-config-fallback`, part of `make check`); `tests/test-xvfb-runtime.sh` expects the live-reload
+  message. `docs/src/troubleshooting.md` no longer says invalid TOML fails silently or suggests a `config.h` fallback
+  that does not exist.
+
+- Qt applications follow the selected palette when `qt6ct` or `qt5ct` is installed, and GTK 2 applications can find
+  the generated theme (Sync Sprint 11 S11-06, upstream `#352`, app-theme half). `theme-apply.sh` used to write only
+  `color_scheme_path` into the tool's config, and only if that config already existed; `qt6ct` ignores that path
+  unless `custom_palette=true` (verified: with the path alone Qt reported its default light palette, with both keys it
+  reported the generated Dracula colours), so installing the tool left Qt light on a dark desktop. It now sets both
+  keys, creates a minimal `[Appearance]` config when none exists (`dwm-settings-theme` already snapshots both files,
+  so a created one is removed on rollback), preserves every other key and section, points at the palette's own scheme
+  (falling back to the tool's `darker.conf` for a dark preset with no generated scheme), and leaves the config alone
+  on a runtime-only apply. `scripts/lyona-gtk-theme` now also writes `Lyona-<id>/qt/colors.conf` (the 21 QPalette
+  roles, highlighted text picked by contrast, placeholder text readable at 3:1 or better) and
+  `Lyona-<id>/gtk-2.0/gtkrc`, and the `check-install` inventory lists them. New tests: `check-app-palettes` (structure
+  and contrast for all 15 presets), `check-qt-palette-xvfb` (the generated scheme really becomes Qt's palette under
+  `qt6ct`, with a negative control for `custom_palette`), and `check-theme-apply-qt-palette` (the real
+  `theme-apply.sh`; fails against the original). Without `qt6ct`/`qt5ct`, Qt already followed the generated GTK theme.
+  Not verified: GTK 2 rendering (not installed here), `qt5ct` beyond its config (same keys, only `qt6ct` was run), or
+  a rendered Qt app.
+
+- Shell text is readable on hover and selected surfaces in every palette (Sync Sprint 11 S11-01, completes Sync Sprint
+  6 S6-03 and issue `#116`, ported from upstream `#352`). The shell's hover surface came from the palette's
+  `term_color8`, ANSI bright-black, which is a terminal foreground and not a UI surface, and hover text was the plain
+  foreground on top of it. Computed from `config/themes.toml`, all 5 light presets and 6 of the 10 dark ones fell
+  below 4.5:1 on hover, and Solarized Light's strong text on hover was 1.00:1. `Theme.qml` now derives a light hover
+  surface from the light background (`lightHover()`), and picks each hover, focus, selected and action text role with
+  `readableText()` and `readableTextOnSurfaces()`, which keep the palette colour when it reaches 4.5:1 and fall back
+  to black or white otherwise (`luminance()` also reads a `#AARRGGBB` string). 13 components take upstream's patch
+  unchanged and `LauncherResultDelegate.qml` and `ControlsWindow.qml` needed small hand merges. New `make
+  check-quickshell-theme-contrast` loads the real `Theme` singleton for all 15 palettes (built with the key mapping
+  read from `dwm-settings-appearance`, so it cannot drift), asserts 174 role/surface pairs at 4.5:1 with its own
+  independent contrast maths, and checks a dark-to-light-to-dark switch in one process; against the original
+  `Theme.qml` it fails 105 of the 174 assertions across 14 presets. Not verified by eye: check a light preset
+  (Solarized Light, Catppuccin Latte) and a dark one on the launcher, control center, network and Settings surfaces.
+
+- `tests/test-xvfb-runtime.sh` no longer raises a critical "dwm: bad config" notification on the real desktop (Sync
+  Sprint 11 S11-04, upstream `#354` test half). The test writes a deliberately invalid `hotkeys.toml`, and dwm reports
+  it through `notify-send`; the test's separate X display still inherited the caller's D-Bus session, so every run of
+  `make check` on a live desktop showed a critical notification. A fake `notify-send` now goes first on dwm's `PATH`
+  and logs its arguments, and the test asserts that a valid configuration emits nothing and that the invalid one is
+  reported as `-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults`. dwm reports once per load
+  (its file watcher and the test's `USR1` each reload), so the assertion is "at least once". No other test that
+  launches dwm writes an invalid configuration.
+
+- The cross-tag window overview's type-to-filter and close-from-card did nothing, and the popup logged
+  `WindowOverview.qml: Unable to assign [undefined] to QString` and `TypeError: Cannot read property 'length' of
+  undefined` as soon as the shell loaded (Sync Sprint 10 S10-01). PR #138 merged `WindowOverview.qml`,
+  `OverviewCard.qml` and `OverviewFilter.js` but not the model half: `OverviewModel.qml` defined no `query`,
+  `setQuery()` or `closeCard()` and never imported `OverviewFilter.js`. It now has `query`, `closingIds`,
+  `visibleWindows` (the filtered list `groups` is built from), `setQuery()`, `closeCard()`, and clamps `selectedIndex`
+  whenever the card list shrinks; `open()`/`close()` reset the query and pending closes. The same error failed
+  `check-quickshell-queued-run-xvfb`, `-picom-model-xvfb`, `-settings-responsiveness-xvfb`, `-update-progress-xvfb`
+  and `-wallpaper-reconcile-xvfb`, which load the real shell, so `make check` stopped at the first of them and never
+  reached the rest. `tests/test-quickshell-overview.sh` now also fails when any member the overview QML reads off the
+  model is not defined on it, which is the check that was missing.
+- `check-quickshell-command-menu` had been failing since the overview popup landed (#135), which changed
+  `shell.qml`'s launcher `onVisibleChanged` block from a one-line `if` to a block that also closes the overview; the
+  test pinned the old one-line text. It now pins the behavior (opening the launcher closes the command menu and the
+  overview) instead of the formatting (Sync Sprint 10 S10-02).
+- `make check` never ran `check-quickshell-health-navigation-xvfb`, `check-quickshell-information-ui-xvfb` or
+  `check-quickshell-health-xvfb`, although Sprint 2 and `ROADMAP.md` Phase 6 cite them as evidence; it now does. The
+  root-only, container-only `tests/test-settings-display-security.sh` was referenced nowhere; it now has
+  `make check-settings-display-security` (skips outside a container, exit 77 convention) and a `display-security` job
+  in the manual **Full suite** workflow that runs it as root in a disposable `archlinux:base-devel` container (Sync
+  Sprint 10 S10-03).
+
+- The manual **Full suite** workflow passed on `main` at `90f20f1` on 2026-09-26 (https://github.com/technicks89/Lyona/actions/runs/36242445295): `make check`
+  (including the 686 `tests/test-system-management.py` tests and `check-quickshell-overview-xvfb`), the new
+  `display-security` job, and the clang build all green. It had failed on all three earlier runs (2026-09-21) and had
+  not been run since; this is the first passing run since the workflow was introduced (Sync Sprint 10 S10-06).
+
+- The cross-tag window overview (Sync Sprint 7 S7-01 through S7-03, issue `#350`) was broken end to end since
+  `scripts/dwm-quickshell-state` and `DwmState.qml` gained a `windowStates`/percent-encoding rework: `client_snapshot()`'s
+  awk script called `sanitize_class()` without defining it, a fatal awk error that crashed `windows=`/`apps=` output
+  outright whenever any client window existed; `DwmState.windowsByTag()` and `OverviewModel.qml`'s own `groups` property
+  both still read a `root.windows`/`root.dwmState.windows` property that had been renamed to `windowStates`, so both threw
+  `is not a function`/`undefined` errors even once the crash above was fixed; and `DwmStateWindows.js`'s `groupByTag()` --
+  the function `OverviewModel.groups` actually calls -- had been dropped entirely. `client_snapshot()`'s awk script also
+  carried three literal duplicate copies of its `_NET_WM_NAME`/`WM_NAME` title-parsing rules, a harmless but clearly
+  accidental leftover, now down to one. Finished the in-progress percent-encoding a `WM_CLASS` needs to survive this
+  wire format's own `:`/`|` separators intact rather than losing information (unlike a title's own lossy space
+  replacement): `sanitize_class()` now actually escapes `%`/`:`/`|` (order matters: `%` first, so the `%` its own
+  escaping introduces is never re-escaped), restored consistently in both `client_snapshot()` and `window_class()`, and
+  a new `DwmStateWindows.js` `decodeClass()` reverses it on the QML side (`DwmState.qml`'s `apps`/`class` parsing and
+  `parseWindows()`'s `appClass`), the same safe try/catch pattern `Icons.qml`'s own `decodeIconPart()` already uses.
+  `tests/test-quickshell-state.sh` had its own problems compounding all of this: two contradictory `expect 'windows=...'`
+  blocks (one with a class value neither code path ever produced), a fifth `0xee` client window referenced by its
+  live-`watch` assertions but never actually given a case in the xprop stub (silently falling through to a generic
+  catch-all), and a live-title-update scenario that could never pass because only the stub's `-spy` branch reacted to
+  its own touch-file signals, not the regular re-poll a real X server would also reflect after an actual property
+  change. Rewritten to be internally consistent, with `0xee` now a real percent-encoding round-trip case, and two
+  `check-shell`-failing shellcheck issues in the same file (an unused loop variable in three `for attempt in {1..100}`
+  polling loops, converted to the codebase's own `i=0`/`while` idiom; a deferred single-quoted `cleanup_add` expansion
+  that is correct by design, now annotated) fixed alongside it -- `make check-shell` itself was failing on `main`.
+  `tests/qml/tst_dwm_state_windows.qml` gained matching coverage for `groupByTag()` and `decodeClass()` (9 new tests,
+  6/6 mutations caught across both fixes). `tests/test-quickshell-overview.sh` (Sprint 7 S7-03's own structural-pin
+  test, which had merged but never actually run since: its last assertion pinned `groupByTag()`'s old 3-argument
+  signature, so it always failed silently) is fixed and grown four more pins that would have caught the `windowStates`
+  rename and the undefined `sanitize_class()` immediately, including one that greps `client_snapshot()`'s own awk block
+  specifically -- the exact per-invocation scoping mistake that let `sanitize_class()` compile fine as a whole file
+  while still being undefined where it was actually called. Found by trying to build Sprint 8 on top of what `main`
+  already had, not by a report -- every one of these was reproduced directly (a real awk crash, a real qmltestrunner
+  `is not a function`, a real shellcheck failure) before being fixed, not inferred from reading the diff.
 
 ### Changed
 
@@ -343,14 +813,14 @@ qualification status.
   Overview load tests enforce absolute CPU and timing budgets only with `DWM_OVERVIEW_STRICT=1`.
 
 - A qualification ledger closes Sprint 10 (Sync Sprint 10 S10-07, issue `#147`,
-  `docs/SYNC-SPRINT-10-COMPLETION-AUDIT.md#s10-07-qualification-ledger-for-sprints-closed-with-hardware-checks-open`). Sprints 4, 5 and Phases 5 to 7 were left
+  `docs/sprints/completed/SYNC-SPRINT-10-COMPLETION-AUDIT.md#s10-07-qualification-ledger-for-sprints-closed-with-hardware-checks-open`). Sprints 4, 5 and Phases 5 to 7 were left
   with checks that need real hardware, a real install, or elevated access (the Picom NVIDIA
   backend, fresh-install media defaults on both ISOs, a full privileged `lyona-update` run,
   Settings panes and floating toggles on a slow provider, a Flathub-remote refusal, a fresh
   LightDM login, a live PackageKit transaction, a live polkit denial, D-4's read-only
   `pacman.lck` check), and those closed milestones did not say so. Nothing here can run in this
   sandbox and none of it is done by this entry; the ledger table in the plan doc is the one
-  place all of it is now tracked instead of implied-done by a closed issue. `docs/UPSTREAM-SYNC.md`'s
+  place all of it is now tracked instead of implied-done by a closed issue. `docs/sprints/UPSTREAM-SYNC.md`'s
   Sprint 10 row and D-4's "Open decisions" row now point at it, and `TASKS.md` marks the sprint done
   on that basis.
 
@@ -375,7 +845,7 @@ qualification status.
   and `test-quickshell-design-system.sh` now pins the three radius values.
 
 - `PanelTooltip.qml`'s horizontal position is now a live property binding
-  (Sync Sprint 6 S6-01, `docs/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`,
+  (Sync Sprint 6 S6-01, `docs/sprints/completed/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md`,
   small portable fix from upstream `#343` `2461027`), not only recomputed from
   `anchor.onAnchoring`, an event that does not necessarily fire on every
   geometry-relevant change. The clamping math moves to a small pure function,
@@ -404,7 +874,7 @@ qualification status.
   `fixed` modes in its X client.
 
 - Settings panes stay hidden until their data has loaded (Sync Sprint 5
-  S5-01, `docs/SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`, ported from
+  S5-01, `docs/sprints/SYNC-SPRINT-5-SETTINGS-LOADING-FLATHUB-FLOATING.md`, ported from
   upstream `#335` `709bcd0` and `4b0d438`; completes Lyona's `#315` work from
   Sprint 3). A pane used to fade in as soon as its component loaded, so cards
   still appeared and reflowed inside a visible pane while its first reads
@@ -452,7 +922,7 @@ qualification status.
   longer skips on hosts without `xkbset`.
 
 - Qualify that missing optional components stay capability-scoped, and coalesce
-  capability refreshes (Sync Sprint 3 S3-09, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  capability refreshes (Sync Sprint 3 S3-09, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#188`/`c8f574b` and `#191`/`4d776bc`, pre-survey gaps).
   A new `make check-phase5-optional-components` target and a combined
   optional-loss scenario in the Settings xvfb suite remove the wallpaper
@@ -479,7 +949,7 @@ qualification status.
   Fixture names follow Lyona's (`Lyona-nord`, not `Nordic`).
 
 - Stop automatic theme-preview status retries once their bounded failure
-  budget is exhausted (Sync Sprint 3 S3-09, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  budget is exhausted (Sync Sprint 3 S3-09, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#183`/`e91d018`, a pre-survey gap): after more than
   three zero-remaining or unparseable `preview-status` reads Appearance stops
   polling and reports that rollback status needs a manual refresh. Opening
@@ -489,7 +959,7 @@ qualification status.
   unchanged.
 
 - Keep the panel sharp under popups, and make shell surfaces usable at large
-  text (Sync Sprint 3 S3-07 and S3-08, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  text (Sync Sprint 3 S3-07 and S3-08, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#324`/`c44dae4` and the surface fixes of `#327`/`a5b829d`).
   Popups now start below the panel so a compositor can no longer blur the bar
   through the transparent click-away surface, and a popup taller or wider than
@@ -534,7 +1004,7 @@ qualification status.
   opening Settings went from 2 reads to 1 when nothing changed.
 
 - Compact the Control Center and Settings detail pane (Sync Sprint 3 S3-04,
-  `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
+  `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream
   `c3e9a18` "refactor(quickshell): compact control surfaces", open since the
   first survey): remove the Control Center overview's redundant "Launch"/
   "Desktop"/"Utilities" section headers and the Power page's duplicate
@@ -557,6 +1027,35 @@ qualification status.
   were read directly off a live xvfb run instrumented with a temporary
   `mapToGlobal()` probe, then verified end to end against the genuine
   compacted UI.
+
+- Reduce hosted CI to one Arch build and desktop smoke job
+  (`tests/test-desktop-smoke-xvfb.sh`, `check-desktop-smoke-xvfb`): build
+  dwm, then start the real managed Quickshell shell in a private Xvfb+dbus
+  session and check its panel, the launcher's Super+R/Escape keys, and an
+  application launch. Skip documentation-only pushes. The full Xvfb/Settings
+  suite (`scripts/run-tests` / `make check`) stays a local check rather than
+  a hosted CI job; local validation and independent review remain the merge
+  gate. The previous full desktop suite, `clang-build`, and `quickshell-qml`
+  hosted jobs are removed; `workflow_dispatch` now runs the same smoke job.
+- Three of the test-harness coupling problems from #93 are fixed. `tests/test-quickshell-settings-loading.sh`'s pane count is
+  derived from `SettingsModel.qml`'s `sections` list instead of a hard-coded `9`, so an added or removed section (with a
+  matching pane) needs no test edit and a mismatched one is still caught. `tests/test-quickshell-appearance-model.sh` no longer
+  restates the S5-01 pending-flag ordering rule with its own awk block; the settings-loading test's generic rule is the one
+  place that checks it. `make check-xvfb-runtime` gained the case the issue named: a tiled window that only later gains a
+  min==max hint (the existing "fixed" client is fixed from creation, so it is never tiled to begin with, and the
+  `!c->isfixed` branch in `togglefloating` was unreachable). It pops out at exactly that fixed size and keeps its top-left
+  corner, rather than being shrunk and recentred through `shrinkfloating`'s 85 percent the way an ordinary tiled window is
+  (both produce the same 300x200 for a min==max client, since `applysizehints` clamps either way, so the position, not the
+  size, is what the case actually has to check). Not done in this pass: the larger, more invasive change of replacing the
+  harness's text-patching (blind `"dataLoading: "`/`"DeferredSettingsPane {"`/`"id: root"` replacement, the `core/UiText.qml`
+  patch) with production test hooks -- a bigger surface better suited to its own follow-up than folding into this one.
+
+- Open Settings full screen on the active screen, like System Health (Sync
+  Sprint 3 S3-06 `#302`, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  upstream `#307`/`56ec27b`), and tighten its navigation rows, pane margins,
+  capability cards, and display controls so more options remain visible
+  without reducing the configured text scale. This supersedes the earlier
+  1180x760-with-clamping window size from this same Unreleased section.
 
 ### Added
 
@@ -664,7 +1163,7 @@ qualification status.
   `theme-apply.sh`. Not verified: a running GTK application actually repainting.
 
 - Multi-monitor labels, type-to-filter and close-from-card for the cross-tag window overview (Sync Sprint 8 S8-02
-  through S8-04, `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, issue `#350`; the model half landed in Sync Sprint 10
+  through S8-04, `docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, issue `#350`; the model half landed in Sync Sprint 10
   S10-01, see "Fixed"). `OverviewCard.qml` shows a monitor label only when more than one monitor is present; a search
   box in `WindowOverview.qml` narrows the cards by title or class through `OverviewFilter.js`'s `filterWindows()`
   (case-insensitive substring, the launcher's own convention); each card has a close button that sends
@@ -678,16 +1177,16 @@ qualification status.
 
 - `DwmState.qml` exposes the per-window list as `windowStates` and resolves each window to a tag and monitor through
   `DwmStateWindows.js` (`windowsByTag()`, `groupByTag()`) (Sync Sprint 7 S7-02,
-  `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, issue `#350`), covered by `tests/qml/tst_dwm_state_windows.qml`.
+  `docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, issue `#350`), covered by `tests/qml/tst_dwm_state_windows.qml`.
   Recorded here after the fact: the original PR (#134) carried no changelog entry.
 
 - A cross-tag window overview popup (`config/quickshell/overview/`): one card per open window grouped by tag, click to
   switch tag and focus the window, Escape or click-away to close (Sync Sprint 7 S7-03,
-  `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, issue `#350`). Recorded here after the fact: the original PR (#135)
+  `docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, issue `#350`). Recorded here after the fact: the original PR (#135)
   carried no changelog entry.
 
 - Keyboard navigation for the cross-tag window overview (Sync Sprint 8 S8-01,
-  `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`): the exact
+  `docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`, part of the cross-tag window overview, issue `#350`): the exact
   `Keys.onPressed` shape `LauncherWindow.qml` already has (arrows/Home/End move the selection, Enter activates it;
   Escape already closed the popup since S7-03). `OverviewModel.qml` gains `selectedIndex`, `flatCards` (the tag-grouped
   card list flattened into keyboard-navigation order, using a new `flatIndex` `DwmStateWindows.js`'s `groupByTag()` now
@@ -702,7 +1201,7 @@ qualification status.
   window-closes-while-open edge case remain the rest of S8-02, not this item.
 
 - `scripts/dwm-quickshell-state` gains a `windows=` field alongside `apps=` (Sync Sprint 7 S7-01,
-  `docs/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, part of the cross-tag window overview, issue `#350`): one entry per managed
+  `docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`, part of the cross-tag window overview, issue `#350`): one entry per managed
   window (`id:desktop:class:title`), never deduplicated by class the way `apps=` is for the panel's running-apps row, which
   it leaves untouched. Adds both title atoms (`_NET_WM_NAME`, preferred, and `WM_NAME` as the fallback) to the same per-window query
   `apps=`/`occupied=` already make, so this rides the existing `watch` loop for free rather than adding a new round trip.
@@ -715,7 +1214,7 @@ qualification status.
   check` stops at the first. Running it found and reproduced the failure below.
 
 - Desktop update experience (Sync Sprint 4 S4-06,
-  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, decision D-8: upstream's
+  `docs/sprints/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, decision D-8: upstream's
   mechanism for `#318`-`#323` is declined because `lyona-update`'s signed
   release tarballs already cover it, and only its user-facing ideas are ported).
   Progress is now visible outside Settings and survives the Quickshell restart
@@ -748,7 +1247,7 @@ qualification status.
   Lyona adaptations: the popup is centered under the panel like the notification
   stack (so it needs no new dwm window rule) instead of a window of its own, the
   new tests never run a real `notify-send`, and the mechanism-side upstream
-  commits are recorded as covered in `docs/UPSTREAM-SYNC.md`.
+  commits are recorded as covered in `docs/sprints/UPSTREAM-SYNC.md`.
   Verified by `tests/test-lyona-update.sh` (log, notifications, defer,
   authorization count) and the new `tests/test-quickshell-update-progress-xvfb.sh`,
   which runs an isolated copy of the shell against real status and log files and
@@ -756,7 +1255,7 @@ qualification status.
 
 
 - Icon themes and first-login theme convergence (Sync Sprint 4 S4-03,
-  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
+  `docs/sprints/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
   `#301`/`69240ea`; `#328`/`d4c6d89` recorded as not needed): the `theme`
   package profile now includes `adwaita-icon-theme` and `papirus-icon-theme`
   next to `dconf` (all in official `extra`, and on the live ISO, which now
@@ -778,7 +1277,7 @@ qualification status.
   fails if `theme-apply.sh` ever launches the daemon with an inherited lock.
 
 - Media and image defaults on fresh installs (Sync Sprint 4 S4-02,
-  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream issue
+  `docs/sprints/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream issue
   `#308` and the fixes `#317` and the MIME hunk of `c679937`): the recommended and
   full install profiles now install Celluloid, mpv, and sxiv (all in official
   `extra`, and on the live ISO too), and a new `scripts/seed-default-apps.sh`
@@ -824,7 +1323,7 @@ qualification status.
   and `tests/test-quickshell-command-menu.sh`.
 
 - Configuration-backed Picom controls (Sync Sprint 4 S4-01,
-  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
+  `docs/sprints/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
   `#312`/`#313`/`#314`, closing upstream issue `#309`): **Settings > Appearance >
   Compositor** now has foreground and background opacity sliders, a backend
   selector (Automatic, XRender, GLX, experimental EGL) and start/stop, driven by
@@ -860,7 +1359,7 @@ qualification status.
   recorded in `docs/evidence/`.
 
 - Polish the Power menu, Settings, cursor updates, tray, and Quick Actions
-  (Sync Sprint 3 S3-06, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
+  (Sync Sprint 3 S3-06, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
   from upstream `#307`/`56ec27b`, closing issues `#302`–`#306`, plus the
   focused-screen hunk from `44800ba`): Power menu labels simplify ("Log Out"
   → "Logout") and unavailable actions stay selectable so choosing one can
@@ -906,7 +1405,7 @@ qualification status.
   isolation fix upstream made independently in `tests/test-install-preservation.sh`
   (also ported).
 - Reduce Settings startup work and readiness (Sync Sprint 3 S3-05,
-  `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream `#291`
+  `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported from upstream `#291`
   (Settings half of `d359a4f`), `#294`/`080b39e`, and Lyona's own fix for
   open issue `#315`): every Settings pane is now lazily loaded through a new
   `DeferredSettingsPane.qml` (`Loader { active: visited }`) that stays
@@ -948,7 +1447,7 @@ qualification status.
   (review-process wording and Lyona's own separately-maintained planning
   docs).
 - Hide the Docked/Undocked automatic-layout controls when no system battery
-  is present (Sync Sprint 3 S3-03, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  is present (Sync Sprint 3 S3-03, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   upstream issue `#310`, still open upstream — no upstream code exists, this
   is Lyona's own implementation): `scripts/dwm-settings-display-profiles`
   gains `system_battery_present()`, reading
@@ -965,7 +1464,7 @@ qualification status.
   `scope=Device`): `system_battery_present()` correctly excludes it and
   reports `battery: false`.
 - Add explicit Docked and Undocked automatic display layouts to Settings
-  (Sync Sprint 3 S3-02, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
+  (Sync Sprint 3 S3-02, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`, ported
   from upstream `#290`/`6b7548b`): a new unprivileged
   `scripts/dwm-settings-display-profiles` (Python) edits autorandr's `mobile`
   (Undocked) and `docked` profiles without ever applying a layout — autorandr
@@ -1004,7 +1503,7 @@ qualification status.
   cached `ci-local.sh` image stays valid.
 
 - Replace the Displays pane's raw X/Y position inputs with relative
-  placement (Sync Sprint 3 S3-01, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
+  placement (Sync Sprint 3 S3-01, `docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
   ported from upstream `#289`/`55dbd76`, plus `6b7548b`'s driver-quirk fix to
   `discover()` pulled in early since it affects placement too): a new pure
   `config/quickshell/settings/DisplayLayout.js` computes placement math and a
@@ -1024,7 +1523,7 @@ qualification status.
   `DisplayPort-1` 1920x1080 rotated right at x=2560): `discover()` emits
   correct `mode-size` records for both real outputs.
 - Close `ROADMAP.md` Phase 6 (System Management) (Sync Sprint 2 S2-07,
-  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, upstream closed its own Phase 6
+  `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, upstream closed its own Phase 6
   with docs-only commits whose Fedora-44-evidence prose isn't ported; used as
   a qualification checklist instead): measured, not assumed, idle CPU with
   all seven `watch-*` domains (updates, time, locale, accounts, printers,
@@ -1039,7 +1538,7 @@ qualification status.
   section recording D-5's permanent firewall-manager generalization and the
   sprint's carried-forward limitations (no PackageKitGlib bindings or
   multi-monitor hardware in this sandbox; `xkbset` still unavailable, carried
-  from Phase 5). `docs/UPSTREAM-SYNC.md`'s status table now reflects Sprint 1
+  from Phase 5). `docs/sprints/UPSTREAM-SYNC.md`'s status table now reflects Sprint 1
   and Sprint 2 as done. `TASKS.md` replaced with a first-pass Phase 7 (Arch
   Image and Release Qualification) task breakdown, grounded in
   `docs/RELEASING.md`'s own already-documented gap ("has not been
@@ -1050,7 +1549,7 @@ qualification status.
   when asked how to scope it.
 - Add the System Settings information card and Health navigation for the
   minor-2 records S2-05 wired in (Sync Sprint 2 S2-06,
-  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#287`,
+  `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#287`,
   commits `cc96efd`/`0c9d07c`; `39ce924` targets a harness Lyona never
   ported, nothing to port): new
   `config/quickshell/settings/SystemInformationControls.qml` renders system
@@ -1101,7 +1600,7 @@ qualification status.
 - Wire the information/storage/security readers from S2-01 through S2-04
   into the system-management snapshot protocol as minor `2`, both on the
   Python provider and the Quickshell consumer (Sync Sprint 2 S2-05,
-  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#285`/
+  `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream `#285`/
   `#286`, commits `7954c54`/`177e3c3`/`b19fb90`/`3232932`/`4aee614`):
   `InformationSnapshotSources`/`build_information_snapshot()` assemble the
   new records; `snapshot`/`snapshot-core`/`snapshot-without-storage` are now
@@ -1174,7 +1673,7 @@ qualification status.
   suite (684 tests) matches the established baseline (only the 16 pre-existing,
   unrelated PackageKitGlib-unavailable failures in this sandbox).
 - Add a bounded mount change monitor to `dwm-system-management` (Sync Sprint
-  2 S2-04, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
+  2 S2-04, `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
   `#284`, commits `5b246a0`/`dbbfde1`/`994011f`/`088069b`/`6ac6f5a`):
   `watch-mounts` supervises one fixed `findmnt --poll` child, arming
   parent-death cleanup (`prctl(PR_SET_PDEATHSIG)`) and re-checking the
@@ -1204,7 +1703,7 @@ qualification status.
   `SystemProviderDiscovery.qml`'s domain list — that's S2-05.
 - Reuse the shared power helper's automatic screen-lock evidence in
   `dwm-system-management` through a bounded internal information reader
-  (Sync Sprint 2 S2-03, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported
+  (Sync Sprint 2 S2-03, `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported
   from upstream `#282`, commits `92c4543`/`76d0739`/`2fe6f7d`):
   `read_screen_lock()`/`parse_screen_lock()` consume
   `dwm-quickshell-controlcenter power-lock-snapshot`, a new lock-only
@@ -1241,7 +1740,7 @@ qualification status.
   were ported but could not be executed in this sandbox, which lacks the
   suite's required `xkbset` binary (a pre-existing, unrelated gap).
 - Add bounded security status readers to `dwm-system-management` (Sync
-  Sprint 2 S2-02, `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from
+  Sprint 2 S2-02, `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from
   upstream `#280`/`#281`): `read_selinux_status()` (runtime enforcement
   first, config fallback only when the runtime interface is absent),
   `read_secure_boot_status()` (the fixed EFI `SecureBoot` variable, never
@@ -1262,7 +1761,7 @@ qualification status.
   resolves to `unencrypted` from this machine's real block-device topology.
 - Add bounded local, hardware, and filesystem information readers to
   `dwm-system-management` (Sync Sprint 2 S2-01,
-  `docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
+  `docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md`, ported from upstream
   `#277`/`#278`/`#279`): `read_local_information()` reads OS identity
   (`/etc/os-release`), CPU model (`/proc/cpuinfo`), memory/swap
   (`/proc/meminfo`), kernel release/architecture (`uname`), logical CPU
@@ -1282,12 +1781,12 @@ qualification status.
   synthetic fixture and this repository's own CachyOS sandbox.
 - Add a manual `Full suite (manual)` GitHub Actions workflow
   (`.github/workflows/full-suite.yml`, Sync Sprint 1 S1-01,
-  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) that runs `scripts/run-tests
+  `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) that runs `scripts/run-tests
   make check` (or one named target) as an unprivileged user in an
   `archlinux:base-devel` container, uploads the log, and optionally builds
   dwm with clang. Push and pull-request CI is unchanged.
 - Add confirmed delegated administration (Sync Sprint 1 S1-04,
-  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream `#266`/`#267`):
+  `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream `#266`/`#267`):
   the Accounts/Password/Printers/Software-sources launch buttons in
   Settings → System now show a visible "Open *tool*?" confirmation card
   before launching, the same as regional (timezone/NTP/locale) changes
@@ -1317,7 +1816,7 @@ qualification status.
   only at the call.
 
 - Give regional (timezone/locale/NTP) preview and confirmation its own model
-  (Sync Sprint 1 S1-05, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
+  (Sync Sprint 1 S1-05, `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
   from upstream `#268`/`#269`): the new
   `config/quickshell/systemmanagement/SystemRegionalSettingsModel.qml`
   replaces the regional preview/confirm state that used to live directly on
@@ -1343,7 +1842,7 @@ qualification status.
   the `build` profile: the leg now fails on the missing `xft`.
 
 - Share one timezone-aware minute clock between the panel and Settings
-  (Sync Sprint 1 S1-06, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
+  (Sync Sprint 1 S1-06, `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported
   from upstream `#270`): the new `config/quickshell/core/ClockModel.qml`
   replaces a bare `SystemClock` instance in the panel that never noticed a
   live `timezone-set` change -- Qt's `Date` does not re-read the system
@@ -1353,7 +1852,7 @@ qualification status.
   to the timezone/locale controls.
 - Add a bounded, event-driven read path for network time status to
   `dwm-system-management` (Sync Sprint 1 S1-07,
-  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
+  `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
   `#271`/`#272`/`#273`): new `ntp-sample` and `time-status` CLI commands
   publish one finite record each, and a new `watch-time` command emits a
   `time-event\towner-arrived` record distinct from an actual `timedate1`
@@ -1371,7 +1870,7 @@ qualification status.
   output nobody could receive; it now fails immediately instead.
 - Reconcile network-time-service owner arrivals and sample synchronization
   while System Settings is open (Sync Sprint 1 S1-08,
-  `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
+  `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`, ported from upstream
   `#274`/`#275`/`#276`): the "time" domain now watches with S1-07's
   `watch-time` instead of `watch-regional time`, so an authenticated
   `timedate1` owner arrival (uncertainty) is reconciled with a bounded
@@ -1391,7 +1890,7 @@ qualification status.
   deliver when its process restarts or fails to start, never previously
   exercised; a `0`-byte buffer is now a no-op instead.
 - Show live per-package update progress and recover user-service session
-  evidence (Sync Sprint 1 S1-09, `docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`,
+  evidence (Sync Sprint 1 S1-09, `docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`,
   ported from the system-management half of upstream `#291`): PackageKit's
   `Package`/`ItemProgress` signals now publish a bounded, ephemeral
   `package-progress` record (name, phase, percent) separate from the
@@ -1514,7 +2013,7 @@ qualification status.
   timezone/locale/NTP changes and delegated administration (accounts,
   password, printers, sources) are now reachable from Settings, not only the
   CLI. `launchDelegated()` dispatches without its own confirmation step;
-  Sync Sprint 1 (`docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) converges this
+  Sync Sprint 1 (`docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md`) converges this
   surface onto upstream's structure, which adds one.
 - Add the update surface to Settings and Control Center (UPDATE-003,
   `docs/P6-UPDATE-SURFACE.md`): a new `config/quickshell/system/UpdateModel.qml`
@@ -1802,406 +2301,6 @@ qualification status.
   `dwm-settings-display`'s `pkexec` call, replacing the generic
   `org.freedesktop.policykit.exec` prompt with a scoped message and icon.
 
-### Changed
-
-- Reduce hosted CI to one Arch build and desktop smoke job
-  (`tests/test-desktop-smoke-xvfb.sh`, `check-desktop-smoke-xvfb`): build
-  dwm, then start the real managed Quickshell shell in a private Xvfb+dbus
-  session and check its panel, the launcher's Super+R/Escape keys, and an
-  application launch. Skip documentation-only pushes. The full Xvfb/Settings
-  suite (`scripts/run-tests` / `make check`) stays a local check rather than
-  a hosted CI job; local validation and independent review remain the merge
-  gate. The previous full desktop suite, `clang-build`, and `quickshell-qml`
-  hosted jobs are removed; `workflow_dispatch` now runs the same smoke job.
-- Three of the test-harness coupling problems from #93 are fixed. `tests/test-quickshell-settings-loading.sh`'s pane count is
-  derived from `SettingsModel.qml`'s `sections` list instead of a hard-coded `9`, so an added or removed section (with a
-  matching pane) needs no test edit and a mismatched one is still caught. `tests/test-quickshell-appearance-model.sh` no longer
-  restates the S5-01 pending-flag ordering rule with its own awk block; the settings-loading test's generic rule is the one
-  place that checks it. `make check-xvfb-runtime` gained the case the issue named: a tiled window that only later gains a
-  min==max hint (the existing "fixed" client is fixed from creation, so it is never tiled to begin with, and the
-  `!c->isfixed` branch in `togglefloating` was unreachable). It pops out at exactly that fixed size and keeps its top-left
-  corner, rather than being shrunk and recentred through `shrinkfloating`'s 85 percent the way an ordinary tiled window is
-  (both produce the same 300x200 for a min==max client, since `applysizehints` clamps either way, so the position, not the
-  size, is what the case actually has to check). Not done in this pass: the larger, more invasive change of replacing the
-  harness's text-patching (blind `"dataLoading: "`/`"DeferredSettingsPane {"`/`"id: root"` replacement, the `core/UiText.qml`
-  patch) with production test hooks -- a bigger surface better suited to its own follow-up than folding into this one.
-
-- Open Settings full screen on the active screen, like System Health (Sync
-  Sprint 3 S3-06 `#302`, `docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md`,
-  upstream `#307`/`56ec27b`), and tighten its navigation rows, pane margins,
-  capability cards, and display controls so more options remain visible
-  without reducing the configured text scale. This supersedes the earlier
-  1180x760-with-clamping window size from this same Unreleased section.
-
-### Fixed
-
-- Rapid overview card closes now launch independent commands so each requested
-  window is processed even while an earlier close command is running.
-
-- Dark presets (Dracula, Tokyo Night, Nord, and every other shipped dark theme) could render Thunar and other plain GTK apps
-  light instead of dark (#348). `lyona-gtk-theme generate-all`, which builds each palette's `Lyona-<theme>` GTK theme, is an
-  install-time step (`make install-system`'s `install-gtk-themes`); on any live system where that step has not run, or whose
-  `themes.toml` grew a palette since, the generated theme genuinely does not exist, and `theme-apply.sh` fell back to a
-  literal `gtk-theme-name=Adwaita-dark` -- a name recent GTK3/GTK4 has no theme by (the dark variant of Adwaita is the
-  `gtk-application-prefer-dark-theme` hint, not a second named theme), so it resolved to nothing and rendered light
-  regardless of the preset. `theme-apply.sh` now generates the one palette actually in use on demand when it is missing, and
-  the fallback (when generation itself fails) is plain `Adwaita` with the hint already set, which is always available. A
-  user's own GTK theme override (Settings > Toolkit) is unaffected either way -- it already won over the palette's choice,
-  and still does, now that the generated theme is more often actually present to compete with it. New
-  `make check-theme-apply-gtk-fallback` (5 cases: on-demand generation, no needless regeneration, a personalization override
-  surviving both with and without the generated theme present, and the corrected fallback).
-
-- A Settings pane can no longer be hidden forever by a read that never finishes
-  (#76). Since the loading gate (S5-01) a pane stays hidden and disabled until
-  every read it waits on has finished, with no upper bound, so one hung helper
-  left it on "Loading settings..." for as long as it hung (the System pane can
-  wait about 12 s on its own when a discovery watch is slow).
-  `DeferredSettingsPane` now has a `loadingTimeoutMs` cap (5 s): when it passes
-  with the pane selected and its component ready, the pane is presented with
-  what it has. The fast path is unchanged. New stages in the responsiveness
-  harness create a pane whose reads never finish and check that it is hidden
-  until its cap and usable after; removing the cap fails them.
-
-- `tests/test-quickshell-system-management-xvfb.sh` no longer races the
-  discovery subscriptions. It asserted the native provider and state statuses
-  (`available`) before waiting for each discovery domain to connect, so on a
-  slower host they read `partial` and it failed in the full-suite CI image; it
-  now waits for every domain first. Its D-3 check also asked
-  `prepareDelegate(accounts-open)` once, straight after the timezone dispatch,
-  and got the shared operation model's "busy" message when that was still
-  settling; it now asks again until the D-3 reason appears, still requiring
-  every attempt to be refused with nothing pending. It failed 4 of 4 runs in
-  the CI container before and passed 5 of 5 after.
-- `tests/test-quickshell-design-system.sh` checks the CI layout as it is now.
-  It still expected the hosted `c-cpp.yml` job to name the `qml-validation`
-  package profile twice, which stopped being true when that job became the
-  desktop smoke test (it installs `ci-smoke`) and QML validation moved to
-  `full-suite.yml`, so `make check` failed there. It now requires each workflow
-  to take its packages from the right profile and to hard-code neither
-  `quickshell` nor `qt6-declarative`.
-- The Settings > System pane now waits for the update card's own reads (#77).
-  Entering the section re-runs `updateModel.refresh()` and `refreshBackups()`,
-  but the pane only waited on the system-management model, so the installed
-  version and the "Available: ..." row could still change after the pane had
-  presented. `UpdateModel` has a read-only `initialLoading` for its local
-  reads (`versionProcess`, `backupsProcess`; not the network check) and the
-  System pane's `dataLoading` includes it. This also corrects the Sprint 5
-  entry above, which said those reads only happen at shell start. The
-  responsiveness harness delays the version read past the System snapshot and
-  checks the pane stays hidden until it finishes.
-
-- A wallpaper preview reconcile that found something blocking it is now retried
-  when that clears (#95). `tryReconcileWallpaperPreview()` leaves the request
-  queued while the model is busy, a font change is running or another wallpaper
-  action is in flight, but the only retry was `refreshWallpaperStatus()`, which
-  runs on watcher events or when a status refresh was itself queued. If none
-  came along, the preview stayed `failed` for good, which is what made
-  `check-quickshell-settings-xvfb` fail intermittently at "wallpaper watchdog
-  reconciliation" (also on `main`). `AppearanceModel` now retries when `busy`,
-  `fontBusy`, `wallpaperBusy` or `wallpaperStatusBusy` clears. New
-  `make check-quickshell-wallpaper-reconcile-xvfb` blocks the reconcile with
-  each of those, releases it, and requires exactly one reconcile to start (it
-  fails on the previous model, and removing any one handler fails its case); the
-  settings test's final check now reports the state it saw instead of failing
-  silently. The flake itself could not be reproduced on demand, so this closes
-  the lost-retry path rather than proving it was the only cause.
-
-- Settings > Bluetooth device rows no longer clip their address line at large
-  text sizes. The row had a fixed height (`Theme.dp(68)`) while its two text
-  lines scale with the font, so at 200 percent text with Noto Sans (a line
-  height of about 1.36, against about 1.2 for the FreeSans fallback) the second
-  line ran a few pixels past the row. The row now grows with its content, never
-  below the old height. The responsiveness harness had passed only where the
-  host's font is short, and failed in the full suite's CI image; its fixture now
-  pins every `UiText` to Noto Sans's line height so a local run answers the same
-  way as CI.
-- `tests/test-seed-default-apps.sh` no longer depends on the host lacking a real
-  Celluloid. Its "handler whose program is not installed" case only removed a
-  stub from its own `PATH`, so on a machine with Celluloid installed (the full
-  suite's CI image) the real one satisfied the check and the case failed with
-  "a handler whose program is not installed was accepted". It now runs that case
-  with a `PATH` of only the tools the script needs plus stub programs, after a
-  control run proving the setup is sufficient.
-- `scripts/ci-local.sh` fails loudly and cleans up after itself (#78). A failing
-  `git ls-files` used to be hidden by a process substitution, so tar copied only
-  `.git` and the run tested an empty tree; the file list is now written to a
-  file, checked, and any files tar could not copy are reported. The build
-  context and file list are removed by the EXIT trap even when `docker build`
-  fails; the container has a unique name, `--init`, a `lyona-ci` label and
-  `--rm`, and lives at most four hours, and the trap removes only a container
-  this run started (a reused PID used to make it delete an older `--keep`
-  container). Logs go in a `mktemp -d` directory instead of a predictable
-  `/tmp` path, host-side reads skip symlinks a test left behind, and the usage
-  text and CONTRIBUTING say the tool runs the tree's own code, for trusted
-  branches only. It also works from a linked git worktree now: `.git` there is
-  a one-line pointer file, so the container got no repository and every
-  target that reads git history failed (`check-release-helper`: "not a git
-  repository"); the shared repository is shipped as `.git` with the worktree's
-  own HEAD and index.
-
-- A tiled selected window no longer covers floating windows and popups
-  (`dwm.c` `raiseselectedclient()`, from the "updating floating windows" work
-  of 2026-08-29). Every restack raised the selected client above the floating
-  clients it had just raised, and above popups an application had raised itself,
-  even when the selected client was tiled. It now raises the selected client only
-  where `restack()` itself does: when it is floating or the layout is floating,
-  which is what that change needed so a selected window is not left under the
-  floats. Found because `make check-xvfb-runtime` had failed since that commit
-  (an override window raised by an application was buried after a layout
-  change); the test now passes end to end, and gained checks that a floating
-  window stays above a selected tiled one and that the selected window comes to
-  the front in the floating layout.
-- The System update UI test fixture (`tests/fixtures/system-update-ui-provider.py`)
-  now answers the storage (`watch-mounts`) and security (`watch-units security`)
-  watches that Sync Sprint 2 added. It rejected them as invalid arguments, so
-  `make check-quickshell-update-ui-xvfb` had failed since the Sprint 2 merge even
-  though every QML assertion passed.
-- The full-suite workflow and `scripts/ci-local.sh` pick the installable packages
-  with one `pacman -Slq` query instead of one `pacman -Si` per package (#79).
-  For the 114 packages in the list the loop took 22 s in the CI image and the
-  single call under a second, and both select the same 111 (the three multilib
-  gaming packages are absent from the container's repositories either way). The
-  workflow step was run as the workflow's shell runs it and the generated
-  Dockerfile was built with a list of real, bogus and multilib names.
-
-- The Gear Lever installer now verifies the Flathub remote before it installs
-  (Sync Sprint 5 S5-02, ported from upstream `#334` `dd64bbf`, issue `#332`).
-  It refused a `flathub` remote with the wrong URL already, but accepted one
-  with signature verification disabled or one that was disabled, and did not
-  check a remote it had just added. A new `scripts/dwm-flatpak-setup
-  --user|--system` checks the official URL, `no-gpg-verify` and `disabled`
-  (reading disabled remotes too), adds the official remote when there is none
-  and verifies it again, and `scripts/install-gearlever` calls it right before
-  `flatpak install`. Lyona adaptation: an app that is already installed exits
-  before the helper, so a remote problem never makes an installed app report a
-  setup failure. The tests script the `flatpak remotes` output in upstream's
-  column format; that format was then checked against real Flatpak 1.18.2 in
-  the CI image (it prints `disabled,no-gpg-verify` comma-joined, as parsed), and
-  the helper refused an unsigned, a disabled and a wrong-URL `flathub` remote
-  and added then verified the official one (#80).
-- `check-deps.sh` now recognises every terminal `dwm-terminal` can launch
-  (Sync Sprint 4 S4-05, ported in part from upstream `#255`/`902a138`). Its
-  fallback list stopped at Alacritty, Kitty and st, so a machine whose only
-  terminal was `warp-terminal` or `xterm` was reported as having none, though
-  `dwm-terminal` and `dwm-diagnostics` accept both. When no terminal is found the
-  hint recommends only terminals in the official repositories (Alacritty, Kitty,
-  xterm); `st` and `warp-terminal` are AUR-only, so they are detected but not
-  suggested, unlike upstream's wording. The `dwmterm` integration itself is
-  declined: it is packaged in neither the official repositories nor the AUR
-  (re-checked 2026-09-20), and promoting it to the first probe would make
-  `dwm-terminal` miss on every launch. The default stays `alacritty`.
-
-- `scripts/install-gearlever` now finds `dwm-flatpak-setup` with `CDPATH=''`,
-  like the repo's other scripts. With `CDPATH` exported and a matching
-  directory on it, `cd` printed a path, the helper lookup returned two lines and
-  the helper was not found (exit 127), which `install.sh` only reports as a
-  warning (#80). New case in `tests/test-install-gearlever.sh`.
-
-- Fix two installer and session start-up problems (Sync Sprint 4 S4-04,
-  `docs/SYNC-SPRINT-4-COMPOSITOR-DEFAULTS-RELEASE.md`, ported from upstream
-  `#283`/`378f06e` and the autostart hunk of `44800ba`). `dev-sync-install.sh`
-  no longer demands a dwm restart after a reinstall that leaves the running
-  binary's bytes unchanged: reinstalling unlinks the running executable, and
-  the old check treated that unlinked (`(deleted)`) file as a mismatch before
-  ever comparing bytes, though `/proc/PID/exe` still exposes the inode.
-  It now compares the bytes even when the file is deleted. Separately,
-  `autostart.sh` runs `systemctl --user daemon-reload` before starting
-  `wm-graphical-session.service` every time, instead of only after a failed
-  start, so autostart exclusions an installer seeded after the user manager
-  began apply on the very first login. The new dev-sync test uses a private
-  child process running a deleted copy of a binary, never the host window
-  manager, and registers its cleanup through `lib.sh`'s stack in place of
-  upstream's hand-written trap. Both new assertions were confirmed to fail on
-  the previous code. Upstream's `test-fedora-packages.sh` hunk is not
-  applicable.
-
-- `MountMonitorTests.gone()` in `tests/test-system-management.py` no longer races
-  a process that exits while `/proc/PID/stat` is being read (#94). That read
-  raises `ProcessLookupError` (ESRCH), which the helper did not treat as "gone",
-  so `test_signal_cleanup_and_parent_death` errored about once in three runs in
-  the full-suite CI container. New cases pin both outcomes (an ESRCH read counts
-  as gone; a process that stays alive still fails).
-
-- Fix `scripts/webapp-launch`, which never worked for a user-scoped browser
-  install: unquoted brace expansion ran before tilde expansion, so
-  `~/.local/share/applications` and `~/.nix-profile/share/applications` were
-  never actually searched, only `/usr/share/applications`. The browser
-  resolution was also unquoted (word-split a path containing a space) and
-  parsed `Exec=` with a `sed` pattern that mishandled quoted or
-  backslash-escaped values. Rewritten with proper quoting, spec-correct
-  `Exec=` parsing, and URL validation. A bare `Super+A` ChatGPT launch now
-  prefers an installed desktop app and falls back to the web app only when
-  asked to, without risking recursion back through the launcher.
-- Super+M (fullscreen) no longer shrinks windows when it returns to the floating
-  layout (#83). `fullscreen()` switches to monocle and back with the layout
-  switch, and since the floating-toggle change (S5-03) that switch shrinks
-  every visible tiled window by 15% when it enters the floating layout, so a
-  round trip from the floating layout came back at 85% of the monocle size.
-  `setlayout()` now takes its shrink from a `shrink` flag: the key and button
-  entry point still shrinks, `fullscreen()` does not. New case in
-  `tests/test-xvfb-runtime.sh` (it fails on the previous build, and checks that
-  an explicit switch still shrinks).
-
-- Fix `dwm-settings-input`'s device scan silently reporting zero devices when
-  `xinput --list --short` failed outright, instead of surfacing the failure.
-  It now checks the command's exit status before parsing its output and
-  exits with `die` on failure.
-- `make check-xvfb-runtime` now turns its test's "skipped" exit status (77:
-  Xvfb/xdotool missing) into success like the other Xvfb targets do.
-  `make check-quickshell-settings-loading` does the same when python3 is
-  unavailable, like the other dependency-dependent checks, instead of failing
-  a plain `make check` on such a host (#82). A real failure still fails.
-
-- Fix a race in `dwm-settings-appearance`'s inventory scanner: a named
-  coprocess's PID and file-descriptor bookkeeping could be unset by bash
-  before the caller read them, if the scan finished first. Replaced with
-  process substitution, which captures its PID synchronously and keeps it
-  valid regardless of whether the process has since exited. The scan also no
-  longer inherits the parent shell's stdin.
-- dwm no longer exits when an X client asks for an extreme aspect ratio
-  (`applysizehints()`, an issue that predates Sprint 5). With a tiny maximum
-  aspect and no minimum size the aspect clamp rounded a side to 0, the
-  zero-sized `XConfigureWindow` came back as BadValue, and `xerror()` treated it
-  as fatal, so any X client could end the session (#81). The result is now
-  floored at 1x1. New `extreme-aspect` client mode and case in
-  `tests/test-xvfb-runtime.sh`, which fails on the unpatched build.
-
-- Document the command menu's `menu open|close|toggle|summon` IPC surface,
-  which shipped undocumented since the fork (`tests/test-quickshell-command-menu.sh`
-  asserted the documentation but nothing had ever satisfied it, so
-  `make check` failed on a from-scratch checkout).
-
-### Fixed
-
-- The TOML parser no longer corrupts window rules or drops sections (Sync Sprint 12 S12-05, issue `#168`). In a
-  multi-line array, a `{` inside a trailing comment (`{ class="a" }, # see {docs}`) opened a phantom table: a window rule
-  with no class, instance or title, which matched every window and reset `isterminal`, `noswallow`, `isfloating` and
-  `alwaysontop`, undoing earlier rules such as terminal swallowing. Comments are now stripped from array lines. Closing
-  an array on the line of its last table (`{ ... } ]`) left the parser in array mode, so every later section, such as
-  `[active] theme`, was lost; an array whose first table sat on the opening line lost the rest. `true` and `false` were
-  read as `0.0` inside tables and as strings elsewhere, so `isfloating=true` did nothing; they now parse as `1` and
-  `0`. A `#` after an escaped quote inside a string no longer cuts the string. dwm also skips any window rule with no
-  class, instance or title and logs it. New `tests/test-tomlparser.c` (`make check-tomlparser`, part of `make check`),
-  the first test of the parser itself, covers each case and checks that the shipped `hotkeys.toml`,
-  `window-rules.toml` and `themes.toml` parse to exactly the tables they contain; `tests/test-dwm-config-fallback.sh`
-  checks the rule skip in a running dwm.
-
-- dwm always starts with working keys, and a config file can no longer hang it (Sync Sprint 12 S12-04, issue `#167`).
-  An empty, all-comment or otherwise unusable `~/.config/lyona/hotkeys.toml` at login left dwm with no key bindings at
-  all, not even quit, while the notification said "loaded defaults". dwm now loads the shipped default instead and says
-  so; a file with entries but nothing dwm can bind counts as unusable. On a live reload it keeps the configuration it
-  already had and now says "kept the previous config" instead of "loaded defaults". If neither the user file nor the
-  default loads at startup, two built-in keys remain (Super+x opens `dwm-terminal`, Super+Shift+q quits). The TOML
-  parser opens files without blocking and accepts only regular files up to 1 MiB, so a `hotkeys.toml` that is a
-  symlink to `/dev/zero` (which kept dwm at about 54% CPU and stopped it managing windows) or a FIFO falls back to the
-  default instead. A `tag_keys` tag outside 0-8 is skipped with a message instead of shifting by an out-of-range
-  amount. A SIGUSR1 (reload) or SIGUSR2 (quit) that arrived just before dwm waited for input was not handled until the
-  next X event; the handlers now also write to a pipe that the wait watches. New `tests/test-dwm-config-fallback.sh`
-  (`make check-dwm-config-fallback`, part of `make check`); `tests/test-xvfb-runtime.sh` expects the live-reload
-  message. `docs/src/troubleshooting.md` no longer says invalid TOML fails silently or suggests a `config.h` fallback
-  that does not exist.
-
-- Qt applications follow the selected palette when `qt6ct` or `qt5ct` is installed, and GTK 2 applications can find
-  the generated theme (Sync Sprint 11 S11-06, upstream `#352`, app-theme half). `theme-apply.sh` used to write only
-  `color_scheme_path` into the tool's config, and only if that config already existed; `qt6ct` ignores that path
-  unless `custom_palette=true` (verified: with the path alone Qt reported its default light palette, with both keys it
-  reported the generated Dracula colours), so installing the tool left Qt light on a dark desktop. It now sets both
-  keys, creates a minimal `[Appearance]` config when none exists (`dwm-settings-theme` already snapshots both files,
-  so a created one is removed on rollback), preserves every other key and section, points at the palette's own scheme
-  (falling back to the tool's `darker.conf` for a dark preset with no generated scheme), and leaves the config alone
-  on a runtime-only apply. `scripts/lyona-gtk-theme` now also writes `Lyona-<id>/qt/colors.conf` (the 21 QPalette
-  roles, highlighted text picked by contrast, placeholder text readable at 3:1 or better) and
-  `Lyona-<id>/gtk-2.0/gtkrc`, and the `check-install` inventory lists them. New tests: `check-app-palettes` (structure
-  and contrast for all 15 presets), `check-qt-palette-xvfb` (the generated scheme really becomes Qt's palette under
-  `qt6ct`, with a negative control for `custom_palette`), and `check-theme-apply-qt-palette` (the real
-  `theme-apply.sh`; fails against the original). Without `qt6ct`/`qt5ct`, Qt already followed the generated GTK theme.
-  Not verified: GTK 2 rendering (not installed here), `qt5ct` beyond its config (same keys, only `qt6ct` was run), or
-  a rendered Qt app.
-
-- Shell text is readable on hover and selected surfaces in every palette (Sync Sprint 11 S11-01, completes Sync Sprint
-  6 S6-03 and issue `#116`, ported from upstream `#352`). The shell's hover surface came from the palette's
-  `term_color8`, ANSI bright-black, which is a terminal foreground and not a UI surface, and hover text was the plain
-  foreground on top of it. Computed from `config/themes.toml`, all 5 light presets and 6 of the 10 dark ones fell
-  below 4.5:1 on hover, and Solarized Light's strong text on hover was 1.00:1. `Theme.qml` now derives a light hover
-  surface from the light background (`lightHover()`), and picks each hover, focus, selected and action text role with
-  `readableText()` and `readableTextOnSurfaces()`, which keep the palette colour when it reaches 4.5:1 and fall back
-  to black or white otherwise (`luminance()` also reads a `#AARRGGBB` string). 13 components take upstream's patch
-  unchanged and `LauncherResultDelegate.qml` and `ControlsWindow.qml` needed small hand merges. New `make
-  check-quickshell-theme-contrast` loads the real `Theme` singleton for all 15 palettes (built with the key mapping
-  read from `dwm-settings-appearance`, so it cannot drift), asserts 174 role/surface pairs at 4.5:1 with its own
-  independent contrast maths, and checks a dark-to-light-to-dark switch in one process; against the original
-  `Theme.qml` it fails 105 of the 174 assertions across 14 presets. Not verified by eye: check a light preset
-  (Solarized Light, Catppuccin Latte) and a dark one on the launcher, control center, network and Settings surfaces.
-
-- `tests/test-xvfb-runtime.sh` no longer raises a critical "dwm: bad config" notification on the real desktop (Sync
-  Sprint 11 S11-04, upstream `#354` test half). The test writes a deliberately invalid `hotkeys.toml`, and dwm reports
-  it through `notify-send`; the test's separate X display still inherited the caller's D-Bus session, so every run of
-  `make check` on a live desktop showed a critical notification. A fake `notify-send` now goes first on dwm's `PATH`
-  and logs its arguments, and the test asserts that a valid configuration emits nothing and that the invalid one is
-  reported as `-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults`. dwm reports once per load
-  (its file watcher and the test's `USR1` each reload), so the assertion is "at least once". No other test that
-  launches dwm writes an invalid configuration.
-
-- The cross-tag window overview's type-to-filter and close-from-card did nothing, and the popup logged
-  `WindowOverview.qml: Unable to assign [undefined] to QString` and `TypeError: Cannot read property 'length' of
-  undefined` as soon as the shell loaded (Sync Sprint 10 S10-01). PR #138 merged `WindowOverview.qml`,
-  `OverviewCard.qml` and `OverviewFilter.js` but not the model half: `OverviewModel.qml` defined no `query`,
-  `setQuery()` or `closeCard()` and never imported `OverviewFilter.js`. It now has `query`, `closingIds`,
-  `visibleWindows` (the filtered list `groups` is built from), `setQuery()`, `closeCard()`, and clamps `selectedIndex`
-  whenever the card list shrinks; `open()`/`close()` reset the query and pending closes. The same error failed
-  `check-quickshell-queued-run-xvfb`, `-picom-model-xvfb`, `-settings-responsiveness-xvfb`, `-update-progress-xvfb`
-  and `-wallpaper-reconcile-xvfb`, which load the real shell, so `make check` stopped at the first of them and never
-  reached the rest. `tests/test-quickshell-overview.sh` now also fails when any member the overview QML reads off the
-  model is not defined on it, which is the check that was missing.
-- `check-quickshell-command-menu` had been failing since the overview popup landed (#135), which changed
-  `shell.qml`'s launcher `onVisibleChanged` block from a one-line `if` to a block that also closes the overview; the
-  test pinned the old one-line text. It now pins the behavior (opening the launcher closes the command menu and the
-  overview) instead of the formatting (Sync Sprint 10 S10-02).
-- `make check` never ran `check-quickshell-health-navigation-xvfb`, `check-quickshell-information-ui-xvfb` or
-  `check-quickshell-health-xvfb`, although Sprint 2 and `ROADMAP.md` Phase 6 cite them as evidence; it now does. The
-  root-only, container-only `tests/test-settings-display-security.sh` was referenced nowhere; it now has
-  `make check-settings-display-security` (skips outside a container, exit 77 convention) and a `display-security` job
-  in the manual **Full suite** workflow that runs it as root in a disposable `archlinux:base-devel` container (Sync
-  Sprint 10 S10-03).
-
-- The manual **Full suite** workflow passed on `main` at `90f20f1` on 2026-09-26 (https://github.com/technicks89/Lyona/actions/runs/36242445295): `make check`
-  (including the 686 `tests/test-system-management.py` tests and `check-quickshell-overview-xvfb`), the new
-  `display-security` job, and the clang build all green. It had failed on all three earlier runs (2026-09-21) and had
-  not been run since; this is the first passing run since the workflow was introduced (Sync Sprint 10 S10-06).
-
-- The cross-tag window overview (Sync Sprint 7 S7-01 through S7-03, issue `#350`) was broken end to end since
-  `scripts/dwm-quickshell-state` and `DwmState.qml` gained a `windowStates`/percent-encoding rework: `client_snapshot()`'s
-  awk script called `sanitize_class()` without defining it, a fatal awk error that crashed `windows=`/`apps=` output
-  outright whenever any client window existed; `DwmState.windowsByTag()` and `OverviewModel.qml`'s own `groups` property
-  both still read a `root.windows`/`root.dwmState.windows` property that had been renamed to `windowStates`, so both threw
-  `is not a function`/`undefined` errors even once the crash above was fixed; and `DwmStateWindows.js`'s `groupByTag()` --
-  the function `OverviewModel.groups` actually calls -- had been dropped entirely. `client_snapshot()`'s awk script also
-  carried three literal duplicate copies of its `_NET_WM_NAME`/`WM_NAME` title-parsing rules, a harmless but clearly
-  accidental leftover, now down to one. Finished the in-progress percent-encoding a `WM_CLASS` needs to survive this
-  wire format's own `:`/`|` separators intact rather than losing information (unlike a title's own lossy space
-  replacement): `sanitize_class()` now actually escapes `%`/`:`/`|` (order matters: `%` first, so the `%` its own
-  escaping introduces is never re-escaped), restored consistently in both `client_snapshot()` and `window_class()`, and
-  a new `DwmStateWindows.js` `decodeClass()` reverses it on the QML side (`DwmState.qml`'s `apps`/`class` parsing and
-  `parseWindows()`'s `appClass`), the same safe try/catch pattern `Icons.qml`'s own `decodeIconPart()` already uses.
-  `tests/test-quickshell-state.sh` had its own problems compounding all of this: two contradictory `expect 'windows=...'`
-  blocks (one with a class value neither code path ever produced), a fifth `0xee` client window referenced by its
-  live-`watch` assertions but never actually given a case in the xprop stub (silently falling through to a generic
-  catch-all), and a live-title-update scenario that could never pass because only the stub's `-spy` branch reacted to
-  its own touch-file signals, not the regular re-poll a real X server would also reflect after an actual property
-  change. Rewritten to be internally consistent, with `0xee` now a real percent-encoding round-trip case, and two
-  `check-shell`-failing shellcheck issues in the same file (an unused loop variable in three `for attempt in {1..100}`
-  polling loops, converted to the codebase's own `i=0`/`while` idiom; a deferred single-quoted `cleanup_add` expansion
-  that is correct by design, now annotated) fixed alongside it -- `make check-shell` itself was failing on `main`.
-  `tests/qml/tst_dwm_state_windows.qml` gained matching coverage for `groupByTag()` and `decodeClass()` (9 new tests,
-  6/6 mutations caught across both fixes). `tests/test-quickshell-overview.sh` (Sprint 7 S7-03's own structural-pin
-  test, which had merged but never actually run since: its last assertion pinned `groupByTag()`'s old 3-argument
-  signature, so it always failed silently) is fixed and grown four more pins that would have caught the `windowStates`
-  rename and the undefined `sanitize_class()` immediately, including one that greps `client_snapshot()`'s own awk block
-  specifically -- the exact per-invocation scoping mistake that let `sanitize_class()` compile fine as a whole file
-  while still being undefined where it was actually called. Found by trying to build Sprint 8 on top of what `main`
-  already had, not by a report -- every one of these was reproduced directly (a real awk crash, a real qmltestrunner
-  `is not a function`, a real shellcheck failure) before being fixed, not inferred from reading the diff.
-
 ## [2026.08.0-beta.1] - 2026-08-28
 
 First beta of the Arch Linux line. See
@@ -2272,6 +2371,7 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.1...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.2...HEAD
+[2026.10.0-beta.2]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.1...v2026.10.0-beta.2
 [2026.10.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.08.0-beta.1...v2026.10.0-beta.1
 [2026.08.0-beta.1]: https://github.com/technicks89/Lyona/releases/tag/v2026.08.0-beta.1

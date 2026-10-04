@@ -18,14 +18,16 @@ postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
 functions=$work/functions.sh
 {
 	awk '/^export LEGACY_NVIDIA_PINS=/{f=1} f{print} f && /'"'"'$/{exit}' "$postinstall"
-	for name in installed_kernels install_legacy_nvidia_driver install_gpu_drivers; do
+	for name in note_warning installed_kernels install_legacy_nvidia_driver install_gpu_drivers; do
 		awk -v name="$name" '$0 ~ "^" name "\\(\\) \\{$" {f=1} f{print} f && /^}$/{exit}' "$postinstall"
 	done
 } >"$functions"
-for name in installed_kernels install_legacy_nvidia_driver install_gpu_drivers; do
+for name in note_warning installed_kernels install_legacy_nvidia_driver install_gpu_drivers; do
 	grep -q "^$name() {" "$functions" || fail "could not read $name from the postinstall"
 done
 grep -q '^export LEGACY_NVIDIA_PINS=' "$functions" || fail 'could not read the pin table'
+# What did not go as chosen is kept for the closing screen (Sync Sprint 16 R16-22).
+export LYONA_WARNINGS=$work/warnings
 
 stub=$work/stub
 mkdir -p "$stub/bin"
@@ -146,7 +148,7 @@ for branch in 580xx 470xx; do
 	assert_file "$target/packages/linux-headers" 'pre-existing headers'
 	assert_file "$target/packages/linux-cachyos-headers" 'new unrelated headers'
 	assert_no_file "$target/packages/nvidia-580xx-utils" 'new nouveau blacklist removed'
-	assert_string_contains "$out" 'leaving the open-source nouveau driver in place'
+	assert_string_contains "$out" 'the open-source nouveau driver is in use instead'
 	awk '/^pacman -R/ { cleaned=1 } /makepkg/ && !cleaned { exit 1 }' "$work/log" || fail 'cleanup ran after AUR build'
 done
 out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_MAKEPKG_FAIL=1 \
@@ -155,7 +157,7 @@ assert_file "$target/packages/nvidia-580xx-utils" 'pre-existing 580xx utils'
 assert_no_file "$target/packages/nvidia-470xx-utils" 'new 470xx utils removed'
 out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_REMOVE_FAIL=1 \
 	STUB_PARTIAL_INSTALL='nvidia-580xx-utils' legacy 580xx)
-assert_string_contains "$out" 'could not remove the newly installed legacy NVIDIA packages'
+assert_string_contains "$out" 'Could not remove the newly installed legacy NVIDIA packages'
 grep -q 'makepkg --noconfirm' "$work/log" || fail 'cleanup failure stopped AUR fallback'
 
 # ── the pinned AUR build, as the new user ───────────────────────────────
@@ -181,7 +183,8 @@ out=$(STUB_MAKEPKG_FAIL=1 legacy 580xx)
 grep -q '^pacman -U' "$work/log" && fail 'a failed build still installed packages'
 [[ ! -e $target/var/tmp/lyona-nvidia-580xx ]] || fail 'a failed build left its directory'
 assert_no_file "$work/aur-marker" 'the AUR marker after a failed build'
-assert_string_contains "$out" 'leaving the open-source nouveau driver in place'
+assert_string_contains "$out" 'the open-source nouveau driver is in use instead'
+assert_string_contains "$(cat "$LYONA_WARNINGS")" 'The NVIDIA 580xx driver could not be built'
 
 # ── the 470xx driver uses its own pin ───────────────────────────────────
 sed -i 's/580xx/470xx/g' "$work/srcinfo"
@@ -205,7 +208,7 @@ dispatch() { # DEVICE OPT-IN
 assert_string_contains "$(dispatch 2684 1)" 'open driver'
 assert_string_contains "$(dispatch 1b80 1)" 'legacy 580xx 1b80'
 assert_string_contains "$(dispatch 0fc6 1)" 'legacy 470xx 0fc6'
-assert_string_contains "$(dispatch 06c0 1)" 'no packaged NVIDIA driver supports GPU 10de:06c0'
+assert_string_contains "$(dispatch 06c0 1)" 'No packaged NVIDIA driver supports GPU 10de:06c0'
 assert_string_contains "$(dispatch 1b80 0)" 'leaving the open-source nouveau driver in place'
 
 printf 'Legacy NVIDIA driver install (stub chroot): PASS\n'

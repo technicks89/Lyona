@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -108,7 +109,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "defaults-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 5
                     && fields[1] === "defaults" && root.validState(fields[2])
                     && fields[3] === "user-session") {

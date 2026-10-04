@@ -208,16 +208,13 @@ privilege_mode() {
 		printf 'direct\n'
 		return
 	fi
-	case ${DWM_HEALTH_ELEVATOR:-} in
-	sudo) printf '%s\n' "$DWM_HEALTH_ELEVATOR" ;;
-	*) printf 'none\n' ;;
-	esac
+	printf 'none\n'
 }
 
 run_privileged_bounded() {
 	local name=$1
 	shift
-	local executable elevator
+	local executable
 
 	if [[ ${DWM_HEALTH_TEST_ROOT:-0} == 1 ]]; then
 		executable=$(command -v "$name" 2>/dev/null || true)
@@ -230,10 +227,6 @@ run_privileged_bounded() {
 	}
 	case $(privilege_mode) in
 	direct) run_bounded "$executable" "$@" ;;
-	sudo)
-		elevator=$(trusted_system_command sudo) || return 127
-		run_bounded "$elevator" -n -- "$executable" "$@"
-		;;
 	*)
 		printf 'privileged authorization is unavailable\n' >&2
 		return 1
@@ -765,31 +758,19 @@ scan_system() {
 # PREFIX/bin with no action of its own; the root helper allows only scan-system
 # and a checked repair-system, and runs the installed copy of this script.
 trusted_system_helper() {
-	local candidate
 	[[ ${DWM_HEALTH_TEST_ROOT:-0} != 1 ]] || return 1
-	for candidate in "${SCRIPT_DIR%/bin}/libexec/lyona/dwm-system-health-root" \
-		/usr/local/libexec/lyona/dwm-system-health-root \
-		/usr/libexec/lyona/dwm-system-health-root; do
-		trusted_file "$candidate" || continue
-		printf '%s\n' "$candidate"
-		return 0
-	done
-	return 1
+	trusted_root_helper_path dwm-system-health-root "$SCRIPT_DIR/dwm-system-health" dwm-system-health
 }
 
+# Always the installed helper through polkit, which asks each time: never a
+# cached sudo session, which would run privileged work without the user's
+# explicit say (Sync Sprint 16 R16-14).
 scan_privileged() {
-	local helper sudo_command pkexec_command
-
-	if sudo_command=$(trusted_system_command sudo); then
-		if "$sudo_command" -n -v >/dev/null 2>&1; then
-			DWM_HEALTH_ELEVATOR=sudo "$SCRIPT_DIR/dwm-system-health" scan-system
-			return
-		fi
-	fi
+	local helper pkexec_command
 
 	pkexec_command=$(trusted_system_command pkexec || true)
 	if [[ -z $pkexec_command ]]; then
-		emit_meta overview restricted scan-system "Privileged scan" "No authorization method available" "Install sudo or polkit, then refresh"
+		emit_meta overview restricted scan-system "Privileged scan" "No authorization method available" "Install polkit, then refresh"
 		return 1
 	fi
 	if helper=$(trusted_system_helper); then
@@ -895,14 +876,9 @@ repair_user() {
 		systemctl --user restart "${units[@]}"
 		;;
 	install-dependencies)
-		local installer=$SCRIPT_DIR/../install.sh
-		if [[ -x $installer ]] && command -v dwm-terminal >/dev/null 2>&1; then
-			local quoted_dir
-			printf -v quoted_dir '%q' "${installer%/*}"
-			dwm-terminal -e bash -lc "cd $quoted_dir && exec ./install.sh"
-		else
-			control_helper_action dependency-check
-		fi
+		# One installer flow, the Control Center's: a checkout's install.sh, or
+		# the installed package library (Sync Sprint 16 R16-03).
+		control_helper_action install-missing-deps
 		;;
 	*)
 		printf 'unsupported user repair: %s\n' "$action" >&2
@@ -955,7 +931,7 @@ repair_system() {
 
 repair_privileged() {
 	local action=${1:-}
-	local helper sudo_command pkexec_command
+	local helper pkexec_command
 
 	case $action in
 	manage-system-service\|* | restart-networkmanager | restart-bluetooth | repair-time-sync) ;;
@@ -964,15 +940,10 @@ repair_privileged() {
 		return 2
 		;;
 	esac
-	if sudo_command=$(trusted_system_command sudo); then
-		if "$sudo_command" -n -v >/dev/null 2>&1; then
-			DWM_HEALTH_ELEVATOR=sudo "$SCRIPT_DIR/dwm-system-health" repair-system "$action"
-			return
-		fi
-	fi
+	# polkit only, as for the scan (Sync Sprint 16 R16-14).
 	pkexec_command=$(trusted_system_command pkexec || true)
 	[[ -n $pkexec_command ]] || {
-		printf 'neither passwordless sudo nor pkexec is available\n' >&2
+		printf 'pkexec is not available\n' >&2
 		return 1
 	}
 	if helper=$(trusted_system_helper); then

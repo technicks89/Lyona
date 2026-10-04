@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import qs.core
 import "DisplayLayout.js" as DisplayLayout
+import "../core/Protocol.js" as Protocol
 
 Scope {
     id: root
@@ -254,7 +255,7 @@ Scope {
         let dpiRecommended = 0;
         for (const line of text.trim().split("\n")) {
             const fields = line.split("\t");
-            if (fields[0] === "display-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "display-protocol", 1)) {
                 valid = true;
             } else if (fields[0] === "output" && fields.length >= 9) {
                 const geometry = DisplayLayout.size({ mode: fields[4], rotation: fields[7] });
@@ -338,7 +339,7 @@ Scope {
         let valid = false;
         for (const line of text.trim().split("\n")) {
             const fields = line.split("\t");
-            if (fields[0] === "input-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "input-protocol", 1)) {
                 valid = true;
             } else if (fields[0] === "device" && fields.length >= 5) {
                 devices.push({ "key": fields[1], "xid": fields[2], "kind": fields[3], "name": fields[4] });
@@ -784,7 +785,7 @@ Scope {
 
         for (const line of lines) {
             const fields = line.split("\t");
-            if (fields[0] === "settings-protocol" && fields[1] === "1") {
+            if (Protocol.isHeader(fields, "settings-protocol", 1)) {
                 validProtocol = true;
             } else if (fields[0] === "platform" && fields.length >= 4) {
                 root.platformId = fields[1];

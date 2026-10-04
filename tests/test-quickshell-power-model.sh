@@ -27,8 +27,8 @@ grep -Fq 'property bool nativeProfileObserved: false' "$model"
 grep -Fq 'if (root.nativeProfileObserved) root.updateNativeProfile();' "$model"
 
 grep -Fq 'fields[0] === "power-protocol"' "$model"
-grep -Fq 'fields.length >= 3 && fields[1] === "1"' "$model"
-grep -Fq 'root.boundedInteger(fields[2], 0, 2147483647) >= 0' "$model"
+# The header through the shared rule (Sync Sprint 16 R16-53).
+grep -Fq 'protocolValid = Protocol.validHeader(fields, 1);' "$model"
 grep -Fq '!/^[0-9]+$/.test(value)' "$model"
 grep -Fq '!/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(value)' "$model"
 grep -Fq '!protocolValid || !providerSeen' "$model"

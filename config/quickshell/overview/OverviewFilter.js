@@ -1,7 +1,7 @@
 .pragma library
 
 // Pure type-to-filter matching for the overview popup (Sync Sprint 8 S8-03,
-// docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md), the launcher's own matching
+// docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md), the launcher's own matching
 // convention (case-insensitive substring, LauncherModel.qml's own
 // refreshFilteredApps()) applied to a window's title/class instead of an
 // app's name. Filters the raw windows list *before* groupByTag() runs, so
@@ -22,7 +22,7 @@ function filterWindows(windows, query) {
 }
 
 // Closing a card from the overview (Sync Sprint 8 S8-04,
-// docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) removes it immediately rather
+// docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) removes it immediately rather
 // than waiting for the next watch update to notice: DwmState.windowStates
 // only refreshes when dwm-quickshell-state's watch stream reports the
 // _NET_CLIENT_LIST change, which lags the close request itself. Filtering

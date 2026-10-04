@@ -4,7 +4,7 @@ import qs.core
 import qs.settings
 
 /*
- * Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation),
+ * Sync Sprint 2 S2-06 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation),
  * ported from upstream's cc96efd (#287), following tests/test-quickshell-update-ui-xvfb.sh's
  * established isolated-shell.qml pattern (cp -a config/quickshell/{core,settings}
  * into a scratch directory, swap this file in as shell.qml).

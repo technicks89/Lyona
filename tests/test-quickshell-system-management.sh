@@ -414,7 +414,7 @@ grep -Fq 'objectName: "systemLocalTime"' "$system_pane"
 grep -Fq 'function clockPanelText(): string' "$settings_test_ipc"
 grep -Fq 'function clockSettingsText(): string' "$settings_test_ipc"
 
-# Sync Sprint 2 S2-06 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation):
+# Sync Sprint 2 S2-06 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-06-settings-information-card-and-health-navigation):
 # the information/storage/security/diagnostics card and Health navigation.
 information_controls=$repo/config/quickshell/settings/SystemInformationControls.qml
 test -f "$information_controls"
@@ -423,7 +423,7 @@ grep -Fq 'signal revealRequested(var target)' "$information_controls"
 grep -Fq 'onActivated: root.model.openHealth()' "$information_controls"
 grep -Fq 'SystemInformationControls {' "$system_pane"
 grep -Fq 'informationControls.revealFocusedControl();' "$system_pane"
-# D-5 (docs/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers):
+# D-5 (docs/sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-02-security-status-readers):
 # firewalld/ufw/nftables are three distinct rows here, not upstream's single
 # "Firewall service" row -- read_firewall_status(kind) reports each
 # independently.

@@ -193,6 +193,17 @@ Scope {
         root.runAction(requestedAction, source);
     }
 
+    // Opens the menu at ACTION's confirmation, for a key binding (Sync Sprint
+    // 16 R16-24). Only an action that asks first: anything else is ignored, so
+    // this never runs an action by itself. (confirmAction is the "yes" that
+    // runs the pending action.)
+    function askToConfirm(actionId) {
+        const requestedAction = root.actionForId(actionId);
+        if (!requestedAction || !requestedAction.confirm) return;
+        root.open("panel");
+        root.requestAction(requestedAction, "panel");
+    }
+
     function cancelConfirmation(origin) {
         if (root.busy) return;
         const source = root.originOrDefault(origin);

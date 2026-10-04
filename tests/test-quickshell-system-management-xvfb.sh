@@ -193,7 +193,7 @@ snapshot | snapshot-core | snapshot-without-storage)
 	printf 'action\ttimezone-set\tavailable\tdelegated\tregional\tChange timezone\tChange the system timezone\n'
 	printf 'action\tntp-set\tavailable\tdelegated\tregional\tConfigure network time\tToggle network time synchronization\n'
 	printf 'action\tlocale-set\tavailable\tdelegated\tregional\tChange locale\tChange the system locale\n'
-	# D-3 (docs/UPSTREAM-SYNC.md#open-decisions): accounts-open/sources-open
+	# D-3 (docs/sprints/UPSTREAM-SYNC.md#open-decisions): accounts-open/sources-open
 	# are permanently unavailable on Arch; the stub reports exactly that
 	# real shape so the pane's disabled buttons are exercised for real.
 	printf 'action\taccounts-open\tunavailable\tdelegated\taccounts\tAccounts\tNo account-management tool is packaged for Arch\n'

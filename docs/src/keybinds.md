@@ -14,6 +14,7 @@ Bindings are defined in `config/hotkeys.toml` and reload instantly on save — n
 | Keys | Action |
 |------|--------|
 | `Super` + `R` | App launcher (Quickshell) |
+| `Super` + `O` | Window overview: every window on every tag ([Getting Started](./getting-started.md#the-window-overview)) |
 | `Super` + `X` | Alacritty terminal |
 | `Super` + `E` | File manager |
 | `Super` + `B` | Browser |
@@ -124,8 +125,9 @@ and resizing keep the geometry they start from.
 | Keys | Action |
 |------|--------|
 | `Super` + `Ctrl` + `Q` | Power menu |
-| `Super` + `Shift` + `Q` | Quit dwm and cleanly end the graphical session |
-| `Super` + `Ctrl` + `Shift` + `R` | Reboot |
+| `Super` + `Shift` + `Q` | Log out: opens the power menu at its confirmation |
+| `Super` + `Ctrl` + `Shift` + `Q` | Quit dwm at once, without asking; for when the shell is not running |
+| `Super` + `Ctrl` + `Shift` + `R` | Reboot: opens the power menu at its confirmation |
 | `Super` + `Ctrl` + `Shift` + `S` | Suspend |
 
 ## Mouse

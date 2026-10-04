@@ -1,6 +1,6 @@
 # S11-06 -- Qt palettes for qt5ct/qt6ct and a GTK 2 theme
 
-Plan: `docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-06`. Issue `#157`.
+Plan: `docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md#s11-06-qt-palettes-for-qt5ctqt6ct-and-a-gtk-2-theme`. Issue `#157`.
 
 ## The fault (verified 2026-09-26, qt6ct 0.11, Qt 6)
 

@@ -8,7 +8,6 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 # shellcheck source=scripts/dwm-paths.sh
 . "$lyona_lib/dwm-paths.sh"
 
-repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 lyona_xdg_dirs
@@ -470,8 +469,9 @@ read_terminal_command() {
 current_hotkeys_file() {
 	if safe_regular_state_file "$hotkeys_file"; then
 		printf '%s\n' "$hotkeys_file"
-	elif safe_regular_state_file "$repo_dir/config/hotkeys.toml"; then
-		printf '%s\n' "$repo_dir/config/hotkeys.toml"
+	elif shipped=$(lyona_default_config_dir "$lyona_lib") && safe_regular_state_file "$shipped/hotkeys.toml"; then
+		# The shipped defaults, installed or in a checkout (Sync Sprint 16 R16-03).
+		printf '%s\n' "$shipped/hotkeys.toml"
 	else
 		return 1
 	fi

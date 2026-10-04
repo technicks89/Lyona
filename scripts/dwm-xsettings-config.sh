@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sourced, not executed. Shared by scripts/dwm-settings-display and
 # scripts/theme-apply.sh (Sync Sprint 3 S3-06 #304,
-# docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md) so both programs edit the
+# docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md) so both programs edit the
 # same xsettingsd.conf through one writer: replacing one key's line while
 # preserving every other line, including the other program's own key.
 

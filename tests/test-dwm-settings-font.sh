@@ -514,11 +514,13 @@ status=$(DWM_SETTINGS_FONT_NOW=8006 DWM_SETTINGS_FONT_BOOT_ID=$test_boot_new run
 grep -Fq $'preview\tfailed\tpreview-watchdog-external\tInter\t0.80\t0\tFont configuration changed outside Settings; automatic rollback was not applied' <<<"$status"
 DWM_SETTINGS_FONT_BOOT_ID=$test_boot_new run_font_watchdog abandon preview-watchdog-external >/dev/null
 
-run_font_watchdog preview preview-watchdog-lock 5 'Noto Sans' 1.25 >/dev/null
+# The watchdog waits 1 s for the lock at a time here, not 5 (DWM_PREVIEW_LOCK_WAIT,
+# Sync Sprint 16 R16-42): held 2.5 s, past the 5 s preview, it retries twice.
+DWM_PREVIEW_LOCK_WAIT=1 run_font_watchdog preview preview-watchdog-lock 5 'Noto Sans' 1.25 >/dev/null
 watchdog_lock=$state/lyona/appearance/font/mutation.lock
 exec 8>"$watchdog_lock"
 flock -x 8
-sleep 10.5
+sleep 7.5
 flock -u 8
 exec 8>&-
 i=0

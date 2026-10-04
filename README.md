@@ -6,13 +6,13 @@
   <p><strong>An Arch Linux X11 desktop built for keyboard-driven work</strong></p>
   <p>
     <a href="https://dwm.technicks89.com">Documentation</a> |
-    <a href="https://github.com/technicks89/Lyona/releases/latest">Latest release</a> |
+    <a href="https://github.com/technicks89/Lyona/releases">Releases</a> |
     <a href="./CHANGELOG.md">Changelog</a> |
     <a href="./CONTRIBUTING.md">Contributing</a>
   </p>
 </div>
 
-![The Lyona desktop with its Quickshell panel](./lyona-qs-4x.webp)
+![The Lyona desktop with its Quickshell panel](assets/screenshots/lyona-qs-4x.webp)
 
 This is a fork of [dwm-titus](https://github.com/ChrisTitusTech/dwm-titus). It is designed to run on Arch Linux rather than Fedora. 
 Lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy). 
@@ -44,44 +44,9 @@ the existing-system installer on Arch Linux.
 
 ## Recent Changes
 
-Highlights from the last few development phases. See
-[CHANGELOG.md](./CHANGELOG.md) for the complete, unabridged list.
-
-### Features
-
-- Show or hide individual panel widgets (workspace, volume, Bluetooth,
-  network, power) from Settings, persisted across every monitor and a fresh
-  session.
-- Settings now reports accessibility maturity per capability — text scale,
-  contrast, reduced motion, notification policy, and keyboard/pointer access
-  — instead of a single all-or-nothing accessibility state.
-- The Settings window was resized and its navigation, panes, and display
-  controls tightened, so more options stay visible without shrinking your
-  configured text scale.
-
-### Bug Fixes
-
-- Fixed a `Super+A` ChatGPT/webapp launch that never found a user-scoped
-  browser install; it now correctly prefers an installed desktop app and
-  falls back to the web app only when asked to.
-- Fixed `dwm-settings-input` silently reporting zero input devices when
-  `xinput` failed outright, instead of surfacing the failure.
-- Fixed a rare race in the appearance inventory scanner that could lose
-  track of an in-progress scan.
-
-### Security Updates
-
-- Closed the last installer paths that could pipe an unverified remote
-  script into `sudo sh`, or build an unpinned clone as root (the Starship,
-  fzf, zoxide, and `yay-bin` fallbacks).
-- `xscreensaver`-based screen blanking is now wired into the real lock
-  chain, so it actually locks the session instead of just going dark.
-- The CachyOS package-signing key is now fingerprint-verified before it's
-  trusted, instead of trusting whatever a keyserver returns for its key ID.
-- `dwm` now builds with standard compiler hardening (stack protector, PIE,
-  RELRO, fortified source, format-security warnings).
-- Closed a `.desktop`-file injection path in `webapp-create` and added a
-  dedicated polkit consent prompt for display-settings changes.
+The newest release's notes summarize what changed and what is still being
+qualified: [2026.10.0-beta.2](./docs/RELEASE-NOTES-2026.10.0-beta.2.md).
+[CHANGELOG.md](./CHANGELOG.md) has the complete list.
 
 ## Install
 
@@ -104,22 +69,26 @@ package, on an Arch host):
 sudo scripts/build-lyona-arch-iso.sh
 ```
 
-The image is named for the release it was built from, so the current
-checkout produces `out/lyona-2026.08.0-x86_64.iso`. A booted medium
-reports its exact build in `/etc/lyona-iso-release`.
+The image is named for the release it was built from, `VERSION` in
+`config.mk`: `out/lyona-VERSION-x86_64.iso`. A booted medium reports its exact
+build in `/etc/lyona-iso-release`.
 
-Write the resulting ISO to a USB drive and boot it (UEFI only). The
-`lyona-install` wizard launches automatically — arrow-key menus for
-disk/keyboard, a few prompts for user/hostname/timezone, no
-desktop-environment picker — then drives `archinstall` unattended and
-automatically finishes installing Lyona. ISO installs get the `multilib`
+Pre-release images are published on the
+[Releases](https://github.com/technicks89/Lyona/releases) page, each with a
+`SHA256SUMS` file; check the download with `sha256sum -c SHA256SUMS` before
+writing it.
+
+Write the ISO to a USB drive and boot it (UEFI only). The `lyona-install`
+wizard launches automatically. It asks, in menus: the keyboard layout, the disk
+to erase, btrfs or ext4 with optional LUKS encryption, your user and password,
+the hostname, the timezone (detected, for you to confirm), and, on an NVIDIA
+GPU, which driver. Nothing is written until you confirm the summary. It then
+drives `archinstall` unattended and finishes installing Lyona. ISO installs get the `multilib`
 and [CachyOS](https://cachyos.org) repositories and both the `linux-cachyos`
 and `linux-cachyos-lts` kernels without being asked; the stock Arch kernel
 stays the default boot entry, so the CachyOS ones are there to select, not
 to surprise you. See the
 [Installation Guide](https://dwm.technicks89.com/install.html) for details.
-No prebuilt ISO is currently published as a release; build one yourself
-with the script above.
 
 ### Existing System
 
@@ -140,8 +109,8 @@ before making changes.
 | Profile | Includes |
 | --- | --- |
 | `core` | The X11 session, required dependencies, and one terminal emulator. |
-| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Gear Lever for AppImages, Topgrade (built with cargo), theming, screenshots, audio, and brightness tools. |
-| `full` | The recommended desktop plus optional file-manager, keyring, wallpaper, display-manager, and supported Arch gaming integrations (Steam, Gamescope, GameMode, MangoHud via `multilib`). |
+| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, GNOME Keyring, Gear Lever for AppImages, Topgrade (built with cargo), theming, screenshots, audio, and brightness tools. |
+| `full` | The recommended desktop plus optional file-manager, wallpaper, display-manager, and supported Arch gaming integrations (Steam, Gamescope, GameMode, MangoHud via `multilib`). |
 
 On x86_64, `--enable-cachyos-repos` adds the [CachyOS](https://cachyos.org)
 repositories for this CPU's ISA level, and `--cachyos-kernel` also installs
@@ -277,4 +246,4 @@ scripts/run-tests
 ```
 
 Project requirements and active work are tracked in [SPEC.md](SPEC.md),
-[ROADMAP.md](ROADMAP.md), and [TASKS.md](TASKS.md).
+[ROADMAP.md](docs/roadmap/ROADMAP.md), and [TASKS.md](docs/roadmap/TASKS.md).

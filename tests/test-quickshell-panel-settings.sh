@@ -317,7 +317,7 @@ assert_contains "$helper" 'while ((attempt < max_restore_attempts)); do'
 assert_contains "$helper" 'Give that edit one final guarded'
 assert_contains "$helper" "current_fingerprint == \"\$expected_fingerprint\""
 
-assert_contains "$model" 'panel-settings-protocol\t1\t0'
+assert_contains "$model" '"panel-settings-protocol", 1)'
 assert_contains "$model" 'Component.onCompleted: root.refresh()'
 assert_contains "$model" 'watchChanges: true'
 assert_contains "$model" 'property bool refreshPending: false'

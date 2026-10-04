@@ -103,6 +103,7 @@ Save the file to apply a new theme instantly across supported apps.
 | Script | Description |
 |--------|-------------|
 | `dwm-controlcenter` | Quickshell control center (`Super`+`F1`) |
+| `lyona-shell` | Opens a part of the shell: `launcher toggle`, `overview toggle`, `controlcenter open\|toggle\|openKeybinds`, `power toggle`, `power confirm logout\|reboot`. The default keybinds call it; use it in your own `hotkeys.toml` rather than Quickshell's IPC, which can change between releases |
 | `dwm-keybinds` | Searchable keybind viewer (`Super`+`/`) |
 | `dwm-quickshell-launcher` | Indexes desktop entries and launches ChatGPT with a native-first web fallback |
 | `dwm-screenshot` | Cursor-free `maim` wrapper (screen, full, gui, clip modes) |

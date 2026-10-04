@@ -157,6 +157,27 @@ registry_was_there=false
 lyona_xdg_dirs
 cache_dir=$cache_home/lyona
 mkdir -p -- "$cache_dir"
+# Parallel compile jobs: one per 2 GiB of available memory, at least one and
+# at most one per CPU, so a 4 GiB machine does not run out of memory (Sync
+# Sprint 16 R16-33). A CARGO_BUILD_JOBS the user set is kept.
+build_jobs() {
+	local key value _ available_kib=0 cpus jobs
+	if [[ ${CARGO_BUILD_JOBS:-} =~ ^[1-9][0-9]*$ ]]; then
+		printf '%s\n' "$CARGO_BUILD_JOBS"
+		return
+	fi
+	while read -r key value _; do
+		[[ $key == MemAvailable: ]] || continue
+		available_kib=$value
+		break
+	done <"${INSTALL_TOPGRADE_MEMINFO:-/proc/meminfo}"
+	cpus=$(nproc 2>/dev/null) || cpus=1
+	jobs=$((available_kib / (2 * 1024 * 1024)))
+	((jobs >= 1)) || jobs=1
+	((jobs <= cpus)) || jobs=$cpus
+	printf '%s\n' "$jobs"
+}
+
 build=$(mktemp -d "$cache_dir/topgrade-build.XXXXXX") || die "cannot create a build directory in $cache_dir"
 # On every exit, a failed or timed-out build included: the build directory, and
 # the crate downloads when this build created the registry.
@@ -172,8 +193,11 @@ else
 fi
 # --force replaces an older build, including one from before this script
 # looked up the newest release.
+jobs=$(build_jobs)
+say "building with $jobs parallel job(s)."
 timeout --kill-after=30 "$build_seconds" \
-	cargo install --locked --force --version "$latest" --root "$cargo_home" --target-dir "$build/target" topgrade ||
+	cargo install --locked --force --jobs "$jobs" --version "$latest" --root "$cargo_home" \
+	--target-dir "$build/target" topgrade ||
 	die "cargo could not build Topgrade $latest"
 [[ $(version_of "$target" || :) == "$latest" ]] ||
 	die "Topgrade was built, but $target does not report version $latest"

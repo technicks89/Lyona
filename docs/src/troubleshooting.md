@@ -169,5 +169,5 @@ activation errors identify a recovery backup and session log.
 
 ## Still Stuck?
 
-- Open an issue: [github.com/technicks89/dwm-titus/issues](https://github.com/technicks89/dwm-titus/issues)
+- Open an issue: [github.com/technicks89/Lyona/issues](https://github.com/technicks89/Lyona/issues)
 - Run the full check: `bash scripts/check-deps.sh`

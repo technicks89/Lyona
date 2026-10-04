@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
+import "../core/Protocol.js" as Protocol
 
 pragma ComponentBehavior: Bound
 
@@ -371,7 +372,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "appearance-inventory-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 5
                     && fields[1] === "appearance-inventory" && root.validState(fields[2])
                     && fields[3] === "read-only" && provider === null) {
@@ -444,7 +445,7 @@ Scope {
             if (line.length === 0) continue;
             const fields = line.split("\t");
             if (fields[0] === "appearance-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 5
                     && fields[1] === "appearance" && root.validState(fields[2])
                     && fields[3] === "read-only") {
@@ -741,7 +742,7 @@ Scope {
         for (const line of text.trim().split("\n")) {
             const fields = line.split("\t");
             if (fields[0] === "appearance-font-action-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 5
                     && fields[1] === "font" && root.validState(fields[2])
                     && fields[3] === "user-session"
@@ -847,7 +848,7 @@ Scope {
         for (const line of text.trim().split("\n")) {
             const fields = line.split("\t");
             if (fields[0] === "toolkit-action-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 5
                     && fields[1] === "toolkit" && root.validInventoryField(fields[4], false)) {
                 provider = { "state": fields[2], "detail": fields[4] };
@@ -991,7 +992,7 @@ Scope {
 
     function parseToolkitAction(text) {
         const lines = text.trim().split("\n");
-        if (lines.length !== 2 || lines[0] !== "toolkit-action-protocol\t1\t0") return;
+        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "toolkit-action-protocol", 1)) return;
         const fields = lines[1].split("\t");
         if (fields.length < 2 || fields[0] !== "result") return;
         const expected = root.toolkitActionKind === "preview" ? "preview-started"
@@ -1100,7 +1101,7 @@ Scope {
 
     function parseFontAction(text) {
         const lines = text.trim().split("\n");
-        if (lines.length !== 2 || lines[0] !== "appearance-font-action-protocol\t1\t0") return;
+        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "appearance-font-action-protocol", 1)) return;
         const fields = lines[1].split("\t");
         if (fields.length !== 2 || fields[0] !== "result") return;
         const expected = root.fontActionKind === "preview" ? "preview-started"
@@ -1182,7 +1183,7 @@ Scope {
         for (const line of text.trim().split("\n")) {
             const fields = line.split("\t");
             if (fields[0] === "wallpaper-protocol") {
-                protocolValid = fields.length === 3 && fields[1] === "1" && fields[2] === "0";
+                protocolValid = Protocol.validHeader(fields, 1);
             } else if (fields[0] === "provider" && fields.length === 5
                     && fields[1] === "wallpaper" && root.validState(fields[2])
                     && fields[3] === "user-session" && root.validInventoryField(fields[4], false)) {
@@ -1374,7 +1375,7 @@ Scope {
             return;
         }
         const lines = text.trim().split("\n");
-        if (lines.length !== 2 || lines[0] !== "wallpaper-action-protocol\t1\t0") return;
+        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "wallpaper-action-protocol", 1)) return;
         const fields = lines[1].split("\t");
         if (root.wallpaperActionKind === "preview") {
             root.wallpaperActionSucceeded = fields.length === 5 && fields[0] === "preview"
@@ -1445,7 +1446,7 @@ Scope {
 
     function parseActionResult(text) {
         const lines = text.trim().split("\n");
-        if (lines.length !== 2 || lines[0] !== "appearance-action-protocol\t1\t0") return;
+        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "appearance-action-protocol", 1)) return;
         const fields = lines[1].split("\t");
         if (root.actionKind === "preview") {
             root.actionSucceeded = fields.length === 5 && fields[0] === "preview"
@@ -1758,7 +1759,7 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: {
                 const lines = this.text.trim().split("\n");
-                if (lines.length < 2 || lines[0] !== "appearance-action-protocol\t1\t0") return;
+                if (lines.length < 2 || !Protocol.isHeader(lines[0].split("\t"), "appearance-action-protocol", 1)) return;
                 const record = lines[1].split("\t");
                 if (record[0] === "result" && record[1] === "none") {
                     root.previewStatusParsed = true;
@@ -1842,7 +1843,7 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: {
                 const lines = this.text.trim().split("\n");
-                if (lines.length !== 2 || lines[0] !== "appearance-action-protocol\t1\t0") return;
+                if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "appearance-action-protocol", 1)) return;
                 const record = lines[1].split("\t");
                 if (record.length === 2 && record[0] === "recovery" && record[1] === "none") {
                     root.recoveryState = "none";

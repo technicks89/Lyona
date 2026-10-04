@@ -32,7 +32,7 @@ grep -Fq 'snapshotGeneration' "$defaults_model"
 assert_contains "$defaults_model" 'WatchedProcess {'
 assert_contains "$defaults_model" 'active: root.settingsVisible'
 grep -Fq 'Commands.defaultsHelperCommand("watch", [])' "$defaults_model"
-grep -Fq 'fields[2] === "0"' "$defaults_model"
+grep -Fq 'protocolValid = Protocol.validHeader(fields, 1);' "$defaults_model"
 grep -Fq 'Commands.checkedCommand(Commands.defaultsHelperCommand(action, args))' "$defaults_model"
 grep -Fq 'root.actionSucceeded = this.text.trim() === actionProcess.expectedResult' "$defaults_model"
 grep -Fq 'function checkedCommand(command)' "$commands"

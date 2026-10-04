@@ -375,8 +375,15 @@ if DWM_TEST_QUICKSHELL_VERSION=0.2.1 run_helper action restart-quickshell \
 fi
 grep -Fq 'compatible Quickshell 0.3.0 or newer is required' \
 	"$work/quickshell-outdated.err"
-grep -Fq 'pkill -x quickshell' "$work/actions.log"
-grep -Fq 'quickshell --no-duplicate' "$work/actions.log"
+# Sync Sprint 16 R16-49: as autostart does, only the managed instance, found by
+# its config path, never every process named quickshell; and started again with
+# --path, the instance the keys address.
+if grep -Fq 'pkill -x quickshell' "$work/actions.log"; then
+	printf 'restart-quickshell still kills every quickshell\n' >&2
+	exit 1
+fi
+grep -Fq "quickshell list --path $work/config/quickshell/shell.qml --json" "$work/actions.log"
+grep -Fq "quickshell --path $work/config/quickshell/shell.qml --no-duplicate" "$work/actions.log"
 
 : >"$work/actions.log"
 run_helper action restart-picom >"$work/picom.out"

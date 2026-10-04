@@ -4,7 +4,7 @@ Evidence for the item recorded in `CHANGELOG.md` under "Added" as "Keyboard
 navigation for the cross-tag window overview (Sync Sprint 8 S8-01, ... issue
 `#350`)", and pinned in `TASKS.md`. This file exists because that PR
 (`89b36f7`, "keyboard nav") updated `CHANGELOG.md` but not `TASKS.md` or
-`docs/evidence/`, which `docs/UPSTREAM-SYNC.md`'s "Commit and tracking"
+`docs/evidence/`, which `docs/sprints/UPSTREAM-SYNC.md`'s "Commit and tracking"
 section requires in the same PR; this file and the `TASKS.md` entry close
 that gap after the fact.
 
@@ -39,20 +39,20 @@ case.
 
 ## Plan-document note
 
-**Superseded:** `docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md` was added to the
+**Superseded:** `docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md` was added to the
 repository afterwards (PR #140), so the paragraph below is history, not a
 current gap.
 
 The CHANGELOG entry and the new source comments cite
-`docs/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md` as this item's plan document.
+`docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md` as this item's plan document.
 That file does not exist anywhere in this repository (checked the working
 tree and `git log --all --diff-filter=A -- docs/SYNC-SPRINT-8*`, no hits) —
 either it was never committed or it was deleted as a "retired plan document"
-per `docs/UPSTREAM-SYNC.md`'s convention of removing a sprint doc once all of
+per `docs/sprints/UPSTREAM-SYNC.md`'s convention of removing a sprint doc once all of
 its items land, even though S8-02 is still open. Rather than invent its
 content, the closest present, real planning source for this feature is
-`docs/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md#s6-04-cross-tag-window-overview`
-(issue `#350`, the feature this item is part of) and `docs/UPSTREAM-SYNC.md`'s
+`docs/sprints/completed/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md#s6-04-cross-tag-window-overview`
+(issue `#350`, the feature this item is part of) and `docs/sprints/UPSTREAM-SYNC.md`'s
 own "Verification" section, whose gates are used below.
 
 ## Automated test coverage
@@ -77,7 +77,7 @@ own "Verification" section, whose gates are used below.
 ## Verification actually performed here
 
 This sandbox has no `make`, no `qmltestrunner`/`qml6-testrunner`, and no
-GUI/X server, so the full gate list in `docs/UPSTREAM-SYNC.md#verification`
+GUI/X server, so the full gate list in `docs/sprints/UPSTREAM-SYNC.md#verification`
 (`scripts/run-tests make clean all`, `check-shell`, `check-format`,
 `check-quickshell-qml`, `qmltestrunner -input tests/qml`, `make check`) could
 not be run here. What was actually run, with real output:
@@ -115,7 +115,7 @@ as a pass. Whoever has `qmltestrunner` available should run
 result here.
 
 No CI run URL is recorded here either, for the same reason
-`docs/UPSTREAM-SYNC.md#verification` asks for one: this environment cannot
+`docs/sprints/UPSTREAM-SYNC.md#verification` asks for one: this environment cannot
 trigger the **Full suite (manual)** GitHub Actions workflow.
 
 ## Verification run on a host with the tooling (Sync Sprint 10 S10-05)

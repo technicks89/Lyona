@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Sync Sprint 11 S11-06 (docs/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md):
+# Sync Sprint 11 S11-06 (docs/sprints/SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md):
 # a palette the generator writes for qt5ct/qt6ct really becomes the palette Qt
 # apps get, and qt6ct ignores color_scheme_path unless custom_palette=true (the
 # reason theme-apply.sh must set both). Quickshell's SystemPalette reports the

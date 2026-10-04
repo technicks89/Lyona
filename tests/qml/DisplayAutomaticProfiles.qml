@@ -4,13 +4,13 @@ import "settings" as Settings
 
 /*
  * Bespoke Quickshell harness (Sync Sprint 3 S3-02,
- * docs/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md, ported from upstream's
+ * docs/sprints/completed/SYNC-SPRINT-3-DISPLAYS-AND-SETTINGS.md, ported from upstream's
  * 6b7548b (#290) tests/quickshell-display-profiles.qml) exercising
  * SettingsModel.qml's automatic-profile draft/model logic directly.
  *
  * SettingsModel is a Scope that imports qs.core and instantiates
  * Quickshell-provided types (Process, FileView, Timer), so -- per S1-08's
- * established finding (docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md) -- it cannot
+ * established finding (docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md) -- it cannot
  * be instantiated under bare qmltestrunner. This stays a bespoke harness,
  * spawned via `quickshell --no-duplicate --path .../shell.qml` from
  * tests/test-settings.sh, the same mechanism upstream's own script uses for

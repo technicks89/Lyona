@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-// Sync Sprint 1 S1-06 (docs/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-06-shared-timezone-aware-minute-clock),
+// Sync Sprint 1 S1-06 (docs/sprints/completed/SYNC-SPRINT-1-SYSTEM-MANAGEMENT.md#s1-06-shared-timezone-aware-minute-clock),
 // ported from upstream's #270 unchanged -- one minute-aligned, timezone-aware
 // clock shared by the panel and Settings, replacing a bare SystemClock
 // instance neither of which noticed a live timezone-set mutation (Qt's Date

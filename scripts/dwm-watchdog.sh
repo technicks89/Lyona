@@ -141,6 +141,19 @@ run_parent_bound() {
 		kill -TERM "${watchdog_pid:-}" 2>/dev/null || :
 	}
 	trap cleanup_parent_bound EXIT HUP INT TERM
+	# This very process already gets SIGTERM when its parent exits: Quickshell
+	# started it through Commands.watchCommand, under setpriv, and the bound PID
+	# is this one (not a subshell, which would not be bound). The child is bound
+	# to this shell, so the backstop loop has nothing to add: just wait (Sync
+	# Sprint 16 R16-43).
+	if [ -n "$parent_bound_wrap" ] && [ -n "$parent_bound_self" ] &&
+		[ "${LYONA_PARENT_BOUND_SELF:-}" = "$parent_bound_self" ]; then
+		watchdog_pid=
+		status=0
+		wait "$child_pid" || status=$?
+		trap - EXIT HUP INT TERM
+		return "$status"
+	fi
 	# shellcheck disable=SC2016 # expanded by the loop's own shell
 	parent_bound_loop='
 		parent_pid=$1 parent_identity=$2 child_pid=$3 interval=$4 guard=$5 bound=$6
