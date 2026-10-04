@@ -36,7 +36,7 @@ usage() {
 	cat <<'EOF'
 Usage: lyona-update check       [--channel stable|preview] [--json]
        lyona-update apply       [--version V]
-                                [--file PATH [--bundle FILE | --sha256 HASH]]
+                                [--file PATH [--bundle FILE] [--sha256 HASH]]
                                 [--allow-downgrade] [--dry-run] [--yes]
        lyona-update rollback    [--backup ID] [--list] [--yes]
        lyona-update backups     [--json]
@@ -52,9 +52,9 @@ pacman, yay or Settings > System, not by this.
                A release's signature is checked with cosign, which needs the
                network. --file installs a tarball you have; its signature is
                downloaded unless you give it (--bundle, the release's
-               lyona-V.sigstore.json). With no network, --sha256 takes the
-               tarball's line in the release's SHA256SUMS instead, and the
-               signature is not checked.
+               lyona-V.sigstore.json). --sha256 gives the tarball's line in
+               the release's SHA256SUMS; with no --bundle, for a machine with
+               no network, the signature is then not checked.
   rollback     Restores a backup (the newest, or --backup ID); --list shows
                them. Asks first unless --yes.
   backups      Lists the backups apply has made.
@@ -335,9 +335,10 @@ fetch_release() {
 # Populates release_version / release_commit / release_published / release_asset_name /
 # release_asset_url / release_asset_size / release_checksum / release_bundle_url
 # (empty when the release has no signature). Returns 1 when the
-# remote could not be reached, and 2 when it answered with nothing published
-# for the channel (an HTTP error, which curl --fail exits 22 for, or an empty
-# release list). Neither is an error (Sync Sprint 16 R16-02).
+# remote could not be reached or answered with an error, and 2 when it answered
+# with nothing published for the channel (a 404, or an empty release list).
+# Neither is an error (Sync Sprint 16 R16-02). Only a 404 means nothing is
+# published: a rate limit's 403, or a server error, is a failed fetch.
 release_version=
 release_commit=unknown
 release_published=unknown
@@ -396,9 +397,13 @@ resolve_release() {
 	local requested_channel=$1 release_json tag_json
 	load_cache "$requested_channel" && return 0
 
-	local fetched=0
-	release_json=$(fetch_release "$requested_channel" 2>/dev/null) || fetched=$?
-	if ((fetched == 22)); then
+	local fetched=0 err_file fetch_error
+	err_file=$(mktemp) || return 1
+	release_json=$(fetch_release "$requested_channel" 2>"$err_file") || fetched=$?
+	fetch_error=$(<"$err_file")
+	rm -f "$err_file"
+	# curl --fail exits 22 for any HTTP error, and names the status.
+	if ((fetched == 22)) && [[ $fetch_error == *'returned error: 404'* ]]; then
 		return 2
 	elif ((fetched != 0)); then
 		return 1
@@ -750,8 +755,6 @@ cmd_apply() {
 		die "--sha256 is for --file; a download is verified against the release's published SHA256SUMS"
 	[[ -z $bundle_path || -n $file_path ]] ||
 		die "--bundle is for --file; a download's signature is downloaded with it"
-	[[ -z $bundle_path || -z $given_checksum ]] ||
-		die "--bundle and --sha256 are alternatives: the signature, or with no network, the checksum"
 	if [[ -n $bundle_path ]]; then
 		valid_absolute_path "$bundle_path" || die "--bundle must be an absolute path"
 		[[ -f $bundle_path && ! -L $bundle_path ]] || die "signature bundle not found: $bundle_path"
@@ -841,7 +844,7 @@ cmd_apply() {
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	if ! signature_required "$requested_version"; then
 		warn "$requested_version was released before releases were signed; verified by its checksum only"
-	elif [[ -n $given_checksum ]]; then
+	elif [[ -n $given_checksum && -z $bundle_path ]]; then
 		warn "not checking the signature: --sha256 vouches for $file_path"
 	else
 		[[ -n $bundle_path ]] || download_bundle "$requested_version"

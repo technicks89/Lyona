@@ -57,19 +57,20 @@ An ISO9660 volume identifier admits only `A-Z`, `0-9` and `_` and is capped at
 A pre-release is still a release: everything in the checklist above applies,
 and step 9 must state plainly which parts are unqualified.
 
-To create the GitHub release:
+Release through the ISO workflow ("Automated ISO builds and releases" below).
+It signs the source archive and the ISO before anything is published, which
+`lyona-update` requires ("Signed releases" below); a release made by hand
+cannot be signed. The workflow runs `scripts/lyona-release` as:
 
 ```sh
-scripts/lyona-release --version v2026.10.0 --iso ~/Downloads/lyona.iso --notes RELEASE_NOTES.md
+scripts/lyona-release --version v2026.10.0-beta.2 --iso lyona-2026.10.0-beta.2-x86_64.iso \
+	--bundle BUNDLE --notes docs/RELEASE-NOTES-2026.10.0-beta.2.md --prerelease --skip-checks
 ```
 
-For a pre-release, pass the suffixed version — it must match `config.mk`:
-
-```sh
-scripts/lyona-release --version v2026.10.0-beta.1 \
-	--iso release/lyona-2026.10.0-beta.1-x86_64.iso \
-	--notes docs/RELEASE-NOTES-2026.10.0-beta.1.md
-```
+`BUNDLE` is the signing step's bundle. The version must match `config.mk`; a
+stable one has no suffix, such as `v2026.10.0`. Run by
+hand, use `--dry-run` to see the plan; without `--bundle` it publishes a
+release that `lyona-update` refuses.
 
 The helper validates and hashes local artifacts before it creates a remote tag
 or release. `--version` confirms the version already committed in `config.mk`;
@@ -126,8 +127,24 @@ the version reaches every field above. Set `LYONA_RELENG_DIR` if the
 `releng` profile is not at `/usr/share/archiso/configs/releng`.
 
 The build produces an ISO on Arch Linux (the release workflow builds one for
-every release), but **no image has been boot-tested end-to-end on real
-hardware or in a VM** — do not treat it as release-qualified until it has been.
+every release). **VM qualification, 2026-10-03:** images built on the
+maintainer's host were installed in a QEMU/KVM virtual machine three times,
+each run finding faults fixed before the next (`CHANGELOG.md`,
+`2026.10.0-beta.2`). The last run:
+- **Image:** `lyona-2026.10.0-beta.1-x86_64.iso` built at the pre-`beta.2`
+  commit of this work, SHA-256
+  `19341b4cbb95cfe58a90b77de90660e277b27bb2a3418915f5fb15e1a3f17beb`,
+  `archiso` 91-1, Arch with the CachyOS repositories.
+- **Machine:** x86_64, UEFI (OVMF), a standard VGA adapter, no NVIDIA GPU,
+  4 GiB, a 30 GiB virtio disk, btrfs, no encryption.
+- **Result:** packages resolved and the wizard completed with no manual
+  help; the installed system booted to LightDM, and dwm and the managed
+  shell came up (the launcher, the power menu).
+
+**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS,
+ext4, the manual `archinstall` fallback, an image built by the release
+workflow, and `lyona-update` from one release to the next. Do not treat a
+release as qualified on hardware until it has been.
 
 ### Signed releases
 

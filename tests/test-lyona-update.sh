@@ -65,7 +65,7 @@ EOF
 reset_curl_responses() {
 	rm -rf "$responses_dir"
 	mkdir -p "$responses_dir"
-	rm -f "$responses_dir/../offline-flag" 2>/dev/null || :
+	rm -f "$responses_dir/../offline-flag" "$responses_dir/../http-error" 2>/dev/null || :
 	# Each scenario seeds its own release fixture; a cache hit -- or a
 	# channel left over from the config-seeding scenario -- would otherwise
 	# skip the network, or hit an endpoint this scenario never seeded.
@@ -88,10 +88,16 @@ for a in "$@"; do
 	prev=$a
 done
 [ ! -e "__RESPONSES__/../offline-flag" ] || exit 7
+# An HTTP error for every request, as curl --fail reports one.
+if [ -f "__RESPONSES__/../http-error" ]; then
+	printf 'curl: (22) The requested URL returned error: %s\n' "$(cat "__RESPONSES__/../http-error")" >&2
+	exit 22
+fi
 key=$(printf '%s' "$url" | tr -c 'A-Za-z0-9' '_')
 resp="__RESPONSES__/$key"
 if [ ! -f "$resp" ]; then
-	printf 'curl-stub: no canned response for %s\n' "$url" >&2
+	# What GitHub answers for a release that does not exist.
+	printf 'curl: (22) The requested URL returned error: 404\n' >&2
 	exit 22
 fi
 if [ -n "$output" ]; then
@@ -338,6 +344,18 @@ go_offline
 status=$(run_update check)
 assert_string_contains "$status" "$(printf 'state\toffline')"
 go_online
+# Only a 404 means nothing is published: a rate limit's 403, or a server
+# error, is a failed fetch, never "nothing published".
+for http_status in 403 500; do
+	printf '%s\n' "$http_status" >"$responses_dir/../http-error"
+	status=$(run_update check)
+	assert_string_contains "$status" "$(printf 'state\toffline')" "HTTP $http_status"
+	case $status in
+	*'Nothing has been published'*) fail "HTTP $http_status was read as nothing published" ;;
+	esac
+done
+rm -f "$responses_dir/../http-error"
+go_online
 # A pre-release install seeds the preview channel on first use.
 reset_curl_responses
 valid_user_record 2026.10.0-beta.1 | write_user_record
@@ -469,9 +487,24 @@ status=$(run_update apply --file "$source_tarball" --version "$source_version" \
 assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
 assert_contains "$cosign_log" "--bundle $work/given.sigstore.json"
 rm -rf "$state_home/lyona/updates/$source_version"
+# --bundle with --sha256: both are checked, the signature too.
+: >"$cosign_log"
+status=$(run_update apply --file "$source_tarball" --version "$source_version" \
+	--bundle "$work/given.sigstore.json" --sha256 "$source_sha" --dry-run 2>"$work/err") || {
+	lyona_show_file "$work/err"
+	fail 'an apply with --bundle and --sha256 failed'
+}
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_contains "$cosign_log" "--bundle $work/given.sigstore.json"
+rm -rf "$state_home/lyona/updates/$source_version"
+printf 'forged\n' >"$work/forged.sigstore.json"
+if run_update apply --file "$source_tarball" --version "$source_version" \
+	--bundle "$work/forged.sigstore.json" --sha256 "$source_sha" --dry-run >"$work/out" 2>&1; then
+	fail 'a forged --bundle was accepted because --sha256 was given'
+fi
+assert_contains "$work/out" "the signature of lyona-$source_version does not verify"
 for refused in \
 	"--bundle $work/given.sigstore.json --version $source_version:--bundle is for --file" \
-	"--file $source_tarball --version $source_version --bundle $work/given.sigstore.json --sha256 $source_sha:--bundle and --sha256 are alternatives" \
 	"--file $source_tarball --version $source_version --bundle $work/missing.json:signature bundle not found"; do
 	# shellcheck disable=SC2086 # the arguments are split on purpose
 	if run_update apply ${refused%%:*} --dry-run >"$work/out" 2>&1; then

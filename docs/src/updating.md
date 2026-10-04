@@ -202,10 +202,11 @@ Useful flags:
   needed for a version that is not the newest on your channel. Checking a
   signature still needs the network, for Sigstore's trust root.
 
-  On a machine with no network, give `--sha256 HASH` instead, where `HASH` is
-  the 64-character hexadecimal value on the tarball's line in the release's
-  `lyona-<version>-SHA256SUMS` (the first field). The signature is then not
-  checked: you vouch for the file.
+  `--sha256 HASH` gives the checksum yourself: `HASH` is the 64-character
+  hexadecimal value on the tarball's line in the release's
+  `lyona-<version>-SHA256SUMS` (the first field). With `--bundle` too, both
+  are checked. Given alone, for a machine with no network, the signature is
+  not checked: you vouch for the file.
 
   ```sh
   lyona-update apply --file ~/lyona-2026.10.0.tar.gz --version 2026.10.0 \

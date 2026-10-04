@@ -124,7 +124,14 @@
                     if (section.id === "appearance") notificationModel.policyState = "loading";
                     if (section.id === "system") settingsModel.testIgnoreSystemModel = true;
                     settingsModel.selectSection(section.id);
-                    if (section.id === "system") systemManagementModel.refresh();
+                    if (section.id === "system") {
+                        systemManagementModel.refresh();
+                        // The update card's version read (a 3 s stub) starts with the
+                        // shell; on a slow run it ended before the earlier panes did,
+                        // and nothing held System back. Start it again here, so it
+                        // is in flight whatever the earlier stages took.
+                        updateModel.refreshInstalled();
+                    }
                     if (section.id === "defaults") {
                         defaultsModel.refresh();
                         autostartModel.refresh();

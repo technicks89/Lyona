@@ -52,9 +52,9 @@ Three fullscreen modes available:
 
 | Mode | Keys | Description |
 |------|------|-------------|
-| True fullscreen | `Super` + `M` | Hides bar, takes full screen |
+| True fullscreen | `Super` + `M` | The focused window only: hides the bar, takes the full screen |
 | Fake fullscreen | `Super` + `Shift` + `Y` | Looks fullscreen, bar still usable |
-| Monocle layout | — | Single window view, bar visible |
+| Monocle layout | none (the Control Center's Window layout row) | A layout, for the tag: one window at a time, bar visible |
 
 ---
 

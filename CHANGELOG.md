@@ -8,7 +8,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
-## [2026.10.0-beta.2] - 2026-10-03
+## [2026.10.0-beta.2] - 2026-10-04
 
 Third beta of the Arch Linux line, and the first signed release. Sync Sprint 16: the fixes from the 2026-10-03
 whole-repo review (`docs/sprints/SYNC-SPRINT-16-REVIEW-FIXES.md`, which maps each to its test), and the image fixes a
@@ -21,8 +21,11 @@ VM install of `2026.10.0-beta.1` found. See `docs/RELEASE-NOTES-2026.10.0-beta.2
   - `lyona-update` checks it with `cosign` (now a `desktop` package) before it unpacks a release, and refuses a release
     whose signature is missing or does not verify. A release from before signing is installed on its checksum alone,
     and says so.
-  - `apply --file` downloads the signature, or takes it with `--bundle FILE`. `--sha256`, for a machine with no
-    network, skips the signature: `cosign` needs the network for Sigstore's trust root.
+  - `apply --file` downloads the signature, or takes it with `--bundle FILE`. `--sha256` alone, for a machine with no
+    network, skips the signature (`cosign` needs the network for Sigstore's trust root); with `--bundle`, both are
+    checked.
+- `lyona-update check` reads only a 404 as "nothing published": a rate limit's 403 or a server error is a failed
+  fetch, not an empty channel.
   - Check a download by hand with `cosign verify-blob-attestation` (`docs/RELEASING.md`), or `gh attestation verify`.
 - Image installs give root no password and lock it; the new user administers with `sudo` (D-29).
 - The live medium never leaves its temporary passwordless `sudo` rule on the new system, however the install ends:
@@ -42,6 +45,8 @@ VM install of `2026.10.0-beta.1` found. See `docs/RELEASE-NOTES-2026.10.0-beta.2
   `lyona-toml` it needs, so on a fresh checkout it failed there, and the installed system booted to a login that
   failed ("Failed to start session"). The config is deployed after the build. Found booting `2026.10.0-beta.1` in a
   VM; a fresh existing-system install with LightDM failed the same way.
+- **Cancelling the hostname prompt** in the image's wizard cancels the install, as every other prompt does, instead
+  of taking the default name.
 - **The image install hung** building `yay`: `makepkg` waited on pacman's "Proceed with installation?" behind the
   progress spinner, where nothing could answer it. A non-interactive `install.sh` answers it (`--noconfirm`).
 - **An image install failed its first package update:** the new system already listed the CachyOS repositories, but

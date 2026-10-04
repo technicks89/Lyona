@@ -72,11 +72,14 @@ launcher hides the ChatGPT web entry while a native desktop entry is installed.
 |------|--------|
 | `Super` + `T` | Tiling layout |
 | `Super` + `F` | Floating layout |
-| `Super` + `M` | Fullscreen (monocle) |
+| `Super` + `M` | Fullscreen the focused window (not a layout) |
 | `Super` + `Space` | Toggle floating for window |
 | `Super` + `Shift` + `M` | Toggle floating for window |
 | `Super` + `Shift` + `Y` | Fake fullscreen (bar stays) |
 | `Super` + `Shift` + `B` | Toggle bar visibility |
+
+The monocle layout (one window at a time, the bar visible) has no default key:
+choose it in the Control Center's **Window layout** row.
 
 Floating a tiled window with `Super` + `Space` (or `Super` + `Shift` + `M`, or
 `Super` + Middle click) pops it out of its tile at 85 percent of the tile's

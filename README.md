@@ -75,8 +75,17 @@ build in `/etc/lyona-iso-release`.
 
 Pre-release images are published on the
 [Releases](https://github.com/technicks89/Lyona/releases) page, each with a
-`SHA256SUMS` file; check the download with `sha256sum -c SHA256SUMS` before
-writing it.
+`lyona-VERSION-SHA256SUMS` file. Check the download before writing it; the
+file also lists the source archive, which `--ignore-missing` skips when you
+downloaded only the image:
+
+```bash
+sha256sum -c --ignore-missing lyona-VERSION-SHA256SUMS
+```
+
+From `2026.10.0-beta.2` on, releases are also signed; the
+[Installation Guide](https://dwm.technicks89.com/install.html) shows how to
+check the signature.
 
 Write the ISO to a USB drive and boot it (UEFI only). The `lyona-install`
 wizard launches automatically. It asks, in menus: the keyboard layout, the disk

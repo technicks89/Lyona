@@ -483,7 +483,8 @@ Scope {
         onRunningChanged: {
             if (!running && root.audioRefreshPending) {
                 root.audioRefreshPending = false;
-                root.refreshAudioInventory();
+                // After this exit has finished, not from inside it.
+                Qt.callLater(root.refreshAudioInventory);
             }
         }
     }

@@ -493,9 +493,12 @@ without turning Quickshell into an unrestricted administration console.
 
 ## Phase 7: Arch Image and Release Qualification
 
-Status: Active. Pre-release images are published (`2026.08.0-beta.1`); none
-has yet been boot-tested on real hardware or in a VM, which the exit criteria
-below require. Interleaved with the upstream sync sprints
+Status: Active. Pre-release images are published (`2026.08.0-beta.1`,
+`2026.10.0-beta.1`). Done: an image built on the maintainer's host installed
+in a UEFI KVM virtual machine and reached a working desktop (2026-10-03,
+`docs/RELEASING.md`). Still open for the exit criteria below: real hardware,
+the NVIDIA, LUKS and ext4 paths, the manual fallback, an image the release
+workflow built, and an update from one release to the next. Interleaved with the upstream sync sprints
 (`docs/sprints/UPSTREAM-SYNC.md`).
 
 ### Objective

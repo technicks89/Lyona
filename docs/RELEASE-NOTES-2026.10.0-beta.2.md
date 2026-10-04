@@ -30,8 +30,10 @@ image never reached a desktop. `CHANGELOG.md` has the complete list.
   unpacks it (decision D-31). A release whose signature is missing, or not
   made by lyona's own release workflow on `main`, is refused.
 - **Offline installs:** `apply --file` downloads the signature, or takes it
-  with `--bundle FILE`. With no network, `--sha256` installs on the checksum
-  you give, and says the signature was not checked.
+  with `--bundle FILE`. With no network, `--sha256` alone installs on the
+  checksum you give, and says the signature was not checked.
+- **`lyona-update check`** reads only a 404 as an empty channel; a rate limit
+  or a server error is reported as a failed fetch.
 
 ### The image installs to a desktop
 
@@ -102,6 +104,11 @@ build host (Arch, CachyOS repositories):
   was refused. No lyona release had been signed yet, so the release
   workflow's signing step is untested until this release is published.
 
-**The full suite** (`scripts/run-tests`) passed. Two tests are known to fail
-now and then without a fault: Settings responsiveness and System Health under
-Xvfb.
+**The full suite** (`scripts/run-tests`) passed. The Settings responsiveness
+test no longer fails now and then: it timed a 3 s read that started with the
+shell, not when its pane opened. One test is still known to fail now and then
+without a fault, System Health under Xvfb ("Control Center popup did not
+open"); it was not reproduced in 14 runs, 6 under full CPU load, and now prints
+the windows it saw when it fails. The appearance inventory test failed once in a
+full run; its two compared scans now get the full time budget, and a failure
+says which check broke.

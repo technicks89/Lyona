@@ -16,16 +16,13 @@ builder (`scripts/build-lyona-arch-iso.sh`), the unattended installer wizard
 individually exercised by automated tests
 (`check-arch-packages`, `tests/test-arch-iso-builder.sh`,
 `tests/test-lyona-update.sh`, `tests/test-install-preservation.sh`). What
-Phase 7 actually closes is the gap `docs/RELEASING.md` states plainly: the
-image builds, but has not been boot-tested end-to-end on real hardware or in a
-VM. Real boot, real install, real upgrade/rollback, on real or virtualized Arch
-hardware, is Phase 7's actual remaining work. It cannot be
-finished from this sandbox: there is no KVM/VM tooling, GPU, or physical
-machine available here, and `docs/RELEASING.md` itself requires disposable
-VM/ISO qualification to happen outside `/tmp` and outside this kind of
-throwaway environment. Every item below is written to be carried out by
-whoever has that hardware, using the acceptance criteria and existing
-automated coverage as the bar.
+Phase 7 closes is real boot, real install and real upgrade/rollback. The first
+VM runs are done: on 2026-10-03 an image built on the maintainer's host
+installed in a UEFI KVM virtual machine, three times, the last reaching a
+working desktop with no manual help (recorded in `docs/RELEASING.md`). Real
+hardware, the paths that VM did not exercise, and upgrade/rollback remain.
+Every item below uses the acceptance criteria and existing automated coverage
+as the bar.
 
 **Open questions this first-pass breakdown does not resolve** (need your
 input, not a guess):
@@ -93,18 +90,22 @@ Acceptance:
 
 ### ARCH-002: First Real Boot and Install Qualification
 
-- [ ] Boot the built ISO in a KVM virtual machine (per `docs/RELEASING.md`'s
+- [x] Boot the built ISO in a KVM virtual machine (per `docs/RELEASING.md`'s
   own instruction), run `lyona-install` to completion against a UEFI target,
-  and reboot from the installed virtual disk.
+  and reboot from the installed virtual disk. Done 2026-10-03 (btrfs, no
+  LUKS, no NVIDIA), with an image built on the maintainer's host; an image
+  the release workflow built is still to do.
 - [ ] Verify LightDM presents a session, dwm starts, and the managed
   Quickshell shell (panel, Settings, Control Center) comes up without manual
-  repair.
+  repair. LightDM, dwm, the panel, the launcher and the power menu were
+  verified in that VM; Settings and the Control Center were not opened.
 - [ ] Verify the manual fallback path (boot the ISO, run `archinstall`
   directly, then `/root/lyona-postinstall.sh` against the mounted target)
   produces the same working result as the wizard path, at least once.
-- [ ] Record the source ISO checksum, firmware mode, architecture,
+- [x] Record the source ISO checksum, firmware mode, architecture,
   package-resolution result, first-boot result, and any untested hardware —
-  `docs/RELEASING.md`'s own qualification-recording instruction.
+  `docs/RELEASING.md`'s own qualification-recording instruction. Recorded
+  there for the 2026-10-03 VM run; record each later run the same way.
 
 Acceptance:
 

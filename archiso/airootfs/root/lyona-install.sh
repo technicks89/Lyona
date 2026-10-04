@@ -176,7 +176,7 @@ valid_hostname() {
 ask_hostname() {
 	local name
 	while true; do
-		name=$(gum input --header "Hostname:" --placeholder "lyona" --value "lyona") || true
+		name=$(gum input --header "Hostname:" --placeholder "lyona" --value "lyona") || cancelled
 		name=${name:-lyona}
 		valid_hostname "$name" && break
 		say --foreground $COLOR_DANGER "invalid hostname: use letters, digits and hyphens (not at either end), up to 63 per part"
