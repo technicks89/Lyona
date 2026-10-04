@@ -87,7 +87,7 @@ From `2026.10.0-beta.2` on, releases are also signed; the
 [Installation Guide](https://dwm.technicks89.com/install.html) shows how to
 check the signature.
 
-Write the ISO to a USB drive and boot it (UEFI only). The `lyona-install`
+Write the ISO to a USB drive and boot it, with UEFI or a legacy BIOS. The `lyona-install`
 wizard launches automatically. It asks, in menus: the keyboard layout, the disk
 to erase, btrfs or ext4 with optional LUKS encryption, your user and password,
 the hostname, the timezone (detected, for you to confirm), and, on an NVIDIA

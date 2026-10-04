@@ -20,9 +20,16 @@ assert_file "$repo/assets/grub/CyberRe/theme.txt" 'the vendored theme'
 assert_file "$repo/assets/grub/LICENSE" 'the vendored theme licence'
 
 bin="$work/bin"
+# LYONA_TEST_ROOT_ONLY names a directory only root can read (a UEFI /boot):
+# this sudo opens it for the one command it runs, as root sees it.
 cat >"$bin/sudo" <<'EOF'
 #!/bin/sh
-exec "$@"
+[ -n "${LYONA_TEST_ROOT_ONLY:-}" ] || exec "$@"
+chmod 755 "$LYONA_TEST_ROOT_ONLY"
+"$@"
+status=$?
+chmod 000 "$LYONA_TEST_ROOT_ONLY"
+exit "$status"
 EOF
 cat >"$bin/grub-mkconfig" <<'EOF'
 #!/bin/sh
@@ -95,6 +102,16 @@ assert_line "$case_dir/default-grub" 'GRUB_TIMEOUT=5'
 assert_line "$case_dir/default-grub" 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet"'
 
 assert_contains "$case_dir/calls.log" "grub-mkconfig -o $case_dir/boot/grub/grub.cfg"
+
+# On UEFI /boot is the EFI system partition, which Arch mounts root-only: the
+# helper runs as the user, so it must look for grub/ as root, or it skips
+# grub-mkconfig and the theme never reaches the menu (#235, found in a VM).
+private_case=$(default_grub_fixture | new_case root-only-boot)
+chmod 000 "$private_case/boot"
+LYONA_TEST_ROOT_ONLY="$private_case/boot" run_helper "$private_case" apply ||
+	fail 'apply failed with a root-only /boot'
+chmod 755 "$private_case/boot"
+assert_contains "$private_case/calls.log" "grub-mkconfig -o $private_case/boot/grub/grub.cfg"
 
 # The backup is what makes the edit reversible, so it must hold the original.
 backup=$(backup_of "$case_dir")

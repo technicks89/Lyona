@@ -155,7 +155,9 @@ comment_grub_key() {
 regenerate_grub() {
 	local cfg="$boot_dir/grub/grub.cfg"
 
-	if [[ ! -d $boot_dir/grub ]]; then
+	# As root: on UEFI, /boot is the EFI system partition, which Arch mounts
+	# root-only (fmask/dmask 0077), so as the user it never had a grub/.
+	if ! run_root test -d "$boot_dir/grub"; then
 		warn "$boot_dir/grub does not exist; skipping grub-mkconfig."
 		warn "Regenerate the GRUB configuration yourself before rebooting."
 		return 0

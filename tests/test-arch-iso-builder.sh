@@ -298,10 +298,10 @@ EOF
 chmod +x "$installer_bin/blockdev" "$installer_bin/openssl"
 
 generate_installer_configs() {
-	local encrypt=$1 out_dir=$2
+	local encrypt=$1 out_dir=$2 firmware=${3:-uefi}
 	mkdir -p "$out_dir"
 	PATH="$installer_bin:$PATH" \
-		LYONA_INSTALL_LIB=1 \
+		LYONA_INSTALL_LIB=1 FIRMWARE="$firmware" \
 		LYONA_UI_LIB="$repo/archiso/airootfs/root/lyona-ui.sh" \
 		LYONA_NVIDIA_LIB="$repo/archiso/airootfs/root/lyona-nvidia.sh" \
 		ENCRYPT="$encrypt" OUT_DIR="$out_dir" \
@@ -324,10 +324,12 @@ generate_installer_configs() {
 		' sh "$repo/archiso/airootfs/root/lyona-install.sh"
 }
 
-for encrypt in 0 1; do
-	config_dir="$work/installer-config-$encrypt"
+for case in uefi:0 uefi:1 bios:0 bios:1; do
+	firmware=${case%%:*}
+	encrypt=${case#*:}
+	config_dir="$work/installer-config-$firmware-$encrypt"
 	cachyos_packages='"cachyos-keyring", "cachyos-mirrorlist"' \
-		generate_installer_configs "$encrypt" "$config_dir"
+		generate_installer_configs "$encrypt" "$config_dir" "$firmware"
 
 	python3 -m json.tool "$config_dir/config.json" >/dev/null || {
 		printf 'lyona-install generated invalid archinstall JSON (ENCRYPT=%s).\n' "$encrypt" >&2
@@ -339,12 +341,29 @@ for encrypt in 0 1; do
 		exit 1
 	}
 
-	python3 - "$config_dir/config.json" "$encrypt" <<'EOF' || exit 1
+	python3 - "$config_dir/config.json" "$encrypt" "$firmware" <<'EOF' || exit 1
 import json
 import sys
 
 config = json.load(open(sys.argv[1]))
 encrypt = sys.argv[2] == "1"
+firmware = sys.argv[3]
+# GRUB on both firmware types (#235), in the fallback path on UEFI, which
+# firmware that ignores boot entries (Apple's among it) still boots.
+bootloader = config["bootloader_config"]
+if bootloader.get("bootloader") != "Grub" or bootloader.get("removable") is not True:
+	print(f"the bootloader is not GRUB in the fallback path: {bootloader}", file=sys.stderr)
+	sys.exit(1)
+partitions = config["disk_config"]["device_modifications"][0]["partitions"]
+boot = next(p for p in partitions if p["mountpoint"] == "/boot")
+root = next(p for p in partitions if p["mountpoint"] == "/")
+expected = ("fat32", ["boot", "esp"]) if firmware == "uefi" else ("ext4", ["boot"])
+if (boot["fs_type"], boot["flags"]) != expected:
+	print(f"{firmware}: /boot is {boot['fs_type']} {boot['flags']}, not {expected}", file=sys.stderr)
+	sys.exit(1)
+if encrypt and config["disk_encryption"]["partitions"] != [root["obj_id"]]:
+	print("only the root partition may be encrypted: GRUB reads /boot", file=sys.stderr)
+	sys.exit(1)
 repos = config.get("mirror_config", {}).get("optional_repositories", [])
 if "multilib" not in repos:
 	print("archinstall config does not request the multilib repository", file=sys.stderr)
