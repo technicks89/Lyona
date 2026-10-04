@@ -85,7 +85,8 @@ the desktop session and Settings found after `2026.10.0-beta.2` (#229, #230,
 **Not tested on real hardware.** On the build host (Arch with the CachyOS
 repositories, x86_64):
 - **The full suite** (`scripts/run-tests`) passed on each branch before it was
-  merged.
+  merged, and on `main` at this release's version, with both merged and
+  the fix for fullscreen windows.
 - **In Xvfb under this release's dwm,** Settings and System Health open below
   the panel.
 - **In a throwaway Xvfb session:**
