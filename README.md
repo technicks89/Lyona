@@ -15,8 +15,9 @@
 ![The Lyona desktop with its Quickshell panel](assets/screenshots/lyona-qs-4x.webp)
 
 This is a fork of [dwm-titus](https://github.com/ChrisTitusTech/dwm-titus). It is designed to run on Arch Linux rather than Fedora. 
-Lyona also draws inspiration from [Omarchy](https://github.com/basecamp/omarchy). 
-Claude is used to help storyboard, build sprints, fix code where needed, and build documentation
+Lyona is not a 1-for-1 of dwm-titus
+Claude is used to help storyboard, build sprints, fix code where needed, and build documentation.
+CodeRabbit is also used to check code
 
 Lyona is a complete, lightweight X11 desktop with sensible defaults,
 guided installation, and powerful customization. It is designed for people who
