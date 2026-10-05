@@ -1180,7 +1180,7 @@ check-install-preservation:
 
 .PHONY: check-install-multilib check-iso-install-credentials check-live-medium-cleanup \
 	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary \
-	check-lyona-shell check-gearlever-first-login
+	check-lyona-shell check-gearlever-first-login check-iso-install-wifi
 check-install-multilib:
 	tests/test-install-multilib.sh
 
@@ -1222,6 +1222,12 @@ check-download-pins:
 # R16-22, R16-29, R16-30: the image install's closing screen, steps and cancel.
 check-iso-install-warnings:
 	tests/test-iso-install-warnings.sh
+
+# #237: the image installer's Wi-Fi step, against a stub iwd (busctl) and gum.
+check-iso-install-wifi:
+	status=0; tests/test-iso-install-wifi.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
 
 # R16-28: the installer's summary lists every change (a dry run; Arch only).
 check-install-summary:
@@ -1413,6 +1419,7 @@ check:
 	$(MAKE) check-installed-helper-paths
 	$(MAKE) check-download-pins
 	$(MAKE) check-iso-install-warnings
+	$(MAKE) check-iso-install-wifi
 	$(MAKE) check-install-summary
 	$(MAKE) check-lyona-shell
 	$(MAKE) check-gearlever-first-login

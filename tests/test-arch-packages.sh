@@ -29,6 +29,8 @@ mapfile -t packages < <(
 	{
 		dwm_packages arch required
 		dwm_packages arch desktop
+		dwm_packages arch browser
+		dwm_packages arch rust-toolchain
 		dwm_packages arch system-management
 		dwm_packages arch system-management-optional
 	} | awk 'NF' | sort -u
@@ -81,6 +83,49 @@ missing_provider_packages=$(PATH="$work/bin:$PATH" DWM_TEST_PPD_PROVIDER=0 bash 
 	dwm_install_package_profile desktop
 ' _ "$repo/scripts/dwm-packages.sh")
 printf '%s\n' "$missing_provider_packages" | grep -Fxq power-profiles-daemon
+
+# The browser (#240): Firefox, unless the user's default https handler is
+# another browser that is installed.
+recommended_packages=$(dwm_packages arch recommended)
+grep -Fxq firefox <<<"$recommended_packages" ||
+	{
+		printf 'firefox is not in the recommended packages.\n' >&2
+		exit 1
+	}
+cat >"$work/bin/xdg-mime" <<'EOF'
+#!/bin/sh
+[ "$*" = 'query default x-scheme-handler/https' ] || exit 2
+[ -n "${DWM_TEST_BROWSER:-}" ] && printf '%s\n' "$DWM_TEST_BROWSER"
+exit 0
+EOF
+chmod +x "$work/bin/xdg-mime"
+mkdir -p "$work/share/applications"
+printf '[Desktop Entry]\nType=Application\nExec=chromium %%U\n' >"$work/share/applications/chromium.desktop"
+printf '#!/bin/sh\nexit 0\n' >"$work/bin/chromium"
+chmod +x "$work/bin/chromium"
+# A leftover entry whose browser was removed.
+printf '[Desktop Entry]\nType=Application\nExec=/opt/gone/browser %%U\n' >"$work/share/applications/gone.desktop"
+browser_install() { # DEFAULT-BROWSER
+	# shellcheck disable=SC2016 # expanded by the inner shell
+	PATH="$work/bin:$PATH" DWM_TEST_BROWSER="$1" XDG_DATA_HOME="$work/none" XDG_DATA_DIRS="$work/share" bash -c '
+		. "$1"
+		DISTRO_FAMILY=arch
+		install_packages() { printf "INSTALL %s\n" "$*"; }
+		dwm_install_package_profile browser
+	' _ "$repo/scripts/dwm-packages.sh" 2>&1
+}
+for case in '' firefox.desktop removed.desktop gone.desktop; do
+	out=$(browser_install "$case")
+	[[ $out == 'INSTALL firefox' ]] || {
+		printf 'Firefox was not installed with the default browser %s: %s\n' "${case:-unset}" "$out" >&2
+		exit 1
+	}
+done
+out=$(browser_install chromium.desktop)
+[[ $out == 'Keeping the default browser (chromium.desktop); skipping firefox.' ]] || {
+	printf 'Firefox was installed beside the default browser chromium: %s\n' "$out" >&2
+	exit 1
+}
 
 # Several profiles must resolve to a single transaction, with no package
 # repeated across them.

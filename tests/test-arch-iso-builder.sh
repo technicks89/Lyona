@@ -36,6 +36,7 @@ bash -n "$repo/archiso/airootfs/root/lyona-postinstall.sh"
 [[ -x "$repo/archiso/airootfs/root/lyona-postinstall.sh" ]]
 
 bash -n "$repo/archiso/airootfs/root/lyona-install.sh"
+bash -n "$repo/archiso/airootfs/root/lyona-wifi.sh"
 [[ -x "$repo/archiso/airootfs/root/lyona-install.sh" ]]
 
 postinstall="$repo/archiso/airootfs/root/lyona-postinstall.sh"
@@ -176,6 +177,8 @@ done
 # check is shared by the installer and the postinstall (S12-15, S12-17); run it
 # against a fake lspci.
 nvidia_lib=$repo/archiso/airootfs/root/lyona-nvidia.sh
+# Sourced by lyona-install.sh, which the cases below source as a library.
+export LYONA_WIFI_LIB=$repo/archiso/airootfs/root/lyona-wifi.sh
 grep -Fqx 'source /root/lyona-nvidia.sh' "$postinstall" ||
 	fail 'lyona-postinstall.sh does not source lyona-nvidia.sh'
 mkdir -p "$work/nvidia-bin"
@@ -752,6 +755,12 @@ grep -Fq 'Wipe $DISK and install' "$repo/archiso/airootfs/root/lyona-install.sh"
 # The installer and the postinstall source the GPU check from the medium.
 [[ -f $work/staged/profile/airootfs/root/lyona-nvidia.sh ]] || {
 	printf 'lyona-nvidia.sh was not staged onto the live medium.\n' >&2
+	exit 1
+}
+
+# So does the Wi-Fi step (#237).
+[[ -f $work/staged/profile/airootfs/root/lyona-wifi.sh ]] || {
+	printf 'lyona-wifi.sh was not staged onto the live medium.\n' >&2
 	exit 1
 }
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Seed fresh accounts with media/image defaults; never replace existing preferences.
+# Seed fresh accounts with browser, media and image defaults; never replace existing preferences.
 set -euo pipefail
 
 [[ $(id -u) != 0 ]] || {
@@ -64,6 +64,11 @@ def entry(desktop, command, prefixes, required=True):
 entry('io.github.celluloid_player.Celluloid.desktop', 'celluloid', ('audio/', 'video/', 'application/'))
 entry('sxiv.desktop', 'sxiv', ('image/',))
 entry('thunar.desktop', 'thunar', ('inode/directory',), required=False)
+# The browser (#240), for the web types only: Firefox also claims image, audio
+# and video types, which stay with the handlers above.
+entry('firefox.desktop', 'firefox',
+      ('x-scheme-handler/http', 'x-scheme-handler/https', 'text/html', 'application/xhtml+xml'),
+      required=False)
 PY
 )
 
@@ -83,4 +88,4 @@ if ! ln -T -- "$target" "$config_home/mimeapps.list"; then
 	printf 'Could not publish application defaults: %s\n' "$config_home/mimeapps.list" >&2
 	exit 1
 fi
-printf 'Configured fresh-account media, image, and file-manager defaults.\n'
+printf 'Configured fresh-account browser, media, image, and file-manager defaults.\n'

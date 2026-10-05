@@ -32,7 +32,7 @@ export PATH="$work/bin:$PATH"
 mimeapps=$XDG_CONFIG_HOME/mimeapps.list
 
 install_handlers() {
-	for app in celluloid sxiv thunar; do
+	for app in celluloid sxiv thunar firefox; do
 		printf '#!/bin/sh\nexit 0\n' >"$work/bin/$app"
 		chmod +x "$work/bin/$app"
 	done
@@ -58,6 +58,15 @@ Type=Application
 Name=Thunar
 Exec=thunar %U
 MimeType=inode/directory;
+APP
+	# Firefox claims image and video types too; it must get only the web ones.
+	cat >"$XDG_DATA_DIRS/applications/firefox.desktop" <<'APP'
+[Desktop Entry]
+Type=Application
+Name=Firefox
+Exec=firefox %u
+Categories=Network;WebBrowser;
+MimeType=application/pdf;application/xhtml+xml;image/png;text/html;video/webm;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/mailto;
 APP
 }
 
@@ -111,6 +120,16 @@ for mime in image/png image/jpeg image/gif image/bmp image/tiff; do
 done
 [[ $(xdg-mime query default inode/directory) == thunar.desktop ]] ||
 	fail 'folders are not opened by Thunar'
+# The browser (#240): the web types, and none of the others Firefox claims.
+for mime in x-scheme-handler/http x-scheme-handler/https text/html application/xhtml+xml; do
+	[[ $(xdg-mime query default "$mime") == firefox.desktop ]] ||
+		fail "$mime is not opened by Firefox"
+done
+for mime in image/png video/webm application/pdf x-scheme-handler/mailto; do
+	if grep -q "^$mime=firefox.desktop;" "$mimeapps"; then
+		fail "Firefox was made the default for $mime"
+	fi
+done
 if grep -q 'image/webp=' "$mimeapps"; then
 	fail 'a format no handler advertises was claimed'
 fi
@@ -142,7 +161,7 @@ mkdir -p "$hermetic/tools" "$hermetic/programs"
 for tool in id python3 mkdir mktemp rm ln; do
 	ln -s "$(command -v "$tool")" "$hermetic/tools/$tool"
 done
-for app in celluloid sxiv thunar; do
+for app in celluloid sxiv thunar firefox; do
 	cp "$work/bin/$app" "$hermetic/programs/$app"
 done
 run_hermetic() { PATH=$hermetic/tools:$hermetic/programs "$seed"; }
@@ -178,6 +197,19 @@ rm -f "$XDG_DATA_DIRS/applications/thunar.desktop"
 "$seed" >/dev/null || fail 'seeding failed without a file manager entry'
 if grep -q 'inode/directory' "$mimeapps"; then
 	fail 'a folder handler was claimed without a file manager'
+fi
+rm -f "$mimeapps"
+install_handlers
+
+# ── the browser is optional too ──────────────────────────────────────────
+#
+# An existing-system install whose user's default is another browser does not
+# install Firefox (dwm_other_default_browser).
+
+rm -f "$XDG_DATA_DIRS/applications/firefox.desktop"
+"$seed" >/dev/null || fail 'seeding failed without Firefox'
+if grep -q 'x-scheme-handler/https=' "$mimeapps"; then
+	fail 'a browser was claimed without Firefox'
 fi
 rm -f "$mimeapps"
 install_handlers

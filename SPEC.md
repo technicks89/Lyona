@@ -266,7 +266,11 @@ comment out replaced assignments instead of deleting them, and regenerate the
 GRUB configuration. It must set `GRUB_THEME`, clear a `GRUB_TERMINAL_OUTPUT`
 that would disable the graphical terminal, and supply a `GRUB_GFXMODE` only
 when the user has not chosen one. It must never change which entry boots, the
-kernel command line, or the timeout.
+kernel command line, or the timeout. It also hides the top-level
+`(EFI BootNext)` firmware entries GRUB 2.16 generates, with
+`GRUB_DISABLE_BOOTNEXT=true` in a lyona drop-in under `/etc/default/grub.d/`.
+It doesn't do this when the user has set that key, and
+`lyona-grub-theme remove` deletes the drop-in (#239).
 
 Installs from the lyona image boot with GRUB (#235), so they get the theme. A
 machine that does not boot with GRUB must be reported and left untouched, and a
@@ -462,7 +466,8 @@ Runtime dependencies are classified as:
   notification tools, audio controls, screenshot tooling, Nerd/emoji fonts,
   Flatpak with its GTK portal, Gear Lever from a user-scoped Flathub
   remote, Topgrade built with cargo (from `rustup`, or a Rust toolchain already
-  installed), and GNOME Keyring (`gnome-keyring`) for secret storage.
+  installed) with `cargo-update` for its Cargo step, Firefox as the default
+  browser, and GNOME Keyring (`gnome-keyring`) for secret storage.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
   password login. A `startx` session has no such stack; its keyring stays locked

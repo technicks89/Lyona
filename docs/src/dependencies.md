@@ -30,7 +30,7 @@ The groups are made of smaller groups:
 | Group | Made of |
 | --- | --- |
 | `required` | build + x11 + runtime-required |
-| `recommended` | desktop + media + system-management + screenshot-optional + theme + theme-gtk + fonts + shell + rust-toolchain |
+| `recommended` | desktop + browser + media + system-management + screenshot-optional + theme + theme-gtk + fonts + shell + rust-toolchain |
 | `optional` | theme-optional + desktop-optional + system-management-optional |
 | `full` | required + recommended + optional + gaming |
 
@@ -71,6 +71,12 @@ The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the po
 `gnome-keyring` (the `keyring` group) stores secrets for browsers, NetworkManager and other applications. It includes `pam_gnome_keyring.so`, which Arch's LightDM PAM stack already loads, so a password login unlocks the keyring; there is no separate PAM package. Under `startx` the keyring is unlocked on first use instead. `dwm-diagnostics` and System Health flag it when it is missing.
 
 `pacman-contrib` (the `update-indicator` group) provides `checkupdates`, which the panel's update icon counts pending package updates with. It never takes pacman's lock.
+
+### `browser`
+
+A web browser, for SUPER+B and the links other programs open. On a fresh account, `seed-default-apps.sh` makes it the default for web links and HTML pages only. Firefox also claims image, audio and video types, but those stay with sxiv and Celluloid. The installer skips it when your default `https` handler (`xdg-mime query default x-scheme-handler/https`) is another browser that's already installed.
+
+`firefox`
 
 ### `media`
 
@@ -118,7 +124,9 @@ The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfe
 
 `rustup`, whose `cargo` builds Topgrade (`scripts/install-topgrade`). Topgrade is AUR-only on Arch, so its newest crates.io release is built with cargo instead. `rustup` conflicts with Arch's `rust` and `cargo` packages. When another Rust toolchain is installed (Arch's `rust`, another package providing it, or a `cargo` from rustup.rs), the installer leaves `rustup` out and uses that toolchain's `cargo`. `check-deps.sh` notes this beside its package suggestions.
 
-`rustup`
+`cargo-update` provides `cargo install-update`, which Topgrade's Cargo step runs to update what `cargo install` installed, Topgrade included. Without it, Topgrade skips that step. It depends on a `cargo`, which `rustup` or Arch's `rust` provides. Beside a `cargo` from rustup.rs, which no package provides, the installer leaves it out, since pacman would add Arch's `rust` next to it: run `cargo install cargo-update` there instead.
+
+`rustup` `cargo-update`
 
 ### `desktop-optional`
 

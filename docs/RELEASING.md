@@ -236,7 +236,8 @@ run `archinstall` yourself, then run `/root/lyona-postinstall.sh`
 directly — it only requires a mounted target at `/mnt` with a regular user
 already created, and works the same whether `lyona-install` or a manual
 `archinstall` run got you there. It also handles CPU microcode, a GPU
-driver, NetworkManager, and low-memory swap (`LYONA_NVIDIA_DRIVER=1` installs
+driver, NetworkManager (with a profile for the Wi-Fi network the live medium is
+connected to, read from iwd), and low-memory swap (`LYONA_NVIDIA_DRIVER=1` installs
 the proprietary NVIDIA driver, which the wizard would have recommended),
 before installing the lyona package profile
 itself. Once that is done, and its temporary passwordless `sudo` rule is

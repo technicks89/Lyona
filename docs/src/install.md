@@ -42,7 +42,14 @@ with the CyberRe boot menu theme.
    ```
 
 3. **Boot it.** The `lyona-install` wizard starts on its own. It checks the
-   network first and says how to connect if there is none. Then it asks:
+   network first. With no wired connection and a Wi-Fi card, it offers to
+   connect to Wi-Fi. It lists the networks it finds, with signal strength and
+   security, plus **Other (hidden network)**, and asks for the passphrase.
+   Open and WPA personal networks are supported, but enterprise (802.1X) and
+   WEP networks aren't. The new system keeps the connection, so its first boot
+   is online. If a Wi-Fi chip has no driver on the image (some Broadcom chips
+   in older Macs need `broadcom-wl`), the wizard says so; install over a cable
+   or USB tethering instead. Then it asks:
    - the keyboard layout;
    - the disk to install to, which it erases;
    - the filesystem: btrfs (the default) or ext4, either optionally encrypted
@@ -360,6 +367,14 @@ Selecting the theme is a separate step, because it edits the bootloader:
   invisible.
 - `GRUB_GFXMODE` is set to `auto` if it is not already set, since the
   640x480 fallback letterboxes the theme's 1920x1080 background.
+- `/etc/default/grub.d/90-lyona-menu.cfg` sets `GRUB_DISABLE_BOOTNEXT=true`.
+  Since GRUB 2.16, every firmware boot entry (the firmware's boot manager, a
+  DVD drive, network boot) otherwise gets its own top-level
+  `... (EFI BootNext)` menu entry. This is a drop-in file, so
+  `/etc/default/grub` isn't edited for it. If you set
+  `GRUB_DISABLE_BOOTNEXT` in `/etc/default/grub`, your setting is kept. If
+  you set it after the drop-in was written, the next `apply` removes the
+  drop-in. A file at that path that isn't lyona's copy is never replaced.
 - `grub-mkconfig` regenerates `/boot/grub/grub.cfg`.
 
 Every one of those is printed as it happens. Replaced lines are commented out
@@ -380,7 +395,7 @@ Manage it afterwards with:
 lyona-grub-theme status    # detected bootloader and selected theme
 lyona-grub-theme list      # installed themes
 lyona-grub-theme apply     # select CyberRe (or apply <name>)
-lyona-grub-theme remove    # back to the default GRUB appearance
+lyona-grub-theme remove    # back to the default GRUB appearance and entries
 ```
 
 The theme is vendored from
