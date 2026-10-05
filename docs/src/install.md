@@ -371,8 +371,10 @@ Selecting the theme is a separate step, because it edits the bootloader:
   Since GRUB 2.16, every firmware boot entry (the firmware's boot manager, a
   DVD drive, network boot) otherwise gets its own top-level
   `... (EFI BootNext)` menu entry. This is a drop-in file, so
-  `/etc/default/grub` isn't edited for it. If you already set
-  `GRUB_DISABLE_BOOTNEXT` in `/etc/default/grub`, your setting is kept.
+  `/etc/default/grub` isn't edited for it. If you set
+  `GRUB_DISABLE_BOOTNEXT` in `/etc/default/grub`, your setting is kept. If
+  you set it after the drop-in was written, the next `apply` removes the
+  drop-in. A file at that path that isn't lyona's copy is never replaced.
 - `grub-mkconfig` regenerates `/boot/grub/grub.cfg`.
 
 Every one of those is printed as it happens. Replaced lines are commented out

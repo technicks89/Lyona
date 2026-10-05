@@ -266,6 +266,15 @@ installs() { # PROVIDER
 [[ $(installs rust) == 'INSTALL cargo-update' ]] || fail "rustup was installed beside Arch's rust, or cargo-update was not"
 [[ $(installs rust-nightly-bin) == 'INSTALL cargo-update' ]] || fail 'rustup was installed beside another provider'
 [[ $(installs rustup) == 'INSTALL rustup cargo-update' ]] || fail 'an installed rustup was treated as another toolchain'
+# Arch's rustup package with its cargo on PATH (/usr/bin/cargo, an absolute
+# path): neither skipped, as that cargo is the package's, not rustup.rs's.
+# shellcheck disable=SC2016 # expanded by the inner shell
+out=$(env PATH="$work/pacman-only:$work/rustupsh:$work/sys" STUB_RUST_PROVIDER=rustup bash -c '
+	. "$0"
+	DISTRO_FAMILY=arch
+	install_packages() { printf "INSTALL %s\n" "$*"; }
+	dwm_install_package_profile rust-toolchain' "$repo/scripts/dwm-packages.sh" 2>&1)
+[[ $out == 'INSTALL rustup cargo-update' ]] || fail "packaged rustup with cargo on PATH: $out"
 # A rustup.rs cargo, which no package provides: neither, or pacman would pull in
 # Arch's rust beside it for cargo-update's dependency on cargo.
 # shellcheck disable=SC2016 # expanded by the inner shell

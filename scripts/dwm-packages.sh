@@ -331,7 +331,9 @@ dwm_install_package_profile() {
 
 # The user's default browser, by desktop ID, when it is installed and is not
 # Firefox: the https handler xdg-mime reports, found as a desktop entry in the
-# XDG data directories. Nothing is printed, and it fails, otherwise.
+# XDG data directories whose program (TryExec, else Exec) is installed. A
+# leftover entry for a removed browser does not count. Nothing is printed, and
+# it fails, otherwise.
 dwm_other_default_browser() {
 	# All four are set by lyona_xdg_dirs; only data_home is read.
 	# shellcheck disable=SC2034
@@ -351,10 +353,37 @@ dwm_other_default_browser() {
 	IFS=: read -ra dirs <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 	for dir in "$data_home" "${dirs[@]}"; do
 		[[ -n $dir && -f $dir/applications/$id ]] || continue
+		# The first entry found is the one used, as in xdg-open.
+		dwm_desktop_entry_runnable "$dir/applications/$id" || return 1
 		printf '%s\n' "$id"
 		return 0
 	done
 	return 1
+}
+
+# Whether a desktop entry's program is installed: its TryExec, else the first
+# word of its Exec, found on PATH (or as an absolute path).
+dwm_desktop_entry_runnable() { # FILE
+	local line key value program='' try='' section=''
+	while IFS= read -r line; do
+		case $line in
+		'['*']') section=$line ;;
+		*=*)
+			[[ $section == '[Desktop Entry]' ]] || continue
+			key=${line%%=*}
+			value=${line#*=}
+			case $key in
+			TryExec) [[ -n $try ]] || try=$value ;;
+			Exec) [[ -n $program ]] || program=$value ;;
+			esac
+			;;
+		esac
+	done <"$1"
+	[[ -z $try ]] || program=$try
+	program=${program%% *}
+	program=${program#\"}
+	program=${program%\"}
+	[[ -n $program ]] && command -v -- "$program" >/dev/null 2>&1
 }
 
 dwm_power_profiles_provider_installed() {

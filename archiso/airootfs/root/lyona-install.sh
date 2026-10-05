@@ -129,7 +129,10 @@ connect_hidden_wifi() { # STATION
 	while true; do
 		passphrase=$(gum input --password --header "Passphrase for $display (empty for an open network):") ||
 			return 1
-		[[ -z $passphrase ]] || wifi_valid_passphrase "$passphrase" && break
+		# Empty is an open network.
+		if [[ -z $passphrase ]] || wifi_valid_passphrase "$passphrase"; then
+			break
+		fi
 		say --foreground $COLOR_DANGER "A WPA passphrase is 8 to 63 characters."
 	done
 	profile=$(wifi_write_profile "$ssid" "$passphrase" true) || {

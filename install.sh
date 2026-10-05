@@ -597,7 +597,13 @@ print_install_summary() {
 	if [[ $GRUB_THEME_MODE != true ]]; then
 		printf '  GRUB theme: files installed, bootloader left unchanged (--skip-grub-theme)\n'
 	elif grub_in_use; then
-		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first); firmware "(EFI BootNext)" entries hidden\n' "$GRUB_THEME_NAME"
+		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first)\n' "$GRUB_THEME_NAME"
+		# lyona-grub-theme leaves a GRUB_DISABLE_BOOTNEXT the user set alone.
+		if command grep -Eq '^[[:space:]]*GRUB_DISABLE_BOOTNEXT=' "${LYONA_GRUB_DEFAULTS:-/etc/default/grub}"; then
+			printf '  GRUB firmware entries: as GRUB_DISABLE_BOOTNEXT in /etc/default/grub sets them (kept)\n'
+		else
+			printf '  GRUB firmware entries: "(EFI BootNext)" entries hidden (/etc/default/grub.d/90-lyona-menu.cfg)\n'
+		fi
 	else
 		printf '  GRUB theme: files installed; this machine does not boot with GRUB\n'
 	fi

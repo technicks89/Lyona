@@ -180,12 +180,25 @@ bootnext_set_by_user() {
 	command grep -Eq '^[[:space:]]*GRUB_DISABLE_BOOTNEXT=' "$grub_defaults"
 }
 
-# Writes the drop-in when it is missing; true when it changed something.
+# Writes the drop-in when it is missing; true when it changed something. A
+# GRUB_DISABLE_BOOTNEXT set in the defaults file wins: an installed drop-in
+# (read after it) is removed then. A file at that path that is not lyona's own
+# copy is left as it is.
 install_menu_dropin() {
 	local tmp
-	! menu_dropin_installed || return 1
 	if bootnext_set_by_user; then
 		info "GRUB_DISABLE_BOOTNEXT is set in $grub_defaults; leaving the firmware entries as you set them."
+		menu_dropin_installed || return 1
+		run_root rm -f -- "$menu_dropin" || {
+			err "could not remove $menu_dropin."
+			return 2
+		}
+		info "Removed $menu_dropin, which would override that setting."
+		return 0
+	fi
+	! menu_dropin_installed || return 1
+	if [[ -e $menu_dropin ]]; then
+		warn "$menu_dropin is not lyona's copy; leaving it as it is."
 		return 1
 	fi
 	tmp=$(mktemp) || {

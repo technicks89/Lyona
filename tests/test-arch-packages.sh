@@ -100,7 +100,11 @@ exit 0
 EOF
 chmod +x "$work/bin/xdg-mime"
 mkdir -p "$work/share/applications"
-: >"$work/share/applications/chromium.desktop"
+printf '[Desktop Entry]\nType=Application\nExec=chromium %%U\n' >"$work/share/applications/chromium.desktop"
+printf '#!/bin/sh\nexit 0\n' >"$work/bin/chromium"
+chmod +x "$work/bin/chromium"
+# A leftover entry whose browser was removed.
+printf '[Desktop Entry]\nType=Application\nExec=/opt/gone/browser %%U\n' >"$work/share/applications/gone.desktop"
 browser_install() { # DEFAULT-BROWSER
 	# shellcheck disable=SC2016 # expanded by the inner shell
 	PATH="$work/bin:$PATH" DWM_TEST_BROWSER="$1" XDG_DATA_HOME="$work/none" XDG_DATA_DIRS="$work/share" bash -c '
@@ -110,7 +114,7 @@ browser_install() { # DEFAULT-BROWSER
 		dwm_install_package_profile browser
 	' _ "$repo/scripts/dwm-packages.sh" 2>&1
 }
-for case in '' firefox.desktop removed.desktop; do
+for case in '' firefox.desktop removed.desktop gone.desktop; do
 	out=$(browser_install "$case")
 	[[ $out == 'INSTALL firefox' ]] || {
 		printf 'Firefox was not installed with the default browser %s: %s\n' "${case:-unset}" "$out" >&2

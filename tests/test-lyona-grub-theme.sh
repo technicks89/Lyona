@@ -191,6 +191,29 @@ assert_line "$case_dir/default-grub" 'GRUB_DISABLE_BOOTNEXT=false'
 run_helper "$case_dir" status || fail 'status failed with GRUB_DISABLE_BOOTNEXT set by the user'
 assert_line "$case_dir/out" 'grub-bootnext: user'
 
+# The user sets it after lyona's drop-in was written: the drop-in, read after
+# the defaults file, would override it, so apply removes it and regenerates.
+case_dir=$(default_grub_fixture | new_case user-bootnext-later)
+run_helper "$case_dir" apply || fail 'the first apply failed'
+assert_line "$case_dir/default-grub.d/90-lyona-menu.cfg" 'GRUB_DISABLE_BOOTNEXT=true'
+printf 'GRUB_DISABLE_BOOTNEXT=false\n' >>"$case_dir/default-grub"
+: >"$case_dir/calls.log"
+run_helper "$case_dir" apply || fail 'apply failed after the user set GRUB_DISABLE_BOOTNEXT'
+assert_no_file "$case_dir/default-grub.d/90-lyona-menu.cfg" \
+	'the drop-in was kept over the GRUB_DISABLE_BOOTNEXT the user set'
+assert_contains "$case_dir/calls.log" "grub-mkconfig -o $case_dir/boot/grub/grub.cfg"
+
+# A file at the drop-in's path that is not lyona's copy is never replaced.
+case_dir=$(default_grub_fixture | new_case foreign-dropin)
+mkdir -p "$case_dir/default-grub.d"
+printf 'GRUB_DISABLE_BOOTNEXT=false\n' >"$case_dir/default-grub.d/90-lyona-menu.cfg"
+run_helper "$case_dir" apply || fail 'apply failed beside a drop-in that is not lyona'"'"'s'
+assert_line "$case_dir/default-grub.d/90-lyona-menu.cfg" 'GRUB_DISABLE_BOOTNEXT=false'
+assert_no_line "$case_dir/default-grub.d/90-lyona-menu.cfg" 'GRUB_DISABLE_BOOTNEXT=true'
+assert_contains "$case_dir/out" "is not lyona's copy"
+run_helper "$case_dir" remove || fail 'remove failed beside a drop-in that is not lyona'"'"'s'
+assert_file "$case_dir/default-grub.d/90-lyona-menu.cfg" 'remove deleted a drop-in that is not lyona'"'"'s'
+
 # ── an existing GRUB_THEME is replaced, not duplicated ───────────────────
 
 case_dir=$(
@@ -312,6 +335,16 @@ case_dir=$(default_grub_fixture | new_case installer-summary)
 default_summary=$(LYONA_GRUB_DEFAULTS="$case_dir/default-grub" grub_summary)
 assert_string_contains "$default_summary" 'CyberRe' \
 	'the GRUB theme is not selected by default on a GRUB machine'
+
+firmware_summary() {
+	(cd "$repo" && PATH="$bin:$PATH" ./install.sh --dry-run 2>&1) |
+		sed -n 's/^  GRUB firmware entries: //p'
+}
+assert_string_contains "$(LYONA_GRUB_DEFAULTS="$case_dir/default-grub" firmware_summary)" \
+	'entries hidden' 'the installer summary does not say the BootNext entries are hidden'
+printf 'GRUB_DISABLE_BOOTNEXT=false\n' >>"$case_dir/default-grub"
+assert_string_contains "$(LYONA_GRUB_DEFAULTS="$case_dir/default-grub" firmware_summary)" \
+	'(kept)' 'the installer summary does not report the GRUB_DISABLE_BOOTNEXT the user set'
 
 no_grub_summary=$(LYONA_GRUB_DEFAULTS="$case_dir/absent" grub_summary)
 assert_string_contains "$no_grub_summary" 'does not boot with GRUB' \
