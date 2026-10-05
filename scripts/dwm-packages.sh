@@ -52,6 +52,14 @@ dwm_packages() {
 		dwm_packages "$family" keyring
 		dwm_packages "$family" update-indicator
 		;;
+	arch:browser)
+		# A web browser, for SUPER+B and links from other programs (#240):
+		# without one, dwm-default-apps open has nothing to open. A fresh
+		# account gets it as its default (seed-default-apps.sh), and
+		# dwm_install_package_profile leaves it out where the user's default
+		# browser is another one already installed.
+		printf '%s\n' firefox
+		;;
 	arch:keyring)
 		# Secret storage, and the login keyring's unlock at a password login.
 		# pam_gnome_keyring.so ships in gnome-keyring itself (Arch has no
@@ -178,7 +186,10 @@ dwm_packages() {
 		# decision D-28), as it is AUR-only. rustup conflicts with Arch's
 		# rust and cargo packages, so dwm_install_package_profile leaves it out
 		# when another Rust toolchain is installed (dwm_other_rust_toolchain).
-		printf '%s\n' rustup
+		# cargo-update (#238): Topgrade's Cargo step runs cargo install-update,
+		# without which nothing installed with cargo install, Topgrade itself
+		# included, is updated. It needs a cargo, which rustup provides.
+		printf '%s\n' rustup cargo-update
 		;;
 	arch:shell)
 		# The interactive shell configuration from technicks89/mybash. Its own
@@ -232,6 +243,7 @@ dwm_packages() {
 		;;
 	arch:recommended)
 		dwm_packages "$family" desktop
+		dwm_packages "$family" browser
 		dwm_packages "$family" media
 		dwm_packages "$family" system-management
 		dwm_packages "$family" screenshot-optional
@@ -278,7 +290,7 @@ dwm_command_tier() { # required|desktop
 dwm_install_package_profile() {
 	local profile
 	local packages=()
-	local package other_rust
+	local package other_rust other_browser
 	local -A queued=()
 
 	for profile in "$@"; do
@@ -294,6 +306,17 @@ dwm_install_package_profile() {
 				printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other_rust" >&2
 				continue
 			fi
+			if [[ $package == firefox ]] && other_browser=$(dwm_other_default_browser); then
+				printf 'Keeping the default browser (%s); skipping firefox.\n' "$other_browser" >&2
+				continue
+			fi
+			# A cargo no package provides (rustup.rs): pacman would add Arch's
+			# rust beside it to satisfy cargo-update's dependency on cargo.
+			if [[ $package == cargo-update ]] && other_rust=$(dwm_other_rust_toolchain) && [[ $other_rust == /* ]]; then
+				printf 'Keeping the Rust toolchain at %s; skipping cargo-update (run cargo install cargo-update).\n' \
+					"$other_rust" >&2
+				continue
+			fi
 			queued[$package]=1
 			packages+=("$package")
 		done < <(dwm_packages "$DISTRO_FAMILY" "$profile")
@@ -304,6 +327,34 @@ dwm_install_package_profile() {
 	fi
 
 	install_packages "${packages[@]}"
+}
+
+# The user's default browser, by desktop ID, when it is installed and is not
+# Firefox: the https handler xdg-mime reports, found as a desktop entry in the
+# XDG data directories. Nothing is printed, and it fails, otherwise.
+dwm_other_default_browser() {
+	# All four are set by lyona_xdg_dirs; only data_home is read.
+	# shellcheck disable=SC2034
+	local id dir config_home data_home state_home cache_home
+	local -a dirs
+	command -v xdg-mime >/dev/null 2>&1 || return 1
+	id=$(xdg-mime query default x-scheme-handler/https 2>/dev/null) || return 1
+	[[ $id == *.desktop && $id != */* && $id != firefox.desktop ]] || return 1
+	# dwm-xdg.sh is beside this file, in a checkout and in an install alike.
+	# Not followed: its directories are locals here, and following it would
+	# make shellcheck track them in every script that sources this one.
+	if ! declare -F lyona_xdg_dirs >/dev/null; then
+		# shellcheck source=/dev/null
+		. "${BASH_SOURCE[0]%/*}/dwm-xdg.sh" || return 1
+	fi
+	lyona_xdg_dirs lenient
+	IFS=: read -ra dirs <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+	for dir in "$data_home" "${dirs[@]}"; do
+		[[ -n $dir && -f $dir/applications/$id ]] || continue
+		printf '%s\n' "$id"
+		return 0
+	done
+	return 1
 }
 
 dwm_power_profiles_provider_installed() {

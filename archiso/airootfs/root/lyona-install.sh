@@ -24,6 +24,8 @@ cancelled() {
 source "${LYONA_UI_LIB:-/root/lyona-ui.sh}"
 # shellcheck source=lyona-nvidia.sh
 source "${LYONA_NVIDIA_LIB:-/root/lyona-nvidia.sh}"
+# shellcheck source=lyona-wifi.sh
+source "${LYONA_WIFI_LIB:-/root/lyona-wifi.sh}"
 
 # GRUB boots both (#235): UEFI, from an EFI system partition, and legacy BIOS,
 # from an MBR disk, which archinstall uses when the medium booted without UEFI.
@@ -44,8 +46,165 @@ firmware_summary() {
 	fi
 }
 
+network_online() {
+	curl -4 -sf -m 5 https://archlinux.org >/dev/null 2>&1
+}
+
+# Up to about twenty seconds for DHCP once Wi-Fi is connected.
+wait_for_network() {
+	local i
+	for ((i = 0; i < 10; i++)); do
+		network_online && return 0
+		sleep 2
+	done
+	return 1
+}
+
+# The passphrase for SSID, on stdout (a pipe, never argv), or a failure when
+# the prompt is cancelled.
+ask_wifi_passphrase() { # SSID-FOR-DISPLAY
+	local passphrase
+	while true; do
+		passphrase=$(gum input --password --header "Passphrase for $1:") || return 1
+		wifi_valid_passphrase "$passphrase" && break
+		# To the terminal: stdout is the passphrase.
+		say --foreground $COLOR_DANGER "A WPA passphrase is 8 to 63 characters." >&2
+	done
+	printf '%s' "$passphrase"
+}
+
+# Connects to one network from the list. On a wrong passphrase or any other
+# failure, the profile written for it is removed, and the reason is in
+# WIFI_MESSAGE for the list to show.
+connect_wifi_network() { # NETWORK-PATH TYPE
+	local path=$1 type=$2 ssid display passphrase profile='' error
+	ssid=$(iwd_property "$path" Network Name) || ssid=
+	[[ -n $ssid ]] || {
+		WIFI_MESSAGE="That network is gone; scan again."
+		return 1
+	}
+	display=$(wifi_display_name "$ssid")
+	case $type in
+	open) ;;
+	psk)
+		# A profile from an earlier try (or from iwctl) is used as it is.
+		if [[ ! -f $(wifi_profile_path "$ssid" psk) ]]; then
+			passphrase=$(ask_wifi_passphrase "$display") || {
+				WIFI_MESSAGE=
+				return 1
+			}
+			profile=$(wifi_write_profile "$ssid" "$passphrase" false) || {
+				WIFI_MESSAGE="Could not save the passphrase for $display."
+				return 1
+			}
+			passphrase=
+		else
+			profile=$(wifi_profile_path "$ssid" psk)
+		fi
+		;;
+	*)
+		WIFI_MESSAGE="$display uses $(wifi_security_words "$type") security, which the installer cannot set up. Use another network or a wired connection."
+		return 1
+		;;
+	esac
+	say "Connecting to $display..."
+	if ! error=$(wifi_iwd_connect "$path"); then
+		[[ -z $profile ]] || rm -f -- "$profile"
+		log_step "wifi: connect failed: ${error//$'\n'/ }"
+		WIFI_MESSAGE="Could not connect to $display. Check the passphrase and try again."
+		return 1
+	fi
+	return 0
+}
+
+# A network that does not broadcast its name.
+connect_hidden_wifi() { # STATION
+	local ssid display passphrase profile error
+	ssid=$(gum input --header "Network name (SSID):") || return 1
+	[[ -n $ssid && ${#ssid} -le 32 ]] || {
+		WIFI_MESSAGE="A network name is 1 to 32 characters."
+		return 1
+	}
+	display=$(wifi_display_name "$ssid")
+	while true; do
+		passphrase=$(gum input --password --header "Passphrase for $display (empty for an open network):") ||
+			return 1
+		[[ -z $passphrase ]] || wifi_valid_passphrase "$passphrase" && break
+		say --foreground $COLOR_DANGER "A WPA passphrase is 8 to 63 characters."
+	done
+	profile=$(wifi_write_profile "$ssid" "$passphrase" true) || {
+		WIFI_MESSAGE="Could not save the passphrase for $display."
+		return 1
+	}
+	passphrase=
+	say "Connecting to $display..."
+	if ! error=$(wifi_iwd_connect_hidden "$1" "$ssid"); then
+		rm -f -- "$profile"
+		log_step "wifi: hidden connect failed: ${error//$'\n'/ }"
+		WIFI_MESSAGE="Could not connect to $display. Check the name and the passphrase."
+		return 1
+	fi
+	return 0
+}
+
+# Pick a network and connect (#237). Succeeds once connected; fails when the
+# user goes back, or when the device has no station (said in WIFI_MESSAGE).
+WIFI_MESSAGE=
+connect_wifi() {
+	local -a interfaces labels rows
+	local -A networks=()
+	local interface station row path name type signal label choice header
+	mapfile -t interfaces < <(wifi_interfaces)
+	if ((${#interfaces[@]} > 1)); then
+		interface=$(gum choose --header "Which Wi-Fi device?" "${interfaces[@]}") || return 1
+	else
+		interface=${interfaces[0]}
+	fi
+	say "Turning on $interface..."
+	if ! station=$(wifi_station "$interface"); then
+		WIFI_MESSAGE="$interface did not come up for Wi-Fi (iwd has no station for it)."
+		return 1
+	fi
+	WIFI_MESSAGE=
+	while true; do
+		show_logo
+		say "Scanning for Wi-Fi networks..."
+		wifi_scan "$station"
+		rows=()
+		mapfile -t rows < <(wifi_networks "$station" || :)
+		labels=()
+		networks=()
+		for row in "${rows[@]}"; do
+			IFS=$'\t' read -r path name type signal <<<"$row"
+			[[ -n $path && $signal =~ ^-?[0-9]+$ ]] || continue
+			label="$(wifi_display_name "$name")  $(wifi_bars "$signal")  $(wifi_security_words "$type")"
+			[[ -z ${networks[$label]:-} ]] || continue
+			networks[$label]="$path"$'\t'"$type"
+			labels+=("$label")
+		done
+		labels+=("Other (hidden network)" "Scan again" "Back")
+		header="Choose a Wi-Fi network:"
+		[[ -z $WIFI_MESSAGE ]] || header="$WIFI_MESSAGE"$'\n\n'"$header"
+		show_logo
+		choice=$(gum choose --header "$header" "${labels[@]}") || return 1
+		WIFI_MESSAGE=
+		case $choice in
+		"Scan again") continue ;;
+		Back) return 1 ;;
+		"Other (hidden network)")
+			connect_hidden_wifi "$station" && return 0
+			continue
+			;;
+		esac
+		row=${networks[$choice]:-}
+		[[ -n $row ]] || continue
+		connect_wifi_network "${row%%$'\t'*}" "${row#*$'\t'}" && return 0
+	done
+}
+
 require_network() {
-	while ! curl -4 -sf -m 5 https://archlinux.org >/dev/null 2>&1; do
+	local choice has_wifi hint
+	while ! network_online; do
 		show_logo
 		say --foreground $COLOR_DANGER --bold "No internet connection detected."
 		say "archinstall needs working internet to download packages, and this wizard"
@@ -56,14 +215,48 @@ require_network() {
 			say --foreground $COLOR_DIM "  $line"
 		done
 		echo
-		say "Wired: check the link is attached, or wait a moment for DHCP."
-		say "Wi-Fi: Ctrl+C to drop to a shell, run iwctl (station <dev> connect <SSID>),"
-		say "then re-run lyona-install."
-		echo
-		if gum confirm "Retry the connectivity check now?"; then
-			continue
+		has_wifi=false
+		[[ -z $(wifi_interfaces) ]] || has_wifi=true
+		if [[ -n $WIFI_MESSAGE ]]; then
+			say --foreground $COLOR_DANGER "$WIFI_MESSAGE"
+			echo
+			WIFI_MESSAGE=
+		fi
+		if $has_wifi; then
+			say "Wired: check the cable is plugged in, or wait a moment for DHCP."
+			echo
+			choice=$(gum choose --header "What would you like to do?" \
+				"Connect to Wi-Fi" "Retry" "Continue without internet") || cancelled "no internet connection"
+			case $choice in
+			"Connect to Wi-Fi")
+				log_step "wifi: connecting"
+				WIFI_MESSAGE=
+				if connect_wifi; then
+					log_step "wifi: connected"
+					show_logo
+					say "Connected. Waiting for an address..."
+					wait_for_network || :
+				fi
+				continue
+				;;
+			Retry) continue ;;
+			esac
+		else
+			say "Wired: check the cable is plugged in, or wait a moment for DHCP."
+			hint=$(wifi_driver_hint)
+			if [[ -n $hint ]]; then
+				echo
+				while IFS= read -r line; do
+					say --foreground $COLOR_DANGER "$line"
+				done <<<"$hint"
+			fi
+			echo
+			if gum confirm "Retry the connectivity check now?"; then
+				continue
+			fi
 		fi
 		gum confirm --default=false "Continue without confirmed internet access?" && return 0
+		$has_wifi && continue
 		cancelled "no internet connection"
 	done
 }

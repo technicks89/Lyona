@@ -204,11 +204,13 @@ the dark/light theme you pick in Settings.
 lyona-grub-theme status    # detected bootloader and selected theme
 lyona-grub-theme list      # installed themes
 lyona-grub-theme apply     # select CyberRe (or apply <name>)
-lyona-grub-theme remove    # back to the default GRUB appearance
+lyona-grub-theme remove    # back to the default GRUB appearance and entries
 ```
 
 Applying or removing a theme edits `/etc/default/grub` and regenerates
-`/boot/grub/grub.cfg`, so it needs root and backs the file up first. See
+`/boot/grub/grub.cfg`, so it needs root and backs the file up first. Applying
+also hides the `(EFI BootNext)` firmware entries GRUB 2.16 adds, through a
+drop-in file that removing deletes. See
 [Install](install.md#grub-boot-menu-theme) for exactly which keys it changes.
 
 Machines that boot with systemd-boot have no GRUB menu to theme, and the

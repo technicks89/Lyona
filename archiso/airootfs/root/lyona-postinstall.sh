@@ -33,6 +33,8 @@ source /root/lyona-ui.sh
 source "$REPO_SRC/scripts/dwm-packages.sh"
 # shellcheck source=lyona-nvidia.sh
 source /root/lyona-nvidia.sh
+# shellcheck source=lyona-wifi.sh
+source /root/lyona-wifi.sh
 require_gum
 : >"$LOG_FILE"
 install_error_trap "$@"
@@ -352,6 +354,10 @@ install_topgrade() {
 	if other=$(arch-chroot "$TARGET" bash -c '. "$1" && dwm_other_rust_toolchain' _ \
 		"$target_home/$checkout_rel/scripts/dwm-packages.sh"); then
 		printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other"
+		# cargo-update (#238) needs a cargo; a package one (not a rustup.rs path)
+		# satisfies it without pacman adding a second toolchain.
+		[[ $other == /* ]] || arch-chroot "$TARGET" pacman -S --noconfirm --needed cargo-update ||
+			printf 'cargo-update was not installed; Topgrade will not update cargo packages.\n'
 	else
 		mapfile -t toolchain < <(dwm_packages arch rust-toolchain)
 		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${toolchain[@]}"
@@ -403,6 +409,12 @@ run_logged "Installing the CachyOS kernels..." install_cachyos_kernels
 run_logged "Installing CPU microcode..." install_microcode
 run_logged "Installing GPU drivers..." install_gpu_drivers
 run_logged "Configuring NetworkManager..." install_networkmanager
+# The Wi-Fi the wizard connected with, so the first boot is online (#237). In
+# this shell, not run_logged's: the passphrase is read here, and what is said
+# about it (never the passphrase) goes to the log.
+if ! wifi_carry_over "$TARGET" >>"$LOG_FILE" 2>&1; then
+	note_warning "The Wi-Fi network was not saved for the new system; connect to it again after the first boot."
+fi
 run_logged "Checking swap..." setup_swap_if_needed
 run_logged "Checking for a QEMU/KVM hypervisor..." install_qemu_guest_utils
 

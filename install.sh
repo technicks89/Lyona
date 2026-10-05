@@ -597,7 +597,7 @@ print_install_summary() {
 	if [[ $GRUB_THEME_MODE != true ]]; then
 		printf '  GRUB theme: files installed, bootloader left unchanged (--skip-grub-theme)\n'
 	elif grub_in_use; then
-		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first)\n' "$GRUB_THEME_NAME"
+		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first); firmware "(EFI BootNext)" entries hidden\n' "$GRUB_THEME_NAME"
 	else
 		printf '  GRUB theme: files installed; this machine does not boot with GRUB\n'
 	fi
@@ -822,6 +822,7 @@ ok "Required build and runtime dependencies installed."
 if install_recommended_profile; then
 	info "Installing recommended desktop dependencies..."
 	dwm_install_package_profile desktop
+	dwm_install_package_profile browser
 	dwm_install_package_profile media
 	dwm_install_package_profile system-management
 	if ! env -u DWM_TEST_MODE -u DWM_TEST_QUICKSHELL_VERSION \
@@ -843,12 +844,12 @@ if install_recommended_profile; then
 	# that fallback is never reached. It also covers fastfetch, which the
 	# linked .bashrc runs at startup and that script does not install at all.
 	dwm_install_package_profile shell
-	# Seed the media and image defaults before Gear Lever, which writes its own
+	# Seed the browser, media and image defaults before Gear Lever, which writes its own
 	# AppImage MIME preference file; the seed leaves any existing preference alone.
 	if bash "$REPO_DIR/scripts/seed-default-apps.sh"; then
-		ok "Media and image defaults are set."
+		ok "Browser, media and image defaults are set."
 	else
-		warn "Media and image defaults were not seeded; set them in Settings > Defaults."
+		warn "Browser, media and image defaults were not seeded; set them in Settings > Defaults."
 	fi
 	info "Setting up Gear Lever for AppImage management..."
 	# Flatpak cannot install for the user inside the image installer's chroot
@@ -937,14 +938,15 @@ fi
 
 # The toolchain for Topgrade, with the other packages (S15-06, D-28): rustup by
 # preference. The map leaves it out when another Rust toolchain is installed,
-# whose cargo is used instead. A failure skips Topgrade, never the install.
+# whose cargo is used instead. cargo-update comes with it (#238), for
+# Topgrade's Cargo step. A failure skips Topgrade, never the install.
 topgrade_toolchain_ready=false
 if install_topgrade_profile; then
 	info "Installing the Rust toolchain for Topgrade..."
 	if dwm_install_package_profile rust-toolchain; then
 		topgrade_toolchain_ready=true
 	else
-		warn "rustup could not be installed; Topgrade will be skipped. Install rustup, then run install-topgrade."
+		warn "rustup or cargo-update could not be installed; Topgrade will be skipped. Install them (sudo pacman -S --needed rustup cargo-update), then run install-topgrade."
 	fi
 fi
 

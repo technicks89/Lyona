@@ -122,6 +122,15 @@ assert_no_line "$backup" "GRUB_THEME=\"$case_dir/themes/CyberRe/theme.txt\""
 run_helper "$case_dir" status || fail 'status failed after apply'
 assert_line "$case_dir/out" "grub-theme: $case_dir/themes/CyberRe/theme.txt"
 
+# ── apply hides the "(EFI BootNext)" firmware entries (#239) ─────────────
+#
+# In a drop-in grub-mkconfig reads after the defaults file, so the defaults
+# file is not edited for it, and remove can simply delete it.
+dropin="$case_dir/default-grub.d/90-lyona-menu.cfg"
+assert_line "$dropin" 'GRUB_DISABLE_BOOTNEXT=true'
+assert_no_line "$case_dir/default-grub" 'GRUB_DISABLE_BOOTNEXT=true'
+assert_line "$case_dir/out" 'grub-bootnext: hidden'
+
 # ── applying twice is a no-op ────────────────────────────────────────────
 
 before=$(cat "$case_dir/default-grub")
@@ -140,6 +149,47 @@ assert_no_line "$case_dir/default-grub" \
 assert_contains "$case_dir/calls.log" "grub-mkconfig -o $case_dir/boot/grub/grub.cfg"
 run_helper "$case_dir" status || fail 'status failed after remove'
 assert_line "$case_dir/out" 'grub-theme: none'
+assert_no_file "$dropin" 'remove left the BootNext drop-in behind'
+assert_line "$case_dir/out" 'grub-bootnext: shown'
+
+# A theme already selected, from before the drop-in existed: apply still adds
+# the drop-in, and regenerates for it, without touching the defaults file.
+case_dir=$(default_grub_fixture | new_case upgrade-adds-dropin)
+run_helper "$case_dir" apply || fail 'the first apply failed'
+rm -f "$case_dir/default-grub.d/90-lyona-menu.cfg"
+before=$(cat "$case_dir/default-grub")
+: >"$case_dir/calls.log"
+run_helper "$case_dir" apply || fail 'apply failed over an already selected theme'
+assert_line "$case_dir/default-grub.d/90-lyona-menu.cfg" 'GRUB_DISABLE_BOOTNEXT=true'
+assert_equals "$before" "$(cat "$case_dir/default-grub")" \
+	'adding the drop-in rewrote the defaults file'
+assert_contains "$case_dir/calls.log" "grub-mkconfig -o $case_dir/boot/grub/grub.cfg"
+
+# Remove with no theme selected and only the drop-in left: it goes, and the
+# menu is regenerated for it.
+case_dir=$(default_grub_fixture | new_case dropin-only)
+mkdir -p "$case_dir/default-grub.d"
+printf '%s\n' '# Written by lyona-grub-theme (lyona-grub-theme remove deletes it).' \
+	'# No "(EFI BootNext)" menu entry for every firmware boot entry.' \
+	'GRUB_DISABLE_BOOTNEXT=true' >"$case_dir/default-grub.d/90-lyona-menu.cfg"
+run_helper "$case_dir" remove || fail 'remove failed with only the drop-in'
+assert_no_file "$case_dir/default-grub.d/90-lyona-menu.cfg" 'remove left the drop-in behind'
+assert_contains "$case_dir/calls.log" "grub-mkconfig -o $case_dir/boot/grub/grub.cfg"
+[ -z "$(backup_of "$case_dir")" ] || fail 'removing only the drop-in backed up the defaults file'
+
+# A GRUB_DISABLE_BOOTNEXT the user set is theirs: no drop-in overrides it.
+case_dir=$(
+	new_case user-bootnext <<'EOF'
+GRUB_TIMEOUT=5
+GRUB_DISABLE_BOOTNEXT=false
+EOF
+)
+run_helper "$case_dir" apply || fail 'apply failed with GRUB_DISABLE_BOOTNEXT set by the user'
+assert_no_file "$case_dir/default-grub.d/90-lyona-menu.cfg" \
+	'apply overrode the GRUB_DISABLE_BOOTNEXT the user set'
+assert_line "$case_dir/default-grub" 'GRUB_DISABLE_BOOTNEXT=false'
+run_helper "$case_dir" status || fail 'status failed with GRUB_DISABLE_BOOTNEXT set by the user'
+assert_line "$case_dir/out" 'grub-bootnext: user'
 
 # ── an existing GRUB_THEME is replaced, not duplicated ───────────────────
 
@@ -180,6 +230,7 @@ run_helper "$case_dir" apply || fail 'apply failed on a machine without GRUB'
 assert_contains "$case_dir/out" 'No GRUB installation found'
 [ ! -s "$case_dir/calls.log" ] || fail 'apply ran grub-mkconfig without GRUB'
 assert_no_file "$case_dir/default-grub" 'apply created a defaults file from nothing'
+assert_no_file "$case_dir/default-grub.d" 'apply wrote a GRUB drop-in without GRUB'
 
 run_helper "$case_dir" status || fail 'status failed on a machine without GRUB'
 assert_line "$case_dir/out" 'grub-theme: no-grub'
@@ -196,6 +247,7 @@ case_dir=$(default_grub_fixture | new_case missing-theme)
 if run_helper "$case_dir" apply Nonexistent; then
 	fail 'apply accepted a theme that is not installed'
 fi
+assert_no_file "$case_dir/default-grub.d" 'a failed apply wrote the BootNext drop-in'
 assert_contains "$case_dir/out" 'is not installed'
 assert_no_line "$case_dir/default-grub" 'GRUB_THEME="Nonexistent"'
 [ ! -s "$case_dir/calls.log" ] || fail 'apply regenerated GRUB for a missing theme'

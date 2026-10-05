@@ -236,8 +236,10 @@ out=$(run --dry-run)
 # The shared rule: rustup only where no other Rust toolchain is installed.
 # shellcheck source=scripts/dwm-packages.sh
 . "$repo/scripts/dwm-packages.sh"
-[[ $(dwm_packages arch rust-toolchain) == rustup ]] || fail 'the rust-toolchain profile is not rustup'
+[[ $(dwm_packages arch rust-toolchain | paste -sd ' ') == 'rustup cargo-update' ]] ||
+	fail 'the rust-toolchain profile is not rustup and cargo-update'
 dwm_packages arch recommended | grep -Fxq rustup || fail 'rustup is not in the recommended packages'
+dwm_packages arch recommended | grep -Fxq cargo-update || fail 'cargo-update is not in the recommended packages (#238)'
 other() { # PATH [PROVIDER]
 	# shellcheck disable=SC2016 # expanded by the inner shell
 	env PATH="$1" STUB_RUST_PROVIDER="${2:-}" bash -c '. "$0"; dwm_other_rust_toolchain' "$repo/scripts/dwm-packages.sh"
@@ -260,10 +262,20 @@ installs() { # PROVIDER
 		install_packages() { printf "INSTALL %s\n" "$*"; }
 		dwm_install_package_profile rust-toolchain' "$repo/scripts/dwm-packages.sh" 2>/dev/null
 }
-[[ $(installs '') == 'INSTALL rustup' ]] || fail 'rustup was not installed on a machine without Rust'
-[[ -z $(installs rust) ]] || fail "rustup was installed beside Arch's rust"
-[[ -z $(installs rust-nightly-bin) ]] || fail 'rustup was installed beside another provider'
-[[ $(installs rustup) == 'INSTALL rustup' ]] || fail 'an installed rustup was treated as another toolchain'
+[[ $(installs '') == 'INSTALL rustup cargo-update' ]] || fail 'rustup was not installed on a machine without Rust'
+[[ $(installs rust) == 'INSTALL cargo-update' ]] || fail "rustup was installed beside Arch's rust, or cargo-update was not"
+[[ $(installs rust-nightly-bin) == 'INSTALL cargo-update' ]] || fail 'rustup was installed beside another provider'
+[[ $(installs rustup) == 'INSTALL rustup cargo-update' ]] || fail 'an installed rustup was treated as another toolchain'
+# A rustup.rs cargo, which no package provides: neither, or pacman would pull in
+# Arch's rust beside it for cargo-update's dependency on cargo.
+# shellcheck disable=SC2016 # expanded by the inner shell
+out=$(env PATH="$work/pacman-only:$work/rustupsh:$work/sys" STUB_RUST_PROVIDER='' bash -c '
+	. "$0"
+	DISTRO_FAMILY=arch
+	install_packages() { printf "INSTALL %s\n" "$*"; }
+	dwm_install_package_profile rust-toolchain' "$repo/scripts/dwm-packages.sh" 2>&1)
+[[ $out != *INSTALL* && $out == *'skipping cargo-update (run cargo install cargo-update)'* ]] ||
+	fail "beside a rustup.rs cargo: $out"
 
 # install.sh: the skip flag, the plan line, a guarded toolchain install, and the
 # build last, after the sudo timestamp is closed.
@@ -325,10 +337,14 @@ postinstall_topgrade() { # TARGET-RUST
 		bash -c '. "$1"; . "$2"; install_topgrade' _ "$repo/scripts/dwm-packages.sh" "$work/install_topgrade.sh" >/dev/null
 }
 postinstall_topgrade '' || fail 'the postinstall Topgrade step failed'
-grep -Fqx 'chroot pacman -S --noconfirm --needed rustup' "$work/chroot.log" ||
-	fail "the postinstall did not install rustup: $(cat "$work/chroot.log")"
+grep -Fqx 'chroot pacman -S --noconfirm --needed rustup cargo-update' "$work/chroot.log" ||
+	fail "the postinstall did not install rustup and cargo-update: $(cat "$work/chroot.log")"
 postinstall_topgrade rust || fail 'the postinstall Topgrade step failed beside Arch rust'
-! grep -Fq 'pacman -S' "$work/chroot.log" || fail "the postinstall installed rustup beside Arch's rust"
+! grep -Fq 'rustup' "$work/chroot.log" || fail "the postinstall installed rustup beside Arch's rust"
+grep -Fqx 'chroot pacman -S --noconfirm --needed cargo-update' "$work/chroot.log" ||
+	fail "the postinstall did not install cargo-update beside Arch's rust: $(cat "$work/chroot.log")"
+postinstall_topgrade "$work/rustupsh/cargo" || fail 'the postinstall Topgrade step failed beside a rustup.rs cargo'
+! grep -Fq 'pacman -S' "$work/chroot.log" || fail 'the postinstall installed packages beside a rustup.rs cargo'
 grep -Fq 'su - alice -c' "$work/chroot.log" || fail 'the postinstall did not build Topgrade as the user beside Arch rust'
 
 printf 'install-topgrade: PASS\n'

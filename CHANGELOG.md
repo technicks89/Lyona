@@ -8,6 +8,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- **The image installer offers Wi-Fi** when there is no wired connection and the machine has a Wi-Fi card. It lists the
+  networks it finds with their signal and security, plus hidden networks, and asks for the passphrase. Open and WPA
+  personal networks are supported, but enterprise and WEP networks aren't. The passphrase goes only into iwd's own
+  profile (mode 600), never into a command line or the install log. The new system gets a NetworkManager profile for
+  the same network, so its first boot is online. A Wi-Fi chip with no driver on the image is named, with a note for the
+  Broadcom chips that need `broadcom-wl` (#237).
+- **Firefox is installed** in the recommended and full profiles, image installs included, and a fresh account gets it
+  as its default browser, for web links and HTML pages only. Before this, SUPER+B had no browser to open. An existing
+  system whose default browser is another installed browser keeps it and gets no Firefox (#240).
+- **cargo-update is installed beside rustup**, from Arch's `extra` repository. Topgrade's Cargo step needs it to update
+  what `cargo install` installed, Topgrade included, and skipped that step without it (#238).
+
+### Fixed
+
+- **The GRUB menu no longer lists every firmware boot entry:** GRUB 2.16 added a top-level `... (EFI BootNext)` entry
+  for each one (the firmware's boot manager, a DVD drive and so on). `lyona-grub-theme apply`, which the installers run,
+  now turns that off with `GRUB_DISABLE_BOOTNEXT=true` in `/etc/default/grub.d/90-lyona-menu.cfg`. That file is a
+  drop-in, so `/etc/default/grub` is not edited for it. `remove` deletes it, and a value you set yourself in
+  `/etc/default/grub` is kept (#239).
+
 ## [2026.10.0-beta.4] - 2026-10-04
 
 Fifth beta of the Arch Linux line: image installs boot with GRUB instead of systemd-boot, on legacy BIOS and UEFI,
