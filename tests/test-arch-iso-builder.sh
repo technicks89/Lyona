@@ -440,7 +440,15 @@ config_version=$(
 }
 
 releng="$work/releng"
-mkdir -p "$releng/airootfs/root" "$releng/airootfs/etc/mkinitcpio.conf.d"
+mkdir -p "$releng/airootfs/root" "$releng/airootfs/etc/mkinitcpio.conf.d" \
+	"$releng/airootfs/etc/systemd/system/getty@tty1.service.d"
+# tty1's autologin and the message of the day, as releng ships them.
+cat >"$releng/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/usr/bin/agetty --noreset --noclear --autologin root - ${TERM}
+EOF
+printf 'To install Arch Linux follow the installation guide:\n' >"$releng/airootfs/etc/motd"
 # The HOOKS line as releng ships it. The splash needs plymouth inserted into
 # it, so the shape the builder patches is pinned here.
 cat >"$releng/airootfs/etc/mkinitcpio.conf.d/archiso.conf" <<'EOF'
@@ -891,6 +899,32 @@ grep -Fq 'clear' "$zlogin" || {
 	printf '.zlogin does not clear the screen before launching lyona-install.\n' >&2
 	exit 1
 }
+
+# Straight from the splash to the installer: nothing printed on tty1 between
+# them. agetty clears and prints no banner or login line, login is hushed, and
+# the message of the day only reaches logins that do not start the installer.
+staged_root=$work/staged/profile/airootfs
+autologin="$staged_root/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+exec_line=$(grep '^ExecStart=-' "$autologin")
+for flag in --skip-login --noissue --nonewline --nohints '--autologin root'; do
+	[[ $exec_line == *" $flag "* ]] || {
+		printf 'tty1 autologin lacks %s: %s\n' "$flag" "$exec_line" >&2
+		exit 1
+	}
+done
+[[ $exec_line != *--noclear* ]] || {
+	printf 'tty1 autologin keeps the boot text on screen (--noclear).\n' >&2
+	exit 1
+}
+[[ -f $staged_root/root/.hushlogin && ! -e $staged_root/etc/motd ]] || {
+	printf 'login still prints the message of the day before the installer.\n' >&2
+	exit 1
+}
+if ! grep -Fq 'To install Arch Linux' "$staged_root/etc/lyona-archiso-motd" ||
+	! grep -Fq 'cat /etc/lyona-archiso-motd' "$zlogin"; then
+	printf 'the message of the day is lost for logins that do not start the installer.\n' >&2
+	exit 1
+fi
 
 stamp="$work/staged/profile/airootfs/etc/lyona-iso-release"
 [[ -f $stamp ]] || {

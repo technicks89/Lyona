@@ -355,18 +355,41 @@ info "Installing lyona-install as a live-medium command..."
 install -Dm755 "$repo_dir/archiso/airootfs/root/lyona-install.sh" \
 	"$profile_dir/airootfs/usr/local/bin/lyona-install"
 
+info "Going straight from the splash to the installer on tty1..."
+# Between the splash and the installer's first screen, tty1 used to show a root
+# console for a moment: agetty's /etc/issue banner and "login: root (automatic
+# login)" line, then login's message of the day (releng's Arch install guide
+# text), over the boot text --noclear had kept. Now agetty clears the screen
+# and prints nothing (--skip-login still logs root in with --autologin; on a
+# virtual console it resets the line as usual), login is hushed, and the
+# message of the day is shown by .zlogin, only on logins that do not start the
+# installer.
+autologin_conf="$profile_dir/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+grep -q -- '--autologin root' "$autologin_conf" 2>/dev/null || {
+	err "releng's tty1 autologin drop-in is missing or changed; the archiso profile format changed."
+	exit 1
+}
+cat >"$autologin_conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/usr/bin/agetty --noreset --skip-login --noissue --nonewline --nohints --autologin root - ${TERM}
+EOF
+: >"$profile_dir/airootfs/root/.hushlogin"
+if [[ -f $profile_dir/airootfs/etc/motd ]]; then
+	mv -f -- "$profile_dir/airootfs/etc/motd" "$profile_dir/airootfs/etc/lyona-archiso-motd"
+fi
+
 info "Auto-launching lyona-install on tty1 login..."
 cat >>"$profile_dir/airootfs/root/.zlogin" <<'EOF'
 
 if [[ $(tty) == "/dev/tty1" && ! -f /root/.lyona-install-done ]]; then
-	# tty1's autologin uses --noclear (releng default, kept so diagnostic
-	# text stays visible on ttys/logins this block doesn't cover), so
-	# nothing has cleared the kernel/systemd boot text still sitting on
-	# screen at this point -- do it here rather than waiting for
-	# lyona-install's own first `clear` inside welcome(), which only
-	# runs after require_network's curl round-trip.
+	# agetty already cleared the screen; this covers anything printed since.
+	# lyona-install draws its first screen before it checks the network.
 	clear
 	lyona-install
+elif [[ -r /etc/lyona-archiso-motd ]]; then
+	# releng's message of the day, which login no longer prints.
+	cat /etc/lyona-archiso-motd
 fi
 EOF
 

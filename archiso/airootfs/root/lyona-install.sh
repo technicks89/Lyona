@@ -665,6 +665,10 @@ main() {
 	[[ -x $POSTINSTALL ]] || fail "$POSTINSTALL not found or not executable."
 
 	apply_console_theme
+	# The first screen, straight after the splash: the network check can take
+	# a few seconds, which used to leave the console blank.
+	show_logo
+	say --foreground $COLOR_DIM "Checking the network connection..."
 	log_step "require_network"
 	require_network
 	log_step "require_network done"
