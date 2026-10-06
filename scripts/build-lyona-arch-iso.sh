@@ -376,7 +376,7 @@ ExecStart=-/usr/bin/agetty --noreset --skip-login --noissue --nonewline --nohint
 EOF
 : >"$profile_dir/airootfs/root/.hushlogin"
 if [[ -f $profile_dir/airootfs/etc/motd ]]; then
-	mv -f -- "$profile_dir/airootfs/etc/motd" "$profile_dir/airootfs/etc/lyona-archiso-motd"
+	mv -fT -- "$profile_dir/airootfs/etc/motd" "$profile_dir/airootfs/etc/lyona-archiso-motd"
 fi
 
 info "Auto-launching lyona-install on tty1 login..."

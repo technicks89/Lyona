@@ -106,11 +106,74 @@ It is a separate path from Settings -> System:
 - **Settings** previews package updates through PackageKit, or runs them in a
   terminal, and keeps the panel's update count current.
 - **Topgrade** goes further than packages, with its own prompts. It does not
-  update lyona itself; use `lyona-update` or Settings for that.
+  update lyona itself out of the box; use `lyona-update` or Settings for that,
+  or add it to Topgrade yourself (below).
 
 The installed Topgrade is built with cargo, so `pacman -Syu` does not upgrade it.
 Run `install-topgrade` to upgrade it to the newest release; it does nothing when
 you already have the newest.
+
+### Adding lyona to Topgrade
+
+Topgrade runs your own commands as steps of its run, from the `[commands]`
+section of its configuration file. lyona doesn't add one for you, because the
+file is yours. To have `topgrade` update lyona too:
+
+1. Open Topgrade's configuration. This creates it, at
+   `~/.config/topgrade.toml`, the first time:
+
+   ```sh
+   topgrade --edit-config
+   ```
+
+2. Find the `[commands]` section (it is there, commented out), and add a line
+   under it:
+
+   ```toml
+   [commands]
+   "lyona" = 'if [ "$(lyona-update check --json | jq -r .state)" = behind ]; then lyona-update apply; fi'
+   ```
+
+   Use single quotes around the command, as above: it holds double quotes of
+   its own.
+
+3. Run `topgrade`. Its summary at the end lists **lyona** as a step of its
+   own.
+
+**What the command does.** `lyona-update apply` installs the newest release
+every time it runs, even one you already have. So the command first asks
+`lyona-update check` (see [Checking for updates](#checking-for-updates)) and
+applies only when your install is `behind`:
+
+| `check` says | The step |
+| --- | --- |
+| `behind` | runs `lyona-update apply`: the same update as in a terminal, with its backup and checks |
+| `current` | does nothing |
+| `offline` | does nothing; the next run tries again |
+| `ahead`, `downgrade-offered` or `unknown` | does nothing; nothing older is ever installed from Topgrade |
+
+**What to expect while it runs:**
+- **Confirmation:** `apply` asks before it installs, in Topgrade's terminal.
+  To skip that question, change `lyona-update apply` to
+  `lyona-update apply --yes`.
+- **Authorization:** installing the system files needs root. In a desktop
+  session that is a polkit prompt; otherwise `sudo` asks for your password.
+- **Your channel:** it follows the channel you chose (see [Channels](#channels)).
+  On `preview`, Topgrade installs pre-releases too.
+- **A failed update** shows as a failed step in Topgrade's summary, and leaves
+  your install as it was, as described in
+  [Applying an update](#applying-an-update).
+
+**Your shell:** Topgrade runs the command with your login shell. The line
+above works in bash and zsh. With fish, use this instead:
+
+```toml
+"lyona" = 'if test (lyona-update check --json | jq -r .state) = behind; lyona-update apply; end'
+```
+
+**To run only this step,** use `topgrade --only custom_commands`. This runs
+every command in your `[commands]` section. **To stop** Topgrade updating
+lyona, delete the line.
 
 ## Applying an update
 

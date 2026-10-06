@@ -8,6 +8,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.5] - 2026-10-09
+
+Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and
+goes straight from the boot splash to the installer; GRUB no longer lists every firmware boot entry, and Topgrade can
+update cargo packages (#237, #238, #239, #240). See `docs/RELEASE-NOTES-2026.10.0-beta.5.md`.
+
 ### Added
 
 - **The image installer offers Wi-Fi** when there is no wired connection and the machine has a Wi-Fi card. It lists the
@@ -2457,7 +2463,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...HEAD
+[2026.10.0-beta.5]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...v2026.10.0-beta.5
 [2026.10.0-beta.4]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...v2026.10.0-beta.4
 [2026.10.0-beta.3]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.2...v2026.10.0-beta.3
 [2026.10.0-beta.2]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.1...v2026.10.0-beta.2
