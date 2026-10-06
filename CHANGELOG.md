@@ -24,6 +24,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- **The image goes straight from the boot splash to the installer:** tty1 briefly showed a root console in between
+  (agetty's banner and automatic-login line, then the Arch install guide message of the day, over the boot text). Now
+  agetty clears the screen and prints nothing, login is quiet, and the installer draws its first screen before it
+  checks the network, which used to leave the console blank for a few seconds when offline. The message of the day
+  still appears on other consoles.
 - **The GRUB menu no longer lists every firmware boot entry:** GRUB 2.16 added a top-level `... (EFI BootNext)` entry
   for each one (the firmware's boot manager, a DVD drive and so on). `lyona-grub-theme apply`, which the installers run,
   now turns that off with `GRUB_DISABLE_BOOTNEXT=true` in `/etc/default/grub.d/90-lyona-menu.cfg`. That file is a
