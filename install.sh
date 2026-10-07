@@ -687,6 +687,17 @@ confirm_install_summary() {
 	esac
 }
 
+# A tip, never a change (#249): pacman.conf is the user's, and the installer
+# does not alter system policy without asking. The image sets 10.
+pacman_parallel_downloads_tip() {
+	local value
+	command -v pacman-conf >/dev/null 2>&1 || return 0
+	value=$(pacman-conf ParallelDownloads 2>/dev/null) || return 0
+	[[ $value =~ ^[0-9]+$ ]] || return 0
+	((value < 10)) || return 0
+	info "Tip: pacman downloads $value package(s) at a time. Setting ParallelDownloads = 10 in /etc/pacman.conf makes this install faster; the installer leaves that file to you."
+}
+
 install_supported_terminal() {
 	if ! dwm_install_first_available_profile terminal; then
 		err "No supported terminal is available in the enabled repositories."
@@ -816,6 +827,7 @@ info "Distribution: $DISTRO_NAME"
 info "Family: $DISTRO_FAMILY"
 info "Package manager: $PKG_CMD"
 info "Install profile: $INSTALL_PROFILE"
+pacman_parallel_downloads_tip
 confirm_cachyos_setup
 confirm_install_summary
 confirm_arch_multilib_repository

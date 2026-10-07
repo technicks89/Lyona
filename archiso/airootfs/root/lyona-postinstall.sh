@@ -12,6 +12,8 @@ export NVIDIA_AUR_MARKER=${NVIDIA_AUR_MARKER:-/run/lyona-nvidia-aur}
 # What did not go as chosen, one line each, for the closing screen (Sync Sprint
 # 16 R16-22): the steps' output only reaches the log.
 export LYONA_WARNINGS=${LYONA_WARNINGS:-/run/lyona-install-warnings}
+# Left by the wizard once it ranked this medium's mirrorlist (#249).
+export LYONA_MIRRORS_MARKER=${LYONA_MIRRORS_MARKER:-/run/lyona-mirrors-ranked}
 
 fail() {
 	printf 'lyona-postinstall: %s\n' "$1" >&2
@@ -397,6 +399,16 @@ target_repo_dir="$target_home/$checkout_rel"
 
 # A Retry starts a fresh list.
 : >"$LYONA_WARNINGS"
+# The mirrors the wizard ranked (#249), so the new system keeps downloading
+# from them. archinstall copied this medium's mirrorlist already; this makes
+# sure of it, whatever archinstall does.
+if [[ -e $LYONA_MIRRORS_MARKER ]]; then
+	if install -Dm644 /etc/pacman.d/mirrorlist "$TARGET/etc/pacman.d/mirrorlist" >>"$LOG_FILE" 2>&1; then
+		log_step "Copied the ranked mirrorlist to $TARGET"
+	else
+		note_warning "The ranked mirrorlist was not copied to the new system; it uses the default mirrors." >>"$LOG_FILE"
+	fi
+fi
 # Every run_logged step below, the install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
 set_total_steps 10

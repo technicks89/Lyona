@@ -130,8 +130,10 @@ dwm_packages() {
 		# - plymouth: the boot splash over the `quiet splash` console;
 		# - gum: the wizard's screens; jq: the credentials file;
 		# - curl: the network check, the timezone and the CachyOS setup;
-		# - openssl: the password hash; pciutils: lspci, for the GPU.
-		printf '%s\n' plymouth gum jq curl openssl pciutils
+		# - openssl: the password hash; pciutils: lspci, for the GPU;
+		# - reflector: ranks the mirrors in the user's country (#249). releng
+		#   has it too; listed because the wizard depends on it.
+		printf '%s\n' plymouth gum jq curl openssl pciutils reflector
 		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): CPU microcode, a GPU driver, NetworkManager
