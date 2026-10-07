@@ -56,9 +56,16 @@ Wall clock from the end of the wizard's questions to the reboot: 14m 48s.
 
 The "After #249" column holds two runs, Europe/Berlin / UTC; #249 landed before
 the other issues in the series. "After #245" is one Europe/Berlin run with both
-#249 and #245 in. Their totals include Topgrade's cargo build,
-which succeeded in both but failed after 3m 02s in the baseline. Without
-Topgrade, the total went from 11m 42s to 3m 32s and 3m 48s.
+#249 and #245 in. The Topgrade row is a different cost in each column:
+
+- **Baseline:** the cargo build, which failed after 3m 02s.
+- **After #249:** the cargo build, which succeeded in both runs (5m 38s and
+  5m 32s).
+- **After #245:** no build: `topgrade-bin` from the AUR, built with `makepkg`
+  and installed with `pacman -U` (5 s).
+
+Without the Topgrade step, the total went from 11m 42s in the baseline to 3m 32s
+and 3m 48s after #249, and 3m 51s after #245.
 
 `install.sh`'s sections:
 
