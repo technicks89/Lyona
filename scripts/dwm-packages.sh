@@ -355,7 +355,10 @@ dwm_install_batch() {
 	done
 	((${#packages[@]} > 0)) || return 0
 
-	pacman_command=(pacman -Syu --needed)
+	# In the C locale, so "target not found" below is pacman's English message
+	# whatever the user's language. Through env, after sudo: sudo's policy can
+	# refuse a variable set on its own command line.
+	pacman_command=(env LC_ALL=C pacman -Syu --needed)
 	! $noconfirm || pacman_command+=(--noconfirm)
 	((EUID == 0)) || pacman_command=(sudo "${pacman_command[@]}")
 	errors=$(mktemp) || return 1

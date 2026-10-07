@@ -167,7 +167,7 @@ cat >"$batch_work/pacman" <<'EOF'
 #!/bin/bash
 calls=$(($(cat "$STUB_DIR/calls" 2>/dev/null || echo 0) + 1))
 printf '%s\n' "$calls" >"$STUB_DIR/calls"
-printf 'pacman %s\n' "$*" >>"$STUB_DIR/pacman.log"
+printf 'LC_ALL=%s pacman %s\n' "${LC_ALL:-}" "$*" >>"$STUB_DIR/pacman.log"
 [[ $calls == "${STUB_FAIL_CALL:-0}" ]] || exit 0
 for name in ${STUB_NOT_FOUND:-}; do printf 'error: target not found: %s\n' "$name" >&2; done
 exit 1
@@ -176,7 +176,8 @@ chmod +x "$batch_work/sudo" "$batch_work/pacman"
 batch() { # FLAGS REQUIRED OPTIONAL: prints the skipped packages, then the status
 	rm -f "$batch_work/calls" "$batch_work/pacman.log"
 	# shellcheck disable=SC2016 # expanded by the inner bash
-	env PATH="$batch_work:$PATH" STUB_DIR="$batch_work" bash -c '
+	# A German locale: pacman must still be run in C, for its error messages.
+	env PATH="$batch_work:$PATH" STUB_DIR="$batch_work" LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 bash -c '
 		set -u
 		. "$1"
 		. "$2"
@@ -195,14 +196,14 @@ batch_fail() {
 }
 out=$(batch --noconfirm 'make xorg-server' 'alacritty make maim')
 [[ $out == $'SKIPPED \nSTATUS 0' ]] || batch_fail "a full batch: $out"
-[[ $(cat "$batch_work/pacman.log") == 'pacman -Syu --needed --noconfirm -- make xorg-server alacritty maim' ]] ||
+[[ $(cat "$batch_work/pacman.log") == 'LC_ALL=C pacman -Syu --needed --noconfirm -- make xorg-server alacritty maim' ]] ||
 	batch_fail 'the batch is not one pacman -Syu --needed transaction, required first, each package once'
 batch '' 'make' 'maim' >/dev/null
-[[ $(cat "$batch_work/pacman.log") == 'pacman -Syu --needed -- make maim' ]] ||
+[[ $(cat "$batch_work/pacman.log") == 'LC_ALL=C pacman -Syu --needed -- make maim' ]] ||
 	batch_fail 'an interactive batch was given --noconfirm'
 out=$(STUB_FAIL_CALL=1 STUB_NOT_FOUND='absent-one absent-two' batch --noconfirm 'make' 'absent-one maim absent-two')
 [[ $out == $'SKIPPED absent-one absent-two\nSTATUS 0' ]] || batch_fail "missing optional packages: $out"
-[[ $(cat "$batch_work/pacman.log") == $'pacman -Syu --needed --noconfirm -- make absent-one maim absent-two\npacman -Syu --needed --noconfirm -- make maim' ]] ||
+[[ $(cat "$batch_work/pacman.log") == $'LC_ALL=C pacman -Syu --needed --noconfirm -- make absent-one maim absent-two\nLC_ALL=C pacman -Syu --needed --noconfirm -- make maim' ]] ||
 	batch_fail 'missing optional packages were not retried once without them'
 grep -Fq 'Not in the enabled repositories, so left out: absent-one absent-two. Retrying once without them.' "$batch_work/err" ||
 	batch_fail 'the retry was not said'
