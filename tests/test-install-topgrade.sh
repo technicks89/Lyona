@@ -110,7 +110,13 @@ cat >"$work/bin/cargo" <<'EOF'
 #!/bin/sh
 printf 'cargo %s\n' "$*" >>"$STUB_DIR/log"
 EOF
-chmod +x "$work/bin/git" "$work/bin/makepkg" "$work/bin/sudo" "$work/bin/pacman" "$work/bin/cargo"
+# install: the system's, or a failure with STUB_INSTALL=fail.
+cat >"$work/bin/install" <<EOF
+#!/bin/sh
+[ "\${STUB_INSTALL:-}" != fail ] || exit 1
+exec $(command -v install) "\$@"
+EOF
+chmod +x "$work/bin/git" "$work/bin/makepkg" "$work/bin/sudo" "$work/bin/pacman" "$work/bin/cargo" "$work/bin/install"
 
 # Tools from the system, without any topgrade, cargo, git or makepkg of its own.
 mkdir -p "$work/sys"
@@ -158,7 +164,9 @@ STUB_INSTALLED=topgrade-bin run 2>"$work/err" || fail 'an installed Topgrade fai
 grep -Fq 'Topgrade is already installed (topgrade-bin)' "$work/err" || fail "an installed Topgrade: $(cat "$work/err")"
 reset
 STUB_INSTALLED=topgrade-bin run --force 2>/dev/null || fail '--force failed'
-grep -q '^sudo pacman -U' "$work/log" || fail '--force did not reinstall'
+# Without --needed, which would skip the version already installed.
+grep -Eq '^sudo pacman -U --noconfirm -- .*/topgrade-bin-1\.0-1-x86_64\.pkg\.tar\.zst$' "$work/log" ||
+	fail "--force did not reinstall: $(grep '^sudo' "$work/log")"
 
 # topgrade-bin cannot be built, or the AUR is unreachable: an error, nothing
 # installed, and nothing else built.
@@ -216,6 +224,14 @@ if grep -q '^sudo' "$work/log"; then fail '--build-only used sudo'; fi
 reset
 rm -f "$work/out-dir"/*
 if STUB_FAIL=topgrade-bin run --build-only "$work/out-dir" >/dev/null 2>&1; then fail '--build-only succeeded without topgrade-bin'; fi
+# The package cannot be copied out: a failure, and no path printed.
+reset
+rm -f "$work/out-dir"/*
+if path=$(STUB_INSTALL=fail run --build-only "$work/out-dir" 2>/dev/null); then fail '--build-only succeeded although the copy failed'; fi
+[[ -z $path ]] || fail "a failed copy printed a path: $path"
+reset
+if STUB_INSTALL=fail run >/dev/null 2>&1; then fail 'an install succeeded although the copy failed'; fi
+if grep -q '^sudo' "$work/log"; then fail 'pacman ran although the copy failed'; fi
 if run --build-only "$work/no-such-dir" >/dev/null 2>&1; then fail '--build-only accepted a missing directory'; fi
 STUB_INSTALLED=topgrade-bin run --build-only "$work/out-dir" >/dev/null 2>&1 || fail '--build-only skipped the build for an installed Topgrade'
 

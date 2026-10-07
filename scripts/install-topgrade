@@ -214,7 +214,8 @@ build_in() {
 		elif (cd "$work/src" && timeout --kill-after=30 "$build_seconds" makepkg --noconfirm >&2); then
 			for package in "$work/src/$base"-[0-9]*.pkg.tar.*; do
 				[[ -f $package && $package != *.sig ]] || continue
-				install -m 0644 -- "$package" "$dest/" && printf '%s\n' "$dest/${package##*/}"
+				install -m 0644 -- "$package" "$dest/" || return 1
+				printf '%s\n' "$dest/${package##*/}"
 				return 0
 			done
 			say "makepkg finished, but built no $base package"
@@ -240,6 +241,9 @@ package=$(build_pin topgrade-bin "$build_root") ||
 	die 'Topgrade could not be built from the AUR; check the network, then run install-topgrade again'
 
 say "installing ${package##*/} with pacman..."
-sudo pacman -U --noconfirm --needed -- "$package" || die "pacman could not install ${package##*/}"
+# --needed would make --force a no-op when this version is already installed.
+pacman_args=(-U --noconfirm)
+$force || pacman_args+=(--needed)
+sudo pacman "${pacman_args[@]}" -- "$package" || die "pacman could not install ${package##*/}"
 say 'Topgrade is installed; run topgrade. It updates itself through yay.'
 offer_cargo_copy_removal
