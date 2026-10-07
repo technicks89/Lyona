@@ -59,12 +59,19 @@ with the CyberRe boot menu theme.
      that will not boot is repaired from the live medium (`arch-chroot`), as
      systemd's emergency shell needs root's password;
    - the timezone, detected from your connection for you to confirm or change;
+   - the package mirrors: those in your timezone's country, or worldwide for a
+     zone with no country such as `UTC`. Choose another country, or worldwide,
+     when you are installing somewhere else. The fastest of them, measured from
+     your machine, are ranked before anything is downloaded, and the new system
+     keeps the list. When too few mirrors are in the country, worldwide ones are
+     added; when they cannot be ranked (no network, or it takes more than 30
+     seconds), the medium's own list is used;
    - on an NVIDIA GPU, the driver: the proprietary driver, recommended when it
      supports the card (a legacy branch for an older card), or the open-source
      nouveau.
 
-   It shows a summary, and nothing is written until you choose **Wipe DISK and
-   install**. Cancelling at any point changes nothing; run `lyona-install` to
+   It shows a summary, mirrors included, and nothing is written until you
+   choose **Wipe DISK and install**. Cancelling at any point changes nothing; run `lyona-install` to
    start again.
 4. **It installs on its own:** Arch with `archinstall`, then lyona's full
    profile as your user, the CachyOS repositories and kernels

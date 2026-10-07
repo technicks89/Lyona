@@ -10,6 +10,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- **The image installer downloads from mirrors near you.** After the timezone, it asks to use the package mirrors in
+  that timezone's country (worldwide for a zone with no country, such as `UTC`), or lets you choose another country.
+  Before anything is downloaded, `reflector` ranks that country's recently synced HTTPS mirrors by their speed from
+  your machine, adding worldwide ones when the country has fewer than three; the new system keeps the list. The
+  summary screen shows the choice. If the ranking fails or takes more than 30 seconds, the install goes on with the
+  medium's own mirrorlist. In the baseline install, one slow mirror took 7 minutes over 80 MiB (#249).
 - **Both installers say how long each step took.** The image installer logs each step's start and duration, and
   `/var/log/lyona-postinstall.log` ends with a table of every step, archinstall included. `install.sh` prints a
   `[TIME]` line after each section and the same table at the end. They are the measurements the install-speed work
@@ -17,6 +23,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **The image downloads 10 packages at a time**, up from 5, on the live medium and on the installed system.
+  `install.sh` does not change an existing system's `/etc/pacman.conf`; it suggests `ParallelDownloads = 10` when
+  the setting is lower (#249).
 - **MesloLGS Nerd Font comes from the Arch repositories** (`ttf-meslo-nerd`, in the `fonts` profile) instead of a
   112 MB release zip from GitHub, downloaded and unpacked by both `install.sh` and `install-mybash`. The repository
   package is a 5.7 MiB download with the same `MesloLGS Nerd Font` families, and updates with the system (#250).

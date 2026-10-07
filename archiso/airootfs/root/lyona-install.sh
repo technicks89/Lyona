@@ -2,6 +2,15 @@
 set -Eeuo pipefail
 
 POSTINSTALL=/root/lyona-postinstall.sh
+# The package mirrors (#249): the zoneinfo tables the country comes from, the
+# live mirrorlist archinstall copies to the new system, and the marker that
+# says it was ranked here.
+LYONA_ZONEINFO=${LYONA_ZONEINFO:-/usr/share/zoneinfo}
+export LYONA_MIRRORLIST=${LYONA_MIRRORLIST:-/etc/pacman.d/mirrorlist}
+export LYONA_MIRRORS_MARKER=${LYONA_MIRRORS_MARKER:-/run/lyona-mirrors-ranked}
+# This medium's own pacman configuration, which archinstall downloads with.
+LYONA_PACMAN_CONF=${LYONA_PACMAN_CONF:-/etc/pacman.conf}
+MIRROR_COUNTRY=
 CACHYOS_HELPER=/root/lyona/scripts/lyona-cachyos
 CACHYOS_PACKAGES=
 export LOG_FILE=/var/log/lyona-install.log
@@ -433,6 +442,132 @@ ask_timezone() {
 	TIMEZONE=$(choose_timezone)
 }
 
+# timezone_country ZONE: the country package mirrors are chosen from (#249),
+# as an ISO 3166 code. zone.tab names one country per zone; a zone only in
+# zone1970.tab, which can name several, gives its first. Nothing for a zone with
+# no country, such as UTC or Etc/*.
+timezone_country() {
+	local code table
+	for table in zone.tab zone1970.tab; do
+		code=$(awk -F'\t' -v zone="$1" '!/^#/ && $3 == zone { print $1; exit }' \
+			"$LYONA_ZONEINFO/$table" 2>/dev/null) || code=
+		[[ -n $code ]] && break
+	done
+	code=${code%%,*}
+	[[ $code =~ ^[A-Z]{2}$ ]] || return 1
+	printf '%s\n' "$code"
+}
+
+# country_name CODE: "Germany", from iso3166.tab; the code itself if it is not
+# listed there.
+country_name() {
+	local name
+	name=$(awk -F'\t' -v code="$1" '$1 == code { print $2; exit }' "$LYONA_ZONEINFO/iso3166.tab" 2>/dev/null) || name=
+	printf '%s\n' "${name:-$1}"
+}
+
+mirror_summary() {
+	if [[ -n $MIRROR_COUNTRY ]]; then
+		echo "$(country_name "$MIRROR_COUNTRY") ($MIRROR_COUNTRY), the fastest of them"
+	else
+		echo "worldwide, the fastest from here"
+	fi
+}
+
+# Every country, to type a few letters of and pick, or worldwide.
+choose_mirror_country() {
+	local choice
+	choice=$({
+		echo "Worldwide"
+		awk -F'\t' '!/^#/ && NF >= 2 { print $2 " (" $1 ")" }' "$LYONA_ZONEINFO/iso3166.tab" 2>/dev/null | sort
+	} | gum filter --header "Type to find the country to download packages from:" \
+		--placeholder "e.g. Germany, Japan") || cancelled
+	case $choice in
+	Worldwide) MIRROR_COUNTRY= ;;
+	*" ("[A-Z][A-Z]")") MIRROR_COUNTRY=${choice: -3:2} ;;
+	*) cancelled ;;
+	esac
+}
+
+# The package mirrors, from the confirmed timezone's country (#249). A slow or
+# distant mirror slows every download of the install, which is most of it.
+ask_mirrors() {
+	local question status=0
+	MIRROR_COUNTRY=$(timezone_country "$TIMEZONE") || MIRROR_COUNTRY=
+	if [[ -n $MIRROR_COUNTRY ]]; then
+		question="Download packages from mirrors in $(country_name "$MIRROR_COUNTRY")?"
+	else
+		question="Download packages from the fastest mirrors worldwide?"
+	fi
+	gum confirm --affirmative "Yes" --negative "Choose another" "$question" || status=$?
+	case $status in
+	0) ;;
+	1) choose_mirror_country ;;
+	*) cancelled ;;
+	esac
+}
+
+# rank_mirrors [COUNTRY]: the live mirrorlist, replaced by the fastest recently
+# synced HTTPS mirrors in COUNTRY, as measured from here. Worldwide ones are
+# added after them when the country has fewer than three, and used alone with no
+# country. Each ranking is bounded to 30 seconds. Never fails: without a usable
+# result the mirrorlist the medium booted with stays, with a warning.
+rank_mirrors() {
+	local country=${1:-} work list=() count=0
+	local -a args=(--protocol https --age 24 --latest 20 --sort rate --threads 10
+		--connection-timeout 5 --download-timeout 5)
+	command -v reflector >/dev/null 2>&1 || {
+		printf 'lyona-install: reflector is not on this medium; keeping the current mirrorlist.\n'
+		return 0
+	}
+	work=$(mktemp -d) || return 0
+	if [[ -n $country ]]; then
+		printf 'Ranking the mirrors in %s...\n' "$country"
+		timeout 30 reflector "${args[@]}" --country "$country" --save "$work/country" ||
+			printf 'lyona-install: ranking the mirrors in %s failed.\n' "$country"
+		[[ -s $work/country ]] && list+=("$work/country")
+		count=$(cat "${list[@]}" /dev/null | grep -c '^Server = ') || count=0
+	fi
+	if ((count < 3)); then
+		[[ -z $country ]] || printf 'Only %s mirrors in %s; adding the fastest worldwide.\n' "$count" "$country"
+		timeout 30 reflector "${args[@]}" --save "$work/world" ||
+			printf 'lyona-install: ranking the worldwide mirrors failed.\n'
+		[[ -s $work/world ]] && list+=("$work/world")
+	fi
+	# One list, the country's first, each server once.
+	cat "${list[@]}" /dev/null | awk '/^Server = / && !seen[$0]++' >"$work/mirrorlist"
+	count=$(grep -c '^Server = ' "$work/mirrorlist") || count=0
+	if ((count == 0)); then
+		printf 'lyona-install: no mirrors were ranked; keeping the current mirrorlist.\n'
+		rm -rf -- "$work"
+		return 0
+	fi
+	{
+		printf '# Ranked by lyona-install (reflector, %s) on %s.\n' "${country:-worldwide}" "$(date -u +%F)"
+		cat "$work/mirrorlist"
+	} >"$work/out"
+	install -m 0644 "$work/out" "$LYONA_MIRRORLIST"
+	: >"$LYONA_MIRRORS_MARKER"
+	rm -rf -- "$work"
+	printf 'Using %s ranked mirrors, fastest first.\n' "$count"
+}
+export -f rank_mirrors
+
+# Ten downloads at a time on this medium (#249), as on the new system. The
+# medium's /etc/pacman.conf is the pacman package's own, with 5:
+# archiso/pacman.conf configures only the image build. It is this live system's
+# file, gone at the reboot, never the user's.
+use_parallel_downloads() {
+	[[ -w $LYONA_PACMAN_CONF ]] || return 0
+	if grep -Eq '^[[:space:]]*#?[[:space:]]*ParallelDownloads[[:space:]]*=' "$LYONA_PACMAN_CONF"; then
+		sed -i -E 's/^[[:space:]]*#?[[:space:]]*ParallelDownloads[[:space:]]*=.*/ParallelDownloads = 10/' \
+			"$LYONA_PACMAN_CONF" || return 0
+	else
+		sed -i 's/^\[options\]$/&\nParallelDownloads = 10/' "$LYONA_PACMAN_CONF" || return 0
+	fi
+	log_step "ParallelDownloads = 10 in $LYONA_PACMAN_CONF"
+}
+
 # One image for every GPU (D-17a, Sync Sprint 12 S12-17): on an NVIDIA GPU a
 # packaged driver supports, the proprietary driver is the recommended choice and
 # nouveau the alternative. Which driver comes from the card's device ID (Sync
@@ -488,6 +623,7 @@ Hostname:   $HOSTNAME
 Username:   $USERNAME
 Keyboard:   $KEYMAP
 Timezone:   $TIMEZONE
+Mirrors:    $(mirror_summary)
 Boot:       $(firmware_summary)
 NVIDIA driver: $(nvidia_summary)
 EOF
@@ -619,7 +755,7 @@ ${disk_encryption_json}  "hostname": "$HOSTNAME",
   "ntp": true,
   "offline": false,
   "packages": [$CACHYOS_PACKAGES],
-  "pacman_config": {"color": true, "parallel_downloads": 5},
+  "pacman_config": {"color": true, "parallel_downloads": 10},
   "swap": {"enabled": true, "algorithm": "zstd"},
   "timezone": "$TIMEZONE",
   "version": "4.4"
@@ -706,6 +842,11 @@ main() {
 	log_step "ask_timezone done: TIMEZONE=$TIMEZONE"
 
 	show_logo
+	log_step "ask_mirrors"
+	ask_mirrors
+	log_step "ask_mirrors done: MIRROR_COUNTRY=${MIRROR_COUNTRY:-worldwide}"
+
+	show_logo
 	log_step "ask_nvidia"
 	ask_nvidia
 	log_step "ask_nvidia done: NVIDIA_OPT_IN=$NVIDIA_OPT_IN"
@@ -714,6 +855,11 @@ main() {
 	log_step "confirm_and_proceed"
 	confirm_and_proceed
 	log_step "confirm_and_proceed done"
+
+	# Before anything is downloaded: archinstall, and the new system after it, use
+	# this medium's mirrorlist.
+	use_parallel_downloads
+	run_logged "Choosing the fastest package mirrors..." rank_mirrors "$MIRROR_COUNTRY"
 
 	log_step "setup_cachyos_repositories"
 	setup_cachyos_repositories

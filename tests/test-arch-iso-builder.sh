@@ -375,6 +375,10 @@ mirror_config = config["mirror_config"]
 if mirror_config.get("mirror_regions") or mirror_config.get("custom_servers"):
 	print("archinstall config must not override the live mirrorlist", file=sys.stderr)
 	sys.exit(1)
+# #249: the new system downloads 10 packages at a time, as the medium does.
+if config.get("pacman_config", {}).get("parallel_downloads") != 10:
+	print(f"parallel_downloads is not 10: {config.get('pacman_config')}", file=sys.stderr)
+	sys.exit(1)
 if encrypt != ("disk_encryption" in config):
 	print("disk_encryption does not follow the ENCRYPT selection", file=sys.stderr)
 	sys.exit(1)

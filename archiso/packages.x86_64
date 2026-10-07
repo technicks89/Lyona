@@ -4,3 +4,4 @@ jq
 openssl
 pciutils
 plymouth
+reflector

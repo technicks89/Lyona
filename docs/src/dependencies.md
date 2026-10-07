@@ -180,9 +180,10 @@ it, as the new system downloads every package it installs (#229).
 - `plymouth` draws the boot splash;
 - `gum` draws the wizard, and `jq` writes its credentials file;
 - `curl` checks the network, looks up the timezone and sets up the CachyOS repositories;
-- `openssl` hashes the password, and `pciutils` (`lspci`) finds the GPU.
+- `openssl` hashes the password, and `pciutils` (`lspci`) finds the GPU;
+- `reflector` ranks the package mirrors in your country (#249).
 
-`plymouth` `gum` `jq` `curl` `openssl` `pciutils`
+`plymouth` `gum` `jq` `curl` `openssl` `pciutils` `reflector`
 
 ### `qml-development`
 
