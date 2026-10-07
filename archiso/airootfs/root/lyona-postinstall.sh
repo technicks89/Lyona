@@ -103,9 +103,11 @@ install_cachyos_kernel() {
 
 # Only the default initramfs, for every kernel on the new system (#246): the
 # fallback image (every module, no autodetect) is the slowest to build, and every
-# kernel, microcode, driver or firmware update rebuilds it. A preset that still
-# builds one is changed, and an image already built is removed, so GRUB lists no
-# fallback entry. Only on the new system, never an existing install. Recovery is
+# kernel, microcode, driver or firmware update rebuilds it. A safeguard: the
+# preset mkinitcpio writes for a new kernel (/usr/share/mkinitcpio/hook.preset)
+# already builds only the default image, mkinitcpio 42.2 included, so archinstall's
+# first build makes none. Should a preset still build one, it is changed, and an
+# image already built is removed, so GRUB lists no fallback entry. Only on the new system, never an existing install. Recovery is
 # from the install medium (arch-chroot); docs/src/install.md says how to get the
 # fallback image back.
 drop_fallback_initramfs() {

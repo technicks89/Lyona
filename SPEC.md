@@ -302,8 +302,9 @@ unreachable CachyOS mirror leaves the install on the stock Arch repositories
 rather than failing it: the stock Arch kernel is installed instead, and the
 postinstall adds `linux-cachyos` as the default boot entry, with the stock
 kernel kept as the fallback, only if the repositories work by then. Recovery
-from an image install is from the install medium (`arch-chroot`), not a second
-kernel or a fallback initramfs. On an existing system, an installed CachyOS kernel
+from an image install is from the install medium (`arch-chroot`), not a fallback
+initramfs, and not a second kernel except in that case, where the retained stock
+kernel is also a recovery option. On an existing system, an installed CachyOS kernel
 never becomes the default boot entry. When
 more than one kernel is installed, the NVIDIA driver must be the DKMS driver
 with headers for every installed kernel.

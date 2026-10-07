@@ -75,8 +75,8 @@ with the CyberRe boot menu theme.
    start again.
 4. **It installs on its own:** Arch with `archinstall`, then lyona's full
    profile as your user, the CachyOS repositories and the `linux-cachyos`
-   kernel (the only kernel; see "CachyOS repositories and kernel" below), and
-   Topgrade. A progress bar shows
+   kernel (normally the only kernel; see "CachyOS repositories and kernel"
+   below), and Topgrade. A progress bar shows
    each step. If something did not go as chosen (a driver that could not be
    installed, for example), the last screen lists it and waits for Enter;
    otherwise it reboots after 15 seconds. Leave the USB stick in until then; if
@@ -311,11 +311,14 @@ once, not twice. The installed system inherits the live medium's `pacman.conf`
 along with the CachyOS mirrorlists and keyring, and `archinstall` installs
 `linux-cachyos` as the only kernel. If the CachyOS mirror cannot be reached,
 the install continues on the stock Arch repositories, with the stock Arch
-kernel, instead of failing.
+kernel, instead of failing. If the repositories can be reached again later in
+the install, `linux-cachyos` is added then and made the default, and the stock
+kernel stays beside it, in the boot menu.
 
-To keep installs fast (#246), there is one kernel and no fallback initramfs.
-CPU microcode comes with the base system on real hardware, and the boot menu
-is generated once.
+To keep installs fast (#246), there is one kernel, apart from that case, and
+no fallback initramfs. CPU microcode comes with the base system on real
+hardware, and the boot menu is generated once. Where the stock kernel was kept,
+it is also a way back: choose it in the boot menu.
 
 **If the new system does not boot,** recover it from the install medium. Boot
 it, press Ctrl+C at the installer's first question, which cancels it and leaves
