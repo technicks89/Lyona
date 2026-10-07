@@ -296,12 +296,11 @@ vulkan() {
 [[ $(vulkan '00:01.0 VGA compatible controller: Red Hat, Inc. Virtio 1.0 GPU') == 'vulkan-swrast lib32-vulkan-swrast ' ]]
 # A laptop with two GPUs gets both drivers.
 [[ $(vulkan $'00:02.0 VGA compatible controller: Intel Corporation\n01:00.0 3D controller: NVIDIA Corporation' 'nvidia-utils') == 'vulkan-intel lib32-vulkan-intel nvidia-utils lib32-nvidia-utils ' ]]
-# install.sh installs them in the same transaction as the gaming profile.
-vulkan_line=$(grep -n 'mapfile -t gaming_packages < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
-gaming_line=$(grep -n 'gaming_packages < <(dwm_collect_packages gaming)' "$repo/install.sh" | cut -d: -f1)
+# install.sh installs them in the same transaction as the gaming profile, which
+# is the one package install (#248).
+vulkan_line=$(grep -nF 'batch_optional < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
+gaming_line=$(grep -nF 'batch_optional < <(dwm_collect_packages gaming)' "$repo/install.sh" | cut -d: -f1)
 [[ -n $vulkan_line && -n $gaming_line ]] && ((vulkan_line < gaming_line))
-# shellcheck disable=SC2016 # the literal text in install.sh
-grep -Fq 'dwm_install_batch "${batch_flags[@]}" gaming_required gaming_packages' "$repo/install.sh"
 
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"
