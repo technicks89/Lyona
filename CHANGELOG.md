@@ -65,6 +65,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   and much longer on an old disk). It writes no fonts, so a plain `fc-cache`, which only rescans changed folders, is
   enough (#250).
 
+### Fixed
+
+- **An install no longer fails when the CachyOS repositories are part way through a Qt update.** CachyOS can publish
+  some Qt modules of a new release before the rest: on 2026-10-07, `qt6-declarative 6.12.0` with `qt6-base 6.11.2`.
+  pacman installed the mix, Quickshell could not start (`version 'Qt_6.12' not found`), and `install.sh` stopped at
+  its Quickshell check, in every image install. After its package transaction, `install.sh` now checks that the
+  installed Qt modules are one Qt release; when they are not, it installs them again from Arch's `extra`, where each
+  Qt release is published whole, and says so. A later update brings back CachyOS's builds once theirs is newer. When
+  the modules match, which is nearly always, it costs well under a second and installs nothing. It covers installs
+  only: a system update made during such a window can still install the mix until CachyOS finishes.
+
 ## [2026.10.0-beta.5] - 2026-10-09
 
 Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and

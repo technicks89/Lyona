@@ -897,6 +897,13 @@ for package in "${DWM_BATCH_SKIPPED[@]}"; do
 	warn "$package is not in the enabled repositories and was left out."
 done
 ok "Packages installed."
+# Qt modules from two Qt releases, from a repository part way through a Qt
+# update, stop Quickshell from starting: one release, from Arch, instead.
+if ! dwm_repair_qt_set "${batch_flags[@]}"; then
+	warn "The Qt modules are from different Qt releases and could not be installed again from Arch; Quickshell may not start until the next system update."
+elif ((${#DWM_QT_REPAIRED[@]} > 0)); then
+	ok "Qt modules installed from Arch, all one release: ${DWM_QT_REPAIRED[*]}."
+fi
 
 if install_recommended_profile; then
 	if ! env -u DWM_TEST_MODE -u DWM_TEST_QUICKSHELL_VERSION \
