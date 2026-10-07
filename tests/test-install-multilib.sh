@@ -4,9 +4,10 @@ set -euo pipefail
 # Sync Sprint 12 S12-11 item 1: enabling multilib must not leave a partial upgrade.
 # configure_arch_multilib_repository is extracted from install.sh and run against
 # stubs: sudo only logs (nothing touches the real pacman.conf), and multilib reads
-# as disabled until the sed has run. The databases are refreshed with the matching
-# upgrade (pacman -Syu), never with -Sy alone, which Arch does not support before
-# installing packages.
+# as disabled until the sed has run.
+# #248: it runs no pacman of its own. The databases are refreshed by the package
+# install right after it, one pacman -Syu --needed transaction with the gaming
+# packages in it: the matching upgrade, never -Sy alone.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -39,28 +40,35 @@ run_case() {
 }
 
 run_case || fail 'enabling multilib failed'
-grep -Fqx 'pacman -Syu' "$work/sudo.log" || {
+grep -q '^sed ' "$work/sudo.log" || fail 'multilib was not enabled in pacman.conf'
+grep -Fq 'info Enabling the multilib repository' "$work/sudo.log" || fail 'enabling multilib is not announced'
+if grep -q '^pacman' "$work/sudo.log"; then
 	lyona_show_file "$work/sudo.log"
-	fail 'multilib was not followed by pacman -Syu'
-}
-if grep -Eq '^pacman -Sy$|^pacman -Sy ' "$work/sudo.log"; then
-	lyona_show_file "$work/sudo.log"
-	fail 'pacman -Sy (a partial upgrade) is still run'
+	fail 'configure_arch_multilib_repository still runs pacman itself'
 fi
-grep -Fq 'info Upgrading the system' "$work/sudo.log" || fail 'the upgrade is not announced'
 
-PACMAN_FAILS=1 run_case && fail 'a failed upgrade was reported as success'
-grep -Fq 'warn Could not upgrade the system' "$work/sudo.log" || fail 'a failed upgrade is not reported'
-
-# multilib already enabled (a rerun after a failed upgrade, or enabled by hand):
-# the upgrade still runs before the gaming packages, and pacman.conf is left alone.
+# multilib already enabled (a rerun, or enabled by hand): pacman.conf is left alone.
 ALREADY_ENABLED=1 run_case || fail 'the already-enabled case failed'
-grep -Fqx 'pacman -Syu' "$work/sudo.log" || {
+if grep -Eq '^(sed|pacman) ' "$work/sudo.log"; then
 	lyona_show_file "$work/sudo.log"
-	fail 'an already-enabled multilib skipped the upgrade'
-}
-if grep -q '^sed ' "$work/sudo.log"; then
-	fail 'pacman.conf was edited although multilib was already enabled'
+	fail 'an already-enabled multilib changed something'
 fi
 
-printf '%s\n' 'install.sh multilib upgrade (pacman -Syu, never -Sy): PASS'
+# install.sh: multilib is set up, and the gaming packages (Vulkan drivers first)
+# queued, before the one package install, which is -Syu; no other pacman -Sy.
+# shellcheck disable=SC2016 # the literal text in install.sh
+configure_line=$(grep -n '^	elif configure_arch_multilib_repository; then$' "$repo/install.sh" | cut -d: -f1)
+vulkan_line=$(grep -nF 'batch_optional < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
+gaming_line=$(grep -nF 'batch_optional < <(dwm_collect_packages gaming)' "$repo/install.sh" | cut -d: -f1)
+# shellcheck disable=SC2016 # the literal text in install.sh
+batch_line=$(grep -nF 'if ! dwm_install_batch "${batch_flags[@]}" batch_required batch_optional; then' "$repo/install.sh" | cut -d: -f1)
+if [[ -z $configure_line || -z $vulkan_line || -z $gaming_line || -z $batch_line ]] ||
+	! ((configure_line < vulkan_line && vulkan_line < gaming_line && gaming_line < batch_line)); then
+	fail "install.sh does not set up multilib, then queue the Vulkan drivers and gaming, before the install ($configure_line, $vulkan_line, $gaming_line, $batch_line)"
+fi
+if grep -nE 'pacman -Sy([^u]|$)' "$repo/install.sh" | grep -v ':[[:space:]]*#' | grep -q .; then
+	fail "install.sh runs pacman -Sy without the upgrade: $(grep -nE 'pacman -Sy([^u]|$)' "$repo/install.sh")"
+fi
+[[ $(grep -c 'dwm_install_batch ' "$repo/install.sh") == 1 ]] || fail 'install.sh has more than one package transaction'
+
+printf '%s\n' 'install.sh multilib in the one package install (pacman -Syu, never -Sy): PASS'

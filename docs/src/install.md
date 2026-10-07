@@ -234,16 +234,19 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   include Steam, Gamescope, and 64-bit and 32-bit GameMode and MangoHud support
   after separate repository approval.
   The installer enables the `multilib` repository for Steam, Gamescope,
-  GameMode, and MangoHud, then adds the invoking user to the `gamemode`
-  group; log out and back in before using its privileged tuning helpers.
+  GameMode, and MangoHud, and installs them, with this machine's Vulkan
+  drivers, in the same transaction as everything else. It then adds the
+  invoking user to the `gamemode` group; log out and back in before using its
+  privileged tuning helpers.
 
 The default is `full` to preserve the historical automated installer behavior.
 
 The installer installs every package of the chosen profile in one `pacman -Syu
 --needed` transaction, so **it also upgrades the system**, as installing on an
 out-of-date Arch system should, never leaving a partial upgrade. Packages already
-installed are left alone, so re-running it is safe. Gaming is a second
-transaction, after `multilib` is set up.
+installed are left alone, so re-running it is safe. The gaming packages are in
+the same transaction: `multilib` is enabled first, once you approve it, and the
+transaction syncs it with the other repositories.
 
 - **A package missing from the repositories:** an optional one (`maim`, a GTK
   theme, `qt6ct`, Firefox and so on) is left out with a warning, and the

@@ -479,17 +479,11 @@ configure_arch_multilib_repository() {
 			return 1
 		fi
 	fi
-	# -Syu, never -Sy, and also when multilib was already enabled: the gaming
-	# packages are installed from the refreshed databases next, and Arch does not
-	# support a sync without the matching upgrade (a partial upgrade). A run whose
-	# upgrade failed after enabling multilib leaves exactly that, and the next run
-	# finds multilib enabled, so it must still upgrade. The upgrade is shown, as
-	# every package change here is.
-	info "Upgrading the system to sync the multilib repository (pacman -Syu)..."
-	if ! sudo pacman -Syu; then
-		warn "Could not upgrade the system after enabling multilib."
-		return 1
-	fi
+	# No pacman run of its own (#248): the package install right after is one
+	# pacman -Syu --needed transaction, which syncs [multilib] with the other
+	# databases and upgrades with it, so never -Sy alone (a partial upgrade). A
+	# run that stops after enabling multilib leaves no sync behind, and the next
+	# run's -Syu still upgrades.
 }
 
 configure_arch_gamemode_access() {
@@ -576,8 +570,8 @@ print_install_summary() {
 	printf '  Package manager: %s\n' "$PKG_CMD"
 	printf '  Profile: %s\n' "$INSTALL_PROFILE"
 	printf '  Mode: %s\n' "$([[ $NON_INTERACTIVE == true ]] && echo non-interactive || echo interactive)"
-	# One transaction for every repository package (#247), the system upgrade
-	# with it; gaming, after [multilib], is a second.
+	# One transaction for every repository package (#247), gaming included
+	# (#248), and the system upgrade with it.
 	printf '  Package install: one pacman -Syu --needed transaction, which also upgrades the system\n'
 	print_summary_profile "Required packages" required
 	if install_recommended_profile; then
@@ -859,8 +853,7 @@ fi
 # resolution, one download, one run of each hook, and the system upgrade with
 # it. The required profiles fail the install when a package is missing, before
 # anything of lyona's is installed; any other missing package is left out with a
-# warning (dwm_install_batch). Gaming, which needs [multilib] set up first, is
-# its own transaction below.
+# warning (dwm_install_batch). Gaming too (#248), once [multilib] is set up.
 step_timer "Packages"
 currentdm="$(detect_display_manager)"
 mapfile -t batch_required < <(dwm_collect_packages build x11 runtime-required)
@@ -875,6 +868,23 @@ if install_optional_profile; then
 	mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages optional)
 	[[ -n $currentdm ]] ||
 		mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages lightdm)
+fi
+# Gaming, in the same transaction (#248): [multilib] is enabled first, as
+# approved, and this machine's Vulkan drivers come before Steam, so pacman never
+# picks a Vulkan provider for it (Sync Sprint 16). A legacy NVIDIA branch's
+# 32-bit utilities may not be in the repositories; then they are left out, as
+# any missing gaming package is.
+gaming_queued=false
+if install_optional_profile && arch_gaming_profile; then
+	if [[ $ARCH_GAMING_REPOS_APPROVED != true ]]; then
+		warn "Arch gaming packages were skipped because the multilib repository was not approved."
+	elif configure_arch_multilib_repository; then
+		mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_vulkan_driver_packages)
+		mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages gaming)
+		gaming_queued=true
+	else
+		warn "Multilib repository setup failed; no gaming packages were installed."
+	fi
 fi
 batch_flags=()
 [[ $NON_INTERACTIVE != true ]] || batch_flags=(--noconfirm)
@@ -931,32 +941,7 @@ if command -v picom >/dev/null 2>&1; then
 fi
 
 if install_optional_profile; then
-	if arch_gaming_profile; then
-		step_timer "Gaming"
-		if [[ $ARCH_GAMING_REPOS_APPROVED != true ]]; then
-			warn "Arch gaming packages were skipped because the multilib repository was not approved."
-		elif configure_arch_multilib_repository; then
-			info "Installing Arch gaming packages..."
-			# This machine's Vulkan drivers in the same transaction, so pacman
-			# never picks one for Steam itself (Sync Sprint 16). A legacy NVIDIA
-			# branch's 32-bit utilities may not be in the repositories; then they
-			# are left out, as any missing gaming package is.
-			mapfile -t gaming_packages < <(dwm_vulkan_driver_packages)
-			mapfile -t -O "${#gaming_packages[@]}" gaming_packages < <(dwm_collect_packages gaming)
-			# shellcheck disable=SC2034 # read by dwm_install_batch, by name
-			gaming_required=()
-			if dwm_install_batch "${batch_flags[@]}" gaming_required gaming_packages; then
-				for package in "${DWM_BATCH_SKIPPED[@]}"; do
-					warn "$package is not in the enabled repositories and was left out."
-				done
-				configure_arch_gamemode_access
-			else
-				warn "The Arch gaming packages could not be installed."
-			fi
-		else
-			warn "Multilib repository setup failed; no gaming packages were installed."
-		fi
-	fi
+	! $gaming_queued || configure_arch_gamemode_access
 else
 	warn "Skipping optional desktop extras for $INSTALL_PROFILE profile."
 fi
