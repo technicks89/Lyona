@@ -49,37 +49,21 @@ cloneMyBash() {
 		git -C "$gitpath" checkout --quiet --detach "$MYBASH_REF"
 }
 
-# The font install.sh installs, pinned to the same release and checksum (Sync
-# Sprint 16 R16-15); tests/test-download-pins.sh keeps the two in step. A
-# download that fails or does not match is skipped, not installed.
-MESLO_VERSION="3.4.0"
-MESLO_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v${MESLO_VERSION}/Meslo.zip"
-MESLO_SHA256="13b502ac8c2bd9d3161018064560e23cd42b175bb730780a270975265a19ad57"
-
+# The font install.sh installs, from the same package (#250): the repository
+# package, not the 112 MB release zip. A failed install is skipped, not fatal.
 installFont() {
 	FONT_NAME="MesloLGS Nerd Font Mono"
 	if fc-list :family | grep -iq "$FONT_NAME"; then
 		printf "%b\n" "Font '$FONT_NAME' is installed."
 		return
 	fi
-	printf "%b\n" "Installing font '$FONT_NAME' (Meslo Nerd Font v$MESLO_VERSION)"
-	FONT_DIR="$HOME/.local/share/fonts"
-	TEMP_DIR=$(mktemp -d)
-	if ! curl --fail --location --show-error --silent "$MESLO_URL" --output "$TEMP_DIR/Meslo.zip"; then
-		printf "%b\n" "Could not download the font; skipping it."
-		rm -rf "$TEMP_DIR"
+	printf "%b\n" "Installing font '$FONT_NAME'..."
+	# shellcheck disable=SC2046 # one package name per word, by design
+	if ! sudo pacman -S --needed --noconfirm $(bash -c '. "$1" && dwm_packages arch font-meslo' \
+		sh "$lyona_lib/dwm-packages.sh"); then
+		printf "%b\n" "Could not install the font; skipping it."
 		return
 	fi
-	if ! printf '%s  %s\n' "$MESLO_SHA256" "$TEMP_DIR/Meslo.zip" | sha256sum --check --status; then
-		printf "%b\n" "The font download does not match its pinned checksum; skipping it."
-		rm -rf "$TEMP_DIR"
-		return
-	fi
-	unzip -q "$TEMP_DIR/Meslo.zip" -d "$TEMP_DIR"
-	mkdir -p "$FONT_DIR/$FONT_NAME"
-	mv "$TEMP_DIR"/*.ttf "$FONT_DIR/$FONT_NAME"
-	fc-cache -f
-	rm -rf "$TEMP_DIR"
 	printf "%b\n" "'$FONT_NAME' installed successfully."
 }
 

@@ -659,6 +659,7 @@ main() {
 	require_gum
 	: >"$LOG_FILE"
 	install_error_trap "$@"
+	reset_step_times
 
 	detect_firmware
 	command -v archinstall >/dev/null 2>&1 || fail "archinstall not found on this live medium."

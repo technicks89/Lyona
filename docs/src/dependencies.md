@@ -110,9 +110,10 @@ The Arch GTK theme packages the installer installs when available; lyona also ge
 
 ### `fonts`
 
-Noto fonts and emoji.
+Noto fonts and emoji, and MesloLGS Nerd Font, the terminal, bar and shell font
+(the `font-meslo` profile).
 
-`noto-fonts-emoji` `noto-fonts`
+`noto-fonts-emoji` `noto-fonts` `ttf-meslo-nerd`
 
 ### `shell`
 
