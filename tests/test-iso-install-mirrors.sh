@@ -137,6 +137,22 @@ grep -Fq 'if [[ -e $LYONA_MIRRORS_MARKER ]]; then' "$postinstall" || fail 'the p
 grep -Fq 'install -Dm644 /etc/pacman.d/mirrorlist "$TARGET/etc/pacman.d/mirrorlist"' "$postinstall" ||
 	fail 'the postinstall does not copy the ranked mirrorlist'
 
+# The medium's own pacman.conf (the pacman package's, with 5): 10, whether the
+# line is set, commented out or missing; nothing else changes.
+for case in 'ParallelDownloads = 5' '#ParallelDownloads = 5' ''; do
+	printf '[options]\nHoldPkg = pacman glibc\n%s\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n' "$case" >"$work/pacman.conf"
+	LYONA_PACMAN_CONF=$work/pacman.conf lib "LOG_FILE=$work/install.log; use_parallel_downloads"
+	if [[ $(grep -c 'ParallelDownloads' "$work/pacman.conf") != 1 ]] || ! grep -Fxq 'ParallelDownloads = 10' "$work/pacman.conf"; then
+		fail "the live pacman.conf with '$case' became: $(cat "$work/pacman.conf")"
+	fi
+	if ! grep -Fxq 'HoldPkg = pacman glibc' "$work/pacman.conf" || ! grep -Fxq '[core]' "$work/pacman.conf"; then
+		fail "use_parallel_downloads changed more than ParallelDownloads: $(cat "$work/pacman.conf")"
+	fi
+	awk '/^\[options\]$/ { o = 1; next } /^\[/ { o = 0 } o && /^ParallelDownloads = 10$/ { found = 1 } END { exit !found }' \
+		"$work/pacman.conf" || fail "ParallelDownloads is not under [options] with '$case'"
+done
+grep -Eq '^	use_parallel_downloads$' "$wizard" || fail 'the wizard does not raise the medium'"'"'s ParallelDownloads'
+
 # Ten downloads at a time, on the medium and on the new system.
 grep -Fxq 'ParallelDownloads = 10' "$repo/archiso/pacman.conf" || fail 'the live medium does not download 10 at a time'
 grep -Fq '"pacman_config": {"color": true, "parallel_downloads": 10}' "$wizard" ||

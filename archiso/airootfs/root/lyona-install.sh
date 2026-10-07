@@ -8,6 +8,8 @@ POSTINSTALL=/root/lyona-postinstall.sh
 LYONA_ZONEINFO=${LYONA_ZONEINFO:-/usr/share/zoneinfo}
 export LYONA_MIRRORLIST=${LYONA_MIRRORLIST:-/etc/pacman.d/mirrorlist}
 export LYONA_MIRRORS_MARKER=${LYONA_MIRRORS_MARKER:-/run/lyona-mirrors-ranked}
+# This medium's own pacman configuration, which archinstall downloads with.
+LYONA_PACMAN_CONF=${LYONA_PACMAN_CONF:-/etc/pacman.conf}
 MIRROR_COUNTRY=
 CACHYOS_HELPER=/root/lyona/scripts/lyona-cachyos
 CACHYOS_PACKAGES=
@@ -551,6 +553,21 @@ rank_mirrors() {
 }
 export -f rank_mirrors
 
+# Ten downloads at a time on this medium (#249), as on the new system. The
+# medium's /etc/pacman.conf is the pacman package's own, with 5:
+# archiso/pacman.conf configures only the image build. It is this live system's
+# file, gone at the reboot, never the user's.
+use_parallel_downloads() {
+	[[ -w $LYONA_PACMAN_CONF ]] || return 0
+	if grep -Eq '^[[:space:]]*#?[[:space:]]*ParallelDownloads[[:space:]]*=' "$LYONA_PACMAN_CONF"; then
+		sed -i -E 's/^[[:space:]]*#?[[:space:]]*ParallelDownloads[[:space:]]*=.*/ParallelDownloads = 10/' \
+			"$LYONA_PACMAN_CONF" || return 0
+	else
+		sed -i 's/^\[options\]$/&\nParallelDownloads = 10/' "$LYONA_PACMAN_CONF" || return 0
+	fi
+	log_step "ParallelDownloads = 10 in $LYONA_PACMAN_CONF"
+}
+
 # One image for every GPU (D-17a, Sync Sprint 12 S12-17): on an NVIDIA GPU a
 # packaged driver supports, the proprietary driver is the recommended choice and
 # nouveau the alternative. Which driver comes from the card's device ID (Sync
@@ -841,6 +858,7 @@ main() {
 
 	# Before anything is downloaded: archinstall, and the new system after it, use
 	# this medium's mirrorlist.
+	use_parallel_downloads
 	run_logged "Choosing the fastest package mirrors..." rank_mirrors "$MIRROR_COUNTRY"
 
 	log_step "setup_cachyos_repositories"
