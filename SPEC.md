@@ -190,7 +190,12 @@ The supported installation flow must:
 2. Resolve Arch package names from one maintained dependency map.
 3. Show required and optional packages before installing them.
 4. Install only missing required packages unless the user requests a broader
-   desktop setup.
+   desktop setup. Every repository package of the chosen profile is installed
+   in one `pacman -Syu --needed` transaction, which also upgrades the system
+   (#247). A missing optional package is left out with a warning and the
+   transaction retried once without it; a missing required one (the `build`,
+   `x11`, `runtime-required` and `desktop` profiles) stops the install before
+   anything of lyona's is installed.
 5. Create a missing `config.h` from guided compile-time questions, or detected
    and documented defaults for an unattended installation. Preserve an
    existing `config.h`.

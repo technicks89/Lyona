@@ -129,9 +129,9 @@ Thunar with SMB browsing and archive support, thumbnails, NetworkManager, `rsync
 
 ### `theme-optional`
 
-`qt6ct` and `qt5ct`. With either installed, applying a theme points it at the palette lyona generates so Qt applications follow it.
+`qt6ct`. With it installed, applying a theme points it at the palette lyona generates so Qt applications follow it. `qt5ct`, which the installer used to try when `qt6ct` was missing, is no longer installed; one you installed yourself is still pointed at the palette (`docs/src/theming.md`).
 
-`qt6ct` `qt5ct`
+`qt6ct`
 
 ### `system-management-optional`
 

@@ -239,7 +239,11 @@ no_partial_files
 # Gear Lever writes its own AppImage MIME preference file. Were it to run
 # first, the seed would see that file and leave every media default unset.
 
-media_line=$(grep -n '^	dwm_install_package_profile media$' "$repo/install.sh" | head -n 1 | cut -d: -f1)
+# The media profile comes with every other package, in one transaction (#247).
+grep -Eq '^	mapfile -t batch_optional < <\(dwm_collect_packages browser media ' "$repo/install.sh" ||
+	fail 'install.sh does not install the media profile with the other packages'
+# shellcheck disable=SC2016 # matching install.sh's literal text, not expanding it
+media_line=$(grep -nF 'if ! dwm_install_batch "${batch_flags[@]}" batch_required batch_optional; then' "$repo/install.sh" | head -n 1 | cut -d: -f1)
 seed_line=$(grep -n 'scripts/seed-default-apps.sh' "$repo/install.sh" | head -n 1 | cut -d: -f1)
 # shellcheck disable=SC2016 # matching install.sh's literal text, not expanding it
 gearlever_line=$(grep -n 'if "$REPO_DIR/scripts/install-gearlever"; then' "$repo/install.sh" | head -n 1 | cut -d: -f1)

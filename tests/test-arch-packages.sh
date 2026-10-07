@@ -153,42 +153,92 @@ fi
 printf '%s\n' "$batched_packages" | grep -Fxq make
 printf '%s\n' "$batched_packages" | grep -Fxq xorg-server
 
-# An optional profile queries availability once and installs what exists in
-# one transaction, still reporting each package it had to skip.
-optional_out=$(bash -c '
-	. "$1"
-	. "$2"
-	DISTRO_FAMILY=arch
-	dwm_packages() { printf "alpha\nabsent-one\nbeta\nabsent-two\n"; }
-	available_packages() {
-		printf "QUERY %s\n" "$*" >&2
-		for candidate in "$@"; do
-			case $candidate in
-			absent-*) continue ;;
-			esac
-			printf "%s\n" "$candidate"
-		done
-	}
-	install_packages() { printf "INSTALL %s\n" "$*"; }
-	dwm_install_available_package_profile fake
-' _ "$repo/scripts/dwm-utils.sh" "$repo/scripts/dwm-packages.sh" 2>"$work/optional.err") &&
-	{
-		printf 'Optional profile with missing packages should report failure.\n' >&2
-		exit 1
-	}
-if [[ $(printf '%s\n' "$optional_out" | grep -c '^INSTALL') -ne 1 ]]; then
-	printf 'Optional profile did not install in a single transaction:\n%s\n' \
-		"$optional_out" >&2
+# #247: dwm_install_batch installs every package as one pacman -Syu --needed
+# transaction, required first and each once. Missing optional packages are
+# retried without, once; a missing required one fails, with no retry. pacman and
+# sudo are stubs: pacman logs each call, and on the call numbered STUB_FAIL_CALL
+# reports STUB_NOT_FOUND as not found (or fails plainly without them).
+batch_work=$(mktemp -d)
+cat >"$batch_work/sudo" <<'EOF'
+#!/bin/sh
+exec "$@"
+EOF
+cat >"$batch_work/pacman" <<'EOF'
+#!/bin/bash
+calls=$(($(cat "$STUB_DIR/calls" 2>/dev/null || echo 0) + 1))
+printf '%s\n' "$calls" >"$STUB_DIR/calls"
+printf 'pacman %s\n' "$*" >>"$STUB_DIR/pacman.log"
+[[ $calls == "${STUB_FAIL_CALL:-0}" ]] || exit 0
+for name in ${STUB_NOT_FOUND:-}; do printf 'error: target not found: %s\n' "$name" >&2; done
+exit 1
+EOF
+chmod +x "$batch_work/sudo" "$batch_work/pacman"
+batch() { # FLAGS REQUIRED OPTIONAL: prints the skipped packages, then the status
+	rm -f "$batch_work/calls" "$batch_work/pacman.log"
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	env PATH="$batch_work:$PATH" STUB_DIR="$batch_work" bash -c '
+		set -u
+		. "$1"
+		. "$2"
+		DISTRO_FAMILY=arch
+		read -ra required <<<"$4"
+		read -ra optional <<<"$5"
+		status=0
+		dwm_install_batch $3 required optional || status=$?
+		printf "SKIPPED %s\nSTATUS %s\n" "${DWM_BATCH_SKIPPED[*]}" "$status"
+	' _ "$repo/scripts/dwm-utils.sh" "$repo/scripts/dwm-packages.sh" "$@" 2>"$batch_work/err"
+}
+batch_fail() {
+	printf '%s\n' "$1" >&2
+	cat "$batch_work/pacman.log" "$batch_work/err" >&2 2>/dev/null
+	exit 1
+}
+out=$(batch --noconfirm 'make xorg-server' 'alacritty make maim')
+[[ $out == $'SKIPPED \nSTATUS 0' ]] || batch_fail "a full batch: $out"
+[[ $(cat "$batch_work/pacman.log") == 'pacman -Syu --needed --noconfirm -- make xorg-server alacritty maim' ]] ||
+	batch_fail 'the batch is not one pacman -Syu --needed transaction, required first, each package once'
+batch '' 'make' 'maim' >/dev/null
+[[ $(cat "$batch_work/pacman.log") == 'pacman -Syu --needed -- make maim' ]] ||
+	batch_fail 'an interactive batch was given --noconfirm'
+out=$(STUB_FAIL_CALL=1 STUB_NOT_FOUND='absent-one absent-two' batch --noconfirm 'make' 'absent-one maim absent-two')
+[[ $out == $'SKIPPED absent-one absent-two\nSTATUS 0' ]] || batch_fail "missing optional packages: $out"
+[[ $(cat "$batch_work/pacman.log") == $'pacman -Syu --needed --noconfirm -- make absent-one maim absent-two\npacman -Syu --needed --noconfirm -- make maim' ]] ||
+	batch_fail 'missing optional packages were not retried once without them'
+grep -Fq 'Not in the enabled repositories, so left out: absent-one absent-two. Retrying once without them.' "$batch_work/err" ||
+	batch_fail 'the retry was not said'
+out=$(STUB_FAIL_CALL=1 STUB_NOT_FOUND='make absent-one' batch --noconfirm 'make' 'absent-one maim')
+[[ $out == $'SKIPPED \nSTATUS 1' ]] || batch_fail "a missing required package: $out"
+[[ $(wc -l <"$batch_work/pacman.log") == 1 ]] || batch_fail 'a missing required package was retried'
+grep -Fq 'A required package is not in the enabled repositories: make' "$batch_work/err" ||
+	batch_fail 'a missing required package was not named'
+out=$(STUB_FAIL_CALL=1 batch --noconfirm 'make' 'maim')
+[[ $out == $'SKIPPED \nSTATUS 1' && $(wc -l <"$batch_work/pacman.log") == 1 ]] ||
+	batch_fail "a failure that is not a missing target was retried, or passed: $out"
+out=$(STUB_FAIL_CALL=2 STUB_NOT_FOUND=absent batch --noconfirm 'make' 'maim')
+[[ $out == $'SKIPPED \nSTATUS 0' ]] || batch_fail "a later call failing changed the first: $out"
+rm -rf "$batch_work"
+# Nothing asks the repositories at install time any more: make check-aur-policy
+# checks every profile's packages against them before a release.
+if grep -nE 'pacman -Si|available_packages|dwm_install_available_package_profile|dwm_install_first_available' \
+	"$repo/install.sh" "$repo/scripts/dwm-utils.sh" "$repo/scripts/dwm-packages.sh" | grep -v ':[[:space:]]*#' | grep -q .; then
+	printf 'The installer still checks the repositories one profile at a time.\n' >&2
 	exit 1
 fi
-printf '%s\n' "$optional_out" | grep -Fqx 'INSTALL alpha beta'
-if [[ $(grep -c '^QUERY' "$work/optional.err") -ne 1 ]]; then
-	printf 'Optional profile did not probe availability in a single query.\n' >&2
-	cat "$work/optional.err" >&2
+[[ $(dwm_packages arch theme-optional) == qt6ct ]] || {
+	printf 'Qt theming is not the one fixed package qt6ct.\n' >&2
+	exit 1
+}
+[[ $(dwm_packages arch terminal-primary) == alacritty ]]
+# install.sh: one transaction for the profiles, and the version check after it.
+# shellcheck disable=SC2016 # the literal text in install.sh
+[[ $(grep -c 'dwm_install_batch "${batch_flags\[@\]}" batch_required batch_optional' "$repo/install.sh") == 1 ]] || {
+	printf 'install.sh does not install the profiles in one dwm_install_batch.\n' >&2
+	exit 1
+}
+if grep -nE '^[[:space:]]*dwm_install_package_profile ' "$repo/install.sh" | grep -q .; then
+	printf 'install.sh still installs a profile on its own: %s\n' "$(grep -nE '^[[:space:]]*dwm_install_package_profile ' "$repo/install.sh")" >&2
 	exit 1
 fi
-grep -Fq 'unavailable in enabled repositories: absent-one' "$work/optional.err"
-grep -Fq 'unavailable in enabled repositories: absent-two' "$work/optional.err"
 
 "$repo/install.sh" --dry-run --non-interactive --profile core >/dev/null
 
@@ -245,10 +295,12 @@ vulkan() {
 [[ $(vulkan '00:01.0 VGA compatible controller: Red Hat, Inc. Virtio 1.0 GPU') == 'vulkan-swrast lib32-vulkan-swrast ' ]]
 # A laptop with two GPUs gets both drivers.
 [[ $(vulkan $'00:02.0 VGA compatible controller: Intel Corporation\n01:00.0 3D controller: NVIDIA Corporation' 'nvidia-utils') == 'vulkan-intel lib32-vulkan-intel nvidia-utils lib32-nvidia-utils ' ]]
-# install.sh installs them before the gaming profile.
-vulkan_line=$(grep -n 'mapfile -t vulkan_drivers < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
-gaming_line=$(grep -n 'dwm_install_available_package_profile gaming;' "$repo/install.sh" | cut -d: -f1)
+# install.sh installs them in the same transaction as the gaming profile.
+vulkan_line=$(grep -n 'mapfile -t gaming_packages < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
+gaming_line=$(grep -n 'gaming_packages < <(dwm_collect_packages gaming)' "$repo/install.sh" | cut -d: -f1)
 [[ -n $vulkan_line && -n $gaming_line ]] && ((vulkan_line < gaming_line))
+# shellcheck disable=SC2016 # the literal text in install.sh
+grep -Fq 'dwm_install_batch "${batch_flags[@]}" gaming_required gaming_packages' "$repo/install.sh"
 
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

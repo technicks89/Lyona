@@ -23,6 +23,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **`install.sh` installs every package in one `pacman -Syu --needed` transaction** instead of about sixteen
+  separate pacman runs, each with its own dependency resolution, download and system hooks. That transaction also
+  upgrades the system. The `pacman -Si` availability checks before each profile are gone: the release check
+  (`make check-aur-policy`) already confirms every package is in the repositories. If an optional package is missing
+  anyway, it is left out with a warning and the transaction retried once without it; a missing required package stops
+  the install before anything of lyona's is installed. Gaming stays a second transaction, after `multilib` (#247).
+  - **Qt theming** is now `qt6ct` alone; `qt5ct` is no longer installed when `qt6ct` is missing. **Terminals:**
+    Alacritty comes with the other packages, and kitty, st or xterm are used only if it is missing afterwards.
 - **Topgrade comes from the AUR's `topgrade-bin` package** instead of being built with cargo. The installer builds it
   with `makepkg` from a PKGBUILD pinned to a reviewed commit, and installs it with `pacman`. That takes seconds instead
   of several minutes, and no longer installs `rustup`, a Rust toolchain or about 300 MB of crates; `cargo-update` is no

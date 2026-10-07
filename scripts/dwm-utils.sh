@@ -47,47 +47,6 @@ install_packages() {
 	esac
 }
 
-package_available() {
-	case "$DISTRO_FAMILY" in
-	arch)
-		pacman -Si -- "$1" >/dev/null 2>&1
-		;;
-	*)
-		return 1
-		;;
-	esac
-}
-
-install_optional_package() {
-	local package=$1
-
-	if package_available "$package"; then
-		install_packages "$package"
-		return
-	fi
-
-	printf 'Optional package is unavailable in enabled repositories: %s\n' "$package" >&2
-	return 1
-}
-
-# Prints the subset of the given packages that exists in the enabled
-# repositories, one per line, using a single pacman query rather than one per
-# package. A package carried by more than one repository is listed once.
-available_packages() {
-	(($# > 0)) || return 0
-
-	case "$DISTRO_FAMILY" in
-	arch)
-		pacman -Si -- "$@" 2>/dev/null |
-			awk '/^Name[[:space:]]*:/ { print $3 }' |
-			sort -u
-		;;
-	*)
-		return 1
-		;;
-	esac
-}
-
 detect_gpu() {
 	if command -v lspci &>/dev/null; then
 		local vga
