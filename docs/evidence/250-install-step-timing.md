@@ -2,10 +2,9 @@
 
 Issue `#250`, part 6/6 of the install-speed series (#245 to #250).
 
-**Status: the timing is in place; the VM baseline has not been run.** Both
-install paths now log each step's duration and end with a table (part A). The
-baseline below has to come from a real VM install, which has not been done.
-Fill it in **before** #245 to #249 land, then add a column after each one.
+**Status: the timing is in place, and the baseline is recorded** from one
+QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). Add a
+column after each of #245 to #249 lands.
 
 ## A. Step timing
 
@@ -21,33 +20,81 @@ Fill it in **before** #245 to #249 land, then add a column after each one.
 - Tested by `tests/test-install-step-timing.sh` (`make check-install-step-timing`)
   against a stub `gum`.
 
-## Baseline: full image install (not yet run)
+## Baseline: full image install
 
-One VM, UEFI, no NVIDIA, wired network. Record the medium's build, the host
-CPU and disk, the VM's cores and memory, and the network speed.
+- **Image:** `lyona-2026.10.0-beta.5-x86_64.iso` built from `d1a7c87`, SHA-256
+  `c9f7250b09a1b9d931fffab2544e3976f640a7fd80ace6f46af0b9c240d5178c`.
+- **VM:** QEMU 11.1 with KVM, UEFI (OVMF), q35, 4 vCPUs (`-cpu host`, AMD), 4 GiB
+  RAM, 40 GiB virtio qcow2 disk on NVMe, user-mode network. Host: 12 threads,
+  about 300 Mbit/s.
+- **Answers:** btrfs, no encryption, timezone detected as `America/New_York`,
+  no NVIDIA GPU (virtio-vga). The CachyOS repositories were set up.
+- **How:** the wizard's prompts were answered by a driver over the serial
+  console, which then ran the wizard's own steps (`setup_cachyos_repositories`,
+  `generate_configs`, `run_archinstall`) and the unchanged postinstall. The
+  first boot reached the LightDM greeter within 40 s.
 
 | Step | Baseline | After #245 | After #247/#248 | After #246 | After #249 |
 | --- | --- | --- | --- | --- | --- |
-| archinstall | not run | | | | |
-| Adding the CachyOS repositories | not run | | | | |
-| Updating the new system | not run | | | | |
-| Installing the CachyOS kernels | not run | | | | |
-| Installing CPU microcode | not run | | | | |
-| Installing GPU drivers | not run | | | | |
-| Configuring NetworkManager | not run | | | | |
-| Checking swap | not run | | | | |
-| Checking for a QEMU/KVM hypervisor | not run | | | | |
-| Running install.sh --profile full | not run | | | | |
-| Building Topgrade | not run | | | | |
-| **Total** | not run | | | | |
+| Wizard: adding the CachyOS repositories | 4s | | | | |
+| archinstall | 1m 33s | | | | |
+| Adding the CachyOS repositories | 0s | | | | |
+| Updating the new system | 2s | | | | |
+| Installing the CachyOS kernels | 14s | | | | |
+| Installing CPU microcode | 6s | | | | |
+| Installing GPU drivers | 0s | | | | |
+| Configuring NetworkManager | 0s | | | | |
+| Checking swap | 2s | | | | |
+| Checking for a QEMU/KVM hypervisor | 0s | | | | |
+| Running install.sh --profile full | 9m 41s | | | | |
+| Building Topgrade | 3m 02s (failed) | | | | |
+| **Total of the steps** | 14m 44s | | | | |
 
-Copy the `install.sh` section times (`[TIME]` lines) from the same log below
-the table.
+Wall clock from the end of the wizard's questions to the reboot: 14m 48s.
+
+`install.sh`'s sections, from the same run:
+
+| Section | Time |
+| --- | --- |
+| Required packages | 13s |
+| Recommended packages | 1m 25s |
+| Optional extras and gaming | 7m 45s |
+| mybash | 1s |
+| Wallpapers | 5s |
+| Display manager (LightDM) | 3s |
+| yay | 4s |
+| Build (make clean; make) | 2s |
+| make install-system | 2s |
+| GRUB theme | 1s |
+| Everything else | 0s each |
+
+### What the baseline shows
+
+- **One slow download made up most of the install.** In "Optional extras and
+  gaming", `pacman -S lib32-vulkan-swrast vulkan-swrast` started at 21:19:49
+  and its transaction began at 21:27:07: 7m 18s to download 79.9 MiB, starting
+  with `lib32-llvm-libs` from the multilib mirror. The next run downloaded 91.5
+  MiB (Steam and the rest of the gaming profile) in 8 s. This is mirror choice
+  (#249), not CPU or package count, and it will vary from run to run.
+- **Topgrade failed:** `rustup` timed out fetching
+  `static.rust-lang.org/dist/channel-rust-stable.toml` after rustup and
+  cargo-update were installed. The install still finished and listed it on the
+  closing screen, as designed. #245 removes this download.
+- The CachyOS CDN (`cdn77.cachyos.org`) returned 404 for several `-v3`
+  packages; pacman fell back to other mirrors without failing.
+- **Initramfs:** 8 builds in all across three kernels (`linux`,
+  `linux-cachyos`, `linux-cachyos-lts`), each only the `default` preset; no
+  fallback image was built. The kernels step took 14 s here, so #246's saving
+  will mostly be download size and disk space on this host, and more on a slow
+  CPU.
+- Not run by the image install: Herdr (the full profile without
+  `--install-herdr`) and Gear Lever (left for the first login).
 
 ## B. The smaller costs
 
-Measured on the development machine (12 threads, NVMe, about 300 Mbit/s), not
-in a VM. Times on old hardware will be higher.
+B1 to B3 and B5 were measured on the development machine (12 threads, NVMe,
+about 300 Mbit/s); B6 and B7 come from the VM baseline above. Times on old
+hardware will be higher.
 
 | Item | Finding | Result |
 | --- | --- | --- |
@@ -56,14 +103,17 @@ in a VM. Times on old hardware will be higher.
 | B3 `make clean; make` | 2.1 s for a full rebuild here, and 0.004 s for `make clean`. | **Closed:** seconds even on a slow CPU, not worth an incremental-build rule. Re-check if the old-hardware run says otherwise. |
 | B4 Gear Lever and Flatpak at first login | Needs a first login on an image install. | **Open:** not measured. |
 | B5 Wallpapers | 85 files, 141 MB at the pinned commit (63 PNG, 22 JPEG). A shallow fetch took 3.8 s here, which is about a minute at 20 Mbit/s. A release tarball would not be smaller: the images are already compressed. | **Open, for a decision:** a smaller default set, with the rest downloaded later, is the only real saving, and choosing which wallpapers stay is a product call. |
-| B6 Herdr and yay downloads | Need a VM run, to see them against the other steps. | **Open:** not measured. |
-| B7 `pacman -Syu` after archinstall | It runs after the CachyOS repositories are added, so it is probably not a no-op: it can replace stock packages with CachyOS builds. Needs the baseline's log to see what it actually does. | **Open:** not measured. Revisit with #247. |
+| B6 Herdr and yay downloads | yay: 4s in the VM. Herdr is not installed by the image install (the full profile without `--install-herdr`). | **Closed:** too small to move earlier. |
+| B7 `pacman -Syu` after archinstall | 2s in the VM: archinstall had already installed from the CachyOS repositories, and the upgrade found nothing to do. | **Closed:** effectively a no-op. #247 can fold it into the single install. |
 
 ## Not tested
 
-- No VM or hardware install has been run with the timing code. The table
-  format and the log lines are tested only against a stub `gum`.
-- `install.sh` has not been run end to end with the change; `--dry-run` and the
-  package-map tests pass.
-- B1: the font has not been checked on screen in a real session (Alacritty, the
-  bar, Quickshell) with only the package installed.
+- One VM run only, on fast hardware with a fast network. No old or low-end
+  machine, no BIOS install, no NVIDIA GPU, no encrypted disk, and no install
+  without the CachyOS repositories.
+- The wizard's prompts were answered by a driver, not typed: the gum screens
+  themselves were not exercised.
+- The desktop session after login was not checked, so B1 (the font on screen
+  with only the package installed) and B4 (Gear Lever at first login) are still
+  unverified.
+- An existing-system `install.sh` run, outside the image, has not been timed.
