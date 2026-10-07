@@ -4,7 +4,8 @@ Issue `#250`, part 6/6 of the install-speed series (#245 to #250).
 
 **Status: the timing is in place, and the baseline is recorded** from one
 QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). The
-"After #249" column is filled in; add the others as #245 to #248 land.
+"After #249" and "After #245" columns are filled in; add the others as #246 to
+#248 land.
 
 ## A. Step timing
 
@@ -36,43 +37,66 @@ QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). The
 
 | Step | Baseline | After #245 | After #247/#248 | After #246 | After #249 |
 | --- | --- | --- | --- | --- | --- |
-| Wizard: choosing the fastest package mirrors | (no step) | | | | 11s / 12s |
-| Wizard: adding the CachyOS repositories | 4s | | | | 5s / 4s |
-| archinstall | 1m 33s | | | | 1m 19s / 1m 24s |
-| Adding the CachyOS repositories | 0s | | | | 0s / 1s |
-| Updating the new system | 2s | | | | 2s / 1s |
-| Installing the CachyOS kernels | 14s | | | | 13s / 14s |
-| Installing CPU microcode | 6s | | | | 6s / 7s |
-| Installing GPU drivers | 0s | | | | 0s / 0s |
-| Configuring NetworkManager | 0s | | | | 1s / 0s |
-| Checking swap | 2s | | | | 1s / 1s |
-| Checking for a QEMU/KVM hypervisor | 0s | | | | 0s / 1s |
-| Running install.sh --profile full | 9m 41s | | | | 1m 34s / 1m 43s |
-| Building Topgrade | 3m 02s (failed) | | | | 5m 38s / 5m 32s |
-| **Total of the steps** | 14m 44s | | | | 9m 10s / 9m 20s |
+| Wizard: choosing the fastest package mirrors | (no step) | 11s | | | 11s / 12s |
+| Wizard: adding the CachyOS repositories | 4s | 5s | | | 5s / 4s |
+| archinstall | 1m 33s | 1m 21s | | | 1m 19s / 1m 24s |
+| Adding the CachyOS repositories | 0s | 0s | | | 0s / 1s |
+| Updating the new system | 2s | 2s | | | 2s / 1s |
+| Installing the CachyOS kernels | 14s | 13s | | | 13s / 14s |
+| Installing CPU microcode | 6s | 6s | | | 6s / 7s |
+| Installing GPU drivers | 0s | 0s | | | 0s / 0s |
+| Configuring NetworkManager | 0s | 0s | | | 1s / 0s |
+| Checking swap | 2s | 1s | | | 1s / 1s |
+| Checking for a QEMU/KVM hypervisor | 0s | 0s | | | 0s / 1s |
+| Running install.sh --profile full | 9m 41s | 1m 52s | | | 1m 34s / 1m 43s |
+| Building Topgrade | 3m 02s (failed) | 5s (installing topgrade-bin) | | | 5m 38s / 5m 32s |
+| **Total of the steps** | 14m 44s | 3m 56s | | | 9m 10s / 9m 20s |
 
 Wall clock from the end of the wizard's questions to the reboot: 14m 48s.
 
 The "After #249" column holds two runs, Europe/Berlin / UTC; #249 landed before
-the other issues in the series. Their totals include Topgrade's cargo build,
+the other issues in the series. "After #245" is one Europe/Berlin run with both
+#249 and #245 in. Their totals include Topgrade's cargo build,
 which succeeded in both but failed after 3m 02s in the baseline. Without
 Topgrade, the total went from 11m 42s to 3m 32s and 3m 48s.
 
 `install.sh`'s sections:
 
-| Section | Baseline | After #249 (Berlin / UTC) |
-| --- | --- | --- |
-| Required packages | 13s | 9s / 10s |
-| Recommended packages | 1m 25s | 46s / 45s |
-| Optional extras and gaming | 7m 45s | 23s / 31s |
-| mybash | 1s | 0s / 0s |
-| Wallpapers | 5s | 5s / 4s |
-| Display manager (LightDM) | 3s | 2s / 2s |
-| yay | 4s | 4s / 4s |
-| Build (make clean; make) | 2s | 2s / 2s |
-| make install-system | 2s | 2s / 2s |
-| GRUB theme | 1s | 0s / 1s |
-| Everything else | 0s each | 0-1s each |
+| Section | Baseline | After #249 (Berlin / UTC) | After #245 (Berlin) |
+| --- | --- | --- | --- |
+| Required packages | 13s | 9s / 10s | 11s |
+| Recommended packages | 1m 25s | 46s / 45s | 54s |
+| Optional extras and gaming | 7m 45s | 23s / 31s | 29s |
+| mybash | 1s | 0s / 0s | 0s |
+| Wallpapers | 5s | 5s / 4s | 4s |
+| Display manager (LightDM) | 3s | 2s / 2s | 3s |
+| yay | 4s | 4s / 4s | 3s |
+| Build (make clean; make) | 2s | 2s / 2s | 3s |
+| make install-system | 2s | 2s / 2s | 1s |
+| GRUB theme | 1s | 0s / 1s | 0s |
+| Everything else | 0s each | 0-1s each | 0-2s each |
+
+### After #245: Topgrade from the AUR
+
+One Europe/Berlin install from an image built from `16770d4`, SHA-256
+`c431bc66ed2138b0bac241cd6e34fdfcef1372226015d4d7695fb4aefff5e61b`,
+same VM and host as the baseline.
+
+- The Topgrade step took 5 s: clone the pinned `topgrade-bin`, download the
+  6.24 MiB release tarball (its b2sum passed), `makepkg` as the new user, and
+  `pacman -U` as root. The cargo build it replaces took 5m 32s and 5m 38s in the
+  #249 runs, and failed after 3m 02s in the baseline.
+- On the new system: `topgrade-bin 17.12.3-1` is installed and
+  `topgrade --version` runs as the user (`topgrade 17.12.3`, `/usr/bin/topgrade`).
+  `rustup`, `rust`, `cargo` and `cargo-update` are not installed, there is no
+  `~/.cargo`, and the build directory in `/var/tmp` is gone. No warnings.
+- The whole install, from the end of the wizard's questions to the reboot, took
+  4m 13s, against 14m 48s in the baseline. It booted to the LightDM greeter
+  within 40 s.
+- Not tested in a VM: `install-topgrade` on an existing system (its `sudo
+  pacman -U` and the offer to remove an older cargo-built copy at a terminal),
+  and a build that fails. Those are covered by `tests/test-install-topgrade.sh`
+  against stubs.
 
 ### After #249: the mirrors and 10 parallel downloads
 
