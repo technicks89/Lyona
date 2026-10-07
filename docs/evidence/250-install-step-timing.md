@@ -3,8 +3,8 @@
 Issue `#250`, part 6/6 of the install-speed series (#245 to #250).
 
 **Status: the timing is in place, and the baseline is recorded** from one
-QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). Add a
-column after each of #245 to #249 lands.
+QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). The
+"After #249" column is filled in; add the others as #245 to #248 land.
 
 ## A. Step timing
 
@@ -36,37 +36,71 @@ column after each of #245 to #249 lands.
 
 | Step | Baseline | After #245 | After #247/#248 | After #246 | After #249 |
 | --- | --- | --- | --- | --- | --- |
-| Wizard: adding the CachyOS repositories | 4s | | | | |
-| archinstall | 1m 33s | | | | |
-| Adding the CachyOS repositories | 0s | | | | |
-| Updating the new system | 2s | | | | |
-| Installing the CachyOS kernels | 14s | | | | |
-| Installing CPU microcode | 6s | | | | |
-| Installing GPU drivers | 0s | | | | |
-| Configuring NetworkManager | 0s | | | | |
-| Checking swap | 2s | | | | |
-| Checking for a QEMU/KVM hypervisor | 0s | | | | |
-| Running install.sh --profile full | 9m 41s | | | | |
-| Building Topgrade | 3m 02s (failed) | | | | |
-| **Total of the steps** | 14m 44s | | | | |
+| Wizard: choosing the fastest package mirrors | (no step) | | | | 11s / 12s |
+| Wizard: adding the CachyOS repositories | 4s | | | | 5s / 4s |
+| archinstall | 1m 33s | | | | 1m 19s / 1m 24s |
+| Adding the CachyOS repositories | 0s | | | | 0s / 1s |
+| Updating the new system | 2s | | | | 2s / 1s |
+| Installing the CachyOS kernels | 14s | | | | 13s / 14s |
+| Installing CPU microcode | 6s | | | | 6s / 7s |
+| Installing GPU drivers | 0s | | | | 0s / 0s |
+| Configuring NetworkManager | 0s | | | | 1s / 0s |
+| Checking swap | 2s | | | | 1s / 1s |
+| Checking for a QEMU/KVM hypervisor | 0s | | | | 0s / 1s |
+| Running install.sh --profile full | 9m 41s | | | | 1m 34s / 1m 43s |
+| Building Topgrade | 3m 02s (failed) | | | | 5m 38s / 5m 32s |
+| **Total of the steps** | 14m 44s | | | | 9m 10s / 9m 20s |
 
 Wall clock from the end of the wizard's questions to the reboot: 14m 48s.
 
-`install.sh`'s sections, from the same run:
+The "After #249" column holds two runs, Europe/Berlin / UTC; #249 landed before
+the other issues in the series. Their totals include Topgrade's cargo build,
+which succeeded in both but failed after 3m 02s in the baseline. Without
+Topgrade, the total went from 11m 42s to 3m 32s and 3m 48s.
 
-| Section | Time |
-| --- | --- |
-| Required packages | 13s |
-| Recommended packages | 1m 25s |
-| Optional extras and gaming | 7m 45s |
-| mybash | 1s |
-| Wallpapers | 5s |
-| Display manager (LightDM) | 3s |
-| yay | 4s |
-| Build (make clean; make) | 2s |
-| make install-system | 2s |
-| GRUB theme | 1s |
-| Everything else | 0s each |
+`install.sh`'s sections:
+
+| Section | Baseline | After #249 (Berlin / UTC) |
+| --- | --- | --- |
+| Required packages | 13s | 9s / 10s |
+| Recommended packages | 1m 25s | 46s / 45s |
+| Optional extras and gaming | 7m 45s | 23s / 31s |
+| mybash | 1s | 0s / 0s |
+| Wallpapers | 5s | 5s / 4s |
+| Display manager (LightDM) | 3s | 2s / 2s |
+| yay | 4s | 4s / 4s |
+| Build (make clean; make) | 2s | 2s / 2s |
+| make install-system | 2s | 2s / 2s |
+| GRUB theme | 1s | 0s / 1s |
+| Everything else | 0s each | 0-1s each |
+
+### After #249: the mirrors and 10 parallel downloads
+
+Two installs, same VM and host as the baseline. The first image was built from
+the uncommitted #249 change; the second, SHA-256
+`92c878fab17a15a4f638a6c0c5a2fa47669f93b5121fc26911d2d0dac0a85b86`, from
+`4b0f583`.
+
+- **Europe/Berlin:** `DE` from `zone.tab`; reflector ranked 20 German HTTPS
+  mirrors in 11 s. The ranking ran from this host in the US, so the order is
+  German mirrors as seen from here, not what a user in Germany would get.
+- **UTC:** no country, so worldwide; 20 mirrors in 12 s, the fastest from here
+  first (`losangeles.mirror.pkgbuild.com`, then `geo.mirror.pkgbuild.com`).
+- In both, the installed `/etc/pacman.d/mirrorlist` is byte for byte the ranked
+  live one, and the installed `/etc/pacman.conf` has `ParallelDownloads = 10`.
+- **Found in the Berlin run, fixed before the UTC one:** the live medium still
+  had `ParallelDownloads = 5`. `archiso/pacman.conf` configures only the image
+  build; the live `/etc/pacman.conf` is the pacman package's. The wizard now
+  sets it to 10 before archinstall, and the UTC run had
+  `ParallelDownloads = 10` live before archinstall started.
+- Both new systems booted to the LightDM greeter within 40 s.
+- `install.sh` went from 9m 41s to 1m 34s and 1m 43s, almost all of it the
+  gaming download that took 7m 18s in the baseline. One run per setting: mirror
+  speed varies from run to run, and the baseline may have caught an unusually
+  slow mirror.
+- Not run in a VM: the ranking failing or timing out, and a country with fewer
+  than three mirrors. Both are covered only by `tests/test-iso-install-mirrors.sh`
+  against a stub reflector.
 
 ### What the baseline shows
 
