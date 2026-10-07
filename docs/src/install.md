@@ -74,9 +74,9 @@ with the CyberRe boot menu theme.
    choose **Wipe DISK and install**. Cancelling at any point changes nothing; run `lyona-install` to
    start again.
 4. **It installs on its own:** Arch with `archinstall`, then lyona's full
-   profile as your user, the CachyOS repositories and kernels
-   (`linux-cachyos` boots by default; the stock kernel stays in the boot menu
-   as the fallback), and Topgrade. A progress bar shows
+   profile as your user, the CachyOS repositories and the `linux-cachyos`
+   kernel (the only kernel; see "CachyOS repositories and kernel" below), and
+   Topgrade. A progress bar shows
    each step. If something did not go as chosen (a driver that could not be
    installed, for example), the last screen lists it and waits for Enter;
    otherwise it reboots after 15 seconds. Leave the USB stick in until then; if
@@ -308,12 +308,44 @@ it. The repositories are added to the live medium *before* `archinstall` runs,
 so `pacstrap` fetches the optimized packages directly instead of installing
 Arch builds and replacing them afterwards -- the base system is downloaded
 once, not twice. The installed system inherits the live medium's `pacman.conf`
-along with the CachyOS mirrorlists and keyring, and the postinstall step then
-installs `linux-cachyos` and `linux-cachyos-lts`. `linux-cachyos` is the
-default boot entry; the stock Arch kernel stays installed and in the boot
-menu, as the fallback if the CachyOS kernel does not boot. If the CachyOS mirror cannot be
-reached, the install continues on the stock Arch repositories instead of
-failing.
+along with the CachyOS mirrorlists and keyring, and `archinstall` installs
+`linux-cachyos` as the only kernel. If the CachyOS mirror cannot be reached,
+the install continues on the stock Arch repositories, with the stock Arch
+kernel, instead of failing.
+
+To keep installs fast (#246), there is one kernel and no fallback initramfs.
+CPU microcode comes with the base system on real hardware, and the boot menu
+is generated once.
+
+**If the new system does not boot,** recover it from the install medium. Boot
+it, press Ctrl+C at the installer's first question, which cancels it and leaves
+a root shell, and find the disk with `lsblk`. The installer made two partitions on it: the first is
+`/boot` (the EFI system partition on UEFI, ext4 on legacy BIOS), the second is
+the root filesystem. With the disk at `/dev/sda` (an NVMe disk's partitions are
+`/dev/nvme0n1p1` and `/dev/nvme0n1p2`):
+
+```sh
+cryptsetup open /dev/sda2 root     # only for an encrypted install; then use /dev/mapper/root below
+mount /dev/sda2 /mnt               # or: mount /dev/mapper/root /mnt
+mount /dev/sda1 /mnt/boot
+arch-chroot /mnt
+```
+
+**To keep a second kernel or the fallback image for recovery,** add them after
+installing. The fallback image is set per kernel, in that kernel's preset under
+`/etc/mkinitcpio.d/`: `linux-cachyos.preset`, or `linux.preset` on an install
+without the CachyOS repositories. The second kernel here is the CachyOS LTS
+one; on an install without CachyOS, use `linux-lts` instead.
+
+```sh
+sudo pacman -S linux-cachyos-lts linux-cachyos-lts-headers   # a second kernel (linux-lts linux-lts-headers without CachyOS)
+sudo sed -i "s/^PRESETS=.*/PRESETS=('default' 'fallback')/" /etc/mkinitcpio.d/*.preset
+sudo mkinitcpio -P                                            # build every kernel's images
+sudo grub-mkconfig -o /boot/grub/grub.cfg                     # list them in the boot menu
+```
+
+Installs from earlier images keep their `linux-cachyos-lts`, stock kernel and
+fallback images; nothing removes them.
 
 On an existing system, the installer can do the same, but both steps are
 opt-in and are never enabled by default:

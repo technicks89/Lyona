@@ -23,6 +23,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **Image installs have one kernel, `linux-cachyos`, installed by `archinstall`** instead of the stock `linux`, then
+  `linux-cachyos` and `linux-cachyos-lts` after it. With CachyOS unavailable, the stock kernel is the one. Each
+  kernel, microcode, driver and firmware update rebuilds one initramfs instead of three. The separate CPU microcode
+  step is gone, because `archinstall` installs microcode with the base system on real hardware. No fallback initramfs
+  is built, and `grub-mkconfig` runs once instead of four times (#246).
+  - **Recovery** is from the install medium (`arch-chroot`); `docs/src/install.md` shows how to add
+    `linux-cachyos-lts` or the fallback image back. Existing installs keep their kernels and fallback images.
 - **The gaming packages are in the same pacman transaction as everything else.** Once `multilib` is approved and
   enabled in `pacman.conf`, Steam, Gamescope, GameMode, MangoHud and this machine's Vulkan drivers join the one
   `pacman -Syu --needed` transaction. The separate system upgrade that synced `multilib`, and the two gaming

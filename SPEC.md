@@ -291,15 +291,19 @@ inferred from existing-system installer approval.
 
 The archiso installer additionally configures the CachyOS repositories on the
 live medium before `archinstall` runs, so the base system is fetched from them
-once rather than installed from Arch and replaced afterwards, and installs the
-CachyOS kernels (`linux-cachyos` and `linux-cachyos-lts`) on the target
-without prompting, using the same `scripts/lyona-cachyos` contract. The
+once rather than installed from Arch and replaced afterwards, and has
+`archinstall` install `linux-cachyos` as the only kernel (#246), without
+prompting. CPU microcode is `archinstall`'s own (on real hardware, with the base
+system), no fallback initramfs is built, and `grub-mkconfig` runs once, after
+every kernel, microcode and driver change. The
 installed system must receive the CachyOS mirrorlists and keyring, because a
 `pacman.conf` that includes a missing file does not parse at all. Both steps are non-fatal: an
 unreachable CachyOS mirror leaves the install on the stock Arch repositories
-rather than failing it. On an image install, `linux-cachyos` becomes the
-default boot entry, and the stock Arch kernel must remain installed and
-bootable as the fallback. On an existing system, an installed CachyOS kernel
+rather than failing it: the stock Arch kernel is installed instead, and the
+postinstall adds `linux-cachyos` as the default boot entry, with the stock
+kernel kept as the fallback, only if the repositories work by then. Recovery
+from an image install is from the install medium (`arch-chroot`), not a second
+kernel or a fallback initramfs. On an existing system, an installed CachyOS kernel
 never becomes the default boot entry. When
 more than one kernel is installed, the NVIDIA driver must be the DKMS driver
 with headers for every installed kernel.

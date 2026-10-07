@@ -77,8 +77,9 @@ grep -Fq '"$CACHYOS_HELPER" add-repos' "$postinstall" || {
 	exit 1
 }
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
-# The image boots linux-cachyos by default; the stock kernel stays installed.
-grep -Fq '"$CACHYOS_HELPER" install-kernel --make-default "${kernels[@]}"' "$postinstall" || {
+# The image boots linux-cachyos by default. archinstall installs it (#246); the
+# postinstall adds it only when archinstall had to install the stock kernel.
+grep -Fq '"$CACHYOS_HELPER" install-kernel --make-default "$CACHYOS_KERNEL"' "$postinstall" || {
 	printf 'lyona-postinstall.sh does not install the CachyOS kernel.\n' >&2
 	exit 1
 }
@@ -115,17 +116,35 @@ grep -Fq 'pacman-key --populate cachyos' "$postinstall" || {
 	exit 1
 }
 
-iso_kernels=$(awk -F'"' '/^export CACHYOS_KERNELS=/{print $2; exit}' "$postinstall")
-for kernel in linux-cachyos linux-cachyos-lts; do
-	case " $iso_kernels " in
-	*" $kernel "*) ;;
-	*)
-		printf 'lyona-postinstall.sh does not install %s (kernels: %s).\n' \
-			"$kernel" "$iso_kernels" >&2
-		exit 1
-		;;
-	esac
-done
+# #246: one CachyOS kernel, no LTS, no microcode step, no grub-mkconfig of its
+# own (the GRUB theme step in install.sh regenerates grub.cfg, once, after
+# every kernel, microcode and driver change).
+grep -Fxq 'export CACHYOS_KERNEL=linux-cachyos' "$postinstall" || {
+	printf 'lyona-postinstall.sh does not name linux-cachyos as its one kernel.\n' >&2
+	exit 1
+}
+if grep -nE 'linux-cachyos-lts|install_microcode|grub-mkconfig' "$postinstall" | grep -v ':[[:space:]]*#' | grep -q .; then
+	printf 'lyona-postinstall.sh still installs the LTS kernel or microcode, or runs grub-mkconfig:\n%s\n' \
+		"$(grep -nE 'linux-cachyos-lts|install_microcode|grub-mkconfig' "$postinstall" | grep -v ':[[:space:]]*#')" >&2
+	exit 1
+fi
+# The fallback initramfs: a preset that builds it is changed, and its image removed.
+fallback_root=$work/fallback-target
+mkdir -p "$fallback_root/etc/mkinitcpio.d" "$fallback_root/boot"
+printf "ALL_kver='/boot/vmlinuz-linux-cachyos'\nPRESETS=('default' 'fallback')\ndefault_image=x\n" \
+	>"$fallback_root/etc/mkinitcpio.d/linux-cachyos.preset"
+printf "PRESETS=('default')\n" >"$fallback_root/etc/mkinitcpio.d/linux.preset"
+: >"$fallback_root/boot/initramfs-linux-cachyos.img"
+: >"$fallback_root/boot/initramfs-linux-cachyos-fallback.img"
+sed -n '/^drop_fallback_initramfs() {$/,/^}$/p' "$postinstall" >"$work/drop-fallback.sh"
+# shellcheck disable=SC2016 # expanded by the inner bash
+TARGET=$fallback_root bash -c '. "$1"; drop_fallback_initramfs' _ "$work/drop-fallback.sh" >/dev/null
+grep -Fxq "PRESETS=('default')" "$fallback_root/etc/mkinitcpio.d/linux-cachyos.preset" &&
+	grep -Fxq "ALL_kver='/boot/vmlinuz-linux-cachyos'" "$fallback_root/etc/mkinitcpio.d/linux-cachyos.preset" &&
+	[[ -f $fallback_root/boot/initramfs-linux-cachyos.img && ! -e $fallback_root/boot/initramfs-linux-cachyos-fallback.img ]] || {
+	printf 'drop_fallback_initramfs did not leave only the default initramfs.\n' >&2
+	exit 1
+}
 
 step_total=$(awk '/^set_total_steps /{print $2; exit}' "$postinstall")
 # Every step, the Topgrade one too, which runs as `if ! run_logged` (Sync Sprint 16 R16-29).
@@ -135,7 +154,7 @@ step_calls=$(grep -cE '^(if ! )?run_logged ' "$postinstall")
 	exit 1
 }
 
-cachyos_step=$(grep -n '^run_logged "Installing the CachyOS kernel' "$postinstall" | cut -d: -f1)
+cachyos_step=$(grep -n '^run_logged "Checking the kernel..." install_cachyos_kernel$' "$postinstall" | cut -d: -f1)
 gpu_step=$(grep -n '^run_logged "Installing GPU drivers' "$postinstall" | cut -d: -f1)
 [[ -n $cachyos_step && -n $gpu_step && $cachyos_step -lt $gpu_step ]] || {
 	printf 'the CachyOS kernel must be installed before the GPU drivers so DKMS builds for it.\n' >&2
@@ -153,7 +172,7 @@ fi
 # map, like every other installer. Each profile it uses must be in the map and
 # used, and no pacman line may name one of its packages directly.
 pacman_lines=$(grep -E 'pacman -(S|Qq)' "$postinstall")
-for profile in microcode-intel microcode-amd gpu-nvidia gpu-nvidia-dkms gpu-amd gpu-intel network vm-guest; do
+for profile in gpu-nvidia gpu-nvidia-dkms gpu-amd gpu-intel network vm-guest; do
 	mapfile -t profile_packages < <(dwm_packages arch "$profile")
 	((${#profile_packages[@]} > 0)) || {
 		printf 'the package map has no arch:%s profile.\n' "$profile" >&2
@@ -385,8 +404,19 @@ if encrypt != ("disk_encryption" in config):
 if "cachyos-keyring" not in config.get("packages", []):
 	print("the CachyOS packages did not reach the archinstall config", file=sys.stderr)
 	sys.exit(1)
+# #246: with the CachyOS repositories, its kernel alone, from archinstall.
+if config.get("kernels") != ["linux-cachyos"]:
+	print(f"the kernels are not linux-cachyos alone: {config.get('kernels')}", file=sys.stderr)
+	sys.exit(1)
 EOF
 done
+
+# Without the CachyOS repositories: the stock kernel alone.
+cachyos_packages='' generate_installer_configs 0 "$work/installer-config-no-cachyos" uefi
+python3 -c 'import json, sys
+kernels = json.load(open(sys.argv[1])).get("kernels")
+sys.exit(0 if kernels == ["linux"] else f"without CachyOS the kernels are {kernels}, not linux alone")' \
+	"$work/installer-config-no-cachyos/config.json"
 
 bash -n "$repo/scripts/build-lyona-arch-iso.sh"
 

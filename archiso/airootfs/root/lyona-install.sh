@@ -659,6 +659,19 @@ setup_cachyos_repositories() {
 	return 0
 }
 
+# The one kernel archinstall installs (#246): linux-cachyos when the CachyOS
+# repositories were set up above, so the new system never carries the stock
+# kernel beside it; the stock linux otherwise. Microcode is archinstall's own:
+# it adds intel-ucode or amd-ucode with the base system on real hardware, before
+# the first initramfs, and none in a virtual machine.
+base_kernel() {
+	if [[ -n $CACHYOS_PACKAGES ]]; then
+		echo linux-cachyos
+	else
+		echo linux
+	fi
+}
+
 generate_configs() {
 	WORK_DIR=$(mktemp -d)
 	CONFIG_JSON="$WORK_DIR/config.json"
@@ -742,7 +755,7 @@ EOF
     ]
   },
 ${disk_encryption_json}  "hostname": "$HOSTNAME",
-  "kernels": ["linux"],
+  "kernels": ["$(base_kernel)"],
   "locale_config": {"kb_layout": "$KEYMAP", "sys_enc": "UTF-8", "sys_lang": "en_US"},
   "mirror_config": {
     "mirror_regions": {},

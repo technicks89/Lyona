@@ -30,7 +30,7 @@ out=$(note_warning 'The CachyOS kernels could not be installed.')
 [[ $(cat "$LYONA_WARNINGS") == 'The CachyOS kernels could not be installed.' ]] || fail 'note_warning kept nothing'
 
 # Each fallback is recorded, not only printed.
-for message in 'CachyOS repository setup failed' 'The CachyOS kernels could not be installed' \
+for message in 'CachyOS repository setup failed' 'The CachyOS kernel could not be installed' \
 	'No packaged NVIDIA driver supports GPU' 'could not be built; the open-source nouveau driver' \
 	'No pinned AUR source for the NVIDIA' 'Topgrade was not installed'; do
 	grep -F "$message" "$postinstall" | grep -q 'note_warning' || fail "not recorded for the closing screen: $message"
