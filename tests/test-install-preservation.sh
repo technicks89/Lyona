@@ -436,8 +436,13 @@ run_as_owner env HOME="$FRESH_HOME" make -C "$TEST_REPO" install-user \
 	XDG_DATA_HOME="$FRESH_DATA_HOME" \
 	XDG_STATE_HOME="$FRESH_HOME/.local/state"
 
-if [[ $(grep -Fxc -- '-f' "$WORK_DIR/fc-cache.log") -ne 3 ]]; then
+if [[ $(wc -l <"$WORK_DIR/fc-cache.log") -ne 3 ]]; then
 	printf 'Expected one font-cache refresh per user install.\n' >&2
+	exit 1
+fi
+# #250: never a forced rebuild of every font cache.
+if grep -Fq -- '-f' "$WORK_DIR/fc-cache.log"; then
+	printf 'A user install forced a full font-cache rebuild (fc-cache -f).\n' >&2
 	exit 1
 fi
 cmp "$TEST_REPO/config/Thunar/uca.xml" "$FRESH_CONFIG_HOME/Thunar/uca.xml"

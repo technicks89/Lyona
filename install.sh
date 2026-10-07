@@ -15,6 +15,48 @@ ok() { printf "${GREEN}[OK]${NC} %s\n" "$1"; }
 warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; }
 err() { printf "${RED}[ERROR]${NC} %s\n" "$1"; }
 
+# Where the install's time goes (#250). step_timer LABEL ends the section
+# before it, saying how long that took, and starts LABEL;
+# print_step_timer_summary ends the last one and prints every section's time.
+STEP_TIMER_LABEL=
+STEP_TIMER_START=0
+STEP_TIMER_ROWS=()
+
+# format_duration SECONDS: "42s", or "3m 05s".
+format_duration() {
+	if (($1 < 60)); then
+		printf '%ds' "$1"
+	else
+		printf '%dm %02ds' "$(($1 / 60))" "$(($1 % 60))"
+	fi
+}
+
+step_timer() {
+	local now=$SECONDS elapsed
+	if [[ -n $STEP_TIMER_LABEL ]]; then
+		elapsed=$((now - STEP_TIMER_START))
+		STEP_TIMER_ROWS+=("$elapsed"$'\t'"$STEP_TIMER_LABEL")
+		printf '[TIME] %s: done in %s\n' "$STEP_TIMER_LABEL" "$(format_duration "$elapsed")"
+	fi
+	STEP_TIMER_LABEL=${1:-}
+	STEP_TIMER_START=$now
+}
+
+print_step_timer_summary() {
+	local row seconds label total=0
+	step_timer
+	((${#STEP_TIMER_ROWS[@]} > 0)) || return 0
+	echo ""
+	printf 'Step times\n%-10s %s\n' "Time" "Step"
+	for row in "${STEP_TIMER_ROWS[@]}"; do
+		seconds=${row%%$'\t'*}
+		label=${row#*$'\t'}
+		printf '%-10s %s\n' "$(format_duration "$seconds")" "$label"
+		total=$((total + seconds))
+	done
+	printf '%-10s %s\n' "$(format_duration "$total")" "Total of the steps above"
+}
+
 usage() {
 	cat <<EOF
 Usage: ./install.sh [options]
@@ -56,9 +98,6 @@ arch)
 esac
 
 BG_DIR="$HOME/Pictures/backgrounds"
-MESLO_VERSION="3.4.0"
-MESLO_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v${MESLO_VERSION}/Meslo.zip"
-MESLO_SHA256="13b502ac8c2bd9d3161018064560e23cd42b175bb730780a270975265a19ad57"
 ARCH="$(uname -m)"
 # The wallpapers, pinned to a reviewed commit (Sync Sprint 16 R16-16): they are
 # fetched while sudo is cached. Re-pin after looking at what changed.
@@ -648,39 +687,6 @@ confirm_install_summary() {
 	esac
 }
 
-install_meslo_nerd_font() {
-	local font_dir="$HOME/.local/share/fonts/Meslo"
-	local tmp_dir
-	local archive
-
-	if fc-list 2>/dev/null | command grep -Eqi 'MesloLGS (NF|Nerd Font)'; then
-		ok "MesloLGS Nerd Font is already installed."
-		return
-	fi
-
-	tmp_dir="$(mktemp -d)"
-	archive="$tmp_dir/Meslo.zip"
-
-	info "Downloading Meslo Nerd Font v${MESLO_VERSION}..."
-	if ! curl --fail --location --show-error --silent "$MESLO_URL" --output "$archive"; then
-		rm -rf "$tmp_dir"
-		err "Failed to download Meslo Nerd Font."
-		return 1
-	fi
-
-	if ! printf '%s  %s\n' "$MESLO_SHA256" "$archive" | sha256sum --check --status; then
-		rm -rf "$tmp_dir"
-		err "Meslo Nerd Font checksum verification failed."
-		return 1
-	fi
-
-	mkdir -p "$font_dir"
-	unzip -j -q -o "$archive" '*.ttf' -d "$font_dir"
-	rm -rf "$tmp_dir"
-	fc-cache -f "$font_dir" >/dev/null 2>&1
-	ok "MesloLGS Nerd Font installed."
-}
-
 install_supported_terminal() {
 	if ! dwm_install_first_available_profile terminal; then
 		err "No supported terminal is available in the enabled repositories."
@@ -813,19 +819,23 @@ info "Install profile: $INSTALL_PROFILE"
 confirm_cachyos_setup
 confirm_install_summary
 confirm_arch_multilib_repository
+step_timer "CachyOS repositories"
 setup_cachyos
 
+step_timer "Build configuration"
 if [[ $NON_INTERACTIVE != true ]]; then
 	"$REPO_DIR/scripts/configure-build.sh"
 else
 	"$REPO_DIR/scripts/configure-build.sh" --non-interactive
 fi
 
+step_timer "Required packages"
 info "Installing required build and runtime dependencies..."
 dwm_install_package_profile build x11 runtime-required
 ok "Required build and runtime dependencies installed."
 
 if install_recommended_profile; then
+	step_timer "Recommended packages"
 	info "Installing recommended desktop dependencies..."
 	dwm_install_package_profile desktop
 	dwm_install_package_profile browser
@@ -850,6 +860,7 @@ if install_recommended_profile; then
 	# that fallback is never reached. It also covers fastfetch, which the
 	# linked .bashrc runs at startup and that script does not install at all.
 	dwm_install_package_profile shell
+	step_timer "Default apps and Gear Lever"
 	# Seed the browser, media and image defaults before Gear Lever, which writes its own
 	# AppImage MIME preference file; the seed leaves any existing preference alone.
 	if bash "$REPO_DIR/scripts/seed-default-apps.sh"; then
@@ -885,6 +896,7 @@ if command -v picom >/dev/null 2>&1; then
 fi
 
 if install_optional_profile; then
+	step_timer "Optional extras and gaming"
 	info "Installing optional desktop extras..."
 	if ! dwm_install_available_package_profile optional; then
 		warn "Some optional desktop extras were unavailable in enabled repositories."
@@ -917,6 +929,7 @@ else
 fi
 
 if install_recommended_profile; then
+	step_timer "Qt/GTK theming packages"
 	info "Configuring Qt/GTK dark-mode dependencies..."
 	dwm_install_first_available_profile theme-optional ||
 		warn "Neither qt6ct nor qt5ct is available - Qt apps may not respect dark mode."
@@ -924,15 +937,10 @@ if install_recommended_profile; then
 fi
 
 if install_recommended_profile; then
-	info "Installing fonts..."
-	FONT_DIR="$HOME/.local/share/fonts"
-	mkdir -p "$FONT_DIR"
-	install_meslo_nerd_font
-	ok "Fonts installed."
-
 	# Replaces ~/.bashrc with a link, keeping the previous file as a
 	# timestamped ~/.bashrc.bak.*, so this stays inside the recommended profile rather than
 	# running for a core install.
+	step_timer "mybash"
 	info "Installing the mybash shell configuration..."
 	if "$REPO_DIR/scripts/install-mybash"; then
 		ok "mybash shell configuration installed; open a new shell to pick it up."
@@ -948,6 +956,7 @@ fi
 # Topgrade's Cargo step. A failure skips Topgrade, never the install.
 topgrade_toolchain_ready=false
 if install_topgrade_profile; then
+	step_timer "Rust toolchain"
 	info "Installing the Rust toolchain for Topgrade..."
 	if dwm_install_package_profile rust-toolchain; then
 		topgrade_toolchain_ready=true
@@ -956,6 +965,7 @@ if install_topgrade_profile; then
 	fi
 fi
 
+step_timer "Terminal"
 terminal=""
 if command -v alacritty &>/dev/null; then
 	terminal="alacritty"
@@ -979,6 +989,7 @@ else
 fi
 
 if install_herdr_profile; then
+	step_timer "Herdr"
 	info "Installing the verified Herdr workspace for interactive terminals..."
 	if "$REPO_DIR/scripts/install-herdr"; then
 		ok "Herdr is installed; set DWM_HERDR=1 and use dwm-terminal to open it in $terminal."
@@ -999,6 +1010,7 @@ if install_optional_profile && command -v xdg-user-dirs-update &>/dev/null; then
 fi
 
 if install_optional_profile; then
+	step_timer "Wallpapers"
 	mkdir -p "$HOME/Pictures"
 	if [ ! -d "$BG_DIR" ]; then
 		info "Downloading wallpapers..."
@@ -1022,6 +1034,7 @@ if install_optional_profile; then
 	fi
 fi
 
+step_timer "Display manager"
 currentdm="$(detect_display_manager)"
 
 if [ -n "$currentdm" ]; then
@@ -1036,8 +1049,10 @@ else
 	ok "LightDM installed and enabled."
 fi
 
+step_timer "yay"
 ensure_yay_installed || true
 
+step_timer "Build (make clean; make)"
 cd "$REPO_DIR"
 make clean
 make
@@ -1047,6 +1062,7 @@ make
 # here and the image install stopped half-done (Sync Sprint 16, found booting
 # the 2026.10.0-beta.1 image in a VM).
 if [[ $currentdm == "lightdm" ]]; then
+	step_timer "LightDM greeter config"
 	info "Deploying LightDM Slick Greeter config..."
 	install_lightdm_config
 	ok "LightDM config deployed."
@@ -1059,11 +1075,13 @@ fi
 provenance_args=()
 [[ -z ${LYONA_SOURCE:-} ]] || provenance_args+=("LYONA_SOURCE=$LYONA_SOURCE")
 [[ -z ${LYONA_COMMIT:-} ]] || provenance_args+=("LYONA_COMMIT=$LYONA_COMMIT")
+step_timer "make install-system"
 sudo make install-system \
 	USER_HOME="$HOME" \
 	OWNER="$(id -un)" \
 	DATADIR="/usr/share" \
 	"${provenance_args[@]}"
+step_timer "make install-user"
 make install-user \
 	USER_HOME="$HOME" \
 	OWNER="$(id -un)" \
@@ -1071,13 +1089,16 @@ make install-user \
 	XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" \
 	XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}" \
 	"${provenance_args[@]}"
+step_timer "GRUB theme"
 apply_grub_theme
+step_timer "Display setup"
 configure_displays_after_install
 
 # Topgrade is built last, after every privileged step, with the sudo timestamp
 # closed first: the build runs a few hundred crates' build scripts as the user,
 # and none of them may reuse that authorization (S15-06).
 if [[ $topgrade_toolchain_ready == true ]]; then
+	step_timer "Topgrade"
 	sudo -k 2>/dev/null || :
 	info "Building Topgrade with cargo (this needs the network and takes a few minutes)..."
 	if "$REPO_DIR/scripts/install-topgrade"; then
@@ -1086,6 +1107,8 @@ if [[ $topgrade_toolchain_ready == true ]]; then
 		warn "Topgrade was not installed; run install-topgrade later to try again."
 	fi
 fi
+
+print_step_timer_summary
 
 echo ""
 echo "╔═══════════════════════════════════════════╗"

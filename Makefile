@@ -474,7 +474,10 @@ install-user:
 	else \
 		echo "  Preserving existing Meslo font alias file."; \
 	fi
-	fc-cache -f >/dev/null 2>&1 || true
+	# Not forced (#250): nothing above writes a font, and an alias is read when
+	# a font is looked up, not cached. A plain run still rescans any font
+	# directory that changed, and costs milliseconds rather than seconds.
+	fc-cache >/dev/null 2>&1 || true
 	@echo "==> Fixing executable permissions..."
 	for dir in config/*/; do \
 		b=$$(basename $$dir); \
@@ -1180,7 +1183,7 @@ check-install-preservation:
 
 .PHONY: check-install-multilib check-iso-install-credentials check-live-medium-cleanup \
 	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary \
-	check-lyona-shell check-gearlever-first-login check-iso-install-wifi
+	check-lyona-shell check-gearlever-first-login check-iso-install-wifi check-install-step-timing
 check-install-multilib:
 	tests/test-install-multilib.sh
 
@@ -1228,6 +1231,10 @@ check-iso-install-wifi:
 	status=0; tests/test-iso-install-wifi.sh || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
+
+# #250: both install paths time each step and end with a table.
+check-install-step-timing:
+	tests/test-install-step-timing.sh
 
 # R16-28: the installer's summary lists every change (a dry run; Arch only).
 check-install-summary:
@@ -1420,6 +1427,7 @@ check:
 	$(MAKE) check-download-pins
 	$(MAKE) check-iso-install-warnings
 	$(MAKE) check-iso-install-wifi
+	$(MAKE) check-install-step-timing
 	$(MAKE) check-install-summary
 	$(MAKE) check-lyona-shell
 	$(MAKE) check-gearlever-first-login

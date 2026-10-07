@@ -8,6 +8,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- **Both installers say how long each step took.** The image installer logs each step's start and duration, and
+  `/var/log/lyona-postinstall.log` ends with a table of every step, archinstall included. `install.sh` prints a
+  `[TIME]` line after each section and the same table at the end. They are the measurements the install-speed work
+  is checked against (#250).
+
+### Changed
+
+- **MesloLGS Nerd Font comes from the Arch repositories** (`ttf-meslo-nerd`, in the `fonts` profile) instead of a
+  112 MB release zip from GitHub, downloaded and unpacked by both `install.sh` and `install-mybash`. The repository
+  package is a 5.7 MiB download with the same `MesloLGS Nerd Font` families, and updates with the system (#250).
+  - **Migration:** an earlier install left a copy in `~/.local/share/fonts/Meslo` or
+    `~/.local/share/fonts/MesloLGS Nerd Font Mono`. Nothing removes it, and it does no harm beside the package. To
+    use only the package, delete those folders and run `fc-cache`.
+- **`make install-user` no longer forces a rebuild of every font cache** (`fc-cache -f`, about 2 s on a fast machine
+  and much longer on an old disk). It writes no fonts, so a plain `fc-cache`, which only rescans changed folders, is
+  enough (#250).
+
 ## [2026.10.0-beta.5] - 2026-10-09
 
 Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and
@@ -216,8 +235,8 @@ VM install of `2026.10.0-beta.1` found. See `docs/RELEASE-NOTES-2026.10.0-beta.2
 
 Second beta of the Arch Linux line: everything since `2026.08.0-beta.1`, Sync
 Phases 6 to 9 and Sync Sprints 1 to 15. See
-`docs/RELEASE-NOTES-2026.10.0-beta.1.md` for the highlights, artifacts and
-qualification status.
+`f2ed7f5f6:docs/RELEASE-NOTES-2026.10.0-beta.1.md` (retired; read it with
+`git show`) for the highlights, artifacts and qualification status.
 
 ### Fixed
 

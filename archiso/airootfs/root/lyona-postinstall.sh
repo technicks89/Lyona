@@ -38,6 +38,7 @@ source /root/lyona-wifi.sh
 require_gum
 : >"$LOG_FILE"
 install_error_trap "$@"
+reset_step_times
 show_logo
 
 install_microcode() {
@@ -479,6 +480,9 @@ arch-chroot "$TARGET" bash -c '
 	systemctl enable power-profiles-daemon.service 2>/dev/null || true
 	systemctl set-default graphical.target
 '
+
+# Where the time went, the wizard's archinstall step included (#250).
+write_step_summary lyona-install lyona-postinstall >>"$LOG_FILE" 2>/dev/null || :
 
 # The log, root-only, where it can be read after the reboot.
 install -Dm600 "$LOG_FILE" "$TARGET/var/log/lyona-postinstall.log" 2>/dev/null || :

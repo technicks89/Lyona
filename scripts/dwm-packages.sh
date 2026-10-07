@@ -208,6 +208,12 @@ dwm_packages() {
 		;;
 	arch:fonts)
 		printf '%s\n' noto-fonts-emoji noto-fonts
+		dwm_packages "$family" font-meslo
+		;;
+	arch:font-meslo)
+		# The terminal, bar and shell font, MesloLGS Nerd Font, from the
+		# repositories rather than a 112 MB release zip (#250).
+		printf '%s\n' ttf-meslo-nerd
 		;;
 	arch:qml-development)
 		printf '%s\n' qt6-declarative

@@ -142,14 +142,73 @@ _progress_bar_string() {
 	echo "[$bar] $percent% (step $((completed + 1))/$STEP_TOTAL)"
 }
 
+# Each step's time, one "SECONDS<TAB>STATUS<TAB>DESCRIPTION" line per step,
+# for the summary table at the end of the log (#250). One file per script: the
+# wizard's archinstall step and the postinstall's steps make one table, and a
+# Retry, which re-runs only its own script, starts only its own file again.
+LYONA_STEP_TIMES_DIR=${LYONA_STEP_TIMES_DIR:-/run/lyona-step-times}
+
+step_times_file() {
+	printf '%s/%s.tsv\n' "$LYONA_STEP_TIMES_DIR" "${1:-$(basename "$0" .sh)}"
+}
+
+reset_step_times() {
+	mkdir -p -- "$LYONA_STEP_TIMES_DIR" 2>/dev/null || return 0
+	{ : >"$(step_times_file)"; } 2>/dev/null || :
+}
+
+# format_duration SECONDS: "42s", or "3m 05s".
+format_duration() {
+	local seconds=$1
+	if ((seconds < 60)); then
+		printf '%ds' "$seconds"
+	else
+		printf '%dm %02ds' "$((seconds / 60))" "$((seconds % 60))"
+	fi
+}
+
 run_logged() {
 	local desc=$1
 	shift
-	local title=$desc
-	((STEP_TOTAL > 0)) && title="$(_progress_bar_string "$STEP_CURRENT") $desc"
+	local title=$desc label=$desc
+	if ((STEP_TOTAL > 0)); then
+		title="$(_progress_bar_string "$STEP_CURRENT") $desc"
+		label="[step $((STEP_CURRENT + 1))/$STEP_TOTAL] $desc"
+	fi
 	STEP_CURRENT=$((STEP_CURRENT + 1))
+	local start=$SECONDS status=0 elapsed
+	log_step "$label"
 	gum spin --spinner dot --title "$title" --show-error -- \
-		bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE"; exit ${PIPESTATUS[0]}' _ "$@"
+		bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE"; exit ${PIPESTATUS[0]}' _ "$@" ||
+		status=$?
+	elapsed=$((SECONDS - start))
+	if ((status == 0)); then
+		log_step "$label done in $(format_duration "$elapsed")"
+	else
+		log_step "$label failed (exit $status) after $(format_duration "$elapsed")"
+	fi
+	{ printf '%s\t%s\t%s\n' "$elapsed" "$status" "$desc" >>"$(step_times_file)"; } 2>/dev/null || :
+	return "$status"
+}
+
+# write_step_summary SCRIPT...: the step times of each script, in order, as a
+# table, with the total. Appended to the log by the caller.
+write_step_summary() {
+	local script file seconds status desc total=0 note
+	printf '\nStep times\n'
+	printf '%-10s %s\n' "Time" "Step"
+	for script in "$@"; do
+		file=$(step_times_file "$script")
+		[[ -s $file ]] || continue
+		while IFS=$'\t' read -r seconds status desc; do
+			[[ $seconds =~ ^[0-9]+$ ]] || continue
+			note=
+			[[ $status == 0 ]] || note=" (failed, exit $status)"
+			printf '%-10s %s: %s%s\n' "$(format_duration "$seconds")" "$script" "$desc" "$note"
+			total=$((total + seconds))
+		done <"$file"
+	done
+	printf '%-10s %s\n' "$(format_duration "$total")" "Total of the steps above"
 }
 
 # Files a run must never leave behind, however it ends: the postinstall's

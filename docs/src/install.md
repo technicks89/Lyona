@@ -74,7 +74,9 @@ with the CyberRe boot menu theme.
    installed, for example), the last screen lists it and waits for Enter;
    otherwise it reboots after 15 seconds. Leave the USB stick in until then; if
    the installer starts again instead of lyona, remove it and restart.
-   The full log is `/var/log/lyona-postinstall.log` on the new system.
+   The full log is `/var/log/lyona-postinstall.log` on the new system. It
+   gives each step's start and duration, and ends with a table of where the
+   install's time went, archinstall included.
 
 If a step fails, a menu offers to retry it or to drop to a shell, and says what
 state the machine is in.

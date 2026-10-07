@@ -140,7 +140,6 @@ Not packages, and not changed here. Listed so the picture is complete.
 | GearLever (AppImage manager) | Flathub, through Flatpak | `scripts/install-gearlever` |
 | `herdr` | Checksummed release download from herdr.dev | `scripts/install-herdr` |
 | `mybash` shell configuration | `git clone` from GitHub | `scripts/install-mybash` |
-| Meslo Nerd Font | Checksummed GitHub release zip, pinned to 3.4.0 | `install.sh` (`MESLO_URL`) |
 | CachyOS repositories | Optional, `--enable-cachyos-repos`; signing key fingerprint pinned | `scripts/lyona-cachyos` |
 
 ## On the audited host, not referenced by Lyona
