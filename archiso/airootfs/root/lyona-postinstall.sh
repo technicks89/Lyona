@@ -342,31 +342,25 @@ install_qemu_guest_utils() {
 	arch-chroot "$TARGET" systemctl enable spice-vdagentd.service
 }
 
-# Topgrade (Sync Sprint 15 S15-06, decision D-28), built only after the install's
-# passwordless sudo is gone (install.sh runs with --skip-topgrade): the build
-# runs a few hundred crates' build scripts as the new user, and none of them may
-# reach root. rustup comes from the map, installed as root; the build runs as
-# the user. A failure leaves the machine without Topgrade, never without a
-# desktop.
+# Topgrade (Sync Sprint 15 S15-06, decision D-28), from the AUR (#245):
+# topgrade-bin, built from its pinned PKGBUILD by install-topgrade --build-only
+# as the new user, after the install's passwordless sudo is gone, so nothing in
+# the build can reach root. Root installs only the built package. No Rust
+# toolchain is installed for it. A failure leaves the machine without Topgrade,
+# never without a desktop: install-topgrade after logging in tries again.
 install_topgrade() {
-	local -a toolchain
-	local other
-	# A target that already has another Rust toolchain (Arch's rust, say) keeps
-	# it, and its cargo builds Topgrade: the shared rule, asked inside the target.
-	# shellcheck disable=SC2016 # $1 is the inner bash's
-	if other=$(arch-chroot "$TARGET" bash -c '. "$1" && dwm_other_rust_toolchain' _ \
-		"$target_home/$checkout_rel/scripts/dwm-packages.sh"); then
-		printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other"
-		# cargo-update (#238) needs a cargo; a package one (not a rustup.rs path)
-		# satisfies it without pacman adding a second toolchain.
-		[[ $other == /* ]] || arch-chroot "$TARGET" pacman -S --noconfirm --needed cargo-update ||
-			printf 'cargo-update was not installed; Topgrade will not update cargo packages.\n'
+	local build=/var/tmp/lyona-topgrade package status=0
+	arch-chroot "$TARGET" rm -rf -- "$build"
+	arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build"
+	package=$(arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" \
+		"$target_home/$checkout_rel/scripts/install-topgrade" --build-only "$build") || status=$?
+	if ((status == 0)) && [[ $package == "$build"/topgrade-bin-*.pkg.tar.* ]]; then
+		arch-chroot "$TARGET" pacman -U --noconfirm --needed -- "$package" || status=$?
 	else
-		mapfile -t toolchain < <(dwm_packages arch rust-toolchain)
-		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${toolchain[@]}"
+		((status != 0)) || status=1
 	fi
-	# shellcheck disable=SC2016 # $HOME is the user's, expanded in their login shell
-	arch-chroot "$TARGET" su - "$target_user" -c '"$HOME/'"$checkout_rel"'/scripts/install-topgrade"'
+	arch-chroot "$TARGET" rm -rf -- "$build" || :
+	return "$status"
 }
 
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
@@ -478,7 +472,7 @@ tail -n "+$((log_mark + 1))" "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' |
 # shellcheck disable=SC2034 # read by lyona-ui.sh's recovery menu
 LYONA_RECOVER_HINT="lyona is installed on $TARGET. Only the last steps failed; after rebooting, log in as $target_user."
 
-if ! run_logged "Building Topgrade as $target_user (this takes a few minutes)..." install_topgrade; then
+if ! run_logged "Installing Topgrade from the AUR..." install_topgrade; then
 	say --foreground "$COLOR_DANGER" -- "-> Topgrade was not installed; after logging in, run install-topgrade."
 	note_warning 'Topgrade was not installed; after logging in, run install-topgrade.' >/dev/null
 fi

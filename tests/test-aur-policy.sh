@@ -6,7 +6,9 @@
 #   - install_legacy_nvidia_driver builds the legacy NVIDIA drivers from pinned
 #     PKGBUILDs, when the CachyOS repository cannot supply them (Sprint 14);
 #   - run_system in lyona-update-terminal runs the user's own `yay -Syu` (Sprint
-#     15).
+#     15);
+#   - install-topgrade builds Topgrade from the pinned topgrade-bin PKGBUILD
+#     (#245).
 # Every package the other profiles and the live ISO name must resolve in core,
 # extra or multilib. A new AUR use is added here, to docs/AUR-PACKAGES.md, and
 # as a decision, never quietly.
@@ -34,6 +36,13 @@ read -r exception_start exception_end <<<"$exception_span"
 outside_exception() {
 	awk -F: -v file="$aur_exception_file" -v start="$exception_start" -v end="$exception_end" \
 		'!($1 == file && $2 >= start && $2 <= end)'
+}
+
+# Topgrade (#245): all of scripts/install-topgrade, which builds only from its
+# pinned, reviewed PKGBUILDs (checked below).
+topgrade_file=$repo/scripts/install-topgrade
+outside_topgrade() {
+	awk -F: -v file="$topgrade_file" '$1 != file'
 }
 
 # The user's own update (Sync Sprint 15 S15-04, decision D-26): Settings >
@@ -78,11 +87,20 @@ fi
 # AUR directly.
 stray=$(grep -rInE 'aur\.archlinux\.org|(^|[^[:alnum:]_-])makepkg([^[:alnum:]_-]|$)' \
 	"$repo/Makefile" "$repo/scripts" "$repo/archiso" "$repo/config" "$repo/.github/workflows" 2>/dev/null |
-	grep -Fv "$self" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | outside_exception || true)
+	grep -Fv "$self" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | outside_exception | outside_topgrade || true)
 if [[ -n $stray ]]; then
 	printf 'AUR access outside the listed places:\n%s\n' "$stray" >&2
-	fail "only install.sh (the helper bootstrap) and $aur_exception_function (the legacy NVIDIA drivers) reach the AUR directly"
+	fail "only install.sh (the helper bootstrap), $aur_exception_function (the legacy NVIDIA drivers) and install-topgrade reach the AUR directly"
 fi
+
+# install-topgrade's one AUR base, topgrade-bin, pinned to a full commit.
+topgrade_pins=$(awk '/^readonly topgrade_pins=/ { f = 1 } f { print } f && /'"'"'$/ { exit }' "$topgrade_file" |
+	sed -E "s/^readonly topgrade_pins='//; s/'$//")
+[[ $(cut -f1 <<<"$topgrade_pins" | paste -sd ' ') == topgrade-bin ]] ||
+	fail "install-topgrade builds another AUR base than topgrade-bin: $topgrade_pins"
+while IFS=$'\t' read -r base ref; do
+	[[ $ref =~ ^[0-9a-f]{40}$ ]] || fail "install-topgrade's $base is not pinned to a commit"
+done <<<"$topgrade_pins"
 
 # The exception's packages each come from a pinned, reviewed AUR base: the pin
 # table in the postinstall, branch<TAB>base<TAB>40-hex commit, one per branch.

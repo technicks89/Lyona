@@ -30,7 +30,7 @@ The groups are made of smaller groups:
 | Group | Made of |
 | --- | --- |
 | `required` | build + x11 + runtime-required |
-| `recommended` | desktop + browser + media + system-management + screenshot-optional + theme + theme-gtk + fonts + shell + rust-toolchain |
+| `recommended` | desktop + browser + media + system-management + screenshot-optional + theme + theme-gtk + fonts + shell |
 | `optional` | theme-optional + desktop-optional + system-management-optional |
 | `full` | required + recommended + optional + gaming |
 
@@ -120,14 +120,6 @@ Noto fonts and emoji, and MesloLGS Nerd Font, the terminal, bar and shell font
 The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfetch and friends.
 
 `starship` `zoxide` `fzf` `fastfetch` `bat` `tree` `trash-cli` `bash-completion`
-
-### `rust-toolchain`
-
-`rustup`, whose `cargo` builds Topgrade (`scripts/install-topgrade`). Topgrade is AUR-only on Arch, so its newest crates.io release is built with cargo instead. `rustup` conflicts with Arch's `rust` and `cargo` packages. When another Rust toolchain is installed (Arch's `rust`, another package providing it, or a `cargo` from rustup.rs), the installer leaves `rustup` out and uses that toolchain's `cargo`. `check-deps.sh` notes this beside its package suggestions.
-
-`cargo-update` provides `cargo install-update`, which Topgrade's Cargo step runs to update what `cargo install` installed, Topgrade included. Without it, Topgrade skips that step. It depends on a `cargo`, which `rustup` or Arch's `rust` provides. Beside a `cargo` from rustup.rs, which no package provides, the installer leaves it out, since pacman would add Arch's `rust` next to it: run `cargo install cargo-update` there instead.
-
-`rustup` `cargo-update`
 
 ### `desktop-optional`
 

@@ -1,295 +1,279 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Sync Sprint 15 S15-06 (decision D-28): scripts/install-topgrade against stub
-# curl, cargo, rustup, pacman and id; the shared rule that leaves rustup out
-# beside another Rust toolchain; and where install.sh and the live medium's
-# postinstall build it.
+# #245: scripts/install-topgrade installs Topgrade from the AUR, against stub
+# git, makepkg, sudo, pacman and cargo; the cargo-update rule; and where
+# install.sh and the live medium's postinstall run it.
 #
-# - The version is the newest on crates.io, looked up each run (with a user
-#   agent, over HTTPS only), and built --locked into $CARGO_HOME/bin, in a
-#   private directory removed afterwards.
-# - A rerun upgrades an older Topgrade, and leaves the newest alone; one
-#   installed some other way is kept (unless --force).
-# - With rustup and no toolchain set, stable (minimal) is set up; without
-#   rustup (Arch's rust), no toolchain step runs.
-# - Root, no cargo, a failed or odd lookup, a failed build and a wrong version
-#   all fail, and build nothing.
-# - rustup is skipped beside Arch's rust, another provider, or a rustup.rs
-#   cargo; never beside rustup itself.
-# - install.sh: --skip-topgrade, a guarded toolchain install, and the build
-#   last, after sudo -k. The live medium builds it after its sudoers file is
-#   gone.
+# - topgrade-bin is built at its pinned commit with makepkg as the user, and
+#   only the built package (never a -debug split) is installed, with sudo
+#   pacman -U. The build directory is removed afterwards.
+# - No source fallback: only topgrade-bin is ever built, and nothing pulls in
+#   Rust.
+# - A PKGBUILD with a source and no checksum, or a SKIP checksum, or a checkout
+#   that is not the pinned commit, is not built.
+# - An installed Topgrade package is left alone (unless --force). An older
+#   cargo-built copy in ~/.cargo/bin is described, never removed silently.
+# - Root, and a build that fails both ways, install nothing.
+# - --build-only builds topgrade-bin into a directory, prints only its path,
+#   and never uses sudo.
+# - No Rust toolchain or cargo-update anywhere in the map or install.sh.
+# - install.sh: no Rust toolchain, --skip-topgrade, the install last after
+#   sudo -k. The live medium builds it as the user once its sudoers file is
+#   gone, and installs the package as root.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
-command -v jq >/dev/null 2>&1 || {
-	printf 'SKIP: jq is unavailable\n'
-	exit 77
-}
 
 installer=$repo/scripts/install-topgrade
-grep -Fq 'readonly crates_api=https://crates.io/api/v1/crates/topgrade' "$installer" ||
-	fail 'the newest version is not looked up on crates.io'
-# shellcheck disable=SC2016 # the literal text in the installer
-grep -Fq 'timeout --kill-after=30 "$build_seconds"' "$installer" || fail 'the build is not bounded in time'
-
 export STUB_DIR=$work
 stage_helpers checkout "$work/scripts" install-topgrade
 helper=$work/scripts/install-topgrade
 
-# curl: the crates.io answer for topgrade, with STUB_LATEST as the newest version,
-# or a failure with STUB_CURL=fail.
-cat >"$work/bin/curl" <<'EOF'
+# The reviewed pin, and only that one.
+pins=$(awk '/^readonly topgrade_pins=/ { f = 1 } f { print } f && /'"'"'$/ { exit }' "$installer")
+[[ $pins == "readonly topgrade_pins='topgrade-bin	478487d31444ccbad24ab5d390d41466201b9dbc'" ]] ||
+	fail "topgrade-bin is not the only base, at its reviewed commit: $pins"
+if grep -nE -- '--syncdeps|--rmdeps|-s[a-z]*r' "$installer" | grep -v '^[0-9]*:#' | grep -q .; then
+	fail 'install-topgrade pulls in build dependencies'
+fi
+# shellcheck disable=SC2016 # the literal text in the installer
+grep -Fq 'readonly aur_url=${INSTALL_TOPGRADE_AUR_URL:-https://aur.archlinux.org}' "$installer" ||
+	fail 'the AUR is not reached over HTTPS'
+if grep -nE 'crates\.io|cargo install|rustup' "$installer" | grep -v '^[0-9]*:#' | grep -v 'cargo uninstall' | grep -q .; then
+	fail "install-topgrade still builds with cargo: $(grep -nE 'crates\.io|cargo install|rustup' "$installer")"
+fi
+
+# git: clone writes nothing but the directory; checkout records the commit, and
+# rev-parse reports it (or STUB_HEAD). STUB_GIT=fail fails the clone.
+cat >"$work/bin/git" <<'EOF'
 #!/bin/bash
-printf 'curl %s\n' "$*" >>"$STUB_DIR/log"
-[[ ${STUB_CURL:-} != fail ]] || exit 22
-printf '{"crate":{"name":"topgrade","max_stable_version":"%s"}}\n' "${STUB_LATEST-17.12.3}"
-EOF
-# cargo install ... --version V --root ROOT ...: logs, then writes ROOT/bin/topgrade
-# reporting STUB_BUILT_VERSION (default: V).
-cat >"$work/bin/cargo" <<'EOF'
-#!/bin/bash
-printf 'cargo %s\n' "$*" >>"$STUB_DIR/log"
-[[ $1 == install ]] || exit 0
-args=("$@")
-for ((i = 0; i < ${#args[@]}; i++)); do
-	case ${args[i]} in
-	--version) version=${args[i + 1]} ;;
-	--root) root=${args[i + 1]} ;;
-	--target-dir) target=${args[i + 1]} ;;
-	esac
-done
-# A real cargo has fetched crates into the registry before a build fails.
-mkdir -p "$target" "$root/registry/cache"
-printf '%s\n' "$target" >"$STUB_DIR/target-dir"
-[[ ${STUB_CARGO:-} != fail ]] || exit 101
-mkdir -p "$root/bin"
-printf '#!/bin/sh\necho "topgrade %s"\n' "${STUB_BUILT_VERSION:-$version}" >"$root/bin/topgrade"
-chmod +x "$root/bin/topgrade"
-EOF
-# rustup: `show active-toolchain` succeeds once a default is set.
-cat >"$work/bin/rustup" <<'EOF'
-#!/bin/bash
-printf 'rustup %s\n' "$*" >>"$STUB_DIR/log"
-case "$1 $2" in
-'show active-toolchain') [[ -e $STUB_DIR/toolchain ]] ;;
-'default stable') : >"$STUB_DIR/toolchain" ;;
-*) exit 0 ;;
+printf 'git %s\n' "$*" >>"$STUB_DIR/log"
+if [[ $1 == clone ]]; then
+	[[ ${STUB_GIT:-} != fail ]] || exit 128
+	dir=${*: -1}
+	mkdir -p "$dir"
+	printf '%s\n' "${*: -2:1}" >"$dir/.url"
+	exit 0
+fi
+[[ $1 == -C ]] || exit 0
+dir=$2
+shift 2
+while [[ $1 == -c ]]; do shift 2; done
+case $1 in
+checkout) printf '%s\n' "${*: -1}" >"$dir/.head" ;;
+rev-parse) printf '%s\n' "${STUB_HEAD:-$(cat "$dir/.head")}" ;;
 esac
 EOF
-# pacman -Qq NAME: prints STUB_RUST_PROVIDER for rust and cargo, as pacman
-# resolves provides; nothing installed when it is unset.
+# makepkg: --printsrcinfo prints a .SRCINFO (STUB_SRCINFO: ok, nosum or skip);
+# a build writes BASE-1.0-1 and its -debug split, or fails for a base listed in
+# STUB_FAIL.
+cat >"$work/bin/makepkg" <<'EOF'
+#!/bin/bash
+base=$(basename "$(sed 's/\.git$//' .url)")
+if [[ $1 == --printsrcinfo ]]; then
+	printf 'pkgbase = %s\n\tpkgver = 1.0\n\tsource_x86_64 = %s.tar.gz::https://github.com/x/%s.tar.gz\n' "$base" "$base" "$base"
+	printf '\tsource_aarch64 = other.tar.gz::https://github.com/x/other.tar.gz\n'
+	case ${STUB_SRCINFO:-ok} in
+	ok) printf '\tb2sums_x86_64 = abc123\n\tb2sums_aarch64 = def456\n' ;;
+	skip) printf '\tb2sums_x86_64 = SKIP\n\tb2sums_aarch64 = def456\n' ;;
+	nosum) printf '\tb2sums_aarch64 = def456\n' ;;
+	esac
+	printf '\npkgname = %s\n' "$base"
+	exit 0
+fi
+printf 'makepkg %s %s (uid %s)\n' "$base" "$*" "$(id -u)" >>"$STUB_DIR/log"
+[[ " ${STUB_FAIL:-} " != *" $base "* ]] || exit 4
+: >"$base-1.0-1-x86_64.pkg.tar.zst"
+: >"$base-debug-1.0-1-x86_64.pkg.tar.zst"
+EOF
+cat >"$work/bin/sudo" <<'EOF'
+#!/bin/bash
+printf 'sudo %s\n' "$*" >>"$STUB_DIR/log"
+[[ ${STUB_SUDO:-} != fail ]]
+EOF
+# pacman -Qq NAME, as pacman resolves provides: topgrade is STUB_INSTALLED, rust
+# and cargo are STUB_RUST_PROVIDER; nothing installed when unset.
 cat >"$work/bin/pacman" <<'EOF'
 #!/bin/sh
 [ "$1" = -Qq ] || exit 1
 case $2 in
-rust | cargo)
-	[ -n "${STUB_RUST_PROVIDER:-}" ] || exit 1
-	printf '%s\n' "$STUB_RUST_PROVIDER"
-	;;
+topgrade) value=${STUB_INSTALLED:-} ;;
+rust | cargo) value=${STUB_RUST_PROVIDER:-} ;;
 *) exit 1 ;;
 esac
+[ -n "$value" ] || exit 1
+printf '%s\n' "$value"
 EOF
-chmod +x "$work/bin/curl" "$work/bin/cargo" "$work/bin/rustup" "$work/bin/pacman"
+cat >"$work/bin/cargo" <<'EOF'
+#!/bin/sh
+printf 'cargo %s\n' "$*" >>"$STUB_DIR/log"
+EOF
+# install: the system's, or a failure with STUB_INSTALL=fail.
+cat >"$work/bin/install" <<EOF
+#!/bin/sh
+[ "\${STUB_INSTALL:-}" != fail ] || exit 1
+exec $(command -v install) "\$@"
+EOF
+chmod +x "$work/bin/git" "$work/bin/makepkg" "$work/bin/sudo" "$work/bin/pacman" "$work/bin/cargo" "$work/bin/install"
 
-# Tools from the system, without any topgrade, cargo or rustup of its own.
+# Tools from the system, without any topgrade, cargo, git or makepkg of its own.
 mkdir -p "$work/sys"
-for cmd in bash sh env sed grep awk sort head mkdir mktemp rm cp chmod timeout id cat dirname printf cut find jq nproc; do
+for cmd in bash sh env sed grep awk sort head mkdir mktemp rm cp chmod install timeout id cat dirname \
+	basename printf cut find uname; do
 	ln -sf "$(command -v "$cmd")" "$work/sys/$cmd"
 done
 base_path=$work/bin:$work/sys
-
-# A machine with 5 GiB available, unless a test says otherwise: two jobs.
-printf 'MemTotal:       16000000 kB\nMemAvailable:    5242880 kB\n' >"$work/meminfo"
 run() {
-	env HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" \
-		INSTALL_TOPGRADE_MEMINFO="${STUB_MEMINFO:-$work/meminfo}" "$helper" "$@"
+	env HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" "$helper" "$@" </dev/null
 }
 reset() {
-	rm -rf "${work:?}/home" "$work/log" "$work/toolchain" "$work/target-dir"
+	rm -rf "${work:?}/home" "$work/log" "$work/out" "$work/err"
 	mkdir -p "$work/home"
 }
-built_by_cargo() { grep -q '^cargo install' "$work/log" 2>/dev/null; }
-installed_version() { "${1:-$work/home/.cargo}/bin/topgrade" --version; }
+log_has() { grep -Fqx -- "$1" "$work/log" 2>/dev/null; }
+no_build_dir() {
+	! find "$work/home/.cache/lyona" -mindepth 1 -maxdepth 1 -name 'topgrade-build.*' 2>/dev/null | grep -q .
+}
 
-# A fresh machine: the newest version looked up, stable (minimal) set up, and a
-# locked build of exactly that version.
+[[ $(run --print-plan) == 'topgrade-bin from the AUR (PKGBUILD pinned at 478487d31444), built with makepkg and installed with pacman' ]] ||
+	fail "the plan line: $(run --print-plan)"
+
+# A fresh machine: topgrade-bin at its pin, built as the user, and only its
+# package installed.
 reset
-run >"$work/out" || fail "the install failed: $(cat "$work/out")"
-grep -Eq '^curl .*--proto =https --tlsv1\.2 .*-A lyona-install-topgrade .*https://crates\.io/api/v1/crates/topgrade$' "$work/log" ||
-	fail "the lookup ran as: $(grep '^curl' "$work/log")"
-[[ $(grep -c '^rustup' "$work/log") == 3 ]] || fail "the toolchain steps: $(cat "$work/log")"
-grep -Fqx 'rustup toolchain install stable --profile minimal' "$work/log" || fail 'stable (minimal) was not installed'
-jobs=2
-(($(nproc) >= 2)) || jobs=1
-grep -Eq "^cargo install --locked --force --jobs $jobs --version 17\.12\.3 --root $work/home/.cargo --target-dir $work/home/.cache/lyona/topgrade-build\.[^ ]+/target topgrade$" "$work/log" ||
-	fail "the build ran as: $(grep '^cargo' "$work/log")"
-# Sync Sprint 16 R16-33: the jobs follow the memory there is. Under 2 GiB: one.
+run >"$work/out" 2>"$work/err" || fail "the install failed: $(cat "$work/err")"
+log_has 'git clone --quiet -- https://aur.archlinux.org/topgrade-bin.git '"$(grep -o "$work/home/.cache/lyona/topgrade-build\.[^ ]*/topgrade-bin\.[^ ]*/src" "$work/log" | head -n 1)" ||
+	fail "the clone ran as: $(grep '^git clone' "$work/log")"
+grep -Eq '^git -C [^ ]+/src -c advice.detachedHead=false checkout --quiet --detach 478487d31444ccbad24ab5d390d41466201b9dbc$' "$work/log" ||
+	fail "the checkout ran as: $(grep checkout "$work/log")"
+log_has "makepkg topgrade-bin --noconfirm (uid $(id -u))" || fail "makepkg ran as: $(grep makepkg "$work/log")"
+grep -Eq "^sudo pacman -U --noconfirm --needed -- $work/home/.cache/lyona/topgrade-build\.[^/]+/topgrade-bin-1\.0-1-x86_64\.pkg\.tar\.zst$" "$work/log" ||
+	fail "the package was installed as: $(grep '^sudo' "$work/log")"
+[[ $(grep -c '^sudo' "$work/log") == 1 ]] || fail 'sudo ran for more than installing the package'
+if grep -q 'topgrade-bin-debug' "$work/log"; then fail 'the -debug package was installed'; fi
+no_build_dir || fail 'the build directory was left behind'
+[[ -z $(cat "$work/out") ]] || fail "the install printed to stdout: $(cat "$work/out")"
+grep -Fq 'Topgrade is installed; run topgrade. It updates itself through yay.' "$work/err" || fail "the install said: $(cat "$work/err")"
+
+# Already installed as a package: left alone, unless --force.
 reset
-printf 'MemAvailable:    1048576 kB\n' >"$work/low-meminfo"
-STUB_MEMINFO=$work/low-meminfo run >/dev/null 2>&1 || fail 'the low-memory install failed'
-grep -q '^cargo install --locked --force --jobs 1 ' "$work/log" || fail "a low-memory build: $(grep '^cargo' "$work/log")"
-# A CARGO_BUILD_JOBS the user set is kept.
+STUB_INSTALLED=topgrade-bin run 2>"$work/err" || fail 'an installed Topgrade failed the run'
+[[ ! -e $work/log ]] || fail "an installed Topgrade was rebuilt: $(cat "$work/log")"
+grep -Fq 'Topgrade is already installed (topgrade-bin)' "$work/err" || fail "an installed Topgrade: $(cat "$work/err")"
 reset
-CARGO_BUILD_JOBS=3 run >/dev/null 2>&1 || fail 'the install with CARGO_BUILD_JOBS failed'
-grep -q '^cargo install --locked --force --jobs 3 ' "$work/log" || fail "CARGO_BUILD_JOBS=3: $(grep '^cargo' "$work/log")"
-reset
-run >"$work/out" || fail "the install failed: $(cat "$work/out")"
-[[ $(installed_version) == 'topgrade 17.12.3' ]] || fail 'the newest Topgrade was not installed'
-[[ ! -e $(cat "$work/target-dir") ]] || fail 'the build directory was left behind'
-[[ -z $(find "$work/home/.cache/lyona" -mindepth 1 2>/dev/null) ]] || fail 'the cache directory was not cleaned'
-[[ ! -e $work/home/.cargo/registry ]] || fail 'the crate downloads this build made were left behind'
-grep -Fq "$work/home/.cargo/bin is not on PATH" "$work/out" || fail 'no PATH hint when ~/.cargo/bin is not on PATH'
+STUB_INSTALLED=topgrade-bin run --force 2>/dev/null || fail '--force failed'
+# Without --needed, which would skip the version already installed.
+grep -Eq '^sudo pacman -U --noconfirm -- .*/topgrade-bin-1\.0-1-x86_64\.pkg\.tar\.zst$' "$work/log" ||
+	fail "--force did not reinstall: $(grep '^sudo' "$work/log")"
 
-# The newest is already there: nothing is built.
-rm -f "$work/log"
-out=$(run)
-[[ $out == *'Topgrade 17.12.3, the newest release, is already installed'* ]] || fail "a second run: $out"
-! built_by_cargo || fail 'a second run built again'
-
-# A newer release appears: a rerun upgrades to it, and a toolchain already set is used.
-rm -f "$work/log"
-out=$(STUB_LATEST=17.13.0 run)
-[[ $out == *'upgrading Topgrade 17.12.3 to 17.13.0'* ]] || fail "an upgrade: $out"
-[[ $(installed_version) == 'topgrade 17.13.0' ]] || fail 'Topgrade was not upgraded to the newest release'
-[[ $(grep -c '^rustup' "$work/log") == 1 ]] || fail "the upgrade changed the toolchain: $(cat "$work/log")"
-
-# --force rebuilds the newest; a registry the user already had is kept.
-mkdir -p "$work/home/.cargo/registry/index"
-rm -f "$work/log"
-STUB_LATEST=17.13.0 run --force >/dev/null || fail '--force failed'
-built_by_cargo || fail '--force did not build'
-[[ -d $work/home/.cargo/registry/index ]] || fail "the user's own cargo registry was removed"
-
-# Topgrade installed some other way (an AUR package, say): kept unless --force.
-reset
-mkdir -p "$work/other"
-printf '#!/bin/sh\necho "topgrade 17.0.0"\n' >"$work/other/topgrade"
-chmod +x "$work/other/topgrade"
-out=$(base_path=$work/bin:$work/sys:$work/other run)
-[[ $out == *"already installed at $work/other/topgrade (17.0.0); leaving it"* ]] || fail "another Topgrade: $out"
-! built_by_cargo || fail 'a Topgrade installed another way was built over'
-base_path=$work/bin:$work/sys:$work/other run --force >/dev/null || fail '--force beside another Topgrade failed'
-built_by_cargo || fail '--force did not build beside another Topgrade'
-
-# A custom CARGO_HOME: the binary and the check both follow it.
-reset
-CARGO_HOME=$work/cargo-home run >/dev/null || fail 'the install with CARGO_HOME failed'
-grep -Fq -- "--root $work/cargo-home " "$work/log" || fail 'the build ignored CARGO_HOME'
-[[ $(installed_version "$work/cargo-home") == 'topgrade 17.12.3' ]] || fail 'Topgrade is not in CARGO_HOME/bin'
-rm -f "$work/log"
-CARGO_HOME=$work/cargo-home run >/dev/null
-! built_by_cargo || fail 'the newest Topgrade in CARGO_HOME/bin was built again'
-
-# Arch's rust instead of rustup: no toolchain step, and the plan says so.
-reset
-mv "$work/bin/rustup" "$work/rustup.off"
-run >/dev/null || fail 'the build with Arch rust failed'
-! grep -q '^rustup' "$work/log" 2>/dev/null || fail 'a toolchain step ran without rustup'
-mv "$work/rustup.off" "$work/bin/rustup"
-plan=$(STUB_RUST_PROVIDER=rust run --print-plan)
-[[ $plan == 'the newest release from crates.io, built with cargo, using the installed Rust toolchain (rust)' ]] ||
-	fail "the plan with Arch rust: $plan"
-# Arch's rustup package answers for rust (pacman -Qq resolves provides).
-plan=$(STUB_RUST_PROVIDER=rustup run --print-plan)
-[[ $plan == *'using rustup' ]] || fail "the plan with rustup: $plan"
-
-# Failures build nothing.
-for case in 'STUB_CURL=fail' 'STUB_LATEST=' 'STUB_LATEST=17.13.0-beta.1' 'STUB_LATEST=1.2;rm' 'STUB_CARGO=fail' 'STUB_BUILT_VERSION=0.0.1'; do
+# topgrade-bin cannot be built, or the AUR is unreachable: an error, nothing
+# installed, and nothing else built.
+for case in STUB_FAIL=topgrade-bin STUB_GIT=fail; do
 	reset
-	if env "$case" HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" "$helper" >/dev/null 2>&1; then
-		fail "it reported success with $case"
+	if env "$case" HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" "$helper" \
+		</dev/null 2>"$work/err"; then
+		fail "$case: the install succeeded"
 	fi
-	case $case in
-	STUB_CARGO=* | STUB_BUILT_VERSION=*) ;;
-	*) ! built_by_cargo || fail "it built with $case" ;;
-	esac
+	if grep -q '^sudo' "$work/log" 2>/dev/null; then fail "$case: something was installed"; fi
+	grep -Fq 'Topgrade could not be built from the AUR; check the network, then run install-topgrade again' "$work/err" ||
+		fail "$case said: $(cat "$work/err")"
+	no_build_dir || fail "$case: the build directory was left behind"
+	if grep -q '^makepkg topgrade ' "$work/log" 2>/dev/null; then fail "$case: the source package was built"; fi
 done
-# A failed build still removes its build directory and the crate downloads it made.
-reset
-if STUB_CARGO=fail run >/dev/null 2>&1; then fail 'a failed build was reported as installed'; fi
-[[ -s $work/target-dir && ! -e $(cat "$work/target-dir") ]] || fail 'a failed build left its build directory'
-[[ ! -e $work/home/.cargo/registry ]] || fail 'a failed build left the crate downloads it made'
-reset
-out=$(env HOME="$work/home" PATH="$work/sys" "$helper" 2>&1) && fail 'it succeeded without curl and cargo'
-[[ $out == *'curl is not installed'* ]] || fail "without curl: $out"
-mkdir -p "$work/curl-only"
-ln -sf "$work/bin/curl" "$work/curl-only/curl"
-out=$(env HOME="$work/home" PATH="$work/curl-only:$work/sys" "$helper" 2>&1) && fail 'it succeeded without cargo'
-[[ $out == *'install rustup first'* ]] || fail "without cargo: $out"
-cat >"$work/bin/id" <<'EOF'
-#!/bin/sh
-[ "$1" = -u ] && echo 0
-EOF
-chmod +x "$work/bin/id"
-out=$(run 2>&1) && fail 'it ran as root'
-[[ $out == *'not as root'* ]] || fail "as root: $out"
-rm "$work/bin/id"
-if run --frobnicate >/dev/null 2>&1; then fail 'an unknown option was accepted'; fi
-reset
-out=$(run --dry-run)
-[[ $out == *'would look up the newest Topgrade release on crates.io'* ]] || fail "a dry run: $out"
-[[ ! -e $work/log && ! -e $work/home/.cargo ]] || fail 'a dry run changed something'
 
-# The shared rule: rustup only where no other Rust toolchain is installed.
+# A source without a checksum, a SKIP checksum, or a checkout that is not the
+# pin: not built, either way.
+for case in STUB_SRCINFO=nosum STUB_SRCINFO=skip STUB_HEAD=0000000000000000000000000000000000000000; do
+	reset
+	if env "$case" HOME="$work/home" PATH="$base_path" XDG_CACHE_HOME="$work/home/.cache" "$helper" \
+		</dev/null 2>"$work/err"; then
+		fail "$case: the install succeeded"
+	fi
+	if grep -q '^makepkg' "$work/log"; then fail "$case: makepkg built: $(grep makepkg "$work/log")"; fi
+	if grep -q '^sudo' "$work/log"; then fail "$case: something was installed"; fi
+done
+grep -q 'has a source without a checksum; not building it' <<<"$(
+	reset
+	STUB_SRCINFO=skip run 2>&1 || :
+)" || fail 'a SKIP checksum was not named'
+
+# Root: refused, nothing built.
+cat >"$work/root-id" <<'EOF'
+#!/bin/sh
+[ "$1" = -u ] && { echo 0; exit 0; }
+exec /usr/bin/id "$@"
+EOF
+mkdir -p "$work/rootbin"
+cp "$work/root-id" "$work/rootbin/id"
+chmod +x "$work/rootbin/id"
+reset
+if env HOME="$work/home" PATH="$work/rootbin:$base_path" "$helper" </dev/null 2>"$work/err"; then fail 'root was not refused'; fi
+grep -Fq 'run as the target user, not as root' "$work/err" || fail "root was refused with: $(cat "$work/err")"
+[[ ! -e $work/log ]] || fail 'root built something'
+
+# --build-only: the package's path alone on stdout, in the directory; no sudo.
+reset
+mkdir -p "$work/out-dir"
+rm -f "$work/out-dir"/*
+path=$(run --build-only "$work/out-dir" 2>"$work/err") || fail "--build-only failed: $(cat "$work/err")"
+[[ $path == "$work/out-dir/topgrade-bin-1.0-1-x86_64.pkg.tar.zst" && -f $path ]] || fail "--build-only printed: $path"
+[[ $(find "$work/out-dir" -mindepth 1 | wc -l) == 1 ]] || fail "--build-only left: $(ls -A "$work/out-dir")"
+if grep -q '^sudo' "$work/log"; then fail '--build-only used sudo'; fi
+reset
+rm -f "$work/out-dir"/*
+if STUB_FAIL=topgrade-bin run --build-only "$work/out-dir" >/dev/null 2>&1; then fail '--build-only succeeded without topgrade-bin'; fi
+# The package cannot be copied out: a failure, and no path printed.
+reset
+rm -f "$work/out-dir"/*
+if path=$(STUB_INSTALL=fail run --build-only "$work/out-dir" 2>/dev/null); then fail '--build-only succeeded although the copy failed'; fi
+[[ -z $path ]] || fail "a failed copy printed a path: $path"
+reset
+if STUB_INSTALL=fail run >/dev/null 2>&1; then fail 'an install succeeded although the copy failed'; fi
+if grep -q '^sudo' "$work/log"; then fail 'pacman ran although the copy failed'; fi
+if run --build-only "$work/no-such-dir" >/dev/null 2>&1; then fail '--build-only accepted a missing directory'; fi
+STUB_INSTALLED=topgrade-bin run --build-only "$work/out-dir" >/dev/null 2>&1 || fail '--build-only skipped the build for an installed Topgrade'
+
+# An older cargo-built Topgrade: described, and left in place without a terminal.
+reset
+mkdir -p "$work/home/.cargo/bin"
+printf '#!/bin/sh\n' >"$work/home/.cargo/bin/topgrade"
+chmod +x "$work/home/.cargo/bin/topgrade"
+run 2>"$work/err" || fail 'the install failed beside a cargo-built Topgrade'
+[[ -x $work/home/.cargo/bin/topgrade ]] || fail 'the cargo-built Topgrade was removed without asking'
+grep -Fq 'left in place; remove it with: cargo uninstall topgrade' "$work/err" || fail "the cargo copy: $(cat "$work/err")"
+if grep -q '^cargo' "$work/log"; then fail 'cargo ran without asking'; fi
+
+# Options.
+if run --frobnicate >/dev/null 2>&1; then fail 'an unknown option was accepted'; fi
+if run --build-only >/dev/null 2>&1; then fail '--build-only without a directory was accepted'; fi
+reset
+out=$(run --dry-run 2>&1)
+[[ $out == *'would build topgrade-bin (AUR commit 478487d31444ccbad24ab5d390d41466201b9dbc) with makepkg and install it with sudo pacman -U'* ]] ||
+	fail "a dry run: $out"
+[[ ! -e $work/log ]] || fail 'a dry run changed something'
+run --help | grep -Fq 'cargo uninstall topgrade' || fail 'the help does not say how to remove a cargo-built Topgrade'
+
+# No Rust: no toolchain or cargo-update profile, nothing Rust in the
+# recommended packages, and no Rust rules left in the map.
 # shellcheck source=scripts/dwm-packages.sh
 . "$repo/scripts/dwm-packages.sh"
-[[ $(dwm_packages arch rust-toolchain | paste -sd ' ') == 'rustup cargo-update' ]] ||
-	fail 'the rust-toolchain profile is not rustup and cargo-update'
-dwm_packages arch recommended | grep -Fxq rustup || fail 'rustup is not in the recommended packages'
-dwm_packages arch recommended | grep -Fxq cargo-update || fail 'cargo-update is not in the recommended packages (#238)'
-other() { # PATH [PROVIDER]
-	# shellcheck disable=SC2016 # expanded by the inner shell
-	env PATH="$1" STUB_RUST_PROVIDER="${2:-}" bash -c '. "$0"; dwm_other_rust_toolchain' "$repo/scripts/dwm-packages.sh"
-}
-[[ $(other "$work/bin:$work/sys" rust) == rust ]] || fail "Arch's rust was not found"
-[[ $(other "$work/bin:$work/sys" rust-nightly-bin) == rust-nightly-bin ]] || fail 'another rust provider was not found'
-if other "$work/bin:$work/sys" rustup >/dev/null; then fail 'rustup itself counted as another toolchain'; fi
-mkdir -p "$work/rustupsh"
-ln -sf "$work/bin/cargo" "$work/rustupsh/cargo"
-[[ $(other "$work/rustupsh:$work/sys") == "$work/rustupsh/cargo" ]] || fail 'a rustup.rs cargo on PATH was not found'
-if other "$work/sys" >/dev/null; then fail 'a toolchain was found where there is none'; fi
-# pacman alone, without the stub cargo: a machine whose only Rust is a package.
-mkdir -p "$work/pacman-only"
-ln -sf "$work/bin/pacman" "$work/pacman-only/pacman"
-installs() { # PROVIDER
-	# shellcheck disable=SC2016 # expanded by the inner shell
-	env PATH="$work/pacman-only:$work/sys" STUB_RUST_PROVIDER="$1" bash -c '
-		. "$0"
-		DISTRO_FAMILY=arch
-		install_packages() { printf "INSTALL %s\n" "$*"; }
-		dwm_install_package_profile rust-toolchain' "$repo/scripts/dwm-packages.sh" 2>/dev/null
-}
-[[ $(installs '') == 'INSTALL rustup cargo-update' ]] || fail 'rustup was not installed on a machine without Rust'
-[[ $(installs rust) == 'INSTALL cargo-update' ]] || fail "rustup was installed beside Arch's rust, or cargo-update was not"
-[[ $(installs rust-nightly-bin) == 'INSTALL cargo-update' ]] || fail 'rustup was installed beside another provider'
-[[ $(installs rustup) == 'INSTALL rustup cargo-update' ]] || fail 'an installed rustup was treated as another toolchain'
-# Arch's rustup package with its cargo on PATH (/usr/bin/cargo, an absolute
-# path): neither skipped, as that cargo is the package's, not rustup.rs's.
-# shellcheck disable=SC2016 # expanded by the inner shell
-out=$(env PATH="$work/pacman-only:$work/rustupsh:$work/sys" STUB_RUST_PROVIDER=rustup bash -c '
-	. "$0"
-	DISTRO_FAMILY=arch
-	install_packages() { printf "INSTALL %s\n" "$*"; }
-	dwm_install_package_profile rust-toolchain' "$repo/scripts/dwm-packages.sh" 2>&1)
-[[ $out == 'INSTALL rustup cargo-update' ]] || fail "packaged rustup with cargo on PATH: $out"
-# A rustup.rs cargo, which no package provides: neither, or pacman would pull in
-# Arch's rust beside it for cargo-update's dependency on cargo.
-# shellcheck disable=SC2016 # expanded by the inner shell
-out=$(env PATH="$work/pacman-only:$work/rustupsh:$work/sys" STUB_RUST_PROVIDER='' bash -c '
-	. "$0"
-	DISTRO_FAMILY=arch
-	install_packages() { printf "INSTALL %s\n" "$*"; }
-	dwm_install_package_profile rust-toolchain' "$repo/scripts/dwm-packages.sh" 2>&1)
-[[ $out != *INSTALL* && $out == *'skipping cargo-update (run cargo install cargo-update)'* ]] ||
-	fail "beside a rustup.rs cargo: $out"
+for name in rustup rust cargo cargo-update; do
+	if dwm_packages arch full | grep -Fxq "$name"; then fail "$name is in the full profile"; fi
+done
+for profile in rust-toolchain cargo-update; do
+	if dwm_packages arch "$profile" | grep -q .; then fail "the $profile profile still exists"; fi
+done
+if declare -F dwm_other_rust_toolchain >/dev/null; then fail 'dwm_other_rust_toolchain is still defined'; fi
 
-# install.sh: the skip flag, the plan line, a guarded toolchain install, and the
-# build last, after the sudo timestamp is closed.
+# install.sh: no Rust toolchain or cargo-update; the skip flag; the plan line;
+# and the install last, after the sudo timestamp is closed.
+if grep -nE 'rust-toolchain|rustup|cargo-update' "$repo/install.sh" | grep -q .; then
+	fail "install.sh still installs Rust: $(grep -nE 'rust-toolchain|rustup|cargo-update' "$repo/install.sh")"
+fi
 "$repo/install.sh" --dry-run --non-interactive --profile recommended >"$work/plan"
-grep -Fq 'Topgrade: the newest release from crates.io, built with cargo' "$work/plan" ||
+grep -Fq 'Topgrade: topgrade-bin from the AUR (PKGBUILD pinned at 478487d31444)' "$work/plan" ||
 	fail "the install plan: $(grep Topgrade "$work/plan")"
 "$repo/install.sh" --dry-run --non-interactive --profile full --skip-topgrade >"$work/skip-plan"
 grep -Fqx '  Topgrade: skipped (--skip-topgrade)' "$work/skip-plan" || fail '--skip-topgrade is not in the plan'
@@ -299,61 +283,58 @@ if DWM_INSTALL_TOPGRADE=maybe "$repo/install.sh" --dry-run --non-interactive >/d
 	fail 'an unsupported DWM_INSTALL_TOPGRADE was accepted'
 fi
 "$repo/install.sh" --dry-run --non-interactive --profile core >"$work/core-plan"
-if grep -Fq 'Topgrade: the newest' "$work/core-plan"; then fail 'a core install plans Topgrade'; fi
-grep -Fq 'if dwm_install_package_profile rust-toolchain; then' "$repo/install.sh" ||
-	fail 'the toolchain install is not guarded'
+if grep -Fq 'Topgrade: topgrade-bin' "$work/core-plan"; then fail 'a core install plans Topgrade'; fi
 displays=$(grep -n '^configure_displays_after_install$' "$repo/install.sh" | cut -d: -f1)
 sudo_k=$(grep -nF 'sudo -k 2>/dev/null' "$repo/install.sh" | cut -d: -f1)
 # shellcheck disable=SC2016 # the literal text in install.sh
-build=$(grep -nF 'if "$REPO_DIR/scripts/install-topgrade"; then' "$repo/install.sh" | cut -d: -f1)
+build=$(grep -nF '"$REPO_DIR/scripts/install-topgrade" </dev/null || topgrade_status=$?' "$repo/install.sh" | cut -d: -f1)
 last_sudo=$(grep -nE '^[[:space:]]*sudo [a-z]' "$repo/install.sh" | grep -v 'sudo -k' | tail -n 1 | cut -d: -f1)
-[[ -n $displays && -n $sudo_k && -n $build && -n $last_sudo ]] || fail 'could not find the build steps in install.sh'
+[[ -n $displays && -n $sudo_k && -n $build && -n $last_sudo ]] || fail 'could not find the Topgrade steps in install.sh'
 ((sudo_k > displays && build > sudo_k && build > last_sudo)) ||
-	fail "install.sh does not build Topgrade last, after sudo -k (displays $displays, sudo -k $sudo_k, build $build, last sudo $last_sudo)"
+	fail "install.sh does not install Topgrade last, after sudo -k (displays $displays, sudo -k $sudo_k, build $build, last sudo $last_sudo)"
 
-# The live medium: install.sh skips it, and it is built once the passwordless
-# sudoers file is gone.
+# The live medium: install.sh skips it; it is built as the user once the
+# passwordless sudoers file is gone, and root installs only the built package.
 postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
 grep -Fq './install.sh --non-interactive --profile full --skip-topgrade' "$postinstall" ||
 	fail 'the live medium does not skip Topgrade in install.sh'
 # shellcheck disable=SC2016 # the literal text in the postinstall
-# The last removal: the one after install.sh (an earlier one clears a stale copy).
 removed=$(grep -n '^rm -f -- "$install_sudoers"$' "$postinstall" | tail -n 1 | cut -d: -f1)
-topgrade=$(grep -n 'run_logged "Building Topgrade' "$postinstall" | cut -d: -f1)
+topgrade=$(grep -n 'run_logged "Installing Topgrade from the AUR\.\.\." install_topgrade' "$postinstall" | cut -d: -f1)
 if [[ -z $removed || -z $topgrade ]] || ((topgrade <= removed)); then
-	fail 'the live medium builds Topgrade before its sudoers file is removed'
+	fail 'the live medium installs Topgrade before its sudoers file is removed'
 fi
 grep -Eq '^[[:space:]]+install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade$' "$postinstall" ||
 	fail 'install_topgrade is not exported for run_logged'
-# The postinstall's own install_topgrade, against a stub arch-chroot: rustup only
-# when the target has no other Rust toolchain, and the build as the user either way.
 awk '/^install_topgrade\(\) \{$/ { f = 1 } f { print } f && /^}$/ { exit }' "$postinstall" >"$work/install_topgrade.sh"
 grep -q '^}$' "$work/install_topgrade.sh" || fail 'could not find install_topgrade in the postinstall'
+# arch-chroot: runs runuser by printing a built package's path (or failing with
+# STUB_BUILD=fail); everything else is only logged.
 cat >"$work/bin/arch-chroot" <<'EOF'
 #!/bin/bash
 shift
 printf 'chroot %s\n' "$*" >>"$STUB_DIR/chroot.log"
-if [[ $1 == bash ]]; then
-	[[ -n ${STUB_TARGET_RUST:-} ]] || exit 1
-	printf '%s\n' "$STUB_TARGET_RUST"
+if [[ $1 == runuser ]]; then
+	[[ ${STUB_BUILD:-} != fail ]] || exit 1
+	printf '/var/tmp/lyona-topgrade/topgrade-bin-1.0-1-x86_64.pkg.tar.zst\n'
 fi
 EOF
 chmod +x "$work/bin/arch-chroot"
-postinstall_topgrade() { # TARGET-RUST
+postinstall_topgrade() {
 	rm -f "$work/chroot.log"
 	# shellcheck disable=SC2016 # expanded by the inner shell
-	env PATH="$work/bin:$work/sys" STUB_TARGET_RUST="$1" TARGET=/mnt target_user=alice target_home=/home/alice \
-		bash -c '. "$1"; . "$2"; install_topgrade' _ "$repo/scripts/dwm-packages.sh" "$work/install_topgrade.sh" >/dev/null
+	env PATH="$work/bin:$work/sys" TARGET=/mnt target_user=alice target_group=alice target_home=/home/alice \
+		checkout_rel=.local/src/lyona bash -c '. "$1"; install_topgrade' _ "$work/install_topgrade.sh" >/dev/null
 }
-postinstall_topgrade '' || fail 'the postinstall Topgrade step failed'
-grep -Fqx 'chroot pacman -S --noconfirm --needed rustup cargo-update' "$work/chroot.log" ||
-	fail "the postinstall did not install rustup and cargo-update: $(cat "$work/chroot.log")"
-postinstall_topgrade rust || fail 'the postinstall Topgrade step failed beside Arch rust'
-! grep -Fq 'rustup' "$work/chroot.log" || fail "the postinstall installed rustup beside Arch's rust"
-grep -Fqx 'chroot pacman -S --noconfirm --needed cargo-update' "$work/chroot.log" ||
-	fail "the postinstall did not install cargo-update beside Arch's rust: $(cat "$work/chroot.log")"
-postinstall_topgrade "$work/rustupsh/cargo" || fail 'the postinstall Topgrade step failed beside a rustup.rs cargo'
-! grep -Fq 'pacman -S' "$work/chroot.log" || fail 'the postinstall installed packages beside a rustup.rs cargo'
-grep -Fq 'su - alice -c' "$work/chroot.log" || fail 'the postinstall did not build Topgrade as the user beside Arch rust'
+postinstall_topgrade || fail 'the postinstall Topgrade step failed'
+grep -Fqx 'chroot runuser -u alice -- env HOME=/home/alice /home/alice/.local/src/lyona/scripts/install-topgrade --build-only /var/tmp/lyona-topgrade' "$work/chroot.log" ||
+	fail "the postinstall did not build as the user: $(cat "$work/chroot.log")"
+grep -Fqx 'chroot pacman -U --noconfirm --needed -- /var/tmp/lyona-topgrade/topgrade-bin-1.0-1-x86_64.pkg.tar.zst' "$work/chroot.log" ||
+	fail "the postinstall did not install the built package: $(cat "$work/chroot.log")"
+if grep -Eq 'rustup|cargo|pacman -S' "$work/chroot.log"; then fail "the postinstall installed a toolchain: $(cat "$work/chroot.log")"; fi
+tail -n 1 "$work/chroot.log" | grep -Fqx 'chroot rm -rf -- /var/tmp/lyona-topgrade' || fail 'the postinstall left its build directory'
+if STUB_BUILD=fail postinstall_topgrade; then fail 'a failed build passed the postinstall step'; fi
+if grep -q 'pacman -U' "$work/chroot.log"; then fail 'the postinstall installed a package after a failed build'; fi
+tail -n 1 "$work/chroot.log" | grep -Fqx 'chroot rm -rf -- /var/tmp/lyona-topgrade' || fail 'a failed build left its build directory'
 
 printf 'install-topgrade: PASS\n'

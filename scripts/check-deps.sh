@@ -180,9 +180,6 @@ else
 		echo "Package suggestions from the shared dependency map:"
 		print_package_profile "Required" required
 		print_package_profile "Recommended desktop" recommended
-		# rustup conflicts with Arch's rust; install.sh leaves it out when another
-		# Rust toolchain is installed (Sync Sprint 15 S15-06).
-		printf '  (rustup is only for a system without another Rust toolchain, such as Arch'"'"'s rust.)\n'
 		print_package_profile "Optional extras" optional
 		print_package_profile "Supported terminals" terminal
 	fi

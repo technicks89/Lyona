@@ -201,28 +201,33 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   itself.
   - **Topgrade.** It also installs [Topgrade](https://github.com/topgrade-rs/topgrade),
     which updates everything with one `topgrade` command. Topgrade is only in
-    the AUR on Arch, so the installer builds the newest release from crates.io
-    with `cargo install --locked`. It looks up the newest version each time it
-    runs.
-  - **The toolchain:** `rustup` by preference. If no Rust toolchain is set
-    up, the stable one is installed (minimal profile). Another Rust toolchain
-    you already have, such as Arch's `rust` package, is kept and its `cargo`
-    used; `rustup` is then not installed, since the two conflict.
-  - **Where it goes:** `${CARGO_HOME:-~/.cargo}/bin/topgrade`, which mybash
-    puts on `PATH`. Without mybash, add it yourself:
-    `export PATH="$HOME/.cargo/bin:$PATH"`.
-  - **When:** it is built last, after every step that needs `sudo`, and
-    the `sudo` timestamp is closed first, because the build runs many
-    third-party build scripts. It needs the network and takes a few minutes.
-    If it fails, the install carries on.
+    the AUR on Arch, so the installer builds the AUR's `topgrade-bin` package,
+    which repackages upstream's release binary, with `makepkg` and installs it
+    with `pacman`. It takes seconds and needs no Rust toolchain.
+  - **What is trusted:** the PKGBUILD is pinned to a reviewed AUR commit, and
+    every file it downloads has a checksum. `makepkg` runs as you, never as
+    root; only the built package is installed with `sudo pacman -U`. See
+    `docs/AUR-PACKAGES.md`.
+  - **When:** it is installed last, after every other step that needs
+    `sudo`. The `sudo` timestamp is closed first, so `sudo` asks for your
+    password again to install the built package. If it fails, the install
+    carries on.
+  - **If it cannot be built** (the AUR or GitHub unreachable, say), the
+    install says so and carries on; run `install-topgrade` later to try again.
+  - **Updates:** `pacman -Syu` does not update AUR packages. Topgrade updates
+    itself, through `yay`, each time it runs.
   - **Skipping it:** pass `--skip-topgrade` (or set `DWM_INSTALL_TOPGRADE=false`).
-  - **Later, or on an existing install:** run
-    `sudo pacman -S --needed rustup` (skip this if another Rust toolchain is
-    installed), then `install-topgrade` (or `scripts/install-topgrade` from the
-    checkout). Rerun it any time to upgrade to the newest release; it does
-    nothing when you already have it. A Topgrade installed another way (such
-    as an AUR package) is left alone. `install-topgrade --force` builds
-    anyway, and `--dry-run` shows what it would do.
+  - **Later, or on an existing install:** run `install-topgrade` (or
+    `scripts/install-topgrade` from the checkout). It does nothing when a
+    Topgrade package is already installed; `install-topgrade --force`
+    reinstalls it, and `--dry-run` shows what it would do.
+  - **Upgrading from a cargo-built Topgrade:** an older lyona built Topgrade
+    with cargo into `~/.cargo/bin`, which comes before the package on `PATH`.
+    `install-topgrade` offers to remove it when run in a terminal, and
+    otherwise says how: `cargo uninstall topgrade`. Nothing removes it
+    silently. lyona no longer installs `rustup` or `cargo-update`; if you have
+    no other use for them, remove them with `sudo pacman -Rns rustup
+    cargo-update`.
 - `full`: `recommended` plus optional extras such as Thunar with SMB-share
   browsing, network tray utilities,
   wallpapers, and display-manager setup. x86_64 Arch full installs also

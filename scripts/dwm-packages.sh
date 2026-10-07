@@ -183,16 +183,6 @@ dwm_packages() {
 	arch:xscreensaver)
 		printf '%s\n' xscreensaver
 		;;
-	arch:rust-toolchain)
-		# rustup, for cargo: Topgrade is built with it (Sync Sprint 15 S15-06,
-		# decision D-28), as it is AUR-only. rustup conflicts with Arch's
-		# rust and cargo packages, so dwm_install_package_profile leaves it out
-		# when another Rust toolchain is installed (dwm_other_rust_toolchain).
-		# cargo-update (#238): Topgrade's Cargo step runs cargo install-update,
-		# without which nothing installed with cargo install, Topgrade itself
-		# included, is updated. It needs a cargo, which rustup provides.
-		printf '%s\n' rustup cargo-update
-		;;
 	arch:shell)
 		# The interactive shell configuration from technicks89/mybash. Its own
 		# setup.sh pipes an installer from starship.rs and pulls an unpinned
@@ -259,7 +249,6 @@ dwm_packages() {
 		dwm_packages "$family" theme-gtk
 		dwm_packages "$family" fonts
 		dwm_packages "$family" shell
-		dwm_packages "$family" rust-toolchain
 		;;
 	arch:optional)
 		dwm_packages "$family" theme-optional
@@ -298,7 +287,7 @@ dwm_command_tier() { # required|desktop
 dwm_install_package_profile() {
 	local profile
 	local packages=()
-	local package other_rust other_browser
+	local package other_browser
 	local -A queued=()
 
 	for profile in "$@"; do
@@ -310,19 +299,8 @@ dwm_install_package_profile() {
 					'Retaining installed Power Profiles provider (ppd-service); skipping power-profiles-daemon.' >&2
 				continue
 			fi
-			if [[ $package == rustup ]] && other_rust=$(dwm_other_rust_toolchain); then
-				printf 'Keeping the installed Rust toolchain (%s); skipping rustup.\n' "$other_rust" >&2
-				continue
-			fi
 			if [[ $package == firefox ]] && other_browser=$(dwm_other_default_browser); then
 				printf 'Keeping the default browser (%s); skipping firefox.\n' "$other_browser" >&2
-				continue
-			fi
-			# A cargo no package provides (rustup.rs): pacman would add Arch's
-			# rust beside it to satisfy cargo-update's dependency on cargo.
-			if [[ $package == cargo-update ]] && other_rust=$(dwm_other_rust_toolchain) && [[ $other_rust == /* ]]; then
-				printf 'Keeping the Rust toolchain at %s; skipping cargo-update (run cargo install cargo-update).\n' \
-					"$other_rust" >&2
 				continue
 			fi
 			queued[$package]=1
@@ -397,27 +375,6 @@ dwm_desktop_entry_runnable() { # FILE
 dwm_power_profiles_provider_installed() {
 	command -v pacman >/dev/null 2>&1 &&
 		pacman -Qq power-profiles-daemon >/dev/null 2>&1
-}
-
-# A Rust toolchain other than Arch's rustup package, by name, when one is
-# installed (Sync Sprint 15 S15-06, decision D-28): Arch's rust, any other
-# package providing rust or cargo (pacman -Qq resolves provides, so it prints
-# the provider, such as rust-nightly-bin), or a cargo from rustup.rs on PATH.
-# rustup conflicts with those packages, and would only duplicate the other, so
-# the rust-toolchain profile is skipped and that toolchain's cargo is used.
-dwm_other_rust_toolchain() {
-	local name provider cargo
-	if command -v pacman >/dev/null 2>&1; then
-		for name in rust cargo; do
-			provider=$(pacman -Qq "$name" 2>/dev/null) || continue
-			provider=${provider%%$'\n'*}
-			[[ $provider != rustup ]] || return 1
-			printf '%s\n' "$provider"
-			return 0
-		done
-	fi
-	cargo=$(command -v cargo 2>/dev/null) || return 1
-	printf '%s\n' "$cargo"
 }
 
 # Installs whatever of the profile is actually available, as one transaction:
