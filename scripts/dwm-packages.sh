@@ -138,18 +138,12 @@ dwm_packages() {
 		printf '%s\n' plymouth gum jq curl openssl pciutils reflector
 		;;
 	# The live medium's postinstall installs these onto the target by what it
-	# detects (Sync Sprint 12 S12-15): CPU microcode, a GPU driver, NetworkManager
+	# detects (Sync Sprint 12 S12-15): a GPU driver, NetworkManager
 	# and the QEMU/KVM guest tools. The NVIDIA DKMS driver also needs each
 	# installed kernel's -headers, which the postinstall derives from the kernels.
 	# Arch replaced nvidia and nvidia-dkms with the open kernel modules, which
 	# support Turing (GTX 16xx, RTX 20xx) and newer; older cards need the
 	# AUR-only nvidia-580xx and stay on nouveau.
-	arch:microcode-intel)
-		printf '%s\n' intel-ucode
-		;;
-	arch:microcode-amd)
-		printf '%s\n' amd-ucode
-		;;
 	arch:gpu-nvidia)
 		printf '%s\n' nvidia-open nvidia-utils
 		;;

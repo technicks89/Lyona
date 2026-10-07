@@ -3,9 +3,9 @@
 Issue `#250`, part 6/6 of the install-speed series (#245 to #250).
 
 **Status: the timing is in place, and the baseline is recorded** from one
-QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). The
-"After #249", "After #245" and "After #247/#248" columns are filled in; add
-#246 as it lands.
+QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). Every
+column is filled in: "After #249", "After #245", "After #247/#248" and
+"After #246".
 
 ## A. Step timing
 
@@ -37,20 +37,20 @@ QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). The
 
 | Step | Baseline | After #245 | After #247/#248 | After #246 | After #249 |
 | --- | --- | --- | --- | --- | --- |
-| Wizard: choosing the fastest package mirrors | (no step) | 11s | 10s / 10s | | 11s / 12s |
-| Wizard: adding the CachyOS repositories | 4s | 5s | 5s / 6s | | 5s / 4s |
-| archinstall | 1m 33s | 1m 21s | 1m 31s / 1m 30s | | 1m 19s / 1m 24s |
-| Adding the CachyOS repositories | 0s | 0s | 0s / 0s | | 0s / 1s |
-| Updating the new system | 2s | 2s | 2s / 2s | | 2s / 1s |
-| Installing the CachyOS kernels | 14s | 13s | 13s / 13s | | 13s / 14s |
-| Installing CPU microcode | 6s | 6s | 7s / 7s | | 6s / 7s |
-| Installing GPU drivers | 0s | 0s | 0s / 0s | | 0s / 0s |
-| Configuring NetworkManager | 0s | 0s | 0s / 0s | | 1s / 0s |
-| Checking swap | 2s | 1s | 2s / 1s | | 1s / 1s |
-| Checking for a QEMU/KVM hypervisor | 0s | 0s | 0s / 0s | | 0s / 1s |
-| Running install.sh --profile full | 9m 41s | 1m 52s | 1m 26s / 1m 14s | | 1m 34s / 1m 43s |
-| Building Topgrade | 3m 02s (failed) | 5s (installing topgrade-bin) | 5s / 5s | | 5m 38s / 5m 32s |
-| **Total of the steps** | 14m 44s | 3m 56s | 3m 41s / 3m 28s | | 9m 10s / 9m 20s |
+| Wizard: choosing the fastest package mirrors | (no step) | 11s | 10s / 10s | 12s | 11s / 12s |
+| Wizard: adding the CachyOS repositories | 4s | 5s | 5s / 6s | 3s | 5s / 4s |
+| archinstall | 1m 33s | 1m 21s | 1m 31s / 1m 30s | 1m 01s | 1m 19s / 1m 24s |
+| Adding the CachyOS repositories | 0s | 0s | 0s / 0s | 0s | 0s / 1s |
+| Updating the new system | 2s | 2s | 2s / 2s | 4s | 2s / 1s |
+| Installing the CachyOS kernels | 14s | 13s | 13s / 13s | 0s ("Checking the kernel") | 13s / 14s |
+| Installing CPU microcode | 6s | 6s | 7s / 7s | (no step) | 6s / 7s |
+| Installing GPU drivers | 0s | 0s | 0s / 0s | 0s | 0s / 0s |
+| Configuring NetworkManager | 0s | 0s | 0s / 0s | 0s | 1s / 0s |
+| Checking swap | 2s | 1s | 2s / 1s | 2s | 1s / 1s |
+| Checking for a QEMU/KVM hypervisor | 0s | 0s | 0s / 0s | 0s | 0s / 1s |
+| Running install.sh --profile full | 9m 41s | 1m 52s | 1m 26s / 1m 14s | 55s (see below) | 1m 34s / 1m 43s |
+| Building Topgrade | 3m 02s (failed) | 5s (installing topgrade-bin) | 5s / 5s | 5s | 5m 38s / 5m 32s |
+| **Total of the steps** | 14m 44s | 3m 56s | 3m 41s / 3m 28s | 2m 22s (2m 37s with the Qt step) | 9m 10s / 9m 20s |
 
 Wall clock from the end of the wizard's questions to the reboot: 14m 48s.
 
@@ -62,29 +62,71 @@ the issues before it. The Topgrade row is a different cost in each column:
 - **Baseline:** the cargo build, which failed after 3m 02s.
 - **After #249:** the cargo build, which succeeded in both runs (5m 38s and
   5m 32s).
-- **After #245, and after #247 and #248:** no build: `topgrade-bin` from the
+- **After #245, #247, #248 and #246:** no build: `topgrade-bin` from the
   AUR, built with `makepkg` and installed with `pacman -U` (5 s).
 
 Without the Topgrade step, the total went from 11m 42s in the baseline to 3m 32s
-and 3m 48s after #249, 3m 51s after #245, 3m 36s after #247, and 3m 23s after #248.
+and 3m 48s after #249, 3m 51s after #245, 3m 36s after #247, 3m 23s after #248,
+and 2m 32s after #246 (counting its 15 s Qt step, below).
 
 `install.sh`'s sections:
 
-| Section | Baseline | After #249 (Berlin / UTC) | After #245 (Berlin) | After #247 (Berlin) | After #248 (Berlin) |
-| --- | --- | --- | --- | --- | --- |
-| Required packages | 13s | 9s / 10s | 11s | (in Packages) | (in Packages) |
-| Recommended packages | 1m 25s | 46s / 45s | 54s | (in Packages) | (in Packages) |
-| Optional extras and gaming | 7m 45s | 23s / 31s | 29s | (in Packages; gaming below) | (in Packages) |
-| Packages: every profile, one transaction | | | | 57s | 58s, gaming included |
-| Gaming: multilib, then its own transaction | | | | 15s | (in Packages) |
-| mybash | 1s | 0s / 0s | 0s | 0s | 1s |
-| Wallpapers | 5s | 5s / 4s | 4s | 4s | 6s |
-| Display manager (LightDM) | 3s | 2s / 2s | 3s | 0s (installed with the packages) | 0s |
-| yay | 4s | 4s / 4s | 3s | 4s | 4s |
-| Build (make clean; make) | 2s | 2s / 2s | 3s | 2s | 2s |
-| make install-system | 2s | 2s / 2s | 1s | 1s | 2s |
-| GRUB theme | 1s | 0s / 1s | 0s | 0s | 1s |
-| Everything else | 0s each | 0-1s each | 0-2s each | 0-1s each | 0-1s each |
+| Section | Baseline | After #249 (Berlin / UTC) | After #245 (Berlin) | After #247 (Berlin) | After #248 (Berlin) | After #246 (Berlin) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Required packages | 13s | 9s / 10s | 11s | (in Packages) | (in Packages) | (in Packages) |
+| Recommended packages | 1m 25s | 46s / 45s | 54s | (in Packages) | (in Packages) | (in Packages) |
+| Optional extras and gaming | 7m 45s | 23s / 31s | 29s | (in Packages; gaming below) | (in Packages) | (in Packages) |
+| Packages: every profile, one transaction | | | | 57s | 58s, gaming included | 41s, gaming included; 31 packages were already installed by the Qt step |
+| Gaming: multilib, then its own transaction | | | | 15s | (in Packages) | (in Packages) |
+| mybash | 1s | 0s / 0s | 0s | 0s | 1s | 1s |
+| Wallpapers | 5s | 5s / 4s | 4s | 4s | 6s | 4s |
+| Display manager (LightDM) | 3s | 2s / 2s | 3s | 0s (installed with the packages) | 0s | 0s |
+| yay | 4s | 4s / 4s | 3s | 4s | 4s | 4s |
+| Build (make clean; make) | 2s | 2s / 2s | 3s | 2s | 2s | 2s |
+| make install-system | 2s | 2s / 2s | 1s | 1s | 2s | 1s |
+| GRUB theme | 1s | 0s / 1s | 0s | 0s | 1s | 1s |
+| Everything else | 0s each | 0-1s each | 0-2s each | 0-1s each | 0-1s each | 0-1s each |
+
+### After #246: one CachyOS kernel, no fallback initramfs
+
+One Europe/Berlin install from an image built from `fb7e28c`, SHA-256
+`83cedd085e083a21d247d82bf62710f4ab3533ff27cc9e92de6748c209cd3b52`,
+same VM and host as the baseline. The image was built on a host with
+squashfs-tools 4.6.1 and `-Xbcj x86`: 4.7.5 failed the squashfs step there with
+`xz uncompress failed with error code 9` (a multithreaded race, not this
+change).
+
+- **A Qt step outside the installer, needed on 2026-10-07 only.** CachyOS was
+  part way through Qt 6.12: `cachyos-extra-v3` had `qt6-declarative 6.12.0-1.1`
+  but still `qt6-base 6.11.2-3.1`. pacman prefers the CachyOS repositories, so
+  the new system got both, `quickshell` failed to load (`version 'Qt_6.12' not
+  found`), and `install.sh` stopped at its Quickshell check. A first run failed
+  there, after the kernel steps. For a run that finishes, the driver installed
+  `extra/qt6-base 6.12.0-2` after archinstall, using only `[core]` and
+  `[extra]`, because the CachyOS key is not trusted until the postinstall's first
+  step. That took 15 s and installed 31 packages (24.2 MiB). It is in no step's
+  time, and those 31 packages were then already installed when `install.sh` ran,
+  so "Packages" (41 s) is low by about that much. Counting it, the total is
+  2m 37s, against 3m 28s after #248.
+- **Kernel:** archinstall installed `linux-cachyos` as the only kernel
+  (`pacman -Q linux` and `linux-cachyos-lts`: not found). `/boot` holds only
+  `vmlinuz-linux-cachyos` and `initramfs-linux-cachyos.img`; the preset is
+  `PRESETS=('default')`, and GRUB lists `Arch Linux` and `Advanced options` with
+  only `linux-cachyos`, no fallback entry. The initramfs was built twice: once by
+  archinstall and once by `install.sh`'s transaction, against 8 builds in the
+  baseline.
+- **Time:** archinstall took 1m 01s, against 1m 30s after #248, and the kernel
+  and microcode steps, 20 s after #248, are gone ("Checking the kernel": 0 s).
+  The whole install, from the end of the wizard's questions to the reboot, took
+  2m 54s, or 2m 39s without the Qt step, against 3m 45s after #248.
+- **Microcode:** none installed (`intel-ucode` and `amd-ucode` not found). That
+  is the design: archinstall adds it on real hardware and none in a virtual
+  machine. Not verified on real hardware.
+- No warnings. `topgrade-bin 17.12.3-1` installed. It booted to the LightDM
+  greeter within 40 s.
+- Not tested in a VM: an install without the CachyOS repositories (stock
+  `linux`, then `linux-cachyos` added by the postinstall), and microcode on real
+  hardware.
 
 ### After #248: gaming in the same transaction
 

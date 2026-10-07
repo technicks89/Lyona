@@ -94,9 +94,11 @@ to erase, btrfs or ext4 with optional LUKS encryption, your user and password,
 the hostname, the timezone (detected, for you to confirm), and, on an NVIDIA
 GPU, which driver. Nothing is written until you confirm the summary. It then
 drives `archinstall` unattended and finishes installing Lyona. ISO installs get the `multilib`
-and [CachyOS](https://cachyos.org) repositories and both the `linux-cachyos`
-and `linux-cachyos-lts` kernels without being asked. `linux-cachyos` boots by
-default, and the stock Arch kernel stays in the boot menu as the fallback. See
+and [CachyOS](https://cachyos.org) repositories and the `linux-cachyos`
+kernel without being asked; it is the only kernel installed. If the CachyOS
+repositories cannot be reached, the stock Arch kernel is installed instead;
+should they work again by the end of the install, `linux-cachyos` is added as
+the default and the stock kernel stays beside it. See
 the
 [Installation Guide](https://dwm.technicks89.com/install.html) for details.
 

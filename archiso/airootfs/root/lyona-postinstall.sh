@@ -5,7 +5,7 @@ export TARGET=/mnt
 export REPO_SRC=/root/lyona
 export LOG_FILE=/var/log/lyona-postinstall.log
 export CACHYOS_HELPER=/usr/local/bin/lyona-cachyos
-export CACHYOS_KERNELS="linux-cachyos linux-cachyos-lts"
+export CACHYOS_KERNEL=linux-cachyos
 export CACHYOS_MARKER=/run/lyona-cachyos-ready
 # Left when the NVIDIA driver was built from the AUR, for the closing message.
 export NVIDIA_AUR_MARKER=${NVIDIA_AUR_MARKER:-/run/lyona-nvidia-aur}
@@ -43,27 +43,6 @@ install_error_trap "$@"
 reset_step_times
 show_logo
 
-install_microcode() {
-	local pkg
-	if grep -q GenuineIntel /proc/cpuinfo; then
-		pkg=$(dwm_packages arch microcode-intel)
-	elif grep -q AuthenticAMD /proc/cpuinfo; then
-		pkg=$(dwm_packages arch microcode-amd)
-	else
-		printf 'lyona-postinstall: could not determine CPU vendor; skipping microcode.\n'
-		return 0
-	fi
-
-	printf 'Installing %s...\n' "$pkg"
-	arch-chroot "$TARGET" pacman -S --noconfirm --needed "$pkg"
-
-	if [[ -f "$TARGET/boot/grub/grub.cfg" ]]; then
-		arch-chroot "$TARGET" grub-mkconfig -o /boot/grub/grub.cfg
-	else
-		printf 'lyona-postinstall: non-GRUB bootloader detected; add %s to its boot entries manually if needed.\n' "$pkg"
-	fi
-}
-
 add_cachyos_repositories() {
 	rm -f "$CACHYOS_MARKER"
 	install -Dm755 "$REPO_SRC/scripts/lyona-cachyos" "$TARGET$CACHYOS_HELPER"
@@ -100,19 +79,47 @@ add_cachyos_repositories() {
 	: >"$CACHYOS_MARKER"
 }
 
-install_cachyos_kernels() {
-	local -a kernels
-
-	if [[ ! -e $CACHYOS_MARKER ]]; then
-		printf 'lyona-postinstall: skipping the CachyOS kernels because their repositories are unavailable.\n'
+# The kernel (#246): archinstall installed linux-cachyos as the only kernel when
+# the wizard set up the CachyOS repositories, so this only checks. When it could
+# not, archinstall installed the stock linux; then, if the repositories work now,
+# linux-cachyos is added and made the default, and the stock kernel stays as the
+# fallback. Either way there is no fallback initramfs (drop_fallback_initramfs).
+install_cachyos_kernel() {
+	drop_fallback_initramfs
+	if arch-chroot "$TARGET" pacman -Qq "$CACHYOS_KERNEL" >/dev/null 2>&1; then
+		printf '%s was installed with the base system; it is the only kernel.\n' "$CACHYOS_KERNEL"
 		return 0
 	fi
-
-	read -r -a kernels <<<"$CACHYOS_KERNELS"
-	if ! arch-chroot "$TARGET" env LYONA_CACHYOS_NONINTERACTIVE=1 \
-		"$CACHYOS_HELPER" install-kernel --make-default "${kernels[@]}"; then
-		note_warning 'The CachyOS kernels could not be installed; the stock kernel remains in place.'
+	if [[ ! -e $CACHYOS_MARKER ]]; then
+		printf 'lyona-postinstall: keeping the stock kernel because the CachyOS repositories are unavailable.\n'
+		return 0
 	fi
+	if ! arch-chroot "$TARGET" env LYONA_CACHYOS_NONINTERACTIVE=1 \
+		"$CACHYOS_HELPER" install-kernel --make-default "$CACHYOS_KERNEL"; then
+		note_warning 'The CachyOS kernel could not be installed; the stock kernel remains in place.'
+	fi
+	drop_fallback_initramfs
+}
+
+# Only the default initramfs, for every kernel on the new system (#246): the
+# fallback image (every module, no autodetect) is the slowest to build, and every
+# kernel, microcode, driver or firmware update rebuilds it. A safeguard: the
+# preset mkinitcpio writes for a new kernel (/usr/share/mkinitcpio/hook.preset)
+# already builds only the default image, mkinitcpio 42.2 included, so archinstall's
+# first build makes none. Should a preset still build one, it is changed, and an
+# image already built is removed, so GRUB lists no fallback entry. Only on the new system, never an existing install. Recovery is
+# from the install medium (arch-chroot); docs/src/install.md says how to get the
+# fallback image back.
+drop_fallback_initramfs() {
+	local preset
+	for preset in "$TARGET"/etc/mkinitcpio.d/*.preset; do
+		[[ -f $preset ]] || continue
+		if grep -Eq "^PRESETS=.*fallback" "$preset"; then
+			sed -i -E "s/^PRESETS=.*/PRESETS=('default')/" "$preset"
+			printf 'Building only the default initramfs: %s\n' "${preset#"$TARGET"}"
+		fi
+	done
+	rm -f -- "$TARGET"/boot/initramfs-*-fallback.img
 }
 
 installed_kernels() {
@@ -363,8 +370,8 @@ install_topgrade() {
 	return "$status"
 }
 
-export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernels installed_kernels \
-	install_microcode lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
+export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
+	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade
 
@@ -405,15 +412,14 @@ if [[ -e $LYONA_MIRRORS_MARKER ]]; then
 fi
 # Every run_logged step below, the install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
-set_total_steps 10
+set_total_steps 9
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
 # repositories (archinstall copied this medium's), and this step trusts their
 # key there. Updating first failed every sync with "unknown trust" (Sync Sprint
 # 16, found in a VM once the wizard's CachyOS step ran again).
 run_logged "Adding the CachyOS repositories..." add_cachyos_repositories
 run_logged "Updating the new system..." arch-chroot "$TARGET" pacman -Syu --noconfirm
-run_logged "Installing the CachyOS kernels..." install_cachyos_kernels
-run_logged "Installing CPU microcode..." install_microcode
+run_logged "Checking the kernel..." install_cachyos_kernel
 run_logged "Installing GPU drivers..." install_gpu_drivers
 run_logged "Configuring NetworkManager..." install_networkmanager
 # The Wi-Fi the wizard connected with, so the first boot is online (#237). In
