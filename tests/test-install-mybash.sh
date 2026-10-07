@@ -44,10 +44,6 @@ grep -Fq 'for command_name in "$@"' "$work/command_exists" ||
 # only acceptable because install.sh installs these from the repositories
 # first, so pacman has nothing left to do by the time the script runs.
 
-grep -Eq '^[[:space:]]*dwm_install_package_profile[[:space:]]+shell[[:space:]]*$' \
-	"$repo/install.sh" ||
-	fail 'install.sh does not install the shell profile'
-
 shell_profile=$(. "$repo/scripts/dwm-packages.sh" && dwm_packages arch shell)
 for fallback in starship fzf zoxide; do
 	printf '%s\n' "$shell_profile" | grep -Fxq "$fallback" ||
@@ -62,7 +58,11 @@ printf '%s\n' "$shell_profile" | grep -Fxq fastfetch ||
 
 # Ordering matters: installing the packages after the script would leave the
 # fallbacks reachable.
-profile_line=$(grep -n 'dwm_install_package_profile shell' "$repo/install.sh" | cut -d: -f1)
+# The shell profile comes with every other package, in one transaction (#247).
+grep -Eq '^		theme theme-gtk fonts shell theme-optional\)$' "$repo/install.sh" ||
+	fail 'install.sh does not install the shell profile with the other packages'
+# shellcheck disable=SC2016 # matching install.sh's literal text, not expanding it
+profile_line=$(grep -nF 'if ! dwm_install_batch "${batch_flags[@]}" batch_required batch_optional; then' "$repo/install.sh" | cut -d: -f1)
 script_line=$(grep -n 'scripts/install-mybash' "$repo/install.sh" | cut -d: -f1)
 [ "$profile_line" -lt "$script_line" ] ||
 	fail 'install.sh runs install-mybash before installing the shell packages'

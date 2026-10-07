@@ -120,7 +120,9 @@ dwm_packages() {
 			adw-gtk-theme deepin-gtk-theme
 		;;
 	arch:theme-optional)
-		printf '%s\n' qt6ct qt5ct
+		# Qt theming: qt6ct, one fixed package (#247). qt5ct, the other choice
+		# the installer used to probe for, only themes Qt 5 applications.
+		printf '%s\n' qt6ct
 		;;
 	arch:iso)
 		# What the live medium itself runs, layered onto releng: the image's
@@ -284,16 +286,19 @@ dwm_command_tier() { # required|desktop
 	esac
 }
 
-dwm_install_package_profile() {
-	local profile
-	local packages=()
-	local package other_browser
+# dwm_collect_packages PROFILE...: every package of the profiles, once each and
+# in order, less those the keep rules leave out: an installed Power Profiles
+# provider, and a default browser other than Firefox. What the rules leave out
+# is said on stderr.
+dwm_collect_packages() {
+	local profile package other_browser
 	local -A queued=()
 
 	for profile in "$@"; do
 		while IFS= read -r package; do
 			[[ -n $package ]] || continue
 			[[ -z ${queued[$package]:-} ]] || continue
+			queued[$package]=1
 			if [[ $package == power-profiles-daemon ]] && dwm_power_profiles_provider_installed; then
 				printf '%s\n' \
 					'Retaining installed Power Profiles provider (ppd-service); skipping power-profiles-daemon.' >&2
@@ -303,16 +308,91 @@ dwm_install_package_profile() {
 				printf 'Keeping the default browser (%s); skipping firefox.\n' "$other_browser" >&2
 				continue
 			fi
-			queued[$package]=1
-			packages+=("$package")
+			printf '%s\n' "$package"
 		done < <(dwm_packages "$DISTRO_FAMILY" "$profile")
 	done
+}
 
-	if ((${#packages[@]} == 0)); then
-		return 0
-	fi
-
+# Accepts one or more profiles and installs them as a single transaction.
+dwm_install_package_profile() {
+	local -a packages
+	mapfile -t packages < <(dwm_collect_packages "$@")
+	((${#packages[@]} > 0)) || return 0
 	install_packages "${packages[@]}"
+}
+
+# dwm_install_batch [--noconfirm] REQUIRED OPTIONAL: the packages of the two
+# named arrays, as one pacman -Syu --needed transaction (#247): one dependency
+# resolution, one download that fills ParallelDownloads, one run of each hook,
+# and the upgrade with the install, so never a partial upgrade.
+#
+# A transaction fails whole on "target not found", and nothing checks the
+# repositories beforehand any more (make check-aur-policy does, before a
+# release). So when targets are not found, and none of them is in REQUIRED, it
+# retries once without them; their names are left in DWM_BATCH_SKIPPED for the
+# caller to warn about. A required one missing fails it, before anything is
+# installed. --noconfirm is for a non-interactive run.
+DWM_BATCH_SKIPPED=()
+dwm_install_batch() {
+	local noconfirm=false
+	if [[ ${1:-} == --noconfirm ]]; then
+		noconfirm=true
+		shift
+	fi
+	local -n dwm_batch_required=$1 dwm_batch_optional=$2
+	local -a pacman_command packages not_found kept
+	local -A is_required=() queued=()
+	local package errors status=0 required_missing=false
+
+	DWM_BATCH_SKIPPED=()
+	for package in "${dwm_batch_required[@]}"; do
+		is_required[$package]=1
+	done
+	for package in "${dwm_batch_required[@]}" "${dwm_batch_optional[@]}"; do
+		[[ -n $package && -z ${queued[$package]:-} ]] || continue
+		queued[$package]=1
+		packages+=("$package")
+	done
+	((${#packages[@]} > 0)) || return 0
+
+	# In the C locale, so "target not found" below is pacman's English message
+	# whatever the user's language. Through env, after sudo: sudo's policy can
+	# refuse a variable set on its own command line.
+	pacman_command=(env LC_ALL=C pacman -Syu --needed)
+	! $noconfirm || pacman_command+=(--noconfirm)
+	((EUID == 0)) || pacman_command=(sudo "${pacman_command[@]}")
+	errors=$(mktemp) || return 1
+	# pacman's errors are shown as they come and kept, to read the missing
+	# targets from; its output and prompts stay on the terminal (fd 3). The
+	# status goes through a file: the pipe's own is tee's.
+	{
+		{
+			"${pacman_command[@]}" -- "${packages[@]}" 2>&1 1>&3 3>&- && status=0 || status=$?
+			printf '%s\n' "$status" >"$errors.status"
+		} | tee "$errors" >&2
+	} 3>&1
+	status=$(cat "$errors.status" 2>/dev/null) || status=1
+	mapfile -t not_found < <(sed -n 's/^error: target not found: //p' "$errors" | sort -u)
+	rm -f -- "$errors" "$errors.status"
+	((status != 0)) || return 0
+	((${#not_found[@]} > 0)) || return "$status"
+
+	for package in "${not_found[@]}"; do
+		if [[ -n ${is_required[$package]:-} ]]; then
+			printf 'A required package is not in the enabled repositories: %s\n' "$package" >&2
+			required_missing=true
+		fi
+	done
+	! $required_missing || return 1
+
+	# shellcheck disable=SC2034 # read by the callers
+	DWM_BATCH_SKIPPED=("${not_found[@]}")
+	for package in "${packages[@]}"; do
+		[[ " ${not_found[*]} " == *" $package "* ]] || kept+=("$package")
+	done
+	printf 'Not in the enabled repositories, so left out: %s. Retrying once without them.\n' "${not_found[*]}" >&2
+	((${#kept[@]} > 0)) || return 0
+	"${pacman_command[@]}" -- "${kept[@]}"
 }
 
 # The user's default browser, by desktop ID, when it is installed and is not
@@ -377,8 +457,6 @@ dwm_power_profiles_provider_installed() {
 		pacman -Qq power-profiles-daemon >/dev/null 2>&1
 }
 
-# Installs whatever of the profile is actually available, as one transaction:
-# a single availability query for the whole profile, then a single install.
 # The Vulkan drivers for this machine's GPUs, 64- and 32-bit: Steam depends on
 # the virtual vulkan-driver and lib32-vulkan-driver, and with --noconfirm pacman
 # takes the first provider listed. With the CachyOS repositories that was
@@ -407,72 +485,4 @@ dwm_vulkan_driver_packages() {
 	fi
 	((${#packages[@]} > 0)) || packages=(vulkan-swrast lib32-vulkan-swrast)
 	printf '%s\n' "${packages[@]}"
-}
-
-dwm_install_available_package_profile() {
-	local profile=$1
-	local package
-	local status=0
-	local wanted=()
-	local install=()
-	local found=()
-	local -A have=()
-
-	while IFS= read -r package; do
-		[[ -n $package ]] || continue
-		wanted+=("$package")
-	done < <(dwm_packages "$DISTRO_FAMILY" "$profile")
-
-	if ((${#wanted[@]} == 0)); then
-		return 0
-	fi
-
-	mapfile -t found < <(available_packages "${wanted[@]}")
-	for package in "${found[@]}"; do
-		have[$package]=1
-	done
-
-	for package in "${wanted[@]}"; do
-		if [[ -n ${have[$package]:-} ]]; then
-			install+=("$package")
-			continue
-		fi
-		printf 'Optional package is unavailable in enabled repositories: %s\n' "$package" >&2
-		printf 'Skipping unavailable optional package: %s\n' "$package" >&2
-		status=1
-	done
-
-	if ((${#install[@]} > 0)); then
-		install_packages "${install[@]}" || status=1
-	fi
-
-	return "$status"
-}
-
-dwm_install_first_available_package() {
-	local package
-
-	for package in "$@"; do
-		if install_optional_package "$package" 2>/dev/null; then
-			return 0
-		fi
-	done
-
-	return 1
-}
-
-dwm_install_first_available_profile() {
-	local profile=$1
-	local packages=()
-	local package
-
-	while IFS= read -r package; do
-		[[ -n $package ]] && packages+=("$package")
-	done < <(dwm_packages "$DISTRO_FAMILY" "$profile")
-
-	if ((${#packages[@]} == 0)); then
-		return 1
-	fi
-
-	dwm_install_first_available_package "${packages[@]}"
 }

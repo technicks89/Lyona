@@ -576,6 +576,9 @@ print_install_summary() {
 	printf '  Package manager: %s\n' "$PKG_CMD"
 	printf '  Profile: %s\n' "$INSTALL_PROFILE"
 	printf '  Mode: %s\n' "$([[ $NON_INTERACTIVE == true ]] && echo non-interactive || echo interactive)"
+	# One transaction for every repository package (#247), the system upgrade
+	# with it; gaming, after [multilib], is a second.
+	printf '  Package install: one pacman -Syu --needed transaction, which also upgrades the system\n'
 	print_summary_profile "Required packages" required
 	if install_recommended_profile; then
 		print_summary_profile "Recommended packages" recommended
@@ -698,11 +701,22 @@ pacman_parallel_downloads_tip() {
 	info "Tip: pacman downloads $value package(s) at a time. Setting ParallelDownloads = 10 in /etc/pacman.conf makes this install faster; the installer leaves that file to you."
 }
 
+# The fallback terminals, one pacman run each, until one installs: only when
+# Alacritty is missing after the package install.
 install_supported_terminal() {
-	if ! dwm_install_first_available_profile terminal; then
-		err "No supported terminal is available in the enabled repositories."
-		return 1
-	fi
+	local package
+	while IFS= read -r package; do
+		[[ $package != alacritty ]] || continue
+		install_packages "$package" && return 0
+	done < <(dwm_packages "$DISTRO_FAMILY" terminal)
+	err "No supported terminal is available in the enabled repositories."
+	return 1
+}
+
+# batch_skipped PACKAGE: whether the package install left PACKAGE out, as not in
+# the enabled repositories.
+batch_skipped() {
+	[[ " ${DWM_BATCH_SKIPPED[*]} " == *" $1 "* ]]
 }
 
 configure_quickshell_picom_opacity() {
@@ -841,37 +855,47 @@ else
 	"$REPO_DIR/scripts/configure-build.sh" --non-interactive
 fi
 
-step_timer "Required packages"
-info "Installing required build and runtime dependencies..."
-dwm_install_package_profile build x11 runtime-required
-ok "Required build and runtime dependencies installed."
+# Every repository package in one pacman transaction (#247): one dependency
+# resolution, one download, one run of each hook, and the system upgrade with
+# it. The required profiles fail the install when a package is missing, before
+# anything of lyona's is installed; any other missing package is left out with a
+# warning (dwm_install_batch). Gaming, which needs [multilib] set up first, is
+# its own transaction below.
+step_timer "Packages"
+currentdm="$(detect_display_manager)"
+mapfile -t batch_required < <(dwm_collect_packages build x11 runtime-required)
+batch_optional=()
+if install_recommended_profile; then
+	mapfile -t -O "${#batch_required[@]}" batch_required < <(dwm_collect_packages desktop)
+	mapfile -t batch_optional < <(dwm_collect_packages browser media system-management screenshot-optional \
+		theme theme-gtk fonts shell theme-optional)
+fi
+mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages terminal-primary)
+if install_optional_profile; then
+	mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages optional)
+	[[ -n $currentdm ]] ||
+		mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages lightdm)
+fi
+batch_flags=()
+[[ $NON_INTERACTIVE != true ]] || batch_flags=(--noconfirm)
+info "Installing the packages in one transaction (pacman -Syu --needed, which also upgrades the system)..."
+if ! dwm_install_batch "${batch_flags[@]}" batch_required batch_optional; then
+	err "The packages could not be installed, so nothing of lyona's was installed. Fix what pacman reported above, then run the installer again."
+	exit 1
+fi
+for package in "${DWM_BATCH_SKIPPED[@]}"; do
+	warn "$package is not in the enabled repositories and was left out."
+done
+ok "Packages installed."
 
 if install_recommended_profile; then
-	step_timer "Recommended packages"
-	info "Installing recommended desktop dependencies..."
-	dwm_install_package_profile desktop
-	dwm_install_package_profile browser
-	dwm_install_package_profile media
-	dwm_install_package_profile system-management
 	if ! env -u DWM_TEST_MODE -u DWM_TEST_QUICKSHELL_VERSION \
 		"$REPO_DIR/scripts/dwm-quickshell-version-check"; then
 		err "The installed Quickshell build is incompatible with lyona."
 		exit 1
 	fi
-	if ! dwm_install_available_package_profile screenshot-optional; then
-		warn "maim is unavailable in the enabled repositories; screenshot hotkeys will remain disabled."
-	fi
-	dwm_install_package_profile theme
-	if ! dwm_install_available_package_profile theme-gtk; then
-		warn "Some GTK theme packages were unavailable in enabled repositories."
-	fi
-	dwm_install_package_profile fonts
-	# Before install-mybash runs. That script installs starship, fzf and
-	# zoxide itself and falls back to piping an installer from the network
-	# when pacman fails; installing them from the repositories first means
-	# that fallback is never reached. It also covers fastfetch, which the
-	# linked .bashrc runs at startup and that script does not install at all.
-	dwm_install_package_profile shell
+	! batch_skipped maim || warn "maim is unavailable in the enabled repositories; screenshot hotkeys will remain disabled."
+	! batch_skipped qt6ct || warn "qt6ct is unavailable in the enabled repositories; Qt apps may not respect dark mode."
 	step_timer "Default apps and Gear Lever"
 	# Seed the browser, media and image defaults before Gear Lever, which writes its own
 	# AppImage MIME preference file; the seed leaves any existing preference alone.
@@ -898,7 +922,6 @@ if install_recommended_profile; then
 	else
 		warn "Gear Lever setup failed; retry with scripts/install-gearlever when Flathub is reachable."
 	fi
-	ok "Recommended desktop dependencies installed."
 else
 	warn "Skipping recommended desktop dependencies for core profile."
 fi
@@ -908,44 +931,34 @@ if command -v picom >/dev/null 2>&1; then
 fi
 
 if install_optional_profile; then
-	step_timer "Optional extras and gaming"
-	info "Installing optional desktop extras..."
-	if ! dwm_install_available_package_profile optional; then
-		warn "Some optional desktop extras were unavailable in enabled repositories."
-	fi
 	if arch_gaming_profile; then
+		step_timer "Gaming"
 		if [[ $ARCH_GAMING_REPOS_APPROVED != true ]]; then
 			warn "Arch gaming packages were skipped because the multilib repository was not approved."
 		elif configure_arch_multilib_repository; then
 			info "Installing Arch gaming packages..."
-			# This machine's Vulkan drivers first, so pacman never picks one for
-			# Steam itself (Sync Sprint 16).
-			# Only those the enabled repositories have: a legacy NVIDIA branch's
-			# 32-bit utilities may come from elsewhere, or not at all.
-			mapfile -t vulkan_drivers < <(dwm_vulkan_driver_packages)
-			mapfile -t vulkan_drivers < <(available_packages "${vulkan_drivers[@]}")
-			if ((${#vulkan_drivers[@]} > 0)) && ! install_packages "${vulkan_drivers[@]}"; then
-				warn "The Vulkan drivers (${vulkan_drivers[*]}) could not be installed."
+			# This machine's Vulkan drivers in the same transaction, so pacman
+			# never picks one for Steam itself (Sync Sprint 16). A legacy NVIDIA
+			# branch's 32-bit utilities may not be in the repositories; then they
+			# are left out, as any missing gaming package is.
+			mapfile -t gaming_packages < <(dwm_vulkan_driver_packages)
+			mapfile -t -O "${#gaming_packages[@]}" gaming_packages < <(dwm_collect_packages gaming)
+			# shellcheck disable=SC2034 # read by dwm_install_batch, by name
+			gaming_required=()
+			if dwm_install_batch "${batch_flags[@]}" gaming_required gaming_packages; then
+				for package in "${DWM_BATCH_SKIPPED[@]}"; do
+					warn "$package is not in the enabled repositories and was left out."
+				done
+				configure_arch_gamemode_access
+			else
+				warn "The Arch gaming packages could not be installed."
 			fi
-			if ! dwm_install_available_package_profile gaming; then
-				warn "Some Arch gaming packages were unavailable in the multilib repository."
-			fi
-			configure_arch_gamemode_access
 		else
 			warn "Multilib repository setup failed; no gaming packages were installed."
 		fi
 	fi
-	ok "Optional desktop extras processed."
 else
 	warn "Skipping optional desktop extras for $INSTALL_PROFILE profile."
-fi
-
-if install_recommended_profile; then
-	step_timer "Qt/GTK theming packages"
-	info "Configuring Qt/GTK dark-mode dependencies..."
-	dwm_install_first_available_profile theme-optional ||
-		warn "Neither qt6ct nor qt5ct is available - Qt apps may not respect dark mode."
-	ok "Qt/GTK theming dependencies configured."
 fi
 
 if install_recommended_profile; then
@@ -968,20 +981,14 @@ if command -v alacritty &>/dev/null; then
 	terminal="alacritty"
 	ok "Preferred terminal already installed: $terminal"
 else
-	info "Installing the preferred Alacritty terminal from enabled repositories..."
-	if dwm_install_first_available_profile terminal-primary; then
-		terminal="alacritty"
-		ok "Preferred terminal installed: $terminal"
-	else
-		warn "Alacritty is unavailable; falling back to another supported terminal."
-		for t in kitty st warp-terminal xterm; do command -v "$t" &>/dev/null && {
-			terminal="$t"
-			break
-		}; done
-		if [ -z "$terminal" ]; then
-			install_supported_terminal
-			terminal="$(detect_terminal)"
-		fi
+	warn "Alacritty was not installed; falling back to another supported terminal."
+	for t in kitty st warp-terminal xterm; do command -v "$t" &>/dev/null && {
+		terminal="$t"
+		break
+	}; done
+	if [ -z "$terminal" ]; then
+		install_supported_terminal
+		terminal="$(detect_terminal)"
 	fi
 fi
 
@@ -1032,18 +1039,18 @@ if install_optional_profile; then
 fi
 
 step_timer "Display manager"
-currentdm="$(detect_display_manager)"
-
 if [ -n "$currentdm" ]; then
 	ok "Display manager already installed: $currentdm"
 elif ! install_optional_profile; then
 	warn "No display manager found; skipping display-manager installation for $INSTALL_PROFILE profile."
-else
-	info "No display manager found - installing LightDM..."
-	dwm_install_package_profile lightdm
+elif pacman -Qq lightdm >/dev/null 2>&1; then
+	# Installed with the other packages.
+	info "No display manager was found - enabling LightDM..."
 	sudo systemctl enable lightdm.service
 	currentdm="lightdm"
 	ok "LightDM installed and enabled."
+else
+	warn "LightDM could not be installed, so no display manager was enabled; start lyona with startx."
 fi
 
 step_timer "yay"

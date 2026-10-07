@@ -238,9 +238,21 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   group; log out and back in before using its privileged tuning helpers.
 
 The default is `full` to preserve the historical automated installer behavior.
-If `maim` is unavailable in the enabled Arch repositories, the installer
-skips that add-on instead of failing the desktop install and reports that the
-screenshot hotkeys are unavailable.
+
+The installer installs every package of the chosen profile in one `pacman -Syu
+--needed` transaction, so **it also upgrades the system**, as installing on an
+out-of-date Arch system should, never leaving a partial upgrade. Packages already
+installed are left alone, so re-running it is safe. Gaming is a second
+transaction, after `multilib` is set up.
+
+- **A package missing from the repositories:** an optional one (`maim`, a GTK
+  theme, `qt6ct`, Firefox and so on) is left out with a warning, and the
+  transaction is retried once without it. Without `maim`, for example, the
+  screenshot hotkeys stay disabled.
+- **A required one** (the build tools, X11, the session's runtime and the
+  desktop itself) stops the install before anything of lyona's is installed.
+- **Interactive runs** let `pacman` ask before it installs; `--non-interactive`
+  runs it with `--noconfirm`.
 
 For a minimal install:
 
