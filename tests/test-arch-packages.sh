@@ -218,6 +218,86 @@ out=$(STUB_FAIL_CALL=1 batch --noconfirm 'make' 'maim')
 out=$(STUB_FAIL_CALL=2 STUB_NOT_FOUND=absent batch --noconfirm 'make' 'maim')
 [[ $out == $'SKIPPED \nSTATUS 0' ]] || batch_fail "a later call failing changed the first: $out"
 rm -rf "$batch_work"
+
+# dwm_repair_qt_set: Qt modules from two Qt releases (CachyOS part way through a
+# Qt update) are installed again from [extra], all one release; matching ones,
+# whatever the repository, are left alone. pacman is a stub: -Q prints
+# STUB_INSTALLED, -Sl extra prints STUB_EXTRA, and -S is logged, failing when
+# STUB_FAIL_INSTALL is set.
+qt_work=$(mktemp -d)
+cat >"$qt_work/sudo" <<'EOF'
+#!/bin/sh
+exec "$@"
+EOF
+cat >"$qt_work/pacman" <<'EOF'
+#!/bin/bash
+case "$1" in
+-Q) printf '%s\n' "${STUB_INSTALLED:-}" ;;
+-Sl) [[ ${2:-} == extra ]] && while read -r line; do [[ -n $line ]] && printf 'extra %s\n' "$line"; done <<<"${STUB_EXTRA:-}" ;;
+-S)
+	printf 'LC_ALL=%s pacman %s\n' "${LC_ALL:-}" "$*" >>"$STUB_DIR/pacman.log"
+	[[ -z ${STUB_FAIL_INSTALL:-} ]]
+	;;
+*) exit 2 ;;
+esac
+EOF
+chmod +x "$qt_work/sudo" "$qt_work/pacman"
+qt_extra='qt6-base 6.12.0-2
+qt6-declarative 6.12.0-1
+qt6-svg 6.12.0-1
+qt6-webengine 6.12.0-1
+qt6-avif-image-plugin 0.9.0-1'
+qt_repair() { # FLAGS INSTALLED: prints DWM_QT_REPAIRED, then the status
+	rm -f "$qt_work/pacman.log"
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	env PATH="$qt_work:$PATH" STUB_DIR="$qt_work" STUB_INSTALLED="$2" STUB_EXTRA="$qt_extra" bash -c '
+		set -u
+		. "$1"
+		status=0
+		dwm_repair_qt_set $2 || status=$?
+		printf "REPAIRED %s\nSTATUS %s\n" "${DWM_QT_REPAIRED[*]}" "$status"
+	' _ "$repo/scripts/dwm-packages.sh" "$1" 2>"$qt_work/err"
+}
+qt_fail() {
+	printf 'dwm_repair_qt_set: %s\n' "$1" >&2
+	cat "$qt_work/pacman.log" "$qt_work/err" >&2 2>/dev/null
+	exit 1
+}
+# CachyOS behind Arch but whole: one release, so nothing is installed.
+out=$(qt_repair --noconfirm $'linux 7.2.9-1\nqt6-base 6.11.2-3.1\nqt6-declarative 6.11.2-2.1\nqt6-svg 6.11.2-1.1')
+[[ $out == $'REPAIRED \nSTATUS 0' && ! -e $qt_work/pacman.log ]] || qt_fail "a matching set was installed again: $out"
+# Part way through: the modules on Arch's qt6-base release, from [extra]; a
+# plugin with its own version is left alone, and nothing not installed is added.
+out=$(qt_repair --noconfirm $'qt6-avif-image-plugin 0.9.0-1.1\nqt6-base 6.11.2-3.1\nqt6-declarative 6.12.0-1.1\nqt6-svg 6.11.2-1.1')
+[[ $out == $'REPAIRED qt6-base qt6-declarative qt6-svg\nSTATUS 0' ]] || qt_fail "a mixed set: $out"
+[[ $(cat "$qt_work/pacman.log") == 'LC_ALL=C pacman -S --needed --noconfirm -- extra/qt6-base extra/qt6-declarative extra/qt6-svg' ]] ||
+	qt_fail 'a mixed set was not installed again from [extra], one transaction'
+grep -Fq "The installed Qt modules are from different Qt releases (qt6-base 6.11.2; qt6-declarative 6.12.0): the CachyOS repositories are part way through a Qt update. Installing Arch's Qt 6.12.0 instead." "$qt_work/err" ||
+	qt_fail 'the mix was not said'
+qt_repair '' $'qt6-base 6.11.2-3.1\nqt6-declarative 6.12.0-1.1' >/dev/null
+[[ $(cat "$qt_work/pacman.log") == 'LC_ALL=C pacman -S --needed -- extra/qt6-base extra/qt6-declarative' ]] ||
+	qt_fail 'an interactive run was given --noconfirm'
+# An epoch is not a release.
+out=$(qt_repair --noconfirm $'qt6-base 1:6.12.0-2\nqt6-declarative 6.12.0-1.1')
+[[ $out == $'REPAIRED \nSTATUS 0' ]] || qt_fail "an epoch was read as a different release: $out"
+# No Qt installed: nothing to do.
+out=$(qt_repair --noconfirm $'linux 7.2.9-1')
+[[ $out == $'REPAIRED \nSTATUS 0' && ! -e $qt_work/pacman.log ]] || qt_fail "no Qt: $out"
+# The install failing is reported, and nothing is called repaired.
+out=$(STUB_FAIL_INSTALL=1 qt_repair --noconfirm $'qt6-base 6.11.2-3.1\nqt6-declarative 6.12.0-1.1')
+[[ $out == $'REPAIRED \nSTATUS 1' ]] || qt_fail "a failed install passed: $out"
+rm -rf "$qt_work"
+# install.sh repairs the Qt set after the one transaction and before the
+# Quickshell check, which would otherwise fail on it.
+batch_line=$(grep -nF 'ok "Packages installed."' "$repo/install.sh" | cut -d: -f1)
+# shellcheck disable=SC2016 # the literal text in install.sh
+repair_line=$(grep -nF 'dwm_repair_qt_set "${batch_flags[@]}"' "$repo/install.sh" | cut -d: -f1)
+check_line=$(grep -nF 'scripts/dwm-quickshell-version-check"' "$repo/install.sh" | cut -d: -f1)
+if [[ -z $batch_line || -z $repair_line || -z $check_line ]] ||
+	((batch_line >= repair_line || repair_line >= check_line)); then
+	printf 'install.sh does not repair the Qt set between the package install and the Quickshell check.\n' >&2
+	exit 1
+fi
 # Nothing asks the repositories at install time any more: make check-aur-policy
 # checks every profile's packages against them before a release.
 if grep -nE 'pacman -Si|available_packages|dwm_install_available_package_profile|dwm_install_first_available' \

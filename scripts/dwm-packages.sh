@@ -389,6 +389,66 @@ dwm_install_batch() {
 	"${pacman_command[@]}" -- "${kept[@]}"
 }
 
+# dwm_repair_qt_set [--noconfirm]: the installed Qt 6 modules all from one Qt
+# release. The CachyOS repositories, ahead of Arch's in pacman.conf, can publish
+# part of a Qt release before the rest (2026-10-07: qt6-declarative 6.12.0 with
+# qt6-base 6.11.2). The dependencies name no versions, so pacman installs the mix,
+# and nothing built on QML starts, Quickshell included. Arch publishes each Qt
+# release whole, so on a mix the modules are installed again from [extra]; a
+# later update brings CachyOS's builds back once theirs is newer. The modules are
+# the installed qt6-* packages whose [extra] version is qt6-base's release there.
+# Nothing is installed when they already match. The modules installed again are
+# left in DWM_QT_REPAIRED.
+DWM_QT_REPAIRED=()
+dwm_repair_qt_set() {
+	local noconfirm=false
+	if [[ ${1:-} == --noconfirm ]]; then
+		noconfirm=true
+		shift
+	fi
+	local name version base_release mixed=false base=qt6-base
+	local -A installed=() arch_release=()
+	local -a modules=() mix=() pacman_command
+
+	DWM_QT_REPAIRED=()
+	# The Qt release of a pacman version, less any epoch and the package
+	# release: 1:6.12.0-2.1 is 6.12.0.
+	while read -r name version; do
+		[[ $name == qt6-* ]] || continue
+		version=${version#*:}
+		installed[$name]=${version%-*}
+	done < <(LC_ALL=C pacman -Q 2>/dev/null)
+	[[ -n ${installed[$base]:-} ]] || return 0
+	while read -r _ name version _; do
+		[[ $name == qt6-* ]] || continue
+		version=${version#*:}
+		arch_release[$name]=${version%-*}
+	done < <(LC_ALL=C pacman -Sl extra 2>/dev/null)
+	base_release=${arch_release[$base]:-}
+	[[ -n $base_release ]] || return 0
+
+	for name in "${!installed[@]}"; do
+		[[ ${arch_release[$name]:-} == "$base_release" ]] || continue
+		modules+=("$name")
+		if [[ ${installed[$name]} != "${installed[$base]}" ]]; then
+			mixed=true
+			mix+=("$name ${installed[$name]}")
+		fi
+	done
+	$mixed || return 0
+
+	mapfile -t modules < <(printf '%s\n' "${modules[@]}" | sort)
+	mapfile -t mix < <(printf '%s\n' "${mix[@]}" | sort)
+	printf 'The installed Qt modules are from different Qt releases (qt6-base %s; %s): the CachyOS repositories are part way through a Qt update. Installing Arch'"'"'s Qt %s instead.\n' \
+		"${installed[$base]}" "$(printf '%s, ' "${mix[@]}" | sed 's/, $//')" "$base_release" >&2
+	pacman_command=(env LC_ALL=C pacman -S --needed)
+	! $noconfirm || pacman_command+=(--noconfirm)
+	((EUID == 0)) || pacman_command=(sudo "${pacman_command[@]}")
+	"${pacman_command[@]}" -- "${modules[@]/#/extra/}" || return
+	# shellcheck disable=SC2034 # read by the callers
+	DWM_QT_REPAIRED=("${modules[@]}")
+}
+
 # The user's default browser, by desktop ID, when it is installed and is not
 # Firefox: the https handler xdg-mime reports, found as a desktop entry in the
 # XDG data directories whose program (TryExec, else Exec) is installed. A

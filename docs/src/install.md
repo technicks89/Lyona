@@ -320,6 +320,18 @@ no fallback initramfs. CPU microcode comes with the base system on real
 hardware, and the boot menu is generated once. Where the stock kernel was kept,
 it is also a way back: choose it in the boot menu.
 
+**Qt part way through an update.** The CachyOS repositories come before Arch's,
+and can publish some Qt modules of a new release before the rest. pacman would
+install the mix, and Quickshell would not start. `install.sh` checks the
+installed Qt modules after its package transaction: when they are from
+different Qt releases, it installs them again from Arch's `extra` repository,
+which publishes each release whole, and says so. A later `pacman -Syu` brings
+back CachyOS's builds once theirs is newer. The check covers installs only. If
+the panel disappears after a system update, a mixed Qt is the likely cause:
+update again once CachyOS has finished, usually within a day, or run
+`sudo pacman -S extra/qt6-base extra/qt6-declarative` with every other installed
+`qt6-*` module of that release.
+
 **If the new system does not boot,** recover it from the install medium. Boot
 it, press Ctrl+C at the installer's first question, which cancels it and leaves
 a root shell, and find the disk with `lsblk`. The installer made two partitions on it: the first is
