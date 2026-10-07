@@ -23,6 +23,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **Topgrade comes from the AUR's `topgrade-bin` package** instead of being built with cargo. The installer builds it
+  with `makepkg` from a PKGBUILD pinned to a reviewed commit, and installs it with `pacman`. That takes seconds instead
+  of several minutes, and no longer installs `rustup`, a Rust toolchain or about 300 MB of crates; `cargo-update` is no
+  longer installed either, and nothing is built from source. Topgrade updates itself through `yay`; `pacman -Syu` does
+  not update it (#245).
+  - **Migration:** a Topgrade an older install built with cargo stays in `~/.cargo/bin`, before the package on
+    `PATH`. `install-topgrade` offers to remove it in a terminal, and otherwise says how (`cargo uninstall topgrade`);
+    it never removes it silently. Remove `rustup` and `cargo-update` with `sudo pacman -Rns rustup cargo-update` if
+    nothing else of yours needs them.
 - **The image downloads 10 packages at a time**, up from 5, on the live medium and on the installed system.
   `install.sh` does not change an existing system's `/etc/pacman.conf`; it suggests `ParallelDownloads = 10` when
   the setting is lower (#249).

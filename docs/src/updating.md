@@ -98,7 +98,7 @@ A `recommended` or `full` install also has [Topgrade](https://github.com/topgrad
 Run `topgrade` in a terminal to update everything it finds in one go:
 - system packages, through `yay` or `pacman`;
 - Flatpak apps;
-- cargo and rustup;
+- cargo and rustup, when you have installed them;
 - firmware;
 - and more.
 
@@ -109,9 +109,10 @@ It is a separate path from Settings -> System:
   update lyona itself out of the box; use `lyona-update` or Settings for that,
   or add it to Topgrade yourself (below).
 
-The installed Topgrade is built with cargo, so `pacman -Syu` does not upgrade it.
-Run `install-topgrade` to upgrade it to the newest release; it does nothing when
-you already have the newest.
+The installed Topgrade is the AUR's `topgrade-bin` package, so `pacman -Syu`
+does not upgrade it. Topgrade updates it itself, through `yay`, each time it
+runs, as it does every other AUR package. To reinstall it, run
+`install-topgrade --force`.
 
 ### Adding lyona to Topgrade
 

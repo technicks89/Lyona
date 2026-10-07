@@ -2,83 +2,94 @@
 set -euo pipefail
 
 # Topgrade, the one command that updates everything (Sync Sprint 15 S15-06,
-# decision D-28). Topgrade is AUR-only on Arch, so it is built from crates.io
-# with cargo instead, from rustup by preference (or the Rust toolchain already
-# installed; see dwm_other_rust_toolchain).
+# decision D-28), from the AUR (#245): topgrade-bin, which repackages
+# upstream's release binary and installs in seconds. It used to be built from
+# crates.io with cargo, which took a Rust toolchain, about 300 MB of crates and
+# several minutes of compiling, and was the slowest step of the install.
 #
-# - The version is always the newest release on crates.io, looked up at run
-#   time (decided with the maintainer, 2026-10-02). --locked builds it with the
-#   dependency versions in its published Cargo.lock, and cargo checks every
-#   crate against the checksums in the crates.io index.
-# - A rerun upgrades an older Topgrade to the newest, and leaves the newest
-#   alone. One installed some other way (such as an AUR package) is left alone
-#   unless --force.
-# - It builds in a private directory under ~/.cache, on disk rather than in a
-#   tmpfs /tmp, and removes it afterwards. The build is bounded in time. The
-#   crate downloads cargo keeps in $CARGO_HOME/registry (about 300 MB) are
-#   removed too, when this build created them; a registry that was already
-#   there is the user's, and is left alone.
-# - The toolchain: with rustup and no toolchain set, the stable toolchain is
-#   installed (minimal profile) and made the default. A toolchain the user set
-#   up is used as it is.
-# - The binary goes to ${CARGO_HOME:-~/.cargo}/bin, which the mybash shell
-#   configuration puts on PATH.
+# - The AUR base is pinned to a commit whose PKGBUILD was reviewed, like the
+#   legacy NVIDIA drivers (docs/AUR-PACKAGES.md): topgrade-bin downloads the
+#   release tarball from github.com/topgrade-rs over HTTPS with a b2sum, and
+#   has no install script or dependencies. A PKGBUILD whose sources are not all
+#   checksummed is refused. Re-pin only after reviewing the diff since the last
+#   pin.
+# - makepkg runs as the user, never as root; only the built package is
+#   installed with root (pacman -U).
+# - No source fallback, and no Rust: the topgrade source package compiles for
+#   several minutes, and when topgrade-bin cannot be built the AUR or GitHub is
+#   almost certainly unreachable for it too (decided with the maintainer).
+# - Topgrade updates itself afterwards: its system step runs yay, which updates
+#   AUR packages. pacman -Syu alone does not.
+# - A Topgrade package already installed is left alone, unless --force. A
+#   Topgrade an older lyona built with cargo, in ~/.cargo/bin, would come first
+#   on PATH: it is offered for removal, never removed silently.
 #
-# Needs the network. install.sh runs this for the recommended and full
-# profiles (unless --skip-topgrade), after every privileged step, and carries
-# on when it fails.
-
-readonly crates_api=https://crates.io/api/v1/crates/topgrade
-# crates.io asks API clients to identify themselves.
-readonly user_agent='lyona-install-topgrade (https://github.com/technicks89/Lyona)'
-readonly build_seconds=3600
+# Needs the network, git and makepkg (base-devel). install.sh runs this for the
+# recommended and full profiles (unless --skip-topgrade), after every
+# privileged step. The live medium's postinstall runs --build-only as the new
+# user and installs the package itself.
 
 # A checkout keeps the shared shell code beside the scripts; an install keeps it
 # in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
 lyona_lib=${BASH_SOURCE[0]%/*}
-[[ -f $lyona_lib/dwm-packages.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
-# shellcheck source=scripts/dwm-packages.sh
-. "$lyona_lib/dwm-packages.sh"
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 
+# AUR base<TAB>commit.
+readonly topgrade_pins='topgrade-bin	478487d31444ccbad24ab5d390d41466201b9dbc'
+readonly aur_url=${INSTALL_TOPGRADE_AUR_URL:-https://aur.archlinux.org}
+# topgrade-bin takes seconds; this bounds a stalled download.
+readonly build_seconds=600
+
 usage() {
 	cat <<EOF
-Usage: install-topgrade [--dry-run] [--force] [--print-plan]
+Usage: install-topgrade [--dry-run] [--force] [--print-plan] [--build-only DIR]
 
-Build and install the newest Topgrade release from crates.io with cargo, using
-rustup (or the Rust toolchain already installed). An older Topgrade it
-installed is upgraded.
+Install Topgrade from the AUR: the topgrade-bin package, built with makepkg
+from a pinned, reviewed PKGBUILD and installed with pacman.
+
+Topgrade then updates itself through yay; pacman -Syu does not update it.
 
 Options:
-  --dry-run     Print what would be done, and change nothing.
-  --force       Build even when the newest Topgrade, or one installed another
-                way, is already there.
-  --print-plan  Print one line describing the install, for install.sh.
-  -h, --help    Show this help.
+  --dry-run         Print what would be done, and change nothing.
+  --force           Install even when a Topgrade package is already installed.
+  --print-plan      Print one line describing the install, for install.sh.
+  --build-only DIR  Build topgrade-bin into DIR and print the package's path;
+                    install nothing, and never use sudo.
+  -h, --help        Show this help.
+
+An older lyona built Topgrade with cargo into ~/.cargo/bin. That copy comes
+before the package on PATH; remove it with: cargo uninstall topgrade
 EOF
 }
 
-say() { printf 'install-topgrade: %s\n' "$*"; }
+say() { printf 'install-topgrade: %s\n' "$*" >&2; }
 die() {
-	printf 'install-topgrade: %s\n' "$*" >&2
+	say "$*"
 	exit 1
 }
 
 dry_run=false
 force=false
 print_plan=false
+build_only=
 while (($# > 0)); do
 	case $1 in
 	--dry-run) dry_run=true ;;
 	--force) force=true ;;
 	--print-plan) print_plan=true ;;
+	--build-only)
+		(($# > 1)) || die '--build-only needs a directory'
+		build_only=$2
+		shift
+		;;
 	-h | --help)
 		usage
 		exit 0
 		;;
 	*)
-		printf 'install-topgrade: unknown option: %s\n' "$1" >&2
+		say "unknown option: $1"
 		usage >&2
 		exit 2
 		;;
@@ -86,123 +97,149 @@ while (($# > 0)); do
 	shift
 done
 
-# The toolchain the build will use, in words.
-toolchain_words() {
-	local other
-	if other=$(dwm_other_rust_toolchain); then
-		printf 'the installed Rust toolchain (%s)' "$other"
-	else
-		printf 'rustup'
-	fi
+pin_of() {
+	awk -F '\t' -v base="$1" '$1 == base { print $2; exit }' <<<"$topgrade_pins"
 }
 
 if $print_plan; then
-	printf 'the newest release from crates.io, built with cargo, using %s\n' "$(toolchain_words)"
+	printf 'topgrade-bin from the AUR (PKGBUILD pinned at %s), built with makepkg and installed with pacman\n' \
+		"$(pin_of topgrade-bin | cut -c1-12)"
 	exit 0
 fi
 
-(($(id -u) != 0)) || die 'run as the target user, not as root'
+(($(id -u) != 0)) || die 'run as the target user, not as root: makepkg refuses root'
 [[ -n ${HOME:-} ]] || die 'HOME is not set'
 
-cargo_home=${CARGO_HOME:-$HOME/.cargo}
-target=$cargo_home/bin/topgrade
-
-# `topgrade --version` prints "topgrade 17.12.3".
-version_of() {
-	local output
-	[[ -x $1 ]] || return 1
-	output=$("$1" --version 2>/dev/null) || return 1
-	printf '%s' "${output##* }"
+# The installed Topgrade package, by name: pacman -Qq resolves provides, so
+# this finds topgrade-bin and topgrade alike.
+topgrade_package() {
+	local name
+	command -v pacman >/dev/null 2>&1 || return 1
+	name=$(pacman -Qq topgrade 2>/dev/null) || return 1
+	printf '%s\n' "${name%%$'\n'*}"
 }
 
-# A Topgrade installed some other way is the user's: left alone.
-if ! $force && other=$(command -v topgrade 2>/dev/null) && [[ $other != "$target" ]]; then
-	say "Topgrade is already installed at $other ($(version_of "$other" || printf 'unknown version')); leaving it. Use --force to build another in $target."
+cargo_copy=${CARGO_HOME:-$HOME/.cargo}/bin/topgrade
+
+# The copy an older lyona built with cargo: asked about at a terminal, only
+# described otherwise.
+offer_cargo_copy_removal() {
+	local answer
+	[[ -x $cargo_copy ]] || return 0
+	say "an older Topgrade, built with cargo, is at $cargo_copy; it comes before the package on PATH."
+	if [[ -t 0 && -t 2 ]]; then
+		printf 'install-topgrade: remove it (cargo uninstall topgrade)? [y/N] ' >&2
+		read -r answer || answer=
+		case $answer in
+		y | Y | yes | YES)
+			if command -v cargo >/dev/null 2>&1 && cargo uninstall topgrade >&2; then
+				say "removed $cargo_copy."
+			elif rm -f -- "$cargo_copy"; then
+				say "removed $cargo_copy."
+			else
+				say "could not remove $cargo_copy."
+			fi
+			return 0
+			;;
+		esac
+	fi
+	say "left in place; remove it with: cargo uninstall topgrade (or rm $cargo_copy)"
+}
+
+if [[ -z $build_only ]] && ! $force && installed=$(topgrade_package); then
+	say "Topgrade is already installed ($installed); it updates itself through yay. Use --force to reinstall."
+	offer_cargo_copy_removal
 	exit 0
 fi
 
 if $dry_run; then
-	say "would look up the newest Topgrade release on crates.io, and build it with"
-	say "cargo install --locked into $target, using $(toolchain_words), unless that version is already there"
-	exit 0
-fi
-
-command -v curl >/dev/null 2>&1 || die 'curl is not installed'
-command -v jq >/dev/null 2>&1 || die 'jq is not installed'
-
-# The newest release: crates.io's newest stable, not yanked, version.
-say 'looking up the newest Topgrade release on crates.io...'
-latest=$(curl -fsS --proto '=https' --tlsv1.2 --max-time 30 -A "$user_agent" -- "$crates_api" |
-	jq -r '.crate.max_stable_version // empty') || die 'could not look up the newest Topgrade release on crates.io'
-[[ $latest =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "crates.io reported an unexpected newest version: '$latest'"
-
-installed=$(version_of "$target" || :)
-if ! $force && [[ $installed == "$latest" ]]; then
-	say "Topgrade $latest, the newest release, is already installed at $target."
-	exit 0
-fi
-
-command -v cargo >/dev/null 2>&1 ||
-	die 'cargo is not installed; install rustup first (sudo pacman -S --needed rustup), unless another Rust toolchain is installed'
-
-# rustup's cargo has no toolchain until one is installed; choose stable then.
-if command -v rustup >/dev/null 2>&1 && ! rustup show active-toolchain >/dev/null 2>&1; then
-	say 'no Rust toolchain is set; installing the stable toolchain (minimal profile)...'
-	rustup toolchain install stable --profile minimal || die 'could not install the stable Rust toolchain'
-	rustup default stable >/dev/null || die 'could not make stable the default Rust toolchain'
-fi
-
-registry_was_there=false
-[[ ! -e $cargo_home/registry ]] || registry_was_there=true
-lyona_xdg_dirs
-cache_dir=$cache_home/lyona
-mkdir -p -- "$cache_dir"
-# Parallel compile jobs: one per 2 GiB of available memory, at least one and
-# at most one per CPU, so a 4 GiB machine does not run out of memory (Sync
-# Sprint 16 R16-33). A CARGO_BUILD_JOBS the user set is kept.
-build_jobs() {
-	local key value _ available_kib=0 cpus jobs
-	if [[ ${CARGO_BUILD_JOBS:-} =~ ^[1-9][0-9]*$ ]]; then
-		printf '%s\n' "$CARGO_BUILD_JOBS"
-		return
+	if [[ -n $build_only ]]; then
+		say "would build topgrade-bin (AUR commit $(pin_of topgrade-bin)) with makepkg into $build_only"
+	else
+		say "would build topgrade-bin (AUR commit $(pin_of topgrade-bin)) with makepkg and install it with sudo pacman -U"
 	fi
-	while read -r key value _; do
-		[[ $key == MemAvailable: ]] || continue
-		available_kib=$value
-		break
-	done <"${INSTALL_TOPGRADE_MEMINFO:-/proc/meminfo}"
-	cpus=$(nproc 2>/dev/null) || cpus=1
-	jobs=$((available_kib / (2 * 1024 * 1024)))
-	((jobs >= 1)) || jobs=1
-	((jobs <= cpus)) || jobs=$cpus
-	printf '%s\n' "$jobs"
+	exit 0
+fi
+
+for tool in git makepkg; do
+	command -v "$tool" >/dev/null 2>&1 ||
+		die "$tool is not installed; install base-devel and git (sudo pacman -S --needed base-devel git)"
+done
+
+# Every source has a checksum, and none is SKIP: the pin covers the PKGBUILD,
+# the checksums what it downloads.
+sources_checksummed() {
+	awk -v arch="$(uname -m)" '
+		{ sub(/^[ \t]+/, "") }
+		$1 == "source" || $1 == "source_" arch { sources++ }
+		$1 ~ "^(sha256|sha512|b2)sums(_" arch ")?$" { sums[$1]++; if ($3 == "SKIP") skipped = 1 }
+		END {
+			if (!sources || skipped) exit 1
+			for (kind in sums) {
+				base = kind; sub("_" arch "$", "", base)
+				total[base] += sums[kind]
+			}
+			for (base in total) if (total[base] == sources) exit 0
+			exit 1
+		}' <<<"$1"
 }
 
-build=$(mktemp -d "$cache_dir/topgrade-build.XXXXXX") || die "cannot create a build directory in $cache_dir"
-# On every exit, a failed or timed-out build included: the build directory, and
-# the crate downloads when this build created the registry.
-cleanup() {
-	rm -rf -- "$build"
-	$registry_was_there || rm -rf -- "${cargo_home:?}/registry"
+# build_pin BASE DEST: BASE at its pinned commit, built in a
+# private directory, its package (not a -debug split) copied into DEST. Prints
+# the package's path.
+build_pin() {
+	local base=$1 dest=$2 ref work status
+	ref=$(pin_of "$base")
+	[[ $ref =~ ^[0-9a-f]{40}$ ]] || {
+		say "no pinned commit for $base"
+		return 1
+	}
+	work=$(mktemp -d "$build_root/$base.XXXXXX") || return 1
+	status=0
+	build_in "$base" "$ref" "$work" "$dest" || status=$?
+	rm -rf -- "$work"
+	return "$status"
 }
-trap cleanup EXIT
-if [[ -n $installed ]]; then
-	say "upgrading Topgrade $installed to $latest; this takes a few minutes..."
-else
-	say "building Topgrade $latest; this takes a few minutes..."
+
+# build_in BASE REF WORK DEST: build_pin's work, in WORK.
+build_in() {
+	local base=$1 ref=$2 work=$3 dest=$4 srcinfo package
+	say "building $base from the AUR at ${ref:0:12}..."
+	if git clone --quiet -- "$aur_url/$base.git" "$work/src" >&2 &&
+		git -C "$work/src" -c advice.detachedHead=false checkout --quiet --detach "$ref" >&2 &&
+		[[ $(git -C "$work/src" rev-parse HEAD) == "$ref" ]] &&
+		srcinfo=$(cd "$work/src" && makepkg --printsrcinfo); then
+		if ! sources_checksummed "$srcinfo"; then
+			say "$base at ${ref:0:12} has a source without a checksum; not building it"
+		elif (cd "$work/src" && timeout --kill-after=30 "$build_seconds" makepkg --noconfirm >&2); then
+			for package in "$work/src/$base"-[0-9]*.pkg.tar.*; do
+				[[ -f $package && $package != *.sig ]] || continue
+				install -m 0644 -- "$package" "$dest/" && printf '%s\n' "$dest/${package##*/}"
+				return 0
+			done
+			say "makepkg finished, but built no $base package"
+		fi
+	fi
+	return 1
+}
+
+if [[ -n $build_only ]]; then
+	[[ -d $build_only && -w $build_only ]] || die "$build_only is not a writable directory"
+	build_root=$build_only
+	build_pin topgrade-bin "$build_only" || die 'topgrade-bin could not be built'
+	exit 0
 fi
-# --force replaces an older build, including one from before this script
-# looked up the newest release.
-jobs=$(build_jobs)
-say "building with $jobs parallel job(s)."
-timeout --kill-after=30 "$build_seconds" \
-	cargo install --locked --force --jobs "$jobs" --version "$latest" --root "$cargo_home" \
-	--target-dir "$build/target" topgrade ||
-	die "cargo could not build Topgrade $latest"
-[[ $(version_of "$target" || :) == "$latest" ]] ||
-	die "Topgrade was built, but $target does not report version $latest"
-say "Topgrade $latest is installed at $target."
-case ":$PATH:" in
-*":$cargo_home/bin:"*) say 'run topgrade in a new shell.' ;;
-*) say "$cargo_home/bin is not on PATH; add it (export PATH=\"$cargo_home/bin:\$PATH\") or run $target." ;;
-esac
+
+command -v sudo >/dev/null 2>&1 || die 'sudo is not installed'
+lyona_xdg_dirs
+mkdir -p -- "$cache_home/lyona"
+build_root=$(mktemp -d "$cache_home/lyona/topgrade-build.XXXXXX") || die "cannot create a build directory in $cache_home/lyona"
+trap 'rm -rf -- "$build_root"' EXIT
+
+package=$(build_pin topgrade-bin "$build_root") ||
+	die 'Topgrade could not be built from the AUR; check the network, then run install-topgrade again'
+
+say "installing ${package##*/} with pacman..."
+sudo pacman -U --noconfirm --needed -- "$package" || die "pacman could not install ${package##*/}"
+say 'Topgrade is installed; run topgrade. It updates itself through yay.'
+offer_cargo_copy_removal

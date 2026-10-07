@@ -241,10 +241,10 @@ connected to, read from iwd), and low-memory swap (`LYONA_NVIDIA_DRIVER=1` insta
 the proprietary NVIDIA driver, which the wizard would have recommended),
 before installing the lyona package profile
 itself. Once that is done, and its temporary passwordless `sudo` rule is
-removed, it builds Topgrade as the new user (Sync Sprint 15 S15-06): rustup is
-installed, and the newest Topgrade is built with cargo. This adds a few minutes
-and some network use to every install. A failure is reported, and the user can
-run `install-topgrade` after logging in.
+removed, it builds Topgrade's AUR package, `topgrade-bin`, from its pinned
+PKGBUILD as the new user, and installs it as root (#245). That takes seconds; no
+Rust toolchain is installed. A failure is reported, and the user can run
+`install-topgrade` after logging in.
 
 Install the image in a KVM virtual machine before treating it as
 release-qualified. Boot the live medium, run `lyona-install` to

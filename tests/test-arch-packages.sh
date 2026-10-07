@@ -30,7 +30,6 @@ mapfile -t packages < <(
 		dwm_packages arch required
 		dwm_packages arch desktop
 		dwm_packages arch browser
-		dwm_packages arch rust-toolchain
 		dwm_packages arch system-management
 		dwm_packages arch system-management-optional
 	} | awk 'NF' | sort -u

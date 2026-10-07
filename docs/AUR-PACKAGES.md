@@ -18,25 +18,47 @@ Where the AUR is used today:
 | --- | --- | --- | --- |
 | The `yay-bin` helper, for the user | `yay` is not in the official repositories | `install.sh`, `ensure_yay_installed()` | a pinned commit (`YAY_BIN_REF`) |
 | Legacy NVIDIA drivers, for older cards (Sync Sprint 14) | Arch dropped every pre-Turing driver | `install_legacy_nvidia_driver` in the live medium's postinstall | the CachyOS repository first; otherwise pinned, reviewed PKGBUILDs |
+| Topgrade (#245) | Topgrade is only in the AUR | `scripts/install-topgrade` | the pinned, reviewed `topgrade-bin` PKGBUILD |
 | The user's own package update (Sync Sprint 15, D-26) | AUR-built packages, such as the drivers above, are not updated by `pacman -Syu` | `run_system` in `scripts/lyona-update-terminal`: `yay -Syu` when `yay` is installed | the exact full upgrade, started by the user in their terminal; it names no packages, so it installs nothing new |
 
-Kept out of the AUR:
+## Topgrade (#245)
 
-- **Topgrade** (Sync Sprint 15 S15-06, decision D-28): AUR-only on Arch. It is
-  built instead from its crates.io release by `scripts/install-topgrade`, using
-  `rustup` from `extra`, or another Rust toolchain already installed.
-  - **The version:** always the newest release on crates.io, looked up each
-    time it runs (decided with the maintainer, 2026-10-02).
-  - **What checks it:** `--locked` builds the dependency versions in the
-    release's published `Cargo.lock`, and cargo checks every crate it downloads
-    against the checksums in the crates.io index.
-  - **What it does not do:** no version or hash is pinned in this repository,
-    and a release is used as soon as it is published. That was chosen over a
-    pinned, reviewed version, so that installs are always current. The trust
-    rests on crates.io and Topgrade's maintainers.
-  - **The guard:** `make check-aur-policy` fails if `topgrade` or
-    `topgrade-bin` is ever named in a package profile, because neither is in
-    the official repositories.
+Topgrade is only in the AUR. Until #245 it was built from its crates.io release
+with cargo, which installed `rustup`, downloaded about 300 MB of crates and
+compiled for several minutes on every install (decision D-28). It now comes from
+the AUR, from a pinned PKGBUILD:
+
+| AUR base | What it is | Pinned commit |
+| --- | --- | --- |
+| `topgrade-bin` | upstream's release binary (static musl), repackaged | `478487d31444ccbad24ab5d390d41466201b9dbc` (17.12.3-1) |
+
+- **Why not the `topgrade` source package:** it builds the same release from
+  source with cargo, which needs a Rust toolchain and several minutes of
+  compiling, and gives nothing `topgrade-bin` does not. It is not used, not even
+  as a fallback: when `topgrade-bin` cannot be built, the AUR or GitHub is
+  almost certainly unreachable for it too (decided with the maintainer, #245).
+- **Reviewed:** `topgrade-bin` downloads the release tarball from
+  `github.com/topgrade-rs/topgrade` over HTTPS, with a `b2sum` for each
+  architecture. It has no install script and no dependencies. Its `package()`
+  runs the downloaded `topgrade` once, as the build user, to write the manual
+  page and shell completions.
+- **How:** `scripts/install-topgrade` clones the pinned commit, checks that it
+  is that commit and that every source for this architecture has a checksum
+  (none `SKIP`), and runs `makepkg` as the user, never as root and never
+  through `yay`. Only the built package is installed, with `sudo pacman -U`.
+- **On the live medium:** `install-topgrade --build-only` builds it as the new
+  user after the install's passwordless `sudo` rule is gone, and the
+  postinstall installs the package as root. If it cannot be built, the closing
+  screen says to run `install-topgrade` after logging in.
+- **Updates:** `pacman -Syu` does not update AUR packages. Topgrade runs `yay`
+  in its system step, which updates it with every other AUR package. The pin
+  only decides what is installed first.
+- **Re-pinning:** only after reviewing the diff since the last pin, and updating
+  this table, `scripts/install-topgrade` and `tests/test-install-topgrade.sh`.
+- **The guard:** `make check-aur-policy` allows the AUR in
+  `scripts/install-topgrade` only, and checks that its one base is
+  `topgrade-bin`, pinned to a full commit. It is never named in a package
+  profile, since it is not in the official repositories.
 
 ## Legacy NVIDIA drivers (Sync Sprint 14)
 

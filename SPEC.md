@@ -206,16 +206,16 @@ The supported installation flow must:
    `*-mimeapps.list`, or a legacy `defaults.list`. It validates every handler
    before writing, publishes atomically, and never replaces a preference
    written while it runs.
-10. In the recommended and full profiles, unless `--skip-topgrade`, build
+10. In the recommended and full profiles, unless `--skip-topgrade`, install
     Topgrade (decision D-28) as the last step, after every privileged step and
     with the `sudo` timestamp closed.
-    - **The source:** the newest release on crates.io, looked up when it runs,
-      built with `cargo install --locked` into the user's cargo bin directory.
-      A rerun upgrades an older build to the newest.
-    - **The toolchain:** `rustup` by preference. Another installed Rust toolchain
-      is kept and used instead.
-    - **On the live medium:** this runs only after the install's passwordless
-      `sudo` rule is removed.
+    - **The source (#245):** the AUR's `topgrade-bin`, upstream's release
+      binary, from a PKGBUILD pinned to a reviewed commit whose every source
+      is checksummed (`docs/AUR-PACKAGES.md`). `makepkg` builds it as the
+      user; only the built package is installed, with `pacman -U`. No Rust
+      toolchain is installed for it.
+    - **On the live medium:** the package is built as the new user only after
+      the install's passwordless `sudo` rule is removed, and root installs it.
     - **Failure:** a failed build is reported and does not stop the install.
 11. Set ownership to the invoking user for files in that user's home.
 12. Support repeated execution without destructive side effects.
@@ -465,8 +465,7 @@ Runtime dependencies are classified as:
 - Recommended desktop: Alacritty, Quickshell, Picom, Feh, Dex, a polkit agent,
   notification tools, audio controls, screenshot tooling, Nerd/emoji fonts,
   Flatpak with its GTK portal, Gear Lever from a user-scoped Flathub
-  remote, Topgrade built with cargo (from `rustup`, or a Rust toolchain already
-  installed) with `cargo-update` for its Cargo step, Firefox as the default
+  remote, Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
   browser, and GNOME Keyring (`gnome-keyring`) for secret storage.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
@@ -854,9 +853,10 @@ In a real or nested X11 session:
   through `maim`.
 - Recommended and full installs expose Gear Lever in the application launcher,
   and it opens a visible window in the supported X11 session.
-- Recommended and full installs, unless `--skip-topgrade`, have the newest
-  Topgrade in the user's cargo bin directory, and `topgrade --version` runs in a
-  new shell. A failed Topgrade build leaves the rest of the install complete.
+- Recommended and full installs, unless `--skip-topgrade`, have the
+  `topgrade-bin` package installed, `topgrade --version` runs, and no Rust
+  toolchain was installed for it. A failed Topgrade build leaves the rest of the
+  install complete.
 
 ### 9.4 Arch Image Validation
 

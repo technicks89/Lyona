@@ -68,7 +68,7 @@ Options:
   --yes                  Accept the interactive install summary.
   --install-herdr        Install verified Herdr as an optional workspace.
   --skip-herdr           Do not install Herdr.
-  --skip-topgrade        Do not build Topgrade (recommended and full profiles).
+  --skip-topgrade        Do not install Topgrade (recommended and full profiles).
   --enable-arch-gaming-repos
                          Approve enabling the multilib repository for gaming.
   --enable-cachyos-repos Add the CachyOS repositories for this CPU, replacing
@@ -291,7 +291,7 @@ herdr_arch_supported() {
 	esac
 }
 
-# Topgrade (Sync Sprint 15 S15-06, decision D-28): built with cargo for the
+# Topgrade (Sync Sprint 15 S15-06, decision D-28): from the AUR (#245) for the
 # recommended and full profiles, unless --skip-topgrade.
 install_topgrade_profile() {
 	install_recommended_profile && [[ $TOPGRADE_INSTALL_MODE == true ]]
@@ -962,21 +962,6 @@ if install_recommended_profile; then
 
 fi
 
-# The toolchain for Topgrade, with the other packages (S15-06, D-28): rustup by
-# preference. The map leaves it out when another Rust toolchain is installed,
-# whose cargo is used instead. cargo-update comes with it (#238), for
-# Topgrade's Cargo step. A failure skips Topgrade, never the install.
-topgrade_toolchain_ready=false
-if install_topgrade_profile; then
-	step_timer "Rust toolchain"
-	info "Installing the Rust toolchain for Topgrade..."
-	if dwm_install_package_profile rust-toolchain; then
-		topgrade_toolchain_ready=true
-	else
-		warn "rustup or cargo-update could not be installed; Topgrade will be skipped. Install them (sudo pacman -S --needed rustup cargo-update), then run install-topgrade."
-	fi
-fi
-
 step_timer "Terminal"
 terminal=""
 if command -v alacritty &>/dev/null; then
@@ -1106,15 +1091,23 @@ apply_grub_theme
 step_timer "Display setup"
 configure_displays_after_install
 
-# Topgrade is built last, after every privileged step, with the sudo timestamp
-# closed first: the build runs a few hundred crates' build scripts as the user,
-# and none of them may reuse that authorization (S15-06).
-if [[ $topgrade_toolchain_ready == true ]]; then
+# Topgrade last, after every privileged step (#245): makepkg builds it from
+# the AUR as the user, with the sudo timestamp closed first so nothing in the
+# build can reuse that authorization; sudo then asks again to install only the
+# built package. In a non-interactive run, an older cargo-built Topgrade is
+# described rather than offered for removal.
+if install_topgrade_profile; then
 	step_timer "Topgrade"
 	sudo -k 2>/dev/null || :
-	info "Building Topgrade with cargo (this needs the network and takes a few minutes)..."
-	if "$REPO_DIR/scripts/install-topgrade"; then
-		ok "Topgrade is installed; run topgrade in a new shell."
+	info "Installing Topgrade from the AUR (topgrade-bin, from a pinned PKGBUILD)..."
+	topgrade_status=0
+	if [[ $NON_INTERACTIVE == true ]]; then
+		"$REPO_DIR/scripts/install-topgrade" </dev/null || topgrade_status=$?
+	else
+		"$REPO_DIR/scripts/install-topgrade" || topgrade_status=$?
+	fi
+	if ((topgrade_status == 0)); then
+		ok "Topgrade is installed; run topgrade. It updates itself through yay."
 	else
 		warn "Topgrade was not installed; run install-topgrade later to try again."
 	fi
