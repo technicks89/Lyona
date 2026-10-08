@@ -398,7 +398,8 @@ dwm_install_batch() {
 # later update brings CachyOS's builds back once theirs is newer. The modules are
 # the installed qt6-* packages whose [extra] version is qt6-base's release there.
 # Nothing is installed when they already match. The modules installed again are
-# left in DWM_QT_REPAIRED.
+# left in DWM_QT_REPAIRED. It fails when pacman cannot list the installed
+# packages or [extra], as when the install fails.
 DWM_QT_REPAIRED=()
 dwm_repair_qt_set() {
 	local noconfirm=false
@@ -406,24 +407,28 @@ dwm_repair_qt_set() {
 		noconfirm=true
 		shift
 	fi
-	local name version base_release mixed=false base=qt6-base
+	local name version base_release mixed=false base=qt6-base listing
 	local -A installed=() arch_release=()
 	local -a modules=() mix=() pacman_command
 
 	DWM_QT_REPAIRED=()
+	# Either listing failing is an error, not an empty list: the check could
+	# not be made.
+	listing=$(LC_ALL=C pacman -Q 2>/dev/null) || return
 	# The Qt release of a pacman version, less any epoch and the package
 	# release: 1:6.12.0-2.1 is 6.12.0.
 	while read -r name version; do
 		[[ $name == qt6-* ]] || continue
 		version=${version#*:}
 		installed[$name]=${version%-*}
-	done < <(LC_ALL=C pacman -Q 2>/dev/null)
+	done <<<"$listing"
 	[[ -n ${installed[$base]:-} ]] || return 0
+	listing=$(LC_ALL=C pacman -Sl extra 2>/dev/null) || return
 	while read -r _ name version _; do
 		[[ $name == qt6-* ]] || continue
 		version=${version#*:}
 		arch_release[$name]=${version%-*}
-	done < <(LC_ALL=C pacman -Sl extra 2>/dev/null)
+	done <<<"$listing"
 	base_release=${arch_release[$base]:-}
 	[[ -n $base_release ]] || return 0
 
