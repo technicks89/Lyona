@@ -1,5 +1,21 @@
 # Troubleshooting
 
+## An AppImage does not open or start
+
+Opening an AppImage uses `lyona-appimage`. If it says the file is not an
+AppImage it can read, it is not a type-2 x86 AppImage (very old type-1 ones are
+not supported). Run it from a terminal to see why it stopped:
+
+```sh
+lyona-appimage open ~/Downloads/Some.AppImage
+lyona-appimage list
+```
+
+An AppImage that is in the launcher but does not start usually needs
+`libfuse.so.2`: install `fuse2` (`sudo pacman -S fuse2`; the recommended
+desktop includes it). Remove one with `lyona-appimage remove NAME`. Prefer Gear
+Lever? Run `install.sh` with `--with-gearlever`, or `install-gearlever`.
+
 ## Gear Lever does not open
 
 Gear Lever requires Flatpak's document portal. If launching it prints a
@@ -11,8 +27,8 @@ systemctl --user restart xdg-document-portal.service
 flatpak run it.mijorus.gearlever
 ```
 
-The recommended and full installers include Flatpak, the GTK portal, and a
-user-scoped Gear Lever installation from Flathub by default. To repair only the
+The recommended and full installers include Flatpak and the GTK portal; Gear
+Lever, from Flathub for the user, only with `--with-gearlever` (#260). To repair only the
 application setup from an installed lyona checkout, run:
 
 ```sh

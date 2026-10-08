@@ -11,7 +11,9 @@ configure_appimage_default() {
 
 	command -v xdg-mime >/dev/null 2>&1 || return 0
 	current_default=$(xdg-mime query default "$APPIMAGE_MIME" 2>/dev/null || true)
-	if [[ -z $current_default ]]; then
+	# lyona's own handler gives way: installing Gear Lever is asking for it
+	# (#260). Any other handler is the user's choice and stays.
+	if [[ -z $current_default || $current_default == lyona-appimage.desktop ]]; then
 		xdg-mime default "$DESKTOP_ID" "$APPIMAGE_MIME"
 		printf 'Gear Lever is the default AppImage handler.\n'
 	fi

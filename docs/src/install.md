@@ -197,9 +197,9 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   audio and video and sxiv for images through `scripts/seed-default-apps.sh`,
   which also makes Thunar the folder handler when Thunar is installed. An
   existing MIME preference file is never replaced; change these in Settings >
-  Defaults when updating an existing account. It also adds Flathub for the
-  target user, installs Gear Lever as the default AppImage manager, and installs
-  the available Arch GTK theme packages. A matching GTK
+  Defaults when updating an existing account. It makes `lyona-appimage` the
+  AppImage handler unless another is set (see below), and installs the
+  available Arch GTK theme packages. A matching GTK
   theme is generated for every palette in `config/themes.toml`, so GTK
   applications follow the active theme without a downloaded theme pack.
   It also installs the [mybash](https://github.com/technicks89/mybash) shell
@@ -297,11 +297,29 @@ An already-enabled `multilib` counts as approval, since nothing in
 `pacman.conf` has to change -- this is what installs from the lyona ISO get,
 because the ISO ships `multilib` enabled.
 
+### AppImages
+
+Opening an AppImage file, for example from Thunar, adds it to the launcher and
+starts it: `lyona-appimage` moves it to `~/Applications`, makes it executable,
+and writes a launcher entry with the name and icon from inside the AppImage. It
+reads them with `unsquashfs` and never runs the file to do so. Opening it again
+just starts it. Take one out again with `lyona-appimage remove NAME` (`lyona-appimage
+list` shows them); that removes the file, its entry and its icon. `fuse2` lets
+the classic AppImages run, and both it and `squashfs-tools` come with the
+recommended desktop.
+
+Gear Lever is no longer installed by default: it needs about 1.7 GB of Flatpak
+runtimes (#260). Add `--with-gearlever` to install it from Flathub; it then
+opens AppImages instead, with in-place updates and its own window. An existing
+Gear Lever is kept, and stays the AppImage handler. If an earlier image install
+left Gear Lever pending for the first login, the next `install.sh` run cancels
+that unless `--with-gearlever` is given.
+
 ### Flatpak prerequisites
 
-The recommended and full profiles install the `flatpak` package, then Gear Lever
-sets up the official Flathub remote for the target user before it installs
-anything. The remote is verified, not just present: setup stops with an error
+The recommended and full profiles install the `flatpak` package. With
+`--with-gearlever`, Gear Lever sets up the official Flathub remote for the
+target user before it installs anything. The remote is verified, not just present: setup stops with an error
 if a `flathub` remote points anywhere but `https://dl.flathub.org/repo`, has
 signature verification disabled, or is disabled. If there is no `flathub`
 remote it adds the official one and checks it again. Repeated setup keeps

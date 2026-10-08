@@ -49,6 +49,7 @@ dwm_packages() {
 			pipewire-pulse wireplumber libnotify light-locker xf86-input-libinput \
 			bluez bluez-utils blueman playerctl upower power-profiles-daemon flatpak xdg-desktop-portal-gtk \
 			pciutils gum cosign
+		dwm_packages "$family" appimage
 		dwm_packages "$family" keyring
 		dwm_packages "$family" update-indicator
 		;;
@@ -59,6 +60,13 @@ dwm_packages() {
 		# dwm_install_package_profile leaves it out where the user's default
 		# browser is another one already installed.
 		printf '%s\n' firefox
+		;;
+	arch:appimage)
+		# AppImages (#260): fuse2 runs the classic type-2 AppImages (libfuse.so.2;
+		# fuse3 alone runs only the newer static-runtime ones), and
+		# squashfs-tools' unsquashfs lets lyona-appimage read an AppImage's
+		# launcher entry and icon without running it.
+		printf '%s\n' fuse2 squashfs-tools
 		;;
 	arch:keyring)
 		# Secret storage, and the login keyring's unlock at a password login.
