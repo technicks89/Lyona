@@ -155,6 +155,14 @@ the run's GitHub identity. There is no signing key to keep or rotate: the
 signature names the repository, the workflow file, the branch (`main`) and the
 commit it was built from.
 
+The signing is its own job (GHSA-xfhv-7h9c-m966). The build job runs the
+repository's code and freshly synced packages in a privileged container, so it
+has a read-only token and cannot sign. The `sign` job, the only one with the
+OIDC token Sigstore signs with, runs no repository code: it downloads the ISO
+and the source archive the build made and attests them with pinned actions.
+The signature still names `build-iso.yml` on `main`, whichever job signs, so
+`lyona-update`'s check is unchanged.
+
 The files are signed before anything is published. `scripts/lyona-release
 --bundle` then publishes the signature as `lyona-VERSION.sigstore.json`, and
 refuses a bundle that does not name the digests of the archive and the ISO it
@@ -257,8 +265,12 @@ cannot replace the required boot and first-session VM qualification.
 ### Automated ISO builds and releases (CI)
 
 `.github/workflows/build-iso.yml` builds the ISO in a privileged
-`archlinux:base-devel` container, then creates the tag and the release. It is
-run by hand, from the Actions tab or:
+`archlinux:base-devel` container (`build-iso`), signs it (`sign`), then
+creates the tag and the release (`release`). The container image is pinned by
+digest: to move to a newer one, `docker pull archlinux:base-devel`, read the
+digest with `docker inspect --format '{{json .RepoDigests}}'
+archlinux:base-devel`, and replace it in both jobs (the workflow test checks
+they match). It is run by hand, from the Actions tab or:
 
 ```sh
 gh workflow run build-iso.yml -f channel=main
