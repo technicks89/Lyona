@@ -450,9 +450,11 @@ install-user:
 	fi
 	@echo "==> Reconciling the account with this release (#273)..."
 	@# The profile install.sh recorded, the defaults, the AppImage handler and
-	@# the hotkeys migration: what lyona-update and install.sh both apply.
+	@# the hotkeys migration: what lyona-update and install.sh both apply. Like
+	@# install.sh, a failure here is a warning: the rest of the update goes on.
 	HOME="${USER_HOME}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" XDG_DATA_HOME="${XDG_DATA_HOME}" \
-		XDG_STATE_HOME="${XDG_STATE_HOME}" scripts/lyona-reconcile-user
+		XDG_STATE_HOME="${XDG_STATE_HOME}" scripts/lyona-reconcile-user || \
+		echo "  Warning: the account's defaults were not all reconciled; run scripts/lyona-reconcile-user to try again." >&2
 	@echo "==> Migrating legacy graphical-session startup..."
 	HOME="${USER_HOME}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" scripts/migrate-graphical-session.sh
 	@echo "==> Installing Meslo font aliases..."

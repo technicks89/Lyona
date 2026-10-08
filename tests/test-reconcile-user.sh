@@ -118,6 +118,9 @@ done < <(sed -n 's/^+?\{0,1\} //p' "$table")
 
 # ── wiring ───────────────────────────────────────────────────────────────
 grep -Fq 'scripts/lyona-reconcile-user' "$repo/Makefile" || fail 'make install-user does not run lyona-reconcile-user'
+# A failure is a warning there too, so the rest of install-user (stamp-user) runs.
+grep -A1 -F 'scripts/lyona-reconcile-user ||' "$repo/Makefile" | grep -Fq 'Warning:' ||
+	fail 'make install-user stops when lyona-reconcile-user fails'
 # shellcheck disable=SC2016 # the literal text in install.sh
 [[ $(grep -cF '"$REPO_DIR/scripts/lyona-reconcile-user" --profile "$INSTALL_PROFILE"' "$repo/install.sh") == 2 ]] ||
 	fail 'install.sh does not record the profile in both the recommended and the core path'
