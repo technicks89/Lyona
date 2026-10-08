@@ -18,7 +18,8 @@ make_workspace
 grep -q '^time_sync_state() {$' "$work/time-sync.sh" || fail 'time_sync_state not found in install.sh'
 grep -q '^configure_time_sync() {$' "$work/time-sync.sh" || fail 'configure_time_sync not found in install.sh'
 
-# STUB_ENABLED and STUB_ACTIVE: the units that are enabled or running.
+# STUB_ENABLED, STUB_STATIC and STUB_ACTIVE: the units that are enabled, static
+# or running. STUB_CHROOT: running in the image install's chroot.
 # STUB_TIMESYNCD: what is-enabled prints for systemd-timesyncd, as systemd 262
 # does (not-found, with exit 4, when the unit does not exist). STUB_ENABLE_FAILS:
 # sudo systemctl enable fails.
@@ -42,14 +43,21 @@ run_case() {
 					$quiet || printf '%s\n' "$STUB_TIMESYNCD"
 					[[ $STUB_TIMESYNCD != not-found ]] || return 4
 					[[ $STUB_TIMESYNCD == enabled* ]]
+				elif [[ " ${STUB_ENABLED:-} " == *" $2 "* ]]; then
+					$quiet || printf 'enabled\n'
+				elif [[ " ${STUB_STATIC:-} " == *" $2 "* ]]; then
+					# static exits 0 as well, though nothing starts it at boot.
+					$quiet || printf 'static\n'
 				else
-					[[ " ${STUB_ENABLED:-} " == *" $2 "* ]]
+					$quiet || printf 'disabled\n'
+					return 1
 				fi
 				;;
 			is-active) [[ " ${STUB_ACTIVE:-} " == *" $2 "* ]] ;;
 			*) return 2 ;;
 			esac
 		}
+		systemd-detect-virt() { [[ ${STUB_CHROOT:-0} == 1 ]]; }
 		sudo() {
 			printf 'sudo %s\n' "$*" >>"$work/out.log"
 			[[ ${STUB_ENABLE_FAILS:-0} != 1 ]]
@@ -78,10 +86,23 @@ expect 'info Enabling time synchronization (systemd-timesyncd)...' 'enabling it 
 expect 'sudo systemctl enable --now systemd-timesyncd.service' 'systemd-timesyncd was not enabled and started'
 expect 'ok systemd-timesyncd enabled and started.' 'enabling it is not reported'
 
-# Already enabled (the image install, or a second run): nothing changes.
-STUB_TIMESYNCD=enabled run_case
+# Already enabled and running (a second run): nothing changes.
+STUB_TIMESYNCD=enabled STUB_ACTIVE=systemd-timesyncd.service run_case
 expect 'ok Time synchronization (systemd-timesyncd) is already enabled.' 'an enabled systemd-timesyncd is not reported'
 no_sudo 'an enabled systemd-timesyncd was enabled again'
+
+# Enabled but not running: started, and said so.
+STUB_TIMESYNCD=enabled run_case
+expect 'sudo systemctl start systemd-timesyncd.service' 'an enabled, stopped systemd-timesyncd was not started'
+expect 'ok systemd-timesyncd started.' 'starting it is not reported'
+STUB_TIMESYNCD=enabled STUB_ENABLE_FAILS=1 run_case || fail 'a failed start stopped the install'
+expect 'warn systemd-timesyncd could not be started; it starts at the next boot.' 'a failed start is not warned about'
+
+# Enabled, in the image install's chroot (archinstall's "ntp": true), where
+# systemctl start is ignored: nothing is run, and it starts at boot.
+STUB_TIMESYNCD=enabled STUB_CHROOT=1 run_case
+expect 'ok Time synchronization (systemd-timesyncd) is enabled; it starts at boot.' 'the chroot case is not reported'
+no_sudo 'systemd-timesyncd was started in a chroot'
 
 # Another NTP service, enabled or only running, is kept, and timesyncd is not
 # enabled beside it.
@@ -90,6 +111,9 @@ for unit in chronyd.service ntpd.service openntpd.service; do
 	expect "ok Time synchronization: keeping $unit." "an enabled $unit was not kept"
 	no_sudo "systemd-timesyncd was enabled beside $unit"
 done
+# A static unit is not enabled to start at boot: timesyncd is enabled instead.
+STUB_TIMESYNCD=disabled STUB_STATIC=chronyd.service run_case
+expect 'sudo systemctl enable --now systemd-timesyncd.service' 'a static chronyd counted as keeping the clock'
 STUB_TIMESYNCD=disabled STUB_ACTIVE=chronyd.service run_case
 expect 'ok Time synchronization: keeping chronyd.service.' 'a running chronyd was not kept'
 no_sudo 'systemd-timesyncd was enabled beside a running chronyd'

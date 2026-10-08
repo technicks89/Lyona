@@ -309,7 +309,10 @@ install_herdr_profile() {
 time_sync_state() {
 	local unit state
 	for unit in chronyd.service ntpd.service openntpd.service; do
-		if systemctl is-enabled --quiet "$unit" 2>/dev/null ||
+		# Enabled to start at boot, not merely static, indirect or an alias,
+		# which is-enabled also exits 0 for.
+		state=$(systemctl is-enabled "$unit" 2>/dev/null) || :
+		if [[ $state == enabled || $state == enabled-runtime ]] ||
 			systemctl is-active --quiet "$unit" 2>/dev/null; then
 			printf 'other:%s\n' "$unit"
 			return 0
@@ -329,7 +332,22 @@ configure_time_sync() {
 	state=$(time_sync_state)
 	case $state in
 	other:*) ok "Time synchronization: keeping ${state#other:}." ;;
-	enabled) ok "Time synchronization (systemd-timesyncd) is already enabled." ;;
+	enabled)
+		if systemctl is-active --quiet systemd-timesyncd.service 2>/dev/null; then
+			ok "Time synchronization (systemd-timesyncd) is already enabled."
+		elif [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
+			# The image install's chroot, where systemctl start is ignored: it
+			# starts at the first boot.
+			ok "Time synchronization (systemd-timesyncd) is enabled; it starts at boot."
+		else
+			info "Starting systemd-timesyncd, which is enabled but not running..."
+			if sudo systemctl start systemd-timesyncd.service; then
+				ok "systemd-timesyncd started."
+			else
+				warn "systemd-timesyncd could not be started; it starts at the next boot."
+			fi
+		fi
+		;;
 	masked) info "systemd-timesyncd is masked, so time synchronization was left off (sudo systemctl unmask systemd-timesyncd to use it)." ;;
 	missing) warn "systemd-timesyncd was not found, so time synchronization was left off." ;;
 	*)

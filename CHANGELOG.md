@@ -13,8 +13,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - **`install.sh` turns on time synchronization.** When no other time service keeps the clock, it enables and starts
   `systemd-timesyncd`, part of `systemd`, in every profile, and the summary says so before anything is changed. A
   `chronyd`, `ntpd` or `openntpd` that is enabled or running is kept, a masked `systemd-timesyncd` is left masked, and
-  a second run changes nothing. Image installs already had it, from `archinstall`. Turn it off in Settings or with
-  `timedatectl set-ntp false` (#258).
+  a second run changes nothing. Image installs already had it, from `archinstall`. Turning it off in Settings or with
+  `timedatectl set-ntp false` lasts until the installer runs again; to keep it off, mask it with
+  `sudo systemctl mask --now systemd-timesyncd` (#258).
 
 - **The image installer downloads from mirrors near you.** After the timezone, it asks to use the package mirrors in
   that timezone's country (worldwide for a zone with no country, such as `UTC`), or lets you choose another country.

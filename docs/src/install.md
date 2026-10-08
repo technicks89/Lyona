@@ -162,8 +162,10 @@ other time service keeps the clock, the installer enables and starts
 it; the summary says so first. If `chronyd`, `ntpd` or `openntpd` is enabled or
 running, it is kept and `systemd-timesyncd` is not enabled beside it, and a
 masked `systemd-timesyncd` is left masked. Running the installer again changes
-nothing. An image install has it from `archinstall` already. Turn it off in
-Settings, or with `timedatectl set-ntp false`. An existing install gets it the
+nothing. An image install has it from `archinstall` already. Turning it off in
+Settings, or with `timedatectl set-ntp false`, lasts only until the installer
+runs again, which turns it back on. To keep it off, mask it:
+`sudo systemctl mask --now systemd-timesyncd`. An existing install gets it the
 next time the installer runs.
 
 Every profile and Arch image defaults to Alacritty without Herdr. With the
