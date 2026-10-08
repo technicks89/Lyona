@@ -75,11 +75,20 @@ TestCase {
         compare(Peripherals.select([device({ "state": "full", "percent": 100 })])[0].detail, "Mouse / Fully charged");
     }
 
-    function test_not_present_not_ready_or_without_charge_is_hidden() {
-        compare(Peripherals.select([device({ "present": false })]).length, 0);
+    function test_not_ready_or_without_charge_is_hidden() {
         compare(Peripherals.select([device({ "ready": false })]).length, 0);
+        compare(Peripherals.select([device({ "kind": "keyboard", "ready": false })]).length, 0);
         compare(Peripherals.select([device({ "percent": -1, "level": "" })]).length, 0);
         compare(Peripherals.select([device({ "percent": -1, "level": "Unknown" })]).length, 0);
+    }
+
+    function test_presence_only_matters_for_the_battery_kind() {
+        // UPower's IsPresent is only meaningful for batteries: a mouse or
+        // headset reporting false is still shown.
+        compare(Peripherals.select([device({ "kind": "mouse", "present": false })]).length, 1);
+        compare(Peripherals.select([device({ "kind": "headset", "present": false })]).length, 1);
+        compare(Peripherals.select([device({ "kind": "battery", "present": false })]).length, 0);
+        compare(Peripherals.select([device({ "kind": "battery", "present": true })]).length, 1);
     }
 
     function test_low_battery() {
@@ -104,6 +113,26 @@ TestCase {
         result = Peripherals.lowWarnings([], result.warned);
         result = Peripherals.lowWarnings(Peripherals.select([device({ "key": "m", "percent": 10 })]), result.warned);
         compare(result.warn.length, 0);
+        // Plugged in at 5%: charging, so not low, but not recovered either.
+        result = Peripherals.lowWarnings(Peripherals.select([device({ "key": "m", "percent": 5, "state": "charging" })]),
+            result.warned);
+        compare(result.warn.length, 0);
+        // Unplugged again at 6%: the same low spell, no second warning.
+        result = Peripherals.lowWarnings(Peripherals.select([device({ "key": "m", "percent": 6 })]), result.warned);
+        compare(result.warn.length, 0);
+        // A coarse device charging at Low has not recovered either; Normal has.
+        let coarse = Peripherals.lowWarnings(Peripherals.select([device({ "key": "c", "percent": -1, "level": "Low" })]), {});
+        compare(coarse.warn.length, 1);
+        coarse = Peripherals.lowWarnings(Peripherals.select([device({ "key": "c", "percent": -1, "level": "Low",
+            "state": "charging" })]), coarse.warned);
+        coarse = Peripherals.lowWarnings(Peripherals.select([device({ "key": "c", "percent": -1, "level": "Low" })]),
+            coarse.warned);
+        compare(coarse.warn.length, 0);
+        coarse = Peripherals.lowWarnings(Peripherals.select([device({ "key": "c", "percent": -1, "level": "Normal" })]),
+            coarse.warned);
+        coarse = Peripherals.lowWarnings(Peripherals.select([device({ "key": "c", "percent": -1, "level": "Low" })]),
+            coarse.warned);
+        compare(coarse.warn.length, 1);
         // Charged above the threshold, then low again: warned again.
         result = Peripherals.lowWarnings(Peripherals.select([device({ "key": "m", "percent": 60 })]), result.warned);
         compare(result.warn.length, 0);

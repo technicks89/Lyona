@@ -27,8 +27,10 @@ the shell reads `/sys/class/power_supply/NAME/capacity` and `capacity_level`
 with two `FileView`s: no `capacity` file means a coarse device, and its
 `capacity_level` is shown. Both files are read when the device appears and
 again only when UPower signals a change for it (sysfs cannot be watched). A
-device is not shown until that check is done, so a coarse device never flashes
-a made-up percentage. Bluetooth devices (native path `/org/bluez/...`) report a
+device is not shown until that check is done, and a coarse one until its level
+has been read too, so it never flashes UPower's approximate percentage (which
+UPower itself says to ignore). A device without a `capacity` file and without a
+readable level has no reading and is not shown. Bluetooth devices (native path `/org/bluez/...`) report a
 percentage through BlueZ and have no such files.
 
 ## The pieces
@@ -44,7 +46,9 @@ percentage through BlueZ and have no such files.
 
 The rules:
 
-- **A peripheral** is a present, ready device with a charge reading that is not
+- **A peripheral** is a ready device with a charge reading (and, for the
+  battery kind only, present: UPower's IsPresent means nothing for the others)
+  that is not
   the machine's own supply (`powerSupply`, `isLaptopBattery`) and not line
   power, a UPS, a monitor, a computer, a network device or a modem. So the
   laptop battery is never listed, and peripherals never change the system
@@ -54,7 +58,9 @@ The rules:
   controller", ..., "Device").
 - **Low:** under 15%, or a coarse Critical or Low, and not charging or full.
 - **Warning:** one `notify-send` through the session's notification server
-  when a device becomes low; not again until it has been seen not low. A device
+  when a device becomes low; not again until it has recovered, that is reached
+  15% or a coarse Normal, High or Full. Charging alone does not reset it, so a
+  device plugged in at 5% and unplugged at 6% is still the same low spell. A device
   that disconnects while low keeps its "warned" mark, so reconnecting it does
   not repeat the warning. The process is started with `Quickshell.execDetached`
   only at that moment: nothing resident.
