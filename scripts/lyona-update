@@ -703,7 +703,7 @@ verify_signature() { # TARBALL VERSION BUNDLE
 
 cmd_apply() {
 	local requested_version='' file_path='' allow_downgrade=false dry_run=false yes=false
-	local given_checksum='' bundle_path=''
+	local given_checksum='' bundle_path='' signature_verified=false
 	while (($# > 0)); do
 		case $1 in
 		--version)
@@ -850,6 +850,16 @@ cmd_apply() {
 		[[ -n $bundle_path ]] || download_bundle "$requested_version"
 		warn "verifying signature"
 		verify_signature "$tarball" "$requested_version" "$bundle_path"
+		signature_verified=true
+		# The root helper checks it again on its own copy, and reads it only from
+		# the managed updates area (GHSA-x538-46gg-v37h).
+		case $bundle_path in
+		"$updates_root"/*) ;;
+		*)
+			install -m 0600 -- "$bundle_path" "$updates_root/lyona-$requested_version.sigstore.json"
+			bundle_path=$updates_root/lyona-$requested_version.sigstore.json
+			;;
+		esac
 	fi
 
 	status_detail="Unpacking lyona-$requested_version.tar.gz"
@@ -944,7 +954,19 @@ cmd_apply() {
 	status_detail="Installing $requested_version (authentication required)"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
 	warn "$status_detail"
-	if ! run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id"; then
+	# A verified release is installed on the routine prompt, where the root
+	# helper checks the signature again; anything else on its own, explicit
+	# prompt, so an unverified install never looks routine.
+	local privileged_status=0
+	if [[ $signature_verified == true ]]; then
+		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" \
+			"$bundle_path" || privileged_status=$?
+	else
+		warn "$requested_version's signature was not checked; the next prompt asks to install an UNVERIFIED update"
+		run_privileged install-unverified release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" ||
+			privileged_status=$?
+	fi
+	if ((privileged_status != 0)); then
 		die "the privileged install step failed or was declined; the live install is untouched, and the staged, built update in $staging_dir was left in place"
 	fi
 	if ! make -C "$staging_dir" install-user \

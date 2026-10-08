@@ -9,7 +9,9 @@ set -euo pipefail
 # Part 1 needs only the helper and tar: restore-system refuses a path, a bad id,
 # a backup store or backup that is not private to root, a non-root-owned archive
 # and members outside the managed locations, and restores a good backup exactly.
-# Part 2 builds a real release and runs install-system release: the helper reads
+# Part 2 builds a real release. install-system release refuses it without a
+# signature it verifies itself (GHSA-x538-46gg-v37h). install-unverified release
+# (the checksum-only path, on its own polkit prompt) installs it: the helper reads
 # the tarball and config.h only with the invoking user's permissions into its own
 # copy and refuses a wrong digest (S12-02), backs up the live files as root before
 # installing, prunes old backups, and a rollback brings the live file back. Part 2
@@ -172,7 +174,7 @@ run_helper restore-system "$good_id" >/dev/null 2>"$work/err" || {
 rm -f "$log"
 printf 'restore-system checks: PASS\n'
 
-# --- Part 2: install-system release takes the backup -------------------------
+# --- Part 2: install-unverified release takes the backup; install-system needs a signature -------------------------
 
 if ! command -v pkg-config >/dev/null 2>&1 || ! make -s -C "$repo" check-build-deps >/dev/null 2>&1; then
 	printf 'SKIP: part 2 (install-system release backups) needs the build dependencies\n'
@@ -219,30 +221,47 @@ for n in 1 2 3 4 5 6; do
 done
 
 new_id=19990101T000000Z-$$
-refuses 'malformed backup id' install-system release "$tarball" "$sha" "$version" - ../x
-refuses 'requires a tarball' install-system release "$tarball" "$sha" "$version" -
+
+# GHSA-x538-46gg-v37h: install-system installs only a release whose signature
+# it verifies itself: no bundle, a bundle outside the updates area, or one that
+# does not verify, and nothing is installed or backed up.
+refuses 'signature bundle' install-system release "$tarball" "$sha" "$version" - "$new_id"
+outside_bundle=$home/outside.sigstore.json
+install -o "$uid" -g "$uid" -m 0600 /dev/null "$outside_bundle"
+refuses 'not under the invoking user' install-system release "$tarball" "$sha" "$version" - "$new_id" "$outside_bundle"
+bad_bundle=$updates/lyona-$version.sigstore.json
+printf 'not a sigstore bundle\n' | install -o "$uid" -g "$uid" -m 0600 /dev/stdin "$bad_bundle"
+if run_helper install-system release "$tarball" "$sha" "$version" - "$new_id" "$bad_bundle" >/dev/null 2>"$work/err"; then
+	fail 'install-system installed a release whose signature does not verify'
+fi
+grep -Eq "signature does not verify|a trusted cosign" "$work/err" ||
+	fail "an unverifiable release was refused for another reason: $(cat "$work/err")"
+[[ ! -e $store/$new_id ]] || fail 'a release refused for its signature left a system backup behind'
+rm -f "$outside_bundle" "$bad_bundle"
+refuses 'malformed backup id' install-unverified release "$tarball" "$sha" "$version" - ../x
+refuses 'requires a tarball' install-unverified release "$tarball" "$sha" "$version" -
 
 # S12-02: the digest is checked on root's own copy, and both inputs are read with
 # the invoking user's permissions. Root could read a mode-000 file; the user cannot.
 wrong_sha=$(printf '%064d' 0)
-refuses 'checksum does not match' install-system release "$tarball" "$wrong_sha" "$version" - "$new_id"
+refuses 'checksum does not match' install-unverified release "$tarball" "$wrong_sha" "$version" - "$new_id"
 chmod 0000 "$tarball"
 refuses 'could not read the tarball as the invoking user' \
-	install-system release "$tarball" "$sha" "$version" - "$new_id"
+	install-unverified release "$tarball" "$sha" "$version" - "$new_id"
 chmod 0644 "$tarball"
 ln -s "$tarball" "$updates/linked.tar.gz"
-refuses 'not a safe, user-owned file' install-system release "$updates/linked.tar.gz" "$sha" "$version" - "$new_id"
+refuses 'not a safe, user-owned file' install-unverified release "$updates/linked.tar.gz" "$sha" "$version" - "$new_id"
 rm "$updates/linked.tar.gz"
 config_h=$home/config.h
 install -o "$uid" -g "$uid" -m 0000 "$repo/config.def.h" "$config_h"
 refuses 'could not read config.h as the invoking user' \
-	install-system release "$tarball" "$sha" "$version" "$config_h" "$new_id"
+	install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id"
 chmod 0644 "$config_h"
 [[ ! -e $store/$new_id ]] || fail 'a refused install left a system backup behind'
 
-run_helper install-system release "$tarball" "$sha" "$version" "$config_h" "$new_id" >"$work/install.out" 2>&1 || {
+run_helper install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id" >"$work/install.out" 2>&1 || {
 	tail -40 "$work/install.out" >&2
-	fail 'install-system release failed'
+	fail 'install-unverified release failed'
 }
 
 [[ $(stat -c '%u %a' "$store/$new_id") == '0 700' ]] || fail 'the new system backup is not private to root'
@@ -264,5 +283,5 @@ run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
 	fail 'rolling back to the new backup failed'
 }
 grep -Fxq '# live-before-update' "$live" || fail 'the rollback did not bring the live file back'
-printf 'install-system release inputs and backups: PASS\n'
+printf 'install-system signature refusals, install-unverified inputs and backups: PASS\n'
 printf 'Update-helper backups: PASS\n'

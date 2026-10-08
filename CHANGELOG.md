@@ -130,6 +130,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the modules match, which is nearly always, it costs well under a second and installs nothing. It covers installs
   only: a system update made during such a window can still install the mix until CachyOS finishes.
 
+
+### Security
+
+- **The privileged update helper verifies the release signature itself** (GHSA-x538-46gg-v37h). `lyona-update`
+  checked a release's Sigstore signature as the user, but `lyona-update-root` installed any tarball whose checksum
+  its caller passed, behind the routine "install a lyona system update" prompt: code already running as the user
+  could have had an approved prompt install its own tarball as root. The helper now checks the signature on its own
+  copy, against the release workflow's identity fixed in the helper, before it installs on that prompt. A release
+  from before signing, or an offline `--sha256` file, is installed through a separate polkit action whose prompt says
+  the signature was NOT verified. Each of the helper's three actions (install, roll back, unverified install) is tied
+  to its subcommand.
+  - **Migration:** nothing to do. An update from an earlier release still runs that release's helper for this one
+    install; the check applies from the next update on.
+
 ## [2026.10.0-beta.5] - 2026-10-09
 
 Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and

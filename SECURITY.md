@@ -29,7 +29,10 @@ is preserved, downloaded artifacts are verified where checksums are available,
 and privileged repair actions remain allowlisted and bounded. lyona's own
 releases are signed through Sigstore by the release workflow, and
 `lyona-update` refuses one whose signature does not verify (decision D-31,
-`docs/RELEASING.md`).
+`docs/RELEASING.md`). The privileged helper checks the signature again itself,
+against the release workflow's identity fixed in the helper; an install it
+cannot verify (a release from before signing, or an offline file) goes through
+its own, explicitly worded polkit action.
 
 ## Hardening Notes
 
