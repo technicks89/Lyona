@@ -49,7 +49,9 @@ window fullscreen, and `Super` + `Shift` + `M` floats it, or tiles it again.
 ### The window overview
 
 `Super` + `O` shows every open window, on every tag and monitor, as a card with
-a preview. Type to narrow the cards by title or class; `Up`, `Down`, `Home` and
+a preview. The previews come from Picom, the compositor lyona starts at login;
+without it the cards show each window's icon and title instead. Type to narrow
+the cards by title or class; `Up`, `Down`, `Home` and
 `End` move the selection; `Enter` or a click goes to that window, on its tag;
 `Ctrl` + `W` or a card's close button asks the window to close, as `Super` +
 `Q` would; `Escape` closes the overview. With more than one monitor, each card

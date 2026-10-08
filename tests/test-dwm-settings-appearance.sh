@@ -242,7 +242,7 @@ grep -Fqx $'integration\talacritty\tavailable\tactive-theme\tGenerated terminal 
 	<<<"$missing_picom"
 grep -Fqx $'integration\tkitty\tavailable\tactive-theme\tGenerated terminal theme matches the resolved palette' \
 	<<<"$missing_picom"
-grep -Fqx $'integration\tcompositor\tunavailable\tmissing\tPicom is optional and not installed' \
+grep -Fqx $'integration\tcompositor\tunavailable\tmissing\tPicom is not installed, so window previews are off' \
 	<<<"$missing_picom"
 
 printf '[window]\nimport = ["%s"]\n' "$config_home/alacritty/active-theme.toml" \

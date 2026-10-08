@@ -260,7 +260,7 @@ grep -Fqx $'selection\tgtk\tunavailable\tLyona-nord\t\tConfigured selection is n
 	<<<"$optional_loss_inventory"
 grep -Fqx $'selection\tqt\tpartial\tqt6ct\t\tConfigured Qt platform theme backend is not installed' \
 	<<<"$optional_loss_inventory"
-grep -Fqx $'selection\tcompositor\tunavailable\t\tmissing\tPicom is optional and not installed' \
+grep -Fqx $'selection\tcompositor\tunavailable\t\tmissing\tPicom is not installed, so window previews are off' \
 	<<<"$optional_loss_inventory"
 test "$(grep -Fc $'selection\t' <<<"$optional_loss_inventory")" -eq 7
 
@@ -785,7 +785,7 @@ grep -Fqx $'watch\tunavailable\tinotifywait\tInstall inotify-tools for live asse
 	<<<"$minimal"
 grep -Fqx $'selection\tfont\tunavailable\t\t\tFontconfig inventory tools are unavailable' \
 	<<<"$minimal"
-grep -Fqx $'selection\tcompositor\tunavailable\t\tmissing\tPicom is optional and not installed' \
+grep -Fqx $'selection\tcompositor\tunavailable\t\tmissing\tPicom is not installed, so window previews are off' \
 	<<<"$minimal"
 
 if HOME=$home PATH=$minimal_bin XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_root \
