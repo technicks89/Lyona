@@ -198,8 +198,9 @@ The supported installation flow must:
    transaction retried once without it; a missing required one (the `build`,
    `x11`, `runtime-required` and `desktop` profiles) stops the install before
    anything of lyona's is installed.
-5. Create a missing `config.h` from guided compile-time questions, or detected
-   and documented defaults for an unattended installation. Preserve an
+5. Create a missing `config.h` from detected and documented defaults, or, with
+   `--configure-build`, from guided compile-time questions asked before the
+   summary, each answer checked and asked again until valid. Preserve an
    existing `config.h`.
 6. Build dwm with the system compiler and detected X11 flags.
 7. Install the binary, man page, X session file, scripts, and default

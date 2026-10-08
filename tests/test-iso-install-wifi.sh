@@ -257,6 +257,10 @@ grep -Fqx 'psk=\sleading\\back=slash' "$profile" || fail "the passphrase, escape
 grep -Eqx 'uuid=[0-9a-f-]{36}' "$profile" || fail 'the profile has no UUID'
 ! grep -q '^hidden=' "$profile" || fail 'a broadcast network was marked hidden'
 if grep -Fq "$nm_secret" "$work/out"; then fail 'the passphrase was printed'; fi
+# A passphrase ending in "=" keeps it (#270): read with IFS='=' dropped it.
+printf '[Security]\nPassphrase=%s\n' 'Secret123=' >"$work/iwd/Home.psk"
+wifi_carry_over "$target" >"$work/out" || fail "carrying over a passphrase ending in = failed: $(cat "$work/out")"
+grep -Fqx 'psk=Secret123=' "$profile" || fail "a trailing = was lost: $(grep '^psk=' "$profile")"
 
 # Hidden and open: no security section, hidden kept.
 objects "$cafe" >"$work/objects.json"

@@ -30,6 +30,45 @@ lacks() { # PLAN TEXT
 
 core=$(plan core)
 has "$core" '  AUR helper: '
+# The dwm build (#289): what config.h will be, and the questions only on request.
+if [[ -e $repo/config.h ]]; then
+	has "$core" '  dwm build: your existing config.h, kept'
+else
+	has "$core" '  dwm build: config.def.h defaults (use --configure-build to choose)'
+fi
+if refused=$(plan core --configure-build); then
+	fail '--configure-build was accepted with --non-interactive'
+fi
+has "$refused" 'cannot run with --non-interactive'
+grep -Fq -- '--configure-build' <("$repo/install.sh" --help) || fail '--help does not list --configure-build'
+# Without a config.h (a copy of the tracked files): DWM_* overrides are named,
+# a dry run says when the questions would come, and answers given then declined
+# at the summary leave no config.h behind (#289).
+fresh=$work/fresh
+mkdir -p "$fresh"
+git -C "$repo" ls-files -z | (cd "$repo" && tar --null -T - -cf -) | tar -x -C "$fresh"
+[[ ! -e $fresh/config.h ]] || fail 'the scratch copy has a config.h'
+fresh_plan() {
+	env HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_DATA_HOME="$work/home/.local/share" \
+		"$fresh/install.sh" --dry-run --non-interactive --profile core 2>&1
+}
+has "$(fresh_plan)" '  dwm build: config.def.h defaults (use --configure-build to choose)'
+has "$(DWM_FONT_SIZE=14 DWM_MODKEY=alt fresh_plan)" '  dwm build: config.def.h defaults, with DWM_FONT_SIZE=14 DWM_MODKEY=alt'
+if command -v script >/dev/null 2>&1; then
+	in_terminal() { # INPUT ARGS...: install.sh in a terminal, fed INPUT
+		local input=$1
+		shift
+		printf '%b' "$input" | env HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" \
+			XDG_DATA_HOME="$work/home/.local/share" DWM_INSTALL_CACHYOS_REPOS=true DWM_INSTALL_CACHYOS_KERNEL=true \
+			script -qec "$(printf '%q ' "$fresh/install.sh" --profile core "$@")" /dev/null 2>&1
+	}
+	dry=$(in_terminal '' --dry-run --configure-build) || fail "a dry run with --configure-build failed: $dry"
+	has "$dry" 'the --configure-build answers, asked before this summary in a real install'
+	declined=$(in_terminal '\n\n\n\n\n\n\n\nn\n' --configure-build) && fail 'a declined summary went on'
+	has "$declined" 'your answers above, written to config.h once you continue'
+	has "$declined" 'Installation cancelled'
+	[[ ! -e $fresh/config.h ]] || fail 'answers declined at the summary still wrote config.h'
+fi
 # Every profile, whatever this machine's state (#258).
 has "$core" '  Time synchronization: '
 lacks "$core" 'Shell configuration: mybash'

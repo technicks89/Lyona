@@ -19,19 +19,33 @@ die() {
 	exit 1
 }
 
+# prompt_value VARIABLE PROMPT DEFAULT CHECK [CHECK-ARGS...]: an answer is
+# checked as soon as it is typed and asked again with the reason, so one typo
+# no longer stops the install after every question (#289).
 prompt_value() {
 	local variable_name=$1
 	local prompt=$2
 	local default=$3
-	local value
+	local check=$4
+	local value reason
+	shift 4
 
 	if [[ $interactive == false ]]; then
 		printf -v "$variable_name" '%s' "$default"
 		return
 	fi
 
-	read -r -p "$prompt [$default]: " value
-	printf -v "$variable_name" '%s' "${value:-$default}"
+	while true; do
+		# End of input is not an answer: stop rather than ask forever.
+		read -r -p "$prompt [$default]: " value || die "no answer for: $prompt (end of input)"
+		value=${value:-$default}
+		reason=$("$check" "$value" "$@")
+		if [[ -z $reason ]]; then
+			printf -v "$variable_name" '%s' "$value"
+			return
+		fi
+		printf '%s\n' "$reason" >&2
+	done
 }
 
 prompt_boolean() {
@@ -52,7 +66,7 @@ prompt_boolean() {
 	fi
 
 	while true; do
-		read -r -p "$prompt [$default_label]: " answer
+		read -r -p "$prompt [$default_label]: " answer || die "no answer for: $prompt (end of input)"
 		case "${answer:-$default}" in
 		1 | y | Y | yes | YES | Yes)
 			printf -v "$variable_name" '%s' 1
@@ -69,29 +83,40 @@ prompt_boolean() {
 	done
 }
 
-validate_integer() {
-	local name=$1
-	local value=$2
-	local minimum=$3
-	local maximum=$4
-
-	[[ $value =~ ^[0-9]+$ ]] ||
-		die "$name must be an integer."
-	((value >= minimum && value <= maximum)) ||
-		die "$name must be between $minimum and $maximum."
+# check_* VALUE NAME [MIN MAX]: why VALUE is refused, or nothing when valid.
+# A whole number without leading zeros (it goes into C, where 0144 is octal),
+# no longer than the maximum, so bash arithmetic never sees one that overflows.
+check_integer() {
+	local value=$1 name=$2 minimum=$3 maximum=$4
+	if [[ ! $value =~ ^(0|[1-9][0-9]*)$ ]]; then
+		printf '%s must be a whole number, such as %s.\n' "$name" "$minimum"
+	elif ((${#value} > ${#maximum})) || ((value < minimum || value > maximum)); then
+		printf '%s must be between %s and %s.\n' "$name" "$minimum" "$maximum"
+	fi
 }
 
-validate_decimal() {
-	local name=$1
-	local value=$2
-	local minimum=$3
-	local maximum=$4
+check_decimal() {
+	local value=$1 name=$2 minimum=$3 maximum=$4
+	if [[ ! $value =~ ^(0|1)(\.[0-9]+)?$ ]] ||
+		! awk -v value="$value" -v minimum="$minimum" -v maximum="$maximum" \
+			'BEGIN { exit !(value >= minimum && value <= maximum) }'; then
+		printf '%s must be a decimal between %s and %s.\n' "$name" "$minimum" "$maximum"
+	fi
+}
 
-	[[ $value =~ ^(0|1)(\.[0-9]+)?$ ]] ||
-		die "$name must be a decimal between $minimum and $maximum."
-	awk -v value="$value" -v minimum="$minimum" -v maximum="$maximum" \
-		'BEGIN { exit !(value >= minimum && value <= maximum) }' ||
-		die "$name must be between $minimum and $maximum."
+check_modkey() {
+	case "${1,,}" in
+	super | mod4 | mod4mask | alt | mod1 | mod1mask) ;;
+	*) printf 'The modifier key must be super or alt.\n' ;;
+	esac
+}
+
+# validate CHECK VALUE ARGS...: an unattended value (DWM_*) that is refused
+# stops here, before any file is written.
+validate() {
+	local reason
+	reason=$("$@")
+	[[ -z $reason ]] || die "$reason"
 }
 
 detect_refresh_rate() {
@@ -162,19 +187,20 @@ swallowfloating=${DWM_SWALLOWFLOATING:-0}
 resizehints=${DWM_RESIZEHINTS:-1}
 
 printf '\nConfigure the local dwm build. Press Enter to accept each default.\n\n'
-prompt_value refresh_rate "Monitor refresh rate in Hz" "$refresh_rate"
-prompt_value font_size "Interface font size" "$font_size"
-prompt_value modkey "Primary modifier key (super or alt)" "$modkey"
-prompt_value mfact "Default master-area ratio" "$mfact"
-prompt_value nmaster "Default number of master windows" "$nmaster"
+prompt_value refresh_rate "Monitor refresh rate in Hz" "$refresh_rate" check_integer "The refresh rate" 30 1000
+prompt_value font_size "Interface font size" "$font_size" check_integer "The font size" 6 48
+prompt_value modkey "Primary modifier key (super or alt)" "$modkey" check_modkey
+prompt_value mfact "Default master-area ratio" "$mfact" check_decimal "The master-area ratio" 0.05 0.95
+prompt_value nmaster "Default number of master windows" "$nmaster" check_integer "The master window count" 1 10
 prompt_boolean cursorwarp "Warp the pointer to the focused window" "$cursorwarp"
 prompt_boolean swallowfloating "Swallow floating windows launched from terminals" "$swallowfloating"
 prompt_boolean resizehints "Respect application size hints while tiling" "$resizehints"
 
-validate_integer "refresh rate" "$refresh_rate" 30 1000
-validate_integer "font size" "$font_size" 6 48
-validate_integer "master window count" "$nmaster" 1 10
-validate_decimal "master-area ratio" "$mfact" 0.05 0.95
+validate check_integer "$refresh_rate" "The refresh rate" 30 1000
+validate check_integer "$font_size" "The font size" 6 48
+validate check_integer "$nmaster" "The master window count" 1 10
+validate check_decimal "$mfact" "The master-area ratio" 0.05 0.95
+validate check_modkey "$modkey"
 
 case "${modkey,,}" in
 super | mod4 | mod4mask)

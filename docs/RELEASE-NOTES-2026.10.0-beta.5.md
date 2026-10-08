@@ -69,7 +69,8 @@ Upgrading from beta.4 to beta.5 still runs beta.4's helper, once.
   supported; enterprise (802.1X) and WEP are listed with the reason they
   can't be used.
 - **The passphrase stays private.** It goes only into iwd's own profile, never
-  onto a command line or into the install logs.
+  onto a command line or into the install logs. A passphrase ending in `=`
+  keeps it on the new system (#270).
 - **The new system stays online:** it gets a NetworkManager profile for the
   same network.
 - **A chip with no driver on the image is named.** Some Broadcom chips need
@@ -166,6 +167,13 @@ until one is pressed or it is closed.
 - **Firefox** is installed in the recommended and full profiles, and a new
   account gets it as the default browser (#240).
 - **The GRUB menu** no longer lists every firmware boot entry (#239).
+
+### `install.sh`
+
+- **The dwm build questions are opt-in (#289).** A new `config.h` uses the
+  defaults. `--configure-build` asks the questions before the summary, and
+  asks again when an answer isn't valid. Before, one typo stopped the install
+  after the summary.
 
 ### Fixed
 

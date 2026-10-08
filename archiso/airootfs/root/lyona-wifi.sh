@@ -261,7 +261,7 @@ wifi_nm_keyfile() { # SSID PASSPHRASE HIDDEN UUID
 # NetworkManager profile on the new system, so its first boot is online. Says
 # what it did; nothing when the medium is not on Wi-Fi.
 wifi_carry_over() { # TARGET
-	local objects path ssid type file pass='' hidden=false key value uuid profile tmp
+	local objects path ssid type file pass='' hidden=false line key value uuid profile tmp
 	command -v busctl >/dev/null 2>&1 || return 0
 	objects=$(iwd_objects) || return 0
 	[[ -n $objects ]] || return 0
@@ -282,8 +282,12 @@ wifi_carry_over() { # TARGET
 		;;
 	esac
 	# Read with the read builtin: the passphrase is in no process's arguments.
+	# Whole lines, split at the first "=": read with IFS='=' drops a trailing
+	# "=" from the value, which a passphrase may end with (#270).
 	if [[ -r $file ]]; then
-		while IFS='=' read -r key value; do
+		while IFS= read -r line; do
+			key=${line%%=*}
+			value=${line#*=}
 			case $key in
 			Passphrase) pass=$value ;;
 			PreSharedKey) [[ -n $pass ]] || pass=$value ;;

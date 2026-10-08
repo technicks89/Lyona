@@ -50,4 +50,26 @@ if DWM_REFRESH_RATE=invalid \
 fi
 test ! -e "$invalid"
 
+# #289: in a terminal, a wrong answer is asked again with the reason, instead
+# of stopping after every question with no config.h.
+if command -v script >/dev/null 2>&1; then
+	asked="$work/asked.h"
+	printf '144hz\n144\n\n\n\n\n\n\n\n' |
+		script -qec "$(printf '%s --template %s --output %s' "$repo/scripts/configure-build.sh" \
+			"$repo/config.def.h" "$asked")" /dev/null >"$work/asked.out" 2>&1 || {
+		cat "$work/asked.out" >&2
+		printf '%s\n' "The interactive configuration failed." >&2
+		exit 1
+	}
+	grep -Fq 'The refresh rate must be a whole number' "$work/asked.out" || {
+		cat "$work/asked.out" >&2
+		printf '%s\n' "A wrong answer was not explained." >&2
+		exit 1
+	}
+	grep -Eq 'refresh_rate[[:space:]]*=[[:space:]]*144;' "$asked" || {
+		printf '%s\n' "The corrected answer was not used." >&2
+		exit 1
+	}
+fi
+
 printf '%s\n' "Build configuration generation and preservation: PASS"
