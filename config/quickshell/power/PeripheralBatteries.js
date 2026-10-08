@@ -62,10 +62,12 @@ function hasCharge(device) {
 
 // A battery-powered device that is not the machine's own supply. The laptop
 // battery (powerSupply, isLaptopBattery) is never one, so peripherals cannot
-// change the system battery or the panel indicator.
+// change the system battery or the panel indicator. UPower's IsPresent is only
+// meaningful for the battery kind, so only that kind must be present.
 function isPeripheral(device) {
     if (!device || device.powerSupply === true || device.isLaptopBattery === true) return false;
-    if (device.present !== true || device.ready !== true) return false;
+    if (device.ready !== true) return false;
+    if (device.kind === "battery" && device.present !== true) return false;
     if (EXCLUDED_KINDS[device.kind] === true) return false;
     return hasCharge(device);
 }
@@ -101,6 +103,15 @@ function isLow(device) {
     return device.percent < LOW_PERCENT;
 }
 
+// Charged back up: at LOW_PERCENT or more, or a coarse Normal, High or Full.
+// Charging alone is not enough: a device plugged in at 5% and unplugged at 6%
+// is still the same low spell.
+function isRecovered(device) {
+    const level = coarseLevel(device);
+    if (level.length > 0) return level === "Normal" || level === "High" || level === "Full";
+    return device.percent >= LOW_PERCENT;
+}
+
 // The peripherals to show, sorted by name, as the rows the shell draws.
 function select(devices) {
     const rows = [];
@@ -116,6 +127,7 @@ function select(devices) {
             "detail": detail.join(" / "),
             "charging": device.state === "charging",
             "low": low,
+            "recovered": isRecovered(device),
             "statusState": low ? "partial" : "available"
         });
     }
@@ -124,10 +136,11 @@ function select(devices) {
 }
 
 // Warn once per low spell: the rows that are low now and were not warned about
-// yet. `warned` maps keys already warned about; a key is forgotten once its
-// device is no longer low, so it warns again after the next recharge. A device
-// that disconnects keeps its key, so reconnecting while still low does not
-// repeat the warning. Returns { warn: rows, warned: map }.
+// yet. `warned` maps keys already warned about; a key is forgotten only once its
+// device has recovered (isRecovered), not merely started charging, so it warns
+// again after a real recharge. A device that disconnects keeps its key, so
+// reconnecting while still low does not repeat the warning.
+// Returns { warn: rows, warned: map }.
 function lowWarnings(rows, warned) {
     const next = Object.assign({}, warned || {});
     const warn = [];
@@ -140,7 +153,7 @@ function lowWarnings(rows, warned) {
         }
     }
     for (const row of rows) {
-        if (!row.low) delete next[row.key];
+        if (row.recovered) delete next[row.key];
     }
     return { "warn": warn, "warned": next };
 }

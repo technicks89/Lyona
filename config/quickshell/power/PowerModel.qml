@@ -595,6 +595,7 @@ Scope {
             readonly property string supplyPath: /^[A-Za-z0-9_.:-]+$/.test(peripheralWatcher.modelData.nativePath)
                 ? "/sys/class/power_supply/" + peripheralWatcher.modelData.nativePath : ""
             property bool capacityChecked: peripheralWatcher.supplyPath.length === 0
+            property bool levelChecked: peripheralWatcher.supplyPath.length === 0
             property bool hasCapacity: true
 
             function reread() {
@@ -604,7 +605,11 @@ Scope {
             }
 
             function snapshot() {
-                const level = !peripheralWatcher.hasCapacity && levelFile.loaded ? levelFile.text().trim() : "";
+                // A device without a capacity file reports only a coarse level:
+                // UPower's percentage for it is an approximation to ignore, so it
+                // is never used, and without a level it has no reading at all.
+                const coarse = !peripheralWatcher.hasCapacity;
+                const level = coarse && levelFile.loaded ? levelFile.text().trim() : "";
                 return {
                     "key": peripheralWatcher.modelData.nativePath,
                     "kind": root.peripheralKind(peripheralWatcher.modelData.type),
@@ -612,10 +617,12 @@ Scope {
                     "powerSupply": peripheralWatcher.modelData.powerSupply,
                     "isLaptopBattery": peripheralWatcher.modelData.isLaptopBattery,
                     "present": peripheralWatcher.modelData.isPresent,
-                    // Not shown until the files say which reading it has, so a
-                    // coarse device never flashes a made-up percentage.
-                    "ready": peripheralWatcher.modelData.ready && peripheralWatcher.capacityChecked,
-                    "percent": level.length > 0 ? -1 : Math.max(0, Math.min(100, peripheralWatcher.modelData.percentage * 100)),
+                    // Not shown until the files say which reading it has, and for a
+                    // coarse device until its level has been read, so it never
+                    // flashes a made-up percentage.
+                    "ready": peripheralWatcher.modelData.ready && peripheralWatcher.capacityChecked
+                        && (peripheralWatcher.hasCapacity || peripheralWatcher.levelChecked),
+                    "percent": coarse ? -1 : Math.max(0, Math.min(100, peripheralWatcher.modelData.percentage * 100)),
                     "state": root.peripheralState(peripheralWatcher.modelData.state),
                     "level": level
                 };
@@ -641,8 +648,14 @@ Scope {
                 id: levelFile
                 path: peripheralWatcher.supplyPath.length > 0 ? peripheralWatcher.supplyPath + "/capacity_level" : ""
                 printErrors: false
-                onLoaded: root.schedulePeripherals()
-                onLoadFailed: root.schedulePeripherals()
+                onLoaded: {
+                    peripheralWatcher.levelChecked = true;
+                    root.schedulePeripherals();
+                }
+                onLoadFailed: {
+                    peripheralWatcher.levelChecked = true;
+                    root.schedulePeripherals();
+                }
             }
 
             Connections {
