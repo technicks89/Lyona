@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import "NotificationActions.js" as NotificationActions
 
 pragma ComponentBehavior: Bound
 
@@ -165,6 +166,9 @@ Scope {
         notification.tracked = true;
         root.sequence += 1;
 
+        const actions = NotificationActions.buttons(notification.actions);
+        // A notification with buttons asks a question: it stays until answered
+        // or closed (timeoutMs 0), instead of timing out unanswered.
         const item = {
             "key": notification.id + "-" + root.sequence,
             "notification": notification,
@@ -173,7 +177,9 @@ Scope {
             "body": notification.body || "",
             "urgency": notification.urgency,
             "urgencyName": root.urgencyName(notification.urgency),
-            "timeoutMs": notification.urgency === NotificationUrgency.Critical ? root.criticalTimeoutMs : root.popupTimeoutMs
+            "actions": actions,
+            "timeoutMs": actions.length > 0 ? 0
+                : notification.urgency === NotificationUrgency.Critical ? root.criticalTimeoutMs : root.popupTimeoutMs
         };
 
         notification.closed.connect(() => root.remove(item.key));
@@ -269,6 +275,18 @@ Scope {
         }
     }
 
+    // The button IDENTIFIER of the popup KEY was pressed: the sender is told,
+    // and the popup goes.
+    function invokeAction(key, identifier) {
+        const item = root.notifications.find(n => n.key === key);
+        if (!item) return;
+        root.remove(item.key);
+        if (!item.notification) return;
+        const action = (item.notification.actions || []).find(a => a && a.identifier === identifier);
+        if (action) action.invoke();
+        else item.notification.dismiss();
+    }
+
     function dismiss(key) {
         root.closeItem(root.notifications.find(n => n.key === key), false);
     }
@@ -358,7 +376,7 @@ Scope {
         id: server
 
         keepOnReload: false
-        actionsSupported: false
+        actionsSupported: true
         bodySupported: true
         bodyMarkupSupported: false
         imageSupported: false

@@ -4,20 +4,26 @@ set -euo pipefail
 # lyona-appimage (#260): AppImages in the launcher, without Gear Lever's GNOME
 # runtime. It is the default handler for AppImage files when nothing else is.
 #
-#   lyona-appimage open FILE    add FILE to the launcher (once) and start it
+#   lyona-appimage open FILE    add FILE to the launcher and start it; the first
+#                               time, it asks first
 #   lyona-appimage remove NAME  take an AppImage out again: its file in
-#                               ~/Applications, its launcher entry and its icon
+#                               ~/Applications (to the trash), its launcher entry
+#                               and its icon
 #   lyona-appimage list         the AppImages it has added, NAME<TAB>FILE
 #
-# Opening moves the file into ~/Applications, makes it executable, and writes a
+# Opening a new AppImage asks "Add and run", "Add only" or "Cancel": in the
+# terminal when it runs in one, else as a notification with those buttons
+# (closing it is Cancel). With no way to ask, it is only added, not run: a
+# downloaded program never runs from one click without a question. Adding
+# moves the file into ~/Applications, makes it executable, and writes a
 # launcher entry with the name and icon read from inside it. They are read with
 # unsquashfs at the offset where the AppImage's ELF runtime ends, so adding an
-# AppImage never runs it; only the open action starts it, as the user asked.
-# Nothing it reads from the file is trusted: entry values are cleaned, files are
-# size-limited, and a symlink inside the image may not lead outside it.
+# AppImage never runs it. Nothing it reads from the file is trusted: entry
+# values are cleaned, files are size-limited, and a symlink inside the image may
+# not lead outside it.
 #
-# Exit status: 0 done, 1 failed (said on stderr, and as a notification for
-# open), 2 bad usage.
+# Exit status: 0 done (or cancelled), 1 failed (said on stderr, and as a
+# notification for open), 2 bad usage.
 
 # The XDG directories, from the shared helper: beside this script in a
 # checkout, PREFIX/lib/lyona in an install.
@@ -27,16 +33,27 @@ lyona_lib=$script_dir
 [[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
-# All four are set; only data_home is read.
+# All four are set; config_home is not read.
 # shellcheck disable=SC2034
 lyona_xdg_dirs
 readonly APPS_DIR=${LYONA_APPIMAGE_DIR:-$HOME/Applications}
 readonly ENTRY_DIR=$data_home/applications
 readonly ICON_DIR=$data_home/lyona/appimage-icons
+readonly WORK_ROOT=$cache_home/lyona
+readonly LOCK_FILE=$state_home/lyona/appimage.lock
 readonly ENTRY_PREFIX=lyona-appimage-
 readonly MAX_ENTRY_BYTES=65536
 readonly MAX_ICON_BYTES=2097152
 readonly MAX_VALUE_CHARS=256
+# At most this many root .desktop files are tried, each extraction at most
+# EXTRACT_SECONDS.
+readonly MAX_CANDIDATES=8
+readonly EXTRACT_SECONDS=20
+# How long another open or remove may hold the lock (one may be asking).
+readonly LOCK_SECONDS=300
+# An AppImage that exits within this many tenths of a second, with a failure,
+# is reported as not started.
+readonly START_WATCH_TENTHS=20
 
 action=${1:-}
 work=
@@ -65,6 +82,14 @@ fail() { # MESSAGE
 usage() {
 	printf 'Usage: lyona-appimage open FILE | remove NAME | list\n' >&2
 	exit 2
+}
+
+# One lock for every change to ~/Applications and the entries: a double click
+# opens twice.
+take_lock() {
+	mkdir -p -- "${LOCK_FILE%/*}"
+	exec 9>>"$LOCK_FILE"
+	flock -w "$LOCK_SECONDS" 9 || fail "another AppImage is being added or removed; try again"
 }
 
 # The byte offset where the ELF runtime ends: the end of its section header
@@ -101,14 +126,19 @@ image_offset() { # FILE
 	printf '%s\n' "$offset"
 }
 
-# extract FILE OFFSET NAME: NAME from the image's root into $work/root, its
+# extract FILE OFFSET NAME MAX: NAME from the image's root into $work/root, its
 # symlinks followed inside the image. Prints the extracted regular file's path,
-# which must stay inside $work/root and be at most MAX bytes.
+# which must stay inside $work/root and be at most MAX bytes. No file written
+# may be larger than MAX (ulimit), and the extraction is time-limited, so a
+# huge or endless entry stops early.
 extract() { # FILE OFFSET NAME MAX
 	local file=$1 offset=$2 name=$3 max=$4 resolved root
 	# unsquashfs takes no "--": FILE is always an absolute path (integrate).
-	unsquashfs -q -no-progress -no-xattrs -follow -f -o "$offset" -d "$work/root" "$file" "$name" \
-		>/dev/null 2>&1 || return 1
+	(
+		ulimit -f $(((max + 1023) / 1024 + 1))
+		timeout "$EXTRACT_SECONDS" unsquashfs -q -no-progress -no-xattrs -follow -f -o "$offset" \
+			-d "$work/root" "$file" "$name"
+	) >/dev/null 2>&1 || return 1
 	root=$(realpath -e -- "$work/root") || return 1
 	resolved=$(realpath -e -- "$work/root/$name" 2>/dev/null) || return 1
 	[[ $resolved == "$root"/* && -f $resolved && ! -L $resolved ]] || return 1
@@ -116,38 +146,56 @@ extract() { # FILE OFFSET NAME MAX
 	printf '%s\n' "$resolved"
 }
 
-# The names at the image's root, one per line.
+# The files and symlinks at the image's root, one per line: never a directory,
+# which extracting would bring along whole.
 root_names() { # FILE OFFSET
-	unsquashfs -no-progress -l -o "$2" -d R "$1" 2>/dev/null | sed -n 's|^R/\([^/]*\)$|\1|p'
+	unsquashfs -no-progress -lls -o "$2" -d R "$1" 2>/dev/null |
+		sed -n -e 's|^-[^ ]* .* R/\([^/]*\)$|\1|p' -e 's|^l[^ ]* .* R/\([^/]*\) -> .*$|\1|p'
 }
 
-# key FILE KEY: KEY's value in the [Desktop Entry] group, cleaned: no control
-# characters, at most MAX_VALUE_CHARS.
-key() { # FILE KEY
+# TEXT cleaned for a desktop entry or a message: no control characters, at most
+# MAX_VALUE_CHARS characters (not bytes, so UTF-8 is never cut in half).
+clean() { # TEXT
+	printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177' |
+		LC_ALL=C.UTF-8 awk -v n="$MAX_VALUE_CHARS" '{ printf "%s", substr($0, 1, n) }'
+}
+
+# raw_key FILE KEY: KEY's value in the [Desktop Entry] group, as written.
+raw_key() { # FILE KEY
 	awk -v want="$2" '
 		/^\[/ { group = $0; next }
 		group == "[Desktop Entry]" {
 			eq = index($0, "=")
 			if (eq > 0 && substr($0, 1, eq - 1) == want) { print substr($0, eq + 1); exit }
-		}' "$1" | LC_ALL=C tr -d '\000-\037\177' | cut -c1-"$MAX_VALUE_CHARS"
+		}' "$1"
 }
 
-# A value quoted for an Exec line (desktop entry specification). A literal %
-# is written %%, so it is not read as a field code.
+# key FILE KEY: raw_key, cleaned: for values read from inside an AppImage.
+key() { # FILE KEY
+	clean "$(raw_key "$1" "$2")"
+}
+
+# A value for an Exec line (desktop entry specification): quoted, with ", `, $
+# and \ escaped inside the quotes and a literal % written %%, then every
+# backslash doubled by the key file's own string escaping, as webapp-create's
+# desktop_exec_arg does.
 exec_quote() { # VALUE
-	local value=$1
-	value=${value//%/%%}
+	local value=${1//%/%%}
 	value=${value//\\/\\\\}
 	value=${value//\"/\\\"}
 	value=${value//\`/\\\`}
 	value=${value//\$/\\\$}
-	printf '"%s"' "$value"
+	value="\"$value\""
+	printf '%s' "${value//\\/\\\\}"
 }
 
+# NAME as an entry id: lowercase ASCII letters, digits and dashes, at most 64
+# characters, so the entry's file name stays well under the 255-byte limit.
 slug() { # NAME
 	local value
 	value=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' '-' | tr -s '-')
 	value=${value#-}
+	value=${value:0:64}
 	value=${value%-}
 	printf '%s\n' "${value:-appimage}"
 }
@@ -162,12 +210,25 @@ entry_for() { # FILE
 	local entry
 	for entry in "$ENTRY_DIR/$ENTRY_PREFIX"*.desktop; do
 		[[ -f $entry ]] || continue
-		[[ $(key "$entry" X-Lyona-AppImage) == "$1" ]] && {
+		[[ $(raw_key "$entry" X-Lyona-AppImage) == "$1" ]] && {
 			printf '%s\n' "$entry"
 			return 0
 		}
 	done
 	return 1
+}
+
+# A free entry id for DEST: its slug, with -2, -3 when another AppImage's
+# entry has it (My_App and My-App have the same slug).
+entry_id() { # DEST
+	local base id n=2
+	base=$ENTRY_PREFIX$(slug "$(basename -- "$1")")
+	id=$base
+	while [[ -e $ENTRY_DIR/$id.desktop && $(raw_key "$ENTRY_DIR/$id.desktop" X-Lyona-AppImage) != "$1" ]]; do
+		id=$base-$n
+		n=$((n + 1))
+	done
+	printf '%s\n' "$id"
 }
 
 # Where FILE goes in APPS_DIR: there already, an identical copy already there,
@@ -191,51 +252,139 @@ destination() { # FILE
 	printf '%s\n' "$candidate"
 }
 
+# PATH for a message: under HOME shown with ~, so the text that matters fits.
+shown() { # PATH
+	if [[ $1 == "$HOME"/* ]]; then
+		# shellcheck disable=SC2088 # a literal ~ to show, not to expand
+		printf '~/%s' "${1#"$HOME"/}"
+	else
+		printf '%s' "$1"
+	fi
+}
+
+# The host FILE was downloaded from, if the browser recorded it
+# (user.xdg.origin.url): only the host, cleaned.
+origin_host() { # FILE
+	local url host
+	command -v getfattr >/dev/null 2>&1 || return 0
+	url=$(getfattr --only-values -n user.xdg.origin.url -- "$1" 2>/dev/null) || return 0
+	[[ $url == *://* ]] || return 0
+	host=${url#*://}
+	host=${host%%/*}
+	host=${host##*@}
+	clean "$host"
+}
+
+# Whether the notification server shows buttons (the "actions" capability).
+notify_can_ask() {
+	local caps
+	command -v notify-send >/dev/null 2>&1 && command -v gdbus >/dev/null 2>&1 || return 1
+	caps=$(timeout 5 gdbus call --session --dest org.freedesktop.Notifications \
+		--object-path /org/freedesktop/Notifications \
+		--method org.freedesktop.Notifications.GetCapabilities 2>/dev/null) || return 1
+	[[ $caps == *"'actions'"* ]]
+}
+
+# ask FILE: the user's choice for a new AppImage, run, add or cancel.
+ask() { # FILE
+	local file=$1 label host size question detail answer=
+	label=$(clean "$(basename -- "$file")")
+	host=$(origin_host "$file")
+	size=$(numfmt --to=iec-i --suffix=B -- "$(stat -c %s -- "$file")" 2>/dev/null || :)
+	question="Run $label?"
+	# The warning first: a notification shows three lines.
+	detail="Only run programs you trust.${host:+ Downloaded from $host.}${size:+ $size.} Either way it moves to $(shown "$APPS_DIR") and joins the launcher."
+	if [[ -t 0 && -t 2 ]]; then
+		printf '%s\n%s\n[r] Add and run  [a] Add only  [c] Cancel: ' "$question" "$detail" >&2
+		read -r answer || answer=
+		case ${answer,,} in
+		r | run) printf 'run\n' ;;
+		a | add) printf 'add\n' ;;
+		*) printf 'cancel\n' ;;
+		esac
+	elif notify_can_ask; then
+		# Critical, so Do Not Disturb does not hide a question the user just
+		# caused; closing it without a choice is Cancel.
+		answer=$(notify-send -a lyona -u critical -A run="Add and run" -A add="Add only" \
+			-A cancel=Cancel -- "$question" "$detail" 2>/dev/null) || answer=
+		case $answer in
+		run | add) printf '%s\n' "$answer" ;;
+		*) printf 'cancel\n' ;;
+		esac
+	else
+		# Nothing can ask: add it, never run it unasked.
+		printf 'add\n'
+	fi
+}
+
 # integrate FILE: the entry for FILE in APPS_DIR, written once. Sets
-# integrated_path, the AppImage in APPS_DIR. In this shell, not a subshell, so
-# the scratch directory is cleaned up on exit.
+# integrated_path, the AppImage in APPS_DIR, and choice: run, add or cancel
+# (already added: run). In this shell, not a subshell, so the scratch
+# directory is cleaned up on exit.
 integrated_path=
+choice=
 integrate() { # FILE
-	local file=$1 offset dest entry name desktop icon_name icon icon_dest ext exec_args terminal
-	local categories comment wmclass id candidate
-	[[ -f $file && ! -L $file ]] || fail "not a file: $file"
-	file=$(realpath -e -- "$file") || fail "not a file: $1"
-	offset=$(image_offset "$file") || fail "$(basename -- "$file") is not an AppImage this can read (type 2, x86)"
+	local file=$1 offset dest name desktop icon_name icon icon_dest ext exec_args terminal
+	local categories comment wmclass id candidate tried=0 base
+	local -a names=()
+	local -A in_root=()
+	[[ -f $file && ! -L $file ]] || fail "not a file: $(clean "$file")"
+	file=$(realpath -e -- "$file") || fail "not a file: $(clean "$1")"
+	base=$(basename -- "$file")
+	# A launcher entry cannot hold these in a path: rename the file first.
+	[[ $base != *[[:cntrl:]\\]* ]] ||
+		fail "$(clean "$base") has a control character or a backslash in its name; rename it and open it again"
+	offset=$(image_offset "$file") || fail "$(clean "$base") is not an AppImage this can read (type 2, x86)"
+	take_lock
 	dest=$(destination "$file")
 	if entry_for "$dest" >/dev/null && [[ -x $dest ]]; then
 		integrated_path=$dest
+		choice=run
 		return 0
 	fi
 
-	work=$(mktemp -d)
+	mkdir -p -- "$WORK_ROOT"
+	work=$(mktemp -d -p "$WORK_ROOT" appimage.XXXXXX)
+	mapfile -t names < <(root_names "$file" "$offset")
+	for candidate in "${names[@]}"; do
+		[[ -z $candidate ]] || in_root[$candidate]=1
+	done
 	desktop=
-	while IFS= read -r candidate; do
+	for candidate in "${names[@]}"; do
 		[[ $candidate == *.desktop ]] || continue
+		((tried++ < MAX_CANDIDATES)) || break
 		desktop=$(extract "$file" "$offset" "$candidate" "$MAX_ENTRY_BYTES") && break
 		desktop=
-	done < <(root_names "$file" "$offset")
+	done
 
 	name=
 	[[ -z $desktop ]] || name=$(key "$desktop" Name)
-	[[ -n $name ]] || name=$(basename -- "$dest" | sed -E 's/\.[Aa]pp[Ii]mage$//')
+	[[ -n $name ]] || name=$(clean "$(basename -- "$dest" | sed -E 's/\.[Aa]pp[Ii]mage$//')")
 	icon_name=
 	[[ -z $desktop ]] || icon_name=$(key "$desktop" Icon)
 	icon=
 	for candidate in "$icon_name.png" "$icon_name.svg" .DirIcon; do
 		[[ $candidate != .png && $candidate != .svg && $candidate != */* ]] || continue
+		[[ -n ${in_root[$candidate]:-} ]] || continue
 		icon=$(extract "$file" "$offset" "$candidate" "$MAX_ICON_BYTES") && break
 		icon=
 	done
 
+	choice=$(ask "$file")
+	if [[ $choice == cancel ]]; then
+		printf 'lyona-appimage: %s was not added\n' "$(clean "$base")" >&2
+		return 0
+	fi
+
 	mkdir -p -- "$APPS_DIR" "$ENTRY_DIR" "$ICON_DIR"
 	if [[ $file != "$dest" && ! -e $dest ]]; then
-		mv -n -- "$file" "$dest" || fail "could not move $(basename -- "$file") to $APPS_DIR"
+		mv -n -- "$file" "$dest" || fail "could not move $(clean "$base") to $APPS_DIR"
 		moved_from=$file
 		moved_to=$dest
 	fi
-	chmod u+x -- "$dest" || fail "could not make $dest executable"
+	chmod u+x -- "$dest" || fail "could not make $(clean "$dest") executable"
 
-	id=$ENTRY_PREFIX$(slug "$(basename -- "$dest")")
+	id=$(entry_id "$dest")
 	icon_dest=application-x-executable
 	if [[ -n $icon ]]; then
 		case $(od -An -tx1 -N4 -- "$icon" | tr -d ' \n') in
@@ -257,6 +406,8 @@ integrate() { # FILE
 		comment=$(key "$desktop" Comment)
 		wmclass=$(key "$desktop" StartupWMClass)
 	fi
+	# dest has no control character or backslash (checked above), so it needs
+	# no string escaping in TryExec and X-Lyona-AppImage.
 	{
 		printf '[Desktop Entry]\nType=Application\n'
 		printf 'Name=%s\n' "$name"
@@ -273,40 +424,65 @@ integrate() { # FILE
 	moved_from=
 	moved_to=
 	refresh_entries
-	notify "Added $name to the launcher" "Remove it with: lyona-appimage remove \"$name\""
+	notify "Added $name to the launcher" "Moved to $(shown "$APPS_DIR"). Remove it with: lyona-appimage remove \"$name\""
 	integrated_path=$dest
 }
 
-open_appimage() { # FILE [ARGS...]
-	local file=$1 dest
+# start DEST ARGS: started detached; one that fails within two seconds is
+# reported, with the usual cause when it is missing.
+start() { # DEST [ARGS...]
+	local dest=$1 pid status=0 i label hint=
 	shift
-	command -v unsquashfs >/dev/null 2>&1 || fail "unsquashfs is missing (install squashfs-tools)"
-	integrate "$file"
-	dest=$integrated_path
 	if command -v setsid >/dev/null 2>&1; then
-		setsid -f -- "$dest" "$@" >/dev/null 2>&1 </dev/null || fail "could not start $(basename -- "$dest")"
+		setsid -- "$dest" "$@" >/dev/null 2>&1 </dev/null &
 	else
 		"$dest" "$@" >/dev/null 2>&1 </dev/null &
 	fi
+	pid=$!
+	for ((i = 0; i < START_WATCH_TENTHS; i++)); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.1
+	done
+	kill -0 "$pid" 2>/dev/null && return 0
+	wait "$pid" || status=$?
+	((status == 0)) && return 0
+	label=$(clean "$(basename -- "$dest")")
+	[[ $(ldconfig -p 2>/dev/null || :) == *libfuse.so.2* ]] ||
+		hint=" It may need fuse2: sudo pacman -S fuse2."
+	printf 'lyona-appimage: %s did not start (exit %s).%s\n' "$label" "$status" "$hint" >&2
+	notify "$label did not start" "Run it from a terminal to see why: lyona-appimage open \"$dest\".$hint"
+	exit 1
+}
+
+open_appimage() { # FILE [ARGS...]
+	local file=$1
+	shift
+	command -v unsquashfs >/dev/null 2>&1 || fail "unsquashfs is missing (install squashfs-tools)"
+	integrate "$file"
+	[[ $choice == run ]] || return 0
+	start "$integrated_path" "$@"
 }
 
 list_appimages() {
 	local entry
 	for entry in "$ENTRY_DIR/$ENTRY_PREFIX"*.desktop; do
 		[[ -f $entry ]] || continue
-		printf '%s\t%s\n' "$(key "$entry" Name)" "$(key "$entry" X-Lyona-AppImage)"
+		printf '%s\t%s\n' "$(key "$entry" Name)" "$(raw_key "$entry" X-Lyona-AppImage)"
 	done
 }
 
 # remove NAME: by its launcher name (any case), its file name, or its path. A
 # name two AppImages share is refused, with their file names to choose from.
+# The file goes to the trash when it can.
 remove_appimage() { # NAME
-	local wanted=$1 entry name file icon apps
+	local wanted=$1 entry name file icon apps icons gone
 	local -a matches=()
+	take_lock
 	apps=$(realpath -m -- "$APPS_DIR")
+	icons=$(realpath -m -- "$ICON_DIR")
 	for entry in "$ENTRY_DIR/$ENTRY_PREFIX"*.desktop; do
 		[[ -f $entry ]] || continue
-		file=$(key "$entry" X-Lyona-AppImage)
+		file=$(raw_key "$entry" X-Lyona-AppImage)
 		if [[ $(basename -- "$file") == "$wanted" || $file == "$wanted" ]]; then
 			matches=("$entry")
 			break
@@ -317,20 +493,27 @@ remove_appimage() { # NAME
 	((${#matches[@]} > 0)) || fail "no AppImage named $wanted (see lyona-appimage list)"
 	if ((${#matches[@]} > 1)); then
 		for entry in "${matches[@]}"; do
-			printf '  %s\n' "$(basename -- "$(key "$entry" X-Lyona-AppImage)")" >&2
+			printf '  %s\n' "$(basename -- "$(raw_key "$entry" X-Lyona-AppImage)")" >&2
 		done
 		fail "${#matches[@]} AppImages are named $wanted; remove one by its file name, from the list above"
 	fi
-	for entry in "${matches[@]}"; do
-		name=$(key "$entry" Name)
-		file=$(key "$entry" X-Lyona-AppImage)
-		# Only what this added: a file in APPS_DIR and an icon in ICON_DIR.
-		[[ $(realpath -m -- "$(dirname -- "$file")") != "$apps" ]] || rm -f -- "$file"
-		icon=$(key "$entry" Icon)
-		[[ $icon != "$ICON_DIR"/* ]] || rm -f -- "$icon"
-		rm -f -- "$entry"
-		printf 'Removed %s\n' "${name:-$file}"
-	done
+	entry=${matches[0]}
+	name=$(key "$entry" Name)
+	file=$(raw_key "$entry" X-Lyona-AppImage)
+	gone="left in place (not in $APPS_DIR)"
+	# Only what this added: a file in APPS_DIR and an icon in ICON_DIR.
+	if [[ $(realpath -m -- "$(dirname -- "$file")") == "$apps" && -e $file ]]; then
+		if command -v gio >/dev/null 2>&1 && gio trash -- "$file" >/dev/null 2>&1; then
+			gone="moved to the trash"
+		else
+			rm -f -- "$file"
+			gone=deleted
+		fi
+	fi
+	icon=$(raw_key "$entry" Icon)
+	[[ $icon != /* || $(realpath -m -- "$(dirname -- "$icon")") != "$icons" ]] || rm -f -- "$icon"
+	rm -f -- "$entry"
+	printf 'Removed %s from the launcher; %s %s\n' "${name:-$file}" "$file" "$gone"
 	refresh_entries
 }
 

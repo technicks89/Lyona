@@ -1,6 +1,20 @@
 # Troubleshooting
 
+Run the dependency checker first — it covers most common issues:
+
+```bash
+dwm-diagnostics
+```
+
+Or use the [Control Center](./control-center.md) → **System Health**.
+
+---
+
 ## An AppImage does not open or start
+
+Opening a new AppImage asks first (**Add and run**, **Add only**, **Cancel**).
+If nothing seems to happen, look for that question in the top-right corner;
+closing it cancels.
 
 Opening an AppImage uses `lyona-appimage`. If it says the file is not an
 AppImage it can read, the file is unsupported or unreadable: not a type-2 x86
@@ -13,9 +27,11 @@ lyona-appimage open ~/Downloads/Some.AppImage
 lyona-appimage list
 ```
 
-An AppImage that is in the launcher but does not start usually needs
-`libfuse.so.2`: install `fuse2` (`sudo pacman -S fuse2`; the recommended
-desktop includes it). Remove one with `lyona-appimage remove NAME`. Prefer Gear
+An AppImage that fails right after it starts is reported ("did not start"), and
+one that is in the launcher but does not start usually needs `libfuse.so.2`:
+install `fuse2` (`sudo pacman -S fuse2`; the recommended desktop includes it).
+A file whose name has a control character or a backslash is refused: rename it
+first. Remove one with `lyona-appimage remove NAME`. Prefer Gear
 Lever? Run `install.sh` with `--with-gearlever`, or `install-gearlever`.
 
 ## Gear Lever does not open
@@ -41,14 +57,6 @@ It refuses a `flathub` remote that has signature verification disabled, is
 disabled, or points at an unofficial URL, and says which. Fix or remove that
 remote (`flatpak remote-modify`, `flatpak remote-delete --user flathub`) and run
 it again; `dwm-flatpak-setup --user` checks the remote on its own.
-
-Run the dependency checker first — it covers most common issues:
-
-```bash
-dwm-diagnostics
-```
-
-Or use the [Control Center](./control-center.md) → **System Health**.
 
 ---
 

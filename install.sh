@@ -325,13 +325,34 @@ install_gearlever_profile() {
 # does, such as Gear Lever from an earlier install or the user's own choice.
 # After the defaults are seeded, which only write to an account with no MIME
 # preferences yet.
+# The AppImage handler the user's own mimeapps.list names, if any: read from
+# the file, because xdg-mime query answers only for a desktop file it can find
+# in this shell, and misses a user Gear Lever when XDG_DATA_DIRS lacks Flatpak's
+# exports (a non-login shell).
+appimage_user_choice() {
+	(
+		. "$REPO_DIR/scripts/dwm-xdg.sh"
+		lyona_xdg_dirs
+		[[ -r $config_home/mimeapps.list ]] || exit 0
+		awk '
+			/^\[/ { group = $0; next }
+			group == "[Default Applications]" && index($0, "application/vnd.appimage=") == 1 {
+				value = substr($0, length("application/vnd.appimage=") + 1)
+				sub(/;.*/, "", value)
+				print value
+				exit
+			}' "$config_home/mimeapps.list"
+	)
+}
+
 configure_appimage_handler() {
 	local current
 	if ! command -v xdg-mime >/dev/null 2>&1; then
 		warn "xdg-mime is missing, so AppImages have no default handler; open them with lyona-appimage open FILE."
 		return 0
 	fi
-	current=$(xdg-mime query default application/vnd.appimage 2>/dev/null || true)
+	current=$(appimage_user_choice)
+	[[ -n $current ]] || current=$(xdg-mime query default application/vnd.appimage 2>/dev/null || true)
 	if [[ -n $current && $current != lyona-appimage.desktop ]]; then
 		ok "AppImages keep opening with $current."
 		return 0

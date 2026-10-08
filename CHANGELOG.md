@@ -30,6 +30,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   your machine, adding worldwide ones when the country has fewer than three; the new system keeps the list. The
   summary screen shows the choice. If the ranking fails or takes more than 30 seconds, the install goes on with the
   medium's own mirrorlist. In the baseline install, one slow mirror took 7 minutes over 80 MiB (#249).
+- **Notifications can ask.** A notification that comes with buttons (actions) now shows them, up to three, and stays
+  until one is pressed or it is closed instead of timing out. Other programs' notifications with actions get their
+  buttons too. The history keeps only the text (#260).
 - **Both installers say how long each step took.** The image installer logs each step's start and duration, and
   `/var/log/lyona-postinstall.log` ends with a table of every step, archinstall included. `install.sh` prints a
   `[TIME]` line after each section and the same table at the end. They are the measurements the install-speed work
@@ -37,14 +40,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
-- **AppImages open without Gear Lever's 1.7 GB of runtimes.** Opening an AppImage now uses the new `lyona-appimage`:
-  it moves the file to `~/Applications`, makes it executable, adds it to the launcher with the name and icon from
-  inside it (read with `unsquashfs`, never by running it), and starts it. `lyona-appimage remove NAME` takes it out
-  again. `fuse2` and `squashfs-tools` join the recommended desktop, so the classic AppImages, which need
+- **AppImages open without Gear Lever's 1.7 GB of runtimes.** Opening an AppImage now uses the new `lyona-appimage`.
+  The first time, it asks: **Add and run**, **Add only** or **Cancel**, in a notification (or in the terminal when run
+  from one), with where the file was downloaded from when the browser recorded it. Closing the question cancels, and
+  nothing changes; a downloaded program never runs from one click unasked. Adding moves the file to `~/Applications`,
+  makes it executable, and adds it to the launcher with the name and icon from inside it (read with `unsquashfs`,
+  never by running it). Opening it again later just starts it, and one that fails right away is reported.
+  `lyona-appimage remove NAME` takes it out again, the file to the trash. `fuse2` and `squashfs-tools` join the recommended desktop, so the classic AppImages, which need
   `libfuse.so.2`, run at all; before, only the newer static-runtime ones did. Gear Lever is now opt-in:
   `install.sh --with-gearlever` installs it from Flathub, and it then takes AppImages over (#260).
   - **Migration:** an installed Gear Lever is kept, and stays the AppImage handler. If an image install left Gear Lever
     pending for the first login, the next `install.sh` run cancels that unless `--with-gearlever` is given.
+  - **Updating with `lyona-update` or Settings:** that installs `lyona-appimage` but not its packages, and does not make
+    it the handler. Run `install.sh` again (it does both), or install `fuse2` and `squashfs-tools` with
+    `sudo pacman -S --needed fuse2 squashfs-tools` and set the handler with
+    `xdg-mime default lyona-appimage.desktop application/vnd.appimage`.
 - **Picom is part of the lyona desktop.** The overview's window previews need it, so the recommended and full profiles
   treat it as required: `check-deps.sh` and `dwm-diagnostics` report it missing as a required failure when Quickshell
   is installed (the core profile is unchanged), and System Health calls a stopped Picom a warning that turns previews
