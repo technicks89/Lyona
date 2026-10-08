@@ -66,8 +66,8 @@ runtimes, peripheral batteries are shown, Picom is part of the desktop, time syn
 - **`install.sh` asks the dwm build questions only with `--configure-build`.** It used to ask eight dwm internals
   (refresh rate, font size, modifier key, master-area ratio and so on) after the summary, on every interactive run,
   and one wrong answer stopped the install there with no message. A new `config.h` now uses `config.def.h`'s defaults;
-  `--configure-build` asks before the summary, and asks again when an answer is not valid. An existing `config.h` is
-  kept, as before (#289).
+  `--configure-build` asks before the summary, asks again when an answer is not valid, and writes `config.h` only once
+  the summary is accepted. An existing `config.h` is kept, as before, and then nothing is asked (#289).
 - **AppImages open without Gear Lever's 1.7 GB of runtimes.** Opening an AppImage now uses the new `lyona-appimage`.
   The first time, it asks: **Add and run**, **Add only** or **Cancel**, in a notification (or in the terminal when run
   from one), with where the file was downloaded from when the browser recorded it. Closing the question cancels, and

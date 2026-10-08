@@ -36,7 +36,8 @@ prompt_value() {
 	fi
 
 	while true; do
-		read -r -p "$prompt [$default]: " value || value=
+		# End of input is not an answer: stop rather than ask forever.
+		read -r -p "$prompt [$default]: " value || die "no answer for: $prompt (end of input)"
 		value=${value:-$default}
 		reason=$("$check" "$value" "$@")
 		if [[ -z $reason ]]; then
@@ -65,7 +66,7 @@ prompt_boolean() {
 	fi
 
 	while true; do
-		read -r -p "$prompt [$default_label]: " answer
+		read -r -p "$prompt [$default_label]: " answer || die "no answer for: $prompt (end of input)"
 		case "${answer:-$default}" in
 		1 | y | Y | yes | YES | Yes)
 			printf -v "$variable_name" '%s' 1
@@ -83,11 +84,13 @@ prompt_boolean() {
 }
 
 # check_* VALUE NAME [MIN MAX]: why VALUE is refused, or nothing when valid.
+# A whole number without leading zeros (it goes into C, where 0144 is octal),
+# no longer than the maximum, so bash arithmetic never sees one that overflows.
 check_integer() {
 	local value=$1 name=$2 minimum=$3 maximum=$4
-	if [[ ! $value =~ ^[0-9]+$ ]]; then
+	if [[ ! $value =~ ^(0|[1-9][0-9]*)$ ]]; then
 		printf '%s must be a whole number, such as %s.\n' "$name" "$minimum"
-	elif ((10#$value < minimum || 10#$value > maximum)); then
+	elif ((${#value} > ${#maximum})) || ((value < minimum || value > maximum)); then
 		printf '%s must be between %s and %s.\n' "$name" "$minimum" "$maximum"
 	fi
 }
