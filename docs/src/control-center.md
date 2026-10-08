@@ -188,8 +188,15 @@ this default changed is kept. The lock uses light-locker, which locks through
 LightDM (Lyona's display manager). In a `startx` session the screen still turns off,
 but the automatic lock needs LightDM.
 
+Below them, the Power Settings card lists the batteries of wireless mice,
+keyboards, headsets and other peripherals that report one, each with its level
+("40%", or a word such as "Low" for a device that reports only that) and
+whether it is charging. With none, nothing extra is shown. A peripheral that
+drops below 15% sends one notification, not repeated until it has been charged.
+
 The full Settings Power page also shows battery, external-power, profile,
-suspend, and lid capabilities. Its Lock, Log Out, Suspend, Reboot, and Shutdown
+suspend, and lid capabilities, and a **Devices** section with the same
+peripheral batteries. Its Lock, Log Out, Suspend, Reboot, and Shutdown
 buttons use the same shared root QML action model and confirmation policy as
 the panel Power menu. Denied or failed actions remain attributed to the
 surface that requested them.

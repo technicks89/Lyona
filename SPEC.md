@@ -600,6 +600,13 @@ The planned Settings surface covers:
 - NetworkManager connections, VPN entry points, and Bluetooth devices.
 - PipeWire/WirePlumber-compatible audio devices and application streams.
 - Power profiles, battery, idle, DPMS, suspend, lid, and lock behavior.
+  Peripheral batteries (mice, keyboards, headsets and other devices UPower
+  reports, never the system battery) are listed in Settings > Power and the
+  Control Center only when present, read from UPower's device list on its
+  signals, never by polling. A device that reports only a coarse level shows
+  the word, not a percentage. A peripheral that falls below 15% (or to a Low
+  or Critical level) while not charging raises one notification, not repeated
+  until it has charged above it.
 - Default applications, MIME handlers, and user-visible autostart entries.
 - Themes, wallpaper, fonts, cursors, toolkit integration, notifications, and
   practical X11 accessibility controls.

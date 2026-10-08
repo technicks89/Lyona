@@ -10,6 +10,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- **Peripheral batteries.** Settings > Power gains a **Devices** section, and the Control Center's power page a row per
+  device, listing the batteries of wireless mice, keyboards, headsets, game controllers and other peripherals that
+  UPower reports, with the level and whether it is charging. A device that reports only a coarse level, such as a
+  Logitech mouse on its receiver, shows the word ("Full", "Low") rather than a made-up percentage. Without any, nothing
+  new appears. A peripheral dropping below 15% sends one notification, not repeated until it has been charged. The list
+  follows UPower's signals, with no polling, and never includes the laptop's own battery; the display profiles' laptop
+  detection is unchanged (#243).
 - **`install.sh` turns on time synchronization.** When no other time service keeps the clock, it enables and starts
   `systemd-timesyncd`, part of `systemd`, in every profile, and the summary says so before anything is changed. A
   `chronyd`, `ntpd` or `openntpd` that is enabled or running is kept, a masked `systemd-timesyncd` is left masked, and

@@ -167,4 +167,30 @@ if grep -R -Fq 'powerMenuModel.close()' "$repo/config/quickshell"; then
 	exit 1
 fi
 
+# #243: peripheral batteries come from UPower's device list through the tested
+# PeripheralBatteries.js, rebuilt on UPower's signals: no polling timer, no
+# `upower` output. Settings and the Control Center show them only when there are
+# some, and the display profiles' laptop detection (#310) does not use them.
+grep -Fq 'import "PeripheralBatteries.js" as Peripherals' "$model"
+grep -Fq 'model: UPower.devices.values' "$model"
+grep -Fq 'const rows = Peripherals.select(devices);' "$model"
+grep -Fq 'Peripherals.lowWarnings(rows, root.peripheralWarned)' "$model"
+grep -Fq 'function onPercentageChanged() { peripheralWatcher.reread(); root.schedulePeripherals(); }' "$model"
+if grep -Eq 'upower (-d|--dump|-i|--show-info)' "$model"; then
+	printf 'PowerModel.qml must read UPower through its service API, not upower output.\n' >&2
+	exit 1
+fi
+peripheral_block=$(sed -n '/id: peripheralWatchers/,/target: PowerProfiles/p' "$model")
+if printf '%s\n' "$peripheral_block" | grep -Eq '\bTimer\b|\bProcess\b|watchChanges: true'; then
+	printf 'The peripheral battery watchers must be event-driven: no Timer, Process or file watch.\n' >&2
+	exit 1
+fi
+grep -Fq 'visible: root.powerModel.peripherals.length > 0' "$pane"
+grep -Fq 'model: root.powerModel.peripherals' "$pane"
+grep -Fq 'model: root.powerModel.peripherals' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
+grep -Fq 'if scope != "Device":' "$repo/scripts/dwm-settings-display-profiles" || {
+	printf 'The display profiles must keep ignoring device batteries (#310).\n' >&2
+	exit 1
+}
+
 printf 'Quickshell shared power model and Settings contract: PASS\n'
