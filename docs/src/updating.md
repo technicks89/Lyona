@@ -179,15 +179,17 @@ lyona, delete the line.
 ## Applying an update
 
 ```sh
-lyona-update apply --version 2026.09.0
+lyona-update apply --version 2026.10.0-beta.5
 ```
 
 Nine steps, in this exact order, so an interruption at any point is always
 recoverable:
 
 1. Download the release tarball to `$XDG_STATE_HOME/lyona/updates/`.
-2. Verify its SHA-256 against the published release digest, and its
-   signature with `cosign`, **before** unpacking it.
+2. Verify its SHA-256 against the published release digest, and, for a release
+   from `2026.10.0-beta.2` on, its signature with `cosign`, **before** unpacking
+   it. An earlier release has no signature: it is installed on its digest alone,
+   through the "NOT verified" prompt (below).
 3. Unpack it, and copy your `config.h` into the build: `~/.config/lyona/config.h`,
    or a checkout's `config.h` when run from one (see Configuration).
 4. Build it, unprivileged, so a compile failure costs you nothing but time.
