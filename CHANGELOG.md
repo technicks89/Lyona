@@ -8,6 +8,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.5] - 2026-10-08
+
+Sixth beta of the Arch Linux line, and the first since beta.4. Three security fixes for lyona's update path and root
+helpers (GHSA-x538-46gg-v37h, GHSA-xfhv-7h9c-m966, GHSA-c897-2mjw-fwhh). The install image connects to Wi-Fi, uses your
+keyboard layout for the passwords, can change an answer or retry a failed base install, and downloads from mirrors near
+you; installs are faster, with one kernel, one pacman transaction and timed steps. AppImages open without Gear Lever's
+runtimes, peripheral batteries are shown, Picom is part of the desktop, time sync is on by default, and re-running
+`install.sh` keeps your `~/.bashrc` and your time settings (#237, #239, #240, #243-#250, #258, #260, #265-#268). See
+`docs/RELEASE-NOTES-2026.10.0-beta.5.md`.
+
 ### Added
 
 - **The image installer's summary can change an answer.** **Change an answer...** asks any one question again instead
@@ -41,6 +51,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `/var/log/lyona-postinstall.log` ends with a table of every step, archinstall included. `install.sh` prints a
   `[TIME]` line after each section and the same table at the end. They are the measurements the install-speed work
   is checked against (#250).
+- **The image installer offers Wi-Fi** when there is no wired connection and the machine has a Wi-Fi card. It lists the
+  networks it finds with their signal and security, plus hidden networks, and asks for the passphrase. Open and WPA
+  personal networks are supported, but enterprise and WEP networks aren't. The passphrase goes only into iwd's own
+  profile (mode 600), never into a command line or the install log. The new system gets a NetworkManager profile for
+  the same network, so its first boot is online. A Wi-Fi chip with no driver on the image is named, with a note for the
+  Broadcom chips that need `broadcom-wl` (#237).
+- **Firefox is installed** in the recommended and full profiles, image installs included, and a fresh account gets it
+  as its default browser, for web links and HTML pages only. Before this, SUPER+B had no browser to open. An existing
+  system whose default browser is another installed browser keeps it and gets no Firefox (#240).
 
 ### Changed
 
@@ -97,13 +116,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
     Alacritty comes with the other packages, and kitty, st or xterm are used only if it is missing afterwards.
 - **Topgrade comes from the AUR's `topgrade-bin` package** instead of being built with cargo. The installer builds it
   with `makepkg` from a PKGBUILD pinned to a reviewed commit, and installs it with `pacman`. That takes seconds instead
-  of several minutes, and no longer installs `rustup`, a Rust toolchain or about 300 MB of crates; `cargo-update` is no
-  longer installed either, and nothing is built from source. Topgrade updates itself through `yay`; `pacman -Syu` does
+  of several minutes, and no longer installs `rustup`, a Rust toolchain or about 300 MB of crates; nothing is built
+  from source. Topgrade updates itself through `yay`; `pacman -Syu` does
   not update it (#245).
   - **Migration:** a Topgrade an older install built with cargo stays in `~/.cargo/bin`, before the package on
     `PATH`. `install-topgrade` offers to remove it in a terminal, and otherwise says how (`cargo uninstall topgrade`);
-    it never removes it silently. Remove `rustup` and `cargo-update` with `sudo pacman -Rns rustup cargo-update` if
-    nothing else of yours needs them.
+    it never removes it silently. Remove `rustup` with `sudo pacman -Rns rustup` if
+    nothing else of yours needs it.
 - **The image downloads 10 packages at a time**, up from 5, on the live medium and on the installed system.
   `install.sh` does not change an existing system's `/etc/pacman.conf`; it suggests `ParallelDownloads = 10` when
   the setting is lower (#249).
@@ -145,7 +164,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   Qt release is published whole, and says so. A later update brings back CachyOS's builds once theirs is newer. When
   the modules match, which is nearly always, it costs well under a second and installs nothing. It covers installs
   only: a system update made during such a window can still install the mix until CachyOS finishes.
-
+- **The image goes straight from the boot splash to the installer:** tty1 briefly showed a root console in between
+  (agetty's banner and automatic-login line, then the Arch install guide message of the day, over the boot text). Now
+  agetty clears the screen and prints nothing, login is quiet, and the installer draws its first screen before it
+  checks the network, which used to leave the console blank for a few seconds when offline. The message of the day
+  still appears on other consoles.
+- **The GRUB menu no longer lists every firmware boot entry:** GRUB 2.16 added a top-level `... (EFI BootNext)` entry
+  for each one (the firmware's boot manager, a DVD drive and so on). `lyona-grub-theme apply`, which the installers run,
+  now turns that off with `GRUB_DISABLE_BOOTNEXT=true` in `/etc/default/grub.d/90-lyona-menu.cfg`. That file is a
+  drop-in, so `/etc/default/grub` is not edited for it. `remove` deletes it, and a value you set yourself in
+  `/etc/default/grub` is kept (#239).
 
 ### Security
 
@@ -172,39 +200,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   of the X authority, read with the user's permissions. The System Health helper now checks, before it runs
   `dwm-system-health` as root, that every library the tool sources is root-owned and nobody else can write it, as it
   already did for the tool; a contract test keeps that list in step with the tool.
-
-## [2026.10.0-beta.5] - 2026-10-09
-
-Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and
-goes straight from the boot splash to the installer; GRUB no longer lists every firmware boot entry, and Topgrade can
-update cargo packages (#237, #238, #239, #240). See `docs/RELEASE-NOTES-2026.10.0-beta.5.md`.
-
-### Added
-
-- **The image installer offers Wi-Fi** when there is no wired connection and the machine has a Wi-Fi card. It lists the
-  networks it finds with their signal and security, plus hidden networks, and asks for the passphrase. Open and WPA
-  personal networks are supported, but enterprise and WEP networks aren't. The passphrase goes only into iwd's own
-  profile (mode 600), never into a command line or the install log. The new system gets a NetworkManager profile for
-  the same network, so its first boot is online. A Wi-Fi chip with no driver on the image is named, with a note for the
-  Broadcom chips that need `broadcom-wl` (#237).
-- **Firefox is installed** in the recommended and full profiles, image installs included, and a fresh account gets it
-  as its default browser, for web links and HTML pages only. Before this, SUPER+B had no browser to open. An existing
-  system whose default browser is another installed browser keeps it and gets no Firefox (#240).
-- **cargo-update is installed beside rustup**, from Arch's `extra` repository. Topgrade's Cargo step needs it to update
-  what `cargo install` installed, Topgrade included, and skipped that step without it (#238).
-
-### Fixed
-
-- **The image goes straight from the boot splash to the installer:** tty1 briefly showed a root console in between
-  (agetty's banner and automatic-login line, then the Arch install guide message of the day, over the boot text). Now
-  agetty clears the screen and prints nothing, login is quiet, and the installer draws its first screen before it
-  checks the network, which used to leave the console blank for a few seconds when offline. The message of the day
-  still appears on other consoles.
-- **The GRUB menu no longer lists every firmware boot entry:** GRUB 2.16 added a top-level `... (EFI BootNext)` entry
-  for each one (the firmware's boot manager, a DVD drive and so on). `lyona-grub-theme apply`, which the installers run,
-  now turns that off with `GRUB_DISABLE_BOOTNEXT=true` in `/etc/default/grub.d/90-lyona-menu.cfg`. That file is a
-  drop-in, so `/etc/default/grub` is not edited for it. `remove` deletes it, and a value you set yourself in
-  `/etc/default/grub` is kept (#239).
 
 ## [2026.10.0-beta.4] - 2026-10-04
 
