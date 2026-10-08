@@ -156,6 +156,16 @@ units are disabled from early startup but otherwise preserved.
 System files are installed with `sudo`, while configuration and data under the
 user's XDG directories are installed as that user.
 
+**Time synchronization** is on by default, in every profile (#258). When no
+other time service keeps the clock, the installer enables and starts
+`systemd-timesyncd`, which comes with `systemd`, so nothing is downloaded for
+it; the summary says so first. If `chronyd`, `ntpd` or `openntpd` is enabled or
+running, it is kept and `systemd-timesyncd` is not enabled beside it, and a
+masked `systemd-timesyncd` is left masked. Running the installer again changes
+nothing. An image install has it from `archinstall` already. Turn it off in
+Settings, or with `timedatectl set-ntp false`. An existing install gets it the
+next time the installer runs.
+
 Every profile and Arch image defaults to Alacritty without Herdr. With the
 explicit `--install-herdr` option, the repository downloads the official
 `https://herdr.dev/install.sh` into an isolated staging directory and verifies
