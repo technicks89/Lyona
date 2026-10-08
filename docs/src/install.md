@@ -469,6 +469,27 @@ its `terminal` variable to `dwm-terminal`, set it to `alacritty` to adopt the
 current direct-terminal default. The installer does not overwrite that
 user-owned choice.
 
+### Updates reach existing accounts
+
+`install.sh` and `lyona-update` (through `make install-user`) both run
+`scripts/lyona-reconcile-user`, so an updated account gets the same per-user
+changes as a fresh install of the same profile. Running it again changes
+nothing.
+
+- The install profile is recorded in
+  `${XDG_STATE_HOME:-$HOME/.local/state}/lyona/install-profile`. An account
+  installed before it was recorded counts as `recommended` when Quickshell is
+  installed, `core` otherwise.
+- `recommended` and `full`: the browser, media and image defaults for an
+  account with none yet, and `lyona-appimage` as the AppImage handler unless
+  another is set.
+- Every profile: a key binding in `~/.config/lyona/hotkeys.toml` that is still
+  exactly an earlier release's default is moved to this release's, for example
+  the raw Quickshell IPC calls to `lyona-shell` and Super+Shift+Q to the
+  logout that asks first. A line you changed is never touched, the previous
+  file is kept as `hotkeys.toml.bak.DATE`, and a symlinked file is left alone.
+  The old defaults are listed in `scripts/hotkeys-migrations`.
+
 An AUR helper (`yay`) is installed automatically for you as a standing
 convenience tool, independent of the package profiles above — none of the
 required, recommended, or optional packages need it, since everything the

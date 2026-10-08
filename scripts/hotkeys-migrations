@@ -1,0 +1,27 @@
+# hotkeys.toml migrations (#273): scripts/lyona-reconcile-user applies them to
+# ~/.config/lyona/hotkeys.toml. Each "-" line is a default an earlier release
+# shipped, matched exactly, so a line the user changed is never touched; the
+# "+" lines that follow replace it. A "+?" line is added after them only when
+# its key chord is bound nowhere else in the file. Lines starting "#" and blank
+# lines are ignored. Add a record whenever a default binding in
+# config/hotkeys.toml changes.
+
+# 2026.10.0-beta.2: shell actions through lyona-shell; logout and reboot ask
+# first, and the direct quit moved to a harder chord.
+-   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call launcher toggle" },
++   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"] },
+-   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter openKeybinds" },
++   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       exec=["lyona-shell", "controlcenter", "openKeybinds"] },
+-   { mod="SUPER",            key="F1",      desc="Control center",          func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter open" },
++   { mod="SUPER",            key="F1",      desc="Control center",          func="spawn",       exec=["lyona-shell", "controlcenter", "open"] },
+-   { mod="SUPER ALT",        key="F1",      desc="Control center",          func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter open" },
++   { mod="SUPER ALT",        key="F1",      desc="Control center",          func="spawn",       exec=["lyona-shell", "controlcenter", "open"] },
+-   { mod="SUPER SHIFT",      key="q",       desc="Quit dwm",                func="quit" },
++   { mod="SUPER SHIFT",      key="q",       desc="Log out (asks first)",    func="spawn",       exec=["lyona-shell", "power", "confirm", "logout"] },
++?   { mod="SUPER CTRL SHIFT", key="q",       desc="Quit dwm now",            func="quit" },
+-   { mod="SUPER CTRL",       key="q",       desc="Power menu",              func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call power toggle" },
++   { mod="SUPER CTRL",       key="q",       desc="Power menu",              func="spawn",       exec=["lyona-shell", "power", "toggle"] },
+-   { mod="SUPER CTRL SHIFT", key="r",       desc="Reboot",                  func="spawn",       cmd="systemctl reboot" },
++   { mod="SUPER CTRL SHIFT", key="r",       desc="Reboot (asks first)",     func="spawn",       exec=["lyona-shell", "power", "confirm", "reboot"] },
+-   { mod="SUPER",            key="o",       desc="Window overview",         func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call overview toggle" },
++   { mod="SUPER",            key="o",       desc="Window overview",         func="spawn",       exec=["lyona-shell", "overview", "toggle"] },

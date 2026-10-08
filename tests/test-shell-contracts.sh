@@ -149,10 +149,11 @@ assert_contains "$repo/scripts/dwm-settings-input" 'simple_watch_events input in
 # Sync Sprint 12 S12-14: dwm-xdg.sh holds the rule (an absolute value, else the
 # fallback under HOME). The exceptions each say why: dwm-system-health's deny
 # list must never fail, lyona-install-verify.sh falls back under USER_HOME and
-# refuses relative values, and three one-variable wrappers stay inline.
+# refuses relative values, three one-variable wrappers stay inline, and
+# hotkeys-migrations is data: the old default bindings, quoted as they shipped.
 xdg_inline=$(grep -nE '\$\{XDG_(CONFIG|DATA|STATE|CACHE)_HOME:[-+]|case \$\{XDG_(CONFIG|DATA|STATE|CACHE)_HOME' \
 	"$repo"/scripts/* 2>/dev/null |
-	grep -vE '^[^:]*/scripts/(dwm-xdg\.sh|dwm-system-health|lyona-install-verify\.sh|dwm-controlcenter|dwm-keybinds|dwm-settings):' || true)
+	grep -vE '^[^:]*/scripts/(dwm-xdg\.sh|dwm-system-health|lyona-install-verify\.sh|dwm-controlcenter|dwm-keybinds|dwm-settings|hotkeys-migrations):' || true)
 if [ -n "$xdg_inline" ]; then
 	printf '%s: XDG directories computed outside dwm-xdg.sh:\n%s\n' "$test_name" "$xdg_inline" >&2
 	exit 1
