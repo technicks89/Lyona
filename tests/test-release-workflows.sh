@@ -49,40 +49,69 @@ assert promote[True]["workflow_dispatch"]["inputs"]["tag"]["required"] is True, 
 # promotion edits a release with the workflow's token.
 assert build["permissions"]["contents"] == "read", build["permissions"]
 assert promote["permissions"]["contents"] == "write"
-steps = [s.get("name") for s in build["jobs"]["build-iso"]["steps"]]
-# release-check runs before the token is in reach, and lyona-release skips it.
-assert steps.index("Check the release archive") < steps.index("Create the tag and the release"), steps
-# Signed releases (D-31): the archive and the ISO are attested before anything
-# is published, with only the permissions signing needs, and the bundle is
-# published with them, for lyona-update's check.
-job = build["jobs"]["build-iso"]
-assert job["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}, job["permissions"]
-assert steps.index("Check the release archive") < steps.index("Sign the release files") < steps.index("Create the tag and the release"), steps
-assert steps.index("Build ISO") < steps.index("Sign the release files"), steps
-sign = next(s for s in job["steps"] if s.get("name") == "Sign the release files")
-assert sign["uses"].startswith("actions/attest-build-provenance@"), sign
-assert len(sign["uses"].split("@")[1]) == 40, "the signing action is not pinned to a commit"
-assert sign.get("id") == "sign", sign
-for subject in ("/iso/*.iso", "release/lyona-*.tar.gz"):
+jobs = build["jobs"]
+assert list(jobs) == ["authorize", "build-iso", "sign", "release"], list(jobs)
+bi, sg, rl = jobs["build-iso"], jobs["sign"], jobs["release"]
+steps = [s.get("name") for s in bi["steps"]]
+# The build runs the repository's code and freshly synced packages: a
+# read-only token, and it neither signs nor publishes (GHSA-xfhv-7h9c-m966).
+assert bi["permissions"] == {"contents": "read"}, bi["permissions"]
+assert "Sign the release files" not in steps and "Create the tag and the release" not in steps, steps
+assert steps.index("Check the version and the tag") < steps.index("Check the release archive") < steps.index("Build ISO"), steps
+uploads = [s["with"]["name"] for s in bi["steps"] if s.get("uses", "").startswith("actions/upload-artifact@")]
+assert uploads == ["lyona-iso-${{ env.TAG }}", "lyona-source-${{ env.TAG }}"], uploads
+assert bi["outputs"] == {"version": "${{ steps.check.outputs.version }}", "tag": "${{ steps.check.outputs.tag }}"}, bi.get("outputs")
+# Signed releases (D-31), in their own job: the only one with the OIDC token,
+# running no repository code (no checkout, no run script, only pinned actions),
+# on build-iso's files.
+for name, job in jobs.items():
+    if name != "sign":
+        assert "id-token" not in (job.get("permissions") or {}), name
+assert sg["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}, sg["permissions"]
+assert sg["needs"] == "build-iso" and "container" not in sg and "environment" not in sg, sg
+for st in sg["steps"]:
+    assert "run" not in st and "uses" in st, st
+    assert not st["uses"].startswith("actions/checkout@"), st
+    assert len(st["uses"].split("@")[1]) == 40, f"not pinned to a commit: {st['uses']}"
+sign = next(st for st in sg["steps"] if st.get("name") == "Sign the release files")
+assert sign["uses"].startswith("actions/attest-build-provenance@") and sign.get("id") == "sign", sign
+for subject in ("iso/*.iso", "source/lyona-*.tar.gz"):
     assert subject in sign["with"]["subject-path"], subject
-publish = next(s for s in job["steps"] if s.get("name") == "Create the tag and the release")
-assert publish["env"]["BUNDLE"] == "${{ steps.sign.outputs.bundle-path }}", publish["env"]
-assert '--bundle "$BUNDLE"' in publish["run"], publish["run"]
+bundle_up = [st for st in sg["steps"] if st["uses"].startswith("actions/upload-artifact@")]
+assert bundle_up and bundle_up[0]["with"]["path"] == "${{ steps.sign.outputs.bundle-path }}", bundle_up
+# The release publishes the signed files: after the signing, with the bundle.
+assert rl["needs"] == ["build-iso", "sign"], rl["needs"]
+assert rl["permissions"] == {"contents": "read"}, rl["permissions"]
+publish = next(st for st in rl["steps"] if st.get("name") == "Create the tag and the release")
+assert '--bundle "${bundle[0]}"' in publish["run"], publish["run"]
+# Both container images pinned by digest.
+import re
+for name in ("build-iso", "release"):
+    image = jobs[name]["container"]["image"]
+    assert re.fullmatch(r"archlinux:base-devel@sha256:[0-9a-f]{64}", image), (name, image)
+assert bi["container"]["image"] == rl["container"]["image"], "the two jobs use different images"
 # Only admins and maintainers: both workflows start with the authorize job, and
 # their work waits for it.
 for wf in (build, promote):
     assert "authorize" in wf["jobs"], wf["jobs"].keys()
 assert build["jobs"]["build-iso"]["needs"] == "authorize"
+assert build["jobs"]["release"]["needs"] == ["build-iso", "sign"]
 assert promote["jobs"]["promote"]["needs"] == "authorize"
-# The tag is created with the release environment's admin token, and only there.
-job = build["jobs"]["build-iso"]
+# The tag is created with the release environment's admin token, and only in
+# the release step; the build checks early that the token exists.
+job = build["jobs"]["release"]
 assert job["environment"] == "release", job.get("environment")
+assert build["jobs"]["build-iso"]["environment"] == "release"
 release_step = [s for s in job["steps"] if s.get("name") == "Create the tag and the release"][0]
 assert release_step["env"]["GH_TOKEN"] == "${{ secrets.RELEASE_TOKEN }}", release_step.get("env")
 assert job["env"]["GH_TOKEN"] == "${{ github.token }}", "the other steps must keep the workflow's own token"
-assert job["env"]["RELEASE_TOKEN_SET"] == "${{ secrets.RELEASE_TOKEN != '' }}", job["env"]
-# The container job's steps are bash scripts; a container defaults to sh.
-assert build["jobs"]["build-iso"]["defaults"]["run"]["shell"] == "bash", build["jobs"]["build-iso"].get("defaults")
+bi = build["jobs"]["build-iso"]
+assert bi["env"]["GH_TOKEN"] == "${{ github.token }}", "the build keeps the workflow's own token"
+assert bi["env"]["RELEASE_TOKEN_SET"] == "${{ secrets.RELEASE_TOKEN != '' }}", bi["env"]
+assert "secrets.RELEASE_TOKEN }}" not in str(bi["steps"]), "the build must not hold the admin token"
+# The container jobs' steps are bash scripts; a container defaults to sh.
+for name in ("build-iso", "release"):
+    assert build["jobs"][name]["defaults"]["run"]["shell"] == "bash", name
 PY
 step "$build_workflow" 'Check the version and the tag' "$work/check.sh"
 step "$build_workflow" 'Create the tag and the release' "$work/release.sh"
@@ -99,10 +128,9 @@ fi
 # shellcheck disable=SC2016 # the literal text in the workflow
 grep -Fq 'scripts/build-lyona-arch-iso.sh --output "$RUNNER_TEMP/iso"' "$build_workflow" ||
 	fail 'the ISO is not built outside the checkout'
-python3 - "$build_workflow" <<'PY' || fail 'the release is created before the ISO is built'
+python3 - "$build_workflow" <<'PY' || fail 'the version check does not come before the build dependencies'
 import sys, yaml
 steps = [s.get("name") for s in yaml.safe_load(open(sys.argv[1]))["jobs"]["build-iso"]["steps"]]
-assert steps.index("Build ISO") < steps.index("Create the tag and the release"), steps
 assert steps.index("Check the version and the tag") < steps.index("Install build dependencies"), steps
 PY
 
@@ -150,8 +178,10 @@ check() { # CHANNEL VERSION [NOTES]
 	git -C "$checkout" add -A
 	git -C "$checkout" -c user.name=t -c user.email=t@example.invalid commit -q -m "v$2" --allow-empty
 	: >"$work/github-env"
+	: >"$work/github-output"
 	mkdir -p "$work/runner-temp"
 	(cd "$checkout" && env PATH="$work/bin:$PATH" CHANNEL="$1" NOTES="${3:-}" GITHUB_ENV="$work/github-env" \
+		GITHUB_OUTPUT="$work/github-output" \
 		RUNNER_TEMP="$work/runner-temp" \
 		RELEASE_TOKEN_SET="${RELEASE_TOKEN_SET:-true}" \
 		bash "$work/check.sh") >"$work/check.out" 2>&1
@@ -161,6 +191,9 @@ grep -Fqx 'TAG=v2026.10.0-beta.1' "$work/github-env" || fail 'the beta tag was n
 check main 2026.10.0 notes/release.md || fail "a main VERSION was refused: $(cat "$work/check.out")"
 grep -Fqx 'TAG=v2026.10.0' "$work/github-env" || fail 'the main tag was not passed on'
 grep -Fqx 'VERSION=2026.10.0' "$work/github-env" || fail 'the version was not passed on'
+# And to the sign and release jobs, as build-iso's outputs.
+grep -Fqx 'version=2026.10.0' "$work/github-output" || fail 'the version is not a job output'
+grep -Fqx 'tag=v2026.10.0' "$work/github-output" || fail 'the tag is not a job output'
 for refused in 'beta 2026.10.0' 'main 2026.10.0-rc.2' 'stable 2026.10.0' 'main 2026.10'; do
 	# shellcheck disable=SC2086 # two words: the channel and the version
 	if check $refused; then fail "check accepted '$refused'"; fi
@@ -184,21 +217,26 @@ STUB_TAG_SHA="head" check main 2026.10.2 ||
 	fail "a rerun at the tagged commit was refused: $(cat "$work/check.out")"
 
 # ---- the release step -------------------------------------------------------
-mkdir -p "$work/release/scripts" "$work/runner/iso"
+mkdir -p "$work/release/scripts" "$work/runner/iso" "$work/runner/bundle"
 cat >"$work/release/scripts/lyona-release" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >"$STUB_DIR/release.args"
 EOF
 chmod +x "$work/release/scripts/lyona-release"
 : >"$work/runner/iso/lyona-2026.10.0-x86_64.iso"
-release() { (cd "$work/release" && env STUB_DIR="$work" RUNNER_TEMP="$work/runner" VERSION=2026.10.0 BUNDLE="$work/runner/bundle.json" NOTES="${1:-}" bash "$work/release.sh"); }
+# The sign job's bundle, as download-artifact leaves it.
+: >"$work/runner/bundle/attestation.jsonl"
+release() { (cd "$work/release" && env STUB_DIR="$work" RUNNER_TEMP="$work/runner" VERSION=2026.10.0 NOTES="${1:-}" bash "$work/release.sh"); }
 release || fail 'the release step failed'
-[[ $(cat "$work/release.args") == "--version 2026.10.0 --iso $work/runner/iso/lyona-2026.10.0-x86_64.iso --bundle $work/runner/bundle.json --prerelease --skip-checks" ]] ||
+[[ $(cat "$work/release.args") == "--version 2026.10.0 --iso $work/runner/iso/lyona-2026.10.0-x86_64.iso --bundle $work/runner/bundle/attestation.jsonl --prerelease --skip-checks" ]] ||
 	fail "lyona-release was run as: $(cat "$work/release.args")"
 release notes/release.md || fail 'the release step with notes failed'
 [[ $(cat "$work/release.args") == *' --prerelease --skip-checks --notes notes/release.md' ]] || fail "with notes: $(cat "$work/release.args")"
 : >"$work/runner/iso/second.iso"
 if release >/dev/null 2>&1; then fail 'the release step accepted two ISOs'; fi
+rm "$work/runner/iso/second.iso"
+rm "$work/runner/bundle/attestation.jsonl"
+if release >/dev/null 2>&1; then fail 'the release step ran without a signature bundle'; fi
 
 # ---- promotion --------------------------------------------------------------
 # gh: the named release (STUB_RELEASE: prerelease, draft, published; none when

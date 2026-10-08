@@ -14,6 +14,17 @@ name: Build ISO and release
 # Rerunning for a VERSION already tagged at this commit replaces the assets; a
 # VERSION tagged at another commit is refused, so bump config.mk first.
 #
+# Three jobs after authorize (GHSA-xfhv-7h9c-m966): build-iso builds and checks
+# everything, with a read-only token and no way to sign; sign, which runs no
+# repository code, attests what build-iso made and is the only job with the
+# OIDC token; release publishes the signed files with the admin's token. The
+# signature's identity is the workflow file (build-iso.yml on main), whichever
+# job signs, so lyona-update's check is unchanged.
+#
+# The container image is pinned by digest. To update it: docker pull
+# archlinux:base-devel, then docker inspect --format '{{json .RepoDigests}}'
+# archlinux:base-devel, and replace both digests below.
+#
 # Who can release: only the repository's admins and maintainers (the authorize
 # job). The tag is created with RELEASE_TOKEN, an admin's fine-grained token
 # kept as a secret of the "release" environment, which only main can use: the
@@ -77,15 +88,16 @@ jobs:
     needs: authorize
     environment: release
     runs-on: ubuntu-latest
-    # Read-only, but for signing: the OIDC token Sigstore signs with, and the
-    # repository's attestation store (decision R16-20).
+    # Read-only: it runs the repository's code and freshly synced packages, so
+    # it can neither sign nor publish (GHSA-xfhv-7h9c-m966).
     permissions:
       contents: read
-      id-token: write
-      attestations: write
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
     timeout-minutes: 90
     container:
-      image: archlinux:base-devel
+      image: archlinux:base-devel@sha256:996c3a1d6b0d87b01242f6fcd8cfa3ad3eece1a67ab5c8f108e20af1d7b97bdd
       options: --privileged
     # A container job's steps run with sh by default; these use bash's [[ ]],
     # arrays, mapfile and pipefail.
@@ -113,6 +125,7 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Check the version and the tag
+        id: check
         run: |
           set -euo pipefail
           version=$(awk -F= '$1 ~ /^[[:space:]]*VERSION[[:space:]]*$/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' config.mk)
@@ -160,6 +173,10 @@ jobs:
             echo "VERSION=$version"
             echo "TAG=$tag"
           } >>"$GITHUB_ENV"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+          } >>"$GITHUB_OUTPUT"
 
       - name: Install build dependencies
         run: |
@@ -192,27 +209,96 @@ jobs:
             ${{ runner.temp }}/iso/*.iso
             ${{ runner.temp }}/iso/SHA256SUMS
 
-      # Signed releases (decision D-31): a build-provenance attestation for the
-      # source archive (left by "Check the release archive", and rebuilt
-      # byte for byte by lyona-release) and the ISO, signed keylessly through
-      # Sigstore with this run's identity, so there is no signing key to keep.
-      # Signed before anything is published; the bundle is published with them
-      # as lyona-VERSION.sigstore.json, which lyona-update checks with cosign.
+      # The source archive "Check the release archive" left, for sign; the
+      # release job rebuilds it byte for byte and checks the signature names it.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lyona-source-${{ env.TAG }}
+          path: release/lyona-*.tar.gz
+          if-no-files-found: error
+
+  # Signed releases (decision D-31): a build-provenance attestation for the
+  # source archive and the ISO, signed keylessly through Sigstore with this
+  # run's identity, so there is no signing key to keep. Apart from the build
+  # (GHSA-xfhv-7h9c-m966): the only job with the OIDC token, and it runs no
+  # repository code, only these pinned actions on build-iso's files.
+  sign:
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: lyona-iso-${{ needs.build-iso.outputs.tag }}
+          path: iso
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: lyona-source-${{ needs.build-iso.outputs.tag }}
+          path: source
+
       - name: Sign the release files
         id: sign
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            ${{ runner.temp }}/iso/*.iso
-            release/lyona-*.tar.gz
+            iso/*.iso
+            source/lyona-*.tar.gz
 
-      # Every release starts as a pre-release: a beta stays one, and a main
-      # release stays one until promote-releases.yml is run for it.
-      # With the admin's token: the "Lock Tags" ruleset lets only admins create tags.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lyona-bundle-${{ needs.build-iso.outputs.tag }}
+          path: ${{ steps.sign.outputs.bundle-path }}
+          if-no-files-found: error
+
+  # Every release starts as a pre-release: a beta stays one, and a main release
+  # stays one until promote-releases.yml is run for it. With the admin's token:
+  # the "Lock Tags" ruleset lets only admins create tags.
+  release:
+    needs: [build-iso, sign]
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    container:
+      image: archlinux:base-devel@sha256:996c3a1d6b0d87b01242f6fcd8cfa3ad3eece1a67ab5c8f108e20af1d7b97bdd
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NOTES: ${{ github.event.inputs.notes }}
+      VERSION: ${{ needs.build-iso.outputs.version }}
+
+    steps:
+      - name: Install checkout and release dependencies
+        run: pacman -Syu --noconfirm --needed git github-cli jq
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trust the container checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: lyona-iso-${{ needs.build-iso.outputs.tag }}
+          path: ${{ runner.temp }}/iso
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: lyona-bundle-${{ needs.build-iso.outputs.tag }}
+          path: ${{ runner.temp }}/bundle
+
       - name: Create the tag and the release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          BUNDLE: ${{ steps.sign.outputs.bundle-path }}
         run: |
           set -euo pipefail
           iso=("$RUNNER_TEMP"/iso/*.iso)
@@ -220,7 +306,11 @@ jobs:
             echo "::error::Expected one ISO, found ${#iso[@]}"
             exit 1
           }
-          args=(--version "$VERSION" --iso "${iso[0]}" --bundle "$BUNDLE" --prerelease --skip-checks)
+          bundle=("$RUNNER_TEMP"/bundle/*)
+          if ((${#bundle[@]} != 1)) || [[ ! -f ${bundle[0]} ]]; then
+            echo "::error::Expected one signature bundle, found ${#bundle[@]}"
+            exit 1
+          fi
+          args=(--version "$VERSION" --iso "${iso[0]}" --bundle "${bundle[0]}" --prerelease --skip-checks)
           [[ -z $NOTES ]] || args+=(--notes "$NOTES")
           scripts/lyona-release "${args[@]}"
-
