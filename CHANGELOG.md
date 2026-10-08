@@ -146,16 +146,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the modules match, which is nearly always, it costs well under a second and installs nothing. It covers installs
   only: a system update made during such a window can still install the mix until CachyOS finishes.
 
-
-### Security
-
-- **Release signing moved into its own job** (GHSA-xfhv-7h9c-m966). The ISO build job held the OIDC token Sigstore signs
-  with while it ran the repository's code and freshly synced packages in a privileged container, so a compromised
-  build input could have signed any file as a lyona release, which `lyona-update` would accept. The build now has a
-  read-only token; a separate `sign` job, which runs no repository code, attests what the build made; and the release
-  job publishes it. The signature's identity is unchanged (`build-iso.yml` on `main`), so `lyona-update` needs no
-  change. The build and release containers are pinned by digest (`docs/RELEASING.md` says how to update the pin).
-
 ## [2026.10.0-beta.5] - 2026-10-09
 
 Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and
