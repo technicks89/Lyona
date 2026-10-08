@@ -45,6 +45,19 @@ trusted_file() {
 }
 # END dwm-trust.sh
 
+# trusted_file's checks for a library the tool sources, which is installed
+# without the executable bit: a canonical path in a trusted directory chain, a
+# regular root-owned file nobody else can write.
+trusted_library() {
+	local path
+	path=$(readlink -f -- "$1" 2>/dev/null) || return 1
+	[[ -n $path && $path == "$1" ]] || return 1
+	trusted_parent_chain "$path" || return 1
+	[[ -f $path && ! -L $path ]] || return 1
+	[[ $(stat -c %u -- "$path" 2>/dev/null || printf 1) == 0 ]] || return 1
+	find "$path" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
+}
+
 [[ $EUID == 0 && ${PKEXEC_UID:-} =~ ^[0-9]+$ ]] ||
 	die "this helper must run through polkit as root"
 self=$(readlink -f "${BASH_SOURCE[0]}")
@@ -54,6 +67,13 @@ trusted_file "$self" || die "helper is not a trusted root-owned executable"
 
 health="$install_prefix/bin/dwm-system-health"
 trusted_file "$health" || die "trusted dwm-system-health is unavailable"
+# What dwm-system-health sources runs as root too (GHSA-c897-2mjw-fwhh): every
+# library it loads must be as trusted as the helper itself. The list is kept in
+# step with the tool by tests/test-shell-contracts.sh.
+for health_library in dwm-xdg.sh dwm-trust.sh; do
+	trusted_library "$install_prefix/lib/lyona/$health_library" ||
+		die "trusted $health_library is unavailable"
+done
 
 # The repairs dwm-system-health offers; manage-system-service names a verb and
 # a unit, which it also checks against the failed units before acting.
