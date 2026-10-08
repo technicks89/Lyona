@@ -724,10 +724,12 @@ auto-logs into a
 root shell that automatically launches `lyona-install`
 (`archiso/airootfs/root/lyona-install.sh`) — no command to type. It is a
 short wizard drawn with `gum` (menus and prompts, the lyona banner redrawn
-between steps): keyboard, disk, btrfs or ext4 with optional LUKS encryption,
-user, hostname, timezone (detected, then confirmed), and an NVIDIA driver
-choice when applicable, then a summary to confirm, with no
-desktop-environment or package picker. It generates an
+between steps): Wi-Fi when there is no wired network, keyboard (applied to the
+console at once, so the passwords are typed with it), disk, btrfs or ext4 with
+optional LUKS encryption, user, hostname, timezone (detected, then confirmed),
+package mirrors, and an NVIDIA driver choice when applicable, then a summary to
+confirm, where any one answer can be changed, with no desktop-environment or
+package picker. A failed `archinstall` offers Retry with the same answers. It generates an
 `archinstall` JSON config and runs it fully unattended (`--silent`) — the
 base install (disk partitioning, filesystem, GRUB, user account) is not
 interactively menu-driven. GRUB boots both firmware types (#235): on UEFI it

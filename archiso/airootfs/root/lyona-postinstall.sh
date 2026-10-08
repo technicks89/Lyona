@@ -413,6 +413,8 @@ fi
 # Every run_logged step below, the install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
 set_total_steps 9
+# From the first step (#266): what a failure before install.sh leaves.
+LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
 # repositories (archinstall copied this medium's), and this step trusts their
 # key there. Updating first failed every sync with "unknown trust" (Sync Sprint

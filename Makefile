@@ -1208,7 +1208,7 @@ check-install-preservation:
 .PHONY: check-install-multilib check-install-time-sync check-iso-install-credentials check-live-medium-cleanup \
 	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary \
 	check-lyona-shell check-gearlever-first-login check-iso-install-wifi check-install-step-timing \
-	check-iso-install-mirrors
+	check-iso-install-mirrors check-iso-install-recovery
 check-install-multilib:
 	tests/test-install-multilib.sh
 
@@ -1263,6 +1263,10 @@ check-iso-install-wifi:
 # #249: the image installer ranks the mirrors in the user's country.
 check-iso-install-mirrors:
 	tests/test-iso-install-mirrors.sh
+
+# #265, #266: the image installer applies the keymap, goes back, and recovers.
+check-iso-install-recovery:
+	tests/test-iso-install-recovery.sh
 
 # #250: both install paths time each step and end with a table.
 check-install-step-timing:
@@ -1463,6 +1467,7 @@ check:
 	$(MAKE) check-iso-install-wifi
 	$(MAKE) check-install-step-timing
 	$(MAKE) check-iso-install-mirrors
+	$(MAKE) check-iso-install-recovery
 	$(MAKE) check-install-summary
 	$(MAKE) check-lyona-shell
 	$(MAKE) check-gearlever-first-login

@@ -13,7 +13,7 @@ LYONA_PACMAN_CONF=${LYONA_PACMAN_CONF:-/etc/pacman.conf}
 MIRROR_COUNTRY=
 CACHYOS_HELPER=/root/lyona/scripts/lyona-cachyos
 CACHYOS_PACKAGES=
-export LOG_FILE=/var/log/lyona-install.log
+export LOG_FILE=${LOG_FILE:-/var/log/lyona-install.log}
 
 err() { printf 'lyona-install: %s\n' "$1" >&2; }
 info() { printf 'lyona-install: %s\n' "$1"; }
@@ -281,11 +281,56 @@ welcome() {
 	echo
 }
 
+# The common keyboard layouts, by name, then every console keymap (#265). The
+# codes are console keymaps, which is what archinstall's kb_layout takes.
+KEYMAP_NAMES=(
+	"us|English (US)" "uk|English (UK)" "de|German" "de-latin1|German (latin1)"
+	"fr|French" "fr-latin1|French (latin1)" "be-latin1|Belgian" "es|Spanish"
+	"la-latin1|Latin American" "it|Italian" "pt-latin1|Portuguese"
+	"br-abnt2|Portuguese (Brazil)" "ca|Canadian (multilingual)" "cf|Canadian French"
+	"sg|Swiss German" "fr_CH|Swiss French" "nl|Dutch" "dk|Danish" "no|Norwegian"
+	"sv-latin1|Swedish" "fi|Finnish" "pl|Polish" "cz|Czech" "hu|Hungarian"
+	"ro|Romanian" "gr|Greek" "ru|Russian" "ua|Ukrainian" "by|Belarusian"
+	"trq|Turkish" "il|Hebrew" "fa|Persian" "et|Estonian" "lt|Lithuanian"
+	"lv|Latvian" "slovene|Slovenian" "mk|Macedonian" "jp106|Japanese"
+	"dvorak|Dvorak (US)" "colemak|Colemak (US)"
+)
+
+keymap_options() {
+	local entry
+	for entry in "${KEYMAP_NAMES[@]}"; do
+		printf '%s (%s)\n' "${entry#*|}" "${entry%%|*}"
+	done
+	localectl list-keymaps 2>/dev/null || :
+}
+
+# The layout is applied to this console at once: the disk and user passwords
+# below are typed with it, as they will be at the LUKS prompt and the login
+# screen. Typed with US keys instead, they would differ there.
 ask_keymap() {
-	# shellcheck disable=SC1010
-	local options=(us by ca cf cz de dk es et fa fi fr gr hu il it lt lv mk nl no pl ro ru se sg si tr ua uk)
-	KEYMAP=$(gum choose "${options[@]}" --header "Select your keyboard layout:") || cancelled
-	[[ -n $KEYMAP ]] || cancelled
+	local choice known
+	while true; do
+		choice=$(keymap_options | gum filter --header "Keyboard layout (type to search):" \
+			--placeholder "e.g. German, French, dvorak, fr") || cancelled
+		case $choice in
+		*" ("*")") KEYMAP=${choice##* (} KEYMAP=${KEYMAP%)} ;;
+		*) KEYMAP=$choice ;;
+		esac
+		known=$(localectl list-keymaps 2>/dev/null || :)
+		if [[ $KEYMAP =~ ^[A-Za-z0-9_.-]+$ ]] && { [[ -z $known ]] || grep -Fxq -- "$KEYMAP" <<<"$known"; }; then
+			break
+		fi
+		say --foreground $COLOR_DANGER "$KEYMAP is not a keyboard layout on this medium; choose another."
+	done
+	apply_keymap
+}
+
+apply_keymap() {
+	if loadkeys "$KEYMAP" >/dev/null 2>&1; then
+		say --foreground $COLOR_DIM "Keyboard set to $KEYMAP: the passwords below are typed with it."
+	else
+		say --foreground $COLOR_DANGER "Could not switch this console to $KEYMAP. Type the passwords below as on a US keyboard, or choose another layout."
+	fi
 }
 
 ask_disk() {
@@ -347,8 +392,8 @@ ask_encryption_password() {
 	local password1 password2
 
 	while true; do
-		password1=$(gum input --password --header "LUKS encryption password:") || cancelled
-		password2=$(gum input --password --header "Confirm encryption password:") || cancelled
+		password1=$(gum input --password --header "LUKS encryption password (keyboard: $KEYMAP):") || cancelled
+		password2=$(gum input --password --header "Confirm encryption password (keyboard: $KEYMAP):") || cancelled
 		[[ -n $password1 && $password1 == "$password2" ]] && break
 		say --foreground $COLOR_DANGER "passwords empty or did not match"
 	done
@@ -366,8 +411,8 @@ ask_user_creds() {
 	USERNAME=$username
 
 	while true; do
-		password1=$(gum input --password --header "Password:") || cancelled
-		password2=$(gum input --password --header "Confirm password:") || cancelled
+		password1=$(gum input --password --header "Password (keyboard: $KEYMAP):") || cancelled
+		password2=$(gum input --password --header "Confirm password (keyboard: $KEYMAP):") || cancelled
 		[[ -n $password1 && $password1 == "$password2" ]] && break
 		say --foreground $COLOR_DANGER "passwords empty or did not match"
 	done
@@ -424,22 +469,31 @@ choose_timezone() {
 	local zone
 	zone=$(timedatectl list-timezones 2>/dev/null |
 		gum filter --header "Type to find your timezone (a city or region):" \
-			--placeholder "e.g. New_York, Berlin, Tokyo") || cancelled
+			--placeholder "e.g. New_York, Berlin, Tokyo") || return 1
 	[[ -n $zone && -f /usr/share/zoneinfo/$zone ]] || fail "unknown timezone: '$zone'"
 	printf '%s\n' "$zone"
 }
 
+# Esc in the list goes back to the detected timezone's question (#266); with
+# nothing detected there is nothing to go back to, and it cancels.
 ask_timezone() {
-	local detected
-	if detected=$(detect_timezone); then
-		if gum confirm --affirmative "Yes" --negative "No" "Detected timezone: $detected. Is this correct?"; then
-			TIMEZONE=$detected
+	local detected zone
+	detected=$(detect_timezone) || detected=
+	while true; do
+		if [[ -n $detected ]]; then
+			if gum confirm --affirmative "Yes" --negative "No" "Detected timezone: $detected. Is this correct?"; then
+				TIMEZONE=$detected
+				return
+			fi
+		else
+			say --foreground "$COLOR_DIM" "Could not detect the timezone from the connection; choose it from the list."
+		fi
+		if zone=$(choose_timezone); then
+			TIMEZONE=$zone
 			return
 		fi
-	else
-		say --foreground "$COLOR_DIM" "Could not detect the timezone from the connection; choose it from the list."
-	fi
-	TIMEZONE=$(choose_timezone)
+		[[ -n $detected ]] || cancelled
+	done
 }
 
 # timezone_country ZONE: the country package mirrors are chosen from (#249),
@@ -481,30 +535,35 @@ choose_mirror_country() {
 		echo "Worldwide"
 		awk -F'\t' '!/^#/ && NF >= 2 { print $2 " (" $1 ")" }' "$LYONA_ZONEINFO/iso3166.tab" 2>/dev/null | sort
 	} | gum filter --header "Type to find the country to download packages from:" \
-		--placeholder "e.g. Germany, Japan") || cancelled
+		--placeholder "e.g. Germany, Japan") || return 1
 	case $choice in
 	Worldwide) MIRROR_COUNTRY= ;;
 	*" ("[A-Z][A-Z]")") MIRROR_COUNTRY=${choice: -3:2} ;;
-	*) cancelled ;;
+	*) return 1 ;;
 	esac
 }
 
 # The package mirrors, from the confirmed timezone's country (#249). A slow or
 # distant mirror slows every download of the install, which is most of it.
+# Esc in the country list goes back to the question (#266).
 ask_mirrors() {
-	local question status=0
-	MIRROR_COUNTRY=$(timezone_country "$TIMEZONE") || MIRROR_COUNTRY=
-	if [[ -n $MIRROR_COUNTRY ]]; then
-		question="Download packages from mirrors in $(country_name "$MIRROR_COUNTRY")?"
+	local question status country
+	country=$(timezone_country "$TIMEZONE") || country=
+	if [[ -n $country ]]; then
+		question="Download packages from mirrors in $(country_name "$country")?"
 	else
 		question="Download packages from the fastest mirrors worldwide?"
 	fi
-	gum confirm --affirmative "Yes" --negative "Choose another" "$question" || status=$?
-	case $status in
-	0) ;;
-	1) choose_mirror_country ;;
-	*) cancelled ;;
-	esac
+	while true; do
+		MIRROR_COUNTRY=$country
+		status=0
+		gum confirm --affirmative "Yes" --negative "Choose another" "$question" || status=$?
+		case $status in
+		0) return 0 ;;
+		1) choose_mirror_country && return 0 ;;
+		*) cancelled ;;
+		esac
+	done
 }
 
 # rank_mirrors [COUNTRY]: the live mirrorlist, replaced by the fastest recently
@@ -613,7 +672,7 @@ nvidia_summary() {
 	fi
 }
 
-confirm_and_proceed() {
+show_summary() {
 	gum style --border rounded --border-foreground $COLOR_ACCENT \
 		--margin "0 0 0 $PADDING_LEFT" --padding "1 2" "$(
 			cat <<EOF
@@ -629,8 +688,52 @@ NVIDIA driver: $(nvidia_summary)
 EOF
 		)"
 	echo
-	gum confirm --default=false --affirmative "Wipe $DISK and install" --negative "Cancel" \
-		"Proceed?" || cancelled
+}
+
+# The summary, until it is confirmed: any answer can be changed there (#266),
+# instead of cancelling and answering everything again. Cancel is first, so
+# Enter alone never wipes the disk.
+confirm_and_proceed() {
+	local choice
+	while true; do
+		show_summary
+		choice=$(gum choose --header "Proceed?" "Cancel" "Change an answer..." "Wipe $DISK and install") ||
+			cancelled
+		case $choice in
+		"Wipe $DISK and install") return 0 ;;
+		"Change an answer...") change_answer ;;
+		*) cancelled ;;
+		esac
+		show_logo
+	done
+}
+
+# One answer asked again; Esc goes back to the summary.
+change_answer() {
+	local field
+	field=$(gum choose --header "Which answer?" "Keyboard" "Disk" "Filesystem" "User and password" \
+		"Hostname" "Timezone" "Mirrors" "NVIDIA driver") || return 0
+	show_logo
+	case $field in
+	Keyboard)
+		ask_keymap
+		# Typed with the old layout, they would differ at login.
+		say "Type the passwords again with the new layout."
+		[[ $ENCRYPT != 1 ]] || ask_encryption_password
+		ask_user_creds
+		;;
+	Disk) ask_disk ;;
+	Filesystem) ask_filesystem ;;
+	"User and password") ask_user_creds ;;
+	Hostname) ask_hostname ;;
+	Timezone)
+		ask_timezone
+		# The mirrors come from the timezone's country.
+		ask_mirrors
+		;;
+	Mirrors) ask_mirrors ;;
+	"NVIDIA driver") ask_nvidia ;;
+	esac
 }
 
 setup_cachyos_repositories() {
@@ -674,6 +777,8 @@ base_kernel() {
 
 generate_configs() {
 	WORK_DIR=$(mktemp -d)
+	# It holds the credentials file: removed however the run ends (#266).
+	LYONA_CLEANUP_FILES+=("$WORK_DIR")
 	CONFIG_JSON="$WORK_DIR/config.json"
 	CREDS_JSON="$WORK_DIR/creds.json"
 
@@ -794,14 +899,40 @@ write_credentials_json() {
 			+ (if $encrypt then {encryption_password: $passphrase} else {} end)'
 }
 
-run_archinstall() {
-	local status=0
-	run_logged "Running archinstall (this can take several minutes)..." \
-		archinstall --config "$CONFIG_JSON" --creds "$CREDS_JSON" --silent --skip-version-check ||
-		status=$?
+# What archinstall left mounted or open on the disk, released before a retry.
+release_target() {
+	local name type
+	umount -R /mnt 2>/dev/null || :
+	while read -r name type; do
+		[[ $type != crypt ]] || cryptsetup close "$name" 2>/dev/null || :
+	done < <(lsblk -nrpo NAME,TYPE -- "$DISK" 2>/dev/null || :)
+}
 
-	((status == 0)) || fail "archinstall failed. Log: $LOG_FILE (archinstall's own log: /var/log/archinstall/install.log)"
+# archinstall until it has installed the base system on /mnt. A failure shows
+# the recovery menu (#266), with what state the disk is in; Retry runs it again
+# with the same answers, not the whole wizard.
+run_archinstall() {
+	local status
+	LYONA_RECOVER_HINT="$DISK may already be erased and partly installed; nothing else on this machine was changed. Retry runs archinstall again with your answers. archinstall's own log: /var/log/archinstall/install.log"
+	while true; do
+		status=0
+		run_logged "Running archinstall (this can take several minutes)..." \
+			archinstall --config "$CONFIG_JSON" --creds "$CREDS_JSON" --silent --skip-version-check ||
+			status=$?
+		if ((status == 0)) && mountpoint -q /mnt; then
+			break
+		fi
+		if ((status == 0)); then
+			err "/mnt is not mounted after archinstall."
+			status=1
+		else
+			err "archinstall failed (exit $status)."
+		fi
+		lyona_recover_menu "$status"
+		release_target
+	done
 	rm -rf "$WORK_DIR"
+	LYONA_RECOVER_HINT=
 }
 
 main() {
@@ -884,10 +1015,6 @@ main() {
 
 	log_step "run_archinstall"
 	run_archinstall
-
-	if ! mountpoint -q /mnt; then
-		fail "/mnt is not mounted after archinstall; not running the lyona install. Run $POSTINSTALL manually once /mnt is ready."
-	fi
 
 	touch /root/.lyona-install-done
 
