@@ -89,9 +89,11 @@ keys = [
   { mod="SUPER CTRL",       key="r",       desc="Restart Proton/Steam",    func="spawn",       cmd="protonrestart" },
 
   # ── Volume  (no modifier — press the media key directly) ─────────────────────
-  { mod="",                 key="XF86AudioRaiseVolume",   desc="Volume up",     func="spawn",  cmd="amixer sset Master 5%+ unmute" },
-  { mod="",                 key="XF86AudioLowerVolume",   desc="Volume down",   func="spawn",  cmd="amixer sset Master 5%- unmute" },
-  { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  cmd="amixer sset Master toggle" },
+  # The default output, through PipeWire or PulseAudio: the device the panel's
+  # slider shows, also when it is USB, Bluetooth or HDMI (#278).
+  { mod="",                 key="XF86AudioRaiseVolume",   desc="Volume up",     func="spawn",  exec=["dwm-quickshell-controls", "volume-up", "5%"] },
+  { mod="",                 key="XF86AudioLowerVolume",   desc="Volume down",   func="spawn",  exec=["dwm-quickshell-controls", "volume-down", "5%"] },
+  { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  exec=["dwm-quickshell-controls", "volume-toggle-mute"] },
 
   # ── Brightness ────────────────────────────────────────────────────────────────
   { mod="",                 key="XF86MonBrightnessUp",    desc="Brightness +",  func="spawn",  cmd="brightnessctl set 10%+" },

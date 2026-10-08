@@ -25,3 +25,12 @@
 +   { mod="SUPER CTRL SHIFT", key="r",       desc="Reboot (asks first)",     func="spawn",       exec=["lyona-shell", "power", "confirm", "reboot"] },
 -   { mod="SUPER",            key="o",       desc="Window overview",         func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call overview toggle" },
 +   { mod="SUPER",            key="o",       desc="Window overview",         func="spawn",       exec=["lyona-shell", "overview", "toggle"] },
+
+# After 2026.10.0-beta.5: the volume keys change the default output, the device
+# the panel slider shows, instead of the ALSA Master control (#278).
+-   { mod="",                 key="XF86AudioRaiseVolume",   desc="Volume up",     func="spawn",  cmd="amixer sset Master 5%+ unmute" },
++   { mod="",                 key="XF86AudioRaiseVolume",   desc="Volume up",     func="spawn",  exec=["dwm-quickshell-controls", "volume-up", "5%"] },
+-   { mod="",                 key="XF86AudioLowerVolume",   desc="Volume down",   func="spawn",  cmd="amixer sset Master 5%- unmute" },
++   { mod="",                 key="XF86AudioLowerVolume",   desc="Volume down",   func="spawn",  exec=["dwm-quickshell-controls", "volume-down", "5%"] },
+-   { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  cmd="amixer sset Master toggle" },
++   { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  exec=["dwm-quickshell-controls", "volume-toggle-mute"] },
