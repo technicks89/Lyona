@@ -8,7 +8,7 @@ model=$repo/config/quickshell/notifications/NotificationModel.qml
 pane=$repo/config/quickshell/settings/AppearanceSettingsPane.qml
 
 grep -Fq 'notification.closed.connect(() => root.remove(item.key));' "$model"
-grep -Fq 'const overflow = candidates.slice(root.maxVisible);' "$model"
+grep -Fq 'const fitted = NotificationActions.fitPopups(candidates, root.maxVisible);' "$model"
 grep -Fq 'root.closeItem(overflowItem, false);' "$model"
 grep -Fq 'root.notifications = [];' "$model"
 grep -Fq 'root.remove(item.key);' "$model"

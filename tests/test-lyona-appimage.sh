@@ -24,6 +24,8 @@ cat >"$work/stubs/setsid" <<'EOF'
 [ "$1" = -f ] && shift
 [ "$1" = -- ] && shift
 printf '%s\n' "$*" >>"$TEST_DIR/launch.log"
+# The started AppImage must not inherit the open/remove lock (fd 9).
+[ ! -e /proc/$$/fd/9 ] || echo inherited >>"$TEST_DIR/lock-inherited.log"
 exit "${TEST_START_STATUS:-0}"
 EOF
 # A question (with buttons) goes to ask.log and is answered with TEST_ANSWER;
@@ -33,6 +35,13 @@ cat >"$work/stubs/notify-send" <<'EOF'
 case " $* " in
 *" -A "*)
 	printf '%s\n' "$*" >>"$TEST_DIR/ask.log"
+	# Whether the open/remove lock was free while asking.
+	# (exit 75 only for a conflict; no lock file yet is free too).
+	status=0
+	flock -n -E 75 "$TEST_LOCK" true 2>/dev/null || status=$?
+	if [ "$status" = 75 ]; then echo held; else echo free; fi >>"$TEST_DIR/lock.log"
+	# Something else happening while the question is open.
+	[ -z "${TEST_DURING_ASK:-}" ] || sh -c "$TEST_DURING_ASK"
 	[ -z "${TEST_ANSWER:-}" ] || printf '%s\n' "$TEST_ANSWER"
 	;;
 *) printf '%s\n' "$*" >>"$TEST_DIR/notify.log" ;;
@@ -95,8 +104,8 @@ fixture Bare.AppImage
 run_helper() { # ARGS...
 	env -i HOME="$work/home" PATH="$work/stubs:/usr/bin:/bin" TEST_DIR="$work" \
 		TEST_CAPS="${TEST_CAPS-actions}" TEST_ANSWER="${TEST_ANSWER-run}" \
-		TEST_START_STATUS="${TEST_START_STATUS:-0}" \
-		XDG_DATA_HOME="$work/home/.local/share" XDG_STATE_HOME="$work/home/.local/state" \
+		TEST_START_STATUS="${TEST_START_STATUS:-0}" TEST_DURING_ASK="${TEST_DURING_ASK:-}" \
+		TEST_LOCK="$work/home/.local/state/lyona/appimage.lock" XDG_DATA_HOME="$work/home/.local/share" XDG_STATE_HOME="$work/home/.local/state" \
 		XDG_CACHE_HOME="$work/home/.cache" "$helper" "$@" </dev/null
 }
 count() { # FILE
@@ -209,6 +218,17 @@ for answer in cancel ''; do
 		fail "answering '$answer' added it"
 	[[ $(count "$work/launch.log") == "$launched_before" ]] || fail "answering '$answer' started it"
 done
+
+# --- The question does not hold the lock; a second open while it is up. --------
+grep -qx held "$work/lock.log" && fail 'the open/remove lock was held while asking'
+cp "$work/fixtures/Bare.AppImage" "$work/home/Downloads/Twice.AppImage"
+launched_before=$(count "$work/launch.log")
+# While the first open asks, a second open of the same file adds it (answer: add).
+TEST_DURING_ASK="TEST_DURING_ASK= TEST_ANSWER=add $(printf '%q open %q' "$helper" "$work/home/Downloads/Twice.AppImage")" \
+	run_helper open "$work/home/Downloads/Twice.AppImage" 2>"$work/err" || fail "the first of two opens failed: $(cat "$work/err")"
+[[ -x $apps/Twice.AppImage && ! -e $work/home/Downloads/Twice.AppImage ]] || fail 'two opens did not add the file once'
+[[ $(find "$entries" -name 'lyona-appimage-twice-appimage*.desktop' | wc -l) == 1 ]] || fail 'two opens wrote two entries'
+[[ $(count "$work/launch.log") == $((launched_before + 1)) ]] || fail 'the first open (Add and run) did not start it'
 
 # --- Add only: added, not started. ----------------------------------------------
 launched_before=$(count "$work/launch.log")
@@ -351,6 +371,8 @@ if command -v gio >/dev/null 2>&1 && grep -Fq 'moved to the trash' "$work/remove
 	[[ -f $work/home/.local/share/Trash/files/Broken.AppImage ]] || fail 'remove said trash but the file is not there'
 fi
 [[ -f $outside ]] || fail 'remove deleted an icon outside its own directory'
+
+[[ ! -e $work/lock-inherited.log ]] || fail 'a started AppImage inherited the open/remove lock'
 
 # --- Usage. ----------------------------------------------------------------------
 status=0

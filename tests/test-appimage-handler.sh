@@ -52,9 +52,17 @@ run_case() {
 run_case ''
 grep -Fxq lyona-appimage.desktop "$work/default.log" || fail 'with no handler, lyona-appimage was not set'
 
-# Already lyona-appimage: set again, harmlessly.
+# Already set to lyona-appimage by an earlier run: detected, nothing changed.
 STUB_QUERY=lyona-appimage.desktop run_case 'application/vnd.appimage=lyona-appimage.desktop;'
-grep -Fxq lyona-appimage.desktop "$work/default.log" || fail 'an existing lyona-appimage default was not kept'
+[[ ! -s $work/default.log ]] || fail 'an existing lyona-appimage default was set again'
+grep -Fq 'ok AppImages already open with lyona-appimage.' "$work/out.log" ||
+	fail "an existing lyona-appimage default was not reported: $(cat "$work/out.log")"
+
+# lyona-appimage only by xdg-mime's own choice (no explicit default): set.
+STUB_QUERY=lyona-appimage.desktop run_case ''
+grep -Fxq lyona-appimage.desktop "$work/default.log" || fail 'an implicit lyona-appimage default was not made explicit'
+grep -Fq 'ok AppImages open with lyona-appimage, which adds them to the launcher.' "$work/out.log" ||
+	fail "setting lyona-appimage was not reported: $(cat "$work/out.log")"
 
 # Gear Lever in mimeapps.list, invisible to xdg-mime query: kept.
 STUB_QUERY='' run_case 'application/vnd.appimage=it.mijorus.gearlever.desktop;'
@@ -69,4 +77,4 @@ STUB_QUERY=other.desktop run_case ''
 run_case 'text/plain=org.gnome.TextEditor.desktop;'
 grep -Fxq lyona-appimage.desktop "$work/default.log" || fail 'an unrelated default stopped lyona-appimage being set'
 
-printf 'AppImage handler (none, ours, Gear Lever unseen by xdg-mime, other, unrelated): PASS\n'
+printf 'AppImage handler (none, ours, implicit, Gear Lever unseen by xdg-mime, other, unrelated): PASS\n'

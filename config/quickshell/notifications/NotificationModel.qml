@@ -192,8 +192,11 @@ Scope {
 
         const existing = root.notifications.filter(n => n.notification && n.notification.id !== notification.id);
         const candidates = [item].concat(existing);
-        const overflow = candidates.slice(root.maxVisible);
-        root.notifications = candidates.slice(0, root.maxVisible);
+        // Questions (buttons, no timeout) stay until answered: only ordinary
+        // notifications count toward maxVisible.
+        const fitted = NotificationActions.fitPopups(candidates, root.maxVisible);
+        const overflow = fitted.overflow;
+        root.notifications = fitted.kept;
 
         for (const overflowItem of overflow) {
             root.closeItem(overflowItem, false);

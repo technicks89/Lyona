@@ -98,8 +98,9 @@ first open.
   buttons (no `actions` capability), it is added but never run.
 - **The shell:** lyona's notification server did not support actions. It now
   does: up to three buttons (`NotificationActions.js`, never the `default`
-  action), no timeout while a question is open, and the history keeps only
-  the text. Other programs' actions get buttons too.
+  action), no timeout while a question is open, questions never pushed out by
+  the four-popup limit (only ordinary notifications count toward it), and the
+  history keeps only the text. Other programs' actions get buttons too.
 - **Cancel** leaves the file where it was, not executable; nothing is written.
 
 Fixed with it, from the review and the #260 comment:
@@ -110,7 +111,7 @@ Fixed with it, from the review and the #260 comment:
 | `Exec` escaped one level short | `exec_quote` matches `webapp-create`'s `desktop_exec_arg`: quote, then double every backslash |
 | `My_App` and `My-App` shared an entry | `entry_id` adds `-2`, `-3` when another AppImage has the id; ids are at most 64 characters |
 | Own `X-Lyona-AppImage` cut at 256 characters | Read back raw (`raw_key`); only values from inside an AppImage are cleaned |
-| Double click raced two opens | `flock` on `$XDG_STATE_HOME/lyona/appimage.lock` around open and remove |
+| Double click raced two opens | `flock` on `$XDG_STATE_HOME/lyona/appimage.lock` around the changes of open and remove; taken after the question (an open question holds nothing up), then the destination and entry are looked at again |
 | Extraction unbounded | Root directories are never extracted, at most 8 candidates, `ulimit -f` per file, 20 s each, scratch under `$XDG_CACHE_HOME/lyona` |
 | Icon removal by text prefix | Resolved directory compared |
 | UTF-8 cut in half | `clean` truncates by character |

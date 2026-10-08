@@ -19,3 +19,25 @@ function buttons(actions) {
     }
     return result;
 }
+
+// The popups to keep when a new one arrives, newest first: only ordinary
+// notifications count toward maxVisible. A question (one with buttons) is
+// never pushed out unanswered; closing it would answer it (Cancel). Returns
+// { kept, overflow }: overflow are the ordinary ones to close.
+function fitPopups(candidates, maxVisible) {
+    var kept = [];
+    var overflow = [];
+    var ordinary = 0;
+    for (var i = 0; i < candidates.length; i++) {
+        var item = candidates[i];
+        if (item.actions && item.actions.length > 0) {
+            kept.push(item);
+        } else if (ordinary < maxVisible) {
+            kept.push(item);
+            ordinary++;
+        } else {
+            overflow.push(item);
+        }
+    }
+    return { "kept": kept, "overflow": overflow };
+}
