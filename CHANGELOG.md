@@ -146,17 +146,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the modules match, which is nearly always, it costs well under a second and installs nothing. It covers installs
   only: a system update made during such a window can still install the mix until CachyOS finishes.
 
-
-### Security
-
-- **The display and System Health root helpers no longer read the user's files as root** (GHSA-c897-2mjw-fwhh). The
-  display helper ran `dwm-display-setup` with the invoking user's `HOME`, and checked the X authority file in the
-  user's home before opening it as root, so the file could be swapped between the check and the open; with none
-  given, Xlib looked for `~/.Xauthority` through that `HOME`. It now runs with root's own `HOME` and a root-owned copy
-  of the X authority, read with the user's permissions. The System Health helper now checks, before it runs
-  `dwm-system-health` as root, that every library the tool sources is root-owned and nobody else can write it, as it
-  already did for the tool; a contract test keeps that list in step with the tool.
-
 ## [2026.10.0-beta.5] - 2026-10-09
 
 Sixth beta of the Arch Linux line: the install image connects to Wi-Fi, installs Firefox as the default browser, and
