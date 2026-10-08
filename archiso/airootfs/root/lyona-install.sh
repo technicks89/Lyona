@@ -306,7 +306,10 @@ keymap_options() {
 
 # The layout is applied to this console at once: the disk and user passwords
 # below are typed with it, as they will be at the LUKS prompt and the login
-# screen. Typed with US keys instead, they would differ there.
+# screen. Typed with US keys instead, they would differ there. So the layout
+# installed (KEYMAP, archinstall's kb_layout) is always the one active here:
+# when loadkeys fails, the user chooses another or keeps the active one.
+ACTIVE_KEYMAP=us
 ask_keymap() {
 	local choice known
 	while true; do
@@ -326,11 +329,24 @@ ask_keymap() {
 }
 
 apply_keymap() {
-	if loadkeys "$KEYMAP" >/dev/null 2>&1; then
-		say --foreground $COLOR_DIM "Keyboard set to $KEYMAP: the passwords below are typed with it."
-	else
-		say --foreground $COLOR_DANGER "Could not switch this console to $KEYMAP. Type the passwords below as on a US keyboard, or choose another layout."
-	fi
+	local choice
+	while ! loadkeys "$KEYMAP" >/dev/null 2>&1; do
+		say --foreground $COLOR_DANGER "Could not switch this console to $KEYMAP."
+		choice=$(gum choose --header "The passwords must be typed with the layout that is installed:" \
+			"Choose another layout" "Keep $ACTIVE_KEYMAP (the layout this console has)") || choice=
+		case $choice in
+		"Keep "*)
+			KEYMAP=$ACTIVE_KEYMAP
+			return 0
+			;;
+		*)
+			ask_keymap
+			return 0
+			;;
+		esac
+	done
+	ACTIVE_KEYMAP=$KEYMAP
+	say --foreground $COLOR_DIM "Keyboard set to $KEYMAP: the passwords below are typed with it."
 }
 
 ask_disk() {
@@ -474,10 +490,11 @@ choose_timezone() {
 	printf '%s\n' "$zone"
 }
 
-# Esc in the list goes back to the detected timezone's question (#266); with
-# nothing detected there is nothing to go back to, and it cancels.
+# Esc in the list goes back to the detected timezone's question (#266). With
+# nothing detected, it asks whether to choose again or cancel the installer;
+# Esc there goes back to the list.
 ask_timezone() {
-	local detected zone
+	local detected zone choice
 	detected=$(detect_timezone) || detected=
 	while true; do
 		if [[ -n $detected ]]; then
@@ -492,7 +509,11 @@ ask_timezone() {
 			TIMEZONE=$zone
 			return
 		fi
-		[[ -n $detected ]] || cancelled
+		if [[ -z $detected ]]; then
+			choice=$(gum choose --header "No timezone chosen." "Choose from the list" "Cancel the installer") ||
+				choice=
+			[[ $choice != "Cancel the installer" ]] || cancelled
+		fi
 	done
 }
 

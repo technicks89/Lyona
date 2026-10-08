@@ -122,7 +122,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - **The image installer uses your keyboard layout for the passwords.** The layout you chose was set only on the new
   system, while the disk-encryption and user passwords were typed in a US layout on the live medium. On a French or
   German keyboard, the same keys then gave other characters at the LUKS prompt and at login, so the disk would not
-  unlock and the password did not match. The layout now applies to the console as soon as it is chosen, and the password prompts name it. The list is
+  unlock and the password did not match. The layout now applies to the console as soon as it is chosen, and the password prompts name it; one the console cannot
+  load is not installed either (keep the active layout or choose another), so the two always match. The list is
   searchable, names the common layouts, and offers every console keymap; Swedish, Turkish and Slovenian were listed
   as `se`, `tr` and `si`, which are not keymaps, and are now `sv-latin1`, `trq` and `slovene` (#265).
 - **A failed `archinstall` in the image installer can be retried.** It ended at a root prompt with one line, possibly

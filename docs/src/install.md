@@ -73,7 +73,7 @@ with the CyberRe boot menu theme.
      nouveau.
 
    In the timezone and country lists, Esc goes back to the question before
-   them. It shows a summary, mirrors included, where **Change an answer...**
+   them (with no detected timezone, it asks whether to choose one or cancel). It shows a summary, mirrors included, where **Change an answer...**
    asks any one question again (a new keyboard layout asks for the passwords
    again too), and nothing is written until you choose **Wipe DISK and
    install**. Cancelling at any point changes nothing; run `lyona-install` to

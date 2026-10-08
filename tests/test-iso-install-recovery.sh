@@ -52,7 +52,8 @@ EOF
 cat >"$work/bin/loadkeys" <<'EOF'
 #!/bin/sh
 printf 'loadkeys %s\n' "$*" >>"$STUB_DIR/calls.log"
-[ "${STUB_LOADKEYS_FAILS:-0}" != 1 ]
+# STUB_LOADKEYS_FAILS: the one layout loadkeys cannot load.
+[ "$1" != "${STUB_LOADKEYS_FAILS:-}" ]
 EOF
 cat >"$work/bin/localectl" <<'EOF'
 #!/bin/sh
@@ -76,7 +77,7 @@ lib() {
 		LYONA_UI_LIB="$root/lyona-ui.sh" LYONA_NVIDIA_LIB="$root/lyona-nvidia.sh" \
 		LYONA_WIFI_LIB="$root/lyona-wifi.sh" LYONA_LOGO_PATH=/nonexistent \
 		LYONA_ZONEINFO="$work/zoneinfo" LOG_FILE="$work/install.log" \
-		STUB_LOADKEYS_FAILS="${STUB_LOADKEYS_FAILS:-0}" \
+		STUB_LOADKEYS_FAILS="${STUB_LOADKEYS_FAILS:-}" \
 		bash -c '. "$1"; eval "$2"' bash "$wizard" "$1" >"$work/out.log" 2>&1
 }
 mkdir -p "$work/zoneinfo"
@@ -117,10 +118,20 @@ lib 'ask_keymap; printf "KEYMAP=%s\n" "$KEYMAP"'
 grep -Fq 'not-a-layout is not a keyboard layout' "$work/out.log" || fail 'an unknown layout was not refused'
 grep -Fxq 'KEYMAP=sv-latin1' "$work/out.log" || fail 'the layout was not asked again'
 
-# loadkeys fails: said, with what to do.
-answers $'0\tGerman (de)'
-STUB_LOADKEYS_FAILS=1 lib 'ask_keymap' || fail 'a failed loadkeys stopped the wizard'
+# loadkeys fails: the layout installed must be the one the passwords are typed
+# with, so the user keeps the active layout or chooses another.
+answers $'0\tGerman (de)' $'0\tKeep us (the layout this console has)'
+STUB_LOADKEYS_FAILS=de lib 'ask_keymap; printf "KEYMAP=%s\n" "$KEYMAP"' || fail 'a failed loadkeys stopped the wizard'
 grep -Fq 'Could not switch this console to de' "$work/out.log" || fail 'a failed loadkeys was not said'
+grep -Fxq 'KEYMAP=us' "$work/out.log" || fail "keeping the active layout did not install it: $(cat "$work/out.log")"
+answers $'0\tGerman (de)' $'0\tChoose another layout' $'0\tFrench (fr)'
+STUB_LOADKEYS_FAILS=de lib 'ask_keymap; printf "KEYMAP=%s\n" "$KEYMAP"'
+grep -Fxq 'KEYMAP=fr' "$work/out.log" || fail 'choosing another layout after a failure did not take it'
+grep -Fxq 'loadkeys fr' "$work/calls.log" || fail 'the other layout was not applied'
+# French active, then a change to German fails: French stays, for both.
+answers $'0\tFrench (fr)' $'0\tGerman (de)' $'0\tKeep fr (the layout this console has)'
+STUB_LOADKEYS_FAILS=de lib 'ask_keymap; ask_keymap; printf "KEYMAP=%s\n" "$KEYMAP"'
+grep -Fxq 'KEYMAP=fr' "$work/out.log" || fail "the active layout was not the one kept: $(cat "$work/out.log")"
 
 # ── #266: Esc goes back in the lists ──────────────────────────────────────
 
@@ -130,6 +141,18 @@ lib 'detect_timezone() { echo Europe/Berlin; }; ask_timezone; printf "TZ=%s\n" "
 	fail "Esc in the timezone list ended the wizard: $(cat "$work/out.log")"
 grep -Fxq 'TZ=Europe/Berlin' "$work/out.log" || fail 'Esc in the timezone list did not go back to the question'
 [[ $(grep -c 'Detected timezone' "$work/gum.log") == 2 ]] || fail 'the timezone question was not asked again'
+
+# Nothing detected: Esc in the list asks; "Choose from the list" goes back to
+# it, Esc on the question too, and only "Cancel the installer" ends.
+answers $'1\t' $'0\tChoose from the list' $'1\t' $'1\t' $'0\tEurope/Berlin'
+lib 'detect_timezone() { return 1; }; choose_timezone() { local z; z=$(gum filter </dev/null) || return 1; printf "%s\n" "$z"; }
+	ask_timezone; printf "TZ=%s\n" "$TIMEZONE"' || fail "Esc with no detected timezone ended the wizard: $(cat "$work/out.log")"
+grep -Fxq 'TZ=Europe/Berlin' "$work/out.log" || fail "the list was not offered again: $(cat "$work/out.log")"
+answers $'1\t' $'0\tCancel the installer'
+if lib 'detect_timezone() { return 1; }; choose_timezone() { gum filter </dev/null >/dev/null || return 1; }; ask_timezone'; then
+	fail 'Cancel the installer did not end it'
+fi
+grep -Fq 'Nothing on the disk was changed' "$work/out.log" || fail 'cancelling from the timezone did not say nothing changed'
 
 # Mirrors: "Choose another", Esc in the countries, back, "Choose another", Japan.
 answers $'1\t' $'1\t' $'1\t' $'0\tJapan (JP)'

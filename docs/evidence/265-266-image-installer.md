@@ -67,6 +67,17 @@ answers (without Esc, Change an answer... or Retry), its disk under
   layout instead ("Password (keyboard: fr):"); covered by
   `tests/test-iso-install-recovery.sh`, not seen in a VM.
 
+## Changed after the run, from review
+
+- A layout `loadkeys` cannot load is no longer installed anyway: the wizard
+  asks to choose another or keep the active one, and that one goes to
+  archinstall's `kb_layout`.
+- With no detected timezone, Esc in the list asks "Choose from the list" or
+  "Cancel the installer" instead of ending the wizard.
+
+Both are covered by `tests/test-iso-install-recovery.sh`; neither was seen in a
+VM.
+
 ## Found, not changed
 
 - After Esc in a list, gum prints "nothing selected" at the left edge.
