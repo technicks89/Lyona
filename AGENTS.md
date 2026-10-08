@@ -126,8 +126,13 @@ an untested package or installation path.
   `-devel`/`-libs` naming conventions from other distributions.
 - Support both display-manager sessions and `startx`.
 - Treat Xorg as required. Wayland-native support is outside the current scope.
-- Keep optional desktop components optional. The absence of Picom, a wallpaper,
-  or a preferred terminal must not crash dwm.
+- Keep optional desktop components optional. The absence of a wallpaper or a
+  preferred terminal must not crash dwm.
+- Picom is part of the lyona desktop (recommended and full profiles): the
+  overview's window previews need it (#244). That is a packaging and session
+  rule only. dwm's C code never depends on it, and a missing, failing or
+  stopped Picom must not crash or hang dwm or the shell: the overview falls
+  back to icon-and-title cards and the user is told once.
 - Use ASCII punctuation in source, scripts, and new documentation unless a
   file's established format requires otherwise.
 

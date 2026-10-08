@@ -307,6 +307,9 @@ install-system:
 	for f in ${INSTALL_DEFAULTS}; do \
 		install -Dm644 "$$f" ${DESTDIR}${SHARE_DIR}/config/$$(basename "$$f"); \
 	done
+	@# lyona's lean Picom default, which dwm-settings-picom puts ahead of
+	@# /etc/xdg (#244).
+	install -Dm644 config/picom/picom.conf ${DESTDIR}${SHARE_DIR}/xdg/picom/picom.conf
 	@# From before S12-13, these were installed as commands.
 	for name in ${INSTALL_LIB_NAMES} ${RETIRED_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
@@ -542,7 +545,9 @@ uninstall:
 	for name in ${INSTALL_DEFAULT_NAMES}; do \
 		rm -f ${DESTDIR}${SHARE_DIR}/config/$$name; \
 	done
-	-rmdir ${DESTDIR}${SHARE_DIR}/config ${DESTDIR}${SHARE_DIR} 2>/dev/null
+	rm -f ${DESTDIR}${SHARE_DIR}/xdg/picom/picom.conf
+	-rmdir ${DESTDIR}${SHARE_DIR}/config ${DESTDIR}${SHARE_DIR}/xdg/picom \
+		${DESTDIR}${SHARE_DIR}/xdg ${DESTDIR}${SHARE_DIR} 2>/dev/null
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		rm -f ${DESTDIR}${PRIVILEGED_HELPER_DIR}/$$name; \
 	done
@@ -601,6 +606,7 @@ check-format:
 
 check-session-guards:
 	tests/test-autostart.sh
+	tests/test-autostart-compositor.sh
 	tests/test-autostop.sh
 
 check-session-migration:
@@ -806,6 +812,7 @@ check-qt-palette-xvfb:
 .PHONY: check-window-thumb-xvfb check-overview-thumbnails-xvfb check-overview-close-xvfb
 check-window-thumb-xvfb: all
 	@/usr/bin/python3 tests/test-window-thumb-xvfb.py; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+	@/usr/bin/python3 tests/test-window-thumb-staleness-xvfb.py; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 check-overview-thumbnails-xvfb: all
 	@/usr/bin/python3 tests/test-overview-thumbnails-xvfb.py; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
@@ -1128,6 +1135,7 @@ check-install-manifest: all
 		for name in ${INSTALL_DEFAULT_NAMES}; do \
 			printf 'usr/share/lyona/config/%s\n' "$$name"; \
 		done; \
+		printf '%s\n' usr/share/lyona/xdg/picom/picom.conf; \
 		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 			printf 'usr/libexec/lyona/%s\n' "$$name"; \
 		done; \

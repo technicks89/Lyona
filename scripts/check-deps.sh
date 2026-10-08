@@ -124,6 +124,17 @@ else
 fi
 echo ""
 
+# Picom is part of the lyona desktop: required with it, optional without (#244).
+echo "Compositor (required with the lyona desktop; window previews need it):"
+while IFS= read -r command; do
+	if dwm_desktop_installed; then
+		check_cmd "$command"
+	else
+		check_optional_cmd "$command"
+	fi
+done < <(dwm_command_tier compositor)
+echo ""
+
 echo "Terminal Emulators (at least one required):"
 TERM_FOUND=0
 # Detect every terminal dwm-terminal can launch (st and warp-terminal are not in

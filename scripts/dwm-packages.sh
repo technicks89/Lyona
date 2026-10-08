@@ -268,16 +268,25 @@ dwm_packages() {
 # agree (Sync Sprint 16 R16-45; SPEC 5.8). Required: the X11 session and the
 # tools core keybindings need, beside the build tools and a terminal, which
 # both check on their own. Desktop: the recommended desktop's commands, whose
-# absence degrades it but does not break the session.
-dwm_command_tier() { # required|desktop
+# absence degrades it but does not break the session. Compositor: Picom, part of
+# the lyona desktop, whose window previews need it (#244); required when the
+# desktop is installed (dwm_desktop_installed), optional in a core install.
+dwm_command_tier() { # required|desktop|compositor
 	case $1 in
 	required) printf '%s\n' startx xrandr xset xsetroot xclip xdotool ;;
 	desktop)
-		printf '%s\n' quickshell picom feh maim xdg-open notify-send amixer brightnessctl \
+		printf '%s\n' quickshell feh maim xdg-open notify-send amixer brightnessctl \
 			light-locker gsettings xprop jq bluetoothctl blueman-applet cosign
 		;;
+	compositor) printf '%s\n' picom ;;
 	*) return 2 ;;
 	esac
+}
+
+# Whether the lyona desktop, the managed Quickshell shell, is installed: then
+# the compositor tier is required (#244).
+dwm_desktop_installed() {
+	command -v quickshell >/dev/null 2>&1
 }
 
 # dwm_collect_packages PROFILE...: every package of the profiles, once each and

@@ -148,7 +148,35 @@ Alacritty. The default `Super`+`X` binding remains plain Alacritty.
 
 ---
 
-## Picom / Compositor Artifacts
+## Picom / Compositor
+
+Picom is part of the lyona desktop: the window overview's previews need it.
+dwm and the panel work without it; the overview then shows icon-and-title cards.
+
+### Picom does not start
+
+At login, a notification says "Picom could not start" (with the path of its
+log) or "Picom is not installed". It is shown once. To see why:
+
+```bash
+dwm-settings-picom status
+dwm-settings-picom start
+```
+
+`start` prints the reason and the log path. Common causes: an old or broken GPU
+driver, or a virtual machine without 3D acceleration. Choose **XRender** in
+**Settings > Appearance > Compositor**: it needs no GPU acceleration. If it is not
+installed: `sudo pacman -S picom`. Start Picom with `dwm-settings-picom start`, not
+`picom` alone: lyona's default configuration leaves the backend for the helper to
+choose, and Picom 13 does not start without one.
+
+### Stopping Picom
+
+**Control Center > Restart Picom** restarts it. To stop it while troubleshooting,
+run `dwm-settings-picom stop`: window previews are off until it starts again, and
+it starts again at the next login.
+
+### Artifacts
 
 Restart picom via the Control Center (**Quick Actions → Restart Picom**) or:
 ```bash

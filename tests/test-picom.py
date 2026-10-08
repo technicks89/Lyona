@@ -926,5 +926,73 @@ class PicomTests(unittest.TestCase):
                     self.apply(config)
 
 
+class LyonaDefaultTests(unittest.TestCase):
+    """#244: lyona's lean default, ahead of the package's /etc/xdg file."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR"))
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.script = self.root / "bin/dwm-settings-picom"
+        self.env = patch.dict(
+            os.environ,
+            {
+                "XDG_CONFIG_DIRS": "/etc/xdg",
+                "XDG_CONFIG_HOME": str(self.root / "home"),
+                "DWM_PICOM_CONFIG": "",
+            },
+        )
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def layout(self, directory):
+        (self.root / directory / "picom").mkdir(parents=True)
+        (self.root / directory / "picom/picom.conf").write_text("shadow = false;\n")
+        return self.root / directory
+
+    def test_installed_directory(self):
+        expected = self.layout("share/lyona/xdg")
+        self.assertEqual(picom.lyona_config_dir(self.script), expected)
+
+    def test_checkout_directory(self):
+        expected = self.layout("config")
+        self.assertEqual(picom.lyona_config_dir(self.script), expected)
+
+    def test_no_default_changes_nothing(self):
+        self.assertIsNone(picom.lyona_config_dir(self.script))
+        picom.use_lyona_defaults(self.script)
+        self.assertEqual(os.environ["XDG_CONFIG_DIRS"], "/etc/xdg")
+
+    def test_prepended_once_ahead_of_etc_xdg(self):
+        directory = self.layout("share/lyona/xdg")
+        picom.use_lyona_defaults(self.script)
+        picom.use_lyona_defaults(self.script)
+        self.assertEqual(os.environ["XDG_CONFIG_DIRS"], "%s:/etc/xdg" % directory)
+
+    def test_user_configuration_still_wins(self):
+        directory = self.layout("share/lyona/xdg")
+        user = self.root / "home/picom/picom.conf"
+        user.parent.mkdir(parents=True)
+        user.write_text("shadow = true;\n")
+        picom.use_lyona_defaults(self.script)
+        with patch.object(picom, "processes", return_value=[]):
+            self.assertEqual(picom.source_path(), user)
+            user.unlink()
+            self.assertEqual(picom.source_path(), directory / "picom/picom.conf")
+
+    def test_shipped_default_is_never_edited(self):
+        # In a checkout the file is writable, but it is copied, never edited.
+        shipped = Path(__file__).resolve().parents[1] / "config/picom/picom.conf"
+        with self.assertRaisesRegex(picom.Error, "lyona's default configuration is read-only"):
+            picom.safe_target(shipped)
+
+    def test_shipped_default_is_lean(self):
+        shipped = Path(__file__).resolve().parents[1] / "config/picom/picom.conf"
+        config = picom.Configuration(shipped)
+        self.assertIs(config.scalar("shadow", None), False)
+        self.assertIs(config.scalar("fading", None), False)
+        self.assertEqual(config.scalar("backend", "auto"), "auto")
+
+
 if __name__ == "__main__":
     unittest.main()

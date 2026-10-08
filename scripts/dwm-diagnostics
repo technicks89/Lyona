@@ -227,6 +227,19 @@ main() {
 	done < <(dwm_command_tier required)
 	check_terminal
 
+	# Picom is part of the lyona desktop: required with it, optional without
+	# (#244).
+	if [[ $format == human ]]; then
+		printf '\nCompositor\n'
+	fi
+	while IFS= read -r cmd; do
+		if dwm_desktop_installed; then
+			check_required_cmd "$cmd"
+		else
+			check_optional_cmd "$cmd"
+		fi
+	done < <(dwm_command_tier compositor)
+
 	if [[ $format == human ]]; then
 		printf '\nOptional desktop\n'
 	fi

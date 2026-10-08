@@ -1152,7 +1152,7 @@ emit_compositor_inventory() {
 	if command -v picom >/dev/null 2>&1; then
 		emit_inventory_selection compositor available picom configuration 'Picom controls use its configuration file'
 	else
-		emit_inventory_selection compositor unavailable '' missing 'Picom is optional and not installed'
+		emit_inventory_selection compositor unavailable '' missing 'Picom is not installed, so window previews are off'
 	fi
 }
 
@@ -1905,7 +1905,7 @@ emit_integrations() {
 	if command -v picom >/dev/null 2>&1; then
 		printf 'integration\tcompositor\tavailable\tpicom\tGlobal opacity is configured in the Compositor section\n'
 	else
-		printf 'integration\tcompositor\tunavailable\tmissing\tPicom is optional and not installed\n'
+		printf 'integration\tcompositor\tunavailable\tmissing\tPicom is not installed, so window previews are off\n'
 	fi
 }
 

@@ -69,11 +69,27 @@ grep -F "Could not check gnome-keyring (pacman -T failed)" "$work/keyring-error.
 grep -Fq "Optional desktop" "$work/ok"
 grep -Fq "degraded quickshell" "$work/ok"
 grep -Fq "degraded maim" "$work/ok"
+# No Quickshell, as in a core install: Picom is optional (#244).
+grep -Fq "degraded picom" "$work/ok"
 # The developer override is always reported (Sync Sprint 12 S12-13).
 grep -Fqx "  LYONA_DEV_SCRIPTS not set (installed helpers)" "$work/ok"
 env HOME="$work/home" PATH="$work/bin" LYONA_DEV_SCRIPTS="$work/checkout/scripts" \
 	"$BASH_BIN" "$HELPER" >"$work/dev"
 grep -Fqx "  LYONA_DEV_SCRIPTS=$work/checkout/scripts (helpers from a development checkout)" "$work/dev"
+
+# #244: with the lyona desktop installed (Quickshell), Picom is required.
+for cmd in quickshell picom; do
+	printf '#!/bin/sh\nexit 0\n' >"$work/bin/$cmd"
+	chmod +x "$work/bin/$cmd"
+done
+env HOME="$work/home" PATH="$work/bin" "$BASH_BIN" "$HELPER" >"$work/desktop-ok"
+grep -Fqx "  required_failures=0" "$work/desktop-ok" || fail "Picom installed with the desktop is not ok"
+rm -f "$work/bin/picom"
+if env HOME="$work/home" PATH="$work/bin" "$BASH_BIN" "$HELPER" >"$work/desktop-no-picom"; then
+	fail "diagnostics passed with the lyona desktop installed and Picom missing"
+fi
+grep -Fqx "  missing picom" "$work/desktop-no-picom" || fail "a missing Picom is not a required failure with the desktop"
+rm -f "$work/bin/quickshell"
 
 rm -f "$work/bin/alacritty" "$work/bin/Xorg"
 
@@ -89,16 +105,22 @@ grep -Fq "Required failures must be fixed" "$work/err"
 # Sync Sprint 16 R16-45: check-deps.sh and dwm-diagnostics take their command
 # tiers from the shared map, so they cannot disagree again.
 for checker in "$repo/scripts/check-deps.sh" "$repo/scripts/dwm-diagnostics"; do
-	for tier in required desktop; do
+	for tier in required desktop compositor; do
 		grep -Fq "done < <(dwm_command_tier $tier)" "$checker" || fail "${checker##*/} does not check the $tier tier"
 	done
 	if grep -Eq '^[[:space:]]*(check_cmd|check_required_cmd|check_optional_cmd) "?(quickshell|picom|feh|xdotool|blueman-applet)"?$' "$checker"; then
 		fail "${checker##*/} still lists a tiered command by hand"
 	fi
 done
-for command in quickshell picom feh; do
+for command in quickshell feh; do
 	(. "$repo/scripts/dwm-packages.sh" && dwm_command_tier desktop) | grep -Fxq "$command" ||
 		fail "$command is not in the desktop tier"
 done
+# #244: Picom is the compositor tier, and only that.
+[[ $(. "$repo/scripts/dwm-packages.sh" && dwm_command_tier compositor) == picom ]] ||
+	fail "picom is not the compositor tier"
+if (. "$repo/scripts/dwm-packages.sh" && dwm_command_tier desktop) | grep -Fxq picom; then
+	fail "picom is still in the desktop tier"
+fi
 
 printf 'dwm-diagnostics: PASS\n'

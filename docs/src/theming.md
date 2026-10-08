@@ -232,10 +232,13 @@ a Picom rule overrides the slider. Picom's manual says rounded corners do not co
 well with `transparent-clipping`, so leave that off if you use them. It needs a running
 compositor to show; with Picom stopped the value applies the next time it starts.
 
-The controls read the active Picom configuration, normally `~/.config/picom.conf`
-or `~/.config/picom/picom.conf`, and observe external edits. With no configuration,
-they show 100% and create a minimal file on the first edit. A system configuration
-can be copied with **Create user configuration**. Comments, unrelated settings,
+The controls read the active Picom configuration: your own `~/.config/picom.conf`
+or `~/.config/picom/picom.conf` when you have one, otherwise lyona's default
+(`/usr/share/lyona/xdg/picom/picom.conf` in a standard install). lyona's default
+is lean so that old hardware can run it: no shadows, fading, blur or animations,
+and every window opaque. It is read-only; **Create user configuration** copies it
+to `~/.config/picom.conf`, after which your copy is used and lyona's updates never
+touch it. The controls observe external edits. Comments, unrelated settings,
 and included files are preserved; the ten most recent edits retain recovery
 backups. Invalid or read-only configurations show an explanation rather than
 disappearing controls. Edits made while Picom is stopped take effect the next time

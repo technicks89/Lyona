@@ -1634,7 +1634,12 @@ reload_wallpaper() {
 
 toggle_compositor() {
 	picom_action toggle || return 1
-	notify "Compositor toggled"
+	# A troubleshooting action (#244): previews need Picom running.
+	if pgrep -x picom >/dev/null 2>&1; then
+		notify "Compositor started"
+	else
+		notify "Compositor stopped" "Window previews in the overview are off until Picom starts again."
+	fi
 }
 
 restart_networkmanager() {

@@ -108,13 +108,22 @@ def main():
                 return json.loads(result.stdout) if success else result
 
             conf = config / "picom.conf"
+            shipped = repo / "config/picom/picom.conf"
+            shipped_text = shipped.read_text()
             helper("start")
             fresh = helper("status")
-            assert fresh["editable"] and not conf.exists()
-            helper("set-opacity", "100", "100", fresh["revision"])
+            # #244: with no configuration of the user's own, lyona's lean default is
+            # the source. It is never edited in place: the first edit copies it.
+            assert fresh["path"] == str(shipped), fresh["path"]
+            assert not fresh["editable"] and fresh["copyable"] and not conf.exists(), fresh
+            helper("copy-config", fresh["revision"])
             assert conf.exists()
+            copied = helper("status")
+            assert copied["editable"] and copied["path"] == str(conf), copied
+            helper("set-opacity", "100", "100", copied["revision"])
+            assert shipped.read_text() == shipped_text, "lyona's default was edited in place"
             helper("stop")
-            print("PASS: first edit after startup without configuration", flush=True)
+            print("PASS: first edit copies lyona's default", flush=True)
             conf.write_text(
                 'backend="xrender";\nactive-opacity=1.0;\ninactive-opacity=1.0;\nfading=false;\nshadow=false;\nuse-ewmh-active-win=true;\n'
             )
@@ -328,6 +337,9 @@ def main():
             vendor_config.write_text(
                 'backend="xrender"; window-shader-fg="vendor.frag";'
             )
+            # A system configuration listed ahead of lyona's default (#244): the
+            # helper keeps an order it is given, so this one is the source.
+            env["XDG_CONFIG_DIRS"] = "%s:%s" % (vendor, repo / "config")
             conf.unlink()
             helper("copy-config", helper("status")["revision"])
             assert str(vendor_shader) in conf.read_text()

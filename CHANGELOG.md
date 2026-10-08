@@ -30,6 +30,22 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **Picom is part of the lyona desktop.** The overview's window previews need it, so the recommended and full profiles
+  treat it as required: `check-deps.sh` and `dwm-diagnostics` report it missing as a required failure when Quickshell
+  is installed (the core profile is unchanged), and System Health calls a stopped Picom a warning that turns previews
+  off. When it is missing or cannot start at login, the session still starts, the overview shows icon-and-title cards,
+  and one notification says why; nothing retries in a loop. dwm itself never depends on it (#244).
+- **A lean default Picom configuration.** lyona now ships its own `picom.conf`, used when you have none of your own:
+  no shadows, fading, blur or animations, and every window opaque. It leaves the backend to `dwm-settings-picom`'s
+  Automatic choice (GLX on accelerated Intel and AMD graphics, XRender otherwise), which the package's configuration
+  used to override with XRender everywhere. Like the package's file, it is copied to `~/.config/picom.conf` before
+  Settings edits it, never edited in place (#244).
+  - **Migration:** a session that used the package's `/etc/xdg/picom.conf` (no `~/.config/picom.conf` of your own)
+    loses its shadows and fading at the next login. To keep them, copy that file to `~/.config/picom/picom.conf`.
+    Your own configuration is never changed.
+  - **Migration:** if you stopped or uninstalled Picom on purpose, for example because of an old GPU, you now get one
+    notification at each login that it is not running, and System Health reports it. Try **XRender** in
+    **Settings > Appearance > Compositor** first; see Troubleshooting > Picom.
 - **Image installs have one kernel, `linux-cachyos`, installed by `archinstall`** instead of the stock `linux`, then
   `linux-cachyos` and `linux-cachyos-lts` after it. With CachyOS unavailable, the stock kernel is the one. Each
   kernel, microcode, driver and firmware update rebuilds one initramfs instead of three. The separate CPU microcode

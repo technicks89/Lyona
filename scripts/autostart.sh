@@ -477,12 +477,41 @@ if command -v feh >/dev/null 2>&1; then
 	fi
 fi
 
-# dwm-settings-picom picks the backend for this GPU and honours PICOM_BACKEND
-# as an override; it starts nothing if this display already has a compositor.
-if command -v picom >/dev/null 2>&1; then
+# One notification about the session, once. Quickshell shows notifications and
+# may not be up yet, so it is tried for up to DWM_AUTOSTART_NOTIFY_TRIES (15)
+# times DWM_AUTOSTART_NOTIFY_INTERVAL (2) seconds, then given up: never a loop.
+notify_session_problem() {
+	command -v notify-send >/dev/null 2>&1 || return 0
+	tries=${DWM_AUTOSTART_NOTIFY_TRIES:-15}
+	while [ "$tries" -gt 0 ]; do
+		notify-send -a lyona -u critical -- "$1" "$2" >/dev/null 2>&1 && return 0
+		tries=$((tries - 1))
+		[ "$tries" -eq 0 ] || sleep "${DWM_AUTOSTART_NOTIFY_INTERVAL:-2}"
+	done
+	return 0
+}
+
+# Picom is part of the lyona desktop: the overview's window previews need it
+# (#244). dwm never depends on it. If it is missing or cannot start, the session
+# goes on, the overview keeps its icon-and-title cards, and the user is told
+# once. dwm-settings-picom picks the backend for this GPU and honours
+# PICOM_BACKEND as an override; it starts nothing if this display already has a
+# compositor.
+start_compositor() {
+	if ! command -v picom >/dev/null 2>&1; then
+		command -v quickshell >/dev/null 2>&1 || return 0
+		notify_session_problem "Picom is not installed" \
+			"Window previews in the overview are off. Install it with: sudo pacman -S picom"
+		return 0
+	fi
 	picom_helper=$(command -v dwm-settings-picom 2>/dev/null || printf '%s' "${0%/*}/dwm-settings-picom")
-	"$picom_helper" start >/dev/null 2>&1 &
-fi
+	if ! picom_error=$("$picom_helper" start 2>&1 >/dev/null); then
+		notify_session_problem "Picom could not start" \
+			"Window previews in the overview are off. Try Restart Picom in the Control Center. $picom_error"
+	fi
+	return 0
+}
+start_compositor &
 
 start_detached_display_command_once dwm-status
 

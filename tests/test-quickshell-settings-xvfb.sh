@@ -400,7 +400,7 @@ if [ "${1:-}" = inventory ] && [ -f "$fixture" ] &&
 		}
 		$1 == "selection" && $2 == "compositor" {
 			$3 = "unavailable"; $4 = ""; $5 = "missing";
-			$6 = "Picom is optional and not installed";
+			$6 = "Picom is not installed, so window previews are off";
 		}
 		{ print }'
 	exit 0
@@ -426,7 +426,7 @@ if [ "${1:-}" = snapshot ] && [ -f "$fixture" ]; then
 			}
 			$1 == "integration" && $2 == "compositor" {
 				$3 = "unavailable"; $4 = "missing";
-				$5 = "Picom is optional and not installed";
+				$5 = "Picom is not installed, so window previews are off";
 			}
 			$1 == "error" && ($2 == "gtk" || $2 == "qt" || $2 == "cursor" ||
 				$2 == "compositor") { next }
@@ -435,7 +435,7 @@ if [ "${1:-}" = snapshot ] && [ -f "$fixture" ]; then
 				print "error", "gtk", "missing-theme", "Requested GTK theme is not installed";
 				print "error", "qt", "missing-backend", "Configured Qt backend is not installed";
 				print "error", "cursor", "missing-theme", "Managed cursor theme is not installed";
-				print "error", "compositor", "missing", "Picom is optional and not installed";
+				print "error", "compositor", "missing", "Picom is not installed, so window previews are off";
 			}'
 		exit 0
 		;;
@@ -2560,7 +2560,7 @@ appearanceIntegrationState compositor=unavailable
 appearanceIntegrationDetail gtk=Requested GTK theme is missing; built-in fallbacks remain available
 appearanceIntegrationDetail qt=Configured Qt backend is not installed; gtk3 remains available
 appearanceIntegrationDetail cursor=Managed cursor theme is missing
-appearanceIntegrationDetail compositor=Picom is optional and not installed
+appearanceIntegrationDetail compositor=Picom is not installed, so window previews are off
 appearanceErrorCode gtk=missing-theme
 appearanceErrorCode qt=missing-backend
 appearanceErrorCode cursor=missing-theme

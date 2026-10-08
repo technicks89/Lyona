@@ -137,7 +137,9 @@ The project must support:
 
 - A display-manager session installed as `dwm.desktop`.
 - A `startx` flow whose `.xinitrc` launches dwm in a D-Bus session.
-- Startup without Picom, a wallpaper, or a polkit agent.
+- Startup without a wallpaper or a polkit agent, and without Picom: Picom is
+  required with the lyona desktop (5.10.1), but a session without it still
+  starts, with icon-and-title overview cards and one notification.
 - Detection of common polkit agent locations across `/usr/lib`,
   `/usr/lib64`, and `/usr/libexec` layouts.
 - Startup helpers that do not create duplicate long-running processes when the
@@ -645,17 +647,35 @@ The unprivileged `dwm-settings-picom` JSON protocol version 1 supplies `status`,
 `watch`, `set-opacity ACTIVE INACTIVE REVISION`, `set-backend BACKEND REVISION`,
 and `copy-config REVISION`. Mutations require the displayed source revision,
 validate before publication, preserve unrelated libconfig source and include
-files, back up changed files, and roll back failed activation. Missing Picom
-remains optional. Missing configuration shows 100 percent defaults and is
-created only on edit. Read-only system configurations require an explicit user
-copy, including referenced configuration files.
+files, back up changed files, and roll back failed activation. Missing
+configuration shows 100 percent defaults and is created only on edit. Read-only
+system configurations require an explicit user copy, including referenced
+configuration files.
+
+Picom is part of the lyona desktop (#244): the recommended and full profiles
+install it, autostart starts it through `dwm-settings-picom`, and the dependency
+checks report it missing as a required failure when Quickshell is installed
+(optional in the core profile). When it is missing or cannot start, the session
+continues, the overview keeps icon-and-title cards, and one notification says
+so; it is never retried in a loop. Stopping it (`stop`, `toggle`, the Control
+Center's `toggle-compositor`) remains a troubleshooting action that turns
+window previews off until it starts again.
+
+lyona ships a lean default configuration, `PREFIX/share/lyona/xdg/picom/picom.conf`
+(no shadows, fading, blur or animations; every window opaque; no backend, so the
+Automatic policy below applies). `dwm-settings-picom` puts its directory first in
+`XDG_CONFIG_DIRS` for itself and every Picom it starts, unless it is already
+listed, so it precedes the package's `/etc/xdg/picom.conf` while a user's own
+configuration still wins. It is never edited in place: like any system
+configuration, editing it requires a user copy.
 
 `start`, `restart`, `reload`, `stop`, and `toggle` share user-and-display-scoped
 session handling. Valid syntax outside the editor's supported subset remains
 usable for session actions, with configuration parsing and backend policy
 delegated to Picom while explicit session overrides remain respected.
 Explicit `DWM_PICOM_CONFIG` and existing session `--config`
-paths precede standard Picom XDG discovery. `PICOM_BACKEND` overrides an
+paths precede standard Picom XDG discovery, which searches the user's
+configuration, then lyona's default, then the system's. `PICOM_BACKEND` overrides an
 explicit config backend; absent both, Automatic uses active-renderer diagnostics
 (GLX for accelerated Intel/AMD, XRender for NVIDIA, software, or unknown), with
 one XRender retry if automatic GLX startup fails. EGL is an explicit experimental

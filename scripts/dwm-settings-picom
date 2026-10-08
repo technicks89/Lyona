@@ -55,6 +55,28 @@ def config_home():
     return Path(value) if value.startswith("/") else Path.home() / ".config"
 
 
+def lyona_config_dir(script=None):
+    """lyona's default configuration directory (#244): PREFIX/share/lyona/xdg in
+    an install, config/ in a checkout. None when neither holds picom/picom.conf."""
+    base = Path(script or __file__).resolve().parent.parent
+    for directory in (base / "share/lyona/xdg", base / "config"):
+        if (directory / "picom/picom.conf").is_file():
+            return directory
+    return None
+
+
+def use_lyona_defaults(script=None):
+    """Put lyona's lean default ahead of the package's /etc/xdg/picom.conf, for
+    this helper and every Picom it starts (#244). A user's own configuration
+    still wins: Picom searches XDG_CONFIG_HOME before XDG_CONFIG_DIRS."""
+    directory = lyona_config_dir(script)
+    if directory is None:
+        return
+    dirs = [d for d in os.environ.get("XDG_CONFIG_DIRS", "/etc/xdg").split(":") if d]
+    if str(directory) not in dirs:
+        os.environ["XDG_CONFIG_DIRS"] = ":".join([str(directory), *dirs])
+
+
 def run(argv, timeout=8):
     try:
         return subprocess.run(
@@ -326,7 +348,11 @@ class Document:
 
 
 def safe_target(path):
-    """Resolve owned dotfile symlinks; reject writable-by-others paths."""
+    """Resolve owned dotfile symlinks; reject writable-by-others paths, and
+    lyona's shipped default, which is only ever copied, never edited (#244)."""
+    default = lyona_config_dir()
+    if default is not None and default.resolve() in path.resolve().parents:
+        raise Error("lyona's default configuration is read-only; create a user configuration to edit it")
     current = path
     for _ in range(16):
         for parent in [current, *current.parents]:
@@ -872,7 +898,7 @@ def status(detect=True):
                 f"PICOM_BACKEND={override} overrides the backend for this session."
             )
         if not result["installed"]:
-            details.append("Picom is optional and not installed.")
+            details.append("Picom is not installed, so window previews are off.")
         result["detail"] = " ".join(details)
         try:
             for path in config.docs:
@@ -1258,6 +1284,7 @@ def watch():
 
 
 def main():
+    use_lyona_defaults()
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest="action", required=True)
     for action in ("status", "watch", "start", "restart", "reload", "stop", "toggle"):

@@ -464,9 +464,11 @@ scan_desktop() {
 	if command -v picom >/dev/null 2>&1; then
 		status=warn
 		pgrep -x picom >/dev/null 2>&1 && status=ok
-		emit_check desktop "$status" picom-process "Picom" "$([[ $status == ok ]] && printf running || printf stopped)" "Optional compositor" restart-picom "Restart Picom" user
+		emit_check desktop "$status" picom-process "Picom" "$([[ $status == ok ]] && printf running || printf 'stopped: window previews are off')" "The compositor, part of the lyona desktop" restart-picom "Restart Picom" user
+	elif command -v quickshell >/dev/null 2>&1; then
+		emit_check desktop error picom-process "Picom" "Not installed: window previews are off" "The lyona desktop needs the compositor (#244)" install-dependencies "Open dependency installer" user
 	else
-		emit_check desktop info picom-process "Picom" "Not installed" "The compositor is optional" install-dependencies "Open dependency installer" user
+		emit_check desktop info picom-process "Picom" "Not installed" "Needed only with the lyona desktop" install-dependencies "Open dependency installer" user
 	fi
 
 	# shellcheck disable=SC2034 # lyona_xdg_dirs sets all four; kept local
