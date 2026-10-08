@@ -231,6 +231,7 @@ exec "$@"
 EOF
 cat >"$qt_work/pacman" <<'EOF'
 #!/bin/bash
+[[ ${STUB_FAIL_LIST:-} != "$1" ]] || exit 1
 case "$1" in
 -Q) printf '%s\n' "${STUB_INSTALLED:-}" ;;
 -Sl) [[ ${2:-} == extra ]] && while read -r line; do [[ -n $line ]] && printf 'extra %s\n' "$line"; done <<<"${STUB_EXTRA:-}" ;;
@@ -286,6 +287,12 @@ out=$(qt_repair --noconfirm $'linux 7.2.9-1')
 # The install failing is reported, and nothing is called repaired.
 out=$(STUB_FAIL_INSTALL=1 qt_repair --noconfirm $'qt6-base 6.11.2-3.1\nqt6-declarative 6.12.0-1.1')
 [[ $out == $'REPAIRED \nSTATUS 1' ]] || qt_fail "a failed install passed: $out"
+# pacman failing to list the installed packages or [extra] fails the check: an
+# empty list is not a matching set.
+for list in -Q -Sl; do
+	out=$(STUB_FAIL_LIST=$list qt_repair --noconfirm $'qt6-base 6.11.2-3.1\nqt6-declarative 6.12.0-1.1')
+	[[ $out == $'REPAIRED \nSTATUS 1' && ! -e $qt_work/pacman.log ]] || qt_fail "pacman $list failing passed: $out"
+done
 rm -rf "$qt_work"
 # install.sh repairs the Qt set after the one transaction and before the
 # Quickshell check, which would otherwise fail on it.

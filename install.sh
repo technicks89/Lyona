@@ -900,7 +900,7 @@ ok "Packages installed."
 # Qt modules from two Qt releases, from a repository part way through a Qt
 # update, stop Quickshell from starting: one release, from Arch, instead.
 if ! dwm_repair_qt_set "${batch_flags[@]}"; then
-	warn "The Qt modules are from different Qt releases and could not be installed again from Arch; Quickshell may not start until the next system update."
+	warn "The installed Qt modules could not be checked, or installed again from Arch as one Qt release; if Quickshell does not start, update the system again later."
 elif ((${#DWM_QT_REPAIRED[@]} > 0)); then
 	ok "Qt modules installed from Arch, all one release: ${DWM_QT_REPAIRED[*]}."
 fi
