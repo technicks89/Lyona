@@ -3,8 +3,10 @@
 ## An AppImage does not open or start
 
 Opening an AppImage uses `lyona-appimage`. If it says the file is not an
-AppImage it can read, it is not a type-2 x86 AppImage (very old type-1 ones are
-not supported). Run it from a terminal to see why it stopped:
+AppImage it can read, the file is unsupported or unreadable: not a type-2 x86
+AppImage (very old type-1 ones are not supported), or damaged or truncated, for
+example by an interrupted download. Run it from a terminal to see why it
+stopped:
 
 ```sh
 lyona-appimage open ~/Downloads/Some.AppImage

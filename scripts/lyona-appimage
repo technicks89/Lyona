@@ -40,8 +40,13 @@ readonly MAX_VALUE_CHARS=256
 
 action=${1:-}
 work=
+# A move integrate made and has not finished: on a failure before the entry is
+# written, the file goes back where it was.
+moved_from=
+moved_to=
 
 cleanup() {
+	[[ -z $moved_from ]] || mv -n -- "$moved_to" "$moved_from" 2>/dev/null || :
 	[[ -z $work ]] || rm -rf -- "$work"
 }
 trap cleanup EXIT
@@ -127,9 +132,11 @@ key() { # FILE KEY
 		}' "$1" | LC_ALL=C tr -d '\000-\037\177' | cut -c1-"$MAX_VALUE_CHARS"
 }
 
-# A value quoted for an Exec line (desktop entry specification).
+# A value quoted for an Exec line (desktop entry specification). A literal %
+# is written %%, so it is not read as a field code.
 exec_quote() { # VALUE
 	local value=$1
+	value=${value//%/%%}
 	value=${value//\\/\\\\}
 	value=${value//\"/\\\"}
 	value=${value//\`/\\\`}
@@ -223,6 +230,8 @@ integrate() { # FILE
 	mkdir -p -- "$APPS_DIR" "$ENTRY_DIR" "$ICON_DIR"
 	if [[ $file != "$dest" && ! -e $dest ]]; then
 		mv -n -- "$file" "$dest" || fail "could not move $(basename -- "$file") to $APPS_DIR"
+		moved_from=$file
+		moved_to=$dest
 	fi
 	chmod u+x -- "$dest" || fail "could not make $dest executable"
 
@@ -261,6 +270,8 @@ integrate() { # FILE
 		printf 'X-Lyona-AppImage=%s\n' "$dest"
 	} >"$ENTRY_DIR/$id.desktop.tmp"
 	mv -fT -- "$ENTRY_DIR/$id.desktop.tmp" "$ENTRY_DIR/$id.desktop"
+	moved_from=
+	moved_to=
 	refresh_entries
 	notify "Added $name to the launcher" "Remove it with: lyona-appimage remove \"$name\""
 	integrated_path=$dest

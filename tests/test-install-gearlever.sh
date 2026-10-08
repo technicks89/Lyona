@@ -305,5 +305,19 @@ grep -Fq 'AppImages: opened with lyona-appimage' "$work/install-plan.out"
 	>"$work/install-plan-gearlever.out"
 grep -Fq 'Gear Lever: user-scoped Flathub install (it.mijorus.gearlever)' \
 	"$work/install-plan-gearlever.out"
+# DWM_INSTALL_GEARLEVER takes the same values as the other install toggles.
+for value in 1 yes true; do
+	DWM_INSTALL_GEARLEVER=$value "$repo/install.sh" --dry-run --non-interactive --profile recommended \
+		>"$work/install-plan-env.out"
+	grep -Fq 'Gear Lever: user-scoped Flathub install (it.mijorus.gearlever)' "$work/install-plan-env.out" ||
+		fail "DWM_INSTALL_GEARLEVER=$value did not plan Gear Lever"
+done
+DWM_INSTALL_GEARLEVER=no "$repo/install.sh" --dry-run --non-interactive --profile recommended \
+	>"$work/install-plan-env.out"
+grep -Fq 'Gear Lever: not installed' "$work/install-plan-env.out" ||
+	fail 'DWM_INSTALL_GEARLEVER=no planned Gear Lever'
+if DWM_INSTALL_GEARLEVER=maybe "$repo/install.sh" --dry-run --non-interactive >/dev/null 2>&1; then
+	fail 'an unsupported DWM_INSTALL_GEARLEVER was accepted'
+fi
 
 printf '%s\n' 'Gear Lever setup: PASS'
