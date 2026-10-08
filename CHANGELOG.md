@@ -20,9 +20,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - **`install.sh` turns on time synchronization.** When no other time service keeps the clock, it enables and starts
   `systemd-timesyncd`, part of `systemd`, in every profile, and the summary says so before anything is changed. A
   `chronyd`, `ntpd` or `openntpd` that is enabled or running is kept, a masked `systemd-timesyncd` is left masked, and
-  a second run changes nothing. Image installs already had it, from `archinstall`. Turning it off in Settings or with
-  `timedatectl set-ntp false` lasts until the installer runs again; to keep it off, mask it with
-  `sudo systemctl mask --now systemd-timesyncd` (#258).
+  a second run changes nothing. Image installs already had it, from `archinstall`. Once lyona has seen it on, it records
+  that in `/var/lib/lyona/time-sync`, so turning it off later in Settings or with `timedatectl set-ntp false` lasts:
+  running the installer again leaves it off and says so (#258, #268).
 
 - **The image installer downloads from mirrors near you.** After the timezone, it asks to use the package mirrors in
   that timezone's country (worldwide for a zone with no country, such as `UTC`), or lets you choose another country.
@@ -115,6 +115,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- **Running `install.sh` again no longer throws away your `~/.bashrc` edits.** `~/.bashrc`, the Starship and Fastfetch
+  configuration and `starship-theme` are links into the mybash checkout, and every run deleted it and cloned it again,
+  without a backup; offline, the clone then failed and left those links pointing at nothing. The checkout is now
+  updated in place, one with your changes is left as it is, and an offline run keeps it. A first clone is moved into
+  place only once complete. The fzf fallback is also pinned to a reviewed commit, not only its tag (#267).
+  - **Migration:** edits a run already deleted cannot be recovered. From now on they are kept.
 - **An install no longer fails when the CachyOS repositories are part way through a Qt update.** CachyOS can publish
   some Qt modules of a new release before the rest: on 2026-10-07, `qt6-declarative 6.12.0` with `qt6-base 6.11.2`.
   pacman installed the mix, Quickshell could not start (`version 'Qt_6.12' not found`), and `install.sh` stopped at

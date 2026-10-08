@@ -376,8 +376,16 @@ install_herdr_profile() {
 # Time synchronization (#258): systemd-timesyncd, part of systemd, is enabled
 # when nothing else keeps the clock. Another NTP service, enabled or running, is
 # the user's choice and is kept, as is a masked systemd-timesyncd. Prints one of
-# other:UNIT, enabled, masked, missing or off. The image install has it enabled
-# already: archinstall's "ntp": true.
+# other:UNIT, enabled, masked, missing, turned-off or off. The image install has
+# it enabled already: archinstall's "ntp": true.
+#
+# Once lyona has seen it on, it records that (time_sync_marker), so a later
+# "off" is the user's choice, from Settings or timedatectl set-ntp false: a
+# re-run leaves it off (turned-off) instead of turning it back on (#268).
+time_sync_marker() {
+	printf '%s\n' "${LYONA_TIME_SYNC_MARKER:-/var/lib/lyona/time-sync}"
+}
+
 time_sync_state() {
 	local unit state
 	for unit in chronyd.service ntpd.service openntpd.service; do
@@ -395,8 +403,21 @@ time_sync_state() {
 	enabled | enabled-runtime) printf 'enabled\n' ;;
 	masked | masked-runtime) printf 'masked\n' ;;
 	not-found | '') printf 'missing\n' ;;
-	*) printf 'off\n' ;;
+	*)
+		if [[ -e $(time_sync_marker) ]]; then
+			printf 'turned-off\n'
+		else
+			printf 'off\n'
+		fi
+		;;
 	esac
+}
+
+# Records that time synchronization has been on, once.
+mark_time_sync() {
+	local marker
+	marker=$(time_sync_marker)
+	[[ -e $marker ]] || sudo install -D -m 0644 /dev/null "$marker" 2>/dev/null || :
 }
 
 configure_time_sync() {
@@ -419,13 +440,16 @@ configure_time_sync() {
 				warn "systemd-timesyncd could not be started; it starts at the next boot."
 			fi
 		fi
+		mark_time_sync
 		;;
+	turned-off) info "Time synchronization is off: it was turned off after lyona set it up, so it stays off (turn it on in Settings or with timedatectl set-ntp true)." ;;
 	masked) info "systemd-timesyncd is masked, so time synchronization was left off (sudo systemctl unmask systemd-timesyncd to use it)." ;;
 	missing) warn "systemd-timesyncd was not found, so time synchronization was left off." ;;
 	*)
 		info "Enabling time synchronization (systemd-timesyncd)..."
 		if sudo systemctl enable --now systemd-timesyncd.service; then
 			ok "systemd-timesyncd enabled and started."
+			mark_time_sync
 		else
 			warn "systemd-timesyncd could not be enabled; turn time synchronization on in Settings or with timedatectl set-ntp true."
 		fi
@@ -786,6 +810,7 @@ print_install_summary() {
 	other:*) printf '  Time synchronization: %s, kept\n' "${time_sync#other:}" ;;
 	enabled) printf '  Time synchronization: systemd-timesyncd, already enabled\n' ;;
 	masked) printf '  Time synchronization: systemd-timesyncd is masked, left as it is\n' ;;
+	turned-off) printf '  Time synchronization: turned off since lyona set it up, left off\n' ;;
 	missing) printf '  Time synchronization: systemd-timesyncd not found, left off\n' ;;
 	*) printf '  Time synchronization: systemd-timesyncd, enabled and started\n' ;;
 	esac
