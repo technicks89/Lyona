@@ -208,7 +208,8 @@ The supported installation flow must:
 9. In the recommended and full profiles, install Celluloid, mpv, and sxiv and
    seed fresh-account audio/video and image MIME defaults using Celluloid and
    sxiv respectively, with Thunar for folders when installed. Seeding runs
-   before Gear Lever, which writes its own AppImage MIME preference file, and
+   before the AppImage handler and Gear Lever, which write their own AppImage
+   MIME preference, and
    preserves any existing preference file: `mimeapps.list`, a desktop-specific
    `*-mimeapps.list`, or a legacy `defaults.list`. It validates every handler
    before writing, publishes atomically, and never replaces a preference
@@ -237,9 +238,18 @@ The supported installation flow must:
 The existing-system installer may enable the official `multilib` repository
 only for the explicitly requested gaming profile. Interactive runs require a
 direct confirmation; non-interactive runs require the explicit
-`--enable-arch-gaming-repos` approval flag. Recommended and full profiles may
-also add the official Flathub remote for the target user and install Gear
-Lever (`it.mijorus.gearlever`) as the default AppImage manager.
+`--enable-arch-gaming-repos` approval flag. In the recommended and full
+profiles, `lyona-appimage` is the default AppImage handler unless another is
+already set (#260): opening an AppImage moves it to `~/Applications`, makes it
+executable, adds a launcher entry and icon read from inside it with
+`unsquashfs` (never by running it), and starts it; `lyona-appimage remove NAME`
+takes it out again. It needs `fuse2` and `squashfs-tools`, in the shared
+dependency map; no Flatpak runtime. Gear Lever (`it.mijorus.gearlever`) is
+opt-in: with `--with-gearlever`, the installer adds the official Flathub
+remote for the target user and installs it, and it takes AppImages over from
+`lyona-appimage` but not from a handler the user chose. Without the flag, a
+first-login Gear Lever marker left by an earlier install is cleared, and an
+installed Gear Lever is never removed.
 
 Kernel headers are an explicit opt-in (`--with-headers`, or an existing DKMS
 installation), since nothing in the project needs them except out-of-tree
@@ -476,8 +486,9 @@ Runtime dependencies are classified as:
   chain retained when Alacritty is unavailable.
 - Recommended desktop: Alacritty, Quickshell, Picom, Feh, Dex, a polkit agent,
   notification tools, audio controls, screenshot tooling, Nerd/emoji fonts,
-  Flatpak with its GTK portal, Gear Lever from a user-scoped Flathub
-  remote, Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
+  Flatpak with its GTK portal, `lyona-appimage` with `fuse2` and
+  `squashfs-tools` for AppImages (Gear Lever from a user-scoped Flathub remote
+  only with `--with-gearlever`), Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
   browser, and GNOME Keyring (`gnome-keyring`) for secret storage.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
@@ -888,8 +899,10 @@ In a real or nested X11 session:
   its completed capture is advertised as `image/png` by an `xclip` clipboard
   owner. Active-monitor and saved-region captures produce non-empty JPEG files
   through `maim`.
-- Recommended and full installs expose Gear Lever in the application launcher,
-  and it opens a visible window in the supported X11 session.
+- Recommended and full installs open an AppImage with `lyona-appimage`: it
+  appears in the application launcher with its own name and icon and starts,
+  without Gear Lever or a Flatpak runtime. With `--with-gearlever`, Gear Lever
+  is in the launcher and opens a visible window in the supported X11 session.
 - Recommended and full installs, unless `--skip-topgrade`, have the
   `topgrade-bin` package installed, `topgrade --version` runs, and no Rust
   toolchain was installed for it. A failed Topgrade build leaves the rest of the

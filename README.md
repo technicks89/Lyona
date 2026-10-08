@@ -121,7 +121,7 @@ before making changes.
 | Profile | Includes |
 | --- | --- |
 | `core` | The X11 session, required dependencies, and one terminal emulator. |
-| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Firefox, GNOME Keyring, Gear Lever for AppImages, Topgrade (from the AUR's pinned `topgrade-bin`), theming, screenshots, audio, and brightness tools. |
+| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Firefox, GNOME Keyring, AppImages in the launcher (Gear Lever with `--with-gearlever`), Topgrade (from the AUR's pinned `topgrade-bin`), theming, screenshots, audio, and brightness tools. |
 | `full` | The recommended desktop plus optional file-manager, wallpaper, display-manager, and supported Arch gaming integrations (Steam, Gamescope, GameMode, MangoHud via `multilib`). |
 
 On x86_64, `--enable-cachyos-repos` adds the [CachyOS](https://cachyos.org)

@@ -126,7 +126,7 @@ out=$(
 
 # The summary comes before the closing banner, and the slow sections are timed.
 grep -Fxq 'print_step_timer_summary' "$repo/install.sh" || fail 'install.sh never prints the step table'
-for section in 'Packages' 'Default apps and Gear Lever' 'Build (make clean; make)' 'make install-system' \
+for section in 'Packages' 'Default apps and AppImages' 'Build (make clean; make)' 'make install-system' \
 	'make install-user' 'Wallpapers' 'Herdr' 'yay' 'GRUB theme' 'Topgrade'; do
 	grep -Fq "step_timer \"$section\"" "$repo/install.sh" || fail "install.sh does not time: $section"
 done

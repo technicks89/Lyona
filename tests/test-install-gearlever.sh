@@ -56,7 +56,9 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$MOCK_XDG_MIME_LOG"
 case $1 in
 query)
-	if [[ -f $MOCK_FLATPAK_STATE/mime-default ]]; then
+	if [[ -n ${MOCK_XDG_DEFAULT:-} ]]; then
+		printf '%s\n' "$MOCK_XDG_DEFAULT"
+	elif [[ -f $MOCK_FLATPAK_STATE/mime-default ]]; then
 		printf '%s\n' it.mijorus.gearlever.desktop
 	fi
 	;;
@@ -123,6 +125,22 @@ if grep -Eq '^(remote-add|install) ' "$log"; then
 	exit 1
 fi
 grep -Fq 'Gear Lever is already installed system-wide.' "$work/system.out"
+
+# #260: installing Gear Lever takes over from lyona's own AppImage handler, and
+# never from one the user chose.
+rm -f "$state/mime-default"
+: >"$mime_log"
+MOCK_XDG_DEFAULT=lyona-appimage.desktop run_helper >/dev/null
+grep -Fqx 'default it.mijorus.gearlever.desktop application/vnd.appimage' "$mime_log" || {
+	printf 'Gear Lever did not take over AppImages from lyona-appimage.\n' >&2
+	exit 1
+}
+: >"$mime_log"
+MOCK_XDG_DEFAULT=org.example.Other.desktop run_helper >/dev/null
+if grep -q '^default ' "$mime_log"; then
+	printf 'Gear Lever replaced an AppImage handler the user chose.\n' >&2
+	exit 1
+fi
 
 rm -f "$state/system-app" "$state/mime-default"
 touch "$state/user-remote"
@@ -278,9 +296,14 @@ mkdir -p "$work/cdpath/scripts"
 	fail "install-gearlever failed with CDPATH set: $(cat "$work/cdpath.err")"
 grep -Eq '^install ' "$log" || fail 'install-gearlever did not install with CDPATH set'
 
+# #260: Gear Lever is opt-in; lyona-appimage opens AppImages otherwise.
 "$repo/install.sh" --dry-run --non-interactive --profile recommended \
 	>"$work/install-plan.out"
+grep -Fq 'Gear Lever: not installed (optional; use --with-gearlever)' "$work/install-plan.out"
+grep -Fq 'AppImages: opened with lyona-appimage' "$work/install-plan.out"
+"$repo/install.sh" --dry-run --non-interactive --profile recommended --with-gearlever \
+	>"$work/install-plan-gearlever.out"
 grep -Fq 'Gear Lever: user-scoped Flathub install (it.mijorus.gearlever)' \
-	"$work/install-plan.out"
+	"$work/install-plan-gearlever.out"
 
 printf '%s\n' 'Gear Lever setup: PASS'

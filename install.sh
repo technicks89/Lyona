@@ -69,6 +69,9 @@ Options:
   --install-herdr        Install verified Herdr as an optional workspace.
   --skip-herdr           Do not install Herdr.
   --skip-topgrade        Do not install Topgrade (recommended and full profiles).
+  --with-gearlever       Also install Gear Lever from Flathub as the AppImage
+                         manager (recommended and full profiles). Without it,
+                         lyona-appimage opens AppImages.
   --enable-arch-gaming-repos
                          Approve enabling the multilib repository for gaming.
   --enable-cachyos-repos Add the CachyOS repositories for this CPU, replacing
@@ -111,6 +114,7 @@ YAY_BIN_REF="13e0a4754d106a9252b7479bf1b370fbe454fc48"
 INSTALL_PROFILE="${DWM_INSTALL_PROFILE:-full}"
 HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
 TOPGRADE_INSTALL_MODE="${DWM_INSTALL_TOPGRADE:-true}"
+GEARLEVER_INSTALL_MODE="${DWM_INSTALL_GEARLEVER:-false}"
 NON_INTERACTIVE=false
 ASSUME_YES=false
 ARCH_GAMING_REPOS_APPROVED=false
@@ -154,6 +158,10 @@ while (($# > 0)); do
 		;;
 	--skip-topgrade)
 		TOPGRADE_INSTALL_MODE=false
+		shift
+		;;
+	--with-gearlever)
+		GEARLEVER_INSTALL_MODE=true
 		shift
 		;;
 	--enable-arch-gaming-repos)
@@ -295,6 +303,34 @@ herdr_arch_supported() {
 # recommended and full profiles, unless --skip-topgrade.
 install_topgrade_profile() {
 	install_recommended_profile && [[ $TOPGRADE_INSTALL_MODE == true ]]
+}
+
+# Gear Lever (#260): opt-in with --with-gearlever. It needs about 1.7 GB of
+# Flatpak runtimes; lyona-appimage opens AppImages without them.
+install_gearlever_profile() {
+	install_recommended_profile && [[ $GEARLEVER_INSTALL_MODE == true ]]
+}
+
+# AppImages (#260): lyona-appimage opens them unless something else already
+# does, such as Gear Lever from an earlier install or the user's own choice.
+# After the defaults are seeded, which only write to an account with no MIME
+# preferences yet.
+configure_appimage_handler() {
+	local current
+	if ! command -v xdg-mime >/dev/null 2>&1; then
+		warn "xdg-mime is missing, so AppImages have no default handler; open them with lyona-appimage open FILE."
+		return 0
+	fi
+	current=$(xdg-mime query default application/vnd.appimage 2>/dev/null || true)
+	if [[ -n $current && $current != lyona-appimage.desktop ]]; then
+		ok "AppImages keep opening with $current."
+		return 0
+	fi
+	if xdg-mime default lyona-appimage.desktop application/vnd.appimage; then
+		ok "AppImages open with lyona-appimage, which adds them to the launcher."
+	else
+		warn "AppImages have no default handler; open them with lyona-appimage open FILE."
+	fi
 }
 
 install_herdr_profile() {
@@ -636,7 +672,12 @@ print_install_summary() {
 	print_summary_profile "Required packages" required
 	if install_recommended_profile; then
 		print_summary_profile "Recommended packages" recommended
-		printf '  Gear Lever: user-scoped Flathub install (%s)\n' 'it.mijorus.gearlever'
+		printf '  AppImages: opened with lyona-appimage, which adds them to the launcher (unless another handler is set)\n'
+		if install_gearlever_profile; then
+			printf '  Gear Lever: user-scoped Flathub install (%s)\n' 'it.mijorus.gearlever'
+		else
+			printf '  Gear Lever: not installed (optional; use --with-gearlever)\n'
+		fi
 		if install_topgrade_profile; then
 			printf '  Topgrade: %s\n' "$("$REPO_DIR/scripts/install-topgrade" --print-plan)"
 		else
@@ -982,31 +1023,39 @@ if install_recommended_profile; then
 	fi
 	! batch_skipped maim || warn "maim is unavailable in the enabled repositories; screenshot hotkeys will remain disabled."
 	! batch_skipped qt6ct || warn "qt6ct is unavailable in the enabled repositories; Qt apps may not respect dark mode."
-	step_timer "Default apps and Gear Lever"
-	# Seed the browser, media and image defaults before Gear Lever, which writes its own
-	# AppImage MIME preference file; the seed leaves any existing preference alone.
+	step_timer "Default apps and AppImages"
+	# Seed the browser, media and image defaults before the AppImage handler and
+	# Gear Lever, which write their own MIME preference; the seed leaves any
+	# existing preference alone.
 	if bash "$REPO_DIR/scripts/seed-default-apps.sh"; then
 		ok "Browser, media and image defaults are set."
 	else
 		warn "Browser, media and image defaults were not seeded; set them in Settings > Defaults."
 	fi
-	info "Setting up Gear Lever for AppImage management..."
-	# Flatpak cannot install for the user inside the image installer's chroot
-	# ("User 1000 does not exist"), so there it is left for the first login,
-	# whose session startup installs it (Sync Sprint 16, found in a VM). The image
-	# always runs this in arch-chroot (LYONA_SOURCE=iso), which systemd-detect-virt
-	# cannot see: it gives the chroot its own PID namespace.
-	if [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
-		gearlever_state=${XDG_STATE_HOME:-$HOME/.local/state}/lyona
-		if mkdir -p -- "$gearlever_state" && : >"$gearlever_state/pending-gearlever"; then
-			info "Gear Lever will be installed at your first login."
+	configure_appimage_handler
+	gearlever_state=${XDG_STATE_HOME:-$HOME/.local/state}/lyona
+	if install_gearlever_profile; then
+		info "Setting up Gear Lever for AppImage management..."
+		# Flatpak cannot install for the user inside the image installer's chroot
+		# ("User 1000 does not exist"), so there it is left for the first login,
+		# whose session startup installs it (Sync Sprint 16, found in a VM). The image
+		# always runs this in arch-chroot (LYONA_SOURCE=iso), which systemd-detect-virt
+		# cannot see: it gives the chroot its own PID namespace.
+		if [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
+			if mkdir -p -- "$gearlever_state" && : >"$gearlever_state/pending-gearlever"; then
+				info "Gear Lever will be installed at your first login."
+			else
+				warn "Gear Lever was not set up; after logging in, run install-gearlever."
+			fi
+		elif "$REPO_DIR/scripts/install-gearlever"; then
+			ok "Gear Lever is installed."
 		else
-			warn "Gear Lever was not set up; after logging in, run install-gearlever."
+			warn "Gear Lever setup failed; retry with scripts/install-gearlever when Flathub is reachable."
 		fi
-	elif "$REPO_DIR/scripts/install-gearlever"; then
-		ok "Gear Lever is installed."
-	else
-		warn "Gear Lever setup failed; retry with scripts/install-gearlever when Flathub is reachable."
+	elif [[ -e $gearlever_state/pending-gearlever ]]; then
+		# Left by an earlier install for the first login: Gear Lever is opt-in now.
+		rm -f -- "$gearlever_state/pending-gearlever" &&
+			info "Gear Lever is no longer installed by default; its pending first-login install was cancelled (use --with-gearlever to install it)."
 	fi
 else
 	warn "Skipping recommended desktop dependencies for core profile."

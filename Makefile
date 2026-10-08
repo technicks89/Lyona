@@ -76,6 +76,7 @@ INSTALL_COMMANDS = \
 	scripts/dwm-xdg-autostart \
 	scripts/dwm-flatpak-setup \
 	scripts/install-gearlever \
+	scripts/lyona-appimage \
 	scripts/install-herdr \
 	scripts/install-mybash \
 	scripts/install-topgrade \
@@ -281,6 +282,9 @@ install-system:
 	sed "s/VERSION/${VERSION}/g" dwm.1 | install -Dm644 /dev/stdin ${DESTDIR}${MANPREFIX}/man1/dwm.1
 	sed "s|@PREFIX@|${PREFIX}|g" dwm.desktop | \
 		install -Dm644 /dev/stdin ${DESTDIR}${XSESSIONSDIR}/dwm.desktop
+	@# The AppImage handler (#260): hidden from the launcher, used by MIME type.
+	sed "s|@PREFIX@|${PREFIX}|g" lyona-appimage.desktop | \
+		install -Dm644 /dev/stdin ${DESTDIR}${DATADIR}/applications/lyona-appimage.desktop
 	@echo "==> Installing scripts to PATH..."
 	for f in ${INSTALL_COMMANDS}; do \
 		install -Dm755 "$$f" ${DESTDIR}${PREFIX}/bin/$$(basename "$$f"); \
@@ -522,6 +526,7 @@ uninstall:
 		${DESTDIR}${PREFIX}/bin/${THUMB} \
 		${DESTDIR}${MANPREFIX}/man1/dwm.1 \
 		${DESTDIR}${XSESSIONSDIR}/dwm.desktop \
+		${DESTDIR}${DATADIR}/applications/lyona-appimage.desktop \
 		${DESTDIR}/etc/lyona-release
 	rm -rf \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_DARK_THEME}" \
@@ -761,6 +766,7 @@ check-terminal:
 
 check-gearlever-install:
 	tests/test-install-gearlever.sh
+	tests/test-lyona-appimage.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 check-herdr-install:
 	tests/test-install-herdr.sh
@@ -1124,6 +1130,7 @@ check-install-manifest: all
 			usr/bin/${THUMB} \
 			usr/share/man/man1/dwm.1 \
 			usr/share/xsessions/dwm.desktop \
+			usr/share/applications/lyona-appimage.desktop \
 			etc/lyona-release; \
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \

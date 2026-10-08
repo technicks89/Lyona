@@ -52,4 +52,17 @@ grep -Fq 'if [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/de
 # shellcheck disable=SC2016 # literal, or expanded by the inner shell
 grep -Fq '"$gearlever_state/pending-gearlever"' <<<"$gear" || fail 'install.sh leaves no marker'
 
+# #260: Gear Lever is opt-in. The marker is only left with --with-gearlever, and
+# without it a marker an earlier install left is cleared, so nothing installs
+# Gear Lever at the first login unasked.
+step=$(sed -n '/^	step_timer "Default apps and AppImages"$/,/^else$/p' "$repo/install.sh")
+grep -Fqx '	if install_gearlever_profile; then' <<<"$step" ||
+	fail 'install.sh sets Gear Lever up without --with-gearlever'
+# shellcheck disable=SC2016 # the literal text in install.sh
+grep -Fqx '	elif [[ -e $gearlever_state/pending-gearlever ]]; then' <<<"$step" ||
+	fail 'install.sh does not clear a pending Gear Lever marker'
+# shellcheck disable=SC2016 # the literal text in install.sh
+grep -Fq 'rm -f -- "$gearlever_state/pending-gearlever"' <<<"$step" ||
+	fail 'install.sh does not remove the pending Gear Lever marker'
+
 printf 'Gear Lever at first login: PASS\n'

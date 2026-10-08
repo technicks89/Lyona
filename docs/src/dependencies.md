@@ -62,9 +62,11 @@ What a running session needs: D-Bus, `xdotool` and `xprop` (the Quickshell state
 
 ### `desktop`
 
-The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, the login keyring, and the signature check of lyona's own updates.
+The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, AppImages, the login keyring, and the signature check of lyona's own updates.
 
-`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `cosign` `gnome-keyring` `pacman-contrib`
+`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `cosign` `fuse2` `squashfs-tools` `gnome-keyring` `pacman-contrib`
+
+`fuse2` and `squashfs-tools` (the `appimage` group) are for AppImages: `fuse2` runs the classic ones, which need `libfuse.so.2` (the newer static-runtime ones run with Flatpak's `fuse3`), and `lyona-appimage` reads an AppImage's launcher entry and icon with `unsquashfs`, without running it.
 
 `cosign` checks the Sigstore signature of each lyona release before `lyona-update` installs it (decision D-31). Without it, an update to a signed release is refused.
 

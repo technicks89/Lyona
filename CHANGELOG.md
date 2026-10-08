@@ -37,6 +37,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- **AppImages open without Gear Lever's 1.7 GB of runtimes.** Opening an AppImage now uses the new `lyona-appimage`:
+  it moves the file to `~/Applications`, makes it executable, adds it to the launcher with the name and icon from
+  inside it (read with `unsquashfs`, never by running it), and starts it. `lyona-appimage remove NAME` takes it out
+  again. `fuse2` and `squashfs-tools` join the recommended desktop, so the classic AppImages, which need
+  `libfuse.so.2`, run at all; before, only the newer static-runtime ones did. Gear Lever is now opt-in:
+  `install.sh --with-gearlever` installs it from Flathub, and it then takes AppImages over (#260).
+  - **Migration:** an installed Gear Lever is kept, and stays the AppImage handler. If an image install left Gear Lever
+    pending for the first login, the next `install.sh` run cancels that unless `--with-gearlever` is given.
 - **Picom is part of the lyona desktop.** The overview's window previews need it, so the recommended and full profiles
   treat it as required: `check-deps.sh` and `dwm-diagnostics` report it missing as a required failure when Quickshell
   is installed (the core profile is unchanged), and System Health calls a stopped Picom a warning that turns previews

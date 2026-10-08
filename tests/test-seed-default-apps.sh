@@ -251,5 +251,11 @@ gearlever_line=$(grep -n 'if "$REPO_DIR/scripts/install-gearlever"; then' "$repo
 	fail 'install.sh no longer installs media, seeds defaults and sets up Gear Lever'
 ((media_line < seed_line && seed_line < gearlever_line)) ||
 	fail "install.sh order must be media packages ($media_line), seed ($seed_line), Gear Lever ($gearlever_line)"
+# The AppImage handler (#260) also writes a MIME preference: after the seed too,
+# and before Gear Lever, which may take it over.
+handler_line=$(grep -nx '	configure_appimage_handler' "$repo/install.sh" | head -n 1 | cut -d: -f1)
+if [[ -z $handler_line ]] || ((seed_line >= handler_line || handler_line >= gearlever_line)); then
+	fail "install.sh must set the AppImage handler ($handler_line) after the seed ($seed_line), before Gear Lever ($gearlever_line)"
+fi
 
 printf 'Seed default apps: PASS\n'
