@@ -33,7 +33,7 @@ the existing-system installer on Arch Linux.
 
 | Experience | What it includes |
 | --- | --- |
-| **A focused desktop** | Automatic window tiling, nine workspaces, fast keyboard navigation, a window overview with live previews of every window, multi-monitor support, and flexible fullscreen modes. |
+| **A focused desktop** | Automatic window tiling, nine workspaces, fast keyboard navigation, a window overview with live previews of every window (while Picom, the compositor, runs), multi-monitor support, and flexible fullscreen modes. |
 | **Everyday essentials** | A polished panel, application launcher, system tray, Control Center, Settings, notifications, screenshots, audio, brightness, and power controls. |
 | **Easy discovery** | An interactive keybind viewer, guided display setup, built-in diagnostics, and clear unsupported-feature reporting. |
 | **Personal configuration** | Live-reloading hotkeys, themes, and window rules, with local configuration preserved across upgrades. |

@@ -407,10 +407,12 @@ install-user:
 	@echo "==> Seeding application config without overwriting user files..."
 	mkdir -p ${CFG_DIR}
 	@# quickshell is installed wholesale below; polkit holds the system polkit
-	@# actions (POLKIT_ACTIONS, @PREFIX@ unexpanded), which are never user config.
+	@# actions (POLKIT_ACTIONS, @PREFIX@ unexpanded), which are never user config;
+	@# picom is lyona's default, installed to SHARE_DIR/xdg and used from there:
+	@# a user copy would shadow every later update of it (#244).
 	for dir in config/*/; do \
 		b=$$(basename "$$dir"); \
-		if [ "$$b" = quickshell ] || [ "$$b" = polkit ]; then \
+		if [ "$$b" = quickshell ] || [ "$$b" = polkit ] || [ "$$b" = picom ]; then \
 			continue; \
 		fi; \
 		dst=${CFG_DIR}/$$b; \

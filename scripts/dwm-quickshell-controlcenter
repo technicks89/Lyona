@@ -1633,13 +1633,16 @@ reload_wallpaper() {
 }
 
 toggle_compositor() {
-	picom_action toggle || return 1
-	# A troubleshooting action (#244): previews need Picom running.
-	if pgrep -x picom >/dev/null 2>&1; then
-		notify "Compositor started"
-	else
+	# A troubleshooting action (#244): previews need Picom running. The helper's
+	# answer is for this display, which a process search is not.
+	picom_helper=$(command -v dwm-settings-picom 2>/dev/null || printf '%s' "$script_dir/dwm-settings-picom")
+	toggled=$("$picom_helper" toggle) || return 1
+	case $toggled in
+	*'"Picom stopped"'*)
 		notify "Compositor stopped" "Window previews in the overview are off until Picom starts again."
-	fi
+		;;
+	*) notify "Compositor started" ;;
+	esac
 }
 
 restart_networkmanager() {

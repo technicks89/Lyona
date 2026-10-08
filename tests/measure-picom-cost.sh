@@ -109,8 +109,13 @@ sample() {
 	say "$line"
 }
 
+# Whether Picom runs on this display, which the helper reports; a process
+# search would also see a Picom on another display.
 picom_was_running=false
-pid_of picom >/dev/null && picom_was_running=true
+if dwm-settings-picom status 2>/dev/null |
+	python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin).get("running") else 1)'; then
+	picom_was_running=true
+fi
 restore() {
 	if $picom_was_running; then
 		dwm-settings-picom start >/dev/null 2>&1 || :
