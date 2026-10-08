@@ -198,16 +198,30 @@ jobs:
       - name: Build ISO
         run: scripts/build-lyona-arch-iso.sh --output "$RUNNER_TEMP/iso"
 
+      # The ISO and its checksum alone in one directory, uploaded by a
+      # single-line path: in a container job the runner maps only the first
+      # line of a multi-line path from the host's runner.temp to the
+      # container's, so a second line matched nothing and the ISO landed under
+      # __w/_temp/iso/ in the artifact, where sign and release did not see it.
       - name: Checksum ISO
-        working-directory: ${{ runner.temp }}/iso
-        run: sha256sum ./*.iso > SHA256SUMS
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          iso=("$RUNNER_TEMP"/iso/*.iso)
+          ((${#iso[@]} == 1)) || {
+            echo "::error::Expected one ISO, found ${#iso[@]}"
+            exit 1
+          }
+          mkdir "$RUNNER_TEMP/iso-artifact"
+          mv -- "${iso[0]}" "$RUNNER_TEMP/iso-artifact/"
+          cd "$RUNNER_TEMP/iso-artifact"
+          sha256sum ./*.iso > SHA256SUMS
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: lyona-iso-${{ env.TAG }}
-          path: |
-            ${{ runner.temp }}/iso/*.iso
-            ${{ runner.temp }}/iso/SHA256SUMS
+          path: ${{ runner.temp }}/iso-artifact
+          if-no-files-found: error
 
       # The source archive "Check the release archive" left, for sign; the
       # release job rebuilds it byte for byte and checks the signature names it.
@@ -301,6 +315,8 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
+          # An unmatched glob counts as none, not as its own literal text.
+          shopt -s nullglob
           iso=("$RUNNER_TEMP"/iso/*.iso)
           ((${#iso[@]} == 1)) || {
             echo "::error::Expected one ISO, found ${#iso[@]}"

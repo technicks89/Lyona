@@ -15,8 +15,8 @@ helpers (GHSA-x538-46gg-v37h, GHSA-xfhv-7h9c-m966, GHSA-c897-2mjw-fwhh). The ins
 keyboard layout for the passwords, can change an answer or retry a failed base install, and downloads from mirrors near
 you; installs are faster, with one kernel, one pacman transaction and timed steps. AppImages open without Gear Lever's
 runtimes, peripheral batteries are shown, Picom is part of the desktop, time sync is on by default, and re-running
-`install.sh` keeps your `~/.bashrc` and your time settings (#237, #239, #240, #243-#250, #258, #260, #265-#268). See
-`docs/RELEASE-NOTES-2026.10.0-beta.5.md`.
+`install.sh` keeps your `~/.bashrc` and your time settings; the dwm build questions are opt-in (#237, #239, #240,
+#243-#250, #258, #260, #265-#268, #270, #289). See `docs/RELEASE-NOTES-2026.10.0-beta.5.md`.
 
 ### Added
 
@@ -63,6 +63,11 @@ runtimes, peripheral batteries are shown, Picom is part of the desktop, time syn
 
 ### Changed
 
+- **`install.sh` asks the dwm build questions only with `--configure-build`.** It used to ask eight dwm internals
+  (refresh rate, font size, modifier key, master-area ratio and so on) after the summary, on every interactive run,
+  and one wrong answer stopped the install there with no message. A new `config.h` now uses `config.def.h`'s defaults;
+  `--configure-build` asks before the summary, and asks again when an answer is not valid. An existing `config.h` is
+  kept, as before (#289).
 - **AppImages open without Gear Lever's 1.7 GB of runtimes.** Opening an AppImage now uses the new `lyona-appimage`.
   The first time, it asks: **Add and run**, **Add only** or **Cancel**, in a notification (or in the terminal when run
   from one), with where the file was downloaded from when the browser recorded it. Closing the question cancels, and
@@ -138,6 +143,9 @@ runtimes, peripheral batteries are shown, Picom is part of the desktop, time syn
 
 ### Fixed
 
+- **A Wi-Fi passphrase ending in `=` reaches the installed system.** The image installer read it back with `read`
+  split at `=`, which drops one trailing `=`, so the new system's first boot was offline while the log said the network
+  was saved (#270).
 - **The image installer uses your keyboard layout for the passwords.** The layout you chose was set only on the new
   system, while the disk-encryption and user passwords were typed in a US layout on the live medium. On a French or
   German keyboard, the same keys then gave other characters at the LUKS prompt and at login, so the disk would not

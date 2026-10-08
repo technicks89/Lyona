@@ -30,6 +30,17 @@ lacks() { # PLAN TEXT
 
 core=$(plan core)
 has "$core" '  AUR helper: '
+# The dwm build (#289): what config.h will be, and the questions only on request.
+if [[ -e $repo/config.h ]]; then
+	has "$core" '  dwm build: your existing config.h, kept'
+else
+	has "$core" '  dwm build: config.def.h defaults (use --configure-build to choose)'
+fi
+if refused=$(plan core --configure-build); then
+	fail '--configure-build was accepted with --non-interactive'
+fi
+has "$refused" 'cannot run with --non-interactive'
+grep -Fq -- '--configure-build' <("$repo/install.sh" --help) || fail '--help does not list --configure-build'
 # Every profile, whatever this machine's state (#258).
 has "$core" '  Time synchronization: '
 lacks "$core" 'Shell configuration: mybash'

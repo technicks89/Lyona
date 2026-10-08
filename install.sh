@@ -69,6 +69,10 @@ Options:
   --install-herdr        Install verified Herdr as an optional workspace.
   --skip-herdr           Do not install Herdr.
   --skip-topgrade        Do not install Topgrade (recommended and full profiles).
+  --configure-build      Ask the dwm build questions (refresh rate, font size,
+                         modifier key, layout) before the summary. Without it,
+                         a new config.h uses config.def.h's defaults; an
+                         existing config.h is always kept.
   --with-gearlever       Also install Gear Lever from Flathub as the AppImage
                          manager (recommended and full profiles). Without it,
                          lyona-appimage opens AppImages.
@@ -115,6 +119,9 @@ INSTALL_PROFILE="${DWM_INSTALL_PROFILE:-full}"
 HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
 TOPGRADE_INSTALL_MODE="${DWM_INSTALL_TOPGRADE:-true}"
 GEARLEVER_INSTALL_MODE="${DWM_INSTALL_GEARLEVER:-false}"
+# The dwm build questions, only when asked for (#289): they are dwm internals
+# most users cannot judge, and a typo in one used to stop the install.
+CONFIGURE_BUILD=false
 NON_INTERACTIVE=false
 ASSUME_YES=false
 ARCH_GAMING_REPOS_APPROVED=false
@@ -162,6 +169,10 @@ while (($# > 0)); do
 		;;
 	--with-gearlever)
 		GEARLEVER_INSTALL_MODE=true
+		shift
+		;;
+	--configure-build)
+		CONFIGURE_BUILD=true
 		shift
 		;;
 	--enable-arch-gaming-repos)
@@ -234,6 +245,11 @@ case $TOPGRADE_INSTALL_MODE in
 	exit 1
 	;;
 esac
+
+if [[ $CONFIGURE_BUILD == true && $NON_INTERACTIVE == true ]]; then
+	err "--configure-build asks questions, so it cannot run with --non-interactive; set DWM_REFRESH_RATE and the other DWM_* values instead (scripts/configure-build.sh --help)."
+	exit 1
+fi
 
 case $GEARLEVER_INSTALL_MODE in
 1 | true | yes) GEARLEVER_INSTALL_MODE=true ;;
@@ -729,6 +745,13 @@ print_install_summary() {
 	# One transaction for every repository package (#247), gaming included
 	# (#248), and the system upgrade with it.
 	printf '  Package install: one pacman -Syu --needed transaction, which also upgrades the system\n'
+	if [[ -e $REPO_DIR/config.h ]]; then
+		printf '  dwm build: your existing config.h, kept\n'
+	elif [[ $CONFIGURE_BUILD == true ]]; then
+		printf '  dwm build: the answers given above\n'
+	else
+		printf '  dwm build: config.def.h defaults (use --configure-build to choose)\n'
+	fi
 	print_summary_profile "Required packages" required
 	if install_recommended_profile; then
 		print_summary_profile "Recommended packages" recommended
@@ -1008,17 +1031,20 @@ info "Package manager: $PKG_CMD"
 info "Install profile: $INSTALL_PROFILE"
 pacman_parallel_downloads_tip
 confirm_cachyos_setup
+# Before the summary: the answers are part of what it shows, and nothing has
+# changed yet if they are abandoned (#289).
+if [[ $CONFIGURE_BUILD == true && $DRY_RUN != true ]]; then
+	"$REPO_DIR/scripts/configure-build.sh"
+fi
 confirm_install_summary
 confirm_arch_multilib_repository
 step_timer "CachyOS repositories"
 setup_cachyos
 
 step_timer "Build configuration"
-if [[ $NON_INTERACTIVE != true ]]; then
-	"$REPO_DIR/scripts/configure-build.sh"
-else
-	"$REPO_DIR/scripts/configure-build.sh" --non-interactive
-fi
+# config.h from the defaults (or DWM_* values) when there is none yet; one made
+# by --configure-build above, or earlier, is kept.
+"$REPO_DIR/scripts/configure-build.sh" --non-interactive
 
 # Every repository package in one pacman transaction (#247): one dependency
 # resolution, one download, one run of each hook, and the system upgrade with

@@ -60,6 +60,11 @@ assert "Sign the release files" not in steps and "Create the tag and the release
 assert steps.index("Check the version and the tag") < steps.index("Check the release archive") < steps.index("Build ISO"), steps
 uploads = [s["with"]["name"] for s in bi["steps"] if s.get("uses", "").startswith("actions/upload-artifact@")]
 assert uploads == ["lyona-iso-${{ env.TAG }}", "lyona-source-${{ env.TAG }}"], uploads
+# One line: a container job maps only a multi-line path's first line from the
+# host's runner.temp, so the ISO landed in a subdirectory of the artifact.
+iso_up = next(s for s in bi["steps"] if s.get("with", {}).get("name") == "lyona-iso-${{ env.TAG }}")
+assert iso_up["with"]["path"] == "${{ runner.temp }}/iso-artifact", iso_up["with"]["path"]
+assert iso_up["with"]["if-no-files-found"] == "error", iso_up["with"]
 assert bi["outputs"] == {"version": "${{ steps.check.outputs.version }}", "tag": "${{ steps.check.outputs.tag }}"}, bi.get("outputs")
 # Signed releases (D-31), in their own job: the only one with the OIDC token,
 # running no repository code (no checkout, no run script, only pinned actions),
@@ -115,12 +120,13 @@ for name in ("build-iso", "release"):
 PY
 step "$build_workflow" 'Check the version and the tag' "$work/check.sh"
 step "$build_workflow" 'Create the tag and the release' "$work/release.sh"
+step "$build_workflow" 'Checksum ISO' "$work/checksum.sh"
 step "$promote_workflow" 'Promote the release' "$work/promote.sh"
 step "$build_workflow" 'Allow only admins and maintainers' "$work/authorize.sh"
 step "$promote_workflow" 'Allow only admins and maintainers' "$work/authorize-promote.sh"
 cmp -s "$work/authorize.sh" "$work/authorize-promote.sh" || fail 'the two workflows check who may run them differently'
 if command -v shellcheck >/dev/null 2>&1; then
-	for script in check release promote authorize; do
+	for script in check release checksum promote authorize; do
 		shellcheck -s bash "$work/$script.sh" || fail "the $script step does not pass shellcheck"
 	done
 fi
@@ -235,8 +241,25 @@ release notes/release.md || fail 'the release step with notes failed'
 : >"$work/runner/iso/second.iso"
 if release >/dev/null 2>&1; then fail 'the release step accepted two ISOs'; fi
 rm "$work/runner/iso/second.iso"
+mv "$work/runner/iso/lyona-2026.10.0-x86_64.iso" "$work/runner/held.iso"
+if release >"$work/release.out" 2>&1; then fail 'the release step ran without an ISO'; fi
+grep -Fq 'Expected one ISO, found 0' "$work/release.out" || fail "without an ISO: $(cat "$work/release.out")"
+mv "$work/runner/held.iso" "$work/runner/iso/lyona-2026.10.0-x86_64.iso"
 rm "$work/runner/bundle/attestation.jsonl"
 if release >/dev/null 2>&1; then fail 'the release step ran without a signature bundle'; fi
+
+# ---- the ISO artifact -------------------------------------------------------
+# The ISO and SHA256SUMS alone in iso-artifact; the build's profile stays out.
+checksum() { env RUNNER_TEMP="$work/build-temp" bash "$work/checksum.sh"; }
+mkdir -p "$work/build-temp/iso/profile"
+printf 'iso\n' >"$work/build-temp/iso/lyona-2026.10.0-x86_64.iso"
+checksum >"$work/checksum.out" 2>&1 || fail "the checksum step failed: $(cat "$work/checksum.out")"
+[[ $(find "$work/build-temp/iso-artifact" -mindepth 1 -printf '%f\n' | LC_ALL=C sort | tr '\n' ' ') == 'SHA256SUMS lyona-2026.10.0-x86_64.iso ' ]] ||
+	fail "the ISO artifact holds: $(find "$work/build-temp/iso-artifact" -mindepth 1)"
+(cd "$work/build-temp/iso-artifact" && sha256sum -c --quiet SHA256SUMS) || fail 'SHA256SUMS does not match the ISO'
+rm -r "$work/build-temp/iso-artifact"
+if checksum >"$work/checksum.out" 2>&1; then fail 'the checksum step ran without an ISO'; fi
+grep -Fq 'Expected one ISO, found 0' "$work/checksum.out" || fail "without an ISO: $(cat "$work/checksum.out")"
 
 # ---- promotion --------------------------------------------------------------
 # gh: the named release (STUB_RELEASE: prerelease, draft, published; none when

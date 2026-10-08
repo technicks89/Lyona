@@ -299,6 +299,13 @@ packaging checks, or scripted validation, use the non-interactive flags:
 ./install.sh --non-interactive --yes --profile full --cachyos-kernel
 ```
 
+**dwm build settings.** A new `config.h` uses `config.def.h`'s defaults: the
+monitor's refresh rate, font size 12, Super as the modifier, and the usual
+layout. To choose them, add `--configure-build`. The installer then asks
+before its summary, and asks again when an answer isn't valid. Unattended, set
+`DWM_REFRESH_RATE`, `DWM_FONT_SIZE`, `DWM_MODKEY` and the other values in
+`scripts/configure-build.sh --help`. An existing `config.h` is always kept.
+
 Without `--enable-arch-gaming-repos`, unattended Arch full installs skip
 Steam, Gamescope, GameMode, and MangoHud rather than changing repository trust.
 An already-enabled `multilib` counts as approval, since nothing in
