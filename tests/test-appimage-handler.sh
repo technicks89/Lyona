@@ -5,7 +5,8 @@ set -euo pipefail
 # set. The user's own choice is read from mimeapps.list itself, so a Gear
 # Lever xdg-mime query cannot see (no Flatpak exports in XDG_DATA_DIRS) is
 # still kept. appimage_user_choice and configure_appimage_handler are extracted
-# from install.sh and run against an xdg-mime stub: query answers STUB_QUERY,
+# from scripts/lyona-reconcile-user (#273), which install.sh and make
+# install-user both run, and run against an xdg-mime stub: query answers STUB_QUERY,
 # and default only logs.
 
 # shellcheck source=tests/lib.sh
@@ -13,11 +14,12 @@ set -euo pipefail
 make_workspace
 
 {
-	sed -n '/^appimage_user_choice() {$/,/^}$/p' "$repo/install.sh"
-	sed -n '/^configure_appimage_handler() {$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^appimage_user_choice() {$/,/^}$/p' "$repo/scripts/lyona-reconcile-user"
+	sed -n '/^configure_appimage_handler() {$/,/^}$/p' "$repo/scripts/lyona-reconcile-user"
 } >"$work/handler.sh"
-grep -q '^appimage_user_choice() {$' "$work/handler.sh" || fail 'appimage_user_choice not found in install.sh'
-grep -q '^configure_appimage_handler() {$' "$work/handler.sh" || fail 'configure_appimage_handler not found in install.sh'
+grep -q '^appimage_user_choice() {$' "$work/handler.sh" || fail 'appimage_user_choice not found in lyona-reconcile-user'
+grep -q '^configure_appimage_handler() {$' "$work/handler.sh" ||
+	fail 'configure_appimage_handler not found in lyona-reconcile-user'
 
 mkdir -p "$work/bin" "$work/config"
 cat >"$work/bin/xdg-mime" <<'STUB'
@@ -40,8 +42,8 @@ run_case() {
 	(
 		ok() { printf 'ok %s\n' "$1" >>"$work/out.log"; }
 		warn() { printf 'warn %s\n' "$1" >>"$work/out.log"; }
-		REPO_DIR=$repo
-		export PATH="$work/bin:$PATH" TEST_DIR="$work" XDG_CONFIG_HOME="$work/config"
+		config_home=$work/config
+		export PATH="$work/bin:$PATH" TEST_DIR="$work"
 		# shellcheck source=/dev/null
 		. "$work/handler.sh"
 		configure_appimage_handler

@@ -244,18 +244,22 @@ grep -Eq '^	mapfile -t batch_optional < <\(dwm_collect_packages browser media ' 
 	fail 'install.sh does not install the media profile with the other packages'
 # shellcheck disable=SC2016 # matching install.sh's literal text, not expanding it
 media_line=$(grep -nF 'if ! dwm_install_batch "${batch_flags[@]}" batch_required batch_optional; then' "$repo/install.sh" | head -n 1 | cut -d: -f1)
-seed_line=$(grep -n 'scripts/seed-default-apps.sh' "$repo/install.sh" | head -n 1 | cut -d: -f1)
+# The seed and the AppImage handler run in lyona-reconcile-user (#273): the
+# first call of it in install.sh is where they happen.
+seed_line=$(grep -n 'scripts/lyona-reconcile-user" --profile' "$repo/install.sh" | head -n 1 | cut -d: -f1)
 # shellcheck disable=SC2016 # matching install.sh's literal text, not expanding it
 gearlever_line=$(grep -n 'if "$REPO_DIR/scripts/install-gearlever"; then' "$repo/install.sh" | head -n 1 | cut -d: -f1)
 [[ -n $media_line && -n $seed_line && -n $gearlever_line ]] ||
 	fail 'install.sh no longer installs media, seeds defaults and sets up Gear Lever'
 ((media_line < seed_line && seed_line < gearlever_line)) ||
 	fail "install.sh order must be media packages ($media_line), seed ($seed_line), Gear Lever ($gearlever_line)"
-# The AppImage handler (#260) also writes a MIME preference: after the seed too,
-# and before Gear Lever, which may take it over.
-handler_line=$(grep -nx '	configure_appimage_handler' "$repo/install.sh" | head -n 1 | cut -d: -f1)
-if [[ -z $handler_line ]] || ((seed_line >= handler_line || handler_line >= gearlever_line)); then
-	fail "install.sh must set the AppImage handler ($handler_line) after the seed ($seed_line), before Gear Lever ($gearlever_line)"
+# The AppImage handler (#260) also writes a MIME preference: after the seed in
+# lyona-reconcile-user, and so before Gear Lever, which may take it over.
+reconcile=$repo/scripts/lyona-reconcile-user
+seed_in=$(grep -n 'seed-default-apps.sh' "$reconcile" | grep -v '^[0-9]*:#' | tail -n 1 | cut -d: -f1)
+handler_in=$(grep -nx '	configure_appimage_handler' "$reconcile" | head -n 1 | cut -d: -f1)
+if [[ -z $seed_in || -z $handler_in ]] || ((seed_in >= handler_in)); then
+	fail "lyona-reconcile-user must set the AppImage handler ($handler_in) after the seed ($seed_in)"
 fi
 
 printf 'Seed default apps: PASS\n'

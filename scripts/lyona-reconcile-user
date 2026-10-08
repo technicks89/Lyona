@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# lyona-reconcile-user (#273): the per-user changes a lyona install makes, in
+# one place, so install.sh, lyona-update (through make install-user) and a
+# future package all apply the same ones. Every step is idempotent: a second
+# run changes nothing.
+#
+#   lyona-reconcile-user [--profile core|recommended|full]
+#
+# - The install profile: recorded with --profile (install.sh passes it), read
+#   back otherwise. An account installed before it was recorded counts as
+#   recommended when Quickshell is installed, core otherwise.
+# - Recommended and full: the browser, media and image defaults for an account
+#   with none yet (seed-default-apps.sh), and lyona-appimage as the AppImage
+#   handler unless another is set (#260).
+# - Every profile: ~/.config/lyona/hotkeys.toml lines that are still an earlier
+#   release's default are moved to this release's (hotkeys-migrations, beside
+#   this script), after a backup. A line the user changed is never touched.
+#
+# Exit status: 0 done, 1 failed, 2 bad usage.
+
+script_dir=${BASH_SOURCE[0]%/*}
+[[ $script_dir != "${BASH_SOURCE[0]}" ]] || script_dir=.
+lyona_lib=$script_dir
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# All four are set; cache_home is not read.
+# shellcheck disable=SC2034
+lyona_xdg_dirs
+
+info() { printf '[INFO] %s\n' "$1"; }
+ok() { printf '[OK] %s\n' "$1"; }
+warn() { printf '[WARN] %s\n' "$1" >&2; }
+die() {
+	printf 'lyona-reconcile-user: %s\n' "$1" >&2
+	exit 1
+}
+usage() {
+	printf 'Usage: lyona-reconcile-user [--profile core|recommended|full]\n' >&2
+	exit 2
+}
+
+[[ $(id -u) != 0 ]] || die "refusing to run as root; it reconciles one user account"
+
+profile=
+while (($# > 0)); do
+	case $1 in
+	--profile)
+		(($# >= 2)) || usage
+		profile=$2
+		shift 2
+		;;
+	*) usage ;;
+	esac
+done
+
+profile_file=$state_home/lyona/install-profile
+
+valid_profile() {
+	[[ $1 == core || $1 == recommended || $1 == full ]]
+}
+
+# The profile: given (and recorded), recorded, or inferred.
+resolve_profile() {
+	local recorded=
+	if [[ -n $profile ]]; then
+		valid_profile "$profile" || usage
+		mkdir -p -- "${profile_file%/*}"
+		printf '%s\n' "$profile" >"$profile_file.tmp"
+		mv -fT -- "$profile_file.tmp" "$profile_file"
+		return 0
+	fi
+	[[ ! -r $profile_file ]] || read -r recorded <"$profile_file" || :
+	if valid_profile "$recorded"; then
+		profile=$recorded
+	elif command -v quickshell >/dev/null 2>&1; then
+		profile=recommended
+		info "No install profile is recorded for this account; treating it as recommended (Quickshell is installed)."
+	else
+		profile=core
+		info "No install profile is recorded for this account; treating it as core."
+	fi
+}
+
+# The AppImage handler the user's own mimeapps.list names, if any: read from
+# the file, because xdg-mime query answers only for a desktop file it can find
+# in this shell, and misses a user Gear Lever when XDG_DATA_DIRS lacks Flatpak's
+# exports (a non-login shell).
+appimage_user_choice() {
+	[[ -r $config_home/mimeapps.list ]] || return 0
+	awk '
+		/^\[/ { group = $0; next }
+		group == "[Default Applications]" && index($0, "application/vnd.appimage=") == 1 {
+			value = substr($0, length("application/vnd.appimage=") + 1)
+			sub(/;.*/, "", value)
+			print value
+			exit
+		}' "$config_home/mimeapps.list"
+}
+
+# lyona-appimage opens AppImages unless something else already does, such as
+# Gear Lever or the user's own choice (#260).
+configure_appimage_handler() {
+	local current
+	if ! command -v xdg-mime >/dev/null 2>&1; then
+		warn "xdg-mime is missing, so AppImages have no default handler; open them with lyona-appimage open FILE."
+		return 0
+	fi
+	current=$(appimage_user_choice)
+	# Set explicitly by an earlier run: nothing to change.
+	if [[ $current == lyona-appimage.desktop ]]; then
+		ok "AppImages already open with lyona-appimage."
+		return 0
+	fi
+	[[ -n $current ]] || current=$(xdg-mime query default application/vnd.appimage 2>/dev/null || true)
+	if [[ -n $current && $current != lyona-appimage.desktop ]]; then
+		ok "AppImages keep opening with $current."
+		return 0
+	fi
+	if xdg-mime default lyona-appimage.desktop application/vnd.appimage; then
+		ok "AppImages open with lyona-appimage, which adds them to the launcher."
+	else
+		warn "AppImages have no default handler; open them with lyona-appimage open FILE."
+	fi
+}
+
+# migrate_hotkeys FILE TABLE: FILE's lines that are exactly an old default in
+# TABLE become its replacement, and a guarded line is added when its key chord
+# is bound nowhere in FILE. Prints how many lines it replaced.
+migrate_hotkeys_lines() {
+	awk -v table="$2" '
+		function chord(s,   mod, key) {
+			if (!match(s, /mod="[^"]*"/)) return ""
+			mod = substr(s, RSTART, RLENGTH)
+			if (!match(s, /key="[^"]*"/)) return ""
+			key = substr(s, RSTART, RLENGTH)
+			return mod " " key
+		}
+		BEGIN {
+			while ((getline line < table) > 0) {
+				if (line ~ /^- /) { old = substr(line, 3); replace[old] = ""; guarded[old] = "" }
+				else if (line ~ /^\+\? /) guarded[old] = guarded[old] substr(line, 4) "\n"
+				else if (line ~ /^\+ /) replace[old] = replace[old] substr(line, 3) "\n"
+			}
+			close(table)
+		}
+		FNR == NR {
+			if ($0 !~ /^[ \t]*#/ && (c = chord($0)) != "") bound[c] = 1
+			next
+		}
+		$0 in replace {
+			printf "%s", replace[$0]
+			changed++
+			n = split(guarded[$0], extra, "\n")
+			for (i = 1; i <= n; i++) {
+				if (extra[i] == "") continue
+				c = chord(extra[i])
+				if (!(c in bound)) { print extra[i]; bound[c] = 1 }
+			}
+			next
+		}
+		{ print }
+		END { printf "%d\n", changed > "/dev/stderr" }
+	' "$1" "$1"
+}
+
+migrate_hotkeys() {
+	local file=$config_home/lyona/hotkeys.toml table=$script_dir/hotkeys-migrations tmp count backup
+	[[ -f $file && ! -L $file ]] || return 0
+	[[ -r $table ]] || {
+		warn "The hotkeys migration table is missing; ~/.config/lyona/hotkeys.toml was left as it is."
+		return 0
+	}
+	tmp=$(mktemp "$file.XXXXXX")
+	if ! count=$(migrate_hotkeys_lines "$file" "$table" 2>&1 >"$tmp"); then
+		rm -f -- "$tmp"
+		warn "Could not read ~/.config/lyona/hotkeys.toml; it was left as it is."
+		return 0
+	fi
+	if [[ $count == 0 ]] || cmp -s "$tmp" "$file"; then
+		rm -f -- "$tmp"
+		return 0
+	fi
+	backup=$file.bak.$(date +%Y%m%d-%H%M%S)
+	command cp -p -- "$file" "$backup"
+	chmod --reference="$file" -- "$tmp"
+	mv -fT -- "$tmp" "$file"
+	ok "Moved $count key binding(s) in hotkeys.toml to this release's defaults; your own changes are kept (previous file: $backup)."
+}
+
+resolve_profile
+case $profile in
+recommended | full)
+	if bash "$script_dir/seed-default-apps.sh"; then
+		ok "Browser, media and image defaults are set."
+	else
+		warn "Browser, media and image defaults were not seeded; set them in Settings > Defaults."
+	fi
+	configure_appimage_handler
+	;;
+esac
+migrate_hotkeys

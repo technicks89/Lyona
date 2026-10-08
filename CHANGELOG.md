@@ -8,6 +8,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Changed
+
+- Updates reach existing accounts (#273). `install.sh` and `lyona-update` both
+  run `scripts/lyona-reconcile-user`, which records the install profile and
+  applies the per-user steps that only a fresh install used to: the browser,
+  media and image defaults and the AppImage handler. Key bindings in
+  `hotkeys.toml` that are still an earlier release's default move to this
+  release's (lyona-shell instead of raw Quickshell IPC, logout and reboot that
+  ask first), after a backup; bindings you changed are kept.
+
 ## [2026.10.0-beta.5] - 2026-10-08
 
 Sixth beta of the Arch Linux line, and the first since beta.4. Three security fixes for lyona's update path and root

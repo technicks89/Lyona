@@ -339,54 +339,6 @@ install_gearlever_profile() {
 	install_recommended_profile && [[ $GEARLEVER_INSTALL_MODE == true ]]
 }
 
-# AppImages (#260): lyona-appimage opens them unless something else already
-# does, such as Gear Lever from an earlier install or the user's own choice.
-# After the defaults are seeded, which only write to an account with no MIME
-# preferences yet.
-# The AppImage handler the user's own mimeapps.list names, if any: read from
-# the file, because xdg-mime query answers only for a desktop file it can find
-# in this shell, and misses a user Gear Lever when XDG_DATA_DIRS lacks Flatpak's
-# exports (a non-login shell).
-appimage_user_choice() {
-	(
-		. "$REPO_DIR/scripts/dwm-xdg.sh"
-		lyona_xdg_dirs
-		[[ -r $config_home/mimeapps.list ]] || exit 0
-		awk '
-			/^\[/ { group = $0; next }
-			group == "[Default Applications]" && index($0, "application/vnd.appimage=") == 1 {
-				value = substr($0, length("application/vnd.appimage=") + 1)
-				sub(/;.*/, "", value)
-				print value
-				exit
-			}' "$config_home/mimeapps.list"
-	)
-}
-
-configure_appimage_handler() {
-	local current
-	if ! command -v xdg-mime >/dev/null 2>&1; then
-		warn "xdg-mime is missing, so AppImages have no default handler; open them with lyona-appimage open FILE."
-		return 0
-	fi
-	current=$(appimage_user_choice)
-	# Set explicitly by an earlier run: nothing to change.
-	if [[ $current == lyona-appimage.desktop ]]; then
-		ok "AppImages already open with lyona-appimage."
-		return 0
-	fi
-	[[ -n $current ]] || current=$(xdg-mime query default application/vnd.appimage 2>/dev/null || true)
-	if [[ -n $current && $current != lyona-appimage.desktop ]]; then
-		ok "AppImages keep opening with $current."
-		return 0
-	fi
-	if xdg-mime default lyona-appimage.desktop application/vnd.appimage; then
-		ok "AppImages open with lyona-appimage, which adds them to the launcher."
-	else
-		warn "AppImages have no default handler; open them with lyona-appimage open FILE."
-	fi
-}
-
 install_herdr_profile() {
 	[[ $HERDR_INSTALL_MODE == true ]] && herdr_arch_supported
 }
@@ -1135,15 +1087,12 @@ if install_recommended_profile; then
 	! batch_skipped maim || warn "maim is unavailable in the enabled repositories; screenshot hotkeys will remain disabled."
 	! batch_skipped qt6ct || warn "qt6ct is unavailable in the enabled repositories; Qt apps may not respect dark mode."
 	step_timer "Default apps and AppImages"
-	# Seed the browser, media and image defaults before the AppImage handler and
-	# Gear Lever, which write their own MIME preference; the seed leaves any
-	# existing preference alone.
-	if bash "$REPO_DIR/scripts/seed-default-apps.sh"; then
-		ok "Browser, media and image defaults are set."
-	else
-		warn "Browser, media and image defaults were not seeded; set them in Settings > Defaults."
-	fi
-	configure_appimage_handler
+	# The per-user changes every install path shares (#273): the profile record,
+	# the browser, media and image defaults, the AppImage handler and the
+	# hotkeys migration. Before Gear Lever, which may take AppImages over; make
+	# install-user runs it again, which changes nothing.
+	"$REPO_DIR/scripts/lyona-reconcile-user" --profile "$INSTALL_PROFILE" ||
+		warn "The account's defaults were not all reconciled; run scripts/lyona-reconcile-user to try again."
 	gearlever_state=${XDG_STATE_HOME:-$HOME/.local/state}/lyona
 	if install_gearlever_profile; then
 		info "Setting up Gear Lever for AppImage management..."
@@ -1170,6 +1119,8 @@ if install_recommended_profile; then
 	fi
 else
 	warn "Skipping recommended desktop dependencies for core profile."
+	"$REPO_DIR/scripts/lyona-reconcile-user" --profile "$INSTALL_PROFILE" ||
+		warn "The account's defaults were not all reconciled; run scripts/lyona-reconcile-user to try again."
 fi
 
 if command -v picom >/dev/null 2>&1; then
