@@ -191,10 +191,11 @@ install succeeds, stops it from relaunching and re-wiping the disk on a
 later tty1 relogin; re-run `lyona-install` by hand if you ever want to.)
 
 It's a short, opinionated wizard drawn with `gum`, not `archinstall`'s own
-menu system: a LYONA wordmark banner, then keyboard layout, target disk, btrfs
+menu system: a LYONA wordmark banner, then Wi-Fi when there is no wired
+network, keyboard layout (applied to the console at once), target disk, btrfs
 or ext4 (each with optional LUKS encryption), username/password, hostname,
-timezone (auto-detected and confirmed), and, only if an NVIDIA GPU is detected,
-a driver choice. There is one image for every GPU (SPEC.md).
+timezone (auto-detected and confirmed), package mirrors, and, only if an NVIDIA
+GPU is detected, a driver choice. The summary can change any one answer. There is one image for every GPU (SPEC.md).
 
 - **A supported card:** on a Turing (GTX 16xx, RTX 20xx) or newer GPU, the
   choice recommends the proprietary driver, with open-source nouveau as the

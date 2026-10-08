@@ -212,7 +212,8 @@ write_step_summary() {
 }
 
 # Files a run must never leave behind, however it ends: the postinstall's
-# temporary passwordless sudoers rule (Sync Sprint 16 R16-01). They are removed
+# temporary passwordless sudoers rule (Sync Sprint 16 R16-01), and the wizard's
+# archinstall directory with the credentials (#266); a directory goes whole. They are removed
 # on exit, and before the recovery menu offers anything, because Retry re-runs
 # the script with exec, which skips EXIT traps.
 LYONA_CLEANUP_FILES=()
@@ -222,7 +223,7 @@ LYONA_RECOVER_HINT=
 lyona_cleanup_files() {
 	local file
 	for file in "${LYONA_CLEANUP_FILES[@]}"; do
-		rm -f -- "$file"
+		rm -rf -- "$file"
 	done
 }
 
@@ -230,9 +231,19 @@ _lyona_recover() {
 	local exit_code=$?
 	trap - ERR
 	lyona_cleanup_files
+	lyona_recover_menu "$exit_code"
+	exec "$SCRIPT_PATH" "${SCRIPT_ARGS[@]}"
+}
+
+# lyona_recover_menu EXIT-CODE: the failure, the end of the log and what state
+# the machine is in (LYONA_RECOVER_HINT), then Retry, View full log or Exit to
+# shell. Returns when Retry is chosen, for the caller to retry its step; exits
+# otherwise.
+lyona_recover_menu() {
+	local exit_code=$1
 
 	echo
-	gum style --foreground $COLOR_DANGER --bold "$SCRIPT_NAME failed (exit $exit_code)."
+	gum style --foreground $COLOR_DANGER --bold "${SCRIPT_NAME:-$(basename "$0")} failed (exit $exit_code)."
 	if [[ -n ${LOG_FILE:-} && -f $LOG_FILE ]]; then
 		echo
 		gum style --foreground $COLOR_DIM "Last lines of $LOG_FILE:"
@@ -252,7 +263,7 @@ _lyona_recover() {
 			choice="Exit to shell"
 		case $choice in
 		Retry)
-			exec "$SCRIPT_PATH" "${SCRIPT_ARGS[@]}"
+			return 0
 			;;
 		"View full log")
 			if [[ -n ${LOG_FILE:-} && -f $LOG_FILE ]]; then

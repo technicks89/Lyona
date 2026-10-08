@@ -50,7 +50,9 @@ with the CyberRe boot menu theme.
    is online. If a Wi-Fi chip has no driver on the image (some Broadcom chips
    in older Macs need `broadcom-wl`), the wizard says so; install over a cable
    or USB tethering instead. Then it asks:
-   - the keyboard layout;
+   - the keyboard layout, from a list you can type in to search (for example
+     "German" or `fr`). It applies at once, so the passwords you type next use
+     it, as they will at the disk-encryption prompt and the login screen;
    - the disk to install to, which it erases;
    - the filesystem: btrfs (the default) or ext4, either optionally encrypted
      with LUKS, which then asks for the encryption password;
@@ -70,8 +72,11 @@ with the CyberRe boot menu theme.
      supports the card (a legacy branch for an older card), or the open-source
      nouveau.
 
-   It shows a summary, mirrors included, and nothing is written until you
-   choose **Wipe DISK and install**. Cancelling at any point changes nothing; run `lyona-install` to
+   In the timezone and country lists, Esc goes back to the question before
+   them (with no detected timezone, it asks whether to choose one or cancel). It shows a summary, mirrors included, where **Change an answer...**
+   asks any one question again (a new keyboard layout asks for the passwords
+   again too), and nothing is written until you choose **Wipe DISK and
+   install**. Cancelling at any point changes nothing; run `lyona-install` to
    start again.
 4. **It installs on its own:** Arch with `archinstall`, then lyona's full
    profile as your user, the CachyOS repositories and the `linux-cachyos`
@@ -85,8 +90,9 @@ with the CyberRe boot menu theme.
    gives each step's start and duration, and ends with a table of where the
    install's time went, archinstall included.
 
-If a step fails, a menu offers to retry it or to drop to a shell, and says what
-state the machine is in.
+If a step fails, a menu offers to retry it, show the log, or drop to a shell,
+and says what state the machine is in. If `archinstall` fails, **Retry** runs
+it again with your answers; the disk may already be erased by then.
 
 **Without the wizard** (partitioning of your own): run `archinstall`
 yourself from the live medium, then `/root/lyona-postinstall.sh` to install

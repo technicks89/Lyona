@@ -10,6 +10,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- **The image installer's summary can change an answer.** **Change an answer...** asks any one question again instead
+  of cancelling and starting over (a new keyboard layout also asks for the passwords again), and **Cancel** is the
+  first choice, so Enter alone never wipes the disk. In the timezone and country lists, Esc goes back to the question
+  instead of ending the installer (#266).
 - **Peripheral batteries.** Settings > Power gains a **Devices** section, and the Control Center's power page a row per
   device, listing the batteries of wireless mice, keyboards, headsets, game controllers and other peripherals that
   UPower reports, with the level and whether it is charging. A device that reports only a coarse level, such as a
@@ -115,6 +119,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- **The image installer uses your keyboard layout for the passwords.** The layout you chose was set only on the new
+  system, while the disk-encryption and user passwords were typed in a US layout on the live medium. On a French or
+  German keyboard, the same keys then gave other characters at the LUKS prompt and at login, so the disk would not
+  unlock and the password did not match. The layout now applies to the console as soon as it is chosen, and the password prompts name it; one the console cannot
+  load is not installed either (keep the active layout or choose another), so the two always match. The list is
+  searchable, names the common layouts, and offers every console keymap; Swedish, Turkish and Slovenian were listed
+  as `se`, `tr` and `si`, which are not keymaps, and are now `sv-latin1`, `trq` and `slovene` (#265).
+- **A failed `archinstall` in the image installer can be retried.** It ended at a root prompt with one line, possibly
+  with the disk already erased, though a recovery menu was documented. It now shows the menu (Retry, View full log,
+  Exit to shell) with what state the disk is in, and Retry runs `archinstall` again with the same answers. Its
+  working directory, which holds the passwords for `archinstall`, is removed however the run ends, and a postinstall
+  failure before `install.sh` also says what state the machine is in (#266).
 - **Running `install.sh` again no longer throws away your `~/.bashrc` edits.** `~/.bashrc`, the Starship and Fastfetch
   configuration and `starship-theme` are links into the mybash checkout, and every run deleted it and cloned it again,
   without a backup; offline, the clone then failed and left those links pointing at nothing. The checkout is now
