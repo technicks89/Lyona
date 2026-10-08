@@ -299,12 +299,18 @@ because the ISO ships `multilib` enabled.
 
 ### AppImages
 
-Opening an AppImage file, for example from Thunar, adds it to the launcher and
-starts it: `lyona-appimage` moves it to `~/Applications`, makes it executable,
-and writes a launcher entry with the name and icon from inside the AppImage. It
-reads them with `unsquashfs` and never runs the file to do so. Opening it again
-just starts it. Take one out again with `lyona-appimage remove NAME` (`lyona-appimage
-list` shows them); that removes the file, its entry and its icon. `fuse2` lets
+Opening an AppImage file, for example from Thunar or your browser's downloads,
+asks first: **Add and run**, **Add only** or **Cancel**, with where it was
+downloaded from when the browser recorded it. Only run programs you trust.
+Closing the question is Cancel, and the file stays where it was. Run from a
+terminal, `lyona-appimage open FILE` asks there instead.
+
+Adding moves it to `~/Applications`, makes it executable, and writes a launcher
+entry with the name and icon from inside the AppImage. `lyona-appimage` reads
+them with `unsquashfs` and never runs the file to do so. **Add and run** then
+starts it; opening it again later just starts it, without asking. Take one out
+again with `lyona-appimage remove NAME` (`lyona-appimage list` shows them): the
+file goes to the trash, and its entry and icon are removed. `fuse2` lets
 the classic AppImages run, and both it and `squashfs-tools` come with the
 recommended desktop.
 

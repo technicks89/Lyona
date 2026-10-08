@@ -3,6 +3,8 @@ import QtQuick.Layouts
 import Quickshell.Services.Notifications
 import qs.core
 
+pragma ComponentBehavior: Bound
+
 Rectangle {
     id: root
 
@@ -10,6 +12,7 @@ Rectangle {
 
     signal dismiss
     signal expired
+    signal actionInvoked(string identifier)
 
     Layout.fillWidth: true
     Layout.preferredHeight: Math.max(Theme.dp(82), content.implicitHeight + Theme.dp(28))
@@ -20,9 +23,10 @@ Rectangle {
     border.color: item.urgency === NotificationUrgency.Critical ? Theme.danger : Theme.popupBorder
     border.width: Theme.controlBorderWidth
 
+    // No timeout for a notification with buttons (timeoutMs 0).
     Timer {
         interval: root.item.timeoutMs
-        running: true
+        running: root.item.timeoutMs > 0
         repeat: false
         onTriggered: root.expired()
     }
@@ -79,6 +83,26 @@ Rectangle {
                 wrapMode: Text.WordWrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
+            }
+
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.tightSpacing
+                visible: (root.item.actions || []).length > 0
+                spacing: Theme.tightSpacing
+
+                Repeater {
+                    model: root.item.actions || []
+
+                    delegate: ShellButton {
+                        id: actionButton
+
+                        required property var modelData
+
+                        label: actionButton.modelData.text
+                        onActivated: root.actionInvoked(actionButton.modelData.identifier)
+                    }
+                }
             }
         }
 

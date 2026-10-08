@@ -57,4 +57,20 @@ policy_detail_line=$(grep -nF 'text: root.notificationModel.policyDetail' "$pane
 sed -n "$((policy_detail_line - 5)),$((policy_detail_line - 1))p" "$pane" |
 	grep -Fq 'visible: root.notificationCapability.status === "available"'
 
+# ── #260: notification buttons (actions) ─────────────────────────────────
+card=$repo/config/quickshell/notifications/NotificationCard.qml
+popup=$repo/config/quickshell/notifications/NotificationPopupWindow.qml
+grep -Fq 'actionsSupported: true' "$model"
+grep -Fq 'const actions = NotificationActions.buttons(notification.actions);' "$model"
+# A question stays until answered: no timeout when it has buttons.
+grep -Fq '"timeoutMs": actions.length > 0 ? 0' "$model"
+grep -Fq 'running: root.item.timeoutMs > 0' "$card"
+grep -Fq 'if (action) action.invoke();' "$model"
+grep -Fq 'onActionInvoked: identifier => root.notificationModel.invokeAction(' "$popup"
+# The history keeps text only: no live actions are saved or offered there.
+if sed -n '/function addHistory/,/^    }/p' "$model" | grep -Fq 'actions'; then
+	printf 'Notification history must not keep actions\n' >&2
+	exit 1
+fi
+
 printf 'Quickshell notification lifecycle and policy: PASS\n'

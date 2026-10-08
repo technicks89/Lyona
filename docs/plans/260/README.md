@@ -1,8 +1,10 @@
 # #260: AppImages without the GNOME runtime
 
-Issue `#260`. Branch `appimage-handler`, one commit: "Open AppImages with
-lyona-appimage; Gear Lever opt-in (#260)". Written with the change; the code is
-in the diff, and this records the design and the decisions behind it.
+Issue `#260`. First merged from branch `appimage-handler` (PR #264, commits
+`f36c557` "Appimage handler" and `af76db7` "CR Updates"); the follow-up from
+the 2026-10-08 review is on `appimage-first-open` (see "Follow-up" below).
+Written with the change; the code is in the diff, and this records the design
+and the decisions behind it.
 
 ## Why
 
@@ -51,7 +53,7 @@ Only `open` runs the AppImage, and only after integrating it, detached with
 
 ## The rules
 
-- **Open:** move the file to `~/Applications` (a different file of the same name
+- **Open, the first time:** ask (see "Follow-up"), then move the file to `~/Applications` (a different file of the same name
   is kept beside it, `-2`), `chmod u+x`, write
   `~/.local/share/applications/lyona-appimage-SLUG.desktop` and the icon under
   `~/.local/share/lyona/appimage-icons/`, refresh the desktop database, notify
@@ -79,9 +81,51 @@ Only `open` runs the AppImage, and only after integrating it, detached with
 - **Not in scope:** updates of AppImages (Gear Lever's), an AppImage catalogue,
   type-1 AppImages.
 
+## Follow-up: ask on the first open (2026-10-08 review)
+
+The review found that one "Open" from a browser's download panel, a chat
+attachment or Thunar ran a downloaded program with no question: the missing
+exec bit, or Gear Lever's window, had been that question. Decision: ask on the
+first open.
+
+- **The question:** "Run NAME?" with **Add and run**, **Add only** and
+  **Cancel**, the download host when the browser recorded it
+  (`user.xdg.origin.url`, host only), the size, and "Only run programs you
+  trust" first, since a notification shows three lines. In a terminal it asks
+  there. Otherwise it is a critical notification (so Do Not Disturb does not
+  hide a question the user just caused) with those buttons, through
+  `notify-send -A`; closing it is Cancel. With no notification server that has
+  buttons (no `actions` capability), it is added but never run.
+- **The shell:** lyona's notification server did not support actions. It now
+  does: up to three buttons (`NotificationActions.js`, never the `default`
+  action), no timeout while a question is open, and the history keeps only
+  the text. Other programs' actions get buttons too.
+- **Cancel** leaves the file where it was, not executable; nothing is written.
+
+Fixed with it, from the review and the #260 comment:
+
+| Finding | Fix |
+| --- | --- |
+| Newline in the name wrote extra entry lines | Names with a control character or a backslash are refused ("rename it") |
+| `Exec` escaped one level short | `exec_quote` matches `webapp-create`'s `desktop_exec_arg`: quote, then double every backslash |
+| `My_App` and `My-App` shared an entry | `entry_id` adds `-2`, `-3` when another AppImage has the id; ids are at most 64 characters |
+| Own `X-Lyona-AppImage` cut at 256 characters | Read back raw (`raw_key`); only values from inside an AppImage are cleaned |
+| Double click raced two opens | `flock` on `$XDG_STATE_HOME/lyona/appimage.lock` around open and remove |
+| Extraction unbounded | Root directories are never extracted, at most 8 candidates, `ulimit -f` per file, 20 s each, scratch under `$XDG_CACHE_HOME/lyona` |
+| Icon removal by text prefix | Resolved directory compared |
+| UTF-8 cut in half | `clean` truncates by character |
+| Silent failure to start | Watched for 2 s; a failure is said, with the `fuse2` hint when `libfuse.so.2` is missing |
+| `remove` deleted the only copy silently | To the trash (`gio trash`), and says what it did |
+| `xdg-mime query` missed a user Gear Lever | `install.sh` reads the user's `mimeapps.list` first |
+| Tests hidden under the Gear Lever target | `check-lyona-appimage`; a skip fails in CI |
+
 ## Validation
 
-- `tests/test-lyona-appimage.sh` (fixtures built in the test), the updated
+- `tests/test-lyona-appimage.sh` (fixtures built in the test; with the
+  follow-up: each answer, no buttons, the terminal question, collisions, long
+  paths, refused names, a `.desktop` directory, a failed start, remove),
+  `tests/test-appimage-handler.sh`, `tests/qml/tst_notification_actions.qml`,
+  `tests/test-quickshell-notifications.sh`, the updated
   `tests/test-install-gearlever.sh`, `tests/test-gearlever-first-login.sh`,
   `tests/test-seed-default-apps.sh`, `tests/test-install-step-timing.sh`.
 - Real AppImages and a VM: `docs/evidence/260-appimages.md`.

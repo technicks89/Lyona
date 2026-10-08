@@ -240,10 +240,15 @@ only for the explicitly requested gaming profile. Interactive runs require a
 direct confirmation; non-interactive runs require the explicit
 `--enable-arch-gaming-repos` approval flag. In the recommended and full
 profiles, `lyona-appimage` is the default AppImage handler unless another is
-already set (#260): opening an AppImage moves it to `~/Applications`, makes it
-executable, adds a launcher entry and icon read from inside it with
-`unsquashfs` (never by running it), and starts it; `lyona-appimage remove NAME`
-takes it out again. It needs `fuse2` and `squashfs-tools`, in the shared
+already set (#260). Opening an AppImage it has not added before asks first:
+Add and run, Add only, or Cancel, in a notification with those buttons (or in
+the terminal when run from one). Closing the question cancels, and nothing
+changes; with no way to ask, the AppImage is added but never run. A downloaded
+program never runs from one click without that question. Adding moves it to
+`~/Applications`, makes it executable, and adds a launcher entry and icon read
+from inside it with `unsquashfs` (never by running it); Add and run then starts
+it, and opening it again later just starts it. `lyona-appimage remove NAME`
+takes it out again, the file to the trash. It needs `fuse2` and `squashfs-tools`, in the shared
 dependency map; no Flatpak runtime. Gear Lever (`it.mijorus.gearlever`) is
 opt-in: with `--with-gearlever`, the installer adds the official Flathub
 remote for the target user and installs it, and it takes AppImages over from
@@ -620,7 +625,9 @@ The planned Settings surface covers:
   until it has charged above it.
 - Default applications, MIME handlers, and user-visible autostart entries.
 - Themes, wallpaper, fonts, cursors, toolkit integration, notifications, and
-  practical X11 accessibility controls.
+  practical X11 accessibility controls. A notification with actions shows them
+  as buttons (at most three, never the default action) and stays until one is
+  pressed or it is closed; the history keeps only its text.
 - Updates, software-source entry points, regional and time settings, user and
   printer entry points, system information, storage overview, diagnostics, and
   recovery guidance.
@@ -899,9 +906,10 @@ In a real or nested X11 session:
   its completed capture is advertised as `image/png` by an `xclip` clipboard
   owner. Active-monitor and saved-region captures produce non-empty JPEG files
   through `maim`.
-- Recommended and full installs open an AppImage with `lyona-appimage`: it
-  appears in the application launcher with its own name and icon and starts,
-  without Gear Lever or a Flatpak runtime. With `--with-gearlever`, Gear Lever
+- Recommended and full installs open an AppImage with `lyona-appimage`: the
+  first open asks (Add and run, Add only, Cancel), Cancel leaves the file where
+  it was, and an added one appears in the application launcher with its own
+  name and icon and starts, without Gear Lever or a Flatpak runtime. With `--with-gearlever`, Gear Lever
   is in the launcher and opens a visible window in the supported X11 session.
 - Recommended and full installs, unless `--skip-topgrade`, have the
   `topgrade-bin` package installed, `topgrade --version` runs, and no Rust

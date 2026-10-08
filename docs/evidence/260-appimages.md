@@ -66,3 +66,34 @@ the user's session:
   Lever installed (both covered by stub tests).
 - A type-1 AppImage (refused by design) and a non-x86 one.
 - Opening from Thunar by double-click; `gio open` takes the same MIME route.
+
+## Follow-up: the first-open question, in the real shell (2026-10-08)
+
+This branch's Quickshell (`quickshell --no-duplicate -p config/quickshell/shell.qml`)
+on a private Xvfb display (1600x900) with its own D-Bus session and a scratch
+HOME, so the user's session was not touched. A fixture AppImage (`/usr/bin/true`
+plus a squashfs with a "Demo App" entry) in `~/Downloads`, with
+`user.xdg.origin.url=https://user:pw@example.org/...`. `lyona-appimage open` run
+with stdin from `/dev/null`, as a file manager runs it. Clicks with `xdotool`,
+screenshots with `ffmpeg -f x11grab`.
+
+- The server's capabilities now include `actions`.
+- The question appeared as a critical card: "Run Demo.AppImage?", the host
+  `example.org` (the user and password in the URL not shown), the size, and
+  **Add and run**, **Add only**, **Cancel**.
+- **Add and run:** the card closed, the file moved to `~/Applications` and was
+  made executable, the entry was written (`Exec="..." %U`), and "Added Demo App
+  to the launcher" followed.
+- A second AppImage's question was still there after 15 s (it used to time out
+  at 10 s); the reworded body showed "Only run programs you trust" first.
+- **x (close):** `lyona-appimage: Other.AppImage was not added`; the file stayed
+  in `~/Downloads`, not executable, and no entry was written.
+- **Add only:** added, executable, an entry; not started.
+- No QML errors in Quickshell's log (only the display's missing PipeWire and
+  power-profiles services). Quickshell used 0 CPU ticks over 10 s with no
+  popup open.
+
+Not tested in the follow-up: a real session under dwm (the Xvfb display had no
+window manager), a second screen, the light theme, and another notification
+server (dunst and others show actions themselves; one without them gets Add
+only).
