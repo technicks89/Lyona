@@ -113,6 +113,85 @@ link "$work/mybash/.bashrc" "$home/.bashrc"
 set -- "$home"/.bashrc.bak.*
 [ $# -eq 1 ] || fail "a second run backed .bashrc up again: $*"
 
+# ── Re-running keeps the checkout and the user's edits (#267) ────────────
+#
+# ~/.bashrc links into the checkout, so an edit to it is an edit there. A
+# local repository stands in for mybash: no network.
+
+awk '/^cloneMyBash\(\) \{/, /^\}/' "$installer" >"$work/clone_mybash"
+[ -s "$work/clone_mybash" ] || fail 'cloneMyBash is missing'
+upstream=$work/upstream
+git init --quiet "$upstream"
+git -C "$upstream" config user.email test@example.invalid
+git -C "$upstream" config user.name test
+printf 'first\n' >"$upstream/.bashrc"
+git -C "$upstream" add .bashrc
+git -C "$upstream" commit --quiet -m first
+first=$(git -C "$upstream" rev-parse HEAD)
+printf 'second\n' >"$upstream/.bashrc"
+git -C "$upstream" commit --quiet -am second
+second=$(git -C "$upstream" rev-parse HEAD)
+chome=$work/clone-home
+mkdir -p "$chome"
+# clone URL REF: cloneMyBash for a scratch HOME, its output in clone.out.
+# shellcheck disable=SC2034,SC2329 # the variables are read by the extracted function
+clone() {
+	(
+		HOME=$chome
+		gitpath=$chome/.local/share/mybash
+		MYBASH_URL=$1
+		MYBASH_REF=$2
+		# shellcheck disable=SC1091 # extracted above
+		. "$work/clone_mybash"
+		cloneMyBash
+	) >"$work/clone.out" 2>&1
+}
+checkout=$chome/.local/share/mybash
+
+# Fresh, offline: fails, and leaves nothing half made.
+if clone "$work/no-such-repo" "$first"; then fail 'a failed first clone succeeded'; fi
+[ ! -e "$checkout" ] || fail 'a failed first clone left a checkout'
+set -- "$chome"/.local/share/mybash.new.*
+[ ! -e "$1" ] || fail 'a failed first clone left its temporary directory'
+
+# Fresh: cloned at the pinned commit.
+clone "$upstream" "$first" || fail "the first clone failed: $(cat "$work/clone.out")"
+[ "$(git -C "$checkout" rev-parse HEAD)" = "$first" ] || fail 'the first clone is not at the pinned commit'
+
+# A new pin, no local changes: moved in place, the same directory.
+inode=$(stat -c %i "$checkout")
+clone "$upstream" "$second" || fail "updating failed: $(cat "$work/clone.out")"
+[ "$(git -C "$checkout" rev-parse HEAD)" = "$second" ] || fail 'a clean checkout was not moved to the new pin'
+[ "$(stat -c %i "$checkout")" = "$inode" ] || fail 'the checkout was replaced instead of updated in place'
+clone "$upstream" "$second" || fail 'a second run at the same pin failed'
+grep -Fq 'up to date' "$work/clone.out" || fail 'an up-to-date checkout was not said'
+
+# The user edited ~/.bashrc (the file in the checkout): kept, not updated.
+git -C "$checkout" checkout --quiet --detach "$first"
+printf 'my alias\n' >>"$checkout/.bashrc"
+clone "$upstream" "$second" || fail 'a checkout with local changes stopped the install'
+grep -Fq 'my alias' "$checkout/.bashrc" || fail 'the user'"'"'s edit to .bashrc was lost'
+grep -Fq 'local changes' "$work/clone.out" || fail 'keeping local changes was not said'
+git -C "$checkout" checkout --quiet -- .bashrc
+
+# Offline with a checkout: kept as it is, the install goes on.
+git -C "$checkout" remote set-url origin "$work/no-such-repo"
+clone "$work/no-such-repo" "$second" || fail 'an offline update stopped the install'
+[ "$(git -C "$checkout" rev-parse HEAD)" = "$first" ] || fail 'an offline update changed the checkout'
+grep -Fq 'keeping the version already there' "$work/clone.out" || fail 'a failed update was not said'
+
+# Something that is not a checkout in its place: kept aside, never deleted.
+rm -rf "$checkout"
+mkdir -p "$checkout"
+printf 'mine\n' >"$checkout/notes"
+clone "$upstream" "$first" || fail "cloning over a non-checkout failed: $(cat "$work/clone.out")"
+set -- "$chome"/.local/share/mybash.bak.*
+[ -f "$1/notes" ] || fail 'a directory that was not a checkout was not kept aside'
+[ -d "$checkout/.git" ] || fail 'no checkout after moving the old directory aside'
+
+# The fzf fallback is pinned to a commit, not only a tag.
+grep -Eq '^FZF_COMMIT="[0-9a-f]{40}"$' "$installer" || fail 'the fzf fallback is not pinned to a commit'
+
 # ── It is reached, and only for the recommended profile ──────────────────
 
 # Sync Sprint 12 S12-18: the clone that becomes ~/.bashrc is pinned to a

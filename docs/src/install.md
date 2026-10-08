@@ -162,11 +162,11 @@ other time service keeps the clock, the installer enables and starts
 it; the summary says so first. If `chronyd`, `ntpd` or `openntpd` is enabled or
 running, it is kept and `systemd-timesyncd` is not enabled beside it, and a
 masked `systemd-timesyncd` is left masked. Running the installer again changes
-nothing. An image install has it from `archinstall` already. Turning it off in
-Settings, or with `timedatectl set-ntp false`, lasts only until the installer
-runs again, which turns it back on. To keep it off, mask it:
-`sudo systemctl mask --now systemd-timesyncd`. An existing install gets it the
-next time the installer runs.
+nothing. An image install has it from `archinstall` already. Once lyona has
+seen it on, it records that in `/var/lib/lyona/time-sync`, so if you turn it
+off later, in Settings or with `timedatectl set-ntp false`, running the
+installer again leaves it off and says so (#268). An existing install gets it
+the next time the installer runs.
 
 Every profile and Arch image defaults to Alacritty without Herdr. With the
 explicit `--install-herdr` option, the repository downloads the official
@@ -208,9 +208,11 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   `~/.config/starship.toml`, `~/.config/fastfetch/config.jsonc`, and
   `~/.local/bin/starship-theme`. Any of those files that was there before is
   kept beside it, as for example `~/.bashrc.bak.20261003-142501`; re-running
-  the installer leaves links that are already in place alone. The clone is
-  replaced on every run, so edit the files it links to rather than the clone
-  itself.
+  the installer leaves links that are already in place alone. Those links
+  point into the checkout, so editing `~/.bashrc` edits the checkout: running
+  the installer again updates a checkout without changes to the reviewed
+  mybash version in place, and leaves one with your edits as it is (#267).
+  Offline, the existing checkout is kept.
   - **Topgrade.** It also installs [Topgrade](https://github.com/topgrade-rs/topgrade),
     which updates everything with one `topgrade` command. Topgrade is only in
     the AUR on Arch, so the installer builds the AUR's `topgrade-bin` package,

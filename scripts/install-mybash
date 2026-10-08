@@ -39,14 +39,50 @@ installDepend() {
 	fi
 }
 
+# The checkout is where ~/.bashrc and the other linked files live, so an edit
+# to ~/.bashrc is an edit in it (#267). An existing checkout is never deleted:
+# it is moved to the pinned commit in place, and one with local changes is left
+# as it is. A new one is cloned beside it and moved in only once complete, so a
+# failed clone (offline) leaves nothing half made.
 cloneMyBash() {
-	# Check if the dir exists before attempting to clone into it.
-	if [ -d "$gitpath" ]; then
-		rm -rf "$gitpath"
+	mkdir -p "$HOME/.local/share"
+	if [ -d "$gitpath/.git" ]; then
+		if [ -n "$(git -C "$gitpath" status --porcelain 2>/dev/null)" ]; then
+			printf "%b\n" "mybash has local changes (your edits to ~/.bashrc and the files beside it); left as they are."
+			printf "%b\n" "To take lyona's version later: commit or discard them in $gitpath, then run install-mybash."
+			return 0
+		fi
+		if [ "$(git -C "$gitpath" rev-parse HEAD 2>/dev/null)" = "$MYBASH_REF" ]; then
+			printf "%b\n" "mybash is up to date."
+			return 0
+		fi
+		if git -C "$gitpath" fetch --quiet origin 2>/dev/null &&
+			git -C "$gitpath" checkout --quiet --detach "$MYBASH_REF" 2>/dev/null; then
+			printf "%b\n" "mybash updated."
+		else
+			printf "%b\n" "Could not update mybash (offline?); keeping the version already there."
+		fi
+		return 0
 	fi
-	mkdir -p "$HOME/.local/share" # Only create the dir if it doesn't exist.
-	cd "$HOME" && git clone --quiet "$MYBASH_URL" "$gitpath" &&
-		git -C "$gitpath" checkout --quiet --detach "$MYBASH_REF"
+	if [ -e "$gitpath" ] || [ -L "$gitpath" ]; then
+		# Not a checkout: kept aside, never deleted.
+		aside="$gitpath.bak.$(date +%Y%m%d-%H%M%S)"
+		printf "%b\n" "Keeping the previous $gitpath as $aside"
+		mv -- "$gitpath" "$aside" || {
+			printf "%b\n" "Can't move $gitpath aside!"
+			exit 1
+		}
+	fi
+	new="$gitpath.new.$$"
+	rm -rf -- "$new"
+	if git clone --quiet "$MYBASH_URL" "$new" &&
+		git -C "$new" checkout --quiet --detach "$MYBASH_REF"; then
+		mv -T -- "$new" "$gitpath"
+	else
+		rm -rf -- "$new"
+		printf "%b\n" "Could not download mybash; the shell configuration was not changed."
+		exit 1
+	fi
 }
 
 # The font install.sh installs, from the same package (#250): the repository
@@ -73,9 +109,10 @@ installFont() {
 # must not be run with the whole script already as root. Re-capture and
 # re-review this hash if the installer content ever legitimately changes.
 STARSHIP_INSTALLER_SHA256="52c64f14a558034ebeb1907ea9364e802b32474576fd3e68265f73bc33cc8fbb"
-# Reviewed fzf-bin release tag: pins to a checksummed upstream release rather
-# than an unpinned clone of a moving branch.
+# Reviewed fzf release: the tag to clone and the commit it must be, so a moved
+# tag is refused rather than built.
 FZF_REF="v0.74.3"
+FZF_COMMIT="15f64c492a08f0840b81540c7d1de35737448086"
 
 _install_pkg() {
 	sudo pacman -S --needed --noconfirm "$1"
@@ -116,6 +153,11 @@ installStarshipAndFzf() {
 		_install_pkg fzf 2>/dev/null || {
 			printf "%b\n" "Package manager install failed; cloning the pinned fzf release..."
 			git clone --branch "$FZF_REF" --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+			if [ "$(git -C ~/.fzf rev-parse HEAD)" != "$FZF_COMMIT" ]; then
+				rm -rf ~/.fzf
+				printf "%b\n" "fzf $FZF_REF is not the reviewed commit; refusing to install it."
+				exit 1
+			fi
 			# --bin installs only into ~/.fzf/bin for this user; never needs sudo.
 			~/.fzf/install --bin --no-update-rc
 		}
