@@ -2,10 +2,12 @@
 
 Issue `#250`, part 6/6 of the install-speed series (#245 to #250).
 
-**Status: the timing is in place, and the baseline is recorded** from one
-QEMU/KVM install of an image built from commit `d1a7c87` (2026-10-07). Every
-column is filled in: "After #249", "After #245", "After #247/#248" and
-"After #246".
+**Status: complete.** The timing is in place, and the baseline is recorded
+from one QEMU/KVM install of an image built from commit `d1a7c87`
+(2026-10-07). Every column is filled in: "After #249", "After #245",
+"After #247/#248" and "After #246". B1 to B7 are each fixed or closed with
+numbers, and `install.sh` on an existing system is timed in a clean container
+(below).
 
 ## A. Step timing
 
@@ -245,30 +247,64 @@ the uncommitted #249 change; the second, SHA-256
 - Not run by the image install: Herdr (the full profile without
   `--install-herdr`) and Gear Lever (left for the first login).
 
+## Existing system: `install.sh --profile full` in a clean container
+
+One run of `./install.sh --non-interactive --profile full` from `84e5942` (main
+with #246, #258 and the Qt repair), as a non-root user with sudo, in a fresh
+`archlinux:base-devel` Docker container on the same host: the stock Arch
+repositories (no CachyOS; not requested), the container's own mirrorlist (2
+servers) and `ParallelDownloads = 5`. No `--enable-arch-gaming-repos`, so the
+gaming packages were skipped, with the warning that says how to approve them.
+
+| Section | Time |
+| --- | --- |
+| Packages (one transaction: 510.7 MiB download, 2351.1 MiB installed) | 1m 03s |
+| Default apps and Gear Lever (installed inline, not at first login) | 31s |
+| Topgrade | 7s |
+| yay | 6s |
+| Wallpapers | 4s |
+| Build (make clean; make) | 3s |
+| make install-system | 3s |
+| mybash, make install-user | 1s each |
+| Everything else, Time synchronization included | 0s each |
+| **Total of the steps** | 1m 59s |
+
+- Wall clock: 2m 01s; it exited 0, and the `Step times` table ended the log.
+- On an existing system Gear Lever is installed during `install.sh`, not at
+  the first login, so its 31 s are part of the install here: 2.5 GB in
+  `~/.local/share/flatpak` (the GNOME runtime, as in B4).
+- In the container, `systemctl enable --now` enabled `systemd-timesyncd` but
+  had no systemd to start it in; the #258 VM runs cover a real start.
+- Against the image install after #246 (2m 22s for every step, archinstall
+  included), this is `install.sh`'s part alone. The two are not comparable
+  line for line: this one has no gaming packages, the stock repositories and
+  5 parallel downloads, and it installs Gear Lever itself.
+
 ## B. The smaller costs
 
 B1 to B3 and B5 were measured on the development machine (12 threads, NVMe,
-about 300 Mbit/s); B6 and B7 come from the VM baseline above. Times on old
-hardware will be higher.
+about 300 Mbit/s); B6 and B7 come from the VM baseline above, and B4 from a
+first login on the #258 VM install (image from `fb7e28c`, same VM and host).
+Times on old hardware will be higher.
 
 | Item | Finding | Result |
 | --- | --- | --- |
 | B1 Meslo Nerd Font | The GitHub `Meslo.zip` is 112,448,359 bytes, downloaded by `install.sh` and again by `install-mybash` when the font was missing. `ttf-meslo-nerd` (extra, 3.5.1-2) is a 5.7 MiB download, and `fc-scan` on its `MesloLGSNerdFont-Regular.ttf` gives the family `MesloLGS Nerd Font`, as the zip does. | **Fixed.** It is in the `fonts` profile (`font-meslo`), installed with the other packages; both downloads are gone. |
 | B2 `fc-cache -f` in `make install-user` | `fc-cache -f`: 2.1 s with 219 fonts installed. Plain `fc-cache`: 0.008 s. `make install-user` writes only an alias file (`50-meslolgs-nerd-font-aliases.conf`), which fontconfig reads at lookup time, not from the cache. Pacman's `fontconfig.hook` already refreshes the cache for packaged fonts. | **Fixed.** Plain `fc-cache`. |
 | B3 `make clean; make` | 2.1 s for a full rebuild here, and 0.004 s for `make clean`. | **Closed:** seconds even on a slow CPU, not worth an incremental-build rule. Re-check if the old-hardware run says otherwise. |
-| B4 Gear Lever and Flatpak at first login | Needs a first login on an image install. | **Open:** not measured. |
-| B5 Wallpapers | 85 files, 141 MB at the pinned commit (63 PNG, 22 JPEG). A shallow fetch took 3.8 s here, which is about a minute at 20 Mbit/s. A release tarball would not be smaller: the images are already compressed. | **Open, for a decision:** a smaller default set, with the rest downloaded later, is the only real saving, and choosing which wallpapers stay is a product call. |
+| B4 Gear Lever and Flatpak at first login | It already runs in the background: `scripts/autostart.sh` starts `install-gearlever` detached when `pending-gearlever` is there, and removes the marker once it succeeds. Measured on a first login: Flathub's install began about 1 s after the password was entered, and the marker was gone after about 31 s. That is 602 MB downloaded (the session's whole network traffic) and 1.7 GB on disk in `~/.local/share/flatpak`: `org.gnome.Platform` 1.1 GB, `org.freedesktop.Platform.GL.default` 462 MB, `codecs-extra` 43 MB, Gear Lever 26.5 MB. The panel and wallpaper came up as usual meanwhile. Nothing tells the user it is happening or when it is done. | **Closed:** it does not delay the session, so there is nothing to move into the background. At 20 Mbit/s the download is about 4 minutes, still behind a working desktop. The size comes from Gear Lever's GNOME runtime, not from how it is installed; whether Gear Lever is worth 1.7 GB is a separate product question. |
+| B5 Wallpapers | 85 files, 141 MB at the pinned commit (63 PNG, 22 JPEG). A shallow fetch took 3.8 s here, which is about a minute at 20 Mbit/s; 4 to 6 s in the VM installs. A release tarball would not be smaller: the images are already compressed. | **Closed** (decided 2026-10-07): every wallpaper stays. A smaller default set was the only real saving, and seconds on a normal connection do not justify it. |
 | B6 Herdr and yay downloads | yay: 4s in the VM. Herdr is not installed by the image install (the full profile without `--install-herdr`). | **Closed:** too small to move earlier. |
 | B7 `pacman -Syu` after archinstall | 2s in the VM: archinstall had already installed from the CachyOS repositories, and the upgrade found nothing to do. | **Closed:** effectively a no-op. #247 can fold it into the single install. |
 
 ## Not tested
 
-- One VM run only, on fast hardware with a fast network. No old or low-end
-  machine, no BIOS install, no NVIDIA GPU, no encrypted disk, and no install
-  without the CachyOS repositories.
+- VM runs only, on fast hardware with a fast network. No old or low-end
+  machine, no BIOS install, no NVIDIA GPU and no encrypted disk. An install
+  without the CachyOS repositories was timed only as `install.sh` in a
+  container (above), not as an image install.
 - The wizard's prompts were answered by a driver, not typed: the gum screens
   themselves were not exercised.
-- The desktop session after login was not checked, so B1 (the font on screen
-  with only the package installed) and B4 (Gear Lever at first login) are still
-  unverified.
-- An existing-system `install.sh` run, outside the image, has not been timed.
+- B1 (the font on screen with only the package installed) is still
+  unverified: the first login (B4) showed the panel, but the font was not
+  checked.
