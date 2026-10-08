@@ -73,6 +73,25 @@ Flickable {
             detail: root.powerModel.externalPowerDetail
         }
 
+        // Peripheral batteries (#243): hidden when there are none.
+        SectionLabel {
+            label: "Devices"
+            visible: root.powerModel.peripherals.length > 0
+        }
+
+        Repeater {
+            model: root.powerModel.peripherals
+
+            delegate: StatusCard {
+                required property var modelData
+
+                label: modelData.name
+                statusState: modelData.statusState
+                value: modelData.value
+                detail: modelData.detail
+            }
+        }
+
         SectionLabel { label: "Power profile" }
 
         UiText {

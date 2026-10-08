@@ -1,9 +1,12 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 import qs.core
 import "../core/Protocol.js" as Protocol
+import "PeripheralBatteries.js" as Peripherals
 
 Scope {
     id: root
@@ -35,6 +38,13 @@ Scope {
     property string batteryDetail: "No system battery is present"
     property string externalPowerState: "unknown"
     property string externalPowerDetail: "External power state is unavailable"
+
+    // Peripheral batteries (#243): mice, keyboards, headsets and other devices
+    // UPower reports, never the system battery. Rows from
+    // PeripheralBatteries.select(), rebuilt only when UPower signals a change:
+    // no timer. The display-profile laptop detection (#310) does not use them.
+    property var peripherals: []
+    property var peripheralWarned: ({})
 
     property string profileState: "idle"
     property string profileDetail: "Power Profiles service has not been queried"
@@ -210,6 +220,71 @@ Scope {
         if (state === UPowerDeviceState.PendingCharge) return "pending-charge";
         if (state === UPowerDeviceState.PendingDischarge) return "pending-discharge";
         return "unknown";
+    }
+
+    function peripheralKind(type) {
+        switch (type) {
+        case UPowerDeviceType.LinePower: return "line-power";
+        case UPowerDeviceType.Ups: return "ups";
+        case UPowerDeviceType.Monitor: return "monitor";
+        case UPowerDeviceType.Computer: return "computer";
+        case UPowerDeviceType.Network: return "network";
+        case UPowerDeviceType.Modem: return "modem";
+        case UPowerDeviceType.Battery: return "battery";
+        case UPowerDeviceType.Mouse: return "mouse";
+        case UPowerDeviceType.Keyboard: return "keyboard";
+        case UPowerDeviceType.Headset: return "headset";
+        case UPowerDeviceType.Headphones: return "headphones";
+        case UPowerDeviceType.Speakers: return "speakers";
+        case UPowerDeviceType.GamingInput: return "gaming";
+        case UPowerDeviceType.Tablet: return "tablet";
+        case UPowerDeviceType.Pen: return "pen";
+        case UPowerDeviceType.Touchpad: return "touchpad";
+        case UPowerDeviceType.Phone: return "phone";
+        case UPowerDeviceType.Pda: return "phone";
+        case UPowerDeviceType.MediaPlayer: return "media";
+        case UPowerDeviceType.RemoteControl: return "remote";
+        case UPowerDeviceType.Wearable: return "wearable";
+        case UPowerDeviceType.Toy: return "toy";
+        case UPowerDeviceType.Camera: return "camera";
+        case UPowerDeviceType.Printer: return "printer";
+        case UPowerDeviceType.Scanner: return "scanner";
+        case UPowerDeviceType.OtherAudio: return "audio";
+        case UPowerDeviceType.Video: return "video";
+        case UPowerDeviceType.BluetoothGeneric: return "bluetooth";
+        }
+        return "other";
+    }
+
+    function peripheralState(state) {
+        if (state === UPowerDeviceState.Charging) return "charging";
+        if (state === UPowerDeviceState.Discharging) return "discharging";
+        if (state === UPowerDeviceState.FullyCharged) return "full";
+        if (state === UPowerDeviceState.Empty) return "empty";
+        if (state === UPowerDeviceState.PendingCharge || state === UPowerDeviceState.PendingDischarge)
+            return "pending";
+        return "unknown";
+    }
+
+    function schedulePeripherals() {
+        Qt.callLater(root.updatePeripherals);
+    }
+
+    function updatePeripherals() {
+        const devices = [];
+        for (const watcher of peripheralWatchers.instances) {
+            if (watcher) devices.push(watcher.snapshot());
+        }
+        const rows = Peripherals.select(devices);
+        root.peripherals = rows;
+        // One notification per low spell (Peripherals.lowWarnings), through the
+        // session's notification server, like any other.
+        const result = Peripherals.lowWarnings(rows, root.peripheralWarned);
+        root.peripheralWarned = result.warned;
+        for (const row of result.warn) {
+            Quickshell.execDetached(["notify-send", "-a", "lyona", "-i", "battery-caution",
+                row.name + " battery is low", row.name + " is at " + row.value + ". Charge it soon."]);
+        }
     }
 
     function updateNativeProfile() {
@@ -503,6 +578,86 @@ Scope {
         function onTimeToEmptyChanged() { root.updateNativeBattery(); }
         function onTimeToFullChanged() { root.updateNativeBattery(); }
         function onChangeRateChanged() { root.updateNativeBattery(); }
+    }
+
+    // One watcher per UPower device. A device that reports only a coarse level
+    // has a kernel power_supply named by its native path, with capacity_level
+    // and no capacity file (Quickshell does not expose UPower's BatteryLevel).
+    // Both files are read once when the device appears and again only when
+    // UPower signals a change for it; sysfs cannot be watched.
+    Variants {
+        id: peripheralWatchers
+        model: UPower.devices.values
+
+        Scope {
+            id: peripheralWatcher
+            required property var modelData
+            readonly property string supplyPath: /^[A-Za-z0-9_.:-]+$/.test(peripheralWatcher.modelData.nativePath)
+                ? "/sys/class/power_supply/" + peripheralWatcher.modelData.nativePath : ""
+            property bool capacityChecked: peripheralWatcher.supplyPath.length === 0
+            property bool hasCapacity: true
+
+            function reread() {
+                if (peripheralWatcher.supplyPath.length === 0) return;
+                capacityFile.reload();
+                levelFile.reload();
+            }
+
+            function snapshot() {
+                const level = !peripheralWatcher.hasCapacity && levelFile.loaded ? levelFile.text().trim() : "";
+                return {
+                    "key": peripheralWatcher.modelData.nativePath,
+                    "kind": root.peripheralKind(peripheralWatcher.modelData.type),
+                    "model": peripheralWatcher.modelData.model,
+                    "powerSupply": peripheralWatcher.modelData.powerSupply,
+                    "isLaptopBattery": peripheralWatcher.modelData.isLaptopBattery,
+                    "present": peripheralWatcher.modelData.isPresent,
+                    // Not shown until the files say which reading it has, so a
+                    // coarse device never flashes a made-up percentage.
+                    "ready": peripheralWatcher.modelData.ready && peripheralWatcher.capacityChecked,
+                    "percent": level.length > 0 ? -1 : Math.max(0, Math.min(100, peripheralWatcher.modelData.percentage * 100)),
+                    "state": root.peripheralState(peripheralWatcher.modelData.state),
+                    "level": level
+                };
+            }
+
+            FileView {
+                id: capacityFile
+                path: peripheralWatcher.supplyPath.length > 0 ? peripheralWatcher.supplyPath + "/capacity" : ""
+                printErrors: false
+                onLoaded: {
+                    peripheralWatcher.hasCapacity = true;
+                    peripheralWatcher.capacityChecked = true;
+                    root.schedulePeripherals();
+                }
+                onLoadFailed: {
+                    peripheralWatcher.hasCapacity = false;
+                    peripheralWatcher.capacityChecked = true;
+                    root.schedulePeripherals();
+                }
+            }
+
+            FileView {
+                id: levelFile
+                path: peripheralWatcher.supplyPath.length > 0 ? peripheralWatcher.supplyPath + "/capacity_level" : ""
+                printErrors: false
+                onLoaded: root.schedulePeripherals()
+                onLoadFailed: root.schedulePeripherals()
+            }
+
+            Connections {
+                target: peripheralWatcher.modelData
+                function onReadyChanged() { peripheralWatcher.reread(); root.schedulePeripherals(); }
+                function onIsPresentChanged() { peripheralWatcher.reread(); root.schedulePeripherals(); }
+                function onPercentageChanged() { peripheralWatcher.reread(); root.schedulePeripherals(); }
+                function onStateChanged() { peripheralWatcher.reread(); root.schedulePeripherals(); }
+                function onModelChanged() { root.schedulePeripherals(); }
+                function onTypeChanged() { root.schedulePeripherals(); }
+            }
+
+            Component.onCompleted: root.schedulePeripherals()
+            Component.onDestruction: root.schedulePeripherals()
+        }
     }
 
     Connections {

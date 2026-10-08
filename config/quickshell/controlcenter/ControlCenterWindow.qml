@@ -508,6 +508,26 @@ ClickAwayPopup {
                             }
                         }
                     }
+
+                    // Peripheral batteries (#243), read-only; none, no rows.
+                    PanelSeparator {
+                        Layout.topMargin: Theme.compactSpacing
+                        Layout.bottomMargin: Theme.compactSpacing
+                        visible: root.powerModel.peripherals.length > 0
+                    }
+                    Repeater {
+                        model: root.powerModel.peripherals
+
+                        delegate: MenuRow {
+                            required property var modelData
+
+                            Layout.fillWidth: true
+                            implicitHeight: root.compactRowHeight
+                            label: modelData.name
+                            detail: modelData.charging ? modelData.value + ", charging" : modelData.value
+                            enabled: false
+                        }
+                    }
                 }
             }
         }

@@ -148,6 +148,16 @@ Alacritty. The default `Super`+`X` binding remains plain Alacritty.
 
 ---
 
+## A Bluetooth device's battery is not shown
+
+Settings > Power and the Control Center list the batteries UPower reports. Most
+wireless mice and keyboards on a USB receiver (for example Logitech's) report
+theirs through the kernel. Some Bluetooth devices report a battery only when
+BlueZ's experimental battery provider is on, which lyona does not change for
+you. To turn it on, set `Experimental = true` under `[General]` in
+`/etc/bluetooth/main.conf`, then `sudo systemctl restart bluetooth`. Check what
+UPower sees with `upower --dump`.
+
 ## Picom / Compositor
 
 Picom is part of the lyona desktop: the window overview's previews need it.
