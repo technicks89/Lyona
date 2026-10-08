@@ -75,6 +75,9 @@ list\ short\ sink-inputs)
 "set-sink-mute @DEFAULT_SINK@ toggle")
 	printf 'mute toggle\n' >>"$DWM_TEST_PACTL_LOG"
 	;;
+"set-sink-mute @DEFAULT_SINK@ 0")
+	printf 'unmute\n' >>"$DWM_TEST_PACTL_LOG"
+	;;
 set-default-sink\ *)
 	printf 'default sink %s\n' "$2" >>"$DWM_TEST_PACTL_LOG"
 	;;
@@ -447,12 +450,15 @@ DWM_TEST_PACTL_LOG="$work/pactl.log" \
 	PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-controls" volume-up 5%
 grep -Fqx "volume up" "$work/pactl.log"
+# The volume keys always unmuted when they changed the volume (#278).
+grep -Fqx "unmute" "$work/pactl.log"
 
 : >"$work/pactl.log"
 DWM_TEST_PACTL_LOG="$work/pactl.log" \
 	PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-controls" volume-down 5%
 grep -Fqx "volume down" "$work/pactl.log"
+grep -Fqx "unmute" "$work/pactl.log"
 
 : >"$work/pactl.log"
 DWM_TEST_PACTL_LOG="$work/pactl.log" \
@@ -465,6 +471,23 @@ DWM_TEST_PACTL_LOG="$work/pactl.log" \
 	PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-controls" volume-toggle-mute
 grep -Fqx "mute toggle" "$work/pactl.log"
+if grep -Fqx "unmute" "$work/pactl.log"; then
+	printf 'The mute toggle also unmuted.\n' >&2
+	exit 1
+fi
+
+# The default volume keys use this helper, so they change the default output
+# the panel shows, not the ALSA Master control (#278).
+for action in '"volume-up", "5%"' '"volume-down", "5%"' '"volume-toggle-mute"'; do
+	grep -Fq "exec=[\"dwm-quickshell-controls\", $action]" "$repo/config/hotkeys.toml" || {
+		printf 'config/hotkeys.toml does not bind %s to dwm-quickshell-controls.\n' "$action" >&2
+		exit 1
+	}
+done
+if grep -v '^[[:space:]]*#' "$repo/config/hotkeys.toml" | grep -Fq amixer; then
+	printf 'config/hotkeys.toml still calls amixer.\n' >&2
+	exit 1
+fi
 
 : >"$work/pactl.log"
 DWM_TEST_PACTL_LOG="$work/pactl.log" \
@@ -511,6 +534,9 @@ OUT
 set-default\ *)
 	printf 'wpctl default %s\n' "$2" >>"$DWM_TEST_WPCTL_LOG"
 	;;
+"set-volume @DEFAULT_AUDIO_SINK@ 5%+" | "set-mute @DEFAULT_AUDIO_SINK@ 0")
+	printf 'wpctl %s\n' "$*" >>"$DWM_TEST_WPCTL_LOG"
+	;;
 *)
 	printf 'unexpected wpctl call: %s\n' "$*" >&2
 	exit 1
@@ -543,6 +569,18 @@ DWM_TEST_WPCTL_LOG="$work/wpctl.log" \
 	PATH="$work/bin:/usr/bin:/bin" \
 	"$repo/scripts/dwm-quickshell-controls" output-set-default 47
 grep -Fqx "wpctl default 47" "$work/wpctl.log"
+
+# With wpctl alone (no pactl anywhere on PATH), volume up unmutes too (#278).
+mkdir -p "$work/wpctl-only"
+for command_path in /usr/bin/*; do
+	[ "${command_path##*/}" = pactl ] || ln -s "$command_path" "$work/wpctl-only/${command_path##*/}"
+done
+ln -sf "$work/bin/wpctl" "$work/wpctl-only/wpctl"
+: >"$work/wpctl.log"
+DWM_TEST_WPCTL_LOG="$work/wpctl.log" PATH="$work/wpctl-only" \
+	"$repo/scripts/dwm-quickshell-controls" volume-up 5%
+grep -Fqx "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+" "$work/wpctl.log"
+grep -Fqx "wpctl set-mute @DEFAULT_AUDIO_SINK@ 0" "$work/wpctl.log"
 
 cat >"$work/bin/wpctl" <<'SH'
 #!/bin/sh

@@ -136,13 +136,16 @@ volume_watch() {
 	volume_status
 }
 
+# Changing the volume unmutes, as the volume keys always did (#278).
 volume_up() {
 	step=$(volume_step "${1:-}")
 
 	if command -v pactl >/dev/null 2>&1; then
 		pactl set-sink-volume @DEFAULT_SINK@ "+$step"
+		pactl set-sink-mute @DEFAULT_SINK@ 0
 	elif command -v wpctl >/dev/null 2>&1; then
 		wpctl set-volume @DEFAULT_AUDIO_SINK@ "$step+"
+		wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
 	else
 		printf '%s\n' "pactl or wpctl not found" >&2
 		exit 127
@@ -154,8 +157,10 @@ volume_down() {
 
 	if command -v pactl >/dev/null 2>&1; then
 		pactl set-sink-volume @DEFAULT_SINK@ "-$step"
+		pactl set-sink-mute @DEFAULT_SINK@ 0
 	elif command -v wpctl >/dev/null 2>&1; then
 		wpctl set-volume @DEFAULT_AUDIO_SINK@ "$step-"
+		wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
 	else
 		printf '%s\n' "pactl or wpctl not found" >&2
 		exit 127

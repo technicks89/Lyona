@@ -18,6 +18,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   release's (lyona-shell instead of raw Quickshell IPC, logout and reboot that
   ask first), after a backup; bindings you changed are kept.
 
+### Fixed
+
+- The volume keys change the default output, the device the panel's slider
+  shows, instead of the ALSA Master control (#278). With a USB, Bluetooth or
+  HDMI output they changed a different device. They now go through
+  `dwm-quickshell-controls`, which uses PipeWire or PulseAudio, and volume up
+  and down still unmute, from the keys and from the panel. An existing
+  `hotkeys.toml` gets the new bindings on update unless you changed them.
+
 ## [2026.10.0-beta.5] - 2026-10-08
 
 Sixth beta of the Arch Linux line, and the first since beta.4. Three security fixes for lyona's update path and root
