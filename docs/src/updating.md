@@ -179,15 +179,17 @@ lyona, delete the line.
 ## Applying an update
 
 ```sh
-lyona-update apply --version 2026.09.0
+lyona-update apply --version 2026.10.0-beta.5
 ```
 
 Nine steps, in this exact order, so an interruption at any point is always
 recoverable:
 
 1. Download the release tarball to `$XDG_STATE_HOME/lyona/updates/`.
-2. Verify its SHA-256 against the published release digest, and its
-   signature with `cosign`, **before** unpacking it.
+2. Verify its SHA-256 against the published release digest, and, for a release
+   from `2026.10.0-beta.2` on, its signature with `cosign`, **before** unpacking
+   it. An earlier release has no signature: it is installed on its digest alone,
+   through the "NOT verified" prompt (below).
 3. Unpack it, and copy your `config.h` into the build: `~/.config/lyona/config.h`,
    or a checkout's `config.h` when run from one (see Configuration).
 4. Build it, unprivileged, so a compile failure costs you nothing but time.
@@ -196,8 +198,10 @@ recoverable:
    (`lyona-update-root`, authenticated through polkit), then install the
    user-level files. The privileged step does not trust the unprivileged build:
    it makes its own root-owned copy of the tarball (read with your permissions),
-   checks the digest again on that copy, then unpacks and rebuilds only that copy
-   before backing up the system files and installing.
+   checks the digest and the signature again on that copy, against lyona's
+   release workflow (fixed in the helper, not taken from the caller), then
+   unpacks and rebuilds only that copy before backing up the system files and
+   installing.
 
 **What the checks prove.** The SHA-256 digest comes from the release page (or a
 short-lived cache in `~/.cache/lyona/`), so a match proves the download is
@@ -205,9 +209,13 @@ intact. The signature proves it is genuine: from `2026.10.0-beta.2` on, each
 release is signed by lyona's own release workflow on GitHub (decision D-31),
 and `lyona-update` refuses one whose signature is missing or does not verify.
 It needs `cosign`, which the install provides, and the network, for Sigstore's
-trust root. A release from before signing is installed on its digest alone,
-and says so. The privileged step re-checks the digest the unprivileged side
-verified; approve its password prompt only for an update you started.
+trust root. The privileged step checks the signature again itself, so its
+usual prompt ("Authentication is required to install a lyona system update")
+only ever installs a signed release. A release from before signing, or an
+offline file you vouch for with `--sha256`, is installed on its digest alone,
+says so, and asks through a different prompt: "...install a lyona update whose
+signature was NOT verified". Approve either only for an update you started, and
+that one only for a file you checked yourself.
 7. Verify every installed file matches what was staged.
 8. Rewrite the provenance record (`/etc/lyona-release`,
    `$XDG_STATE_HOME/lyona/install.state`) — last, and only after step 7
@@ -270,7 +278,8 @@ Useful flags:
   hexadecimal value on the tarball's line in the release's
   `lyona-<version>-SHA256SUMS` (the first field). With `--bundle` too, both
   are checked. Given alone, for a machine with no network, the signature is
-  not checked: you vouch for the file.
+  not checked: you vouch for the file, and the install asks through the
+  "NOT verified" prompt.
 
   ```sh
   lyona-update apply --file ~/lyona-2026.10.0.tar.gz --version 2026.10.0 \

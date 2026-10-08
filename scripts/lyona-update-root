@@ -226,12 +226,50 @@ extract_verified_tree() {
 		die "failed to extract the verified release tarball"
 }
 
+# The release workflow's Sigstore identity (decision D-31), fixed here rather
+# than taken from the caller or the environment: install-system checks it
+# itself, as root, so a release it installs on the routine prompt is one the
+# release workflow on main built and signed (GHSA-x538-46gg-v37h).
+readonly release_signer=https://github.com/technicks89/Lyona/.github/workflows/build-iso.yml@refs/heads/main
+readonly release_issuer=https://token.actions.githubusercontent.com
+readonly cosign_path=/usr/bin/cosign
+
+# verify_release_signature TARBALL BUNDLE: both root's own copies. cosign runs
+# with a clean environment and a root-only cache for Sigstore's trust root,
+# which it fetches over the network.
+verify_release_signature() {
+	local output
+	trusted_file "$cosign_path" ||
+		die "a trusted cosign ($cosign_path) is needed to verify the release; install it with: pacman -S cosign"
+	if ! output=$(env -i PATH=/usr/bin:/bin HOME="$verified_home" TUF_ROOT="$verified_home/sigstore" \
+		"$cosign_path" verify-blob-attestation --bundle "$2" \
+		--type https://slsa.dev/provenance/v1 \
+		--certificate-oidc-issuer "$release_issuer" \
+		--certificate-identity "$release_signer" \
+		"$1" 2>&1 >/dev/null); then
+		printf '%s\n' "$output" | tail -n 3 >&2
+		die "the release's signature does not verify; refusing to install it"
+	fi
+}
+
 case ${1:-} in
-install-system)
+# install-system installs only a release whose signature it verifies itself,
+# on the routine polkit prompt. install-unverified is the same install checked
+# by its digest alone (a release from before signing, or an offline file the
+# user vouched for), on its own, explicit prompt (com.lyona.update.unverified).
+install-system | install-unverified)
+	install_mode=$1
 	case ${2:-} in
 	release)
-		[[ $# == 7 ]] ||
-			die "install-system release requires a tarball, its checksum, the version, a config.h path (or -), and a backup id"
+		if [[ $install_mode == install-system ]]; then
+			[[ $# == 8 ]] ||
+				die "install-system release requires a tarball, its checksum, the version, a config.h path (or -), a backup id, and the release's signature bundle"
+			bundle_path=$8
+		else
+			[[ $# == 7 ]] ||
+				die "install-unverified release requires a tarball, its checksum, the version, a config.h path (or -), and a backup id"
+			bundle_path=
+		fi
 		tarball_path=$3
 		expected_sha256=$4
 		requested_version=$5
@@ -246,6 +284,14 @@ install-system)
 		esac
 		user_owned_file "$tarball_path" "$invoking_uid" ||
 			die "tarball is not a safe, user-owned file"
+		if [[ -n $bundle_path ]]; then
+			case $bundle_path in
+			"$updates_root"/*) ;;
+			*) die "signature bundle is not under the invoking user's managed updates area" ;;
+			esac
+			user_owned_file "$bundle_path" "$invoking_uid" ||
+				die "signature bundle is not a safe, user-owned file"
+		fi
 		[[ $expected_sha256 =~ ^[0-9a-fA-F]{64}$ ]] || die "malformed expected checksum"
 		[[ $requested_version =~ ^[0-9][0-9A-Za-z.+_-]*$ ]] || die "malformed version"
 
@@ -257,9 +303,11 @@ install-system)
 
 		verified_dir=$(mktemp -d) || die "could not create a scratch directory"
 		verified_tarball=$(mktemp) || die "could not create a scratch file"
-		chmod 700 "$verified_dir"
-		chmod 600 "$verified_tarball"
-		trap 'rm -rf "$verified_dir" "$verified_tarball"' EXIT
+		verified_bundle=$(mktemp) || die "could not create a scratch file"
+		verified_home=$(mktemp -d) || die "could not create a scratch directory"
+		chmod 700 "$verified_dir" "$verified_home"
+		chmod 600 "$verified_tarball" "$verified_bundle"
+		trap 'rm -rf "$verified_dir" "$verified_tarball" "$verified_bundle" "$verified_home"' EXIT
 
 		# Sync Sprint 12 S12-02: one root-owned copy is hashed, extracted and built,
 		# so nothing can swap the file between the hash and the build. The copy is
@@ -268,12 +316,17 @@ install-system)
 		runuser -u "$invoking_user" -- cat -- "$tarball_path" >"$verified_tarball" ||
 			die "could not read the tarball as the invoking user"
 		actual_sha256=$(sha256sum -- "$verified_tarball" | awk '{ print $1 }')
-		# The expected digest comes from the invoking user's side, which fetched
-		# it from the release page (or its own cache), so a match only proves the
-		# download is intact, not that it is genuine: the administrator's approval
-		# is the boundary. Releases are not signed yet (decision D-14).
+		# The expected digest comes from the invoking user's side, so a match only
+		# proves the file is the one the caller meant. That it is genuine is the
+		# signature, checked below on root's own copy, for install-system; for
+		# install-unverified, the administrator's approval of the explicit prompt.
 		[[ ${actual_sha256,,} == "${expected_sha256,,}" ]] ||
 			die "tarball checksum does not match the expected release digest; refusing to install"
+		if [[ $install_mode == install-system ]]; then
+			runuser -u "$invoking_user" -- cat -- "$bundle_path" >"$verified_bundle" ||
+				die "could not read the signature bundle as the invoking user"
+			verify_release_signature "$verified_tarball" "$verified_bundle"
+		fi
 
 		extract_verified_tree "$verified_tarball" "$verified_dir"
 		staged_version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$verified_dir/config.mk")
@@ -307,13 +360,13 @@ install-system)
 			USER_HOME="$invoking_home" \
 			OWNER="$invoking_user" \
 			XDG_STATE_HOME="$state_home"; then
-			log_outcome install-system "$requested_version" "$verified_dir" failed
+			log_outcome "$install_mode" "$requested_version" "$verified_dir" failed
 			die "install-system failed"
 		fi
-		log_outcome install-system "$requested_version" "$tarball_path" succeeded
+		log_outcome "$install_mode" "$requested_version" "$tarball_path" succeeded
 		;;
 	*)
-		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID"
+		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID BUNDLE, or install-unverified release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID"
 		;;
 	esac
 	;;

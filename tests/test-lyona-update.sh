@@ -915,8 +915,49 @@ if valid_archive "$work/restore/dotdot.tar" quickshell; then fail 'an archive wi
 printf 'not an archive\n' >"$work/restore/bogus.tar"
 if valid_archive "$work/restore/bogus.tar" quickshell; then fail 'an unreadable archive was accepted'; fi
 
-assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileged sites in cmd_apply"
-assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "release site"
+# GHSA-x538-46gg-v37h: a release whose signature was verified goes to the root
+# helper's install-system, which checks the signature again itself; anything
+# else to install-unverified, on its own explicit polkit prompt.
+assert_equals 2 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileged sites in cmd_apply"
+assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "verified release site"
+assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-unverified release')" "unverified release site"
+# shellcheck disable=SC2016 # the patterns match the literal source text
+body_of cmd_apply | grep -A3 'if \[\[ $signature_verified == true \]\]; then' | grep -q 'run_privileged install-system release' ||
+	fail 'install-system is not reserved for a verified signature'
+# shellcheck disable=SC2016
+body_of cmd_apply | grep -A1 'run_privileged install-system release' | grep -q '"$bundle_path"' ||
+	fail 'install-system is not given the signature bundle'
+# shellcheck disable=SC2016
+[ "$(body_of cmd_apply | grep -c 'signature_verified=true')" = 1 ] ||
+	fail 'signature_verified is set somewhere other than after verify_signature'
+body_of cmd_apply | grep -B1 'signature_verified=true' | grep -q 'verify_signature ' ||
+	fail 'signature_verified=true does not follow verify_signature'
+
+# The root helper checks the signature itself, against a fixed identity.
+root_helper=$repo/scripts/lyona-update-root
+grep -Fxq 'readonly release_signer=https://github.com/technicks89/Lyona/.github/workflows/build-iso.yml@refs/heads/main' "$root_helper" ||
+	fail 'the root helper does not fix the release signer identity'
+grep -Fxq 'readonly release_issuer=https://token.actions.githubusercontent.com' "$root_helper" ||
+	fail 'the root helper does not fix the release signer issuer'
+if grep -q 'LYONA_UPDATE_GITHUB\|github_repo' "$root_helper"; then
+	fail 'the root helper takes the signer from the environment'
+fi
+# shellcheck disable=SC2016
+grep -q 'install-system release requires .* the release.s signature bundle' "$root_helper" ||
+	fail 'install-system does not require the signature bundle'
+# shellcheck disable=SC2016
+grep -B3 'verify_release_signature "$verified_tarball" "$verified_bundle"' "$root_helper" |
+	grep -q 'if \[\[ $install_mode == install-system \]\]; then' ||
+	fail 'install-system does not verify the signature on root'"'"'s own copy'
+# One polkit action per subcommand, none for the bare helper path.
+policy=$repo/config/polkit/com.lyona.update.policy
+assert_equals 3 "$(grep -c '<action id=' "$policy")" "update polkit actions"
+assert_equals 3 "$(grep -c 'policykit.exec.argv1' "$policy")" "update polkit actions tied to a subcommand"
+for sub in install-system restore-system install-unverified; do
+	grep -Fq "exec.argv1\">$sub</annotate>" "$policy" || fail "no polkit action for $sub"
+done
+grep -A2 'com.lyona.update.unverified' "$policy" | grep -q 'NOT verified' ||
+	fail 'the unverified action does not say so'
 # Sync Sprint 12 S12-03 (decision D-15): no checkout mode, on either side.
 assert_equals 0 "$(body_of cmd_apply | grep -c 'install-system checkout')" "checkout site"
 assert_equals 0 "$(grep -c 'checkout)' "$repo/scripts/lyona-update-root")" "root helper checkout mode"
