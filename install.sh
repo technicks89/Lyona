@@ -352,6 +352,11 @@ configure_appimage_handler() {
 		return 0
 	fi
 	current=$(appimage_user_choice)
+	# Set explicitly by an earlier run: nothing to change.
+	if [[ $current == lyona-appimage.desktop ]]; then
+		ok "AppImages already open with lyona-appimage."
+		return 0
+	fi
 	[[ -n $current ]] || current=$(xdg-mime query default application/vnd.appimage 2>/dev/null || true)
 	if [[ -n $current && $current != lyona-appimage.desktop ]]; then
 		ok "AppImages keep opening with $current."

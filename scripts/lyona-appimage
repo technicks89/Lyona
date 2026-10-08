@@ -319,7 +319,7 @@ ask() { # FILE
 
 # integrate FILE: the entry for FILE in APPS_DIR, written once. Sets
 # integrated_path, the AppImage in APPS_DIR, and choice: run, add or cancel
-# (already added: run). In this shell, not a subshell, so the scratch
+# (already added: run; added by another open while asking: the answer given). In this shell, not a subshell, so the scratch
 # directory is cleaned up on exit.
 integrated_path=
 choice=
@@ -335,7 +335,6 @@ integrate() { # FILE
 	[[ $base != *[[:cntrl:]\\]* ]] ||
 		fail "$(clean "$base") has a control character or a backslash in its name; rename it and open it again"
 	offset=$(image_offset "$file") || fail "$(clean "$base") is not an AppImage this can read (type 2, x86)"
-	take_lock
 	dest=$(destination "$file")
 	if entry_for "$dest" >/dev/null && [[ -x $dest ]]; then
 		integrated_path=$dest
@@ -357,9 +356,6 @@ integrate() { # FILE
 		desktop=
 	done
 
-	name=
-	[[ -z $desktop ]] || name=$(key "$desktop" Name)
-	[[ -n $name ]] || name=$(clean "$(basename -- "$dest" | sed -E 's/\.[Aa]pp[Ii]mage$//')")
 	icon_name=
 	[[ -z $desktop ]] || icon_name=$(key "$desktop" Icon)
 	icon=
@@ -370,11 +366,33 @@ integrate() { # FILE
 		icon=
 	done
 
+	# Asked without the lock, so an open question holds up no other open or
+	# remove.
 	choice=$(ask "$file")
 	if [[ $choice == cancel ]]; then
 		printf 'lyona-appimage: %s was not added\n' "$(clean "$base")" >&2
 		return 0
 	fi
+
+	# Under the lock, looked at again: while the question was open, another
+	# open of the same file (a double click) may have added it.
+	take_lock
+	if [[ ! -e $file ]]; then
+		if entry_for "$dest" >/dev/null && [[ -x $dest ]]; then
+			integrated_path=$dest
+			return 0
+		fi
+		fail "$(clean "$base") was moved while asking; open it again"
+	fi
+	dest=$(destination "$file")
+	if entry_for "$dest" >/dev/null && [[ -x $dest ]]; then
+		integrated_path=$dest
+		return 0
+	fi
+
+	name=
+	[[ -z $desktop ]] || name=$(key "$desktop" Name)
+	[[ -n $name ]] || name=$(clean "$(basename -- "$dest" | sed -E 's/\.[Aa]pp[Ii]mage$//')")
 
 	mkdir -p -- "$APPS_DIR" "$ENTRY_DIR" "$ICON_DIR"
 	if [[ $file != "$dest" && ! -e $dest ]]; then
@@ -433,10 +451,12 @@ integrate() { # FILE
 start() { # DEST [ARGS...]
 	local dest=$1 pid status=0 i label hint=
 	shift
+	# 9>&-: the AppImage must not inherit the open/remove lock, or it would hold
+	# it for as long as it runs.
 	if command -v setsid >/dev/null 2>&1; then
-		setsid -- "$dest" "$@" >/dev/null 2>&1 </dev/null &
+		setsid -- "$dest" "$@" >/dev/null 2>&1 </dev/null 9>&- &
 	else
-		"$dest" "$@" >/dev/null 2>&1 </dev/null &
+		"$dest" "$@" >/dev/null 2>&1 </dev/null 9>&- &
 	fi
 	pid=$!
 	for ((i = 0; i < START_WATCH_TENTHS; i++)); do

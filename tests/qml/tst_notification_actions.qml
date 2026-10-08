@@ -45,6 +45,35 @@ TestCase {
         compare(buttons[2].identifier, "3");
     }
 
+    function popup(key, withButtons) {
+        return { "key": key, "actions": withButtons ? [action("run", "Run")] : [] };
+    }
+
+    function keys(list) {
+        return list.map(item => item.key).join(",");
+    }
+
+    function test_ordinary_popups_keep_the_limit() {
+        const fitted = NotificationActions.fitPopups([popup("e"), popup("d"), popup("c"), popup("b"), popup("a")], 4);
+        compare(keys(fitted.kept), "e,d,c,b");
+        compare(keys(fitted.overflow), "a");
+    }
+
+    function test_questions_are_never_pushed_out() {
+        // The oldest is a question; four newer ordinary ones arrive.
+        const fitted = NotificationActions.fitPopups([popup("e"), popup("d"), popup("c"), popup("b"),
+            popup("q", true)], 4);
+        compare(keys(fitted.kept), "e,d,c,b,q");
+        compare(fitted.overflow.length, 0);
+    }
+
+    function test_questions_do_not_count_toward_the_limit() {
+        const fitted = NotificationActions.fitPopups([popup("q1", true), popup("e"), popup("q2", true),
+            popup("d"), popup("c"), popup("b"), popup("a")], 4);
+        compare(keys(fitted.kept), "q1,e,q2,d,c,b");
+        compare(keys(fitted.overflow), "a");
+    }
+
     function test_long_text_is_cut() {
         const buttons = NotificationActions.buttons([action("x", "y".repeat(100))]);
         compare(buttons[0].text.length, NotificationActions.MAX_TEXT);
