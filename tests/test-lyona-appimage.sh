@@ -151,6 +151,25 @@ run_helper open "$work/home/Downloads/My \$Tool.AppImage" || fail 'a name with a
 grep -Fxq "Exec=\"$apps/My \\\$Tool.AppImage\"" "$entries/lyona-appimage-my-tool-appimage.desktop" ||
 	fail "the Exec line is not quoted: $(grep ^Exec= "$entries/lyona-appimage-my-tool-appimage.desktop")"
 
+# --- A % in the name is written %%, not read as a field code. -------------------
+cp "$work/fixtures/Bare.AppImage" "$work/home/Downloads/Tool%20X.AppImage"
+run_helper open "$work/home/Downloads/Tool%20X.AppImage" || fail 'a name with a percent sign failed'
+grep -Fxq "Exec=\"$apps/Tool%%20X.AppImage\"" "$entries/lyona-appimage-tool-20x-appimage.desktop" ||
+	fail "a % in the Exec line is not doubled: $(grep ^Exec= "$entries/lyona-appimage-tool-20x-appimage.desktop")"
+
+# --- A failure after the move puts the file back. -------------------------------
+cp "$work/fixtures/Bare.AppImage" "$work/home/Downloads/Stuck.AppImage"
+chmod a-w "$entries"
+if run_helper open "$work/home/Downloads/Stuck.AppImage" 2>/dev/null; then
+	chmod u+w "$entries"
+	fail 'opening succeeded although its entry could not be written'
+fi
+chmod u+w "$entries"
+[[ -f $work/home/Downloads/Stuck.AppImage ]] || fail 'a failed open did not put the file back'
+[[ ! -e $apps/Stuck.AppImage ]] || fail 'a failed open left the file in ~/Applications'
+[[ ! -e $entries/lyona-appimage-stuck-appimage.desktop ]] || fail 'a failed open left an entry'
+rm -f "$work/home/Downloads/Stuck.AppImage"
+
 # --- Not an AppImage: refused, said, nothing moved. ------------------------------
 printf 'not an appimage\n' >"$work/home/Downloads/fake.AppImage"
 cp /usr/bin/true "$work/home/Downloads/elf-only.AppImage"
@@ -203,4 +222,4 @@ status=0
 run_helper frobnicate 2>/dev/null || status=$?
 [[ $status == 2 ]] || fail "a bad action did not exit 2 ($status)"
 
-printf 'lyona-appimage (open, re-open, symlink escape, bare, quoting, refusal, list, remove): PASS\n'
+printf 'lyona-appimage (open, re-open, symlink escape, bare, quoting, percent, rollback, refusal, list, remove): PASS\n'

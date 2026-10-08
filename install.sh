@@ -235,6 +235,16 @@ case $TOPGRADE_INSTALL_MODE in
 	;;
 esac
 
+case $GEARLEVER_INSTALL_MODE in
+1 | true | yes) GEARLEVER_INSTALL_MODE=true ;;
+0 | false | no) GEARLEVER_INSTALL_MODE=false ;;
+*)
+	err "Unsupported DWM_INSTALL_GEARLEVER: $GEARLEVER_INSTALL_MODE"
+	err "Supported values: true, false"
+	exit 1
+	;;
+esac
+
 for cachyos_setting in CACHYOS_REPOS_APPROVED CACHYOS_KERNEL_MODE; do
 	case "${!cachyos_setting}" in
 	1 | true | yes)

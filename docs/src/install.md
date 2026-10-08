@@ -309,8 +309,9 @@ the classic AppImages run, and both it and `squashfs-tools` come with the
 recommended desktop.
 
 Gear Lever is no longer installed by default: it needs about 1.7 GB of Flatpak
-runtimes (#260). Add `--with-gearlever` to install it from Flathub; it then
-opens AppImages instead, with in-place updates and its own window. An existing
+runtimes (#260). Add `--with-gearlever` (or set `DWM_INSTALL_GEARLEVER=true`)
+to install it from Flathub; it then opens AppImages instead, with in-place
+updates and its own window. An existing
 Gear Lever is kept, and stays the AppImage handler. If an earlier image install
 left Gear Lever pending for the first login, the next `install.sh` run cancels
 that unless `--with-gearlever` is given.
