@@ -30,7 +30,7 @@ cleanup() {
 	rm -rf "$work" "$custom_prefix"
 }
 trap cleanup EXIT
-mkdir -p "$custom_prefix/bin" "$custom_prefix/libexec/lyona"
+mkdir -p "$custom_prefix/bin" "$custom_prefix/libexec/lyona" "$custom_prefix/lib/lyona"
 
 installed=$custom_prefix/libexec/lyona/dwm-system-health-root
 health=$custom_prefix/bin/dwm-system-health
@@ -41,7 +41,14 @@ sed "s|@PREFIX@|$custom_prefix|g" "$repo/scripts/dwm-system-health-root" |
 # to run, and the environment it was run with.
 # shellcheck disable=SC2016 # the stub's own expansions, written literally
 printf '#!/bin/sh\nprintf "%%s|HOME=%%s|PKEXEC_UID=%%s\\n" "$*" "$HOME" "${PKEXEC_UID:-}" >>%s\n' \
-	"$record" | install -o root -g root -m 0755 /dev/stdin "$health"
+	"$record" | install -o root -g root -m 0755 /dev/stdin "$health.stub"
+# The libraries dwm-system-health sources, staged as an install lays them out
+# and owned by root, as installed (GHSA-c897-2mjw-fwhh); then the stand-in
+# replaces the tool itself.
+stage_helpers prefix "$custom_prefix" dwm-system-health
+chown -R root:root "$custom_prefix/lib/lyona"
+chmod go-w "$custom_prefix"/lib/lyona/*
+mv -fT "$health.stub" "$health"
 
 refuses() { # LABEL EXPECTED-ERROR ENV-AND-COMMAND...
 	local label=$1 expected=$2
@@ -67,6 +74,15 @@ chmod 0775 "$health"
 refuses 'an untrusted dwm-system-health' 'trusted dwm-system-health is unavailable' \
 	env PKEXEC_UID=1000 "$installed" scan-system
 chmod 0755 "$health"
+# What dwm-system-health sources runs as root too: an untrusted library refuses.
+chmod 0664 "$custom_prefix/lib/lyona/dwm-trust.sh"
+refuses 'a writable library dwm-system-health sources' 'trusted dwm-trust.sh is unavailable' \
+	env PKEXEC_UID=1000 "$installed" scan-system
+chmod 0644 "$custom_prefix/lib/lyona/dwm-trust.sh"
+mv -fT "$custom_prefix/lib/lyona/dwm-xdg.sh" "$work/dwm-xdg.sh.aside"
+refuses 'a missing library dwm-system-health sources' 'trusted dwm-xdg.sh is unavailable' \
+	env PKEXEC_UID=1000 "$installed" scan-system
+mv -fT "$work/dwm-xdg.sh.aside" "$custom_prefix/lib/lyona/dwm-xdg.sh"
 
 # Only the two requests, with checked arguments.
 refuses 'an unknown request' 'usage:' env PKEXEC_UID=1000 "$installed" scan-user

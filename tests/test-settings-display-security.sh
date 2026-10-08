@@ -195,4 +195,66 @@ if env PKEXEC_UID=1000 "$installed" rollback 2>"$work/custom-prefix.err"; then
 fi
 grep -Fq 'no backup found' "$work/custom-prefix.err"
 
+# GHSA-c897-2mjw-fwhh: the setup runs with root's own HOME, and with a
+# root-owned copy of the user's X authority read with the user's permissions,
+# never the user's own path. A stand-in setup records what it was given.
+xuser=lyonadisplaytest
+id -u "$xuser" >/dev/null 2>&1 || useradd -m "$xuser"
+xuid=$(id -u "$xuser")
+xhome=$(getent passwd "$xuser" | cut -d: -f6)
+record=$work/setup.record
+cat >"$work/setup-stub" <<EOF
+#!/bin/sh
+{
+	printf 'HOME=%s\n' "\$HOME"
+	printf 'XAUTH=%s\n' "\$XAUTHORITY"
+	stat -c 'OWNER=%u MODE=%a' "\$XAUTHORITY"
+	printf 'CONTENT=%s\n' "\$(cat "\$XAUTHORITY")"
+} >$record
+EOF
+install -o root -g root -m 0755 "$work/setup-stub" "$setup"
+rm -f /etc/X11/xorg.conf
+xinstall() { # XAUTHORITY
+	rm -f "$record"
+	env PKEXEC_UID="$xuid" "$installed" install :99 "$1" "HDMI-1 --mode 1920x1080" 2>"$work/xauth.err" || {
+		cat "$work/xauth.err" >&2
+		printf 'the display install failed\n' >&2
+		exit 1
+	}
+	[[ -s $record ]] || {
+		printf 'the setup did not run\n' >&2
+		exit 1
+	}
+}
+expect_record() { # LINE MESSAGE
+	grep -Fxq -- "$1" "$record" || {
+		cat "$record" >&2
+		printf '%s\n' "$2" >&2
+		exit 1
+	}
+}
+printf 'user-cookie\n' | install -o "$xuid" -g "$xuid" -m 0600 /dev/stdin "$xhome/.Xauthority"
+xinstall "$xhome/.Xauthority"
+expect_record 'HOME=/root' "the setup did not run with root's HOME"
+expect_record 'OWNER=0 MODE=600' 'the X authority given to the setup is not a root-owned private copy'
+expect_record 'CONTENT=user-cookie' 'the copy does not hold the user'"'"'s X authority'
+if grep -Fxq "XAUTH=$xhome/.Xauthority" "$record"; then
+	printf 'the setup was given the user'"'"'s own X authority path\n' >&2
+	exit 1
+fi
+copy=$(sed -n 's/^XAUTH=//p' "$record")
+[[ ! -e $copy ]] || {
+	printf 'the X authority copy was left behind: %s\n' "$copy" >&2
+	exit 1
+}
+# A link to a file only root can read: the copy is read as the user, so it is
+# empty, never the file's contents.
+ln -s /etc/shadow "$xhome/shadow-link"
+chown -h "$xuid:$xuid" "$xhome/shadow-link"
+xinstall "$xhome/shadow-link"
+expect_record 'CONTENT=' 'root read a file through the user'"'"'s X authority link'
+# None given: the user's ~/.Xauthority, as Xlib would have looked for it.
+xinstall ''
+expect_record 'CONTENT=user-cookie' 'without an X authority, the user'"'"'s ~/.Xauthority was not used'
+
 printf 'Privileged display-helper trust and authorization denial: PASS\n'

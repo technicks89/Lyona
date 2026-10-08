@@ -586,7 +586,11 @@ The Settings platform must distinguish:
 QML must not construct arbitrary privileged commands. Elevated helpers must be
 root-owned, non-writable by unprivileged users, validate every argument, expose
 only documented operations, and remain safe when authorization is denied or
-cancelled. Repository and XDG copies must never be elevated.
+cancelled. Repository and XDG copies must never be elevated. What an elevated
+helper runs as root is held to the same rules: the tool, and every library it
+sources, root-owned and checked before it runs; root's own `HOME`; and nothing
+read from the invoking user's files except through a copy made with the user's
+own permissions.
 
 Settings providers must prefer event-driven updates and stop unnecessary
 watches and processes when their section closes. A failure in one provider

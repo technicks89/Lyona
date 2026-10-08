@@ -77,18 +77,34 @@ validate_profile_line() {
 	[[ $enabled == 0 || ${#words[@]} -gt 1 ]]
 }
 
+# dwm-display-setup runs as root with root's own HOME, never the invoking
+# user's (GHSA-c897-2mjw-fwhh): nothing it or Xlib reads from HOME is the user's
+# to write. The X authority it needs is the user's, read with the user's own
+# permissions into a root-owned copy, as lyona-update-root reads a tarball, so
+# root never opens a path in the user's home: no symlink or swap between a
+# check and the open can make it read another file. Without one given, the
+# user's ~/.Xauthority, which Xlib would otherwise have looked for in HOME.
 run_setup() {
-	local display=$1 xauthority=$2 home
+	local display=$1 xauthority=$2 user home copy status=0
 	shift 2
+	user=$(getent passwd "${PKEXEC_UID:-0}" | cut -d: -f1)
 	home=$(getent passwd "${PKEXEC_UID:-0}" | cut -d: -f6)
-	[[ -n $home ]] || home=/root
-	if [[ -n $xauthority ]]; then
-		[[ -f $xauthority && ! -L $xauthority ]] || die "unsafe Xauthority file"
-		[[ $(stat -c %u "$xauthority") == "${PKEXEC_UID:-0}" ]] || die "Xauthority has the wrong owner"
+	[[ -n $user && $home == /* ]] || die "could not resolve the invoking user"
+	[[ -n $xauthority ]] || xauthority=$home/.Xauthority
+	[[ $xauthority == /* ]] || die "the Xauthority path must be absolute"
+	command -v runuser >/dev/null 2>&1 || die "runuser is unavailable"
+	copy=$(mktemp) || die "could not create a scratch file"
+	chmod 600 "$copy"
+	if ! runuser -u "$user" -- cat -- "$xauthority" >"$copy" 2>/dev/null; then
+		# No authority file is a valid setup (xhost, a local server); the copy
+		# stays empty and X decides.
+		: >"$copy"
 	fi
-	env -i PATH=/usr/bin:/bin HOME="$home" DISPLAY="$display" XAUTHORITY="$xauthority" \
+	env -i PATH=/usr/bin:/bin HOME=/root DISPLAY="$display" XAUTHORITY="$copy" \
 		DWM_DISPLAY_NO_SUDO=1 DWM_XORG_CONFIG="$managed_config" \
-		DWM_XORG_MAIN_CONFIG="$main_config" "$setup" "$@"
+		DWM_XORG_MAIN_CONFIG="$main_config" "$setup" "$@" || status=$?
+	rm -f -- "$copy"
+	return "$status"
 }
 
 case ${1:-} in

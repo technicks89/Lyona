@@ -190,6 +190,27 @@ for root_helper in lyona-update-root dwm-settings-display-root dwm-system-health
 		exit 1
 	}
 done
+# GHSA-c897-2mjw-fwhh: the tools the root helpers run as root are held to D-21
+# too. dwm-display-setup sources nothing; every library dwm-system-health
+# sources, the wrapper checks with trusted_file before running it, and the two
+# lists must match. The display wrapper gives the tool root's own HOME.
+if grep -Eq '^[[:space:]]*(\.|source)[[:space:]]' "$repo/scripts/dwm-display-setup"; then
+	fail 'dwm-display-setup, run as root by dwm-settings-display-root, sources a file'
+fi
+# shellcheck disable=SC2016 # matching the literal source text
+health_sources=$(sed -n 's|^\. "$lyona_lib/\([A-Za-z0-9_.-]*\)"$|\1|p' "$repo/scripts/dwm-system-health" | sort)
+health_checked=$(sed -n 's|^for health_library in \(.*\); do$|\1|p' "$repo/scripts/dwm-system-health-root" | tr ' ' '\n' | sort)
+[ -n "$health_sources" ] || fail 'could not read what dwm-system-health sources'
+[ "$health_sources" = "$health_checked" ] ||
+	fail "dwm-system-health sources [$(echo "$health_sources" | tr '\n' ' ')] but its root wrapper checks [$(echo "$health_checked" | tr '\n' ' ')]"
+# shellcheck disable=SC2016
+grep -Fq 'env -i PATH=/usr/bin:/bin HOME=/root DISPLAY="$display" XAUTHORITY="$copy"' "$repo/scripts/dwm-settings-display-root" ||
+	fail 'dwm-settings-display-root does not run the setup with root'"'"'s HOME and its own Xauthority copy'
+# shellcheck disable=SC2016
+if grep -q 'HOME="$home"' "$repo/scripts/dwm-settings-display-root"; then
+	fail 'dwm-settings-display-root still gives the setup the user'"'"'s HOME'
+fi
+
 # Sync Sprint 16 R16-46: one root-helper lookup, in the installed prefix only.
 # No script lists other prefixes, and the lookup derives PREFIX/libexec/lyona
 # from the caller's PREFIX/bin, or from the installed command on PATH when run
