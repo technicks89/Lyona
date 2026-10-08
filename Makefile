@@ -1181,12 +1181,15 @@ check-install-manifest: all
 check-install-preservation:
 	tests/test-install-preservation.sh
 
-.PHONY: check-install-multilib check-iso-install-credentials check-live-medium-cleanup \
+.PHONY: check-install-multilib check-install-time-sync check-iso-install-credentials check-live-medium-cleanup \
 	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary \
 	check-lyona-shell check-gearlever-first-login check-iso-install-wifi check-install-step-timing \
 	check-iso-install-mirrors
 check-install-multilib:
 	tests/test-install-multilib.sh
+
+check-install-time-sync:
+	tests/test-install-time-sync.sh
 
 check-iso-install-credentials:
 	status=0; tests/test-iso-install-credentials.sh || status=$$?; \
@@ -1422,6 +1425,7 @@ check:
 	$(MAKE) check-install
 	$(MAKE) check-install-preservation
 	$(MAKE) check-install-multilib
+	$(MAKE) check-install-time-sync
 	$(MAKE) check-iso-install-credentials
 	$(MAKE) check-lyona-version
 	$(MAKE) check-lyona-update

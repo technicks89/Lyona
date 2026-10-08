@@ -301,6 +301,66 @@ install_herdr_profile() {
 	[[ $HERDR_INSTALL_MODE == true ]] && herdr_arch_supported
 }
 
+# Time synchronization (#258): systemd-timesyncd, part of systemd, is enabled
+# when nothing else keeps the clock. Another NTP service, enabled or running, is
+# the user's choice and is kept, as is a masked systemd-timesyncd. Prints one of
+# other:UNIT, enabled, masked, missing or off. The image install has it enabled
+# already: archinstall's "ntp": true.
+time_sync_state() {
+	local unit state
+	for unit in chronyd.service ntpd.service openntpd.service; do
+		# Enabled to start at boot, not merely static, indirect or an alias,
+		# which is-enabled also exits 0 for.
+		state=$(systemctl is-enabled "$unit" 2>/dev/null) || :
+		if [[ $state == enabled || $state == enabled-runtime ]] ||
+			systemctl is-active --quiet "$unit" 2>/dev/null; then
+			printf 'other:%s\n' "$unit"
+			return 0
+		fi
+	done
+	state=$(systemctl is-enabled systemd-timesyncd.service 2>/dev/null) || :
+	case $state in
+	enabled | enabled-runtime) printf 'enabled\n' ;;
+	masked | masked-runtime) printf 'masked\n' ;;
+	not-found | '') printf 'missing\n' ;;
+	*) printf 'off\n' ;;
+	esac
+}
+
+configure_time_sync() {
+	local state
+	state=$(time_sync_state)
+	case $state in
+	other:*) ok "Time synchronization: keeping ${state#other:}." ;;
+	enabled)
+		if systemctl is-active --quiet systemd-timesyncd.service 2>/dev/null; then
+			ok "Time synchronization (systemd-timesyncd) is already enabled."
+		elif [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
+			# The image install's chroot, where systemctl start is ignored: it
+			# starts at the first boot.
+			ok "Time synchronization (systemd-timesyncd) is enabled; it starts at boot."
+		else
+			info "Starting systemd-timesyncd, which is enabled but not running..."
+			if sudo systemctl start systemd-timesyncd.service; then
+				ok "systemd-timesyncd started."
+			else
+				warn "systemd-timesyncd could not be started; it starts at the next boot."
+			fi
+		fi
+		;;
+	masked) info "systemd-timesyncd is masked, so time synchronization was left off (sudo systemctl unmask systemd-timesyncd to use it)." ;;
+	missing) warn "systemd-timesyncd was not found, so time synchronization was left off." ;;
+	*)
+		info "Enabling time synchronization (systemd-timesyncd)..."
+		if sudo systemctl enable --now systemd-timesyncd.service; then
+			ok "systemd-timesyncd enabled and started."
+		else
+			warn "systemd-timesyncd could not be enabled; turn time synchronization on in Settings or with timedatectl set-ntp true."
+		fi
+		;;
+	esac
+}
+
 # Same override the helper reads, so both agree about which machine they are
 # looking at and either branch can be exercised in a test.
 grub_in_use() {
@@ -643,6 +703,15 @@ print_install_summary() {
 	else
 		printf '  GRUB theme: files installed; this machine does not boot with GRUB\n'
 	fi
+	local time_sync
+	time_sync=$(time_sync_state)
+	case $time_sync in
+	other:*) printf '  Time synchronization: %s, kept\n' "${time_sync#other:}" ;;
+	enabled) printf '  Time synchronization: systemd-timesyncd, already enabled\n' ;;
+	masked) printf '  Time synchronization: systemd-timesyncd is masked, left as it is\n' ;;
+	missing) printf '  Time synchronization: systemd-timesyncd not found, left off\n' ;;
+	*) printf '  Time synchronization: systemd-timesyncd, enabled and started\n' ;;
+	esac
 	print_summary_profile "Terminal candidates" terminal
 	if install_herdr_profile; then
 		printf '  Herdr workspace: verified user install from https://herdr.dev/install.sh\n'
@@ -1044,6 +1113,9 @@ elif pacman -Qq lightdm >/dev/null 2>&1; then
 else
 	warn "LightDM could not be installed, so no display manager was enabled; start lyona with startx."
 fi
+
+step_timer "Time synchronization"
+configure_time_sync
 
 step_timer "yay"
 ensure_yay_installed || true

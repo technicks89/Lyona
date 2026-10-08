@@ -30,6 +30,8 @@ lacks() { # PLAN TEXT
 
 core=$(plan core)
 has "$core" '  AUR helper: '
+# Every profile, whatever this machine's state (#258).
+has "$core" '  Time synchronization: '
 lacks "$core" 'Shell configuration: mybash'
 lacks "$core" 'Wallpapers: '
 
