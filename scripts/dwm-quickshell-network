@@ -270,7 +270,9 @@ snapshot() {
 	printf 'connectivity-protocol\t1\t0\n'
 
 	if ! command -v nmcli >/dev/null 2>&1; then
-		printf 'provider\tnetwork\tunavailable\tread-only\tnmcli is not installed\n'
+		# The panel shows this detail as it is (#292): nmcli comes with
+		# NetworkManager.
+		printf 'provider\tnetwork\tunavailable\tread-only\tNetworkManager not installed\n'
 		return 0
 	fi
 
@@ -278,7 +280,7 @@ snapshot() {
 	trap 'rm -rf "$work"' EXIT HUP INT TERM
 	if ! devices >"$work/devices" 2>"$work/error" ||
 		! connections >"$work/connections" 2>>"$work/error"; then
-		printf 'provider\tnetwork\tunavailable\tread-only\tNetworkManager service is unavailable\n'
+		printf 'provider\tnetwork\tunavailable\tread-only\tNetworkManager not running\n'
 		return 0
 	fi
 

@@ -33,6 +33,8 @@ lyona_lib=$script_dir
 [[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh"
 # All four are set; config_home is not read.
 # shellcheck disable=SC2034
 lyona_xdg_dirs
@@ -160,33 +162,16 @@ clean() { # TEXT
 		LC_ALL=C.UTF-8 awk -v n="$MAX_VALUE_CHARS" '{ printf "%s", substr($0, 1, n) }'
 }
 
-# raw_key FILE KEY: KEY's value in the [Desktop Entry] group, as written.
+# raw_key FILE KEY: KEY's value in the [Desktop Entry] group, as written, by
+# the shared strict reader (#275). Missing, or a file it refuses, reads as
+# empty, so every caller keeps its own fallback.
 raw_key() { # FILE KEY
-	awk -v want="$2" '
-		/^\[/ { group = $0; next }
-		group == "[Desktop Entry]" {
-			eq = index($0, "=")
-			if (eq > 0 && substr($0, 1, eq - 1) == want) { print substr($0, eq + 1); exit }
-		}' "$1"
+	desktop_entry_get "$1" "$2" || :
 }
 
 # key FILE KEY: raw_key, cleaned: for values read from inside an AppImage.
 key() { # FILE KEY
 	clean "$(raw_key "$1" "$2")"
-}
-
-# A value for an Exec line (desktop entry specification): quoted, with ", `, $
-# and \ escaped inside the quotes and a literal % written %%, then every
-# backslash doubled by the key file's own string escaping, as webapp-create's
-# desktop_exec_arg does.
-exec_quote() { # VALUE
-	local value=${1//%/%%}
-	value=${value//\\/\\\\}
-	value=${value//\"/\\\"}
-	value=${value//\`/\\\`}
-	value=${value//\$/\\\$}
-	value="\"$value\""
-	printf '%s' "${value//\\/\\\\}"
 }
 
 # NAME as an entry id: lowercase ASCII letters, digits and dashes, at most 64
@@ -431,7 +416,7 @@ integrate() { # FILE
 		printf 'Name=%s\n' "$name"
 		[[ -z ${comment:-} ]] || printf 'Comment=%s\n' "$comment"
 		[[ -z ${categories:-} ]] || printf 'Categories=%s\n' "$categories"
-		printf 'Exec=%s%s\n' "$(exec_quote "$dest")" "${exec_args:+ $exec_args}"
+		printf 'Exec=%s%s\n' "$(desktop_exec_arg "$dest")" "${exec_args:+ $exec_args}"
 		printf 'TryExec=%s\n' "$dest"
 		printf 'Icon=%s\n' "$icon_dest"
 		printf 'Terminal=%s\n' "$([[ ${terminal:-} == true ]] && printf true || printf false)"

@@ -89,8 +89,10 @@ an untested package or installation path.
 - Record the archiso build-host version, resulting image checksum,
   architecture, firmware mode, GPU and driver path, and untested hardware in
   release evidence.
-- This image path is best-effort and has not been boot-tested on real
-  hardware or in a VM — do not claim it works until it has been.
+- This image path is best-effort. It has been installed and booted in a
+  QEMU/KVM virtual machine with UEFI firmware (first on 2026-10-03), but not
+  tested on real hardware — do not claim it works on hardware until it has
+  been.
 
 ## Desktop Settings Rules
 

@@ -5,6 +5,8 @@ readonly APP_ID=it.mijorus.gearlever
 readonly DESKTOP_ID=it.mijorus.gearlever.desktop
 readonly FLATHUB_REMOTE=flathub
 readonly APPIMAGE_MIME=application/vnd.appimage
+# Beside this script, in a checkout and in an install alike.
+default_apps=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/dwm-default-apps
 
 configure_appimage_default() {
 	local current_default
@@ -14,8 +16,13 @@ configure_appimage_default() {
 	# lyona's own handler gives way: installing Gear Lever is asking for it
 	# (#260). Any other handler is the user's choice and stays.
 	if [[ -z $current_default || $current_default == lyona-appimage.desktop ]]; then
-		xdg-mime default "$DESKTOP_ID" "$APPIMAGE_MIME"
-		printf 'Gear Lever is the default AppImage handler.\n'
+		# Through dwm-default-apps, the one writer of mimeapps.list, with its
+		# lock and recovery (#276).
+		if "$default_apps" set-mime "$APPIMAGE_MIME" "$DESKTOP_ID" >/dev/null; then
+			printf 'Gear Lever is the default AppImage handler.\n'
+		else
+			printf 'Gear Lever could not be made the AppImage handler; choose it in Settings > Defaults.\n' >&2
+		fi
 	fi
 }
 

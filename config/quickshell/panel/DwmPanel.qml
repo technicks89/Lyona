@@ -418,7 +418,10 @@ PanelWindow {
                             spacing: Theme.compactSpacing
 
                             IconText {
-                                text: root.networkModel.statusText.indexOf("offline") >= 0
+                                // Unavailable too when the text names the missing
+                                // service, "NetworkManager not installed" (#292).
+                                text: root.networkModel.providerState === "unavailable"
+                                    || root.networkModel.statusText.indexOf("offline") >= 0
                                     || root.networkModel.statusText.indexOf("unavailable") >= 0 ? "󰤭" : "󰤨"
                                 color: Theme.textStrong
                                 font.pixelSize: Theme.scaledFontSize(14 * 1.2, 8)

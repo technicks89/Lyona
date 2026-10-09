@@ -64,6 +64,9 @@ supported_mimes=(
 	image/tiff
 	audio/mpeg
 	video/mp4
+	# AppImages (#276): lyona-appimage, Gear Lever or another, set here like
+	# the rest instead of by each installer.
+	application/vnd.appimage
 )
 
 usage() {
@@ -107,6 +110,12 @@ data_dirs() {
 	configured_dirs+=("$data_home")
 	IFS=':' read -r -a split_dirs <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 	configured_dirs+=("${split_dirs[@]}")
+	# Flatpak's exports, which a login session has through Flatpak's profile
+	# script but a plain shell does not: a user-scoped Gear Lever is found
+	# either way (#276).
+	for dir in "$data_home/flatpak/exports/share" /var/lib/flatpak/exports/share; do
+		[[ ! -d $dir ]] || configured_dirs+=("$dir")
+	done
 	for dir in "${configured_dirs[@]}"; do
 		[[ -n $dir && -z ${seen[$dir]+x} ]] || continue
 		seen[$dir]=1
@@ -555,11 +564,11 @@ acquire_lock() {
 		fi
 	fi
 	defaults_lock_pid=$$
-	defaults_lock_starttime=$(process_starttime "$$") || {
-		rmdir -- "$defaults_state_dir/.lock" 2>/dev/null || :
-		printf 'dwm-default-apps: cannot identify the defaults lock owner\n' >&2
-		return 1
-	}
+	# Under arch-chroot (the image install) this process has a PID of its own
+	# namespace that the chroot's /proc does not show. No session runs there to
+	# race it, so the lock is recorded with a start time of 0, which a later
+	# check treats as stale, rather than refused.
+	defaults_lock_starttime=$(process_starttime "$$" 2>/dev/null) || defaults_lock_starttime=0
 	if ! printf '%s %s\n' "$defaults_lock_pid" "$defaults_lock_starttime" \
 		>"$defaults_state_dir/.lock/owner" ||
 		! chmod 600 -- "$defaults_state_dir/.lock/owner"; then

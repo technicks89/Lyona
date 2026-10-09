@@ -495,7 +495,9 @@ Runtime dependencies are classified as:
   Flatpak with its GTK portal, `lyona-appimage` with `fuse2` and
   `squashfs-tools` for AppImages (Gear Lever from a user-scoped Flathub remote
   only with `--with-gearlever`), Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
-  browser, and GNOME Keyring (`gnome-keyring`) for secret storage.
+  browser, GNOME Keyring (`gnome-keyring`) for secret storage, the Thunar
+  file manager that Super+E opens, and NetworkManager, enabled only when no
+  other network manager is in use.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
   password login. A `startx` session has no such stack; its keyring stays locked
@@ -505,7 +507,7 @@ Runtime dependencies are classified as:
   `2026.10.0-beta.2` on, `lyona-update` refuses a release whose signature is
   missing or does not verify, and refuses to update without `cosign`
   (decision D-31).
-- Optional: the Herdr terminal workspace, file manager, network tray, theme
+- Optional: the Herdr terminal workspace, theme
   utilities, display-manager greeter customization, wallpapers, and
   hardware-specific helpers.
 
@@ -777,8 +779,10 @@ Static archiso profile checks (package-map sync, script syntax) are necessary
 but not sufficient. A released image must record its build host, archiso
 version, architecture, firmware mode, GPU and driver path, package-resolution result,
 completed base install and postinstall run, first boot, and hardware
-limitations. As of this writing the archiso path is best-effort and has not
-been boot-tested — see `docs/RELEASING.md`.
+limitations. As of this writing the archiso path is best-effort: the image has
+been installed and booted in a QEMU/KVM virtual machine with UEFI firmware
+(first on 2026-10-03), legacy BIOS boots but is not yet qualified, and it has
+not been tested on real hardware — see `docs/RELEASING.md`.
 
 ## 6. Filesystem and Installation Contract
 
@@ -948,12 +952,11 @@ The existing desktop provides dwm, a managed Quickshell panel and launcher,
 notifications, quick controls, power actions, network and Bluetooth surfaces,
 display helpers, a system-health dashboard, and the unified Settings platform.
 Settings includes the completed Phase 2 display and input mutation surface,
-Phase 3 NetworkManager, BlueZ, PipeWire, and media workflows, and Phase 4 power,
-session-action, default-application, MIME, and XDG autostart workflows. The
-remaining Settings mutation surface in Section 5.10 begins with Phase 5 themes,
-wallpaper, fonts, cursors, toolkit integration, notifications, and practical X11
-accessibility controls, sequenced in `docs/roadmap/ROADMAP.md` and defined in
-`docs/roadmap/TASKS.md`.
+Phase 3 NetworkManager, BlueZ, PipeWire, and media workflows, Phase 4 power,
+session-action, default-application, MIME, and XDG autostart workflows, Phase 5
+personalization and accessibility, and Phase 6 system management. Phase 7, Arch
+image and release qualification, is active: sequenced in
+`docs/roadmap/ROADMAP.md` and defined in `docs/roadmap/TASKS.md`.
 
 The installer contains an Arch Linux-only package map and rejects other
 systems. The build uses `pkg-config`, supports staged installation with

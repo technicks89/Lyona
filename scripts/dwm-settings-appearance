@@ -29,6 +29,8 @@ lyona_lib=$script_dir
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-watchdog.sh
 . "$lyona_lib/dwm-watchdog.sh"
+# shellcheck source=scripts/dwm-theme-resolve.sh
+. "$lyona_lib/dwm-theme-resolve.sh"
 lyona_xdg_dirs
 config_dir=$config_home/lyona
 themes_file=${DWM_APPEARANCE_THEMES_FILE:-$config_home/lyona/themes.toml}
@@ -1456,21 +1458,6 @@ watch_inventory() {
 	done
 }
 
-gtk_theme_version_available() {
-	local name=$1 version=$2 root
-	case $name in
-	Adwaita | Adwaita-dark) return 0 ;;
-	esac
-	while IFS= read -r root; do
-		[[ -d $root/themes/$name/gtk-$version ]] && return 0
-	done < <(data_roots)
-	[[ -d ${HOME:-}/.themes/$name/gtk-$version ]]
-}
-
-gtk_theme_available() {
-	gtk_theme_version_available "$1" 3.0 || gtk_theme_version_available "$1" 4.0
-}
-
 gtk_settings_file_matches() {
 	local file=$1 key=$2 expected=$3
 	awk -F= -v target_key="$key" -v expected="$expected" '
@@ -1802,50 +1789,50 @@ emit_color_records() {
 }
 
 emit_integrations() {
-	local dark requested_gtk fallback_gtk cursor qt_backend terminal terminal_theme_file
+	local dark requested_gtk cursor qt_backend terminal terminal_theme_file
 	[[ -n $resolved_theme ]] || return 0
 
 	dark=${value[$resolved_theme$key_separator'dark_mode']:-true}
 	[[ $dark == true || $dark == false ]] || dark=true
-	requested_gtk=${value[$resolved_theme$key_separator'gtk_theme']:-}
-	# Kept in lockstep with theme-apply.sh's default_gtk_theme() and its
-	# fallback. If these two disagree the gtk integration reports stale-theme
-	# forever, because the snapshot names one theme and the applier wrote
-	# another.
-	if [[ -z $requested_gtk ]]; then
-		if gtk_theme_available "Lyona-$resolved_theme"; then
-			requested_gtk=Lyona-$resolved_theme
-		elif [[ $dark == true ]]; then
-			requested_gtk=Adwaita-dark
-		else
-			requested_gtk=Adwaita
-		fi
-	elif ! gtk_theme_available "$requested_gtk" &&
-		gtk_theme_available "Lyona-$resolved_theme"; then
-		requested_gtk=Lyona-$resolved_theme
+	# The theme theme-apply.sh writes, worked out by the same code: a Toolkit
+	# override first, then the palette's choice and its fallbacks (#274).
+	lyona_read_personalization
+	lyona_gtk_theme_resolve "$resolved_theme" "${value[$resolved_theme$key_separator'gtk_theme']:-}"
+	# A GTK theme the palette names and that is missing is reported as missing,
+	# not as the Adwaita apply falls back to. A palette that names none simply
+	# expects Adwaita until its Lyona-<palette> theme is generated.
+	requested_gtk=$LYONA_GTK_THEME
+	if [[ -n ${value[$resolved_theme$key_separator'gtk_theme']:-} ]]; then
+		requested_gtk=${LYONA_GTK_THEME_FELL_BACK:-$LYONA_GTK_THEME}
 	fi
-	if gtk_theme_version_available "$requested_gtk" 3.0 &&
-		gtk_theme_version_available "$requested_gtk" 4.0 &&
+	if lyona_gtk_theme_has_version "$requested_gtk" 3.0 &&
+		lyona_gtk_theme_has_version "$requested_gtk" 4.0 &&
 		gtk_theme_applied "$requested_gtk"; then
 		printf 'integration\tgtk\tavailable\t%s\tRequested GTK theme is installed and applied\n' \
 			"$(clean_field "$requested_gtk")"
-	elif gtk_theme_available "$requested_gtk" &&
-		{ ! gtk_theme_version_available "$requested_gtk" 3.0 ||
-			! gtk_theme_version_available "$requested_gtk" 4.0; }; then
+	elif lyona_gtk_theme_available "$requested_gtk" &&
+		{ ! lyona_gtk_theme_has_version "$requested_gtk" 3.0 ||
+			! lyona_gtk_theme_has_version "$requested_gtk" 4.0; }; then
 		printf 'integration\tgtk\tpartial\t%s\tRequested GTK theme is missing GTK 3 or GTK 4 assets\n' \
 			"$(clean_field "$requested_gtk")"
 		add_error gtk missing-version "GTK theme '$requested_gtk' does not support both GTK 3 and GTK 4"
 		if ! gtk_theme_applied "$requested_gtk"; then
 			add_error gtk stale-theme "Applied GTK settings do not match '$requested_gtk'"
 		fi
-	elif gtk_theme_available "$requested_gtk"; then
+	elif lyona_gtk_theme_available "$requested_gtk"; then
 		printf 'integration\tgtk\tpartial\t%s\tRequested GTK theme is installed but not applied\n' \
 			"$(clean_field "$requested_gtk")"
 		add_error gtk stale-theme "Applied GTK settings do not match '$requested_gtk'"
 	else
-		[[ $dark == true ]] && fallback_gtk=Adwaita-dark || fallback_gtk=Adwaita
-		printf 'integration\tgtk\tpartial\t%s\tRequested GTK theme is missing; apply falls back to %s\n' \
-			"$(clean_field "$requested_gtk")" "$fallback_gtk"
+		# theme-apply.sh falls back to Adwaita for the palette's theme, but
+		# keeps a Toolkit override's name, which GTK then draws as Adwaita.
+		if [[ -n $LYONA_GTK_THEME_FELL_BACK ]]; then
+			printf 'integration\tgtk\tpartial\t%s\tRequested GTK theme is missing; apply falls back to Adwaita\n' \
+				"$(clean_field "$requested_gtk")"
+		else
+			printf 'integration\tgtk\tpartial\t%s\tRequested GTK theme is missing; GTK applications use Adwaita\n' \
+				"$(clean_field "$requested_gtk")"
+		fi
 		add_error gtk missing-theme "GTK theme '$requested_gtk' is not installed"
 	fi
 
@@ -1865,7 +1852,7 @@ emit_integrations() {
 		add_error qt stale-backend "Recorded Qt theme backend '$qt_backend' is unsupported or unavailable"
 	fi
 
-	[[ $dark == true ]] && cursor=Capitaine-Cursors-White || cursor=Capitaine-Cursors
+	cursor=$(lyona_cursor_theme_resolve "$dark")
 	if asset_available icons "$cursor" && cursor_theme_applied "$cursor"; then
 		printf 'integration\tcursor\tavailable\t%s\tManaged cursor theme is installed and applied\n' "$cursor"
 	elif asset_available icons "$cursor"; then

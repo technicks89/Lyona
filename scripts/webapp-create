@@ -3,20 +3,14 @@
 APPS_DIR="$HOME/.local/share/applications"
 ICONS_DIR="$HOME/.local/share/icons"
 
-# One Exec= argument, as the desktop-entry spec requires (Sync Sprint 12 S12-18):
-# a literal % becomes %%; an argument with a reserved character is put in
-# double quotes, with ", `, $ and \ escaped by a backslash inside them; then
-# the key file's own escaping doubles every backslash.
-desktop_exec_arg() {
-	local arg=${1//%/%%}
-	if [[ $arg =~ [[:space:]\"\'\\\>\<\~\|\&\;\$\*\?\#\(\)\`] ]]; then
-		arg=${arg//\\/\\\\}
-		arg=${arg//\"/\\\"}
-		arg=${arg//\`/\\\`}
-		arg=${arg//\$/\\\$}
-		arg="\"$arg\""
-	fi
-	printf '%s' "${arg//\\/\\\\}"
+# desktop_exec_arg, the Exec= writer the scripts share (#275): installed in
+# PREFIX/lib/lyona, beside the scripts in a checkout.
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-desktop-entry.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh" || {
+	echo "webapp-create: $lyona_lib/dwm-desktop-entry.sh is missing" >&2
+	exit 1
 }
 
 create_webapp() {

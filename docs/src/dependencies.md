@@ -17,7 +17,7 @@ Group names that are not listed print nothing.
 ## Installer profiles
 
 `install.sh --profile` (or `DWM_INSTALL_PROFILE`) takes three values, described in
-[Installation](./install.md#automated-installer):
+[Installation](./install.md#2-run-the-installer):
 
 | Profile | What it installs |
 | --- | --- |
@@ -34,9 +34,11 @@ The groups are made of smaller groups:
 | `optional` | theme-optional + desktop-optional + system-management-optional |
 | `full` | required + recommended + optional + gaming |
 
-The `optional` and `gaming` additions in `full` are conveniences. The desktop starts
-without Picom, a wallpaper, Thunar or a preferred terminal, and dwm does not depend
-on any of them.
+The `optional` and `gaming` additions in `full` are conveniences. Picom is part of
+the recommended desktop, since the overview's window previews need it. Still, dwm
+depends on none of these: the desktop starts without Picom, a wallpaper, a file
+manager or a preferred terminal, and without Picom the overview shows icon-and-title
+cards.
 
 ## Groups
 
@@ -62,13 +64,15 @@ What a running session needs: D-Bus, `xdotool` and `xprop` (the Quickshell state
 
 ### `desktop`
 
-The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, AppImages, the login keyring, and the signature check of lyona's own updates.
+The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, AppImages, the login keyring, the signature check of lyona's own updates, the Thunar file manager and NetworkManager.
 
-`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `cosign` `fuse2` `squashfs-tools` `gnome-keyring` `pacman-contrib`
+`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `cosign` `fuse2` `squashfs-tools` `gnome-keyring` `pacman-contrib` `thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `networkmanager`
+
+Thunar with SMB browsing, archives and thumbnails (the `file-manager` group) is what Super+E opens. NetworkManager (the `network` group) is what the panel's network status and Wi-Fi read; the installer enables it only when no other network manager (systemd-networkd, iwd, ConnMan, dhcpcd, netctl) is in use, and it starts at the next boot. Without it the panel says "NetworkManager not installed" or "NetworkManager not running".
 
 `fuse2` and `squashfs-tools` (the `appimage` group) are for AppImages: `fuse2` runs the classic ones, which need `libfuse.so.2` (the newer static-runtime ones run with Flatpak's `fuse3`), and `lyona-appimage` reads an AppImage's launcher entry and icon with `unsquashfs`, without running it.
 
-`cosign` checks the Sigstore signature of each lyona release before `lyona-update` installs it (decision D-31). Without it, an update to a signed release is refused.
+`cosign` checks the Sigstore signature of each lyona release before `lyona-update` installs it. Without it, an update to a signed release is refused.
 
 `gnome-keyring` (the `keyring` group) stores secrets for browsers, NetworkManager and other applications. It includes `pam_gnome_keyring.so`, which Arch's LightDM PAM stack already loads, so a password login unlocks the keyring; there is no separate PAM package. Under `startx` the keyring is unlocked on first use instead. `dwm-diagnostics` and System Health flag it when it is missing.
 
@@ -125,9 +129,9 @@ The shell add-ons the `mybash` configuration uses: Starship, zoxide, fzf, Fastfe
 
 ### `desktop-optional`
 
-Thunar with SMB browsing and archive support, thumbnails, NetworkManager, `rsync` and `autorandr`. Every package is in the official repositories.
+`rsync` and `autorandr`. Every package is in the official repositories. The file manager and NetworkManager are in `desktop`.
 
-`thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `networkmanager` `rsync` `autorandr`
+`rsync` `autorandr`
 
 ### `theme-optional`
 
@@ -169,13 +173,13 @@ The LightDM display manager and its greeter.
 
 What the live install medium itself runs, on top of archiso's `releng`
 profile: the whole package list of the install image. The desktop is not on
-it, as the new system downloads every package it installs (#229).
+it, as the new system downloads every package it installs.
 
 - `plymouth` draws the boot splash;
 - `gum` draws the wizard, and `jq` writes its credentials file;
 - `curl` checks the network, looks up the timezone and sets up the CachyOS repositories;
 - `openssl` hashes the password, and `pciutils` (`lspci`) finds the GPU;
-- `reflector` ranks the package mirrors in your country (#249).
+- `reflector` ranks the package mirrors in your country.
 
 `plymouth` `gum` `jq` `curl` `openssl` `pciutils` `reflector`
 
@@ -200,9 +204,11 @@ project's own test jobs and are not part of an install.
 
 Every package above is in the official Arch repositories. Lyona limits the AUR to
 where no official package can do the job (`docs/AUR-PACKAGES.md`, enforced by
-`make check-aur-policy`). Today that is three places:
+`make check-aur-policy`). Today that is four places:
 
 - the `yay` helper `install.sh` installs for you;
+- Topgrade, built from the AUR's pinned, reviewed `topgrade-bin` PKGBUILD, as
+  Topgrade is only in the AUR;
 - on the live medium, an older NVIDIA card's legacy driver, built from a pinned AUR
   PKGBUILD when the CachyOS repository cannot supply it;
 - Settings -> System -> **Update packages**, which runs your own `yay -Syu` when `yay`

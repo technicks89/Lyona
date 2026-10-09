@@ -90,10 +90,10 @@ When focus moves to a different window or monitor (via keyboard), the mouse curs
 ## Live Configuration
 
 ### TOML Hotkeys (`hotkeys.toml`)
-Keybindings are parsed from `config/hotkeys.toml` at runtime. Edit and save — bindings update without recompiling or restarting dwm.
+Keybindings are parsed from `~/.config/lyona/hotkeys.toml` at runtime. Edit and save — bindings update without recompiling or restarting dwm.
 
 ### TOML Themes (`themes.toml`)
-Colors for dwm, terminal, GTK, and Qt are sourced from `config/themes.toml`.
+Colors for dwm, terminal, GTK, and Qt are sourced from `~/.config/lyona/themes.toml`.
 Save the file to apply a new theme instantly across supported apps.
 
 ---
@@ -104,7 +104,7 @@ Save the file to apply a new theme instantly across supported apps.
 |--------|-------------|
 | `dwm-controlcenter` | Quickshell control center (`Super`+`F1`) |
 | `lyona-shell` | Opens a part of the shell: `launcher toggle`, `overview toggle`, `controlcenter open\|toggle\|openKeybinds`, `power toggle`, `power confirm logout\|reboot`. The default keybinds call it; use it in your own `hotkeys.toml` rather than Quickshell's IPC, which can change between releases |
-| `dwm-keybinds` | Searchable keybind viewer (`Super`+`/`) |
+| `dwm-keybinds` | Opens the keybind viewer (`Super`+`/`) |
 | `dwm-quickshell-launcher` | Indexes desktop entries and launches ChatGPT with a native-first web fallback |
 | `dwm-screenshot` | Cursor-free `maim` wrapper (screen, full, gui, clip modes) |
 | `dwm-settings-theme` | Previews, applies, resets, and recovers theme selection transactionally |

@@ -106,11 +106,13 @@ INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
 # beside PREFIX/bin, where a command finds it relative to itself (a checkout
 # keeps it beside the scripts). Sync Sprint 12 S12-13 step 1.
 INSTALL_LIBS = \
+	scripts/dwm-desktop-entry.sh \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
 	scripts/dwm-preview.sh \
 	scripts/dwm-quickshell-lifecycle.sh \
 	scripts/dwm-simple-watch.sh \
+	scripts/dwm-theme-resolve.sh \
 	scripts/dwm-utils.sh \
 	scripts/dwm-trust.sh \
 	scripts/dwm-watchdog.sh \
@@ -777,6 +779,7 @@ check-gearlever-install:
 # lyona-appimage (#260). Its fixture test skips (77) without squashfs-tools,
 # except in CI, which installs it: there a skip is a failure.
 check-lyona-appimage:
+	tests/test-desktop-entry.sh
 	tests/test-appimage-handler.sh
 	@status=0; tests/test-lyona-appimage.sh || status=$$?; \
 		if [ "$$status" -eq 77 ] && [ -z "$${CI:-}" ]; then exit 0; fi; \

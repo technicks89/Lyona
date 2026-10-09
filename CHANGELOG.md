@@ -22,6 +22,35 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   while it kept three processes, woke every 30 seconds and made the panel's
   state bridge rebuild on every power-supply event. Login also skips the
   process scan that kept it to one copy per display.
+- `install.sh`'s summary leads with what it changes on the system: the
+  upgrade, the `~/.bashrc` replacement, GRUB, LightDM, the repositories (#294).
+  Package groups follow as counts with the names wrapped underneath, then what
+  it sets up for your account. It no longer shows a package command that said
+  `--noconfirm` while pacman asks, or repeats the header. The CachyOS question
+  comes after the summary, just before the confirmation, instead of before the
+  plan on every run.
+- The recommended profile includes the Thunar file manager, so Super+E opens
+  one, and NetworkManager, which the panel's network status reads (#292).
+  NetworkManager is enabled only when no other network manager
+  (systemd-networkd, iwd, ConnMan, dhcpcd, netctl) is in use, and starts at
+  the next boot. Without it the panel says "NetworkManager not installed" or
+  "NetworkManager not running" instead of "NET unavailable".
+- Settings > Defaults shows the AppImage handler and can change it (#276).
+  `install.sh`, `lyona-update` and `install-gearlever` now set it through
+  `dwm-default-apps`, the one writer of `mimeapps.list`, with its lock and
+  recovery, instead of each calling `xdg-mime` directly. A user-scoped Gear
+  Lever is found even in a shell without Flatpak's directories on
+  `XDG_DATA_DIRS`.
+- Desktop entries are read and their `Exec=` lines written by one library,
+  `scripts/dwm-desktop-entry.sh` (#275). Its reader refuses a file with
+  control characters, a NUL byte, a repeated group or a duplicate key, so an
+  AppImage's own entry cannot carry a hidden second value. `lyona-appimage` and
+  `webapp-create` use it; `lyona-appimage` now quotes an `Exec=` path only
+  when it needs quoting, as `webapp-create` did. A test stops new hand-written
+  readers.
+- `install.sh` ends with the run's warnings (#290): "Finished with N
+  warning(s)" and the list, under a different title, instead of "Installation
+  Complete!" over warnings that scrolled past in pacman's output.
 - The panel's state bridge starts about 80% fewer processes when a window's
   title changes (#283): 4 instead of 22, measured with five windows. The
   active window now comes with the root properties instead of from
@@ -33,6 +62,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings > Appearance shows a Toolkit GTK or cursor theme as applied
+  (#274). It worked out the expected theme with its own copy of
+  `theme-apply.sh`'s rule, which ignored the Toolkit overrides, searched other
+  directories and expected an `Adwaita-dark` GTK no longer has, so an
+  overridden theme showed as stale for good. Both now use
+  `scripts/dwm-theme-resolve.sh`.
 - The volume keys change the default output, the device the panel's slider
   shows, instead of the ALSA Master control (#278). With a USB, Bluetooth or
   HDMI output they changed a different device. They now go through

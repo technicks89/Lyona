@@ -12,7 +12,13 @@ source "$REPO_DIR/scripts/dwm-packages.sh"
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' NC='\033[0m'
 info() { printf "${CYAN}[INFO]${NC} %s\n" "$1"; }
 ok() { printf "${GREEN}[OK]${NC} %s\n" "$1"; }
-warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; }
+# Every warning is kept for the closing screen (#290): in the middle of
+# pacman's output it scrolls past unread.
+INSTALL_WARNINGS=()
+warn() {
+	printf "${YELLOW}[WARN]${NC} %s\n" "$1"
+	INSTALL_WARNINGS+=("$1")
+}
 err() { printf "${RED}[ERROR]${NC} %s\n" "$1"; }
 
 # Where the install's time goes (#250). step_timer LABEL ends the section
@@ -427,6 +433,80 @@ configure_time_sync() {
 	esac
 }
 
+# NetworkManager, on recommended and full (#292): the panel's network status
+# and Wi-Fi come from it. It is enabled only when nothing else manages the
+# network, so a working systemd-networkd, iwd, ConnMan, dhcpcd or netctl setup
+# is never taken over. Prints image, enabled, masked, other:UNIT or off.
+network_manager_state() {
+	local unit state
+	# The image install: its postinstall enables NetworkManager itself, and in
+	# its chroot systemctl answers for the live medium, which runs networkd.
+	if [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
+		printf 'image\n'
+		return 0
+	fi
+	state=$(systemctl is-enabled NetworkManager.service 2>/dev/null) || :
+	case $state in
+	enabled | enabled-runtime)
+		printf 'enabled\n'
+		return 0
+		;;
+	masked | masked-runtime)
+		printf 'masked\n'
+		return 0
+		;;
+	esac
+	for unit in systemd-networkd.service iwd.service connman.service dhcpcd.service; do
+		state=$(systemctl is-enabled "$unit" 2>/dev/null) || :
+		if [[ $state == enabled || $state == enabled-runtime ]] ||
+			systemctl is-active --quiet "$unit" 2>/dev/null; then
+			printf 'other:%s\n' "$unit"
+			return 0
+		fi
+	done
+	# netctl runs one unit per profile (netctl@PROFILE) or interface
+	# (netctl-auto@IFACE): active now, or enabled to start at boot. Enabled
+	# template instances are links in a *.wants directory.
+	unit=$({
+		systemctl list-units --type=service --state=active --plain --no-legend 'netctl*' 2>/dev/null
+		systemctl list-unit-files --type=service --state=enabled --plain --no-legend 'netctl*' 2>/dev/null
+	} | awk '$1 ~ /^netctl/ { print $1; exit }') || :
+	if [[ -z $unit ]]; then
+		for unit in "${LYONA_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"/*.wants/netctl*; do
+			[[ -e $unit || -L $unit ]] || continue
+			unit=${unit##*/}
+			break
+		done
+		[[ $unit != *'*'* ]] || unit=
+	fi
+	if [[ -n $unit ]]; then
+		printf 'other:%s\n' "$unit"
+		return 0
+	fi
+	printf 'off\n'
+}
+
+# Enabled, not started: the install still downloads after this, and
+# NetworkManager taking over the interfaces could drop the connection.
+configure_network_manager() {
+	local state
+	state=$(network_manager_state)
+	case $state in
+	image) ok "NetworkManager is set up by the image installer." ;;
+	enabled) ok "NetworkManager is already enabled." ;;
+	masked) info "NetworkManager is masked, so it was left off (sudo systemctl unmask NetworkManager to use it)." ;;
+	other:*) info "NetworkManager was installed but not enabled: ${state#other:} manages the network. The panel's network status needs NetworkManager." ;;
+	*)
+		info "Enabling NetworkManager..."
+		if sudo systemctl enable NetworkManager.service; then
+			ok "NetworkManager enabled; it starts at the next boot."
+		else
+			warn "NetworkManager could not be enabled; the panel shows no network status until it is (sudo systemctl enable --now NetworkManager)."
+		fi
+		;;
+	esac
+}
+
 # Same override the helper reads, so both agree about which machine they are
 # looking at and either branch can be exercised in a test.
 grub_in_use() {
@@ -476,9 +556,9 @@ cachyos_repos_configured() {
 		command grep -Fxq 'cachyos-repos: configured'
 }
 
-confirm_cachyos_setup() {
-	local answer
-
+# Before the summary: what this machine allows and already has, so the summary
+# says it correctly.
+prepare_cachyos_setup() {
 	cachyos_supported || {
 		if [[ $CACHYOS_REPOS_APPROVED == true ]]; then
 			warn "The CachyOS repositories are x86_64 Arch only; skipping them."
@@ -490,6 +570,13 @@ confirm_cachyos_setup() {
 	if cachyos_repos_configured; then
 		CACHYOS_REPOS_APPROVED=true
 	fi
+}
+
+# After the summary (#294): the questions, interactive runs only.
+ask_cachyos_setup() {
+	local answer
+
+	cachyos_supported || return 0
 	if [[ $NON_INTERACTIVE == true || $DRY_RUN == true ]]; then
 		return
 	fi
@@ -678,27 +765,130 @@ package_line() {
 print_summary_profile() {
 	local label=$1
 	local profile=$2
-	local packages
+	local -a packages=()
 
-	packages="$(package_line "$profile")"
-	if [[ -n $packages ]]; then
-		printf '  %s: %s\n' "$label" "$packages"
-	else
+	mapfile -t packages < <(dwm_packages "$DISTRO_FAMILY" "$profile")
+	if ((${#packages[@]} == 0)); then
 		printf '  %s: none\n' "$label"
+		return 0
 	fi
+	# A count first; the names after it, wrapped, not as one long line (#294).
+	printf '  %s: %d\n' "$label" "${#packages[@]}"
+	printf '%s\n' "${packages[*]}" | fold -s -w 70 | sed 's/^/      /; s/ *$//'
 }
 
+# The plan, before anything changes: what it does to the system first, then
+# the packages, then what it sets up for this account (#294).
 print_install_summary() {
 	echo ""
-	echo "Installation summary:"
-	printf '  Distribution: %s\n' "$DISTRO_NAME"
-	printf '  Family: %s\n' "$DISTRO_FAMILY"
-	printf '  Package manager: %s\n' "$PKG_CMD"
-	printf '  Profile: %s\n' "$INSTALL_PROFILE"
-	printf '  Mode: %s\n' "$([[ $NON_INTERACTIVE == true ]] && echo non-interactive || echo interactive)"
+	printf 'Installation summary: %s, %s profile, %s\n' "$DISTRO_NAME" "$INSTALL_PROFILE" \
+		"$([[ $NON_INTERACTIVE == true ]] && echo non-interactive || echo interactive)"
+
+	echo ""
+	echo "System changes:"
 	# One transaction for every repository package (#247), gaming included
 	# (#248), and the system upgrade with it.
-	printf '  Package install: one pacman -Syu --needed transaction, which also upgrades the system\n'
+	printf '  System upgrade: every installed package, in the same pacman -Syu --needed transaction as the packages below\n'
+	if install_recommended_profile; then
+		# Every change it makes is listed (Sync Sprint 16 R16-28).
+		printf '  Shell configuration: mybash replaces ~/.bashrc, ~/.config/starship.toml, the fastfetch config and ~/.local/bin/starship-theme with links (previous files kept as .bak.<time>)\n'
+	fi
+	if [[ $GRUB_THEME_MODE != true ]]; then
+		printf '  GRUB theme: files installed, bootloader left unchanged (--skip-grub-theme)\n'
+	elif grub_in_use; then
+		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first)\n' "$GRUB_THEME_NAME"
+		# lyona-grub-theme leaves a GRUB_DISABLE_BOOTNEXT the user set alone.
+		if command grep -Eq '^[[:space:]]*GRUB_DISABLE_BOOTNEXT=' "${LYONA_GRUB_DEFAULTS:-/etc/default/grub}"; then
+			printf '  GRUB firmware entries: as GRUB_DISABLE_BOOTNEXT in /etc/default/grub sets them (kept)\n'
+		else
+			printf '  GRUB firmware entries: "(EFI BootNext)" entries hidden (/etc/default/grub.d/90-lyona-menu.cfg)\n'
+		fi
+	else
+		printf '  GRUB theme: files installed; this machine does not boot with GRUB\n'
+	fi
+	if install_optional_profile; then
+		local dm
+		dm=$(detect_display_manager)
+		if [[ -n $dm ]]; then
+			printf '  Display manager: %s, already installed\n' "$dm"
+		else
+			printf '  Display manager: LightDM, installed and enabled\n'
+		fi
+		if arch_gaming_profile; then
+			# Arch's own [multilib], not a third-party repository.
+			if [[ $ARCH_GAMING_REPOS_APPROVED == true ]]; then
+				printf '  Arch [multilib] repository: approved\n'
+			elif arch_multilib_enabled; then
+				printf '  Arch [multilib] repository: already enabled\n'
+			else
+				printf '  Arch [multilib] repository: requires separate confirmation\n'
+			fi
+			printf '  gamemode group: %s is added to it, with the gaming packages\n' "$(id -un)"
+		fi
+	fi
+	if cachyos_supported; then
+		if cachyos_repos_configured; then
+			printf '  CachyOS repositories: already configured\n'
+		elif [[ $CACHYOS_REPOS_APPROVED == true ]]; then
+			printf '  CachyOS repositories: approved; they replace pacman with the CachyOS build and upgrade to optimized packages\n'
+		elif [[ $NON_INTERACTIVE == true ]]; then
+			printf '  CachyOS repositories: not requested (use --enable-cachyos-repos)\n'
+		else
+			printf '  CachyOS repositories: not requested (use --enable-cachyos-repos); an interactive install asks after this summary\n'
+		fi
+		if [[ $CACHYOS_KERNEL_MODE == true ]]; then
+			printf '  CachyOS kernel: %s with a boot entry\n' "$CACHYOS_KERNEL"
+		else
+			printf '  CachyOS kernel: not requested (use --cachyos-kernel)\n'
+		fi
+	fi
+	if install_recommended_profile; then
+		local network
+		network=$(network_manager_state)
+		case $network in
+		image) printf '  NetworkManager: set up by the image installer\n' ;;
+		enabled) printf '  NetworkManager: already enabled\n' ;;
+		masked) printf '  NetworkManager: installed; masked, left as it is\n' ;;
+		other:*) printf '  NetworkManager: installed, not enabled (%s manages the network)\n' "${network#other:}" ;;
+		*) printf '  NetworkManager: installed and enabled; starts at the next boot\n' ;;
+		esac
+	fi
+	local time_sync
+	time_sync=$(time_sync_state)
+	case $time_sync in
+	other:*) printf '  Time synchronization: %s, kept\n' "${time_sync#other:}" ;;
+	enabled) printf '  Time synchronization: systemd-timesyncd, already enabled\n' ;;
+	masked) printf '  Time synchronization: systemd-timesyncd is masked, left as it is\n' ;;
+	turned-off) printf '  Time synchronization: turned off since lyona set it up, left off\n' ;;
+	missing) printf '  Time synchronization: systemd-timesyncd not found, left off\n' ;;
+	*) printf '  Time synchronization: systemd-timesyncd, enabled and started\n' ;;
+	esac
+	if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
+		printf '  AUR helper: already installed\n'
+	else
+		printf '  AUR helper: yay-bin, built from its pinned AUR PKGBUILD with makepkg\n'
+	fi
+
+	echo ""
+	echo "Packages:"
+	print_summary_profile "Required packages" required
+	if install_recommended_profile; then
+		print_summary_profile "Recommended packages" recommended
+	else
+		printf '  Recommended packages: skipped\n'
+	fi
+	if install_optional_profile; then
+		print_summary_profile "Optional extras" optional
+		if arch_gaming_profile; then
+			print_summary_profile "Arch gaming packages" gaming
+		fi
+	else
+		printf '  Optional extras: skipped\n'
+	fi
+	print_summary_profile "Terminal candidates" terminal
+
+	echo ""
+	echo "For this account:"
 	local build_overrides='' build_variable
 	for build_variable in DWM_REFRESH_RATE DWM_FONT_SIZE DWM_MODKEY DWM_MFACT DWM_NMASTER \
 		DWM_CURSORWARP DWM_SWALLOWFLOATING DWM_RESIZEHINTS; do
@@ -715,9 +905,7 @@ print_install_summary() {
 	else
 		printf '  dwm build: config.def.h defaults (use --configure-build to choose)\n'
 	fi
-	print_summary_profile "Required packages" required
 	if install_recommended_profile; then
-		print_summary_profile "Recommended packages" recommended
 		printf '  AppImages: opened with lyona-appimage, which adds them to the launcher (unless another handler is set)\n'
 		if install_gearlever_profile; then
 			printf '  Gear Lever: user-scoped Flathub install (%s)\n' 'it.mijorus.gearlever'
@@ -729,89 +917,20 @@ print_install_summary() {
 		else
 			printf '  Topgrade: skipped (--skip-topgrade)\n'
 		fi
-		# Every change it makes is listed (Sync Sprint 16 R16-28).
-		printf '  Shell configuration: mybash replaces ~/.bashrc, ~/.config/starship.toml, the fastfetch config and ~/.local/bin/starship-theme with links (previous files kept as .bak.<time>)\n'
-	else
-		printf '  Recommended packages: skipped\n'
 	fi
 	if install_optional_profile; then
-		print_summary_profile "Optional extras" optional
 		if [[ -d $BG_DIR ]]; then
 			printf '  Wallpapers: already present in %s\n' "$BG_DIR"
 		else
 			printf '  Wallpapers: downloaded into %s (pinned commit)\n' "$BG_DIR"
 		fi
-		local dm
-		dm=$(detect_display_manager)
-		if [[ -n $dm ]]; then
-			printf '  Display manager: %s, already installed\n' "$dm"
-		else
-			printf '  Display manager: LightDM, installed and enabled\n'
-		fi
-		if arch_gaming_profile; then
-			print_summary_profile "Arch gaming packages" gaming
-			# Arch's own [multilib], not a third-party repository.
-			if [[ $ARCH_GAMING_REPOS_APPROVED == true ]]; then
-				printf '  Arch [multilib] repository: approved\n'
-			elif arch_multilib_enabled; then
-				printf '  Arch [multilib] repository: already enabled\n'
-			else
-				printf '  Arch [multilib] repository: requires separate confirmation\n'
-			fi
-			printf '  gamemode group: %s is added to it, with the gaming packages\n' "$(id -un)"
-		fi
-	else
-		printf '  Optional extras: skipped\n'
 	fi
-	if cachyos_supported; then
-		if cachyos_repos_configured; then
-			printf '  CachyOS repositories: already configured\n'
-		elif [[ $CACHYOS_REPOS_APPROVED == true ]]; then
-			printf '  CachyOS repositories: approved\n'
-		else
-			printf '  CachyOS repositories: not requested (use --enable-cachyos-repos)\n'
-		fi
-		if [[ $CACHYOS_KERNEL_MODE == true ]]; then
-			printf '  CachyOS kernel: %s with a boot entry\n' "$CACHYOS_KERNEL"
-		else
-			printf '  CachyOS kernel: not requested (use --cachyos-kernel)\n'
-		fi
-	fi
-	if [[ $GRUB_THEME_MODE != true ]]; then
-		printf '  GRUB theme: files installed, bootloader left unchanged (--skip-grub-theme)\n'
-	elif grub_in_use; then
-		printf '  GRUB theme: %s, selected in /etc/default/grub (backed up first)\n' "$GRUB_THEME_NAME"
-		# lyona-grub-theme leaves a GRUB_DISABLE_BOOTNEXT the user set alone.
-		if command grep -Eq '^[[:space:]]*GRUB_DISABLE_BOOTNEXT=' "${LYONA_GRUB_DEFAULTS:-/etc/default/grub}"; then
-			printf '  GRUB firmware entries: as GRUB_DISABLE_BOOTNEXT in /etc/default/grub sets them (kept)\n'
-		else
-			printf '  GRUB firmware entries: "(EFI BootNext)" entries hidden (/etc/default/grub.d/90-lyona-menu.cfg)\n'
-		fi
-	else
-		printf '  GRUB theme: files installed; this machine does not boot with GRUB\n'
-	fi
-	local time_sync
-	time_sync=$(time_sync_state)
-	case $time_sync in
-	other:*) printf '  Time synchronization: %s, kept\n' "${time_sync#other:}" ;;
-	enabled) printf '  Time synchronization: systemd-timesyncd, already enabled\n' ;;
-	masked) printf '  Time synchronization: systemd-timesyncd is masked, left as it is\n' ;;
-	turned-off) printf '  Time synchronization: turned off since lyona set it up, left off\n' ;;
-	missing) printf '  Time synchronization: systemd-timesyncd not found, left off\n' ;;
-	*) printf '  Time synchronization: systemd-timesyncd, enabled and started\n' ;;
-	esac
-	print_summary_profile "Terminal candidates" terminal
 	if install_herdr_profile; then
 		printf '  Herdr workspace: verified user install from https://herdr.dev/install.sh\n'
 	elif [[ $HERDR_INSTALL_MODE == true ]]; then
 		printf '  Herdr workspace: skipped (unsupported architecture: %s)\n' "$ARCH"
 	else
 		printf '  Herdr workspace: skipped (optional; use --install-herdr to enable)\n'
-	fi
-	if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
-		printf '  AUR helper: already installed\n'
-	else
-		printf '  AUR helper: yay-bin, built from its pinned AUR PKGBUILD with makepkg\n'
 	fi
 	echo ""
 }
@@ -826,6 +945,9 @@ confirm_install_summary() {
 		exit 0
 	fi
 
+	# With the plan on screen, not before it on every run (#294).
+	ask_cachyos_setup
+
 	if [[ $ASSUME_YES == true ]]; then
 		return
 	fi
@@ -839,6 +961,40 @@ confirm_install_summary() {
 		exit 1
 		;;
 	esac
+}
+
+# The closing banner, and every warning of the run under it (#290), so a run
+# that left something out does not end on "Installation Complete!".
+print_completion_banner() {
+	local message
+	local -A seen=()
+	# The child scripts' warnings too; each once, though reconcile runs twice.
+	if [[ -n ${LYONA_INSTALL_WARNINGS_FILE:-} && -s $LYONA_INSTALL_WARNINGS_FILE ]]; then
+		mapfile -t -O "${#INSTALL_WARNINGS[@]}" INSTALL_WARNINGS <"$LYONA_INSTALL_WARNINGS_FILE"
+	fi
+	local -a unique=()
+	for message in "${INSTALL_WARNINGS[@]}"; do
+		[[ -z ${seen[$message]+set} ]] || continue
+		seen[$message]=1
+		unique+=("$message")
+	done
+	INSTALL_WARNINGS=("${unique[@]}")
+	echo ""
+	echo "╔═══════════════════════════════════════════╗"
+	if ((${#INSTALL_WARNINGS[@]} == 0)); then
+		echo "║          Installation Complete!           ║"
+		echo "╚═══════════════════════════════════════════╝"
+		echo ""
+		return 0
+	fi
+	echo "║   Installation finished, with warnings    ║"
+	echo "╚═══════════════════════════════════════════╝"
+	echo ""
+	printf "${YELLOW}Finished with %d warning(s):${NC}\n" "${#INSTALL_WARNINGS[@]}"
+	for message in "${INSTALL_WARNINGS[@]}"; do
+		printf '  - %s\n' "$message"
+	done
+	echo ""
 }
 
 # A tip, never a change (#249): pacman.conf is the user's, and the installer
@@ -989,11 +1145,9 @@ echo "║              lyona Installer              ║"
 echo "╚═══════════════════════════════════════════╝"
 echo ""
 info "Distribution: $DISTRO_NAME"
-info "Family: $DISTRO_FAMILY"
-info "Package manager: $PKG_CMD"
 info "Install profile: $INSTALL_PROFILE"
 pacman_parallel_downloads_tip
-confirm_cachyos_setup
+prepare_cachyos_setup
 # Before the summary, into a staging directory (#289): the answers are part of
 # what it shows, and become config.h only once the install goes ahead, so a
 # declined summary leaves nothing behind. An existing config.h is kept, so then
@@ -1009,6 +1163,11 @@ if [[ $CONFIGURE_BUILD == true && $DRY_RUN != true ]]; then
 	fi
 fi
 confirm_install_summary
+# Scripts this install runs that warn and carry on (lyona-reconcile-user, also
+# under make install-user) add their warnings here, for the closing list (#290).
+LYONA_INSTALL_WARNINGS_FILE=$(mktemp)
+export LYONA_INSTALL_WARNINGS_FILE
+trap 'rm -f -- "$LYONA_INSTALL_WARNINGS_FILE"; [[ -z ${BUILD_CONFIG_STAGING:-} ]] || rm -rf -- "$BUILD_CONFIG_STAGING"' EXIT
 confirm_arch_multilib_repository
 step_timer "CachyOS repositories"
 setup_cachyos
@@ -1228,6 +1387,11 @@ fi
 step_timer "Time synchronization"
 configure_time_sync
 
+if install_recommended_profile; then
+	step_timer "NetworkManager"
+	configure_network_manager
+fi
+
 step_timer "yay"
 ensure_yay_installed || true
 
@@ -1297,11 +1461,7 @@ fi
 
 print_step_timer_summary
 
-echo ""
-echo "╔═══════════════════════════════════════════╗"
-echo "║          Installation Complete!           ║"
-echo "╚═══════════════════════════════════════════╝"
-echo ""
+print_completion_banner
 info "Detected: $DISTRO_NAME"
 echo "  • Installed version: $("$REPO_DIR/scripts/lyona-version" print 2>/dev/null || echo unknown)"
 echo "  • Build configuration: $REPO_DIR/config.h"
@@ -1310,7 +1470,7 @@ echo "  • Display setup: dwm-display-setup"
 if grub_in_use; then
 	echo "  • GRUB theme: lyona-grub-theme status (remove with lyona-grub-theme remove)"
 fi
-echo "  • Log out and select 'dwm', or start with: startx"
+echo "  • Log out and select the 'lyona' session, or start with: startx"
 if [[ $currentdm == "lightdm" ]]; then
 	echo "  • Start LightDM now (optional): sudo systemctl start lightdm.service"
 fi

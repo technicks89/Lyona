@@ -52,6 +52,15 @@ dwm_packages() {
 		dwm_packages "$family" appimage
 		dwm_packages "$family" keyring
 		dwm_packages "$family" update-indicator
+		# Super+E's file manager and the panel's network status (#292): the
+		# everyday desktop had neither before full.
+		dwm_packages "$family" file-manager
+		dwm_packages "$family" network
+		;;
+	arch:file-manager)
+		printf '%s\n' \
+			thunar gvfs gvfs-smb tumbler thunar-archive-plugin file-roller \
+			xdg-user-dirs
 		;;
 	arch:browser)
 		# A web browser, for SUPER+B and links from other programs (#240):
@@ -89,10 +98,7 @@ dwm_packages() {
 		# AccessX controls (sticky/slow/bounce/mouse keys) used to need the
 		# AUR-only xkbset; they are now served by the in-tree
 		# scripts/dwm-xkbset.
-		printf '%s\n' \
-			thunar gvfs gvfs-smb tumbler thunar-archive-plugin file-roller \
-			xdg-user-dirs networkmanager \
-			rsync autorandr
+		printf '%s\n' rsync autorandr
 		;;
 	arch:system-management)
 		# PackageKit on Arch is a first-class alpm frontend: the `packagekit`

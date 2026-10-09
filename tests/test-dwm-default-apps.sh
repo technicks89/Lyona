@@ -140,6 +140,15 @@ MimeType=image/png;image/jpeg;image/gif;image/bmp;image/tiff;
 NoDisplay=true
 DESKTOP
 
+# lyona's AppImage handler (#276): NoDisplay, like the installed one.
+cat >"$work/data/applications/lyona-appimage.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=AppImage
+Exec=sxiv %f
+NoDisplay=true
+MimeType=application/vnd.appimage;
+DESKTOP
 cp "$work/data/applications/sxiv.desktop" "$work/data/applications/hidden-image.desktop"
 printf 'Hidden=true\n' >>"$work/data/applications/hidden-image.desktop"
 sed 's/^Exec=.*/Exec=\/missing-dwm-test-image-viewer %F/' \
@@ -489,6 +498,19 @@ grep -Fqx $'mime\timage/png\tavailable\tsxiv.desktop\tsxiv\tXDG MIME default is 
 result=$(run_helper reset-mime image/png)
 [[ $result == $'defaults-result\t1\t0\treset-mime\timage/png\t\tok' ]]
 [[ $(sha256sum "$work/home/.config/mimeapps.list") == "$image_defaults_before" ]]
+
+# The AppImage handler is one of the types Settings > Defaults shows and sets
+# (#276): a row in the snapshot, lyona-appimage as a candidate, set and reset
+# like the others.
+appimage_before=$(sha256sum "$work/home/.config/mimeapps.list")
+result=$(run_helper set-mime application/vnd.appimage lyona-appimage.desktop)
+[[ $result == $'defaults-result\t1\t0\tset-mime\tapplication/vnd.appimage\tlyona-appimage.desktop\tok' ]]
+snapshot=$(run_helper snapshot)
+grep -Fqx $'mime\tapplication/vnd.appimage\tavailable\tlyona-appimage.desktop\tAppImage\tXDG MIME default is readable' <<<"$snapshot"
+grep -Fqx $'mime-candidate\tapplication/vnd.appimage\tlyona-appimage.desktop\tAppImage\tavailable\tInstalled desktop entry' <<<"$snapshot"
+result=$(run_helper reset-mime application/vnd.appimage)
+[[ $result == $'defaults-result\t1\t0\treset-mime\tapplication/vnd.appimage\t\tok' ]]
+[[ $(sha256sum "$work/home/.config/mimeapps.list") == "$appimage_before" ]]
 
 : >"$work/log"
 expect_status 1 run_helper set-mime image/png hidden-image.desktop
