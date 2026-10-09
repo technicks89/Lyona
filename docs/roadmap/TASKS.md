@@ -27,11 +27,11 @@ as the bar.
 **Open questions this first-pass breakdown does not resolve** (need your
 input, not a guess):
 
-- Is legacy BIOS an actual target, or is UEFI-only acceptable long-term?
-  `docs/RELEASING.md` currently states plainly that the wizard "cannot boot
-  BIOS/legacy systems" and only offers a manual `archinstall` fallback for
-  that case — Phase 7's own ROADMAP wording ("legacy BIOS where supported")
-  already hedges on this, but doesn't say which way.
+- Is legacy BIOS a qualified target? It boots: since #235 the wizard installs
+  GRUB for both UEFI and a legacy BIOS (MBR disk, ext4 `/boot`), as
+  `docs/RELEASING.md` says. But it has not been qualified, in a VM or on
+  hardware, and Phase 7's ROADMAP wording ("legacy BIOS where supported")
+  does not say whether it must be.
 - Which specific hardware and VM targets actually matter for the matrix
   (ARCH-004 below)? The ROADMAP names categories (UEFI, common display
   configs, audio, networking, suspend, NVIDIA) but not concrete machines/VM
@@ -56,7 +56,7 @@ and merge each before starting the next:
 - [x] `archiso/packages.x86_64`/`archiso/pacman.conf` exist and
   `dwm_packages arch iso` (`scripts/dwm-packages.sh`) stays in sync with
   them — `check-archiso`. Since #229 the image carries only what the live
-  medium runs (6 packages on top of `releng`); the desktop was 66 packages the
+  medium runs (7 packages on top of `releng`); the desktop was 66 packages the
   new system downloads anyway.
 - [x] `scripts/build-lyona-arch-iso.sh --profile-only` stages the branded
   profile and stamps `VERSION`/commit/label into every required field without
@@ -144,8 +144,8 @@ Acceptance:
 
 ### ARCH-004: VM/Hardware Matrix and Release-Notes Limitations
 
-- [ ] Resolve the open legacy-BIOS question above, then qualify or
-  explicitly document it as unsupported.
+- [ ] Legacy BIOS boots but is not yet qualified: resolve the question above,
+  then qualify it or document it as unsupported.
 - [ ] Qualify common display configurations (single monitor at minimum;
   multi-monitor if hardware is available — Phase 5's own real-hardware
   multi-monitor qualification is still separately outstanding too, see

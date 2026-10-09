@@ -183,7 +183,11 @@ Scope {
         root.online = generalState === "connected";
         root.stateKnown = true;
         const stateReadable = root.providerState === "available" || root.providerState === "restricted";
-        root.statusText = stateReadable ? (connectedDevice.length > 0 ? "NET " + connectedDevice : "NET offline") : "NET unavailable";
+        // Unavailable names the missing service, such as "NetworkManager not
+        // installed", rather than a bare "NET unavailable" (#292).
+        root.statusText = stateReadable ? (connectedDevice.length > 0 ? "NET " + connectedDevice : "NET offline")
+            : root.providerState === "unavailable" && root.providerDetail.length > 0 ? root.providerDetail
+            : "NET unavailable";
         if (root.providerState !== "available") root.message = root.providerDetail;
         else if (!root.actionFailed && !root.busy) root.message = "";
         if (root.selectedIndex >= connections.length) root.selectedIndex = Math.max(0, connections.length - 1);

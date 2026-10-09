@@ -493,8 +493,9 @@ without turning Quickshell into an unrestricted administration console.
 
 ## Phase 7: Arch Image and Release Qualification
 
-Status: Active. Pre-release images are published (`2026.08.0-beta.1`,
-`2026.10.0-beta.1`). Done: an image built on the maintainer's host installed
+Status: Active. Pre-release images are published: `2026.08.0-beta.1`, and
+`2026.10.0-beta.3` to `2026.10.0-beta.5`, which the release workflow built and
+signed (decision D-31). Done: an image built on the maintainer's host installed
 in a UEFI KVM virtual machine and reached a working desktop (2026-10-03,
 `docs/RELEASING.md`). Still open for the exit criteria below: real hardware,
 the NVIDIA, LUKS and ext4 paths, the manual fallback, an image the release
@@ -547,10 +548,12 @@ Updates and rollbacks without an administrator password (requested
 2026-09-27, when decision D-15 removed `lyona-update-root`'s checkout mode) are a
 future sprint, tabled for the current work. Two decisions shape it: D-16 makes the
 root-owned system copy the only runtime source, so an update always writes where
-only root can; and D-14 declined release signing for now, which leaves the
-administrator's approval as the only proof that a release is genuine. Removing the
-password prompt is only safe once something else provides that proof, so this
-sprint reopens D-14.
+only root can; and D-14 declined release signing, which left the administrator's
+approval as the only proof that a release is genuine. D-31 has since reversed D-14:
+from `2026.10.0-beta.2` on, the release workflow signs every release, and
+`lyona-update` refuses one whose signature is missing or does not verify. That is
+the proof a password-free update needs; what remains is keeping that check in front
+of the root-owned write without the prompt, which the design below does.
 
 Recommended design (2026-09-27): ship Lyona as a signed pacman package.
 

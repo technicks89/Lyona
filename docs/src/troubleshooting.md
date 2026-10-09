@@ -46,7 +46,7 @@ flatpak run it.mijorus.gearlever
 ```
 
 The recommended and full installers include Flatpak and the GTK portal; Gear
-Lever, from Flathub for the user, only with `--with-gearlever` (#260). To repair only the
+Lever, from Flathub for the user, only with `--with-gearlever`. To repair only the
 application setup from an installed lyona checkout, run:
 
 ```sh
@@ -65,12 +65,14 @@ it again; `dwm-flatpak-setup --user` checks the remote on its own.
 **Black screen / returns immediately to login:**
 - Run `dwm-diagnostics` and resolve any required X11/session failures.
 - Preview required packages with `./install.sh --dry-run --profile core`.
-- Check `.xinitrc` exists and ends with `exec dwm`
+- Check `~/.xinitrc` exists and ends by starting dwm, as the shipped one does:
+  `dbus-run-session -- sh -c 'exec dwm'`
 - Run `startx` from a TTY to see error output in the terminal
 
 **`dwm: cannot open display`:**
 - You must launch dwm from a TTY, not an existing X session
-- If using a display manager, ensure `dwm.desktop` is in `/usr/share/xsessions/`
+- With a display manager, choose the **lyona** session; its file is
+  `/usr/share/xsessions/dwm.desktop`
 
 ---
 
@@ -78,7 +80,9 @@ it again; `dwm-flatpak-setup --user` checks the remote on its own.
 
 - Install the recommended desktop layer: `./install.sh --profile recommended`
 - Verify the managed config exists: `ls ~/.config/quickshell/shell.qml`
-- Run manually: `quickshell --no-duplicate`
+- Restart it with <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>, or
+  `dwm-quickshell-controlcenter action restart-quickshell`. Started by hand
+  instead, a second Quickshell does not get the hotkeys
 - Check fonts: `fc-list | grep -i meslo`
 
 ---
@@ -87,7 +91,7 @@ it again; `dwm-flatpak-setup --user` checks the remote on its own.
 
 - Run `alacritty` from an existing shell to inspect its error directly
 - Install Alacritty with `sudo pacman -S alacritty`
-- Confirm the fixed terminal in `config/hotkeys.toml`:
+- Confirm the fixed terminal in `~/.config/lyona/hotkeys.toml`:
   ```toml
   [vars]
   terminal = "alacritty"

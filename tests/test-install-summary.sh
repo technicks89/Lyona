@@ -90,6 +90,138 @@ fi
 mkdir -p "$work/home/Pictures/backgrounds"
 has "$(plan full)" "  Wallpapers: already present in $work/home/Pictures/backgrounds"
 
+# The summary leads with the system changes, then the packages, then this
+# account; no package command (it showed --noconfirm even when pacman asks)
+# and no repeated header lines (#294).
+for summary in "$core" "$recommended" "$full"; do
+	order=$(grep -x -e 'System changes:' -e 'Packages:' -e 'For this account:' <<<"$summary" | paste -sd '|' -)
+	[[ $order == 'System changes:|Packages:|For this account:' ]] ||
+		fail "the summary sections are out of order: $order"
+	lacks "$summary" 'Package manager:'
+	lacks "$summary" '--noconfirm'
+	lacks "$summary" '  Family:'
+done
+has "$recommended" '  System upgrade: every installed package'
+has "$full" '  Required packages: '
+# The CachyOS question comes after the plan, just before the confirmation,
+# when it is asked at all (x86_64, repositories not configured yet).
+if command -v script >/dev/null 2>&1; then
+	# A pacman.conf without the CachyOS sections, so the question comes up even
+	# on a machine that has them.
+	printf '[options]\n[core]\nInclude = /etc/pacman.d/mirrorlist\n' >"$work/pacman.conf"
+	asked=$(printf 'n\nn\n' | env HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" \
+		XDG_DATA_HOME="$work/home/.local/share" LYONA_CACHYOS_PACMAN_CONF="$work/pacman.conf" \
+		script -qec "$(printf '%q ' "$fresh/install.sh" --profile core)" /dev/null 2>&1) || :
+	if [[ $asked == *'an interactive install asks after this summary'* ]]; then
+		question=$(grep -n -m1 'Add the CachyOS repositories?' <<<"$asked" | cut -d: -f1)
+		account=$(grep -n -m1 'For this account:' <<<"$asked" | cut -d: -f1)
+		continue_at=$(grep -n -m1 'Continue with installation?' <<<"$asked" | cut -d: -f1)
+		if [[ -z $question || -z $account || -z $continue_at ]] ||
+			((account >= question || question > continue_at)); then
+			fail "the CachyOS question is not between the summary and the confirmation"$'\n'"$asked"
+		fi
+	elif [[ $(uname -m) == x86_64 ]]; then
+		fail "an interactive x86_64 run did not say the CachyOS question comes after the summary"$'\n'"$asked"
+	fi
+fi
+
+# The closing screen lists the run's warnings (#290): warn() keeps them and
+# print_completion_banner shows them, with another title. A clean run has none.
+{
+	sed -n '/^INSTALL_WARNINGS=()$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^print_completion_banner() {$/,/^}$/p' "$repo/install.sh"
+} >"$work/banner.sh"
+grep -q '^print_completion_banner() {$' "$work/banner.sh" || fail 'print_completion_banner not found in install.sh'
+# shellcheck disable=SC2016 # expanded by the inner bash
+clean=$(bash -c 'YELLOW= NC=; . "$1"; print_completion_banner' bash "$work/banner.sh")
+has "$clean" 'Installation Complete!'
+lacks "$clean" 'warning'
+# shellcheck disable=SC2016 # expanded by the inner bash
+warned=$(bash -c 'YELLOW= NC=; . "$1"; warn "Topgrade could not be installed." >/dev/null
+	warn "LightDM was not enabled." >/dev/null; print_completion_banner' bash "$work/banner.sh")
+lacks "$warned" 'Installation Complete!'
+has "$warned" 'Installation finished, with warnings'
+has "$warned" 'Finished with 2 warning(s):'
+has "$warned" '  - Topgrade could not be installed.'
+has "$warned" '  - LightDM was not enabled.'
+grep -Fxq 'print_completion_banner' "$repo/install.sh" || fail 'install.sh does not end with print_completion_banner'
+# A child script's warnings, from the file install.sh exports, join the list,
+# each once though lyona-reconcile-user runs twice (#290).
+printf '%s\n' 'AppImages have no default handler.' 'AppImages have no default handler.' >"$work/child-warnings"
+# shellcheck disable=SC2016 # expanded by the inner bash
+merged=$(LYONA_INSTALL_WARNINGS_FILE="$work/child-warnings" bash -c 'YELLOW= NC=; . "$1"
+	warn "Topgrade could not be installed." >/dev/null; print_completion_banner' bash "$work/banner.sh")
+has "$merged" 'Finished with 2 warning(s):'
+has "$merged" '  - AppImages have no default handler.'
+[[ $(grep -c 'AppImages have no default handler' <<<"$merged") == 1 ]] || fail "a repeated child warning was listed twice: $merged"
+
+# NetworkManager (#292): enabled on recommended only when nothing else manages
+# the network, and enabled, not started, mid-install. A systemctl stub answers
+# from STUB_ENABLED (unit=state pairs) and STUB_ACTIVE (active units).
+{
+	sed -n '/^network_manager_state() {$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^configure_network_manager() {$/,/^}$/p' "$repo/install.sh"
+} >"$work/nm.sh"
+grep -q '^configure_network_manager() {$' "$work/nm.sh" || fail 'configure_network_manager not found in install.sh'
+mkdir -p "$work/nm-bin"
+cat >"$work/nm-bin/systemctl" <<'STUB'
+#!/bin/sh
+case $1 in
+is-enabled)
+	for pair in $STUB_ENABLED; do
+		[ "${pair%%=*}" = "$2" ] && { printf '%s\n' "${pair#*=}"; exit 0; }
+	done
+	printf 'disabled\n'
+	exit 1
+	;;
+is-active)
+	for unit in $STUB_ACTIVE; do [ "$unit" = "$3" ] && exit 0; done
+	exit 3
+	;;
+list-units)
+	for unit in $STUB_ACTIVE; do
+		case $unit in netctl*) printf '%s loaded active running Profile\n' "$unit" ;; esac
+	done
+	;;
+esac
+exit 0
+STUB
+cat >"$work/nm-bin/sudo" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"$NM_LOG"
+STUB
+# Not a chroot unless STUB_CHROOT says so, whatever the machine running this.
+cat >"$work/nm-bin/systemd-detect-virt" <<'STUB'
+#!/bin/sh
+[ -n "${STUB_CHROOT:-}" ]
+STUB
+chmod +x "$work/nm-bin/systemctl" "$work/nm-bin/sudo" "$work/nm-bin/systemd-detect-virt"
+nm_case() { # ENABLED ACTIVE: prints the state, then what configure did
+	: >"$work/nm.log"
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	env PATH="$work/nm-bin:$PATH" NM_LOG="$work/nm.log" STUB_ENABLED="$1" STUB_ACTIVE="$2" \
+		${LYONA_SOURCE:+LYONA_SOURCE="$LYONA_SOURCE"} ${STUB_CHROOT:+STUB_CHROOT=1} \
+		bash -c 'ok() { :; }; info() { :; }; warn() { :; }; . "$1"; network_manager_state; configure_network_manager' \
+		bash "$work/nm.sh"
+	cat "$work/nm.log"
+}
+[[ $(nm_case 'NetworkManager.service=enabled' '') == enabled ]] || fail 'an enabled NetworkManager was not recognised'
+[[ $(nm_case 'NetworkManager.service=masked' '') == masked ]] || fail 'a masked NetworkManager was not left alone'
+[[ $(nm_case 'systemd-networkd.service=enabled' '') == other:systemd-networkd.service ]] ||
+	fail 'NetworkManager was enabled over an enabled systemd-networkd'
+[[ $(nm_case '' 'iwd.service') == other:iwd.service ]] || fail 'NetworkManager was enabled over a running iwd'
+[[ $(nm_case '' 'netctl@home.service') == other:netctl@home.service ]] ||
+	fail 'NetworkManager was enabled over an active netctl profile'
+[[ $(nm_case '' '') == $'off\nsystemctl enable NetworkManager.service' ]] ||
+	fail "NetworkManager was not enabled (and only enabled) when nothing manages the network: $(nm_case '' '')"
+# The image install leaves it to its postinstall, which enables it; inside
+# that chroot systemctl answers for the live medium (found in a VM).
+[[ $(LYONA_SOURCE=iso nm_case 'systemd-networkd.service=enabled' 'systemd-networkd.service') == image ]] ||
+	fail 'the image install judged NetworkManager by the live medium'
+[[ $(STUB_CHROOT=1 nm_case '' '') == image ]] || fail 'a chroot was not left to the image installer'
+has "$recommended" '  NetworkManager: '
+lacks "$core" 'NetworkManager: '
+
 # A non-interactive run answers makepkg's pacman prompt: behind the image
 # install's spinner nothing else can, and it waited there forever (Sync Sprint
 # 16, found in a VM).

@@ -1,6 +1,6 @@
 # Theming
 
-Themes are defined in `config/themes.toml`. Change the active theme and **save**
+Themes are defined in `~/.config/lyona/themes.toml`. Change the active theme and **save**
 to update dwm, Quickshell, terminal, GTK, and Qt styling. No restart needed.
 
 ```toml
@@ -120,7 +120,7 @@ palette in this file, and that generated theme is what a palette falls back to.
 Regenerate one by hand with:
 
 ```bash
-scripts/lyona-gtk-theme generate mytheme config/themes.toml ~/.themes/Lyona-mytheme
+lyona-gtk-theme generate mytheme ~/.config/lyona/themes.toml ~/.themes/Lyona-mytheme
 ```
 
 Applications built on libadwaita ignore custom GTK themes by design and stay in
@@ -138,7 +138,7 @@ Settings > Appearance, or set `qt` in `personalization.conf`.
 
 ## Applying Themes via Control Center
 
-Open the Control Center with <kbd>Super</kbd> + <kbd>F1</kbd>, navigate to **Appearance → Select Theme**, and pick from the list. The theme switches immediately.
+Open the Control Center with <kbd>Super</kbd> + <kbd>F1</kbd>, open **Appearance**, and pick a theme from the list. The theme switches immediately.
 
 ---
 ## Wallpapers

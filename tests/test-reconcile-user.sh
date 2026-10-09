@@ -18,10 +18,21 @@ make_workspace
 reconcile=$repo/scripts/lyona-reconcile-user
 table=$repo/scripts/hotkeys-migrations
 mkdir -p "$work/bin"
-# xdg-mime: answers nothing, logs defaults. No quickshell unless STUB_QUICKSHELL.
+# xdg-mime: logs defaults, writes them to mimeapps.list and answers queries
+# from it, as dwm-default-apps checks after setting one (#276).
 cat >"$work/bin/xdg-mime" <<'EOF'
 #!/bin/sh
-[ "$1" = default ] && printf '%s\n' "$2" >>"$TEST_DIR/xdg-mime.log"
+list=$XDG_CONFIG_HOME/mimeapps.list
+case $1 in
+default)
+	[ -z "${STUB_MIME_FAIL:-}" ] || exit 1
+	printf '%s\n' "$2" >>"$TEST_DIR/xdg-mime.log"
+	printf '[Default Applications]\n%s=%s\n' "$3" "$2" >"$list"
+	;;
+query)
+	[ -f "$list" ] && sed -n "s|^$3=||p" "$list"
+	;;
+esac
 exit 0
 EOF
 chmod +x "$work/bin/xdg-mime"
@@ -33,8 +44,13 @@ for command_path in /usr/bin/*; do
 done
 
 home=$work/home
+# lyona's AppImage handler, as make install-system puts it in the data dirs.
+mkdir -p "$home/.local/share/applications"
+printf '[Desktop Entry]\nType=Application\nName=AppImage\nExec=true %%f\nNoDisplay=true\nMimeType=application/vnd.appimage;\n' \
+	>"$home/.local/share/applications/lyona-appimage.desktop"
 run() { # ARGS...: the reconcile step for the scratch account
 	env -i HOME="$home" PATH="$work/bin:$work/sysbin" TEST_DIR="$work" \
+		${STUB_MIME_FAIL:+STUB_MIME_FAIL=1} ${LYONA_INSTALL_WARNINGS_FILE:+LYONA_INSTALL_WARNINGS_FILE="$LYONA_INSTALL_WARNINGS_FILE"} \
 		XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" XDG_STATE_HOME="$home/.local/state" \
 		"$reconcile" "$@"
 }
@@ -60,6 +76,17 @@ grep -Fq 'treating it as recommended' "$work/out" || fail "an unrecorded account
 grep -Fq 'AppImages open with lyona-appimage' "$work/out" || fail "a recommended account did not get the AppImage handler: $(cat "$work/out")"
 [[ ! -e $record ]] || fail 'an inferred profile was recorded as if it had been chosen'
 rm -f "$work/bin/quickshell"
+
+# A warning reaches install.sh's closing list through the file it exports
+# (#290), as well as stderr.
+rm -f "$home/.config/mimeapps.list"
+LYONA_INSTALL_WARNINGS_FILE=$work/install-warnings
+: >"$LYONA_INSTALL_WARNINGS_FILE"
+STUB_MIME_FAIL=1 run --profile recommended >"$work/out" 2>&1 || :
+grep -Fq '[WARN] AppImages have no default handler' "$work/out" || fail "the failed handler was not a warning: $(cat "$work/out")"
+grep -Fxq 'AppImages have no default handler; open them with lyona-appimage open FILE.' "$LYONA_INSTALL_WARNINGS_FILE" ||
+	fail "the warning did not reach install.sh's list: $(cat "$LYONA_INSTALL_WARNINGS_FILE")"
+unset LYONA_INSTALL_WARNINGS_FILE
 
 # ── the hotkeys migration ───────────────────────────────────────────────
 hotkeys=$home/.config/lyona/hotkeys.toml

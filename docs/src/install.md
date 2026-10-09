@@ -9,14 +9,17 @@ For a new, dedicated machine, with UEFI or a legacy BIOS. It installs GRUB,
 with the CyberRe boot menu theme.
 
 1. **Download** the newest image, `lyona-VERSION-x86_64.iso`, and its
-   `SHA256SUMS` from the
+   `lyona-VERSION-SHA256SUMS` from the
    [Releases](https://github.com/technicks89/Lyona/releases) page. Images are
    pre-releases while lyona is in beta. Check the download, in the folder that
    holds both:
 
    ```bash
-   sha256sum -c SHA256SUMS --ignore-missing
+   sha256sum -c lyona-VERSION-SHA256SUMS --ignore-missing
    ```
+
+   The file also lists the source archive; `--ignore-missing` skips it when
+   you did not download it.
 
    Releases from `2026.10.0-beta.2` on are signed. With `cosign`, and the
    release's `lyona-VERSION.sigstore.json` beside the image, check that it was
@@ -109,46 +112,26 @@ git clone https://github.com/technicks89/Lyona.git lyona
 cd lyona
 ```
 
-### 2. Dependencies
+### 2. Run the installer
 
-The supported dependency path is the installer because it resolves Arch
-package names from the shared map:
+The installer installs the packages, builds dwm, installs it and sets up your
+account, all from the checkout. See its plan first, then install:
 
 ```bash
-./install.sh --dry-run --non-interactive --profile core
-./install.sh --profile full
+./install.sh --dry-run
+./install.sh
 ```
 
-Use `core` for the required build/X11/session packages and Alacritty,
+It installs the `full` profile unless you choose another with `--profile`:
+`core` for the required build/X11/session packages and Alacritty,
 `recommended` for the complete desktop layer, or `full` for optional extras
-such as file-manager integration, wallpapers, and
-display-manager setup. On x86_64 Arch, `full` can also install Steam,
-Gamescope, GameMode, and MangoHud after repository approval.
+such as wallpapers and display-manager setup. On x86_64 Arch, `full` can also
+install Steam, Gamescope, GameMode, and MangoHud after repository approval.
 See [Dependencies and Package Profiles](./dependencies.md) for exactly which
 packages each profile installs.
 The installer separately asks before enabling the `multilib` repository for
 Steam, Gamescope, GameMode, and MangoHud. Declining skips the gaming subset
 without affecting other full-profile extras.
-
-### 3. Build
-
-From the same checkout:
-
-```bash
-cp config.def.h config.h
-./scripts/dev-sync-install.sh
-```
-
-For later source-checkout updates, run the same command so the binary,
-installed helpers, shipped defaults and managed Quickshell configuration stay at
-one revision. Run `./scripts/dev-sync-install.sh --check` after any requested
-session restart to verify the active runtime.
-
-### Automated Installer
-
-```bash
-./install.sh
-```
 
 The script requires `ID=arch` before handling dependency installation, font
 copying, display-manager integration, or config placement. Every other
@@ -162,7 +145,7 @@ units are disabled from early startup but otherwise preserved.
 System files are installed with `sudo`, while configuration and data under the
 user's XDG directories are installed as that user.
 
-**Time synchronization** is on by default, in every profile (#258). When no
+**Time synchronization** is on by default, in every profile. When no
 other time service keeps the clock, the installer enables and starts
 `systemd-timesyncd`, which comes with `systemd`, so nothing is downloaded for
 it; the summary says so first. If `chronyd`, `ntpd` or `openntpd` is enabled or
@@ -171,7 +154,7 @@ masked `systemd-timesyncd` is left masked. Running the installer again changes
 nothing. An image install has it from `archinstall` already. Once lyona has
 seen it on, it records that in `/var/lib/lyona/time-sync`, so if you turn it
 off later, in Settings or with `timedatectl set-ntp false`, running the
-installer again leaves it off and says so (#268). An existing install gets it
+installer again leaves it off and says so. An existing install gets it
 the next time the installer runs.
 
 Every profile and Arch image defaults to Alacritty without Herdr. With the
@@ -197,8 +180,11 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   skipped unless `--install-herdr` is provided.
 - `recommended`: `core` plus the recommended desktop layer such as Quickshell,
   Picom, Feh, Dex, fonts, theming, screenshot, audio, Bluetooth control and
-  tray tools, brightness tools, Flatpak, the GTK desktop portal, and GNOME
-  Keyring, which a display-manager login unlocks. It also
+  tray tools, brightness tools, Flatpak, the GTK desktop portal, GNOME
+  Keyring, which a display-manager login unlocks, the Thunar file manager
+  (Super+E), and NetworkManager. NetworkManager is enabled only when no other
+  network manager (systemd-networkd, iwd, ConnMan, dhcpcd or netctl) is in use,
+  and starts at the next boot. It also
   installs Celluloid, mpv, and sxiv, and gives a fresh account Celluloid for
   audio and video and sxiv for images through `scripts/seed-default-apps.sh`,
   which also makes Thunar the folder handler when Thunar is installed. An
@@ -217,7 +203,7 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   the installer leaves links that are already in place alone. Those links
   point into the checkout, so editing `~/.bashrc` edits the checkout: running
   the installer again updates a checkout without changes to the reviewed
-  mybash version in place, and leaves one with your edits as it is (#267).
+  mybash version in place, and leaves one with your edits as it is.
   Offline, the existing checkout is kept.
   - **Topgrade.** It also installs [Topgrade](https://github.com/topgrade-rs/topgrade),
     which updates everything with one `topgrade` command. Topgrade is only in
@@ -248,9 +234,8 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
     silently. lyona no longer installs `rustup` or `cargo-update`; if you have
     no other use for them, remove them with `sudo pacman -Rns rustup
     cargo-update`.
-- `full`: `recommended` plus optional extras such as Thunar with SMB-share
-  browsing, network tray utilities,
-  wallpapers, and display-manager setup. x86_64 Arch full installs also
+- `full`: `recommended` plus optional extras such as wallpapers, display-manager
+  setup, `rsync` and `autorandr`. x86_64 Arch full installs also
   include Steam, Gamescope, and 64-bit and 32-bit GameMode and MangoHud support
   after separate repository approval.
   The installer enables the `multilib` repository for Steam, Gamescope,
@@ -331,7 +316,7 @@ the classic AppImages run, and both it and `squashfs-tools` come with the
 recommended desktop.
 
 Gear Lever is no longer installed by default: it needs about 1.7 GB of Flatpak
-runtimes (#260). Add `--with-gearlever` (or set `DWM_INSTALL_GEARLEVER=true`)
+runtimes. Add `--with-gearlever` (or set `DWM_INSTALL_GEARLEVER=true`)
 to install it from Flathub; it then opens AppImages instead, with in-place
 updates and its own window. An existing
 Gear Lever is kept, and stays the AppImage handler. If an earlier image install
@@ -368,7 +353,7 @@ kernel, instead of failing. If the repositories can be reached again later in
 the install, `linux-cachyos` is added then and made the default, and the stock
 kernel stays beside it, in the boot menu.
 
-To keep installs fast (#246), there is one kernel, apart from that case, and
+To keep installs fast, there is one kernel, apart from that case, and
 no fallback initramfs. CPU microcode comes with the base system on real
 hardware, and the boot menu is generated once. Where the stock kernel was kept,
 it is also a way back: choose it in the boot menu.
@@ -495,9 +480,9 @@ convenience tool, independent of the package profiles above — none of the
 required, recommended, or optional packages need it, since everything the
 installer selects is available directly through official `pacman` repos
 (`core`/`extra`/`multilib`). Lyona limits the AUR to where it is needed: today,
-the live medium's driver for an older NVIDIA card, and the `yay -Syu` that
-Settings -> System -> **Update packages** runs for you (see
-`docs/AUR-PACKAGES.md`).
+this `yay` helper, Topgrade's pinned `topgrade-bin`, the live medium's driver
+for an older NVIDIA card, and the `yay -Syu` that Settings -> System ->
+**Update packages** runs for you (see `docs/AUR-PACKAGES.md`).
 
 ### GRUB boot menu theme
 

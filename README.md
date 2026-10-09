@@ -121,8 +121,8 @@ before making changes.
 | Profile | Includes |
 | --- | --- |
 | `core` | The X11 session, required dependencies, and one terminal emulator. |
-| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Firefox, GNOME Keyring, AppImages in the launcher (Gear Lever with `--with-gearlever`), Topgrade (from the AUR's pinned `topgrade-bin`), theming, screenshots, audio, and brightness tools. |
-| `full` | The recommended desktop plus optional file-manager, wallpaper, display-manager, and supported Arch gaming integrations (Steam, Gamescope, GameMode, MangoHud via `multilib`). |
+| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Firefox, the Thunar file manager, NetworkManager (enabled only when no other network manager is in use), GNOME Keyring, AppImages in the launcher (Gear Lever with `--with-gearlever`), Topgrade (from the AUR's pinned `topgrade-bin`), theming, screenshots, audio, and brightness tools. |
+| `full` | The recommended desktop plus wallpaper, display-manager, and supported Arch gaming integrations (Steam, Gamescope, GameMode, MangoHud via `multilib`). |
 
 On x86_64, `--enable-cachyos-repos` adds the [CachyOS](https://cachyos.org)
 repositories for this CPU's ISA level, and `--cachyos-kernel` also installs
@@ -151,7 +151,7 @@ runtime dependencies for the X11 desktop and its other managed helpers.
 | Switch workspace | <kbd>Super</kbd> + <kbd>1-9</kbd> |
 | Open the power menu | <kbd>Super</kbd> + <kbd>Ctrl</kbd> + <kbd>Q</kbd> |
 
-With a display manager, select the `dwm` session when logging in. From a TTY,
+With a display manager, select the **lyona** session when logging in. From a TTY,
 start the session with:
 
 ```bash

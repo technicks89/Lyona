@@ -1,7 +1,8 @@
 # Settings
 
-The unified Settings application provides one place to inspect desktop
-capabilities and see which features are available, restricted, or planned.
+The unified Settings application is one place to see and change the desktop:
+each section shows the current state, changes what it can, and says when a
+feature is restricted or unavailable on this machine.
 
 Open Control Center with `Super+F1`, then select **Settings** from the main
 menu. You can also run:
@@ -93,9 +94,22 @@ names which of the three differs — that is the one signal a damaged install
 gives you, so it is impossible to miss.
 
 **Check for updates** compares the installed version against the configured
-channel (`stable` or `preview`) and reports current, behind, ahead, or
-offline — an unreachable update server is never treated as an error, and the
-installed version stays visible either way. When a newer release is
+channel (`stable` or `preview`) and reports one of:
+
+- **current**: the installed release matches the channel;
+- **behind**: a newer release is available;
+- **ahead**: a development checkout newer than the published release;
+- **downgrade offered**: the channel's release is older than the installed one.
+  Nothing is installed unless you ask for that version
+  (`lyona-update apply --version VERSION --allow-downgrade`);
+- **unknown**: there is no install record to compare, or nothing has been
+  published on the channel yet (lyona's releases so far are pre-releases, on
+  `preview`);
+- **unavailable**: the install record exists but cannot be trusted;
+- **offline**: the update server could not be reached.
+
+An unreachable server is never treated as an error, and the installed version
+stays visible either way. When a newer release is
 available, **Update now** asks you to confirm the exact target version, then
 downloads and SHA-256-verifies the release tarball, builds it, backs up the
 live install, and installs it through one confirmed privileged step. Progress

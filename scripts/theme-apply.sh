@@ -11,6 +11,8 @@ lyona_lib=$script_dir
 . "$lyona_lib/dwm-xsettings-config.sh"
 # shellcheck source=scripts/dwm-paths.sh
 . "$lyona_lib/dwm-paths.sh"
+# shellcheck source=scripts/dwm-theme-resolve.sh
+. "$lyona_lib/dwm-theme-resolve.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 lyona_xdg_dirs
@@ -198,11 +200,6 @@ TERM_C15="$(theme_get term_color15)"
 DARK_MODE="$(theme_get dark_mode)"
 [[ "$DARK_MODE" != "false" ]] && DARK_MODE="true"
 CURSOR_SIZE=32
-if [[ "$DARK_MODE" == "true" ]]; then
-	CURSOR_THEME="Capitaine-Cursors-White"
-else
-	CURSOR_THEME="Capitaine-Cursors"
-fi
 
 # ── Toolkit overrides ─────────────────────────────────────────────────────
 #
@@ -214,43 +211,13 @@ fi
 # and the real apply see the same overrides. Without that pin the dry run
 # would compute theme defaults and a later revert would refuse, believing the
 # files had changed outside Settings.
-PERSONALIZATION_FILE="${DWM_APPEARANCE_PERSONALIZATION_FILE:-$config_home/lyona/personalization.conf}"
-declare -A PERSONALIZATION=()
-
-read_personalization() {
-	local record value extra records=0 header=''
-	[[ -f $PERSONALIZATION_FILE && ! -L $PERSONALIZATION_FILE ]] || return 0
-	[[ $(stat -c %s -- "$PERSONALIZATION_FILE" 2>/dev/null || echo 0) -le 4096 ]] || return 0
-	local -A parsed=()
-	while IFS=$'\t' read -r record value extra || [[ -n $record$value$extra ]]; do
-		((records += 1))
-		if ((records == 1)); then
-			header=$record
-			continue
-		fi
-		[[ -z $extra ]] || return 0
-		case $record in
-		cursor | icon | gtk | qt) parsed[$record]=$value ;;
-		*) return 0 ;;
-		esac
-	done <"$PERSONALIZATION_FILE"
-	[[ $header == toolkit-protocol ]] || return 0
-	local key
-	for key in "${!parsed[@]}"; do
-		value=${parsed[$key]}
-		# Refuse anything that could escape into another path or record.
-		[[ -n $value && ${#value} -le 128 && $value != */* && $value != *$'\t'* &&
-			$value != .. && $value != . ]] || continue
-		case $value in
-		follow-theme | follow-system) continue ;;
-		esac
-		PERSONALIZATION[$key]=$value
-	done
-}
-
-read_personalization
-[[ -z ${PERSONALIZATION[cursor]:-} ]] || CURSOR_THEME="${PERSONALIZATION[cursor]}"
-ICON_THEME="${PERSONALIZATION[icon]:-}"
+#
+# dwm-theme-resolve.sh reads them and resolves the cursor and GTK themes. The
+# Appearance helper sources it too, so it reports the theme this script writes
+# (#274).
+lyona_read_personalization
+CURSOR_THEME=$(lyona_cursor_theme_resolve "$DARK_MODE")
+ICON_THEME="${LYONA_PERSONALIZATION[icon]:-}"
 
 # The icon theme has no palette default, so releasing an override means putting
 # back whatever was there before Settings first took it over -- which may well
@@ -272,32 +239,6 @@ read_baseline_icon() {
 	TOOLKIT_BASELINE_ICON="$value"
 }
 read_baseline_icon
-
-gtk_theme_available() {
-	local name="$1"
-	local base
-	for base in \
-		"$data_home/themes" \
-		"$THEME_DISCOVERY_HOME/.themes" \
-		/usr/local/share/themes \
-		/usr/share/themes; do
-		[[ -d "$base/$name" ]] || continue
-		[[ -d "$base/$name/gtk-3.0" || -d "$base/$name/gtk-4.0" ]] && return 0
-	done
-	return 1
-}
-
-# Every palette has a generated Lyona-<name> theme; the Adwaita answers are a
-# safety net for a themes.toml that names a palette we have not generated.
-default_gtk_theme() {
-	if gtk_theme_available "Lyona-$THEME_NAME"; then
-		printf '%s\n' "Lyona-$THEME_NAME"
-	elif [[ "$DARK_MODE" == "true" ]]; then
-		printf '%s\n' "Adwaita-dark"
-	else
-		printf '%s\n' "Adwaita"
-	fi
-}
 
 ALACRITTY_DIR="$config_home/alacritty"
 if [[ $RUNTIME_ONLY == 0 && $LIVE_ONLY == 0 && -d "$ALACRITTY_DIR" ]]; then
@@ -393,44 +334,31 @@ else
 	GTK_COLOR_SCHEME="default"
 	GTK_DARK_PREF=0
 fi
-GTK_THEME_NAME="$(theme_get gtk_theme)"
-[[ -n "$GTK_THEME_NAME" ]] || GTK_THEME_NAME="$(default_gtk_theme)"
-# A user override wins over the palette's own choice, including over the
-# generate-on-demand fallback below: if they asked for a specific name, an
-# unrelated one (even the palette's own) must never silently replace it.
-GTK_THEME_PERSONALIZED=0
-if [[ -n ${PERSONALIZATION[gtk]:-} ]]; then
-	GTK_THEME_NAME="${PERSONALIZATION[gtk]}"
-	GTK_THEME_PERSONALIZED=1
-fi
+GTK_THEME_TOML="$(theme_get gtk_theme)"
+# A Toolkit override wins over the palette's own choice as it is, installed or
+# not (lyona_gtk_theme_resolve).
+#
 # A themes.toml carried over from an older install may still name a theme we
 # no longer ship, such as the Nordic clone; prefer this palette's generated
 # theme over dropping all the way back to stock Adwaita. `lyona-gtk-theme
 # generate-all` is normally an install-time step (Makefile's
 # `install-gtk-themes`); a live system that has never run it, or whose
 # themes.toml grew a palette since, would otherwise render every dark preset
-# in a fallback that is not actually dark (see below) -- generate the one
-# palette actually in use on demand instead.
-if ((! GTK_THEME_PERSONALIZED)) && [[ $RUNTIME_ONLY == 0 ]] &&
-	! gtk_theme_available "$GTK_THEME_NAME" && ! gtk_theme_available "Lyona-$THEME_NAME"; then
+# in a fallback that is not actually dark -- generate the one palette actually
+# in use on demand instead.
+if [[ -z ${LYONA_PERSONALIZATION[gtk]:-} && $RUNTIME_ONLY == 0 ]] &&
+	! lyona_gtk_theme_available "$(lyona_gtk_theme_requested "$THEME_NAME" "$GTK_THEME_TOML")" &&
+	! lyona_gtk_theme_available "Lyona-$THEME_NAME"; then
 	"$script_dir/lyona-gtk-theme" generate "$THEME_NAME" "$THEMES_FILE" \
 		"$data_home/themes/Lyona-$THEME_NAME" >/dev/null 2>&1 || true
 fi
-if ((! GTK_THEME_PERSONALIZED)) && ! gtk_theme_available "$GTK_THEME_NAME" &&
-	gtk_theme_available "Lyona-$THEME_NAME"; then
-	GTK_THEME_NAME="Lyona-$THEME_NAME"
-fi
-if ((! GTK_THEME_PERSONALIZED)) && ! gtk_theme_available "$GTK_THEME_NAME"; then
-	# Not "Adwaita-dark": recent GTK3/GTK4 has no theme by that name to find
-	# (Adwaita's dark variant is the "prefer dark" hint below, not a second
-	# theme), so that literal name resolved to nothing and rendered light
-	# regardless of $DARK_MODE. Plain "Adwaita" plus the hint already set
-	# below is the correct, always-available dark fallback. A personalized
-	# choice that does not exist is left as-is rather than substituted: it is
-	# the user's own pick, same as an override that does resolve.
-	GTK_THEME_FALLBACK="Adwaita"
-	echo "theme-apply: GTK theme '$GTK_THEME_NAME' not found; falling back to '$GTK_THEME_FALLBACK'" >&2
-	GTK_THEME_NAME="$GTK_THEME_FALLBACK"
+# Not "Adwaita-dark" as the last fallback: recent GTK3/GTK4 has no theme by
+# that name (its dark variant is the "prefer dark" hint below), so that name
+# rendered light regardless of $DARK_MODE.
+lyona_gtk_theme_resolve "$THEME_NAME" "$GTK_THEME_TOML"
+GTK_THEME_NAME=$LYONA_GTK_THEME
+if [[ -n $LYONA_GTK_THEME_FELL_BACK ]]; then
+	echo "theme-apply: GTK theme '$LYONA_GTK_THEME_FELL_BACK' not found; falling back to 'Adwaita'" >&2
 fi
 
 # Set one key in an ini file, preserving everything else.
@@ -671,8 +599,8 @@ if [[ $RUNTIME_ONLY == 0 && $TRANSACTIONAL_APPLY == 0 ]] && command -v xfconf-qu
 	xfconf-query -c xsettings -p /Gtk/CursorThemeSize -n -t int -s "$CURSOR_SIZE" 2>/dev/null || true
 fi
 
-if [[ -n ${PERSONALIZATION[qt]:-} ]]; then
-	QT_PLATFORM_THEME="${PERSONALIZATION[qt]}"
+if [[ -n ${LYONA_PERSONALIZATION[qt]:-} ]]; then
+	QT_PLATFORM_THEME="${LYONA_PERSONALIZATION[qt]}"
 elif command -v qt6ct &>/dev/null; then
 	QT_PLATFORM_THEME="qt6ct"
 elif command -v qt5ct &>/dev/null; then

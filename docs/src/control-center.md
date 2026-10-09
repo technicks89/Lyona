@@ -20,9 +20,9 @@ or <kbd>Super</kbd> + <kbd>F</kbd> moves the highlight. Layouts are per tag, and
 acts on the tag and monitor that currently have focus. The buttons are disabled when dwm
 does not report its layout (an older dwm build).
 
-The Utilities section opens the unified Settings application directly. Phase
-1 Settings is a read-only capability overview with section search and
-keyboard/mouse navigation. It can also be opened with `dwm-settings open`.
+The Utilities section opens the unified Settings application directly, where
+each section shows the current state and changes what it can. It can also be
+opened with `dwm-settings open`.
 
 The Utilities section also shows the installed lyona version, and — only when
 a newer release is available on the configured channel — an **Update
@@ -102,8 +102,7 @@ changed.
 System Health opens as a separate dashboard filling the current monitor below
 the panel, which stays visible. It starts two read-only scans: session checks run immediately, and a
 privileged scan completes current-boot journal, kernel, system-service, and
-drive checks. If cached or `NOPASSWD` sudo access is available, the scan runs
-without a prompt. Otherwise the running polkit agent requests graphical
+drive checks. It always asks: the running polkit agent requests graphical
 authorization for the root-owned `${PREFIX}/libexec/lyona/dwm-system-health-root`,
 under its own action (`com.lyona.system-health.manage`, "Authentication is
 required to read system logs and repair system services"). That helper accepts
@@ -147,10 +146,9 @@ make
 sudo make install-system
 ```
 
-A checkout's copy of a helper is never elevated. If
-the installed helper is unavailable, cached or `NOPASSWD` sudo can still run
-the validated root-owned system commands. Polkit authorization requires the
-root-owned installed helper.
+A checkout's copy of a helper is never elevated, and a cached `sudo` session
+is never used: without the root-owned installed helper, the privileged scan and
+the system repairs are unavailable and the dashboard says so.
 
 ### Quick Actions
 
@@ -158,21 +156,19 @@ root-owned installed helper.
 |--------|-------------|
 | Restart Picom | Restart the compositor through `dwm-settings-picom`, which picks the backend for this GPU |
 | Restart Quickshell | Reload the managed Quickshell shell |
-| Reload Wallpaper | Randomize from `~/Pictures/backgrounds/` |
-| Restart NetworkManager | `sudo systemctl restart NetworkManager` |
-| Run Dependency Check | Opens `check-deps.sh` in a terminal |
-| Install Missing Deps | Runs `install.sh` in a terminal |
+| Reload Wallpaper | A random wallpaper from `~/Pictures/backgrounds/` |
+| Restart NetworkManager | Runs `sudo systemctl restart NetworkManager` in a terminal, which asks for your password |
+| Dependency Check | Opens `check-deps.sh` in a terminal |
+| Self-Heal | Runs the script named in `~/.config/lyona/self-heal.path` (or `dwm-self-heal` on `PATH`); says so when none is set |
+| Install Missing Deps | In a terminal: `install.sh` from a checkout, or the required and desktop packages through pacman from an install |
 | Wallpaper Folder | Open `~/Pictures/backgrounds/` in the file manager |
-| GTK Settings | Launch `nwg-look` for GTK theming |
+| GTK Settings | Launch `nwg-look` for GTK theming; shown only when `nwg-look` is installed |
 
 ### Appearance
 
-| Action | Description |
-|--------|-------------|
-| Select Theme | Pick from all themes defined in `themes.toml` |
-| Randomize Wallpaper | Random image from `~/Pictures/backgrounds/` |
-| Open Wallpaper Folder | Open folder in file manager |
-| GTK Theme Settings | Launch `nwg-look` for GTK theming |
+The Appearance page lists every theme in `~/.config/lyona/themes.toml`, the
+active one marked. Choose one to apply it at once. The wallpaper and GTK
+actions are in Quick Actions above.
 
 ### Power Settings
 
@@ -219,7 +215,7 @@ compositor, or polkit agent require explicit confirmation.
 
 ### Keybind Viewer
 
-Displays all bindings from `hotkeys.toml` in a searchable Quickshell list. Same
+Displays all bindings from `hotkeys.toml` in a Quickshell list. Same
 as pressing <kbd>Super</kbd> + <kbd>/</kbd>.
 
 ---

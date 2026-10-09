@@ -224,11 +224,25 @@ fi
 
 DWM_TEST_NMCLI_MODE=service-fail PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-network" snapshot --rescan no >"$work/snapshot-unavailable.out"
-grep -Fqx "provider	network	unavailable	read-only	NetworkManager service is unavailable" "$work/snapshot-unavailable.out"
+grep -Fqx "provider	network	unavailable	read-only	NetworkManager not running" "$work/snapshot-unavailable.out"
+
+# No NetworkManager at all: the panel names it rather than "NET unavailable"
+# (#292). A PATH of the system's commands without nmcli.
+mkdir -p "$work/no-nmcli"
+for command_path in /usr/bin/*; do
+	[ "${command_path##*/}" = nmcli ] || ln -s "$command_path" "$work/no-nmcli/${command_path##*/}"
+done
+PATH="$work/no-nmcli" "$repo/scripts/dwm-quickshell-network" snapshot --rescan no >"$work/snapshot-not-installed.out"
+grep -Fqx "provider	network	unavailable	read-only	NetworkManager not installed" "$work/snapshot-not-installed.out"
+grep -Fq 'root.providerState === "unavailable" && root.providerDetail.length > 0 ? root.providerDetail' \
+	"$repo/config/quickshell/network/NetworkModel.qml" || {
+	printf 'The panel does not name the missing network service.\n' >&2
+	exit 1
+}
 
 DWM_TEST_NMCLI_CONNECTION_FAIL=1 PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-network" snapshot --rescan no >"$work/snapshot-connection-failure.out"
-grep -Fqx "provider	network	unavailable	read-only	NetworkManager service is unavailable" "$work/snapshot-connection-failure.out"
+grep -Fqx "provider	network	unavailable	read-only	NetworkManager not running" "$work/snapshot-connection-failure.out"
 if grep -Fq "network-profile	" "$work/snapshot-connection-failure.out"; then
 	printf 'Snapshot emitted incomplete profiles after a connection query failure.\n' >&2
 	exit 1

@@ -536,7 +536,7 @@ grep -Fqx $'error\tgtk\tmissing-version\tGTK theme '\''Lyona-nord'\'' does not s
 	<<<"$partial_gtk_assets"
 rmdir "$data_root/themes/Lyona-nord/gtk-3.0"
 missing_gtk=$(snapshot)
-grep -Fqx $'integration\tgtk\tpartial\tLyona-nord\tRequested GTK theme is missing; apply falls back to Adwaita-dark' <<<"$missing_gtk"
+grep -Fqx $'integration\tgtk\tpartial\tLyona-nord\tRequested GTK theme is missing; apply falls back to Adwaita' <<<"$missing_gtk"
 grep -Fqx $'error\tgtk\tmissing-theme\tGTK theme '\''Lyona-nord'\'' is not installed' <<<"$missing_gtk"
 mkdir -p "$data_root/themes/Lyona-nord/gtk-3.0" "$data_root/themes/Lyona-nord/gtk-4.0"
 
@@ -549,6 +549,37 @@ grep -Fqx $'error\tgtk\tstale-theme\tApplied GTK settings do not match '\''Lyona
 	<<<"$stale_gtk_application"
 sed -i 's/gtk-theme-name=Adwaita/gtk-theme-name=Lyona-nord/' \
 	"$config_home/gtk-4.0/settings.ini"
+
+# A Toolkit override wins in theme-apply.sh, so Appearance must expect it too:
+# applied, it is not a stale theme (#274). Both read it through
+# dwm-theme-resolve.sh.
+mkdir -p "$data_root/themes/MyGtk/gtk-3.0" "$data_root/themes/MyGtk/gtk-4.0" "$data_root/icons/MyCursor"
+printf 'toolkit-protocol\t1\t0\ngtk\tMyGtk\ncursor\tMyCursor\n' >"$config_home/lyona/personalization.conf"
+cp -a "$config_home/lyona/theme-env.sh" "$config_home/lyona/cursor.Xresources" \
+	"$config_home/gtk-3.0/settings.ini" "$work/"
+cp "$config_home/gtk-4.0/settings.ini" "$work/settings-4.ini"
+for file in "$config_home/gtk-3.0/settings.ini" "$config_home/gtk-4.0/settings.ini"; do
+	printf '[Settings]\ngtk-theme-name=MyGtk\ngtk-cursor-theme-name=MyCursor\n' >"$file"
+done
+sed -i 's/XCURSOR_THEME=.*/XCURSOR_THEME=MyCursor/' "$config_home/lyona/theme-env.sh"
+printf 'Xcursor.theme: MyCursor\n' >"$config_home/lyona/cursor.Xresources"
+override_applied=$(snapshot)
+grep -Fqx $'integration\tgtk\tavailable\tMyGtk\tRequested GTK theme is installed and applied' \
+	<<<"$override_applied"
+grep -Fqx $'integration\tcursor\tavailable\tMyCursor\tManaged cursor theme is installed and applied' \
+	<<<"$override_applied"
+if grep -Fq $'\tstale-theme\t' <<<"$override_applied"; then
+	printf 'An applied Toolkit override was reported as a stale theme\n' >&2
+	exit 1
+fi
+# Set but not yet applied: stale, naming the override.
+sed -i 's/gtk-theme-name=MyGtk/gtk-theme-name=Lyona-nord/' "$config_home/gtk-3.0/settings.ini"
+override_stale=$(snapshot)
+grep -Fqx $'error\tgtk\tstale-theme\tApplied GTK settings do not match '\''MyGtk'\''' <<<"$override_stale"
+rm -f "$config_home/lyona/personalization.conf"
+cp "$work/theme-env.sh" "$work/cursor.Xresources" "$config_home/lyona/"
+cp "$work/settings.ini" "$config_home/gtk-3.0/settings.ini"
+cp "$work/settings-4.ini" "$config_home/gtk-4.0/settings.ini"
 
 mv "$config_home/lyona/themes.toml" "$work/managed-themes.toml"
 managed=$(PATH=$bin_dir XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_root \
@@ -697,15 +728,17 @@ sed -i '0,/theme = "nord"/s//theme = "dracula"/' "$config_home/lyona/themes.toml
 # Every palette now names a generated Lyona-<name> theme, so drop dracula's to
 # exercise the built-in Adwaita fallback this case is actually about.
 sed -i '/^gtk_theme *= *"Lyona-dracula"/d' "$config_home/lyona/themes.toml"
-sed -i 's/gtk-theme-name=Lyona-nord/gtk-theme-name=Adwaita-dark/' \
+# theme-apply.sh writes plain Adwaita with the prefer-dark hint: GTK 3 and 4
+# have no Adwaita-dark theme (#274).
+sed -i 's/gtk-theme-name=Lyona-nord/gtk-theme-name=Adwaita/' \
 	"$config_home/gtk-3.0/settings.ini" "$config_home/gtk-4.0/settings.ini"
 adwaita=$(snapshot)
-grep -Fqx $'integration\tgtk\tavailable\tAdwaita-dark\tRequested GTK theme is installed and applied' <<<"$adwaita"
+grep -Fqx $'integration\tgtk\tavailable\tAdwaita\tRequested GTK theme is installed and applied' <<<"$adwaita"
 if grep -Fq $'error\tgtk\tmissing-theme' <<<"$adwaita"; then
 	printf 'Built-in Adwaita fallback was reported missing\n' >&2
 	exit 1
 fi
-sed -i 's/gtk-theme-name=Adwaita-dark/gtk-theme-name=Lyona-nord/' \
+sed -i 's/gtk-theme-name=Adwaita$/gtk-theme-name=Lyona-nord/' \
 	"$config_home/gtk-3.0/settings.ini" "$config_home/gtk-4.0/settings.ini"
 
 cp "$work/managed-themes.toml" "$config_home/lyona/themes.toml"

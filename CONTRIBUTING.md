@@ -29,6 +29,17 @@ scripts/run-tests
 Use `./install.sh --dry-run --non-interactive --profile core` to inspect the
 dependency plan without changing the system.
 
+After installing lyona from your checkout, keep the install at the checkout's
+revision with:
+
+```sh
+./scripts/dev-sync-install.sh
+```
+
+It rebuilds dwm and installs the binary, the helpers, the shipped defaults and
+the managed Quickshell configuration, so they all match. After a session
+restart, `./scripts/dev-sync-install.sh --check` verifies the running copy.
+
 ### Running a session from the checkout
 
 An installed session runs one copy of everything:

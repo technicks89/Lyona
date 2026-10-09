@@ -206,7 +206,7 @@ recoverable:
 **What the checks prove.** The SHA-256 digest comes from the release page (or a
 short-lived cache in `~/.cache/lyona/`), so a match proves the download is
 intact. The signature proves it is genuine: from `2026.10.0-beta.2` on, each
-release is signed by lyona's own release workflow on GitHub (decision D-31),
+release is signed by lyona's own release workflow on GitHub,
 and `lyona-update` refuses one whose signature is missing or does not verify.
 It needs `cosign`, which the install provides, and the network, for Sigstore's
 trust root. The privileged step checks the signature again itself, so its
@@ -329,7 +329,7 @@ lyona-update rollback --backup 20260828T153709Z-1472673
 Every `apply` backs up the live install first, before writing anything, so
 `rollback` always has something to restore to. A backup has two halves under the
 same id: your own files (the managed Quickshell config, and in backups taken
-before the S12-13 change the Lyona data directory) in
+before an earlier release moved it, the Lyona data directory) in
 `~/.local/state/lyona/live-update-backups/<id>/`, and the system
 files, which the privileged helper copies as root, just before installing, into
 `/var/lib/lyona/backups/<id>/`, readable only by root. A rollback restores the

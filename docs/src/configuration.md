@@ -171,7 +171,7 @@ The replay watcher is scoped to the owning dwm process and exits at logout,
 including when dwm was launched through `startx`.
 
 Power settings are managed from Control Center -> Power. Out of the box
-(decision D-13), the screen turns off after 10 minutes idle and the desktop
+the screen turns off after 10 minutes idle and the desktop
 locks: lyona sets light-locker to lock 5 seconds after the screen blanks and on
 suspend, and starts it. Changing anything there writes `power.conf`, which is
 then authoritative and persists screen DPMS state, display-off timing, and

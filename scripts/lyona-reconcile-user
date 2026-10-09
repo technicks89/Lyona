@@ -32,7 +32,12 @@ lyona_xdg_dirs
 
 info() { printf '[INFO] %s\n' "$1"; }
 ok() { printf '[OK] %s\n' "$1"; }
-warn() { printf '[WARN] %s\n' "$1" >&2; }
+# Also into install.sh's closing list, when it runs this (#290).
+warn() {
+	printf '[WARN] %s\n' "$1" >&2
+	[[ -z ${LYONA_INSTALL_WARNINGS_FILE:-} || ! -w $LYONA_INSTALL_WARNINGS_FILE ]] ||
+		printf '%s\n' "$1" >>"$LYONA_INSTALL_WARNINGS_FILE"
+}
 die() {
 	printf 'lyona-reconcile-user: %s\n' "$1" >&2
 	exit 1
@@ -100,6 +105,19 @@ appimage_user_choice() {
 		}' "$config_home/mimeapps.list"
 }
 
+# Whether lyona-appimage's entry is installed where dwm-default-apps looks. On
+# a first install.sh run it is not yet: make install-user runs this again
+# after it is (#276).
+appimage_entry_installed() {
+	local dir
+	local -a dirs=()
+	IFS=: read -r -a dirs <<<"$data_home:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+	for dir in "${dirs[@]}"; do
+		[[ -z $dir || ! -f $dir/applications/lyona-appimage.desktop ]] || return 0
+	done
+	return 1
+}
+
 # lyona-appimage opens AppImages unless something else already does, such as
 # Gear Lever or the user's own choice (#260).
 configure_appimage_handler() {
@@ -119,7 +137,13 @@ configure_appimage_handler() {
 		ok "AppImages keep opening with $current."
 		return 0
 	fi
-	if xdg-mime default lyona-appimage.desktop application/vnd.appimage; then
+	if ! appimage_entry_installed; then
+		info "AppImages get lyona-appimage as their handler once lyona's files are installed."
+		return 0
+	fi
+	# Through dwm-default-apps, which keeps the lock and recovery for
+	# mimeapps.list, as Settings > Defaults does (#276).
+	if "$script_dir/dwm-default-apps" set-mime application/vnd.appimage lyona-appimage.desktop >/dev/null; then
 		ok "AppImages open with lyona-appimage, which adds them to the launcher."
 	else
 		warn "AppImages have no default handler; open them with lyona-appimage open FILE."

@@ -9,6 +9,9 @@ set -euo pipefail
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+# The Exec= argument the shared writer produces for a path (#275).
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$repo/scripts/dwm-desktop-entry.sh"
 make_workspace
 for tool in mksquashfs unsquashfs od python3; do
 	command -v "$tool" >/dev/null 2>&1 || {
@@ -128,7 +131,7 @@ run_helper open "$work/home/Downloads/Good.AppImage" || fail 'opening a good App
 entry=$entries/lyona-appimage-good-appimage.desktop
 [[ -f $entry ]] || fail 'no launcher entry was written'
 grep -Fxq 'Name=Good App' "$entry" || fail 'the entry does not carry the name from inside the image'
-grep -Fxq "Exec=\"$apps/Good.AppImage\" %U" "$entry" || fail "the entry does not start the moved file: $(grep ^Exec= "$entry")"
+grep -Fxq "Exec=$(desktop_exec_arg "$apps/Good.AppImage") %U" "$entry" || fail "the entry does not start the moved file: $(grep ^Exec= "$entry")"
 grep -Fxq "X-Lyona-AppImage=$apps/Good.AppImage" "$entry" || fail 'the entry does not record its file'
 grep -Fxq 'Categories=Utility;' "$entry" || fail 'the categories were not kept'
 if grep -q '^MimeType=' "$entry"; then
@@ -178,7 +181,7 @@ run_helper open "$work/home/Downloads/Bare.AppImage" || fail 'an AppImage withou
 bare_entry=$entries/lyona-appimage-bare-appimage.desktop
 grep -Fxq 'Name=Bare' "$bare_entry" || fail 'a bare AppImage is not named after its file'
 grep -Fxq 'Icon=application-x-executable' "$bare_entry" || fail 'a bare AppImage has no generic icon'
-grep -Fxq "Exec=\"$apps/Bare.AppImage\"" "$bare_entry" || fail 'a bare AppImage has the wrong Exec'
+grep -Fxq "Exec=$(desktop_exec_arg "$apps/Bare.AppImage")" "$bare_entry" || fail 'a bare AppImage has the wrong Exec'
 
 # --- A path that needs quoting. -------------------------------------------------
 cp "$work/fixtures/Bare.AppImage" "$work/home/Downloads/My \$Tool.AppImage"
@@ -190,8 +193,11 @@ grep -Fxq "Exec=\"$apps/My \\\\\$Tool.AppImage\"" "$entries/lyona-appimage-my-to
 # --- A % in the name is written %%, not read as a field code. -------------------
 cp "$work/fixtures/Bare.AppImage" "$work/home/Downloads/Tool%20X.AppImage"
 run_helper open "$work/home/Downloads/Tool%20X.AppImage" || fail 'a name with a percent sign failed'
-grep -Fxq "Exec=\"$apps/Tool%%20X.AppImage\"" "$entries/lyona-appimage-tool-20x-appimage.desktop" ||
-	fail "a % in the Exec line is not doubled: $(grep ^Exec= "$entries/lyona-appimage-tool-20x-appimage.desktop")"
+percent_entry=$entries/lyona-appimage-tool-20x-appimage.desktop
+if ! grep -Fxq "Exec=$(desktop_exec_arg "$apps/Tool%20X.AppImage")" "$percent_entry" ||
+	! grep -Fq 'Tool%%20X.AppImage' "$percent_entry"; then
+	fail "a % in the Exec line is not doubled: $(grep ^Exec= "$percent_entry")"
+fi
 
 # --- A failure after the move puts the file back. -------------------------------
 cp "$work/fixtures/Bare.AppImage" "$work/home/Downloads/Stuck.AppImage"

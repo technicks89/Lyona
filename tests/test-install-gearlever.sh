@@ -56,24 +56,35 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$MOCK_XDG_MIME_LOG"
 case $1 in
 query)
-	if [[ -n ${MOCK_XDG_DEFAULT:-} ]]; then
-		printf '%s\n' "$MOCK_XDG_DEFAULT"
-	elif [[ -f $MOCK_FLATPAK_STATE/mime-default ]]; then
+	if [[ -f $MOCK_FLATPAK_STATE/mime-default ]]; then
 		printf '%s\n' it.mijorus.gearlever.desktop
+	elif [[ -n ${MOCK_XDG_DEFAULT:-} ]]; then
+		printf '%s\n' "$MOCK_XDG_DEFAULT"
 	fi
 	;;
 default)
 	[[ $2 == it.mijorus.gearlever.desktop ]]
 	[[ $3 == application/vnd.appimage ]]
 	touch "$MOCK_FLATPAK_STATE/mime-default"
+	printf '[Default Applications]\n%s=%s\n' "$3" "$2" >"$XDG_CONFIG_HOME/mimeapps.list"
 	;;
 *) exit 2 ;;
 esac
 MOCK
 chmod +x "$mock_bin/xdg-mime"
 
+# A scratch account: Gear Lever is set through dwm-default-apps (#276), which
+# writes mimeapps.list and its recovery state. Gear Lever's entry is where a
+# user Flatpak exports it, outside XDG_DATA_DIRS in a plain shell.
+home=$work/home
+gearlever_entry=$home/.local/share/flatpak/exports/share/applications/it.mijorus.gearlever.desktop
+mkdir -p "$home/.config" "$home/.local/state" "${gearlever_entry%/*}"
+printf '[Desktop Entry]\nType=Application\nName=Gear Lever\nExec=flatpak run it.mijorus.gearlever %%f\nMimeType=application/vnd.appimage;\n' \
+	>"$gearlever_entry"
 run_helper() {
-	PATH="$mock_bin:$PATH" \
+	HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share \
+		XDG_STATE_HOME=$home/.local/state XDG_DATA_DIRS=/usr/share \
+		PATH="$mock_bin:$PATH" \
 		MOCK_FLATPAK_LOG="$log" \
 		MOCK_FLATPAK_STATE="$state" \
 		MOCK_XDG_MIME_LOG="$mime_log" \
@@ -98,6 +109,8 @@ if ! ((verify_line < add_line && add_line < last_verify_line && last_verify_line
 fi
 grep -Fq 'Adding the official user Flathub remote' "$work/install.out"
 grep -Fqx 'default it.mijorus.gearlever.desktop application/vnd.appimage' "$mime_log"
+grep -Fq 'Gear Lever is the default AppImage handler.' "$work/install.out" ||
+	fail "Gear Lever was not set through dwm-default-apps: $(cat "$work/install.out")"
 grep -Fq 'Gear Lever is ready.' "$work/install.out"
 
 before=$(wc -l <"$log")

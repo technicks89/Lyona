@@ -1,11 +1,11 @@
 # Keybindings
 
-> Press <kbd>Super</kbd> + <kbd>/</kbd> inside dwm to open a live, searchable
-> Quickshell keybind viewer.
+> Press <kbd>Super</kbd> + <kbd>/</kbd> inside dwm to open a live Quickshell
+> keybind viewer.
 
 **MODKEY** = <kbd>Super</kbd> (Windows key) in the shipped `config.h`.
 
-Bindings are defined in `config/hotkeys.toml` and reload instantly on save — no recompile needed.
+Bindings are defined in `~/.config/lyona/hotkeys.toml` and reload instantly on save — no recompile needed.
 
 ---
 
@@ -20,6 +20,8 @@ Bindings are defined in `config/hotkeys.toml` and reload instantly on save — n
 | `Super` + `B` | Browser |
 | `Super` + `/` | Keybind viewer |
 | `Super` + `F1` | Control Center |
+| `Super` + `Alt` + `F1` | Control Center (the same, for keyboards where `Super` + `F1` is taken) |
+| `Super` + `Shift` + `W` | A random wallpaper from `~/Pictures/backgrounds` |
 | `Super` + `Shift` + `R` | Restart Quickshell |
 
 ## Screenshots
@@ -43,6 +45,8 @@ JPEG. The lightweight capture flow intentionally has no annotation toolbar.
 | `Super` + `A` | ChatGPT |
 | `Super` + `Shift` + `A` | Gemini |
 | `Super` + `Shift` + `X` | X/Twitter — new post |
+| `Super` + `W` | Looking Glass client, full screen, for a virtual machine with a passed-through GPU (needs `looking-glass-client`) |
+| `Super` + `Ctrl` + `R` | Restart Proton and Steam |
 
 `Super` + `A` opens an installed ChatGPT desktop application when one is
 available and falls back to the ChatGPT web app otherwise. The application
@@ -81,8 +85,8 @@ launcher hides the ChatGPT web entry while a native desktop entry is installed.
 The monocle layout (one window at a time, the bar visible) has no default key:
 choose it in the Control Center's **Window layout** row.
 
-Floating a tiled window with `Super` + `Space` (or `Super` + `Shift` + `M`, or
-`Super` + Middle click) pops it out of its tile at 85 percent of the tile's
+Floating a tiled window with `Super` + `Space` (or `Super` + `Shift` + `M`)
+pops it out of its tile at 85 percent of the tile's
 size, centered on it and kept inside the work area, so the change is visible.
 A window whose minimum size is larger than the work area keeps that size,
 starting at the work area's top-left corner and extending past it. Toggle
@@ -138,14 +142,14 @@ and resizing keep the geometry they start from.
 | Action | Function |
 |--------|----------|
 | `Super` + Left drag | Move window |
-| `Super` + Middle click | Toggle floating |
 | `Super` + Right drag | Resize window |
+| Click a tag in the panel | Switch to that tag |
 
 ---
 
 ## Customizing Keybinds
 
-Edit `config/hotkeys.toml` — changes take effect on save, no recompile required.
+Edit `~/.config/lyona/hotkeys.toml` — changes take effect on save, no recompile required. The repository's `config/hotkeys.toml` is only the default a new account starts from.
 
 ```toml
 [vars]
