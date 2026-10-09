@@ -581,7 +581,10 @@ verify_power_live_lock() {
 		[ "$(power_status_value "$verified_status" lock_timeout)" = 0 ] || return 1
 		[ "$(power_status_value "$verified_status" lock_after)" = 0 ] || return 1
 		[ "$(power_status_value "$verified_status" lock_on_suspend)" = false ] || return 1
-		[ "$(power_status_value "$verified_status" lock_running)" = 0 ] || return 1
+		# light-locker stopped. lock_running also counts dwm-lock-watch, which
+		# autostart keeps running whatever this setting is, so it is no
+		# evidence here; status and rollback still use it.
+		! configured_light_locker_running || return 1
 	fi
 }
 

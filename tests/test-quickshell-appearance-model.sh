@@ -410,6 +410,21 @@ for toolkit_function in preview apply reset keepPreview revertPreview abandonPre
 	}
 done
 
+# The pane follows each part's changes on that part's model (#282): a handler
+# on the Appearance model for a signal it no longer has would never run.
+for part_signal in 'wallpaper:onCandidatesChanged' 'wallpaper:onPathChanged' 'wallpaper:onFitChanged' \
+	'font:onFamilyChanged' 'font:onScaleChanged' 'toolkit:onSelectionsChanged'; do
+	sed -n "/target: root.appearanceModel.${part_signal%%:*}\$/,/^    }/p" "$pane" |
+		grep -Fq "function ${part_signal#*:}()" || {
+		printf 'Appearance pane does not follow %s on its own model\n' "$part_signal" >&2
+		exit 1
+	}
+done
+if grep -Eq 'function on(Wallpaper|Font|Toolkit)[A-Z]' "$pane"; then
+	printf 'Appearance pane still listens for a moved signal on the Appearance model\n' >&2
+	exit 1
+fi
+
 # A pending choice must survive the status refreshes that arrive while the
 # pane is open, so the pane keeps its own selection beside the saved one.
 grep -Fq 'function syncToolkitSelection()' "$pane"
