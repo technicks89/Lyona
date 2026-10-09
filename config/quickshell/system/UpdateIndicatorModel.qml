@@ -245,9 +245,7 @@ Scope {
 
     // The settings file can change outside the shell; follow it.
     FileView {
-        path: (Quickshell.env("XDG_CONFIG_HOME") || "").startsWith("/")
-            ? Quickshell.env("XDG_CONFIG_HOME") + "/lyona/update-indicator.conf"
-            : (Quickshell.env("HOME") || "") + "/.config/lyona/update-indicator.conf"
+        path: Xdg.configHome + "/lyona/update-indicator.conf"
         watchChanges: true
         printErrors: false
         onFileChanged: if (!statusProcess.running) statusProcess.running = true

@@ -20,9 +20,9 @@ Scope {
     readonly property bool initialLoading: snapshotProcess.running || root.snapshotPending
         || readinessProcess.running || root.mutationReadinessPending
         || previewStatusProcess.running || recoveryStatusProcess.running
-        || root.wallpaperStatusBusy || root.fontStatusBusy
-        || root.toolkitStatusBusy || root.toolkitStatusPending
-        || root.fontStatusPending || picomModel.statusBusy
+        || wallpaperModel.statusBusy || fontModel.statusBusy
+        || toolkitModel.statusBusy || toolkitModel.statusPending
+        || fontModel.statusPending || picomModel.statusBusy
     property bool busy: false
     property bool mutationReady: false
     property bool mutationReadinessPending: false
@@ -54,107 +54,25 @@ Scope {
     property bool inventoryWatchRestartPending: false
     readonly property alias picom: picomModel
     PicomModel { id: picomModel; active: root.settingsVisible }
-    property string wallpaperState: "idle"
-    property string wallpaperPath: ""
-    property string wallpaperFit: "fill"
-    property string wallpaperDetail: "Wallpaper state has not been loaded"
-    property string wallpaperProviderState: "idle"
-    property string wallpaperProviderDetail: "Wallpaper provider has not been checked"
-    property string wallpaperMutationState: "idle"
-    property bool wallpaperMutationReady: false
-    property string wallpaperMutationDetail: "Wallpaper changes have not been checked"
-    property string wallpaperResetState: "idle"
-    property bool wallpaperResetReady: false
-    property string wallpaperResetDetail: "Wallpaper reset readiness has not been checked"
-    property bool wallpaperBusy: false
-    property bool wallpaperReconcilePending: false
+    readonly property alias toolkit: toolkitModel
+    ToolkitModel { id: toolkitModel; appearance: root }
+    readonly property alias wallpaper: wallpaperModel
+    WallpaperModel { id: wallpaperModel; appearance: root }
+    readonly property alias font: fontModel
+    FontModel { id: fontModel; appearance: root }
     // inventoryWatch is a resident subscription, normally excluded from
     // "loading" (see initialLoading above). Its startup handshake is the one
     // deliberate exception: until it says "ready", an edit made in that window
     // could go unseen the way an unconfirmed Picom watch could (#85), so the
     // pane stays gated until the handshake completes, not only while a read runs.
-    readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running
-        || wallpaperStatusProcess.running || inventoryProcess.running
-        || root.wallpaperStatusPending || root.inventoryPending
-        || (inventoryWatch.running && !root.inventoryWatchReady)
-    readonly property bool wallpaperPreviewActionBusy: wallpaperReadinessProcess.running
-        || wallpaperStatusProcess.running || wallpaperActionProcess.running || root.busy
-    property string wallpaperPreviewState: "none"
-    property string wallpaperPreviewToken: ""
-    property string wallpaperPreviewPath: ""
-    property string wallpaperPreviewFit: "fill"
-    property alias wallpaperPreviewRemaining: wallpaperCountdown.remaining
-    property string wallpaperPreviewDetail: ""
-    property string wallpaperActionKind: ""
-    property string wallpaperActionToken: ""
-    property string wallpaperActionPath: ""
-    property string wallpaperActionFit: "fill"
-    property string wallpaperActionResultState: ""
-    property string wallpaperActionError: ""
-    property bool wallpaperActionSucceeded: false
-    property bool wallpaperStatusParsed: false
-    property bool wallpaperStatusPending: false
-    property string fontState: "idle"
-    property string fontFamily: "MesloLGS Nerd Font Mono"
-    property real fontScale: 1.0
-    property string fontDetail: "Managed shell font state has not been loaded"
-    property string fontProviderState: "idle"
-    property string fontProviderDetail: "Font provider has not been checked"
-    property bool fontMutationReady: false
-    property bool fontBusy: false
-    readonly property bool fontStatusBusy: fontStatusProcess.running || fontReadinessProcess.running
-    property bool fontStatusParsed: false
-    property bool fontStatusPending: false
-    property int fontStatusRetryAttempts: 0
-    property string fontPreviewState: "none"
-    property string fontPreviewToken: ""
-    property string fontPreviewFamily: ""
-    property real fontPreviewScale: 1.0
-    property alias fontPreviewRemaining: fontCountdown.remaining
-    property string fontPreviewDetail: ""
-    property string fontActionKind: ""
-    property string fontActionToken: ""
-    property string fontActionFamily: ""
-    property real fontActionScale: 1.0
-    property string fontActionError: ""
-    property bool fontActionSucceeded: false
-    // Cursor, icon, GTK and Qt overrides. Each capability is independent: a
-    // sentinel hands one back to the active theme without disturbing the rest.
-    property string toolkitProviderState: "idle"
-    property string toolkitProviderDetail: "Toolkit provider has not been checked"
-    property bool toolkitMutationReady: false
-    property string toolkitMutationDetail: "Toolkit changes have not been checked"
-    property var toolkitSelections: ({})
-    property var toolkitCandidates: ({})
-    property bool toolkitBusy: false
-    readonly property bool toolkitStatusBusy: toolkitStatusProcess.running
-    property bool toolkitStatusParsed: false
-    property bool toolkitStatusPending: false
-    property string toolkitPreviewState: "none"
-    property string toolkitPreviewToken: ""
-    property string toolkitPreviewCapability: ""
-    property string toolkitPreviewValue: ""
-    property alias toolkitPreviewRemaining: toolkitCountdown.remaining
-    property string toolkitPreviewDetail: ""
-    property string toolkitActionKind: ""
-    property string toolkitActionCapability: ""
-    property string toolkitActionValue: ""
-    property string toolkitActionToken: ""
-    property string toolkitActionError: ""
-    property bool toolkitActionSucceeded: false
-    readonly property var toolkitCapabilities: ["cursor", "icon", "gtk", "qt"]
-    readonly property var toolkitSentinels: ({
-        "cursor": "follow-theme",
-        "icon": "follow-system",
-        "gtk": "follow-theme",
-        "qt": "follow-theme"
-    })
-    readonly property var toolkitTitles: ({
-        "cursor": "Cursor theme",
-        "icon": "Icon theme",
-        "gtk": "GTK theme",
-        "qt": "Qt platform theme"
-    })
+    // The inventory's processes, which the wallpaper model waits on, and the
+    // one thing it does to them: a kept or reverted preview stops a read that
+    // would only report the state being replaced (#282).
+    readonly property bool inventoryRunning: inventoryProcess.running
+    readonly property bool inventoryWatchStarting: inventoryWatch.running && !root.inventoryWatchReady
+    function stopInventoryRead() {
+        if (inventoryProcess.running) inventoryProcess.running = false;
+    }
     property string message: ""
     property string messageSeverity: "idle"
     property string previewState: "none"
@@ -178,30 +96,13 @@ Scope {
     property string actionError: ""
     property bool actionSucceeded: false
 
-    readonly property string homeDir: Quickshell.env("HOME") || ""
-    readonly property string configuredConfigHome: Quickshell.env("XDG_CONFIG_HOME")
-    readonly property string configuredDataHome: Quickshell.env("XDG_DATA_HOME")
-    readonly property string configuredStateHome: Quickshell.env("XDG_STATE_HOME")
-    readonly property string configHome: root.configuredConfigHome.startsWith("/")
-        ? root.configuredConfigHome : root.homeDir + "/.config"
-    readonly property string dataHome: root.configuredDataHome.startsWith("/")
-        ? root.configuredDataHome : root.homeDir + "/.local/share"
-    readonly property string stateHome: root.configuredStateHome.startsWith("/")
-        ? root.configuredStateHome : root.homeDir + "/.local/state"
+    readonly property string configHome: Xdg.configHome
+    readonly property string dataHome: Xdg.dataHome
+    readonly property string stateHome: Xdg.stateHome
     readonly property string themesPath: root.configHome + "/lyona/themes.toml"
-    readonly property string wallpaperConfigPath: root.configHome + "/lyona/wallpaper.conf"
-    readonly property string fontConfigPath: root.configHome + "/lyona/font.conf"
-    readonly property string fontPreviewPath: root.stateHome
-        + "/lyona/appearance/font/preview.current"
-    readonly property var fontCandidates: root.inventoryCandidates.filter(function(candidate) {
-        return candidate.id === "font";
-    })
     // The shipped themes.toml, as the helper reports it (Sync Sprint 12 S12-13):
     // it lives beside the installed helpers, which only the helper can find.
     property string managedThemesPath: ""
-    readonly property var wallpaperCandidates: root.inventoryCandidates.filter(function(candidate) {
-        return candidate.id === "wallpaper";
-    })
     readonly property var integrationWatchPaths: [
         root.configHome + "/alacritty/active-theme.toml",
         root.configHome + "/alacritty/alacritty.toml",
@@ -209,7 +110,7 @@ Scope {
         root.configHome + "/kitty/kitty.conf",
         root.configHome + "/gtk-3.0/settings.ini",
         root.configHome + "/gtk-4.0/settings.ini",
-        (Quickshell.env("HOME") || "") + "/.gtkrc-2.0",
+        Xdg.home + "/.gtkrc-2.0",
         root.configHome + "/lyona/cursor.Xresources",
         root.configHome + "/lyona/theme-env.sh",
         root.configHome + "/qt5ct/qt5ct.conf",
@@ -221,7 +122,7 @@ Scope {
         root.stateHome + "/lyona/appearance/transaction.meta",
         root.stateHome + "/lyona/appearance/transaction.failed",
         root.stateHome + "/lyona/appearance/integration-transaction",
-        root.wallpaperConfigPath,
+        wallpaperModel.configPath,
         root.stateHome + "/lyona/appearance/wallpaper/preview.current"
     ]
     readonly property var requiredIntegrationIds: [
@@ -248,10 +149,10 @@ Scope {
         for (const integration of root.integrations) {
             if (integration.state !== "available") return "partial";
         }
-        if (root.wallpaperProviderState !== "available"
-                || root.wallpaperState !== "available") return "partial";
-        if (root.fontProviderState !== "available"
-                || root.fontState !== "available") return "partial";
+        if (wallpaperModel.providerState !== "available"
+                || wallpaperModel.selectionState !== "available") return "partial";
+        if (fontModel.providerState !== "available"
+                || fontModel.selectionState !== "available") return "partial";
         return "available";
     }
 
@@ -270,16 +171,6 @@ Scope {
         return typeof value === "string" && value.indexOf("\t") < 0
             && value.indexOf("\n") < 0 && value.length <= 4095
             && (allowEmpty || value.length > 0);
-    }
-
-    function validWallpaperFit(value) {
-        return value === "center" || value === "fill" || value === "max"
-            || value === "scale" || value === "tile";
-    }
-
-    function validFontScale(value) {
-        return value === "0.80" || value === "0.90" || value === "1.00"
-            || value === "1.10" || value === "1.25" || value === "1.50";
     }
 
     function validThemeName(value) {
@@ -551,23 +442,6 @@ Scope {
         QueuedRun.startOrQueue(readinessProcess, root, "mutationReadinessPending", actionProcess.running);
     }
 
-    function refreshWallpaperStatus() {
-        if (!root.settingsVisible) return;
-        if (root.wallpaperReconcilePending) root.tryReconcileWallpaperPreview();
-        QueuedRun.startOrQueue(wallpaperStatusProcess, root, "wallpaperStatusPending",
-            wallpaperReadinessProcess.running || wallpaperActionProcess.running || inventoryProcess.running,
-            function() { root.wallpaperStatusParsed = false; });
-    }
-
-    function refreshFontStatus() {
-        if (!fontReadinessProcess.running && !fontActionProcess.running) {
-            root.fontMutationReady = false;
-            fontReadinessProcess.running = true;
-        }
-        QueuedRun.startOrQueue(fontStatusProcess, root, "fontStatusPending", fontActionProcess.running,
-            function() { root.fontStatusParsed = false; });
-    }
-
     function refreshInventory(allowUnwatched) {
         if (!root.settingsVisible) return;
         if (!root.inventoryWatchReady && !root.inventoryWatchFailed
@@ -575,7 +449,7 @@ Scope {
             root.inventoryPending = true;
             return;
         }
-        if (wallpaperStatusProcess.running || wallpaperActionProcess.running) {
+        if (wallpaperModel.reading) {
             root.inventoryPending = true;
             root.inventoryPendingAllowUnwatched = root.inventoryPendingAllowUnwatched
                 || allowUnwatched === true;
@@ -608,9 +482,9 @@ Scope {
         root.refreshPreviewStatus(forcePreviewStatus === true);
         root.refreshRecoveryStatus();
         root.refreshMutationReadiness();
-        root.refreshWallpaperStatus();
-        root.refreshFontStatus();
-        root.refreshToolkitStatus();
+        wallpaperModel.refreshStatus();
+        fontModel.refreshStatus();
+        toolkitModel.refreshStatus();
     }
 
     function openSettings() {
@@ -620,8 +494,7 @@ Scope {
         root.inventoryWatchReady = false;
         root.inventoryWatchSawEvent = false;
         root.inventoryWatchFailed = false;
-        if (!wallpaperReadinessProcess.running)
-            wallpaperReadinessProcess.running = true;
+        wallpaperModel.startReadiness();
         root.startInventoryWatcher(true);
         root.refreshAll(true);
     }
@@ -667,8 +540,8 @@ Scope {
         root.inventoryWatchReady = false;
         root.inventoryWatchSawEvent = false;
         inventoryProcess.running = false;
-        wallpaperStatusProcess.running = false;
-        root.wallpaperStatusPending = false;
+        wallpaperModel.stopStatusRead();
+        wallpaperModel.statusPending = false;
         root.inventoryPending = false;
         root.inventoryPendingAllowUnwatched = false;
         root.mutationReadinessPending = false;
@@ -679,7 +552,7 @@ Scope {
     }
 
     function runAction(action, args, theme, token) {
-        if (root.busy || root.wallpaperBusy || root.fontBusy || actionProcess.running) {
+        if (root.busy || wallpaperModel.busy || fontModel.busy || actionProcess.running) {
             root.message = "Another appearance change is already in progress";
             root.messageSeverity = "warning";
             return;
@@ -739,736 +612,7 @@ Scope {
         root.runAction("recover", [], root.recoveryTheme, "");
     }
 
-    function nextWallpaperPreviewToken() {
-        return "wallpaper-" + Quickshell.processId.toString() + "-" + Date.now().toString();
-    }
-
-    function nextFontPreviewToken() {
-        return "font-" + Quickshell.processId.toString() + "-" + Date.now().toString();
-    }
-
-    function clearFontStatus(detail) {
-        root.fontStatusParsed = false;
-        root.fontProviderState = "unavailable";
-        root.fontProviderDetail = detail;
-        root.fontState = "unavailable";
-        root.fontDetail = detail;
-        root.fontMutationReady = false;
-        if (!fontStatusRetryTimer.running && root.fontStatusRetryAttempts < 3) {
-            root.fontStatusRetryAttempts++;
-            fontStatusRetryTimer.restart();
-        }
-    }
-
-    function parseFontStatus(text) {
-        let protocolValid = false;
-        let provider = null;
-        let selection = null;
-        let preview = null;
-        for (const line of text.trim().split("\n")) {
-            const fields = line.split("\t");
-            if (fields[0] === "appearance-font-action-protocol") {
-                protocolValid = Protocol.validHeader(fields, 1);
-            } else if (fields[0] === "provider" && fields.length === 5
-                    && fields[1] === "font" && root.validState(fields[2])
-                    && fields[3] === "user-session"
-                    && root.validInventoryField(fields[4], false)) {
-                provider = { "state": fields[2], "detail": fields[4] };
-            } else if (fields[0] === "selection" && fields.length === 5
-                    && root.validState(fields[1]) && root.validInventoryField(fields[2], false)
-                    && root.validFontScale(fields[3])
-                    && root.validInventoryField(fields[4], false)) {
-                selection = { "state": fields[1], "family": fields[2],
-                    "scale": Number(fields[3]), "detail": fields[4] };
-            } else if (fields[0] === "preview" && fields.length === 7
-                    && (fields[1] === "none" || fields[1] === "active" || fields[1] === "failed")
-                    && root.validInventoryField(fields[2], true)
-                    && root.validInventoryField(fields[3], true)
-                    && (fields[4].length === 0 || root.validFontScale(fields[4]))
-                    && /^[0-9]+$/.test(fields[5])
-                    && root.validInventoryField(fields[6], false)) {
-                preview = { "state": fields[1], "token": fields[2], "family": fields[3],
-                    "scale": fields[4].length > 0 ? Number(fields[4]) : 1.0,
-                    "remaining": Number(fields[5]), "detail": fields[6] };
-            }
-        }
-        if (!protocolValid || provider === null || selection === null || preview === null) {
-            root.clearFontStatus("Font helper returned an unsupported response");
-            return;
-        }
-        const previewWasActive = root.fontPreviewState === "active";
-        const previousRemaining = root.fontPreviewRemaining;
-        root.fontStatusParsed = true;
-        root.fontStatusRetryAttempts = 0;
-        fontStatusRetryTimer.stop();
-        root.fontProviderState = provider.state;
-        root.fontProviderDetail = provider.detail;
-        root.fontState = selection.state;
-        root.fontFamily = selection.family;
-        root.fontScale = selection.scale;
-        root.fontDetail = selection.detail;
-        root.fontPreviewState = preview.state;
-        root.fontPreviewToken = preview.token;
-        root.fontPreviewFamily = preview.family;
-        root.fontPreviewScale = preview.scale;
-        root.fontPreviewRemaining = preview.remaining;
-        root.fontPreviewDetail = preview.detail;
-        Theme.applyFontPreferences(root.fontFamily, root.fontScale);
-        if (!previewWasActive && preview.state === "active") {
-            root.message = "Font preview active; keep it within " + preview.remaining
-                + (preview.remaining === 1 ? " second" : " seconds") + " or it will revert";
-            root.messageSeverity = "warning";
-        } else if (previewWasActive && preview.state === "none"
-                && previousRemaining <= 1) {
-            root.message = "Font preview expired and reverted automatically";
-            root.messageSeverity = "warning";
-        }
-    }
-
-    function toolkitSentinelFor(capability) {
-        return root.toolkitSentinels[capability] || "follow-theme";
-    }
-
-    function toolkitSelectionFor(capability) {
-        const entry = root.toolkitSelections[capability];
-        if (entry === undefined) {
-            return { "state": "idle", "option": root.toolkitSentinelFor(capability),
-                "live": "", "detail": "Toolkit state has not been loaded" };
-        }
-        return entry;
-    }
-
-    function toolkitCandidatesFor(capability) {
-        const entry = root.toolkitCandidates[capability];
-        return entry === undefined ? [] : entry;
-    }
-
-    function clearToolkitStatus(detail) {
-        root.toolkitProviderState = "unavailable";
-        root.toolkitProviderDetail = detail;
-        root.toolkitMutationReady = false;
-        root.toolkitMutationDetail = detail;
-        root.toolkitSelections = ({});
-        root.toolkitCandidates = ({});
-        root.toolkitPreviewState = "none";
-        root.toolkitPreviewToken = "";
-        root.toolkitPreviewCapability = "";
-        root.toolkitPreviewValue = "";
-        root.toolkitPreviewRemaining = 0;
-        root.toolkitPreviewDetail = "";
-    }
-
-    function refreshToolkitStatus() {
-        QueuedRun.startOrQueue(toolkitStatusProcess, root, "toolkitStatusPending", toolkitActionProcess.running,
-            function() { root.toolkitStatusParsed = false; });
-    }
-
-    function parseToolkitStatus(text) {
-        let protocolValid = false;
-        let complete = false;
-        let provider = null;
-        let preview = null;
-        let mutation = null;
-        const selections = ({});
-        const candidates = ({});
-        for (const line of text.trim().split("\n")) {
-            const fields = line.split("\t");
-            if (fields[0] === "toolkit-action-protocol") {
-                protocolValid = Protocol.validHeader(fields, 1);
-            } else if (fields[0] === "provider" && fields.length === 5
-                    && fields[1] === "toolkit" && root.validInventoryField(fields[4], false)) {
-                provider = { "state": fields[2], "detail": fields[4] };
-            } else if (fields[0] === "selection" && fields.length === 6
-                    && root.toolkitCapabilities.indexOf(fields[1]) !== -1
-                    && root.validInventoryField(fields[3], false)
-                    && root.validInventoryField(fields[4], true)
-                    && root.validInventoryField(fields[5], false)) {
-                selections[fields[1]] = { "state": fields[2], "option": fields[3],
-                    "live": fields[4], "detail": fields[5] };
-            } else if (fields[0] === "candidate" && fields.length === 3
-                    && root.toolkitCapabilities.indexOf(fields[1]) !== -1
-                    && root.validInventoryField(fields[2], false)) {
-                if (candidates[fields[1]] === undefined) candidates[fields[1]] = [];
-                candidates[fields[1]].push(fields[2]);
-            } else if (fields[0] === "preview" && fields.length === 7
-                    && (fields[1] === "none" || fields[1] === "active" || fields[1] === "failed")
-                    && root.validInventoryField(fields[2], true)
-                    && root.validInventoryField(fields[3], true)
-                    && root.validInventoryField(fields[4], true)
-                    && /^[0-9]+$/.test(fields[5])
-                    && root.validInventoryField(fields[6], false)) {
-                preview = { "state": fields[1], "token": fields[2], "capability": fields[3],
-                    "value": fields[4], "remaining": Number(fields[5]), "detail": fields[6] };
-            } else if (fields[0] === "mutation" && fields.length === 3
-                    && (fields[1] === "ready" || fields[1] === "blocked")
-                    && root.validInventoryField(fields[2], true)) {
-                mutation = { "ready": fields[1] === "ready", "detail": fields[2] };
-            } else if (fields[0] === "complete") {
-                complete = true;
-            }
-        }
-        // A status that stopped early would otherwise render as a pane with
-        // some capabilities missing, which looks like they are unsupported.
-        if (!protocolValid || !complete || provider === null || preview === null
-                || mutation === null) {
-            root.clearToolkitStatus("Toolkit helper returned an unsupported response");
-            return;
-        }
-        for (const capability of root.toolkitCapabilities) {
-            if (selections[capability] === undefined) {
-                root.clearToolkitStatus("Toolkit helper returned an incomplete response");
-                return;
-            }
-        }
-        const previewWasActive = root.toolkitPreviewState === "active";
-        const previousRemaining = root.toolkitPreviewRemaining;
-        root.toolkitStatusParsed = true;
-        root.toolkitProviderState = provider.state;
-        root.toolkitProviderDetail = provider.detail;
-        root.toolkitSelections = selections;
-        root.toolkitCandidates = candidates;
-        root.toolkitMutationReady = mutation.ready;
-        root.toolkitMutationDetail = mutation.detail;
-        root.toolkitPreviewState = preview.state;
-        root.toolkitPreviewToken = preview.token;
-        root.toolkitPreviewCapability = preview.capability;
-        root.toolkitPreviewValue = preview.value;
-        root.toolkitPreviewRemaining = preview.remaining;
-        root.toolkitPreviewDetail = preview.detail;
-        if (!previewWasActive && preview.state === "active") {
-            root.message = "Toolkit preview active; keep it within " + preview.remaining
-                + (preview.remaining === 1 ? " second" : " seconds") + " or it will revert";
-            root.messageSeverity = "warning";
-        } else if (previewWasActive && preview.state === "none" && previousRemaining <= 1) {
-            root.message = "Toolkit preview expired and reverted automatically";
-            root.messageSeverity = "warning";
-        }
-    }
-
-    function runToolkitAction(action, args, capability, value, token) {
-        if (root.toolkitBusy || toolkitActionProcess.running || toolkitStatusProcess.running
-                || root.busy || root.wallpaperBusy || root.fontBusy) {
-            root.message = "Another appearance change is already in progress";
-            root.messageSeverity = "warning";
-            return;
-        }
-        root.toolkitBusy = true;
-        root.toolkitActionKind = action;
-        root.toolkitActionCapability = capability || "";
-        root.toolkitActionValue = value || "";
-        root.toolkitActionToken = token || "";
-        root.toolkitActionError = "";
-        root.toolkitActionSucceeded = false;
-        root.message = "Applying toolkit change...";
-        root.messageSeverity = "idle";
-        toolkitActionProcess.command = Commands.checkedCommand(
-            Commands.settingsToolkitCommand(action, args));
-        toolkitActionProcess.running = true;
-    }
-
-    function validToolkitChoice(capability, value) {
-        if (root.toolkitCapabilities.indexOf(capability) === -1) return false;
-        if (!root.validInventoryField(value, false)) return false;
-        return root.toolkitCandidatesFor(capability).indexOf(value) !== -1;
-    }
-
-    function nextToolkitPreviewToken() {
-        return "toolkit-" + Date.now().toString(36);
-    }
-
-    function previewToolkit(capability, value) {
-        if (!root.toolkitMutationReady || !root.validToolkitChoice(capability, value)
-                || root.toolkitPreviewState !== "none") return;
-        const token = root.nextToolkitPreviewToken();
-        root.runToolkitAction("preview", [token, "30", capability, value],
-            capability, value, token);
-    }
-
-    function applyToolkit(capability, value) {
-        if (!root.toolkitMutationReady || !root.validToolkitChoice(capability, value)
-                || root.toolkitPreviewState !== "none") return;
-        root.runToolkitAction("apply", [capability, value], capability, value, "");
-    }
-
-    function resetToolkit(capability) {
-        if (!root.toolkitMutationReady
-                || root.toolkitCapabilities.indexOf(capability) === -1
-                || root.toolkitPreviewState !== "none") return;
-        root.runToolkitAction("reset", [capability], capability,
-            root.toolkitSentinelFor(capability), "");
-    }
-
-    function keepToolkitPreview() {
-        if (root.toolkitPreviewState !== "active" || root.toolkitPreviewToken.length === 0) return;
-        root.runToolkitAction("keep", [root.toolkitPreviewToken],
-            root.toolkitPreviewCapability, root.toolkitPreviewValue, root.toolkitPreviewToken);
-    }
-
-    function revertToolkitPreview() {
-        if (root.toolkitPreviewState !== "active" || root.toolkitPreviewToken.length === 0) return;
-        root.runToolkitAction("revert", [root.toolkitPreviewToken],
-            root.toolkitPreviewCapability, root.toolkitPreviewValue, root.toolkitPreviewToken);
-    }
-
-    function abandonToolkitPreview() {
-        if (root.toolkitPreviewState !== "failed" || root.toolkitPreviewToken.length === 0) return;
-        root.runToolkitAction("abandon", [root.toolkitPreviewToken],
-            root.toolkitPreviewCapability, root.toolkitPreviewValue, root.toolkitPreviewToken);
-    }
-
-    function parseToolkitAction(text) {
-        const lines = text.trim().split("\n");
-        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "toolkit-action-protocol", 1)) return;
-        const fields = lines[1].split("\t");
-        if (fields.length < 2 || fields[0] !== "result") return;
-        const expected = root.toolkitActionKind === "preview" ? "preview-started"
-            : root.toolkitActionKind;
-        root.toolkitActionSucceeded = fields[1] === expected;
-    }
-
-    function finishToolkitAction() {
-        root.toolkitBusy = false;
-        if (root.toolkitActionSucceeded) {
-            if (root.toolkitActionKind === "preview") {
-                root.toolkitPreviewState = "active";
-                root.toolkitPreviewToken = root.toolkitActionToken;
-                root.toolkitPreviewCapability = root.toolkitActionCapability;
-                root.toolkitPreviewValue = root.toolkitActionValue;
-                root.toolkitPreviewRemaining = 30;
-                root.toolkitPreviewDetail = "Automatic rollback is armed";
-            } else if (root.toolkitActionKind === "keep" || root.toolkitActionKind === "revert"
-                    || root.toolkitActionKind === "abandon") {
-                root.toolkitPreviewState = "none";
-                root.toolkitPreviewToken = "";
-                root.toolkitPreviewCapability = "";
-                root.toolkitPreviewValue = "";
-                root.toolkitPreviewRemaining = 0;
-                root.toolkitPreviewDetail = "";
-            }
-            const title = root.toolkitTitles[root.toolkitActionCapability] || "Toolkit";
-            root.message = root.toolkitActionKind === "preview"
-                ? "Toolkit preview active; keep it within 30 seconds or it will revert"
-                : root.toolkitActionKind === "keep" ? "Toolkit preview kept"
-                    : root.toolkitActionKind === "revert" ? "Toolkit preview reverted"
-                        : root.toolkitActionKind === "abandon" ? "External toolkit state accepted"
-                            : root.toolkitActionKind === "reset"
-                                ? title + " follows the active theme again"
-                                : title + " updated";
-            root.messageSeverity = root.toolkitActionKind === "preview" ? "warning" : "success";
-        } else {
-            root.message = root.toolkitActionError.length > 0 ? root.toolkitActionError
-                : "Toolkit helper did not confirm the requested change";
-            root.messageSeverity = "danger";
-        }
-        Qt.callLater(root.refreshToolkitStatus);
-    }
-
-    function runFontAction(action, args, family, scale, token) {
-        if (root.fontBusy || fontActionProcess.running || fontStatusProcess.running
-                || root.busy || root.wallpaperBusy) {
-            root.message = "Another appearance change is already in progress";
-            root.messageSeverity = "warning";
-            return;
-        }
-        root.fontBusy = true;
-        root.fontActionKind = action;
-        root.fontActionFamily = family || "";
-        root.fontActionScale = scale || 1.0;
-        root.fontActionToken = token || "";
-        root.fontActionError = "";
-        root.fontActionSucceeded = false;
-        root.message = "Applying font change...";
-        root.messageSeverity = "idle";
-        fontActionProcess.command = Commands.checkedCommand(Commands.settingsFontCommand(action, args));
-        fontActionProcess.running = true;
-    }
-
-    function previewFont(family, scale) {
-        const scaleArgument = Number(scale).toFixed(2);
-        if (!root.fontMutationReady || fontReadinessProcess.running
-                || !root.validInventoryField(family, false)
-                || !root.validFontScale(scaleArgument) || root.fontPreviewState !== "none") return;
-        const token = root.nextFontPreviewToken();
-        root.runFontAction("preview", [token, "30", family, scaleArgument], family, scale, token);
-    }
-
-    function applyFont(family, scale) {
-        const scaleArgument = Number(scale).toFixed(2);
-        if (!root.fontMutationReady || fontReadinessProcess.running
-                || !root.validInventoryField(family, false)
-                || !root.validFontScale(scaleArgument) || root.fontPreviewState !== "none") return;
-        root.runFontAction("apply", [family, scaleArgument], family, scale, "");
-    }
-
-    function resetFont() {
-        if (!root.fontMutationReady || fontReadinessProcess.running
-                || root.fontPreviewState !== "none") return;
-        root.runFontAction("reset", [], "", 1.0, "");
-    }
-
-    function keepFontPreview() {
-        if (root.fontPreviewState !== "active" || root.fontPreviewToken.length === 0) return;
-        root.runFontAction("keep", [root.fontPreviewToken], root.fontPreviewFamily,
-            root.fontPreviewScale, root.fontPreviewToken);
-    }
-
-    function revertFontPreview() {
-        if ((root.fontPreviewState !== "active" && root.fontPreviewState !== "failed")
-                || root.fontPreviewToken.length === 0) return;
-        root.runFontAction("revert", [root.fontPreviewToken], root.fontPreviewFamily,
-            root.fontPreviewScale, root.fontPreviewToken);
-    }
-
-    function abandonFontPreview() {
-        if (root.fontPreviewState !== "failed" || root.fontPreviewToken.length === 0) return;
-        root.runFontAction("abandon", [root.fontPreviewToken], root.fontPreviewFamily,
-            root.fontPreviewScale, root.fontPreviewToken);
-    }
-
-    function parseFontAction(text) {
-        const lines = text.trim().split("\n");
-        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "appearance-font-action-protocol", 1)) return;
-        const fields = lines[1].split("\t");
-        if (fields.length !== 2 || fields[0] !== "result") return;
-        const expected = root.fontActionKind === "preview" ? "preview-started"
-            : root.fontActionKind === "apply" ? "applied" : root.fontActionKind;
-        root.fontActionSucceeded = fields[1] === expected;
-    }
-
-    function finishFontAction() {
-        root.fontBusy = false;
-        if (root.fontActionSucceeded) {
-            if (root.fontActionKind === "preview") {
-                root.fontPreviewState = "active";
-                root.fontPreviewToken = root.fontActionToken;
-                root.fontPreviewFamily = root.fontActionFamily;
-                root.fontPreviewScale = root.fontActionScale;
-                root.fontPreviewRemaining = 30;
-                root.fontPreviewDetail = "Automatic rollback is armed";
-            } else if (root.fontActionKind === "keep" || root.fontActionKind === "revert"
-                    || root.fontActionKind === "abandon") {
-                root.fontPreviewState = "none";
-                root.fontPreviewToken = "";
-                root.fontPreviewFamily = "";
-                root.fontPreviewScale = 1.0;
-                root.fontPreviewRemaining = 0;
-                root.fontPreviewDetail = "";
-            }
-            root.message = root.fontActionKind === "preview"
-                ? "Font preview active; keep it within 30 seconds or it will revert"
-                : root.fontActionKind === "keep" ? "Font preview kept"
-                    : root.fontActionKind === "revert" ? "Font preview reverted"
-                        : root.fontActionKind === "abandon" ? "External font state accepted"
-                            : root.fontActionKind === "reset"
-                                ? "Font reset to the managed shell default" : "Font applied";
-            root.messageSeverity = root.fontActionKind === "preview" ? "warning" : "success";
-        } else {
-            root.message = root.fontActionError.length > 0 ? root.fontActionError
-                : "Font helper did not confirm the requested change";
-            root.messageSeverity = "danger";
-        }
-        Qt.callLater(root.refreshFontStatus);
-        if (root.settingsVisible) root.refreshInventory(true);
-    }
-
-    function clearWallpaperStatus(detail) {
-        const preservePreview = (root.wallpaperPreviewState === "active"
-                || root.wallpaperPreviewState === "failed")
-            && root.wallpaperPreviewToken.length > 0;
-        root.wallpaperStatusParsed = false;
-        root.wallpaperProviderState = "unavailable";
-        root.wallpaperProviderDetail = detail;
-        root.wallpaperState = "unavailable";
-        root.wallpaperPath = "";
-        root.wallpaperFit = "fill";
-        root.wallpaperDetail = detail;
-        root.wallpaperMutationState = "unavailable";
-        root.wallpaperMutationReady = false;
-        root.wallpaperMutationDetail = detail;
-        root.wallpaperResetState = "unavailable";
-        root.wallpaperResetReady = false;
-        root.wallpaperResetDetail = detail;
-        if (!preservePreview) {
-            root.wallpaperPreviewState = "none";
-            root.wallpaperPreviewToken = "";
-            root.wallpaperPreviewRemaining = 0;
-            root.wallpaperPreviewPath = "";
-            root.wallpaperPreviewFit = "fill";
-            root.wallpaperPreviewDetail = "";
-        }
-    }
-
-    function parseWallpaperStatus(text) {
-        let protocolValid = false;
-        let provider = null;
-        let selection = null;
-        let mutation = null;
-        let reset = { "state": "restricted",
-            "detail": "Installed wallpaper helper does not report reset readiness" };
-        let preview = null;
-        for (const line of text.trim().split("\n")) {
-            const fields = line.split("\t");
-            if (fields[0] === "wallpaper-protocol") {
-                protocolValid = Protocol.validHeader(fields, 1);
-            } else if (fields[0] === "provider" && fields.length === 5
-                    && fields[1] === "wallpaper" && root.validState(fields[2])
-                    && fields[3] === "user-session" && root.validInventoryField(fields[4], false)) {
-                provider = { "state": fields[2], "detail": fields[4] };
-            } else if (fields[0] === "selection" && fields.length === 5
-                    && root.validState(fields[1]) && root.validInventoryField(fields[2], true)
-                    && root.validWallpaperFit(fields[3]) && root.validInventoryField(fields[4], false)) {
-                selection = { "state": fields[1], "path": fields[2], "fit": fields[3],
-                    "detail": fields[4] };
-            } else if (fields[0] === "mutation" && fields.length === 3
-                    && (fields[1] === "available" || fields[1] === "restricted")
-                    && root.validInventoryField(fields[2], false)) {
-                mutation = { "state": fields[1], "detail": fields[2] };
-            } else if (fields[0] === "reset" && fields.length === 3
-                    && (fields[1] === "available" || fields[1] === "restricted")
-                    && root.validInventoryField(fields[2], false)) {
-                reset = { "state": fields[1], "detail": fields[2] };
-            } else if (fields[0] === "preview" && fields.length === 7
-                    && (fields[1] === "none" || fields[1] === "active" || fields[1] === "failed")
-                    && root.validInventoryField(fields[2], true) && /^[0-9]+$/.test(fields[3])
-                    && root.validInventoryField(fields[4], true) && root.validWallpaperFit(fields[5])
-                    && root.validInventoryField(fields[6], false)) {
-                preview = { "state": fields[1], "token": fields[2], "remaining": Number(fields[3]),
-                    "path": fields[4], "fit": fields[5], "detail": fields[6] };
-            }
-        }
-        if (!protocolValid || provider === null || selection === null || mutation === null
-                || preview === null) {
-            root.clearWallpaperStatus("Wallpaper helper returned an unsupported response");
-            return;
-        }
-        const previewWasActive = root.wallpaperPreviewState === "active";
-        const previewRemainingBefore = root.wallpaperPreviewRemaining;
-        root.wallpaperStatusParsed = true;
-        root.wallpaperProviderState = provider.state;
-        root.wallpaperProviderDetail = provider.detail;
-        root.wallpaperState = selection.state;
-        root.wallpaperPath = selection.path;
-        root.wallpaperFit = selection.fit;
-        root.wallpaperDetail = selection.detail;
-        root.wallpaperMutationState = mutation.state;
-        root.wallpaperMutationReady = mutation.state === "available";
-        root.wallpaperMutationDetail = mutation.detail;
-        root.wallpaperResetState = reset.state;
-        root.wallpaperResetReady = reset.state === "available";
-        root.wallpaperResetDetail = reset.detail;
-        root.wallpaperPreviewState = preview.state;
-        root.wallpaperPreviewToken = preview.token;
-        root.wallpaperPreviewRemaining = preview.remaining;
-        root.wallpaperPreviewPath = preview.path;
-        root.wallpaperPreviewFit = preview.fit;
-        root.wallpaperPreviewDetail = preview.detail;
-        if (!previewWasActive && preview.state === "active") {
-            root.message = "Wallpaper preview active; keep it within " + preview.remaining
-                + (preview.remaining === 1 ? " second" : " seconds") + " or it will revert";
-            root.messageSeverity = "warning";
-        } else if (previewWasActive && preview.state === "none"
-                && root.message.startsWith("Wallpaper preview active; keep it within ")
-                && root.message.endsWith(" or it will revert")) {
-            root.message = previewRemainingBefore <= 1
-                ? "Wallpaper preview expired and reverted automatically"
-                : "Wallpaper preview completed outside Settings";
-            root.messageSeverity = previewRemainingBefore <= 1 ? "warning" : "idle";
-        }
-    }
-
-    function runWallpaperAction(action, args, path, fit, token) {
-        const previewDecision = root.wallpaperPreviewState === "active"
-            && (action === "keep" || action === "revert");
-        if (previewDecision && (inventoryProcess.running || root.inventoryPending
-                || root.wallpaperStatusPending)
-                && !root.wallpaperBusy && !wallpaperActionProcess.running
-                && !wallpaperReadinessProcess.running && !wallpaperStatusProcess.running
-                && !root.busy && !root.fontBusy) {
-            root.inventoryGeneration++;
-            root.wallpaperStatusPending = false;
-            root.inventoryPending = false;
-            root.inventoryPendingAllowUnwatched = false;
-            if (inventoryProcess.running) inventoryProcess.running = false;
-        }
-        if (root.wallpaperBusy || wallpaperActionProcess.running
-                || wallpaperReadinessProcess.running || wallpaperStatusProcess.running
-                || (!previewDecision && (inventoryProcess.running
-                    || root.wallpaperStatusPending || root.inventoryPending))
-                || (!previewDecision && inventoryWatch.running
-                    && !root.inventoryWatchReady)
-                || root.busy || root.fontBusy) {
-            root.message = "Another appearance change is already in progress";
-            root.messageSeverity = "warning";
-            return;
-        }
-        root.wallpaperBusy = true;
-        root.wallpaperActionKind = action;
-        root.wallpaperActionPath = path || "";
-        root.wallpaperActionFit = fit || "fill";
-        root.wallpaperActionResultState = "";
-        root.wallpaperActionToken = token || "";
-        root.wallpaperActionError = "";
-        root.wallpaperActionSucceeded = false;
-        root.message = "Applying wallpaper change...";
-        root.messageSeverity = "idle";
-        wallpaperActionProcess.command = Commands.checkedCommand(
-            Commands.settingsWallpaperCommand(action === "reconcile" ? "status" : action, args));
-        wallpaperActionProcess.running = true;
-    }
-
-    function previewWallpaper(path, fit) {
-        if (!root.wallpaperMutationReady || !root.validInventoryField(path, false)
-                || !root.validWallpaperFit(fit) || root.wallpaperPreviewState !== "none") return;
-        const token = root.nextWallpaperPreviewToken();
-        root.runWallpaperAction("preview", [token, "30", path, fit], path, fit, token);
-    }
-
-    function applyWallpaper(path, fit) {
-        if (!root.wallpaperMutationReady || !root.validInventoryField(path, false)
-                || !root.validWallpaperFit(fit) || root.wallpaperPreviewState !== "none") return;
-        root.runWallpaperAction("apply", [path, fit], path, fit, "");
-    }
-
-    function resetWallpaper() {
-        if (!root.wallpaperResetReady || root.wallpaperPreviewState !== "none") return;
-        root.runWallpaperAction("reset", [], "", "fill", "");
-    }
-
-    function keepWallpaperPreview() {
-        if (root.wallpaperPreviewState !== "active" || root.wallpaperPreviewToken.length === 0) return;
-        root.runWallpaperAction("keep", [root.wallpaperPreviewToken], root.wallpaperPreviewPath,
-            root.wallpaperPreviewFit, root.wallpaperPreviewToken);
-    }
-
-    function revertWallpaperPreview() {
-        if ((root.wallpaperPreviewState !== "active" && root.wallpaperPreviewState !== "failed")
-                || root.wallpaperPreviewToken.length === 0) return;
-        root.runWallpaperAction("revert", [root.wallpaperPreviewToken], root.wallpaperPreviewPath,
-            root.wallpaperPreviewFit, root.wallpaperPreviewToken);
-    }
-
-    function abandonWallpaperPreview() {
-        if (root.wallpaperPreviewState !== "failed" || root.wallpaperPreviewToken.length === 0) return;
-        root.runWallpaperAction("abandon", [root.wallpaperPreviewToken], root.wallpaperPreviewPath,
-            root.wallpaperPreviewFit, root.wallpaperPreviewToken);
-    }
-
-    function reconcileWallpaperPreview() {
-        if (root.wallpaperPreviewState !== "failed") return;
-        root.wallpaperReconcilePending = true;
-        root.tryReconcileWallpaperPreview();
-    }
-
-    // runWallpaperAction() silently drops the reconcile request whenever the
-    // continuous background status poller (or another action) is mid-flight,
-    // which happens often enough while the wallpaper pane is open that a
-    // single fire-and-forget attempt can be lost with no user-visible retry.
-    // refreshWallpaperStatus() re-attempts this on every poll cycle instead.
-    function tryReconcileWallpaperPreview() {
-        if (!root.wallpaperReconcilePending) return;
-        if (root.wallpaperPreviewState !== "failed") {
-            root.wallpaperReconcilePending = false;
-            return;
-        }
-        if (root.wallpaperBusy || wallpaperActionProcess.running || wallpaperReadinessProcess.running
-                || wallpaperStatusProcess.running || inventoryProcess.running
-                || root.wallpaperStatusPending || root.inventoryPending
-                || (inventoryWatch.running && !root.inventoryWatchReady)
-                || root.busy || root.fontBusy) {
-            return;
-        }
-        root.wallpaperReconcilePending = false;
-        root.runWallpaperAction("reconcile", [], root.wallpaperPreviewPath,
-            root.wallpaperPreviewFit, root.wallpaperPreviewToken);
-    }
-
-    // A reconcile that found something blocking it stays queued. Retry it as soon
-    // as anything that can have been blocking it clears, so it does not depend on
-    // a later status poll (or a watcher event) happening to come along.
-    function retryQueuedWallpaperReconcile() {
-        if (root.wallpaperReconcilePending) Qt.callLater(root.tryReconcileWallpaperPreview);
-    }
-    onBusyChanged: if (!root.busy) root.retryQueuedWallpaperReconcile()
-    onFontBusyChanged: if (!root.fontBusy) root.retryQueuedWallpaperReconcile()
-    onWallpaperBusyChanged: if (!root.wallpaperBusy) root.retryQueuedWallpaperReconcile()
-    onWallpaperStatusBusyChanged: if (!root.wallpaperStatusBusy) root.retryQueuedWallpaperReconcile()
-
-    function parseWallpaperAction(text) {
-        if (root.wallpaperActionKind === "reconcile") {
-            root.wallpaperStatusParsed = false;
-            root.parseWallpaperStatus(text);
-            root.wallpaperActionSucceeded = root.wallpaperStatusParsed;
-            return;
-        }
-        const lines = text.trim().split("\n");
-        if (lines.length !== 2 || !Protocol.isHeader(lines[0].split("\t"), "wallpaper-action-protocol", 1)) return;
-        const fields = lines[1].split("\t");
-        if (root.wallpaperActionKind === "preview") {
-            root.wallpaperActionSucceeded = fields.length === 5 && fields[0] === "preview"
-                && fields[1] === root.wallpaperActionToken && fields[2] === "30"
-                && fields[3] === root.wallpaperActionPath && fields[4] === root.wallpaperActionFit;
-        } else if (root.wallpaperActionKind === "apply") {
-            root.wallpaperActionSucceeded = fields.length === 4 && fields[0] === "result"
-                && fields[1] === "apply" && fields[2] === root.wallpaperActionPath
-                && fields[3] === root.wallpaperActionFit;
-        } else if (root.wallpaperActionKind === "reset") {
-            root.wallpaperActionSucceeded = fields.length === 3 && fields[0] === "result"
-                && fields[1] === "reset" && (fields[2] === "applied" || fields[2] === "unavailable");
-            if (root.wallpaperActionSucceeded) root.wallpaperActionResultState = fields[2];
-        } else {
-            root.wallpaperActionSucceeded = fields.length === 3 && fields[0] === "result"
-                && fields[1] === root.wallpaperActionKind && fields[2] === root.wallpaperActionToken;
-        }
-    }
-
-    function finishWallpaperAction() {
-        if (root.wallpaperActionSucceeded) {
-            if (root.wallpaperActionKind === "preview") {
-                root.wallpaperPreviewState = "active";
-                root.wallpaperPreviewToken = root.wallpaperActionToken;
-                root.wallpaperPreviewRemaining = 30;
-                root.wallpaperPreviewPath = root.wallpaperActionPath;
-                root.wallpaperPreviewFit = root.wallpaperActionFit;
-                root.wallpaperPreviewDetail = "Automatic rollback is armed";
-            } else if (root.wallpaperActionKind === "keep"
-                    || root.wallpaperActionKind === "revert"
-                    || root.wallpaperActionKind === "abandon") {
-                root.wallpaperPreviewState = "none";
-                root.wallpaperPreviewToken = "";
-                root.wallpaperPreviewRemaining = 0;
-                root.wallpaperPreviewPath = "";
-                root.wallpaperPreviewFit = "fill";
-                root.wallpaperPreviewDetail = "";
-            }
-            root.message = root.wallpaperActionKind === "reconcile"
-                ? root.wallpaperPreviewState === "failed"
-                    ? "Wallpaper preview recovery still needs attention"
-                    : "Wallpaper preview recovery reconciled"
-                : root.wallpaperActionKind === "preview"
-                ? "Wallpaper preview active; keep it within 30 seconds or it will revert"
-                : root.wallpaperActionKind === "keep" ? "Wallpaper preview kept"
-                    : root.wallpaperActionKind === "revert" ? "Wallpaper preview reverted"
-                        : root.wallpaperActionKind === "abandon" ? "External wallpaper state restored"
-                            : root.wallpaperActionKind === "reset"
-                                ? root.wallpaperActionResultState === "applied"
-                                    ? "Wallpaper reset to the session default"
-                                    : "Wallpaper selection reset; no session default was available"
-                                : "Wallpaper applied";
-            root.messageSeverity = root.wallpaperActionKind === "reconcile"
-                ? root.wallpaperPreviewState === "failed" ? "warning" : "success"
-                : root.wallpaperActionKind === "preview"
-                    || (root.wallpaperActionKind === "reset"
-                        && root.wallpaperActionResultState === "unavailable")
-                ? "warning" : "success";
-        } else {
-            root.message = root.wallpaperActionError.length > 0 ? root.wallpaperActionError
-                : "Wallpaper helper did not confirm the requested change";
-            root.messageSeverity = "danger";
-        }
-        root.wallpaperBusy = false;
-        Qt.callLater(root.refreshWallpaperStatus);
-        root.refreshInventory(true);
-    }
+    onBusyChanged: if (!root.busy) wallpaperModel.retryQueuedReconcile()
 
     function parseActionResult(text) {
         const lines = text.trim().split("\n");
@@ -1557,26 +701,6 @@ Scope {
         onFileChanged: reload()
     }
 
-    FileView {
-        id: fontConfigWatch
-        path: root.fontConfigPath
-        watchChanges: true
-        printErrors: false
-        onLoaded: fontChangeSettleTimer.restart()
-        onLoadFailed: fontChangeSettleTimer.restart()
-        onFileChanged: reload()
-    }
-
-    FileView {
-        id: fontPreviewWatch
-        path: root.fontPreviewPath
-        watchChanges: true
-        printErrors: false
-        onLoaded: fontChangeSettleTimer.restart()
-        onLoadFailed: fontChangeSettleTimer.restart()
-        onFileChanged: reload()
-    }
-
     Variants {
         model: root.integrationWatchPaths
 
@@ -1645,62 +769,6 @@ Scope {
     }
 
     Process {
-        id: wallpaperReadinessProcess
-        command: Commands.booleanStatusCommand(Commands.settingsWallpaperCommand("reset-ready", []))
-        running: false
-        onRunningChanged: {
-            if (!running && root.settingsVisible)
-                Qt.callLater(root.refreshWallpaperStatus);
-        }
-    }
-
-    Process {
-        id: fontReadinessProcess
-        command: Commands.booleanStatusCommand(Commands.settingsFontCommand("mutation-ready", []))
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: root.fontMutationReady = this.text.trim() === "available"
-        }
-    }
-
-    Process {
-        id: fontStatusProcess
-        command: Commands.checkedCommand(Commands.settingsFontCommand("status", []))
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseFontStatus(this.text) }
-        stderr: StdioCollector { id: fontStatusError }
-        onRunningChanged: {
-            if (running) return;
-            if (!root.fontStatusParsed) {
-                const error = fontStatusError.text.trim();
-                root.clearFontStatus(error.length > 0 ? error
-                    : "Font helper failed before returning a valid status");
-            }
-            if (root.fontStatusPending) Qt.callLater(root.refreshFontStatus);
-        }
-    }
-
-    Process {
-        id: wallpaperStatusProcess
-        command: Commands.settingsWallpaperCommand("status", ["--read-only"])
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseWallpaperStatus(this.text) }
-        stderr: StdioCollector { id: wallpaperStatusError }
-        onRunningChanged: {
-            if (!running && root.settingsVisible && !root.wallpaperStatusParsed) {
-                const error = wallpaperStatusError.text.trim();
-                root.clearWallpaperStatus(error.length > 0 ? error
-                    : "Wallpaper helper failed before returning a valid status");
-            }
-            if (!running && root.settingsVisible && root.inventoryPending) {
-                Qt.callLater(root.retryInventoryRefresh);
-            } else if (!running && root.settingsVisible && root.wallpaperStatusPending) {
-                Qt.callLater(root.refreshWallpaperStatus);
-            }
-        }
-    }
-
-    Process {
         id: inventoryProcess
 
         command: Commands.settingsAppearanceCommand("inventory", [])
@@ -1720,8 +788,8 @@ Scope {
             }
             if (!running && root.inventoryPending && root.settingsVisible) {
                 Qt.callLater(root.retryInventoryRefresh);
-            } else if (!running && root.wallpaperStatusPending && root.settingsVisible) {
-                Qt.callLater(root.refreshWallpaperStatus);
+            } else if (!running && wallpaperModel.statusPending && root.settingsVisible) {
+                Qt.callLater(wallpaperModel.refreshStatus);
             }
         }
     }
@@ -1740,17 +808,17 @@ Scope {
                 root.inventoryWatchReady = true;
                 root.inventoryWatchSawEvent = false;
                 if (root.settingsVisible) {
-                    root.refreshWallpaperStatus();
+                    wallpaperModel.refreshStatus();
                     root.refreshInventory(true);
-                    root.refreshFontStatus();
+                    fontModel.refreshStatus();
                 }
             } else if (line.startsWith("changed\t")) {
                 root.inventoryWatchReady = false;
                 root.inventoryWatchSawEvent = true;
                 root.inventoryPending = true;
                 if (root.settingsVisible) {
-                    root.refreshWallpaperStatus();
-                    root.refreshFontStatus();
+                    wallpaperModel.refreshStatus();
+                    fontModel.refreshStatus();
                 }
             }
         }
@@ -1882,56 +950,6 @@ Scope {
         }
     }
 
-    Process {
-        id: wallpaperActionProcess
-        command: ["sh", "-c", "exit 1"]
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseWallpaperAction(this.text) }
-        stderr: StdioCollector { onStreamFinished: root.wallpaperActionError = this.text.trim() }
-        onRunningChanged: if (!running && root.wallpaperBusy) root.finishWallpaperAction()
-    }
-
-    Process {
-        id: fontActionProcess
-        command: ["sh", "-c", "exit 1"]
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseFontAction(this.text) }
-        stderr: StdioCollector { onStreamFinished: root.fontActionError = this.text.trim() }
-        onRunningChanged: if (!running && root.fontBusy) root.finishFontAction()
-    }
-
-    Process {
-        id: toolkitStatusProcess
-        command: Commands.checkedCommand(Commands.settingsToolkitCommand("status", []))
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseToolkitStatus(this.text) }
-        stderr: StdioCollector { id: toolkitStatusError }
-        onRunningChanged: {
-            if (running) return;
-            if (!root.toolkitStatusParsed) {
-                const error = toolkitStatusError.text.trim();
-                root.clearToolkitStatus(error.length > 0 ? error
-                    : "Toolkit helper failed before returning a valid status");
-            }
-            if (root.toolkitStatusPending) Qt.callLater(root.refreshToolkitStatus);
-        }
-    }
-
-    Process {
-        id: toolkitActionProcess
-        command: ["sh", "-c", "exit 1"]
-        running: false
-        stdout: StdioCollector { onStreamFinished: root.parseToolkitAction(this.text) }
-        stderr: StdioCollector { onStreamFinished: root.toolkitActionError = this.text.trim() }
-        onRunningChanged: if (!running && root.toolkitBusy) root.finishToolkitAction()
-    }
-
-    PreviewCountdown {
-        id: toolkitCountdown
-        active: root.settingsVisible && root.toolkitPreviewState === "active"
-        onExpired: Qt.callLater(root.refreshToolkitStatus)
-    }
-
     Timer {
         id: previewZeroRetryTimer
         interval: 250
@@ -1939,31 +957,11 @@ Scope {
         onTriggered: root.refreshPreviewStatus()
     }
 
-    PreviewCountdown {
-        id: wallpaperCountdown
-        active: root.settingsVisible && root.wallpaperPreviewState === "active"
-        onExpired: Qt.callLater(root.refreshWallpaperStatus)
-    }
-
     Timer {
         id: sourceChangeSettleTimer
         interval: 100
         repeat: false
         onTriggered: root.refreshAll()
-    }
-
-    Timer {
-        id: fontChangeSettleTimer
-        interval: 100
-        repeat: false
-        onTriggered: root.refreshFontStatus()
-    }
-
-    Timer {
-        id: fontStatusRetryTimer
-        interval: 250
-        repeat: false
-        onTriggered: root.refreshFontStatus()
     }
 
     Timer {
@@ -2002,9 +1000,4 @@ Scope {
         }
     }
 
-    PreviewCountdown {
-        id: fontCountdown
-        active: root.settingsVisible && root.fontPreviewState === "active"
-        onExpired: Qt.callLater(root.refreshFontStatus)
-    }
 }

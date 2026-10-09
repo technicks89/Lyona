@@ -112,8 +112,9 @@ watched=$core/WatchedProcess.qml
 grep -Fq 'stdout: SplitParser' "$watched"
 grep -Fq 'interval: root.settleInterval' "$watched"
 grep -Fq 'interval: root.restartInterval' "$watched"
-grep -Fq 'if (!root.active)' "$watched"
-grep -Fq 'if (root.active && !watchProcess.running)' "$watched"
+# Restarts only while active, and only for the run it was armed for (#279).
+grep -Fq 'if (!root.active || root.runGeneration !== root.generation)' "$watched"
+grep -Fq 'if (root.active && !watchProcess.running && root.restartGeneration === root.generation)' "$watched"
 # A watcher is event-driven; a repeating timer here would be a poll.
 if grep -Fq 'repeat: true' "$watched"; then
 	printf '%s\n' 'WatchedProcess must not poll.' >&2
@@ -124,9 +125,8 @@ fi
 # that does nothing but restart a settle timer, next to a matching restart
 # timer -- that combination is exactly what the component expresses.
 #
-# Watchers with a bespoke stdout handler (AppearanceModel's inventory
-# handshake) and lone settle or restart timers (BluetoothModel, ControlsModel,
-# NetworkModel, SettingsModel) are deliberately left alone: they are not this
+# Lone settle or restart timers in other models are
+# deliberately left alone: they are not this
 # pattern, and folding them in would mean inventing options for one caller.
 for model in "$shell"/*/*.qml; do
 	[ -f "$model" ] || continue

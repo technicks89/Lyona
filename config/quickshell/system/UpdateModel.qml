@@ -68,17 +68,12 @@ Scope {
     property bool logTruncated: false
     readonly property int logTailBytes: 64 * 1024
 
-    readonly property string homeDir: Quickshell.env("HOME") || ""
     // The developer override (Sync Sprint 12 S12-13): set, the shell runs its
     // helpers from a checkout instead of the installed commands. The shell's own
     // environment is what its helpers inherit, so it is read here, directly.
     readonly property string devScripts: Quickshell.env("LYONA_DEV_SCRIPTS") || ""
-    readonly property string configuredConfigHome: Quickshell.env("XDG_CONFIG_HOME") || ""
-    readonly property string configHome: root.configuredConfigHome.startsWith("/")
-        ? root.configuredConfigHome : root.homeDir + "/.config"
-    readonly property string configuredStateHome: Quickshell.env("XDG_STATE_HOME") || ""
-    readonly property string stateHome: root.configuredStateHome.startsWith("/")
-        ? root.configuredStateHome : root.homeDir + "/.local/state"
+    readonly property string configHome: Xdg.configHome
+    readonly property string stateHome: Xdg.stateHome
     readonly property string updateConfPath: root.configHome + "/lyona/update.conf"
     readonly property string statusPath: root.stateHome + "/lyona/update.status"
     readonly property string logPath: root.stateHome + "/lyona/update.log"

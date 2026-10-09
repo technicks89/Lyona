@@ -149,6 +149,7 @@ assert_contains "$repo/scripts/dwm-settings-input" 'simple_watch_events input in
 # dwm-proc.sh is the only shell code that reads /proc/PID/stat: a copy that
 # split the whole line (awk's $22) took the wrong field for a command name with
 # a space in it, and a fix to one copy never reached the others.
+# shellcheck disable=SC2016 # the $ is a pattern for source text, not an expansion
 proc_inline=$(grep -nE '/proc/(\$[{]?[A-Za-z_0-9]+[}]?|[0-9]+|self)/stat\b|\$22\b' \
 	"$repo"/scripts/* "$repo/install.sh" "$repo"/archiso/airootfs/root/*.sh 2>/dev/null |
 	grep -vE '^[^:]*/scripts/dwm-proc\.sh:' |
@@ -202,6 +203,7 @@ for preview_core_user in dwm-preview.sh dwm-settings-wallpaper dwm-settings-them
 	grep -Fq '. "$lyona_lib/dwm-preview-core.sh"' "$repo/scripts/$preview_core_user" ||
 		fail "$preview_core_user does not use dwm-preview-core.sh"
 done
+# shellcheck disable=SC2016 # the $ is a pattern for source text, not an expansion
 preview_copies=$(grep -nE 'flock (-[nwx]|[0-9])|mktemp.*exchange-[ab]|read -r uptime|\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,[0-9]+\}\$' \
 	"$repo/scripts/dwm-preview.sh" "$repo"/scripts/dwm-settings-* 2>/dev/null |
 	grep -v 'dwm-settings-display:.*\$1 != \*\.\.\*' || true)

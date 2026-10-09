@@ -187,6 +187,13 @@ Scope {
         return false;
     }
 
+    // Moves the pointer onto the menu once its window is up (#282: the window
+    // asks; the process is the model's, as every other is).
+    function warpPointer() {
+        pointerWarpProcess.running = false;
+        pointerWarpProcess.running = true;
+    }
+
     function runHelper(entry) {
         if (actionProcess.running) return;
 
@@ -237,6 +244,12 @@ Scope {
     }
 
     onCurrentEntryIdsChanged: root.refreshRows()
+
+    Process {
+        id: pointerWarpProcess
+
+        command: Commands.pointerHelperCommand("command-menu")
+    }
 
     Process {
         id: actionProcess

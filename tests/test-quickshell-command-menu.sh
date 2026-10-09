@@ -19,8 +19,14 @@ grep -Fq '"actionType": "helper"' "$catalog"
 grep -Fq '"kind": "application"' "$model"
 grep -Fq 'Commands.screenshotHelperCommand(entry.action)' "$model"
 grep -Fq 'Commands.lockHelperCommand()' "$model"
-grep -Fq 'Commands.pointerHelperCommand("command-menu")' "$window"
-grep -Fq 'pointerWarpProcess.running = true;' "$window"
+# #282: the window asks the model, which owns the process; no view starts one.
+grep -Fq 'Commands.pointerHelperCommand("command-menu")' "$model"
+grep -Fq 'pointerWarpProcess.running = true;' "$model"
+grep -Fq 'root.commandMenuModel.warpPointer();' "$window"
+if grep -Eq 'Process \{|Quickshell\.Io' "$window"; then
+	printf 'CommandMenuWindow.qml starts a process of its own again\n' >&2
+	exit 1
+fi
 [ -x "$repo/scripts/dwm-quickshell-pointer" ]
 grep -Fq "while [ \"\$attempt\" -lt 100 ]; do" "$repo/scripts/dwm-quickshell-pointer"
 grep -Fq 'sleep 0.05' "$repo/scripts/dwm-quickshell-pointer"

@@ -235,42 +235,71 @@ watch_pid=
 # shellcheck disable=SC2016 # deferred by design: cleanup_add's argument is
 # eval'd later by lyona_run_cleanup, once $watch_pid actually holds a value.
 cleanup_add 'if [[ -n $watch_pid ]]; then kill "$watch_pid" 2>/dev/null || true; wait "$watch_pid" 2>/dev/null || true; fi'
-# The per-window xprop -spy way, which these stubs fake; dwm-xwatch, which needs
-# a real display, is covered by test-quickshell-state-bridge-xvfb.py.
-PATH="$bin:$PATH" DWM_STATE_WATCHER=spies "$helper" watch >"$work/watch-out" 2>"$work/watch-err" &
-watch_pid=$!
+
+# The watch runs from a checkout, where dwm-xwatch is the built binary beside
+# scripts/ (#282). Its stand-in prints what the real one does: "ready", then
+# "window 0xID" for each window whose properties changed. Unless it is told to
+# fail, when the watch falls back to an xprop -spy per window.
+checkout=$work/checkout
+stage_helpers checkout "$checkout/scripts" dwm-quickshell-state
+cat >"$checkout/dwm-xwatch" <<EOF
+#!/bin/sh
+printf 'xwatch\n' >>"$work/xwatch.log"
+[ ! -f "$work/xwatch-broken" ] || exit 1
+printf 'ready\n'
+while [ ! -f "$work/title-changed" ]; do sleep 0.05; done
+printf 'window 0xaa\n'
+while [ ! -f "$work/fallback-title-changed" ]; do sleep 0.05; done
+printf 'window 0xbb\n'
+exec sleep 30
+EOF
+chmod +x "$checkout/dwm-xwatch"
+
 initial='windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 fallback_updated='windows=0xaa:3:alacritty:Updated title|0xbb:1:firefox:Firefox Updated|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
-i=0
-while [ "$i" -lt 100 ]; do
-	grep -Fqx "$initial" "$work/watch-out" && break
-	sleep 0.05
-	i=$((i + 1))
-done
-grep -Fqx "$initial" "$work/watch-out" || fail 'watch did not emit initial titles' "$work/watch-err"
-touch "$work/title-changed"
-i=0
-while [ "$i" -lt 100 ]; do
-	grep -Fqx "$updated" "$work/watch-out" && break
-	sleep 0.05
-	i=$((i + 1))
-done
-grep -Fqx "$updated" "$work/watch-out" || fail 'watch ignored a title-only change' "$work/xprop.log"
-grep -Fqx 'title=Updated title' "$work/watch-out" || fail 'the active title did not follow the change' "$work/watch-out"
-touch "$work/fallback-title-changed"
-i=0
-while [ "$i" -lt 100 ]; do
-	grep -Fqx "$fallback_updated" "$work/watch-out" && break
-	sleep 0.05
-	i=$((i + 1))
-done
-grep -Fqx "$fallback_updated" "$work/watch-out" || fail 'watch ignored a WM_NAME-only change' "$work/watch-out"
+
+wait_for_line() { # LINE MESSAGE
+	local i=0
+	while [ "$i" -lt 100 ]; do
+		grep -Fqx "$1" "$work/watch-out" && return 0
+		sleep 0.05
+		i=$((i + 1))
+	done
+	fail "$2" "$work/watch-out"
+}
+
+# run_watch: start the watch, see the initial titles, then a _NET_WM_NAME and a
+# WM_NAME change each reach the output.
+run_watch() {
+	rm -f "$work/title-changed" "$work/fallback-title-changed" "$work/watch-out" "$work/xwatch.log"
+	: >"$work/xprop.log"
+	PATH="$bin:$PATH" "$checkout/scripts/dwm-quickshell-state" watch >"$work/watch-out" 2>"$work/watch-err" &
+	watch_pid=$!
+	wait_for_line "$initial" 'watch did not emit initial titles'
+	touch "$work/title-changed"
+	wait_for_line "$updated" 'watch ignored a title-only change'
+	grep -Fqx 'title=Updated title' "$work/watch-out" || fail 'the active title did not follow the change' "$work/watch-out"
+	touch "$work/fallback-title-changed"
+	wait_for_line "$fallback_updated" 'watch ignored a WM_NAME-only change'
+	kill "$watch_pid"
+	wait "$watch_pid" 2>/dev/null || true
+	watch_pid=
+}
+
+# dwm-xwatch: one watcher for every window, and no xprop -spy at all.
+run_watch
+[[ -s $work/xwatch.log ]] || fail 'the watch did not use dwm-xwatch'
+if grep -Fq -- '-spy' "$work/xprop.log"; then
+	fail 'the watch started xprop -spy although dwm-xwatch was ready' "$work/xprop.log"
+fi
+
+# dwm-xwatch cannot watch the display: the per-window xprop -spy fallback.
+touch "$work/xwatch-broken"
+run_watch
 grep -Fq -- '-id 0xaa -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP' "$work/xprop.log" ||
-	fail 'watch did not subscribe to client title properties' "$work/xprop.log"
-kill "$watch_pid"
-wait "$watch_pid" 2>/dev/null || true
-watch_pid=
+	fail 'the fallback did not subscribe to client title properties' "$work/xprop.log"
+rm -f "$work/xwatch-broken"
 
 PATH="$bin:$PATH" "$helper" state >"$work/reopened-out" 2>"$work/reopened-err" ||
 	fail 'fresh state after title change exited non-zero' "$work/reopened-err"

@@ -199,7 +199,7 @@ if grep -Eq '"command"[[:space:]]*:' "$model"; then
 	exit 1
 fi
 grep -Fq 'function sessionActionCommand(action)' "$commands"
-grep -Fq 'powerHelperCommand("session-action", [action])' "$commands"
+grep -Fq 'helperCommand("dwm-quickshell-controlcenter", "session-action", [action])' "$commands"
 grep -Fq 'enabled: !root.powerMenuModel.busy' "$window"
 grep -Fq 'root.powerMenuModel.requestAction(modelData, root.actionOrigin)' "$window"
 grep -Fq 'readonly property bool ownsConfirmation: powerMenuModel.confirming' "$window"

@@ -365,7 +365,7 @@ Exec=/usr/bin/true
 EOF
 # The helpers this test runs, and every library they source (S12-21).
 stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-system-health \
-	dwm-settings-display dwm-settings-input dwm-display-setup dwm-quickshell-controlcenter \
+	dwm-settings-display dwm-settings-input dwm-display-setup dwm-quickshell-controlcenter dwm-settings-power \
 	dwm-quickshell-controls dwm-quickshell-network dwm-diagnostics dwm-default-apps \
 	dwm-xdg-autostart dwm-settings-appearance dwm-settings-wallpaper dwm-settings-font \
 	dwm-settings-theme dwm-cursor-reload dwm-settings-toolkit dwm-xkbset dwm-settings-picom \
@@ -646,9 +646,9 @@ SH
 chmod +x "$data_home/checkout/scripts/lyona-update"
 
 malformed_power_snapshot=$work/malformed-power-snapshot
-mv "$data_home/checkout/scripts/dwm-quickshell-controlcenter" \
-	"$data_home/checkout/scripts/dwm-quickshell-controlcenter.real"
-cat >"$data_home/checkout/scripts/dwm-quickshell-controlcenter" <<'SH'
+mv "$data_home/checkout/scripts/dwm-settings-power" \
+	"$data_home/checkout/scripts/dwm-settings-power.real"
+cat >"$data_home/checkout/scripts/dwm-settings-power" <<'SH'
 #!/bin/sh
 set -eu
 fixture=${DWM_SETTINGS_TEST_MALFORMED_POWER_SNAPSHOT:?}
@@ -679,9 +679,9 @@ if [ "${1:-}" = power-snapshot ] && [ -r "$fixture" ]; then
 	esac
 	exit 0
 fi
-exec "$(dirname -- "$0")/dwm-quickshell-controlcenter.real" "$@"
+exec "$(dirname -- "$0")/dwm-settings-power.real" "$@"
 SH
-chmod +x "$data_home/checkout/scripts/dwm-quickshell-controlcenter"
+chmod +x "$data_home/checkout/scripts/dwm-settings-power"
 cat >"$data_home/checkout/scripts/kitty" <<'EOF'
 #!/bin/sh
 exit 0
@@ -878,8 +878,8 @@ settings_power_watch_count() {
 		[ -n "$monitor_parent" ] && [ -r "/proc/$monitor_parent/cmdline" ] || continue
 		monitor_command=$(tr '\0' ' ' <"/proc/$monitor_parent/cmdline")
 		case $monitor_command in
-		*"$data_home/checkout/scripts/dwm-quickshell-controlcenter power-watch"* | \
-			*"$data_home/checkout/scripts/dwm-quickshell-controlcenter.real power-watch"*)
+		*"$data_home/checkout/scripts/dwm-settings-power power-watch"* | \
+			*"$data_home/checkout/scripts/dwm-settings-power.real power-watch"*)
 			watch_count=$((watch_count + 1))
 			;;
 		esac
@@ -895,8 +895,8 @@ settings_power_gsettings_watch_count() {
 		[ -n "$monitor_parent" ] && [ -r "/proc/$monitor_parent/cmdline" ] || continue
 		monitor_command=$(tr '\0' ' ' <"/proc/$monitor_parent/cmdline")
 		case $monitor_command in
-		*"$data_home/checkout/scripts/dwm-quickshell-controlcenter power-watch"* | \
-			*"$data_home/checkout/scripts/dwm-quickshell-controlcenter.real power-watch"*)
+		*"$data_home/checkout/scripts/dwm-settings-power power-watch"* | \
+			*"$data_home/checkout/scripts/dwm-settings-power.real power-watch"*)
 			watch_count=$((watch_count + 1))
 			;;
 		esac
@@ -1467,8 +1467,8 @@ done
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings close >/dev/null
 sleep 0.1
-if ! pgrep -af '[d]wm-quickshell-controlcenter([.]real)? power-dpms off$' |
-	grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+if ! pgrep -af '[d]wm-settings-power([.]real)? power-dpms off$' |
+	grep -F "$data_home/checkout/scripts/dwm-settings-power" >/dev/null; then
 	printf 'Power mutation did not survive Settings closure\n' >&2
 	exit 1
 fi
@@ -1859,15 +1859,15 @@ done
 [ "$(settings_autostart_watch_count)" -eq 0 ]
 i=0
 while [ "$i" -lt 100 ]; do
-	if ! pgrep -af '[d]wm-quickshell-controlcenter([.]real)? (power-snapshot|power-watch)$' |
-		grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+	if ! pgrep -af '[d]wm-settings-power([.]real)? (power-snapshot|power-watch)$' |
+		grep -F "$data_home/checkout/scripts/dwm-settings-power" >/dev/null; then
 		break
 	fi
 	i=$((i + 1))
 	sleep 0.05
 done
-if pgrep -af '[d]wm-quickshell-controlcenter([.]real)? (power-snapshot|power-watch)$' |
-	grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+if pgrep -af '[d]wm-settings-power([.]real)? (power-snapshot|power-watch)$' |
+	grep -F "$data_home/checkout/scripts/dwm-settings-power" >/dev/null; then
 	printf 'Settings-owned power work remained active after leaving Power\n' >&2
 	exit 1
 fi
@@ -2914,8 +2914,8 @@ if pgrep -af '[d]wm-quickshell-controls (bluetooth-snapshot|bluetooth-scan|bluet
 	printf 'Settings-owned Bluetooth work remained active after close\n' >&2
 	exit 1
 fi
-if pgrep -af '[d]wm-quickshell-controlcenter([.]real)? (power-snapshot|power-watch|power-profile-set|power-dpms|power-dpms-timeout|power-lock|power-lock-timeout)' |
-	grep -F "$data_home/checkout/scripts/dwm-quickshell-controlcenter" >/dev/null; then
+if pgrep -af '[d]wm-settings-power([.]real)? (power-snapshot|power-watch|power-profile-set|power-dpms|power-dpms-timeout|power-lock|power-lock-timeout)' |
+	grep -F "$data_home/checkout/scripts/dwm-settings-power" >/dev/null; then
 	printf 'Settings-owned power work remained active after close\n' >&2
 	exit 1
 fi

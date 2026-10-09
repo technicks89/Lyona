@@ -619,7 +619,7 @@ def read_information_process(kind: str) -> FilesystemInformation | InformationSt
         parse = parse_root_encryption
     elif kind == "screen-lock":
         label = "Automatic screen lock"
-        command = [sibling_command("dwm-quickshell-controlcenter"), "power-lock-snapshot"]
+        command = [sibling_command("dwm-settings-power"), "power-lock-snapshot"]
         parse = parse_screen_lock
         duration = 10
         output_limit = 8192

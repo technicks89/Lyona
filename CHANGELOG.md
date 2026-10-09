@@ -25,6 +25,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Control Center > Restart NetworkManager is the System Health repair (#282):
+  polkit asks for your password and NetworkManager restarts, where it ran
+  `sudo systemctl restart NetworkManager` in a terminal.
+- The power provider is its own helper, `dwm-settings-power` (#282), split from
+  `dwm-quickshell-controlcenter`; the power records and their subcommands are
+  unchanged, and the Control Center helper still forwards `power-*` to it.
+- Settings > Appearance is four models, one per helper, as Picom's already was
+  (#282): `ToolkitModel.qml`, `FontModel.qml` and `WallpaperModel.qml` beside
+  the theme and inventory in `AppearanceModel.qml`, which shrinks from about
+  2,000 lines to 1,000.
+- The shell reads the XDG base directories in one place, `core/Xdg.qml`, with
+  `dwm-xdg.sh`'s rule (#282). A relative `XDG_CACHE_HOME` or `XDG_DATA_HOME`
+  is now ignored there too, as the specification requires.
+- The dwm state bridge uses its per-window `xprop -spy` watchers only as a
+  fallback, when `dwm-xwatch` is missing or cannot watch the display (#282);
+  the test-only `DWM_STATE_WATCHER=spies` switch is gone.
+
 - Process identity is read in one place (#277): `dwm-proc.sh` reads a PID's
   state, parent and start time from `/proc/PID/stat` with shell builtins, where
   twelve scripts each had a copy, and a contract test forbids new ones. The
@@ -123,6 +140,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   title changes every second now costs a fraction of what it did on an old
   CPU. A window without `_NET_WM_NAME` now shows its `WM_NAME` in the panel
   instead of "Desktop".
+
+### Removed
+
+- `power-management.sh` is no longer installed (#282), and an install removes
+  an earlier copy. It changed `/etc/tlp.conf` and sysctl settings as root,
+  outside Settings' preview and recovery; Settings > Power is the way to
+  change power settings.
 
 ### Fixed
 

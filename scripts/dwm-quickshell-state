@@ -539,13 +539,12 @@ cached_client_snapshot() {
 # One dwm-xwatch for the root window and every client (Sync Sprint 16 R16-40):
 # it says which window changed, so a change re-reads that window alone, where
 # a resident "xprop -spy" per window, whose lines did not say which window they
-# came from, made every change re-read them all. Without the helper, or without
-# a display it can open, watch_state_spies keeps the old way.
+# came from, made every change re-read them all. watch_state_spies, the old way,
+# is only the fallback (#282): without the helper, or when it cannot watch the
+# display (it never says "ready").
 watch_state() {
 	local xwatch event
-	# DWM_STATE_WATCHER=spies keeps the old way: tests that fake xprop -spy
-	# use it, as dwm-xwatch would watch a real display instead.
-	if [[ ${DWM_STATE_WATCHER:-} == spies ]] || ! xwatch=$(xwatch_path); then
+	if ! xwatch=$(xwatch_path); then
 		watch_state_spies
 		return
 	fi
@@ -589,7 +588,8 @@ note_window_event() {
 # Every property watcher writes its lines to one fifo; each burst of lines (a tag
 # switch alone changes 3 or 4 properties) becomes one rebuild. Windows get one
 # resident "xprop -spy" each, started when a window appears and stopped when it
-# goes, never restarted wholesale. The way without dwm-xwatch.
+# goes, never restarted wholesale. The fallback for when dwm-xwatch is missing
+# or cannot watch the display.
 watch_state_spies() {
 	watch_dir=$(mktemp -d)
 	declare -gA client_watchers=()

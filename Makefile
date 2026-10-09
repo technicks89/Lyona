@@ -47,6 +47,7 @@ INSTALL_COMMANDS = \
 	scripts/dwm-quickshell-launcher \
 	scripts/dwm-quickshell-controls \
 	scripts/dwm-quickshell-controlcenter \
+	scripts/dwm-settings-power \
 	scripts/dwm-quickshell-network \
 	scripts/dwm-quickshell-pointer \
 	scripts/dwm-quickshell-state \
@@ -94,7 +95,6 @@ INSTALL_COMMANDS = \
 	scripts/nvidia-suspend-test.sh \
 	scripts/nvidia-temp \
 	scripts/pkg-scan.py \
-	scripts/power-management.sh \
 	scripts/protonrestart \
 	scripts/theme-apply.sh \
 	scripts/webapp-create \
@@ -126,6 +126,10 @@ INSTALL_LIB_NAMES = $(notdir ${INSTALL_LIBS})
 # dev-sync-install.sh runs from a checkout, and lyona-update now sources
 # lyona-install-verify.sh.
 RETIRED_LIB_NAMES = dev-sync-install.sh
+# Commands installed before and no longer, removed from PREFIX/bin on install:
+# power-management.sh changed /etc/tlp.conf and sysctl as root, outside the
+# Settings model's preview and recovery (#282); Settings > Power is the way.
+RETIRED_COMMAND_NAMES = power-management.sh
 # The session scripts dwm runs at login and logout, not commands: executable,
 # in LIB_DIR, where dwm finds them from its own location (S12-13 step 3). Before,
 # only a per-user copy existed, so an account that never ran install-user had
@@ -324,6 +328,9 @@ install-system:
 	done
 	for name in ${RETIRED_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
+	done
+	for name in ${RETIRED_COMMAND_NAMES}; do \
+		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
 	@echo "==> Installing privileged helpers..."
 	for f in ${PRIVILEGED_HELPERS}; do \
@@ -551,7 +558,7 @@ uninstall:
 		| while IFS= read -r id; do \
 			rm -rf "${DESTDIR}${DATADIR}/themes/Lyona-$$id"; \
 		done
-	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES}; do \
+	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES} ${RETIRED_COMMAND_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
 	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL} ${XWATCH}; do \
@@ -1029,6 +1036,9 @@ check-quickshell-notifications:
 check-quickshell-tray:
 	tests/test-quickshell-tray.sh
 
+check-quickshell-xdg:
+	tests/test-quickshell-xdg.sh
+
 check-cursor-reload:
 	xvfb-run -a /usr/bin/python3 tests/test-cursor-reload.py
 
@@ -1128,6 +1138,7 @@ check-cachyos:
 
 check-quickshell-state:
 	tests/test-quickshell-state.sh
+	tests/test-dwm-properties.sh
 
 check-quickshell-state-close:
 	tests/test-quickshell-state-close.sh
@@ -1437,6 +1448,7 @@ check:
 	$(MAKE) check-quickshell-health-xvfb
 	$(MAKE) check-quickshell-notifications
 	$(MAKE) check-quickshell-tray
+	$(MAKE) check-quickshell-xdg
 	$(MAKE) check-cursor-reload
 	$(MAKE) check-xkbset
 	$(MAKE) check-picom
@@ -1500,5 +1512,5 @@ check:
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall

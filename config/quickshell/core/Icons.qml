@@ -1,6 +1,7 @@
 pragma Singleton
 
 import Quickshell
+import qs.core
 
 Singleton {
     function launcherIcon(iconName) {
@@ -106,8 +107,9 @@ Singleton {
     }
 
     function addHicolorFallbacks(sources, iconName) {
-        const home = Quickshell.env("HOME") || "";
-        const xdgDataHome = Quickshell.env("XDG_DATA_HOME") || (home.length > 0 ? home + "/.local/share" : "");
+        // A relative XDG_DATA_HOME is ignored, as the specification requires (#282).
+        const home = Xdg.home;
+        const xdgDataHome = Xdg.dataHome;
 
         addIconThemeFileSources(sources, "/usr/share/icons/hicolor", iconName);
         addIconThemeFileSources(sources, "/usr/local/share/icons/hicolor", iconName);

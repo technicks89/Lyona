@@ -29,16 +29,16 @@ Flickable {
     property var selectedToolkit: ({})
     property var syncedToolkit: ({})
     readonly property bool appearanceBusy: root.appearanceModel.busy
-        || root.appearanceModel.wallpaperBusy || root.appearanceModel.fontBusy
-        || root.appearanceModel.toolkitBusy
+        || root.appearanceModel.wallpaper.busy || root.appearanceModel.font.busy
+        || root.appearanceModel.toolkit.busy
     readonly property bool toolkitControlsBusy: root.appearanceBusy
-        || root.appearanceModel.toolkitStatusBusy
+        || root.appearanceModel.toolkit.statusBusy
     readonly property bool wallpaperControlsBusy: root.appearanceBusy
-        || root.appearanceModel.wallpaperStatusBusy
+        || root.appearanceModel.wallpaper.statusBusy
     readonly property bool wallpaperPreviewControlsBusy: root.appearanceBusy
-        || root.appearanceModel.wallpaperPreviewActionBusy
-    readonly property bool fontControlsBusy: root.appearanceBusy || root.appearanceModel.fontStatusBusy
-        || root.appearanceModel.wallpaperStatusBusy
+        || root.appearanceModel.wallpaper.previewActionBusy
+    readonly property bool fontControlsBusy: root.appearanceBusy || root.appearanceModel.font.statusBusy
+        || root.appearanceModel.wallpaper.statusBusy
     // accessibility-contrast, accessibility-reduced-motion, and
     // accessibility-notifications now have their own dedicated controls
     // above; showing them again as generic read-only cards would be
@@ -71,26 +71,26 @@ Flickable {
     }
 
     function ensureWallpaperSelection() {
-        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+        for (const candidate of root.appearanceModel.wallpaper.candidates) {
             if (candidate.token === root.selectedWallpaperPath) return;
         }
-        const preferred = root.appearanceModel.wallpaperPath;
-        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+        const preferred = root.appearanceModel.wallpaper.path;
+        for (const candidate of root.appearanceModel.wallpaper.candidates) {
             if (candidate.token === preferred) {
                 root.selectedWallpaperPath = preferred;
-                root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+                root.selectedWallpaperFit = root.appearanceModel.wallpaper.fit;
                 return;
             }
         }
-        if (root.appearanceModel.wallpaperCandidates.length > 0)
-            root.selectedWallpaperPath = root.appearanceModel.wallpaperCandidates[0].token;
+        if (root.appearanceModel.wallpaper.candidates.length > 0)
+            root.selectedWallpaperPath = root.appearanceModel.wallpaper.candidates[0].token;
         else root.selectedWallpaperPath = "";
-        if (root.appearanceModel.validWallpaperFit(root.appearanceModel.wallpaperFit))
-            root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+        if (root.appearanceModel.wallpaper.validWallpaperFit(root.appearanceModel.wallpaper.fit))
+            root.selectedWallpaperFit = root.appearanceModel.wallpaper.fit;
     }
 
     function wallpaperSelectionAvailable() {
-        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+        for (const candidate of root.appearanceModel.wallpaper.candidates) {
             if (candidate.token === root.selectedWallpaperPath) return true;
         }
         return false;
@@ -114,12 +114,12 @@ Flickable {
     }
 
     function syncWallpaperSelection() {
-        const preferred = root.appearanceModel.wallpaperPath;
-        for (const candidate of root.appearanceModel.wallpaperCandidates) {
+        const preferred = root.appearanceModel.wallpaper.path;
+        for (const candidate of root.appearanceModel.wallpaper.candidates) {
             if (candidate.token === preferred) {
                 root.selectedWallpaperPath = preferred;
-                if (root.appearanceModel.validWallpaperFit(root.appearanceModel.wallpaperFit))
-                    root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+                if (root.appearanceModel.wallpaper.validWallpaperFit(root.appearanceModel.wallpaper.fit))
+                    root.selectedWallpaperFit = root.appearanceModel.wallpaper.fit;
                 return;
             }
         }
@@ -127,10 +127,10 @@ Flickable {
     }
 
     function syncFontSelection() {
-        if (root.appearanceModel.fontFamily.length > 0)
-            root.selectedFontFamily = root.appearanceModel.fontFamily;
-        if (root.appearanceModel.fontScale >= 0.8 && root.appearanceModel.fontScale <= 1.5)
-            root.selectedFontScale = root.appearanceModel.fontScale;
+        if (root.appearanceModel.font.family.length > 0)
+            root.selectedFontFamily = root.appearanceModel.font.family;
+        if (root.appearanceModel.font.scale >= 0.8 && root.appearanceModel.font.scale <= 1.5)
+            root.selectedFontScale = root.appearanceModel.font.scale;
     }
 
     // Adopt the saved option only when it actually changed underneath, so a
@@ -138,8 +138,8 @@ Flickable {
     function syncToolkitSelection() {
         const selected = ({});
         const synced = ({});
-        for (const capability of root.appearanceModel.toolkitCapabilities) {
-            const saved = root.appearanceModel.toolkitSelectionFor(capability).option;
+        for (const capability of root.appearanceModel.toolkit.capabilities) {
+            const saved = root.appearanceModel.toolkit.selectionFor(capability).option;
             const previous = root.syncedToolkit[capability];
             const pending = root.selectedToolkit[capability];
             selected[capability] = (previous !== undefined && previous === saved
@@ -153,12 +153,12 @@ Flickable {
     function toolkitChosen(capability) {
         const chosen = root.selectedToolkit[capability];
         return chosen === undefined
-            ? root.appearanceModel.toolkitSelectionFor(capability).option : chosen;
+            ? root.appearanceModel.toolkit.selectionFor(capability).option : chosen;
     }
 
     function toolkitDirty(capability) {
         return root.toolkitChosen(capability)
-            !== root.appearanceModel.toolkitSelectionFor(capability).option;
+            !== root.appearanceModel.toolkit.selectionFor(capability).option;
     }
 
     function chooseToolkit(capability, value) {
@@ -187,9 +187,9 @@ Flickable {
         function onWallpaperCandidatesChanged() { root.ensureWallpaperSelection(); }
         function onWallpaperPathChanged() { root.syncWallpaperSelection(); }
         function onWallpaperFitChanged() {
-            if (root.selectedWallpaperPath === root.appearanceModel.wallpaperPath
-                    && root.appearanceModel.validWallpaperFit(root.appearanceModel.wallpaperFit))
-                root.selectedWallpaperFit = root.appearanceModel.wallpaperFit;
+            if (root.selectedWallpaperPath === root.appearanceModel.wallpaper.path
+                    && root.appearanceModel.wallpaper.validWallpaperFit(root.appearanceModel.wallpaper.fit))
+                root.selectedWallpaperFit = root.appearanceModel.wallpaper.fit;
         }
         function onFontFamilyChanged() { root.syncFontSelection(); }
         function onFontScaleChanged() { root.syncFontSelection(); }
@@ -471,35 +471,35 @@ Flickable {
 
         StatusCard {
             label: "Configured wallpaper"
-            statusState: root.appearanceModel.wallpaperState
-            value: root.appearanceModel.wallpaperFit
-            detail: root.appearanceModel.wallpaperDetail
-                + (root.appearanceModel.wallpaperPath.length > 0
-                    ? " / " + root.appearanceModel.wallpaperPath : "")
+            statusState: root.appearanceModel.wallpaper.selectionState
+            value: root.appearanceModel.wallpaper.fit
+            detail: root.appearanceModel.wallpaper.detail
+                + (root.appearanceModel.wallpaper.path.length > 0
+                    ? " / " + root.appearanceModel.wallpaper.path : "")
         }
 
         StatusCard {
-            visible: root.appearanceModel.wallpaperProviderState !== "available"
+            visible: root.appearanceModel.wallpaper.providerState !== "available"
             label: "Wallpaper provider"
-            statusState: root.appearanceModel.wallpaperProviderState
-            value: root.appearanceModel.wallpaperProviderState
-            detail: root.appearanceModel.wallpaperProviderDetail
+            statusState: root.appearanceModel.wallpaper.providerState
+            value: root.appearanceModel.wallpaper.providerState
+            detail: root.appearanceModel.wallpaper.providerDetail
         }
 
         StatusCard {
-            visible: !root.appearanceModel.wallpaperMutationReady
+            visible: !root.appearanceModel.wallpaper.mutationReady
             label: "Wallpaper apply and preview unavailable"
             statusState: "restricted"
-            value: root.appearanceModel.wallpaperResetReady ? "Reset available" : "Protected"
-            detail: root.appearanceModel.wallpaperMutationDetail
+            value: root.appearanceModel.wallpaper.resetReady ? "Reset available" : "Protected"
+            detail: root.appearanceModel.wallpaper.mutationDetail
         }
 
         Rectangle {
             Layout.fillWidth: true
-            visible: root.appearanceModel.wallpaperPreviewState !== "none"
+            visible: root.appearanceModel.wallpaper.previewState !== "none"
             Layout.preferredHeight: wallpaperPreviewColumn.implicitHeight + Theme.spacingLg * 2
             color: Theme.controlNormalFill
-            border.color: root.appearanceModel.wallpaperPreviewState === "failed"
+            border.color: root.appearanceModel.wallpaper.previewState === "failed"
                 ? Theme.danger : Theme.warning
             border.width: Theme.controlFocusBorderWidth
             radius: Theme.controlRadius
@@ -512,50 +512,50 @@ Flickable {
 
                 UiText {
                     Layout.fillWidth: true
-                    text: root.appearanceModel.wallpaperPreviewState === "failed"
+                    text: root.appearanceModel.wallpaper.previewState === "failed"
                         ? "Wallpaper preview recovery needs attention"
-                        : "Wallpaper preview / " + root.appearanceModel.wallpaperPreviewRemaining
-                            + "s remaining / " + root.appearanceModel.wallpaperPreviewFit
-                    color: root.appearanceModel.wallpaperPreviewState === "failed"
+                        : "Wallpaper preview / " + root.appearanceModel.wallpaper.previewRemaining
+                            + "s remaining / " + root.appearanceModel.wallpaper.previewFit
+                    color: root.appearanceModel.wallpaper.previewState === "failed"
                         ? Theme.danger : Theme.warning
                     font.bold: true
                     wrapMode: Text.WordWrap
                 }
                 UiText {
                     Layout.fillWidth: true
-                    text: root.appearanceModel.wallpaperPreviewDetail
-                        + (root.appearanceModel.wallpaperPreviewPath.length > 0
-                            ? " / " + root.appearanceModel.wallpaperPreviewPath : "")
+                    text: root.appearanceModel.wallpaper.previewDetail
+                        + (root.appearanceModel.wallpaper.previewPath.length > 0
+                            ? " / " + root.appearanceModel.wallpaper.previewPath : "")
                     color: Theme.menuText
                     wrapMode: Text.WordWrap
                 }
                 RowLayout {
                     ShellButton {
-                        visible: root.appearanceModel.wallpaperPreviewState === "active"
+                        visible: root.appearanceModel.wallpaper.previewState === "active"
                         label: "Keep wallpaper"
                         enabled: !root.wallpaperPreviewControlsBusy
-                        onActivated: root.appearanceModel.keepWallpaperPreview()
+                        onActivated: root.appearanceModel.wallpaper.keepPreview()
                     }
                     ShellButton {
                         label: "Restore configured"
-                        visible: root.appearanceModel.wallpaperPreviewToken.length > 0
-                        enabled: root.appearanceModel.wallpaperPreviewState === "active"
+                        visible: root.appearanceModel.wallpaper.previewToken.length > 0
+                        enabled: root.appearanceModel.wallpaper.previewState === "active"
                             ? !root.wallpaperPreviewControlsBusy : !root.wallpaperControlsBusy
-                        onActivated: root.appearanceModel.revertWallpaperPreview()
+                        onActivated: root.appearanceModel.wallpaper.revertPreview()
                     }
                     ShellButton {
-                        visible: root.appearanceModel.wallpaperPreviewState === "failed"
-                            && root.appearanceModel.wallpaperPreviewToken.length > 0
+                        visible: root.appearanceModel.wallpaper.previewState === "failed"
+                            && root.appearanceModel.wallpaper.previewToken.length > 0
                         label: "Use current configuration"
                         danger: true
                         enabled: !root.wallpaperControlsBusy
-                        onActivated: root.appearanceModel.abandonWallpaperPreview()
+                        onActivated: root.appearanceModel.wallpaper.abandonPreview()
                     }
                     ShellButton {
-                        visible: root.appearanceModel.wallpaperPreviewState === "failed"
+                        visible: root.appearanceModel.wallpaper.previewState === "failed"
                         label: "Repair wallpaper state"
                         enabled: !root.wallpaperControlsBusy
-                        onActivated: root.appearanceModel.reconcileWallpaperPreview()
+                        onActivated: root.appearanceModel.wallpaper.reconcilePreview()
                     }
                 }
             }
@@ -563,7 +563,7 @@ Flickable {
 
         UiText {
             Layout.fillWidth: true
-            visible: root.appearanceModel.wallpaperCandidates.length === 0
+            visible: root.appearanceModel.wallpaper.candidates.length === 0
             text: root.wallpaperEmptyDetail()
             color: Theme.menuMutedText
             wrapMode: Text.WordWrap
@@ -574,14 +574,14 @@ Flickable {
             spacing: Theme.spacingSm
 
             Repeater {
-                model: root.appearanceModel.wallpaperCandidates
+                model: root.appearanceModel.wallpaper.candidates
                 delegate: ShellButton {
                     id: wallpaperButton
                     required property var modelData
                     label: wallpaperButton.modelData.label
                         + (wallpaperButton.modelData.token === root.selectedWallpaperPath
                             ? " / Selected" : "")
-                        + (wallpaperButton.modelData.token === root.appearanceModel.wallpaperPath
+                        + (wallpaperButton.modelData.token === root.appearanceModel.wallpaper.path
                             ? " / Saved" : "")
                     enabled: !root.wallpaperControlsBusy
                     onActivated: root.selectedWallpaperPath = wallpaperButton.modelData.token
@@ -619,25 +619,25 @@ Flickable {
             spacing: Theme.spacingSm
             ShellButton {
                 label: "Preview wallpaper for 30 seconds"
-                enabled: root.appearanceModel.wallpaperMutationReady
+                enabled: root.appearanceModel.wallpaper.mutationReady
                     && root.wallpaperSelectionAvailable() && !root.wallpaperControlsBusy
-                    && root.appearanceModel.wallpaperPreviewState === "none"
-                onActivated: root.appearanceModel.previewWallpaper(
+                    && root.appearanceModel.wallpaper.previewState === "none"
+                onActivated: root.appearanceModel.wallpaper.preview(
                     root.selectedWallpaperPath, root.selectedWallpaperFit)
             }
             ShellButton {
                 label: "Apply wallpaper"
-                enabled: root.appearanceModel.wallpaperMutationReady
+                enabled: root.appearanceModel.wallpaper.mutationReady
                     && root.wallpaperSelectionAvailable() && !root.wallpaperControlsBusy
-                    && root.appearanceModel.wallpaperPreviewState === "none"
-                onActivated: root.appearanceModel.applyWallpaper(
+                    && root.appearanceModel.wallpaper.previewState === "none"
+                onActivated: root.appearanceModel.wallpaper.apply(
                     root.selectedWallpaperPath, root.selectedWallpaperFit)
             }
             ShellButton {
                 label: "Reset wallpaper"
-                enabled: root.appearanceModel.wallpaperResetReady && !root.wallpaperControlsBusy
-                    && root.appearanceModel.wallpaperPreviewState === "none"
-                onActivated: root.appearanceModel.resetWallpaper()
+                enabled: root.appearanceModel.wallpaper.resetReady && !root.wallpaperControlsBusy
+                    && root.appearanceModel.wallpaper.previewState === "none"
+                onActivated: root.appearanceModel.wallpaper.reset()
             }
         }
 
@@ -645,20 +645,20 @@ Flickable {
 
         StatusCard {
             label: "Managed shell font"
-            statusState: root.appearanceModel.fontState
-            value: Math.round(root.appearanceModel.fontScale * 100) + "%"
-            detail: root.appearanceModel.fontDetail + " / " + root.appearanceModel.fontFamily
+            statusState: root.appearanceModel.font.selectionState
+            value: Math.round(root.appearanceModel.font.scale * 100) + "%"
+            detail: root.appearanceModel.font.detail + " / " + root.appearanceModel.font.family
         }
 
         StatusCard {
-            visible: root.appearanceModel.fontProviderState !== "available"
-                || !root.appearanceModel.fontMutationReady
+            visible: root.appearanceModel.font.providerState !== "available"
+                || !root.appearanceModel.font.mutationReady
             label: "Font changes unavailable"
-            statusState: root.appearanceModel.fontProviderState === "available"
-                ? "restricted" : root.appearanceModel.fontProviderState
+            statusState: root.appearanceModel.font.providerState === "available"
+                ? "restricted" : root.appearanceModel.font.providerState
             value: "Protected"
-            detail: root.appearanceModel.fontProviderState !== "available"
-                ? root.appearanceModel.fontProviderDetail
+            detail: root.appearanceModel.font.providerState !== "available"
+                ? root.appearanceModel.font.providerDetail
                 : "The installed font helper cannot safely update user state"
         }
 
@@ -697,7 +697,7 @@ Flickable {
             spacing: Theme.spacingSm
 
             Repeater {
-                model: root.appearanceModel.fontCandidates.slice(0, 24)
+                model: root.appearanceModel.font.candidates.slice(0, 24)
                 delegate: ShellButton {
                     id: fontButton
                     required property var modelData
@@ -731,10 +731,10 @@ Flickable {
 
         Rectangle {
             Layout.fillWidth: true
-            visible: root.appearanceModel.fontPreviewState !== "none"
+            visible: root.appearanceModel.font.previewState !== "none"
             Layout.preferredHeight: fontPreviewColumn.implicitHeight + Theme.spacingLg * 2
             color: Theme.controlNormalFill
-            border.color: root.appearanceModel.fontPreviewState === "failed"
+            border.color: root.appearanceModel.font.previewState === "failed"
                 ? Theme.danger : Theme.warning
             border.width: Theme.controlFocusBorderWidth
             radius: Theme.controlRadius
@@ -747,40 +747,40 @@ Flickable {
 
                 UiText {
                     Layout.fillWidth: true
-                    text: root.appearanceModel.fontPreviewState === "failed"
+                    text: root.appearanceModel.font.previewState === "failed"
                         ? "Font preview recovery needs attention"
-                        : "Font preview / " + root.appearanceModel.fontPreviewRemaining
-                            + "s remaining / " + root.appearanceModel.fontPreviewFamily
-                            + " / " + Math.round(root.appearanceModel.fontPreviewScale * 100) + "%"
-                    color: root.appearanceModel.fontPreviewState === "failed"
+                        : "Font preview / " + root.appearanceModel.font.previewRemaining
+                            + "s remaining / " + root.appearanceModel.font.previewFamily
+                            + " / " + Math.round(root.appearanceModel.font.previewScale * 100) + "%"
+                    color: root.appearanceModel.font.previewState === "failed"
                         ? Theme.danger : Theme.warning
                     font.bold: true
                     wrapMode: Text.WordWrap
                 }
                 UiText {
                     Layout.fillWidth: true
-                    text: root.appearanceModel.fontPreviewDetail
+                    text: root.appearanceModel.font.previewDetail
                     color: Theme.menuText
                     wrapMode: Text.WordWrap
                 }
                 RowLayout {
                     ShellButton {
-                        visible: root.appearanceModel.fontPreviewState === "active"
+                        visible: root.appearanceModel.font.previewState === "active"
                         label: "Keep font"
                         enabled: !root.fontControlsBusy
-                        onActivated: root.appearanceModel.keepFontPreview()
+                        onActivated: root.appearanceModel.font.keepPreview()
                     }
                     ShellButton {
                         label: "Restore previous"
                         enabled: !root.fontControlsBusy
-                        onActivated: root.appearanceModel.revertFontPreview()
+                        onActivated: root.appearanceModel.font.revertPreview()
                     }
                     ShellButton {
-                        visible: root.appearanceModel.fontPreviewState === "failed"
+                        visible: root.appearanceModel.font.previewState === "failed"
                         label: "Accept external state"
                         danger: true
                         enabled: !root.fontControlsBusy
-                        onActivated: root.appearanceModel.abandonFontPreview()
+                        onActivated: root.appearanceModel.font.abandonPreview()
                     }
                 }
             }
@@ -791,25 +791,25 @@ Flickable {
             spacing: Theme.spacingSm
             ShellButton {
                 label: "Preview font for 30 seconds"
-                enabled: root.appearanceModel.fontMutationReady
+                enabled: root.appearanceModel.font.mutationReady
                     && root.selectedFontFamily.trim().length > 0 && !root.fontControlsBusy
-                    && root.appearanceModel.fontPreviewState === "none"
-                onActivated: root.appearanceModel.previewFont(
+                    && root.appearanceModel.font.previewState === "none"
+                onActivated: root.appearanceModel.font.preview(
                     root.selectedFontFamily.trim(), root.selectedFontScale)
             }
             ShellButton {
                 label: "Apply font"
-                enabled: root.appearanceModel.fontMutationReady
+                enabled: root.appearanceModel.font.mutationReady
                     && root.selectedFontFamily.trim().length > 0 && !root.fontControlsBusy
-                    && root.appearanceModel.fontPreviewState === "none"
-                onActivated: root.appearanceModel.applyFont(
+                    && root.appearanceModel.font.previewState === "none"
+                onActivated: root.appearanceModel.font.apply(
                     root.selectedFontFamily.trim(), root.selectedFontScale)
             }
             ShellButton {
                 label: "Reset font"
-                enabled: root.appearanceModel.fontMutationReady && !root.fontControlsBusy
-                    && root.appearanceModel.fontPreviewState === "none"
-                onActivated: root.appearanceModel.resetFont()
+                enabled: root.appearanceModel.font.mutationReady && !root.fontControlsBusy
+                    && root.appearanceModel.font.previewState === "none"
+                onActivated: root.appearanceModel.font.reset()
             }
         }
 
@@ -825,33 +825,33 @@ Flickable {
         }
 
         StatusCard {
-            visible: root.appearanceModel.toolkitProviderState !== "available"
-                || !root.appearanceModel.toolkitMutationReady
+            visible: root.appearanceModel.toolkit.providerState !== "available"
+                || !root.appearanceModel.toolkit.mutationReady
             label: "Toolkit changes unavailable"
-            statusState: root.appearanceModel.toolkitProviderState === "available"
-                ? "restricted" : root.appearanceModel.toolkitProviderState
+            statusState: root.appearanceModel.toolkit.providerState === "available"
+                ? "restricted" : root.appearanceModel.toolkit.providerState
             value: "Protected"
-            detail: root.appearanceModel.toolkitProviderState !== "available"
-                ? root.appearanceModel.toolkitProviderDetail
-                : root.appearanceModel.toolkitMutationDetail
+            detail: root.appearanceModel.toolkit.providerState !== "available"
+                ? root.appearanceModel.toolkit.providerDetail
+                : root.appearanceModel.toolkit.mutationDetail
         }
 
         Repeater {
-            model: root.appearanceModel.toolkitCapabilities
+            model: root.appearanceModel.toolkit.capabilities
             delegate: ColumnLayout {
                 id: toolkitControl
                 required property string modelData
                 readonly property var selection:
-                    root.appearanceModel.toolkitSelectionFor(toolkitControl.modelData)
+                    root.appearanceModel.toolkit.selectionFor(toolkitControl.modelData)
                 readonly property string sentinel:
-                    root.appearanceModel.toolkitSentinelFor(toolkitControl.modelData)
+                    root.appearanceModel.toolkit.sentinelFor(toolkitControl.modelData)
                 readonly property string chosen: root.toolkitChosen(toolkitControl.modelData)
                 readonly property bool releasing: toolkitControl.chosen === toolkitControl.sentinel
                 Layout.fillWidth: true
                 spacing: Theme.spacingSm
 
                 StatusCard {
-                    label: root.appearanceModel.toolkitTitles[toolkitControl.modelData]
+                    label: root.appearanceModel.toolkit.titles[toolkitControl.modelData]
                     statusState: toolkitControl.selection.state
                     // What the option currently resolves to, which is the only
                     // thing that tells the user what following the theme means.
@@ -867,7 +867,7 @@ Flickable {
                     spacing: Theme.spacingSm
 
                     Repeater {
-                        model: root.appearanceModel.toolkitCandidatesFor(toolkitControl.modelData)
+                        model: root.appearanceModel.toolkit.candidatesFor(toolkitControl.modelData)
                         delegate: ShellButton {
                             id: toolkitCandidate
                             required property string modelData
@@ -882,7 +882,7 @@ Flickable {
                                 + (toolkitCandidate.modelData === toolkitControl.selection.option
                                     ? " / Saved" : "")
                             enabled: !root.toolkitControlsBusy
-                                && root.appearanceModel.toolkitPreviewState === "none"
+                                && root.appearanceModel.toolkit.previewState === "none"
                             onActivated: root.chooseToolkit(toolkitControl.modelData,
                                 toolkitCandidate.modelData)
                         }
@@ -898,29 +898,29 @@ Flickable {
                         // there is nothing worth previewing about it.
                         visible: !toolkitControl.releasing
                         label: "Preview for 30 seconds"
-                        enabled: root.appearanceModel.toolkitMutationReady
+                        enabled: root.appearanceModel.toolkit.mutationReady
                             && !root.toolkitControlsBusy && root.toolkitDirty(toolkitControl.modelData)
-                            && root.appearanceModel.toolkitPreviewState === "none"
-                        onActivated: root.appearanceModel.previewToolkit(
+                            && root.appearanceModel.toolkit.previewState === "none"
+                        onActivated: root.appearanceModel.toolkit.preview(
                             toolkitControl.modelData, toolkitControl.chosen)
                     }
                     ShellButton {
                         visible: !toolkitControl.releasing
                         label: "Apply"
-                        enabled: root.appearanceModel.toolkitMutationReady
+                        enabled: root.appearanceModel.toolkit.mutationReady
                             && !root.toolkitControlsBusy && root.toolkitDirty(toolkitControl.modelData)
-                            && root.appearanceModel.toolkitPreviewState === "none"
-                        onActivated: root.appearanceModel.applyToolkit(
+                            && root.appearanceModel.toolkit.previewState === "none"
+                        onActivated: root.appearanceModel.toolkit.apply(
                             toolkitControl.modelData, toolkitControl.chosen)
                     }
                     ShellButton {
                         label: toolkitControl.modelData === "icon"
                             ? "Follow system icons" : "Follow the theme"
-                        enabled: root.appearanceModel.toolkitMutationReady
+                        enabled: root.appearanceModel.toolkit.mutationReady
                             && !root.toolkitControlsBusy
                             && toolkitControl.selection.option !== toolkitControl.sentinel
-                            && root.appearanceModel.toolkitPreviewState === "none"
-                        onActivated: root.appearanceModel.resetToolkit(toolkitControl.modelData)
+                            && root.appearanceModel.toolkit.previewState === "none"
+                        onActivated: root.appearanceModel.toolkit.reset(toolkitControl.modelData)
                     }
                 }
             }
@@ -928,10 +928,10 @@ Flickable {
 
         Rectangle {
             Layout.fillWidth: true
-            visible: root.appearanceModel.toolkitPreviewState !== "none"
+            visible: root.appearanceModel.toolkit.previewState !== "none"
             Layout.preferredHeight: toolkitPreviewColumn.implicitHeight + Theme.spacingLg * 2
             color: Theme.controlNormalFill
-            border.color: root.appearanceModel.toolkitPreviewState === "failed"
+            border.color: root.appearanceModel.toolkit.previewState === "failed"
                 ? Theme.danger : Theme.warning
             border.width: Theme.controlFocusBorderWidth
             radius: Theme.controlRadius
@@ -944,44 +944,44 @@ Flickable {
 
                 UiText {
                     Layout.fillWidth: true
-                    text: root.appearanceModel.toolkitPreviewState === "failed"
+                    text: root.appearanceModel.toolkit.previewState === "failed"
                         ? "Toolkit preview recovery needs attention"
                         : "Toolkit preview / "
-                            + root.appearanceModel.toolkitPreviewRemaining
+                            + root.appearanceModel.toolkit.previewRemaining
                             + "s remaining / "
-                            + (root.appearanceModel.toolkitTitles[
-                                root.appearanceModel.toolkitPreviewCapability] || "Toolkit")
-                            + " / " + root.appearanceModel.toolkitPreviewValue
-                    color: root.appearanceModel.toolkitPreviewState === "failed"
+                            + (root.appearanceModel.toolkit.titles[
+                                root.appearanceModel.toolkit.previewCapability] || "Toolkit")
+                            + " / " + root.appearanceModel.toolkit.previewValue
+                    color: root.appearanceModel.toolkit.previewState === "failed"
                         ? Theme.danger : Theme.warning
                     font.bold: true
                     wrapMode: Text.WordWrap
                 }
                 UiText {
                     Layout.fillWidth: true
-                    text: root.appearanceModel.toolkitPreviewDetail
+                    text: root.appearanceModel.toolkit.previewDetail
                     color: Theme.menuText
                     wrapMode: Text.WordWrap
                 }
                 RowLayout {
                     ShellButton {
-                        visible: root.appearanceModel.toolkitPreviewState === "active"
+                        visible: root.appearanceModel.toolkit.previewState === "active"
                         label: "Keep"
                         enabled: !root.toolkitControlsBusy
-                        onActivated: root.appearanceModel.keepToolkitPreview()
+                        onActivated: root.appearanceModel.toolkit.keepPreview()
                     }
                     ShellButton {
-                        visible: root.appearanceModel.toolkitPreviewState === "active"
+                        visible: root.appearanceModel.toolkit.previewState === "active"
                         label: "Restore previous"
                         enabled: !root.toolkitControlsBusy
-                        onActivated: root.appearanceModel.revertToolkitPreview()
+                        onActivated: root.appearanceModel.toolkit.revertPreview()
                     }
                     ShellButton {
-                        visible: root.appearanceModel.toolkitPreviewState === "failed"
+                        visible: root.appearanceModel.toolkit.previewState === "failed"
                         label: "Accept external state"
                         danger: true
                         enabled: !root.toolkitControlsBusy
-                        onActivated: root.appearanceModel.abandonToolkitPreview()
+                        onActivated: root.appearanceModel.toolkit.abandonPreview()
                     }
                 }
             }

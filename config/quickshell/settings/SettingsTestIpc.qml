@@ -326,103 +326,103 @@ Scope {
         }
 
         function appearanceWallpaperState(): string {
-            return root.appearanceModel.wallpaperState;
+            return root.appearanceModel.wallpaper.selectionState;
         }
 
         function appearanceWallpaperProviderState(): string {
-            return root.appearanceModel.wallpaperProviderState;
+            return root.appearanceModel.wallpaper.providerState;
         }
 
         function appearanceWallpaperProviderDetail(): string {
-            return root.appearanceModel.wallpaperProviderDetail;
+            return root.appearanceModel.wallpaper.providerDetail;
         }
 
         function appearanceWallpaperDetail(): string {
-            return root.appearanceModel.wallpaperDetail;
+            return root.appearanceModel.wallpaper.detail;
         }
 
         function appearanceWallpaperMutationState(): string {
-            return root.appearanceModel.wallpaperMutationState;
+            return root.appearanceModel.wallpaper.mutationState;
         }
 
         function appearanceWallpaperResetState(): string {
-            return root.appearanceModel.wallpaperResetState;
+            return root.appearanceModel.wallpaper.resetState;
         }
 
         function appearanceWallpaperResetDetail(): string {
-            return root.appearanceModel.wallpaperResetDetail;
+            return root.appearanceModel.wallpaper.resetDetail;
         }
 
         function appearanceWallpaperPath(): string {
-            return root.appearanceModel.wallpaperPath;
+            return root.appearanceModel.wallpaper.path;
         }
 
         function appearanceWallpaperFit(): string {
-            return root.appearanceModel.wallpaperFit;
+            return root.appearanceModel.wallpaper.fit;
         }
 
         function appearanceWallpaperMutationDetail(): string {
-            return root.appearanceModel.wallpaperMutationDetail;
+            return root.appearanceModel.wallpaper.mutationDetail;
         }
 
         function appearanceWallpaperResetReady(): bool {
-            return root.appearanceModel.wallpaperResetReady;
+            return root.appearanceModel.wallpaper.resetReady;
         }
 
         function appearanceWallpaperPreviewState(): string {
-            return root.appearanceModel.wallpaperPreviewState;
+            return root.appearanceModel.wallpaper.previewState;
         }
 
         function appearanceWallpaperPreviewRemaining(): int {
-            return root.appearanceModel.wallpaperPreviewRemaining;
+            return root.appearanceModel.wallpaper.previewRemaining;
         }
 
         function appearanceWallpaperStatusBusy(): bool {
-            return root.appearanceModel.wallpaperStatusBusy;
+            return root.appearanceModel.wallpaper.statusBusy;
         }
 
         function appearanceWallpaperReconcile(): void {
-            root.appearanceModel.reconcileWallpaperPreview();
+            root.appearanceModel.wallpaper.reconcilePreview();
         }
 
         function appearanceFontState(): string {
-            return root.appearanceModel.fontState;
+            return root.appearanceModel.font.selectionState;
         }
 
         function appearanceFontFamily(): string {
-            return root.appearanceModel.fontFamily;
+            return root.appearanceModel.font.family;
         }
 
         function appearanceFontScale(): string {
-            return root.appearanceModel.fontScale.toFixed(2);
+            return root.appearanceModel.font.scale.toFixed(2);
         }
 
         function appearanceFontMutationReady(): bool {
-            return root.appearanceModel.fontMutationReady;
+            return root.appearanceModel.font.mutationReady;
         }
 
         function appearanceFontPreviewState(): string {
-            return root.appearanceModel.fontPreviewState;
+            return root.appearanceModel.font.previewState;
         }
 
         function appearanceFontPreviewRemaining(): int {
-            return root.appearanceModel.fontPreviewRemaining;
+            return root.appearanceModel.font.previewRemaining;
         }
 
         function appearanceToolkitProviderState(): string {
-            return root.appearanceModel.toolkitProviderState;
+            return root.appearanceModel.toolkit.providerState;
         }
 
         function appearanceToolkitMutationReady(): bool {
-            return root.appearanceModel.toolkitMutationReady;
+            return root.appearanceModel.toolkit.mutationReady;
         }
 
         function appearanceToolkitStatusBusy(): bool {
-            return root.appearanceModel.toolkitStatusBusy;
+            return root.appearanceModel.toolkit.statusBusy;
         }
 
         function appearanceToolkitState(capability: string): string {
-            return root.appearanceModel.toolkitSelectionFor(capability).state;
+            return root.appearanceModel.toolkit.selectionFor(capability).state;
         }
 
         function appearanceMessage(): string {

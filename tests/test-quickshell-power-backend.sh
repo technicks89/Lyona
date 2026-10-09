@@ -320,7 +320,7 @@ run_helper() {
 		DWM_POWER_TEST_STATE="$work/state" \
 		DWM_POWER_TEST_LOG="$work/actions.log" \
 		PATH="$work/bin:/usr/bin:/bin" \
-		"$repo/scripts/dwm-quickshell-controlcenter" "$@"
+		"$repo/scripts/dwm-settings-power" "$@"
 }
 
 expect_status() {
@@ -659,7 +659,7 @@ mv "$work/power-target.conf" "$work/config/lyona/power.conf"
 		DWM_POWER_TEST_SETTINGS_MONITOR_IGNORE_TERM=1 \
 		LYONA_PARENT_BOUND_INTERVAL=0.2 \
 		PATH="$work/bin:/usr/bin:/bin" \
-		"$repo/scripts/dwm-quickshell-controlcenter" power-watch >"$work/watch.out" 2>&1 &
+		"$repo/scripts/dwm-settings-power" power-watch >"$work/watch.out" 2>&1 &
 	printf '%s\n' "$!" >"$work/helper.pid"
 	wait
 ) &
@@ -727,7 +727,7 @@ rm -f "$work/state/monitor.pid" "$work/state/settings-get.pid" \
 		DWM_POWER_TEST_GSETTINGS_GET_IGNORE_TERM=1 \
 		LYONA_PARENT_BOUND_INTERVAL=0.2 \
 		PATH="$work/bin:/usr/bin:/bin" \
-		"$repo/scripts/dwm-quickshell-controlcenter" power-watch >/dev/null 2>&1 &
+		"$repo/scripts/dwm-settings-power" power-watch >/dev/null 2>&1 &
 	printf '%s\n' "$!" >"$work/hung-helper.pid"
 	wait
 ) &
@@ -773,17 +773,17 @@ printf '%s\n' "$required_packages" | grep -Fqx dbus
 
 # Sync Sprint 16 R16-37: the watch checks its children each second with
 # builtins, never awk, and by identity (PID and start time).
-controlcenter=$repo/scripts/dwm-quickshell-controlcenter
-sed -n '/^power_watch_child_alive() {$/,/^}$/p' "$controlcenter" >"$work/child-alive"
+power_helper=$repo/scripts/dwm-settings-power
+sed -n '/^power_watch_child_alive() {$/,/^}$/p' "$power_helper" >"$work/child-alive"
 [ -s "$work/child-alive" ] || fail 'power_watch_child_alive is missing'
 if grep -Eq 'awk|sed|cut|\$\(' "$work/child-alive"; then
 	fail 'power_watch_child_alive starts a process'
 fi
 # shellcheck disable=SC2016 # the literal text in the helper
-grep -Fq 'while power_watch_child_alive "$power_dbus_watch_identity" &&' "$controlcenter" ||
+grep -Fq 'while power_watch_child_alive "$power_dbus_watch_identity" &&' "$power_helper" ||
 	fail 'the power watch loop does not check its children by identity'
 # shellcheck disable=SC2016 # the literal text in the helper
-grep -Fq 'sleep "${DWM_POWER_WATCH_CHECK_SECONDS:-1}"' "$controlcenter" ||
+grep -Fq 'sleep "${DWM_POWER_WATCH_CHECK_SECONDS:-1}"' "$power_helper" ||
 	fail 'the power watch loop does not wait a second between checks'
 
 printf 'Quickshell power backend: PASS\n'

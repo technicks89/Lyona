@@ -326,7 +326,7 @@ assert_contains "$model" 'root.mutationRefreshPending = true;'
 assert_contains "$model" '} else if (root.mutationRefreshPending) {'
 assert_contains "$model" 'function useDefaults()'
 assert_contains "$model" 'root.useDefaults();'
-assert_contains "$model" 'configuredConfigHome.startsWith("/")'
+assert_contains "$model" 'readonly property string configHome: Xdg.configHome'
 assert_contains "$model" 'readonly property bool mutationReady:'
 
 assert_contains "$shell" 'PanelSettingsModel {'
