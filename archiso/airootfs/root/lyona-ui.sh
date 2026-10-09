@@ -185,10 +185,10 @@ _step_log_tail() {
 # The live status of a running step (#291): the step, how long it has run, how
 # long it usually takes, and the newest line of its log, redrawn every second,
 # so a slow step is told from a hung one. On the same left edge as the screen
-# above it, and the log line wrapped to that column's width, at most three lines,
-# rather than cut at the screen's edge.
+# above it, the step wrapped to that column's width (two lines at most) and the
+# log line under it (three at most), rather than cut at the screen's edge.
 _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
-	local cols indent width pad last part i drawn
+	local cols indent width pad last part i drawn title=0
 	local -a lines=()
 	cols=$(tput cols 2>/dev/null || printf 80)
 	[[ $cols =~ ^[0-9]+$ ]] && ((cols > 20)) || cols=80
@@ -197,17 +197,20 @@ _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
 	width=$((cols - indent - 1))
 	((width > LOGO_WIDTH)) && width=$LOGO_WIDTH
 	printf -v pad '%*s' "$indent" ''
-	part="$4 $1  $(format_duration "$2")${3:+ ($3)}"
-	lines+=("${part:0:width}")
+	# The spinner on the first line; the lines after it start under the step.
+	while IFS= read -r part; do
+		((title == 0)) && lines+=("$4 $part") || lines+=("  $part")
+		title=$((title + 1))
+	done < <(_wrap_text "$1  $(format_duration "$2")${3:+ ($3)}" "$((width - 2))" 2)
 	last=$(_step_log_tail)
 	if [[ -n $last ]]; then
 		while IFS= read -r part; do
 			lines+=("  $part")
-		done < <(printf '%s\n' "$last" | fold -s -w "$((width - 2))" | head -n 3)
+		done < <(_wrap_text "$last" "$((width - 2))" 3)
 	fi
 	printf '\r'
 	for ((i = 0; i < ${#lines[@]}; i++)); do
-		if ((i == 0)); then
+		if ((i < title)); then
 			printf '\033[K%s%s\n' "$pad" "${lines[i]}"
 		else
 			printf '\033[K\033[2m%s%s\033[0m\n' "$pad" "${lines[i]}"
@@ -220,6 +223,26 @@ _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
 	drawn=$((${#lines[@]} > _STEP_STATUS_LINES ? ${#lines[@]} : _STEP_STATUS_LINES))
 	printf '\033[%dA\r' "$drawn"
 	_STEP_STATUS_LINES=$drawn
+}
+
+# TEXT word-wrapped to WIDTH characters, at most MAX lines, one per line out.
+# Bash counts characters where fold counts bytes, and the step's progress bar is
+# drawn in three-byte block characters. A word longer than WIDTH is split.
+_wrap_text() { # TEXT WIDTH MAX
+	local text=$1 width=$2 max=$3 n=0 cut
+	while [[ -n $text ]] && ((n < max)); do
+		if ((${#text} <= width)); then
+			printf '%s\n' "$text"
+			return 0
+		fi
+		cut=${text:0:width+1}
+		cut=${cut% *}
+		((${#cut} > width || ${#cut} == 0)) && cut=${text:0:width}
+		printf '%s\n' "$cut"
+		text=${text:${#cut}}
+		text=${text# }
+		n=$((n + 1))
+	done
 }
 
 # The status block cleared, the cursor back where it began and shown again.

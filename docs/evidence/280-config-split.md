@@ -159,17 +159,27 @@ The full suite, each step on its own: 150 of 151 on the final tree, and the one
 failure (`check-lyona-update`, the backup label stopping an update under
 `set -e`) fixed and passing.
 
-### Changed after the beta.6 image was built
+### Closing focus and the installer's status (rebuilt image)
 
 - Closing a window focuses the window focused before it (`unmanage()` takes it
   from `m->stack`), where it focused the master: tested in
   `check-dwm-activate-xvfb`, and in the VM for the launcher and the keybind
   viewer.
-- The installer's step status: at the screen's left edge, the newest log line
-  wrapped within it (three lines at most), pacman's last redraw without escape
-  remains, an ASCII spinner, the cursor hidden. Tested in
-  `check-install-step-timing` and seen on the VM's Linux console with
-  pacman-style output; not yet in an image install (it needs a new image).
+- The installer's step status: at the screen's left edge, wrapped within it
+  (the step and its progress bar in two lines at most, the newest log line in
+  three), pacman's last redraw without escape remains, an ASCII spinner, the
+  cursor hidden. Wrapped by characters in Bash, not by `fold`, which counts the
+  bar's block characters as bytes. Tested in `check-install-step-timing`.
+
+The image rebuilt with both: `lyona-2026.10.0-beta.6-x86_64.iso`, SHA-256
+`145c6a80e288dd5a920a417edcd941dfc0b0490e4adbde2621474ea59a7b499e`, same host
+and VM as above. A fresh install (btrfs) showed the status under the summary
+box with the log line wrapped, booted to LightDM and passed all 96 checks, the
+close-focus ones among them. On that install the step name with its progress
+bar was still cut at the column's width, not wrapped; it now wraps, and was seen
+wrapping on the VM's console, not yet in an image install. The checks need
+`xorg-xwininfo` and a `dbus-monitor` for notifications, neither part of lyona;
+both were added to the VM for the run.
 
 ## Not tested
 

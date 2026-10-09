@@ -159,7 +159,7 @@ printf ' old-package 1.0 MiB [###-----] 30%%\r\033[3F\033[K older-redraw 1 MiB\r
 block=$(PATH="$work/narrow-bin:$PATH" LOG_FILE=$progress_log bash -c '
 	. "$1"
 	PADDING_LEFT=10
-	_draw_step_status "Running archinstall..." 75 "usually 2-10 minutes" "|"
+	_draw_step_status "(step 8/9) Running install.sh --profile full --non-interactive for the new user" 75 "usually 2-10 minutes" "|"
 ' bash "$ui") || fail 'drawing the step status failed'
 plain=$(printf '%s' "$block" | sed -E $'s/\x1b\\[[0-9;]*[A-Za-z]//g' | tr -d '\r')
 [[ $plain != *'[3F'* && $plain != *'old-package'* && $plain != *'older-redraw'* ]] ||
@@ -172,9 +172,15 @@ while IFS= read -r line; do
 	[[ $line == '          '[!\ ]* || $line == '            '[!\ ]* ]] ||
 		fail "a status line does not start at the screen's left edge (10): '$line'"
 done <<<"$plain"
-((lines >= 3 && lines <= 4)) || fail "the long log line was not wrapped to 2-3 lines ($lines lines): $plain"
+((lines >= 4 && lines <= 5)) || fail "the long step and log line were not wrapped to 4-5 lines ($lines lines): $plain"
+[[ $plain == *'for the new user'* ]] || fail "the long step name was cut, not wrapped: $plain"
 [[ $plain == *'more packages after these ones'* || $plain == *'linux-firmware-nvidia'* ]] ||
 	fail "the wrapped log line lost its text: $plain"
+# Wrapped by characters, not bytes: the progress bar is block characters.
+# shellcheck disable=SC2016 # expanded by the inner bash
+wrapped=$(LC_ALL=C.UTF-8 bash -c '. "$1"; _wrap_text "[████████████░░░░░░░░] 60% (step 6/9) Installing" 40 2' bash "$ui")
+[[ $wrapped == $'[████████████░░░░░░░░] 60% (step 6/9)\nInstalling' ]] ||
+	fail "the progress bar title was not wrapped by characters: $wrapped"
 grep -Fq "local -a frames=('|' '/' '-' \"\\\\\")" "$ui" ||
 	fail 'the spinner is not ASCII (the console font has no braille)'
 

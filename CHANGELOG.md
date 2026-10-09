@@ -211,8 +211,8 @@ processes; Settings and `install.sh` read clearer; and dwm's runtime configurati
   history, instead of the first tiled window (the master) (#280). The same for
   the launcher and the keybind viewer: Escape goes back to where you were.
 - The image installer's step status lines up with the screen above it and
-  wraps the newest log line within the screen, at most three lines, instead of
-  cutting it at the edge (#280). It shows the last redraw of pacman's progress
+  wraps within the screen instead of cutting at its edge (#280): the step and
+  its progress bar in at most two lines, the newest log line in at most three. It shows the last redraw of pacman's progress
   without the remains of its escape codes ("[3F"), its spinner is ASCII (the
   console font has no braille), and the console cursor no longer blinks beside
   it.
