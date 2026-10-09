@@ -6,7 +6,11 @@
 # one or not) and start it again without --path. POSIX, as both callers are.
 # An instance is the managed one when Quickshell lists it for the managed
 # config's path; it is stopped by identity (pid and start time, and owned by
-# this user), politely first.
+# this user), politely first. Needs dwm-proc.sh, beside it: the caller's
+# $lyona_lib names that directory.
+
+# shellcheck source=scripts/dwm-proc.sh disable=SC2154 # lyona_lib is the caller's
+. "$lyona_lib/dwm-proc.sh"
 
 quickshell_instance_pids() {
 	config=$1
@@ -31,27 +35,12 @@ quickshell_pid_is_owned() {
 	[ "${executable##*/}" = quickshell ]
 }
 
-quickshell_pid_starttime() {
-	pid=$1
-	awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[1] != "Z" && fields[20] ~ /^[0-9]+$/) {
-				print fields[20]
-			}
-		}
-	' "/proc/$pid/stat" 2>/dev/null
-}
-
 quickshell_instance_identities() {
 	config=$1
 	pids=$(quickshell_instance_pids "$config") || return 1
 	for pid in $pids; do
 		quickshell_pid_is_owned "$pid" || continue
-		starttime=$(quickshell_pid_starttime "$pid")
-		[ -n "$starttime" ] || continue
+		starttime=$(proc_starttime "$pid") || continue
 		printf '%s:%s\n' "$pid" "$starttime"
 	done
 }
@@ -62,7 +51,7 @@ quickshell_identity_matches() {
 	starttime=${identity#*:}
 
 	quickshell_pid_is_owned "$pid" || return 1
-	[ "$(quickshell_pid_starttime "$pid")" = "$starttime" ]
+	proc_identity_live "$pid" "$starttime"
 }
 
 wait_for_quickshell_exit() {

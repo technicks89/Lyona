@@ -3,12 +3,10 @@
 # Bounded and parent-bound execution, shared by the Quickshell backend
 # scripts. POSIX shell: all three callers are #!/bin/sh.
 #
-# Source it with the directory the caller lives in, which is scripts/ in the
-# repo and PREFIX/bin once installed:
+# Source it from the shared shell code's directory, which is scripts/ in a
+# checkout and PREFIX/lib/lyona once installed:
 #
-#     script_dir=${0%/*}
-#     [ "$script_dir" != "$0" ] || script_dir=.
-#     . "$script_dir/dwm-watchdog.sh"
+#     . "$lyona_lib/dwm-watchdog.sh"
 #
 # Defines run_bounded, run_parent_bound and bound_to_this_shell; sets nothing
 # else.
@@ -17,6 +15,11 @@
 # preserving every existing caller's behavior) to keep a nested timeout in
 # the same process group as an encompassing one, rather than backgrounding
 # its own.
+#
+# Needs dwm-proc.sh, beside it: the caller's $lyona_lib names that directory.
+
+# shellcheck source=scripts/dwm-proc.sh disable=SC2154 # lyona_lib is the caller's
+. "$lyona_lib/dwm-proc.sh"
 
 run_bounded() {
 	duration=$1
@@ -36,19 +39,6 @@ run_bounded() {
 		printf 'operation timed out after %s seconds\n' "$duration" >&2
 	fi
 	return "$status"
-}
-
-# parent_bound_record PID: print "STATE STARTTIME" for PID from /proc/PID/stat
-# (fields 3 and 22, counted after the ") " that ends the command name), using only
-# shell builtins. The start time is the identity: comparing it, not the state,
-# means a live parent merely scheduling from S to R is never taken for a new one.
-parent_bound_record() {
-	parent_bound_line=
-	IFS= read -r parent_bound_line 2>/dev/null <"/proc/$1/stat" || return 1
-	# shellcheck disable=SC2086 # splitting the fields is the point
-	set -- ${parent_bound_line##*) }
-	[ "$#" -ge 20 ] || return 1
-	printf '%s %s\n' "$1" "${20}"
 }
 
 # Runs "$@" in the background and ends it when this script's parent (Quickshell)
@@ -97,13 +87,9 @@ bound_to_this_shell() {
 
 run_parent_bound() {
 	parent_pid=$PPID
-	parent_record=$(parent_bound_record "$parent_pid") || return 1
-	parent_state=${parent_record%% *}
-	parent_identity=${parent_record#* }
-	[ -n "$parent_identity" ] || return 1
-	case $parent_state in
-	Z) return 1 ;;
-	esac
+	# The start time is the identity: comparing it, not the state, means a
+	# live parent merely scheduling from S to R is never taken for a new one.
+	parent_identity=$(proc_starttime "$parent_pid") || return 1
 	# A positive number of seconds (digits, at most one "." with digits on both
 	# sides); anything else, zero included, would make the backstop loop spin.
 	parent_bound_interval=${LYONA_PARENT_BOUND_INTERVAL:-5}
@@ -120,7 +106,7 @@ run_parent_bound() {
 	# when run_parent_bound runs in a subshell ($$ would be the main shell's): the
 	# read builtin opens /proc/self in this very process.
 	parent_bound_self=
-	IFS=' ' read -r parent_bound_self _ 2>/dev/null </proc/self/stat || parent_bound_self=
+	! proc_stat self || parent_bound_self=$proc_pid
 
 	# A function cannot be exec'd by setpriv; it runs as a plain child.
 	case $(command -v "$1" 2>/dev/null) in
@@ -157,14 +143,11 @@ run_parent_bound() {
 	# shellcheck disable=SC2016 # expanded by the loop's own shell
 	parent_bound_loop='
 		parent_pid=$1 parent_identity=$2 child_pid=$3 interval=$4 guard=$5 bound=$6
+		. "$7" || exit 0
 		self=
-		IFS=" " read -r self _ </proc/self/stat
+		! proc_stat self || self=$proc_pid
 		while :; do
-			line=
-			IFS= read -r line 2>/dev/null <"/proc/$parent_pid/stat" || line=
-			set -- ${line##*) }
-			state=${1:-} identity=${20:-}
-			[ "$state" != Z ] && [ -n "$identity" ] && [ "$identity" = "$parent_identity" ] || {
+			proc_identity_live "$parent_pid" "$parent_identity" || {
 				kill -TERM "$child_pid" 2>/dev/null || :
 				exit 0
 			}
@@ -181,11 +164,11 @@ run_parent_bound() {
 		setpriv --pdeathsig TERM -- sh -c "$parent_bound_guard" sh "$parent_bound_self" \
 			sh -c "$parent_bound_loop" sh \
 			"$parent_pid" "$parent_identity" "$child_pid" "$parent_bound_interval" \
-			"$parent_bound_guard" bound &
+			"$parent_bound_guard" bound "$lyona_lib/dwm-proc.sh" &
 	else
 		sh -c "$parent_bound_loop" sh \
 			"$parent_pid" "$parent_identity" "$child_pid" "$parent_bound_interval" \
-			"$parent_bound_guard" sleep &
+			"$parent_bound_guard" sleep "$lyona_lib/dwm-proc.sh" &
 	fi
 	watchdog_pid=$!
 

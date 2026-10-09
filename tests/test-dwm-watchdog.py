@@ -91,8 +91,10 @@ def kill_groups():
 with tempfile.TemporaryDirectory(prefix='dwm-watchdog-') as temp:
     work = Path(temp)
     helper = work / 'helper.sh'
+    # As a caller does: $lyona_lib names the shared shell code (dwm-proc.sh too).
     helper.write_text('''#!/bin/sh
-. "%s"
+lyona_lib="%s"
+. "$lyona_lib/dwm-watchdog.sh"
 long_function() { sleep 1000 & fn_child=$!; trap 'kill "$fn_child"; exit 0' TERM; wait "$fn_child"; }
 case $1 in
 status) run_parent_bound sh -c 'exit 3'; echo "status=$?" >"$2" ;;
@@ -101,7 +103,7 @@ function) echo $$ >"$2"; run_parent_bound long_function ;;
 bound) echo $$ >"$2"; LYONA_PARENT_BOUND_SELF=$$; export LYONA_PARENT_BOUND_SELF; run_parent_bound sleep 1000 ;;
 elsewhere) echo $$ >"$2"; LYONA_PARENT_BOUND_SELF=1; export LYONA_PARENT_BOUND_SELF; run_parent_bound sleep 1000 ;;
 esac
-''' % watchdog)
+''' % watchdog.parent)
     helper.chmod(0o755)
 
     def start(kind, interval='5'):
@@ -189,7 +191,7 @@ esac
         fail('the idle watchdog started %d processes in 3 s' % len(started))
 
     # 6. The guard: the command runs only under the expected parent.
-    guard = subprocess.run(['sh', '-c', '. "$0"; printf %s "$parent_bound_guard"', str(watchdog)],
+    guard = subprocess.run(['sh', '-c', 'lyona_lib=${0%/*}; . "$0"; printf %s "$parent_bound_guard"', str(watchdog)],
                            capture_output=True, text=True, check=True).stdout
     # "; :" keeps the outer shell from exec'ing the inner one, so it really is the parent.
     here = subprocess.run(['sh', '-c', 'sh -c "$1" sh "$$" echo ran; :', 'sh', guard], capture_output=True, text=True)

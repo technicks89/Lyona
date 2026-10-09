@@ -537,9 +537,9 @@ The theme is vendored from
 [ChrisTitusTech/bootloader-themes](https://github.com/ChrisTitusTech/bootloader-themes)
 (MIT) so it is available during an offline install.
 
-## Starting dwm
+## Starting the session
 
-**Display manager** (SDDM, GDM, LightDM): log out and select **dwm** from the session list.
+**Display manager** (SDDM, GDM, LightDM): log out and select **lyona** from the session list (its file is `/usr/share/xsessions/dwm.desktop`).
 
 When the interactive installer runs inside an active X11 session, it offers
 the `dwm-display-setup` wizard after installation. The wizard previews the

@@ -14,6 +14,9 @@ self=$script_dir/${BASH_SOURCE[0]##*/}
 appearance_helper=${DWM_SETTINGS_APPEARANCE_HELPER:-$script_dir/dwm-settings-appearance}
 apply_helper=${DWM_APPEARANCE_APPLY_HELPER:-$script_dir/theme-apply.sh}
 
+# The lock and token primitives (#277).
+# shellcheck source=scripts/dwm-preview-core.sh
+. "$lyona_lib/dwm-preview-core.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 lyona_xdg_dirs
@@ -100,7 +103,7 @@ valid_theme_name() {
 }
 
 valid_token() {
-	[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]
+	preview_valid_token "$1"
 }
 
 ensure_runtime_dir() {
@@ -245,28 +248,16 @@ mutation_ready() {
 }
 
 acquire_lock() {
-	local lock_file
 	command -v flock >/dev/null 2>&1 || die 'flock is unavailable'
 	ensure_runtime_dir
-	lock_file=$runtime_dir/mutation.lock
-	[[ ! -e $lock_file || (-f $lock_file && ! -L $lock_file) ]] || die 'unsafe mutation lock'
-	: >>"$lock_file"
-	chmod 600 -- "$lock_file"
-	exec 9>"$lock_file"
-	flock 9
+	preview_lock "$runtime_dir/mutation.lock" 9 || die 'unsafe mutation lock'
 }
 
+# Shared with theme-apply.sh and dwm-session-launch, which take it too.
 acquire_integration_lock() {
-	local lock_file=$runtime_base/dwm-theme-apply.lock
 	command -v flock >/dev/null 2>&1 || die 'flock is unavailable'
 	ensure_runtime_dir
-	[[ ! -e $lock_file || (-f $lock_file && ! -L $lock_file &&
-		$(stat -c %u -- "$lock_file") == "$UID") ]] ||
-		die 'unsafe integration lock'
-	: >>"$lock_file"
-	chmod 600 -- "$lock_file"
-	exec 8>"$lock_file"
-	flock 8
+	preview_lock "$runtime_base/dwm-theme-apply.lock" 8 || die 'unsafe integration lock'
 	integration_lock_held=true
 }
 

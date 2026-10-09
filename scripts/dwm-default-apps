@@ -8,6 +8,8 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 # shellcheck source=scripts/dwm-paths.sh
 . "$lyona_lib/dwm-paths.sh"
 
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-desktop-entry.sh
@@ -597,25 +599,11 @@ scope_name() {
 }
 
 process_starttime() {
-	local pid=$1 stat rest
-	local -a stat_fields=()
-	[[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-	IFS= read -r stat <"/proc/$pid/stat" || return 1
-	rest=${stat##*) }
-	read -r -a stat_fields <<<"$rest"
-	[[ ${#stat_fields[@]} -ge 20 && ${stat_fields[19]} =~ ^[0-9]+$ ]] || return 1
-	printf '%s\n' "${stat_fields[19]}"
+	proc_starttime "$1"
 }
 
 process_identity_is_live() {
-	local pid=$1 expected_starttime=$2 stat rest
-	local -a stat_fields=()
-	[[ $pid =~ ^[1-9][0-9]*$ && $expected_starttime =~ ^[0-9]+$ ]] || return 1
-	IFS= read -r stat <"/proc/$pid/stat" || return 1
-	rest=${stat##*) }
-	read -r -a stat_fields <<<"$rest"
-	[[ ${#stat_fields[@]} -ge 20 && ${stat_fields[0]} != Z &&
-		${stat_fields[19]} == "$expected_starttime" ]]
+	proc_identity_live "$1" "$2"
 }
 
 lock_owner() {

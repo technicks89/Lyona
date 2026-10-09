@@ -8,6 +8,9 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 # shellcheck source=scripts/dwm-simple-watch.sh
 . "$lyona_lib/dwm-simple-watch.sh"
 
+# The lock and token primitives (#277).
+# shellcheck source=scripts/dwm-preview-core.sh
+. "$lyona_lib/dwm-preview-core.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 lyona_xdg_dirs
@@ -499,15 +502,11 @@ acquire_mutation_lock() {
 	command -v flock >/dev/null 2>&1 || die "flock is unavailable"
 	ensure_state_dir
 	mutation_lock=$state_dir/input-mutation.lock
-	[[ ! -e $mutation_lock || (-f $mutation_lock && ! -L $mutation_lock) ]] || die "unsafe input mutation lock"
-	: >>"$mutation_lock"
-	chmod 600 "$mutation_lock"
-	exec 7>"$mutation_lock"
-	flock 7
+	preview_lock "$mutation_lock" 7 || die "unsafe input mutation lock"
 }
 
 token_file() {
-	[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "invalid preview token"
+	preview_valid_token "$1" || die "invalid preview token"
 	printf '%s/%s.%s\n' "$state_dir" "$1" "$2"
 }
 cleanup_preview() {
@@ -703,18 +702,13 @@ apply_pending_hotplug() {
 	apply_saved "$skip_key" "$skip_setting"
 }
 
-# With builtins only, as it runs all session (Sync Sprint 16 R16-32): fields 3
-# and 22 of /proc/PID/stat, counted after the command name, which may hold
-# spaces. A zombie has exited: waitpid returns at once for it, so counting it
-# alive would spin until its parent reaps it.
+# With builtins only, as it runs all session (Sync Sprint 16 R16-32). A zombie
+# has exited: waitpid returns at once for it, so counting it alive would spin
+# until its parent reaps it.
 session_parent_alive() {
-	local session_pid=${DWM_INPUT_SESSION_PID:-} expected_start=${DWM_INPUT_SESSION_START:-} stat
-	local -a fields
-	[[ -n $session_pid && -r /proc/$session_pid/stat ]] || return 1
-	IFS= read -r stat <"/proc/$session_pid/stat" 2>/dev/null || return 1
-	read -r -a fields <<<"${stat##*) }"
-	[[ ${fields[0]:-} != [ZX] ]] || return 1
-	[[ -z $expected_start || ${fields[19]:-} == "$expected_start" ]]
+	local session_pid=${DWM_INPUT_SESSION_PID:-} expected_start=${DWM_INPUT_SESSION_START:-}
+	proc_alive "$session_pid" || return 1
+	[[ -z $expected_start || $proc_start == "$expected_start" ]]
 }
 
 cleanup_watch_apply() {
@@ -744,11 +738,10 @@ watch_apply_events() {
 	[[ $hotplug_settle_seconds =~ ^[0-9]+([.][0-9]+)?$ ]] &&
 		[[ ! $hotplug_settle_seconds =~ ^0+([.]0+)?$ ]] || die "hotplug settle interval must be positive"
 	watch_lock=$state_dir/hotplug-watch.lock
-	[[ ! -e $watch_lock || (-f $watch_lock && ! -L $watch_lock) ]] || die "unsafe input hotplug watcher lock"
-	: >>"$watch_lock"
-	chmod 600 "$watch_lock"
-	exec 9>"$watch_lock"
-	flock -n 9 || die "input hotplug watcher is already running"
+	preview_lock "$watch_lock" 9 0 || {
+		(($? == 1)) || die "unsafe input hotplug watcher lock"
+		die "input hotplug watcher is already running"
+	}
 	trap 'exit 0' HUP INT TERM
 	trap cleanup_watch_apply EXIT
 	session_pid=${DWM_INPUT_SESSION_PID:-}

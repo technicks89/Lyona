@@ -1,3 +1,4 @@
+import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.core
@@ -293,19 +294,18 @@ Scope {
         Quickshell.execDetached(Commands.stateHelperCommand("layout", [String(index)]));
     }
 
-    // Not WatchedProcess (Sync Sprint 12 S12-14): always on, with its own
-    // restart and snapshot handling below.
-    Process {
+    // Always on. Each record is the whole state, so a restarted watcher's
+    // first one catches up on anything missed while it was down; it had no
+    // restart at all before #279.
+    WatchedProcess {
+        id: stateWatch
         command: Commands.watchCommand(Commands.stateHelperCommand("watch"))
-        running: true
-
-        stdout: SplitParser {
-            splitMarker: "\n\n"
-            onRead: function(data) {
-                root.parseState(data);
-            }
-        }
+        active: true
+        splitMarker: "\n\n"
+        onLine: data => root.parseState(data)
     }
+
+    Component.onCompleted: stateWatch.start()
 
     Process {
         id: switchWorkspaceProcess

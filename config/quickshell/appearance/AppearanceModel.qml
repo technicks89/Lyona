@@ -14,7 +14,7 @@ Scope {
     // model itself starts or has queued, running or about to run. Not "the
     // first read only" (a later refresh gates the pane again, same as the
     // first) and not "nothing else is happening" (a resident subscription like
-    // inventoryWatchProcess does not belong here once it is confirmed live --
+    // inventoryWatch does not belong here once it is confirmed live --
     // see wallpaperStatusBusy below for the one deliberate exception, its own
     // not-yet-live handshake).
     readonly property bool initialLoading: snapshotProcess.running || root.snapshotPending
@@ -68,7 +68,7 @@ Scope {
     property string wallpaperResetDetail: "Wallpaper reset readiness has not been checked"
     property bool wallpaperBusy: false
     property bool wallpaperReconcilePending: false
-    // inventoryWatchProcess is a resident subscription, normally excluded from
+    // inventoryWatch is a resident subscription, normally excluded from
     // "loading" (see initialLoading above). Its startup handshake is the one
     // deliberate exception: until it says "ready", an edit made in that window
     // could go unseen the way an unconfirmed Picom watch could (#85), so the
@@ -76,7 +76,7 @@ Scope {
     readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running
         || wallpaperStatusProcess.running || inventoryProcess.running
         || root.wallpaperStatusPending || root.inventoryPending
-        || (inventoryWatchProcess.running && !root.inventoryWatchReady)
+        || (inventoryWatch.running && !root.inventoryWatchReady)
     readonly property bool wallpaperPreviewActionBusy: wallpaperReadinessProcess.running
         || wallpaperStatusProcess.running || wallpaperActionProcess.running || root.busy
     property string wallpaperPreviewState: "none"
@@ -356,7 +356,7 @@ Scope {
         root.inventoryWatchFailed = true;
         root.inventoryWatchRestartPending = false;
         inventoryWatchRestartTimer.stop();
-        inventoryWatchProcess.running = false;
+        inventoryWatch.stop();
     }
 
     function parseInventory(text) {
@@ -425,7 +425,12 @@ Scope {
             root.startInventoryWatcher();
         if (watch.state !== "available") {
             inventoryWatchRestartTimer.stop();
-            inventoryWatchProcess.running = false;
+            // stop() reports nothing, so the end is handled here, as it was
+            // when the watch's own exit handler saw this stop.
+            if (inventoryWatch.running) {
+                inventoryWatch.stop();
+                root.inventoryWatchEnded("");
+            }
         }
     }
 
@@ -621,15 +626,36 @@ Scope {
         root.refreshAll(true);
     }
 
+    // The inventory watch has ended: by itself (after a change, or failing,
+    // with ERROR from its stderr), or stopped because the inventory reported
+    // live watching unavailable.
+    function inventoryWatchEnded(error) {
+        root.inventoryWatchReady = false;
+        if (root.settingsVisible && root.inventoryWatchRestartPending
+                && !root.inventoryWatchFailed) {
+            root.inventoryWatchRestartPending = false;
+            if (root.inventoryWatchSawEvent) inventoryWatchRestartTimer.restart();
+            else Qt.callLater(root.startInventoryWatcher);
+        } else if (root.settingsVisible && !root.inventoryWatchSawEvent
+                && !root.inventoryWatchFailed) {
+            root.inventoryWatchFailed = true;
+            root.inventoryWatchState = "unavailable";
+            root.inventoryWatchDetail = error.length > 0 ? error
+                : "Live appearance asset watching stopped unexpectedly";
+            root.refreshInventory(true);
+        } else if (root.settingsVisible && (root.inventoryWatchState === "available"
+                || root.inventoryWatchState === "idle")) inventoryWatchRestartTimer.restart();
+    }
+
     function startInventoryWatcher(restartIfRunning) {
         if (!root.settingsVisible) return;
-        if (inventoryWatchProcess.running) {
+        if (inventoryWatch.running) {
             if (restartIfRunning === true) root.inventoryWatchRestartPending = true;
             return;
         }
         root.inventoryWatchRestartPending = false;
         root.inventoryWatchSawEvent = false;
-        inventoryWatchProcess.running = true;
+        inventoryWatch.start();
     }
 
     function closeSettings() {
@@ -637,7 +663,7 @@ Scope {
         root.inventoryGeneration++;
         inventoryWatchRestartTimer.stop();
         root.inventoryWatchRestartPending = false;
-        inventoryWatchProcess.running = false;
+        inventoryWatch.stop();
         root.inventoryWatchReady = false;
         root.inventoryWatchSawEvent = false;
         inventoryProcess.running = false;
@@ -1268,7 +1294,7 @@ Scope {
                 || wallpaperReadinessProcess.running || wallpaperStatusProcess.running
                 || (!previewDecision && (inventoryProcess.running
                     || root.wallpaperStatusPending || root.inventoryPending))
-                || (!previewDecision && inventoryWatchProcess.running
+                || (!previewDecision && inventoryWatch.running
                     && !root.inventoryWatchReady)
                 || root.busy || root.fontBusy) {
             root.message = "Another appearance change is already in progress";
@@ -1347,7 +1373,7 @@ Scope {
         if (root.wallpaperBusy || wallpaperActionProcess.running || wallpaperReadinessProcess.running
                 || wallpaperStatusProcess.running || inventoryProcess.running
                 || root.wallpaperStatusPending || root.inventoryPending
-                || (inventoryWatchProcess.running && !root.inventoryWatchReady)
+                || (inventoryWatch.running && !root.inventoryWatchReady)
                 || root.busy || root.fontBusy) {
             return;
         }
@@ -1700,56 +1726,35 @@ Scope {
         }
     }
 
-    // Not WatchedProcess (Sync Sprint 12 S12-14): its restart depends on
-    // whether it saw an event and whether it failed, and it reports its stderr.
-    Process {
-        id: inventoryWatchProcess
+    // Ends after each change it reports, by design, and is started again by
+    // inventoryWatchRestartTimer; an end without a change is a failure, shown
+    // with its stderr. So it never restarts itself (#279: restartPolicy
+    // "never").
+    WatchedProcess {
+        id: inventoryWatch
         command: Commands.watchCommand(Commands.settingsAppearanceCommand("watch-inventory", []))
-        running: false
-        stdout: SplitParser {
-            onRead: line => {
-                if (line === "ready\tinventory") {
-                    root.inventoryWatchReady = true;
-                    root.inventoryWatchSawEvent = false;
-                    if (root.settingsVisible) {
-                        root.refreshWallpaperStatus();
-                        root.refreshInventory(true);
-                        root.refreshFontStatus();
-                    }
-                } else if (line.startsWith("changed\t")) {
-                    root.inventoryWatchReady = false;
-                    root.inventoryWatchSawEvent = true;
-                    root.inventoryPending = true;
-                    if (root.settingsVisible) {
-                        root.refreshWallpaperStatus();
-                        root.refreshFontStatus();
-                    }
+        active: root.settingsVisible
+        restartPolicy: "never"
+        onLine: line => {
+            if (line === "ready\tinventory") {
+                root.inventoryWatchReady = true;
+                root.inventoryWatchSawEvent = false;
+                if (root.settingsVisible) {
+                    root.refreshWallpaperStatus();
+                    root.refreshInventory(true);
+                    root.refreshFontStatus();
+                }
+            } else if (line.startsWith("changed\t")) {
+                root.inventoryWatchReady = false;
+                root.inventoryWatchSawEvent = true;
+                root.inventoryPending = true;
+                if (root.settingsVisible) {
+                    root.refreshWallpaperStatus();
+                    root.refreshFontStatus();
                 }
             }
         }
-        stderr: StdioCollector {
-            id: inventoryWatchError
-        }
-        onRunningChanged: {
-            if (!running) {
-                root.inventoryWatchReady = false;
-                if (root.settingsVisible && root.inventoryWatchRestartPending
-                        && !root.inventoryWatchFailed) {
-                    root.inventoryWatchRestartPending = false;
-                    if (root.inventoryWatchSawEvent) inventoryWatchRestartTimer.restart();
-                    else Qt.callLater(root.startInventoryWatcher);
-                } else if (root.settingsVisible && !root.inventoryWatchSawEvent
-                        && !root.inventoryWatchFailed) {
-                    const error = inventoryWatchError.text.trim();
-                    root.inventoryWatchFailed = true;
-                    root.inventoryWatchState = "unavailable";
-                    root.inventoryWatchDetail = error.length > 0 ? error
-                        : "Live appearance asset watching stopped unexpectedly";
-                    root.refreshInventory(true);
-                } else if (root.settingsVisible && (root.inventoryWatchState === "available"
-                        || root.inventoryWatchState === "idle")) inventoryWatchRestartTimer.restart();
-            }
-        }
+        onEnded: root.inventoryWatchEnded(inventoryWatch.failureText)
     }
 
     Process {

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-proc.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
+
 fifo=
 fifo_dir=
 identity_file=
@@ -31,37 +38,15 @@ if ! [[ $power_poll_interval =~ ^[0-9]+([.][0-9]+)?$ ]] ||
 	power_poll_interval=30
 fi
 
-child_starttime() {
-	local child_pid=$1
-
-	awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[20] ~ /^[0-9]+$/) print fields[20]
-		}
-	' "/proc/$child_pid/stat" 2>/dev/null
-}
-
 child_is_live() {
-	local identity=$1 child_pid=${1%%:*} expected_starttime=${1#*:}
-	local stat_line stat_rest
-	local -a stat_fields
-
-	[[ $expected_starttime =~ ^[0-9]+$ ]] || return 1
-	{ IFS= read -r stat_line <"/proc/$child_pid/stat"; } 2>/dev/null || return 1
-	stat_rest=${stat_line##*) }
-	read -r -a stat_fields <<<"$stat_rest"
-	((${#stat_fields[@]} > 19)) || return 1
-	[[ ${stat_fields[0]} != Z && ${stat_fields[1]} == "$$" && ${stat_fields[19]} == "$expected_starttime" ]]
+	proc_identity_live "${1%%:*}" "${1#*:}" && [[ $proc_ppid == "$$" ]]
 }
 
 capture_child_starttime() {
 	local child_pid=$1 starttime attempt
 
 	for ((attempt = 0; attempt < 20; attempt++)); do
-		starttime=$(child_starttime "$child_pid")
+		starttime=$(proc_starttime "$child_pid" || true)
 		if [[ $starttime =~ ^[0-9]+$ ]]; then
 			printf '%s\n' "$starttime"
 			return 0
@@ -79,14 +64,7 @@ register_identity() {
 	command -v sha256sum >/dev/null 2>&1 || return 0
 	display_key=$(printf '%s' "${DISPLAY:-}" | sha256sum | awk '{ print $1 }')
 	[[ $display_key =~ ^[0-9a-f]{64}$ ]] || return 0
-	starttime=$(awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[20] ~ /^[0-9]+$/) print fields[20]
-		}
-	' "/proc/$$/stat")
+	starttime=$(proc_starttime "$$" || true)
 	[[ $starttime =~ ^[0-9]+$ ]] || return 0
 	identity_dir=$XDG_RUNTIME_DIR/lyona
 	(umask 077 && mkdir -p -- "$identity_dir") || return 0

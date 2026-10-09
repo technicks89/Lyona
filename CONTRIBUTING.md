@@ -138,7 +138,12 @@ explicitly exclude and document that target from the parallel set before merge.
   features.
 - Preserve existing `config.h`, XDG user configuration, and `.xinitrc` files.
 - Keep Quickshell integrations event-driven when a signal, stream, watch, IPC,
-  or service API exists.
+  or service API exists. Run a resident watcher through `core/WatchedProcess.qml`
+  rather than a `Process` of its own.
+- Use the shared shell code rather than a copy: `dwm-proc.sh` for a process's
+  identity (never parse `/proc/PID/stat` in a script), and
+  `dwm-preview-core.sh` for a Settings helper's lock, token, clock and atomic
+  exchange. `make check-shell-contracts` refuses copies.
 - Update user documentation, migration notes, and `CHANGELOG.md` when behavior,
   commands, dependencies, or defaults change.
 - Add focused regression coverage for bug fixes.

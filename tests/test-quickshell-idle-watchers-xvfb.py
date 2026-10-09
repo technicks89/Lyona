@@ -124,6 +124,10 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
     (config / 'lyona').mkdir()
     for toml in (repo / 'config').glob('*.toml'):
         shutil.copy(toml, config / 'lyona' / toml.name)
+    # The one update check after login (15-60 s in, at random) is not a watcher:
+    # left on, it lands in the sample or not by chance.
+    (config / 'lyona' / 'update.conf').write_text(
+        'channel=preview\ncheck_on_login=false\nauto_apply=false\nkeep_backups=5\n')
     shutil.copytree(repo / 'scripts', home / '.local/share/checkout/scripts')
     # The checkout layout: the built TOML reader beside scripts/ (S12-14).
     shutil.copy2(repo / 'lyona-toml', home / '.local/share/checkout/lyona-toml')

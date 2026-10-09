@@ -7,6 +7,9 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 [[ -f $lyona_lib/dwm-simple-watch.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-simple-watch.sh
 . "$lyona_lib/dwm-simple-watch.sh"
+# The token primitive (#277).
+# shellcheck source=scripts/dwm-preview-core.sh
+. "$lyona_lib/dwm-preview-core.sh"
 # shellcheck source=scripts/dwm-xsettings-config.sh
 . "$lyona_lib/dwm-xsettings-config.sh"
 # shellcheck source=scripts/dwm-trust.sh
@@ -91,7 +94,7 @@ ensure_state_dir() {
 
 token_path() {
 	local token=$1 suffix=$2
-	[[ $token =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "invalid preview token"
+	preview_valid_token "$token" || die "invalid preview token"
 	printf '%s/%s.%s\n' "$state_dir" "$token" "$suffix"
 }
 

@@ -13,6 +13,8 @@ readonly protocol_minor=0
 readonly max_desktop_size=262144
 readonly confirm_token=confirm-session-critical
 
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-desktop-entry.sh
@@ -495,7 +497,7 @@ acquire_lock() {
 		if [[ -d $lock_dir && ! -L $lock_dir && -f $lock_dir/owner && ! -L $lock_dir/owner ]] &&
 			read -r owner_pid owner_start <"$lock_dir/owner" &&
 			[[ $owner_pid =~ ^[0-9]+$ && $owner_start =~ ^[0-9]+$ ]]; then
-			current_start=$(sed 's/^.*) //' "/proc/$owner_pid/stat" 2>/dev/null | awk '{ print $20 }' || true)
+			current_start=$(proc_starttime "$owner_pid" || true)
 			if [[ $current_start != "$owner_start" ]] &&
 				rm -- "$lock_dir/owner" 2>/dev/null &&
 				rmdir -- "$lock_dir" 2>/dev/null &&
@@ -509,7 +511,7 @@ acquire_lock() {
 		fi
 	fi
 	lock_owned=1
-	current_start=$(sed 's/^.*) //' "/proc/$$/stat" 2>/dev/null | awk '{ print $20 }') || die 'could not identify the autostart action process'
+	current_start=$(proc_starttime "$$") || die 'could not identify the autostart action process'
 	[[ $current_start =~ ^[0-9]+$ ]] || die 'could not identify the autostart action process'
 	printf '%s %s\n' "$$" "$current_start" >"$lock_dir/owner" || die 'could not record autostart action ownership'
 }
@@ -742,14 +744,11 @@ resolve_user_watch() {
 }
 
 watch_generation() {
-	local user_mode=$1 user_path=$2 parent_pid=$PPID parent_record parent_state parent_identity
-	local current_record current_state current_identity ready_log fifo watch_fd status=0 restart=0 attempts=0
+	local user_mode=$1 user_path=$2 parent_pid=$PPID parent_identity
+	local ready_log fifo watch_fd status=0 restart=0 attempts=0
 	shift 2
 	local -a paths=("$@")
-	parent_record=$(sed 's/^.*) //' "/proc/$parent_pid/stat" 2>/dev/null | awk '{ print $1 " " $20 }') || return 1
-	parent_state=${parent_record%% *}
-	parent_identity=${parent_record#* }
-	[[ -n $parent_identity && $parent_state != Z ]] || return 1
+	parent_identity=$(proc_starttime "$parent_pid") || return 1
 
 	ready_log=$work/inotify.ready
 	fifo=$work/inotify.events
@@ -762,10 +761,7 @@ watch_generation() {
 	exec {watch_fd}<"$fifo"
 	(
 		while :; do
-			current_record=$(sed 's/^.*) //' "/proc/$parent_pid/stat" 2>/dev/null | awk '{ print $1 " " $20 }' || true)
-			current_state=${current_record%% *}
-			current_identity=${current_record#* }
-			if [[ $current_state == Z || $current_identity != "$parent_identity" ]]; then
+			if ! proc_identity_live "$parent_pid" "$parent_identity"; then
 				kill -TERM "$watch_child" 2>/dev/null || true
 				exit 0
 			fi

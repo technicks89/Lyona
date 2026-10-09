@@ -43,7 +43,7 @@ grep -Fq 'function openSettings()' "$network_model"
 # The parent-bound watchdog moved into the shared helper; the callers have to
 # reach it, and it has to still refuse a parent it cannot identify.
 # shellcheck disable=SC2016 # matching the helper's source text verbatim
-assert_contains "$repo/scripts/dwm-watchdog.sh" '[ -n "$parent_identity" ] || return 1'
+assert_contains "$repo/scripts/dwm-watchdog.sh" 'parent_identity=$(proc_starttime "$parent_pid") || return 1'
 for watchdog_caller in dwm-quickshell-network dwm-quickshell-controls; do
 	assert_contains "$repo/scripts/$watchdog_caller" 'dwm-watchdog.sh'
 done

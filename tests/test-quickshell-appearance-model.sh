@@ -98,17 +98,19 @@ if grep -Eq 'compositorWatch|watch-compositor' "$model"; then
 	exit 1
 fi
 grep -Fq 'if (!root.settingsVisible) return;' "$model"
-grep -Fq 'inventoryWatchProcess.running = false' "$model"
+grep -Fq 'inventoryWatch.stop();' "$model"
+# #279: the inventory watch is a WatchedProcess that never restarts itself.
+sed -n '/id: inventoryWatch$/,/^    }/p' "$model" | grep -Fq 'restartPolicy: "never"'
 # Upstream f4f477c hardens their appearance watcher so a helper that dies
 # while the surface is open gets restarted, and a burst of change lines
 # coalesces into one refresh. Lyona already has both properties in the
 # shared WatchedProcess component the other models' watchers use --
 # verify that instead of porting a second, inline copy.
 # Restarted only while active, after a delay that backs off (Sync Sprint 16 R16-36).
-assert_contains "$watched_process" 'if (!root.active)'
+assert_contains "$watched_process" 'if (!root.active || root.runGeneration !== root.generation)'
 assert_contains "$watched_process" 'restartTimer.interval = root.restartDelay;'
 assert_contains "$watched_process" 'restartTimer.restart()'
-assert_contains "$watched_process" 'if (root.active && !watchProcess.running)'
+assert_contains "$watched_process" 'if (root.active && !watchProcess.running && root.restartGeneration === root.generation)'
 assert_contains "$watched_process" 'onTriggered: root.settled()'
 grep -Fq 'root.inventoryCandidates = candidates' "$model"
 grep -Fq 'candidate.id === "wallpaper"' "$model"
@@ -177,7 +179,7 @@ grep -Fq 'if (!running && root.wallpaperStatusPending && root.settingsVisible) {
 grep -Fq 'readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running' "$model"
 grep -Fq 'Commands.settingsWallpaperCommand("reset-ready", [])' "$model"
 grep -Fq 'wallpaperReadinessProcess.running || wallpaperActionProcess.running || inventoryProcess.running,' "$model"
-if grep -Fq '|| (inventoryWatchProcess.running && !root.inventoryWatchReady)) {' "$model"; then
+if grep -Fq '|| (inventoryWatch.running && !root.inventoryWatchReady)) {' "$model"; then
 	printf 'Wallpaper status discovery is still gated on inventory watcher startup\n' >&2
 	exit 1
 fi
@@ -191,7 +193,7 @@ grep -Fq 'Wallpaper preview expired and reverted automatically' "$model"
 grep -Fq 'const previewDecision = root.wallpaperPreviewState === "active"' "$model"
 grep -Fq 'if (previewDecision && (inventoryProcess.running || root.inventoryPending' "$model"
 grep -Fq '|| root.wallpaperStatusPending' "$model"
-grep -Fq '|| (!previewDecision && inventoryWatchProcess.running' "$model"
+grep -Fq '|| (!previewDecision && inventoryWatch.running' "$model"
 if grep -Fq '&& !root.wallpaperStatusPending' "$model"; then
 	printf 'Queued status work still blocks wallpaper inventory preemption\n' >&2
 	exit 1

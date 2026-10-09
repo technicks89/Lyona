@@ -25,6 +25,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Process identity is read in one place (#277): `dwm-proc.sh` reads a PID's
+  state, parent and start time from `/proc/PID/stat` with shell builtins, where
+  twelve scripts each had a copy, and a contract test forbids new ones. The
+  Settings preview helpers share their lock, token, clock, atomic-exchange
+  check and watchdog identity through `dwm-preview-core.sh`: font and toolkit
+  (through `dwm-preview.sh`), wallpaper, theme, display and input. Theme and
+  input locks now refuse a symbolic link or a second hard link, as wallpaper's
+  did, and the autostart settings watcher checks its parent every 0.25 s
+  without starting `sed` and `awk`.
+- Every resident shell watcher is a `WatchedProcess` (#279), which gains a
+  restart policy (`never` reports the end, with its stderr, and leaves the
+  retry to the user), a generation guard and the run's failure text. The
+  Controls `pactl` fallback watcher backs off instead of restarting every 3 s;
+  Picom's and the Appearance inventory's watches use `never`.
 - Settings > System runs one watcher process for all its domains, where it
   started eight: about 37 MB where it was about 30 MB each (#286).
   `dwm-system-management watch-domains` holds every domain's subscription on one
@@ -112,6 +126,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A process whose name holds a space no longer gives the input watcher a wrong
+  session start time (#277): `autostart.sh` read field 22 of `/proc/PID/stat`
+  with `awk`, which counts the name's words as fields.
+- The dwm state bridge is restarted, with back-off, when its watcher exits
+  (#279); before, the panel stopped following dwm until the next login.
+- The install guide names the session **lyona**, as the display manager lists
+  it (#272).
 - Image installs in QEMU/KVM get the guest utilities again (#310). The
   hypervisor was detected inside `arch-chroot`, which answers `container-other`,
   so no VM ever got `qemu-guest-agent` or `spice-vdagent`.
