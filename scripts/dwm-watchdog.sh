@@ -143,7 +143,12 @@ run_parent_bound() {
 	# shellcheck disable=SC2016 # expanded by the loop's own shell
 	parent_bound_loop='
 		parent_pid=$1 parent_identity=$2 child_pid=$3 interval=$4 guard=$5 bound=$6
-		. "$7" || exit 0
+		# No backstop without it: stop the child rather than leave it unwatched.
+		# Checked first, as a failed "." ends a POSIX shell before any "||".
+		if [ ! -r "$7" ] || ! . "$7"; then
+			kill -TERM "$child_pid" 2>/dev/null || :
+			exit 0
+		fi
 		self=
 		! proc_stat self || self=$proc_pid
 		while :; do

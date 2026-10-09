@@ -21,6 +21,9 @@ grep -Fq 'root.fallbackProcessGeneration === root.audioSourceGeneration' "$model
 grep -Fq 'WatchedProcess {' "$model"
 grep -Fq 'active: root.audioSourceKind === "fallback" && (root.visible || root.settingsVisible)' "$model"
 grep -Fq 'fallbackWatch.stop();' "$model"
+# Closing stops it, so reopening on the fallback starts it again.
+sed -n '/function selectAudioSource() {/,/^    }/p' "$model" | grep -Fq 'fallbackWatch.start();' ||
+	fail 'reopening on the pactl fallback does not restart its watcher'
 # Sync Sprint 16 R16-38: a burst of pactl lines is one snapshot once it settles,
 # and a change during a snapshot is read again after it.
 sed -n '/id: fallbackWatch$/,/^    }/p' "$model" | grep -Fq 'onSettled: {' ||

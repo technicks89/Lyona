@@ -79,8 +79,10 @@ Scope {
                 root.audioSourceGeneration++;
                 root.audioSourceKind = "native";
             }
-        } else if ((root.visible || root.settingsVisible) && !nativeGraceTimer.running
-                && root.audioSourceKind !== "fallback") {
+        } else if ((root.visible || root.settingsVisible) && root.audioSourceKind === "fallback") {
+            // Reopened while on the fallback: closing stopped its watcher.
+            fallbackWatch.start();
+        } else if ((root.visible || root.settingsVisible) && !nativeGraceTimer.running) {
             nativeGraceTimer.restart();
         }
     }
