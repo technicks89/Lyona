@@ -153,7 +153,9 @@ Flickable {
         SectionLabel { label: "Automatic locking" }
 
         StatusCard {
-            label: !root.powerModel.lockAvailable ? "Automatic lock status unavailable"
+            // Unavailable carries its reason in lockDetail, such as no LightDM login (#269).
+            label: root.powerModel.lockState === "unavailable" ? "Automatic lock unavailable"
+                : !root.powerModel.lockAvailable ? "Automatic lock status unavailable"
                 : root.powerModel.lockEnabled ? "Automatic lock enabled" : "Automatic lock disabled"
             statusState: root.powerModel.lockState
             value: !root.powerModel.lockAvailable ? "Unknown"

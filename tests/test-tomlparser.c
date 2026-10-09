@@ -165,6 +165,74 @@ long_string(const char *dir)
 	CHECK(is_int(toml_get(&doc, "", "after"), 7), "the key after a long top-level string was lost");
 }
 
+static int
+parse_bytes(const char *dir, const char *name, const char *bytes, size_t len)
+{
+	FILE *f;
+
+	snprintf(path, sizeof path, "%s/%s.toml", dir, name);
+	if (!(f = fopen(path, "w")) || fwrite(bytes, 1, len, f) != len || fclose(f) != 0) {
+		perror(path);
+		exit(2);
+	}
+	return toml_parse(path, &doc);
+}
+
+/* A line longer than the parser's line buffer is skipped whole and counted:
+ * its remainder used to be read as the next line, so text inside a long
+ * string became a key of its own (#271). */
+static void
+long_line(const char *dir)
+{
+	static char text[3 * TOML_MAX_LINE], filler[TOML_MAX_LINE];
+	int n;
+
+	/* Over the limit: one skipped line, and nothing in its tail is a key. The
+	 * filler ends the buffer just before " injected =", where the old parser
+	 * cut the line and read the rest as a key. */
+	memset(filler, 'x', TOML_MAX_LINE);
+	filler[TOML_MAX_LINE - 1 - strlen("browser = \"")] = '\0';
+	snprintf(text, sizeof(text),
+		"[vars]\n"
+		"before = 1\n"
+		"browser = \"%s injected = \\\"evil\\\" \"\n"
+		"after = 2\n", filler);
+	CHECK(parse_text(dir, "long-line", text), "did not parse");
+	CHECK(doc.long_lines == 1, "long lines: %d, want 1", doc.long_lines);
+	CHECK(!toml_get(&doc, "vars", "injected"), "the tail of a long line became a key");
+	CHECK(!toml_get(&doc, "vars", "browser"), "the cut start of a long line was kept");
+	CHECK(is_int(toml_get(&doc, "vars", "before"), 1), "the key before a long line was lost");
+	CHECK(is_int(toml_get(&doc, "vars", "after"), 2), "the key after a long line was lost");
+
+	/* Exactly TOML_MAX_LINE - 1 bytes and its newline: complete, kept, and the
+	 * short line after it is read as it is. */
+	n = snprintf(text, sizeof(text), "k = \"");
+	memset(text + n, 'y', TOML_MAX_LINE - 1 - n - 1);
+	n = TOML_MAX_LINE - 2;
+	text[n++] = '"';
+	text[n++] = '\n';
+	snprintf(text + n, sizeof(text) - (size_t)n, "b = 3\n");
+	CHECK(parse_text(dir, "full-line", text), "did not parse");
+	CHECK(doc.long_lines == 0, "a line that fits was counted as long");
+	CHECK(toml_get(&doc, "", "k") != NULL, "a line that just fits was lost");
+	CHECK(is_int(toml_get(&doc, "", "b"), 3), "the line after a full line was lost");
+
+	/* A NUL byte is not a cut line: the next line is not swallowed. */
+	CHECK(parse_bytes(dir, "nul-byte", "a = 1\0junk\nb = 4\n", sizeof("a = 1\0junk\nb = 4\n") - 1),
+	      "did not parse");
+	CHECK(doc.long_lines == 0, "a line with a NUL byte was counted as long");
+	CHECK(is_int(toml_get(&doc, "", "b"), 4), "the line after a NUL byte was lost");
+
+	/* The last line, too long and with no newline: skipped, no hang. */
+	memset(filler, 'x', TOML_MAX_LINE);
+	filler[TOML_MAX_LINE - 1] = '\0';
+	snprintf(text, sizeof(text), "a = 5\nlast = \"%s\"", filler);
+	CHECK(parse_text(dir, "long-last-line", text), "did not parse");
+	CHECK(doc.long_lines == 1, "long last line: %d, want 1", doc.long_lines);
+	CHECK(is_int(toml_get(&doc, "", "a"), 5), "the key before a long last line was lost");
+	CHECK(!toml_get(&doc, "", "last"), "a long last line was kept");
+}
+
 /* What already worked must keep working. */
 static void
 regressions(const char *dir)
@@ -288,6 +356,7 @@ main(int argc, char *argv[])
 	booleans(argv[1]);
 	escaped_quote(argv[1]);
 	long_string(argv[1]);
+	long_line(argv[1]);
 	regressions(argv[1]);
 	truncation(argv[1]);
 	shipped(argv[2], atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), argv[6], atoi(argv[7]), argv[8]);

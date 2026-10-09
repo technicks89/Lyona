@@ -311,8 +311,11 @@ EOF
 	rm -f "$work/state/light-locker.running"
 }
 
+# A LightDM login, where light-locker can run, unless DWM_TEST_SESSION_PATH is
+# set empty (#269).
 run_helper() {
-	DISPLAY="${DISPLAY-:fixture}" HOME="$work/home" \
+	XDG_SESSION_PATH="${DWM_TEST_SESSION_PATH-/org/freedesktop/DisplayManager/Session0}" \
+		DISPLAY="${DISPLAY-:fixture}" HOME="$work/home" \
 		XDG_CONFIG_HOME="$work/config" \
 		DWM_POWER_TEST_STATE="$work/state" \
 		DWM_POWER_TEST_LOG="$work/actions.log" \
@@ -365,6 +368,12 @@ for malformed_after in '5' 'bad 5' 'uint32 4294967296' 'uint32 -1'; do
 	DWM_POWER_TEST_GSETTINGS_RAW="$malformed_after" run_helper power-lock-snapshot >"$work/malformed-lock"
 	grep -q '^power-lock[[:space:]]partial[[:space:]]' "$work/malformed-lock"
 done
+
+# Outside a LightDM login light-locker cannot run, so nothing locks however it
+# is set: Auto Lock is unavailable, and the row says why (#269).
+write_initial_config
+DWM_TEST_SESSION_PATH='' run_helper power-lock-snapshot >"$work/no-lightdm-lock"
+grep -q '^power-lock[[:space:]]unavailable[[:space:]].*needs a LightDM login' "$work/no-lightdm-lock"
 
 # A private process with the actual locker comm name tests procps environment
 # matching without starting a locker or connecting to an X server.

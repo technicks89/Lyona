@@ -3741,6 +3741,9 @@ toml_doc_ok(const char *path, TomlDoc *doc, TomlUsable usable)
 	if (doc->truncated)
 		fprintf(stderr, "dwm: %s has more than %d entries; the rest were ignored\n",
 		        path, TOML_MAX_ENTRIES);
+	if (doc->long_lines)
+		fprintf(stderr, "dwm: %s has %d line(s) longer than %d bytes; they were ignored\n",
+		        path, doc->long_lines, TOML_MAX_LINE - 1);
 	return doc->n > 0 && (!usable || usable(doc));
 }
 

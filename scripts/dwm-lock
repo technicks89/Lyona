@@ -65,6 +65,29 @@ try_lock() {
 	"$@" >/dev/null 2>&1
 }
 
+# loginctl lock-session only sends logind's Lock signal, and succeeds whether
+# or not anything listens: it counts only once logind reports the session
+# locked, within about two seconds (#269).
+try_loginctl_lock() {
+	[ "${DWM_LOCK_NO_LOGINCTL:-0}" != 1 ] || return 1
+	command -v loginctl >/dev/null 2>&1 || return 1
+	if [ -n "${XDG_SESSION_ID:-}" ]; then
+		try_lock loginctl lock-session "$XDG_SESSION_ID" || return 1
+	else
+		try_lock loginctl lock-session || return 1
+	fi
+	lock_attempt=0
+	while [ "$lock_attempt" -lt "${DWM_LOCK_VERIFY_TRIES:-20}" ]; do
+		[ "$(loginctl show-session "${XDG_SESSION_ID:-self}" -p LockedHint --value 2>/dev/null)" != yes ] ||
+			return 0
+		lock_attempt=$((lock_attempt + 1))
+		if command -v sleep >/dev/null 2>&1; then
+			sleep 0.1
+		fi
+	done
+	return 1
+}
+
 if command -v light-locker-command >/dev/null 2>&1; then
 	start_light_locker
 	if try_lock light-locker-command --lock; then
@@ -77,17 +100,6 @@ fi
 if command -v xdg-screensaver >/dev/null 2>&1 &&
 	try_lock xdg-screensaver lock; then
 	exit 0
-fi
-
-if [ "${DWM_LOCK_NO_LOGINCTL:-0}" != 1 ] &&
-	command -v loginctl >/dev/null 2>&1; then
-	if [ -n "${XDG_SESSION_ID:-}" ]; then
-		if try_lock loginctl lock-session "$XDG_SESSION_ID"; then
-			exit 0
-		fi
-	elif try_lock loginctl lock-session; then
-		exit 0
-	fi
 fi
 
 if command -v mate-screensaver-command >/dev/null 2>&1 &&
@@ -123,7 +135,18 @@ for locker in i3lock slock xlock; do
 	fi
 done
 
+# Last: a listener on logind's Lock signal, once it reports the screen locked.
+if try_loginctl_lock; then
+	exit 0
+fi
+
 printf '%s\n' \
 	'dwm-lock: no usable screen locker found.' \
-	'Install light-locker or another supported locker.' >&2
+	'Install i3lock or slock, or log in through LightDM for light-locker.' >&2
+# Lock is often a key or a menu entry that shows no error: say so on screen too.
+if command -v notify-send >/dev/null 2>&1; then
+	notify-send -a lyona -u critical -- 'Screen not locked' \
+		'No screen locker is available. Install i3lock or slock, or log in through LightDM for light-locker.' \
+		>/dev/null 2>&1 || true
+fi
 exit 1
