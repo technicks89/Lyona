@@ -34,7 +34,8 @@ esac
 EOF
 # makepkg: --printsrcinfo per STUB_SRCINFO (ok, nosum, skip); a build writes a
 # package, its -debug split and a signature, or fails (STUB_BUILD=fail), or
-# hangs (STUB_BUILD=hang).
+# hangs (STUB_BUILD=hang). It writes them where makepkg would: PKGDEST from the
+# environment, else the makepkg.conf one (STUB_CONF_PKGDEST), else here.
 cat >"$work/bin/makepkg" <<'EOF'
 #!/bin/bash
 if [[ $1 == --printsrcinfo ]]; then
@@ -51,9 +52,10 @@ case ${STUB_BUILD:-ok} in
 fail) exit 4 ;;
 hang) exec sleep 30 ;;
 esac
-: >demo-1.0-1-x86_64.pkg.tar.zst
-: >demo-1.0-1-x86_64.pkg.tar.zst.sig
-: >demo-debug-1.0-1-x86_64.pkg.tar.zst
+dest=${PKGDEST:-${STUB_CONF_PKGDEST:-.}}
+: >"$dest/demo-1.0-1-x86_64.pkg.tar.zst"
+: >"$dest/demo-1.0-1-x86_64.pkg.tar.zst.sig"
+: >"$dest/demo-debug-1.0-1-x86_64.pkg.tar.zst"
 EOF
 chmod +x "$work/bin/git" "$work/bin/makepkg"
 export STUB_LOG=$work/log PATH="$work/bin:$PATH"
@@ -92,6 +94,13 @@ out=$(aur build "$work/f1" "$work/out") || fail 'a clean build failed'
 [[ ! -e $work/out/demo-debug-1.0-1-x86_64.pkg.tar.zst && ! -e $work/out/demo-1.0-1-x86_64.pkg.tar.zst.sig ]] ||
 	fail 'a -debug split or a signature was copied'
 grep -Fqx "makepkg --noconfirm --nocheck (uid $(id -u))" "$work/log" || fail "makepkg ran as: $(grep makepkg "$work/log")"
+# A PKGDEST in the user's makepkg.conf does not move the packages away.
+mkdir -p "$work/conf-pkgdest" "$work/out2"
+aur fetch yay-bin "$work/f5" >/dev/null 2>&1 || fail 'a clean fetch failed'
+out=$(STUB_CONF_PKGDEST=$work/conf-pkgdest aur build "$work/f5" "$work/out2") ||
+	fail 'a build with PKGDEST set in makepkg.conf found no package'
+[[ $out == "$work/out2/demo-1.0-1-x86_64.pkg.tar.zst" && -z $(ls -A "$work/conf-pkgdest") ]] ||
+	fail "PKGDEST from makepkg.conf was used: $out"
 if aur build "$work/nowhere" "$work/out" 2>/dev/null; then fail 'a build without a PKGBUILD was accepted'; fi
 if STUB_BUILD=fail aur build "$work/f1" "$work/out" 2>/dev/null; then fail 'a failed makepkg was accepted'; fi
 start=$SECONDS
