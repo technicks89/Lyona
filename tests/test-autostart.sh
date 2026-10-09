@@ -57,14 +57,6 @@ cleanup() {
 		*) kill "$watcher_pid" 2>/dev/null || true ;;
 		esac
 	fi
-	for identity_file in "$work"/*/state/dwm-status-runtime.identities; do
-		[ -f "$identity_file" ] || continue
-		while IFS= read -r runtime_identity; do
-			test_identity_matches "$runtime_identity" || continue
-			runtime_pid=${runtime_identity%%:*}
-			kill -TERM "$runtime_pid" 2>/dev/null || true
-		done <"$identity_file"
-	done
 	for identity_file in "$work"/*/state/quickshell-runtime.identities; do
 		[ -f "$identity_file" ] || continue
 		while IFS= read -r runtime_identity; do
@@ -74,14 +66,6 @@ cleanup() {
 		done <"$identity_file"
 	done
 	sleep 0.05
-	for identity_file in "$work"/*/state/dwm-status-runtime.identities; do
-		[ -f "$identity_file" ] || continue
-		while IFS= read -r runtime_identity; do
-			test_identity_matches "$runtime_identity" || continue
-			runtime_pid=${runtime_identity%%:*}
-			kill -KILL "$runtime_pid" 2>/dev/null || true
-		done <"$identity_file"
-	done
 	for identity_file in "$work"/*/state/quickshell-runtime.identities; do
 		[ -f "$identity_file" ] || continue
 		while IFS= read -r runtime_identity; do
@@ -234,32 +218,6 @@ cat >"$work/bin/dwm-settings-picom" <<'EOF'
 [ -f "${TEST_STATE:?}/picom.running" ] || picom
 EOF
 chmod +x "$work/bin/dwm-settings-picom"
-
-cat >"$work/bin/dwm-status" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-name=$(basename "$0")
-count_file="${TEST_STATE:?}/$name.count"
-count=0
-[[ ! -f $count_file ]] || count=$(<"$count_file")
-printf '%s\n' "$((count + 1))" >"$count_file"
-: >"${TEST_STATE:?}/$name.running"
-starttime=$(awk '
-	{
-		line = $0
-		sub(/^.*\) /, "", line)
-		split(line, fields, " ")
-		print fields[20]
-	}
-' "/proc/$$/stat")
-printf '%s:%s\n' "$$" "$starttime" >>"${TEST_STATE:?}/dwm-status-runtime.identities"
-trap 'exit 0' HUP INT TERM
-while :; do
-	sleep 0.1
-done
-EOF
-chmod +x "$work/bin/dwm-status"
 
 cat >"$work/bin/quickshell" <<'EOF'
 #!/bin/sh
@@ -482,7 +440,6 @@ run_duplicate_case() {
 		fi
 		wait_for_marker "$state/feh.running"
 		wait_for_marker "$state/picom.running"
-		wait_for_marker "$state/dwm-status.running"
 		wait_for_marker "$state/dwm-lock-watch.running"
 		if ! wait_for_marker "$state/quickshell.running"; then
 			printf 'Quickshell launch arguments:\n' >&2
@@ -508,9 +465,11 @@ run_duplicate_case() {
 	fi
 	# light-locker too: with no saved power config the desktop locks after 10
 	# minutes idle (Sync Sprint 12 S12-10, D-13), and power-apply starts it once.
-	for name in picom dwm-status dwm-lock-watch quickshell light-locker; do
+	for name in picom dwm-lock-watch quickshell light-locker; do
 		test "$(cat "$state/$name.count")" -eq 1
 	done
+	# dwm-status is on PATH but no longer started: nothing reads it (#284).
+	test ! -e "$state/dwm-status.count"
 	test ! -e "$state/dex.count"
 	test ! -e "$state/dex-autostart.count"
 	awk '
@@ -687,128 +646,6 @@ run_delayed_quickshell_case() {
 	rm -f "$state/quickshell-managed.pids" "$identity_file"
 }
 
-run_status_display_scope_case() {
-	home="$work/status-display/home"
-	state="$work/status-display/state"
-	runtime="$work/status-display/runtime"
-	mkdir -p "$home/Pictures/backgrounds" "$home/.config/quickshell" "$state" "$runtime"
-	chmod 700 "$runtime"
-	: >"$home/Pictures/backgrounds/wallpaper"
-	: >"$home/.config/quickshell/shell.qml"
-	: >"$state/polkit-mate-authentication-agent-1.running"
-
-	expected_status_count=0
-	for display in :101 :102 :101; do
-		DISPLAY=$display \
-			HOME=$home \
-			TEST_STATE=$state \
-			PATH="$work/bin:/usr/bin:/bin" \
-			XDG_CONFIG_HOME="$home/.config" \
-			XDG_RUNTIME_DIR="$runtime" \
-			DWM_AUTOSTART_NO_INPUT_WATCH=1 \
-			DWM_AUTOSTART_NO_SETSID=1 \
-			sh "$repo/scripts/autostart.sh"
-		case $display in
-		:101)
-			[ "$expected_status_count" -ne 0 ] || expected_status_count=1
-			;;
-		:102) expected_status_count=2 ;;
-		esac
-		for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-			[ "$(wc -l <"$state/dwm-status-runtime.identities" 2>/dev/null || printf 0)" -eq "$expected_status_count" ] && break
-			sleep 0.02
-		done
-		test "$(wc -l <"$state/dwm-status-runtime.identities")" -eq "$expected_status_count"
-	done
-
-	test "$(cat "$state/dwm-status.count")" -eq 2
-	test "$(wc -l <"$state/dwm-status-runtime.identities")" -eq 2
-	first_identity=$(sed -n '1p' "$state/dwm-status-runtime.identities")
-	second_identity=$(sed -n '2p' "$state/dwm-status-runtime.identities")
-	first_pid=${first_identity%%:*}
-	second_pid=${second_identity%%:*}
-	test_identity_matches "$first_identity"
-	test_identity_matches "$second_identity"
-	grep -Fqx bash "/proc/$first_pid/comm"
-	grep -Fqx bash "/proc/$second_pid/comm"
-	test ! -e "/proc/$first_pid/fd/9"
-	test ! -e "/proc/$second_pid/fd/9"
-	tr '\0' '\n' <"/proc/$first_pid/environ" | grep -Fqx 'DISPLAY=:101'
-	tr '\0' '\n' <"/proc/$second_pid/environ" | grep -Fqx 'DISPLAY=:102'
-}
-
-run_status_optional_lock_case() {
-	home="$work/status-lock/home"
-	state="$work/status-lock/state"
-	runtime="$work/status-lock/runtime"
-	mkdir -p "$home/Pictures/backgrounds" "$state" "$runtime"
-	/usr/bin/chmod 700 "$runtime"
-	: >"$home/Pictures/backgrounds/wallpaper"
-	: >"$state/polkit-mate-authentication-agent-1.running"
-
-	DISPLAY=:104 HOME=$home TEST_STATE=$state PATH="$work/bin:/usr/bin:/bin" \
-		XDG_CONFIG_HOME="$home/.config" XDG_RUNTIME_DIR=$runtime \
-		DWM_AUTOSTART_NO_INPUT_WATCH=1 DWM_AUTOSTART_NO_SETSID=1 \
-		TEST_CHMOD_FAILURE_TARGET="$runtime/lyona" \
-		sh "$repo/scripts/autostart.sh"
-	wait_for_marker "$state/dwm-status.running"
-	test "$(cat "$state/dwm-status.count")" -eq 1
-	identity=$(cat "$state/dwm-status-runtime.identities")
-	test_identity_matches "$identity"
-	test ! -e "/proc/${identity%%:*}/fd/9"
-}
-
-run_status_empty_display_case() {
-	home="$work/status-empty/home"
-	state="$work/status-empty/state"
-	runtime="$work/status-empty/runtime"
-	mkdir -p "$home/Pictures/backgrounds" "$state" "$runtime"
-	chmod 700 "$runtime"
-	: >"$home/Pictures/backgrounds/wallpaper"
-	: >"$state/polkit-mate-authentication-agent-1.running"
-	DISPLAY='' HOME=$home TEST_STATE=$state PATH="$work/bin:/usr/bin:/bin" \
-		XDG_CONFIG_HOME="$home/.config" XDG_RUNTIME_DIR="$runtime" \
-		DWM_AUTOSTART_NO_INPUT_WATCH=1 \
-		DWM_AUTOSTART_NO_SETSID=1 sh "$repo/scripts/autostart.sh"
-	test ! -e "$state/dwm-status.count"
-}
-
-run_status_launch_race_case() {
-	home="$work/status-race/home"
-	state="$work/status-race/state"
-	runtime="$work/status-race/runtime"
-	mkdir -p "$home/Pictures/backgrounds" "$state" "$runtime"
-	chmod 700 "$runtime"
-	: >"$home/Pictures/backgrounds/wallpaper"
-	: >"$state/polkit-mate-authentication-agent-1.running"
-	race_pids=
-
-	for _invocation in 1 2; do
-		DISPLAY=:103 \
-			HOME=$home \
-			TEST_STATE=$state \
-			PATH="$work/bin:/usr/bin:/bin" \
-			XDG_CONFIG_HOME="$home/.config" \
-			XDG_RUNTIME_DIR=$runtime \
-			DWM_AUTOSTART_NO_INPUT_WATCH=1 \
-			DWM_AUTOSTART_NO_SETSID=1 \
-			sh "$repo/scripts/autostart.sh" &
-		race_pid=$!
-		race_pids="$race_pids $race_pid"
-	done
-	for race_pid in $race_pids; do
-		wait "$race_pid"
-	done
-	wait_for_marker "$state/dwm-status.running"
-	for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-		[ "$(wc -l <"$state/dwm-status-runtime.identities" 2>/dev/null || printf 0)" -eq 1 ] && break
-		sleep 0.02
-	done
-	test "$(wc -l <"$state/dwm-status-runtime.identities")" -eq 1
-	sleep 0.1
-	test "$(wc -l <"$state/dwm-status-runtime.identities")" -eq 1
-}
-
 run_hung_quickshell_case() {
 	home="$work/hung/home"
 	state="$work/hung/state"
@@ -976,10 +813,6 @@ run_duplicate_case display-manager
 run_duplicate_case startx
 run_relative_config_home_case
 run_wallpaper_recovery_with_existing_feh_case
-run_status_display_scope_case
-run_status_launch_race_case
-run_status_optional_lock_case
-run_status_empty_display_case
 run_stale_quickshell_case
 run_delayed_quickshell_case
 run_hung_quickshell_case
@@ -998,14 +831,6 @@ if grep -q 'systemctl --user enable.*SERVICE_NAME' \
 	printf '%s\n' "XDG setup must not enable the graphical session at early boot" >&2
 	exit 1
 fi
-grep -Fq 'start_detached_display_command_once dwm-status' \
-	"$repo/scripts/autostart.sh"
-grep -Fq 'display_process_script' "$repo/scripts/autostart.sh"
-# Candidates must still be scoped to this session's DISPLAY, however that
-# filter is implemented.
-grep -Fq '/environ' "$repo/scripts/autostart.sh"
-grep -Fq 'DISPLAY=' "$repo/scripts/autostart.sh"
-grep -Fq 'display_command_display' "$repo/scripts/autostart.sh"
 grep -Fq 'timeout --signal=TERM --kill-after=2 5' "$repo/scripts/autostart.sh"
 grep -Fq '_resume-preview >/dev/null' "$repo/scripts/autostart.sh"
 # shellcheck disable=SC2016

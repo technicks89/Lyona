@@ -98,10 +98,11 @@ grep -Fq 'WindowsLib.decodeClass(value) : "application-x-executable"' "$state/Dw
 # script is not visible in another, unlike a shell function, so a call site
 # added to client_snapshot() without also adding the function there is a
 # fatal awk parse error the moment any client window exists -- checked
-# against client_snapshot()'s own block, not the whole file, since
-# window_class() also defines and calls its own copy correctly.
+# against the client_snapshot_awk program that client_snapshot() and
+# client_snapshot_one() run (#283), not the whole file, since window_class()
+# also defines and calls its own copy correctly.
 helper=$repo/scripts/dwm-quickshell-state
-client_snapshot_awk=$(awk '/^client_snapshot\(\)/,/^}/' "$helper")
+client_snapshot_awk=$(awk "/^client_snapshot_awk='\$/,/^'\$/" "$helper")
 printf '%s\n' "$client_snapshot_awk" | grep -Fq 'function sanitize_class(value)' ||
 	fail_reason='client_snapshot() calls sanitize_class() without defining it'
 printf '%s\n' "$client_snapshot_awk" | grep -Fq 'class = sanitize_class(tolower(classes[2]))' ||

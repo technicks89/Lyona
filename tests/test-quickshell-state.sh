@@ -46,6 +46,8 @@ if [ "\$1" = "-root" ]; then
 		printf '_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee\n'
 		exit 0
 	fi
+	# The active window, in the same root query (#283); 0xaa unless set.
+	printf '_NET_ACTIVE_WINDOW(WINDOW): window id # %s\n' "\${TEST_ACTIVE:-0xaa}"
 	cat <<'ROOT'
 _NET_CURRENT_DESKTOP(CARDINAL) = 2
 _NET_NUMBER_OF_DESKTOPS(CARDINAL) = 9
@@ -133,9 +135,11 @@ esac
 exit 0
 EOF
 
-cat >"$bin/xdotool" <<'EOF'
+# The active window comes from the root query now: any xdotool call is a
+# process too many (#283).
+cat >"$bin/xdotool" <<EOF
 #!/bin/sh
-[ "$1" = "getactivewindow" ] && { printf '0xaa\n'; exit 0; }
+printf '%s\n' "\$*" >>"$work/xdotool.log"
 exit 1
 EOF
 chmod +x "$bin/xprop" "$bin/xdotool"
@@ -174,12 +178,15 @@ expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:ala
 # fullscreen monitors are de-duplicated and sorted
 expect 'fullscreen_monitors=0|1'
 
-# the active window's title has its whitespace collapsed
-expect 'title=a title with spaces'
+# The active window (0xaa) from the root query: its title keeps the "|" that
+# windows= cannot carry, and its class comes from its windows= entry.
+expect 'active_window=0xaa'
+expect 'title=Term|one'
 expect 'class=alacritty'
 
-# One xprop for every root property, then exactly one per client window,
-# plus the active window's title and class. Anything more is a regression.
+# One xprop for every root property, the active window included, then exactly
+# one per client window: the active window's title and class cost nothing more
+# (#283). Anything more is a regression.
 root_calls=$(grep -c '^-root' "$work/xprop.log" || true)
 [[ $root_calls -eq 1 ]] ||
 	fail "expected exactly 1 batched root xprop call, got $root_calls" "$work/xprop.log"
@@ -187,8 +194,29 @@ per_window=$(grep -c '^-id .* _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME$' "$
 [[ $per_window -eq 5 ]] ||
 	fail "expected 1 batched xprop per client window (5), got $per_window" "$work/xprop.log"
 total=$(wc -l <"$work/xprop.log")
-[[ $total -le 8 ]] ||
-	fail "expected at most 8 xprop calls for 5 windows, got $total" "$work/xprop.log"
+[[ $total -eq 6 ]] ||
+	fail "expected 6 xprop calls for 5 windows, got $total" "$work/xprop.log"
+[[ ! -e $work/xdotool.log ]] || fail 'state still ran xdotool' "$work/xdotool.log"
+
+# state_for ACTIVE: the state with another active window.
+state_for() {
+	PATH="$bin:$PATH" TEST_ACTIVE=$1 "$helper" state >"$work/out" 2>"$work/err" ||
+		fail "state with active window $1 exited non-zero" "$work/err"
+}
+# WM_NAME is the title when _NET_WM_NAME is absent, whitespace collapsed.
+state_for 0xbb
+expect 'title=Firefox page'
+expect 'class=firefox'
+# No active window: the defaults.
+state_for 0x0
+expect 'active_window='
+expect 'title=Desktop'
+expect 'class=application-x-executable'
+# An active window outside the client list is read on its own.
+state_for 0x99
+expect 'active_window=0x99'
+expect 'title=a title with spaces'
+expect 'class=alacritty'
 
 # Asking for a layout sets the _DWM_SET_LAYOUT root property; a malformed index
 # is refused before anything is sent.
@@ -229,6 +257,7 @@ while [ "$i" -lt 100 ]; do
 	i=$((i + 1))
 done
 grep -Fqx "$updated" "$work/watch-out" || fail 'watch ignored a title-only change' "$work/xprop.log"
+grep -Fqx 'title=Updated title' "$work/watch-out" || fail 'the active title did not follow the change' "$work/watch-out"
 touch "$work/fallback-title-changed"
 i=0
 while [ "$i" -lt 100 ]; do

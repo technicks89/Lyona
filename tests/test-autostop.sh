@@ -7,79 +7,8 @@ set -eu
 work=$(mktemp -d)
 TEST_REAL_UID=$(id -u)
 export TEST_REAL_UID
-status_pids=
-status_identities=
-
-track_status_pid() {
-	tracked_pid=$1
-	tracked_starttime=$(awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[1] != "Z" && fields[20] ~ /^[0-9]+$/)
-				print fields[20]
-		}
-	' "/proc/$tracked_pid/stat" 2>/dev/null || true)
-	[ -n "$tracked_starttime" ]
-	status_pids="$status_pids $tracked_pid"
-	status_identities="$status_identities $tracked_pid:$tracked_starttime"
-}
-
-forget_status_pid() {
-	forgotten_pid=$1
-	remaining_pids=
-	for recorded_pid in $status_pids; do
-		[ "$recorded_pid" = "$forgotten_pid" ] || remaining_pids="$remaining_pids $recorded_pid"
-	done
-	status_pids=$remaining_pids
-	remaining_identities=
-	for recorded_identity in $status_identities; do
-		[ "${recorded_identity%%:*}" = "$forgotten_pid" ] ||
-			remaining_identities="$remaining_identities $recorded_identity"
-	done
-	status_identities=$remaining_identities
-}
-
-status_identity_is_live() {
-	test_identity=$1
-	test_pid=${test_identity%%:*}
-	test_starttime=${test_identity#*:}
-	test_record=$(awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[1] != "Z" && fields[20] ~ /^[0-9]+$/)
-				print fields[20]
-		}
-	' "/proc/$test_pid/stat" 2>/dev/null || true)
-	[ "$test_record" = "$test_starttime" ]
-}
 
 cleanup() {
-	set +e
-	for cleanup_identity in $status_identities; do
-		status_identity_is_live "$cleanup_identity" || continue
-		kill -TERM "${cleanup_identity%%:*}" 2>/dev/null || true
-	done
-	cleanup_attempt=0
-	while [ "$cleanup_attempt" -lt 20 ]; do
-		cleanup_live=0
-		for cleanup_identity in $status_identities; do
-			status_identity_is_live "$cleanup_identity" && cleanup_live=1
-		done
-		[ "$cleanup_live" -eq 1 ] || break
-		cleanup_attempt=$((cleanup_attempt + 1))
-		sleep 0.05
-	done
-	for cleanup_identity in $status_identities; do
-		status_identity_is_live "$cleanup_identity" || continue
-		kill -KILL "${cleanup_identity%%:*}" 2>/dev/null || true
-	done
-	for cleanup_pid in $status_pids; do
-		wait "$cleanup_pid" 2>/dev/null || true
-	done
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -147,27 +76,7 @@ case "${1:-}" in
 esac
 EOF
 
-cat >"$work/bin/dwm-status" <<'EOF'
-#!/bin/sh
-: >"${TEST_STATUS_READY:?}"
-replace_identity() {
-	if [ -n "${TEST_STATUS_REPLACEMENT_IDENTITY:-}" ]; then
-		printf '%s\n' "$TEST_STATUS_REPLACEMENT_IDENTITY" >"${TEST_STATUS_IDENTITY_FILE:?}"
-	fi
-	exit 0
-}
-trap replace_identity HUP INT
-if [ "${TEST_STATUS_IGNORE_TERM:-0}" = 1 ]; then
-	trap '' TERM
-else
-	trap replace_identity TERM
-fi
-while :; do
-	sleep 0.1
-done
-EOF
-
-chmod +x "$work/bin/systemctl" "$work/bin/loginctl" "$work/bin/id" "$work/bin/dwm-status"
+chmod +x "$work/bin/systemctl" "$work/bin/loginctl" "$work/bin/id"
 
 run_case() {
 	case_name=$1
@@ -187,103 +96,6 @@ systemctl --user stop xdg-desktop-autostart.target wm-graphical-session.service 
 loginctl terminate-session 42
 EOF
 cmp "$work/normal.expected" "$work/normal.log"
-
-mkdir -p "$work/status-runtime/lyona"
-chmod 700 "$work/status-runtime"
-DISPLAY=:0 XDG_RUNTIME_DIR="$work/status-runtime" \
-	TEST_STATUS_READY="$work/status.ready" "$work/bin/dwm-status" &
-status_pid=$!
-track_status_pid "$status_pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-	[ -e "$work/status.ready" ] && break
-	sleep 0.02
-done
-status_starttime=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[20] }' "/proc/$status_pid/stat")
-status_key=$(printf '%s' :0 | sha256sum | awk '{ print $1 }')
-status_identity=$work/status-runtime/lyona/dwm-status.$status_key.identity
-printf '%s:%s\n' "$status_pid" "$status_starttime" >"$status_identity"
-
-run_case startx env XDG_SESSION_ID=43 TEST_SESSION_TYPE=tty TEST_SESSION_DISPLAY= \
-	XDG_RUNTIME_DIR="$work/status-runtime"
-grep -Fqx 'systemctl --user stop xdg-desktop-autostart.target wm-graphical-session.service graphical-session.target' \
-	"$work/startx.log"
-if grep -q '^loginctl terminate-session ' "$work/startx.log"; then
-	printf '%s\n' 'autostop must not terminate a startx TTY session' >&2
-	exit 1
-fi
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-	status_state=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[1] }' "/proc/$status_pid/stat" 2>/dev/null || true)
-	[ -z "$status_state" ] || [ "$status_state" = Z ] && break
-	sleep 0.02
-done
-[ -z "$status_state" ] || [ "$status_state" = Z ]
-wait "$status_pid" 2>/dev/null || true
-forget_status_pid "$status_pid"
-[ ! -e "$status_identity" ]
-
-DISPLAY=:0 XDG_RUNTIME_DIR="$work/status-runtime" \
-	TEST_STATUS_READY="$work/status-race.ready" "$work/bin/dwm-status" &
-replacement_pid=$!
-track_status_pid "$replacement_pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-	[ -e "$work/status-race.ready" ] && break
-	sleep 0.02
-done
-replacement_starttime=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[20] }' "/proc/$replacement_pid/stat")
-replacement_identity=$replacement_pid:$replacement_starttime
-DISPLAY=:0 XDG_RUNTIME_DIR="$work/status-runtime" \
-	TEST_STATUS_READY="$work/status-old.ready" \
-	TEST_STATUS_REPLACEMENT_IDENTITY="$replacement_identity" \
-	TEST_STATUS_IDENTITY_FILE="$status_identity" "$work/bin/dwm-status" &
-old_status_pid=$!
-track_status_pid "$old_status_pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-	[ -e "$work/status-old.ready" ] && break
-	sleep 0.02
-done
-old_status_starttime=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[20] }' "/proc/$old_status_pid/stat")
-printf '%s:%s\n' "$old_status_pid" "$old_status_starttime" >"$status_identity"
-run_case replacement_identity env XDG_SESSION_ID=43 TEST_SESSION_TYPE=tty TEST_SESSION_DISPLAY= \
-	XDG_RUNTIME_DIR="$work/status-runtime"
-wait "$old_status_pid" 2>/dev/null || true
-forget_status_pid "$old_status_pid"
-status_identity_is_live "$replacement_identity"
-[ "$(cat "$status_identity")" = "$replacement_identity" ]
-
-cat >"$work/bin/sh" <<'EOF'
-#!/usr/bin/env bash
-kill() {
-	if [[ ${1:-} == -KILL && ${2:-} == "${TEST_AUTOSTOP_STUBBORN_PID:-}" ]]; then
-		return 0
-	fi
-	builtin kill "$@"
-}
-script=$1
-shift
-. "$script" "$@"
-EOF
-chmod +x "$work/bin/sh"
-
-DISPLAY=:0 XDG_RUNTIME_DIR="$work/status-runtime" \
-	TEST_STATUS_READY="$work/status-stubborn.ready" TEST_STATUS_IGNORE_TERM=1 \
-	"$work/bin/dwm-status" &
-stubborn_pid=$!
-track_status_pid "$stubborn_pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-	[ -e "$work/status-stubborn.ready" ] && break
-	sleep 0.02
-done
-stubborn_starttime=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[20] }' "/proc/$stubborn_pid/stat")
-stubborn_identity=$stubborn_pid:$stubborn_starttime
-printf '%s\n' "$stubborn_identity" >"$status_identity"
-run_case stubborn_survivor env XDG_SESSION_ID=43 TEST_SESSION_TYPE=tty TEST_SESSION_DISPLAY= \
-	XDG_RUNTIME_DIR="$work/status-runtime" TEST_AUTOSTOP_STUBBORN_PID="$stubborn_pid"
-status_identity_is_live "$stubborn_identity"
-[ "$(cat "$status_identity")" = "$stubborn_identity" ]
-kill -KILL "$stubborn_pid"
-wait "$stubborn_pid" 2>/dev/null || true
-forget_status_pid "$stubborn_pid"
-rm -f "$work/bin/sh" "$status_identity"
 
 run_case other_graphical env \
 	XDG_SESSION_ID=44 \
@@ -318,39 +130,13 @@ if grep -q '^systemctl \|^loginctl terminate-session ' "$work/mismatched_session
 	exit 1
 fi
 
-DISPLAY=:150 XDG_RUNTIME_DIR="$work/status-runtime" \
-	TEST_STATUS_READY="$work/status-nested.ready" "$work/bin/dwm-status" &
-nested_status_pid=$!
-track_status_pid "$nested_status_pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-	[ -e "$work/status-nested.ready" ] && break
-	sleep 0.02
-done
-nested_status_starttime=$(awk '{ line = $0; sub(/^.*\) /, "", line); split(line, fields, " "); print fields[20] }' "/proc/$nested_status_pid/stat")
-nested_status_key=$(printf '%s' :150 | sha256sum | awk '{ print $1 }')
-nested_status_identity_file=$work/status-runtime/lyona/dwm-status.$nested_status_key.identity
-printf '%s:%s\n' "$nested_status_pid" "$nested_status_starttime" >"$nested_status_identity_file"
-
-run_case mismatched_display env XDG_SESSION_ID=48 DISPLAY=:150 \
-	XDG_RUNTIME_DIR="$work/status-runtime"
+run_case mismatched_display env XDG_SESSION_ID=48 DISPLAY=:150
 grep -Fqx 'loginctl show-session 48 -p Name -p Type -p Class -p Active -p Display' \
 	"$work/mismatched_display.log"
 if grep -q '^systemctl \|^loginctl terminate-session ' "$work/mismatched_display.log"; then
 	printf '%s\n' 'autostop must not clean up a login from a nested X display' >&2
 	exit 1
 fi
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-	status_identity_is_live "$nested_status_pid:$nested_status_starttime" || break
-	sleep 0.05
-done
-if status_identity_is_live "$nested_status_pid:$nested_status_starttime"; then
-	printf '%s\n' 'autostop left the nested display status process running' >&2
-	exit 1
-fi
-wait "$nested_status_pid" 2>/dev/null || true
-forget_status_pid "$nested_status_pid"
-[ ! -e "$nested_status_identity_file" ]
-
 run_case screen_suffix env XDG_SESSION_ID=48 DISPLAY=:0.1
 grep -Fqx 'loginctl terminate-session 48' "$work/screen_suffix.log"
 

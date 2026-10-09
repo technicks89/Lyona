@@ -69,11 +69,147 @@ desktop_names() {
 	fi
 }
 
-active_window_id() {
-	xdotool getactivewindow 2>/dev/null || {
-		root_property_value _NET_ACTIVE_WINDOW |
-			awk '$1 != "0x0" { print $1; exit }'
+# The parser for client_snapshot and client_snapshot_one: xprop output for
+# each window, after a "LYONA-WINDOW ID" line or, for one window, with the id
+# given as first.
+# shellcheck disable=SC2016 # an awk program: its $ fields are awk's
+client_snapshot_awk='
+	# One window, given as first, has no LYONA-WINDOW line before it.
+	BEGIN { window = first }
+	function sanitize_title(value) {
+		gsub(/\|/, " ", value)
+		gsub(/[\t\r\n]/, " ", value)
+		gsub(/  +/, " ", value)
+		sub(/^ /, "", value)
+		sub(/ $/, "", value)
+		return value
 	}
+	# A WM_CLASS is not free text like a title: unlike sanitize_title,
+	# whose lossy space-replacement is fine for display, a class needs to
+	# round-trip exactly (it feeds Icons.launcherIcon lookups and is
+	# matched against elsewhere), so a "%"/":"/"|" collision with this
+	# wire format own separators is escaped rather than destroyed --
+	# percent-encoded the way encodeURIComponent would, and decoded back
+	# on the QML side via DwmStateWindows.js decodeClass. "%" must be
+	# escaped first so the "%" introduced by escaping ":"/"|" is never
+	# itself re-escaped.
+	function sanitize_class(value) {
+		gsub(/%/, "%25", value)
+		gsub(/:/, "%3A", value)
+		gsub(/\|/, "%7C", value)
+		return value
+	}
+	function flush(   value) {
+		if (window == "") {
+			return
+		}
+		if (desktop != "" && desktop ~ /^[0-9]+$/ && desktop != 4294967295) {
+			desktops[desktop] = 1
+		}
+		# Every managed window is listed. Windows whose _NET_WM_PID named a
+		# root-owned process used to be left out, which a client could claim
+		# to hide from the overview and the task list, and which hid real
+		# root GUI tools (Sync Sprint 12 S12-12).
+		value = window ":" desktop ":" class ":" sanitize_title(title)
+		windows[++nwindows] = value
+		full_titles[nwindows] = window " " full_title(raw_title)
+		if (class != "") {
+			if (!((("|" class "|")) in seen)) {
+				seen["|" class "|"] = 1
+				value = window ":" class
+				apps[++napps] = value
+			}
+		}
+		window = ""; desktop = ""; class = ""; title = ""; raw_title = ""; have_net_wm_name = 0
+	}
+	# The title as the panel shows it (#283): the "|" that windows= cannot
+	# carry is kept, and only whitespace is collapsed, as window_title does.
+	function full_title(value) {
+		sub(/^"/, "", value)
+		sub(/"$/, "", value)
+		gsub(/[[:space:]]+/, " ", value)
+		sub(/^ /, "", value)
+		sub(/ $/, "", value)
+		return value
+	}
+	/^LYONA-WINDOW / { flush(); window = $2; next }
+	/^_NET_WM_DESKTOP/ { sub(/^[^=]*= */, ""); desktop = $0; next }
+	/^WM_CLASS/ {
+		sub(/^[^=]*= */, "")
+		gsub(/"/, "")
+		split($0, classes, /, /)
+		class = sanitize_class(tolower(classes[2]))
+		next
+	}
+	# A property the window does not set prints "PROP:  not found." (no
+	# "(" after the name), never a real value; only a line with "(" is a
+	# genuine title, the same distinction window_title() makes with its
+	# own -F"= " split (where a "not found" line leaves $2 empty).
+	/^_NET_WM_NAME\(/ {
+		sub(/^[^=]*= */, "")
+		raw_title = $0
+		gsub(/"/, "")
+		title = $0
+		have_net_wm_name = 1
+		next
+	}
+	/^WM_NAME\(/ {
+		if (!have_net_wm_name) {
+			sub(/^[^=]*= */, "")
+			raw_title = $0
+			gsub(/"/, "")
+			title = $0
+		}
+		next
+	}
+	END {
+		flush()
+
+		ndesktops = 0
+		for (key in desktops) {
+			sorted[++ndesktops] = key + 0
+		}
+		for (i = 2; i <= ndesktops; i++) {
+			value = sorted[i]
+			for (j = i - 1; j >= 1 && sorted[j] > value; j--) {
+				sorted[j + 1] = sorted[j]
+			}
+			sorted[j + 1] = value
+		}
+		out = ""
+		for (i = 1; i <= ndesktops; i++) {
+			out = out (i > 1 ? "|" : "") sorted[i]
+		}
+		printf "occupied=%s\n", out
+
+		out = ""
+		for (i = 1; i <= napps; i++) {
+			out = out (i > 1 ? "|" : "") apps[i]
+		}
+		printf "apps=%s\n", out
+
+		out = ""
+		for (i = 1; i <= nwindows; i++) {
+			out = out (i > 1 ? "|" : "") windows[i]
+		}
+		printf "windows=%s\n", out
+		# Then the full title of every window, "title ID TEXT", for the active
+		# window title= line.
+		for (i = 1; i <= nwindows; i++) {
+			printf "title %s\n", full_titles[i]
+		}
+	}
+'
+
+# The windows' properties, each after a "LYONA-WINDOW ID" line.
+client_window_props() {
+	local window_id IFS=,
+	for window_id in $1; do
+		window_id=${window_id##* }
+		[ -n "$window_id" ] || continue
+		printf 'LYONA-WINDOW %s\n' "$window_id"
+		xprop -id "$window_id" _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
+	done
 }
 
 client_snapshot() {
@@ -82,124 +218,13 @@ client_snapshot() {
 		printf 'occupied=\napps=\nwindows=\n'
 		return 0
 	}
+	awk -v first= "$client_snapshot_awk" < <(client_window_props "$client_list")
+}
 
-	{
-		snapshot_ifs=$IFS
-		IFS=','
-		for window_id in $client_list; do
-			window_id=${window_id##* }
-			[ -n "$window_id" ] || continue
-			printf 'LYONA-WINDOW %s\n' "$window_id"
-			xprop -id "$window_id" _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
-		done
-		IFS=$snapshot_ifs
-	} | awk '
-		function sanitize_title(value) {
-			gsub(/\|/, " ", value)
-			gsub(/[\t\r\n]/, " ", value)
-			gsub(/  +/, " ", value)
-			sub(/^ /, "", value)
-			sub(/ $/, "", value)
-			return value
-		}
-		# A WM_CLASS is not free text like a title: unlike sanitize_title,
-		# whose lossy space-replacement is fine for display, a class needs to
-		# round-trip exactly (it feeds Icons.launcherIcon lookups and is
-		# matched against elsewhere), so a "%"/":"/"|" collision with this
-		# wire format own separators is escaped rather than destroyed --
-		# percent-encoded the way encodeURIComponent would, and decoded back
-		# on the QML side via DwmStateWindows.js decodeClass. "%" must be
-		# escaped first so the "%" introduced by escaping ":"/"|" is never
-		# itself re-escaped.
-		function sanitize_class(value) {
-			gsub(/%/, "%25", value)
-			gsub(/:/, "%3A", value)
-			gsub(/\|/, "%7C", value)
-			return value
-		}
-		function flush(   value) {
-			if (window == "") {
-				return
-			}
-			if (desktop != "" && desktop ~ /^[0-9]+$/ && desktop != 4294967295) {
-				desktops[desktop] = 1
-			}
-			# Every managed window is listed. Windows whose _NET_WM_PID named a
-			# root-owned process used to be left out, which a client could claim
-			# to hide from the overview and the task list, and which hid real
-			# root GUI tools (Sync Sprint 12 S12-12).
-			value = window ":" desktop ":" class ":" sanitize_title(title)
-			windows[++nwindows] = value
-			if (class != "") {
-				if (!((("|" class "|")) in seen)) {
-					seen["|" class "|"] = 1
-					value = window ":" class
-					apps[++napps] = value
-				}
-			}
-			window = ""; desktop = ""; class = ""; title = ""; have_net_wm_name = 0
-		}
-		/^LYONA-WINDOW / { flush(); window = $2; next }
-		/^_NET_WM_DESKTOP/ { sub(/^[^=]*= */, ""); desktop = $0; next }
-		/^WM_CLASS/ {
-			sub(/^[^=]*= */, "")
-			gsub(/"/, "")
-			split($0, classes, /, /)
-			class = sanitize_class(tolower(classes[2]))
-			next
-		}
-		# A property the window does not set prints "PROP:  not found." (no
-		# "(" after the name), never a real value; only a line with "(" is a
-		# genuine title, the same distinction window_title() makes with its
-		# own -F"= " split (where a "not found" line leaves $2 empty).
-		/^_NET_WM_NAME\(/ {
-			sub(/^[^=]*= */, "")
-			gsub(/"/, "")
-			title = $0
-			have_net_wm_name = 1
-			next
-		}
-		/^WM_NAME\(/ {
-			if (!have_net_wm_name) {
-				sub(/^[^=]*= */, "")
-				gsub(/"/, "")
-				title = $0
-			}
-			next
-		}
-		END {
-			flush()
-
-			ndesktops = 0
-			for (key in desktops) {
-				sorted[++ndesktops] = key + 0
-			}
-			for (i = 2; i <= ndesktops; i++) {
-				value = sorted[i]
-				for (j = i - 1; j >= 1 && sorted[j] > value; j--) {
-					sorted[j + 1] = sorted[j]
-				}
-				sorted[j + 1] = value
-			}
-			out = ""
-			for (i = 1; i <= ndesktops; i++) {
-				out = out (i > 1 ? "|" : "") sorted[i]
-			}
-			printf "occupied=%s\n", out
-
-			out = ""
-			for (i = 1; i <= napps; i++) {
-				out = out (i > 1 ? "|" : "") apps[i]
-			}
-			printf "apps=%s\n", out
-
-			out = ""
-			for (i = 1; i <= nwindows; i++) {
-				out = out (i > 1 ? "|" : "") windows[i]
-			}
-			printf "windows=%s\n", out
-		}
-	'
+# One window: each side is a single command, which bash runs without a fork of
+# its own, so a changed window costs two processes, xprop and awk (#283).
+client_snapshot_one() {
+	awk -v first="$1" "$client_snapshot_awk" < <(xprop -id "$1" _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null)
 }
 
 fullscreen_monitors() {
@@ -257,90 +282,89 @@ window_class() {
 		'
 }
 
+# Each side is a single command, which bash runs without a fork of its own:
+# with the caller's < <(...), the root costs two processes (#283).
 root_snapshot() {
-	xprop -root \
-		_NET_CURRENT_DESKTOP \
-		_NET_NUMBER_OF_DESKTOPS \
-		_NET_DESKTOP_NAMES \
-		_NET_CLIENT_LIST \
-		_DWM_FULLSCREEN_MONITORS \
-		_DWM_MONITOR_DESKTOPS \
-		_DWM_SELECTED_MONITOR \
-		_DWM_LAYOUT \
-		WM_NAME 2>/dev/null |
-		awk '
-			function value(   text) {
-				text = $0
-				sub(/^[^=:]*(\([^)]*\))?[:=][[:space:]]*/, "", text)
-				sub(/^window id # /, "", text)
-				return text
-			}
-			function collapse(text) {
-				gsub(/[\r\n\t]/, " ", text)
-				gsub(/[[:space:]]+/, " ", text)
-				sub(/^ /, "", text)
-				sub(/ $/, "", text)
-				return text
-			}
-			function unquote(text) {
-				sub(/^"/, "", text)
-				sub(/"$/, "", text)
-				return text
-			}
-			# An unset property prints "NAME:  not found." (or "no such atom on
-			# any window." for an atom nobody has created): no value.
-			/^[A-Za-z_]+:[[:space:]]+(not found|no such atom on any window)\.$/ { next }
-			/^_NET_CURRENT_DESKTOP/ { split(value(), f, /[[:space:]]+/); current = f[1]; next }
-			/^_NET_NUMBER_OF_DESKTOPS/ { split(value(), f, /[[:space:]]+/); count = f[1]; next }
-			/^_NET_DESKTOP_NAMES/ {
-				n = split(value(), parts, /,[[:space:]]*/)
-				names = ""
-				for (i = 1; i <= n; i++) {
-					entry = unquote(parts[i])
-					if (entry != "") {
-						names = names (names == "" ? "" : "|") entry
-					}
+	awk '
+		function value(   text) {
+			text = $0
+			sub(/^[^=:]*(\([^)]*\))?[:=][[:space:]]*/, "", text)
+			sub(/^window id # /, "", text)
+			return text
+		}
+		function collapse(text) {
+			gsub(/[\r\n\t]/, " ", text)
+			gsub(/[[:space:]]+/, " ", text)
+			sub(/^ /, "", text)
+			sub(/ $/, "", text)
+			return text
+		}
+		function unquote(text) {
+			sub(/^"/, "", text)
+			sub(/"$/, "", text)
+			return text
+		}
+		# An unset property prints "NAME:  not found." (or "no such atom on
+		# any window." for an atom nobody has created): no value.
+		/^[A-Za-z_]+:[[:space:]]+(not found|no such atom on any window)\.$/ { next }
+		/^_NET_CURRENT_DESKTOP/ { split(value(), f, /[[:space:]]+/); current = f[1]; next }
+		/^_NET_NUMBER_OF_DESKTOPS/ { split(value(), f, /[[:space:]]+/); count = f[1]; next }
+		/^_NET_DESKTOP_NAMES/ {
+			n = split(value(), parts, /,[[:space:]]*/)
+			names = ""
+			for (i = 1; i <= n; i++) {
+				entry = unquote(parts[i])
+				if (entry != "") {
+					names = names (names == "" ? "" : "|") entry
 				}
-				next
 			}
-			/^_NET_CLIENT_LIST/ { clients = value(); next }
-			/^_DWM_FULLSCREEN_MONITORS/ {
-				n = split(value(), parts, /,[[:space:]]*/)
-				delete seen
-				nfull = 0
-				for (i = 1; i <= n; i++) {
-					entry = unquote(parts[i])
-					if (entry !~ /^[[:space:]]*[0-9]+[[:space:]]*$/) {
-						continue
-					}
-					entry = entry + 0
-					if (!(entry in seen)) {
-						seen[entry] = 1
-						full[++nfull] = entry
-					}
+			next
+		}
+		/^_NET_CLIENT_LIST/ { clients = value(); next }
+		/^_DWM_FULLSCREEN_MONITORS/ {
+			n = split(value(), parts, /,[[:space:]]*/)
+			delete seen
+			nfull = 0
+			for (i = 1; i <= n; i++) {
+				entry = unquote(parts[i])
+				if (entry !~ /^[[:space:]]*[0-9]+[[:space:]]*$/) {
+					continue
 				}
-				for (i = 2; i <= nfull; i++) {
-					pivot = full[i]
-					for (j = i - 1; j >= 1 && full[j] > pivot; j--) {
-						full[j + 1] = full[j]
-					}
-					full[j + 1] = pivot
+				entry = entry + 0
+				if (!(entry in seen)) {
+					seen[entry] = 1
+					full[++nfull] = entry
 				}
-				fullscreen = ""
-				for (i = 1; i <= nfull; i++) {
-					fullscreen = fullscreen (i > 1 ? "|" : "") full[i]
-				}
-				next
 			}
-			/^_DWM_MONITOR_DESKTOPS/ { desktops = value(); gsub(/[[:space:]"]/, "", desktops); next }
-			/^_DWM_SELECTED_MONITOR/ { split(value(), f, /[[:space:]]+/); selected = f[1]; next }
-			/^_DWM_LAYOUT/ { split(value(), f, /[[:space:]]+/); layout = f[1]; next }
-			/^WM_NAME/ { status = collapse(unquote(value())); next }
-			END {
-				printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
-					current, count, names, clients, fullscreen, desktops, selected, layout, status
+			for (i = 2; i <= nfull; i++) {
+				pivot = full[i]
+				for (j = i - 1; j >= 1 && full[j] > pivot; j--) {
+					full[j + 1] = full[j]
+				}
+				full[j + 1] = pivot
 			}
-		'
+			fullscreen = ""
+			for (i = 1; i <= nfull; i++) {
+				fullscreen = fullscreen (i > 1 ? "|" : "") full[i]
+			}
+			next
+		}
+		/^_DWM_MONITOR_DESKTOPS/ { desktops = value(); gsub(/[[:space:]"]/, "", desktops); next }
+		/^_DWM_SELECTED_MONITOR/ { split(value(), f, /[[:space:]]+/); selected = f[1]; next }
+		/^_DWM_LAYOUT/ { split(value(), f, /[[:space:]]+/); layout = f[1]; next }
+		# The active window, read here rather than by another process per
+		# rebuild (#283); 0x0 is "none".
+		/^_NET_ACTIVE_WINDOW/ {
+			split(value(), f, /[[:space:],]+/)
+			if (f[1] ~ /^0x[0-9a-fA-F]+$/ && f[1] != "0x0") active = f[1]
+			next
+		}
+		/^WM_NAME/ { status = collapse(unquote(value())); next }
+		END {
+			printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+				current, count, names, clients, fullscreen, desktops, selected, layout, status, active
+		}
+	' < <(xprop -root _NET_CURRENT_DESKTOP _NET_NUMBER_OF_DESKTOPS _NET_DESKTOP_NAMES _NET_CLIENT_LIST _DWM_FULLSCREEN_MONITORS _DWM_MONITOR_DESKTOPS _DWM_SELECTED_MONITOR _DWM_LAYOUT _NET_ACTIVE_WINDOW WM_NAME 2>/dev/null)
 }
 
 show_state() {
@@ -355,22 +379,24 @@ show_state() {
 	focused_monitor=${root_fields[6]:-}
 	layout=${root_fields[7]:-}
 	status=${root_fields[8]:-}
+	window_id=${root_fields[9]:-}
 
 	current=${current:-0}
 	count=${count:-9}
 	[ -n "$names" ] || names=$(print_default_names "$count")
-	window_id=$(active_window_id || true)
-	title=$(window_title "$window_id" || true)
-	title=${title:-Desktop}
-	class=$(window_class "$window_id" || true)
-	class=${class:-application-x-executable}
 	occupied=
 	apps=
 	windows=
+	local line entry title='' class='' found=0
+	local -a entries=()
 	if [[ ${state_cache:-0} == 1 ]]; then
 		cached_client_snapshot "$clients"
+		[[ -z $window_id || -z ${title_cache[$window_id]+set} ]] || title=${title_cache[$window_id]}
 	else
 		snapshot=$(client_snapshot "$clients")
+		while IFS= read -r line; do
+			[[ $line == "title $window_id "* ]] && title=${line#"title $window_id "}
+		done <<<"$snapshot"
 	fi
 	occupied=${snapshot%%
 *}
@@ -382,8 +408,31 @@ show_state() {
 	apps=${apps#apps=}
 	windows=${rest#*
 }
+	windows=${windows%%
+*}
 	windows=${windows#windows=}
 	monitor_desktops=${monitor_desktops:-$current}
+
+	# The active window's class from its windows= entry, and its title from the
+	# snapshot's title lines (#283). An active window outside the client list
+	# is read on its own, as every one used to be.
+	if [[ -n $window_id ]]; then
+		IFS='|' read -r -a entries <<<"$windows"
+		for entry in "${entries[@]}"; do
+			[[ $entry == "$window_id:"* ]] || continue
+			entry=${entry#*:}
+			entry=${entry#*:}
+			class=${entry%%:*}
+			found=1
+			break
+		done
+		if ((found == 0)); then
+			title=$(window_title "$window_id" || true)
+			class=$(window_class "$window_id" || true)
+		fi
+	fi
+	title=${title:-Desktop}
+	class=${class:-application-x-executable}
 
 	printf 'current=%s\n' "$current"
 	printf 'monitor_desktops=%s\n' "$monitor_desktops"
@@ -418,9 +467,11 @@ xwatch_path() {
 # in the client list's order, exactly as client_snapshot builds them. Sets
 # snapshot.
 cached_client_snapshot() {
-	local client_list=$1 window_id entry rest desktop class stale=() occupied_out='' apps_out='' windows_out=''
-	local -a order=()
-	local -A present=() seen_class=() desktops=()
+	local client_list=$1 window_id entry rest desktop class line stale=() occupied_out='' apps_out='' windows_out=''
+	# An indexed array of the occupied tags: its indices list in numeric order,
+	# so they need no sort process (#283).
+	local -a order=() desktops=()
+	local -A present=() seen_class=()
 	local IFS=,
 	for window_id in $client_list; do
 		window_id=${window_id##* }
@@ -430,19 +481,34 @@ cached_client_snapshot() {
 	done
 	IFS=$' \t\n'
 	for window_id in "${!window_cache[@]}"; do
-		[[ -n ${present[$window_id]:-} ]] || unset 'window_cache[$window_id]'
+		[[ -n ${present[$window_id]:-} ]] || unset 'window_cache[$window_id]' 'title_cache[$window_id]'
 	done
 	for window_id in "${order[@]}"; do
 		[[ -n ${window_cache[$window_id]:-} && -z ${window_stale[$window_id]:-} ]] || stale+=("$window_id")
 	done
 	window_stale=()
 	if ((${#stale[@]} > 0)); then
-		local fresh list
-		list=$(printf '%s,' "${stale[@]}")
-		fresh=$(client_snapshot "${list%,}")
-		fresh=${fresh##*windows=}
-		local -a entries=()
-		IFS='|' read -r -a entries <<<"$fresh"
+		# mapfile with a process substitution, not $(...), which would cost a
+		# fork of its own on every rebuild (#283).
+		local list
+		local -a fresh=() entries=()
+		if ((${#stale[@]} == 1)); then
+			mapfile -t fresh < <(client_snapshot_one "${stale[0]}")
+		else
+			printf -v list '%s,' "${stale[@]}"
+			mapfile -t fresh < <(client_snapshot "${list%,}")
+		fi
+		for line in "${fresh[@]}"; do
+			case $line in
+			'title '*)
+				line=${line#title }
+				title_cache[${line%% *}]=${line#* }
+				;;
+			windows=*)
+				IFS='|' read -r -a entries <<<"${line#windows=}"
+				;;
+			esac
+		done
 		IFS=$' \t\n'
 		for entry in "${entries[@]}"; do
 			[[ -n $entry ]] && window_cache[${entry%%:*}]=$entry
@@ -455,8 +521,8 @@ cached_client_snapshot() {
 		desktop=${rest%%:*}
 		rest=${rest#*:}
 		class=${rest%%:*}
-		if [[ $desktop =~ ^[0-9]+$ && $desktop != 4294967295 ]]; then
-			desktops[$((10#$desktop))]=1
+		if [[ $desktop =~ ^[0-9]{1,9}$ ]]; then
+			desktops[10#$desktop]=1
 		fi
 		if [[ -n $class && -z ${seen_class["|$class|"]:-} ]]; then
 			seen_class["|$class|"]=1
@@ -464,7 +530,7 @@ cached_client_snapshot() {
 		fi
 		windows_out+=${windows_out:+|}$entry
 	done
-	for desktop in $(printf '%s\n' "${!desktops[@]}" | sort -n); do
+	for desktop in "${!desktops[@]}"; do
 		occupied_out+=${occupied_out:+|}$desktop
 	done
 	printf -v snapshot 'occupied=%s\napps=%s\nwindows=%s' "$occupied_out" "$apps_out" "$windows_out"
@@ -484,7 +550,7 @@ watch_state() {
 		return
 	fi
 	watch_dir=$(mktemp -d)
-	declare -gA client_watchers=() window_cache=() window_stale=()
+	declare -gA client_watchers=() window_cache=() window_stale=() title_cache=()
 	root_pid=
 	trap 'watch_cleanup' EXIT
 	trap 'exit 129' HUP

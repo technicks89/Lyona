@@ -35,144 +35,6 @@ start_detached_once() {
 	fi
 }
 
-display_command_running() {
-	display_command=$1
-	display_command_path=$(command -v "$display_command" 2>/dev/null) || return 1
-	display_command_path=$(readlink -f "$display_command_path" 2>/dev/null) || return 1
-	display_command_uid=$(id -u)
-	display_command_display=${DISPLAY:-}
-	[ -n "$display_command_display" ] || return 1
-
-	# One stat for every process, rather than one stat per process. Paths
-	# under /proc are digits only, so word splitting them back apart is safe.
-	display_command_owned=$(stat -c '%u %n' /proc/[0-9]* 2>/dev/null |
-		awk -v uid="$display_command_uid" '$1 == uid { print $2 }')
-
-	# One awk over every candidate's environ, rather than a tr and an awk per
-	# candidate. Same rule as before: exactly one DISPLAY= entry, and it must
-	# match ours.
-	display_command_environs=
-	for display_command_proc in $display_command_owned; do
-		display_command_environs="$display_command_environs $display_command_proc/environ"
-	done
-	[ -n "$display_command_environs" ] || return 1
-	# shellcheck disable=SC2086 # /proc paths are digits only; splitting is intended
-	display_command_owned=$(awk -v want="$display_command_display" '
-		BEGIN {
-			RS = "\0"
-			# read each environ explicitly: an unreadable one must be
-			# skipped, and naming them as operands makes awk fatal instead
-			for (i = 1; i < ARGC; i++) {
-				path = ARGV[i]
-				matches = 0
-				value = ""
-				while ((getline entry < path) > 0) {
-					if (index(entry, "DISPLAY=") == 1) {
-						matches++
-						value = substr(entry, 9)
-					}
-				}
-				close(path)
-				if (matches == 1 && value == want) {
-					sub(/\/environ$/, "", path)
-					print path
-				}
-			}
-			exit 0
-		}
-	' $display_command_environs 2>/dev/null)
-
-	for display_command_proc in $display_command_owned; do
-		{ IFS= read -r display_command_stat <"$display_command_proc/stat"; } 2>/dev/null ||
-			continue
-		# strip through the last ") " exactly as sub(/^.*\) /, "") did, so a
-		# comm containing ") " is handled the same way
-		display_command_state=${display_command_stat##*') '}
-		display_command_state=${display_command_state%% *}
-		[ "$display_command_state" != Z ] || continue
-
-		display_process_command=$({
-			tr '\0' '\n' <"$display_command_proc/cmdline"
-		} 2>/dev/null) ||
-			continue
-		display_process_arg0=
-		display_process_arg1=
-		display_process_arg2=
-		{
-			IFS= read -r display_process_arg0 || true
-			IFS= read -r display_process_arg1 || true
-			IFS= read -r display_process_arg2 || true
-		} <<COMMAND_LINE
-$display_process_command
-COMMAND_LINE
-		[ -z "$display_process_arg2" ] || continue
-		display_process_executable=$(readlink -f "$display_command_proc/exe" 2>/dev/null || true)
-		if [ "$display_process_executable" = "$display_command_path" ] &&
-			[ -z "$display_process_arg1" ]; then
-			return 0
-		fi
-		[ -n "$display_process_arg0" ] && [ -n "$display_process_arg1" ] || continue
-		[ "${display_process_arg0##*/}" = "${display_process_executable##*/}" ] || continue
-		[ "${display_process_executable##*/}" = bash ] || continue
-		display_process_script=$(readlink -f "$display_process_arg1" 2>/dev/null || true)
-		[ "$display_process_script" = "$display_command_path" ] && return 0
-	done
-
-	return 1
-}
-
-start_detached_display_command_once() {
-	display_command=$1
-	shift
-	display_lock_fd=
-
-	command -v "$display_command" >/dev/null 2>&1 || return 0
-	[ -n "${DISPLAY:-}" ] || return 0
-	if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ] &&
-		[ ! -L "$XDG_RUNTIME_DIR" ] && command -v flock >/dev/null 2>&1 &&
-		command -v sha256sum >/dev/null 2>&1 &&
-		[ "$(stat -c %u -- "$XDG_RUNTIME_DIR" 2>/dev/null)" = "$(id -u)" ]; then
-		display_lock_dir=$XDG_RUNTIME_DIR/lyona
-		display_lock_key=$(printf '%s\n%s\n' "${DISPLAY:-}" "$display_command" |
-			sha256sum | awk '{ print $1 }')
-		if [ -n "$display_lock_key" ] &&
-			(umask 077 && mkdir -p -- "$display_lock_dir") &&
-			[ -d "$display_lock_dir" ] && [ ! -L "$display_lock_dir" ]; then
-			if chmod 700 -- "$display_lock_dir" 2>/dev/null; then
-				exec 9>"$display_lock_dir/dwm-status.$display_lock_key.lock"
-				if flock -w 5 -x 9; then
-					display_lock_fd=9
-				else
-					exec 9>&-
-				fi
-			fi
-		fi
-	fi
-	if display_command_running "$display_command"; then
-		if [ -n "$display_lock_fd" ]; then
-			flock -u 9
-			exec 9>&-
-		fi
-		return 0
-	fi
-	if [ "${DWM_AUTOSTART_NO_SETSID:-0}" != 1 ] &&
-		command -v setsid >/dev/null 2>&1; then
-		setsid -f "$display_command" "$@" >/dev/null 2>&1 9>&-
-	else
-		"$display_command" "$@" >/dev/null 2>&1 9>&- &
-	fi
-	if [ -n "$display_lock_fd" ]; then
-		display_wait_attempt=0
-		while [ "$display_wait_attempt" -lt 50 ]; do
-			display_command_running "$display_command" && break
-			display_wait_attempt=$((display_wait_attempt + 1))
-			sleep 0.02
-		done
-		flock -u 9
-		exec 9>&-
-	fi
-}
-
 start_detached() {
 	command -v "$1" >/dev/null 2>&1 || return 0
 	if [ "${DWM_AUTOSTART_NO_SETSID:-0}" != 1 ] &&
@@ -513,7 +375,8 @@ start_compositor() {
 }
 start_compositor &
 
-start_detached_display_command_once dwm-status
+# dwm-status is no longer started: dwm draws no bar, and the panel takes the
+# battery from UPower, so nothing read the root name it wrote (#284).
 
 # Gear Lever, when the image installer could not set it up (it ran in a chroot):
 # once per login, in the background, until it succeeds (Sync Sprint 16).
