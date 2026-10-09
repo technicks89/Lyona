@@ -13,6 +13,8 @@ script_dir=${0%/*}
 # in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
 lyona_lib=$script_dir
 [ -f "$lyona_lib/dwm-watchdog.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 # Lenient: every panel poll runs this, and a missing HOME must not end it.
@@ -841,26 +843,11 @@ power_lock_snapshot() {
 	power_lock_record
 }
 
-power_watch_pid_starttime() {
-	power_watch_pid=$1
-	awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[1] != "Z" && fields[20] ~ /^[0-9]+$/) {
-				print fields[20]
-			}
-		}
-	' "/proc/$power_watch_pid/stat" 2>/dev/null
-}
-
 power_watch_capture_identity() {
 	power_watch_pid=$1
 	power_watch_attempt=0
 	while [ "$power_watch_attempt" -lt 20 ]; do
-		power_watch_starttime=$(power_watch_pid_starttime "$power_watch_pid")
-		if [ -n "$power_watch_starttime" ]; then
+		if power_watch_starttime=$(proc_starttime "$power_watch_pid"); then
 			printf '%s:%s\n' "$power_watch_pid" "$power_watch_starttime"
 			return 0
 		fi
@@ -875,21 +862,16 @@ power_watch_identity_running() {
 	[ -n "$power_watch_identity" ] || return 1
 	power_watch_pid=${power_watch_identity%%:*}
 	power_watch_starttime=${power_watch_identity#*:}
-	[ "$(power_watch_pid_starttime "$power_watch_pid")" = "$power_watch_starttime" ]
+	proc_identity_live "$power_watch_pid" "$power_watch_starttime"
 }
 
 # power_watch_identity_running, with builtins only, for the loop below (Sync
-# Sprint 16 R16-37): IDENTITY (PID:START) is running when /proc/PID/stat names
-# that start time and is not a zombie. The start time matters: a shell may reap
-# a child as it exits, freeing its PID for reuse.
+# Sprint 16 R16-37): IDENTITY (PID:START) is running, not a zombie, with that
+# start time. The start time matters: a shell may reap a child as it exits,
+# freeing its PID for reuse.
 power_watch_child_alive() {
 	[ -n "$1" ] || return 1
-	{ IFS= read -r power_watch_stat <"/proc/${1%%:*}/stat"; } 2>/dev/null || return 1
-	set -f
-	# shellcheck disable=SC2086 # split into the fields after the command name
-	set -- "${1#*:}" ${power_watch_stat##*) }
-	set +f
-	[ "$2" != Z ] && [ "${21:-}" = "$1" ]
+	proc_identity_live "${1%%:*}" "${1#*:}"
 }
 
 power_watch_sources() {
@@ -1222,19 +1204,6 @@ power_set_lock_timeout() {
 	printf 'power-lock-timeout\t%s\n' "$power_lock_timeout"
 }
 
-session_pid_starttime() {
-	session_pid=$1
-	awk '
-		{
-			line = $0
-			sub(/^.*\) /, "", line)
-			split(line, fields, " ")
-			if (fields[1] != "Z" && fields[20] ~ /^[0-9]+$/)
-				print fields[20]
-		}
-	' "/proc/$session_pid/stat" 2>/dev/null
-}
-
 session_pid_identity() {
 	session_pid=$1
 	case $session_pid in
@@ -1247,8 +1216,7 @@ session_pid_identity() {
 	*' (deleted)') session_executable=${session_executable%' (deleted)'} ;;
 	esac
 	[ "${session_executable##*/}" = dwm ] || return 1
-	session_starttime=$(session_pid_starttime "$session_pid")
-	[ -n "$session_starttime" ] || return 1
+	session_starttime=$(proc_starttime "$session_pid") || return 1
 	printf '%s:%s\n' "$session_pid" "$session_starttime"
 }
 

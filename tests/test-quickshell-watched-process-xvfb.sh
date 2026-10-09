@@ -5,6 +5,31 @@ set -eu
 # watchers now share, run in a real Quickshell (tests/qml/WatchedProcessLines.qml).
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+
+# #279: the watchers that kept a Process of their own are WatchedProcess now:
+# the Controls pactl fallback (it restarted every 3 s), Picom's and the
+# Appearance inventory's ("never": a failure is reported, not retried), and the
+# dwm state bridge (it had no restart at all).
+qs=$repo/config/quickshell
+for watcher in controls/ControlsModel.qml:fallbackWatch appearance/PicomModel.qml:watcher \
+	appearance/AppearanceModel.qml:inventoryWatch state/DwmState.qml:stateWatch; do
+	file=$qs/${watcher%%:*}
+	awk -v id="${watcher#*:}" '/WatchedProcess \{/ { inside = 1; next } inside && $0 ~ "id: " id "$" { found = 1 }
+		/^    \}/ { inside = 0 } END { exit !found }' "$file" || {
+		printf '%s: %s is not a WatchedProcess\n' "${watcher%%:*}" "${watcher#*:}" >&2
+		exit 1
+	}
+	if grep -q 'Not WatchedProcess' "$file"; then
+		printf '%s still keeps a watcher of its own\n' "${watcher%%:*}" >&2
+		exit 1
+	fi
+done
+for watcher in appearance/PicomModel.qml:watcher appearance/AppearanceModel.qml:inventoryWatch; do
+	sed -n "/id: ${watcher#*:}\$/,/^    }/p" "$qs/${watcher%%:*}" | grep -Fq 'restartPolicy: "never"' || {
+		printf '%s restarts a watch it should report\n' "${watcher%%:*}" >&2
+		exit 1
+	}
+done
 for command_name in Xvfb quickshell timeout; do
 	if ! command -v "$command_name" >/dev/null 2>&1; then
 		printf 'SKIP: %s is unavailable\n' "$command_name"

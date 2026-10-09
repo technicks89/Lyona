@@ -168,6 +168,29 @@ esac
 exit 0
 EOF
 
+# With a session bus, autostart waits for the tray's D-Bus name through gdbus
+# instead of asking Quickshell over IPC (#288). The stub Quickshell's tray is
+# only seen through its IPC, which is where it replaces a stale instance and
+# hangs, so the name appears exactly when that IPC answers.
+cat >"$work/bin/gdbus" <<'EOF'
+#!/bin/sh
+printf 'gdbus\t%s\n' "$*" >>"${TEST_STATE:?}/events.log"
+case $* in
+*"wait --session"*org.kde.StatusNotifierWatcher*) ;;
+*) exit 1 ;;
+esac
+case ${XDG_CONFIG_HOME:-} in
+/*) config=$XDG_CONFIG_HOME/quickshell/shell.qml ;;
+*) config=${HOME:?}/.config/quickshell/shell.qml ;;
+esac
+# shellcheck disable=SC2016 # expanded by the inner shell
+exec timeout 5 sh -c '
+	while ! timeout 1 quickshell ipc --path "$1" call tray count >/dev/null 2>&1; do
+		sleep 0.1
+	done' sh "$config"
+EOF
+chmod +x "$work/bin/gdbus"
+
 cat >"$work/bin/dbus-update-activation-environment" <<'EOF'
 #!/bin/sh
 exit 0

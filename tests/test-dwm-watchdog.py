@@ -91,8 +91,10 @@ def kill_groups():
 with tempfile.TemporaryDirectory(prefix='dwm-watchdog-') as temp:
     work = Path(temp)
     helper = work / 'helper.sh'
+    # As a caller does: $lyona_lib names the shared shell code (dwm-proc.sh too).
     helper.write_text('''#!/bin/sh
-. "%s"
+lyona_lib="%s"
+. "$lyona_lib/dwm-watchdog.sh"
 long_function() { sleep 1000 & fn_child=$!; trap 'kill "$fn_child"; exit 0' TERM; wait "$fn_child"; }
 case $1 in
 status) run_parent_bound sh -c 'exit 3'; echo "status=$?" >"$2" ;;
@@ -100,8 +102,9 @@ program) echo $$ >"$2"; run_parent_bound sleep 1000 ;;
 function) echo $$ >"$2"; run_parent_bound long_function ;;
 bound) echo $$ >"$2"; LYONA_PARENT_BOUND_SELF=$$; export LYONA_PARENT_BOUND_SELF; run_parent_bound sleep 1000 ;;
 elsewhere) echo $$ >"$2"; LYONA_PARENT_BOUND_SELF=1; export LYONA_PARENT_BOUND_SELF; run_parent_bound sleep 1000 ;;
+nolib) lyona_lib=/nonexistent; run_parent_bound sleep 1000; echo "status=$?" >"$2" ;;
 esac
-''' % watchdog)
+''' % watchdog.parent)
     helper.chmod(0o755)
 
     def start(kind, interval='5'):
@@ -140,6 +143,17 @@ esac
     subprocess.run(['sh', '-c', '"$0" status "$1"', str(helper), str(out)], check=True, timeout=10)
     if out.read_text().strip() != 'status=3':
         fail('run_parent_bound did not return the child status: ' + out.read_text())
+
+    # 1b. The backstop loop cannot load dwm-proc.sh: it stops the child rather
+    #     than leave it running unwatched.
+    out = work / 'nolib.out'
+    try:
+        subprocess.run(['sh', '-c', '"$0" nolib "$1"', str(helper), str(out)], check=True, timeout=10,
+                       env=dict(os.environ, LYONA_PARENT_BOUND_INTERVAL='60'))
+    except subprocess.TimeoutExpired:
+        fail('a backstop loop without dwm-proc.sh left its child running')
+    if out.read_text().strip() != 'status=143':
+        fail('a backstop loop without dwm-proc.sh did not stop its child: ' + out.read_text())
 
     # 2. SIGKILL on the helper ends the child at once (pdeathsig, no polling).
     parent, helper_pid, child = start('program', interval='60')
@@ -189,7 +203,7 @@ esac
         fail('the idle watchdog started %d processes in 3 s' % len(started))
 
     # 6. The guard: the command runs only under the expected parent.
-    guard = subprocess.run(['sh', '-c', '. "$0"; printf %s "$parent_bound_guard"', str(watchdog)],
+    guard = subprocess.run(['sh', '-c', 'lyona_lib=${0%/*}; . "$0"; printf %s "$parent_bound_guard"', str(watchdog)],
                            capture_output=True, text=True, check=True).stdout
     # "; :" keeps the outer shell from exec'ing the inner one, so it really is the parent.
     here = subprocess.run(['sh', '-c', 'sh -c "$1" sh "$$" echo ran; :', 'sh', guard], capture_output=True, text=True)

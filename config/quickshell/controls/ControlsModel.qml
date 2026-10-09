@@ -74,13 +74,15 @@ Scope {
     function selectAudioSource() {
         if (root.nativeAudioReady()) {
             nativeGraceTimer.stop();
-            if (fallbackWatchProcess.running) fallbackWatchProcess.running = false;
+            fallbackWatch.stop();
             if (root.audioSourceKind !== "native") {
                 root.audioSourceGeneration++;
                 root.audioSourceKind = "native";
             }
-        } else if ((root.visible || root.settingsVisible) && !nativeGraceTimer.running
-                && root.audioSourceKind !== "fallback") {
+        } else if ((root.visible || root.settingsVisible) && root.audioSourceKind === "fallback") {
+            // Reopened while on the fallback: closing stopped its watcher.
+            fallbackWatch.start();
+        } else if ((root.visible || root.settingsVisible) && !nativeGraceTimer.running) {
             nativeGraceTimer.restart();
         }
     }
@@ -93,7 +95,7 @@ Scope {
 
     function closeSettings() {
         root.settingsVisible = false;
-        if (!root.visible && fallbackWatchProcess.running) fallbackWatchProcess.running = false;
+        if (!root.visible) fallbackWatch.stop();
         if (!root.visible) nativeGraceTimer.stop();
     }
 
@@ -137,7 +139,7 @@ Scope {
     function close() {
         root.visible = false;
         root.message = "";
-        if (!root.settingsVisible && fallbackWatchProcess.running) fallbackWatchProcess.running = false;
+        if (!root.settingsVisible) fallbackWatch.stop();
         if (!root.settingsVisible) nativeGraceTimer.stop();
     }
 
@@ -449,7 +451,7 @@ Scope {
                 root.audioSourceKind = "fallback";
                 root.fallbackProcessGeneration = root.audioSourceGeneration;
                 root.refreshAudioInventory();
-                fallbackWatchProcess.running = true;
+                fallbackWatch.start();
             }
         }
     }
@@ -468,49 +470,19 @@ Scope {
         }
     }
 
-    // pactl prints several lines for one change: one snapshot once they settle
-    // (Sync Sprint 16 R16-38), as WatchedProcess does for the other watchers.
-    Timer {
-        id: fallbackSettleTimer
-        interval: 250
-        repeat: false
-        onTriggered: {
+    // pactl's watcher, while the native PipeWire service is unavailable. It
+    // prints several lines for one change: one snapshot once they settle (Sync
+    // Sprint 16 R16-38). A restart backs off as every watcher's does (#279),
+    // where this one used to retry every 3 s. Each start is tagged with the
+    // audio source generation, which its snapshots are checked against.
+    WatchedProcess {
+        id: fallbackWatch
+        command: Commands.watchCommand(Commands.controlsHelperCommand("audio-watch"))
+        active: root.audioSourceKind === "fallback" && (root.visible || root.settingsVisible)
+        onSettled: {
             if (root.audioSourceKind === "fallback"
                     && root.fallbackProcessGeneration === root.audioSourceGeneration)
                 root.refreshAudioInventory();
-        }
-    }
-
-    // Not WatchedProcess (Sync Sprint 12 S12-14): each start is tagged with the
-    // audio source generation, which its lines and restarts are checked against.
-    Process {
-        id: fallbackWatchProcess
-        command: Commands.watchCommand(Commands.controlsHelperCommand("audio-watch"))
-        running: false
-        stdout: SplitParser {
-            onRead: function(data) {
-                if (root.audioSourceKind === "fallback"
-                        && root.fallbackProcessGeneration === root.audioSourceGeneration) {
-                    fallbackSettleTimer.restart();
-                }
-            }
-        }
-        onRunningChanged: {
-            if (!running && root.audioSourceKind === "fallback"
-                    && (root.visible || root.settingsVisible)) fallbackRestartTimer.restart();
-        }
-    }
-
-    Timer {
-        id: fallbackRestartTimer
-        interval: 3000
-        repeat: false
-        onTriggered: {
-            if (root.audioSourceKind === "fallback" && !fallbackWatchProcess.running
-                    && (root.visible || root.settingsVisible)) {
-                root.fallbackProcessGeneration = root.audioSourceGeneration;
-                fallbackWatchProcess.running = true;
-            }
         }
     }
 

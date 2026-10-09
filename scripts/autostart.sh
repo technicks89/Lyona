@@ -5,6 +5,8 @@
 lyona_lib=${0%/*}
 [ "$lyona_lib" != "$0" ] || lyona_lib=.
 [ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-quickshell-lifecycle.sh
@@ -197,8 +199,8 @@ if [ -n "$input_helper" ]; then
 	if [ "${DWM_AUTOSTART_NO_INPUT_WATCH:-0}" != 1 ]; then
 		input_session_pid=${DWM_INPUT_SESSION_PID:-$PPID}
 		input_session_start=${DWM_INPUT_SESSION_START:-}
-		if [ -z "$input_session_start" ] && [ -r "/proc/$input_session_pid/stat" ]; then
-			input_session_start=$(awk '{ print $22 }' "/proc/$input_session_pid/stat" 2>/dev/null || true)
+		if [ -z "$input_session_start" ]; then
+			input_session_start=$(proc_starttime "$input_session_pid" || true)
 		fi
 		if [ "${DWM_AUTOSTART_NO_SETSID:-0}" != 1 ] && command -v setsid >/dev/null 2>&1; then
 			DWM_INPUT_SESSION_PID=$input_session_pid \

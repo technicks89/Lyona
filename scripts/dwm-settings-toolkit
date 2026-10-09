@@ -22,6 +22,8 @@ protocol_header=$'toolkit-protocol\t1\t0'
 action_header=$'toolkit-action-protocol\t1\t0'
 home_dir=${HOME:-}
 # Lenient: a missing HOME is reported by require_paths, through the protocol.
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 lyona_xdg_dirs lenient
@@ -627,7 +629,7 @@ start_preview() {
 		pid=$!
 		preview_setup_pid=$pid
 		for _ in {1..20}; do
-			start=$(process_start_time "$pid" || true)
+			start=$(proc_starttime "$pid" || true)
 			[[ -n $start ]] && break
 			sleep 0.01
 		done

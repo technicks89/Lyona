@@ -129,7 +129,7 @@ HOME=$probe_home XDG_CONFIG_HOME=$probe_home/.config \
 	fail 'dwm-settings-font rejected clean XDG paths'
 
 # ── The udev watcher is defined once ─────────────────────────────────────
-for helper in simple_watch_process_starttime simple_watch_identity_is_live \
+for helper in simple_watch_identity_is_live \
 	simple_watch_capture_child simple_watch_cleanup simple_watch_events; do
 	assert_contains "$repo/scripts/dwm-simple-watch.sh" "$helper() {"
 	duplicate=$(grep -l "^$helper() {" "$repo"/scripts/* 2>/dev/null |
@@ -143,6 +143,101 @@ done
 # The subsystem is the parameter that made one watcher serve both.
 assert_contains "$repo/scripts/dwm-settings-display" 'simple_watch_events drm display'
 assert_contains "$repo/scripts/dwm-settings-input" 'simple_watch_events input input'
+
+# ── Process identity comes from one place (#277) ─────────────────────────
+#
+# dwm-proc.sh is the only shell code that reads /proc/PID/stat: a copy that
+# split the whole line (awk's $22) took the wrong field for a command name with
+# a space in it, and a fix to one copy never reached the others.
+proc_inline=$(grep -nE '/proc/(\$[{]?[A-Za-z_0-9]+[}]?|[0-9]+|self)/stat\b|\$22\b' \
+	"$repo"/scripts/* "$repo/install.sh" "$repo"/archiso/airootfs/root/*.sh 2>/dev/null |
+	grep -vE '^[^:]*/scripts/dwm-proc\.sh:' |
+	while IFS= read -r line; do
+		# Python reads /proc its own way; only shell code is held to this.
+		head -n 1 "${line%%:*}" | grep -q python || printf '%s\n' "$line"
+	done || true)
+if [ -n "$proc_inline" ]; then
+	printf '%s: /proc/PID/stat read outside dwm-proc.sh:\n%s\n' "$test_name" "$proc_inline" >&2
+	exit 1
+fi
+# A command name with spaces and a ")" still gives the right fields, in sh and
+# in Bash alike.
+proc_dir=$(mktemp -d "${DWM_TEST_TMP_ROOT:-${TMPDIR:-/tmp}}/proc-test.XXXXXX")
+cp "$(command -v sleep)" "$proc_dir/a b) c"
+"$proc_dir/a b) c" 30 &
+proc_pid=$!
+proc_expected=
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+	proc_expected=$(python3 -c 'import sys; print(open("/proc/%s/stat" % sys.argv[1]).read().rsplit(")", 1)[1].split()[19])' "$proc_pid" 2>/dev/null) && break
+	sleep 0.05
+done
+for proc_shell in sh bash; do
+	# shellcheck disable=SC2016 # expanded by the inner shell
+	proc_result=$("$proc_shell" -c '. "$1"; proc_starttime "$2"; proc_identity_live "$2" "$3" && echo live
+		proc_identity_live "$2" 1 && echo wrong; proc_stat self && [ "$proc_pid" = "$$" ] && echo self' \
+		sh "$repo/scripts/dwm-proc.sh" "$proc_pid" "$proc_expected")
+	[ "$proc_result" = "$proc_expected
+live
+self" ] || {
+		kill "$proc_pid" 2>/dev/null || :
+		rm -rf -- "$proc_dir"
+		fail "dwm-proc.sh in $proc_shell gave '$proc_result' for a name with spaces, expected start $proc_expected"
+	}
+done
+kill "$proc_pid" 2>/dev/null || :
+wait "$proc_pid" 2>/dev/null || :
+rm -rf -- "$proc_dir"
+# shellcheck disable=SC2016 # expanded by the inner shell
+if sh -c '. "$1"; proc_alive 999999999 || proc_alive abc || proc_alive ""' sh "$repo/scripts/dwm-proc.sh"; then
+	fail 'dwm-proc.sh counts a missing or malformed PID as running'
+fi
+
+# ── The preview primitives come from one place (#277) ────────────────────
+#
+# The lock, token, clock and atomic-exchange probe live in dwm-preview-core.sh;
+# each Settings helper keeps only its own state machine on top of them.
+for preview_core_user in dwm-preview.sh dwm-settings-wallpaper dwm-settings-theme \
+	dwm-settings-display dwm-settings-input; do
+	# shellcheck disable=SC2016 # the literal source line
+	grep -Fq '. "$lyona_lib/dwm-preview-core.sh"' "$repo/scripts/$preview_core_user" ||
+		fail "$preview_core_user does not use dwm-preview-core.sh"
+done
+preview_copies=$(grep -nE 'flock (-[nwx]|[0-9])|mktemp.*exchange-[ab]|read -r uptime|\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,[0-9]+\}\$' \
+	"$repo/scripts/dwm-preview.sh" "$repo"/scripts/dwm-settings-* 2>/dev/null |
+	grep -v 'dwm-settings-display:.*\$1 != \*\.\.\*' || true)
+if [ -n "$preview_copies" ]; then
+	printf '%s: a preview primitive copied outside dwm-preview-core.sh:\n%s\n' "$test_name" "$preview_copies" >&2
+	exit 1
+fi
+# The lock: refused when it is a symbolic link or has a second hard link, and
+# a second holder waits, or gives up after WAIT.
+lock_dir=$(mktemp -d "${DWM_TEST_TMP_ROOT:-${TMPDIR:-/tmp}}/preview-lock.XXXXXX")
+# shellcheck disable=SC2016 # expanded by the inner shell
+lock_try='lyona_lib=$1; . "$lyona_lib/dwm-preview-core.sh"; status=0; preview_lock "$2" 9 "$3" || status=$?; echo "$status"'
+ln -s "$lock_dir/elsewhere" "$lock_dir/link.lock"
+: >"$lock_dir/hard.lock"
+ln "$lock_dir/hard.lock" "$lock_dir/hard2.lock"
+for lock_case in 'link.lock 2' 'hard.lock 2' 'fresh.lock 0'; do
+	lock_got=$(bash -c "$lock_try" sh "$repo/scripts" "$lock_dir/${lock_case% *}" 1)
+	[ "$lock_got" = "${lock_case#* }" ] || {
+		rm -rf -- "$lock_dir"
+		fail "preview_lock on ${lock_case% *} gave $lock_got, expected ${lock_case#* }"
+	}
+done
+[ "$(stat -c %a "$lock_dir/fresh.lock")" = 600 ] || fail 'preview_lock made a lock that is not private'
+flock "$lock_dir/fresh.lock" sleep 3 &
+lock_holder=$!
+sleep 0.3
+lock_got=$(bash -c "$lock_try" sh "$repo/scripts" "$lock_dir/fresh.lock" 0)
+kill "$lock_holder" 2>/dev/null || :
+wait "$lock_holder" 2>/dev/null || :
+rm -rf -- "$lock_dir"
+[ "$lock_got" = 1 ] || fail "preview_lock on a held lock gave $lock_got, expected 1"
+# shellcheck disable=SC2016 # expanded by the inner shell
+token_result=$(bash -c 'lyona_lib=$1; . "$lyona_lib/dwm-preview-core.sh"
+	for token in ok-1.2_3 "" -lead "a b" "$(printf "%065d" 0)"; do preview_valid_token "$token" && printf "y" || printf "n"; done
+	preview_valid_token "$(printf "%096d" 0)" 96 && printf "y"' sh "$repo/scripts")
+[ "$token_result" = ynnnny ] || fail "preview_valid_token gave $token_result, expected ynnnny"
 
 # ── XDG directories come from one place ──────────────────────────────────
 #

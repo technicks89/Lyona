@@ -25,6 +25,8 @@ lyona_lib=$script_dir
 [[ -f $lyona_lib/dwm-paths.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-paths.sh
 . "$lyona_lib/dwm-paths.sh"
+# shellcheck source=scripts/dwm-proc.sh
+. "$lyona_lib/dwm-proc.sh"
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-watchdog.sh
@@ -1232,11 +1234,7 @@ inventory_watch_cleanup() {
 }
 
 process_active() {
-	local pid=$1 stat fields
-	[[ $pid =~ ^[1-9][0-9]*$ && -r /proc/$pid/stat ]] || return 1
-	{ IFS= read -r stat <"/proc/$pid/stat"; } 2>/dev/null || return 1
-	fields=${stat##*) }
-	[[ ${fields%% *} != Z ]]
+	proc_alive "$1"
 }
 
 terminate_and_reap() {
@@ -1251,15 +1249,9 @@ terminate_and_reap() {
 }
 
 read_process_start_time() {
-	local pid=$1 stat
-	local -a fields=()
 	process_start_time=
-	[[ $pid =~ ^[1-9][0-9]*$ && -r /proc/$pid/stat ]] || return 1
-	{ IFS= read -r stat <"/proc/$pid/stat"; } 2>/dev/null || return 1
-	stat=${stat##*) }
-	read -r -a fields <<<"$stat"
-	[[ ${fields[19]:-} =~ ^[0-9]+$ ]] || return 1
-	process_start_time=${fields[19]}
+	proc_alive "$1" || return 1
+	process_start_time=$proc_start
 }
 
 stop_parent_exit_watch() {

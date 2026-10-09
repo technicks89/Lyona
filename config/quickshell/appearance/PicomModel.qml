@@ -85,13 +85,17 @@ Scope {
     }
 
     onActiveChanged: {
-        if (active) root.refresh();
-        else {
+        if (active) {
+            watcher.start();
+            root.refresh();
+        } else {
+            watcher.stop();
             statusProcess.running = false;
             root.pending = false;
             settle.stop();
         }
     }
+    Component.onCompleted: if (root.active) watcher.start()
 
     Process {
         id: statusProcess
@@ -128,27 +132,25 @@ Scope {
         }
     }
 
-    // Not WatchedProcess (Sync Sprint 12 S12-14): a failed watch is reported,
-    // with its stderr, and left for the user's Refresh, not restarted.
-    Process {
+    // A failed watch is reported, with its stderr, and left for the user's
+    // Refresh, not restarted (#279: restartPolicy "never").
+    WatchedProcess {
         id: watcher
         command: Commands.watchCommand(Commands.helperCommand("dwm-settings-picom", "watch", []))
-        running: root.active
-        stdout: SplitParser {
-            onRead: data => {
-                if (data === "changed") settle.restart();
-                else if (data === "ready" || data.indexOf("ready\t") === 0) {
-                    root.watchFailure = "";
-                    root.watchReadyRevision = data.substring(6);
-                    root.watchReadyPending = true;
-                    root.verifyWatchReady();
-                }
+        active: root.active
+        restartPolicy: "never"
+        onLine: data => {
+            if (data === "changed") settle.restart();
+            else if (data === "ready" || data.indexOf("ready\t") === 0) {
+                root.watchFailure = "";
+                root.watchReadyRevision = data.substring(6);
+                root.watchReadyPending = true;
+                root.verifyWatchReady();
             }
         }
-        stderr: StdioCollector { id: watchError }
-        onExited: (exitCode, exitStatus) => {
-            if (root.active && (exitCode !== 0 || exitStatus !== 0))
-                root.watchFailure = watchError.text || "Live Picom updates unavailable; use Refresh";
+        onEnded: exitCode => {
+            if (exitCode !== 0)
+                root.watchFailure = watcher.failureText || "Live Picom updates unavailable; use Refresh";
         }
     }
 

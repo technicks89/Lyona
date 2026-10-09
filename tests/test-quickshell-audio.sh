@@ -16,11 +16,18 @@ grep -Fq 'property string mutationOrigin: ""' "$model"
 grep -Fq 'interval: 3000' "$model"
 grep -Fq 'repeat: false' "$model"
 grep -Fq 'root.fallbackProcessGeneration === root.audioSourceGeneration' "$model"
-grep -Fq 'fallbackRestartTimer.restart()' "$model"
-grep -Fq 'if (fallbackWatchProcess.running) fallbackWatchProcess.running = false;' "$model"
+# #279: the pactl watcher is a WatchedProcess (restarts back off), stopped when
+# the native service takes over.
+grep -Fq 'WatchedProcess {' "$model"
+grep -Fq 'active: root.audioSourceKind === "fallback" && (root.visible || root.settingsVisible)' "$model"
+grep -Fq 'fallbackWatch.stop();' "$model"
+# Closing stops it, so reopening on the fallback starts it again.
+sed -n '/function selectAudioSource() {/,/^    }/p' "$model" | grep -Fq 'fallbackWatch.start();' ||
+	fail 'reopening on the pactl fallback does not restart its watcher'
 # Sync Sprint 16 R16-38: a burst of pactl lines is one snapshot once it settles,
 # and a change during a snapshot is read again after it.
-grep -Fq 'fallbackSettleTimer.restart();' "$model"
+sed -n '/id: fallbackWatch$/,/^    }/p' "$model" | grep -Fq 'onSettled: {' ||
+	fail 'the pactl watcher does not wait for a burst to settle'
 sed -n '/stdout: SplitParser {/,/^        }/p' "$model" | grep -Fq 'root.refreshAudioInventory();' &&
 	fail 'a pactl line still refreshes at once'
 grep -Fq 'root.audioRefreshPending = true;' "$model"

@@ -13,40 +13,27 @@
 #
 # Caller contract: reports through die, so a caller must define one.
 #
-# Identity throughout is "pid:starttime" from /proc/pid/stat field 22, which is
-# what makes a recycled pid detectable; the state letter in field 3 is checked
-# separately so a process merely being rescheduled never reads as gone.
+# Identity throughout is "pid:starttime" (dwm-proc.sh), which is what makes a
+# recycled pid detectable; a process merely being rescheduled never reads as
+# gone.
+
+# shellcheck source=scripts/dwm-proc.sh disable=SC2154 # lyona_lib is the caller's
+. "$lyona_lib/dwm-proc.sh"
 
 declare -a simple_watch_children=()
 simple_watch_fifo_dir=
 simple_watch_monitor_pid=
 
-simple_watch_process_starttime() {
-	local pid=$1 stat rest
-	local -a fields=()
-	[[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-	{ IFS= read -r stat <"/proc/$pid/stat"; } 2>/dev/null || return 1
-	rest=${stat##*) }
-	read -r -a fields <<<"$rest"
-	[[ ${#fields[@]} -ge 20 && ${fields[0]} != Z && ${fields[19]} =~ ^[0-9]+$ ]] || return 1
-	printf '%s\n' "${fields[19]}"
-}
-
 simple_watch_identity_is_live() {
-	local identity=$1 expected_parent=${2:-} pid=${1%%:*} starttime=${1#*:} stat rest
-	local -a fields=()
-	[[ $pid =~ ^[1-9][0-9]*$ && $starttime =~ ^[0-9]+$ ]] || return 1
-	{ IFS= read -r stat <"/proc/$pid/stat"; } 2>/dev/null || return 1
-	rest=${stat##*) }
-	read -r -a fields <<<"$rest"
-	[[ ${#fields[@]} -ge 20 && ${fields[0]} != Z && ${fields[19]} == "$starttime" ]] || return 1
-	[[ -z $expected_parent || ${fields[1]} == "$expected_parent" ]]
+	local expected_parent=${2:-}
+	proc_identity_live "${1%%:*}" "${1#*:}" || return 1
+	[[ -z $expected_parent || $proc_ppid == "$expected_parent" ]]
 }
 
 simple_watch_capture_child() {
 	local pid=$1 starttime attempt
 	for ((attempt = 0; attempt < 20; attempt++)); do
-		starttime=$(simple_watch_process_starttime "$pid" 2>/dev/null || true)
+		starttime=$(proc_starttime "$pid" || true)
 		if [[ $starttime =~ ^[0-9]+$ ]] &&
 			simple_watch_identity_is_live "$pid:$starttime" "$$"; then
 			printf '%s:%s\n' "$pid" "$starttime"

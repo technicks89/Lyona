@@ -776,6 +776,8 @@ grep -Fq '! waitpid -- "$session_pid" >/dev/null 2>&1; then' "$helper" ||
 	fail 'the session guard does not wait on the session process'
 # An exited session process left unreaped is not alive: waitpid returns at
 # once for a zombie, so the guard would otherwise spin.
+# shellcheck source=scripts/dwm-proc.sh
+. "$repo/scripts/dwm-proc.sh"
 eval "$guard"
 sh -c 'sleep 0 & exec sleep 5' &
 zombie_parent=$!

@@ -110,6 +110,8 @@ INSTALL_LIBS = \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
 	scripts/dwm-preview.sh \
+	scripts/dwm-preview-core.sh \
+	scripts/dwm-proc.sh \
 	scripts/dwm-quickshell-lifecycle.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-theme-resolve.sh \

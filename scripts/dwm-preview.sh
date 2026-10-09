@@ -20,6 +20,10 @@
 # It also defines die, and the domain functions these call back: read_config,
 # write_config, apply_selection, emit_status and the rest of its own model.
 
+# The lock, token, clock, exchange and watchdog primitives (#277).
+# shellcheck source=scripts/dwm-preview-core.sh disable=SC2154 # lyona_lib is the caller's
+. "$lyona_lib/dwm-preview-core.sh"
+
 capture_baseline() {
 	local temp
 	temp=$(mktemp --tmpdir="$state_dir" .preview.baseline.XXXXXX)
@@ -104,30 +108,12 @@ meta_value() {
 	awk -F '\t' -v key="$key" '$1 == key && NF == 2 { print $2; found = 1; exit } END { exit(found ? 0 : 1) }' "$preview_meta"
 }
 
-mv_exchange_options_supported() {
-	local help
-	help=$(LC_ALL=C mv --help 2>/dev/null) || return 1
-	[[ $help == *'--exchange'* && $help == *'--no-copy'* ]]
-}
-
 preview_token() {
 	[[ -f $preview_file ]] || return 1
 	local token extra
 	IFS=$'\t' read -r token extra <"$preview_file" || true
 	valid_token "$token" && [[ -z ${extra:-} ]] || return 1
 	printf '%s\n' "$token"
-}
-
-process_group_id() {
-	local pid=$1
-	awk '{ line=$0; sub(/^.*\) /, "", line); split(line, field, " "); if (field[1] != "Z") print field[3] }' \
-		"/proc/$pid/stat" 2>/dev/null
-}
-
-process_start_time() {
-	local pid=$1
-	awk '{ line=$0; sub(/^.*\) /, "", line); split(line, field, " "); if (field[1] != "Z") print field[20] }' \
-		"/proc/$pid/stat" 2>/dev/null
 }
 
 require_paths() {
@@ -178,15 +164,13 @@ stop_watchdog() {
 	[[ $pid =~ ^[0-9]+$ && $pid -ge 2 && -n $start && $pid -ne $$ ]] || return 0
 	current_boot=$(read_boot_id)
 	[[ $current_boot == "$boot_id" ]] || return 0
-	current=$(process_start_time "$pid" || true)
-	[[ $current == "$start" ]] || return 0
-	terminate_watchdog_group "$pid"
+	preview_stop_process "$pid" "$start" group
 }
 
 terminate_watchdog_group() {
 	local pid=$1 pgrp
 	[[ $pid =~ ^[0-9]+$ && $pid -ge 2 && $pid -ne $$ ]] || return 0
-	pgrp=$(process_group_id "$pid" || true)
+	proc_alive "$pid" && pgrp=$proc_pgrp || return 0
 	[[ $pgrp == "$pid" ]] || return 0
 	kill -TERM -- "-$pid" 2>/dev/null || true
 }
@@ -207,7 +191,7 @@ valid_seconds() {
 }
 
 valid_token() {
-	[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]]
+	preview_valid_token "$1" 96
 }
 
 watchdog() {
@@ -224,10 +208,10 @@ watchdog() {
 		((next > now)) || exit 1
 	done
 	prepare_state
-	exec 9>"$lock_file"
 	# Two minutes in all by default; DWM_PREVIEW_LOCK_WAIT shortens each wait
 	# for tests (Sync Sprint 16 R16-42).
-	until flock -w "${DWM_PREVIEW_LOCK_WAIT:-5}" -x 9; do
+	until preview_lock "$lock_file" 9 "${DWM_PREVIEW_LOCK_WAIT:-5}"; do
+		(($? == 1)) || exit 1
 		((attempts += 1))
 		((attempts < 24)) || exit 1
 	done
@@ -243,8 +227,7 @@ watchdog_alive() {
 	[[ $pid =~ ^[0-9]+$ && $pid -ge 2 && -n $start ]] || return 1
 	current_boot=$(read_boot_id)
 	[[ $current_boot == "$boot_id" ]] || return 1
-	current=$(process_start_time "$pid" || true)
-	[[ $current == "$start" ]]
+	preview_process_owned "$pid" "$start"
 }
 
 write_preview_token() {
@@ -258,32 +241,18 @@ write_preview_token() {
 }
 
 acquire_lock() {
+	local status=0
 	prepare_state
-	exec 9>"$lock_file"
-	flock -w 5 -x 9 || die "another $preview_label settings operation is already running"
+	preview_lock "$lock_file" 9 5 || status=$?
+	((status != 2)) || die "the $preview_label settings lock is unsafe: $lock_file"
+	((status == 0)) || die "another $preview_label settings operation is already running"
 }
 
 exchange_supported() {
-	local probe_a probe_b status=1
-	exchange_failure_detail='Atomic file exchange readiness could not be verified'
-	if ! mv_exchange_options_supported; then
-		exchange_failure_detail='GNU mv with --exchange and --no-copy is required (coreutils 9.5 or newer)'
-		return 1
-	fi
 	prepare_config
-	probe_a=$(mktemp --tmpdir="$config_dir" ".$preview_label-exchange-a.XXXXXX") || return 1
-	probe_b=$(mktemp --tmpdir="$config_dir" ".$preview_label-exchange-b.XXXXXX") || {
-		unlink -- "$probe_a"
-		return 1
-	}
-	if mv --exchange --no-copy -- "$probe_a" "$probe_b" 2>/dev/null; then
-		status=0
-	else
-		exchange_failure_detail="Atomic file exchange is unavailable on the $preview_label configuration filesystem"
-	fi
-	unlink -- "$probe_a"
-	unlink -- "$probe_b"
-	return "$status"
+	preview_exchange_supported "$config_dir" "$preview_label" && return 0
+	exchange_failure_detail=$preview_exchange_detail
+	return 1
 }
 
 expire_preview_locked() {
@@ -450,7 +419,7 @@ publish_config_if_hash() {
 		[[ $(config_path_hash "$config_file" 2>/dev/null || true) == "$published_hash" ]]
 		return
 	fi
-	if ! mv_exchange_options_supported; then
+	if ! preview_mv_exchange_options; then
 		printf '%s: GNU mv with --exchange and --no-copy is required (coreutils 9.5 or newer)\n' "$preview_program" >&2
 		return 1
 	fi
@@ -485,17 +454,18 @@ publish_config_if_hash() {
 	return 1
 }
 
+# The clock is preview_clock_read's; ${preview_env}_BOOT_ID and _NOW stand in
+# for it in tests.
 read_boot_id() {
-	local boot_id
 	local boot_id_var=${preview_env}_BOOT_ID
 	if [[ -n ${!boot_id_var:-} ]]; then
-		boot_id=${!boot_id_var}
+		[[ ${!boot_id_var} =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] ||
+			die 'boot identity is invalid'
+		printf '%s\n' "${!boot_id_var}"
 	else
-		IFS= read -r boot_id </proc/sys/kernel/random/boot_id || die 'boot identity is unavailable'
+		preview_clock_read || die 'boot identity or monotonic clock is unavailable'
+		printf '%s\n' "$preview_clock_boot_id"
 	fi
-	[[ $boot_id =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] ||
-		die 'boot identity is invalid'
-	printf '%s\n' "$boot_id"
 }
 
 read_now() {
@@ -504,10 +474,8 @@ read_now() {
 		[[ ${!now_var} =~ ^[0-9]+$ ]] || die "$now_var must be a monotonic timestamp"
 		printf '%s\n' "${!now_var}"
 	else
-		local uptime
-		IFS=' ' read -r uptime _ </proc/uptime || die 'monotonic clock is unavailable'
-		[[ $uptime =~ ^[0-9]+([.][0-9]+)?$ ]] || die 'monotonic clock is invalid'
-		printf '%s\n' "${uptime%%.*}"
+		preview_clock_read || die 'boot identity or monotonic clock is unavailable'
+		printf '%s\n' "$preview_clock_s"
 	fi
 }
 
