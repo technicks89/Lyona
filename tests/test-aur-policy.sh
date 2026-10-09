@@ -1,54 +1,28 @@
 #!/usr/bin/env bash
 # Lyona limits the AUR to where an official package cannot do the job (decision
-# D-27, docs/AUR-PACKAGES.md). Every AUR use is one of the reviewed places listed
-# below; anything else fails here:
-#   - install.sh bootstraps a pinned yay-bin for the user;
-#   - install_legacy_nvidia_driver builds the legacy NVIDIA drivers from pinned
-#     PKGBUILDs, when the CachyOS repository cannot supply them (Sprint 14);
-#   - run_system in lyona-update-terminal runs the user's own `yay -Syu` (Sprint
-#     15);
-#   - install-topgrade builds Topgrade from the pinned topgrade-bin PKGBUILD
-#     (#245).
-# Every package the other profiles and the live ISO name must resolve in core,
-# extra or multilib. A new AUR use is added here, to docs/AUR-PACKAGES.md, and
-# as a decision, never quietly.
+# D-27, docs/AUR-PACKAGES.md). Every AUR build goes through one helper,
+# scripts/dwm-aur.sh, and its one table of reviewed pins (#281):
+#   - install.sh bootstraps yay-bin for the user;
+#   - install_legacy_nvidia_driver builds the legacy NVIDIA drivers, when the
+#     CachyOS repository cannot supply them (Sprint 14);
+#   - install-topgrade builds Topgrade from topgrade-bin (#245);
+# and run_system in lyona-update-terminal runs the user's own `yay -Syu`
+# (Sprint 15). Every package the other profiles and the live ISO name must
+# resolve in core, extra or multilib. A new AUR use is added here, to
+# docs/AUR-PACKAGES.md, to the pin table, and as a decision, never quietly.
 set -euo pipefail
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
 
-# The legacy NVIDIA drivers (Sync Sprint 14): built from pinned PKGBUILDs by
-# install_legacy_nvidia_driver, and only when the CachyOS repository cannot
-# supply them.
-aur_exception_file=$repo/archiso/airootfs/root/lyona-postinstall.sh
-aur_exception_function=install_legacy_nvidia_driver
+aur_helper=$repo/scripts/dwm-aur.sh
 aur_exception_profiles='gpu-nvidia-580xx gpu-nvidia-470xx'
-# The exception function's lines, by number, from its "name() {" to its "}".
-exception_span=$(awk -v name="$aur_exception_function" '
-	$0 ~ "^" name "\\(\\) \\{$" { start = NR }
-	start && !end && /^}$/ { end = NR }
-	END { if (start && end) print start, end }
-' "$aur_exception_file")
-[[ -n $exception_span ]] || fail "$aur_exception_function is missing from ${aur_exception_file##*/}"
-read -r exception_start exception_end <<<"$exception_span"
-# Drop "file:line:" matches that fall inside the exception function.
-outside_exception() {
-	awk -F: -v file="$aur_exception_file" -v start="$exception_start" -v end="$exception_end" \
-		'!($1 == file && $2 >= start && $2 <= end)'
-}
-
-# Topgrade (#245): all of scripts/install-topgrade, which builds only from its
-# pinned, reviewed PKGBUILDs (checked below).
-topgrade_file=$repo/scripts/install-topgrade
-outside_topgrade() {
-	awk -F: -v file="$topgrade_file" '$1 != file'
-}
 
 # The user's own update (Sync Sprint 15 S15-04, decision D-26): Settings >
 # System runs `yay -Syu` in the user's terminal when yay is installed, so
-# packages already built from the AUR (the legacy drivers above) are updated
-# with everything else. Inside run_system that exact upgrade is allowed, with no
+# packages already built from the AUR (the legacy drivers) are updated with
+# everything else. Inside run_system that exact upgrade is allowed, with no
 # package names and so nothing new installed; any other helper call still fails.
 user_update_file=$repo/scripts/lyona-update-terminal
 user_update_function=run_system
@@ -71,7 +45,7 @@ outside_user_update() {
 		}'
 }
 
-# ── 1. the AUR is reached only from the listed places ────────────────────
+# ── 1. the AUR is reached only through dwm-aur.sh ────────────────────────
 
 self=$repo/tests/test-aur-policy.sh
 surfaces=("$repo/install.sh" "$repo/Makefile" "$repo/scripts" "$repo/archiso" "$repo/config" "$repo/.github/workflows")
@@ -83,39 +57,47 @@ if [[ -n $helper_installs ]]; then
 	fail 'list a new AUR use in docs/AUR-PACKAGES.md and this test, with a decision, or use an official package'
 fi
 
-# Only the helper bootstrap in install.sh and the legacy driver build reach the
-# AUR directly.
-stray=$(grep -rInE 'aur\.archlinux\.org|(^|[^[:alnum:]_-])makepkg([^[:alnum:]_-]|$)' \
-	"$repo/Makefile" "$repo/scripts" "$repo/archiso" "$repo/config" "$repo/.github/workflows" 2>/dev/null |
-	grep -Fv "$self" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | outside_exception | outside_topgrade || true)
+# The AUR's address, or makepkg run with options, anywhere but the helper.
+stray=$(grep -rInE 'aur\.archlinux\.org|(^|[^[:alnum:]_-])makepkg[[:space:]]+-' "${surfaces[@]}" 2>/dev/null |
+	grep -Fv "$self" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v "^$aur_helper:" || true)
 if [[ -n $stray ]]; then
-	printf 'AUR access outside the listed places:\n%s\n' "$stray" >&2
-	fail "only install.sh (the helper bootstrap), $aur_exception_function (the legacy NVIDIA drivers) and install-topgrade reach the AUR directly"
+	printf 'AUR access outside dwm-aur.sh:\n%s\n' "$stray" >&2
+	fail 'every AUR build goes through scripts/dwm-aur.sh build-pinned (or fetch and build), at a reviewed pin'
 fi
 
-# install-topgrade's one AUR base, topgrade-bin, pinned to a full commit.
-topgrade_pins=$(awk '/^readonly topgrade_pins=/ { f = 1 } f { print } f && /'"'"'$/ { exit }' "$topgrade_file" |
-	sed -E "s/^readonly topgrade_pins='//; s/'$//")
-[[ $(cut -f1 <<<"$topgrade_pins" | paste -sd ' ') == topgrade-bin ]] ||
-	fail "install-topgrade builds another AUR base than topgrade-bin: $topgrade_pins"
-while IFS=$'\t' read -r base ref; do
-	[[ $ref =~ ^[0-9a-f]{40}$ ]] || fail "install-topgrade's $base is not pinned to a commit"
-done <<<"$topgrade_pins"
+# The one pin table: these bases, each at a full commit, and no other.
+pins=$(awk '/^readonly aur_pins=/ { f = 1 } f { print } f && /'"'"'$/ { exit }' "$aur_helper" |
+	sed -E "s/^readonly aur_pins='//; s/'$//")
+[[ $(cut -f1 <<<"$pins" | sort | paste -sd ' ') == 'nvidia-470xx-utils nvidia-580xx-utils topgrade-bin yay-bin' ]] ||
+	fail "dwm-aur.sh pins other bases than the listed AUR uses: $(cut -f1 <<<"$pins" | paste -sd ' ')"
+while IFS=$'\t' read -r base ref _; do
+	[[ $ref =~ ^[0-9a-f]{40}$ ]] || fail "$base is not pinned to a full commit"
+	[[ $(bash "$aur_helper" pin "$base") == "$ref" ]] || fail "dwm-aur.sh pin $base does not give its table entry"
+done <<<"$pins"
+if bash "$aur_helper" pin not-a-pinned-base >/dev/null 2>&1; then
+	fail 'dwm-aur.sh gave a pin for a base that is not in its table'
+fi
 
-# The exception's packages each come from a pinned, reviewed AUR base: the pin
-# table in the postinstall, branch<TAB>base<TAB>40-hex commit, one per branch.
+# Each caller builds its own base through the helper, and only that base.
+grep -Fq 'dwm-aur.sh" build-pinned yay-bin' "$repo/install.sh" ||
+	fail 'install.sh does not build yay-bin through dwm-aur.sh'
+grep -Fq 'build_pin topgrade-bin' "$repo/scripts/install-topgrade" ||
+	fail 'install-topgrade does not build topgrade-bin through dwm-aur.sh'
+postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
+# shellcheck disable=SC2016 # the literal text in the postinstall
+for fragment in 'base=nvidia-$branch-utils' 'dwm-aur.sh" fetch "$base"' 'dwm-aur.sh" build "$build/src"'; do
+	grep -Fq "$fragment" "$postinstall" || fail "the legacy NVIDIA drivers are not built through dwm-aur.sh ($fragment)"
+done
+
+# The exception's packages each come from their branch's pinned base.
 # shellcheck source=scripts/dwm-packages.sh
 source "$repo/scripts/dwm-packages.sh"
-pins=$(awk '/^export LEGACY_NVIDIA_PINS=/{f=1} f{print} f && /'"'"'$/{exit}' "$aur_exception_file" |
-	sed -E "s/^export LEGACY_NVIDIA_PINS='//; s/'$//")
 for profile in $aur_exception_profiles; do
 	branch=${profile#gpu-nvidia-}
-	pin=$(awk -F '\t' -v branch="$branch" '$1 == branch' <<<"$pins")
-	[[ $pin =~ ^$branch$'\t'[a-z0-9-]+$'\t'[0-9a-f]{40}$ ]] ||
-		fail "the $profile packages have no pinned AUR source in ${aur_exception_file##*/}"
-	base=$(cut -f2 <<<"$pin")
+	base=nvidia-$branch-utils
+	[[ $(cut -f1 <<<"$pins") == *"$base"* ]] || fail "the $profile packages have no pinned AUR base $base"
 	for package in $(dwm_packages arch "$profile"); do
-		[[ $package == "nvidia-$branch-"* && $base == "nvidia-$branch-utils" ]] ||
+		[[ $package == "nvidia-$branch-"* ]] ||
 			fail "$package is in $profile but not built by its pinned base $base"
 	done
 done

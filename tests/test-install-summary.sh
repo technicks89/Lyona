@@ -235,12 +235,12 @@ ln -s /usr/lib/systemd/system/netctl@.service "$work/nm-units-enabled/multi-user
 has "$recommended" '  NetworkManager: '
 lacks "$core" 'NetworkManager: '
 
-# A non-interactive run answers makepkg's pacman prompt: behind the image
-# install's spinner nothing else can, and it waited there forever (Sync Sprint
-# 16, found in a VM).
+# A non-interactive run answers pacman's prompt when it installs yay-bin: behind
+# the image install's spinner nothing else can, and it waited there forever
+# (Sync Sprint 16, found in a VM). test-dwm-aur.sh runs it.
 yay_fn=$(sed -n '/^ensure_yay_installed() {$/,/^}$/p' "$repo/install.sh")
 # shellcheck disable=SC2016 # the literal text in install.sh
-grep -Fq '[[ $NON_INTERACTIVE != true ]] || makepkg_args+=(--noconfirm)' <<<"$yay_fn" ||
-	fail 'a non-interactive install does not answer makepkg'
+grep -Fq '[[ $NON_INTERACTIVE != true ]] || pacman_args+=(--noconfirm)' <<<"$yay_fn" ||
+	fail 'a non-interactive install does not answer pacman for yay-bin'
 
 printf 'Installer summary completeness: PASS\n'

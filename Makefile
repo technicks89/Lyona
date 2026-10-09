@@ -106,6 +106,7 @@ INSTALL_COMMAND_NAMES = $(notdir ${INSTALL_COMMANDS})
 # beside PREFIX/bin, where a command finds it relative to itself (a checkout
 # keeps it beside the scripts). Sync Sprint 12 S12-13 step 1.
 INSTALL_LIBS = \
+	scripts/dwm-aur.sh \
 	scripts/dwm-desktop-entry.sh \
 	scripts/dwm-packages.sh \
 	scripts/dwm-paths.sh \
@@ -1125,6 +1126,7 @@ check-arch-packages:
 # check-no-aur is the target's old name, kept for existing scripts.
 check-aur-policy:
 	tests/test-aur-policy.sh
+	tests/test-dwm-aur.sh
 
 check-no-aur: check-aur-policy
 

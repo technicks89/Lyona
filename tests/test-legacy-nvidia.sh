@@ -3,10 +3,11 @@ set -euo pipefail
 
 # Sync Sprint 14 S14-02 and S14-03: the live medium's driver for an older NVIDIA
 # card. The postinstall's own functions run against a stub arch-chroot that logs
-# every command and emulates git, makepkg and the file operations in a scratch
-# target. Checked: the CachyOS repository comes first; failing that, the pinned
-# AUR PKGBUILD is built, its dependencies installed by root, makepkg run only as
-# the new user, and only the profile's packages installed; a failed build
+# every command and emulates dwm-aur.sh's fetch and build (#281; the helper has
+# its own test, test-dwm-aur.sh) and the file operations in a scratch target.
+# Checked: the CachyOS repository comes first; failing that, the pinned AUR base
+# is fetched and built by dwm-aur.sh as the new user, its dependencies installed
+# by root in between, and only the profile's packages installed; a failed build
 # installs nothing and leaves nouveau; and each kind of card reaches the right
 # path.
 
@@ -17,7 +18,6 @@ make_workspace
 postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
 functions=$work/functions.sh
 {
-	awk '/^export LEGACY_NVIDIA_PINS=/{f=1} f{print} f && /'"'"'$/{exit}' "$postinstall"
 	for name in note_warning installed_kernels install_legacy_nvidia_driver install_gpu_drivers; do
 		awk -v name="$name" '$0 ~ "^" name "\\(\\) \\{$" {f=1} f{print} f && /^}$/{exit}' "$postinstall"
 	done
@@ -25,7 +25,6 @@ functions=$work/functions.sh
 for name in note_warning installed_kernels install_legacy_nvidia_driver install_gpu_drivers; do
 	grep -q "^$name() {" "$functions" || fail "could not read $name from the postinstall"
 done
-grep -q '^export LEGACY_NVIDIA_PINS=' "$functions" || fail 'could not read the pin table'
 # What did not go as chosen is kept for the closing screen (Sync Sprint 16 R16-22).
 export LYONA_WARNINGS=$work/warnings
 
@@ -63,22 +62,20 @@ pacman)
 rm) rm -rf -- "$root${*: -1}" ;;
 install) mkdir -p -- "$root${*: -1}" ;;
 runuser)
-	# runuser -u USER -- env HOME=DIR COMMAND...
+	# runuser -u USER -- env HOME=DIR bash HELPER fetch BASE DIR | build DIR OUT
 	shift 6
-	case "$1 $2" in
-	"git clone") mkdir -p -- "$root${*: -1}" ;;
-	"git -C") ;;
-	"sh -c")
-		dir=${*: -1}
-		case $3 in
-		*--printsrcinfo*) cat "$STUB_SRCINFO" ;;
-		*makepkg*)
-			[[ -z ${STUB_MAKEPKG_FAIL:-} ]] || exit 1
-			for package in "nvidia-$STUB_BRANCH-utils" "opencl-nvidia-$STUB_BRANCH" "nvidia-$STUB_BRANCH-dkms"; do
-				: >"$root$dir/$package-1.0-1-x86_64.pkg.tar.zst"
-			done
-			;;
-		esac
+	[[ $1 == bash && $2 == */dwm-aur.sh && -f $root$2 ]] || exit 9
+	case $3 in
+	fetch)
+		mkdir -p -- "$root$5"
+		cat "$STUB_SRCINFO"
+		;;
+	build)
+		[[ -z ${STUB_MAKEPKG_FAIL:-} ]] || exit 1
+		for package in "nvidia-$STUB_BRANCH-utils" "opencl-nvidia-$STUB_BRANCH" "nvidia-$STUB_BRANCH-dkms"; do
+			: >"$root$5/$package-1.0-1-x86_64.pkg.tar.zst"
+			printf '%s\n' "$5/$package-1.0-1-x86_64.pkg.tar.zst"
+		done
 		;;
 	*) exit 9 ;;
 	esac
@@ -111,7 +108,7 @@ legacy() { # BRANCH, with the stub's settings in the environment
 	done
 	: >"$work/log"
 	# shellcheck disable=SC2016 # $1 to $3 are the inner bash's
-	env STUB_LOG="$work/log" STUB_SRCINFO="$work/srcinfo" STUB_BRANCH="$1" PATH="$stub/bin:$PATH" \
+	env STUB_LOG="$work/log" STUB_SRCINFO="$work/srcinfo" STUB_BRANCH="$1" PATH="$stub/bin:$PATH" REPO_SRC="$repo" \
 		TARGET="$target" CACHYOS_MARKER="${cachyos_marker:-$work/no-cachyos}" \
 		NVIDIA_AUR_MARKER="$work/aur-marker" target_user=tester target_group=tester \
 		target_home=/home/tester bash -c '
@@ -133,7 +130,7 @@ assert_string_contains "$out" 'from the CachyOS repository'
 # ── the CachyOS repository failing falls back to the AUR ────────────────
 out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ legacy 580xx)
 assert_string_contains "$out" 'building it from the AUR instead'
-grep -q 'makepkg --noconfirm' "$work/log" || fail 'no AUR build after the CachyOS repository failed'
+grep -q 'dwm-aur.sh build' "$work/log" || fail 'no AUR build after the CachyOS repository failed'
 
 # Failed transactions clean up only newly installed legacy packages, before
 # an AUR build that can also fail. Existing packages and other deps survive.
@@ -149,7 +146,7 @@ for branch in 580xx 470xx; do
 	assert_file "$target/packages/linux-cachyos-headers" 'new unrelated headers'
 	assert_no_file "$target/packages/nvidia-580xx-utils" 'new nouveau blacklist removed'
 	assert_string_contains "$out" 'the open-source nouveau driver is in use instead'
-	awk '/^pacman -R/ { cleaned=1 } /makepkg/ && !cleaned { exit 1 }' "$work/log" || fail 'cleanup ran after AUR build'
+	awk '/^pacman -R/ { cleaned=1 } /dwm-aur.sh build/ && !cleaned { exit 1 }' "$work/log" || fail 'cleanup ran after AUR build'
 done
 out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_MAKEPKG_FAIL=1 \
 	STUB_PREINSTALLED='nvidia-580xx-utils' STUB_PARTIAL_INSTALL='nvidia-470xx-utils' legacy 580xx)
@@ -158,21 +155,27 @@ assert_no_file "$target/packages/nvidia-470xx-utils" 'new 470xx utils removed'
 out=$(cachyos_marker=$work/cachyos STUB_PACMAN_FAIL=cachyos/ STUB_REMOVE_FAIL=1 \
 	STUB_PARTIAL_INSTALL='nvidia-580xx-utils' legacy 580xx)
 assert_string_contains "$out" 'Could not remove the newly installed legacy NVIDIA packages'
-grep -q 'makepkg --noconfirm' "$work/log" || fail 'cleanup failure stopped AUR fallback'
+grep -q 'dwm-aur.sh build' "$work/log" || fail 'cleanup failure stopped AUR fallback'
 
 # ── the pinned AUR build, as the new user ───────────────────────────────
 out=$(legacy 580xx)
 log=$(cat "$work/log")
 assert_string_contains "$log" 'pacman -S --noconfirm --needed --asdeps base-devel git'
 assert_string_contains "$log" 'pacman -S --noconfirm --needed linux-headers linux-cachyos-headers'
-assert_string_contains "$log" 'git clone --quiet -- https://aur.archlinux.org/nvidia-580xx-utils.git /var/tmp/lyona-nvidia-580xx/src'
-assert_string_contains "$log" 'git -C /var/tmp/lyona-nvidia-580xx/src checkout --quiet --detach 3d31a20c08a1e6c11c1abe953954f44158c9a592'
+# The base is fetched and checked by the one AUR helper, copied into the build
+# directory from the medium's checkout, as the new user.
+assert_string_contains "$log" 'runuser -u tester -- env HOME=/home/tester bash /var/tmp/lyona-nvidia-580xx/dwm-aur.sh fetch nvidia-580xx-utils /var/tmp/lyona-nvidia-580xx/src'
+assert_string_contains "$out" 'nvidia-580xx-utils at 3d31a20c08a1'
 # The dependencies, versions stripped, the base's own packages left out.
 assert_string_contains "$log" 'pacman -S --noconfirm --needed --asdeps foo-make libglvnd egl-wayland zlib dkms'
-# makepkg only ever as the new user.
-grep 'makepkg' "$work/log" | grep -v '^runuser -u tester -- ' && fail 'makepkg ran other than as the new user'
+# The helper only ever as the new user, and the dependencies installed between
+# its fetch and its build.
+grep 'dwm-aur.sh' "$work/log" | grep -v '^runuser -u tester -- ' && fail 'dwm-aur.sh ran other than as the new user'
+awk '/dwm-aur.sh fetch/ { fetched = NR } /--asdeps foo-make/ { deps = NR } /dwm-aur.sh build/ { built = NR }
+	END { exit !(fetched && deps && built && fetched < deps && deps < built) }' "$work/log" ||
+	fail 'the dependencies were not installed between the fetch and the build'
 # Only the profile's packages are installed, and the build directory goes.
-assert_equals 'pacman -U --noconfirm --needed /var/tmp/lyona-nvidia-580xx/src/nvidia-580xx-dkms-1.0-1-x86_64.pkg.tar.zst /var/tmp/lyona-nvidia-580xx/src/nvidia-580xx-utils-1.0-1-x86_64.pkg.tar.zst' \
+assert_equals 'pacman -U --noconfirm --needed /var/tmp/lyona-nvidia-580xx/out/nvidia-580xx-dkms-1.0-1-x86_64.pkg.tar.zst /var/tmp/lyona-nvidia-580xx/out/nvidia-580xx-utils-1.0-1-x86_64.pkg.tar.zst' \
 	"$(grep '^pacman -U' "$work/log")" 'the AUR install'
 [[ ! -e $target/var/tmp/lyona-nvidia-580xx ]] || fail 'the build directory was left behind'
 assert_file "$work/aur-marker" 'the AUR-built marker for the closing message'
@@ -188,9 +191,10 @@ assert_string_contains "$(cat "$LYONA_WARNINGS")" 'The NVIDIA 580xx driver could
 
 # ── the 470xx driver uses its own pin ───────────────────────────────────
 sed -i 's/580xx/470xx/g' "$work/srcinfo"
-legacy 470xx >/dev/null
-assert_string_contains "$(cat "$work/log")" 'git -C /var/tmp/lyona-nvidia-470xx/src checkout --quiet --detach af0b7617132e32dd39174779aa8ced2a726afc51'
-assert_string_contains "$(cat "$work/log")" 'pacman -U --noconfirm --needed /var/tmp/lyona-nvidia-470xx/src/nvidia-470xx-dkms-'
+out=$(legacy 470xx)
+assert_string_contains "$(cat "$work/log")" 'dwm-aur.sh fetch nvidia-470xx-utils /var/tmp/lyona-nvidia-470xx/src'
+assert_string_contains "$out" 'nvidia-470xx-utils at af0b7617132e'
+assert_string_contains "$(cat "$work/log")" 'pacman -U --noconfirm --needed /var/tmp/lyona-nvidia-470xx/out/nvidia-470xx-dkms-'
 
 # ── each kind of card reaches its path ──────────────────────────────────
 dispatch() { # DEVICE OPT-IN

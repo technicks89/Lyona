@@ -151,22 +151,20 @@ install_nvidia_driver() {
 
 # A listed AUR use (Sync Sprint 14, docs/AUR-PACKAGES.md): the legacy NVIDIA
 # drivers, when the CachyOS repository cannot supply them (decision D-22). Each
-# branch's packages come from one AUR base, pinned to a commit whose PKGBUILD was
-# reviewed: its sources download from download.nvidia.com over HTTPS, each with
-# a checksum, and its install script does no more than Arch's own nvidia-utils.
-# Re-pin only after reviewing the diff since the last pin.
-# branch<TAB>AUR base<TAB>commit
-export LEGACY_NVIDIA_PINS='580xx	nvidia-580xx-utils	3d31a20c08a1e6c11c1abe953954f44158c9a592
-470xx	nvidia-470xx-utils	af0b7617132e32dd39174779aa8ced2a726afc51'
+# branch's packages come from one AUR base, nvidia-BRANCH-utils, pinned in
+# dwm-aur.sh's table (#281) to a commit whose PKGBUILD was reviewed: its sources
+# download from download.nvidia.com over HTTPS, each with a checksum, and its
+# install script does no more than Arch's own nvidia-utils.
 
 # install_legacy_nvidia_driver BRANCH DEVICE: the 580xx or 470xx driver, with the
 # headers of every installed kernel (they are DKMS-only). From the CachyOS
 # repository when the medium added it; otherwise built from the pinned AUR
-# PKGBUILD as the new user (makepkg never runs as root), its dependencies
-# installed by root first. Any failure leaves nouveau in place and the rest of
-# the install going: it returns 0 either way, having said which.
+# PKGBUILD by dwm-aur.sh as the new user (makepkg never runs as root), its
+# dependencies installed by root between the fetch and the build. Any failure
+# leaves nouveau in place and the rest of the install going: it returns 0 either
+# way, having said which.
 install_legacy_nvidia_driver() {
-	local branch=$1 device=$2 base ref kernel_pkg build srcinfo package file
+	local branch=$1 device=$2 base ref kernel_pkg build srcinfo package file list
 	local -a packages kernel_pkgs headers=() built=() needed=() own=()
 	local -a legacy_packages absent_before=() newly_installed=()
 
@@ -207,8 +205,8 @@ install_legacy_nvidia_driver() {
 		printf 'lyona-postinstall: the CachyOS repository could not supply it; building it from the AUR instead.\n'
 	fi
 
-	IFS=$'\t' read -r _ base ref < <(awk -F '\t' -v branch="$branch" '$1 == branch' <<<"$LEGACY_NVIDIA_PINS") || :
-	if [[ -z ${base:-} || ! ${ref:-} =~ ^[0-9a-f]{40}$ ]]; then
+	base=nvidia-$branch-utils
+	if ! ref=$(bash "$REPO_SRC/scripts/dwm-aur.sh" pin "$base" 2>/dev/null); then
 		note_warning "No pinned AUR source for the NVIDIA $branch driver; the open-source nouveau driver is in use instead."
 		return 0
 	fi
@@ -218,14 +216,16 @@ install_legacy_nvidia_driver() {
 	as_user() {
 		arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" "$@"
 	}
-	# shellcheck disable=SC2016 # $1 is the inner sh's, in both makepkg calls
+	# The one AUR helper (#281), from the live medium's checkout into the build
+	# directory: it fetches the pinned commit and checks its sources as the new
+	# user, root installs what it depends on, and it builds, again as the user.
 	if arch-chroot "$TARGET" pacman -S --noconfirm --needed --asdeps base-devel git &&
 		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${headers[@]}" &&
 		arch-chroot "$TARGET" rm -rf -- "$build" &&
 		arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build" &&
-		as_user git clone --quiet -- "https://aur.archlinux.org/$base.git" "$build/src" &&
-		as_user git -C "$build/src" checkout --quiet --detach "$ref" &&
-		srcinfo=$(as_user sh -c 'cd "$1" && makepkg --printsrcinfo' sh "$build/src"); then
+		arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build/out" &&
+		install -m 0644 -- "$REPO_SRC/scripts/dwm-aur.sh" "$TARGET$build/dwm-aur.sh" &&
+		srcinfo=$(as_user bash "$build/dwm-aur.sh" fetch "$base" "$build/src"); then
 		# The dependencies, less the packages this base itself builds, by name.
 		mapfile -t own < <(sed -n -E 's/^pkgname = (.+)$/\1/p' <<<"$srcinfo")
 		while IFS= read -r package; do
@@ -233,13 +233,13 @@ install_legacy_nvidia_driver() {
 			[[ -n $package && " ${own[*]} " != *" $package "* && " ${needed[*]} " != *" $package "* ]] &&
 				needed+=("$package")
 		done < <(sed -n -E 's/^[[:space:]]+(make)?depends = (.+)$/\2/p' <<<"$srcinfo")
-		# shellcheck disable=SC2016 # $1 is the inner sh's
 		if { ((${#needed[@]} == 0)) || arch-chroot "$TARGET" pacman -S --noconfirm --needed --asdeps "${needed[@]}"; } &&
-			as_user sh -c 'cd "$1" && makepkg --noconfirm --nocheck' sh "$build/src"; then
+			list=$(as_user bash "$build/dwm-aur.sh" build "$build/src" "$build/out"); then
+			# The branch's packages, of everything the base built.
 			for package in "${packages[@]}"; do
-				for file in "$TARGET$build/src/$package"-[0-9]*.pkg.tar.*; do
-					[[ -f $file && $file != *.sig ]] && built+=("${file#"$TARGET"}")
-				done
+				while IFS= read -r file; do
+					if [[ ${file##*/} == "$package"-[0-9]* ]]; then built+=("$file"); fi
+				done <<<"$list"
 			done
 		fi
 	fi

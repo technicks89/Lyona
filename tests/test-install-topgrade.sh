@@ -31,15 +31,22 @@ export STUB_DIR=$work
 stage_helpers checkout "$work/scripts" install-topgrade
 helper=$work/scripts/install-topgrade
 
-# The reviewed pin, and only that one.
-pins=$(awk '/^readonly topgrade_pins=/ { f = 1 } f { print } f && /'"'"'$/ { exit }' "$installer")
-[[ $pins == "readonly topgrade_pins='topgrade-bin	478487d31444ccbad24ab5d390d41466201b9dbc'" ]] ||
-	fail "topgrade-bin is not the only base, at its reviewed commit: $pins"
+# The reviewed pin, in the one AUR helper's table (#281), and the only base
+# install-topgrade builds.
+[[ $(bash "$repo/scripts/dwm-aur.sh" pin topgrade-bin) == 478487d31444ccbad24ab5d390d41466201b9dbc ]] ||
+	fail "topgrade-bin is not at its reviewed commit: $(bash "$repo/scripts/dwm-aur.sh" pin topgrade-bin)"
+# shellcheck disable=SC2016 # the literal text in the installer
+[[ $(grep -oE 'build-pinned "?\$?[a-z_-]+' "$installer" | sort -u) == 'build-pinned "$base' ]] &&
+	[[ $(grep -oE 'build_pin [a-z-]+' "$installer" | sort -u) == 'build_pin topgrade-bin' ]] ||
+	fail 'install-topgrade builds another AUR base than topgrade-bin, or not through dwm-aur.sh'
+if grep -nE 'aur\.archlinux\.org|git clone|makepkg --' "$installer" | grep -v '^[0-9]*:#' | grep -q .; then
+	fail 'install-topgrade reaches the AUR itself, not through dwm-aur.sh'
+fi
 if grep -nE -- '--syncdeps|--rmdeps|-s[a-z]*r' "$installer" | grep -v '^[0-9]*:#' | grep -q .; then
 	fail 'install-topgrade pulls in build dependencies'
 fi
-# shellcheck disable=SC2016 # the literal text in the installer
-grep -Fq 'readonly aur_url=${INSTALL_TOPGRADE_AUR_URL:-https://aur.archlinux.org}' "$installer" ||
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fq 'readonly aur_url=${DWM_AUR_URL:-https://aur.archlinux.org}' "$repo/scripts/dwm-aur.sh" ||
 	fail 'the AUR is not reached over HTTPS'
 if grep -nE 'crates\.io|cargo install|rustup' "$installer" | grep -v '^[0-9]*:#' | grep -v 'cargo uninstall' | grep -q .; then
 	fail "install-topgrade still builds with cargo: $(grep -nE 'crates\.io|cargo install|rustup' "$installer")"
@@ -55,6 +62,7 @@ if [[ $1 == clone ]]; then
 	dir=${*: -1}
 	mkdir -p "$dir"
 	printf '%s\n' "${*: -2:1}" >"$dir/.url"
+	: >"$dir/PKGBUILD"
 	exit 0
 fi
 [[ $1 == -C ]] || exit 0
@@ -144,11 +152,11 @@ no_build_dir() {
 # package installed.
 reset
 run >"$work/out" 2>"$work/err" || fail "the install failed: $(cat "$work/err")"
-log_has 'git clone --quiet -- https://aur.archlinux.org/topgrade-bin.git '"$(grep -o "$work/home/.cache/lyona/topgrade-build\.[^ ]*/topgrade-bin\.[^ ]*/src" "$work/log" | head -n 1)" ||
+log_has 'git clone --quiet -- https://aur.archlinux.org/topgrade-bin.git '"$(grep -o "$work/home/.cache/lyona/topgrade-build\.[^ ]*/\.topgrade-bin\.[^ ]*/src" "$work/log" | head -n 1)" ||
 	fail "the clone ran as: $(grep '^git clone' "$work/log")"
 grep -Eq '^git -C [^ ]+/src -c advice.detachedHead=false checkout --quiet --detach 478487d31444ccbad24ab5d390d41466201b9dbc$' "$work/log" ||
 	fail "the checkout ran as: $(grep checkout "$work/log")"
-log_has "makepkg topgrade-bin --noconfirm (uid $(id -u))" || fail "makepkg ran as: $(grep makepkg "$work/log")"
+log_has "makepkg topgrade-bin --noconfirm --nocheck (uid $(id -u))" || fail "makepkg ran as: $(grep makepkg "$work/log")"
 grep -Eq "^sudo pacman -U --noconfirm --needed -- $work/home/.cache/lyona/topgrade-build\.[^/]+/topgrade-bin-1\.0-1-x86_64\.pkg\.tar\.zst$" "$work/log" ||
 	fail "the package was installed as: $(grep '^sudo' "$work/log")"
 [[ $(grep -c '^sudo' "$work/log") == 1 ]] || fail 'sudo ran for more than installing the package'

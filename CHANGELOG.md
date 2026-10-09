@@ -25,6 +25,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Every AUR build goes through one helper, `dwm-aur.sh`, with one table of
+  reviewed pins (#281): `yay-bin`, `topgrade-bin` and the legacy NVIDIA drivers.
+  Each is fetched at its pinned commit, refused when a source has no checksum,
+  and built by `makepkg` as the user within a time limit; root installs only the
+  packages. `yay-bin` used to be built with `makepkg -si`, with no checksum check
+  or time limit. `make check-aur-policy` reads the one table.
+
 - Control Center > Restart NetworkManager is the System Health repair (#282):
   polkit asks for your password and NetworkManager restarts, where it ran
   `sudo systemctl restart NetworkManager` in a terminal.
