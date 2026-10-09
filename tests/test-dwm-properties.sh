@@ -9,6 +9,7 @@ set -euo pipefail
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+make_workspace
 
 doc=$repo/docs/SHELL-STATE-PROTOCOL.md
 dwm_c=$repo/dwm.c
@@ -50,16 +51,41 @@ same 'the properties dwm-quickshell-state sets' "$requests" \
 	"$(grep -oE -- '-set _DWM_[A-Z_]+' "$state" | sed 's/^-set //' | sort -u)"
 
 # Each published property becomes one state line, which DwmState.qml reads.
-declare -A line_key=(
-	[_DWM_MONITOR_DESKTOPS]=monitor_desktops
-	[_DWM_SELECTED_MONITOR]=focused_monitor
-	[_DWM_LAYOUT]=layout
-	[_DWM_FULLSCREEN_MONITORS]=fullscreen_monitors
+# Each gets its own value from a stub xprop, which must come out on that
+# property's line: two swapped mappings would put each value on the other's.
+# NAME: the xprop line dwm would give, and the state line it must become.
+declare -A root_line=(
+	[_DWM_MONITOR_DESKTOPS]='_DWM_MONITOR_DESKTOPS(INTEGER) = 0, 0, 1280, 800, 4'
+	[_DWM_SELECTED_MONITOR]='_DWM_SELECTED_MONITOR(CARDINAL) = 3'
+	[_DWM_LAYOUT]='_DWM_LAYOUT(CARDINAL) = 2'
+	[_DWM_FULLSCREEN_MONITORS]='_DWM_FULLSCREEN_MONITORS(CARDINAL) = 5'
 )
+declare -A state_line=(
+	[_DWM_MONITOR_DESKTOPS]='monitor_desktops=0,0,1280,800,4'
+	[_DWM_SELECTED_MONITOR]='focused_monitor=3'
+	[_DWM_LAYOUT]='layout=2'
+	[_DWM_FULLSCREEN_MONITORS]='fullscreen_monitors=5'
+)
+mkdir -p "$work/bin"
+{
+	# shellcheck disable=SC2016 # the stub's own $1
+	printf '#!/bin/sh\n[ "$1" = -root ] || exit 0\ncat <<'"'"'ROOT'"'"'\n'
+	printf '%s\n' '_NET_CURRENT_DESKTOP(CARDINAL) = 0' '_NET_NUMBER_OF_DESKTOPS(CARDINAL) = 9' \
+		'_NET_CLIENT_LIST(WINDOW): window id #' '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0'
+	for name in $published; do
+		[[ -n ${root_line[$name]:-} ]] || fail "$name is published but this test gives it no value; add it here"
+		printf '%s\n' "${root_line[$name]}"
+	done
+	printf 'ROOT\n'
+} >"$work/bin/xprop"
+chmod +x "$work/bin/xprop"
+PATH="$work/bin:$PATH" "$state" state >"$work/state.out" 2>"$work/state.err" ||
+	fail "the state bridge failed on the stub properties: $(cat "$work/state.err")"
 for name in $published; do
-	key=${line_key[$name]:-}
-	[[ -n $key ]] || fail "$name is published but this test does not know its state line; add it here"
-	grep -Fq "printf '$key=" "$state" || fail "dwm-quickshell-state prints no $key= line for $name"
+	expected=${state_line[$name]}
+	grep -Fqx "$expected" "$work/state.out" ||
+		fail "$name did not become '$expected':"$'\n'"$(cat "$work/state.out")"
+	key=${expected%%=*}
 	grep -Fq "key === \"$key\"" "$qml" || fail "DwmState.qml does not read the $key line ($name)"
 done
 

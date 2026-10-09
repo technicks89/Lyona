@@ -184,16 +184,29 @@ Flickable {
     Connections {
         target: root.appearanceModel
         function onThemesChanged() { root.ensureSelection(); }
-        function onWallpaperCandidatesChanged() { root.ensureWallpaperSelection(); }
-        function onWallpaperPathChanged() { root.syncWallpaperSelection(); }
-        function onWallpaperFitChanged() {
+    }
+
+    // Each part's changes come from its own model (#282).
+    Connections {
+        target: root.appearanceModel.wallpaper
+        function onCandidatesChanged() { root.ensureWallpaperSelection(); }
+        function onPathChanged() { root.syncWallpaperSelection(); }
+        function onFitChanged() {
             if (root.selectedWallpaperPath === root.appearanceModel.wallpaper.path
                     && root.appearanceModel.wallpaper.validWallpaperFit(root.appearanceModel.wallpaper.fit))
                 root.selectedWallpaperFit = root.appearanceModel.wallpaper.fit;
         }
-        function onFontFamilyChanged() { root.syncFontSelection(); }
-        function onFontScaleChanged() { root.syncFontSelection(); }
-        function onToolkitSelectionsChanged() { root.syncToolkitSelection(); }
+    }
+
+    Connections {
+        target: root.appearanceModel.font
+        function onFamilyChanged() { root.syncFontSelection(); }
+        function onScaleChanged() { root.syncFontSelection(); }
+    }
+
+    Connections {
+        target: root.appearanceModel.toolkit
+        function onSelectionsChanged() { root.syncToolkitSelection(); }
     }
 
     component AccessibilityToggle: Rectangle {

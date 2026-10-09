@@ -11,7 +11,9 @@ set -euo pipefail
 make_workspace
 
 qs=$repo/config/quickshell
-inline=$(grep -rn 'Quickshell.env("XDG_\|Quickshell.env("HOME")' "$qs" --include='*.qml' --include='*.js' |
+# Either quote style, and any spacing around the argument.
+inline=$(grep -rnE "Quickshell[.]env[[:space:]]*[(][[:space:]]*[\"'](XDG_[A-Z_]*|HOME)[\"'][[:space:]]*[)]" \
+	"$qs" --include='*.qml' --include='*.js' |
 	grep -v '^[^:]*/core/Xdg.qml:' || true)
 [[ -z $inline ]] || fail "XDG directories read outside core/Xdg.qml:"$'\n'"$inline"
 # Xdg is the qs.core module's: a file that uses it without the import gets

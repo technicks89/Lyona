@@ -147,6 +147,7 @@ cat >"$work/bin/pgrep" <<'SH'
 if [ "${DWM_POWER_TEST_REAL_PGREP:-0}" = 1 ]; then exec /usr/bin/pgrep --pid "${DWM_POWER_TEST_LOCKER_PID:?}" "$@"; fi
 case $* in
 *light-locker*) test -e "${DWM_POWER_TEST_STATE:?}/light-locker.running" ;;
+*dwm-lock-watch*) test -e "${DWM_POWER_TEST_STATE:?}/lock-watch.running" ;;
 *) exit 1 ;;
 esac
 SH
@@ -633,6 +634,23 @@ printf 'true\n' >"$work/state/lock_on_suspend"
 export DWM_POWER_TEST_LOCKER_EXIT_DELAY=1
 [ "$(run_helper power-lock off)" = "$(printf 'power-lock\t0')" ]
 unset DWM_POWER_TEST_LOCKER_EXIT_DELAY
+
+# Turning automatic locking off checks that light-locker stopped, not the
+# combined lock_running: with lock_managed=1 that also counts dwm-lock-watch,
+# which autostart keeps running whatever this setting is (#282 review).
+write_initial_config
+grep -Fqx 'lock_managed=1' "$work/config/lyona/power.conf"
+sed -i 's/^lock_enabled=0$/lock_enabled=1/' "$work/config/lyona/power.conf"
+printf '600\n' >"$work/state/saver_timeout"
+printf '5\n' >"$work/state/lock_after"
+printf 'true\n' >"$work/state/lock_on_suspend"
+: >"$work/state/light-locker.running"
+: >"$work/state/lock-watch.running"
+[ "$(run_helper power-lock off)" = "$(printf 'power-lock\t0')" ] ||
+	fail 'automatic locking could not be turned off while dwm-lock-watch runs'
+[ ! -e "$work/state/light-locker.running" ] || fail 'light-locker kept running after automatic locking was turned off'
+grep -Fqx 'lock_enabled=0' "$work/config/lyona/power.conf"
+rm -f "$work/state/lock-watch.running"
 
 write_initial_config
 mv "$work/config/lyona/power.conf" "$work/power-target.conf"

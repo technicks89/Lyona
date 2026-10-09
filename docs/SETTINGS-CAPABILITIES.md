@@ -58,7 +58,7 @@ provider work still required.
 | Restart Picom or Quickshell, toggle compositor, reload wallpaper | `dwm-quickshell-controlcenter action` with fixed action names | User-session | Keep allowlisted; surface missing-tool and process failures instead of unconditional success. |
 | Dependency check and installer | Fixed Control Center actions launched in a terminal | Delegated | Keep as explicit delegated workflows, not background Settings mutations. |
 | Open wallpaper folder or GTK settings | `xdg-open` or `nwg-look` through fixed actions | Delegated | Expose only when the target tool is available. |
-| Restart NetworkManager | Legacy fixed action launches `sudo systemctl` in a terminal | Privileged | Do not reuse as a Settings provider. Route future use through the trusted health helper or another installed allowlisted helper. |
+| Restart NetworkManager | Fixed action delegates to `dwm-system-health repair-privileged restart-networkmanager`, which polkit authorizes for the root-owned installed health helper | Privileged | The health helper's allowlisted repair, the same one System Health offers; nothing is elevated from a checkout or user copy. |
 | Lock, logout, suspend, reboot, shutdown | One root `PowerMenuModel.qml` uses the fixed `session-action` helper protocol | User-session for lock/logout; delegated for suspend/reboot/shutdown | Panel and Settings share confirmation, progress, failures, and overlap rejection. Logout signals only the verified current DWM so normal autostop cleanup runs. |
 
 `Commands.qml` currently limits QML to fixed helper names and argv actions.
@@ -114,7 +114,7 @@ action.
 
 | Operations | Owner and interface | Class | Failure and safety behavior |
 | --- | --- | --- | --- |
-| DPMS and lock status | Versioned Control Center snapshot over X11 and light-locker state | Read-only | Availability flags keep missing X11 or lock providers from breaking the section. |
+| DPMS and lock status | Versioned `dwm-settings-power` snapshot over X11 and light-locker state | Read-only | Availability flags keep missing X11 or lock providers from breaking the section. |
 | Enable/disable DPMS or auto-lock; set timeouts | Fixed power actions apply through bounded `xset`/`gsettings`, then atomically replace user `power.conf` | User-session | Values are restricted to 60 through 86400 seconds; apply or persistence failure restores prior state and is not reported as saved. |
 | Battery and external power | Aggregate UPower display-device and manager properties | Read-only | No battery is an explicit hardware-absent record; it does not hide profile, DPMS, lock, suspend, or lid state. |
 | Power profiles | Power Profiles D-Bus properties and fixed allowlisted `ActiveProfile` mutation | Read-only and delegated | Missing service disables profile selection only; the service and polkit retain authorization ownership. |
@@ -196,8 +196,9 @@ duplicate Arch package lists.
 - There is no reusable generic privilege interface. The health helper is the
   only current trusted-helper pattern and its allowlist must not be widened by
   accepting arbitrary commands.
-- The display installer's terminal `sudo` flow and the Control Center's legacy
-  NetworkManager restart are not Settings provider contracts.
+- The display installer's terminal `sudo` flow is not a Settings provider
+  contract. The Control Center's NetworkManager restart goes through the health
+  helper's allowlisted repair.
 - Existing event streams used by persistent panel widgets may stay shared.
   Watches created only for a Settings section must start on section activation
   and stop on close.
