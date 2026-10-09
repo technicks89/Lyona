@@ -12,13 +12,40 @@ Each use is written down here, pinned or bounded, reviewed, and listed in
 `make check-aur-policy` (`tests/test-aur-policy.sh`), which fails on any other.
 A new use needs all of that, and a decision; it is never added quietly.
 
+## One helper, one pin table (#281)
+
+Every AUR build goes through `scripts/dwm-aur.sh` (installed in
+`PREFIX/lib/lyona`), which holds the one table of reviewed pins:
+
+| AUR base | Pinned commit | For |
+| --- | --- | --- |
+| `yay-bin` | `13e0a4754d106a9252b7479bf1b370fbe454fc48` | yay 13.0.1, the user's AUR helper |
+| `topgrade-bin` | `478487d31444ccbad24ab5d390d41466201b9dbc` | Topgrade 17.12.3-1 (#245) |
+| `nvidia-580xx-utils` | `3d31a20c08a1e6c11c1abe953954f44158c9a592` | legacy NVIDIA 580xx 580.178.04-2 |
+| `nvidia-470xx-utils` | `af0b7617132e32dd39174779aa8ced2a726afc51` | legacy NVIDIA 470xx 470.256.02-8.03 |
+
+- **What it does, the same for every base:** `fetch BASE DIR` clones the base,
+  checks out the pinned commit, checks it is that commit, and refuses a
+  PKGBUILD with a source for this architecture that has no checksum, or a
+  `SKIP`. `build DIR OUTDIR` runs `makepkg --noconfirm --nocheck` as the
+  calling user (never root) within a time limit (30 minutes by default), and
+  copies the packages it built, not `-debug` splits, into `OUTDIR`.
+  `build-pinned BASE OUTDIR` does both in a private directory removed
+  afterwards.
+- **What it does not do:** install anything. The caller installs the built
+  packages with `pacman -U`, as root. `makepkg` never installs dependencies;
+  the legacy driver's are installed by root between the fetch and the build.
+- **Re-pinning:** only after reviewing the PKGBUILD's diff since the last pin,
+  in the table in `scripts/dwm-aur.sh` and this document. Nothing else names a
+  commit.
+
 Where the AUR is used today:
 
 | Use | Why there is no official package | Where | Bounded by |
 | --- | --- | --- | --- |
-| The `yay-bin` helper, for the user | `yay` is not in the official repositories | `install.sh`, `ensure_yay_installed()` | a pinned commit (`YAY_BIN_REF`) |
-| Legacy NVIDIA drivers, for older cards (Sync Sprint 14) | Arch dropped every pre-Turing driver | `install_legacy_nvidia_driver` in the live medium's postinstall | the CachyOS repository first; otherwise pinned, reviewed PKGBUILDs |
-| Topgrade (#245) | Topgrade is only in the AUR | `scripts/install-topgrade` | the pinned, reviewed `topgrade-bin` PKGBUILD |
+| The `yay-bin` helper, for the user | `yay` is not in the official repositories | `install.sh`, `ensure_yay_installed()`, through `dwm-aur.sh` | its pin in `dwm-aur.sh` |
+| Legacy NVIDIA drivers, for older cards (Sync Sprint 14) | Arch dropped every pre-Turing driver | `install_legacy_nvidia_driver` in the live medium's postinstall, through `dwm-aur.sh` | the CachyOS repository first; otherwise their pins in `dwm-aur.sh` |
+| Topgrade (#245) | Topgrade is only in the AUR | `scripts/install-topgrade`, through `dwm-aur.sh` | its pin in `dwm-aur.sh` |
 | The user's own package update (Sync Sprint 15, D-26) | AUR-built packages, such as the drivers above, are not updated by `pacman -Syu` | `run_system` in `scripts/lyona-update-terminal`: `yay -Syu` when `yay` is installed | the exact full upgrade, started by the user in their terminal; it names no packages, so it installs nothing new |
 
 ## Topgrade (#245)
@@ -42,10 +69,9 @@ the AUR, from a pinned PKGBUILD:
   architecture. It has no install script and no dependencies. Its `package()`
   runs the downloaded `topgrade` once, as the build user, to write the manual
   page and shell completions.
-- **How:** `scripts/install-topgrade` clones the pinned commit, checks that it
-  is that commit and that every source for this architecture has a checksum
-  (none `SKIP`), and runs `makepkg` as the user, never as root and never
-  through `yay`. Only the built package is installed, with `sudo pacman -U`.
+- **How:** `scripts/install-topgrade` has `dwm-aur.sh build-pinned` build it
+  as the user, never as root and never through `yay`. Only the built package is
+  installed, with `sudo pacman -U`.
 - **On the live medium:** `install-topgrade --build-only` builds it as the new
   user after the install's passwordless `sudo` rule is gone, and the
   postinstall installs the package as root. If it cannot be built, the closing
@@ -53,12 +79,12 @@ the AUR, from a pinned PKGBUILD:
 - **Updates:** `pacman -Syu` does not update AUR packages. Topgrade runs `yay`
   in its system step, which updates it with every other AUR package. The pin
   only decides what is installed first.
-- **Re-pinning:** only after reviewing the diff since the last pin, and updating
-  this table, `scripts/install-topgrade` and `tests/test-install-topgrade.sh`.
-- **The guard:** `make check-aur-policy` allows the AUR in
-  `scripts/install-topgrade` only, and checks that its one base is
-  `topgrade-bin`, pinned to a full commit. It is never named in a package
-  profile, since it is not in the official repositories.
+- **Re-pinning:** only after reviewing the diff since the last pin, in
+  `scripts/dwm-aur.sh`'s table and this document.
+- **The guard:** `make check-aur-policy` checks that install-topgrade builds
+  `topgrade-bin` through `dwm-aur.sh`, and that it is pinned to a full commit.
+  It is never named in a package profile, since it is not in the official
+  repositories.
 
 ## Legacy NVIDIA drivers (Sync Sprint 14)
 
@@ -77,10 +103,11 @@ The legacy NVIDIA drivers for older cards, which have no driver in `core`,
   packages when the medium added that repository. Only otherwise does the AUR
   come in.
 - **How:** `install_legacy_nvidia_driver` in
-  `archiso/airootfs/root/lyona-postinstall.sh` clones the pinned commit as the
-  new user. It installs the PKGBUILD's dependencies as root, runs `makepkg` as
-  that user (never as root, never through `yay`), and installs the built
-  packages with `pacman -U`. Any failure leaves nouveau.
+  `archiso/airootfs/root/lyona-postinstall.sh` copies `dwm-aur.sh` from the
+  live medium's checkout into the target, and has it fetch the pinned commit as
+  the new user. Root installs the PKGBUILD's dependencies; `dwm-aur.sh build`
+  runs `makepkg` as that user (never as root, never through `yay`); root
+  installs the built packages with `pacman -U`. Any failure leaves nouveau.
 - **What was reviewed at each pin:**
   - every source downloads from `download.nvidia.com` over HTTPS or ships in
     the repository, and has a checksum (no `SKIP`);
@@ -100,12 +127,14 @@ The legacy NVIDIA drivers for older cards, which have no driver in `core`,
   each package's current AUR PKGBUILD, which nobody here has reviewed. Run it
   yourself, read what it shows, and use yay's diff prompt when it offers one
   (Sync Sprint 16 R16-12).
-- **The guard:** `tests/test-aur-policy.sh` allows AUR access and `makepkg`
-  only in `install.sh` (the helper bootstrap) and inside
-  `install_legacy_nvidia_driver` (the legacy driver fallback). It requires each
-  package in the two legacy profiles to be built by a pinned base. The one
-  AUR-helper call it allows is the user's own full upgrade, `yay -Syu`, inside
-  `run_system` in `scripts/lyona-update-terminal`. Any other AUR use fails it.
+- **The guard:** `tests/test-aur-policy.sh` allows the AUR's address and
+  `makepkg` only in `scripts/dwm-aur.sh`, checks that its pin table holds
+  exactly the four bases above at full commits, that each caller builds its
+  own base through it, and that each package in the two legacy profiles comes
+  from its branch's pinned base. The one AUR-helper call it allows is the
+  user's own full upgrade, `yay -Syu`, inside `run_system` in
+  `scripts/lyona-update-terminal`. Any other AUR use fails it.
+  `tests/test-dwm-aur.sh` checks the helper itself.
 
 The 390xx driver (Fermi) is not included (D-23); those cards keep nouveau.
 
@@ -117,7 +146,7 @@ dependency of anything.
 | Package | Where it was referenced | What used it | Status |
 | --- | --- | --- | --- |
 | `xkbset` (AUR only; no package in `core`, `extra` or `multilib`) | `scripts/dwm-packages.sh`, profile `arch:desktop-optional` | `scripts/dwm-settings-input` and `scripts/dwm-settings-provider`, for the XKB AccessX controls: sticky, slow, bounce and mouse keys, and the AccessX shortcuts | **Removed.** Replaced by the in-tree `scripts/dwm-xkbset` (see below). Nothing in Lyona depends on `xkbset` any more. |
-| `yay-bin` 13.0.1 (the AUR helper) | `install.sh`: `YAY_BIN_URL`, pinned `YAY_BIN_REF=13e0a4754d106a9252b7479bf1b370fbe454fc48`, `ensure_yay_installed()` | Nothing at install time. It is a standing convenience tool for the user, independent of every package profile | **Kept, by decision.** No package Lyona installs is built or fetched through it, and the guard below fails if one ever is. Settings uses it only for the user's own `yay -Syu` (Sync Sprint 15). |
+| `yay-bin` 13.0.1 (the AUR helper) | `install.sh`: `ensure_yay_installed()`, built through `dwm-aur.sh` at its pin `13e0a4754d106a9252b7479bf1b370fbe454fc48` | Nothing at install time. It is a standing convenience tool for the user, independent of every package profile | **Kept, by decision.** No package Lyona installs is built or fetched through it, and the guard below fails if one ever is. Settings uses it only for the user's own `yay -Syu` (Sync Sprint 15). |
 
 ### The `xkbset` replacement
 

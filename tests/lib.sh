@@ -325,12 +325,10 @@ $sh_staged
 EOF
 }
 
-# The libraries FILE reaches through $lyona_lib: sourced, or tested for as the
-# marker of that directory. One name per line.
+# The libraries FILE reaches through $lyona_lib: sourced, run (dwm-aur.sh,
+# #281), or tested for as the marker of that directory. One name per line.
 stage_helper_libraries() {
 	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
-	sed -n -E \
-		-e 's#^[[:space:]]*(\.|source) "\$lyona_lib/([A-Za-z0-9_.-]+)".*#\2#p' \
-		-e 's#.*-f "?\$lyona_lib/([A-Za-z0-9_.-]+)"?.*#\1#p' \
-		"$1" | grep -vx 'lyona-toml' | LC_ALL=C sort -u
+	grep -oE '\$lyona_lib/[A-Za-z0-9_.-]+' "$1" | sed 's#^\$lyona_lib/##' |
+		grep -vx 'lyona-toml' | LC_ALL=C sort -u
 }

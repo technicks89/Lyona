@@ -116,11 +116,6 @@ ARCH="$(uname -m)"
 # fetched while sudo is cached. Re-pin after looking at what changed.
 WALLPAPERS_URL="https://github.com/technicks89/nord-background.git"
 WALLPAPERS_REF="8f3dc598c132eaabdba7e7af5dc0acb45fbaa2b3"
-YAY_BIN_URL="https://aur.archlinux.org/yay-bin.git"
-# Reviewed AUR PKGBUILD commit (yay-bin 13.0.1): downloads a checksummed
-# release tarball from github.com/Jguer/yay, no arbitrary build step. Re-pin
-# after reviewing the diff since the last pin.
-YAY_BIN_REF="13e0a4754d106a9252b7479bf1b370fbe454fc48"
 INSTALL_PROFILE="${DWM_INSTALL_PROFILE:-full}"
 HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
 TOPGRADE_INSTALL_MODE="${DWM_INSTALL_TOPGRADE:-true}"
@@ -735,21 +730,26 @@ ensure_yay_installed() {
 	fi
 
 	info "Installing yay as a standing AUR helper..."
+	# yay-bin at its reviewed, pinned commit, built as this user by the one AUR
+	# helper (#281), within its time limit; root installs only the package.
 	tmp_dir="$(mktemp -d)"
-	if ! git clone "$YAY_BIN_URL" "$tmp_dir/yay-bin" 2>/dev/null ||
-		! git -C "$tmp_dir/yay-bin" checkout --quiet "$YAY_BIN_REF"; then
+	local package='' built
+	while IFS= read -r built; do
+		if [[ ${built##*/} == yay-bin-[0-9]* ]]; then package=$built; fi
+	done < <(bash "$REPO_DIR/scripts/dwm-aur.sh" build-pinned yay-bin "$tmp_dir")
+	if [[ -z $package ]]; then
 		rm -rf "$tmp_dir"
-		warn "Could not download yay; continuing without an AUR helper."
+		warn "yay could not be built from the AUR; continuing without an AUR helper."
 		return 1
 	fi
 	# pacman's "Proceed with installation?" is answered for a non-interactive
 	# run: the image install runs this behind a spinner, where nothing can answer
 	# it, and it waited there forever (Sync Sprint 16, found in a VM).
-	local -a makepkg_args=(-si --needed)
-	[[ $NON_INTERACTIVE != true ]] || makepkg_args+=(--noconfirm)
-	if ! (cd "$tmp_dir/yay-bin" && makepkg "${makepkg_args[@]}"); then
+	local -a pacman_args=(-U --needed)
+	[[ $NON_INTERACTIVE != true ]] || pacman_args+=(--noconfirm)
+	if ! sudo pacman "${pacman_args[@]}" -- "$package"; then
 		rm -rf "$tmp_dir"
-		warn "yay build failed; continuing without an AUR helper."
+		warn "pacman could not install ${package##*/}; continuing without an AUR helper."
 		return 1
 	fi
 	rm -rf "$tmp_dir"

@@ -7,12 +7,11 @@ set -euo pipefail
 # crates.io with cargo, which took a Rust toolchain, about 300 MB of crates and
 # several minutes of compiling, and was the slowest step of the install.
 #
-# - The AUR base is pinned to a commit whose PKGBUILD was reviewed, like the
-#   legacy NVIDIA drivers (docs/AUR-PACKAGES.md): topgrade-bin downloads the
-#   release tarball from github.com/topgrade-rs over HTTPS with a b2sum, and
-#   has no install script or dependencies. A PKGBUILD whose sources are not all
-#   checksummed is refused. Re-pin only after reviewing the diff since the last
-#   pin.
+# - The AUR base is pinned to a commit whose PKGBUILD was reviewed, in
+#   dwm-aur.sh's one pin table (#281, docs/AUR-PACKAGES.md): topgrade-bin
+#   downloads the release tarball from github.com/topgrade-rs over HTTPS with a
+#   b2sum, and has no install script or dependencies. dwm-aur.sh refuses a
+#   PKGBUILD whose sources are not all checksummed, and bounds the build.
 # - makepkg runs as the user, never as root; only the built package is
 #   installed with root (pacman -U).
 # - No source fallback, and no Rust: the topgrade source package compiles for
@@ -36,11 +35,12 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
 
-# AUR base<TAB>commit.
-readonly topgrade_pins='topgrade-bin	478487d31444ccbad24ab5d390d41466201b9dbc'
-readonly aur_url=${INSTALL_TOPGRADE_AUR_URL:-https://aur.archlinux.org}
+# Every AUR build goes through dwm-aur.sh, which holds the pins (#281).
+aur=$lyona_lib/dwm-aur.sh
+# The tests' local AUR, under the name this script has always read.
+[[ -z ${INSTALL_TOPGRADE_AUR_URL:-} ]] || export DWM_AUR_URL=$INSTALL_TOPGRADE_AUR_URL
 # topgrade-bin takes seconds; this bounds a stalled download.
-readonly build_seconds=600
+export DWM_AUR_BUILD_SECONDS=${DWM_AUR_BUILD_SECONDS:-600}
 
 usage() {
 	cat <<EOF
@@ -98,7 +98,7 @@ while (($# > 0)); do
 done
 
 pin_of() {
-	awk -F '\t' -v base="$1" '$1 == base { print $2; exit }' <<<"$topgrade_pins"
+	bash "$aur" pin "$1"
 }
 
 if $print_plan; then
@@ -161,72 +161,21 @@ if $dry_run; then
 	exit 0
 fi
 
-for tool in git makepkg; do
-	command -v "$tool" >/dev/null 2>&1 ||
-		die "$tool is not installed; install base-devel and git (sudo pacman -S --needed base-devel git)"
-done
-
-# Every source has a checksum, and none is SKIP: the pin covers the PKGBUILD,
-# the checksums what it downloads.
-sources_checksummed() {
-	awk -v arch="$(uname -m)" '
-		{ sub(/^[ \t]+/, "") }
-		$1 == "source" || $1 == "source_" arch { sources++ }
-		$1 ~ "^(sha256|sha512|b2)sums(_" arch ")?$" { sums[$1]++; if ($3 == "SKIP") skipped = 1 }
-		END {
-			if (!sources || skipped) exit 1
-			for (kind in sums) {
-				base = kind; sub("_" arch "$", "", base)
-				total[base] += sums[kind]
-			}
-			for (base in total) if (total[base] == sources) exit 0
-			exit 1
-		}' <<<"$1"
-}
-
-# build_pin BASE DEST: BASE at its pinned commit, built in a
-# private directory, its package (not a -debug split) copied into DEST. Prints
-# the package's path.
+# build_pin BASE DEST: BASE built at its pinned commit by dwm-aur.sh, its
+# package (not a -debug split) in DEST. Prints the package's path.
 build_pin() {
-	local base=$1 dest=$2 ref work status
-	ref=$(pin_of "$base")
-	[[ $ref =~ ^[0-9a-f]{40}$ ]] || {
-		say "no pinned commit for $base"
-		return 1
-	}
-	work=$(mktemp -d "$build_root/$base.XXXXXX") || return 1
-	status=0
-	build_in "$base" "$ref" "$work" "$dest" || status=$?
-	rm -rf -- "$work"
-	return "$status"
-}
-
-# build_in BASE REF WORK DEST: build_pin's work, in WORK.
-build_in() {
-	local base=$1 ref=$2 work=$3 dest=$4 srcinfo package
-	say "building $base from the AUR at ${ref:0:12}..."
-	if git clone --quiet -- "$aur_url/$base.git" "$work/src" >&2 &&
-		git -C "$work/src" -c advice.detachedHead=false checkout --quiet --detach "$ref" >&2 &&
-		[[ $(git -C "$work/src" rev-parse HEAD) == "$ref" ]] &&
-		srcinfo=$(cd "$work/src" && makepkg --printsrcinfo); then
-		if ! sources_checksummed "$srcinfo"; then
-			say "$base at ${ref:0:12} has a source without a checksum; not building it"
-		elif (cd "$work/src" && timeout --kill-after=30 "$build_seconds" makepkg --noconfirm >&2); then
-			for package in "$work/src/$base"-[0-9]*.pkg.tar.*; do
-				[[ -f $package && $package != *.sig ]] || continue
-				install -m 0644 -- "$package" "$dest/" || return 1
-				printf '%s\n' "$dest/${package##*/}"
-				return 0
-			done
-			say "makepkg finished, but built no $base package"
-		fi
-	fi
+	local base=$1 dest=$2 package
+	while IFS= read -r package; do
+		[[ ${package##*/} == "$base"-[0-9]* ]] || continue
+		printf '%s\n' "$package"
+		return 0
+	done < <(bash "$aur" build-pinned "$base" "$dest")
+	say "built no $base package"
 	return 1
 }
 
 if [[ -n $build_only ]]; then
 	[[ -d $build_only && -w $build_only ]] || die "$build_only is not a writable directory"
-	build_root=$build_only
 	build_pin topgrade-bin "$build_only" || die 'topgrade-bin could not be built'
 	exit 0
 fi
