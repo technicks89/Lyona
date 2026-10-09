@@ -172,7 +172,21 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
         while shell is None and time.time() < deadline:
             shell = resident()
             time.sleep(0.2)
-        time.sleep(8)  # start-up: first snapshots, watchers attached
+        # Start-up: the first snapshots and the watchers attaching. At least 8 s,
+        # then until no new process has appeared under the shell for 3 s, at most
+        # 30 s: on a busy machine a fixed 8 s let late start-up helpers land in
+        # the first sample and read just over the budget now and then (#280).
+        settle_started = time.time()
+        quiet_since = time.time()
+        known = tree(shell) if shell else set()
+        while shell is not None and time.time() - settle_started < 30:
+            now = tree(shell)
+            if now - known:
+                quiet_since = time.time()
+            known |= now
+            if time.time() - settle_started >= 8 and time.time() - quiet_since >= 3:
+                break
+            time.sleep(0.1)
         if shell is None or resident() != shell:
             fail_session('no resident quickshell for this session')
         monitor = network_monitor(shell)

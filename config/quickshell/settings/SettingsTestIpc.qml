@@ -505,6 +505,10 @@ Scope {
             return root.updateModel.message;
         }
 
+        function updateOutcomeMessage(): string {
+            return root.updateModel.outcomeMessage;
+        }
+
         function updateRefreshLog(): void {
             root.updateModel.refreshLog();
         }

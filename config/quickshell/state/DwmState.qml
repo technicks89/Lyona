@@ -19,6 +19,10 @@ Scope {
     property var runningApps: []
     property var windowStates: []
     property string activeWindowTitle: "Desktop"
+    property string activeWindowId: ""
+    // Each monitor's selected window by logical index ("" for none), from
+    // _DWM_MONITOR_WINDOWS; empty with a dwm that does not publish it.
+    property var monitorWindows: []
     property string activeWindowClass: "application-x-executable"
     property string statusText: ""
     property var statusSegments: []
@@ -94,6 +98,10 @@ Scope {
                 // stays exactly what tst_dwm_state_windows.qml already covers
                 // -- including decodeClass() for a percent-encoded class.
                 root.windowStates = WindowsLib.parseWindows(value);
+            } else if (key === "active_window") {
+                root.activeWindowId = value;
+            } else if (key === "monitor_windows") {
+                root.monitorWindows = value.length > 0 ? value.split("|") : [];
             } else if (key === "title") {
                 root.activeWindowTitle = value.length > 0 ? value : "Desktop";
             } else if (key === "class") {
@@ -103,6 +111,12 @@ Scope {
                 root.updateStatusSegments();
             }
         }
+    }
+
+    // The title for the panel on SCREEN: its own monitor's window.
+    function titleForScreen(screen) {
+        return WindowsLib.titleForMonitor(root.monitorWindows, root.screenIndex(screen), root.activeWindowId,
+            root.activeWindowTitle, root.windowStates);
     }
 
     function workspaceOccupied(index) {

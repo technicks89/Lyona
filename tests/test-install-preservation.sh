@@ -174,7 +174,14 @@ fi
 grep -Fq 'dwm is not built. Run make before install-system.' \
 	"$WORK_DIR/unbuilt-install.log"
 test ! -e "$WORK_DIR/stale-stage"
-for object in drw.o dwm.o util.o tomlparser.o; do
+# One object per source in the Makefile's SRC, so a new source file (#280)
+# needs no change here.
+dwm_objects=$(sed -n 's/^SRC[[:space:]]*=[[:space:]]*//p' "$repo/Makefile" | sed 's/\.c\b/.o/g')
+[[ -n $dwm_objects ]] || {
+	printf 'No SRC line in the Makefile.\n' >&2
+	exit 1
+}
+for object in $dwm_objects; do
 	install -Dm644 /dev/null "$TEST_REPO/$object"
 done
 # The object fixtures are newer than the copied TOML reader.

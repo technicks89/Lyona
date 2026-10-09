@@ -153,7 +153,7 @@ PanelWindow {
                             anchors.fill: parent
                             anchors.leftMargin: Theme.pillHorizontalPadding
                             anchors.rightMargin: Theme.pillHorizontalPadding
-                            text: root.state.activeWindowTitle
+                            text: root.state.titleForScreen(root.screen)
                             color: Theme.text
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter

@@ -12,7 +12,12 @@ XDG_DATA_HOME ?= ${USER_HOME}/.local/share
 XDG_STATE_HOME ?= ${USER_HOME}/.local/state
 DATA_DIR  := ${XDG_DATA_HOME}/lyona
 CFG_DIR   := ${XDG_CONFIG_HOME}
-DATADIR   ?= ${PREFIX}/share
+# Shared data (cursor and GTK themes, the GRUB theme, licenses). For the system
+# prefixes /usr and /usr/local it is /usr/share, as install.sh and every image
+# install use: an update by a release before 2026.10.0-beta.6 runs install-system
+# with no DATADIR, so this default must agree with them (#280 VM). Any other
+# PREFIX keeps its data inside it, PREFIX/share.
+DATADIR   ?= $(if $(filter /usr /usr/local,${PREFIX}),/usr/share,${PREFIX}/share)
 SYSTEMDUSERDIR ?= ${PREFIX}/lib/systemd/user
 # UPDATE-001 install provenance. The ISO build passes both through the
 # environment (archiso/airootfs/root/lyona-postinstall.sh); an existing-system
@@ -27,7 +32,7 @@ GRUB_THEME_NAME = CyberRe
 GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 run_managed_test = if [ -n "$${DWM_TEST_WORKSPACE:-}" ] && [ -n "$${DWM_TEST_RUNNER_TOKEN:-}" ] && [ "$${TMPDIR:-}" = "$${DWM_TEST_WORKSPACE}" ] && [ -f "$${DWM_TEST_WORKSPACE}/.runner" ] && [ ! -L "$${DWM_TEST_WORKSPACE}/.runner" ] && [ "$$(cat "$${DWM_TEST_WORKSPACE}/.runner" 2>/dev/null)" = "$${DWM_TEST_RUNNER_TOKEN}" ]; then $(1); else scripts/run-tests $(1); fi
 
-SRC = drw.c dwm.c util.c tomlparser.c
+SRC = drw.c dwm.c util.c tomlparser.c config.c
 OBJ = ${SRC:.c=.o}
 
 INSTALL_COMMANDS = \
@@ -184,7 +189,8 @@ all: dwm ${THUMB} ${TOML_TOOL} ${XWATCH}
 
 ${OBJ}: config.h config.mk Makefile
 drw.o: drw.h util.h
-dwm.o: drw.h util.h tomlparser.h
+dwm.o: drw.h util.h rtconfig.h
+config.o: rtconfig.h tomlparser.h util.h
 util.o: util.h
 tomlparser.o: tomlparser.h
 
@@ -277,10 +283,11 @@ install-system:
 	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h tomlparser.o util.c util.h util.o config.h config.mk Makefile; do \
 		test ! "$$input" -nt ${TOML_TOOL} || { echo "${TOML_TOOL} is stale. Run make before install-system." >&2; exit 1; }; \
 	done
-	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h config.h config.mk Makefile; do \
+	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h rtconfig.h config.h config.mk Makefile; do \
 		test -e "$$input" || { echo "dwm build input is missing: $$input. Run make before install-system." >&2; exit 1; }; \
 		test ! "$$input" -nt dwm || { echo "dwm is stale. Run make before install-system." >&2; exit 1; }; \
 	done
+	$(MAKE) remove-legacy-shared-data
 	$(MAKE) install-gtk-themes
 	$(MAKE) install-cursors
 	$(MAKE) install-grub-theme
@@ -347,6 +354,34 @@ install-system:
 	done
 	$(MAKE) stamp-system
 
+# Updates before 2026.10.0-beta.6 installed the shared data under PREFIX/share,
+# the old DATADIR default (#280 VM). XDG_DATA_DIRS lists /usr/local/share before
+# /usr/share, so those copies would shadow the ones installed now: they go. Only
+# what is lyona's, and only where lyona's own license directory shows that lyona
+# installed there: its GTK themes and AppImage entry, and the cursor and GRUB
+# themes beside their license. A theme you installed yourself is kept, whatever
+# its name. Each removal is named.
+remove-legacy-shared-data:
+	@legacy="${DESTDIR}${PREFIX}/share"; \
+	if [ "${PREFIX}/share" = "${DATADIR}" ] || [ ! -d "$$legacy/licenses/lyona" ] || \
+		[ -L "$$legacy/licenses/lyona" ]; then exit 0; fi; \
+	remove() { \
+		if [ -e "$$1" ] || [ -L "$$1" ]; then \
+			echo "  Removing an earlier update's copy: $$1"; \
+			rm -rf -- "$$1"; \
+		fi; \
+	}; \
+	for path in "$$legacy"/themes/Lyona-*; do remove "$$path"; done; \
+	remove "$$legacy/applications/lyona-appimage.desktop"; \
+	if [ -d "$$legacy/licenses/lyona/capitaine-cursors" ]; then \
+		remove "$$legacy/icons/${CAPITAINE_DARK_THEME}"; \
+		remove "$$legacy/icons/${CAPITAINE_LIGHT_THEME}"; \
+	fi; \
+	if [ -d "$$legacy/licenses/lyona/grub-themes" ]; then \
+		remove "$$legacy/grub/themes/${GRUB_THEME_NAME}"; \
+	fi; \
+	remove "$$legacy/licenses/lyona"
+
 # Written last, and only from this target, so an install that fails partway
 # through never leaves a stamp claiming success.
 stamp-system:
@@ -358,6 +393,9 @@ stamp-system:
 		printf 'LYONA_COMMIT=%s\n' "${LYONA_COMMIT}"; \
 		printf 'LYONA_SOURCE=%s\n' "${LYONA_SOURCE}"; \
 		printf 'LYONA_PREFIX=%s\n' "${PREFIX}"; \
+		printf 'LYONA_MANPREFIX=%s\n' "${MANPREFIX}"; \
+		printf 'LYONA_DATADIR=%s\n' "${DATADIR}"; \
+		printf 'LYONA_XSESSIONSDIR=%s\n' "${XSESSIONSDIR}"; \
 		printf 'LYONA_INSTALL_DATE=%s\n' "$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
 	} >"$$temp"; \
 	chmod 0644 "$$temp"; \
@@ -911,6 +949,9 @@ check-quickshell-controls:
 check-quickshell-audio:
 	tests/test-quickshell-audio.sh
 
+check-quickshell-lifecycle:
+	tests/test-quickshell-lifecycle-locale.sh
+
 check-quickshell-controlcenter:
 	tests/test-quickshell-controlcenter.sh
 
@@ -1000,6 +1041,25 @@ check-quickshell-theme-contrast: all
 
 check-overview-load-xvfb: all
 	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-overview-load-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# _NET_ACTIVE_WINDOW from a pager and _DWM_MONITOR_WINDOWS, with the real dwm,
+# on one screen and on two Xinerama screens (#280 VM).
+check-dwm-activate-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
+		/usr/bin/python3 tests/test-dwm-activate-xvfb.py || status=$$?; \
+		if [ "$$status" -ne 0 ] && [ "$$status" -ne 77 ]; then exit "$$status"; fi; \
+	status=0; DWM_TEST_MONITORS=2 dbus-run-session -- xvfb-run -a \
+		-s "+xinerama -screen 0 1024x768x24 -screen 1 800x600x24" \
+		/usr/bin/python3 tests/test-dwm-activate-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# A monitor keeps one bar while other docks come and go (#280 VM), real dwm.
+check-dwm-bar-docks-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
+		/usr/bin/python3 tests/test-dwm-bar-docks-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1231,6 +1291,12 @@ check-install-manifest: all
 	cmp "$$before" "$$after"; \
 	echo "==> Install manifest and uninstall symmetry validated."
 
+check-live-backup-label:
+	tests/test-live-backup-label.sh
+
+check-legacy-shared-data:
+	tests/test-legacy-shared-data.sh
+
 check-install-preservation:
 	tests/test-install-preservation.sh
 
@@ -1334,7 +1400,7 @@ release-check:
 	$(MAKE) release; \
 	cmp "$$work/first.tar.gz" "${RELEASE_ARCHIVE}"; \
 	tar -tzf "${RELEASE_ARCHIVE}" > "$$work/listing"; \
-	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c \
+	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c config.c rtconfig.h \
 		${TOML_TOOL}.c ${THUMB}.c ${XWATCH}.c dwm.desktop install.sh scripts/dwm-system-management \
 		scripts/lyona_system_management/cli.py config/themes.toml; do \
 		grep -Fqx "${RELEASE_NAME}/$$path" "$$work/listing" || \
@@ -1397,6 +1463,7 @@ check:
 	$(MAKE) check-quickshell-controls
 	$(MAKE) check-quickshell-audio
 	$(MAKE) check-quickshell-controlcenter
+	$(MAKE) check-quickshell-lifecycle
 	$(MAKE) check-quickshell-power-backend
 	$(MAKE) check-quickshell-power-model
 	$(MAKE) check-quickshell-session-actions
@@ -1435,6 +1502,8 @@ check:
 	$(MAKE) check-quickshell-overview
 	$(MAKE) check-quickshell-overview-xvfb
 	$(MAKE) check-overview-keyboard-xvfb
+	$(MAKE) check-dwm-activate-xvfb
+	$(MAKE) check-dwm-bar-docks-xvfb
 	$(MAKE) check-overview-load-xvfb
 	$(MAKE) check-quickshell-theme-contrast
 	$(MAKE) check-quickshell-panel-settings
@@ -1485,6 +1554,8 @@ check:
 	$(MAKE) check-legacy-nvidia
 	$(MAKE) check-install
 	$(MAKE) check-install-preservation
+	$(MAKE) check-legacy-shared-data
+	$(MAKE) check-live-backup-label
 	$(MAKE) check-install-multilib
 	$(MAKE) check-install-time-sync
 	$(MAKE) check-iso-install-credentials
@@ -1512,7 +1583,7 @@ check:
 	check-cursor-reload check-xkbset check-picom check-picom-xvfb \
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
-	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-manifest check-install-preservation check-lyona-version check-lyona-update check-lock \
+	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
-	install-cursors install-grub-theme install-gtk-themes stamp-system stamp-user native release release-check uninstall
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	install-cursors install-grub-theme install-gtk-themes remove-legacy-shared-data stamp-system stamp-user native release release-check uninstall

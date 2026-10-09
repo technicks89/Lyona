@@ -5,7 +5,13 @@ Runs the real dwm and Quickshell in an isolated X11 session and loads the real
 OverviewModel and WindowOverview against a stub dwmState. Then, with no mouse event
 sent at all: open the overview, type a filter, move the selection, close the
 selected card with Ctrl+W, activate one with Enter, and dismiss with Escape.
+
+A real client window is open and focused throughout (#280 VM): the popup is
+override-redirect, so it has the keyboard only because dwm gives it the focus
+when it asks, and gives it back to the client when it closes.
 """
+import ctypes
+import ctypes.util
 import json
 import os
 import shutil
@@ -125,8 +131,41 @@ with tempfile.TemporaryDirectory(prefix='overview-keys-', dir=str(temp_root)) as
     def key(*names):
         run('xdotool', 'key', '--clearmodifiers', *names).check_returncode()
 
+    def focused_window():
+        result = run('xdotool', 'getwindowfocus')
+        return int(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip() else 0
+
+    def wait_focus(window, message, seconds=4):
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if focused_window() == window:
+                return
+            time.sleep(0.08)
+        raise AssertionError('%s (focus 0x%x, client 0x%x)' % (message, focused_window(), window))
+
+    # A real client for dwm to focus: the connection stays open, so it stays mapped.
+    xlib = ctypes.CDLL(ctypes.util.find_library('X11'))
+    xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    xlib.XOpenDisplay.restype = ctypes.c_void_p
+    xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    xlib.XDefaultRootWindow.restype = ctypes.c_ulong
+    xlib.XCreateSimpleWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+                                         ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_ulong, ctypes.c_ulong]
+    xlib.XCreateSimpleWindow.restype = ctypes.c_ulong
+    xlib.XMapWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    xlib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    client_display = None
+
     try:
         wait_for(lambda s: True, 'IPC unavailable', 10)
+        client_display = xlib.XOpenDisplay(os.environ['DISPLAY'].encode())
+        assert client_display, 'cannot open the display for the client window'
+        client = xlib.XCreateSimpleWindow(client_display, xlib.XDefaultRootWindow(client_display),
+                                          40, 60, 400, 300, 0, 0, 0x336699)
+        xlib.XMapWindow(client_display, client)
+        xlib.XSync(client_display, 0)
+        wait_focus(client, 'dwm did not focus the new client window')
         assert run('quickshell', 'ipc', 'call', 'ov', 'open').returncode == 0
         opened = wait_for(lambda s: s['visible'], 'the overview did not open')
         assert opened['ids'] == ['0x1', '0x2', '0x3'], opened
@@ -164,17 +203,21 @@ with tempfile.TemporaryDirectory(prefix='overview-keys-', dir=str(temp_root)) as
         time.sleep(0.4)
         key('Escape')
         wait_for(lambda s: not s['visible'], 'Escape did not dismiss the overview')
+        wait_focus(client, 'the client did not get the focus back when the overview closed')
 
         assert wm.poll() is None and shell.poll() is None
         log.seek(0)
         output = log.read()
         assert 'TypeError:' not in output and 'ReferenceError:' not in output, output[-2000:]
-        print('Overview keyboard-only walkthrough (open, navigate, filter, close, activate, dismiss): PASS')
+        print('Overview keyboard-only walkthrough over a focused client '
+              '(open, navigate, filter, close, activate, dismiss, focus back): PASS')
     except BaseException:
         log.seek(0)
         print(log.read()[-4000:])
         raise
     finally:
+        if client_display:
+            xlib.XCloseDisplay(client_display)
         shell.terminate()
         shell.wait(timeout=5)
         wm.terminate()

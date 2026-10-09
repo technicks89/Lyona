@@ -49,9 +49,10 @@ id -u "$user" >/dev/null 2>&1 || useradd -m "$user"
 uid=$(id -u "$user")
 home=$(getent passwd "$user" | cut -d: -f6)
 
-install_helper() {
+datadir=/usr/share
+install_helper() { # as install-system does, for $prefix and $datadir
 	sed -e "s|@PREFIX@|$prefix|g" -e "s|@MANPREFIX@|$prefix/share/man|g" \
-		-e "s|@DATADIR@|$prefix/share|g" -e "s|@XSESSIONSDIR@|/usr/share/xsessions|g" \
+		-e "s|@DATADIR@|$datadir|g" -e "s|@XSESSIONSDIR@|/usr/share/xsessions|g" \
 		"$repo/scripts/lyona-update-root" |
 		install -D -o root -g root -m 0755 /dev/stdin "$helper"
 }
@@ -148,6 +149,67 @@ refuses 'symlink outside the cursor themes' restore-system "$bad_id"
 [[ ! -L $prefix/bin/dwm-planted-link ]] || fail 'a refused archive wrote a symlink'
 rm -rf "${store:?}/$bad_id"
 
+# Cursor themes, in DATADIR and in PREFIX/share where updates before
+# 2026.10.0-beta.6 put them (#280 VM: a rollback refused usr/share/icons),
+# restore.
+cursor_id=20260927T101800Z-4545
+install -d -o root -g root -m 0700 "$store/$cursor_id"
+for icons in "$datadir/icons" "$prefix/share/icons"; do
+	install -D -m 0644 /dev/null "$work/stage4$icons/Capitaine-Cursors/index.theme"
+	printf 'from %s\n' "$icons" >"$work/stage4$icons/Capitaine-Cursors/index.theme"
+done
+tar -C "$work/stage4" --numeric-owner -cpf "$store/$cursor_id/system-files.tar" \
+	"${datadir#/}/icons/Capitaine-Cursors" "${prefix#/}/share/icons/Capitaine-Cursors"
+run_helper restore-system "$cursor_id" >/dev/null 2>"$work/err" || {
+	cat "$work/err" >&2
+	fail 'a backup of the cursor themes (DATADIR and PREFIX/share) did not restore'
+}
+for icons in "$datadir/icons" "$prefix/share/icons"; do
+	grep -Fxq "from $icons" "$icons/Capitaine-Cursors/index.theme" ||
+		fail "the cursor theme in $icons was not restored"
+done
+rm -rf "${store:?}/$cursor_id" "$datadir/icons/Capitaine-Cursors" "$prefix/share/icons/Capitaine-Cursors"
+rm -f "$home/.local/state/lyona/update.log"
+
+# The layout comes from /etc/lyona-release (#280 VM): only a root-owned record
+# that nobody else can write, and only absolute plain paths, are used.
+stamp=/etc/lyona-release
+[[ ! -e $stamp ]] || mv "$stamp" "$work/stamp.saved"
+write_stamp() { # LINE...
+	printf '%s\n' 'LYONA_VERSION=test' "LYONA_PREFIX=$prefix" "$@" |
+		install -o root -g root -m 0644 /dev/stdin "$stamp"
+}
+write_stamp "LYONA_DATADIR=$datadir"
+chmod 0664 "$stamp"
+refuses 'not a root-owned, root-only-writable record' restore-system "$good_id"
+chmod 0644 "$stamp"
+chown "$uid" "$stamp"
+refuses 'not a root-owned, root-only-writable record' restore-system "$good_id"
+write_stamp 'LYONA_DATADIR=relative/share'
+refuses 'unusable LYONA_DATADIR' restore-system "$good_id"
+write_stamp 'LYONA_DATADIR=/usr/share/../../etc'
+refuses 'unusable LYONA_DATADIR' restore-system "$good_id"
+write_stamp 'LYONA_MANPREFIX=/usr/share/man with space'
+refuses 'unusable LYONA_MANPREFIX' restore-system "$good_id"
+# A record for another PREFIX is not this install's: the standard layout stays,
+# so this helper still refuses a DATADIR it was not installed for.
+printf '%s\n' 'LYONA_VERSION=test' 'LYONA_PREFIX=/opt/elsewhere' 'LYONA_DATADIR=/srv/other' |
+	install -o root -g root -m 0644 /dev/stdin "$stamp"
+other_id=20260927T101900Z-4646
+install -d -o root -g root -m 0700 "$store/$other_id"
+install -D -m 0644 /dev/null "$work/stage5/srv/other/icons/Capitaine-Cursors/index.theme"
+tar -C "$work/stage5" --numeric-owner -cpf "$store/$other_id/system-files.tar" srv/other/icons/Capitaine-Cursors
+refuses 'outside the managed install locations' restore-system "$other_id"
+# ... and the record for this PREFIX moves it.
+write_stamp 'LYONA_DATADIR=/srv/other'
+run_helper restore-system "$other_id" >/dev/null 2>"$work/err" || {
+	cat "$work/err" >&2
+	fail 'a backup of the cursor themes in the recorded DATADIR did not restore'
+}
+rm -rf "${store:?}/$other_id" /srv/other "$stamp"
+[[ ! -e $work/stamp.saved ]] || mv "$work/stamp.saved" "$stamp"
+rm -f "$home/.local/state/lyona/update.log"
+
 # A good backup restores the live file exactly as it was recorded.
 chown -R "$uid:$uid" "$home/.local"
 run_helper restore-system "$good_id" >/dev/null 2>"$work/err" || {
@@ -183,18 +245,21 @@ if ! command -v pkg-config >/dev/null 2>&1 || ! make -s -C "$repo" check-build-d
 fi
 
 rm -rf "$store"
+# A DATADIR that is not the Makefile default: the helper must install the
+# update there too, and record it in the helper it installs (#280 VM).
+datadir=/srv/lyona-data
 src=$work/src
 cp -a "$repo/." "$src"
 rm -f "$src/config.h"
 make -s -C "$src" clean >/dev/null
 # The live install the update will replace, with a marker the release lacks.
 make -s -C "$src" all >/dev/null
-make -s -C "$src" install-system >/dev/null
+make -s -C "$src" install-system DATADIR="$datadir" >/dev/null
 # S12-03: the source tree is owned by the building user, not root; the cursor
 # themes it installs as root must still come out root-owned.
 [[ $(stat -c %u "$src/assets/cursors") != 0 ]] || chown -R "$uid:$uid" "$src/assets/cursors"
-make -s -C "$src" install-cursors >/dev/null
-not_root=$(find "$prefix/share/icons/Capitaine-Cursors" "$prefix/share/icons/Capitaine-Cursors-White" \
+make -s -C "$src" install-cursors DATADIR="$datadir" >/dev/null
+not_root=$(find "$datadir/icons/Capitaine-Cursors" "$datadir/icons/Capitaine-Cursors-White" \
 	! -uid 0 -print -quit)
 [[ -z $not_root ]] || fail "install-cursors left a file not owned by root: $not_root"
 install_helper
@@ -273,6 +338,15 @@ grep -Fxq '# live-before-update' "$work/backed-up-live" ||
 tar -tf "$store/$new_id/system-files.tar" >"$work/backup-list"
 grep -Fxq "${helper#/}" "$work/backup-list" ||
 	fail 'the backup does not hold the privileged helper'
+grep -q "^${datadir#/}/icons/Capitaine-Cursors/" "$work/backup-list" ||
+	fail 'the backup does not hold the cursor themes from DATADIR'
+grep -Fxq "LYONA_DATADIR=$datadir" /etc/lyona-release ||
+	fail "the update did not keep DATADIR $datadir in /etc/lyona-release: $(cat /etc/lyona-release)"
+! grep -q '@[A-Z_]*@' "$helper" || fail 'the installed helper still has an install placeholder'
+[[ $(sed "s|@PREFIX@|$prefix|g" "$src/scripts/lyona-update-root") == "$(cat "$helper")" ]] ||
+	fail 'the installed helper is not the source with @PREFIX@ filled in (what an older update check expects)'
+[[ ! -e /usr/share/icons/Capitaine-Cursors && ! -e $prefix/share/icons/Capitaine-Cursors ]] ||
+	fail 'the update installed the cursor themes outside DATADIR'
 ! grep -Fxq '# live-before-update' "$live" || fail 'the update did not replace the live file'
 kept=$(find "$store" -mindepth 1 -maxdepth 1 -type d | wc -l)
 [[ $kept == 5 ]] || fail "pruning kept $kept backups, not 5"

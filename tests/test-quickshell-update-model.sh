@@ -59,6 +59,18 @@ grep -Fq 'lyona-update-protocol' "$update_model"
 grep -Fq 'validUpdateStates.indexOf(state) < 0' "$update_model"
 grep -Fq 'root.providerState = "unavailable"' "$update_model"
 grep -Fq 'lyona-update-status-protocol' "$update_model"
+# #280 VM: the progress popup shows how the last action ended, which the
+# channel check (root.message) must not overwrite while it is shown.
+progress_window=$repo/config/quickshell/system/UpdateProgressWindow.qml
+grep -Fq 'property string outcomeMessage' "$update_model"
+grep -Fq 'root.outcomeMessage = outcome === "succeeded"' "$update_model"
+# Settings shows the action's outcome the same way (its status card keeps the check text).
+grep -Fq 'text: root.updateModel.outcomeMessage' "$system_pane" ||
+	fail 'Settings > System does not show how the last update or rollback ended'
+if grep -Fq 'updateModel.message' "$progress_window"; then
+	printf 'The update progress popup must show outcomeMessage, not the check message.\n' >&2
+	exit 1
+fi
 grep -Fq 'lyona-version-protocol' "$update_model"
 
 # offline is informational: it reaches providerState/updateState the same

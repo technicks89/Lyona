@@ -179,7 +179,7 @@ lyona, delete the line.
 ## Applying an update
 
 ```sh
-lyona-update apply --version 2026.10.0-beta.5
+lyona-update apply --version 2026.10.0-beta.6
 ```
 
 Nine steps, in this exact order, so an interruption at any point is always

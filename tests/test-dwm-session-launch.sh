@@ -173,9 +173,11 @@ for caller in dwm-quickshell-launcher dwm-quickshell-controlcenter \
 	dwm-quickshell-network; do
 	assert_contains "$repo/scripts/$caller" 'dwm-session-launch'
 done
-assert_contains "$repo/dwm.c" '"/dwm-session-launch"'
+wm_grep -Fq '"/dwm-session-launch"' ||
+	fail 'dwm does not run dwm-session-launch by its path'
 # Resolved beside the running binary, not through PATH, so a custom prefix
 # cannot go stale between build and install.
-assert_contains "$repo/dwm.c" '/proc/self/exe'
+wm_grep -Fq '/proc/self/exe' ||
+	fail 'dwm does not find its own directory through /proc/self/exe'
 
 printf '%s\n' 'Session launch wrapper: PASS'

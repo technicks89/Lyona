@@ -159,27 +159,44 @@ if printf '%s\n' "$scan_processes" | grep -F "$data_home/checkout/scripts/dwm-sy
 	exit 1
 fi
 
+# The open popup's window: Quickshell's click-away surface, below the panel
+# (y > 0) and far taller than it. Found by what it is, not as "a window that was
+# not visible before": a popup reuses its window, so a reopen during the
+# previous close's fade was never "new", and the test failed now and then
+# ("Control Center popup did not open").
+popup_surface() {
+	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
+		geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$candidate" 2>/dev/null || true)
+		surface_y=$(printf '%s\n' "$geometry" | sed -n 's/^Y=//p')
+		surface_height=$(printf '%s\n' "$geometry" | sed -n 's/^HEIGHT=//p')
+		if [ "${surface_y:-0}" -gt 0 ] && [ "${surface_height:-0}" -gt 300 ]; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Sets popup_window to the open popup's surface; fails after 10 s.
+wait_popup() {
+	popup_window=
+	i=0
+	while [ "$i" -lt 200 ]; do
+		popup_window=$(popup_surface) && return 0
+		i=$((i + 1))
+		sleep 0.05
+	done
+	return 1
+}
+
 visible_windows=$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
 
 window=
-i=0
-while [ "$i" -lt 200 ]; do
-	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
-		was_visible=0
-		for existing in $visible_windows; do
-			[ "$candidate" = "$existing" ] && was_visible=1
-		done
-		if [ "$was_visible" = 0 ]; then
-			window=$candidate
-			break
-		fi
-	done
-	[ -n "$window" ] && break
-	i=$((i + 1))
-	sleep 0.05
-done
+if wait_popup; then
+	window=$popup_window
+fi
 
 if [ -z "$window" ]; then
 	printf 'Control Center popup did not open\n' >&2
@@ -196,6 +213,10 @@ if [ -z "$window" ]; then
 	describe_windows "$visible_windows"
 	printf 'Quickshell windows visible now:\n' >&2
 	describe_windows "$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)"
+	printf 'Every visible window now:\n' >&2
+	describe_windows "$(DISPLAY=$display xdotool search --onlyvisible --name '' 2>/dev/null || true)"
+	printf 'controlcenter isOpen answers: %s\n' "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home \
+		XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call controlcenter isOpen 2>&1)" >&2
 	tail -40 "$work/quickshell.log" >&2
 	exit 1
 fi
@@ -218,22 +239,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
 
 window=
-i=0
-while [ "$i" -lt 200 ]; do
-	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
-		was_visible=0
-		for existing in $visible_windows; do
-			[ "$candidate" = "$existing" ] && was_visible=1
-		done
-		if [ "$was_visible" = 0 ]; then
-			window=$candidate
-			break
-		fi
-	done
-	[ -n "$window" ] && break
-	i=$((i + 1))
-	sleep 0.05
-done
+if wait_popup; then
+	window=$popup_window
+fi
 [ -n "$window" ]
 
 DISPLAY=$display xdotool key Escape
@@ -257,23 +265,7 @@ exercise_panel_popup() {
 	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 		quickshell ipc --path "$config" call "$target" open >/dev/null
 
-	popup_window=
-	i=0
-	while [ "$i" -lt 200 ]; do
-		for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
-			was_visible=0
-			for existing in $visible_windows; do
-				[ "$candidate" = "$existing" ] && was_visible=1
-			done
-			if [ "$was_visible" = 0 ]; then
-				popup_window=$candidate
-				break
-			fi
-		done
-		[ -n "$popup_window" ] && break
-		i=$((i + 1))
-		sleep 0.05
-	done
+	wait_popup || popup_window=
 
 	if [ -z "$popup_window" ]; then
 		printf '%s popup did not open\n' "$label" >&2
@@ -306,22 +298,9 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
 
 window=
-i=0
-while [ "$i" -lt 200 ]; do
-	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
-		was_visible=0
-		for existing in $visible_windows; do
-			[ "$candidate" = "$existing" ] && was_visible=1
-		done
-		if [ "$was_visible" = 0 ]; then
-			window=$candidate
-			break
-		fi
-	done
-	[ -n "$window" ] && break
-	i=$((i + 1))
-	sleep 0.05
-done
+if wait_popup; then
+	window=$popup_window
+fi
 [ -n "$window" ]
 
 DISPLAY=$display xdotool mousemove 120 141 click 1

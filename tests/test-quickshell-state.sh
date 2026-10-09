@@ -43,7 +43,7 @@ if [ "\$1" = "-root" ] && [ "\$2" = "-f" ]; then
 fi
 if [ "\$1" = "-root" ]; then
 	if [ "\$2" = "_NET_CLIENT_LIST" ]; then
-		printf '_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee\n'
+		printf '_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff\n'
 		exit 0
 	fi
 	# The active window, in the same root query (#283); 0xaa unless set.
@@ -52,7 +52,7 @@ if [ "\$1" = "-root" ]; then
 _NET_CURRENT_DESKTOP(CARDINAL) = 2
 _NET_NUMBER_OF_DESKTOPS(CARDINAL) = 9
 _NET_DESKTOP_NAMES(UTF8_STRING) = "one", "two", "three"
-_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee
+_NET_CLIENT_LIST(WINDOW): window id # 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
 _DWM_FULLSCREEN_MONITORS(STRING) = "1, 0, 1"
 _DWM_MONITOR_DESKTOPS(STRING) = "0, 1, 2"
 _DWM_SELECTED_MONITOR(CARDINAL) = 1
@@ -125,6 +125,14 @@ case "\$window:\$*" in
 	printf '%s\n' 'WM_CLASS(STRING) = "edge-instance", "Edge:Case|With%7c"'
 	printf '_NET_WM_NAME(UTF8_STRING) = "Edge title"\n'
 	;;
+0xff:*WM_CLASS*)
+	# The panel, as Quickshell maps it: a dock with no WM_CLASS on every
+	# desktop, which dwm lists with its clients. It is not a window (#280 VM).
+	printf '_NET_WM_DESKTOP(CARDINAL) = 4294967295\n'
+	printf '_NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_DOCK, _KDE_NET_WM_WINDOW_TYPE_OVERRIDE, _NET_WM_WINDOW_TYPE_NORMAL\n'
+	printf 'WM_CLASS:  not found.\n'
+	printf '_NET_WM_NAME(UTF8_STRING) = "quickshell"\n'
+	;;
 *_NET_WM_NAME*)
 	printf '_NET_WM_NAME(UTF8_STRING) = "a  title\twith   spaces"\n'
 	;;
@@ -171,8 +179,10 @@ expect 'apps=0xaa:alacritty|0xbb:firefox|0xdd:rootapp|0xee:edge%3Acase%7Cwith%25
 # one): _NET_WM_NAME wins over a stale WM_NAME and drops its "|" (0xaa),
 # WM_NAME is the fallback when _NET_WM_NAME is absent (0xbb), neither present
 # leaves an empty title rather than the literal "not found." text (0xcc), a
-# window claiming a root-owned pid (0xdd) is listed, and a class containing
-# ":", "|" and a literal "%" round-trips through percent encoding intact (0xee).
+# window claiming a root-owned pid (0xdd) is listed, a class containing
+# ":", "|" and a literal "%" round-trips through percent encoding intact (0xee),
+# and the panel, a dock (0xff), is not a window: not in windows=, apps= or
+# occupied=.
 expect 'windows=0xaa:3:alacritty:Term one|0xbb:1:firefox:Firefox page|0xcc:0:alacritty:|0xdd:7:rootapp:Root App|0xee:2:edge%3Acase%7Cwith%257c:Edge title'
 
 # fullscreen monitors are de-duplicated and sorted
@@ -190,12 +200,12 @@ expect 'class=alacritty'
 root_calls=$(grep -c '^-root' "$work/xprop.log" || true)
 [[ $root_calls -eq 1 ]] ||
 	fail "expected exactly 1 batched root xprop call, got $root_calls" "$work/xprop.log"
-per_window=$(grep -c '^-id .* _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME$' "$work/xprop.log" || true)
-[[ $per_window -eq 5 ]] ||
-	fail "expected 1 batched xprop per client window (5), got $per_window" "$work/xprop.log"
+per_window=$(grep -c '^-id .* _NET_WM_DESKTOP _NET_WM_WINDOW_TYPE WM_CLASS _NET_WM_NAME WM_NAME$' "$work/xprop.log" || true)
+[[ $per_window -eq 6 ]] ||
+	fail "expected 1 batched xprop per listed window (6, the dock too), got $per_window" "$work/xprop.log"
 total=$(wc -l <"$work/xprop.log")
-[[ $total -eq 6 ]] ||
-	fail "expected 6 xprop calls for 5 windows, got $total" "$work/xprop.log"
+[[ $total -eq 7 ]] ||
+	fail "expected 7 xprop calls for 6 listed windows, got $total" "$work/xprop.log"
 [[ ! -e $work/xdotool.log ]] || fail 'state still ran xdotool' "$work/xdotool.log"
 
 # state_for ACTIVE: the state with another active window.
@@ -290,6 +300,11 @@ run_watch() {
 # dwm-xwatch: one watcher for every window, and no xprop -spy at all.
 run_watch
 [[ -s $work/xwatch.log ]] || fail 'the watch did not use dwm-xwatch'
+# The dock is read once and remembered as left out, not read again on every
+# rebuild because no windows= entry cached it.
+dock_reads=$(grep -c '^-id 0xff ' "$work/xprop.log" || true)
+[[ $dock_reads -eq 1 ]] ||
+	fail "the watch read the dock $dock_reads times; once is enough" "$work/xprop.log"
 if grep -Fq -- '-spy' "$work/xprop.log"; then
 	fail 'the watch started xprop -spy although dwm-xwatch was ready' "$work/xprop.log"
 fi

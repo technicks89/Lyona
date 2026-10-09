@@ -49,6 +49,36 @@ function parseWindows(value) {
     });
 }
 
+// The title one monitor's panel shows (#280 VM: the second monitor's panel showed
+// the other monitor's window). monitorWindows is dwm's _DWM_MONITOR_WINDOWS,
+// each monitor's selected window by logical index ("" for none); empty while a
+// dwm without it still runs (after an update, until the next login), and then
+// every panel keeps the one active title, as before. The active window keeps
+// its full title; another monitor's window has the windows= title, whose "|"
+// became a space.
+function titleForMonitor(monitorWindows, monitorIndex, activeWindowId, activeTitle, windows) {
+    if (!monitorWindows || monitorWindows.length === 0) {
+        return activeTitle;
+    }
+
+    const windowId = monitorIndex >= 0 && monitorIndex < monitorWindows.length
+        ? monitorWindows[monitorIndex] : "";
+
+    if (windowId.length === 0) {
+        return "Desktop";
+    }
+    if (windowId === activeWindowId) {
+        return activeTitle;
+    }
+    for (const win of windows) {
+        if (win.windowId === windowId) {
+            return win.title.length > 0 ? win.title : "Desktop";
+        }
+    }
+
+    return "Desktop";
+}
+
 // Mirrors DwmState.qml's own workspaceIndexes(screen) range math -- the same
 // number of workspaces split evenly across monitors, with the last monitor
 // taking the remainder -- but keyed by a plain monitor index and an explicit

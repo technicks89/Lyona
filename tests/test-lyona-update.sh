@@ -958,6 +958,19 @@ for sub in install-system restore-system install-unverified; do
 done
 grep -A2 'com.lyona.update.unverified' "$policy" | grep -q 'NOT verified' ||
 	fail 'the unverified action does not say so'
+# #280 VM: the privileged helpers carry no install path but @PREFIX@. The update
+# check of a release before 2026.10.0-beta.6 fills in only @PREFIX@ in its
+# expected copy, so any other placeholder made every update a "MISMATCH";
+# lyona-update-root reads the rest of its layout from /etc/lyona-release.
+for privileged in lyona-update-root dwm-settings-display-root dwm-system-health-root; do
+	placeholders=$(grep -o '@[A-Z_]*@' "$repo/scripts/$privileged" | sort -u | tr '\n' ' ')
+	assert_equals '@PREFIX@ ' "$placeholders" "install placeholders in $privileged"
+done
+grep -Fq 'install_stamp=/etc/lyona-release' "$root_helper" ||
+	fail 'the root helper does not read its layout from /etc/lyona-release'
+for field in LYONA_MANPREFIX LYONA_DATADIR LYONA_XSESSIONSDIR; do
+	grep -Fq "printf '$field=%s" "$repo/Makefile" || fail "stamp-system does not record $field"
+done
 # Sync Sprint 12 S12-03 (decision D-15): no checkout mode, on either side.
 assert_equals 0 "$(body_of cmd_apply | grep -c 'install-system checkout')" "checkout site"
 assert_equals 0 "$(grep -c 'checkout)' "$repo/scripts/lyona-update-root")" "root helper checkout mode"

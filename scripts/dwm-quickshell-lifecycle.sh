@@ -16,7 +16,10 @@ quickshell_instance_pids() {
 	config=$1
 
 	command -v jq >/dev/null 2>&1 || return 1
-	instances=$(timeout 1 quickshell list --path "$config" --json 2>/dev/null) || return 1
+	# A UTF-8 locale for Quickshell alone: under a C locale (a TTY, ssh, a
+	# service) Qt prints its locale warning to stdout, the JSON no longer
+	# parsed, no instance was found, and a restart silently did nothing (#280 VM).
+	instances=$(LC_ALL=C.UTF-8 timeout 1 quickshell list --path "$config" --json 2>/dev/null) || return 1
 	printf '%s\n' "$instances" |
 		jq -r '.[]? | .pid | select(type == "number" and . >= 2 and floor == .)'
 }

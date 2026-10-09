@@ -7,10 +7,9 @@ set -eu
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
-dwm_c="$repo/dwm.c"
 
 body() {
-	sed -n "/^$1/,/^}\$/p" "$dwm_c"
+	wm_body "$1"
 }
 
 count() {
@@ -27,9 +26,9 @@ priority=$(body 'restackprioritywindows')
 	fail 'raiseselectedclient must run after the floating pass.'
 
 # ── WM_CLASS is cached on the client ─────────────────────────────────────
-grep -q '	char class\[256\];' "$dwm_c" ||
+wm_grep -q '	char class\[256\];' ||
 	fail 'Client no longer caches its WM_CLASS class.'
-grep -q '	char instance\[256\];' "$dwm_c" ||
+wm_grep -q '	char instance\[256\];' ||
 	fail 'Client no longer caches its WM_CLASS instance.'
 
 update_class_body=$(body 'updateclass(Client \*c)')
@@ -83,7 +82,7 @@ expose_body=$(body 'expose(XEvent \*e)')
 printf '%s\n' "$expose_body" | grep -q 'trayscanpending' ||
 	fail 'expose() rescans the tray unconditionally.'
 
-gates=$(grep -c 'traywin && trayscanpending' "$dwm_c")
+gates=$(wm_count 'traywin && trayscanpending')
 [ "$gates" -eq 3 ] ||
 	fail "expected 3 gated scantray() sites, found $gates."
 
@@ -98,7 +97,7 @@ printf '%s\n' "$unmanagetray_body" | grep -q 'trayscanpending = 1;' ||
 # ── Per-monitor tag masks are cached ─────────────────────────────────────
 # getmontagmask() walks mons and getmonlogicalindex() walks it twice more,
 # from inside per-client loops.
-grep -q '	unsigned int tagmask;' "$dwm_c" ||
+wm_grep -q '	unsigned int tagmask;' ||
 	fail 'Monitor no longer caches its tag mask.'
 get_mask_body=$(body 'getmontagmask(int monnum)')
 printf '%s\n' "$get_mask_body" | grep -q 'm->tagmaskvalid' ||

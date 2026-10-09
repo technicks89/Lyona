@@ -8,6 +8,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.6] - 2026-10-09
+
+Seventh beta of the Arch Linux line. Updates work end to end: `lyona-update` verifies an update without a false
+mismatch, rolls back with the cursor themes, and keeps the shared data where the system was installed. The panel's
+popups take the keyboard while a window is open, and the overview no longer lists the panel. The image installer times
+its steps and names the first keys; AUR builds go through one pinned helper; the desktop starts fewer resident
+processes; Settings and `install.sh` read clearer; and dwm's runtime configuration is its own file, `config.c`
+(#269-#295, #308, #310). See `docs/RELEASE-NOTES-2026.10.0-beta.6.md`.
+
 ### Added
 
 - The image installer shows how long each step has run, how long it usually
@@ -147,6 +156,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   title changes every second now costs a fraction of what it did on an old
   CPU. A window without `_NET_WM_NAME` now shows its `WM_NAME` in the panel
   instead of "Desktop".
+- dwm's runtime TOML loading, inotify watch and reload moved from `dwm.c` into
+  `config.c`, behind a narrow interface (`rtconfig.h`) that touches no X state
+  (#280). There is no behaviour change. The source tests search every file
+  dwm is built from instead of `dwm.c` by name.
+- With `PREFIX` `/usr` or `/usr/local`, `make install-system` puts the shared
+  data (cursor and GTK themes, the GRUB theme, licenses) in `/usr/share` by
+  default, as `install.sh` always did, instead of `/usr/local/share` (#280);
+  any other `PREFIX` keeps it in `PREFIX/share`. The update helper installs with the paths
+  it was installed with, recorded in `/etc/lyona-release`, so an update no
+  longer moves the cursors to `/usr/local/share`. **Migration:** nothing to do.
+  `install-system` removes the copies earlier updates left under
+  `/usr/local/share`, which `XDG_DATA_DIRS` found before `/usr/share` and so
+  shadowed the current themes: lyona's GTK themes, AppImage entry, cursor and
+  GRUB themes, only where lyona's own license directory shows lyona installed
+  there. Each removal is named.
 
 ### Removed
 
@@ -173,6 +197,61 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   with it (#310).
 - The launcher's ChatGPT lookup no longer consumes the rest of the entry list it
   is searching.
+- `lyona-update apply` no longer ends every update with "MISMATCH: privileged
+  helper lyona-update-root" and a call to roll back (#280). Its check filled in
+  only `@PREFIX@` of the four paths install-system wrote into the helper. The
+  helper now carries only `@PREFIX@` and reads the rest of its layout from
+  `/etc/lyona-release`, root's own record, so the update from beta.5, checked
+  by beta.5's code, passes too.
+- `lyona-update rollback` restores the cursor themes again (#280). It refused
+  a backup holding `usr/share/icons`, because the update had reinstalled the
+  helper for `/usr/local/share`; backups from earlier updates, holding
+  `usr/local/share/icons`, restore too.
+- Closing a window focuses the window you were on before it, from dwm's focus
+  history, instead of the first tiled window (the master) (#280). The same for
+  the launcher and the keybind viewer: Escape goes back to where you were.
+- The image installer's step status lines up with the screen above it and
+  wraps the newest log line within the screen, at most three lines, instead of
+  cutting it at the edge (#280). It shows the last redraw of pacman's progress
+  without the remains of its escape codes ("[3F"), its spinner is ASCII (the
+  console font has no braille), and the console cursor no longer blinks beside
+  it.
+- A rollback names the version it restores (#280). Each backup was labelled
+  with the release about to replace it, so rolling back from beta.6 to beta.5
+  said "Log in now to start using 2026.10.0-beta.6"; backups now take the
+  version and commit from the live install's `/etc/lyona-release`. Backups made
+  before keep their old label.
+- After a failed update or rollback, the panel's popup keeps the reason (#280).
+  The update check that runs afterwards replaced it with "The installed release
+  matches the channel." under "The update did not finish".
+- Escape, the arrow keys and typing reach the window overview, the Control
+  Center, the power menu and the other panel popups while a window is open
+  (#280). On X11 a popup is not managed by dwm, so the keyboard stayed with the
+  focused window. A popup now asks for the focus, dwm gives it, and gives it
+  back to that window when the popup closes.
+- The window overview and the panel's window list no longer show the panel
+  itself as a window called "quickshell" (#280): dwm lists the bar with its
+  windows, and the state bridge now leaves docks out.
+- Choosing a window in the overview, or a running app in the panel, switches to
+  it (#280). dwm answered `_NET_ACTIVE_WINDOW` only by marking the window
+  urgent, so the selection did nothing on its own tag. A request from a pager
+  or the user's own tool (EWMH source 2) now switches to the window's tag and
+  focuses it; an application asking for itself is still only marked urgent.
+- Each monitor's panel names the window on that monitor (#280): dwm publishes
+  `_DWM_MONITOR_WINDOWS`, each monitor's selected window. Before, every panel
+  showed the one focused window, so the other monitor's said "Desktop".
+- A window whose class has no themed icon shows the generic application icon in
+  the panel, the overview and the launcher (#280), instead of an empty button.
+- A reload asked for with SIGUSR1 takes effect at once (#280); its key grabs and
+  theme changes waited in dwm's X buffer for the next X event.
+- The panel stays the bar when the shell's configuration reloads, as an update
+  does (#280). Quickshell's "reloaded" notice is a dock too, and dwm took it
+  for the bar: the two were raised over each other without end (about 40% of a
+  core), and when the notice went, windows covered the panel until the next
+  login. A monitor keeps one bar; another dock replaces it only when wider.
+- Restart Quickshell works from a TTY, ssh or a service (#280). There Qt's
+  "not UTF-8" warning went to stdout, the instance list did not parse, and the
+  restart did nothing; `lyona-update`'s check read the tray count the same way.
 
 - Settings > Appearance shows a Toolkit GTK or cursor theme as applied
   (#274). It worked out the expected theme with its own copy of
@@ -2820,7 +2899,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...HEAD
+[2026.10.0-beta.6]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...v2026.10.0-beta.6
 [2026.10.0-beta.5]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...v2026.10.0-beta.5
 [2026.10.0-beta.4]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...v2026.10.0-beta.4
 [2026.10.0-beta.3]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.2...v2026.10.0-beta.3

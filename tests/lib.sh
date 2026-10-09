@@ -327,8 +327,67 @@ EOF
 
 # The libraries FILE reaches through $lyona_lib: sourced, run (dwm-aur.sh,
 # #281), or tested for as the marker of that directory. One name per line.
+# Only *.sh names are libraries: $lyona_lib/.. is a path into the layout, and
+# lyona-toml and dwm-xwatch are built tools (lyona-toml is staged above;
+# dwm-quickshell-state falls back without dwm-xwatch).
 stage_helper_libraries() {
 	# shellcheck disable=SC2016 # the $ is literal source text, not an expansion
 	grep -oE '\$lyona_lib/[A-Za-z0-9_.-]+' "$1" | sed 's#^\$lyona_lib/##' |
-		grep -vx 'lyona-toml' | LC_ALL=C sort -u
+		grep -E '^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.sh$' | LC_ALL=C sort -u
+}
+
+# ── Window-manager sources ───────────────────────────────────────────────
+#
+# Source guards search dwm's C files, not dwm.c by name, so moving a function
+# from one file to another (#280) does not break the test that pins it. The
+# files are the Makefile's SRC and the local headers they include, except
+# config.h: the local build configuration, which is not dwm's code.
+
+# One path per line.
+wm_sources() {
+	ws_src=$(sed -n 's/^SRC[[:space:]]*=[[:space:]]*//p' "$repo/Makefile")
+	[ -n "$ws_src" ] || fail "wm_sources: no SRC line in $repo/Makefile"
+	# shellcheck disable=SC2086 # SRC is a list of plain file names
+	for ws_file in $ws_src; do
+		printf '%s\n' "$repo/$ws_file"
+	done
+	# shellcheck disable=SC2086
+	for ws_file in $ws_src; do
+		sed -n 's/^#include "\([^"]*\)".*/\1/p' "$repo/$ws_file"
+	done | grep -vx 'config.h' | LC_ALL=C sort -u | while IFS= read -r ws_header; do
+		printf '%s\n' "$repo/$ws_header"
+	done
+}
+
+# grep over every source: wm_grep [OPTION]... PATTERN. File names are not
+# printed; -c prints one count per file (wm_count adds them up).
+wm_grep() {
+	(
+		wg_files=$(wm_sources) || exit 2
+		IFS='
+'
+		set -f
+		# shellcheck disable=SC2086 # one path per line, split on newlines only
+		exec grep -h "$@" -- $wg_files
+	)
+}
+
+# How many lines match across every source: wm_count [OPTION]... PATTERN.
+wm_count() {
+	{ wm_grep -c "$@" || :; } | awk '{ n += $1 } END { print n + 0 }'
+}
+
+# The function whose definition line starts with PATTERN (a sed regex, such as
+# 'view(const Arg \*arg)'), from its first line to the closing brace in column
+# one, from whichever source defines it.
+wm_body() {
+	(
+		wb_files=$(wm_sources) || exit 2
+		IFS='
+'
+		set -f
+		for wb_file in $wb_files; do
+			sed -n "/^$1/,/^}\$/p" "$wb_file"
+		done
+	)
 }

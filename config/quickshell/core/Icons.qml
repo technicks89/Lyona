@@ -4,12 +4,24 @@ import Quickshell
 import qs.core
 
 Singleton {
+    // The themed icon for iconName, else the generic application icon, else ""
+    // when the theme has neither: a window class is often not an icon name, and
+    // the generic one is missing from some themes, where it drew Qt's
+    // "missing image" checkerboard (#280 VM). Callers show the name's initial
+    // for "" (initialFor).
     function launcherIcon(iconName) {
-        if (iconName.length > 0) {
-            return Quickshell.iconPath(iconName, true);
+        for (const name of [iconName, "application-x-executable"]) {
+            if (name.length > 0 && Quickshell.hasThemeIcon(name)) {
+                return Quickshell.iconPath(name);
+            }
         }
+        return "";
+    }
 
-        return Quickshell.iconPath("application-x-executable", true);
+    // The first letter of a name, upper case, for an item with no icon.
+    function initialFor(name) {
+        const trimmed = (name || "").trim();
+        return trimmed.length > 0 ? trimmed.charAt(0).toUpperCase() : "?";
     }
 
     function trayIconSource(trayItem) {

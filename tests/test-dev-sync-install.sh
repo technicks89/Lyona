@@ -68,7 +68,11 @@ install -Dm755 "$test_repo/lyona-toml" "$prefix/lib/lyona/lyona-toml"
 install -Dm755 "$test_repo/dwm-xwatch" "$prefix/lib/lyona/dwm-xwatch"
 while IFS= read -r privileged_helper; do
 	[ -n "$privileged_helper" ] || continue
-	sed "s|@PREFIX@|$prefix|g" "$test_repo/$privileged_helper" |
+	# All four substitutions install-system makes: a check that substituted
+	# only @PREFIX@ passed here while every real update failed (#280 VM).
+	sed -e "s|@PREFIX@|$prefix|g" -e "s|@MANPREFIX@|$manprefix|g" \
+		-e "s|@DATADIR@|$data_root|g" -e "s|@XSESSIONSDIR@|$xsessions_dir|g" \
+		"$test_repo/$privileged_helper" |
 		install -Dm755 /dev/stdin "$prefix/libexec/lyona/${privileged_helper##*/}"
 done <"$privileged_helpers"
 while IFS= read -r install_source; do

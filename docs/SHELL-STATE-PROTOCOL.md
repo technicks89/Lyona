@@ -26,12 +26,13 @@ order the shell's panels use. A tag index is 0 to 8.
 | --- | --- | --- | --- |
 | `_DWM_MONITOR_DESKTOPS` | `INTEGER`, 5 per monitor | the selected tag changes on any monitor, or monitors change | for each monitor, by logical index: x, y, width, height, and its first selected tag |
 | `_DWM_SELECTED_MONITOR` | `CARDINAL`, 1 | the selected monitor changes | the selected monitor's logical index |
+| `_DWM_MONITOR_WINDOWS` | `WINDOW`, 1 per monitor | any monitor's selected window changes, or monitors change | for each monitor, by logical index: its selected window, or 0 (None) when it has none. Each panel names its own monitor's window from it (`dwm-quickshell-state`'s `monitor_windows=`) |
 | `_DWM_LAYOUT` | `CARDINAL`, 1 | the selected monitor's layout changes | an index into dwm's `layouts[]` |
 | `_DWM_FULLSCREEN_MONITORS` | `CARDINAL`, 0 or more | a window enters or leaves fullscreen | the logical indexes of the monitors showing a fullscreen window; empty when none |
 | `DWM_TAG_UPDATE` | `CARDINAL`, 1 | any window's tags change | a sequence number, increased each time; its value means nothing, a change means "read `_NET_WM_DESKTOP` again" |
 
-A write does not always mean a change: dwm writes `_DWM_LAYOUT` and
-`_DWM_FULLSCREEN_MONITORS` only when they change, but may write the others again
+A write does not always mean a change: dwm writes `_DWM_LAYOUT`,
+`_DWM_MONITOR_WINDOWS` and `_DWM_FULLSCREEN_MONITORS` only when they change, but may write the others again
 with the same value, so a reader compares before acting.
 
 ### Requests from the shell

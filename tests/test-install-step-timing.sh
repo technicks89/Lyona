@@ -141,7 +141,42 @@ if command -v script >/dev/null 2>&1; then
 	[[ $live == *'Installing...'*'(usually 5-30 minutes)'* ]] || fail "the expected duration was not shown: $live"
 	[[ $live == *'Installing...  2s'* || $live == *'Installing...  3s'* ]] || fail "the elapsed time was not shown: $live"
 	[[ $live == *'downloading packages'* ]] || fail "the newest log line was not shown: $live"
+	# The cursor, hidden while the status redraws, is shown again after the step.
+	[[ $live == *$'\033[?25l'*$'\033[?25h'* ]] || fail 'the console cursor is not shown again after a step'
 fi
+
+# The status block on a narrow console (#280 VM): pacman redraws its progress with
+# carriage returns and cursor moves; only the last redraw shows, without the
+# remains of those escapes ("[3F"), wrapped under the screen's left edge
+# (PADDING_LEFT) within the screen, not cut at its edge, in at most 4 lines.
+mkdir -p "$work/narrow-bin"
+printf '#!/bin/sh\necho 60\n' >"$work/narrow-bin/tput"
+chmod +x "$work/narrow-bin/tput"
+progress_log=$work/progress.log
+printf ' old-package 1.0 MiB [###-----] 30%%\r\033[3F\033[K older-redraw 1 MiB\r\033[3F\033[K linux-firmware-intel 9.9 MiB 7.86 MiB/s 00:15 [#----------] 7%%  linux-firmware-nvidia 9.8 MiB 7.85 MiB/s 00:11 [#---------] 9%%  more packages after these ones\r\033[3F\033[K\n' \
+	>"$progress_log"
+# shellcheck disable=SC2016 # expanded by the inner bash
+block=$(PATH="$work/narrow-bin:$PATH" LOG_FILE=$progress_log bash -c '
+	. "$1"
+	PADDING_LEFT=10
+	_draw_step_status "Running archinstall..." 75 "usually 2-10 minutes" "|"
+' bash "$ui") || fail 'drawing the step status failed'
+plain=$(printf '%s' "$block" | sed -E $'s/\x1b\\[[0-9;]*[A-Za-z]//g' | tr -d '\r')
+[[ $plain != *'[3F'* && $plain != *'old-package'* && $plain != *'older-redraw'* ]] ||
+	fail "the status shows escape remains or an earlier redraw: $plain"
+lines=0
+while IFS= read -r line; do
+	[[ -n $line ]] || continue
+	lines=$((lines + 1))
+	((${#line} < 60)) || fail "a status line is wider than the 60-column screen: '$line'"
+	[[ $line == '          '[!\ ]* || $line == '            '[!\ ]* ]] ||
+		fail "a status line does not start at the screen's left edge (10): '$line'"
+done <<<"$plain"
+((lines >= 3 && lines <= 4)) || fail "the long log line was not wrapped to 2-3 lines ($lines lines): $plain"
+[[ $plain == *'more packages after these ones'* || $plain == *'linux-firmware-nvidia'* ]] ||
+	fail "the wrapped log line lost its text: $plain"
+grep -Fq "local -a frames=('|' '/' '-' \"\\\\\")" "$ui" ||
+	fail 'the spinner is not ASCII (the console font has no braille)'
 
 # Stopped part-way (Ctrl+C, or a kill), a step takes everything it started
 # with it, and the installer's own traps are back once a step ends.

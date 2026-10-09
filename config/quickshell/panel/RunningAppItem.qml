@@ -20,10 +20,21 @@ Rectangle {
     border.width: active || appMouse.containsMouse ? Theme.pillBorderWidth : 0
 
     IconImage {
+        id: appIcon
         anchors.centerIn: parent
         width: Theme.trayIconSize
         height: Theme.trayIconSize
         source: Icons.launcherIcon(root.app.appClass)
+        visible: source.toString().length > 0
+    }
+
+    // No themed icon for this class: its initial, not an empty button (#280 VM).
+    UiText {
+        anchors.centerIn: parent
+        visible: !appIcon.visible
+        text: Icons.initialFor(root.app.appClass)
+        color: Theme.text
+        font.bold: true
     }
 
     MouseArea {

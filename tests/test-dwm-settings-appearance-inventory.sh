@@ -343,15 +343,21 @@ cat >"$work/slow-wallpaper-status-helper" <<'EOF'
 sleep 10
 EOF
 chmod +x "$work/slow-wallpaper-status-helper"
-started=$(date +%s)
+# The helper sleeps 10 s; the inventory gives it 2 s here (DWM_APPEARANCE_SCAN_SECONDS=1,
+# plus one), and must not wait it out. Timed in milliseconds against that point,
+# not whole seconds against 4 s, which a busy machine could cross now and then.
+started=$(date +%s%3N)
 slow_wallpaper_inventory=$(HOME=$home PATH=$bin_dir XDG_CONFIG_HOME=$config_home \
 	XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$work/runtime \
 	XDG_DATA_HOME=$data_root DWM_APPEARANCE_DATA_DIRS=$data_root \
 	DWM_SETTINGS_WALLPAPER_HELPER=$work/slow-wallpaper-status-helper \
 	DWM_APPEARANCE_WALLPAPER_DIR=$wallpaper_dir QT_QPA_PLATFORMTHEME=qt6ct \
 	"$helper" inventory)
-elapsed=$(($(date +%s) - started))
-test "$elapsed" -lt 4
+elapsed=$(($(date +%s%3N) - started))
+[ "$elapsed" -lt 8000 ] || {
+	printf 'The inventory waited %s ms for a wallpaper helper it gives 2 s\n' "$elapsed" >&2
+	exit 1
+}
 grep -Fqx $'selection\twallpaper\tpartial\t\tfill\tWallpaper state helper did not return a valid bounded response' \
 	<<<"$slow_wallpaper_inventory"
 rm -f "$config_home/lyona/wallpaper.conf"

@@ -106,11 +106,21 @@ Rectangle {
             }
 
             IconImage {
+                id: cardIcon
                 anchors.centerIn: parent
                 width: Theme.trayIconSize
                 height: Theme.trayIconSize
-                visible: !preview.visible
+                visible: !preview.visible && source.toString().length > 0
                 source: Icons.launcherIcon(root.window.appClass)
+            }
+
+            // No preview and no themed icon: the class's initial (#280 VM).
+            UiText {
+                anchors.centerIn: parent
+                visible: !preview.visible && !cardIcon.visible
+                text: Icons.initialFor(root.window.appClass)
+                color: Theme.text
+                font.bold: true
             }
         }
 

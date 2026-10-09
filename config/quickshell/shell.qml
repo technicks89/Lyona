@@ -594,6 +594,12 @@ ShellRoot {
             controlCenterModel.close();
         }
 
+        // Whether the Control Center is open: tests and tools ask this rather
+        // than guessing from which windows are mapped.
+        function isOpen(): bool {
+            return controlCenterModel.visible;
+        }
+
         function open(): void {
             controlCenterModel.open();
         }

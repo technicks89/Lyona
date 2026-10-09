@@ -35,7 +35,9 @@ an untested package or installation path.
 
 ## Repository Map
 
-- `dwm.c`, `drw.c`, `util.c`, `tomlparser.c`: window-manager sources.
+- `dwm.c`, `config.c`, `drw.c`, `util.c`, `tomlparser.c`: window-manager
+  sources. `config.c` (interface `rtconfig.h`) loads and watches the runtime
+  TOML files; `config.h` is the compile-time configuration.
 - `config.def.h`: version-controlled default compile-time configuration.
 - `config.h`: local build configuration. Do not overwrite user changes.
 - `config.mk`: compiler, include, library, and installation settings.

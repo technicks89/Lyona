@@ -67,7 +67,7 @@ PopupWindow {
             UiText {
                 Layout.fillWidth: true
                 text: root.updateModel.busy ? "Updating Lyona"
-                    : root.updateModel.actionSucceeded ? root.updateModel.message : "The update did not finish"
+                    : root.updateModel.actionSucceeded ? root.updateModel.outcomeMessage : "The update did not finish"
                 color: root.failed ? Theme.danger : Theme.textStrong
                 font.pixelSize: Theme.titleFontSize
                 font.bold: true
@@ -77,7 +77,7 @@ PopupWindow {
             UiText {
                 Layout.fillWidth: true
                 text: root.updateModel.busy ? root.phaseLabel(root.updateModel.phase)
-                    : (root.failed ? root.updateModel.message : "")
+                    : (root.failed ? root.updateModel.outcomeMessage : "")
                 visible: text.length > 0
                 color: Theme.menuText
                 wrapMode: Text.WordWrap
