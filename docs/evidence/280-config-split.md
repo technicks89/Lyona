@@ -176,8 +176,13 @@ The image rebuilt with both: `lyona-2026.10.0-beta.6-x86_64.iso`, SHA-256
 and VM as above. A fresh install (btrfs) showed the status under the summary
 box with the log line wrapped, booted to LightDM and passed all 96 checks, the
 close-focus ones among them. On that install the step name with its progress
-bar was still cut at the column's width, not wrapped; it now wraps, and was seen
-wrapping on the VM's console, not yet in an image install. The checks need
+bar was still cut at the column's width, not wrapped.
+
+Rebuilt again with the step name wrapped: SHA-256
+`9956f9f10da9bc5d12b88dd9c6edd2ec6a9bced471dd804f3f52686c3144bc32`. A fresh
+install (btrfs) showed "(step 8/9) Running install.sh --profile full as
+tester..." and its progress bar wrapped to a second line under the spinner, the
+log line below it; it booted to LightDM and passed all 96 checks. The checks need
 `xorg-xwininfo` and a `dbus-monitor` for notifications, neither part of lyona;
 both were added to the VM for the run.
 
