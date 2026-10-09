@@ -93,7 +93,9 @@ build() {
 	local dir=$1 out=$2 package built=0
 	[[ -f $dir/PKGBUILD ]] || die "$dir holds no PKGBUILD"
 	[[ -d $out && -w $out ]] || die "$out is not a writable directory"
-	(cd "$dir" && timeout --kill-after=30 "$build_seconds" makepkg --noconfirm --nocheck >&2) ||
+	# PKGDEST here, over one in the user's makepkg.conf, so the packages are
+	# where the loop below looks.
+	(cd "$dir" && PKGDEST=$PWD timeout --kill-after=30 "$build_seconds" makepkg --noconfirm --nocheck >&2) ||
 		die "makepkg failed in $dir"
 	for package in "$dir"/*.pkg.tar.*; do
 		[[ -f $package && $package != *.sig && $package != *-debug-[0-9]* ]] || continue
