@@ -11,6 +11,7 @@ set -euo pipefail
 make_workspace
 
 {
+	sed -n '/^notify_retry() {/,/^}$/p' "$repo/scripts/autostart.sh"
 	sed -n '/^notify_session_problem() {$/,/^}$/p' "$repo/scripts/autostart.sh"
 	sed -n '/^start_compositor() {$/,/^}$/p' "$repo/scripts/autostart.sh"
 } >"$work/compositor.sh"
@@ -71,6 +72,9 @@ notified 1 || fail 'a failed start was not notified exactly once'
 grep -Fq -- '-a lyona -u critical -- Picom could not start Window previews in the overview are off.' "$work/notify.log" ||
 	fail 'the failed-start notification is not the expected one'
 grep -Fq 'see /run/user/1000/lyona-picom/picom.log' "$work/notify.log" || fail 'the notification does not carry the log path'
+# #293: it points at the backend that usually works, not at a restart.
+grep -Fq 'Try the XRender backend in Settings > Appearance > Compositor.' "$work/notify.log" ||
+	fail 'the failed-start notification does not point at XRender'
 
 # Picom missing with the desktop installed: one notification.
 run_case no yes || fail 'a missing Picom stopped autostart'

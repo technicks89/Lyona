@@ -196,7 +196,9 @@ dwm and the panel work without it; the overview then shows icon-and-title cards.
 ### Picom does not start
 
 At login, a notification says "Picom could not start" (with the path of its
-log) or "Picom is not installed". It is shown once. To see why:
+log, and a pointer to the XRender backend in Settings > Appearance >
+Compositor, which works on most GPUs) or "Picom is not installed". It is shown
+once. To see why:
 
 ```bash
 dwm-settings-picom status

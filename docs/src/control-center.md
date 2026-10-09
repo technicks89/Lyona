@@ -159,10 +159,14 @@ the system repairs are unavailable and the dashboard says so.
 | Reload Wallpaper | A random wallpaper from `~/Pictures/backgrounds/` |
 | Restart NetworkManager | Runs `sudo systemctl restart NetworkManager` in a terminal, which may ask for your password |
 | Dependency Check | Opens `check-deps.sh` in a terminal |
-| Self-Heal | Runs the script named in `~/.config/lyona/self-heal.path` (or `dwm-self-heal` on `PATH`); says so when none is set |
+| Self-Heal | Runs the script named in `~/.config/lyona/self-heal.path` (or `dwm-self-heal` on `PATH`) in a terminal; shown only when one is set up |
 | Install Missing Deps | In a terminal: `install.sh` from a checkout, or the required and desktop packages through pacman from an install |
 | Wallpaper Folder | Open `~/Pictures/backgrounds/` in the file manager |
 | GTK Settings | Launch `nwg-look` for GTK theming; shown only when `nwg-look` is installed |
+
+While an action runs, the status line names it ("Running Restart Picom..."), then
+says "done", "opened in a terminal" for the ones that work in a terminal, or why
+it failed.
 
 ### Appearance
 

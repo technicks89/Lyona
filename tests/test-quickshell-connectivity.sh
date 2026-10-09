@@ -12,6 +12,14 @@ bluetooth_pane=$repo/config/quickshell/settings/BluetoothSettingsPane.qml
 
 grep -Fq 'run_parent_bound nmcli monitor' "$repo/scripts/dwm-quickshell-network"
 grep -Fq 'run_parent_bound playerctl --follow' "$repo/scripts/dwm-quickshell-controls"
+# #285: the shell's media state comes from Quickshell's MPRIS service, not a
+# resident playerctl --follow; the helper's media-watch stays for scripts.
+controls_model=$repo/config/quickshell/controls/ControlsModel.qml
+grep -Fq 'import Quickshell.Services.Mpris' "$controls_model" || fail 'the media state does not use Quickshell MPRIS'
+grep -Fq 'root.mediaSource.togglePlaying();' "$controls_model" || fail 'play/pause does not act on the player shown'
+if grep -Fq 'controlsHelperCommand("media-watch")' "$controls_model"; then
+	fail 'the controls model runs a resident media watcher again'
+fi
 # The monitor is a WatchedProcess, which restarts it (Sync Sprint 12 S12-14).
 grep -Fq 'id: networkMonitor' "$network_model"
 grep -Fq 'Component.onCompleted: networkMonitor.start()' "$network_model"
@@ -54,13 +62,14 @@ if grep -Fq 'repeat: true' "$network_model" || grep -Fq 'repeat: true' "$bluetoo
 	printf 'Connectivity models must not poll.\n' >&2
 	exit 1
 fi
-grep -Fq 'stdout: SplitParser { onRead: monitorSettleTimer.restart() }' "$bluetooth_model"
-# Sync Sprint 16 R16-35: BlueZ's changes through gdbus, which subscribes as any
-# user may; busctl monitor needs BecomeMonitor, which the system bus refuses.
-grep -Fq '&& exec gdbus monitor --system --dest org.bluez"' "$bluetooth_model" ||
-	fail 'the Bluetooth watcher does not use gdbus monitor'
-if grep -Fq 'busctl --system monitor' "$bluetooth_model"; then
-	fail 'the Bluetooth watcher still uses busctl monitor'
+# #285: BlueZ's changes through Quickshell.Bluetooth, which follows them over
+# D-Bus already: no resident monitor process (gdbus monitor before, and never
+# busctl monitor, which needs BecomeMonitor).
+grep -Fq 'import Quickshell.Bluetooth' "$bluetooth_model" || fail 'the Bluetooth model does not use Quickshell.Bluetooth'
+grep -Fq 'onBluezStateChanged: monitorSettleTimer.restart()' "$bluetooth_model" ||
+	fail "a BlueZ change does not re-read the Bluetooth snapshot"
+if grep -Eq 'gdbus monitor|busctl --system monitor' "$bluetooth_model"; then
+	fail 'the Bluetooth model runs a resident monitor process again'
 fi
 
 grep -Fq 'networkModel: networkModel' "$repo/config/quickshell/shell.qml"

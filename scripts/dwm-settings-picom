@@ -484,6 +484,13 @@ class Configuration:
             raise Error("Picom corner radius must be a non-negative whole number")
         return int(value)
 
+    def unredirect(self):
+        """Whether Picom stops compositing full-screen windows (off unless set)."""
+        value = self.scalar("unredir-if-possible", False)
+        if not isinstance(value, bool):
+            raise Error("unredir-if-possible must be true or false")
+        return value
+
     def changes(self, values):
         edits = {}
         for key, value in values.items():
@@ -866,6 +873,11 @@ def status(detect=True):
             result["corner_radius"] = config.corner_radius()
         except (Error, OSError, ValueError) as exc:
             radius_error = str(exc)
+        unredirect_error = ""
+        try:
+            result["unredirect"] = config.unredirect()
+        except Error as exc:
+            unredirect_error = str(exc)
         policy, effective, override, gpu = backend(
             config, detect and result["installed"]
         )
@@ -886,6 +898,8 @@ def status(detect=True):
         ]
         if radius_error:
             details.append(radius_error)
+        if unredirect_error:
+            details.append(unredirect_error)
         radius_override = corner_radius_override(running)
         if radius_override:
             details.append("Remove the command-line corner radius override before editing the radius.")
@@ -1052,6 +1066,11 @@ def mutate(action, args, revision):
                 )
             changes = config.changes(
                 {"backend": None if args[0] == "auto" else args[0]}
+            )
+        elif action == "set-unredirect":
+            # Off is Picom's default: the line is removed rather than written.
+            changes = config.changes(
+                {"unredir-if-possible": True if args[0] == "on" else None}
             )
         else:
             destination = copy_destination(config, processes())
@@ -1299,6 +1318,9 @@ def main():
     selector = subs.add_parser("set-backend")
     selector.add_argument("backend", choices=BACKENDS)
     selector.add_argument("revision")
+    unredirect = subs.add_parser("set-unredirect")
+    unredirect.add_argument("state", choices=("on", "off"))
+    unredirect.add_argument("revision")
     copy = subs.add_parser("copy-config")
     copy.add_argument("revision")
     args = parser.parse_args()
@@ -1306,7 +1328,13 @@ def main():
         print(json.dumps(status()))
     elif args.action == "watch":
         watch()
-    elif args.action in ("set-opacity", "set-corner-radius", "set-backend", "copy-config"):
+    elif args.action in (
+        "set-opacity",
+        "set-corner-radius",
+        "set-backend",
+        "set-unredirect",
+        "copy-config",
+    ):
         values = (
             [args.active, args.inactive]
             if args.action == "set-opacity"
@@ -1314,6 +1342,8 @@ def main():
             if args.action == "set-corner-radius"
             else [args.backend]
             if args.action == "set-backend"
+            else [args.state]
+            if args.action == "set-unredirect"
             else []
         )
         detail = mutate(args.action, values, args.revision)

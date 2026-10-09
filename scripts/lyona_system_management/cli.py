@@ -241,7 +241,7 @@ def update_command(action_id: str, generation: str | None = None) -> int:
 
 def usage() -> int:
     print(f"usage: {sys.argv[0]} snapshot | snapshot-core | snapshot-without-storage | "
-          "ntp-sample | time-status | watch-mounts | watch-time | "
+          "ntp-sample | time-status | watch-domains | watch-mounts | watch-time | "
           "watch-updates | updates-refresh | "
           "updates-install-all GENERATION | watch-operation OPERATION_ID | "
           "ack-operation OPERATION_ID | updates-cancel OPERATION_ID | "
@@ -254,6 +254,8 @@ def usage() -> int:
 
 
 def main(argv: Sequence[str]) -> int:
+    if argv and argv[0] == "watch-domains":
+        return watch_commands.watch_domains() if len(argv) == 1 else usage()
     if argv and argv[0] == "watch-mounts":
         return watch_commands.watch_mount_events() if len(argv) == 1 else usage()
     if argv and argv[0] == "time-status":

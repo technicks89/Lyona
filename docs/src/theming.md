@@ -232,6 +232,12 @@ a Picom rule overrides the slider. Picom's manual says rounded corners do not co
 well with `transparent-clipping`, so leave that off if you use them. It needs a running
 compositor to show; with Picom stopped the value applies the next time it starts.
 
+**Let full-screen windows bypass the compositor** is off by default. On, Picom's
+`unredir-if-possible` lets a full-screen window, such as a game, draw without the
+compositor, which is faster. While a window is full screen that way, the overview
+cannot preview it, and on some GPUs the screen flickers as it switches. Off removes
+the setting from the configuration.
+
 The controls read the active Picom configuration: your own `~/.config/picom.conf`
 or `~/.config/picom/picom.conf` when you have one, otherwise lyona's default
 (`/usr/share/lyona/xdg/picom/picom.conf` in a standard install). lyona's default

@@ -278,6 +278,20 @@ keybinds=$(run_helper keybinds)
 printf '%s\n' "$keybinds" | grep -Fqx 'Super + r	App launcher'
 printf '%s\n' "$keybinds" | grep -Fqx 'Super + F1	Control center'
 printf '%s\n' "$keybinds" | grep -Fqx 'Super + 0	Show all tags'
+# #293: plain words in the keybind viewer, not dwm's internal names.
+printf '%s\n' "$keybinds" | grep -Fqx 'Super Shift + h	Taller window in stack'
+printf '%s\n' "$keybinds" | grep -Eiq 'cfact|master' && exit 1
+# Super+W says Looking Glass is missing rather than failing silently.
+looking_glass=$(sed -n 's/^.*key="w", *desc="Looking Glass (VM)", *func="spawn", *cmd="\(.*\)" },$/\1/p' "$repo/config/hotkeys.toml")
+[ -n "$looking_glass" ]
+: >"$work/actions.log"
+DWM_TEST_LOG="$work/actions.log" PATH="$work/bin:/usr/bin:/bin" sh -c "$looking_glass"
+grep -Fq 'notify-send -a lyona Looking Glass is not installed' "$work/actions.log"
+stub_logging_command looking-glass-client
+: >"$work/actions.log"
+DWM_TEST_LOG="$work/actions.log" PATH="$work/bin:/usr/bin:/bin" sh -c "$looking_glass"
+grep -Fqx 'looking-glass-client -F' "$work/actions.log"
+rm -f "$work/bin/looking-glass-client"
 if printf '%s\n' "$keybinds" | grep -Fq 'Super + Alt + 0'; then
 	printf 'Legacy tag-10 show-all binding is still exposed.\n' >&2
 	exit 1
@@ -317,6 +331,8 @@ rm -f "$work/power-state/light-locker.running"
 : >"$work/actions.log"
 run_helper power-dpms-timeout 900 >"$work/power-dpms-timeout.out"
 grep -Fqx 'power-dpms-timeout	900' "$work/power-dpms-timeout.out"
+# #293: timeouts as people say them.
+grep -Fq 'notify-send -a lyona Display power updated The screen turns off after 15 minutes' "$work/actions.log"
 grep -Fq 'dpms_enabled=1' "$work/config/lyona/power.conf"
 grep -Fq 'dpms_timeout=900' "$work/config/lyona/power.conf"
 grep -Fqx 'xset +dpms' "$work/actions.log"
@@ -328,6 +344,9 @@ printf '%s\n' "$power" | grep -Fqx 'dpms_timeout	900'
 : >"$work/actions.log"
 run_helper power-lock-timeout 300 >"$work/power-lock-timeout.out"
 grep -Fqx 'power-lock-timeout	300' "$work/power-lock-timeout.out"
+# #293: one sender name, and timeouts as people say them.
+grep -Fq 'notify-send -a lyona Locking updated The screen locks after 5 minutes' "$work/actions.log"
+grep -Fq 'DWM Control Center' "$work/actions.log" && exit 1
 grep -Fq 'lock_enabled=1' "$work/config/lyona/power.conf"
 grep -Fq 'lock_timeout=300' "$work/config/lyona/power.conf"
 grep -Fqx 'xset s 300' "$work/actions.log"
@@ -472,9 +491,16 @@ shift
 exec "$@"
 SH
 chmod +x "$work/bin/dwm-terminal"
+# #293: Quick Actions offers Self-Heal only once it is set up.
+run_helper optional-actions >"$work/optional-unset.out"
+grep -Fq 'self-heal' "$work/optional-unset.out" && exit 1
 printf '%s\n' "$self_heal_script" >"$work/config/lyona/self-heal.path"
+run_helper optional-actions >"$work/optional-set.out"
+grep -Fqx 'optional-action	self-heal' "$work/optional-set.out"
 printf '\n' | run_helper action self-heal >"$work/self-heal.out"
 grep -Fqx 'self-heal invoked' "$work/self-heal.out"
+# After the synchronous terminal's prompt, which has no newline.
+grep -Eq 'action	self-heal	terminal$' "$work/self-heal.out"
 grep -Fq 'Self-Heal exited with status 0.' "$work/self-heal.out"
 status=0
 printf '\n' | DWM_TEST_SELF_HEAL_STATUS=7 run_helper action self-heal >"$work/self-heal-fail.out" || status=$?
@@ -595,7 +621,11 @@ grep -Fq 'root.launcherModel.openOnScreen(targetScreen);' "$repo/config/quickshe
 grep -Fq 'launcherModel: launcherModel' "$repo/config/quickshell/shell.qml"
 grep -Fq 'label: "Quick Actions"' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
 grep -Fq 'model: root.controlCenterModel.actions' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
-grep -Fq 'root.gtkSettingsAvailable = false;' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"
+grep -Fq 'command: Commands.controlCenterHelperCommand("optional-actions")' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"
+# #293: feedback names the action, not its id, and says when it opened a terminal.
+grep -Fq 'root.message = "Running " + root.actionLabel(action) + "...";' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"
+grep -Fq '? label + (root.actionInTerminal ? ": opened in a terminal" : ": done")' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"
+grep -Fq 'Action dispatched' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml" && exit 1
 grep -Fq 'root.actionSucceeded = this.text.indexOf("action\t") === 0' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"
 grep -Fq 'root.message = root.actionSucceeded' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"
 grep -Fq 'function openWidgets()' "$repo/config/quickshell/controlcenter/ControlCenterModel.qml"

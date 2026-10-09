@@ -13,12 +13,13 @@ set -euo pipefail
 make_workspace
 
 helper=$repo/scripts/lyona-update-indicator
-export XDG_CONFIG_HOME=$work/config
+export XDG_CONFIG_HOME=$work/config XDG_CACHE_HOME=$work/cache
 conf=$XDG_CONFIG_HOME/lyona/update-indicator.conf
 
 cat >"$work/bin/checkupdates" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$STUB_DIR/log"
+printf 'db=%s\n' "${CHECKUPDATES_DB:-}" >>"$STUB_DIR/db.log"
 case ${STUB_MODE:-updates} in
 updates) printf 'linux 6.17.1-1 -> 6.17.2-1\nmesa 1:25.2.4-1 -> 1:25.2.5-1\nvim 9.1-1 -> 9.1-2\n' ;;
 none) exit 2 ;;
@@ -69,6 +70,12 @@ out=$(FLATPAK_SYSTEM=2 FLATPAK_USER=fail run check)
 [[ $out == *$'provider\tflatpak\terror\t0\tThe Flatpak check failed for the user installation'* ]] ||
 	fail "a failed user installation: $out"
 grep -Fqx -- '--nocolor' "$work/log" || fail "checkupdates was not run with --nocolor"
+# #288: its database copy goes to the cache directory, not /tmp (RAM), unless set.
+grep -Fqx "db=$work/cache/lyona/checkupdates-db" "$work/db.log" ||
+	fail "checkupdates' database copy is not in the cache directory: $(cat "$work/db.log")"
+rm -f "$work/db.log"
+CHECKUPDATES_DB=$work/own-db run check >/dev/null
+grep -Fqx "db=$work/own-db" "$work/db.log" || fail 'a CHECKUPDATES_DB the user set was not kept'
 out=$(STUB_MODE=none run check)
 [[ $out == *$'provider\tsystem\tcurrent\t0\tPackages are up to date'* ]] || fail "no updates: $out"
 out=$(STUB_MODE=fail run check)

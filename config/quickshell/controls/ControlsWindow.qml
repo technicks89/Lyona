@@ -144,7 +144,7 @@ ClickAwayPopup {
                 visible: root.controlsModel.outputDevices.length > 0
 
                 Repeater {
-                    model: root.controlsModel.outputDevices
+                    model: root.visible ? root.controlsModel.outputDevices : []
 
                     Rectangle {
                         id: outputDeviceRow

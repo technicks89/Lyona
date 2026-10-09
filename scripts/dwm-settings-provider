@@ -660,7 +660,7 @@ discover() {
 			'Unprivileged health state is available'
 	else
 		emit_capability system health 'System health' unavailable read-only dwm-system-health \
-			'Install the dwm-system-health helper'
+			'Reinstall lyona to restore system health'
 	fi
 	if trusted_health_helper && {
 		provider_available pkexec ||
@@ -668,16 +668,20 @@ discover() {
 	}; then
 		emit_capability system authorization 'Administrative authorization' available privileged polkit \
 			'A trusted installed helper and authorization tool are available'
+	elif trusted_health_helper; then
+		# The helper is installed: reinstalling lyona would not help.
+		emit_capability system authorization 'Administrative authorization' restricted privileged polkit \
+			'Read-only state remains available; install polkit (pkexec) to restore administrative actions'
 	else
 		emit_capability system authorization 'Administrative authorization' restricted privileged polkit \
-			'Read-only state remains available; install the trusted system helper for authorized actions'
+			'Read-only state remains available; reinstall lyona to restore administrative actions'
 	fi
 	if provider_available dwm-system-management; then
 		emit_capability system package-updates 'System updates' available read-only dwm-system-management \
 			'Update discovery is available; installation requires explicit confirmation'
 	else
 		emit_capability system package-updates 'System updates' unavailable read-only dwm-system-management \
-			'Install the dwm-system-management helper'
+			'Reinstall lyona to restore system updates'
 	fi
 	emit_capability system administration 'Advanced administration' unsupported delegated arch-tools \
 		'High-risk administration remains delegated to trusted tools'
@@ -686,7 +690,7 @@ discover() {
 			'Check, apply, and roll back lyona releases from Settings'
 	else
 		emit_capability system updates 'Software updates' unavailable user-session lyona-update \
-			'Install the lyona-update helper'
+			'Reinstall lyona to restore software updates'
 	fi
 }
 

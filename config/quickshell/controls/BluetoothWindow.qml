@@ -81,7 +81,7 @@ ClickAwayPopup {
                 Layout.fillHeight: true
                 clip: true
                 spacing: Theme.listSpacing
-                model: root.bluetoothModel.devices
+                model: root.visible ? root.bluetoothModel.devices : []
 
                 delegate: Rectangle {
                     id: deviceRow

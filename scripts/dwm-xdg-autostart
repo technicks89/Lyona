@@ -15,6 +15,8 @@ readonly confirm_token=confirm-session-critical
 
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh"
 lyona_xdg_dirs
 config_dirs=${XDG_CONFIG_DIRS:-/etc/xdg}
 autostart_dir=$config_home/autostart
@@ -177,72 +179,41 @@ parse_desktop_file() {
 	parsed_only_present=0
 	parsed_not_present=0
 
-	mapfile -t values < <(
-		LC_ALL=C awk '
-			function fail(message) { error = message; exit }
-			{
-				sub(/\r$/, "")
-				if ($0 ~ /[\000-\011\013-\037\177]/)
-					fail("control character in desktop entry")
-				if ($0 ~ /^\[/) {
-					in_entry = ($0 == "[Desktop Entry]")
-					if (in_entry) entry_groups++
-					next
-				}
-				if (!in_entry || $0 ~ /^[[:space:]]*($|#)/) next
-				if ($0 !~ /^[A-Za-z0-9-]+=/) next
-				key = $0
-				sub(/=.*/, "", key)
-				value = substr($0, length(key) + 2)
-				if (key == "Type" || key == "Name" || key == "Exec" ||
-				    key == "Hidden" || key == "OnlyShowIn" ||
-				    key == "NotShowIn" || key == "TryExec" ||
-				    key == "AutostartCondition") {
-					if (++seen[key] > 1) fail("duplicate " key " key")
-					values[key] = value
-				}
-			}
-			END {
-				if (length(error)) {
-					print "error=" error
-					exit
-				}
-				if (entry_groups != 1) {
-					print "error=expected exactly one Desktop Entry group"
-					exit
-				}
-				print "type=" values["Type"]
-				print "name=" values["Name"]
-				print "exec=" values["Exec"]
-				print "hidden=" values["Hidden"]
-				print "only=" values["OnlyShowIn"]
-				print "not=" values["NotShowIn"]
-				print "try=" values["TryExec"]
-				print "condition=" values["AutostartCondition"]
-				print "only-present=" (seen["OnlyShowIn"] ? 1 : 0)
-				print "not-present=" (seen["NotShowIn"] ? 1 : 0)
-			}
-		' "$file"
-	)
-
-	local row key value
+	# The shared reader (#308): a file with control characters, a repeated
+	# group or a duplicate key is refused whole.
+	local row rest key value status=invalid count=0
+	mapfile -t values < <(desktop_entries_read 'Desktop Entry' "$file")
 	for row in "${values[@]}"; do
-		key=${row%%=*}
-		value=${row#*=}
+		rest=${row#*$'\t'}
+		key=${rest%%$'\t'*}
+		value=${rest#*$'\t'}
+		if [[ -z $key ]]; then
+			status=$value
+			continue
+		fi
+		count=$((count + 1))
 		case $key in
-		error) parsed_error=$value ;;
-		type) parsed_type=$value ;;
-		name) parsed_name=$value ;;
-		exec) parsed_exec=$value ;;
-		hidden) parsed_hidden=${value:-false} ;;
-		only) parsed_only=$value ;;
-		not) parsed_not=$value ;;
-		try) parsed_try_exec=$value ;;
-		condition) parsed_condition=$value ;;
-		only-present) parsed_only_present=$value ;;
-		not-present) parsed_not_present=$value ;;
+		Type) parsed_type=$value ;;
+		Name) parsed_name=$value ;;
+		Exec) parsed_exec=$value ;;
+		Hidden) parsed_hidden=${value:-false} ;;
+		OnlyShowIn)
+			parsed_only=$value
+			parsed_only_present=1
+			;;
+		NotShowIn)
+			parsed_not=$value
+			parsed_not_present=1
+			;;
+		TryExec) parsed_try_exec=$value ;;
+		AutostartCondition) parsed_condition=$value ;;
 		esac
 	done
+	if [[ $status != ok ]]; then
+		parsed_error='malformed desktop entry (a control character, a repeated group or a duplicate key)'
+	elif ((count == 0)); then
+		parsed_error='expected exactly one Desktop Entry group'
+	fi
 
 	[[ -z $parsed_error ]] || return 1
 	[[ $parsed_type == Application ]] || {
@@ -601,64 +572,38 @@ verify_requested_state() {
 	esac
 }
 
+# The user override for REQUESTED: OnlyShowIn and NotShowIn rewritten through
+# the shared writer (#308), the rest of the entry as it is.
 transform_entry() {
-	local source=$1 destination=$2 requested=$3
-	LC_ALL=C awk -v requested="$requested" '
-		function has_token(value, wanted, count, parts, i) {
-			count = split(value, parts, ";")
-			for (i = 1; i <= count; i++) if (parts[i] == wanted) return 1
-			return 0
-		}
-		function remove_dwm(value, count, parts, i, result) {
-			count = split(value, parts, ";")
-			result = ""
-			for (i = 1; i <= count; i++) {
-				if (parts[i] == "" || parts[i] == "X-DWM" || parts[i] == "dwm") continue
-				result = result parts[i] ";"
-			}
-			return result
-		}
-		function add_token(value, token) {
-			if (has_token(value, token)) return value
-			if (value != "" && value !~ /;$/) value = value ";"
-			return value token ";"
-		}
-		function updated_only(value) {
-			if (requested == "disabled") return remove_dwm(value)
-			return add_token(remove_dwm(value), "X-DWM")
-		}
-		function updated_not(value) {
-			value = remove_dwm(value)
-			if (requested == "disabled") value = add_token(value, "X-DWM")
-			return value
-		}
-		{
-			line = $0
-			sub(/\r$/, "", line)
-			if (line ~ /^\[/) {
-				if (in_entry && requested == "disabled" && !seen_not && !seen_only)
-					print "NotShowIn=X-DWM;"
-				in_entry = (line == "[Desktop Entry]")
-				print line
-				next
-			}
-			if (in_entry && line ~ /^OnlyShowIn=/) {
-				print "OnlyShowIn=" updated_only(substr(line, 12))
-				seen_only = 1
-				next
-			}
-			if (in_entry && line ~ /^NotShowIn=/) {
-				print "NotShowIn=" updated_not(substr(line, 11))
-				seen_not = 1
-				next
-			}
-			print line
-		}
-		END {
-			if (in_entry && requested == "disabled" && !seen_not && !seen_only)
-				print "NotShowIn=X-DWM;"
-		}
-	' "$source" >"$destination"
+	local source=$1 destination=$2 requested=$3 only_show not_show status
+	local -a pairs=()
+	status=0
+	only_show=$(desktop_entry_get "$source" OnlyShowIn) || status=$?
+	case $status in
+	0)
+		only_show=$(desktop_list_without "$only_show" X-DWM dwm)
+		[[ $requested == disabled ]] || only_show=$(desktop_list_with "$only_show" X-DWM)
+		pairs+=(OnlyShowIn "$only_show")
+		;;
+	1) ;;
+	*) return 1 ;;
+	esac
+	status=0
+	not_show=$(desktop_entry_get "$source" NotShowIn) || status=$?
+	case $status in
+	0)
+		not_show=$(desktop_list_without "$not_show" X-DWM dwm)
+		[[ $requested != disabled ]] || not_show=$(desktop_list_with "$not_show" X-DWM)
+		pairs+=(NotShowIn "$not_show")
+		;;
+	1) ;;
+	*) return 1 ;;
+	esac
+	# Disabled, with neither key: hidden from dwm sessions alone.
+	if [[ $requested == disabled && ${#pairs[@]} -eq 0 ]]; then
+		pairs+=(NotShowIn 'X-DWM;')
+	fi
+	desktop_entry_set "$source" "$destination" 'Desktop Entry' "${pairs[@]}"
 }
 
 prepare_action() {

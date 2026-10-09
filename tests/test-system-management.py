@@ -4992,6 +4992,154 @@ class UnitEventMonitorTests(unittest.TestCase):
         self.assertEqual(result.stdout, "Private-bus unit events: PASS\n")
 
 
+# Stand-in monitors for watch-domains: "time" is ready, then fails after
+# 300 ms; every other domain is ready and stays. Each finish is recorded.
+WATCH_DOMAINS_DRIVER = r"""
+import os, sys
+sys.path.insert(0, sys.argv[1])
+from gi.repository import GLib
+from lyona_system_management import event_monitors, watch_commands
+FINISHED = sys.argv[2]
+
+class Fake:
+    prefix = "fake-event"
+    fails = False
+    def __init__(self, *args):
+        self.emit = args[-1]
+        self.on_stop = None
+        self.loop = None
+        self.stopped = False
+        self.exit_code = 1
+    def stop(self, code):
+        if self.stopped:
+            return
+        self.stopped = True
+        self.exit_code = code
+        self.on_stop(self)
+    def begin(self, signals=True):
+        assert signals is False
+        GLib.timeout_add(20, self.ready)
+        if self.fails:
+            GLib.timeout_add(300, lambda: self.stop(1) or False)
+    def ready(self):
+        if not self.stopped:
+            self.emit(self.prefix + "	ready")
+        return False
+    def finish(self, wait=True):
+        with open(FINISHED, "a") as log:
+            log.write(self.prefix + "\n")
+
+class FakeTime(Fake):
+    prefix = "time-event"
+    fails = True
+
+class FakeRegional(Fake):
+    prefix = "regional-event"
+
+event_monitors.TimeEventMonitor = FakeTime
+event_monitors.RegionalEventMonitor = FakeRegional
+sys.exit(watch_commands.watch_domains())
+"""
+
+
+class WatchDomainsTests(unittest.TestCase):
+    """#286: one watcher process for every Settings > System domain."""
+
+    def start(self, workdir):
+        try:
+            import gi  # noqa: F401
+        except ImportError:
+            self.skipTest("System Python GObject bindings are unavailable")
+        finished = pathlib.Path(workdir) / "finished"
+        finished.touch()
+        process = subprocess.Popen(["/usr/bin/python3", "-I", "-c", WATCH_DOMAINS_DRIVER,
+            str(REPO / "scripts"), str(finished)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, bufsize=0)
+        def cleanup():
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=3)
+            for stream in (process.stdin, process.stdout, process.stderr):
+                stream.close()
+
+        self.addCleanup(cleanup)
+        return process, finished
+
+    def read_lines(self, process, count, timeout=3):
+        output = b""
+        deadline = time.monotonic() + timeout
+        while output.count(b"\n") < count and time.monotonic() < deadline:
+            ready, _, _ = select.select([process.stdout], [], [], max(0, deadline - time.monotonic()))
+            if not ready:
+                break
+            chunk = os.read(process.stdout.fileno(), 4096)
+            if not chunk:
+                break
+            output += chunk
+        return output.decode().splitlines()
+
+    def test_one_domain_fails_alone_and_can_start_again(self):
+        with tempfile.TemporaryDirectory() as workdir:
+            process, finished = self.start(workdir)
+            process.stdin.write(b"start time\nstart locale\n")
+            self.assertEqual(sorted(self.read_lines(process, 2)),
+                ["locale\tregional-event\tready", "time\ttime-event\tready"])
+            self.assertEqual(self.read_lines(process, 1), ["time\tstopped\t1"])
+            self.assertEqual(finished.read_text(), "time-event\n")
+            # The other domain carries on, and the failed one starts afresh.
+            process.stdin.write(b"start time\n")
+            self.assertEqual(self.read_lines(process, 1), ["time\ttime-event\tready"])
+            process.stdin.close()
+            self.assertEqual(process.wait(timeout=5), 0)
+            self.assertEqual(sorted(finished.read_text().split()),
+                ["regional-event", "time-event", "time-event"])
+
+    def test_stop_retires_one_domain_for_a_fresh_start(self):
+        with tempfile.TemporaryDirectory() as workdir:
+            process, finished = self.start(workdir)
+            process.stdin.write(b"start locale\n")
+            self.assertEqual(self.read_lines(process, 1), ["locale\tregional-event\tready"])
+            # One reply per live subscription; none for a domain without one.
+            process.stdin.write(b"stop locale\nstop locale\nstop accounts\n")
+            self.assertEqual(self.read_lines(process, 2, timeout=1), ["locale\tstopped\t0"])
+            process.stdin.write(b"start locale\n")
+            self.assertEqual(self.read_lines(process, 1), ["locale\tregional-event\tready"])
+            process.stdin.close()
+            self.assertEqual(process.wait(timeout=5), 0)
+            self.assertEqual(finished.read_text().split(), ["regional-event", "regional-event"])
+
+    def test_sigterm_finishes_every_domain(self):
+        with tempfile.TemporaryDirectory() as workdir:
+            process, finished = self.start(workdir)
+            process.stdin.write(b"start locale\n")
+            self.assertEqual(self.read_lines(process, 1), ["locale\tregional-event\tready"])
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=5), 0)
+            self.assertEqual(finished.read_text(), "regional-event\n")
+
+    def test_unknown_or_malformed_requests_end_it(self):
+        for request in (b"start bogus\n", b"stop bogus\n", b"restart locale\n", b"start\n",
+                        b"start locale extra\n"):
+            with self.subTest(request=request), tempfile.TemporaryDirectory() as workdir:
+                process, _ = self.start(workdir)
+                process.stdin.write(request)
+                self.assertEqual(process.wait(timeout=5), 1)
+
+    def test_cli_and_private_bus(self):
+        with mock.patch.object(provider.watch_commands, "watch_domains", return_value=0) as watch, \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(provider.main(["watch-domains"]), 0)
+            self.assertEqual(provider.main(["watch-domains", "updates"]), 2)
+            watch.assert_called_once_with()
+        if shutil.which("dbus-run-session") is None:
+            self.skipTest("dbus-run-session is unavailable")
+        result = subprocess.run(["dbus-run-session", "--", "/usr/bin/python3",
+            str(REPO / "tests/fixtures/system-watch-domains-bus.py"), str(PROVIDER_PATH)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "watch-domains private-bus monitors: PASS\n")
+
+
 class HardwareReadTests(unittest.TestCase):
     """Sync Sprint 2 S2-01, ported from upstream's 30dc7fb (#278)."""
 

@@ -29,26 +29,27 @@ assert_contains "$model" 'property string mutationDetail: "Loading accessibility
 assert_contains "$model" 'root.mutationState = mutation[1];'
 assert_contains "$model" 'root.mutationDetail = mutation[2];'
 assert_contains "$model" 'root.mutationState = "unavailable";'
-# Unlike DefaultAppsModel/AutostartModel/PowerModel/AppearanceModel's
-# WatchedProcess usage, this one is active: true unconditionally rather than
-# gated on section visibility, so nothing else ever starts it -- it has to
-# happen here, or external accessibility.conf changes are never picked up.
-assert_contains "$model" 'root.refresh();'
-assert_contains "$model" 'accessibilityWatcher.start();'
+# The first read happens here, and external accessibility.conf changes are
+# picked up by a FileView on that one file all session.
+assert_contains "$model" 'Component.onCompleted: root.refresh()'
 assert_contains "$model" 'Commands.accessibilitySettingsCommand("status", [])'
-assert_contains "$model" 'Commands.accessibilitySettingsCommand("watch", [])'
 assert_contains "$model" 'Commands.checkedCommand(' # set()/reset() go through the checked wrapper
 assert_contains "$model" 'Theme.applyAccessibility(root.highContrast, root.reducedMotion)'
 assert_contains "$model" 'Theme.applyAccessibility(false, false)'
 
-# The watcher is a WatchedProcess, not a second inline copy of the watch
-# lifecycle upstream carries. Verify the substitution instead of porting
-# upstream's watchReady/watchSetupFailures assertions, which describe an
-# implementation this file does not have.
-assert_contains "$model" 'command: Commands.watchCommand(Commands.accessibilitySettingsCommand("watch", []))'
-assert_contains "$model" 'active: true'
-assert_contains "$model" 'settleInterval: 100'
-assert_contains "$model" 'onSettled: root.refresh()'
+# #285: no resident watcher process (it was inotifywait on all of
+# ~/.config/lyona). Quickshell watches the one file, and a short settle reads
+# the helper's status, which still checks the file.
+# A missing folder is never watched: it is created first, as the old watcher did.
+assert_contains "$model" 'command: ["mkdir", "-p", "-m", "700", "--", root.configHome + "/lyona"]'
+assert_contains "$model" 'path: root.configDirReady ? root.configHome + "/lyona/accessibility.conf" : ""'
+assert_contains "$model" 'watchChanges: true'
+assert_contains "$model" 'accessibilitySettle.restart();'
+assert_contains "$model" 'onTriggered: root.refresh()'
+if grep -Fq 'accessibilitySettingsCommand("watch"' "$model" || grep -Fq 'WatchedProcess' "$model"; then
+	printf 'Accessibility model runs a resident watcher process again\n' >&2
+	exit 1
+fi
 if grep -Fq 'watchReady' "$model" || grep -Fq 'watchSetupFailures' "$model"; then
 	printf 'Accessibility model reintroduced the inline watch-lifecycle bookkeeping WatchedProcess replaces\n' >&2
 	exit 1

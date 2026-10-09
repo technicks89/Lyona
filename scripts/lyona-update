@@ -133,7 +133,7 @@ notify_outcome() {
 		;;
 	*) return 0 ;;
 	esac
-	local -a notify=(notify-send --app-name=Lyona --icon=system-software-update --urgency="$urgency" -- "$title" "$body")
+	local -a notify=(notify-send --app-name=lyona --icon=system-software-update --urgency="$urgency" -- "$title" "$body")
 	if command -v timeout >/dev/null 2>&1; then
 		timeout 5 "${notify[@]}" >/dev/null 2>&1 || :
 	else

@@ -937,7 +937,9 @@ run_archinstall() {
 	LYONA_RECOVER_HINT="$DISK may already be erased and partly installed; nothing else on this machine was changed. Retry runs archinstall again with your answers. archinstall's own log: /var/log/archinstall/install.log"
 	while true; do
 		status=0
-		run_logged "Running archinstall (this can take several minutes)..." \
+		# Shown beside the elapsed time, so slow is told from hung (#291).
+		LYONA_STEP_EXPECT="usually 2-10 minutes"
+		run_logged "Running archinstall..." \
 			archinstall --config "$CONFIG_JSON" --creds "$CREDS_JSON" --silent --skip-version-check ||
 			status=$?
 		if ((status == 0)) && mountpoint -q /mnt; then

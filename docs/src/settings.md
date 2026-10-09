@@ -50,7 +50,9 @@ session-configurable and report that persistence is unavailable. Unsupported
 per-device properties remain visible with an explanation.
 
 Type to search section names and descriptions. Use Up and Down to move through
-the filtered sections, Enter to select one, or Escape to close Settings. The
+the filtered sections, Enter to select one, or Escape to close Settings. A
+search for "shortcut", "hotkey" or "keybind" shows **Keyboard shortcuts**, which
+opens the keybind viewer (`Super`+`/`). The
 Refresh button runs a new bounded capability snapshot; Settings does not add an
 idle polling timer.
 
@@ -92,6 +94,10 @@ The System section shows the installed lyona version, its commit and source
 user record, and running binary agree. If they disagree the card turns red and
 names which of the three differs — that is the one signal a damaged install
 gives you, so it is impossible to miss.
+
+At the bottom, **Needs attention** lists only what is not working, such as a
+missing helper ("Reinstall lyona to restore system updates"). Parts that work,
+and administration lyona leaves to dedicated tools by design, are not listed.
 
 **Check for updates** compares the installed version against the configured
 channel (`stable` or `preview`) and reports one of:

@@ -28,6 +28,8 @@ Scope {
     property var controlsModel: null
     property var powerModel: null
     property var powerMenuModel: null
+    // Opens the keybind viewer from a search for shortcuts (#293).
+    property var controlCenterModel: null
     property var defaultsModel: null
     property var autostartModel: null
     property var appearanceModel: null
@@ -124,6 +126,14 @@ Scope {
 
     readonly property var sections: SettingsSearch.sections
     readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
+    readonly property bool shortcutsMatch: SettingsSearch.matchesShortcuts(root.searchQuery)
+    // The shortcuts row follows the matching sections in keyboard order.
+    readonly property bool shortcutsSelected: root.shortcutsMatch
+        && root.selectedIndex === root.filteredSections.length
+
+    function openShortcuts() {
+        if (root.controlCenterModel) root.controlCenterModel.openKeybinds();
+    }
 
     function sectionById(id) {
         for (const section of root.sections) {
@@ -752,13 +762,24 @@ Scope {
 
     function selectRelative(delta) {
         const sections = root.filteredSections;
-        if (sections.length === 0) return;
-        root.selectedIndex = (root.selectedIndex + delta + sections.length) % sections.length;
+        const count = sections.length + (root.shortcutsMatch ? 1 : 0);
+        if (count === 0) return;
+        root.selectedIndex = (root.selectedIndex + delta + count) % count;
+        // The shortcuts row: the section shown stays as it is.
+        if (root.selectedIndex >= sections.length) return;
         const id = sections[root.selectedIndex].id;
         if (root.selectedSectionId !== id) {
             root.selectedSectionId = id;
             root.activateSection(id);
         }
+    }
+
+    // Enter in the search field: the selected row.
+    function activateSelected() {
+        const sections = root.filteredSections;
+        if (root.shortcutsSelected) root.openShortcuts();
+        else if (sections.length > 0)
+            root.selectSection(sections[Math.min(root.selectedIndex, sections.length - 1)].id);
     }
 
     function parseDiscovery(text) {

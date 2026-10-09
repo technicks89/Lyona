@@ -335,6 +335,24 @@ class PicomTests(unittest.TestCase):
         self.assertIn("# keep", self.path.read_text())
         self.assertIn("active-opacity = 0.8;", self.path.read_text())
 
+    def test_unredirect_is_off_by_default_set_and_cleared(self):
+        # #288: full-screen windows bypass the compositor only when asked.
+        config = self.write("# keep\nactive-opacity = 0.8;\n")
+        self.assertFalse(config.unredirect())
+        self.assertFalse(picom.status(detect=False)["unredirect"])
+        shipped = Path(__file__).resolve().parents[1] / "config/picom/picom.conf"
+        self.assertNotIn("unredir", shipped.read_text())
+        picom.mutate("set-unredirect", ["on"], config.revision())
+        self.assertIn("unredir-if-possible = true;", self.path.read_text())
+        self.assertTrue(picom.Configuration().unredirect())
+        picom.mutate("set-unredirect", ["on"], picom.Configuration().revision())
+        self.assertEqual(self.path.read_text().count("unredir-if-possible"), 1)
+        picom.mutate("set-unredirect", ["off"], picom.Configuration().revision())
+        self.assertNotIn("unredir", self.path.read_text())
+        self.assertIn("# keep", self.path.read_text())
+        with self.assertRaises(picom.Error):
+            self.write("unredir-if-possible = 1;\n").unredirect()
+
     def test_corner_radius_rejects_bad_values_and_unreadable_config(self):
         config = self.write("corner-radius = 4;\n")
         for value in (-1, picom.CORNER_RADIUS_MAX + 1, 2.5, float("nan"), float("inf")):

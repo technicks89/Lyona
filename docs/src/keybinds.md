@@ -45,7 +45,7 @@ JPEG. The lightweight capture flow intentionally has no annotation toolbar.
 | `Super` + `A` | ChatGPT |
 | `Super` + `Shift` + `A` | Gemini |
 | `Super` + `Shift` + `X` | X/Twitter — new post |
-| `Super` + `W` | Looking Glass client, full screen, for a virtual machine with a passed-through GPU (needs `looking-glass-client`) |
+| `Super` + `W` | Looking Glass client, full screen, for a virtual machine with a passed-through GPU. No lyona profile installs `looking-glass-client`; without it, the key says so in a notification |
 | `Super` + `Ctrl` + `R` | Restart Proton and Steam |
 
 `Super` + `A` opens an installed ChatGPT desktop application when one is
@@ -60,15 +60,15 @@ launcher hides the ChatGPT web entry while a native desktop entry is installed.
 | `Super` + `K` | Focus previous window |
 | `Super` + `Shift` + `J` | Move window down in stack |
 | `Super` + `Shift` + `K` | Move window up in stack |
-| `Super` + `Return` | Promote window to master |
+| `Super` + `Return` | Move window to the main area |
 | `Super` + `Q` | Close window |
-| `Super` + `I` | Add window to master area |
-| `Super` + `D` | Remove window from master area |
-| `Super` + `H` | Shrink master area |
-| `Super` + `L` | Expand master area |
-| `Super` + `Shift` + `H` | Increase window cfact size |
-| `Super` + `Shift` + `L` | Decrease window cfact size |
-| `Super` + `Shift` + `O` | Reset window cfact |
+| `Super` + `I` | One more window in the main area |
+| `Super` + `D` | One fewer window in the main area |
+| `Super` + `H` | Narrower main area |
+| `Super` + `L` | Wider main area |
+| `Super` + `Shift` + `H` | Taller window in the stack |
+| `Super` + `Shift` + `L` | Shorter window in the stack |
+| `Super` + `Shift` + `O` | Even out the stack heights |
 
 ## Layouts
 
@@ -79,7 +79,7 @@ launcher hides the ChatGPT web entry while a native desktop entry is installed.
 | `Super` + `M` | Fullscreen the focused window (not a layout) |
 | `Super` + `Space` | Toggle floating for window |
 | `Super` + `Shift` + `M` | Toggle floating for window |
-| `Super` + `Shift` + `Y` | Fake fullscreen (bar stays) |
+| `Super` + `Shift` + `Y` | Fullscreen inside the window (the window keeps its size) |
 | `Super` + `Shift` + `B` | Toggle bar visibility |
 
 The monocle layout (one window at a time, the bar visible) has no default key:

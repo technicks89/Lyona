@@ -10,6 +10,8 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh"
 lyona_xdg_dirs
 mime_file=$config_home/mimeapps.list
 hotkeys_file=$config_home/lyona/hotkeys.toml
@@ -32,7 +34,6 @@ defaults_watch_children=()
 defaults_watch_monitor=
 defaults_watch_owner_watchdog=
 defaults_watch_work=
-readonly max_desktop_size=262144
 desktop_parsed_type=
 desktop_parsed_name=
 desktop_parsed_hidden=
@@ -87,6 +88,13 @@ EOF
 
 clean_field() {
 	printf '%s' "$1" | tr '\011\015\012' '   '
+}
+
+# clean_into NAME VALUE: VALUE with tabs and line breaks as spaces, into NAME,
+# without the subshell clean_field costs for every field of a snapshot (#288).
+clean_into() {
+	local cleaned=${2//[$'\t\r\n']/ }
+	printf -v "$1" '%s' "$cleaned"
 }
 
 need_cmd() {
@@ -182,8 +190,33 @@ desktop_file_for_id() {
 	return 1
 }
 
+# Entries read through the shared reader (#308), kept for this run: a file's
+# status (ok or invalid), how many [Desktop Entry] keys it has, and each value.
+declare -A desktop_cache_status=() desktop_cache_keys=() desktop_cache_value=()
+
+# desktop_cache_load FILE...: read every FILE in one pass, for the snapshot's
+# hundreds of candidates.
+desktop_cache_load() {
+	local line file rest key
+	local -a lines=()
+	# mapfile reads the pipe in blocks, where read takes it a byte at a time.
+	mapfile -t lines < <(desktop_entries_read 'Desktop Entry' "$@")
+	for line in "${lines[@]}"; do
+		file=${line%%$'\t'*}
+		rest=${line#*$'\t'}
+		key=${rest%%$'\t'*}
+		if [[ -z $key ]]; then
+			desktop_cache_status[$file]=${rest#*$'\t'}
+			desktop_cache_keys[$file]=${desktop_cache_keys[$file]:-0}
+		else
+			desktop_cache_value[$file$'\x1f'$key]=${rest#*$'\t'}
+			desktop_cache_keys[$file]=$((${desktop_cache_keys[$file]:-0} + 1))
+		fi
+	done
+}
+
 parse_desktop_file() {
-	local file=$1 size parsed key value
+	local file=$1 key
 
 	desktop_parsed_type=
 	desktop_parsed_name=
@@ -194,52 +227,18 @@ parse_desktop_file() {
 	desktop_parsed_categories=
 	desktop_parsed_mime_types=
 	[[ -f $file && ! -L $file ]] || return 1
-	size=$(stat -c %s -- "$file" 2>/dev/null) || return 1
-	[[ $size =~ ^[0-9]+$ ]] || return 1
-	((size <= max_desktop_size)) || return 1
-	parsed=$(LC_ALL=C awk '
-		{
-			line = $0
-			sub(/\r$/, "", line)
-			if (line ~ /[\000-\011\013-\037\177]/) invalid = 1
-			if (line ~ /^\[/) {
-				in_entry = (line == "[Desktop Entry]")
-				if (in_entry) entry_groups++
-				next
-			}
-			if (!in_entry || line ~ /^[[:space:]]*($|#)/) next
-			equals = index(line, "=")
-			if (equals <= 1) next
-			key = substr(line, 1, equals - 1)
-			if (key ~ /^[A-Za-z0-9-]+(\[[^][]+\])?$/) {
-				if (++seen[key] > 1) invalid = 1
-				value[key] = substr(line, equals + 1)
-			}
-		}
-		END {
-			if (invalid || entry_groups != 1) exit 1
-			print "type\t" value["Type"]
-			print "name\t" value["Name"]
-			print "hidden\t" value["Hidden"]
-			print "nodisplay\t" value["NoDisplay"]
-			print "try-exec\t" value["TryExec"]
-			print "exec\t" value["Exec"]
-			print "categories\t" value["Categories"]
-			print "mime-types\t" value["MimeType"]
-		}
-	' "$file") || return 1
-	while IFS=$'\t' read -r key value; do
-		case $key in
-		type) desktop_parsed_type=$value ;;
-		name) desktop_parsed_name=$value ;;
-		hidden) desktop_parsed_hidden=$value ;;
-		nodisplay) desktop_parsed_nodisplay=$value ;;
-		try-exec) desktop_parsed_try_exec=$value ;;
-		exec) desktop_parsed_exec=$value ;;
-		categories) desktop_parsed_categories=$value ;;
-		mime-types) desktop_parsed_mime_types=$value ;;
-		esac
-	done <<<"$parsed"
+	[[ -n ${desktop_cache_status[$file]+x} ]] || desktop_cache_load "$file"
+	# Refused whole, or no [Desktop Entry] keys at all.
+	[[ ${desktop_cache_status[$file]:-} == ok && ${desktop_cache_keys[$file]:-0} -gt 0 ]] || return 1
+	key=$file$'\x1f'
+	desktop_parsed_type=${desktop_cache_value[${key}Type]-}
+	desktop_parsed_name=${desktop_cache_value[${key}Name]-}
+	desktop_parsed_hidden=${desktop_cache_value[${key}Hidden]-}
+	desktop_parsed_nodisplay=${desktop_cache_value[${key}NoDisplay]-}
+	desktop_parsed_try_exec=${desktop_cache_value[${key}TryExec]-}
+	desktop_parsed_exec=${desktop_cache_value[${key}Exec]-}
+	desktop_parsed_categories=${desktop_cache_value[${key}Categories]-}
+	desktop_parsed_mime_types=${desktop_cache_value[${key}MimeType]-}
 }
 
 desktop_file_valid() {
@@ -424,7 +423,105 @@ require_mime_candidate() {
 	fi
 }
 
+# The [Default Applications] line for every MIME type, from one read of the
+# mimeapps.list files (#288), in xdg-mime's order: the config dirs, then the
+# data dirs' applications, each with the desktop-prefixed list first. The first
+# file that lists a type wins, as in xdg-mime. Then, for the supported types,
+# what xdg-mime falls back to next: the first defaults.list or mimeinfo.cache
+# line that names the type, taken as it is.
+declare -A mimeapps_defaults=() mimeapps_cache_defaults=()
+mimeapps_loaded=0
+
+load_mimeapps_defaults() {
+	local dir desktop prefix mime value
+	local -a dirs=() lists=() desktops=()
+	local -a caches=()
+	((mimeapps_loaded == 0)) || return 0
+	mimeapps_loaded=1
+	mimeapps_defaults=()
+	mimeapps_cache_defaults=()
+	IFS=':' read -r -a desktops <<<"${XDG_CURRENT_DESKTOP:-}"
+	desktops+=('')
+	IFS=':' read -r -a dirs <<<"${XDG_CONFIG_DIRS:-/etc/xdg}"
+	dirs=("$config_home" "${dirs[@]}" "$data_home/applications")
+	IFS=':' read -r -a split_dirs <<<"${XDG_DATA_DIRS:-/usr/local/share/:/usr/share/}"
+	for dir in "${split_dirs[@]}"; do
+		dirs+=("$dir/applications")
+	done
+	for dir in "${dirs[@]}"; do
+		[[ -n $dir ]] || continue
+		for desktop in "${desktops[@]}"; do
+			prefix=
+			[[ -z $desktop ]] || prefix="${desktop,,}-"
+			[[ ! -f $dir/${prefix}mimeapps.list ]] || lists+=("$dir/${prefix}mimeapps.list")
+		done
+	done
+	if ((${#lists[@]} > 0)); then
+		while IFS=$'\t' read -r mime value; do
+			[[ -z ${mimeapps_defaults[$mime]+x} ]] || continue
+			mimeapps_defaults[$mime]=$value
+		done < <(awk '
+			FNR == 1 { indefault = 0; delete found }
+			index($0, "[Default Applications]") == 1 { indefault = 1; next }
+			index($0, "[") == 1 { indefault = 0; next }
+			indefault && (equals = index($0, "=")) > 1 {
+				mime = substr($0, 1, equals - 1)
+				if (!(mime in found)) {
+					found[mime] = 1
+					print mime "\t" substr($0, equals + 1)
+				}
+			}
+		' "${lists[@]}" 2>/dev/null)
+	fi
+	for dir in "$data_home" "${split_dirs[@]}"; do
+		for prefix in "${XDG_MENU_PREFIX:-}" ''; do
+			for value in defaults.list mimeinfo.cache; do
+				[[ ! -f $dir/applications/$prefix$value ]] || caches+=("$dir/applications/$prefix$value")
+			done
+		done
+	done
+	((${#caches[@]} > 0)) || return 0
+	while IFS=$'\t' read -r mime value; do
+		mimeapps_cache_defaults[$mime]=$value
+	done < <(awk -v mimes="${supported_mimes[*]}" '
+		BEGIN { count = split(mimes, wanted, " ") }
+		{
+			for (i = 1; i <= count; i++) {
+				if (!(wanted[i] in found) && index($0, wanted[i] "=") > 0) {
+					found[wanted[i]] = 1
+					value = substr($0, index($0, "=") + 1)
+					sub(/;.*/, "", value)
+					print wanted[i] "\t" value
+				}
+			}
+		}
+	' "${caches[@]}" 2>/dev/null)
+}
+
+# The default for MIME as xdg-mime finds it in a lyona session, from the files
+# read once (#288): a mimeapps.list line whose first app is installed and
+# usable, or, with no line, the cache's entry. Anything less clear-cut, such as
+# a listed app that is missing, is left to xdg-mime itself.
 query_mime() {
+	local mime=$1
+	local value first file
+	load_mimeapps_defaults
+	if [[ -n ${mimeapps_defaults[$mime]+x} ]]; then
+		value=${mimeapps_defaults[$mime]}
+		first=${value%%;*}
+		if [[ -n $first ]] && valid_desktop_id "$first" &&
+			file=$(desktop_file_for_id "$first") && desktop_usable "$file"; then
+			printf '%s\n' "$first"
+			return 0
+		fi
+	elif [[ -n ${mimeapps_cache_defaults[$mime]-} ]] && valid_desktop_id "${mimeapps_cache_defaults[$mime]}"; then
+		printf '%s\n' "${mimeapps_cache_defaults[$mime]}"
+		return 0
+	fi
+	query_mime_xdg "$mime"
+}
+
+query_mime_xdg() {
 	local mime=$1
 	local value
 	need_cmd timeout >/dev/null
@@ -1105,13 +1202,15 @@ emit_role() {
 		state=restricted
 		detail='Configured desktop entry is missing'
 	fi
+	clean_into current "$current"
+	clean_into label "$label"
+	clean_into detail "$detail"
 	printf 'role\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-		"$role" "$state" "$(clean_field "$current")" "$(clean_field "$label")" \
-		"$provider" "$(clean_field "$detail")"
+		"$role" "$state" "$current" "$label" "$provider" "$detail"
 }
 
 emit_mimes() {
-	local mime current state label file
+	local mime current state label file detail
 	for mime in "${supported_mimes[@]}"; do
 		if current=$(query_mime "$mime" 2>/dev/null) && [[ -n $current ]]; then
 			state=available
@@ -1130,21 +1229,34 @@ emit_mimes() {
 		elif [[ -n $current ]]; then
 			state=unavailable
 		fi
-		printf 'mime\t%s\t%s\t%s\t%s\t%s\n' \
-			"$mime" "$state" "$(clean_field "$current")" "$(clean_field "$label")" \
-			"$([[ $state == available ]] && printf 'XDG MIME default is readable' || printf 'XDG MIME default is unavailable or invalid')"
+		clean_into current "$current"
+		clean_into label "$label"
+		detail='XDG MIME default is unavailable or invalid'
+		[[ $state != available ]] || detail='XDG MIME default is readable'
+		printf 'mime\t%s\t%s\t%s\t%s\t%s\n' "$mime" "$state" "$current" "$label" "$detail"
 	done
 }
 
 emit_candidates() {
-	local dir applications file id name role command_name mime mime_types candidate_state candidate_detail
+	local dir applications file id name role command_name mime mime_types candidate_state candidate_detail index
 	local -A seen=()
+	local -a candidate_dirs=() candidate_files=()
+	# Every candidate first, then all of them read in one pass (#308).
 	while IFS= read -r dir; do
 		applications=$dir/applications
 		if [[ ! -d $applications ]] || ! path_has_no_symlink_components "$applications"; then
 			continue
 		fi
 		while IFS= read -r -d '' file; do
+			candidate_dirs+=("$applications")
+			candidate_files+=("$file")
+		done < <(find "$applications" -type f -name '*.desktop' -print0 2>/dev/null)
+	done < <(data_dirs)
+	desktop_cache_load "${candidate_files[@]}"
+	for index in "${!candidate_files[@]}"; do
+		applications=${candidate_dirs[index]}
+		file=${candidate_files[index]}
+		{
 			id=$(desktop_id_for_file "$applications" "$file")
 			valid_desktop_id "$id" || continue
 			[[ -z ${seen[$id]+x} ]] || continue
@@ -1152,6 +1264,7 @@ emit_candidates() {
 			desktop_usable "$file" || continue
 			name=$desktop_parsed_name
 			[[ -n $name ]] || name=$id
+			clean_into name "$name"
 			for role in browser file-manager terminal; do
 				parsed_desktop_matches_role "$role" || continue
 				command_name=
@@ -1168,17 +1281,17 @@ emit_candidates() {
 					fi
 				fi
 				printf 'candidate\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-					"$role" "$id" "$(clean_field "$name")" "$candidate_state" \
+					"$role" "$id" "$name" "$candidate_state" \
 					"$command_name" "$candidate_detail"
 			done
 			mime_types=$desktop_parsed_mime_types
 			for mime in "${supported_mimes[@]}"; do
 				desktop_token_present "$mime_types" "$mime" || continue
 				printf 'mime-candidate\t%s\t%s\t%s\tavailable\tInstalled desktop entry\n' \
-					"$mime" "$id" "$(clean_field "$name")"
+					"$mime" "$id" "$name"
 			done
-		done < <(find "$applications" -type f -name '*.desktop' -print0 2>/dev/null)
-	done < <(data_dirs)
+		}
+	done
 }
 
 emit_recovery() {
@@ -1233,6 +1346,10 @@ snapshot() {
 	else
 		printf 'watch\tunavailable\tinotifywait\tInstall inotify-tools for live external updates\n'
 	fi
+	# Read here, not in the $(query_mime) subshells, which would each read
+	# them again.
+	mimeapps_loaded=0
+	load_mimeapps_defaults
 	emit_role browser
 	emit_role terminal
 	emit_role file-manager

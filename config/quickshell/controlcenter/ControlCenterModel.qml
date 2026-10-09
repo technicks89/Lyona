@@ -39,7 +39,10 @@ Scope {
     property var infoRows: []
     property var themeRows: []
     property var keybindRows: []
-    property bool gtkSettingsAvailable: false
+    // Quick Actions that need something optional, from the helper's
+    // optional-actions: Self-Heal once configured, GTK Settings with nwg-look.
+    property var optionalActions: []
+    property bool actionInTerminal: false
     readonly property var actions: {
         const availableActions = [
             { "id": "restart-picom", "label": "Restart Picom" },
@@ -47,14 +50,25 @@ Scope {
             { "id": "reload-wallpaper", "label": "Reload Wallpaper" },
             { "id": "restart-networkmanager", "label": "Restart NetworkManager" },
             { "id": "dependency-check", "label": "Dependency Check" },
-            { "id": "self-heal", "label": "Self-Heal" },
             { "id": "install-missing-deps", "label": "Install Missing Deps" },
             { "id": "open-wallpapers", "label": "Wallpaper Folder" }
         ];
-        if (root.gtkSettingsAvailable) {
+        if (root.optionalActions.indexOf("self-heal") >= 0) {
+            availableActions.push({ "id": "self-heal", "label": "Self-Heal" });
+        }
+        if (root.optionalActions.indexOf("gtk-settings") >= 0) {
             availableActions.push({ "id": "gtk-settings", "label": "GTK Settings" });
         }
         return availableActions;
+    }
+
+    function actionLabel(action) {
+        for (const entry of root.actions) {
+            if (entry.id === action) {
+                return entry.label;
+            }
+        }
+        return action;
     }
     function openPage(name, message, process) {
         if (root.powerModel) {
@@ -125,9 +139,8 @@ Scope {
 
     function openActions() {
         root.openPage("actions", "", null);
-        if (!gtkSettingsCheckProcess.running) {
-            root.gtkSettingsAvailable = false;
-            gtkSettingsCheckProcess.running = true;
+        if (!optionalActionsProcess.running) {
+            optionalActionsProcess.running = true;
         }
     }
 
@@ -202,7 +215,8 @@ Scope {
         root.pendingAction = action;
         root.actionSucceeded = false;
         root.actionError = "";
-        root.message = "Running " + action + "...";
+        root.actionInTerminal = false;
+        root.message = "Running " + root.actionLabel(action) + "...";
         actionProcess.command = Commands.controlCenterHelperCommand("action", [action]);
         actionProcess.running = true;
     }
@@ -261,13 +275,14 @@ Scope {
     }
 
     Process {
-        id: gtkSettingsCheckProcess
+        id: optionalActionsProcess
 
-        command: ["sh", "-c", "command -v nwg-look >/dev/null 2>&1 && printf yes || printf no"]
+        command: Commands.controlCenterHelperCommand("optional-actions")
         running: false
 
         stdout: StdioCollector {
-            onStreamFinished: root.gtkSettingsAvailable = this.text.trim() === "yes"
+            onStreamFinished: root.optionalActions = root.parseRows(this.text, ["kind", "id"])
+                .filter(row => row.kind === "optional-action").map(row => row.id)
         }
     }
 
@@ -278,7 +293,11 @@ Scope {
         running: false
 
         stdout: StdioCollector {
-            onStreamFinished: root.actionSucceeded = this.text.indexOf("action\t") === 0
+            onStreamFinished: {
+                root.actionSucceeded = this.text.indexOf("action\t") === 0;
+                const line = this.text.split("\n").find(row => row.indexOf("action\t") === 0) || "";
+                root.actionInTerminal = line.split("\t")[2] === "terminal";
+            }
         }
 
         stderr: StdioCollector {
@@ -288,10 +307,10 @@ Scope {
         onRunningChanged: {
             if (!running && root.busy) {
                 root.busy = false;
+                const label = root.actionLabel(root.pendingAction);
                 root.message = root.actionSucceeded
-                    ? "Action dispatched"
-                    : (root.actionError.length > 0 ? root.actionError
-                        : "Action failed: " + root.pendingAction);
+                    ? label + (root.actionInTerminal ? ": opened in a terminal" : ": done")
+                    : (root.actionError.length > 0 ? root.actionError : label + " failed");
                 root.pendingAction = "";
                 root.refreshCurrentPage();
             }

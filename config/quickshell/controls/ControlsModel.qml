@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
 import qs.core
 import "../core/Protocol.js" as Protocol
@@ -9,15 +10,11 @@ Scope {
     id: root
 
     readonly property bool initialLoading: audioSnapshotProcess.running || volumeStatusProcess.running
-        || micStatusProcess.running || mediaStatusProcess.running || bluetoothStatusProcess.running
+        || micStatusProcess.running
 
     property bool visible: false
     property bool settingsVisible: false
     property bool busy: false
-    // Set when the media helper reports that playerctl is not installed: the
-    // watcher is then not restarted every 3 s for the whole session (Sync Sprint
-    // 12 S12-07). A shell restart looks again.
-    property bool mediaWatchUnavailable: false
     property string volumeText: "VOL unavailable"
     property int volumePercent: 0
     property bool volumeMuted: false
@@ -28,12 +25,33 @@ Scope {
     property string outputDeviceName: ""
     property string outputDeviceDescription: ""
     property string micText: "MIC unavailable"
-    property string mediaText: "MEDIA none"
-    property string mediaPlayer: ""
-    property string mediaState: ""
-    property string mediaArtist: ""
-    property string mediaTitle: ""
-    property string bluetoothText: "BT unavailable"
+    // Media from Quickshell's MPRIS service, which follows the players over
+    // D-Bus (#285): no resident playerctl --follow. The player shown is the
+    // first one playing, else the first one, and the buttons act on it.
+    readonly property var mediaSource: {
+        const players = Mpris.players.values;
+        for (const player of players) {
+            if (player.isPlaying) return player;
+        }
+        return players.length > 0 ? players[0] : null;
+    }
+    readonly property string mediaPlayer: root.mediaSource ? root.playerName(root.mediaSource) : ""
+    readonly property string mediaState: !root.mediaSource ? ""
+        : root.mediaSource.playbackState === MprisPlaybackState.Playing ? "Playing"
+        : root.mediaSource.playbackState === MprisPlaybackState.Paused ? "Paused" : "Stopped"
+    readonly property string mediaArtist: root.mediaSource ? (root.mediaSource.trackArtist || "") : ""
+    readonly property string mediaTitle: root.mediaSource ? (root.mediaSource.trackTitle || "") : ""
+    readonly property string mediaText: {
+        if (!root.mediaSource) return "MEDIA none";
+        const label = [root.mediaPlayer, root.mediaState].filter(part => part.length > 0);
+        const title = [root.mediaArtist, root.mediaTitle].filter(part => part.length > 0);
+        return (label.length > 0 ? label.join(" ") : "MEDIA")
+            + (title.length > 0 ? ": " + title.join(" - ") : "");
+    }
+    // From BluetoothModel, which already follows the adapter, rather than a
+    // read of its own (#288).
+    property var bluetoothModel: null
+    readonly property string bluetoothText: root.bluetoothModel ? root.bluetoothModel.statusText : "BT unavailable"
     property string message: ""
     property string audioProviderState: "idle"
     property string audioProviderDetail: ""
@@ -134,12 +152,6 @@ Scope {
     function refresh() {
         root.refreshAudioStatus();
         root.refreshAudioInventory();
-        if (!mediaStatusProcess.running) {
-            mediaStatusProcess.running = true;
-        }
-        if (!bluetoothStatusProcess.running) {
-            bluetoothStatusProcess.running = true;
-        }
     }
 
     function refreshAudioInventory() {
@@ -228,44 +240,11 @@ Scope {
         }
     }
 
-    function parseMedia(text) {
-        const trimmed = text.trim();
-
-        if (trimmed === "MEDIA unavailable")
-            root.mediaWatchUnavailable = true;
-        if (trimmed.length === 0 || trimmed.indexOf("MEDIA ") === 0) {
-            root.mediaText = trimmed.length > 0 ? trimmed : "MEDIA none";
-            root.mediaPlayer = "";
-            root.mediaState = "";
-            root.mediaArtist = "";
-            root.mediaTitle = "";
-            return;
-        }
-
-        const fields = trimmed.split("\t");
-
-        root.mediaPlayer = fields.length > 0 ? fields[0] : "";
-        root.mediaState = fields.length > 1 ? fields[1] : "";
-        root.mediaArtist = fields.length > 2 ? fields[2] : "";
-        root.mediaTitle = fields.length > 3 ? fields.slice(3).join("\t") : "";
-
-        const labelParts = [];
-        if (root.mediaPlayer.length > 0) {
-            labelParts.push(root.mediaPlayer);
-        }
-        if (root.mediaState.length > 0) {
-            labelParts.push(root.mediaState);
-        }
-
-        const titleParts = [];
-        if (root.mediaArtist.length > 0) {
-            titleParts.push(root.mediaArtist);
-        }
-        if (root.mediaTitle.length > 0) {
-            titleParts.push(root.mediaTitle);
-        }
-
-        root.mediaText = (labelParts.length > 0 ? labelParts.join(" ") : "MEDIA") + (titleParts.length > 0 ? ": " + titleParts.join(" - ") : "");
+    // The player's name as playerctl gave it: its bus name, without the
+    // MPRIS prefix or a per-instance suffix ("firefox", not "firefox.instance_1").
+    function playerName(player) {
+        const name = String(player.dbusName || "").replace(/^org\.mpris\.MediaPlayer2\./, "");
+        return name.replace(/\.instance[_0-9]*$/, "") || String(player.identity || "");
     }
 
     function parseVolume(text) {
@@ -376,15 +355,15 @@ Scope {
     function streamToggleMute(index, origin) { root.runAction("stream-toggle-mute", [index], origin); }
 
     function mediaPlayPause() {
-        root.runAction("media-play-pause");
+        if (root.mediaSource && root.mediaSource.canTogglePlaying) root.mediaSource.togglePlaying();
     }
 
     function mediaNext() {
-        root.runAction("media-next");
+        if (root.mediaSource && root.mediaSource.canGoNext) root.mediaSource.next();
     }
 
     function mediaPrevious() {
-        root.runAction("media-previous");
+        if (root.mediaSource && root.mediaSource.canGoPrevious) root.mediaSource.previous();
     }
 
     PwObjectTracker {
@@ -564,43 +543,6 @@ Scope {
                     const text = this.text.trim();
                     root.micText = text.length > 0 ? text : "MIC unavailable";
                 }
-            }
-        }
-    }
-
-    Process {
-        id: mediaStatusProcess
-
-        command: Commands.controlsHelperCommand("media-status")
-        running: false
-
-        stdout: StdioCollector {
-            onStreamFinished: root.parseMedia(this.text)
-        }
-    }
-
-    // Always on, each line parsed as it arrives; restarted 3 s after it exits
-    // unless the helper reported media control unavailable (Sync Sprint 12
-    // S12-14: on WatchedProcess).
-    WatchedProcess {
-        id: mediaWatch
-        command: Commands.watchCommand(Commands.controlsHelperCommand("media-watch"))
-        active: !root.mediaWatchUnavailable
-        onLine: text => root.parseMedia(text)
-        Component.onCompleted: mediaWatch.start()
-    }
-
-    Process {
-        id: bluetoothStatusProcess
-
-        command: Commands.controlsHelperCommand("bluetooth-status")
-        running: false
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const text = this.text.trim();
-
-                root.bluetoothText = text.length > 0 ? text : "BT unavailable";
             }
         }
     }

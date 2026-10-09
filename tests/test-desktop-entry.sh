@@ -53,6 +53,40 @@ refused 'a repeated group'
 } >"$entry"
 refused 'a file over the size limit'
 
+# ── the batch reader (#308) ─────────────────────────────────────────────────
+mkdir -p "$work/batch"
+printf '%s\n' '[Desktop Entry]' 'Name=One' 'Exec=one' '[Desktop Action a]' 'Name=Action' >"$work/batch/one.desktop"
+printf '[Desktop Entry]\nName=Nul\000x\n' >"$work/batch/nul.desktop"
+printf '%s\n' '[Desktop Entry]' 'Name=First' 'Name=Second' >"$work/batch/dup.desktop"
+printf '%s\n' '[Other]' 'Name=Elsewhere' >"$work/batch/nogroup.desktop"
+printf '%s\n' '[Desktop Entry]' 'Name=Two' >"$work/batch/two.desktop"
+batch=$(desktop_entries_read 'Desktop Entry' "$work/batch/one.desktop" "$work/batch/nul.desktop" \
+	"$work/batch/dup.desktop" "$work/batch/nogroup.desktop" "$work/batch/missing.desktop" "$work/batch/two.desktop")
+expected=$(printf '%s\n' \
+	"$work/batch/one.desktop	Name	One" "$work/batch/one.desktop	Exec	one" "$work/batch/one.desktop		ok" \
+	"$work/batch/nul.desktop		invalid" "$work/batch/dup.desktop		invalid" \
+	"$work/batch/nogroup.desktop		ok" \
+	"$work/batch/two.desktop	Name	Two" "$work/batch/two.desktop		ok")
+[[ $batch == "$expected" ]] || fail "the batch reader:
+$batch
+wanted:
+$expected"
+# A refused file's earlier keys never leak out; another group is read when asked.
+[[ $(desktop_entries_read 'Desktop Action a' "$work/batch/one.desktop") == "$work/batch/one.desktop	Name	Action
+$work/batch/one.desktop		ok" ]] || fail 'the batch reader does not read another group'
+[[ -z $(desktop_entries_read 'Desktop Entry') ]] || fail 'the batch reader printed something for no files'
+
+# ── the key writer (#308) ───────────────────────────────────────────────────
+printf '%s\r\n' '[Desktop Entry]' 'Name=App' 'NotShowIn=GNOME;' '' '[Desktop Action a]' 'Name=A' >"$work/set.desktop"
+desktop_entry_set "$work/set.desktop" "$work/set.out" 'Desktop Entry' NotShowIn 'GNOME;X-DWM;' OnlyShowIn 'X-DWM;' ||
+	fail 'desktop_entry_set failed'
+[[ $(cat "$work/set.out") == $'[Desktop Entry]\nName=App\nNotShowIn=GNOME;X-DWM;\n\nOnlyShowIn=X-DWM;\n[Desktop Action a]\nName=A' ]] ||
+	fail "desktop_entry_set wrote: $(cat -A "$work/set.out")"
+[[ $(desktop_entry_get "$work/set.out" NotShowIn) == 'GNOME;X-DWM;' ]] || fail 'a set key does not read back'
+if desktop_entry_set "$work/set.desktop" "$work/bad.out" 'Desktop Entry' Name $'evil\nExec=x'; then
+	fail 'desktop_entry_set wrote a value with a line break'
+fi
+
 # ── the Exec= writer ────────────────────────────────────────────────────────
 exec_case() { # VALUE EXPECTED
 	local actual
@@ -70,14 +104,16 @@ exec_case 'cost $5' '"cost \\$5"'
 exec_case 'run `x`' '"run \\`x\\`"'
 
 # ── the contract ────────────────────────────────────────────────────────────
-# Desktop entries are read through dwm-desktop-entry.sh. These readers came
-# before it and move in #308; anything else that compares a line with
-# its group header, or reads an Exec= line itself, is a new hand-written parser.
-allowed='dwm-default-apps dwm-xdg-autostart dwm-quickshell-launcher webapp-launch seed-autostart-overrides.sh dwm-packages.sh'
+# Desktop entries are read through dwm-desktop-entry.sh, with no exceptions
+# since #308: anything else that compares a line with its group header, reads
+# an Exec= line itself, or looks for a desktop key at the start of a line is a
+# new hand-written parser. (Name= and Type= are left out: autostop.sh reads
+# them from loginctl, not from a desktop entry.)
 while IFS= read -r file; do
 	name=${file##*/}
-	[[ $name == dwm-desktop-entry.sh || " $allowed " == *" $name "* ]] ||
+	[[ $name == dwm-desktop-entry.sh ]] ||
 		fail "$name reads desktop entries by hand; use scripts/dwm-desktop-entry.sh"
-done < <(grep -lE "== *[\"']\[Desktop Entry\][\"']|== Exec=\*" "$repo"/scripts/* 2>/dev/null || true)
+done < <(grep -lE "== *[\"']\[Desktop Entry\][\"']|== Exec=\*|\^(Exec|TryExec|Categories|OnlyShowIn|NotShowIn|MimeType|NoDisplay|Hidden)=" \
+	"$repo"/scripts/* 2>/dev/null || true)
 
 printf 'Desktop entry reader and Exec writer: PASS\n'

@@ -108,7 +108,10 @@ fi
 # long-running watch-* child terminatingCheckedCommand exists for
 # (Sync Phase 4). Sync Sprint 2 S2-05 (#286): the subcommand itself now
 # selects among snapshot/snapshot-core/snapshot-without-storage.
-grep -Fq 'snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand(' "$system_model"
+# #310: the snapshot is bound to the shell, so one still reading when
+# Quickshell dies is stopped with it.
+grep -Fq 'snapshotProcess.command = Commands.boundCheckedCommand(Commands.systemManagementCommand(' "$system_model"
+grep -Fq 'return watchCommand(["sh", "-c", script, "dwm-checked-command"].concat(command));' "$repo/config/quickshell/core/Commands.qml"
 grep -Fq 'required ? "snapshot-core" : snapshotProcess.storageOmitted ? "snapshot-without-storage" : "snapshot"' "$system_model"
 if grep -q 'terminatingCheckedCommand' "$system_model"; then
 	printf 'SystemManagementModel must use checkedCommand for the one-shot snapshot fetch.\n' >&2
@@ -183,6 +186,15 @@ grep -Fq 'capability.id !== "updates" && capability.id !== "package-updates"' "$
 grep -Fq 'emit_capability system package-updates' "$provider"
 grep -Fq 'emit_capability system health' "$provider"
 grep -Fq 'emit_capability system authorization' "$provider"
+# #293: no developer status cards. Rows that work, and rows unsupported by
+# design, are not shown; a missing helper says how to get it back.
+grep -Fq '&& capability.status !== "available" && capability.status !== "unsupported";' "$system_pane"
+grep -Fq "'Reinstall lyona to restore system health'" "$provider"
+if grep -Eq "emit_capability system .*'Install the" "$provider" ||
+	grep -A1 'emit_capability system' "$provider" | grep -Fq "'Install the"; then
+	printf 'A System row still names an internal helper to install.\n' >&2
+	exit 1
+fi
 
 # Settings section wiring: "system" already existed and already excluded
 # the generic capability-list fallback (UPDATE-003); this boundary must not
@@ -221,11 +233,24 @@ grep -Fq '"watch-units"' "$provider_discovery"
 # timer, parser line, or exit signal from a retired Process can never be
 # mistaken for a replacement one's -- the command assignment and deadline
 # Timers moved from the single static Process into that per-launch Component.
-grep -Fq 'command: Commands.watchCommand(Commands.systemManagementCommand(selected.action, selected.args))' "$provider_discovery"
+# #286: the per-launch monitor object stays, but attaches to the one shared
+# watch-domains process (SystemWatchHub) instead of running a watch-* process.
+watch_hub=$repo/config/quickshell/systemmanagement/SystemWatchHub.qml
+grep -Fq 'callbacks: root.monitorCallbacks(identity), domain: root.domain, hub: root.hub });' "$provider_discovery"
 grep -Fq 'interval: owner.identity.storage ? 3000 : 12000' "$provider_discovery"
 grep -Fq 'interval: owner.identity.storage ? 2000 : 1500' "$provider_discovery"
-grep -Fq 'process.signal(15)' "$provider_discovery"
+grep -Fq 'owner.hub.detach(owner, retire);' "$provider_discovery"
+# A failed domain's subscription is retired, so the retry starts it afresh.
+grep -Fq 'root.monitor.stop(root.failed);' "$provider_discovery"
+grep -Fq 'process.write("stop " + domain + "\n");' "$watch_hub"
 grep -Fq 'root.monitor.signal(9);' "$provider_discovery"
+grep -Fq 'command: Commands.watchCommand(Commands.systemManagementCommand("watch-domains", []))' "$watch_hub"
+grep -Fq 'process.write("start " + domain + "\n");' "$watch_hub"
+if grep -Fq 'Commands.systemManagementCommand(selected.action' "$provider_discovery"; then
+	printf 'A Settings > System domain starts its own watcher process again.\n' >&2
+	exit 1
+fi
+[ "$(grep -c 'hub: systemWatchHub' "$repo/config/quickshell/systemmanagement/SystemManagementModel.qml")" -eq 7 ]
 
 # Any event line that is not exactly "<prefix>\tready" or "<prefix>\tchanged"
 # fails the monitor -- unlike the snapshot protocol, unknown records here

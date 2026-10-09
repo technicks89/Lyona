@@ -66,7 +66,7 @@ keys = [
   # somewhere else -- Sync Sprint 7 S7-03, docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md.
   { mod="SUPER",            key="o",       desc="Window overview",         func="spawn",       exec=["lyona-shell", "overview", "toggle"] },
   { mod="SUPER",            key="x",       desc="Terminal",                 func="spawn",       exec=["$terminal"] },
-  { mod="SUPER",            key="w",       desc="Looking Glass (VM)",      func="spawn",       cmd="looking-glass-client -F" },
+  { mod="SUPER",            key="w",       desc="Looking Glass (VM)",      func="spawn",       cmd="if command -v looking-glass-client >/dev/null; then exec looking-glass-client -F; else notify-send -a lyona 'Looking Glass is not installed' 'Super+W starts looking-glass-client, for a VM with a passed-through GPU. Install it from the AUR to use it.'; fi" },
   { mod="SUPER SHIFT",      key="w",       desc="Randomize wallpaper",     func="spawn",       cmd="dwm-quickshell-controlcenter action reload-wallpaper" },
 
   # ── Web apps ─────────────────────────────────────────────────────────────────
@@ -104,18 +104,18 @@ keys = [
   { mod="SUPER",            key="k",       desc="Focus prev window",       func="focusstack",  i=-1 },
   { mod="SUPER SHIFT",      key="j",       desc="Move window down",        func="movestack",   i=1 },
   { mod="SUPER SHIFT",      key="k",       desc="Move window up",          func="movestack",   i=-1 },
-  { mod="SUPER",            key="Return",  desc="Promote to master",       func="zoom" },
+  { mod="SUPER",            key="Return",  desc="Move window to main area", func="zoom" },
   { mod="SUPER",            key="Tab",     desc="Previous tag",            func="view" },
   { mod="SUPER",            key="q",       desc="Close window",            func="killclient" },
 
   # ── Master / stack sizing ─────────────────────────────────────────────────────
-  { mod="SUPER",            key="i",       desc="Add to master",           func="incnmaster",  i=1 },
-  { mod="SUPER",            key="d",       desc="Remove from master",      func="incnmaster",  i=-1 },
-  { mod="SUPER",            key="h",       desc="Shrink master",           func="setmfact",    f=-0.05 },
-  { mod="SUPER",            key="l",       desc="Grow master",             func="setmfact",    f=0.05 },
-  { mod="SUPER SHIFT",      key="h",       desc="Cfact grow",              func="setcfact",    f=0.25 },
-  { mod="SUPER SHIFT",      key="l",       desc="Cfact shrink",            func="setcfact",    f=-0.25 },
-  { mod="SUPER SHIFT",      key="o",       desc="Cfact reset",             func="setcfact",    f=0.00 },
+  { mod="SUPER",            key="i",       desc="More windows in main area",func="incnmaster",  i=1 },
+  { mod="SUPER",            key="d",       desc="Fewer windows in main area",func="incnmaster",  i=-1 },
+  { mod="SUPER",            key="h",       desc="Narrower main area",      func="setmfact",    f=-0.05 },
+  { mod="SUPER",            key="l",       desc="Wider main area",         func="setmfact",    f=0.05 },
+  { mod="SUPER SHIFT",      key="h",       desc="Taller window in stack",  func="setcfact",    f=0.25 },
+  { mod="SUPER SHIFT",      key="l",       desc="Shorter window in stack", func="setcfact",    f=-0.25 },
+  { mod="SUPER SHIFT",      key="o",       desc="Even stack heights",      func="setcfact",    f=0.00 },
 
   # ── Layouts  (0=tiling  1=floating  2=monocle) ───────────────────────────────
   { mod="SUPER",            key="t",       desc="Tile layout",             func="setlayout",   layout_idx=0 },
@@ -123,7 +123,7 @@ keys = [
   { mod="SUPER",            key="m",       desc="Fullscreen",              func="fullscreen" },
   { mod="SUPER SHIFT",      key="m",       desc="Toggle floating window",  func="togglefloating" },
   { mod="SUPER",            key="space",   desc="Toggle float/tile",       func="togglefloating" },
-  { mod="SUPER SHIFT",      key="y",       desc="Fake fullscreen",         func="togglefakefullscreen" },
+  { mod="SUPER SHIFT",      key="y",       desc="Fullscreen inside window",func="togglefakefullscreen" },
   { mod="SUPER SHIFT",      key="b",       desc="Toggle bar",              func="togglebar" },
 
   # ── Multi-monitor ─────────────────────────────────────────────────────────────

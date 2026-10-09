@@ -36,6 +36,7 @@ Scope {
                 || value.active < 0 || value.active > 100 || value.inactive < 0 || value.inactive > 100
                 || (value.corner_radius !== undefined
                     && (!Number.isInteger(value.corner_radius) || value.corner_radius < 0))
+                || (value.unredirect !== undefined && typeof value.unredirect !== "boolean")
                 || ["auto", "xrender", "glx", "egl"].indexOf(value.policy) < 0)
             throw new Error("Invalid Picom settings response");
         root.snapshot = value;
@@ -68,6 +69,11 @@ Scope {
         root.message = "";
         root.actionFailure = "";
         actionProcess.running = true;
+    }
+
+    // Full-screen windows bypass the compositor (#288); off by default.
+    function setUnredirect(enabled) {
+        root.mutate("set-unredirect", [enabled ? "on" : "off"]);
     }
 
     function setOpacity(active, inactive, revision) {

@@ -39,6 +39,19 @@ var sections = [
             "diagnostics", "firewall", "secure boot", "encryption"] }
 ];
 
+// Not a section: what finds the row that opens the keybind viewer (#293).
+var shortcutKeywords = ["keyboard shortcuts", "shortcut", "hotkey", "keybind", "keybinding",
+    "key binding", "bindings"];
+
+// Whether QUERY (three letters or more, any case) asks for keyboard shortcuts.
+function matchesShortcuts(query) {
+    const needle = String(query || "").trim().toLowerCase();
+    if (needle.length < 3) return false;
+    return shortcutKeywords.some(function(keyword) {
+        return keyword.indexOf(needle) >= 0;
+    });
+}
+
 // The sections whose name, description or a keyword contains QUERY (any case).
 function filter(list, query) {
     const needle = String(query || "").trim().toLowerCase();

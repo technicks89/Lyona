@@ -131,4 +131,41 @@ for section in 'Packages' 'Default apps and AppImages' 'Build (make clean; make)
 	grep -Fq "step_timer \"$section\"" "$repo/install.sh" || fail "install.sh does not time: $section"
 done
 
+# A long step shows how long it has run, how long it usually takes and the
+# newest line of its log while it runs (#291), on a terminal.
+if command -v script >/dev/null 2>&1; then
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	live=$(script -qec "$(printf '%q ' bash -c '. "$1"; LYONA_STEP_EXPECT="usually 5-30 minutes"; run_logged "Installing..." bash -c "echo first line; sleep 2; echo downloading packages; sleep 2"' bash "$ui")" /dev/null 2>&1) ||
+		fail "a live step failed: $live"
+	live=$(printf '%s' "$live" | tr -d '\r')
+	[[ $live == *'Installing...'*'(usually 5-30 minutes)'* ]] || fail "the expected duration was not shown: $live"
+	[[ $live == *'Installing...  2s'* || $live == *'Installing...  3s'* ]] || fail "the elapsed time was not shown: $live"
+	[[ $live == *'downloading packages'* ]] || fail "the newest log line was not shown: $live"
+fi
+
+# Stopped part-way (Ctrl+C, or a kill), a step takes everything it started
+# with it, and the installer's own traps are back once a step ends.
+marker=$work/stop-marker
+# shellcheck disable=SC2016 # expanded by the inner bash
+STOP_MARKER=$marker bash -c '. "$1"; eval "$2"' x "$ui" '
+	trap "exit 143" TERM
+	run_logged "Kept trap" true
+	[[ $(trap -p TERM) == *"exit 143"* ]] || exit 9
+	run_logged "Long step" bash -c "(exec -a \"$STOP_MARKER-a\" sleep 300) & (exec -a \"$STOP_MARKER-b\" sleep 300); wait"' >/dev/null 2>&1 &
+installer=$!
+for _ in $(seq 50); do
+	pgrep -f "^$marker-b" >/dev/null && break
+	sleep 0.1
+done
+pgrep -f "^$marker-b" >/dev/null || fail 'the long step never started'
+kill -TERM "$installer"
+status=0
+wait "$installer" || status=$?
+[[ $status == 143 ]] || fail "a step stopped by TERM ended the installer with $status, not 143"
+sleep 0.2
+if pgrep -f "^$marker-" >/dev/null; then
+	pkill -f "^$marker-" || :
+	fail 'a stopped step left its processes running'
+fi
+
 echo "PASS: $test_name"

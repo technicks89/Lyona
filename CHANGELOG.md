@@ -8,7 +8,57 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- The image installer shows how long each step has run, how long it usually
+  takes, and the newest line of its log, redrawn every second, so a slow
+  archinstall or `install.sh` is told from a hung one (#291). Ctrl+C or a kill
+  during a step stops the step and everything it started.
+- The first keys after an image install (#295): the installer's last screen
+  names `Super`+`/` (every key), `Super`+`R` (the app launcher) and `Super`+`F1`
+  (the Control Center), and the first login says so in one notification.
+- Settings search finds "shortcut", "hotkey" and "keybind": a **Keyboard
+  shortcuts** row, reached with the arrow keys after the matching sections,
+  opens the keybind viewer (#293).
+- **Settings > Appearance > Compositor** can let full-screen windows bypass the
+  compositor (Picom's `unredir-if-possible`), off by default (#288).
+
 ### Changed
+
+- Settings > System runs one watcher process for all its domains, where it
+  started eight: about 37 MB where it was about 30 MB each (#286).
+  `dwm-system-management watch-domains` holds every domain's subscription on one
+  GLib loop; one domain failing no longer affects the others, and its retry
+  starts a fresh subscription (`stop DOMAIN`).
+- Fewer resident processes (#285): Bluetooth changes come through Quickshell's
+  Bluetooth service and media through its MPRIS service, instead of a resident
+  `gdbus monitor` and `playerctl --follow`, and the accessibility settings are
+  watched as one file instead of an `inotifywait` on all of `~/.config/lyona`.
+  The Bluetooth snapshot runs one `jq` instead of three. The network watcher
+  stays (Quickshell's networking service does not report saved profiles), but a
+  change while no network window is open no longer lists Wi-Fi networks, and
+  `nm-connection-editor` is looked up once.
+- Closed popups hold no list items (#287): notification history, the network,
+  Bluetooth and audio lists are built only while their popup is open.
+- Smaller costs (#288): the Defaults snapshot reads `mimeapps.list` and the
+  desktop entries once (about 40% faster here); login waits for the tray on its
+  D-Bus name instead of polling Quickshell; notification history keeps at most
+  256 characters of a summary and 1024 of a body; `checkupdates` keeps its
+  database copy in `~/.cache/lyona` instead of `/tmp` (RAM); the Controls popup
+  takes the Bluetooth status from the Bluetooth model; the input settings watcher
+  waits on the session process instead of checking it every 5 seconds.
+- Every script reads desktop entries through `scripts/dwm-desktop-entry.sh`
+  (#308): the launcher, Defaults, XDG autostart, web-app launch, the autostart
+  seeding and the package checks. It refuses an entry with control characters,
+  a repeated group or a duplicate key in every one of them. The launcher indexes
+  as fast as before.
+- Clearer wording (#293): Quick Actions names the action it runs and says "done"
+  or "opened in a terminal"; Self-Heal is shown only once it is set up; the Picom
+  failure notification points at the XRender backend; Settings > System lists
+  only what needs attention, and a missing helper says "Reinstall lyona to
+  restore ..."; every notification comes from "lyona", with timeouts such as
+  "10 minutes"; the keybind viewer says "Taller window in stack" rather than
+  "Cfact grow".
 
 - Updates reach existing accounts (#273). `install.sh` and `lyona-update` both
   run `scripts/lyona-reconcile-user`, which records the install profile and
@@ -61,6 +111,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   instead of "Desktop".
 
 ### Fixed
+
+- Image installs in QEMU/KVM get the guest utilities again (#310). The
+  hypervisor was detected inside `arch-chroot`, which answers `container-other`,
+  so no VM ever got `qemu-guest-agent` or `spice-vdagent`.
+- `Super`+`W` says Looking Glass is not installed instead of failing silently;
+  no profile installs `looking-glass-client` (#293).
+- A Settings > System snapshot still running when Quickshell dies is stopped
+  with it (#310).
+- The launcher's ChatGPT lookup no longer consumes the rest of the entry list it
+  is searching.
 
 - Settings > Appearance shows a Toolkit GTK or cursor theme as applied
   (#274). It worked out the expected theme with its own copy of

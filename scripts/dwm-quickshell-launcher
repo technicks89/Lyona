@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
 # A checkout keeps the shared shell code beside the scripts; an install keeps it
@@ -8,6 +8,8 @@ lyona_lib=${0%/*}
 [ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh"
 
 usage() {
 	printf 'usage: %s list|launch <desktop-file>\n' "$0" >&2
@@ -65,44 +67,31 @@ desktop_files() {
 		done
 }
 
+# desktop_entry_summary [FILE...]: one row per entry the launcher shows, from
+# the files given, or from the list on stdin. All of them are read in one pass
+# of the shared reader (#308), which refuses a malformed entry whole.
 desktop_entry_summary() {
+	local locale locale_short current_desktop
+	local -a files=("$@")
 	locale=${LC_MESSAGES:-${LANG:-}}
 	locale=${locale%%.*}
 	locale_short=${locale%%_*}
 	# Lyona sessions export X-DWM and dwm; the same names when run outside one.
 	current_desktop=${XDG_CURRENT_DESKTOP:-X-DWM:dwm}
+	(($# > 0)) || mapfile -t files
 
-	awk -v locale="$locale" -v locale_short="$locale_short" -v current_desktop="$current_desktop" '
+	desktop_entries_read 'Desktop Entry' "${files[@]}" |
+		awk -F '\t' -v locale="$locale" -v locale_short="$locale_short" -v current_desktop="$current_desktop" '
 		function clean(value) {
 			gsub(/\t/, " ", value)
 			gsub(/\r/, "", value)
 			return value
 		}
 
-		function key_name(line) {
-			return substr(line, 1, index(line, "=") - 1)
-		}
-
-		function key_value(line) {
-			return substr(line, index(line, "=") + 1)
-		}
-
 		function localized_match(key, base) {
 			return locale != "" &&
 				(key == base "[" locale "]" ||
 				 key == base "[" locale_short "]")
-		}
-
-		function assign_localized(key, value) {
-			if (localized_match(key, "Name")) {
-				name = value
-			} else if (localized_match(key, "GenericName")) {
-				generic = value
-			} else if (localized_match(key, "Comment")) {
-				comment = value
-			} else if (localized_match(key, "Keywords")) {
-				keywords = value
-			}
 		}
 
 		# True when desktop matches a name in the semicolon-separated list
@@ -125,158 +114,47 @@ desktop_entry_summary() {
 			for (i = 1; i <= n_desktops; i++) {
 				desktop = desktops[i]
 				if (desktop == "") continue
-				if (has_onlyshowin && desktop_matches(desktop, onlyshowin)) return 1
-				if (has_notshowin && desktop_matches(desktop, notshowin)) return 0
+				if ("OnlyShowIn" in key && desktop_matches(desktop, key["OnlyShowIn"])) return 1
+				if ("NotShowIn" in key && desktop_matches(desktop, key["NotShowIn"])) return 0
 			}
-			return !has_onlyshowin
+			return !("OnlyShowIn" in key)
 		}
 
-		function desktop_entry_visible() {
-			return type == "Application" &&
-				name != "" &&
-				exec != "" &&
-				hidden != "true" &&
-				nodisplay != "true" &&
-				shown_on_this_desktop()
+		# A localized value for this locale wins over the plain one.
+		function localized(base) {
+			return localized_value[base] != "" ? localized_value[base] : key[base]
 		}
 
-		function emit() {
-			if (desktop_entry_visible()) {
+		function emit(file, name) {
+			name = localized("Name")
+			if (key["Type"] == "Application" && name != "" && key["Exec"] != "" &&
+			    tolower(key["Hidden"]) != "true" && tolower(key["NoDisplay"]) != "true" &&
+			    shown_on_this_desktop()) {
 				printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					clean(name), clean(generic), clean(comment),
-					clean(exec), clean(icon), clean(file),
-					clean(keywords), clean(categories),
-					clean(startup_wm_class), clean(actions)
+					clean(name), clean(localized("GenericName")), clean(localized("Comment")),
+					clean(key["Exec"]), clean(key["Icon"]), clean(file),
+					clean(localized("Keywords")), clean(key["Categories"]),
+					clean(key["StartupWMClass"]), clean(key["Actions"])
 			}
 		}
 
-		function reset() {
-			entry = 0
-			type = ""
-			name = ""
-			generic = ""
-			comment = ""
-			exec = ""
-			icon = ""
-			keywords = ""
-			categories = ""
-			startup_wm_class = ""
-			actions = ""
-			hidden = "false"
-			nodisplay = "false"
-			onlyshowin = ""
-			notshowin = ""
-			has_onlyshowin = 0
-			has_notshowin = 0
+		# The status line ends each file: its keys are complete.
+		$2 == "" {
+			if ($3 == "ok") emit($1)
+			delete key
+			delete localized_value
+			next
 		}
 
-		BEGIN {
-			while ((getline path < "/dev/stdin") > 0) {
-				if (path != "") {
-					ARGV[ARGC++] = path
-				}
+		{
+			value = substr($0, length($1) + length($2) + 3)
+			if ($2 ~ /\[/) {
+				base = $2
+				sub(/\[.*/, "", base)
+				if (localized_match($2, base)) localized_value[base] = value
+			} else {
+				key[$2] = value
 			}
-			file = ""
-			reset()
-		}
-
-		FNR == 1 {
-			emit()
-			reset()
-			file = FILENAME
-		}
-
-		$0 == "[Desktop Entry]" {
-			entry = 1
-			next
-		}
-
-		/^\[/ {
-			entry = 0
-			next
-		}
-
-		entry && $0 ~ /^Type=/ {
-			type = substr($0, 6)
-			next
-		}
-
-		entry && $0 ~ /^Name=/ && name == "" {
-			name = substr($0, 6)
-			next
-		}
-
-		entry && $0 ~ /^GenericName=/ && generic == "" {
-			generic = substr($0, 13)
-			next
-		}
-
-		entry && $0 ~ /^Comment=/ && comment == "" {
-			comment = substr($0, 9)
-			next
-		}
-
-		entry && $0 ~ /^Exec=/ && exec == "" {
-			exec = substr($0, 6)
-			next
-		}
-
-		entry && $0 ~ /^Icon=/ && icon == "" {
-			icon = substr($0, 6)
-			next
-		}
-
-		entry && $0 ~ /^Keywords=/ && keywords == "" {
-			keywords = substr($0, 10)
-			next
-		}
-
-		entry && $0 ~ /^Categories=/ && categories == "" {
-			categories = substr($0, 12)
-			next
-		}
-
-		entry && $0 ~ /^StartupWMClass=/ && startup_wm_class == "" {
-			startup_wm_class = substr($0, 16)
-			next
-		}
-
-		entry && $0 ~ /^Actions=/ && actions == "" {
-			actions = substr($0, 9)
-			next
-		}
-
-		entry && $0 ~ /^OnlyShowIn[[:space:]]*=/ {
-			onlyshowin = key_value($0)
-			sub(/^[[:space:]]+/, "", onlyshowin)
-			has_onlyshowin = 1
-			next
-		}
-
-		entry && $0 ~ /^NotShowIn[[:space:]]*=/ {
-			notshowin = key_value($0)
-			sub(/^[[:space:]]+/, "", notshowin)
-			has_notshowin = 1
-			next
-		}
-
-		entry && $0 ~ /^Hidden=/ {
-			hidden = tolower(substr($0, 8))
-			next
-		}
-
-		entry && $0 ~ /^NoDisplay=/ {
-			nodisplay = tolower(substr($0, 11))
-			next
-		}
-
-		entry && $0 ~ /^[A-Za-z]+(\[[^]]+\])=/ {
-			assign_localized(key_name($0), key_value($0))
-			next
-		}
-
-		END {
-			emit()
 		}
 	'
 }
@@ -324,25 +202,7 @@ list_apps() {
 }
 
 desktop_value() {
-	file=$1
-	key=$2
-
-	awk -v key="$key" '
-		$0 == "[Desktop Entry]" {
-			entry = 1
-			next
-		}
-
-		/^\[/ {
-			entry = 0
-			next
-		}
-
-		entry && index($0, key "=") == 1 {
-			print substr($0, length(key) + 2)
-			exit
-		}
-	' "$file"
+	desktop_entry_get "$1" "$2" || true
 }
 
 is_chatgpt_entry() {

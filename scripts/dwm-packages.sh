@@ -512,21 +512,14 @@ dwm_other_default_browser() {
 # Whether a desktop entry's program is installed: its TryExec, else the first
 # word of its Exec, found on PATH (or as an absolute path).
 dwm_desktop_entry_runnable() { # FILE
-	local line key value program='' try='' section=''
-	while IFS= read -r line; do
-		case $line in
-		'['*']') section=$line ;;
-		*=*)
-			[[ $section == '[Desktop Entry]' ]] || continue
-			key=${line%%=*}
-			value=${line#*=}
-			case $key in
-			TryExec) [[ -n $try ]] || try=$value ;;
-			Exec) [[ -n $program ]] || program=$value ;;
-			esac
-			;;
-		esac
-	done <"$1"
+	local program try
+	# Through the shared reader (#308), sourced from beside this file.
+	if ! declare -F desktop_entry_get >/dev/null; then
+		# shellcheck source=scripts/dwm-desktop-entry.sh
+		. "${BASH_SOURCE[0]%/*}/dwm-desktop-entry.sh" || return 1
+	fi
+	program=$(desktop_entry_get "$1" Exec) || program=
+	try=$(desktop_entry_get "$1" TryExec) || try=
 	[[ -z $try ]] || program=$try
 	program=${program%% *}
 	program=${program#\"}
