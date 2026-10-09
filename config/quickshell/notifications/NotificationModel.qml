@@ -26,6 +26,10 @@ Scope {
     readonly property int criticalTimeoutMs: 10000
     readonly property int maxVisible: 4
     readonly property int maxHistory: 50
+    // History is capped in size as well as count (#288): a sender's long text
+    // is cut when it arrives, so 50 entries stay small on disk and in memory.
+    readonly property int maxHistorySummary: 256
+    readonly property int maxHistoryBody: 1024
     readonly property var popupTimeoutOptions: [4000, 6000, 10000]
     readonly property bool popupSuppressed: root.policyState === "loading"
         || root.policyState === "partial"
@@ -216,16 +220,25 @@ Scope {
         }
     }
 
-    function addHistory(item) {
-        const entry = {
+    function clipText(text, limit) {
+        const value = String(text || "");
+        return value.length > limit ? value.slice(0, limit - 3) + "..." : value;
+    }
+
+    function historyEntry(item, timestamp) {
+        return {
             "key": item.key,
-            "appName": item.appName,
-            "summary": item.summary,
-            "body": item.body,
+            "appName": root.clipText(item.appName, 64),
+            "summary": root.clipText(item.summary, root.maxHistorySummary),
+            "body": root.clipText(item.body, root.maxHistoryBody),
             "urgency": item.urgency,
             "urgencyName": item.urgencyName,
-            "timestamp": Date.now()
+            "timestamp": timestamp
         };
+    }
+
+    function addHistory(item) {
+        const entry = root.historyEntry(item, Date.now());
 
         root.history = [entry].concat(root.history).slice(0, root.maxHistory);
         root.saveHistory();
@@ -253,7 +266,8 @@ Scope {
     }
 
     function loadHistory() {
-        root.history = (historyFile.notifications || []).slice(0, root.maxHistory);
+        root.history = (historyFile.notifications || []).slice(0, root.maxHistory)
+            .map(entry => root.historyEntry(entry, entry.timestamp));
     }
 
     function saveHistory() {

@@ -32,6 +32,15 @@ TestCase {
         compare(ids("no such setting"), []);
     }
 
+    // #293: shortcuts are found, and lead to the keybind viewer, not a section.
+    function test_shortcuts() {
+        for (const query of ["shortcut", "Hotkey", "keybind", "key binding", "Keyboard shortcuts"])
+            verify(SettingsSearch.matchesShortcuts(query), query);
+        for (const query of ["", "ke", "wifi", "keyboard layout"])
+            verify(!SettingsSearch.matchesShortcuts(query), query);
+        compare(ids("shortcut"), []);
+    }
+
     function test_every_section_has_keywords() {
         for (const section of SettingsSearch.sections) {
             verify(section.keywords.length > 0, section.id);

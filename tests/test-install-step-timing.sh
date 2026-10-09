@@ -131,4 +131,16 @@ for section in 'Packages' 'Default apps and AppImages' 'Build (make clean; make)
 	grep -Fq "step_timer \"$section\"" "$repo/install.sh" || fail "install.sh does not time: $section"
 done
 
+# A long step shows how long it has run, how long it usually takes and the
+# newest line of its log while it runs (#291), on a terminal.
+if command -v script >/dev/null 2>&1; then
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	live=$(script -qec "$(printf '%q ' bash -c '. "$1"; LYONA_STEP_EXPECT="usually 5-30 minutes"; run_logged "Installing..." bash -c "echo first line; sleep 2; echo downloading packages; sleep 2"' bash "$ui")" /dev/null 2>&1) ||
+		fail "a live step failed: $live"
+	live=$(printf '%s' "$live" | tr -d '\r')
+	[[ $live == *'Installing...'*'(usually 5-30 minutes)'* ]] || fail "the expected duration was not shown: $live"
+	[[ $live == *'Installing...  2s'* || $live == *'Installing...  3s'* ]] || fail "the elapsed time was not shown: $live"
+	[[ $live == *'downloading packages'* ]] || fail "the newest log line was not shown: $live"
+fi
+
 echo "PASS: $test_name"

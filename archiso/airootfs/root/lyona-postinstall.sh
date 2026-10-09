@@ -331,7 +331,9 @@ setup_swap_if_needed() {
 
 install_qemu_guest_utils() {
 	local virt
-	virt=$(arch-chroot "$TARGET" systemd-detect-virt 2>/dev/null || true)
+	# Asked here, on the live medium, not inside arch-chroot: there it answers
+	# container-other, and no VM ever got the guest utilities (#310).
+	virt=$(systemd-detect-virt --vm 2>/dev/null || true)
 
 	case "$virt" in
 	qemu | kvm) ;;
@@ -470,11 +472,18 @@ install -Dm644 /etc/lyona-iso-release "$TARGET/etc/lyona-iso-release" 2>/dev/nul
 
 # install.sh's own warnings, from what it adds to the log.
 log_mark=$(wc -l <"$LOG_FILE" 2>/dev/null || printf '0')
+# It downloads the whole desktop: shown beside the elapsed time (#291).
+LYONA_STEP_EXPECT="usually 5-30 minutes"
 run_logged "Running install.sh --profile full as $target_user..." \
 	arch-chroot "$TARGET" su - "$target_user" -c \
 	"cd \"\$HOME/$checkout_rel\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full --skip-topgrade"
 
 rm -f -- "$install_sudoers"
+# The first keys, shown once at the first login (#295): the session's autostart
+# turns this marker into a notification, then removes it.
+# shellcheck disable=SC2016 # expanded by the inner sh, as the user
+arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" \
+	sh -c 'mkdir -p "$HOME/.local/state/lyona" && : >"$HOME/.local/state/lyona/first-login-keys"' || :
 tail -n "+$((log_mark + 1))" "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' |
 	sed -n 's/^\[WARN\] /install.sh: /p' >>"$LYONA_WARNINGS" || :
 # shellcheck disable=SC2034 # read by lyona-ui.sh's recovery menu
@@ -524,6 +533,10 @@ if [[ -e $NVIDIA_AUR_MARKER ]]; then
 		"The NVIDIA driver was built from the AUR: pacman -Syu does not update it. Update it with yay."
 	echo
 fi
+# The keys a newcomer needs first (#295); the first login says them again.
+say --foreground "$COLOR_ACCENT" \
+	"After logging in: Super+/ shows every key, Super+R opens the app launcher, Super+F1 the Control Center."
+echo
 # Not "remove it now": this live system may still be running from the medium,
 # and pulling it out before the reboot crashed the reboot (Sync Sprint 16,
 # found in a VM). The new disk comes first in the boot order archinstall sets.

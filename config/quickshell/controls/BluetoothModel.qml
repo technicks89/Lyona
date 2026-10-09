@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Io
 import qs.core
 import "../core/Protocol.js" as Protocol
@@ -186,17 +187,21 @@ Scope {
         }
     }
 
-    // Not WatchedProcess (Sync Sprint 12 S12-14): it is never restarted, and
-    // WatchedProcess would restart it every 3 s -- forever, on a machine
-    // without gdbus, where the command exits at once. gdbus subscribes to
-    // BlueZ's signals as any user may; `busctl monitor` needs BecomeMonitor,
-    // which the system bus refuses an unprivileged user, so it never saw a
-    // change (Sync Sprint 16 R16-35).
-    Process {
-        command: Commands.watchCommand(["sh", "-c", "command -v gdbus >/dev/null 2>&1 && exec gdbus monitor --system --dest org.bluez"])
-        running: true
-        stdout: SplitParser { onRead: monitorSettleTimer.restart() }
+    // What the snapshot shows, as Quickshell already follows BlueZ over D-Bus
+    // (#285): a change to any of it reads the snapshot again. This replaces a
+    // resident D-Bus monitor process, which ran all session even without an
+    // adapter.
+    readonly property string bluezState: {
+        const parts = [];
+        for (const adapter of Bluetooth.adapters.values)
+            parts.push([adapter.dbusPath, adapter.name, adapter.enabled, adapter.discovering,
+                adapter.pairable].join("|"));
+        for (const device of Bluetooth.devices.values)
+            parts.push([device.dbusPath, device.name, device.paired, device.trusted,
+                device.connected].join("|"));
+        return parts.join("\n");
     }
+    onBluezStateChanged: monitorSettleTimer.restart()
 
     Timer {
         id: monitorSettleTimer

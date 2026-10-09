@@ -124,6 +124,7 @@ stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-s
 # regional-preview/timezone-set/ntp-set/locale-set/*-open responses, so
 # SystemRegionalControls has real content for a full preview -> confirm ->
 # dispatch -> verified-result cycle, not just idle defaults.
+cp "$repo/tests/fixtures/watch-domains-adapter.py" "$data_home/checkout/scripts/"
 cat >"$data_home/checkout/scripts/dwm-system-management" <<'SH'
 #!/bin/sh
 set -eu
@@ -214,6 +215,11 @@ snapshot | snapshot-core | snapshot-without-storage)
 		printf 'filesystem\t1\tavailable\t/dev/fixture\t/\text4\t1000000000\t200000000\t800000000\tFilesystem bytes at this read\n'
 	fi
 	printf 'complete\tsnapshot\n'
+	;;
+watch-domains)
+	# #286: the shell's one watcher; the adapter runs this stub's watch-*
+	# commands below behind it.
+	exec /usr/bin/python3 "${0%/*}/watch-domains-adapter.py" "$0"
 	;;
 watch-updates)
 	# Real bus signals are exercised for real by

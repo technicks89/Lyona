@@ -24,6 +24,8 @@ Scope {
     property string pendingSetting: ""
     property string pendingValue: ""
     readonly property bool mutationReady: root.mutationState === "available"
+    readonly property string configHome: (Quickshell.env("XDG_CONFIG_HOME") || "").startsWith("/")
+        ? Quickshell.env("XDG_CONFIG_HOME") : (Quickshell.env("HOME") || "") + "/.config"
 
     function useDefaults() {
         root.highContrast = false;
@@ -117,18 +119,27 @@ Scope {
                 && fields[2] === "all" && fields[3] === "defaults";
     }
 
-    Component.onCompleted: {
-        root.refresh();
-        accessibilityWatcher.start();
+    Component.onCompleted: root.refresh()
+
+    // The one file, watched in the shell (#285): no inotifywait on the whole
+    // folder. It sees the file created, replaced and removed; the helper still
+    // checks it on every read.
+    FileView {
+        id: accessibilityWatch
+        path: root.configHome + "/lyona/accessibility.conf"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: {
+            reload();
+            accessibilitySettle.restart();
+        }
     }
 
-    WatchedProcess {
-        id: accessibilityWatcher
-
-        command: Commands.watchCommand(Commands.accessibilitySettingsCommand("watch", []))
-        active: true
-        settleInterval: 100
-        onSettled: root.refresh()
+    Timer {
+        id: accessibilitySettle
+        interval: 100
+        repeat: false
+        onTriggered: root.refresh()
     }
 
     Process {

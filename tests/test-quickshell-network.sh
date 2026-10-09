@@ -222,6 +222,24 @@ if grep -Fq "wifi-network	" "$work/snapshot-wifi-restricted.out"; then
 	exit 1
 fi
 
+# #285: with no network window open, the shell asks for no Wi-Fi list. Wi-Fi
+# scanning failing here shows it is not even tried.
+DWM_TEST_WIFI_SCAN_FAIL=1 PATH="$work/bin:$PATH" \
+	"$repo/scripts/dwm-quickshell-network" snapshot --wifi no --rescan no >"$work/snapshot-no-wifi.out"
+grep -Fqx "provider	network	available	delegated	NetworkManager state and user-authorized actions" "$work/snapshot-no-wifi.out"
+grep -Fqx "network-device	enp6s0	ethernet	connected	Wired connection 1" "$work/snapshot-no-wifi.out"
+if grep -Fq "wifi-network	" "$work/snapshot-no-wifi.out"; then
+	exit 1
+fi
+PATH="$work/bin:$PATH" "$repo/scripts/dwm-quickshell-network" snapshot --wifi yes --rescan no >"$work/snapshot-wifi-yes.out"
+grep -Fqx "wifi-network	*	AA:BB:CC:DD:EE:01	Cafe:WiFi	83	WPA2	6	wlan0" "$work/snapshot-wifi-yes.out"
+if PATH="$work/bin:$PATH" "$repo/scripts/dwm-quickshell-network" snapshot --wifi maybe >/dev/null 2>&1; then
+	exit 1
+fi
+model=$repo/config/quickshell/network/NetworkModel.qml
+grep -Fq 'const wantWifi = root.visible || root.settingsVisible;' "$model"
+grep -Fq 'if (!root.editorChecked && !editorCheckProcess.running) {' "$model"
+
 DWM_TEST_NMCLI_MODE=service-fail PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-network" snapshot --rescan no >"$work/snapshot-unavailable.out"
 grep -Fqx "provider	network	unavailable	read-only	NetworkManager not running" "$work/snapshot-unavailable.out"

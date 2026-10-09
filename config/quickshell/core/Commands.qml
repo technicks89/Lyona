@@ -44,6 +44,19 @@ Singleton {
         return ["sh", "-c", script, "dwm-checked-command"].concat(command);
     }
 
+    // checkedCommand's success gate for a one-shot read that can run for a
+    // while, bound to Quickshell's lifetime (#310): the wrapper is
+    // parent-bound like a watcher, and a TERM (Quickshell stopping the Process,
+    // or dying) stops the helper too instead of leaving it to finish. Its
+    // output goes through a private file, so it may be any size.
+    function boundCheckedCommand(command) {
+        const script = 'output_file=$(mktemp "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dwm-checked-command.XXXXXX") || exit 1; '
+            + 'child=; stop() { [ -z "$child" ] || kill -TERM "$child" 2>/dev/null; rm -f -- "$output_file"; exit 143; }; '
+            + 'trap stop HUP INT TERM; "$@" >"$output_file" & child=$!; wait "$child"; status=$?; child=; '
+            + 'if [ "$status" -eq 0 ]; then cat -- "$output_file"; fi; rm -f -- "$output_file"; exit "$status"';
+        return watchCommand(["sh", "-c", script, "dwm-checked-command"].concat(command));
+    }
+
     function booleanStatusCommand(command) {
         const script = 'if "$@" >/dev/null 2>&1; then printf "available\\n"; else printf "restricted\\n"; fi';
         return ["sh", "-c", script, "dwm-boolean-status"].concat(command);

@@ -623,6 +623,7 @@ check-format:
 check-session-guards:
 	tests/test-autostart.sh
 	tests/test-autostart-compositor.sh
+	tests/test-autostart-tray-wait.sh
 	tests/test-autostop.sh
 
 check-session-migration:
@@ -800,6 +801,7 @@ check-lock:
 
 check-default-apps:
 	tests/test-dwm-default-apps.sh
+	tests/test-default-apps-mime-cache.sh
 	tests/test-seed-default-apps.sh
 	tests/test-reconcile-user.sh
 
@@ -1019,6 +1021,7 @@ check-quickshell-command-menu:
 	tests/test-quickshell-command-menu.sh
 
 check-quickshell-notifications:
+	tests/test-quickshell-closed-popups.sh
 	tests/test-quickshell-notifications.sh
 
 check-quickshell-tray:
@@ -1264,6 +1267,8 @@ check-download-pins:
 # R16-22, R16-29, R16-30: the image install's closing screen, steps and cancel.
 check-iso-install-warnings:
 	tests/test-iso-install-warnings.sh
+	tests/test-iso-vm-guest.sh
+	tests/test-first-login-keys.sh
 
 # #237: the image installer's Wi-Fi step, against a stub iwd (busctl) and gum.
 check-iso-install-wifi:

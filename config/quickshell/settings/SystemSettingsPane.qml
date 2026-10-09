@@ -25,8 +25,11 @@ Flickable {
     // shown beside the timezone row below.
     property string clockText: ""
 
+    // Only rows that need the user: not ones that work, and not ones that are
+    // unsupported by design, such as delegated administration (#293).
     readonly property var additionalCapabilities: root.capabilities.filter(function(capability) {
-        return capability.id !== "updates" && capability.id !== "package-updates";
+        return capability.id !== "updates" && capability.id !== "package-updates"
+            && capability.status !== "available" && capability.status !== "unsupported";
     })
 
     contentWidth: width
@@ -771,7 +774,7 @@ Flickable {
 
         SectionLabel {
             visible: root.additionalCapabilities.length > 0
-            label: "Additional capabilities"
+            label: "Needs attention"
         }
 
         Repeater {

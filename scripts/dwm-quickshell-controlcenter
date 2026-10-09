@@ -1117,7 +1117,7 @@ power_set_dpms_timeout() {
 		printf 'failed to save display power timeout; configuration was not changed\n' >&2
 		return 1
 	fi
-	notify "Display power updated" "DPMS timeout ${power_dpms_timeout}s"
+	notify "Display power updated" "The screen turns off after $(human_duration "$power_dpms_timeout")"
 	printf 'power-dpms-timeout\t%s\n' "$power_dpms_timeout"
 }
 
@@ -1218,7 +1218,7 @@ power_set_lock_timeout() {
 		printf 'failed to save automatic locking timeout; configuration was not changed\n' >&2
 		return 1
 	fi
-	notify "Locking updated" "Auto lock timeout ${power_lock_timeout}s"
+	notify "Locking updated" "The screen locks after $(human_duration "$power_lock_timeout")"
 	printf 'power-lock-timeout\t%s\n' "$power_lock_timeout"
 }
 
@@ -1386,9 +1386,26 @@ session_action() {
 	esac
 }
 
+# Every lyona notification has the one sender name, "lyona" (#293).
 notify() {
 	if command -v notify-send >/dev/null 2>&1; then
-		notify-send -a "DWM Control Center" "$@" 2>/dev/null || true
+		notify-send -a lyona "$@" 2>/dev/null || true
+	fi
+}
+
+# SECONDS as people say it: "10 minutes", "1 hour", "45 seconds" (#293).
+human_duration() {
+	if [ "$1" -ge 3600 ] && [ $(($1 % 3600)) -eq 0 ]; then
+		set -- $(($1 / 3600)) hour
+	elif [ "$1" -ge 60 ] && [ $(($1 % 60)) -eq 0 ]; then
+		set -- $(($1 / 60)) minute
+	else
+		set -- "$1" second
+	fi
+	if [ "$1" -eq 1 ]; then
+		printf '1 %s\n' "$2"
+	else
+		printf '%s %ss\n' "$1" "$2"
 	fi
 }
 
@@ -1416,8 +1433,13 @@ launch_background() {
 	fi
 }
 
+# Set when an action opened a terminal, so the Control Center says so rather
+# than "Done" (#293).
+action_terminal=
+
 terminal_run() {
 	if command -v dwm-terminal >/dev/null 2>&1; then
+		action_terminal=1
 		launch_background dwm-terminal -e sh -c "$1"
 	else
 		sh -c "$1"
@@ -1682,7 +1704,8 @@ install_missing_deps() {
 	fi
 }
 
-self_heal() {
+# The configured Self-Heal script, or a reason on stderr and status 1.
+self_heal_script_path() {
 	self_heal_script=${DWM_SELF_HEAL_SCRIPT:-}
 	self_heal_path_file=$dwm_config_dir/self-heal.path
 	if [ -z "$self_heal_script" ] && [ -f "$self_heal_path_file" ]; then
@@ -1702,6 +1725,11 @@ self_heal() {
 		printf 'Self-Heal script is not executable: %s\n' "$self_heal_script" >&2
 		return 1
 	fi
+	printf '%s\n' "$self_heal_script"
+}
+
+self_heal() {
+	self_heal_script=$(self_heal_script_path) || return 1
 	if ! command -v dwm-terminal >/dev/null 2>&1 ||
 		! dwm-terminal --print-command >/dev/null 2>&1; then
 		printf 'Self-Heal requires an available terminal to show progress and authorization prompts.\n' >&2
@@ -1709,6 +1737,7 @@ self_heal() {
 	fi
 	# The script is an argv value, never shell source. It owns any confirmation
 	# and privilege prompts; the Quickshell frontend stays unprivileged.
+	action_terminal=1
 	# shellcheck disable=SC2016 # Expand positional arguments in the terminal shell.
 	launch_background dwm-terminal -e sh -c '
 		"$1"
@@ -1756,15 +1785,23 @@ action() {
 		return 2
 		;;
 	esac
-	printf 'action\t%s\n' "$1"
+	printf 'action\t%s%s\n' "$1" "${action_terminal:+	terminal}"
+}
+
+# The Quick Actions that depend on something optional, one per line, when it is
+# there: Self-Heal only once a script is set up, GTK Settings with nwg-look (#293).
+optional_actions() {
+	! command -v nwg-look >/dev/null 2>&1 || printf 'optional-action\tgtk-settings\n'
+	! self_heal_script_path >/dev/null 2>&1 || printf 'optional-action\tself-heal\n'
 }
 
 usage() {
-	printf 'usage: %s health|info|themes|theme-set <name>|keybinds|power-status|power-snapshot|power-lock-snapshot|power-watch|power-profile-set <profile>|power-apply|power-dpms on|off|power-dpms-timeout <seconds>|power-lock on|off|power-lock-timeout <seconds>|session-action lock|logout|suspend|reboot|shutdown|action <name>\n' "$0" >&2
+	printf 'usage: %s health|optional-actions|info|themes|theme-set <name>|keybinds|power-status|power-snapshot|power-lock-snapshot|power-watch|power-profile-set <profile>|power-apply|power-dpms on|off|power-dpms-timeout <seconds>|power-lock on|off|power-lock-timeout <seconds>|session-action lock|logout|suspend|reboot|shutdown|action <name>\n' "$0" >&2
 }
 
 case ${1:-} in
 health) health ;;
+optional-actions) optional_actions ;;
 info) info ;;
 themes) themes ;;
 theme-set)

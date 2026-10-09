@@ -83,7 +83,7 @@ FloatingWindow {
                     spacing: Theme.spacingLg
 
                     Repeater {
-                        model: root.notificationModel.history
+                        model: root.visible ? root.notificationModel.history : []
 
                         delegate: Rectangle {
                             id: historyEntry

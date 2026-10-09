@@ -135,6 +135,8 @@ FloatingWindow {
                             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                 if (root.settingsModel.filteredSections.length > 0) {
                                     root.settingsModel.selectSection(root.settingsModel.filteredSections[root.settingsModel.selectedIndex].id);
+                                } else if (root.settingsModel.shortcutsMatch) {
+                                    root.settingsModel.openShortcuts();
                                 }
                                 event.accepted = true;
                             } else if (event.key === Qt.Key_Escape) {
@@ -281,9 +283,56 @@ FloatingWindow {
                                 UiText {
                                     parent: sectionList
                                     anchors.centerIn: parent
-                                    visible: sectionList.count === 0
+                                    visible: sectionList.count === 0 && !root.settingsModel.shortcutsMatch
                                     text: "No matching sections"
                                     color: Theme.menuMutedText
+                                }
+                            }
+
+                            // Shortcuts live in the keybind viewer, not a section (#293).
+                            Rectangle {
+                                id: shortcutsButton
+
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.max(Theme.dp(44),
+                                    shortcutsColumn.implicitHeight + Theme.spacingSm)
+                                visible: root.settingsModel.shortcutsMatch
+                                color: shortcutsMouse.containsMouse ? Theme.menuHoverBackground : Theme.transparent
+                                border.color: Theme.controlSelectedBorder
+                                border.width: Theme.controlBorderWidth
+                                radius: Theme.controlRadius
+
+                                ColumnLayout {
+                                    id: shortcutsColumn
+
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 8
+                                    spacing: Theme.spacingXxs
+
+                                    UiText {
+                                        Layout.fillWidth: true
+                                        text: "Keyboard shortcuts"
+                                        color: shortcutsMouse.containsMouse ? Theme.menuHoverText : Theme.menuText
+                                        font.pixelSize: Theme.fontBodySize
+                                        elide: Text.ElideRight
+                                    }
+
+                                    UiText {
+                                        Layout.fillWidth: true
+                                        text: "Open the keybind viewer (Super+/)"
+                                        color: shortcutsMouse.containsMouse ? Theme.menuHoverText : Theme.menuMutedText
+                                        font.pixelSize: Theme.fontCaptionSize
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: shortcutsMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.settingsModel.openShortcuts()
                                 }
                             }
                         }

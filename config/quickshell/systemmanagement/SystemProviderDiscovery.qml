@@ -1,7 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
-import qs.core
 import "SystemDiscoveryCycle.js" as Cycle
 
 /*
@@ -26,6 +24,8 @@ Scope {
 
     // Only these fixed provider commands are selectable; no caller-supplied argv.
     property string domain: "updates"
+    // The one watch-domains process every domain shares (#286).
+    property var hub: null
     readonly property var definition: root.domainDefinition(root.domain)
 
     signal snapshotRequested()
@@ -169,24 +169,14 @@ Scope {
             root.requestPending();
             return;
         }
-        // Deliberately NOT wrapped in checkedCommand or terminatingCheckedCommand:
-        // both buffer the wrapped command's stdout to a temp file and only
-        // `cat` it once the child exits, which is correct for a bounded
-        // one-shot read but defeats live streaming entirely -- ready/changed
-        // would only ever arrive as one batch at shutdown. helperCommand's
-        // own script chain runs the real helper via `exec`, so this Process's
-        // PID already *is* the helper (no intermediate command-substitution
-        // fork to orphan), and monitor.signal() below reaches it directly.
-        // See 92ec6e2:docs/SYNC-P4-DISCOVERY-EVENTS.md's "Correction, found during
-        // implementation" note -- the doc's own terminatingCheckedCommand
-        // instruction was wrong for this streaming case.
+        // The domain's events come through the shared watch-domains process
+        // (SystemWatchHub, #286), one subscription per domain, instead of a
+        // watch-* process of its own. The lines are the ones its watch-*
+        // command printed, so event() below reads them unchanged.
         const identity = Object.freeze({ generation: root.generation, serial: ++root.launchSequence,
             storage: root.domain === "storage", prefix: selected.prefix });
-        // Not WatchedProcess (Sync Sprint 12 S12-14): one monitor per discovery,
-        // created and owned by generation, not a supervised surface watcher.
-        const owner = monitorComponent.createObject(root, { identity: identity,
-            callbacks: root.monitorCallbacks(identity),
-            command: Commands.watchCommand(Commands.systemManagementCommand(selected.action, selected.args)) });
+        const owner = root.hub === null ? null : monitorComponent.createObject(root, { identity: identity,
+            callbacks: root.monitorCallbacks(identity), domain: root.domain, hub: root.hub });
         if (owner === null) {
             root.failed = true;
             root.invalidated();
@@ -288,16 +278,34 @@ Scope {
             id: owner
             required property var identity
             required property var callbacks
-            property alias command: process.command
-            function start() { setupDeadline.restart(); process.running = true; }
+            required property string domain
+            required property var hub
+            property bool attached: false
+            function start() { setupDeadline.restart(); owner.attached = true; owner.hub.attach(owner); }
             function stopSetup() { setupDeadline.stop(); }
-            function stop() { setupDeadline.stop(); stopDeadline.restart(); process.signal(15); }
-            function signal(number) { process.signal(number); }
+            // Stopping leaves the shared subscription to the hub; this monitor
+            // is finished once detached, as a process was once it exited.
+            function stop() { setupDeadline.stop(); stopDeadline.restart(); owner.release(); }
+            function signal(number) { owner.release(); }
             function clearDeadlines() { setupDeadline.stop(); stopDeadline.stop(); }
+            function release() {
+                if (!owner.attached) return;
+                owner.attached = false;
+                owner.hub.detach(owner);
+                const finish = owner.callbacks.finish;
+                Qt.callLater(finish);
+            }
+            // From the hub: one of this domain's records, or its end.
+            function deliver(line) { if (owner.attached) owner.callbacks.line(line); }
+            function ended() {
+                if (!owner.attached) return;
+                owner.attached = false;
+                owner.callbacks.finish();
+            }
             // Both intervals are milliseconds, not geometry -- Theme.dp() does
-            // not apply. Storage (watch-mounts) has no idle-poll fallback and
-            // a bare readiness line, so it gets shorter deadlines than the
-            // remaining watch-* domains.
+            // not apply. Storage (mounts) has no idle-poll fallback and a bare
+            // readiness line, so it gets shorter deadlines than the remaining
+            // domains.
             Timer {
                 id: setupDeadline
                 interval: owner.identity.storage ? 3000 : 12000
@@ -309,15 +317,6 @@ Scope {
                 interval: owner.identity.storage ? 2000 : 1500
                 repeat: false
                 onTriggered: owner.callbacks.stop()
-            }
-            Process {
-                id: process
-                stdout: SplitParser { onRead: line => owner.callbacks.line(line) }
-                // onRunningChanged alone covers every exit path (normal or
-                // abnormal); a duplicate onExited handler here trips
-                // quickshell-qmllint (QProcess::ExitStatus is not exposed to
-                // it) for no behavioral benefit.
-                onRunningChanged: { if (!running) owner.callbacks.finish(); }
             }
         }
     }

@@ -164,6 +164,9 @@ system_provider() {
 		printf 'provider\tsystem\tunavailable\t0\tInstall pacman-contrib to count package updates\n'
 		return
 	fi
+	# checkupdates syncs a copy of the package databases, by default under
+	# /tmp, which is RAM here: keep it in the cache directory instead (#288).
+	export CHECKUPDATES_DB="${CHECKUPDATES_DB:-$cache_home/lyona/checkupdates-db}"
 	output=$(timeout --kill-after=10 "$check_seconds" checkupdates --nocolor 2>/dev/null) || status=$?
 	case $status in
 	0)

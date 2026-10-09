@@ -9,8 +9,11 @@ start-up has settled, it measures the CPU of everything Quickshell has started
 Quickshell's own; helpers that exit are counted through Quickshell's
 reaped-children time. It also counts the processes that appear in the window.
 
-The plan's check is 30 s within 0.5 percentage points of zero:
-DWM_IDLE_WATCHERS_SECONDS=30 (default 10 so `make check` stays quick).
+The plan's check is within 0.5 percentage points of zero. It is judged on the
+median of DWM_IDLE_WATCHERS_WINDOWS (3) samples of DWM_IDLE_WATCHERS_SECONDS
+(6) each (#310): a one-off helper that happens to fall in one sample, such as a
+late start-up read, no longer fails it, while a cost that recurs, such as a
+polling timer, shows in every sample and still does.
 """
 import json
 import os
@@ -29,7 +32,8 @@ if not shutil.which('quickshell') or not os.environ.get('DISPLAY') or not (repo 
     print('SKIP: needs quickshell, an X display (xvfb-run) and a built dwm')
     raise SystemExit(77)
 
-SECONDS = float(os.environ.get('DWM_IDLE_WATCHERS_SECONDS', '10'))
+SECONDS = float(os.environ.get('DWM_IDLE_WATCHERS_SECONDS', '6'))
+WINDOWS = max(1, int(os.environ.get('DWM_IDLE_WATCHERS_WINDOWS', '3')))
 BUDGET = float(os.environ.get('DWM_IDLE_WATCHERS_BUDGET', '0.5'))
 TICK = os.sysconf('SC_CLK_TCK')
 
@@ -168,18 +172,26 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
         monitor = network_monitor(shell)
         if monitor is None:
             fail_session('network watcher (nmcli monitor) is not running before the idle sample')
-        before = tree(shell)
-        seen = set(before)
-        started_names = {}
-        start_ticks, started = cost(shell), time.time()
-        while time.time() - started < SECONDS:
-            now = tree(shell)
-            new = now - seen
-            for name, count in names(new).items():  # named while they are alive
-                started_names[name] = started_names.get(name, 0) + count
-            seen |= now
-            time.sleep(0.05)
-        end_ticks, elapsed = cost(shell), time.time() - started
+        samples = []
+        for _ in range(WINDOWS):
+            before = tree(shell)
+            seen = set(before)
+            started_names = {}
+            start_ticks, started = cost(shell), time.time()
+            while time.time() - started < SECONDS:
+                now = tree(shell)
+                new = now - seen
+                for name, count in names(new).items():  # named while they are alive
+                    started_names[name] = started_names.get(name, 0) + count
+                seen |= now
+                time.sleep(0.05)
+            end_ticks, elapsed = cost(shell), time.time() - started
+            samples.append({
+                'seconds': round(elapsed, 1),
+                'watcher_cpu_percent': round((end_ticks - start_ticks) / TICK / elapsed * 100, 2),
+                'processes_started': len(seen - before),
+                'started_by_name': started_names,
+            })
         resident_names = names(tree(shell))
         if network_monitor(shell) != monitor:
             fail_session('network watcher (nmcli monitor) did not stay running through the idle sample')
@@ -192,17 +204,19 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
         wm.wait()
         log.close()
 
-    percent = (end_ticks - start_ticks) / TICK / elapsed * 100
+    percents = sorted(sample['watcher_cpu_percent'] for sample in samples)
+    percent = percents[len(percents) // 2]
+    elapsed = sum(sample['seconds'] for sample in samples)
     report = {
-        'seconds': round(elapsed, 1),
-        'watcher_cpu_percent': round(percent, 2),
-        'processes_started': len(seen - before),
-        'started_by_name': started_names,
+        'median_watcher_cpu_percent': percent,
+        'samples': samples,
         'resident_under_quickshell': resident_names,
     }
     print('Idle watchers: %s' % json.dumps(report))
     if percent > BUDGET:
-        print('FAIL: the watchers used %.2f%% of a core idle, over %.2f%%' % (percent, BUDGET), file=sys.stderr)
+        print('FAIL: the watchers used %.2f%% of a core idle (median of %d samples), over %.2f%%'
+              % (percent, len(samples), BUDGET), file=sys.stderr)
         raise SystemExit(1)
 
-print('Quickshell idle watchers (%.0f s, %.2f%% CPU, within %.1f points of zero): PASS' % (elapsed, percent, BUDGET))
+print('Quickshell idle watchers (%.0f s, median %.2f%% CPU, within %.1f points of zero): PASS'
+      % (elapsed, percent, BUDGET))

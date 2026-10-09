@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -eu
 
@@ -9,6 +9,8 @@ lyona_lib=${0%/*}
 [ -f "$lyona_lib/dwm-xdg.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
 # shellcheck source=scripts/dwm-xdg.sh
 . "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh"
 lyona_xdg_dirs
 config_dirs=${XDG_CONFIG_DIRS:-/etc/xdg}
 destination_dir=$config_home/autostart
@@ -40,60 +42,25 @@ find_vendor_entry() {
 	return 1
 }
 
+# add_dwm_exclusion SOURCE DEST: SOURCE, hidden from dwm sessions, written to
+# DEST through the shared reader and writer (#308): dwm taken out of an
+# OnlyShowIn, X-DWM added to a NotShowIn, or NotShowIn=X-DWM; when it has
+# neither. An entry with both, or that the reader refuses, is left alone.
 add_dwm_exclusion() {
-	awk '
-		function without_dwm(value, count, parts, i, result) {
-			count = split(value, parts, ";")
-			result = ""
-			for (i = 1; i <= count; i++)
-				if (parts[i] != "" && parts[i] != "X-DWM" && parts[i] != "dwm")
-					result = result parts[i] ";"
-			return result
-		}
-		function with_dwm_exclusion(value) {
-			if (value ~ /(^|;)X-DWM(;|$)/)
-				return value
-			if (value != "" && value !~ /;$/)
-				value = value ";"
-			return value "X-DWM;"
-		}
-
-		$0 == "[Desktop Entry]" {
-			in_desktop = 1
-			seen_desktop = 1
-			print
-			next
-		}
-
-		in_desktop && /^\[/ {
-			if (!updated)
-				print "NotShowIn=X-DWM;"
-			in_desktop = 0
-		}
-
-		in_desktop && /^OnlyShowIn=/ {
-			print "OnlyShowIn=" without_dwm(substr($0, 12))
-			seen_only = 1
-			updated = 1
-			next
-		}
-
-		in_desktop && /^NotShowIn=/ {
-			print "NotShowIn=" with_dwm_exclusion(substr($0, 11))
-			seen_not = 1
-			updated = 1
-			next
-		}
-
-		{ print }
-
-		END {
-			if (in_desktop && !updated)
-				print "NotShowIn=X-DWM;"
-			if (!seen_desktop || (seen_only && seen_not))
-				exit 1
-		}
-	' "$1"
+	local only_show not_show only_status=0 not_status=0
+	only_show=$(desktop_entry_get "$1" OnlyShowIn) || only_status=$?
+	not_show=$(desktop_entry_get "$1" NotShowIn) || not_status=$?
+	((only_status <= 1 && not_status <= 1)) || return 1
+	((only_status == 1 || not_status == 1)) || return 1
+	# A file without a [Desktop Entry] group has no Type.
+	desktop_entry_get "$1" Type >/dev/null || return 1
+	if ((only_status == 0)); then
+		desktop_entry_set "$1" "$2" 'Desktop Entry' OnlyShowIn "$(desktop_list_without "$only_show" X-DWM dwm)"
+	elif ((not_status == 0)); then
+		desktop_entry_set "$1" "$2" 'Desktop Entry' NotShowIn "$(desktop_list_with "$not_show" X-DWM)"
+	else
+		desktop_entry_set "$1" "$2" 'Desktop Entry' NotShowIn 'X-DWM;'
+	fi
 }
 
 if [ ! -e "$destination_dir" ] && [ ! -L "$destination_dir" ]; then
@@ -120,7 +87,7 @@ for entry in \
 	if ! source_entry=$(find_vendor_entry "$entry"); then
 		continue
 	fi
-	if ! add_dwm_exclusion "$source_entry" >"$tmp"; then
+	if ! add_dwm_exclusion "$source_entry" "$tmp"; then
 		printf 'Warning: could not scope invalid autostart entry: %s\n' \
 			"$source_entry" >&2
 		continue

@@ -6,9 +6,9 @@ dbus-run-session, see `make check-quickshell-watchers-xvfb`) against stub
 dwm-quickshell-network and dwm-quickshell-controls helpers on PATH that log every
 call with a timestamp.
 
-1. Media: with playerctl missing, media-watch prints "MEDIA unavailable" and
-   exits. The model used to restart it every 3 s for the whole session; it must
-   be started once.
+1. Media: the model takes it from Quickshell's MPRIS service (#285), so it starts
+   no media-watch at all. (It used to restart one every 3 s when playerctl was
+   missing, and then once.)
 2. Network, burst: the monitor prints six lines within 50 ms (one change). They
    must cause one snapshot, after the lines settle.
 3. Network, mid-snapshot: a line that arrives while a snapshot is running used to
@@ -134,9 +134,8 @@ with tempfile.TemporaryDirectory(prefix='watchers-', dir=os.environ.get('DWM_TES
         fail('the monitor did not run both phases', log)
 
     media = [s for s, a in events if a == 'media-watch']
-    if len(media) != 1:
-        fail('media-watch was started %d times in 12 s; with playerctl missing it must not be restarted' % len(media),
-             log)
+    if media:
+        fail('media-watch was started %d times in 12 s; media comes from Quickshell MPRIS' % len(media), log)
 
     burst = [s for s, a in events if a == 'snapshot' and marks['phase1'] <= s < marks['phase2']]
     if len(burst) != 1:
@@ -147,4 +146,4 @@ with tempfile.TemporaryDirectory(prefix='watchers-', dir=os.environ.get('DWM_TES
         fail('a monitor line during a snapshot caused %d snapshots after it, not two (it was dropped)' % len(mid),
              log)
 
-print('Quickshell watchers (media not respawned when unavailable, network burst debounced, mid-snapshot change kept): PASS')
+print('Quickshell watchers (no media watcher process, network burst debounced, mid-snapshot change kept): PASS')

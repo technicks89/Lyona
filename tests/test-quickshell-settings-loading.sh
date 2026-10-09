@@ -39,8 +39,7 @@ for relative, expression in (
     ("controls/BluetoothModel.qml",
      "snapshotProcess.running || statusProcess.running || devicesProcess.running"),
     ("controls/ControlsModel.qml",
-     "audioSnapshotProcess.running || volumeStatusProcess.running || micStatusProcess.running "
-     "|| mediaStatusProcess.running || bluetoothStatusProcess.running"),
+     "audioSnapshotProcess.running || volumeStatusProcess.running || micStatusProcess.running"),
     ("defaults/AutostartModel.qml", "snapshotProcess.running || root.snapshotPending"),
     ("defaults/DefaultAppsModel.qml", "snapshotProcess.running || root.snapshotPending"),
     ("power/PowerModel.qml", "snapshotProcess.running || root.snapshotPending"),

@@ -553,14 +553,43 @@ bluetooth_snapshot() {
 		return 0
 	}
 
-	if ! adapter_count=$(printf '%s\n' "$bluez_json" |
-		jq -er 'select(.data[0] | type == "object") | [.data[0] | to_entries[] | select(.value["org.bluez.Adapter1"] != null)] | length'); then
+	# One jq for the whole response (#285): the adapter count on the first
+	# line, then the adapter rows, then the device rows.
+	if ! bluez_rows=$(printf '%s\n' "$bluez_json" | jq -er '
+		def clean: tostring | gsub("[\\t\\r\\n]"; " ");
+		def field: clean | if . == "" then "-" else . end;
+		select(.data[0] | type == "object") | .data[0] | to_entries as $objects |
+		([$objects[] | select(.value["org.bluez.Adapter1"] != null)] | length | tostring),
+		($objects[] | select(.value["org.bluez.Adapter1"] != null) |
+			.value["org.bluez.Adapter1"] as $adapter |
+			["bluetooth-adapter", .key,
+			 ($adapter.Address.data // "" | field),
+			 ($adapter.Alias.data // $adapter.Name.data // "" | field),
+			 (if ($adapter.Powered.data // false) then "yes" else "no" end),
+			 (if ($adapter.Discovering.data // false) then "yes" else "no" end),
+			 (if ($adapter.Pairable.data // false) then "yes" else "no" end)] | @tsv),
+		($objects[] | select(.value["org.bluez.Device1"] != null) |
+			.value["org.bluez.Device1"] as $device |
+			["bluetooth-device", .key,
+			 ($device.Address.data // "" | field),
+			 ($device.Alias.data // $device.Name.data // $device.Address.data // "" | field),
+			 (if ($device.Paired.data // false) then "yes" else "no" end),
+			 (if ($device.Trusted.data // false) then "yes" else "no" end),
+			 (if ($device.Connected.data // false) then "yes" else "no" end),
+			 ($device.Adapter.data // "" | field)] | @tsv)'); then
 		printf 'provider\tbluetooth\tunavailable\tread-only\tBlueZ returned an invalid ObjectManager response\n'
 		printf 'bluetooth-support\tdaemon\tunknown\tBlueZ response could not be validated\n'
 		printf 'bluetooth-support\tadapter\tunknown\tAdapter state cannot be read\n'
 		printf 'bluetooth-support\toperations\tunavailable\tBluetooth actions are disabled\n'
 		return 0
 	fi
+	newline='
+'
+	adapter_count=${bluez_rows%%"$newline"*}
+	case $bluez_rows in
+	*"$newline"*) bluez_rows=${bluez_rows#*"$newline"} ;;
+	*) bluez_rows= ;;
+	esac
 	if [ "$adapter_count" -eq 0 ]; then
 		printf 'provider\tbluetooth\trestricted\tread-only\tBlueZ is available but no adapter is present\n'
 		printf 'bluetooth-support\tdaemon\tavailable\tBlueZ ObjectManager is reachable\n'
@@ -581,31 +610,7 @@ bluetooth_snapshot() {
 	printf 'bluetooth-support\tdaemon\tavailable\tBlueZ ObjectManager is reachable\n'
 	printf 'bluetooth-support\tadapter\tavailable\tA BlueZ adapter object is present\n'
 	printf 'bluetooth-support\toperations\t%s\t%s\n' "$operation_state" "$operation_detail"
-	printf '%s\n' "$bluez_json" | jq -r '
-		def clean: tostring | gsub("[\\t\\r\\n]"; " ");
-		def field: clean | if . == "" then "-" else . end;
-		.data[0] | to_entries[] |
-		select(.value["org.bluez.Adapter1"] != null) |
-		.value["org.bluez.Adapter1"] as $adapter |
-		["bluetooth-adapter", .key,
-		 ($adapter.Address.data // "" | field),
-		 ($adapter.Alias.data // $adapter.Name.data // "" | field),
-		 (if ($adapter.Powered.data // false) then "yes" else "no" end),
-		 (if ($adapter.Discovering.data // false) then "yes" else "no" end),
-		 (if ($adapter.Pairable.data // false) then "yes" else "no" end)] | @tsv'
-	printf '%s\n' "$bluez_json" | jq -r '
-		def clean: tostring | gsub("[\\t\\r\\n]"; " ");
-		def field: clean | if . == "" then "-" else . end;
-		.data[0] | to_entries[] |
-		select(.value["org.bluez.Device1"] != null) |
-		.value["org.bluez.Device1"] as $device |
-		["bluetooth-device", .key,
-		 ($device.Address.data // "" | field),
-		 ($device.Alias.data // $device.Name.data // $device.Address.data // "" | field),
-		 (if ($device.Paired.data // false) then "yes" else "no" end),
-		 (if ($device.Trusted.data // false) then "yes" else "no" end),
-		 (if ($device.Connected.data // false) then "yes" else "no" end),
-		 ($device.Adapter.data // "" | field)] | @tsv'
+	[ -z "$bluez_rows" ] || printf '%s\n' "$bluez_rows"
 }
 
 validate_bluetooth_address() {

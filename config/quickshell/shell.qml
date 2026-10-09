@@ -281,6 +281,7 @@ ShellRoot {
 
     ControlsModel {
         id: controlsModel
+        bluetoothModel: bluetoothModel
     }
 
     OverviewModel {
@@ -316,6 +317,7 @@ ShellRoot {
         panelSettingsModel: panelSettingsModel
         updateModel: updateModel
         systemManagementModel: systemManagementModel
+        controlCenterModel: controlCenterModel
     }
 
     LazyLoader {

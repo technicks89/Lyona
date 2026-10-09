@@ -61,9 +61,18 @@ start_managed_quickshell() {
 	fi
 }
 
+# Until the tray is up, so tray apps started next find it; at most 5 seconds.
+# The tray owns org.kde.StatusNotifierWatcher: gdbus waits for that name, one
+# process and no polling (#288). Without gdbus, or with no session bus, ask
+# Quickshell over IPC every 0.1 s.
 wait_for_quickshell_tray() {
 	config=$1
 
+	if command -v gdbus >/dev/null 2>&1 &&
+		{ [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; }; then
+		timeout 6 gdbus wait --session --timeout 5 org.kde.StatusNotifierWatcher >/dev/null 2>&1
+		return
+	fi
 	# shellcheck disable=SC2016 # The script runs in the child shell below.
 	timeout 5 sh -c '
 		config=$1
@@ -342,15 +351,19 @@ fi
 # One notification about the session, once. Quickshell shows notifications and
 # may not be up yet, so it is tried for up to DWM_AUTOSTART_NOTIFY_TRIES (15)
 # times DWM_AUTOSTART_NOTIFY_INTERVAL (2) seconds, then given up: never a loop.
-notify_session_problem() {
-	command -v notify-send >/dev/null 2>&1 || return 0
+notify_retry() { # URGENCY TITLE BODY: 0 once shown, 1 if it never was
+	command -v notify-send >/dev/null 2>&1 || return 1
 	tries=${DWM_AUTOSTART_NOTIFY_TRIES:-15}
 	while [ "$tries" -gt 0 ]; do
-		notify-send -a lyona -u critical -- "$1" "$2" >/dev/null 2>&1 && return 0
+		notify-send -a lyona -u "$1" -- "$2" "$3" >/dev/null 2>&1 && return 0
 		tries=$((tries - 1))
 		[ "$tries" -eq 0 ] || sleep "${DWM_AUTOSTART_NOTIFY_INTERVAL:-2}"
 	done
-	return 0
+	return 1
+}
+
+notify_session_problem() {
+	notify_retry critical "$1" "$2" || :
 }
 
 # Picom is part of the lyona desktop: the overview's window previews need it
@@ -369,7 +382,7 @@ start_compositor() {
 	picom_helper=$(command -v dwm-settings-picom 2>/dev/null || printf '%s' "${0%/*}/dwm-settings-picom")
 	if ! picom_error=$("$picom_helper" start 2>&1 >/dev/null); then
 		notify_session_problem "Picom could not start" \
-			"Window previews in the overview are off. Try Restart Picom in the Control Center. $picom_error"
+			"Window previews in the overview are off. Try the XRender backend in Settings > Appearance > Compositor. $picom_error"
 	fi
 	return 0
 }
@@ -384,6 +397,16 @@ if [ -n "${state_home:-}" ] && [ -f "$state_home/lyona/pending-gearlever" ] &&
 	command -v install-gearlever >/dev/null 2>&1; then
 	# shellcheck disable=SC2016 # expanded by the inner shell
 	start_detached sh -c 'install-gearlever && rm -f -- "$1"' sh "$state_home/lyona/pending-gearlever"
+fi
+
+# The first keys, once, after an image install (#295): its postinstall leaves
+# this marker. Removed once shown, so a login without notifications tries again.
+if [ -n "${state_home:-}" ] && [ -f "$state_home/lyona/first-login-keys" ]; then
+	(
+		notify_retry normal "Welcome to lyona" \
+			"Super+/ shows every key. Super+R opens the app launcher, Super+F1 the Control Center." &&
+			rm -f -- "$state_home/lyona/first-login-keys"
+	) &
 fi
 
 lock_watch=dwm-lock-watch

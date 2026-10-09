@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-	printf '%s\n' "usage: dwm-quickshell-network snapshot [--rescan yes|no]|status|devices|connections|wifi-scan [--rescan yes|no] [ifname]|wifi-connect <ifname> <bssid> <ssid> [--password-stdin <security>]|connect <uuid>|disconnect <device>|forget <uuid>|monitor|editor" >&2
+	printf '%s\n' "usage: dwm-quickshell-network snapshot [--wifi yes|no] [--rescan yes|no]|status|devices|connections|wifi-scan [--rescan yes|no] [ifname]|wifi-connect <ifname> <bssid> <ssid> [--password-stdin <security>]|connect <uuid>|disconnect <device>|forget <uuid>|monitor|editor" >&2
 	exit 2
 }
 
@@ -266,7 +266,18 @@ forget_uuid() {
 	run_bounded 15 nmcli connection delete uuid "$1"
 }
 
+# snapshot [--wifi yes|no] [wifi-scan options]: with --wifi no, no Wi-Fi list,
+# for the shell while no network window is open (#285).
 snapshot() {
+	want_wifi=yes
+	if [ "${1:-}" = --wifi ]; then
+		[ "$#" -ge 2 ] || usage
+		case $2 in
+		yes | no) want_wifi=$2 ;;
+		*) usage ;;
+		esac
+		shift 2
+	fi
 	printf 'connectivity-protocol\t1\t0\n'
 
 	if ! command -v nmcli >/dev/null 2>&1; then
@@ -284,7 +295,10 @@ snapshot() {
 		return 0
 	fi
 
-	if wifi_scan "$@" >"$work/wifi" 2>>"$work/error"; then
+	if [ "$want_wifi" = no ]; then
+		: >"$work/wifi"
+		printf 'provider\tnetwork\tavailable\tdelegated\tNetworkManager state and user-authorized actions\n'
+	elif wifi_scan "$@" >"$work/wifi" 2>>"$work/error"; then
 		printf 'provider\tnetwork\tavailable\tdelegated\tNetworkManager state and user-authorized actions\n'
 	else
 		: >"$work/wifi"

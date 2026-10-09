@@ -28,6 +28,8 @@ Scope {
     property var controlsModel: null
     property var powerModel: null
     property var powerMenuModel: null
+    // Opens the keybind viewer from a search for shortcuts (#293).
+    property var controlCenterModel: null
     property var defaultsModel: null
     property var autostartModel: null
     property var appearanceModel: null
@@ -124,6 +126,11 @@ Scope {
 
     readonly property var sections: SettingsSearch.sections
     readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
+    readonly property bool shortcutsMatch: SettingsSearch.matchesShortcuts(root.searchQuery)
+
+    function openShortcuts() {
+        if (root.controlCenterModel) root.controlCenterModel.openKeybinds();
+    }
 
     function sectionById(id) {
         for (const section of root.sections) {

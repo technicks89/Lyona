@@ -35,6 +35,9 @@ class UpdateEventMonitor:
         self.deadline = 0.0
         self.owner = ""
         self.owner_epoch = 0
+        # Set by watch-domains (#286), which runs several monitors on one
+        # shared loop: a stop is reported to it instead of ending the loop.
+        self.on_stop: Callable[["UpdateEventMonitor"], None] | None = None
 
     def stop(self, code: int) -> None:
         """Stop the event loop once while preserving the first exit status."""
@@ -43,7 +46,10 @@ class UpdateEventMonitor:
         self.stopped = True
         self.exit_code = code
         self.cancellable.cancel()
-        self.loop.quit()
+        if self.on_stop is not None:
+            self.on_stop(self)
+        else:
+            self.loop.quit()
 
     def write(self, record: str) -> None:
         """Emit one protocol record or stop when the consumer is unavailable."""
@@ -162,6 +168,15 @@ class UpdateEventMonitor:
 
     def run(self) -> int:
         """Run until stopped, then remove subscriptions, sources, and matches."""
+        try:
+            self.begin()
+            self.loop.run()
+        finally:
+            self.finish()
+        return self.exit_code
+
+    def begin(self, signals: bool = True) -> None:
+        """Arm the readiness deadline and connect; the caller runs the loop."""
         def timeout():
             """Fail setup when the bounded readiness deadline expires."""
             self.deadline_source = 0
@@ -173,30 +188,33 @@ class UpdateEventMonitor:
             self.stop(0)
             return self.GLib.SOURCE_CONTINUE
 
-        try:
-            self.deadline = time.monotonic() + 10
-            self.deadline_source = self.GLib.timeout_add(10000, timeout)
+        self.deadline = time.monotonic() + 10
+        self.deadline_source = self.GLib.timeout_add(10000, timeout)
+        if signals:
             for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
                 self.sources.append(self.GLibUnix.signal_add(self.GLib.PRIORITY_DEFAULT, signum, terminate))
-            self.Gio.bus_get(self.Gio.BusType.SYSTEM, self.cancellable, self.connected, None)
-            self.loop.run()
-        finally:
-            self.stopped = True
-            self.cancellable.cancel()
-            if self.connection is not None:
-                for subscription in self.subscriptions:
-                    self.connection.signal_unsubscribe(subscription)
-                if self.closed_handler:
-                    self.connection.disconnect(self.closed_handler)
-                for rule in self.installed_rules:
-                    # Best-effort asynchronous cleanup cannot delay pane close.
-                    # Process/bus disconnection also removes every match rule.
-                    self.connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus",
-                        "org.freedesktop.DBus", "RemoveMatch", self.GLib.Variant("(s)", (rule,)),
-                        None, self.Gio.DBusCallFlags.NONE, 1000, None, None, None)
-            for source in self.sources + ([self.deadline_source] if self.deadline_source else []):
-                self.GLib.source_remove(source)
-        return self.exit_code
+        self.Gio.bus_get(self.Gio.BusType.SYSTEM, self.cancellable, self.connected, None)
+
+    def finish(self, wait: bool = True) -> None:
+        """Remove subscriptions, sources, and matches once stopped."""
+        self.stopped = True
+        self.cancellable.cancel()
+        if self.connection is not None:
+            for subscription in self.subscriptions:
+                self.connection.signal_unsubscribe(subscription)
+            if self.closed_handler:
+                self.connection.disconnect(self.closed_handler)
+            for rule in self.installed_rules:
+                # Best-effort asynchronous cleanup cannot delay pane close.
+                # Process/bus disconnection also removes every match rule.
+                self.connection.call("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus", "RemoveMatch", self.GLib.Variant("(s)", (rule,)),
+                    None, self.Gio.DBusCallFlags.NONE, 1000, None, None, None)
+            self.subscriptions, self.installed_rules, self.closed_handler = [], [], 0
+        for source in self.sources + ([self.deadline_source] if self.deadline_source else []):
+            self.GLib.source_remove(source)
+        self.sources = []
+        self.deadline_source = 0
 
 
 # Sync Phase 9 (92ec6e2:docs/SYNC-P9-REGIONAL-MUTATION.md §4): the generic
@@ -354,8 +372,13 @@ class AuthenticatedEventMonitor(UpdateEventMonitor):
     def run(self):
         if self.started:
             raise RuntimeError("Service monitors are single-use")
-        self.started = True
         return super().run()
+
+    def begin(self, signals=True):
+        if self.started:
+            raise RuntimeError("Service monitors are single-use")
+        self.started = True
+        super().begin(signals)
 
 
 class RegionalEventMonitor(AuthenticatedEventMonitor):
@@ -767,6 +790,20 @@ class UnitEventMonitor(AuthenticatedEventMonitor):
     def run(self):
         if self.started:
             raise RuntimeError("Service monitors are single-use")
+        try:
+            if self.begin():
+                self.loop.run()
+        except self.GLib.Error:
+            self.stop(1)
+        finally:
+            self.finish()
+        return self.exit_code
+
+    def begin(self, signals=True):
+        """Arm the deadline and open this monitor's own connection; True when
+        the caller should run the loop."""
+        if self.started:
+            raise RuntimeError("Service monitors are single-use")
         self.started = True
 
         def expired():
@@ -781,43 +818,54 @@ class UnitEventMonitor(AuthenticatedEventMonitor):
         try:
             self.deadline = time.monotonic() + 10
             self.deadline_source = self.GLib.timeout_add(10000, expired)
-            for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-                self.sources.append(self.GLibUnix.signal_add(self.GLib.PRIORITY_DEFAULT, signum, terminate))
+            if signals:
+                for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                    self.sources.append(self.GLibUnix.signal_add(self.GLib.PRIORITY_DEFAULT, signum, terminate))
             address = self.Gio.dbus_address_get_for_bus_sync(self.Gio.BusType.SYSTEM, self.cancellable)
-            if self.setting_up():
-                self.connecting = True
-                flags = self.Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | self.Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
-                self.Gio.DBusConnection.new_for_address(address, flags, None, self.cancellable, self.connected, None)
-                self.loop.run()
+            if not self.setting_up():
+                return False
+            self.connecting = True
+            flags = self.Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | self.Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
+            self.Gio.DBusConnection.new_for_address(address, flags, None, self.cancellable, self.connected, None)
+            return True
         except self.GLib.Error:
             self.stop(1)
-        finally:
-            self.stopped = True
-            self.cancellable.cancel()
-            if self.resolve_cancel is not None:
-                self.resolve_cancel.cancel()
-            if self.connection is not None:
-                for subscription in self.subscriptions:
-                    self.connection.signal_unsubscribe(subscription)
-                if self.closed_handler:
-                    self.connection.disconnect(self.closed_handler)
-            for source in self.sources + [self.deadline_source, self.resolve_source]:
-                if source:
-                    self.GLib.source_remove(source)
-            self.cleanup_loop = self.GLib.MainLoop()
-            cleanup_expired = False
+            return False
 
-            def cleanup_timeout():
-                nonlocal cleanup_expired
-                cleanup_expired = True
-                self.exit_code = 1
-                self.cleanup_loop.quit()
-                return self.GLib.SOURCE_REMOVE
-
-            cleanup_source = self.GLib.timeout_add(1000, cleanup_timeout)
+    def finish(self, wait=True):
+        """Unsubscribe and close the connection. With wait (a monitor that ran
+        its own loop), wait for the close for up to a second; on a shared loop
+        (watch-domains, #286) the close completes as that loop runs."""
+        self.stopped = True
+        self.cancellable.cancel()
+        if self.resolve_cancel is not None:
+            self.resolve_cancel.cancel()
+        if self.connection is not None:
+            for subscription in self.subscriptions:
+                self.connection.signal_unsubscribe(subscription)
+            if self.closed_handler:
+                self.connection.disconnect(self.closed_handler)
+            self.subscriptions, self.closed_handler = [], 0
+        for source in self.sources + [self.deadline_source, self.resolve_source]:
+            if source:
+                self.GLib.source_remove(source)
+        self.sources, self.deadline_source, self.resolve_source = [], 0, 0
+        if not wait:
             self.close_connection()
-            if not self.cleanup_done and (self.connection is not None or self.connecting):
-                self.cleanup_loop.run()
-            if not cleanup_expired:
-                self.GLib.source_remove(cleanup_source)
-        return self.exit_code
+            return
+        self.cleanup_loop = self.GLib.MainLoop()
+        cleanup_expired = False
+
+        def cleanup_timeout():
+            nonlocal cleanup_expired
+            cleanup_expired = True
+            self.exit_code = 1
+            self.cleanup_loop.quit()
+            return self.GLib.SOURCE_REMOVE
+
+        cleanup_source = self.GLib.timeout_add(1000, cleanup_timeout)
+        self.close_connection()
+        if not self.cleanup_done and (self.connection is not None or self.connecting):
+            self.cleanup_loop.run()
+        if not cleanup_expired:
+            self.GLib.source_remove(cleanup_source)

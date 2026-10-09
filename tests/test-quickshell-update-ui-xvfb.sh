@@ -38,6 +38,7 @@ cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/settings" \
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
 cp "$repo/tests/qml/SystemUpdateUi.qml" "$work/qml/shell.qml"
 cp "$repo/tests/fixtures/system-update-ui-provider.py" "$work/data/checkout/scripts/dwm-system-management"
+cp "$repo/tests/fixtures/watch-domains-adapter.py" "$work/data/checkout/scripts/"
 chmod +x "$work/data/checkout/scripts/dwm-system-management"
 Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &

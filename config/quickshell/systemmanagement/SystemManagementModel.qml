@@ -693,7 +693,9 @@ Scope {
         snapshotProcess.cycleTokens = tokens;
         root.snapshotState = "loading";
         root.message = "Loading system update status...";
-        snapshotProcess.command = Commands.checkedCommand(Commands.systemManagementCommand(
+        // Bound to the shell (#310): a snapshot still reading when Quickshell
+        // dies is stopped with it.
+        snapshotProcess.command = Commands.boundCheckedCommand(Commands.systemManagementCommand(
             required ? "snapshot-core" : snapshotProcess.storageOmitted ? "snapshot-without-storage" : "snapshot", []));
         snapshotProcess.running = true;
     }
@@ -1134,8 +1136,14 @@ Scope {
     // this model only accepts fixed update commands (startUpdate).
     Component.onCompleted: Qt.callLater(function() { operationModel.requestSnapshot(); })
 
+    // The one watch-domains process the discoveries below share (#286).
+    SystemWatchHub {
+        id: systemWatchHub
+    }
+
     SystemUpdateDiscovery {
         id: discoveryModel
+        hub: systemWatchHub
         onSnapshotRequested: root.requestSnapshot(false)
         onInvalidated: root.confirmationInvalidated()
     }
@@ -1145,6 +1153,7 @@ Scope {
     // instantiation and coordination into the snapshot cycle was missing.
     SystemProviderDiscovery {
         id: timeDiscoveryModel
+        hub: systemWatchHub
         domain: "time"
         externalUnresolved: timeReconciliationModel.blocked
         externalDetail: timeReconciliationModel.detail
@@ -1162,12 +1171,14 @@ Scope {
     }
     SystemProviderDiscovery {
         id: localeDiscoveryModel
+        hub: systemWatchHub
         domain: "locale"
         onSnapshotRequested: root.requestSnapshot(false)
         onInvalidated: regionalModel.invalidate("locale")
     }
     SystemProviderDiscovery {
         id: accountDiscoveryModel
+        hub: systemWatchHub
         domain: "accounts"
         onSnapshotRequested: root.requestSnapshot(false)
         // #266: a live account change must retire any confirmation prepared
@@ -1176,17 +1187,20 @@ Scope {
     }
     SystemProviderDiscovery {
         id: printerDiscoveryModel
+        hub: systemWatchHub
         domain: "printers"
         onSnapshotRequested: root.requestSnapshot(false)
         onInvalidated: root.invalidateNativeConfirmation("printers")
     }
     SystemProviderDiscovery {
         id: storageDiscoveryModel
+        hub: systemWatchHub
         domain: "storage"
         onSnapshotRequested: root.requestSnapshot(false)
     }
     SystemProviderDiscovery {
         id: securityDiscoveryModel
+        hub: systemWatchHub
         domain: "security"
         onSnapshotRequested: root.requestSnapshot(false)
     }

@@ -96,7 +96,7 @@ ClickAwayPopup {
                 Layout.preferredHeight: Math.min(150, Math.max(42, contentHeight))
                 clip: true
                 spacing: Theme.listSpacing
-                model: root.networkModel.activeConnections
+                model: root.visible ? root.networkModel.activeConnections : []
 
                 delegate: NetworkProfileRow {
                     required property var modelData
@@ -128,7 +128,7 @@ ClickAwayPopup {
                 Layout.preferredHeight: Math.min(220, Math.max(64, contentHeight))
                 clip: true
                 spacing: Theme.listSpacing
-                model: root.networkModel.wifiNetworks
+                model: root.visible ? root.networkModel.wifiNetworks : []
 
                 delegate: NetworkWifiRow {
                     required property int index
@@ -167,7 +167,7 @@ ClickAwayPopup {
                 Layout.fillHeight: true
                 clip: true
                 spacing: Theme.listSpacing
-                model: root.networkModel.savedProfiles
+                model: root.visible ? root.networkModel.savedProfiles : []
 
                 delegate: NetworkProfileRow {
                     required property var modelData

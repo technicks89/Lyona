@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona.
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-desktop-entry.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-desktop-entry.sh
+. "$lyona_lib/dwm-desktop-entry.sh"
+
 usage() {
 	printf 'usage: %s URL [browser-argument ...]\n' "${0##*/}" >&2
 }
@@ -42,23 +49,16 @@ parse_exec_path() {
 }
 
 find_browser_exec() {
-	local desktop_file candidate line exec_path
+	local desktop_file line exec_path
 
 	for desktop_file in \
 		"$HOME/.local/share/applications/$browser" \
 		"$HOME/.nix-profile/share/applications/$browser" \
 		"/usr/share/applications/$browser"; do
 		[[ -f $desktop_file ]] || continue
-		# Read in-process and stop at the first Exec=, rather than forking grep
-		# once per candidate on every web-app launch.
-		line=
-		while IFS= read -r candidate || [[ -n $candidate ]]; do
-			if [[ $candidate == Exec=* ]]; then
-				line=$candidate
-				break
-			fi
-		done <"$desktop_file"
-		[[ -n $line ]] || continue
+		# The [Desktop Entry] group's Exec, through the shared reader (#308).
+		line=$(desktop_entry_get "$desktop_file" Exec) || continue
+		line=Exec=$line
 		if ! exec_path=$(parse_exec_path "$line"); then
 			printf '%s: unsupported browser Exec line in %s\n' \
 				"${0##*/}" "$desktop_file" >&2

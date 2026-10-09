@@ -517,7 +517,9 @@ exec 9>&-
 sleep 1 &
 session_pid=$!
 session_start=$(awk '{ print $22 }' "/proc/$session_pid/stat")
-env "${env_common[@]}" TEST_UDEV_BLOCK=1 DWM_INPUT_SESSION_POLL_SECONDS=0.2 \
+# A 30 s poll: only waiting on the process itself (waitpid, #288) ends the
+# watcher within the 3 s allowed below.
+env "${env_common[@]}" TEST_UDEV_BLOCK=1 DWM_INPUT_SESSION_POLL_SECONDS=30 \
 	DWM_INPUT_SESSION_PID="$session_pid" DWM_INPUT_SESSION_START="$session_start" \
 	"$helper" watch-apply &
 session_watcher_pid=$!
@@ -769,5 +771,8 @@ fi
 # shellcheck disable=SC2016 # the literal text in the helper
 grep -Fq 'session_poll_seconds=${DWM_INPUT_SESSION_POLL_SECONDS:-5}' "$helper" ||
 	fail 'the session guard does not default to 5 s'
+# shellcheck disable=SC2016 # the literal text in the helper
+grep -Fq '! waitpid -- "$session_pid" >/dev/null 2>&1; then' "$helper" ||
+	fail 'the session guard does not wait on the session process'
 
 printf 'Settings input discovery, stable IDs, preview, rollback, and persistence: PASS\n'

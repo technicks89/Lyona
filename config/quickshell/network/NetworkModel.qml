@@ -41,6 +41,7 @@ Scope {
     property var devices: []
     property var connections: []
     property var wifiNetworks: []
+    property bool editorChecked: false
 
     readonly property var activeConnections: root.connections.filter(function(profile) {
         return profile.active;
@@ -114,9 +115,14 @@ Scope {
         }
         root.providerState = "loading";
         root.snapshotOrigin = origin || (root.visible ? "panel" : "shared");
-        snapshotProcess.command = Commands.networkHelperCommand("snapshot", ["--rescan", rescanWifi ? "yes" : "no"]);
+        // The Wi-Fi list only while a network window shows it (#285): a
+        // change while both are closed reads the rest of the state alone.
+        const wantWifi = root.visible || root.settingsVisible;
+        snapshotProcess.command = Commands.networkHelperCommand("snapshot",
+            ["--wifi", wantWifi ? "yes" : "no", "--rescan", rescanWifi && wantWifi ? "yes" : "no"]);
         snapshotProcess.running = true;
-        if (!editorCheckProcess.running) {
+        // nm-connection-editor is looked up once, not on every refresh.
+        if (!root.editorChecked && !editorCheckProcess.running) {
             editorCheckProcess.running = true;
         }
     }
@@ -559,7 +565,10 @@ Scope {
         running: false
 
         stdout: StdioCollector {
-            onStreamFinished: root.editorAvailable = this.text.trim() === "yes"
+            onStreamFinished: {
+                root.editorAvailable = this.text.trim() === "yes";
+                root.editorChecked = true;
+            }
         }
     }
 }

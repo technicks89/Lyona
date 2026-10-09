@@ -191,6 +191,30 @@ ColumnLayout {
         enabled: root.model.editable && !root.model.snapshot.override
         onActivated: index => root.model.mutate("set-backend", [["auto", "xrender", "glx", "egl"][index]])
     }
+    // #288: off by default. On, a full-screen game skips the compositor,
+    // which is faster, but the overview cannot preview it and some GPUs
+    // flicker when switching.
+    RowLayout {
+        Layout.fillWidth: true
+        visible: root.model.snapshot.unredirect !== undefined
+
+        UiText {
+            Layout.fillWidth: true
+            text: "Let full-screen windows bypass the compositor (faster games; no overview preview while full screen)"
+            color: Theme.menuText
+            wrapMode: Text.WordWrap
+        }
+
+        PanelToggleSwitch {
+            objectName: "picomUnredirect"
+            checked: root.model.snapshot.unredirect === true
+            busy: root.model.busy
+            enabled: root.model.editable
+            accessibleName: "Full-screen windows bypass the compositor"
+            accessibleDescription: "Faster full-screen games; the overview cannot preview a full-screen window while this is on"
+            onToggled: root.model.setUnredirect(!checked)
+        }
+    }
     ShellButton {
         visible: root.model.snapshot.copyable
         enabled: !root.model.busy

@@ -167,25 +167,53 @@ format_duration() {
 	fi
 }
 
+# The live status line of a running step (#291): the step, how long it has
+# run, how long it usually takes, and the newest line of its log, redrawn every
+# second, so a slow step is told from a hung one.
+_draw_step_status() { # TITLE ELAPSED EXPECT FRAME
+	local cols last line
+	cols=$(tput cols 2>/dev/null || printf 80)
+	[[ $cols =~ ^[0-9]+$ ]] && ((cols > 20)) || cols=80
+	last=$(tail -n 1 -- "$LOG_FILE" 2>/dev/null | tr -d '\r' | LC_ALL=C tr -c '[:print:]' ' ') || last=
+	line="$4 $1  $(format_duration "$2")${3:+ ($3)}"
+	printf '\r\033[K%s\n\033[K\033[2m  %s\033[0m\033[1A\r' "${line:0:cols-1}" "${last:0:cols-3}"
+}
+
+# run_logged DESCRIPTION COMMAND...: one install step, its output to the log.
+# Set LYONA_STEP_EXPECT (such as "usually 5-30 minutes") on the line before for
+# a long step; it applies to the next step only.
 run_logged() {
 	local desc=$1
 	shift
-	local title=$desc label=$desc
+	local title=$desc label=$desc expect=${LYONA_STEP_EXPECT:-}
+	LYONA_STEP_EXPECT=
 	if ((STEP_TOTAL > 0)); then
 		title="$(_progress_bar_string "$STEP_CURRENT") $desc"
 		label="[step $((STEP_CURRENT + 1))/$STEP_TOTAL] $desc"
 	fi
 	STEP_CURRENT=$((STEP_CURRENT + 1))
-	local start=$SECONDS status=0 elapsed
+	local start=$SECONDS status=0 elapsed pid frame=0
+	local -a frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 	log_step "$label"
-	gum spin --spinner dot --title "$title" --show-error -- \
-		bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE"; exit ${PIPESTATUS[0]}' _ "$@" ||
-		status=$?
+	bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE" >/dev/null; exit ${PIPESTATUS[0]}' _ "$@" &
+	pid=$!
+	if [[ -t 1 ]]; then
+		while kill -0 "$pid" 2>/dev/null; do
+			_draw_step_status "$title" "$((SECONDS - start))" "$expect" "${frames[frame % ${#frames[@]}]}"
+			frame=$((frame + 1))
+			sleep 1
+		done
+		# Both status lines cleared.
+		printf '\r\033[K\n\033[K\033[1A\r'
+	fi
+	wait "$pid" || status=$?
 	elapsed=$((SECONDS - start))
 	if ((status == 0)); then
 		log_step "$label done in $(format_duration "$elapsed")"
 	else
 		log_step "$label failed (exit $status) after $(format_duration "$elapsed")"
+		# What gum spin --show-error used to show: the step's last output.
+		tail -n 20 -- "$LOG_FILE" >&2 2>/dev/null || :
 	fi
 	{ printf '%s\t%s\t%s\n' "$elapsed" "$status" "$desc" >>"$(step_times_file)"; } 2>/dev/null || :
 	return "$status"

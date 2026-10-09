@@ -100,12 +100,13 @@ remove_webapp() {
 
 list_webapps() {
 	echo "Installed web apps:"
+	local desktop_file categories name
 	for desktop_file in "$APPS_DIR"/*.desktop; do
-		if [[ -f "$desktop_file" ]] && grep -q "Categories=.*WebApp" "$desktop_file" 2>/dev/null; then
-			local name
-			name=$(grep "^Name=" "$desktop_file" | cut -d'=' -f2-)
-			echo "  - $name"
-		fi
+		# Through the shared reader (#308): a WebApp category, and its name.
+		categories=$(desktop_entry_get "$desktop_file" Categories) || continue
+		[[ ";$categories;" == *";WebApp;"* ]] || continue
+		name=$(desktop_entry_get "$desktop_file" Name) || name=${desktop_file##*/}
+		echo "  - $name"
 	done
 }
 

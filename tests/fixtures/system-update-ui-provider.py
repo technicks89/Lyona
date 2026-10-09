@@ -91,6 +91,11 @@ def snapshot():
 
 
 def main():
+    if sys.argv[1:] == ["watch-domains"]:
+        # #286: the shell's one watcher, with this fixture's watch-* commands
+        # behind it.
+        adapter = str(Path(sys.argv[0]).resolve().parent / "watch-domains-adapter.py")
+        os.execv("/usr/bin/python3", ["/usr/bin/python3", adapter, sys.argv[0]])
     if tuple(sys.argv[1:]) in (("watch-time",), ("watch-regional", "locale"),
                               ("watch-accounts",), ("watch-units", "printers"),
                               ("watch-units", "security")):

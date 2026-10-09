@@ -521,3 +521,270 @@ def cancel_journal_operation(journal: operation_journal.JournalDescriptorSet, op
                 and all(getattr(current, key) == getattr(original, key) for key in identity)):
             operation_journal.advance_journal_operation(journal, current, replace(current, state="cancel-requested",
                 detail="Cancellation requested; waiting for PackageKit completion"))
+
+
+def remove_live_source(GLib, source: int) -> None:
+    """Remove a GLib source unless it already ended (returned SOURCE_REMOVE)."""
+    found = GLib.MainContext.default().find_source_by_id(source)
+    if found is not None and not found.is_destroyed():
+        GLib.source_remove(source)
+
+
+class MountEventMonitor:
+    """watch-mounts' supervision of findmnt --poll, on a GLib loop shared with
+    the service monitors (watch-domains, #286): the same child, readiness probe
+    and records, with pipe and pidfd watches in place of a selector."""
+
+    def __init__(self, GLib, emit: Callable[[str], None]) -> None:
+        self.GLib = GLib
+        self.emit = emit
+        self.on_stop: Callable[["MountEventMonitor"], None] | None = None
+        self.process = None
+        self.identity = None
+        self.pidfd = -1
+        self.sources: list[int] = []
+        self.pending = bytearray()
+        self.deadline = 0.0
+        self.started = False
+        self.stopped = False
+        self.ready = False
+        self.exit_code = 1
+
+    def stop(self, code: int) -> None:
+        if self.stopped:
+            return
+        self.stopped = True
+        self.exit_code = code
+        if self.on_stop is not None:
+            self.on_stop(self)
+
+    def write(self, record: str) -> None:
+        try:
+            self.emit(record)
+        except OSError:
+            self.stop(1)
+
+    def begin(self, signals: bool = False) -> bool:
+        if self.started:
+            raise RuntimeError("Mount monitors are single-use")
+        self.started = True
+        try:
+            self.deadline = time.monotonic() + 1
+            self.process = subprocess.Popen(["/usr/bin/python3", "-I", "-c", MOUNT_MONITOR_EXEC,
+                str(os.getpid())], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, start_new_session=True, close_fds=True,
+                env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+            identity = os.stat(f"/proc/{self.process.pid}")
+            self.identity = (identity.st_dev, identity.st_ino)
+            self.pidfd = os.pidfd_open(self.process.pid)
+            for stream in (self.process.stdout, self.process.stderr):
+                os.set_blocking(stream.fileno(), False)
+            condition = self.GLib.IOCondition.IN | self.GLib.IOCondition.HUP | self.GLib.IOCondition.ERR
+            self.sources.append(self.GLib.unix_fd_add_full(self.GLib.PRIORITY_DEFAULT, self.pidfd,
+                condition, lambda *_args: self.fail()))
+            self.sources.append(self.GLib.unix_fd_add_full(self.GLib.PRIORITY_DEFAULT,
+                self.process.stderr.fileno(), condition, lambda *_args: self.fail()))
+            # Readiness has one bounded startup probe, as in watch-mounts.
+            self.sources.append(self.GLib.timeout_add(10, self.probe))
+            return True
+        except (OSError, ValueError):
+            self.stop(1)
+            return False
+
+    def fail(self):
+        self.stop(1)
+        return self.GLib.SOURCE_REMOVE
+
+    def probe(self):
+        if self.stopped:
+            return self.GLib.SOURCE_REMOVE
+        try:
+            observed = mount_baseline_ready(self.process, self.identity)
+        except OSError:
+            return self.fail()
+        if observed:
+            self.ready = True
+            self.write("mount-monitor-ready")
+            # Events read only once ready: early ones wait in the pipe, as in
+            # watch-mounts, so none is reported before the baseline.
+            condition = self.GLib.IOCondition.IN | self.GLib.IOCondition.HUP | self.GLib.IOCondition.ERR
+            self.sources.append(self.GLib.unix_fd_add_full(self.GLib.PRIORITY_DEFAULT,
+                self.process.stdout.fileno(), condition, self.readable))
+            return self.GLib.SOURCE_REMOVE
+        if time.monotonic() >= self.deadline:
+            return self.fail()
+        return self.GLib.SOURCE_CONTINUE
+
+    def readable(self, *_args):
+        if self.stopped:
+            return self.GLib.SOURCE_REMOVE
+        try:
+            chunk = os.read(self.process.stdout.fileno(), 4096)
+        except BlockingIOError:
+            return self.GLib.SOURCE_CONTINUE
+        except OSError:
+            return self.fail()
+        if not chunk:
+            return self.fail()
+        self.pending.extend(chunk)
+        while b"\n" in self.pending:
+            line, _, rest = self.pending.partition(b"\n")
+            self.pending = bytearray(rest)
+            if len(line) > 256 or bytes(line) not in MOUNT_ACTIONS:
+                return self.fail()
+            self.write("mount-change\t" + bytes(line).decode("ascii"))
+            if self.stopped:
+                return self.GLib.SOURCE_REMOVE
+        if len(self.pending) > 256:
+            return self.fail()
+        return self.GLib.SOURCE_CONTINUE
+
+    def finish(self, wait: bool = True) -> None:
+        self.stopped = True
+        for source in self.sources:
+            remove_live_source(self.GLib, source)
+        self.sources = []
+        if self.pidfd >= 0:
+            os.close(self.pidfd)
+            self.pidfd = -1
+        if self.process is not None:
+            regional_settings.close_locale_process(self.process)
+            self.process = None
+
+
+# The domains watch-domains serves, each the stream its watch-* command gives.
+WATCH_DOMAINS = ("updates", "time", "locale", "accounts", "printers", "security", "storage")
+
+
+def watch_domains() -> int:
+    """One process for every Settings > System domain (#286).
+
+    Where each domain had its own watch-* process (about 30 MB of Python and
+    GLib each, eight with the pane open), one GLib loop holds all their
+    subscriptions. The consumer starts a domain by writing "start DOMAIN" on
+    stdin; each record comes out as "DOMAIN<TAB>record", exactly what that
+    domain's watch-* command prints, and "DOMAIN<TAB>stopped<TAB>CODE" when one
+    domain's monitor ends, the others carrying on. A later "start DOMAIN"
+    subscribes it again. stdin closing, or SIGTERM, ends everything.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return 1
+    try:
+        import gi
+
+        gi.require_version("Gio", "2.0")
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import Gio, GLib, GLibUnix
+    except (ImportError, ValueError):
+        return 1
+
+    loop = GLib.MainLoop()
+    monitors: dict[str, object] = {}
+    retired: list[object] = []
+    state = {"code": 0, "done": False}
+    pending_input = bytearray()
+
+    with contextlib.ExitStack() as resources:
+        try:
+            writer = control_output_writer(sys.stdout, resources)
+        except OSError:
+            writer = None
+        if writer is None:
+            return 1
+
+        def output(line: str) -> None:
+            payload = (line + "\n").encode("ascii")
+            # One record fits PIPE_BUF; a reader that stops reading fails the
+            # whole watcher rather than queueing without bound.
+            if writer(payload) != len(payload):
+                raise OSError("Incomplete event output")
+
+        def shutdown(code: int) -> None:
+            if state["done"]:
+                return
+            state["done"] = True
+            state["code"] = state["code"] or code
+            loop.quit()
+
+        def retire(domain: str, monitor) -> bool:
+            if monitors.get(domain) is monitor:
+                del monitors[domain]
+                retired.append(monitor)
+                monitor.finish(wait=False)
+                try:
+                    output(f"{domain}\tstopped\t{monitor.exit_code}")
+                except OSError:
+                    shutdown(1)
+            return GLib.SOURCE_REMOVE
+
+        def start(domain: str) -> None:
+            current = monitors.get(domain)
+            if current is not None and not current.stopped:
+                return  # Already subscribed; the consumer knows whether it is ready.
+
+            def emit(record: str) -> None:
+                output(f"{domain}\t{record}")
+
+            if domain == "storage":
+                monitor = MountEventMonitor(GLib, emit)
+            elif domain == "updates":
+                monitor = event_monitors.UpdateEventMonitor(Gio, GLib, GLibUnix, emit)
+            elif domain == "accounts":
+                monitor = event_monitors.AccountEventMonitor(Gio, GLib, GLibUnix, emit)
+            elif domain == "time":
+                monitor = event_monitors.TimeEventMonitor(Gio, GLib, GLibUnix, emit)
+            elif domain in shared.WATCH_UNIT_SETS:
+                monitor = event_monitors.UnitEventMonitor(domain, Gio, GLib, GLibUnix, emit)
+            else:
+                monitor = event_monitors.RegionalEventMonitor("locale", Gio, GLib, GLibUnix, emit)
+            monitor.loop = loop
+            # Retired from an idle callback, never inside the monitor's own.
+            monitor.on_stop = lambda stopped: GLib.idle_add(retire, domain, stopped)
+            monitors[domain] = monitor
+            monitor.begin(signals=False)
+
+        def command_input(_fd, condition):
+            try:
+                chunk = os.read(sys.stdin.fileno(), 4096)
+            except OSError:
+                chunk = b""
+            if not chunk:
+                shutdown(0)  # The consumer is gone.
+                return GLib.SOURCE_REMOVE
+            pending_input.extend(chunk)
+            while b"\n" in pending_input:
+                line, _, rest = pending_input.partition(b"\n")
+                pending_input[:] = rest
+                words = bytes(line).decode("ascii", "replace").split(" ")
+                if len(words) != 2 or words[0] != "start" or words[1] not in WATCH_DOMAINS:
+                    shutdown(1)
+                    return GLib.SOURCE_REMOVE
+                start(words[1])
+            if len(pending_input) > 256:
+                shutdown(1)
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        def terminate():
+            shutdown(0)
+            return GLib.SOURCE_CONTINUE
+
+        sources = [GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, number, terminate)
+                   for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)]
+        # Read only when GLib reports input, so stdin stays as inherited:
+        # never O_NONBLOCK on a shared open-file description.
+        sources.append(GLib.unix_fd_add_full(GLib.PRIORITY_DEFAULT, sys.stdin.fileno(),
+            GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR, command_input))
+        try:
+            loop.run()
+        finally:
+            for source in sources:
+                remove_live_source(GLib, source)
+            # Every monitor still running stops as its own watch-* would on
+            # SIGTERM, one after the other, each waiting for its own cleanup.
+            for monitor in list(monitors.values()):
+                monitor.on_stop = None
+                monitor.stopped = True
+                monitor.finish(wait=True)
+            monitors.clear()
+    return state["code"]
