@@ -774,5 +774,23 @@ grep -Fq 'session_poll_seconds=${DWM_INPUT_SESSION_POLL_SECONDS:-5}' "$helper" |
 # shellcheck disable=SC2016 # the literal text in the helper
 grep -Fq '! waitpid -- "$session_pid" >/dev/null 2>&1; then' "$helper" ||
 	fail 'the session guard does not wait on the session process'
+# An exited session process left unreaped is not alive: waitpid returns at
+# once for a zombie, so the guard would otherwise spin.
+eval "$guard"
+sh -c 'sleep 0 & exec sleep 5' &
+zombie_parent=$!
+zombie_pid=
+for _ in $(seq 50); do
+	zombie_pid=$(ps -o pid= --ppid "$zombie_parent" 2>/dev/null | tr -d ' ')
+	[[ -n $zombie_pid && $(ps -o stat= -p "$zombie_pid" 2>/dev/null) == Z* ]] && break
+	sleep 0.1
+done
+[[ -n $zombie_pid ]] || fail 'no zombie process to test the session guard with'
+DWM_INPUT_SESSION_PID=$zombie_pid DWM_INPUT_SESSION_START='' session_parent_alive &&
+	fail 'session_parent_alive counts a zombie as alive'
+DWM_INPUT_SESSION_PID=$zombie_parent DWM_INPUT_SESSION_START='' session_parent_alive ||
+	fail 'session_parent_alive does not count a running process as alive'
+kill "$zombie_parent" 2>/dev/null || :
+wait "$zombie_parent" 2>/dev/null || :
 
 printf 'Settings input discovery, stable IDs, preview, rollback, and persistence: PASS\n'

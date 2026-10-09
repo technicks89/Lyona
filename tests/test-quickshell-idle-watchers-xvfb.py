@@ -10,10 +10,12 @@ Quickshell's own; helpers that exit are counted through Quickshell's
 reaped-children time. It also counts the processes that appear in the window.
 
 The plan's check is within 0.5 percentage points of zero. It is judged on the
-median of DWM_IDLE_WATCHERS_WINDOWS (3) samples of DWM_IDLE_WATCHERS_SECONDS
-(6) each (#310): a one-off helper that happens to fall in one sample, such as a
-late start-up read, no longer fails it, while a cost that recurs, such as a
-polling timer, shows in every sample and still does.
+whole observation period, DWM_IDLE_WATCHERS_WINDOWS (3) samples of
+DWM_IDLE_WATCHERS_SECONDS (6) each (#310): a one-off helper, such as a late
+start-up read, is spread over all 18 s rather than one 6 s window, while a
+polling timer of any interval up to that long is counted in full. (A median
+of the samples would hide a timer slower than one sample.) Each sample is
+still reported.
 """
 import json
 import os
@@ -187,6 +189,8 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
                 time.sleep(0.05)
             end_ticks, elapsed = cost(shell), time.time() - started
             samples.append({
+                'ticks': end_ticks - start_ticks,
+                'elapsed': elapsed,
                 'seconds': round(elapsed, 1),
                 'watcher_cpu_percent': round((end_ticks - start_ticks) / TICK / elapsed * 100, 2),
                 'processes_started': len(seen - before),
@@ -204,19 +208,18 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
         wm.wait()
         log.close()
 
-    percents = sorted(sample['watcher_cpu_percent'] for sample in samples)
-    percent = percents[len(percents) // 2]
-    elapsed = sum(sample['seconds'] for sample in samples)
+    elapsed = sum(sample.pop('elapsed') for sample in samples)
+    percent = round(sum(sample.pop('ticks') for sample in samples) / TICK / elapsed * 100, 2)
     report = {
-        'median_watcher_cpu_percent': percent,
+        'watcher_cpu_percent': percent,
         'samples': samples,
         'resident_under_quickshell': resident_names,
     }
     print('Idle watchers: %s' % json.dumps(report))
     if percent > BUDGET:
-        print('FAIL: the watchers used %.2f%% of a core idle (median of %d samples), over %.2f%%'
+        print('FAIL: the watchers used %.2f%% of a core idle (over %d samples), over %.2f%%'
               % (percent, len(samples), BUDGET), file=sys.stderr)
         raise SystemExit(1)
 
-print('Quickshell idle watchers (%.0f s, median %.2f%% CPU, within %.1f points of zero): PASS'
+print('Quickshell idle watchers (%.0f s, %.2f%% CPU, within %.1f points of zero): PASS'
       % (elapsed, percent, BUDGET))

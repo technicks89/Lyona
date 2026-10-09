@@ -5,7 +5,8 @@ The real watch-domains runs every domain's monitor on one GLib loop. The stubs
 only implement the separate watch-* commands, so this adapter gives them the
 same protocol: "start DOMAIN" on stdin runs STUB's watch-* command for it,
 each line it prints comes out as "DOMAIN<TAB>line", and its exit as
-"DOMAIN<TAB>stopped<TAB>CODE". stdin closing or SIGTERM stops every child.
+"DOMAIN<TAB>stopped<TAB>CODE". "stop DOMAIN" ends that child, whose exit is
+the reply; stdin closing or SIGTERM stops every child.
 """
 import os
 import selectors
@@ -56,9 +57,13 @@ def main(stub):
                 while b"\n" in pending:
                     line, _, pending = pending.partition(b"\n")
                     words = line.decode().split(" ")
-                    if len(words) != 2 or words[0] != "start" or words[1] not in COMMANDS:
+                    if len(words) != 2 or words[0] not in ("start", "stop") or words[1] not in COMMANDS:
                         return 1
                     domain = words[1]
+                    if words[0] == "stop":
+                        if domain in children:
+                            children[domain].terminate()
+                        continue
                     if domain in children:
                         continue
                     child = subprocess.Popen([stub] + COMMANDS[domain], stdin=subprocess.DEVNULL,

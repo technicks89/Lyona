@@ -179,6 +179,23 @@ _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
 	printf '\r\033[K%s\n\033[K\033[2m  %s\033[0m\033[1A\r' "${line:0:cols-1}" "${last:0:cols-3}"
 }
 
+# _stop_step PID: a running step and everything it started, stopped and
+# waited for. Without job control a background step ignores SIGINT, so Ctrl+C
+# would leave it running after the installer exits. The tree is listed before
+# anything is signalled, while every process still has its parent.
+_stop_step() {
+	local -a tree=("$1")
+	local index=0 child
+	while ((index < ${#tree[@]})); do
+		for child in $(pgrep -P "${tree[index]}" 2>/dev/null); do
+			tree+=("$child")
+		done
+		index=$((index + 1))
+	done
+	kill -TERM "${tree[@]}" 2>/dev/null || :
+	wait "$1" 2>/dev/null || :
+}
+
 # run_logged DESCRIPTION COMMAND...: one install step, its output to the log.
 # Set LYONA_STEP_EXPECT (such as "usually 5-30 minutes") on the line before for
 # a long step; it applies to the next step only.
@@ -195,8 +212,14 @@ run_logged() {
 	local start=$SECONDS status=0 elapsed pid frame=0
 	local -a frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 	log_step "$label"
+	local saved_traps
+	saved_traps=$(trap -p INT TERM)
 	bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE" >/dev/null; exit ${PIPESTATUS[0]}' _ "$@" &
 	pid=$!
+	# shellcheck disable=SC2064 # the step's PID, fixed now
+	trap "_stop_step $pid; exit 130" INT
+	# shellcheck disable=SC2064
+	trap "_stop_step $pid; exit 143" TERM
 	if [[ -t 1 ]]; then
 		while kill -0 "$pid" 2>/dev/null; do
 			_draw_step_status "$title" "$((SECONDS - start))" "$expect" "${frames[frame % ${#frames[@]}]}"
@@ -207,6 +230,8 @@ run_logged() {
 		printf '\r\033[K\n\033[K\033[1A\r'
 	fi
 	wait "$pid" || status=$?
+	trap - INT TERM
+	eval "$saved_traps"
 	elapsed=$((SECONDS - start))
 	if ((status == 0)); then
 		log_step "$label done in $(format_duration "$elapsed")"

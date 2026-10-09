@@ -12,12 +12,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 - The image installer shows how long each step has run, how long it usually
   takes, and the newest line of its log, redrawn every second, so a slow
-  archinstall or `install.sh` is told from a hung one (#291).
+  archinstall or `install.sh` is told from a hung one (#291). Ctrl+C or a kill
+  during a step stops the step and everything it started.
 - The first keys after an image install (#295): the installer's last screen
   names `Super`+`/` (every key), `Super`+`R` (the app launcher) and `Super`+`F1`
   (the Control Center), and the first login says so in one notification.
 - Settings search finds "shortcut", "hotkey" and "keybind": a **Keyboard
-  shortcuts** row opens the keybind viewer (#293).
+  shortcuts** row, reached with the arrow keys after the matching sections,
+  opens the keybind viewer (#293).
 - **Settings > Appearance > Compositor** can let full-screen windows bypass the
   compositor (Picom's `unredir-if-possible`), off by default (#288).
 
@@ -26,7 +28,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - Settings > System runs one watcher process for all its domains, where it
   started eight: about 37 MB where it was about 30 MB each (#286).
   `dwm-system-management watch-domains` holds every domain's subscription on one
-  GLib loop; one domain failing no longer affects the others.
+  GLib loop; one domain failing no longer affects the others, and its retry
+  starts a fresh subscription (`stop DOMAIN`).
 - Fewer resident processes (#285): Bluetooth changes come through Quickshell's
   Bluetooth service and media through its MPRIS service, instead of a resident
   `gdbus monitor` and `playerctl --follow`, and the accessibility settings are

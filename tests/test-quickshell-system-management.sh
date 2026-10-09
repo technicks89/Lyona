@@ -239,7 +239,10 @@ watch_hub=$repo/config/quickshell/systemmanagement/SystemWatchHub.qml
 grep -Fq 'callbacks: root.monitorCallbacks(identity), domain: root.domain, hub: root.hub });' "$provider_discovery"
 grep -Fq 'interval: owner.identity.storage ? 3000 : 12000' "$provider_discovery"
 grep -Fq 'interval: owner.identity.storage ? 2000 : 1500' "$provider_discovery"
-grep -Fq 'owner.hub.detach(owner);' "$provider_discovery"
+grep -Fq 'owner.hub.detach(owner, retire);' "$provider_discovery"
+# A failed domain's subscription is retired, so the retry starts it afresh.
+grep -Fq 'root.monitor.stop(root.failed);' "$provider_discovery"
+grep -Fq 'process.write("stop " + domain + "\n");' "$watch_hub"
 grep -Fq 'root.monitor.signal(9);' "$provider_discovery"
 grep -Fq 'command: Commands.watchCommand(Commands.systemManagementCommand("watch-domains", []))' "$watch_hub"
 grep -Fq 'process.write("start " + domain + "\n");' "$watch_hub"

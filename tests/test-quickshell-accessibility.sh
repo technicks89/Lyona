@@ -40,7 +40,9 @@ assert_contains "$model" 'Theme.applyAccessibility(false, false)'
 # #285: no resident watcher process (it was inotifywait on all of
 # ~/.config/lyona). Quickshell watches the one file, and a short settle reads
 # the helper's status, which still checks the file.
-assert_contains "$model" 'path: root.configHome + "/lyona/accessibility.conf"'
+# A missing folder is never watched: it is created first, as the old watcher did.
+assert_contains "$model" 'command: ["mkdir", "-p", "-m", "700", "--", root.configHome + "/lyona"]'
+assert_contains "$model" 'path: root.configDirReady ? root.configHome + "/lyona/accessibility.conf" : ""'
 assert_contains "$model" 'watchChanges: true'
 assert_contains "$model" 'accessibilitySettle.restart();'
 assert_contains "$model" 'onTriggered: root.refresh()'

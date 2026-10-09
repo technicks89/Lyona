@@ -5094,6 +5094,20 @@ class WatchDomainsTests(unittest.TestCase):
             self.assertEqual(sorted(finished.read_text().split()),
                 ["regional-event", "time-event", "time-event"])
 
+    def test_stop_retires_one_domain_for_a_fresh_start(self):
+        with tempfile.TemporaryDirectory() as workdir:
+            process, finished = self.start(workdir)
+            process.stdin.write(b"start locale\n")
+            self.assertEqual(self.read_lines(process, 1), ["locale\tregional-event\tready"])
+            # One reply per live subscription; none for a domain without one.
+            process.stdin.write(b"stop locale\nstop locale\nstop accounts\n")
+            self.assertEqual(self.read_lines(process, 2, timeout=1), ["locale\tstopped\t0"])
+            process.stdin.write(b"start locale\n")
+            self.assertEqual(self.read_lines(process, 1), ["locale\tregional-event\tready"])
+            process.stdin.close()
+            self.assertEqual(process.wait(timeout=5), 0)
+            self.assertEqual(finished.read_text().split(), ["regional-event", "regional-event"])
+
     def test_sigterm_finishes_every_domain(self):
         with tempfile.TemporaryDirectory() as workdir:
             process, finished = self.start(workdir)
@@ -5104,7 +5118,8 @@ class WatchDomainsTests(unittest.TestCase):
             self.assertEqual(finished.read_text(), "regional-event\n")
 
     def test_unknown_or_malformed_requests_end_it(self):
-        for request in (b"start bogus\n", b"stop locale\n", b"start\n", b"start locale extra\n"):
+        for request in (b"start bogus\n", b"stop bogus\n", b"restart locale\n", b"start\n",
+                        b"start locale extra\n"):
             with self.subTest(request=request), tempfile.TemporaryDirectory() as workdir:
                 process, _ = self.start(workdir)
                 process.stdin.write(request)

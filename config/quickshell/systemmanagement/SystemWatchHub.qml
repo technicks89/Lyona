@@ -16,7 +16,10 @@ import qs.core
  * lines its watch-* command printed, and "DOMAIN<TAB>stopped<TAB>CODE" ends it
  * alone. A monitor attaching to a domain that is already subscribed and ready
  * is ready at once: that subscription has been live since before it attached,
- * so a read it starts now misses nothing.
+ * so a read it starts now misses nothing. A domain that failed is retired with
+ * "stop DOMAIN" once its last monitor goes, so a retry gets a fresh
+ * subscription rather than the stale one; it is started again only after its
+ * "stopped" reply, and the other domains carry on.
  */
 Scope {
     id: root
@@ -27,6 +30,8 @@ Scope {
     property var subscribed: ({})
     property var readyRecord: ({})
     property var queued: []
+    // Domains asked to stop, waiting for their "stopped" reply.
+    property var retiring: ({})
     property bool started: false
     // Asked to stop: anything attaching now waits for a fresh process.
     property bool stopping: false
@@ -34,6 +39,8 @@ Scope {
     function attach(client) {
         root.clients = root.clients.concat([client]);
         const domain = client.domain;
+        // Started again once the old subscription has gone.
+        if (root.started && !root.stopping && root.retiring[domain] === true) return;
         if (root.started && !root.stopping && root.subscribed[domain] === true) {
             const ready = root.readyRecord[domain] || "";
             if (ready.length > 0) Qt.callLater(function() { client.deliver(ready); });
@@ -49,12 +56,22 @@ Scope {
         if (!process.running) process.running = true;
     }
 
-    function detach(client) {
+    // retire: the monitor failed, so its domain's subscription is not reused.
+    function detach(client, retire) {
         root.clients = root.clients.filter(other => other !== client);
         if (root.clients.length === 0 && process.running && !root.stopping) {
             root.stopping = true;
             root.queued = [];
             process.signal(15);
+            return;
+        }
+        const domain = client.domain;
+        if (retire === true && root.started && !root.stopping && root.subscribed[domain] === true
+                && !root.clients.some(other => other.domain === domain)) {
+            root.subscribed[domain] = false;
+            root.readyRecord[domain] = "";
+            root.retiring[domain] = true;
+            process.write("stop " + domain + "\n");
         }
     }
 
@@ -64,6 +81,16 @@ Scope {
         const domain = line.slice(0, tab);
         const record = line.slice(tab + 1);
         const targets = root.clients.filter(client => client.domain === domain);
+        if (record.indexOf("stopped\t") === 0 && root.retiring[domain] === true) {
+            // The reply to "stop": start afresh for whoever attached since.
+            delete root.retiring[domain];
+            if (targets.length > 0) {
+                root.subscribed[domain] = true;
+                root.readyRecord[domain] = "";
+                process.write("start " + domain + "\n");
+            }
+            return;
+        }
         if (record.indexOf("stopped\t") === 0) {
             root.subscribed[domain] = false;
             root.readyRecord[domain] = "";
@@ -86,6 +113,7 @@ Scope {
         onStarted: {
             root.started = true;
             root.stopping = false;
+            root.retiring = ({});
             const domains = root.queued;
             root.queued = [];
             for (const domain of domains) {
@@ -100,6 +128,7 @@ Scope {
             root.stopping = false;
             root.subscribed = ({});
             root.readyRecord = ({});
+            root.retiring = ({});
             if (root.clients.length === 0) {
                 root.queued = [];
                 return;

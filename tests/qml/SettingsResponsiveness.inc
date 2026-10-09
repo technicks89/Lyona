@@ -107,6 +107,20 @@
                 root.responseCheck(settingsModel.testActivations === before + 1 && settingsModel.selectedSectionId === "audio", "A changed search activates its section exactly once");
                 settingsModel.selectSection("displays");
                 root.responseCheck(settingsModel.testActivations === before + 2 && settingsModel.searchQuery === "", "Selecting outside the filter clears it without intermediate activation");
+                // #293: the shortcuts row is reached from the keyboard too, after
+                // the matching sections, without changing the section shown.
+                settingsModel.setSearch("keyboard");
+                const keyboardSections = settingsModel.filteredSections.length;
+                const shownSection = settingsModel.selectedSectionId;
+                root.responseCheck(settingsModel.shortcutsMatch && !settingsModel.shortcutsSelected,
+                    "A shortcut search starts on the first matching row");
+                for (let step = 0; step < keyboardSections; step++) settingsModel.selectRelative(1);
+                root.responseCheck(settingsModel.shortcutsSelected && settingsModel.selectedSectionId === shownSection,
+                    "Down past the sections selects the shortcuts row");
+                settingsModel.selectRelative(1);
+                root.responseCheck(!settingsModel.shortcutsSelected || keyboardSections === 0,
+                    "Down from the shortcuts row wraps to the sections");
+                settingsModel.setSearch("");
                 const reads = settingsModel.testDisplayReads;
                 settingsModel.refresh();
                 root.responseCheck(settingsModel.testDisplayReads === reads + 1, "Explicit Refresh reloads display state");

@@ -703,16 +703,18 @@ apply_pending_hotplug() {
 	apply_saved "$skip_key" "$skip_setting"
 }
 
-# With builtins only, as it runs all session (Sync Sprint 16 R16-32): field 22
-# of /proc/PID/stat, counted after the command name, which may hold spaces.
+# With builtins only, as it runs all session (Sync Sprint 16 R16-32): fields 3
+# and 22 of /proc/PID/stat, counted after the command name, which may hold
+# spaces. A zombie has exited: waitpid returns at once for it, so counting it
+# alive would spin until its parent reaps it.
 session_parent_alive() {
 	local session_pid=${DWM_INPUT_SESSION_PID:-} expected_start=${DWM_INPUT_SESSION_START:-} stat
 	local -a fields
 	[[ -n $session_pid && -r /proc/$session_pid/stat ]] || return 1
-	[[ -n $expected_start ]] || return 0
 	IFS= read -r stat <"/proc/$session_pid/stat" 2>/dev/null || return 1
 	read -r -a fields <<<"${stat##*) }"
-	[[ ${fields[19]:-} == "$expected_start" ]]
+	[[ ${fields[0]:-} != [ZX] ]] || return 1
+	[[ -z $expected_start || ${fields[19]:-} == "$expected_start" ]]
 }
 
 cleanup_watch_apply() {

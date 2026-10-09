@@ -211,7 +211,8 @@ Scope {
         if (root.monitor !== null) root.monitor.stopSetup();
         if (!root.monitorOwned || root.stopping) return;
         root.stopping = true;
-        root.monitor.stop();
+        // A failed domain's subscription is retired, not reused by the retry.
+        root.monitor.stop(root.failed);
     }
 
     function setupExpired(generation, serial) {
@@ -283,15 +284,16 @@ Scope {
             property bool attached: false
             function start() { setupDeadline.restart(); owner.attached = true; owner.hub.attach(owner); }
             function stopSetup() { setupDeadline.stop(); }
-            // Stopping leaves the shared subscription to the hub; this monitor
-            // is finished once detached, as a process was once it exited.
-            function stop() { setupDeadline.stop(); stopDeadline.restart(); owner.release(); }
-            function signal(number) { owner.release(); }
+            // Stopping leaves the shared subscription to the hub, which retires
+            // it when this domain failed; this monitor is finished once
+            // detached, as a process was once it exited.
+            function stop(retire) { setupDeadline.stop(); stopDeadline.restart(); owner.release(retire === true); }
+            function signal(number) { owner.release(true); }
             function clearDeadlines() { setupDeadline.stop(); stopDeadline.stop(); }
-            function release() {
+            function release(retire) {
                 if (!owner.attached) return;
                 owner.attached = false;
-                owner.hub.detach(owner);
+                owner.hub.detach(owner, retire);
                 const finish = owner.callbacks.finish;
                 Qt.callLater(finish);
             }

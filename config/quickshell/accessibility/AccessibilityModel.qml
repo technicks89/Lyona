@@ -123,10 +123,20 @@ Scope {
 
     // The one file, watched in the shell (#285): no inotifywait on the whole
     // folder. It sees the file created, replaced and removed; the helper still
-    // checks it on every read.
+    // checks it on every read. A missing folder is never watched, so it is
+    // created first, private, as the old watcher did.
+    property bool configDirReady: false
+
+    Process {
+        id: configDirProcess
+        command: ["mkdir", "-p", "-m", "700", "--", root.configHome + "/lyona"]
+        running: true
+        onRunningChanged: if (!running) root.configDirReady = true
+    }
+
     FileView {
         id: accessibilityWatch
-        path: root.configHome + "/lyona/accessibility.conf"
+        path: root.configDirReady ? root.configHome + "/lyona/accessibility.conf" : ""
         watchChanges: true
         printErrors: false
         onFileChanged: {

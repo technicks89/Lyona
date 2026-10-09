@@ -668,6 +668,10 @@ discover() {
 	}; then
 		emit_capability system authorization 'Administrative authorization' available privileged polkit \
 			'A trusted installed helper and authorization tool are available'
+	elif trusted_health_helper; then
+		# The helper is installed: reinstalling lyona would not help.
+		emit_capability system authorization 'Administrative authorization' restricted privileged polkit \
+			'Read-only state remains available; install polkit (pkexec) to restore administrative actions'
 	else
 		emit_capability system authorization 'Administrative authorization' restricted privileged polkit \
 			'Read-only state remains available; reinstall lyona to restore administrative actions'

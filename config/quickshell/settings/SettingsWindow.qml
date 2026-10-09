@@ -133,11 +133,7 @@ FloatingWindow {
                                 root.settingsModel.selectRelative(-1);
                                 event.accepted = true;
                             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                if (root.settingsModel.filteredSections.length > 0) {
-                                    root.settingsModel.selectSection(root.settingsModel.filteredSections[root.settingsModel.selectedIndex].id);
-                                } else if (root.settingsModel.shortcutsMatch) {
-                                    root.settingsModel.openShortcuts();
-                                }
+                                root.settingsModel.activateSelected();
                                 event.accepted = true;
                             } else if (event.key === Qt.Key_Escape) {
                                 root.settingsModel.close();
@@ -206,6 +202,7 @@ FloatingWindow {
                                     required property int index
                                     required property var modelData
                                     readonly property bool selected: root.settingsModel.selectedSectionId === modelData.id
+                                        && !root.settingsModel.shortcutsSelected
 
                                     width: sectionList.width
                                     height: Math.max(Theme.dp(44),
@@ -296,8 +293,11 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: Math.max(Theme.dp(44),
                                     shortcutsColumn.implicitHeight + Theme.spacingSm)
+                                readonly property bool selected: root.settingsModel.shortcutsSelected
+
                                 visible: root.settingsModel.shortcutsMatch
-                                color: shortcutsMouse.containsMouse ? Theme.menuHoverBackground : Theme.transparent
+                                color: selected ? Theme.menuSelectedBackground
+                                    : shortcutsMouse.containsMouse ? Theme.menuHoverBackground : Theme.transparent
                                 border.color: Theme.controlSelectedBorder
                                 border.width: Theme.controlBorderWidth
                                 radius: Theme.controlRadius
@@ -313,7 +313,8 @@ FloatingWindow {
                                     UiText {
                                         Layout.fillWidth: true
                                         text: "Keyboard shortcuts"
-                                        color: shortcutsMouse.containsMouse ? Theme.menuHoverText : Theme.menuText
+                                        color: shortcutsButton.selected ? Theme.menuSelectedText
+                                            : shortcutsMouse.containsMouse ? Theme.menuHoverText : Theme.menuText
                                         font.pixelSize: Theme.fontBodySize
                                         elide: Text.ElideRight
                                     }
@@ -321,7 +322,8 @@ FloatingWindow {
                                     UiText {
                                         Layout.fillWidth: true
                                         text: "Open the keybind viewer (Super+/)"
-                                        color: shortcutsMouse.containsMouse ? Theme.menuHoverText : Theme.menuMutedText
+                                        color: shortcutsButton.selected ? Theme.menuSelectedText
+                                            : shortcutsMouse.containsMouse ? Theme.menuHoverText : Theme.menuMutedText
                                         font.pixelSize: Theme.fontCaptionSize
                                         elide: Text.ElideRight
                                     }

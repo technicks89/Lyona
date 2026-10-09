@@ -665,7 +665,11 @@ def watch_domains() -> int:
     stdin; each record comes out as "DOMAIN<TAB>record", exactly what that
     domain's watch-* command prints, and "DOMAIN<TAB>stopped<TAB>CODE" when one
     domain's monitor ends, the others carrying on. A later "start DOMAIN"
-    subscribes it again. stdin closing, or SIGTERM, ends everything.
+    subscribes it again. "stop DOMAIN" retires one live subscription, so a
+    domain that failed in the consumer starts afresh: its one "stopped" record
+    is the reply, and a domain with no live monitor gets none (its own
+    "stopped" is already on the way). stdin closing, or SIGTERM, ends
+    everything.
     """
     if threading.current_thread() is not threading.main_thread():
         return 1
@@ -743,6 +747,11 @@ def watch_domains() -> int:
             monitors[domain] = monitor
             monitor.begin(signals=False)
 
+        def stop(domain: str) -> None:
+            current = monitors.get(domain)
+            if current is not None and not current.stopped:
+                current.stop(0)
+
         def command_input(_fd, condition):
             try:
                 chunk = os.read(sys.stdin.fileno(), 4096)
@@ -756,10 +765,13 @@ def watch_domains() -> int:
                 line, _, rest = pending_input.partition(b"\n")
                 pending_input[:] = rest
                 words = bytes(line).decode("ascii", "replace").split(" ")
-                if len(words) != 2 or words[0] != "start" or words[1] not in WATCH_DOMAINS:
+                if len(words) != 2 or words[0] not in ("start", "stop") or words[1] not in WATCH_DOMAINS:
                     shutdown(1)
                     return GLib.SOURCE_REMOVE
-                start(words[1])
+                if words[0] == "start":
+                    start(words[1])
+                else:
+                    stop(words[1])
             if len(pending_input) > 256:
                 shutdown(1)
                 return GLib.SOURCE_REMOVE
