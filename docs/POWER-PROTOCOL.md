@@ -17,7 +17,7 @@ timeout values while preserving their provider status.
 
 ## Purpose
 
-`dwm-quickshell-controlcenter power-snapshot` exposes the power state used by
+`dwm-settings-power power-snapshot` exposes the power state used by
 the shared Quickshell Power model. It combines the UPower display device,
 Power Profiles D-Bus service, systemd-logind capability state, X11 DPMS, and
 the existing light-locker and `power.conf` policy without granting QML a
@@ -102,7 +102,7 @@ read-only in Settings; the user-writable helper is never elevated to edit it.
 
 ## Lock-only Snapshot
 
-`dwm-quickshell-controlcenter power-lock-snapshot` accepts no arguments and
+`dwm-settings-power power-lock-snapshot` accepts no arguments and
 emits the version header and the same `power-lock` record as the complete power
 snapshot. It reuses power status collection without querying UPower, profiles,
 suspend, or lid policy. System information can consume automatic-lock evidence
@@ -114,11 +114,11 @@ locking configuration and locker readiness, not whether the screen is locked now
 The fixed user-session actions are:
 
 ```text
-dwm-quickshell-controlcenter power-profile-set power-saver|balanced|performance
-dwm-quickshell-controlcenter power-dpms on|off
-dwm-quickshell-controlcenter power-dpms-timeout SECONDS
-dwm-quickshell-controlcenter power-lock on|off
-dwm-quickshell-controlcenter power-lock-timeout SECONDS
+dwm-settings-power power-profile-set power-saver|balanced|performance
+dwm-settings-power power-dpms on|off
+dwm-settings-power power-dpms-timeout SECONDS
+dwm-settings-power power-lock on|off
+dwm-settings-power power-lock-timeout SECONDS
 ```
 
 DPMS and lock timeouts must be decimal integers from 60 through 86400.

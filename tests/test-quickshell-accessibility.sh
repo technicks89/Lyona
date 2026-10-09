@@ -54,9 +54,9 @@ if grep -Fq 'watchReady' "$model" || grep -Fq 'watchSetupFailures' "$model"; the
 	printf 'Accessibility model reintroduced the inline watch-lifecycle bookkeeping WatchedProcess replaces\n' >&2
 	exit 1
 fi
-assert_contains "$watched_process" 'if (!root.active)'
+assert_contains "$watched_process" 'if (!root.active || root.runGeneration !== root.generation)'
 assert_contains "$watched_process" 'restartTimer.restart()'
-assert_contains "$watched_process" 'if (root.active && !watchProcess.running)'
+assert_contains "$watched_process" 'if (root.active && !watchProcess.running && root.restartGeneration === root.generation)'
 assert_contains "$watched_process" 'onTriggered: root.settled()'
 
 # parseStatus()'s field-count/enum/duplicate-rejection validation is the

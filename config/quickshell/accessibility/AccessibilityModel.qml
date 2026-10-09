@@ -24,8 +24,7 @@ Scope {
     property string pendingSetting: ""
     property string pendingValue: ""
     readonly property bool mutationReady: root.mutationState === "available"
-    readonly property string configHome: (Quickshell.env("XDG_CONFIG_HOME") || "").startsWith("/")
-        ? Quickshell.env("XDG_CONFIG_HOME") : (Quickshell.env("HOME") || "") + "/.config"
+    readonly property string configHome: Xdg.configHome
 
     function useDefaults() {
         root.highContrast = false;

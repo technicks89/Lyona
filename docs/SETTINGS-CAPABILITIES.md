@@ -54,7 +54,7 @@ provider work still required.
 | Operations | Owner and interface | Class | Settings disposition |
 | --- | --- | --- | --- |
 | Open/close pages, show/hide panel widgets | One root `PanelSettingsModel.qml` over versioned `dwm-panel-settings` state; Control Center delegates to it | User-session | Workspace, volume, Bluetooth, network, and power visibility is shared by every monitor and Settings. Absent or invalid state safely reads as all-on; atomic set/reset refuses unsafe or concurrent replacement. |
-| System summary, theme list, keybind list, power status | `dwm-quickshell-controlcenter info`, `themes`, `keybinds`, `power-status`; tab-separated records | Read-only | Keep as internal interfaces until a future owning phase versions their output and error contracts. |
+| System summary, theme list, keybind list, power status | `dwm-quickshell-controlcenter info`, `themes`, `keybinds`; `dwm-settings-power power-status`; tab-separated records | Read-only | Keep as internal interfaces until a future owning phase versions their output and error contracts. |
 | Restart Picom or Quickshell, toggle compositor, reload wallpaper | `dwm-quickshell-controlcenter action` with fixed action names | User-session | Keep allowlisted; surface missing-tool and process failures instead of unconditional success. |
 | Dependency check and installer | Fixed Control Center actions launched in a terminal | Delegated | Keep as explicit delegated workflows, not background Settings mutations. |
 | Open wallpaper folder or GTK settings | `xdg-open` or `nwg-look` through fixed actions | Delegated | Expose only when the target tool is available. |

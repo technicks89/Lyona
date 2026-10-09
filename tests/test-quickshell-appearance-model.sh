@@ -11,6 +11,9 @@ icon_text=$repo/config/quickshell/core/IconText.qml
 panel=$repo/config/quickshell/panel/DwmPanel.qml
 commands=$repo/config/quickshell/core/Commands.qml
 model=$repo/config/quickshell/appearance/AppearanceModel.qml
+# Split per helper (#282), as PicomModel.qml was.
+wallpaper_model=$repo/config/quickshell/appearance/WallpaperModel.qml
+font_model=$repo/config/quickshell/appearance/FontModel.qml
 watched_process=$repo/config/quickshell/core/WatchedProcess.qml
 settings_model=$repo/config/quickshell/settings/SettingsModel.qml
 settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
@@ -58,7 +61,7 @@ for mutation_function in startPreview applyTheme resetTheme; do
 done
 grep -Fq 'Theme.applyAppearanceColors(colors, darkMode)' "$model"
 grep -Fq 'watchChanges: true' "$model"
-test "$(grep -Fc 'watchChanges: true' "$model")" -eq 5
+test "$(cat "$model" "$font_model" | grep -Fc 'watchChanges: true')" -eq 5
 grep -Fq 'model: root.integrationWatchPaths' "$model"
 grep -Fq 'Commands.settingsAppearanceCommand("inventory", [])' "$model"
 if grep -Fq 'Commands.checkedCommand(Commands.settingsAppearanceCommand("inventory", []))' \
@@ -113,106 +116,107 @@ assert_contains "$watched_process" 'restartTimer.restart()'
 assert_contains "$watched_process" 'if (root.active && !watchProcess.running && root.restartGeneration === root.generation)'
 assert_contains "$watched_process" 'onTriggered: root.settled()'
 grep -Fq 'root.inventoryCandidates = candidates' "$model"
-grep -Fq 'candidate.id === "wallpaper"' "$model"
-grep -Fq 'candidate.id === "font"' "$model"
-grep -Fq 'Commands.checkedCommand(Commands.settingsFontCommand("status", []))' "$model"
-grep -Fq 'Commands.settingsFontCommand("mutation-ready", [])' "$model"
-grep -Fq 'Commands.checkedCommand(Commands.settingsFontCommand(action, args))' "$model"
-grep -Fq 'function previewFont(family, scale)' "$model"
-grep -Fq 'function applyFont(family, scale)' "$model"
-grep -Fq 'function resetFont()' "$model"
-grep -Fq 'Theme.applyFontPreferences(root.fontFamily, root.fontScale)' "$model"
-grep -Fq 'root.fontStatusRetryAttempts = 0;' "$model"
-grep -Fq 'root.fontStatusRetryAttempts < 3' "$model"
-grep -Fq 'fontStatusRetryTimer.restart();' "$model"
-grep -Fq 'id: fontStatusRetryTimer' "$model"
-grep -Fq 'root.fontMutationReady = false;' "$model"
-test "$(grep -Fc '!root.fontMutationReady || fontReadinessProcess.running' "$model")" -eq 3
-grep -Fq 'root.fontPreviewToken = root.fontActionToken;' "$model"
-grep -Fq 'root.fontPreviewRemaining = 30;' "$model"
-finish_font_action=$(sed -n '/function finishFontAction()/,/^    }/p' "$model")
+grep -Fq 'candidate.id === "wallpaper"' "$wallpaper_model"
+grep -Fq 'candidate.id === "font"' "$font_model"
+grep -Fq 'Commands.checkedCommand(Commands.settingsFontCommand("status", []))' "$font_model"
+grep -Fq 'Commands.settingsFontCommand("mutation-ready", [])' "$font_model"
+grep -Fq 'Commands.checkedCommand(Commands.settingsFontCommand(action, args))' "$font_model"
+grep -Fq 'function preview(family, scale)' "$font_model"
+grep -Fq 'function apply(family, scale)' "$font_model"
+grep -Fq 'function reset()' "$font_model"
+grep -Fq 'Theme.applyFontPreferences(root.family, root.scale)' "$font_model"
+grep -Fq 'root.statusRetryAttempts = 0;' "$font_model"
+grep -Fq 'root.statusRetryAttempts < 3' "$font_model"
+grep -Fq 'statusRetryTimer.restart();' "$font_model"
+grep -Fq 'id: statusRetryTimer' "$font_model"
+grep -Fq 'root.mutationReady = false;' "$font_model"
+test "$(grep -Fc '!root.mutationReady || readinessProcess.running' "$font_model")" -eq 3
+grep -Fq 'root.previewToken = root.actionToken;' "$font_model"
+grep -Fq 'root.previewRemaining = 30;' "$font_model"
+finish_font_action=$(sed -n '/function finishAction()/,/^    }/p' "$font_model")
 printf '%s\n' "$finish_font_action" |
-	grep -Fq 'root.fontActionKind === "keep" || root.fontActionKind === "revert"'
-printf '%s\n' "$finish_font_action" | grep -Fq '|| root.fontActionKind === "abandon"'
-printf '%s\n' "$finish_font_action" | grep -Fq 'root.fontPreviewState = "none";'
-printf '%s\n' "$finish_font_action" | grep -Fq 'root.fontPreviewToken = "";'
-printf '%s\n' "$finish_font_action" | grep -Fq 'root.fontPreviewFamily = "";'
-printf '%s\n' "$finish_font_action" | grep -Fq 'root.fontPreviewScale = 1.0;'
-printf '%s\n' "$finish_font_action" | grep -Fq 'root.fontPreviewRemaining = 0;'
-printf '%s\n' "$finish_font_action" | grep -Fq 'root.fontPreviewDetail = "";'
-if sed -n '/function clearFontStatus(detail)/,/^    }/p' "$model" |
+	grep -Fq 'root.actionKind === "keep" || root.actionKind === "revert"'
+printf '%s\n' "$finish_font_action" | grep -Fq '|| root.actionKind === "abandon"'
+printf '%s\n' "$finish_font_action" | grep -Fq 'root.previewState = "none";'
+printf '%s\n' "$finish_font_action" | grep -Fq 'root.previewToken = "";'
+printf '%s\n' "$finish_font_action" | grep -Fq 'root.previewFamily = "";'
+printf '%s\n' "$finish_font_action" | grep -Fq 'root.previewScale = 1.0;'
+printf '%s\n' "$finish_font_action" | grep -Fq 'root.previewRemaining = 0;'
+printf '%s\n' "$finish_font_action" | grep -Fq 'root.previewDetail = "";'
+if sed -n '/function clearStatus(detail)/,/^    }/p' "$font_model" |
 	grep -Fq 'Theme.applyFontPreferences'; then
 	printf 'Transient font status failure still repaints the shell with fallback preferences\n' >&2
 	exit 1
 fi
-test "$(grep -Fc 'root.refreshFontStatus();' "$model")" -eq 3
+test "$(grep -Fc 'fontModel.refreshStatus();' "$model")" -eq 3
 # The countdowns are PreviewCountdown components (Sync Sprint 12 S12-14).
-grep -Fq 'active: root.settingsVisible && root.fontPreviewState === "active"' "$model"
-grep -Fq 'property alias fontPreviewRemaining: fontCountdown.remaining' "$model"
-grep -Fq 'Commands.settingsWallpaperCommand("status", ["--read-only"])' "$model"
-if grep -Fq 'Commands.checkedCommand(Commands.settingsWallpaperCommand("status"' "$model"; then
+grep -Fq 'active: root.appearance.settingsVisible && root.previewState === "active"' "$font_model"
+grep -Fq 'property alias previewRemaining: countdown.remaining' "$font_model"
+grep -Fq 'Commands.settingsWallpaperCommand("status", ["--read-only"])' "$wallpaper_model"
+if grep -Fq 'Commands.checkedCommand(Commands.settingsWallpaperCommand("status"' "$wallpaper_model"; then
 	printf 'Wallpaper status remained behind the orphan-prone checked-command wrapper\n' >&2
 	exit 1
 fi
-grep -Fq 'Commands.settingsWallpaperCommand(action === "reconcile" ? "status" : action, args)' "$model"
-grep -Fq 'function previewWallpaper(path, fit)' "$model"
-grep -Fq 'function resetWallpaper()' "$model"
-grep -Fq 'function reconcileWallpaperPreview()' "$model"
-grep -Fq 'function clearWallpaperStatus(detail)' "$model"
-grep -Fq 'root.wallpaperPath = "";' "$model"
-grep -Fq 'const preservePreview = (root.wallpaperPreviewState === "active"' "$model"
-grep -Fq '|| root.wallpaperPreviewState === "failed")' "$model"
-grep -Fq '&& root.wallpaperPreviewToken.length > 0;' "$model"
-grep -Fq 'if (!preservePreview) {' "$model"
-grep -Fq 'Installed wallpaper helper does not report reset readiness' "$model"
-grep -Fq 'root.clearWallpaperStatus("Wallpaper helper returned an unsupported response")' "$model"
+grep -Fq 'Commands.settingsWallpaperCommand(action === "reconcile" ? "status" : action, args)' "$wallpaper_model"
+grep -Fq 'function preview(path, fit)' "$wallpaper_model"
+grep -Fq 'function reset()' "$wallpaper_model"
+grep -Fq 'function reconcilePreview()' "$wallpaper_model"
+grep -Fq 'function clearStatus(detail)' "$wallpaper_model"
+grep -Fq 'root.path = "";' "$wallpaper_model"
+grep -Fq 'const preservePreview = (root.previewState === "active"' "$wallpaper_model"
+grep -Fq '|| root.previewState === "failed")' "$wallpaper_model"
+grep -Fq '&& root.previewToken.length > 0;' "$wallpaper_model"
+grep -Fq 'if (!preservePreview) {' "$wallpaper_model"
+grep -Fq 'Installed wallpaper helper does not report reset readiness' "$wallpaper_model"
+grep -Fq 'root.clearStatus("Wallpaper helper returned an unsupported response")' "$wallpaper_model"
 grep -Fq 'provider = { "state": fields[2], "detail": fields[4] }' "$model"
-grep -Fq 'root.wallpaperProviderDetail = provider.detail' "$model"
-grep -Fq 'root.wallpaperMutationDetail = mutation.detail' "$model"
-grep -Fq 'root.wallpaperResetReady = reset.state === "available"' "$model"
-grep -Fq 'QueuedRun.startOrQueue(wallpaperStatusProcess, root, "wallpaperStatusPending",' "$model"
-grep -Fq '|| wallpaperActionProcess.running || inventoryProcess.running' "$model"
-grep -Fq 'if (wallpaperStatusProcess.running || wallpaperActionProcess.running) {' "$model"
-grep -Fq 'if (!running && root.settingsVisible && root.inventoryPending) {' "$model"
-grep -Fq '} else if (!running && root.settingsVisible && root.wallpaperStatusPending) {' "$model"
-grep -Fq 'if (!running && root.wallpaperStatusPending && root.settingsVisible) {' "$model"
-grep -Fq 'readonly property bool wallpaperStatusBusy: wallpaperReadinessProcess.running' "$model"
-grep -Fq 'Commands.settingsWallpaperCommand("reset-ready", [])' "$model"
-grep -Fq 'wallpaperReadinessProcess.running || wallpaperActionProcess.running || inventoryProcess.running,' "$model"
-if grep -Fq '|| (inventoryWatch.running && !root.inventoryWatchReady)) {' "$model"; then
+grep -Fq 'root.providerDetail = provider.detail' "$wallpaper_model"
+grep -Fq 'root.mutationDetail = mutation.detail' "$wallpaper_model"
+grep -Fq 'root.resetReady = reset.state === "available"' "$wallpaper_model"
+grep -Fq 'QueuedRun.startOrQueue(statusProcess, root, "statusPending",' "$wallpaper_model"
+grep -Fq '|| actionProcess.running || root.appearance.inventoryRunning' "$wallpaper_model"
+grep -Fq 'readonly property bool reading: statusProcess.running || actionProcess.running' "$wallpaper_model"
+grep -Fq 'if (wallpaperModel.reading) {' "$model"
+grep -Fq 'if (!running && root.appearance.settingsVisible && root.appearance.inventoryPending) {' "$wallpaper_model"
+grep -Fq '} else if (!running && root.appearance.settingsVisible && root.statusPending) {' "$wallpaper_model"
+grep -Fq '} else if (!running && wallpaperModel.statusPending && root.settingsVisible) {' "$model"
+grep -Fq 'readonly property bool statusBusy: readinessProcess.running' "$wallpaper_model"
+grep -Fq 'Commands.settingsWallpaperCommand("reset-ready", [])' "$wallpaper_model"
+grep -Fq 'readinessProcess.running || actionProcess.running || root.appearance.inventoryRunning,' "$wallpaper_model"
+if grep -Fq '|| root.appearance.inventoryWatchStarting) {' "$wallpaper_model"; then
 	printf 'Wallpaper status discovery is still gated on inventory watcher startup\n' >&2
 	exit 1
 fi
-grep -Fq '|| wallpaperReadinessProcess.running || wallpaperStatusProcess.running' "$model"
-grep -Fq 'root.wallpaperPreviewState = "active";' "$model"
-test "$(grep -Fc 'root.wallpaperPreviewState = "active";' "$model")" -eq 1
-grep -Fq 'root.wallpaperPreviewToken = root.wallpaperActionToken;' "$model"
-grep -Fq 'action === "reconcile" ? "status" : action' "$model"
-grep -Fq 'root.parseWallpaperStatus(text);' "$model"
-grep -Fq 'Wallpaper preview expired and reverted automatically' "$model"
-grep -Fq 'const previewDecision = root.wallpaperPreviewState === "active"' "$model"
-grep -Fq 'if (previewDecision && (inventoryProcess.running || root.inventoryPending' "$model"
-grep -Fq '|| root.wallpaperStatusPending' "$model"
-grep -Fq '|| (!previewDecision && inventoryWatch.running' "$model"
-if grep -Fq '&& !root.wallpaperStatusPending' "$model"; then
+grep -Fq '|| readinessProcess.running || statusProcess.running' "$wallpaper_model"
+grep -Fq 'root.previewState = "active";' "$wallpaper_model"
+test "$(grep -Fc 'root.previewState = "active";' "$wallpaper_model")" -eq 1
+grep -Fq 'root.previewToken = root.actionToken;' "$wallpaper_model"
+grep -Fq 'action === "reconcile" ? "status" : action' "$wallpaper_model"
+grep -Fq 'root.parseStatus(text);' "$wallpaper_model"
+grep -Fq 'Wallpaper preview expired and reverted automatically' "$wallpaper_model"
+grep -Fq 'const previewDecision = root.previewState === "active"' "$wallpaper_model"
+grep -Fq 'if (previewDecision && (root.appearance.inventoryRunning || root.appearance.inventoryPending' "$wallpaper_model"
+grep -Fq '|| root.statusPending' "$wallpaper_model"
+grep -Fq '|| (!previewDecision && root.appearance.inventoryWatchStarting' "$wallpaper_model"
+if grep -Fq '&& !root.statusPending' "$wallpaper_model"; then
 	printf 'Queued status work still blocks wallpaper inventory preemption\n' >&2
 	exit 1
 fi
 grep -Fq 'if (inventoryProcess.running) inventoryProcess.running = false;' "$model"
-grep -Fq 'root.wallpaperStatusPending = false;' "$model"
-if grep -Fq 'wallpaperActionPending' "$model"; then
+grep -Fq 'root.statusPending = false;' "$wallpaper_model"
+if grep -Fq 'actionPending' "$wallpaper_model"; then
 	printf 'Wallpaper preview decisions still use a pane-scoped pending queue\n' >&2
 	exit 1
 fi
 grep -Fq '&& !root.inventoryWatchFailed) {' "$model"
 grep -Fq 'root.inventoryWatchRestartPending = false;' "$model"
 grep -Fq 'if (root.inventoryWatchSawEvent) inventoryWatchRestartTimer.restart();' "$model"
-grep -Fq 'if (!previewWasActive && preview.state === "active") {' "$model"
-grep -Fq 'root.wallpaperPreviewState = "none";' "$model"
-grep -Fq 'Qt.callLater(root.refreshWallpaperStatus)' "$model"
-grep -Fq 'active: root.settingsVisible && root.wallpaperPreviewState === "active"' "$model"
-grep -Fq 'property alias wallpaperPreviewRemaining: wallpaperCountdown.remaining' "$model"
-if grep -Fq 'onTriggered: root.refreshWallpaperStatus()' "$model"; then
+grep -Fq 'if (!previewWasActive && preview.state === "active") {' "$wallpaper_model"
+grep -Fq 'root.previewState = "none";' "$wallpaper_model"
+grep -Fq 'Qt.callLater(root.refreshStatus)' "$wallpaper_model"
+grep -Fq 'active: root.appearance.settingsVisible && root.previewState === "active"' "$wallpaper_model"
+grep -Fq 'property alias previewRemaining: countdown.remaining' "$wallpaper_model"
+if grep -Fq 'onTriggered: root.refreshStatus()' "$wallpaper_model"; then
 	printf 'Wallpaper preview countdown still polls the full status helper every second\n' >&2
 	exit 1
 fi
@@ -277,13 +281,13 @@ grep -Fq 'root.snapshotRunGeneration === root.snapshotGeneration' "$model"
 grep -Fq '&& !root.snapshotParsed' "$model"
 grep -Fq 'const error = snapshotError.text.trim()' "$model"
 grep -Fq 'Appearance provider failed before returning a valid snapshot' "$model"
-grep -Fq 'root.configuredConfigHome.startsWith("/")' "$model"
-grep -Fq 'root.configuredDataHome.startsWith("/")' "$model"
-grep -Fq 'root.configuredStateHome.startsWith("/")' "$model"
+grep -Fq 'readonly property string configHome: Xdg.configHome' "$model"
+grep -Fq 'readonly property string dataHome: Xdg.dataHome' "$model"
+grep -Fq 'readonly property string stateHome: Xdg.stateHome' "$model"
 grep -Fq 'appliedTheme === null || !appliedTheme.valid' "$model"
 grep -Fq 'if (root.activeState === "recovery") return "partial"' "$model"
-grep -Fq 'if (root.wallpaperProviderState !== "available"' "$model"
-grep -Fq '|| root.wallpaperState !== "available") return "partial"' "$model"
+grep -Fq 'if (wallpaperModel.providerState !== "available"' "$model"
+grep -Fq '|| wallpaperModel.selectionState !== "available") return "partial"' "$model"
 grep -Fq 'root.colorsComplete(colors)' "$model"
 grep -Fq 'root.integrationsComplete(integrations)' "$model"
 grep -Fq 'Qt.callLater(root.refreshSnapshot)' "$model"
@@ -322,24 +326,24 @@ grep -Fq 'Preview for 30 seconds' "$pane"
 grep -Fq 'Preview wallpaper for 30 seconds' "$pane"
 grep -Fq 'label: "Configured wallpaper"' "$pane"
 grep -Fq 'label: "Wallpaper apply and preview unavailable"' "$pane"
-grep -Fq 'root.appearanceModel.wallpaperResetReady ? "Reset available" : "Protected"' "$pane"
+grep -Fq 'root.appearanceModel.wallpaper.resetReady ? "Reset available" : "Protected"' "$pane"
 grep -Fq 'readonly property bool wallpaperControlsBusy: root.appearanceBusy' "$pane"
-grep -Fq '|| root.appearanceModel.wallpaperStatusBusy' "$pane"
+grep -Fq '|| root.appearanceModel.wallpaper.statusBusy' "$pane"
 grep -Fq 'readonly property bool wallpaperPreviewControlsBusy: root.appearanceBusy' "$pane"
-grep -Fq '|| root.appearanceModel.wallpaperPreviewActionBusy' "$pane"
+grep -Fq '|| root.appearanceModel.wallpaper.previewActionBusy' "$pane"
 grep -Fq 'enabled: !root.wallpaperPreviewControlsBusy' "$pane"
 grep -Fq '? !root.wallpaperPreviewControlsBusy : !root.wallpaperControlsBusy' "$pane"
 grep -Fq 'label: "Reset wallpaper"' "$pane"
 grep -Fq 'label: "Managed shell font"' "$pane"
 grep -Fq 'Preview font for 30 seconds' "$pane"
-grep -Fq 'onActivated: root.appearanceModel.keepFontPreview()' "$pane"
-grep -Fq 'onActivated: root.appearanceModel.revertFontPreview()' "$pane"
-grep -Fq 'onActivated: root.appearanceModel.abandonFontPreview()' "$pane"
+grep -Fq 'onActivated: root.appearanceModel.font.keepPreview()' "$pane"
+grep -Fq 'onActivated: root.appearanceModel.font.revertPreview()' "$pane"
+grep -Fq 'onActivated: root.appearanceModel.font.abandonPreview()' "$pane"
 grep -Fq 'label: "Reset font"' "$pane"
 grep -Fq 'label: "Repair wallpaper state"' "$pane"
-test "$(grep -Fc 'root.appearanceModel.wallpaperPreviewToken.length > 0' "$pane")" -eq 2
-grep -Fq 'root.appearanceModel.wallpaperResetReady' "$pane"
-grep -Fq 'detail: root.appearanceModel.wallpaperMutationDetail' "$pane"
+test "$(grep -Fc 'root.appearanceModel.wallpaper.previewToken.length > 0' "$pane")" -eq 2
+grep -Fq 'root.appearanceModel.wallpaper.resetReady' "$pane"
+grep -Fq 'detail: root.appearanceModel.wallpaper.mutationDetail' "$pane"
 grep -Fq 'else root.selectedWallpaperPath = "";' "$pane"
 grep -Fq 'function wallpaperSelectionAvailable()' "$pane"
 test "$(grep -Fc '&& root.wallpaperSelectionAvailable() && !root.wallpaperControlsBusy' "$pane")" -eq 2
@@ -348,8 +352,8 @@ grep -Fq 'return root.appearanceModel.inventoryProviderDetail;' "$pane"
 grep -Fq 'selection.detail === "Wallpaper candidate discovery did not complete"' "$pane"
 grep -Fq 'root.appearanceModel.inventoryWatchDetail' "$pane"
 grep -Fq '? " / Saved" : "")' "$pane"
-grep -Fq 'detail: root.appearanceModel.wallpaperProviderDetail' "$pane"
-grep -Fq 'root.appearanceModel.wallpaperCandidates' "$pane"
+grep -Fq 'detail: root.appearanceModel.wallpaper.providerDetail' "$pane"
+grep -Fq 'root.appearanceModel.wallpaper.candidates' "$pane"
 grep -Fq 'Component.onCompleted: {' "$pane"
 grep -Fq 'root.ensureWallpaperSelection();' "$pane"
 grep -Fq 'preferred = root.appearanceModel.resolvedTheme' "$pane"
@@ -374,32 +378,33 @@ grep -Fq 'function appearanceFontScale(): string' "$settings_test_ipc"
 grep -Fq 'function appearanceFontPreviewState(): string' "$settings_test_ipc"
 test "$(grep -Fc 'root.selectedTheme.valid && root.selectedTheme.mutable' "$pane")" -eq 2
 
-# Cursor, icon, GTK and Qt overrides.
+# Cursor, icon, GTK and Qt overrides, in their own model (#282), as Picom's.
+toolkit_model=$repo/config/quickshell/appearance/ToolkitModel.qml
+grep -Fq 'ToolkitModel { id: toolkitModel; appearance: root }' "$model"
 grep -Fq 'function settingsToolkitCommand(action, args)' "$commands"
-grep -Fq 'toolkit-action-protocol' "$model"
+grep -Fq 'toolkit-action-protocol' "$toolkit_model"
 
 # A status that stopped early would render as a pane missing some
 # capabilities, which reads as those capabilities being unsupported rather
 # than as a truncated read. Both guards have to stay.
-grep -Fq 'fields[0] === "complete"' "$model"
-grep -Fq 'root.clearToolkitStatus("Toolkit helper returned an incomplete response")' "$model"
+grep -Fq 'fields[0] === "complete"' "$toolkit_model"
+grep -Fq 'root.clearStatus("Toolkit helper returned an incomplete response")' "$toolkit_model"
 
 # The saved option and the value it resolves to are separate columns, so the
 # selection record is six fields rather than five.
-grep -Fq 'fields[0] === "selection" && fields.length === 6' "$model"
-grep -Fq 'fields[0] === "candidate" && fields.length === 3' "$model"
+grep -Fq 'fields[0] === "selection" && fields.length === 6' "$toolkit_model"
+grep -Fq 'fields[0] === "candidate" && fields.length === 3' "$toolkit_model"
 
 # Settings must only offer what the helper says is installed, or it will
 # offer a choice that is then refused.
-grep -Fq 'return root.toolkitCandidatesFor(capability).indexOf(value) !== -1' "$model"
+grep -Fq 'return root.candidatesFor(capability).indexOf(value) !== -1' "$toolkit_model"
 
-for toolkit_function in previewToolkit applyToolkit resetToolkit \
-	keepToolkitPreview revertToolkitPreview abandonToolkitPreview; do
-	grep -Fq "function $toolkit_function(" "$model" || {
-		printf 'Appearance model is missing %s\n' "$toolkit_function" >&2
+for toolkit_function in preview apply reset keepPreview revertPreview abandonPreview; do
+	grep -Fq "function $toolkit_function(" "$toolkit_model" || {
+		printf 'Toolkit model is missing %s\n' "$toolkit_function" >&2
 		exit 1
 	}
-	grep -Fq "root.appearanceModel.$toolkit_function(" "$pane" || {
+	grep -Fq "root.appearanceModel.toolkit.$toolkit_function(" "$pane" || {
 		printf 'Appearance pane never calls %s\n' "$toolkit_function" >&2
 		exit 1
 	}

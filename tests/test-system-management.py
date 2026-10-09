@@ -642,7 +642,7 @@ class ScreenLockTests(unittest.TestCase):
         children = []
         def launch(command, **options):
             self.assertEqual(command, ["/usr/bin/timeout", "--signal=TERM", "--kill-after=1", "10",
-                str(REPO / "scripts/dwm-quickshell-controlcenter"), "power-lock-snapshot"])
+                str(REPO / "scripts/dwm-settings-power"), "power-lock-snapshot"])
             self.assertEqual(options["env"]["DISPLAY"], ":fixture")
             self.assertEqual(options["env"]["LC_ALL"], "C")
             self.assertEqual(options["stdin"], subprocess.DEVNULL)

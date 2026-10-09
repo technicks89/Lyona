@@ -301,7 +301,7 @@ Security (`INFORMATION_SECURITY_IDS`, `read_selinux_status()`/
   either is `unencrypted`; incomplete or inconsistent topology is `partial`,
   never guessed either way. Verified against this sandbox's real block-device
   topology: `available`/`unencrypted`.
-- `screen-lock` — reuses `dwm-quickshell-controlcenter power-lock-snapshot`
+- `screen-lock` — reuses `dwm-settings-power power-lock-snapshot`
   ([`POWER-PROTOCOL.md`](POWER-PROTOCOL.md), [S2-03](sprints/completed/SYNC-SPRINT-2-SYSTEM-INFORMATION.md#s2-03-automatic-screen-lock-evidence)),
   never a second locker or GSettings probe. Lyona additionally autostarts
   `dwm-lock-watch` alongside `light-locker`; `configured_lock_running()`

@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import qs.core
 import "NotificationActions.js" as NotificationActions
 
 pragma ComponentBehavior: Bound
@@ -39,13 +40,11 @@ Scope {
         && (root.policyState === "available" || root.policyState === "defaults")
     readonly property bool policyResetReady: !root.policySaving
         && root.policyState !== "loading"
-    readonly property string homeDir: Quickshell.env("HOME") || ""
-    readonly property string configuredConfigHome: Quickshell.env("XDG_CONFIG_HOME") || ""
-    readonly property string configHome: root.configuredConfigHome.startsWith("/")
-        ? root.configuredConfigHome : root.homeDir + "/.config"
+    readonly property string configHome: Xdg.configHome
     readonly property string configDir: root.configHome + "/lyona"
     readonly property string policyPath: root.configDir + "/notification-settings.json"
-    readonly property string cacheDir: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/lyona"
+    // A relative XDG_CACHE_HOME is ignored, as the specification requires (#282).
+    readonly property string cacheDir: Xdg.cacheHome + "/lyona"
     readonly property string historyPath: cacheDir + "/notification-history.json"
 
     // The history holds other programs' notification text, so only this user can

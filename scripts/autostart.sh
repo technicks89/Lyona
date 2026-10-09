@@ -88,7 +88,7 @@ wait_for_quickshell_tray() {
 apply_power_settings() {
 	helper=
 	case $0 in
-	*/*) helper=${0%/*}/dwm-quickshell-controlcenter ;;
+	*/*) helper=${0%/*}/dwm-settings-power ;;
 	esac
 
 	if [ -n "$helper" ] && [ -x "$helper" ]; then
@@ -96,12 +96,12 @@ apply_power_settings() {
 		return 0
 	fi
 
-	if command -v dwm-quickshell-controlcenter >/dev/null 2>&1; then
-		dwm-quickshell-controlcenter power-apply >/dev/null 2>&1 || true
+	if command -v dwm-settings-power >/dev/null 2>&1; then
+		dwm-settings-power power-apply >/dev/null 2>&1 || true
 		return 0
 	fi
 
-	# Only reached when no Control Center helper exists. It honours a saved
+	# Only reached when no power helper exists. It honours a saved
 	# power.conf the way the helper's read_power_config does (same keys, same
 	# boolean words, timeouts kept within 60-86400 s), and otherwise the D-13
 	# defaults: blank at 10 minutes. Locking needs light-locker, which only the

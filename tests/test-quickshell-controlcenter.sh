@@ -274,6 +274,35 @@ run_helper theme-set dracula >"$work/theme-set-source.out"
 grep -Fqx 'theme	dracula' "$work/theme-set-source.out"
 grep -Fq 'theme = "dracula"' "$work/config/lyona/themes.toml"
 
+# #282: Restart NetworkManager is the System Health repair, through polkit,
+# not sudo in a terminal; its refusal is the action's error.
+cat >"$work/prefix/bin/dwm-system-health" <<EOF
+#!/bin/sh
+printf 'dwm-system-health %s\n' "\$*" >>"$work/actions.log"
+[ -z "\${DWM_TEST_HEALTH_FAIL:-}" ] || { printf 'pkexec is not available\n' >&2; exit 1; }
+printf 'repair\toverview\tok\trestart-networkmanager\n'
+EOF
+chmod +x "$work/prefix/bin/dwm-system-health"
+run_installed_action() {
+	DWM_TEST_LOG="$work/actions.log" DWM_TEST_SYNC=1 HOME="$work/home" XDG_CONFIG_HOME="$work/config" \
+		XDG_DATA_HOME="$work/data" XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
+		DWM_TEST_MODE=1 PATH="$run_helper_path" "$work/prefix/bin/dwm-quickshell-controlcenter" action "$@"
+}
+: >"$work/actions.log"
+run_installed_action restart-networkmanager >"$work/nm.out"
+grep -Fqx 'action	restart-networkmanager' "$work/nm.out"
+grep -Fqx 'dwm-system-health repair-privileged restart-networkmanager' "$work/actions.log"
+if grep -Eq 'sudo|terminal' "$work/actions.log"; then
+	printf 'Restart NetworkManager still runs sudo in a terminal\n' >&2
+	exit 1
+fi
+if DWM_TEST_HEALTH_FAIL=1 run_installed_action restart-networkmanager >/dev/null 2>"$work/nm.err"; then
+	printf 'a refused NetworkManager restart was reported as done\n' >&2
+	exit 1
+fi
+grep -Fqx 'pkexec is not available' "$work/nm.err"
+rm -f "$work/prefix/bin/dwm-system-health"
+
 keybinds=$(run_helper keybinds)
 printf '%s\n' "$keybinds" | grep -Fqx 'Super + r	App launcher'
 printf '%s\n' "$keybinds" | grep -Fqx 'Super + F1	Control center'
@@ -301,6 +330,8 @@ grep -Fq 'title: "dwm control center utility"' \
 grep -Fq '{ title="dwm control center utility", isfloating=1, alwaysontop=1 }' \
 	"$repo/config/window-rules.toml"
 
+# The power provider is dwm-settings-power (#282); these go through the Control
+# Center helper, which forwards power-* to it for a shell from before the split.
 power=$(run_helper power-status)
 printf '%s\n' "$power" | grep -Fqx 'dpms_available	1'
 printf '%s\n' "$power" | grep -Fqx 'dpms_enabled	0'
@@ -520,8 +551,11 @@ rm "$work/config/lyona/self-heal.path"
 mv "$work/bin/dwm-terminal.saved" "$work/bin/dwm-terminal"
 
 grep -Fq 'watchChanges: true' "$repo/config/quickshell/appearance/AppearanceModel.qml"
-[ "$(grep -Fc 'watchChanges: true' "$repo/config/quickshell/appearance/AppearanceModel.qml")" -eq 5 ]
-[ "$(grep -Fc 'onFileChanged: reload()' "$repo/config/quickshell/appearance/AppearanceModel.qml")" -eq 6 ]
+# The font model's two file watches came with it out of the Appearance model (#282).
+appearance_watches=$(cat "$repo/config/quickshell/appearance/AppearanceModel.qml" \
+	"$repo/config/quickshell/appearance/FontModel.qml")
+[ "$(printf '%s\n' "$appearance_watches" | grep -Fc 'watchChanges: true')" -eq 5 ]
+[ "$(printf '%s\n' "$appearance_watches" | grep -Fc 'onFileChanged: reload()')" -eq 6 ]
 grep -Fq 'themes.toml' "$repo/config/quickshell/appearance/AppearanceModel.qml"
 grep -Fq 'ClickAwayPopup {' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
 grep -Fq 'onDismissed: controlCenterModel.close()' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"

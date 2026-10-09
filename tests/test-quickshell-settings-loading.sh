@@ -53,8 +53,8 @@ for relative, expression in (
     ("appearance/AppearanceModel.qml",
      "snapshotProcess.running || root.snapshotPending || readinessProcess.running "
      "|| root.mutationReadinessPending || previewStatusProcess.running || recoveryStatusProcess.running "
-     "|| root.wallpaperStatusBusy || root.fontStatusBusy || root.toolkitStatusBusy "
-     "|| root.toolkitStatusPending || root.fontStatusPending || picomModel.statusBusy"),
+     "|| wallpaperModel.statusBusy || fontModel.statusBusy || toolkitModel.statusBusy "
+     "|| toolkitModel.statusPending || fontModel.statusPending || picomModel.statusBusy"),
 ):
     need(relative, f"readonly property bool initialLoading: {expression}", "initialLoading")
 need("system/UpdateModel.qml",

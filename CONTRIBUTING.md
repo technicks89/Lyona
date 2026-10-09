@@ -143,7 +143,9 @@ explicitly exclude and document that target from the parallel set before merge.
 - Use the shared shell code rather than a copy: `dwm-proc.sh` for a process's
   identity (never parse `/proc/PID/stat` in a script), and
   `dwm-preview-core.sh` for a Settings helper's lock, token, clock and atomic
-  exchange. `make check-shell-contracts` refuses copies.
+  exchange. `make check-shell-contracts` refuses copies. In QML, read the XDG
+  directories through `core/Xdg.qml` (`make check-quickshell-xdg`), and start
+  processes from models, not windows or panes.
 - Update user documentation, migration notes, and `CHANGELOG.md` when behavior,
   commands, dependencies, or defaults change.
 - Add focused regression coverage for bug fixes.

@@ -43,7 +43,7 @@ text = replace_once(
     '        if (helper === "lyona-version" && action === "status") return ["sleep", "3"];\n'
     '        if (action === "snapshot" && (helper === "dwm-quickshell-network" || helper === "dwm-default-apps" || helper === "dwm-xdg-autostart")) return ["sleep", "0.75"];\n'
     '        if ((action === "bluetooth-snapshot" || action === "audio-snapshot") && helper === "dwm-quickshell-controls") return ["sleep", "0.75"];\n'
-    '        if (action === "power-snapshot" && helper === "dwm-quickshell-controlcenter") return ["sleep", "0.75"];\n'
+    '        if (action === "power-snapshot" && helper === "dwm-settings-power") return ["sleep", "0.75"];\n'
     '        return ["true"];\n        const argv = args || [];',
 )
 commands.write_text(text)

@@ -5,7 +5,14 @@
     property int reconcileStage: 0
     property double reconcileStageStarted: Date.now()
     property int reconcileBefore: 0
-    readonly property var reconcileBlockers: ["busy", "fontBusy", "wallpaperBusy", "wallpaperStatusPending"]
+    // Each blocker: the model that owns it (the Appearance model, or its font or
+    // wallpaper model since #282), and the property.
+    readonly property var reconcileBlockers: [["appearance", "busy"], ["font", "busy"],
+        ["wallpaper", "busy"], ["wallpaper", "statusPending"]]
+
+    function reconcileOwner(name) {
+        return name === "appearance" ? appearanceModel : appearanceModel[name];
+    }
 
     function reconcileCheck(ok, detail) {
         if (!ok) {
@@ -25,11 +32,11 @@
         repeat: true
         onTriggered: {
             const waited = Date.now() - root.reconcileStageStarted;
-            const model = appearanceModel;
+            const model = appearanceModel.wallpaper;
             if (root.reconcileStage === 0) {
                 if (waited < 800) return;
-                const idle = !model.busy && !model.fontBusy && !model.wallpaperBusy
-                    && !model.wallpaperStatusBusy;
+                const idle = !appearanceModel.busy && !appearanceModel.font.busy && !model.busy
+                    && !model.statusBusy;
                 root.reconcileCheck(idle || waited < 8000,
                     "the appearance model did not become idle before wallpaper reconciliation");
                 if (!idle) return;
@@ -42,18 +49,20 @@
                 Qt.quit();
                 return;
             }
-            const blocker = root.reconcileBlockers[index];
+            const owner = root.reconcileOwner(root.reconcileBlockers[index][0]);
+            const property = root.reconcileBlockers[index][1];
+            const blocker = root.reconcileBlockers[index].join(".");
             switch ((root.reconcileStage - 1) % 3) {
             case 0: {
                 // A failed preview, and something blocking the reconcile.
-                model.wallpaperPreviewState = "failed";
-                model.wallpaperPreviewToken = "test-token";
-                model.wallpaperPreviewPath = "/tmp/test-wallpaper.png";
-                model.wallpaperPreviewFit = "fill";
-                model[blocker] = true;
+                model.previewState = "failed";
+                model.previewToken = "test-token";
+                model.previewPath = "/tmp/test-wallpaper.png";
+                model.previewFit = "fill";
+                owner[property] = true;
                 root.reconcileBefore = model.testReconcileRuns;
-                model.reconcileWallpaperPreview();
-                root.reconcileCheck(model.wallpaperReconcilePending,
+                model.reconcilePreview();
+                root.reconcileCheck(model.reconcilePending,
                     "a reconcile blocked by " + blocker + " is not queued");
                 root.reconcileCheck(model.testReconcileRuns === root.reconcileBefore,
                     "a reconcile ran while " + blocker + " was set");
@@ -65,9 +74,9 @@
                 if (waited < 300) return;
                 root.reconcileCheck(model.testReconcileRuns === root.reconcileBefore,
                     "a reconcile ran while " + blocker + " was still set");
-                root.reconcileCheck(model.wallpaperReconcilePending,
+                root.reconcileCheck(model.reconcilePending,
                     "the queued reconcile was dropped while " + blocker + " was set");
-                model[blocker] = false;
+                owner[property] = false;
                 root.reconcileNext();
                 return;
             }
@@ -80,10 +89,10 @@
                 }
                 root.reconcileCheck(model.testReconcileRuns === root.reconcileBefore + 1,
                     "the reconcile ran more than once after " + blocker + " was cleared");
-                root.reconcileCheck(!model.wallpaperReconcilePending,
+                root.reconcileCheck(!model.reconcilePending,
                     "the reconcile ran but is still queued (" + blocker + ")");
                 // Let the action finish before the next case.
-                if (model.wallpaperBusy) return;
+                if (model.busy) return;
                 root.reconcileNext();
                 return;
             }

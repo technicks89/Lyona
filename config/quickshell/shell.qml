@@ -248,8 +248,7 @@ ShellRoot {
         onHealthOpened: settingsModel.close()
     }
 
-    readonly property string dpiStatePath: (Quickshell.env("XDG_RUNTIME_DIR") || "")
-        + "/dwm-settings-display/dpi.current"
+    readonly property string dpiStatePath: Xdg.runtimeDir + "/dwm-settings-display/dpi.current"
 
     function applyDpiState(text) {
         let dpi = 96;

@@ -12,8 +12,9 @@ dwm sets these on the root window. `dwm-quickshell-state watch` follows them,
 and each client's title, class and tag, through one `dwm-xwatch` process
 (`PREFIX/lib/lyona/dwm-xwatch`, which prints `root PROPERTY` or `window 0xID`
 for each change), re-reads only what changed, and prints the shell's state
-lines; QML never reads X itself. Without `dwm-xwatch` it falls back to one
-`xprop -spy` per window (`DWM_STATE_WATCHER=spies` forces that).
+lines; QML never reads X itself. Only when `dwm-xwatch` is missing, or cannot
+watch the display (it never prints `ready`), does it fall back to one
+`xprop -spy` per window.
 The standard EWMH properties (`_NET_CURRENT_DESKTOP`, `_NET_CLIENT_LIST`,
 `_NET_ACTIVE_WINDOW`, `_NET_WM_DESKTOP` and the others) are read the same way
 and are not repeated here.

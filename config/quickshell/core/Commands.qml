@@ -124,12 +124,13 @@ Singleton {
         return helperCommand("dwm-quickshell-controlcenter", action, args);
     }
 
+    // The power provider, split from the Control Center helper (#282).
     function powerHelperCommand(action, args) {
-        return helperCommand("dwm-quickshell-controlcenter", action, args);
+        return helperCommand("dwm-settings-power", action, args);
     }
 
     function sessionActionCommand(action) {
-        return powerHelperCommand("session-action", [action]);
+        return helperCommand("dwm-quickshell-controlcenter", "session-action", [action]);
     }
 
     function defaultsHelperCommand(action, args) {
