@@ -38,7 +38,9 @@ revision with:
 
 It rebuilds dwm and installs the binary, the helpers, the shipped defaults and
 the managed Quickshell configuration, so they all match. After a session
-restart, `./scripts/dev-sync-install.sh --check` verifies the running copy.
+restart, `./scripts/dev-sync-install.sh --check` checks the installed files, and
+also the running dwm and Quickshell when it can: it skips that part with
+`DWM_DEV_SYNC_SKIP_RUNTIME=1`, and defers it when `DISPLAY` is unset.
 
 ### Running a session from the checkout
 

@@ -464,9 +464,21 @@ network_manager_state() {
 			return 0
 		fi
 	done
-	# netctl runs one unit per profile.
-	unit=$(systemctl list-units --type=service --state=active --plain --no-legend 'netctl*' 2>/dev/null |
-		awk 'NR == 1 { print $1 }') || :
+	# netctl runs one unit per profile (netctl@PROFILE) or interface
+	# (netctl-auto@IFACE): active now, or enabled to start at boot. Enabled
+	# template instances are links in a *.wants directory.
+	unit=$({
+		systemctl list-units --type=service --state=active --plain --no-legend 'netctl*' 2>/dev/null
+		systemctl list-unit-files --type=service --state=enabled --plain --no-legend 'netctl*' 2>/dev/null
+	} | awk '$1 ~ /^netctl/ { print $1; exit }') || :
+	if [[ -z $unit ]]; then
+		for unit in "${LYONA_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"/*.wants/netctl*; do
+			[[ -e $unit || -L $unit ]] || continue
+			unit=${unit##*/}
+			break
+		done
+		[[ $unit != *'*'* ]] || unit=
+	fi
 	if [[ -n $unit ]]; then
 		printf 'other:%s\n' "$unit"
 		return 0

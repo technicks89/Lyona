@@ -157,7 +157,7 @@ the system repairs are unavailable and the dashboard says so.
 | Restart Picom | Restart the compositor through `dwm-settings-picom`, which picks the backend for this GPU |
 | Restart Quickshell | Reload the managed Quickshell shell |
 | Reload Wallpaper | A random wallpaper from `~/Pictures/backgrounds/` |
-| Restart NetworkManager | Runs `sudo systemctl restart NetworkManager` in a terminal, which asks for your password |
+| Restart NetworkManager | Runs `sudo systemctl restart NetworkManager` in a terminal, which may ask for your password |
 | Dependency Check | Opens `check-deps.sh` in a terminal |
 | Self-Heal | Runs the script named in `~/.config/lyona/self-heal.path` (or `dwm-self-heal` on `PATH`); says so when none is set |
 | Install Missing Deps | In a terminal: `install.sh` from a checkout, or the required and desktop packages through pacman from an install |

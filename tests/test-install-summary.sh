@@ -163,7 +163,7 @@ has "$merged" '  - AppImages have no default handler.'
 	sed -n '/^configure_network_manager() {$/,/^}$/p' "$repo/install.sh"
 } >"$work/nm.sh"
 grep -q '^configure_network_manager() {$' "$work/nm.sh" || fail 'configure_network_manager not found in install.sh'
-mkdir -p "$work/nm-bin"
+mkdir -p "$work/nm-bin" "$work/nm-units"
 cat >"$work/nm-bin/systemctl" <<'STUB'
 #!/bin/sh
 case $1 in
@@ -183,6 +183,11 @@ list-units)
 		case $unit in netctl*) printf '%s loaded active running Profile\n' "$unit" ;; esac
 	done
 	;;
+list-unit-files)
+	for pair in $STUB_ENABLED; do
+		case $pair in netctl*=enabled) printf '%s enabled disabled\n' "${pair%%=*}" ;; esac
+	done
+	;;
 esac
 exit 0
 STUB
@@ -200,6 +205,7 @@ nm_case() { # ENABLED ACTIVE: prints the state, then what configure did
 	: >"$work/nm.log"
 	# shellcheck disable=SC2016 # expanded by the inner bash
 	env PATH="$work/nm-bin:$PATH" NM_LOG="$work/nm.log" STUB_ENABLED="$1" STUB_ACTIVE="$2" \
+		LYONA_SYSTEMD_UNIT_DIR="${NM_UNIT_DIR:-$work/nm-units}" \
 		${LYONA_SOURCE:+LYONA_SOURCE="$LYONA_SOURCE"} ${STUB_CHROOT:+STUB_CHROOT=1} \
 		bash -c 'ok() { :; }; info() { :; }; warn() { :; }; . "$1"; network_manager_state; configure_network_manager' \
 		bash "$work/nm.sh"
@@ -212,6 +218,13 @@ nm_case() { # ENABLED ACTIVE: prints the state, then what configure did
 [[ $(nm_case '' 'iwd.service') == other:iwd.service ]] || fail 'NetworkManager was enabled over a running iwd'
 [[ $(nm_case '' 'netctl@home.service') == other:netctl@home.service ]] ||
 	fail 'NetworkManager was enabled over an active netctl profile'
+# netctl enabled but not active now (no network in range): still its manager.
+[[ $(nm_case 'netctl-auto@wlan0.service=enabled' '') == other:netctl-auto@wlan0.service ]] ||
+	fail 'NetworkManager was enabled over an enabled, inactive netctl-auto'
+mkdir -p "$work/nm-units-enabled/multi-user.target.wants"
+ln -s /usr/lib/systemd/system/netctl@.service "$work/nm-units-enabled/multi-user.target.wants/netctl@office.service"
+[[ $(NM_UNIT_DIR=$work/nm-units-enabled nm_case '' '') == other:netctl@office.service ]] ||
+	fail 'NetworkManager was enabled over a netctl profile enabled for boot'
 [[ $(nm_case '' '') == $'off\nsystemctl enable NetworkManager.service' ]] ||
 	fail "NetworkManager was not enabled (and only enabled) when nothing manages the network: $(nm_case '' '')"
 # The image install leaves it to its postinstall, which enables it; inside

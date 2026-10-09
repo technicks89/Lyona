@@ -227,11 +227,8 @@ DWM_TEST_NMCLI_MODE=service-fail PATH="$work/bin:$PATH" \
 grep -Fqx "provider	network	unavailable	read-only	NetworkManager not running" "$work/snapshot-unavailable.out"
 
 # No NetworkManager at all: the panel names it rather than "NET unavailable"
-# (#292). A PATH of the system's commands without nmcli.
+# (#292). An empty PATH: the helper needs nothing else to say so.
 mkdir -p "$work/no-nmcli"
-for command_path in /usr/bin/*; do
-	[ "${command_path##*/}" = nmcli ] || ln -s "$command_path" "$work/no-nmcli/${command_path##*/}"
-done
 PATH="$work/no-nmcli" "$repo/scripts/dwm-quickshell-network" snapshot --rescan no >"$work/snapshot-not-installed.out"
 grep -Fqx "provider	network	unavailable	read-only	NetworkManager not installed" "$work/snapshot-not-installed.out"
 grep -Fq 'root.providerState === "unavailable" && root.providerDetail.length > 0 ? root.providerDetail' \

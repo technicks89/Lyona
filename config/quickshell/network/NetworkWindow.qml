@@ -57,9 +57,12 @@ ClickAwayPopup {
 
             PanelHero {
                 Layout.fillWidth: true
-                iconText: root.networkModel.statusText.indexOf("offline") >= 0
+                // Unavailable too when the text names the missing service (#292).
+                iconText: root.networkModel.providerState === "unavailable"
+                    || root.networkModel.statusText.indexOf("offline") >= 0
                     || root.networkModel.statusText.indexOf("unavailable") >= 0 ? "󰤭" : "󰤨"
-                iconColor: root.networkModel.statusText.indexOf("unavailable") >= 0
+                iconColor: root.networkModel.providerState === "unavailable"
+                    || root.networkModel.statusText.indexOf("unavailable") >= 0
                     ? Theme.menuMutedText : Theme.popupText
                 title: "Network"
                 subtitle: root.networkModel.statusText
