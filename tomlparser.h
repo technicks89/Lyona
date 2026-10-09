@@ -9,6 +9,7 @@
 #define TOML_MAX_ENTRIES 512
 #define TOML_MAX_STR     512
 #define TOML_MAX_ARR      32
+#define TOML_MAX_LINE   4096 /* bytes in one line, its newline included */
 
 typedef enum {
 	TOML_STRING = 0,
@@ -40,6 +41,7 @@ typedef struct {
 	TomlEntry entries[TOML_MAX_ENTRIES];
 	int       n;
 	int       truncated; /* entries past TOML_MAX_ENTRIES were dropped */
+	int       long_lines; /* lines longer than TOML_MAX_LINE, each skipped whole */
 } TomlDoc;
 
 int toml_parse(const char *path, TomlDoc *doc);

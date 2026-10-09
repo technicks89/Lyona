@@ -72,9 +72,14 @@ grep -Fq 'run_helper session-action lock' "$repo/tests/test-quickshell-session-a
 grep -Fq 'return helperCommand("dwm-lock", undefined, [])' \
 	"$repo/config/quickshell/core/Commands.qml"
 
+# lock-session is logged; show-session answers LockedHint, "yes" unless
+# DWM_LOCK_TEST_HINT says otherwise (#269).
 cat >"$work/bin/loginctl" <<'SCRIPT'
 #!/bin/sh
-printf '%s\n' "$*" >"${DWM_LOCK_TEST_DIR:?}/loginctl"
+case $1 in
+lock-session) printf '%s\n' "$*" >"${DWM_LOCK_TEST_DIR:?}/loginctl" ;;
+show-session) printf '%s\n' "${DWM_LOCK_TEST_HINT:-yes}" ;;
+esac
 SCRIPT
 chmod +x "$work/bin/loginctl"
 
@@ -92,9 +97,14 @@ rm -f "$work/bin/loginctl" "$work/loginctl" "$work/light-locker-command"
 rm -f "$work/bin/light-locker" "$work/bin/light-locker-command" \
 	"$work/light-locker" "$work/light-locker-command"
 
+# lock-session is logged; show-session answers LockedHint, "yes" unless
+# DWM_LOCK_TEST_HINT says otherwise (#269).
 cat >"$work/bin/loginctl" <<'SCRIPT'
 #!/bin/sh
-printf '%s\n' "$*" >"${DWM_LOCK_TEST_DIR:?}/loginctl"
+case $1 in
+lock-session) printf '%s\n' "$*" >"${DWM_LOCK_TEST_DIR:?}/loginctl" ;;
+show-session) printf '%s\n' "${DWM_LOCK_TEST_HINT:-yes}" ;;
+esac
 SCRIPT
 chmod +x "$work/bin/loginctl"
 
@@ -103,6 +113,37 @@ DWM_LOCK_TEST_DIR="$work" \
 	PATH="$work/bin" \
 	"$helper"
 grep -Fxq "lock-session 7" "$work/loginctl"
+
+# Nothing listens for logind's Lock signal: lock-session succeeds, but the
+# session never reports locked, so dwm-lock fails, and says so on screen.
+cat >"$work/bin/notify-send" <<'SCRIPT'
+#!/bin/sh
+printf '%s\n' "$*" >"${DWM_LOCK_TEST_DIR:?}/notify-send"
+SCRIPT
+chmod +x "$work/bin/notify-send"
+rm -f "$work/loginctl"
+if DWM_LOCK_TEST_DIR="$work" DWM_LOCK_TEST_HINT=no DWM_LOCK_VERIFY_TRIES=3 \
+	XDG_SESSION_ID=7 PATH="$work/bin" "$helper" 2>"$work/err"; then
+	echo "dwm-lock reported a lock that logind never saw" >&2
+	exit 1
+fi
+grep -Fxq "lock-session 7" "$work/loginctl"
+grep -Fq "no usable screen locker found" "$work/err"
+grep -Fq "Screen not locked" "$work/notify-send"
+
+# A real locker comes before loginctl: with i3lock installed, logind's Lock
+# signal is never the one relied on.
+cat >"$work/bin/i3lock" <<'SCRIPT'
+#!/bin/sh
+: >"${DWM_LOCK_TEST_DIR:?}/i3lock"
+SCRIPT
+chmod +x "$work/bin/i3lock"
+rm -f "$work/loginctl" "$work/notify-send"
+DWM_LOCK_TEST_DIR="$work" DWM_LOCK_TEST_HINT=no XDG_SESSION_ID=7 PATH="$work/bin" "$helper"
+test -e "$work/i3lock"
+test ! -e "$work/loginctl"
+test ! -e "$work/notify-send"
+rm -f "$work/bin/i3lock" "$work/i3lock" "$work/bin/notify-send"
 
 rm -f "$work/bin/loginctl" "$work/loginctl"
 

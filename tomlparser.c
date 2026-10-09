@@ -228,7 +228,8 @@ toml_parse(const char *path, TomlDoc *doc)
 	if (!f) return 0;
 	doc->n = 0;
 	doc->truncated = 0;
-	char line[4096];
+	doc->long_lines = 0;
+	char line[TOML_MAX_LINE];
 	char cur_section[TOML_MAX_STR] = "";
 	int  cur_tidx = -1;
 
@@ -237,13 +238,39 @@ toml_parse(const char *path, TomlDoc *doc)
 	int  ml_tidx   = 0;
 	long total     = 0;
 
-	while (fgets(line, sizeof(line), f)) {
+	for (;;) {
+		/* fgets writes the last byte only when the line fills the buffer:
+		 * this sentinel tells a cut line from one that holds a NUL byte. */
+		line[sizeof(line) - 1] = 1;
+		if (!fgets(line, sizeof(line), f))
+			break;
 		/* toml_open checked the size, but the file can still grow while it is
 		 * read; stop at the same limit rather than read without end. */
-		total += (long)strlen(line);
+		size_t len = strlen(line);
+		total += (long)len;
 		if (total > TOML_MAX_FILE_BYTES) {
 			fclose(f);
 			return 0;
+		}
+		/* A line that does not fit is skipped whole (#271): read as it came,
+		 * its remainder was taken for the next line, so text inside a long
+		 * string could become a key of its own. A line that only filled the
+		 * buffer up to its newline is complete. */
+		if (line[sizeof(line) - 1] == '\0' && line[sizeof(line) - 2] != '\n') {
+			int c = getc(f);
+			if (c != EOF && c != '\n') {
+				while (c != EOF && c != '\n') {
+					if (++total > TOML_MAX_FILE_BYTES) {
+						fclose(f);
+						return 0;
+					}
+					c = getc(f);
+				}
+				doc->long_lines++;
+				continue;
+			}
+			if (c == '\n')
+				total++;
 		}
 		char *p = strtrim(line);
 

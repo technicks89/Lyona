@@ -39,6 +39,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `dwm-quickshell-controls`, which uses PipeWire or PulseAudio, and volume up
   and down still unmute, from the keys and from the panel. An existing
   `hotkeys.toml` gets the new bindings on update unless you changed them.
+- A TOML line longer than 4 KB is skipped whole (#271). Its remainder used to
+  be read as the next line, so text inside a long string, such as a
+  `browser = "..."` entry in `[vars]`, could become a key of its own. dwm and
+  `lyona-toml` now say how many lines were skipped.
+- Lock no longer reports success when nothing locked the screen (#269).
+  `loginctl lock-session` succeeds whether or not anything listens, so it now
+  comes after i3lock, slock and xlock, and counts only once logind reports
+  the session locked. When nothing locks, `dwm-lock` fails and says so in a
+  notification. Auto Lock shows as unavailable, with the reason, outside a
+  LightDM login, where light-locker cannot run (startx, GDM, SDDM).
 
 ## [2026.10.0-beta.5] - 2026-10-08
 

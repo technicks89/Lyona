@@ -115,6 +115,9 @@ main(int argc, char *argv[])
 		fputs("lyona-toml: write error\n", stderr);
 		return 3;
 	}
+	if (doc.long_lines)
+		fprintf(stderr, "lyona-toml: %s has %d line(s) longer than %d bytes; they were ignored\n",
+		        argv[2], doc.long_lines, TOML_MAX_LINE - 1);
 	if (doc.truncated) {
 		fprintf(stderr, "lyona-toml: %s has more than %d entries; the rest were ignored\n",
 		        argv[2], TOML_MAX_ENTRIES);

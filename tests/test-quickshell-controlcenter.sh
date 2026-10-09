@@ -7,6 +7,9 @@ export DISPLAY
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
+# A LightDM login, where light-locker and so Auto Lock can work (#269).
+XDG_SESSION_PATH=/org/freedesktop/DisplayManager/Session0
+export XDG_SESSION_PATH
 test_uid=$(id -u)
 
 mkdir -p "$work/bin" "$work/config/lyona" "$work/home/Pictures/backgrounds" \

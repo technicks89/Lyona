@@ -481,11 +481,20 @@ ClickAwayPopup {
                         Layout.fillWidth: true
                         implicitHeight: root.compactRowHeight
                         label: "Auto Lock"
-                        detail: !root.powerModel.lockAvailable ? "Unknown"
+                        detail: root.powerModel.lockState === "unavailable" ? "Unavailable"
+                            : !root.powerModel.lockAvailable ? "Unknown"
                             : root.powerModel.lockEnabled ? Theme.formatDuration(root.powerModel.lockTimeout) : "Off"
                         active: root.powerModel.lockEnabled
                         enabled: root.powerModel.lockAvailable && !root.powerModel.busy
                         onActivated: root.powerModel.setLock(!root.powerModel.lockEnabled, "controlcenter")
+                    }
+                    // Why, such as no LightDM login (#269): too long for the row's detail.
+                    UiText {
+                        Layout.fillWidth: true
+                        visible: root.powerModel.lockState === "unavailable" && root.powerModel.lockDetail.length > 0
+                        text: root.powerModel.lockDetail.replace(/^Unavailable:\s*/, "")
+                        color: Theme.textMuted
+                        wrapMode: Text.Wrap
                     }
                     GridLayout {
                         Layout.fillWidth: true

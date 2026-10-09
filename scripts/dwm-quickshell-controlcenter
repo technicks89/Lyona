@@ -437,6 +437,14 @@ power_status() {
 		fi
 	fi
 
+	# light-locker runs only in a LightDM login, which sets XDG_SESSION_PATH:
+	# on startx, GDM or SDDM it exits, so nothing locks however it is set (#269).
+	power_lock_reason=
+	if [ -z "${XDG_SESSION_PATH:-}" ]; then
+		power_lock_available=0
+		power_lock_reason='Unavailable: light-locker needs a LightDM login, and this session has none'
+	fi
+
 	power_live_lock_enabled=$power_lock_enabled
 	if [ "$power_xset_available" = 1 ] && [ "$power_lock_available" = 1 ]; then
 		if [ "$power_live_lock_after" -gt 0 ] && [ "$power_live_lock_timeout" -gt 0 ]; then
@@ -462,6 +470,7 @@ power_status() {
 	printf 'lock_on_suspend\t%s\n' "$power_live_lock_on_suspend"
 	printf 'lock_running\t%s\n' "$power_lock_running"
 	printf 'lock_malformed\t%s\n' "$power_lock_malformed"
+	printf 'lock_reason\t%s\n' "$power_lock_reason"
 	printf 'config_file\t%s\n' "$power_config_file"
 }
 
@@ -799,11 +808,13 @@ power_snapshot_suspend() {
 }
 
 power_lock_record() {
-	printf 'power-lock\t%s\t%s\t%s\t%s\tuser-session\tlight-locker automatic locking\n' \
-		"$(if [ "$(power_row_value lock_malformed)" = 1 ]; then printf partial; elif [ "$(power_row_value lock_available)" = 1 ]; then printf available; else printf unavailable; fi)" \
+	power_record_reason=$(power_row_value lock_reason)
+	printf 'power-lock\t%s\t%s\t%s\t%s\tuser-session\t%s\n' \
+		"$(if [ -n "$power_record_reason" ]; then printf unavailable; elif [ "$(power_row_value lock_malformed)" = 1 ]; then printf partial; elif [ "$(power_row_value lock_available)" = 1 ]; then printf available; else printf unavailable; fi)" \
 		"$([ "$(power_row_value lock_enabled)" = 1 ] && printf yes || printf no)" \
 		"$(power_row_value lock_timeout)" \
-		"$([ "$(power_row_value lock_running)" = 1 ] && printf yes || printf no)"
+		"$([ "$(power_row_value lock_running)" = 1 ] && printf yes || printf no)" \
+		"${power_record_reason:-light-locker automatic locking}"
 }
 
 power_snapshot() {

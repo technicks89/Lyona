@@ -3,6 +3,9 @@ set -eu
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+# A LightDM login, where light-locker and so Auto Lock can work (#269).
+XDG_SESSION_PATH=/org/freedesktop/DisplayManager/Session0
+export XDG_SESSION_PATH
 screen_geometry=${DWM_SETTINGS_TEST_SCREEN_GEOMETRY:-1280x800x24}
 # Settings fills its target screen below the panel, which stays visible (#231;
 # fullscreen before, S3-06 #302): the screen's width, and from the panel's

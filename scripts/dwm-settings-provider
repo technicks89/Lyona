@@ -590,7 +590,11 @@ discover() {
 		'Install xset and open Settings from X11' \
 		'xset is installed, but no responsive X11 display is available' \
 		q
-	if run_bounded_probe xset q && provider_available light-locker &&
+	# light-locker runs only in a LightDM login (#269).
+	if [ -z "${XDG_SESSION_PATH:-}" ]; then
+		emit_capability power auto-lock 'Automatic locking' unavailable user-session light-locker \
+			'light-locker needs a LightDM login, and this session has none'
+	elif run_bounded_probe xset q && provider_available light-locker &&
 		run_bounded_probe gsettings get apps.light-locker lock-after-screensaver; then
 		emit_capability power auto-lock 'Automatic locking' available user-session light-locker \
 			'Light-locker session policy is available'
