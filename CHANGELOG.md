@@ -17,6 +17,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `hotkeys.toml` that are still an earlier release's default move to this
   release's (lyona-shell instead of raw Quickshell IPC, logout and reboot that
   ask first), after a backup; bindings you changed are kept.
+- The session no longer starts `dwm-status` (#284). dwm draws no bar and the
+  panel takes the battery from UPower, so nothing read the root name it wrote,
+  while it kept three processes, woke every 30 seconds and made the panel's
+  state bridge rebuild on every power-supply event. Login also skips the
+  process scan that kept it to one copy per display.
+- The panel's state bridge starts about 80% fewer processes when a window's
+  title changes (#283): 4 instead of 22, measured with five windows. The
+  active window now comes with the root properties instead of from
+  `xdotool`, its title and class from what the bridge already read, and the
+  occupied tags are sorted in bash. A torrent client or chat window whose
+  title changes every second now costs a fraction of what it did on an old
+  CPU. A window without `_NET_WM_NAME` now shows its `WM_NAME` in the panel
+  instead of "Desktop".
 
 ### Fixed
 
