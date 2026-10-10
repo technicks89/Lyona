@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# yay, the AUR helper kept for the user (docs/AUR-PACKAGES.md): yay-bin, built
+# from its pinned, reviewed PKGBUILD by the one AUR helper (dwm-aur.sh, #281)
+# as the user, never as root, and installed with pacman. The one place yay is
+# installed (#339): install.sh runs this on an existing system, and the live
+# medium's postinstall runs --build-only as the new user, before the install's
+# temporary passwordless sudo exists, and installs the package itself (#328).
+#
+# - The sudo timestamp is closed before the build, as for Topgrade, so nothing
+#   in the build can reuse it; sudo asks again to install the built package.
+# - A non-interactive run (INSTALL_YAY_NON_INTERACTIVE=1) can answer neither
+#   sudo nor pacman: it installs only where sudo needs no password, and says so
+#   and exits 3 otherwise, before building anything; pacman gets --noconfirm.
+# - yay or paru already on PATH: nothing to do.
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+
+# Every AUR build goes through dwm-aur.sh, which holds the pins (#281).
+aur=$lyona_lib/dwm-aur.sh
+# yay-bin takes seconds; this bounds a stalled download.
+export DWM_AUR_BUILD_SECONDS=${DWM_AUR_BUILD_SECONDS:-600}
+
+usage() {
+	cat <<EOF2
+Usage: install-yay [--print-plan] [--build-only DIR]
+
+Install yay from the AUR: the yay-bin package, built with makepkg from a
+pinned, reviewed PKGBUILD and installed with pacman. Nothing lyona installs
+needs yay; it is kept for you.
+
+Options:
+  --print-plan      Print one line describing the install, for install.sh.
+  --build-only DIR  Build yay-bin into DIR and print the package's path;
+                    install nothing, and never use sudo.
+  -h, --help        Show this help.
+
+Environment:
+  INSTALL_YAY_NON_INTERACTIVE=1
+                    Answer pacman (--noconfirm) and never wait for a sudo
+                    password: where sudo needs one, install nothing, say so and
+                    exit 3.
+
+Exit status: 0 installed or already present; 1 a failure; 3 skipped, because a
+non-interactive run cannot ask for the sudo password.
+EOF2
+}
+
+say() { printf 'install-yay: %s\n' "$*" >&2; }
+die() {
+	say "$*"
+	exit 1
+}
+
+print_plan=false
+build_only=
+while (($# > 0)); do
+	case $1 in
+	--print-plan) print_plan=true ;;
+	--build-only)
+		(($# > 1)) || die '--build-only needs a directory'
+		build_only=$2
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		say "unknown option: $1"
+		usage >&2
+		exit 2
+		;;
+	esac
+	shift
+done
+
+pin_of() {
+	bash "$aur" pin "$1"
+}
+
+if $print_plan; then
+	printf 'yay-bin from the AUR (PKGBUILD pinned at %s), built with makepkg and installed with pacman\n' \
+		"$(pin_of yay-bin | cut -c1-12)"
+	exit 0
+fi
+
+(($(id -u) != 0)) || die 'run as the target user, not as root: makepkg refuses root'
+[[ -n ${HOME:-} ]] || die 'HOME is not set'
+non_interactive=false
+[[ ${INSTALL_YAY_NON_INTERACTIVE:-} != 1 ]] || non_interactive=true
+
+# build_pin BASE DEST: BASE built at its pinned commit by dwm-aur.sh, its
+# package (not a -debug split) in DEST. Prints the package's path.
+build_pin() {
+	local base=$1 dest=$2 package
+	while IFS= read -r package; do
+		[[ ${package##*/} == "$base"-[0-9]* ]] || continue
+		printf '%s\n' "$package"
+		return 0
+	done < <(bash "$aur" build-pinned "$base" "$dest")
+	say "built no $base package"
+	return 1
+}
+
+if [[ -n $build_only ]]; then
+	[[ -d $build_only && -w $build_only ]] || die "$build_only is not a writable directory"
+	build_pin yay-bin "$build_only" || die 'yay-bin could not be built'
+	exit 0
+fi
+
+if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
+	say 'an AUR helper is already installed.'
+	exit 0
+fi
+command -v git >/dev/null 2>&1 && command -v makepkg >/dev/null 2>&1 ||
+	die 'git and makepkg (base-devel) are needed to build yay; install them, then run install-yay again'
+command -v sudo >/dev/null 2>&1 || die 'sudo is not installed'
+
+# The sudo timestamp is closed first, so nothing in the build can reuse it
+# (#328); sudo asks again for the one install below. A run that cannot ask
+# finds out now, before building for nothing.
+sudo -k 2>/dev/null || :
+if $non_interactive && ! sudo -n true 2>/dev/null; then
+	say 'sudo needs a password, which a non-interactive run cannot give: yay was not installed. Run install-yay from a terminal to add it.'
+	exit 3
+fi
+
+lyona_xdg_dirs
+mkdir -p -- "$cache_home/lyona"
+build_root=$(mktemp -d "$cache_home/lyona/yay-build.XXXXXX") || die "cannot create a build directory in $cache_home/lyona"
+trap 'rm -rf -- "$build_root"' EXIT
+
+say 'building yay-bin from its pinned AUR PKGBUILD...'
+package=$(build_pin yay-bin "$build_root") ||
+	die 'yay could not be built from the AUR; check the network, then run install-yay again'
+
+say "installing ${package##*/} with pacman..."
+pacman_args=(-U --needed)
+sudo_args=()
+if $non_interactive; then
+	# pacman's "Proceed with installation?" is answered: behind a spinner nothing
+	# else can, and it waited there forever (Sync Sprint 16, found in a VM).
+	pacman_args+=(--noconfirm)
+	sudo_args=(-n)
+fi
+sudo "${sudo_args[@]}" pacman "${pacman_args[@]}" -- "$package" ||
+	die "pacman could not install ${package##*/}; run install-yay again, or install yay-bin yourself"
+say 'yay is installed.'

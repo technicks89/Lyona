@@ -43,7 +43,7 @@ Where the AUR is used today:
 
 | Use | Why there is no official package | Where | Bounded by |
 | --- | --- | --- | --- |
-| The `yay-bin` helper, for the user | `yay` is not in the official repositories | `install.sh`, `ensure_yay_installed()`, and the image's postinstall, `install_yay` in `archiso/airootfs/root/lyona-postinstall.sh` (before the install's temporary sudo rule exists; it then passes `--skip-yay` to `install.sh`), both through `dwm-aur.sh` | its pin in `dwm-aur.sh` |
+| The `yay-bin` helper, for the user | `yay` is not in the official repositories | `scripts/install-yay`, through `dwm-aur.sh`: run by `install.sh` (`ensure_yay_installed()`), and with `--build-only` by the image's postinstall (`install_yay` in `archiso/airootfs/root/lyona-postinstall.sh`, before the install's temporary sudo rule exists; it then passes `--skip-yay` to `install.sh`) (#339) | its pin in `dwm-aur.sh` |
 | Legacy NVIDIA drivers, for older cards (Sync Sprint 14) | Arch dropped every pre-Turing driver | `install_legacy_nvidia_driver` in the live medium's postinstall, through `dwm-aur.sh` | the CachyOS repository first; otherwise their pins in `dwm-aur.sh` |
 | Topgrade (#245) | Topgrade is only in the AUR | `scripts/install-topgrade`, through `dwm-aur.sh` | its pin in `dwm-aur.sh` |
 | The user's own package update (Sync Sprint 15, D-26) | AUR-built packages, such as the drivers above, are not updated by `pacman -Syu` | `run_system` in `scripts/lyona-update-terminal`: `yay -Syu` when `yay` is installed | the exact full upgrade, started by the user in their terminal; it names no packages, so it installs nothing new |

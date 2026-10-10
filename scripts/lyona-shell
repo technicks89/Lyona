@@ -47,16 +47,87 @@ if [ ! -f "$config" ]; then
 	exit 1
 fi
 
+# Whether the managed instance answers at all: its tray, the first thing it
+# serves (as dwm-quickshell-lifecycle.sh's quickshell_tray_ready).
+shell_answers() {
+	if command -v timeout >/dev/null 2>&1; then
+		timeout 1 quickshell ipc --path "$config" call tray count >/dev/null 2>&1
+	else
+		quickshell ipc --path "$config" call tray count >/dev/null 2>&1
+	fi
+}
+
+# The chord of the first binding whose FIELD contains VALUE, as the cheatsheet
+# shows it (Super+Shift+R): from the user's hotkeys.toml, read by the one TOML
+# reader (D-20), so a rebound key is named right in the one message that
+# matters when the shell is down (#338). DEFAULT when the binding, the file or
+# the reader is missing.
+toml=$lyona_lib/lyona-toml
+[ -x "$toml" ] || toml=$lyona_lib/../lyona-toml
+hotkeys=$config_home/lyona/hotkeys.toml
+if [ ! -f "$hotkeys" ]; then
+	hotkeys=${lyona_lib%/lib/lyona}/share/lyona/config/hotkeys.toml
+	[ -f "$hotkeys" ] || hotkeys=$lyona_lib/../config/hotkeys.toml
+fi
+chord_for() { # FIELD VALUE DEFAULT
+	chord=$([ -x "$toml" ] && "$toml" dump "$hotkeys" 2>/dev/null | awk -F '\t' -v field="$1" -v value="$2" '
+		$1 != "keys" { next }
+		$3 == "mod" { mod[$2] = $4 }
+		$3 == "key" { key[$2] = $4 }
+		!hit && $3 == field && index($4, value) { hit = 1; idx = $2 }
+		END {
+			if (!hit) exit 1
+			n = split(mod[idx], part, " ")
+			out = ""
+			for (i = 1; i <= n; i++) {
+				p = tolower(part[i])
+				out = out (i > 1 ? "+" : "") toupper(substr(p, 1, 1)) substr(p, 2)
+			}
+			k = key[idx]
+			if (length(k) == 1) k = toupper(k)
+			print out "+" k
+		}') || chord=''
+	printf '%s\n' "${chord:-$3}"
+}
+
 # Not exec: when no shell answers (it crashed, or was stopped), a key that
-# opens part of it did nothing at all. Say how to get it back, and for the
-# power keys how to leave without it (#320).
+# opens part of it did nothing at all (#320). Now it brings the shell back,
+# the way the Control Center and the restart key do, waits for it and asks
+# again; only when that fails is the user told, by a path that does not need
+# the shell, which is the notification server here: the first version of this
+# used notify-send, which reached nothing (#338).
 status=0
 quickshell ipc --path "$config" call "$@" || status=$?
-if [ "$status" -ne 0 ] && command -v notify-send >/dev/null 2>&1; then
-	case $1 in
-	power) hint='Super+Shift+R restarts it; Super+Ctrl+Shift+Q quits the session now.' ;;
-	*) hint='Super+Shift+R restarts it.' ;;
-	esac
-	notify-send -u critical "The lyona shell is not running" "$hint" >/dev/null 2>&1 || :
+[ "$status" -ne 0 ] || exit 0
+# A call the running shell refused is its own error, not a shell down.
+if shell_answers; then
+	exit "$status"
+fi
+controlcenter=$(command -v dwm-quickshell-controlcenter 2>/dev/null || true)
+[ -n "$controlcenter" ] || controlcenter=${0%/*}/dwm-quickshell-controlcenter
+if [ -x "$controlcenter" ]; then
+	printf 'lyona-shell: the lyona shell is not running; starting it\n' >&2
+	"$controlcenter" action restart-quickshell >/dev/null 2>&1 || :
+	# Bounded: a start takes a second or two; a shell that cannot start is
+	# reported below rather than waited for.
+	tries=$((${LYONA_SHELL_RESTART_WAIT:-8} * 4))
+	while [ "$tries" -gt 0 ]; do
+		if shell_answers; then
+			quickshell ipc --path "$config" call "$@"
+			exit
+		fi
+		sleep 0.25
+		tries=$((tries - 1))
+	done
+fi
+restart_chord=$(chord_for cmd restart-quickshell 'Super+Shift+R')
+quit_chord=$(chord_for func quit 'Super+Ctrl+Shift+Q')
+case $1 in
+power) hint="The lyona shell could not be started. $restart_chord tries again; $quit_chord quits the session now." ;;
+*) hint="The lyona shell could not be started. $restart_chord tries again." ;;
+esac
+printf 'lyona-shell: %s\n' "$hint" >&2
+if command -v xmessage >/dev/null 2>&1; then
+	xmessage -center -timeout 30 -buttons OK -default OK "$hint" >/dev/null 2>&1 &
 fi
 exit "$status"

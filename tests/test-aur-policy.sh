@@ -79,8 +79,10 @@ if bash "$aur_helper" pin not-a-pinned-base >/dev/null 2>&1; then
 fi
 
 # Each caller builds its own base through the helper, and only that base.
-grep -Fq 'dwm-aur.sh" build-pinned yay-bin' "$repo/install.sh" ||
-	fail 'install.sh does not build yay-bin through dwm-aur.sh'
+grep -Fq '"$REPO_DIR/scripts/install-yay"' "$repo/install.sh" ||
+	fail 'install.sh does not install yay through install-yay'
+grep -Fq 'build_pin yay-bin' "$repo/scripts/install-yay" ||
+	fail 'install-yay does not build yay-bin through dwm-aur.sh'
 grep -Fq 'build_pin topgrade-bin' "$repo/scripts/install-topgrade" ||
 	fail 'install-topgrade does not build topgrade-bin through dwm-aur.sh'
 postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh

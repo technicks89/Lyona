@@ -75,7 +75,9 @@ Options:
   --install-herdr        Install verified Herdr as an optional workspace.
   --skip-herdr           Do not install Herdr.
   --skip-topgrade        Do not install Topgrade (recommended and full profiles).
-  --skip-yay             Do not install yay (the image installs it itself).
+  --skip-yay             Do not install yay. The image installer passes it,
+                         having built yay itself (scripts/install-yay) before
+                         its temporary passwordless sudo exists.
   --configure-build      Ask the dwm build questions (refresh rate, font size,
                          modifier key, layout) before the summary. Without it,
                          a new config.h uses config.def.h's defaults; an
@@ -724,50 +726,24 @@ configure_arch_gamemode_access() {
 }
 
 ensure_yay_installed() {
-	local tmp_dir
-
-	if command -v yay &>/dev/null || command -v paru &>/dev/null; then
-		ok "An AUR helper is already installed."
-		return 0
-	fi
-	if ! command -v git &>/dev/null || ! command -v makepkg &>/dev/null; then
-		warn "git or makepkg is unavailable; skipping yay installation."
-		return 1
-	fi
-
+	# One script installs yay, here and in the image's postinstall (#339):
+	# scripts/install-yay builds yay-bin from its pin as this user, after closing
+	# the sudo timestamp (#328), and installs it with pacman. A non-interactive
+	# run installs it only where sudo needs no password (exit 3), since it can
+	# answer neither sudo nor pacman.
+	local status=0
 	info "Installing yay as a standing AUR helper..."
-	# yay-bin at its reviewed, pinned commit, built as this user by the one AUR
-	# helper (#281), within its time limit; root installs only the package. The
-	# sudo timestamp is closed first, as for Topgrade, so nothing in the build
-	# can reuse it; sudo asks again to install the built package (#328).
-	sudo -k 2>/dev/null || :
-	tmp_dir="$(mktemp -d)"
-	local package='' built
-	while IFS= read -r built; do
-		if [[ ${built##*/} == yay-bin-[0-9]* ]]; then package=$built; fi
-	done < <(bash "$REPO_DIR/scripts/dwm-aur.sh" build-pinned yay-bin "$tmp_dir")
-	if [[ -z $package ]]; then
-		rm -rf "$tmp_dir"
-		warn "yay could not be built from the AUR; continuing without an AUR helper."
-		return 1
-	fi
-	# pacman's "Proceed with installation?" is answered for a non-interactive
-	# run: the image install runs this behind a spinner, where nothing can answer
-	# it, and it waited there forever (Sync Sprint 16, found in a VM).
-	# Nor sudo's password, which the timestamp closed above would ask for: a
-	# non-interactive run installs it only where sudo needs no password.
-	local -a pacman_args=(-U --needed) sudo_args=()
 	if [[ $NON_INTERACTIVE == true ]]; then
-		pacman_args+=(--noconfirm)
-		sudo_args=(-n)
+		INSTALL_YAY_NON_INTERACTIVE=1 "$REPO_DIR/scripts/install-yay" </dev/null || status=$?
+	else
+		"$REPO_DIR/scripts/install-yay" || status=$?
 	fi
-	if ! sudo "${sudo_args[@]}" pacman "${pacman_args[@]}" -- "$package"; then
-		rm -rf "$tmp_dir"
-		warn "pacman could not install ${package##*/}; continuing without an AUR helper (run the installer interactively, or install yay-bin yourself, to add it)."
-		return 1
-	fi
-	rm -rf "$tmp_dir"
-	ok "yay installed."
+	case $status in
+	0) ok "yay is available." ;;
+	3) warn "yay was not installed: a non-interactive run installs it only where sudo needs no password. Run install-yay from a terminal to add it." ;;
+	*) warn "yay was not installed; run install-yay later to try again." ;;
+	esac
+	return "$status"
 }
 
 package_line() {
@@ -881,8 +857,11 @@ print_install_summary() {
 		printf '  AUR helper: already installed\n'
 	elif [[ $YAY_INSTALL_MODE != true ]]; then
 		printf '  AUR helper: skipped (--skip-yay)\n'
+	elif [[ $NON_INTERACTIVE == true ]]; then
+		printf '  AUR helper: %s; a non-interactive run installs it only where sudo needs no password\n' \
+			"$("$REPO_DIR/scripts/install-yay" --print-plan)"
 	else
-		printf '  AUR helper: yay-bin, built from its pinned AUR PKGBUILD with makepkg\n'
+		printf '  AUR helper: %s\n' "$("$REPO_DIR/scripts/install-yay" --print-plan)"
 	fi
 
 	echo ""

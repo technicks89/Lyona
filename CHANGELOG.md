@@ -38,6 +38,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   and the update's progress names both too; `--allow-downgrade` is passed only
   then, never on a routine update. The downgrade prompt no longer refers to a
   terminal warning you did not see (#334).
+- With the shell not running, a shell key (Super+R, the power keys) starts it
+  again and then does what it was pressed for, where it showed a hint through
+  the shell's own notification daemon, which was down with it, so nothing
+  appeared. When the shell cannot start, the message is shown with `xmessage`
+  (new in the desktop profile) and names the keys as `hotkeys.toml` binds them,
+  not the defaults (#338).
+- A non-interactive `install.sh` says in its summary and its closing warnings
+  that yay is installed only where `sudo` needs no password, instead of
+  promising it and then skipping it with one line in the log (#339).
 
 ### Security
 
@@ -67,6 +76,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   release's helper's reads against the current tree, and
   `tests/test-lyona-update.sh` orders the same version pairs through both rank
   functions (#337).
+- `scripts/install-yay` is the one place yay is built and installed, for
+  `install.sh` and the image's postinstall (`--build-only`), as
+  `install-topgrade` is for Topgrade: the pinned build, the closed sudo
+  timestamp and the non-interactive rules live once. The postinstall takes the
+  AUR build prerequisites (`base-devel`, `git`) from the shared map's
+  `aur-build` profile (#339).
 
 ## [2026.10.0-beta.6] - 2026-10-10
 

@@ -97,6 +97,7 @@ INSTALL_COMMANDS = \
 	scripts/install-herdr \
 	scripts/install-mybash \
 	scripts/install-topgrade \
+	scripts/install-yay \
 	scripts/lyona-cachyos \
 	scripts/lyona-console-theme \
 	scripts/lyona-grub-theme \
@@ -898,6 +899,9 @@ check-mybash-install:
 check-topgrade-install:
 	tests/test-install-topgrade.sh
 
+check-install-yay:
+	tests/test-install-yay.sh
+
 check-lock:
 	tests/test-dwm-lock.sh
 
@@ -1437,8 +1441,9 @@ check-install-step-timing:
 check-install-summary:
 	@tests/test-install-summary.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
-# R16-47: keybinds open the shell through lyona-shell.
-check-lyona-shell:
+# R16-47: keybinds open the shell through lyona-shell; #338: it reads the
+# recovery chords from hotkeys.toml with lyona-toml, so that is built first.
+check-lyona-shell: ${TOML_TOOL}
 	tests/test-lyona-shell.sh
 
 # An image install leaves Gear Lever for the first login.
@@ -1603,6 +1608,7 @@ check:
 	$(MAKE) check-herdr-install
 	$(MAKE) check-mybash-install
 	$(MAKE) check-topgrade-install
+	$(MAKE) check-install-yay
 	$(MAKE) check-lock
 	$(MAKE) check-session-guards
 	$(MAKE) check-session-migration
@@ -1646,11 +1652,11 @@ check:
 	$(MAKE) check-lightdm-config
 	$(MAKE) release-check
 
-.PHONY: clean all all-root check check-update-root-contract check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
+.PHONY: clean all all-root check check-update-root-contract check-install-yay check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-cursor-reload check-xkbset check-picom check-picom-xvfb \
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
-	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
+	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-yay check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes remove-legacy-shared-data stamp-system stamp-user native release release-check uninstall

@@ -118,53 +118,14 @@ mkdir -p "$work/failed"
 if STUB_BUILD=fail aur build-pinned topgrade-bin "$work/failed" 2>/dev/null; then fail 'a failed build-pinned succeeded'; fi
 [[ -z $(ls -A "$work/failed") ]] || fail "a failed build-pinned left: $(ls -A "$work/failed")"
 
-# ── install.sh's yay-bin bootstrap goes through it ───────────────────────
-awk '/^ensure_yay_installed\(\) \{$/ { f = 1 } f { print } f && /^}$/ { exit }' "$repo/install.sh" >"$work/yay.sh"
-grep -q '^ensure_yay_installed() {$' "$work/yay.sh" || fail 'ensure_yay_installed is missing from install.sh'
-mkdir -p "$work/repo/scripts" "$work/ybin"
-# The helper as install.sh runs it: builds a yay-bin package (STUB_YAY=fail
-# fails), and logs how it was called.
-cat >"$work/repo/scripts/dwm-aur.sh" <<'EOF'
-printf 'dwm-aur %s\n' "$*" >>"$STUB_LOG"
-[[ ${STUB_YAY:-} != fail ]] || exit 1
-: >"$3/yay-bin-13.0.1-1-x86_64.pkg.tar.zst"
-printf '%s\n' "$3/yay-bin-debug-13.0.1-1-x86_64.pkg.tar.zst" "$3/yay-bin-13.0.1-1-x86_64.pkg.tar.zst"
-EOF
-cat >"$work/ybin/sudo" <<'EOF'
-#!/bin/sh
-printf 'sudo %s\n' "$*" >>"$STUB_LOG"
-EOF
-chmod +x "$work/ybin/sudo"
-# Only the tools it needs: this machine's own yay would make it skip itself.
-for tool in bash env mktemp rm mkdir cat; do
-	ln -sf "$(command -v "$tool")" "$work/ybin/$tool"
-done
-yay_bootstrap() { # NON_INTERACTIVE, with STUB_ settings in the environment
-	# shellcheck disable=SC2016 # expanded by the inner bash
-	env PATH="$work/ybin:$work/bin" REPO_DIR="$work/repo" NON_INTERACTIVE="$1" bash -c '
-		info() { printf "info %s\n" "$*"; }
-		ok() { printf "ok %s\n" "$*"; }
-		warn() { printf "warn %s\n" "$*"; }
-		. "$1"
-		ensure_yay_installed' sh "$work/yay.sh"
-}
-: >"$work/log"
-yay_bootstrap true >"$work/yay.out" || fail "the yay bootstrap failed: $(cat "$work/yay.out")"
-grep -Eq '^dwm-aur build-pinned yay-bin /' "$work/log" || fail "the helper was not used: $(cat "$work/log")"
-# #328: the sudo timestamp is closed before the build, as for Topgrade.
-[[ $(grep -m1 -n '^sudo -k' "$work/log" | cut -d: -f1) -lt $(grep -m1 -n '^dwm-aur build-pinned' "$work/log" | cut -d: -f1) ]] ||
-	fail "the sudo timestamp was not closed before the yay build: $(cat "$work/log")"
-# Non-interactive: sudo -n, which never waits for a password no one types.
-grep -Eqx 'sudo -n pacman -U --needed --noconfirm -- /.*/yay-bin-13\.0\.1-1-x86_64\.pkg\.tar\.zst' "$work/log" ||
-	fail "yay-bin was installed as: $(grep sudo "$work/log")"
-if grep -q 'makepkg' "$work/log"; then fail 'install.sh ran makepkg itself'; fi
-: >"$work/log"
-yay_bootstrap false >/dev/null
-grep -Eqx 'sudo pacman -U --needed -- /.*/yay-bin-13\.0\.1-1-x86_64\.pkg\.tar\.zst' "$work/log" ||
-	fail "an interactive install answered for the user: $(grep sudo "$work/log")"
-: >"$work/log"
-if STUB_YAY=fail yay_bootstrap true >"$work/yay.out"; then fail 'a failed yay-bin build reported success'; fi
-grep -q '^sudo pacman' "$work/log" && fail 'a failed build still ran pacman'
-grep -Fq 'continuing without an AUR helper' "$work/yay.out" || fail "a failed build said: $(cat "$work/yay.out")"
+# ── yay-bin is built through it, by the one script that installs yay ─────
+# (#339: scripts/install-yay, for install.sh and the live medium alike;
+# tests/test-install-yay.sh runs it.)
+grep -Fq 'bash "$aur" build-pinned "$base" "$dest"' "$repo/scripts/install-yay" ||
+	fail 'install-yay does not build through dwm-aur.sh'
+grep -Fq 'build_pin yay-bin' "$repo/scripts/install-yay" || fail 'install-yay does not build yay-bin'
+if grep -n 'build-pinned yay-bin' "$repo/install.sh" "$repo/archiso/airootfs/root/lyona-postinstall.sh" | grep -q .; then
+	fail 'install.sh or the postinstall builds yay-bin apart from install-yay'
+fi
 
-printf 'dwm-aur.sh pins, fetch checks, build and time limit; install.sh yay-bin through it: PASS\n'
+printf 'dwm-aur.sh pins, fetch checks, build and time limit; yay-bin through install-yay: PASS\n'
