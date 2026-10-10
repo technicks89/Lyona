@@ -42,6 +42,15 @@ run() {
 	env PATH="$work/bin:$PATH" XDG_CONFIG_HOME="$work/config" STUB_LOG="$work/log" LYONA_SHELL_RESTART_WAIT=1 \
 		"$repo/scripts/lyona-shell" "$@"
 }
+# xmessage is started in the background: wait (bounded, 5s) for its log.
+xmessage_log() {
+	local i
+	for ((i = 0; i < 50; i++)); do
+		[[ -s $work/log.xmessage ]] && break
+		sleep 0.1
+	done
+	cat "$work/log.xmessage" 2>/dev/null || :
+}
 
 for pair in 'launcher toggle' 'overview toggle' 'controlcenter open' 'controlcenter toggle' \
 	'controlcenter openKeybinds' 'power toggle' 'power confirm logout' 'power confirm reboot' \
@@ -110,14 +119,14 @@ status=0
 run power confirm logout 2>"$work/err" || status=$?
 [[ $status != 0 ]] || fail 'a call no shell could answer succeeded'
 [[ $(cat "$work/log.restart") == 'action restart-quickshell' ]] || fail 'no restart was tried'
-[[ $(cat "$work/log.xmessage" 2>/dev/null) == '-center -timeout 30 -buttons OK -default OK The lyona shell could not be started. Super+Shift+R tries again; Super+Ctrl+Shift+Q quits the session now.' ]] ||
+[[ $(xmessage_log) == '-center -timeout 30 -buttons OK -default OK The lyona shell could not be started. Super+Shift+R tries again; Super+Ctrl+Shift+Q quits the session now.' ]] ||
 	fail "the power key gave no recovery hint: $(cat "$work/log.xmessage" 2>/dev/null)"
 grep -Fq 'The lyona shell could not be started. Super+Shift+R tries again; Super+Ctrl+Shift+Q quits the session now.' "$work/err" ||
 	fail "the hint was not printed: $(cat "$work/err")"
 [[ ! -e $work/log.notify ]] || fail 'the hint went through notify-send, which the shell serves'
 rm -f "$work/log.xmessage" "$work/log.restart"
 run launcher toggle 2>/dev/null || :
-[[ $(cat "$work/log.xmessage" 2>/dev/null) == '-center -timeout 30 -buttons OK -default OK The lyona shell could not be started. Super+Shift+R tries again.' ]] ||
+[[ $(xmessage_log) == '-center -timeout 30 -buttons OK -default OK The lyona shell could not be started. Super+Shift+R tries again.' ]] ||
 	fail "the launcher key gave no recovery hint: $(cat "$work/log.xmessage" 2>/dev/null)"
 rm -f "$work/log.xmessage" "$work/log.restart"
 
@@ -133,7 +142,7 @@ keys = [
 ]
 TOML
 run power confirm logout 2>/dev/null || :
-[[ $(cat "$work/log.xmessage" 2>/dev/null) == *'Super+Alt+Z tries again; Super+Ctrl+Shift+X quits the session now.' ]] ||
+[[ $(xmessage_log) == *'Super+Alt+Z tries again; Super+Ctrl+Shift+X quits the session now.' ]] ||
 	fail "the rebound chords were not read from hotkeys.toml: $(cat "$work/log.xmessage" 2>/dev/null)"
 rm -rf "$work/config/lyona" "$work/log.down" "$work/log.norestart" "$work/log.xmessage" "$work/log.restart" "$work/log.probe"
 
