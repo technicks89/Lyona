@@ -166,9 +166,10 @@ the theme (`applyconfigtheme()`: colour schemes, border widths, arrange) and
 starts `theme-apply.sh`. Moved out of `dwm.c` for #280.
 
 Interface: `runtime_config_setup()` takes a `ConfigEnv` (the functions a binding
-may name, the layouts, the tag count and `MODKEY`), so `config.c` includes no
-`config.h` and touches no window, monitor or scheme. `runtime_config_load()`
-fills `rt_keys`, `rt_buttons` and `rt_rules` and returns the theme;
+may name, the layouts, the tag count, `MODKEY` and the emergency keys), so
+`config.c` includes no `config.h` and touches no window, monitor or scheme.
+`runtime_config_load(ConfigTheme *theme)` fills `rt_keys`, `rt_buttons` and
+`rt_rules`, and returns 1 and fills `*theme` when `themes.toml` loaded;
 `runtime_config_fd()`, `runtime_config_poll()` and the pending flag
 (`runtime_config_mark_reload_pending()`, set from the SIGUSR1 handler, and
 `runtime_config_take_pending()`) are what `run()`'s `select()` loop needs.

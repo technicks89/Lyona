@@ -1,6 +1,6 @@
 .TH DWM 1 dwm\-VERSION
 .SH NAME
-dwm \- dynamic window manager
+dwm \- dynamic window manager (lyona)
 .SH SYNOPSIS
 .B dwm
 .RB [ \-v ]
@@ -20,16 +20,12 @@ layout applied.
 Windows are grouped by tags. Each window can be tagged with one or multiple
 tags. Selecting certain tags displays all windows with these tags.
 .P
-Each screen contains a small status bar which displays all available tags, the
-layout, the title of the focused window, and the text read from the root window
-name property, if the screen is focused. A floating window is indicated with an
-empty square and a maximised floating window is indicated with a filled square
-before the windows title.  The selected tags are indicated with a different
-color. The tags of the focused window are indicated with a filled square in the
-top left corner.  The tags which are applied to one or more windows are
-indicated with an empty square in the top left corner.
+This dwm is lyona's: it draws no bar of its own. Each screen's panel is drawn by
+the lyona shell (Quickshell), and dwm keeps windows clear of it. dwm publishes
+its tags, layout and windows as root window properties, which the panel reads.
 .P
-dwm draws a small border around windows to indicate the focus state.
+dwm draws a border around windows to indicate the focus state. Closing a window
+focuses the window focused before it.
 .P
 On start, dwm runs the session script autostart.sh in the background, and on
 exit it runs autostop.sh and waits up to five seconds for it (see the FILES
@@ -39,123 +35,39 @@ section below).  Either may be missing.
 .B \-v
 prints version information to stderr, then exits.
 .SH USAGE
-.SS Status bar
+The keys and mouse buttons are not compiled in. dwm reads them at run time from
+.IR hotkeys.toml
+(see FILES), and the modifier is the Super key. Press
+.B Super\-/
+to see every key binding. Among the defaults:
 .TP
-.B X root window name
-is read and displayed in the status text area. It can be set with the
-.BR xsetroot (1)
-command.
+.B Super\-r
+Open the application launcher.
 .TP
-.B Button1
-click on a tag label to display all windows with that tag, click on the layout
-label toggles between tiled and floating layout.
+.B Super\-q
+Close the focused window.
 .TP
-.B Button3
-click on a tag label adds/removes all windows with that tag to/from the view.
+.B Super\-[1..9]
+View the windows of a tag;
+.B Super\-Shift\-[1..9]
+sends the focused window to it.
 .TP
-.B Mod1\-Button1
-click on a tag label applies that tag to the focused window.
+.B Super\-Shift\-q
+Log out, after asking.
+.B Super\-Control\-Shift\-q
+quits dwm at once.
 .TP
-.B Mod1\-Button3
-click on a tag label adds/removes that tag to/from the focused window.
-.SS Keyboard commands
-.TP
-.B Mod1\-Shift\-Return
-Start
-.BR st(1).
-.TP
-.B Mod1\-p
-Spawn
-.BR dmenu(1)
-for launching other programs.
-.TP
-.B Mod1\-,
-Focus previous screen, if any.
-.TP
-.B Mod1\-.
-Focus next screen, if any.
-.TP
-.B Mod1\-Shift\-,
-Send focused window to previous screen, if any.
-.TP
-.B Mod1\-Shift\-.
-Send focused window to next screen, if any.
-.TP
-.B Mod1\-b
-Toggles bar on and off.
-.TP
-.B Mod1\-t
-Sets tiled layout.
-.TP
-.B Mod1\-f
-Sets floating layout.
-.TP
-.B Mod1\-m
-Sets monocle layout.
-.TP
-.B Mod1\-space
-Toggles between current and previous layout.
-.TP
-.B Mod1\-j
-Focus next window.
-.TP
-.B Mod1\-k
-Focus previous window.
-.TP
-.B Mod1\-i
-Increase number of windows in master area.
-.TP
-.B Mod1\-d
-Decrease number of windows in master area.
-.TP
-.B Mod1\-l
-Increase master area size.
-.TP
-.B Mod1\-h
-Decrease master area size.
-.TP
-.B Mod1\-Return
-Zooms/cycles focused window to/from master area (tiled layouts only).
-.TP
-.B Mod1\-Shift\-c
-Close focused window.
-.TP
-.B Mod1\-Shift\-space
-Toggle focused window between tiled and floating state.
-.TP
-.B Mod1\-Tab
-Toggles to the previously selected tags.
-.TP
-.B Mod1\-Shift\-[1..n]
-Apply nth tag to focused window.
-.TP
-.B Mod1\-Shift\-0
-Apply all tags to focused window.
-.TP
-.B Mod1\-Control\-Shift\-[1..n]
-Add/remove nth tag to/from focused window.
-.TP
-.B Mod1\-[1..n]
-View all windows with nth tag.
-.TP
-.B Mod1\-0
-View all windows with any tag.
-.TP
-.B Mod1\-Control\-[1..n]
-Add/remove all windows with nth tag to/from the view.
-.TP
-.B Mod1\-Shift\-q
-Quit dwm.
-.SS Mouse commands
-.TP
-.B Mod1\-Button1
-Move focused window while dragging. Tiled windows will be toggled to the floating state.
-.TP
-.B Mod1\-Button2
-Toggles focused window between floating and tiled state.
-.TP
-.B Mod1\-Button3
-Resize focused window while dragging. Tiled windows will be toggled to the floating state.
+.B Super\-Button1
+Move a window while dragging;
+.B Super\-Button3
+resizes it.
+.P
+When neither the user's nor the shipped hotkeys.toml loads at startup, two
+emergency keys are bound instead:
+.B Super\-x
+opens a terminal and
+.B Super\-Shift\-q
+quits dwm.
 .SH FILES
 The session scripts are installed in
 .IR PREFIX /lib/lyona,
@@ -171,18 +83,38 @@ Run when dwm exits; dwm waits up to five seconds for it.
 The shipped default hotkeys.toml, themes.toml and window-rules.toml are in
 .IR PREFIX /share/lyona/config,
 and are used when the files in $XDG_CONFIG_HOME/lyona are missing or unusable.
+.TP 15
+$XDG_CONFIG_HOME/lyona/hotkeys.toml
+Key and mouse bindings.
+.TP 15
+$XDG_CONFIG_HOME/lyona/themes.toml
+The colour theme and border width.
+.TP 15
+$XDG_CONFIG_HOME/lyona/window-rules.toml
+Per-application rules: tag, floating, monitor.
 .SH ENVIRONMENT
 .TP 15
 LYONA_DEV_SCRIPTS
 A development checkout's scripts directory.  When it holds autostart.sh,
 autostop.sh or theme-apply.sh, dwm runs that copy instead of the installed one.
 It is never set by an install, and dwm ignores it when running as root.
+.SH SIGNALS
+.TP 15
+SIGUSR1
+Reload hotkeys.toml, themes.toml and window-rules.toml.
+.TP 15
+SIGUSR2
+Quit, as the quit binding does.
 .SH CUSTOMIZATION
-dwm is customized by creating a custom config.h and (re)compiling the source
-code. This keeps it fast, secure and simple.
+Edit the TOML files in $XDG_CONFIG_HOME/lyona (by default ~/.config/lyona).
+dwm watches them and reloads a file when it is saved, without a restart. A file
+that does not load is reported, and a running session keeps the configuration
+it had. Settings > Appearance changes the theme for you. The
+compile-time defaults (layouts, tags, fonts) are in config.h, which needs a
+rebuild; the runtime files are the way to customise.
 .SH SEE ALSO
-.BR dmenu (1),
-.BR st (1)
+The lyona documentation:
+.I https://github.com/technicks89/Lyona
 .SH ISSUES
 Java applications which use the XToolkit/XAWT backend may draw grey windows
 only. The XToolkit/XAWT backend breaks ICCCM-compliance in recent JDK 1.5 and early
@@ -198,4 +130,5 @@ or
 XToolkit/XAWT backend can recognize) or when using OpenJDK setting the environment variable
 .BR _JAVA_AWT_WM_NONREPARENTING=1 .
 .SH BUGS
-Send all bug reports with a patch to hackers@suckless.org.
+Report bugs at
+.IR https://github.com/technicks89/Lyona/issues .

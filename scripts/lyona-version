@@ -26,6 +26,24 @@ usage() {
 	exit 2
 }
 
+help() {
+	cat <<EOF
+usage: $self status [--json]
+       $self print
+
+Report the installed lyona version, from the system record (/etc/lyona-release)
+and your own (lyona/install.state in your state directory, by default
+~/.local/state).
+
+  status          both records, the version the dwm binary reports, and whether
+                  they agree, as tab-separated lines (lyona-version-protocol 1)
+  status --json   the same as one JSON object
+  print           just the version: yours, else the system's, else "unknown"
+  -h, --help      show this help
+EOF
+	exit 0
+}
+
 # A record is "safe" when it cannot have been placed or edited by anyone
 # other than its owning scope: a regular file, never a symlink, a single
 # hard link (no alias written elsewhere), size-capped, and not writable by
@@ -204,6 +222,9 @@ cmd_print() {
 
 [ $# -ge 1 ] || usage
 case $1 in
+-h | --help)
+	help
+	;;
 status)
 	shift
 	cmd_status "${1:-}"

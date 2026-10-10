@@ -130,11 +130,18 @@ Found by a full install-and-update run in a VM:
 repositories, x86_64): the full suite, each step on its own, passed on the
 release tree; the root-helper tests passed as root in a disposable container.
 
-**In a VM** (QEMU/KVM, UEFI, standard VGA, no NVIDIA), from this release's image
-(SHA-256 `cd78abbdf455a7688386b1208d34cb2b8b8532eb5328af490a6321f83daba5f4`):
-- **A fresh install** (ext4) reached the desktop; 96 desktop checks passed:
-  the window functions, tags, the popups and the overview by keyboard, hot
-  reload of the three configuration files, and idle cost.
+**In a VM** (QEMU/KVM, UEFI, standard VGA, no NVIDIA). The image was built three
+times as the last fixes landed; each build was installed fresh:
+- **The release tree's image** (SHA-256
+  `9956f9f10da9bc5d12b88dd9c6edd2ec6a9bced471dd804f3f52686c3144bc32`): a fresh
+  install (btrfs) reached the desktop, and all 96 desktop checks passed: the
+  window functions, tags, closing a window back to the one before it, the
+  popups and the overview by keyboard, hot reload of the three configuration
+  files, and idle cost. The installer's step status wrapped within the screen.
+- **The first build** (SHA-256
+  `cd78abbdf455a7688386b1208d34cb2b8b8532eb5328af490a6321f83daba5f4`, before
+  the close-focus and installer-status fixes): a fresh install (ext4) passed the
+  same 96 checks.
 - **Updates:** with this release's code, and from a fresh beta.5 install with
   beta.5's code, apply verified and rollback restored; an install with earlier
   updates had its stale theme copies removed.

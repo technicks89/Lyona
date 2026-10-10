@@ -18,6 +18,20 @@ usage() {
 	printf 'usage: %s [--format human|health-tsv]\n' "$0" >&2
 }
 
+help() {
+	cat <<EOF
+usage: ${0##*/} [--format human|health-tsv]
+
+Check this lyona install: the required commands and services dwm needs, and the
+optional ones desktop features use. Run it when something does not start or a
+feature is missing. Exits 1 when a required check fails.
+
+  --format human        a readable report (the default)
+  --format health-tsv   tab-separated lines for System Health
+  -h, --help            show this help
+EOF
+}
+
 sanitize_field() {
 	local value=${1:-}
 
@@ -289,6 +303,10 @@ main() {
 
 if (($# > 0)); then
 	case ${1:-} in
+	-h | --help)
+		help
+		exit 0
+		;;
 	--format)
 		[[ $# -eq 2 ]] || {
 			usage

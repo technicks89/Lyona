@@ -17,7 +17,10 @@ watch the display (it never prints `ready`), does it fall back to one
 `xprop -spy` per window.
 The standard EWMH properties (`_NET_CURRENT_DESKTOP`, `_NET_CLIENT_LIST`,
 `_NET_ACTIVE_WINDOW`, `_NET_WM_DESKTOP` and the others) are read the same way
-and are not repeated here.
+and are not repeated here. `_NET_CLIENT_LIST` lists each monitor's bar and tray
+(docks) with the clients; `dwm-quickshell-state` leaves windows whose first
+`_NET_WM_WINDOW_TYPE` is `_NET_WM_WINDOW_TYPE_DOCK` out of `windows=`, `apps=`
+and `occupied=`, and reads such a window again when its type changes.
 
 "Logical monitor index" is the monitor's position in dwm's monitor order, the
 order the shell's panels use. A tag index is 0 to 8.
@@ -41,8 +44,16 @@ with the same value, so a reader compares before acting.
 | --- | --- | --- | --- |
 | `_DWM_SET_LAYOUT` | `CARDINAL`, 1 | `dwm-quickshell-state layout INDEX` (the panel's layout switcher) | dwm reads it, deletes it, and applies `layouts[INDEX]` to the selected monitor, as the layout key would. An index out of range, or a value of another type or length, is ignored. |
 
-Any X client can set a root property; that is the same trust as the EWMH
-client messages dwm already accepts.
+The shell also uses the standard `_NET_ACTIVE_WINDOW` client message, with two
+lyona-specific effects:
+
+| Sent by | Source indication | Effect in dwm |
+| --- | --- | --- |
+| A pager: the overview, the panel's running apps (`dwm-quickshell-state focus`, `xdotool windowactivate`) | 2 | Shows the window's tag on its monitor and focuses it (`activateclient()`). From an application (source 1 or 0) it only marks the window urgent, so no window steals the focus. |
+| A viewable override-redirect window: a Quickshell popup (launcher, keybind viewer, Control Center) asking for the keyboard (`requestActivate()`) | any | dwm gives that window the input focus and leaves it there while it is mapped; the selected client gets the focus back when the window unmaps or is destroyed (`focusoverridewindow()`, `untrackoverridewindow()`). |
+
+Any X client can set a root property or send these messages; that is the same
+trust as the EWMH client messages dwm already accepts.
 
 ## DPI state file
 
@@ -64,3 +75,16 @@ calls the helper for this.
   `DPI` is an integer from 72 to 384; a value outside that range means 96.
   With no file the shell uses 96, and a file without the version 1 header is
   ignored, leaving the scale as it was.
+
+## Other shell protocols
+
+The shell's other helpers have their own versioned contracts:
+
+- [Audio provider protocol](AUDIO-PROTOCOL.md): `dwm-quickshell-controls
+  audio-snapshot` (`audio-protocol 1`), read by `ControlsModel.qml`.
+- [Connectivity provider protocol](CONNECTIVITY-PROTOCOL.md):
+  `dwm-quickshell-network snapshot` and `dwm-quickshell-controls
+  bluetooth-snapshot` (`connectivity-protocol 1`), read by the Network and
+  Bluetooth models.
+- [Session action contract](SESSION-ACTIONS.md): lock, logout, suspend,
+  reboot and shutdown through `PowerMenuModel.qml`.

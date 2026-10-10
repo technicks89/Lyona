@@ -38,6 +38,10 @@ an untested package or installation path.
 - `dwm.c`, `config.c`, `drw.c`, `util.c`, `tomlparser.c`: window-manager
   sources. `config.c` (interface `rtconfig.h`) loads and watches the runtime
   TOML files; `config.h` is the compile-time configuration.
+- `dwm-xwatch.c`, `dwm-window-thumb.c`, `lyona-toml.c`: helper programs
+  installed in `PREFIX/lib/lyona`, outside the window manager: the state
+  bridge's X property watcher, the overview's window previews, and the TOML
+  reader scripts use (dwm's own parser).
 - `config.def.h`: version-controlled default compile-time configuration.
 - `config.h`: local build configuration. Do not overwrite user changes.
 - `config.mk`: compiler, include, library, and installation settings.
@@ -51,6 +55,10 @@ an untested package or installation path.
 - `archiso/`, `scripts/build-lyona-arch-iso.sh`: Arch install-medium
   profile and builder (best-effort; see `docs/RELEASING.md`).
 - `dwm.desktop`: display-manager X session entry.
+- `lightdm/`: the LightDM and slick-greeter configuration the installer
+  deploys.
+- `tests/`: the test suite, run through the Makefile's `check-*` targets and
+  `scripts/run-tests`.
 - `AGENTS.md`: durable engineering and agent-execution rules.
 - `SPEC.md`: product scope, interfaces, and acceptance criteria.
 - `docs/roadmap/ROADMAP.md`: ordered desktop-environment outcomes.
@@ -58,6 +66,8 @@ an untested package or installation path.
 - `docs/sprints/`: upstream-sync sprint plans and their index
   (`UPSTREAM-SYNC.md`); finished sprints in `docs/sprints/completed/`.
 - `docs/reviews/`: dated whole-repo review reports.
+- `docs/plans/`: per-issue implementation plans; `docs/evidence/`: what a
+  change was validated with; `docs/design/`: design notes.
 - `docs/`: user, contributor, and release documentation.
 
 ## Planning Workflow
