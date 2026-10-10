@@ -316,14 +316,16 @@ static void
 problems(const char *dir)
 {
 	char text[8192];
-	int i, len;
+	size_t len;
+	int i;
 
 	/* 33 exec arguments, then a second rule: the 33rd "]"-free item and the
 	 * "]" of the long array used to end "rules", losing rule B. */
-	len = snprintf(text, sizeof text, "rules = [ { class=\"A\", exec=[");
+	len = 0;
+	append_text(text, sizeof text, &len, "rules = [ { class=\"A\", exec=[");
 	for (i = 0; i < 33; i++)
-		len += snprintf(text + len, sizeof text - (size_t)len, "%s\"a%d\"", i ? ", " : "", i);
-	snprintf(text + len, sizeof text - (size_t)len, "] }, { class=\"B\", isfloating=1 } ]\n");
+		append_text(text, sizeof text, &len, "%s\"a%d\"", i ? ", " : "", i);
+	append_text(text, sizeof text, &len, "] }, { class=\"B\", isfloating=1 } ]\n");
 	CHECK(parse_text(dir, "long-array", text), "the long-array file did not parse");
 	CHECK(toml_table_count(&doc, "rules") == 2, "long array: %d rules, want 2",
 	      toml_table_count(&doc, "rules"));
@@ -335,11 +337,11 @@ problems(const char *dir)
 	      doc.unclosed_line);
 
 	/* A 35th item that looks like a table is part of the array, not a rule. */
-	len = snprintf(text, sizeof text, "rules = [ { class=\"A\", exec=[");
+	len = 0;
+	append_text(text, sizeof text, &len, "rules = [ { class=\"A\", exec=[");
 	for (i = 0; i < 34; i++)
-		len += snprintf(text + len, sizeof text - (size_t)len, "\"a%d\", ", i);
-	snprintf(text + len, sizeof text - (size_t)len,
-	         "\"{ class = \\\"Evil\\\", isfloating = 1 }\"] } ]\n");
+		append_text(text, sizeof text, &len, "\"a%d\", ", i);
+	append_text(text, sizeof text, &len, "\"{ class = \\\"Evil\\\", isfloating = 1 }\"] } ]\n");
 	CHECK(parse_text(dir, "long-array-table", text), "the crafted file did not parse");
 	CHECK(toml_table_count(&doc, "rules") == 1, "a crafted array item became a rule: %d rules",
 	      toml_table_count(&doc, "rules"));
