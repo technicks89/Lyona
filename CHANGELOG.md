@@ -8,6 +8,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Changed
+
+- dwm takes as a monitor's bar only a dock that reserves space at the top or
+  bottom of the screen (the EWMH `_NET_WM_STRUT_PARTIAL`, which the lyona panel
+  sets for its exclusive zone), not any window named "quickshell" or any wide
+  dock. A banner or OSD dock from the shell can no longer take the bar's place
+  and move the work area, and a dock that reserves nothing is shown, never
+  tiled as a window. A dock that sets its strut later becomes the bar then.
+  **Migration:** a panel of your own needs a non-zero `exclusiveZone` (#322).
+- Window previews in the overview are scaled by the X server (XRender), and
+  one small image is read per window: about 160 KB, where every row of the
+  window was read (33 MB for a 4K window). Measured under Xvfb with a 4K
+  window: 6 ms per preview, from 23 ms. Without Render the old path is used.
+  `dwm-window-thumb` now links libXrender, which Xft already needs (#323).
+
 ### Fixed
 
 - A window closing by itself on the other monitor (a finished download, a

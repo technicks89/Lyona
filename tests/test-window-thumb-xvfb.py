@@ -160,6 +160,23 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
         visible_path = Path(result.stdout.strip())
         assert visible_path == runtime / 'lyona' / 'overview-thumbs' / (format(int(window), 'x') + '.ppm'), visible_path
         visible = looks_like_stripes(visible_path, window)
+        server_bytes = visible_path.read_bytes()
+
+        # #323: the X server scales the window (XRender, a box filter); the
+        # client-side path (forced here, as without Render) agrees with it on
+        # every region, yet the two are not byte for byte the same: a box over
+        # every pixel and 4x4 samples differ on the stripes, which shows the
+        # server path really ran rather than falling back.
+        result = run('capture', window, extra_env={'LYONA_THUMB_NO_RENDER': '1'})
+        assert result.returncode == 0, ('client-side capture', result.returncode, result.stderr)
+        client_path = Path(result.stdout.strip())
+        client_bytes = client_path.read_bytes()
+        assert client_bytes != server_bytes, 'the server-side capture is the client-side one: Render did not run'
+        client = looks_like_stripes(client_path, window)
+        assert client.size == visible.size, (client.size, visible.size)
+        diff = ImageStat.Stat(ImageChops.difference(client.convert('RGB'), visible.convert('RGB'))).mean
+        assert max(diff) < 12, ('the server and client previews disagree', diff)
+        client_path.write_bytes(server_bytes)
 
         # 3. Privacy of what was written.
         assert stat.S_IMODE((runtime / 'lyona').stat().st_mode) == 0o700
@@ -259,7 +276,7 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
             time.sleep(0.1)
         assert run('available').returncode == NOCOMP
 
-        print('dwm-window-thumb (no compositor, Picom, off-tag capture, privacy, arguments, off switch): PASS')
+        print('dwm-window-thumb (no compositor, Picom, server-side scaling, off-tag capture, privacy, arguments, off switch): PASS')
     finally:
         for proc in reversed(procs):
             if proc.poll() is None:

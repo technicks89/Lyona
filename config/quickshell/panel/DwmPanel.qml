@@ -60,6 +60,9 @@ PanelWindow {
 
     implicitHeight: Theme.panelHeight
     color: Theme.barBackground
+    // The panel's declaration that it is the bar: on X11 the exclusive zone
+    // is the EWMH strut (_NET_WM_STRUT_PARTIAL), and dwm takes the dock that
+    // reserves space for its bar, nothing else (#322). Keep it non-zero.
     exclusiveZone: Theme.panelHeight
     aboveWindows: root.state.fullscreenMonitorIndexes.indexOf(
         root.state.screenIndex(root.screen)) === -1

@@ -27,11 +27,15 @@ Invariants:
   blocking work to the X event loop.
 - External bars must be able to reconstruct tag and client state from root
   properties without relying on dwm internals.
-- A monitor has one bar (`barwin`). Another dock (`isaltbar()`) takes its place
-  only when the bar is gone or the dock is wider (`updatealtbar()`), else it
-  waits (`waitingbar`, the widest); when the bar goes, `unmanagealtbar()`
-  promotes the waiting dock, and scans only when none waits. Two docks taking
-  the place in turn on each ConfigureNotify raised each other without end.
+- A bar is a dock that reserves space at the top or bottom of its screen, by
+  `_NET_WM_STRUT_PARTIAL` or `_NET_WM_STRUT` (`isaltbar()`, `hasbarstrut()`):
+  the lyona panel declares itself so with Quickshell's `exclusiveZone`. dwm
+  guesses nothing from a window's class or width (#322). A dock that reserves
+  nothing (a notice, a banner) is shown, never managed or tiled (`leavedock()`),
+  and becomes the bar if it sets a strut later (`strutchanged()`).
+- A monitor has one bar (`barwin`). A second bar on it waits until the first
+  goes, when `unmanagealtbar()` rescans (`scanaltbars()`). Two bars taking the
+  place in turn on each ConfigureNotify raised each other without end.
 - When an override-redirect window has the focus by its own request
   (`overridefocus`), `focusin()` leaves it there, until `focus()` gives the
   keyboard to a client, which clears it: there is one focus owner at a time.
