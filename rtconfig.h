@@ -91,8 +91,8 @@ extern int           rt_nbuttons;
 extern const Rule   *rt_rules;
 extern int           rt_nrules;
 
-/* Finds the user and default config directories, normalizes XDG_CONFIG_HOME
- * and XDG_DATA_HOME in the environment, and starts the inotify watches. */
+/* Finds the user and default config directories and starts the inotify
+ * watches. XDG_CONFIG_HOME must already be absolute: dwm.c sets it. */
 void runtime_config_setup(const ConfigEnv *env);
 /* Loads all three files. Returns 1 and fills *theme when themes.toml loaded. */
 int runtime_config_load(ConfigTheme *theme);

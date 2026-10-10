@@ -26,6 +26,48 @@ strtrim(char *s)
 static const char *parse_inline_table(const char *p, TomlDoc *doc,
                                       const char *section, int tidx);
 
+/* The line being read, 1-based, for bad_lines (#319). */
+static int cur_line;
+
+/* Text on the current line that the parser could not read: counted once per
+ * line, so a loader can say a file did not load as written (#319). */
+static void
+mark_bad(TomlDoc *doc)
+{
+	if (doc->bad_lines && doc->first_bad_line == cur_line)
+		return;
+	if (!doc->bad_lines || cur_line < doc->first_bad_line)
+		doc->first_bad_line = cur_line;
+	doc->bad_lines++;
+}
+
+/* Past the items of an array that did not fit in TOML_MAX_ARR, to its "]",
+ * stepping over quoted strings, so an item's "]" or "{" is never read as the
+ * end of the array or a table of its own (#319). */
+static const char *
+skip_array_rest(const char *p, TomlDoc *doc)
+{
+	int skipped = 0;
+
+	while (*p && *p != ']') {
+		if (*p == '"') {
+			for (p++; *p && *p != '"'; p++)
+				if (*p == '\\' && p[1])
+					p++;
+			if (*p == '"')
+				p++;
+			skipped = 1;
+		} else {
+			if (!isspace((unsigned char)*p) && *p != ',')
+				skipped = 1;
+			p++;
+		}
+	}
+	if (skipped)
+		doc->long_arrays++;
+	return p;
+}
+
 /* Cut a "#" comment off a line, but not a "#" inside a double-quoted string
  * (where a backslash escapes the next character). Sync Sprint 12 S12-05. */
 static void
@@ -68,6 +110,9 @@ parse_array_line(const char *sp, TomlDoc *doc, const char *section, int *tidx)
 			sp = parse_inline_table(sp + 1, doc, section, (*tidx)++);
 			continue;
 		}
+		/* Between tables only commas and spaces belong. */
+		if (!isspace((unsigned char)*sp) && *sp != ',')
+			mark_bad(doc);
 		sp++;
 	}
 	return 0;
@@ -130,9 +175,15 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 		const char *kstart = p;
 		while (*p && *p != '=' && !isspace((unsigned char)*p) && *p != '}') p++;
 		int klen = (int)(p - kstart);
-		if (klen <= 0 || klen >= TOML_MAX_STR) break;
+		if (klen <= 0 || klen >= TOML_MAX_STR) {
+			mark_bad(doc);
+			break;
+		}
 		while (isspace((unsigned char)*p)) p++;
-		if (*p != '=') break;
+		if (*p != '=') {
+			mark_bad(doc);
+			break;
+		}
 		p++;
 		while (isspace((unsigned char)*p)) p++;
 
@@ -165,6 +216,8 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 					p++;
 				}
 			}
+			if (ent->val.a.len == TOML_MAX_ARR)
+				p = skip_array_rest(p, doc);
 			if (*p == ']') p++;
 
 		} else {
@@ -191,9 +244,17 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 		}
 		doc->n++;
 
+		/* After a value only a comma or the closing brace belongs: a missing
+		 * comma or a stray word is reported, then skipped as before. */
+		while (isspace((unsigned char)*p)) p++;
+		if (*p && *p != ',' && *p != '}')
+			mark_bad(doc);
 		while (*p && *p != ',' && *p != '}') p++;
 	}
-	if (*p == '}') p++;
+	if (*p == '}')
+		p++;
+	else if (doc->n < TOML_MAX_ENTRIES)
+		mark_bad(doc); /* a table not closed on its line */
 	return p;
 }
 
@@ -229,6 +290,11 @@ toml_parse(const char *path, TomlDoc *doc)
 	doc->n = 0;
 	doc->truncated = 0;
 	doc->long_lines = 0;
+	doc->bad_lines = 0;
+	doc->first_bad_line = 0;
+	doc->long_arrays = 0;
+	doc->unclosed_line = 0;
+	cur_line = 0;
 	char line[TOML_MAX_LINE];
 	char cur_section[TOML_MAX_STR] = "";
 	int  cur_tidx = -1;
@@ -236,6 +302,7 @@ toml_parse(const char *path, TomlDoc *doc)
 	int  ml_active = 0;
 	char ml_section[TOML_MAX_STR] = "";
 	int  ml_tidx   = 0;
+	int  ml_line   = 0; /* where the open array began */
 	long total     = 0;
 
 	for (;;) {
@@ -244,6 +311,7 @@ toml_parse(const char *path, TomlDoc *doc)
 		line[sizeof(line) - 1] = 1;
 		if (!fgets(line, sizeof(line), f))
 			break;
+		cur_line++;
 		/* toml_open checked the size, but the file can still grow while it is
 		 * read; stop at the same limit rather than read without end. */
 		size_t len = strlen(line);
@@ -285,7 +353,10 @@ toml_parse(const char *path, TomlDoc *doc)
 
 		if (p[0] == '[' && p[1] == '[') {
 			char *end = strstr(p + 2, "]]");
-			if (!end) continue;
+			if (!end) {
+				mark_bad(doc);
+				continue;
+			}
 			int len = (int)(end - (p + 2));
 			if (len >= TOML_MAX_STR) len = TOML_MAX_STR - 1;
 			strncpy(cur_section, p + 2, len);
@@ -296,7 +367,10 @@ toml_parse(const char *path, TomlDoc *doc)
 
 		if (p[0] == '[') {
 			char *end = strchr(p + 1, ']');
-			if (!end) continue;
+			if (!end) {
+				mark_bad(doc);
+				continue;
+			}
 			int len = (int)(end - (p + 1));
 			if (len >= TOML_MAX_STR) len = TOML_MAX_STR - 1;
 			strncpy(cur_section, p + 1, len);
@@ -306,11 +380,17 @@ toml_parse(const char *path, TomlDoc *doc)
 		}
 
 		char *eq = strchr(p, '=');
-		if (!eq) continue;
+		if (!eq) {
+			mark_bad(doc);
+			continue;
+		}
 
 		int klen = (int)(eq - p);
 		while (klen > 0 && isspace((unsigned char)p[klen - 1])) klen--;
-		if (klen <= 0 || klen >= TOML_MAX_STR) continue;
+		if (klen <= 0 || klen >= TOML_MAX_STR) {
+			mark_bad(doc);
+			continue;
+		}
 		char key[TOML_MAX_STR];
 		strncpy(key, p, (size_t)klen);
 		key[klen] = '\0';
@@ -330,6 +410,7 @@ toml_parse(const char *path, TomlDoc *doc)
 				ml_section[TOML_MAX_STR - 1] = '\0';
 				ml_tidx   = 0;
 				ml_active = 1;
+				ml_line   = cur_line;
 				continue;
 			}
 
@@ -341,6 +422,7 @@ toml_parse(const char *path, TomlDoc *doc)
 					copystr(ml_section, sizeof(ml_section), key);
 					ml_tidx   = tidx_local;
 					ml_active = 1;
+					ml_line   = cur_line;
 				}
 				continue;
 			}
@@ -378,6 +460,8 @@ toml_parse(const char *path, TomlDoc *doc)
 					vp++;
 				}
 			}
+			if (ent->val.a.len == TOML_MAX_ARR)
+				(void)skip_array_rest(vp, doc);
 
 		} else {
 			char *ep;
@@ -403,6 +487,10 @@ toml_parse(const char *path, TomlDoc *doc)
 		}
 		doc->n++;
 	}
+	/* An array still open at the end: the file was cut off, or its "]" is
+	 * missing. The loaders refuse such a file rather than load part of it. */
+	if (ml_active)
+		doc->unclosed_line = ml_line;
 	fclose(f);
 	return 1;
 }

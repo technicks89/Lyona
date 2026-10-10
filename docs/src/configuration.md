@@ -12,13 +12,20 @@ every update and rollback unchanged. No recompile is needed.
 | `window-rules.toml` | Per-app window rules: tag, floating, terminal swallowing, always on top, monitor |
 | `power.conf` | Control Center screen blanking and auto-lock choices |
 
-If one of these files cannot be used (a typo, an empty file, nothing dwm can bind),
-dwm tells you with a "dwm: bad config" notification. At login it falls back to the
-shipped default for that file; when you save a broken file while dwm is running, it
-keeps the configuration it already had until the file is fixed.
+dwm tells you about a file it could not load as written with a "dwm: bad config"
+notification, which names the first problem:
+- **Part of the file is wrong** (an unknown key name, a missing comma or `}`, a
+  binding with nothing to run): dwm loads the rest, and the notification counts
+  what it skipped, for example "1 problem, the rest loaded - unknown key 'Retrun'".
+- **The file cannot be used** (it is empty, nothing in it can be bound, or it is
+  cut off inside an array, as a half-saved edit is): at login dwm falls back to the
+  shipped default for that file; when you save it while dwm is running, it keeps
+  the configuration it already had until the file is fixed. The notification says
+  why, for example "invalid config (line 14: an array is never closed) - kept the
+  previous config".
 
-The shipped defaults are read-only, in `/usr/share/lyona/config/` (under your
-`PREFIX` for another install location). They are replaced on every update, so
+The shipped defaults are read-only, in `/usr/local/share/lyona/config/` (in
+`PREFIX/share/lyona/config/` for another install location). They are replaced on every update, so
 change your own copy in `~/.config/lyona/`, never these.
 
 ## Window rules

@@ -408,8 +408,7 @@ restart_quickshell() {
 	# identity, then started again with --path, the instance the keys address.
 	# shellcheck source=scripts/dwm-quickshell-lifecycle.sh
 	. "$lyona_lib/dwm-quickshell-lifecycle.sh"
-	stop_managed_quickshell "$config" >/dev/null 2>&1 || true
-	launch_background quickshell --path "$config" --no-duplicate
+	restart_managed_quickshell "$config" launch_background
 	notify "Quickshell restarted"
 }
 

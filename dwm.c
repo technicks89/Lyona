@@ -1312,6 +1312,9 @@ focus(Client *c)
 			selmon = c->mon;
 		if (c->isurgent)
 			seturgent(c, 0);
+		/* A client has the keyboard now, not the popup that asked for it:
+		 * focusin() corrects a later FocusIn on that popup again (#318). */
+		overridefocus = None;
 		detachstack(c);
 		attachstack(c);
 		grabbuttons(c, 1);
@@ -3377,6 +3380,37 @@ sigusr2_handler(int sig)
 	sig_wake();
 }
 
+/* The session's XDG_CONFIG_HOME and XDG_DATA_HOME, made absolute (from HOME
+ * when unset or relative), so dwm, config.c and every program dwm starts agree
+ * on them. Session policy, so here rather than in config.c (#319). */
+static void
+normalizexdgenv(void)
+{
+	static const struct { const char *var, *fallback; } dirs[] = {
+		{ "XDG_CONFIG_HOME", ".config" },
+		{ "XDG_DATA_HOME",   ".local/share" },
+	};
+	const char *home = getenv("HOME"), *value;
+	char path[PATH_MAX];
+	size_t i;
+
+	for (i = 0; i < LENGTH(dirs); i++) {
+		value = getenv(dirs[i].var);
+		if (value && value[0] == '/')
+			continue;
+		if (!home || !home[0]) {
+			fprintf(stderr, "dwm: HOME is required for XDG fallback paths\n");
+			return;
+		}
+		if (!pathjoin(path, sizeof(path), home, dirs[i].fallback)) {
+			fprintf(stderr, "dwm: %s fallback path exceeds PATH_MAX\n", dirs[i].var);
+			continue;
+		}
+		if (setenv(dirs[i].var, path, 1) < 0)
+			perror("dwm: cannot normalize XDG environment");
+	}
+}
+
 /* The functions hotkeys.toml may bind, by name (config.c). */
 static const ConfigFunc configfuncs[] = {
 	{ "spawn",                spawn },
@@ -3713,6 +3747,7 @@ setup(void)
 	XSelectInput(dpy, root, wa.event_mask);
 
 	signal(SIGUSR1, sigusr1_handler);
+	normalizexdgenv();
 	runtime_config_setup(&configenv);
 	reload_config(1);
 	grabkeys();
@@ -4211,20 +4246,16 @@ unmanage(Client *c, int destroyed)
 	free(c);
 	if (!s) {
 
-		/* The window focused before, from the focus history, not the first
-		 * tiled window: closing a window (or the launcher) went back to the
-		 * master, not to where you were (#280 VM). */
-		for (top = m->stack; top && !ISVISIBLE(top); top = top->snext);
-
-		if (top) {
-
+		/* Only a window closing on the monitor you are on moves the focus,
+		 * to the window focused before it, from the focus history (#280 VM),
+		 * or to none. On another monitor detachstack() has already chosen
+		 * that monitor's next window, and the focus stays where you are
+		 * typing: it went there, or to the root, before (#318). */
+		if (m == selmon) {
+			for (top = m->stack; top && !ISVISIBLE(top); top = top->snext);
 			focus(top);
-			restack(m);
-
-			XSetInputFocus(dpy, top->win, RevertToPointerRoot, CurrentTime);
-		} else {
-
-			XSetInputFocus(dpy, root, RevertToPointerRoot, CurrentTime);
+			if (top)
+				XSetInputFocus(dpy, top->win, RevertToPointerRoot, CurrentTime);
 		}
 
 		updateclientlist();

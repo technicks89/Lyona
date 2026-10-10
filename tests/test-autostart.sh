@@ -54,7 +54,16 @@ cleanup() {
 		watcher_pid=$(cat "$work/watcher-fallback/state/watcher.pid")
 		case $watcher_pid in
 		'' | *[!0-9]*) ;;
-		*) kill "$watcher_pid" 2>/dev/null || true ;;
+		*)
+			kill "$watcher_pid" 2>/dev/null || true
+			# Outside this test's process group (timeout gave it its own), so
+			# wait for it here rather than leave it to the runner (#321).
+			i=0
+			while kill -0 "$watcher_pid" 2>/dev/null && [ "$i" -lt 40 ]; do
+				i=$((i + 1))
+				sleep 0.05
+			done
+			;;
 		esac
 	fi
 	for identity_file in "$work"/*/state/quickshell-runtime.identities; do
@@ -810,8 +819,14 @@ watch-apply)
 	printf '%s\n' "$$" >"${TEST_STATE:?}/watcher.pid"
 	printf '%s\t%s\n' "${DWM_INPUT_SESSION_PID:-}" "${DWM_INPUT_SESSION_START:-}" \
 		>"${TEST_STATE:?}/watcher.session"
-	trap 'exit 0' HUP INT TERM
-	while :; do sleep 10; done
+	# A sleep in the background, so TERM is acted on at once and takes the sleep
+	# with it: in the foreground it ran on for up to 10 s after the test (#321).
+	trap 'kill "$sleeper" 2>/dev/null; exit 0' HUP INT TERM
+	while :; do
+		sleep 10 &
+		sleeper=$!
+		wait "$sleeper"
+	done
 	;;
 *) exit 1 ;;
 esac

@@ -42,6 +42,10 @@ typedef struct {
 	int       n;
 	int       truncated; /* entries past TOML_MAX_ENTRIES were dropped */
 	int       long_lines; /* lines longer than TOML_MAX_LINE, each skipped whole */
+	int       bad_lines;      /* lines with text the parser could not read (#319) */
+	int       first_bad_line; /* the first of them, 1-based; 0 when none */
+	int       long_arrays;    /* arrays cut to TOML_MAX_ARR items */
+	int       unclosed_line;  /* where an array opened that never closed; 0 when none */
 } TomlDoc;
 
 int toml_parse(const char *path, TomlDoc *doc);

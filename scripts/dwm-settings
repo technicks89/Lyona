@@ -1,15 +1,6 @@
 #!/bin/sh
 set -eu
 
-# The managed shell lives only here; install-user replaces it wholesale.
-# One variable, so inline; dwm-xdg.sh holds the shared rule (S12-14).
-config=${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml
-
-if [ ! -f "$config" ]; then
-	printf 'dwm-settings: managed Quickshell configuration not found\n' >&2
-	exit 1
-fi
-
 action=${1:-toggle}
 case "$action" in
 open | close | toggle | refresh | status) ;;
@@ -19,4 +10,7 @@ open | close | toggle | refresh | status) ;;
 	;;
 esac
 
-exec quickshell ipc --path "$config" call settings "$action"
+# lyona-shell knows the managed shell's config path and IPC targets (#320).
+shell=lyona-shell
+[ ! -x "${0%/*}/lyona-shell" ] || shell=${0%/*}/lyona-shell
+exec "$shell" settings "$action"

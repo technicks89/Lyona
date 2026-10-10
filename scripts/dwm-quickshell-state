@@ -599,6 +599,12 @@ watch_state() {
 	exec 3<>"$watch_dir/events"
 	bound_to_this_shell "$xwatch" >&3 2>/dev/null &
 	root_pid=$!
+	# From here dwm-xwatch holds the only write end and this shell only reads,
+	# so if the watcher dies (an OOM kill, a crash) the read sees end of file
+	# and the watch ends, for WatchedProcess to start it again; with its own
+	# write end open the read waited for ever, and the panel stopped updating
+	# (#320). The read end opens at once: fd 3 is still a writer then.
+	exec 4<"$watch_dir/events" 3>&- 3<&4 4<&-
 	if ! IFS= read -r -t 2 event <&3 || [[ $event != ready ]]; then
 		watch_cleanup
 		trap - EXIT HUP INT TERM
@@ -608,13 +614,26 @@ watch_state() {
 	state_cache=1
 	show_state
 	printf '\n'
+	last_rebuild=${EPOCHREALTIME//[!0-9]/}
 
 	while IFS= read -r event <&3; do
 		note_window_event "$event"
 		drain_events note_window_event
-		show_state
-		printf '\n'
+		rebuild_after_gap note_window_event
 	done
+	printf 'dwm-quickshell-state: dwm-xwatch stopped; the watch ends, to be started again\n' >&2
+}
+
+# The state again, at most every 200 ms (#320): the drain merges a burst, but a
+# window that retitles without pause (a progress title) used to rebuild about 17
+# times a second, about 70 processes. Events in the rest of the gap join this
+# rebuild. HANDLER notes them, as for drain_events.
+rebuild_after_gap() {
+	local handler=$1
+	drain_events "$handler" $((last_rebuild + 200000))
+	show_state
+	printf '\n'
+	last_rebuild=${EPOCHREALTIME//[!0-9]/}
 }
 
 # "window 0xID": that window is read again; root changes and the client list
@@ -673,8 +692,23 @@ watch_state_spies() {
 	sync_client_watchers
 	show_state
 	printf '\n'
+	last_rebuild=${EPOCHREALTIME//[!0-9]/}
 
-	while IFS= read -r event <&3; do
+	local rest
+	while :; do
+		event=
+		# This shell keeps a write end, to start a watcher for each new window,
+		# so the root watcher's death is never an end of file here: after 30 s
+		# without an event, check it is still there (#320). Only this fallback
+		# wakes so; the dwm-xwatch path above needs no timeout.
+		if ! IFS= read -r -t 30 event <&3; then
+			if [[ -z $event ]]; then
+				kill -0 "$root_pid" 2>/dev/null || break
+				continue
+			fi
+			IFS= read -r rest <&3 || true
+			event=$event$rest
+		fi
 		clients_changed=0
 		note_event "$event"
 		drain_events
@@ -683,9 +717,9 @@ watch_state_spies() {
 			clients_changed=0
 			sync_client_watchers
 		done
-		show_state
-		printf '\n'
+		rebuild_after_gap note_event
 	done
+	printf 'dwm-quickshell-state: the root xprop -spy stopped; the watch ends, to be started again\n' >&2
 }
 
 note_event() {
@@ -694,11 +728,13 @@ note_event() {
 	esac
 }
 
-# Take every event that arrives in the next 50 ms into the same rebuild, noting
-# each with HANDLER (note_event by default).
+# Take every event that arrives in the next 50 ms, or until DEADLINE (in
+# microseconds, as EPOCHREALTIME) when that is later, into the same rebuild,
+# noting each with HANDLER (note_event by default).
 drain_events() {
 	local handler=${1:-note_event} deadline remaining timeout event rest
 	deadline=$((${EPOCHREALTIME//[!0-9]/} + 50000))
+	((${2:-0} > deadline)) && deadline=$2
 	while :; do
 		remaining=$((deadline - ${EPOCHREALTIME//[!0-9]/}))
 		((remaining > 0)) || return 0

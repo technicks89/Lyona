@@ -768,11 +768,11 @@ wait_for_current_desktop 0
 # S12-04; tests/test-dwm-config-fallback.sh covers startup).
 i=0
 while [ "$i" -lt 100 ] &&
-	! grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - kept the previous config' "$work/notifications.log"; do
+	! grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config (line 1 could not be read) - kept the previous config' "$work/notifications.log"; do
 	i=$((i + 1))
 	sleep 0.05
 done
-grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - kept the previous config' "$work/notifications.log" || {
+grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config (line 1 could not be read) - kept the previous config' "$work/notifications.log" || {
 	printf '%s\n' 'missing captured invalid-config notification' >&2
 	cat "$work/notifications.log" >&2
 	exit 1

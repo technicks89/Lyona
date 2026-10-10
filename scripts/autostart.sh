@@ -47,22 +47,6 @@ start_detached() {
 	fi
 }
 
-quickshell_tray_ready() {
-	config=$1
-
-	command -v timeout >/dev/null 2>&1 || return 1
-	timeout 1 quickshell ipc --path "$config" call tray count >/dev/null 2>&1
-}
-
-start_managed_quickshell() {
-	config=$1
-
-	if ! quickshell_tray_ready "$config"; then
-		stop_managed_quickshell "$config" >/dev/null 2>&1 || true
-		start_detached quickshell --path "$config" --no-duplicate
-	fi
-}
-
 # Until the tray is up, so tray apps started next find it; at most 5 seconds.
 # The tray owns org.kde.StatusNotifierWatcher: gdbus waits for that name, one
 # process and no polling (#288). Without gdbus, or with no session bus, ask
@@ -311,7 +295,7 @@ if [ -f "$QUICKSHELL_CONFIG" ]; then
 		# any later self-relaunch (dwm-quickshell-controlcenter's restart
 		# action) still inherits it as a descendant of this process.
 		QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
-			start_managed_quickshell "$QUICKSHELL_CONFIG"
+			start_managed_quickshell "$QUICKSHELL_CONFIG" start_detached
 	else
 		printf '%s\n' 'lyona: compatible Quickshell 0.3.0 or newer is required' >&2
 	fi

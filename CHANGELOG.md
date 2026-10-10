@@ -8,6 +8,32 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Fixed
+
+- A window closing by itself on the other monitor (a finished download, a
+  terminal that exits) no longer takes the keyboard focus from where you are
+  typing, nor drops it to nowhere; only a window closing on your monitor moves
+  the focus (#318).
+- After you click back into a window while a popup is open, the popup can no
+  longer keep the keyboard by taking it back (#318).
+- A `hotkeys.toml` with a typo, a missing comma or `}`, or an unknown key name
+  now says so: one "dwm: bad config" notification names the first problem and
+  how many there are, and the rest of the file loads. A file cut off inside its
+  array (a half-saved edit) is refused as a whole, so a running session keeps
+  every key it has; the notification says which line opened the array. The
+  same applies to `window-rules.toml` and `themes.toml` (#319).
+- A `hotkeys.toml` binding (or window rule) with more than 32 `exec` arguments
+  no longer makes dwm lose every entry after it (#319).
+- The panel and the overview keep updating after their state watcher
+  (`dwm-xwatch`) dies: the bridge exits and is started again, where it waited
+  for ever (#320).
+- A window that retitles without pause (a progress title) rebuilds the shell's
+  state at most five times a second, where it was about 17 times, about 70
+  processes a second (#320).
+- With the shell not running, Super+Shift+Q, Super+R and the other shell keys
+  show how to get it back (Super+Shift+R), and the power keys how to quit at once
+  (Super+Ctrl+Shift+Q), instead of doing nothing (#320).
+
 ### Changed
 
 - `man dwm` describes lyona's dwm instead of stock dwm: the Super key, the
@@ -23,6 +49,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the shell's `_NET_ACTIVE_WINDOW` requests and the dock exclusion and links the
   other shell protocols, and the README offers the published image before the
   build.
+- The "invalid config" notification says why a file was refused, for example
+  "invalid config (line 14: an array is never closed) - kept the previous
+  config" (#319).
+- dwm, not its config loader, makes `XDG_CONFIG_HOME` and `XDG_DATA_HOME`
+  absolute for the session; the programs dwm starts see the same values as
+  before (#319).
+- `autostart.sh` and the Control Center's Restart Quickshell share one start
+  sequence (`dwm-quickshell-lifecycle.sh`), and `dwm-controlcenter`,
+  `dwm-keybinds` and `dwm-settings` go through `lyona-shell`, which now also
+  opens Settings (#320).
+- `scripts/run-tests` stops, names and fails on any process a test left
+  running, even one that left the test's process group (#321).
+- The shipped defaults are documented where a standard install puts them,
+  `/usr/local/share/lyona/` (#319).
 
 ## [2026.10.0-beta.6] - 2026-10-09
 

@@ -240,7 +240,7 @@ the setting from the configuration.
 
 The controls read the active Picom configuration: your own `~/.config/picom.conf`
 or `~/.config/picom/picom.conf` when you have one, otherwise lyona's default
-(`/usr/share/lyona/xdg/picom/picom.conf` in a standard install). lyona's default
+(`/usr/local/share/lyona/xdg/picom/picom.conf` in a standard install). lyona's default
 is lean so that old hardware can run it: no shadows, fading, blur or animations,
 and every window opaque. It is read-only; **Create user configuration** copies it
 to `~/.config/picom.conf`, after which your copy is used and lyona's updates never

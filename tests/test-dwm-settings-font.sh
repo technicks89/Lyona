@@ -501,7 +501,14 @@ grep -Fqx $'preview\tnone\t\t\t\t0\tNo font preview is active' <<<"$status"
 
 DWM_SETTINGS_FONT_NOW=7000 DWM_SETTINGS_FONT_BOOT_ID=$test_boot_new \
 	run_font_watchdog preview preview-frozen 5 'Noto Sans' 1.25 >/dev/null
-sleep 5.2
+# The watchdog rolls the 5 s preview back on its own (5 s is the shortest the
+# helper allows); wait for that, bounded, rather than a fixed 5.2 s that a
+# loaded host could overrun (#321).
+i=0
+while [[ -e $font_state_dir/preview.current && $i -lt 100 ]]; do
+	((i += 1))
+	sleep 0.1
+done
 status=$(DWM_SETTINGS_FONT_NOW=7000 DWM_SETTINGS_FONT_BOOT_ID=$test_boot_new run_font_watchdog status)
 grep -Fqx $'preview\tnone\t\t\t\t0\tNo font preview is active' <<<"$status"
 grep -Fqx $'family\tInter' "$font_config"
@@ -520,6 +527,8 @@ DWM_PREVIEW_LOCK_WAIT=1 run_font_watchdog preview preview-watchdog-lock 5 'Noto 
 watchdog_lock=$state/lyona/appearance/font/mutation.lock
 exec 8>"$watchdog_lock"
 flock -x 8
+# Held on purpose, not a wait: through the 5 s deadline and two of the
+# watchdog's 1 s lock retries, which is the behaviour under test.
 sleep 7.5
 flock -u 8
 exec 8>&-
