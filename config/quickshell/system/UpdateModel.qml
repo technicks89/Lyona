@@ -110,6 +110,10 @@ Scope {
         "downgrade-offered", "unknown", "offline", "unavailable"]
     readonly property bool updateAvailable: root.updateState === "behind"
         || root.updateState === "downgrade-offered"
+    // The channel's release is older than the installed one: Settings says so
+    // before the password prompt does, and only then is --allow-downgrade
+    // passed (#334).
+    readonly property bool downgradeOffered: root.updateState === "downgrade-offered"
 
     function refresh() {
         root.refreshCheck();
@@ -290,9 +294,13 @@ Scope {
         root.lastOperation = "apply";
         root.markOutcome(0);
         root.phase = "downloading";
-        root.progressDetail = "Starting update to " + version;
+        root.progressDetail = (root.downgradeOffered ? "Going back to " : "Starting update to ") + version;
         root.outcomeMessage = "";
-        applyProcess.command = Commands.updateCommand("apply", ["--version", version, "--allow-downgrade", "--yes"]);
+        const args = ["--version", version];
+        if (root.downgradeOffered) args.push("--allow-downgrade");
+        args.push("--yes");
+        applyProcess.command = Commands.updateCommand("apply", args);
+
         applyProcess.running = true;
     }
 

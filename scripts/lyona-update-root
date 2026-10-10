@@ -21,6 +21,14 @@ die() {
 	exit 1
 }
 
+# Exit 3, apart from die's 1: install-system had begun writing when it failed,
+# so the live install may now mix two releases. lyona-update tells the caller
+# to roll back to the backup this helper took first (#333).
+die_part_way() {
+	printf 'lyona-update-root: %s\n' "$*" >&2
+	exit 3
+}
+
 # BEGIN dwm-trust.sh -- a verbatim copy of scripts/dwm-trust.sh's functions. A
 # root helper sources nothing at run time (Sync Sprint 12 S12-14, D-21), and
 # tests/test-shell-contracts.sh fails if this copy differs from the library.
@@ -520,7 +528,8 @@ install-system | install-unverified | install-downgrade)
 			OWNER="$invoking_user" \
 			XDG_STATE_HOME="$state_home"; then
 			log_outcome "$install_mode" "$requested_version" "$verified_dir" failed
-			die "install-system failed"
+			die_part_way "install-system stopped part-way; the live install may now mix $requested_version with the release installed before. Its system files were backed up first as $backup_id: run lyona-update rollback to restore them"
+
 		fi
 		log_outcome "$install_mode" "$requested_version" "$tarball_path" succeeded
 		;;

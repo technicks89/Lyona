@@ -383,8 +383,39 @@ if grep -q '^root:' "$work/evil.out"; then
 fi
 rm -rf "${store:?}/$new_id"
 
+# #333: a failure once install-system has begun writing exits 3, not die's 1,
+# names the backup and says to roll back: the live install may now mix two
+# releases. A file where DATADIR/applications should be fails the install
+# right after dwm, the man page and the session file were written, before
+# the commands and the shared code.
+install -m 0644 /dev/null "$datadir/applications"
+dwm_before=$(stat -c %Y "$prefix/bin/dwm")
+sleep 1
+part_way_status=0
+run_helper install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id" \
+	>"$work/part-way.out" 2>&1 || part_way_status=$?
+rm -f "$datadir/applications"
+[[ $part_way_status == 3 ]] ||
+	fail "a part-way install-system failure exited $part_way_status, not 3: $(tail -5 "$work/part-way.out")"
+grep -Fq "backed up first as $new_id" "$work/part-way.out" ||
+	fail "the part-way failure did not name the backup: $(tail -3 "$work/part-way.out")"
+grep -Fq 'run lyona-update rollback' "$work/part-way.out" || fail 'the part-way failure did not say to roll back'
+[[ -d $store/$new_id ]] || fail 'the part-way failure left no system backup to roll back to'
+# Mixed indeed: a new dwm over the old commands.
+[[ $(stat -c %Y "$prefix/bin/dwm") -gt $dwm_before ]] ||
+	fail 'the part-way install did not reach bin/dwm (the test needs a failure after it)'
+grep -Fxq '# live-before-update' "$live" || fail 'the part-way install reached the commands (the test needs an earlier failure)'
+run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
+	cat "$work/err" >&2
+	fail 'rolling back the part-way install failed'
+}
+[[ $(stat -c %Y "$prefix/bin/dwm") -le $dwm_before ]] ||
+	fail 'the rollback after a part-way install did not bring the old dwm back'
+rm -rf "${store:?}/$new_id"
+
 # What an update before 2026.10.0-beta.6 left under PREFIX/share, which this
 # install removes: the backup keeps it, so the rollback puts it back.
+
 legacy_cursor=$prefix/share/icons/Capitaine-Cursors/index.theme
 install -D -m 0644 /dev/null "$legacy_cursor"
 printf 'legacy cursor\n' >"$legacy_cursor"

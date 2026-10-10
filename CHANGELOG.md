@@ -31,7 +31,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A failed update says what failed. The progress popup, the notification and
+  Settings > System showed "Installing V (authentication required)" for every
+  failure after the password prompt, whatever had gone wrong; they now show the
+  reason (a build error, a missing package, a full disk). When the system
+  install itself stops part-way, which can leave two releases mixed, the update
+  says so instead of "the live install is untouched", names the backup it took
+  first and tells you to run `lyona-update rollback`; the root helper exits 3
+  for that case, apart from a refusal (#333).
+- Dismissing the password dialog cancels the update from a terminal too, where
+  it used to ask for the `sudo` password next; `sudo` is asked only when polkit
+  could not authorize at all (#333).
+- A downgrade is called one before the password prompt. When the channel's
+  release is older than the installed one, Settings > System offers **Go back
+  to VERSION**, its confirmation names both versions and points at Roll back,
+  and the update's progress names both too; `--allow-downgrade` is passed only
+  then, never on a routine update. The downgrade prompt no longer refers to a
+  terminal warning you did not see (#334).
 - `lyona-update rollback` restores `PREFIX/lib/lyona` and `PREFIX/share/lyona`
+
   whole (removing what the newer release added), the polkit actions and the GTK
   themes, where it restored only the commands: after a rollback, the old
   commands sourced the new shared code. A restore takes only the paths its

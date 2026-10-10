@@ -758,6 +758,11 @@ fi
 assert_file "$status_file"
 assert_contains "$status_file" "$(printf 'outcome\tfailed')"
 assert_not_contains "$status_file" "$(printf 'outcome\tpending')"
+# #333: the outcome carries die's reason, not the phase it fired in, which read
+# "Installing V (authentication required)" for every failure after the prompt.
+assert_contains "$status_file" "$(printf 'outcome\tfailed\ttrusted privileged update helper is unavailable (exit 1)')"
+assert_not_contains "$status_file" 'authentication required) (exit'
+assert_contains "$notify_log" 'trusted privileged update helper is unavailable'
 
 # The failed apply left a log a person can read after Quickshell has restarted,
 # readable only by its owner, and told them so.
@@ -981,6 +986,11 @@ grep -B3 'verify_release_signature "$verified_tarball" "$verified_bundle"' "$roo
 policy=$repo/config/polkit/com.lyona.update.policy
 assert_equals 4 "$(grep -c '<action id=' "$policy")" "update polkit actions"
 assert_equals 4 "$(grep -c 'policykit.exec.argv1' "$policy")" "update polkit actions tied to a subcommand"
+# #334: the downgrade prompt refers to what the user saw, not to a terminal
+# warning they did not.
+grep -Fq "the update's progress names both versions" "$policy" ||
+	fail 'the downgrade action does not say where both versions were named'
+assert_not_contains "$policy" 'lyona-update named both'
 for sub in install-system restore-system install-unverified install-downgrade; do
 	grep -Fq "exec.argv1\">$sub</annotate>" "$policy" || fail "no polkit action for $sub"
 done
@@ -1038,6 +1048,30 @@ cleaned_at=$(body_of cmd_apply | grep -n 'rm -rf -- "${staging_dir:?}" "$tarball
 [ -n "$verified_at" ] && [ -n "$cleaned_at" ] && [ "$cleaned_at" -gt "$verified_at" ] ||
 	fail "apply does not remove its staged update after verifying the install ($verified_at, $cleaned_at)"
 
+# #333: the helper's exit 3 (install-system stopped part-way) is told apart from
+# a refusal, which leaves the live install untouched, and points at the backup
+# and rollback. A root-owned helper cannot be installed here, so this pins the
+# shape; tests/test-lyona-update-root-backups.sh runs the failure as root.
+body_of cmd_apply | grep -Fq 'if ((privileged_status == 3)); then' ||
+	fail 'apply does not tell a part-way system install from a refused one'
+# shellcheck disable=SC2016 # the literal text of the script
+body_of cmd_apply | grep -A1 -F 'if ((privileged_status == 3)); then' |
+	grep -Fq 'run lyona-update rollback (backup $backup_id)' ||
+	fail 'a part-way system install does not say to roll back to its backup'
+root_helper_src=$repo/scripts/lyona-update-root
+grep -A2 '^die_part_way()' "$root_helper_src" | grep -q 'exit 3' ||
+	fail 'lyona-update-root has no exit 3 for a part-way install-system'
+grep -Fq 'die_part_way "install-system stopped part-way' "$root_helper_src" ||
+	fail 'a failed install-system does not exit 3'
+# #334: the progress names both versions before the downgrade prompt, which
+# cannot name them itself.
+# shellcheck disable=SC2016 # the literal text of the script
+body_of cmd_apply | grep -Fq 'status_detail="Installing $requested_version, OLDER than the installed $installed_version (authentication required)"' ||
+	fail 'the status before a downgrade prompt does not name both versions'
+# shellcheck disable=SC2016
+body_of cmd_apply | grep -Fq 'status_detail="Installing $requested_version (authentication required)"' ||
+	fail 'the status before a routine prompt changed'
+
 priv_probe=$work/priv-probe.sh
 priv_log=$work/priv.log
 {
@@ -1078,8 +1112,15 @@ run_priv 0 ':0'
 assert_equals pkexec "$(cat "$priv_log")" "escalation when polkit authorizes"
 if run_priv 1 ':0'; then fail 'a failed privileged step was reported as success'; fi
 assert_equals pkexec "$(cat "$priv_log")" "a failed step must not prompt a second time"
-run_priv 126 ':0' tty
+run_priv 127 ':0' tty
 assert_equals "$(printf 'pkexec\nsudo')" "$(cat "$priv_log")" "fallback to sudo on a terminal when polkit cannot run"
+# #333: a dismissed dialog (126) is a cancel on a terminal too, not a second,
+# sudo prompt.
+status=0
+run_priv 126 ':0' tty || status=$?
+assert_equals 4 "$status" "the exit status of a dismissed dialog on a terminal"
+assert_equals "$(printf 'pkexec\nstatus cancelled Update cancelled: authorization was not given. Nothing was changed.')" \
+	"$(cat "$priv_log")" "a dismissed dialog on a terminal"
 # #326: no terminal (started from Settings): a dismissed or refused prompt is a
 # cancel, recorded as such, with nothing tried after it and exit status 4.
 for pkexec_status in 126 127; do
@@ -1099,6 +1140,10 @@ assert_equals 'sudo -n' "$(cat "$priv_log")" "no sudo prompt without a terminal"
 # ── --help / usage ───────────────────────────────────────────────────────
 status=$(run_update --help)
 assert_string_contains "$status" 'Usage: lyona-update'
+# #334: the flag is described, not only listed.
+assert_string_contains "$status" '--allow-downgrade installs a release older than the installed'
+assert_string_contains "$status" 'use rollback instead'
+
 if run_update bogus-command >"$work/out" 2>&1; then
 	fail "unknown subcommand unexpectedly succeeded"
 fi

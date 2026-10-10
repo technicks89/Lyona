@@ -33,7 +33,8 @@
   </action>
   <action id="com.lyona.update.downgrade">
     <description>Install an older lyona release</description>
-    <message>Authentication is required to install an OLDER lyona release in place of the one installed. Approve this only if you meant to go back a version; lyona-update named both.</message>
+    <message>Authentication is required to install an OLDER lyona release in place of the one installed. Approve this only if you meant to go back a version; the update's progress names both versions. To return to the release installed before an update, use rollback instead.</message>
+
     <icon_name>dialog-warning</icon_name>
     <defaults>
       <allow_any>no</allow_any>

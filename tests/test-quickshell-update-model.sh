@@ -91,8 +91,27 @@ grep -Fq 'root.updateModel.consistent ? "available" : "unavailable"' "$system_pa
 grep -Fq 'installedMismatchDetail' "$update_model"
 grep -Fq 'installedMismatchDetail' "$system_pane"
 
+# #334: an older release than the installed one is called one in Settings,
+# before the password prompt (which cannot name the versions), and
+# --allow-downgrade is passed only then, never on a routine update.
+grep -Fq 'readonly property bool downgradeOffered: root.updateState === "downgrade-offered"' "$update_model" ||
+	fail 'UpdateModel does not expose downgradeOffered'
+grep -Fq 'if (root.downgradeOffered) args.push("--allow-downgrade");' "$update_model" ||
+	fail 'UpdateModel does not limit --allow-downgrade to a downgrade offer'
+if grep -Fq '"--version", version, "--allow-downgrade"' "$update_model"; then
+	printf 'UpdateModel must not pass --allow-downgrade on a routine update.\n' >&2
+	exit 1
+fi
+grep -Fq '(root.updateModel.downgradeOffered ? "Go back to " : "Update to ")' "$system_pane" ||
+	fail 'Settings calls a downgrade "Update to"'
+grep -Fq 'which is OLDER than the installed' "$system_pane" ||
+	fail 'the Settings confirmation does not say the release is older'
+grep -Fq 'root.updateModel.downgradeOffered ? "Install the older release" : "Update now"' "$system_pane" ||
+	fail 'the Settings confirm button calls a downgrade "Update now"'
+
 # Actions are inert while busy.
 grep -Fq 'if (root.busy' "$update_model"
+
 grep -Fq 'function apply(version) {' "$update_model"
 grep -Fq 'function rollback(backupId) {' "$update_model"
 grep -Fq 'function setChannel(value) {' "$update_model"

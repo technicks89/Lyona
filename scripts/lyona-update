@@ -27,8 +27,14 @@ signer_issuer=https://token.actions.githubusercontent.com
 cache_ttl=${LYONA_UPDATE_CACHE_TTL:-300}
 
 warn() { printf '%s: %s\n' "$self" "$*" >&2; }
+# die's reason is what the status file and the notification report (#333):
+# report_status_failure used to record only the phase it fired in, so every
+# failure after the password prompt read "Installing V (authentication
+# required)", whatever had gone wrong.
+die_message=''
 die() {
 	warn "$*"
+	die_message=$*
 	exit 1
 }
 
@@ -55,7 +61,12 @@ pacman, yay or Settings > System, not by this.
                lyona-V.sigstore.json). --sha256 gives the tarball's line in
                the release's SHA256SUMS; with no --bundle, for a machine with
                no network, the signature is then not checked.
-  rollback     Restores a backup (the newest, or --backup ID); --list shows
+               --allow-downgrade installs a release older than the installed
+               one: only with its signature checked, and on its own prompt,
+               which says OLDER. To go back to what was installed before an
+               update, use rollback instead.
+  rollback     Restores a backup
+ (the newest, or --backup ID); --list shows
                them. Asks first unless --yes.
   backups      Lists the backups apply has made.
   set-channel  stable: releases only. preview: pre-releases too.
@@ -181,8 +192,10 @@ report_status_failure() {
 	# as the sole EXIT trap (a failure before the library is ever sourced).
 	local exit_status=${install_verify_exit_status:-$?}
 	[[ ${status_written:-false} == true ]] && return 0
+	# The reason die() gave, when it was die() that ended the run; the phase's
+	# own text only for an exit nothing explained (#333).
 	write_status "${status_phase:-idle}" "${status_detail:-}" "${status_target:-}" \
-		failed "${status_detail:-} (exit $exit_status)"
+		failed "${die_message:-${status_detail:-}} (exit $exit_status)"
 }
 
 # --- version comparison -----------------------------------------------
@@ -576,9 +589,12 @@ trusted_root_helper() {
 # rollback is the path a user takes with no desktop running, so this must not
 # require a polkit agent: it tries pkexec only when a graphical session looks
 # reachable, and falls back to sudo when there is a terminal to ask for the
-# password on. Started from Settings or the panel there is none: a dismissed
-# or refused polkit prompt is then a cancel, not a reason to try sudo, which
-# could only fail with errors about terminals and askpass helpers (#326).
+# password on and polkit could not authorize (127: no agent, not authorized).
+# A dismissed dialog (126) is a cancel wherever it happens: a terminal gets no
+# second, sudo prompt for it (#333). Started from Settings or the panel there
+# is no terminal, so a refused prompt is a cancel too, not a reason to try
+# sudo, which could only fail with errors about terminals and askpass helpers
+# (#326).
 run_privileged() {
 	local helper pkexec_status=0
 	helper=$(trusted_root_helper) || die "trusted privileged update helper is unavailable"
@@ -586,7 +602,8 @@ run_privileged() {
 		pkexec "$helper" "$@" || pkexec_status=$?
 		case $pkexec_status in
 		0) return 0 ;;
-		126 | 127)
+		126) cancel_privileged ;;
+		127)
 			[[ -t 0 ]] || cancel_privileged
 			warn "pkexec could not authorize or run this step; falling back to sudo"
 			;;
@@ -983,18 +1000,22 @@ cmd_apply() {
 	# which it takes, as root, just before installing (Sync Sprint 12 S12-01).
 	local backup_id=${backup_dir##*/}
 
-	status_detail="Installing $requested_version (authentication required)"
-	write_status "$status_phase" "$status_detail" "$status_target" pending ''
-	warn "$status_detail"
 	# A verified release is installed on the routine prompt, where the root
 	# helper checks the signature again; anything else on its own, explicit
 	# prompt, so an unverified install never looks routine.
 	local privileged_status=0 install_subcommand=install-system
-	# An older release than the installed one has its own prompt (#327).
+	# An older release than the installed one has its own prompt (#327), and
+	# the progress names both versions before it, as the prompt itself cannot
+	# (#334).
 	if [[ $requested_rank < $installed_rank ]]; then
 		install_subcommand=install-downgrade
+		status_detail="Installing $requested_version, OLDER than the installed $installed_version (authentication required)"
 		warn "$requested_version is older than the installed $installed_version; the next prompt asks to install an OLDER release"
+	else
+		status_detail="Installing $requested_version (authentication required)"
 	fi
+	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	warn "$status_detail"
 	if [[ $signature_verified == true ]]; then
 		run_privileged "$install_subcommand" release "$tarball" "$checksum" "$requested_version" "$config_h_arg" \
 			"$backup_id" "$bundle_path" || privileged_status=$?
@@ -1003,7 +1024,12 @@ cmd_apply() {
 		run_privileged install-unverified release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" ||
 			privileged_status=$?
 	fi
-	if ((privileged_status != 0)); then
+	# The helper exits 3 once install-system has begun writing (#333): the live
+	# install may now mix two releases, and only the backup it took first puts
+	# that right.
+	if ((privileged_status == 3)); then
+		die "the system install of $requested_version stopped part-way, so the live install may mix it with the release installed before; run lyona-update rollback (backup $backup_id) to restore that release"
+	elif ((privileged_status != 0)); then
 		die "the privileged install step failed or was declined; the live install is untouched, and the staged, built update in $staging_dir was left in place"
 	fi
 	if ! make -C "$staging_dir" install-user \

@@ -231,7 +231,8 @@ Flickable {
         ShellButton {
             Layout.alignment: Qt.AlignLeft
             visible: root.updateModel.updateAvailable && root.confirmVersion.length === 0
-            label: "Update to " + root.updateModel.availableVersion
+            label: (root.updateModel.downgradeOffered ? "Go back to " : "Update to ")
+                + root.updateModel.availableVersion
             primary: true
             enabled: !root.updateModel.busy
             onActivated: root.confirmVersion = root.updateModel.availableVersion
@@ -244,7 +245,13 @@ Flickable {
 
             UiText {
                 Layout.fillWidth: true
-                text: "Install " + root.confirmVersion + " over the running system? "
+                // An older release is called one here, before the password prompt,
+                // which cannot name the versions (#334).
+                text: (root.updateModel.downgradeOffered
+                        ? "Install " + root.confirmVersion + ", which is OLDER than the installed "
+                            + root.updateModel.installedVersion + ", over the running system? "
+                            + "To return to the release installed before an update, use Roll back below instead. "
+                        : "Install " + root.confirmVersion + " over the running system? ")
                     + "Quickshell will restart; a session restart may also be required."
                 color: Theme.popupText
                 wrapMode: Text.WordWrap
@@ -254,10 +261,11 @@ Flickable {
                 spacing: Theme.spacingSm
 
                 ShellButton {
-                    label: "Update now"
+                    label: root.updateModel.downgradeOffered ? "Install the older release" : "Update now"
                     primary: true
                     onActivated: {
                         root.updateModel.apply(root.confirmVersion);
+
                         root.confirmVersion = "";
                     }
                 }
