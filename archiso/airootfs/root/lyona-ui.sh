@@ -167,16 +167,109 @@ format_duration() {
 	fi
 }
 
-# The live status line of a running step (#291): the step, how long it has
-# run, how long it usually takes, and the newest line of its log, redrawn every
-# second, so a slow step is told from a hung one.
+# How many lines the status block took when it was last drawn.
+_STEP_STATUS_LINES=0
+
+# The newest line of the step's log, as the console can show it: the last
+# redraw of a progress bar that still has text (pacman writes each redraw as
+# text, a carriage return and cursor moves), without escape sequences, whose
+# remains such as "[3F" were shown, other control and non-ASCII characters as
+# single spaces.
+_step_log_tail() {
+	tail -n 1 -- "$LOG_FILE" 2>/dev/null | tr '\r' '\n' |
+		LC_ALL=C sed -E $'s/\x1b\\[[0-9;?]*[ -/]*[@-~]//g; s/\x1b[@-_]//g' |
+		LC_ALL=C tr -c '[:print:]\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $//' |
+		awk 'NF { last = $0 } END { printf "%s", last }'
+}
+
+# The live status of a running step (#291): the step, how long it has run, how
+# long it usually takes, and the newest line of its log, redrawn every second,
+# so a slow step is told from a hung one. On the same left edge as the screen
+# above it, the step wrapped to that column's width (its name in two lines at
+# most, then its timing) and the log line under it (three at most), rather than
+# cut at the screen's edge.
 _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
-	local cols last line
+	local cols indent width pad last part i drawn title=0 timing
+	local -a lines=() name=()
 	cols=$(tput cols 2>/dev/null || printf 80)
 	[[ $cols =~ ^[0-9]+$ ]] && ((cols > 20)) || cols=80
-	last=$(tail -n 1 -- "$LOG_FILE" 2>/dev/null | tr -d '\r' | LC_ALL=C tr -c '[:print:]' ' ') || last=
-	line="$4 $1  $(format_duration "$2")${3:+ ($3)}"
-	printf '\r\033[K%s\n\033[K\033[2m  %s\033[0m\033[1A\r' "${line:0:cols-1}" "${last:0:cols-3}"
+	indent=${PADDING_LEFT:-0}
+	[[ $indent =~ ^[0-9]+$ ]] && ((indent + 30 <= cols)) || indent=0
+	width=$((cols - indent - 1))
+	((width > LOGO_WIDTH)) && width=$LOGO_WIDTH
+	printf -v pad '%*s' "$indent" ''
+	# The spinner on the first line; the lines after it start under the step.
+	# The timing always shows: after the step's name when it fits, else on a
+	# line of its own. A name longer than two lines ends in "..." instead.
+	timing="$(format_duration "$2")${3:+ ($3)}"
+	mapfile -t name < <(_wrap_text "$1" "$((width - 2))" 3)
+	if ((${#name[@]} > 2)); then
+		part=${name[1]:0:width-5}
+		name=("${name[0]}" "${part% }...")
+	fi
+	if ((${#name[-1]} + 2 + ${#timing} <= width - 2)); then
+		name[-1]+="  $timing"
+	else
+		name+=("$timing")
+	fi
+	for part in "${name[@]}"; do
+		((title == 0)) && lines+=("$4 $part") || lines+=("  $part")
+		title=$((title + 1))
+	done
+	last=$(_step_log_tail)
+	if [[ -n $last ]]; then
+		while IFS= read -r part; do
+			lines+=("  $part")
+		done < <(_wrap_text "$last" "$((width - 2))" 3)
+	fi
+	printf '\r'
+	for ((i = 0; i < ${#lines[@]}; i++)); do
+		if ((i < title)); then
+			printf '\033[K%s%s\n' "$pad" "${lines[i]}"
+		else
+			printf '\033[K\033[2m%s%s\033[0m\n' "$pad" "${lines[i]}"
+		fi
+	done
+	# Lines a longer log line used last time, cleared.
+	for ((i = ${#lines[@]}; i < _STEP_STATUS_LINES; i++)); do
+		printf '\033[K\n'
+	done
+	drawn=$((${#lines[@]} > _STEP_STATUS_LINES ? ${#lines[@]} : _STEP_STATUS_LINES))
+	printf '\033[%dA\r' "$drawn"
+	_STEP_STATUS_LINES=$drawn
+}
+
+# TEXT word-wrapped to WIDTH characters, at most MAX lines, one per line out.
+# Bash counts characters where fold counts bytes, and the step's progress bar is
+# drawn in three-byte block characters. A word longer than WIDTH is split.
+_wrap_text() { # TEXT WIDTH MAX
+	local text=$1 width=$2 max=$3 n=0 cut
+	while [[ -n $text ]] && ((n < max)); do
+		if ((${#text} <= width)); then
+			printf '%s\n' "$text"
+			return 0
+		fi
+		cut=${text:0:width+1}
+		cut=${cut% *}
+		((${#cut} > width || ${#cut} == 0)) && cut=${text:0:width}
+		printf '%s\n' "$cut"
+		text=${text:${#cut}}
+		text=${text# }
+		n=$((n + 1))
+	done
+}
+
+# The status block cleared, the cursor back where it began and shown again.
+_clear_step_status() {
+	local i
+	printf '\033[?25h'
+	((_STEP_STATUS_LINES > 0)) || return 0
+	printf '\r'
+	for ((i = 0; i < _STEP_STATUS_LINES; i++)); do
+		printf '\033[K\n'
+	done
+	printf '\033[%dA\r' "$_STEP_STATUS_LINES"
+	_STEP_STATUS_LINES=0
 }
 
 # _stop_step PID: a running step and everything it started, stopped and
@@ -210,24 +303,27 @@ run_logged() {
 	fi
 	STEP_CURRENT=$((STEP_CURRENT + 1))
 	local start=$SECONDS status=0 elapsed pid frame=0
-	local -a frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+	# ASCII: the console font has no braille, which drew as a stray glyph.
+	local -a frames=('|' '/' '-' "\\")
 	log_step "$label"
 	local saved_traps
 	saved_traps=$(trap -p INT TERM)
 	bash -c 'set -Eeuo pipefail; "$@" 2>&1 | tee -a "$LOG_FILE" >/dev/null; exit ${PIPESTATUS[0]}' _ "$@" &
 	pid=$!
 	# shellcheck disable=SC2064 # the step's PID, fixed now
-	trap "_stop_step $pid; exit 130" INT
+	trap "_stop_step $pid; [[ -t 1 ]] && _clear_step_status; exit 130" INT
 	# shellcheck disable=SC2064
-	trap "_stop_step $pid; exit 143" TERM
+	trap "_stop_step $pid; [[ -t 1 ]] && _clear_step_status; exit 143" TERM
 	if [[ -t 1 ]]; then
+		# The console's cursor hidden while the status redraws: it blinked at
+		# the left edge beside it.
+		printf '\033[?25l'
 		while kill -0 "$pid" 2>/dev/null; do
 			_draw_step_status "$title" "$((SECONDS - start))" "$expect" "${frames[frame % ${#frames[@]}]}"
 			frame=$((frame + 1))
 			sleep 1
 		done
-		# Both status lines cleared.
-		printf '\r\033[K\n\033[K\033[1A\r'
+		_clear_step_status
 	fi
 	wait "$pid" || status=$?
 	trap - INT TERM

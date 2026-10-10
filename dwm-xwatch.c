@@ -21,12 +21,15 @@
 #include <X11/Xlib.h>
 
 static const char *const rootprops[] = {
-	"DWM_TAG_UPDATE", "_DWM_MONITOR_DESKTOPS", "_DWM_SELECTED_MONITOR", "_DWM_LAYOUT",
+	"DWM_TAG_UPDATE", "_DWM_MONITOR_DESKTOPS", "_DWM_SELECTED_MONITOR", "_DWM_MONITOR_WINDOWS", "_DWM_LAYOUT",
 	"_NET_CURRENT_DESKTOP", "_NET_NUMBER_OF_DESKTOPS", "_NET_DESKTOP_NAMES",
 	"_NET_ACTIVE_WINDOW", "_DWM_FULLSCREEN_MONITORS", "WM_NAME",
 };
 #define NROOT (sizeof(rootprops) / sizeof(rootprops[0]))
-static const char *const clientprops[] = { "WM_NAME", "_NET_WM_NAME", "WM_CLASS", "_NET_WM_DESKTOP" };
+/* _NET_WM_WINDOW_TYPE: a dock is left out of the state, so a window that
+ * stops being one has to be read again. */
+static const char *const clientprops[] = { "WM_NAME", "_NET_WM_NAME", "WM_CLASS", "_NET_WM_DESKTOP",
+	"_NET_WM_WINDOW_TYPE" };
 #define NCLIENT (sizeof(clientprops) / sizeof(clientprops[0]))
 
 static Atom rootatoms[NROOT], clientatoms[NCLIENT], clientlist;

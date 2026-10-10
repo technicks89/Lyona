@@ -226,6 +226,29 @@ TestCase {
         compare(groups[2].windows[0].flatIndex, 3);
     }
 
+    // #280 VM: each monitor's panel names its own monitor's window.
+    function test_titleForMonitor_names_each_monitors_own_window() {
+        const windows = WindowsLib.parseWindows("0xaa:0:alacritty:Term one|0xbb:5:firefox:Docs page");
+        const monitors = ["0xaa", "0xbb", ""];
+
+        compare(WindowsLib.titleForMonitor(monitors, 0, "0xaa", "Term|one", windows), "Term|one",
+            "The active window keeps its full title");
+        compare(WindowsLib.titleForMonitor(monitors, 1, "0xaa", "Term|one", windows), "Docs page",
+            "Another monitor shows its own window, not the active one");
+        compare(WindowsLib.titleForMonitor(monitors, 2, "0xaa", "Term|one", windows), "Desktop",
+            "A monitor with no window says Desktop");
+        compare(WindowsLib.titleForMonitor(monitors, 7, "0xaa", "Term|one", windows), "Desktop");
+        compare(WindowsLib.titleForMonitor(["0xcc"], 0, "0xaa", "Term|one", windows), "Desktop",
+            "A window not (yet) in the list is not named");
+    }
+
+    function test_titleForMonitor_without_the_property_keeps_the_active_title() {
+        const windows = WindowsLib.parseWindows("0xaa:0:alacritty:Term one");
+
+        compare(WindowsLib.titleForMonitor([], 1, "0xaa", "Term one", windows), "Term one",
+            "An older dwm, still running after an update, keeps today's behaviour");
+    }
+
     function test_groupByTag_flatIndex_does_not_disturb_other_fields() {
         const windows = WindowsLib.parseWindows("0xaa:3:alacritty:Term one");
         const groups = WindowsLib.groupByTag(windows, twoMonitorRows(), nineNames);

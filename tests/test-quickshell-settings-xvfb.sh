@@ -2116,9 +2116,13 @@ while [ "$i" -lt 100 ]; do
 	i=$((i + 1))
 	sleep 0.05
 done
-[ "$wallpaper_state" = available ]
-[ "$wallpaper_path" = "$test_wallpaper" ]
-[ "$wallpaper_fit" = max ]
+# Said out loud: these failed once under full-suite load with no word of which.
+if [ "$wallpaper_state" != available ] || [ "$wallpaper_path" != "$test_wallpaper" ] ||
+	[ "$wallpaper_fit" != max ]; then
+	printf 'Wallpaper apply not reflected in Settings: state=%s path=%s fit=%s\n' \
+		"$wallpaper_state" "$wallpaper_path" "$wallpaper_fit" >&2
+	exit 1
+fi
 
 wallpaper_preview_timeout=60
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -2133,10 +2137,16 @@ while [ "$i" -lt 100 ]; do
 	i=$((i + 1))
 	sleep 0.05
 done
-[ "$wallpaper_preview" = active ]
+[ "$wallpaper_preview" = active ] || {
+	printf 'Wallpaper preview not reported active: %s\n' "$wallpaper_preview" >&2
+	exit 1
+}
 wallpaper_remaining_before=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewRemaining)
-[ "$wallpaper_remaining_before" -gt 0 ]
+[ "$wallpaper_remaining_before" -gt 0 ] || {
+	printf 'Wallpaper preview has no time left: %s\n' "$wallpaper_remaining_before" >&2
+	exit 1
+}
 wallpaper_message=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceMessage)
 case $wallpaper_message in
@@ -2152,7 +2162,11 @@ wallpaper_message_remaining=${wallpaper_message_remaining%% seconds*}
 sleep 1.2
 wallpaper_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewRemaining)
-[ "$wallpaper_remaining_after" -lt "$wallpaper_remaining_before" ]
+[ "$wallpaper_remaining_after" -lt "$wallpaper_remaining_before" ] || {
+	printf 'Wallpaper preview deadline did not count down: %s -> %s\n' \
+		"$wallpaper_remaining_before" "$wallpaper_remaining_after" >&2
+	exit 1
+}
 case $wallpaper_message_remaining in
 '' | *[!0-9]*)
 	printf 'External wallpaper preview message reported an invalid deadline: %s\n' \

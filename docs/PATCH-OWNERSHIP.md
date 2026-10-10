@@ -1,8 +1,8 @@
 # lyona Patch Ownership and Invariants
 
-This document records the major patched subsystems in `dwm.c` before Phase 4
-refactoring. "Owner" means the source area that owns the behavior and must stay
-authoritative when code is regrouped or extracted.
+This document records the major patched subsystems of dwm (`dwm.c`, and since
+#280 `config.c`). "Owner" means the source area that owns the behavior and must
+stay authoritative when code is regrouped or extracted.
 
 ## EWMH
 
@@ -18,17 +18,43 @@ Invariants:
   client management changes, focus changes, and tag switches.
 - `_DWM_MONITOR_DESKTOPS` must expose `x`, `y`, `width`, `height`, and current
   desktop tuples in the same logical order used by monitor tag ownership.
+- `_DWM_MONITOR_WINDOWS` names each monitor's selected window (None for none)
+  in that same order. `updatemonitorwindows()` runs once per pass of `run()`'s
+  event loop and writes only on a change; the loop flushes before `select()`.
 - Cross-monitor tag changes must update selected monitor state, focus, cursor
   placement, and EWMH current desktop together.
 - Property updates must be synchronous with state changes and must not add
   blocking work to the X event loop.
 - External bars must be able to reconstruct tag and client state from root
   properties without relying on dwm internals.
+- A monitor has one bar (`barwin`). Another dock (`isaltbar()`) takes its place
+  only when the bar is gone or the dock is wider (`updatealtbar()`), else it
+  waits (`waitingbar`, the widest); when the bar goes, `unmanagealtbar()`
+  promotes the waiting dock, and scans only when none waits. Two docks taking
+  the place in turn on each ConfigureNotify raised each other without end.
+- When an override-redirect window has the focus by its own request
+  (`overridefocus`), `focusin()` leaves it there.
+- Closing a client focuses the most recently focused visible client on its
+  monitor (`m->stack`, in `unmanage()`), floating or tiled, not the master. `_NET_CLIENT_LIST` lists each
+  monitor's bar and tray with the clients; the shell leaves docks out of its
+  window list.
+- `_NET_ACTIVE_WINDOW` with source 2 (a pager, the overview, the panel's running
+  apps, `xdotool windowactivate`) shows the window's tag on its monitor and
+  focuses it (`activateclient()`); from an application (source 1 or 0) it only
+  marks the window urgent, so no window steals the focus. From a viewable
+  override-redirect window (a Quickshell popup on X11)
+  it gives that window the input focus, and the selected client gets the focus
+  back when the window unmaps or is destroyed (`focusoverridewindow()`,
+  `untrackoverridewindow()`).
 
 Regression coverage:
 
 - `make check-xvfb-runtime` validates startup EWMH state, focus, tag switching,
   fullscreen requests, and client-list behavior.
+- `make check-overview-keyboard-xvfb` drives the overview popup by keyboard over
+  a real, focused client, and checks the focus returns to it.
+- `make check-dwm-activate-xvfb` checks both kinds of activation request and
+  `_DWM_MONITOR_WINDOWS`, on one screen and on two Xinerama screens.
 - `make check-monitor-tags` validates the cross-monitor source path for EWMH
   tag handoff.
 
@@ -133,8 +159,19 @@ Regression coverage:
 
 ## Runtime TOML
 
-Owner: runtime configuration loading, inotify reload, and applied hotkey, theme,
-and rule state in `dwm.c` plus `tomlparser.c`.
+Owner: `config.c` (interface `rtconfig.h`, parser `tomlparser.c`) for finding,
+loading and watching the files and for the hotkey, button and rule tables it
+builds; `dwm.c` for applying them: `reload_config()` grabs the keys again, applies
+the theme (`applyconfigtheme()`: colour schemes, border widths, arrange) and
+starts `theme-apply.sh`. Moved out of `dwm.c` for #280.
+
+Interface: `runtime_config_setup()` takes a `ConfigEnv` (the functions a binding
+may name, the layouts, the tag count and `MODKEY`), so `config.c` includes no
+`config.h` and touches no window, monitor or scheme. `runtime_config_load()`
+fills `rt_keys`, `rt_buttons` and `rt_rules` and returns the theme;
+`runtime_config_fd()`, `runtime_config_poll()` and the pending flag
+(`runtime_config_mark_reload_pending()`, set from the SIGUSR1 handler, and
+`runtime_config_take_pending()`) are what `run()`'s `select()` loop needs.
 
 Invariants:
 
@@ -155,6 +192,8 @@ Regression coverage:
   preservation.
 - `make check-install-preservation` validates user runtime TOML preservation
   during repeated installs.
+- `make check-dwm-config-fallback` validates the fallback to the shipped
+  defaults, invalid reloads and the emergency keys.
 
 ## Stacking and floating geometry
 
@@ -200,7 +239,10 @@ Regression coverage:
 
 ## Phase 4 Refactor Rules
 
-- Preserve the existing test coverage before extracting code.
+- Preserve the existing test coverage before extracting code. The source guards
+  search every file of the Makefile's `SRC` and the headers they include
+  (`wm_grep`, `wm_count` and `wm_body` in `tests/lib.sh`), not `dwm.c` by name,
+  so moving a function between files does not need a test change.
 - Add direct tests or Xvfb coverage for any subsystem whose invariants are
   changed.
 - Keep X event-loop paths nonblocking.

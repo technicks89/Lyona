@@ -28,6 +28,20 @@ PopupWindow {
         rect.y: root.panelOffset
     }
 
+    // On X11 a popup is override-redirect, so the window manager never focuses
+    // it and grabFocus takes no keyboard grab: with any window open, Escape and
+    // the arrow keys went to that window (#280 VM). Activating asks dwm for the
+    // focus (_NET_ACTIVE_WINDOW), which it gives an override-redirect window
+    // and hands back to the selected client when the popup closes.
+    function requestKeyboard() {
+        const popupWindow = popupHost.Window.window;
+        if (root.visible && root.grabFocus && popupWindow)
+            popupWindow.requestActivate();
+    }
+
+    onVisibleChanged: if (visible) Qt.callLater(root.requestKeyboard)
+    onGrabFocusChanged: if (grabFocus && visible) Qt.callLater(root.requestKeyboard)
+
     MouseArea {
         anchors.fill: parent
         onClicked: root.dismissed()

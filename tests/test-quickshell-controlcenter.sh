@@ -693,7 +693,13 @@ grep -Fq 'opacity: 1.0' "$repo/config/quickshell/core/ClickAwayPopup.qml"
 grep -Fq 'RunningAppsArea { state: root.state }' "$repo/config/quickshell/panel/DwmPanel.qml"
 grep -Fq 'onFocusRequested: windowId => root.state.focusWindow(windowId)' "$repo/config/quickshell/panel/RunningAppsArea.qml"
 grep -Fq 'source: Icons.launcherIcon(root.app.appClass)' "$repo/config/quickshell/panel/RunningAppItem.qml"
-grep -Fq 'root.state.activeWindowTitle' "$repo/config/quickshell/panel/DwmPanel.qml"
+# #280 VM: a class with no themed icon gets the generic one when the theme has it,
+# else its initial: never an empty button, nor Qt's missing-image checkerboard.
+grep -Fq 'Quickshell.hasThemeIcon(name)' "$repo/config/quickshell/core/Icons.qml"
+grep -Fq 'text: Icons.initialFor(root.app.appClass)' "$repo/config/quickshell/panel/RunningAppItem.qml"
+grep -Fq 'text: Icons.initialFor(root.window.appClass)' "$repo/config/quickshell/overview/OverviewCard.qml"
+# Each panel names its own monitor's window (#280 VM).
+grep -Fq 'root.state.titleForScreen(root.screen)' "$repo/config/quickshell/panel/DwmPanel.qml"
 grep -Fq 'root.state.statusSegments' "$repo/config/quickshell/panel/DwmPanel.qml"
 grep -Fq 'required property var powerModel' "$repo/config/quickshell/panel/DwmPanel.qml"
 grep -Fq 'root.powerModel.batteryPercent.toString() + "%"' "$repo/config/quickshell/panel/DwmPanel.qml"

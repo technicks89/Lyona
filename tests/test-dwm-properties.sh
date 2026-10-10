@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # #282: dwm's own root properties are named in four places, which must agree:
-# dwm.c sets them, dwm-xwatch.c watches them, dwm-quickshell-state reads them
+# dwm sets them, dwm-xwatch.c watches them, dwm-quickshell-state reads them
 # into its state lines, and DwmState.qml reads those lines. The reference is
 # docs/SHELL-STATE-PROTOCOL.md's two tables: what dwm publishes, and what the
 # shell asks of it.
@@ -12,7 +12,6 @@ set -euo pipefail
 make_workspace
 
 doc=$repo/docs/SHELL-STATE-PROTOCOL.md
-dwm_c=$repo/dwm.c
 xwatch_c=$repo/dwm-xwatch.c
 state=$repo/scripts/dwm-quickshell-state
 qml=$repo/config/quickshell/state/DwmState.qml
@@ -35,7 +34,7 @@ documented=$(printf '%s\n%s\n' "$published" "$requests" | sort -u)
 same() { # WHAT EXPECTED ACTUAL
 	[[ $2 == "$3" ]] || fail "$1 does not match the protocol document:"$'\n'"expected:"$'\n'"$2"$'\n'"found:"$'\n'"$3"
 }
-same 'the names dwm.c uses' "$documented" "$(names "$dwm_c")"
+same 'the names dwm uses' "$documented" "$(wm_grep -oE '_DWM_[A-Z_]+' | sort -u)"
 same 'the names dwm-xwatch watches' "$published" "$(names "$xwatch_c")"
 same 'the names dwm-quickshell-state uses' "$documented" "$(names "$state")"
 
@@ -57,12 +56,14 @@ same 'the properties dwm-quickshell-state sets' "$requests" \
 declare -A root_line=(
 	[_DWM_MONITOR_DESKTOPS]='_DWM_MONITOR_DESKTOPS(INTEGER) = 0, 0, 1280, 800, 4'
 	[_DWM_SELECTED_MONITOR]='_DWM_SELECTED_MONITOR(CARDINAL) = 3'
+	[_DWM_MONITOR_WINDOWS]='_DWM_MONITOR_WINDOWS(WINDOW): window id # 0xa00001, 0x0'
 	[_DWM_LAYOUT]='_DWM_LAYOUT(CARDINAL) = 2'
 	[_DWM_FULLSCREEN_MONITORS]='_DWM_FULLSCREEN_MONITORS(CARDINAL) = 5'
 )
 declare -A state_line=(
 	[_DWM_MONITOR_DESKTOPS]='monitor_desktops=0,0,1280,800,4'
 	[_DWM_SELECTED_MONITOR]='focused_monitor=3'
+	[_DWM_MONITOR_WINDOWS]='monitor_windows=0xa00001|'
 	[_DWM_LAYOUT]='layout=2'
 	[_DWM_FULLSCREEN_MONITORS]='fullscreen_monitors=5'
 )
@@ -89,4 +90,4 @@ for name in $published; do
 	grep -Fq "key === \"$key\"" "$qml" || fail "DwmState.qml does not read the $key line ($name)"
 done
 
-printf 'dwm root property names agree (dwm.c, dwm-xwatch, state bridge, DwmState): PASS\n'
+printf 'dwm root property names agree (dwm, dwm-xwatch, state bridge, DwmState): PASS\n'

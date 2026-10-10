@@ -176,7 +176,10 @@ prepare_expected_files() {
 	mkdir -p "$expected_privileged_dir"
 	while IFS= read -r privileged_helper; do
 		[ -n "$privileged_helper" ] || continue
-		sed "s|@PREFIX@|$prefix|g" "$repo_dir/$privileged_helper" \
+		# The same four substitutions install-system makes.
+		sed -e "s|@PREFIX@|$prefix|g" -e "s|@MANPREFIX@|$manprefix|g" \
+			-e "s|@DATADIR@|$data_root|g" -e "s|@XSESSIONSDIR@|$xsessions_dir|g" \
+			"$repo_dir/$privileged_helper" \
 			>"$expected_privileged_dir/${privileged_helper##*/}"
 	done <"$privileged_helpers_file"
 }
@@ -344,7 +347,7 @@ add_system_backup_path() {
 }
 
 backup_live_install() {
-	for backup_command in date git sha256sum tar; do
+	for backup_command in date sha256sum tar; do
 		command -v "$backup_command" >/dev/null 2>&1 ||
 			die "required backup command not found: $backup_command"
 	done
@@ -407,10 +410,28 @@ backup_live_install() {
 		tar -C / -cpf "$backup_dir/system-files.tar" -T "$system_manifest"
 	fi
 
+	# What is backed up is the live install, so its version and commit come from
+	# its own record, not from the tree about to replace it: every backup was
+	# labelled with the new release, and a rollback to beta.5 said "Log in now
+	# to start using 2026.10.0-beta.6" (#280 VM).
+	# lyona-version reads that record, with its ownership checks: the one reader
+	# on this side. lyona-update names it (version_helper); otherwise it is the
+	# one beside the sourcing script, in PREFIX/bin or a checkout's scripts/.
+	live_tool=${version_helper:-${0%/*}/lyona-version}
+	live_version='' live_commit='' live_source=''
+	if [ -x "$live_tool" ]; then
+		# Best effort: a label never stops a backup (the caller may run set -e
+		# with pipefail), and what the tool printed is used whatever its status.
+		live_out=$("$live_tool" status 2>/dev/null) || :
+		live_line=$(printf '%s\n' "$live_out" | awk -F '\t' '$1 == "system" { print; exit }')
+		live_version=$(printf '%s\n' "$live_line" | awk -F '\t' '$2 != "none" { print $2 }')
+		live_commit=$(printf '%s\n' "$live_line" | awk -F '\t' '$3 != "none" { print $3 }')
+		live_source=$(printf '%s\n' "$live_line" | awk -F '\t' '$4 != "none" { print $4 }')
+	fi
 	{
-		printf 'commit=%s\n' "$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf unknown)"
-		printf 'branch=%s\n' "$(git -C "$repo_dir" branch --show-current 2>/dev/null || printf unknown)"
-		printf 'version=%s\n' "$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$repo_dir/config.mk")"
+		printf 'commit=%s\n' "${live_commit:-unknown}"
+		printf 'source=%s\n' "${live_source:-unknown}"
+		printf 'version=%s\n' "${live_version:-unknown}"
 		printf 'prefix=%s\n' "$prefix"
 		printf 'data_root=%s\n' "$data_root"
 		printf 'config_home=%s\n' "$config_home"
@@ -470,7 +491,8 @@ runtime_verify() {
 		tray_count=
 		tray_try=0
 		while [ "$tray_try" -lt 50 ]; do
-			if tray_count=$(quickshell ipc --path "$quickshell_dir/shell.qml" \
+			# UTF-8 for Quickshell: under a C locale Qt's warning goes to stdout.
+			if tray_count=$(LC_ALL=C.UTF-8 quickshell ipc --path "$quickshell_dir/shell.qml" \
 				call tray count 2>/dev/null); then
 				tray_ready=1
 				break

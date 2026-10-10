@@ -6,7 +6,7 @@ set -eu
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
 
-view_body=$(sed -n '/^view(const Arg \*arg)/,/^}$/p' "$repo/dwm.c")
+view_body=$(wm_body 'view(const Arg \*arg)')
 
 printf '%s\n' "$view_body" | grep -q 'selmon = targetmon;'
 printf '%s\n' "$view_body" | grep -q 'focus(NULL);'
@@ -15,7 +15,7 @@ printf '%s\n' "$view_body" | grep -q 'updatecurrentdesktop();'
 
 # The focus-and-warp that view() used to inline twice.
 focus_first_tagged_body=$(
-	sed -n '/^focusfirsttagged(unsigned int tags)/,/^}$/p' "$repo/dwm.c"
+	wm_body 'focusfirsttagged(unsigned int tags)'
 )
 printf '%s\n' "$focus_first_tagged_body" | grep -q '(c->tags & tags) && ISVISIBLE(c)'
 printf '%s\n' "$focus_first_tagged_body" | grep -q 'focus(c);'
@@ -35,12 +35,12 @@ printf '%s\n' "$same_tag_block" | grep -q 'focus(NULL);'
 printf '%s\n' "$same_tag_block" | grep -q 'focusfirsttagged(arg->ui);'
 printf '%s\n' "$same_tag_block" | grep -q 'updatecurrentdesktop();'
 
-update_current_body=$(sed -n '/^updatecurrentdesktop(void)/,/^}$/p' "$repo/dwm.c")
+update_current_body=$(wm_body 'updatecurrentdesktop(void)')
 printf '%s\n' "$update_current_body" | grep -q 'getmonlogicalindex(m)'
 printf '%s\n' "$update_current_body" | grep -q 'netatom\[NetDwmMonitorDesktops\]'
-grep -q 'XInternAtom(dpy, "_DWM_MONITOR_DESKTOPS", False)' "$repo/dwm.c"
+wm_grep -q 'XInternAtom(dpy, "_DWM_MONITOR_DESKTOPS", False)'
 
-configure_body=$(sed -n '/^configurenotify(XEvent \*e)/,/^}$/p' "$repo/dwm.c")
+configure_body=$(wm_body 'configurenotify(XEvent \*e)')
 printf '%s\n' "$configure_body" | grep -q 'reconcilemonitortags();'
 reconcile_line=$(printf '%s\n' "$configure_body" | grep -n 'reconcilemonitortags();' | cut -d: -f1)
 scan_bars_line=$(printf '%s\n' "$configure_body" | grep -n 'scanaltbars();' | cut -d: -f1)
@@ -64,7 +64,7 @@ printf '%s\n' "$configure_body" | grep -q 'oldm->barwin = 0;'
 printf '%s\n' "$configure_body" | grep -q 'oldm->bh = 0;'
 printf '%s\n' "$configure_body" | grep -q 'arrange(oldm);'
 
-reconcile_body=$(sed -n '/^reconcilemonitortags(void)/,/^}$/p' "$repo/dwm.c")
+reconcile_body=$(wm_body 'reconcilemonitortags(void)')
 printf '%s\n' "$reconcile_body" | grep -q 'updatemonitorcount();'
 printf '%s\n' "$reconcile_body" | grep -q 'm->tagset\[s\] &= montags;'
 printf '%s\n' "$reconcile_body" | grep -q 'm->tagset\[s\] = fallbacktag;'
@@ -84,10 +84,10 @@ printf '%s\n' "$reconcile_body" | grep -q 'm->mfact = m->pertag->mfacts\[m->pert
 printf '%s\n' "$reconcile_body" | grep -q 'm->lt\[m->sellt\] = m->pertag->ltidxs'
 printf '%s\n' "$reconcile_body" | grep -q 'm->showbar = m->pertag->showbars\[m->pertag->curtag\];'
 
-update_client_list_body=$(sed -n '/^updateclientlist(void)/,/^}$/p' "$repo/dwm.c")
+update_client_list_body=$(wm_body 'updateclientlist(void)')
 printf '%s\n' "$update_client_list_body" | grep -q 'PropModeReplace'
 printf '%s\n' "$update_client_list_body" | grep -q 'memcmp(clients, clientlistcache'
-scan_alt_bars_body=$(sed -n '/^scanaltbars(void)/,/^}$/p' "$repo/dwm.c")
+scan_alt_bars_body=$(wm_body 'scanaltbars(void)')
 query_tree_line=$(printf '%s\n' "$scan_alt_bars_body" |
 	grep -n 'XQueryTree' | cut -d: -f1)
 clear_bars_line=$(printf '%s\n' "$scan_alt_bars_body" |
@@ -101,10 +101,10 @@ printf '%s\n' "$scan_alt_bars_body" | grep -q 'knownbars\[j\] == wins\[i\]'
 printf '%s\n' "$scan_alt_bars_body" | grep -q 'INTERSECT(wa.x, wa.y, wa.width, wa.height, m) <= 0'
 printf '%s\n' "$scan_alt_bars_body" | grep -q 'm = oldm;'
 printf '%s\n' "$scan_alt_bars_body" | grep -q 'updatealtbar(m, wins\[i\], &wa);'
-update_alt_bar_body=$(sed -n '/^updatealtbar(Monitor \*m, Window win, XWindowAttributes \*wa)/,/^}$/p' "$repo/dwm.c")
+update_alt_bar_body=$(wm_body 'updatealtbar(Monitor \*m, Window win, XWindowAttributes \*wa)')
 printf '%s\n' "$update_alt_bar_body" | grep -q 'changed = m->barwin != win'
 printf '%s\n' "$update_alt_bar_body" | grep -q 'return changed;'
-manage_alt_bar_body=$(sed -n '/^managealtbar(Window win, XWindowAttributes \*wa)/,/^}$/p' "$repo/dwm.c")
+manage_alt_bar_body=$(wm_body 'managealtbar(Window win, XWindowAttributes \*wa)')
 printf '%s\n' "$manage_alt_bar_body" | grep -q 'changed = updatealtbar(m, win, wa);'
 printf '%s\n' "$manage_alt_bar_body" | grep -q 'if (changed)'
 printf '%s\n' "$manage_alt_bar_body" | grep -q 'XMapWindow(dpy, win);'
@@ -114,24 +114,24 @@ if printf '%s\n' "$changed_arrange_block" | grep -q 'XMapWindow'; then
 	printf '%s\n' "XMapWindow must remain outside the changed-geometry branch." >&2
 	exit 1
 fi
-grep -q 'ewmh_replace_root_cardinal(dwmtagupdateatom, data, 1)' "$repo/dwm.c"
-grep -q 'm->barwin, m->wx, m->by, m->ww, m->bh' "$repo/dwm.c"
-grep -q 'selmon->barwin, selmon->wx, selmon->by, selmon->ww, selmon->bh' "$repo/dwm.c"
-set_fullscreen_body=$(sed -n '/^setfullscreen(Client \*c, int fullscreen)/,/^}$/p' "$repo/dwm.c")
+wm_grep -q 'ewmh_replace_root_cardinal(dwmtagupdateatom, data, 1)'
+wm_grep -q 'm->barwin, m->wx, m->by, m->ww, m->bh'
+wm_grep -q 'selmon->barwin, selmon->wx, selmon->by, selmon->ww, selmon->bh'
+set_fullscreen_body=$(wm_body 'setfullscreen(Client \*c, int fullscreen)')
 printf '%s\n' "$set_fullscreen_body" | grep -q 'actualfullscreenchanged'
 printf '%s\n' "$set_fullscreen_body" | grep -q 'wasactualfullscreen'
 printf '%s\n' "$set_fullscreen_body" | grep -q 'updatefullscreenmonitors();'
-visible_fullscreen_body=$(sed -n '/^isvisiblefullscreen(Client \*c)/,/^}$/p' "$repo/dwm.c")
+visible_fullscreen_body=$(wm_body 'isvisiblefullscreen(Client \*c)')
 printf '%s\n' "$visible_fullscreen_body" | grep -q 'c->isfullscreen'
 printf '%s\n' "$visible_fullscreen_body" | grep -q 'c->fakefullscreen != 1'
 printf '%s\n' "$visible_fullscreen_body" | grep -q 'ISVISIBLE(c)'
-monitor_has_fullscreen_body=$(sed -n '/^monitorhasfullscreen(Monitor \*m)/,/^}$/p' "$repo/dwm.c")
+monitor_has_fullscreen_body=$(wm_body 'monitorhasfullscreen(Monitor \*m)')
 printf '%s\n' "$monitor_has_fullscreen_body" | grep -q 'isvisiblefullscreen(c)'
-fullscreen_monitors_body=$(sed -n '/^updatefullscreenmonitors(void)/,/^}$/p' "$repo/dwm.c")
+fullscreen_monitors_body=$(wm_body 'updatefullscreenmonitors(void)')
 printf '%s\n' "$fullscreen_monitors_body" | grep -q 'monitorhasfullscreen(m)'
 printf '%s\n' "$fullscreen_monitors_body" | grep -q 'getmonlogicalindex(m)'
 printf '%s\n' "$fullscreen_monitors_body" | grep -q 'dwmfullscreenmonitorsatom'
-priority_body=$(sed -n '/^restackprioritywindows(void)/,/^}$/p' "$repo/dwm.c")
+priority_body=$(wm_body 'restackprioritywindows(void)')
 printf '%s\n' "$priority_body" | grep -q 'raisealwaysontopclients(m->stack)'
 printf '%s\n' "$priority_body" | grep -q '!monitorhasfullscreen(m)'
 printf '%s\n' "$priority_body" | grep -q 'ow->raise'
@@ -142,10 +142,10 @@ override_line=$(printf '%s\n' "$priority_body" |
 fullscreen_line=$(printf '%s\n' "$priority_body" |
 	grep -n 'raisefullscreenclients(m->stack)' | cut -d: -f1)
 test "$override_line" -lt "$fullscreen_line"
-raise_fullscreen_clients_body=$(sed -n '/^raisefullscreenclients(Client \*c)/,/^}$/p' "$repo/dwm.c")
+raise_fullscreen_clients_body=$(wm_body 'raisefullscreenclients(Client \*c)')
 printf '%s\n' "$raise_fullscreen_clients_body" | grep -q 'raisefullscreenclients(c->snext);'
 printf '%s\n' "$raise_fullscreen_clients_body" | grep -q 'isvisiblefullscreen(c)'
-property_notify_body=$(sed -n '/^propertynotify(XEvent \*e)/,/^}$/p' "$repo/dwm.c")
+property_notify_body=$(wm_body 'propertynotify(XEvent \*e)')
 override_property_block=$(printf '%s\n' "$property_notify_body" |
 	sed -n '/for (ow = overridewindows/,/if ((ev->window == root)/p')
 printf '%s\n' "$override_property_block" | grep -q 'updateoverridewindow(ev->window);'
@@ -156,35 +156,35 @@ update_override_line=$(printf '%s\n' "$override_property_block" |
 restack_override_line=$(printf '%s\n' "$override_property_block" |
 	grep -n 'restackprioritywindows();' | cut -d: -f1)
 test "$update_override_line" -lt "$restack_override_line"
-update_override_body=$(sed -n '/^updateoverridewindow(Window win)/,/^}$/p' "$repo/dwm.c")
+update_override_body=$(wm_body 'updateoverridewindow(Window win)')
 printf '%s\n' "$update_override_body" | grep -q 'istransientforbar(win)'
-transient_bar_body=$(sed -n '/^istransientforbar(Window win)/,/^}$/p' "$repo/dwm.c")
+transient_bar_body=$(wm_body 'istransientforbar(Window win)')
 printf '%s\n' "$transient_bar_body" | grep -q 'XGetTransientForHint'
 printf '%s\n' "$transient_bar_body" | grep -q 'isaltbar(trans, &wa)'
-map_notify_body=$(sed -n '/^mapnotify(XEvent \*e)/,/^}$/p' "$repo/dwm.c")
+map_notify_body=$(wm_body 'mapnotify(XEvent \*e)')
 printf '%s\n' "$map_notify_body" | grep -q 'trackoverridewindow(ev->window);'
 printf '%s\n' "$map_notify_body" | grep -q 'restackprioritywindows();'
-focus_in_body=$(sed -n '/^focusin(XEvent \*e)/,/^}$/p' "$repo/dwm.c")
+focus_in_body=$(wm_body 'focusin(XEvent \*e)')
 printf '%s\n' "$focus_in_body" | grep -q 'focusfullscreenforoverride(ev->window)'
 printf '%s\n' "$focus_in_body" | grep -q 'istransientforbar(ev->window)'
-track_override_body=$(sed -n '/^trackoverridewindow(Window win)/,/^}$/p' "$repo/dwm.c")
+track_override_body=$(wm_body 'trackoverridewindow(Window win)')
 printf '%s\n' "$track_override_body" | grep -q 'FocusChangeMask'
-tagmon_body=$(sed -n '/^tagmon(const Arg \*arg)/,/^}$/p' "$repo/dwm.c")
+tagmon_body=$(wm_body 'tagmon(const Arg \*arg)')
 printf '%s\n' "$tagmon_body" | grep -q 'c->isfullscreen = 1;'
 printf '%s\n' "$tagmon_body" | grep -q 'updatefullscreenmonitors();'
-reconcile_body=$(sed -n '/^reconcilemonitortags(void)/,/^}$/p' "$repo/dwm.c")
+reconcile_body=$(wm_body 'reconcilemonitortags(void)')
 printf '%s\n' "$reconcile_body" | grep -q 'dwmfullscreenmonitorsatom != None'
 printf '%s\n' "$reconcile_body" | grep -q 'updatefullscreenmonitors();'
-grep -q 'XInternAtom(dpy, "_DWM_FULLSCREEN_MONITORS", False)' "$repo/dwm.c"
-grep -q 'XInternAtom(dpy, "_DWM_SELECTED_MONITOR", False)' "$repo/dwm.c"
-focus_body=$(sed -n '/^focus(Client \*c)/,/^}$/p' "$repo/dwm.c")
+wm_grep -q 'XInternAtom(dpy, "_DWM_FULLSCREEN_MONITORS", False)'
+wm_grep -q 'XInternAtom(dpy, "_DWM_SELECTED_MONITOR", False)'
+focus_body=$(wm_body 'focus(Client \*c)')
 printf '%s\n' "$focus_body" | grep -q 'updateselectedmonitor();'
-selected_monitor_body=$(sed -n '/^updateselectedmonitor(void)/,/^}$/p' "$repo/dwm.c")
+selected_monitor_body=$(wm_body 'updateselectedmonitor(void)')
 printf '%s\n' "$selected_monitor_body" | grep -q 'selectedmonitorcachevalid && logicalindex == selectedmonitorcache'
 printf '%s\n' "$selected_monitor_body" | grep -q 'selectedmonitorcachevalid = 1;'
-configure_notify_body=$(sed -n '/^configurenotify(XEvent \*e)/,/^}$/p' "$repo/dwm.c")
+configure_notify_body=$(wm_body 'configurenotify(XEvent \*e)')
 printf '%s\n' "$configure_notify_body" | grep -q 'selectedmonitorcachevalid = 0;'
-grep -q 'XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_COMBO", False)' "$repo/dwm.c"
+wm_grep -q 'XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_COMBO", False)'
 
 mkdir -p "$work/bin"
 cat >"$work/bin/xprop" <<'SH'

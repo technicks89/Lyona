@@ -453,10 +453,10 @@ SH
 	test -f "$work/autostop.marker"
 fi
 
-grep -Fq 'static volatile sig_atomic_t running = 1;' "$repo/dwm.c"
-grep -Fq 'signal(SIGUSR2, sigusr2_handler);' "$repo/dwm.c"
-grep -Fq 'netatom[NetWMPid] = XInternAtom(dpy, "_NET_WM_PID", False);' "$repo/dwm.c"
-grep -Fq 'XChangeProperty(dpy, wmcheckwin, netatom[NetWMPid], XA_CARDINAL, 32,' "$repo/dwm.c"
+wm_grep -Fq 'static volatile sig_atomic_t running = 1;'
+wm_grep -Fq 'signal(SIGUSR2, sigusr2_handler);'
+wm_grep -Fq 'netatom[NetWMPid] = XInternAtom(dpy, "_NET_WM_PID", False);'
+wm_grep -Fq 'XChangeProperty(dpy, wmcheckwin, netatom[NetWMPid], XA_CARDINAL, 32,'
 
 # Sync Sprint 16 R16-24: the logout and reboot keys open the menu at the
 # action's confirmation. askToConfirm only takes actions that ask first, so the

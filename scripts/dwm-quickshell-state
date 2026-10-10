@@ -99,8 +99,20 @@ client_snapshot_awk='
 		gsub(/\|/, "%7C", value)
 		return value
 	}
+	function reset() {
+		window = ""; desktop = ""; class = ""; title = ""; raw_title = ""; have_net_wm_name = 0; dock = 0
+	}
 	function flush(   value) {
 		if (window == "") {
+			return
+		}
+		# A dock is the panel or the tray, which dwm lists in _NET_CLIENT_LIST
+		# with its clients (EWMH allows it): not a window to switch to, so it
+		# stays out of the overview and the task list. Its preferred (first)
+		# type decides, as dwm isaltbar() reads it.
+		if (dock) {
+			skipped[++nskipped] = window
+			reset()
 			return
 		}
 		if (desktop != "" && desktop ~ /^[0-9]+$/ && desktop != 4294967295) {
@@ -120,7 +132,7 @@ client_snapshot_awk='
 				apps[++napps] = value
 			}
 		}
-		window = ""; desktop = ""; class = ""; title = ""; raw_title = ""; have_net_wm_name = 0
+		reset()
 	}
 	# The title as the panel shows it (#283): the "|" that windows= cannot
 	# carry is kept, and only whitespace is collapsed, as window_title does.
@@ -134,6 +146,12 @@ client_snapshot_awk='
 	}
 	/^LYONA-WINDOW / { flush(); window = $2; next }
 	/^_NET_WM_DESKTOP/ { sub(/^[^=]*= */, ""); desktop = $0; next }
+	/^_NET_WM_WINDOW_TYPE\(/ {
+		sub(/^[^=]*= */, "")
+		split($0, types, /, /)
+		dock = types[1] == "_NET_WM_WINDOW_TYPE_DOCK"
+		next
+	}
 	/^WM_CLASS/ {
 		sub(/^[^=]*= */, "")
 		gsub(/"/, "")
@@ -198,6 +216,11 @@ client_snapshot_awk='
 		for (i = 1; i <= nwindows; i++) {
 			printf "title %s\n", full_titles[i]
 		}
+		# Last, so the occupied, apps and windows lines stay first: the docks
+		# left out, for the per-window cache to remember.
+		for (i = 1; i <= nskipped; i++) {
+			printf "skip %s\n", skipped[i]
+		}
 	}
 '
 
@@ -208,7 +231,7 @@ client_window_props() {
 		window_id=${window_id##* }
 		[ -n "$window_id" ] || continue
 		printf 'LYONA-WINDOW %s\n' "$window_id"
-		xprop -id "$window_id" _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
+		xprop -id "$window_id" _NET_WM_DESKTOP _NET_WM_WINDOW_TYPE WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null || true
 	done
 }
 
@@ -224,7 +247,7 @@ client_snapshot() {
 # One window: each side is a single command, which bash runs without a fork of
 # its own, so a changed window costs two processes, xprop and awk (#283).
 client_snapshot_one() {
-	awk -v first="$1" "$client_snapshot_awk" < <(xprop -id "$1" _NET_WM_DESKTOP WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null)
+	awk -v first="$1" "$client_snapshot_awk" < <(xprop -id "$1" _NET_WM_DESKTOP _NET_WM_WINDOW_TYPE WM_CLASS _NET_WM_NAME WM_NAME 2>/dev/null)
 }
 
 fullscreen_monitors() {
@@ -351,6 +374,16 @@ root_snapshot() {
 		}
 		/^_DWM_MONITOR_DESKTOPS/ { desktops = value(); gsub(/[[:space:]"]/, "", desktops); next }
 		/^_DWM_SELECTED_MONITOR/ { split(value(), f, /[[:space:]]+/); selected = f[1]; next }
+		# The selected window of each monitor, by logical index; "" for none.
+		/^_DWM_MONITOR_WINDOWS/ {
+			n = split(value(), f, /[[:space:],]+/)
+			monitor_windows = ""
+			for (i = 1; i <= n; i++) {
+				id = (f[i] ~ /^0x[0-9a-fA-F]+$/ && f[i] !~ /^0x0+$/) ? f[i] : ""
+				monitor_windows = monitor_windows (i > 1 ? "|" : "") id
+			}
+			next
+		}
 		/^_DWM_LAYOUT/ { split(value(), f, /[[:space:]]+/); layout = f[1]; next }
 		# The active window, read here rather than by another process per
 		# rebuild (#283); 0x0 is "none".
@@ -361,10 +394,11 @@ root_snapshot() {
 		}
 		/^WM_NAME/ { status = collapse(unquote(value())); next }
 		END {
-			printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
-				current, count, names, clients, fullscreen, desktops, selected, layout, status, active
+			printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+				current, count, names, clients, fullscreen, desktops, selected, layout, status, active,
+				monitor_windows
 		}
-	' < <(xprop -root _NET_CURRENT_DESKTOP _NET_NUMBER_OF_DESKTOPS _NET_DESKTOP_NAMES _NET_CLIENT_LIST _DWM_FULLSCREEN_MONITORS _DWM_MONITOR_DESKTOPS _DWM_SELECTED_MONITOR _DWM_LAYOUT _NET_ACTIVE_WINDOW WM_NAME 2>/dev/null)
+	' < <(xprop -root _NET_CURRENT_DESKTOP _NET_NUMBER_OF_DESKTOPS _NET_DESKTOP_NAMES _NET_CLIENT_LIST _DWM_FULLSCREEN_MONITORS _DWM_MONITOR_DESKTOPS _DWM_SELECTED_MONITOR _DWM_MONITOR_WINDOWS _DWM_LAYOUT _NET_ACTIVE_WINDOW WM_NAME 2>/dev/null)
 }
 
 show_state() {
@@ -380,6 +414,7 @@ show_state() {
 	layout=${root_fields[7]:-}
 	status=${root_fields[8]:-}
 	window_id=${root_fields[9]:-}
+	monitor_windows=${root_fields[10]:-}
 
 	current=${current:-0}
 	count=${count:-9}
@@ -437,6 +472,7 @@ show_state() {
 	printf 'current=%s\n' "$current"
 	printf 'monitor_desktops=%s\n' "$monitor_desktops"
 	printf 'focused_monitor=%s\n' "$focused_monitor"
+	printf 'monitor_windows=%s\n' "$monitor_windows"
 	printf 'layout=%s\n' "$layout"
 	printf 'count=%s\n' "$count"
 	printf 'names=%s\n' "$names"
@@ -507,6 +543,10 @@ cached_client_snapshot() {
 			windows=*)
 				IFS='|' read -r -a entries <<<"${line#windows=}"
 				;;
+			'skip '*)
+				# Cached as "-", so a dock is not read again on every rebuild.
+				window_cache[${line#skip }]=-
+				;;
 			esac
 		done
 		IFS=$' \t\n'
@@ -516,7 +556,7 @@ cached_client_snapshot() {
 	fi
 	for window_id in "${order[@]}"; do
 		entry=${window_cache[$window_id]:-}
-		[[ -n $entry ]] || continue
+		[[ -n $entry && $entry != - ]] || continue
 		rest=${entry#*:}
 		desktop=${rest%%:*}
 		rest=${rest#*:}
@@ -610,6 +650,7 @@ watch_state_spies() {
 			DWM_TAG_UPDATE \
 			_DWM_MONITOR_DESKTOPS \
 			_DWM_SELECTED_MONITOR \
+			_DWM_MONITOR_WINDOWS \
 			_DWM_LAYOUT \
 			_NET_NUMBER_OF_DESKTOPS \
 			_NET_DESKTOP_NAMES \
@@ -696,7 +737,7 @@ sync_client_watchers() {
 	done
 	for window_id in "${!wanted[@]}"; do
 		[ -z "${client_watchers[$window_id]:-}" ] || continue
-		bound_to_this_shell xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP \
+		bound_to_this_shell xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP _NET_WM_WINDOW_TYPE \
 			>&3 2>/dev/null &
 		client_watchers[$window_id]=$!
 		started=1

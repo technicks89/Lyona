@@ -2,9 +2,14 @@
 set -euo pipefail
 
 install_prefix='@PREFIX@'
-install_manprefix='@MANPREFIX@'
-install_datadir='@DATADIR@'
-install_xsessionsdir='@XSESSIONSDIR@'
+# The rest of the layout comes from /etc/lyona-release at run time (see
+# read_install_layout below), so only @PREFIX@ is written into this file: the
+# update check of a release before 2026.10.0-beta.6 fills in only @PREFIX@ in
+# its expected copy, and reported every update as a mismatch (#280 VM).
+install_manprefix=$install_prefix/share/man
+install_datadir=/usr/share
+install_xsessionsdir=/usr/share/xsessions
+install_stamp=/etc/lyona-release
 
 die() {
 	printf 'lyona-update-root: %s\n' "$*" >&2
@@ -74,6 +79,44 @@ self=$(readlink -f "${BASH_SOURCE[0]}")
 [[ $self == "$install_prefix/libexec/lyona/lyona-update-root" ]] ||
 	die "helper is not running from its trusted installed path"
 trusted_file "$self" || die "helper is not a trusted root-owned executable"
+
+# The layout install-system recorded (stamp-system): where it put the man page,
+# the shared data and the X session. These decide what root writes and what a
+# restore accepts, so the stamp must be root's own file, and every value an
+# absolute path of plain characters. It is read as data, never sourced. A
+# stamp without the fields (before 2026.10.0-beta.6), or one written for
+# another PREFIX, leaves the standard layout above.
+read_install_layout() {
+	local line key value prefix='' manprefix='' datadir='' xsessionsdir=''
+	[[ -e $install_stamp ]] || return 0
+	[[ -f $install_stamp && ! -L $install_stamp ]] || die "$install_stamp is not a regular file"
+	if [[ $(stat -c '%u %h' -- "$install_stamp") != '0 1' ]] ||
+		find "$install_stamp" -maxdepth 0 -perm /022 -print -quit | grep -q . ||
+		(($(stat -c %s -- "$install_stamp") > 4096)); then
+		die "$install_stamp is not a root-owned, root-only-writable record"
+	fi
+	while IFS= read -r line || [[ -n $line ]]; do
+		key=${line%%=*}
+		value=${line#*=}
+		case $key in
+		LYONA_PREFIX | LYONA_MANPREFIX | LYONA_DATADIR | LYONA_XSESSIONSDIR) ;;
+		*) continue ;;
+		esac
+		[[ $value =~ ^/[A-Za-z0-9._/+-]*$ && $value != / && /$value/ != */../* && /$value/ != */./* ]] ||
+			die "$install_stamp has an unusable $key: $value"
+		case $key in
+		LYONA_PREFIX) prefix=$value ;;
+		LYONA_MANPREFIX) manprefix=$value ;;
+		LYONA_DATADIR) datadir=$value ;;
+		LYONA_XSESSIONSDIR) xsessionsdir=$value ;;
+		esac
+	done <"$install_stamp"
+	[[ $prefix == "$install_prefix" ]] || return 0
+	install_manprefix=${manprefix:-$install_manprefix}
+	install_datadir=${datadir:-$install_datadir}
+	install_xsessionsdir=${xsessionsdir:-$install_xsessionsdir}
+}
+read_install_layout
 
 # rollback must work from a bare TTY with no polkit agent running, so this
 # accepts sudo's invoking-user variable as well as pkexec's -- never a
@@ -191,6 +234,15 @@ backup_system_files() {
 		for name in "${themes[@]}"; do
 			printf '%s\n' "${install_datadir#/}/icons/$name"
 		done
+		# An install from before 2026.10.0-beta.6 has its shared data under
+		# PREFIX/share, which this install removes (remove-legacy-shared-data):
+		# kept here, so a rollback puts it back. Restore accepts these paths.
+		if [[ $install_prefix/share != "$install_datadir" ]]; then
+			for name in "${themes[@]}"; do
+				printf '%s\n' "${install_prefix#/}/share/icons/$name"
+			done
+			printf '%s\n' "${install_prefix#/}/share/licenses/lyona"
+		fi
 		printf '%s\n' "${install_manprefix#/}/man1/dwm.1" \
 			"${install_xsessionsdir#/}/dwm.desktop" \
 			"${install_datadir#/}/licenses/lyona" \
@@ -356,7 +408,12 @@ install-system | install-unverified)
 		fi
 		backup_system_files "$verified_dir" "$backup_id"
 
+		# Into the locations this helper was installed for, so an update never
+		# moves the shared data (the cursors, the GRUB theme) to where a bare
+		# Makefile default puts them, and a later restore finds them.
 		if ! "$make_path" -C "$verified_dir" install-system \
+			PREFIX="$install_prefix" MANPREFIX="$install_manprefix" \
+			DATADIR="$install_datadir" XSESSIONSDIR="$install_xsessionsdir" \
 			USER_HOME="$invoking_home" \
 			OWNER="$invoking_user" \
 			XDG_STATE_HOME="$state_home"; then
@@ -397,6 +454,11 @@ restore-system)
 	xsessions_dir_rel=${install_xsessionsdir#/}
 	icons_dir_rel=${install_datadir#/}/icons
 	licenses_dir_rel=${install_datadir#/}/licenses/lyona
+	# Updates before 2026.10.0-beta.6 installed the shared data under
+	# PREFIX/share, the Makefile's old DATADIR default, so a backup taken then
+	# may hold it there.
+	legacy_icons_dir_rel=${install_prefix#/}/share/icons
+	legacy_licenses_dir_rel=${install_prefix#/}/share/licenses/lyona
 	while IFS= read -r listing_line; do
 		[[ -n $listing_line ]] || continue
 		member_type=${listing_line:0:1}
@@ -409,7 +471,7 @@ restore-system)
 		- | d) ;;
 		l)
 			case $member_path in
-			"$icons_dir_rel/"?*) ;;
+			"$icons_dir_rel/"?* | "$legacy_icons_dir_rel/"?*) ;;
 			*) die "backup archive contains a symlink outside the cursor themes: $member_path" ;;
 			esac
 			;;
@@ -433,6 +495,8 @@ restore-system)
 		"$xsessions_dir_rel/" | "$xsessions_dir_rel/"*) ;;
 		"$icons_dir_rel/" | "$icons_dir_rel/"*) ;;
 		"$licenses_dir_rel/" | "$licenses_dir_rel/"*) ;;
+		"$legacy_icons_dir_rel/" | "$legacy_icons_dir_rel/"*) ;;
+		"$legacy_licenses_dir_rel/" | "$legacy_licenses_dir_rel/"*) ;;
 		etc/lyona-release) ;;
 		*) die "backup archive contains a path outside the managed install locations: $member_path" ;;
 		esac

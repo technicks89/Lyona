@@ -40,6 +40,11 @@ Scope {
     property string phase: "idle" // idle|checking|downloading|verifying|building|installing|verifying-install|restarting
     property string progressDetail: ""
     property string message: ""
+    // How the last apply or rollback ended, for the progress popup. Kept apart
+    // from message, which the channel check rewrites: a refresh while a failure
+    // was shown replaced its reason with "The installed release matches the
+    // channel." (#280 VM).
+    property string outcomeMessage: ""
     property bool actionSucceeded: false
 
     property var backups: []
@@ -260,7 +265,7 @@ Scope {
         root.actionSucceeded = false;
         root.phase = "downloading";
         root.progressDetail = "Starting update to " + version;
-        root.message = "";
+        root.outcomeMessage = "";
         applyProcess.command = Commands.updateCommand("apply", ["--version", version, "--allow-downgrade", "--yes"]);
         applyProcess.running = true;
     }
@@ -273,7 +278,7 @@ Scope {
         root.actionSucceeded = false;
         root.phase = "restarting";
         root.progressDetail = "Starting rollback";
-        root.message = "";
+        root.outcomeMessage = "";
         rollbackProcess.command = Commands.updateCommand("rollback", ["--backup", backupId, "--yes"]);
         rollbackProcess.running = true;
     }
@@ -322,7 +327,7 @@ Scope {
         root.actionSucceeded = outcome === "succeeded";
         root.phase = "idle";
         root.progressDetail = "";
-        root.message = outcome === "succeeded"
+        root.outcomeMessage = outcome === "succeeded"
             ? "Update complete"
             : (outcomeMessage.length > 0 ? outcomeMessage : "The last update attempt failed");
         // Show how it ended only while that is news: right after an update
@@ -485,7 +490,7 @@ Scope {
             if (applyError.text.trim().length > 0) {
                 root.busy = false;
                 root.actionSucceeded = false;
-                root.message = applyError.text.trim();
+                root.outcomeMessage = applyError.text.trim();
             }
         }
     }
@@ -499,7 +504,7 @@ Scope {
             if (rollbackError.text.trim().length > 0) {
                 root.busy = false;
                 root.actionSucceeded = false;
-                root.message = rollbackError.text.trim();
+                root.outcomeMessage = rollbackError.text.trim();
             }
         }
     }

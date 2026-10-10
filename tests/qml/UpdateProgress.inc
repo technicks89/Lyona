@@ -102,7 +102,7 @@
             case 4: {
                 // The update finished: the outcome is shown, even if the popup had been hidden.
                 if (model.busy) return;
-                root.updateCheck(model.actionSucceeded && model.message === "Update complete",
+                root.updateCheck(model.actionSucceeded && model.outcomeMessage === "Update complete",
                     "a finished update is not reported as complete");
                 root.updateCheck(model.progressShown && popup.visible && root.updatePillItem.visible,
                     "a finished update is not shown");
@@ -116,7 +116,7 @@
                 return;
             }
             case 5: {
-                if (model.message !== "old failure A") return;
+                if (model.outcomeMessage !== "old failure A") return;
                 root.updateCheck(!model.progressShown && !popup.visible && !root.updatePillItem.visible,
                     "an outcome from 30 minutes ago was shown again");
                 // A pending status left by a crash two hours ago must not spin forever.
@@ -135,9 +135,17 @@
                 return;
             }
             case 7: {
-                if (model.message !== "fresh failure B (exit 3)") return;
+                if (model.outcomeMessage !== "fresh failure B (exit 3)") return;
                 root.updateCheck(!model.busy && !model.actionSucceeded && model.progressShown && popup.visible
                     && root.updatePillItem.visible && popup.failed, "a fresh failure is not shown");
+                // #280 VM: a channel check while the failure is shown rewrites
+                // model.message; the popup must keep the failure's reason.
+                model.message = "The installed release matches the channel.";
+                root.updateCheck(root.updateItems(popup.contentItem,
+                        item => item.visible && item.text === "fresh failure B (exit 3)").length === 1
+                    && root.updateItems(popup.contentItem,
+                        item => item.text === "The installed release matches the channel.").length === 0,
+                    "a channel check replaced the failure shown in the update popup");
                 // The log is bounded: 200 KB written, at most 64 KiB read, cut at a line.
                 updateFileWriter.command = ["sh", "-c",
                     'yes "line of update log output" | head -c 200000 > "$1" && printf "\\nEND-OF-LOG\\n" >> "$1"',

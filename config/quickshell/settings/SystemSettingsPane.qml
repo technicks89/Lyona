@@ -290,11 +290,13 @@ Flickable {
             }
         }
 
+        // How the last apply or rollback ended (outcomeMessage); the channel
+        // check's own text is the status card's detail above.
         UiText {
             Layout.fillWidth: true
-            visible: !root.updateModel.busy && root.updateModel.message.length > 0
+            visible: !root.updateModel.busy && root.updateModel.outcomeMessage.length > 0
                 && !root.updateModel.updateAvailable
-            text: root.updateModel.message
+            text: root.updateModel.outcomeMessage
             color: root.updateModel.actionSucceeded ? Theme.success : Theme.menuMutedText
             wrapMode: Text.WordWrap
         }
