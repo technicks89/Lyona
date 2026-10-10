@@ -344,6 +344,9 @@ Scope {
 
         if (outcome === "pending") {
             root.busy = true;
+            // The running operation's own, not the last one's: an update
+            // started after a rollback was titled "Rolling back" (#326 VM).
+            root.lastOperation = operation;
             root.phase = phaseValue.length > 0 ? phaseValue : "idle";
             root.progressDetail = phaseDetail;
             // An update that is genuinely running writes a new status every

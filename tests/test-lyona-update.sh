@@ -1005,6 +1005,11 @@ done
 assert_equals 0 "$(body_of cmd_apply | grep -c 'install-system checkout')" "checkout site"
 assert_equals 0 "$(grep -c 'checkout)' "$repo/scripts/lyona-update-root")" "root helper checkout mode"
 assert_equals 1 "$(body_of cmd_rollback | grep -c 'run_privileged ')" "run_privileged sites in cmd_rollback"
+# #324 VM: the account's install record goes back with the rest, or lyona-version
+# calls the restored install inconsistent.
+# shellcheck disable=SC2016 # the literal source text
+assert_equals 1 "$(body_of cmd_rollback | grep -c '"$backup_dir/install.state" "$state_home/lyona/.install.state.restore"')" \
+	"install.state restore in cmd_rollback"
 # Sync Sprint 12 S12-01: root keeps its own system backups. A rollback names one
 # by id and never passes root a path into the user's backup directory, and the
 # install passes the id so root backs up the live files before installing.

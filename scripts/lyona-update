@@ -1262,6 +1262,14 @@ cmd_rollback() {
 		restore_user_tree "$backup_dir/quickshell.tar" "$config_home/quickshell" ||
 			die "could not restore $config_home/quickshell from backup $backup_id"
 	fi
+	# The account's install record as it was (#324); a backup from before it was
+	# kept leaves the current one.
+	if [[ -f $backup_dir/install.state && ! -L $backup_dir/install.state ]]; then
+		if ! install -m 0600 -- "$backup_dir/install.state" "$state_home/lyona/.install.state.restore" ||
+			! mv -f -- "$state_home/lyona/.install.state.restore" "$state_home/lyona/install.state"; then
+			die "could not restore $state_home/lyona/install.state from backup $backup_id"
+		fi
+	fi
 
 	local restored_version
 	restored_version=$(backup_version_of "$backup_id")

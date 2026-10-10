@@ -201,13 +201,24 @@
                 root.updateCheck(root.updateItems(popup.contentItem,
                         item => item.visible && item.text === "Rollback cancelled").length === 1,
                     "the popup does not say the rollback was cancelled");
+                // An update started after that rollback is called an update
+                // while it runs, not "Rolling back" (#326 VM).
+                root.updateWriteFile(model.statusPath, root.updateStatusText("installing", "Installing",
+                    "pending", "", 0, "apply"));
+                root.updateNext();
+                return;
+            }
+            case 13: {
+                if (!model.busy) return;
+                root.updateCheck(model.lastOperation === "apply" && !popup.rollback,
+                    "an update running after a rollback is shown as a rollback");
                 // An outcome two days old is not shown in Settings.
                 root.updateWriteFile(model.statusPath, root.updateStatusText("installing", "Installing",
                     "failed", "two-day-old failure", 2 * 24 * 60 * 60 * 1000));
                 root.updateNext();
                 return;
             }
-            case 13: {
+            case 14: {
                 if (model.outcomeMessage !== "two-day-old failure") return;
                 root.updateCheck(!model.outcomeRecent, "an outcome two days old counts as recent");
                 // One a second short of a day old: recent now, and no longer once
@@ -217,13 +228,13 @@
                 root.updateNext();
                 return;
             }
-            case 14: {
+            case 15: {
                 if (model.outcomeMessage !== "expiring failure") return;
                 root.updateCheck(model.outcomeRecent, "an outcome under a day old does not count as recent");
                 root.updateNext();
                 return;
             }
-            case 15: {
+            case 16: {
                 if (model.outcomeRecent) return;
                 console.info("Update progress: PASS");
                 Qt.quit();
