@@ -240,7 +240,9 @@ lacks "$core" 'NetworkManager: '
 # (Sync Sprint 16, found in a VM). test-dwm-aur.sh runs it.
 yay_fn=$(sed -n '/^ensure_yay_installed() {$/,/^}$/p' "$repo/install.sh")
 # shellcheck disable=SC2016 # the literal text in install.sh
-grep -A3 -F 'if [[ $NON_INTERACTIVE == true ]]; then' <<<"$yay_fn" | grep -Fq 'pacman_args+=(--noconfirm)' ||
+awk '/^\tif \[\[ \$NON_INTERACTIVE == true \]\]; then$/ { inside = 1; next }
+	inside && /^\tfi$/ { exit }
+	inside' <<<"$yay_fn" | grep -Fq 'pacman_args+=(--noconfirm)' ||
 	fail 'a non-interactive install does not answer pacman for yay-bin'
 
 printf 'Installer summary completeness: PASS\n'
