@@ -36,8 +36,11 @@ Branch `root-helper-hardening-336-337`, uncommitted, on `main` at `4dac7f9`
   `docs/src/troubleshooting.md` name `lyona-build`. `CHANGELOG.md`.
 - Tests: `tests/test-update-root-contract.sh` (`make
   check-update-root-contract`) runs the previous release's helper's Makefile
-  reads against the current tree, checks the four targets exist, that
-  `all-root` never builds `dwm.o`, that only `dwm.c` includes `config.h`, and
+  reads against the current tree (when HEAD is itself a release, the release
+  before it, the one that updates to HEAD), checks the four targets exist, that
+  `all-root`'s prerequisites in make's database hold every object but `dwm.o`
+  and the three helper programs and neither `dwm` nor `dwm.o`, that only
+  `dwm.c` includes `config.h`, and
   that `stamp-system` still writes the record fields the helper reads.
   `tests/test-lyona-update.sh` orders ten version pairs, both ways, through
   `version_rank` and `release_rank`, refuses the same malformed versions through

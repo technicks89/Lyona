@@ -4,17 +4,22 @@ set -eu
 # #337: an update is installed by the root helper already on the system, which
 # reads the new release's tree through its Makefile. What it reads is a contract
 # (SPEC.md section 6, "The release-tree contract"): the previous release's
-# helper, taken from the newest tag reachable from HEAD, must still find every
-# variable and target it names in the current tree. Without a reachable tag (a
-# clone without tags) the current helper stands in, so its reads are checked
-# against the tree all the same.
+# helper, taken from the newest tag reachable from HEAD (or, when HEAD is a
+# release itself, from the one before it: the release that updates to HEAD),
+# must still find every variable and target it names in the current tree.
+# Without a reachable tag (a clone without tags) the current helper stands in,
+# so its reads are checked against the tree all the same.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 
 make_workspace
 helper_src=$work/previous-helper
+head=$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)
 tag=$(git -C "$repo" describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+if [ -n "$tag" ] && [ "$(git -C "$repo" rev-parse "$tag^{commit}" 2>/dev/null)" = "$head" ]; then
+	tag=$(git -C "$repo" describe --tags --abbrev=0 "$head^" 2>/dev/null || true)
+fi
 if [ -n "$tag" ] && git -C "$repo" show "$tag:scripts/lyona-update-root" >"$helper_src" 2>/dev/null; then
 	printf 'previous release: %s\n' "$tag"
 else
@@ -43,11 +48,20 @@ for target in all-root dwm clean install-system; do
 	make -n -C "$repo" "$target" >/dev/null 2>"$work/make.err" ||
 		fail "the tree has no $target target: $(head -3 "$work/make.err")"
 done
-# all-root never includes config.h: only dwm.c does, and dwm.o is not in it.
-all_root=$(make_values '$(filter-out dwm.o,$(OBJ)) $(THUMB) $(TOML_TOOL) $(XWATCH)')
-case " $(printf '%s' "$all_root" | tr '\n' ' ') " in
-*" dwm.o "*) fail 'all-root would build dwm.o as root' ;;
+# all-root never includes config.h: its prerequisites, as make's database
+# records them for this tree, hold every object but dwm.o, the three helper
+# programs, and neither dwm nor dwm.o; and only dwm.c includes config.h.
+prereqs=$(make -pqn -C "$repo" all-root 2>/dev/null | sed -n 's/^all-root: //p')
+[ -n "$prereqs" ] || fail 'make lists no prerequisites for all-root'
+case " $prereqs " in
+*" dwm.o "* | *" dwm "*) fail "all-root would build dwm or dwm.o as root: $prereqs" ;;
 esac
+for want in $(make_values '$(filter-out dwm.o,$(OBJ)) $(THUMB) $(TOML_TOOL) $(XWATCH)'); do
+	case " $prereqs " in
+	*" $want "*) ;;
+	*) fail "all-root does not build $want, which the root helper needs built: $prereqs" ;;
+	esac
+done
 [ "$(grep -l '#include "config.h"' "$repo"/*.c)" = "$repo/dwm.c" ] ||
 	fail 'a source other than dwm.c includes config.h, so all-root would compile it as root'
 
