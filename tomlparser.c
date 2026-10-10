@@ -43,13 +43,15 @@ mark_bad(TomlDoc *doc)
 
 /* Past the items of an array that did not fit in TOML_MAX_ARR, to its "]",
  * stepping over quoted strings, so an item's "]" or "{" is never read as the
- * end of the array or a table of its own (#319). */
+ * end of the array or a table of its own (#319). In an inline table (in_table)
+ * a "}" outside a string also stops it: the array's "]" is missing, and the
+ * table, and the tables after it, still close where they should. */
 static const char *
-skip_array_rest(const char *p, TomlDoc *doc)
+skip_array_rest(const char *p, TomlDoc *doc, int in_table)
 {
 	int skipped = 0;
 
-	while (*p && *p != ']') {
+	while (*p && *p != ']' && !(in_table && *p == '}')) {
 		if (*p == '"') {
 			for (p++; *p && *p != '"'; p++)
 				if (*p == '\\' && p[1])
@@ -204,9 +206,9 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 			ent->val.type = TOML_ARRAY;
 			ent->val.a.len = 0;
 			p++;
-			while (*p && *p != ']' && ent->val.a.len < TOML_MAX_ARR) {
+			while (*p && *p != ']' && *p != '}' && ent->val.a.len < TOML_MAX_ARR) {
 				while (isspace((unsigned char)*p) || *p == ',') p++;
-				if (*p == ']' || *p == '\0') break;
+				if (*p == ']' || *p == '}' || *p == '\0') break;
 				if (*p == '"') {
 					char *dst = ent->val.a.items[ent->val.a.len];
 					p = unescape_into(p + 1, dst, TOML_MAX_STR);
@@ -217,8 +219,11 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 				}
 			}
 			if (ent->val.a.len == TOML_MAX_ARR)
-				p = skip_array_rest(p, doc);
-			if (*p == ']') p++;
+				p = skip_array_rest(p, doc, 1);
+			if (*p == ']')
+				p++;
+			else
+				mark_bad(doc); /* "]" missing: the table's "}", or the line, ended it */
 
 		} else {
 
@@ -461,7 +466,7 @@ toml_parse(const char *path, TomlDoc *doc)
 				}
 			}
 			if (ent->val.a.len == TOML_MAX_ARR)
-				(void)skip_array_rest(vp, doc);
+				(void)skip_array_rest(vp, doc, 0);
 
 		} else {
 			char *ep;
