@@ -151,7 +151,11 @@ yay_bootstrap() { # NON_INTERACTIVE, with STUB_ settings in the environment
 : >"$work/log"
 yay_bootstrap true >"$work/yay.out" || fail "the yay bootstrap failed: $(cat "$work/yay.out")"
 grep -Eq '^dwm-aur build-pinned yay-bin /' "$work/log" || fail "the helper was not used: $(cat "$work/log")"
-grep -Eqx 'sudo pacman -U --needed --noconfirm -- /.*/yay-bin-13\.0\.1-1-x86_64\.pkg\.tar\.zst' "$work/log" ||
+# #328: the sudo timestamp is closed before the build, as for Topgrade.
+[[ $(grep -m1 -n '^sudo -k' "$work/log" | cut -d: -f1) -lt $(grep -m1 -n '^dwm-aur build-pinned' "$work/log" | cut -d: -f1) ]] ||
+	fail "the sudo timestamp was not closed before the yay build: $(cat "$work/log")"
+# Non-interactive: sudo -n, which never waits for a password no one types.
+grep -Eqx 'sudo -n pacman -U --needed --noconfirm -- /.*/yay-bin-13\.0\.1-1-x86_64\.pkg\.tar\.zst' "$work/log" ||
 	fail "yay-bin was installed as: $(grep sudo "$work/log")"
 if grep -q 'makepkg' "$work/log"; then fail 'install.sh ran makepkg itself'; fi
 : >"$work/log"
@@ -160,7 +164,7 @@ grep -Eqx 'sudo pacman -U --needed -- /.*/yay-bin-13\.0\.1-1-x86_64\.pkg\.tar\.z
 	fail "an interactive install answered for the user: $(grep sudo "$work/log")"
 : >"$work/log"
 if STUB_YAY=fail yay_bootstrap true >"$work/yay.out"; then fail 'a failed yay-bin build reported success'; fi
-grep -q '^sudo' "$work/log" && fail 'a failed build still ran pacman'
+grep -q '^sudo pacman' "$work/log" && fail 'a failed build still ran pacman'
 grep -Fq 'continuing without an AUR helper' "$work/yay.out" || fail "a failed build said: $(cat "$work/yay.out")"
 
 printf 'dwm-aur.sh pins, fetch checks, build and time limit; install.sh yay-bin through it: PASS\n'

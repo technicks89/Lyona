@@ -295,12 +295,14 @@ Flickable {
         UiText {
             Layout.fillWidth: true
             // A failed or cancelled action is shown even with an update still
-            // available, which is exactly when the reason matters; a success
-            // only until the "Update to" button replaces it. Never an outcome
-            // older than a day (#326).
+            // available, which is exactly when the reason matters, and so is a
+            // rollback, which leaves one available; an update's success only
+            // until the "Update to" button replaces it. Never an outcome older
+            // than a day (#326).
             visible: !root.updateModel.busy && root.updateModel.outcomeMessage.length > 0
                 && root.updateModel.outcomeRecent
-                && (!root.updateModel.updateAvailable || !root.updateModel.actionSucceeded)
+                && (!root.updateModel.updateAvailable || !root.updateModel.actionSucceeded
+                    || root.updateModel.lastOperation === "rollback")
             text: root.updateModel.outcomeMessage
             color: root.updateModel.actionSucceeded ? Theme.success : Theme.menuMutedText
             wrapMode: Text.WordWrap

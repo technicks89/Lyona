@@ -379,6 +379,12 @@ remove-legacy-shared-data:
 			[ "$$parent" != "$$legacy" ] || break; \
 			parent=$${parent%/*}; \
 		done; \
+		parent=$${legacy%/*}; \
+		while [ "$$(id -u)" = 0 ] && [ -n "$$parent" ]; do \
+			[ "$$(stat -c %u -- "$$parent" 2>/dev/null || echo 1)" = 0 ] || \
+				{ echo "  Not removing $$1: $$parent is not root's" >&2; return 0; }; \
+			parent=$${parent%/*}; \
+		done; \
 		if [ -e "$$1" ] || [ -L "$$1" ]; then \
 			echo "  Removing an earlier update's copy: $$1"; \
 			rm -rf -- "$$1"; \

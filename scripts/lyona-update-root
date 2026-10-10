@@ -630,12 +630,19 @@ restore-system)
 
 	# The shared code and defaults are put back whole: files the newer release
 	# added there go, as they would not have existed in the version restored.
+	set_aside=()
 	for whole_dir in "$lib_dir_rel" "$share_dir_rel"; do
 		grep -Fxq -- "$whole_dir" "$backup_manifest" || continue
 		[[ -d /$whole_dir && ! -L /$whole_dir ]] || continue
 		rm -rf -- "/${whole_dir:?}.lyona-restore-old"
-		mv -T -- "/$whole_dir" "/$whole_dir.lyona-restore-old" ||
+		if ! mv -T -- "/$whole_dir" "/$whole_dir.lyona-restore-old"; then
+			# Nothing restored yet: what was set aside goes back first.
+			for moved in "${set_aside[@]}"; do
+				mv -T -- "/$moved.lyona-restore-old" "/$moved" || :
+			done
 			die "could not set aside /$whole_dir before restoring it"
+		fi
+		set_aside+=("$whole_dir")
 	done
 	if ! tar -C / --numeric-owner -xpf "$system_archive"; then
 		# What was there before goes back, not a half-restored tree.

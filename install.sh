@@ -754,11 +754,16 @@ ensure_yay_installed() {
 	# pacman's "Proceed with installation?" is answered for a non-interactive
 	# run: the image install runs this behind a spinner, where nothing can answer
 	# it, and it waited there forever (Sync Sprint 16, found in a VM).
-	local -a pacman_args=(-U --needed)
-	[[ $NON_INTERACTIVE != true ]] || pacman_args+=(--noconfirm)
-	if ! sudo pacman "${pacman_args[@]}" -- "$package"; then
+	# Nor sudo's password, which the timestamp closed above would ask for: a
+	# non-interactive run installs it only where sudo needs no password.
+	local -a pacman_args=(-U --needed) sudo_args=()
+	if [[ $NON_INTERACTIVE == true ]]; then
+		pacman_args+=(--noconfirm)
+		sudo_args=(-n)
+	fi
+	if ! sudo "${sudo_args[@]}" pacman "${pacman_args[@]}" -- "$package"; then
 		rm -rf "$tmp_dir"
-		warn "pacman could not install ${package##*/}; continuing without an AUR helper."
+		warn "pacman could not install ${package##*/}; continuing without an AUR helper (run the installer interactively, or install yay-bin yourself, to add it)."
 		return 1
 	fi
 	rm -rf "$tmp_dir"

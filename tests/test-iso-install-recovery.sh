@@ -163,6 +163,13 @@ lib "detect_timezone() { : >\"$work/looked-up\"; echo Europe/Berlin; }
 [[ ! -e $work/looked-up ]] || fail 'the timezone was looked up online after a no'
 grep -Fxq 'TZ=Europe/Paris' "$work/out.log" || fail "declining the lookup did not offer the list: $(cat "$work/out.log")"
 grep -Fq 'sends your IP address' "$work/gum.log" || fail 'the lookup question does not say it sends the IP address'
+# Esc on that question cancels, as on every other one; it is no "No".
+answers $'130\t'
+if lib "detect_timezone() { : >\"$work/looked-up\"; echo Europe/Berlin; }; ask_timezone"; then
+	fail 'Esc on the lookup question did not cancel'
+fi
+grep -Fq 'Nothing on the disk was changed' "$work/out.log" || fail "Esc on the lookup question said: $(cat "$work/out.log")"
+[[ ! -e $work/looked-up ]] || fail 'Esc on the lookup question looked the timezone up'
 
 # Mirrors: "Choose another", Esc in the countries, back, "Choose another", Japan.
 answers $'1\t' $'1\t' $'1\t' $'0\tJapan (JP)'

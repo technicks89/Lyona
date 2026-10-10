@@ -77,11 +77,20 @@ run interrupt
 
 # The postinstall registers its sudoers rule, and removes any stale copy first.
 # shellcheck disable=SC2016 # the literal text in the postinstall
-grep -Fq 'LYONA_CLEANUP_FILES+=("$install_sudoers")' "$postinstall" ||
+grep -Fq 'LYONA_CLEANUP_FILES+=("$install_sudoers" "$install_sudoers_tmpfiles")' "$postinstall" ||
 	fail 'the postinstall does not register its sudoers rule for clean-up'
 # shellcheck disable=SC2016 # the literal text in the postinstall
-registered=$(grep -nF 'LYONA_CLEANUP_FILES+=("$install_sudoers")' "$postinstall" | cut -d: -f1)
+registered=$(grep -nF 'LYONA_CLEANUP_FILES+=("$install_sudoers" "$install_sudoers_tmpfiles")' "$postinstall" | cut -d: -f1)
 written=$(grep -nF 'NOPASSWD: ALL' "$postinstall" | cut -d: -f1)
 ((registered < written)) || fail 'the sudoers rule is written before it is registered for clean-up'
+# #328: a power-off skips that clean-up; the rule is removed at the next boot,
+# by a tmpfiles.d entry written before the rule, and removed with it.
+tmpfiles_at=$(grep -nF "'r /etc/sudoers.d/90-lyona-install'" "$postinstall" | cut -d: -f1)
+if [[ -z $tmpfiles_at ]] || ((tmpfiles_at >= written)); then
+	fail 'the sudoers rule has no boot-time removal written before it'
+fi
+# shellcheck disable=SC2016 # the literal text in the postinstall
+grep -Fq 'rm -f -- "$install_sudoers" "$install_sudoers_tmpfiles"' "$postinstall" ||
+	fail 'the boot-time removal is not removed with the rule'
 
 printf 'Live medium clean-up: PASS\n'

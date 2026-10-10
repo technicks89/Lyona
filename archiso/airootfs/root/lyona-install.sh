@@ -494,14 +494,20 @@ choose_timezone() {
 # nothing detected, it asks whether to choose again or cancel the installer;
 # Esc there goes back to the list.
 ask_timezone() {
-	local detected='' zone choice asked=false
+	local detected='' zone choice asked=false status=0
 	# Asked first (#328, which updates D-30): the lookup sends this machine's
-	# IP address to an outside service, so it runs only on a yes.
-	if gum confirm --affirmative "Yes" --negative "No" \
-		"Detect your timezone online? This sends your IP address to ipinfo.io or ipapi.co."; then
+	# IP address to an outside service, so it runs only on a yes. No goes to
+	# the list; a dismissed or failed prompt cancels, as every other one does.
+	gum confirm --affirmative "Yes" --negative "No" \
+		"Detect your timezone online? This sends your IP address to ipinfo.io or ipapi.co." || status=$?
+	case $status in
+	0)
 		asked=true
 		detected=$(detect_timezone) || detected=
-	fi
+		;;
+	1) ;;
+	*) cancelled ;;
+	esac
 	while true; do
 		if [[ -n $detected ]]; then
 			if gum confirm --affirmative "Yes" --negative "No" "Detected timezone: $detected. Is this correct?"; then

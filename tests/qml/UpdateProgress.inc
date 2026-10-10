@@ -210,6 +210,21 @@
             case 13: {
                 if (model.outcomeMessage !== "two-day-old failure") return;
                 root.updateCheck(!model.outcomeRecent, "an outcome two days old counts as recent");
+                // One a second short of a day old: recent now, and no longer once
+                // the day is up, with no further status read.
+                root.updateWriteFile(model.statusPath, root.updateStatusText("installing", "Installing",
+                    "failed", "expiring failure", model.settingsOutcomeMs - 1000));
+                root.updateNext();
+                return;
+            }
+            case 14: {
+                if (model.outcomeMessage !== "expiring failure") return;
+                root.updateCheck(model.outcomeRecent, "an outcome under a day old does not count as recent");
+                root.updateNext();
+                return;
+            }
+            case 15: {
+                if (model.outcomeRecent) return;
                 console.info("Update progress: PASS");
                 Qt.quit();
                 return;

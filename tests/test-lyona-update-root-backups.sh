@@ -430,6 +430,24 @@ kept=$(find "$store" -mindepth 1 -maxdepth 1 -type d | wc -l)
 [[ $kept == 5 ]] || fail "pruning kept $kept backups, not 5"
 [[ -d $store/$new_id ]] || fail 'pruning removed the newly created backup'
 
+# A set-aside that fails part way puts back what it already moved: lib/lyona
+# set aside, then share/lyona's move fails (this container's mv, swapped).
+mv /usr/bin/mv /usr/bin/mv.real
+cat >/usr/bin/mv <<'EOF'
+#!/bin/sh
+for last; do :; done
+case $last in */share/lyona.lyona-restore-old) exit 1 ;; esac
+exec /usr/bin/mv.real "$@"
+EOF
+chmod 0755 /usr/bin/mv
+set_aside_status=0
+run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || set_aside_status=$?
+/usr/bin/mv.real -f /usr/bin/mv.real /usr/bin/mv
+((set_aside_status != 0)) || fail 'a restore whose set-aside failed reported success'
+grep -Fq 'could not set aside' "$work/err" || fail "a failed set-aside said: $(cat "$work/err")"
+[[ -e $prefix/lib/lyona/added-by-the-update.sh && ! -e $prefix/lib/lyona.lyona-restore-old ]] ||
+	fail 'a failed set-aside left PREFIX/lib/lyona moved aside'
+
 run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
 	cat "$work/err" >&2
 	fail 'rolling back to the new backup failed'

@@ -64,6 +64,11 @@ grep -Fq 'lyona-update-status-protocol' "$update_model"
 progress_window=$repo/config/quickshell/system/UpdateProgressWindow.qml
 grep -Fq 'property string outcomeMessage' "$update_model"
 grep -Fq 'root.outcomeMessage = outcome === "succeeded"' "$update_model"
+# A successful rollback is shown though it leaves an update available (#326).
+grep -Fq '|| root.updateModel.lastOperation === "rollback")' "$system_pane" || {
+	printf 'Settings must show a successful rollback while an update is available.\n' >&2
+	exit 1
+}
 # Settings shows the action's outcome the same way (its status card keeps the check text).
 grep -Fq 'text: root.updateModel.outcomeMessage' "$system_pane" ||
 	fail 'Settings > System does not show how the last update or rollback ended'

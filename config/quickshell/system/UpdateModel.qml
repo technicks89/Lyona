@@ -57,6 +57,19 @@ Scope {
     property bool outcomeRecent: false
     readonly property int settingsOutcomeMs: 24 * 60 * 60 * 1000
 
+    // An outcome AGE_MS old is recent until it is a day old: outcomeExpiry
+    // clears the flag then, in a shell left open, with no status read needed.
+    function markOutcome(ageMs) {
+        const remaining = root.settingsOutcomeMs - ageMs;
+        root.outcomeRecent = remaining > 0;
+        if (remaining > 0) {
+            outcomeExpiry.interval = Math.max(1, Math.ceil(remaining));
+            outcomeExpiry.restart();
+        } else {
+            outcomeExpiry.stop();
+        }
+    }
+
     property var backups: []
     property bool backupsLoaded: false
 
@@ -275,7 +288,7 @@ Scope {
         root.actionSucceeded = false;
         root.actionCancelled = false;
         root.lastOperation = "apply";
-        root.outcomeRecent = true;
+        root.markOutcome(0);
         root.phase = "downloading";
         root.progressDetail = "Starting update to " + version;
         root.outcomeMessage = "";
@@ -291,7 +304,7 @@ Scope {
         root.actionSucceeded = false;
         root.actionCancelled = false;
         root.lastOperation = "rollback";
-        root.outcomeRecent = true;
+        root.markOutcome(0);
         root.phase = "restarting";
         root.progressDetail = "Starting rollback";
         root.outcomeMessage = "";
@@ -346,7 +359,7 @@ Scope {
         root.actionSucceeded = outcome === "succeeded";
         root.actionCancelled = outcome === "cancelled";
         root.lastOperation = operation;
-        root.outcomeRecent = ageMs <= root.settingsOutcomeMs;
+        root.markOutcome(ageMs);
         root.phase = "idle";
         root.progressDetail = "";
         root.outcomeMessage = outcome === "succeeded"
@@ -425,6 +438,12 @@ Scope {
         running: root.progressShown && !root.busy && root.actionSucceeded
         repeat: false
         onTriggered: root.dismissProgress()
+    }
+
+    Timer {
+        id: outcomeExpiry
+        repeat: false
+        onTriggered: root.outcomeRecent = false
     }
 
     FileView {
@@ -518,7 +537,7 @@ Scope {
         root.busy = false;
         root.actionSucceeded = false;
         root.actionCancelled = exitCode === 4;
-        root.outcomeRecent = true;
+        root.markOutcome(0);
         root.outcomeMessage = reason;
     }
 
