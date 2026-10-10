@@ -20,7 +20,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - Window previews in the overview are scaled by the X server (XRender), and
   one small image is read per window: about 160 KB, where every row of the
   window was read (33 MB for a 4K window). Measured under Xvfb with a 4K
-  window: 6 ms per preview, from 23 ms. Without Render the old path is used.
+  window: 6 ms per preview, from 23 ms; at 1280x800 and below the time is
+  about the same (27 ms against 25 ms in a VM), with a twentieth of the data.
+  Without Render the old path is used.
   `dwm-window-thumb` now links libXrender, which Xft already needs (#323).
 
 ### Fixed

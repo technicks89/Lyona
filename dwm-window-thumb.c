@@ -247,8 +247,10 @@ serverscale(Display *dpy, Window win, const XWindowAttributes *wa, int dw, int d
 	}
 	if (curpix == None) {
 		/* Already preview-sized: nothing to scale, the client-side path
-		 * reads it as it is. */
+		 * reads it as it is, without an error from the picture above. */
 		XRenderFreePicture(dpy, cur);
+		XSync(dpy, False);
+		x_error = 0;
 		return 0;
 	}
 	/* Its reply comes after any error the requests above caused. */

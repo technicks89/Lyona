@@ -2982,7 +2982,12 @@ scan(void)
 	for (i = 0; i < num; i++) {
 		if (!probe[i].probed || !probe[i].transient)
 			continue;
-		if (probe[i].wa.map_state == IsViewable
+		/* A dock is a bar or left alone, transient or not, as in maprequest(). */
+		if (isaltbar(wins[i], &probe[i].wa))
+			managealtbar(wins[i], &probe[i].wa);
+		else if (isdock(wins[i]))
+			XSelectInput(dpy, wins[i], PropertyChangeMask); /* as leavedock() */
+		else if (probe[i].wa.map_state == IsViewable
 		|| getstate(wins[i]) == IconicState)
 			manage(wins[i], &probe[i].wa);
 	}
@@ -2995,6 +3000,7 @@ void
 scanaltbars(void)
 {
 	unsigned int i, j, monitorcount, num;
+	int pass;
 	Monitor *m, *oldm;
 	Window d1, d2, *wins = NULL;
 	Window *knownbars;
@@ -3017,16 +3023,21 @@ scanaltbars(void)
 		updatebarpos(m);
 	}
 
+	/* The bars already in place first, so one still shown keeps its monitor;
+	 * only a monitor that lost its bar takes another (a panel waiting through
+	 * a shell reload), whatever their stacking order (#322). */
+	for (pass = 0; pass < 2; pass++)
 	for (i = 0; i < num; i++) {
-		if (!XGetWindowAttributes(dpy, wins[i], &wa)
-		    || wa.override_redirect || wa.map_state != IsViewable
-		    || !isaltbar(wins[i], &wa))
-			continue;
-
 		for (j = 0, oldm = mons; oldm && j < monitorcount;
 		     oldm = oldm->next, j++)
 			if (knownbars[j] == wins[i])
 				break;
+		if ((pass == 0) != (oldm != NULL))
+			continue;
+		if (!XGetWindowAttributes(dpy, wins[i], &wa)
+		    || wa.override_redirect || wa.map_state != IsViewable
+		    || !isaltbar(wins[i], &wa))
+			continue;
 		m = recttomon(wa.x, wa.y, wa.width, wa.height);
 		if (!m || INTERSECT(wa.x, wa.y, wa.width, wa.height, m) <= 0)
 			m = oldm;
