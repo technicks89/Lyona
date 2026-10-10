@@ -1,6 +1,6 @@
 # S9-03 -- overview accessibility and keyboard operability
 
-Plan: `docs/sprints/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-03-accessibility-pass`. Issue `#350`.
+Plan: `docs/sprints/completed/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-03-accessibility-pass`. Issue `#350`.
 
 ## Findings from the audit
 

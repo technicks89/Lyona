@@ -343,12 +343,17 @@ checkout. To prepare and verify only the user remote, run
 ### CachyOS repositories and kernel
 
 Installs from the lyona ISO get this automatically and are not asked about
-it. The repositories are added to the live medium *before* `archinstall` runs,
-so `pacstrap` fetches the optimized packages directly instead of installing
-Arch builds and replacing them afterwards -- the base system is downloaded
-once, not twice. The installed system inherits the live medium's `pacman.conf`
-along with the CachyOS mirrorlists and keyring, and `archinstall` installs
-`linux-cachyos` as the only kernel. If the CachyOS mirror cannot be reached,
+it. The baseline CachyOS repository is added to the live medium *before*
+`archinstall` runs (only that one: it needs no CachyOS `pacman`, so the live
+medium is never half upgraded), and `pacstrap` fetches the base system as
+CachyOS baseline builds. The postinstall then moves the new system to your
+CPU's level (`v3` or `v4`) with `lyona-cachyos raise-level`, a full upgrade
+that downloads the base packages a second time: about 340 MiB, under a minute
+on a fast connection. A CPU at the baseline level skips that step; if it was
+skipped for another reason, `sudo lyona-cachyos raise-level` does it later. The
+installed system inherits the live medium's `pacman.conf` along with the
+CachyOS mirrorlists and keyring, and `archinstall` installs `linux-cachyos` as
+the only kernel. If the CachyOS mirror cannot be reached,
 the install continues on the stock Arch repositories, with the stock Arch
 kernel, instead of failing. If the repositories can be reached again later in
 the install, `linux-cachyos` is added then and made the default, and the stock

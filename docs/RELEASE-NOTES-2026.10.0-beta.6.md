@@ -13,7 +13,10 @@ Also in this release:
 - the image installer times its steps and names the first keys;
 - every AUR build goes through one helper, with reviewed pins;
 - the desktop starts fewer resident processes;
-- Settings and `install.sh` say more plainly what they do.
+- Settings and `install.sh` say more plainly what they do;
+- and, in the published cut, the 2026-10-09 review's fixes (#317 to #328,
+  below): a rollback that restores everything, a downgrade on its own prompt,
+  `config.h` never compiled as root, and the panel declaring itself the bar.
 
 `CHANGELOG.md` has the complete list.
 
@@ -124,6 +127,54 @@ Found by a full install-and-update run in a VM:
 - **`hotkeys.toml`:** bindings still at an earlier release's default move to
   this release's, after a backup; bindings you changed are kept (#273, #278).
 
+## Added in the published cut (#317 to #328)
+
+The published `v2026.10.0-beta.6` is `1bfafac`, a day after the first cut
+(`34c8021`, 2026-10-09), with the fixes from the 2026-10-09 whole-repo review
+(`docs/reviews/2026-10-09-whole-repo-review.md`). Beyond the lists above:
+
+- **Rollback restores everything it backed up (#324).** `lyona-update
+  rollback` restores `PREFIX/lib/lyona` and `PREFIX/share/lyona` whole, the
+  polkit actions and the GTK themes, and the account's install record, where it
+  restored only the commands and left the old commands sourcing the new shared
+  code.
+- **One install layout (#325).** The update and its root helper take `PREFIX`
+  and `DATADIR` from `/etc/lyona-release`, so another layout is backed up,
+  verified and restored where it was installed.
+- **Updating from Settings (#326).** Cancelling the password prompt is a
+  cancel, not a failure; the reason for a failed update stays visible; a
+  successful update removes what it downloaded and built (about 25 MB a time).
+- **`config.h` is never compiled as root (#327).** The root helper builds
+  `dwm`, the one program that includes it, as `nobody`; an `#include` in
+  `config.h` cannot read root-only files into the installed binary.
+- **A downgrade has its own prompt (#327).** An older release is refused on the
+  routine prompt and installed only through "Install an older lyona release",
+  with its signature verified.
+- **Image installer hardening (#328).** yay is built before the install's
+  temporary passwordless sudo exists; a sudo rule left by a power-off is removed
+  at the next boot; the live medium adds only the baseline CachyOS repository,
+  so it is never partially upgraded, and the new system is raised to its CPU's
+  level afterwards; the timezone lookup asks before sending your IP address.
+- **Focus (#318).** A window closing by itself on the other monitor no longer
+  takes or drops the keyboard focus.
+- **A broken `hotkeys.toml` says so (#319).** One notification names the first
+  problem and how many there are; a file cut off inside an array is refused
+  whole, so a running session keeps its keys; an `exec` with more than 32
+  arguments no longer loses the rest of the file.
+- **The state bridge and the shell lifecycle (#320).** The bridge exits and is
+  restarted when its watcher dies; retitling windows rebuild the state at most
+  five times a second; the shell keys say how to get the shell back when it is
+  not running.
+- **The panel declares itself the bar (#322).** dwm takes as the bar only a
+  dock that reserves space at the top or bottom of the screen. **Migration:** a
+  panel of your own needs a non-zero `exclusiveZone` (a strut).
+- **Window previews scaled by the X server (#323).** About a twentieth of the
+  data read per preview, four times faster at 4K; `dwm-window-thumb` links
+  libXrender.
+- **Test hygiene (#321)** and **the documentation catch-up (#317)**: `man dwm`
+  describes lyona's dwm, `--help` is complete, and the records match the
+  evidence.
+
 ## Qualification status
 
 **Not tested on real hardware.** On the build host (Arch with the CachyOS
@@ -146,6 +197,14 @@ times as the last fixes landed; each build was installed fresh:
   beta.5's code, apply verified and rollback restored; an install with earlier
   updates had its stale theme copies removed.
 - `docs/evidence/280-config-split.md` has the details.
+- **The published cut (2026-10-10):** an image built from `1bfafac` installed
+  fresh in the same kind of VM, updated to a `beta.7` build and rolled back,
+  refused an unsigned downgrade, took a signed one through the new prompt,
+  failed a `config.h` that includes a private file in the root helper's
+  `nobody` build, and reported a cancelled prompt as a cancel; Settings was
+  opened and used for the downgrade. The strut-based bar and the XRender
+  previews were checked there too. `docs/evidence/324-328-install-update-rollback.md`
+  and `docs/evidence/322-323-bar-role-thumbnails.md` have the details.
 
 **Not tested yet:** real hardware, legacy BIOS, NVIDIA, Wi-Fi installs, two
 physical outputs (two monitors were tested as Xinerama screens and RandR

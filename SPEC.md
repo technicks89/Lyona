@@ -120,7 +120,10 @@ low overhead while idle: hidden launcher UI must not continuously filter or
 render application models, timer-triggered helper processes must not overlap,
 and only one shell provider should run in the lyona session. On X11, the
 managed shell must create one `PanelWindow` for every active screen so each
-monitor has a bar. The per-screen Quickshell `Variants` design must share its
+monitor has a bar. The panel declares itself the bar by reserving space, as a
+dock with a top or bottom strut (Quickshell's `exclusiveZone`); dwm takes only
+such a dock as a monitor's bar, never a window by its class or width (#322,
+`docs/SHELL-STATE-PROTOCOL.md`). The per-screen Quickshell `Variants` design must share its
 state providers and be explicitly profiled to show that it remains near idle.
 
 The managed shell requires Quickshell 0.3.0 or newer, matching the version
@@ -308,10 +311,15 @@ Its inclusion is validated as part of the reviewed archiso profile rather than
 inferred from existing-system installer approval.
 
 The archiso installer additionally configures the CachyOS repositories on the
-live medium before `archinstall` runs, so the base system is fetched from them
-once rather than installed from Arch and replaced afterwards, and has
-`archinstall` install `linux-cachyos` as the only kernel (#246), without
-prompting. CPU microcode is `archinstall`'s own (on real hardware, with the base
+live medium before `archinstall` runs: only the baseline (`x86-64`) repository,
+which needs no CachyOS `pacman`, so the live medium is never partially upgraded
+(#328). `pacstrap` fetches the base system as CachyOS baseline builds, and the
+postinstall then moves the new system to its CPU's level with
+`lyona-cachyos raise-level`, a full upgrade that downloads the base packages a
+second time (about 340 MiB, under a minute on the VM); a baseline-level CPU
+skips it, and a system left at baseline is raised later with
+`sudo lyona-cachyos raise-level`. The installer has `archinstall` install
+`linux-cachyos` as the only kernel (#246), without prompting. CPU microcode is `archinstall`'s own (on real hardware, with the base
 system), no fallback initramfs is built, and `grub-mkconfig` runs once, after
 every kernel, microcode and driver change. The
 installed system must receive the CachyOS mirrorlists and keyring, because a

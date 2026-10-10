@@ -201,7 +201,11 @@ recoverable:
    checks the digest and the signature again on that copy, against lyona's
    release workflow (fixed in the helper, not taken from the caller), then
    unpacks and rebuilds only that copy before backing up the system files and
-   installing.
+   installing. The one program that includes your `config.h`, `dwm`, is built
+   there as an unprivileged user (`nobody`, through `setpriv`), never as root:
+   a `config.h` can include only files everyone can read, and the password
+   prompt says a `config.h` is compiled in. The step needs `setpriv`
+   (util-linux) and the `nobody` user, which Arch has.
 
 **What the checks prove.** The SHA-256 digest comes from the release page (or a
 short-lived cache in `~/.cache/lyona/`), so a match proves the download is
@@ -357,7 +361,13 @@ files, which the privileged helper copies as root, just before installing, into
 `/var/lib/lyona/backups/<id>/`, readable only by root. A rollback restores the
 system files from that root-only copy and never from anything in your home
 directory, so nothing another program running as you could have changed is ever
-installed as root. The helper keeps the newest 5 system backups. Your own files
+installed as root. The helper keeps the newest 5 system backups. The system
+half holds the commands, the privileged helpers, `PREFIX/lib/lyona` and
+`PREFIX/share/lyona` whole, the polkit actions, the cursor and GTK themes, the
+man page, the session file and `/etc/lyona-release`; a rollback puts them all
+back, and restores your install record
+(`~/.local/state/lyona/install.state`) with them, so a regression in the shared
+code is undone too (#324). Your own files
 are restored whole: the backed-up Quickshell config, and the data directory when
 the backup holds one, replace the current ones, so nothing a newer version added
 is left behind. An older backup's data directory still holds that version's

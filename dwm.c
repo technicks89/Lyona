@@ -388,7 +388,10 @@ static int selectedmonitorcachevalid;
 static Atom dwmfullscreenmonitorsatom, dwmtagupdateatom;
 static unsigned long tagupdatesequence;
 
-static const char *altbarclass = "quickshell";
+/* The tray host is the one window still found by its class: EWMH has no role
+ * for a tray. The bar is not: it is the dock that reserves space, whatever its
+ * class (isaltbar(), #322). */
+static const char *traywinclass = "quickshell";
 static const char *alttrayname = "tray";
 
 #include "config.h"
@@ -3059,7 +3062,7 @@ scantray(void)
 	trayscanpending = 0;
 	if (XQueryTree(dpy, root, &d1, &d2, &wins, &num)) {
 		for (unsigned int i = 0; i < num; i++) {
-			if (wmclasscontains(wins[i], altbarclass, alttrayname)) {
+			if (wmclasscontains(wins[i], traywinclass, alttrayname)) {
 				if (!XGetWindowAttributes(dpy, wins[i], &wa))
 					break;
 				managetray(wins[i], &wa);

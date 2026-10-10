@@ -122,4 +122,4 @@ edge case (Sprint 8); live thumbnails, motion, accessibility pass, formal
 idle-CPU/performance testing (Sprint 9). See
 [`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)
 and
-[`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](../SYNC-SPRINT-9-OVERVIEW-POLISH.md).
+[`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md).

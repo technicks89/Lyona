@@ -8,26 +8,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
-### Security
+### Changed
 
-- `lyona-update-root` builds the dwm binary, the one program that includes your
-  `config.h`, as the `nobody` user, not as root: an `#include` or `#embed` in
-  `config.h` can no longer read root-only files into the build output or the
-  installed binary. Everything root runs during the install is built from the
-  verified sources alone. The update prompt says a `config.h` is compiled in
-  (#327).
-- An older release than the installed one is no longer installed on the
-  routine "verified update" prompt: the root helper refuses it there, and it
-  goes through its own polkit action (`install-downgrade`, "Install an older
-  lyona release"), only with its signature verified. To go back to what was
-  installed before an update, use `lyona-update rollback` (#327).
-- The image install builds yay before the install's temporary passwordless sudo
-  exists, as Topgrade is built after it, and `install.sh` closes the sudo
-  timestamp before building yay. A temporary sudo rule left by a power-off
-  during the install is removed at the next boot (#328).
-- The image wizard asks before looking up the timezone online, which sends the
-  IP address to ipinfo.io or ipapi.co; a no goes straight to the list. This
-  updates decision D-30 (#328).
+- The record catches up with the published `2026.10.0-beta.6`, which is
+  `1bfafac`: its changelog section and release notes list #317 to #328; SPEC
+  and the install guide describe the base-system download as it is since
+  #328 (baseline on the medium, raised afterwards); the updating guide covers
+  the unprivileged `config.h` build, the downgrade prompt and what a rollback
+  restores; `CONTRIBUTING.md` gives the default `/usr/local` layout; and
+  `tests/test-changelog-record.sh` fails when a tagged version has no dated
+  changelog section or release notes (#335).
 
 ### Fixed
 
@@ -48,55 +38,35 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   and the update's progress names both too; `--allow-downgrade` is passed only
   then, never on a routine update. The downgrade prompt no longer refers to a
   terminal warning you did not see (#334).
-- `lyona-update rollback` restores `PREFIX/lib/lyona` and `PREFIX/share/lyona`
 
-  whole (removing what the newer release added), the polkit actions and the GTK
-  themes, where it restored only the commands: after a rollback, the old
-  commands sourced the new shared code. A restore takes only the paths its
-  backup recorded (#324).
-- A rollback also restores the account's install record
-  (`~/.local/state/lyona/install.state`), which the update had rewritten:
-  Settings called the rolled-back install damaged ("Installed records
-  disagree") (#324).
-- The update and its root helper take the install layout from the same record,
-  `/etc/lyona-release`: an install with another `PREFIX` or `DATADIR` is backed
-  up, verified and restored where it was installed. `install.sh` no longer
-  passes its own `DATADIR` (#325).
-- Updating from Settings: cancelling the password prompt says "Update
-  cancelled: authorization was not given. Nothing was changed.", not a failure
-  with `sudo` errors about terminals; Settings shows why the last update or
-  rollback failed even while an update is still available, and no outcome
-  older than a day; a failed rollback is called one (#326). An update started
-  after a rollback is no longer titled "Rolling back Lyona" while it runs.
-- A successful update removes what it downloaded and built (about 25 MB each
-  time), which stayed under `~/.local/state/lyona/updates` for good (#326).
-- The image's live medium adds only the baseline CachyOS repository, which needs
-  no CachyOS pacman, so it is never partially upgraded; the new system moves to
-  its CPU's level afterwards (`lyona-cachyos raise-level`, with full upgrades)
-  (#328).
-- A window closing by itself on the other monitor (a finished download, a
-  terminal that exits) no longer takes the keyboard focus from where you are
-  typing, nor drops it to nowhere; only a window closing on your monitor moves
-  the focus (#318).
-- After you click back into a window while a popup is open, the popup can no
-  longer keep the keyboard by taking it back (#318).
-- A `hotkeys.toml` with a typo, a missing comma or `}`, or an unknown key name
-  now says so: one "dwm: bad config" notification names the first problem and
-  how many there are, and the rest of the file loads. A file cut off inside its
-  array (a half-saved edit) is refused as a whole, so a running session keeps
-  every key it has; the notification says which line opened the array. The
-  same applies to `window-rules.toml` and `themes.toml` (#319).
-- A `hotkeys.toml` binding (or window rule) with more than 32 `exec` arguments
-  no longer makes dwm lose every entry after it (#319).
-- The panel and the overview keep updating after their state watcher
-  (`dwm-xwatch`) dies: the bridge exits and is started again, where it waited
-  for ever (#320).
-- A window that retitles without pause (a progress title) rebuilds the shell's
-  state at most five times a second, where it was about 17 times, about 70
-  processes a second (#320).
-- With the shell not running, Super+Shift+Q, Super+R and the other shell keys
-  show how to get it back (Super+Shift+R), and the power keys how to quit at once
-  (Super+Ctrl+Shift+Q), instead of doing nothing (#320).
+## [2026.10.0-beta.6] - 2026-10-10
+
+Seventh beta of the Arch Linux line. Updates work end to end: `lyona-update` verifies an update without a false
+mismatch, rolls back with the cursor themes, and keeps the shared data where the system was installed. The panel's
+popups take the keyboard while a window is open, and the overview no longer lists the panel. The image installer times
+its steps and names the first keys; AUR builds go through one pinned helper; the desktop starts fewer resident
+processes; Settings and `install.sh` read clearer; and dwm's runtime configuration is its own file, `config.c`
+(#269-#295, #308, #310). See `docs/RELEASE-NOTES-2026.10.0-beta.6.md`.
+
+Published 2026-10-10 from `1bfafac`, a day after the first cut (`34c8021`,
+2026-10-09), with the fixes from the 2026-10-09 whole-repo review: the entries
+marked #317 to #328 below are in the published release and were not in the
+first cut.
+
+### Added
+
+- The image installer shows how long each step has run, how long it usually
+  takes, and the newest line of its log, redrawn every second, so a slow
+  archinstall or `install.sh` is told from a hung one (#291). Ctrl+C or a kill
+  during a step stops the step and everything it started.
+- The first keys after an image install (#295): the installer's last screen
+  names `Super`+`/` (every key), `Super`+`R` (the app launcher) and `Super`+`F1`
+  (the Control Center), and the first login says so in one notification.
+- Settings search finds "shortcut", "hotkey" and "keybind": a **Keyboard
+  shortcuts** row, reached with the arrow keys after the matching sections,
+  opens the keybind viewer (#293).
+- **Settings > Appearance > Compositor** can let full-screen windows bypass the
+  compositor (Picom's `unredir-if-possible`), off by default (#288).
 
 ### Changed
 
@@ -106,7 +76,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - Settings > System says how its two package-update areas differ: Update
   packages in a terminal (yay or pacman, AUR included) and System updates
   through PackageKit (#326).
-
 - dwm takes as a monitor's bar only a dock that reserves space at the top or
   bottom of the screen (the EWMH `_NET_WM_STRUT_PARTIAL`, which the lyona panel
   sets for its exclusive zone), not any window named "quickshell" or any wide
@@ -148,33 +117,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   running, even one that left the test's process group (#321).
 - The shipped defaults are documented where a standard install puts them,
   `/usr/local/share/lyona/` (#319).
-
-## [2026.10.0-beta.6] - 2026-10-09
-
-Seventh beta of the Arch Linux line. Updates work end to end: `lyona-update` verifies an update without a false
-mismatch, rolls back with the cursor themes, and keeps the shared data where the system was installed. The panel's
-popups take the keyboard while a window is open, and the overview no longer lists the panel. The image installer times
-its steps and names the first keys; AUR builds go through one pinned helper; the desktop starts fewer resident
-processes; Settings and `install.sh` read clearer; and dwm's runtime configuration is its own file, `config.c`
-(#269-#295, #308, #310). See `docs/RELEASE-NOTES-2026.10.0-beta.6.md`.
-
-### Added
-
-- The image installer shows how long each step has run, how long it usually
-  takes, and the newest line of its log, redrawn every second, so a slow
-  archinstall or `install.sh` is told from a hung one (#291). Ctrl+C or a kill
-  during a step stops the step and everything it started.
-- The first keys after an image install (#295): the installer's last screen
-  names `Super`+`/` (every key), `Super`+`R` (the app launcher) and `Super`+`F1`
-  (the Control Center), and the first login says so in one notification.
-- Settings search finds "shortcut", "hotkey" and "keybind": a **Keyboard
-  shortcuts** row, reached with the arrow keys after the matching sections,
-  opens the keybind viewer (#293).
-- **Settings > Appearance > Compositor** can let full-screen windows bypass the
-  compositor (Picom's `unredir-if-possible`), off by default (#288).
-
-### Changed
-
+- `install.sh --skip-yay` leaves yay alone; the image installer passes it,
+  having built yay itself before its temporary sudo rule exists (#328).
 - Every AUR build goes through one helper, `dwm-aur.sh`, with one table of
   reviewed pins (#281): `yay-bin`, `topgrade-bin` and the legacy NVIDIA drivers.
   Each is fetched at its pinned commit, refused when a source has no checksum,
@@ -324,6 +268,54 @@ processes; Settings and `install.sh` read clearer; and dwm's runtime configurati
 
 ### Fixed
 
+- `lyona-update rollback` restores `PREFIX/lib/lyona` and `PREFIX/share/lyona`
+  whole (removing what the newer release added), the polkit actions and the GTK
+  themes, where it restored only the commands: after a rollback, the old
+  commands sourced the new shared code. A restore takes only the paths its
+  backup recorded (#324).
+- A rollback also restores the account's install record
+  (`~/.local/state/lyona/install.state`), which the update had rewritten:
+  Settings called the rolled-back install damaged ("Installed records
+  disagree") (#324).
+- The update and its root helper take the install layout from the same record,
+  `/etc/lyona-release`: an install with another `PREFIX` or `DATADIR` is backed
+  up, verified and restored where it was installed. `install.sh` no longer
+  passes its own `DATADIR` (#325).
+- Updating from Settings: cancelling the password prompt says "Update
+  cancelled: authorization was not given. Nothing was changed.", not a failure
+  with `sudo` errors about terminals; Settings shows why the last update or
+  rollback failed even while an update is still available, and no outcome
+  older than a day; a failed rollback is called one (#326). An update started
+  after a rollback is no longer titled "Rolling back Lyona" while it runs.
+- A successful update removes what it downloaded and built (about 25 MB each
+  time), which stayed under `~/.local/state/lyona/updates` for good (#326).
+- The image's live medium adds only the baseline CachyOS repository, which needs
+  no CachyOS pacman, so it is never partially upgraded; the new system moves to
+  its CPU's level afterwards (`lyona-cachyos raise-level`, with full upgrades)
+  (#328).
+- A window closing by itself on the other monitor (a finished download, a
+  terminal that exits) no longer takes the keyboard focus from where you are
+  typing, nor drops it to nowhere; only a window closing on your monitor moves
+  the focus (#318).
+- After you click back into a window while a popup is open, the popup can no
+  longer keep the keyboard by taking it back (#318).
+- A `hotkeys.toml` with a typo, a missing comma or `}`, or an unknown key name
+  now says so: one "dwm: bad config" notification names the first problem and
+  how many there are, and the rest of the file loads. A file cut off inside its
+  array (a half-saved edit) is refused as a whole, so a running session keeps
+  every key it has; the notification says which line opened the array. The
+  same applies to `window-rules.toml` and `themes.toml` (#319).
+- A `hotkeys.toml` binding (or window rule) with more than 32 `exec` arguments
+  no longer makes dwm lose every entry after it (#319).
+- The panel and the overview keep updating after their state watcher
+  (`dwm-xwatch`) dies: the bridge exits and is started again, where it waited
+  for ever (#320).
+- A window that retitles without pause (a progress title) rebuilds the shell's
+  state at most five times a second, where it was about 17 times, about 70
+  processes a second (#320).
+- With the shell not running, Super+Shift+Q, Super+R and the other shell keys
+  show how to get it back (Super+Shift+R), and the power keys how to quit at once
+  (Super+Ctrl+Shift+Q), instead of doing nothing (#320).
 - A process whose name holds a space no longer gives the input watcher a wrong
   session start time (#277): `autostart.sh` read field 22 of `/proc/PID/stat`
   with `awk`, which counts the name's words as fields.
@@ -421,6 +413,27 @@ processes; Settings and `install.sh` read clearer; and dwm's runtime configurati
   the session locked. When nothing locks, `dwm-lock` fails and says so in a
   notification. Auto Lock shows as unavailable, with the reason, outside a
   LightDM login, where light-locker cannot run (startx, GDM, SDDM).
+
+### Security
+
+- `lyona-update-root` builds the dwm binary, the one program that includes your
+  `config.h`, as the `nobody` user, not as root: an `#include` or `#embed` in
+  `config.h` can no longer read root-only files into the build output or the
+  installed binary. Everything root runs during the install is built from the
+  verified sources alone. The update prompt says a `config.h` is compiled in
+  (#327).
+- An older release than the installed one is no longer installed on the
+  routine "verified update" prompt: the root helper refuses it there, and it
+  goes through its own polkit action (`install-downgrade`, "Install an older
+  lyona release"), only with its signature verified. To go back to what was
+  installed before an update, use `lyona-update rollback` (#327).
+- The image install builds yay before the install's temporary passwordless sudo
+  exists, as Topgrade is built after it, and `install.sh` closes the sudo
+  timestamp before building yay. A temporary sudo rule left by a power-off
+  during the install is removed at the next boot (#328).
+- The image wizard asks before looking up the timezone online, which sends the
+  IP address to ipinfo.io or ipapi.co; a no goes straight to the list. This
+  updates decision D-30 (#328).
 
 ## [2026.10.0-beta.5] - 2026-10-08
 

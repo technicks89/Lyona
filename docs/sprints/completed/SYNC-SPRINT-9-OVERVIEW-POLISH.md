@@ -1,7 +1,7 @@
 # Sync Sprint 9 — Cross-tag window overview: visual richness, accessibility, performance
 
-Index: [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md). Continues
-[Sprint 8](completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md), which finished the
+Index: [`UPSTREAM-SYNC.md`](../UPSTREAM-SYNC.md). Continues
+[Sprint 8](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md), which finished the
 overview's interaction model. Everything here is explicitly **beyond** the
 design doc's first version — real per-window previews, motion, an
 accessibility pass, and formal performance validation, none of which
