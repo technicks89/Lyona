@@ -36,6 +36,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   themes, where it restored only the commands: after a rollback, the old
   commands sourced the new shared code. A restore takes only the paths its
   backup recorded (#324).
+- A rollback also restores the account's install record
+  (`~/.local/state/lyona/install.state`), which the update had rewritten:
+  Settings called the rolled-back install damaged ("Installed records
+  disagree") (#324).
 - The update and its root helper take the install layout from the same record,
   `/etc/lyona-release`: an install with another `PREFIX` or `DATADIR` is backed
   up, verified and restored where it was installed. `install.sh` no longer
@@ -44,7 +48,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   cancelled: authorization was not given. Nothing was changed.", not a failure
   with `sudo` errors about terminals; Settings shows why the last update or
   rollback failed even while an update is still available, and no outcome
-  older than a day; a failed rollback is called one (#326).
+  older than a day; a failed rollback is called one (#326). An update started
+  after a rollback is no longer titled "Rolling back Lyona" while it runs.
 - A successful update removes what it downloaded and built (about 25 MB each
   time), which stayed under `~/.local/state/lyona/updates` for good (#326).
 - The image's live medium adds only the baseline CachyOS repository, which needs

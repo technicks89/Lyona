@@ -1266,7 +1266,7 @@ cmd_rollback() {
 	# kept leaves the current one.
 	if [[ -f $backup_dir/install.state && ! -L $backup_dir/install.state ]]; then
 		if ! install -m 0600 -- "$backup_dir/install.state" "$state_home/lyona/.install.state.restore" ||
-			! mv -f -- "$state_home/lyona/.install.state.restore" "$state_home/lyona/install.state"; then
+			! mv -fT -- "$state_home/lyona/.install.state.restore" "$state_home/lyona/install.state"; then
 			die "could not restore $state_home/lyona/install.state from backup $backup_id"
 		fi
 	fi
