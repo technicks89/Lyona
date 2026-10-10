@@ -733,7 +733,7 @@ root shell that automatically launches `lyona-install`
 short wizard drawn with `gum` (menus and prompts, the lyona banner redrawn
 between steps): Wi-Fi when there is no wired network, keyboard (applied to the
 console at once, so the passwords are typed with it), disk, btrfs or ext4 with
-optional LUKS encryption, user, hostname, timezone (detected, then confirmed),
+optional LUKS encryption, user, hostname, timezone (looked up online only after the user agrees, then confirmed),
 package mirrors, and an NVIDIA driver choice when applicable, then a summary to
 confirm, where any one answer can be changed, with no desktop-environment or
 package picker. A failed `archinstall` offers Retry with the same answers. It generates an
@@ -786,13 +786,28 @@ not been tested on real hardware — see `docs/RELEASING.md`.
 
 ## 6. Filesystem and Installation Contract
 
-Default system installation locations:
+Default system installation locations (`PREFIX` is `/usr/local` by default):
 
 ```text
-${PREFIX}/bin/dwm
-${PREFIX}/share/man/man1/dwm.1
-/usr/share/xsessions/dwm.desktop
+${PREFIX}/bin/dwm and the commands
+${PREFIX}/libexec/lyona/          privileged helpers
+${PREFIX}/lib/lyona/              shared code, session scripts, helper programs
+${PREFIX}/share/lyona/config/     the shipped default TOML files
+${MANPREFIX}/man1/dwm.1           MANPREFIX: ${PREFIX}/share/man
+${DATADIR}/icons, themes, ...     DATADIR: /usr/share for PREFIX /usr and
+                                  /usr/local, else ${PREFIX}/share
+${XSESSIONSDIR}/dwm.desktop       XSESSIONSDIR: /usr/share/xsessions
+/etc/lyona-release                the system install record
 ```
+
+`make install-system` writes `/etc/lyona-release` last, as a record of the
+install: `LYONA_VERSION`, `LYONA_COMMIT`, `LYONA_SOURCE`, `LYONA_INSTALL_DATE`
+and the layout, `LYONA_PREFIX`, `LYONA_MANPREFIX`, `LYONA_DATADIR` and
+`LYONA_XSESSIONSDIR`. It is read as data, never sourced. `lyona-update` and its
+privileged helper `lyona-update-root` both take the layout from it, so an update
+installs, backs up, verifies and restores where the system was installed; a
+record without the layout fields (before `2026.10.0-beta.6`) falls back to the
+defaults above.
 
 Default user locations:
 

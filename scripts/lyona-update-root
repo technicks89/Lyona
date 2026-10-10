@@ -7,7 +7,12 @@ install_prefix='@PREFIX@'
 # update check of a release before 2026.10.0-beta.6 fills in only @PREFIX@ in
 # its expected copy, and reported every update as a mismatch (#280 VM).
 install_manprefix=$install_prefix/share/man
-install_datadir=/usr/share
+# The Makefile's DATADIR default for this PREFIX (#325): /usr/share for /usr and
+# /usr/local, else PREFIX/share.
+case $install_prefix in
+/usr | /usr/local) install_datadir=/usr/share ;;
+*) install_datadir=$install_prefix/share ;;
+esac
 install_xsessionsdir=/usr/share/xsessions
 install_stamp=/etc/lyona-release
 
@@ -184,6 +189,64 @@ installed_version() {
 	printf '%s\n' "${version:-unknown}"
 }
 
+# A release's order, as a string that sorts as versions do: YYYY.MM[.PATCH], then
+# alpha < beta < rc < the release itself. As lyona-update's version_rank.
+release_rank() {
+	local v=$1 core=$1 suffix word num=0 srank=9 year month patch=0
+	[[ $v =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-(alpha|beta|rc)\.[0-9]+)?$ ]] || return 1
+	if [[ $v == *-* ]]; then
+		core=${v%%-*}
+		suffix=${v#*-}
+		word=${suffix%%.*}
+		num=${suffix#*.}
+		case $word in
+		alpha) srank=1 ;;
+		beta) srank=2 ;;
+		rc) srank=3 ;;
+		esac
+	fi
+	IFS=. read -r year month patch <<<"$core"
+	printf '%04d%02d%03d%d%03d\n' "$((10#$year))" "$((10#$month))" "$((10#${patch:-0}))" "$srank" "$((10#$num))"
+}
+
+# dwm, the one program that includes the user's config.h, built as nobody, in a
+# copy of the verified tree nobody owns: an #include or #embed in config.h then
+# reads only what nobody can, where root's build could read any file and put it
+# in a binary installed world-readable (#327, decided: setpriv). Everything root
+# runs (lyona-toml, during install-system) is built by root from the verified
+# sources, which do not include config.h. dwm and dwm.o are read back with
+# nobody's permissions, so a link planted in the build directory gives nothing
+# nobody could not read, then touched so install-system takes them as current.
+readonly setpriv_path=/usr/bin/setpriv
+build_dwm_unprivileged() {
+	local tree=$1 build file
+	trusted_file "$setpriv_path" ||
+		die "a trusted setpriv ($setpriv_path) is needed to build the update without root"
+	getent passwd nobody >/dev/null || die "there is no nobody user to build the update as"
+	build=$(mktemp -d) || die "could not create a build directory"
+	if ! cp -a -- "$tree/." "$build/" || ! chown -R nobody:nobody -- "$build"; then
+		rm -rf -- "$build"
+		die "could not prepare the unprivileged build"
+	fi
+	if ! env -i PATH=/usr/bin:/bin HOME=/nonexistent LANG=C.UTF-8 \
+		"$setpriv_path" --reuid=nobody --regid=nobody --clear-groups --no-new-privs \
+		"$make_path" -C "$build" dwm; then
+		rm -rf -- "$build"
+		die "failed to build dwm for the verified release"
+	fi
+	for file in dwm.o dwm; do
+		if ! runuser -u nobody -- cat -- "$build/$file" >"$tree/$file"; then
+			rm -rf -- "$build"
+			die "could not read the built $file back"
+		fi
+	done
+	rm -rf -- "$build"
+	chmod 0644 -- "$tree/dwm.o"
+	chmod 0755 -- "$tree/dwm"
+	touch -- "$tree/dwm.o"
+	touch -- "$tree/dwm"
+}
+
 prune_system_backups() {
 	local current_id=$1 id count=1
 	while IFS= read -r id; do
@@ -201,7 +264,7 @@ prune_system_backups() {
 # from); the contents come from the live system, read by root.
 backup_system_files() {
 	local tree=$1 id=$2 dir name path out
-	local -a names helpers themes
+	local -a names helpers themes policies palettes
 	valid_backup_id "$id" || die "malformed backup id: $id"
 	prepare_system_backups_root ||
 		die "$system_backups_root is not a private root-owned directory; refusing to back up into it"
@@ -220,6 +283,13 @@ backup_system_files() {
 	out=$(tree_make_values "$tree" '$(CAPITAINE_DARK_THEME) $(CAPITAINE_LIGHT_THEME)') ||
 		die "could not read the cursor theme names from the new release"
 	mapfile -t themes < <(awk 'NF' <<<"$out")
+	# shellcheck disable=SC2016
+	out=$(tree_make_values "$tree" '$(notdir $(POLKIT_ACTIONS))') ||
+		die "could not read the polkit actions from the new release"
+	mapfile -t policies < <(awk 'NF' <<<"$out")
+	# The GTK themes, one per palette, as install-gtk-themes names them.
+	mapfile -t palettes < <(awk '/^\[theme\./ { id = $0; sub(/^\[theme\./, "", id); sub(/\].*$/, "", id); print id }' \
+		"$tree/config/themes.toml" 2>/dev/null)
 	((${#names[@]} > 1)) || die "the new release reported no installed commands"
 
 	mkdir -m 0700 -- "$dir" || die "could not create the system backup directory"
@@ -233,6 +303,16 @@ backup_system_files() {
 		done
 		for name in "${themes[@]}"; do
 			printf '%s\n' "${install_datadir#/}/icons/$name"
+		done
+		# The shared code, session scripts and helper programs, and the shipped
+		# defaults, whole: most of lyona's logic lives there, and a rollback that
+		# left them restored new libraries under old commands (#324).
+		printf '%s\n' "${install_prefix#/}/lib/lyona" "${install_prefix#/}/share/lyona"
+		for name in "${policies[@]}"; do
+			[[ $name =~ ^[A-Za-z0-9._-]+\.policy$ ]] && printf '%s\n' "usr/share/polkit-1/actions/$name"
+		done
+		for name in "${palettes[@]}"; do
+			[[ $name =~ ^[A-Za-z0-9_-]+$ ]] && printf '%s\n' "${install_datadir#/}/themes/Lyona-$name"
 		done
 		# An install from before 2026.10.0-beta.6 has its shared data under
 		# PREFIX/share, which this install removes (remove-legacy-shared-data):
@@ -309,11 +389,11 @@ case ${1:-} in
 # on the routine polkit prompt. install-unverified is the same install checked
 # by its digest alone (a release from before signing, or an offline file the
 # user vouched for), on its own, explicit prompt (com.lyona.update.unverified).
-install-system | install-unverified)
+install-system | install-unverified | install-downgrade)
 	install_mode=$1
 	case ${2:-} in
 	release)
-		if [[ $install_mode == install-system ]]; then
+		if [[ $install_mode != install-unverified ]]; then
 			[[ $# == 8 ]] ||
 				die "install-system release requires a tarball, its checksum, the version, a config.h path (or -), a backup id, and the release's signature bundle"
 			bundle_path=$8
@@ -374,7 +454,7 @@ install-system | install-unverified)
 		# install-unverified, the administrator's approval of the explicit prompt.
 		[[ ${actual_sha256,,} == "${expected_sha256,,}" ]] ||
 			die "tarball checksum does not match the expected release digest; refusing to install"
-		if [[ $install_mode == install-system ]]; then
+		if [[ $install_mode != install-unverified ]]; then
 			runuser -u "$invoking_user" -- cat -- "$bundle_path" >"$verified_bundle" ||
 				die "could not read the signature bundle as the invoking user"
 			verify_release_signature "$verified_tarball" "$verified_bundle"
@@ -385,6 +465,22 @@ install-system | install-unverified)
 		[[ -n $staged_version ]] || die "could not read VERSION from the verified release's config.mk"
 		[[ $staged_version == "$requested_version" ]] ||
 			die "the verified release is version $staged_version, not the requested $requested_version"
+
+		# An older release goes through its own subcommand and polkit action,
+		# never the routine update prompt: an old release may carry a root-helper
+		# bug fixed since (#327, decided: a separate action).
+		installed=$(installed_version)
+		if [[ $installed != unknown ]] && installed_rank=$(release_rank "$installed") &&
+			requested_rank=$(release_rank "$requested_version"); then
+			if [[ $requested_rank < $installed_rank && $install_mode != install-downgrade ]]; then
+				die "$requested_version is older than the installed $installed; a downgrade needs its own approval (install-downgrade)"
+			fi
+			if [[ ! $requested_rank < $installed_rank && $install_mode == install-downgrade ]]; then
+				die "$requested_version is not older than the installed $installed; install-downgrade only installs an older release"
+			fi
+		elif [[ $install_mode == install-downgrade ]]; then
+			die "the installed version is unknown, so this is no downgrade; use install-system"
+		fi
 
 		if [[ $config_h_path != - ]]; then
 			runuser -u "$invoking_user" -- cat -- "$config_h_path" >"$verified_dir/config.h" ||
@@ -403,9 +499,15 @@ install-system | install-unverified)
 		if ! "$make_path" -C "$verified_dir" clean; then
 			die "failed to clean the verified build tree"
 		fi
-		if ! "$make_path" -C "$verified_dir" all; then
+		# Everything but dwm, as root: none of it includes config.h.
+		# shellcheck disable=SC2016 # expanded by make, not the shell
+		root_targets_out=$(tree_make_values "$verified_dir" '$(THUMB) $(TOML_TOOL) $(XWATCH) $(filter-out dwm.o,$(OBJ))') ||
+			die "could not read the build targets from the verified release"
+		mapfile -t root_targets < <(awk 'NF' <<<"$root_targets_out")
+		if ! "$make_path" -C "$verified_dir" "${root_targets[@]}"; then
 			die "failed to build the verified release"
 		fi
+		build_dwm_unprivileged "$verified_dir"
 		backup_system_files "$verified_dir" "$backup_id"
 
 		# Into the locations this helper was installed for, so an update never
@@ -423,7 +525,7 @@ install-system | install-unverified)
 		log_outcome "$install_mode" "$requested_version" "$tarball_path" succeeded
 		;;
 	*)
-		die "usage: lyona-update-root install-system release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID BUNDLE, or install-unverified release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID"
+		die "usage: lyona-update-root install-system|install-downgrade release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID BUNDLE, or install-unverified release TARBALL SHA256 VERSION CONFIG_H|- BACKUP_ID"
 		;;
 	esac
 	;;
@@ -459,6 +561,23 @@ restore-system)
 	# may hold it there.
 	legacy_icons_dir_rel=${install_prefix#/}/share/icons
 	legacy_licenses_dir_rel=${install_prefix#/}/share/licenses/lyona
+	lib_dir_rel=${install_prefix#/}/lib/lyona
+	share_dir_rel=${install_prefix#/}/share/lyona
+	polkit_dir_rel=usr/share/polkit-1/actions
+	gtk_themes_rel=${install_datadir#/}/themes
+	# Every member must also be one of the paths this backup recorded, or under
+	# one (#324): the cursor themes it took, not anything under icons/.
+	backup_manifest=$backup_dir/manifest
+	[[ -f $backup_manifest && ! -L $backup_manifest && $(stat -c %u -- "$backup_manifest") == 0 ]] ||
+		die "the system backup $backup_id has no root-owned manifest"
+	in_manifest() {
+		local member=${1%/} entry
+		while IFS= read -r entry; do
+			[[ -n $entry ]] || continue
+			[[ $member == "$entry" || $member == "$entry"/* ]] && return 0
+		done <"$backup_manifest"
+		return 1
+	}
 	while IFS= read -r listing_line; do
 		[[ -n $listing_line ]] || continue
 		member_type=${listing_line:0:1}
@@ -471,7 +590,7 @@ restore-system)
 		- | d) ;;
 		l)
 			case $member_path in
-			"$icons_dir_rel/"?* | "$legacy_icons_dir_rel/"?*) ;;
+			"$icons_dir_rel/"?* | "$legacy_icons_dir_rel/"?* | "$gtk_themes_rel/Lyona-"?*) ;;
 			*) die "backup archive contains a symlink outside the cursor themes: $member_path" ;;
 			esac
 			;;
@@ -497,15 +616,47 @@ restore-system)
 		"$licenses_dir_rel/" | "$licenses_dir_rel/"*) ;;
 		"$legacy_icons_dir_rel/" | "$legacy_icons_dir_rel/"*) ;;
 		"$legacy_licenses_dir_rel/" | "$legacy_licenses_dir_rel/"*) ;;
+		"$lib_dir_rel/" | "$lib_dir_rel/"*) ;;
+		"$share_dir_rel/" | "$share_dir_rel/"*) ;;
+		"$polkit_dir_rel/"*/*) die "backup archive contains a nested path under a flat directory: $member_path" ;;
+		"$polkit_dir_rel/com.lyona."*.policy) ;;
+		"$gtk_themes_rel/Lyona-"?*) ;;
 		etc/lyona-release) ;;
 		*) die "backup archive contains a path outside the managed install locations: $member_path" ;;
 		esac
+		in_manifest "$member_path" ||
+			die "backup archive contains a path its manifest does not list: $member_path"
 	done < <(tar --numeric-owner -tvf "$system_archive")
 
+	# The shared code and defaults are put back whole: files the newer release
+	# added there go, as they would not have existed in the version restored.
+	set_aside=()
+	for whole_dir in "$lib_dir_rel" "$share_dir_rel"; do
+		grep -Fxq -- "$whole_dir" "$backup_manifest" || continue
+		[[ -d /$whole_dir && ! -L /$whole_dir ]] || continue
+		rm -rf -- "/${whole_dir:?}.lyona-restore-old"
+		if ! mv -T -- "/$whole_dir" "/$whole_dir.lyona-restore-old"; then
+			# Nothing restored yet: what was set aside goes back first.
+			for moved in "${set_aside[@]}"; do
+				mv -T -- "/$moved.lyona-restore-old" "/$moved" || :
+			done
+			die "could not set aside /$whole_dir before restoring it"
+		fi
+		set_aside+=("$whole_dir")
+	done
 	if ! tar -C / --numeric-owner -xpf "$system_archive"; then
+		# What was there before goes back, not a half-restored tree.
+		for whole_dir in "$lib_dir_rel" "$share_dir_rel"; do
+			[[ -d /$whole_dir.lyona-restore-old ]] || continue
+			rm -rf -- "/${whole_dir:?}"
+			mv -T -- "/$whole_dir.lyona-restore-old" "/$whole_dir"
+		done
 		log_outcome restore-system unknown "$backup_id" failed
 		die "restoring the system backup $backup_id failed"
 	fi
+	for whole_dir in "$lib_dir_rel" "$share_dir_rel"; do
+		rm -rf -- "/${whole_dir:?}.lyona-restore-old"
+	done
 	log_outcome restore-system unknown "$backup_id" succeeded
 	;;
 *)

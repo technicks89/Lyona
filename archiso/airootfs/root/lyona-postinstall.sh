@@ -65,6 +65,12 @@ add_cachyos_repositories() {
 		if ! arch-chroot "$TARGET" pacman-key --populate cachyos >/dev/null 2>&1; then
 			note_warning 'Could not trust the CachyOS signing key on the new system; package updates will fail until it is (pacman-key --populate cachyos).'
 		fi
+		# The live medium set up only the baseline repository, which needs no
+		# CachyOS pacman (#328); the new system moves to its CPU's level here,
+		# with full upgrades. Staying at baseline is no failure.
+		if ! arch-chroot "$TARGET" env LYONA_CACHYOS_NONINTERACTIVE=1 "$CACHYOS_HELPER" raise-level; then
+			note_warning "The CachyOS repositories stayed at baseline; run 'sudo lyona-cachyos raise-level' to use your CPU's optimized packages."
+		fi
 		: >"$CACHYOS_MARKER"
 		return 0
 	fi
@@ -372,10 +378,33 @@ install_topgrade() {
 	return "$status"
 }
 
+# yay-bin (#328): built from its pinned PKGBUILD as the new user before the
+# install's passwordless sudo exists, so nothing in the build can reach root,
+# and installed by root from the built package, as Topgrade is. makepkg's
+# base-devel and git come first, from the official repositories. install.sh is
+# then told to leave yay alone, so it never builds it under that sudo.
+install_yay() {
+	local build=/var/tmp/lyona-yay package='' line status=0
+	arch-chroot "$TARGET" pacman -S --needed --noconfirm base-devel git || return 1
+	arch-chroot "$TARGET" rm -rf -- "$build"
+	arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build"
+	while IFS= read -r line; do
+		[[ ${line##*/} == yay-bin-[0-9]* ]] && package=$line
+	done < <(arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" \
+		bash "$target_home/$checkout_rel/scripts/dwm-aur.sh" build-pinned yay-bin "$build")
+	if [[ -n $package ]]; then
+		arch-chroot "$TARGET" pacman -U --noconfirm --needed -- "$package" || status=$?
+	else
+		status=1
+	fi
+	arch-chroot "$TARGET" rm -rf -- "$build" || :
+	return "$status"
+}
+
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers \
-	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade
+	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade install_yay
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."
 [[ -d $REPO_SRC ]] || fail "checkout not found at $REPO_SRC (this script expects to run from the lyona live medium)."
@@ -412,9 +441,9 @@ if [[ -e $LYONA_MIRRORS_MARKER ]]; then
 		note_warning "The ranked mirrorlist was not copied to the new system; it uses the default mirrors." >>"$LOG_FILE"
 	fi
 fi
-# Every run_logged step below, the install.sh and Topgrade ones too (Sync
+# Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
-set_total_steps 9
+set_total_steps 10
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
@@ -447,12 +476,24 @@ rm -rf "${TARGET:?}$target_repo_dir"
 cp -a "$REPO_SRC" "$TARGET$target_repo_dir"
 arch-chroot "$TARGET" chown -R "$target_user:$target_group" "$target_repo_dir"
 
+if ! run_logged "Installing yay from the AUR..." install_yay; then
+	say --foreground "$COLOR_DANGER" -- "-> yay was not installed; after logging in, run ~/$checkout_rel/install.sh to add it."
+	note_warning "yay was not installed; after logging in, run ~/$checkout_rel/install.sh to add it." >/dev/null
+fi
+
 # Passwordless sudo, only while install.sh runs as the new user. It is removed
 # however the run ends (lyona-ui.sh's clean-up), and a stale copy from an
 # earlier, failed run is removed first (Sync Sprint 16 R16-01).
 install_sudoers="$TARGET/etc/sudoers.d/90-lyona-install"
-LYONA_CLEANUP_FILES+=("$install_sudoers")
+# A power-off or a kill skips that clean-up: systemd-tmpfiles then removes the
+# rule at the next boot, and this entry with it (#328). Removed with the rule
+# when the run ends normally.
+install_sudoers_tmpfiles="$TARGET/etc/tmpfiles.d/lyona-install-sudoers.conf"
+LYONA_CLEANUP_FILES+=("$install_sudoers" "$install_sudoers_tmpfiles")
 rm -f -- "$install_sudoers"
+install -Dm 0644 /dev/null "$install_sudoers_tmpfiles"
+printf '%s\n' 'r /etc/sudoers.d/90-lyona-install' 'r /etc/tmpfiles.d/lyona-install-sudoers.conf' \
+	>"$install_sudoers_tmpfiles"
 install -m 0440 /dev/null "$install_sudoers"
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$target_user" >"$install_sudoers"
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET, but lyona is not finished. Choose Retry to run the lyona install again. Or reboot, log in as $target_user, and run ~/$checkout_rel/install.sh."
@@ -476,9 +517,9 @@ log_mark=$(wc -l <"$LOG_FILE" 2>/dev/null || printf '0')
 LYONA_STEP_EXPECT="usually 5-30 minutes"
 run_logged "Running install.sh --profile full as $target_user..." \
 	arch-chroot "$TARGET" su - "$target_user" -c \
-	"cd \"\$HOME/$checkout_rel\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full --skip-topgrade"
+	"cd \"\$HOME/$checkout_rel\" && env LYONA_SOURCE=iso LYONA_COMMIT=$iso_commit ./install.sh --non-interactive --profile full --skip-topgrade --skip-yay"
 
-rm -f -- "$install_sudoers"
+rm -f -- "$install_sudoers" "$install_sudoers_tmpfiles"
 # The first keys, shown once at the first login (#295): the session's autostart
 # turns this marker into a notification, then removes it.
 # shellcheck disable=SC2016 # expanded by the inner sh, as the user

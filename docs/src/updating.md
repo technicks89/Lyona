@@ -23,8 +23,8 @@ CHANNEL channel yet" means the server answered but has no release there; see
 `check_on_login=true` (the default) runs one check shortly after Quickshell
 starts, jittered so a machine with several users logging in around the same
 time does not all hit the update server at once. It never runs more than once
-per session, and a `behind` result only surfaces a notification — it never
-applies anything on its own.
+per session, and a `behind` result only shows on the panel's update icon and in
+the Control Center — it never applies anything on its own.
 
 ## The panel's update icon
 
@@ -252,6 +252,15 @@ progress is shown outside Settings and survives that restart:
 - A **notification** reports how an update or rollback ended. A failure is
   critical and names the log; declining the confirmation prompt is not
   treated as a failure and sends nothing.
+- **Cancelling the password prompt** cancels the update (or rollback): nothing
+  is changed, and the popup and Settings -> System say "Update cancelled",
+  with no notification. Started from a terminal instead, `lyona-update` asks
+  for your password with `sudo` when there is no polkit agent to ask.
+- **Settings -> System** shows how the last update or rollback ended, its
+  reason when it failed or was cancelled, for a day after it.
+- A successful update removes what it downloaded and built under
+  `~/.local/state/lyona/updates`; a failed one leaves it there, to look into.
+  Rollback uses the backups, not these files.
 - **View log** in the popup, or **View update log** under Settings -> System,
   shows the last 64 KiB of `$XDG_STATE_HOME/lyona/update.log`. Each apply or
   rollback starts a fresh log holding its full output (build output included),

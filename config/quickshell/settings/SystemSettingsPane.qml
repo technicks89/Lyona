@@ -294,8 +294,15 @@ Flickable {
         // check's own text is the status card's detail above.
         UiText {
             Layout.fillWidth: true
+            // A failed or cancelled action is shown even with an update still
+            // available, which is exactly when the reason matters, and so is a
+            // rollback, which leaves one available; an update's success only
+            // until the "Update to" button replaces it. Never an outcome older
+            // than a day (#326).
             visible: !root.updateModel.busy && root.updateModel.outcomeMessage.length > 0
-                && !root.updateModel.updateAvailable
+                && root.updateModel.outcomeRecent
+                && (!root.updateModel.updateAvailable || !root.updateModel.actionSucceeded
+                    || root.updateModel.lastOperation === "rollback")
             text: root.updateModel.outcomeMessage
             color: root.updateModel.actionSucceeded ? Theme.success : Theme.menuMutedText
             wrapMode: Text.WordWrap
@@ -433,7 +440,8 @@ Flickable {
                 Layout.fillWidth: true
                 text: "Each runs in your terminal, where you read the plan and confirm it. "
                     + "Update packages updates the system's packages: with yay when it is installed (AUR packages included), "
-                    + "otherwise pacman, which asks for your password. Update Flatpak apps updates Flatpak apps only."
+                    + "otherwise pacman, which asks for your password. Update Flatpak apps updates Flatpak apps only. "
+                    + "For the same system packages without a terminal, use System updates below."
                 color: Theme.menuMutedText
                 wrapMode: Text.WordWrap
             }
@@ -560,6 +568,17 @@ Flickable {
         }
 
         SectionLabel { label: "System updates" }
+
+        // Two ways to update the same packages, side by side: say how they
+        // differ rather than leave the user to guess (#326).
+        UiText {
+            Layout.fillWidth: true
+            text: "The same system packages as Update packages above, through PackageKit, without a terminal: "
+                + "refresh the package lists, then install the updates found. AUR packages are not included; "
+                + "use Update packages for those, which waits while PackageKit is working."
+            color: Theme.menuMutedText
+            wrapMode: Text.WordWrap
+        }
 
         SystemUpdateControls {
             id: updateControls

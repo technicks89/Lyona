@@ -21,9 +21,10 @@
     function updateFind(container, objectName) {
         return updateItems(container, item => item.objectName === objectName)[0];
     }
-    function updateStatusText(phase, detail, outcome, message, ageMs) {
+    function updateStatusText(phase, detail, outcome, message, ageMs, operation) {
         const stamp = new Date(Date.now() - ageMs).toISOString().replace(/\.\d+Z$/, "Z");
-        return "lyona-update-status-protocol\t1\t0\nphase\t" + phase + "\t" + detail
+        return "lyona-update-status-protocol\t1\t1\noperation\t" + (operation || "apply")
+            + "\nphase\t" + phase + "\t" + detail
             + "\ntarget\t2026.10.0\noutcome\t" + outcome + "\t" + message
             + "\ntimestamp\t" + stamp + "\ncomplete\tstatus\n";
     }
@@ -183,6 +184,58 @@
                 if (model.logState === "loading") return;
                 root.updateCheck(model.logState === "unavailable" && model.logText === "",
                     "a missing log was not reported as unavailable: " + model.logState);
+                // #326: a rollback whose password prompt was dismissed is a cancel,
+                // named as a rollback, not a failure.
+                root.updateWriteFile(model.statusPath, root.updateStatusText("restarting", "Restoring backup",
+                    "cancelled", "Rollback cancelled: authorization was not given. Nothing was changed.", 0,
+                    "rollback"));
+                root.updateNext();
+                return;
+            }
+            case 12: {
+                if (!model.actionCancelled) return;
+                root.updateCheck(model.lastOperation === "rollback" && !model.actionSucceeded && model.outcomeRecent,
+                    "a cancelled rollback was not read as one");
+                root.updateCheck(popup.visible && popup.cancelled && !popup.failed,
+                    "a cancelled rollback is shown as a failure");
+                root.updateCheck(root.updateItems(popup.contentItem,
+                        item => item.visible && item.text === "Rollback cancelled").length === 1,
+                    "the popup does not say the rollback was cancelled");
+                // An update started after that rollback is called an update
+                // while it runs, not "Rolling back" (#326 VM).
+                root.updateWriteFile(model.statusPath, root.updateStatusText("installing", "Installing",
+                    "pending", "", 0, "apply"));
+                root.updateNext();
+                return;
+            }
+            case 13: {
+                if (!model.busy) return;
+                root.updateCheck(model.lastOperation === "apply" && !popup.rollback,
+                    "an update running after a rollback is shown as a rollback");
+                // An outcome two days old is not shown in Settings.
+                root.updateWriteFile(model.statusPath, root.updateStatusText("installing", "Installing",
+                    "failed", "two-day-old failure", 2 * 24 * 60 * 60 * 1000));
+                root.updateNext();
+                return;
+            }
+            case 14: {
+                if (model.outcomeMessage !== "two-day-old failure") return;
+                root.updateCheck(!model.outcomeRecent, "an outcome two days old counts as recent");
+                // One a second short of a day old: recent now, and no longer once
+                // the day is up, with no further status read.
+                root.updateWriteFile(model.statusPath, root.updateStatusText("installing", "Installing",
+                    "failed", "expiring failure", model.settingsOutcomeMs - 1000));
+                root.updateNext();
+                return;
+            }
+            case 15: {
+                if (model.outcomeMessage !== "expiring failure") return;
+                root.updateCheck(model.outcomeRecent, "an outcome under a day old does not count as recent");
+                root.updateNext();
+                return;
+            }
+            case 16: {
+                if (model.outcomeRecent) return;
                 console.info("Update progress: PASS");
                 Qt.quit();
                 return;

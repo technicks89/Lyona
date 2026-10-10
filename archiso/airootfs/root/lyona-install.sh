@@ -463,8 +463,8 @@ ask_hostname() {
 	HOSTNAME=$name
 }
 
-# The timezone, detected from the connection and confirmed with a yes or no
-# (decision R16-19). One service alone failed too often: ipapi.co answers 429
+# The timezone, detected from the connection once the user agrees to the lookup
+# (#328), and confirmed with a yes or no (decision R16-19). One service alone failed too often: ipapi.co answers 429
 # when its free tier is used up, and the wizard then fell back to tzselect's
 # numbered menus. Each provider is tried in turn, over HTTPS, and only a zone
 # this medium knows is offered.
@@ -494,15 +494,27 @@ choose_timezone() {
 # nothing detected, it asks whether to choose again or cancel the installer;
 # Esc there goes back to the list.
 ask_timezone() {
-	local detected zone choice
-	detected=$(detect_timezone) || detected=
+	local detected='' zone choice asked=false status=0
+	# Asked first (#328, which updates D-30): the lookup sends this machine's
+	# IP address to an outside service, so it runs only on a yes. No goes to
+	# the list; a dismissed or failed prompt cancels, as every other one does.
+	gum confirm --affirmative "Yes" --negative "No" \
+		"Detect your timezone online? This sends your IP address to ipinfo.io or ipapi.co." || status=$?
+	case $status in
+	0)
+		asked=true
+		detected=$(detect_timezone) || detected=
+		;;
+	1) ;;
+	*) cancelled ;;
+	esac
 	while true; do
 		if [[ -n $detected ]]; then
 			if gum confirm --affirmative "Yes" --negative "No" "Detected timezone: $detected. Is this correct?"; then
 				TIMEZONE=$detected
 				return
 			fi
-		else
+		elif [[ $asked == true ]]; then
 			say --foreground "$COLOR_DIM" "Could not detect the timezone from the connection; choose it from the list."
 		fi
 		if zone=$(choose_timezone); then
@@ -766,11 +778,14 @@ setup_cachyos_repositories() {
 	fi
 
 	# Adding the repositories here rather than after the install means
-	# pacstrap fetches the optimized packages directly, instead of installing
-	# Arch builds and replacing them afterwards. pacstrap verifies signatures
-	# against this medium's keyring, which is where add-repos puts the key.
+	# pacstrap fetches CachyOS packages directly, instead of installing Arch
+	# builds and replacing them afterwards. Only the baseline repository
+	# (--baseline): the CPU-level ones need the CachyOS pacman, which this
+	# medium could only take as a partial upgrade (#328); the new system moves
+	# to its level in the postinstall (raise-level). pacstrap verifies
+	# signatures against this medium's keyring, where add-repos puts the key.
 	if ! run_logged "Adding the CachyOS repositories..." \
-		env LYONA_CACHYOS_NONINTERACTIVE=1 "$CACHYOS_HELPER" add-repos --no-upgrade; then
+		env LYONA_CACHYOS_NONINTERACTIVE=1 "$CACHYOS_HELPER" add-repos --no-upgrade --baseline; then
 		say --foreground $COLOR_DANGER \
 			"CachyOS repository setup failed; continuing with the stock Arch repositories."
 		return 0

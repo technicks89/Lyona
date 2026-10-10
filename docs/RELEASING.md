@@ -218,7 +218,7 @@ It's a short, opinionated wizard drawn with `gum`, not `archinstall`'s own
 menu system: a LYONA wordmark banner, then Wi-Fi when there is no wired
 network, keyboard layout (applied to the console at once), target disk, btrfs
 or ext4 (each with optional LUKS encryption), username/password, hostname,
-timezone (auto-detected and confirmed), package mirrors, and, only if an NVIDIA
+timezone (detected online after the user agrees, and confirmed), package mirrors, and, only if an NVIDIA
 GPU is detected, a driver choice. The summary can change any one answer. There is one image for every GPU (SPEC.md).
 
 - **A supported card:** on a Turing (GTX 16xx, RTX 20xx) or newer GPU, the

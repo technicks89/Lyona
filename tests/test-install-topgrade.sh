@@ -293,7 +293,8 @@ fi
 "$repo/install.sh" --dry-run --non-interactive --profile core >"$work/core-plan"
 if grep -Fq 'Topgrade: topgrade-bin' "$work/core-plan"; then fail 'a core install plans Topgrade'; fi
 displays=$(grep -n '^configure_displays_after_install$' "$repo/install.sh" | cut -d: -f1)
-sudo_k=$(grep -nF 'sudo -k 2>/dev/null' "$repo/install.sh" | cut -d: -f1)
+# Topgrade's, the last: yay's build closes the timestamp too (#328).
+sudo_k=$(grep -nF 'sudo -k 2>/dev/null' "$repo/install.sh" | tail -n 1 | cut -d: -f1)
 # shellcheck disable=SC2016 # the literal text in install.sh
 build=$(grep -nF '"$REPO_DIR/scripts/install-topgrade" </dev/null || topgrade_status=$?' "$repo/install.sh" | cut -d: -f1)
 last_sudo=$(grep -nE '^[[:space:]]*sudo [a-z]' "$repo/install.sh" | grep -v 'sudo -k' | tail -n 1 | cut -d: -f1)
@@ -312,8 +313,8 @@ topgrade=$(grep -n 'run_logged "Installing Topgrade from the AUR\.\.\." install_
 if [[ -z $removed || -z $topgrade ]] || ((topgrade <= removed)); then
 	fail 'the live medium installs Topgrade before its sudoers file is removed'
 fi
-grep -Eq '^[[:space:]]+install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade$' "$postinstall" ||
-	fail 'install_topgrade is not exported for run_logged'
+grep -Eq '^[[:space:]]+install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade install_yay$' "$postinstall" ||
+	fail 'install_topgrade and install_yay are not exported for run_logged'
 awk '/^install_topgrade\(\) \{$/ { f = 1 } f { print } f && /^}$/ { exit }' "$postinstall" >"$work/install_topgrade.sh"
 grep -q '^}$' "$work/install_topgrade.sh" || fail 'could not find install_topgrade in the postinstall'
 # arch-chroot: runs runuser by printing a built package's path (or failing with

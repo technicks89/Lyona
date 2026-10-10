@@ -75,6 +75,7 @@ Options:
   --install-herdr        Install verified Herdr as an optional workspace.
   --skip-herdr           Do not install Herdr.
   --skip-topgrade        Do not install Topgrade (recommended and full profiles).
+  --skip-yay             Do not install yay (the image installs it itself).
   --configure-build      Ask the dwm build questions (refresh rate, font size,
                          modifier key, layout) before the summary. Without it,
                          a new config.h uses config.def.h's defaults; an
@@ -119,6 +120,7 @@ WALLPAPERS_REF="8f3dc598c132eaabdba7e7af5dc0acb45fbaa2b3"
 INSTALL_PROFILE="${DWM_INSTALL_PROFILE:-full}"
 HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
 TOPGRADE_INSTALL_MODE="${DWM_INSTALL_TOPGRADE:-true}"
+YAY_INSTALL_MODE=true
 GEARLEVER_INSTALL_MODE="${DWM_INSTALL_GEARLEVER:-false}"
 # The dwm build questions, only when asked for (#289): they are dwm internals
 # most users cannot judge, and a typo in one used to stop the install.
@@ -166,6 +168,10 @@ while (($# > 0)); do
 		;;
 	--skip-topgrade)
 		TOPGRADE_INSTALL_MODE=false
+		shift
+		;;
+	--skip-yay)
+		YAY_INSTALL_MODE=false
 		shift
 		;;
 	--with-gearlever)
@@ -731,7 +737,10 @@ ensure_yay_installed() {
 
 	info "Installing yay as a standing AUR helper..."
 	# yay-bin at its reviewed, pinned commit, built as this user by the one AUR
-	# helper (#281), within its time limit; root installs only the package.
+	# helper (#281), within its time limit; root installs only the package. The
+	# sudo timestamp is closed first, as for Topgrade, so nothing in the build
+	# can reuse it; sudo asks again to install the built package (#328).
+	sudo -k 2>/dev/null || :
 	tmp_dir="$(mktemp -d)"
 	local package='' built
 	while IFS= read -r built; do
@@ -745,11 +754,16 @@ ensure_yay_installed() {
 	# pacman's "Proceed with installation?" is answered for a non-interactive
 	# run: the image install runs this behind a spinner, where nothing can answer
 	# it, and it waited there forever (Sync Sprint 16, found in a VM).
-	local -a pacman_args=(-U --needed)
-	[[ $NON_INTERACTIVE != true ]] || pacman_args+=(--noconfirm)
-	if ! sudo pacman "${pacman_args[@]}" -- "$package"; then
+	# Nor sudo's password, which the timestamp closed above would ask for: a
+	# non-interactive run installs it only where sudo needs no password.
+	local -a pacman_args=(-U --needed) sudo_args=()
+	if [[ $NON_INTERACTIVE == true ]]; then
+		pacman_args+=(--noconfirm)
+		sudo_args=(-n)
+	fi
+	if ! sudo "${sudo_args[@]}" pacman "${pacman_args[@]}" -- "$package"; then
 		rm -rf "$tmp_dir"
-		warn "pacman could not install ${package##*/}; continuing without an AUR helper."
+		warn "pacman could not install ${package##*/}; continuing without an AUR helper (run the installer interactively, or install yay-bin yourself, to add it)."
 		return 1
 	fi
 	rm -rf "$tmp_dir"
@@ -865,6 +879,8 @@ print_install_summary() {
 	esac
 	if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
 		printf '  AUR helper: already installed\n'
+	elif [[ $YAY_INSTALL_MODE != true ]]; then
+		printf '  AUR helper: skipped (--skip-yay)\n'
 	else
 		printf '  AUR helper: yay-bin, built from its pinned AUR PKGBUILD with makepkg\n'
 	fi
@@ -1392,8 +1408,10 @@ if install_recommended_profile; then
 	configure_network_manager
 fi
 
-step_timer "yay"
-ensure_yay_installed || true
+if [[ $YAY_INSTALL_MODE == true ]]; then
+	step_timer "yay"
+	ensure_yay_installed || true
+fi
 
 step_timer "Build (make clean; make)"
 cd "$REPO_DIR"
@@ -1419,10 +1437,11 @@ provenance_args=()
 [[ -z ${LYONA_SOURCE:-} ]] || provenance_args+=("LYONA_SOURCE=$LYONA_SOURCE")
 [[ -z ${LYONA_COMMIT:-} ]] || provenance_args+=("LYONA_COMMIT=$LYONA_COMMIT")
 step_timer "make install-system"
+# DATADIR is the Makefile's default for the PREFIX, recorded in /etc/lyona-release,
+# which the updater reads: one rule for the layout, not a second copy here (#325).
 sudo make install-system \
 	USER_HOME="$HOME" \
 	OWNER="$(id -un)" \
-	DATADIR="/usr/share" \
 	"${provenance_args[@]}"
 step_timer "make install-user"
 make install-user \

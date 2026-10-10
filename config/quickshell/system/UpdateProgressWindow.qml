@@ -28,6 +28,9 @@ PopupWindow {
     readonly property int maxHeight: panelWindow && panelWindow.screen
         ? Math.max(0, panelWindow.screen.height - Theme.panelHeight - edgeMargin * 2) : 0
     readonly property bool failed: !root.updateModel.busy && !root.updateModel.actionSucceeded
+        && !root.updateModel.actionCancelled
+    readonly property bool cancelled: !root.updateModel.busy && root.updateModel.actionCancelled
+    readonly property bool rollback: root.updateModel.lastOperation === "rollback"
 
     function phaseLabel(phase) {
         switch (phase) {
@@ -66,8 +69,10 @@ PopupWindow {
 
             UiText {
                 Layout.fillWidth: true
-                text: root.updateModel.busy ? "Updating Lyona"
-                    : root.updateModel.actionSucceeded ? root.updateModel.outcomeMessage : "The update did not finish"
+                text: root.updateModel.busy ? (root.rollback ? "Rolling back Lyona" : "Updating Lyona")
+                    : root.updateModel.actionSucceeded ? root.updateModel.outcomeMessage
+                    : root.cancelled ? (root.rollback ? "Rollback cancelled" : "Update cancelled")
+                    : (root.rollback ? "The rollback did not finish" : "The update did not finish")
                 color: root.failed ? Theme.danger : Theme.textStrong
                 font.pixelSize: Theme.titleFontSize
                 font.bold: true
@@ -77,7 +82,7 @@ PopupWindow {
             UiText {
                 Layout.fillWidth: true
                 text: root.updateModel.busy ? root.phaseLabel(root.updateModel.phase)
-                    : (root.failed ? root.updateModel.outcomeMessage : "")
+                    : (root.failed || root.cancelled ? root.updateModel.outcomeMessage : "")
                 visible: text.length > 0
                 color: Theme.menuText
                 wrapMode: Text.WordWrap

@@ -369,6 +369,11 @@ backup_live_install() {
 		tar -C "$(dirname "$data_dir")" -cpf \
 			"$backup_dir/lyona-data.tar" "$(basename "$data_dir")"
 	fi
+	# The account's install record, which the update rewrites: a rollback puts
+	# it back, or lyona-version calls the restored install inconsistent (#324).
+	if [ -f "$state_home/lyona/install.state" ] && [ ! -L "$state_home/lyona/install.state" ]; then
+		cp -p -- "$state_home/lyona/install.state" "$backup_dir/install.state"
+	fi
 
 	system_manifest=$work/system-files
 	: >"$system_manifest"

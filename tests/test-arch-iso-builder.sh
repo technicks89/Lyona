@@ -88,7 +88,7 @@ grep -Fq '"$CACHYOS_HELPER" install-kernel --make-default "$CACHYOS_KERNEL"' "$p
 # optimized packages once instead of installing Arch builds and replacing them.
 installer="$repo/archiso/airootfs/root/lyona-install.sh"
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
-grep -Fq '"$CACHYOS_HELPER" add-repos --no-upgrade' "$installer" || {
+grep -Fq '"$CACHYOS_HELPER" add-repos --no-upgrade --baseline' "$installer" || {
 	printf 'lyona-install.sh does not add the CachyOS repositories before archinstall.\n' >&2
 	exit 1
 }
