@@ -283,6 +283,9 @@ make -s -C "$src" clean >/dev/null
 # The live install the update will replace, with a marker the release lacks.
 make -s -C "$src" all >/dev/null
 make -s -C "$src" install-system DATADIR="$datadir" >/dev/null
+# #336: install-system declares and creates the account the helper builds as.
+[[ -f /usr/lib/sysusers.d/lyona-update.conf ]] || fail 'install-system did not install the sysusers entry for lyona-build'
+getent passwd lyona-build >/dev/null || fail 'install-system did not create the lyona-build user'
 # S12-03: the source tree is owned by the building user, not root; the cursor
 # themes it installs as root must still come out root-owned.
 [[ $(stat -c %u "$src/assets/cursors") != 0 ]] || chown -R "$uid:$uid" "$src/assets/cursors"
@@ -366,8 +369,24 @@ refuses 'older than the installed 2099.01.0' install-unverified release "$tarbal
 cp -p "$work/stamp.part2" /etc/lyona-release
 [[ ! -e $store/$new_id ]] || fail 'a refused downgrade left a system backup behind'
 
-# #327: dwm, which includes config.h, is built as nobody: a config.h that
-# includes a root-only file fails to build, and shows none of it.
+# #336: an installed version that cannot be compared refuses every install,
+# rather than skipping the age check.
+sed -i 's/^LYONA_VERSION=.*/LYONA_VERSION=2099.01+hotfix/' /etc/lyona-release
+refuses 'cannot compare' install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id"
+cp -p "$work/stamp.part2" /etc/lyona-release
+
+# #336: nothing else may run as the build user while dwm is built as it: such
+# a process could rewrite the sources or the result that root then installs.
+runuser -u lyona-build -- sleep 120 &
+squatter=$!
+sleep 0.5
+refuses 'a process is running as lyona-build' install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id"
+kill "$squatter" 2>/dev/null || :
+wait "$squatter" 2>/dev/null || :
+[[ ! -e $store/$new_id ]] || fail 'a refused build left a system backup behind'
+
+# #327, #336: dwm, which includes config.h, is built as lyona-build: a config.h
+# that includes a root-only file fails to build, and shows none of it.
 evil_config_h=$home/evil-config.h
 {
 	cat "$repo/config.def.h"

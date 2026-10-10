@@ -39,6 +39,35 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   then, never on a routine update. The downgrade prompt no longer refers to a
   terminal warning you did not see (#334).
 
+### Security
+
+- `lyona-update-root` builds dwm, the one program that includes your
+  `config.h`, as lyona's own system user `lyona-build`, not as the shared
+  `nobody`, which any process already running as `nobody` could have written
+  the build through. The account is declared in
+  `/usr/lib/sysusers.d/lyona-update.conf` and created by `make install-system`
+  (`systemd-sysusers`); nothing else runs as it, and the build refuses to start
+  while anything does. Only the sources, headers, objects and Makefile are
+  copied for it, not the whole tree. Decision D-36 (#336).
+- The root helper refuses an install when the installed or the requested
+  version cannot be compared, instead of skipping the age check that keeps an
+  older release off the routine prompt (#336).
+- The root helper runs `make` from a fixed, checked path (`/usr/bin/make`), as
+  it does `cosign` and `setpriv`, and its backups list files to `tar` with
+  `--verbatim-files-from` (#336).
+
+### Changed
+
+- The Makefile is the one owner of what the update's root helper needs from a
+  release tree: `make all-root` builds everything that never includes
+  `config.h`, `GTK_THEME_IDS` lists the palettes once (for `uninstall`, the
+  legacy removal, the release manifest and the helper's backups, where the same
+  awk was written four times), and SPEC section 6 freezes those names as the
+  release-tree contract. `tests/test-update-root-contract.sh` runs the previous
+  release's helper's reads against the current tree, and
+  `tests/test-lyona-update.sh` orders the same version pairs through both rank
+  functions (#337).
+
 ## [2026.10.0-beta.6] - 2026-10-10
 
 Seventh beta of the Arch Linux line. Updates work end to end: `lyona-update` verifies an update without a false

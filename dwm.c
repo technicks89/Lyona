@@ -1982,10 +1982,19 @@ isdock(Window win)
 /* A dock that is not a bar (a notice, a banner) is shown, not managed: it is
  * no window to tile or focus. Its properties are watched, so it becomes the
  * bar if it reserves space later (#322). */
+/* A dock dwm leaves unmanaged is still watched, for the strut it may set or
+ * clear later (strutchanged()): the one rule for every such dock, whether it
+ * maps now or was there at scan time. */
+static void
+watchdock(Window win)
+{
+	XSelectInput(dpy, win, PropertyChangeMask);
+}
+
 void
 leavedock(Window win)
 {
-	XSelectInput(dpy, win, PropertyChangeMask);
+	watchdock(win);
 	XMapWindow(dpy, win);
 	XRaiseWindow(dpy, win);
 }
@@ -2977,7 +2986,7 @@ scan(void)
 		if (isaltbar(wins[i], &probe[i].wa))
 			managealtbar(wins[i], &probe[i].wa);
 		else if (isdock(wins[i]))
-			XSelectInput(dpy, wins[i], PropertyChangeMask); /* as leavedock() */
+			watchdock(wins[i]);
 		else if (probe[i].wa.map_state == IsViewable
 		|| getstate(wins[i]) == IconicState)
 			manage(wins[i], &probe[i].wa);
@@ -2989,7 +2998,7 @@ scan(void)
 		if (isaltbar(wins[i], &probe[i].wa))
 			managealtbar(wins[i], &probe[i].wa);
 		else if (isdock(wins[i]))
-			XSelectInput(dpy, wins[i], PropertyChangeMask); /* as leavedock() */
+			watchdock(wins[i]);
 		else if (probe[i].wa.map_state == IsViewable
 		|| getstate(wins[i]) == IconicState)
 			manage(wins[i], &probe[i].wa);

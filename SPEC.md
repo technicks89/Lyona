@@ -611,9 +611,12 @@ cancelled. Repository and XDG copies must never be elevated. What an elevated
 helper runs as root is held to the same rules: the tool, and every library it
 sources, root-owned and checked before it runs; root's own `HOME`; and nothing
 read from the invoking user's files except through a copy made with the user's
-own permissions. Code the user wrote (`config.h`) is compiled by an unprivileged
-identity, not by root, and a change that undoes a release (a downgrade) has its
-own polkit action, worded as such, apart from the routine one (#327).
+own permissions. Code the user wrote (`config.h`) is compiled by a dedicated
+system user of lyona's own (`lyona-build`, decision D-36), never by root and
+never by a shared account such as `nobody`, which another process could already
+be running as; the tools the helper runs as root (`make`, `cosign`, `setpriv`)
+are fixed, checked paths; and a change that undoes a release (a downgrade) has
+its own polkit action, worded as such, apart from the routine one (#327, #336).
 
 
 Settings providers must prefer event-driven updates and stop unnecessary
@@ -829,6 +832,19 @@ privileged helper `lyona-update-root` both take the layout from it, so an update
 installs, backs up, verifies and restores where the system was installed; a
 record without the layout fields (before `2026.10.0-beta.6`) falls back to the
 defaults above.
+
+**The release-tree contract.** An update is installed by the helper already on
+the system, which reads the new release's tree through its Makefile. These names
+are therefore frozen: a release may add to them, never rename or drop them
+(#337). Targets: `all-root` (every program and object that never includes
+`config.h`, built as root), `dwm` (the one that does, built as `lyona-build`),
+`clean` and `install-system`. Variables, read with `make --eval`:
+`INSTALL_COMMAND_NAMES`, `THUMB`, `PRIVILEGED_HELPERS`, `CAPITAINE_DARK_THEME`,
+`CAPITAINE_LIGHT_THEME`, `POLKIT_ACTIONS` and `GTK_THEME_IDS` (the palettes of
+`config/themes.toml`, one GTK theme each). Only `dwm.c` includes `config.h`.
+The record's layout fields above are part of the same contract.
+`tests/test-update-root-contract.sh` runs the previous release's helper's reads
+against the current tree.
 
 Default user locations:
 

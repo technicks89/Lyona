@@ -1072,6 +1072,78 @@ body_of cmd_apply | grep -Fq 'status_detail="Installing $requested_version, OLDE
 body_of cmd_apply | grep -Fq 'status_detail="Installing $requested_version (authentication required)"' ||
 	fail 'the status before a routine prompt changed'
 
+# #336: the root helper builds dwm as lyona's own lyona-build user, never the
+# shared nobody, and not while anything runs as it; make is a fixed, checked
+# path; the backup's file list cannot be read as tar options; and the downgrade
+# guard fails closed on a version it cannot rank. The root test runs these;
+# this pins their shape.
+grep -Fq 'readonly build_user=lyona-build' "$root_helper_src" || fail 'the root helper does not build as lyona-build'
+if grep -Eq 'reuid=nobody|chown -R nobody|runuser -u nobody|passwd nobody' "$root_helper_src"; then
+	fail 'the root helper still builds as, or reads back as, nobody'
+fi
+# shellcheck disable=SC2016
+grep -Fq 'pgrep -u "$build_user"' "$root_helper_src" || fail 'the root helper does not refuse a build while a process runs as the build user'
+grep -Fq 'readonly make_path=/usr/bin/make' "$root_helper_src" || fail 'the root helper takes make from PATH'
+# shellcheck disable=SC2016
+grep -Fq 'trusted_file "$make_path"' "$root_helper_src" || fail 'the root helper does not check make'
+grep -Fq -- '--verbatim-files-from -cpf' "$root_helper_src" || fail 'the backup tar reads its file list as options'
+grep -Fq 'cannot compare' "$root_helper_src" || fail 'the downgrade guard does not fail closed'
+grep -Fq 'u lyona-build - ' "$repo/config/systemd/lyona-update.conf" || fail 'no sysusers entry for lyona-build'
+grep -Fq 'systemd-sysusers ${SYSUSERS_DIR}/lyona-update.conf' "$repo/Makefile" || fail 'install-system does not create the build user'
+
+# #337: the Makefile owns what the helper reads from a release tree. all-root
+# names what root builds; GTK_THEME_IDS is the one palette list; only dwm.c
+# includes config.h.
+grep -q '^all-root:' "$repo/Makefile" || fail 'the Makefile has no all-root target'
+grep -Fq 'root_targets=(all-root)' "$root_helper_src" || fail 'the root helper does not build all-root'
+# shellcheck disable=SC2016
+grep -Fq "tree_make_values \"\$tree\" '\$(GTK_THEME_IDS)'" "$root_helper_src" || fail 'the root helper does not read GTK_THEME_IDS'
+[ "$(grep -cF '/^\[theme\./' "$repo/Makefile")" = 1 ] || fail 'the Makefile reads the palettes in more than one place'
+[ "$(grep -cF '/^\[theme\./' "$root_helper_src")" = 1 ] || fail 'the root helper reads the palettes in more than its fallback'
+[ "$(grep -l '#include "config.h"' "$repo"/*.c)" = "$repo/dwm.c" ] ||
+	fail "a source other than dwm.c includes config.h: $(grep -l '#include "config.h"' "$repo"/*.c | tr '\n' ' ')"
+
+# #337: version_rank (lyona-update) and release_rank (lyona-update-root) are two
+# copies by design, since the helper sources nothing; the same pairs must order
+# the same way through both, and both must refuse the same malformed versions.
+rank_probe=$work/rank-probe.sh
+{
+	extract_function valid_version
+	extract_function version_rank
+	sed -n '/^release_rank() {$/,/^}$/p' "$root_helper_src"
+} >"$rank_probe"
+grep -q '^release_rank() {$' "$rank_probe" || fail 'release_rank was not extracted from the root helper'
+rank_lt() { # FUNCTION OLDER NEWER: "lt" when FUNCTION ranks OLDER before NEWER
+	bash -c '. "$1"; a=$("$2" "$3") && b=$("$2" "$4") && [[ $a < $b ]] && echo lt || echo ge' \
+		bash "$rank_probe" "$@"
+}
+while read -r older newer; do
+	[ -n "$older" ] || continue
+	[ "$(rank_lt version_rank "$older" "$newer")" = lt ] || fail "version_rank: $older is not older than $newer"
+	[ "$(rank_lt release_rank "$older" "$newer")" = lt ] || fail "release_rank: $older is not older than $newer"
+	[ "$(rank_lt version_rank "$newer" "$older")" = ge ] || fail "version_rank: $newer ranks below $older"
+	[ "$(rank_lt release_rank "$newer" "$older")" = ge ] || fail "release_rank: $newer ranks below $older"
+done <<'PAIRS'
+2026.08.0 2026.09.0
+2026.09.0 2026.10.0
+2026.10.0-alpha.1 2026.10.0-beta.1
+2026.10.0-beta.1 2026.10.0-beta.2
+2026.10.0-beta.9 2026.10.0-beta.10
+2026.10.0-beta.6 2026.10.0-rc.1
+2026.10.0-rc.1 2026.10.0
+2026.10.0 2026.10.1
+2026.10.1 2026.11.0
+2026.12.0 2027.01.0
+PAIRS
+for bad in 2026.10.0+hotfix v2026.10.0 2026.10.0-beta 2026.10.0-gamma.1 2026; do
+	if bash -c '. "$1"; version_rank "$2"' bash "$rank_probe" "$bad" >/dev/null 2>&1; then
+		fail "version_rank accepted $bad"
+	fi
+	if bash -c '. "$1"; release_rank "$2"' bash "$rank_probe" "$bad" >/dev/null 2>&1; then
+		fail "release_rank accepted $bad"
+	fi
+done
+
 priv_probe=$work/priv-probe.sh
 priv_log=$work/priv.log
 {

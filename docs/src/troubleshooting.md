@@ -247,7 +247,7 @@ activation errors identify a recovery backup and session log.
 ## An update fails to build with "Permission denied"
 
 `lyona-update` builds `dwm`, the one program that includes your `config.h`, as
-an unprivileged user (`nobody`), never as root. A `config.h` that includes a
+an unprivileged user (lyona's own `lyona-build`), never as root. A `config.h` that includes a
 file only you or root can read fails there with `Permission denied`, and
 nothing is installed; the reason is in the update log (Settings -> System,
 **View update log**). Make the included file readable by everyone, or keep
