@@ -81,8 +81,11 @@ it again; `dwm-flatpak-setup --user` checks the remote on its own.
 - Install the recommended desktop layer: `./install.sh --profile recommended`
 - Verify the managed config exists: `ls ~/.config/quickshell/shell.qml`
 - Restart it with <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>, or
-  `dwm-quickshell-controlcenter action restart-quickshell`. Started by hand
-  instead, a second Quickshell does not get the hotkeys
+  `dwm-quickshell-controlcenter action restart-quickshell`. Any shell key
+  (<kbd>Super</kbd> + <kbd>R</kbd>, the power keys) does the same when the
+  shell is not running, then does what it was pressed for; if the shell cannot
+  start, a message names the keys to try again and to quit the session. Started
+  by hand instead, a second Quickshell does not get the hotkeys
 - Check fonts: `fc-list | grep -i meslo`
 - A bar of your own, instead of the lyona panel, must reserve space at the top
   or bottom of the screen: a dock window with a strut (`_NET_WM_STRUT_PARTIAL`;

@@ -17,6 +17,12 @@ dwm_packages() {
 	arch:runtime-required)
 		printf '%s\n' dbus curl git procps-ng psmisc unzip util-linux xclip xdotool xorg-xprop xdg-utils
 		;;
+	arch:aur-build)
+		# What makepkg needs for an AUR build (yay-bin, the legacy NVIDIA
+		# drivers): the image's postinstall installs these before building
+		# as the new user (#339).
+		printf '%s\n' base-devel git
+		;;
 	arch:ci-smoke)
 		# The hosted CI smoke job: build dwm, then start the real managed
 		# Quickshell shell against it in a private Xvfb+dbus session and
@@ -48,7 +54,7 @@ dwm_packages() {
 			alsa-utils brightnessctl inotify-tools jq libpulse pipewire pavucontrol \
 			pipewire-pulse wireplumber libnotify light-locker xf86-input-libinput \
 			bluez bluez-utils blueman playerctl upower power-profiles-daemon flatpak xdg-desktop-portal-gtk \
-			pciutils gum cosign
+			pciutils gum cosign xorg-xmessage
 		dwm_packages "$family" appimage
 		dwm_packages "$family" keyring
 		dwm_packages "$family" update-indicator

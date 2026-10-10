@@ -237,12 +237,24 @@ lacks "$core" 'NetworkManager: '
 
 # A non-interactive run answers pacman's prompt when it installs yay-bin: behind
 # the image install's spinner nothing else can, and it waited there forever
-# (Sync Sprint 16, found in a VM). test-dwm-aur.sh runs it.
+# (Sync Sprint 16, found in a VM). install.sh runs install-yay for it (#339),
+# non-interactively; test-install-yay.sh runs that.
 yay_fn=$(sed -n '/^ensure_yay_installed() {$/,/^}$/p' "$repo/install.sh")
-# shellcheck disable=SC2016 # the literal text in install.sh
-awk '/^\tif \[\[ \$NON_INTERACTIVE == true \]\]; then$/ { inside = 1; next }
-	inside && /^\tfi$/ { exit }
-	inside' <<<"$yay_fn" | grep -Fq 'pacman_args+=(--noconfirm)' ||
-	fail 'a non-interactive install does not answer pacman for yay-bin'
+grep -Fq 'INSTALL_YAY_NON_INTERACTIVE=1 "$REPO_DIR/scripts/install-yay"' <<<"$yay_fn" ||
+	fail 'a non-interactive install does not run install-yay non-interactively'
+grep -Fq 'pacman_args+=(--noconfirm)' "$repo/scripts/install-yay" ||
+	fail 'a non-interactive install-yay does not answer pacman for yay-bin'
+# The summary says a non-interactive run installs yay only where sudo needs no
+# password (#339), which is what install-yay does.
+if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
+	# This host has one, so the plan can only say so; the wording is checked in
+	# the source.
+	has "$core" '  AUR helper: already installed'
+	grep -Fq 'a non-interactive run installs it only where sudo needs no password' "$repo/install.sh" ||
+		fail 'the non-interactive plan does not say when yay is skipped'
+else
+	has "$core" '  AUR helper: yay-bin from the AUR'
+	has "$core" 'a non-interactive run installs it only where sudo needs no password'
+fi
 
 printf 'Installer summary completeness: PASS\n'

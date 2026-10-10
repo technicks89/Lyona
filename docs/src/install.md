@@ -285,6 +285,10 @@ packaging checks, or scripted validation, use the non-interactive flags:
 ./install.sh --non-interactive --yes --profile full --cachyos-kernel
 ```
 
+A non-interactive run cannot type a password, so it installs yay only where
+`sudo` needs none; otherwise it says so in its summary and its closing warnings,
+and `install-yay` adds yay later from a terminal.
+
 **dwm build settings.** A new `config.h` uses `config.def.h`'s defaults: the
 monitor's refresh rate, font size 12, Super as the modifier, and the usual
 layout. To choose them, add `--configure-build`. The installer then asks
@@ -482,9 +486,11 @@ nothing.
   file is kept as `hotkeys.toml.bak.DATE`, and a symlinked file is left alone.
   The old defaults are listed in `scripts/hotkeys-migrations`.
 
-An AUR helper (`yay`) is installed automatically for you as a standing
-convenience tool (`--skip-yay` leaves it out; the image installs it itself,
-before anything has passwordless sudo), independent of the package profiles above — none of the
+An AUR helper (`yay`) is installed for you as a standing convenience tool, by
+`scripts/install-yay`, the one script that builds it (the image installs it the
+same way, before anything has passwordless sudo, and passes `--skip-yay` to
+`install.sh`; a non-interactive run installs it only where `sudo` needs no
+password, and `install-yay` from a terminal adds it later), independent of the package profiles above — none of the
 required, recommended, or optional packages need it, since everything the
 installer selects is available directly through official `pacman` repos
 (`core`/`extra`/`multilib`). Lyona limits the AUR to where it is needed: today,

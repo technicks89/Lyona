@@ -66,13 +66,15 @@ What a running session needs: D-Bus, `xdotool` and `xprop` (the Quickshell state
 
 The managed shell and the desktop around it: Quickshell, Picom, Feh, Dex, the polkit agent, audio (PipeWire, WirePlumber, `pavucontrol`), brightness, notifications, Bluetooth, power, Flatpak, the GTK desktop portal, AppImages, the login keyring, the signature check of lyona's own updates, the Thunar file manager and NetworkManager.
 
-`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `cosign` `fuse2` `squashfs-tools` `gnome-keyring` `pacman-contrib` `thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `networkmanager`
+`quickshell` `picom` `python` `feh` `dex` `mate-polkit` `alsa-utils` `brightnessctl` `inotify-tools` `jq` `libpulse` `pipewire` `pavucontrol` `pipewire-pulse` `wireplumber` `libnotify` `light-locker` `xf86-input-libinput` `bluez` `bluez-utils` `blueman` `playerctl` `upower` `power-profiles-daemon` `flatpak` `xdg-desktop-portal-gtk` `pciutils` `gum` `cosign` `xorg-xmessage` `fuse2` `squashfs-tools` `gnome-keyring` `pacman-contrib` `thunar` `gvfs` `gvfs-smb` `tumbler` `thunar-archive-plugin` `file-roller` `xdg-user-dirs` `networkmanager`
 
 Thunar with SMB browsing, archives and thumbnails (the `file-manager` group) is what Super+E opens. NetworkManager (the `network` group) is what the panel's network status and Wi-Fi read; the installer enables it only when no other network manager (systemd-networkd, iwd, ConnMan, dhcpcd, netctl) is in use, and it starts at the next boot. Without it the panel says "NetworkManager not installed" or "NetworkManager not running".
 
 `fuse2` and `squashfs-tools` (the `appimage` group) are for AppImages: `fuse2` runs the classic ones, which need `libfuse.so.2` (the newer static-runtime ones run with Flatpak's `fuse3`), and `lyona-appimage` reads an AppImage's launcher entry and icon with `unsquashfs`, without running it.
 
 `cosign` checks the Sigstore signature of each lyona release before `lyona-update` installs it. Without it, an update to a signed release is refused.
+
+`xorg-xmessage` shows the one message the shell cannot: when a shell key finds the shell down and cannot start it again, since the shell is the notification server (#338).
 
 `gnome-keyring` (the `keyring` group) stores secrets for browsers, NetworkManager and other applications. It includes `pam_gnome_keyring.so`, which Arch's LightDM PAM stack already loads, so a password login unlocks the keyring; there is no separate PAM package. Under `startx` the keyring is unlocked on first use instead. `dwm-diagnostics` and System Health flag it when it is missing.
 

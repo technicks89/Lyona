@@ -225,7 +225,8 @@ install_legacy_nvidia_driver() {
 	# The one AUR helper (#281), from the live medium's checkout into the build
 	# directory: it fetches the pinned commit and checks its sources as the new
 	# user, root installs what it depends on, and it builds, again as the user.
-	if arch-chroot "$TARGET" pacman -S --noconfirm --needed --asdeps base-devel git &&
+	mapfile -t aur_build < <(dwm_packages arch aur-build)
+	if arch-chroot "$TARGET" pacman -S --noconfirm --needed --asdeps "${aur_build[@]}" &&
 		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${headers[@]}" &&
 		arch-chroot "$TARGET" rm -rf -- "$build" &&
 		arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build" &&
@@ -381,21 +382,24 @@ install_topgrade() {
 # yay-bin (#328): built from its pinned PKGBUILD as the new user before the
 # install's passwordless sudo exists, so nothing in the build can reach root,
 # and installed by root from the built package, as Topgrade is. makepkg's
-# base-devel and git come first, from the official repositories. install.sh is
-# then told to leave yay alone, so it never builds it under that sudo.
+# The AUR build prerequisites come first, from the official repositories, by
+# the shared map's aur-build profile. install.sh is then told to leave yay
+# alone, so it never builds it under that sudo. The build itself is
+# scripts/install-yay --build-only, the one place yay is built (#339), as
+# install-topgrade is for Topgrade.
 install_yay() {
-	local build=/var/tmp/lyona-yay package='' line status=0
-	arch-chroot "$TARGET" pacman -S --needed --noconfirm base-devel git || return 1
+	local build=/var/tmp/lyona-yay package status=0
+	local -a aur_build
+	mapfile -t aur_build < <(dwm_packages arch aur-build)
+	arch-chroot "$TARGET" pacman -S --needed --noconfirm "${aur_build[@]}" || return 1
 	arch-chroot "$TARGET" rm -rf -- "$build"
 	arch-chroot "$TARGET" install -d -o "$target_user" -g "$target_group" -m 700 -- "$build"
-	while IFS= read -r line; do
-		[[ ${line##*/} == yay-bin-[0-9]* ]] && package=$line
-	done < <(arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" \
-		bash "$target_home/$checkout_rel/scripts/dwm-aur.sh" build-pinned yay-bin "$build")
-	if [[ -n $package ]]; then
+	package=$(arch-chroot "$TARGET" runuser -u "$target_user" -- env HOME="$target_home" \
+		"$target_home/$checkout_rel/scripts/install-yay" --build-only "$build") || status=$?
+	if ((status == 0)) && [[ $package == "$build"/yay-bin-*.pkg.tar.* ]]; then
 		arch-chroot "$TARGET" pacman -U --noconfirm --needed -- "$package" || status=$?
 	else
-		status=1
+		((status != 0)) || status=1
 	fi
 	arch-chroot "$TARGET" rm -rf -- "$build" || :
 	return "$status"
