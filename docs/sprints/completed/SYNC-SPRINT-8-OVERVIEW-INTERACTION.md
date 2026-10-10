@@ -145,4 +145,4 @@ sprint branch and on `main`.
 
 Live thumbnails, motion/animation polish, an accessibility pass beyond the
 focus ring S8-01 already adds, and formal idle-CPU/performance testing at
-scale — [`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](../SYNC-SPRINT-9-OVERVIEW-POLISH.md).
+scale — [`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md).

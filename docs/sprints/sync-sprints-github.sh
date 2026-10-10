@@ -62,7 +62,7 @@ sprints=(
 	"6|Sync Sprint 6 — Theme consistency and window overview|completed/SYNC-SPRINT-6-THEME-CONSISTENCY-AND-WINDOW-OVERVIEW.md"
 	"7|Sync Sprint 7 — Cross-tag overview: foundation|completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md"
 	"8|Sync Sprint 8 — Cross-tag overview: interaction|completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md"
-	"9|Sync Sprint 9 — Cross-tag overview: polish|SYNC-SPRINT-9-OVERVIEW-POLISH.md"
+	"9|Sync Sprint 9 — Cross-tag overview: polish|completed/SYNC-SPRINT-9-OVERVIEW-POLISH.md"
 	"10|Sync Sprint 10 - Completion audit|completed/SYNC-SPRINT-10-COMPLETION-AUDIT.md"
 	"11|Sync Sprint 11 - Shell contrast and survey gaps|SYNC-SPRINT-11-SHELL-CONTRAST-AND-SURVEY-GAPS.md"
 	"12|Sync Sprint 12 - Whole-repo review|SYNC-SPRINT-12-WHOLE-REPO-REVIEW.md"

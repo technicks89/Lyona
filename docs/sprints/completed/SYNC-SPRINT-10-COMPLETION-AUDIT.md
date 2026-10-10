@@ -508,7 +508,7 @@ and leave #116 (S6-03) open: it needs a maintainer screenshot.
 and issues can be created (do not run it without confirming):
 
 ```diff
- 	"9|Sync Sprint 9 -- Cross-tag overview: polish|SYNC-SPRINT-9-OVERVIEW-POLISH.md"
+ 	"9|Sync Sprint 9 -- Cross-tag overview: polish|completed/SYNC-SPRINT-9-OVERVIEW-POLISH.md"
 +	"10|Sync Sprint 10 -- Completion audit|SYNC-SPRINT-10-COMPLETION-AUDIT.md"
 ```
 

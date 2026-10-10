@@ -84,6 +84,11 @@ it again; `dwm-flatpak-setup --user` checks the remote on its own.
   `dwm-quickshell-controlcenter action restart-quickshell`. Started by hand
   instead, a second Quickshell does not get the hotkeys
 - Check fonts: `fc-list | grep -i meslo`
+- A bar of your own, instead of the lyona panel, must reserve space at the top
+  or bottom of the screen: a dock window with a strut (`_NET_WM_STRUT_PARTIAL`;
+  in Quickshell, a `PanelWindow` with a non-zero `exclusiveZone`). dwm takes
+  only such a dock as the bar. One that reserves nothing is shown as a plain
+  dock, and windows are not kept clear of it (#322).
 
 ---
 
@@ -236,6 +241,18 @@ Run `dwm-settings-picom status` to see the configuration path and effective
 backend. The controls remain available while Picom is stopped. Configuration
 errors and concurrent edits are reported without silently replacing your choices;
 activation errors identify a recovery backup and session log.
+
+---
+
+## An update fails to build with "Permission denied"
+
+`lyona-update` builds `dwm`, the one program that includes your `config.h`, as
+an unprivileged user (`nobody`), never as root. A `config.h` that includes a
+file only you or root can read fails there with `Permission denied`, and
+nothing is installed; the reason is in the update log (Settings -> System,
+**View update log**). Make the included file readable by everyone, or keep
+what it holds in `config.h` itself. The runtime TOML files are the supported
+way to customise (`docs/src/configuration.md`).
 
 ---
 

@@ -103,7 +103,9 @@ Acceptance:
   Quickshell shell (panel, Settings, Control Center) comes up without manual
   repair. LightDM, dwm, the panel, the launcher and the power menu were
   verified in the 2026-10-03 VM; the Control Center, keybind viewer and
-  overview too in the 2026-10-09 beta.6 VM. Settings was not opened in a VM.
+  overview too in the 2026-10-09 beta.6 VM, and Settings in the 2026-10-10 VM,
+  where it offered and ran a downgrade and showed a cancelled prompt's outcome
+  (`docs/evidence/324-328-install-update-rollback.md`).
 - [ ] Verify the manual fallback path (boot the ISO, run `archinstall`
   directly, then `/root/lyona-postinstall.sh` against the mounted target)
   produces the same working result as the wizard path, at least once.

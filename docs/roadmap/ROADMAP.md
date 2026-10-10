@@ -494,12 +494,15 @@ without turning Quickshell into an unrestricted administration console.
 ## Phase 7: Arch Image and Release Qualification
 
 Status: Active. Pre-release images are published: `2026.08.0-beta.1`, and
-`2026.10.0-beta.3` to `2026.10.0-beta.5`, which the release workflow built and
+`2026.10.0-beta.3` to `2026.10.0-beta.6`, which the release workflow built and
 signed (decision D-31). Done: an image built on the maintainer's host installed
 in a UEFI KVM virtual machine and reached a working desktop (2026-10-03,
 `docs/RELEASING.md`). In the same kind of VM on 2026-10-09, `2026.10.0-beta.6`
 images installed fresh with btrfs and ext4, and an update from `beta.5` to
-`beta.6` applied and rolled back. Still open for the exit criteria below: real
+`beta.6` applied and rolled back. On 2026-10-10 the published `beta.6`
+(`1bfafac`) installed fresh, updated to a `beta.7` build, rolled back, and took
+a signed downgrade through its own prompt, with Settings opened and used
+(`docs/evidence/324-328-install-update-rollback.md`). Still open for the exit criteria below: real
 hardware, the NVIDIA and LUKS paths, the manual fallback, and an image the
 release workflow built. Interleaved with the upstream sync sprints
 (`docs/sprints/UPSTREAM-SYNC.md`).

@@ -219,7 +219,7 @@ watch` stream), and
 [`SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md`](SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md),
 [`SYNC-SPRINT-8-OVERVIEW-INTERACTION.md`](SYNC-SPRINT-8-OVERVIEW-INTERACTION.md)
 and
-[`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](../SYNC-SPRINT-9-OVERVIEW-POLISH.md) for
+[`SYNC-SPRINT-9-OVERVIEW-POLISH.md`](SYNC-SPRINT-9-OVERVIEW-POLISH.md) for
 the implementation plan: the design doc's own version-one phasing (Sprint 7),
 finishing what the issue actually asked for plus two small, low-risk
 additions (Sprint 8), then real previews, motion, accessibility and

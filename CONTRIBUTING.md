@@ -44,11 +44,12 @@ also the running dwm and Quickshell when it can: it skips that part with
 
 ### Running a session from the checkout
 
-An installed session runs one copy of everything:
-- the commands in `/usr/bin`;
+An installed session runs one copy of everything (`PREFIX` is `/usr/local` by
+default, `config.mk`):
+- the commands in `/usr/local/bin`;
 - the session scripts (`autostart.sh`, `autostop.sh`) and shared shell code in
-  `/usr/lib/lyona`;
-- the shipped default config in `/usr/share/lyona/config`.
+  `/usr/local/lib/lyona`;
+- the shipped default config in `/usr/local/share/lyona/config`.
 
 To try script changes without reinstalling, point the session at your checkout
 before dwm starts, in `~/.xinitrc` or your display manager's session

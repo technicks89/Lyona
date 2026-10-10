@@ -30,7 +30,8 @@ Invariants:
 - A bar is a dock that reserves space at the top or bottom of its screen, by
   `_NET_WM_STRUT_PARTIAL` or `_NET_WM_STRUT` (`isaltbar()`, `hasbarstrut()`):
   the lyona panel declares itself so with Quickshell's `exclusiveZone`. dwm
-  guesses nothing from a window's class or width (#322). A dock that reserves
+  guesses nothing from a window's class or width (#322); only the tray host,
+  which has no EWMH role, is still found by its class (`traywinclass`). A dock that reserves
   nothing (a notice, a banner) is shown, never managed or tiled (`leavedock()`),
   and becomes the bar if it sets a strut later (`strutchanged()`).
 - A monitor has one bar (`barwin`). A second bar on it waits until the first
