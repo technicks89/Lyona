@@ -17,11 +17,14 @@ Branch `update-failure-downgrade-333-334`, uncommitted, on `main` at `1bfafac`
   install-system` fails after it began writing, naming the backup.
 - `config/polkit/com.lyona.update.policy`: the downgrade prompt refers to the
   progress that named both versions, and to rollback.
-- `config/quickshell/system/UpdateModel.qml`: `downgradeOffered`;
-  `--allow-downgrade` is passed only when the channel offers an older release.
+- `config/quickshell/system/UpdateModel.qml`: `downgradeOffered`; `apply`
+  takes the confirmed downgrade state and passes `--allow-downgrade` only then.
 - `config/quickshell/settings/SystemSettingsPane.qml`: "Go back to V", a
   confirmation that says OLDER and names the installed version, "Install the
-  older release".
+  older release"; the downgrade state is captured with the confirmed version
+  (`confirmDowngrade`), so a check landing in between cannot change what was
+  approved.
+
 - Docs: `docs/src/updating.md`, `docs/src/settings.md`, `SPEC.md` 5.5 and
   5.10, decisions D-34 and D-35 in `docs/sprints/UPSTREAM-SYNC.md`,
   `CHANGELOG.md`.

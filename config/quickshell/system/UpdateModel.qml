@@ -284,8 +284,13 @@ Scope {
         channelProcess.running = true;
     }
 
-    function apply(version) {
+    // VERSION as confirmed in Settings, and whether it was confirmed as the
+    // older release: the pane captures both at the confirmation, so a check
+    // that lands between it and the click cannot change what was approved
+    // (#334).
+    function apply(version, downgrade) {
         if (root.busy || !version || version.length === 0) return;
+        const older = downgrade === true;
         root.busy = true;
         root.progressShown = true;
         root.popupClosed = false;
@@ -294,14 +299,14 @@ Scope {
         root.lastOperation = "apply";
         root.markOutcome(0);
         root.phase = "downloading";
-        root.progressDetail = (root.downgradeOffered ? "Going back to " : "Starting update to ") + version;
+        root.progressDetail = (older ? "Going back to " : "Starting update to ") + version;
         root.outcomeMessage = "";
         const args = ["--version", version];
-        if (root.downgradeOffered) args.push("--allow-downgrade");
+        if (older) args.push("--allow-downgrade");
         args.push("--yes");
         applyProcess.command = Commands.updateCommand("apply", args);
-
         applyProcess.running = true;
+
     }
 
     function rollback(backupId) {

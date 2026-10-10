@@ -388,6 +388,7 @@ rm -rf "${store:?}/$new_id"
 # releases. A file where DATADIR/applications should be fails the install
 # right after dwm, the man page and the session file were written, before
 # the commands and the shared code.
+mv "$datadir/applications" "$work/applications.aside"
 install -m 0644 /dev/null "$datadir/applications"
 dwm_before=$(stat -c %Y "$prefix/bin/dwm")
 sleep 1
@@ -395,6 +396,7 @@ part_way_status=0
 run_helper install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id" \
 	>"$work/part-way.out" 2>&1 || part_way_status=$?
 rm -f "$datadir/applications"
+mv "$work/applications.aside" "$datadir/applications"
 [[ $part_way_status == 3 ]] ||
 	fail "a part-way install-system failure exited $part_way_status, not 3: $(tail -5 "$work/part-way.out")"
 grep -Fq "backed up first as $new_id" "$work/part-way.out" ||

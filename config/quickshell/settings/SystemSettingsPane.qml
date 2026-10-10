@@ -12,6 +12,10 @@ Flickable {
     required property var systemManagementModel
     property var capabilities: []
     property string confirmVersion: ""
+    // Whether confirmVersion was offered as the older release, captured with
+    // it: the confirmation and the apply say what was approved even if a check
+    // lands in between (#334).
+    property bool confirmDowngrade: false
     // The backup "Roll back" was chosen for, until it is confirmed or cancelled
     // (Sync Sprint 16 R16-25).
     property var confirmBackup: null
@@ -38,6 +42,7 @@ Flickable {
 
     onVisibleChanged: if (!visible) {
         root.confirmVersion = "";
+        root.confirmDowngrade = false;
         root.confirmBackup = null;
     }
     // #267/S1-05 (#269): layout publication (a card appearing/disappearing
@@ -235,7 +240,10 @@ Flickable {
                 + root.updateModel.availableVersion
             primary: true
             enabled: !root.updateModel.busy
-            onActivated: root.confirmVersion = root.updateModel.availableVersion
+            onActivated: {
+                root.confirmDowngrade = root.updateModel.downgradeOffered;
+                root.confirmVersion = root.updateModel.availableVersion;
+            }
         }
 
         ColumnLayout {
@@ -247,7 +255,7 @@ Flickable {
                 Layout.fillWidth: true
                 // An older release is called one here, before the password prompt,
                 // which cannot name the versions (#334).
-                text: (root.updateModel.downgradeOffered
+                text: (root.confirmDowngrade
                         ? "Install " + root.confirmVersion + ", which is OLDER than the installed "
                             + root.updateModel.installedVersion + ", over the running system? "
                             + "To return to the release installed before an update, use Roll back below instead. "
@@ -261,18 +269,21 @@ Flickable {
                 spacing: Theme.spacingSm
 
                 ShellButton {
-                    label: root.updateModel.downgradeOffered ? "Install the older release" : "Update now"
+                    label: root.confirmDowngrade ? "Install the older release" : "Update now"
                     primary: true
                     onActivated: {
-                        root.updateModel.apply(root.confirmVersion);
-
+                        root.updateModel.apply(root.confirmVersion, root.confirmDowngrade);
                         root.confirmVersion = "";
+                        root.confirmDowngrade = false;
                     }
                 }
 
                 ShellButton {
                     label: "Cancel"
-                    onActivated: root.confirmVersion = ""
+                    onActivated: {
+                        root.confirmVersion = "";
+                        root.confirmDowngrade = false;
+                    }
                 }
             }
         }

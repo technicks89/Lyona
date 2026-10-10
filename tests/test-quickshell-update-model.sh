@@ -96,8 +96,14 @@ grep -Fq 'installedMismatchDetail' "$system_pane"
 # --allow-downgrade is passed only then, never on a routine update.
 grep -Fq 'readonly property bool downgradeOffered: root.updateState === "downgrade-offered"' "$update_model" ||
 	fail 'UpdateModel does not expose downgradeOffered'
-grep -Fq 'if (root.downgradeOffered) args.push("--allow-downgrade");' "$update_model" ||
-	fail 'UpdateModel does not limit --allow-downgrade to a downgrade offer'
+# The flag follows what was confirmed, captured by the pane with the version,
+# not the live state at the click.
+grep -Fq 'function apply(version, downgrade) {' "$update_model" ||
+	fail 'UpdateModel.apply does not take the confirmed downgrade state'
+grep -Fq 'if (older) args.push("--allow-downgrade");' "$update_model" ||
+	fail 'UpdateModel does not limit --allow-downgrade to a confirmed downgrade'
+grep -Fq 'root.confirmDowngrade = root.updateModel.downgradeOffered;' "$system_pane" ||
+	fail 'Settings does not capture the downgrade state with the confirmed version'
 if grep -Fq '"--version", version, "--allow-downgrade"' "$update_model"; then
 	printf 'UpdateModel must not pass --allow-downgrade on a routine update.\n' >&2
 	exit 1
@@ -106,13 +112,13 @@ grep -Fq '(root.updateModel.downgradeOffered ? "Go back to " : "Update to ")' "$
 	fail 'Settings calls a downgrade "Update to"'
 grep -Fq 'which is OLDER than the installed' "$system_pane" ||
 	fail 'the Settings confirmation does not say the release is older'
-grep -Fq 'root.updateModel.downgradeOffered ? "Install the older release" : "Update now"' "$system_pane" ||
+grep -Fq 'root.confirmDowngrade ? "Install the older release" : "Update now"' "$system_pane" ||
 	fail 'the Settings confirm button calls a downgrade "Update now"'
 
 # Actions are inert while busy.
 grep -Fq 'if (root.busy' "$update_model"
 
-grep -Fq 'function apply(version) {' "$update_model"
+grep -Fq 'function apply(version, downgrade) {' "$update_model"
 grep -Fq 'function rollback(backupId) {' "$update_model"
 grep -Fq 'function setChannel(value) {' "$update_model"
 
@@ -126,7 +132,8 @@ grep -Fq 'root.checkOnLogin' "$update_model"
 # Confirmation before apply: no direct call path from a button straight into
 # apply() without the pane's own confirmVersion gate.
 grep -Fq 'property string confirmVersion' "$system_pane"
-grep -Fq 'root.updateModel.apply(root.confirmVersion)' "$system_pane"
+grep -Fq 'root.updateModel.apply(root.confirmVersion, root.confirmDowngrade)' "$system_pane"
+
 # Rollback asks first too (Sync Sprint 16 R16-25): the backup's button only
 # chooses it, and rollback() runs from the confirmation alone.
 grep -Fq 'property var confirmBackup: null' "$system_pane"
