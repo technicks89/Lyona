@@ -186,6 +186,14 @@ log line below it; it booted to LightDM and passed all 96 checks. The checks nee
 `xorg-xwininfo` and a `dbus-monitor` for notifications, neither part of lyona;
 both were added to the VM for the run.
 
+The full suite on the final tree, each step on its own: 151 of 151, none
+skipped. The review fixes that followed (the legacy theme cleanup and its
+backup, `dwm-xwatch` watching `_NET_WM_WINDOW_TYPE`, the step timing) landed
+while it ran; the steps they touch were run again after it, with the new
+`check-dwm-xwatch-xvfb`, and pass. `check-update-root-backups` skips outside a
+container, so it ran as root in an `archlinux:base-devel` container: it passes,
+and fails without the backup fix.
+
 ## Not tested
 
 - Real hardware, legacy BIOS, an NVIDIA GPU, two real outputs.

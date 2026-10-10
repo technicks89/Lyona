@@ -358,9 +358,10 @@ install-system:
 # the old DATADIR default (#280 VM). XDG_DATA_DIRS lists /usr/local/share before
 # /usr/share, so those copies would shadow the ones installed now: they go. Only
 # what is lyona's, and only where lyona's own license directory shows that lyona
-# installed there: its GTK themes and AppImage entry, and the cursor and GRUB
-# themes beside their license. A theme you installed yourself is kept, whatever
-# its name. Each removal is named.
+# installed there: its GTK themes (one per palette in config/themes.toml, as
+# uninstall removes them) and AppImage entry, and the cursor and GRUB themes
+# beside their license. A theme you installed yourself is kept, even one named
+# Lyona-something. Each removal is named.
 remove-legacy-shared-data:
 	@legacy="${DESTDIR}${PREFIX}/share"; \
 	if [ "${PREFIX}/share" = "${DATADIR}" ] || [ ! -d "$$legacy/licenses/lyona" ] || \
@@ -371,7 +372,9 @@ remove-legacy-shared-data:
 			rm -rf -- "$$1"; \
 		fi; \
 	}; \
-	for path in "$$legacy"/themes/Lyona-*; do remove "$$path"; done; \
+	for id in $$(awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print id; }' config/themes.toml); do \
+		remove "$$legacy/themes/Lyona-$$id"; \
+	done; \
 	remove "$$legacy/applications/lyona-appimage.desktop"; \
 	if [ -d "$$legacy/licenses/lyona/capitaine-cursors" ]; then \
 		remove "$$legacy/icons/${CAPITAINE_DARK_THEME}"; \
@@ -1057,6 +1060,11 @@ check-dwm-activate-xvfb: all
 		exit "$$status"
 
 # A monitor keeps one bar while other docks come and go (#280 VM), real dwm.
+check-dwm-xwatch-xvfb: all
+	status=0; xvfb-run -a /usr/bin/python3 tests/test-dwm-xwatch-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 check-dwm-bar-docks-xvfb: all
 	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
 		/usr/bin/python3 tests/test-dwm-bar-docks-xvfb.py || status=$$?; \
@@ -1504,6 +1512,7 @@ check:
 	$(MAKE) check-overview-keyboard-xvfb
 	$(MAKE) check-dwm-activate-xvfb
 	$(MAKE) check-dwm-bar-docks-xvfb
+	$(MAKE) check-dwm-xwatch-xvfb
 	$(MAKE) check-overview-load-xvfb
 	$(MAKE) check-quickshell-theme-contrast
 	$(MAKE) check-quickshell-panel-settings
@@ -1585,5 +1594,5 @@ check:
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes remove-legacy-shared-data stamp-system stamp-user native release release-check uninstall

@@ -234,6 +234,15 @@ backup_system_files() {
 		for name in "${themes[@]}"; do
 			printf '%s\n' "${install_datadir#/}/icons/$name"
 		done
+		# An install from before 2026.10.0-beta.6 has its shared data under
+		# PREFIX/share, which this install removes (remove-legacy-shared-data):
+		# kept here, so a rollback puts it back. Restore accepts these paths.
+		if [[ $install_prefix/share != "$install_datadir" ]]; then
+			for name in "${themes[@]}"; do
+				printf '%s\n' "${install_prefix#/}/share/icons/$name"
+			done
+			printf '%s\n' "${install_prefix#/}/share/licenses/lyona"
+		fi
 		printf '%s\n' "${install_manprefix#/}/man1/dwm.1" \
 			"${install_xsessionsdir#/}/dwm.desktop" \
 			"${install_datadir#/}/licenses/lyona" \

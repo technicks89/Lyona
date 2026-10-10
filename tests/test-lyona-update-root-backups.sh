@@ -324,6 +324,13 @@ refuses 'could not read config.h as the invoking user' \
 chmod 0644 "$config_h"
 [[ ! -e $store/$new_id ]] || fail 'a refused install left a system backup behind'
 
+# What an update before 2026.10.0-beta.6 left under PREFIX/share, which this
+# install removes: the backup keeps it, so the rollback puts it back.
+legacy_cursor=$prefix/share/icons/Capitaine-Cursors/index.theme
+install -D -m 0644 /dev/null "$legacy_cursor"
+printf 'legacy cursor\n' >"$legacy_cursor"
+install -D -m 0644 /dev/null "$prefix/share/licenses/lyona/capitaine-cursors/COPYING"
+
 run_helper install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id" >"$work/install.out" 2>&1 || {
 	tail -40 "$work/install.out" >&2
 	fail 'install-unverified release failed'
@@ -340,6 +347,10 @@ grep -Fxq "${helper#/}" "$work/backup-list" ||
 	fail 'the backup does not hold the privileged helper'
 grep -q "^${datadir#/}/icons/Capitaine-Cursors/" "$work/backup-list" ||
 	fail 'the backup does not hold the cursor themes from DATADIR'
+grep -Fxq "${legacy_cursor#/}" "$work/backup-list" ||
+	fail 'the backup does not hold the PREFIX/share cursor theme the install removes'
+grep -q "^${prefix#/}/share/licenses/lyona/" "$work/backup-list" ||
+	fail 'the backup does not hold the PREFIX/share license directory the install removes'
 grep -Fxq "LYONA_DATADIR=$datadir" /etc/lyona-release ||
 	fail "the update did not keep DATADIR $datadir in /etc/lyona-release: $(cat /etc/lyona-release)"
 ! grep -q '@[A-Z_]*@' "$helper" || fail 'the installed helper still has an install placeholder'
@@ -357,5 +368,6 @@ run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
 	fail 'rolling back to the new backup failed'
 }
 grep -Fxq '# live-before-update' "$live" || fail 'the rollback did not bring the live file back'
+grep -Fxq 'legacy cursor' "$legacy_cursor" || fail 'the rollback did not bring the PREFIX/share cursor theme back'
 printf 'install-system signature refusals, install-unverified inputs and backups: PASS\n'
 printf 'Update-helper backups: PASS\n'

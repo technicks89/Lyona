@@ -185,11 +185,12 @@ _step_log_tail() {
 # The live status of a running step (#291): the step, how long it has run, how
 # long it usually takes, and the newest line of its log, redrawn every second,
 # so a slow step is told from a hung one. On the same left edge as the screen
-# above it, the step wrapped to that column's width (two lines at most) and the
-# log line under it (three at most), rather than cut at the screen's edge.
+# above it, the step wrapped to that column's width (its name in two lines at
+# most, then its timing) and the log line under it (three at most), rather than
+# cut at the screen's edge.
 _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
-	local cols indent width pad last part i drawn title=0
-	local -a lines=()
+	local cols indent width pad last part i drawn title=0 timing
+	local -a lines=() name=()
 	cols=$(tput cols 2>/dev/null || printf 80)
 	[[ $cols =~ ^[0-9]+$ ]] && ((cols > 20)) || cols=80
 	indent=${PADDING_LEFT:-0}
@@ -198,10 +199,23 @@ _draw_step_status() { # TITLE ELAPSED EXPECT FRAME
 	((width > LOGO_WIDTH)) && width=$LOGO_WIDTH
 	printf -v pad '%*s' "$indent" ''
 	# The spinner on the first line; the lines after it start under the step.
-	while IFS= read -r part; do
+	# The timing always shows: after the step's name when it fits, else on a
+	# line of its own. A name longer than two lines ends in "..." instead.
+	timing="$(format_duration "$2")${3:+ ($3)}"
+	mapfile -t name < <(_wrap_text "$1" "$((width - 2))" 3)
+	if ((${#name[@]} > 2)); then
+		part=${name[1]:0:width-5}
+		name=("${name[0]}" "${part% }...")
+	fi
+	if ((${#name[-1]} + 2 + ${#timing} <= width - 2)); then
+		name[-1]+="  $timing"
+	else
+		name+=("$timing")
+	fi
+	for part in "${name[@]}"; do
 		((title == 0)) && lines+=("$4 $part") || lines+=("  $part")
 		title=$((title + 1))
-	done < <(_wrap_text "$1  $(format_duration "$2")${3:+ ($3)}" "$((width - 2))" 2)
+	done
 	last=$(_step_log_tail)
 	if [[ -n $last ]]; then
 		while IFS= read -r part; do

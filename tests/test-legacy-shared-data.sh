@@ -23,6 +23,8 @@ put licenses/lyona/capitaine-cursors/COPYING
 put licenses/lyona/grub-themes/LICENSE
 # What is not lyona's.
 put themes/Adwaita-custom/index.theme
+# Named like lyona's, but no palette of config/themes.toml: someone's own.
+put themes/Lyona-custom/index.theme
 put icons/hicolor/index.theme
 put applications/firefox.desktop
 
@@ -37,7 +39,8 @@ for gone in themes/Lyona-tokyonight applications/lyona-appimage.desktop icons/Ca
 	grep -Fq "Removing an earlier update's copy: $legacy/$gone" "$work/out" ||
 		fail "the removal of $gone was not reported"
 done
-for kept in themes/Adwaita-custom/index.theme icons/hicolor/index.theme applications/firefox.desktop; do
+for kept in themes/Adwaita-custom/index.theme themes/Lyona-custom/index.theme icons/hicolor/index.theme \
+	applications/firefox.desktop; do
 	assert_file "$legacy/$kept" 'not lyona'"'"'s; kept'
 done
 

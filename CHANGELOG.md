@@ -168,9 +168,11 @@ processes; Settings and `install.sh` read clearer; and dwm's runtime configurati
   longer moves the cursors to `/usr/local/share`. **Migration:** nothing to do.
   `install-system` removes the copies earlier updates left under
   `/usr/local/share`, which `XDG_DATA_DIRS` found before `/usr/share` and so
-  shadowed the current themes: lyona's GTK themes, AppImage entry, cursor and
-  GRUB themes, only where lyona's own license directory shows lyona installed
-  there. Each removal is named.
+  shadowed the current themes: lyona's GTK themes (one per palette; a theme of
+  your own named `Lyona-something` is kept), AppImage entry, cursor and GRUB
+  themes, only where lyona's own license directory shows lyona installed
+  there. Each removal is named. The update's backup holds the cursor themes and
+  license directory it removes there, so a rollback puts them back.
 
 ### Removed
 
@@ -212,7 +214,9 @@ processes; Settings and `install.sh` read clearer; and dwm's runtime configurati
   the launcher and the keybind viewer: Escape goes back to where you were.
 - The image installer's step status lines up with the screen above it and
   wraps within the screen instead of cutting at its edge (#280): the step and
-  its progress bar in at most two lines, the newest log line in at most three. It shows the last redraw of pacman's progress
+  its progress bar in at most two lines, then how long it has run on the same
+  line or the next (a longer name ends in "..."), the newest log line in at
+  most three. It shows the last redraw of pacman's progress
   without the remains of its escape codes ("[3F"), its spinner is ASCII (the
   console font has no braille), and the console cursor no longer blinks beside
   it.
@@ -231,7 +235,8 @@ processes; Settings and `install.sh` read clearer; and dwm's runtime configurati
   back to that window when the popup closes.
 - The window overview and the panel's window list no longer show the panel
   itself as a window called "quickshell" (#280): dwm lists the bar with its
-  windows, and the state bridge now leaves docks out.
+  windows, and the state bridge now leaves docks out. A window that stops being
+  a dock is read again (`dwm-xwatch` watches `_NET_WM_WINDOW_TYPE`).
 - Choosing a window in the overview, or a running app in the panel, switches to
   it (#280). dwm answered `_NET_ACTIVE_WINDOW` only by marking the window
   urgent, so the selection did nothing on its own tag. A request from a pager

@@ -172,7 +172,7 @@ while IFS= read -r line; do
 	[[ $line == '          '[!\ ]* || $line == '            '[!\ ]* ]] ||
 		fail "a status line does not start at the screen's left edge (10): '$line'"
 done <<<"$plain"
-((lines >= 4 && lines <= 5)) || fail "the long step and log line were not wrapped to 4-5 lines ($lines lines): $plain"
+((lines >= 5 && lines <= 6)) || fail "the long step and log line were not wrapped to 5-6 lines ($lines lines): $plain"
 [[ $plain == *'for the new user'* ]] || fail "the long step name was cut, not wrapped: $plain"
 [[ $plain == *'more packages after these ones'* || $plain == *'linux-firmware-nvidia'* ]] ||
 	fail "the wrapped log line lost its text: $plain"
@@ -181,6 +181,22 @@ done <<<"$plain"
 wrapped=$(LC_ALL=C.UTF-8 bash -c '. "$1"; _wrap_text "[████████████░░░░░░░░] 60% (step 6/9) Installing" 40 2' bash "$ui")
 [[ $wrapped == $'[████████████░░░░░░░░] 60% (step 6/9)\nInstalling' ]] ||
 	fail "the progress bar title was not wrapped by characters: $wrapped"
+# A step name too long for two lines ends in "...", and its timing still shows.
+# shellcheck disable=SC2016 # expanded by the inner bash
+block=$(PATH="$work/narrow-bin:$PATH" LOG_FILE=/dev/null bash -c '
+	. "$1"
+	PADDING_LEFT=10
+	_draw_step_status "[████████████░░░░░░░░] 60% (step 6/9) Installing the packages of the full profile and the drivers for every device found on this machine" 75 "usually 5-30 minutes" "|"
+' bash "$ui") || fail 'drawing a long step name failed'
+plain=$(printf '%s' "$block" | sed -E $'s/\x1b\\[[0-9;?]*[A-Za-z]//g' | tr -d '\r')
+[[ $plain == *'...'* && $plain == *'1m 15s (usually 5-30 minutes)'* ]] || fail "a long step name hid its timing: $plain"
+lines=0
+while IFS= read -r line; do
+	[[ -n $line ]] || continue
+	lines=$((lines + 1))
+	((${#line} < 60)) || fail "a long step name drew past the screen: '$line'"
+done <<<"$plain"
+((lines <= 3)) || fail "a long step name took $lines lines, not 3 at most: $plain"
 grep -Fq "local -a frames=('|' '/' '-' \"\\\\\")" "$ui" ||
 	fail 'the spinner is not ASCII (the console font has no braille)'
 

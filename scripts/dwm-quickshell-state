@@ -737,7 +737,7 @@ sync_client_watchers() {
 	done
 	for window_id in "${!wanted[@]}"; do
 		[ -z "${client_watchers[$window_id]:-}" ] || continue
-		bound_to_this_shell xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP \
+		bound_to_this_shell xprop -id "$window_id" -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP _NET_WM_WINDOW_TYPE \
 			>&3 2>/dev/null &
 		client_watchers[$window_id]=$!
 		started=1
