@@ -346,6 +346,28 @@ problems(const char *dir)
 	CHECK(toml_table_count(&doc, "rules") == 1, "a crafted array item became a rule: %d rules",
 	      toml_table_count(&doc, "rules"));
 
+	/* An array in a table with its "]" missing ends at the table's "}", so the
+	 * table after it still loads, short or past TOML_MAX_ARR items. */
+	CHECK(parse_text(dir, "unclosed-inner-array",
+		"rules = [ { class=\"A\", exec=[\"a\", \"b\" }, { class=\"B\", isfloating=1 } ]\n"),
+	      "the unclosed-inner-array file did not parse");
+	CHECK(toml_table_count(&doc, "rules") == 2 && table_str("rules", 1, "class")
+	      && strcmp(table_str("rules", 1, "class"), "B") == 0,
+	      "a table after an unclosed array was lost: %d rules", toml_table_count(&doc, "rules"));
+	CHECK(doc.bad_lines == 1 && doc.first_bad_line == 1, "unclosed inner array: bad_lines %d, first %d",
+	      doc.bad_lines, doc.first_bad_line);
+	len = 0;
+	append_text(text, sizeof text, &len, "rules = [ { class=\"A\", exec=[");
+	for (i = 0; i < 40; i++)
+		append_text(text, sizeof text, &len, "\"a%d\", ", i);
+	append_text(text, sizeof text, &len, "\"x\" }, { class=\"B\" } ]\n");
+	CHECK(parse_text(dir, "unclosed-long-inner-array", text), "the unclosed long array file did not parse");
+	CHECK(toml_table_count(&doc, "rules") == 2 && table_str("rules", 1, "class")
+	      && strcmp(table_str("rules", 1, "class"), "B") == 0,
+	      "a table after an unclosed long array was lost: %d rules", toml_table_count(&doc, "rules"));
+	CHECK(doc.bad_lines == 1 && doc.long_arrays == 1, "unclosed long inner array: bad_lines %d, long_arrays %d",
+	      doc.bad_lines, doc.long_arrays);
+
 	CHECK(parse_text(dir, "missing-comma",
 		"keys = [\n"
 		"  { mod=\"SUPER\", key=\"a\", func=\"view\" },\n"

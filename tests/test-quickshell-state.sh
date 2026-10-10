@@ -25,9 +25,16 @@ cat >"$bin/xprop" <<EOF
 # -root <props...>  |  -id <window> <props...>
 printf '%s\n' "\$*" >>"$work/xprop.log"
 if [ "\$1" = "-root" ] && [ "\$2" = "-spy" ]; then
+	if [ -f "$work/root-spy-dies" ]; then
+		while [ ! -f "$work/root-spy-kill" ]; do sleep 0.05; done
+		exit 0
+	fi
 	exec sleep 30
 fi
 if [ "\$1" = "-id" ] && [ "\$3" = "-spy" ]; then
+	if [ "\$2" = "0xaa" ] && [ -f "$work/client-churn" ]; then
+		while :; do printf '_NET_WM_NAME(UTF8_STRING) = "Churn"\n'; sleep 0.2; done
+	fi
 	if [ "\$2" = "0xaa" ]; then
 		while [ ! -f "$work/title-changed" ]; do sleep 0.05; done
 		printf '_NET_WM_NAME(UTF8_STRING) = "Updated title"\n'
@@ -314,6 +321,27 @@ touch "$work/xwatch-broken"
 run_watch
 grep -Fq -- '-id 0xaa -spy _NET_WM_NAME WM_NAME WM_CLASS _NET_WM_DESKTOP' "$work/xprop.log" ||
 	fail 'the fallback did not subscribe to client title properties' "$work/xprop.log"
+
+# #320 review: the root xprop -spy dies while a window's watcher keeps writing,
+# so the 30 s timeout never comes: the watch still ends, after the next event.
+rm -f "$work/title-changed" "$work/fallback-title-changed" "$work/root-spy-kill"
+touch "$work/root-spy-dies" "$work/client-churn"
+PATH="$bin:$PATH" "$checkout/scripts/dwm-quickshell-state" watch >"$work/watch-out" 2>"$work/watch-err" &
+watch_pid=$!
+wait_for_line "$initial" 'watch did not emit initial titles (fallback, dying root watcher)'
+touch "$work/root-spy-kill"
+i=0
+while kill -0 "$watch_pid" 2>/dev/null; do
+	i=$((i + 1))
+	[ "$i" -lt 80 ] || fail 'the fallback watch kept running after its root watcher died' "$work/watch-err"
+	sleep 0.05
+done
+wait "$watch_pid" 2>/dev/null || true
+watch_pid=
+grep -Fq 'the root xprop -spy stopped' "$work/watch-err" || fail 'the fallback watch did not say why it ended' "$work/watch-err"
+rm -f "$work/root-spy-dies" "$work/root-spy-kill" "$work/client-churn"
+# The titles as the fallback run above left them, for the snapshot check below.
+touch "$work/title-changed" "$work/fallback-title-changed"
 rm -f "$work/xwatch-broken"
 
 PATH="$bin:$PATH" "$helper" state >"$work/reopened-out" 2>"$work/reopened-err" ||

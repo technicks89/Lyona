@@ -698,9 +698,9 @@ watch_state_spies() {
 	while :; do
 		event=
 		# This shell keeps a write end, to start a watcher for each new window,
-		# so the root watcher's death is never an end of file here: after 30 s
-		# without an event, check it is still there (#320). Only this fallback
-		# wakes so; the dwm-xwatch path above needs no timeout.
+		# so the root watcher's death is never an end of file here: it is checked
+		# after every event, and after 30 s without one (#320). Only this
+		# fallback wakes so; the dwm-xwatch path above needs no timeout.
 		if ! IFS= read -r -t 30 event <&3; then
 			if [[ -z $event ]]; then
 				kill -0 "$root_pid" 2>/dev/null || break
@@ -709,15 +709,22 @@ watch_state_spies() {
 			IFS= read -r rest <&3 || true
 			event=$event$rest
 		fi
+		# The windows' own watchers can keep writing after the root one died.
+		kill -0 "$root_pid" 2>/dev/null || break
 		clients_changed=0
 		note_event "$event"
-		drain_events
+		# The burst, and the rest of the 200 ms gap, before the watchers are
+		# synced: a window listed during the gap gets its watcher before this
+		# rebuild, not only at the next list change.
+		drain_events note_event $((last_rebuild + 200000))
 		# The drain after starting new watchers may see the list change again.
 		while [ "$clients_changed" = 1 ]; do
 			clients_changed=0
 			sync_client_watchers
 		done
-		rebuild_after_gap note_event
+		show_state
+		printf '\n'
+		last_rebuild=${EPOCHREALTIME//[!0-9]/}
 	done
 	printf 'dwm-quickshell-state: the root xprop -spy stopped; the watch ends, to be started again\n' >&2
 }
