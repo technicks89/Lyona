@@ -551,6 +551,18 @@ main(int argc, char **argv)
 	XSetWMProtocols(dpy, win, &wm_delete, 1);
 	XSelectInput(dpy, win, StructureNotifyMask);
 	if (preconfigure_panel) {
+		/* As Quickshell's panel declares itself the bar on X11: a dock that
+		 * reserves its height at the top (exclusiveZone), #322. */
+		Atom dock = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
+		long strut_partial[12] = { 0, 0, 24, 0, 0, 0, 0, 0, 0, 1023, 0, 0 };
+		long strut[4] = { 0, 0, 24, 0 };
+
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False),
+			XA_ATOM, 32, PropModeReplace, (unsigned char *)&dock, 1);
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_STRUT_PARTIAL", False),
+			XA_CARDINAL, 32, PropModeReplace, (unsigned char *)strut_partial, 12);
+		XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_STRUT", False),
+			XA_CARDINAL, 32, PropModeReplace, (unsigned char *)strut, 4);
 		XMoveResizeWindow(dpy, win, 0, 0, 1024, 24);
 		XFlush(dpy);
 		usleep(100000);

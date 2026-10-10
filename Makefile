@@ -170,9 +170,10 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '0')
 
 # dwm-window-thumb captures window previews for the overview (Sync Sprint 9
 # S9-01). It is a separate program, not part of the window manager, and needs
-# only libX11.
+# libX11 and libXrender (already a build dependency, through Xft): the X server
+# scales the window down (#323).
 THUMB = dwm-window-thumb
-THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11)
+THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11 xrender)
 
 # lyona-toml, the scripts' one reader of the TOML files, built on dwm's own
 # parser (Sync Sprint 12 S12-14, D-20). Installed in LIB_DIR, off PATH.

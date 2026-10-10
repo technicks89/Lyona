@@ -46,6 +46,13 @@ with the same value, so a reader compares before acting.
 | --- | --- | --- | --- |
 | `_DWM_SET_LAYOUT` | `CARDINAL`, 1 | `dwm-quickshell-state layout INDEX` (the panel's layout switcher) | dwm reads it, deletes it, and applies `layouts[INDEX]` to the selected monitor, as the layout key would. An index out of range, or a value of another type or length, is ignored. |
 
+The panel declares itself the bar with the standard strut: a dock
+(`_NET_WM_WINDOW_TYPE_DOCK`) that reserves space at the top or bottom of its
+screen (`_NET_WM_STRUT_PARTIAL`, or `_NET_WM_STRUT`), which Quickshell sets for a
+`PanelWindow`'s `exclusiveZone`. dwm takes that dock, and only that, as the
+monitor's bar, and keeps windows clear of it; a dock that reserves nothing (a
+notice, a banner) is shown but neither the bar nor a managed window (#322).
+
 The shell also uses the standard `_NET_ACTIVE_WINDOW` client message, with two
 lyona-specific effects:
 

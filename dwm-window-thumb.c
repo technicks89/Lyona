@@ -2,7 +2,13 @@
  *
  * dwm-window-thumb: capture a small preview of one X11 window for the window
  * overview (Sync Sprint 9 S9-01, docs/evidence/s9-01-thumbnail-spike.md).
- * Needs only libX11, and is not part of the window manager.
+ * Needs libX11 and libXrender, and is not part of the window manager.
+ *
+ * The X server scales the window down (XRender, halved step by step, so every
+ * source pixel counts), and one small image of the result is read: at most
+ * 160 KB for any window, where every row of it used to be fetched, 33 MB for a
+ * 4K window (#323). Without Render, or if it fails, the window is fetched in bands and
+ * scaled here, as before; LYONA_THUMB_NO_RENDER=1 forces that, for the tests.
  *
  *   dwm-window-thumb available        exit 0 if previews can be captured
  *   dwm-window-thumb capture WINDOW   write the preview, print its path
@@ -28,6 +34,7 @@
  */
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/Xrender.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -179,6 +186,97 @@ purge(void)
 	return 0;
 }
 
+/* One Render step: SRC (SW x SH) scaled into a new RGB24 picture of DW x DH,
+ * bilinear. At most 2x down per axis, bilinear samples exactly between pixels,
+ * so each step is a 2x2 average on pixman's fast path. Returns the picture and
+ * its pixmap in *PIX, or None. */
+static Picture
+halfstep(Display *dpy, Window root, XRenderPictFormat *fmt, Picture src,
+         int sw, int sh, int dw, int dh, Pixmap *pix)
+{
+	XTransform xf;
+	Picture dst;
+
+	memset(&xf, 0, sizeof xf);
+	xf.matrix[0][0] = XDoubleToFixed((double)sw / dw);
+	xf.matrix[1][1] = XDoubleToFixed((double)sh / dh);
+	xf.matrix[2][2] = XDoubleToFixed(1);
+	*pix = XCreatePixmap(dpy, root, (unsigned)dw, (unsigned)dh, 24);
+	dst = XRenderCreatePicture(dpy, *pix, fmt, 0, NULL);
+	XRenderSetPictureTransform(dpy, src, &xf);
+	XRenderSetPictureFilter(dpy, src, FilterBilinear, NULL, 0);
+	XRenderComposite(dpy, PictOpSrc, src, None, dst, 0, 0, 0, 0, 0, 0,
+	                 (unsigned)dw, (unsigned)dh);
+	return dst;
+}
+
+/* WIN scaled to DW x DH by the X server (#323): halved with Render until it is
+ * within twice the preview on each side, then one last bilinear step, and the
+ * result read with one XGetImage. Each halving averages 2x2 pixels, so every
+ * source pixel counts, as a box filter would, at a fraction of a convolution's
+ * cost in the server (a 15x15 convolution took 43 ms for a 4K window, and the
+ * server serves no one meanwhile). Fills OUT (DW x DH, RGB) and returns 1; 0
+ * when Render is missing or fails, for the client-side path. */
+static int
+serverscale(Display *dpy, Window win, const XWindowAttributes *wa, int dw, int dh,
+            unsigned char *out)
+{
+	XRenderPictFormat *srcfmt, *fmt;
+	XRenderPictureAttributes pa;
+	Picture cur, next;
+	Pixmap curpix = None, nextpix;
+	XImage *img;
+	int ev, er, cw = wa->width, ch = wa->height, nw, nh, x, y, ok = 0;
+	unsigned long p;
+
+	if (getenv("LYONA_THUMB_NO_RENDER") || !XRenderQueryExtension(dpy, &ev, &er)
+	    || !(srcfmt = XRenderFindVisualFormat(dpy, wa->visual))
+	    || !(fmt = XRenderFindStandardFormat(dpy, PictStandardRGB24)))
+		return 0;
+	memset(&pa, 0, sizeof pa);
+	pa.subwindow_mode = IncludeInferiors;
+	cur = XRenderCreatePicture(dpy, win, srcfmt, CPSubwindowMode, &pa);
+	while (cw > dw || ch > dh) {
+		nw = cw > 2 * dw ? (cw + 1) / 2 : dw;
+		nh = ch > 2 * dh ? (ch + 1) / 2 : dh;
+		next = halfstep(dpy, wa->root, fmt, cur, cw, ch, nw, nh, &nextpix);
+		XRenderFreePicture(dpy, cur);
+		if (curpix != None)
+			XFreePixmap(dpy, curpix);
+		cur = next, curpix = nextpix, cw = nw, ch = nh;
+	}
+	if (curpix == None) {
+		/* Already preview-sized: nothing to scale, the client-side path
+		 * reads it as it is, without an error from the picture above. */
+		XRenderFreePicture(dpy, cur);
+		XSync(dpy, False);
+		x_error = 0;
+		return 0;
+	}
+	/* Its reply comes after any error the requests above caused. */
+	img = XGetImage(dpy, curpix, 0, 0, (unsigned)dw, (unsigned)dh, AllPlanes, ZPixmap);
+	if (img && !x_error) {
+		/* The pixmap's layout is the RGB24 picture format's, not a visual's. */
+		for (y = 0; y < dh; y++)
+			for (x = 0; x < dw; x++) {
+				p = XGetPixel(img, x, y);
+				out[((size_t)y * dw + x) * 3] = (unsigned char)((p >> fmt->direct.red) & fmt->direct.redMask);
+				out[((size_t)y * dw + x) * 3 + 1] = (unsigned char)((p >> fmt->direct.green) & fmt->direct.greenMask);
+				out[((size_t)y * dw + x) * 3 + 2] = (unsigned char)((p >> fmt->direct.blue) & fmt->direct.blueMask);
+			}
+		ok = 1;
+	}
+	if (img)
+		XDestroyImage(img);
+	if (cur != None)
+		XRenderFreePicture(dpy, cur);
+	if (curpix != None)
+		XFreePixmap(dpy, curpix);
+	XSync(dpy, False);
+	x_error = 0; /* a failure here leaves the client-side path to try */
+	return ok;
+}
+
 static int
 capture(Display *dpy, Window win)
 {
@@ -216,6 +314,8 @@ capture(Display *dpy, Window win)
 	if (!(out = malloc((size_t)dw * dh * 3)) || !(sum = malloc(sizeof(unsigned long) * dw * 3))
 	    || !(cnt = malloc(sizeof(unsigned long) * dw)))
 		goto done;
+	if (serverscale(dpy, win, &wa, dw, dh, out))
+		goto write;
 
 	/* The source rows output row K samples from: [SRCY0(K), SRCY1(K)). */
 #define SRCY0(k) ((int)((long)(k) * wa.height / dh))
@@ -276,6 +376,7 @@ capture(Display *dpy, Window win)
 #undef SRCY0
 #undef SRCY1
 
+write:
 	if ((dfd = opendirsafe(1)) < 0)
 		goto done;
 	snprintf(tmp, sizeof tmp, ".tmp-%ld", (long)getpid());

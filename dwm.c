@@ -83,7 +83,7 @@ enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
        NetWMWindowTypeCombo, NetWMWindowTypeDnd,
        NetClientList, NetDesktopNames, NetDesktopViewport, NetNumberOfDesktops, NetCurrentDesktop,
        NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmMonitorWindows, NetDwmLayout, NetDwmSetLayout,
-       NetCloseWindow, NetLast };
+       NetCloseWindow, NetWMStrut, NetWMStrutPartial, NetLast };
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast };
 typedef struct Client Client;
 typedef struct OverrideWindow OverrideWindow;
@@ -143,8 +143,6 @@ struct Monitor {
 	Monitor *next;
 	Window barwin;
 	Window traywin;
-	Window waitingbar;	/* the widest dock turned away while barwin lived */
-	int waitingbarw;
 	const Layout *lt[2];
 	Pertag *pertag;
 };
@@ -179,7 +177,10 @@ static int gettextprop(Window w, Atom atom, char *text, unsigned int size);
 static void grabbuttons(Client *c, int focused);
 static void grabkeys(void);
 static void incnmaster(const Arg *arg);
+static int hasbarstrut(Window win);
 static int isaltbar(Window win, XWindowAttributes *wa);
+static int isdock(Window win);
+static void leavedock(Window win);
 static int istransientforbar(Window win);
 static int isdescprocess(pid_t p, pid_t c);
 static void closeclient(Client *c);
@@ -317,6 +318,7 @@ static void updatelayoutprop(void);
 static void applylayoutrequest(void);
 
 static void managealtbar(Window win, XWindowAttributes *wa);
+static void strutchanged(Window win);
 static void managetray(Window win, XWindowAttributes *wa);
 static void scanaltbars(void);
 static void scantray(void);
@@ -1889,6 +1891,23 @@ manage(Window w, XWindowAttributes *wa)
 	focus(NULL);
 }
 
+/* A dock's strut changed: it becomes a bar when it reserves space, and stops
+ * being one when it no longer does (#322). */
+void
+strutchanged(Window win)
+{
+	XWindowAttributes wa;
+	Monitor *m;
+
+	if (!XGetWindowAttributes(dpy, win, &wa) || wa.map_state != IsViewable)
+		return;
+	for (m = mons; m && m->barwin != win; m = m->next);
+	if (isaltbar(win, &wa))
+		managealtbar(win, &wa);
+	else if (m)
+		unmanagealtbar(win);
+}
+
 void
 managealtbar(Window win, XWindowAttributes *wa)
 {
@@ -1910,18 +1929,62 @@ managealtbar(Window win, XWindowAttributes *wa)
 		scantray();
 }
 
+/* Whether WIN reserves space at the top or bottom of the screen, by the EWMH
+ * strut a panel sets for its exclusive zone (Quickshell's exclusiveZone sets
+ * _NET_WM_STRUT_PARTIAL and _NET_WM_STRUT). */
+int
+hasbarstrut(Window win)
+{
+	Atom props[2] = { netatom[NetWMStrutPartial], netatom[NetWMStrut] };
+	Atom type;
+	int format, res = 0;
+	unsigned long n, after;
+	unsigned char *data;
+	size_t i;
+
+	for (i = 0; i < LENGTH(props); i++) {
+		data = NULL;
+		if (XGetWindowProperty(dpy, win, props[i], 0L, 12L, False, XA_CARDINAL,
+		                       &type, &format, &n, &after, &data) != Success || !data)
+			continue;
+		if (type == XA_CARDINAL && format == 32 && n >= 4) {
+			long *v = (long *)data; /* left, right, top, bottom, ... */
+			res = v[2] > 0 || v[3] > 0;
+			XFree(data);
+			return res;
+		}
+		XFree(data);
+	}
+	return 0;
+}
+
+/* A bar is a dock that reserves space at the top or bottom of its screen: the
+ * panel declares itself so (#322). dwm used to take any window of class
+ * "quickshell", or any dock wider than tall, and then chose between them by
+ * width: a banner or an OSD from the shell could take the bar's place. */
 int
 isaltbar(Window win, XWindowAttributes *wa)
 {
-	Atom wtype;
-
-	if (wmclasscontains(win, altbarclass, ""))
-		return 1;
-	if (!wa || wa->width <= wa->height)
+	if (wa && wa->override_redirect)
 		return 0;
+	return isdock(win) && hasbarstrut(win);
+}
 
-	wtype = getwinatomprop(win, netatom[NetWMWindowType]);
-	return wtype == netatom[NetWMWindowTypeDock];
+int
+isdock(Window win)
+{
+	return getwinatomprop(win, netatom[NetWMWindowType]) == netatom[NetWMWindowTypeDock];
+}
+
+/* A dock that is not a bar (a notice, a banner) is shown, not managed: it is
+ * no window to tile or focus. Its properties are watched, so it becomes the
+ * bar if it reserves space later (#322). */
+void
+leavedock(Window win)
+{
+	XSelectInput(dpy, win, PropertyChangeMask);
+	XMapWindow(dpy, win);
+	XRaiseWindow(dpy, win);
 }
 
 int
@@ -1983,6 +2046,8 @@ maprequest(XEvent *e)
 		return;
 	if (isaltbar(ev->window, &wa))
 		managealtbar(ev->window, &wa);
+	else if (isdock(ev->window))
+		leavedock(ev->window);
 	else if (!wintoclient(ev->window))
 		manage(ev->window, &wa);
 }
@@ -2327,6 +2392,9 @@ propertynotify(XEvent *e)
 	} else if ((ev->window == root) && (ev->atom == netatom[NetDwmSetLayout])) {
 		if (ev->state == PropertyNewValue)
 			applylayoutrequest();
+	} else if ((ev->atom == netatom[NetWMStrutPartial] || ev->atom == netatom[NetWMStrut])
+	           && !wintoclient(ev->window)) {
+		strutchanged(ev->window);
 	} else if (ev->state == PropertyDelete) {
 		return;
 	} else if ((c = wintoclient(ev->window))) {
@@ -2905,6 +2973,8 @@ scan(void)
 			continue;
 		if (isaltbar(wins[i], &probe[i].wa))
 			managealtbar(wins[i], &probe[i].wa);
+		else if (isdock(wins[i]))
+			XSelectInput(dpy, wins[i], PropertyChangeMask); /* as leavedock() */
 		else if (probe[i].wa.map_state == IsViewable
 		|| getstate(wins[i]) == IconicState)
 			manage(wins[i], &probe[i].wa);
@@ -2912,7 +2982,12 @@ scan(void)
 	for (i = 0; i < num; i++) {
 		if (!probe[i].probed || !probe[i].transient)
 			continue;
-		if (probe[i].wa.map_state == IsViewable
+		/* A dock is a bar or left alone, transient or not, as in maprequest(). */
+		if (isaltbar(wins[i], &probe[i].wa))
+			managealtbar(wins[i], &probe[i].wa);
+		else if (isdock(wins[i]))
+			XSelectInput(dpy, wins[i], PropertyChangeMask); /* as leavedock() */
+		else if (probe[i].wa.map_state == IsViewable
 		|| getstate(wins[i]) == IconicState)
 			manage(wins[i], &probe[i].wa);
 	}
@@ -2925,6 +3000,7 @@ void
 scanaltbars(void)
 {
 	unsigned int i, j, monitorcount, num;
+	int pass;
 	Monitor *m, *oldm;
 	Window d1, d2, *wins = NULL;
 	Window *knownbars;
@@ -2947,16 +3023,21 @@ scanaltbars(void)
 		updatebarpos(m);
 	}
 
+	/* The bars already in place first, so one still shown keeps its monitor;
+	 * only a monitor that lost its bar takes another (a panel waiting through
+	 * a shell reload), whatever their stacking order (#322). */
+	for (pass = 0; pass < 2; pass++)
 	for (i = 0; i < num; i++) {
-		if (!XGetWindowAttributes(dpy, wins[i], &wa)
-		    || wa.override_redirect || wa.map_state != IsViewable
-		    || !isaltbar(wins[i], &wa))
-			continue;
-
 		for (j = 0, oldm = mons; oldm && j < monitorcount;
 		     oldm = oldm->next, j++)
 			if (knownbars[j] == wins[i])
 				break;
+		if ((pass == 0) != (oldm != NULL))
+			continue;
+		if (!XGetWindowAttributes(dpy, wins[i], &wa)
+		    || wa.override_redirect || wa.map_state != IsViewable
+		    || !isaltbar(wins[i], &wa))
+			continue;
 		m = recttomon(wa.x, wa.y, wa.width, wa.height);
 		if (!m || INTERSECT(wa.x, wa.y, wa.width, wa.height, m) <= 0)
 			m = oldm;
@@ -3674,6 +3755,8 @@ setup(void)
 	netatom[NetWMWindowType] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
 	netatom[NetWMWindowTypeDialog] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
 	netatom[NetWMWindowTypeDock] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
+	netatom[NetWMStrut] = XInternAtom(dpy, "_NET_WM_STRUT", False);
+	netatom[NetWMStrutPartial] = XInternAtom(dpy, "_NET_WM_STRUT_PARTIAL", False);
 	netatom[NetWMWindowTypeTooltip] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
 	netatom[NetWMWindowTypeNotification] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
 	netatom[NetWMWindowTypeMenu] = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_MENU", False);
@@ -4267,7 +4350,6 @@ void
 unmanagealtbar(Window w)
 {
 	Monitor *m = wintomon(w);
-	XWindowAttributes wa;
 
 	if (!m)
 		return;
@@ -4276,15 +4358,9 @@ unmanagealtbar(Window w)
 	m->by = 0;
 	m->bh = 0;
 	updatebarpos(m);
-	/* A dock may be waiting for the place: the panel Quickshell maps before it
-	 * destroys the old one on a reload. One round trip for it; the full scan
-	 * only when there is none. */
-	if (m->waitingbar && XGetWindowAttributes(dpy, m->waitingbar, &wa)
-	    && wa.map_state == IsViewable && !wa.override_redirect)
-		updatealtbar(m, m->waitingbar, &wa);
-	else
-		scanaltbars();
-	m->waitingbar = 0;
+	/* Another bar may be waiting for the place: the panel Quickshell maps
+	 * before it destroys the old one on a reload. */
+	scanaltbars();
 	arrange(m);
 	updateclientlist();
 }
@@ -4432,15 +4508,11 @@ void
 untrackoverridewindow(Window win)
 {
 	OverrideWindow **ow;
-	Monitor *m;
 
 	if (win == overridefocus) {
 		overridefocus = None;
 		focus(NULL);
 	}
-	for (m = mons; m; m = m->next)
-		if (m->waitingbar == win)
-			m->waitingbar = 0;
 
 	for (ow = &overridewindows; *ow && (*ow)->win != win; ow = &(*ow)->next);
 	if (*ow) {
@@ -4529,24 +4601,14 @@ updatealtbar(Monitor *m, Window win, XWindowAttributes *wa)
 		return 0;
 	if (wa->override_redirect)
 		return 0;
-	/* A monitor keeps one bar. Another dock (Quickshell's reload notice is
-	 * one) takes the place of a live bar only when it is wider; a new panel of
-	 * the same width takes it once the old one goes (unmanagealtbar rescans).
-	 * Before, every dock took the place in turn on each ConfigureNotify, each
-	 * raised over the other without end, and the bar was lost with the last
-	 * one (#280 VM). */
+	/* A monitor keeps one bar while it is shown: a second one (the panel
+	 * Quickshell maps before it destroys the old one on a reload) takes the
+	 * place when the first goes (unmanagealtbar rescans). Two taking it in
+	 * turn on each ConfigureNotify raised each other without end (#280 VM). */
 	if (m->barwin && m->barwin != win
 	    && XGetWindowAttributes(dpy, m->barwin, &current)
-	    && current.map_state == IsViewable && wa->width <= current.width) {
-		/* Kept to take the place when the bar goes, the widest one. */
-		if (!m->waitingbar || m->waitingbar == win || wa->width >= m->waitingbarw) {
-			m->waitingbar = win;
-			m->waitingbarw = wa->width;
-		}
+	    && current.map_state == IsViewable)
 		return 0;
-	}
-	if (m->waitingbar == win)
-		m->waitingbar = 0;
 
 	newtopbar = wa->y < m->my + m->mh / 2;
 	newbh = wa->height > 0 ? wa->height : bh;
