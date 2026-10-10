@@ -110,6 +110,10 @@ Scope {
         "downgrade-offered", "unknown", "offline", "unavailable"]
     readonly property bool updateAvailable: root.updateState === "behind"
         || root.updateState === "downgrade-offered"
+    // The channel's release is older than the installed one: Settings says so
+    // before the password prompt does, and only then is --allow-downgrade
+    // passed (#334).
+    readonly property bool downgradeOffered: root.updateState === "downgrade-offered"
 
     function refresh() {
         root.refreshCheck();
@@ -280,8 +284,13 @@ Scope {
         channelProcess.running = true;
     }
 
-    function apply(version) {
+    // VERSION as confirmed in Settings, and whether it was confirmed as the
+    // older release: the pane captures both at the confirmation, so a check
+    // that lands between it and the click cannot change what was approved
+    // (#334).
+    function apply(version, downgrade) {
         if (root.busy || !version || version.length === 0) return;
+        const older = downgrade === true;
         root.busy = true;
         root.progressShown = true;
         root.popupClosed = false;
@@ -290,10 +299,14 @@ Scope {
         root.lastOperation = "apply";
         root.markOutcome(0);
         root.phase = "downloading";
-        root.progressDetail = "Starting update to " + version;
+        root.progressDetail = (older ? "Going back to " : "Starting update to ") + version;
         root.outcomeMessage = "";
-        applyProcess.command = Commands.updateCommand("apply", ["--version", version, "--allow-downgrade", "--yes"]);
+        const args = ["--version", version];
+        if (older) args.push("--allow-downgrade");
+        args.push("--yes");
+        applyProcess.command = Commands.updateCommand("apply", args);
         applyProcess.running = true;
+
     }
 
     function rollback(backupId) {

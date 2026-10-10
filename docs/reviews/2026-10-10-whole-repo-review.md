@@ -43,6 +43,17 @@ window closes on another monitor, a rollback restoring a mixed-version install,
 and a broken `hotkeys.toml` loading silently) are fixed with tests that fail
 without the fix, and the targeted test targets all pass.
 
+## Tracking
+
+The findings below are grouped into seven issues and four pull requests:
+
+| PR | Issues |
+| --- | --- |
+| 1. Update failure story and downgrade wording | #333 (a failed update says "authentication required"; a part-way `install-system` says "untouched"; `sudo` after a dismissed dialog), #334 (a downgrade is called an update; the downgrade and signature rules undocumented) |
+| 2. Release record | #335 (beta.6 tagged at `1bfafac` while CHANGELOG says Unreleased; SPEC and `install.md` promise one base-system download; the smaller doc drift) |
+| 3. Root helper hardening | #336 (a dedicated build identity instead of `nobody`; fail-closed downgrade guard; `make` through `trusted_file`; `tar --verbatim-files-from`), #337 (the Makefile owns the palette list and the build-target split, frozen in SPEC 6 and tested across versions) |
+| 4. Shell recovery and yay | #338 (the shell-down hint goes through the shell's own notification daemon), #339 (yay installed by two copies; a non-interactive install never installs it) |
+
 ## Fix first
 
 These came up in more than one review, or sit on the most common path. None is
@@ -438,7 +449,7 @@ root), any real X11 session, the desktop, the image, or a real update. The VM
 evidence in `docs/evidence/324-328-install-update-rollback.md` covers those for
 the 2026-10-10 run.
 
-## Suggested grouping
+## Suggested grouping (now the Tracking table above)
 
 1. **Update failure story and downgrade wording** (Fix first 1, 2; the sudo
    fallback on 126): `lyona-update`, `lyona-update-root` exit codes,

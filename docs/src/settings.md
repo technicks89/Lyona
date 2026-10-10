@@ -106,8 +106,12 @@ channel (`stable` or `preview`) and reports one of:
 - **behind**: a newer release is available;
 - **ahead**: a development checkout newer than the published release;
 - **downgrade offered**: the channel's release is older than the installed one.
-  Nothing is installed unless you ask for that version
-  (`lyona-update apply --version VERSION --allow-downgrade`);
+  Nothing is installed unless you ask for that version: the button says **Go
+  back to VERSION**, the confirmation says it is older than what is installed,
+  and the password prompt is the separate "install an OLDER lyona release"
+  one, which needs the release's signature (`lyona-update apply --version
+  VERSION --allow-downgrade` from a terminal). To return to what was installed
+  before an update, roll back to its backup (below) instead;
 - **unknown**: there is no install record to compare, or nothing has been
   published on the channel yet (lyona's releases so far are pre-releases, on
   `preview`);
@@ -122,8 +126,11 @@ live install, and installs it through one confirmed privileged step. Progress
 is shown phase by phase (downloading, verifying, building, installing,
 verifying, restarting) rather than a bare spinner, because the whole
 operation restarts Quickshell partway through and can take several minutes.
-Declining the privileged step, or a build failure, costs nothing but time —
-the live install is never left half-applied.
+Declining the privileged step, or a build failure, costs nothing but time: the
+live install is untouched. A system install that stops part-way says so, and
+points at the backup to roll back to. Whatever failed, Settings -> System shows
+the reason, not just the step it failed in.
+
 
 Switch between the `stable` and `preview` channels at any time; `preview`
 carries a visible warning that pre-release builds are not release-qualified.

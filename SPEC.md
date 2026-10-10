@@ -358,6 +358,16 @@ contract for every developer deployment. Every live update must:
    active and that the graphical-session and XDG autostart lifecycle starts
    tray clients for the new X11 session.
 
+A release update (`lyona-update apply`) additionally builds the one program
+that includes the user's `config.h` as an unprivileged identity, never as root
+(#327); refuses a release older than the installed one on the routine
+authorization and installs it only through a separate action whose prompt says
+so, with the release's signature verified, after naming both versions in its
+progress (#327, #334); and, when its system install stops part-way, reports
+that as distinct from a refusal, names the backup it took first and points at
+`lyona-update rollback`, with the failure's own reason as the recorded outcome
+(#333).
+
 ### 5.6 Build System
 
 The build must:
@@ -593,7 +603,10 @@ cancelled. Repository and XDG copies must never be elevated. What an elevated
 helper runs as root is held to the same rules: the tool, and every library it
 sources, root-owned and checked before it runs; root's own `HOME`; and nothing
 read from the invoking user's files except through a copy made with the user's
-own permissions.
+own permissions. Code the user wrote (`config.h`) is compiled by an unprivileged
+identity, not by root, and a change that undoes a release (a downgrade) has its
+own polkit action, worded as such, apart from the routine one (#327).
+
 
 Settings providers must prefer event-driven updates and stop unnecessary
 watches and processes when their section closes. A failure in one provider

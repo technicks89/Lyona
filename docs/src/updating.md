@@ -211,7 +211,8 @@ and `lyona-update` refuses one whose signature is missing or does not verify.
 It needs `cosign`, which the install provides, and the network, for Sigstore's
 trust root. The privileged step checks the signature again itself, so its
 usual prompt ("Authentication is required to install a lyona system update")
-only ever installs a signed release. A release from before signing, or an
+only ever installs a signed release that is not older than the one installed. A
+release from before signing, or an
 offline file you vouch for with `--sha256`, is installed on its digest alone,
 says so, and asks through a different prompt: "...install a lyona update whose
 signature was NOT verified". Approve either only for an update you started, and
@@ -224,8 +225,11 @@ that one only for a file you checked yourself.
    session restart.
 
 Declining the privileged-step confirmation, or a build failure, leaves the
-live install completely untouched and exits non-zero — never a half-applied
-system.
+live install completely untouched and exits non-zero. Should the system install
+itself stop part-way (a full disk, say), the update says so, names the backup
+it took first, and tells you to run `lyona-update rollback`, which restores the
+release installed before. Whatever the failure, its reason is what the progress
+popup, the notification and Settings -> System show, and the log has the rest.
 
 Before it builds, an apply checks the packages the new release needs, from the
 release's own package list. If one it requires is missing, it stops, changes
@@ -254,8 +258,9 @@ progress is shown outside Settings and survives that restart:
   treated as a failure and sends nothing.
 - **Cancelling the password prompt** cancels the update (or rollback): nothing
   is changed, and the popup and Settings -> System say "Update cancelled",
-  with no notification. Started from a terminal instead, `lyona-update` asks
-  for your password with `sudo` when there is no polkit agent to ask.
+  with no notification. Dismissing the dialog cancels from a terminal too.
+  Started from a terminal, `lyona-update` asks for your password with `sudo`
+  only when polkit could not authorize at all: no agent to ask, or not allowed.
 - **Settings -> System** shows how the last update or rollback ended, its
   reason when it failed or was cancelled, for a day after it.
 - A successful update removes what it downloaded and built under
@@ -273,7 +278,13 @@ through a second prompt.
 Useful flags:
 
 - `--allow-downgrade` — required to install a version older than what is
-  installed.
+  installed. An older release is installed only with its signature checked
+  (never with `--sha256` alone), and through its own prompt, "Authentication is
+  required to install an OLDER lyona release", not the usual one; the progress
+  names both versions before it. To return to what was installed before an
+  update, use `lyona-update rollback` instead: it needs no download and keeps
+  your settings as they were. Settings offers the same as **Go back to**
+  when the channel's release is older than the installed one.
 - `--dry-run` — builds and reports exactly what would be written, without
   installing anything.
 - `--file PATH` — install an already-downloaded tarball; still requires
@@ -288,7 +299,9 @@ Useful flags:
   `lyona-<version>-SHA256SUMS` (the first field). With `--bundle` too, both
   are checked. Given alone, for a machine with no network, the signature is
   not checked: you vouch for the file, and the install asks through the
-  "NOT verified" prompt.
+  "NOT verified" prompt. A release older than the installed one is never
+  installed this way: it needs its signature.
+
 
   ```sh
   lyona-update apply --file ~/lyona-2026.10.0.tar.gz --version 2026.10.0 \
