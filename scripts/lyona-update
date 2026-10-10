@@ -92,7 +92,8 @@ write_status_file() {
 	mkdir -p "$dir" 2>/dev/null || return 0
 	tmp=$(mktemp "$dir/.update.status.XXXXXX" 2>/dev/null) || return 0
 	if ! {
-		printf 'lyona-update-status-protocol\t1\t0\n'
+		printf 'lyona-update-status-protocol\t1\t1\n'
+		printf 'operation\t%s\n' "${status_operation:-apply}"
 		printf 'phase\t%s\t%s\n' "$phase" "$detail"
 		printf 'target\t%s\n' "$target"
 		printf 'outcome\t%s\t%s\n' "$outcome" "$message"
@@ -143,6 +144,7 @@ notify_outcome() {
 
 write_status() {
 	write_status_file "$@"
+	# A cancel is the user's own choice: no notification for it.
 	case ${4:-pending} in
 	succeeded | failed) notify_outcome "$2" "${3:-}" "$4" "${5:-}" ;;
 	esac
@@ -573,22 +575,41 @@ trusted_root_helper() {
 
 # rollback is the path a user takes with no desktop running, so this must not
 # require a polkit agent: it tries pkexec only when a graphical session looks
-# reachable, and always has sudo as a fallback.
+# reachable, and falls back to sudo when there is a terminal to ask for the
+# password on. Started from Settings or the panel there is none: a dismissed
+# or refused polkit prompt is then a cancel, not a reason to try sudo, which
+# could only fail with errors about terminals and askpass helpers (#326).
 run_privileged() {
-	local helper
+	local helper pkexec_status=0
 	helper=$(trusted_root_helper) || die "trusted privileged update helper is unavailable"
 	if [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]] && command -v pkexec >/dev/null 2>&1; then
-		local pkexec_status=0
 		pkexec "$helper" "$@" || pkexec_status=$?
 		case $pkexec_status in
 		0) return 0 ;;
-		126 | 127) warn "pkexec could not authorize or run this step; falling back to sudo" ;;
+		126 | 127)
+			[[ -t 0 ]] || cancel_privileged
+			warn "pkexec could not authorize or run this step; falling back to sudo"
+			;;
 		*) return "$pkexec_status" ;;
 		esac
 	fi
 	command -v sudo >/dev/null 2>&1 ||
 		die "neither a polkit agent nor sudo is available to complete this step"
+	[[ -t 0 ]] || sudo -n true 2>/dev/null ||
+		die "authorization is needed and there is no polkit agent or terminal to ask on; run lyona-update from a terminal"
 	sudo "$helper" "$@"
+}
+
+# The privileged step was not authorized: nothing was changed. Recorded as
+# cancelled, not failed, and exits 4, which the shell shows as a cancel.
+cancel_privileged() {
+	local what=Update
+	[[ ${status_operation:-apply} != rollback ]] || what=Rollback
+	status_written=true
+	write_status_file "${status_phase:-idle}" "${status_detail:-}" "${status_target:-}" cancelled \
+		"$what cancelled: authorization was not given. Nothing was changed."
+	warn "$what cancelled: authorization was not given. Nothing was changed."
+	exit 4
 }
 
 # --- apply -----------------------------------------------------------
@@ -761,12 +782,15 @@ cmd_apply() {
 	fi
 
 	local status_phase=downloading status_detail='Preparing to apply' status_target='' status_written=false status_quiet=false
+	local status_operation=apply
 	trap report_status_failure EXIT
 	# A dry run installs nothing, so it must not replace the last real log.
 	[[ $dry_run == true ]] || start_operation_log apply
 
 	read_config
 	read_installed
+	# The layout root installs into, for the backup, the check and the dry run.
+	lyona_install_layout
 
 	local staging_dir tarball checksum config_h_arg=- live_config_h=
 	if [[ -n $file_path ]]; then
@@ -892,6 +916,11 @@ cmd_apply() {
 	if [[ $requested_rank < $installed_rank && $allow_downgrade != true ]]; then
 		die "requested version $requested_version is older than the installed $installed_version; pass --allow-downgrade to proceed"
 	fi
+	# Only with its signature checked: the root helper installs an older release
+	# through install-downgrade, which verifies it (#327).
+	if [[ $requested_rank < $installed_rank && $signature_verified != true ]]; then
+		die "an older release is installed only with its signature checked; to go back to what was installed before, run lyona-update rollback"
+	fi
 
 	status_detail="Checking the packages $requested_version needs"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
@@ -917,9 +946,12 @@ cmd_apply() {
 		# stale pending record for a build that already finished.
 		rm -f "$status_file"
 		printf 'dry run: would back up the live install, then write:\n'
-		printf '  %s/bin (system commands and dwm)\n' "${PREFIX:-/usr/local}"
-		printf '  %s/libexec/lyona (privileged helpers)\n' "${PREFIX:-/usr/local}"
-		printf '  %s/share/man/man1/dwm.1\n' "${PREFIX:-/usr/local}"
+		printf '  %s/bin (system commands and dwm)\n' "$PREFIX"
+		printf '  %s/libexec/lyona (privileged helpers)\n' "$PREFIX"
+		printf '  %s/lib/lyona and %s/share/lyona (shared code and defaults)\n' "$PREFIX" "$PREFIX"
+		printf '  %s (cursor and GTK themes)\n' "$DATADIR"
+		printf '  %s/man1/dwm.1\n' "$MANPREFIX"
+		printf '  %s/dwm.desktop\n' "$XSESSIONSDIR"
 		printf '  /etc/lyona-release\n'
 		printf '  %s\n' "$state_home/lyona/install.state"
 		printf 'complete\tapply-dry-run\n'
@@ -957,10 +989,15 @@ cmd_apply() {
 	# A verified release is installed on the routine prompt, where the root
 	# helper checks the signature again; anything else on its own, explicit
 	# prompt, so an unverified install never looks routine.
-	local privileged_status=0
+	local privileged_status=0 install_subcommand=install-system
+	# An older release than the installed one has its own prompt (#327).
+	if [[ $requested_rank < $installed_rank ]]; then
+		install_subcommand=install-downgrade
+		warn "$requested_version is older than the installed $installed_version; the next prompt asks to install an OLDER release"
+	fi
 	if [[ $signature_verified == true ]]; then
-		run_privileged install-system release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" \
-			"$bundle_path" || privileged_status=$?
+		run_privileged "$install_subcommand" release "$tarball" "$checksum" "$requested_version" "$config_h_arg" \
+			"$backup_id" "$bundle_path" || privileged_status=$?
 	else
 		warn "$requested_version's signature was not checked; the next prompt asks to install an UNVERIFIED update"
 		run_privileged install-unverified release "$tarball" "$checksum" "$requested_version" "$config_h_arg" "$backup_id" ||
@@ -986,6 +1023,11 @@ cmd_apply() {
 	runtime_verify 1 || warn "runtime validation reported a problem; see above"
 
 	prune_backups
+	# The staged tree, the tarball and the signature bundles are not needed once
+	# the update is in and verified: a rollback uses the backups. About 25 MB an
+	# update was left behind for good (#326). The failure paths above keep them.
+	rm -rf -- "${staging_dir:?}" "$tarball"
+	rm -f -- "$updates_root"/lyona-*.sigstore.json
 	status_written=true
 	write_status restarting 'Update complete' "$status_target" succeeded ''
 	trap - EXIT
@@ -1160,6 +1202,7 @@ cmd_rollback() {
 	[[ -d $backup_dir && ! -L $backup_dir ]] || die "backup not found: $backup_id"
 
 	local status_phase=restarting status_detail="Verifying backup $backup_id" status_target=$backup_id status_written=false status_quiet=false
+	local status_operation=rollback
 	trap report_status_failure EXIT
 	start_operation_log rollback
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
@@ -1171,7 +1214,8 @@ cmd_rollback() {
 	backup_prefix=$(awk -F= '$1 == "prefix" { print $2; exit }' "$checkout_file" 2>/dev/null)
 	backup_config_home=$(awk -F= '$1 == "config_home" { print $2; exit }' "$checkout_file" 2>/dev/null)
 	backup_data_home=$(awk -F= '$1 == "xdg_data_home" { print $2; exit }' "$checkout_file" 2>/dev/null)
-	local current_prefix=${PREFIX:-/usr/local}
+	lyona_install_layout
+	local current_prefix=$PREFIX
 	if [[ -n $backup_prefix && $backup_prefix != "$current_prefix" ]] ||
 		[[ -n $backup_config_home && $backup_config_home != "$config_home" ]] ||
 		[[ -n $backup_data_home && $backup_data_home != "$data_home" ]]; then

@@ -63,7 +63,8 @@ with the CyberRe boot menu theme.
      machine with `sudo`; root has no password and cannot log in. A system
      that will not boot is repaired from the live medium (`arch-chroot`), as
      systemd's emergency shell needs root's password;
-   - the timezone, detected from your connection for you to confirm or change;
+   - the timezone: it asks first whether to detect it online (that sends your
+     IP address to ipinfo.io or ipapi.co), then lets you confirm or change it;
    - the package mirrors: those in your timezone's country, or worldwide for a
      zone with no country such as `UTC`. Choose another country, or worldwide,
      when you are installing somewhere else. The fastest of them, measured from
@@ -435,6 +436,7 @@ The same steps are available on their own afterwards:
 ```bash
 lyona-cachyos status
 lyona-cachyos add-repos              # --no-upgrade to skip the system upgrade
+lyona-cachyos raise-level            # from the baseline repository to your CPU's level
 lyona-cachyos install-kernel         # --with-headers to include kernel headers
 ```
 
@@ -476,7 +478,8 @@ nothing.
   The old defaults are listed in `scripts/hotkeys-migrations`.
 
 An AUR helper (`yay`) is installed automatically for you as a standing
-convenience tool, independent of the package profiles above — none of the
+convenience tool (`--skip-yay` leaves it out; the image installs it itself,
+before anything has passwordless sudo), independent of the package profiles above — none of the
 required, recommended, or optional packages need it, since everything the
 installer selects is available directly through official `pacman` repos
 (`core`/`extra`/`multilib`). Lyona limits the AUR to where it is needed: today,

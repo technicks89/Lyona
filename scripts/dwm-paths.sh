@@ -167,3 +167,47 @@ lyona_toml_load() {
 lyona_toml_value() {
 	printf '%s\n' "${LYONA_TOML["$1"$'\034'"$2"]:-}"
 }
+
+# The default shared-data directory for PREFIX, as the Makefile's DATADIR:
+# /usr/share for PREFIX /usr and /usr/local, else PREFIX/share.
+lyona_default_datadir() {
+	case $1 in
+	/usr | /usr/local) printf '/usr/share\n' ;;
+	*) printf '%s/share\n' "$1" ;;
+	esac
+}
+
+# Where the system install put things, from the record make install-system
+# wrote (/etc/lyona-release, its LYONA_PREFIX, LYONA_MANPREFIX, LYONA_DATADIR and
+# LYONA_XSESSIONSDIR), so both halves of an update use the layout root installs
+# into (#325); lyona-update-root reads the same record, as root. A field the
+# record lacks (one from before 2026.10.0-beta.6) comes from the environment,
+# else the Makefile's default. Read as data, never sourced: only absolute paths
+# of plain characters are taken. Sets and exports PREFIX, MANPREFIX, DATADIR
+# and XSESSIONSDIR. DWM_TEST_SYSTEM_RECORD names another record, for the tests.
+lyona_install_layout() {
+	local record=${DWM_TEST_SYSTEM_RECORD:-/etc/lyona-release} line key value size
+	local prefix='' manprefix='' datadir='' xsessionsdir=''
+
+	if [[ -f $record && ! -L $record ]] && size=$(stat -c %s -- "$record" 2>/dev/null) &&
+		((size <= 4096)); then
+		while IFS= read -r line || [[ -n $line ]]; do
+			key=${line%%=*}
+			value=${line#*=}
+			if ! [[ $value =~ ^/[A-Za-z0-9._/+-]*$ && $value != / ]] || ! valid_absolute_path "$value"; then
+				continue
+			fi
+			case $key in
+			LYONA_PREFIX) prefix=$value ;;
+			LYONA_MANPREFIX) manprefix=$value ;;
+			LYONA_DATADIR) datadir=$value ;;
+			LYONA_XSESSIONSDIR) xsessionsdir=$value ;;
+			esac
+		done <"$record"
+	fi
+	PREFIX=${prefix:-${PREFIX:-/usr/local}}
+	MANPREFIX=${manprefix:-${MANPREFIX:-$PREFIX/share/man}}
+	DATADIR=${datadir:-${DATADIR:-$(lyona_default_datadir "$PREFIX")}}
+	XSESSIONSDIR=${xsessionsdir:-${XSESSIONSDIR:-/usr/share/xsessions}}
+	export PREFIX MANPREFIX DATADIR XSESSIONSDIR
+}

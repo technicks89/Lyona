@@ -69,4 +69,18 @@ awk '/^install-system:/ { inside = 1 } inside && /remove-legacy-shared-data/ { f
 	inside && /install-gtk-themes/ { exit !found }' "$repo/Makefile" ||
 	fail 'install-system does not remove the legacy copies before installing the shared data'
 
+# #324: nothing is removed through a symlinked directory, such as a themes/
+# that points somewhere else.
+command rm -rf "$stage" "$work/elsewhere"
+put licenses/lyona/capitaine-cursors/COPYING
+install -D -m 0644 /dev/null "$work/elsewhere/Lyona-tokyonight/index.theme"
+ln -s "$work/elsewhere" "$legacy/themes"
+make -s -C "$repo" remove-legacy-shared-data DESTDIR="$stage" PREFIX=/usr/local DATADIR=/usr/share \
+	>"$work/out" 2>&1 || {
+	cat "$work/out" >&2
+	fail 'remove-legacy-shared-data failed with a symlinked themes directory'
+}
+assert_file "$work/elsewhere/Lyona-tokyonight/index.theme" 'a theme behind a symlinked themes/ was removed'
+grep -Fq "is a symlink or not root's" "$work/out" || fail "the skipped removal was not reported: $(cat "$work/out")"
+
 printf 'Legacy shared data from earlier updates: PASS\n'

@@ -29,10 +29,16 @@ Usage: scripts/lyona-cachyos <command>
 
 Commands:
   status          Report whether the CachyOS repositories are configured.
-  add-repos [--no-upgrade]
+  add-repos [--no-upgrade] [--baseline]
                   Add the CachyOS repositories matching this CPU's ISA level.
                   --no-upgrade syncs the databases but skips the system
                   upgrade, for callers that only need the repositories.
+                  --baseline adds only the baseline repository, which needs
+                  no CachyOS pacman: with --no-upgrade, nothing is installed,
+                  so a system that cannot be upgraded (the live medium) is
+                  never partially upgraded.
+  raise-level     On a system set up at baseline, move to this CPU's level:
+                  a full upgrade, the CachyOS pacman, the level repositories.
   install-kernel [--with-headers] [--make-default] [KERNEL...]
                   Install $DEFAULT_KERNEL (or the named kernels) and make them
                   bootable without changing the default boot entry, unless
@@ -203,12 +209,16 @@ import_key() {
 }
 
 add_repos() {
-	local level backup restore=false status=0 upgrade_after=true
+	local level backup restore=false status=0 upgrade_after=true baseline_only=false
 
 	while (($# > 0)); do
 		case $1 in
 		--no-upgrade)
 			upgrade_after=false
+			shift
+			;;
+		--baseline)
+			baseline_only=true
 			shift
 			;;
 		*)
@@ -227,6 +237,10 @@ add_repos() {
 
 	level=$(detect_isa_level)
 	info "Detected CachyOS package level: $level"
+	if [[ $baseline_only == true && $level != baseline ]]; then
+		info "Adding the baseline repository only (--baseline); raise-level moves to $level later."
+		level=baseline
+	fi
 
 	backup="$pacman_conf.lyona-backup-$(date +%Y%m%d%H%M%S)"
 	run_root install -m 0644 "$pacman_conf" "$backup"
@@ -288,6 +302,39 @@ add_repos() {
 
 	ok "CachyOS repositories configured ($level)."
 	return $status
+}
+
+# A system set up with add-repos --baseline, moved to the CPU's own level (#328):
+# the live medium could not take the CachyOS pacman that level needs without a
+# partial upgrade, so the new system does it, with full upgrades around it.
+# pacman.conf is put back if any step fails, leaving the baseline repository.
+raise_level() {
+	local level backup upgrade=(-Syu)
+	[[ $noconfirm == 1 ]] && upgrade+=(--noconfirm)
+	require_platform || return 1
+	repos_configured || {
+		err "The CachyOS repositories are not configured; run 'lyona-cachyos add-repos' first."
+		return 1
+	}
+	level=$(detect_isa_level)
+	if [[ $level == baseline ]]; then
+		ok "This CPU uses the baseline repository; nothing to raise."
+		return 0
+	fi
+	if command grep -Eq "^\[cachyos-$level\]" "$pacman_conf"; then
+		ok "The CachyOS $level repositories are already configured."
+		return 0
+	fi
+	backup="$pacman_conf.lyona-backup-$(date +%Y%m%d%H%M%S)"
+	run_root install -m 0644 "$pacman_conf" "$backup"
+	if run_root pacman "${upgrade[@]}" && pacman_install cachyos/pacman &&
+		write_repo_blocks "$(repo_blocks_for_level "$level")" && run_root pacman "${upgrade[@]}"; then
+		ok "CachyOS repositories raised to $level."
+		return 0
+	fi
+	run_root install -m 0644 "$backup" "$pacman_conf"
+	err "Could not move to the $level repositories; restored $pacman_conf from $backup (baseline)."
+	return 1
 }
 
 find_boot_entry_source() {
@@ -519,6 +566,9 @@ status)
 add-repos)
 	shift
 	add_repos "$@"
+	;;
+raise-level)
+	raise_level
 	;;
 install-kernel)
 	shift

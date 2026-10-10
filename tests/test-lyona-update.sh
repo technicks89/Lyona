@@ -416,6 +416,23 @@ status=$(run_update apply --file "$source_tarball" --version "$source_version" \
 assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
 # The checksum the user gave stands in for the signature, which needs the network.
 assert_contains "$work/err" "not checking the signature: --sha256 vouches for $source_tarball"
+
+# #325: the layout comes from /etc/lyona-release, the record install-system
+# wrote, as for the root helper; it used to be PREFIX's default, /usr/local.
+# shellcheck disable=SC2016 # a line that must be read as text, never run
+printf '%s\n' 'LYONA_VERSION=0000.00.0' 'LYONA_PREFIX=/opt/lyona' 'LYONA_MANPREFIX=/opt/lyona/man' \
+	'LYONA_DATADIR=/opt/lyona/data' 'LYONA_XSESSIONSDIR=/opt/lyona/xsessions' 'LYONA_EVIL=$(touch x)' \
+	>"$system_record"
+status=$(run_update apply --file "$source_tarball" --version "$source_version" \
+	--sha256 "$source_sha" --dry-run 2>"$work/err") || {
+	lyona_show_file "$work/err"
+	fail 'a dry run with a recorded layout failed'
+}
+for line in '  /opt/lyona/bin (system commands and dwm)' '  /opt/lyona/data (cursor and GTK themes)' \
+	'  /opt/lyona/man/man1/dwm.1' '  /opt/lyona/xsessions/dwm.desktop'; do
+	assert_string_contains "$status" "$line"
+done
+rm -f "$system_record"
 rm -rf "$state_home/lyona/updates/$source_version"
 if run_update apply --file "$source_tarball" --version "$source_version" --yes \
 	--sha256 "$(printf '%064d' 0)" >"$work/out" 2>&1; then
@@ -605,6 +622,13 @@ if apply_source --dry-run >"$work/out" 2>&1; then
 	fail "downgrade apply unexpectedly succeeded without --allow-downgrade"
 fi
 assert_contains "$work/out" 'pass --allow-downgrade to proceed'
+# #327: an older release goes through install-downgrade, which verifies its
+# signature: one vouched for by --sha256 alone is refused, before any build.
+if apply_source --allow-downgrade --sha256 "$source_sha" --dry-run >"$work/out" 2>&1; then
+	fail "an unverified downgrade was accepted"
+fi
+assert_contains "$work/out" 'an older release is installed only with its signature checked'
+assert_not_contains "$work/out" "building $source_version"
 
 # ── apply --dry-run: lists privileged paths, installs nothing ──────────
 reset_curl_responses
@@ -919,13 +943,17 @@ if valid_archive "$work/restore/bogus.tar" quickshell; then fail 'an unreadable 
 # helper's install-system, which checks the signature again itself; anything
 # else to install-unverified, on its own explicit polkit prompt.
 assert_equals 2 "$(body_of cmd_apply | grep -c 'run_privileged ')" "run_privileged sites in cmd_apply"
-assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system release')" "verified release site"
+# shellcheck disable=SC2016 # the literal text of the script
+assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged "$install_subcommand" release')" "verified release site"
+# #327: that subcommand is install-system, or install-downgrade for an older release.
+assert_equals 1 "$(body_of cmd_apply | grep -c 'install_subcommand=install-system')" "verified release default"
+assert_equals 1 "$(body_of cmd_apply | grep -c 'install_subcommand=install-downgrade')" "verified older release"
 assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-unverified release')" "unverified release site"
 # shellcheck disable=SC2016 # the patterns match the literal source text
-body_of cmd_apply | grep -A3 'if \[\[ $signature_verified == true \]\]; then' | grep -q 'run_privileged install-system release' ||
+body_of cmd_apply | grep -A3 'if \[\[ $signature_verified == true \]\]; then' | grep -q 'run_privileged "$install_subcommand" release' ||
 	fail 'install-system is not reserved for a verified signature'
 # shellcheck disable=SC2016
-body_of cmd_apply | grep -A1 'run_privileged install-system release' | grep -q '"$bundle_path"' ||
+body_of cmd_apply | grep -A1 'run_privileged "$install_subcommand" release' | grep -q '"$bundle_path"' ||
 	fail 'install-system is not given the signature bundle'
 # shellcheck disable=SC2016
 [ "$(body_of cmd_apply | grep -c 'signature_verified=true')" = 1 ] ||
@@ -947,17 +975,19 @@ grep -q 'install-system release requires .* the release.s signature bundle' "$ro
 	fail 'install-system does not require the signature bundle'
 # shellcheck disable=SC2016
 grep -B3 'verify_release_signature "$verified_tarball" "$verified_bundle"' "$root_helper" |
-	grep -q 'if \[\[ $install_mode == install-system \]\]; then' ||
+	grep -q 'if \[\[ $install_mode != install-unverified \]\]; then' ||
 	fail 'install-system does not verify the signature on root'"'"'s own copy'
 # One polkit action per subcommand, none for the bare helper path.
 policy=$repo/config/polkit/com.lyona.update.policy
-assert_equals 3 "$(grep -c '<action id=' "$policy")" "update polkit actions"
-assert_equals 3 "$(grep -c 'policykit.exec.argv1' "$policy")" "update polkit actions tied to a subcommand"
-for sub in install-system restore-system install-unverified; do
+assert_equals 4 "$(grep -c '<action id=' "$policy")" "update polkit actions"
+assert_equals 4 "$(grep -c 'policykit.exec.argv1' "$policy")" "update polkit actions tied to a subcommand"
+for sub in install-system restore-system install-unverified install-downgrade; do
 	grep -Fq "exec.argv1\">$sub</annotate>" "$policy" || fail "no polkit action for $sub"
 done
 grep -A2 'com.lyona.update.unverified' "$policy" | grep -q 'NOT verified' ||
 	fail 'the unverified action does not say so'
+grep -A2 'com.lyona.update.downgrade' "$policy" | grep -q 'OLDER' ||
+	fail 'the downgrade action does not say so (#327)'
 # #280 VM: the privileged helpers carry no install path but @PREFIX@. The update
 # check of a release before 2026.10.0-beta.6 fills in only @PREFIX@ in its
 # expected copy, so any other placeholder made every update a "MISMATCH";
@@ -985,7 +1015,7 @@ assert_equals 1 "$(body_of cmd_rollback | grep -c 'run_privileged restore-system
 assert_equals 0 "$(body_of cmd_rollback | grep -c 'run_privileged restore-system "$backup_dir"')" \
 	"rollback never passes the privileged helper a backup path"
 # shellcheck disable=SC2016
-assert_equals 1 "$(body_of cmd_apply | grep -c 'run_privileged install-system .*"$backup_id"')" \
+assert_equals 1 "$(body_of cmd_apply | grep -A1 'run_privileged "$install_subcommand"' | grep -c '"$backup_id"')" \
 	"the install passes the backup id"
 outside=$(grep -n 'pkexec "\|sudo "' "$helper" | grep -v '^[0-9]*:[[:space:]]*#' || true)
 assert_equals 2 "$(printf '%s\n' "$outside" | grep -c .)" "pkexec/sudo invocations in lyona-update"
@@ -995,35 +1025,71 @@ case $first_escalation in
 *) fail 'the first escalation is not pkexec' ;;
 esac
 
+# #326: a successful apply removes its staged tree and tarball, after the
+# install is verified, never before (a failed one keeps them).
+verified_at=$(body_of cmd_apply | grep -n 'verify_install ||' | head -n1 | cut -d: -f1)
+# shellcheck disable=SC2016 # the literal text of the script
+cleaned_at=$(body_of cmd_apply | grep -n 'rm -rf -- "${staging_dir:?}" "$tarball"' | head -n1 | cut -d: -f1)
+[ -n "$verified_at" ] && [ -n "$cleaned_at" ] && [ "$cleaned_at" -gt "$verified_at" ] ||
+	fail "apply does not remove its staged update after verifying the install ($verified_at, $cleaned_at)"
+
 priv_probe=$work/priv-probe.sh
 priv_log=$work/priv.log
 {
 	printf "warn() { printf '%%s\\n' \"\$*\" >&2; }\ndie() { warn \"\$*\"; exit 1; }\n"
 	printf "trusted_root_helper() { printf '%%s\\n' /bin/true; }\n"
+	printf "write_status_file() { printf 'status %%s %%s\\n' \"\$4\" \"\$5\" >>\"\$DWM_TEST_PRIV_LOG\"; }\n"
 	extract_function run_privileged
+	extract_function cancel_privileged
 } >"$priv_probe"
 for tool in pkexec sudo; do
 	stub_command "$tool" <<'SH'
 #!/bin/sh
 name=$(basename "$0")
+if [ "$name" = sudo ] && [ "$1" = -n ]; then
+	printf 'sudo -n\n' >>"${DWM_TEST_PRIV_LOG:?}"
+	exit "${DWM_TEST_SUDO_N_STATUS:-1}"
+fi
 printf '%s\n' "$name" >>"${DWM_TEST_PRIV_LOG:?}"
 if [ "$name" = pkexec ]; then exit "${DWM_TEST_PKEXEC_STATUS:-0}"; fi
 exit 0
 SH
 done
+# run_priv STATUS DISPLAY [tty]: run_privileged with pkexec exiting STATUS, on a
+# terminal when the third argument is "tty", else with none (as from Settings).
 run_priv() {
 	: >"$priv_log"
-	PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="${2-:0}" \
-		bash -c '. "$1"; run_privileged install-system release' bash "$priv_probe" >/dev/null 2>&1
+	if [ "${3:-}" = tty ]; then
+		# shellcheck disable=SC2016 # expanded by the inner bash
+		PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="$2" \
+			script -qec "bash -c '. \"\$1\"; run_privileged install-system release' bash $priv_probe" /dev/null \
+			>/dev/null 2>&1
+	else
+		PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="$2" \
+			bash -c '. "$1"; run_privileged install-system release' bash "$priv_probe" </dev/null >/dev/null 2>&1
+	fi
 }
 run_priv 0 ':0'
 assert_equals pkexec "$(cat "$priv_log")" "escalation when polkit authorizes"
 if run_priv 1 ':0'; then fail 'a failed privileged step was reported as success'; fi
 assert_equals pkexec "$(cat "$priv_log")" "a failed step must not prompt a second time"
-run_priv 126 ':0'
-assert_equals "$(printf 'pkexec\nsudo')" "$(cat "$priv_log")" "fallback when polkit cannot run"
-run_priv 0 ''
+run_priv 126 ':0' tty
+assert_equals "$(printf 'pkexec\nsudo')" "$(cat "$priv_log")" "fallback to sudo on a terminal when polkit cannot run"
+# #326: no terminal (started from Settings): a dismissed or refused prompt is a
+# cancel, recorded as such, with nothing tried after it and exit status 4.
+for pkexec_status in 126 127; do
+	status=0
+	run_priv "$pkexec_status" ':0' || status=$?
+	assert_equals 4 "$status" "the exit status of a cancel (pkexec $pkexec_status)"
+	assert_equals "$(printf 'pkexec\nstatus cancelled Update cancelled: authorization was not given. Nothing was changed.')" \
+		"$(cat "$priv_log")" "a cancel with no terminal (pkexec $pkexec_status)"
+done
+run_priv 0 '' tty
 assert_equals sudo "$(cat "$priv_log")" "escalation with no graphical session"
+# No graphical session and no terminal: sudo cannot ask, so it is not tried,
+# unless it needs no password.
+if run_priv 0 ''; then fail 'an escalation with no agent and no terminal succeeded'; fi
+assert_equals 'sudo -n' "$(cat "$priv_log")" "no sudo prompt without a terminal"
 
 # ── --help / usage ───────────────────────────────────────────────────────
 status=$(run_update --help)
@@ -1032,5 +1098,24 @@ if run_update bogus-command >"$work/out" 2>&1; then
 	fail "unknown subcommand unexpectedly succeeded"
 fi
 assert_contains "$work/out" 'Usage: lyona-update'
+
+# #325: lyona_install_layout's defaults follow the Makefile (DATADIR is
+# /usr/share for PREFIX /usr and /usr/local, else PREFIX/share), an explicit
+# PREFIX is used when no record names one, and a record value with ".." is not.
+layout_of() { # RECORD [VAR=VALUE...]
+	layout_record=$1
+	shift
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	env -u PREFIX -u MANPREFIX -u DATADIR -u XSESSIONSDIR "$@" DWM_TEST_SYSTEM_RECORD="$layout_record" bash -c \
+		'. "$1/scripts/dwm-paths.sh"; lyona_install_layout; printf "%s %s %s %s" "$PREFIX" "$MANPREFIX" "$DATADIR" "$XSESSIONSDIR"' \
+		bash "$repo"
+}
+[ "$(layout_of /nonexistent)" = '/usr/local /usr/local/share/man /usr/share /usr/share/xsessions' ] ||
+	fail "default layout: $(layout_of /nonexistent)"
+[ "$(layout_of /nonexistent PREFIX=/opt/x)" = '/opt/x /opt/x/share/man /opt/x/share /usr/share/xsessions' ] ||
+	fail "PREFIX-only layout: $(layout_of /nonexistent PREFIX=/opt/x)"
+printf 'LYONA_PREFIX=/usr\nLYONA_DATADIR=/srv/../etc\n' >"$work/layout-record"
+[ "$(layout_of "$work/layout-record")" = '/usr /usr/share/man /usr/share /usr/share/xsessions' ] ||
+	fail "a record value with .. was used: $(layout_of "$work/layout-record")"
 
 printf 'lyona-update contract: PASS\n'

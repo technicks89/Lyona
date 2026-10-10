@@ -91,7 +91,7 @@ build in `/etc/lyona-iso-release`.
 Write the ISO to a USB drive and boot it, with UEFI or a legacy BIOS. The `lyona-install`
 wizard launches automatically. It asks, in menus: the keyboard layout, the disk
 to erase, btrfs or ext4 with optional LUKS encryption, your user and password,
-the hostname, the timezone (detected, for you to confirm), and, on an NVIDIA
+the hostname, the timezone (detected online only if you agree, then confirmed), and, on an NVIDIA
 GPU, which driver. Nothing is written until you confirm the summary. It then
 drives `archinstall` unattended and finishes installing Lyona. ISO installs get the `multilib`
 and [CachyOS](https://cachyos.org) repositories and the `linux-cachyos`

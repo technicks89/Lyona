@@ -135,8 +135,8 @@ grep -Fxq 'KEYMAP=fr' "$work/out.log" || fail "the active layout was not the one
 
 # ── #266: Esc goes back in the lists ──────────────────────────────────────
 
-# Timezone: "No", Esc in the list, back at the question, "Yes".
-answers $'1\t' $'1\t' $'0\t'
+# Timezone: detect it, "No", Esc in the list, back at the question, "Yes".
+answers $'0\t' $'1\t' $'1\t' $'0\t'
 lib 'detect_timezone() { echo Europe/Berlin; }; ask_timezone; printf "TZ=%s\n" "$TIMEZONE"' ||
 	fail "Esc in the timezone list ended the wizard: $(cat "$work/out.log")"
 grep -Fxq 'TZ=Europe/Berlin' "$work/out.log" || fail 'Esc in the timezone list did not go back to the question'
@@ -144,15 +144,25 @@ grep -Fxq 'TZ=Europe/Berlin' "$work/out.log" || fail 'Esc in the timezone list d
 
 # Nothing detected: Esc in the list asks; "Choose from the list" goes back to
 # it, Esc on the question too, and only "Cancel the installer" ends.
-answers $'1\t' $'0\tChoose from the list' $'1\t' $'1\t' $'0\tEurope/Berlin'
+answers $'0\t' $'1\t' $'0\tChoose from the list' $'1\t' $'1\t' $'0\tEurope/Berlin'
 lib 'detect_timezone() { return 1; }; choose_timezone() { local z; z=$(gum filter </dev/null) || return 1; printf "%s\n" "$z"; }
 	ask_timezone; printf "TZ=%s\n" "$TIMEZONE"' || fail "Esc with no detected timezone ended the wizard: $(cat "$work/out.log")"
 grep -Fxq 'TZ=Europe/Berlin' "$work/out.log" || fail "the list was not offered again: $(cat "$work/out.log")"
-answers $'1\t' $'0\tCancel the installer'
+answers $'0\t' $'1\t' $'0\tCancel the installer'
 if lib 'detect_timezone() { return 1; }; choose_timezone() { gum filter </dev/null >/dev/null || return 1; }; ask_timezone'; then
 	fail 'Cancel the installer did not end it'
 fi
 grep -Fq 'Nothing on the disk was changed' "$work/out.log" || fail 'cancelling from the timezone did not say nothing changed'
+
+# #328: the lookup runs only after a yes. "No" goes straight to the list, and
+# nothing is looked up.
+answers $'1\t' $'0\tEurope/Paris'
+lib "detect_timezone() { : >\"$work/looked-up\"; echo Europe/Berlin; }
+	choose_timezone() { local z; z=\$(gum filter </dev/null) || return 1; printf '%s\\n' \"\$z\"; }
+	ask_timezone; printf 'TZ=%s\\n' \"\$TIMEZONE\"" || fail "declining the lookup ended the wizard: $(cat "$work/out.log")"
+[[ ! -e $work/looked-up ]] || fail 'the timezone was looked up online after a no'
+grep -Fxq 'TZ=Europe/Paris' "$work/out.log" || fail "declining the lookup did not offer the list: $(cat "$work/out.log")"
+grep -Fq 'sends your IP address' "$work/gum.log" || fail 'the lookup question does not say it sends the IP address'
 
 # Mirrors: "Choose another", Esc in the countries, back, "Choose another", Japan.
 answers $'1\t' $'1\t' $'1\t' $'0\tJapan (JP)'

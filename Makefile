@@ -362,18 +362,31 @@ install-system:
 # installed there: its GTK themes (one per palette in config/themes.toml, as
 # uninstall removes them) and AppImage entry, and the cursor and GRUB themes
 # beside their license. A theme you installed yourself is kept, even one named
-# Lyona-something. Each removal is named.
+# Lyona-something. Each removal is named. As root, nothing is removed through a
+# directory that is a symlink or not root's, and a palette id that is not a
+# plain name is skipped (#324).
 remove-legacy-shared-data:
 	@legacy="${DESTDIR}${PREFIX}/share"; \
 	if [ "${PREFIX}/share" = "${DATADIR}" ] || [ ! -d "$$legacy/licenses/lyona" ] || \
 		[ -L "$$legacy/licenses/lyona" ]; then exit 0; fi; \
+	safe_dir() { \
+		[ ! -L "$$1" ] && { [ "$$(id -u)" != 0 ] || [ ! -e "$$1" ] || [ "$$(stat -c %u -- "$$1")" = 0 ]; }; \
+	}; \
 	remove() { \
+		parent=$${1%/*}; \
+		while :; do \
+			safe_dir "$$parent" || { echo "  Not removing $$1: $$parent is a symlink or not root's" >&2; return 0; }; \
+			[ "$$parent" != "$$legacy" ] || break; \
+			parent=$${parent%/*}; \
+		done; \
 		if [ -e "$$1" ] || [ -L "$$1" ]; then \
 			echo "  Removing an earlier update's copy: $$1"; \
 			rm -rf -- "$$1"; \
 		fi; \
 	}; \
-	for id in $$(awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print id; }' config/themes.toml); do \
+	awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print id; }' config/themes.toml | \
+	while IFS= read -r id; do \
+		case $$id in '' | *[!A-Za-z0-9_-]*) continue ;; esac; \
 		remove "$$legacy/themes/Lyona-$$id"; \
 	done; \
 	remove "$$legacy/applications/lyona-appimage.desktop"; \

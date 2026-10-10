@@ -8,25 +8,49 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
-### Changed
+### Security
 
-- dwm takes as a monitor's bar only a dock that reserves space at the top or
-  bottom of the screen (the EWMH `_NET_WM_STRUT_PARTIAL`, which the lyona panel
-  sets for its exclusive zone), not any window named "quickshell" or any wide
-  dock. A banner or OSD dock from the shell can no longer take the bar's place
-  and move the work area, and a dock that reserves nothing is shown, never
-  tiled as a window. A dock that sets its strut later becomes the bar then.
-  **Migration:** a panel of your own needs a non-zero `exclusiveZone` (#322).
-- Window previews in the overview are scaled by the X server (XRender), and
-  one small image is read per window: about 160 KB, where every row of the
-  window was read (33 MB for a 4K window). Measured under Xvfb with a 4K
-  window: 6 ms per preview, from 23 ms; at 1280x800 and below the time is
-  about the same (27 ms against 25 ms in a VM), with a twentieth of the data.
-  Without Render the old path is used.
-  `dwm-window-thumb` now links libXrender, which Xft already needs (#323).
+- `lyona-update-root` builds the dwm binary, the one program that includes your
+  `config.h`, as the `nobody` user, not as root: an `#include` or `#embed` in
+  `config.h` can no longer read root-only files into the build output or the
+  installed binary. Everything root runs during the install is built from the
+  verified sources alone. The update prompt says a `config.h` is compiled in
+  (#327).
+- An older release than the installed one is no longer installed on the
+  routine "verified update" prompt: the root helper refuses it there, and it
+  goes through its own polkit action (`install-downgrade`, "Install an older
+  lyona release"), only with its signature verified. To go back to what was
+  installed before an update, use `lyona-update rollback` (#327).
+- The image install builds yay before the install's temporary passwordless sudo
+  exists, as Topgrade is built after it, and `install.sh` closes the sudo
+  timestamp before building yay. A temporary sudo rule left by a power-off
+  during the install is removed at the next boot (#328).
+- The image wizard asks before looking up the timezone online, which sends the
+  IP address to ipinfo.io or ipapi.co; a no goes straight to the list. This
+  updates decision D-30 (#328).
 
 ### Fixed
 
+- `lyona-update rollback` restores `PREFIX/lib/lyona` and `PREFIX/share/lyona`
+  whole (removing what the newer release added), the polkit actions and the GTK
+  themes, where it restored only the commands: after a rollback, the old
+  commands sourced the new shared code. A restore takes only the paths its
+  backup recorded (#324).
+- The update and its root helper take the install layout from the same record,
+  `/etc/lyona-release`: an install with another `PREFIX` or `DATADIR` is backed
+  up, verified and restored where it was installed. `install.sh` no longer
+  passes its own `DATADIR` (#325).
+- Updating from Settings: cancelling the password prompt says "Update
+  cancelled: authorization was not given. Nothing was changed.", not a failure
+  with `sudo` errors about terminals; Settings shows why the last update or
+  rollback failed even while an update is still available, and no outcome
+  older than a day; a failed rollback is called one (#326).
+- A successful update removes what it downloaded and built (about 25 MB each
+  time), which stayed under `~/.local/state/lyona/updates` for good (#326).
+- The image's live medium adds only the baseline CachyOS repository, which needs
+  no CachyOS pacman, so it is never partially upgraded; the new system moves to
+  its CPU's level afterwards (`lyona-cachyos raise-level`, with full upgrades)
+  (#328).
 - A window closing by itself on the other monitor (a finished download, a
   terminal that exits) no longer takes the keyboard focus from where you are
   typing, nor drops it to nowhere; only a window closing on your monitor moves
@@ -53,6 +77,27 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- `remove-legacy-shared-data` (run by `install-system` as root) removes nothing
+  through a directory that is a symlink or not root's, and skips a palette id
+  that is not a plain name (#324).
+- Settings > System says how its two package-update areas differ: Update
+  packages in a terminal (yay or pacman, AUR included) and System updates
+  through PackageKit (#326).
+
+- dwm takes as a monitor's bar only a dock that reserves space at the top or
+  bottom of the screen (the EWMH `_NET_WM_STRUT_PARTIAL`, which the lyona panel
+  sets for its exclusive zone), not any window named "quickshell" or any wide
+  dock. A banner or OSD dock from the shell can no longer take the bar's place
+  and move the work area, and a dock that reserves nothing is shown, never
+  tiled as a window. A dock that sets its strut later becomes the bar then.
+  **Migration:** a panel of your own needs a non-zero `exclusiveZone` (#322).
+- Window previews in the overview are scaled by the X server (XRender), and
+  one small image is read per window: about 160 KB, where every row of the
+  window was read (33 MB for a 4K window). Measured under Xvfb with a 4K
+  window: 6 ms per preview, from 23 ms; at 1280x800 and below the time is
+  about the same (27 ms against 25 ms in a VM), with a twentieth of the data.
+  Without Render the old path is used.
+  `dwm-window-thumb` now links libXrender, which Xft already needs (#323).
 - `man dwm` describes lyona's dwm instead of stock dwm: the Super key, the
   bindings read from `hotkeys.toml` at run time (Super+/ lists them), the three
   runtime TOML files and their hot reload, SIGUSR1 and SIGUSR2, and the

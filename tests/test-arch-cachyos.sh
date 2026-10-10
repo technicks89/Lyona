@@ -259,6 +259,34 @@ grep -Fqx 'pacman -Sy' "$case_dir/calls.log" ||
 [[ $(section_order "$case_dir/pacman.conf") == '[options] [cachyos-v3] [cachyos-core-v3] [cachyos-extra-v3] [cachyos] [core] [extra] [multilib] ' ]] ||
 	fail "--no-upgrade did not add the repositories: $(section_order "$case_dir/pacman.conf")"
 
+# --- #328: --baseline on the live medium, raise-level on the new system ------
+# The live medium cannot be upgraded: with --no-upgrade --baseline it gets only
+# the baseline repository, and never the CachyOS pacman (a partial upgrade).
+base_case=$(new_case baseline-only)
+run_helper "$base_case" add-repos --no-upgrade --baseline >"$base_case/out" 2>&1 ||
+	fail 'add-repos --no-upgrade --baseline failed' "$base_case/out"
+grep -Fq 'cachyos/pacman' "$base_case/calls.log" &&
+	fail '--baseline installed the CachyOS pacman' "$base_case/calls.log"
+grep -Fq 'pacman -Syu' "$base_case/calls.log" &&
+	fail '--baseline --no-upgrade upgraded the system' "$base_case/calls.log"
+[[ $(section_order "$base_case/pacman.conf") == '[options] [cachyos] [core] [extra] [multilib] ' ]] ||
+	fail "--baseline added more than the baseline repository: $(section_order "$base_case/pacman.conf")"
+# The new system then moves to its level, the CachyOS pacman between full upgrades.
+: >"$base_case/calls.log"
+run_helper "$base_case" raise-level >"$base_case/raise.out" 2>&1 ||
+	fail 'raise-level failed' "$base_case/raise.out"
+mapfile -t pacman_calls < <(grep '^pacman ' "$base_case/calls.log")
+[[ ${pacman_calls[*]} == 'pacman -Syu --noconfirm pacman -S --needed --noconfirm cachyos/pacman pacman -Syu --noconfirm' ]] ||
+	fail "raise-level ran: ${pacman_calls[*]}"
+[[ $(section_order "$base_case/pacman.conf") == '[options] [cachyos-v3] [cachyos-core-v3] [cachyos-extra-v3] [cachyos] [core] [extra] [multilib] ' ]] ||
+	fail "raise-level did not add the v3 repositories: $(section_order "$base_case/pacman.conf")"
+: >"$base_case/calls.log"
+run_helper "$base_case" raise-level >"$base_case/raise2.out" 2>&1 ||
+	fail 'a second raise-level failed' "$base_case/raise2.out"
+if ! grep -Fq 'already configured' "$base_case/raise2.out" || grep -q '^pacman ' "$base_case/calls.log"; then
+	fail 'a second raise-level did more than report the level' "$base_case/calls.log"
+fi
+
 set +e
 run_helper "$case_dir" add-repos --bogus >"$case_dir/bogus.out" 2>&1
 status=$?

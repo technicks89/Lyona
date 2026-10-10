@@ -46,6 +46,16 @@ Scope {
     // channel." (#280 VM).
     property string outcomeMessage: ""
     property bool actionSucceeded: false
+    // The authorization prompt was dismissed or refused: nothing changed, and
+    // it is no failure (#326). lyona-update records "cancelled" and exits 4.
+    property bool actionCancelled: false
+    // Which action the outcome is about, "apply" or "rollback", so a failed
+    // rollback is not called a failed update.
+    property string lastOperation: "apply"
+    // Whether the outcome is recent enough to show in Settings: an old
+    // "Update complete" is no news (#326).
+    property bool outcomeRecent: false
+    readonly property int settingsOutcomeMs: 24 * 60 * 60 * 1000
 
     property var backups: []
     property bool backupsLoaded: false
@@ -263,6 +273,9 @@ Scope {
         root.progressShown = true;
         root.popupClosed = false;
         root.actionSucceeded = false;
+        root.actionCancelled = false;
+        root.lastOperation = "apply";
+        root.outcomeRecent = true;
         root.phase = "downloading";
         root.progressDetail = "Starting update to " + version;
         root.outcomeMessage = "";
@@ -276,6 +289,9 @@ Scope {
         root.progressShown = true;
         root.popupClosed = false;
         root.actionSucceeded = false;
+        root.actionCancelled = false;
+        root.lastOperation = "rollback";
+        root.outcomeRecent = true;
         root.phase = "restarting";
         root.progressDetail = "Starting rollback";
         root.outcomeMessage = "";
@@ -293,10 +309,13 @@ Scope {
         const lines = text.trim().length > 0 ? text.trim().split("\n") : [];
         let validProtocol = false;
         let phaseValue = "", phaseDetail = "", outcome = "", outcomeMessage = "", timestamp = "";
+        let operation = "apply";
         for (const line of lines) {
             const fields = line.split("\t");
             if (Protocol.isHeader(fields, "lyona-update-status-protocol", 1)) {
                 validProtocol = true;
+            } else if (fields[0] === "operation" && fields.length >= 2) {
+                operation = fields[1] === "rollback" ? "rollback" : "apply";
             } else if (fields[0] === "phase" && fields.length >= 3) {
                 phaseValue = fields[1];
                 phaseDetail = fields[2];
@@ -325,11 +344,15 @@ Scope {
         // restart this model instance never saw happen.
         root.busy = false;
         root.actionSucceeded = outcome === "succeeded";
+        root.actionCancelled = outcome === "cancelled";
+        root.lastOperation = operation;
+        root.outcomeRecent = ageMs <= root.settingsOutcomeMs;
         root.phase = "idle";
         root.progressDetail = "";
         root.outcomeMessage = outcome === "succeeded"
-            ? "Update complete"
-            : (outcomeMessage.length > 0 ? outcomeMessage : "The last update attempt failed");
+            ? (operation === "rollback" ? "Rollback complete" : "Update complete")
+            : (outcomeMessage.length > 0 ? outcomeMessage
+                : (operation === "rollback" ? "The last rollback failed" : "The last update attempt failed"));
         // Show how it ended only while that is news: right after an update
         // that restarted this shell, not for one that finished days ago.
         root.progressShown = ageMs <= root.recentOutcomeMs;
@@ -481,18 +504,30 @@ Scope {
     // a successful run's completion is observed through statusFile instead,
     // since a successful apply destroys this Process along with the rest of
     // this model instance when Quickshell restarts.
+    // The reason lyona-update gave: its last line, the die() message, not the
+    // whole stream of progress lines before it.
+    function lastLine(text) {
+        const lines = text.trim().split("\n").filter(line => line.trim().length > 0);
+        return lines.length > 0 ? lines[lines.length - 1].replace(/^lyona-update: /, "") : "";
+    }
+
+    function processEnded(exitCode, errorText) {
+        if (!root.busy || exitCode === 0) return;
+        const reason = root.lastLine(errorText);
+        if (reason.length === 0 && exitCode !== 4) return;
+        root.busy = false;
+        root.actionSucceeded = false;
+        root.actionCancelled = exitCode === 4;
+        root.outcomeRecent = true;
+        root.outcomeMessage = reason;
+    }
+
     Process {
         id: applyProcess
         running: false
         stdout: StdioCollector {}
         stderr: StdioCollector { id: applyError }
-        onRunningChanged: if (!running && root.busy) {
-            if (applyError.text.trim().length > 0) {
-                root.busy = false;
-                root.actionSucceeded = false;
-                root.outcomeMessage = applyError.text.trim();
-            }
-        }
+        onExited: (exitCode, exitStatus) => root.processEnded(exitCode, applyError.text)
     }
 
     Process {
@@ -500,12 +535,6 @@ Scope {
         running: false
         stdout: StdioCollector {}
         stderr: StdioCollector { id: rollbackError }
-        onRunningChanged: if (!running && root.busy) {
-            if (rollbackError.text.trim().length > 0) {
-                root.busy = false;
-                root.actionSucceeded = false;
-                root.outcomeMessage = rollbackError.text.trim();
-            }
-        }
+        onExited: (exitCode, exitStatus) => root.processEnded(exitCode, rollbackError.text)
     }
 }

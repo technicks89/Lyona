@@ -4,11 +4,12 @@
 <policyconfig>
   <!-- One action per subcommand (exec.argv1), so pkexec picks exactly one:
        a release whose signature lyona-update-root verifies itself, a restore,
-       and an install checked by its digest alone, which says so
-       (GHSA-x538-46gg-v37h). -->
+       an install checked by its digest alone, which says so
+       (GHSA-x538-46gg-v37h), and an older release than the one installed,
+       which never passes as a routine update (#327). -->
   <action id="com.lyona.update.manage">
     <description>Install a verified lyona system update</description>
-    <message>Authentication is required to install a lyona system update</message>
+    <message>Authentication is required to install a lyona system update. Your config.h, if you have one, is compiled in as an unprivileged user.</message>
     <icon_name>system-software-update</icon_name>
     <defaults>
       <allow_any>no</allow_any>
@@ -29,6 +30,18 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">@PREFIX@/libexec/lyona/lyona-update-root</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">restore-system</annotate>
+  </action>
+  <action id="com.lyona.update.downgrade">
+    <description>Install an older lyona release</description>
+    <message>Authentication is required to install an OLDER lyona release in place of the one installed. Approve this only if you meant to go back a version; lyona-update named both.</message>
+    <icon_name>dialog-warning</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@PREFIX@/libexec/lyona/lyona-update-root</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install-downgrade</annotate>
   </action>
   <action id="com.lyona.update.unverified">
     <description>Install a lyona update whose signature was not verified</description>

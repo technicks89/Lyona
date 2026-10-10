@@ -83,9 +83,16 @@ install -D -o root -g root -m 0755 /dev/null "$bin_file"
 printf 'v1\n' >"$bin_file"
 
 good_id=20260927T101500Z-4242
+# The manifest a backup records, as the helper writes it: every member of its
+# archive is one of these paths or under one (#324).
+seal_backup() { # ID
+	tar -tf "$store/$1/system-files.tar" | sed 's|/$||' |
+		install -o root -g root -m 0600 /dev/stdin "$store/$1/manifest"
+}
 make_root_backup() { # ID: a backup as the helper would make it, of $bin_file
 	install -d -o root -g root -m 0700 "$store" "$store/$1"
 	tar -C / --numeric-owner -cpf "$store/$1/system-files.tar" "${bin_file#/}"
+	seal_backup "$1"
 }
 
 # A path, or anything that is not an id, is refused before anything is read.
@@ -136,15 +143,18 @@ bad_id=20260927T101700Z-4444
 install -d -o root -g root -m 0700 "$store/$bad_id"
 install -D -m 0644 /dev/null "$work/stage/etc/cron.d/lyona-planted"
 tar -C "$work/stage" --numeric-owner -cpf "$store/$bad_id/system-files.tar" etc/cron.d/lyona-planted
+seal_backup "$bad_id"
 refuses 'outside the managed install locations' restore-system "$bad_id"
 [[ ! -e /etc/cron.d/lyona-planted ]] || fail 'a refused archive wrote a file'
 install -D -m 0755 /dev/null "$work/stage2/${bin_file#/}"
 chmod 4755 "$work/stage2/${bin_file#/}"
 tar -C "$work/stage2" --numeric-owner -cpf "$store/$bad_id/system-files.tar" "${bin_file#/}"
+seal_backup "$bad_id"
 refuses 'setuid, setgid, or sticky' restore-system "$bad_id"
 install -d "$work/stage3/${prefix#/}/bin"
 ln -s /etc/shadow "$work/stage3/${prefix#/}/bin/dwm-planted-link"
 tar -C "$work/stage3" --numeric-owner -cpf "$store/$bad_id/system-files.tar" "${prefix#/}/bin/dwm-planted-link"
+seal_backup "$bad_id"
 refuses 'symlink outside the cursor themes' restore-system "$bad_id"
 [[ ! -L $prefix/bin/dwm-planted-link ]] || fail 'a refused archive wrote a symlink'
 rm -rf "${store:?}/$bad_id"
@@ -160,6 +170,7 @@ for icons in "$datadir/icons" "$prefix/share/icons"; do
 done
 tar -C "$work/stage4" --numeric-owner -cpf "$store/$cursor_id/system-files.tar" \
 	"${datadir#/}/icons/Capitaine-Cursors" "${prefix#/}/share/icons/Capitaine-Cursors"
+seal_backup "$cursor_id"
 run_helper restore-system "$cursor_id" >/dev/null 2>"$work/err" || {
 	cat "$work/err" >&2
 	fail 'a backup of the cursor themes (DATADIR and PREFIX/share) did not restore'
@@ -170,6 +181,22 @@ for icons in "$datadir/icons" "$prefix/share/icons"; do
 done
 rm -rf "${store:?}/$cursor_id" "$datadir/icons/Capitaine-Cursors" "$prefix/share/icons/Capitaine-Cursors"
 rm -f "$home/.local/state/lyona/update.log"
+
+# #324: a member the backup's manifest does not list is refused, even under
+# icons/, and a backup with no manifest restores nothing.
+evil_id=20260927T101850Z-4550
+install -d -o root -g root -m 0700 "$store/$evil_id"
+install -D -m 0644 /dev/null "$work/stage6$datadir/icons/Capitaine-Cursors/index.theme"
+install -D -m 0644 /dev/null "$work/stage6$datadir/icons/Adwaita-planted/index.theme"
+tar -C "$work/stage6" --numeric-owner -cpf "$store/$evil_id/system-files.tar" \
+	"${datadir#/}/icons/Capitaine-Cursors" "${datadir#/}/icons/Adwaita-planted"
+printf '%s\n' "${datadir#/}/icons/Capitaine-Cursors" |
+	install -o root -g root -m 0600 /dev/stdin "$store/$evil_id/manifest"
+refuses 'its manifest does not list' restore-system "$evil_id"
+[[ ! -e $datadir/icons/Adwaita-planted ]] || fail 'a member outside the manifest was restored'
+rm -f "$store/$evil_id/manifest"
+refuses 'has no root-owned manifest' restore-system "$evil_id"
+rm -rf "${store:?}/$evil_id" "$datadir/icons/Capitaine-Cursors"
 
 # The layout comes from /etc/lyona-release (#280 VM): only a root-owned record
 # that nobody else can write, and only absolute plain paths, are used.
@@ -199,6 +226,7 @@ other_id=20260927T101900Z-4646
 install -d -o root -g root -m 0700 "$store/$other_id"
 install -D -m 0644 /dev/null "$work/stage5/srv/other/icons/Capitaine-Cursors/index.theme"
 tar -C "$work/stage5" --numeric-owner -cpf "$store/$other_id/system-files.tar" srv/other/icons/Capitaine-Cursors
+seal_backup "$other_id"
 refuses 'outside the managed install locations' restore-system "$other_id"
 # ... and the record for this PREFIX moves it.
 write_stamp 'LYONA_DATADIR=/srv/other'
@@ -265,6 +293,12 @@ not_root=$(find "$datadir/icons/Capitaine-Cursors" "$datadir/icons/Capitaine-Cur
 install_helper
 live=$prefix/bin/dwm-status
 printf '# live-before-update\n' >>"$live"
+# #324: the shared code and the shipped defaults are backed up too, and come
+# back as they were.
+live_lib=$prefix/lib/lyona/dwm-xdg.sh
+live_default=$prefix/share/lyona/config/hotkeys.toml
+printf '# lib-before-update\n' >>"$live_lib"
+printf '# default-before-update\n' >>"$live_default"
 version=$(awk '$1 == "VERSION" && $2 == "=" { print $3; exit }' "$src/config.mk")
 # The real release asset (Sync Sprint 12 S12-19): make release's source archive,
 # which install-system release builds and installs. The copy keeps its owner from
@@ -324,6 +358,31 @@ refuses 'could not read config.h as the invoking user' \
 chmod 0644 "$config_h"
 [[ ! -e $store/$new_id ]] || fail 'a refused install left a system backup behind'
 
+# #327: a release older than the installed one is refused on the routine and
+# the unverified prompts; it needs install-downgrade, its own action.
+cp -p /etc/lyona-release "$work/stamp.part2"
+sed -i 's/^LYONA_VERSION=.*/LYONA_VERSION=2099.01.0/' /etc/lyona-release
+refuses 'older than the installed 2099.01.0' install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id"
+cp -p "$work/stamp.part2" /etc/lyona-release
+[[ ! -e $store/$new_id ]] || fail 'a refused downgrade left a system backup behind'
+
+# #327: dwm, which includes config.h, is built as nobody: a config.h that
+# includes a root-only file fails to build, and shows none of it.
+evil_config_h=$home/evil-config.h
+{
+	cat "$repo/config.def.h"
+	printf '#include "/etc/shadow"\n'
+} | install -o "$uid" -g "$uid" -m 0644 /dev/stdin "$evil_config_h"
+if run_helper install-unverified release "$tarball" "$sha" "$version" "$evil_config_h" "$new_id" \
+	>"$work/evil.out" 2>&1; then
+	fail 'a config.h including /etc/shadow was built and installed'
+fi
+grep -q 'Permission denied' "$work/evil.out" || fail "the root-only include did not fail on permission: $(tail -5 "$work/evil.out")"
+if grep -q '^root:' "$work/evil.out"; then
+	fail 'the build output shows /etc/shadow'
+fi
+rm -rf "${store:?}/$new_id"
+
 # What an update before 2026.10.0-beta.6 left under PREFIX/share, which this
 # install removes: the backup keeps it, so the rollback puts it back.
 legacy_cursor=$prefix/share/icons/Capitaine-Cursors/index.theme
@@ -343,6 +402,14 @@ tar -xOf "$store/$new_id/system-files.tar" "${live#/}" >"$work/backed-up-live"
 grep -Fxq '# live-before-update' "$work/backed-up-live" ||
 	fail 'the backup does not hold the live file as it was before the update'
 tar -tf "$store/$new_id/system-files.tar" >"$work/backup-list"
+grep -q "^${prefix#/}/lib/lyona/" "$work/backup-list" ||
+	fail 'the backup does not hold PREFIX/lib/lyona (#324)'
+grep -q "^${prefix#/}/share/lyona/config/" "$work/backup-list" ||
+	fail 'the backup does not hold the shipped defaults in PREFIX/share/lyona (#324)'
+grep -q '^usr/share/polkit-1/actions/com.lyona.update.policy$' "$work/backup-list" ||
+	fail 'the backup does not hold the polkit actions (#324)'
+# A file only the newer release has: the rollback must not leave it behind.
+install -m 0644 /dev/null "$prefix/lib/lyona/added-by-the-update.sh"
 grep -Fxq "${helper#/}" "$work/backup-list" ||
 	fail 'the backup does not hold the privileged helper'
 grep -q "^${datadir#/}/icons/Capitaine-Cursors/" "$work/backup-list" ||
@@ -369,5 +436,11 @@ run_helper restore-system "$new_id" >/dev/null 2>"$work/err" || {
 }
 grep -Fxq '# live-before-update' "$live" || fail 'the rollback did not bring the live file back'
 grep -Fxq 'legacy cursor' "$legacy_cursor" || fail 'the rollback did not bring the PREFIX/share cursor theme back'
+grep -Fxq '# lib-before-update' "$live_lib" || fail 'the rollback did not bring PREFIX/lib/lyona back'
+grep -Fxq '# default-before-update' "$live_default" || fail 'the rollback did not bring PREFIX/share/lyona back'
+[[ ! -e $prefix/lib/lyona/added-by-the-update.sh ]] ||
+	fail 'a file the update added to PREFIX/lib/lyona stayed after the rollback'
+[[ ! -e $prefix/lib/lyona.lyona-restore-old && ! -e $prefix/share/lyona.lyona-restore-old ]] ||
+	fail 'the rollback left a set-aside copy behind'
 printf 'install-system signature refusals, install-unverified inputs and backups: PASS\n'
 printf 'Update-helper backups: PASS\n'
