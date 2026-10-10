@@ -19,6 +19,11 @@ CFG_DIR   := ${XDG_CONFIG_HOME}
 # PREFIX keeps its data inside it, PREFIX/share.
 DATADIR   ?= $(if $(filter /usr /usr/local,${PREFIX}),/usr/share,${PREFIX}/share)
 SYSTEMDUSERDIR ?= ${PREFIX}/lib/systemd/user
+# The system user the update's root helper builds dwm as (#336, decision D-36),
+# declared for systemd-sysusers and created by install-system.
+SYSUSERS_DIR = /usr/lib/sysusers.d
+SYSUSERS_CONF = config/systemd/lyona-update.conf
+BUILD_USER = lyona-build
 # UPDATE-001 install provenance. The ISO build passes both through the
 # environment (archiso/airootfs/root/lyona-postinstall.sh); an existing-system
 # install falls back to the local checkout's own HEAD, and finally to
@@ -27,6 +32,12 @@ LYONA_COMMIT ?= $(shell git -C . rev-parse HEAD 2>/dev/null || printf unknown)
 LYONA_SOURCE ?= $(if $(wildcard .git),checkout,tarball)
 CAPITAINE_DARK_THEME = Capitaine-Cursors
 CAPITAINE_LIGHT_THEME = Capitaine-Cursors-White
+# The palettes in config/themes.toml, one GTK theme each (Lyona-ID): the one
+# place the list is read, for uninstall, the legacy removal, the release
+# manifest and the root helper's backups (#337; install-gtk-themes reads the
+# file itself through lyona-gtk-theme). An id that is not a plain name is left
+# out, as the removals as root require.
+GTK_THEME_IDS := $(shell awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); if (id ~ /^[A-Za-z0-9_-]+$$/) print id }' config/themes.toml 2>/dev/null)
 CAPITAINE_LICENSE_DIR = ${DATADIR}/licenses/lyona/capitaine-cursors
 GRUB_THEME_NAME = CyberRe
 GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
@@ -201,6 +212,12 @@ config.h:
 dwm: check-build-deps ${OBJ}
 	${CC} -o $@ ${OBJ} ${LDFLAGS} ${LDLIBS}
 
+# What the update's root helper builds as root: every program and object that
+# never includes config.h. dwm, which does, it builds as an unprivileged user
+# (make dwm). The names all-root and dwm are part of the release-tree contract
+# an installed helper relies on (SPEC.md section 6, #337).
+all-root: check-build-deps ${THUMB} ${TOML_TOOL} ${XWATCH} $(filter-out dwm.o,${OBJ})
+
 ${THUMB}: check-build-deps ${THUMB}.c config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${THUMB}.c ${LDFLAGS} ${THUMB_LIBS}
 
@@ -353,6 +370,16 @@ install-system:
 		sed "s|@PREFIX@|${PREFIX}|g" "$$f" | \
 			install -Dm644 /dev/stdin ${DESTDIR}${POLKIT_ACTIONS_DIR}/$$(basename "$$f"); \
 	done
+	@echo "==> Installing the update build user..."
+	install -Dm644 ${SYSUSERS_CONF} ${DESTDIR}${SYSUSERS_DIR}/lyona-update.conf
+	@# A staged install leaves the account to systemd-sysusers at the next boot.
+	if [ -z "${DESTDIR}" ]; then \
+		if command -v systemd-sysusers >/dev/null 2>&1; then \
+			systemd-sysusers ${SYSUSERS_DIR}/lyona-update.conf; \
+		elif ! getent passwd ${BUILD_USER} >/dev/null 2>&1; then \
+			useradd -r -d /nonexistent -s /usr/bin/nologin -c 'lyona update build' ${BUILD_USER}; \
+		fi; \
+	fi
 	$(MAKE) stamp-system
 
 # Updates before 2026.10.0-beta.6 installed the shared data under PREFIX/share,
@@ -390,9 +417,7 @@ remove-legacy-shared-data:
 			rm -rf -- "$$1"; \
 		fi; \
 	}; \
-	awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print id; }' config/themes.toml | \
-	while IFS= read -r id; do \
-		case $$id in '' | *[!A-Za-z0-9_-]*) continue ;; esac; \
+	for id in ${GTK_THEME_IDS}; do \
 		remove "$$legacy/themes/Lyona-$$id"; \
 	done; \
 	remove "$$legacy/applications/lyona-appimage.desktop"; \
@@ -607,6 +632,7 @@ uninstall:
 		${DESTDIR}${MANPREFIX}/man1/dwm.1 \
 		${DESTDIR}${XSESSIONSDIR}/dwm.desktop \
 		${DESTDIR}${DATADIR}/applications/lyona-appimage.desktop \
+		${DESTDIR}${SYSUSERS_DIR}/lyona-update.conf \
 		${DESTDIR}/etc/lyona-release
 	rm -rf \
 		"${DESTDIR}${DATADIR}/icons/${CAPITAINE_DARK_THEME}" \
@@ -614,12 +640,11 @@ uninstall:
 		"${DESTDIR}${CAPITAINE_LICENSE_DIR}" \
 		"${DESTDIR}${DATADIR}/grub/themes/${GRUB_THEME_NAME}" \
 		"${DESTDIR}${GRUB_THEME_LICENSE_DIR}"
-	@# One directory per palette, so the list comes from the palettes rather
-	@# than from a second copy of it that can fall out of step.
-	awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print id; }' config/themes.toml \
-		| while IFS= read -r id; do \
-			rm -rf "${DESTDIR}${DATADIR}/themes/Lyona-$$id"; \
-		done
+	@# One directory per palette (GTK_THEME_IDS, read once from the palettes).
+	@# The lyona-build account stays: an account is not a file of this project's.
+	for id in ${GTK_THEME_IDS}; do \
+		rm -rf "${DESTDIR}${DATADIR}/themes/Lyona-$$id"; \
+	done
 	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES} ${RETIRED_COMMAND_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
@@ -715,6 +740,9 @@ check-release-workflows:
 
 check-changelog-record:
 	tests/test-changelog-record.sh
+
+check-update-root-contract:
+	tests/test-update-root-contract.sh
 
 check-xvfb-runtime: all
 	status=0; tests/test-xvfb-runtime.sh || status=$$?; \
@@ -1275,13 +1303,18 @@ check-install-manifest: all
 		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 			printf 'usr/libexec/lyona/%s\n' "$$name"; \
 		done; \
+		printf '%s\n' usr/lib/sysusers.d/lyona-update.conf; \
 		find "assets/cursors/${CAPITAINE_DARK_THEME}" \
 			\( -type f -o -type l \) \
 			-printf 'usr/share/icons/${CAPITAINE_DARK_THEME}/%P\n'; \
 		find "assets/cursors/${CAPITAINE_LIGHT_THEME}" \
 			\( -type f -o -type l \) \
 			-printf 'usr/share/icons/${CAPITAINE_LIGHT_THEME}/%P\n'; \
-		awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id); sub(/\].*$$/, "", id); print "usr/share/themes/Lyona-" id "/index.theme"; print "usr/share/themes/Lyona-" id "/gtk-2.0/gtkrc"; print "usr/share/themes/Lyona-" id "/gtk-3.0/gtk.css"; print "usr/share/themes/Lyona-" id "/gtk-4.0/gtk.css"; print "usr/share/themes/Lyona-" id "/qt/colors.conf"; }' config/themes.toml; \
+		for id in ${GTK_THEME_IDS}; do \
+			for file in index.theme gtk-2.0/gtkrc gtk-3.0/gtk.css gtk-4.0/gtk.css qt/colors.conf; do \
+				printf 'usr/share/themes/Lyona-%s/%s\n' "$$id" "$$file"; \
+			done; \
+		done; \
 		find "assets/grub/${GRUB_THEME_NAME}" \
 			\( -type f -o -type l \) \
 			-printf 'usr/share/grub/themes/${GRUB_THEME_NAME}/%P\n'; \
@@ -1578,6 +1611,7 @@ check:
 	$(MAKE) check-release-helper
 	$(MAKE) check-release-workflows
 	$(MAKE) check-changelog-record
+	$(MAKE) check-update-root-contract
 	$(MAKE) check-archiso
 	$(MAKE) check-cachyos
 	$(MAKE) check-quickshell-state
@@ -1612,11 +1646,11 @@ check:
 	$(MAKE) check-lightdm-config
 	$(MAKE) release-check
 
-.PHONY: clean all check check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
+.PHONY: clean all all-root check check-update-root-contract check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-cursor-reload check-xkbset check-picom check-picom-xvfb \
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
-	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
+	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes remove-legacy-shared-data stamp-system stamp-user native release release-check uninstall

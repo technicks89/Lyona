@@ -153,7 +153,10 @@ invoking_user=$(getent passwd "$invoking_uid" | cut -d: -f1)
 state_home=$invoking_home/.local/state
 log_file=$state_home/lyona/update.log
 
-make_path=$(command -v make) || die "make is unavailable"
+# make evaluates $(shell ...) as root, so it is a fixed path checked like cosign
+# and setpriv, never whatever PATH yields (#336).
+readonly make_path=/usr/bin/make
+trusted_file "$make_path" || die "a trusted make ($make_path) is needed"
 
 # System backups are made and kept by this helper, in a directory only root can
 # read or write (Sync Sprint 12 S12-01). A rollback names a backup by its id; it
@@ -217,33 +220,46 @@ release_rank() {
 	printf '%04d%02d%03d%d%03d\n' "$((10#$year))" "$((10#$month))" "$((10#${patch:-0}))" "$srank" "$((10#$num))"
 }
 
-# dwm, the one program that includes the user's config.h, built as nobody, in a
-# copy of the verified tree nobody owns: an #include or #embed in config.h then
-# reads only what nobody can, where root's build could read any file and put it
-# in a binary installed world-readable (#327, decided: setpriv). Everything root
-# runs (lyona-toml, during install-system) is built by root from the verified
-# sources, which do not include config.h. dwm and dwm.o are read back with
-# nobody's permissions, so a link planted in the build directory gives nothing
-# nobody could not read, then touched so install-system takes them as current.
+# dwm, the one program that includes the user's config.h, is built as lyona's
+# own system user, lyona-build (#336, decision D-36), in a copy of the sources
+# that user owns: an #include or #embed in config.h then reads only what that
+# user can, where root's build could read any file and put it in a binary
+# installed world-readable (#327, D-34: setpriv). Nothing else runs as
+# lyona-build (no home, shell or password; install-system creates it through
+# systemd-sysusers): the shared nobody could be written to by any process
+# already running as nobody, whose code root would then install for every
+# account, so a process running as the build user refuses the build. Only the
+# sources, headers, built objects and the Makefile are copied, not the whole
+# tree, so only dwm.o is compiled. Everything root runs (lyona-toml, during
+# install-system) is built by root from the verified sources, which do not
+# include config.h. dwm and dwm.o are read back with the build user's
+# permissions, so a link planted in the build directory gives nothing that user
+# could not read, then touched so install-system takes them as current.
 readonly setpriv_path=/usr/bin/setpriv
+readonly build_user=lyona-build
 build_dwm_unprivileged() {
 	local tree=$1 build file
 	trusted_file "$setpriv_path" ||
 		die "a trusted setpriv ($setpriv_path) is needed to build the update without root"
-	getent passwd nobody >/dev/null || die "there is no nobody user to build the update as"
+	getent passwd "$build_user" >/dev/null ||
+		die "there is no $build_user user to build the update as; install-system creates it (systemd-sysusers /usr/lib/sysusers.d/lyona-update.conf)"
+	if pgrep -u "$build_user" >/dev/null 2>&1; then
+		die "a process is running as $build_user, which could alter the build; refusing to build the update until it is gone"
+	fi
 	build=$(mktemp -d) || die "could not create a build directory"
-	if ! cp -a -- "$tree/." "$build/" || ! chown -R nobody:nobody -- "$build"; then
+	if ! cp -a -- "$tree"/*.c "$tree"/*.h "$tree"/*.o "$tree/Makefile" "$tree/config.mk" "$build/" ||
+		! chown -R "$build_user:$build_user" -- "$build"; then
 		rm -rf -- "$build"
 		die "could not prepare the unprivileged build"
 	fi
 	if ! env -i PATH=/usr/bin:/bin HOME=/nonexistent LANG=C.UTF-8 \
-		"$setpriv_path" --reuid=nobody --regid=nobody --clear-groups --no-new-privs \
+		"$setpriv_path" --reuid="$build_user" --regid="$build_user" --clear-groups --no-new-privs \
 		"$make_path" -C "$build" dwm; then
 		rm -rf -- "$build"
 		die "failed to build dwm for the verified release"
 	fi
 	for file in dwm.o dwm; do
-		if ! runuser -u nobody -- cat -- "$build/$file" >"$tree/$file"; then
+		if ! runuser -u "$build_user" -- cat -- "$build/$file" >"$tree/$file"; then
 			rm -rf -- "$build"
 			die "could not read the built $file back"
 		fi
@@ -295,9 +311,17 @@ backup_system_files() {
 	out=$(tree_make_values "$tree" '$(notdir $(POLKIT_ACTIONS))') ||
 		die "could not read the polkit actions from the new release"
 	mapfile -t policies < <(awk 'NF' <<<"$out")
-	# The GTK themes, one per palette, as install-gtk-themes names them.
-	mapfile -t palettes < <(awk '/^\[theme\./ { id = $0; sub(/^\[theme\./, "", id); sub(/\].*$/, "", id); print id }' \
-		"$tree/config/themes.toml" 2>/dev/null)
+	# The GTK themes, one per palette, as the new release's Makefile names them
+	# (GTK_THEME_IDS, the release-tree contract, #337). A release before
+	# 2026.10.0-beta.7 has no such variable: its palettes are read as its
+	# Makefile then read them.
+	# shellcheck disable=SC2016
+	out=$(tree_make_values "$tree" '$(GTK_THEME_IDS)') || out=''
+	mapfile -t palettes < <(awk 'NF' <<<"$out")
+	if ((${#palettes[@]} == 0)); then
+		mapfile -t palettes < <(awk '/^\[theme\./ { id = $0; sub(/^\[theme\./, "", id); sub(/\].*$/, "", id); print id }' \
+			"$tree/config/themes.toml" 2>/dev/null)
+	fi
 	((${#names[@]} > 1)) || die "the new release reported no installed commands"
 
 	mkdir -m 0700 -- "$dir" || die "could not create the system backup directory"
@@ -342,7 +366,8 @@ backup_system_files() {
 		fi
 	done >"$dir/manifest"
 
-	if ! tar -C / --numeric-owner -cpf "$dir/system-files.tar" -T "$dir/manifest"; then
+	# --verbatim-files-from: a manifest line is a path, never a tar option (#336).
+	if ! tar -C / --numeric-owner --verbatim-files-from -cpf "$dir/system-files.tar" -T "$dir/manifest"; then
 		rm -rf -- "$dir"
 		die "could not write the system backup"
 	fi
@@ -477,9 +502,14 @@ install-system | install-unverified | install-downgrade)
 		# An older release goes through its own subcommand and polkit action,
 		# never the routine update prompt: an old release may carry a root-helper
 		# bug fixed since (#327, decided: a separate action).
+		# Fail closed: a version that cannot be ranked, on either side, refuses
+		# the install rather than skipping the age check (#336).
 		installed=$(installed_version)
-		if [[ $installed != unknown ]] && installed_rank=$(release_rank "$installed") &&
-			requested_rank=$(release_rank "$requested_version"); then
+		if [[ $installed != unknown ]]; then
+			installed_rank=$(release_rank "$installed") ||
+				die "cannot compare $requested_version with the installed $installed, which /etc/lyona-release records in an unknown form; refusing to install"
+			requested_rank=$(release_rank "$requested_version") ||
+				die "cannot compare $requested_version with the installed $installed; refusing to install a release whose version is in an unknown form"
 			if [[ $requested_rank < $installed_rank && $install_mode != install-downgrade ]]; then
 				die "$requested_version is older than the installed $installed; a downgrade needs its own approval (install-downgrade)"
 			fi
@@ -507,11 +537,18 @@ install-system | install-unverified | install-downgrade)
 		if ! "$make_path" -C "$verified_dir" clean; then
 			die "failed to clean the verified build tree"
 		fi
-		# Everything but dwm, as root: none of it includes config.h.
-		# shellcheck disable=SC2016 # expanded by make, not the shell
-		root_targets_out=$(tree_make_values "$verified_dir" '$(THUMB) $(TOML_TOOL) $(XWATCH) $(filter-out dwm.o,$(OBJ))') ||
-			die "could not read the build targets from the verified release"
-		mapfile -t root_targets < <(awk 'NF' <<<"$root_targets_out")
+		# Everything but dwm, as root: the release's all-root target, which names
+		# what never includes config.h (the release-tree contract, SPEC.md
+		# section 6, #337). A release before 2026.10.0-beta.7 has no such target:
+		# its programs and objects are named as its Makefile then named them.
+		if "$make_path" -C "$verified_dir" -n all-root >/dev/null 2>&1; then
+			root_targets=(all-root)
+		else
+			# shellcheck disable=SC2016 # expanded by make, not the shell
+			root_targets_out=$(tree_make_values "$verified_dir" '$(THUMB) $(TOML_TOOL) $(XWATCH) $(filter-out dwm.o,$(OBJ))') ||
+				die "could not read the build targets from the verified release"
+			mapfile -t root_targets < <(awk 'NF' <<<"$root_targets_out")
+		fi
 		if ! "$make_path" -C "$verified_dir" "${root_targets[@]}"; then
 			die "failed to build the verified release"
 		fi

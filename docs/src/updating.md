@@ -202,10 +202,13 @@ recoverable:
    release workflow (fixed in the helper, not taken from the caller), then
    unpacks and rebuilds only that copy before backing up the system files and
    installing. The one program that includes your `config.h`, `dwm`, is built
-   there as an unprivileged user (`nobody`, through `setpriv`), never as root:
-   a `config.h` can include only files everyone can read, and the password
-   prompt says a `config.h` is compiled in. The step needs `setpriv`
-   (util-linux) and the `nobody` user, which Arch has.
+   there as lyona's own system user, `lyona-build` (through `setpriv`), never
+   as root and not as the shared `nobody`: a `config.h` can include only files
+   everyone can read, and the password prompt says a `config.h` is compiled in.
+   The step needs `setpriv` (util-linux) and the `lyona-build` account, which
+   the install creates (`systemd-sysusers`, from
+   `/usr/lib/sysusers.d/lyona-update.conf`); nothing else runs as it, and the
+   build refuses to start while anything does.
 
 **What the checks prove.** The SHA-256 digest comes from the release page (or a
 short-lived cache in `~/.cache/lyona/`), so a match proves the download is
