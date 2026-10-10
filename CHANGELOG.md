@@ -8,6 +8,22 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Changed
+
+- `man dwm` describes lyona's dwm instead of stock dwm: the Super key, the
+  bindings read from `hotkeys.toml` at run time (Super+/ lists them), the three
+  runtime TOML files and their hot reload, SIGUSR1 and SIGUSR2, and the
+  emergency keys (#317).
+- `lyona-version --help` and `dwm-diagnostics --help` explain each command and
+  format and exit 0, where they printed a one-line usage (#317).
+- The documentation catches up with the 2026-10-09 review (#317): the beta.6
+  qualification cites the final image, `docs/RELEASING.md` records the
+  2026-10-09 VM run and the release-notes retention rule, the roadmap, tasks
+  and sprint records match the evidence, `docs/SHELL-STATE-PROTOCOL.md` covers
+  the shell's `_NET_ACTIVE_WINDOW` requests and the dock exclusion and links the
+  other shell protocols, and the README offers the published image before the
+  build.
+
 ## [2026.10.0-beta.6] - 2026-10-09
 
 Seventh beta of the Arch Linux line. Updates work end to end: `lyona-update` verifies an update without a false
@@ -540,7 +556,8 @@ session and Settings found in `2026.10.0-beta.2` (#229, #230, #231). See `docs/R
 
 Third beta of the Arch Linux line, and the first signed release. Sync Sprint 16: the fixes from the 2026-10-03
 whole-repo review (`docs/sprints/SYNC-SPRINT-16-REVIEW-FIXES.md`, which maps each to its test), and the image fixes a
-VM install of `2026.10.0-beta.1` found. See `docs/RELEASE-NOTES-2026.10.0-beta.2.md`.
+VM install of `2026.10.0-beta.1` found. See
+`4581d25^:docs/RELEASE-NOTES-2026.10.0-beta.2.md` (retired; read it with `git show`).
 
 ### Security
 

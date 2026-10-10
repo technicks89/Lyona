@@ -6,7 +6,8 @@ That report has six reviews: architecture, engineering, security, user
 experience, efficiency and documentation.
 
 **Status:** every item implemented 2026-10-03 on branch
-`repo-review-and-docs-cleanup`, awaiting review: the **Fix** items first, then
+`repo-review-and-docs-cleanup`, merged in #228 (`a68efe1`) and released in
+`2026.10.0-beta.2`: the **Fix** items first, then
 the **Decision** items as decided (D-29 to D-33) and the **Split** items. What
 was done, and what could not be tested, is under [Implemented](#implemented)
 and [Second round](#second-round-decisions-split-items-and-the-image).

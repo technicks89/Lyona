@@ -20,7 +20,11 @@ use `make native` for published binaries.
    `lyona-VERSION-x86_64.iso` with a matching
    `/etc/lyona-iso-release`.
 9. Record the tested Arch release, architectures, X11 environments, known
-   limitations, and SHA-256 checksum in the release notes.
+   limitations, and SHA-256 checksum in the release notes, one file per
+   version under `docs/`. Keep the notes of every release published
+   on the Releases page, and of the one being prepared. Notes for a version
+   that was never published are retired: delete the file, and point its
+   `CHANGELOG.md` entry at the deleting commit (`git show COMMIT^:PATH`).
 10. Tag the release only after all applicable `SPEC.md` acceptance criteria
     and required GitHub checks pass. The ISO workflow (see "Automated ISO
     builds and releases" below) creates the tag; run it only then.
@@ -141,10 +145,22 @@ each run finding faults fixed before the next (`CHANGELOG.md`,
   help; the installed system booted to LightDM, and dwm and the managed
   shell came up (the launcher, the power menu).
 
+**VM qualification, 2026-10-09** (`2026.10.0-beta.6`, #280; details in
+`docs/evidence/280-config-split.md`):
+- **Image:** `lyona-2026.10.0-beta.6-x86_64.iso` built from the release tree,
+  SHA-256 `9956f9f10da9bc5d12b88dd9c6edd2ec6a9bced471dd804f3f52686c3144bc32`,
+  `archiso` 91-1, squashfs-tools 4.6.1, Arch with the CachyOS repositories.
+- **Machine:** QEMU 11.1.2 with KVM, q35, x86_64, UEFI (OVMF), a standard VGA
+  adapter, no NVIDIA GPU, 4 GiB, a 32 GiB virtio disk.
+- **Result:** fresh installs with btrfs (this image) and ext4 (an earlier
+  build of the same release) reached the desktop, and 96 desktop checks passed
+  on each. `lyona-update` applied and rolled back with the release's own code,
+  and from a fresh `2026.10.0-beta.5` install to `beta.6` with beta.5's updater.
+
 **Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS,
-ext4, the manual `archinstall` fallback, an image built by the release
-workflow, and `lyona-update` from one release to the next. Do not treat a
-release as qualified on hardware until it has been.
+the manual `archinstall` fallback, Wi-Fi installs, and an image built by the
+release workflow. Do not treat a release as qualified on hardware until it has
+been.
 
 ### Signed releases
 

@@ -63,17 +63,6 @@ For complete requirements and installation details, see the
 
 ### Arch ISO
 
-Build the installer image from this checkout (requires the `archiso`
-package, on an Arch host):
-
-```bash
-sudo scripts/build-lyona-arch-iso.sh
-```
-
-The image is named for the release it was built from, `VERSION` in
-`config.mk`: `out/lyona-VERSION-x86_64.iso`. A booted medium reports its exact
-build in `/etc/lyona-iso-release`.
-
 Pre-release images are published on the
 [Releases](https://github.com/technicks89/Lyona/releases) page, each with a
 `lyona-VERSION-SHA256SUMS` file. Check the download before writing it; the
@@ -87,6 +76,17 @@ sha256sum -c --ignore-missing lyona-VERSION-SHA256SUMS
 From `2026.10.0-beta.2` on, releases are also signed; the
 [Installation Guide](https://dwm.technicks89.com/install.html) shows how to
 check the signature.
+
+To build the installer image yourself from this checkout (requires the
+`archiso` package, on an Arch host):
+
+```bash
+sudo scripts/build-lyona-arch-iso.sh
+```
+
+The image is named for the release it was built from, `VERSION` in
+`config.mk`: `out/lyona-VERSION-x86_64.iso`. A booted medium reports its exact
+build in `/etc/lyona-iso-release`.
 
 Write the ISO to a USB drive and boot it, with UEFI or a legacy BIOS. The `lyona-install`
 wizard launches automatically. It asks, in menus: the keyboard layout, the disk

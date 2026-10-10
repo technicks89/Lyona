@@ -147,4 +147,12 @@ assert_string_contains "$json" '"state":"available"'
 assert_string_contains "$json" '"consistent":true'
 assert_string_contains "$json" '"version":"2026.08.0-beta.1"'
 
+# --help explains the commands and exits 0; an unknown command still exits 2.
+help=$(sh "$helper" --help) || fail 'lyona-version --help did not exit 0'
+assert_string_contains "$help" 'status --json'
+assert_string_contains "$help" '/etc/lyona-release'
+status=0
+sh "$helper" bogus >/dev/null 2>&1 || status=$?
+[ "$status" -eq 2 ] || fail "an unknown command exited $status, not 2"
+
 printf 'lyona-version contract: PASS\n'

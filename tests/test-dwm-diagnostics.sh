@@ -123,4 +123,11 @@ if (. "$repo/scripts/dwm-packages.sh" && dwm_command_tier desktop) | grep -Fxq p
 	fail "picom is still in the desktop tier"
 fi
 
+# --help explains the formats and exits 0, without running the checks.
+help=$(bash "$HELPER" --help) || fail 'dwm-diagnostics --help did not exit 0'
+case $help in
+*'--format health-tsv'*'Exits 1 when a required check fails'* | *'Exits 1 when a required check fails'*'--format health-tsv'*) ;;
+*) fail "dwm-diagnostics --help does not describe the formats and exit status: $help" ;;
+esac
+
 printf 'dwm-diagnostics: PASS\n'

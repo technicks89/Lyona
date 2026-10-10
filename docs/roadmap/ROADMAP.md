@@ -497,9 +497,11 @@ Status: Active. Pre-release images are published: `2026.08.0-beta.1`, and
 `2026.10.0-beta.3` to `2026.10.0-beta.5`, which the release workflow built and
 signed (decision D-31). Done: an image built on the maintainer's host installed
 in a UEFI KVM virtual machine and reached a working desktop (2026-10-03,
-`docs/RELEASING.md`). Still open for the exit criteria below: real hardware,
-the NVIDIA, LUKS and ext4 paths, the manual fallback, an image the release
-workflow built, and an update from one release to the next. Interleaved with the upstream sync sprints
+`docs/RELEASING.md`). In the same kind of VM on 2026-10-09, `2026.10.0-beta.6`
+images installed fresh with btrfs and ext4, and an update from `beta.5` to
+`beta.6` applied and rolled back. Still open for the exit criteria below: real
+hardware, the NVIDIA and LUKS paths, the manual fallback, and an image the
+release workflow built. Interleaved with the upstream sync sprints
 (`docs/sprints/UPSTREAM-SYNC.md`).
 
 ### Objective

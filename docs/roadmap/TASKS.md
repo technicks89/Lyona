@@ -19,8 +19,11 @@ individually exercised by automated tests
 Phase 7 closes is real boot, real install and real upgrade/rollback. The first
 VM runs are done: on 2026-10-03 an image built on the maintainer's host
 installed in a UEFI KVM virtual machine, three times, the last reaching a
-working desktop with no manual help (recorded in `docs/RELEASING.md`). Real
-hardware, the paths that VM did not exercise, and upgrade/rollback remain.
+working desktop with no manual help (recorded in `docs/RELEASING.md`). On
+2026-10-09 the `2026.10.0-beta.6` images installed fresh with btrfs and ext4,
+and an update from `beta.5` to `beta.6` applied and rolled back, in the same
+kind of VM (`docs/evidence/280-config-split.md`). Real hardware, and the paths
+those VMs did not exercise, remain.
 Every item below uses the acceptance criteria and existing automated coverage
 as the bar.
 
@@ -99,7 +102,8 @@ Acceptance:
 - [ ] Verify LightDM presents a session, dwm starts, and the managed
   Quickshell shell (panel, Settings, Control Center) comes up without manual
   repair. LightDM, dwm, the panel, the launcher and the power menu were
-  verified in that VM; Settings and the Control Center were not opened.
+  verified in the 2026-10-03 VM; the Control Center, keybind viewer and
+  overview too in the 2026-10-09 beta.6 VM. Settings was not opened in a VM.
 - [ ] Verify the manual fallback path (boot the ISO, run `archinstall`
   directly, then `/root/lyona-postinstall.sh` against the mounted target)
   produces the same working result as the wizard path, at least once.
@@ -125,11 +129,14 @@ Acceptance:
   configuration and provenance stamps rather than clobbering them —
   `tests/test-install-preservation.sh` (passing in this sandbox as of
   2026-09-19).
-- [ ] Qualify `lyona-update apply` and `lyona-update rollback` against a real
+- [x] Qualify `lyona-update apply` and `lyona-update rollback` against a real
   previous release tarball on a real installed system (VM or hardware), not
   just the test harness's synthetic fixtures — confirm user data and
   managed-configuration ownership survive an actual version-to-version
-  upgrade and a subsequent rollback.
+  upgrade and a subsequent rollback. Done 2026-10-09 in a VM only: a fresh
+  `2026.10.0-beta.5` image install updated to `beta.6` with beta.5's updater,
+  verified, and rolled back (`docs/evidence/280-config-split.md`); hardware is
+  still to do.
 - [ ] Qualify the existing-system installer (`install.sh`) against a
   pre-existing, non-lyona Arch install with real user data present, per
   `SPEC.md`'s existing-system installer contract.
@@ -176,13 +183,10 @@ items that used to be kept here):
 - [ ] Sync Sprints 4, 5 and 11 -- code complete; a green **Full suite (manual)**
   run and the hardware and by-eye checks in Sprint 10's S10-07 ledger
   (`docs/sprints/completed/SYNC-SPRINT-10-COMPLETION-AUDIT.md`) are open.
-- [ ] Sync Sprint 9 S9-01 -- live per-window thumbnails: feasible only with
-  Picom running; a maintainer decision
-  (`docs/evidence/s9-01-thumbnail-spike.md`).
 - [ ] Sync Sprint 12 -- implemented; sign-off needs a green Full suite on
   `main` and the checks in the doc's Close-out.
 - [ ] Sync Sprints 14 and 15 -- implemented; real NVIDIA hardware (S14-04) and
   a live session (S15-05) are open.
 - [ ] Sync Sprint 16 -- the 2026-10-03 whole-repo review's fixes
-  (`docs/sprints/SYNC-SPRINT-16-REVIEW-FIXES.md`); its decisions and split
-  items are listed there.
+  (`docs/sprints/SYNC-SPRINT-16-REVIEW-FIXES.md`): merged (#228) and released
+  in `2026.10.0-beta.2`; real hardware is open.

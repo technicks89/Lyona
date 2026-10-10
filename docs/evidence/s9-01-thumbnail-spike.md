@@ -1,7 +1,9 @@
 # S9-01 -- live per-window thumbnails: spike outcome
 
-Plan: `docs/sprints/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-01-live-per-window-thumbnails-a-spike`. Issue `#350`. **Not implemented; a maintainer decision is
-needed.** The spike answered the feasibility question only.
+Plan: `docs/sprints/SYNC-SPRINT-9-OVERVIEW-POLISH.md#s9-01-live-per-window-thumbnails-a-spike`. Issue `#350`. **Decided and built:** the spike below
+answered feasibility; previews were then built as `dwm-window-thumb.c` (with
+Sprint 9, `5e5faad`), which captures only while a compositor runs, and Picom was
+made part of the desktop for them (#244, `5bd6907`; `docs/evidence/244-picom-required.md`).
 
 ## What was tried (2026-09-27, Xvfb 1024x768 and 3840x2160, real dwm, feh test window, nothing committed)
 
