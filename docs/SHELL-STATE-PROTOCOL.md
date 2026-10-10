@@ -14,7 +14,9 @@ and each client's title, class and tag, through one `dwm-xwatch` process
 for each change), re-reads only what changed, and prints the shell's state
 lines; QML never reads X itself. Only when `dwm-xwatch` is missing, or cannot
 watch the display (it never prints `ready`), does it fall back to one
-`xprop -spy` per window.
+`xprop -spy` per window. A burst of changes is one rebuild, and rebuilds are at
+least 200 ms apart. When its watcher ends (`dwm-xwatch`, or the fallback's root
+`xprop -spy`), `watch` exits, and the shell's `WatchedProcess` starts it again.
 The standard EWMH properties (`_NET_CURRENT_DESKTOP`, `_NET_CLIENT_LIST`,
 `_NET_ACTIVE_WINDOW`, `_NET_WM_DESKTOP` and the others) are read the same way
 and are not repeated here. `_NET_CLIENT_LIST` lists each monitor's bar and tray

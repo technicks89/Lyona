@@ -309,6 +309,93 @@ truncation(const char *dir)
 	      "the flag survived into the next parse");
 }
 
+/* #319: what the parser could not read is counted, with the first line, an
+ * array over TOML_MAX_ARR items no longer ends the outer array early, and an
+ * array that never closes is recorded. Well-formed input reports nothing. */
+static void
+problems(const char *dir)
+{
+	char text[8192];
+	int i, len;
+
+	/* 33 exec arguments, then a second rule: the 33rd "]"-free item and the
+	 * "]" of the long array used to end "rules", losing rule B. */
+	len = snprintf(text, sizeof text, "rules = [ { class=\"A\", exec=[");
+	for (i = 0; i < 33; i++)
+		len += snprintf(text + len, sizeof text - (size_t)len, "%s\"a%d\"", i ? ", " : "", i);
+	snprintf(text + len, sizeof text - (size_t)len, "] }, { class=\"B\", isfloating=1 } ]\n");
+	CHECK(parse_text(dir, "long-array", text), "the long-array file did not parse");
+	CHECK(toml_table_count(&doc, "rules") == 2, "long array: %d rules, want 2",
+	      toml_table_count(&doc, "rules"));
+	CHECK(table_str("rules", 1, "class") && strcmp(table_str("rules", 1, "class"), "B") == 0
+	      && is_int(toml_table_get(&doc, "rules", 1, "isfloating"), 1),
+	      "the rule after a long array was lost");
+	CHECK(doc.long_arrays == 1 && doc.bad_lines == 0 && !doc.unclosed_line,
+	      "long array: long_arrays %d, bad_lines %d, unclosed %d", doc.long_arrays, doc.bad_lines,
+	      doc.unclosed_line);
+
+	/* A 35th item that looks like a table is part of the array, not a rule. */
+	len = snprintf(text, sizeof text, "rules = [ { class=\"A\", exec=[");
+	for (i = 0; i < 34; i++)
+		len += snprintf(text + len, sizeof text - (size_t)len, "\"a%d\", ", i);
+	snprintf(text + len, sizeof text - (size_t)len,
+	         "\"{ class = \\\"Evil\\\", isfloating = 1 }\"] } ]\n");
+	CHECK(parse_text(dir, "long-array-table", text), "the crafted file did not parse");
+	CHECK(toml_table_count(&doc, "rules") == 1, "a crafted array item became a rule: %d rules",
+	      toml_table_count(&doc, "rules"));
+
+	CHECK(parse_text(dir, "missing-comma",
+		"keys = [\n"
+		"  { mod=\"SUPER\", key=\"a\", func=\"view\" },\n"
+		"  { mod=\"SUPER\", key=\"b\" func=\"view\" },\n"
+		"]\n"), "the missing-comma file did not parse");
+	CHECK(doc.bad_lines == 1 && doc.first_bad_line == 3, "missing comma: bad_lines %d, first %d",
+	      doc.bad_lines, doc.first_bad_line);
+
+	CHECK(parse_text(dir, "missing-brace",
+		"keys = [\n"
+		"  { mod=\"SUPER\", key=\"a\", func=\"view\" },\n"
+		"  { mod=\"SUPER\", key=\"b\", func=\"view\"\n"
+		"  { mod=\"SUPER\", key=\"c\", func=\"view\" },\n"
+		"]\n"), "the missing-brace file did not parse");
+	CHECK(doc.bad_lines == 1 && doc.first_bad_line == 3, "missing brace: bad_lines %d, first %d",
+	      doc.bad_lines, doc.first_bad_line);
+	CHECK(toml_table_count(&doc, "keys") == 3, "missing brace: %d keys, want 3",
+	      toml_table_count(&doc, "keys"));
+
+	CHECK(parse_text(dir, "stray-line", "[a]\nx = 1\noops\n[b\ny = 2\n"),
+	      "the stray-line file did not parse");
+	CHECK(doc.bad_lines == 2 && doc.first_bad_line == 3, "stray lines: bad_lines %d, first %d",
+	      doc.bad_lines, doc.first_bad_line);
+
+	CHECK(parse_text(dir, "unclosed",
+		"x = 1\n"
+		"keys = [\n"
+		"  { mod=\"SUPER\", key=\"a\", func=\"view\" },\n"), "the cut-off file did not parse");
+	CHECK(doc.unclosed_line == 2, "an array that never closes: unclosed_line %d, want 2",
+	      doc.unclosed_line);
+
+	CHECK(parse_text(dir, "well-formed",
+		"# comment\n"
+		"[a]\n"
+		"x = 1   # trailing\n"
+		"s = \"text # not a comment\"\n"
+		"list = [\"a\", \"b\"]\n"
+		"rules = [ { class = \"a\" , isfloating = 1 } ]\n"
+		"keys = [\n"
+		"\n"
+		"  # a comment line\n"
+		"  { key=\"a\", exec=[\"x\", \"y]\"] },  { key = \"b\" , n = 2 } ,\n"
+		"]\n"), "the well-formed file did not parse");
+	CHECK(doc.bad_lines == 0 && doc.long_arrays == 0 && !doc.unclosed_line,
+	      "well-formed input reported problems: bad_lines %d (first %d), long_arrays %d, unclosed %d",
+	      doc.bad_lines, doc.first_bad_line, doc.long_arrays, doc.unclosed_line);
+}
+
+#define CHECK_CLEAN(file) CHECK(!doc.bad_lines && !doc.long_arrays && !doc.unclosed_line, \
+	"%s: bad_lines %d (first %d), long_arrays %d, unclosed %d", file, doc.bad_lines, \
+	doc.first_bad_line, doc.long_arrays, doc.unclosed_line)
+
 static void
 shipped(const char *hotkeys, int keys, int tag_keys, int buttons,
         const char *rules_file, int rules, const char *themes)
@@ -318,6 +405,7 @@ shipped(const char *hotkeys, int keys, int tag_keys, int buttons,
 	int i, n = 0;
 
 	CHECK(toml_parse(hotkeys, &doc), "%s did not parse", hotkeys);
+	CHECK_CLEAN(hotkeys);
 	CHECK(toml_table_count(&doc, "keys") == keys, "hotkeys keys: %d, the file has %d",
 	      toml_table_count(&doc, "keys"), keys);
 	CHECK(toml_table_count(&doc, "tag_keys") == tag_keys, "hotkeys tag_keys: %d, the file has %d",
@@ -326,6 +414,7 @@ shipped(const char *hotkeys, int keys, int tag_keys, int buttons,
 	      toml_table_count(&doc, "buttons"), buttons);
 
 	CHECK(toml_parse(rules_file, &doc), "%s did not parse", rules_file);
+	CHECK_CLEAN(rules_file);
 	CHECK(toml_table_count(&doc, "rules") == rules, "window rules: %d, the file has %d",
 	      toml_table_count(&doc, "rules"), rules);
 	for (i = 0; i < toml_table_count(&doc, "rules"); i++)
@@ -333,6 +422,7 @@ shipped(const char *hotkeys, int keys, int tag_keys, int buttons,
 		      || table_str("rules", i, "title"), "shipped rule %d matches every window", i);
 
 	CHECK(toml_parse(themes, &doc), "%s did not parse", themes);
+	CHECK_CLEAN(themes);
 	v = toml_get(&doc, "active", "theme");
 	CHECK(v && v->type == TOML_STRING && v->s[0], "themes.toml has no active theme");
 	if (v && v->type == TOML_STRING) {
@@ -359,6 +449,7 @@ main(int argc, char *argv[])
 	long_line(argv[1]);
 	regressions(argv[1]);
 	truncation(argv[1]);
+	problems(argv[1]);
 	shipped(argv[2], atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), argv[6], atoi(argv[7]), argv[8]);
 	if (failures) {
 		fprintf(stderr, "tomlparser: %d check(s) failed\n", failures);

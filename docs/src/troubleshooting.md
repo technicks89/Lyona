@@ -136,12 +136,14 @@ Alacritty. The default `Super`+`X` binding remains plain Alacritty.
 
 ## Keybinds Not Working
 
-- Check `~/.config/lyona/hotkeys.toml` for mistakes. A file dwm cannot use raises a
-  "dwm: bad config" notification: at login dwm falls back to the shipped defaults, and
-  when you save a broken file while running it keeps the keys you already had. dwm
-  names each entry it skips (an unknown key or function, a tag outside 0-8) on its
-  standard error: the terminal you ran `startx` from, or your display manager's
-  session log (for LightDM, `~/.xsession-errors`).
+- Check `~/.config/lyona/hotkeys.toml` for mistakes. A "dwm: bad config"
+  notification names the first problem. When only some bindings are wrong (an
+  unknown key or function, a tag outside 0-8, a missing comma), dwm loads the rest
+  and says how many it skipped. A file dwm cannot use at all (empty, or cut off
+  inside its array): at login dwm falls back to the shipped defaults, and when you
+  save it while running it keeps the keys you already had. dwm lists every entry it
+  skips on its standard error: the terminal you ran `startx` from, or your display
+  manager's session log (for LightDM, `~/.xsession-errors`).
 - Verify the key name is correct (use `xev` to find X11 key names).
 - If neither your file nor the shipped default can be loaded, only two keys work:
   Super+x opens a terminal and Super+Shift+q quits dwm.

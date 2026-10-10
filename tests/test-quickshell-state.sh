@@ -320,4 +320,58 @@ PATH="$bin:$PATH" "$helper" state >"$work/reopened-out" 2>"$work/reopened-err" |
 	fail 'fresh state after title change exited non-zero' "$work/reopened-err"
 grep -Fqx "$fallback_updated" "$work/reopened-out" || fail 'fresh snapshot kept the old title' "$work/reopened-out"
 
+# #320: when dwm-xwatch dies (an OOM kill, a crash), the watch ends, so that
+# WatchedProcess starts it again; it used to block on its own fifo for ever.
+cat >"$checkout/dwm-xwatch" <<EOF
+#!/bin/sh
+printf 'ready\n'
+while [ ! -f "$work/xwatch-die" ]; do sleep 0.05; done
+exit 0
+EOF
+chmod +x "$checkout/dwm-xwatch"
+rm -f "$work/xwatch-die" "$work/title-changed" "$work/fallback-title-changed"
+PATH="$bin:$PATH" "$checkout/scripts/dwm-quickshell-state" watch >"$work/watch-out" 2>"$work/watch-err" &
+watch_pid=$!
+wait_for_line "$initial" 'watch did not emit initial titles (dying watcher)'
+touch "$work/xwatch-die"
+i=0
+while kill -0 "$watch_pid" 2>/dev/null; do
+	i=$((i + 1))
+	[ "$i" -lt 60 ] || fail 'the watch kept running after dwm-xwatch died' "$work/watch-err"
+	sleep 0.05
+done
+wait "$watch_pid" 2>/dev/null || true
+watch_pid=
+grep -Fq 'dwm-xwatch stopped' "$work/watch-err" || fail 'the watch did not say why it ended' "$work/watch-err"
+
+# A window that retitles without pause (here about 100 times a second for 2 s)
+# rebuilds the state at most every 200 ms, about 10 times, not once per 50 ms
+# burst; a single change still shows at once.
+cat >"$checkout/dwm-xwatch" <<EOF
+#!/bin/sh
+printf 'ready\n'
+while [ ! -f "$work/churn-start" ]; do sleep 0.05; done
+n=0
+while [ "\$n" -lt 200 ]; do printf 'window 0xaa\n'; sleep 0.01; n=\$((n + 1)); done
+exec sleep 30
+EOF
+chmod +x "$checkout/dwm-xwatch"
+rm -f "$work/churn-start"
+PATH="$bin:$PATH" "$checkout/scripts/dwm-quickshell-state" watch >"$work/watch-out" 2>"$work/watch-err" &
+watch_pid=$!
+wait_for_line "$initial" 'watch did not emit initial titles (churn)'
+blocks_before=$(grep -c '^current=' "$work/watch-out")
+start_ms=$(($(date +%s%N) / 1000000))
+touch "$work/churn-start"
+sleep 3
+blocks=$(($(grep -c '^current=' "$work/watch-out") - blocks_before))
+elapsed_ms=$(($(date +%s%N) / 1000000 - start_ms))
+kill "$watch_pid"
+wait "$watch_pid" 2>/dev/null || true
+watch_pid=
+printf 'retitling for 2 s: %d rebuilds\n' "$blocks"
+# 2 s of churn at one rebuild per 200 ms is about 10; allow for a slow host.
+[[ $blocks -ge 2 && $blocks -le 16 ]] ||
+	fail "a retitling window caused $blocks rebuilds in ${elapsed_ms} ms; want at most about 10" "$work/watch-out"
+
 printf 'Quickshell state bridge: PASS\n'

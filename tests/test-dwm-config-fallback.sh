@@ -114,15 +114,24 @@ press_until_desktop() { # KEYS DESKTOP FAILURE-MESSAGE
 	done
 }
 
-expect_defaults() { # LABEL: the shipped keys work, and the fallback was reported
-	press_until_desktop Super+2 1 "the shipped keys are not grabbed ($1)"
+wait_notification() { # TEXT LABEL: TEXT was notified (after "dwm: bad config hotkeys.toml: ")
 	i=0
-	until grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - loaded defaults' \
-		"$work/notifications.log"; do
+	until grep -Fxq -- "-u critical dwm: bad config hotkeys.toml: $1" "$work/notifications.log"; do
 		i=$((i + 1))
-		[ "$i" -lt 100 ] || fail "no 'loaded defaults' notification ($1): $(cat "$work/notifications.log")"
+		[ "$i" -lt 100 ] || fail "no '$1' notification ($2): $(cat "$work/notifications.log")"
 		sleep 0.05
 	done
+}
+
+# LABEL [WHY]: the shipped keys work, and the fallback was reported, with why
+# the file was refused when dwm could say (#319).
+expect_defaults() {
+	press_until_desktop Super+2 1 "the shipped keys are not grabbed ($1)"
+	if [ -n "${2:-}" ]; then
+		wait_notification "invalid config ($2) - loaded defaults" "$1"
+	else
+		wait_notification 'invalid config - loaded defaults' "$1"
+	fi
 	kill -USR2 "$dwm_pid"
 	wait_exit "$1"
 }
@@ -172,38 +181,63 @@ rm -f "$user_themes"
 # An empty file, and one that is only comments, used to leave dwm with no keys.
 : >"$user_hotkeys"
 start_dwm empty
-expect_defaults empty
+expect_defaults empty 'nothing in it could be used'
 
 printf '# nothing but comments\n# keys = []\n' >"$user_hotkeys"
 start_dwm comments
-expect_defaults comments
+expect_defaults comments 'nothing in it could be used'
 
 # Entries, but not one binding dwm could grab (and a tag outside 0-8).
 printf '[meta]\nversion = 1\ntag_keys = [\n  { key="1", tag=40 },\n]\n' >"$user_hotkeys"
 start_dwm unusable
-expect_defaults unusable
+expect_defaults unusable 'nothing in it could be used'
 
 # The only binding is a spawn with nothing to run, which the loader refuses.
 printf 'keys = [\n  { mod="SUPER", key="x", func="spawn" },\n]\n' >"$work/spawn-only.toml"
 cp "$work/spawn-only.toml" "$user_hotkeys"
 start_dwm spawn-only
-expect_defaults spawn-only
+expect_defaults spawn-only 'nothing in it could be used'
 
 # A live reload to that file keeps the keys already in use, and says so.
 cp "$repo/config/hotkeys.toml" "$user_hotkeys"
 start_dwm reload-spawn-only
 cp "$work/spawn-only.toml" "$user_hotkeys"
 kill -USR1 "$dwm_pid"
-i=0
-until grep -Fxq -- '-u critical dwm: bad config hotkeys.toml: invalid config - kept the previous config' \
-	"$work/notifications.log"; do
-	i=$((i + 1))
-	[ "$i" -lt 100 ] || fail "no 'kept the previous config' notification: $(cat "$work/notifications.log")"
-	sleep 0.05
-done
+wait_notification 'invalid config (nothing in it could be used) - kept the previous config' reload-spawn-only
 press_until_desktop Super+2 1 'a reload to an unusable file lost the keys in use'
 kill -USR2 "$dwm_pid"
 wait_exit reload-spawn-only
+
+# #319: a file with a typo loads what it can and says what it could not, where
+# only stderr used to. An unknown key name:
+printf 'keys = [\n  { mod="SUPER", key="Retrun", func="zoom" },\n]\ntag_keys = [\n  { key="2", tag=1 },\n]\n' \
+	>"$user_hotkeys"
+start_dwm typo
+press_until_desktop Super+2 1 'the good binding beside a typo was not loaded'
+wait_notification "1 problem, the rest loaded - unknown key 'Retrun'" typo
+grep -Fq 'invalid config' "$work/notifications.log" && fail 'a file that loaded was called invalid'
+kill -USR2 "$dwm_pid"
+wait_exit typo
+
+# A missing comma: the line is named (and the binding it broke is skipped).
+printf 'keys = [\n  { mod="SUPER" key="x", func="zoom" },\n]\ntag_keys = [\n  { key="2", tag=1 },\n]\n' \
+	>"$user_hotkeys"
+start_dwm missing-comma
+press_until_desktop Super+2 1 'the good binding beside a missing comma was not loaded'
+wait_notification '2 problems, the rest loaded - line 2 could not be read' missing-comma
+kill -USR2 "$dwm_pid"
+wait_exit missing-comma
+
+# A file cut off inside its array, as a half-saved edit is: a live reload keeps
+# every key in use, not just the part before the cut, and says why.
+cp "$repo/config/hotkeys.toml" "$user_hotkeys"
+start_dwm reload-cut-off
+printf 'keys = [\n  { mod="SUPER", key="F12", func="zoom" },\n' >"$user_hotkeys"
+kill -USR1 "$dwm_pid"
+wait_notification 'invalid config (line 1: an array is never closed) - kept the previous config' reload-cut-off
+press_until_desktop Super+2 1 'a reload to a cut-off file lost the keys in use'
+kill -USR2 "$dwm_pid"
+wait_exit reload-cut-off
 
 # A device used to hang dwm in the parser (about 54% CPU, no new windows).
 rm -f "$user_hotkeys"
@@ -239,8 +273,16 @@ until grep -Fq 'dwm: loaded 1 window rules from config' "$work/dwm.log"; do
 	[ "$i" -lt 100 ] || fail "the empty rule was not skipped: $(grep 'window rule' "$work/dwm.log")"
 	sleep 0.05
 done
-grep -Fq 'window rule 1 has no class, instance or title; skipped' "$work/dwm.log" ||
+grep -Fq 'dwm: rules: rule 1 has no class, instance or title; skipped' "$work/dwm.log" ||
 	fail 'dwm did not say it skipped the empty rule'
+# And the user is told, not only stderr (#319).
+i=0
+until grep -Fxq -- '-u critical dwm: bad config window-rules.toml: 1 problem, the rest loaded - rule 1 has no class, instance or title' \
+	"$work/notifications.log"; do
+	i=$((i + 1))
+	[ "$i" -lt 100 ] || fail "the skipped rule was not notified: $(cat "$work/notifications.log")"
+	sleep 0.05
+done
 kill -USR2 "$dwm_pid"
 wait_exit empty-rule
 rm -f "$user_rules"
@@ -261,4 +303,4 @@ done
 wait_exit 'emergency Super+Shift+q'
 seed_defaults
 
-printf 'dwm config fallback (empty, comments, unusable, spawn-only, reload, /dev/zero, oversized, FIFO, empty rule, emergency keys): PASS\n'
+printf 'dwm config fallback (empty, comments, unusable, spawn-only, reload, typo, missing comma, cut off, /dev/zero, oversized, FIFO, empty rule, emergency keys): PASS\n'

@@ -98,6 +98,38 @@ interrupt() {
 	child_pid=
 	exit "$status"
 }
+# Every process a test starts carries DWM_TEST_WORKSPACE, even one that left the
+# test's process group (setsid, a double fork) and outlived it: seven Settings
+# watchers ran for a day after their test (#321). Stop them, name them, and fail
+# the run, so a teardown that leaks is fixed rather than left to pile up. Read
+# with builtins only: a process this loop started would carry the variable too.
+# shellcheck disable=SC2329
+stop_leftovers() {
+	local proc pid entry comm signal
+	local -a env found=()
+
+	for signal in TERM KILL; do
+		for proc in /proc/[0-9]*; do
+			pid=${proc#/proc/}
+			[[ $pid != "$$" ]] || continue
+			mapfile -d '' -t env 2>/dev/null <"$proc/environ" || continue
+			for entry in "${env[@]}"; do
+				[[ $entry == "DWM_TEST_WORKSPACE=$work" ]] || continue
+				if [[ $signal == TERM ]]; then
+					comm=unknown
+					read -r comm 2>/dev/null <"$proc/comm" || :
+					found+=("$pid ($comm)")
+				fi
+				kill -s "$signal" "$pid" 2>/dev/null || :
+				break
+			done
+		done
+		((${#found[@]})) || return 0
+		[[ $signal == KILL ]] || sleep 0.5
+	done
+	printf 'run-tests: still running after the test, now stopped: %s\n' "${found[*]}" >&2
+	return 1
+}
 trap 'interrupt HUP 129' HUP
 trap 'interrupt INT 130' INT
 trap 'interrupt TERM 143' TERM
@@ -128,4 +160,7 @@ if [[ $child_group == true ]] && child_alive; then
 	stop_child TERM
 fi
 child_pid=
+if ! stop_leftovers && ((status == 0)); then
+	status=1
+fi
 exit "$status"

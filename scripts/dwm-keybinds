@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-# The managed shell lives only here; install-user replaces it wholesale.
-# One variable, so inline; dwm-xdg.sh holds the shared rule (S12-14).
-config=${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml
-
-exec quickshell ipc --path "$config" call controlcenter openKeybinds
+# lyona-shell knows the managed shell's config path and IPC targets (#320).
+shell=lyona-shell
+[ ! -x "${0%/*}/lyona-shell" ] || shell=${0%/*}/lyona-shell
+exec "$shell" controlcenter openKeybinds

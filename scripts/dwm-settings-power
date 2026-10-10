@@ -945,6 +945,9 @@ power_watch_sources() {
 	# POSIX sh cannot wait for whichever of two children ends first, so this
 	# checks both each second, with builtins: one sleep a second, where this
 	# used to start about 12 processes a second (Sync Sprint 16 R16-37).
+	# Kept as it is (#321): the values themselves come from the two watchers'
+	# events, this only notices one of them ending, and only while Settings or
+	# the Control Center is open. Removing it would mean Bash's wait -n here.
 	while power_watch_child_alive "$power_dbus_watch_identity" &&
 		{ [ -z "$power_settings_watch_identity" ] ||
 			power_watch_child_alive "$power_settings_watch_identity"; }; do

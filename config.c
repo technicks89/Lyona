@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,7 +58,6 @@ static char   toml_arena_buf[TOML_ARENA_CAP];
 static size_t toml_arena_pos = 0;
 
 static char          dwm_config_home_dir[PATH_MAX];
-static char          dwm_data_home_dir[PATH_MAX];
 static char          toml_default_dir[PATH_MAX];
 static char          toml_hotkeys_default_path[PATH_MAX];
 static char          toml_themes_default_path[PATH_MAX];
@@ -174,6 +174,58 @@ notify_bad_config(const char *filename, const char *reason)
 		       "dwm: bad config", msg, (char *)NULL);
 		_exit(127);
 	}
+}
+
+/* The entries a loader refused in the file it is loading (#319): how many, and
+ * the first, for one notification instead of a word on stderr each. */
+static int  skip_count;
+static char skip_first[192];
+
+static void
+skip_reset(void)
+{
+	skip_count = 0;
+	skip_first[0] = '\0';
+}
+
+static void
+note_skip(const char *what, const char *fmt, ...)
+{
+	char reason[192];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(reason, sizeof(reason), fmt, ap);
+	va_end(ap);
+	fprintf(stderr, "dwm: %s: %s; skipped\n", what, reason);
+	if (!skip_count++)
+		copystr(skip_first, sizeof(skip_first), reason);
+}
+
+/* A user file that loaded, but not as written: one notification naming the
+ * first problem, where only stderr used to say so (#319). */
+static void
+report_problems(const char *path, const TomlDoc *doc)
+{
+	char where[192], reason[320];
+	int n = doc->bad_lines + doc->long_arrays + doc->long_lines + skip_count
+	        + (doc->truncated ? 1 : 0);
+
+	if (n == 0)
+		return;
+	if (doc->first_bad_line)
+		snprintf(where, sizeof(where), "line %d could not be read", doc->first_bad_line);
+	else if (skip_first[0])
+		copystr(where, sizeof(where), skip_first);
+	else if (doc->long_arrays)
+		snprintf(where, sizeof(where), "an array has more than %d items", TOML_MAX_ARR);
+	else if (doc->long_lines)
+		snprintf(where, sizeof(where), "a line is longer than %d bytes", TOML_MAX_LINE - 1);
+	else
+		snprintf(where, sizeof(where), "more than %d entries", TOML_MAX_ENTRIES);
+	snprintf(reason, sizeof(reason), "%d problem%s, the rest loaded - %s", n,
+	         n == 1 ? "" : "s", where);
+	notify_bad_config(path, reason);
 }
 
 static unsigned int
@@ -309,11 +361,30 @@ build_arg(const char *func_name, const TomlDoc *doc,
 /* Whether a parsed document holds anything worth loading. NULL: any entry. */
 typedef int (*TomlUsable)(const TomlDoc *doc);
 
+/* Why toml_doc_ok last refused a file, for the notification; empty when it
+ * could not be read at all. */
+static char invalid_reason[128];
+
 static int
 toml_doc_ok(const char *path, TomlDoc *doc, TomlUsable usable)
 {
+	invalid_reason[0] = '\0';
 	if (!path || !path[0] || !toml_parse(path, doc))
 		return 0;
+	/* Cut off, or a "]" missing: none of it is loaded, so a live session keeps
+	 * the keys it has rather than the part before the cut (#319). */
+	if (doc->unclosed_line) {
+		snprintf(invalid_reason, sizeof(invalid_reason),
+		         "line %d: an array is never closed", doc->unclosed_line);
+		fprintf(stderr, "dwm: %s: %s\n", path, invalid_reason);
+		return 0;
+	}
+	if (doc->bad_lines)
+		fprintf(stderr, "dwm: %s: %d line(s) could not be read, the first is line %d\n",
+		        path, doc->bad_lines, doc->first_bad_line);
+	if (doc->long_arrays)
+		fprintf(stderr, "dwm: %s: %d array(s) have more than %d items; the rest were ignored\n",
+		        path, doc->long_arrays, TOML_MAX_ARR);
 	/* The parser keeps the first TOML_MAX_ENTRIES and drops the rest; say so,
 	 * or themes at the end of a long file vanish without a word (S12-14). */
 	if (doc->truncated)
@@ -322,36 +393,62 @@ toml_doc_ok(const char *path, TomlDoc *doc, TomlUsable usable)
 	if (doc->long_lines)
 		fprintf(stderr, "dwm: %s has %d line(s) longer than %d bytes; they were ignored\n",
 		        path, doc->long_lines, TOML_MAX_LINE - 1);
-	return doc->n > 0 && (!usable || usable(doc));
+	if (doc->n > 0 && (!usable || usable(doc)))
+		return 1;
+	if (doc->first_bad_line)
+		snprintf(invalid_reason, sizeof(invalid_reason), "line %d could not be read",
+		         doc->first_bad_line);
+	else
+		copystr(invalid_reason, sizeof(invalid_reason), "nothing in it could be used");
+	return 0;
+}
+
+/* "invalid config (WHY) - OUTCOME", or without WHY when there is none. */
+static void
+notify_invalid(const char *path, const char *why, const char *outcome)
+{
+	char reason[256];
+
+	if (why && why[0])
+		snprintf(reason, sizeof(reason), "invalid config (%s) - %s", why, outcome);
+	else
+		snprintf(reason, sizeof(reason), "invalid config - %s", outcome);
+	notify_bad_config(path, reason);
 }
 
 /* Load the user's file, or else the shipped default (Sync Sprint 12 S12-04).
- * A user file that does not load is reported. On a live reload (have_previous)
- * the config already in use is kept, so a half-saved edit never takes the keys
- * away; at startup the shipped default is loaded instead of nothing. Returns 1
- * when doc holds a config to apply. */
+ * A user file that does not load is reported, with why (#319). On a live
+ * reload (have_previous) the config already in use is kept, so a half-saved
+ * edit never takes the keys away; at startup the shipped default is loaded
+ * instead of nothing. Returns 1 when doc holds a config to apply; *from_user
+ * says whether it is the user's file, whose problems the caller reports. */
 static int
 toml_load_with_fallback(TomlDoc *doc, const char *user_path,
                         const char *default_path, const char *what,
-                        TomlUsable usable, int have_previous)
+                        TomlUsable usable, int have_previous, int *from_user)
 {
 	int user_exists = user_path && user_path[0] && access(user_path, F_OK) == 0;
+	char why[sizeof(invalid_reason)] = "";
 
+	*from_user = 0;
 	if (user_exists) {
-		if (toml_doc_ok(user_path, doc, usable))
+		if (toml_doc_ok(user_path, doc, usable)) {
+			*from_user = 1;
 			return 1;
+		}
+		copystr(why, sizeof(why), invalid_reason);
 		if (have_previous) {
-			notify_bad_config(user_path, "invalid config - kept the previous config");
+			notify_invalid(user_path, why, "kept the previous config");
 			return 0;
 		}
 	}
 	if (toml_doc_ok(default_path, doc, usable)) {
 		if (user_exists)
-			notify_bad_config(user_path, "invalid config - loaded defaults");
+			notify_invalid(user_path, why, "loaded defaults");
 		return 1;
 	}
 	if (user_exists)
-		notify_bad_config(user_path, "invalid config - and the default did not load");
+		notify_invalid(user_path, why, "and the default did not load");
 	fprintf(stderr, "dwm: cannot load %s (no usable user or default config)\n", what);
 	return 0;
 }
@@ -403,9 +500,10 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 {
 	static TomlDoc doc;
 	static int from_config;
+	int from_user;
 
 	if (!toml_load_with_fallback(&doc, user_path, default_path, "hotkeys",
-	                             hotkeys_doc_usable, from_config)) {
+	                             hotkeys_doc_usable, from_config, &from_user)) {
 		if (!from_config)
 			use_emergency_keys(user_path);
 		return;
@@ -415,6 +513,7 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 	int total    = nregular + ntag * 4;
 	if (total <= 0) return;
 
+	skip_reset();
 	toml_arena_pos = 0;
 	Key *newkeys = toml_alloc((size_t)total * sizeof(Key));
 	if (!newkeys) {
@@ -427,22 +526,28 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 		const TomlValue *vkey  = toml_table_get(&doc, "keys", i, "key");
 		const TomlValue *vmod  = toml_table_get(&doc, "keys", i, "mod");
 		const TomlValue *vfunc = toml_table_get(&doc, "keys", i, "func");
-		if (!vkey || vkey->type != TOML_STRING) continue;
-		if (!vfunc || vfunc->type != TOML_STRING) continue;
+		if (!vkey || vkey->type != TOML_STRING || !vkey->s[0]) {
+			note_skip("hotkeys", "binding %d has no key", i + 1);
+			continue;
+		}
+		if (!vfunc || vfunc->type != TOML_STRING) {
+			note_skip("hotkeys", "the binding for '%s' has no func", vkey->s);
+			continue;
+		}
 		KeySym ks = XStringToKeysym(vkey->s);
 		if (ks == NoSymbol) {
-			fprintf(stderr, "dwm: unknown keysym '%s'\n", vkey->s);
+			note_skip("hotkeys", "unknown key '%s'", vkey->s);
 			continue;
 		}
 		void (*fn)(const Arg *) = lookup_func(vfunc->s);
 		if (!fn) {
-			fprintf(stderr, "dwm: unknown func '%s'\n", vfunc->s);
+			note_skip("hotkeys", "unknown func '%s' for '%s'", vfunc->s, vkey->s);
 			continue;
 		}
 		if (nk >= total) break;
 		Arg tmp_arg = build_arg(vfunc->s, &doc, "keys", i);
 		if (fn == spawnfunc && !tmp_arg.v) {
-			fprintf(stderr, "dwm: no spawn arguments for '%s'\n", vkey->s);
+			note_skip("hotkeys", "the binding for '%s' has nothing to run", vkey->s);
 			continue;
 		}
 		newkeys[nk].mod    = parse_mod_mask(vmod);
@@ -461,15 +566,20 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 	for (int i = 0; i < ntag; i++) {
 		const TomlValue *vkey = toml_table_get(&doc, "tag_keys", i, "key");
 		const TomlValue *vtag = toml_table_get(&doc, "tag_keys", i, "tag");
-		if (!vkey || vkey->type != TOML_STRING) continue;
-		if (!vtag || vtag->type != TOML_INT) continue;
+		if (!vkey || vkey->type != TOML_STRING || !vtag || vtag->type != TOML_INT) {
+			note_skip("hotkeys", "tag key %d needs a key and a tag number", i + 1);
+			continue;
+		}
 		if (vtag->i < 0 || vtag->i >= (long)env->ntags) {
-			fprintf(stderr, "dwm: tag_keys tag %ld is not a tag (0-%d)\n",
-			        vtag->i, (int)env->ntags - 1);
+			note_skip("hotkeys", "tag_keys tag %ld is not a tag (0-%d)",
+			          vtag->i, (int)env->ntags - 1);
 			continue;
 		}
 		KeySym ks = XStringToKeysym(vkey->s);
-		if (ks == NoSymbol) continue;
+		if (ks == NoSymbol) {
+			note_skip("hotkeys", "unknown key '%s' in tag_keys", vkey->s);
+			continue;
+		}
 		unsigned int tag_bit = 1u << vtag->i;
 		for (int j = 0; j < 4 && nk < total; j++) {
 			Arg tmp_arg;
@@ -495,30 +605,35 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 
 	{
 		int nbtn = toml_table_count(&doc, "buttons");
-		if (nbtn > TOML_BUTTONS_MAX) nbtn = TOML_BUTTONS_MAX;
+		if (nbtn > TOML_BUTTONS_MAX) {
+			note_skip("hotkeys", "more than %d buttons", TOML_BUTTONS_MAX);
+			nbtn = TOML_BUTTONS_MAX;
+		}
 		int nb = 0;
 		for (int i = 0; i < nbtn; i++) {
 			const TomlValue *vclick = toml_table_get(&doc, "buttons", i, "click");
 			const TomlValue *vmod   = toml_table_get(&doc, "buttons", i, "mod");
 			const TomlValue *vbtn   = toml_table_get(&doc, "buttons", i, "button");
 			const TomlValue *vfunc  = toml_table_get(&doc, "buttons", i, "func");
-			if (!vclick || vclick->type != TOML_STRING) continue;
-			if (!vfunc  || vfunc->type  != TOML_STRING) continue;
-			if (!vbtn   || vbtn->type   != TOML_INT)    continue;
+			if (!vclick || vclick->type != TOML_STRING || !vfunc || vfunc->type != TOML_STRING
+			    || !vbtn || vbtn->type != TOML_INT) {
+				note_skip("hotkeys", "button %d needs a click, a button and a func", i + 1);
+				continue;
+			}
 			unsigned int click = lookup_click(vclick->s);
 			if (click == ClkLast) {
-				fprintf(stderr, "dwm: unknown click '%s'\n", vclick->s);
+				note_skip("hotkeys", "unknown click '%s'", vclick->s);
 				continue;
 			}
 			void (*fn)(const Arg *) = lookup_func(vfunc->s);
 			if (!fn) {
-				fprintf(stderr, "dwm: unknown func '%s'\n", vfunc->s);
+				note_skip("hotkeys", "unknown func '%s' for a button", vfunc->s);
 				continue;
 			}
 			if (nb >= TOML_BUTTONS_MAX) break;
 			Arg tmp_arg = build_arg(vfunc->s, &doc, "buttons", i);
 			if (fn == spawnfunc && !tmp_arg.v) {
-				fprintf(stderr, "dwm: no spawn arguments for click '%s'\n", vclick->s);
+				note_skip("hotkeys", "the button on '%s' has nothing to run", vclick->s);
 				continue;
 			}
 			Button *b = &rt_buttons_buf[nb];
@@ -534,6 +649,8 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 		fprintf(stderr, "dwm: loaded %d button bindings from hotkeys config\n", nb);
 	}
 	fprintf(stderr, "dwm: loaded %d keybinds from hotkeys config\n", nk);
+	if (from_user)
+		report_problems(user_path, &doc);
 }
 
 /* Returns 1 and fills *theme when themes.toml (or its default) loaded. */
@@ -543,9 +660,15 @@ load_themes_toml(const char *user_path, const char *default_path, ConfigTheme *t
 	static TomlDoc doc;
 	static int from_config;
 
-	if (!toml_load_with_fallback(&doc, user_path, default_path, "themes", NULL, from_config))
+	int from_user;
+
+	if (!toml_load_with_fallback(&doc, user_path, default_path, "themes", NULL, from_config,
+	                             &from_user))
 		return 0;
 	from_config = 1;
+	skip_reset();
+	if (from_user)
+		report_problems(user_path, &doc);
 
 	char *c_normfg = theme->colors[0][0], *c_normbg = theme->colors[0][1];
 	char *c_normborder = theme->colors[0][2];
@@ -601,11 +724,18 @@ load_rules_toml(const char *user_path, const char *default_path)
 	static TomlDoc doc;
 	static int from_config;
 
-	if (!toml_load_with_fallback(&doc, user_path, default_path, "rules", NULL, from_config))
+	int from_user;
+
+	if (!toml_load_with_fallback(&doc, user_path, default_path, "rules", NULL, from_config,
+	                             &from_user))
 		return;
 	from_config = 1;
+	skip_reset();
 	int n = toml_table_count(&doc, "rules");
-	if (n > TOML_RULES_MAX) n = TOML_RULES_MAX;
+	if (n > TOML_RULES_MAX) {
+		note_skip("rules", "more than %d rules", TOML_RULES_MAX);
+		n = TOML_RULES_MAX;
+	}
 	int nk = 0;
 	for (int i = 0; i < n; i++) {
 		const TomlValue *vc    = toml_table_get(&doc, "rules", i, "class");
@@ -639,7 +769,7 @@ load_rules_toml(const char *user_path, const char *default_path)
 		/* A rule with nothing to match would apply to every window and reset
 		 * the flags every earlier rule set (Sync Sprint 12 S12-05). */
 		if (!r->class && !r->instance && !r->title) {
-			fprintf(stderr, "dwm: window rule %d has no class, instance or title; skipped\n", i + 1);
+			note_skip("rules", "rule %d has no class, instance or title", i + 1);
 			continue;
 		}
 		r->tags       = (vtag  && vtag->type  == TOML_INT && vtag->i >= 1 && vtag->i <= 9)
@@ -654,6 +784,8 @@ load_rules_toml(const char *user_path, const char *default_path)
 	rt_rules  = rt_rules_buf;
 	rt_nrules = nk;
 	fprintf(stderr, "dwm: loaded %d window rules from config\n", nk);
+	if (from_user)
+		report_problems(user_path, &doc);
 }
 
 int
@@ -764,41 +896,14 @@ runtime_config_setup(const ConfigEnv *e)
 static void
 setup_inotify(void)
 {
-	const char *home = getenv("HOME");
+	/* dwm made it absolute before calling this (normalizexdgenv() in
+	 * dwm.c): the session's environment is not config.c's to change (#319). */
 	const char *config_home = getenv("XDG_CONFIG_HOME");
-	const char *data_home = getenv("XDG_DATA_HOME");
-	char config_home_fallback[PATH_MAX];
-	char data_home_fallback[PATH_MAX];
-	if (((!config_home || config_home[0] != '/')
-	     || (!data_home || data_home[0] != '/'))
-	    && (!home || home[0] == '\0')) {
-		fprintf(stderr, "dwm: HOME is required for XDG fallback paths\n");
-		return;
-	}
-
 	if (!config_home || config_home[0] != '/') {
-		if (!pathjoin(config_home_fallback, sizeof(config_home_fallback),
-		              home, ".config")) {
-			fprintf(stderr, "dwm: config home path exceeds PATH_MAX\n");
-			return;
-		}
-		config_home = config_home_fallback;
-	}
-	if (!data_home || data_home[0] != '/') {
-		if (!pathjoin(data_home_fallback, sizeof(data_home_fallback),
-		              home, ".local/share")) {
-			fprintf(stderr, "dwm: data home path exceeds PATH_MAX\n");
-			return;
-		}
-		data_home = data_home_fallback;
+		fprintf(stderr, "dwm: XDG_CONFIG_HOME is not an absolute path; no user config\n");
+		return;
 	}
 	copystr(dwm_config_home_dir, sizeof(dwm_config_home_dir), config_home);
-	copystr(dwm_data_home_dir, sizeof(dwm_data_home_dir), data_home);
-	if (setenv("XDG_CONFIG_HOME", dwm_config_home_dir, 1) < 0 ||
-	    setenv("XDG_DATA_HOME", dwm_data_home_dir, 1) < 0) {
-		perror("dwm: cannot normalize XDG environment");
-		return;
-	}
 
 	if (!pathjoin(toml_config_dir, sizeof(toml_config_dir),
 	              config_home, "lyona")

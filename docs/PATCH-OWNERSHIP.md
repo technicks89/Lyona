@@ -33,9 +33,12 @@ Invariants:
   promotes the waiting dock, and scans only when none waits. Two docks taking
   the place in turn on each ConfigureNotify raised each other without end.
 - When an override-redirect window has the focus by its own request
-  (`overridefocus`), `focusin()` leaves it there.
-- Closing a client focuses the most recently focused visible client on its
-  monitor (`m->stack`, in `unmanage()`), floating or tiled, not the master. `_NET_CLIENT_LIST` lists each
+  (`overridefocus`), `focusin()` leaves it there, until `focus()` gives the
+  keyboard to a client, which clears it: there is one focus owner at a time.
+- Closing a client on the selected monitor focuses the most recently focused
+  visible client there (`m->stack`, in `unmanage()`), floating or tiled, not the
+  master, or none. Closing one on another monitor changes only that monitor's
+  selection (`detachstack()`), never the focus. `_NET_CLIENT_LIST` lists each
   monitor's bar and tray with the clients; the shell leaves docks out of its
   window list.
 - `_NET_ACTIVE_WINDOW` with source 2 (a pager, the overview, the panel's running

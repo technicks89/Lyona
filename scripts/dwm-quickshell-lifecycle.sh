@@ -102,3 +102,28 @@ stop_managed_quickshell() {
 	done
 	wait_for_quickshell_exit "$identities" >/dev/null 2>&1
 }
+
+# Whether the managed instance answers: its tray, which tray apps need first.
+quickshell_tray_ready() {
+	config=$1
+
+	command -v timeout >/dev/null 2>&1 || return 1
+	timeout 1 quickshell ipc --path "$config" call tray count >/dev/null 2>&1
+}
+
+# restart_managed_quickshell CONFIG LAUNCHER...: stop the managed instance, by
+# identity, and start it again with --path, the instance the keys address,
+# through the caller's LAUNCHER (which detaches it). The one start sequence of
+# autostart.sh and the Control Center (#320).
+restart_managed_quickshell() {
+	config=$1
+	shift
+	stop_managed_quickshell "$config" >/dev/null 2>&1 || true
+	"$@" quickshell --path "$config" --no-duplicate
+}
+
+# start_managed_quickshell CONFIG LAUNCHER...: the same, only when the managed
+# instance is not already answering, as at login.
+start_managed_quickshell() {
+	quickshell_tray_ready "$1" || restart_managed_quickshell "$@"
+}

@@ -17,6 +17,8 @@ usage: lyona-shell TARGET ACTION
   controlcenter openKeybinds   the keybinds cheatsheet
   power toggle                 the power menu
   power confirm logout|reboot  the power menu, at that action's confirmation
+  settings open|close|toggle|refresh|status
+                               the Settings window
 EOF
 	exit 2
 }
@@ -24,7 +26,8 @@ EOF
 [ "$#" -ge 2 ] || usage
 case "$1 $2 ${3:-}" in
 'launcher toggle ' | 'overview toggle ' | 'controlcenter open ' | 'controlcenter toggle ' | \
-	'controlcenter openKeybinds ' | 'power toggle ') [ "$#" -eq 2 ] || usage ;;
+	'controlcenter openKeybinds ' | 'power toggle ' | 'settings open ' | 'settings close ' | \
+	'settings toggle ' | 'settings refresh ' | 'settings status ') [ "$#" -eq 2 ] || usage ;;
 'power confirm logout' | 'power confirm reboot') [ "$#" -eq 3 ] || usage ;;
 *) usage ;;
 esac
@@ -39,5 +42,21 @@ lyona_lib=${0%/*}
 lyona_xdg_dirs
 # The managed shell lives only here; install-user replaces it wholesale.
 config=$config_home/quickshell/shell.qml
+if [ ! -f "$config" ]; then
+	printf 'lyona-shell: managed Quickshell configuration not found: %s\n' "$config" >&2
+	exit 1
+fi
 
-exec quickshell ipc --path "$config" call "$@"
+# Not exec: when no shell answers (it crashed, or was stopped), a key that
+# opens part of it did nothing at all. Say how to get it back, and for the
+# power keys how to leave without it (#320).
+status=0
+quickshell ipc --path "$config" call "$@" || status=$?
+if [ "$status" -ne 0 ] && command -v notify-send >/dev/null 2>&1; then
+	case $1 in
+	power) hint='Super+Shift+R restarts it; Super+Ctrl+Shift+Q quits the session now.' ;;
+	*) hint='Super+Shift+R restarts it.' ;;
+	esac
+	notify-send -u critical "The lyona shell is not running" "$hint" >/dev/null 2>&1 || :
+fi
+exit "$status"

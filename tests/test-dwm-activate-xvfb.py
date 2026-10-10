@@ -71,6 +71,21 @@ class XEvent(ctypes.Union):
 X.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.POINTER(XEvent)]
 
 
+class SetWindowAttributes(ctypes.Structure):
+    _fields_ = [('background_pixmap', ctypes.c_ulong), ('background_pixel', ctypes.c_ulong),
+                ('border_pixmap', ctypes.c_ulong), ('border_pixel', ctypes.c_ulong),
+                ('bit_gravity', ctypes.c_int), ('win_gravity', ctypes.c_int), ('backing_store', ctypes.c_int),
+                ('backing_planes', ctypes.c_ulong), ('backing_pixel', ctypes.c_ulong), ('save_under', ctypes.c_int),
+                ('event_mask', ctypes.c_long), ('do_not_propagate_mask', ctypes.c_long),
+                ('override_redirect', ctypes.c_int), ('colormap', ctypes.c_ulong), ('cursor', ctypes.c_ulong)]
+
+
+X.XChangeWindowAttributes.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong,
+                                      ctypes.POINTER(SetWindowAttributes)]
+X.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+CW_OVERRIDE_REDIRECT = 1 << 9
+
+
 def run(*args):
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
@@ -156,6 +171,28 @@ with tempfile.TemporaryDirectory(prefix='dwm-activate-', dir=os.environ.get('DWM
              'closing a window did not return the focus to the window focused before it '
              '(focus 0x%x, before 0x%x, master 0x%x)' % (focused(), second, first))
 
+        # A popup (an override-redirect window, as Quickshell maps one on X11)
+        # asks for the keyboard and gets it; once a client has the focus again,
+        # the popup taking it back by itself is corrected (#318: dwm used to
+        # keep treating the popup as the focus owner until it unmapped).
+        popup = X.XCreateSimpleWindow(display, root, 400, 300, 200, 100, 0, 0, 0x993366)
+        attributes = SetWindowAttributes(override_redirect=1)
+        X.XChangeWindowAttributes(display, popup, CW_OVERRIDE_REDIRECT, ctypes.byref(attributes))
+        X.XMapWindow(display, popup)
+        X.XSync(display, 0)
+        time.sleep(0.3)
+        request(popup, 1)
+        wait(lambda: focused() == popup, 'a popup asking for the keyboard did not get it')
+        request(second, 2)
+        wait(lambda: focused() == second, 'a pager request did not take the focus back from the popup')
+        X.XSetInputFocus(display, popup, 1, 0)  # RevertToPointerRoot, CurrentTime
+        X.XSync(display, 0)
+        wait(lambda: focused() == second,
+             'a popup took the focus back by itself after a client had it, and dwm left it there '
+             '(focus 0x%x, client 0x%x)' % (focused(), second))
+        X.XDestroyWindow(display, popup)
+        X.XSync(display, 0)
+
         # An application asking for itself: urgent, and the focus stays.
         request(first, 1)
         time.sleep(0.5)
@@ -198,10 +235,44 @@ with tempfile.TemporaryDirectory(prefix='dwm-activate-', dir=os.environ.get('DWM
             third = window()
             wait(lambda: monitor_windows() == [first, third],
                  'each monitor should name its own window: %r' % monitor_windows())
+
+            # A window closing on the monitor you are not on leaves your focus
+            # alone (#318): it used to go to the root (when that monitor had no
+            # window left) or to that monitor's next window.
+            def stays_on_first(message):
+                time.sleep(0.5)
+                if (focused() != first or root_prop('_DWM_SELECTED_MONITOR') != '0'
+                        or ids(root_prop('_NET_ACTIVE_WINDOW')) != [first]):
+                    fail('%s: focus 0x%x, selected monitor %s, _NET_ACTIVE_WINDOW %s (expected 0x%x on 0)'
+                         % (message, focused(), root_prop('_DWM_SELECTED_MONITOR'),
+                            root_prop('_NET_ACTIVE_WINDOW'), first))
+
+            run('xdotool', 'key', '--clearmodifiers', 'super+comma')
+            wait(lambda: root_prop('_DWM_SELECTED_MONITOR') == '0' and focused() == first,
+                 'Super+comma did not go back to monitor 1 and its window')
+            X.XDestroyWindow(display, third)
+            X.XSync(display, 0)
+            stays_on_first('closing the only window on the other monitor moved the focus')
+            wait(lambda: monitor_windows() == [first, 0],
+                 'the other monitor still names its closed window: %r' % monitor_windows())
+
+            run('xdotool', 'key', '--clearmodifiers', 'super+period')
+            wait(lambda: root_prop('_DWM_SELECTED_MONITOR') == '1', 'Super+period did not select monitor 2 again')
+            fourth = window()
+            fifth = window()
+            wait(lambda: monitor_windows() == [first, fifth], 'monitor 2 does not name its newest window')
+            run('xdotool', 'key', '--clearmodifiers', 'super+comma')
+            wait(lambda: root_prop('_DWM_SELECTED_MONITOR') == '0' and focused() == first,
+                 'Super+comma did not go back to monitor 1 and its window')
+            X.XDestroyWindow(display, fifth)
+            X.XSync(display, 0)
+            stays_on_first('closing one of two windows on the other monitor moved the focus')
+            wait(lambda: monitor_windows() == [first, fourth],
+                 'the other monitor does not name its remaining window: %r' % monitor_windows())
         if wm.poll() is not None:
             fail('dwm exited')
-        print('dwm activation (pager switches, application is urgent), focus after close and per-monitor windows, '
-              '%d monitor(s): PASS' % MONITORS)
+        print('dwm activation (pager switches, application is urgent), focus after close (on this and another '
+              'monitor), popup focus and per-monitor windows, %d monitor(s): PASS' % MONITORS)
     finally:
         if display:
             X.XCloseDisplay(display)
