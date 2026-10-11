@@ -127,7 +127,7 @@ not change ARM-5's release of the generic and Pi images.
 ## GitHub
 
 Each scheduled sprint (ARM-1, ARM-2, ARM-3, ARM-5) is a milestone and each of
-its items an issue, labelled `arm64`. The issues were created 2026-10-11;
+its items an issue, labelled `arm64`. The issues were created 2026-10-11 in technicks89/Lyona and moved here;
 [`arm-sprints-github.sh`](arm-sprints-github.sh) creates the milestones and
 the "Lyona on ARM" project board, and puts each issue in its milestone.
 ARM-4 and ARM5-05 are not on GitHub while they are deferred.

@@ -2,7 +2,7 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1.
 
-**Status:** planned 2026-10-11. Not started. GitHub: issues #350 to #354
+**Status:** planned 2026-10-11. Not started. GitHub: issues #7 to #11
 (label `arm64`); milestone "ARM Sprint 2 - Generic aarch64 image", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 

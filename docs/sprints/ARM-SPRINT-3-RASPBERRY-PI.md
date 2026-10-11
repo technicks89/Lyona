@@ -2,7 +2,7 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 
-**Status:** planned 2026-10-11. Not started. GitHub: issues #355 to #360
+**Status:** planned 2026-10-11. Not started. GitHub: issues #12 to #17
 (label `arm64`); milestone "ARM Sprint 3 - Raspberry Pi 4 and 5", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
