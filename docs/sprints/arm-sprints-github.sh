@@ -18,11 +18,12 @@
 #   --days      sprint length in days (default: 14)
 #
 # Safe to re-run: existing milestones, labels, issues (matched by exact title)
-# and project items are left alone, except that an existing issue with no
-# milestone is put in its sprint's milestone.
+# and project items are left alone, except that an existing issue is given the
+# arm64 label and its sprint's milestone when it lacks them (issues
+# transferred from technicks89/Lyona arrive without their milestone).
 set -euo pipefail
 
-repo=technicks89/Lyona
+repo=technicks89/Lyona-ARM
 dry_run=0
 with_project=0
 start=$(date +%F)
@@ -149,12 +150,13 @@ fi
 for item in "${items[@]}"; do
 	IFS='|' read -r n id anchor title <<<"$item"
 	full_title="[$id] $title"
-	existing=$(gh issue list --repo "$repo" --state all --label "$label" --limit 200 \
+	existing=$(gh issue list --repo "$repo" --state all --limit 200 \
 		--search "\"[$id]\" in:title" --json number,title,milestone \
 		--jq ".[] | select(.title == \"$full_title\") | \"\(.number) \(.milestone.title // \"\")\"")
 	if [[ -n $existing ]]; then
 		number=${existing%% *}
 		printf 'issue exists: #%s %s\n' "$number" "$full_title"
+		run gh issue edit "$number" --repo "$repo" --add-label "$label" >/dev/null
 		if [[ ${existing#* } != "${milestone_title[$n]}" ]]; then
 			run gh issue edit "$number" --repo "$repo" --milestone "${milestone_title[$n]}" >/dev/null
 			printf '  milestone set: %s\n' "${milestone_title[$n]}"
