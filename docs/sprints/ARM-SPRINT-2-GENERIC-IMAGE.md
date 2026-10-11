@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1.
 
-**Status:** planned 2026-10-11. Not started.
+**Status:** planned 2026-10-11. Not started. GitHub: issues #350 to #354
+(label `arm64`); milestone "ARM Sprint 2 - Generic aarch64 image", created by
+[`arm-sprints-github.sh`](arm-sprints-github.sh).
 
 **Goal:** an installer image for any aarch64 machine that boots UEFI, built
 the way the x86_64 image is built, which installs Lyona with the same wizard

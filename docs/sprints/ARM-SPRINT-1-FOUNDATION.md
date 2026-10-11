@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md).
 
-**Status:** planned 2026-10-11. Not started.
+**Status:** planned 2026-10-11. Not started. GitHub: issues #344 to #349
+(label `arm64`); milestone "ARM Sprint 1 - Foundation", created by
+[`arm-sprints-github.sh`](arm-sprints-github.sh).
 
 **Goal:** `install.sh` installs Lyona on an existing Arch Linux ARM (aarch64)
 system and reaches a working desktop, and CI builds and tests on aarch64. No

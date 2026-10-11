@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 
-**Status:** planned 2026-10-11. Not started.
+**Status:** planned 2026-10-11. Not started. GitHub: issues #355 to #360
+(label `arm64`); milestone "ARM Sprint 3 - Raspberry Pi 4 and 5", created by
+[`arm-sprints-github.sh`](arm-sprints-github.sh).
 
 **Goal:** one ready-to-boot image (A-5) that a user writes to an SD card or
 NVMe drive, which boots a Pi 4 or a Pi 5 into a first-boot wizard and then a

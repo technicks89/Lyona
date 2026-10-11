@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 and ARM-3.
 
-**Status:** planned 2026-10-11. Not started.
+**Status:** planned 2026-10-11. Not started. GitHub: issues #361 to #364
+(label `arm64`); milestone "ARM Sprint 5 - Release and support contract", created by
+[`arm-sprints-github.sh`](arm-sprints-github.sh).
 
 **Goal:** the generic and Pi images ship with a Lyona release, each target's
 status is written down honestly, and users can install and update on ARM from
