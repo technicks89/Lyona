@@ -1,0 +1,128 @@
+# Lyona on ARM (aarch64)
+
+Index for the project that brings Lyona to 64-bit ARM machines. It carries the
+targets, what each one needs, the rules that apply to every sprint, the open
+decisions (`A-n`), and the **sprint plan**. Each sprint has its own document.
+The upstream-sync project has its own index, [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md);
+the two are independent.
+
+**Status:** planned 2026-10-11 at the maintainer's request. No code has
+changed. Nothing here is a support claim: `SPEC.md` still makes Arch x86_64 the
+only release target, and an aarch64 target is supported only once its sprint
+has met the release validation contract (`SPEC.md` 9.4) on that target.
+
+---
+
+## Targets
+
+| Target | What it is | Image | Verdict |
+| --- | --- | --- | --- |
+| **Generic aarch64 UEFI** | Any aarch64 machine that boots UEFI with ACPI or a UEFI device tree: virtual machines on Apple Silicon (UTM, Parallels, VMware Fusion), QEMU/KVM on an ARM host, Ampere and other ARM servers and workstations | An installer image, like today's x86_64 one | **Doable. Large.** Closest to the current flow, but the image builder and the installer both need ARM ports |
+| **Raspberry Pi 5** | BCM2712, VideoCore VII, 4 to 16 GB | A ready-to-boot SD card (or NVMe) image with Lyona preinstalled and a first-boot wizard | **Doable. Medium.** The most predictable target: Arch Linux ARM supports it, and the GPU runs Mesa (`v3d`) |
+| **Raspberry Pi 4** | BCM2711, VideoCore VI, 2 to 8 GB | The same image as the Pi 5 (A-5) | **Doable. Medium.** Slower GPU: the overview's previews and Picom need checking against the lean-desktop goal |
+| **NVIDIA GB10** | Grace Blackwell desktop systems: NVIDIA DGX Spark and the OEM GB10 boxes | The generic image, which detects GB10 and installs its kernel and driver (A-7) | **Doable with risk. Large.** Mainline Linux does not yet carry GB10's hardware-enablement patches: without them USB, and so the keyboard and mouse, does not come up. It needs NVIDIA's patched kernel (or a community package of it) and NVIDIA's aarch64 driver, neither of which Arch Linux ARM packages |
+| **NVIDIA N1X** | The RTX Spark laptops (announced 2026-06-01): the same Grace Blackwell design in a laptop | The generic image, as GB10, if and when it works | **Not doable yet. Watch item.** NVIDIA lists Windows 11 only; the Linux driver's supported-device list has GB10 but no N1X device IDs (checked 2026-10-11). Planned work starts only when both a Linux driver that lists N1X and test hardware exist (A-8) |
+
+What already helps:
+
+- dwm and its helpers (`dwm-xwatch`, `dwm-window-thumb`, `lyona-toml`) are C99
+  with Xlib and build on aarch64 unchanged.
+- The Quickshell shell and most scripts do not depend on the CPU. Arch Linux
+  ARM packages Quickshell for aarch64 (`extra/quickshell`; 0.3.0 on
+  2026-10-11, one release behind Arch's 0.3.1).
+- `install.sh` already skips CachyOS off x86_64, the dependency map's gaming
+  profile is x86_64 only, `install-herdr` accepts aarch64, and `dwm-aur.sh`
+  reads per-architecture `source_*` lines.
+- `lyona-update` builds from signed source, so updates do not depend on the CPU.
+
+What every ARM target lacks today:
+
+- **Identity.** Arch Linux ARM reports `ID=archarm` (`ID_LIKE=arch`); the
+  existing-system installer accepts only `ID=arch` and rejects it.
+- **Image builder.** `scripts/build-lyona-arch-iso.sh` layers onto archiso's
+  `releng` profile, which is x86_64 only.
+- **Installer.** The image installer drives archinstall, which does not support
+  Arch Linux ARM; its mirror ranking uses reflector, which ranks Arch's mirrors,
+  not Arch Linux ARM's (one geo-balanced host, `mirror.archlinuxarm.org`); its
+  keyring is `archlinux-keyring`, not `archlinuxarm-keyring`; and it adds
+  CachyOS and detects NVIDIA PCI GPUs, neither of which applies.
+- **Packages.** Arch Linux ARM builds most of Arch's repositories, not all, a
+  little later, and has no `multilib`. Each name in the dependency map needs a
+  `pacman -Si` check on aarch64.
+
+---
+
+## Rules for every sprint
+
+These come from `AGENTS.md` and `SPEC.md` and hold here too.
+
+- **Arch only, exactly.** Arch Linux ARM is accepted as its own identity
+  (`ID=archarm`) on `aarch64` only (A-1). Nothing that merely says
+  `ID_LIKE=arch` is accepted, and 32-bit ARM (`armv7h`) is out of scope.
+- **One dependency map.** ARM package differences live in
+  `scripts/dwm-packages.sh`, gated by architecture, never in scattered lists.
+- **x86_64 does not regress.** Every sprint keeps the full x86_64 suite green
+  and the x86_64 image unchanged except where a change is shared on purpose.
+- **NVIDIA-only packages and kernel arguments** are installed only on a machine
+  that gets the driver, never shipped in an image, as on x86_64.
+- **No support claim without evidence.** A target is called supported only
+  after a real install on that hardware (or, for the generic image, on the
+  named virtual machines), recorded under `docs/evidence/`, with what was not
+  tested said plainly. Until then the images are "experimental".
+- **Lean.** Each target's idle CPU and memory with the launcher closed is
+  measured and recorded, as `AGENTS.md` asks of the shell; the Pi 4 is the bar.
+- **Optional stays optional.** A missing Picom, GPU acceleration or Wi-Fi
+  driver must not crash dwm or the shell; the overview falls back to icon
+  cards (#244) as it does on x86_64.
+
+---
+
+## Decisions
+
+| ID | Question | Blocks | Recommendation | Status |
+| --- | --- | --- | --- | --- |
+| **A-1** | Which identity does Lyona accept on ARM? | ARM-1 | `ID=archarm` on `aarch64` only, named in `SPEC.md` section 4 and `AGENTS.md` as a second supported identity, marked experimental until a target qualifies | Open |
+| **A-2** | What builds the generic image? (a) archiso with an aarch64 profile of Lyona's own, (b) archboot, (c) mkosi | ARM-2 | Decide from ARM-2's spike (S2-01). Prefer (a) if archiso's aarch64 UEFI boot modes build a working image, so the profile, the builder and its tests stay one design; else (c), which builds any architecture's disk images from a pacman bootstrap | Open |
+| **A-3** | Where are ARM images built? (a) A native aarch64 host (an Arch Linux ARM VM on Apple Silicon, or a GitHub arm64 runner), (b) x86_64 with `qemu-user-static` | ARM-2, ARM-3 | **(a).** Emulated chroots are slow and hide faults that only show natively. The maintainer's Apple Silicon VM for local builds; a GitHub arm64 runner for CI | Open |
+| **A-4** | What installs the system from the generic image? (a) archinstall, patched for Arch Linux ARM, (b) Lyona's own `pacstrap` path for ARM | ARM-2 | **(b)** unless S2-01 finds archinstall works unpatched. It is a smaller surface than a patched archinstall: partition, format, `pacstrap`, `genfstab`, bootloader, then the existing postinstall. The wizard's questions stay the same | Open |
+| **A-5** | One Raspberry Pi image or two? | ARM-3 | **One** for the Pi 4 and Pi 5, with Arch Linux ARM's `linux-rpi` kernel (4K pages) and the firmware's per-board device trees, as the x86_64 image is one image for every GPU | Open |
+| **A-6** | Where do the GB10 kernel and NVIDIA's aarch64 driver come from? (a) Pinned PKGBUILDs built on the machine at install time, (b) a signed Lyona aarch64 package repository, (c) wait for mainline Linux and Arch Linux ARM | ARM-4 | **(a) first**, as Sprint 14 did for the legacy NVIDIA drivers: reviewed, pinned commits, built as the new user, never as root. Measure the build time on GB10 (20 cores); if it is too long, (b), which overlaps the signed package repository already proposed in `ROADMAP.md` "Future Evaluation". Revisit (c) every release | Open |
+| **A-7** | Does GB10 (and later N1X) get its own image? | ARM-4 | **No.** The generic image detects GB10 (by its SMBIOS or PCI IDs) and offers its kernel and driver, recommended, as the x86_64 image offers `nvidia-open` | Open |
+| **A-8** | When does N1X work start? | ARM-5 | Only when NVIDIA's Linux driver lists N1X device IDs **and** test hardware is available. Until then it is a watch item, checked at each release | Open |
+| **A-9** | How does CI cover ARM? | ARM-1 | A GitHub `ubuntu-24.04-arm` runner running the suite inside an Arch Linux ARM container, on the manual Full suite workflow first, then on pull requests once it is reliable | Open |
+
+---
+
+## Sprint plan
+
+Five sprints of about two weeks, each one reviewable branch per item. ARM-1
+comes first; ARM-2 and ARM-3 depend on it and not on each other; ARM-4
+depends on ARM-2; ARM-5 closes the project.
+
+| Sprint | Document | Scope | Exit | Depends on |
+| --- | --- | --- | --- | --- |
+| **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM VM, with no x86_64 regression | A-1, A-9 |
+| **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on UTM, Parallels and QEMU/KVM | ARM-1, A-2, A-3, A-4 |
+| **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 and a Pi 5 | One image boots to a working desktop on a real Pi 4 and Pi 5, within the lean budget | ARM-1, A-3, A-5 |
+| **ARM-4** | [`ARM-SPRINT-4-NVIDIA-GB10.md`](ARM-SPRINT-4-NVIDIA-GB10.md) | GB10 detection, its kernel and boot arguments, NVIDIA's aarch64 driver, Picom on NVIDIA aarch64, validation on GB10 hardware | The generic image installs a working desktop with the NVIDIA driver on a real GB10 system | ARM-2, A-6, A-7, hardware |
+| **ARM-5** | [`ARM-SPRINT-5-RELEASE-AND-N1X.md`](ARM-SPRINT-5-RELEASE-AND-N1X.md) | Release workflow for the ARM images, the update path on aarch64, the support contract per target, user docs, the N1X watch item | ARM images published with a release, each target's status recorded, N1X's gate written down | ARM-2, ARM-3 (ARM-4 for its row) |
+
+Ordering in practice: ARM-3 is the most predictable target and can run beside
+ARM-2 once ARM-1 is merged. ARM-4 is the riskiest and needs GB10 hardware; it
+can slip to after ARM-5's first release of the generic and Pi images without
+blocking them.
+
+## Hardware and test machines
+
+| Target | What validates it | Needed by |
+| --- | --- | --- |
+| Generic | UTM and Parallels on an Apple Silicon Mac; QEMU/KVM on an aarch64 Linux host (the GitHub runner, for boot only) | ARM-1, ARM-2 |
+| Raspberry Pi | A Pi 4 (4 GB is the floor to test) and a Pi 5, each with an HDMI display, keyboard and mouse; one SD card and one NVMe (Pi 5) boot | ARM-3 |
+| GB10 | A DGX Spark or an OEM GB10 system, with a display on its HDMI port | ARM-4 |
+| N1X | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
+
+## GitHub
+
+Not yet created. When the plan is agreed, each sprint can become a milestone
+and each item an issue, in the way `sync-sprints-github.sh` does for the
+upstream-sync sprints, under its own label (`arm64`).
