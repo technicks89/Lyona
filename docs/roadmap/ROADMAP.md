@@ -541,9 +541,10 @@ outside this roadmap.
 Lyona on ARM (requested 2026-10-11): a generic aarch64 UEFI image, one
 Raspberry Pi 4 and 5 image, NVIDIA GB10 systems, and NVIDIA N1X laptops once a
 Linux driver lists them, all on Arch Linux ARM. Planned as its own project in
-`docs/sprints/ARM64.md` (five sprints, decisions A-1 to A-9); not scheduled
-against these phases, and no ARM target is supported until its sprint
-qualifies it.
+`docs/sprints/ARM64.md` (five sprints, decisions A-1 to A-9). The scope for
+now is the generic image and the Raspberry Pi; GB10 and N1X are deferred. Not
+scheduled against these phases, and no ARM target is supported until its
+sprint qualifies it.
 
 Searchable keybinds (#232, requested 2026-10-04): typing in the keybind viewer
 (Super + /) narrows the bindings by key or by action, as the launcher and the

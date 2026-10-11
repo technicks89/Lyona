@@ -15,16 +15,16 @@ with the wizard's questions asked at first boot.
 
 | Item | Kind | Gate |
 | --- | --- | --- |
-| [S3-01](#s3-01-the-pi-image-builder) | Feature | A-3, A-5 |
-| [S3-02](#s3-02-the-first-boot-wizard) | Feature | S3-01 |
-| [S3-03](#s3-03-pi-boot-configuration-and-kernel) | Feature | S3-01 |
-| [S3-04](#s3-04-the-desktop-on-v3d) | Measurement, fix | S3-01, a Pi 4 |
-| [S3-05](#s3-05-settings-on-a-pi) | Fix | ARM-1 S1-04 |
-| [S3-06](#s3-06-validate-on-a-real-pi-4-and-pi-5) | Validation | S3-01 to S3-05, hardware |
+| [ARM3-01](#arm3-01-the-pi-image-builder) | Feature | A-3, A-5 |
+| [ARM3-02](#arm3-02-the-first-boot-wizard) | Feature | ARM3-01 |
+| [ARM3-03](#arm3-03-pi-boot-configuration-and-kernel) | Feature | ARM3-01 |
+| [ARM3-04](#arm3-04-the-desktop-on-v3d) | Measurement, fix | ARM3-01, a Pi 4 |
+| [ARM3-05](#arm3-05-settings-on-a-pi) | Fix | ARM1-04 |
+| [ARM3-06](#arm3-06-validate-on-a-real-pi-4-and-pi-5) | Validation | ARM3-01 to ARM3-05, hardware |
 
 ---
 
-## S3-01: The Pi image builder
+## ARM3-01: The Pi image builder
 
 1. **Script.** A new builder (for example `scripts/build-lyona-rpi-image.sh`),
    run on the aarch64 build host (A-3). It makes a disk image file with a FAT
@@ -45,7 +45,7 @@ with the wizard's questions asked at first boot.
 **Acceptance:** the builder produces an image whose root filesystem passes
 the static checks.
 
-## S3-02: The first-boot wizard
+## ARM3-02: The first-boot wizard
 
 1. **Reuse** the image wizard's questions and UI (`lyona-ui.sh`): keymap,
    user and password, hostname, timezone (opt-in lookup), locale, and Wi-Fi
@@ -61,7 +61,7 @@ the static checks.
 **Acceptance:** a stubbed first boot creates the user, sets each answer and
 disables itself.
 
-## S3-03: Pi boot configuration and kernel
+## ARM3-03: Pi boot configuration and kernel
 
 1. **Kernel** under A-5: Arch Linux ARM's `linux-rpi`, which boots both
    boards with the firmware's device trees. Measure the Pi 5 with the 16K-page
@@ -77,7 +77,7 @@ disables itself.
 **Acceptance:** both boards boot the same image to the wizard, from SD, and
 the Pi 5 from NVMe.
 
-## S3-04: The desktop on `v3d`
+## ARM3-04: The desktop on `v3d`
 
 The Pi 4's VideoCore VI is the slowest GPU Lyona will support. The lean goal
 (`AGENTS.md`, and the CPU and GPU check of #244) is measured there first.
@@ -96,9 +96,9 @@ The Pi 4's VideoCore VI is the slowest GPU Lyona will support. The lean goal
 **Acceptance:** the desktop is usable on a 4 GB Pi 4 by the numbers recorded,
 and its idle cost is within the budget the sprint sets from them.
 
-## S3-05: Settings on a Pi
+## ARM3-05: Settings on a Pi
 
-1. **System Information** names the board (from the device tree, ARM-1 S1-04)
+1. **System Information** names the board (from the device tree, ARM1-04)
    and shows the SoC temperature.
 2. **Not on a Pi:** suspend and hibernate, firmware and boot entries,
    backlight on an HDMI display. Each is hidden or explained, never an error.
@@ -108,13 +108,13 @@ and its idle cost is within the budget the sprint sets from them.
 **Acceptance:** every Settings pane opens on a Pi without an error, and what a
 Pi cannot do is hidden or explained.
 
-## S3-06: Validate on a real Pi 4 and Pi 5
+## ARM3-06: Validate on a real Pi 4 and Pi 5
 
 1. **Hardware:** a Pi 4 (4 GB) and a Pi 5, each with an HDMI display,
    keyboard and mouse; Ethernet and Wi-Fi.
-2. **Run:** write the image, first boot, wizard, log in, the checks of ARM-1's
-   S1-06, the S3-04 measurements, a reboot, an update and a rollback.
-3. **Record** in `docs/evidence/arm-s3-06-raspberry-pi.md`: board and memory,
+2. **Run:** write the image, first boot, wizard, log in, the checks of
+   ARM1-06, the ARM3-04 measurements, a reboot, an update and a rollback.
+3. **Record** in `docs/evidence/arm3-06-raspberry-pi.md`: board and memory,
    boot medium, image checksum, kernel, display, and what was not tested (for
    example two displays on a Pi 4, or other boards).
 

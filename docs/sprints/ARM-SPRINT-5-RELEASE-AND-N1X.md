@@ -1,24 +1,24 @@
 # ARM Sprint 5 -- Release, support contract and the N1X watch item
 
-Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 and ARM-3; ARM-4 for its row.
+Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 and ARM-3.
 
 **Status:** planned 2026-10-11. Not started.
 
-**Goal:** the ARM images ship with a Lyona release, each target's status is
-written down honestly, users can install and update on ARM from the docs, and
-N1X has a written gate instead of an open question.
+**Goal:** the generic and Pi images ship with a Lyona release, each target's
+status is written down honestly, and users can install and update on ARM from
+the docs. ARM5-05, the N1X watch item, is deferred with GB10 (2026-10-11).
 
 | Item | Kind | Gate |
 | --- | --- | --- |
-| [S5-01](#s5-01-the-release-workflow-for-arm-images) | Release | ARM-2, ARM-3 |
-| [S5-02](#s5-02-updates-on-aarch64) | Validation | ARM-2, ARM-3 |
-| [S5-03](#s5-03-the-support-contract-per-target) | Policy, docs | S5-01, S5-02 |
-| [S5-04](#s5-04-user-documentation) | Docs | S5-03 |
-| [S5-05](#s5-05-the-n1x-watch-item) | Research | A-8 |
+| [ARM5-01](#arm5-01-the-release-workflow-for-arm-images) | Release | ARM-2, ARM-3 |
+| [ARM5-02](#arm5-02-updates-on-aarch64) | Validation | ARM-2, ARM-3 |
+| [ARM5-03](#arm5-03-the-support-contract-per-target) | Policy, docs | ARM5-01, ARM5-02 |
+| [ARM5-04](#arm5-04-user-documentation) | Docs | ARM5-03 |
+| [ARM5-05](#arm5-05-the-n1x-watch-item) (deferred) | Research | A-8 |
 
 ---
 
-## S5-01: The release workflow for ARM images
+## ARM5-01: The release workflow for ARM images
 
 1. **Build:** the generic aarch64 image and the Pi image, built on the
    aarch64 host (A-3), from the same tagged commit as the x86_64 image.
@@ -31,20 +31,20 @@ N1X has a written gate instead of an open question.
 4. **`scripts/lyona-release`** and the release workflows learn the new
    assets; `tests/test-release-workflows.sh` checks them.
 
-**Acceptance:** a pre-release with all three images, each checksummed and
-signed.
+**Acceptance:** a pre-release with the x86_64, generic aarch64 and Pi images,
+each checksummed and signed.
 
-## S5-02: Updates on aarch64
+## ARM5-02: Updates on aarch64
 
 1. `lyona-update` check, apply and rollback on the generic image's VM and on a
    Pi, from one release to the next.
 2. Package updates (`pacman -Syu`, the Settings pane) against Arch Linux
-   ARM's repositories; Topgrade where S1-03 kept it.
+   ARM's repositories; Topgrade where ARM1-03 kept it.
 3. **Record** in the release evidence.
 
 **Acceptance:** an update and a rollback pass on both targets.
 
-## S5-03: The support contract per target
+## ARM5-03: The support contract per target
 
 1. `SPEC.md` section 4's target table gets a row per ARM target with its
    status: supported (validated on the hardware named), experimental (built,
@@ -56,7 +56,7 @@ signed.
 **Acceptance:** every claim in `SPEC.md`, `AGENTS.md` and the README matches
 the evidence on file.
 
-## S5-04: User documentation
+## ARM5-04: User documentation
 
 1. `docs/src/install.md`: a section per target (which image, how to write it,
    first boot), what is different on ARM (no CachyOS, no Steam, Arch Linux ARM
@@ -68,7 +68,9 @@ the evidence on file.
 
 **Acceptance:** a user can install each target from the docs alone.
 
-## S5-05: The N1X watch item
+## ARM5-05: The N1X watch item
+
+Deferred (2026-10-11) with GB10; not tracked on GitHub until it is picked up.
 
 1. **Write down the gate (A-8)** in `ARM64.md`: work starts when NVIDIA's
    Linux driver lists N1X device IDs and a laptop is available to test.
@@ -86,7 +88,6 @@ the evidence on file.
 
 ## Project close
 
-The project is done when the generic and Pi images are released with their
-evidence, GB10's status is recorded (supported, experimental, or deferred
-with the reason), and N1X's gate is written down. Then this project's
+The current scope is done when the generic and Pi images are released with
+their evidence, and GB10 and N1X are recorded as deferred with the reason. Then this project's
 documents move to `docs/sprints/completed/`, as the upstream-sync sprints do.

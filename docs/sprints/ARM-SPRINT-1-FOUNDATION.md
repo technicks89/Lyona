@@ -10,16 +10,16 @@ image yet: that is ARM-2 and ARM-3, which both build on this sprint.
 
 | Item | Kind | Gate |
 | --- | --- | --- |
-| [S1-01](#s1-01-the-support-contract-and-the-identity) | Policy, installer | A-1 |
-| [S1-02](#s1-02-the-dependency-map-on-aarch64) | Packaging | S1-01 |
-| [S1-03](#s1-03-aur-pins-and-downloaded-binaries-on-aarch64) | Packaging | S1-02 |
-| [S1-04](#s1-04-code-that-assumes-x86_64) | Fix | none |
-| [S1-05](#s1-05-aarch64-ci) | CI | A-9 |
-| [S1-06](#s1-06-validate-installsh-on-arch-linux-arm) | Validation | S1-01 to S1-04, an aarch64 VM |
+| [ARM1-01](#arm1-01-the-support-contract-and-the-identity) | Policy, installer | A-1 |
+| [ARM1-02](#arm1-02-the-dependency-map-on-aarch64) | Packaging | ARM1-01 |
+| [ARM1-03](#arm1-03-aur-pins-and-downloaded-binaries-on-aarch64) | Packaging | ARM1-02 |
+| [ARM1-04](#arm1-04-code-that-assumes-x86_64) | Fix | none |
+| [ARM1-05](#arm1-05-aarch64-ci) | CI | A-9 |
+| [ARM1-06](#arm1-06-validate-installsh-on-arch-linux-arm) | Validation | ARM1-01 to ARM1-04, an aarch64 VM |
 
 ---
 
-## S1-01: The support contract and the identity
+## ARM1-01: The support contract and the identity
 
 1. **Contract.** Under A-1, `SPEC.md` section 4 gains Arch Linux ARM
    (`ID=archarm`, `aarch64` only) as a second accepted identity, with the
@@ -46,7 +46,7 @@ image yet: that is ARM-2 and ARM-3, which both build on this sprint.
 `archarm`/`aarch64` gets past the identity check and skips CachyOS with its
 existing message.
 
-## S1-02: The dependency map on aarch64
+## ARM1-02: The dependency map on aarch64
 
 1. **Survey.** On an Arch Linux ARM system, run `pacman -Si` for every
    package every profile in `scripts/dwm-packages.sh` resolves to, and record
@@ -67,7 +67,7 @@ existing message.
 **Acceptance:** every profile resolves on aarch64 to packages that exist in
 Arch Linux ARM on the survey date; the x86_64 resolution is unchanged.
 
-## S1-03: AUR pins and downloaded binaries on aarch64
+## ARM1-03: AUR pins and downloaded binaries on aarch64
 
 1. **AUR pins** (`scripts/dwm-aur.sh`): `yay-bin` and `topgrade-bin` were
    reviewed for x86_64. For each, check that the pinned PKGBUILD lists
@@ -87,7 +87,7 @@ Arch Linux ARM on the survey date; the x86_64 resolution is unchanged.
 **Acceptance:** `install.sh --print-plan`-style summaries name the right
 artifact for aarch64, and nothing x86_64-only is downloaded on aarch64.
 
-## S1-04: Code that assumes x86_64
+## ARM1-04: Code that assumes x86_64
 
 Known places (from a 2026-10-11 search for `x86_64` and `uname -m`); the
 sprint starts by repeating the search.
@@ -114,7 +114,7 @@ sprint starts by repeating the search.
 **Acceptance:** each place has a test that runs the aarch64 case, and the
 x86_64 cases still pass.
 
-## S1-05: aarch64 CI
+## ARM1-05: aarch64 CI
 
 1. Under A-9, add an aarch64 job to the manual **Full suite** workflow
    (`.github/workflows/full-suite.yml`): a GitHub `ubuntu-24.04-arm` runner,
@@ -129,7 +129,7 @@ x86_64 cases still pass.
 
 **Acceptance:** a green aarch64 Full suite run on the sprint branch.
 
-## S1-06: Validate `install.sh` on Arch Linux ARM
+## ARM1-06: Validate `install.sh` on Arch Linux ARM
 
 1. **Machine:** an Arch Linux ARM virtual machine on Apple Silicon (UTM or
    Parallels), UEFI, `linux-aarch64` kernel, installed from Arch Linux ARM's
@@ -140,7 +140,7 @@ x86_64 cases still pass.
    Settings (every pane opens; System Information names the CPU), audio,
    network, a reboot, `lyona-update check`, idle CPU and memory with the
    launcher closed.
-4. **Record** in `docs/evidence/arm-s1-06-install-sh.md`, including what was
+4. **Record** in `docs/evidence/arm1-06-install-sh.md`, including what was
    not tested.
 
 **Acceptance:** a working desktop on the VM with no manual step, and the
@@ -151,5 +151,5 @@ x86_64 Full suite still green.
 ## Not in this sprint
 
 Any image, the Raspberry Pi, GB10 and N1X. `SPEC.md`'s contract changes only
-as far as S1-01 says: the identity is accepted and marked experimental; no
+as far as ARM1-01 says: the identity is accepted and marked experimental; no
 target is claimed supported.

@@ -7,7 +7,8 @@ sprints here:
 - **Upstream sync** (`SYNC-SPRINT-*`), indexed by
   [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).
 - **Lyona on ARM** (`ARM-SPRINT-*`), indexed by [`ARM64.md`](ARM64.md), with
-  its own decisions (`A-n`).
+  its own decisions (`A-n`) and its own GitHub script,
+  [`arm-sprints-github.sh`](arm-sprints-github.sh) (label `arm64`).
 
 For the upstream-sync project:
 

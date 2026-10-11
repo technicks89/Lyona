@@ -11,18 +11,18 @@ and reaches a working desktop on three virtual machines. GB10 detection
 
 | Item | Kind | Gate |
 | --- | --- | --- |
-| [S2-01](#s2-01-builder-and-installer-spike) | Spike | A-2, A-3, A-4 open until it reports |
-| [S2-02](#s2-02-the-aarch64-live-medium) | Feature | S2-01 |
-| [S2-03](#s2-03-the-arm-installer-path) | Feature | S2-01, S2-02 |
-| [S2-04](#s2-04-mirrors-keyring-and-what-the-installer-skips-on-arm) | Fix | S2-03 |
-| [S2-05](#s2-05-validate-on-three-virtual-machines) | Validation | S2-02 to S2-04 |
+| [ARM2-01](#arm2-01-builder-and-installer-spike) | Spike | A-2, A-3, A-4 open until it reports |
+| [ARM2-02](#arm2-02-the-aarch64-live-medium) | Feature | ARM2-01 |
+| [ARM2-03](#arm2-03-the-arm-installer-path) | Feature | ARM2-01, ARM2-02 |
+| [ARM2-04](#arm2-04-mirrors-keyring-and-what-the-installer-skips-on-arm) | Fix | ARM2-03 |
+| [ARM2-05](#arm2-05-validate-on-three-virtual-machines) | Validation | ARM2-02 to ARM2-04 |
 
 ---
 
-## S2-01: Builder and installer spike
+## ARM2-01: Builder and installer spike
 
 Time-boxed to the sprint's first week. It answers A-2, A-3 and A-4 with
-evidence, in `docs/evidence/arm-s2-01-spike.md`.
+evidence, in `docs/evidence/arm2-01-spike.md`.
 
 1. **archiso on aarch64.** On an Arch Linux ARM build host (A-3), build a
    minimal archiso profile with an aarch64 UEFI boot mode, `linux-aarch64` and
@@ -38,7 +38,7 @@ evidence, in `docs/evidence/arm-s2-01-spike.md`.
 
 **Acceptance:** A-2, A-3 and A-4 decided and recorded in `ARM64.md`.
 
-## S2-02: The aarch64 live medium
+## ARM2-02: The aarch64 live medium
 
 1. **Profile.** An aarch64 profile beside `archiso/` (for example
    `archiso-aarch64/`), sharing `airootfs/root/` with the x86_64 one where the
@@ -47,17 +47,17 @@ evidence, in `docs/evidence/arm-s2-01-spike.md`.
    kept in sync as `archiso/packages.x86_64` is with `arch:iso` (the test in
    `tests/test-arch-iso-builder.sh` is extended, not copied).
 2. **Builder.** `scripts/build-lyona-arch-iso.sh` gains `--arch aarch64` (or
-   an aarch64 sibling script if S2-01 chose a different tool), with the same
+   an aarch64 sibling script if ARM2-01 chose a different tool), with the same
    rebranding, quiet boot, Plymouth and checks. It refuses to run on the wrong
    host architecture unless the spike proved emulation reliable (A-3).
-3. **Boot.** GRUB or systemd-boot for `aa64`, whichever S2-01 found boots on
+3. **Boot.** GRUB or systemd-boot for `aa64`, whichever ARM2-01 found boots on
    all three machines. Secure Boot is out of scope, as on x86_64.
 4. **Tests.** `make check-archiso` covers the aarch64 profile statically.
 
 **Acceptance:** the image builds on the build host and boots to the wizard on
 all three machines.
 
-## S2-03: The ARM installer path
+## ARM2-03: The ARM installer path
 
 1. **The wizard is shared.** `lyona-install.sh`'s questions (keymap, disk,
    filesystem, user, hostname, timezone with the opt-in lookup, mirrors) stay
@@ -78,7 +78,7 @@ all three machines.
 **Acceptance:** the stubbed install runs end to end on both paths; the
 x86_64 path's tests are unchanged.
 
-## S2-04: Mirrors, keyring and what the installer skips on ARM
+## ARM2-04: Mirrors, keyring and what the installer skips on ARM
 
 1. **Mirrors.** reflector ranks Arch's mirrors only. On aarch64 the mirror
    step uses Arch Linux ARM's mirrorlist (the geo-balanced
@@ -94,14 +94,14 @@ x86_64 path's tests are unchanged.
 **Acceptance:** an install on a VM uses Arch Linux ARM's mirrors and keyring
 with no warning from reflector or CachyOS in the log.
 
-## S2-05: Validate on three virtual machines
+## ARM2-05: Validate on three virtual machines
 
 1. **Machines:** UTM (QEMU backend) and Parallels on Apple Silicon; QEMU/KVM
    on an aarch64 Linux host. UEFI on all three.
 2. **Run:** a fresh install with ext4 and with btrfs on each; log in; the
-   checks of ARM-1's S1-06; an update from the image's release to the next
+   checks of ARM1-06; an update from the image's release to the next
    build and a rollback (`lyona-update`).
-3. **Record** in `docs/evidence/arm-s2-05-generic-image.md`, as
+3. **Record** in `docs/evidence/arm2-05-generic-image.md`, as
    `docs/RELEASING.md` asks of the x86_64 image: build host, image checksum,
    firmware mode, GPU and driver path (virtio-gpu, Apple's paravirtual GPU),
    and what was not tested (real ARM hardware other than the VMs' hosts).
