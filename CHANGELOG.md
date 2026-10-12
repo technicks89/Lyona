@@ -31,6 +31,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   A nearly full USB or other hotplug drive, such as an install stick's EFI
   partition, is shown as information rather than a warning. The uptime card
   names the host without `hostname(1)`, which Arch does not install.
+- Clicking a running app's icon in the panel switches to its workspace and
+  focuses it without moving the mouse pointer to the middle of the window; the
+  pointer stays on the panel. This holds for a window on another workspace,
+  which the panel reaches through a workspace switch first, and for the
+  panel's workspace buttons. Tag and monitor keys and the window overview
+  still move the pointer to the window, as before.
+- Steam's menu bar menus (Steam, View, Friends, Games, Help) stay open. Steam
+  focuses a window inside each menu and also asks for the focus with
+  `_NET_ACTIVE_WINDOW`; dwm answered by focusing the menu itself, which took
+  the keyboard off Steam's inner window, and Steam closed the menu at once.
+  dwm now leaves the focus where it is when it is already inside the popup
+  (#318).
+- Right-clicking a tray icon, such as Steam's, opens its menu again, drawn in
+  the panel's own popup style; a submenu opens in place with Back to return,
+  and Escape closes it. The menu used to need Quickshell's QApplication mode,
+  which the shell does not run in, so the click opened nothing.
+- An app with a window open no longer shows twice on the panel: its tray icon
+  is hidden while its running-app button is there, and comes back when the
+  window closes to the tray (Steam, among others).
 - System Health opens again after being closed from outside, as with dwm's
   kill-window key. The window hid while its model still read open, so every
   later open changed nothing until Quickshell restarted.

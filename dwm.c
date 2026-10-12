@@ -169,6 +169,7 @@ static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
 static pid_t getparentprocess(pid_t p);
 static int getrootptr(int *x, int *y);
+static int pointeronbar(void);
 static int atomlistcontains(const Atom *atoms, unsigned long nitems, Atom atom);
 static unsigned long getatomproplist(Client *c, Atom prop, Atom *atoms, unsigned long maxitems, int *truncated);
 static unsigned long getwinatomproplist(Window win, Atom prop, Atom *atoms, unsigned long maxitems, int *truncated);
@@ -246,6 +247,7 @@ static void unfocus(Client *c, int setfocus);
 static void unmanage(Client *c, int destroyed);
 static void untrackoverridewindow(Window win);
 static void focusoverridewindow(Window win);
+static int focusinside(Window win);
 static void activateclient(Client *c);
 static void updatemonitorwindows(void);
 static void unswallow(Client *c);
@@ -375,6 +377,9 @@ static Window *clientlistcache;
 /* The override-redirect window given the keyboard on its own request; the
  * selected client gets it back when that window goes. */
 static Window overridefocus;
+/* Cleared while a click on the panel switches tags (activateclient() and
+ * _NET_CURRENT_DESKTOP), so view() leaves the pointer on the panel. */
+static int viewwarps = 1;
 /* _DWM_MONITOR_WINDOWS as last written, so it is written only on a change. */
 static Window *monitorwindowscache;
 static int monitorwindowscachelen = -1;
@@ -853,7 +858,12 @@ clientmessage(XEvent *e)
 
 		if (desktop >= 0 && desktop < TAGSLENGTH) {
 			Arg arg = { .ui = 1U << desktop };
+			/* A click on the panel (a workspace button, or a running
+			 * app on another workspace: xdotool windowactivate switches
+			 * the workspace first) leaves the pointer on the panel. */
+			viewwarps = !pointeronbar();
 			view(&arg);
+			viewwarps = 1;
 		}
 		return;
 	}
@@ -1643,6 +1653,22 @@ getrootptr(int *x, int *y)
 	Window dummy;
 
 	return XQueryPointer(dpy, root, &dummy, &dummy, x, y, &di, &di, &dui);
+}
+
+/* True when the pointer is on a monitor's panel, as when a running app's icon
+ * there was just clicked. */
+int
+pointeronbar(void)
+{
+	int di;
+	unsigned int dui;
+	Window dummy, child;
+	Monitor *m;
+
+	if (!XQueryPointer(dpy, root, &dummy, &child, &di, &di, &di, &di, &dui) || !child)
+		return 0;
+	for (m = mons; m && m->barwin != child; m = m->next);
+	return m != NULL;
 }
 
 long
@@ -4436,15 +4462,21 @@ trackoverridewindow(Window win)
 }
 
 /* Show C: its first tag on its own monitor when it is hidden, then focus it,
- * raise it and, with cursorwarp, put the pointer on it, as a tag key does. */
+ * raise it and, with cursorwarp, put the pointer on it, as a tag key does.
+ * A click on the panel's running apps leaves the pointer on the panel: the
+ * jump to the middle of the window was not asked for. The overview still
+ * warps, as the window under the pointer takes the focus once it closes. */
 void
 activateclient(Client *c)
 {
 	Arg arg;
+	int warp = cursorwarp && !pointeronbar();
 
 	if (!ISVISIBLE(c)) {
 		arg.ui = c->tags & -c->tags;
+		viewwarps = warp;
 		view(&arg);
+		viewwarps = 1;
 	}
 	if (!ISVISIBLE(c))
 		return;
@@ -4454,7 +4486,7 @@ activateclient(Client *c)
 	}
 	focus(c);
 	restack(c->mon);
-	if (cursorwarp)
+	if (warp)
 		XWarpPointer(dpy, None, c->win, 0, 0, 0, 0, c->w / 2, c->h / 2);
 }
 
@@ -4503,7 +4535,14 @@ updatemonitorwindows(void)
  * _NET_ACTIVE_WINDOW, which dwm otherwise answers only for its clients. Only a
  * viewable override-redirect window gets it; any X client could focus its own
  * such window directly, so this grants nothing new. untrackoverridewindow()
- * gives the focus back to the selected client when the window goes. */
+ * gives the focus back to the selected client when the window goes.
+ *
+ * Steam asks the same way for each menu bar menu, then focuses a window inside
+ * the menu itself. Focusing the menu over that took the keyboard off Steam's
+ * own window, and Steam closed the menu at once. So the focus is left where it
+ * is when it is already inside WIN. (Not the request's timestamp: Qt's can be
+ * older than dwm's last focus change, and the shell's popups lost the keyboard
+ * again.) */
 void
 focusoverridewindow(Window win)
 {
@@ -4513,7 +4552,31 @@ focusoverridewindow(Window win)
 	    || wa.map_state != IsViewable)
 		return;
 	overridefocus = win;
-	XSetInputFocus(dpy, win, RevertToPointerRoot, CurrentTime);
+	if (!focusinside(win))
+		XSetInputFocus(dpy, win, RevertToPointerRoot, CurrentTime);
+}
+
+/* True when the keyboard focus is WIN or a window inside it. */
+int
+focusinside(Window win)
+{
+	int depth, revert;
+	unsigned int n;
+	Window w, parent, rootret, *children;
+
+	if (!XGetInputFocus(dpy, &w, &revert))
+		return 0;
+	/* Bounded, as a reparenting loop in a broken client must not hang dwm. */
+	for (depth = 0; depth < 32 && w != None && w != PointerRoot && w != root; depth++) {
+		if (w == win)
+			return 1;
+		if (!XQueryTree(dpy, w, &rootret, &parent, &children, &n))
+			return 0;
+		if (children)
+			XFree(children);
+		w = parent;
+	}
+	return 0;
 }
 
 void
@@ -5113,13 +5176,13 @@ focusfirsttagged(unsigned int tags)
 	for (c = selmon->clients; c; c = c->next) {
 		if ((c->tags & tags) && ISVISIBLE(c)) {
 			focus(c);
-			if (cursorwarp)
+			if (cursorwarp && viewwarps)
 				XWarpPointer(dpy, None, c->win, 0, 0, 0, 0,
 					c->w / 2, c->h / 2);
 			return;
 		}
 	}
-	if (cursorwarp)
+	if (cursorwarp && viewwarps)
 		XWarpPointer(dpy, None, root, 0, 0, 0, 0,
 			selmon->mx + selmon->mw / 2, selmon->my + selmon->mh / 2);
 }

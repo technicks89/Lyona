@@ -46,7 +46,7 @@ for closer in 'commandMenuModel.close();' 'launcherModel.close();' \
 	printf '%s\n' "$select_popup_body" | grep -Fq "$closer"
 done
 grep -Fq 'model: root.state.workspaceIndexes(root.screen)' "$panel/DwmPanel.qml"
-grep -Fq 'sourceComponent: TrayArea {}' "$panel/DwmPanel.qml"
+grep -Fq 'sourceComponent: TrayArea {' "$panel/DwmPanel.qml"
 grep -Fq 'RunningAppsArea { state: root.state }' "$panel/DwmPanel.qml"
 
 grep -Fq 'outlined: true' "$panel/DwmPanel.qml"
