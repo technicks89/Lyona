@@ -206,6 +206,19 @@ esac
 EOF
 chmod +x "$work/bin/xrandr"
 
+# Settings stops a running Picom around each live layout change: amdgpu crashed
+# Xorg when the screen resized under a queued page flip. The stub logs its
+# actions beside xrandr's so the order can be checked.
+cat >"$work/bin/dwm-settings-picom" <<'EOF'
+#!/bin/sh
+case ${1:-} in
+status) printf '{"protocol": 1, "running": %s}\n' "${TEST_PICOM_RUNNING:-false}" ;;
+stop | start) printf 'picom %s\n' "$1" >>"$TEST_XRANDR_LOG" ;;
+*) exit 2 ;;
+esac
+EOF
+chmod +x "$work/bin/dwm-settings-picom"
+
 cat >"$work/bin/udevadm" <<'EOF'
 #!/bin/bash
 set -eu
@@ -557,6 +570,7 @@ settings_env=(
 	# tests that it works, not how long it waits.
 	LYONA_PARENT_BOUND_INTERVAL=0.2
 	DWM_DISPLAY_SETUP="$HELPER"
+	DWM_DISPLAY_PICOM_HELPER="$work/bin/dwm-settings-picom"
 	DWM_DISPLAY_PROFILE_DIR="$work/home/.config/lyona/display-profiles"
 	XDG_RUNTIME_DIR="$work/runtime"
 )
@@ -690,6 +704,28 @@ test -f "$work/runtime/dwm-settings-display/settings-test.active"
 rmdir "$work/runtime/dwm-settings-display/settings-test.claim"
 env "${settings_env[@]}" "$BASH_BIN" "$SETTINGS_HELPER" revert settings-test >"$work/settings-revert"
 grep -Fqx 'result	reverted	settings-test' "$work/settings-revert"
+
+# A running Picom is stopped before the layout changes and started after it,
+# for the preview and for the revert; a stopped one is left alone (above).
+if grep -Fq 'picom' "$work/xrandr.log"; then
+	printf 'Settings touched a Picom that was not running\n' >&2
+	exit 1
+fi
+rm -f "$work/xrandr.log"
+env "${settings_env[@]}" TEST_PICOM_RUNNING=true "$BASH_BIN" "$SETTINGS_HELPER" \
+	preview picom-test 5 "$spec_hdmi" "$spec_dp1" "$spec_dp2" >/dev/null
+env "${settings_env[@]}" TEST_PICOM_RUNNING=true "$BASH_BIN" "$SETTINGS_HELPER" \
+	revert picom-test >/dev/null
+grep -v -- '--dryrun' "$work/xrandr.log" | awk '
+	/^picom stop$/ { if (paused) bad = 1; paused = 1; stops++; next }
+	/^picom start$/ { if (!paused) bad = 1; paused = 0; next }
+	/^--output / { if (!paused) bad = 1 }
+	END { exit (bad || paused || stops != 2) }
+' || {
+	printf 'Picom was not stopped around each display change:\n' >&2
+	cat "$work/xrandr.log" >&2
+	exit 1
+}
 
 # Keep remembers the layout, and the next login applies it again, but only with
 # exactly the same outputs connected: Keep alone used to last for the session.

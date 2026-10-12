@@ -236,7 +236,7 @@ run_privileged_bounded() {
 
 scan_identity() {
 	local os_name=unknown
-	local uptime_text=unknown
+	local uptime_text=unknown host_name
 
 	if [[ -r ${DWM_HEALTH_OS_RELEASE:-/etc/os-release} ]]; then
 		os_name=$(awk -F= '$1 == "PRETTY_NAME" { gsub(/^"|"$/, "", $2); print $2; exit }' "${DWM_HEALTH_OS_RELEASE:-/etc/os-release}")
@@ -246,7 +246,9 @@ scan_identity() {
 	fi
 
 	emit_check overview info host-os "Operating system" "$os_name" "Kernel $(uname -sr 2>/dev/null || printf unknown)"
-	emit_check overview info host-uptime "Uptime" "$uptime_text" "Host $(hostname 2>/dev/null || printf unknown)"
+	# Arch's base does not ship hostname(1); uname -n reads the same kernel name.
+	host_name=$(uname -n 2>/dev/null || true)
+	emit_check overview info host-uptime "Uptime" "$uptime_text" "Host ${host_name:-unknown}"
 }
 
 scan_memory() {
@@ -318,6 +320,11 @@ scan_load() {
 	emit_check resources "$status" cpu-load "System load" "$load5 load over 5 minutes" "$cpu_count logical CPUs; $ratio load per CPU"
 }
 
+is_hotplug_device() {
+	[[ $1 == /dev/* ]] && command -v lsblk >/dev/null 2>&1 || return 1
+	[[ $(run_bounded lsblk -ndo HOTPLUG -- "$1" 2>/dev/null) =~ ^[[:space:]]*1[[:space:]]*$ ]]
+}
+
 scan_storage() {
 	local output source percent mount usage status id
 
@@ -338,6 +345,12 @@ scan_storage() {
 		fi
 		id=$(printf '%s' "$mount" | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-$//')
 		[[ -n $id ]] || id=root
+		# A USB stick or other hotplug drive filling up is not a system
+		# problem: an install medium's small EFI partition is always near full.
+		if [[ $status != ok ]] && is_hotplug_device "$source"; then
+			emit_check storage info "disk-$id" "Filesystem $mount" "$usage% used" "$source (removable drive)"
+			continue
+		fi
 		emit_check storage "$status" "disk-$id" "Filesystem $mount" "$usage% used" "$source"
 	done <<<"$output"
 
@@ -490,7 +503,7 @@ scan_desktop() {
 }
 
 scan_network() {
-	local output
+	local output resolv_conf
 
 	if command -v ip >/dev/null 2>&1; then
 		output=$(run_bounded ip route show default 2>/dev/null | first_lines 3 || true)
@@ -514,17 +527,19 @@ scan_network() {
 		emit_check network info networkmanager-state "NetworkManager" "nmcli not installed" "Another network manager may be in use"
 	fi
 
+	# resolvectl is installed with systemd even when systemd-resolved is not
+	# running; NetworkManager then writes the servers to resolv.conf itself.
+	output=
 	if command -v resolvectl >/dev/null 2>&1; then
 		output=$(run_bounded resolvectl status 2>/dev/null | awk '/DNS Servers:/ { sub(/^[[:space:]]*/, ""); print; exit }' || true)
-		if [[ -n $output ]]; then
-			emit_check network ok resolver "DNS resolver" "Configured" "$output"
-		else
-			emit_check network warn resolver "DNS resolver" "No resolver reported" "resolvectl did not report DNS servers"
-		fi
-	elif [[ -s /etc/resolv.conf ]]; then
-		emit_check network ok resolver "DNS resolver" "resolv.conf is populated" "$(awk '/^nameserver/ { print; found++; if (found >= 3) exit }' /etc/resolv.conf)"
+	fi
+	resolv_conf=${DWM_HEALTH_RESOLV_CONF:-/etc/resolv.conf}
+	if [[ -n $output ]]; then
+		emit_check network ok resolver "DNS resolver" "Configured" "$output"
+	elif [[ -r $resolv_conf ]] && output=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = " "; if (++found >= 3) exit } END { if (!found) exit 1 }' "$resolv_conf"); then
+		emit_check network ok resolver "DNS resolver" "resolv.conf is populated" "$output"
 	else
-		emit_check network warn resolver "DNS resolver" "No resolver configuration found" "/etc/resolv.conf is empty or missing"
+		emit_check network warn resolver "DNS resolver" "No resolver configuration found" "Neither resolvectl nor $resolv_conf reported DNS servers"
 	fi
 }
 

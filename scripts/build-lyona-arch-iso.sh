@@ -194,18 +194,21 @@ info "Quieting the primary boot entries' console output..."
 # The primary entry's parameters end at archisosearchuuid, then, since archiso
 # 91, a %KERNEL_PARAMS% placeholder. The accessibility entry's go on to
 # accessibility=on, so it stays as releng wrote it.
+# copytoram=n: archiso otherwise reads the whole root image into RAM from a
+# USB stick before boot continues, tens of seconds behind a silent splash on
+# real hardware. The stick stays in for the install anyway.
 sed -E -i \
-	'/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ quiet splash loglevel=3 vt.global_cursor_default=0/' \
+	'/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
 	"$profile_dir/efiboot/loader/entries/01-archiso-linux.conf"
 sed -E -i \
-	'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ quiet splash loglevel=3 vt.global_cursor_default=0/' \
+	'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
 	"$profile_dir/syslinux/archiso_sys-linux.cfg"
 
-grep -q 'quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
+grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
 	err "releng's UEFI boot entry has no matching options line to quiet; the archiso profile format changed."
 	exit 1
 }
-grep -q 'quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/syslinux/archiso_sys-linux.cfg" || {
+grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/syslinux/archiso_sys-linux.cfg" || {
 	err "releng's BIOS boot entry has no matching APPEND line to quiet; the archiso profile format changed."
 	exit 1
 }

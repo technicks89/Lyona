@@ -530,9 +530,18 @@ Exec=polkit-mate-authentication-agent-1
 OnlyShowIn=MATE;
 NotShowIn=GNOME;
 EOF
+# autorandr's entry runs --default default, which fails without that profile;
+# autostart.sh runs autorandr itself in dwm sessions.
+cat >"$EMPTY_CONFIG_DIRS/autostart/autorandr.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Autorandr
+Exec=/usr/bin/autorandr -c --default default
+EOF
 HOME="$TEST_HOME" XDG_CONFIG_HOME="$EMPTY_CONFIG_HOME" \
 	XDG_CONFIG_DIRS="$EMPTY_CONFIG_DIRS" DWM_INSTALL_OWNER="$OWNER" \
 	"$TEST_REPO/scripts/seed-autostart-overrides.sh"
+grep -Fqx 'NotShowIn=X-DWM;' "$EMPTY_CONFIG_HOME/autostart/autorandr.desktop"
 grep -Fqx 'OnlyShowIn=' "$EMPTY_CONFIG_HOME/autostart/light-locker.desktop"
 test ! -e "$EMPTY_CONFIG_HOME/autostart/polkit-mate-authentication-agent-1.desktop"
 

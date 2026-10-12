@@ -271,6 +271,20 @@ fi
 [ -z "$systemctl_import_pid" ] || wait "$systemctl_import_pid"
 [ -z "$dbus_import_pid" ] || wait "$dbus_import_pid"
 
+# autorandr's own autostart entry, hidden from dwm sessions by the installer,
+# runs --default default and fails when no profile named default exists, as on
+# every fresh install. Apply a saved layout before the panels start, and fall
+# back to default only when that profile exists.
+if command -v autorandr >/dev/null 2>&1; then
+	autorandr_dir=$config_home/autorandr
+	[ ! -d "${HOME:-/nonexistent}/.autorandr" ] || autorandr_dir=$HOME/.autorandr
+	if [ -d "$autorandr_dir/default" ]; then
+		timeout 15 autorandr --change --default default >/dev/null 2>&1 || true
+	else
+		timeout 15 autorandr --change >/dev/null 2>&1 || true
+	fi
+fi
+
 QUICKSHELL_CONFIG=$config_home/quickshell/shell.qml
 if [ -f "$QUICKSHELL_CONFIG" ]; then
 	quickshell_check=

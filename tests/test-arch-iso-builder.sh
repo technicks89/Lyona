@@ -595,7 +595,7 @@ uefi_main="$work/staged/profile/efiboot/loader/entries/01-archiso-linux.conf"
 uefi_speech="$work/staged/profile/efiboot/loader/entries/02-archiso-speech-linux.conf"
 bios_cfg="$work/staged/profile/syslinux/archiso_sys-linux.cfg"
 
-grep -Fq 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3 vt.global_cursor_default=0' \
+grep -Fq 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' \
 	"$uefi_main" || {
 	printf 'staged UEFI boot entry was not quieted.\n' >&2
 	exit 1
@@ -605,7 +605,7 @@ grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID
 	printf 'staged UEFI speech/accessibility entry should be left untouched.\n' >&2
 	exit 1
 }
-grep -Fq 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3 vt.global_cursor_default=0' \
+grep -Fq 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' \
 	"$bios_cfg" || {
 	printf 'staged BIOS boot entry was not quieted.\n' >&2
 	exit 1
@@ -636,7 +636,7 @@ LYONA_RELENG_DIR="$releng91" \
 	exit 1
 }
 staged91=$work/staged91/profile
-grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% quiet splash loglevel=3 vt.global_cursor_default=0' \
+grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' \
 	"$staged91/efiboot/loader/entries/01-archiso-linux.conf" || {
 	printf 'the archiso 91 UEFI boot entry was not quieted.\n' >&2
 	exit 1
@@ -646,7 +646,7 @@ grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID
 	printf 'the archiso 91 UEFI speech entry should be left untouched.\n' >&2
 	exit 1
 }
-grep -Fqx 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% quiet splash loglevel=3 vt.global_cursor_default=0' \
+grep -Fqx 'APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' \
 	"$staged91/syslinux/archiso_sys-linux.cfg" || {
 	printf 'the archiso 91 BIOS boot entry was not quieted.\n' >&2
 	exit 1

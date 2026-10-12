@@ -36,6 +36,7 @@ managed_config="${DWM_XORG_CONFIG:-/etc/X11/xorg.conf.d/90-lyona-display.conf}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 setup_helper="${DWM_DISPLAY_SETUP:-$script_dir/dwm-display-setup}"
+picom_helper="${DWM_DISPLAY_PICOM_HELPER:-$script_dir/dwm-settings-picom}"
 self="$script_dir/${BASH_SOURCE[0]##*/}"
 
 usage() {
@@ -507,6 +508,23 @@ reserve_preview() {
 	fi
 }
 
+# Picom's GL backends page-flip their overlay window. With xf86-video-amdgpu
+# 25.0, a layout change that resizes the screen, such as rotating an output,
+# fails a flip that is still queued, and the driver's flip-abort path then
+# crashes Xorg, taking the session with it. Stop the compositor for the change
+# and start it again afterwards; a Picom that was not running stays stopped.
+apply_layout() {
+	local layout=$1 paused=0 status=0
+	if [[ -x $picom_helper && $("$picom_helper" status 2>/dev/null) == *'"running": true'* ]]; then
+		"$picom_helper" stop >/dev/null && paused=1
+	fi
+	"$setup_helper" apply "$layout" --tearfree off || status=$?
+	if ((paused)) && ! "$picom_helper" start >/dev/null; then
+		warn "Picom did not restart after the display change; start it from Settings > Appearance > Compositor"
+	fi
+	return "$status"
+}
+
 preview_file() {
 	local token=$1 seconds=$2 proposed=$3 previous marker failed
 	previous=$(token_path "$token" previous)
@@ -518,8 +536,8 @@ preview_file() {
 	chmod 600 "$previous" "$proposed"
 	: >"$marker"
 	chmod 600 "$marker"
-	if ! "$setup_helper" apply "$proposed" --tearfree off; then
-		if "$setup_helper" apply "$previous" --tearfree off; then
+	if ! apply_layout "$proposed"; then
+		if apply_layout "$previous"; then
 			cleanup_preview "$token"
 			die "display preview failed; the previous layout was restored"
 		fi
@@ -617,7 +635,7 @@ apply_kept_layout() {
 	kept=$(awk '{ sub(/#.*/, "") } NF { print $1 }' "$kept_layout" | sort -u)
 	connected=$(xrandr --query 2>/dev/null | awk '$2 == "connected" { print $1 }' | sort -u)
 	[[ -n $kept && $kept == "$connected" ]] || return 0
-	"$setup_helper" apply "$kept_layout" --tearfree off >/dev/null
+	apply_layout "$kept_layout" >/dev/null
 }
 
 revert_preview() {
@@ -628,7 +646,7 @@ revert_preview() {
 	[[ -f $marker && -f $previous ]] || die "display preview is not active"
 	claim=$(claim_preview "$token")
 	trap 'rmdir "$claim" 2>/dev/null || true' RETURN
-	"$setup_helper" apply "$previous" --tearfree off
+	apply_layout "$previous"
 	cleanup_preview "$token"
 	printf 'result\treverted\t%s\n' "$token"
 }
@@ -643,7 +661,7 @@ watchdog() {
 	if [[ -f $marker && -f $previous ]]; then
 		claim=$(token_path "$token" claim)
 		mkdir "$claim" 2>/dev/null || return 0
-		if "$setup_helper" apply "$previous" --tearfree off; then
+		if apply_layout "$previous"; then
 			cleanup_preview "$token"
 		else
 			printf 'Automatic rollback failed; the captured layout is retained for retry.\n' >"$failed"

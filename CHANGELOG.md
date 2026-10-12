@@ -21,6 +21,27 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A fresh install no longer starts with System Health warnings for things that
+  are not wrong. Autorandr's own login entry ran `autorandr --change --default
+  default` and failed until a profile named `default` existed; the installer
+  now hides it from dwm sessions, and the session runs `autorandr --change`
+  itself, falling back to `default` only when that profile exists. The DNS
+  check reads `/etc/resolv.conf` when systemd-resolved is not running, as on
+  a NetworkManager install, instead of warning that no resolver is reported.
+  A nearly full USB or other hotplug drive, such as an install stick's EFI
+  partition, is shown as information rather than a warning. The uptime card
+  names the host without `hostname(1)`, which Arch does not install.
+- Rotating a display from Settings no longer crashes the whole session on AMD
+  graphics. The resize under Picom's queued page flip failed the flip, and the
+  amdgpu driver (xf86-video-amdgpu 25.0) crashed Xorg while aborting it.
+  Settings now stops a running Picom for each live layout change (preview,
+  revert, automatic rollback) and starts it again afterwards. A layout changed
+  by other tools, such as autorandr on hotplug, is not covered.
+- The install medium no longer sits on its splash screen for most of a minute
+  when booted from a USB stick. archiso copied the whole root image into RAM
+  before boot continued, hidden behind the splash; the primary boot entries
+  now pass `copytoram=n`, so the stick must stay plugged in during the
+  install, as it already had to. Not yet validated on real hardware.
 - A failed update says what failed. The progress popup, the notification and
   Settings > System showed "Installing V (authentication required)" for every
   failure after the password prompt, whatever had gone wrong; they now show the
