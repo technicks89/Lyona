@@ -1003,6 +1003,24 @@ pacman_parallel_downloads_tip() {
 	info "Tip: pacman downloads $value package(s) at a time. Setting ParallelDownloads = 10 in /etc/pacman.conf makes this install faster; the installer leaves that file to you."
 }
 
+# A tip, never a change (#365): with no Wi-Fi country, cfg80211 starts on the
+# world domain, where 5 GHz is passive only, until an access point names its
+# country. The image installer sets it from the timezone; here the country is
+# the user's to choose. Said only on a machine with Wi-Fi and no country set
+# in any of the places the kernel or wireless-regdb's udev rule reads.
+# LYONA_SYSROOT moves those paths for the tests.
+wifi_country_tip() {
+	local root=${LYONA_SYSROOT:-} file
+	[[ ${LYONA_SOURCE:-} != iso ]] || return 0
+	compgen -G "$root/sys/class/ieee80211/*" >/dev/null || return 0
+	grep -qs 'cfg80211\.ieee80211_regdom=' "$root/proc/cmdline" && return 0
+	grep -qsE "^[[:space:]]*WIRELESS_REGDOM=[\"']?[A-Z0-9]{2}" "$root/etc/conf.d/wireless-regdom" && return 0
+	for file in "$root"/etc/modprobe.d/*.conf "$root"/run/modprobe.d/*.conf "$root"/usr/lib/modprobe.d/*.conf; do
+		grep -qsE '^[[:space:]]*options[[:space:]]+cfg80211[[:space:]].*ieee80211_regdom=' "$file" && return 0
+	done
+	info "Tip: no Wi-Fi country is set, so Wi-Fi starts on the world regulatory domain, where 5 GHz connects slowly or not at all. Uncomment your country's WIRELESS_REGDOM line in /etc/conf.d/wireless-regdom; the installer leaves that to you."
+}
+
 # The fallback terminals, one pacman run each, until one installs: only when
 # Alacritty is missing after the package install.
 install_supported_terminal() {
@@ -1385,6 +1403,7 @@ configure_time_sync
 if install_recommended_profile; then
 	step_timer "NetworkManager"
 	configure_network_manager
+	wifi_country_tip
 fi
 
 if [[ $YAY_INSTALL_MODE == true ]]; then

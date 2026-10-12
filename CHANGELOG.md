@@ -21,6 +21,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Wi-Fi on an installed system connects quickly on boot and resume, including
+  on 5 GHz (#365). The `network` packages now include `wireless-regdb`, the
+  kernel's regulatory database, and `iw`. Without the database every boot
+  logged `failed to load regulatory.db` and Wi-Fi stayed on the world domain,
+  where 5 GHz is passive only and the access point's country is ignored, so
+  each connection first timed out on 5 GHz. The live medium had the database,
+  so the installer never showed the problem. The image installer also sets the
+  Wi-Fi country from the timezone (shown on its summary) in
+  `/etc/modprobe.d/lyona-regdom.conf`, and sets none for a zone with no
+  country such as `UTC`. On an existing system `install.sh` does not set the
+  country; on a machine with Wi-Fi and no country it says how to set one in
+  `/etc/conf.d/wireless-regdom`. Troubleshooting covers chips that stay
+  unreliable on 5 GHz, such as the Broadcom BCM43224 in older MacBooks.
 - A fresh install no longer starts with System Health warnings for things that
   are not wrong. Autorandr's own login entry ran `autorandr --change --default
   default` and failed until a profile named `default` existed; the installer

@@ -553,6 +553,18 @@ country_name() {
 	printf '%s\n' "${name:-$1}"
 }
 
+# The Wi-Fi regulatory country the postinstall sets (#365): the timezone's,
+# whatever mirrors were chosen, since it is where the machine is. A zone with
+# no country (UTC) sets none, and the access point's country is used.
+wifi_country_summary() {
+	local country
+	if country=$(timezone_country "$TIMEZONE"); then
+		echo "$(country_name "$country") ($country)"
+	else
+		echo "none, the access point's"
+	fi
+}
+
 mirror_summary() {
 	if [[ -n $MIRROR_COUNTRY ]]; then
 		echo "$(country_name "$MIRROR_COUNTRY") ($MIRROR_COUNTRY), the fastest of them"
@@ -716,6 +728,7 @@ Username:   $USERNAME
 Keyboard:   $KEYMAP
 Timezone:   $TIMEZONE
 Mirrors:    $(mirror_summary)
+Wi-Fi country: $(wifi_country_summary)
 Boot:       $(firmware_summary)
 NVIDIA driver: $(nvidia_summary)
 EOF
@@ -1060,6 +1073,8 @@ main() {
 	if [[ $NVIDIA_OPT_IN == 1 ]]; then
 		export LYONA_NVIDIA_DRIVER=1
 	fi
+	LYONA_WIFI_COUNTRY=$(timezone_country "$TIMEZONE") || LYONA_WIFI_COUNTRY=
+	export LYONA_WIFI_COUNTRY
 	exec "$POSTINSTALL"
 }
 
