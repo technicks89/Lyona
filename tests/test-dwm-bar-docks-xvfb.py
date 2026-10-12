@@ -152,6 +152,40 @@ with tempfile.TemporaryDirectory(prefix='dwm-bar-docks-', dir=os.environ.get('DW
         client = window(100, 100, 300, 200, False)
         wait(lambda: y_of(client) >= 30, 'a client did not start below the panel (y %d)' % y_of(client))
 
+        # A click on the panel's running apps activates a window the way the
+        # panel's focus helper does (xdotool windowactivate, EWMH source 2) and
+        # leaves the pointer on the panel; from anywhere else, as from the
+        # window overview, the pointer still goes to the window.
+        def pointer():
+            out = run('xdotool', 'getmouselocation', '--shell').stdout
+            fields = dict(line.split('=', 1) for line in out.split() if '=' in line)
+            return int(fields.get('X', -1)), int(fields.get('Y', -1))
+
+        run('xdotool', 'mousemove', '500', '15')
+        wait(lambda: pointer() == (500, 15), 'the pointer could not be put on the panel')
+        run('xdotool', 'windowactivate', '%d' % client)
+        time.sleep(0.5)
+        if pointer() != (500, 15):
+            fail('activating a window from the panel moved the pointer to %s' % (pointer(),))
+        # A workspace button (xdotool set_desktop), then a running app on
+        # another workspace: windowactivate switches the workspace first with
+        # the same _NET_CURRENT_DESKTOP message, and that warped the pointer.
+        run('xdotool', 'set_desktop', '1')
+        wait(lambda: not viewable(client), 'switching the workspace from the panel did not hide the client')
+        if pointer() != (500, 15):
+            fail('a workspace button on the panel moved the pointer to %s' % (pointer(),))
+        run('xdotool', 'windowactivate', '%d' % client)
+        wait(lambda: viewable(client), 'activating a window on another workspace did not show it')
+        time.sleep(0.5)
+        if pointer() != (500, 15):
+            fail('activating a window on another workspace from the panel moved the pointer to %s'
+                 % (pointer(),))
+        run('xdotool', 'mousemove', '900', '600')
+        wait(lambda: pointer() == (900, 600), 'the pointer could not be moved off the panel')
+        run('xdotool', 'windowactivate', '%d' % client)
+        wait(lambda: pointer() != (900, 600),
+             'activating a window from outside the panel no longer put the pointer on it')
+
         # A full-width dock that reserves nothing (a banner): not the bar, not a
         # managed window, but shown. dwm used to take any wide dock for a bar.
         banner = window(0, 0, 1024, 60, True)

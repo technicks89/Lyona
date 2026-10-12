@@ -193,6 +193,29 @@ with tempfile.TemporaryDirectory(prefix='dwm-activate-', dir=os.environ.get('DWM
         X.XDestroyWindow(display, popup)
         X.XSync(display, 0)
 
+        # A popup that focuses a window inside itself and also asks for the
+        # keyboard, as Steam does for each menu bar menu: dwm focusing the
+        # popup over the inner window closed the menu at once. The focus stays
+        # inside, and the client gets it back when the popup closes.
+        menu = X.XCreateSimpleWindow(display, root, 400, 300, 200, 100, 0, 0, 0x669933)
+        attributes = SetWindowAttributes(override_redirect=1)
+        X.XChangeWindowAttributes(display, menu, CW_OVERRIDE_REDIRECT, ctypes.byref(attributes))
+        inner = X.XCreateSimpleWindow(display, menu, 0, 0, 200, 100, 0, 0, 0x336699)
+        X.XMapWindow(display, inner)
+        X.XMapWindow(display, menu)
+        X.XSync(display, 0)
+        time.sleep(0.3)
+        X.XSetInputFocus(display, inner, 1, 0)  # RevertToPointerRoot, CurrentTime
+        X.XSync(display, 0)
+        request(menu, 1)
+        time.sleep(0.5)
+        if focused() != inner:
+            fail('a popup asking for the keyboard lost it from the window inside it '
+                 '(focus 0x%x, inner 0x%x, popup 0x%x)' % (focused(), inner, menu))
+        X.XDestroyWindow(display, menu)
+        X.XSync(display, 0)
+        wait(lambda: focused() == second, 'the focus did not return to the client after its popup closed')
+
         # An application asking for itself: urgent, and the focus stays.
         request(first, 1)
         time.sleep(0.5)

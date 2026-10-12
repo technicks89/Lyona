@@ -12,6 +12,12 @@ PanelWindow {
     // Opens Settings on a section (Sync Sprint 15 S15-02: the update indicator).
     signal settingsRequested(var panelWindow, string sectionId)
 
+    // Another panel popup opening closes the tray's menu.
+    onPopupRequested: (panelWindow, popupId) => {
+        if (popupId !== "tray" && trayLoader.item)
+            trayLoader.item.closeMenu();
+    }
+
     // The first item under the panel with this objectName, for the shell's test
     // IPC; undefined when there is none.
     function findItem(name) {
@@ -265,8 +271,15 @@ PanelWindow {
                     RunningAppsArea { state: root.state }
 
                     Loader {
+                        id: trayLoader
+
                         active: root.primaryPanel
-                        sourceComponent: TrayArea {}
+                        sourceComponent: TrayArea {
+                            panelWindow: root
+                            runningApps: root.state.runningApps
+                            // Close the panel's other popups, as their buttons do.
+                            onMenuOpened: root.popupRequested(root, "tray")
+                        }
                     }
 
                     PanelPill {
