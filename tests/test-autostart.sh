@@ -177,6 +177,19 @@ esac
 exit 0
 EOF
 
+# logind, as autostart sees it: this login is the user's only one. The stub
+# systemctl reports every unit active, so the first run finds the graphical
+# targets a crashed login left behind and must end them; a second run in the
+# same login started them itself and must leave them alone.
+cat >"$work/bin/loginctl" <<'EOF'
+#!/bin/sh
+case $* in
+"show-session self -p Id --value") printf 'c1\n' ;;
+"show-user "*" -p Sessions --value") printf 'c1\n' ;;
+*) exit 1 ;;
+esac
+EOF
+
 # With a session bus, autostart waits for the tray's D-Bus name through gdbus
 # instead of asking Quickshell over IPC (#288). The stub Quickshell's tray is
 # only seen through its IPC, which is where it replaces a stale instance and
@@ -514,6 +527,21 @@ run_duplicate_case() {
 		index(":" $1 ":", ":X-DWM:") && index(":" $1 ":", ":dwm:") { found = 1 }
 		END { exit !found }
 	' "$state/systemctl.log"
+	# Stale targets ended once, before they were started, and not again by
+	# the second run in the same login.
+	awk -F '\t' '
+		$2 ~ /^--user stop xdg-desktop-autostart.target wm-graphical-session.service graphical-session.target$/ {
+			stops++
+			if (!first_stop) first_stop = NR
+		}
+		$2 ~ /^--user reset-failed app-\*@autostart.service$/ { resets++ }
+		$2 ~ /^--user start wm-graphical-session.service$/ && !started { started = NR }
+		END { exit !(stops == 1 && resets == 1 && first_stop < started) }
+	' "$state/systemctl.log" || {
+		printf 'autostart did not end stale graphical targets exactly once:\n' >&2
+		cat "$state/systemctl.log" >&2
+		exit 1
+	}
 }
 
 run_relative_config_home_case() {

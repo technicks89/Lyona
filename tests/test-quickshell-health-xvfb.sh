@@ -159,6 +159,50 @@ if printf '%s\n' "$scan_processes" | grep -F "$data_home/checkout/scripts/dwm-sy
 	exit 1
 fi
 
+# Closed from outside, as dwm's kill-window key does with WM_DELETE_WINDOW, and
+# then opened again: the model used to keep reading visible, so the next open
+# changed nothing and the window never came back.
+health_visible() {
+	DISPLAY=$display xdotool search --onlyvisible --name '^dwm system health$' 2>/dev/null | head -1
+}
+wait_health() {
+	want=$1
+	i=0
+	while [ "$i" -lt 200 ]; do
+		window=$(health_visible || true)
+		if { [ "$want" = shown ] && [ -n "$window" ]; } || { [ "$want" = hidden ] && [ -z "$window" ]; }; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.05
+	done
+	return 1
+}
+health_ipc() {
+	DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		quickshell ipc --path "$config" call systemhealth "$1" >/dev/null
+}
+health_ipc open
+wait_health shown || {
+	printf 'System Health window did not open before the external close\n' >&2
+	exit 1
+}
+DISPLAY=$display xdotool windowquit "$window"
+wait_health hidden || {
+	printf 'System Health window did not close on WM_DELETE_WINDOW\n' >&2
+	exit 1
+}
+health_ipc open
+wait_health shown || {
+	printf 'System Health could not be opened again after an external close\n' >&2
+	exit 1
+}
+health_ipc close
+wait_health hidden || {
+	printf 'System Health window did not close after reopening\n' >&2
+	exit 1
+}
+
 # The open popup's window: Quickshell's click-away surface, below the panel
 # (y > 0) and far taller than it. Found by what it is, not as "a window that was
 # not visible before": a popup reuses its window, so a reopen during the

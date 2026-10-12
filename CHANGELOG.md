@@ -31,6 +31,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   A nearly full USB or other hotplug drive, such as an install stick's EFI
   partition, is shown as information rather than a warning. The uptime card
   names the host without `hostname(1)`, which Arch does not install.
+- System Health opens again after being closed from outside, as with dwm's
+  kill-window key. The window hid while its model still read open, so every
+  later open changed nothing until Quickshell restarted.
+- XDG autostart applications come back after a session that ended without
+  logging out, such as an Xorg crash. The user's graphical-session targets
+  stayed active, so the next login started nothing and an applet that died
+  with the old X server, such as Blueman, stayed failed and showed in System
+  Health. Login now ends targets left by another login when no other graphical
+  login of the user is active, through `dwm-session.sh`, which autostop.sh now
+  shares.
 - Rotating a display from Settings no longer crashes the whole session on AMD
   graphics. The resize under Picom's queued page flip failed the flip, and the
   amdgpu driver (xf86-video-amdgpu 25.0) crashed Xorg while aborting it.

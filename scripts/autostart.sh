@@ -11,6 +11,8 @@ lyona_lib=${0%/*}
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-quickshell-lifecycle.sh
 . "$lyona_lib/dwm-quickshell-lifecycle.sh"
+# shellcheck source=scripts/dwm-session.sh
+. "$lyona_lib/dwm-session.sh"
 # Lenient: a session must still start without HOME; what needs it is skipped.
 lyona_xdg_dirs lenient
 
@@ -320,12 +322,40 @@ fi
 
 xdg_autostart_started=0
 
+# A login that ended without autostop.sh, as when Xorg crashed, leaves the
+# user's graphical-session targets active, and starting an active target starts
+# nothing: XDG autostart applications that died with the old X server, such as
+# the Blueman applet, stayed failed at every later login. The login that
+# started the targets is recorded; when it was another one and no other
+# graphical login of this user is active, end the stale targets so this login
+# starts them afresh.
+graphical_session_owner=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/lyona-graphical-session
+reset_stale_graphical_session() {
+	self_session=$1
+	systemctl --user is-active --quiet "$WM_GRAPHICAL_SESSION" 2>/dev/null || return 0
+	[ -n "$self_session" ] || return 0
+	owner_session=
+	[ ! -f "$graphical_session_owner" ] || IFS= read -r owner_session <"$graphical_session_owner" || true
+	[ "$owner_session" != "$self_session" ] || return 0
+	! lyona_other_graphical_session "$self_session" || return 0
+	systemctl --user stop xdg-desktop-autostart.target "$WM_GRAPHICAL_SESSION" \
+		graphical-session.target >/dev/null 2>&1 || true
+	systemctl --user reset-failed 'app-*@autostart.service' >/dev/null 2>&1 || true
+}
+
 # Refresh generated entries first: an installer may have seeded user exclusions
 # after this user manager started, even when the wm shim already exists.
 if command -v systemctl >/dev/null 2>&1; then
+	self_session=
+	if command -v loginctl >/dev/null 2>&1; then
+		self_session=$(loginctl show-session self -p Id --value 2>/dev/null) || self_session=
+	fi
+	reset_stale_graphical_session "$self_session"
 	if systemctl --user daemon-reload 2>/dev/null &&
 		systemctl --user start "$WM_GRAPHICAL_SESSION" 2>/dev/null; then
 		xdg_autostart_started=1
+		[ -z "$self_session" ] ||
+			printf '%s\n' "$self_session" >"$graphical_session_owner" 2>/dev/null || true
 	fi
 fi
 

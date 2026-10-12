@@ -26,9 +26,14 @@ FloatingWindow {
         return Theme.accent;
     }
 
+    // Closed from outside, as by dwm's kill-window key, the window hides while the
+    // model still reads visible, and every later open sets visible to true again,
+    // which changes nothing: System Health could not be opened again.
     onVisibleChanged: {
         if (visible) {
             Qt.callLater(content.forceActiveFocus);
+        } else if (root.healthModel.visible) {
+            root.healthModel.close();
         }
     }
 

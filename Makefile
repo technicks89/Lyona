@@ -131,6 +131,7 @@ INSTALL_LIBS = \
 	scripts/dwm-preview-core.sh \
 	scripts/dwm-proc.sh \
 	scripts/dwm-quickshell-lifecycle.sh \
+	scripts/dwm-session.sh \
 	scripts/dwm-simple-watch.sh \
 	scripts/dwm-theme-resolve.sh \
 	scripts/dwm-utils.sh \

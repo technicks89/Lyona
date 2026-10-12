@@ -2,6 +2,14 @@
 
 set -eu
 
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona.
+lyona_lib=${0%/*}
+[ "$lyona_lib" != "$0" ] || lyona_lib=.
+[ -f "$lyona_lib/dwm-session.sh" ] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-session.sh
+. "$lyona_lib/dwm-session.sh"
+
 command -v loginctl >/dev/null 2>&1 || exit 0
 self_session_id=$(loginctl show-session self -p Id --value 2>/dev/null) || exit 0
 [ -n "$self_session_id" ] || exit 0
@@ -17,7 +25,6 @@ session_type=$(printf '%s\n' "$session_details" | sed -n 's/^Type=//p')
 session_class=$(printf '%s\n' "$session_details" | sed -n 's/^Class=//p')
 session_display=$(printf '%s\n' "$session_details" | sed -n 's/^Display=//p')
 user_name=$(id -un)
-user_id=$(id -u)
 [ "$session_owner" = "$user_name" ] || exit 0
 
 case "$session_type:$session_class:$session_display" in
@@ -30,29 +37,7 @@ x11:user:?*)
 esac
 
 stop_targets=1
-user_sessions=$(loginctl show-user "$user_id" -p Sessions --value 2>/dev/null) || stop_targets=0
-if [ "$stop_targets" -eq 1 ]; then
-	for other_id in $user_sessions; do
-		[ "$other_id" != "$session_id" ] || continue
-		other_details=$(loginctl show-session "$other_id" \
-			-p Name -p Type -p Class -p Active 2>/dev/null) || {
-			stop_targets=0
-			break
-		}
-		other_owner=$(printf '%s\n' "$other_details" | sed -n 's/^Name=//p')
-		other_type=$(printf '%s\n' "$other_details" | sed -n 's/^Type=//p')
-		other_class=$(printf '%s\n' "$other_details" | sed -n 's/^Class=//p')
-		other_active=$(printf '%s\n' "$other_details" | sed -n 's/^Active=//p')
-		case "$other_type:$other_class:$other_active" in
-		x11:user:yes | wayland:user:yes)
-			if [ "$other_owner" = "$user_name" ]; then
-				stop_targets=0
-				break
-			fi
-			;;
-		esac
-	done
-fi
+! lyona_other_graphical_session "$session_id" || stop_targets=0
 
 if [ "$stop_targets" -eq 1 ] && command -v systemctl >/dev/null 2>&1; then
 	systemctl --user stop \
