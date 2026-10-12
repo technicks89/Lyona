@@ -188,6 +188,31 @@ Alacritty. The default `Super`+`X` binding remains plain Alacritty.
 
 ---
 
+## Wi-Fi is slow to connect or 5 GHz fails
+
+Check the kernel log first:
+
+```bash
+journalctl -b -k | grep -E 'regulatory|timed out'
+```
+
+- `failed to load regulatory.db`: the regulatory database is missing, so Wi-Fi
+  stays on the world domain, where 5 GHz is passive only. Install it with
+  `sudo pacman -S wireless-regdb` (lyona installs it since #365), then reboot.
+- No Wi-Fi country: `iw reg get` shows `country 00`. The image installer sets
+  the country from your timezone in `/etc/modprobe.d/lyona-regdom.conf`. To
+  set or change it yourself, uncomment your country's line in
+  `/etc/conf.d/wireless-regdom` (for example `WIRELESS_REGDOM="DE"`) and
+  reboot; that setting wins over the installer's.
+- Some chips stay unreliable on 5 GHz even with a country set, such as the
+  Broadcom BCM43224 (`brcmsmac`) in older MacBooks. Keep such a connection on
+  2.4 GHz: `nmcli con mod "<connection name>" 802-11-wireless.band bg`.
+- On those Broadcom chips the log also shows `b43` failing to probe the card
+  (`probe with driver b43 failed with error -524`). That is harmless:
+  `brcmsmac` drives the card. lyona does not blacklist `b43`.
+
+---
+
 ## A Bluetooth device's battery is not shown
 
 Settings > Power and the Control Center list the batteries UPower reports. Most
