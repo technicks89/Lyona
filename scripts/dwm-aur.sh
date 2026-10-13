@@ -20,6 +20,8 @@
 #
 # Run it with bash (installed, it is shared code in PREFIX/lib/lyona, not a
 # command). DWM_AUR_URL replaces https://aur.archlinux.org, for tests;
+# DWM_AUR_ARCH the architecture the .SRCINFO is checked for (bash's own,
+# $HOSTTYPE, which is makepkg's CARCH on x86_64 and aarch64), for tests;
 # DWM_AUR_BUILD_SECONDS the build's time limit (1800). Needs git and makepkg.
 set -euo pipefail
 
@@ -33,6 +35,7 @@ nvidia-470xx-utils	af0b7617132e32dd39174779aa8ced2a726afc51	legacy NVIDIA 470xx 
 
 readonly aur_url=${DWM_AUR_URL:-https://aur.archlinux.org}
 readonly build_seconds=${DWM_AUR_BUILD_SECONDS:-1800}
+readonly aur_arch=${DWM_AUR_ARCH:-$HOSTTYPE}
 
 say() { printf 'dwm-aur: %s\n' "$*" >&2; }
 die() {
@@ -47,10 +50,20 @@ pin_of() {
 	printf '%s\n' "$ref"
 }
 
-# Every source has a checksum, and none is SKIP: the pin covers the PKGBUILD,
-# the checksums what it downloads.
+# The base builds for this architecture: its arch=() names it, or any. On
+# aarch64 (ARM1-03) yay-bin and topgrade-bin do; the legacy NVIDIA bases, which
+# are x86_64 only, do not, and are refused here rather than by makepkg.
+builds_here() {
+	awk -v arch="$aur_arch" '
+		{ sub(/^[ \t]+/, "") }
+		$1 == "arch" && ($3 == arch || $3 == "any") { found = 1 }
+		END { exit !found }' <<<"$1"
+}
+
+# Every source for this architecture has a checksum, and none is SKIP: the pin
+# covers the PKGBUILD, the checksums what it downloads.
 sources_checksummed() {
-	awk -v arch="$(uname -m)" '
+	awk -v arch="$aur_arch" '
 		{ sub(/^[ \t]+/, "") }
 		$1 == "source" || $1 == "source_" arch { sources++ }
 		$1 ~ "^(sha256|sha512|b2)sums(_" arch ")?$" { sums[$1]++; if ($3 == "SKIP") skipped = 1 }
@@ -84,6 +97,7 @@ fetch() {
 		die "$base has no commit ${ref:0:12}"
 	[[ $(git -C "$dir" rev-parse HEAD) == "$ref" ]] || die "$base is not at its pinned commit"
 	srcinfo=$(cd "$dir" && makepkg --printsrcinfo) || die "could not read $base's .SRCINFO"
+	builds_here "$srcinfo" || die "$base at ${ref:0:12} does not build for $aur_arch; not building it"
 	sources_checksummed "$srcinfo" ||
 		die "$base at ${ref:0:12} has a source without a checksum; not building it"
 	printf '%s\n' "$srcinfo"
