@@ -16,8 +16,11 @@ if [[ -r $OS_RELEASE_FILE ]]; then
 	DISTRO_NAME="${PRETTY_NAME:-${NAME:-Unknown Linux}}"
 fi
 
-# The machine lyona runs on, as uname reports it; DWM_MACHINE in test mode.
-DISTRO_MACHINE=$(uname -m)
+# The architecture lyona installs for: bash's own, which is the userland's and
+# so pacman's (a 32-bit Arch Linux ARM userland on a 64-bit kernel is not
+# aarch64, whatever uname says). A shell variable, so sourcing this file starts
+# no process. DWM_MACHINE in test mode.
+DISTRO_MACHINE=$HOSTTYPE
 if [[ ${DWM_TEST_MODE:-0} == 1 && -n ${DWM_MACHINE:-} ]]; then
 	DISTRO_MACHINE=$DWM_MACHINE
 fi
