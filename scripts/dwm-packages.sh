@@ -2,11 +2,12 @@
 
 # Prints its arguments on x86_64 only, and returns 0 either way (dwm_packages
 # returns 1 only for an unknown profile). The architecture is $ARCH, as
-# install.sh sets it, else uname. Packages gated here are missing from Arch
+# install.sh sets it, else bash's own ($HOSTTYPE, as dwm-utils.sh): no
+# process is started. Packages gated here are missing from Arch
 # Linux ARM, or do not apply on aarch64 (ARM1-02; the survey is
 # docs/evidence/arm1-02-aarch64-packages.md).
 dwm_x86_64_only() {
-	[[ ${ARCH:-$(uname -m)} != x86_64 ]] || printf '%s\n' "$@"
+	[[ ${ARCH:-$HOSTTYPE} != x86_64 ]] || printf '%s\n' "$@"
 }
 
 dwm_packages() {
