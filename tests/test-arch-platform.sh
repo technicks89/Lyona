@@ -179,6 +179,28 @@ grep -Fq 'Distribution: Arch Linux ARM' "$work/archarm-dry-run.out"
 grep -Fq 'The CachyOS repositories are x86_64 Arch only; skipping them.' "$work/archarm-dry-run.out"
 grep -Fq 'Dry run complete; no changes were made.' "$work/archarm-dry-run.out"
 
+# NVIDIA detection finds nothing, without an error, on ARM machines (ARM1-04):
+# a Raspberry Pi 4 (a PCIe bridge and the VL805 USB controller), the aarch64
+# QEMU VM, and a machine without lspci (a Pi with no pciutils).
+mkdir -p "$work/gpu-bin"
+cat >"$work/gpu-bin/lspci" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$TEST_LSPCI"
+EOF
+chmod +x "$work/gpu-bin/lspci"
+gpu() {
+	# shellcheck disable=SC2016
+	env PATH="$1" TEST_LSPCI="${2:-}" bash -c '. "$1"; detect_gpu' sh "$repo/scripts/dwm-utils.sh" 2>"$work/gpu.err"
+}
+pi4=$'00:00.0 PCI bridge: Broadcom Inc. and subsidiaries BCM2711 PCIe Bridge (rev 20)\n01:00.0 USB controller: VIA Technologies, Inc. VL805/806 xHCI USB 3.0 Controller (rev 01)'
+# The emulated aarch64 VM's own lspci (2026-10-13).
+vm=$'00:00.0 Host bridge: Red Hat, Inc. QEMU PCIe Host bridge\n00:01.0 Ethernet controller: Red Hat, Inc. Virtio network device\n00:02.0 Display controller: Red Hat, Inc. Virtio 1.0 GPU (rev 01)\n00:03.0 USB controller: Red Hat, Inc. QEMU XHCI Host Controller (rev 01)'
+[[ $(gpu "$work/gpu-bin:$PATH" "$pi4") == unknown && ! -s $work/gpu.err ]]
+[[ $(gpu "$work/gpu-bin:$PATH" "$vm") == unknown && ! -s $work/gpu.err ]]
+mkdir -p "$work/no-lspci"
+for tool in bash env grep ls head; do ln -sf "$(command -v "$tool")" "$work/no-lspci/$tool"; done
+[[ $(gpu "$work/no-lspci") == unknown && ! -s $work/gpu.err ]]
+
 # The settings provider and the health check name Arch Linux ARM's family.
 grep -Eq '^[[:space:]]*arch \| archarm\) printf' "$repo/scripts/dwm-settings-provider"
 grep -Fq '[[ $id == arch || $id == archarm ]] && family=arch' "$repo/scripts/dwm-system-health"

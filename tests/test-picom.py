@@ -437,6 +437,14 @@ class PicomTests(unittest.TestCase):
             ("Intel", "Mesa Intel Graphics", 1, "intel"),
             ("NVIDIA Corporation", "RTX", 1, "nvidia"),
             ("Mesa", "llvmpipe", 0, "software"),
+            # ARM GPUs (ARM1-04): none is measured yet, so auto picks XRender.
+            # The Pi's v3d is measured in ARM Sprint 3, NVIDIA on ARM in 4.
+            ("Broadcom", "V3D 4.2.14.0", 1, "unknown"),
+            ("Broadcom", "V3D 7.1.7.0", 1, "unknown"),
+            ("Mesa", "virgl (Apple M2)", 1, "unknown"),
+            ("Mesa", "Mali-G610 (Panfrost)", 1, "unknown"),
+            ("Mesa", "FD740 (Adreno)", 1, "unknown"),
+            ("NVIDIA Corporation", "NVIDIA GB10/PCIe", 1, "nvidia"),
         ]:
             text = (
                 f"* GL: {vendor}\n* GL renderer: {gl}\n* Accelerated: {accelerated}\n"
