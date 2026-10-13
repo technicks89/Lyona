@@ -271,7 +271,11 @@ with `dwm-display-setup validate` first; a layout naming an output that is no
 longer connected is recorded as a rollback failure without touching the
 display, and Settings then offers Keep current or Discard but not Revert.
 `discard TOKEN` removes a preview in any state without applying anything and
-reports `result discarded`. Input previews do not have this recovery yet.
+reports `result discarded`. Input previews have the same recovery (#371): the
+same lock and leftover-claim removal, session and watchdog records, foreign
+previews reported `result stale` and removed without applying their captured
+value, and an orphaned preview reported as a rollback failure; Keep and Revert
+then decide, and a failed Revert can be retried.
 
 Display scaling is a direct user-session change rather than a timed preview,
 because a wrong Xft DPI leaves the session readable and is reversible from the

@@ -681,6 +681,11 @@ for helper in dwm-settings-display dwm-settings-input; do
 	fi
 done
 
+# #371: an input preview dropped as stale finishes the input prompt too.
+grep -Fq 'fields[1] === "expired" || fields[1] === "stale") {' "$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq '"An interrupted input preview was discarded; the current settings stay."' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+
 # #369: a stale or discarded preview finishes the prompt; a failed rollback
 # keeps its reason apart from displayMessage, offers Discard, and offers no
 # Revert when dwm-display-setup refused the captured layout (the panel and the
