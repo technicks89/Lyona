@@ -21,6 +21,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Rotating the screen Settings is on to portrait keeps the display preview's
+  **Keep changes** and **Revert** on screen (#372). Settings kept its old width
+  after the rotation, so on a single rotated screen the buttons were
+  off-screen and the countdown always reverted. Settings now follows its
+  screen's size, and dwm re-centers a floating window resized past the screen
+  edge in the area below the panel, where it first places it, instead of half
+  under the panel. A Keep, Revert or Discard clicked while Settings is busy
+  is no longer dropped, and closing Settings while a display preview cannot be
+  restored leaves the preview in place with one notification saying so.
+- `docs/src/install.md` lists every `dwm-settings-display` and
+  `dwm-settings-input` action, with the arguments their usage text gives, and a
+  test keeps the two in step (#373).
 - Settings > Displays no longer gets stuck asking "Keep these display
   settings?" after an interrupted change (#369). If the session ended during a
   preview (Xorg crashed rotating an output), Settings now drops the preview the

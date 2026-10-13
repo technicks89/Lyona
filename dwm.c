@@ -1080,10 +1080,13 @@ configurerequest(XEvent *e)
 				c->oldh = c->h;
 				c->h = ev->height;
 			}
+			/* Centered in the area the bar leaves, as manage() places it: a
+			 * floating window resized past the edge (Settings filling the
+			 * screen after it rotates, #372) went half under the bar. */
 			if ((c->x + c->w) > m->mx + m->mw && c->isfloating)
-				c->x = m->mx + (m->mw / 2 - WIDTH(c) / 2);
+				c->x = MAX(m->wx, m->wx + (m->ww - WIDTH(c)) / 2);
 			if ((c->y + c->h) > m->my + m->mh && c->isfloating)
-				c->y = m->my + (m->mh / 2 - HEIGHT(c) / 2);
+				c->y = MAX(m->wy, m->wy + (m->wh - HEIGHT(c)) / 2);
 			if ((ev->value_mask & (CWX|CWY)) && !(ev->value_mask & (CWWidth|CWHeight)))
 				configure(c);
 			if (ISVISIBLE(c))

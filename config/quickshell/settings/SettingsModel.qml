@@ -116,6 +116,11 @@ Scope {
     // A captured layout dwm-display-setup refused (an output no longer
     // connected) fails the same way on every Revert, so Revert is not offered.
     readonly property bool previewRestorable: !root.previewFailureMessage.startsWith("The previous layout cannot be restored")
+    // A Keep, Revert or Discard clicked while another display action (a status
+    // poll, a refresh) runs, run when it ends (#372): it used to be dropped.
+    property var queuedDisplayAction: null
+    // The preview a "not restored" notification was posted for, once each.
+    property string displayPreviewNotified: ""
     property bool previewOperationLocked: false
     property bool closeRollbackPending: false
     property string pendingAction: ""
@@ -511,7 +516,11 @@ Scope {
     }
 
     function runDisplay(action, args) {
-        if (displayActionProcess.running) return;
+        if (displayActionProcess.running) {
+            if (action === "keep" || action === "revert" || action === "discard")
+                root.queuedDisplayAction = { "action": action, "args": args || [] };
+            return;
+        }
         if (action !== "preview-status") root.displayOutcomeSticky = false;
         root.pendingAction = "display-" + action;
         displayActionProcess.command = Commands.settingsDisplayCommand(action, args || []);
@@ -545,6 +554,17 @@ Scope {
         if (!root.previewToken) return;
         if (root.previewKind === "display") root.runDisplay("revert", [root.previewToken]);
         else if (root.previewKind === "input") root.runInput("revert", [root.previewToken]);
+    }
+
+    // A display preview left unresolved while Settings is closed (a close-time
+    // Revert or the automatic rollback could not restore the layout) is said
+    // once (#372), or the screens stay as they are with no word why.
+    function notifyUnresolvedDisplayPreview() {
+        if (!root.previewToken || root.displayPreviewNotified === root.previewToken) return;
+        root.displayPreviewNotified = root.previewToken;
+        Quickshell.execDetached(["notify-send", "-a", "lyona", "-i", "video-display", "--",
+            "Display settings were not restored",
+            "Open Settings > Displays to keep the current layout or discard the preview."]);
     }
 
     function discardPreview() {
@@ -896,7 +916,12 @@ Scope {
 				root.closeRollbackPending = true;
 			} else if (root.previewToken) {
 				const actionBusy = root.previewKind === "display" ? displayActionProcess.running : inputActionProcess.running;
-				if (actionBusy) root.closeRollbackPending = true;
+				if (root.previewKind === "display" && root.previewRollbackFailed && !root.previewRestorable) {
+					// Revert would be refused again (#372): the preview stays for
+					// Keep current or Discard, and the notification says so.
+					root.closeRollbackPending = false;
+					root.notifyUnresolvedDisplayPreview();
+				} else if (actionBusy) root.closeRollbackPending = true;
 			else {
 				root.closeRollbackPending = false;
 				root.revertPreview();
@@ -1088,6 +1113,7 @@ Scope {
 							root.previewKind = "display"; root.previewToken = fields[1]; root.previewSeconds = 0;
 							root.previewRollbackFailed = true;
 							root.previewFailureMessage = fields.slice(2).join(" ");
+							if (!root.visible) root.notifyUnresolvedDisplayPreview();
 							root.requireRecoveredPreviewRollback();
 						root.displayPreviewStatusAttempts = 0;
 						root.previewOperationLocked = true; root.displayMessage = fields.slice(2).join("\t");
@@ -1127,6 +1153,13 @@ Scope {
 			if (!running && !root.visible && root.previewKind === "display" && root.closeRollbackPending) {
 				root.closeRollbackPending = false;
 				root.revertPreview();
+			} else if (!running && root.queuedDisplayAction) {
+				// Only for the preview it was clicked on: the action that just
+				// ended may have finished that preview.
+				const queued = root.queuedDisplayAction;
+				root.queuedDisplayAction = null;
+				if (root.previewKind === "display" && queued.args[0] === root.previewToken)
+					Qt.callLater(function() { root.runDisplay(queued.action, queued.args); });
 			}
         }
     }
