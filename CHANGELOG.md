@@ -10,6 +10,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The dependency map resolves on aarch64 to packages Arch Linux ARM has
+  (ARM1-02). A `pacman -Si` survey of every profile on Arch Linux ARM
+  (`docs/evidence/arm1-02-aarch64-packages.md`) found 131 of 141 packages;
+  the missing ones are now x86_64 only, through one gate,
+  `dwm_x86_64_only`: `deepin-gtk-theme`, `libva-intel-driver`, `shellcheck`
+  and `archiso`, with the NVIDIA profiles (NVIDIA on aarch64 is ARM Sprint 4's
+  own profile) and the gaming profile, as before. The x86_64 resolution is
+  unchanged, and `check-arch-packages` resolves every profile for both
+  architectures (#2).
+
 - The existing-system installer accepts Arch Linux ARM (`ID=archarm`) on
   aarch64, as an experimental identity of the ARM64 project (decision A-1 in
   `docs/sprints/ARM64.md`); no ARM machine is a supported target yet. One
