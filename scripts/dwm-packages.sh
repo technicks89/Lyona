@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# Prints its arguments on x86_64 only, and returns 0 either way (dwm_packages
+# returns 1 only for an unknown profile). The architecture is $ARCH, as
+# install.sh sets it, else uname. Packages gated here are missing from Arch
+# Linux ARM, or do not apply on aarch64 (ARM1-02; the survey is
+# docs/evidence/arm1-02-aarch64-packages.md).
+dwm_x86_64_only() {
+	[[ ${ARCH:-$(uname -m)} != x86_64 ]] || printf '%s\n' "$@"
+}
+
 dwm_packages() {
 	local family=$1
 	local profile=$2
@@ -36,7 +45,10 @@ dwm_packages() {
 	arch:ci-tools)
 		# What the full-suite CI job needs beyond the desktop: linters, the
 		# ISO builder, and the Xvfb/dbus/X11 tools the acceptance tests drive.
-		printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
+		# Arch Linux ARM has no shellcheck (no GHC) and no archiso (the ISO
+		# builder is x86_64); the x86_64 job lints and builds the medium.
+		dwm_x86_64_only shellcheck archiso
+		printf '%s\n' shfmt python-dbus python-pillow \
 			xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
 		;;
 	arch:ci-full)
@@ -124,11 +136,9 @@ dwm_packages() {
 			system-config-printer arch-audit
 		;;
 	arch:gaming)
-		if [[ ${ARCH:-$(uname -m)} == x86_64 ]]; then
-			printf '%s\n' \
-				steam gamescope gamemode lib32-gamemode \
-				mangohud lib32-mangohud
-		fi
+		# x86_64 only: it needs multilib, which Arch Linux ARM does not have.
+		dwm_x86_64_only steam gamescope gamemode lib32-gamemode \
+			mangohud lib32-mangohud
 		;;
 	arch:theme)
 		# The icon themes give every GTK application icons on a fresh install
@@ -136,8 +146,9 @@ dwm_packages() {
 		printf '%s\n' dconf adwaita-icon-theme papirus-icon-theme
 		;;
 	arch:theme-gtk)
-		printf '%s\n' \
-			adw-gtk-theme deepin-gtk-theme
+		printf '%s\n' adw-gtk-theme
+		# Not in Arch Linux ARM (checked 2026-10-13).
+		dwm_x86_64_only deepin-gtk-theme
 		;;
 	arch:theme-optional)
 		# Qt theming: qt6ct, one fixed package (#247). qt5ct, the other choice
@@ -164,26 +175,31 @@ dwm_packages() {
 	# Arch replaced nvidia and nvidia-dkms with the open kernel modules, which
 	# support Turing (GTX 16xx, RTX 20xx) and newer; older cards need the
 	# AUR-only nvidia-580xx and stay on nouveau.
+	# The NVIDIA profiles are x86_64 only: Arch Linux ARM has no prebuilt
+	# nvidia-open and no legacy branches, and NVIDIA on aarch64 (GB10) is ARM
+	# Sprint 4's own profile.
 	arch:gpu-nvidia)
-		printf '%s\n' nvidia-open nvidia-utils
+		dwm_x86_64_only nvidia-open nvidia-utils
 		;;
 	arch:gpu-nvidia-dkms)
-		printf '%s\n' nvidia-open-dkms nvidia-utils
+		dwm_x86_64_only nvidia-open-dkms nvidia-utils
 		;;
 	# The legacy drivers for older cards (Sync Sprint 14, decision D-23): from the
 	# CachyOS repository when the medium added it, else built from pinned AUR
 	# PKGBUILDs (a listed AUR use; docs/AUR-PACKAGES.md). DKMS only.
 	arch:gpu-nvidia-580xx)
-		printf '%s\n' nvidia-580xx-dkms nvidia-580xx-utils
+		dwm_x86_64_only nvidia-580xx-dkms nvidia-580xx-utils
 		;;
 	arch:gpu-nvidia-470xx)
-		printf '%s\n' nvidia-470xx-dkms nvidia-470xx-utils
+		dwm_x86_64_only nvidia-470xx-dkms nvidia-470xx-utils
 		;;
 	arch:gpu-amd)
 		printf '%s\n' xf86-video-amdgpu
 		;;
 	arch:gpu-intel)
-		printf '%s\n' mesa vulkan-intel libva-intel-driver
+		printf '%s\n' mesa vulkan-intel
+		# Not in Arch Linux ARM (checked 2026-10-13).
+		dwm_x86_64_only libva-intel-driver
 		;;
 	# wireless-regdb: without regulatory.db, cfg80211 stays on the world domain,
 	# where 5 GHz is passive only and the access point's country is ignored
