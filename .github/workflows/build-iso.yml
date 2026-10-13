@@ -217,7 +217,7 @@ jobs:
           cd "$RUNNER_TEMP/iso-artifact"
           sha256sum ./*.iso > SHA256SUMS
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lyona-iso-${{ env.TAG }}
           path: ${{ runner.temp }}/iso-artifact
@@ -225,7 +225,7 @@ jobs:
 
       # The source archive "Check the release archive" left, for sign; the
       # release job rebuilds it byte for byte and checks the signature names it.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lyona-source-${{ env.TAG }}
           path: release/lyona-*.tar.gz
@@ -263,7 +263,7 @@ jobs:
             iso/*.iso
             source/lyona-*.tar.gz
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lyona-bundle-${{ needs.build-iso.outputs.tag }}
           path: ${{ steps.sign.outputs.bundle-path }}
