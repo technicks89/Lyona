@@ -24,22 +24,15 @@ fail() {
 }
 header() { echo -e "\n${BOLD}=== $1 ===${NC}"; }
 
-DISTRO_ID=unknown
-OS_RELEASE_FILE=/etc/os-release
-if [[ ${DWM_TEST_MODE:-0} == 1 && -n ${DWM_OS_RELEASE:-} ]]; then
-	OS_RELEASE_FILE=$DWM_OS_RELEASE
-fi
-if [[ -r $OS_RELEASE_FILE ]]; then
-	# shellcheck disable=SC1090
-	source "$OS_RELEASE_FILE"
-	DISTRO_ID=${ID:-unknown}
-fi
-[[ $DISTRO_ID == arch ]] || fail "lyona supports Arch Linux only."
+# The identities lyona accepts, in one place (dwm-utils.sh).
+# shellcheck source=scripts/dwm-utils.sh
+. "$lyona_lib/dwm-utils.sh"
+is_arch_family || fail "lyona supports Arch Linux, and Arch Linux ARM on aarch64 (experimental), only."
 
 header "Installing xscreensaver"
 
 install_pkg() {
-	command -v pacman >/dev/null 2>&1 || fail "pacman is required; lyona supports Arch Linux only."
+	command -v pacman >/dev/null 2>&1 || fail "pacman is required; lyona supports Arch Linux and Arch Linux ARM only."
 	info "Installing with pacman"
 	local -a packages
 	mapfile -t packages < <(dwm_packages arch xscreensaver)

@@ -16,9 +16,26 @@ if [[ -r $OS_RELEASE_FILE ]]; then
 	DISTRO_NAME="${PRETTY_NAME:-${NAME:-Unknown Linux}}"
 fi
 
-if [[ $DISTRO_ID == "arch" ]]; then
-	DISTRO_FAMILY="arch"
+# The machine lyona runs on, as uname reports it; DWM_MACHINE in test mode.
+DISTRO_MACHINE=$(uname -m)
+if [[ ${DWM_TEST_MODE:-0} == 1 && -n ${DWM_MACHINE:-} ]]; then
+	DISTRO_MACHINE=$DWM_MACHINE
 fi
+
+# The identities lyona accepts (SPEC.md section 4): Arch Linux (ID=arch), and
+# Arch Linux ARM (ID=archarm) on aarch64 only, experimental (decision A-1,
+# docs/sprints/ARM64.md). Nothing is accepted for its ID_LIKE alone, and
+# 32-bit Arch Linux ARM (armv7h) is not.
+case $DISTRO_ID in
+arch) DISTRO_FAMILY="arch" ;;
+archarm) [[ $DISTRO_MACHINE != aarch64 ]] || DISTRO_FAMILY="arch" ;;
+esac
+
+# The Arch family: every path an accepted identity takes. Architecture gates
+# (CachyOS and gaming are x86_64 only) stay where they are.
+is_arch_family() {
+	[[ $DISTRO_FAMILY == "arch" ]]
+}
 
 case "$DISTRO_FAMILY" in
 arch)
@@ -41,7 +58,7 @@ install_packages() {
 		"${DWM_PACKAGE_COMMAND[@]}" "$@"
 		;;
 	*)
-		printf 'Unsupported distribution: %s (Arch Linux is required)\n' "$DISTRO_NAME" >&2
+		printf 'Unsupported distribution: %s (Arch Linux, or Arch Linux ARM on aarch64, is required)\n' "$DISTRO_NAME" >&2
 		return 1
 		;;
 	esac

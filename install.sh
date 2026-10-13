@@ -107,14 +107,14 @@ arch)
 	}
 	;;
 *)
-	err "Unsupported distribution: $DISTRO_NAME"
-	err "lyona supports Arch Linux only."
+	err "Unsupported distribution: $DISTRO_NAME (ID=$DISTRO_ID on $DISTRO_MACHINE)"
+	err "lyona supports Arch Linux, and Arch Linux ARM on aarch64 (experimental), only."
 	exit 1
 	;;
 esac
 
 BG_DIR="$HOME/Pictures/backgrounds"
-ARCH="$(uname -m)"
+ARCH="$DISTRO_MACHINE"
 # The wallpapers, pinned to a reviewed commit (Sync Sprint 16 R16-16): they are
 # fetched while sudo is cached. Re-pin after looking at what changed.
 WALLPAPERS_URL="https://github.com/technicks89/nord-background.git"
@@ -543,7 +543,7 @@ apply_grub_theme() {
 }
 
 arch_gaming_profile() {
-	[[ $DISTRO_ID == "arch" && $INSTALL_PROFILE == "full" && $ARCH == "x86_64" ]]
+	is_arch_family && [[ $INSTALL_PROFILE == "full" && $ARCH == "x86_64" ]]
 }
 
 arch_multilib_enabled() {
@@ -551,7 +551,7 @@ arch_multilib_enabled() {
 }
 
 cachyos_supported() {
-	[[ $DISTRO_ID == "arch" && $ARCH == "x86_64" ]]
+	is_arch_family && [[ $ARCH == "x86_64" ]]
 }
 
 cachyos_repos_configured() {
@@ -668,7 +668,7 @@ confirm_arch_multilib_repository() {
 configure_arch_multilib_repository() {
 	local pacman_conf="/etc/pacman.conf"
 
-	if [[ $DISTRO_ID != "arch" || $INSTALL_PROFILE != "full" || $ARCH != "x86_64" ]]; then
+	if ! is_arch_family || [[ $INSTALL_PROFILE != "full" || $ARCH != "x86_64" ]]; then
 		return 1
 	fi
 	if [[ $ARCH_GAMING_REPOS_APPROVED != true ]]; then
@@ -705,7 +705,7 @@ configure_arch_multilib_repository() {
 configure_arch_gamemode_access() {
 	local target_user
 
-	if [[ $DISTRO_ID != "arch" || $INSTALL_PROFILE != "full" ]]; then
+	if ! is_arch_family || [[ $INSTALL_PROFILE != "full" ]]; then
 		return
 	fi
 	if ! getent group gamemode >/dev/null 2>&1; then

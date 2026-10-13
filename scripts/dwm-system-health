@@ -552,7 +552,9 @@ scan_package_database() {
 		source "$os_file"
 		id=${ID:-unknown}
 	fi
-	[[ $id == arch ]] && family=arch
+	# Arch Linux, or Arch Linux ARM (experimental, docs/sprints/ARM64.md A-1):
+	# both keep pacman's database.
+	[[ $id == arch || $id == archarm ]] && family=arch
 
 	case $family in
 	arch)

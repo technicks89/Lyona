@@ -115,8 +115,11 @@ cd Lyona
 The dry run shows the dependency and installation plan before anything changes.
 The installer requires Arch Linux, preserves existing personal configuration,
 and installs the managed desktop components. It accepts only Arch's
-`/etc/os-release` identity and rejects every other operating-system identity
-before making changes.
+`/etc/os-release` identity (`ID=arch`), and Arch Linux ARM's (`ID=archarm`)
+on aarch64 as an experimental identity of the
+[ARM64 project](docs/sprints/ARM64.md), and rejects every other
+operating-system identity before making changes. No ARM machine is a
+supported target yet.
 
 | Profile | Includes |
 | --- | --- |

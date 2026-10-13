@@ -29,7 +29,10 @@ The sole supported platform is Arch Linux. The archiso-based lyona install
 medium is the current documented image base: one image for every GPU, whose
 installer detects an NVIDIA GPU and offers its driver, recommended, when the
 card supports it. The
-existing-system installer also supports Arch Linux.
+existing-system installer also supports Arch Linux, and accepts Arch Linux
+ARM (`ID=archarm`) on `aarch64` only, as an experimental identity of the ARM64
+project (`docs/sprints/ARM64.md`, decision A-1); no ARM target is supported
+until its sprint has met `SPEC.md` 9.4 on that target.
 Every other operating-system identity must fail clearly instead of entering
 an untested package or installation path.
 
@@ -127,7 +130,11 @@ an untested package or installation path.
 ## Arch Platform Rules
 
 - Detect Arch Linux through `/etc/os-release` and reject every other identity
-  before package installation or system changes.
+  before package installation or system changes. Arch Linux ARM
+  (`ID=archarm`) is accepted on `aarch64` only (experimental); `ID_LIKE`
+  never makes an identity acceptable. Use `is_arch_family`
+  (`scripts/dwm-utils.sh`) rather than testing `ID` directly, and keep
+  architecture gates (CachyOS and gaming are x86_64 only) where they are.
 - Keep Arch package capability names in the shared dependency map
   (`scripts/dwm-packages.sh`). Do not scatter package-name lists across
   multiple scripts.

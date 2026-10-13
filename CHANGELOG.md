@@ -10,6 +10,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The existing-system installer accepts Arch Linux ARM (`ID=archarm`) on
+  aarch64, as an experimental identity of the ARM64 project (decision A-1 in
+  `docs/sprints/ARM64.md`); no ARM machine is a supported target yet. One
+  helper, `is_arch_family` in `scripts/dwm-utils.sh`, decides which
+  identities are accepted, and `install.sh` and the xscreensaver setup use it.
+  The Settings provider and the health check count Arch Linux ARM as the Arch
+  family. Arch Linux ARM on any other architecture (32-bit `armv7h`), and any
+  derivative whatever its `ID_LIKE`, is still rejected before any change, and
+  the rejection now names the identity and the architecture found. CachyOS
+  and the gaming profile stay x86_64 only (#1).
+
 - The record catches up with the published `2026.10.0-beta.6`, which is
   `1bfafac`: its changelog section and release notes list #317 to #328; SPEC
   and the install guide describe the base-system download as it is since

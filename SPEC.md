@@ -55,16 +55,22 @@ The primary release target is the Arch Linux desktop image:
 | Session | Xorg with dwm and the managed Quickshell shell |
 | Variants | One image for every GPU; the installer recommends the proprietary NVIDIA driver on a supported NVIDIA GPU, with nouveau as the alternative |
 | Initial release architecture | x86_64 |
+| Arch Linux ARM (`ID=archarm`, aarch64) | Experimental (ARM64 project, `docs/sprints/ARM64.md`): accepted by the existing-system installer; no target is supported yet |
 
 Arch aarch64 is not currently a supported release target. Architecture-aware
 package filtering may remain in shared helpers, but it does not constitute an
 aarch64 support claim without native installer and desktop runtime evidence.
+An aarch64 target becomes supported only once its ARM sprint has met the
+release validation contract (section 9.4) on that target.
 
 The existing-system installer supports Arch Linux and uses `pacman`. It must
-report the detected distribution and accept only `ID=arch` before package
-installation or system changes. Every other operating-system identity must be
-rejected. Arch Linux is the sole supported distribution; derivative distributions
-are not included by implication.
+report the detected distribution and architecture, and accept only `ID=arch`,
+or `ID=archarm` on `aarch64` (Arch Linux ARM, experimental; decision A-1 of
+the ARM64 project), before package installation or system changes. Every other
+operating-system identity must be rejected, including `ID=archarm` on any other
+architecture (32-bit `armv7h` is out of scope). Arch Linux, with Arch Linux ARM
+as its aarch64 port, is the sole supported distribution; derivative
+distributions are not included by implication, whatever their `ID_LIKE`.
 
 ## 5. Functional Requirements
 
