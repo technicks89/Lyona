@@ -261,6 +261,16 @@ Use `${DWM_TEST_TMP_ROOT:-$HOME/tmp}` for test workspaces and clear the exact
 run directory after success, failure, or interruption. If a required Arch
 path cannot be tested, state exactly what was not tested.
 
+Tests never act on the desktop they are run from (#368). A check goal of the
+Makefile, `scripts/run-tests` and `tests/lib.sh` remove the session's display
+and bus, keep GSettings in memory, give the run a private
+`XDG_RUNTIME_DIR`, and set `LYONA_NO_TRUSTED_HELPERS`, so no installed root
+helper or polkit prompt is reached. A test that needs X starts its own Xvfb
+(`xvfb-run`, `dbus-run-session`) inside its recipe. Keep new tests behind
+those entry points: do not export `DISPLAY` or a session bus into a test, and
+do not call `gsettings`, `xrdb`, Picom or Quickshell IPC outside a stub or a
+private server. `make check-session-isolation` fails when that breaks.
+
 For Arch image changes, follow the complete validation contract in
 [SPEC.md Section 9.4](SPEC.md#94-arch-image-validation). Static validation
 alone does not prove package resolution, postinstall behavior, first boot, or

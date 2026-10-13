@@ -194,6 +194,71 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# ── Isolation from the desktop session ──────────────────────────────────
+#
+# A test never acts on the desktop it was started from (#368): run inside a
+# session, the theme tests reloaded the live Picom and wrote the user's
+# GSettings, and the whole desktop flashed. Under make's check goals and
+# scripts/run-tests (LYONA_TEST_ISOLATED) the session's display and bus are
+# already gone, so whatever DISPLAY or bus a test sees here is the one its
+# recipe started (xvfb-run, dbus-run-session). A test run straight from a
+# terminal loses the session's: a display that is not an Xvfb or Xephyr
+# server, the inherited session bus and the inherited runtime directory.
+# GSettings stays in memory and no installed root helper is found
+# (scripts/dwm-trust.sh).
+
+# lyona_display_is_virtual DISPLAY: true when an Xvfb or Xephyr server runs it.
+lyona_display_is_virtual() {
+	ldv_number=${1#*:}
+	ldv_number=${ldv_number%%.*}
+	case $ldv_number in '' | *[!0-9]*) return 1 ;; esac
+	for ldv_cmdline in $(grep -l -s -a -e Xvfb -e Xephyr /proc/[0-9]*/cmdline); do
+		# The grep above can list itself, gone by now.
+		ldv_args=" $({ tr '\0' ' ' <"$ldv_cmdline"; } 2>/dev/null) "
+		case $ldv_args in
+		*" Xvfb :$ldv_number "* | */Xvfb" :$ldv_number "* | *" Xephyr :$ldv_number "* | */Xephyr" :$ldv_number "*)
+			return 0
+			;;
+		esac
+	done
+	return 1
+}
+
+lyona_uid=$(id -u)
+if [ -z "${LYONA_TEST_ISOLATED:-}" ]; then
+	if [ -n "${DISPLAY:-}" ] && ! lyona_display_is_virtual "$DISPLAY"; then
+		unset DISPLAY XAUTHORITY
+	fi
+	unset WAYLAND_DISPLAY
+	# Nothing has started a bus for this test yet, so any bus it inherits is
+	# its caller's session bus, whatever its address (/run/user, an abstract
+	# socket from dbus-launch). A test that needs one starts its own.
+	DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
+	export DBUS_SESSION_BUS_ADDRESS
+fi
+GSETTINGS_BACKEND=memory
+LYONA_NO_TRUSTED_HELPERS=1
+export GSETTINGS_BACKEND LYONA_NO_TRUSTED_HELPERS
+# The runtime directory is private already under LYONA_TEST_ISOLATED (the
+# Makefile's or the run's own); any other is the session's, wherever it is.
+lyona_runtime_private=
+if [ -n "${LYONA_TEST_ISOLATED:-}" ]; then
+	case ${XDG_RUNTIME_DIR:-} in
+	'' | "/run/user/$lyona_uid" | "/run/user/$lyona_uid/"*) ;;
+	*) lyona_runtime_private=1 ;;
+	esac
+fi
+case $lyona_runtime_private in
+'')
+	XDG_RUNTIME_DIR=$(mktemp -d) || fail 'could not create a private runtime directory'
+	chmod 700 "$XDG_RUNTIME_DIR"
+	export XDG_RUNTIME_DIR
+	# shellcheck disable=SC2016 # expanded when the cleanup runs
+	cleanup_add 'rm -rf -- "$lyona_private_runtime"'
+	lyona_private_runtime=$XDG_RUNTIME_DIR
+	;;
+esac
+
 # Creates $work and arranges for it to be removed. $work/bin exists but is not
 # put on PATH: tests scope stubs to individual invocations.
 make_workspace() {

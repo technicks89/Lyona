@@ -36,6 +36,13 @@ FloatingWindow {
     // panel below it. dwm centers it in the area below the panel.
     implicitWidth: root.screen ? root.screen.width : 1180
     implicitHeight: root.screen ? root.screen.height - Theme.panelHeight : 760
+    // Both limits at that size (#372): Quickshell applies the implicit size only
+    // when the window is first shown, so after its screen rotated Settings kept
+    // the old width, with the preview prompt's Keep and Revert off-screen. Qt
+    // resizes a window to its limits when they change; dwm re-centers it below
+    // the panel.
+    minimumSize: Qt.size(implicitWidth, implicitHeight)
+    maximumSize: Qt.size(implicitWidth, implicitHeight)
     color: Theme.transparent
 
     function focusSearch() {

@@ -13,6 +13,19 @@ body() {
 	wm_body "$1"
 }
 
+# ── Floating: a window resized past the edge is centered below the bar ──
+# #372: configurerequest centered it on the whole monitor, half under the bar,
+# where manage() places it in the area the bar leaves.
+configurerequest=$(body 'configurerequest(XEvent \*e)')
+[ -n "$configurerequest" ] || fail 'configurerequest(XEvent *e) is missing.'
+printf '%s\n' "$configurerequest" | grep -Fq 'c->x = MAX(m->wx, m->wx + (m->ww - WIDTH(c)) / 2);' ||
+	fail 'configurerequest no longer centers a floating window across the bar-free area.'
+printf '%s\n' "$configurerequest" | grep -Fq 'c->y = MAX(m->wy, m->wy + (m->wh - HEIGHT(c)) / 2);' ||
+	fail 'configurerequest no longer centers a floating window below the bar.'
+if printf '%s\n' "$configurerequest" | grep -Fq 'm->my + (m->mh / 2 - HEIGHT(c) / 2)'; then
+	fail 'configurerequest centers a floating window on the whole monitor again, under the bar.'
+fi
+
 # ── Floating: the mechanism does not depend on an incidental Arg convention ─
 setfloating=$(body 'setfloating(Client \*c, int shrink)')
 [ -n "$setfloating" ] || fail 'setfloating(Client *c, int shrink) is missing.'

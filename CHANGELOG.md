@@ -21,6 +21,119 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- dwm no longer crashes at login when the display layout kept from Settings >
+  Displays rotates a screen to portrait (#371). The kept layout is applied
+  early in the session, before the panel has docked, while dwm's bar height
+  is still 0, and resizing its drawing surface asked X for an empty pixmap,
+  which X refuses and dwm treats as fatal: every login ended at once. A layout
+  of the same size (inverted) was not affected.
+- Settings > Input no longer gets stuck on an interrupted preview (#371), as
+  Settings > Displays no longer does (#369). An input preview left behind when
+  the session ended mid-preview, or by a Keep or Revert that was killed, is
+  now dropped without applying anything if its X session is gone, reported as
+  a failed rollback (with Keep and Revert working) if only its automatic
+  rollback stopped, and a leftover lock no longer blocks the next Keep or
+  Revert. `dwm-settings-input` reports a dropped preview as `result stale`.
+- Rotating the screen Settings is on to portrait keeps the display preview's
+  **Keep changes** and **Revert** on screen (#372). Settings kept its old width
+  after the rotation, so on a single rotated screen the buttons were
+  off-screen and the countdown always reverted. Settings now follows its
+  screen's size, and dwm re-centers a floating window resized past the screen
+  edge in the area below the panel, where it first places it, instead of half
+  under the panel. A Keep, Revert or Discard clicked while Settings is busy
+  is no longer dropped, and closing Settings while a display preview cannot be
+  restored leaves the preview in place with one notification saying so.
+- `docs/src/install.md` lists every `dwm-settings-display` and
+  `dwm-settings-input` action, with the arguments their usage text gives, and a
+  test keeps the two in step (#373).
+- Settings > Displays no longer gets stuck asking "Keep these display
+  settings?" after an interrupted change (#369). If the session ended during a
+  preview (Xorg crashed rotating an output), Settings now drops the preview the
+  next time it checks, without applying anything, instead of asking forever,
+  and a Keep or Revert that was killed no longer locks out the next one. When
+  the previous layout cannot be restored, because its automatic rollback
+  stopped or it names a display that is no longer connected (as after a change
+  of X driver renames the outputs), the prompt says why and offers **Keep
+  current** (also used at the next login) or **Discard** (this session only).
+  A preview already stuck this way is dropped the next time Settings >
+  Displays opens, once it is ten minutes old; nothing needs doing.
+  `dwm-settings-display` has a new `discard TOKEN` action and reports a
+  dropped preview as `result stale`.
+- Running lyona's tests inside a desktop session no longer makes the whole
+  desktop flash or changes its theme (#368). The tests inherited the session's
+  display, D-Bus and GSettings: theme tests reloaded the live Picom, which
+  redraws every screen, and wrote the user's GTK theme (a run left it on a
+  test theme), and the update test reached the installed root helper through
+  polkit. A check goal of the Makefile, `scripts/run-tests` and a test run on
+  its own now drop the session's display and bus, keep GSettings in memory,
+  use a private runtime directory and find no installed root helper
+  (`LYONA_NO_TRUSTED_HELPERS`). Tests that need X start their own Xvfb, as
+  before. `make check-session-isolation` fails if a test reaches the session
+  again. A machine where the suite ran in a session may still have a test GTK
+  theme: apply your theme again from Settings > Appearance.
+- Wi-Fi on an installed system connects quickly on boot and resume, including
+  on 5 GHz (#365). The `network` packages now include `wireless-regdb`, the
+  kernel's regulatory database, and `iw`. Without the database every boot
+  logged `failed to load regulatory.db` and Wi-Fi stayed on the world domain,
+  where 5 GHz is passive only and the access point's country is ignored, so
+  each connection first timed out on 5 GHz. The live medium had the database,
+  so the installer never showed the problem. The image installer also sets the
+  Wi-Fi country from the timezone (shown on its summary) in
+  `/etc/modprobe.d/lyona-regdom.conf`, and sets none for a zone with no
+  country such as `UTC`. On an existing system `install.sh` does not set the
+  country; on a machine with Wi-Fi and no country it says how to set one in
+  `/etc/conf.d/wireless-regdom`. Troubleshooting covers chips that stay
+  unreliable on 5 GHz, such as the Broadcom BCM43224 in older MacBooks.
+- A fresh install no longer starts with System Health warnings for things that
+  are not wrong. Autorandr's own login entry ran `autorandr --change --default
+  default` and failed until a profile named `default` existed; the installer
+  now hides it from dwm sessions, and the session runs `autorandr --change`
+  itself, falling back to `default` only when that profile exists. The DNS
+  check reads `/etc/resolv.conf` when systemd-resolved is not running, as on
+  a NetworkManager install, instead of warning that no resolver is reported.
+  A nearly full USB or other hotplug drive, such as an install stick's EFI
+  partition, is shown as information rather than a warning. The uptime card
+  names the host without `hostname(1)`, which Arch does not install.
+- Clicking a running app's icon in the panel switches to its workspace and
+  focuses it without moving the mouse pointer to the middle of the window; the
+  pointer stays on the panel. This holds for a window on another workspace,
+  which the panel reaches through a workspace switch first, and for the
+  panel's workspace buttons. Tag and monitor keys and the window overview
+  still move the pointer to the window, as before.
+- Steam's menu bar menus (Steam, View, Friends, Games, Help) stay open. Steam
+  focuses a window inside each menu and also asks for the focus with
+  `_NET_ACTIVE_WINDOW`; dwm answered by focusing the menu itself, which took
+  the keyboard off Steam's inner window, and Steam closed the menu at once.
+  dwm now leaves the focus where it is when it is already inside the popup
+  (#318).
+- Right-clicking a tray icon, such as Steam's, opens its menu again, drawn in
+  the panel's own popup style; a submenu opens in place with Back to return,
+  and Escape closes it. The menu used to need Quickshell's QApplication mode,
+  which the shell does not run in, so the click opened nothing.
+- An app with a window open no longer shows twice on the panel: its tray icon
+  is hidden while its running-app button is there, and comes back when the
+  window closes to the tray (Steam, among others).
+- System Health opens again after being closed from outside, as with dwm's
+  kill-window key. The window hid while its model still read open, so every
+  later open changed nothing until Quickshell restarted.
+- XDG autostart applications come back after a session that ended without
+  logging out, such as an Xorg crash. The user's graphical-session targets
+  stayed active, so the next login started nothing and an applet that died
+  with the old X server, such as Blueman, stayed failed and showed in System
+  Health. Login now ends targets left by another login when no other graphical
+  login of the user is active, through `dwm-session.sh`, which autostop.sh now
+  shares.
+- Rotating a display from Settings no longer crashes the whole session on AMD
+  graphics. The resize under Picom's queued page flip failed the flip, and the
+  amdgpu driver (xf86-video-amdgpu 25.0) crashed Xorg while aborting it.
+  Settings now stops a running Picom for each live layout change (preview,
+  revert, automatic rollback) and starts it again afterwards. A layout changed
+  by other tools, such as autorandr on hotplug, is not covered.
+- The install medium no longer sits on its splash screen for most of a minute
+  when booted from a USB stick. archiso copied the whole root image into RAM
+  before boot continued, hidden behind the splash; the primary boot entries
+  now pass `copytoram=n`, so the stick must stay plugged in during the
+  install, as it already had to. Not yet validated on real hardware.
 - A failed update says what failed. The progress popup, the notification and
   Settings > System showed "Installing V (authentication required)" for every
   failure after the password prompt, whatever had gone wrong; they now show the

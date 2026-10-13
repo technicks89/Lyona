@@ -320,6 +320,9 @@ mkdir -p "$work/prefix/bin" "$work/onpath/bin"
 chmod +x "$work/onpath/bin/lyona-update"
 # shellcheck disable=SC2016 # expanded by the inner shell
 lookup='. "$0"; trusted_file() { [ "$1" = "$EXPECT" ]; }; trusted_root_helper_path "$@"'
+# The test run sets LYONA_NO_TRUSTED_HELPERS (#368); these checks are of the
+# lookup itself.
+unset LYONA_NO_TRUSTED_HELPERS
 got=$(EXPECT="$work/prefix/libexec/lyona/lyona-update-root" sh -c "$lookup" "$trust_lib" \
 	lyona-update-root "$work/prefix/bin/lyona-update" lyona-update) || fail 'the installed lookup failed'
 [ "$got" = "$work/prefix/libexec/lyona/lyona-update-root" ] || fail "the installed lookup gave: $got"
@@ -329,6 +332,11 @@ got=$(PATH="$work/onpath/bin:$PATH" EXPECT="$work/onpath/libexec/lyona/lyona-upd
 if PATH="$repo/scripts:/usr/bin:/bin" EXPECT=x sh -c "$lookup" "$trust_lib" \
 	lyona-update-root "$repo/scripts/lyona-update" lyona-update >/dev/null; then
 	fail 'a checkout with no installed lyona found a root helper'
+fi
+# LYONA_NO_TRUSTED_HELPERS refuses even a helper that would pass (#368).
+if LYONA_NO_TRUSTED_HELPERS=1 EXPECT="$work/prefix/libexec/lyona/lyona-update-root" sh -c "$lookup" "$trust_lib" \
+	lyona-update-root "$work/prefix/bin/lyona-update" lyona-update >/dev/null; then
+	fail 'LYONA_NO_TRUSTED_HELPERS did not stop the root helper lookup'
 fi
 for helper in trusted_parent_chain trusted_file; do
 	duplicate=$(grep -l "^$helper() {" "$repo"/scripts/* 2>/dev/null |

@@ -72,6 +72,10 @@ with the CyberRe boot menu theme.
      keeps the list. When too few mirrors are in the country, worldwide ones are
      added; when they cannot be ranked (no network, or it takes more than 30
      seconds), the medium's own list is used;
+   - the Wi-Fi country is not asked: it is the timezone's country, shown on
+     the summary, and the new system's Wi-Fi uses that country's channels and
+     power limits from the first boot. A zone with no country, such as `UTC`,
+     sets none, and Wi-Fi follows the country the access point names;
    - on an NVIDIA GPU, the driver: the proprietary driver, recommended when it
      supports the card (a legacy branch for an older card), or the open-source
      nouveau.
@@ -183,9 +187,12 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   Picom, Feh, Dex, fonts, theming, screenshot, audio, Bluetooth control and
   tray tools, brightness tools, Flatpak, the GTK desktop portal, GNOME
   Keyring, which a display-manager login unlocks, the Thunar file manager
-  (Super+E), and NetworkManager. NetworkManager is enabled only when no other
+  (Super+E), and NetworkManager with the Wi-Fi regulatory database
+  (`wireless-regdb`). NetworkManager is enabled only when no other
   network manager (systemd-networkd, iwd, ConnMan, dhcpcd or netctl) is in use,
-  and starts at the next boot. It also
+  and starts at the next boot. The installer does not set your Wi-Fi country
+  on an existing system; when none is set it says how to (see
+  [Troubleshooting](troubleshooting.md#wi-fi-is-slow-to-connect-or-5-ghz-fails)). It also
   installs Celluloid, mpv, and sxiv, and gives a fresh account Celluloid for
   audio and video and sxiv for images through `scripts/seed-default-apps.sh`,
   which also makes Thunar the folder handler when Thunar is installed. An
@@ -569,15 +576,20 @@ The installed Settings display provider is machine-oriented. Its actions are:
 
 ```text
 dwm-settings-display discover
-dwm-settings-display watch
+dwm-settings-display watch OWNER_PID OWNER_START
 dwm-settings-display save NAME SPEC...
 dwm-settings-display preview TOKEN SECONDS SPEC...
 dwm-settings-display preview-profile TOKEN SECONDS NAME
 dwm-settings-display keep TOKEN [NAME]
+dwm-settings-display apply-kept
 dwm-settings-display revert TOKEN
+dwm-settings-display discard TOKEN
 dwm-settings-display preview-status [TOKEN]
 dwm-settings-display install-profile NAME
 dwm-settings-display rollback-system
+dwm-settings-display dpi-set VALUE
+dwm-settings-display dpi-reset
+dwm-settings-display dpi-apply-saved
 ```
 
 Discovery and live previews require `xrandr`, and the hotplug watch requires
@@ -594,7 +606,7 @@ The input provider exposes the corresponding session actions:
 
 ```text
 dwm-settings-input discover
-dwm-settings-input watch
+dwm-settings-input watch OWNER_PID OWNER_START
 dwm-settings-input watch-apply
 dwm-settings-input apply-saved
 dwm-settings-input preview TOKEN SECONDS DEVICE SETTING VALUE

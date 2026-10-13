@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
 import Quickshell.Widgets
 import qs.core
 
@@ -11,9 +10,12 @@ Rectangle {
     property var iconSources: Icons.trayIconSources(root.trayItem)
     property int iconSourceIndex: 0
 
+    // TrayArea draws the menu: one popup for the whole tray.
+    signal menuRequested(var item)
+
     function openContextMenu() {
         if (root.trayItem && root.trayItem.hasMenu) {
-            trayMenu.open();
+            root.menuRequested(root);
         }
     }
 
@@ -39,13 +41,6 @@ Rectangle {
     color: trayMouse.containsMouse ? Theme.controlHoverFill : Theme.transparent
     border.color: trayMouse.containsMouse ? Theme.controlHoverBorder : Theme.transparent
     border.width: trayMouse.containsMouse ? Theme.pillBorderWidth : 0
-
-    QsMenuAnchor {
-        id: trayMenu
-
-        menu: root.trayItem ? root.trayItem.menu : null
-        anchor.item: root
-    }
 
     IconImage {
         id: trayIcon
