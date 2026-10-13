@@ -811,6 +811,23 @@ helper_369 revert dead-watchdog >"$work/369-dead-watchdog-revert"
 grep -Fqx $'result\treverted\tdead-watchdog' "$work/369-dead-watchdog-revert"
 grep -Fq -- '--output DP-1 --mode 2560x1440 --rate 60.00 --pos 1920x0 --rotate normal' "$work/xrandr.log"
 
+# The preview died while applying the layout, after recording its session but
+# before starting a watchdog: no watch record. Still young, it may be starting,
+# and is left active; older than the longest timeout (99 s), it is orphaned,
+# reported as a failed rollback, and Revert restores the layout.
+preview_369 no-watch 30
+stop_watchdog_369 "$(watchdog_369 no-watch)"
+rm -f "$state/no-watch.watch"
+helper_369 preview-status no-watch >"$work/369-no-watch-young"
+grep -Fqx $'preview-active\tno-watch' "$work/369-no-watch-young"
+touch -d '5 minutes ago' "$state/no-watch.active"
+helper_369 preview-status no-watch >"$work/369-no-watch-old"
+grep -Fqx $'preview-failed\tno-watch\tThe automatic rollback is no longer running.' "$work/369-no-watch-old"
+rm -f "$work/xrandr.log"
+helper_369 revert no-watch >"$work/369-no-watch-revert"
+grep -Fqx $'result\treverted\tno-watch' "$work/369-no-watch-revert"
+grep -Fq -- '--output DP-1 --mode 2560x1440 --rate 60.00 --pos 1920x0 --rotate normal' "$work/xrandr.log"
+
 # The state an interrupted preview left before any of this was recorded: no
 # session or watchdog record, a claim left behind. Older than any timeout, its
 # server is unknowable, so it is dropped without applying anything.

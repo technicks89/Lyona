@@ -21,6 +21,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A display or input preview that died while applying its change, after
+  recording its session but before starting the automatic rollback, no longer
+  stays "active" for good on the same X server. Once older than any preview
+  timeout it is reported as a failed rollback, so Keep and Revert work. The
+  input preview got this in #371's review; display previews now match.
 - dwm no longer crashes at login when the display layout kept from Settings >
   Displays rotates a screen to portrait (#371). The kept layout is applied
   early in the session, before the panel has docked, while dwm's bar height
