@@ -579,11 +579,21 @@ preview_foreign() {
 # active, but its watchdog is gone, so nothing will revert it. It is kept: its
 # captured value is still good here, and Keep or Revert decides.
 preview_orphaned() {
-	local token=$1 state watch failed pid= start=
+	local token=$1 state session watch failed pid= start=
 	state=$(token_file "$token" state)
+	session=$(token_file "$token" session)
 	watch=$(token_file "$token" watch)
 	failed=$(token_file "$token" failed)
-	[[ -f $state && -f $watch && ! -f $failed ]] || return 1
+	[[ -f $state && ! -f $failed ]] || return 1
+	if [[ ! -f $watch ]]; then
+		# Its session is recorded but no watchdog was: the preview died while
+		# applying, before starting one. Orphaned once older than the longest
+		# timeout (99 s) can be; a preview with no records at all is
+		# preview_foreign's.
+		[[ -s $session ]] || return 1
+		[[ -n $(find "$state" -maxdepth 0 -mmin +2 2>/dev/null) ]]
+		return
+	fi
 	read -r pid start <"$watch" || :
 	[[ -n $pid && -n $start ]] && preview_process_owned "$pid" "$start" && return 1
 	return 0

@@ -696,6 +696,23 @@ input_371 revert dead-watchdog >"$work/371-dead-revert"
 grep -Fqx $'result\trevert\tdead-watchdog' "$work/371-dead-revert"
 grep -Fq 'xinput set-prop 12 libinput Accel Speed' "$work/actions.log"
 
+# The preview died while applying, after recording its session but before
+# starting a watchdog: no watch record. Still young, it may be starting, and is
+# left active; older than the longest timeout (99 s), it is orphaned, reported
+# as a failed rollback, and Revert restores the value.
+input_371 preview no-watch 30 "$mouse_key" pointer-speed 0.5 >/dev/null
+stop_watchdog_371 "$(watchdog_371 no-watch)"
+rm -f "$istate/no-watch.watch"
+input_371 preview-status no-watch >"$work/371-no-watch-young"
+grep -Fqx $'preview-active\tno-watch' "$work/371-no-watch-young"
+touch -d '5 minutes ago' "$istate/no-watch.state"
+input_371 preview-status no-watch >"$work/371-no-watch-old"
+grep -Fqx $'preview-failed\tno-watch\tThe automatic rollback is no longer running.' "$work/371-no-watch-old"
+rm -f "$work/actions.log"
+input_371 revert no-watch >"$work/371-no-watch-revert"
+grep -Fqx $'result\trevert\tno-watch' "$work/371-no-watch-revert"
+grep -Fq 'xinput set-prop 12 libinput Accel Speed' "$work/actions.log"
+
 # A preview from before these records (no session or watchdog), older than any
 # timeout, with a claim left behind: dropped without applying anything, and the
 # reservation of the preview that is current is left alone.
