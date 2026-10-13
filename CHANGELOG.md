@@ -21,6 +21,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Running lyona's tests inside a desktop session no longer makes the whole
+  desktop flash or changes its theme (#368). The tests inherited the session's
+  display, D-Bus and GSettings: theme tests reloaded the live Picom, which
+  redraws every screen, and wrote the user's GTK theme (a run left it on a
+  test theme), and the update test reached the installed root helper through
+  polkit. A check goal of the Makefile, `scripts/run-tests` and a test run on
+  its own now drop the session's display and bus, keep GSettings in memory,
+  use a private runtime directory and find no installed root helper
+  (`LYONA_NO_TRUSTED_HELPERS`). Tests that need X start their own Xvfb, as
+  before. `make check-session-isolation` fails if a test reaches the session
+  again. A machine where the suite ran in a session may still have a test GTK
+  theme: apply your theme again from Settings > Appearance.
 - Wi-Fi on an installed system connects quickly on boot and resume, including
   on 5 GHz (#365). The `network` packages now include `wireless-regdb`, the
   kernel's regulatory database, and `iw`. Without the database every boot

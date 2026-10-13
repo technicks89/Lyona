@@ -41,6 +41,25 @@ GTK_THEME_IDS := $(shell awk '/^\[theme\./ { id = $$0; sub(/^\[theme\./, "", id)
 CAPITAINE_LICENSE_DIR = ${DATADIR}/licenses/lyona/capitaine-cursors
 GRUB_THEME_NAME = CyberRe
 GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
+# Tests never act on the desktop they are started from (#368). Run inside a
+# session, theme tests reloaded the live Picom and wrote the user's GSettings,
+# and the whole desktop flashed. For a check goal, every recipe loses the
+# session's display and bus: an Xvfb test gets a fresh one from xvfb-run and
+# dbus-run-session inside its recipe. GSettings stays in memory, and the
+# inherited runtime directory (Quickshell's IPC sockets, the display helper's
+# state), wherever the session keeps it, is swapped for a private one. No installed root helper is
+# found (LYONA_NO_TRUSTED_HELPERS, scripts/dwm-trust.sh), so no test reaches
+# polkit and the real system helpers. scripts/run-tests and
+# tests/lib.sh do the same for what they start.
+ifneq ($(filter check check-% release-check,$(MAKECMDGOALS)),)
+unexport DISPLAY WAYLAND_DISPLAY XAUTHORITY
+export GSETTINGS_BACKEND := memory
+export DBUS_SESSION_BUS_ADDRESS := unix:path=/nonexistent/lyona-tests-have-no-session-bus
+export LYONA_TEST_ISOLATED := 1
+export LYONA_NO_TRUSTED_HELPERS := 1
+export XDG_RUNTIME_DIR := $(or $(TMPDIR),$(DWM_TEST_TMP_ROOT),$(HOME)/tmp)/lyona-test-runtime
+$(shell mkdir -p -m 700 '$(XDG_RUNTIME_DIR)')
+endif
 run_managed_test = if [ -n "$${DWM_TEST_WORKSPACE:-}" ] && [ -n "$${DWM_TEST_RUNNER_TOKEN:-}" ] && [ "$${TMPDIR:-}" = "$${DWM_TEST_WORKSPACE}" ] && [ -f "$${DWM_TEST_WORKSPACE}/.runner" ] && [ ! -L "$${DWM_TEST_WORKSPACE}/.runner" ] && [ "$$(cat "$${DWM_TEST_WORKSPACE}/.runner" 2>/dev/null)" = "$${DWM_TEST_RUNNER_TOKEN}" ]; then $(1); else scripts/run-tests $(1); fi
 
 SRC = drw.c dwm.c util.c tomlparser.c config.c
@@ -979,6 +998,10 @@ check-shell-contracts:
 check-test-lib:
 	tests/test-lib.sh
 
+# #368: no test reaches the desktop session it is started from.
+check-session-isolation:
+	tests/test-session-isolation.sh
+
 .PHONY: check-ci-schedule
 check-ci-schedule:
 	tests/test-ci-schedule.sh
@@ -1515,6 +1538,7 @@ check:
 	$(MAKE) check-diagnostics
 	$(MAKE) check-status
 	$(MAKE) check-test-lib
+	$(MAKE) check-session-isolation
 	$(MAKE) check-ci-schedule
 	$(MAKE) check-shell-contracts
 	$(MAKE) check-gtk-theme
@@ -1664,6 +1688,6 @@ check:
 	check-test-runner \
 	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-yay check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
-	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
+	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-session-isolation check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes remove-legacy-shared-data stamp-system stamp-user native release release-check uninstall

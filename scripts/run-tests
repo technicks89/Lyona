@@ -135,6 +135,18 @@ trap 'interrupt INT 130' INT
 trap 'interrupt TERM 143' TERM
 
 export TMPDIR=$work
+# What the run starts never reaches the desktop it was started from (#368),
+# the same isolation the Makefile gives a check goal: no session display or
+# bus (an Xvfb test starts its own with xvfb-run and dbus-run-session),
+# GSettings in memory, a runtime directory inside the workspace, and no
+# installed root helper (scripts/dwm-trust.sh).
+unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+install -d -m 0700 -- "$work/runtime"
+export XDG_RUNTIME_DIR=$work/runtime
+export GSETTINGS_BACKEND=memory
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
+export LYONA_TEST_ISOLATED=1
+export LYONA_NO_TRUSTED_HELPERS=1
 export DWM_TEST_WORKSPACE=$work
 export DWM_TEST_RUNNER_TOKEN=$runner_token
 printf '==> Test workspace: %s\n' "$work"
