@@ -10,6 +10,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The AUR pins and downloaded tools on aarch64 (ARM1-03). `yay-bin` and
+  `topgrade-bin` already build there at their pins, each with its own
+  checksummed aarch64 download (matched to the release files); the legacy
+  NVIDIA bases stay x86_64 only. `dwm-aur.sh` checks the `.SRCINFO` for the
+  machine's architecture (bash's `$HOSTTYPE`, no `uname` process) and refuses
+  a base whose `arch=()` does not name it. `lyona-appimage` reads the CPU an
+  AppImage was built for from its ELF header and refuses one this machine
+  cannot run, saying which CPU it is for: an x86_64 AppImage on aarch64, or an
+  aarch64 one on x86_64. herdr and Gear Lever already publish aarch64 builds.
+  The decisions are in `docs/AUR-PACKAGES.md` (#3).
+
+
 - The dependency map resolves on aarch64 to packages Arch Linux ARM has
   (ARM1-02). A `pacman -Si` survey of every profile on Arch Linux ARM
   (`docs/evidence/arm1-02-aarch64-packages.md`) found 131 of 141 packages;
@@ -41,6 +53,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   changelog section or release notes (#335).
 
 ### Fixed
+
+- `check-herdr-install` passes again: since the architecture comes from
+  `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
+  `uname` stub, and an aarch64 plan case is added.
 
 - A display or input preview that died while applying its change, after
   recording its session but before starting the automatic rollback, no longer

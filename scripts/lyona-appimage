@@ -95,8 +95,8 @@ take_lock() {
 }
 
 # The byte offset where the ELF runtime ends: the end of its section header
-# table, which is the end of the ELF file (AppImage type 2). Little-endian x86
-# only, which is what lyona runs on.
+# table, which is the end of the ELF file (AppImage type 2). Little-endian
+# only: x86 and aarch64, which is what lyona runs on.
 elf_end() { # FILE
 	local file=$1 class shoff shentsize shnum
 	[[ $(od -An -tx1 -N4 -- "$file" | tr -d ' \n') == 7f454c46 ]] || return 1
@@ -117,6 +117,27 @@ elf_end() { # FILE
 	esac
 	[[ $shoff =~ ^[0-9]+$ && $shentsize =~ ^[0-9]+$ && $shnum =~ ^[0-9]+$ ]] || return 1
 	printf '%s\n' $((shoff + shentsize * shnum))
+}
+
+# The CPU an ELF file was built for (its e_machine), by name, or "another CPU".
+elf_cpu() { # FILE
+	case $(od -An -tu2 -j18 -N2 -- "$1" | tr -d ' ') in
+	62) printf 'x86_64\n' ;;
+	3) printf '32-bit x86\n' ;;
+	183) printf 'aarch64\n' ;;
+	40) printf '32-bit ARM\n' ;;
+	*) printf 'another CPU\n' ;;
+	esac
+}
+
+# Whether this machine runs what an AppImage was built for: an x86_64 AppImage
+# never runs on aarch64, nor the other way (ARM1-03). x86_64 also runs 32-bit
+# x86. The machine is bash's own ($HOSTTYPE): no process is started.
+cpu_runs_here() { # CPU
+	case $HOSTTYPE:$1 in
+	x86_64:x86_64 | 'x86_64:32-bit x86' | aarch64:aarch64) return 0 ;;
+	esac
+	return 1
 }
 
 # The offset of the AppImage's squashfs image, or fail.
@@ -309,7 +330,7 @@ ask() { # FILE
 integrated_path=
 choice=
 integrate() { # FILE
-	local file=$1 offset dest name desktop icon_name icon icon_dest ext exec_args terminal
+	local file=$1 offset cpu dest name desktop icon_name icon icon_dest ext exec_args terminal
 	local categories comment wmclass id candidate tried=0 base
 	local -a names=()
 	local -A in_root=()
@@ -319,7 +340,10 @@ integrate() { # FILE
 	# A launcher entry cannot hold these in a path: rename the file first.
 	[[ $base != *[[:cntrl:]\\]* ]] ||
 		fail "$(clean "$base") has a control character or a backslash in its name; rename it and open it again"
-	offset=$(image_offset "$file") || fail "$(clean "$base") is not an AppImage this can read (type 2, x86)"
+	offset=$(image_offset "$file") || fail "$(clean "$base") is not an AppImage this can read (type 2)"
+	cpu=$(elf_cpu "$file")
+	cpu_runs_here "$cpu" ||
+		fail "$(clean "$base") is built for $cpu, and this computer is $HOSTTYPE; download the $HOSTTYPE AppImage instead"
 	dest=$(destination "$file")
 	if entry_for "$dest" >/dev/null && [[ -x $dest ]]; then
 		integrated_path=$dest
