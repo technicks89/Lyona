@@ -649,6 +649,38 @@ grep -Fq 'path: "/proc/" + Quickshell.processId.toString() + "/stat"' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runInput("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runDisplay("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
+# #372: Settings follows its screen's size (Quickshell applies the implicit size
+# only when the window is first shown), a Keep, Revert or Discard clicked while
+# a display action runs is queued, not dropped, and a preview left unresolved
+# while Settings is closed is said once.
+settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
+grep -Fq 'minimumSize: Qt.size(implicitWidth, implicitHeight)' "$settings_window"
+grep -Fq 'maximumSize: Qt.size(implicitWidth, implicitHeight)' "$settings_window"
+grep -Fq 'root.queuedDisplayAction = { "action": action, "args": args || [] };' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (root.previewKind === "display" && queued.args[0] === root.previewToken)' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (!root.visible) root.notifyUnresolvedDisplayPreview();' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (root.previewKind === "display" && root.previewRollbackFailed && !root.previewRestorable) {' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+
+# #373: docs/src/install.md lists exactly the actions each Settings helper's
+# usage() names, so the two copies cannot drift apart again.
+for helper in dwm-settings-display dwm-settings-input; do
+	usage_actions=$(sed -n '/^usage() {$/,/^EOF$/p' "$repo/scripts/$helper" |
+		sed -n "s/^.*$helper \([a-z|-]*\).*$/\1/p" | tr '|' '\n' | LC_ALL=C sort -u)
+	doc_actions=$(sed -n "s/^$helper \([a-z-]*\).*$/\1/p" "$repo/docs/src/install.md" | LC_ALL=C sort -u)
+	[ -n "$usage_actions" ] || fail "no actions found in $helper's usage()"
+	if [ "$usage_actions" != "$doc_actions" ]; then
+		printf 'docs/src/install.md lists different %s actions than its usage():\n' "$helper" >&2
+		printf '%s\n' "$usage_actions" >"$work/usage-actions"
+		printf '%s\n' "$doc_actions" >"$work/doc-actions"
+		diff "$work/usage-actions" "$work/doc-actions" >&2 || :
+		exit 1
+	fi
+done
+
 # #369: a stale or discarded preview finishes the prompt; a failed rollback
 # keeps its reason apart from displayMessage, offers Discard, and offers no
 # Revert when dwm-display-setup refused the captured layout (the panel and the

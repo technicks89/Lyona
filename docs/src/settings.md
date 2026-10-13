@@ -16,7 +16,10 @@ lets you edit resolution, refresh rate, position, rotation, primary state, and
 output enablement, and manages named layouts. Choose **Apply changes** to test
 the complete layout for 15 seconds, then **Keep changes** to accept it or
 **Revert** to restore the captured layout. Timeout or closing Settings also
-restores the prior layout. If a preview is interrupted, for example because
+restores the prior layout; if it cannot be restored, the preview stays, a
+notification says so, and Settings > Displays offers Keep current or Discard
+when reopened. Settings fills the screen below the panel and follows it when
+the screen is rotated, so the preview's buttons stay on screen. If a preview is interrupted, for example because
 the X session crashed mid-change, Settings drops it the next time it checks,
 without applying anything, and the layout then in use stays. When the prior
 layout cannot be restored automatically (its watchdog stopped, or it names a

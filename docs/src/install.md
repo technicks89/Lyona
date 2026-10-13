@@ -576,16 +576,20 @@ The installed Settings display provider is machine-oriented. Its actions are:
 
 ```text
 dwm-settings-display discover
-dwm-settings-display watch
+dwm-settings-display watch OWNER_PID OWNER_START
 dwm-settings-display save NAME SPEC...
 dwm-settings-display preview TOKEN SECONDS SPEC...
 dwm-settings-display preview-profile TOKEN SECONDS NAME
 dwm-settings-display keep TOKEN [NAME]
+dwm-settings-display apply-kept
 dwm-settings-display revert TOKEN
 dwm-settings-display discard TOKEN
 dwm-settings-display preview-status [TOKEN]
 dwm-settings-display install-profile NAME
 dwm-settings-display rollback-system
+dwm-settings-display dpi-set VALUE
+dwm-settings-display dpi-reset
+dwm-settings-display dpi-apply-saved
 ```
 
 Discovery and live previews require `xrandr`, and the hotplug watch requires
@@ -602,7 +606,7 @@ The input provider exposes the corresponding session actions:
 
 ```text
 dwm-settings-input discover
-dwm-settings-input watch
+dwm-settings-input watch OWNER_PID OWNER_START
 dwm-settings-input watch-apply
 dwm-settings-input apply-saved
 dwm-settings-input preview TOKEN SECONDS DEVICE SETTING VALUE
