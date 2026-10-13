@@ -65,10 +65,12 @@ From `scripts/dwm-packages.sh`:
 
 ### What stays GTK regardless
 
-Steam, Firefox, GIMP, darktable and most applications users install
-themselves are GTK. lyona's GTK theming (the `Lyona-*` GTK themes from
-`scripts/lyona-gtk-theme`, `xsettingsd`, the GTK `settings.ini` files) has
-to stay, or those applications lose the lyona look. Replacing lyona's own GTK
+Firefox, GIMP, darktable and most applications users install themselves are
+GTK. Steam's client UI is Chromium-based (`steamwebhelper`); only parts of it,
+such as its file dialogs and tray menu, go through GTK. lyona's GTK theming
+(the `Lyona-*` GTK themes from `scripts/lyona-gtk-theme`, `xsettingsd`, the
+GTK `settings.ini` files) has to stay, or those applications lose the lyona
+look. Replacing lyona's own GTK
 choices reduces the number of GTK processes, not the need for GTK theming.
 
 ## Recommendation

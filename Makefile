@@ -46,8 +46,8 @@ GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 # and the whole desktop flashed. For a check goal, every recipe loses the
 # session's display and bus: an Xvfb test gets a fresh one from xvfb-run and
 # dbus-run-session inside its recipe. GSettings stays in memory, and the
-# login session's runtime directory (Quickshell's IPC sockets, the display
-# helper's state) is swapped for a private one. No installed root helper is
+# inherited runtime directory (Quickshell's IPC sockets, the display helper's
+# state), wherever the session keeps it, is swapped for a private one. No installed root helper is
 # found (LYONA_NO_TRUSTED_HELPERS, scripts/dwm-trust.sh), so no test reaches
 # polkit and the real system helpers. scripts/run-tests and
 # tests/lib.sh do the same for what they start.
@@ -57,10 +57,8 @@ export GSETTINGS_BACKEND := memory
 export DBUS_SESSION_BUS_ADDRESS := unix:path=/nonexistent/lyona-tests-have-no-session-bus
 export LYONA_TEST_ISOLATED := 1
 export LYONA_NO_TRUSTED_HELPERS := 1
-ifneq ($(filter /run/user/%,$(XDG_RUNTIME_DIR)),)
 export XDG_RUNTIME_DIR := $(or $(TMPDIR),$(DWM_TEST_TMP_ROOT),$(HOME)/tmp)/lyona-test-runtime
 $(shell mkdir -p -m 700 '$(XDG_RUNTIME_DIR)')
-endif
 endif
 run_managed_test = if [ -n "$${DWM_TEST_WORKSPACE:-}" ] && [ -n "$${DWM_TEST_RUNNER_TOKEN:-}" ] && [ "$${TMPDIR:-}" = "$${DWM_TEST_WORKSPACE}" ] && [ -f "$${DWM_TEST_WORKSPACE}/.runner" ] && [ ! -L "$${DWM_TEST_WORKSPACE}/.runner" ] && [ "$$(cat "$${DWM_TEST_WORKSPACE}/.runner" 2>/dev/null)" = "$${DWM_TEST_RUNNER_TOKEN}" ]; then $(1); else scripts/run-tests $(1); fi
 

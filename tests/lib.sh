@@ -203,9 +203,9 @@ trap 'exit 143' TERM
 # already gone, so whatever DISPLAY or bus a test sees here is the one its
 # recipe started (xvfb-run, dbus-run-session). A test run straight from a
 # terminal loses the session's: a display that is not an Xvfb or Xephyr
-# server, and the login bus in /run/user/UID. GSettings stays in memory, no
-# installed root helper is found (scripts/dwm-trust.sh), and the login
-# session's runtime directory is swapped for a private one.
+# server, the inherited session bus and the inherited runtime directory.
+# GSettings stays in memory and no installed root helper is found
+# (scripts/dwm-trust.sh).
 
 # lyona_display_is_virtual DISPLAY: true when an Xvfb or Xephyr server runs it.
 lyona_display_is_virtual() {
@@ -230,18 +230,26 @@ if [ -z "${LYONA_TEST_ISOLATED:-}" ]; then
 		unset DISPLAY XAUTHORITY
 	fi
 	unset WAYLAND_DISPLAY
-	case ${DBUS_SESSION_BUS_ADDRESS:-} in
-	*"/run/user/$lyona_uid/"*)
-		DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
-		export DBUS_SESSION_BUS_ADDRESS
-		;;
-	esac
+	# Nothing has started a bus for this test yet, so any bus it inherits is
+	# its caller's session bus, whatever its address (/run/user, an abstract
+	# socket from dbus-launch). A test that needs one starts its own.
+	DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
+	export DBUS_SESSION_BUS_ADDRESS
 fi
 GSETTINGS_BACKEND=memory
 LYONA_NO_TRUSTED_HELPERS=1
 export GSETTINGS_BACKEND LYONA_NO_TRUSTED_HELPERS
-case ${XDG_RUNTIME_DIR:-} in
-'' | "/run/user/$lyona_uid" | "/run/user/$lyona_uid/"*)
+# The runtime directory is private already under LYONA_TEST_ISOLATED (the
+# Makefile's or the run's own); any other is the session's, wherever it is.
+lyona_runtime_private=
+if [ -n "${LYONA_TEST_ISOLATED:-}" ]; then
+	case ${XDG_RUNTIME_DIR:-} in
+	'' | "/run/user/$lyona_uid" | "/run/user/$lyona_uid/"*) ;;
+	*) lyona_runtime_private=1 ;;
+	esac
+fi
+case $lyona_runtime_private in
+'')
 	XDG_RUNTIME_DIR=$(mktemp -d) || fail 'could not create a private runtime directory'
 	chmod 700 "$XDG_RUNTIME_DIR"
 	export XDG_RUNTIME_DIR

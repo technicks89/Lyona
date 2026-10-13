@@ -61,6 +61,11 @@ assert_isolated "$work/make-check.out" 'make check-...'
 	>"$work/make-other.out"
 assert_line "$work/make-other.out" 'DISPLAY=:4242'
 assert_line "$work/make-other.out" 'GSETTINGS_BACKEND=dconf'
+# A runtime directory outside /run/user (startx without logind) is replaced too.
+"${outside[@]}" "${session_env[@]}" XDG_RUNTIME_DIR="$work/session-runtime" TMPDIR="$work" \
+	make -s --no-print-directory -C "$repo" -f Makefile -f "$work/probe.mk" check-session-probe \
+	>"$work/make-elsewhere.out"
+assert_not_contains "$work/make-elsewhere.out" "RUNTIME=$work/session-runtime"
 
 # ── scripts/run-tests ────────────────────────────────────────────────────
 "${outside[@]}" "${session_env[@]}" DWM_TEST_TMP_ROOT="$work" \
@@ -78,12 +83,24 @@ chmod +x "$work/lib-probe.sh"
 assert_isolated "$work/lib.out" 'tests/lib.sh'
 private_runtime=$(sed -n 's/^RUNTIME=//p' "$work/lib.out")
 [[ ! -e $private_runtime ]] || fail "tests/lib.sh left its private runtime directory: $private_runtime"
-# A bus from dbus-run-session, and a display a make recipe started, are kept.
-"${outside[@]}" "${session_env[@]}" DBUS_SESSION_BUS_ADDRESS="unix:path=$work/private-bus" \
-	"$work/lib-probe.sh" >"$work/lib-private-bus.out"
-assert_line "$work/lib-private-bus.out" "DBUS=unix:path=$work/private-bus"
-env "${session_env[@]}" LYONA_TEST_ISOLATED=1 "$work/lib-probe.sh" >"$work/lib-isolated.out"
+# Run from a terminal, any inherited bus and runtime directory are the
+# session's, whatever their address: an abstract socket from dbus-launch, a
+# runtime directory outside /run/user.
+for bus in "unix:abstract=/tmp/dbus-lyona-session" "unix:path=$work/session-bus"; do
+	"${outside[@]}" "${session_env[@]}" DBUS_SESSION_BUS_ADDRESS="$bus" \
+		XDG_RUNTIME_DIR="$work/session-runtime" "$work/lib-probe.sh" >"$work/lib-bus.out"
+	assert_line "$work/lib-bus.out" 'DBUS=unix:path=/nonexistent/lyona-tests-have-no-session-bus'
+	assert_not_contains "$work/lib-bus.out" "RUNTIME=$work/session-runtime"
+done
+# Under make or scripts/run-tests (LYONA_TEST_ISOLATED), the bus, display and
+# runtime directory a test sees are its recipe's own (dbus-run-session,
+# xvfb-run, the private runtime directory), and are kept.
+mkdir -m 700 "$work/private-runtime"
+env "${session_env[@]}" LYONA_TEST_ISOLATED=1 DBUS_SESSION_BUS_ADDRESS="unix:path=$work/private-bus" \
+	XDG_RUNTIME_DIR="$work/private-runtime" "$work/lib-probe.sh" >"$work/lib-isolated.out"
 assert_line "$work/lib-isolated.out" 'DISPLAY=:4242'
+assert_line "$work/lib-isolated.out" "DBUS=unix:path=$work/private-bus"
+assert_line "$work/lib-isolated.out" "RUNTIME=$work/private-runtime"
 
 # ── theme-apply.sh from a test run inside a session ──────────────────────
 # Every command that acts on a session records what it was handed, and does
