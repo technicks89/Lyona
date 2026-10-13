@@ -14127,5 +14127,74 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "patched\n")
 
 
+
+class ArmCpuModelTests(unittest.TestCase):
+    """ARM1-04: arm64's /proc/cpuinfo has no "model name", only MIDR codes."""
+
+    PI4 = (b"processor\t: 0\nBogoMIPS\t: 108.00\nFeatures\t: fp asimd evtstrm crc32 cpuid\n"
+           b"CPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x0\nCPU part\t: 0xd08\n"
+           b"CPU revision\t: 3\n\n") * 4 + b"Revision\t: c03114\nModel\t\t: Raspberry Pi 4 Model B Rev 1.4\n"
+
+    @staticmethod
+    def cores(*pairs):
+        return b"".join(b"processor\t: %d\nCPU implementer\t: %s\nCPU part\t: %s\n\n" % (n, i, p)
+                        for n, (i, p) in enumerate(pairs))
+
+    def model(self, data, board=None):
+        reads = []
+        def read_board():
+            reads.append(1)
+            return board
+        state = provider.system_information.parse_cpu_information(data, read_board)["cpu-model"]
+        return state, len(reads)
+
+    def test_known_cores_are_named_without_reading_the_board(self):
+        for data, name in (
+                (self.PI4, "Arm Cortex-A72"),
+                (self.cores((b"0x41", b"0xd0b"))*4, "Arm Cortex-A76"),
+                (self.cores(*[(b"0x41", b"0xd85")] * 10 + [(b"0x41", b"0xd87")] * 10),
+                 "Arm Cortex-X925 + Arm Cortex-A725"),
+                (self.cores((b"0xc0", b"0xac3")), "Ampere Ampere-1")):
+            with self.subTest(name=name):
+                state, reads = self.model(data, "Some Board")
+                self.assertEqual((state.status, state.value, reads), ("available", name, 0))
+
+    def test_unknown_core_falls_back_to_the_board_then_the_codes(self):
+        qemu = self.cores((b"0x00", b"0x051"), (b"0x00", b"0x051"))
+        state, reads = self.model(qemu, "QEMU Virtual Machine")
+        self.assertEqual((state.status, state.value, reads), ("available", "QEMU Virtual Machine", 1))
+        state, _ = self.model(qemu)
+        self.assertEqual(state.value, "CPU implementer 0x00 part 0x051")
+        state, _ = self.model(self.cores((b"0x41", b"0xd08"), (b"0x61", b"0x022")))
+        self.assertEqual(state.value, "CPU implementer 0x41 part 0xd08 + CPU implementer 0x61 part 0x022")
+
+    def test_x86_model_name_wins_and_no_codes_is_still_not_reported(self):
+        state, reads = self.model(b"processor: 0\nmodel name: Fixture CPU\nCPU implementer: 0x41\nCPU part: 0xd08\n")
+        self.assertEqual((state.value, reads), ("Fixture CPU", 0))
+        state, reads = self.model(b"processor: 0\n", "Board")
+        self.assertEqual((state.status, state.error_code, reads), ("partial", "missing-provider", 0))
+
+    def test_malformed_codes_are_refused(self):
+        with self.assertRaises(provider.shared.SnapshotFailure):
+            self.model(b"CPU implementer: 0x41\nCPU part: zz\n")
+
+    def test_board_model_sources_in_order(self):
+        def run(files):
+            def open_source(path, mode):
+                self.assertEqual(mode, "rb")
+                value = files.get(path, OSError(errno.ENOENT, "absent"))
+                if isinstance(value, Exception):
+                    raise value
+                return io.BytesIO(value)
+            with mock.patch.object(provider.system_information, "open", open_source, create=True):
+                return provider.system_information.read_board_model()
+        tree, dmi = "/sys/firmware/devicetree/base/model", "/sys/class/dmi/id/product_name"
+        self.assertEqual(run({tree: b"Raspberry Pi 4 Model B Rev 1.4\0", dmi: b"x\n"}), "Raspberry Pi 4 Model B Rev 1.4")
+        self.assertEqual(run({dmi: b"QEMU Virtual Machine\n"}), "QEMU Virtual Machine")
+        self.assertEqual(run({tree: b"\xff\0", dmi: b"NVIDIA DGX Spark\n"}), "NVIDIA DGX Spark")
+        self.assertEqual(run({tree: b"x" * 257, dmi: b"\x07\n"}), None)
+        self.assertEqual(run({}), None)
+
+
 if __name__ == "__main__":
     unittest.main()

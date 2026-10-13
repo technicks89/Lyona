@@ -10,6 +10,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Code that assumed x86_64, checked on aarch64 (ARM1-04). System Information
+  names an ARM processor, which has no `model name` in `/proc/cpuinfo`: from
+  its cores' implementer and part codes ("Arm Cortex-A72" on a Raspberry Pi
+  4, "Arm Cortex-X925 + Arm Cortex-A725" on GB10), else the board's name
+  (device tree or SMBIOS), else the codes. NVIDIA detection finds nothing on
+  a Pi or an ARM VM, without an error; Picom's automatic backend chooses
+  XRender for every ARM GPU until one is measured; the GRUB theme and
+  suspend already follow what the machine has. dwm and its helpers build on
+  aarch64 with GCC and Clang without a warning. The x86_64 paths are unchanged
+  (#4).
+
 - The AUR pins and downloaded tools on aarch64 (ARM1-03). `yay-bin` and
   `topgrade-bin` already build there at their pins, each with its own
   checksummed aarch64 download (matched to the release files); the legacy

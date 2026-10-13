@@ -251,6 +251,13 @@ Information (`INFORMATION_LOCAL_IDS`/`HARDWARE_INFORMATION_FIELDS`,
   `hardware-model` — `org.freedesktop.hostname1`'s `HardwareVendor`/
   `HardwareModel` properties, one ten-second aggregate deadline for both.
 - `cpu-model` — `/proc/cpuinfo`'s first `model name` field, capped at 4 MiB.
+  arm64 kernels print no `model name` (ARM1-04): then each kind of core is
+  named from its `CPU implementer` and `CPU part` codes ("Arm Cortex-A72";
+  "Arm Cortex-X925 + Arm Cortex-A725" for two kinds), or, for a core Lyona
+  does not name, the board's name from the device tree
+  (`/sys/firmware/devicetree/base/model`) or SMBIOS
+  (`/sys/class/dmi/id/product_name`), each capped at 256 bytes, else the
+  codes themselves. The board files are read only on that path.
   `logical-cpus` — `os.cpu_count()`.
 - `memory-total-bytes`/`memory-available-bytes`/`swap-total-bytes`/
   `swap-free-bytes` — `/proc/meminfo`'s `MemTotal`/`MemAvailable`/
