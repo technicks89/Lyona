@@ -16,12 +16,19 @@ lets you edit resolution, refresh rate, position, rotation, primary state, and
 output enablement, and manages named layouts. Choose **Apply changes** to test
 the complete layout for 15 seconds, then **Keep changes** to accept it or
 **Revert** to restore the captured layout. Timeout or closing Settings also
-restores the prior layout. Saved layouts can be reused later; **Use at next
+restores the prior layout. If a preview is interrupted, for example because
+the X session crashed mid-change, Settings drops it the next time it checks,
+without applying anything, and the layout then in use stays. When the prior
+layout cannot be restored automatically (its watchdog stopped, or it names a
+display that is no longer connected), the prompt says why and offers **Keep
+current**, which also uses the layout at the next login, and **Discard**,
+which leaves the screens as they are for this session only; **Revert** stays
+available when retrying can work. Saved layouts can be reused later; **Use at next
 login** installs the selected layout for future X11 sessions after a separate
 confirmation and administrator authorization.
 The machine-oriented `dwm-settings-display` helper exposes `discover` and
 `watch`, complete-layout `save` and `preview`, named `preview-profile`, timed
-`keep`, `revert`, and `preview-status`, plus authorized `install-profile` and
+`keep`, `revert`, `discard`, and `preview-status`, plus authorized `install-profile` and
 `rollback-system` actions. Named layouts live under the lyona XDG config
 directory. Legacy incomplete layouts remain available to
 `dwm-display-profile`, but Settings requires them to be resaved as complete

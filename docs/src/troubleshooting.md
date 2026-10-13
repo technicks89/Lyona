@@ -176,6 +176,12 @@ Alacritty. The default `Super`+`X` binding remains plain Alacritty.
   saving a layout.
 - Display layout profiles: run `dwm-display-profile dir` and
   `dwm-display-profile template` to create optional `xrandr` profiles
+- Settings > Displays keeps asking "Keep these display settings?": choose
+  **Discard** to forget the preview and keep the current layout for this
+  session, or **Keep current** to keep it at the next login too. From a
+  terminal, `dwm-settings-display preview-status` shows the preview's token,
+  and `dwm-settings-display discard TOKEN` removes it without applying
+  anything.
 
 ---
 

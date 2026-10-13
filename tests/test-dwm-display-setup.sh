@@ -693,15 +693,9 @@ if grep -Fq -- '--set TearFree' "$work/xrandr.log"; then
 	printf 'Settings layout preview changed TearFree without capturing its prior state\n' >&2
 	exit 1
 fi
+# A claim is only ever taken under the mutation lock (#369), so one found there
+# was left by a keep or revert that exited; it does not block the next one.
 mkdir "$work/runtime/dwm-settings-display/settings-test.claim"
-if env "${settings_env[@]}" "$BASH_BIN" "$SETTINGS_HELPER" keep settings-test \
-	2>"$work/settings-claim.err"; then
-	printf 'concurrent display finalization was accepted\n' >&2
-	exit 1
-fi
-grep -Fq 'already being finalized' "$work/settings-claim.err"
-test -f "$work/runtime/dwm-settings-display/settings-test.active"
-rmdir "$work/runtime/dwm-settings-display/settings-test.claim"
 env "${settings_env[@]}" "$BASH_BIN" "$SETTINGS_HELPER" revert settings-test >"$work/settings-revert"
 grep -Fqx 'result	reverted	settings-test' "$work/settings-revert"
 
@@ -726,6 +720,175 @@ grep -v -- '--dryrun' "$work/xrandr.log" | awk '
 	cat "$work/xrandr.log" >&2
 	exit 1
 }
+
+# #369: a preview interrupted by its session (Xorg crashed rotating an output),
+# or a keep or revert that died mid-way, left Settings asking Keep or Revert for
+# good. Each case recovers without applying what it should not.
+state=$work/runtime/dwm-settings-display
+spec_left='DP-1|1|2560x1440|60|1920|0|left|0'
+mkdir -p "$work/x11"
+make_socket_369() { # PATH: a listening Unix socket there, as an X server's
+	rm -f -- "$1"
+	python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$1"
+}
+preview_369() { # TOKEN SECONDS [ENV...]: a preview, its watchdog asleep
+	local token=$1 seconds=$2
+	shift 2
+	env "${settings_env[@]}" LYONA_X11_SOCKET_DIR="$work/x11" "$@" "$BASH_BIN" "$SETTINGS_HELPER" \
+		preview "$token" "$seconds" "$spec_hdmi" "$spec_left" "$spec_dp2" >/dev/null
+}
+helper_369() { # ARGS...: the helper, as Settings on display :77 runs it
+	env "${settings_env[@]}" LYONA_X11_SOCKET_DIR="$work/x11" "$BASH_BIN" "$SETTINGS_HELPER" "$@"
+}
+watchdog_369() { # TOKEN: the watchdog the preview recorded, as "PID START"
+	local pid start
+	read -r pid start <"$state/$1.watch"
+	[[ -n $start ]] || { printf 'no watchdog was recorded for %s\n' "$1" >&2; exit 1; }
+	printf '%s %s\n' "$pid" "$start"
+}
+stop_watchdog_369() { # "PID START": that watchdog, gone
+	local pid=${1%% *}
+	kill -KILL "$pid" 2>/dev/null || true
+	for _ in {1..40}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+}
+make_socket_369 "$work/x11/X77"
+
+# A preview records its X server, by its display's socket.
+preview_369 recorded 30
+grep -Eq $'^:77\tsocket::77:[0-9]+:[0-9]+:[0-9]+$' "$state/recorded.session"
+recorded_watchdog=$(watchdog_369 recorded)
+# The recorded PID is the watchdog itself, not a subshell around it.
+tr '\0' ' ' <"/proc/${recorded_watchdog%% *}/cmdline" | grep -Fq ' _watch recorded 30' || {
+	printf 'the recorded PID is not the watchdog: %s\n' "$(tr '\0' ' ' <"/proc/${recorded_watchdog%% *}/cmdline")" >&2
+	exit 1
+}
+# Settings running on another display (a nested Xephyr shares the runtime
+# directory) leaves a preview whose own server is still running alone.
+make_socket_369 "$work/x11/X78"
+env "${settings_env[@]}" DISPLAY=:78 LYONA_X11_SOCKET_DIR="$work/x11" "$BASH_BIN" "$SETTINGS_HELPER" \
+	preview-status >"$work/369-nested"
+grep -Fqx $'preview-active\trecorded' "$work/369-nested"
+helper_369 discard recorded >/dev/null
+stop_watchdog_369 "$recorded_watchdog"
+
+# The server restarted (a crash, a logout): the preview is foreign, reported
+# stale, cleaned up, and its captured layout is not applied to the new server.
+preview_369 other-server 30
+other_server_watchdog=$(watchdog_369 other-server)
+make_socket_369 "$work/x11/X77.new"
+mv -f "$work/x11/X77.new" "$work/x11/X77"
+rm -f "$work/xrandr.log"
+helper_369 preview-status >"$work/369-other-server"
+grep -Fqx $'result\tstale\tother-server' "$work/369-other-server"
+test ! -e "$state/other-server.active"
+test ! -e "$state/current"
+if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
+	printf 'a preview from another X server was reverted\n' >&2
+	exit 1
+fi
+stop_watchdog_369 "$other_server_watchdog"
+# Its watchdog, waking on the new server, applies nothing either.
+preview_369 watchdog-other 1
+make_socket_369 "$work/x11/X77.new"
+mv -f "$work/x11/X77.new" "$work/x11/X77"
+rm -f "$work/xrandr.log"
+for _ in {1..60}; do [[ -e $state/watchdog-other.active ]] || break; sleep 0.05; done
+test ! -e "$state/watchdog-other.active"
+if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
+	printf 'a watchdog reverted on another X server\n' >&2
+	exit 1
+fi
+
+# The watchdog is gone but the server is the same: the captured layout is still
+# good here, so the preview is not dropped. It reports a failed rollback, and
+# Revert restores the layout.
+preview_369 dead-watchdog 30
+stop_watchdog_369 "$(watchdog_369 dead-watchdog)"
+helper_369 preview-status dead-watchdog >"$work/369-dead-watchdog"
+grep -Fqx $'preview-failed\tdead-watchdog\tThe automatic rollback is no longer running.' "$work/369-dead-watchdog"
+rm -f "$work/xrandr.log"
+helper_369 revert dead-watchdog >"$work/369-dead-watchdog-revert"
+grep -Fqx $'result\treverted\tdead-watchdog' "$work/369-dead-watchdog-revert"
+grep -Fq -- '--output DP-1 --mode 2560x1440 --rate 60.00 --pos 1920x0 --rotate normal' "$work/xrandr.log"
+
+# The state an interrupted preview left before any of this was recorded: no
+# session or watchdog record, a claim left behind. Older than any timeout, its
+# server is unknowable, so it is dropped without applying anything.
+printf 'legacy-stuck\n' >"$state/current"
+: >"$state/legacy-stuck.active"
+printf 'DisplayPort-1 --mode 1920x1080 --rotate normal\n' >"$state/legacy-stuck.previous"
+printf 'DisplayPort-1 --mode 1920x1080 --rotate left\n' >"$state/legacy-stuck.proposed"
+mkdir "$state/legacy-stuck.claim"
+chmod 600 "$state/current" "$state/legacy-stuck."{active,previous,proposed}
+touch -d '20 minutes ago' "$state/legacy-stuck.active" "$state/legacy-stuck.claim"
+rm -f "$work/xrandr.log"
+helper_369 preview-status >"$work/369-legacy"
+grep -Fqx $'result\tstale\tlegacy-stuck' "$work/369-legacy"
+for leftover in current legacy-stuck.active legacy-stuck.previous legacy-stuck.proposed legacy-stuck.claim; do
+	test ! -e "$state/$leftover" || { printf 'stale preview left %s\n' "$leftover" >&2; exit 1; }
+done
+if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
+	printf 'a legacy preview was reverted\n' >&2
+	exit 1
+fi
+# A reservation with no preview behind it (killed while starting) is cleared.
+printf 'half-started\n' >"$state/current"
+chmod 600 "$state/current"
+helper_369 preview-status >"$work/369-half"
+grep -Fqx $'result\texpired\thalf-started' "$work/369-half"
+test ! -e "$state/current"
+
+# Revert never applies a layout naming an output that is not connected. It
+# records why, naming only the missing output, keeps the preview for Keep or
+# Discard, and releases its claim; Discard then removes it.
+preview_369 missing-outputs 30
+stop_watchdog_369 "$(watchdog_369 missing-outputs)"
+printf '%s\n' 'HDMI-1 --primary --mode 1920x1080 --rate 60 --pos 0x0 --rotate normal' \
+	'DisplayPort-0 --mode 2560x1440 --rate 60 --pos 1920x0 --rotate normal' \
+	>"$state/missing-outputs.previous"
+rm -f "$work/xrandr.log"
+helper_369 revert missing-outputs >"$work/369-missing"
+grep -Fq $'preview-failed\tmissing-outputs\tThe previous layout cannot be restored: ' "$work/369-missing"
+grep -Fq 'DisplayPort-0' "$work/369-missing"
+if grep -Fq 'restored: error:' "$work/369-missing"; then
+	printf 'the missing-output message kept the error: prefix\n' >&2
+	exit 1
+fi
+if grep -Fq 'HDMI-1' "$work/369-missing"; then
+	printf 'the missing-output message named a connected output\n' >&2
+	exit 1
+fi
+test ! -e "$state/missing-outputs.claim"
+test -f "$state/missing-outputs.active"
+if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
+	printf 'a layout naming a disconnected output reached xrandr\n' >&2
+	exit 1
+fi
+helper_369 preview-status missing-outputs >"$work/369-missing-status"
+grep -Fq $'preview-failed\tmissing-outputs\tThe previous layout cannot be restored: ' "$work/369-missing-status"
+# Discarding an old token never frees the reservation of the current preview.
+printf 'missing-outputs\n' >"$state/current"
+helper_369 discard some-older-token >"$work/369-discard-other"
+grep -Fqx $'result\tdiscarded\tsome-older-token' "$work/369-discard-other"
+grep -Fqx 'missing-outputs' "$state/current"
+helper_369 discard missing-outputs >"$work/369-discard"
+grep -Fqx $'result\tdiscarded\tmissing-outputs' "$work/369-discard"
+test ! -e "$state/missing-outputs.active"
+test ! -e "$state/current"
+
+# A lock held by a keep or revert still running makes the others wait their
+# turn, not fail or act at once; the kernel frees it when the holder exits.
+preview_369 locked 30
+locked_watchdog=$(watchdog_369 locked)
+exec 8>>"$state/display-mutation.lock"
+flock 8
+( sleep 1; flock -u 8 ) &
+lock_holder=$!
+helper_369 keep locked >"$work/369-locked"
+wait "$lock_holder"
+exec 8>&-
+grep -Fqx $'result\tkept\tlocked' "$work/369-locked"
+stop_watchdog_369 "$locked_watchdog"
 
 # Keep remembers the layout, and the next login applies it again, but only with
 # exactly the same outputs connected: Keep alone used to last for the session.

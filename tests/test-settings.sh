@@ -649,6 +649,25 @@ grep -Fq 'path: "/proc/" + Quickshell.processId.toString() + "/stat"' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runInput("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runDisplay("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
+# #369: a stale or discarded preview finishes the prompt; a failed rollback
+# keeps its reason apart from displayMessage, offers Discard, and offers no
+# Revert when dwm-display-setup refused the captured layout (the panel and the
+# helper share that phrase).
+settings_model=$repo/config/quickshell/settings/SettingsModel.qml
+display_pane=$repo/config/quickshell/settings/DisplaySettingsPane.qml
+grep -Fq '|| fields[1] === "stale" || fields[1] === "discarded";' "$settings_model"
+grep -Fq 'root.runDisplay("discard", [root.previewToken]);' "$settings_model"
+grep -Fq 'root.previewFailureMessage = fields.slice(2).join(" ");' "$settings_model"
+grep -Fq 'startsWith("The previous layout cannot be restored")' "$settings_model"
+grep -Fq '"The previous layout cannot be restored: ' "$repo/scripts/dwm-settings-display"
+grep -Fq 'if (!valid || !root.displayOutcomeSticky)' "$settings_model"
+grep -Fq 'onActivated: root.settingsModel.discardPreview()' "$display_pane"
+grep -Fq 'visible: root.settingsModel.previewRollbackFailed || root.settingsModel.previewSeconds === 0' "$display_pane"
+grep -Fq 'enabled: !root.settingsModel.previewRollbackFailed || root.settingsModel.previewRestorable' "$display_pane"
+if grep -Fq 'displayFinalizeFailed' "$settings_model" "$display_pane"; then
+	printf 'the display prompt has a second failure state again\n' >&2
+	exit 1
+fi
 grep -Fq 'if (!root.visible) root.closeRollbackPending = true;' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'if (!root.previewToken && (displayPreviewStarting || inputPreviewStarting)) {' \
