@@ -1193,11 +1193,16 @@ Scope {
 						root.inputPreviewStatusAttempts = 0;
 						root.previewOperationLocked = true; root.inputMessage = fields.slice(2).join("\t");
 					} else if (fields[0] === "result") {
-						if (fields[1] === "keep" || fields[1] === "revert" || fields[1] === "expired") {
+						// stale: the preview belonged to an X session that ended; the
+						// helper removed it without applying anything (#371).
+						if (fields[1] === "keep" || fields[1] === "revert" || fields[1] === "expired" || fields[1] === "stale") {
 							root.previewKind = ""; root.previewToken = ""; root.previewSeconds = 0; root.previewOperationLocked = false;
+							root.previewRollbackFailed = false;
 							root.inputPreviewStatusAttempts = 0;
 						}
-						root.inputMessage = fields.slice(1).join(" ");
+						root.inputMessage = fields[1] === "stale"
+							? "An interrupted input preview was discarded; the current settings stay."
+							: fields.slice(1).join(" ");
 						root.refreshInput();
 					}
 					}

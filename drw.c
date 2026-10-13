@@ -57,7 +57,7 @@ drw_create(Display *dpy, int screen, Window root, unsigned int w, unsigned int h
 	drw->root = root;
 	drw->w = w;
 	drw->h = h;
-	drw->drawable = XCreatePixmap(dpy, root, w, h, DefaultDepth(dpy, screen));
+	drw->drawable = XCreatePixmap(dpy, root, MAX(w, 1), MAX(h, 1), DefaultDepth(dpy, screen));
 	drw->picture = XRenderCreatePicture(dpy, drw->drawable, XRenderFindVisualFormat(dpy, DefaultVisual(dpy, screen)), 0, NULL);
 	drw->gc = XCreateGC(dpy, root, 0, NULL);
 	XSetLineAttributes(dpy, drw->gc, 1, LineSolid, CapButt, JoinMiter);
@@ -77,7 +77,12 @@ drw_resize(Drw *drw, unsigned int w, unsigned int h)
 		XRenderFreePicture(drw->dpy, drw->picture);
 	if (drw->drawable)
 		XFreePixmap(drw->dpy, drw->drawable);
-	drw->drawable = XCreatePixmap(drw->dpy, drw->root, w, h, DefaultDepth(drw->dpy, drw->screen));
+	/* X refuses an empty pixmap (BadValue), and dwm treats that as fatal. With
+	 * no bar of its own dwm's bar height is 0 until the panel docks, so a
+	 * screen resized before then (a kept portrait layout applied at login)
+	 * crashed it (#371). The size stays as asked for; only the pixmap has one
+	 * row or column at least. */
+	drw->drawable = XCreatePixmap(drw->dpy, drw->root, MAX(w, 1), MAX(h, 1), DefaultDepth(drw->dpy, drw->screen));
 	drw->picture = XRenderCreatePicture(drw->dpy, drw->drawable, XRenderFindVisualFormat(drw->dpy, DefaultVisual(drw->dpy, drw->screen)), 0, NULL);
 }
 

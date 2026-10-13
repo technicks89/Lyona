@@ -21,6 +21,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- dwm no longer crashes at login when the display layout kept from Settings >
+  Displays rotates a screen to portrait (#371). The kept layout is applied
+  early in the session, before the panel has docked, while dwm's bar height
+  is still 0, and resizing its drawing surface asked X for an empty pixmap,
+  which X refuses and dwm treats as fatal: every login ended at once. A layout
+  of the same size (inverted) was not affected.
+- Settings > Input no longer gets stuck on an interrupted preview (#371), as
+  Settings > Displays no longer does (#369). An input preview left behind when
+  the session ended mid-preview, or by a Keep or Revert that was killed, is
+  now dropped without applying anything if its X session is gone, reported as
+  a failed rollback (with Keep and Revert working) if only its automatic
+  rollback stopped, and a leftover lock no longer blocks the next Keep or
+  Revert. `dwm-settings-input` reports a dropped preview as `result stale`.
 - Rotating the screen Settings is on to portrait keeps the display preview's
   **Keep changes** and **Revert** on screen (#372). Settings kept its old width
   after the rotation, so on a single rotated screen the buttons were
@@ -45,7 +58,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   A preview already stuck this way is dropped the next time Settings >
   Displays opens, once it is ten minutes old; nothing needs doing.
   `dwm-settings-display` has a new `discard TOKEN` action and reports a
-  dropped preview as `result stale`. Input previews still lack this recovery.
+  dropped preview as `result stale`.
 - Running lyona's tests inside a desktop session no longer makes the whole
   desktop flash or changes its theme (#368). The tests inherited the session's
   display, D-Bus and GSettings: theme tests reloaded the live Picom, which

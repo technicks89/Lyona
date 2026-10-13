@@ -609,18 +609,138 @@ fi
 grep -Fq 'xinput set-prop 12 libinput Accel Speed 0.25' "$work/actions.log"
 
 env "${env_common[@]}" "$helper" preview keyboard-test 5 "$keyboard_key" keyboard-layout de >/dev/null
+# A claim is only taken under the mutation lock (#371), so one found there was
+# left by a keep or revert that exited; it does not block the next one.
 mkdir "$work/runtime/dwm-settings-input/keyboard-test.claim"
-if env "${env_common[@]}" "$helper" keep keyboard-test 2>"$work/input-claim.err"; then
-	printf 'concurrent input finalization was accepted\n' >&2
-	exit 1
-fi
-grep -Fq 'already being finalized' "$work/input-claim.err"
-test -f "$work/runtime/dwm-settings-input/keyboard-test.state"
-rmdir "$work/runtime/dwm-settings-input/keyboard-test.claim"
 env "${env_common[@]}" "$helper" revert keyboard-test >"$work/revert"
 grep -Fqx 'result	revert	keyboard-test' "$work/revert"
 grep -Fq 'setxkbmap -device 13 -layout de' "$work/actions.log"
 grep -Fq 'setxkbmap -device 13 -layout us' "$work/actions.log"
+
+# #371: as #369 for display previews. A preview interrupted by its session, or
+# a finalize that died, recovers without applying what it should not.
+istate=$work/runtime/dwm-settings-input
+mkdir -p "$work/x11"
+make_socket_371() { # PATH: a listening Unix socket there, as an X server's
+	rm -f -- "$1"
+	python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$1"
+}
+input_371() { # ARGS...: the helper, as Settings on display :88 runs it
+	env "${env_common[@]}" LYONA_X11_SOCKET_DIR="$work/x11" "$helper" "$@"
+}
+watchdog_371() { # TOKEN: the watchdog the preview recorded, as "PID START"
+	local pid start
+	read -r pid start <"$istate/$1.watch"
+	[[ -n $start ]] || { printf 'no watchdog was recorded for %s\n' "$1" >&2; exit 1; }
+	printf '%s %s\n' "$pid" "$start"
+}
+stop_watchdog_371() { # "PID START": that watchdog, gone
+	local pid=${1%% *}
+	kill -KILL "$pid" 2>/dev/null || true
+	for _ in {1..40}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+}
+make_socket_371 "$work/x11/X88"
+
+# A preview records its X server and its watchdog, which is the watchdog itself.
+input_371 preview recorded 30 "$mouse_key" pointer-speed 0.5 >/dev/null
+grep -Eq $'^:88\tsocket::88:[0-9]+:[0-9]+:[0-9]+$' "$istate/recorded.session"
+recorded_watchdog=$(watchdog_371 recorded)
+tr '\0' ' ' <"/proc/${recorded_watchdog%% *}/cmdline" | grep -Fq ' _watch recorded 30' || {
+	printf 'the recorded input watchdog PID is not the watchdog\n' >&2
+	exit 1
+}
+# Settings on another display (a nested Xephyr shares the runtime directory)
+# leaves a preview whose own server still runs alone.
+make_socket_371 "$work/x11/X89"
+env "${env_common[@]}" DISPLAY=:89 LYONA_X11_SOCKET_DIR="$work/x11" "$helper" preview-status \
+	>"$work/371-nested"
+grep -Fqx $'preview-active\trecorded' "$work/371-nested"
+input_371 revert recorded >/dev/null
+stop_watchdog_371 "$recorded_watchdog"
+
+# The server restarted: the preview is foreign, reported stale and removed, and
+# its captured value is not applied to the new server, by status or watchdog.
+input_371 preview other-server 30 "$mouse_key" pointer-speed 0.5 >/dev/null
+other_server_watchdog=$(watchdog_371 other-server)
+make_socket_371 "$work/x11/X88.new"
+mv -f "$work/x11/X88.new" "$work/x11/X88"
+rm -f "$work/actions.log"
+input_371 preview-status >"$work/371-other-server"
+grep -Fqx $'result\tstale\tother-server' "$work/371-other-server"
+test ! -e "$istate/other-server.state"
+test ! -e "$istate/current"
+if grep -Fq 'set-prop' "$work/actions.log" 2>/dev/null; then
+	printf 'an input preview from another X server was reverted\n' >&2
+	exit 1
+fi
+stop_watchdog_371 "$other_server_watchdog"
+input_371 preview watchdog-other 1 "$mouse_key" pointer-speed 0.5 >/dev/null
+make_socket_371 "$work/x11/X88.new"
+mv -f "$work/x11/X88.new" "$work/x11/X88"
+rm -f "$work/actions.log"
+for _ in {1..60}; do [[ -e $istate/watchdog-other.state ]] || break; sleep 0.05; done
+test ! -e "$istate/watchdog-other.state"
+if grep -Fq 'set-prop' "$work/actions.log" 2>/dev/null; then
+	printf 'an input watchdog reverted on another X server\n' >&2
+	exit 1
+fi
+
+# The watchdog is gone but the server is the same: the preview is kept, reported
+# as a failed rollback, and Revert restores the value.
+input_371 preview dead-watchdog 30 "$mouse_key" pointer-speed 0.5 >/dev/null
+stop_watchdog_371 "$(watchdog_371 dead-watchdog)"
+input_371 preview-status dead-watchdog >"$work/371-dead-watchdog"
+grep -Fqx $'preview-failed\tdead-watchdog\tThe automatic rollback is no longer running.' "$work/371-dead-watchdog"
+rm -f "$work/actions.log"
+input_371 revert dead-watchdog >"$work/371-dead-revert"
+grep -Fqx $'result\trevert\tdead-watchdog' "$work/371-dead-revert"
+grep -Fq 'xinput set-prop 12 libinput Accel Speed' "$work/actions.log"
+
+# The preview died while applying, after recording its session but before
+# starting a watchdog: no watch record. Still young, it may be starting, and is
+# left active; older than the longest timeout (99 s), it is orphaned, reported
+# as a failed rollback, and Revert restores the value.
+input_371 preview no-watch 30 "$mouse_key" pointer-speed 0.5 >/dev/null
+stop_watchdog_371 "$(watchdog_371 no-watch)"
+rm -f "$istate/no-watch.watch"
+input_371 preview-status no-watch >"$work/371-no-watch-young"
+grep -Fqx $'preview-active\tno-watch' "$work/371-no-watch-young"
+touch -d '5 minutes ago' "$istate/no-watch.state"
+input_371 preview-status no-watch >"$work/371-no-watch-old"
+grep -Fqx $'preview-failed\tno-watch\tThe automatic rollback is no longer running.' "$work/371-no-watch-old"
+rm -f "$work/actions.log"
+input_371 revert no-watch >"$work/371-no-watch-revert"
+grep -Fqx $'result\trevert\tno-watch' "$work/371-no-watch-revert"
+grep -Fq 'xinput set-prop 12 libinput Accel Speed' "$work/actions.log"
+
+# A preview from before these records (no session or watchdog), older than any
+# timeout, with a claim left behind: dropped without applying anything, and the
+# reservation of the preview that is current is left alone.
+input_371 preview current-one 30 "$mouse_key" pointer-speed 0.5 >/dev/null
+current_watchdog=$(watchdog_371 current-one)
+printf '%s|pointer-speed|0.25|0.5|1\n' "$mouse_key" >"$istate/legacy-stuck.state"
+mkdir "$istate/legacy-stuck.claim"
+chmod 600 "$istate/legacy-stuck.state"
+touch -d '20 minutes ago' "$istate/legacy-stuck.state" "$istate/legacy-stuck.claim"
+rm -f "$work/actions.log"
+input_371 preview-status legacy-stuck >"$work/371-legacy"
+grep -Fqx $'result\tstale\tlegacy-stuck' "$work/371-legacy"
+test ! -e "$istate/legacy-stuck.state"
+test ! -e "$istate/legacy-stuck.claim"
+grep -Fqx 'current-one' "$istate/current"
+if grep -Fq 'set-prop' "$work/actions.log" 2>/dev/null; then
+	printf 'a legacy input preview was reverted\n' >&2
+	exit 1
+fi
+input_371 revert current-one >/dev/null
+stop_watchdog_371 "$current_watchdog"
+
+# A reservation with no preview behind it (killed while starting) is cleared.
+printf 'half-started\n' >"$istate/current"
+chmod 600 "$istate/current"
+input_371 preview-status >"$work/371-half"
+grep -Fqx $'result\texpired\thalf-started' "$work/371-half"
+test ! -e "$istate/current"
 
 rm -f "$work/actions.log"
 if env "${env_common[@]}" "$helper" preview 'bad/token' 5 \

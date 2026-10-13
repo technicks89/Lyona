@@ -127,4 +127,14 @@ printf '%s\n' "$scan_body" | grep -q '!probe\[i\].transient' ||
 printf '%s\n' "$scan_body" | grep -q 'free(probe);' ||
 	fail 'scan() leaks its probe table.'
 
+# #371: drw never asks X for an empty pixmap. With no bar of its own, dwm's bar
+# height is 0 until the panel docks, and a screen resized before then (a kept
+# portrait layout applied at login) made XCreatePixmap fail fatally.
+for drw_function in 'drw_create(Display \*dpy' 'drw_resize(Drw \*drw'; do
+	drw_body=$(wm_body "$drw_function")
+	[ -n "$drw_body" ] || fail "$drw_function is missing."
+	printf '%s\n' "$drw_body" | grep -q 'XCreatePixmap(.*MAX(w, 1), MAX(h, 1)' ||
+		fail "$drw_function can ask X for an empty pixmap again."
+done
+
 printf '%s\n' "dwm X round-trip guards: PASS"
