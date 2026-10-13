@@ -1174,7 +1174,7 @@ run_priv() {
 	if [ "${3:-}" = tty ]; then
 		# shellcheck disable=SC2016 # expanded by the inner bash
 		PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="$2" \
-			script -qec "bash -c '. \"\$1\"; run_privileged install-system release' bash $priv_probe" /dev/null \
+			SHELL=/bin/sh script -qec "bash -c '. \"\$1\"; run_privileged install-system release' bash $priv_probe" /dev/null \
 			>/dev/null 2>&1
 	else
 		PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="$2" \
