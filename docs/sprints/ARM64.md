@@ -84,7 +84,7 @@ These come from `AGENTS.md` and `SPEC.md` and hold here too.
 
 | ID | Question | Blocks | Recommendation | Status |
 | --- | --- | --- | --- | --- |
-| **A-1** | Which identity does Lyona accept on ARM? | ARM-1 | `ID=archarm` on `aarch64` only, named in `SPEC.md` section 4 and `AGENTS.md` as a second supported identity, marked experimental until a target qualifies | Open |
+| **A-1** | Which identity does Lyona accept on ARM? | ARM-1 | `ID=archarm` on `aarch64` only, named in `SPEC.md` section 4 and `AGENTS.md` as a second supported identity, marked experimental until a target qualifies | Decided 2026-10-13 as recommended |
 | **A-2** | What builds the generic image? (a) archiso with an aarch64 profile of Lyona's own, (b) archboot, (c) mkosi | ARM-2 | Decide from ARM-2's spike (ARM2-01). Prefer (a) if archiso's aarch64 UEFI boot modes build a working image, so the profile, the builder and its tests stay one design; else (c), which builds any architecture's disk images from a pacman bootstrap | Open |
 | **A-3** | Where are ARM images built? (a) A native aarch64 host (an Arch Linux ARM VM on Apple Silicon, or a GitHub arm64 runner), (b) x86_64 with `qemu-user-static` | ARM-2, ARM-3 | **(a).** Emulated chroots are slow and hide faults that only show natively. The maintainer's Apple Silicon VM for local builds; a GitHub arm64 runner for CI | Open |
 | **A-4** | What installs the system from the generic image? (a) archinstall, patched for Arch Linux ARM, (b) Lyona's own `pacstrap` path for ARM | ARM-2 | **(b)** unless ARM2-01 finds archinstall works unpatched. It is a smaller surface than a patched archinstall: partition, format, `pacstrap`, `genfstab`, bootloader, then the existing postinstall. The wizard's questions stay the same | Open |
@@ -92,7 +92,7 @@ These come from `AGENTS.md` and `SPEC.md` and hold here too.
 | **A-6** (deferred with ARM-4) | Where do the GB10 kernel and NVIDIA's aarch64 driver come from? (a) Pinned PKGBUILDs built on the machine at install time, (b) a signed Lyona aarch64 package repository, (c) wait for mainline Linux and Arch Linux ARM | ARM-4 | **(a) first**, as Sprint 14 did for the legacy NVIDIA drivers: reviewed, pinned commits, built as the new user, never as root. Measure the build time on GB10 (20 cores); if it is too long, (b), which overlaps the signed package repository already proposed in `ROADMAP.md` "Future Evaluation". Revisit (c) every release | Open |
 | **A-7** (deferred with ARM-4) | Does GB10 (and later N1X) get its own image? | ARM-4 | **No.** The generic image detects GB10 (by its SMBIOS or PCI IDs) and offers its kernel and driver, recommended, as the x86_64 image offers `nvidia-open` | Open |
 | **A-8** (deferred) | When does N1X work start? | ARM-5 | Only when NVIDIA's Linux driver lists N1X device IDs **and** test hardware is available. Until then it is a watch item, checked at each release | Open |
-| **A-9** | How does CI cover ARM? | ARM-1 | A GitHub `ubuntu-24.04-arm` runner running the suite inside an Arch Linux ARM container, on the manual Full suite workflow first, then on pull requests once it is reliable | Open |
+| **A-9** | How does CI cover ARM? | ARM-1 | A GitHub `ubuntu-24.04-arm` runner running the suite inside an Arch Linux ARM container, on the manual Full suite workflow first, then on pull requests once it is reliable | Decided 2026-10-13 as recommended |
 
 ---
 
@@ -123,6 +123,11 @@ not change ARM-5's release of the generic and Pi images.
 | Raspberry Pi | A Pi 4 (4 GB is the floor to test) and a Pi 5, each with an HDMI display, keyboard and mouse; one SD card and one NVMe (Pi 5) boot | ARM-3 |
 | GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port | ARM-4 |
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
+
+Available to the maintainer (2026-10-13): a Raspberry Pi 4 and an NVIDIA GB10
+system. No Apple Silicon Mac is named, so ARM-1's VM checks run in an emulated
+aarch64 QEMU VM on an x86_64 host until a native VM is available, and the
+evidence says it was emulated.
 
 ## GitHub
 

@@ -38,7 +38,8 @@ platform_family() {
 	id=$1
 
 	case "$id" in
-	arch) printf '%s\n' arch ;;
+	# Arch Linux ARM is the Arch family too (experimental, ARM64.md A-1).
+	arch | archarm) printf '%s\n' arch ;;
 	*) printf '%s\n' unknown ;;
 	esac
 }

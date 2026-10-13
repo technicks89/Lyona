@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md).
 
-**Status:** planned 2026-10-11. Not started. GitHub: issues #1 to #6
+**Status:** planned 2026-10-11. In progress: ARM1-01 implemented 2026-10-13
+(A-1 decided: `ID=archarm` on `aarch64` only; A-9 decided: the GitHub
+arm64 runner). GitHub: issues #1 to #6
 (label `arm64`); milestone "ARM Sprint 1 - Foundation", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
