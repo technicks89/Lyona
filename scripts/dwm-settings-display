@@ -10,6 +10,8 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 # The token primitive (#277).
 # shellcheck source=scripts/dwm-preview-core.sh
 . "$lyona_lib/dwm-preview-core.sh"
+# shellcheck source=scripts/dwm-xsession.sh
+. "$lyona_lib/dwm-xsession.sh"
 # shellcheck source=scripts/dwm-xsettings-config.sh
 . "$lyona_lib/dwm-xsettings-config.sh"
 # shellcheck source=scripts/dwm-trust.sh
@@ -48,6 +50,7 @@ usage: dwm-settings-display discover|watch OWNER_PID OWNER_START
        dwm-settings-display keep TOKEN [NAME]
        dwm-settings-display apply-kept
        dwm-settings-display revert TOKEN
+       dwm-settings-display discard TOKEN
        dwm-settings-display preview-status [TOKEN]
        dwm-settings-display install-profile NAME
        dwm-settings-display rollback-system
@@ -534,6 +537,7 @@ preview_file() {
 	"$setup_helper" validate "$proposed" --tearfree off
 	"$setup_helper" capture >"$previous"
 	chmod 600 "$previous" "$proposed"
+	record_preview_session "$token"
 	: >"$marker"
 	chmod 600 "$marker"
 	if ! apply_layout "$proposed"; then
@@ -546,14 +550,36 @@ preview_file() {
 		printf 'preview-failed\t%s\t%s\n' "$token" "$(clean_field "$(<"$failed")")"
 		return 0
 	fi
-	("$self" _watch "$token" "$seconds" >/dev/null 2>&1) &
+	# exec: the recorded PID is the watchdog itself, not a subshell around it
+	# (#369). The mutation lock's descriptor is not inherited.
+	(exec "$self" _watch "$token" "$seconds" >/dev/null 2>&1 7>&-) &
+	record_preview_watchdog "$token" "$!"
 	printf 'preview\t%s\t%s\n' "$token" "$seconds"
+}
+
+# Every step that changes a preview's state holds this lock (#369): starting a
+# preview, keep, revert, discard, the watchdog's rollback, and a status that
+# clears a finished preview. The kernel releases it when its holder exits, so
+# a keep or revert killed mid-way, or a session that died, never leaves the
+# others locked out, and two of them can never act on one preview at once.
+acquire_mutation_lock() {
+	local wait=${1:-}
+	command -v flock >/dev/null 2>&1 || die "flock is unavailable"
+	ensure_state_dir
+	local status=0
+	preview_lock "$state_dir/display-mutation.lock" 7 $wait || status=$?
+	case $status in
+	0) ;;
+	1) die "display settings are busy; try again in a moment" ;;
+	*) die "unsafe display mutation lock" ;;
+	esac
 }
 
 start_preview() {
 	local token=$1 seconds=$2 temporary
 	shift 2
 	[[ $seconds =~ ^[1-9][0-9]?$ ]] || die "preview timeout must be between 1 and 99 seconds"
+	acquire_mutation_lock 30
 	reserve_preview "$token"
 	trap 'cleanup_preview "$token"' EXIT
 	temporary=$(mktemp "$state_dir/.proposed.XXXXXX")
@@ -571,6 +597,7 @@ preview_profile() {
 	source=$(profile_path "$name")
 	[[ -f $source && ! -L $source ]] || die "profile not found: $name"
 	profile_is_complete "$source" || die "profile is incomplete; save a complete layout from Settings before preview"
+	acquire_mutation_lock 30
 	reserve_preview "$token"
 	trap 'cleanup_preview "$token"' EXIT
 	destination=$(token_path "$token" proposed)
@@ -579,27 +606,134 @@ preview_profile() {
 	trap - EXIT
 }
 
+# Removes the preview's files. The reservation goes only when it is this
+# preview's: an old token must never free a newer preview's.
 cleanup_preview() {
-	local token=$1
+	local token=$1 current_token=
 	rm -f "$(token_path "$token" active)" "$(token_path "$token" previous)" \
-		"$(token_path "$token" proposed)" "$(token_path "$token" failed)" "$state_dir/current"
+		"$(token_path "$token" proposed)" "$(token_path "$token" failed)" \
+		"$(token_path "$token" session)" "$(token_path "$token" watch)"
+	if [[ -f $state_dir/current ]]; then
+		IFS= read -r current_token <"$state_dir/current" || current_token=
+		[[ $current_token != "$token" ]] || rm -f "$state_dir/current"
+	fi
 	rmdir "$(token_path "$token" claim)" 2>/dev/null || true
 }
 
+# A preview belongs to the X server it was made on and to the watchdog that
+# reverts it (#369). A session that ended mid-preview (Xorg crashed rotating an
+# output) left the preview marked active for good: every status said active,
+# so Settings asked Keep or Revert forever. The server is recorded with its
+# display (dwm-xsession.sh), so a preview is judged by its own display, not by
+# whichever one Settings runs on.
+record_preview_session() {
+	local session identity
+	session=$(token_path "$1" session)
+	identity=$(x11_session_identity "${DISPLAY:-}") || identity=
+	printf '%s\t%s\n' "$(normalize_x11_display "${DISPLAY:-}")" "$identity" >"$session"
+	chmod 600 "$session"
+}
+
+record_preview_watchdog() {
+	local watch start
+	watch=$(token_path "$1" watch)
+	start=$(proc_starttime "$2") || start=
+	printf '%s %s\n' "$2" "$start" >"$watch"
+	chmod 600 "$watch"
+}
+
+# preview_foreign TOKEN: the preview was made on an X server that is no longer
+# running (its display's server is gone or was restarted), so its captured
+# layout means nothing now and is never applied. A preview from before these
+# records (no watch file) is foreign once older than any timeout can be.
+preview_foreign() {
+	local token=$1 marker session watch display= recorded= current
+	marker=$(token_path "$token" active)
+	session=$(token_path "$token" session)
+	watch=$(token_path "$token" watch)
+	[[ -f $marker ]] || return 1
+	if [[ -s $session ]]; then
+		IFS=$'\t' read -r display recorded <"$session" || :
+		[[ -n $recorded ]] || return 1
+		current=$(x11_session_identity "$display") || current=
+		[[ $current == "$recorded" ]] && return 1
+		return 0
+	fi
+	[[ ! -f $watch ]] || return 1
+	[[ -n $(find "$marker" -maxdepth 0 -mmin +10 2>/dev/null) ]]
+}
+
+# preview_orphaned TOKEN: the preview is on the server running now and still
+# active, but its watchdog is gone (killed, or it never started), so nothing
+# will revert it. It is not dropped: its captured layout is still valid here,
+# and the user decides with Keep, Revert or Discard.
+preview_orphaned() {
+	local token=$1 marker watch failed pid= start=
+	marker=$(token_path "$token" active)
+	watch=$(token_path "$token" watch)
+	failed=$(token_path "$token" failed)
+	[[ -f $marker && -f $watch && ! -f $failed ]] || return 1
+	read -r pid start <"$watch" || :
+	[[ -n $pid && -n $start ]] && preview_process_owned "$pid" "$start" && return 1
+	return 0
+}
+
+record_preview_failure() { # TOKEN MESSAGE
+	local failed
+	failed=$(token_path "$1" failed)
+	printf '%s\n' "$2" >"$failed"
+	chmod 600 "$failed"
+}
+
+# The finalize claim, taken under the mutation lock: a claim left behind is
+# by then always one whose holder has exited, and is removed.
 claim_preview() {
 	local token=$1 claim
 	claim=$(token_path "$token" claim)
-	mkdir "$claim" 2>/dev/null || die "display preview is already being finalized"
+	rmdir -- "$claim" 2>/dev/null || true
+	mkdir -- "$claim" 2>/dev/null || die "display preview is already being finalized"
 	printf '%s\n' "$claim"
+}
+
+# restore_previous TOKEN WHO: apply the captured layout, or record why it cannot be,
+# in which case the preview stays for Keep, Revert or Discard. dwm-display-setup
+# validates it first, so a layout naming an output that is no longer connected
+# (a change of X driver renames them) is refused before anything is touched.
+restore_previous() { # TOKEN WHO: WHO names the step in a failure ("Automatic rollback", "Revert")
+	local token=$1 who=$2 previous error
+	previous=$(token_path "$token" previous)
+	if ! error=$("$setup_helper" validate "$previous" --tearfree off 2>&1 >/dev/null); then
+		error=${error#dwm-display-setup: }
+		error=${error#error: }
+		record_preview_failure "$token" "The previous layout cannot be restored: ${error:-it is not valid for the connected displays}."
+		return 1
+	fi
+	if ! apply_layout "$previous"; then
+		record_preview_failure "$token" "$who failed; the captured layout is retained for retry."
+		return 1
+	fi
+}
+
+print_preview_failure() {
+	printf 'preview-failed\t%s\t%s\n' "$1" "$(clean_field "$(<"$(token_path "$1" failed)")")"
+}
+
+finish_foreign() {
+	cleanup_preview "$1"
+	printf 'result\tstale\t%s\n' "$1"
 }
 
 keep_preview() {
 	local token=$1 name=${2:-} proposed marker failed claim
-	ensure_state_dir
+	acquire_mutation_lock 30
 	marker=$(token_path "$token" active)
 	proposed=$(token_path "$token" proposed)
 	failed=$(token_path "$token" failed)
 	[[ -z $name ]] || valid_name "$name" || die "invalid profile name: $name"
+	if preview_foreign "$token"; then
+		finish_foreign "$token"
+		return 0
+	fi
 	claim=$(claim_preview "$token")
 	trap 'rmdir "$claim" 2>/dev/null || true' RETURN EXIT
 	[[ -f $marker && -f $proposed ]] || die "display preview is not active"
@@ -640,35 +774,56 @@ apply_kept_layout() {
 
 revert_preview() {
 	local token=$1 previous marker claim
-	ensure_state_dir
+	acquire_mutation_lock 30
 	marker=$(token_path "$token" active)
 	previous=$(token_path "$token" previous)
+	if preview_foreign "$token"; then
+		finish_foreign "$token"
+		return 0
+	fi
 	[[ -f $marker && -f $previous ]] || die "display preview is not active"
 	claim=$(claim_preview "$token")
-	trap 'rmdir "$claim" 2>/dev/null || true' RETURN
-	apply_layout "$previous"
+	# EXIT too: a claim left behind by a failed revert blocked every later
+	# keep and revert (#369).
+	trap 'rmdir "$claim" 2>/dev/null || true' RETURN EXIT
+	if ! restore_previous "$token" Revert; then
+		rmdir "$claim" 2>/dev/null || true
+		trap - RETURN EXIT
+		print_preview_failure "$token"
+		return 0
+	fi
 	cleanup_preview "$token"
+	trap - RETURN EXIT
 	printf 'result\treverted\t%s\n' "$token"
 }
 
+# discard TOKEN: forget the preview without applying anything, whatever state
+# it is in. The way out when the captured layout cannot be restored.
+discard_preview() {
+	local token=$1
+	acquire_mutation_lock 30
+	cleanup_preview "$token"
+	printf 'result\tdiscarded\t%s\n' "$token"
+}
+
 watchdog() {
-	local token=$1 seconds=$2 marker previous failed claim
+	local token=$1 seconds=$2 marker previous claim
 	sleep "$seconds"
-	ensure_state_dir
+	acquire_mutation_lock
 	marker=$(token_path "$token" active)
 	previous=$(token_path "$token" previous)
-	failed=$(token_path "$token" failed)
-	if [[ -f $marker && -f $previous ]]; then
-		claim=$(token_path "$token" claim)
-		mkdir "$claim" 2>/dev/null || return 0
-		if apply_layout "$previous"; then
-			cleanup_preview "$token"
-		else
-			printf 'Automatic rollback failed; the captured layout is retained for retry.\n' >"$failed"
-			chmod 600 "$failed"
-			rmdir "$claim" 2>/dev/null || true
-		fi
+	# Kept, reverted or discarded while asleep: nothing to do.
+	[[ -f $marker && -f $previous && ! -f $(token_path "$token" failed) ]] || return 0
+	# A server that is not the preview's own gets nothing of it.
+	if preview_foreign "$token"; then
+		cleanup_preview "$token"
+		return 0
 	fi
+	claim=$(claim_preview "$token")
+	if restore_previous "$token" "Automatic rollback"; then
+		cleanup_preview "$token"
+	fi
+	rmdir "$claim" 2>/dev/null || true
 }
 
 preview_status() {
@@ -684,8 +839,23 @@ preview_status() {
 	fi
 	marker=$(token_path "$token" active)
 	failed=$(token_path "$token" failed)
+	if preview_foreign "$token" || preview_orphaned "$token" ||
+		[[ ! -f $marker && -f $state_dir/current ]]; then
+		acquire_mutation_lock 30
+		if preview_foreign "$token"; then
+			finish_foreign "$token"
+			return
+		fi
+		if preview_orphaned "$token"; then
+			record_preview_failure "$token" "The automatic rollback is no longer running."
+		elif [[ ! -f $marker && ! -f $failed ]]; then
+			# A reservation with nothing behind it (a preview killed while it
+			# started) refused every new preview.
+			cleanup_preview "$token"
+		fi
+	fi
 	if [[ -f $failed ]]; then
-		printf 'preview-failed\t%s\t%s\n' "$token" "$(clean_field "$(<"$failed")")"
+		print_preview_failure "$token"
 	elif [[ -f $marker ]]; then
 		printf 'preview-active\t%s\n' "$token"
 	else
@@ -735,6 +905,10 @@ apply-kept)
 revert)
 	[[ $# == 2 ]] || die "revert requires token"
 	revert_preview "$2"
+	;;
+discard)
+	[[ $# == 2 ]] || die "discard requires token"
+	discard_preview "$2"
 	;;
 preview-status)
 	[[ $# == 1 || $# == 2 ]] || die "preview-status accepts an optional token"

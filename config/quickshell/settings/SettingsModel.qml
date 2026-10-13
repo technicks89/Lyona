@@ -106,6 +106,16 @@ Scope {
     property int displayPreviewStatusAttempts: 0
 	property int inputPreviewStatusAttempts: 0
     property bool previewRollbackFailed: false
+    // Why the display preview's rollback failed, from the helper's
+    // preview-failed record (#369), kept apart from displayMessage, which a
+    // display refresh overwrites.
+    property string previewFailureMessage: ""
+    // A preview's outcome ("kept", "discarded"...) stays shown until the next
+    // display action, not replaced by the refresh that follows it.
+    property bool displayOutcomeSticky: false
+    // A captured layout dwm-display-setup refused (an output no longer
+    // connected) fails the same way on every Revert, so Revert is not offered.
+    readonly property bool previewRestorable: !root.previewFailureMessage.startsWith("The previous layout cannot be restored")
     property bool previewOperationLocked: false
     property bool closeRollbackPending: false
     property string pendingAction: ""
@@ -322,7 +332,8 @@ Scope {
         root.displayDpiPersisted = dpiPersisted;
         root.displayDpiRecommended = dpiRecommended;
         root.displayState = valid ? "ready" : "failure";
-        root.displayMessage = valid ? outputs.length + " connected outputs" : "Unsupported display provider response";
+        if (!valid || !root.displayOutcomeSticky)
+            root.displayMessage = valid ? outputs.length + " connected outputs" : "Unsupported display provider response";
     }
 
     function parseInput(text) {
@@ -501,6 +512,7 @@ Scope {
 
     function runDisplay(action, args) {
         if (displayActionProcess.running) return;
+        if (action !== "preview-status") root.displayOutcomeSticky = false;
         root.pendingAction = "display-" + action;
         displayActionProcess.command = Commands.settingsDisplayCommand(action, args || []);
         displayActionProcess.running = true;
@@ -533,6 +545,11 @@ Scope {
         if (!root.previewToken) return;
         if (root.previewKind === "display") root.runDisplay("revert", [root.previewToken]);
         else if (root.previewKind === "input") root.runInput("revert", [root.previewToken]);
+    }
+
+    function discardPreview() {
+        if (root.previewKind === "display" && root.previewToken)
+            root.runDisplay("discard", [root.previewToken]);
     }
 
     function saveDisplay(name) {
@@ -1053,6 +1070,7 @@ Scope {
 					if (fields[0] === "preview") {
 						root.previewKind = "display"; root.previewToken = fields[1]; root.previewSeconds = Number(fields[2]);
 						root.previewRollbackFailed = false;
+						root.previewFailureMessage = "";
 						root.displayPreviewStatusAttempts = 0;
 						root.displayMessage = "Display preview active";
 						} else if (fields[0] === "preview-active") {
@@ -1069,23 +1087,41 @@ Scope {
 						} else if (fields[0] === "preview-failed") {
 							root.previewKind = "display"; root.previewToken = fields[1]; root.previewSeconds = 0;
 							root.previewRollbackFailed = true;
+							root.previewFailureMessage = fields.slice(2).join(" ");
 							root.requireRecoveredPreviewRollback();
 						root.displayPreviewStatusAttempts = 0;
 						root.previewOperationLocked = true; root.displayMessage = fields.slice(2).join("\t");
 					} else if (fields[0] === "result") {
-						const finalizesPreview = fields[1] === "kept" || fields[1] === "reverted" || fields[1] === "expired";
+						// stale: the preview belonged to an X session that ended, or its
+						// watchdog is gone; the helper removed it without applying anything.
+						const finalizesPreview = fields[1] === "kept" || fields[1] === "reverted" || fields[1] === "expired"
+							|| fields[1] === "stale" || fields[1] === "discarded";
 						if (finalizesPreview) {
 							root.previewKind = ""; root.previewToken = ""; root.previewSeconds = 0; root.previewOperationLocked = false;
 							root.previewRollbackFailed = false;
+							root.previewFailureMessage = "";
 							root.displayPreviewStatusAttempts = 0;
 						}
-						root.displayMessage = fields.slice(1).join(" ");
+						const outcomes = {
+							"kept": "Display settings kept.",
+							"reverted": "Previous display layout restored.",
+							"expired": "The display preview ended; the previous layout was restored.",
+							"stale": "An interrupted display preview was discarded; the current layout stays.",
+							"discarded": "Display preview discarded; the current layout stays for this session."
+						};
+						root.displayMessage = outcomes[fields[1]] || fields.slice(1).join(" ");
+						root.displayOutcomeSticky = outcomes[fields[1]] !== undefined;
 						root.refreshDisplays();
 					}
                 }
             }
         }
-        stderr: StdioCollector { onStreamFinished: { const error = this.text.trim(); if (error) root.displayMessage = error; } }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const error = this.text.trim().replace(/^dwm-settings-display: /gm, "");
+                if (error) root.displayMessage = error;
+            }
+        }
         onRunningChanged: {
             if (!running && !root.previewToken) root.previewOperationLocked = false;
 			if (!running && !root.visible && root.previewKind === "display" && root.closeRollbackPending) {

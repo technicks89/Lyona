@@ -75,7 +75,7 @@ action.
 | Generate an Xorg fragment | `dwm-display-setup generate PROFILE` | Read-only | Parses and validates an allowlisted profile grammar without installing it. |
 | Apply a saved profile | `dwm-display-profile apply PROFILE` invokes `xrandr` with validated output names/options | User-session | Reject invalid profiles and disconnected outputs; failure leaves persistence unchanged. |
 | Timed live preview | `dwm-display-setup preview PROFILE` captures the current RandR layout before apply | User-session | Reverts after timeout or rejection; reports rollback failure explicitly. |
-| Settings discovery and profile preview | `dwm-settings-display` version 1 records and section-owned udev watch | Read-only and user-session | QML passes structured argv only; validation and RandR policy stay in `dwm-display-setup`. Apply failure and timeout restore the captured layout. |
+| Settings discovery and profile preview | `dwm-settings-display` version 1 records and section-owned udev watch | Read-only and user-session | QML passes structured argv only; validation and RandR policy stay in `dwm-display-setup`. Apply failure and timeout restore the captured layout, unless it names an output that is no longer connected; Settings then offers Keep current or Discard. A preview whose X server is gone is dropped without applying anything. |
 | Persistent install and rollback | `dwm-settings-display-root` writes only the managed Xorg fragment through `pkexec` | Privileged | Requires confirmation, an exact installed libexec path, root ownership, non-writable files, structured records, and a safe caller Xauthority. Denial leaves readable state available. |
 
 ### Input

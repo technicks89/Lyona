@@ -21,6 +21,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings > Displays no longer gets stuck asking "Keep these display
+  settings?" after an interrupted change (#369). If the session ended during a
+  preview (Xorg crashed rotating an output), Settings now drops the preview the
+  next time it checks, without applying anything, instead of asking forever,
+  and a Keep or Revert that was killed no longer locks out the next one. When
+  the previous layout cannot be restored, because its automatic rollback
+  stopped or it names a display that is no longer connected (as after a change
+  of X driver renames the outputs), the prompt says why and offers **Keep
+  current** (also used at the next login) or **Discard** (this session only).
+  A preview already stuck this way is dropped the next time Settings >
+  Displays opens, once it is ten minutes old; nothing needs doing.
+  `dwm-settings-display` has a new `discard TOKEN` action and reports a
+  dropped preview as `result stale`. Input previews still lack this recovery.
 - Running lyona's tests inside a desktop session no longer makes the whole
   desktop flash or changes its theme (#368). The tests inherited the session's
   display, D-Bus and GSettings: theme tests reloaded the live Picom, which

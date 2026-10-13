@@ -582,6 +582,7 @@ dwm-settings-display preview TOKEN SECONDS SPEC...
 dwm-settings-display preview-profile TOKEN SECONDS NAME
 dwm-settings-display keep TOKEN [NAME]
 dwm-settings-display revert TOKEN
+dwm-settings-display discard TOKEN
 dwm-settings-display preview-status [TOKEN]
 dwm-settings-display install-profile NAME
 dwm-settings-display rollback-system

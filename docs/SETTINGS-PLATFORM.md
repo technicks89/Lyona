@@ -61,9 +61,10 @@ if an older installation produced conflicting keys.
 The Phase 1 capability snapshot invokes only `dwm-settings-provider discover`
 through the fixed `Commands.settingsProviderCommand()` wrapper. Phase 2 uses
 equally fixed display actions (`discover`, `watch`, `save`, `preview`,
-`preview-profile`, `keep`, `revert`, `install-profile`, `rollback-system`,
-`dpi-set`, and `dpi-reset`) plus the read-only `preview-status` recovery query
-and the startup-only `dpi-apply-saved` action,
+`preview-profile`, `keep`, `revert`, `discard`, `install-profile`,
+`rollback-system`, `dpi-set`, and `dpi-reset`) plus the `preview-status`
+recovery query, which reports a preview and removes one whose X server is gone
+without applying anything, and the startup-only `dpi-apply-saved` action,
 and equally fixed input actions (`discover`, `watch`, `watch-apply`, `preview`,
 `keep`, `revert`, `preview-status`, `reset`, and `apply-saved`). QML cannot
 supply command strings, executables, arbitrary
@@ -251,6 +252,26 @@ path if the action process is busy or the shell exits. Display finalization is
 atomically claimed so Keep cannot race the watchdog. A failed automatic
 rollback retains the captured profile, reports the failure in Settings, and
 keeps Revert available for retry.
+
+Display preview recovery (#369): every step that changes a display preview
+(start, Keep, Revert, `discard`, the watchdog's rollback, and a status that
+clears a preview) holds a mutation lock (`flock`) that the kernel releases when
+its holder exits, so a Keep or Revert killed mid-way never locks the others
+out; a finalize claim found under the lock is a leftover and is removed. Each
+preview records its X display and server (by socket, `dwm-xsession.sh`, shared
+with the wallpaper preview) and its watchdog's PID and start time. A preview
+whose X server is gone or was restarted, or one from before these records that
+is older than any timeout, is foreign: Keep, Revert, `preview-status` and the
+watchdog report `result stale` and remove it without applying its captured
+layout to the new server. A preview on the running server whose watchdog has
+exited is not dropped: `preview-status` records a rollback failure ("The
+automatic rollback is no longer running"), and Keep, Revert and Discard work
+as for any failed rollback. Revert and the watchdog validate the captured layout
+with `dwm-display-setup validate` first; a layout naming an output that is no
+longer connected is recorded as a rollback failure without touching the
+display, and Settings then offers Keep current or Discard but not Revert.
+`discard TOKEN` removes a preview in any state without applying anything and
+reports `result discarded`. Input previews do not have this recovery yet.
 
 Display scaling is a direct user-session change rather than a timed preview,
 because a wrong Xft DPI leaves the session readable and is reversible from the
