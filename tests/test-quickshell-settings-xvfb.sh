@@ -1844,7 +1844,7 @@ done
 
 DISPLAY=$display xdotool windowactivate --sync "$window"
 
-DISPLAY=$display xdotool mousemove "$((x + 120))" "$((y + 210))" click 1
+DISPLAY=$display xdotool mousemove --window "$window" 120 210 click 1
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = displays ]

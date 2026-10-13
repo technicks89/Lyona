@@ -377,12 +377,17 @@ assert_no_file "$config" 'refused or reverted Qt changes leave no configuration 
 
 # ── an override whose theme is uninstalled afterwards ────────────────────
 
-toolkit apply gtk Lyona-nord >/dev/null
-rm -rf -- "$data_home/themes/Lyona-nord"
-grep -Fq $'selection\tgtk\tunavailable\tLyona-nord' <<<"$(toolkit status)" ||
+# A name nothing installs system-wide: the helper also searches
+# /usr/local/share/themes and /usr/share/themes, where an installed Lyona
+# ships its own Lyona-nord.
+vanishing=Lyona-toolkit-test-vanishing
+mkdir -p "$data_home/themes/$vanishing/gtk-3.0"
+toolkit apply gtk "$vanishing" >/dev/null || fail 'apply gtk failed for the vanishing theme'
+rm -rf -- "$data_home/themes/$vanishing"
+grep -Fq $'selection\tgtk\tunavailable\t'"$vanishing" <<<"$(toolkit status)" ||
 	fail 'a vanished override theme should report unavailable'
 # ...and stops offering it, so the pane cannot re-apply what just vanished.
-if grep -Fq $'candidate\tgtk\tLyona-nord' <<<"$(toolkit status)"; then
+if grep -Fqx $'candidate\tgtk\t'"$vanishing" <<<"$(toolkit status)"; then
 	fail 'an uninstalled theme is still offered as a candidate'
 fi
 

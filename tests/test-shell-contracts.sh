@@ -396,9 +396,11 @@ grep -Fqx '        target: "settingsTest"' "$repo/config/quickshell/settings/Set
 # Sync Sprint 12 S12-17: a document the code or the user-facing docs cite must
 # exist, or, once retired, be cited as a `git show` argument naming a commit
 # that holds it: <commit>:docs/<name>.md (docs/sprints/UPSTREAM-SYNC.md, "Retired plan
-# documents"). The commit form is checked only in a git checkout.
+# documents"). The commit form is checked only in a git checkout with its
+# history: a shallow clone does not hold the older commits.
 in_git=0
 git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 && in_git=1
+[ "$in_git" = 0 ] || [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = false ] || in_git=0
 doc_refs=$(cd "$repo" && grep -rhoE '([0-9a-f]{7,40}:)?docs/[A-Za-z0-9_./-]+\.md' \
 	scripts config tests archiso install.sh Makefile README.md SPEC.md AGENTS.md \
 	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md docs/sprints/UPSTREAM-SYNC.md \
