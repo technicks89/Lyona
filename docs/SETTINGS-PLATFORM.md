@@ -264,7 +264,8 @@ whose X server is gone or was restarted, or one from before these records that
 is older than any timeout, is foreign: Keep, Revert, `preview-status` and the
 watchdog report `result stale` and remove it without applying its captured
 layout to the new server. A preview on the running server whose watchdog has
-exited is not dropped: `preview-status` records a rollback failure ("The
+exited, or never started (it died while applying, and is older than any
+timeout), is not dropped: `preview-status` records a rollback failure ("The
 automatic rollback is no longer running"), and Keep, Revert and Discard work
 as for any failed rollback. Revert and the watchdog validate the captured layout
 with `dwm-display-setup validate` first; a layout naming an output that is no
