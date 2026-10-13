@@ -119,8 +119,9 @@ if command -v yay >/dev/null 2>&1 || command -v paru >/dev/null 2>&1; then
 	say 'an AUR helper is already installed.'
 	exit 0
 fi
-command -v git >/dev/null 2>&1 && command -v makepkg >/dev/null 2>&1 ||
+if ! command -v git >/dev/null 2>&1 || ! command -v makepkg >/dev/null 2>&1; then
 	die 'git and makepkg (base-devel) are needed to build yay; install them, then run install-yay again'
+fi
 command -v sudo >/dev/null 2>&1 || die 'sudo is not installed'
 
 # The sudo timestamp is closed first, so nothing in the build can reuse it

@@ -631,13 +631,19 @@ input_371() { # ARGS...: the helper, as Settings on display :88 runs it
 watchdog_371() { # TOKEN: the watchdog the preview recorded, as "PID START"
 	local pid start
 	read -r pid start <"$istate/$1.watch"
-	[[ -n $start ]] || { printf 'no watchdog was recorded for %s\n' "$1" >&2; exit 1; }
+	[[ -n $start ]] || {
+		printf 'no watchdog was recorded for %s\n' "$1" >&2
+		exit 1
+	}
 	printf '%s %s\n' "$pid" "$start"
 }
 stop_watchdog_371() { # "PID START": that watchdog, gone
 	local pid=${1%% *}
 	kill -KILL "$pid" 2>/dev/null || true
-	for _ in {1..40}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+	for _ in {1..40}; do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.05
+	done
 }
 make_socket_371 "$work/x11/X88"
 
@@ -678,7 +684,10 @@ input_371 preview watchdog-other 1 "$mouse_key" pointer-speed 0.5 >/dev/null
 make_socket_371 "$work/x11/X88.new"
 mv -f "$work/x11/X88.new" "$work/x11/X88"
 rm -f "$work/actions.log"
-for _ in {1..60}; do [[ -e $istate/watchdog-other.state ]] || break; sleep 0.05; done
+for _ in {1..60}; do
+	[[ -e $istate/watchdog-other.state ]] || break
+	sleep 0.05
+done
 test ! -e "$istate/watchdog-other.state"
 if grep -Fq 'set-prop' "$work/actions.log" 2>/dev/null; then
 	printf 'an input watchdog reverted on another X server\n' >&2

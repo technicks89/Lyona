@@ -567,7 +567,7 @@ acquire_mutation_lock() {
 	command -v flock >/dev/null 2>&1 || die "flock is unavailable"
 	ensure_state_dir
 	local status=0
-	preview_lock "$state_dir/display-mutation.lock" 7 $wait || status=$?
+	preview_lock "$state_dir/display-mutation.lock" 7 ${wait:+"$wait"} || status=$?
 	case $status in
 	0) ;;
 	1) die "display settings are busy; try again in a moment" ;;
@@ -647,7 +647,7 @@ record_preview_watchdog() {
 # layout means nothing now and is never applied. A preview from before these
 # records (no watch file) is foreign once older than any timeout can be.
 preview_foreign() {
-	local token=$1 marker session watch display= recorded= current
+	local token=$1 marker session watch display='' recorded='' current
 	marker=$(token_path "$token" active)
 	session=$(token_path "$token" session)
 	watch=$(token_path "$token" watch)
@@ -668,7 +668,7 @@ preview_foreign() {
 # will revert it. It is not dropped: its captured layout is still valid here,
 # and the user decides with Keep, Revert or Discard.
 preview_orphaned() {
-	local token=$1 marker session watch failed pid= start=
+	local token=$1 marker session watch failed pid='' start=''
 	marker=$(token_path "$token" active)
 	session=$(token_path "$token" session)
 	watch=$(token_path "$token" watch)

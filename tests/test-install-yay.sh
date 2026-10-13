@@ -164,12 +164,14 @@ run --build-only "$work/missing" 2>/dev/null || status=$?
 [[ $status == 1 ]] || fail '--build-only accepted a missing directory'
 
 # install.sh and the live medium go through it, and neither builds yay itself.
+# shellcheck disable=SC2016 # the literal text in install.sh
 grep -Fq 'INSTALL_YAY_NON_INTERACTIVE=1 "$REPO_DIR/scripts/install-yay" </dev/null' "$repo/install.sh" ||
 	fail 'install.sh does not run install-yay non-interactively'
 # shellcheck disable=SC2016 # the literal text in install.sh
 grep -Fq '"$REPO_DIR/scripts/install-yay" || status=$?' "$repo/install.sh" || fail 'install.sh does not run install-yay'
 grep -Fq 'only where sudo needs no password' "$repo/install.sh" || fail 'install.sh does not say when a non-interactive run skips yay'
 postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
+# shellcheck disable=SC2016 # the literal text in the postinstall
 grep -Fq 'scripts/install-yay" --build-only "$build"' "$postinstall" || fail 'the postinstall does not build yay through install-yay'
 grep -Fq 'dwm_packages arch aur-build' "$postinstall" || fail 'the postinstall does not take the AUR build prerequisites from the map'
 if grep -n 'build-pinned yay-bin' "$repo/install.sh" "$postinstall" | grep -q .; then

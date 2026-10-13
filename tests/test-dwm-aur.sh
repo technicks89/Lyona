@@ -121,6 +121,7 @@ if STUB_BUILD=fail aur build-pinned topgrade-bin "$work/failed" 2>/dev/null; the
 # ── yay-bin is built through it, by the one script that installs yay ─────
 # (#339: scripts/install-yay, for install.sh and the live medium alike;
 # tests/test-install-yay.sh runs it.)
+# shellcheck disable=SC2016 # the literal text in install-yay
 grep -Fq 'bash "$aur" build-pinned "$base" "$dest"' "$repo/scripts/install-yay" ||
 	fail 'install-yay does not build through dwm-aur.sh'
 grep -Fq 'build_pin yay-bin' "$repo/scripts/install-yay" || fail 'install-yay does not build yay-bin'

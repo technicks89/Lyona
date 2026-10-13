@@ -240,6 +240,7 @@ lacks "$core" 'NetworkManager: '
 # (Sync Sprint 16, found in a VM). install.sh runs install-yay for it (#339),
 # non-interactively; test-install-yay.sh runs that.
 yay_fn=$(sed -n '/^ensure_yay_installed() {$/,/^}$/p' "$repo/install.sh")
+# shellcheck disable=SC2016 # the literal text in install.sh
 grep -Fq 'INSTALL_YAY_NON_INTERACTIVE=1 "$REPO_DIR/scripts/install-yay"' <<<"$yay_fn" ||
 	fail 'a non-interactive install does not run install-yay non-interactively'
 grep -Fq 'pacman_args+=(--noconfirm)' "$repo/scripts/install-yay" ||
