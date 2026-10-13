@@ -649,6 +649,62 @@ grep -Fq 'path: "/proc/" + Quickshell.processId.toString() + "/stat"' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runInput("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'root.runDisplay("preview-status", [])' "$repo/config/quickshell/settings/SettingsModel.qml"
+# #372: Settings follows its screen's size (Quickshell applies the implicit size
+# only when the window is first shown), a Keep, Revert or Discard clicked while
+# a display action runs is queued, not dropped, and a preview left unresolved
+# while Settings is closed is said once.
+settings_window=$repo/config/quickshell/settings/SettingsWindow.qml
+grep -Fq 'minimumSize: Qt.size(implicitWidth, implicitHeight)' "$settings_window"
+grep -Fq 'maximumSize: Qt.size(implicitWidth, implicitHeight)' "$settings_window"
+grep -Fq 'root.queuedDisplayAction = { "action": action, "args": args || [] };' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (root.previewKind === "display" && queued.args[0] === root.previewToken)' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (!root.visible) root.notifyUnresolvedDisplayPreview();' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq 'if (root.previewKind === "display" && root.previewRollbackFailed && !root.previewRestorable) {' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+
+# #373: docs/src/install.md lists exactly the actions each Settings helper's
+# usage() names, so the two copies cannot drift apart again.
+for helper in dwm-settings-display dwm-settings-input; do
+	usage_actions=$(sed -n '/^usage() {$/,/^EOF$/p' "$repo/scripts/$helper" |
+		sed -n "s/^.*$helper \([a-z|-]*\).*$/\1/p" | tr '|' '\n' | LC_ALL=C sort -u)
+	doc_actions=$(sed -n "s/^$helper \([a-z-]*\).*$/\1/p" "$repo/docs/src/install.md" | LC_ALL=C sort -u)
+	[ -n "$usage_actions" ] || fail "no actions found in $helper's usage()"
+	if [ "$usage_actions" != "$doc_actions" ]; then
+		printf 'docs/src/install.md lists different %s actions than its usage():\n' "$helper" >&2
+		printf '%s\n' "$usage_actions" >"$work/usage-actions"
+		printf '%s\n' "$doc_actions" >"$work/doc-actions"
+		diff "$work/usage-actions" "$work/doc-actions" >&2 || :
+		exit 1
+	fi
+done
+
+# #371: an input preview dropped as stale finishes the input prompt too.
+grep -Fq 'fields[1] === "expired" || fields[1] === "stale") {' "$repo/config/quickshell/settings/SettingsModel.qml"
+grep -Fq '"An interrupted input preview was discarded; the current settings stay."' \
+	"$repo/config/quickshell/settings/SettingsModel.qml"
+
+# #369: a stale or discarded preview finishes the prompt; a failed rollback
+# keeps its reason apart from displayMessage, offers Discard, and offers no
+# Revert when dwm-display-setup refused the captured layout (the panel and the
+# helper share that phrase).
+settings_model=$repo/config/quickshell/settings/SettingsModel.qml
+display_pane=$repo/config/quickshell/settings/DisplaySettingsPane.qml
+grep -Fq '|| fields[1] === "stale" || fields[1] === "discarded";' "$settings_model"
+grep -Fq 'root.runDisplay("discard", [root.previewToken]);' "$settings_model"
+grep -Fq 'root.previewFailureMessage = fields.slice(2).join(" ");' "$settings_model"
+grep -Fq 'startsWith("The previous layout cannot be restored")' "$settings_model"
+grep -Fq '"The previous layout cannot be restored: ' "$repo/scripts/dwm-settings-display"
+grep -Fq 'if (!valid || !root.displayOutcomeSticky)' "$settings_model"
+grep -Fq 'onActivated: root.settingsModel.discardPreview()' "$display_pane"
+grep -Fq 'visible: root.settingsModel.previewRollbackFailed || root.settingsModel.previewSeconds === 0' "$display_pane"
+grep -Fq 'enabled: !root.settingsModel.previewRollbackFailed || root.settingsModel.previewRestorable' "$display_pane"
+if grep -Fq 'displayFinalizeFailed' "$settings_model" "$display_pane"; then
+	printf 'the display prompt has a second failure state again\n' >&2
+	exit 1
+fi
 grep -Fq 'if (!root.visible) root.closeRollbackPending = true;' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'if (!root.previewToken && (displayPreviewStarting || inputPreviewStarting)) {' \

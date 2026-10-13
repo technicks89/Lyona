@@ -309,6 +309,30 @@ install_networkmanager() {
 	arch-chroot "$TARGET" systemctl enable NetworkManager.service
 }
 
+# The Wi-Fi country, from the timezone the wizard confirmed (#365): with
+# regulatory.db alone the kernel still starts on the world domain until an
+# access point names its country. A lyona-owned file, the same on every run;
+# none for a timezone with no country (UTC), where the access point's country
+# is used. A country set later in /etc/conf.d/wireless-regdom wins: its udev
+# rule runs after cfg80211 loads.
+set_wifi_country() {
+	local conf="$TARGET/etc/modprobe.d/lyona-regdom.conf"
+	if [[ -z ${LYONA_WIFI_COUNTRY:-} ]]; then
+		rm -f -- "$conf"
+		printf "lyona-postinstall: no Wi-Fi country for this timezone; the access point's country is used.\n"
+		return 0
+	fi
+	if [[ ! $LYONA_WIFI_COUNTRY =~ ^[A-Z]{2}$ ]]; then
+		printf 'lyona-postinstall: not a country code: %s\n' "$LYONA_WIFI_COUNTRY" >&2
+		return 1
+	fi
+	install -d -m 0755 "$TARGET/etc/modprobe.d"
+	printf '# Written by the lyona installer: the Wi-Fi regulatory country (#365).\noptions cfg80211 ieee80211_regdom=%s\n' \
+		"$LYONA_WIFI_COUNTRY" >"$conf"
+	chmod 0644 "$conf"
+	printf 'Wi-Fi country set to %s.\n' "$LYONA_WIFI_COUNTRY"
+}
+
 setup_swap_if_needed() {
 	local total_mem_kb
 	total_mem_kb=$(awk '/MemTotal/{print $2}' /proc/meminfo)
@@ -407,7 +431,7 @@ install_yay() {
 
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
-	install_legacy_nvidia_driver install_gpu_drivers \
+	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade install_yay
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."
@@ -447,7 +471,7 @@ if [[ -e $LYONA_MIRRORS_MARKER ]]; then
 fi
 # Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
-set_total_steps 10
+set_total_steps 11
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
@@ -459,6 +483,9 @@ run_logged "Updating the new system..." arch-chroot "$TARGET" pacman -Syu --noco
 run_logged "Checking the kernel..." install_cachyos_kernel
 run_logged "Installing GPU drivers..." install_gpu_drivers
 run_logged "Configuring NetworkManager..." install_networkmanager
+if ! run_logged "Setting the Wi-Fi country..." set_wifi_country; then
+	note_warning "The Wi-Fi country was not set; set WIRELESS_REGDOM in /etc/conf.d/wireless-regdom after the first boot." >/dev/null
+fi
 # The Wi-Fi the wizard connected with, so the first boot is online (#237). In
 # this shell, not run_logged's: the passphrase is read here, and what is said
 # about it (never the passphrase) goes to the log.

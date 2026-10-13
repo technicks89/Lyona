@@ -185,8 +185,11 @@ dwm_packages() {
 	arch:gpu-intel)
 		printf '%s\n' mesa vulkan-intel libva-intel-driver
 		;;
+	# wireless-regdb: without regulatory.db, cfg80211 stays on the world domain,
+	# where 5 GHz is passive only and the access point's country is ignored
+	# (#365). iw, which it depends on, also answers iw reg get when debugging.
 	arch:network)
-		printf '%s\n' networkmanager
+		printf '%s\n' networkmanager wireless-regdb iw
 		;;
 	arch:vm-guest)
 		printf '%s\n' virtiofsd qemu-guest-agent spice-vdagent qemu-hw-display-virtio-vga

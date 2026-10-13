@@ -14,8 +14,12 @@
 # and /usr). CALLER is the calling command's own path; from a checkout, the
 # installed COMMAND on PATH gives the prefix instead. Prints the helper's path
 # when it passes trusted_file. Above the functions the root helpers copy, as
-# they never look a helper up.
+# they never look a helper up. LYONA_NO_TRUSTED_HELPERS (set for every test run,
+# #368) finds none: run from a checkout on a machine with lyona installed, a test
+# otherwise reached the real root helper through polkit. It can only refuse a
+# helper, never choose one.
 trusted_root_helper_path() { # NAME CALLER COMMAND
+	[ -z "${LYONA_NO_TRUSTED_HELPERS:-}" ] || return 1
 	lyona_trust_bin=${2%/*}
 	case $lyona_trust_bin in
 	*/bin) ;;

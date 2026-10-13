@@ -106,6 +106,21 @@ Scope {
     property int displayPreviewStatusAttempts: 0
 	property int inputPreviewStatusAttempts: 0
     property bool previewRollbackFailed: false
+    // Why the display preview's rollback failed, from the helper's
+    // preview-failed record (#369), kept apart from displayMessage, which a
+    // display refresh overwrites.
+    property string previewFailureMessage: ""
+    // A preview's outcome ("kept", "discarded"...) stays shown until the next
+    // display action, not replaced by the refresh that follows it.
+    property bool displayOutcomeSticky: false
+    // A captured layout dwm-display-setup refused (an output no longer
+    // connected) fails the same way on every Revert, so Revert is not offered.
+    readonly property bool previewRestorable: !root.previewFailureMessage.startsWith("The previous layout cannot be restored")
+    // A Keep, Revert or Discard clicked while another display action (a status
+    // poll, a refresh) runs, run when it ends (#372): it used to be dropped.
+    property var queuedDisplayAction: null
+    // The preview a "not restored" notification was posted for, once each.
+    property string displayPreviewNotified: ""
     property bool previewOperationLocked: false
     property bool closeRollbackPending: false
     property string pendingAction: ""
@@ -322,7 +337,8 @@ Scope {
         root.displayDpiPersisted = dpiPersisted;
         root.displayDpiRecommended = dpiRecommended;
         root.displayState = valid ? "ready" : "failure";
-        root.displayMessage = valid ? outputs.length + " connected outputs" : "Unsupported display provider response";
+        if (!valid || !root.displayOutcomeSticky)
+            root.displayMessage = valid ? outputs.length + " connected outputs" : "Unsupported display provider response";
     }
 
     function parseInput(text) {
@@ -500,7 +516,12 @@ Scope {
     }
 
     function runDisplay(action, args) {
-        if (displayActionProcess.running) return;
+        if (displayActionProcess.running) {
+            if (action === "keep" || action === "revert" || action === "discard")
+                root.queuedDisplayAction = { "action": action, "args": args || [] };
+            return;
+        }
+        if (action !== "preview-status") root.displayOutcomeSticky = false;
         root.pendingAction = "display-" + action;
         displayActionProcess.command = Commands.settingsDisplayCommand(action, args || []);
         displayActionProcess.running = true;
@@ -533,6 +554,22 @@ Scope {
         if (!root.previewToken) return;
         if (root.previewKind === "display") root.runDisplay("revert", [root.previewToken]);
         else if (root.previewKind === "input") root.runInput("revert", [root.previewToken]);
+    }
+
+    // A display preview left unresolved while Settings is closed (a close-time
+    // Revert or the automatic rollback could not restore the layout) is said
+    // once (#372), or the screens stay as they are with no word why.
+    function notifyUnresolvedDisplayPreview() {
+        if (!root.previewToken || root.displayPreviewNotified === root.previewToken) return;
+        root.displayPreviewNotified = root.previewToken;
+        Quickshell.execDetached(["notify-send", "-a", "lyona", "-i", "video-display", "--",
+            "Display settings were not restored",
+            "Open Settings > Displays to keep the current layout or discard the preview."]);
+    }
+
+    function discardPreview() {
+        if (root.previewKind === "display" && root.previewToken)
+            root.runDisplay("discard", [root.previewToken]);
     }
 
     function saveDisplay(name) {
@@ -879,7 +916,12 @@ Scope {
 				root.closeRollbackPending = true;
 			} else if (root.previewToken) {
 				const actionBusy = root.previewKind === "display" ? displayActionProcess.running : inputActionProcess.running;
-				if (actionBusy) root.closeRollbackPending = true;
+				if (root.previewKind === "display" && root.previewRollbackFailed && !root.previewRestorable) {
+					// Revert would be refused again (#372): the preview stays for
+					// Keep current or Discard, and the notification says so.
+					root.closeRollbackPending = false;
+					root.notifyUnresolvedDisplayPreview();
+				} else if (actionBusy) root.closeRollbackPending = true;
 			else {
 				root.closeRollbackPending = false;
 				root.revertPreview();
@@ -1053,6 +1095,7 @@ Scope {
 					if (fields[0] === "preview") {
 						root.previewKind = "display"; root.previewToken = fields[1]; root.previewSeconds = Number(fields[2]);
 						root.previewRollbackFailed = false;
+						root.previewFailureMessage = "";
 						root.displayPreviewStatusAttempts = 0;
 						root.displayMessage = "Display preview active";
 						} else if (fields[0] === "preview-active") {
@@ -1069,28 +1112,54 @@ Scope {
 						} else if (fields[0] === "preview-failed") {
 							root.previewKind = "display"; root.previewToken = fields[1]; root.previewSeconds = 0;
 							root.previewRollbackFailed = true;
+							root.previewFailureMessage = fields.slice(2).join(" ");
+							if (!root.visible) root.notifyUnresolvedDisplayPreview();
 							root.requireRecoveredPreviewRollback();
 						root.displayPreviewStatusAttempts = 0;
 						root.previewOperationLocked = true; root.displayMessage = fields.slice(2).join("\t");
 					} else if (fields[0] === "result") {
-						const finalizesPreview = fields[1] === "kept" || fields[1] === "reverted" || fields[1] === "expired";
+						// stale: the preview belonged to an X session that ended, or its
+						// watchdog is gone; the helper removed it without applying anything.
+						const finalizesPreview = fields[1] === "kept" || fields[1] === "reverted" || fields[1] === "expired"
+							|| fields[1] === "stale" || fields[1] === "discarded";
 						if (finalizesPreview) {
 							root.previewKind = ""; root.previewToken = ""; root.previewSeconds = 0; root.previewOperationLocked = false;
 							root.previewRollbackFailed = false;
+							root.previewFailureMessage = "";
 							root.displayPreviewStatusAttempts = 0;
 						}
-						root.displayMessage = fields.slice(1).join(" ");
+						const outcomes = {
+							"kept": "Display settings kept.",
+							"reverted": "Previous display layout restored.",
+							"expired": "The display preview ended; the previous layout was restored.",
+							"stale": "An interrupted display preview was discarded; the current layout stays.",
+							"discarded": "Display preview discarded; the current layout stays for this session."
+						};
+						root.displayMessage = outcomes[fields[1]] || fields.slice(1).join(" ");
+						root.displayOutcomeSticky = outcomes[fields[1]] !== undefined;
 						root.refreshDisplays();
 					}
                 }
             }
         }
-        stderr: StdioCollector { onStreamFinished: { const error = this.text.trim(); if (error) root.displayMessage = error; } }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const error = this.text.trim().replace(/^dwm-settings-display: /gm, "");
+                if (error) root.displayMessage = error;
+            }
+        }
         onRunningChanged: {
             if (!running && !root.previewToken) root.previewOperationLocked = false;
 			if (!running && !root.visible && root.previewKind === "display" && root.closeRollbackPending) {
 				root.closeRollbackPending = false;
 				root.revertPreview();
+			} else if (!running && root.queuedDisplayAction) {
+				// Only for the preview it was clicked on: the action that just
+				// ended may have finished that preview.
+				const queued = root.queuedDisplayAction;
+				root.queuedDisplayAction = null;
+				if (root.previewKind === "display" && queued.args[0] === root.previewToken)
+					Qt.callLater(function() { root.runDisplay(queued.action, queued.args); });
 			}
         }
     }
@@ -1124,11 +1193,16 @@ Scope {
 						root.inputPreviewStatusAttempts = 0;
 						root.previewOperationLocked = true; root.inputMessage = fields.slice(2).join("\t");
 					} else if (fields[0] === "result") {
-						if (fields[1] === "keep" || fields[1] === "revert" || fields[1] === "expired") {
+						// stale: the preview belonged to an X session that ended; the
+						// helper removed it without applying anything (#371).
+						if (fields[1] === "keep" || fields[1] === "revert" || fields[1] === "expired" || fields[1] === "stale") {
 							root.previewKind = ""; root.previewToken = ""; root.previewSeconds = 0; root.previewOperationLocked = false;
+							root.previewRollbackFailed = false;
 							root.inputPreviewStatusAttempts = 0;
 						}
-						root.inputMessage = fields.slice(1).join(" ");
+						root.inputMessage = fields[1] === "stale"
+							? "An interrupted input preview was discarded; the current settings stay."
+							: fields.slice(1).join(" ");
 						root.refreshInput();
 					}
 					}

@@ -305,10 +305,18 @@ Flickable {
 				Text {
 					textFormat: Text.PlainText
 					Layout.fillWidth: true
-					text: root.settingsModel.previewSeconds > 0
-						? "Keep these display settings? Reverting in " + root.settingsModel.previewSeconds + " seconds."
-						: "Could not restore the previous layout automatically. Revert retries it; Keep current accepts this layout."
-					color: Theme.textStrong
+					// #369: every state names only the buttons it shows. Keep also
+					// uses the layout at the next login; Discard leaves the screens as
+					// they are for this session only.
+					text: root.settingsModel.previewRollbackFailed
+						? (root.settingsModel.previewFailureMessage || "Could not restore the previous layout automatically.")
+							+ (root.settingsModel.previewRestorable ? " Revert restores the previous layout;" : "")
+							+ " Keep current keeps this layout, also at the next login; Discard leaves the screens as they are for this session only."
+						: root.settingsModel.previewSeconds > 0
+						? "Keep these display settings? Reverting in " + root.settingsModel.previewSeconds
+							+ (root.settingsModel.previewSeconds === 1 ? " second." : " seconds.")
+						: "Settings could not confirm the automatic rollback. Revert restores the previous layout; Keep changes keeps this one; Discard leaves the screens as they are for this session only."
+					color: root.settingsModel.previewRollbackFailed ? Theme.danger : Theme.textStrong
 					font.family: Theme.fontFamily
 					font.pixelSize: Theme.bodyFontSize
 					wrapMode: Text.WordWrap
@@ -318,7 +326,17 @@ Flickable {
 					primary: true
 					onActivated: root.settingsModel.keepPreview()
 				}
-                ShellButton { label: "Revert"; danger: true; onActivated: root.settingsModel.revertPreview() }
+                ShellButton {
+                    label: "Revert"
+                    danger: true
+                    enabled: !root.settingsModel.previewRollbackFailed || root.settingsModel.previewRestorable
+                    onActivated: root.settingsModel.revertPreview()
+                }
+                ShellButton {
+                    label: "Discard"
+                    visible: root.settingsModel.previewRollbackFailed || root.settingsModel.previewSeconds === 0
+                    onActivated: root.settingsModel.discardPreview()
+                }
             }
         }
 

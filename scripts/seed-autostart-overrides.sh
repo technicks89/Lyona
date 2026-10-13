@@ -75,6 +75,7 @@ else
 fi
 
 for entry in \
+	autorandr.desktop \
 	light-locker.desktop \
 	picom.desktop \
 	polkit-mate-authentication-agent-1.desktop; do

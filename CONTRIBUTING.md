@@ -26,6 +26,12 @@ make
 scripts/run-tests
 ```
 
+The tests are safe to run inside your lyona session: `make check-...`,
+`scripts/run-tests` and a test run on its own all drop the session's display
+and D-Bus, keep GSettings in memory, use a private runtime directory and never
+reach the installed root helpers, so a run does not change your theme, reload
+your compositor or ask for a password. Tests that need X start their own Xvfb.
+
 Use `./install.sh --dry-run --non-interactive --profile core` to inspect the
 dependency plan without changing the system.
 
