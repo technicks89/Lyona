@@ -820,7 +820,9 @@ stop_watchdog_369 "$(watchdog_369 no-watch)"
 rm -f "$state/no-watch.watch"
 helper_369 preview-status no-watch >"$work/369-no-watch-young"
 grep -Fqx $'preview-active\tno-watch' "$work/369-no-watch-young"
-touch -d '5 minutes ago' "$state/no-watch.active"
+# Just over two minutes: past the longest timeout (99 s) and the margin. GNU
+# find's -mmin +2 compares the exact age, so 125 s is old enough.
+touch -d '125 seconds ago' "$state/no-watch.active"
 helper_369 preview-status no-watch >"$work/369-no-watch-old"
 grep -Fqx $'preview-failed\tno-watch\tThe automatic rollback is no longer running.' "$work/369-no-watch-old"
 rm -f "$work/xrandr.log"
