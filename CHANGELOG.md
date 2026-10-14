@@ -110,7 +110,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `_NET_ACTIVE_WINDOW`; dwm answered by focusing the menu itself, which took
   the keyboard off Steam's inner window, and Steam closed the menu at once.
   dwm now leaves the focus where it is when it is already inside the popup
-  (#318).
+  (#318), including when Steam's own focus change reaches dwm before the
+  request, which dwm had taken for the popup grabbing the keyboard by itself.
 - Right-clicking a tray icon, such as Steam's, opens its menu again, drawn in
   the panel's own popup style; a submenu opens in place with Back to return,
   and Escape closes it. The menu used to need Quickshell's QApplication mode,
