@@ -92,8 +92,10 @@ def network_monitor(root):
         try:
             fields = stat(pid)
             args = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
-            if fields[0] != 'Z' and os.path.basename(args[0]) == b'nmcli' \
-                    and args[1:2] == [b'monitor']:
+            # nmcli itself, or the stand-in script below run by its shell.
+            at = 1 if len(args) > 1 and os.path.basename(args[1]) == b'nmcli' else 0
+            if fields[0] != 'Z' and os.path.basename(args[at]) == b'nmcli' \
+                    and args[at + 1:at + 2] == [b'monitor']:
                 return pid, fields[19]
         except (FileNotFoundError, ProcessLookupError, PermissionError, IndexError):
             pass
@@ -134,6 +136,24 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
     (home / '.cache').mkdir()
     runtime = base / 'runtime'
     runtime.mkdir(mode=0o700)
+    path = '%s:%s' % (repo / 'scripts', os.environ['PATH'])
+    # Without NetworkManager (a CI container has no system bus), nmcli monitor
+    # exits at once and the shell restarts it every 3 s, so there is no watcher
+    # to measure. A stand-in that stays up, as the real one does, keeps the
+    # watcher under test; everything else still goes to the real nmcli.
+    nm = subprocess.run(['nmcli', '-t', '-f', 'RUNNING', 'general'], capture_output=True, text=True) \
+        if shutil.which('nmcli') else None
+    if nm is None or nm.returncode != 0 or nm.stdout.strip() != 'running':
+        stubs = base / 'stubs'
+        stubs.mkdir()
+        (stubs / 'nmcli').write_text(
+            '#!/bin/sh\n'
+            'if [ "${1:-}" = monitor ]; then\n'
+            '\twhile :; do sleep 3600; done\n'
+            'fi\n'
+            'exec %s "$@"\n' % (shutil.which('nmcli') or 'false'))
+        (stubs / 'nmcli').chmod(0o755)
+        path = '%s:%s' % (stubs, path)
     env = {
         **os.environ,
         'HOME': str(home), 'XDG_CONFIG_HOME': str(config), 'XDG_DATA_HOME': str(home / '.local/share'),
@@ -142,7 +162,7 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
         'LYONA_DEV_SCRIPTS': str(home / '.local/share/checkout/scripts'),
         'XDG_CACHE_HOME': str(home / '.cache'), 'XDG_RUNTIME_DIR': str(runtime),
         'QSG_RHI_BACKEND': 'software', 'QT_QUICK_BACKEND': 'software', 'QT_QPA_PLATFORMTHEME': '',
-        'DWM_AUTOSTART_NO_INPUT_WATCH': '1', 'PATH': '%s:%s' % (repo / 'scripts', os.environ['PATH']),
+        'DWM_AUTOSTART_NO_INPUT_WATCH': '1', 'PATH': path,
     }
     log = (base / 'session.log').open('w')
     wm = subprocess.Popen([str(repo / 'dwm')], env=env, stdout=log, stderr=log, start_new_session=True)
