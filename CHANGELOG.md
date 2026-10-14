@@ -10,6 +10,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The Full suite workflow runs on aarch64 too (ARM1-05, decision A-9). The
+  new manual job runs the suite in an Arch Linux ARM container on a GitHub ARM
+  runner. The container is built from Arch Linux ARM's own root filesystem,
+  checked against its pinned signing key and published checksum. It uses the
+  same package profile (resolved for aarch64), `nobody` runner and
+  `scripts/run-tests` as the x86_64 job, through `scripts/ci-local.sh
+  --base-image`. For the whole suite every target runs and every failure is
+  listed, with one log per target. Tests of x86_64-only features (legacy
+  NVIDIA, the install medium, CachyOS, the AUR fixtures) are pinned to x86_64.
+  The package checks resolve the map for aarch64 against Arch Linux ARM's
+  repositories. The x86_64 job gives its runner a login shell. The whole
+  suite passes on aarch64 (`docs/evidence/arm1-05-aarch64-ci.md`) (#5).
+
 - Code that assumed x86_64, checked on aarch64 (ARM1-04). System Information
   names an ARM processor, which has no `model name` in `/proc/cpuinfo`: from
   its cores' implementer and part codes ("Arm Cortex-A72" on a Raspberry Pi

@@ -286,6 +286,8 @@ x86_64) foreign=183 foreign_name=aarch64 ;;
 *) foreign=62 foreign_name=x86_64 ;;
 esac
 cp "$work/fixtures/Good.AppImage" "$work/home/Downloads/Foreign.AppImage"
+# The format is built on purpose: a byte given in octal.
+# shellcheck disable=SC2059
 printf "\\$(printf %03o "$foreign")\\000" |
 	dd of="$work/home/Downloads/Foreign.AppImage" bs=1 seek=18 conv=notrunc status=none
 notified_before=$(count "$work/notify.log")

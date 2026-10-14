@@ -732,7 +732,15 @@ SHELL_SCRIPTS = $(sort $(wildcard scripts/*.sh) $(shell for f in scripts/*; do \
 	[ -f "$$f" ] && head -n 1 -- "$$f" | grep -Eq '^$(HASH)!.*(/|env )(ba)?sh([[:space:]]|$$)' && \
 	printf '%s\n' "$$f"; done))
 
+# Arch Linux ARM has no shellcheck package (ARM1-02); the result does not depend
+# on the machine, so off x86_64 a missing shellcheck is a skip, and the x86_64
+# job runs it (ARM1-05). On x86_64 it stays required.
 check-shell:
+	@if ! command -v shellcheck >/dev/null 2>&1 && [ "$$(uname -m)" != x86_64 ]; then \
+		echo "check-shell: skipped: shellcheck is not packaged for $$(uname -m); the x86_64 job runs it"; \
+		exit 0; \
+	fi; \
+	echo shellcheck install.sh ${SHELL_SCRIPTS} tests/*.sh; \
 	shellcheck install.sh ${SHELL_SCRIPTS} tests/*.sh
 
 check-format:

@@ -28,6 +28,9 @@ make_workspace
 
 installer=$repo/scripts/install-topgrade
 export STUB_DIR=$work
+# The fixture PKGBUILDs are x86_64's; dwm-aur.sh checks the host's otherwise.
+# Its per-architecture checks are tests/test-dwm-aur.sh's (ARM1-03).
+export DWM_AUR_ARCH=x86_64
 stage_helpers checkout "$work/scripts" install-topgrade
 helper=$work/scripts/install-topgrade
 

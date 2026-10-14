@@ -250,10 +250,12 @@ test "$(stat -c '%a' "$work/home/.local/bin")" = "700"
 
 # install.sh's architecture is bash's own ($HOSTTYPE, scripts/dwm-utils.sh),
 # set in test mode with DWM_MACHINE. Arch Linux on armv7l (any architecture is
-# Arch's) gets no Herdr; aarch64 does (ARM1-03).
+# Arch's) gets no Herdr; aarch64 does (ARM1-03). The identity is Arch Linux's
+# too, whatever the host's is: Arch Linux ARM is accepted on aarch64 only.
+printf 'ID=arch\nNAME="Arch Linux"\n' >"$work/os-release"
 env \
 	HOME="$work/home" \
-	DWM_TEST_MODE=1 DWM_MACHINE=armv7l \
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/os-release" DWM_MACHINE=armv7l \
 	"$repo/install.sh" --dry-run --non-interactive --profile recommended \
 	--install-herdr \
 	>"$work/arm-plan.out"
@@ -263,7 +265,7 @@ grep -Fq "Herdr workspace: skipped (unsupported architecture: armv7l)" \
 
 env \
 	HOME="$work/home" \
-	DWM_TEST_MODE=1 DWM_MACHINE=aarch64 \
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/os-release" DWM_MACHINE=aarch64 \
 	"$repo/install.sh" --dry-run --non-interactive --profile recommended \
 	--install-herdr \
 	>"$work/aarch64-plan.out"
@@ -272,7 +274,7 @@ grep -Fq "Herdr workspace: verified user install from https://herdr.dev/install.
 
 env \
 	HOME="$work/home" \
-	DWM_TEST_MODE=1 DWM_MACHINE=x86_64 \
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/os-release" DWM_MACHINE=x86_64 \
 	"$repo/install.sh" --dry-run --non-interactive --profile recommended \
 	>"$work/recommended-plan.out"
 grep -Fq "Herdr workspace: skipped (optional; use --install-herdr to enable)" \
@@ -280,14 +282,14 @@ grep -Fq "Herdr workspace: skipped (optional; use --install-herdr to enable)" \
 
 env \
 	HOME="$work/home" \
-	DWM_TEST_MODE=1 DWM_MACHINE=x86_64 \
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/os-release" DWM_MACHINE=x86_64 \
 	"$repo/install.sh" --dry-run --non-interactive --profile core \
 	--install-herdr >"$work/forced-plan.out"
 grep -Fq "Herdr workspace: verified user install" "$work/forced-plan.out"
 
 env \
 	HOME="$work/home" \
-	DWM_TEST_MODE=1 DWM_MACHINE=x86_64 \
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/os-release" DWM_MACHINE=x86_64 \
 	"$repo/install.sh" --dry-run --non-interactive --profile recommended \
 	--skip-herdr >"$work/skipped-plan.out"
 grep -Fq "Herdr workspace: skipped" "$work/skipped-plan.out"

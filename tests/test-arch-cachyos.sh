@@ -70,6 +70,15 @@ cat >"$bin/grub-mkconfig" <<'EOF'
 printf 'grub-mkconfig %s\n' "$*" >>"${LYONA_TEST_LOG:?}"
 exit 0
 EOF
+# The machine the helper sees: x86_64, whatever the host is (ARM1-05).
+cat >"$bin/uname" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = -m ]; then
+	printf '%s\n' "${LYONA_TEST_MACHINE:-x86_64}"
+	exit 0
+fi
+exec /usr/bin/uname "$@"
+EOF
 cat >"$bin/gcc" <<'EOF'
 #!/bin/sh
 printf '  -march=                    \t\t%s\n' "${LYONA_TEST_MARCH:-x86-64}"
@@ -125,6 +134,7 @@ run_helper() {
 		LYONA_TEST_PACMAN_FAIL="${pacman_fail:-}" \
 		LYONA_TEST_INSTALLED="${installed:-}" \
 		LYONA_TEST_MARCH="${march:-x86-64}" \
+		LYONA_TEST_MACHINE="${machine:-x86_64}" \
 		LYONA_TEST_CACHYOS_KEY_FP="${cachyos_key_fp:-}" \
 		LYONA_TEST_CACHYOS_EXTRA_KEY="${cachyos_extra_key:-}" \
 		LYONA_TEST_CACHYOS_KEY_EXISTS="${cachyos_key_exists:-0}" \
@@ -156,6 +166,17 @@ case_dir=$(new_case status)
 run_helper "$case_dir" status >"$case_dir/out" 2>&1
 grep -Fqx 'cachyos-repos: not configured' "$case_dir/out" ||
 	fail 'status did not report an unconfigured system' "$case_dir/out"
+
+# --- the repositories are x86_64 only ----------------------------------------
+case_dir=$(new_case aarch64)
+cp "$case_dir/pacman.conf" "$case_dir/pacman.conf.orig"
+if machine=aarch64 run_helper "$case_dir" add-repos >"$case_dir/out" 2>&1; then
+	fail 'add-repos succeeded on aarch64' "$case_dir/out"
+fi
+grep -Fq 'x86_64 only (this machine is aarch64)' "$case_dir/out" ||
+	fail 'add-repos on aarch64 did not say why it refused' "$case_dir/out"
+cmp -s "$case_dir/pacman.conf" "$case_dir/pacman.conf.orig" ||
+	fail 'add-repos on aarch64 changed pacman.conf'
 
 # --- add-repos on a v3 machine ------------------------------------------------
 case_dir=$(new_case v3)
@@ -569,10 +590,12 @@ configured_conf="$work/configured-pacman.conf"
 	printf '[core]\nInclude = /etc/pacman.d/mirrorlist\n'
 } >"$configured_conf"
 
+# The CachyOS options are x86_64 only, so the summary is taken for that machine
+# whatever the host is.
 installer_summary() {
 	local conf=$1
 	shift
-	DWM_TEST_MODE=1 DWM_OS_RELEASE="$os_release" \
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$os_release" DWM_MACHINE=x86_64 \
 		LYONA_CACHYOS_PACMAN_CONF="$conf" \
 		"$repo/install.sh" --dry-run --profile full "$@" 2>&1
 }

@@ -3,6 +3,9 @@ set -euo pipefail
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+# The install medium is x86_64's (packages.x86_64): its map, whatever the
+# host is (ARM1-05).
+export ARCH=x86_64
 make_workspace
 
 # shellcheck source=scripts/dwm-utils.sh

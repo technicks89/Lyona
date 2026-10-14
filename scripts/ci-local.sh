@@ -9,7 +9,8 @@
 # has to be committed or pushed first.
 #
 # Usage: scripts/ci-local.sh [--each [--jobs N] [--targets "A B"]]
-#                            [--clang | --clang-only] [--keep] [--refresh] [TARGET]
+#                            [--clang | --clang-only] [--keep] [--refresh]
+#                            [--base-image IMAGE] [TARGET]
 #
 #   TARGET     make target to run (default: check, the whole suite)
 #   --each     run every target of the `check` recipe on its own and list all
@@ -32,6 +33,11 @@
 #              (docker exec -it NAME bash); it is named in the output and
 #              removes itself after four hours
 #   --refresh  rebuild the cached package image(s) from a fresh base image
+#   --base-image IMAGE
+#              start from IMAGE, a local image, instead of archlinux:base-devel:
+#              the aarch64 job runs on the Arch Linux ARM image that
+#              scripts/ci-archlinuxarm-image.sh builds (ARM1-05). It is not
+#              pulled, and --refresh rebuilds from it as it is
 #
 # It runs this tree's own scripts and tests, on the host (it sources
 # scripts/dwm-packages.sh) and in a container whose seccomp and AppArmor
@@ -63,6 +69,7 @@ clang=0
 clang_only=0
 keep=0
 refresh=0
+local_base=0
 
 while (($#)); do
 	case $1 in
@@ -79,6 +86,11 @@ while (($#)); do
 	--clang-only) clang=1 clang_only=1 ;;
 	--keep) keep=1 ;;
 	--refresh) refresh=1 ;;
+	--base-image)
+		base_image=${2:?--base-image needs an image}
+		local_base=1
+		shift
+		;;
 	-h | --help)
 		usage
 		exit 0
@@ -121,6 +133,17 @@ docker info >/dev/null 2>&1 || {
 	printf 'docker is not running, or this user cannot use it\n' >&2
 	exit 1
 }
+if ((local_base)); then
+	# One image reference: it goes into the Dockerfile's FROM line.
+	[[ $base_image =~ ^[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9_.-]+)?$ ]] || {
+		printf 'invalid --base-image: %s\n' "$base_image" >&2
+		exit 2
+	}
+	docker image inspect "$base_image" >/dev/null 2>&1 || {
+		printf 'no local image %s (build it first, e.g. scripts/ci-archlinuxarm-image.sh)\n' "$base_image" >&2
+		exit 1
+	}
+fi
 
 # The package set the workflow installs (it drops names its repositories lack,
 # which the image build does too).
@@ -129,7 +152,10 @@ source "$repo/scripts/dwm-packages.sh"
 # shellcheck source=scripts/ci-schedule.sh
 source "$repo/scripts/ci-schedule.sh"
 mapfile -t packages < <(dwm_packages arch ci-full | awk 'NF' | sort -u)
-image=lyona-ci:$(printf '%s\n' "${packages[@]}" | sha256sum | cut -c1-12)
+# Another base image gets its own cached images: its name is part of the hash.
+base_key=()
+((! local_base)) || base_key=("$base_image")
+image=lyona-ci:$(printf '%s\n' "${packages[@]}" ${base_key[@]+"${base_key[@]}"} | sha256sum | cut -c1-12)
 # The workflow's clang job installs the build profile and clang in a clean
 # container, and nothing more. Keep the profiles separate for Docker layer
 # caching, then retain the complete list for the image tag and status output.
@@ -139,7 +165,7 @@ mapfile -t clang_packages < <({
 	printf '%s\n' "${clang_build_packages[@]}"
 	printf '%s\n' "${clang_tool_packages[@]}"
 } | awk 'NF' | sort -u)
-clang_image=lyona-ci-clang:$(printf '%s\n' "${clang_packages[@]}" | sha256sum | cut -c1-12)
+clang_image=lyona-ci-clang:$(printf '%s\n' "${clang_packages[@]}" ${base_key[@]+"${base_key[@]}"} | sha256sum | cut -c1-12)
 
 # Under the test root (AGENTS.md), not /tmp. The log folder is kept: its path is
 # printed at the end so the logs can be read.
@@ -209,7 +235,11 @@ RUN pacman -Syu --noconfirm --needed git \\
 EOF
 	fi
 	build_flags=()
-	((refresh)) && build_flags+=(--pull --no-cache)
+	# A local base image is not in a registry, so it is not pulled.
+	if ((refresh)); then
+		build_flags+=(--no-cache)
+		((local_base)) || build_flags+=(--pull)
+	fi
 	# An explicit return: the clang leg calls this in an `if`, where `set -e` is off.
 	docker build "${build_flags[@]}" -t "$tag" "$context" || return 1
 	rm -rf "$context"
@@ -285,11 +315,13 @@ prepare_container() {
 
 # as_nobody_in NAME COMMAND...: run a command the way the workflow does, as
 # nobody, in the workspace.
+# SHELL: runuser sets nobody's, nologin, and the tests that drive a terminal
+# through script(1) run it; a user always has a real one.
 as_nobody_in() {
 	local cname=$1
 	shift
 	docker exec -w "$workspace" "$cname" \
-		runuser -u nobody -- env HOME="$CI_HOME" XDG_RUNTIME_DIR="$CI_RUNTIME_DIR" \
+		runuser -u nobody -- env HOME="$CI_HOME" XDG_RUNTIME_DIR="$CI_RUNTIME_DIR" SHELL=/bin/bash \
 		DWM_TEST_TMP_ROOT="$test_root" "$@"
 }
 # shellcheck disable=SC2329 # runs through run_logged

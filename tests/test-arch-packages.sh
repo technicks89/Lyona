@@ -19,7 +19,9 @@ source "$repo/scripts/dwm-utils.sh"
 # shellcheck source=scripts/dwm-packages.sh
 source "$repo/scripts/dwm-packages.sh"
 
-if [[ $DISTRO_ID != arch || $DISTRO_FAMILY != arch ]]; then
+# Arch Linux, or Arch Linux ARM on aarch64: the map resolves for the host, and
+# the host's repositories check it.
+if ! is_arch_family; then
 	printf 'Arch package validation requires Arch Linux; detected %s.\n' \
 		"$DISTRO_NAME" >&2
 	exit 1

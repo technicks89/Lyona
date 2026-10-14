@@ -203,6 +203,7 @@ for tool in bash env grep ls head; do ln -sf "$(command -v "$tool")" "$work/no-l
 
 # The settings provider and the health check name Arch Linux ARM's family.
 grep -Eq '^[[:space:]]*arch \| archarm\) printf' "$repo/scripts/dwm-settings-provider"
+# shellcheck disable=SC2016
 grep -Fq '[[ $id == arch || $id == archarm ]] && family=arch' "$repo/scripts/dwm-system-health"
 
 printf 'Arch Linux platform contract (Arch Linux, Arch Linux ARM on aarch64): PASS\n'

@@ -4,6 +4,8 @@ set -euo pipefail
 # The full-suite workflow and scripts/ci-local.sh (its local twin) must not drift:
 # they take the package set from one profile and the environment from one file.
 # Nothing here runs Docker or the network.
+# The aarch64 job (ARM1-05) is checked too: it reuses ci-local.sh rather than
+# repeating it.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -22,6 +24,9 @@ source "$env_file"
 
 # ── the package set ───────────────────────────────────────────────────────
 
+# The x86_64 job's set, whichever machine runs this: on aarch64 the profile
+# drops the packages Arch Linux ARM lacks (shellcheck, archiso; ARM1-02).
+export ARCH=x86_64
 ci_full=$(dwm_packages arch ci-full | awk 'NF' | LC_ALL=C sort -u)
 [[ -n $ci_full ]] || fail 'the ci-full profile is empty'
 for profile in full ci-smoke qml-validation ci-tools; do
@@ -68,5 +73,38 @@ for literal in "$CI_TEST_ROOT" "$CI_HOME" "$CI_RUNTIME_DIR" 'seccomp=unconfined'
 	fi
 done
 [[ $CI_WORKSPACE == /__w/Lyona/Lyona ]] || fail 'the workspace path is the one GitHub mounts for this repository'
+
+# ── the aarch64 job (ARM1-05) ─────────────────────────────────────────────
+
+# It runs ci-local.sh itself, on the image the image script builds, so it has
+# no package list or environment of its own to drift.
+alarm_image=$repo/scripts/ci-archlinuxarm-image.sh
+alarm_key=$repo/scripts/ci-archlinuxarm.asc
+assert_file "$alarm_image"
+assert_file "$alarm_key"
+aarch64_job=$(awk '/^  full-suite-aarch64:/{f=1;print;next} f&&/^  [A-Za-z0-9_-]+:/{f=0} f' "$workflow")
+[[ -n $aarch64_job ]] || fail 'the workflow has no full-suite-aarch64 job'
+grep -Fq 'runs-on: ubuntu-24.04-arm' <<<"$aarch64_job" || fail 'the aarch64 job does not run on ubuntu-24.04-arm'
+grep -Fq 'if: inputs.aarch64' <<<"$aarch64_job" || fail 'the aarch64 job is not behind its input'
+grep -Fq 'scripts/ci-archlinuxarm-image.sh lyona-archlinuxarm:base-devel' <<<"$aarch64_job" ||
+	fail 'the aarch64 job does not build its image with scripts/ci-archlinuxarm-image.sh'
+grep -Fq 'scripts/ci-local.sh --base-image lyona-archlinuxarm:base-devel' <<<"$aarch64_job" ||
+	fail 'the aarch64 job does not run ci-local.sh on that image'
+if grep -Eq 'dwm_packages|pacman ' <<<"$aarch64_job"; then
+	fail 'the aarch64 job assembles packages itself instead of through ci-local.sh'
+fi
+# Manual only until it has been green several times in a row (ARM1-05).
+grep -Eq '^  (push|pull_request)' "$workflow" && fail 'the full-suite workflow runs on pushes or pull requests'
+# The pinned signer is the key kept beside the script.
+signer=$(sed -n 's/^signer=\([0-9A-F]\{40\}\)$/\1/p' "$alarm_image")
+[[ $signer == 68B3537F39A313B3E574D06777193F152BDBE6A6 ]] ||
+	fail "the image script pins $signer, not the Arch Linux ARM Build System key"
+if command -v gpg >/dev/null 2>&1; then
+	make_workspace
+	mkdir -m 0700 "$work/gnupg"
+	key_fprs=$(gpg --homedir "$work/gnupg" --batch --with-colons --import-options show-only \
+		--import "$alarm_key" 2>/dev/null | awk -F: '$1 == "fpr" { print $10 }')
+	grep -Fxq "$signer" <<<"$key_fprs" || fail "scripts/ci-archlinuxarm.asc is not the key $signer"
+fi
 
 printf 'CI parity: PASS\n'
