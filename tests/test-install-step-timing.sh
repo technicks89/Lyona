@@ -135,7 +135,7 @@ done
 # newest line of its log while it runs (#291), on a terminal.
 if command -v script >/dev/null 2>&1; then
 	# shellcheck disable=SC2016 # expanded by the inner bash
-	live=$(script -qec "$(printf '%q ' bash -c '. "$1"; LYONA_STEP_EXPECT="usually 5-30 minutes"; run_logged "Installing..." bash -c "echo first line; sleep 2; echo downloading packages; sleep 2"' bash "$ui")" /dev/null 2>&1) ||
+	live=$(SHELL=/bin/sh script -qec "$(printf '%q ' bash -c '. "$1"; LYONA_STEP_EXPECT="usually 5-30 minutes"; run_logged "Installing..." bash -c "echo first line; sleep 2; echo downloading packages; sleep 2"' bash "$ui")" /dev/null 2>&1) ||
 		fail "a live step failed: $live"
 	live=$(printf '%s' "$live" | tr -d '\r')
 	[[ $live == *'Installing...'*'(usually 5-30 minutes)'* ]] || fail "the expected duration was not shown: $live"

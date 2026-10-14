@@ -1089,6 +1089,7 @@ grep -Fq 'trusted_file "$make_path"' "$root_helper_src" || fail 'the root helper
 grep -Fq -- '--verbatim-files-from -cpf' "$root_helper_src" || fail 'the backup tar reads its file list as options'
 grep -Fq 'cannot compare' "$root_helper_src" || fail 'the downgrade guard does not fail closed'
 grep -Fq 'u lyona-build - ' "$repo/config/systemd/lyona-update.conf" || fail 'no sysusers entry for lyona-build'
+# shellcheck disable=SC2016 # the literal text in the Makefile
 grep -Fq 'systemd-sysusers ${SYSUSERS_DIR}/lyona-update.conf' "$repo/Makefile" || fail 'install-system does not create the build user'
 
 # #337: the Makefile owns what the helper reads from a release tree. all-root
@@ -1173,7 +1174,7 @@ run_priv() {
 	if [ "${3:-}" = tty ]; then
 		# shellcheck disable=SC2016 # expanded by the inner bash
 		PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="$2" \
-			script -qec "bash -c '. \"\$1\"; run_privileged install-system release' bash $priv_probe" /dev/null \
+			SHELL=/bin/sh script -qec "bash -c '. \"\$1\"; run_privileged install-system release' bash $priv_probe" /dev/null \
 			>/dev/null 2>&1
 	else
 		PATH="$bin_dir:$PATH" DWM_TEST_PRIV_LOG="$priv_log" DWM_TEST_PKEXEC_STATUS="$1" DISPLAY="$2" \

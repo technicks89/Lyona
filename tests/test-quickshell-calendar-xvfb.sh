@@ -70,9 +70,20 @@ esac
 STUB
 chmod +x "$LYONA_DEV_SCRIPTS/lyona-weather"
 
-display=":$((($$ % 400) + 1100))"
-Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp >"$work/xvfb.log" 2>&1 &
+# Xvfb picks a free display, so this never lands on another test's server.
+Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 pids="$pids $!"
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 i=0
 until DISPLAY=$display xprop -root >/dev/null 2>&1; do
 	i=$((i + 1))

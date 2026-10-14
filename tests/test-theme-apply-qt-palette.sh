@@ -14,8 +14,11 @@ make_workspace
 home=$work/home
 runtime=$work/run
 bin=$work/bin
+# The system data dirs: empty, so a Lyona theme installed on the machine
+# running the tests does not stand in for the one this test generates.
+share=$work/share
 mkdir -p "$home/.config/lyona" "$home/.local/share" "$home/.local/state" \
-	"$runtime" "$bin"
+	"$runtime" "$bin" "$share"
 chmod 700 "$runtime"
 
 # Everything that could touch the developer's real session is a stub. qt6ct and
@@ -33,7 +36,7 @@ use_preset() {
 
 run_apply() {
 	HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share \
-		XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
+		XDG_DATA_DIRS=$share XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
 		PATH=$bin:/usr/bin:/bin \
 		"$repo/scripts/theme-apply.sh" >"$work/apply.out" 2>&1 || {
 		cat "$work/apply.out" >&2
@@ -114,7 +117,7 @@ printf 'qt5ct is configured the same way: PASS\n'
 rm -f "$qt5conf" "$conf"
 rm -f "$home/.config/lyona/personalization.conf"
 HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share \
-	XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
+	XDG_DATA_DIRS=$share XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
 	DWM_APPEARANCE_RUNTIME_ONLY=1 PATH=$bin:/usr/bin:/bin \
 	"$repo/scripts/theme-apply.sh" >"$work/apply.out" 2>&1 || {
 	cat "$work/apply.out" >&2

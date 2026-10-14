@@ -493,9 +493,10 @@ cmp "$WORK_DIR/user-config.h" "$CUSTOM_HOME/.config/lyona/config.h"
 cp -p "$WORK_DIR/config.h.saved" "$TEST_REPO/config.h"
 grep -Fqx '    <command>alacritty --working-directory %f</command>' \
 	"$FRESH_CONFIG_HOME/Thunar/uca.xml"
+# S12-13: install-user creates no per-user data directory, so only the
+# directories it does create (config, and .local via the state stamp) are checked.
 for user_path in \
 	"$FRESH_HOME/.local" \
-	"$FRESH_DATA_HOME" \
 	"$FRESH_CONFIG_HOME" \
 	"$FRESH_CONFIG_HOME/lyona"; do
 	test "$(stat -c %U "$user_path")" = "$OWNER"

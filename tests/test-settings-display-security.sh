@@ -16,6 +16,10 @@ set -euo pipefail
 	printf 'The container security test must run as root\n' >&2
 	exit 1
 }
+# The client must find the helper this test installs, in a disposable
+# container: the test runs' guard against reaching an installed root helper
+# (#368, scripts/dwm-trust.sh) would hide it.
+unset LYONA_NO_TRUSTED_HELPERS
 
 work=$(mktemp -d)
 custom_prefix=$(mktemp -d /opt/lyona-security-test.XXXXXX)

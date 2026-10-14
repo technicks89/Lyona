@@ -54,8 +54,10 @@ test ! -e "$invalid"
 # of stopping after every question with no config.h.
 if command -v script >/dev/null 2>&1; then
 	asked="$work/asked.h"
+	# script runs the command in $SHELL, which is nologin for a system user
+	# such as the CI's nobody.
 	printf '144hz\n144\n\n\n\n\n\n\n\n' |
-		script -qec "$(printf '%s --template %s --output %s' "$repo/scripts/configure-build.sh" \
+		SHELL=/bin/sh script -qec "$(printf '%s --template %s --output %s' "$repo/scripts/configure-build.sh" \
 			"$repo/config.def.h" "$asked")" /dev/null >"$work/asked.out" 2>&1 || {
 		cat "$work/asked.out" >&2
 		printf '%s\n' "The interactive configuration failed." >&2

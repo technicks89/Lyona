@@ -72,7 +72,6 @@ if [ "${DWM_SETTINGS_XVFB_DBUS_SESSION:-0}" != 1 ]; then
 fi
 
 work=$(mktemp -d "$test_tmp_root/dwm-settings-xvfb.XXXXXX")
-display=":$((($$ % 400) + 700))"
 dwm_bin=${DWM_SETTINGS_TEST_DWM_BIN:-$repo/dwm}
 dwm_bin_dir=$(CDPATH='' cd -- "$(dirname -- "$dwm_bin")" && pwd)
 dwm_installed_version=$("$dwm_bin" -v 2>&1 1>/dev/null) || :
@@ -817,9 +816,22 @@ esac
 SH
 chmod +x "$data_home/checkout/scripts/xset"
 
-Xvfb "$display" -screen 0 "$screen_geometry" -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
+# Xvfb picks a free display, so this never lands on another test's server.
+Xvfb -displayfd 3 -screen 0 "$screen_geometry" -nolisten tcp -extension GLX \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 xvfb_identity=$(capture_process_identity "$xvfb_pid")
+
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 
 i=0
 while [ "$i" -lt 100 ]; do
@@ -1844,7 +1856,7 @@ done
 
 DISPLAY=$display xdotool windowactivate --sync "$window"
 
-DISPLAY=$display xdotool mousemove "$((x + 120))" "$((y + 210))" click 1
+DISPLAY=$display xdotool mousemove --window "$window" 120 210 click 1
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = displays ]

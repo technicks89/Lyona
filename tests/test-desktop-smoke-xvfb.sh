@@ -25,7 +25,6 @@ if [ "${DWM_SMOKE_XVFB_DBUS_SESSION:-0}" != 1 ]; then
 fi
 
 work=$(mktemp -d "$test_tmp_root/dwm-smoke-xvfb.XXXXXX")
-display=":$((($$ % 400) + 700))"
 dwm_bin=${DWM_SMOKE_TEST_DWM_BIN:-$repo/dwm}
 [ -x "$dwm_bin" ] || {
 	printf 'dwm binary is not built: %s\n' "$dwm_bin" >&2
@@ -127,9 +126,23 @@ Terminal=false
 Categories=Utility;
 EOF
 
-Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
+test_stage='starting Xvfb'
+# Xvfb picks a free display, so this never lands on another test's server.
+Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 xvfb_identity=$(capture_process_identity "$xvfb_pid")
+
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 
 i=0
 while [ "$i" -lt 100 ]; do

@@ -743,13 +743,19 @@ helper_369() { # ARGS...: the helper, as Settings on display :77 runs it
 watchdog_369() { # TOKEN: the watchdog the preview recorded, as "PID START"
 	local pid start
 	read -r pid start <"$state/$1.watch"
-	[[ -n $start ]] || { printf 'no watchdog was recorded for %s\n' "$1" >&2; exit 1; }
+	[[ -n $start ]] || {
+		printf 'no watchdog was recorded for %s\n' "$1" >&2
+		exit 1
+	}
 	printf '%s %s\n' "$pid" "$start"
 }
 stop_watchdog_369() { # "PID START": that watchdog, gone
 	local pid=${1%% *}
 	kill -KILL "$pid" 2>/dev/null || true
-	for _ in {1..40}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+	for _ in {1..40}; do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.05
+	done
 }
 make_socket_369 "$work/x11/X77"
 
@@ -792,7 +798,10 @@ preview_369 watchdog-other 1
 make_socket_369 "$work/x11/X77.new"
 mv -f "$work/x11/X77.new" "$work/x11/X77"
 rm -f "$work/xrandr.log"
-for _ in {1..60}; do [[ -e $state/watchdog-other.active ]] || break; sleep 0.05; done
+for _ in {1..60}; do
+	[[ -e $state/watchdog-other.active ]] || break
+	sleep 0.05
+done
 test ! -e "$state/watchdog-other.active"
 if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
 	printf 'a watchdog reverted on another X server\n' >&2
@@ -844,7 +853,10 @@ rm -f "$work/xrandr.log"
 helper_369 preview-status >"$work/369-legacy"
 grep -Fqx $'result\tstale\tlegacy-stuck' "$work/369-legacy"
 for leftover in current legacy-stuck.active legacy-stuck.previous legacy-stuck.proposed legacy-stuck.claim; do
-	test ! -e "$state/$leftover" || { printf 'stale preview left %s\n' "$leftover" >&2; exit 1; }
+	test ! -e "$state/$leftover" || {
+		printf 'stale preview left %s\n' "$leftover" >&2
+		exit 1
+	}
 done
 if grep -Fq -- '--output' "$work/xrandr.log" 2>/dev/null; then
 	printf 'a legacy preview was reverted\n' >&2
@@ -901,7 +913,10 @@ preview_369 locked 30
 locked_watchdog=$(watchdog_369 locked)
 exec 8>>"$state/display-mutation.lock"
 flock 8
-( sleep 1; flock -u 8 ) &
+(
+	sleep 1
+	flock -u 8
+) &
 lock_holder=$!
 helper_369 keep locked >"$work/369-locked"
 wait "$lock_holder"

@@ -81,12 +81,12 @@ for generator in lyona-plymouth-theme lyona-console-theme; do
 	[[ -z $mismatches ]] || fail "$generator reads the shipped themes unlike dwm:
 $mismatches"
 done
-make_ids=$(awk '/^\[theme\./ { id = $0; sub(/^\[theme\./, "", id); sub(/\].*$/, "", id); print id; }' "$shipped")
+make_ids=$(awk '/^\[theme\./ { id = $0; sub(/^\[theme\./, "", id); sub(/\].*$/, "", id); if (id ~ /^[A-Za-z0-9_-]+$/) print id }' "$shipped")
 dwm_ids=$(awk -F'\t' '$2 == -1 && $1 ~ /^theme\./ { id = $1; sub(/^theme\./, "", id); if (!seen[id]++) print id }' \
 	"$work/shipped.dump")
 [[ $make_ids == "$dwm_ids" ]] || fail "the Makefile's theme ids differ from dwm's:
 $(diff <(printf '%s\n' "$make_ids") <(printf '%s\n' "$dwm_ids") || true)"
-grep -Fq "awk '/^\\[theme\\./ { id = \$\$0; sub(/^\\[theme\\./, \"\", id); sub(/\\].*\$\$/, \"\", id); print id; }' config/themes.toml" \
+grep -Fq "awk '/^\\[theme\\./ { id = \$\$0; sub(/^\\[theme\\./, \"\", id); sub(/\\].*\$\$/, \"\", id); if (id ~ /^[A-Za-z0-9_-]+\$\$/) print id }' config/themes.toml" \
 	"$repo/Makefile" || fail 'the Makefile no longer lists theme ids this way; update this pin'
 
 printf 'Theme readers agree with dwm (no spaces, trailing comment, commented header; the build-time readers): PASS\n'
