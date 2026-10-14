@@ -9,8 +9,9 @@ the two are independent.
 **Status:** planned 2026-10-11 at the maintainer's request. **Scope for now
 (decided 2026-10-11): the generic image and the Raspberry Pi**, through
 ARM-1, ARM-2, ARM-3 and ARM-5. GB10 (ARM-4) and N1X are deferred: their
-plans stay here, but they are not scheduled or tracked on GitHub. No code has
-changed. Nothing here is a support claim: `SPEC.md` still makes Arch x86_64 the
+plans stay here, but they are not scheduled or tracked on GitHub. ARM-1 is in
+progress: ARM1-01 to ARM1-05 are merged (2026-10-14), ARM1-06 remains. Nothing
+here is a support claim: `SPEC.md` still makes Arch x86_64 the
 only release target, and an aarch64 target is supported only once its sprint
 has met the release validation contract (`SPEC.md` 9.4) on that target.
 
@@ -104,7 +105,7 @@ depends on ARM-2; ARM-5 closes the project.
 
 | Sprint | Document | Scope | Exit | Depends on |
 | --- | --- | --- | --- | --- |
-| **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM VM, with no x86_64 regression | A-1, A-9 |
+| **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM machine (a Raspberry Pi 4), with no x86_64 regression | A-1, A-9 |
 | **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on UTM, Parallels and QEMU/KVM | ARM-1, A-2, A-3, A-4 |
 | **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 and a Pi 5 | One image boots to a working desktop on a real Pi 4 and Pi 5, within the lean budget | ARM-1, A-3, A-5 |
 | **ARM-4** (deferred) | [`ARM-SPRINT-4-NVIDIA-GB10.md`](ARM-SPRINT-4-NVIDIA-GB10.md) | GB10 detection, its kernel and boot arguments, NVIDIA's aarch64 driver, Picom on NVIDIA aarch64, validation on GB10 hardware | The generic image installs a working desktop with the NVIDIA driver on a real GB10 system | ARM-2, A-6, A-7, hardware |
@@ -114,6 +115,19 @@ Ordering in practice: ARM-3 is the most predictable target and can run beside
 ARM-2 once ARM-1 is merged. ARM-4 (GB10) and the N1X watch item are deferred
 (2026-10-11); when they are picked up, ARM-4 builds on ARM-2's image and does
 not change ARM-5's release of the generic and Pi images.
+
+## End state
+
+Decided 2026-10-14: one Lyona repository that builds both the x86_64 and the
+ARM versions. Lyona-ARM is where the ARM work happens until ARM-1, ARM-2, ARM-3
+and ARM-5 are done; then it is merged into Lyona as a whole. Lyona-ARM has no
+releases of its own. Until then:
+
+- Lyona `main` is synced in often, each time through a pull request merged
+  with a merge commit (not squashed), so Git knows what is already in.
+- Every ARM difference stays behind `is_arch_family`, an architecture check or
+  the dependency map, so the final merge changes nothing on x86_64.
+- A fix to code both repositories share is made in Lyona first and synced in.
 
 ## Hardware and test machines
 
@@ -125,9 +139,9 @@ not change ARM-5's release of the generic and Pi images.
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
 
 Available to the maintainer (2026-10-13): a Raspberry Pi 4 and an NVIDIA GB10
-system. No Apple Silicon Mac is named, so ARM-1's VM checks run in an emulated
-aarch64 QEMU VM on an x86_64 host until a native VM is available, and the
-evidence says it was emulated.
+system. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
+x86_64 host froze that host (2026-10-13), so ARM-1 tests on the GitHub arm64
+runner (ARM1-05) and on the Pi 4 (ARM1-06), not in an emulated VM.
 
 ## GitHub
 

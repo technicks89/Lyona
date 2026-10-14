@@ -2,7 +2,8 @@
 
 Index: [`ARM64.md`](ARM64.md).
 
-**Status:** planned 2026-10-11. In progress: ARM1-01 implemented 2026-10-13 (#23), ARM1-02 2026-10-13 (#24, #25), ARM1-03 2026-10-13 (#26), ARM1-04 2026-10-13
+**Status:** planned 2026-10-11. In progress: ARM1-01 implemented 2026-10-13 (#23), ARM1-02 2026-10-13 (#24, #25), ARM1-03 2026-10-13 (#26), ARM1-04 2026-10-13 (#27),
+ARM1-05 2026-10-14 (#28). Remaining: ARM1-06
 (A-1 decided: `ID=archarm` on `aarch64` only; A-9 decided: the GitHub
 arm64 runner). GitHub: issues #1 to #6
 (label `arm64`); milestone "ARM Sprint 1 - Foundation", created by
@@ -19,7 +20,7 @@ image yet: that is ARM-2 and ARM-3, which both build on this sprint.
 | [ARM1-03](#arm1-03-aur-pins-and-downloaded-binaries-on-aarch64) | Packaging | ARM1-02 |
 | [ARM1-04](#arm1-04-code-that-assumes-x86_64) | Fix | none |
 | [ARM1-05](#arm1-05-aarch64-ci) | CI | A-9 |
-| [ARM1-06](#arm1-06-validate-installsh-on-arch-linux-arm) | Validation | ARM1-01 to ARM1-04, an aarch64 VM |
+| [ARM1-06](#arm1-06-validate-installsh-on-arch-linux-arm) | Validation | ARM1-01 to ARM1-04, an aarch64 machine |
 
 ---
 
@@ -133,11 +134,22 @@ x86_64 cases still pass.
 
 **Acceptance:** a green aarch64 Full suite run on the sprint branch.
 
+**Done 2026-10-14 (#28):** the whole suite passed on aarch64 (157 targets) in
+run 38557298342; the evidence is `docs/evidence/arm1-05-aarch64-ci.md`. One
+change from item 2: the tests that need x86_64 are pinned to x86_64
+(`ARCH`, `DWM_AUR_ARCH`, a `uname -m` stub) instead of skipped, so they still
+run on aarch64. Only `check-shell` skips, as ShellCheck is not packaged for
+aarch64. The job stays manual (item 3).
+
 ## ARM1-06: Validate `install.sh` on Arch Linux ARM
 
-1. **Machine:** an Arch Linux ARM virtual machine on Apple Silicon (UTM or
-   Parallels), UEFI, `linux-aarch64` kernel, installed from Arch Linux ARM's
-   generic tarball.
+1. **Machine:** the maintainer's Raspberry Pi 4, running Arch Linux ARM
+   (aarch64) installed from Arch Linux ARM's own Raspberry Pi image, with an
+   HDMI display, keyboard and mouse. Decided 2026-10-14: no Apple Silicon Mac
+   is available, an emulated aarch64 VM on x86_64 froze its host
+   (2026-10-13), and the maintainer's GB10 needs ARM-4's kernel before its USB
+   works. The Pi is not UEFI and runs Arch Linux ARM's Pi kernel, so this
+   validates `install.sh`, not the generic image's boot path (ARM-2).
 2. **Run** `install.sh` for the recommended and full profiles; log in through
    LightDM and through `startx`.
 3. **Check:** the panel, launcher, overview (with Picom, then without),
@@ -147,7 +159,7 @@ x86_64 cases still pass.
 4. **Record** in `docs/evidence/arm1-06-install-sh.md`, including what was
    not tested.
 
-**Acceptance:** a working desktop on the VM with no manual step, and the
+**Acceptance:** a working desktop on the Pi 4 with no manual step, and the
 x86_64 Full suite still green.
 
 ---
