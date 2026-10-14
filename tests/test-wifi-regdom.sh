@@ -76,6 +76,7 @@ lib() {
 	fail "the summary says: $(lib 'TIMEZONE=Europe/Berlin; wifi_country_summary')"
 [[ $(lib 'TIMEZONE=UTC; wifi_country_summary') == "none, the access point's" ]] ||
 	fail "the UTC summary says: $(lib 'TIMEZONE=UTC; wifi_country_summary')"
+# shellcheck disable=SC2016 # the literal text in the wizard
 grep -Fq 'Wi-Fi country: $(wifi_country_summary)' "$wizard" || fail 'the summary screen does not show the Wi-Fi country'
 # shellcheck disable=SC2016 # the literal text in the wizard
 grep -Fq 'LYONA_WIFI_COUNTRY=$(timezone_country "$TIMEZONE") || LYONA_WIFI_COUNTRY=' "$wizard" ||
@@ -89,6 +90,7 @@ grep -Fq '	wifi_country_tip' "$repo/install.sh" || fail 'install.sh does not cal
 sys=$work/sys
 tip() { # prints what the tip says for $sys
 	(
+		# shellcheck disable=SC2329 # called by the sourced tip
 		info() { printf '%s\n' "$1"; }
 		export LYONA_SYSROOT=$sys
 		# shellcheck source=/dev/null

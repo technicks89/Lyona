@@ -16,7 +16,6 @@ if [ "${DWM_XVFB_DBUS_SESSION:-0}" != 1 ]; then
 fi
 
 work=$(mktemp -d)
-display=":$((($$ % 400) + 300))"
 cleanup() {
 	set +e
 	[ -n "${quickshell_pid:-}" ] && kill "$quickshell_pid" 2>/dev/null
@@ -57,8 +56,21 @@ HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR
 grep -E "$(printf '\t(ok|warn)\tdependency-package-gnome-keyring\t')" "$work/dependencies.tsv" >/dev/null ||
 	fail "the staged diagnostics report no gnome-keyring row"
 
-Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
+# Xvfb picks a free display, so this never lands on another test's server.
+Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
+
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 
 i=0
 while [ "$i" -lt 100 ]; do

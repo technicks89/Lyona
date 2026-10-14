@@ -559,7 +559,7 @@ record_preview_watchdog() {
 # means nothing now and is never applied. A preview from before these records
 # (no watch file) is foreign once older than any timeout can be.
 preview_foreign() {
-	local token=$1 state session watch display= recorded= current
+	local token=$1 state session watch display='' recorded='' current
 	state=$(token_file "$token" state)
 	session=$(token_file "$token" session)
 	watch=$(token_file "$token" watch)
@@ -579,7 +579,7 @@ preview_foreign() {
 # active, but its watchdog is gone, so nothing will revert it. It is kept: its
 # captured value is still good here, and Keep or Revert decides.
 preview_orphaned() {
-	local token=$1 state session watch failed pid= start=
+	local token=$1 state session watch failed pid='' start=''
 	state=$(token_file "$token" state)
 	session=$(token_file "$token" session)
 	watch=$(token_file "$token" watch)

@@ -61,7 +61,6 @@ if [ "${DWM_SYSTEM_MANAGEMENT_XVFB_DBUS_SESSION:-0}" != 1 ]; then
 fi
 
 work=$(mktemp -d)
-display=":$((($$ % 300) + 1400))"
 runtime_alias_dir=
 test_stage='initializing fixture'
 cleanup() {
@@ -344,8 +343,21 @@ esac
 SH
 chmod +x "$data_home/checkout/scripts/dwm-system-management"
 
-Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp -extension GLX >"$work/xvfb.log" 2>&1 &
+# Xvfb picks a free display, so this never lands on another test's server.
+Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp -extension GLX \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
+
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 
 i=0
 while [ "$i" -lt 100 ]; do
@@ -634,7 +646,18 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 [ "$snapshot_state" = loaded ]
-[ "$(ipc settingsTest systemManagementOpenHealth)" = true ]
+# Closing Settings leaves the last state "loaded" while the reopened window's
+# fresh read is still in flight, and openHealth() refuses until that read
+# offers health-open again: ask until it is taken.
+i=0
+until [ "$(ipc settingsTest systemManagementOpenHealth 2>/dev/null)" = true ]; do
+	i=$((i + 1))
+	if [ "$i" -ge 200 ]; then
+		printf 'health-open was never accepted after reopening Settings\n' >&2
+		exit 1
+	fi
+	sleep 0.05
+done
 if [ "$(ipc settingsTest systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after systemManagementOpenHealth\n' >&2
 	exit 1
@@ -672,7 +695,17 @@ ipc settings select system >/dev/null
 [ "$(ipc settingsTest systemManagementSettingsVisible)" = true ]
 
 test_stage='loading the timezone choices catalog (#268: prepare() requires a loaded, matching catalog)'
-[ "$(ipc settingsTest systemManagementRegionalRequestChoices timezone)" = true ]
+# Reopening Settings starts a fresh status read, and the request is refused
+# ("Wait for fresh regional status") until it is done: ask until it is taken.
+i=0
+until [ "$(ipc settingsTest systemManagementRegionalRequestChoices timezone 2>/dev/null)" = true ]; do
+	i=$((i + 1))
+	if [ "$i" -ge 200 ]; then
+		printf 'The timezone choices request was never accepted after reopening Settings\n' >&2
+		exit 1
+	fi
+	sleep 0.05
+done
 timezone_choices=0
 i=0
 while [ "$i" -lt 100 ]; do

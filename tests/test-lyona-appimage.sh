@@ -256,7 +256,7 @@ if command -v script >/dev/null 2>&1; then
 	printf 'a\n' | env -i HOME="$work/home" PATH="$work/stubs:/usr/bin:/bin" TEST_DIR="$work" \
 		XDG_DATA_HOME="$work/home/.local/share" XDG_STATE_HOME="$work/home/.local/state" \
 		XDG_CACHE_HOME="$work/home/.cache" TERM=dumb \
-		script -qec "$(printf '%q open %q' "$helper" "$work/home/Downloads/Term.AppImage")" /dev/null \
+		SHELL=/bin/sh script -qec "$(printf '%q open %q' "$helper" "$work/home/Downloads/Term.AppImage")" /dev/null \
 		>"$work/term.out" 2>&1 || fail "the terminal question failed: $(cat "$work/term.out")"
 	grep -Fq '[r] Add and run' "$work/term.out" || fail "it did not ask in the terminal: $(cat "$work/term.out")"
 	[[ -f $entries/lyona-appimage-term-appimage.desktop ]] || fail 'answering a in the terminal did not add it'

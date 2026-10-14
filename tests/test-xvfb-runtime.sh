@@ -635,10 +635,20 @@ EOF
 # shellcheck disable=SC2046
 cc "$work/xclient.c" -o "$work/xclient" $(pkg-config --cflags --libs x11)
 
-display=":$((($$ % 500) + 150))"
-Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp -extension GLX \
-	>"$work/xvfb.log" 2>&1 &
+# Xvfb picks a free display, so this never lands on another test's server.
+Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 wait_for_display
 
 # dwm posts "dwm: bad config" through notify-send when a config fails to load.

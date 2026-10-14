@@ -212,6 +212,7 @@ lyona_display_is_virtual() {
 	ldv_number=${1#*:}
 	ldv_number=${ldv_number%%.*}
 	case $ldv_number in '' | *[!0-9]*) return 1 ;; esac
+	# shellcheck disable=SC2013 # /proc paths, one word each
 	for ldv_cmdline in $(grep -l -s -a -e Xvfb -e Xephyr /proc/[0-9]*/cmdline); do
 		# The grep above can list itself, gone by now.
 		ldv_args=" $({ tr '\0' ' ' <"$ldv_cmdline"; } 2>/dev/null) "

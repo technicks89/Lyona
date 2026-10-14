@@ -16,6 +16,9 @@ set -eu
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 
 make_workspace
+# What the launcher sets must come from the test's theme-env.sh, not from the
+# desktop session the tests are run from.
+unset QT_QPA_PLATFORMTHEME XCURSOR_THEME XCURSOR_SIZE
 
 launcher=$repo/scripts/dwm-session-launch
 assert_executable "$launcher"

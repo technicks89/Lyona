@@ -34,6 +34,14 @@ ShellRoot {
             throw new Error(detail);
         }
     }
+    // Key order is not part of the result: a var property or signal argument
+    // can hand an object back as a QVariantMap, with its keys sorted (Qt 6.12).
+    function canonical(value) {
+        if (value === null || typeof value !== "object") return JSON.stringify(value);
+        const sorted = {};
+        for (const key of Object.keys(value).sort()) sorted[key] = value[key];
+        return JSON.stringify(sorted);
+    }
     function scheduleAdvance() {
         if (!startedTest || starting || advancing || done || model.current !== null) return;
         advancing = true;
@@ -138,7 +146,7 @@ ShellRoot {
                         ? ["America/Chicago", "Etc/UTC"] : ["C", "en_US.utf8"]), "Exact catalog retained across collector reuse");
                 else if (outcome.command === "regional-preview")
                     root.check(outcome.preview.detail === "Full fixture detail", "Complete preview retained");
-                else root.check(JSON.stringify(outcome.observation) === JSON.stringify(outcome.command === "time-status"
+                else root.check(root.canonical(outcome.observation) === root.canonical(outcome.command === "time-status"
                     ? { timezone: "Etc/UTC", canNtp: true, ntpEnabled: false, synchronized: true }
                     : { canNtp: true, synchronized: false }), "Exact observation retained across collector reuse");
             } else {

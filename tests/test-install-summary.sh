@@ -60,7 +60,7 @@ if command -v script >/dev/null 2>&1; then
 		shift
 		printf '%b' "$input" | env HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" \
 			XDG_DATA_HOME="$work/home/.local/share" DWM_INSTALL_CACHYOS_REPOS=true DWM_INSTALL_CACHYOS_KERNEL=true \
-			script -qec "$(printf '%q ' "$fresh/install.sh" --profile core "$@")" /dev/null 2>&1
+			SHELL=/bin/sh script -qec "$(printf '%q ' "$fresh/install.sh" --profile core "$@")" /dev/null 2>&1
 	}
 	dry=$(in_terminal '' --dry-run --configure-build) || fail "a dry run with --configure-build failed: $dry"
 	has "$dry" 'the --configure-build answers, asked before this summary in a real install'
@@ -111,7 +111,7 @@ if command -v script >/dev/null 2>&1; then
 	printf '[options]\n[core]\nInclude = /etc/pacman.d/mirrorlist\n' >"$work/pacman.conf"
 	asked=$(printf 'n\nn\n' | env HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" \
 		XDG_DATA_HOME="$work/home/.local/share" LYONA_CACHYOS_PACMAN_CONF="$work/pacman.conf" \
-		script -qec "$(printf '%q ' "$fresh/install.sh" --profile core)" /dev/null 2>&1) || :
+		SHELL=/bin/sh script -qec "$(printf '%q ' "$fresh/install.sh" --profile core)" /dev/null 2>&1) || :
 	if [[ $asked == *'an interactive install asks after this summary'* ]]; then
 		question=$(grep -n -m1 'Add the CachyOS repositories?' <<<"$asked" | cut -d: -f1)
 		account=$(grep -n -m1 'For this account:' <<<"$asked" | cut -d: -f1)
@@ -240,6 +240,7 @@ lacks "$core" 'NetworkManager: '
 # (Sync Sprint 16, found in a VM). install.sh runs install-yay for it (#339),
 # non-interactively; test-install-yay.sh runs that.
 yay_fn=$(sed -n '/^ensure_yay_installed() {$/,/^}$/p' "$repo/install.sh")
+# shellcheck disable=SC2016 # the literal text in install.sh
 grep -Fq 'INSTALL_YAY_NON_INTERACTIVE=1 "$REPO_DIR/scripts/install-yay"' <<<"$yay_fn" ||
 	fail 'a non-interactive install does not run install-yay non-interactively'
 grep -Fq 'pacman_args+=(--noconfirm)' "$repo/scripts/install-yay" ||

@@ -36,12 +36,26 @@ trap cleanup EXIT HUP INT TERM
 fail() {
 	printf 'FAIL: %s\n' "$*" >&2
 	[ ! -f "$work/dwm.log" ] || tail -20 "$work/dwm.log" >&2
+	[ ! -s "$work/xvfb.log" ] || tail -20 "$work/xvfb.log" >&2
 	exit 1
 }
 
-display=":$((($$ % 500) + 700))"
-Xvfb "$display" -screen 0 1024x768x24 -nolisten tcp >"$work/xvfb.log" 2>&1 &
+# Xvfb picks a free display, so this never lands on another test's server, and
+# -noreset keeps it from resetting, and refusing connections, each time the
+# dwm under test exits and the next one starts.
+Xvfb -displayfd 3 -noreset -screen 0 1024x768x24 -nolisten tcp \
+	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
+i=0
+while [ ! -s "$work/display" ] && [ "$i" -lt 100 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+display_number=$(sed -n '1p' "$work/display")
+case $display_number in
+'' | *[!0-9]*) fail "Xvfb did not report a display: $(cat "$work/xvfb.log")" ;;
+esac
+display=:$display_number
 i=0
 until DISPLAY=$display xprop -root >/dev/null 2>&1; do
 	i=$((i + 1))
@@ -76,6 +90,9 @@ current_desktop() {
 
 start_dwm() {
 	: >"$work/notifications.log"
+	# The server outlives each dwm (-noreset): drop the last one's desktop, so
+	# the wait below sees this dwm's.
+	DISPLAY=$display xprop -root -remove _NET_CURRENT_DESKTOP 2>/dev/null || :
 	DISPLAY=$display HOME=$home XDG_CONFIG_HOME="$home/.config" XDG_DATA_HOME="$home/.local/share" \
 		PATH="$work/bin:$PATH" DWM_TEST_NOTIFICATION_LOG="$work/notifications.log" \
 		"$prefix/bin/dwm" >"$work/dwm.log" 2>&1 &

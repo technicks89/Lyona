@@ -14,8 +14,11 @@ make_workspace
 home=$work/home
 runtime=$work/run
 bin=$work/bin
+# The system data dirs: empty, so a Lyona theme installed on the machine
+# running the tests does not stand in for the one this test generates.
+share=$work/share
 mkdir -p "$home/.config/lyona" "$home/.local/share" "$home/.local/state" \
-	"$runtime" "$bin"
+	"$runtime" "$bin" "$share"
 chmod 700 "$runtime"
 cp "$repo/config/themes.toml" "$home/.config/lyona/themes.toml"
 sed -i 's/^theme = ".*"/theme = "tokyonight"/' "$home/.config/lyona/themes.toml"
@@ -31,7 +34,7 @@ chmod +x "$bin"/*
 run_apply() {
 	local data_home=${1:-$home/.local/share}
 	HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$data_home \
-		XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
+		XDG_DATA_DIRS=$share XDG_STATE_HOME=$home/.local/state XDG_RUNTIME_DIR=$runtime \
 		PATH=$bin:/usr/bin:/bin \
 		"$repo/scripts/theme-apply.sh" >"$work/apply.out" 2>&1
 }
@@ -116,7 +119,7 @@ printf 'a fallback that cannot generate still asks for the dark variant correctl
 # directory (it is documented to avoid persistent changes).
 rm -rf "$home/.local/share/themes"
 DWM_APPEARANCE_RUNTIME_ONLY=1 HOME=$home XDG_CONFIG_HOME=$home/.config \
-	XDG_DATA_HOME=$home/.local/share XDG_STATE_HOME=$home/.local/state \
+	XDG_DATA_HOME=$home/.local/share XDG_DATA_DIRS=$share XDG_STATE_HOME=$home/.local/state \
 	XDG_RUNTIME_DIR=$runtime PATH=$bin:/usr/bin:/bin \
 	"$repo/scripts/theme-apply.sh" >"$work/apply.out" 2>&1 || {
 	cat "$work/apply.out" >&2

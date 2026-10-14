@@ -56,6 +56,7 @@ prereqs=$(make -pqn -C "$repo" all-root 2>/dev/null | sed -n 's/^all-root: //p')
 case " $prereqs " in
 *" dwm.o "* | *" dwm "*) fail "all-root would build dwm or dwm.o as root: $prereqs" ;;
 esac
+# shellcheck disable=SC2016 # make variables, expanded by make
 for want in $(make_values '$(filter-out dwm.o,$(OBJ)) $(THUMB) $(TOML_TOOL) $(XWATCH)'); do
 	case " $prereqs " in
 	*" $want "*) ;;

@@ -79,6 +79,7 @@ if bash "$aur_helper" pin not-a-pinned-base >/dev/null 2>&1; then
 fi
 
 # Each caller builds its own base through the helper, and only that base.
+# shellcheck disable=SC2016 # the literal text in install.sh
 grep -Fq '"$REPO_DIR/scripts/install-yay"' "$repo/install.sh" ||
 	fail 'install.sh does not install yay through install-yay'
 grep -Fq 'build_pin yay-bin' "$repo/scripts/install-yay" ||

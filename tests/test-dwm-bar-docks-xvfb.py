@@ -102,6 +102,15 @@ def y_of(win):
     return -1
 
 
+def shown(win):
+    """dwm hides a client off screen, to the left; it stays mapped."""
+    out = run('xdotool', 'getwindowgeometry', '--shell', str(win)).stdout
+    for line in out.splitlines():
+        if line.startswith('X='):
+            return int(line[2:]) >= 0
+    return False
+
+
 def cpu_ticks(pid):
     fields = Path('/proc/%d/stat' % pid).read_text().rsplit(')', 1)[1].split()
     return int(fields[11]) + int(fields[12])
@@ -171,11 +180,11 @@ with tempfile.TemporaryDirectory(prefix='dwm-bar-docks-', dir=os.environ.get('DW
         # another workspace: windowactivate switches the workspace first with
         # the same _NET_CURRENT_DESKTOP message, and that warped the pointer.
         run('xdotool', 'set_desktop', '1')
-        wait(lambda: not viewable(client), 'switching the workspace from the panel did not hide the client')
+        wait(lambda: not shown(client), 'switching the workspace from the panel did not hide the client')
         if pointer() != (500, 15):
             fail('a workspace button on the panel moved the pointer to %s' % (pointer(),))
         run('xdotool', 'windowactivate', '%d' % client)
-        wait(lambda: viewable(client), 'activating a window on another workspace did not show it')
+        wait(lambda: shown(client), 'activating a window on another workspace did not show it')
         time.sleep(0.5)
         if pointer() != (500, 15):
             fail('activating a window on another workspace from the panel moved the pointer to %s'
