@@ -646,7 +646,18 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 [ "$snapshot_state" = loaded ]
-[ "$(ipc settingsTest systemManagementOpenHealth)" = true ]
+# Closing Settings leaves the last state "loaded" while the reopened window's
+# fresh read is still in flight, and openHealth() refuses until that read
+# offers health-open again: ask until it is taken.
+i=0
+until [ "$(ipc settingsTest systemManagementOpenHealth 2>/dev/null)" = true ]; do
+	i=$((i + 1))
+	if [ "$i" -ge 200 ]; then
+		printf 'health-open was never accepted after reopening Settings\n' >&2
+		exit 1
+	fi
+	sleep 0.05
+done
 if [ "$(ipc settingsTest systemManagementSettingsVisible)" != false ]; then
 	printf 'systemManagementModel.settingsVisible stayed true after systemManagementOpenHealth\n' >&2
 	exit 1
@@ -684,7 +695,17 @@ ipc settings select system >/dev/null
 [ "$(ipc settingsTest systemManagementSettingsVisible)" = true ]
 
 test_stage='loading the timezone choices catalog (#268: prepare() requires a loaded, matching catalog)'
-[ "$(ipc settingsTest systemManagementRegionalRequestChoices timezone)" = true ]
+# Reopening Settings starts a fresh status read, and the request is refused
+# ("Wait for fresh regional status") until it is done: ask until it is taken.
+i=0
+until [ "$(ipc settingsTest systemManagementRegionalRequestChoices timezone 2>/dev/null)" = true ]; do
+	i=$((i + 1))
+	if [ "$i" -ge 200 ]; then
+		printf 'The timezone choices request was never accepted after reopening Settings\n' >&2
+		exit 1
+	fi
+	sleep 0.05
+done
 timezone_choices=0
 i=0
 while [ "$i" -lt 100 ]; do
