@@ -141,8 +141,12 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
     # exits at once and the shell restarts it every 3 s, so there is no watcher
     # to measure. A stand-in that stays up, as the real one does, keeps the
     # watcher under test; everything else still goes to the real nmcli.
-    nm = subprocess.run(['nmcli', '-t', '-f', 'RUNNING', 'general'], capture_output=True, text=True) \
-        if shutil.which('nmcli') else None
+    # A NetworkManager that does not answer counts as none.
+    try:
+        nm = subprocess.run(['nmcli', '-t', '-f', 'RUNNING', 'general'], capture_output=True, text=True,
+                            timeout=10) if shutil.which('nmcli') else None
+    except subprocess.TimeoutExpired:
+        nm = None
     if nm is None or nm.returncode != 0 or nm.stdout.strip() != 'running':
         stubs = base / 'stubs'
         stubs.mkdir()
