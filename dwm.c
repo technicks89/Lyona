@@ -1379,6 +1379,10 @@ focusin(XEvent *e)
 	if (overridefocus && ev->window == overridefocus)
 		return;
 	for (ow = overridewindows; ow && ow->win != ev->window; ow = ow->next);
+	/* The popup's own client focused a window inside it, as Steam does for
+	 * its menu bar menus before asking for the popup: leave it there. */
+	if (ow && (ev->detail == NotifyVirtual || ev->detail == NotifyNonlinearVirtual))
+		return;
 	if (ow && (focusfullscreenforoverride(ev->window)
 	    || istransientforbar(ev->window)))
 		return;
