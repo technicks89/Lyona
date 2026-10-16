@@ -265,20 +265,6 @@ launcher_visible || {
 	printf 'Launcher window did not reopen on Super+R\n' >&2
 	exit 1
 }
-# Visible is not yet typeable: dwm gives the launcher the keyboard once it is
-# mapped (#280), and keys sent before that are lost, so Return launched
-# nothing (#389).
-launcher_window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' 2>/dev/null | head -1 || true)
-i=0
-while [ "$i" -lt 100 ]; do
-	[ "$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)" = "$launcher_window" ] && break
-	i=$((i + 1))
-	sleep 0.05
-done
-[ "$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)" = "$launcher_window" ] || {
-	printf 'Launcher window did not get the keyboard\n' >&2
-	exit 1
-}
 DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
 DISPLAY=$display xdotool key Return
 i=0
@@ -292,4 +278,59 @@ done
 	exit 1
 }
 
-printf 'Desktop smoke: dwm build, Quickshell panel, launcher hotkey, and application launch: PASS\n'
+# Each open reloads the application index, so Enter can come before it: a
+# quick Super+R, query and Enter. That Enter must launch once the index
+# arrives, not be dropped with the launcher left open. For this stage the
+# launcher's helper waits on a FIFO before listing, so Enter is always first.
+test_stage='launching before the application index has loaded'
+index_hold=$work/index-hold
+held_scripts=$work/held-scripts
+mkfifo "$index_hold"
+mkdir "$held_scripts"
+for script in "$repo"/scripts/* "$repo"/scripts/.[!.]*; do
+	[ ! -e "$script" ] || ln -s "$script" "$held_scripts/"
+done
+rm "$held_scripts/dwm-quickshell-launcher"
+cat >"$held_scripts/dwm-quickshell-launcher" <<EOF
+#!/bin/sh
+[ "\${1:-}" != list ] || cat "$index_hold" >/dev/null
+exec "$repo/scripts/dwm-quickshell-launcher" "\$@"
+EOF
+chmod +x "$held_scripts/dwm-quickshell-launcher"
+ln -sfn "$held_scripts" "$data_home/checkout/scripts"
+rm -f "$smoke_marker"
+DISPLAY=$display xdotool key --clearmodifiers super+r
+i=0
+while [ "$i" -lt 100 ]; do
+	launcher_visible && break
+	i=$((i + 1))
+	sleep 0.05
+done
+launcher_visible || {
+	printf 'Launcher window did not open on Super+R with the index held\n' >&2
+	exit 1
+}
+DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
+DISPLAY=$display xdotool key Return
+[ "$(launcher_ipc indexCount 2>/dev/null || printf x)" = 0 ] || {
+	printf 'The application index was not held back\n' >&2
+	exit 1
+}
+# shellcheck disable=SC2016 # $1 is the inner shell's argument
+timeout 5 sh -c ': >"$1"' sh "$index_hold" || {
+	printf 'The launcher never asked for the held application index\n' >&2
+	exit 1
+}
+ln -sfn "$repo/scripts" "$data_home/checkout/scripts"
+i=0
+while [ "$i" -lt 100 ]; do
+	[ -f "$smoke_marker" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ -f "$smoke_marker" ] || {
+	printf 'Enter before the application index loaded launched nothing\n' >&2
+	exit 1
+}
+
+printf 'Desktop smoke: dwm build, Quickshell panel, launcher hotkey, application launch, and Enter before the index loads: PASS\n'

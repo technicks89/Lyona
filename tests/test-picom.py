@@ -100,6 +100,38 @@ class PicomTests(unittest.TestCase):
             self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
 
     @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_covers_an_include_added_while_the_watches_are_set_up(self):
+        # An edit that lands after the watcher has read the configuration but
+        # before its watches are live (a slow start, or several files written
+        # at once) must not leave a newly included file unwatched behind a
+        # "ready" for the new revision.
+        self.write("active-opacity=.8;")
+        include = self.home / "elsewhere/opacity.conf"
+        include.parent.mkdir()
+        include.write_text("active-opacity=.7;")
+        tools = self.home / "tools"
+        tools.mkdir()
+        mark = self.home / "edited"
+        wrapper = tools / "inotifywait"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            f"if [ ! -e '{mark}' ]; then\n"
+            f"\t: >'{mark}'\n"
+            f"\tprintf '@include \"%s\"' '{include}' >'{self.path}'\n"
+            "fi\n"
+            f"exec '{INOTIFYWAIT}' \"$@\"\n"
+        )
+        wrapper.chmod(0o755)
+        with patch.dict(os.environ, {"PATH": f"{tools}:{os.environ['PATH']}"}):
+            line = self.watcher()
+        while not (said := line()).startswith("ready"):
+            self.assertEqual(said, "changed")
+        self.assertTrue(mark.exists())
+        self.assertEqual(said, "ready\t" + picom.Configuration().revision())
+        include.write_text("active-opacity=.65;")
+        self.assertEqual(line(), "changed")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
     def test_watch_says_plain_ready_when_the_configuration_cannot_be_read(self):
         self.write("active-opacity=.8;")
         self.path.write_text("malformed configuration")
