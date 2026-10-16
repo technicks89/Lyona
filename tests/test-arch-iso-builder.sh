@@ -156,6 +156,7 @@ grep -Fq 'systemctl set-default graphical.target' "$work/services.sh" ||
 mkdir -p "$work/services-bin"
 cat >"$work/services-bin/systemctl" <<'STUB'
 #!/bin/sh
+set -eu
 printf '%s\n' "$*" >>"$SERVICES_LOG"
 if [ "$1" = -q ] && [ "$2" = list-unit-files ]; then
 	for unit in $STUB_UNITS; do [ "$unit" = "$3" ] && exit 0; done

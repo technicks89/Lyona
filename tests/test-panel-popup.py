@@ -19,7 +19,7 @@ The second popup takes the keyboard only while open (grabFocus bound to it, as
 the overview's is). Qt does not close such a popup by itself when it loses the
 keyboard, so it checks ClickAwayPopup's own dismissal.
 """
-import os, shutil, subprocess, tempfile, time
+import os, select, shutil, subprocess, tempfile, time
 from pathlib import Path
 repo=Path(__file__).resolve().parents[1]
 temp_root = Path(os.environ.get('DWM_TEST_TMP_ROOT') or os.environ.get('TMPDIR') or Path.home()/'tmp')
@@ -74,6 +74,20 @@ ShellRoot {
   # dwm gives it the keyboard (#280) only after it is mapped.
   wait_for(lambda: run('xdotool','getwindowfocus').stdout.strip()==popup()['WINDOW'],'popup did not get the keyboard')
   return popup()
+ watch_buf=[b'']
+ def watch_line(watch, what, picom=None, timeout=5.0):
+  # Bounded: a Picom that never takes the selection must fail, not hang.
+  deadline=time.monotonic()+timeout
+  while b'\n' not in watch_buf[0]:
+   if picom is not None and picom.poll() is not None: raise AssertionError('%s: Picom exited with status %s'%(what,picom.returncode))
+   left=deadline-time.monotonic()
+   if left<=0: raise AssertionError('%s: timed out'%what)
+   if select.select([watch.stdout],[],[],min(left,.1))[0]:
+    chunk=os.read(watch.stdout.fileno(),4096)
+    if not chunk: raise AssertionError('%s: watch-compositor exited'%what)
+    watch_buf[0]+=chunk
+  line,watch_buf[0]=watch_buf[0].split(b'\n',1)
+  return line.decode().strip()
  def assert_dismissed(what):
   wait_for(lambda: (lambda s: s.get('open') is False and s.get('visible') is False)(state()),what)
  def assert_menu_sized(g):
@@ -117,25 +131,25 @@ ShellRoot {
    print('SKIP: feh is unavailable; the click on a window is not checked')
 
   if shutil.which('picom'):
-   watch=subprocess.Popen([str(repo/'dwm-window-thumb'),'watch-compositor'],env=env,stdout=subprocess.PIPE,stderr=log,text=True)
+   watch=subprocess.Popen([str(repo/'dwm-window-thumb'),'watch-compositor'],env=env,stdout=subprocess.PIPE,stderr=log)
    procs.append(watch)
-   assert watch.stdout.readline().strip()=='compositor 0',"watch-compositor did not report no compositor"
+   what="watch-compositor did not report no compositor"; assert watch_line(watch,what)=='compositor 0',what
    (base/'picom.conf').write_text('backend = "xrender";\n')
    picom=start('picom','--config',str(base/'picom.conf'))
-   assert watch.stdout.readline().strip()=='compositor 1',"watch-compositor did not report Picom starting"
+   what="watch-compositor did not report Picom starting"; assert watch_line(watch,what,picom)=='compositor 1',what
    wait_for(lambda: state().get('compositor'),'the shell did not see Picom start')
    check_clicks(True)
    # Picom stopping while the popup is open: the menu alone, still open, still closes.
    g=open_popup(); assert_surface(g)
    stop(picom)
-   assert watch.stdout.readline().strip()=='compositor 0',"watch-compositor did not report Picom stopping"
+   what="watch-compositor did not report Picom stopping"; assert watch_line(watch,what)=='compositor 0',what
    wait_for(lambda: not state()['compositor'] and popup() is not None and int(popup()['WIDTH'])==280,'the popup did not shrink to the menu when Picom stopped')
    assert_menu_sized(popup()); assert state()['open'] and state()['visible']
    click(700,500); assert_dismissed("Outside click did not dismiss popup after Picom stopped")
    # And Picom starting while it is open: the full surface again.
    open_popup()
    picom=start('picom','--config',str(base/'picom.conf'))
-   assert watch.stdout.readline().strip()=='compositor 1'
+   what="watch-compositor did not report Picom starting again"; assert watch_line(watch,what,picom)=='compositor 1',what
    wait_for(lambda: state().get('compositor') and popup() is not None and int(popup()['WIDTH'])==int(panel['WIDTH']),'the popup did not cover the screen when Picom started')
    assert_surface(popup()); assert state()['open'] and state()['visible']
    click(700,500); assert_dismissed("Outside click did not dismiss popup after Picom started")

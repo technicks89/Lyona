@@ -524,8 +524,10 @@ bluetooth_state() {
 		return 0
 	fi
 	state=$(systemctl is-enabled bluetooth.service 2>/dev/null) || :
+	# enabled-runtime is gone at the next reboot, the very bug: it is "off", so
+	# it is enabled for good.
 	case $state in
-	enabled | enabled-runtime) printf 'enabled\n' ;;
+	enabled) printf 'enabled\n' ;;
 	masked | masked-runtime) printf 'masked\n' ;;
 	not-found | '') printf 'missing\n' ;;
 	*) printf 'off\n' ;;
@@ -537,7 +539,18 @@ configure_bluetooth() {
 	state=$(bluetooth_state)
 	case $state in
 	image) ok "Bluetooth is set up by the image installer." ;;
-	enabled) ok "Bluetooth (bluetooth.service) is already enabled." ;;
+	enabled)
+		if systemctl is-active --quiet bluetooth.service 2>/dev/null; then
+			ok "Bluetooth (bluetooth.service) is already enabled."
+		else
+			info "Starting bluetooth.service, which is enabled but not running..."
+			if sudo systemctl start bluetooth.service; then
+				ok "bluetooth.service started."
+			else
+				warn "bluetooth.service could not be started; it starts at the next boot."
+			fi
+		fi
+		;;
 	masked) info "bluetooth.service is masked, so it was left off (sudo systemctl unmask bluetooth.service to use it)." ;;
 	missing) info "bluetooth.service was not found (bluez is not installed), so Bluetooth was left off." ;;
 	*)
