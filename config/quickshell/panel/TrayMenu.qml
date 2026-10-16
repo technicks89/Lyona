@@ -26,11 +26,11 @@ ClickAwayPopup {
         root.submenus = [];
         root.trayItem = item;
         root.anchorX = x;
-        root.visible = true;
+        root.open = true;
     }
 
     function closeMenu() {
-        root.visible = false;
+        root.open = false;
         root.submenus = [];
         root.trayItem = null;
     }
@@ -46,7 +46,7 @@ ClickAwayPopup {
         }
     }
 
-    visible: false
+    open: false
     targetWindow: panelWindow
     popupWidth: Theme.controlCenterWidth
     popupHeight: menuCard.implicitHeight

@@ -204,9 +204,12 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '0')
 # dwm-window-thumb captures window previews for the overview (Sync Sprint 9
 # S9-01). It is a separate program, not part of the window manager, and needs
 # libX11 and libXrender (already a build dependency, through Xft): the X server
-# scales the window down (#323).
+# scales the window down (#323). It also tells the shell's popups whether a
+# compositor runs (#384), through libxcb's XFixes (libxcb is a dependency
+# already; check-build-deps checks the module).
 THUMB = dwm-window-thumb
-THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11 xrender)
+THUMB_MODULES = x11 xrender xcb xcb-xfixes
+THUMB_LIBS = $(shell ${PKG_CONFIG} --libs ${THUMB_MODULES})
 
 # lyona-toml, the scripts' one reader of the TOML files, built on dwm's own
 # parser (Sync Sprint 12 S12-14, D-20). Installed in LIB_DIR, off PATH.
@@ -254,7 +257,7 @@ check-build-deps:
 		echo "Missing required command: ${PKG_CONFIG}" >&2; \
 		exit 1; \
 	}
-	@missing="$$(for module in ${PKG_MODULES}; do \
+	@missing="$$(for module in ${PKG_MODULES} ${THUMB_MODULES}; do \
 		"${PKG_CONFIG}" --exists "$$module" || printf '%s ' "$$module"; \
 	done)"; \
 	if [ -n "$$missing" ]; then \

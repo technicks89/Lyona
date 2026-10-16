@@ -514,8 +514,9 @@ Runtime dependencies are classified as:
   `squashfs-tools` for AppImages (Gear Lever from a user-scoped Flathub remote
   only with `--with-gearlever`), Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
   browser, GNOME Keyring (`gnome-keyring`) for secret storage, the Thunar
-  file manager that Super+E opens, and NetworkManager, enabled only when no
-  other network manager is in use.
+  file manager that Super+E opens, NetworkManager, enabled only when no
+  other network manager is in use, and BlueZ, with `bluetooth.service`
+  enabled when the unit is installed and not masked.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
   password login. A `startx` session has no such stack; its keyring stays locked

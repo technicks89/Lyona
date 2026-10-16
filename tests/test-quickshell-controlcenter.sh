@@ -567,7 +567,7 @@ grep -Fq 'property bool wifiPasswordPromptVisible: false' "$repo/config/quickshe
 grep -Fq 'root.wifiPasswordPromptVisible = true;' "$repo/config/quickshell/network/NetworkModel.qml"
 grep -Fq 'root.networkModel.cancelWifiPasswordPrompt()' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'wifiPasswordInput.forceActiveFocus();' "$repo/config/quickshell/network/NetworkWindow.qml"
-grep -Fq 'visible: panelWindow !== null && panelWindow.screen !== null' "$repo/config/quickshell/network/NetworkWindow.qml"
+grep -Fq 'open: panelWindow !== null && panelWindow.screen !== null' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'enabled: !root.networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'grabFocus: !networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'FloatingWindow {' "$repo/config/quickshell/network/NetworkWindow.qml"

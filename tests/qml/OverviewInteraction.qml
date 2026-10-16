@@ -211,6 +211,7 @@ ShellRoot {
             root.check(Theme.animationFast === 120, "motion returns when reduced motion is off");
             Theme.surfaceActive = root.savedSurfaceActive;
             root.check(popup.visible, "the overview is open before the close transition");
+            root.check(Compositor.running, "the stub dwm-window-thumb reports a compositor");
             model.close();
             root.check(popup.visible, "closing keeps the popup visible for its fade-out");
             root.check(!popup.grabFocus, "closing releases the popup's focus grab");
@@ -267,6 +268,14 @@ ShellRoot {
             root.check(popup.visible, "reduced motion still opens the popup");
             model.close();
             root.check(!popup.visible, "reduced motion closes immediately after reopening too");
+            // Without a compositor a part-transparent window draws dark, not
+            // faded: no fade there either (#384).
+            Theme.applyAccessibility(false, false);
+            Compositor.running = false;
+            model.open(null);
+            root.check(popup.visible, "the popup opens without a compositor");
+            model.close();
+            root.check(!popup.visible, "without a compositor the popup closes immediately");
             console.info("Overview interaction tests: PASS (" + root.assertions + " assertions)");
             Qt.quit();
         }

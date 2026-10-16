@@ -231,7 +231,7 @@ main() {
 	check_required_cmd cc
 	check_required_cmd make
 	check_required_cmd pkg-config
-	for module in x11 xft xinerama xrender imlib2 x11-xcb xcb xcb-res; do
+	for module in x11 xft xinerama xrender imlib2 x11-xcb xcb xcb-res xcb-xfixes; do
 		check_pkg_config "$module"
 	done
 	check_any_required_cmd "X11 server" Xorg Xlibre

@@ -235,6 +235,40 @@ ln -s /usr/lib/systemd/system/netctl@.service "$work/nm-units-enabled/multi-user
 has "$recommended" '  NetworkManager: '
 lacks "$core" 'NetworkManager: '
 
+# Bluetooth (#380): bluetooth.service enabled on recommended when bluez
+# provides it, left alone when masked or missing. The same stubs; is-enabled
+# of a unit not in STUB_ENABLED answers "disabled", and "not-found" is given.
+{
+	sed -n '/^bluetooth_state() {$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^configure_bluetooth() {$/,/^}$/p' "$repo/install.sh"
+} >"$work/bt.sh"
+grep -q '^configure_bluetooth() {$' "$work/bt.sh" || fail 'configure_bluetooth not found in install.sh'
+bt_case() { # ENABLED [ACTIVE]: prints the state, then what configure did
+	: >"$work/nm.log"
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	env PATH="$work/nm-bin:$PATH" NM_LOG="$work/nm.log" STUB_ENABLED="$1" STUB_ACTIVE="${2:-}" \
+		${LYONA_SOURCE:+LYONA_SOURCE="$LYONA_SOURCE"} ${STUB_CHROOT:+STUB_CHROOT=1} \
+		bash -c 'ok() { :; }; info() { :; }; warn() { :; }; . "$1"; bluetooth_state; configure_bluetooth' \
+		bash "$work/bt.sh"
+	cat "$work/nm.log"
+}
+[[ $(bt_case '') == $'off\nsystemctl enable --now bluetooth.service' ]] ||
+	fail "bluetooth.service was not enabled when bluez provides it: $(bt_case '')"
+[[ $(bt_case 'bluetooth.service=enabled' bluetooth.service) == enabled ]] ||
+	fail 'an enabled, running bluetooth.service was enabled or started again'
+[[ $(bt_case 'bluetooth.service=enabled') == $'enabled\nsystemctl start bluetooth.service' ]] ||
+	fail "an enabled bluetooth.service that is not running was not started: $(bt_case 'bluetooth.service=enabled')"
+# enabled-runtime is gone at the next reboot: enabled for good.
+[[ $(bt_case 'bluetooth.service=enabled-runtime') == $'off\nsystemctl enable --now bluetooth.service' ]] ||
+	fail "a runtime-only enabled bluetooth.service was not enabled for good: $(bt_case 'bluetooth.service=enabled-runtime')"
+[[ $(bt_case 'bluetooth.service=masked') == masked ]] || fail 'a masked bluetooth.service was not left alone'
+[[ $(bt_case 'bluetooth.service=not-found') == missing ]] ||
+	fail 'bluetooth.service was enabled without bluez installed'
+[[ $(LYONA_SOURCE=iso bt_case '') == image ]] || fail 'the image install judged bluetooth by the live medium'
+[[ $(STUB_CHROOT=1 bt_case '') == image ]] || fail 'a chroot was not left to the image installer'
+has "$recommended" '  Bluetooth: '
+lacks "$core" 'Bluetooth: '
+
 # A non-interactive run answers pacman's prompt when it installs yay-bin: behind
 # the image install's spinner nothing else can, and it waited there forever
 # (Sync Sprint 16, found in a VM). install.sh runs install-yay for it (#339),
