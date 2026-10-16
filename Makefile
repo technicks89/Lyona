@@ -1131,13 +1131,16 @@ check-overview-load-xvfb: all
 		exit "$$status"
 
 # _NET_ACTIVE_WINDOW from a pager and _DWM_MONITOR_WINDOWS, with the real dwm,
-# on one screen and on two Xinerama screens (#280 VM).
+# on one screen and on two Xinerama screens (#280 VM). -noreset: the test's
+# first xprop can connect and leave before dwm connects, and a server reset
+# then (the last client left) drops dwm's connection: "cannot open display".
+# A session never resets there: xinit and LightDM hold a connection.
 check-dwm-activate-xvfb: all
-	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
+	status=0; dbus-run-session -- xvfb-run -a -s "-noreset -screen 0 1024x768x24" \
 		/usr/bin/python3 tests/test-dwm-activate-xvfb.py || status=$$?; \
 		if [ "$$status" -ne 0 ] && [ "$$status" -ne 77 ]; then exit "$$status"; fi; \
 	status=0; DWM_TEST_MONITORS=2 dbus-run-session -- xvfb-run -a \
-		-s "+xinerama -screen 0 1024x768x24 -screen 1 800x600x24" \
+		-s "-noreset +xinerama -screen 0 1024x768x24 -screen 1 800x600x24" \
 		/usr/bin/python3 tests/test-dwm-activate-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"

@@ -21,6 +21,29 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- New terminals no longer print Starship's "Scanning current directory timed
+  out" warning now and then (#385). Its 30 ms default `scan_timeout` was too
+  short on a cold disk cache or a busy system; the mybash pin moves to
+  `dfe4ffd`, whose `starship.toml` sets it to 500 ms. A re-run of
+  `install-mybash` (or the installer) picks it up.
+- Enter in the app launcher is no longer lost when it comes before the
+  application list has loaded (#389). The launcher reloads the list each time it
+  opens, which takes tens of milliseconds (more on a busy machine or with many
+  applications), and an Enter pressed in that time did nothing: a quick
+  Super+R, query and Enter left the launcher open with the match shown. Enter
+  now launches the best match as soon as the list arrives, unless the query or
+  selection changed after it or the launcher was opened again.
+  `tests/test-desktop-smoke-xvfb.sh` checks it
+  with the list held back, and this was its occasional "Test application did
+  not launch from the launcher" failure.
+- Settings > Appearance no longer stops following a Picom include that was
+  added while its live updates were re-arming (#389). The watcher chose which
+  files to watch from one read of the configuration and reported the revision
+  of a later one, so an edit landing between the two (several files written
+  at once, or a slow start) could leave a newly included file unwatched behind
+  a matching revision, and its edits went unseen until Settings was reopened
+  (Refresh rereads once but does not watch again). The watcher now re-arms
+  when the configuration moved while it was setting up.
 - Bluetooth is no longer inactive after a reboot (#380). `bluez` was
   installed with the desktop but nothing enabled `bluetooth.service`, so the
   panel and Settings showed no adapter until it was started by hand. The

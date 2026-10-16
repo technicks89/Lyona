@@ -91,6 +91,10 @@ def wait(predicate, message, seconds=4):
 
 def root_prop(name):
     out = run('xprop', '-root', name).stdout.strip()
+    # Unset ("NAME:  not found.", or "no such atom on any window." before dwm
+    # has made the atom) reads as "", so the wait for dwm to start waits (#389).
+    if not out.startswith(name + '('):
+        return ''
     return out.split(':', 1)[1] if ':' in out else ''
 
 
@@ -124,7 +128,10 @@ with tempfile.TemporaryDirectory(prefix='dwm-bar-docks-', dir=os.environ.get('DW
     wm = subprocess.Popen([str(repo / 'dwm')], env=env, stdout=log, stderr=log)
     display = None
     try:
-        wait(lambda: root_prop('_NET_SUPPORTING_WM_CHECK') != '', 'dwm did not start', 8)
+        wait(lambda: wm.poll() is not None or root_prop('_NET_SUPPORTING_WM_CHECK') != '', 'dwm did not start', 8)
+        if wm.poll() is not None:
+            log.flush()
+            fail('dwm exited at startup (status %d): %s' % (wm.returncode, (base / 'dwm.log').read_text()[-2000:]))
         display = X.XOpenDisplay(os.environ['DISPLAY'].encode())
         root = X.XDefaultRootWindow(display)
         wtype = X.XInternAtom(display, b'_NET_WM_WINDOW_TYPE', 0)

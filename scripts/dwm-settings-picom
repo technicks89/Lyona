@@ -1262,8 +1262,9 @@ def watch():
         try:
             config = Configuration()
             known_paths = list(config.docs)
+            armed = config.revision()
         except (Error, OSError, ValueError):
-            pass
+            armed = ""
         paths += known_paths
         parents = set()
         for path in paths:
@@ -1285,14 +1286,21 @@ def watch():
             text=True,
             preexec_fn=lambda: libc.prctl(1, signal.SIGTERM, 0, 0, 0),  # noqa: PLW1509 - this CLI has no threads
         )
+        rearm = False
         try:
             # Not -q: inotifywait says "Watches established." on stderr once it is
             # watching, and only then can the revision below be trusted to mean
             # that any later edit is reported as "changed".
             if any(line.startswith("Watches established") for line in child.stderr):
                 revision = watched_revision()
-                print("ready\t" + revision if revision else "ready", flush=True)
-            code = child.wait()
+                # The watches cover the files of the configuration read above. One
+                # edited before they were live may now include a file they miss, so
+                # a revision that moved since that read means watch again rather
+                # than report ready for a configuration nobody is watching.
+                rearm = revision != armed
+                if not rearm:
+                    print("ready\t" + revision if revision else "ready", flush=True)
+            code = 0 if rearm else child.wait()
         finally:
             if child.poll() is None:
                 child.terminate()
