@@ -27,6 +27,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   image install now enables it on the new system, and `install.sh`
   (recommended and full) enables and starts it when the unit is installed,
   leaving a masked or missing one alone; its summary says which.
+- Settings > Appearance > Toolkit now looks for GTK, icon and cursor themes
+  where the theme applier does: under `XDG_DATA_HOME` and every
+  `XDG_DATA_DIRS` entry (or `DWM_APPEARANCE_DATA_DIRS`), then `~/.themes` or
+  `~/.icons` (#383). It searched four fixed directories, so with a non-default
+  `XDG_DATA_DIRS` (a Flatpak export, `/opt/share`) a theme the applier would
+  use was never offered, and one from a directory left out was offered and
+  then fell back to Adwaita when applied. Both now share the resolver's
+  `lyona_theme_dirs` and the new `lyona_icon_dirs`.
 - A display or input preview that died while applying its change, after
   recording its session but before starting the automatic rollback, no longer
   stays "active" for good on the same X server. Once older than any preview
