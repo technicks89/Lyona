@@ -432,7 +432,7 @@ ShellRoot {
                     start_new_session=True,
                 )
 
-            def ipc(method, *args):
+            def ipc(method, *args, timeout=8):
                 return subprocess.run(
                     [
                         "quickshell",
@@ -447,7 +447,7 @@ ShellRoot {
                     env=env,
                     capture_output=True,
                     text=True,
-                    timeout=8,
+                    timeout=timeout,
                     check=False,
                 )
 
@@ -563,10 +563,18 @@ ShellRoot {
             time.sleep(0.3)
             watched.write_text("active-opacity=.65;")
             # Seen once in CI and never since (#389): say what the model held.
+            # Diagnostics only, so bounded (2 s each), and a shell that no
+            # longer answers does not replace the assertion with a timeout.
+            def answer(method):
+                try:
+                    return ipc(method, timeout=2).stdout.strip()
+                except (OSError, subprocess.TimeoutExpired):
+                    return "<no answer>"
+
             wait_until(
                 lambda: ui_matches("active", 65),
                 lambda: "Fixed nested include was not observed: state %s, error %r, status error %r"
-                % (ipc("state").stdout.strip(), ipc("error").stdout.strip(), ipc("statusError").stdout.strip()),
+                % (answer("state"), answer("error"), answer("statusError")),
             )
             print("PASS: nested include watch recovers after parse failure", flush=True)
             conf.write_text(
