@@ -265,6 +265,20 @@ launcher_visible || {
 	printf 'Launcher window did not reopen on Super+R\n' >&2
 	exit 1
 }
+# Visible is not yet typeable: dwm gives the launcher the keyboard once it is
+# mapped (#280), and keys sent before that are lost, so Return launched
+# nothing (#389).
+launcher_window=$(DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' 2>/dev/null | head -1 || true)
+i=0
+while [ "$i" -lt 100 ]; do
+	[ "$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)" = "$launcher_window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)" = "$launcher_window" ] || {
+	printf 'Launcher window did not get the keyboard\n' >&2
+	exit 1
+}
 DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
 DISPLAY=$display xdotool key Return
 i=0
