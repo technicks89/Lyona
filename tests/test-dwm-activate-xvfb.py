@@ -97,6 +97,12 @@ def fail(message):
 
 def root_prop(name):
     out = run('xprop', '-root', name).stdout.strip()
+    # Unset, xprop says "NAME:  not found." or, before dwm has made the atom,
+    # "NAME:  no such atom on any window.": both read as "", or the wait for dwm
+    # to start passed at once and the test raced dwm's startup (#389). A set
+    # property names its type: "NAME(WINDOW): ..." or "NAME(CARDINAL) = ...".
+    if not out.startswith(name + '('):
+        return ''
     return out.split('=', 1)[1].strip() if '=' in out else (out.split(':', 1)[1].strip() if ':' in out else '')
 
 
@@ -126,7 +132,10 @@ with tempfile.TemporaryDirectory(prefix='dwm-activate-', dir=os.environ.get('DWM
     wm = subprocess.Popen([str(repo / 'dwm')], env=env, stdout=log, stderr=log)
     display = None
     try:
-        wait(lambda: root_prop('_NET_SUPPORTING_WM_CHECK') != '', 'dwm did not start', 8)
+        wait(lambda: wm.poll() is not None or root_prop('_NET_SUPPORTING_WM_CHECK') != '', 'dwm did not start', 8)
+        if wm.poll() is not None:
+            log.flush()
+            fail('dwm exited at startup (status %d): %s' % (wm.returncode, (base / 'dwm.log').read_text()[-2000:]))
         display = X.XOpenDisplay(os.environ['DISPLAY'].encode())
         root = X.XDefaultRootWindow(display)
 

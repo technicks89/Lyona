@@ -6,7 +6,7 @@ gitpath="$HOME/.local/share/mybash"
 # the linked files downloads or runs remote code at shell startup. Re-pin only
 # after reviewing the diff since the last pin.
 MYBASH_URL="https://github.com/technicks89/mybash.git"
-MYBASH_REF="d5284b2c5fcbfcd266bab8bac6541e2b54bac109"
+MYBASH_REF="dfe4ffda7947b95c8c030997f4cba27eb86791b3"
 
 # The packages come from the shared map (Sync Sprint 12 S12-15), which is Bash:
 # this script is POSIX, so it asks bash for the list rather than sourcing it.

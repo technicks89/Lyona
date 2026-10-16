@@ -82,6 +82,10 @@ def main():
                         "1024x768x24",
                         "-nolisten",
                         "tcp",
+                        # Picom is often the only client here: without this,
+                        # each stop resets the server, dropping its atoms and
+                        # properties before the next start (#389).
+                        "-noreset",
                     ],
                     pass_fds=(write_fd,),
                     stdout=log,
@@ -558,9 +562,11 @@ ShellRoot {
             # Allow the watcher to rearm while parsing is broken.
             time.sleep(0.3)
             watched.write_text("active-opacity=.65;")
+            # Seen once in CI and never since (#389): say what the model held.
             wait_until(
                 lambda: ui_matches("active", 65),
-                "Fixed nested include was not observed",
+                lambda: "Fixed nested include was not observed: state %s, error %r, status error %r"
+                % (ipc("state").stdout.strip(), ipc("error").stdout.strip(), ipc("statusError").stdout.strip()),
             )
             print("PASS: nested include watch recovers after parse failure", flush=True)
             conf.write_text(

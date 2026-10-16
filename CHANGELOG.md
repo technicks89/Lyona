@@ -21,6 +21,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- New terminals no longer print Starship's "Scanning current directory timed
+  out" warning now and then (#385). Its 30 ms default `scan_timeout` was too
+  short on a cold disk cache or a busy system; the mybash pin moves to
+  `dfe4ffd`, whose `starship.toml` sets it to 500 ms. A re-run of
+  `install-mybash` (or the installer) picks it up.
 - Bluetooth is no longer inactive after a reboot (#380). `bluez` was
   installed with the desktop but nothing enabled `bluetooth.service`, so the
   panel and Settings showed no adapter until it was started by hand. The
