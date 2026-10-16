@@ -237,6 +237,9 @@ Scope {
     }
 
     function openWindow() {
+        // A new session: an Enter still pending from the last one must not
+        // launch whatever tops this one's empty query.
+        root.launchPending = false;
         root.visible = true;
         root.query = "";
         root.category = "all";

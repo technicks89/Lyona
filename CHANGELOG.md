@@ -32,7 +32,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   applications), and an Enter pressed in that time did nothing: a quick
   Super+R, query and Enter left the launcher open with the match shown. Enter
   now launches the best match as soon as the list arrives, unless the query or
-  selection changed after it. `tests/test-desktop-smoke-xvfb.sh` checks it
+  selection changed after it or the launcher was opened again.
+  `tests/test-desktop-smoke-xvfb.sh` checks it
   with the list held back, and this was its occasional "Test application did
   not launch from the launcher" failure.
 - Settings > Appearance no longer stops following a Picom include that was

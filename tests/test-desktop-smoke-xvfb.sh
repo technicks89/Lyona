@@ -333,4 +333,51 @@ done
 	exit 1
 }
 
-printf 'Desktop smoke: dwm build, Quickshell panel, launcher hotkey, application launch, and Enter before the index loads: PASS\n'
+# Opening the launcher again while it is open (IPC open, the Control Center's
+# openOnScreen) starts a new session with an empty query: an Enter still
+# pending from the last one must not launch whatever tops that. The launch
+# would happen as the index is parsed, closing the launcher, so a launcher
+# still open with its index loaded means nothing was launched.
+test_stage='opening the launcher again with an Enter pending'
+ln -sfn "$held_scripts" "$data_home/checkout/scripts"
+rm -f "$smoke_marker"
+DISPLAY=$display xdotool key --clearmodifiers super+r
+i=0
+while [ "$i" -lt 100 ]; do
+	launcher_visible && break
+	i=$((i + 1))
+	sleep 0.05
+done
+launcher_visible || {
+	printf 'Launcher window did not open on Super+R with the index held\n' >&2
+	exit 1
+}
+DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
+DISPLAY=$display xdotool key Return
+launcher_ipc open >/dev/null
+# shellcheck disable=SC2016 # $1 is the inner shell's argument
+timeout 5 sh -c ': >"$1"' sh "$index_hold" || {
+	printf 'The launcher never asked for the held application index\n' >&2
+	exit 1
+}
+ln -sfn "$repo/scripts" "$data_home/checkout/scripts"
+# Until the index loads, or the launcher closes: a launch closes it, and
+# closing clears the index again.
+i=0
+while [ "$i" -lt 100 ]; do
+	launcher_visible || break
+	[ "$(launcher_ipc indexCount 2>/dev/null || printf 0)" -gt 0 ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if ! launcher_visible || [ -f "$smoke_marker" ]; then
+	printf 'An Enter from before the launcher was opened again launched an application\n' >&2
+	exit 1
+fi
+[ "$(launcher_ipc indexCount 2>/dev/null || printf 0)" -gt 0 ] || {
+	printf 'The application index did not load after it was released\n' >&2
+	exit 1
+}
+launcher_ipc close >/dev/null
+
+printf 'Desktop smoke: dwm build, Quickshell panel, launcher hotkey, application launch, Enter before the index loads, and no stale Enter after reopening: PASS\n'
