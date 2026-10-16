@@ -35,6 +35,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   use was never offered, and one from a directory left out was offered and
   then fell back to Adwaita when applied. Both now share the resolver's
   `lyona_theme_dirs` and the new `lyona_icon_dirs`.
+- Shell menus no longer black out the screen when no compositor runs (#384):
+  Picom stopped, or a Raspberry Pi 4, where it cannot run. Each menu covered
+  the screen below the panel with a transparent window, which only a
+  compositor shows as see-through. Without one, the menu's window is now the
+  menu alone, and a click outside it still closes it: dwm hands the keyboard
+  back on a click on the desktop or on the selected window, as it already did
+  for any other window, and a menu closes when it loses the keyboard. That
+  click also reaches what was clicked. With Picom nothing changes, and Picom
+  starting or stopping while a menu is open switches it over at once
+  (`dwm-window-thumb watch-compositor`, which needs libxcb's XFixes, part of
+  `libxcb`). The overview no longer fades in or out without a compositor,
+  where a part-transparent window draws dark. A menu that closed by losing
+  the keyboard also tells its owner now, so opening it again takes one click.
 - A display or input preview that died while applying its change, after
   recording its session but before starting the automatic rollback, no longer
   stays "active" for good on the same X server. Once older than any preview

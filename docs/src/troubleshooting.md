@@ -259,6 +259,10 @@ choose, and Picom 13 does not start without one.
 run `dwm-settings-picom stop`: window previews are off until it starts again, and
 it starts again at the next login.
 
+The shell's menus work without Picom too. Each one is then only as big as the
+menu, and a click outside it still closes it. Unlike with Picom, that click also
+reaches the window you clicked.
+
 ### Artifacts
 
 Restart picom via the Control Center (**Quick Actions → Restart Picom**) or:

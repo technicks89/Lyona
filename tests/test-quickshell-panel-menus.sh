@@ -104,4 +104,40 @@ if grep -REn '(^|[[:space:]])Process[[:space:]]*\{' \
 	exit 1
 fi
 
+# #384: without a compositor a popup is the menu alone, not a transparent
+# surface X draws black. The compositor state is watched (XFixes events in
+# dwm-window-thumb), not polled; a popup closes when it loses the keyboard,
+# which dwm takes back on a click on the desktop or the selected window.
+# tests/test-panel-popup.py checks all of it at runtime.
+grep -Fq 'readonly property bool clickAwaySurface: Compositor.running' "$core/ClickAwayPopup.qml"
+grep -Fq 'implicitWidth: clickAwaySurface ? areaWidth : menuWidth' "$core/ClickAwayPopup.qml"
+grep -Fq 'onHasKeyboardChanged: if (!hasKeyboard) Qt.callLater(root.dismissWithoutKeyboard)' "$core/ClickAwayPopup.qml"
+grep -Fq 'else if (root.open)' "$core/ClickAwayPopup.qml"
+grep -Fq 'command: Commands.watchCommand(["dwm-window-thumb", "watch-compositor"])' "$core/Compositor.qml"
+grep -Fq 'XCB_XFIXES_SELECTION_EVENT_MASK_SET_SELECTION_OWNER' "$repo/dwm-window-thumb.c"
+if grep -n 'Timer' "$core/Compositor.qml"; then
+	printf 'The compositor state must come from the watcher, not a timer.\n' >&2
+	exit 1
+fi
+# Owners set open, not visible: only open tells a popup Qt closed from one its
+# owner closed.
+for popup in calendar/CalendarWindow controlcenter/ControlCenterWindow \
+	controls/BluetoothWindow controls/ControlsWindow network/NetworkWindow \
+	overview/WindowOverview panel/TrayMenu power/PowerMenuWindow weather/WeatherWindow; do
+	file=$repo/config/quickshell/$popup.qml
+	grep -Fq 'ClickAwayPopup {' "$file"
+	grep -Eq '^    open:' "$file"
+	if grep -En '^    visible:|root\.visible = ' "$file"; then
+		printf '%s sets visible; a ClickAwayPopup owner sets open.\n' "$popup" >&2
+		exit 1
+	fi
+done
+[ "$(grep -rl --include='*.qml' 'ClickAwayPopup {' "$repo/config/quickshell" | wc -l)" -eq 9 ]
+grep -Fq 'readonly property bool fades: !Theme.reducedMotion && Compositor.running' \
+	"$repo/config/quickshell/overview/WindowOverview.qml"
+# dwm: the selected window's clicks while a popup has the keyboard, and the
+# desktop click.
+sed -n '/^focusoverridewindow(Window win)/,/^}/p' "$repo/dwm.c" | grep -Fq 'grabbuttons(selmon->sel, 0);'
+sed -n '/^buttonpress(XEvent \*e)/,/^}/p' "$repo/dwm.c" | grep -Fq '} else if (ev->window == root && overridefocus) {'
+
 printf 'Quickshell panel menus: PASS\n'

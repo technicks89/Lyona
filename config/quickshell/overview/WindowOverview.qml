@@ -25,9 +25,13 @@ ClickAwayPopup {
     readonly property int cardWidth: Theme.dp(420)
     readonly property int cardHeight: Math.max(Theme.dp(320), overviewColumn.implicitHeight + Theme.popupPadding * 2)
 
+    // Fade in and out, but not without a compositor: there a window that is
+    // part transparent draws dark, not faded (#384).
+    readonly property bool fades: !Theme.reducedMotion && Compositor.running
+
     // Keep the window mapped until the closing fade reaches zero.
-    visible: panelWindow !== null && panelWindow.screen !== null
-        && (overviewModel.visible || (!Theme.reducedMotion && content.opacity > 0))
+    open: panelWindow !== null && panelWindow.screen !== null
+        && (overviewModel.visible || (root.fades && content.opacity > 0))
     grabFocus: overviewModel.visible
     targetWindow: panelWindow
     popupWidth: root.cardWidth
@@ -132,11 +136,11 @@ ClickAwayPopup {
         Accessible.name: "Window overview"
 
         // Animate both directions, including a reopen during the closing fade.
-        // Reduced motion applies the final opacity immediately.
+        // Reduced motion, or no compositor, applies the final opacity immediately.
         opacity: root.overviewModel.visible ? 1 : 0
         enabled: root.overviewModel.visible
         Behavior on opacity {
-            enabled: !Theme.reducedMotion
+            enabled: root.fades
             NumberAnimation {
                 duration: Theme.animationNormal
                 easing.type: Easing.OutCubic

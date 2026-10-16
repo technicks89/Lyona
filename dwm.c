@@ -732,6 +732,12 @@ buttonpress(XEvent *e)
 		unfocus(selmon->sel, 1);
 		selmon = m;
 		focus(NULL);
+	} else if (ev->window == root && overridefocus) {
+		/* A click on the desktop takes the keyboard back from a popup,
+		 * as a click on a window does: a shell menu closes when it loses
+		 * the keyboard, its only click-away without a compositor (#384). */
+		overridefocus = None;
+		focus(NULL);
 	}
 	if (ev->window == selmon->barwin) {
 		i = x = 0;
@@ -4561,6 +4567,12 @@ focusoverridewindow(Window win)
 	overridefocus = win;
 	if (!focusinside(win))
 		XSetInputFocus(dpy, win, RevertToPointerRoot, CurrentTime);
+	/* The selected window no longer has the keyboard either: take its
+	 * clicks, as for any unfocused window, so a click on it focuses it and
+	 * closes a shell menu, which closes when it loses the keyboard (#384).
+	 * focus() grabs as for a focused window again. */
+	if (selmon->sel)
+		grabbuttons(selmon->sel, 0);
 }
 
 /* True when the keyboard focus is WIN or a window inside it. */
