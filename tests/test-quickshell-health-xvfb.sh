@@ -215,17 +215,19 @@ wait_health hidden || {
 	exit 1
 }
 
-# The open popup's window: Quickshell's click-away surface, below the panel
-# (y > 0) and far taller than it. Found by what it is, not as "a window that was
-# not visible before": a popup reuses its window, so a reopen during the
-# previous close's fade was never "new", and the test failed now and then
-# ("Control Center popup did not open").
+# The open popup's window: the shell's one visible window below the panel
+# (y > 0). Found by what it is, not as "a window that was not visible before": a
+# popup reuses its window, so a reopen during the previous close's fade was
+# never "new", and the test failed now and then ("Control Center popup did not
+# open"). Not by its size either: with a compositor it is the click-away surface
+# over the screen, but this Xvfb has none, so it is the menu alone (#384), and
+# the power menu is shorter than any fixed height.
 popup_surface() {
 	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
 		geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$candidate" 2>/dev/null || true)
 		surface_y=$(printf '%s\n' "$geometry" | sed -n 's/^Y=//p')
 		surface_height=$(printf '%s\n' "$geometry" | sed -n 's/^HEIGHT=//p')
-		if [ "${surface_y:-0}" -gt 0 ] && [ "${surface_height:-0}" -gt 300 ]; then
+		if [ "${surface_y:-0}" -gt 0 ] && [ "${surface_height:-0}" -gt 0 ]; then
 			printf '%s\n' "$candidate"
 			return 0
 		fi
