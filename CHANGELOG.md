@@ -21,6 +21,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Bluetooth is no longer inactive after a reboot (#380). `bluez` was
+  installed with the desktop but nothing enabled `bluetooth.service`, so the
+  panel and Settings showed no adapter until it was started by hand. The
+  image install now enables it on the new system, and `install.sh`
+  (recommended and full) enables and starts it when the unit is installed,
+  leaving a masked or missing one alone; its summary says which.
 - A display or input preview that died while applying its change, after
   recording its session but before starting the automatic rollback, no longer
   stays "active" for good on the same X server. Once older than any preview

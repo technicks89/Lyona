@@ -146,6 +146,36 @@ grep -Fxq "PRESETS=('default')" "$fallback_root/etc/mkinitcpio.d/linux-cachyos.p
 	exit 1
 }
 
+# The services enabled in the target's last chroot (#380): bluetooth.service
+# when bluez provides it, nothing when it does not. The block runs against a
+# systemctl stub that logs its calls and knows STUB_UNITS.
+awk '/^arch-chroot "\$TARGET" bash -c '"'"'$/ { f = 1; next } f && /^'"'"'$/ { exit } f { print }' \
+	"$postinstall" >"$work/services.sh"
+grep -Fq 'systemctl set-default graphical.target' "$work/services.sh" ||
+	fail 'the postinstall service block was not found'
+mkdir -p "$work/services-bin"
+cat >"$work/services-bin/systemctl" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"$SERVICES_LOG"
+if [ "$1" = -q ] && [ "$2" = list-unit-files ]; then
+	for unit in $STUB_UNITS; do [ "$unit" = "$3" ] && exit 0; done
+	exit 1
+fi
+exit 0
+STUB
+chmod +x "$work/services-bin/systemctl"
+services_case() { # UNITS: prints the systemctl enable calls
+	: >"$work/services.log"
+	PATH="$work/services-bin:$PATH" SERVICES_LOG="$work/services.log" STUB_UNITS="$1" \
+		bash "$work/services.sh" >/dev/null 2>&1 || :
+	grep '^enable ' "$work/services.log" || :
+}
+grep -Fxq 'enable bluetooth.service' <<<"$(services_case 'lightdm.service bluetooth.service')" ||
+	fail 'lyona-postinstall.sh does not enable bluetooth.service when bluez provides it'
+if grep -Fq 'bluetooth' <<<"$(services_case 'lightdm.service')"; then
+	fail 'lyona-postinstall.sh enables bluetooth.service without bluez installed'
+fi
+
 step_total=$(awk '/^set_total_steps /{print $2; exit}' "$postinstall")
 # Every step, the Topgrade one too, which runs as `if ! run_logged` (Sync Sprint 16 R16-29).
 step_calls=$(grep -cE '^(if ! )?run_logged ' "$postinstall")

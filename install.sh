@@ -510,6 +510,47 @@ configure_network_manager() {
 	esac
 }
 
+# Bluetooth, on recommended and full (#380): bluez is installed with the
+# desktop, but its service is not enabled by the package, so the panel and
+# Settings showed no adapter after a reboot. Enabled only when the unit is
+# there: a machine without bluez is left as it is. Prints image, enabled,
+# masked, missing or off.
+bluetooth_state() {
+	local state
+	# The image install: its postinstall enables it in the target, and in its
+	# chroot systemctl answers for the live medium.
+	if [[ ${LYONA_SOURCE:-} == iso ]] || systemd-detect-virt --chroot >/dev/null 2>&1; then
+		printf 'image\n'
+		return 0
+	fi
+	state=$(systemctl is-enabled bluetooth.service 2>/dev/null) || :
+	case $state in
+	enabled | enabled-runtime) printf 'enabled\n' ;;
+	masked | masked-runtime) printf 'masked\n' ;;
+	not-found | '') printf 'missing\n' ;;
+	*) printf 'off\n' ;;
+	esac
+}
+
+configure_bluetooth() {
+	local state
+	state=$(bluetooth_state)
+	case $state in
+	image) ok "Bluetooth is set up by the image installer." ;;
+	enabled) ok "Bluetooth (bluetooth.service) is already enabled." ;;
+	masked) info "bluetooth.service is masked, so it was left off (sudo systemctl unmask bluetooth.service to use it)." ;;
+	missing) info "bluetooth.service was not found (bluez is not installed), so Bluetooth was left off." ;;
+	*)
+		info "Enabling Bluetooth (bluetooth.service)..."
+		if sudo systemctl enable --now bluetooth.service; then
+			ok "bluetooth.service enabled and started."
+		else
+			warn "bluetooth.service could not be enabled; the panel and Settings show no Bluetooth adapter until it is (sudo systemctl enable --now bluetooth.service)."
+		fi
+		;;
+	esac
+}
+
 # Same override the helper reads, so both agree about which machine they are
 # looking at and either branch can be exercised in a test.
 grub_in_use() {
@@ -841,6 +882,14 @@ print_install_summary() {
 		masked) printf '  NetworkManager: installed; masked, left as it is\n' ;;
 		other:*) printf '  NetworkManager: installed, not enabled (%s manages the network)\n' "${network#other:}" ;;
 		*) printf '  NetworkManager: installed and enabled; starts at the next boot\n' ;;
+		esac
+		local bluetooth
+		bluetooth=$(bluetooth_state)
+		case $bluetooth in
+		image) printf '  Bluetooth: set up by the image installer\n' ;;
+		enabled) printf '  Bluetooth: bluetooth.service, already enabled\n' ;;
+		masked) printf '  Bluetooth: bluetooth.service is masked, left as it is\n' ;;
+		*) printf '  Bluetooth: bluetooth.service enabled and started once bluez is installed\n' ;;
 		esac
 	fi
 	local time_sync
@@ -1404,6 +1453,8 @@ if install_recommended_profile; then
 	step_timer "NetworkManager"
 	configure_network_manager
 	wifi_country_tip
+	step_timer "Bluetooth"
+	configure_bluetooth
 fi
 
 if [[ $YAY_INSTALL_MODE == true ]]; then
