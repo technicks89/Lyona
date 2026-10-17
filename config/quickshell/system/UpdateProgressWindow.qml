@@ -82,7 +82,8 @@ PopupWindow {
             UiText {
                 Layout.fillWidth: true
                 text: root.updateModel.busy ? root.phaseLabel(root.updateModel.phase)
-                    : (root.failed || root.cancelled ? root.updateModel.outcomeMessage : "")
+                    : (root.failed || root.cancelled ? root.updateModel.outcomeMessage
+                        : root.updateModel.outcomeNote)
                 visible: text.length > 0
                 color: Theme.menuText
                 wrapMode: Text.WordWrap

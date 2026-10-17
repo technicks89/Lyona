@@ -595,6 +595,8 @@ status=$(apply_source --dry-run 2>"$work/err") || {
 }
 assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
 assert_contains "$work/err" 'desktop packages not installed (features that use them stay unavailable): picom'
+# #399: and how to install them, as for a required one: nothing installs them later.
+assert_contains "$work/err" 'install them with: sudo pacman -S --needed picom'
 : >"$work/pacman-missing"
 # A failed query is an error, never read as "nothing is missing".
 : >"$work/pacman-fails"
@@ -849,6 +851,15 @@ assert_equals 1 "$(grep -c . "$notify_log")" "notifications after a successful u
 assert_contains "$notify_log" 'Lyona: Update complete'
 assert_contains "$notify_log" 'Version 2026.10.0 is installed.'
 assert_contains "$notify_log" '--urgency=normal'
+
+# #399: a success that still needs desktop packages says so, in the status
+# Settings reads and in the notification.
+: >"$notify_log"
+note='Some desktop packages are not installed, so the features that use them stay unavailable: iw. Install them with: sudo pacman -S --needed iw'
+run_status_probe restarting 'Update complete' 2026.10.0 succeeded "$note"
+assert_contains "$work/probe.status" "$(printf 'outcome\tsucceeded\t%s' "$note")"
+assert_contains "$notify_log" 'Version 2026.10.0 is installed. Some desktop packages are not installed'
+assert_contains "$notify_log" 'sudo pacman -S --needed iw'
 
 : >"$notify_log"
 run_status_probe restarting 'Rollback complete' 20260301T000000Z-2 succeeded ''

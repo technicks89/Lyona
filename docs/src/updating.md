@@ -243,7 +243,16 @@ release's own package list. If one it requires is missing, it stops, changes
 nothing, and prints the command to install it, for example
 `sudo pacman -S --needed xdotool`. Run that, then update again; Settings shows the
 same message. A missing desktop package (Picom, light-locker, ...) is only a
-warning: the features that use it stay unavailable.
+warning: the update goes ahead and the features that use it stay unavailable.
+It prints the command to install it too, and so do the notification and
+Settings -> System once the update is in. An update never installs packages, so
+a release that adds one (as `wireless-regdb`, `iw` and `xorg-xmessage` were
+added after `2026.10.0-beta.6`) leaves it to that command on a system installed
+before it:
+
+```sh
+sudo pacman -S --needed wireless-regdb iw xorg-xmessage
+```
 
 ### Watching an update
 

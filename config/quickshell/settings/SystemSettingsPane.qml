@@ -327,6 +327,17 @@ Flickable {
             wrapMode: Text.WordWrap
         }
 
+        // What a recent successful update still asks for: the command for
+        // desktop packages the release needs that are not installed (#399).
+        UiText {
+            Layout.fillWidth: true
+            visible: !root.updateModel.busy && root.updateModel.outcomeNote.length > 0
+                && root.updateModel.outcomeRecent
+            text: root.updateModel.outcomeNote
+            color: Theme.menuText
+            wrapMode: Text.WordWrap
+        }
+
         SectionLabel { label: "Update log" }
 
         ShellButton {

@@ -45,6 +45,10 @@ Scope {
     // was shown replaced its reason with "The installed release matches the
     // channel." (#280 VM).
     property string outcomeMessage: ""
+    // What a successful update still asks of the user, from its status (#399:
+    // desktop packages the release needs that are not installed). Empty
+    // otherwise.
+    property string outcomeNote: ""
     property bool actionSucceeded: false
     // The authorization prompt was dismissed or refused: nothing changed, and
     // it is no failure (#326). lyona-update records "cancelled" and exits 4.
@@ -301,6 +305,7 @@ Scope {
         root.phase = "downloading";
         root.progressDetail = (older ? "Going back to " : "Starting update to ") + version;
         root.outcomeMessage = "";
+        root.outcomeNote = "";
         const args = ["--version", version];
         if (older) args.push("--allow-downgrade");
         args.push("--yes");
@@ -321,6 +326,7 @@ Scope {
         root.phase = "restarting";
         root.progressDetail = "Starting rollback";
         root.outcomeMessage = "";
+        root.outcomeNote = "";
         rollbackProcess.command = Commands.updateCommand("rollback", ["--backup", backupId, "--yes"]);
         rollbackProcess.running = true;
     }
@@ -378,6 +384,7 @@ Scope {
         root.markOutcome(ageMs);
         root.phase = "idle";
         root.progressDetail = "";
+        root.outcomeNote = outcome === "succeeded" ? outcomeMessage : "";
         root.outcomeMessage = outcome === "succeeded"
             ? (operation === "rollback" ? "Rollback complete" : "Update complete")
             : (outcomeMessage.length > 0 ? outcomeMessage
