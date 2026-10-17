@@ -50,9 +50,19 @@ def read_config(path):
         return stream.read()
 
 
+def home_dir(variable):
+    """HOME, which every XDG fallback needs (#406). Never the passwd home that
+    Path.home() falls back to: a helper run with a scrubbed environment would
+    otherwise read and write the real user's files."""
+    value = os.environ.get("HOME", "")
+    if not value.startswith("/"):
+        raise Error(f"HOME is required when {variable} is not an absolute path")
+    return Path(value)
+
+
 def config_home():
     value = os.environ.get("XDG_CONFIG_HOME", "")
-    return Path(value) if value.startswith("/") else Path.home() / ".config"
+    return Path(value) if value.startswith("/") else home_dir("XDG_CONFIG_HOME") / ".config"
 
 
 def lyona_config_dir(script=None):
@@ -650,7 +660,7 @@ def stop(running):
 
 def private_dir():
     base = os.environ.get("XDG_STATE_HOME", "")
-    root = Path(base) if base.startswith("/") else Path.home() / ".local/state"
+    root = Path(base) if base.startswith("/") else home_dir("XDG_STATE_HOME") / ".local/state"
     path = root / "lyona/picom"
     safe_target(path / "probe")
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
