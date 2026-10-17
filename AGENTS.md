@@ -265,11 +265,16 @@ Tests never act on the desktop they are run from (#368). A check goal of the
 Makefile, `scripts/run-tests` and `tests/lib.sh` remove the session's display
 and bus, keep GSettings in memory, give the run a private
 `XDG_RUNTIME_DIR`, and set `LYONA_NO_TRUSTED_HELPERS`, so no installed root
-helper or polkit prompt is reached. A test that needs X starts its own Xvfb
-(`xvfb-run`, `dbus-run-session`) inside its recipe. Keep new tests behind
-those entry points: do not export `DISPLAY` or a session bus into a test, and
-do not call `gsettings`, `xrdb`, Picom or Quickshell IPC outside a stub or a
-private server. `make check-session-isolation` fails when that breaks.
+helper or polkit prompt is reached. They also give a test private
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` directories and drop
+the session's `XDG_CACHE_HOME` (#404); `HOME` stays the session's, so a test
+that stages files for a helper gives it a `HOME` of its own. A test that
+needs X starts its own Xvfb (`xvfb-run`, `dbus-run-session`) inside its
+recipe. Keep new tests behind those entry points: a Python test, or a shell
+test that does not source `tests/lib.sh`, is isolated only under `make` or
+`scripts/run-tests`. Do not export `DISPLAY` or a session bus into a test,
+and do not call `gsettings`, `xrdb`, Picom or Quickshell IPC outside a stub
+or a private server. `make check-session-isolation` fails when that breaks.
 
 For Arch image changes, follow the complete validation contract in
 [SPEC.md Section 9.4](SPEC.md#94-arch-image-validation). Static validation

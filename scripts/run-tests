@@ -139,13 +139,15 @@ export TMPDIR=$work
 # the same isolation the Makefile gives a check goal: no session display or
 # bus (an Xvfb test starts its own with xvfb-run and dbus-run-session),
 # GSettings in memory, a runtime directory inside the workspace, and no
-# installed root helper (scripts/dwm-trust.sh). No XDG base directory of the
-# session either (#404): helpers prefer them to HOME, so a test that gave its
-# helper a HOME of its own still wrote the user's state and configuration.
-unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
-unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
-install -d -m 0700 -- "$work/runtime"
+# installed root helper (scripts/dwm-trust.sh). The configuration, data and
+# state directories are private ones inside the workspace too (#404):
+# helpers prefer them to HOME, so a test that gave its helper a HOME of its
+# own still wrote the user's kept display layout and Picom log. HOME stays
+# the session's, and the cache directory is only dropped (see the Makefile).
+unset DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_CACHE_HOME
+install -d -m 0700 -- "$work/runtime" "$work/xdg-config" "$work/xdg-data" "$work/xdg-state"
 export XDG_RUNTIME_DIR=$work/runtime
+export XDG_CONFIG_HOME=$work/xdg-config XDG_DATA_HOME=$work/xdg-data XDG_STATE_HOME=$work/xdg-state
 export GSETTINGS_BACKEND=memory
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
 export LYONA_TEST_ISOLATED=1
