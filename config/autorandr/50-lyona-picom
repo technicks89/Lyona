@@ -30,8 +30,13 @@ helper=${LYONA_AUTORANDR_PICOM_HELPER:-}
 [ -n "$helper" ] || helper=$(command -v dwm-settings-picom 2>/dev/null || :)
 [ -n "$helper" ] && [ -x "$helper" ] && [ -d "$runtime" ] || exit 0
 
+# restore [TOKEN]: start Picom if a switch left it stopped. With a TOKEN (the
+# fallback timer's), only when the marker is still that switch's own: a later
+# switch has its own marker and timer, and an earlier timer must not start
+# Picom while that one is still applying its layout.
 restore() {
 	[ -e "$marker" ] || return 0
+	[ -z "${1:-}" ] || [ "$(cat "$marker" 2>/dev/null)" = "$1" ] || return 0
 	rm -f "$marker"
 	"$helper" start >/dev/null 2>&1 ||
 		echo "lyona: Picom did not restart after the layout change; start it from Settings > Appearance > Compositor" >&2
@@ -44,10 +49,11 @@ pre)
 	*) exit 0 ;;
 	esac
 	if "$helper" stop >/dev/null 2>&1; then
-		: >"$marker"
+		token=$$.$(date +%s%N 2>/dev/null || date +%s)
+		printf '%s\n' "$token" >"$marker"
 		(
 			sleep "$grace"
-			restore
+			restore "$token"
 		) >/dev/null 2>&1 </dev/null &
 	fi
 	;;

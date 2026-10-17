@@ -79,7 +79,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   layout; a Picom that was not running stays stopped. This covers autorandr
   only, not a plain `xrandr`; whether the crash still happens on a current
   xorg-server is for the AMD test in `docs/plans/386-amd-layout-crash.md`
-  (its option E).
+  (its option E). Nothing to do: an update installs the hook and
+  `make uninstall` removes it.
 - New terminals no longer print Starship's "Scanning current directory timed
   out" warning now and then (#385). Its 30 ms default `scan_timeout` was too
   short on a cold disk cache or a busy system; the mybash pin moves to
@@ -117,6 +118,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   longer hangs, left running, when Settings closes just as it starts waiting
   for `inotifywait`: its SIGTERM handler raised `SystemExit`, which could land
   as `subprocess` took its waitpid lock and leave the lock held.
+  A `XDG_CONFIG_HOME` that is itself a link, retargeted, is now seen too: the
+  directory holding the link is watched, not only the one it points at.
 - Bluetooth is no longer inactive after a reboot (#380). `bluez` was
   installed with the desktop but nothing enabled `bluetooth.service`, so the
   panel and Settings showed no adapter until it was started by hand. The

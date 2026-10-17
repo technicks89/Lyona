@@ -1235,9 +1235,11 @@ def watched_directories(paths):
     """The directories that cover PATHS, each with the identity it had when chosen.
 
     A file's directory, or the nearest parent that exists when it does not, and
-    for a symbolic link its target's too. A link whose target cannot be resolved
-    (a loop raises RuntimeError before Python 3.13) adds only its own directory,
-    where a change to the link itself is still seen.
+    for a symbolic link its target's too. The directory holding a link on the
+    way to a file is watched as well, to see the link retargeted. A link whose
+    target cannot be resolved (a loop raises RuntimeError before Python 3.13)
+    adds only its own directory, where a change to the link itself is still
+    seen.
     """
     found = {}
 
@@ -1253,9 +1255,22 @@ def watched_directories(paths):
                 directory = directory.parent
         found[str(directory)] = (info.st_dev, info.st_ino)
 
+    def is_link(path):
+        # An ancestor that cannot be read is not a link we can follow.
+        try:
+            return path.is_symlink()
+        except OSError:
+            return False
+
     for path in paths:
         add(path)
-        if path.is_symlink():
+        # A link anywhere in the path, such as a XDG_CONFIG_HOME that is one, is
+        # retargeted in the directory that holds it, which the watch on the
+        # target does not see.
+        for link in path.parents:
+            if is_link(link):
+                add(link)
+        if is_link(path):
             try:
                 add(path.resolve())
             except (OSError, RuntimeError):
@@ -1273,6 +1288,20 @@ def moved(directories):
         if (info.st_dev, info.st_ino) != identity:
             return True
     return False
+
+
+def nothing_moved(directories, armed):
+    """Whether the configuration and the directories to watch are as they were
+    when the watches were set: the revision ARMED, and the same DIRECTORIES with
+    the same identities (one that now exists, or a link pointing elsewhere,
+    changes the set)."""
+    try:
+        config = Configuration()
+        return config.revision() == armed and watched_directories(
+            [*candidates(), *config.docs]
+        ) == directories
+    except (Error, OSError, ValueError, RuntimeError):
+        return False
 
 
 def watch():
@@ -1332,6 +1361,7 @@ def watch():
             preexec_fn=lambda: libc.prctl(1, signal.SIGTERM, 0, 0, 0),  # noqa: PLW1509 - this CLI has no threads
         )
         rearm = False
+        quiet = False
         established = False
         said = []
         try:
@@ -1353,6 +1383,7 @@ def watch():
                 if not rearm:
                     print("ready\t" + revision if revision else "ready", flush=True)
             code = 0 if rearm else child.wait()
+            quiet = established and not rearm and not code
         finally:
             if child.poll() is None:
                 child.terminate()
@@ -1374,6 +1405,14 @@ def watch():
                 + (f" ({reason})" if reason else "")
                 + "; use Refresh"
             )
+        # The directory holding a link on the way to the configuration (often
+        # $HOME) is watched to see the link retargeted, and sees every other
+        # file written there too. Those are not changes: the same directories
+        # and the same revision are armed again without telling Settings, whose
+        # refresh is the costly part. Not when the revision could not be read
+        # (a broken configuration), where any edit may change the error shown.
+        if quiet and armed and nothing_moved(directories, armed):
+            continue
         print("changed", flush=True)
 
 

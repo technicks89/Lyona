@@ -135,6 +135,52 @@ class PicomTests(unittest.TestCase):
         self.assertEqual(line(), "changed")
 
     @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_sees_a_linked_configuration_home_retargeted(self):
+        # A XDG_CONFIG_HOME that is a link is retargeted in the directory that
+        # holds the link, not in the one it points at.
+        first, second = self.home / "first", self.home / "second"
+        for directory, opacity in ((first, ".8"), (second, ".7")):
+            directory.mkdir()
+            (directory / "picom.conf").write_text(f"active-opacity={opacity};")
+        link = self.home / "linked"
+        link.symlink_to(first)
+        # Where the system directories are is not the link's directory: a vendor
+        # directory that does not exist would put the watch on its nearest parent.
+        vendor = self.home / "system" / "xdg"
+        vendor.mkdir(parents=True)
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(link), "XDG_CONFIG_DIRS": str(vendor)}):
+            line = self.watcher()
+            self.assertTrue(line().startswith("ready"))
+            swap = self.home / "swap"
+            swap.symlink_to(second)
+            os.replace(swap, link)
+            self.assertEqual(line(), "changed")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_ignores_other_files_in_the_directory_holding_a_link(self):
+        # The directory holding a linked XDG_CONFIG_HOME (often $HOME) is watched
+        # to see the link retargeted. Other files written there are not changes:
+        # the watch is armed again without a "changed", which would make
+        # Settings refresh. An edit of the configuration still is one.
+        target = self.home / "target"
+        target.mkdir()
+        (target / "picom.conf").write_text("active-opacity=.8;")
+        link = self.home / "linked"
+        link.symlink_to(target)
+        vendor = self.home / "system" / "xdg"
+        vendor.mkdir(parents=True)
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(link), "XDG_CONFIG_DIRS": str(vendor)}):
+            revision = picom.Configuration().revision()
+            line = self.watcher()
+            self.assertEqual(line(), "ready\t" + revision)
+            for name in ("history", "log"):
+                (self.home / name).write_text("noise")
+                self.assertEqual(line(), "ready\t" + revision)
+            (target / "picom.conf").write_text("active-opacity=.7;")
+            self.assertEqual(line(), "changed")
+            self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
     def test_watch_survives_a_link_whose_target_cannot_be_resolved(self):
         # #392: Path.resolve() raises RuntimeError for a link loop (before
         # Python 3.13), which ended the watcher. The link's own directory is

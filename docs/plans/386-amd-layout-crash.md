@@ -262,10 +262,12 @@ for i in 1 2 3 4 5; do
   xrandr --output "$OUT" --rotate left; sleep 3
   xrandr --output "$OUT" --rotate normal; sleep 3
 done
-xrandr --output "$OUT" --scale-from 2560x1440; sleep 3; xrandr --output "$OUT" --scale 1x1
+xrandr --output "$OUT" --scale-from 3200x1800; sleep 3; xrandr --output "$OUT" --scale 1x1
 ```
 
-(Use the output's real mode for `--scale-from`.) Then the same through
+(`--scale-from` needs a size different from the output's current mode, or the
+transform is the identity and nothing is tested; pick one with the same aspect
+ratio, such as 3200x1800 for a 2560x1440 output, and adjust it if it is not.) Then the same through
 autorandr. Build the profiles with Picom stopped, then switch with it running:
 
 ```sh
@@ -356,7 +358,7 @@ sudo systemctl restart lightdm   # or log out and in
 
 | Result | Change |
 | --- | --- |
-| Step 2 shows the old crash under 21.1.25-1, step 3 passes (10 xrandr and 10 autorandr round trips, plus hotplug) | Option A: correct the CHANGELOG cause, document it, close #386. No driver change. |
+| Step 2 shows the old crash under 21.1.25-1, step 3 passes (five xrandr and five autorandr round trips, plus hotplug) | Option A: correct the CHANGELOG cause, document it, close #386. No driver change. |
 | Step 3 crashes with the TearFree damage stack, 4a/4b pass | Option C, through `dwm-display-setup` and documented, plus an upstream report |
 | Step 3 crashes in another amdgpu path; only 4d passes | Option B with the migration above, as its own issue; report upstream with `~/386` |
 | Only 4c passes | Option D or E, depending on cost seen |

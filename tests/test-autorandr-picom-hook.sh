@@ -9,7 +9,9 @@ set -euo pipefail
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 hook="$repo/config/autorandr/50-lyona-picom"
 
-work="$(mktemp -d "${DWM_TEST_TMP_ROOT:-$HOME/tmp}/autorandr-picom.XXXXXX")"
+tmp_root="${DWM_TEST_TMP_ROOT:-$HOME/tmp}"
+mkdir -p -- "$tmp_root"
+work="$(mktemp -d "$tmp_root/autorandr-picom.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/run" "$work/bin" "$work/pre/preswitch.d" "$work/post/postswitch.d"
 cp "$hook" "$work/pre/preswitch.d/50-lyona-picom"
@@ -61,7 +63,10 @@ run post
 reset running
 GRACE=1 run pre
 [[ $(state) == stopped ]] || fail "preswitch left Picom running (grace case)"
-sleep 3
+for _ in $(seq 1 100); do
+	[[ $(state) == running ]] && break
+	sleep 0.1
+done
 [[ $(state) == running ]] || fail "Picom was not started after the grace period"
 [[ ! -e $work/run/lyona-autorandr-picom ]] || fail "grace restart left the marker"
 
@@ -70,8 +75,22 @@ reset running
 GRACE=1 run pre
 run post
 echo stopped >"$work/state"
-sleep 3
+sleep 3 # the grace period (1 s) and then some
 [[ $(state) == stopped ]] || fail "the grace restart ran after postswitch"
+
+# A later switch's marker is its own: an earlier switch's timer must not start
+# Picom while the later one is still applying its layout.
+reset running
+GRACE=2 run pre
+run post
+echo running >"$work/state"
+GRACE=6 run pre
+[[ $(state) == stopped ]] || fail "the second preswitch left Picom running"
+sleep 4 # past the first switch's timer
+[[ $(state) == stopped ]] || fail "an earlier switch's timer started Picom during a later switch"
+[[ -e $work/run/lyona-autorandr-picom ]] || fail "an earlier switch's timer removed a later switch's marker"
+run post
+[[ $(state) == running ]] || fail "postswitch did not start Picom after the second switch"
 
 # A failing start or a missing helper never fails the hook.
 reset running

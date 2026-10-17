@@ -176,7 +176,8 @@ with tempfile.TemporaryDirectory(prefix='dwm-portrait-login-', dir=os.environ.ge
         def tiled(wins, size, top):
             """The windows tile the screen below TOP: a master column on the
             left, a stack on the right, no part off screen, no strip left
-            over (gaps are allowed, the same on every side of the area)."""
+            over (gaps are allowed, the same on every side of the area), and no
+            two windows overlap."""
             width, height = size
             boxes = [geometry(win) for win in wins]
             if None in boxes:
@@ -185,6 +186,11 @@ with tempfile.TemporaryDirectory(prefix='dwm-portrait-login-', dir=os.environ.ge
             right = max(box[0] + box[2] for box in boxes)
             upper = min(box[1] for box in boxes)
             lower = max(box[1] + box[3] for box in boxes)
+            for index, one in enumerate(boxes):
+                for other in boxes[index + 1:]:
+                    if (one[0] < other[0] + other[2] and other[0] < one[0] + one[2]
+                            and one[1] < other[1] + other[3] and other[1] < one[1] + one[3]):
+                        return False
             gap = left
             return (0 <= gap <= 40 and upper >= top and right <= width and lower <= height
                     and abs((width - right) - gap) <= 1 and abs((upper - top) - gap) <= 1
