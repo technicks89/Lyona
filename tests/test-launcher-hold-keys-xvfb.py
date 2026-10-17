@@ -81,7 +81,7 @@ while True:
     print((X.XKeysymToString(sym) or b'?').decode(), flush=True)
 '''
 
-with tempfile.TemporaryDirectory(prefix='launcher-hold-keys-', dir=str(temp_root)) as temp:
+with tempfile.TemporaryDirectory(prefix='lhk-', dir=str(temp_root)) as temp:
     base = Path(temp)
     home = base / 'home'
     config = home / '.config'

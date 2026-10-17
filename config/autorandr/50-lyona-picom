@@ -1,0 +1,58 @@
+#!/bin/sh
+# autorandr preswitch.d/postswitch.d hook: keep Picom out of a layout change.
+#
+# Picom's GL backends page-flip their overlay window. With xf86-video-amdgpu
+# 25.0, a layout change that resizes the screen, such as a hotplug that
+# rotates or adds an output, fails a flip that is still queued, and the
+# driver's flip-abort path then crashes Xorg, taking the session with it
+# (#386). Settings > Displays already stops Picom around its own changes
+# (dwm-settings-display); this does the same for the ones autorandr makes.
+#
+# Installed as /etc/xdg/autorandr/preswitch.d/50-lyona-picom and
+# postswitch.d/50-lyona-picom, one file in both places: the directory it runs
+# from says which half it is. A Picom that was not running stays stopped.
+# Always exits 0: a failing hook must never get in the way of the layout.
+set -u
+
+case $0 in
+*/postswitch.d/*) phase=post ;;
+*) phase=pre ;;
+esac
+
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+marker=$runtime/lyona-autorandr-picom
+# autorandr skips postswitch when applying the layout fails; a Picom still
+# stopped after this long is started again so a failure cannot leave the
+# desktop without its compositor.
+grace=${LYONA_AUTORANDR_PICOM_GRACE:-30}
+
+helper=${LYONA_AUTORANDR_PICOM_HELPER:-}
+[ -n "$helper" ] || helper=$(command -v dwm-settings-picom 2>/dev/null || :)
+[ -n "$helper" ] && [ -x "$helper" ] && [ -d "$runtime" ] || exit 0
+
+restore() {
+	[ -e "$marker" ] || return 0
+	rm -f "$marker"
+	"$helper" start >/dev/null 2>&1 ||
+		echo "lyona: Picom did not restart after the layout change; start it from Settings > Appearance > Compositor" >&2
+}
+
+case $phase in
+pre)
+	case $("$helper" status 2>/dev/null) in
+	*'"running": true'*) ;;
+	*) exit 0 ;;
+	esac
+	if "$helper" stop >/dev/null 2>&1; then
+		: >"$marker"
+		(
+			sleep "$grace"
+			restore
+		) >/dev/null 2>&1 </dev/null &
+	fi
+	;;
+post)
+	restore
+	;;
+esac
+exit 0

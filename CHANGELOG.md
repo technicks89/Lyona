@@ -71,6 +71,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   still restarted by Super+Shift+R; one left from another display is still
   replaced at login. `tests/test-desktop-smoke-xvfb.sh` failed now and then
   under load with "Launcher window did not open on Super+R" because of this.
+- A layout change by autorandr, such as on a display hotplug, no longer risks
+  crashing Xorg on AMD graphics while Picom runs (#386). Settings already
+  stopped Picom around its own changes; autorandr now does too, through a
+  pre/postswitch hook installed in `/etc/xdg/autorandr/`. Picom starts again
+  after the change, or 30 seconds later when autorandr could not apply the
+  layout; a Picom that was not running stays stopped. This covers autorandr
+  only, not a plain `xrandr`; whether the crash still happens on a current
+  xorg-server is for the AMD test in `docs/plans/386-amd-layout-crash.md`
+  (its option E).
 - New terminals no longer print Starship's "Scanning current directory timed
   out" warning now and then (#385). Its 30 ms default `scan_timeout` was too
   short on a cold disk cache or a busy system; the mybash pin moves to

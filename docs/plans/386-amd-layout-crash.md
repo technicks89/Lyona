@@ -197,6 +197,21 @@ still the TearFree path, then E for hotplug, then B with the migration above.
 Whatever the outcome, the Settings pause can stay until the hardware result is
 in; removing it is a separate decision.
 
+## Status of option E
+
+The autorandr hook (option E) is in the tree as `config/autorandr/50-lyona-picom`,
+installed to `/etc/xdg/autorandr/{pre,post}switch.d/` (`tests/test-autorandr-picom-hook.sh`).
+It is a mitigation for hotplug only, kept until the test plan below says
+whether the crash still happens on a current xorg-server. Checked against the
+open points under "Narrower mitigations": `autorandr --batch` runs the hooks in
+a child that has dropped to the user and taken the environment of one of the
+user's processes (`dispatch_call_to_sessions`), so `DISPLAY` and `XAUTHORITY`
+are there; the hook always exits 0; and autorandr skips postswitch when the
+layout fails to apply, so the hook starts Picom again by itself after 30
+seconds. Not verified: that a Picom started from `autorandr.service` stays up
+(it lives in that unit's cgroup, and `KillMode=process` leaves it running), and
+the crash itself. Neither can be tested without systemd as root and AMD hardware.
+
 ## Test plan (AMD desktop)
 
 Save all work before each step that rotates: a crash ends the session. Run as
