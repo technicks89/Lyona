@@ -41,11 +41,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   started by a test emptied the user's Picom log, the per-session
   `~/.local/state/lyona/picom/session.log`, which the next Picom start writes
   again. A check goal of the Makefile, `scripts/run-tests` and `tests/lib.sh`
-  now give a test private configuration, data and state directories, as they
-  give it a private runtime directory (#368), and drop the session's cache
-  directory; `make check-session-isolation` fails if the session's still
-  reach a test. A kept layout lost this way has to be set again: choose it in
-  Settings > Displays, Apply changes, then Keep changes.
+  now give a test private configuration, data, state and cache directories,
+  as they give it a private runtime directory (#368), and
+  `make check-session-isolation` fails if the session's still reach a test.
+  A kept layout lost this way has to be set again: choose it in Settings >
+  Displays, Apply changes, then Keep changes.
 - `check-quickshell-panel-menus` no longer fails now and then (#396). When
   Picom stopped with a menu open, the test waited for the menu's width only,
   but the shell sets the width and the height in two steps, and under load

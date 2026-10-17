@@ -29,11 +29,11 @@ scripts/run-tests
 The tests are safe to run inside your lyona session: `make check-...`,
 `scripts/run-tests` and a shell test run on its own (one that sources
 `tests/lib.sh`) all drop the session's display and D-Bus, keep GSettings in
-memory, use private runtime, configuration, data and state directories and
-never reach the installed root helpers, so a run does not change your theme,
-reload your compositor, ask for a password or touch your kept display layout
-and Picom log. A Python test run on its own gets that only under `make` or
-`scripts/run-tests`. Tests that need X start their own Xvfb.
+memory, use private runtime, configuration, data, state and cache directories
+and never reach the installed root helpers, so a run does not change your
+theme, reload your compositor, ask for a password or touch your kept display
+layout and Picom log. A Python test run on its own gets that only under `make`
+or `scripts/run-tests`. Tests that need X start their own Xvfb.
 
 Use `./install.sh --dry-run --non-interactive --profile core` to inspect the
 dependency plan without changing the system.

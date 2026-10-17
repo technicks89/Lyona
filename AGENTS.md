@@ -266,9 +266,9 @@ Makefile, `scripts/run-tests` and `tests/lib.sh` remove the session's display
 and bus, keep GSettings in memory, give the run a private
 `XDG_RUNTIME_DIR`, and set `LYONA_NO_TRUSTED_HELPERS`, so no installed root
 helper or polkit prompt is reached. They also give a test private
-`XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` directories and drop
-the session's `XDG_CACHE_HOME` (#404); `HOME` stays the session's, so a test
-that stages files for a helper gives it a `HOME` of its own. A test that
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME`
+directories (#404); `HOME` stays the session's, so a test that stages files
+for a helper gives it a `HOME` of its own. A test that
 needs X starts its own Xvfb (`xvfb-run`, `dbus-run-session`) inside its
 recipe. Keep new tests behind those entry points: a Python test, or a shell
 test that does not source `tests/lib.sh`, is isolated only under `make` or

@@ -205,8 +205,8 @@ trap 'exit 143' TERM
 # terminal loses the session's: a display that is not an Xvfb or Xephyr
 # server, the inherited session bus and the inherited runtime directory.
 # GSettings stays in memory and no installed root helper is found
-# (scripts/dwm-trust.sh). The configuration, data and state directories are
-# private to the test on every path (#404); HOME stays the caller's.
+# (scripts/dwm-trust.sh). The XDG base directories are private to the test
+# on every path (#404); HOME stays the caller's.
 
 # lyona_display_is_virtual DISPLAY: true when an Xvfb or Xephyr server runs it.
 lyona_display_is_virtual() {
@@ -260,23 +260,23 @@ case $lyona_runtime_private in
 	lyona_private_runtime=$XDG_RUNTIME_DIR
 	;;
 esac
-# The configuration, data and state directories are private to this test
-# (#404): helpers prefer them to HOME, so a test that gave its helper a HOME
-# of its own still wrote the user's kept display layout and Picom log, and
-# one that set neither reached the real home through the fallback. Fresh for
-# every test, under make and scripts/run-tests too, so a kept layout one test
-# wrote is not applied by the next; a test that stages files for a helper
-# still gives it a HOME, or directories, of its own per invocation. HOME stays
-# the caller's. The cache directory is only dropped (see the Makefile).
-unset XDG_CACHE_HOME
+# The XDG base directories (configuration, data, state, cache) are private
+# to this test (#404): helpers prefer them to HOME, so a test that gave its
+# helper a HOME of its own still wrote the user's kept display layout and
+# Picom log, and one that set neither reached the real home through the
+# fallback. Fresh for every test, under make and scripts/run-tests too, so a
+# kept layout one test wrote is not applied by the next; a test that stages
+# files for a helper still gives it a HOME, or directories, of its own per
+# invocation. HOME stays the caller's.
 lyona_private_xdg=$(mktemp -d) || fail 'could not create private XDG base directories'
 chmod 700 "$lyona_private_xdg"
-mkdir -m 700 "$lyona_private_xdg/config" "$lyona_private_xdg/data" "$lyona_private_xdg/state" ||
-	fail 'could not create private XDG base directories'
+mkdir -m 700 "$lyona_private_xdg/config" "$lyona_private_xdg/data" "$lyona_private_xdg/state" \
+	"$lyona_private_xdg/cache" || fail 'could not create private XDG base directories'
 XDG_CONFIG_HOME=$lyona_private_xdg/config
 XDG_DATA_HOME=$lyona_private_xdg/data
 XDG_STATE_HOME=$lyona_private_xdg/state
-export XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME
+XDG_CACHE_HOME=$lyona_private_xdg/cache
+export XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
 # shellcheck disable=SC2016 # expanded when the cleanup runs
 cleanup_add 'rm -rf -- "$lyona_private_xdg"'
 

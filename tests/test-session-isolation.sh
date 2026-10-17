@@ -11,17 +11,18 @@ set -euo pipefail
 #   display or bus its recipe started (xvfb-run, dbus-run-session);
 # and theme-apply.sh, run from a test inside a session, hands nothing of the
 # session to xrdb, GSettings, Xfconf, Picom or the cursor helper.
-# #404: the session's configuration, data and state directories went the same
-# way. Helpers prefer them to HOME, so a test that gave its helper a HOME of
-# its own still replaced the user's kept display layout and emptied the Picom
-# log. Every way in now gives a test private ones and drops the cache
-# directory; HOME stays the session's.
+# #404: the session's XDG base directories went the same way. Helpers prefer
+# them to HOME, so a test that gave its helper a HOME of its own still
+# replaced the user's kept display layout and emptied the Picom log. Every
+# way in now gives a test private ones. HOME stays the session's, so the
+# fixture's HOME sits beside them and a fallback to it is caught too.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
 
 uid=$(id -u)
+mkdir -m 700 "$work/session-home"
 # A desktop session as a test inherits it: nothing here is a real display or bus.
 session_env=(
 	DISPLAY=:4242
@@ -30,6 +31,9 @@ session_env=(
 	DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
 	XDG_RUNTIME_DIR="/run/user/$uid"
 	GSETTINGS_BACKEND=dconf
+	# The user's home, which no way in replaces: a private directory that fell
+	# back to it (HOME/.config) is a leak like the four below.
+	HOME="$work/session-home"
 	# A login session exports these; helpers prefer them to HOME (#404).
 	XDG_CONFIG_HOME="$work/session-config"
 	XDG_DATA_HOME="$work/session-data"
@@ -61,10 +65,10 @@ assert_isolated() {
 	assert_not_contains "$1" ':4242'
 	grep -q '^RUNTIME=/' "$1" || fail "$2: no private runtime directory: $(cat "$1")"
 	# #404: a test that sets only HOME, or nothing, must not reach the user's
-	# files: the configuration, data and state directories are private ones,
-	# the cache directory is gone. Every leak is named, with where it is cut.
+	# files: every XDG base directory is a private one, under neither the
+	# session's nor its HOME. Every leak is named, with where it is cut.
 	local leaked='' name value
-	for name in XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME; do
+	for name in XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME; do
 		value=$(sed -n "s/^$name=//p" "$1")
 		case $value in
 		"$work"/session-*) leaked="$leaked $name=$value (the session's)" ;;
@@ -72,8 +76,6 @@ assert_isolated() {
 		*) leaked="$leaked $name=${value:-empty} (not a private directory)" ;;
 		esac
 	done
-	value=$(sed -n 's/^XDG_CACHE_HOME=//p' "$1")
-	[[ $value == unset ]] || leaked="$leaked XDG_CACHE_HOME=$value (not dropped)"
 	[[ -z $leaked ]] || fail "$2 still hands the session's XDG base directories to a test:$leaked. They are swapped in the check block of the Makefile, in scripts/run-tests before the run starts, and in the isolation section of tests/lib.sh."
 }
 

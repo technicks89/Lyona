@@ -50,21 +50,19 @@ GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 # state), wherever the session keeps it, is swapped for a private one. No
 # installed root helper is found (LYONA_NO_TRUSTED_HELPERS,
 # scripts/dwm-trust.sh), so no test reaches polkit and the real system
-# helpers. The configuration, data and state directories (XDG_CONFIG_HOME,
-# XDG_DATA_HOME, XDG_STATE_HOME) are swapped for private ones too (#404):
+# helpers. The XDG base directories (XDG_CONFIG_HOME, XDG_DATA_HOME,
+# XDG_STATE_HOME, XDG_CACHE_HOME) are swapped for private ones too (#404):
 # helpers prefer them to HOME, so a test that gave its helper a HOME of its
 # own still wrote the user's kept display layout and Picom log, and a test
 # that sets neither would reach the real home through the fallback. HOME
-# itself stays the session's (the test root, git, fontconfig), so a test that
-# stages files for a helper gives it a HOME of its own. The cache directory
-# is only dropped: a private one would make every Xvfb test rebuild the
-# fontconfig and Qt caches. The make variables of the same names serve the
-# install goals, which no check goal runs against the real home, so they are
-# redefined rather than kept apart; CFG_DIR and DATA_DIR above keep their
-# values. scripts/run-tests and tests/lib.sh do the same for what they start.
+# itself stays the session's (the test root, git), so a test that stages
+# files for a helper gives it a HOME of its own. The make variables of the
+# same names serve the install goals, which no check goal runs against the
+# real home, so they are redefined rather than kept apart; CFG_DIR and
+# DATA_DIR above keep their values. scripts/run-tests and tests/lib.sh do the
+# same for what they start.
 ifneq ($(filter check check-% release-check,$(MAKECMDGOALS)),)
 unexport DISPLAY WAYLAND_DISPLAY XAUTHORITY
-unexport XDG_CACHE_HOME
 export GSETTINGS_BACKEND := memory
 export DBUS_SESSION_BUS_ADDRESS := unix:path=/nonexistent/lyona-tests-have-no-session-bus
 export LYONA_TEST_ISOLATED := 1
@@ -74,7 +72,8 @@ export XDG_RUNTIME_DIR := $(LYONA_TEST_ROOT)/lyona-test-runtime
 export XDG_CONFIG_HOME := $(LYONA_TEST_ROOT)/lyona-test-config
 export XDG_DATA_HOME := $(LYONA_TEST_ROOT)/lyona-test-data
 export XDG_STATE_HOME := $(LYONA_TEST_ROOT)/lyona-test-state
-$(shell mkdir -p -m 700 '$(XDG_RUNTIME_DIR)' '$(XDG_CONFIG_HOME)' '$(XDG_DATA_HOME)' '$(XDG_STATE_HOME)')
+export XDG_CACHE_HOME := $(LYONA_TEST_ROOT)/lyona-test-cache
+$(shell mkdir -p -m 700 '$(XDG_RUNTIME_DIR)' '$(XDG_CONFIG_HOME)' '$(XDG_DATA_HOME)' '$(XDG_STATE_HOME)' '$(XDG_CACHE_HOME)')
 endif
 run_managed_test = if [ -n "$${DWM_TEST_WORKSPACE:-}" ] && [ -n "$${DWM_TEST_RUNNER_TOKEN:-}" ] && [ "$${TMPDIR:-}" = "$${DWM_TEST_WORKSPACE}" ] && [ -f "$${DWM_TEST_WORKSPACE}/.runner" ] && [ ! -L "$${DWM_TEST_WORKSPACE}/.runner" ] && [ "$$(cat "$${DWM_TEST_WORKSPACE}/.runner" 2>/dev/null)" = "$${DWM_TEST_RUNNER_TOKEN}" ]; then $(1); else scripts/run-tests $(1); fi
 
