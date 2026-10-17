@@ -721,14 +721,30 @@ if [ "$timezone_choices" -eq 0 ]; then
 	exit 1
 fi
 
+# prepare_regional ACTION ARGUMENT: ask for the preview until the request is
+# taken. prepare() sits behind the same freshness gate as the choices request
+# above (#409): the status read after Settings reopens, or the periodic
+# time-status sample, owns the provider for a moment and the request is
+# refused ("Wait for fresh regional status"). The model's message says why
+# when it is never taken.
+prepare_regional() {
+	pr_try=0
+	until [ "$(ipc settingsTest systemManagementRegionalPreview "$1" "$2" 2>/dev/null)" = true ]; do
+		pr_try=$((pr_try + 1))
+		if [ "$pr_try" -ge 200 ]; then
+			printf 'systemManagementRegionalPreview(%s, %s) was never accepted: %s\n' "$1" "$2" \
+				"$(ipc settingsTest systemManagementRegionalMessage 2>/dev/null || true)" >&2
+			return 1
+		fi
+		sleep 0.05
+	done
+}
+
 test_stage='validating the regional confirmation step itself (#268): prepare then discard'
 # Regional preview/confirm now lives on SystemRegionalSettingsModel, the
 # same split S1-04 already gave delegated actions -- prove discard() clears
 # a pending preview without ever dispatching, before proving confirm() does.
-if [ "$(ipc settingsTest systemManagementRegionalPreview timezone-set America/Chicago)" != true ]; then
-	printf 'systemManagementRegionalPreview(timezone-set, America/Chicago) did not accept the read\n' >&2
-	exit 1
-fi
+prepare_regional timezone-set America/Chicago || exit 1
 discard_preview=
 i=0
 while [ "$i" -lt 100 ]; do
@@ -768,7 +784,7 @@ if [ "$timezone_choices" -eq 0 ]; then
 fi
 
 test_stage='requesting a regional preview'
-[ "$(ipc settingsTest systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
+prepare_regional timezone-set America/Chicago
 
 preview_result=
 i=0
