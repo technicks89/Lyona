@@ -31,6 +31,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Tests no longer reach the session's configuration, data, state and cache
+  directories (#404). A session that exports `XDG_CONFIG_HOME`,
+  `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME`, as the reporter's
+  does, handed them to every test, and helpers prefer them to `HOME`, so a
+  test that gave its helper a `HOME` of its own still wrote the real files:
+  a run of the display tests replaced the user's kept display layout
+  (`~/.local/state/lyona/display-kept.conf`) with its fixture, and a Picom
+  started by a test emptied the user's Picom log, the per-session
+  `~/.local/state/lyona/picom/session.log`, which the next Picom start writes
+  again. A check goal of the Makefile, `scripts/run-tests` and `tests/lib.sh`
+  now give a test private configuration, data, state and cache directories,
+  as they give it a private runtime directory (#368), and
+  `make check-session-isolation` fails if the session's still reach a test.
+  A kept layout lost this way has to be set again: choose it in Settings >
+  Displays, Apply changes, then Keep changes.
 - `check-quickshell-panel-menus` no longer fails now and then (#396). When
   Picom stopped with a menu open, the test waited for the menu's width only,
   but the shell sets the width and the height in two steps, and under load
