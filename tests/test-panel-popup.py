@@ -106,6 +106,9 @@ ShellRoot {
  shell=start('quickshell','--no-duplicate')
  try:
   wait_for(lambda: state()!={},'IPC unavailable',10)
+  # The shell answers before its panel is mapped, which under load is later
+  # (#396): wait for it rather than look once.
+  wait_for(lambda: any(g and int(g['HEIGHT'])==30 for g in geometries()),'the panel did not map')
   panel=next(g for g in geometries() if g and int(g['HEIGHT'])==30)
 
   # No compositor: the menu alone, and a desktop click closes it (dwm, #384).
@@ -144,7 +147,16 @@ ShellRoot {
    g=open_popup(); assert_surface(g)
    stop(picom)
    what="watch-compositor did not report Picom stopping"; assert watch_line(watch,what)=='compositor 0',what
-   wait_for(lambda: not state()['compositor'] and popup() is not None and int(popup()['WIDTH'])==280,'the popup did not shrink to the menu when Picom stopped')
+   # The width and the height change in two steps: wait for both, not the
+   # width alone, which under load was seen with the height still on its way
+   # (#396). A popup that settles at another size still fails, by timeout,
+   # with what it found; 10 s, as a fully loaded machine once took over 5.
+   menu=(40,30,280,300)
+   sized=lambda g: g is not None and (int(g['X']),int(g['Y']),int(g['WIDTH']),int(g['HEIGHT']))==menu
+   try:
+    wait_for(lambda: not state()['compositor'] and sized(popup()),'',10)
+   except AssertionError:
+    raise AssertionError('the popup did not shrink to the menu (40,30 280x300) when Picom stopped: compositor %r, windows %r'%(state().get('compositor'),geometries()))
    assert_menu_sized(popup()); assert state()['open'] and state()['visible']
    click(700,500); assert_dismissed("Outside click did not dismiss popup after Picom stopped")
    # And Picom starting while it is open: the full surface again.

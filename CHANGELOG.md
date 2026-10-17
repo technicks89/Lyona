@@ -31,6 +31,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `check-quickshell-panel-menus` no longer fails now and then (#396). When
+  Picom stopped with a menu open, the test waited for the menu's width only,
+  but the shell sets the width and the height in two steps, and under load
+  the test saw the height still on its way. It now waits for the whole
+  geometry and reports what it found if that never comes. It also waits for
+  the panel to map instead of looking for it once, which failed when the
+  shell answered before its panel was mapped.
 - A panel menu no longer vanishes as it opens on a busy machine (#397). Qt
   6.12 closes every popup at once when its own activation of a popup and the
   X server's FocusIn for it arrive in the other order, and load made that
