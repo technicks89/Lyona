@@ -64,9 +64,9 @@ class PicomTests(unittest.TestCase):
     def apply(self, config, active=90, inactive=75):
         return picom.mutate("set-opacity", [active, inactive], config.revision())
 
-    def watcher(self):
+    def watcher(self, command=None):
         process = subprocess.Popen(
-            [str(Path(loader.path)), "watch"],
+            command or [str(Path(loader.path)), "watch"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
@@ -85,7 +85,200 @@ class PicomTests(unittest.TestCase):
                 self.fail("the watcher said nothing for 10 seconds")
             return process.stdout.readline().decode().rstrip("\n")
 
+        line.process = process
         return line
+
+    def wrap_inotifywait(self, before=""):
+        """Put an inotifywait first on PATH that logs each start, runs BEFORE
+        (shell) and then the real one; returns the log."""
+        tools = self.home / "tools"
+        tools.mkdir()
+        log = self.home / "inotifywait.log"
+        wrapper = tools / "inotifywait"
+        wrapper.write_text(
+            f"#!/bin/sh\necho start >>'{log}'\n{before}exec '{INOTIFYWAIT}' \"$@\"\n"
+        )
+        wrapper.chmod(0o755)
+        return patch.dict(os.environ, {"PATH": f"{tools}:{os.environ['PATH']}"}), log
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_rearms_when_a_watched_directory_vanishes_before_it_is_watched(self):
+        # #392: a directory removed between choosing the watches and inotifywait
+        # setting them up made inotifywait fail, and the watcher ended for good.
+        # It is a change: report it and watch the nearest directory still there.
+        self.write("active-opacity=.8;")
+        nested = self.config / "picom"
+        nested.mkdir()
+        mark = self.home / "removed"
+        path, _log = self.wrap_inotifywait(
+            f"if [ ! -e '{mark}' ]; then : >'{mark}'; rmdir '{nested}'; fi\n"
+        )
+        with path:
+            line = self.watcher()
+        self.assertEqual(line(), "changed")
+        self.assertTrue(mark.exists())
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+        nested.mkdir()
+        self.assertEqual(line(), "changed")
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+        self.path.write_text("active-opacity=.7;")
+        self.assertEqual(line(), "changed")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_follows_a_link_into_a_directory_that_does_not_exist(self):
+        # #392: a link to a file in a missing directory had that directory
+        # watched, which inotifywait cannot do. Its nearest parent is watched.
+        self.path.symlink_to(self.home / "gone/deeper/picom.conf")
+        line = self.watcher()
+        self.assertTrue(line().startswith("ready"))
+        (self.home / "gone").mkdir()
+        self.assertEqual(line(), "changed")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_sees_an_include_fixed_that_was_broken_when_it_started(self):
+        # #400: the watcher knew an include only from a configuration it could
+        # read, so one broken from the first time it was seen was not watched,
+        # and its fix went unseen until Refresh.
+        include = self.config / "deep" / "opacity.conf"
+        include.parent.mkdir()
+        include.write_text("malformed included configuration")
+        self.path.write_text(f'@include "{include}"')
+        line = self.watcher()
+        self.assertEqual(line(), "ready")
+        include.write_text("active-opacity=.65;")
+        self.assertEqual(line(), "changed")
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_sees_a_linked_configuration_home_retargeted(self):
+        # A XDG_CONFIG_HOME that is a link is retargeted in the directory that
+        # holds the link, not in the one it points at.
+        first, second = self.home / "first", self.home / "second"
+        for directory, opacity in ((first, ".8"), (second, ".7")):
+            directory.mkdir()
+            (directory / "picom.conf").write_text(f"active-opacity={opacity};")
+        link = self.home / "linked"
+        link.symlink_to(first)
+        # Where the system directories are is not the link's directory: a vendor
+        # directory that does not exist would put the watch on its nearest parent.
+        vendor = self.home / "system" / "xdg"
+        vendor.mkdir(parents=True)
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(link), "XDG_CONFIG_DIRS": str(vendor)}):
+            line = self.watcher()
+            self.assertTrue(line().startswith("ready"))
+            swap = self.home / "swap"
+            swap.symlink_to(second)
+            os.replace(swap, link)
+            self.assertEqual(line(), "changed")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_ignores_other_files_in_the_directory_holding_a_link(self):
+        # The directory holding a linked XDG_CONFIG_HOME (often $HOME) is watched
+        # to see the link retargeted. Other files written there are not changes:
+        # the watch is armed again without a "changed", which would make
+        # Settings refresh. An edit of the configuration still is one.
+        target = self.home / "target"
+        target.mkdir()
+        (target / "picom.conf").write_text("active-opacity=.8;")
+        link = self.home / "linked"
+        link.symlink_to(target)
+        vendor = self.home / "system" / "xdg"
+        vendor.mkdir(parents=True)
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(link), "XDG_CONFIG_DIRS": str(vendor)}):
+            revision = picom.Configuration().revision()
+            line = self.watcher()
+            self.assertEqual(line(), "ready\t" + revision)
+            for name in ("history", "log"):
+                (self.home / name).write_text("noise")
+                self.assertEqual(line(), "ready\t" + revision)
+            (target / "picom.conf").write_text("active-opacity=.7;")
+            self.assertEqual(line(), "changed")
+            self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_survives_a_link_whose_target_cannot_be_resolved(self):
+        # #392: Path.resolve() raises RuntimeError for a link loop (before
+        # Python 3.13), which ended the watcher. The link's own directory is
+        # still watched. Raised here on every Python, through a patched resolve.
+        self.write("active-opacity=.8;")
+        nested = self.config / "picom"
+        nested.mkdir()
+        (nested / "picom.conf").symlink_to("picom.conf")
+        script = (
+            "import importlib.machinery, importlib.util, pathlib, sys\n"
+            "real = pathlib.Path.resolve\n"
+            "def resolve(self, strict=False):\n"
+            "    if self.name == 'picom.conf' and self.parent.name == 'picom':\n"
+            "        raise RuntimeError(f'Symlink loop from {str(self)!r}')\n"
+            "    return real(self, strict)\n"
+            "pathlib.Path.resolve = resolve\n"
+            f"loader = importlib.machinery.SourceFileLoader('__main__', {str(loader.path)!r})\n"
+            "sys.argv = [loader.path, 'watch']\n"
+            "module = importlib.util.module_from_spec(importlib.util.spec_from_loader('__main__', loader))\n"
+            "loader.exec_module(module)\n"
+        )
+        line = self.watcher([sys.executable, "-I", "-c", script])
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+        self.path.write_text("active-opacity=.7;")
+        self.assertEqual(line(), "changed")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_ends_on_sigterm_that_lands_as_it_takes_the_wait_lock(self):
+        # Closing Settings sends SIGTERM. One handled the moment the watcher's
+        # wait for inotifywait has taken subprocess's waitpid lock, but before
+        # the `with` block protects it (the end of the __enter__ call, which
+        # CPython leaves outside the block), left that lock held, and the
+        # watcher then waited on it forever. Seen as a hung check-picom under
+        # load; made certain here by sending the signal from inside __enter__.
+        self.write("active-opacity=.8;")
+        script = (
+            "import importlib.machinery, importlib.util, os, signal, subprocess, sys\n"
+            "real = subprocess.Popen.__init__\n"
+            "class Lock:\n"
+            "    def __init__(self, lock): self.lock = lock\n"
+            "    def acquire(self, *args): return self.lock.acquire(*args)\n"
+            "    def release(self): self.lock.release()\n"
+            "    def __enter__(self):\n"
+            "        self.lock.acquire()\n"
+            "        signal.raise_signal(signal.SIGTERM)\n"
+            "    def __exit__(self, *exc): self.lock.release()\n"
+            "def init(self, args, *rest, **kwargs):\n"
+            "    real(self, args, *rest, **kwargs)\n"
+            "    if args[0] == 'inotifywait': self._waitpid_lock = Lock(self._waitpid_lock)\n"
+            "subprocess.Popen.__init__ = init\n"
+            f"loader = importlib.machinery.SourceFileLoader('__main__', {str(loader.path)!r})\n"
+            "sys.argv = [loader.path, 'watch']\n"
+            "module = importlib.util.module_from_spec(importlib.util.spec_from_loader('__main__', loader))\n"
+            "loader.exec_module(module)\n"
+        )
+        line = self.watcher([sys.executable, "-I", "-c", script])
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+        try:
+            line.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.fail("the watcher hung after SIGTERM")
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    @unittest.skipIf(os.geteuid() == 0, "root can watch any directory")
+    def test_watch_reports_a_directory_it_cannot_watch_without_retrying(self):
+        # A directory that is there but cannot be watched is no change: the
+        # watcher must say why it failed and end, not re-arm in a loop.
+        self.write("active-opacity=.8;")
+        locked = self.home / "vendor/picom"
+        locked.mkdir(parents=True)
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o700)
+        path, log = self.wrap_inotifywait()
+        with path:
+            line = self.watcher()
+        process = line.process
+        self.assertEqual(process.wait(timeout=10), 1)
+        error = process.stderr.read().decode()
+        self.assertIn("Picom configuration watch failed", error)
+        self.assertIn("use Refresh", error)
+        self.assertIn(str(locked), error)
+        self.assertEqual(log.read_text(), "start\n")
+        self.assertEqual(process.stdout.read(), b"")
 
     @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
     def test_watch_reports_the_revision_once_the_watches_are_live(self):

@@ -18,9 +18,74 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   restores; `CONTRIBUTING.md` gives the default `/usr/local` layout; and
   `tests/test-changelog-record.sh` fails when a tagged version has no dated
   changelog section or release notes (#335).
+- A portrait display layout kept from the last session is now checked from
+  login to the docked panel (#387, follow-up to #376). dwm turns the screen
+  while it has no bar yet; `tests/test-dwm-portrait-login-xvfb.py`
+  (`make check-dwm-portrait-login-xvfb`) checks that dwm survives it (it
+  fails without the #376 fix), that the panel docks across the portrait
+  width, and that windows mapped before and after the panel tile the portrait
+  screen below it, and again after the screen turns back and forth with the
+  panel docked. Nothing needed changing: dwm no longer paints a bar of its
+  own, so its drawing surface is never shown, and nothing divides by the bar
+  height.
 
 ### Fixed
 
+- Keys typed straight after Super+R now go to the app launcher, not to the
+  window you were in (#391). The launcher appears 30 to 50 ms after the key
+  (more on a busy machine), and what was typed before then went to the
+  focused window: in a private Xvfb, 101 of 220 key presses typed with no
+  pause after Super+R reached the previous window (161 of 220 under CPU
+  load), and with a terminal there, an Enter would have run them. A
+  hotkeys.toml binding can now say `hold_keys="WINDOW"`: dwm grabs that key
+  synchronously, so from the moment it goes down the X server queues what is
+  typed, and the keys are released, in order, once a window whose title,
+  class or instance contains WINDOW has mapped and has the focus, or after
+  one second if none does. The default Super+R has `hold_keys="dwm
+  launcher"`, and the installer's hotkeys migration adds it to a Super+R line
+  still as shipped. `make check-launcher-hold-keys-xvfb` types a query and
+  Enter straight after Super+R and checks that nothing reaches the previous
+  window, the launcher gets the whole query and the application starts. The
+  launcher's IPC gains a read-only `query`.
+- Closing a popup that had the keyboard now always gives it back to the
+  focused window (#395). dwm returned it only for a popup whose
+  `_NET_ACTIVE_WINDOW` request it had already handled; a popup that focused a
+  window inside itself and closed before dwm read the request (a quick menu on
+  a busy machine), or never asked, left no window with the keyboard until a
+  click; so did one closed before dwm read its MapNotify. dwm now gives the
+  focus back whenever a window that is not a client unmaps and the focus has
+  reverted to nothing. This was the occasional "the focus did not return to
+  the client after its popup closed" failure of
+  `tests/test-dwm-activate-xvfb.py`, which now checks both cases with dwm
+  stopped while the popup comes and goes. That test still failed now and
+  then under load: events that arrived just as dwm's event loop finished a
+  pass were read into Xlib's queue by the flush before dwm waited for more,
+  and dwm then waited on an empty connection until some later event. It now
+  handles them first, so a burst of events with nothing after it (a popup
+  that opens and closes while dwm is busy) is no longer left unhandled.
+- A shell that is still starting, or too busy to answer within a second, is no
+  longer restarted (#394). At login, autostart restarted a running shell whose
+  tray did not answer within a second, and a shell key such as Super+R pressed
+  early did the same, through `restart-quickshell`, even stopping the shell
+  autostart had just started: on a slow or loaded login that killed a shell
+  that was nearly up, the key did nothing, and the replacement could be killed
+  again by the next key. Now autostart and `lyona-shell` leave this display's
+  shell running and wait for it, and the key then does what it asks; with no
+  shell running, a key starts one (the Control Center helper's new
+  `start-quickshell` action) and stops none. A shell that never answers is
+  still restarted by Super+Shift+R; one left from another display is still
+  replaced at login. `tests/test-desktop-smoke-xvfb.sh` failed now and then
+  under load with "Launcher window did not open on Super+R" because of this.
+- A layout change by autorandr, such as on a display hotplug, no longer risks
+  crashing Xorg on AMD graphics while Picom runs (#386). Settings already
+  stopped Picom around its own changes; autorandr now does too, through a
+  pre/postswitch hook installed in `/etc/xdg/autorandr/`. Picom starts again
+  after the change, or 30 seconds later when autorandr could not apply the
+  layout; a Picom that was not running stays stopped. This covers autorandr
+  only, not a plain `xrandr`; whether the crash still happens on a current
+  xorg-server is for the AMD test in `docs/plans/386-amd-layout-crash.md`
+  (its option E). Nothing to do: an update installs the hook and
+  `make uninstall` removes it.
 - New terminals no longer print Starship's "Scanning current directory timed
   out" warning now and then (#385). Its 30 ms default `scan_timeout` was too
   short on a cold disk cache or a busy system; the mybash pin moves to
@@ -44,6 +109,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   a matching revision, and its edits went unseen until Settings was reopened
   (Refresh rereads once but does not watch again). The watcher now re-arms
   when the configuration moved while it was setting up.
+- Settings > Appearance keeps following the Picom configuration when a
+  directory it watches is removed, and Refresh restarts live updates that did
+  stop (#392). A directory removed between the watcher choosing it and
+  `inotifywait` watching it made the watcher fail with "use Refresh", and
+  Refresh only reread the status, so live updates stayed off until Settings
+  was reopened. That removal now counts as a change and the watcher re-arms
+  on the nearest directory still there; a link into a missing directory is
+  watched the same way, and a link loop no longer ends the watcher (Python
+  before 3.13 raised for it). A directory that is there but cannot be watched
+  still ends the watch, now with `inotifywait`'s reason, and Refresh starts
+  it again; it is still not retried on its own (#279). The watcher also no
+  longer hangs, left running, when Settings closes just as it starts waiting
+  for `inotifywait`: its SIGTERM handler raised `SystemExit`, which could land
+  as `subprocess` took its waitpid lock and leave the lock held.
+  A `XDG_CONFIG_HOME` that is itself a link, retargeted, is now seen too: the
+  directory holding the link is watched, not only the one it points at.
+  So is an include that was already broken when the watcher first saw it
+  (#400): it watched only the files of a configuration it could read, and
+  fixing that include went unseen until Refresh.
 - Bluetooth is no longer inactive after a reboot (#380). `bluez` was
   installed with the desktop but nothing enabled `bluetooth.service`, so the
   panel and Settings showed no adapter until it was started by hand. The

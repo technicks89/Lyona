@@ -354,6 +354,10 @@ ShellRoot {
             launcherModel.open();
         }
 
+        function query(): string {
+            return launcherModel.query;
+        }
+
         function toggle(): void {
             launcherModel.toggle();
         }

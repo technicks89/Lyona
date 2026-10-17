@@ -56,8 +56,10 @@ HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR
 grep -E "$(printf '\t(ok|warn)\tdependency-package-gnome-keyring\t')" "$work/dependencies.tsv" >/dev/null ||
 	fail "the staged diagnostics report no gnome-keyring row"
 
-# Xvfb picks a free display, so this never lands on another test's server.
-Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+# Xvfb picks a free display, so this never lands on another test's server, and
+# -noreset keeps the readiness xprop's exit from resetting it, and dropping
+# dwm's connection, as dwm starts (#393).
+Xvfb -displayfd 3 -noreset -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 

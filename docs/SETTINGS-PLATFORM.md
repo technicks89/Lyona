@@ -325,7 +325,11 @@ dependency while normal display controls remain usable. Saving Undocked sets
 `default -> mobile` and stores only the built-in monitor identity; Docked
 stores the connected monitor identity set. Unrecognized hardware uses the
 default fallback. Existing XDG autostart disablement is respected; Settings
-does not enable system services. Profile replacements preserve hooks and
+does not enable system services. A hook lyona installs in
+`/etc/xdg/autorandr/` stops a running Picom around each layout autorandr applies
+and starts it afterwards (or 30 seconds later when the layout fails to apply),
+because a layout change under Picom can crash Xorg on AMD graphics (#386).
+Profile replacements preserve hooks and
 create backups under `~/.config/lyona/display-profile-backups/` (respecting
 `XDG_CONFIG_HOME`). An existing `~/.autorandr` directory takes precedence,
 matching autorandr; its backups are stored in `~/lyona/display-profile-backups/`.

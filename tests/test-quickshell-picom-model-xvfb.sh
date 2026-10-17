@@ -72,6 +72,7 @@ run_scenario() {
 		XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
 		QT_QPA_PLATFORMTHEME= QT_QUICK_BACKEND=software QSG_RHI_BACKEND=software \
 		PICOM_STUB_DIR="$ctl" PICOM_SCENARIO="$name" PICOM_RUN_MS="$run_ms" \
+		PICOM_REFRESH_MS="${refresh_ms:-}" \
 		quickshell --no-duplicate --path "$work/qml/shell.qml" >"$work/ui-$name.log" 2>&1 || status=$?
 	reads=0
 	[ ! -f "$ctl/status.log" ] || reads=$(wc -l <"$ctl/status.log")
@@ -104,4 +105,22 @@ run_scenario failed-read 3000 2 r1 'a failed first read is retried once the watc
 run_scenario failed-matching-revision 4000 3 r1 'a failed read with a matching watcher revision is retried'
 run_scenario changed-only 4000 2 r3 'one change, one read, and no read loop'
 run_scenario changed-real 4000 2 r3 'a change followed by the re-armed ready is still one read'
+# #392: a watch that failed is not restarted on its own (#279), but Refresh,
+# which its failure message names, starts it again.
+refresh_ms=1500 run_scenario failed-watch 4000 2 r1 'the initial read and the one Refresh makes'
+if ! grep -Eq 'Picom result: .* failure=$' "$work/ui-failed-watch.log"; then
+	grep -F 'Picom result:' "$work/ui-failed-watch.log" >&2 || true
+	printf 'Picom model: the watch failure still shows after Refresh restarted it\n' >&2
+	exit 1
+fi
+if ! grep -Fq 'Picom before refresh: failure=Picom configuration watch failed' "$work/ui-failed-watch.log"; then
+	cat "$work/ui-failed-watch.log" >&2
+	printf 'Picom model: the failed watch was not reported before Refresh\n' >&2
+	exit 1
+fi
+starts=$(wc -l <"$work/ctl-failed-watch/watch.log")
+if [ "$starts" -ne 2 ]; then
+	printf 'Picom model: the watch started %s time(s), expected 2 (once, then on Refresh)\n' "$starts" >&2
+	exit 1
+fi
 printf 'Picom model: PASS\n'

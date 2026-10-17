@@ -39,6 +39,8 @@ if not helper.exists() or not dwm.exists():
 
 from PIL import Image, ImageChops, ImageStat  # noqa: E402
 
+import lyona_xvfb  # noqa: E402  (Xvfb's -displayfd, read to its newline)
+
 temp_root = Path(os.environ.get('DWM_TEST_TMP_ROOT') or os.environ.get('TMPDIR') or Path.home() / 'tmp')
 temp_root.mkdir(parents=True, exist_ok=True)
 SRC_W, SRC_H = 300, 200
@@ -68,8 +70,7 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
         ['Xvfb', '-displayfd', str(write_fd), '-screen', '0', '1024x768x24', '-nolisten', 'tcp', '+extension', 'Composite'],
         pass_fds=(write_fd,), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     os.close(write_fd)
-    display = ':' + os.read(read_fd, 32).decode().strip()
-    os.close(read_fd)
+    display = lyona_xvfb.read_display(read_fd)  # to its newline (#393)
     env = {
         **os.environ,
         'DISPLAY': display,

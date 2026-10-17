@@ -8,11 +8,11 @@ import importlib.machinery
 import importlib.util
 import json
 import os
-import select
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -20,6 +20,7 @@ from pathlib import Path
 from PIL import ImageGrab
 
 import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+import lyona_xvfb  # noqa: E402  (Xvfb's -displayfd, read to its newline)
 
 repo = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader(
@@ -45,7 +46,7 @@ def main():
         if not shutil.which(command):
             raise RuntimeError(f"{command} is required")
     primary = picom.processes()
-    xvfb = shell = connection = None
+    xvfb = shell = connection = observer = None
     with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as directory:
         work = Path(directory)
         home, config, data, runtime = [
@@ -92,10 +93,9 @@ def main():
                     stderr=log,
                 )
             os.close(write_fd)
-            if not select.select([read_fd], [], [], 10)[0]:
-                raise AssertionError("Xvfb startup timed out")
-            display = ":" + os.read(read_fd, 32).decode().strip()
-            os.close(read_fd)
+            # To its newline: Xvfb writes it separately, and a pipe closed
+            # before then makes Xvfb exit (#393).
+            display = lyona_xvfb.read_display(read_fd, 10)
             env["DISPLAY"] = display
 
             def helper(*args, success=True):
@@ -549,11 +549,40 @@ ShellRoot {
                 ImageGrab.grab(xdisplay=display).save(
                     os.environ["DWM_TEST_PICOM_CAPTURE"]
                 )
+            # The step below failed once in CI with the model never refreshing
+            # after the fix (#389), and could not be reproduced. A second watcher
+            # with the same environment records what the helper says and when,
+            # beside when this test wrote, so a failure shows which event was
+            # missed. Diagnostics only: it is read only when the step fails.
+            began = time.monotonic()
+            timeline = []
+
+            def note(text):
+                timeline.append("%.2fs %s" % (time.monotonic() - began, text))
+
+            observer = subprocess.Popen(
+                [str(repo / "scripts/dwm-settings-picom"), "watch"],
+                env=env,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            def observe():
+                for line in observer.stdout:
+                    note("watcher said %r" % line.rstrip("\n"))
+
+            threading.Thread(target=observe, daemon=True).start()
             watched = config / "picom/include/deep/opacity.conf"
             watched.parent.mkdir(parents=True)
-            watched.write_text("active-opacity=.7;")
+            # Not 70, which the step above left: the wait must see the include
+            # load, or the malformed write below races the watcher learning of
+            # the include (#400).
+            watched.write_text("active-opacity=.72;")
             conf.write_text('@include "' + str(watched) + '"')
-            wait_until(lambda: ui_matches("active", 70), "Include did not load")
+            wait_until(lambda: ui_matches("active", 72), "Include did not load")
+            note("wrote a malformed include")
             watched.write_text("malformed included configuration")
             wait_until(
                 lambda: ui_matches("editable", False),
@@ -561,6 +590,7 @@ ShellRoot {
             )
             # Allow the watcher to rearm while parsing is broken.
             time.sleep(0.3)
+            note("wrote the fix")
             watched.write_text("active-opacity=.65;")
             # Seen once in CI and never since (#389): say what the model held.
             # Diagnostics only, so bounded (2 s each), and a shell that no
@@ -573,9 +603,17 @@ ShellRoot {
 
             wait_until(
                 lambda: ui_matches("active", 65),
-                lambda: "Fixed nested include was not observed: state %s, error %r, status error %r"
-                % (answer("state"), answer("error"), answer("statusError")),
+                lambda: "Fixed nested include was not observed: state %s, error %r, status error %r; "
+                "timeline: %s"
+                % (
+                    answer("state"),
+                    answer("error"),
+                    answer("statusError"),
+                    " | ".join(timeline),
+                ),
             )
+            observer.terminate()
+            observer.wait(timeout=5)
             print("PASS: nested include watch recovers after parse failure", flush=True)
             conf.write_text(
                 'backend="xrender"; daemon=true; active-opacity=.8; inactive-opacity=.6;'
@@ -626,6 +664,10 @@ ShellRoot {
                     print(path.name + ":\n" + path.read_text()[-6000:])
             raise
         finally:
+            if observer and observer.poll() is None:
+                observer.terminate()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    observer.wait(timeout=5)
             if shell:
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(shell.pid, 15)

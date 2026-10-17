@@ -37,6 +37,8 @@ if not (repo / 'dwm').exists() or not (repo / 'dwm-window-thumb').exists():
 
 from PIL import Image  # noqa: E402
 
+import lyona_xvfb  # noqa: E402  (Xvfb's -displayfd, read to its newline)
+
 temp_root = Path(os.environ.get('DWM_TEST_TMP_ROOT') or os.environ.get('TMPDIR') or Path.home() / 'tmp')
 temp_root.mkdir(parents=True, exist_ok=True)
 
@@ -164,8 +166,7 @@ with tempfile.TemporaryDirectory(prefix='overview-thumbs-', dir=str(temp_root)) 
         ['Xvfb', '-displayfd', str(write_fd), '-screen', '0', '1024x768x24', '-nolisten', 'tcp', '+extension', 'Composite'],
         pass_fds=(write_fd,), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     os.close(write_fd)
-    display = ':' + os.read(read_fd, 32).decode().strip()
-    os.close(read_fd)
+    display = lyona_xvfb.read_display(read_fd)  # to its newline (#393)
     path_with_helper = '%s:%s' % (wrapper_dir, os.environ['PATH'])
     env = {
         **os.environ,

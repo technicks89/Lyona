@@ -328,6 +328,28 @@ build_spawn_arg(const TomlDoc *doc, const char *section, int tidx)
 	return arg;
 }
 
+/* A binding's hold_keys: the window its keys wait for (#391), copied into the
+ * key arena, or NULL. */
+static const char *
+build_holdkeys(const TomlDoc *doc, int tidx, const char *keyname)
+{
+	const TomlValue *v = toml_table_get(doc, "keys", tidx, "hold_keys");
+	char *s;
+	size_t len;
+
+	if (!v)
+		return NULL;
+	if (v->type != TOML_STRING || !v->s[0]) {
+		note_skip("hotkeys", "hold_keys for '%s' is not a window name", keyname);
+		return NULL;
+	}
+	len = strlen(v->s) + 1;
+	if (!(s = toml_alloc(len)))
+		return NULL;
+	memcpy(s, v->s, len);
+	return s;
+}
+
 static Arg
 build_arg(const char *func_name, const TomlDoc *doc,
           const char *section, int tidx)
@@ -554,6 +576,7 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 		newkeys[nk].keysym = ks;
 		newkeys[nk].func   = fn;
 		memcpy((void *)&newkeys[nk].arg, &tmp_arg, sizeof(Arg));
+		newkeys[nk].holdkeys = build_holdkeys(&doc, i, vkey->s);
 		nk++;
 	}
 
@@ -588,6 +611,7 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 			newkeys[nk].keysym = ks;
 			newkeys[nk].func   = lookup_func(tag_funcs[j]);
 			memcpy((void *)&newkeys[nk].arg, &tmp_arg, sizeof(Arg));
+			newkeys[nk].holdkeys = NULL;
 			nk++;
 		}
 	}

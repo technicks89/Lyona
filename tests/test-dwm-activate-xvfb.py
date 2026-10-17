@@ -16,6 +16,7 @@ import ctypes
 import ctypes.util
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,7 @@ X.XCreateSimpleWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int,
 X.XCreateSimpleWindow.restype = ctypes.c_ulong
 X.XMapWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
 X.XDestroyWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+X.XUnmapWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
 X.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
 X.XFlush.argtypes = [ctypes.c_void_p]
 X.XCloseDisplay.argtypes = [ctypes.c_void_p]
@@ -224,6 +226,49 @@ with tempfile.TemporaryDirectory(prefix='dwm-activate-', dir=os.environ.get('DWM
         X.XDestroyWindow(display, menu)
         X.XSync(display, 0)
         wait(lambda: focused() == second, 'the focus did not return to the client after its popup closed')
+
+        # #395: popups that had the keyboard without dwm handing it to them,
+        # so the focus reverts to nothing when they close; dwm is stopped
+        # (SIGSTOP) to read their events late, as under load. The same popup
+        # as above, but dwm reads its request only after it has closed. And
+        # a popup that focuses a window inside itself without asking, closed
+        # before dwm read even its MapNotify, the focus reverting to its
+        # parent, the root window. Both away from the pointer, so no FocusIn
+        # on the window under it hides the revert.
+        def late_popup(revert, ask, stop):
+            menu = X.XCreateSimpleWindow(display, root, 20, 600, 100, 50, 0, 0, 0x669933)
+            attributes = SetWindowAttributes(override_redirect=1)
+            X.XChangeWindowAttributes(display, menu, CW_OVERRIDE_REDIRECT, ctypes.byref(attributes))
+            inner = X.XCreateSimpleWindow(display, menu, 0, 0, 100, 50, 0, 0, 0x336699)
+            X.XMapWindow(display, inner)
+            X.XSync(display, 0)
+            if stop == 'map':
+                wm.send_signal(signal.SIGSTOP)
+            try:
+                X.XMapWindow(display, menu)
+                X.XSync(display, 0)
+                time.sleep(0.3)
+                if stop == 'request':
+                    wm.send_signal(signal.SIGSTOP)
+                X.XSetInputFocus(display, inner, revert, 0)
+                X.XSync(display, 0)
+                if ask:
+                    request(menu, 1)
+                X.XUnmapWindow(display, menu)
+                X.XSync(display, 0)
+            finally:
+                wm.send_signal(signal.SIGCONT)
+            X.XDestroyWindow(display, menu)
+            X.XSync(display, 0)
+
+        late_popup(1, True, 'request')  # RevertToPointerRoot
+        wait(lambda: focused() == second,
+             'the focus did not return to the client after a popup closed before dwm read its request '
+             '(focus 0x%x, client 0x%x)' % (focused(), second))
+        late_popup(2, False, 'map')  # RevertToParent
+        wait(lambda: focused() == second,
+             'the focus did not return to the client after a popup that focused itself closed '
+             '(focus 0x%x, client 0x%x)' % (focused(), second))
 
         # An application asking for itself: urgent, and the focus stays.
         request(first, 1)

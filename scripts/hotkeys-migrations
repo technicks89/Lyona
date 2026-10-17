@@ -9,7 +9,7 @@
 # 2026.10.0-beta.2: shell actions through lyona-shell; logout and reboot ask
 # first, and the direct quit moved to a harder chord.
 -   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call launcher toggle" },
-+   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"] },
++   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
 -   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter openKeybinds" },
 +   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       exec=["lyona-shell", "controlcenter", "openKeybinds"] },
 -   { mod="SUPER",            key="F1",      desc="Control center",          func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter open" },
@@ -34,3 +34,8 @@
 +   { mod="",                 key="XF86AudioLowerVolume",   desc="Volume down",   func="spawn",  exec=["dwm-quickshell-controls", "volume-down", "5%"] },
 -   { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  cmd="amixer sset Master toggle" },
 +   { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  exec=["dwm-quickshell-controls", "volume-toggle-mute"] },
+
+# After 2026.10.0-beta.6: keys typed straight after Super+R wait for the
+# launcher instead of going to the window you were in (#391).
+-   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"] },
++   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
