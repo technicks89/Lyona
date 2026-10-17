@@ -31,6 +31,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `dwm-settings-picom` and `dwm-settings-display-profiles` no longer fall
+  back to the passwd home when `HOME` is unset (#406), and the display
+  profiles helper no longer treats an empty or relative `XDG_CONFIG_HOME` as
+  the current directory (#407). Both resolve their directories as
+  `dwm-xdg.sh` does: an absolute XDG variable, else `HOME`, else a clear
+  error. A helper run with a scrubbed environment used to read and write the
+  real user's Picom state and autorandr profiles.
 - Tests no longer reach the session's configuration, data, state and cache
   directories (#404). A session that exports `XDG_CONFIG_HOME`,
   `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME`, as the reporter's

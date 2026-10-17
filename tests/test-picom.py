@@ -1237,5 +1237,32 @@ class LyonaDefaultTests(unittest.TestCase):
         self.assertEqual(config.scalar("backend", "auto"), "auto")
 
 
+class HomeFallbackTests(unittest.TestCase):
+    """#406: the XDG fallbacks go through HOME, never the passwd home."""
+
+    def environment(self, **values):
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in {"HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"}}
+        environment.update(values)
+        return patch.dict(os.environ, environment, clear=True)
+
+    def test_fallbacks_land_under_home(self):
+        home = Path(tempfile.mkdtemp(dir=os.environ.get("TMPDIR")))
+        self.addCleanup(shutil.rmtree, home)
+        # An empty or relative value is no directory at all.
+        with self.environment(HOME=str(home), XDG_CONFIG_HOME="", XDG_STATE_HOME="relative/state"), \
+                patch.object(picom.Path, "home", side_effect=AssertionError("passwd home consulted")):
+            self.assertEqual(picom.config_home(), home / ".config")
+            self.assertEqual(picom.private_dir(), home / ".local/state/lyona/picom")
+
+    def test_fallbacks_require_home(self):
+        with self.environment(), \
+                patch.object(picom.Path, "home", side_effect=AssertionError("passwd home consulted")):
+            with self.assertRaises(picom.Error):
+                picom.config_home()
+            with self.assertRaises(picom.Error):
+                picom.private_dir()
+
+
 if __name__ == "__main__":
     unittest.main()
