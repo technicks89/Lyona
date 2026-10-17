@@ -139,8 +139,11 @@ export TMPDIR=$work
 # the same isolation the Makefile gives a check goal: no session display or
 # bus (an Xvfb test starts its own with xvfb-run and dbus-run-session),
 # GSettings in memory, a runtime directory inside the workspace, and no
-# installed root helper (scripts/dwm-trust.sh).
+# installed root helper (scripts/dwm-trust.sh). No XDG base directory of the
+# session either (#404): helpers prefer them to HOME, so a test that gave its
+# helper a HOME of its own still wrote the user's state and configuration.
 unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
 install -d -m 0700 -- "$work/runtime"
 export XDG_RUNTIME_DIR=$work/runtime
 export GSETTINGS_BACKEND=memory

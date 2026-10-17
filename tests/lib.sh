@@ -236,6 +236,11 @@ if [ -z "${LYONA_TEST_ISOLATED:-}" ]; then
 	# socket from dbus-launch). A test that needs one starts its own.
 	DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
 	export DBUS_SESSION_BUS_ADDRESS
+	# Nor its XDG base directories (#404): helpers prefer them to HOME, so a
+	# test that gave a helper a HOME of its own still wrote the user's files.
+	# Under make or scripts/run-tests they are gone already, and a test may
+	# set its own.
+	unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
 fi
 GSETTINGS_BACKEND=memory
 LYONA_NO_TRUSTED_HELPERS=1

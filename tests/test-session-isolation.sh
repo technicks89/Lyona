@@ -25,6 +25,11 @@ session_env=(
 	DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
 	XDG_RUNTIME_DIR="/run/user/$uid"
 	GSETTINGS_BACKEND=dconf
+	# A login session exports these; helpers prefer them to HOME (#404).
+	XDG_CONFIG_HOME="$work/session-config"
+	XDG_DATA_HOME="$work/session-data"
+	XDG_STATE_HOME="$work/session-state"
+	XDG_CACHE_HOME="$work/session-cache"
 )
 outside=(env -u LYONA_TEST_ISOLATED -u LYONA_NO_TRUSTED_HELPERS)
 
@@ -34,6 +39,9 @@ printf 'DISPLAY=%s\nXAUTHORITY=%s\nWAYLAND_DISPLAY=%s\nDBUS=%s\nRUNTIME=%s\nGSET
 	"${DISPLAY-unset}" "${XAUTHORITY-unset}" "${WAYLAND_DISPLAY-unset}" \
 	"${DBUS_SESSION_BUS_ADDRESS-unset}" "${XDG_RUNTIME_DIR-unset}" \
 	"${GSETTINGS_BACKEND-unset}" "${LYONA_NO_TRUSTED_HELPERS-unset}"
+printf 'XDG_CONFIG_HOME=%s\nXDG_DATA_HOME=%s\nXDG_STATE_HOME=%s\nXDG_CACHE_HOME=%s\n' \
+	"${XDG_CONFIG_HOME-unset}" "${XDG_DATA_HOME-unset}" \
+	"${XDG_STATE_HOME-unset}" "${XDG_CACHE_HOME-unset}"
 EOF
 chmod +x "$work/probe.sh"
 
@@ -46,6 +54,11 @@ assert_isolated() {
 	assert_line "$1" 'NO_HELPERS=1'
 	assert_not_contains "$1" "/run/user/$uid"
 	assert_not_contains "$1" ':4242'
+	# #404: a test that sets only HOME must not still reach the user's files.
+	assert_line "$1" 'XDG_CONFIG_HOME=unset'
+	assert_line "$1" 'XDG_DATA_HOME=unset'
+	assert_line "$1" 'XDG_STATE_HOME=unset'
+	assert_line "$1" 'XDG_CACHE_HOME=unset'
 	grep -q '^RUNTIME=/' "$1" || fail "$2: no private runtime directory: $(cat "$1")"
 }
 
