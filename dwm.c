@@ -2986,8 +2986,14 @@ run(void)
 			reload_config(1);
 		updatemonitorwindows();
 		/* Requests made since XPending() last flushed (the two above) would
-		 * otherwise wait in Xlib's buffer for the next X event. */
-		XFlush(dpy);
+		 * otherwise wait in Xlib's buffer for the next X event. XPending()
+		 * flushes them, as XFlush() did, and says whether events came in
+		 * meanwhile: a flush also reads the socket, so they are in Xlib's
+		 * queue, and select() would sleep on a socket that has nothing left
+		 * to read until some later event (#395, a popup's events arriving
+		 * just as the loop above ended). Handle them first. */
+		if (XPending(dpy))
+			continue;
 
 		FD_ZERO(&rfds);
 		FD_SET(x11_fd, &rfds);

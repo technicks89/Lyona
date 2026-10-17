@@ -57,7 +57,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   reverted to nothing. This was the occasional "the focus did not return to
   the client after its popup closed" failure of
   `tests/test-dwm-activate-xvfb.py`, which now checks both cases with dwm
-  stopped while the popup comes and goes.
+  stopped while the popup comes and goes. That test still failed now and
+  then under load: events that arrived just as dwm's event loop finished a
+  pass were read into Xlib's queue by the flush before dwm waited for more,
+  and dwm then waited on an empty connection until some later event. It now
+  handles them first, so a burst of events with nothing after it (a popup
+  that opens and closes while dwm is busy) is no longer left unhandled.
 - A shell that is still starting, or too busy to answer within a second, is no
   longer restarted (#394). At login, autostart restarted a running shell whose
   tray did not answer within a second, and a shell key such as Super+R pressed
