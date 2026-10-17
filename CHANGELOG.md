@@ -31,6 +31,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A panel menu no longer vanishes as it opens on a busy machine (#397). Qt
+  6.12 closes every popup at once when its own activation of a popup and the
+  X server's FocusIn for it arrive in the other order, and load made that
+  happen. The shell's menus (ClickAwayPopup) are no longer Qt popups: they
+  ask dwm for the keyboard and close on losing it themselves, as they already
+  did without a compositor (#384), so Qt has no popup to close. Owners say
+  whether a menu wants the keyboard with `wantsKeyboard` instead of
+  `grabFocus` (the network popup's password prompt, the overview's closing
+  fade).
+  `tests/test-quickshell-health-xvfb.sh` now waits for each popup to be
+  placed before it clicks it, where a fixed 0.1 s missed it under load.
 - An update that finds desktop packages missing now says how to install them
   (#399). A missing required package stopped the update with the
   `sudo pacman -S --needed ...` command; a missing desktop package was only a

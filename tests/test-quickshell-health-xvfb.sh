@@ -249,6 +249,36 @@ wait_popup() {
 	return 1
 }
 
+# Waits, up to 2 s, until the popup's geometry is the same in two samples
+# 0.1 s apart. Mapped is not yet placed: under load a click straight after the
+# map landed outside the menu Qt was still placing, and Qt closed the popup as
+# clicked away (#397).
+wait_popup_settled() {
+	previous=
+	i=0
+	while [ "$i" -lt 20 ]; do
+		current=$(DISPLAY=$display xdotool getwindowgeometry --shell "$1" 2>/dev/null || true)
+		[ -n "$current" ] && [ "$current" = "$previous" ] && return 0
+		previous=$current
+		i=$((i + 1))
+		sleep 0.1
+	done
+	return 1
+}
+
+# Waits, up to 5 s, until the popup has the keyboard. A click away closes a
+# menu by taking the keyboard from it, so one that lands before dwm has given
+# the keyboard to the menu takes nothing (#397, under load).
+wait_popup_focused() {
+	i=0
+	while [ "$i" -lt 100 ]; do
+		[ "$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)" = "$1" ] && return 0
+		i=$((i + 1))
+		sleep 0.05
+	done
+	return 1
+}
+
 visible_windows=$(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true)
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
@@ -278,6 +308,10 @@ if [ -z "$window" ]; then
 	printf 'controlcenter isOpen answers: %s\n' "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home \
 		XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call controlcenter isOpen 2>&1)" >&2
 	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+if ! wait_popup_focused "$window"; then
+	printf 'Control Center popup never got the keyboard\n' >&2
 	exit 1
 fi
 DISPLAY=$display xdotool mousemove 700 700 click 1
@@ -358,7 +392,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
 
 window=
-if wait_popup; then
+if wait_popup && wait_popup_settled "$popup_window"; then
 	window=$popup_window
 fi
 [ -n "$window" ]
@@ -381,7 +415,16 @@ fi
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
-sleep 0.1
+# Click only once the popup is there and placed: a fixed 0.1 s was too short
+# under load, and the click landed outside it (#397).
+window=
+if wait_popup && wait_popup_settled "$popup_window"; then
+	window=$popup_window
+fi
+if [ -z "$window" ]; then
+	printf 'Control Center popup did not open before clicking its Applications item\n' >&2
+	exit 1
+fi
 DISPLAY=$display xdotool mousemove 120 74 click 1
 
 launcher_window=

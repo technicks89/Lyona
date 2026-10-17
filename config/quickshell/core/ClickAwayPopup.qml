@@ -40,9 +40,18 @@ PopupWindow {
     readonly property int menuX: Math.max(0, Math.min(root.popupX, root.areaWidth - root.menuWidth))
     readonly property int menuY: Math.max(0, Math.min(root.popupY - root.panelOffset, root.areaHeight - root.menuHeight))
 
+    // Whether the popup takes the keyboard while shown: owners turn it off to
+    // let the keyboard go (the overview's closing fade, the network popup's
+    // password prompt). The popup asks for the keyboard itself (below), not
+    // through Quickshell's grabFocus: that makes it a Qt::Popup, and Qt 6
+    // closes every popup at once when its own activation of one and the X
+    // FocusIn for it arrive in the other order, which a busy machine made
+    // happen: a menu vanished as it opened (#397).
+    property bool wantsKeyboard: true
+
     visible: open
     color: Theme.transparent
-    grabFocus: true
+    grabFocus: false
     implicitWidth: clickAwaySurface ? areaWidth : menuWidth
     implicitHeight: clickAwaySurface ? areaHeight : menuHeight
 
@@ -53,38 +62,36 @@ PopupWindow {
     }
 
     // On X11 a popup is override-redirect, so the window manager never focuses
-    // it and grabFocus takes no keyboard grab: with any window open, Escape and
+    // it by itself: with any window open, Escape and
     // the arrow keys went to that window (#280 VM). Activating asks dwm for the
     // focus (_NET_ACTIVE_WINDOW), which it gives an override-redirect window
     // and hands back to the selected client when the popup closes.
     function requestKeyboard() {
         const popupWindow = popupHost.Window.window;
-        if (root.visible && root.grabFocus && popupWindow)
+        if (root.visible && root.wantsKeyboard && popupWindow)
             popupWindow.requestActivate();
     }
 
     // Losing the keyboard while shown is a click away (#384): on another
     // window or the desktop, which dwm then focuses. Not while the popup has
-    // let the keyboard go itself (grabFocus false: the overview's closing
-    // fade, the network popup's password prompt). Checked once the focus
+    // let the keyboard go itself (wantsKeyboard false). Checked once the focus
     // change has settled, not inside it: closing changes what it depends on.
     readonly property bool hasKeyboard: popupHost.Window.active
     function dismissWithoutKeyboard() {
-        if (!root.hasKeyboard && root.open && root.visible && root.grabFocus)
+        if (!root.hasKeyboard && root.open && root.visible && root.wantsKeyboard)
             root.dismissed();
     }
     onHasKeyboardChanged: if (!hasKeyboard) Qt.callLater(root.dismissWithoutKeyboard)
 
-    // Hidden while the owner still wants it shown: Qt closes most popups that
-    // lose the keyboard on its own. The owner is told, so its state closes
-    // too and the next open is one click.
+    // Hidden while the owner still wants it shown (the window went away): the
+    // owner is told, so its state closes too and the next open is one click.
     onVisibleChanged: {
         if (visible)
             Qt.callLater(root.requestKeyboard);
         else if (root.open)
             root.dismissed();
     }
-    onGrabFocusChanged: if (grabFocus && visible) Qt.callLater(root.requestKeyboard)
+    onWantsKeyboardChanged: if (wantsKeyboard && visible) Qt.callLater(root.requestKeyboard)
 
     MouseArea {
         anchors.fill: parent

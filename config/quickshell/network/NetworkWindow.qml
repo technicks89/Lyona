@@ -17,7 +17,7 @@ ClickAwayPopup {
 
     open: panelWindow !== null && panelWindow.screen !== null
         && networkModel.visible && !networkModel.wifiPasswordPromptVisible
-    grabFocus: !networkModel.wifiPasswordPromptVisible
+    wantsKeyboard: !networkModel.wifiPasswordPromptVisible
     targetWindow: panelWindow
     popupWidth: cardWidth
     popupHeight: cardHeight

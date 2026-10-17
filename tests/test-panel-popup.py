@@ -15,9 +15,10 @@ checked here. This test used to check it, but against the window id of the
 earlier showing: a popup gets a new X window each time it opens, so that check
 passed whatever the click did.
 
-The second popup takes the keyboard only while open (grabFocus bound to it, as
-the overview's is). Qt does not close such a popup by itself when it loses the
-keyboard, so it checks ClickAwayPopup's own dismissal.
+The second popup takes the keyboard only while open (wantsKeyboard bound to it,
+as the overview's is). Qt does not close a ClickAwayPopup by itself when it
+loses the keyboard (it is not a Qt::Popup, #397), so it checks ClickAwayPopup's
+own dismissal.
 """
 import os, select, shutil, subprocess, tempfile, time
 from pathlib import Path
@@ -35,7 +36,7 @@ import qs.core
 ShellRoot {
  PanelWindow { id: panel; implicitHeight: 30; anchors { top: true; left: true; right: true } color: "white"; exclusiveZone: 30 }
  ClickAwayPopup { id: plain; targetWindow: panel; open: false; popupX: 40; popupWidth: 280; popupHeight: 300; onDismissed: open = false; Rectangle { anchors.fill: parent; color: "red" } }
- ClickAwayPopup { id: late; targetWindow: panel; open: false; grabFocus: open; popupX: 40; popupWidth: 280; popupHeight: 300; onDismissed: open = false; Rectangle { anchors.fill: parent; color: "blue" } }
+ ClickAwayPopup { id: late; targetWindow: panel; open: false; wantsKeyboard: open; popupX: 40; popupWidth: 280; popupHeight: 300; onDismissed: open = false; Rectangle { anchors.fill: parent; color: "blue" } }
  IpcHandler { target: "test"
   function open(name: string): void { (name === "late" ? late : plain).open = true; }
   function state(name: string): string { const popup = name === "late" ? late : plain; return [popup.open, popup.visible, Compositor.running].join(" "); } }

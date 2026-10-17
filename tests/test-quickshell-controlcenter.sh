@@ -585,7 +585,9 @@ appearance_watches=$(cat "$repo/config/quickshell/appearance/AppearanceModel.qml
 grep -Fq 'themes.toml' "$repo/config/quickshell/appearance/AppearanceModel.qml"
 grep -Fq 'ClickAwayPopup {' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
 grep -Fq 'onDismissed: controlCenterModel.close()' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
-grep -Fq 'grabFocus: true' "$repo/config/quickshell/core/ClickAwayPopup.qml"
+# Not a Qt::Popup: Qt closed every popup at once in a focus race (#397).
+grep -Fq 'grabFocus: false' "$repo/config/quickshell/core/ClickAwayPopup.qml"
+grep -Fq 'property bool wantsKeyboard: true' "$repo/config/quickshell/core/ClickAwayPopup.qml"
 grep -Fq 'function applyAppearanceColors(colors, darkMode)' "$repo/config/quickshell/core/Theme.qml"
 grep -Fq 'root.text = colors.text' "$repo/config/quickshell/core/Theme.qml"
 grep -Fq 'label: root.delegated ? "Advanced" : root.busy ? "Connecting..." : "Connect"' "$repo/config/quickshell/network/NetworkWifiRow.qml"
@@ -595,7 +597,7 @@ grep -Fq 'root.networkModel.cancelWifiPasswordPrompt()' "$repo/config/quickshell
 grep -Fq 'wifiPasswordInput.forceActiveFocus();' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'open: panelWindow !== null && panelWindow.screen !== null' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'enabled: !root.networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
-grep -Fq 'grabFocus: !networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
+grep -Fq 'wantsKeyboard: !networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'FloatingWindow {' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'title: "dwm network password"' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq '{ title="dwm network password",     isfloating=1, alwaysontop=1 }' \
