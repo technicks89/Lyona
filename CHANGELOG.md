@@ -31,6 +31,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- An update that finds desktop packages missing now says how to install them
+  (#399). A missing required package stopped the update with the
+  `sudo pacman -S --needed ...` command; a missing desktop package was only a
+  warning in the log, with no command, and nothing installed it later. The
+  warning, the notification and Settings -> System now give the command. A
+  system installed from `2026.10.0-beta.6` or earlier lacks three packages
+  added since (`wireless-regdb` and `iw` for Wi-Fi, #365; `xorg-xmessage` for
+  the shell's start-up message, #343) and gets them with
+  `sudo pacman -S --needed wireless-regdb iw xorg-xmessage`.
 - Keys typed straight after Super+R now go to the app launcher, not to the
   window you were in (#391). The launcher appears 30 to 50 ms after the key
   (more on a busy machine), and what was typed before then went to the

@@ -95,8 +95,9 @@
                 area.clicked(null);
                 root.updateCheck(popup.visible && !model.popupClosed, "clicking the indicator did not reopen the popup");
                 popup.showLog = false;
+                // #399: a success can still ask for desktop packages.
                 root.updateWriteFile(model.statusPath, root.updateStatusText("restarting", "Update complete",
-                    "succeeded", "", 0));
+                    "succeeded", "Install them with: sudo pacman -S --needed iw", 0));
                 root.updateNext();
                 return;
             }
@@ -105,6 +106,8 @@
                 if (model.busy) return;
                 root.updateCheck(model.actionSucceeded && model.outcomeMessage === "Update complete",
                     "a finished update is not reported as complete");
+                root.updateCheck(model.outcomeNote === "Install them with: sudo pacman -S --needed iw",
+                    "a finished update dropped what it still asks for (#399)");
                 root.updateCheck(model.progressShown && popup.visible && root.updatePillItem.visible,
                     "a finished update is not shown");
                 model.dismissProgress();
@@ -118,6 +121,7 @@
             }
             case 5: {
                 if (model.outcomeMessage !== "old failure A") return;
+                root.updateCheck(model.outcomeNote === "", "a failure kept the previous success's note");
                 root.updateCheck(!model.progressShown && !popup.visible && !root.updatePillItem.visible,
                     "an outcome from 30 minutes ago was shown again");
                 // A pending status left by a crash two hours ago must not spin forever.
