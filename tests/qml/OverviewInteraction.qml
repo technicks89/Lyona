@@ -214,7 +214,7 @@ ShellRoot {
             root.check(Compositor.running, "the stub dwm-window-thumb reports a compositor");
             model.close();
             root.check(popup.visible, "closing keeps the popup visible for its fade-out");
-            root.check(!popup.grabFocus, "closing releases the popup's focus grab");
+            root.check(!popup.wantsKeyboard, "closing lets the keyboard go");
             popupFading.start();
         }
     }
@@ -259,7 +259,7 @@ ShellRoot {
 
         interval: 400
         onTriggered: {
-            root.check(model.visible && popup.visible && popup.grabFocus,
+            root.check(model.visible && popup.visible && popup.wantsKeyboard,
                 "reopening during a close keeps the popup open and focused");
             Theme.applyAccessibility(false, true);
             model.close();

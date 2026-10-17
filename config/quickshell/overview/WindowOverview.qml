@@ -32,7 +32,7 @@ ClickAwayPopup {
     // Keep the window mapped until the closing fade reaches zero.
     open: panelWindow !== null && panelWindow.screen !== null
         && (overviewModel.visible || (root.fades && content.opacity > 0))
-    grabFocus: overviewModel.visible
+    wantsKeyboard: overviewModel.visible
     targetWindow: panelWindow
     popupWidth: root.cardWidth
     popupHeight: root.cardHeight
