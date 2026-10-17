@@ -154,7 +154,7 @@ ShellRoot {
    menu=(40,30,280,300)
    sized=lambda g: g is not None and (int(g['X']),int(g['Y']),int(g['WIDTH']),int(g['HEIGHT']))==menu
    try:
-    wait_for(lambda: not state()['compositor'] and sized(popup()),'',10)
+    wait_for(lambda: state().get('compositor') is False and sized(popup()),'',10)
    except AssertionError:
     raise AssertionError('the popup did not shrink to the menu (40,30 280x300) when Picom stopped: compositor %r, windows %r'%(state().get('compositor'),geometries()))
    assert_menu_sized(popup()); assert state()['open'] and state()['visible']
