@@ -8,7 +8,6 @@ import importlib.machinery
 import importlib.util
 import json
 import os
-import select
 import shutil
 import subprocess
 import sys
@@ -20,6 +19,7 @@ from pathlib import Path
 from PIL import ImageGrab
 
 import lyona_tmp  # noqa: F401,E402  (workspaces under the test root, not /tmp)
+import lyona_xvfb  # noqa: E402  (Xvfb's -displayfd, read to its newline)
 
 repo = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader(
@@ -92,10 +92,9 @@ def main():
                     stderr=log,
                 )
             os.close(write_fd)
-            if not select.select([read_fd], [], [], 10)[0]:
-                raise AssertionError("Xvfb startup timed out")
-            display = ":" + os.read(read_fd, 32).decode().strip()
-            os.close(read_fd)
+            # To its newline: Xvfb writes it separately, and a pipe closed
+            # before then makes Xvfb exit (#393).
+            display = lyona_xvfb.read_display(read_fd, 10)
             env["DISPLAY"] = display
 
             def helper(*args, success=True):

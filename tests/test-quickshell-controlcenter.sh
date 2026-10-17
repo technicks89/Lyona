@@ -33,7 +33,11 @@ stub_command quickshell <<'SH'
 #!/bin/sh
 case ${1:-} in
 --version) printf 'quickshell %s\n' "${DWM_TEST_QUICKSHELL_VERSION:-0.3.0}" ;;
-*) printf 'quickshell %s\n' "$*" >>"${DWM_TEST_LOG:?}" ;;
+*)
+	printf 'quickshell %s\n' "$*" >>"${DWM_TEST_LOG:?}"
+	# A shell that does not answer, for start-quickshell.
+	[ "${1:-}" != ipc ] || [ -z "${DWM_TEST_QUICKSHELL_DOWN:-}" ]
+	;;
 esac
 SH
 
@@ -451,6 +455,28 @@ if grep -Fq 'pkill -x quickshell' "$work/actions.log"; then
 fi
 grep -Fq "quickshell list --path $work/config/quickshell/shell.qml --json" "$work/actions.log"
 grep -Fq "quickshell --path $work/config/quickshell/shell.qml --no-duplicate" "$work/actions.log"
+
+# #394: start-quickshell, what a shell key asks for when no shell answers,
+# starts the shell with no shell of this session running, and no detaching;
+# with one answering it starts nothing. The stopping side is
+# tests/test-quickshell-starting-instance.sh.
+: >"$work/actions.log"
+DWM_TEST_QUICKSHELL_DOWN=1 run_helper action start-quickshell >"$work/quickshell-start.out"
+grep -Fqx 'action	start-quickshell' "$work/quickshell-start.out"
+grep -Fq "quickshell --path $work/config/quickshell/shell.qml --no-duplicate" "$work/actions.log" || {
+	printf 'start-quickshell did not start a shell that was not running\n' >&2
+	exit 1
+}
+if grep -Fq 'setsid -f env LYONA_QUICKSHELL_RESTART_DETACHED=1 ' "$work/actions.log"; then
+	printf 'start-quickshell went through the restart\n' >&2
+	exit 1
+fi
+: >"$work/actions.log"
+run_helper action start-quickshell >"$work/quickshell-start.out"
+if grep -Fq -- '--no-duplicate' "$work/actions.log"; then
+	printf 'start-quickshell started a second shell beside one that answers\n' >&2
+	exit 1
+fi
 
 : >"$work/actions.log"
 run_helper action restart-picom >"$work/picom.out"

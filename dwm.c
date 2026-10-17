@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <limits.h>
 #include <stdint.h>
@@ -299,6 +300,7 @@ static void sig_wake_drain(void);
 static void sig_wake_setup(void);
 static void setup(void);
 static void unmapnotify(XEvent *e);
+static void refocusreverted(void);
 
 static void ewmh_clear_active_window(void);
 static void ewmh_clear_client_list(void);
@@ -420,6 +422,16 @@ static int           dpi_value = DEFAULTDPI;
  * a signal that lands between the checks and select() still wakes the loop
  * (Sync Sprint 12 S12-04). -1 when the pipe could not be made. */
 static int sig_wake_fd[2] = { -1, -1 };
+
+/* A hold_keys binding's keyboard hold (#391): see holdkeys_start. */
+#define HOLDKEYS_MS 1000
+static char holdkeys_for[256];
+static struct timespec holdkeys_deadline;
+static int holdkeys_active;
+static void holdkeys_start(const char *what);
+static void holdkeys_end(void);
+static void holdkeys_mapped(const Client *c);
+static int holdkeys_timeout(struct timeval *tv);
 
 #if SHOWWINICON
 static void freeicon(Client *c);
@@ -814,6 +826,7 @@ cleanup(void)
 		while (m->stack)
 			unmanage(m->stack, 0);
 	XUngrabKey(dpy, AnyKey, AnyModifier, root);
+	holdkeys_end();
 	while (mons)
 		cleanupmon(mons);
 	while (overridewindows) {
@@ -1774,10 +1787,12 @@ grabkeys(void)
 
 				if (akeys[i].keysym == syms[(k - start) * skip])
 					for (j = 0; j < LENGTH(modifiers); j++)
+						/* A hold_keys binding freezes the keyboard
+						 * as it is pressed (#391): see keypress. */
 						XGrabKey(dpy, k,
 							 akeys[i].mod | modifiers[j],
-							 root, True,
-							 GrabModeAsync, GrabModeAsync);
+							 root, True, GrabModeAsync,
+							 akeys[i].holdkeys ? GrabModeSync : GrabModeAsync);
 		XFree(syms);
 	}
 }
@@ -1822,13 +1837,23 @@ keypress(XEvent *e)
 	keysym = XGetKeyboardMapping(dpy, (KeyCode)ev->keycode, 1, &keysyms_return);
 	const Key  *akeys        = rt_keys;
 	unsigned int nkeys_active = (unsigned int)rt_nkeys;
-	if (!akeys || !nkeys_active) { XFree(keysym); return; }
-	for (i = 0; i < nkeys_active; i++)
+	for (i = 0; akeys && keysym && i < nkeys_active; i++)
 		if (*keysym == akeys[i].keysym
 				&& CLEANMASK(akeys[i].mod) == CLEANMASK(ev->state)
-				&& akeys[i].func)
+				&& akeys[i].func) {
+			/* Before the function, so a window that maps at once is not missed. */
+			if (akeys[i].holdkeys)
+				holdkeys_start(akeys[i].holdkeys);
 			akeys[i].func(&(akeys[i].arg));
+		}
 	XFree(keysym);
+	/* A hold_keys binding's passive grab is synchronous, so the X server
+	 * froze the keyboard as the key went down, before dwm could hold it:
+	 * keys typed while dwm gets here are queued too. Unless a hold took
+	 * over that freeze, let the keyboard go; for any other key this does
+	 * nothing. */
+	if (!holdkeys_active)
+		XAllowEvents(dpy, AsyncKeyboard, CurrentTime);
 }
 
 void
@@ -1931,6 +1956,7 @@ manage(Window w, XWindowAttributes *wa)
 	if (term)
 		swallow(term, c);
 	focus(NULL);
+	holdkeys_mapped(c);
 }
 
 /* A dock's strut changed: it becomes a bar when it reserves space, and stops
@@ -2841,6 +2867,102 @@ raiseselectedclient(Monitor *m)
 	XRaiseWindow(dpy, c->win);
 }
 
+/* Keys typed right after a hold_keys binding (the launcher's Super+R) belong
+ * to the window it opens, which maps tens of milliseconds later (#391). Until
+ * then they would go to the window that has the focus, a terminal say. So the
+ * binding's passive grab is synchronous (grabkeys), and keypress turns it into
+ * an active synchronous grab here: the X server queues key events instead of
+ * delivering them, from the moment the key went down, however long dwm takes
+ * to see it. When a window whose title, class or instance
+ * contains the hold_keys text maps, manage() has focused it, and releasing
+ * the grab lets the server deliver the queued events, as real events in
+ * their order, through the passive grabs (dwm's own hotkeys) and the focus.
+ * Nothing is replayed by hand, so nothing is reordered, lost or synthetic.
+ * HOLDKEYS_MS bounds the hold: a window that never maps gets the keys where
+ * they would have gone without it, late. */
+static int
+holdkeys_matches(const Client *c)
+{
+	return strstr(c->name, holdkeys_for) || strstr(c->class, holdkeys_for)
+	       || strstr(c->instance, holdkeys_for);
+}
+
+static void
+holdkeys_start(const char *what)
+{
+	Monitor *m;
+	Client *c;
+
+	if (holdkeys_active)
+		return;
+	copystr(holdkeys_for, sizeof(holdkeys_for), what);
+	/* Already open: the binding closes it, so nothing will map. */
+	for (m = mons; m; m = m->next)
+		for (c = m->clients; c; c = c->next)
+			if (holdkeys_matches(c))
+				return;
+	if (clock_gettime(CLOCK_MONOTONIC, &holdkeys_deadline) != 0)
+		return;
+	/* Another client's grab (AlreadyGrabbed, Frozen): keys go as they did. */
+	if (XGrabKeyboard(dpy, root, False, GrabModeAsync, GrabModeSync, CurrentTime)
+	    != GrabSuccess) {
+		fprintf(stderr, "dwm: hold_keys: the keyboard is grabbed elsewhere; keys are not held\n");
+		return;
+	}
+	holdkeys_deadline.tv_sec += HOLDKEYS_MS / 1000;
+	holdkeys_deadline.tv_nsec += (long)(HOLDKEYS_MS % 1000) * 1000000L;
+	if (holdkeys_deadline.tv_nsec >= 1000000000L) {
+		holdkeys_deadline.tv_sec++;
+		holdkeys_deadline.tv_nsec -= 1000000000L;
+	}
+	holdkeys_active = 1;
+}
+
+static void
+holdkeys_end(void)
+{
+	if (!holdkeys_active)
+		return;
+	holdkeys_active = 0;
+	XUngrabKeyboard(dpy, CurrentTime);
+	XFlush(dpy);
+}
+
+/* C has just been managed and focused: the queued keys are its. */
+static void
+holdkeys_mapped(const Client *c)
+{
+	if (holdkeys_active && holdkeys_matches(c))
+		holdkeys_end();
+}
+
+/* For select(): 0 and no timeout without a hold; otherwise 1 and the time left,
+ * ending the hold once that has run out. */
+static int
+holdkeys_timeout(struct timeval *tv)
+{
+	struct timespec now;
+	long long ms;
+
+	if (!holdkeys_active)
+		return 0;
+	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+		holdkeys_end();
+		return 0;
+	}
+	ms = (long long)(holdkeys_deadline.tv_sec - now.tv_sec) * 1000
+	     + (holdkeys_deadline.tv_nsec - now.tv_nsec) / 1000000L;
+	if (ms <= 0) {
+		fprintf(stderr, "dwm: hold_keys: no '%s' window within %d ms; keys released\n",
+		        holdkeys_for, HOLDKEYS_MS);
+		holdkeys_end();
+		return 0;
+	}
+	tv->tv_sec = (time_t)(ms / 1000);
+	tv->tv_usec = (suseconds_t)(ms % 1000) * 1000;
+	return 1;
+}
+
 void
 run(void)
 {
@@ -2848,6 +2970,7 @@ run(void)
 	int x11_fd = ConnectionNumber(dpy);
 	int config_fd, changed;
 	fd_set rfds;
+	struct timeval tv;
 
 	XSync(dpy, False);
 	while (running) {
@@ -2881,7 +3004,8 @@ run(void)
 				maxfd = sig_wake_fd[0];
 		}
 
-		if (select(maxfd + 1, &rfds, NULL, NULL, NULL) < 0) {
+		if (select(maxfd + 1, &rfds, NULL, NULL,
+		           holdkeys_timeout(&tv) ? &tv : NULL) < 0) {
 			if (errno == EINTR) continue;
 			break;
 		}
@@ -3573,8 +3697,8 @@ static const ConfigFunc configfuncs[] = {
  * at startup, so the session always keeps a way to open a terminal and quit. */
 static const char *emergency_termcmd[] = { "dwm-terminal", NULL };
 static const Key emergency_keys[] = {
-	{ MODKEY,           XK_x, spawn, { .v = emergency_termcmd } },
-	{ MODKEY|ShiftMask, XK_q, quit,  { 0 } },
+	{ MODKEY,           XK_x, spawn, { .v = emergency_termcmd }, NULL },
+	{ MODKEY|ShiftMask, XK_q, quit,  { 0 },                      NULL },
 };
 
 static const ConfigEnv configenv = {
@@ -4450,6 +4574,25 @@ unmapnotify(XEvent *e)
 		unmanagealtbar(ev->window);
 	else if (m && m->traywin == ev->window)
 		unmanagetray(ev->window);
+	else if (!ev->send_event)
+		refocusreverted();
+}
+
+/* A window that is not a client unmapped, and the server may have reverted
+ * the keyboard focus to nothing with it: a popup that focused a window inside
+ * itself, or that closed before dwm read its _NET_ACTIVE_WINDOW request (or
+ * its MapNotify) and so was never overridefocus, left no window with the
+ * keyboard until a click (#395). Give it back to the selected client. A
+ * destroyed window that was mapped unmaps first, so this covers it too. */
+void
+refocusreverted(void)
+{
+	Window win;
+	int revert;
+
+	XGetInputFocus(dpy, &win, &revert);
+	if (win == None || ((win == PointerRoot || win == root) && selmon->sel))
+		focus(NULL);
 }
 
 void

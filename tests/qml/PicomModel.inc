@@ -7,6 +7,15 @@
         running: true
         onTriggered: appearanceModel.testPicom.active = true
     }
+    // Press the Appearance pane's Refresh, when the scenario asks for it.
+    Timer {
+        interval: Number(Quickshell.env("PICOM_REFRESH_MS") || 0)
+        running: interval > 0
+        onTriggered: {
+            console.info("Picom before refresh: failure=" + appearanceModel.testPicom.failure);
+            appearanceModel.refreshAll(true);
+        }
+    }
     Timer {
         interval: Number(Quickshell.env("PICOM_RUN_MS") || 3000)
         running: true

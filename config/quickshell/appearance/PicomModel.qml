@@ -24,6 +24,8 @@ Scope {
     // (empty when it could not say), waiting to be checked against a status read.
     property bool watchReadyPending: false
     property string watchReadyRevision: ""
+    // The watcher ended while the pane was open and waits for a refresh.
+    property bool watchEnded: false
     property string action: "status"
     readonly property bool editable: root.snapshot.editable && !root.busy
 
@@ -44,6 +46,13 @@ Scope {
 
     function refresh() {
         if (!root.active) return;
+        // A watch that ended is started again here, so Refresh is the retry its
+        // failure asks for (#392). Not on its own: a watch that cannot run would
+        // only fail again (#279).
+        if (root.watchEnded) {
+            root.watchEnded = false;
+            watcher.start();
+        }
         QueuedRun.startOrQueue(statusProcess, root, "pending", root.busy);
     }
 
@@ -90,6 +99,7 @@ Scope {
             root.refresh();
         } else {
             watcher.stop();
+            root.watchEnded = false;
             statusProcess.running = false;
             root.pending = false;
             settle.stop();
@@ -132,8 +142,8 @@ Scope {
         }
     }
 
-    // A failed watch is reported, with its stderr, and left for the user's
-    // Refresh, not restarted (#279: restartPolicy "never").
+    // A failed watch is reported, with its stderr, and left for the next
+    // refresh (the user's Refresh), not restarted (#279: restartPolicy "never").
     WatchedProcess {
         id: watcher
         command: Commands.watchCommand(Commands.helperCommand("dwm-settings-picom", "watch", []))
@@ -149,6 +159,7 @@ Scope {
             }
         }
         onEnded: exitCode => {
+            root.watchEnded = true;
             if (exitCode !== 0)
                 root.watchFailure = watcher.failureText || "Live Picom updates unavailable; use Refresh";
         }

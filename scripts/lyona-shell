@@ -92,22 +92,43 @@ chord_for() { # FIELD VALUE DEFAULT
 
 # Not exec: when no shell answers (it crashed, or was stopped), a key that
 # opens part of it did nothing at all (#320). Now it brings the shell back,
-# the way the Control Center and the restart key do, waits for it and asks
+# through the Control Center helper, waits for it and asks
 # again; only when that fails is the user told, by a path that does not need
 # the shell, which is the notification server here: the first version of this
 # used notify-send, which reached nothing (#338).
 status=0
 quickshell ipc --path "$config" call "$@" || status=$?
 [ "$status" -ne 0 ] || exit 0
-# A call the running shell refused is its own error, not a shell down.
+# A shell that answers now may have come up between the call and the probe, a
+# key pressed as it finished starting (#394): the call is made once more. A
+# call the running shell refuses again is its own error, not a shell down.
 if shell_answers; then
+	status=0
+	quickshell ipc --path "$config" call "$@" || status=$?
 	exit "$status"
 fi
+# A shell that is running but does not answer yet is starting (a key pressed
+# early in a login) or too busy to answer within the probe's second: it is
+# waited for, not restarted. Restarting it killed a shell that was nearly up,
+# and started the wait again from nothing (#394).
+# shellcheck source=scripts/dwm-quickshell-lifecycle.sh
+. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 controlcenter=$(command -v dwm-quickshell-controlcenter 2>/dev/null || true)
 [ -n "$controlcenter" ] || controlcenter=${0%/*}/dwm-quickshell-controlcenter
-if [ -x "$controlcenter" ]; then
+waiting=0
+starting=0
+if quickshell_session_instance_running "$config"; then
+	printf 'lyona-shell: the lyona shell is still starting; waiting for it\n' >&2
+	waiting=1
+	starting=1
+elif [ -x "$controlcenter" ]; then
 	printf 'lyona-shell: the lyona shell is not running; starting it\n' >&2
-	"$controlcenter" action restart-quickshell >/dev/null 2>&1 || :
+	# Started, not restarted: autostart may start it at the same moment, early
+	# in a login, and a restart stopped that one (#394).
+	"$controlcenter" action start-quickshell >/dev/null 2>&1 || :
+	waiting=1
+fi
+if [ "$waiting" -eq 1 ]; then
 	# Bounded by one deadline, probes and sleeps included: a start takes a
 	# second or two; a shell that cannot start is reported below rather than
 	# waited for.
@@ -123,9 +144,11 @@ if [ -x "$controlcenter" ]; then
 fi
 restart_chord=$(chord_for cmd restart-quickshell 'Super+Shift+R')
 quit_chord=$(chord_for func quit 'Super+Ctrl+Shift+Q')
+problem='The lyona shell could not be started.'
+[ "$starting" -eq 0 ] || problem='The lyona shell is running but does not answer.'
 case $1 in
-power) hint="The lyona shell could not be started. $restart_chord tries again; $quit_chord quits the session now." ;;
-*) hint="The lyona shell could not be started. $restart_chord tries again." ;;
+power) hint="$problem $restart_chord tries again; $quit_chord quits the session now." ;;
+*) hint="$problem $restart_chord tries again." ;;
 esac
 printf 'lyona-shell: %s\n' "$hint" >&2
 if command -v xmessage >/dev/null 2>&1; then

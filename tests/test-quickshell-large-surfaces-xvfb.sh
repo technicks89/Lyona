@@ -130,8 +130,10 @@ printf '%s\n' "$1" >>"$DWM_LARGE_SURFACE_DEX_LOG"
 SH
 chmod +x "$bin/dex"
 
-# Xvfb picks a free display, so this never lands on another test's server.
-Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp -extension GLX \
+# Xvfb picks a free display, so this never lands on another test's server, and
+# -noreset keeps the readiness xprop's exit from resetting it, and dropping
+# dwm's connection, as dwm starts (#393).
+Xvfb -displayfd 3 -noreset -screen 0 1280x800x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 

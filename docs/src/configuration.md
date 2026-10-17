@@ -217,6 +217,27 @@ Use space-separated modifiers: `"SUPER"`, `"SUPER SHIFT"`, `"SUPER CTRL"`, `"SUP
 | `view` | `ui=-1` = all tags | Switch tag |
 | `quit` | — | Exit dwm |
 
+### Keys Typed Before a Window Opens
+
+A binding that opens a window can hold the keys typed straight after it until
+that window appears, so they do not go to the window you were in:
+
+```toml
+  { mod="SUPER", key="r", desc="App launcher", func="spawn",
+    exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
+```
+
+`hold_keys` is text a window's title, class or instance contains. dwm grabs
+the binding's key synchronously, so from the moment it goes down the X server
+queues the keys typed after it, however busy the machine is; once a matching window maps and has the focus, dwm lets them go and
+they reach it in the order typed, dwm's own hotkeys included (Super+R again
+closes the launcher, Escape dismisses it). The hold lasts at most one second:
+if no matching window appears by then, the keys go where they would have gone
+without it, late. A window that is already open is not waited for (the
+binding usually closes it), and when another program has the keyboard
+grabbed, nothing is held. The default Super+R binding has it; the installer's
+hotkeys migration adds it to a Super+R line still exactly as shipped.
+
 ### Tag Bindings
 
 Tag bindings auto-generate all four variants (switch, toggle-view, move, toggle-tag):

@@ -127,8 +127,10 @@ Categories=Utility;
 EOF
 
 test_stage='starting Xvfb'
-# Xvfb picks a free display, so this never lands on another test's server.
-Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+# Xvfb picks a free display, so this never lands on another test's server, and
+# -noreset keeps the readiness xprop's exit from resetting it, and dropping
+# dwm's connection, as dwm starts (#393).
+Xvfb -displayfd 3 -noreset -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 xvfb_identity=$(capture_process_identity "$xvfb_pid")

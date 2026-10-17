@@ -1227,8 +1227,52 @@ def mutate(action, args, revision):
 def watched_revision():
     try:
         return Configuration().revision()
-    except (Error, OSError, ValueError):
+    except (Error, OSError, ValueError, RuntimeError):
         return ""
+
+
+def watched_directories(paths):
+    """The directories that cover PATHS, each with the identity it had when chosen.
+
+    A file's directory, or the nearest parent that exists when it does not, and
+    for a symbolic link its target's too. A link whose target cannot be resolved
+    (a loop raises RuntimeError before Python 3.13) adds only its own directory,
+    where a change to the link itself is still seen.
+    """
+    found = {}
+
+    def add(path):
+        directory = path.parent
+        while True:
+            try:
+                info = directory.stat()
+                break
+            except OSError:
+                if directory == directory.parent:
+                    return
+                directory = directory.parent
+        found[str(directory)] = (info.st_dev, info.st_ino)
+
+    for path in paths:
+        add(path)
+        if path.is_symlink():
+            try:
+                add(path.resolve())
+            except (OSError, RuntimeError):
+                pass
+    return found
+
+
+def moved(directories):
+    """Whether any of DIRECTORIES is gone or is no longer the one chosen."""
+    for directory, identity in directories.items():
+        try:
+            info = os.stat(directory)
+        except OSError:
+            return True
+        if (info.st_dev, info.st_ino) != identity:
+            return True
+    return False
 
 
 def watch():
@@ -1248,9 +1292,17 @@ def watch():
     libc.prctl(1, signal.SIGTERM, 0, 0, 0)
 
     def finish(_sig, _frame):
-        if child is not None:
-            child.terminate()
-        raise SystemExit(0)
+        # Leave at once, not by raising SystemExit: raised as the wait for
+        # inotifywait takes subprocess's waitpid lock (outside the `with` that
+        # would release it), it left the lock held, and the cleanup then waited
+        # on it forever. Nothing is left to flush (every line is flushed), and
+        # inotifywait also gets SIGTERM from its parent-death signal.
+        if child is not None and child.returncode is None:
+            try:
+                os.kill(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        os._exit(0)
 
     signal.signal(signal.SIGTERM, finish)
     signal.signal(signal.SIGINT, finish)
@@ -1263,23 +1315,16 @@ def watch():
             config = Configuration()
             known_paths = list(config.docs)
             armed = config.revision()
-        except (Error, OSError, ValueError):
+        except (Error, OSError, ValueError, RuntimeError):
             armed = ""
         paths += known_paths
-        parents = set()
-        for path in paths:
-            parent = path.parent
-            while not parent.exists():
-                parent = parent.parent
-            parents.add(str(parent))
-            if path.is_symlink():
-                parents.add(str(path.resolve().parent))
+        directories = watched_directories(paths)
         child = subprocess.Popen(
             [
                 "inotifywait",
                 "-e",
                 "close_write,create,delete,moved_to,moved_from,delete_self,move_self",
-                *sorted(parents),
+                *sorted(directories),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -1287,11 +1332,18 @@ def watch():
             preexec_fn=lambda: libc.prctl(1, signal.SIGTERM, 0, 0, 0),  # noqa: PLW1509 - this CLI has no threads
         )
         rearm = False
+        established = False
+        said = []
         try:
             # Not -q: inotifywait says "Watches established." on stderr once it is
             # watching, and only then can the revision below be trusted to mean
             # that any later edit is reported as "changed".
-            if any(line.startswith("Watches established") for line in child.stderr):
+            for line in child.stderr:
+                if line.startswith("Watches established"):
+                    established = True
+                    break
+                said.append(line.strip())
+            if established:
                 revision = watched_revision()
                 # The watches cover the files of the configuration read above. One
                 # edited before they were live may now include a file they miss, so
@@ -1305,8 +1357,23 @@ def watch():
             if child.poll() is None:
                 child.terminate()
                 child.wait()
+        # A directory removed or replaced between being chosen and being
+        # watched makes inotifywait fail (#392). That is a change: report it and
+        # choose again, which picks its nearest parent if it stays gone. Each
+        # such round needs another directory to move, so this cannot spin; one
+        # that is there but cannot be watched (no permission, no inotify
+        # watches left) is a failure, reported with inotifywait's reason.
+        if code and not established and moved(directories):
+            code = 0
         if code:
-            raise Error("Picom configuration watch failed; use Refresh")
+            reason = "; ".join(
+                line for line in said if line and not line.startswith("Setting up")
+            )
+            raise Error(
+                "Picom configuration watch failed"
+                + (f" ({reason})" if reason else "")
+                + "; use Refresh"
+            )
         print("changed", flush=True)
 
 

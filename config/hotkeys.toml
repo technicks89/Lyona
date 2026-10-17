@@ -44,6 +44,12 @@
 #          tag               → send window to a tag
 #          toggleview / toggletag → also show/tag alongside current
 #          quit              → exit DWM
+#
+#  hold_keys  Optional, for a binding that opens a window (the launcher).
+#          Keys typed straight after the binding wait, up to one second, for a
+#          window whose title, class or instance contains this text to appear,
+#          and then go to it instead of the window you were in. Example:
+#          hold_keys="dwm launcher"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── VARIABLES ─────────────────────────────────────────────────────────────────
@@ -60,7 +66,7 @@ webapp   = "webapp-launch"
 keys = [
 
   # ── Launchers ────────────────────────────────────────────────────────────────
-  { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"] },
+  { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
   # SUPER+Tab is already "Previous tag" (dwm's own func="view" below); o for
   # "overview" is free and mnemonic, but pick your own if you'd rather have it
   # somewhere else -- Sync Sprint 7 S7-03, docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md.

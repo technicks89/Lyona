@@ -36,7 +36,19 @@ status)
 	: >"$ctl/status.done"
 	;;
 watch)
+	printf 'watch\n' >>"$ctl/watch.log"
 	case $PICOM_SCENARIO in
+	failed-watch)
+		# The first watch fails the way the real one reports it; the second, the
+		# one Refresh starts (#392), goes live.
+		if [ "$(wc -l <"$ctl/watch.log")" -eq 1 ]; then
+			wait_for status.done
+			printf "Picom configuration watch failed (Couldn't watch /gone: No such file or directory); use Refresh\n" >&2
+			exit 1
+		fi
+		sleep 0.3
+		printf 'ready\tr1\n'
+		;;
 	unchanged)
 		wait_for status.done
 		sleep 0.3
