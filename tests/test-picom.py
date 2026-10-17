@@ -135,6 +135,21 @@ class PicomTests(unittest.TestCase):
         self.assertEqual(line(), "changed")
 
     @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
+    def test_watch_sees_an_include_fixed_that_was_broken_when_it_started(self):
+        # #400: the watcher knew an include only from a configuration it could
+        # read, so one broken from the first time it was seen was not watched,
+        # and its fix went unseen until Refresh.
+        include = self.config / "deep" / "opacity.conf"
+        include.parent.mkdir()
+        include.write_text("malformed included configuration")
+        self.path.write_text(f'@include "{include}"')
+        line = self.watcher()
+        self.assertEqual(line(), "ready")
+        include.write_text("active-opacity=.65;")
+        self.assertEqual(line(), "changed")
+        self.assertEqual(line(), "ready\t" + picom.Configuration().revision())
+
+    @unittest.skipUnless(INOTIFYWAIT, "inotifywait is unavailable")
     def test_watch_sees_a_linked_configuration_home_retargeted(self):
         # A XDG_CONFIG_HOME that is a link is retargeted in the directory that
         # holds the link, not in the one it points at.

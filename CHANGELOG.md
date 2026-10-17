@@ -125,6 +125,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   as `subprocess` took its waitpid lock and leave the lock held.
   A `XDG_CONFIG_HOME` that is itself a link, retargeted, is now seen too: the
   directory holding the link is watched, not only the one it points at.
+  So is an include that was already broken when the watcher first saw it
+  (#400): it watched only the files of a configuration it could read, and
+  fixing that include went unseen until Refresh.
 - Bluetooth is no longer inactive after a reboot (#380). `bluez` was
   installed with the desktop but nothing enabled `bluetooth.service`, so the
   panel and Settings showed no adapter until it was started by hand. The

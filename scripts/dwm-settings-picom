@@ -400,11 +400,19 @@ class Configuration:
         self.docs = {}
         self.entries = {}
         self.overrides = overrides or {}
-        self.load(self.path, [])
+        self.read = []
+        try:
+            self.load(self.path, [])
+        except Exception as exc:
+            # The files reached before it failed, the broken one among them:
+            # the watcher follows them, so fixing that file is seen (#400).
+            exc.paths = list(self.read)
+            raise
 
     def load(self, path, ancestors):
         if len(self.docs) >= 32 or path.resolve() in ancestors:
             raise Error("Picom includes are cyclic or exceed 32 files")
+        self.read.append(path)
         if path in self.overrides:
             text = self.overrides[path]
         elif not path.exists() and not ancestors and not path.is_symlink():
@@ -1344,8 +1352,13 @@ def watch():
             config = Configuration()
             known_paths = list(config.docs)
             armed = config.revision()
-        except (Error, OSError, ValueError, RuntimeError):
+        except (Error, OSError, ValueError, RuntimeError) as exc:
             armed = ""
+            # Still the files of the last good read, and now also those this
+            # read reached, the broken one among them. An include first seen
+            # broken was watched by neither, and fixing it went unseen until
+            # Refresh (#400).
+            known_paths = list(dict.fromkeys([*known_paths, *getattr(exc, "paths", [])]))
         paths += known_paths
         directories = watched_directories(paths)
         child = subprocess.Popen(

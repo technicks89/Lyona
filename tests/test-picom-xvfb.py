@@ -576,9 +576,12 @@ ShellRoot {
             threading.Thread(target=observe, daemon=True).start()
             watched = config / "picom/include/deep/opacity.conf"
             watched.parent.mkdir(parents=True)
-            watched.write_text("active-opacity=.7;")
+            # Not 70, which the step above left: the wait must see the include
+            # load, or the malformed write below races the watcher learning of
+            # the include (#400).
+            watched.write_text("active-opacity=.72;")
             conf.write_text('@include "' + str(watched) + '"')
-            wait_until(lambda: ui_matches("active", 70), "Include did not load")
+            wait_until(lambda: ui_matches("active", 72), "Include did not load")
             note("wrote a malformed include")
             watched.write_text("malformed included configuration")
             wait_until(
