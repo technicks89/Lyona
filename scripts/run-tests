@@ -143,8 +143,15 @@ export TMPDIR=$work
 # (configuration, data, state, cache) are private ones inside the workspace
 # too (#404): helpers prefer them to HOME, so a test that gave its helper a
 # HOME of its own still wrote the user's kept display layout and Picom log.
-# HOME stays the session's (see the Makefile).
+# HOME stays the session's (see the Makefile). Every DWM_* and LYONA_*
+# variable the caller exported goes too, but for the Makefile's
+# LYONA_TEST_KEPT list (#408): helpers take them as overrides.
 unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+kept=' DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS DWM_SECURITY_CONTAINER DWM_IDLE_WATCHERS_SECONDS DWM_TEST_MONITORS DWM_TEST_PICOM_CAPTURE '
+while IFS= read -r name; do
+	case $name in DWM_* | LYONA_*) ;; *) continue ;; esac
+	[[ $kept == *" $name "* ]] || unset -- "$name"
+done < <(compgen -e)
 install -d -m 0700 -- "$work/runtime" "$work/xdg-config" "$work/xdg-data" "$work/xdg-state" "$work/xdg-cache"
 export XDG_RUNTIME_DIR=$work/runtime
 export XDG_CONFIG_HOME=$work/xdg-config XDG_DATA_HOME=$work/xdg-data

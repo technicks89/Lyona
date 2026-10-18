@@ -203,8 +203,9 @@ trap 'exit 143' TERM
 # already gone, so whatever DISPLAY or bus a test sees here is the one its
 # recipe started (xvfb-run, dbus-run-session). A test run straight from a
 # terminal loses the session's: a display that is not an Xvfb or Xephyr
-# server, the inherited session bus and the inherited runtime directory.
-# GSettings stays in memory and no installed root helper is found
+# server, the inherited session bus and the inherited runtime directory,
+# and the DWM_* and LYONA_* overrides it exported (#408). GSettings stays in
+# memory and no installed root helper is found
 # (scripts/dwm-trust.sh). The XDG base directories are private to the test
 # on every path (#404); HOME stays the caller's.
 
@@ -237,6 +238,17 @@ if [ -z "${LYONA_TEST_ISOLATED:-}" ]; then
 	# socket from dbus-launch). A test that needs one starts its own.
 	DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lyona-tests-have-no-session-bus
 	export DBUS_SESSION_BUS_ADDRESS
+	# Every DWM_* and LYONA_* variable the caller exported, but for the
+	# Makefile's LYONA_TEST_KEPT list (#408): helpers take them as overrides,
+	# and a developer session exports LYONA_DEV_SCRIPTS. Under make or
+	# scripts/run-tests they are gone already, and what a recipe set is kept.
+	lyona_kept=' DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS DWM_SECURITY_CONTAINER DWM_IDLE_WATCHERS_SECONDS DWM_TEST_MONITORS DWM_TEST_PICOM_CAPTURE '
+	for lyona_name in $(env | sed -nE 's/^((DWM|LYONA)_[A-Za-z0-9_]*)=.*/\1/p'); do
+		case $lyona_kept in
+		*" $lyona_name "*) ;;
+		*) unset "$lyona_name" ;;
+		esac
+	done
 fi
 GSETTINGS_BACKEND=memory
 LYONA_NO_TRUSTED_HELPERS=1

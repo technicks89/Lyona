@@ -59,10 +59,26 @@ GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 # files for a helper gives it a HOME of its own. The make variables of the
 # same names serve the install goals, which no check goal runs against the
 # real home, so they are redefined rather than kept apart; CFG_DIR and
-# DATA_DIR above keep their values. scripts/run-tests and tests/lib.sh do the
-# same for what they start.
+# DATA_DIR above keep their values. Every DWM_* and LYONA_* variable the
+# caller exported is dropped too (#408): helpers take these as overrides, and
+# CONTRIBUTING.md has a developer export LYONA_DEV_SCRIPTS for the whole
+# session, so a test that does not set one ran a helper the caller's variable
+# pointed at. A value a recipe sets, or `make VAR=value`, still reaches the
+# test. LYONA_TEST_KEPT holds what survives: the run's own variables, and the
+# knobs a developer passes a test (DWM_TEST_TMP_ROOT, DWM_SECURITY_CONTAINER,
+# DWM_IDLE_WATCHERS_SECONDS, DWM_TEST_MONITORS, DWM_TEST_PICOM_CAPTURE), which
+# no helper reads. scripts/run-tests and tests/lib.sh do the same for what
+# they start, with the same list.
+LYONA_TEST_KEPT := DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN \
+	LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS DWM_SECURITY_CONTAINER \
+	DWM_IDLE_WATCHERS_SECONDS DWM_TEST_MONITORS DWM_TEST_PICOM_CAPTURE
 ifneq ($(filter check check-% release-check,$(MAKECMDGOALS)),)
 unexport DISPLAY WAYLAND_DISPLAY XAUTHORITY
+LYONA_TEST_INHERITED := $(foreach v,$(filter-out $(LYONA_TEST_KEPT),$(filter DWM_% LYONA_%,$(.VARIABLES))),$(if $(findstring environment,$(origin $(v))),$(v)))
+# A bare unexport would change what make exports by default.
+ifneq ($(strip $(LYONA_TEST_INHERITED)),)
+unexport $(LYONA_TEST_INHERITED)
+endif
 export GSETTINGS_BACKEND := memory
 export DBUS_SESSION_BUS_ADDRESS := unix:path=/nonexistent/lyona-tests-have-no-session-bus
 export LYONA_TEST_ISOLATED := 1
