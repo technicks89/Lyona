@@ -46,6 +46,8 @@ preview_config_name=personalization.conf
 preview_env=DWM_SETTINGS_TOOLKIT
 # shellcheck source=scripts/dwm-preview.sh
 . "$lyona_lib/dwm-preview.sh"
+# shellcheck source=scripts/dwm-theme-resolve.sh
+. "$lyona_lib/dwm-theme-resolve.sh"
 icon_baseline_file=$state_dir/baseline-icon
 preview_setup_active=false
 preview_setup_pid=''
@@ -94,22 +96,16 @@ valid_value_syntax() {
 		$value != *$'\r'* && $value != */* && $value != *\\* && $value != .. && $value != . ]]
 }
 
-# The same roots theme-apply.sh searches, so what Settings offers and what the
-# applier can resolve cannot drift apart.
+# The roots come from dwm-theme-resolve.sh, the resolver theme-apply.sh uses:
+# DWM_APPEARANCE_DATA_DIRS, else XDG_DATA_HOME and XDG_DATA_DIRS, then
+# ~/.themes or ~/.icons. One list, so what Settings offers is what the applier
+# can resolve, whatever XDG_DATA_DIRS holds (#383).
 theme_roots() {
-	printf '%s\n' \
-		"$data_home/themes" \
-		"$home_dir/.themes" \
-		/usr/local/share/themes \
-		/usr/share/themes
+	lyona_theme_dirs
 }
 
 icon_roots() {
-	printf '%s\n' \
-		"$data_home/icons" \
-		"$home_dir/.icons" \
-		/usr/local/share/icons \
-		/usr/share/icons
+	lyona_icon_dirs
 }
 
 gtk_available() {

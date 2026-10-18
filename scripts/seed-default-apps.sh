@@ -80,12 +80,16 @@ printf '[Default Applications]\n%s\n' "$associations" >"$target"
 
 # Link the complete file without replacing a preference written since the
 # initial check. A rename would silently overwrite that concurrent choice.
-if ! ln -T -- "$target" "$config_home/mimeapps.list"; then
+# ln's own message is shown only when publishing failed: a preference that
+# appeared in the meantime is the expected case, and ln's "File exists" there
+# read as an error just before the defaults were kept.
+if ! ln_error=$(ln -T -- "$target" "$config_home/mimeapps.list" 2>&1); then
 	if [[ -e $config_home/mimeapps.list || -L $config_home/mimeapps.list ]]; then
 		printf 'Preserving existing application defaults: %s\n' "$config_home/mimeapps.list"
 		exit 0
 	fi
 	printf 'Could not publish application defaults: %s\n' "$config_home/mimeapps.list" >&2
+	[[ -z $ln_error ]] || printf '%s\n' "$ln_error" >&2
 	exit 1
 fi
 printf 'Configured fresh-account browser, media, image, and file-manager defaults.\n'

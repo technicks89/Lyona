@@ -69,13 +69,40 @@ class ProfilesTest(unittest.TestCase):
         self.assertTrue(state["profiles"][1]["saved"])
         self.assertEqual(Path(result["backup"]).parent.name, "display-profile-backups")
 
+    def environment(self, **values):
+        """The helper's environment with HOME and XDG_CONFIG_HOME replaced by
+        VALUES alone, and the passwd home off limits (#406)."""
+        environment = {key: value for key, value in profiles.os.environ.items()
+                       if key not in {"HOME", "XDG_CONFIG_HOME"}}
+        environment.update(values)
+        patch.object(profiles.Path, "home", side_effect=AssertionError("passwd home consulted")).start()
+        return patch.dict(profiles.os.environ, environment, clear=True)
+
     def test_legacy_root_precedes_xdg(self):
         home = Path(self.work.name) / "home"
         home.mkdir()
-        with patch.object(profiles.Path, "home", return_value=home), patch.dict(profiles.os.environ, {"XDG_CONFIG_HOME": str(self.root.parent)}):
+        with self.environment(HOME=str(home), XDG_CONFIG_HOME=str(self.root.parent)):
             self.assertEqual(profiles.profile_root(), self.root)
             (home / ".autorandr").mkdir()
             self.assertEqual(profiles.profile_root(), home / ".autorandr")
+
+    def test_empty_or_relative_config_home_falls_back_to_home(self):
+        # #407: an empty XDG_CONFIG_HOME used to mean the current directory.
+        home = Path(self.work.name) / "home"
+        home.mkdir()
+        for value in ("", "relative/config"):
+            with self.environment(HOME=str(home), XDG_CONFIG_HOME=value):
+                self.assertEqual(profiles.profile_root(), home / ".config/autorandr")
+
+    def test_root_requires_home(self):
+        with self.environment():
+            with self.assertRaises(ValueError):
+                profiles.profile_root()
+        # Resolved at import; main() reports the failure like any other error.
+        with patch.object(profiles, "ROOT", None), patch.object(profiles, "ROOT_ERROR", "HOME is required"), \
+                patch.object(profiles.sys, "argv", ["dwm-settings-display-profiles", "status"]):
+            with self.assertRaises(ValueError):
+                profiles.main()
 
     def test_settings_merge_preserves_choices_and_backup(self):
         self.root.mkdir()

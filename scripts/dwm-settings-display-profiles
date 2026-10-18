@@ -18,12 +18,37 @@ import time
 ROLES = {"undocked": "mobile", "docked": "docked"}
 
 
+def home_dir():
+    """HOME, which the XDG fallback needs (#406). Never the passwd home that
+    Path.home() falls back to: a helper run with a scrubbed environment would
+    otherwise write the real user's profiles."""
+    value = os.environ.get("HOME", "")
+    if not value.startswith("/"):
+        raise ValueError("HOME is required when XDG_CONFIG_HOME is not an absolute path")
+    return Path(value)
+
+
+def config_home():
+    """XDG_CONFIG_HOME when absolute. An empty or relative value is ignored
+    (#407), as dwm-xdg.sh ignores it; it used to put the profiles in the
+    current directory."""
+    value = os.environ.get("XDG_CONFIG_HOME", "")
+    return Path(value) if value.startswith("/") else home_dir() / ".config"
+
+
 def profile_root():
-    legacy = Path.home() / ".autorandr"
-    return legacy if legacy.is_dir() else Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "autorandr"
+    home = os.environ.get("HOME", "")
+    if home.startswith("/") and (Path(home) / ".autorandr").is_dir():
+        return Path(home) / ".autorandr"
+    return config_home() / "autorandr"
 
 
-ROOT = profile_root()
+ROOT_ERROR = ""
+try:
+    ROOT = profile_root()
+except ValueError as error:
+    # Reported by main() with the other errors; nothing here runs without it.
+    ROOT, ROOT_ERROR = None, str(error)
 INTERNAL = re.compile(r"^(eDP|LVDS|DSI)[-0-9]")
 NAME = re.compile(r"[A-Za-z0-9_.:+-]+")
 POWER_SUPPLY = Path(os.environ.get("DWM_POWER_SUPPLY_ROOT", "/sys/class/power_supply"))
@@ -307,6 +332,8 @@ def publish_locked(role, outputs, fingerprint, dimensions):
 
 
 def main():
+    if ROOT is None:
+        raise ValueError(ROOT_ERROR)
     if sys.argv[1:] == ["status"]:
         result = status()
     elif len(sys.argv) >= 4 and sys.argv[1] == "save":

@@ -82,9 +82,12 @@ it again; `dwm-flatpak-setup --user` checks the remote on its own.
 - Verify the managed config exists: `ls ~/.config/quickshell/shell.qml`
 - Restart it with <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>, or
   `dwm-quickshell-controlcenter action restart-quickshell`. Any shell key
-  (<kbd>Super</kbd> + <kbd>R</kbd>, the power keys) does the same when the
-  shell is not running, then does what it was pressed for; if the shell cannot
-  start, a message names the keys to try again and to quit the session. Started
+  (<kbd>Super</kbd> + <kbd>R</kbd>, the power keys) starts the shell when it is
+  not running, then does what it was pressed for; when it is running but still
+  starting, as early in a login, the key waits for it instead (#394). If the
+  shell cannot start or never answers, a message names the key to try again
+  (<kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> by default); the message
+  for a power key also names the key that quits the session. Started
   by hand instead, a second Quickshell does not get the hotkeys
 - Check fonts: `fc-list | grep -i meslo`
 - A bar of your own, instead of the lyona panel, must reserve space at the top
@@ -258,6 +261,10 @@ choose, and Picom 13 does not start without one.
 **Control Center > Restart Picom** restarts it. To stop it while troubleshooting,
 run `dwm-settings-picom stop`: window previews are off until it starts again, and
 it starts again at the next login.
+
+The shell's menus work without Picom too. Each one is then only as big as the
+menu, and a click outside it still closes it. Unlike with Picom, that click also
+reaches the window you clicked.
 
 ### Artifacts
 

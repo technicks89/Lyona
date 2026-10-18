@@ -10,7 +10,7 @@ set -euo pipefail
 make_workspace
 
 # quickshell: logs the call (the readiness probe, "call tray count", apart),
-# and answers unless STUB_LOG.down exists. The Control Center's restart action
+# and answers unless STUB_LOG.down exists. The Control Center's start action
 # brings it back, unless STUB_LOG.norestart exists. xmessage and notify-send
 # log what they are told; notify-send must never be the recovery path (#338).
 cat >"$work/bin/quickshell" <<'STUB'
@@ -75,7 +75,7 @@ done
 	fail 'a working call probed, restarted or notified'
 
 # #320, #338: with no shell answering, a key that opens part of it brings the
-# shell back (the Control Center's restart action), waits for it, and asks
+# shell back (the Control Center's start action, #394), waits for it, and asks
 # again, so the key does what it says. The one probe that found it down is the
 # tray call.
 touch "$work/log.down"
@@ -83,7 +83,7 @@ rm -f "$work/log"
 run power confirm logout 2>"$work/err" || fail "a call with the shell down was not retried after the restart: $(cat "$work/err")"
 [[ $(cat "$work/log") == "ipc --path $work/config/quickshell/shell.qml call power confirm logout" ]] ||
 	fail "the call was not asked again after the restart: $(cat "$work/log" 2>/dev/null)"
-[[ $(cat "$work/log.restart") == 'action restart-quickshell' ]] || fail "the shell was not restarted: $(cat "$work/log.restart" 2>/dev/null)"
+[[ $(cat "$work/log.restart") == 'action start-quickshell' ]] || fail "the shell was not started: $(cat "$work/log.restart" 2>/dev/null)"
 grep -Fq 'the lyona shell is not running; starting it' "$work/err" || fail "the restart was not announced: $(cat "$work/err")"
 grep -Fqx "ipc --path $work/config/quickshell/shell.qml call tray count" "$work/log.probe" || fail "the shell was not probed: $(cat "$work/log.probe")"
 [[ ! -e $work/log.xmessage && ! -e $work/log.notify ]] || fail 'a shell that came back was reported as down'
@@ -118,7 +118,7 @@ touch "$work/log.down" "$work/log.norestart"
 status=0
 run power confirm logout 2>"$work/err" || status=$?
 [[ $status != 0 ]] || fail 'a call no shell could answer succeeded'
-[[ $(cat "$work/log.restart") == 'action restart-quickshell' ]] || fail 'no restart was tried'
+[[ $(cat "$work/log.restart") == 'action start-quickshell' ]] || fail 'no start was tried'
 [[ $(xmessage_log) == '-center -timeout 30 -buttons OK -default OK The lyona shell could not be started. Super+Shift+R tries again; Super+Ctrl+Shift+Q quits the session now.' ]] ||
 	fail "the power key gave no recovery hint: $(cat "$work/log.xmessage" 2>/dev/null)"
 grep -Fq 'The lyona shell could not be started. Super+Shift+R tries again; Super+Ctrl+Shift+Q quits the session now.' "$work/err" ||

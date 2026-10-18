@@ -296,7 +296,7 @@
                             close: () => {}}});
                     const clickAway = Qt.createComponent("core/ClickAwayPopup.qml");
                     root.scaleOversizedPopup = clickAway.createObject(root, {targetWindow: root.defaultPanelWindow,
-                        popupWidth: 300, popupHeight: root.defaultPanelWindow.screen.height * 2, visible: true});
+                        popupWidth: 300, popupHeight: root.defaultPanelWindow.screen.height * 2, open: true});
                     const bluetooth = Qt.createComponent("settings/BluetoothSettingsPane.qml");
                     root.scaleBluetoothPane = bluetooth.createObject(settingsWindow.contentItem,
                         {width: 1000, height: 900, bluetoothModel: {

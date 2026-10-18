@@ -47,18 +47,49 @@ GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 # session's display and bus: an Xvfb test gets a fresh one from xvfb-run and
 # dbus-run-session inside its recipe. GSettings stays in memory, and the
 # inherited runtime directory (Quickshell's IPC sockets, the display helper's
-# state), wherever the session keeps it, is swapped for a private one. No installed root helper is
-# found (LYONA_NO_TRUSTED_HELPERS, scripts/dwm-trust.sh), so no test reaches
-# polkit and the real system helpers. scripts/run-tests and
-# tests/lib.sh do the same for what they start.
+# state), wherever the session keeps it, is swapped for a private one. No
+# installed root helper is found (LYONA_NO_TRUSTED_HELPERS,
+# scripts/dwm-trust.sh), so no test reaches polkit and the real system
+# helpers. The XDG base directories (XDG_CONFIG_HOME, XDG_DATA_HOME,
+# XDG_STATE_HOME, XDG_CACHE_HOME) are swapped for private ones too (#404):
+# helpers prefer them to HOME, so a test that gave its helper a HOME of its
+# own still wrote the user's kept display layout and Picom log, and a test
+# that sets neither would reach the real home through the fallback. HOME
+# itself stays the session's (the test root, git), so a test that stages
+# files for a helper gives it a HOME of its own. The make variables of the
+# same names serve the install goals, which no check goal runs against the
+# real home, so they are redefined rather than kept apart; CFG_DIR and
+# DATA_DIR above keep their values. Every DWM_* and LYONA_* variable the
+# caller exported is dropped too (#408): helpers take these as overrides, and
+# CONTRIBUTING.md has a developer export LYONA_DEV_SCRIPTS for the whole
+# session, so a test that does not set one ran a helper the caller's variable
+# pointed at. A value a recipe sets, or `make VAR=value`, still reaches the
+# test. LYONA_TEST_KEPT holds what survives: the run's own variables, and the
+# knobs a developer passes a test (DWM_TEST_TMP_ROOT, DWM_SECURITY_CONTAINER,
+# DWM_IDLE_WATCHERS_SECONDS, DWM_TEST_MONITORS, DWM_TEST_PICOM_CAPTURE), which
+# no helper reads. scripts/run-tests and tests/lib.sh do the same for what
+# they start, with the same list.
+LYONA_TEST_KEPT := DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN \
+	LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS DWM_SECURITY_CONTAINER \
+	DWM_IDLE_WATCHERS_SECONDS DWM_TEST_MONITORS DWM_TEST_PICOM_CAPTURE
 ifneq ($(filter check check-% release-check,$(MAKECMDGOALS)),)
 unexport DISPLAY WAYLAND_DISPLAY XAUTHORITY
+LYONA_TEST_INHERITED := $(foreach v,$(filter-out $(LYONA_TEST_KEPT),$(filter DWM_% LYONA_%,$(.VARIABLES))),$(if $(findstring environment,$(origin $(v))),$(v)))
+# A bare unexport would change what make exports by default.
+ifneq ($(strip $(LYONA_TEST_INHERITED)),)
+unexport $(LYONA_TEST_INHERITED)
+endif
 export GSETTINGS_BACKEND := memory
 export DBUS_SESSION_BUS_ADDRESS := unix:path=/nonexistent/lyona-tests-have-no-session-bus
 export LYONA_TEST_ISOLATED := 1
 export LYONA_NO_TRUSTED_HELPERS := 1
-export XDG_RUNTIME_DIR := $(or $(TMPDIR),$(DWM_TEST_TMP_ROOT),$(HOME)/tmp)/lyona-test-runtime
-$(shell mkdir -p -m 700 '$(XDG_RUNTIME_DIR)')
+LYONA_TEST_ROOT := $(or $(TMPDIR),$(DWM_TEST_TMP_ROOT),$(HOME)/tmp)
+export XDG_RUNTIME_DIR := $(LYONA_TEST_ROOT)/lyona-test-runtime
+export XDG_CONFIG_HOME := $(LYONA_TEST_ROOT)/lyona-test-config
+export XDG_DATA_HOME := $(LYONA_TEST_ROOT)/lyona-test-data
+export XDG_STATE_HOME := $(LYONA_TEST_ROOT)/lyona-test-state
+export XDG_CACHE_HOME := $(LYONA_TEST_ROOT)/lyona-test-cache
+$(shell mkdir -p -m 700 '$(XDG_RUNTIME_DIR)' '$(XDG_CONFIG_HOME)' '$(XDG_DATA_HOME)' '$(XDG_STATE_HOME)' '$(XDG_CACHE_HOME)')
 endif
 run_managed_test = if [ -n "$${DWM_TEST_WORKSPACE:-}" ] && [ -n "$${DWM_TEST_RUNNER_TOKEN:-}" ] && [ "$${TMPDIR:-}" = "$${DWM_TEST_WORKSPACE}" ] && [ -f "$${DWM_TEST_WORKSPACE}/.runner" ] && [ ! -L "$${DWM_TEST_WORKSPACE}/.runner" ] && [ "$$(cat "$${DWM_TEST_WORKSPACE}/.runner" 2>/dev/null)" = "$${DWM_TEST_RUNNER_TOKEN}" ]; then $(1); else scripts/run-tests $(1); fi
 
@@ -187,6 +218,8 @@ PYTHON_LIB_DIR = ${LIB_DIR}/python
 INSTALL_DEFAULTS = config/hotkeys.toml config/themes.toml config/window-rules.toml
 INSTALL_DEFAULT_NAMES = $(notdir ${INSTALL_DEFAULTS})
 SHARE_DIR = ${PREFIX}/share/lyona
+AUTORANDR_HOOK = 50-lyona-picom
+AUTORANDR_HOOK_DIR = /etc/xdg/autorandr
 PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/dwm-system-health-root \
 	scripts/lyona-update-root
 PRIVILEGED_HELPER_DIR = ${PREFIX}/libexec/lyona
@@ -204,9 +237,12 @@ SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '0')
 # dwm-window-thumb captures window previews for the overview (Sync Sprint 9
 # S9-01). It is a separate program, not part of the window manager, and needs
 # libX11 and libXrender (already a build dependency, through Xft): the X server
-# scales the window down (#323).
+# scales the window down (#323). It also tells the shell's popups whether a
+# compositor runs (#384), through libxcb's XFixes (libxcb is a dependency
+# already; check-build-deps checks the module).
 THUMB = dwm-window-thumb
-THUMB_LIBS = $(shell ${PKG_CONFIG} --libs x11 xrender)
+THUMB_MODULES = x11 xrender xcb xcb-xfixes
+THUMB_LIBS = $(shell ${PKG_CONFIG} --libs ${THUMB_MODULES})
 
 # lyona-toml, the scripts' one reader of the TOML files, built on dwm's own
 # parser (Sync Sprint 12 S12-14, D-20). Installed in LIB_DIR, off PATH.
@@ -254,7 +290,7 @@ check-build-deps:
 		echo "Missing required command: ${PKG_CONFIG}" >&2; \
 		exit 1; \
 	}
-	@missing="$$(for module in ${PKG_MODULES}; do \
+	@missing="$$(for module in ${PKG_MODULES} ${THUMB_MODULES}; do \
 		"${PKG_CONFIG}" --exists "$$module" || printf '%s ' "$$module"; \
 	done)"; \
 	if [ -n "$$missing" ]; then \
@@ -370,6 +406,12 @@ install-system:
 	@# lyona's lean Picom default, which dwm-settings-picom puts ahead of
 	@# /etc/xdg (#244).
 	install -Dm644 config/picom/picom.conf ${DESTDIR}${SHARE_DIR}/xdg/picom/picom.conf
+	@# autorandr runs these around a layout change, so Picom is stopped for
+	@# it (#386). Hooks of autorandr's own system-wide folder: harmless when
+	@# autorandr is not installed.
+	for phase in preswitch postswitch; do \
+		install -Dm755 config/autorandr/${AUTORANDR_HOOK} ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d/${AUTORANDR_HOOK}; \
+	done
 	@# From before S12-13, these were installed as commands.
 	for name in ${INSTALL_LIB_NAMES} ${RETIRED_LIB_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
@@ -680,6 +722,11 @@ uninstall:
 		rm -f ${DESTDIR}${SHARE_DIR}/config/$$name; \
 	done
 	rm -f ${DESTDIR}${SHARE_DIR}/xdg/picom/picom.conf
+	for phase in preswitch postswitch; do \
+		rm -f ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d/${AUTORANDR_HOOK}; \
+		rmdir ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d 2>/dev/null || true; \
+	done
+	-rmdir ${DESTDIR}${AUTORANDR_HOOK_DIR} 2>/dev/null
 	-rmdir ${DESTDIR}${SHARE_DIR}/config ${DESTDIR}${SHARE_DIR}/xdg/picom \
 		${DESTDIR}${SHARE_DIR}/xdg ${DESTDIR}${SHARE_DIR} 2>/dev/null
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
@@ -802,8 +849,11 @@ check-quickshell-idle-watchers-xvfb: all
 		exit "$$status"
 
 # The state bridge with real dwm and windows: one rebuild per burst of events.
+# -noreset (#393), as for check-dwm-activate-xvfb: the xprop that waits for dwm
+# can leave before dwm connects. The screen is xvfb-run's default.
 check-quickshell-state-bridge-xvfb: all
-	status=0; dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-quickshell-state-bridge-xvfb.py || status=$$?; \
+	status=0; dbus-run-session -- xvfb-run -a -s "-noreset -screen 0 640x480x24" \
+		/usr/bin/python3 tests/test-quickshell-state-bridge-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -952,6 +1002,9 @@ check-display-profiles:
 check-display-setup:
 	tests/test-dwm-display-setup.sh
 
+check-autorandr-picom-hook:
+	tests/test-autorandr-picom-hook.sh
+
 check-diagnostics:
 	tests/test-dwm-diagnostics.sh
 
@@ -982,8 +1035,11 @@ check-overview-thumbnails-xvfb: all
 
 # The overview's close asks the window (WM_DELETE_WINDOW through dwm's
 # _NET_CLOSE_WINDOW), so a window with unsaved work can refuse (S12-12).
+# -noreset (#393), as for check-dwm-activate-xvfb: the xprop that waits for dwm
+# can leave before dwm connects. The screen is xvfb-run's default.
 check-overview-close-xvfb: all
-	@status=0; xvfb-run -a /usr/bin/python3 tests/test-overview-close-xvfb.py || status=$$?; \
+	@status=0; xvfb-run -a -s "-noreset -screen 0 640x480x24" \
+		/usr/bin/python3 tests/test-overview-close-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1042,6 +1098,7 @@ check-quickshell-audio:
 
 check-quickshell-lifecycle:
 	tests/test-quickshell-lifecycle-locale.sh
+	tests/test-quickshell-starting-instance.sh
 
 check-quickshell-controlcenter:
 	tests/test-quickshell-controlcenter.sh
@@ -1136,13 +1193,16 @@ check-overview-load-xvfb: all
 		exit "$$status"
 
 # _NET_ACTIVE_WINDOW from a pager and _DWM_MONITOR_WINDOWS, with the real dwm,
-# on one screen and on two Xinerama screens (#280 VM).
+# on one screen and on two Xinerama screens (#280 VM). -noreset: the test's
+# first xprop can connect and leave before dwm connects, and a server reset
+# then (the last client left) drops dwm's connection: "cannot open display".
+# A session never resets there: xinit and LightDM hold a connection.
 check-dwm-activate-xvfb: all
-	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
+	status=0; dbus-run-session -- xvfb-run -a -s "-noreset -screen 0 1024x768x24" \
 		/usr/bin/python3 tests/test-dwm-activate-xvfb.py || status=$$?; \
 		if [ "$$status" -ne 0 ] && [ "$$status" -ne 77 ]; then exit "$$status"; fi; \
 	status=0; DWM_TEST_MONITORS=2 dbus-run-session -- xvfb-run -a \
-		-s "+xinerama -screen 0 1024x768x24 -screen 1 800x600x24" \
+		-s "-noreset +xinerama -screen 0 1024x768x24 -screen 1 800x600x24" \
 		/usr/bin/python3 tests/test-dwm-activate-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
@@ -1153,9 +1213,23 @@ check-dwm-xwatch-xvfb: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# -noreset (#393), as for check-dwm-activate-xvfb: the xprop that waits for dwm
+# can leave before dwm connects.
 check-dwm-bar-docks-xvfb: all
-	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1024x768x24" \
+	status=0; dbus-run-session -- xvfb-run -a -s "-noreset -screen 0 1024x768x24" \
 		/usr/bin/python3 tests/test-dwm-bar-docks-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-dwm-portrait-login-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1920x24 -noreset" \
+		/usr/bin/python3 tests/test-dwm-portrait-login-xvfb.py || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+check-launcher-hold-keys-xvfb: all
+	status=0; dbus-run-session -- xvfb-run -a -s "-noreset -screen 0 1024x768x24" \
+		/usr/bin/python3 tests/test-launcher-hold-keys-xvfb.py || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1169,9 +1243,12 @@ check-quickshell-overview-xvfb: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# -noreset (#393): the popup test's first client (xdotool getdisplaygeometry)
+# leaves just before dwm connects. The screen is xvfb-run's default.
 check-quickshell-panel-menus: all
 	tests/test-quickshell-panel-menus.sh
-	dbus-run-session -- xvfb-run -a /usr/bin/python3 tests/test-panel-popup.py
+	dbus-run-session -- xvfb-run -a -s "-noreset -screen 0 640x480x24" \
+		/usr/bin/python3 tests/test-panel-popup.py
 
 check-quickshell-overview: all
 	tests/test-quickshell-overview.sh
@@ -1337,6 +1414,9 @@ check-install-manifest: all
 			printf 'usr/share/lyona/config/%s\n' "$$name"; \
 		done; \
 		printf '%s\n' usr/share/lyona/xdg/picom/picom.conf; \
+		for phase in preswitch postswitch; do \
+			printf 'etc/xdg/autorandr/%s.d/${AUTORANDR_HOOK}\n' "$$phase"; \
+		done; \
 		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 			printf 'usr/libexec/lyona/%s\n' "$$name"; \
 		done; \
@@ -1566,6 +1646,7 @@ check:
 	$(MAKE) check-display-profile
 	$(MAKE) check-display-profiles
 	$(MAKE) check-display-setup
+	$(MAKE) check-autorandr-picom-hook
 	$(MAKE) check-monitor-tags
 	$(MAKE) check-quickshell-launcher
 	$(MAKE) check-quickshell-controls
@@ -1610,8 +1691,10 @@ check:
 	$(MAKE) check-quickshell-overview
 	$(MAKE) check-quickshell-overview-xvfb
 	$(MAKE) check-overview-keyboard-xvfb
+	$(MAKE) check-launcher-hold-keys-xvfb
 	$(MAKE) check-dwm-activate-xvfb
 	$(MAKE) check-dwm-bar-docks-xvfb
+	$(MAKE) check-dwm-portrait-login-xvfb
 	$(MAKE) check-dwm-xwatch-xvfb
 	$(MAKE) check-overview-load-xvfb
 	$(MAKE) check-quickshell-theme-contrast
@@ -1695,8 +1778,8 @@ check:
 .PHONY: clean all all-root check check-update-root-contract check-install-yay check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-cursor-reload check-xkbset check-picom check-picom-xvfb \
 	check-test-runner \
-	check-display-profile check-display-profiles check-display-setup check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
+	check-display-profile check-display-profiles check-display-setup check-autorandr-picom-hook check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-yay check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-session-isolation check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
-	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
+	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-launcher-hold-keys-xvfb check-dwm-activate-xvfb check-dwm-bar-docks-xvfb check-dwm-portrait-login-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \
 	install-cursors install-grub-theme install-gtk-themes remove-legacy-shared-data stamp-system stamp-user native release release-check uninstall

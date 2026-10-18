@@ -23,7 +23,7 @@ cat >"$work/bin/pkg-config" <<'SCRIPT'
 # Only "pkg-config --exists MODULE" is expected; anything else fails.
 test "$1" = "--exists" || exit 1
 case "$2" in
-	x11|xft|xinerama|xrender|imlib2|x11-xcb|xcb|xcb-res)
+	x11|xft|xinerama|xrender|imlib2|x11-xcb|xcb|xcb-res|xcb-xfixes)
 		exit 0
 		;;
 esac

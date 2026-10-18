@@ -56,8 +56,10 @@ HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR
 grep -E "$(printf '\t(ok|warn)\tdependency-package-gnome-keyring\t')" "$work/dependencies.tsv" >/dev/null ||
 	fail "the staged diagnostics report no gnome-keyring row"
 
-# Xvfb picks a free display, so this never lands on another test's server.
-Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
+# Xvfb picks a free display, so this never lands on another test's server, and
+# -noreset keeps the readiness xprop's exit from resetting it, and dropping
+# dwm's connection, as dwm starts (#393).
+Xvfb -displayfd 3 -noreset -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 
@@ -215,17 +217,19 @@ wait_health hidden || {
 	exit 1
 }
 
-# The open popup's window: Quickshell's click-away surface, below the panel
-# (y > 0) and far taller than it. Found by what it is, not as "a window that was
-# not visible before": a popup reuses its window, so a reopen during the
-# previous close's fade was never "new", and the test failed now and then
-# ("Control Center popup did not open").
+# The open popup's window: the shell's one visible window below the panel
+# (y > 0). Found by what it is, not as "a window that was not visible before": a
+# popup reuses its window, so a reopen during the previous close's fade was
+# never "new", and the test failed now and then ("Control Center popup did not
+# open"). Not by its size either: with a compositor it is the click-away surface
+# over the screen, but this Xvfb has none, so it is the menu alone (#384), and
+# the power menu is shorter than any fixed height.
 popup_surface() {
 	for candidate in $(DISPLAY=$display xdotool search --onlyvisible --pid "$quickshell_pid" 2>/dev/null || true); do
 		geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$candidate" 2>/dev/null || true)
 		surface_y=$(printf '%s\n' "$geometry" | sed -n 's/^Y=//p')
 		surface_height=$(printf '%s\n' "$geometry" | sed -n 's/^HEIGHT=//p')
-		if [ "${surface_y:-0}" -gt 0 ] && [ "${surface_height:-0}" -gt 300 ]; then
+		if [ "${surface_y:-0}" -gt 0 ] && [ "${surface_height:-0}" -gt 0 ]; then
 			printf '%s\n' "$candidate"
 			return 0
 		fi
@@ -239,6 +243,36 @@ wait_popup() {
 	i=0
 	while [ "$i" -lt 200 ]; do
 		popup_window=$(popup_surface) && return 0
+		i=$((i + 1))
+		sleep 0.05
+	done
+	return 1
+}
+
+# Waits, up to 2 s, until the popup's geometry is the same in two samples
+# 0.1 s apart. Mapped is not yet placed: under load a click straight after the
+# map landed outside the menu Qt was still placing, and Qt closed the popup as
+# clicked away (#397).
+wait_popup_settled() {
+	previous=
+	i=0
+	while [ "$i" -lt 20 ]; do
+		current=$(DISPLAY=$display xdotool getwindowgeometry --shell "$1" 2>/dev/null || true)
+		[ -n "$current" ] && [ "$current" = "$previous" ] && return 0
+		previous=$current
+		i=$((i + 1))
+		sleep 0.1
+	done
+	return 1
+}
+
+# Waits, up to 5 s, until the popup has the keyboard. A click away closes a
+# menu by taking the keyboard from it, so one that lands before dwm has given
+# the keyboard to the menu takes nothing (#397, under load).
+wait_popup_focused() {
+	i=0
+	while [ "$i" -lt 100 ]; do
+		[ "$(DISPLAY=$display xdotool getwindowfocus 2>/dev/null || true)" = "$1" ] && return 0
 		i=$((i + 1))
 		sleep 0.05
 	done
@@ -274,6 +308,10 @@ if [ -z "$window" ]; then
 	printf 'controlcenter isOpen answers: %s\n' "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home \
 		XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call controlcenter isOpen 2>&1)" >&2
 	tail -40 "$work/quickshell.log" >&2
+	exit 1
+fi
+if ! wait_popup_focused "$window"; then
+	printf 'Control Center popup never got the keyboard\n' >&2
 	exit 1
 fi
 DISPLAY=$display xdotool mousemove 700 700 click 1
@@ -354,7 +392,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
 
 window=
-if wait_popup; then
+if wait_popup && wait_popup_settled "$popup_window"; then
 	window=$popup_window
 fi
 [ -n "$window" ]
@@ -377,7 +415,16 @@ fi
 
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
 	quickshell ipc --path "$config" call controlcenter open >/dev/null
-sleep 0.1
+# Click only once the popup is there and placed: a fixed 0.1 s was too short
+# under load, and the click landed outside it (#397).
+window=
+if wait_popup && wait_popup_settled "$popup_window"; then
+	window=$popup_window
+fi
+if [ -z "$window" ]; then
+	printf 'Control Center popup did not open before clicking its Applications item\n' >&2
+	exit 1
+fi
 DISPLAY=$display xdotool mousemove 120 74 click 1
 
 launcher_window=

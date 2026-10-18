@@ -27,10 +27,19 @@ scripts/run-tests
 ```
 
 The tests are safe to run inside your lyona session: `make check-...`,
-`scripts/run-tests` and a test run on its own all drop the session's display
-and D-Bus, keep GSettings in memory, use a private runtime directory and never
-reach the installed root helpers, so a run does not change your theme, reload
-your compositor or ask for a password. Tests that need X start their own Xvfb.
+`scripts/run-tests` and a shell test run on its own (one that sources
+`tests/lib.sh`) all drop the session's display and D-Bus, keep GSettings in
+memory, use private runtime, configuration, data, state and cache directories
+and never reach the installed root helpers, so a run does not change your
+theme, reload your compositor, ask for a password or touch your kept display
+layout and Picom log. They also drop every `DWM_*` and `LYONA_*` variable your
+shell exported, `LYONA_DEV_SCRIPTS` included, so a test runs the helpers it
+chose and not your checkout's. A few test knobs are kept:
+`DWM_TEST_TMP_ROOT`, `DWM_SECURITY_CONTAINER`, `DWM_IDLE_WATCHERS_SECONDS`,
+`DWM_TEST_MONITORS` and `DWM_TEST_PICOM_CAPTURE`. Any other value reaches a
+test when you give it on make's command line, such as
+`make check-foo DWM_FOO=1`. A Python test run on its own gets all of this only
+under `make` or `scripts/run-tests`. Tests that need X start their own Xvfb.
 
 Use `./install.sh --dry-run --non-interactive --profile core` to inspect the
 dependency plan without changing the system.

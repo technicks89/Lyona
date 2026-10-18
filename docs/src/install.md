@@ -190,7 +190,9 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   (Super+E), and NetworkManager with the Wi-Fi regulatory database
   (`wireless-regdb`). NetworkManager is enabled only when no other
   network manager (systemd-networkd, iwd, ConnMan, dhcpcd or netctl) is in use,
-  and starts at the next boot. The installer does not set your Wi-Fi country
+  and starts at the next boot. Bluetooth (`bluetooth.service`, from `bluez`)
+  is enabled and started when the unit is installed, unless it is masked.
+  The installer does not set your Wi-Fi country
   on an existing system; when none is set it says how to (see
   [Troubleshooting](troubleshooting.md#wi-fi-is-slow-to-connect-or-5-ghz-fails)). It also
   installs Celluloid, mpv, and sxiv, and gives a fresh account Celluloid for

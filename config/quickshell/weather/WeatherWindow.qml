@@ -22,7 +22,7 @@ ClickAwayPopup {
         + (askLocation ? Theme.controlHeight + Theme.spacingMd + Theme.dp(24) : 0)
     readonly property int edgeMargin: Theme.rowSpacing
 
-    visible: panelWindow !== null && panelWindow.screen !== null && weatherModel.visible
+    open: panelWindow !== null && panelWindow.screen !== null && weatherModel.visible
     targetWindow: panelWindow
     popupWidth: cardWidth
     popupHeight: cardHeight

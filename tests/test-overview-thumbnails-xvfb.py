@@ -13,7 +13,8 @@ A wrapper around the helper logs every capture it is asked for. Checks:
 3. Without a compositor, without the helper installed, or with previews switched off,
    the overview still opens and lists its windows with the compact icon-and-title
    cards, and nothing is captured.
-4. Closed, the shell is idle after all that.
+4. Closed, the shell that did all that is idle (measured before the helper is
+   taken away, on the same shell as the baseline).
 
 Exits 77 (skip) without Xvfb, picom, feh, xdotool, quickshell or the built programs.
 """
@@ -36,6 +37,8 @@ if not (repo / 'dwm').exists() or not (repo / 'dwm-window-thumb').exists():
     raise SystemExit(77)
 
 from PIL import Image  # noqa: E402
+
+import lyona_xvfb  # noqa: E402  (Xvfb's -displayfd, read to its newline)
 
 temp_root = Path(os.environ.get('DWM_TEST_TMP_ROOT') or os.environ.get('TMPDIR') or Path.home() / 'tmp')
 temp_root.mkdir(parents=True, exist_ok=True)
@@ -164,8 +167,7 @@ with tempfile.TemporaryDirectory(prefix='overview-thumbs-', dir=str(temp_root)) 
         ['Xvfb', '-displayfd', str(write_fd), '-screen', '0', '1024x768x24', '-nolisten', 'tcp', '+extension', 'Composite'],
         pass_fds=(write_fd,), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     os.close(write_fd)
-    display = ':' + os.read(read_fd, 32).decode().strip()
-    os.close(read_fd)
+    display = lyona_xvfb.read_display(read_fd)  # to its newline (#393)
     path_with_helper = '%s:%s' % (wrapper_dir, os.environ['PATH'])
     env = {
         **os.environ,
@@ -341,6 +343,17 @@ with tempfile.TemporaryDirectory(prefix='overview-thumbs-', dir=str(temp_root)) 
         close_overview()
         switch.unlink()
 
+        # --- 4. Idle afterwards ---------------------------------------------------------------
+        # Measured on the shell that did all of the above, as the baseline was, and
+        # before 3c replaces it. The shell 3c starts has no helper, so its compositor
+        # watcher restarts the missing program 3 s in, then 6 s and 12 s later
+        # (WatchedProcess backoff, the documented fallback): that spawn fell inside
+        # this window and cost the 3 s sample up to two 10 ms ticks under load, a
+        # cost an installed shell, which has the helper, never pays.
+        time.sleep(1.5)
+        idle_after_use = closed_cpu(IDLE_SECONDS / 2)
+        assert idle_after_use <= idle_before_use + 0.5 and idle_after_use <= 1.0, (idle_before_use, idle_after_use)
+
         # --- 3c. The helper is not installed -----------------------------------------------------
         shell.terminate()
         shell.wait(timeout=5)
@@ -354,11 +367,6 @@ with tempfile.TemporaryDirectory(prefix='overview-thumbs-', dir=str(temp_root)) 
         missing = wait_for(lambda s: s['visible'] and len(s['cards']) > 0, 'the overview did not list windows without the helper')
         assert not missing['available'] and missing['previews'] == [], missing
         close_overview()
-
-        # --- 4. Idle afterwards ---------------------------------------------------------------
-        time.sleep(1.5)
-        idle_after_use = closed_cpu(IDLE_SECONDS / 2)
-        assert idle_after_use <= idle_before_use + 0.5 and idle_after_use <= 1.0, (idle_before_use, idle_after_use)
 
         assert shell.poll() is None
         log.seek(0)

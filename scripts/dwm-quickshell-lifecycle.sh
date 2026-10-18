@@ -77,9 +77,10 @@ wait_for_quickshell_exit() {
 	return 1
 }
 
-stop_managed_quickshell() {
-	config=$1
-	identities=$(quickshell_instance_identities "$config") || return 1
+# stop_quickshell_identities IDENTITIES: stop those instances, each one only
+# while it is still the process its identity names, politely first.
+stop_quickshell_identities() {
+	identities=$1
 	[ -n "$identities" ] || return 0
 
 	for identity in $identities; do
@@ -103,6 +104,12 @@ stop_managed_quickshell() {
 	wait_for_quickshell_exit "$identities" >/dev/null 2>&1
 }
 
+stop_managed_quickshell() {
+	config=$1
+	identities=$(quickshell_instance_identities "$config") || return 1
+	stop_quickshell_identities "$identities"
+}
+
 # Whether the managed instance answers: its tray, which tray apps need first.
 quickshell_tray_ready() {
 	config=$1
@@ -122,8 +129,43 @@ restart_managed_quickshell() {
 	"$@" quickshell --path "$config" --no-duplicate
 }
 
-# start_managed_quickshell CONFIG LAUNCHER...: the same, only when the managed
-# instance is not already answering, as at login.
+# The X display a process was started on: DISPLAY in its environment, which is
+# fixed at exec and readable by its owner. Empty when it has none.
+quickshell_pid_display() {
+	tr '\0' '\n' <"/proc/$1/environ" 2>/dev/null | sed -n '/^DISPLAY=/{s///p;q;}'
+}
+
+# quickshell_session_identity_in IDENTITIES: whether one of those instances is
+# this session's: started on this X display. Such an instance that does not
+# answer yet is still loading, or too busy to answer within the probe's second
+# (a loaded login): it is waited for, never stopped, as stopping it killed a
+# shell that was nearly up and started the wait again from nothing (#394). One
+# on another display is another session's, or a dead one's.
+quickshell_session_identity_in() {
+	[ -n "${DISPLAY:-}" ] || return 1
+	for session_identity in $1; do
+		[ "$(quickshell_pid_display "${session_identity%%:*}")" = "$DISPLAY" ] && return 0
+	done
+	return 1
+}
+
+# Whether this session's managed instance is running, answering or not.
+quickshell_session_instance_running() {
+	session_identities=$(quickshell_instance_identities "$1") || return 1
+	quickshell_session_identity_in "$session_identities"
+}
+
+# start_managed_quickshell CONFIG LAUNCHER...: as restart_managed_quickshell,
+# only when this session's managed instance is neither answering nor running,
+# as at login. An instance that is not this session's is replaced. The
+# instances are listed once: the one listing decides, and names what is stopped.
 start_managed_quickshell() {
-	quickshell_tray_ready "$1" || restart_managed_quickshell "$@"
+	config=$1
+	shift
+	quickshell_tray_ready "$config" && return 0
+	if start_identities=$(quickshell_instance_identities "$config"); then
+		quickshell_session_identity_in "$start_identities" && return 0
+		stop_quickshell_identities "$start_identities" >/dev/null 2>&1 || true
+	fi
+	"$@" quickshell --path "$config" --no-duplicate
 }
