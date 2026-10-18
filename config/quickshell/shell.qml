@@ -350,6 +350,11 @@ ShellRoot {
             return launcherModel.apps.length;
         }
 
+        // Read-only: whether the launcher is open, for a check that its window shows.
+        function isOpen(): bool {
+            return launcherModel.visible;
+        }
+
         function open(): void {
             launcherModel.open();
         }

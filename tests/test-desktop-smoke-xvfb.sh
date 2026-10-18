@@ -157,9 +157,20 @@ done
 DISPLAY=$display xprop -root >/dev/null
 
 test_stage='starting dwm'
+# dwm runs its bindings through this lyona-shell first (#411): each call is
+# recorded, so a launcher that did not open tells a key dwm never handled from
+# a call that reached the shell. It runs the checkout's, which the held-index
+# stages below swap.
+mkdir -p "$work/binding-bin"
+cat >"$work/binding-bin/lyona-shell" <<EOF
+#!/bin/sh
+printf '%s %s\\n' "\$(date +%s.%N)" "\$*" >>"$work/lyona-shell.calls"
+exec "$data_home/checkout/scripts/lyona-shell" "\$@"
+EOF
+chmod +x "$work/binding-bin/lyona-shell"
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime DWM_AUTOSTART_NO_INPUT_WATCH=1 \
-	PATH="$data_home/checkout/scripts:$PATH" \
+	PATH="$work/binding-bin:$data_home/checkout/scripts:$PATH" \
 	"$dwm_bin" >"$work/dwm.log" 2>&1 &
 dwm_pid=$!
 dwm_identity=$(capture_process_identity "$dwm_pid")
@@ -219,6 +230,24 @@ test_stage='opening the launcher with Super+R'
 launcher_visible() {
 	DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' >/dev/null 2>&1
 }
+# launcher_not_shown WHAT: say where a Super+R that showed no launcher was lost
+# (#411): whether dwm ran the binding, whether the shell holds the launcher
+# open, and whether its window exists at all, and which window has the focus.
+launcher_not_shown() {
+	printf '%s\n' "$1" >&2
+	if [ -s "$work/lyona-shell.calls" ]; then
+		printf 'lyona-shell calls from dwm (time, arguments):\n' >&2
+		cat "$work/lyona-shell.calls" >&2
+	else
+		printf 'dwm never ran a lyona-shell binding: the key did not reach it as Super+R\n' >&2
+	fi
+	printf 'launcher open in the shell: %s\n' "$(launcher_ipc isOpen 2>&1)" >&2
+	printf 'launcher windows (any state): %s\n' \
+		"$(DISPLAY=$display xdotool search --name '^dwm launcher$' 2>/dev/null | tr '\n' ' ')" >&2
+	printf 'focused window: %s\n' \
+		"$(DISPLAY=$display xdotool getwindowfocus getwindowname 2>&1)" >&2
+	exit 1
+}
 DISPLAY=$display xdotool key --clearmodifiers super+r
 i=0
 while [ "$i" -lt 100 ]; do
@@ -227,8 +256,7 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 launcher_visible || {
-	printf 'Launcher window did not open on Super+R\n' >&2
-	exit 1
+	launcher_not_shown 'Launcher window did not open on Super+R'
 }
 i=0
 while [ "$i" -lt 100 ]; do
@@ -264,8 +292,7 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 launcher_visible || {
-	printf 'Launcher window did not reopen on Super+R\n' >&2
-	exit 1
+	launcher_not_shown 'Launcher window did not reopen on Super+R'
 }
 DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
 DISPLAY=$display xdotool key Return
@@ -309,8 +336,7 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 launcher_visible || {
-	printf 'Launcher window did not open on Super+R with the index held\n' >&2
-	exit 1
+	launcher_not_shown 'Launcher window did not open on Super+R with the index held'
 }
 DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
 DISPLAY=$display xdotool key Return
@@ -351,8 +377,7 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 launcher_visible || {
-	printf 'Launcher window did not open on Super+R with the index held\n' >&2
-	exit 1
+	launcher_not_shown 'Launcher window did not open on Super+R with the index held'
 }
 DISPLAY=$display xdotool type --clearmodifiers --delay 1 DwmSmokeApp
 DISPLAY=$display xdotool key Return
