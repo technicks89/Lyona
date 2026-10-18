@@ -31,6 +31,33 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Setting a fresh account's default applications no longer prints a raw
+  `ln: failed to create hard link ... File exists` when a preference written
+  meanwhile is kept, just before saying it was kept. `ln`'s own message now
+  shows only when the defaults could not be published, after "Could not
+  publish application defaults", so the reason is still given.
+- `check-overview-thumbnails-xvfb` no longer fails now and then on its idle
+  check. It compared the idle CPU of two different shells: the baseline
+  came from the shell that had the preview helper, and the final reading
+  from the shell restarted without it, whose compositor watcher (#384)
+  restarts the missing helper 3 s in, inside the 3 s sample. Under load that
+  one spawn cost two 10 ms ticks, 0.667 points against a 0.5 allowance. The
+  test now takes the final reading on the same shell as the baseline, before
+  the helper is taken away. An installed shell has the helper, so it never
+  pays that cost.
+- `check-desktop-smoke-xvfb` now says where a Super+R that opened no
+  launcher was lost (#411): whether dwm ran the binding, whether the shell
+  holds the launcher open (a new read-only `isOpen` call on the launcher
+  IPC), whether a launcher window exists, and which window has the focus.
+  The one failure on CI logged nothing on either side, so the cause is still
+  open.
+- `check-quickshell-system-management-xvfb` prepares the regional preview
+  the way a user does, once the Review change... button would be enabled
+  (#409): it waits for the button's own reason to clear, through a new
+  read-only `systemManagementRegionalActionReason` test call, instead of
+  retrying the request blindly, and reports that reason if the gate never
+  opens. Nothing in the product changed: a user sees the button disabled,
+  with the reason under it, while regional status refreshes.
 - Tests no longer inherit the `DWM_*` and `LYONA_*` overrides of the shell
   they run from (#408). `CONTRIBUTING.md` has a developer export
   `LYONA_DEV_SCRIPTS` for the whole session, and helpers take that and the

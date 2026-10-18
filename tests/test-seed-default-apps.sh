@@ -227,12 +227,37 @@ printf '[Default Applications]\ntext/plain=user-editor.desktop;\n' >"$XDG_CONFIG
 exec "$DWM_TEST_REAL_LN" "$@"
 SH
 chmod +x "$work/bin/ln"
-"$seed" >"$work/race.out" || fail 'seeding failed when a preference appeared mid-run'
+"$seed" >"$work/race.out" 2>"$work/race.err" || fail 'seeding failed when a preference appeared mid-run'
 printf '[Default Applications]\ntext/plain=user-editor.desktop;\n' >"$work/concurrent"
 cmp "$work/concurrent" "$mimeapps" || fail 'a preference written mid-run was replaced'
 grep -Fq 'Preserving existing application defaults' "$work/race.out" ||
 	fail 'keeping the concurrent preference was not reported'
+# Keeping it is the expected outcome, so ln's "File exists" is not shown.
+[ ! -s "$work/race.err" ] || fail "keeping the concurrent preference printed an error: $(cat "$work/race.err")"
 no_partial_files
+
+# ── a publication that fails says why ────────────────────────────────────
+#
+# Any other ln failure (permissions, a read-only file system) leaves no
+# mimeapps.list behind: the run fails, and ln's own reason is shown.
+
+rm -f "$mimeapps"
+cat >"$work/bin/ln" <<'SH'
+#!/bin/sh
+printf 'ln: failed to create hard link: Permission denied\n' >&2
+exit 1
+SH
+chmod +x "$work/bin/ln"
+if "$seed" >"$work/denied.out" 2>"$work/denied.err"; then
+	fail 'seeding succeeded although the defaults could not be published'
+fi
+grep -Fq 'Could not publish application defaults' "$work/denied.err" ||
+	fail "a failed publication was not reported: $(cat "$work/denied.err")"
+grep -Fq 'Permission denied' "$work/denied.err" ||
+	fail "a failed publication hid ln's reason: $(cat "$work/denied.err")"
+[ ! -e "$mimeapps" ] || fail 'a failed publication left a mimeapps.list'
+no_partial_files
+rm -f "$work/bin/ln"
 
 # ── install.sh installs the handlers, then seeds, then sets up Gear Lever ─
 #

@@ -602,6 +602,12 @@ Scope {
             return root.systemManagementModel.regional.ownsPreparation();
         }
 
+        // Why the action cannot be prepared now, or "" when it can: the same
+        // reason that disables Review change... and shows under it (#409).
+        function systemManagementRegionalActionReason(action: string): string {
+            return root.systemManagementModel.regional.actionReason(action);
+        }
+
         // Fire-and-poll, matching systemManagementRegionalPreview()'s own
         // split: the read is async, so request and result are separate
         // probes.

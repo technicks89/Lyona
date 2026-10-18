@@ -721,18 +721,26 @@ if [ "$timezone_choices" -eq 0 ]; then
 	exit 1
 fi
 
-# prepare_regional ACTION ARGUMENT: ask for the preview until the request is
-# taken. prepare() sits behind the same freshness gate as the choices request
-# above (#409): the status read after Settings reopens, or the periodic
-# time-status sample, owns the provider for a moment and the request is
-# refused ("Wait for fresh regional status"). The model's message says why
-# when it is never taken.
+# prepare_regional ACTION ARGUMENT: prepare the preview as a user does, once
+# Review change... is enabled. prepare() sits behind the same freshness gate as
+# the choices request above (#409): the status read after Settings reopens, or
+# the periodic time-status sample, owns the provider for a moment, and the
+# button is disabled with "Wait for fresh regional status" under it. So wait
+# for the button's own reason to clear, then prepare; a sample that starts
+# between the two refuses it, and the wait starts again. When the gate never
+# opens, the reason and the model's message say why.
 prepare_regional() {
 	pr_try=0
-	until [ "$(ipc settingsTest systemManagementRegionalPreview "$1" "$2" 2>/dev/null)" = true ]; do
+	while :; do
+		pr_reason=$(ipc settingsTest systemManagementRegionalActionReason "$1" 2>/dev/null) || pr_reason='(no answer)'
+		if [ -z "$pr_reason" ] &&
+			[ "$(ipc settingsTest systemManagementRegionalPreview "$1" "$2" 2>/dev/null)" = true ]; then
+			return 0
+		fi
 		pr_try=$((pr_try + 1))
 		if [ "$pr_try" -ge 200 ]; then
-			printf 'systemManagementRegionalPreview(%s, %s) was never accepted: %s\n' "$1" "$2" \
+			printf 'systemManagementRegionalPreview(%s, %s) was never accepted. Reason: %s. Message: %s\n' \
+				"$1" "$2" "${pr_reason:-none}" \
 				"$(ipc settingsTest systemManagementRegionalMessage 2>/dev/null || true)" >&2
 			return 1
 		fi
