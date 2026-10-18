@@ -35,6 +35,16 @@ chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/core" "$repo/config/quickshell/overview" "$repo/config/quickshell/state" "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
 cp "$repo/tests/qml/OverviewInteraction.qml" "$work/qml/shell.qml"
+# A dwm-window-thumb that reports a compositor (#384): the overview fades only
+# with one, and the harness checks the fade. It captures nothing.
+mkdir -p "$work/bin"
+cat >"$work/bin/dwm-window-thumb" <<'SCRIPT'
+#!/bin/sh
+[ "${1:-}" = watch-compositor ] || exit 3
+printf 'compositor 1\n'
+exec sleep 60
+SCRIPT
+chmod +x "$work/bin/dwm-window-thumb"
 
 Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
@@ -53,7 +63,7 @@ case $display_number in
 esac
 
 status=0
-timeout --foreground --kill-after=2s 30s env DISPLAY=":$display_number" HOME="$work/home" \
+timeout --foreground --kill-after=2s 30s env DISPLAY=":$display_number" HOME="$work/home" PATH="$work/bin:$PATH" \
 	XDG_CONFIG_HOME="$work/home/.config" XDG_RUNTIME_DIR="$work/runtime" QT_QPA_PLATFORMTHEME= \
 	quickshell --no-duplicate --path "$work/qml/shell.qml" >"$work/overview.log" 2>&1 || status=$?
 if [ "$status" -ne 0 ] || ! grep -F 'Overview interaction tests: PASS' "$work/overview.log" ||

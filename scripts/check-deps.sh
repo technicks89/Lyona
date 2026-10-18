@@ -94,7 +94,7 @@ echo "Build Dependencies (required to compile):"
 check_cmd "cc"
 check_cmd "make"
 check_cmd "pkg-config"
-for module in x11 xft xinerama xrender imlib2 x11-xcb xcb xcb-res; do
+for module in x11 xft xinerama xrender imlib2 x11-xcb xcb xcb-res xcb-xfixes; do
 	check_pkg_config "$module"
 done
 echo ""

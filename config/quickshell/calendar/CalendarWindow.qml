@@ -19,7 +19,7 @@ ClickAwayPopup {
     readonly property int cardHeight: Theme.dp(380)
     readonly property int edgeMargin: Theme.rowSpacing
 
-    visible: panelWindow !== null && panelWindow.screen !== null && calendarModel.visible
+    open: panelWindow !== null && panelWindow.screen !== null && calendarModel.visible
     targetWindow: panelWindow
     popupWidth: cardWidth
     popupHeight: cardHeight

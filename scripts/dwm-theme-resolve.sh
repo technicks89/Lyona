@@ -8,7 +8,8 @@
 # staging overrides, all optional:
 #   DWM_APPEARANCE_PERSONALIZATION_FILE  the Toolkit overrides file
 #   DWM_APPEARANCE_DATA_DIRS             data roots in place of the XDG ones
-#   DWM_APPEARANCE_DISCOVERY_HOME        the home whose ~/.themes is searched
+#   DWM_APPEARANCE_DISCOVERY_HOME        the home whose ~/.themes and ~/.icons
+#                                        are searched
 
 # Toolkit overrides from personalization.conf: cursor, icon, gtk and qt, each
 # a theme name. "follow-theme" and "follow-system" are no override. A file
@@ -57,6 +58,20 @@ lyona_theme_dirs() {
 		[[ -z $root ]] || printf '%s\n' "$root/themes"
 	done
 	printf '%s\n' "${DWM_APPEARANCE_DISCOVERY_HOME:-${HOME:-}}/.themes"
+}
+
+# Where icon and cursor themes are looked for, by the same rule: each data
+# root's icons/, user first, then the discovery home's ~/.icons. Settings >
+# Toolkit offers what these find (#383), so it agrees with the applier.
+lyona_icon_dirs() {
+	local roots root
+	local -a split_roots=()
+	roots=${DWM_APPEARANCE_DATA_DIRS:-$data_home:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}}
+	IFS=: read -r -a split_roots <<<"$roots"
+	for root in "${split_roots[@]}"; do
+		[[ -z $root ]] || printf '%s\n' "$root/icons"
+	done
+	printf '%s\n' "${DWM_APPEARANCE_DISCOVERY_HOME:-${HOME:-}}/.icons"
 }
 
 # lyona_gtk_theme_has_version NAME VERSION: NAME has gtk-VERSION assets.

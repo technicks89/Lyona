@@ -2,7 +2,8 @@
  *
  * dwm-window-thumb: capture a small preview of one X11 window for the window
  * overview (Sync Sprint 9 S9-01, docs/evidence/s9-01-thumbnail-spike.md).
- * Needs libX11 and libXrender, and is not part of the window manager.
+ * Needs libX11, libXrender and libxcb's XFixes, and is not part of the
+ * window manager.
  *
  * The X server scales the window down (XRender, halved step by step, so every
  * source pixel counts), and one small image of the result is read: at most
@@ -13,6 +14,8 @@
  *   dwm-window-thumb available        exit 0 if previews can be captured
  *   dwm-window-thumb capture WINDOW   write the preview, print its path
  *   dwm-window-thumb purge            delete every stored preview
+ *   dwm-window-thumb watch-compositor print "compositor 1" or "compositor 0"
+ *                                     now and whenever that changes
  *
  * A window on another tag is mapped but moved off screen, and only a
  * compositor keeps its pixels, so nothing is captured unless one is running
@@ -29,17 +32,27 @@
  * Previews can be switched off with the word "off" in
  * ${XDG_CONFIG_HOME:-$HOME/.config}/lyona/overview-thumbnails.
  *
- * Exit status: 0 success, 2 bad usage or environment, 3 no compositor, 4
- * switched off, 5 window cannot be captured, 6 capture or write failed.
+ * watch-compositor is for the shell's popups (#384), which need a compositor
+ * to show their transparent click-away surface as see-through: it waits on
+ * XFixes selection events, so it costs nothing while nothing changes. It
+ * ignores the "off" file, which is about previews only. Without XFixes it
+ * reports once and then waits for the display to close.
+ *
+ * Exit status: 0 success (for watch-compositor: its output was closed), 2 bad
+ * usage or environment, 3 no compositor, 4 switched off, 5 window cannot be
+ * captured, 6 capture or write failed, or the display connection was lost.
  */
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrender.h>
+#include <xcb/xcb.h>
+#include <xcb/xfixes.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -415,6 +428,94 @@ done:
 	return status;
 }
 
+/* Whether SEL has an owner, or -1 when the connection failed. */
+static int
+selectionowned(xcb_connection_t *c, xcb_atom_t sel)
+{
+	xcb_get_selection_owner_reply_t *r;
+	int owned;
+
+	if (!(r = xcb_get_selection_owner_reply(c, xcb_get_selection_owner(c, sel), NULL)))
+		return -1;
+	owned = r->owner != XCB_NONE;
+	free(r);
+	return owned;
+}
+
+/* Print "compositor 1" or "compositor 0" now and on every change of the
+ * _NET_WM_CM_S<screen> owner, until the output or the display closes. Uses
+ * xcb, not Xlib, so the XFixes events need no Xlib extension of their own. */
+static int
+watchcompositor(void)
+{
+	xcb_connection_t *c;
+	xcb_screen_iterator_t it;
+	xcb_intern_atom_reply_t *atom;
+	xcb_xfixes_query_version_reply_t *version;
+	const xcb_query_extension_reply_t *ext;
+	xcb_generic_event_t *ev;
+	xcb_atom_t sel;
+	char name[32];
+	int screen, i, owned, shown = -1, watching = 0, status = 0;
+
+	/* A closed reader makes the write fail, and the watch end. */
+	signal(SIGPIPE, SIG_IGN);
+	c = xcb_connect(NULL, &screen);
+	if (xcb_connection_has_error(c)) {
+		fputs("dwm-window-thumb: cannot open display\n", stderr);
+		xcb_disconnect(c);
+		return EXIT_USAGE;
+	}
+	it = xcb_setup_roots_iterator(xcb_get_setup(c));
+	for (i = 0; i < screen && it.rem; i++)
+		xcb_screen_next(&it);
+	snprintf(name, sizeof name, "_NET_WM_CM_S%d", screen);
+	atom = xcb_intern_atom_reply(c, xcb_intern_atom(c, 0, strlen(name), name), NULL);
+	if (!it.rem || !atom) {
+		free(atom);
+		xcb_disconnect(c);
+		return EXIT_FAIL;
+	}
+	sel = atom->atom;
+	free(atom);
+	ext = xcb_get_extension_data(c, &xcb_xfixes_id);
+	if (ext && ext->present
+	    && (version = xcb_xfixes_query_version_reply(c,
+	        xcb_xfixes_query_version(c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION), NULL))) {
+		watching = version->major_version >= 1;
+		free(version);
+	}
+	/* Selected before the first read, so no change falls in between. */
+	if (watching)
+		xcb_xfixes_select_selection_input(c, it.data->root, sel,
+			XCB_XFIXES_SELECTION_EVENT_MASK_SET_SELECTION_OWNER
+			| XCB_XFIXES_SELECTION_EVENT_MASK_SELECTION_WINDOW_DESTROY
+			| XCB_XFIXES_SELECTION_EVENT_MASK_SELECTION_CLIENT_CLOSE);
+	for (;;) {
+		if ((owned = selectionowned(c, sel)) < 0) {
+			status = EXIT_FAIL;
+			break;
+		}
+		if (owned != shown) {
+			shown = owned;
+			if (printf("compositor %d\n", owned) < 0 || fflush(stdout) == EOF)
+				break;
+		}
+		/* Only selection events were asked for: any event means read again.
+		 * Without XFixes none comes, and this returns when the display goes. */
+		if (!(ev = xcb_wait_for_event(c))) {
+			status = EXIT_FAIL;
+			break;
+		}
+		free(ev);
+		/* One read for a burst of events. */
+		while ((ev = xcb_poll_for_event(c)))
+			free(ev);
+	}
+	xcb_disconnect(c);
+	return status;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -424,9 +525,11 @@ main(int argc, char *argv[])
 
 	if (argc == 2 && !strcmp(argv[1], "purge"))
 		return purge();
+	if (argc == 2 && !strcmp(argv[1], "watch-compositor"))
+		return watchcompositor();
 	if (!((argc == 2 && !strcmp(argv[1], "available"))
 	      || (argc == 3 && !strcmp(argv[1], "capture")))) {
-		fputs("usage: dwm-window-thumb available | capture WINDOW | purge\n", stderr);
+		fputs("usage: dwm-window-thumb available | capture WINDOW | purge | watch-compositor\n", stderr);
 		return EXIT_USAGE;
 	}
 	if (argc == 3 && !parsewindow(argv[2], &win)) {

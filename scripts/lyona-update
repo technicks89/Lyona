@@ -89,6 +89,9 @@ cache_file=$cache_home/lyona/update-index.json
 updates_root=$state_home/lyona/updates
 backups_root=$state_home/lyona/live-update-backups
 status_file=$state_home/lyona/update.status
+# Set by check_release_packages when desktop packages are missing: how to
+# install them, carried to the outcome Settings and the notification show.
+desktop_packages_note=
 log_file=$state_home/lyona/update.log
 
 # An apply restarts Quickshell (and rollback now does too, see cmd_rollback),
@@ -137,6 +140,7 @@ notify_outcome() {
 		Rollback*) body="Restored backup $target." ;;
 		*) body="Version $target is installed." ;;
 		esac
+		[[ -z $message ]] || body="$body $message"
 		;;
 	failed)
 		title='Lyona: update failed'
@@ -659,7 +663,12 @@ check_release_packages() {
 	missing=$(missing_packages "$map" desktop) ||
 		die "could not check which packages are installed (pacman -T failed)"
 	if [[ -n $missing ]]; then
+		# Nothing installs them later: an update does not install packages,
+		# so say how, as for a required one, and keep it for the outcome
+		# (#399; a system from an older image lacks what a release added).
+		desktop_packages_note="Some desktop packages are not installed, so the features that use them stay unavailable: $missing. Install them with: sudo pacman -S --needed $missing"
 		warn "desktop packages not installed (features that use them stay unavailable): $missing"
+		warn "install them with: sudo pacman -S --needed $missing"
 	fi
 }
 
@@ -1055,7 +1064,7 @@ cmd_apply() {
 	rm -rf -- "${staging_dir:?}" "$tarball"
 	rm -f -- "$updates_root"/lyona-*.sigstore.json
 	status_written=true
-	write_status restarting 'Update complete' "$status_target" succeeded ''
+	write_status restarting 'Update complete' "$status_target" succeeded "$desktop_packages_note"
 	trap - EXIT
 	printf 'complete\tapply\t%s\n' "$requested_version"
 }

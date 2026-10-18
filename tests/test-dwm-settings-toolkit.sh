@@ -35,9 +35,18 @@ cp "$repo/config/themes.toml" "$config_home/lyona/themes.toml"
 
 config=$config_home/lyona/personalization.conf
 
+# The system data roots, empty: the helper and the applier both search
+# XDG_DATA_DIRS (#383), so nothing installed on the machine running the tests
+# (an installed Lyona ships Lyona-nord in /usr/share/themes) is offered here.
+system_share=$work/system-share
+mkdir -p "$system_share"
+data_dirs=$system_share
+appearance_data_dirs=
+
 toolkit() {
 	HOME=$home XDG_CONFIG_HOME=$config_home XDG_STATE_HOME=$state_home \
 		XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		XDG_DATA_DIRS=$data_dirs DWM_APPEARANCE_DATA_DIRS=$appearance_data_dirs \
 		DWM_SETTINGS_TOOLKIT_NO_WATCHDOG=1 \
 		timeout 120 "$helper" "$@"
 }
@@ -276,6 +285,7 @@ STUB
 stub_toolkit() {
 	HOME=$home XDG_CONFIG_HOME=$config_home XDG_STATE_HOME=$state_home \
 		XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		XDG_DATA_DIRS=$data_dirs DWM_APPEARANCE_DATA_DIRS=$appearance_data_dirs \
 		DWM_SETTINGS_TOOLKIT_NO_WATCHDOG=1 \
 		timeout 120 "$stub_dir/dwm-settings-toolkit" "$@"
 }
@@ -375,19 +385,90 @@ for backend in qt5ct qt6ct; do
 done
 assert_no_file "$config" 'refused or reverted Qt changes leave no configuration behind'
 
+# ── Settings offers what the applier resolves (#383) ─────────────────────
+#
+# The helper once searched fixed roots while theme-apply.sh searched
+# XDG_DATA_DIRS, so a theme under another data dir (a Flatpak export, /opt) was
+# applied but never offered, and one under a dir left out was offered but fell
+# back to Adwaita when applied. The applier runs here with no override, from a
+# themes.toml whose active palette asks for the GTK theme by name, so what it
+# writes is its own resolution of the name.
+
+extra_share=$work/extra-share
+mkdir -p "$extra_share/themes/Example/gtk-3.0" \
+	"$extra_share/icons/Example-Icons" "$extra_share/icons/Example-Cursors/cursors"
+printf '[Icon Theme]\nName=Example-Icons\nDirectories=48x48/apps\n' \
+	>"$extra_share/icons/Example-Icons/index.theme"
+
+agree_config=$work/agree-config
+mkdir -p "$agree_config/lyona"
+sed 's/^gtk_theme *= *"Lyona-tokyonight"/gtk_theme = "Example"/' \
+	"$repo/config/themes.toml" >"$agree_config/lyona/themes.toml"
+grep -q '^gtk_theme = "Example"' "$agree_config/lyona/themes.toml" ||
+	fail 'the agreement fixture did not set the active palette GTK theme'
+
+# applier_gtk_theme: the GTK theme theme-apply.sh writes for that palette.
+applier_gtk_theme() {
+	HOME=$home XDG_CONFIG_HOME=$agree_config XDG_STATE_HOME=$state_home \
+		XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+		XDG_DATA_DIRS=$data_dirs DWM_APPEARANCE_DATA_DIRS=$appearance_data_dirs \
+		DWM_APPEARANCE_PERSONALIZATION_FILE=$work/no-personalization.conf \
+		timeout 30 "$repo/scripts/theme-apply.sh" >/dev/null 2>&1 ||
+		fail 'theme-apply.sh failed on the agreement fixture'
+	sed -n 's/^gtk-theme-name=//p' "$agree_config/gtk-3.0/settings.ini"
+}
+
+# offered CAPABILITY NAME: the helper lists NAME as a candidate.
+offered() {
+	grep -Fqx $'candidate\t'"$1"$'\t'"$2" <<<"$(toolkit status)"
+}
+
+# A data dir in XDG_DATA_DIRS: both find what is under it.
+data_dirs=$extra_share:$system_share
+offered gtk Example || fail 'a GTK theme under XDG_DATA_DIRS is not offered'
+offered icon Example-Icons || fail 'an icon theme under XDG_DATA_DIRS is not offered'
+offered cursor Example-Cursors || fail 'a cursor theme under XDG_DATA_DIRS is not offered'
+assert_equals Example "$(applier_gtk_theme)" \
+	'the applier resolves the GTK theme Settings offers'
+toolkit apply gtk Example >/dev/null || fail 'apply gtk failed for a theme under XDG_DATA_DIRS'
+toolkit reset gtk >/dev/null || fail 'reset gtk failed after the XDG_DATA_DIRS theme'
+
+# The same dir left out of XDG_DATA_DIRS: neither finds it.
+data_dirs=$system_share
+if offered gtk Example; then
+	fail 'a GTK theme outside XDG_DATA_DIRS is still offered'
+fi
+if offered icon Example-Icons || offered cursor Example-Cursors; then
+	fail 'an icon or cursor theme outside XDG_DATA_DIRS is still offered'
+fi
+# It falls back (to the palette's generated Lyona theme, which it wrote under
+# XDG_DATA_HOME on an earlier run, or to Adwaita); which one is not the point.
+applied=$(applier_gtk_theme)
+[[ -n $applied && $applied != Example ]] ||
+	fail "the applier resolved a GTK theme Settings does not offer: '$applied'"
+refuses 'a GTK theme outside XDG_DATA_DIRS' apply gtk Example
+
+# DWM_APPEARANCE_DATA_DIRS replaces every data root, the user's included.
+appearance_data_dirs=$extra_share
+offered gtk Example || fail 'a GTK theme under DWM_APPEARANCE_DATA_DIRS is not offered'
+if offered gtk Lyona-nord; then
+	fail 'a GTK theme outside DWM_APPEARANCE_DATA_DIRS is still offered'
+fi
+assert_equals Example "$(applier_gtk_theme)" \
+	'the applier resolves the GTK theme under DWM_APPEARANCE_DATA_DIRS'
+appearance_data_dirs=
+assert_no_file "$config" 'the agreement checks leave no configuration behind'
+
 # ── an override whose theme is uninstalled afterwards ────────────────────
 
-# A name nothing installs system-wide: the helper also searches
-# /usr/local/share/themes and /usr/share/themes, where an installed Lyona
-# ships its own Lyona-nord.
-vanishing=Lyona-toolkit-test-vanishing
-mkdir -p "$data_home/themes/$vanishing/gtk-3.0"
-toolkit apply gtk "$vanishing" >/dev/null || fail 'apply gtk failed for the vanishing theme'
-rm -rf -- "$data_home/themes/$vanishing"
-grep -Fq $'selection\tgtk\tunavailable\t'"$vanishing" <<<"$(toolkit status)" ||
+# XDG_DATA_DIRS holds no system root, so an installed Lyona's own
+# /usr/share/themes/Lyona-nord cannot keep the theme available (#381, #383).
+toolkit apply gtk Lyona-nord >/dev/null || fail 'apply gtk failed for the vanishing theme'
+rm -rf -- "$data_home/themes/Lyona-nord"
+grep -Fq $'selection\tgtk\tunavailable\tLyona-nord' <<<"$(toolkit status)" ||
 	fail 'a vanished override theme should report unavailable'
 # ...and stops offering it, so the pane cannot re-apply what just vanished.
-if grep -Fqx $'candidate\tgtk\t'"$vanishing" <<<"$(toolkit status)"; then
+if offered gtk Lyona-nord; then
 	fail 'an uninstalled theme is still offered as a candidate'
 fi
 

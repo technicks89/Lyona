@@ -34,6 +34,9 @@ typedef struct {
 	KeySym keysym;
 	void (*func)(const Arg *);
 	const Arg arg;
+	/* hotkeys.toml hold_keys: text a window's title, class or instance
+	 * contains; keys typed after the binding wait for that window (#391). */
+	const char *holdkeys;
 } Key;
 
 typedef struct Monitor Monitor;

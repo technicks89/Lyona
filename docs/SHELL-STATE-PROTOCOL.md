@@ -59,7 +59,7 @@ lyona-specific effects:
 | Sent by | Source indication | Effect in dwm |
 | --- | --- | --- |
 | A pager: the overview, the panel's running apps (`dwm-quickshell-state focus`, `xdotool windowactivate`) | 2 | Shows the window's tag on its monitor and focuses it (`activateclient()`). From an application (source 1 or 0) it only marks the window urgent, so no window steals the focus. |
-| A viewable override-redirect window: a Quickshell popup (launcher, keybind viewer, Control Center) asking for the keyboard (`requestActivate()`) | any | dwm gives that window the input focus and leaves it there while it is mapped; the selected client gets the focus back when the window unmaps or is destroyed (`focusoverridewindow()`, `untrackoverridewindow()`). |
+| A viewable override-redirect window: a Quickshell popup (launcher, keybind viewer, Control Center) asking for the keyboard (`requestActivate()`) | any | dwm gives that window the input focus and leaves it there while it is mapped; the selected client gets the focus back when the window unmaps or is destroyed (`focusoverridewindow()`, `untrackoverridewindow()`), also when the popup took the keyboard itself or closed before dwm read its request and the focus reverted to nothing (`refocusreverted()`, #395). |
 
 Any X client can set a root property or send these messages; that is the same
 trust as the EWMH client messages dwm already accepts.

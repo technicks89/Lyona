@@ -53,7 +53,11 @@ Invariants:
   override-redirect window (a Quickshell popup on X11)
   it gives that window the input focus, and the selected client gets the focus
   back when the window unmaps or is destroyed (`focusoverridewindow()`,
-  `untrackoverridewindow()`).
+  `untrackoverridewindow()`). It also gets it back when any window that is
+  not a client unmaps and the server has reverted the focus to nothing
+  (`None`, `PointerRoot` or the root window): a popup that focused a window
+  inside itself, or closed before dwm read its request (`unmapnotify()`,
+  `refocusreverted()`, #395).
 
 Regression coverage:
 

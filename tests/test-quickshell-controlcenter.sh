@@ -33,7 +33,11 @@ stub_command quickshell <<'SH'
 #!/bin/sh
 case ${1:-} in
 --version) printf 'quickshell %s\n' "${DWM_TEST_QUICKSHELL_VERSION:-0.3.0}" ;;
-*) printf 'quickshell %s\n' "$*" >>"${DWM_TEST_LOG:?}" ;;
+*)
+	printf 'quickshell %s\n' "$*" >>"${DWM_TEST_LOG:?}"
+	# A shell that does not answer, for start-quickshell.
+	[ "${1:-}" != ipc ] || [ -z "${DWM_TEST_QUICKSHELL_DOWN:-}" ]
+	;;
 esac
 SH
 
@@ -452,6 +456,28 @@ fi
 grep -Fq "quickshell list --path $work/config/quickshell/shell.qml --json" "$work/actions.log"
 grep -Fq "quickshell --path $work/config/quickshell/shell.qml --no-duplicate" "$work/actions.log"
 
+# #394: start-quickshell, what a shell key asks for when no shell answers,
+# starts the shell with no shell of this session running, and no detaching;
+# with one answering it starts nothing. The stopping side is
+# tests/test-quickshell-starting-instance.sh.
+: >"$work/actions.log"
+DWM_TEST_QUICKSHELL_DOWN=1 run_helper action start-quickshell >"$work/quickshell-start.out"
+grep -Fqx 'action	start-quickshell' "$work/quickshell-start.out"
+grep -Fq "quickshell --path $work/config/quickshell/shell.qml --no-duplicate" "$work/actions.log" || {
+	printf 'start-quickshell did not start a shell that was not running\n' >&2
+	exit 1
+}
+if grep -Fq 'setsid -f env LYONA_QUICKSHELL_RESTART_DETACHED=1 ' "$work/actions.log"; then
+	printf 'start-quickshell went through the restart\n' >&2
+	exit 1
+fi
+: >"$work/actions.log"
+run_helper action start-quickshell >"$work/quickshell-start.out"
+if grep -Fq -- '--no-duplicate' "$work/actions.log"; then
+	printf 'start-quickshell started a second shell beside one that answers\n' >&2
+	exit 1
+fi
+
 : >"$work/actions.log"
 run_helper action restart-picom >"$work/picom.out"
 grep -Fqx 'action	restart-picom' "$work/picom.out"
@@ -559,7 +585,9 @@ appearance_watches=$(cat "$repo/config/quickshell/appearance/AppearanceModel.qml
 grep -Fq 'themes.toml' "$repo/config/quickshell/appearance/AppearanceModel.qml"
 grep -Fq 'ClickAwayPopup {' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
 grep -Fq 'onDismissed: controlCenterModel.close()' "$repo/config/quickshell/controlcenter/ControlCenterWindow.qml"
-grep -Fq 'grabFocus: true' "$repo/config/quickshell/core/ClickAwayPopup.qml"
+# Not a Qt::Popup: Qt closed every popup at once in a focus race (#397).
+grep -Fq 'grabFocus: false' "$repo/config/quickshell/core/ClickAwayPopup.qml"
+grep -Fq 'property bool wantsKeyboard: true' "$repo/config/quickshell/core/ClickAwayPopup.qml"
 grep -Fq 'function applyAppearanceColors(colors, darkMode)' "$repo/config/quickshell/core/Theme.qml"
 grep -Fq 'root.text = colors.text' "$repo/config/quickshell/core/Theme.qml"
 grep -Fq 'label: root.delegated ? "Advanced" : root.busy ? "Connecting..." : "Connect"' "$repo/config/quickshell/network/NetworkWifiRow.qml"
@@ -567,9 +595,9 @@ grep -Fq 'property bool wifiPasswordPromptVisible: false' "$repo/config/quickshe
 grep -Fq 'root.wifiPasswordPromptVisible = true;' "$repo/config/quickshell/network/NetworkModel.qml"
 grep -Fq 'root.networkModel.cancelWifiPasswordPrompt()' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'wifiPasswordInput.forceActiveFocus();' "$repo/config/quickshell/network/NetworkWindow.qml"
-grep -Fq 'visible: panelWindow !== null && panelWindow.screen !== null' "$repo/config/quickshell/network/NetworkWindow.qml"
+grep -Fq 'open: panelWindow !== null && panelWindow.screen !== null' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'enabled: !root.networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
-grep -Fq 'grabFocus: !networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
+grep -Fq 'wantsKeyboard: !networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'FloatingWindow {' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'title: "dwm network password"' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq '{ title="dwm network password",     isfloating=1, alwaysontop=1 }' \

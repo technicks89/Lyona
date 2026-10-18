@@ -15,6 +15,9 @@ Scope {
     property var categories: []
     property var filteredApps: []
     property int applicationConsumers: 0
+    // Enter came while the index was still loading: launch the best match once
+    // it arrives, so Super+R, a quick query and Enter is never lost.
+    property bool launchPending: false
     readonly property bool applicationIndexActive: root.visible || root.applicationConsumers > 0
 
     function categoryLabel(category) {
@@ -190,6 +193,12 @@ Scope {
         root.status = apps.length === 1 ? "1 application" : apps.length + " applications";
         root.selectedIndex = 0;
         root.refreshFilteredApps();
+
+        const launch = root.launchPending;
+        root.launchPending = false;
+        if (launch && root.visible && root.filteredApps.length > 0) {
+            root.launchSelectedApp();
+        }
     }
 
     function clearApplicationIndex() {
@@ -228,6 +237,9 @@ Scope {
     }
 
     function openWindow() {
+        // A new session: an Enter still pending from the last one must not
+        // launch whatever tops this one's empty query.
+        root.launchPending = false;
         root.visible = true;
         root.query = "";
         root.category = "all";
@@ -248,6 +260,7 @@ Scope {
     }
 
     function close() {
+        root.launchPending = false;
         root.visible = false;
         root.query = "";
         root.category = "all";
@@ -268,12 +281,16 @@ Scope {
     }
 
     function setQuery(value) {
+        if (value !== root.query) {
+            root.launchPending = false;
+        }
         root.query = value;
         root.selectedIndex = 0;
         root.refreshFilteredApps();
     }
 
     function setCategory(value) {
+        root.launchPending = false;
         root.category = value;
         root.selectedIndex = 0;
         root.refreshFilteredApps();
@@ -281,6 +298,8 @@ Scope {
 
     function selectRelative(delta) {
         const apps = root.filteredApps;
+
+        root.launchPending = false;
 
         if (apps.length === 0) {
             root.selectedIndex = 0;
@@ -292,6 +311,8 @@ Scope {
 
     function selectAbsolute(index) {
         const apps = root.filteredApps;
+
+        root.launchPending = false;
 
         if (apps.length === 0) {
             root.selectedIndex = 0;
@@ -314,6 +335,8 @@ Scope {
     function launchSelectedApp() {
         const apps = root.filteredApps;
 
+        // An empty list while the index loads is not "no match" yet.
+        root.launchPending = apps.length === 0 && indexProcess.running;
         if (apps.length === 0) {
             return;
         }

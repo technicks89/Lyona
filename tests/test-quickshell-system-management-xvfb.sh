@@ -343,8 +343,10 @@ esac
 SH
 chmod +x "$data_home/checkout/scripts/dwm-system-management"
 
-# Xvfb picks a free display, so this never lands on another test's server.
-Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp -extension GLX \
+# Xvfb picks a free display, so this never lands on another test's server, and
+# -noreset keeps the readiness xprop's exit from resetting it, and dropping
+# dwm's connection, as dwm starts (#393).
+Xvfb -displayfd 3 -noreset -screen 0 1280x800x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xvfb_pid=$!
 
@@ -719,14 +721,38 @@ if [ "$timezone_choices" -eq 0 ]; then
 	exit 1
 fi
 
+# prepare_regional ACTION ARGUMENT: prepare the preview as a user does, once
+# Review change... is enabled. prepare() sits behind the same freshness gate as
+# the choices request above (#409): the status read after Settings reopens, or
+# the periodic time-status sample, owns the provider for a moment, and the
+# button is disabled with "Wait for fresh regional status" under it. So wait
+# for the button's own reason to clear, then prepare; a sample that starts
+# between the two refuses it, and the wait starts again. When the gate never
+# opens, the reason and the model's message say why.
+prepare_regional() {
+	pr_try=0
+	while :; do
+		pr_reason=$(ipc settingsTest systemManagementRegionalActionReason "$1" 2>/dev/null) || pr_reason='(no answer)'
+		if [ -z "$pr_reason" ] &&
+			[ "$(ipc settingsTest systemManagementRegionalPreview "$1" "$2" 2>/dev/null)" = true ]; then
+			return 0
+		fi
+		pr_try=$((pr_try + 1))
+		if [ "$pr_try" -ge 200 ]; then
+			printf 'systemManagementRegionalPreview(%s, %s) was never accepted. Reason: %s. Message: %s\n' \
+				"$1" "$2" "${pr_reason:-none}" \
+				"$(ipc settingsTest systemManagementRegionalMessage 2>/dev/null || true)" >&2
+			return 1
+		fi
+		sleep 0.05
+	done
+}
+
 test_stage='validating the regional confirmation step itself (#268): prepare then discard'
 # Regional preview/confirm now lives on SystemRegionalSettingsModel, the
 # same split S1-04 already gave delegated actions -- prove discard() clears
 # a pending preview without ever dispatching, before proving confirm() does.
-if [ "$(ipc settingsTest systemManagementRegionalPreview timezone-set America/Chicago)" != true ]; then
-	printf 'systemManagementRegionalPreview(timezone-set, America/Chicago) did not accept the read\n' >&2
-	exit 1
-fi
+prepare_regional timezone-set America/Chicago || exit 1
 discard_preview=
 i=0
 while [ "$i" -lt 100 ]; do
@@ -766,7 +792,7 @@ if [ "$timezone_choices" -eq 0 ]; then
 fi
 
 test_stage='requesting a regional preview'
-[ "$(ipc settingsTest systemManagementRegionalPreview timezone-set America/Chicago)" = true ]
+prepare_regional timezone-set America/Chicago
 
 preview_result=
 i=0

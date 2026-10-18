@@ -334,7 +334,9 @@ printf '%s\n%s\n' "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" \
 SH
 	chmod +x "$runtime_data_home/checkout/scripts/"*.sh
 
-	Xvfb "$runtime_display" -screen 0 800x600x24 -nolisten tcp \
+	# -noreset: the readiness xprop below can leave just as dwm connects, and a
+	# reset then (the last client left) drops dwm's connection (#393).
+	Xvfb "$runtime_display" -noreset -screen 0 800x600x24 -nolisten tcp \
 		>"$work/xvfb.log" 2>&1 &
 	xvfb_pid=$!
 	test_pids="$test_pids $xvfb_pid"

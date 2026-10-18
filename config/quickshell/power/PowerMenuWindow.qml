@@ -20,7 +20,7 @@ ClickAwayPopup {
         ? "Another surface is awaiting confirmation for a session action"
         : powerMenuModel.messageFor(actionOrigin)
 
-    visible: panelWindow !== null && panelWindow.screen !== null && powerMenuModel.visible
+    open: panelWindow !== null && panelWindow.screen !== null && powerMenuModel.visible
     targetWindow: panelWindow
     popupWidth: cardWidth
     popupHeight: powerCard.implicitHeight

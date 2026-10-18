@@ -573,6 +573,10 @@ arch-chroot "$TARGET" bash -c '
 		systemctl enable lightdm.service
 	fi
 	systemctl enable power-profiles-daemon.service 2>/dev/null || true
+	# bluez does not enable its own service (#380).
+	if systemctl -q list-unit-files bluetooth.service >/dev/null 2>&1; then
+		systemctl enable bluetooth.service
+	fi
 	systemctl set-default graphical.target
 '
 

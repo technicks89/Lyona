@@ -108,7 +108,7 @@ ClickAwayPopup {
         });
     }
 
-    visible: panelWindow !== null && panelWindow.screen !== null && controlCenterModel.visible
+    open: panelWindow !== null && panelWindow.screen !== null && controlCenterModel.visible
     targetWindow: panelWindow
     popupX: Theme.controlCenterX
     popupY: Theme.panelHeight

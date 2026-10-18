@@ -75,6 +75,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   restores; `CONTRIBUTING.md` gives the default `/usr/local` layout; and
   `tests/test-changelog-record.sh` fails when a tagged version has no dated
   changelog section or release notes (#335).
+- A portrait display layout kept from the last session is now checked from
+  login to the docked panel (#387, follow-up to #376). dwm turns the screen
+  while it has no bar yet; `tests/test-dwm-portrait-login-xvfb.py`
+  (`make check-dwm-portrait-login-xvfb`) checks that dwm survives it (it
+  fails without the #376 fix), that the panel docks across the portrait
+  width, and that windows mapped before and after the panel tile the portrait
+  screen below it, and again after the screen turns back and forth with the
+  panel docked. Nothing needed changing: dwm no longer paints a bar of its
+  own, so its drawing surface is never shown, and nothing divides by the bar
+  height.
 
 ### Fixed
 
@@ -82,6 +92,217 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
   `uname` stub, and an aarch64 plan case is added.
 
+- Setting a fresh account's default applications no longer prints a raw
+  `ln: failed to create hard link ... File exists` when a preference written
+  meanwhile is kept, just before saying it was kept. `ln`'s own message now
+  shows only when the defaults could not be published, after "Could not
+  publish application defaults", so the reason is still given.
+- `check-overview-thumbnails-xvfb` no longer fails now and then on its idle
+  check. It compared the idle CPU of two different shells: the baseline
+  came from the shell that had the preview helper, and the final reading
+  from the shell restarted without it, whose compositor watcher (#384)
+  restarts the missing helper 3 s in, inside the 3 s sample. Under load that
+  one spawn cost two 10 ms ticks, 0.667 points against a 0.5 allowance. The
+  test now takes the final reading on the same shell as the baseline, before
+  the helper is taken away. An installed shell has the helper, so it never
+  pays that cost.
+- `check-desktop-smoke-xvfb` now says where a Super+R that opened no
+  launcher was lost (#411): whether dwm ran the binding, whether the shell
+  holds the launcher open (a new read-only `isOpen` call on the launcher
+  IPC), whether a launcher window exists, and which window has the focus.
+  The one failure on CI logged nothing on either side, so the cause is still
+  open.
+- `check-quickshell-system-management-xvfb` prepares the regional preview
+  the way a user does, once the Review change... button would be enabled
+  (#409): it waits for the button's own reason to clear, through a new
+  read-only `systemManagementRegionalActionReason` test call, instead of
+  retrying the request blindly, and reports that reason if the gate never
+  opens. Nothing in the product changed: a user sees the button disabled,
+  with the reason under it, while regional status refreshes.
+- Tests no longer inherit the `DWM_*` and `LYONA_*` overrides of the shell
+  they run from (#408). `CONTRIBUTING.md` has a developer export
+  `LYONA_DEV_SCRIPTS` for the whole session, and helpers take that and the
+  other overrides (`DWM_DISPLAY_KEPT_LAYOUT`, the `DWM_APPEARANCE_*_HELPER`
+  programs, `DWM_APPEARANCE_DATA_DIRS`, `LYONA_AUTORANDR_PICOM_HELPER`) as
+  where to read, write or run, so a test that did not set one used the
+  caller's. A check goal of the Makefile, `scripts/run-tests` and
+  `tests/lib.sh` now drop them all but for a short list of test knobs no
+  helper reads, and `make check-session-isolation` fails if one still
+  reaches a test or the three lists differ. A value given on make's command
+  line still reaches the test.
+- `dwm-settings-picom` and `dwm-settings-display-profiles` no longer fall
+  back to the passwd home when `HOME` is unset (#406), and the display
+  profiles helper no longer treats an empty or relative `XDG_CONFIG_HOME` as
+  the current directory (#407). Both resolve their directories as
+  `dwm-xdg.sh` does: an absolute XDG variable, else `HOME`, else a clear
+  error. A helper run with a scrubbed environment used to read and write the
+  real user's Picom state and autorandr profiles.
+- Tests no longer reach the session's configuration, data, state and cache
+  directories (#404). A session that exports `XDG_CONFIG_HOME`,
+  `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME`, as the reporter's
+  does, handed them to every test, and helpers prefer them to `HOME`, so a
+  test that gave its helper a `HOME` of its own still wrote the real files:
+  a run of the display tests replaced the user's kept display layout
+  (`~/.local/state/lyona/display-kept.conf`) with its fixture, and a Picom
+  started by a test emptied the user's Picom log, the per-session
+  `~/.local/state/lyona/picom/session.log`, which the next Picom start writes
+  again. A check goal of the Makefile, `scripts/run-tests` and `tests/lib.sh`
+  now give a test private configuration, data, state and cache directories,
+  as they give it a private runtime directory (#368), and
+  `make check-session-isolation` fails if the session's still reach a test.
+  A kept layout lost this way has to be set again: choose it in Settings >
+  Displays, Apply changes, then Keep changes.
+- `check-quickshell-panel-menus` no longer fails now and then (#396). When
+  Picom stopped with a menu open, the test waited for the menu's width only,
+  but the shell sets the width and the height in two steps, and under load
+  the test saw the height still on its way. It now waits for the whole
+  geometry and reports what it found if that never comes. It also waits for
+  the panel to map instead of looking for it once, which failed when the
+  shell answered before its panel was mapped.
+- A panel menu no longer vanishes as it opens on a busy machine (#397). Qt
+  6.12 closes every popup at once when its own activation of a popup and the
+  X server's FocusIn for it arrive in the other order, and load made that
+  happen. The shell's menus (ClickAwayPopup) are no longer Qt popups: they
+  ask dwm for the keyboard and close on losing it themselves, as they already
+  did without a compositor (#384), so Qt has no popup to close. Owners say
+  whether a menu wants the keyboard with `wantsKeyboard` instead of
+  `grabFocus` (the network popup's password prompt, the overview's closing
+  fade).
+  `tests/test-quickshell-health-xvfb.sh` now waits for each popup to be
+  placed before it clicks it, where a fixed 0.1 s missed it under load.
+- An update that finds desktop packages missing now says how to install them
+  (#399). A missing required package stopped the update with the
+  `sudo pacman -S --needed ...` command; a missing desktop package was only a
+  warning in the log, with no command, and nothing installed it later. The
+  warning, the notification and Settings -> System now give the command. A
+  system installed from `2026.10.0-beta.6` or earlier lacks three packages
+  added since (`wireless-regdb` and `iw` for Wi-Fi, #365; `xorg-xmessage` for
+  the shell's start-up message, #343) and gets them with
+  `sudo pacman -S --needed wireless-regdb iw xorg-xmessage`.
+- Keys typed straight after Super+R now go to the app launcher, not to the
+  window you were in (#391). The launcher appears 30 to 50 ms after the key
+  (more on a busy machine), and what was typed before then went to the
+  focused window: in a private Xvfb, 101 of 220 key presses typed with no
+  pause after Super+R reached the previous window (161 of 220 under CPU
+  load), and with a terminal there, an Enter would have run them. A
+  hotkeys.toml binding can now say `hold_keys="WINDOW"`: dwm grabs that key
+  synchronously, so from the moment it goes down the X server queues what is
+  typed, and the keys are released, in order, once a window whose title,
+  class or instance contains WINDOW has mapped and has the focus, or after
+  one second if none does. The default Super+R has `hold_keys="dwm
+  launcher"`, and the installer's hotkeys migration adds it to a Super+R line
+  still as shipped. `make check-launcher-hold-keys-xvfb` types a query and
+  Enter straight after Super+R and checks that nothing reaches the previous
+  window, the launcher gets the whole query and the application starts. The
+  launcher's IPC gains a read-only `query`.
+- Closing a popup that had the keyboard now always gives it back to the
+  focused window (#395). dwm returned it only for a popup whose
+  `_NET_ACTIVE_WINDOW` request it had already handled; a popup that focused a
+  window inside itself and closed before dwm read the request (a quick menu on
+  a busy machine), or never asked, left no window with the keyboard until a
+  click; so did one closed before dwm read its MapNotify. dwm now gives the
+  focus back whenever a window that is not a client unmaps and the focus has
+  reverted to nothing. This was the occasional "the focus did not return to
+  the client after its popup closed" failure of
+  `tests/test-dwm-activate-xvfb.py`, which now checks both cases with dwm
+  stopped while the popup comes and goes. That test still failed now and
+  then under load: events that arrived just as dwm's event loop finished a
+  pass were read into Xlib's queue by the flush before dwm waited for more,
+  and dwm then waited on an empty connection until some later event. It now
+  handles them first, so a burst of events with nothing after it (a popup
+  that opens and closes while dwm is busy) is no longer left unhandled.
+- A shell that is still starting, or too busy to answer within a second, is no
+  longer restarted (#394). At login, autostart restarted a running shell whose
+  tray did not answer within a second, and a shell key such as Super+R pressed
+  early did the same, through `restart-quickshell`, even stopping the shell
+  autostart had just started: on a slow or loaded login that killed a shell
+  that was nearly up, the key did nothing, and the replacement could be killed
+  again by the next key. Now autostart and `lyona-shell` leave this display's
+  shell running and wait for it, and the key then does what it asks; with no
+  shell running, a key starts one (the Control Center helper's new
+  `start-quickshell` action) and stops none. A shell that never answers is
+  still restarted by Super+Shift+R; one left from another display is still
+  replaced at login. `tests/test-desktop-smoke-xvfb.sh` failed now and then
+  under load with "Launcher window did not open on Super+R" because of this.
+- A layout change by autorandr, such as on a display hotplug, no longer risks
+  crashing Xorg on AMD graphics while Picom runs (#386). Settings already
+  stopped Picom around its own changes; autorandr now does too, through a
+  pre/postswitch hook installed in `/etc/xdg/autorandr/`. Picom starts again
+  after the change, or 30 seconds later when autorandr could not apply the
+  layout; a Picom that was not running stays stopped. This covers autorandr
+  only, not a plain `xrandr`; whether the crash still happens on a current
+  xorg-server is for the AMD test in `docs/plans/386-amd-layout-crash.md`
+  (its option E). Nothing to do: an update installs the hook and
+  `make uninstall` removes it.
+- New terminals no longer print Starship's "Scanning current directory timed
+  out" warning now and then (#385). Its 30 ms default `scan_timeout` was too
+  short on a cold disk cache or a busy system; the mybash pin moves to
+  `dfe4ffd`, whose `starship.toml` sets it to 500 ms. A re-run of
+  `install-mybash` (or the installer) picks it up.
+- Enter in the app launcher is no longer lost when it comes before the
+  application list has loaded (#389). The launcher reloads the list each time it
+  opens, which takes tens of milliseconds (more on a busy machine or with many
+  applications), and an Enter pressed in that time did nothing: a quick
+  Super+R, query and Enter left the launcher open with the match shown. Enter
+  now launches the best match as soon as the list arrives, unless the query or
+  selection changed after it or the launcher was opened again.
+  `tests/test-desktop-smoke-xvfb.sh` checks it
+  with the list held back, and this was its occasional "Test application did
+  not launch from the launcher" failure.
+- Settings > Appearance no longer stops following a Picom include that was
+  added while its live updates were re-arming (#389). The watcher chose which
+  files to watch from one read of the configuration and reported the revision
+  of a later one, so an edit landing between the two (several files written
+  at once, or a slow start) could leave a newly included file unwatched behind
+  a matching revision, and its edits went unseen until Settings was reopened
+  (Refresh rereads once but does not watch again). The watcher now re-arms
+  when the configuration moved while it was setting up.
+- Settings > Appearance keeps following the Picom configuration when a
+  directory it watches is removed, and Refresh restarts live updates that did
+  stop (#392). A directory removed between the watcher choosing it and
+  `inotifywait` watching it made the watcher fail with "use Refresh", and
+  Refresh only reread the status, so live updates stayed off until Settings
+  was reopened. That removal now counts as a change and the watcher re-arms
+  on the nearest directory still there; a link into a missing directory is
+  watched the same way, and a link loop no longer ends the watcher (Python
+  before 3.13 raised for it). A directory that is there but cannot be watched
+  still ends the watch, now with `inotifywait`'s reason, and Refresh starts
+  it again; it is still not retried on its own (#279). The watcher also no
+  longer hangs, left running, when Settings closes just as it starts waiting
+  for `inotifywait`: its SIGTERM handler raised `SystemExit`, which could land
+  as `subprocess` took its waitpid lock and leave the lock held.
+  A `XDG_CONFIG_HOME` that is itself a link, retargeted, is now seen too: the
+  directory holding the link is watched, not only the one it points at.
+  So is an include that was already broken when the watcher first saw it
+  (#400): it watched only the files of a configuration it could read, and
+  fixing that include went unseen until Refresh.
+- Bluetooth is no longer inactive after a reboot (#380). `bluez` was
+  installed with the desktop but nothing enabled `bluetooth.service`, so the
+  panel and Settings showed no adapter until it was started by hand. The
+  image install now enables it on the new system, and `install.sh`
+  (recommended and full) enables and starts it when the unit is installed,
+  leaving a masked or missing one alone; its summary says which.
+- Settings > Appearance > Toolkit now looks for GTK, icon and cursor themes
+  where the theme applier does: under `XDG_DATA_HOME` and every
+  `XDG_DATA_DIRS` entry (or `DWM_APPEARANCE_DATA_DIRS`), then `~/.themes` or
+  `~/.icons` (#383). It searched four fixed directories, so with a non-default
+  `XDG_DATA_DIRS` (a Flatpak export, `/opt/share`) a theme the applier would
+  use was never offered, and one from a directory left out was offered and
+  then fell back to Adwaita when applied. Both now share the resolver's
+  `lyona_theme_dirs` and the new `lyona_icon_dirs`.
+- Shell menus no longer black out the screen when no compositor runs (#384):
+  Picom stopped, or a Raspberry Pi 4, where it cannot run. Each menu covered
+  the screen below the panel with a transparent window, which only a
+  compositor shows as see-through. Without one, the menu's window is now the
+  menu alone, and a click outside it still closes it: dwm hands the keyboard
+  back on a click on the desktop or on the selected window, as it already did
+  for any other window, and a menu closes when it loses the keyboard. That
+  click also reaches what was clicked. With Picom nothing changes, and Picom
+  starting or stopping while a menu is open switches it over at once
+  (`dwm-window-thumb watch-compositor`, which needs libxcb's XFixes, part of
+  `libxcb`). The overview no longer fades in or out without a compositor,
+  where a part-transparent window draws dark. A menu that closed by losing
+  the keyboard also tells its owner now, so opening it again takes one click.
 - A display or input preview that died while applying its change, after
   recording its session but before starting the automatic rollback, no longer
   stays "active" for good on the same X server. Once older than any preview

@@ -13,7 +13,7 @@ ClickAwayPopup {
     readonly property int cardWidth: Theme.dp(360)
     readonly property int cardHeight: Theme.dp(420)
 
-    visible: panelWindow !== null && panelWindow.screen !== null && bluetoothModel.visible
+    open: panelWindow !== null && panelWindow.screen !== null && bluetoothModel.visible
     targetWindow: panelWindow
     popupWidth: cardWidth
     popupHeight: cardHeight
