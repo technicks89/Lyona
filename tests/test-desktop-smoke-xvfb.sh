@@ -230,16 +230,29 @@ test_stage='opening the launcher with Super+R'
 launcher_visible() {
 	DISPLAY=$display xdotool search --onlyvisible --name '^dwm launcher$' >/dev/null 2>&1
 }
+# press_super_r: press Super+R, first noting how many binding calls dwm has
+# made, so a failure is judged by this keypress's calls alone.
+press_super_r() {
+	calls_before=0
+	if [ -f "$work/lyona-shell.calls" ]; then
+		calls_before=$(wc -l <"$work/lyona-shell.calls")
+	fi
+	DISPLAY=$display xdotool key --clearmodifiers super+r
+}
 # launcher_not_shown WHAT: say where a Super+R that showed no launcher was lost
-# (#411): whether dwm ran the binding, whether the shell holds the launcher
-# open, and whether its window exists at all, and which window has the focus.
+# (#411): whether dwm ran the binding for it, whether the shell holds the
+# launcher open, and whether its window exists at all, and which window has the
+# focus. Calls from earlier keypresses do not count.
 launcher_not_shown() {
 	printf '%s\n' "$1" >&2
-	if [ -s "$work/lyona-shell.calls" ]; then
-		printf 'lyona-shell calls from dwm (time, arguments):\n' >&2
-		cat "$work/lyona-shell.calls" >&2
+	new_calls=
+	if [ -f "$work/lyona-shell.calls" ]; then
+		new_calls=$(tail -n +"$((calls_before + 1))" "$work/lyona-shell.calls")
+	fi
+	if [ -n "$new_calls" ]; then
+		printf 'lyona-shell calls from dwm since this Super+R (time, arguments):\n%s\n' "$new_calls" >&2
 	else
-		printf 'dwm never ran a lyona-shell binding: the key did not reach it as Super+R\n' >&2
+		printf 'dwm ran no lyona-shell binding for this Super+R: the key did not reach it as Super+R\n' >&2
 	fi
 	printf 'launcher open in the shell: %s\n' "$(launcher_ipc isOpen 2>&1)" >&2
 	printf 'launcher windows (any state): %s\n' \
@@ -248,7 +261,7 @@ launcher_not_shown() {
 		"$(DISPLAY=$display xdotool getwindowfocus getwindowname 2>&1)" >&2
 	exit 1
 }
-DISPLAY=$display xdotool key --clearmodifiers super+r
+press_super_r
 i=0
 while [ "$i" -lt 100 ]; do
 	launcher_visible && break
@@ -284,7 +297,7 @@ done
 }
 
 test_stage='launching an application from the launcher'
-DISPLAY=$display xdotool key --clearmodifiers super+r
+press_super_r
 i=0
 while [ "$i" -lt 100 ]; do
 	launcher_visible && break
@@ -328,7 +341,7 @@ EOF
 chmod +x "$held_scripts/dwm-quickshell-launcher"
 ln -sfn "$held_scripts" "$data_home/checkout/scripts"
 rm -f "$smoke_marker"
-DISPLAY=$display xdotool key --clearmodifiers super+r
+press_super_r
 i=0
 while [ "$i" -lt 100 ]; do
 	launcher_visible && break
@@ -369,7 +382,7 @@ done
 test_stage='opening the launcher again with an Enter pending'
 ln -sfn "$held_scripts" "$data_home/checkout/scripts"
 rm -f "$smoke_marker"
-DISPLAY=$display xdotool key --clearmodifiers super+r
+press_super_r
 i=0
 while [ "$i" -lt 100 ]; do
 	launcher_visible && break
