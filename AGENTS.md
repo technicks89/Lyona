@@ -268,7 +268,11 @@ and bus, keep GSettings in memory, give the run a private
 helper or polkit prompt is reached. They also give a test private
 `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME`
 directories (#404); `HOME` stays the session's, so a test that stages files
-for a helper gives it a `HOME` of its own. A test that
+for a helper gives it a `HOME` of its own. They drop every `DWM_*` and
+`LYONA_*` variable the caller exported (#408), but for the Makefile's
+`LYONA_TEST_KEPT` list, which the three entry points share: the run's own
+variables and the test knobs no helper reads. A variable a recipe sets, or
+`make VAR=value`, still reaches the test. A test that
 needs X starts its own Xvfb (`xvfb-run`, `dbus-run-session`) inside its
 recipe. Keep new tests behind those entry points: a Python test, or a shell
 test that does not source `tests/lib.sh`, is isolated only under `make` or

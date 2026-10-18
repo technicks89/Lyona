@@ -31,6 +31,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Tests no longer inherit the `DWM_*` and `LYONA_*` overrides of the shell
+  they run from (#408). `CONTRIBUTING.md` has a developer export
+  `LYONA_DEV_SCRIPTS` for the whole session, and helpers take that and the
+  other overrides (`DWM_DISPLAY_KEPT_LAYOUT`, the `DWM_APPEARANCE_*_HELPER`
+  programs, `DWM_APPEARANCE_DATA_DIRS`, `LYONA_AUTORANDR_PICOM_HELPER`) as
+  where to read, write or run, so a test that did not set one used the
+  caller's. A check goal of the Makefile, `scripts/run-tests` and
+  `tests/lib.sh` now drop them all but for a short list of test knobs no
+  helper reads, and `make check-session-isolation` fails if one still
+  reaches a test or the three lists differ. A value given on make's command
+  line still reaches the test.
 - `dwm-settings-picom` and `dwm-settings-display-profiles` no longer fall
   back to the passwd home when `HOME` is unset (#406), and the display
   profiles helper no longer treats an empty or relative `XDG_CONFIG_HOME` as
