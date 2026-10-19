@@ -249,12 +249,14 @@ and runs `archinstall --config ... --creds ...
 automatically runs `lyona-postinstall.sh` to finish the lyona
 install.
 
-The `archinstall` JSON schema is version-sensitive and was validated by
-running real installs against loop devices, not just archinstall's own
+The `archinstall` JSON schema is version-sensitive. It was first validated
+by running real installs against loop devices, not just archinstall's own
 bundled `examples/config-sample.json` (which is stale/wrong for 4.4 in
-several fields). If this profile bumps the archinstall package version,
-re-validate the schema in `archiso/airootfs/root/lyona-install.sh`
-before trusting it again.
+several fields), and was last validated against archinstall 4.5 on
+2026-10-19, with VM installs on UEFI with LUKS and on legacy BIOS
+(`docs/evidence/arch001-archinstall-4.5.md`). If this profile bumps the
+archinstall package version, re-validate the schema in
+`archiso/airootfs/root/lyona-install.sh` before trusting it again.
 
 **Manual fallback** (custom partitioning): boot the ISO,
 run `archinstall` yourself, then run `/root/lyona-postinstall.sh`

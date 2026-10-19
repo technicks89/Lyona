@@ -65,11 +65,13 @@ and merge each before starting the next:
   profile and stamps `VERSION`/commit/label into every required field without
   needing root or `mkarchiso` — `tests/test-arch-iso-builder.sh` (passing in
   this sandbox as of 2026-09-19).
-- [ ] Run the real (non-`--profile-only`) build on an Arch host with
+- [x] Run the real (non-`--profile-only`) build on an Arch host with
   `archiso` installed (`sudo scripts/build-lyona-arch-iso.sh --output
   release/`) and confirm `mkarchiso` itself resolves every package in the
-  current official repositories without a missing/renamed/moved package —
-  this sandbox has never actually invoked `mkarchiso`, only the staging step.
+  current official repositories without a missing/renamed/moved package.
+  Done: images built with `mkarchiso` on the maintainer's host resolved every
+  package and installed on 2026-10-03 and 2026-10-09 (`docs/RELEASING.md`),
+  and the release workflow builds one for every release.
 - [ ] Confirm the NVIDIA opt-in path in `lyona-install.sh`/
   `lyona-postinstall.sh` (`LYONA_NVIDIA_DRIVER=1`) actually installs a working
   proprietary driver stack against the current Arch `nvidia-open`/
@@ -77,10 +79,13 @@ and merge each before starting the next:
   correctly. (Arch dropped `nvidia`/`nvidia-dkms`; the open modules need a
   Turing or newer GPU. Older cards get the 580xx or 470xx legacy driver, Sync
   Sprint 14, and a card no packaged driver supports stays on nouveau.)
-- [ ] Re-validate the `archinstall` JSON schema in `lyona-install.sh` against
+- [x] Re-validate the `archinstall` JSON schema in `lyona-install.sh` against
   whatever `archinstall` version the current `releng` profile actually pulls
   in — `docs/RELEASING.md` already flags this as version-sensitive and known
-  to have been wrong for at least one prior `archinstall` release.
+  to have been wrong for at least one prior `archinstall` release. Done
+  2026-10-19 for archinstall 4.5: the configuration moved off 4.5's deprecated
+  forms and installed in a VM on UEFI with LUKS and on legacy BIOS
+  (`docs/evidence/arch001-archinstall-4.5.md`).
 
 Acceptance:
 
@@ -99,7 +104,7 @@ Acceptance:
   and reboot from the installed virtual disk. Done 2026-10-03 (btrfs, no
   LUKS, no NVIDIA), with an image built on the maintainer's host; an image
   the release workflow built is still to do.
-- [ ] Verify LightDM presents a session, dwm starts, and the managed
+- [x] Verify LightDM presents a session, dwm starts, and the managed
   Quickshell shell (panel, Settings, Control Center) comes up without manual
   repair. LightDM, dwm, the panel, the launcher and the power menu were
   verified in the 2026-10-03 VM; the Control Center, keybind viewer and
