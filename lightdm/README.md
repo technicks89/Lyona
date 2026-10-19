@@ -14,6 +14,7 @@ target renders the matching `lightdm.conf`.
 | `slick-greeter.conf` | `/etc/lightdm/slick-greeter.conf` |
 | `wallpaper.jpg` | `/usr/share/pixmaps/lyona.jpg` |
 | `../assets/logo/lyona-icon.png` | `/usr/share/pixmaps/lyona-logo.png` |
+| `../assets/logo/lyona-logo-greeter.png` | `/usr/share/pixmaps/lyona-greeter-logo.png` |
 | `gtk-theme/Lyona-TokyoNight/` | `/usr/share/themes/Lyona-TokyoNight/` |
 
 ## Install

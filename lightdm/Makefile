@@ -37,6 +37,7 @@ install:
 	install -Dm644 slick-greeter.conf                $(LIGHTDM_DIR)/slick-greeter.conf
 	install -Dm644 wallpaper.jpg                     $(PIXMAPS_DIR)/lyona.jpg
 	install -Dm644 ../assets/logo/lyona-icon.png     $(PIXMAPS_DIR)/lyona-logo.png
+	install -Dm644 ../assets/logo/lyona-logo-greeter.png $(PIXMAPS_DIR)/lyona-greeter-logo.png
 	../scripts/lyona-gtk-theme generate tokyonight ../config/themes.toml \
 		$(THEMES_DIR)/$(GREETER_THEME)
 	find $(THEMES_DIR)/$(GREETER_THEME) -type d -exec chmod 0755 {} +
