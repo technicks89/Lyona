@@ -9,7 +9,8 @@ set -euo pipefail
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
 make_workspace
-if ! grep -Eqs '^ID=arch$' /etc/os-release; then
+# The installer's own identity check, so Arch Linux ARM on aarch64 runs it too.
+if ! bash -c '. "$1"; is_arch_family' sh "$repo/scripts/dwm-utils.sh"; then
 	printf 'SKIP: the installer dry run needs Arch Linux\n'
 	exit 77
 fi
