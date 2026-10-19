@@ -825,12 +825,15 @@ print_summary_profile() {
 # preference into, under make install-user. On the first install for this
 # account (no install.state of lyona's yet), one that already sets any of those
 # keys is someone else's choice, so it is kept as FILE.bak.TIMESTAMP first, as
-# mybash keeps ~/.bashrc. A later run finds install.state and leaves them alone.
+# mybash keeps ~/.bashrc. A symlinked one too: theme-apply.sh replaces the link
+# with a file, and the copy holds what it pointed to. A copy that fails stops
+# the install before anything is themed. A later run finds install.state and
+# leaves them alone.
 gtk_settings_to_keep() {
 	local config_home=${XDG_CONFIG_HOME:-$HOME/.config} file
 	[[ ! -e ${XDG_STATE_HOME:-$HOME/.local/state}/lyona/install.state ]] || return 0
 	for file in "$config_home/gtk-3.0/settings.ini" "$config_home/gtk-4.0/settings.ini" "$HOME/.gtkrc-2.0"; do
-		[[ -f $file && ! -L $file ]] || continue
+		[[ -f $file ]] || continue
 		command grep -Eq '^[[:space:]]*gtk-(theme-name|cursor-theme-name|cursor-theme-size|application-prefer-dark-theme)[[:space:]]*=' "$file" ||
 			continue
 		printf '%s\n' "$file"
@@ -846,11 +849,11 @@ keep_gtk_settings() {
 			backup="$file.bak.$(date +%Y%m%d-%H%M%S).$n"
 			n=$((n + 1))
 		done
-		if cp -p -- "$file" "$backup"; then
-			info "Keeping the previous $file as $backup"
-		else
-			warn "Could not keep a copy of $file; lyona's GTK theme replaces its theme settings."
+		if ! cp -p -- "$file" "$backup"; then
+			err "Could not keep a copy of $file as $backup; stopping before lyona's GTK theme replaces it."
+			return 1
 		fi
+		info "Keeping the previous $file as $backup"
 	done < <(gtk_settings_to_keep)
 }
 
