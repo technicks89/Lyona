@@ -2,8 +2,8 @@
 
 Index: [`ARM64.md`](ARM64.md).
 
-**Status:** planned 2026-10-11. In progress: ARM1-01 implemented 2026-10-13 (#23), ARM1-02 2026-10-13 (#24, #25), ARM1-03 2026-10-13 (#26), ARM1-04 2026-10-13 (#27),
-ARM1-05 2026-10-14 (#28). Remaining: ARM1-06
+**Status:** planned 2026-10-11. Done 2026-10-19: ARM1-01 implemented 2026-10-13 (#23), ARM1-02 2026-10-13 (#24, #25), ARM1-03 2026-10-13 (#26), ARM1-04 2026-10-13 (#27),
+ARM1-05 2026-10-14 (#28), ARM1-06 2026-10-19 (#31)
 (A-1 decided: `ID=archarm` on `aarch64` only; A-9 decided: the GitHub
 arm64 runner). GitHub: issues #1 to #6
 (label `arm64`); milestone "ARM Sprint 1 - Foundation", created by
@@ -179,6 +179,15 @@ and the Pi run moves to ARM3-06, which already validates on a real Pi 4.
   Bluetooth and HDMI audio. ARM3-06 checks these on the Pi.
 - **Acceptance, revised:** a working desktop in that VM with no manual step,
   and the x86_64 Full suite still green.
+
+**Done 2026-10-19 (#31):** both profiles reached a working desktop in the VM,
+through LightDM and `startx`; the evidence is
+`docs/evidence/arm1-06-install-sh.md`. The run found five things, fixed on the
+same branch: the installer now offers to switch Arch Linux ARM's stock
+systemd-networkd to NetworkManager (F-1), the install guide lists Arch Linux
+ARM's first steps with a locale (F-3), and Settings no longer waits on a
+missing Bluetooth daemon (F-5). The Full suite passed on both architectures
+(run 39189700146).
 
 ---
 

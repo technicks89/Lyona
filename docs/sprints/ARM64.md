@@ -9,8 +9,8 @@ the two are independent.
 **Status:** planned 2026-10-11 at the maintainer's request. **Scope for now
 (decided 2026-10-11): the generic image and the Raspberry Pi**, through
 ARM-1, ARM-2, ARM-3 and ARM-5. GB10 (ARM-4) and N1X are deferred: their
-plans stay here, but they are not scheduled or tracked on GitHub. ARM-1 is in
-progress: ARM1-01 to ARM1-05 are merged (2026-10-14), ARM1-06 remains. Nothing
+plans stay here, but they are not scheduled or tracked on GitHub. ARM-1 is
+done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31). Nothing
 here is a support claim: `SPEC.md` still makes Arch x86_64 the
 only release target, and an aarch64 target is supported only once its sprint
 has met the release validation contract (`SPEC.md` 9.4) on that target.
@@ -140,8 +140,9 @@ releases of its own. Until then:
 
 Available to the maintainer (2026-10-13): a Raspberry Pi 4 and an NVIDIA GB10
 system. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
-x86_64 host froze that host (2026-10-13), so ARM-1 tests on the GitHub arm64
-runner (ARM1-05) and on the Pi 4 (ARM1-06), not in an emulated VM.
+x86_64 host froze that host (2026-10-13), so ARM-1 tested on the GitHub arm64
+runner (ARM1-05) and in a native VM on the GB10 (ARM1-06, below), not in an
+emulated VM.
 
 Since 2026-10-19 the GB10 (a DGX Spark, on its own Ubuntu-based OS) is also an
 aarch64 test host. It runs the suite in the Arch Linux ARM container

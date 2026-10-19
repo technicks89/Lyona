@@ -84,8 +84,18 @@ the Pi 4's Cortex-A72, so it says nothing about the lean bar (ARM3-06).
 
 ## x86_64
 
-ARM1-06's acceptance also asks for the x86_64 Full suite still green. PENDING:
-the Full suite workflow run on `91773f9`, and its x86_64 result.
+ARM1-06's acceptance also asks for the x86_64 Full suite still green. It is:
+Full suite run 39189700146 on `91773f9`, the fixes' commit, passed every job
+(`make check`, the clang build, and both root-container jobs). The commit
+after it changes documentation only.
+
+Its aarch64 job passed on the second attempt. On the first, every test passed,
+but `check-quickshell-plain-text-xvfb` failed in `scripts/run-tests`'
+leftover-process check: the Picom that the test's dwm session autostarts was
+still exiting when the check ran, on the two-core runner. This was not caused
+by these changes: the test stops only the processes it started, and it passed
+in both local aarch64 runs and in ARM1-05's run. A follow-up to fix it: the
+test stops its session's Picom before stopping Xvfb.
 
 On aarch64, the whole suite passed on the fixes, in the Arch Linux ARM
 container (`scripts/ci-local.sh --base-image lyona-archlinuxarm:base-devel
