@@ -20,6 +20,7 @@ set -euo pipefail
 # PICOM_BACKEND=xrender (or glx) in the environment measures that backend
 # instead of the Automatic choice.
 
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 seconds=300
 use_seconds=60
 use=true
@@ -125,8 +126,19 @@ restore() {
 }
 trap restore EXIT
 
+# The processor as System Information names it: arm64's /proc/cpuinfo has no
+# "model name", only each core's implementer and part codes (ARM1-04).
+cpu_name() {
+	python3 -I -c 'import sys
+sys.path.insert(0, sys.argv[1])
+from lyona_system_management.system_information import parse_cpu_information
+with open("/proc/cpuinfo", "rb") as cpuinfo:
+    print(parse_cpu_information(cpuinfo.read())["cpu-model"].value)' "$repo/scripts" 2>/dev/null ||
+		awk -F': ' '/^model name/ { print $2; exit }' /proc/cpuinfo
+}
+
 say "# Picom and window preview cost, $(date -u +%FT%TZ)"
-say "cpu: $(awk -F': ' '/^model name/ { print $2; exit }' /proc/cpuinfo), $(nproc) threads"
+say "cpu: $(cpu_name), $(nproc) threads"
 say "memory: $(awk '/^MemTotal/ { printf "%.1f GiB", $2 / 1048576 }' /proc/meminfo)"
 say "gpu: $(lspci 2>/dev/null | grep -E 'VGA|3D|Display' | sed 's/^[^ ]* //' | paste -sd ';' -)"
 say "kernel: $(uname -r); picom: $(picom --version 2>/dev/null | head -n 1)"

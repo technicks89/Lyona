@@ -29,8 +29,11 @@ from.
 
 Arch Linux ARM's own first steps, not Lyona's: the keyring initialised and
 populated (`pacman-key --init`, `pacman-key --populate archlinuxarm`), the
-system upgraded (`pacman -Syu`), `sudo` and `git` installed, and a user in
-`wheel` with `sudo` rights. `install.sh` runs as that user, never as root.
+system upgraded (`pacman -Syu`), `sudo` and `git` installed, a user in
+`wheel` with `sudo` rights, and a locale set (`locale-gen`, `localectl
+set-locale`), since the root filesystem ships `LANG=C` (docs/src/install.md).
+`install.sh` runs as that user, never as root, with `sudo` asking for its
+password.
 
 PENDING: anything else that was needed before `install.sh` could run. Each
 such step is a finding: ARM1-06 asks for no manual step.
@@ -40,17 +43,18 @@ such step is a finding: ARM1-06 asks for no manual step.
 | Run | Command | Result |
 | --- | --- | --- |
 | Dry run | `./install.sh --profile recommended --dry-run` | PENDING: the install summary it printed for aarch64: no CachyOS, no gaming, no multilib |
-| Recommended | `./install.sh --profile recommended` | PENDING: exit status, time, warnings |
+| Recommended | `./install.sh --profile recommended` | PENDING: exit status, time, warnings. It asks to switch from Arch Linux ARM's systemd-networkd to NetworkManager: answer yes |
 | Full, over it | `./install.sh --profile full` | PENDING: exit status, time, warnings. Also checks that a second run is safe (`AGENTS.md`: idempotent) |
 
 PENDING: the installer's log or the end of its output for each run.
 
 ## The desktop
 
-Checked after each profile, logged in through LightDM, then through `startx`
-from a TTY.
+Checked after each profile: the recommended profile through `startx` from a
+TTY (it installs no display manager), the full profile through LightDM, then
+through `startx`.
 
-| Check | Recommended, LightDM | Full, LightDM | Full, `startx` |
+| Check | Recommended, `startx` | Full, LightDM | Full, `startx` |
 | --- | --- | --- | --- |
 | The session starts: dwm and the panel | PENDING | PENDING | PENDING |
 | Launcher (Super+R) opens and starts an application | PENDING | PENDING | PENDING |

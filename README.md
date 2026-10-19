@@ -124,7 +124,7 @@ supported target yet.
 | Profile | Includes |
 | --- | --- |
 | `core` | The X11 session, required dependencies, and one terminal emulator. |
-| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Firefox, the Thunar file manager, NetworkManager (enabled only when no other network manager is in use), BlueZ (`bluetooth.service` enabled), GNOME Keyring, AppImages in the launcher (Gear Lever with `--with-gearlever`), Topgrade (from the AUR's pinned `topgrade-bin`), theming, screenshots, audio, and brightness tools. |
+| `recommended` | The complete everyday desktop, including Alacritty, Quickshell, Firefox, the Thunar file manager, NetworkManager (enabled only when no other network manager is in use; on Arch Linux ARM it offers to replace the stock systemd-networkd), BlueZ (`bluetooth.service` enabled), GNOME Keyring, AppImages in the launcher (Gear Lever with `--with-gearlever`), Topgrade (from the AUR's pinned `topgrade-bin`), theming, screenshots, audio, and brightness tools. |
 | `full` | The recommended desktop plus wallpaper, display-manager, and supported Arch gaming integrations (Steam, Gamescope, GameMode, MangoHud via `multilib`). |
 
 On x86_64, `--enable-cachyos-repos` adds the [CachyOS](https://cachyos.org)

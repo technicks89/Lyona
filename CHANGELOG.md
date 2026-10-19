@@ -10,6 +10,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- On Arch Linux ARM, the installer offers to switch to NetworkManager
+  (ARM1-06). Arch Linux ARM's root filesystem enables systemd-networkd with
+  two stock DHCP files, so NetworkManager was installed but left off, and the
+  panel and Settings showed no network although the machine was online. When
+  that exact setup is found, an interactive install asks after its summary
+  (yes by default) and switches at the next boot: NetworkManager is enabled,
+  then systemd-networkd is disabled with its sockets and wait-online. If the
+  disable fails, the enable is taken back. An unattended install switches only
+  with the new `--switch-to-networkmanager`. Any other network manager, or a
+  systemd-networkd with changed or added files, is still left alone. The
+  installer prints how to switch back. The docs list Arch Linux ARM's first
+  steps before the installer, including setting a locale (it ships `LANG=C`).
+
 - The Full suite workflow runs on aarch64 too (ARM1-05, decision A-9). The
   new manual job runs the suite in an Arch Linux ARM container on a GitHub ARM
   runner. The container is built from Arch Linux ARM's own root filesystem,
@@ -87,6 +100,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   height.
 
 ### Fixed
+
+- Settings' Appearance pane no longer waits for its 5-second loading cap on a
+  machine without Bluetooth (ARM1-06). Settings' capability discovery ran
+  `bluetoothctl show`, which waits for a Bluetooth daemon that is not running
+  until its 2-second timeout. Discovery runs twice when Appearance is opened,
+  so the pane always appeared at the cap. Discovery now first asks the system
+  bus whether a daemon owns `org.bluez`, and reports Bluetooth unavailable at
+  once when none does. In an Arch Linux ARM VM, discovery went from 3.9 s to
+  1.8 s, and Appearance appears in about 2.6 s.
+
+- `tests/measure-picom-cost.sh` names the processor on aarch64, where
+  `/proc/cpuinfo` has no `model name`: it asks the same parser System
+  Information uses.
 
 - `check-herdr-install` passes again: since the architecture comes from
   `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a

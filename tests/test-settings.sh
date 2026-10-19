@@ -542,6 +542,26 @@ printf '%s\n' "$runtime_down_output" | grep -Fqx \
 printf '%s\n' "$runtime_down_output" | grep -Fqx \
 	'capability	appearance	themes	Themes	unavailable	read-only	dwm-settings-appearance	Restore a valid themes.toml configuration or inspect the appearance snapshot errors'
 
+# No bluetoothd on the system bus (ARM1-06): Bluetooth is unavailable at once,
+# without waiting out `bluetoothctl show`'s timeout.
+no_bluez_bin=$work/no-bluez-bin
+cp -a "$arch_bin" "$no_bluez_bin"
+printf '%s\n' '#!/bin/sh' \
+	'case "$*" in *"NameHasOwner s org.bluez"*) printf '\''{"type":"b","data":[false]}\n'\'' ;;' \
+	'*) printf '\''{"type":"u","data":[4242]}\n'\'' ;; esac' >"$no_bluez_bin/busctl"
+# shellcheck disable=SC2016 # expanded by the stub
+printf '%s\n' '#!/bin/sh' ': >"${DWM_SETTINGS_BLUETOOTHCTL_RAN:?}"' >"$no_bluez_bin/bluetoothctl"
+chmod +x "$no_bluez_bin/busctl" "$no_bluez_bin/bluetoothctl"
+no_bluez_output=$(PATH="$no_bluez_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_BLUETOOTHCTL_RAN="$work/bluetoothctl-ran" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" "$provider" discover)
+printf '%s\n' "$no_bluez_output" | grep -Fqx \
+	'capability	bluetooth	bluez	Bluetooth	unavailable	delegated	bluetoothctl	BlueZ tools are installed, but no daemon or adapter is responding'
+if [ -e "$work/bluetoothctl-ran" ]; then
+	printf 'bluetoothctl was probed although no daemon owns org.bluez\n' >&2
+	exit 1
+fi
+
 malformed_appearance_bin=$work/malformed-appearance-bin
 cp -a "$arch_bin" "$malformed_appearance_bin"
 make_malformed_appearance_stub "$malformed_appearance_bin/dwm-settings-appearance"

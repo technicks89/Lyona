@@ -521,7 +521,9 @@ Runtime dependencies are classified as:
   only with `--with-gearlever`), Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
   browser, GNOME Keyring (`gnome-keyring`) for secret storage, the Thunar
   file manager that Super+E opens, NetworkManager, enabled only when no
-  other network manager is in use, and BlueZ, with `bluetooth.service`
+  other network manager is in use (on Arch Linux ARM, it replaces the root
+  filesystem's stock systemd-networkd setup only with the user's approval: the
+  installer's question, or `--switch-to-networkmanager`), and BlueZ, with `bluetooth.service`
   enabled when the unit is installed and not masked.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a

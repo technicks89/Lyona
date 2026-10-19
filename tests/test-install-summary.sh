@@ -161,9 +161,14 @@ has "$merged" '  - AppImages have no default handler.'
 # from STUB_ENABLED (unit=state pairs) and STUB_ACTIVE (active units).
 {
 	sed -n '/^network_manager_state() {$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^archarm_stock_networkd() {$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^ask_network_switch() {$/,/^}$/p' "$repo/install.sh"
+	sed -n '/^switch_to_network_manager() {$/,/^}$/p' "$repo/install.sh"
 	sed -n '/^configure_network_manager() {$/,/^}$/p' "$repo/install.sh"
 } >"$work/nm.sh"
-grep -q '^configure_network_manager() {$' "$work/nm.sh" || fail 'configure_network_manager not found in install.sh'
+for function in archarm_stock_networkd ask_network_switch switch_to_network_manager configure_network_manager; do
+	grep -q "^$function() {\$" "$work/nm.sh" || fail "$function not found in install.sh"
+done
 mkdir -p "$work/nm-bin" "$work/nm-units"
 cat >"$work/nm-bin/systemctl" <<'STUB'
 #!/bin/sh
@@ -192,9 +197,11 @@ list-unit-files)
 esac
 exit 0
 STUB
+# STUB_SUDO_FAIL: a command that fails (after it is logged).
 cat >"$work/nm-bin/sudo" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >>"$NM_LOG"
+[ "$*" != "${STUB_SUDO_FAIL:-}" ]
 STUB
 # Not a chroot unless STUB_CHROOT says so, whatever the machine running this.
 cat >"$work/nm-bin/systemd-detect-virt" <<'STUB'
@@ -207,6 +214,8 @@ nm_case() { # ENABLED ACTIVE: prints the state, then what configure did
 	# shellcheck disable=SC2016 # expanded by the inner bash
 	env PATH="$work/nm-bin:$PATH" NM_LOG="$work/nm.log" STUB_ENABLED="$1" STUB_ACTIVE="$2" \
 		LYONA_SYSTEMD_UNIT_DIR="${NM_UNIT_DIR:-$work/nm-units}" \
+		DISTRO_ID="${NM_DISTRO:-arch}" NETWORK_SWITCH_APPROVED="${NM_SWITCH:-false}" \
+		LYONA_NETWORKD_DIR="${NM_NETWORKD_DIR:-$work/nm-units}" STUB_SUDO_FAIL="${NM_SUDO_FAIL:-}" \
 		${LYONA_SOURCE:+LYONA_SOURCE="$LYONA_SOURCE"} ${STUB_CHROOT:+STUB_CHROOT=1} \
 		bash -c 'ok() { :; }; info() { :; }; warn() { :; }; . "$1"; network_manager_state; configure_network_manager' \
 		bash "$work/nm.sh"
@@ -233,6 +242,66 @@ ln -s /usr/lib/systemd/system/netctl@.service "$work/nm-units-enabled/multi-user
 [[ $(LYONA_SOURCE=iso nm_case 'systemd-networkd.service=enabled' 'systemd-networkd.service') == image ]] ||
 	fail 'the image install judged NetworkManager by the live medium'
 [[ $(STUB_CHROOT=1 nm_case '' '') == image ]] || fail 'a chroot was not left to the image installer'
+
+# Arch Linux ARM (ARM1-06): its stock systemd-networkd setup, the two DHCP
+# files its root filesystem ships, is switched to NetworkManager with
+# approval: NetworkManager enabled first, then networkd disabled. Anything
+# else networkd runs is someone's configuration and is left alone.
+stock_networkd() { # DIR: the files byte for byte, carriage returns included
+	mkdir -p "$1"
+	printf '[Match]\nName=en*\n\n[Network]\nDHCP=yes\r\nDNSSEC=no\n' >"$1/en.network"
+	printf '[Match]\nName=eth*\n\n[Network]\nDHCP=yes\r\nDNSSEC=no\n' >"$1/eth.network"
+}
+stock_networkd "$work/networkd-stock"
+networkd=systemd-networkd.service=enabled
+switched=$'other:systemd-networkd.service\nsystemctl enable NetworkManager.service\nsystemctl disable systemd-networkd.service'
+[[ $(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock nm_case "$networkd" '') == "$switched" ]] ||
+	fail "the stock Arch Linux ARM networkd was not switched: $(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock nm_case "$networkd" '')"
+[[ $(NM_DISTRO=archarm NM_NETWORKD_DIR=$work/networkd-stock nm_case "$networkd" '') == other:systemd-networkd.service ]] ||
+	fail 'the stock Arch Linux ARM networkd was switched without approval'
+[[ $(NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock nm_case "$networkd" '') == other:systemd-networkd.service ]] ||
+	fail 'an Arch Linux networkd with the same files was switched'
+stock_networkd "$work/networkd-edited"
+printf '[Match]\nName=en*\n\n[Network]\nAddress=192.0.2.10/24\n' >"$work/networkd-edited/en.network"
+[[ $(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-edited nm_case "$networkd" '') == other:systemd-networkd.service ]] ||
+	fail 'an edited Arch Linux ARM networkd file was switched'
+stock_networkd "$work/networkd-added"
+printf '[Match]\nName=wlan0\n\n[Network]\nDHCP=yes\n' >"$work/networkd-added/wlan.network"
+[[ $(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-added nm_case "$networkd" '') == other:systemd-networkd.service ]] ||
+	fail 'an Arch Linux ARM networkd with an added file was switched'
+[[ $(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock nm_case '' 'iwd.service') == other:iwd.service ]] ||
+	fail 'iwd on Arch Linux ARM was switched to NetworkManager'
+beside=$(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock nm_case "$networkd iwd.service=enabled" '')
+[[ $beside == other:systemd-networkd.service ]] ||
+	fail "the stock networkd was switched although iwd is enabled beside it: $beside"
+beside=$(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock nm_case "$networkd" 'dhcpcd.service')
+[[ $beside == other:systemd-networkd.service ]] ||
+	fail "the stock networkd was switched although dhcpcd is running beside it: $beside"
+# A failed enable leaves networkd as it is; a failed disable takes the enable back.
+failed=$(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock \
+	NM_SUDO_FAIL='systemctl enable NetworkManager.service' nm_case "$networkd" '')
+[[ $failed == $'other:systemd-networkd.service\nsystemctl enable NetworkManager.service' ]] ||
+	fail "networkd was disabled although NetworkManager could not be enabled: $failed"
+failed=$(NM_DISTRO=archarm NM_SWITCH=true NM_NETWORKD_DIR=$work/networkd-stock \
+	NM_SUDO_FAIL='systemctl disable systemd-networkd.service' nm_case "$networkd" '')
+[[ $failed == "$switched"$'\nsystemctl disable NetworkManager.service' ]] ||
+	fail "NetworkManager stayed enabled beside a networkd that could not be disabled: $failed"
+# The question: yes by default, and asked only when it applies.
+ask_case() { # ANSWER [ENV...]: prints NETWORK_SWITCH_APPROVED
+	local answer=$1
+	shift
+	# shellcheck disable=SC2016 # expanded by the inner bash
+	printf '%s\n' "$answer" | env PATH="$work/nm-bin:$PATH" STUB_ENABLED="$networkd" STUB_ACTIVE='' \
+		LYONA_SYSTEMD_UNIT_DIR="$work/nm-units" LYONA_NETWORKD_DIR="$work/networkd-stock" \
+		DISTRO_ID=archarm NETWORK_SWITCH_APPROVED=false NON_INTERACTIVE=false DRY_RUN=false "$@" \
+		bash -c 'info() { :; }; install_recommended_profile() { [[ ${PROFILE:-recommended} != core ]]; }
+			. "$1"; ask_network_switch >/dev/null; printf "%s\n" "$NETWORK_SWITCH_APPROVED"' bash "$work/nm.sh"
+}
+[[ $(ask_case '') == true ]] || fail 'an empty answer did not approve the switch'
+[[ $(ask_case n) == false ]] || fail 'answering n still approved the switch'
+[[ $(ask_case y NON_INTERACTIVE=true) == false ]] || fail 'a non-interactive run approved the switch without the flag'
+[[ $(ask_case y PROFILE=core) == false ]] || fail 'the core profile asked about NetworkManager'
+[[ $(ask_case y DISTRO_ID=arch) == false ]] || fail 'Arch Linux was asked to switch networkd'
 has "$recommended" '  NetworkManager: '
 lacks "$core" 'NetworkManager: '
 

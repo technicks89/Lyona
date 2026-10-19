@@ -108,6 +108,19 @@ lyona onto it.
 
 ## Install on an existing Arch system
 
+On Arch Linux ARM (aarch64, experimental), do its own first steps before
+the installer: initialise and populate the keyring (`pacman-key --init`,
+`pacman-key --populate archlinuxarm`), upgrade (`pacman -Syu`), install
+`sudo` and `git`, and use an account in `wheel` with `sudo` rights. Also set
+a locale, because its root filesystem ships `LANG=C`, which Qt warns about at
+every login. Uncomment yours (for example `en_US.UTF-8 UTF-8`) in
+`/etc/locale.gen`, then run:
+
+```bash
+sudo locale-gen
+sudo localectl set-locale LANG=en_US.UTF-8
+```
+
 ### 1. Clone
 
 Everything below runs from the checkout:
@@ -190,7 +203,12 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   (Super+E), and NetworkManager with the Wi-Fi regulatory database
   (`wireless-regdb`). NetworkManager is enabled only when no other
   network manager (systemd-networkd, iwd, ConnMan, dhcpcd or netctl) is in use,
-  and starts at the next boot. Bluetooth (`bluetooth.service`, from `bluez`)
+  and starts at the next boot. The exception is Arch Linux ARM's own setup,
+  systemd-networkd with its two stock DHCP files: there an interactive install
+  asks (yes by default) to switch to NetworkManager at the next boot, and an
+  unattended one switches only with `--switch-to-networkmanager`. Any other
+  systemd-networkd setup is left alone. To switch back:
+  `sudo systemctl disable NetworkManager.service && sudo systemctl enable systemd-networkd.service`. Bluetooth (`bluetooth.service`, from `bluez`)
   is enabled and started when the unit is installed, unless it is masked.
   The installer does not set your Wi-Fi country
   on an existing system; when none is set it says how to (see

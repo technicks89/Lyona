@@ -94,6 +94,10 @@ Options:
                          for it. Implies --enable-cachyos-repos.
   --skip-grub-theme      Install the GRUB theme files but leave the bootloader
                          configuration untouched.
+  --switch-to-networkmanager
+                         On Arch Linux ARM with its stock systemd-networkd
+                         setup, switch to NetworkManager at the next boot
+                         without asking. An interactive install asks.
   --dry-run              Print the resolved plan and exit before changes.
   -h, --help             Show this help.
 EOF
@@ -135,6 +139,7 @@ CACHYOS_KERNEL_MODE="${DWM_INSTALL_CACHYOS_KERNEL:-false}"
 CACHYOS_KERNEL=linux-cachyos
 GRUB_THEME_MODE="${DWM_INSTALL_GRUB_THEME:-true}"
 GRUB_THEME_NAME=CyberRe
+NETWORK_SWITCH_APPROVED=false
 DRY_RUN=false
 
 while (($# > 0)); do
@@ -198,6 +203,10 @@ while (($# > 0)); do
 		;;
 	--skip-grub-theme)
 		GRUB_THEME_MODE=false
+		shift
+		;;
+	--switch-to-networkmanager)
+		NETWORK_SWITCH_APPROVED=true
 		shift
 		;;
 	--dry-run)
@@ -489,6 +498,79 @@ network_manager_state() {
 	printf 'off\n'
 }
 
+# Arch Linux ARM's root filesystems enable systemd-networkd with two stock
+# DHCP files, en.network and eth.network (ARM1-06). That is the image's
+# default, not a choice the user made, and with it the panel shows no network.
+# Only that exact setup may be switched to NetworkManager, and only with
+# approval: a changed or added file means someone configured networkd.
+archarm_stock_networkd() {
+	local dir=${LYONA_NETWORKD_DIR:-/etc/systemd/network} file name content
+	local -a found=()
+
+	[[ $DISTRO_ID == archarm ]] || return 1
+	[[ $(network_manager_state) == other:systemd-networkd.service ]] || return 1
+	# networkd beside a Wi-Fi or DHCP daemon is someone's setup, not the stock one.
+	for name in iwd.service connman.service dhcpcd.service; do
+		content=$(systemctl is-enabled "$name" 2>/dev/null) || :
+		[[ $content != enabled && $content != enabled-runtime ]] || return 1
+		! systemctl is-active --quiet "$name" 2>/dev/null || return 1
+	done
+	for file in "$dir"/*; do
+		[[ -e $file || -L $file ]] || continue
+		found+=("${file##*/}")
+	done
+	[[ ${found[*]} == "en.network eth.network" ]] || return 1
+	# The files as shipped have a carriage return after DHCP=yes; line endings
+	# are not configuration.
+	for name in en eth; do
+		[[ ! -L $dir/$name.network ]] || return 1
+		content=$(<"$dir/$name.network")
+		[[ ${content//$'\r'/} == "$(printf '[Match]\nName=%s*\n\n[Network]\nDHCP=yes\nDNSSEC=no' "$name")" ]] ||
+			return 1
+	done
+}
+
+# With the plan on screen, as the CachyOS question is. Yes by default: on the
+# stock setup the switch is what makes the panel's network status work.
+ask_network_switch() {
+	local answer
+
+	[[ $NETWORK_SWITCH_APPROVED != true ]] || return 0
+	install_recommended_profile || return 0
+	[[ $NON_INTERACTIVE != true && $DRY_RUN != true ]] || return 0
+	archarm_stock_networkd || return 0
+	printf 'Arch Linux ARM manages the network with systemd-networkd, its default.\n'
+	printf 'Switch to NetworkManager at the next boot, so the panel and Settings show\n'
+	printf 'the network and Wi-Fi? [Y/n] '
+	read -r answer
+	case "$answer" in
+	n | N | no | NO)
+		info "Keeping systemd-networkd; the panel shows no network status until NetworkManager is enabled."
+		;;
+	*)
+		NETWORK_SWITCH_APPROVED=true
+		;;
+	esac
+}
+
+# NetworkManager enabled first, then systemd-networkd disabled (its Also=
+# units with it: the sockets, wait-online and the generator), so a failure
+# never leaves the next boot without a network manager. Neither is started
+# or stopped now.
+switch_to_network_manager() {
+	info "Switching from systemd-networkd to NetworkManager at the next boot..."
+	if ! sudo systemctl enable NetworkManager.service; then
+		warn "NetworkManager could not be enabled; systemd-networkd still manages the network."
+		return 0
+	fi
+	if ! sudo systemctl disable systemd-networkd.service; then
+		sudo systemctl disable NetworkManager.service || :
+		warn "systemd-networkd could not be disabled, so NetworkManager was left off; systemd-networkd still manages the network."
+		return 0
+	fi
+	ok "NetworkManager replaces systemd-networkd at the next boot. To go back: sudo systemctl disable NetworkManager.service && sudo systemctl enable systemd-networkd.service"
+}
+
 # Enabled, not started: the install still downloads after this, and
 # NetworkManager taking over the interfaces could drop the connection.
 configure_network_manager() {
@@ -498,7 +580,13 @@ configure_network_manager() {
 	image) ok "NetworkManager is set up by the image installer." ;;
 	enabled) ok "NetworkManager is already enabled." ;;
 	masked) info "NetworkManager is masked, so it was left off (sudo systemctl unmask NetworkManager to use it)." ;;
-	other:*) info "NetworkManager was installed but not enabled: ${state#other:} manages the network. The panel's network status needs NetworkManager." ;;
+	other:*)
+		if [[ $NETWORK_SWITCH_APPROVED == true ]] && archarm_stock_networkd; then
+			switch_to_network_manager
+		else
+			info "NetworkManager was installed but not enabled: ${state#other:} manages the network. The panel's network status needs NetworkManager."
+		fi
+		;;
 	*)
 		info "Enabling NetworkManager..."
 		if sudo systemctl enable NetworkManager.service; then
@@ -893,7 +981,15 @@ print_install_summary() {
 		image) printf '  NetworkManager: set up by the image installer\n' ;;
 		enabled) printf '  NetworkManager: already enabled\n' ;;
 		masked) printf '  NetworkManager: installed; masked, left as it is\n' ;;
-		other:*) printf '  NetworkManager: installed, not enabled (%s manages the network)\n' "${network#other:}" ;;
+		other:*)
+			if ! archarm_stock_networkd; then
+				printf '  NetworkManager: installed, not enabled (%s manages the network)\n' "${network#other:}"
+			elif [[ $NETWORK_SWITCH_APPROVED == true ]]; then
+				printf "  NetworkManager: replaces systemd-networkd (Arch Linux ARM's default) at the next boot\n"
+			else
+				printf "  NetworkManager: installed, not enabled (systemd-networkd, Arch Linux ARM's default, manages the network); an interactive install asks after this summary to switch (or use --switch-to-networkmanager)\n"
+			fi
+			;;
 		*) printf '  NetworkManager: installed and enabled; starts at the next boot\n' ;;
 		esac
 		local bluetooth
@@ -1004,6 +1100,7 @@ confirm_install_summary() {
 
 	# With the plan on screen, not before it on every run (#294).
 	ask_cachyos_setup
+	ask_network_switch
 
 	if [[ $ASSUME_YES == true ]]; then
 		return
