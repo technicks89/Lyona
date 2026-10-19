@@ -69,6 +69,21 @@ if command -v script >/dev/null 2>&1; then
 	has "$declined" 'Installation cancelled'
 	[[ ! -e $fresh/config.h ]] || fail 'answers declined at the summary still wrote config.h'
 fi
+# A GTK theme someone else set, in any profile: the first install names the
+# files it keeps a copy of before lyona's theme replaces it. A file without
+# those keys loses nothing, and once lyona has installed for this account
+# (install.state) it is lyona's own setting.
+lacks "$core" 'GTK theme: '
+mkdir -p "$work/home/.config/gtk-3.0" "$work/home/.config/gtk-4.0"
+printf '[Settings]\ngtk-theme-name=Adwaita-dark\n' >"$work/home/.config/gtk-3.0/settings.ini"
+printf '[Settings]\ngtk-font-name=Sans 11\n' >"$work/home/.config/gtk-4.0/settings.ini"
+printf 'gtk-cursor-theme-name="Adwaita"\n' >"$work/home/.gtkrc-2.0"
+has "$(plan core)" "  GTK theme: lyona's theme and cursor replace yours in ~/.config/gtk-3.0/settings.ini ~/.gtkrc-2.0 (previous files kept as .bak.<time>)"
+mkdir -p "$XDG_STATE_HOME/lyona"
+: >"$XDG_STATE_HOME/lyona/install.state"
+lacks "$(plan core)" 'GTK theme: '
+rm -r "$XDG_STATE_HOME/lyona" "$work/home/.config/gtk-3.0" "$work/home/.config/gtk-4.0" "$work/home/.gtkrc-2.0"
+
 # Every profile, whatever this machine's state (#258).
 has "$core" '  Time synchronization: '
 lacks "$core" 'Shell configuration: mybash'

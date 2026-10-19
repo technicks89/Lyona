@@ -148,9 +148,13 @@ Acceptance:
   `2026.10.0-beta.5` image install updated to `beta.6` with beta.5's updater,
   verified, and rolled back (`docs/evidence/280-config-split.md`); hardware is
   still to do.
-- [ ] Qualify the existing-system installer (`install.sh`) against a
+- [x] Qualify the existing-system installer (`install.sh`) against a
   pre-existing, non-lyona Arch install with real user data present, per
-  `SPEC.md`'s existing-system installer contract.
+  `SPEC.md`'s existing-system installer contract. Done 2026-10-19 in a VM with
+  seeded user data: everything outside the summary's announced changes was
+  kept. The one silent overwrite, a GTK theme, was fixed and re-run
+  (`docs/evidence/arch003-existing-system-install.md`). Hardware is still to
+  do.
 
 Acceptance:
 
