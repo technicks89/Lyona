@@ -311,11 +311,14 @@ button:disabled {
 /*
  * Widgets the LightDM greeter uses. `menubar` is its top status bar and
  * `lightdm-combo` its session chooser; both names come from slick-greeter's
- * own style classes. Harmless in a normal application.
+ * own style classes. Harmless in a normal application. slick-greeter paints
+ * its bar itself, the blurred wallpaper under a dark tint, and ignores the
+ * theme's background there, so the items stay transparent: a coloured item
+ * leaves the empty middle of the bar lighter than its ends.
  */
 menubar,
 menubar > menuitem {
-	background-color: @lyona_bg;
+	background-color: transparent;
 	color: @lyona_fg_dim;
 }
 
