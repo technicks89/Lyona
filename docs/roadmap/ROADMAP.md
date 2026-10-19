@@ -502,9 +502,12 @@ images installed fresh with btrfs and ext4, and an update from `beta.5` to
 `beta.6` applied and rolled back. On 2026-10-10 the published `beta.6`
 (`1bfafac`) installed fresh, updated to a `beta.7` build, rolled back, and took
 a signed downgrade through its own prompt, with Settings opened and used
-(`docs/evidence/324-328-install-update-rollback.md`). Still open for the exit criteria below: real
-hardware, the NVIDIA and LUKS paths, the manual fallback, and an image the
-release workflow built. Interleaved with the upstream sync sprints
+(`docs/evidence/324-328-install-update-rollback.md`). On 2026-10-19 the
+release workflow's `beta.6` image reached the desktop through the wizard and
+through the manual `archinstall` fallback
+(`docs/evidence/arch001-wizard-fallback.md`). Still open for the exit
+criteria below: real hardware, the NVIDIA path, and LUKS and legacy BIOS
+through to the desktop. Interleaved with the upstream sync sprints
 (`docs/sprints/UPSTREAM-SYNC.md`).
 
 ### Objective
