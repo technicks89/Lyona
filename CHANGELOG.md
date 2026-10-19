@@ -31,6 +31,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Opening Settings, System Health or the notification history while it is
+  already open on another tag brings it forward (#413): dwm views its tag and
+  focuses it. Settings stays on the page it was on, or goes to the page asked
+  for (the Control Center's lyona version row asks for System), and System
+  Health scans again, as opening it always did. Each used to stay out of
+  sight on its old tag until it was closed and opened again, because an open
+  window is already mapped. The shell asks dwm through the new
+  `dwm-quickshell-state focus-shell PID TITLE`, which activates the window of
+  that process with exactly that title, as the panel's running apps do. An
+  open Settings or System Health also keeps its screen.
+  `check-quickshell-settings-xvfb` and `check-quickshell-large-surfaces-xvfb`
+  now stage `dwm-quickshell-state` too, so they no longer run the copy
+  installed on the machine that runs the tests.
 - Setting a fresh account's default applications no longer prints a raw
   `ln: failed to create hard link ... File exists` when a preference written
   meanwhile is kept, just before saying it was kept. `ln`'s own message now
