@@ -30,11 +30,6 @@ as the bar.
 **Open questions this first-pass breakdown does not resolve** (need your
 input, not a guess):
 
-- Is legacy BIOS a qualified target? It boots: since #235 the wizard installs
-  GRUB for both UEFI and a legacy BIOS (MBR disk, ext4 `/boot`), as
-  `docs/RELEASING.md` says. But it has not been qualified, in a VM or on
-  hardware, and Phase 7's ROADMAP wording ("legacy BIOS where supported")
-  does not say whether it must be.
 - Which specific hardware and VM targets actually matter for the matrix
   (ARCH-004 below)? The ROADMAP names categories (UEFI, common display
   configs, audio, networking, suspend, NVIDIA) but not concrete machines/VM
@@ -42,6 +37,9 @@ input, not a guess):
 - Is there real NVIDIA hardware available to qualify the opt-in driver path
   against, or does that stay a documented, unqualified limitation for this
   release?
+
+Resolved: legacy BIOS is a qualified target, in a VM (decided 2026-10-19,
+qualified the same day; ARCH-004 below). Real hardware is still to do.
 
 Keep Phase 7 reviewable through these ordered boundaries. Finish, validate,
 and merge each before starting the next:
@@ -162,8 +160,10 @@ Acceptance:
 
 ### ARCH-004: VM/Hardware Matrix and Release-Notes Limitations
 
-- [ ] Legacy BIOS boots but is not yet qualified: resolve the question above,
-  then qualify it or document it as unsupported.
+- [x] Qualify legacy BIOS or document it as unsupported. Qualified in a VM
+  2026-10-19: the wizard on SeaBIOS, from an image built from `main`,
+  reached the desktop (`docs/evidence/arch004-legacy-bios.md`). Real
+  hardware is still to do.
 - [ ] Qualify common display configurations (single monitor at minimum;
   multi-monitor if hardware is available — Phase 5's own real-hardware
   multi-monitor qualification is still separately outstanding too, see

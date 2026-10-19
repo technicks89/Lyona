@@ -171,9 +171,15 @@ each run finding faults fixed before the next (`CHANGELOG.md`,
   installed and booted under UEFI with btrfs in LUKS and under legacy BIOS
   with ext4, without postinstall.
 
-**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS and
-legacy BIOS through to the desktop, and Wi-Fi installs. Do not treat a release as qualified on hardware until it has
-been.
+**Legacy BIOS, 2026-10-19** (`docs/evidence/arch004-legacy-bios.md`): an image
+built from `main` at `2b7d9cc` (SHA-256
+`1237d292fe1a2b0b3c2b196ce1593ee72e1ba3021f0adcf201194286880c924a`,
+archinstall 4.5-1) went through the wizard under SeaBIOS (ext4) to the
+desktop, in the same kind of VM.
+
+**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS
+through to the desktop, and Wi-Fi installs. Do not treat a release as
+qualified on hardware until it has been.
 
 ### Signed releases
 
