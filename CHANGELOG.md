@@ -39,6 +39,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   keep the icon, which they draw centred. `tests/test-lightdm-config.sh`
   fails when the login logo is taller than 80px.
 
+- The greeter's top bar is one even shade (#414). slick-greeter paints the
+  bar itself, the blurred wallpaper under a dark tint, and only the hostname,
+  clock and power items took the Tokyo Night background, so the middle of the
+  bar was lighter than its ends. The items are now transparent; their text
+  and hover colours are unchanged.
+
 - Opening Settings, System Health or the notification history while it is
   already open on another tag brings it forward (#413): dwm views its tag and
   focuses it. Settings stays on the page it was on, or goes to the page asked
