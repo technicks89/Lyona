@@ -505,9 +505,10 @@ a signed downgrade through its own prompt, with Settings opened and used
 (`docs/evidence/324-328-install-update-rollback.md`). On 2026-10-19 the
 release workflow's `beta.6` image reached the desktop through the wizard and
 through the manual `archinstall` fallback
-(`docs/evidence/arch001-wizard-fallback.md`). Still open for the exit
-criteria below: real hardware, the NVIDIA path, and LUKS and legacy BIOS
-through to the desktop. Interleaved with the upstream sync sprints
+(`docs/evidence/arch001-wizard-fallback.md`), and an image built from
+`main` reached it on legacy BIOS (`docs/evidence/arch004-legacy-bios.md`).
+Still open for the exit criteria below: real hardware, the NVIDIA path, and
+LUKS through to the desktop. Interleaved with the upstream sync sprints
 (`docs/sprints/UPSTREAM-SYNC.md`).
 
 ### Objective

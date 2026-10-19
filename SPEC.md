@@ -806,8 +806,8 @@ version, architecture, firmware mode, GPU and driver path, package-resolution re
 completed base install and postinstall run, first boot, and hardware
 limitations. As of this writing the archiso path is best-effort: the image has
 been installed and booted in a QEMU/KVM virtual machine with UEFI firmware
-(first on 2026-10-03), legacy BIOS boots but is not yet qualified, and it has
-not been tested on real hardware — see `docs/RELEASING.md`.
+(first on 2026-10-03), and with legacy BIOS firmware (qualified 2026-10-19),
+and it has not been tested on real hardware — see `docs/RELEASING.md`.
 
 ## 6. Filesystem and Installation Contract
 

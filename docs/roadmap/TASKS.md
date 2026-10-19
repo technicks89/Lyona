@@ -34,7 +34,8 @@ input, not a guess):
   GRUB for both UEFI and a legacy BIOS (MBR disk, ext4 `/boot`), as
   `docs/RELEASING.md` says. But it has not been qualified, in a VM or on
   hardware, and Phase 7's ROADMAP wording ("legacy BIOS where supported")
-  does not say whether it must be.
+  does not say whether it must be. Decided 2026-10-19: qualify it in a VM.
+  Done the same day (ARCH-004 below).
 - Which specific hardware and VM targets actually matter for the matrix
   (ARCH-004 below)? The ROADMAP names categories (UEFI, common display
   configs, audio, networking, suspend, NVIDIA) but not concrete machines/VM
@@ -162,8 +163,11 @@ Acceptance:
 
 ### ARCH-004: VM/Hardware Matrix and Release-Notes Limitations
 
-- [ ] Legacy BIOS boots but is not yet qualified: resolve the question above,
-  then qualify it or document it as unsupported.
+- [x] Legacy BIOS boots but is not yet qualified: resolve the question above,
+  then qualify it or document it as unsupported. Qualified in a VM
+  2026-10-19: the wizard on SeaBIOS, from an image built from `main`,
+  reached the desktop (`docs/evidence/arch004-legacy-bios.md`). Not yet on
+  real hardware.
 - [ ] Qualify common display configurations (single monitor at minimum;
   multi-monitor if hardware is available — Phase 5's own real-hardware
   multi-monitor qualification is still separately outstanding too, see
