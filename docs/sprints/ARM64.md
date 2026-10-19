@@ -105,7 +105,7 @@ depends on ARM-2; ARM-5 closes the project.
 
 | Sprint | Document | Scope | Exit | Depends on |
 | --- | --- | --- | --- | --- |
-| **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM machine (a Raspberry Pi 4), with no x86_64 regression | A-1, A-9 |
+| **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM machine (an Arch Linux ARM VM under KVM on GB10, since 2026-10-19; the Pi 4 run moved to ARM3-06), with no x86_64 regression | A-1, A-9 |
 | **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on UTM, Parallels and QEMU/KVM | ARM-1, A-2, A-3, A-4 |
 | **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 and a Pi 5 | One image boots to a working desktop on a real Pi 4 and Pi 5, within the lean budget | ARM-1, A-3, A-5 |
 | **ARM-4** (deferred) | [`ARM-SPRINT-4-NVIDIA-GB10.md`](ARM-SPRINT-4-NVIDIA-GB10.md) | GB10 detection, its kernel and boot arguments, NVIDIA's aarch64 driver, Picom on NVIDIA aarch64, validation on GB10 hardware | The generic image installs a working desktop with the NVIDIA driver on a real GB10 system | ARM-2, A-6, A-7, hardware |
@@ -142,6 +142,13 @@ Available to the maintainer (2026-10-13): a Raspberry Pi 4 and an NVIDIA GB10
 system. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
 x86_64 host froze that host (2026-10-13), so ARM-1 tests on the GitHub arm64
 runner (ARM1-05) and on the Pi 4 (ARM1-06), not in an emulated VM.
+
+Since 2026-10-19 the GB10 (a DGX Spark, on its own Ubuntu-based OS) is also an
+aarch64 test host. It runs the suite in the Arch Linux ARM container
+(`scripts/ci-local.sh --base-image`), and native aarch64 VMs under KVM with
+UEFI (AAVMF), not emulated. ARM1-06 was validated in such a VM, because the
+Pi 4 was not available; its Pi run moved to ARM3-06. The same host suits
+ARM2-01's spike and ARM2-05's QEMU/KVM machine.
 
 ## GitHub
 

@@ -123,6 +123,15 @@ Pi cannot do is hidden or explained.
 **Acceptance:** both boards reach a working desktop from the same image with
 no manual step.
 
+**Also, from ARM1-06 (moved here 2026-10-19):** ARM1-06 was validated in an
+Arch Linux ARM VM on GB10, because the Pi 4 was not available. On the Pi 4,
+also run `install.sh` on Arch Linux ARM's own Raspberry Pi image, for the
+recommended and full profiles. Answer the installer's NetworkManager question,
+and use `sudo` with a password. Then repeat ARM1-06's checks on `v3d`, with
+Picom's glx backend, the board's Wi-Fi, Bluetooth and HDMI audio, and the idle
+cost. Record it in `docs/evidence/arm1-06-install-sh.md`, under a Raspberry Pi
+section beside the VM run.
+
 ---
 
 ## Not in this sprint

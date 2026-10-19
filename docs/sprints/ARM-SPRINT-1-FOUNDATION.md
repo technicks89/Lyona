@@ -162,6 +162,24 @@ aarch64. The job stays manual (item 3).
 **Acceptance:** a working desktop on the Pi 4 with no manual step, and the
 x86_64 Full suite still green.
 
+**Changed 2026-10-19 (maintainer's decision):** the Pi 4 is not available
+for now, so ARM1-06 is validated in an Arch Linux ARM virtual machine instead,
+and the Pi run moves to ARM3-06, which already validates on a real Pi 4.
+
+- **Machine:** Arch Linux ARM's generic aarch64 root filesystem, booted UEFI
+  (AAVMF, systemd-boot, `linux-aarch64`) under KVM on the maintainer's GB10
+  (a DGX Spark running its own Ubuntu-based OS). Unlike the emulated VM that
+  froze an x86_64 host, this one runs natively: its 8 vCPUs are pinned to the
+  host's Cortex-X925 cores.
+- **What it proves:** `install.sh` on an existing Arch Linux ARM aarch64
+  system, both profiles, and the desktop checks above, through LightDM and
+  `startx`.
+- **What it does not:** the Pi's firmware boot and `linux-rpi`, the `v3d`
+  GPU and Picom's glx backend, the Pi 4's speed (the lean bar), and real Wi-Fi,
+  Bluetooth and HDMI audio. ARM3-06 checks these on the Pi.
+- **Acceptance, revised:** a working desktop in that VM with no manual step,
+  and the x86_64 Full suite still green.
+
 ---
 
 ## Not in this sprint
