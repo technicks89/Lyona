@@ -10,6 +10,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The image installer's archinstall configuration uses archinstall 4.5's
+  current forms: `disk_encryption` inside `disk_config`, `audio_config` under
+  `app_config`, no `debug`, `offline` or `no_pkg_lookups` (which archinstall
+  reads only as command-line flags), and `version` 4.5. Arch has shipped 4.5
+  since 2026-09-29; it still read the old forms, but only as backwards
+  compatibility. Installed in a VM from the `2026.10.0-beta.6` image on UEFI
+  with LUKS and on legacy BIOS (`docs/evidence/arch001-archinstall-4.5.md`).
+  `tests/test-arch-iso-builder.sh` fails when a deprecated key comes back.
 - The record catches up with the published `2026.10.0-beta.6`, which is
   `1bfafac`: its changelog section and release notes list #317 to #328; SPEC
   and the install guide describe the base-system download as it is since

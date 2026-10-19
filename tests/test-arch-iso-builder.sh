@@ -414,8 +414,18 @@ expected = ("fat32", ["boot", "esp"]) if firmware == "uefi" else ("ext4", ["boot
 if (boot["fs_type"], boot["flags"]) != expected:
 	print(f"{firmware}: /boot is {boot['fs_type']} {boot['flags']}, not {expected}", file=sys.stderr)
 	sys.exit(1)
-if encrypt and config["disk_encryption"]["partitions"] != [root["obj_id"]]:
+disk_encryption = config["disk_config"].get("disk_encryption")
+if encrypt and disk_encryption["partitions"] != [root["obj_id"]]:
 	print("only the root partition may be encrypted: GRUB reads /boot", file=sys.stderr)
+	sys.exit(1)
+# archinstall 4.5 still reads these top-level forms, but only as backwards
+# compatibility; the config uses the current ones.
+for deprecated in ("disk_encryption", "audio_config", "debug", "offline", "no_pkg_lookups"):
+	if deprecated in config:
+		print(f"archinstall config uses the deprecated top-level {deprecated!r}", file=sys.stderr)
+		sys.exit(1)
+if config.get("app_config", {}).get("audio_config", {}).get("audio") != "pipewire":
+	print(f"the audio server is not PipeWire: {config.get('app_config')}", file=sys.stderr)
 	sys.exit(1)
 repos = config.get("mirror_config", {}).get("optional_repositories", [])
 if "multilib" not in repos:
@@ -429,7 +439,7 @@ if mirror_config.get("mirror_regions") or mirror_config.get("custom_servers"):
 if config.get("pacman_config", {}).get("parallel_downloads") != 10:
 	print(f"parallel_downloads is not 10: {config.get('pacman_config')}", file=sys.stderr)
 	sys.exit(1)
-if encrypt != ("disk_encryption" in config):
+if encrypt != (disk_encryption is not None):
 	print("disk_encryption does not follow the ENCRYPT selection", file=sys.stderr)
 	sys.exit(1)
 if "cachyos-keyring" not in config.get("packages", []):
