@@ -157,9 +157,22 @@ each run finding faults fixed before the next (`CHANGELOG.md`,
   on each. `lyona-update` applied and rolled back with the release's own code,
   and from a fresh `2026.10.0-beta.5` install to `beta.6` with beta.5's updater.
 
-**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS,
-the manual `archinstall` fallback, Wi-Fi installs, and an image built by the
-release workflow. Do not treat a release as qualified on hardware until it has
+**VM qualification, 2026-10-19** (details in
+`docs/evidence/arch001-archinstall-4.5.md` and
+`docs/evidence/arch001-wizard-fallback.md`):
+- **Image:** the release workflow's `lyona-2026.10.0-beta.6-x86_64.iso`,
+  SHA-256 `1c1722b6d0b6cd400e45d09a8fddaa571598e17343b119b0505d41ae4ef13a84`,
+  archinstall 4.5-1.
+- **Machine:** QEMU 11.1.2 with KVM, q35, x86_64, a standard VGA adapter, no
+  NVIDIA GPU, 4 GiB, a 40 GiB virtio disk; UEFI (OVMF), and SeaBIOS for one
+  run.
+- **Result:** the wizard (UEFI, btrfs) and the manual `archinstall` fallback
+  (UEFI, ext4) each reached the desktop. The archinstall 4.5 configuration
+  installed and booted under UEFI with btrfs in LUKS and under legacy BIOS
+  with ext4, without postinstall.
+
+**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS and
+legacy BIOS through to the desktop, and Wi-Fi installs. Do not treat a release as qualified on hardware until it has
 been.
 
 ### Signed releases

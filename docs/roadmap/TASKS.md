@@ -102,8 +102,9 @@ Acceptance:
 - [x] Boot the built ISO in a KVM virtual machine (per `docs/RELEASING.md`'s
   own instruction), run `lyona-install` to completion against a UEFI target,
   and reboot from the installed virtual disk. Done 2026-10-03 (btrfs, no
-  LUKS, no NVIDIA), with an image built on the maintainer's host; an image
-  the release workflow built is still to do.
+  LUKS, no NVIDIA), with an image built on the maintainer's host, and on
+  2026-10-19 with the release workflow's beta.6 image
+  (`docs/evidence/arch001-wizard-fallback.md`).
 - [x] Verify LightDM presents a session, dwm starts, and the managed
   Quickshell shell (panel, Settings, Control Center) comes up without manual
   repair. LightDM, dwm, the panel, the launcher and the power menu were
@@ -111,9 +112,12 @@ Acceptance:
   overview too in the 2026-10-09 beta.6 VM, and Settings in the 2026-10-10 VM,
   where it offered and ran a downgrade and showed a cancelled prompt's outcome
   (`docs/evidence/324-328-install-update-rollback.md`).
-- [ ] Verify the manual fallback path (boot the ISO, run `archinstall`
+- [x] Verify the manual fallback path (boot the ISO, run `archinstall`
   directly, then `/root/lyona-postinstall.sh` against the mounted target)
-  produces the same working result as the wizard path, at least once.
+  produces the same working result as the wizard path, at least once. Done
+  2026-10-19 with the beta.6 workflow image: archinstall from a configuration
+  file (ext4, no `[multilib]`), then postinstall, reached the desktop
+  (`docs/evidence/arch001-wizard-fallback.md`).
 - [x] Record the source ISO checksum, firmware mode, architecture,
   package-resolution result, first-boot result, and any untested hardware —
   `docs/RELEASING.md`'s own qualification-recording instruction. Recorded

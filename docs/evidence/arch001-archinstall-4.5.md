@@ -58,4 +58,7 @@ about it until then.
 ## Not covered here
 
 The wizard's own questions, `lyona-postinstall.sh` and the desktop, the manual
-`archinstall` fallback, real hardware and NVIDIA.
+`archinstall` fallback, real hardware and NVIDIA. The wizard and the fallback
+were run to the desktop the same day: the wizard with the image's own
+configuration, the fallback with a plain configuration of its own
+(`docs/evidence/arch001-wizard-fallback.md`).
