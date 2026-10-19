@@ -368,7 +368,7 @@ stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-s
 	dwm-quickshell-controls dwm-quickshell-network dwm-diagnostics dwm-default-apps \
 	dwm-xdg-autostart dwm-settings-appearance dwm-settings-wallpaper dwm-settings-font \
 	dwm-settings-theme dwm-cursor-reload dwm-settings-toolkit dwm-xkbset dwm-settings-picom \
-	dwm-accessibility-settings theme-apply.sh dwm-terminal dwm-lock lyona-version
+	dwm-accessibility-settings theme-apply.sh dwm-terminal dwm-lock lyona-version dwm-quickshell-state
 
 appearance_failure_fixture=$work/appearance-snapshot-failure
 mv "$data_home/checkout/scripts/dwm-settings-appearance" \
@@ -2901,6 +2901,51 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = audio ]
+
+# Opening Settings while it is open on another tag (#413) brings it forward:
+# dwm views its tag and focuses it, on the page it was on. Mapping an open
+# window again does nothing, so this used to leave it out of sight.
+test_stage='opening Settings again from another tag'
+# A root property's last field as a number (a window id is hex), 0 while it
+# is unset ("not found.").
+root_cardinal() {
+	value=$(DISPLAY=$display xprop -root "$1" 2>/dev/null | awk '{ print $NF }')
+	case $value in
+	'' | found.) value=0 ;;
+	esac
+	printf '%d\n' "$value"
+}
+settings_tag=$(DISPLAY=$display xprop -id "$window" _NET_WM_DESKTOP | awk '{ print $NF }')
+other_tag=$(((settings_tag + 2) % 9))
+DISPLAY=$display xdotool set_desktop "$other_tag"
+i=0
+while [ "$i" -lt 100 ] && [ "$(root_cardinal _NET_CURRENT_DESKTOP)" != "$other_tag" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$(root_cardinal _NET_CURRENT_DESKTOP)" = "$other_tag" ]
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings open >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	[ "$(root_cardinal _NET_CURRENT_DESKTOP)" = "$settings_tag" ] &&
+		[ "$(root_cardinal _NET_ACTIVE_WINDOW)" = "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$(root_cardinal _NET_CURRENT_DESKTOP)" != "$settings_tag" ] ||
+	[ "$(root_cardinal _NET_ACTIVE_WINDOW)" != "$window" ]; then
+	printf 'Settings, open on tag %s, did not come forward when opened from tag %s: viewing tag %s, active window %s\n' \
+		"$((settings_tag + 1))" "$((other_tag + 1))" "$(($(root_cardinal _NET_CURRENT_DESKTOP) + 1))" \
+		"$(root_cardinal _NET_ACTIVE_WINDOW)" >&2
+	exit 1
+fi
+section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
+[ "$section" = audio ] || {
+	printf 'Opening Settings again moved it from Audio to %s\n' "$section" >&2
+	exit 1
+}
 
 DISPLAY=$display xdotool key Escape
 test_stage='closing Settings and checking lifecycle cleanup'
