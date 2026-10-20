@@ -438,7 +438,7 @@ splash_in_initramfs() {
 	local image found=1
 	for image in "$TARGET"/boot/initramfs-*.img; do
 		[[ -f $image ]] || continue
-		arch-chroot "$TARGET" lsinitcpio -- "/boot/${image##*/}" | grep -q 'plymouthd$' || return 1
+		arch-chroot "$TARGET" lsinitcpio -- "/boot/${image##*/}" | grep 'plymouthd$' >/dev/null || return 1
 		found=0
 	done
 	return "$found"
