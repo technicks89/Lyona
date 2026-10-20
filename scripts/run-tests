@@ -105,9 +105,14 @@ interrupt() {
 # with builtins only: a process this loop started would carry the variable too.
 # shellcheck disable=SC2329
 stop_leftovers() {
-	local proc pid entry comm signal
-	local -a env found=()
+	local proc pid entry item comm signal stat ppid start uptime age home cwd clk
+	local -a env found=() fields args
 
+	# Each one is described as it is found, for the test that left it (the
+	# leaked `sleep` of CI's full suite): its parent, its age, its home
+	# and directory (most tests' are a temporary directory named after the
+	# test) and its command line.
+	clk=$(getconf CLK_TCK 2>/dev/null) || clk=100
 	for signal in TERM KILL; do
 		for proc in /proc/[0-9]*; do
 			pid=${proc#/proc/}
@@ -119,6 +124,25 @@ stop_leftovers() {
 					comm=unknown
 					read -r comm 2>/dev/null <"$proc/comm" || :
 					found+=("$pid ($comm)")
+					ppid='?' start=''
+					if read -r stat 2>/dev/null <"$proc/stat"; then
+						read -ra fields <<<"${stat##*) }"
+						ppid=${fields[1]:-?} start=${fields[19]:-}
+					fi
+					uptime='' age='?'
+					read -r uptime _ 2>/dev/null </proc/uptime || :
+					[[ -z $start || -z $uptime ]] || age=$((${uptime%.*} - start / clk))
+					home='' cwd=''
+					for item in "${env[@]}"; do
+						case $item in
+						HOME=*) home=${item#HOME=} ;;
+						PWD=*) cwd=${item#PWD=} ;;
+						esac
+					done
+					args=()
+					mapfile -d '' -t args 2>/dev/null <"$proc/cmdline" || :
+					printf 'run-tests: left running: %s (%s), parent %s, started %s s ago, HOME=%s, PWD=%s: %.300s\n' \
+						"$pid" "$comm" "$ppid" "$age" "${home:-?}" "${cwd:-?}" "${args[*]}" >&2
 				fi
 				kill -s "$signal" "$pid" 2>/dev/null || :
 				break

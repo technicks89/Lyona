@@ -1474,7 +1474,7 @@ check-install-preservation:
 	tests/test-install-preservation.sh
 
 .PHONY: check-install-multilib check-install-time-sync check-iso-install-credentials check-live-medium-cleanup \
-	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary \
+	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary check-install-startx-hint \
 	check-lyona-shell check-gearlever-first-login check-iso-install-wifi check-install-step-timing \
 	check-iso-install-mirrors check-wifi-regdom check-iso-install-recovery
 check-install-multilib:
@@ -1547,6 +1547,10 @@ check-iso-install-recovery:
 # #250: both install paths time each step and end with a table.
 check-install-step-timing:
 	tests/test-install-step-timing.sh
+
+# #426: the closing startx line, only when ~/.xinitrc starts dwm.
+check-install-startx-hint:
+	tests/test-install-startx-hint.sh
 
 # R16-28: the installer's summary lists every change (a dry run; Arch only).
 check-install-summary:
@@ -1761,6 +1765,7 @@ check:
 	$(MAKE) check-wifi-regdom
 	$(MAKE) check-iso-install-recovery
 	$(MAKE) check-install-summary
+	$(MAKE) check-install-startx-hint
 	$(MAKE) check-lyona-shell
 	$(MAKE) check-gearlever-first-login
 	$(MAKE) check-lyona-weather
