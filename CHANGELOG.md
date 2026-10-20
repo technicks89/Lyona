@@ -53,6 +53,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Closing Settings, or leaving its Displays or Input section, no longer
+  sometimes leaves an idle `bash` process behind until logout (#420). The
+  section's udev watcher, stopped while it was still starting, left the copy
+  of itself that starts `udevadm monitor` waiting for good to open the pipe
+  between them, about once in 40 starts in a test. That copy no longer waits,
+  and a watcher stopped as it starts no longer leaves an empty
+  `dwm-settings-*-watch.*` directory in the session's runtime directory.
 - `install.sh` no longer replaces a GTK theme someone else set without a
   word. On the first install for an account, a `~/.config/gtk-3.0` or
   `gtk-4.0` `settings.ini`, or a `~/.gtkrc-2.0`, that already sets a theme,
