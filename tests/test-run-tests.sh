@@ -192,10 +192,13 @@ if DWM_TEST_TMP_ROOT=$test_root "$repo/scripts/run-tests" \
 	printf 'A run that left a process behind succeeded.\n' >&2
 	exit 1
 fi
-grep -Eq "^run-tests: left running: [0-9]+ \(sleep\), parent [0-9]+, started [0-9]+ s ago, HOME=$work/leak-home, PWD=[^,]+: sleep 300\$" "$leak_err" || {
+# The shape with a pattern, the home as a fixed string: a temporary path can
+# hold characters a pattern reads as operators.
+if ! grep -Eq '^run-tests: left running: [0-9]+ \(sleep\), parent [0-9]+, started [0-9]+ s ago, HOME=[^,]+, PWD=[^,]+: sleep 300$' "$leak_err" ||
+	! grep -Fq ", HOME=$work/leak-home, PWD=" "$leak_err"; then
 	printf 'The leftover process was not described:\n%s\n' "$(cat "$leak_err")" >&2
 	exit 1
-}
+fi
 grep -Eq '^run-tests: still running after the test, now stopped: [0-9]+ \(sleep\)$' "$leak_err" || {
 	printf 'The leftover process was not reported as stopped.\n' >&2
 	exit 1

@@ -41,5 +41,11 @@ offers $'#!/bin/sh\nexec /usr/local/bin/dwm'
 warns $'#!/bin/sh\nexec xterm'
 warns $'#!/bin/sh\n# exec dwm\nexec i3'
 warns $'#!/bin/sh\nexec dwm-like-wm'
+# dwm named where it is not run: an argument, or a comment after the command.
+warns $'#!/bin/sh\necho dwm\nexec xterm'
+warns $'#!/bin/sh\npkill dwm\nexec i3'
+warns $'#!/bin/sh\nexec i3 # dwm'
+offers $'#!/bin/sh\nxset s off; exec dwm'
+offers $'#!/bin/sh\ndwm &\nwait'
 
-printf 'install.sh startx hint (lyona .xinitrc, none, dwm, kept other, commented): PASS\n'
+printf 'install.sh startx hint (lyona .xinitrc, none, dwm run, kept other, dwm named but not run): PASS\n'
