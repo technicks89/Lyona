@@ -506,9 +506,10 @@ a signed downgrade through its own prompt, with Settings opened and used
 release workflow's `beta.6` image reached the desktop through the wizard and
 through the manual `archinstall` fallback
 (`docs/evidence/arch001-wizard-fallback.md`), and an image built from
-`main` reached it on legacy BIOS (`docs/evidence/arch004-legacy-bios.md`).
-Still open for the exit criteria below: real hardware, the NVIDIA path, and
-LUKS through to the desktop. Interleaved with the upstream sync sprints
+`main` reached it on legacy BIOS (`docs/evidence/arch004-legacy-bios.md`)
+and, with btrfs in LUKS, on UEFI (`docs/evidence/arch002-luks-desktop.md`).
+Still open for the exit criteria below: real hardware and the NVIDIA path.
+Interleaved with the upstream sync sprints
 (`docs/sprints/UPSTREAM-SYNC.md`).
 
 ### Objective

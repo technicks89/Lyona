@@ -102,7 +102,9 @@ Acceptance:
   and reboot from the installed virtual disk. Done 2026-10-03 (btrfs, no
   LUKS, no NVIDIA), with an image built on the maintainer's host, and on
   2026-10-19 with the release workflow's beta.6 image
-  (`docs/evidence/arch001-wizard-fallback.md`).
+  (`docs/evidence/arch001-wizard-fallback.md`). With btrfs in LUKS the same
+  day, from an image built from `main`
+  (`docs/evidence/arch002-luks-desktop.md`).
 - [x] Verify LightDM presents a session, dwm starts, and the managed
   Quickshell shell (panel, Settings, Control Center) comes up without manual
   repair. LightDM, dwm, the panel, the launcher and the power menu were

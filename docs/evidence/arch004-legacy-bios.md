@@ -42,5 +42,5 @@ needed (no NVIDIA GPU detected)".
 
 ## Not covered here
 
-LUKS through to the desktop, Wi-Fi installs, real hardware (BIOS or UEFI)
-and NVIDIA.
+LUKS (run under UEFI the same day, `arch002-luks-desktop.md`), Wi-Fi
+installs, real hardware (BIOS or UEFI) and NVIDIA.
