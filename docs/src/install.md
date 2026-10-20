@@ -6,7 +6,7 @@
 ## Install from the image
 
 For a new, dedicated machine, with UEFI or a legacy BIOS. It installs GRUB,
-with the CyberRe boot menu theme.
+with the CyberRe boot menu theme, and the lyona boot splash.
 
 1. **Download** the newest image, `lyona-VERSION-x86_64.iso`, and its
    `lyona-VERSION-SHA256SUMS` from the
@@ -105,6 +105,41 @@ it again with your answers; the disk may already be erased by then.
 **Without the wizard** (partitioning of your own): run `archinstall`
 yourself from the live medium, then `/root/lyona-postinstall.sh` to install
 lyona onto it.
+
+### Boot splash
+
+An image install boots with the lyona splash, the one the install medium
+boots with: the logo on the theme's background, drawn by Plymouth. On an
+encrypted disk it is also where you type the encryption password, in a box
+under the logo, with the keyboard layout you chose. With the splash, the desktop's login screen comes
+up about a tenth of a second later (measured in a VM).
+
+The install sets it up with:
+
+- the `plymouth` package, and the generated theme in
+  `/usr/share/plymouth/themes/lyona`, selected in
+  `/etc/plymouth/plymouthd.conf`;
+- the `plymouth` hook in `/etc/mkinitcpio.conf`, after `udev` and so before
+  `encrypt`;
+- `splash` on the kernel command line, added by
+  `/etc/default/grub.d/90-lyona-splash.cfg` rather than an edit of
+  `/etc/default/grub`.
+
+If any of it fails, the install puts the hooks back, says so on its last
+screen, and the system boots without the splash.
+
+To turn it off, delete the drop-in and the hook, then rebuild the initramfs
+and the GRUB menu:
+
+```bash
+sudo rm /etc/default/grub.d/90-lyona-splash.cfg
+sudo sed -i -E '/^HOOKS=/ s/ plymouth([ )])/\1/' /etc/mkinitcpio.conf
+sudo mkinitcpio -P
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+sudo pacman -Rns plymouth   # optional: its services also run without the splash
+```
+
+`install.sh` on an existing system does not add the splash.
 
 ## Install on an existing Arch system
 

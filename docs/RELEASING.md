@@ -157,10 +157,33 @@ each run finding faults fixed before the next (`CHANGELOG.md`,
   on each. `lyona-update` applied and rolled back with the release's own code,
   and from a fresh `2026.10.0-beta.5` install to `beta.6` with beta.5's updater.
 
-**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, LUKS,
-the manual `archinstall` fallback, Wi-Fi installs, and an image built by the
-release workflow. Do not treat a release as qualified on hardware until it has
-been.
+**VM qualification, 2026-10-19** (details in
+`docs/evidence/arch001-archinstall-4.5.md` and
+`docs/evidence/arch001-wizard-fallback.md`):
+- **Image:** the release workflow's `lyona-2026.10.0-beta.6-x86_64.iso`,
+  SHA-256 `1c1722b6d0b6cd400e45d09a8fddaa571598e17343b119b0505d41ae4ef13a84`,
+  archinstall 4.5-1.
+- **Machine:** QEMU 11.1.2 with KVM, q35, x86_64, a standard VGA adapter, no
+  NVIDIA GPU, 4 GiB, a 40 GiB virtio disk; UEFI (OVMF), and SeaBIOS for one
+  run.
+- **Result:** the wizard (UEFI, btrfs) and the manual `archinstall` fallback
+  (UEFI, ext4) each reached the desktop. The archinstall 4.5 configuration
+  installed and booted under UEFI with btrfs in LUKS and under legacy BIOS
+  with ext4, without postinstall.
+
+**Legacy BIOS, 2026-10-19** (`docs/evidence/arch004-legacy-bios.md`): an image
+built from `main` at `2b7d9cc` (SHA-256
+`1237d292fe1a2b0b3c2b196ce1593ee72e1ba3021f0adcf201194286880c924a`,
+archinstall 4.5-1) went through the wizard under SeaBIOS (ext4) to the
+desktop, in the same kind of VM.
+
+**LUKS, 2026-10-19** (`docs/evidence/arch002-luks-desktop.md`): the same image
+went through the wizard under UEFI with btrfs in LUKS. The passphrase prompt at
+boot opened the root volume, and the system reached the desktop.
+
+**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, and Wi-Fi
+installs. Do not treat a release as
+qualified on hardware until it has been.
 
 ### Signed releases
 
@@ -249,12 +272,14 @@ and runs `archinstall --config ... --creds ...
 automatically runs `lyona-postinstall.sh` to finish the lyona
 install.
 
-The `archinstall` JSON schema is version-sensitive and was validated by
-running real installs against loop devices, not just archinstall's own
+The `archinstall` JSON schema is version-sensitive. It was first validated
+by running real installs against loop devices, not just archinstall's own
 bundled `examples/config-sample.json` (which is stale/wrong for 4.4 in
-several fields). If this profile bumps the archinstall package version,
-re-validate the schema in `archiso/airootfs/root/lyona-install.sh`
-before trusting it again.
+several fields), and was last validated against archinstall 4.5 on
+2026-10-19, with VM installs on UEFI with LUKS and on legacy BIOS
+(`docs/evidence/arch001-archinstall-4.5.md`). If this profile bumps the
+archinstall package version, re-validate the schema in
+`archiso/airootfs/root/lyona-install.sh` before trusting it again.
 
 **Manual fallback** (custom partitioning): boot the ISO,
 run `archinstall` yourself, then run `/root/lyona-postinstall.sh`

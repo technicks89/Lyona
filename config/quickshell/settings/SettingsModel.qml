@@ -10,6 +10,9 @@ Scope {
     id: root
 
     property bool visible: false
+    // Open() while already open (#413): SettingsWindow asks dwm to bring
+    // itself forward.
+    signal bringForwardRequested()
     property bool busy: false
     property string searchQuery: ""
     property string selectedSectionId: "displays"
@@ -880,6 +883,14 @@ Scope {
     }
 
     function openWindow(sectionId) {
+        if (root.visible) {
+            // Already open, maybe on another tag or monitor (#413). It stays
+            // mapped, so nothing would show: dwm brings it forward instead, on
+            // the page it is on unless one was asked for.
+            if (sectionId) root.selectSection(sectionId);
+            root.bringForwardRequested();
+            return;
+        }
         root.visible = true;
         root.searchQuery = "";
         const targetId = sectionId || root.sections[0].id;
@@ -898,13 +909,14 @@ Scope {
 		root.recoverInputPreview();
     }
 
+    // An open window keeps its screen: dwm brings it forward where it is (#413).
     function open(sectionId) {
-        root.targetScreen = null;
+        if (!root.visible) root.targetScreen = null;
         root.openWindow(sectionId);
     }
 
     function openOnScreen(screen, sectionId) {
-        root.targetScreen = screen;
+        if (!root.visible) root.targetScreen = screen;
         root.openWindow(sectionId);
     }
 

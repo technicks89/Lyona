@@ -13,6 +13,9 @@ Scope {
     property var notifications: []
     property var history: []
     property bool historyVisible: false
+    // openHistory() while it is open (#413): NotificationHistoryWindow asks dwm
+    // to bring itself forward.
+    signal historyBringForwardRequested()
     property int sequence: 0
     property bool doNotDisturb: false
     property int popupTimeoutMs: 6000
@@ -252,7 +255,10 @@ Scope {
         root.historyVisible = false;
     }
 
+    // Already open, maybe on another tag (#413), it stays mapped, so nothing
+    // would show: dwm brings it forward instead.
     function openHistory() {
+        if (root.historyVisible) root.historyBringForwardRequested();
         root.historyVisible = true;
     }
 
