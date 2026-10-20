@@ -564,6 +564,20 @@ configure_bluetooth() {
 	esac
 }
 
+# The closing line on starting the session (#426). `make install-user` keeps an
+# existing ~/.xinitrc, so `startx` is offered only when that file starts dwm:
+# lyona's copy, or one of the user's with a line that runs it.
+startx_hint() {
+	local xinitrc=$HOME/.xinitrc
+	if [[ ! -e $xinitrc ]] || grep -Eqs '^[^#]*(^|[^[:alnum:]_-])dwm([^[:alnum:]_-]|$)' "$xinitrc"; then
+		printf "  • Log out and select the 'lyona' session, or start with: startx\n"
+		return 0
+	fi
+	printf "  • Log out and select the 'lyona' session. Your ~/.xinitrc was kept and\n"
+	printf "    does not start dwm, so startx runs it instead; %s has the line that does.\n" \
+		"$REPO_DIR/scripts/.xinitrc"
+}
+
 # Same override the helper reads, so both agree about which machine they are
 # looking at and either branch can be exercised in a test.
 grub_in_use() {
@@ -1593,7 +1607,7 @@ echo "  • Display setup: dwm-display-setup"
 if grub_in_use; then
 	echo "  • GRUB theme: lyona-grub-theme status (remove with lyona-grub-theme remove)"
 fi
-echo "  • Log out and select the 'lyona' session, or start with: startx"
+startx_hint
 if [[ $currentdm == "lightdm" ]]; then
 	echo "  • Start LightDM now (optional): sudo systemctl start lightdm.service"
 fi

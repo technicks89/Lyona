@@ -180,4 +180,31 @@ if DWM_TEST_TMP_ROOT=$link_root "$repo/scripts/run-tests" true 2>"$work/symlink.
 fi
 grep -Fq 'Refusing symbolic-link test root' "$work/symlink.err"
 
+# A process that left the test's group and outlived it is stopped, fails the
+# run, and is described so the test that left it can be found: its age, its
+# home (a test's temporary directory) and its command line.
+leak_out=$work/leak.out leak_err=$work/leak.err
+mkdir "$work/leak-home"
+# shellcheck disable=SC2016
+if DWM_TEST_TMP_ROOT=$test_root "$repo/scripts/run-tests" \
+	sh -c 'HOME=$1 setsid sleep 300 </dev/null >/dev/null 2>&1 & sleep 1' sh "$work/leak-home" \
+	>"$leak_out" 2>"$leak_err"; then
+	printf 'A run that left a process behind succeeded.\n' >&2
+	exit 1
+fi
+grep -Eq "^run-tests: left running: [0-9]+ \(sleep\), parent [0-9]+, started [0-9]+ s ago, HOME=$work/leak-home, PWD=[^,]+: sleep 300\$" "$leak_err" || {
+	printf 'The leftover process was not described:\n%s\n' "$(cat "$leak_err")" >&2
+	exit 1
+}
+grep -Eq '^run-tests: still running after the test, now stopped: [0-9]+ \(sleep\)$' "$leak_err" || {
+	printf 'The leftover process was not reported as stopped.\n' >&2
+	exit 1
+}
+leak_pid=$(sed -n 's/^run-tests: left running: \([0-9]*\) .*/\1/p' "$leak_err")
+if process_is_live "$leak_pid"; then
+	printf 'The leftover process %s is still running.\n' "$leak_pid" >&2
+	exit 1
+fi
+assert_workspace_removed "$leak_out" "$test_root" Leaking
+
 printf 'Managed test workspace: PASS\n'
