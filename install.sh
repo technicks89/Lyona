@@ -821,6 +821,42 @@ print_summary_profile() {
 	printf '%s\n' "${packages[*]}" | fold -s -w 70 | sed 's/^/      /; s/ *$//'
 }
 
+# The GTK settings files theme-apply.sh writes lyona's theme, cursor and dark
+# preference into, under make install-user. On the first install for this
+# account (no install.state of lyona's yet), one that already sets any of those
+# keys is someone else's choice, so it is kept as FILE.bak.TIMESTAMP first, as
+# mybash keeps ~/.bashrc. A symlinked one too: theme-apply.sh replaces the link
+# with a file, and the copy holds what it pointed to. A copy that fails stops
+# the install before anything is themed. A later run finds install.state and
+# leaves them alone.
+gtk_settings_to_keep() {
+	local config_home=${XDG_CONFIG_HOME:-$HOME/.config} file
+	[[ ! -e ${XDG_STATE_HOME:-$HOME/.local/state}/lyona/install.state ]] || return 0
+	for file in "$config_home/gtk-3.0/settings.ini" "$config_home/gtk-4.0/settings.ini" "$HOME/.gtkrc-2.0"; do
+		[[ -f $file ]] || continue
+		command grep -Eq '^[[:space:]]*gtk-(theme-name|cursor-theme-name|cursor-theme-size|application-prefer-dark-theme)[[:space:]]*=' "$file" ||
+			continue
+		printf '%s\n' "$file"
+	done
+}
+
+keep_gtk_settings() {
+	local file backup n
+	while IFS= read -r file; do
+		backup="$file.bak.$(date +%Y%m%d-%H%M%S)"
+		n=1
+		while [[ -e $backup || -L $backup ]]; do
+			backup="$file.bak.$(date +%Y%m%d-%H%M%S).$n"
+			n=$((n + 1))
+		done
+		if ! cp -p -- "$file" "$backup"; then
+			err "Could not keep a copy of $file as $backup; stopping before lyona's GTK theme replaces it."
+			return 1
+		fi
+		info "Keeping the previous $file as $backup"
+	done < <(gtk_settings_to_keep)
+}
+
 # The plan, before anything changes: what it does to the system first, then
 # the packages, then what it sets up for this account (#294).
 print_install_summary() {
@@ -961,6 +997,11 @@ print_install_summary() {
 		printf '  dwm build: config.def.h defaults, with%s\n' "$build_overrides"
 	else
 		printf '  dwm build: config.def.h defaults (use --configure-build to choose)\n'
+	fi
+	local gtk_files
+	gtk_files=$(gtk_settings_to_keep | sed "s|^$HOME/|~/|" | paste -sd ' ')
+	if [[ -n $gtk_files ]]; then
+		printf "  GTK theme: lyona's theme and cursor replace yours in %s (previous files kept as .bak.<time>)\n" "$gtk_files"
 	fi
 	if install_recommended_profile; then
 		printf '  AppImages: opened with lyona-appimage, which adds them to the launcher (unless another handler is set)\n'
@@ -1506,6 +1547,7 @@ sudo make install-system \
 	OWNER="$(id -un)" \
 	"${provenance_args[@]}"
 step_timer "make install-user"
+keep_gtk_settings
 make install-user \
 	USER_HOME="$HOME" \
 	OWNER="$(id -un)" \

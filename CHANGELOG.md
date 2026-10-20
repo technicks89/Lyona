@@ -39,6 +39,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `install.sh` no longer replaces a GTK theme someone else set without a
+  word. On the first install for an account, a `~/.config/gtk-3.0` or
+  `gtk-4.0` `settings.ini`, or a `~/.gtkrc-2.0`, that already sets a theme,
+  cursor or dark preference is kept as `FILE.bak.<time>` before lyona's theme
+  is written into it, and the summary names those files. Found while
+  qualifying the installer on an existing Arch system (ARCH-003): the user's
+  `Adwaita-dark` was overwritten, with no copy kept and nothing said.
 - The LightDM greeter shows the whole lyona logo (#414). slick-greeter draws
   it at its own size two 40px grid cells above the bottom of the screen, so
   the 512px icon was cut off at every resolution. The login monitor now gets

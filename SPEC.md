@@ -208,7 +208,11 @@ The supported installation flow must:
 6. Build dwm with the system compiler and detected X11 flags.
 7. Install the binary, man page, X session file, scripts, and default
    configuration.
-8. Seed missing user configuration while preserving existing files.
+8. Seed missing user configuration while preserving existing files. lyona's
+   theme is written into the GTK settings files (`gtk-3.0` and `gtk-4.0`
+   `settings.ini`, `~/.gtkrc-2.0`); on the first install for an account, one
+   that already sets a GTK theme, cursor or dark preference is kept as
+   `FILE.bak.<time>` first, and the summary names it.
 9. In the recommended and full profiles, install Celluloid, mpv, and sxiv and
    seed fresh-account audio/video and image MIME defaults using Celluloid and
    sxiv respectively, with Thunar for folders when installed. Seeding runs
