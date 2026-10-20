@@ -138,6 +138,26 @@ cp "$work/target/etc/mkinitcpio.conf" "$work/mkinitcpio.before"
 run_case mkinitcpio 1
 expect_restored 'a failed initramfs build'
 
+# The GRUB drop-in cannot be written (grub.d is a file): the step still ends in
+# the warning, with the hooks and the initramfs as they were.
+new_target 'base udev autodetect block encrypt filesystems fsck'
+cp "$work/target/etc/mkinitcpio.conf" "$work/mkinitcpio.before"
+: >"$work/target/etc/default/grub.d"
+# Not in a condition: errexit stays on, as under run_logged.
+run_case
+cmp -s "$work/mkinitcpio.before" "$work/target/etc/mkinitcpio.conf" || fail "a failed drop-in left the hook in: $(hooks)"
+[[ ! -e $work/target/built-splash ]] || fail 'a failed drop-in left an initramfs with the splash'
+grep -Fq 'could not be set up' "$work/warnings" || fail 'a failed drop-in left no warning'
+
+# The theme cannot be copied (its directory is a file): a warning, nothing installed.
+new_target 'base udev autodetect block encrypt filesystems fsck'
+cp "$work/target/etc/mkinitcpio.conf" "$work/mkinitcpio.before"
+mkdir -p "$work/target/usr/share/plymouth/themes"
+: >"$work/target/usr/share/plymouth/themes/lyona"
+run_case
+! grep -q '^pacman' "$work/commands" || fail 'plymouth was installed without its theme'
+expect_restored 'a failed theme copy'
+
 # No udev or systemd hook to follow: nothing installed.
 new_target 'base autodetect block filesystems fsck'
 cp "$work/target/etc/mkinitcpio.conf" "$work/mkinitcpio.before"

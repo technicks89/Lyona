@@ -133,7 +133,7 @@ and the GRUB menu:
 
 ```bash
 sudo rm /etc/default/grub.d/90-lyona-splash.cfg
-sudo sed -i 's/ plymouth / /' /etc/mkinitcpio.conf
+sudo sed -i -E '/^HOOKS=/ s/ plymouth([ )])/\1/' /etc/mkinitcpio.conf
 sudo mkinitcpio -P
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 sudo pacman -Rns plymouth   # optional: its services also run without the splash

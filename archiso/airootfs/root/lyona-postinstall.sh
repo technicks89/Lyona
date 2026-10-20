@@ -395,42 +395,47 @@ install_qemu_guest_utils() {
 install_boot_splash() {
 	# LYONA_MEDIUM_ROOT: where the medium's files are read from, for the tests.
 	local medium=${LYONA_MEDIUM_ROOT:-} theme=/usr/share/plymouth/themes/lyona
-	local conf=$TARGET/etc/mkinitcpio.conf backup
+	local conf=$TARGET/etc/mkinitcpio.conf dropin=$TARGET/etc/default/grub.d/90-lyona-splash.cfg backup= saved=0
 	local -a splash
 	if [[ ! -f $medium$theme/lyona.plymouth || ! -f $medium/etc/plymouth/plymouthd.conf ]]; then
 		note_warning 'This medium has no lyona boot splash; the new system boots without one.'
 		return 0
 	fi
-	install -d -m 0755 "$TARGET$theme"
-	install -m 0644 "$medium$theme"/* "$TARGET$theme/"
-	install -Dm 0644 "$medium/etc/plymouth/plymouthd.conf" "$TARGET/etc/plymouth/plymouthd.conf"
-
-	backup=$(mktemp)
-	cp -p -- "$conf" "$backup"
-	if ! grep -Eq '^HOOKS=\(.*\<plymouth\>' "$conf"; then
-		sed -i -E '/^HOOKS=\(/ s/\<(udev|systemd)\>/& plymouth/' "$conf"
-	fi
 	mapfile -t splash < <(dwm_packages arch boot-splash)
+	# One chain, so that any failure in it, the copies and the drop-in too, is
+	# the warning below rather than a failed step: run_logged runs under errexit.
 	# Already installed (a Retry), the package builds nothing: one build then.
-	if ! grep -Eq '^HOOKS=\(.*\<plymouth\>' "$conf" ||
-		! arch-chroot "$TARGET" pacman -S --noconfirm --needed "${splash[@]}" ||
-		{ ! splash_in_initramfs && { ! arch-chroot "$TARGET" mkinitcpio -P || ! splash_in_initramfs; }; }; then
-		cp -p -- "$backup" "$conf"
+	# The package's stock plymouthd.conf is set aside as .pacnew because lyona's
+	# was there first; the initramfs build reads the theme from lyona's.
+	# shellcheck disable=SC2016 # expanded by grub-mkconfig
+	if backup=$(mktemp) && cp -p -- "$conf" "$backup" && saved=1 &&
+		install -d -m 0755 "$TARGET$theme" &&
+		install -m 0644 "$medium$theme"/* "$TARGET$theme/" &&
+		install -Dm 0644 "$medium/etc/plymouth/plymouthd.conf" "$TARGET/etc/plymouth/plymouthd.conf" &&
+		{ grep -Eq '^HOOKS=\(.*\<plymouth\>' "$conf" ||
+			sed -i -E '/^HOOKS=\(/ s/\<(udev|systemd)\>/& plymouth/' "$conf"; } &&
+		grep -Eq '^HOOKS=\(.*\<plymouth\>' "$conf" &&
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${splash[@]}" &&
+		{ splash_in_initramfs || { arch-chroot "$TARGET" mkinitcpio -P && splash_in_initramfs; }; } &&
+		rm -f -- "$TARGET/etc/plymouth/plymouthd.conf.pacnew" &&
+		install -d -m 0755 "$TARGET/etc/default/grub.d" &&
+		printf '%s\n' '# The lyona boot splash (lyona-postinstall.sh); delete this file to turn it off.' \
+			'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} splash"' >"$dropin"; then
 		rm -f -- "$backup"
-		arch-chroot "$TARGET" mkinitcpio -P || true
-		note_warning 'The boot splash could not be set up; the new system boots without it.'
+		printf 'Boot splash: Plymouth, the lyona theme.\n'
 		return 0
 	fi
-	rm -f -- "$backup"
-	# The package's stock copy, set aside because lyona's was there first: the
-	# initramfs build reads the theme from lyona's.
-	rm -f -- "$TARGET/etc/plymouth/plymouthd.conf.pacnew"
-	install -d -m 0755 "$TARGET/etc/default/grub.d"
-	# shellcheck disable=SC2016 # expanded by grub-mkconfig
-	printf '%s\n' '# The lyona boot splash (lyona-postinstall.sh); delete this file to turn it off.' \
-		'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} splash"' \
-		>"$TARGET/etc/default/grub.d/90-lyona-splash.cfg"
-	printf 'Boot splash: Plymouth, the lyona theme.\n'
+	# The hooks as they were and the initramfs rebuilt from them, no drop-in. The
+	# theme files, and plymouth when it was installed, stay: without the hook
+	# and `splash` they do nothing at boot.
+	rm -f -- "$dropin" || :
+	if ((saved)) && ! cmp -s -- "$backup" "$conf"; then
+		cp -p -- "$backup" "$conf" || :
+		arch-chroot "$TARGET" mkinitcpio -P || :
+	fi
+	[[ -z $backup ]] || rm -f -- "$backup" || :
+	note_warning 'The boot splash could not be set up; the new system boots without it.'
+	return 0
 }
 
 # splash_in_initramfs: every initramfs on the new system carries Plymouth.
