@@ -205,6 +205,34 @@ terminate_process_identity() {
 	wait "$terminate_pid" 2>/dev/null || true
 }
 
+# lingering_watcher_report NAME: a Settings watcher outlived the window (#420).
+# Says what each copy was doing and whether it went away in the next 5 s, so
+# the failure tells a slow stop from one that never comes. The test still fails.
+lingering_watcher_report() (
+	report_pattern="$1 watch [0-9]+ [0-9]+\$"
+	report_pids=$(pgrep -f "$report_pattern" 2>/dev/null) || report_pids=
+	report_found=0
+	for report_pid in $report_pids; do
+		grep -qF "$data_home/checkout/scripts/$1" "/proc/$report_pid/cmdline" 2>/dev/null || continue
+		report_found=1
+		printf '%s watcher %s, and its children:\n' "$1" "$report_pid" >&2
+		ps -o pid=,ppid=,stat=,etimes=,wchan:24=,args= -p "$report_pid" >&2 2>/dev/null || true
+		ps -o pid=,ppid=,stat=,etimes=,wchan:24=,args= --ppid "$report_pid" >&2 2>/dev/null || true
+		report_attempt=0
+		while [ "$report_attempt" -lt 100 ] && kill -0 "$report_pid" 2>/dev/null; do
+			report_attempt=$((report_attempt + 1))
+			sleep 0.05
+		done
+		if kill -0 "$report_pid" 2>/dev/null; then
+			printf '%s watcher %s was still running 5 s later\n' "$1" "$report_pid" >&2
+		else
+			printf '%s watcher %s exited within %s ms of the check\n' "$1" "$report_pid" \
+				"$((report_attempt * 50))" >&2
+		fi
+	done
+	[ "$report_found" = 1 ] || printf '%s watcher had exited by the time of this report\n' "$1" >&2
+)
+
 scoped_settings_watcher_identities() (
 	for watcher_proc in /proc/[0-9]*; do
 		watcher_pid=${watcher_proc##*/}
@@ -2969,11 +2997,13 @@ fi
 if pgrep -af '[d]wm-settings-display watch [0-9]+ [0-9]+$' |
 	grep -F "$data_home/checkout/scripts/dwm-settings-display" >/dev/null; then
 	printf 'Settings display watcher remained active after close\n' >&2
+	lingering_watcher_report dwm-settings-display
 	exit 1
 fi
 if pgrep -af '[d]wm-settings-input watch [0-9]+ [0-9]+$' |
 	grep -F "$data_home/checkout/scripts/dwm-settings-input" >/dev/null; then
 	printf 'Settings input watcher remained active after close\n' >&2
+	lingering_watcher_report dwm-settings-input
 	exit 1
 fi
 
