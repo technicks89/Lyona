@@ -89,9 +89,8 @@ simple_watch_events() {
 		die "invalid $noun watch owner identity"
 	simple_watch_identity_is_live "$owner_pid:$owner_starttime" ||
 		die "$noun watch owner is unavailable"
-	# In the session's runtime directory, like dwm-status: cleared at logout, so a
-	# watcher killed before it can clean up leaves nothing in /tmp.
-	simple_watch_fifo_dir=$(mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dwm-settings-$noun-watch.XXXXXX")
+	# Before the directory exists, so that a watcher stopped as it is made still
+	# removes it (#420).
 	trap simple_watch_cleanup EXIT
 	# Exit, not just note the signal: a trap that returns leaves a blocked read
 	# waiting for its timeout, and SIGTERM is how the watcher is stopped (its
@@ -99,7 +98,18 @@ simple_watch_events() {
 	trap 'exit 129' HUP
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
+	# In the session's runtime directory, like dwm-status: cleared at logout, so a
+	# watcher killed before it can clean up leaves nothing in /tmp.
+	simple_watch_fifo_dir=$(mktemp -d "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dwm-settings-$noun-watch.XXXXXX")
 	mkfifo -m 600 "$simple_watch_fifo_dir/events"
+	# Held open for reading and writing until the monitor's end is open (#420).
+	# Opening a fifo for reading or for writing alone waits for the other end,
+	# and so did the monitor's: forked for it, a copy of this shell opens the
+	# fifo before it runs setpriv. Stopped in between, this watcher left that
+	# copy orphaned for good, still with its command line. Opened both ways, a
+	# fifo waits for nothing, and while it is held the copy's open does not wait.
+	# The monitor itself closes its copy, so its stream ends as before.
+	exec {simple_watch_hold_fd}<>"$simple_watch_fifo_dir/events"
 
 	# The monitor ends with this watcher however the watcher ends: Quickshell stops
 	# a watcher it no longer needs (a Settings section left) without waiting for
@@ -109,10 +119,10 @@ simple_watch_events() {
 		# shellcheck disable=SC2016 # expanded by the guard's own shell
 		setpriv --pdeathsig KILL -- sh -c '[ "$PPID" = "$1" ] || exit 0; shift; exec "$@"' sh "$$" \
 			udevadm monitor --udev --subsystem-match="$subsystem" --property \
-			>"$simple_watch_fifo_dir/events" 2>/dev/null &
+			>"$simple_watch_fifo_dir/events" 2>/dev/null {simple_watch_hold_fd}<&- &
 	else
 		udevadm monitor --udev --subsystem-match="$subsystem" --property \
-			>"$simple_watch_fifo_dir/events" 2>/dev/null &
+			>"$simple_watch_fifo_dir/events" 2>/dev/null {simple_watch_hold_fd}<&- &
 	fi
 	simple_watch_monitor_pid=$!
 	identity=$(simple_watch_capture_child "$simple_watch_monitor_pid") ||
@@ -124,10 +134,14 @@ simple_watch_events() {
 	# setpriv). Same setting and default as dwm-watchdog.sh's run_parent_bound.
 	interval=${LYONA_PARENT_BOUND_INTERVAL:-5}
 	[[ $interval =~ ^[0-9]+([.][0-9]+)?$ && $interval =~ [1-9] ]] || interval=5
+	# Read-only from here, so that the monitor's exit is the end of the stream:
+	# this end opens at once, the held one being a writer, and is then the only
+	# one left here.
 	exec {simple_watch_fd}<"$simple_watch_fifo_dir/events"
-	# Opening a fifo to read waits for its writer, so both ends are open now and
-	# the name is no longer needed: a watcher that is killed outright (SIGKILL,
-	# which runs no trap) then leaves nothing behind in the temporary directory.
+	exec {simple_watch_hold_fd}<&-
+	# Both ends are open now and the name is no longer needed: a watcher that is
+	# killed outright (SIGKILL, which runs no trap) then leaves nothing behind in
+	# the temporary directory.
 	rm -f -- "$simple_watch_fifo_dir/events"
 	rmdir -- "$simple_watch_fifo_dir" 2>/dev/null || true
 	simple_watch_fifo_dir=
