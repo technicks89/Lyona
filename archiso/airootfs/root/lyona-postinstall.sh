@@ -494,7 +494,8 @@ install_yay() {
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
-	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_boot_splash splash_in_initramfs install_topgrade install_yay
+	install_boot_splash splash_in_initramfs \
+	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade install_yay
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."
 [[ -d $REPO_SRC ]] || fail "checkout not found at $REPO_SRC (this script expects to run from the lyona live medium)."

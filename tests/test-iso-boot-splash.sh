@@ -14,7 +14,7 @@ postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
 sed -n '/^install_boot_splash() {$/,/^}$/p; /^splash_in_initramfs() {$/,/^}$/p' "$postinstall" >"$work/splash.sh"
 grep -q '^install_boot_splash() {$' "$work/splash.sh" || fail 'install_boot_splash not found in the postinstall'
 grep -q '^splash_in_initramfs() {$' "$work/splash.sh" || fail 'splash_in_initramfs not found in the postinstall'
-grep -Eq '^[[:space:]]+install_networkmanager .*install_boot_splash splash_in_initramfs' "$postinstall" ||
+grep -Eq '^[[:space:]]+install_boot_splash splash_in_initramfs \\$' "$postinstall" ||
 	fail 'the boot splash functions are not exported for run_logged'
 splash_line=$(grep -n 'run_logged "Setting up the boot splash..." install_boot_splash' "$postinstall" | cut -d: -f1)
 install_line=$(grep -n 'run_logged "Running install.sh' "$postinstall" | cut -d: -f1)
