@@ -852,6 +852,38 @@ focus_window() {
 	fi
 }
 
+# One of the shell's own windows, by its process and exact title (#413): the
+# shell does not know a window's X id, and its windows stay mapped while open,
+# so opening one again does not bring it forward. Activated as focus does, as a
+# pager, so dwm views its tag and focuses it. Only a window of PID is matched:
+# _NET_WM_PID, which Qt sets.
+focus_shell_window() {
+	pid=${1:-}
+	title=${2:-}
+	case $pid in
+	'' | *[!0-9]*)
+		printf 'usage: %s focus-shell <pid> <title>\n' "$0" >&2
+		return 2
+		;;
+	esac
+	if [ -z "$title" ]; then
+		printf 'usage: %s focus-shell <pid> <title>\n' "$0" >&2
+		return 2
+	fi
+	command -v xdotool >/dev/null 2>&1 || {
+		printf 'xdotool is required to bring a shell window forward\n' >&2
+		return 127
+	}
+	for target in $(xdotool search --all --pid "$pid" 2>/dev/null); do
+		if [ "$(xdotool getwindowname "$target" 2>/dev/null)" = "$title" ]; then
+			focus_window "$target"
+			return
+		fi
+	done
+	printf 'no window titled %s belongs to process %s\n' "$title" "$pid" >&2
+	return 1
+}
+
 # Closing a card from the overview popup (Sync Sprint 8 S8-04,
 # docs/sprints/completed/SYNC-SPRINT-8-OVERVIEW-INTERACTION.md) is not selmon->sel, which is
 # the only client dwm.c's own killclient() closes -- most cards are not the
@@ -894,6 +926,9 @@ switch)
 focus)
 	focus_window "${2:-}"
 	;;
+focus-shell)
+	focus_shell_window "${2:-}" "${3:-}"
+	;;
 layout)
 	set_layout "${2:-}"
 	;;
@@ -901,7 +936,7 @@ close)
 	close_window "${2:-}"
 	;;
 *)
-	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>|close <window-id>|layout <index>]\n' "$0" >&2
+	printf 'usage: %s [state|watch|switch <zero-based-workspace>|focus <window-id>|focus-shell <pid> <title>|close <window-id>|layout <index>]\n' "$0" >&2
 	exit 2
 	;;
 esac

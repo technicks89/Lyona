@@ -8,6 +8,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- Systems the image installs boot with the lyona Plymouth splash, the one the
+  install medium boots with, and an encrypted disk asks for its passphrase
+  there instead of on the bare console: the message, then a box with a
+  blinking cursor and a dot for each character typed (the splash used to add
+  `***` after the message). The postinstall installs `plymouth`
+  and the medium's generated theme, puts the `plymouth` hook before `encrypt`,
+  and adds `splash` through `/etc/default/grub.d/90-lyona-splash.cfg`;
+  `install.sh`'s GRUB theme step regenerates `grub.cfg` with it. A failure puts
+  the hooks back and is listed on the closing screen. In a VM, LightDM started
+  about 0.1 s later with it (8 boots each way). `docs/src/install.md` says how
+  to turn it off. `install.sh` on an existing system does not add it.
+
 ### Changed
 
 - On Arch Linux ARM, the installer offers to switch to NetworkManager
@@ -80,6 +94,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the rejection now names the identity and the architecture found. CachyOS
   and the gaming profile stay x86_64 only (#1).
 
+- The image installer's archinstall configuration uses archinstall 4.5's
+  current forms: `disk_encryption` inside `disk_config`, `audio_config` under
+  `app_config`, no `debug`, `offline` or `no_pkg_lookups` (which archinstall
+  reads only as command-line flags), and `version` 4.5. Arch has shipped 4.5
+  since 2026-09-29; it still read the old forms, but only as backwards
+  compatibility. Installed in a VM from the `2026.10.0-beta.6` image on UEFI
+  with LUKS and on legacy BIOS (`docs/evidence/arch001-archinstall-4.5.md`).
+  `tests/test-arch-iso-builder.sh` fails when a deprecated key comes back.
 - The record catches up with the published `2026.10.0-beta.6`, which is
   `1bfafac`: its changelog section and release notes list #317 to #328; SPEC
   and the install guide describe the base-system download as it is since
@@ -118,6 +140,47 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
   `uname` stub, and an aarch64 plan case is added.
 
+- Closing Settings, or leaving its Displays or Input section, no longer
+  sometimes leaves an idle `bash` process behind until logout (#420). The
+  section's udev watcher, stopped while it was still starting, left the copy
+  of itself that starts `udevadm monitor` waiting for good to open the pipe
+  between them, about once in 40 starts in a test. That copy no longer waits,
+  and a watcher stopped as it starts no longer leaves an empty
+  `dwm-settings-*-watch.*` directory in the session's runtime directory.
+- `install.sh` no longer replaces a GTK theme someone else set without a
+  word. On the first install for an account, a `~/.config/gtk-3.0` or
+  `gtk-4.0` `settings.ini`, or a `~/.gtkrc-2.0`, that already sets a theme,
+  cursor or dark preference is kept as `FILE.bak.<time>` before lyona's theme
+  is written into it, and the summary names those files. Found while
+  qualifying the installer on an existing Arch system (ARCH-003): the user's
+  `Adwaita-dark` was overwritten, with no copy kept and nothing said.
+- The LightDM greeter shows the whole lyona logo (#414). slick-greeter draws
+  it at its own size two 40px grid cells above the bottom of the screen, so
+  the 512px icon was cut off at every resolution. The login monitor now gets
+  `assets/logo/lyona-logo-greeter.png`, the horizontal logo at 80px tall,
+  installed as `/usr/share/pixmaps/lyona-greeter-logo.png`; other monitors
+  keep the icon, which they draw centred. `tests/test-lightdm-config.sh`
+  fails when the login logo is taller than 80px.
+
+- The greeter's top bar is one even shade (#414). slick-greeter paints the
+  bar itself, the blurred wallpaper under a dark tint, and only the hostname,
+  clock and power items took the Tokyo Night background, so the middle of the
+  bar was lighter than its ends. The items are now transparent; their text
+  and hover colours are unchanged.
+
+- Opening Settings, System Health or the notification history while it is
+  already open on another tag brings it forward (#413): dwm views its tag and
+  focuses it. Settings stays on the page it was on, or goes to the page asked
+  for (the Control Center's lyona version row asks for System), and System
+  Health scans again, as opening it always did. Each used to stay out of
+  sight on its old tag until it was closed and opened again, because an open
+  window is already mapped. The shell asks dwm through the new
+  `dwm-quickshell-state focus-shell PID TITLE`, which activates the window of
+  that process with exactly that title, as the panel's running apps do. An
+  open Settings or System Health also keeps its screen.
+  `check-quickshell-settings-xvfb` and `check-quickshell-large-surfaces-xvfb`
+  now stage `dwm-quickshell-state` too, so they no longer run the copy
+  installed on the machine that runs the tests.
 - Setting a fresh account's default applications no longer prints a raw
   `ln: failed to create hard link ... File exists` when a preference written
   meanwhile is kept, just before saying it was kept. `ln`'s own message now

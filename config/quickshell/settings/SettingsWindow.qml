@@ -50,6 +50,17 @@ FloatingWindow {
         settingsSearch.cursorPosition = settingsSearch.text.length;
     }
 
+    // Opened again while open (#413): mapped already, so dwm is asked to view
+    // its tag and focus it, found by this process and title.
+    Connections {
+        target: root.settingsModel
+
+        function onBringForwardRequested() {
+            Quickshell.execDetached(Commands.stateHelperCommand("focus-shell",
+                [Quickshell.processId.toString(), root.title]));
+        }
+    }
+
     onVisibleChanged: {
         if (visible) {
             Qt.callLater(root.focusSearch);

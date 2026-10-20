@@ -291,6 +291,41 @@ PATH="$work/switchbin:$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-state" focus 0x2400003
 grep -Fqx 'xdotool windowactivate 0x2400003' "$work/switch.log"
 
+# focus-shell (#413): of the windows of that process, the one with exactly
+# that title, activated as focus does; nothing when none has it.
+mkdir -p "$work/shellbin"
+cat >"$work/shellbin/xdotool" <<SH
+#!/bin/sh
+printf 'xdotool %s\\n' "\$*" >>"$work/switch.log"
+case "\$1 \$2 \$3 \${4:-}" in
+'search --all --pid 4242') printf '%s\\n' 101 102 103 ;;
+'getwindowname 101'*) printf 'dwm settings (old)\\n' ;;
+'getwindowname 102'*) printf 'dwm settings\\n' ;;
+'getwindowname 103'*) printf 'dwm settings\\n' ;;
+esac
+SH
+chmod +x "$work/shellbin/xdotool"
+: >"$work/switch.log"
+PATH="$work/shellbin:$work/bin:$PATH" \
+	"$repo/scripts/dwm-quickshell-state" focus-shell 4242 'dwm settings'
+grep -Fqx 'xdotool windowactivate 102' "$work/switch.log"
+[ "$(grep -c windowactivate "$work/switch.log")" -eq 1 ]
+: >"$work/switch.log"
+shell_status=0
+PATH="$work/shellbin:$work/bin:$PATH" \
+	"$repo/scripts/dwm-quickshell-state" focus-shell 4242 'dwm launcher' 2>"$work/shell.err" ||
+	shell_status=$?
+test "$shell_status" -eq 1
+grep -q 'no window titled dwm launcher belongs to process 4242' "$work/shell.err"
+grep -q windowactivate "$work/switch.log" && exit 1
+for args in "x42 dwm-settings" "4242"; do
+	shell_status=0
+	# shellcheck disable=SC2086 # each case is its words
+	PATH="$work/shellbin:$work/bin:$PATH" \
+		"$repo/scripts/dwm-quickshell-state" focus-shell $args 2>/dev/null || shell_status=$?
+	test "$shell_status" -eq 2
+done
+
 mkdir -p "$work/wmctrlbin"
 mv "$work/switchbin/wmctrl" "$work/wmctrlbin/wmctrl"
 : >"$work/switch.log"

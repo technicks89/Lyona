@@ -26,6 +26,17 @@ FloatingWindow {
         return Theme.accent;
     }
 
+    // Opened again while open (#413): mapped already, so dwm is asked to view
+    // its tag and focus it, found by this process and title.
+    Connections {
+        target: root.healthModel
+
+        function onBringForwardRequested() {
+            Quickshell.execDetached(Commands.stateHelperCommand("focus-shell",
+                [Quickshell.processId.toString(), root.title]));
+        }
+    }
+
     // Closed from outside, as by dwm's kill-window key, the window hides while the
     // model still reads visible, and every later open sets visible to true again,
     // which changes nothing: System Health could not be opened again.

@@ -30,11 +30,6 @@ as the bar.
 **Open questions this first-pass breakdown does not resolve** (need your
 input, not a guess):
 
-- Is legacy BIOS a qualified target? It boots: since #235 the wizard installs
-  GRUB for both UEFI and a legacy BIOS (MBR disk, ext4 `/boot`), as
-  `docs/RELEASING.md` says. But it has not been qualified, in a VM or on
-  hardware, and Phase 7's ROADMAP wording ("legacy BIOS where supported")
-  does not say whether it must be.
 - Which specific hardware and VM targets actually matter for the matrix
   (ARCH-004 below)? The ROADMAP names categories (UEFI, common display
   configs, audio, networking, suspend, NVIDIA) but not concrete machines/VM
@@ -42,6 +37,9 @@ input, not a guess):
 - Is there real NVIDIA hardware available to qualify the opt-in driver path
   against, or does that stay a documented, unqualified limitation for this
   release?
+
+Resolved: legacy BIOS is a qualified target, in a VM (decided 2026-10-19,
+qualified the same day; ARCH-004 below). Real hardware is still to do.
 
 Keep Phase 7 reviewable through these ordered boundaries. Finish, validate,
 and merge each before starting the next:
@@ -65,11 +63,13 @@ and merge each before starting the next:
   profile and stamps `VERSION`/commit/label into every required field without
   needing root or `mkarchiso` — `tests/test-arch-iso-builder.sh` (passing in
   this sandbox as of 2026-09-19).
-- [ ] Run the real (non-`--profile-only`) build on an Arch host with
+- [x] Run the real (non-`--profile-only`) build on an Arch host with
   `archiso` installed (`sudo scripts/build-lyona-arch-iso.sh --output
   release/`) and confirm `mkarchiso` itself resolves every package in the
-  current official repositories without a missing/renamed/moved package —
-  this sandbox has never actually invoked `mkarchiso`, only the staging step.
+  current official repositories without a missing/renamed/moved package.
+  Done: images built with `mkarchiso` on the maintainer's host resolved every
+  package and installed on 2026-10-03 and 2026-10-09 (`docs/RELEASING.md`),
+  and the release workflow builds one for every release.
 - [ ] Confirm the NVIDIA opt-in path in `lyona-install.sh`/
   `lyona-postinstall.sh` (`LYONA_NVIDIA_DRIVER=1`) actually installs a working
   proprietary driver stack against the current Arch `nvidia-open`/
@@ -77,10 +77,13 @@ and merge each before starting the next:
   correctly. (Arch dropped `nvidia`/`nvidia-dkms`; the open modules need a
   Turing or newer GPU. Older cards get the 580xx or 470xx legacy driver, Sync
   Sprint 14, and a card no packaged driver supports stays on nouveau.)
-- [ ] Re-validate the `archinstall` JSON schema in `lyona-install.sh` against
+- [x] Re-validate the `archinstall` JSON schema in `lyona-install.sh` against
   whatever `archinstall` version the current `releng` profile actually pulls
   in — `docs/RELEASING.md` already flags this as version-sensitive and known
-  to have been wrong for at least one prior `archinstall` release.
+  to have been wrong for at least one prior `archinstall` release. Done
+  2026-10-19 for archinstall 4.5: the configuration moved off 4.5's deprecated
+  forms and installed in a VM on UEFI with LUKS and on legacy BIOS
+  (`docs/evidence/arch001-archinstall-4.5.md`).
 
 Acceptance:
 
@@ -97,18 +100,24 @@ Acceptance:
 - [x] Boot the built ISO in a KVM virtual machine (per `docs/RELEASING.md`'s
   own instruction), run `lyona-install` to completion against a UEFI target,
   and reboot from the installed virtual disk. Done 2026-10-03 (btrfs, no
-  LUKS, no NVIDIA), with an image built on the maintainer's host; an image
-  the release workflow built is still to do.
-- [ ] Verify LightDM presents a session, dwm starts, and the managed
+  LUKS, no NVIDIA), with an image built on the maintainer's host, and on
+  2026-10-19 with the release workflow's beta.6 image
+  (`docs/evidence/arch001-wizard-fallback.md`). With btrfs in LUKS the same
+  day, from an image built from `main`
+  (`docs/evidence/arch002-luks-desktop.md`).
+- [x] Verify LightDM presents a session, dwm starts, and the managed
   Quickshell shell (panel, Settings, Control Center) comes up without manual
   repair. LightDM, dwm, the panel, the launcher and the power menu were
   verified in the 2026-10-03 VM; the Control Center, keybind viewer and
   overview too in the 2026-10-09 beta.6 VM, and Settings in the 2026-10-10 VM,
   where it offered and ran a downgrade and showed a cancelled prompt's outcome
   (`docs/evidence/324-328-install-update-rollback.md`).
-- [ ] Verify the manual fallback path (boot the ISO, run `archinstall`
+- [x] Verify the manual fallback path (boot the ISO, run `archinstall`
   directly, then `/root/lyona-postinstall.sh` against the mounted target)
-  produces the same working result as the wizard path, at least once.
+  produces the same working result as the wizard path, at least once. Done
+  2026-10-19 with the beta.6 workflow image: archinstall from a configuration
+  file (ext4, no `[multilib]`), then postinstall, reached the desktop
+  (`docs/evidence/arch001-wizard-fallback.md`).
 - [x] Record the source ISO checksum, firmware mode, architecture,
   package-resolution result, first-boot result, and any untested hardware —
   `docs/RELEASING.md`'s own qualification-recording instruction. Recorded
@@ -139,9 +148,13 @@ Acceptance:
   `2026.10.0-beta.5` image install updated to `beta.6` with beta.5's updater,
   verified, and rolled back (`docs/evidence/280-config-split.md`); hardware is
   still to do.
-- [ ] Qualify the existing-system installer (`install.sh`) against a
+- [x] Qualify the existing-system installer (`install.sh`) against a
   pre-existing, non-lyona Arch install with real user data present, per
-  `SPEC.md`'s existing-system installer contract.
+  `SPEC.md`'s existing-system installer contract. Done 2026-10-19 in a VM with
+  seeded user data: everything outside the summary's announced changes was
+  kept. The one silent overwrite, a GTK theme, was fixed and re-run
+  (`docs/evidence/arch003-existing-system-install.md`). Hardware is still to
+  do.
 
 Acceptance:
 
@@ -153,8 +166,10 @@ Acceptance:
 
 ### ARCH-004: VM/Hardware Matrix and Release-Notes Limitations
 
-- [ ] Legacy BIOS boots but is not yet qualified: resolve the question above,
-  then qualify it or document it as unsupported.
+- [x] Qualify legacy BIOS or document it as unsupported. Qualified in a VM
+  2026-10-19: the wizard on SeaBIOS, from an image built from `main`,
+  reached the desktop (`docs/evidence/arch004-legacy-bios.md`). Real
+  hardware is still to do.
 - [ ] Qualify common display configurations (single monitor at minimum;
   multi-monitor if hardware is available — Phase 5's own real-hardware
   multi-monitor qualification is still separately outstanding too, see

@@ -6,6 +6,9 @@ Scope {
     id: root
 
     property bool visible: false
+    // Open() while already open (#413): SystemHealthWindow asks dwm to bring
+    // itself forward.
+    signal bringForwardRequested()
     property bool userRunning: false
     property bool systemRunning: false
     property bool repairRunning: false
@@ -43,15 +46,23 @@ Scope {
         return row.category === root.selectedCategory;
     })
 
+    // Already open, maybe on another tag or monitor (#413), it stays mapped, so
+    // nothing would show: dwm brings it forward where it is instead. Either way
+    // the scan runs again.
     function openOnScreen(screen) {
-        if (screen) {
-            root.targetScreen = screen;
+        if (root.visible) {
+            root.bringForwardRequested();
+        } else {
+            if (screen) {
+                root.targetScreen = screen;
+            }
+            root.visible = true;
         }
-        root.visible = true;
         root.refresh();
     }
 
     function open() {
+        if (root.visible) root.bringForwardRequested();
         root.visible = true;
         root.refresh();
     }

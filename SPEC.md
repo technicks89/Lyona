@@ -214,7 +214,11 @@ The supported installation flow must:
 6. Build dwm with the system compiler and detected X11 flags.
 7. Install the binary, man page, X session file, scripts, and default
    configuration.
-8. Seed missing user configuration while preserving existing files.
+8. Seed missing user configuration while preserving existing files. lyona's
+   theme is written into the GTK settings files (`gtk-3.0` and `gtk-4.0`
+   `settings.ini`, `~/.gtkrc-2.0`); on the first install for an account, one
+   that already sets a GTK theme, cursor or dark preference is kept as
+   `FILE.bak.<time>` first, and the summary names it.
 9. In the recommended and full profiles, install Celluloid, mpv, and sxiv and
    seed fresh-account audio/video and image MIME defaults using Celluloid and
    sxiv respectively, with Thunar for folders when installed. Seeding runs
@@ -781,7 +785,13 @@ written once the base install succeeds, prevents a later tty1 relogin from
 relaunching the wizard and re-wiping the disk. Once `archinstall` completes
 to the target root, `lyona-install` automatically runs
 `archiso/airootfs/root/lyona-postinstall.sh` to finish the lyona
-install. The postinstall script also remains runnable standalone against an
+install. Among its steps, it gives the new system the medium's Plymouth boot
+splash, which on an encrypted disk asks for the passphrase: `plymouth`, its
+initramfs hook before `encrypt`, and `splash` on the kernel command line through
+a GRUB drop-in (`/etc/default/grub.d/90-lyona-splash.cfg`), never an edit of
+`/etc/default/grub`. A failure there puts the hooks back and is reported, and
+the system boots without the splash. The existing-system installer does not
+add it. The postinstall script also remains runnable standalone against an
 already-completed base install (e.g. a manually-run `archinstall`, for custom
 partitioning). This differs from Anaconda/Kickstart in degree,
 not automation: Arch has no first-party unattended installer service, so
@@ -814,8 +824,8 @@ version, architecture, firmware mode, GPU and driver path, package-resolution re
 completed base install and postinstall run, first boot, and hardware
 limitations. As of this writing the archiso path is best-effort: the image has
 been installed and booted in a QEMU/KVM virtual machine with UEFI firmware
-(first on 2026-10-03), legacy BIOS boots but is not yet qualified, and it has
-not been tested on real hardware — see `docs/RELEASING.md`.
+(first on 2026-10-03), and with legacy BIOS firmware (qualified 2026-10-19),
+and it has not been tested on real hardware — see `docs/RELEASING.md`.
 
 ## 6. Filesystem and Installation Contract
 

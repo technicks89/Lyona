@@ -854,23 +854,25 @@ generate_configs() {
 	esp_id=$(cat /proc/sys/kernel/random/uuid)
 	root_id=$(cat /proc/sys/kernel/random/uuid)
 
+	# Inside disk_config, where archinstall 4.4 and later read it; the top-level
+	# form is only their backwards-compatibility path.
 	local disk_encryption_json=""
 	if [[ $ENCRYPT == 1 ]]; then
 		read -r -d '' disk_encryption_json <<EOF || true
-  "disk_encryption": {
-    "encryption_type": "luks",
-    "partitions": ["$root_id"],
-    "lvm_volumes": []
-  },
+,
+    "disk_encryption": {
+      "encryption_type": "luks",
+      "partitions": ["$root_id"],
+      "lvm_volumes": []
+    }
 EOF
 	fi
 
 	cat >"$CONFIG_JSON" <<EOF
 {
   "archinstall-language": "English",
-  "audio_config": {"audio": "pipewire"},
+  "app_config": {"audio_config": {"audio": "pipewire"}},
   "bootloader_config": {"bootloader": "Grub", "uki": false, "removable": true},
-  "debug": false,
   "disk_config": {
     "config_type": "default_layout",
     "device_modifications": [
@@ -906,9 +908,9 @@ EOF
           }
         ]
       }
-    ]
+    ]${disk_encryption_json}
   },
-${disk_encryption_json}  "hostname": "$HOSTNAME",
+  "hostname": "$HOSTNAME",
   "kernels": ["$(base_kernel)"],
   "locale_config": {"kb_layout": "$KEYMAP", "sys_enc": "UTF-8", "sys_lang": "en_US"},
   "mirror_config": {
@@ -918,14 +920,12 @@ ${disk_encryption_json}  "hostname": "$HOSTNAME",
     "custom_repositories": []
   },
   "network_config": {"type": "nm"},
-  "no_pkg_lookups": false,
   "ntp": true,
-  "offline": false,
   "packages": [$CACHYOS_PACKAGES],
   "pacman_config": {"color": true, "parallel_downloads": 10},
   "swap": {"enabled": true, "algorithm": "zstd"},
   "timezone": "$TIMEZONE",
-  "version": "4.4"
+  "version": "4.5"
 }
 EOF
 

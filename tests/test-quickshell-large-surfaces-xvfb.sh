@@ -111,7 +111,7 @@ cp "$repo/config/"*.toml "$config_home/lyona/"
 stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-system-health \
 	dwm-settings-display dwm-settings-input dwm-display-setup dwm-quickshell-controlcenter \
 	dwm-quickshell-controls dwm-quickshell-network dwm-quickshell-launcher dwm-diagnostics \
-	dwm-lock
+	dwm-lock dwm-quickshell-state
 
 cat >"$data_home/applications/dwm-large-surface-test.desktop" <<'DESKTOP'
 [Desktop Entry]
@@ -188,6 +188,45 @@ wait_window() {
 		i=$((i + 1))
 		sleep 0.05
 	done
+	return 1
+}
+
+# A root property's last field as a number (a window id is hex), 0 while it
+# is unset ("not found.").
+root_cardinal() {
+	value=$(DISPLAY=$display xprop -root "$1" 2>/dev/null | awk '{ print $NF }')
+	case $value in
+	'' | found.) value=0 ;;
+	esac
+	printf '%d\n' "$value"
+}
+
+# NAME, its open WINDOW, then the IPC call that opens it (#413): opened again
+# from another tag, dwm views the window's tag and focuses it, rather than
+# nothing showing, as an open window is mapped already.
+expect_brought_forward() {
+	name=$1
+	window_id=$2
+	shift 2
+	window_tag=$(DISPLAY=$display xprop -id "$window_id" _NET_WM_DESKTOP | awk '{ print $NF }')
+	away_tag=$(((window_tag + 2) % 9))
+	DISPLAY=$display xdotool set_desktop "$away_tag"
+	i=0
+	while [ "$i" -lt 100 ] && [ "$(root_cardinal _NET_CURRENT_DESKTOP)" != "$away_tag" ]; do
+		i=$((i + 1))
+		sleep 0.05
+	done
+	ipc "$@" >/dev/null
+	i=0
+	while [ "$i" -lt 100 ]; do
+		[ "$(root_cardinal _NET_CURRENT_DESKTOP)" = "$window_tag" ] &&
+			[ "$(root_cardinal _NET_ACTIVE_WINDOW)" = "$window_id" ] && return 0
+		i=$((i + 1))
+		sleep 0.05
+	done
+	printf '%s, open on tag %s, did not come forward when opened from tag %s: viewing tag %s, active window %s\n' \
+		"$name" "$((window_tag + 1))" "$((away_tag + 1))" "$(($(root_cardinal _NET_CURRENT_DESKTOP) + 1))" \
+		"$(root_cardinal _NET_ACTIVE_WINDOW)" >&2
 	return 1
 }
 
@@ -308,6 +347,7 @@ if DISPLAY=$display xprop -id "$health_window" _NET_WM_STATE | grep -q '_NET_WM_
 	exit 1
 fi
 capture_window system-health "$health_window"
+expect_brought_forward 'System Health' "$health_window" systemhealth open
 if [ "${DWM_LARGE_SURFACE_CAPTURE_ONLY:-0}" = 1 ]; then
 	ipc systemhealth close >/dev/null
 else
@@ -386,6 +426,7 @@ capture_root notification-popup
 ipc notifications openHistory >/dev/null
 history_window=$(wait_window '^dwm notification history$')
 capture_window notification-history "$history_window"
+expect_brought_forward 'Notification history' "$history_window" notifications openHistory
 if [ "${DWM_LARGE_SURFACE_CAPTURE_ONLY:-0}" = 1 ]; then
 	ipc notifications closeHistory >/dev/null
 else

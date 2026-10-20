@@ -120,6 +120,16 @@ for key in logo other-monitors-logo; do
 	}
 done
 
+# slick-greeter draws the login monitor's logo at its own size, two 40px grid
+# cells above the bottom edge: a taller image runs off the screen (#414).
+logo=$(sed -n 's/^logo=//p' "$stage/etc/lightdm/slick-greeter.conf")
+logo_height=$(od -An -tu1 -j20 -N4 "$stage$logo" | awk '{ print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4 }')
+((logo_height > 0 && logo_height <= 80)) || {
+	printf 'slick-greeter.conf logo is %s pixels tall; at most 80 fit.\n' \
+		"$logo_height" >&2
+	exit 1
+}
+
 # The greeter theme needs the built lyona-toml, so install.sh deploys the
 # LightDM config only after `make` (Sync Sprint 16: a fresh image install
 # failed here). And the Makefile says so, rather than failing deep inside.

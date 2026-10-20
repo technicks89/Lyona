@@ -205,6 +205,34 @@ terminate_process_identity() {
 	wait "$terminate_pid" 2>/dev/null || true
 }
 
+# lingering_watcher_report NAME: a Settings watcher outlived the window (#420).
+# Says what each copy was doing and whether it went away in the next 5 s, so
+# the failure tells a slow stop from one that never comes. The test still fails.
+lingering_watcher_report() (
+	report_pattern="$1 watch [0-9]+ [0-9]+\$"
+	report_pids=$(pgrep -f "$report_pattern" 2>/dev/null) || report_pids=
+	report_found=0
+	for report_pid in $report_pids; do
+		grep -qF "$data_home/checkout/scripts/$1" "/proc/$report_pid/cmdline" 2>/dev/null || continue
+		report_found=1
+		printf '%s watcher %s, and its children:\n' "$1" "$report_pid" >&2
+		ps -o pid=,ppid=,stat=,etimes=,wchan:24=,args= -p "$report_pid" >&2 2>/dev/null || true
+		ps -o pid=,ppid=,stat=,etimes=,wchan:24=,args= --ppid "$report_pid" >&2 2>/dev/null || true
+		report_attempt=0
+		while [ "$report_attempt" -lt 100 ] && kill -0 "$report_pid" 2>/dev/null; do
+			report_attempt=$((report_attempt + 1))
+			sleep 0.05
+		done
+		if kill -0 "$report_pid" 2>/dev/null; then
+			printf '%s watcher %s was still running 5 s later\n' "$1" "$report_pid" >&2
+		else
+			printf '%s watcher %s exited within %s ms of the check\n' "$1" "$report_pid" \
+				"$((report_attempt * 50))" >&2
+		fi
+	done
+	[ "$report_found" = 1 ] || printf '%s watcher had exited by the time of this report\n' "$1" >&2
+)
+
 scoped_settings_watcher_identities() (
 	for watcher_proc in /proc/[0-9]*; do
 		watcher_pid=${watcher_proc##*/}
@@ -368,7 +396,7 @@ stage_helpers checkout "$data_home/checkout/scripts" dwm-settings-provider dwm-s
 	dwm-quickshell-controls dwm-quickshell-network dwm-diagnostics dwm-default-apps \
 	dwm-xdg-autostart dwm-settings-appearance dwm-settings-wallpaper dwm-settings-font \
 	dwm-settings-theme dwm-cursor-reload dwm-settings-toolkit dwm-xkbset dwm-settings-picom \
-	dwm-accessibility-settings theme-apply.sh dwm-terminal dwm-lock lyona-version
+	dwm-accessibility-settings theme-apply.sh dwm-terminal dwm-lock lyona-version dwm-quickshell-state
 
 appearance_failure_fixture=$work/appearance-snapshot-failure
 mv "$data_home/checkout/scripts/dwm-settings-appearance" \
@@ -2917,6 +2945,51 @@ section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
 [ "$section" = audio ]
 
+# Opening Settings while it is open on another tag (#413) brings it forward:
+# dwm views its tag and focuses it, on the page it was on. Mapping an open
+# window again does nothing, so this used to leave it out of sight.
+test_stage='opening Settings again from another tag'
+# A root property's last field as a number (a window id is hex), 0 while it
+# is unset ("not found.").
+root_cardinal() {
+	value=$(DISPLAY=$display xprop -root "$1" 2>/dev/null | awk '{ print $NF }')
+	case $value in
+	'' | found.) value=0 ;;
+	esac
+	printf '%d\n' "$value"
+}
+settings_tag=$(DISPLAY=$display xprop -id "$window" _NET_WM_DESKTOP | awk '{ print $NF }')
+other_tag=$(((settings_tag + 2) % 9))
+DISPLAY=$display xdotool set_desktop "$other_tag"
+i=0
+while [ "$i" -lt 100 ] && [ "$(root_cardinal _NET_CURRENT_DESKTOP)" != "$other_tag" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+[ "$(root_cardinal _NET_CURRENT_DESKTOP)" = "$other_tag" ]
+DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settings open >/dev/null
+i=0
+while [ "$i" -lt 100 ]; do
+	[ "$(root_cardinal _NET_CURRENT_DESKTOP)" = "$settings_tag" ] &&
+		[ "$(root_cardinal _NET_ACTIVE_WINDOW)" = "$window" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
+if [ "$(root_cardinal _NET_CURRENT_DESKTOP)" != "$settings_tag" ] ||
+	[ "$(root_cardinal _NET_ACTIVE_WINDOW)" != "$window" ]; then
+	printf 'Settings, open on tag %s, did not come forward when opened from tag %s: viewing tag %s, active window %s\n' \
+		"$((settings_tag + 1))" "$((other_tag + 1))" "$(($(root_cardinal _NET_CURRENT_DESKTOP) + 1))" \
+		"$(root_cardinal _NET_ACTIVE_WINDOW)" >&2
+	exit 1
+fi
+section=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest currentSection)
+[ "$section" = audio ] || {
+	printf 'Opening Settings again moved it from Audio to %s\n' "$section" >&2
+	exit 1
+}
+
 DISPLAY=$display xdotool key Escape
 test_stage='closing Settings and checking lifecycle cleanup'
 i=0
@@ -2948,11 +3021,13 @@ fi
 if pgrep -af '[d]wm-settings-display watch [0-9]+ [0-9]+$' |
 	grep -F "$data_home/checkout/scripts/dwm-settings-display" >/dev/null; then
 	printf 'Settings display watcher remained active after close\n' >&2
+	lingering_watcher_report dwm-settings-display
 	exit 1
 fi
 if pgrep -af '[d]wm-settings-input watch [0-9]+ [0-9]+$' |
 	grep -F "$data_home/checkout/scripts/dwm-settings-input" >/dev/null; then
 	printf 'Settings input watcher remained active after close\n' >&2
+	lingering_watcher_report dwm-settings-input
 	exit 1
 fi
 
