@@ -777,7 +777,13 @@ written once the base install succeeds, prevents a later tty1 relogin from
 relaunching the wizard and re-wiping the disk. Once `archinstall` completes
 to the target root, `lyona-install` automatically runs
 `archiso/airootfs/root/lyona-postinstall.sh` to finish the lyona
-install. The postinstall script also remains runnable standalone against an
+install. Among its steps, it gives the new system the medium's Plymouth boot
+splash, which on an encrypted disk asks for the passphrase: `plymouth`, its
+initramfs hook before `encrypt`, and `splash` on the kernel command line through
+a GRUB drop-in (`/etc/default/grub.d/90-lyona-splash.cfg`), never an edit of
+`/etc/default/grub`. A failure there puts the hooks back and is reported, and
+the system boots without the splash. The existing-system installer does not
+add it. The postinstall script also remains runnable standalone against an
 already-completed base install (e.g. a manually-run `archinstall`, for custom
 partitioning). This differs from Anaconda/Kickstart in degree,
 not automation: Arch has no first-party unattended installer service, so

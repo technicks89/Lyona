@@ -95,6 +95,9 @@ hex_to_console() {
 	printf '0x%s' "$(printf '%s' "${colour:1}" | tr '[:upper:]' '[:lower:]')"
 }
 
+# A 1x1 white RGBA PNG, written out by generate_one (no image tool needed).
+pixel_png=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==
+
 emit_theme_descriptor() {
 	local id=$1 console_bg=$2
 	cat <<EOF
@@ -146,30 +149,92 @@ logo.sprite.SetPosition(
 	0);
 
 # The password prompt has to be answerable, or an encrypted root cannot be
-# unlocked with the splash showing.
-prompt.bullets = "";
+# unlocked with the splash showing. The message, then a box to type in, with a
+# blinking cursor and a dot for each character typed. The script module draws
+# no shapes, and the initramfs font has no bullet: the box's border and fill,
+# the dots and the cursor are pixel.png, one white pixel, scaled to size and
+# made more or less transparent.
+pixel = Image("pixel.png");
+box.width = screen_width * 0.3;
+if (box.width < 280) box.width = 280;
+if (box.width > 420) box.width = 420;
+if (box.width > screen_width - 32) box.width = screen_width - 32;
+box.height = 40;
+box.x = (screen_width - box.width) / 2;
+box.padding = 14;
+dot.size = 8;
+dot.step = 14;
+# Globals, so the sprites the callbacks make outlive the callbacks.
+prompt.y = 0;
+cursor.ticks = 0;
+cursor.shown = 0;
+
+fun pixel_sprite(x, y, width, height, opacity) {
+	sprite = Sprite(pixel.Scale(width, height));
+	sprite.SetPosition(x, y, 2);
+	sprite.SetOpacity(opacity);
+	return sprite;
+}
 
 fun display_password_callback(prompt_string, bullet_count) {
-	prompt.bullets = "";
+	prompt.image = Image.Text(prompt_string, $foreground);
+	prompt.sprite = Sprite(prompt.image);
+	prompt.y = (screen_height + logo.height) / 2 + 40;
+	prompt.sprite.SetPosition((screen_width - prompt.image.GetWidth()) / 2, prompt.y, 1);
+
+	box.y = prompt.y + prompt.image.GetHeight() + 14;
+	box.fill = pixel_sprite(box.x, box.y, box.width, box.height, 0.06);
+	box.top = pixel_sprite(box.x, box.y, box.width, 2, 0.45);
+	box.bottom = pixel_sprite(box.x, box.y + box.height - 2, box.width, 2, 0.45);
+	box.left = pixel_sprite(box.x, box.y, 2, box.height, 0.45);
+	box.right = pixel_sprite(box.x + box.width - 2, box.y, 2, box.height, 0.45);
+
+	# As many dots as fit: past that the box stays full.
+	shown = bullet_count;
+	room = Math.Int((box.width - 2 * box.padding - 6) / dot.step);
+	if (shown > room) shown = room;
 	index = 0;
-	while (index < bullet_count) {
-		prompt.bullets = prompt.bullets + "*";
+	while (index < room) {
+		box.dots[index] = NULL;
+		if (index < shown)
+			box.dots[index] = pixel_sprite(box.x + box.padding + index * dot.step,
+				box.y + (box.height - dot.size) / 2, dot.size, dot.size, 0.9);
 		index++;
 	}
-	prompt.image = Image.Text(prompt_string + " " + prompt.bullets, $foreground);
-	prompt.sprite = Sprite(prompt.image);
-	prompt.sprite.SetPosition(
-		(screen_width - prompt.image.GetWidth()) / 2,
-		(screen_height + logo.height) / 2 + 40,
-		1);
+	text_end = box.x + box.padding + shown * dot.step;
+	cursor.sprite = pixel_sprite(text_end, box.y + 9, 2, box.height - 18, 1);
+	cursor.ticks = 0;
+	cursor.shown = 1;
+}
+
+# Blinks the cursor: the refresh runs about 50 times a second.
+fun refresh_callback() {
+	if (cursor.shown) {
+		cursor.ticks++;
+		if (Math.Int(cursor.ticks / 25) % 2) cursor.sprite.SetOpacity(0);
+		else cursor.sprite.SetOpacity(1);
+	}
 }
 
 fun display_normal_callback() {
 	prompt.sprite = NULL;
+	box.fill = NULL;
+	box.top = NULL;
+	box.bottom = NULL;
+	box.left = NULL;
+	box.right = NULL;
+	index = 0;
+	while (box.dots[index]) {
+		box.dots[index] = NULL;
+		index++;
+	}
+	cursor.sprite = NULL;
+	cursor.shown = 0;
 }
 
 Plymouth.SetDisplayPasswordFunction(display_password_callback);
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
+Plymouth.SetRefreshFunction(refresh_callback);
 EOF
 }
 
@@ -211,6 +276,10 @@ generate_one() {
 	emit_script "$id" "$(hex_to_floats "$background")" \
 		"$(hex_to_floats "$foreground")" >"$outdir/$theme_name.script"
 	install -Dm644 "$logo" "$outdir/logo.png"
+	# One white pixel, the password box's and cursor's only image.
+	printf '%s' "$pixel_png" | base64 -d >"$outdir/pixel.png" ||
+		die "could not write $outdir/pixel.png"
+	chmod 644 "$outdir/pixel.png"
 }
 
 case ${1:-} in

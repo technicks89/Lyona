@@ -191,6 +191,11 @@ dwm_packages() {
 	arch:network)
 		printf '%s\n' networkmanager wireless-regdb iw
 		;;
+	arch:boot-splash)
+		# The image postinstall's boot splash on the new system: the lyona
+		# Plymouth theme the live medium boots with.
+		printf '%s\n' plymouth
+		;;
 	arch:vm-guest)
 		printf '%s\n' virtiofsd qemu-guest-agent spice-vdagent qemu-hw-display-virtio-vga
 		;;

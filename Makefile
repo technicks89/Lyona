@@ -1522,6 +1522,7 @@ check-download-pins:
 check-iso-install-warnings:
 	tests/test-iso-install-warnings.sh
 	tests/test-iso-vm-guest.sh
+	tests/test-iso-boot-splash.sh
 	tests/test-first-login-keys.sh
 
 # #237: the image installer's Wi-Fi step, against a stub iwd (busctl) and gum.

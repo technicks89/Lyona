@@ -8,6 +8,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- Systems the image installs boot with the lyona Plymouth splash, the one the
+  install medium boots with, and an encrypted disk asks for its passphrase
+  there instead of on the bare console: the message, then a box with a
+  blinking cursor and a dot for each character typed (the splash used to add
+  `***` after the message). The postinstall installs `plymouth`
+  and the medium's generated theme, puts the `plymouth` hook before `encrypt`,
+  and adds `splash` through `/etc/default/grub.d/90-lyona-splash.cfg`;
+  `install.sh`'s GRUB theme step regenerates `grub.cfg` with it. A failure puts
+  the hooks back and is listed on the closing screen. In a VM, LightDM started
+  about 0.1 s later with it (8 boots each way). `docs/src/install.md` says how
+  to turn it off. `install.sh` on an existing system does not add it.
+
 ### Changed
 
 - The image installer's archinstall configuration uses archinstall 4.5's

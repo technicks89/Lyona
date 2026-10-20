@@ -38,6 +38,21 @@ while IFS= read -r id; do
 	assert_file "$out/lyona.plymouth"
 	assert_file "$out/lyona.script"
 	assert_file "$out/logo.png"
+	assert_file "$out/pixel.png"
+
+	# The password box: the message, a box with a blinking cursor, and a dot
+	# per character, all drawn from the one pixel (the initramfs font has no
+	# bullet, and the script module draws no shapes).
+	[ "$(od -An -tx1 -j12 -N12 "$out/pixel.png" | tr -d ' \n')" = 494844520000000100000001 ] ||
+		fail "the $id splash's pixel.png is not a 1x1 PNG"
+	assert_contains "$out/lyona.script" 'pixel = Image("pixel.png");'
+	assert_contains "$out/lyona.script" 'Plymouth.SetRefreshFunction(refresh_callback);'
+	assert_contains "$out/lyona.script" 'box.dots[index] = pixel_sprite('
+	# A callback's sprites live in globals, or they vanish when it returns.
+	assert_contains "$out/lyona.script" 'prompt.y = 0;'
+	if grep -n 'Image.Text(' "$out/lyona.script" | grep -v 'Image.Text(prompt_string,' | grep -q .; then
+		fail "the $id splash draws text other than the prompt, which the initramfs font may not have"
+	fi
 
 	# Plymouth reads the theme by name, so these paths are what makes the
 	# generated theme findable at boot at all.
@@ -82,7 +97,7 @@ assert_contains "$work/themes/catppuccin-latte/lyona.plymouth" \
 # Same palette, same bytes, so a rebuild does not churn the ISO.
 "$generator" generate tokyonight "$themes" "$assets" "$work/again" ||
 	fail 'the second generation failed'
-for name in lyona.plymouth lyona.script; do
+for name in lyona.plymouth lyona.script pixel.png; do
 	cmp -s "$work/themes/tokyonight/$name" "$work/again/$name" ||
 		fail "generation is not deterministic: $name"
 done

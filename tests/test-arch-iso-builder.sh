@@ -203,7 +203,7 @@ fi
 # map, like every other installer. Each profile it uses must be in the map and
 # used, and no pacman line may name one of its packages directly.
 pacman_lines=$(grep -E 'pacman -(S|Qq)' "$postinstall")
-for profile in gpu-nvidia gpu-nvidia-dkms gpu-amd gpu-intel network vm-guest; do
+for profile in gpu-nvidia gpu-nvidia-dkms gpu-amd gpu-intel network vm-guest boot-splash; do
 	mapfile -t profile_packages < <(dwm_packages arch "$profile")
 	((${#profile_packages[@]} > 0)) || {
 		printf 'the package map has no arch:%s profile.\n' "$profile" >&2

@@ -382,6 +382,73 @@ install_qemu_guest_utils() {
 	arch-chroot "$TARGET" systemctl enable spice-vdagentd.service
 }
 
+# The boot splash this medium boots with, on the new system: the generated lyona
+# Plymouth theme over `quiet splash`, and on an encrypted disk the passphrase
+# prompt drawn by it. Measured in a VM, LightDM starts about 0.1 s later with
+# it. The plymouth hook goes after udev (or systemd), and so before encrypt,
+# before the package is installed: the package's own pacman hook then builds
+# the initramfs once, with the splash in it. `splash` reaches GRUB's default
+# command line through a drop-in of its own, like the GRUB theme's menu
+# settings; install.sh's GRUB theme step regenerates grub.cfg after this (#246).
+# Cosmetic: a failure puts the hooks back and is a warning, and the system boots
+# as archinstall left it. docs/src/install.md says how to turn it off.
+install_boot_splash() {
+	# LYONA_MEDIUM_ROOT: where the medium's files are read from, for the tests.
+	local medium=${LYONA_MEDIUM_ROOT:-} theme=/usr/share/plymouth/themes/lyona
+	local conf=$TARGET/etc/mkinitcpio.conf dropin=$TARGET/etc/default/grub.d/90-lyona-splash.cfg backup= saved=0
+	local -a splash
+	if [[ ! -f $medium$theme/lyona.plymouth || ! -f $medium/etc/plymouth/plymouthd.conf ]]; then
+		note_warning 'This medium has no lyona boot splash; the new system boots without one.'
+		return 0
+	fi
+	mapfile -t splash < <(dwm_packages arch boot-splash)
+	# One chain, so that any failure in it, the copies and the drop-in too, is
+	# the warning below rather than a failed step: run_logged runs under errexit.
+	# Already installed (a Retry), the package builds nothing: one build then.
+	# The package's stock plymouthd.conf is set aside as .pacnew because lyona's
+	# was there first; the initramfs build reads the theme from lyona's.
+	# shellcheck disable=SC2016 # expanded by grub-mkconfig
+	if backup=$(mktemp) && cp -p -- "$conf" "$backup" && saved=1 &&
+		install -d -m 0755 "$TARGET$theme" &&
+		install -m 0644 "$medium$theme"/* "$TARGET$theme/" &&
+		install -Dm 0644 "$medium/etc/plymouth/plymouthd.conf" "$TARGET/etc/plymouth/plymouthd.conf" &&
+		{ grep -Eq '^HOOKS=\(.*\<plymouth\>' "$conf" ||
+			sed -i -E '/^HOOKS=\(/ s/\<(udev|systemd)\>/& plymouth/' "$conf"; } &&
+		grep -Eq '^HOOKS=\(.*\<plymouth\>' "$conf" &&
+		arch-chroot "$TARGET" pacman -S --noconfirm --needed "${splash[@]}" &&
+		{ splash_in_initramfs || { arch-chroot "$TARGET" mkinitcpio -P && splash_in_initramfs; }; } &&
+		rm -f -- "$TARGET/etc/plymouth/plymouthd.conf.pacnew" &&
+		install -d -m 0755 "$TARGET/etc/default/grub.d" &&
+		printf '%s\n' '# The lyona boot splash (lyona-postinstall.sh); delete this file to turn it off.' \
+			'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} splash"' >"$dropin"; then
+		rm -f -- "$backup"
+		printf 'Boot splash: Plymouth, the lyona theme.\n'
+		return 0
+	fi
+	# The hooks as they were and the initramfs rebuilt from them, no drop-in. The
+	# theme files, and plymouth when it was installed, stay: without the hook
+	# and `splash` they do nothing at boot.
+	rm -f -- "$dropin" || :
+	if ((saved)) && ! cmp -s -- "$backup" "$conf"; then
+		cp -p -- "$backup" "$conf" || :
+		arch-chroot "$TARGET" mkinitcpio -P || :
+	fi
+	[[ -z $backup ]] || rm -f -- "$backup" || :
+	note_warning 'The boot splash could not be set up; the new system boots without it.'
+	return 0
+}
+
+# splash_in_initramfs: every initramfs on the new system carries Plymouth.
+splash_in_initramfs() {
+	local image found=1
+	for image in "$TARGET"/boot/initramfs-*.img; do
+		[[ -f $image ]] || continue
+		arch-chroot "$TARGET" lsinitcpio -- "/boot/${image##*/}" | grep 'plymouthd$' >/dev/null || return 1
+		found=0
+	done
+	return "$found"
+}
+
 # Topgrade (Sync Sprint 15 S15-06, decision D-28), from the AUR (#245):
 # topgrade-bin, built from its pinned PKGBUILD by install-topgrade --build-only
 # as the new user, after the install's passwordless sudo is gone, so nothing in
@@ -432,6 +499,7 @@ install_yay() {
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
+	install_boot_splash splash_in_initramfs \
 	install_networkmanager setup_swap_if_needed install_qemu_guest_utils install_topgrade install_yay
 
 mountpoint -q "$TARGET" || fail "$TARGET is not a mounted target root. Complete a base Arch install to $TARGET first (e.g. with archinstall), then re-run this script."
@@ -471,7 +539,7 @@ if [[ -e $LYONA_MIRRORS_MARKER ]]; then
 fi
 # Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
-set_total_steps 11
+set_total_steps 12
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
@@ -494,6 +562,9 @@ if ! wifi_carry_over "$TARGET" >>"$LOG_FILE" 2>&1; then
 fi
 run_logged "Checking swap..." setup_swap_if_needed
 run_logged "Checking for a QEMU/KVM hypervisor..." install_qemu_guest_utils
+# After the kernel and driver steps, before install.sh, whose GRUB theme step
+# regenerates grub.cfg with the splash's `splash`.
+run_logged "Setting up the boot splash..." install_boot_splash
 
 chmod +x "$REPO_SRC/install.sh"
 find "$REPO_SRC/scripts" -maxdepth 1 -type f -exec chmod +x {} +
