@@ -122,7 +122,10 @@ ShellRoot {
   # old height after Picom stopped. Another client's resize gives the popup
   # that same stale size, the full surface's height, here.
   g=open_popup(); assert_menu_sized(g)
-  run('xdotool','windowsize',g['WINDOW'],'280',str(screen_h-30)).check_returncode()
+  # --sync, so the check below follows the resize. Bounded and not checked:
+  # it waits to see the stale size, which the popup may already have put
+  # right, and the check below is the test.
+  run('timeout','3','xdotool','windowsize','--sync',g['WINDOW'],'280',str(screen_h-30))
   try:
    wait_for(lambda: popup() is not None and (int(popup()['X']),int(popup()['Y']),int(popup()['WIDTH']),int(popup()['HEIGHT']))==(40,30,280,300),'',3)
   except AssertionError:

@@ -68,12 +68,16 @@ PopupWindow {
     // last: after Picom started or stopped, the popup kept its old height
     // (#431). Once the answers have settled, a size that is still not the one
     // asked for is asked for again, as the one request outstanding. Bounded:
-    // each try waits for the answers to settle again.
+    // each try waits for the answers to settle again, and 10 in a row that
+    // do not take give up; a size found right starts the count again.
     property int sizeCorrections: 0
     function correctSize() {
         const popupWindow = popupHost.Window.window;
         if (!root.visible || !popupWindow) return;
-        if (popupWindow.width === root.implicitWidth && popupWindow.height === root.implicitHeight) return;
+        if (popupWindow.width === root.implicitWidth && popupWindow.height === root.implicitHeight) {
+            root.sizeCorrections = 0;
+            return;
+        }
         if (root.sizeCorrections >= 10) return;
         root.sizeCorrections++;
         if (popupWindow.width !== root.implicitWidth) popupWindow.width = root.implicitWidth;
