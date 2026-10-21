@@ -423,6 +423,17 @@ static int           dpi_value = DEFAULTDPI;
  * (Sync Sprint 12 S12-04). -1 when the pipe could not be made. */
 static int sig_wake_fd[2] = { -1, -1 };
 
+/* The key and modifier pairs grabbed on the root window, so that grabkeys()
+ * takes back only those no longer bound (#411). keygrabs_known is 0 until the
+ * first grab, and after an allocation failure. */
+typedef struct {
+	KeyCode code;
+	unsigned int mod;
+} KeyGrab;
+static KeyGrab *keygrabs;
+static size_t nkeygrabs;
+static int keygrabs_known;
+
 /* A hold_keys binding's keyboard hold (#391): see holdkeys_start. */
 #define HOLDKEYS_MS 1000
 static char holdkeys_for[256];
@@ -826,6 +837,10 @@ cleanup(void)
 		while (m->stack)
 			unmanage(m->stack, 0);
 	XUngrabKey(dpy, AnyKey, AnyModifier, root);
+	free(keygrabs);
+	keygrabs = NULL;
+	nkeygrabs = 0;
+	keygrabs_known = 0;
 	holdkeys_end();
 	while (mons)
 		cleanupmon(mons);
@@ -1760,6 +1775,23 @@ grabbuttons(Client *c, int focused)
 	}
 }
 
+static int
+keygrab_listed(const KeyGrab *grabs, size_t n, KeyGrab grab)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++)
+		if (grabs[i].code == grab.code && grabs[i].mod == grab.mod)
+			return 1;
+	return 0;
+}
+
+/* Grabs every bound key, then takes back the grabs no longer bound. A grab
+ * made again replaces the old one in place, so a bound key is never left
+ * ungrabbed meanwhile: dwm runs this on every keyboard MappingNotify, and the
+ * X server sends one as the core keyboard switches devices (the first XTest
+ * key, or another keyboard). Taking every grab back first lost a key pressed
+ * during the regrab to the focused window (#411). */
 void
 grabkeys(void)
 {
@@ -1768,31 +1800,54 @@ grabkeys(void)
 		unsigned int i, j, k;
 		unsigned int modifiers[] = { 0, LockMask, numlockmask, numlockmask|LockMask };
 		int start, end, skip;
+		size_t g, n = 0, total = 0;
 		KeySym *syms;
+		KeyGrab *grabs = NULL;
 
-		XUngrabKey(dpy, AnyKey, AnyModifier, root);
 		XDisplayKeycodes(dpy, &start, &end);
 		syms = XGetKeyboardMapping(dpy, start, end - start + 1, &skip);
 		if (!syms)
 			return;
 		const Key  *akeys        = rt_keys;
-		unsigned int nkeys_active = (unsigned int)rt_nkeys;
-		if (!akeys || !nkeys_active) {
+		unsigned int nkeys_active = akeys ? (unsigned int)rt_nkeys : 0;
+		for (k = start; k <= end; k++)
+			for (i = 0; i < nkeys_active; i++)
+				if (akeys[i].keysym == syms[(k - start) * skip])
+					total += LENGTH(modifiers);
+		if (total)
+			grabs = calloc(total, sizeof(*grabs));
+		/* Without a list of the old grabs, or room for the new one, take
+		 * every grab back first. */
+		if (!keygrabs_known || (total && !grabs)) {
 			XUngrabKey(dpy, AnyKey, AnyModifier, root);
-			XFree(syms);
-			return;
+			free(keygrabs);
+			keygrabs = NULL;
+			nkeygrabs = 0;
 		}
 		for (k = start; k <= end; k++)
 			for (i = 0; i < nkeys_active; i++)
 
 				if (akeys[i].keysym == syms[(k - start) * skip])
-					for (j = 0; j < LENGTH(modifiers); j++)
+					for (j = 0; j < LENGTH(modifiers); j++) {
 						/* A hold_keys binding freezes the keyboard
 						 * as it is pressed (#391): see keypress. */
 						XGrabKey(dpy, k,
 							 akeys[i].mod | modifiers[j],
 							 root, True, GrabModeAsync,
 							 akeys[i].holdkeys ? GrabModeSync : GrabModeAsync);
+						if (grabs) {
+							grabs[n].code = (KeyCode)k;
+							grabs[n].mod = akeys[i].mod | modifiers[j];
+							n++;
+						}
+					}
+		for (g = 0; g < nkeygrabs; g++)
+			if (!keygrab_listed(grabs, n, keygrabs[g]))
+				XUngrabKey(dpy, keygrabs[g].code, keygrabs[g].mod, root);
+		free(keygrabs);
+		keygrabs = grabs;
+		nkeygrabs = n;
+		keygrabs_known = !total || grabs;
 		XFree(syms);
 	}
 }
