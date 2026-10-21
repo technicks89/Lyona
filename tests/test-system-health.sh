@@ -273,4 +273,26 @@ if grep -nE 'trusted_system_command sudo|DWM_HEALTH_ELEVATOR|sudo"? -n' "$repo/s
 	exit 1
 fi
 
+# #32: a Pi 4 (V3D 4) starts without Picom by design, so a stopped Picom there
+# is reported as information, not a warning; anywhere else it stays a warning.
+grep -Fq "status=info picom_state='off at login on this GPU (V3D 4): window previews are off'" "$HELPER" ||
+	fail 'System Health does not report Picom left off at login as information'
+mkdir -p "$work/picom-health"
+{
+	printf 'COMMAND_TIMEOUT=5\nSCRIPT_DIR=%s\n' "$work/picom-health"
+	sed -n '/^run_bounded() {$/,/^}$/p; /^find_sibling_command() {$/,/^}$/p; /^picom_off_at_login() {$/,/^}$/p' "$HELPER"
+} >"$work/picom-health/lib.sh"
+grep -q '^picom_off_at_login() {$' "$work/picom-health/lib.sh" || fail 'picom_off_at_login not found'
+picom_health_case() {
+	# shellcheck disable=SC2016 # expanded by the stub
+	printf '#!/bin/sh\n[ "$1" = status ] || exit 2\n%s\n' "$1" >"$work/picom-health/dwm-settings-picom"
+	chmod +x "$work/picom-health/dwm-settings-picom"
+	bash -c '. "$1"; picom_off_at_login' sh "$work/picom-health/lib.sh"
+}
+picom_health_case "printf '{\"renderer\": \"v3d4\", \"detail\": \"Picom is stopped. Picom is off at login on this GPU\"}\n'" ||
+	fail 'Picom left off at login on V3D 4 was not recognised'
+! picom_health_case "printf '{\"renderer\": \"intel\", \"detail\": \"Picom is stopped.\"}\n'" ||
+	fail 'a stopped Picom elsewhere was taken for one left off at login'
+! picom_health_case 'exit 1' || fail 'a failing status was taken for Picom left off at login'
+
 printf 'System health helper: PASS\n'

@@ -726,7 +726,13 @@ install it, autostart starts it through `dwm-settings-picom`, and the dependency
 checks report it missing as a required failure when Quickshell is installed
 (optional in the core profile). When it is missing or cannot start, the session
 continues, the overview keeps icon-and-title cards, and one notification says
-so; it is never retried in a loop. Stopping it (`stop`, `toggle`, the Control
+so; it is never retried in a loop. The one exception is a Raspberry Pi 4 (V3D 4,
+experimental, ARM64 project): there Picom makes the desktop unusable with either
+backend it can run (#32). So under the Automatic policy, autostart's
+`session-start` leaves it off at login, with no notification, and `status` says
+why. A backend chosen in Settings, `PICOM_BACKEND`, a user configuration
+outside the editor's subset, and `start` from Settings or the Control Center
+still start it. Stopping it (`stop`, `toggle`, the Control
 Center's `toggle-compositor`) remains a troubleshooting action that turns
 window previews off until it starts again.
 

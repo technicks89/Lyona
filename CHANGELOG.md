@@ -24,6 +24,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- On a Raspberry Pi 4, Picom stays off at login (#32). With the GPU's V3D 4,
+  Picom made the desktop unusable: it froze with Xorg's acceleration on, and
+  everything fell back to software rendering with it off. Autostart now runs
+  `dwm-settings-picom session-start`, which leaves Picom off there under the
+  Automatic policy. Settings > Appearance > Compositor says why, and System
+  Health reports it as information rather than a warning. The
+  overview shows icon-and-title cards. Choosing a backend in Settings, or
+  setting `PICOM_BACKEND`, still starts it at login, and Settings can start it
+  for the session. Every other GPU, the Pi 5's V3D 7 among them, is unchanged.
+  Not yet checked on a Pi 4: unit tests only.
 - On Arch Linux ARM, the installer offers to switch to NetworkManager
   (ARM1-06). Arch Linux ARM's root filesystem enables systemd-networkd with
   two stock DHCP files, so NetworkManager was installed but left off, and the

@@ -649,6 +649,7 @@ class PicomTests(unittest.TestCase):
             ("nvidia", "xrender"),
             ("unknown", "xrender"),
             ("software", "xrender"),
+            ("v3d4", "xrender"),
         ]:
             with patch.object(picom, "renderer", return_value=gpu):
                 self.assertEqual(picom.backend(picom.Configuration())[1], expected)
@@ -664,7 +665,9 @@ class PicomTests(unittest.TestCase):
             ("Mesa", "llvmpipe", 0, "software"),
             # ARM GPUs (ARM1-04): none is measured yet, so auto picks XRender.
             # The Pi's v3d is measured in ARM Sprint 3, NVIDIA on ARM in 4.
-            ("Broadcom", "V3D 4.2.14.0", 1, "unknown"),
+            # V3D 4, the Pi 4, is named: Picom stays off there at login (#32).
+            ("Broadcom", "V3D 4.2.14.0", 1, "v3d4"),
+            ("Broadcom", "V3D 4.2", 0, "v3d4"),
             ("Broadcom", "V3D 7.1.7.0", 1, "unknown"),
             ("Mesa", "virgl (Apple M2)", 1, "unknown"),
             ("Mesa", "Mali-G610 (Panfrost)", 1, "unknown"),
@@ -676,6 +679,77 @@ class PicomTests(unittest.TestCase):
             )
             with patch.object(picom, "diagnostics", return_value=text):
                 self.assertEqual(picom.renderer(picom.Configuration()), expected)
+
+    def session_start(self):
+        out = []
+        with (
+            patch.object(sys, "argv", ["dwm-settings-picom", "session-start"]),
+            patch.object(picom, "activate", return_value="started") as activate,
+            patch("builtins.print", side_effect=lambda text: out.append(text)),
+        ):
+            picom.main()
+        return activate, out[-1]
+
+    def test_session_start_leaves_picom_off_on_v3d4_under_auto(self):
+        # #32: on the Pi 4, Picom makes the desktop unusable; login skips it.
+        with patch.object(picom, "renderer", return_value="v3d4"):
+            activate, out = self.session_start()
+        activate.assert_not_called()
+        self.assertIn("off at login", out)
+
+    def test_session_start_starts_picom_everywhere_else(self):
+        for gpu in ("intel", "amd", "nvidia", "software", "unknown"):
+            with patch.object(picom, "renderer", return_value=gpu):
+                activate, _ = self.session_start()
+            activate.assert_called_once()
+            self.assertEqual(activate.call_args.args[1], "start")
+
+    def test_session_start_on_v3d4_honours_an_explicit_choice(self):
+        with patch.object(picom, "renderer", return_value="v3d4"):
+            with patch.dict(os.environ, PICOM_BACKEND="xrender"):
+                activate, _ = self.session_start()
+                activate.assert_called_once()
+            self.write('backend="xrender";\n')
+            activate, _ = self.session_start()
+            activate.assert_called_once()
+            # The user's own picom.conf, outside the editor's subset.
+            with patch.object(
+                picom,
+                "session_configuration",
+                return_value=picom.NativeConfiguration(self.path),
+            ):
+                activate, _ = self.session_start()
+                activate.assert_called_once()
+
+    def test_session_start_keeps_a_running_picom_on_v3d4(self):
+        with (
+            patch.object(picom, "renderer", return_value="v3d4"),
+            patch.object(picom, "processes", return_value=[{"pid": 1, "args": ["picom"]}]),
+        ):
+            activate, _ = self.session_start()
+        activate.assert_called_once()
+
+    def test_start_on_v3d4_still_starts(self):
+        # Only login skips it: Settings and the Control Center start it.
+        with (
+            patch.object(sys, "argv", ["dwm-settings-picom", "start"]),
+            patch.object(picom, "renderer", return_value="v3d4"),
+            patch.object(picom, "activate", return_value="started") as activate,
+            patch("builtins.print"),
+        ):
+            picom.main()
+        activate.assert_called_once()
+
+    def test_status_says_why_picom_is_off_on_v3d4(self):
+        with patch.object(picom, "renderer", return_value="v3d4"):
+            result = picom.status()
+        self.assertEqual(result["renderer"], "v3d4")
+        self.assertIn("off at login", result["detail"])
+        with (
+            patch.object(picom, "renderer", return_value="v3d4"),
+            patch.dict(os.environ, PICOM_BACKEND="xrender"),
+        ):
+            self.assertNotIn("off at login", picom.status()["detail"])
 
     def test_reload_does_not_start_stopped_compositor(self):
         with patch.object(picom, "launch") as launch:

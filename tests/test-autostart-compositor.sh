@@ -25,7 +25,7 @@ for tool in sleep cat; do
 done
 cat >"$work/stubs/dwm-settings-picom" <<'EOF'
 #!/bin/sh
-[ "$1" = start ] || exit 2
+[ "$1" = session-start ] || exit 2
 if [ "${STUB_PICOM_FAILS:-0}" = 1 ]; then
 	printf 'Picom failed to start; see /run/user/1000/lyona-picom/picom.log\n' >&2
 	exit 1

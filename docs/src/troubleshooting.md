@@ -256,6 +256,15 @@ installed: `sudo pacman -S picom`. Start Picom with `dwm-settings-picom start`, 
 `picom` alone: lyona's default configuration leaves the backend for the helper to
 choose, and Picom 13 does not start without one.
 
+### Picom is off on a Raspberry Pi 4
+
+On a Raspberry Pi 4, lyona does not start Picom at login: with the Pi 4's GPU
+(V3D 4) it makes the desktop unusable. There is no notification;
+`dwm-settings-picom status` and Settings > Appearance > Compositor say so. The
+overview shows icon-and-title cards. To use Picom anyway, choose a backend in
+**Settings > Appearance > Compositor** (it then starts at every login), or start
+it for one session there. The Raspberry Pi 5 is not affected.
+
 ### Stopping Picom
 
 **Control Center > Restart Picom** restarts it. To stop it while troubleshooting,

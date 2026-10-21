@@ -259,7 +259,7 @@ done
 # launches picom unless this display already has one.
 cat >"$work/bin/dwm-settings-picom" <<'EOF'
 #!/bin/sh
-[ "$1" = start ] || exit 1
+[ "$1" = session-start ] || exit 1
 [ -f "${TEST_STATE:?}/picom.running" ] || picom
 EOF
 chmod +x "$work/bin/dwm-settings-picom"

@@ -95,6 +95,12 @@ The Pi 4's VideoCore VI is the slowest GPU Lyona will support. The lean goal
 4. **Record** the measurements in the sprint's evidence; any default changed
    for the Pi is written in the user docs.
 
+**Already found (#32, 2026-10-15):** on the Pi 4's V3D 4, Picom made the
+desktop unusable with both backends it can run. Since 2026-10-21, the
+Automatic policy leaves it off at login there (`dwm-settings-picom
+session-start`), so the overview shows its cards. Check that on the Pi 4, and
+measure whether the Pi 5's V3D 7 needs the same.
+
 **Acceptance:** the desktop is usable on a 4 GB Pi 4 by the numbers recorded,
 and its idle cost is within the budget the sprint sets from them.
 
