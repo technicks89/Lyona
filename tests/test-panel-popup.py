@@ -116,6 +116,19 @@ ShellRoot {
   for which in ('plain','late'): check_clicks(False)
   which='plain'
 
+  # A stale size from X is asked for again (#431). Qt sends the two implicit
+  # sizes as two requests, and Quickshell's move to the anchor resends the
+  # size X last reported: an answer that arrived late left the popup at the
+  # old height after Picom stopped. Another client's resize gives the popup
+  # that same stale size, the full surface's height, here.
+  g=open_popup(); assert_menu_sized(g)
+  run('xdotool','windowsize',g['WINDOW'],'280',str(screen_h-30)).check_returncode()
+  try:
+   wait_for(lambda: popup() is not None and (int(popup()['X']),int(popup()['Y']),int(popup()['WIDTH']),int(popup()['HEIGHT']))==(40,30,280,300),'',3)
+  except AssertionError:
+   raise AssertionError('the popup kept a size it did not ask for (40,30 280x300 wanted): %r'%(popup(),))
+  click(700,500); assert_dismissed("Outside click did not dismiss popup after its size was restored")
+
   # A click on a window closes it too, the selected window included: dwm takes
   # that click while the popup has the keyboard.
   feh=None

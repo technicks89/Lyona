@@ -61,6 +61,35 @@ PopupWindow {
         rect.y: root.panelOffset + (root.clickAwaySurface ? 0 : root.menuY)
     }
 
+    // Qt sends implicitWidth and implicitHeight to X as two requests, and
+    // Quickshell moves the popup to its anchor at the size Qt last heard back
+    // from X. When X's answer to the first request arrives after the second
+    // was sent, that size is a stale one, and Quickshell's move sends it again,
+    // last: after Picom started or stopped, the popup kept its old height
+    // (#431). Once the answers have settled, a size that is still not the one
+    // asked for is asked for again, as the one request outstanding. Bounded:
+    // each try waits for the answers to settle again.
+    property int sizeCorrections: 0
+    function correctSize() {
+        const popupWindow = popupHost.Window.window;
+        if (!root.visible || !popupWindow) return;
+        if (popupWindow.width === root.implicitWidth && popupWindow.height === root.implicitHeight) return;
+        if (root.sizeCorrections >= 10) return;
+        root.sizeCorrections++;
+        if (popupWindow.width !== root.implicitWidth) popupWindow.width = root.implicitWidth;
+        if (popupWindow.height !== root.implicitHeight) popupWindow.height = root.implicitHeight;
+        sizeSettle.restart();
+    }
+    Timer {
+        id: sizeSettle
+        interval: 100
+        onTriggered: root.correctSize()
+    }
+    onImplicitWidthChanged: { root.sizeCorrections = 0; sizeSettle.restart(); }
+    onImplicitHeightChanged: { root.sizeCorrections = 0; sizeSettle.restart(); }
+    onWidthChanged: sizeSettle.restart()
+    onHeightChanged: sizeSettle.restart()
+
     // On X11 a popup is override-redirect, so the window manager never focuses
     // it by itself: with any window open, Escape and
     // the arrow keys went to that window (#280 VM). Activating asks dwm for the
@@ -86,6 +115,7 @@ PopupWindow {
     // Hidden while the owner still wants it shown (the window went away): the
     // owner is told, so its state closes too and the next open is one click.
     onVisibleChanged: {
+        root.sizeCorrections = 0;
         if (visible)
             Qt.callLater(root.requestKeyboard);
         else if (root.open)

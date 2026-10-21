@@ -53,6 +53,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A panel menu open while Picom starts or stops no longer keeps the wrong
+  height (#431). The menu switches between the menu alone and a click-away
+  surface over the screen below the panel. Qt sends the new width and height
+  to X as two requests, and Quickshell moves the popup to its place at the
+  size X last reported. When X's answer to the first request came after the
+  second was sent, that move sent the old height again, last: after Picom
+  stopped, a transparent strip under the menu kept catching clicks; after it
+  started, the surface stopped short of the bottom of the screen. Seen in the
+  panel-menus test on loaded CI runners, and here in 2 of 40 switches on two
+  busy cores. The popup now asks again for a size that is still wrong once
+  X's answers have settled.
+
 - Closing Settings while it is still discovering capabilities no longer
   leaves part of the discovery running (#432). Settings stops the capability
   provider with a TERM to that one process; a probe it was waiting on, with
