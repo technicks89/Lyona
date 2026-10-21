@@ -53,6 +53,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Closing Settings while it is still discovering capabilities no longer
+  leaves part of the discovery running (#432). Settings stops the capability
+  provider with a TERM to that one process; a probe it was waiting on, with
+  its `timeout` and the subshell around it, kept running orphaned for up to
+  6 s. Seen in the Settings Xvfb test on a two-core aarch64 runner, and on
+  x86_64 in 16 of 40 TERMs sent during discovery. The provider now runs
+  discovery in a session of its own and ends all of it when it is stopped.
+
 - A dwm shortcut pressed just as the keyboard changes is no longer lost
   (#411). dwm grabs its keys again whenever the keymap changes, and the X
   server reports a change when the keyboard in use switches devices: the

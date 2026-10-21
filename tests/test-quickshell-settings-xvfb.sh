@@ -2990,8 +2990,20 @@ if DISPLAY=$display xdotool search --onlyvisible --name '^dwm settings$' >/dev/n
 	exit 1
 fi
 
-if pgrep -f '[d]wm-settings-provider discover$' >/dev/null; then
+# close() stops discovery with a TERM that the provider passes on to every
+# probe it started (#432); a signal takes a moment, a leftover probe up to 6 s.
+provider_pattern='[d]wm-settings-provider _?discover$'
+i=0
+while [ "$i" -lt 20 ] && pgrep -f "$provider_pattern" >/dev/null; do
+	i=$((i + 1))
+	sleep 0.05
+done
+if provider_pids=$(pgrep -f "$provider_pattern"); then
 	printf 'Settings capability provider remained active after close\n' >&2
+	for provider_pid in $provider_pids; do
+		ps -o pid=,ppid=,stat=,etimes=,wchan:24=,args= -p "$provider_pid" >&2 2>/dev/null || true
+		ps -o pid=,ppid=,stat=,etimes=,wchan:24=,args= --ppid "$provider_pid" >&2 2>/dev/null || true
+	done
 	exit 1
 fi
 if pgrep -af '[d]wm-settings-display watch [0-9]+ [0-9]+$' |

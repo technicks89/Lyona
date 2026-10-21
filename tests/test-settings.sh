@@ -588,6 +588,54 @@ missing_appearance_output=$(PATH="$missing_appearance_bin" XDG_CONFIG_HOME="$wor
 printf '%s\n' "$missing_appearance_output" | grep -Fqx \
 	'capability	appearance	themes	Themes	unavailable	read-only	dwm-settings-appearance	Install the managed appearance provider'
 
+# Settings stops discovery with a TERM to the provider alone (#432). Nothing it
+# started may outlive it: not the probe it is waiting on, its timeout, or the
+# command-substitution subshell around them, which keeps the provider's own
+# command line.
+slow_appearance_bin=$work/slow-appearance-bin
+cp -a "$arch_bin" "$slow_appearance_bin"
+make_tools "$slow_appearance_bin" setsid pkill sleep
+# shellcheck disable=SC2016 # the stub's own expansions
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$$" >"$DWM_TEST_PROBE_PID"' 'exec sleep 30' \
+	>"$slow_appearance_bin/dwm-settings-appearance"
+chmod +x "$slow_appearance_bin/dwm-settings-appearance"
+slow_provider_dir=$work/slow-provider
+mkdir "$slow_provider_dir"
+stage_helpers checkout "$slow_provider_dir" dwm-settings-provider
+PATH="$slow_appearance_bin" XDG_CONFIG_HOME="$work/arch-config" \
+	DWM_SETTINGS_OS_RELEASE="$work/arch-os-release" DWM_TEST_PROBE_PID="$work/slow-probe.pid" \
+	"$slow_provider_dir/dwm-settings-provider" discover >/dev/null 2>&1 &
+slow_provider_pid=$!
+attempt=0
+while [ ! -s "$work/slow-probe.pid" ] && [ "$attempt" -lt 200 ]; do
+	attempt=$((attempt + 1))
+	sleep 0.05
+done
+[ -s "$work/slow-probe.pid" ] || fail 'the slow appearance probe never started'
+slow_probe_pid=$(cat "$work/slow-probe.pid")
+kill -TERM "$slow_provider_pid"
+wait "$slow_provider_pid" 2>/dev/null || true
+attempt=0
+while [ "$attempt" -lt 20 ]; do
+	slow_left=
+	for slow_pid in $(pgrep -f slow- 2>/dev/null || true); do
+		grep -qF "$work/slow-" "/proc/$slow_pid/cmdline" 2>/dev/null &&
+			slow_left="$slow_left $slow_pid"
+	done
+	kill -0 "$slow_probe_pid" 2>/dev/null || [ -n "$slow_left" ] || break
+	attempt=$((attempt + 1))
+	sleep 0.05
+done
+if kill -0 "$slow_probe_pid" 2>/dev/null || [ -n "$slow_left" ]; then
+	printf 'Discovery outlived the provider it was stopped through:\n' >&2
+	ps -o pid=,ppid=,stat=,etimes=,args= -p "$slow_probe_pid" >&2 2>/dev/null || true
+	# shellcheck disable=SC2086 # a list of process IDs
+	[ -z "$slow_left" ] || ps -o pid=,ppid=,stat=,etimes=,args= -p ${slow_left# } >&2 2>/dev/null || true
+	# shellcheck disable=SC2086
+	kill -KILL "$slow_probe_pid" $slow_left 2>/dev/null || true
+	fail 'a TERM to the provider left its discovery running'
+fi
+
 if "$provider" unknown 2>"$work/provider.err"; then
 	exit 1
 fi

@@ -700,6 +700,32 @@ discover)
 		usage
 		exit 2
 	}
+	# Settings stops discovery with a TERM to this process alone (#432). The
+	# probes run in command substitutions, whose subshells and timeouts would
+	# outlive it and finish their probe orphaned. Discovery runs in a session
+	# of its own instead, and a TERM here ends that whole session: its process
+	# group at once, which no fork can escape, then each timeout, which keeps
+	# a group of its own and passes the TERM on to its probe's group.
+	# The trap is in place before the launch: a TERM that lands before the
+	# PID is assigned takes it from $!, and one before the fork has nothing
+	# to end.
+	if command -v setsid >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1; then
+		discovery_pid=
+		trap 'discovery_pid=${discovery_pid:-${!:-}}
+		if [ -n "$discovery_pid" ]; then
+			kill -TERM -- "-$discovery_pid" 2>/dev/null ||
+				kill -TERM "$discovery_pid" 2>/dev/null || true
+			pkill -TERM -s "$discovery_pid" 2>/dev/null || true
+		fi
+		exit 143' HUP INT TERM
+		setsid -w "$script_dir/${0##*/}" _discover &
+		discovery_pid=$!
+		wait "$discovery_pid"
+	else
+		discover
+	fi
+	;;
+_discover)
 	discover
 	;;
 watch-notifications)
