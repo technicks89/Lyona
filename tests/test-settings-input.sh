@@ -35,6 +35,10 @@ cleanup_test() {
 }
 
 trap cleanup_test EXIT
+# A failure that set -e ends silently says where (Full suite run 39273890621:
+# exit 141 with no message). Top level only, without errtrace: inside a
+# function or $(...), a failure the caller handles is not a test failure.
+trap 'printf "test-settings-input.sh: line %s exited %s: %s\n" "$LINENO" "$?" "$BASH_COMMAND" >&2' ERR
 mkdir -p "$work/bin" "$work/home/.config/lyona" "$work/runtime"
 chmod 700 "$work/runtime"
 
