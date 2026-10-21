@@ -8,6 +8,10 @@ tmp_root=${DWM_TEST_TMP_ROOT:-${HOME}/tmp}
 mkdir -p -- "$tmp_root"
 work=$(mktemp -d "$tmp_root/dwm-wallpaper-test.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
+# A failure that set -e ends silently says where (Full suite run 39667413237:
+# exit 1 with no message). Top level only, without errtrace: inside a
+# function or $(...), a failure the caller handles is not a test failure.
+trap 'printf "test-dwm-settings-wallpaper.sh: line %s exited %s: %s\n" "$LINENO" "$?" "$BASH_COMMAND" >&2' ERR
 
 home=$work/home
 config_home=$home/.config
