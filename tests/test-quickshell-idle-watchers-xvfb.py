@@ -44,6 +44,14 @@ def stat(pid):
     return Path('/proc/%d/stat' % pid).read_text().rsplit(')', 1)[1].split()
 
 
+def stat_state(pid):
+    """A process's state letter, or None once it is gone."""
+    try:
+        return stat(pid)[0]
+    except (FileNotFoundError, ProcessLookupError, IndexError):
+        return None
+
+
 def pids():
     return [int(e) for e in os.listdir('/proc') if e.isdigit()]
 
@@ -242,11 +250,22 @@ with tempfile.TemporaryDirectory(prefix='idle-watchers-', dir=os.environ.get('DW
         if network_monitor(shell) != monitor:
             fail_session('network watcher (nmcli monitor) did not stay running through the idle sample')
     finally:
-        for pid in tree(wm.pid) | carrying(marker):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+        # Until a look finds none: what a process started while the others were
+        # being killed is not in the first look. The nmcli stand-in's loop, its
+        # sleep killed first, started another before the loop itself was
+        # killed, and that sleep ran on for an hour after the test (#427).
+        # Bounded.
+        for _ in range(50):
+            left = {pid for pid in tree(wm.pid) | carrying(marker)
+                    if stat_state(pid) not in (None, 'Z')}
+            if not left:
+                break
+            for pid in left:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            time.sleep(0.1)
         wm.wait()
         log.close()
 
