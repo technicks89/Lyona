@@ -3005,6 +3005,15 @@ if DISPLAY=$display xdotool search --onlyvisible --name '^dwm settings$' >/dev/n
 	exit 1
 fi
 
+# Closing stops discovery, but the provider was once seen still running at
+# this point on the aarch64 runner (Full suite run 39273890621). Give it up to
+# 8 s, beyond its longest bounded probe (5 s, then 1 s to KILL); one still
+# running after that is a real leak.
+i=0
+while [ "$i" -lt 160 ] && pgrep -f '[d]wm-settings-provider discover$' >/dev/null; do
+	i=$((i + 1))
+	sleep 0.05
+done
 if pgrep -f '[d]wm-settings-provider discover$' >/dev/null; then
 	printf 'Settings capability provider remained active after close\n' >&2
 	exit 1
