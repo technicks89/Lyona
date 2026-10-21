@@ -53,6 +53,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A dwm shortcut pressed just as the keyboard changes is no longer lost
+  (#411). dwm grabs its keys again whenever the keymap changes, and the X
+  server reports a change when the keyboard in use switches devices: the
+  first key from a second keyboard, or the first `xdotool` key. dwm let go of
+  every key before grabbing them again, so a key pressed in between went to
+  the focused window instead: the desktop smoke test's first Super+R, now and
+  then on a loaded CI runner. dwm now grabs the new keys first and lets go
+  only of the ones no longer bound. `check-dwm-regrab-xvfb` changes the keymap
+  200 times and fails if dwm ever lets go of Super+R.
 - Closing Settings, or leaving its Displays or Input section, no longer
   sometimes leaves an idle `bash` process behind until logout (#420). The
   section's udev watcher, stopped while it was still starting, left the copy
