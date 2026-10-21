@@ -140,6 +140,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
   `uname` stub, and an aarch64 plan case is added.
 
+- Closing Settings while it is still discovering capabilities no longer
+  leaves part of the discovery running (#432). Settings stops the capability
+  provider with a TERM to that one process; a probe it was waiting on, with
+  its `timeout` and the subshell around it, kept running orphaned for up to
+  6 s. Seen in the Settings Xvfb test on a two-core aarch64 runner, and on
+  x86_64 in 16 of 40 TERMs sent during discovery. The provider now runs
+  discovery in a session of its own and ends all of it when it is stopped.
+
+- A dwm shortcut pressed just as the keyboard changes is no longer lost
+  (#411). dwm grabs its keys again whenever the keymap changes, and the X
+  server reports a change when the keyboard in use switches devices: the
+  first key from a second keyboard, or the first `xdotool` key. dwm let go of
+  every key before grabbing them again, so a key pressed in between went to
+  the focused window instead: the desktop smoke test's first Super+R, now and
+  then on a loaded CI runner. dwm now grabs the new keys first and lets go
+  only of the ones no longer bound. `check-dwm-regrab-xvfb` changes the keymap
+  200 times and fails if dwm ever lets go of Super+R.
+
 - Closing Settings, or leaving its Displays or Input section, no longer
   sometimes leaves an idle `bash` process behind until logout (#420). The
   section's udev watcher, stopped while it was still starting, left the copy
