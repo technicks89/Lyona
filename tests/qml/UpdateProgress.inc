@@ -21,8 +21,15 @@
     function updateFind(container, objectName) {
         return updateItems(container, item => item.objectName === objectName)[0];
     }
+    // The timestamp is in whole seconds, as lyona-update writes it. Rounded
+    // down, an outcome could be up to a second older than AGE_MS, and the
+    // "a second short of a day" outcome already expired by the next check
+    // (about 1 run in 20, #441). Rounded up, but not past the current second:
+    // never older than asked, never in the future.
     function updateStatusText(phase, detail, outcome, message, ageMs, operation) {
-        const stamp = new Date(Date.now() - ageMs).toISOString().replace(/\.\d+Z$/, "Z");
+        const now = Date.now();
+        const written = Math.min(Math.ceil((now - ageMs) / 1000), Math.floor(now / 1000)) * 1000;
+        const stamp = new Date(written).toISOString().replace(/\.\d+Z$/, "Z");
         return "lyona-update-status-protocol\t1\t1\noperation\t" + (operation || "apply")
             + "\nphase\t" + phase + "\t" + detail
             + "\ntarget\t2026.10.0\noutcome\t" + outcome + "\t" + message
