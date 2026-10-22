@@ -133,6 +133,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The first time the launcher opened in a session, the first keys typed
+  straight after Super+R could be lost: the query was missing its opening
+  letters, and they did not reach the window underneath either. dwm held the
+  keys and handed them over as it focused the launcher (#391), but the search
+  field only took the focus a moment later, and Qt dropped what came before.
+  The search field is now the launcher's focus item from the start. Seen once
+  in `check-launcher-hold-keys-xvfb` on aarch64; with the field's focus
+  delayed 300 ms, every key of the first query was lost before the change and
+  none after.
 - Settings' Appearance pane no longer waits for its 5-second loading cap on a
   machine without Bluetooth (ARM1-06). Settings' capability discovery ran
   `bluetoothctl show`, which waits for a Bluetooth daemon that is not running
