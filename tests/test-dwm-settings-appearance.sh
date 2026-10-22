@@ -635,6 +635,29 @@ grep -Fq $'error\tsource\tdangling-user\tIgnoring dangling user theme symlink an
 	<<<"$dangling_user"
 rm -f "$config_home/lyona/themes.toml"
 
+# A reader that fails is a finding, not a theme quietly left out (#437); a file
+# dwm cannot parse either (status 3) keeps the linter's verdict without one.
+cp "$themes_fixture" "$config_home/lyona/themes.toml"
+sed -i 's/^\[theme\.dracula\]$/[theme.dracula] trailing/' "$config_home/lyona/themes.toml"
+mv "$prefix/lib/lyona/lyona-toml" "$work/lyona-toml.staged"
+for reader_status in 70 3; do
+	printf '#!/bin/sh\nexit %s\n' "$reader_status" >"$prefix/lib/lyona/lyona-toml"
+	chmod 755 "$prefix/lib/lyona/lyona-toml"
+	failed_reader=$(PATH=$bin_dir XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_root \
+		DWM_APPEARANCE_DATA_DIRS=$data_root "$installed_helper" snapshot)
+	grep -Fqx $'provider\tappearance\tpartial\tread-only\tShared theme inventory and integration state' \
+		<<<"$failed_reader"
+	if [[ $reader_status == 3 ]]; then
+		! grep -Fq $'error\tsource\tdwm-reader\t' <<<"$failed_reader" ||
+			fail 'a theme file dwm cannot parse was reported as a reader failure'
+	else
+		grep -Fqx $'error\tsource\tdwm-reader\tCould not read the theme file the way dwm does (lyona-toml exited 70); themes dwm reads may be missing' \
+			<<<"$failed_reader" || fail 'a failing lyona-toml dropped themes without a finding'
+	fi
+done
+mv -f "$work/lyona-toml.staged" "$prefix/lib/lyona/lyona-toml"
+rm -f "$config_home/lyona/themes.toml"
+
 custom_theme=-custom_theme_with_a_name_that_is_longer_than_sixty_four_characters_1234567890
 cp "$work/managed-themes.toml" "$config_home/lyona/themes.toml"
 sed -i "0,/theme = \"nord\"/s//theme = \"$custom_theme\"/" "$config_home/lyona/themes.toml"

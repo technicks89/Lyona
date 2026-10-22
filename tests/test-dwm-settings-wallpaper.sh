@@ -8,6 +8,10 @@ tmp_root=${DWM_TEST_TMP_ROOT:-${HOME}/tmp}
 mkdir -p -- "$tmp_root"
 work=$(mktemp -d "$tmp_root/dwm-wallpaper-test.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT
+# A failure that set -e ends silently says where (#436). Top level only,
+# without errtrace: inside a function or $(...), a failure the caller handles is
+# not a test failure.
+trap 'printf "test-dwm-settings-wallpaper.sh: line %s exited %s: %s\n" "$LINENO" "$?" "$BASH_COMMAND" >&2' ERR
 
 home=$work/home
 config_home=$home/.config
@@ -160,6 +164,33 @@ process_running() {
 	[[ $pid =~ ^[1-9][0-9]*$ && -r /proc/$pid/stat ]] || return 1
 	record=$(sed 's/^.*) //' "/proc/$pid/stat" 2>/dev/null) || return 1
 	[[ ${record%% *} != Z ]]
+}
+
+# A watchdog the test stops has exited before the test goes on. The wait used
+# to end after 1 s whether it had or not, and on a busy machine a later check
+# could still see it running (#436).
+wait_for_exit() {
+	local pid=$1
+	for _ in {1..400}; do
+		process_running "$pid" || return 0
+		sleep 0.025
+	done
+	fail "process $pid was still running 10 s after it was stopped"
+}
+
+# A preview's watchdog repairs an over-long deadline as it starts, so a check
+# that sets one first waits for the watchdog to reach its sleep loop, past that
+# repair (a 20 s preview's loop sleeps 1 s at a time): on a busy machine the
+# watchdog repaired it after the test had set it, and the check saw an active
+# preview where it expected a failed repair (#436).
+wait_for_watchdog_loop() {
+	local meta=$1 pid
+	pid=$(awk -F= '$1 == "pid" { print $2 }' "$meta")
+	for _ in {1..400}; do
+		pgrep -P "$pid" -fx 'sleep 1' >/dev/null 2>&1 && return 0
+		sleep 0.025
+	done
+	fail "the wallpaper preview watchdog ($pid) did not reach its sleep loop"
 }
 
 read_only_initial=$(run_helper status --read-only)
@@ -413,10 +444,7 @@ done
 [[ -n $watchdog_sleep_pid ]]
 
 kill -TERM "$watchdog_pid"
-for _ in {1..40}; do
-	process_running "$watchdog_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$watchdog_pid"
 dead_watchdog_status=$(run_helper status --read-only)
 grep -Fqx $'preview\tfailed\tkeep-me\t0\t'"$second"$'\ttile\tAutomatic wallpaper rollback is not armed; run a writable status check to recover' \
 	<<<"$dead_watchdog_status"
@@ -521,10 +549,7 @@ run_helper preview rearm-me 20 "$first" fill >/dev/null
 rearm_meta=$state_home/lyona/appearance/wallpaper/rearm-me.meta
 rearm_pid=$(awk -F= '$1 == "pid" { print $2 }' "$rearm_meta")
 kill -TERM "$rearm_pid"
-for _ in {1..40}; do
-	process_running "$rearm_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$rearm_pid"
 sed -i "s/^pid=.*/pid=$$/; s/^pid_start=.*/pid_start=1/" "$rearm_meta"
 run_helper status >/dev/null
 new_rearm_pid=$(awk -F= '$1 == "pid" { print $2 }' "$rearm_meta")
@@ -615,10 +640,7 @@ run_helper preview external-expiry 2 "$first" fill >/dev/null
 external_expiry_meta=$state_home/lyona/appearance/wallpaper/external-expiry.meta
 external_expiry_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$external_expiry_meta")
 kill -TERM "$external_expiry_watchdog"
-for _ in {1..40}; do
-	process_running "$external_expiry_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$external_expiry_watchdog"
 : >"$log"
 export XAUTHORITY=$caller_auth
 cat >"$config_home/lyona/wallpaper.conf" <<EOF
@@ -1371,10 +1393,7 @@ run_helper_display :915 preview foreign-rearm 20 "$second" center >/dev/null
 foreign_rearm_meta=$state_home/lyona/appearance/wallpaper/foreign-rearm.meta
 foreign_rearm_old_pid=$(awk -F= '$1 == "pid" { print $2 }' "$foreign_rearm_meta")
 kill -TERM "$foreign_rearm_old_pid"
-for _ in {1..40}; do
-	process_running "$foreign_rearm_old_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$foreign_rearm_old_pid"
 cat >"$bin_dir/xprop" <<'EOF'
 #!/bin/sh
 [ "${1:-}" = -display ] && [ "${2:-}" = :915 ]
@@ -1392,10 +1411,7 @@ run_helper_display :915 preview reused-watchdog-pid 20 "$second" center >/dev/nu
 reused_meta=$state_home/lyona/appearance/wallpaper/reused-watchdog-pid.meta
 real_reused_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$reused_meta")
 kill -TERM "$real_reused_watchdog"
-for _ in {1..40}; do
-	process_running "$real_reused_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$real_reused_watchdog"
 sleep 20 &
 unrelated_pid=$!
 unrelated_start=$(sed 's/^.*) //' "/proc/$unrelated_pid/stat" | awk '{ print $20 }')
@@ -1413,10 +1429,7 @@ run_helper_display :915 preview stale-display 20 "$second" center >/dev/null
 stale_display_meta=$state_home/lyona/appearance/wallpaper/stale-display.meta
 stale_display_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$stale_display_meta")
 kill -TERM "$stale_display_watchdog"
-for _ in {1..40}; do
-	process_running "$stale_display_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$stale_display_watchdog"
 run_helper_display :916 session-apply
 test ! -e "$state_home/lyona/appearance/wallpaper/preview.current"
 run_helper_display :916 apply "$first" tile >/dev/null
@@ -1451,10 +1464,7 @@ backward_clock_meta=$state_home/lyona/appearance/wallpaper/backward-clock.meta
 grep -Fqx 'deadline=1020000' "$backward_clock_meta"
 backward_clock_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$backward_clock_meta")
 kill -TERM "$backward_clock_watchdog"
-for _ in {1..40}; do
-	process_running "$backward_clock_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$backward_clock_watchdog"
 printf '500\n' >"$fake_wall_clock"
 printf '1010.00 0.00\n' >"$fake_monotonic"
 backward_clock_status=$(run_helper_display :915 status)
@@ -1488,10 +1498,7 @@ run_helper_display :915 preview stale-boot 20 "$second" center >/dev/null
 stale_boot_meta=$state_home/lyona/appearance/wallpaper/stale-boot.meta
 stale_boot_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$stale_boot_meta")
 kill -TERM "$stale_boot_watchdog"
-for _ in {1..40}; do
-	process_running "$stale_boot_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$stale_boot_watchdog"
 printf '22222222-2222-2222-2222-222222222222\n' >"$fake_boot_id"
 printf '5.00 0.00\n' >"$fake_monotonic"
 : >"$log"
@@ -1507,10 +1514,7 @@ run_helper_display :915 preview failed-display 20 "$second" center >/dev/null
 failed_display_meta=$state_home/lyona/appearance/wallpaper/failed-display.meta
 failed_display_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$failed_display_meta")
 kill -TERM "$failed_display_watchdog"
-for _ in {1..40}; do
-	process_running "$failed_display_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$failed_display_watchdog"
 printf '%s\n' 'Owner display rollback failed' \
 	>"$state_home/lyona/appearance/wallpaper/failed-display.failed"
 : >"$log"
@@ -1523,10 +1527,7 @@ run_helper_display :915 preview reused-display-failure 20 "$second" center >/dev
 reused_display_meta=$state_home/lyona/appearance/wallpaper/reused-display-failure.meta
 reused_display_watchdog=$(awk -F= '$1 == "pid" { print $2 }' "$reused_display_meta")
 kill -TERM "$reused_display_watchdog"
-for _ in {1..40}; do
-	process_running "$reused_display_watchdog" || break
-	sleep 0.025
-done
+wait_for_exit "$reused_display_watchdog"
 printf '%s\n' 'Previous session rollback failed' \
 	>"$state_home/lyona/appearance/wallpaper/reused-display-failure.failed"
 run_helper_display :915 session-apply
@@ -1612,6 +1613,7 @@ export DWM_TEST_CHMOD_FAIL_AT=999
 run_helper preview finish-clamp-failure 20 "$second" fill >/dev/null
 finish_clamp_meta=$state_home/lyona/appearance/wallpaper/finish-clamp-failure.meta
 finish_clamp_deadline=$(awk -F= '$1 == "deadline" { print $2 }' "$finish_clamp_meta")
+wait_for_watchdog_loop "$finish_clamp_meta"
 sed -i "s/^deadline=.*/deadline=$((finish_clamp_deadline + 1000000000))/" "$finish_clamp_meta"
 rm -f -- "$DWM_TEST_CHMOD_COUNT"
 export DWM_TEST_CHMOD_FAIL_AT=1
@@ -1632,6 +1634,7 @@ export DWM_TEST_CHMOD_FAIL_AT=999
 run_helper preview reconcile-clamp-failure 20 "$second" fill >/dev/null
 clamp_meta=$state_home/lyona/appearance/wallpaper/reconcile-clamp-failure.meta
 clamp_deadline=$(awk -F= '$1 == "deadline" { print $2 }' "$clamp_meta")
+wait_for_watchdog_loop "$clamp_meta"
 sed -i "s/^deadline=.*/deadline=$((clamp_deadline + 1000000000))/" "$clamp_meta"
 rm -f -- "$DWM_TEST_CHMOD_COUNT"
 export DWM_TEST_CHMOD_FAIL_AT=1
@@ -1647,10 +1650,7 @@ run_helper preview reconcile-rearm-failure 20 "$second" fill >/dev/null
 rearm_failure_meta=$state_home/lyona/appearance/wallpaper/reconcile-rearm-failure.meta
 rearm_failure_pid=$(awk -F= '$1 == "pid" { print $2 }' "$rearm_failure_meta")
 kill -TERM "$rearm_failure_pid"
-for _ in {1..40}; do
-	process_running "$rearm_failure_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$rearm_failure_pid"
 sed -i "s/^pid=.*/pid=$$/; s/^pid_start=.*/pid_start=1/" "$rearm_failure_meta"
 rm -f -- "$DWM_TEST_CHMOD_COUNT"
 export DWM_TEST_CHMOD_FAIL_AT=1
@@ -1685,10 +1685,7 @@ run_helper preview rearm-mktemp-failure 20 "$second" fill >/dev/null
 mktemp_failure_meta=$state_home/lyona/appearance/wallpaper/rearm-mktemp-failure.meta
 mktemp_failure_pid=$(awk -F= '$1 == "pid" { print $2 }' "$mktemp_failure_meta")
 kill -TERM "$mktemp_failure_pid"
-for _ in {1..40}; do
-	process_running "$mktemp_failure_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$mktemp_failure_pid"
 rm -f -- "$DWM_TEST_MKTEMP_COUNT"
 export DWM_TEST_MKTEMP_FAIL_AT=1
 mktemp_failure_status=$(run_helper status)
@@ -1703,14 +1700,38 @@ unset DWM_TEST_MKTEMP_COUNT DWM_TEST_REAL_MKTEMP DWM_TEST_MKTEMP_FAIL_AT
 rm -f -- "$bin_dir/mktemp"
 run_helper abandon rearm-mktemp-failure >/dev/null
 
+# The watchdog reads its metadata without the lock, while the preview replaces
+# the file to record the watchdog's pid. A read that meets the old file as it
+# goes sees no links on it; the watchdog tries again instead of taking that
+# for an ended preview and leaving the preview with no rollback (#436).
+real_stat=$(command -v stat)
+cat >"$bin_dir/stat" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $* == "-c %h -- "*/replaced-meta.meta && -e $DWM_TEST_STAT_ONCE ]] &&
+	tr '\0' ' ' <"/proc/$PPID/cmdline" | grep -q ' preview-watchdog replaced-meta '; then
+	rm -f -- "$DWM_TEST_STAT_ONCE"
+	printf '0\n'
+	exit 0
+fi
+exec "$DWM_TEST_REAL_STAT" "$@"
+EOF
+chmod +x "$bin_dir/stat"
+export DWM_TEST_STAT_ONCE=$work/stat.once DWM_TEST_REAL_STAT=$real_stat
+: >"$DWM_TEST_STAT_ONCE"
+run_helper preview replaced-meta 20 "$second" fill >/dev/null
+replaced_meta=$state_home/lyona/appearance/wallpaper/replaced-meta.meta
+wait_for_watchdog_loop "$replaced_meta"
+test ! -e "$DWM_TEST_STAT_ONCE" || fail 'the watchdog never met the replaced metadata'
+unset DWM_TEST_STAT_ONCE DWM_TEST_REAL_STAT
+rm -f -- "$bin_dir/stat"
+run_helper revert replaced-meta >/dev/null
+
 run_helper preview noncanonical-deadline 20 "$second" fill >/dev/null
 noncanonical_meta=$state_home/lyona/appearance/wallpaper/noncanonical-deadline.meta
 noncanonical_pid=$(awk -F= '$1 == "pid" { print $2 }' "$noncanonical_meta")
 kill -TERM "$noncanonical_pid"
-for _ in {1..40}; do
-	process_running "$noncanonical_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$noncanonical_pid"
 sed -i 's/^deadline=.*/deadline=08/' "$noncanonical_meta"
 if ! noncanonical_status=$(run_helper status 2>"$work/noncanonical-deadline.err"); then
 	printf 'Wallpaper status aborted on a noncanonical decimal deadline\n' >&2
@@ -1727,10 +1748,7 @@ run_helper preview corrupt-active-meta 20 "$second" fill >/dev/null
 corrupt_active_meta=$state_home/lyona/appearance/wallpaper/corrupt-active-meta.meta
 corrupt_active_pid=$(awk -F= '$1 == "pid" { print $2 }' "$corrupt_active_meta")
 kill -TERM "$corrupt_active_pid"
-for _ in {1..40}; do
-	process_running "$corrupt_active_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$corrupt_active_pid"
 printf 'invalid\n' >"$corrupt_active_meta"
 invalid_status=$(run_helper status --read-only)
 grep -Fqx $'mutation\trestricted\tWallpaper preview state is invalid; restore it explicitly before changing wallpaper' \
@@ -1755,10 +1773,7 @@ run_helper_display :915 preview corrupt-current-owner 20 "$second" fill >/dev/nu
 corrupt_owner_meta=$state_home/lyona/appearance/wallpaper/corrupt-current-owner.meta
 corrupt_owner_pid=$(awk -F= '$1 == "pid" { print $2 }' "$corrupt_owner_meta")
 kill -TERM "$corrupt_owner_pid"
-for _ in {1..40}; do
-	process_running "$corrupt_owner_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$corrupt_owner_pid"
 : >"$state_home/lyona/appearance/wallpaper/preview.current"
 : >"$log"
 malformed_read_only=$(run_helper_display :916 status --read-only)
@@ -1777,10 +1792,7 @@ run_helper_display :915 preview mismatched-owner-token 20 "$second" fill >/dev/n
 mismatched_owner_meta=$state_home/lyona/appearance/wallpaper/mismatched-owner-token.meta
 mismatched_owner_pid=$(awk -F= '$1 == "pid" { print $2 }' "$mismatched_owner_meta")
 kill -TERM "$mismatched_owner_pid"
-for _ in {1..40}; do
-	process_running "$mismatched_owner_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$mismatched_owner_pid"
 printf '%s\n' valid-but-mismatched-token \
 	>"$state_home/lyona/appearance/wallpaper/preview.current"
 : >"$log"
@@ -1798,10 +1810,7 @@ run_helper_display :915 preview corrupt-current-stale-owner 20 "$second" fill >/
 stale_owner_meta=$state_home/lyona/appearance/wallpaper/corrupt-current-stale-owner.meta
 stale_owner_pid=$(awk -F= '$1 == "pid" { print $2 }' "$stale_owner_meta")
 kill -TERM "$stale_owner_pid"
-for _ in {1..40}; do
-	process_running "$stale_owner_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$stale_owner_pid"
 : >"$state_home/lyona/appearance/wallpaper/preview.current"
 cat >"$bin_dir/xprop" <<'EOF'
 #!/bin/sh
@@ -1825,10 +1834,7 @@ run_helper_display :915 preview missing-current-after-apply 20 "$second" fill >/
 missing_current_meta=$state_home/lyona/appearance/wallpaper/missing-current-after-apply.meta
 missing_current_pid=$(awk -F= '$1 == "pid" { print $2 }' "$missing_current_meta")
 kill -TERM "$missing_current_pid"
-for _ in {1..40}; do
-	process_running "$missing_current_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$missing_current_pid"
 rm -f -- "$state_home/lyona/appearance/wallpaper/preview.current"
 : >"$log"
 owner_only_status=$(run_helper_display :916 status --read-only)
@@ -1848,10 +1854,7 @@ run_helper_display :915 preview overlapping-owner-recovery 20 "$second" fill >/d
 overlapping_owner_meta=$state_home/lyona/appearance/wallpaper/overlapping-owner-recovery.meta
 overlapping_owner_pid=$(awk -F= '$1 == "pid" { print $2 }' "$overlapping_owner_meta")
 kill -TERM "$overlapping_owner_pid"
-for _ in {1..40}; do
-	process_running "$overlapping_owner_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$overlapping_owner_pid"
 rm -f -- "$state_home/lyona/appearance/wallpaper/preview.current"
 selection_owner=$state_home/lyona/appearance/wallpaper/selection.owner
 selection_hash=$(sha256sum "$config_home/lyona/wallpaper.conf" | awk '{ print $1 }')
@@ -1998,10 +2001,7 @@ run_helper preview missing-active-meta 20 "$second" fill >/dev/null
 missing_active_meta=$state_home/lyona/appearance/wallpaper/missing-active-meta.meta
 missing_active_pid=$(awk -F= '$1 == "pid" { print $2 }' "$missing_active_meta")
 kill -TERM "$missing_active_pid"
-for _ in {1..40}; do
-	process_running "$missing_active_pid" || break
-	sleep 0.025
-done
+wait_for_exit "$missing_active_pid"
 rm -f -- "$missing_active_meta"
 invalid_status=$(run_helper status)
 grep -Fqx $'preview\tfailed\tmissing-active-meta\t0\t\tfill\tWallpaper preview state is invalid; restore it explicitly before changing wallpaper' \
