@@ -24,8 +24,8 @@
     // The timestamp is in whole seconds, as lyona-update writes it. Rounded
     // down, an outcome could be up to a second older than AGE_MS, and the
     // "a second short of a day" outcome already expired by the next check
-    // (about 1 run in 20). Rounded up, but not past the current second: never
-    // older than asked, never in the future.
+    // (about 1 run in 20, #441). Rounded up, but not past the current second:
+    // never older than asked, never in the future.
     function updateStatusText(phase, detail, outcome, message, ageMs, operation) {
         const now = Date.now();
         const written = Math.min(Math.ceil((now - ageMs) / 1000), Math.floor(now / 1000)) * 1000;

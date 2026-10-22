@@ -3959,7 +3959,10 @@ class MountMonitorTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = pathlib.Path(directory.name) / "child"
-        fixture = (f"import time\nopen({str(path)!r}, 'w').write(str(os.getpid()))\n"
+        # The PID appears in one step: open() creates the file empty, so a
+        # child descheduled before its write left start() reading '' (#440).
+        fixture = (f"import time\nopen({str(path) + '.tmp'!r}, 'w').write(str(os.getpid()))\n"
+                   f"os.replace({str(path) + '.tmp'!r}, {str(path)!r})\n"
                    f"time.sleep({delay!r})\n"
                    + ("baseline = open('/proc/self/mountinfo')\nos.set_inheritable(baseline.fileno(), True)\n" if baseline else "")
                    + body + "\ntime.sleep(60)\n")
