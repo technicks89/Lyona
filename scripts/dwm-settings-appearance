@@ -482,7 +482,10 @@ valid_color() {
 # theme it also read), a theme dwm reads is never invalid, nor the provider
 # unavailable, on the linter's grammar alone: those findings stay as warnings
 # (partial). A file dwm would not apply keeps the linter's verdict. The colour
-# checks in validate_themes still apply, since they are about content.
+# checks in validate_themes still apply, since they are about content. A file
+# dwm cannot parse either (status 3) keeps the linter's verdict too; a reader
+# that is missing or fails otherwise is a finding (#437), since the themes
+# shown may then not be the ones dwm reads.
 apply_dwm_reading() {
 	local file=$1 state_before=$2 dump status=0 line section index key parsed id raw
 	local dwm_active=
@@ -490,7 +493,16 @@ apply_dwm_reading() {
 	local -a dwm_order=()
 
 	dump=$(lyona_toml dump "$file" 2>/dev/null) || status=$?
-	[[ $status == 0 || $status == 4 ]] || return 0
+	case $status in
+	0 | 4) ;;
+	3) return 0 ;;
+	*)
+		[[ $provider_state == unavailable ]] || provider_state=partial
+		add_error source dwm-reader \
+			"Could not read the theme file the way dwm does (lyona-toml exited $status); themes dwm reads may be missing"
+		return 0
+		;;
+	esac
 	while IFS= read -r line; do
 		section=${line%%$'\t'*}
 		line=${line#*$'\t'}

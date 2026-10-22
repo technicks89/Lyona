@@ -595,6 +595,10 @@ def renderer(config):
         return "nvidia"
     if any(v in name for v in ("llvmpipe", "softpipe", "software")):
         return "software"
+    # The Raspberry Pi 4's VideoCore VI ("V3D 4.2"): Picom makes the desktop
+    # unusable there, with either backend it can run (#32). The Pi 5 is V3D 7.
+    if re.search(r"\bv3d 4\.", name):
+        return "v3d4"
     if re.search(r"\* Accelerated:\s*1", text):
         if "intel" in name:
             return "intel"
@@ -613,6 +617,21 @@ def backend(config, detect=True):
     if effective == "auto":
         effective = "glx" if gpu in ("intel", "amd") else "xrender"
     return selected, effective, override, gpu
+
+
+LOGIN_SKIP_MESSAGE = (
+    "Picom is off at login on this GPU (V3D 4, the Raspberry Pi 4), where it makes "
+    "the desktop unusable. Start it in Settings, or choose a backend, to use it anyway."
+)
+
+
+def login_skip(config):
+    # At login only, and only for the Automatic policy: a backend chosen in
+    # Settings, PICOM_BACKEND or the user's own picom.conf still starts it (#32).
+    if isinstance(config, NativeConfiguration) or os.environ.get("PICOM_BACKEND"):
+        return False
+    selected, _effective, _override, gpu = backend(config)
+    return selected == "auto" and gpu == "v3d4"
 
 
 def owner():
@@ -925,6 +944,8 @@ def status(detect=True):
             details.append("No configuration yet; the first edit creates it.")
         if not result["running"]:
             details.append("Picom is stopped; edits apply the next time it starts.")
+            if policy == "auto" and not override and gpu == "v3d4":
+                details.append(LOGIN_SKIP_MESSAGE)
         if override:
             details.append(
                 f"PICOM_BACKEND={override} overrides the backend for this session."
@@ -1443,7 +1464,16 @@ def main():
     use_lyona_defaults()
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest="action", required=True)
-    for action in ("status", "watch", "start", "restart", "reload", "stop", "toggle"):
+    for action in (
+        "status",
+        "watch",
+        "start",
+        "session-start",
+        "restart",
+        "reload",
+        "stop",
+        "toggle",
+    ):
         subs.add_parser(action)
     opacity = subs.add_parser("set-opacity")
     opacity.add_argument("active", type=float)
@@ -1495,6 +1525,12 @@ def main():
                 if args.action == "stop" or (args.action == "toggle" and running):
                     stop(running)
                     detail = "Picom stopped"
+                elif args.action == "session-start":
+                    config = session_configuration()
+                    if not running and login_skip(config):
+                        detail = LOGIN_SKIP_MESSAGE
+                    else:
+                        detail = activate(config, "start")
                 else:
                     detail = activate(session_configuration(), args.action)
         print(json.dumps({"protocol": PROTOCOL, "message": detail}))
