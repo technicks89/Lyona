@@ -769,7 +769,8 @@ second compositor keeps the selection and still fails immediately.
 
 Released Arch images are built from an archiso profile (`archiso/`) layered
 onto the system `releng` profile, via `scripts/build-lyona-arch-iso.sh`.
-The live medium embeds this repository, boots on UEFI and legacy BIOS, and
+The live medium embeds this repository, boots on UEFI and legacy BIOS (the
+experimental aarch64 medium, `--arch aarch64`, on UEFI only), and
 auto-logs into a
 root shell that automatically launches `lyona-install`
 (`archiso/airootfs/root/lyona-install.sh`) — no command to type. It is a
@@ -1006,7 +1007,9 @@ In a real or nested X11 session:
 
 ### 9.4 Arch Image Validation
 
-- `archiso/packages.x86_64` stays in sync with the `arch:iso` package map,
+- `archiso/packages.x86_64` stays in sync with the `arch:iso` package map
+  (and the experimental aarch64 medium's `archiso-aarch64/packages.aarch64`
+  with the same map on `aarch64`),
   what the live medium itself runs on top of `releng`; the desktop packages are
   not on the image, as the new system downloads every package it installs. The
   postinstall script and ISO builder pass their structural checks

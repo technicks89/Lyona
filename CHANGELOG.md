@@ -10,6 +10,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- An experimental aarch64 install medium for Arch Linux ARM (ARM2-02):
+  `scripts/build-lyona-arch-iso.sh --arch aarch64` builds
+  `lyona-VERSION-aarch64.iso` on an aarch64 host, from archiso 91's releng
+  and `archiso-aarch64/`. It boots on UEFI only (systemd-boot), with
+  `linux-aarch64`, and goes straight to the same wizard as the x86_64 medium.
+  It is not released or supported on any machine yet: it booted to the
+  wizard in a QEMU/KVM virtual machine on GB10, and installing from it is
+  ARM2-03. Its live system leaves out `reflector`, which Arch Linux ARM does
+  not have. `docs/RELEASING.md` says how to build it.
 - Systems the image installs boot with the lyona Plymouth splash, the one the
   install medium boots with, and an encrypted disk asks for its passphrase
   there instead of on the bare console: the message, then a box with a

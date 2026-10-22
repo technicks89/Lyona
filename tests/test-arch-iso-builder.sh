@@ -489,7 +489,7 @@ expect_failure() {
 		printf 'build-lyona-arch-iso.sh accepted %s.\n' "$label" >&2
 		exit 1
 	fi
-	grep -Fq "$expected_text" "$work/fail.out" || {
+	grep -Fq -- "$expected_text" "$work/fail.out" || {
 		printf 'build-lyona-arch-iso.sh did not report %s.\n' "$label" >&2
 		cat "$work/fail.out" >&2
 		exit 1
@@ -1049,7 +1049,10 @@ exit 0
 EOF
 	chmod +x "$work/bin/mkarchiso"
 	set +e
-	PATH="$work/bin:$PATH" "$repo/scripts/build-lyona-arch-iso.sh" >"$work/norun.out" 2>&1
+	# For this host's own architecture, so the root check is the one reached
+	# (a build for another architecture stops before it, ARM64.md A-3).
+	PATH="$work/bin:$PATH" "$repo/scripts/build-lyona-arch-iso.sh" --arch "$(uname -m)" \
+		>"$work/norun.out" 2>&1
 	norun_status=$?
 	set -e
 	if [[ $norun_status -eq 0 ]]; then
@@ -1071,5 +1074,175 @@ if grep -Fq '"/root/lyona/README.md"' "$profiledef"; then
 	printf 'a file that is not executable was made executable in the image\n' >&2
 	exit 1
 fi
+
+# --- The aarch64 medium (ARM2-02) ---------------------------------------------
+# Arch Linux ARM over archiso 91's releng: what the ARM2-01 spike changed
+# (docs/evidence/arm2-01-spike.md), each checked here.
+
+# Its package layer is the same map with ARCH=aarch64, as packages.x86_64 is
+# with ARCH=x86_64 (the script exports that above).
+mapfile -t expected_aarch64 < <(ARCH=aarch64 dwm_packages arch iso | awk 'NF' | sort -u)
+mapfile -t actual_aarch64 < <(awk 'NF' "$repo/archiso-aarch64/packages.aarch64" | sort -u)
+if [[ "${expected_aarch64[*]}" != "${actual_aarch64[*]}" ]]; then
+	printf 'archiso-aarch64/packages.aarch64 is out of sync with the arch:iso package map.\n' >&2
+	printf 'Regenerate with:\n' >&2
+	printf '  source scripts/dwm-packages.sh && ARCH=aarch64 dwm_packages arch iso | sort -u > archiso-aarch64/packages.aarch64\n' >&2
+	exit 1
+fi
+# reflector ranks Arch Linux's mirrors, and is not in Arch Linux ARM.
+if grep -Fqx reflector "$repo/archiso-aarch64/packages.aarch64"; then
+	printf 'archiso-aarch64/packages.aarch64 lists reflector, which Arch Linux ARM lacks.\n' >&2
+	exit 1
+fi
+
+grep -Fq -- '--arch ARCH' "$work/help.out"
+expect_failure 'an unknown architecture' '--arch must be x86_64 or aarch64' \
+	"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --arch riscv64
+expect_failure 'a valueless --arch' 'requires a value' \
+	"$repo/scripts/build-lyona-arch-iso.sh" --arch
+# Built natively only (ARM64.md A-3): a medium for another architecture than
+# this host's is refused, before anything else is checked.
+case $(uname -m) in
+aarch64) other_arch=x86_64 ;;
+*) other_arch=aarch64 ;;
+esac
+expect_failure "a $other_arch build on this host" "an $other_arch medium builds on an $other_arch host" \
+	"$repo/scripts/build-lyona-arch-iso.sh" --arch "$other_arch"
+# The fixture above is a releng without aarch64 support, as before archiso 91.
+expect_failure 'an aarch64 build from a releng before archiso 91' 'needs archiso 91 or later' \
+	env LYONA_RELENG_DIR="$releng" \
+	"$repo/scripts/build-lyona-arch-iso.sh" --arch aarch64 --profile-only --output "$work/staged-old-aarch64"
+
+# archiso 91's releng, with its aarch64 parts as it ships them.
+releng_aarch64=$work/releng-aarch64
+cp -a "$releng91" "$releng_aarch64"
+cat >>"$releng_aarch64/profiledef.sh" <<'EOF'
+bootmodes=('bios.syslinux'
+           'uefi.systemd-boot')
+airootfs_image_type="squashfs"
+airootfs_image_tool_options=('-comp' 'xz' '-Xbcj' 'x86,arm64' '-b' '1M' '-Xdict-size' '1M')
+kernel_params_aarch64="clk_ignore_unused pd_ignore_unused arm64.nopauth"
+EOF
+printf '%s\n' base edk2-shell ghostty-terminfo linux linux-dtbs stubble >"$releng_aarch64/packages.aarch64"
+cat >"$releng_aarch64/efiboot/loader/entries/03-archiso-memtest86+x64.conf" <<'EOF'
+title    Memtest86+
+efi      /boot/memtest86+/memtest.efi
+EOF
+
+LYONA_RELENG_DIR="$releng_aarch64" \
+	"$repo/scripts/build-lyona-arch-iso.sh" --arch aarch64 --profile-only \
+	--output "$work/staged-aarch64" >"$work/profile-aarch64.out" 2>&1 || {
+	printf 'staging the aarch64 profile failed:\n' >&2
+	cat "$work/profile-aarch64.out" >&2
+	exit 1
+}
+staged_aarch64=$work/staged-aarch64/profile
+aarch64_profiledef=$staged_aarch64/profiledef.sh
+aarch64_fail() {
+	printf 'staged aarch64 profile: %s\n' "$1" >&2
+	exit 1
+}
+
+# UEFI only: no syslinux boot mode, directory or memtest entry.
+! grep -q 'bios\.syslinux' "$aarch64_profiledef" || aarch64_fail 'still boots with syslinux'
+grep -q "'uefi.systemd-boot'" "$aarch64_profiledef" || aarch64_fail 'lost its UEFI boot mode'
+[[ ! -e $staged_aarch64/syslinux ]] || aarch64_fail 'still has a syslinux directory'
+[[ ! -e "$staged_aarch64/efiboot/loader/entries/03-archiso-memtest86+x64.conf" ]] ||
+	aarch64_fail 'still has the x86_64 memtest entry'
+# The bootmodes array is still valid bash once the syslinux mode is gone.
+bash -n "$aarch64_profiledef" || aarch64_fail 'profiledef.sh is no longer valid bash'
+# shellcheck disable=SC1090 # the staged profile is generated by the test
+staged_bootmodes=$(
+	# As mkarchiso sources it: file_permissions is an associative array.
+	bootmodes=()
+	# shellcheck disable=SC2034 # filled by the sourced profiledef.sh
+	declare -A file_permissions=()
+	. "$aarch64_profiledef" >/dev/null 2>&1
+	printf '%s\n' "${bootmodes[@]}"
+)
+[[ $staged_bootmodes == uefi.systemd-boot ]] ||
+	aarch64_fail "boots with '$staged_bootmodes', not uefi.systemd-boot alone"
+
+# linux-aarch64 reads only the arm64 BCJ filter.
+grep -Fq "'-Xbcj' 'arm64'" "$aarch64_profiledef" || aarch64_fail 'does not compress with -Xbcj arm64'
+! grep -q 'x86,arm64' "$aarch64_profiledef" || aarch64_fail 'still compresses with the x86 filter'
+grep -Fqx 'kernel_params_aarch64="clk_ignore_unused pd_ignore_unused arm64.nopauth"' \
+	"$aarch64_profiledef" || aarch64_fail "lost releng's aarch64 kernel parameters"
+
+# No memdisk; the splash's plymouth hook, as on x86_64.
+aarch64_hooks=$(grep '^HOOKS=' "$staged_aarch64/airootfs/etc/mkinitcpio.conf.d/archiso.conf")
+[[ $aarch64_hooks != *' memdisk '* ]] || aarch64_fail 'still has the memdisk hook'
+[[ $aarch64_hooks == 'HOOKS=(base udev plymouth '* ]] || aarch64_fail 'has no plymouth hook after udev'
+
+# Arch Linux ARM's kernel and keyring, and lyona's layer, without what it lacks.
+aarch64_packages=$staged_aarch64/packages.aarch64
+for package in linux-aarch64 archlinuxarm-keyring base "${expected_aarch64[@]}"; do
+	grep -Fqx "$package" "$aarch64_packages" || aarch64_fail "does not install $package"
+done
+for package in linux linux-dtbs stubble edk2-shell ghostty-terminfo reflector; do
+	! grep -Fqx "$package" "$aarch64_packages" || aarch64_fail "still installs $package"
+done
+
+# Arch Linux ARM's repositories, not Arch Linux's [multilib].
+cmp -s "$repo/archiso-aarch64/pacman.conf" "$staged_aarch64/pacman.conf" ||
+	aarch64_fail "pacman.conf is not archiso-aarch64's"
+grep -Fqx '[alarm]' "$staged_aarch64/pacman.conf" || aarch64_fail 'pacman.conf has no [alarm]'
+! grep -Fqx '[multilib]' "$staged_aarch64/pacman.conf" || aarch64_fail 'pacman.conf has [multilib]'
+
+# The kernel-name hook stays on the live medium: archinstall's pacstrap runs
+# the medium's hooks, so the new system's GRUB finds a vmlinuz-linux to pair
+# with initramfs-linux.img. releng's zzzz99 hook removes any with the marker.
+vmlinuz_hook=$staged_aarch64/airootfs/etc/pacman.d/hooks/lyona-vmlinuz-linux.hook
+[[ -f $vmlinuz_hook ]] || aarch64_fail 'has no kernel-name hook'
+grep -Fqx 'Exec = /usr/bin/cp -f /boot/Image /boot/vmlinuz-linux' "$vmlinuz_hook" ||
+	aarch64_fail 'its kernel-name hook does not copy /boot/Image to /boot/vmlinuz-linux'
+grep -Fqx 'Target = linux-aarch64' "$vmlinuz_hook" || aarch64_fail 'its kernel-name hook is not for linux-aarch64'
+! grep -Fq 'remove from airootfs' "$vmlinuz_hook" ||
+	aarch64_fail 'its kernel-name hook would be removed from the live medium'
+
+# Everything else is the x86_64 medium's: the quiet boot, no boot menu, the
+# rebranding, the splash, the installer on tty1 and the release stamp.
+grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' \
+	"$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" || aarch64_fail 'its UEFI entry was not quieted'
+grep -Fqx 'timeout 0' "$staged_aarch64/efiboot/loader/loader.conf" || aarch64_fail 'still shows the boot menu'
+grep -Fqx 'iso_name="lyona"' "$aarch64_profiledef" || aarch64_fail 'is not named lyona'
+grep -Fqx "iso_label=\"$expected_label\"" "$aarch64_profiledef" || aarch64_fail "is not labelled $expected_label"
+[[ -f $staged_aarch64/airootfs/usr/share/plymouth/themes/lyona/lyona.plymouth ]] ||
+	aarch64_fail 'has no lyona splash'
+[[ -f $staged_aarch64/airootfs/usr/local/bin/lyona-install ]] || aarch64_fail 'has no lyona-install'
+grep -Fq 'lyona-install' "$staged_aarch64/airootfs/root/.zlogin" || aarch64_fail 'does not start the installer on tty1'
+grep -Fqx "LYONA_ISO_VERSION=$config_version" "$staged_aarch64/airootfs/etc/lyona-iso-release" ||
+	aarch64_fail 'has no release stamp'
+grep -Fqx '  ["/root/lyona/install.sh"]="0:0:755"' "$aarch64_profiledef" ||
+	aarch64_fail 'would lose the embedded checkout executable bits'
+
+# A releng whose shape changed fails the staging, naming what it did not find.
+for change in xbcj memdisk kernel uefi; do
+	releng_changed=$work/releng-aarch64-$change
+	rm -rf -- "$releng_changed"
+	cp -a "$releng_aarch64" "$releng_changed"
+	case $change in
+	xbcj)
+		sed -i "s/'-Xbcj' 'x86,arm64'/'-Xbcj' 'arm64'/" "$releng_changed/profiledef.sh"
+		expected_text='have no -Xbcj x86,arm64'
+		;;
+	memdisk)
+		sed -i 's/ memdisk / /' "$releng_changed/airootfs/etc/mkinitcpio.conf.d/archiso.conf"
+		expected_text='has no memdisk hook'
+		;;
+	kernel)
+		sed -i '/^linux$/d' "$releng_changed/packages.aarch64"
+		expected_text='has no linux kernel'
+		;;
+	uefi)
+		sed -i "s/'uefi.systemd-boot'/'uefi.grub'/" "$releng_changed/profiledef.sh"
+		expected_text='has no uefi.systemd-boot boot mode'
+		;;
+	esac
+	expect_failure "a releng with no $change shape" "$expected_text" \
+		env LYONA_RELENG_DIR="$releng_changed" \
+		"$repo/scripts/build-lyona-arch-iso.sh" --arch aarch64 --profile-only \
+		--output "$work/staged-aarch64-$change"
+done
 
 printf 'Arch ISO builder structural checks: PASS\n'

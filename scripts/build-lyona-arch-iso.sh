@@ -3,27 +3,34 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-Usage: sudo scripts/build-lyona-arch-iso.sh [--output DIR] [--version VERSION]
+Usage: sudo scripts/build-lyona-arch-iso.sh [--arch ARCH] [--output DIR] [--version VERSION]
 
 Build a lyona Arch Linux install medium by layering this checkout and
 archiso/ onto the system's archiso releng profile, then running mkarchiso.
 Requires the archiso package and root (mkarchiso builds as root).
 
 The image carries the release version from config.mk unless --version
-overrides it, producing lyona-VERSION-x86_64.iso and recording the build
+overrides it, producing lyona-VERSION-ARCH.iso and recording the build
 in /etc/lyona-iso-release on the live medium.
 
 Options:
+  --arch ARCH             x86_64 (the default) or aarch64. aarch64 builds the
+                          experimental Arch Linux ARM medium: archiso-aarch64/
+                          over archiso 91's releng, UEFI only. It builds only
+                          on an aarch64 host (ARM64.md A-3).
   --output DIR            Write the ISO to DIR (default: ./out).
   --version VERSION       Stamp VERSION instead of the config.mk VERSION.
                           Accepts 0.1.0 or v0.1.0.
   --profile-only          Stage and stamp the archiso profile under
                           DIR/profile, then stop without running mkarchiso.
-                          Does not require root.
+                          Does not require root, or a host of ARCH.
   -h, --help              Show this help.
 
 LYONA_RELENG_DIR overrides the archiso releng profile location
-(default: /usr/share/archiso/configs/releng).
+(default: /usr/share/archiso/configs/releng), and LYONA_MKARCHISO the
+mkarchiso to run (default: mkarchiso on PATH). Arch Linux ARM does not
+package archiso: for --arch aarch64, point both at an archiso 91 or later
+checkout (its configs/releng and archiso/mkarchiso; docs/RELEASING.md).
 
 The live medium auto-logs into a root shell on tty1. After completing a base
 Arch install to /mnt (e.g. with `archinstall`), run
@@ -42,9 +49,22 @@ err() {
 output_dir="$PWD/out"
 iso_version=
 profile_only=false
+arch=x86_64
 
 while (($# > 0)); do
 	case "$1" in
+	--arch)
+		if (($# < 2)); then
+			err "--arch requires a value."
+			exit 1
+		fi
+		arch=$2
+		shift 2
+		;;
+	--arch=*)
+		arch=${1#*=}
+		shift
+		;;
 	--output)
 		if (($# < 2)); then
 			err "--output requires a value."
@@ -85,8 +105,22 @@ while (($# > 0)); do
 	esac
 done
 
+case $arch in
+x86_64 | aarch64) ;;
+*)
+	err "--arch must be x86_64 or aarch64: $arch"
+	exit 1
+	;;
+esac
+
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 config_mk="$repo_dir/config.mk"
+# What differs on each architecture: the package layer, pacman.conf and, on
+# aarch64, airootfs/ files. The rest of the medium is archiso/'s, shared.
+case $arch in
+x86_64) arch_profile_dir=$repo_dir/archiso ;;
+aarch64) arch_profile_dir=$repo_dir/archiso-aarch64 ;;
+esac
 
 if [[ -z $iso_version ]]; then
 	[[ -f $config_mk ]] || {
@@ -130,14 +164,29 @@ if ((${#iso_label} > 32)); then
 	exit 1
 fi
 
+mkarchiso_cmd=${LYONA_MKARCHISO:-mkarchiso}
 if [[ $profile_only != true ]]; then
+	# Built natively, never under emulation (ARM64.md A-3): an emulated chroot
+	# is slow and hides faults that only show on the real architecture. Before
+	# the root check, so the reason is the one shown.
+	host_arch=$(uname -m)
+	if [[ $host_arch != "$arch" ]]; then
+		err "an $arch medium builds on an $arch host; this one is $host_arch."
+		exit 1
+	fi
+
 	if [[ $EUID -ne 0 ]]; then
 		err "mkarchiso must run as root."
 		exit 1
 	fi
 
-	command -v mkarchiso >/dev/null 2>&1 || {
-		err "mkarchiso not found. Install the archiso package first."
+	command -v "$mkarchiso_cmd" >/dev/null 2>&1 || {
+		if [[ $arch == aarch64 ]]; then
+			err "mkarchiso not found. Arch Linux ARM does not package archiso: set"
+			err "LYONA_MKARCHISO and LYONA_RELENG_DIR to an archiso 91 checkout."
+		else
+			err "mkarchiso not found. Install the archiso package first."
+		fi
 		exit 1
 	}
 fi
@@ -150,6 +199,15 @@ releng_dir="${LYONA_RELENG_DIR:-/usr/share/archiso/configs/releng}"
 	err "releng profile not found at $releng_dir. Reinstall the archiso package."
 	exit 1
 }
+# archiso 91 added aarch64 to releng: its package list and its kernel
+# parameters. Older releng profiles have neither, and mkarchiso before 91
+# cannot build an aarch64 UEFI medium (docs/evidence/arm2-01-spike.md).
+if [[ $arch == aarch64 ]] &&
+	{ [[ ! -f $releng_dir/packages.aarch64 ]] ||
+		! grep -q '^kernel_params_aarch64=' "$releng_dir/profiledef.sh"; }; then
+	err "the releng profile at $releng_dir has no aarch64 support; it needs archiso 91 or later."
+	exit 1
+fi
 
 work_dir="$(mktemp -d -p /var/tmp)"
 trap 'rm -rf "$work_dir"' EXIT
@@ -167,12 +225,74 @@ info() { printf 'build-lyona-arch-iso: %s\n' "$*"; }
 info "Copying the releng base profile..."
 cp -a "$releng_dir" "$profile_dir"
 
-info "Layering lyona packages onto packages.x86_64..."
-cat "$repo_dir/archiso/packages.x86_64" >>"$profile_dir/packages.x86_64"
-sort -u -o "$profile_dir/packages.x86_64" "$profile_dir/packages.x86_64"
+# releng's aarch64 profile is written for Arch Linux's own aarch64 port, which
+# has no public repositories; this makes it Arch Linux ARM's (ARM2-02, from
+# the ARM2-01 spike: docs/evidence/arm2-01-spike.md). Every edit checks the
+# shape it changes, so a new releng fails here rather than in the image.
+adapt_releng_aarch64() {
+	local packages=$profile_dir/packages.aarch64
+	local profiledef=$profile_dir/profiledef.sh
+	local hooks_conf=$profile_dir/airootfs/etc/mkinitcpio.conf.d/archiso.conf
+	local package
+
+	info "Adapting releng's aarch64 profile to Arch Linux ARM..."
+	# UEFI only: aarch64 has no BIOS, and syslinux no aarch64 build.
+	grep -q "'uefi.systemd-boot'" "$profiledef" || {
+		err "releng's profiledef.sh has no uefi.systemd-boot boot mode; the archiso profile format changed."
+		exit 1
+	}
+	sed -i "s/'bios\.syslinux'//" "$profiledef"
+	! grep -q 'bios\.syslinux' "$profiledef" || {
+		err "the bios.syslinux boot mode was not removed."
+		exit 1
+	}
+	rm -rf -- "$profile_dir/syslinux"
+	rm -f -- "$profile_dir"/efiboot/loader/entries/*memtest86*
+
+	# linux-aarch64 has CONFIG_XZ_DEC_ARM64 but not CONFIG_XZ_DEC_X86: a
+	# root image block mksquashfs compressed with the x86 filter cannot be
+	# read on the booted medium.
+	grep -q "'-Xbcj' 'x86,arm64'" "$profiledef" || {
+		err "releng's squashfs options have no -Xbcj x86,arm64; the archiso profile format changed."
+		exit 1
+	}
+	sed -i "s/'-Xbcj' 'x86,arm64'/'-Xbcj' 'arm64'/" "$profiledef"
+
+	# memdisk is syslinux's BIOS RAM-disk boot; its hook fails the
+	# initramfs build on aarch64 (no phram module, no memdiskfind).
+	grep -q '^HOOKS=(.* memdisk ' "$hooks_conf" || {
+		err "releng's HOOKS line has no memdisk hook; the archiso profile format changed."
+		exit 1
+	}
+	sed -i '/^HOOKS=(/ s/ memdisk / /' "$hooks_conf"
+
+	# Arch Linux ARM's kernel, linux-aarch64, carries its own device trees;
+	# the other four are not in its repositories.
+	grep -Fqx linux "$packages" || {
+		err "releng's packages.aarch64 has no linux kernel; the archiso profile format changed."
+		exit 1
+	}
+	for package in linux linux-dtbs stubble edk2-shell ghostty-terminfo; do
+		sed -i "/^${package}\$/d" "$packages"
+	done
+	printf '%s\n' linux-aarch64 archlinuxarm-keyring >>"$packages"
+}
+
+if [[ $arch == aarch64 ]]; then
+	adapt_releng_aarch64
+fi
+
+info "Layering lyona packages onto packages.$arch..."
+cat "$arch_profile_dir/packages.$arch" >>"$profile_dir/packages.$arch"
+sort -u -o "$profile_dir/packages.$arch" "$profile_dir/packages.$arch"
 
 info "Applying lyona pacman.conf..."
-cp -f "$repo_dir/archiso/pacman.conf" "$profile_dir/pacman.conf"
+cp -f "$arch_profile_dir/pacman.conf" "$profile_dir/pacman.conf"
+
+if [[ $arch == aarch64 ]]; then
+	info "Adding the aarch64 medium's own files..."
+	cp -a "$arch_profile_dir/airootfs/." "$profile_dir/airootfs/"
+fi
 
 info "Rebranding profiledef.sh for lyona $iso_version..."
 sed -i \
@@ -200,18 +320,22 @@ info "Quieting the primary boot entries' console output..."
 sed -E -i \
 	'/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
 	"$profile_dir/efiboot/loader/entries/01-archiso-linux.conf"
-sed -E -i \
-	'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
-	"$profile_dir/syslinux/archiso_sys-linux.cfg"
 
 grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
 	err "releng's UEFI boot entry has no matching options line to quiet; the archiso profile format changed."
 	exit 1
 }
-grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/syslinux/archiso_sys-linux.cfg" || {
-	err "releng's BIOS boot entry has no matching APPEND line to quiet; the archiso profile format changed."
-	exit 1
-}
+# syslinux, the BIOS loader, is x86_64 only (the aarch64 medium is UEFI only).
+if [[ $arch == x86_64 ]]; then
+	sed -E -i \
+		'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
+		"$profile_dir/syslinux/archiso_sys-linux.cfg"
+
+	grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/syslinux/archiso_sys-linux.cfg" || {
+		err "releng's BIOS boot entry has no matching APPEND line to quiet; the archiso profile format changed."
+		exit 1
+	}
+fi
 
 info "Booting straight into the installer, without a boot menu..."
 # There is one thing to boot on this medium and it launches the installer on
@@ -230,28 +354,30 @@ grep -Fqx 'timeout 0' "$loader_conf" || {
 	exit 1
 }
 
-# vesamenu.c32 always draws, whatever the timeout, so the menu module itself
-# has to go rather than just its countdown.
-syslinux_head="$profile_dir/syslinux/archiso_head.cfg"
-syslinux_sys="$profile_dir/syslinux/archiso_sys.cfg"
-grep -q '^UI vesamenu.c32$' "$syslinux_head" || {
-	err "releng's syslinux head has no vesamenu UI line; the archiso profile format changed."
-	exit 1
-}
-grep -q '^TIMEOUT ' "$syslinux_sys" || {
-	err "releng's syslinux config has no TIMEOUT to shorten; the archiso profile format changed."
-	exit 1
-}
-sed -i 's/^UI vesamenu.c32$/PROMPT 0/' "$syslinux_head"
-sed -i 's/^TIMEOUT .*/TIMEOUT 1/' "$syslinux_sys"
-grep -Fqx 'PROMPT 0' "$syslinux_head" || {
-	err "the BIOS boot menu was not disabled."
-	exit 1
-}
-grep -Fqx 'TIMEOUT 1' "$syslinux_sys" || {
-	err "the BIOS boot menu timeout was not shortened."
-	exit 1
-}
+if [[ $arch == x86_64 ]]; then
+	# vesamenu.c32 always draws, whatever the timeout, so the menu module itself
+	# has to go rather than just its countdown.
+	syslinux_head="$profile_dir/syslinux/archiso_head.cfg"
+	syslinux_sys="$profile_dir/syslinux/archiso_sys.cfg"
+	grep -q '^UI vesamenu.c32$' "$syslinux_head" || {
+		err "releng's syslinux head has no vesamenu UI line; the archiso profile format changed."
+		exit 1
+	}
+	grep -q '^TIMEOUT ' "$syslinux_sys" || {
+		err "releng's syslinux config has no TIMEOUT to shorten; the archiso profile format changed."
+		exit 1
+	}
+	sed -i 's/^UI vesamenu.c32$/PROMPT 0/' "$syslinux_head"
+	sed -i 's/^TIMEOUT .*/TIMEOUT 1/' "$syslinux_sys"
+	grep -Fqx 'PROMPT 0' "$syslinux_head" || {
+		err "the BIOS boot menu was not disabled."
+		exit 1
+	}
+	grep -Fqx 'TIMEOUT 1' "$syslinux_sys" || {
+		err "the BIOS boot menu timeout was not shortened."
+		exit 1
+	}
+fi
 
 grep -q '^file_permissions=($' "$profile_dir/profiledef.sh" || {
 	err "releng's profiledef.sh has no file_permissions=( line; the archiso profile format changed."
@@ -414,5 +540,5 @@ fi
 
 mkdir -p "$output_dir"
 info "Running mkarchiso..."
-mkarchiso -v -w "$work_dir/build" -o "$output_dir" "$profile_dir"
+"$mkarchiso_cmd" -v -w "$work_dir/build" -o "$output_dir" "$profile_dir"
 info "Done. lyona $iso_version ISO is under $output_dir"
