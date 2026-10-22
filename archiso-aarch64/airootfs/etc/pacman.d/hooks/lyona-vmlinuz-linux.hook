@@ -1,0 +1,23 @@
+# linux-aarch64 installs its kernel as /boot/Image; Arch's tools expect
+# /boot/vmlinuz-linux. mkarchiso copies /boot/vmlinuz-* onto the medium, and
+# GRUB's grub-mkconfig pairs initramfs-linux.img (linux-aarch64's preset) only
+# with a vmlinuz-linux: beside /boot/Image alone it writes an entry with no
+# initramfs and root=/dev/... (docs/evidence/arm2-01-spike.md).
+#
+# Deliberately left on the live medium: releng's zzzz99 hook deletes every
+# build hook whose text has its removal marker, so this file must never quote
+# that marker, even in a comment. The medium's hooks run when archinstall's
+# pacstrap installs the new system, so its /boot gets the copy before
+# archinstall runs grub-mkconfig. The new system needs its own copy of this
+# hook for later kernel upgrades (ARM2-03).
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = linux-aarch64
+
+[Action]
+Description = Copying linux-aarch64's /boot/Image to /boot/vmlinuz-linux...
+When = PostTransaction
+Exec = /usr/bin/cp -f /boot/Image /boot/vmlinuz-linux

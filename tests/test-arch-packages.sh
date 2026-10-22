@@ -396,10 +396,10 @@ gaming_line=$(grep -nF 'batch_optional < <(dwm_collect_packages gaming)' "$repo/
 # survey found missing from Arch Linux ARM
 # (docs/evidence/arm1-02-aarch64-packages.md), and the NVIDIA and gaming
 # profiles, which do not apply there. Nothing else changes on x86_64.
-# reflector stays in the x86_64 medium's iso profile: the aarch64 medium is
-# ARM Sprint 2's.
+# reflector: the aarch64 medium's iso profile leaves it out (ARM2-02), as it
+# ranks Arch Linux's mirrors.
 aarch64_gated=(
-	deepin-gtk-theme libva-intel-driver shellcheck archiso
+	deepin-gtk-theme libva-intel-driver shellcheck archiso reflector
 	nvidia-open nvidia-open-dkms nvidia-utils
 	nvidia-580xx-dkms nvidia-580xx-utils nvidia-470xx-dkms nvidia-470xx-utils
 	steam gamescope gamemode lib32-gamemode mangohud lib32-mangohud
@@ -446,7 +446,9 @@ if ! cmp -s "$work/dropped.names" "$work/gated.names"; then
 	diff "$work/gated.names" "$work/dropped.names" >&2 || true
 	exit 1
 fi
-grep -q '^iso reflector$' "$work/aarch64.resolved"
+# The x86_64 medium ranks its mirrors with reflector; the aarch64 one has none.
+grep -q '^iso reflector$' "$work/x86_64.resolved"
+! grep -q '^iso reflector$' "$work/aarch64.resolved"
 
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

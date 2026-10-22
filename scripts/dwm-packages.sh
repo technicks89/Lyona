@@ -166,8 +166,14 @@ dwm_packages() {
 		# - curl: the network check, the timezone and the CachyOS setup;
 		# - openssl: the password hash; pciutils: lspci, for the GPU;
 		# - reflector: ranks the mirrors in the user's country (#249). releng
-		#   has it too; listed because the wizard depends on it.
-		printf '%s\n' plymouth gum jq curl openssl pciutils reflector
+		#   has it too; listed because the wizard depends on it. It ranks Arch
+		#   Linux's mirrors from their status page, and is not in Arch Linux
+		#   ARM, whose mirrors are not on it (ARM2-04 decides the wizard's
+		#   mirror step there).
+		# The aarch64 medium's list (archiso-aarch64/packages.aarch64) is this
+		# profile with ARCH=aarch64 (ARM2-02).
+		printf '%s\n' plymouth gum jq curl openssl pciutils
+		dwm_x86_64_only reflector
 		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): a GPU driver, NetworkManager

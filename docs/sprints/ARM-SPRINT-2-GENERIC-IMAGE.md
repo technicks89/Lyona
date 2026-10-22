@@ -4,7 +4,9 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-1.
 
 **Status:** planned 2026-10-11. ARM2-01 reported 2026-10-22
 ([`docs/evidence/arm2-01-spike.md`](../evidence/arm2-01-spike.md)): A-2, A-3
-and A-4 decided. GitHub: issues #7 to #11
+and A-4 decided. ARM2-02 built 2026-10-22
+([`docs/evidence/arm2-02-live-medium.md`](../evidence/arm2-02-live-medium.md)):
+the medium boots to the wizard on QEMU/KVM; UTM and Parallels are untested. GitHub: issues #7 to #11
 (label `arm64`); milestone "ARM Sprint 2 - Generic aarch64 image", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 

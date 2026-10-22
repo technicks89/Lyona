@@ -185,6 +185,32 @@ boot opened the root volume, and the system reached the desktop.
 installs. Do not treat a release as
 qualified on hardware until it has been.
 
+### The aarch64 medium (experimental)
+
+ARM Sprint 2 (`docs/sprints/ARM-SPRINT-2-GENERIC-IMAGE.md`) adds an aarch64
+UEFI medium on Arch Linux ARM. It is not released, and is not supported on
+any machine yet (`SPEC.md` 9.4 is not met on any ARM target). It builds only
+on an aarch64 host, natively (`docs/sprints/ARM64.md` A-3), and needs
+archiso 91 or later, which Arch Linux ARM does not package, so a checkout of
+it provides `mkarchiso` and the `releng` profile:
+
+```sh
+git clone --branch v91 https://gitlab.archlinux.org/archlinux/archiso.git
+sudo LYONA_MKARCHISO="$PWD/archiso/archiso/mkarchiso" \
+	LYONA_RELENG_DIR="$PWD/archiso/configs/releng" \
+	scripts/build-lyona-arch-iso.sh --arch aarch64 --output release/
+```
+
+`mkarchiso` needs `arch-install-scripts`, `squashfs-tools`, `libisoburn`,
+`mtools`, `dosfstools`, `erofs-utils`, `mkinitcpio-archiso` and `grub` on the
+host. It produces `lyona-VERSION-aarch64.iso`. The medium is the x86_64 one
+with `archiso-aarch64/`'s package layer, `pacman.conf` and kernel-name hook,
+and the builder's changes to `releng` for Arch Linux ARM: UEFI only
+(systemd-boot), `linux-aarch64`, SquashFS with the arm64 filter alone, and no
+`memdisk` hook. Each change is explained in
+`docs/evidence/arm2-01-spike.md` and checked by
+`tests/test-arch-iso-builder.sh`.
+
 ### Signed releases
 
 The release workflow signs what users install, the ISO and the source archive,
