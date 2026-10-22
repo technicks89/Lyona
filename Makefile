@@ -1010,13 +1010,13 @@ check-status:
 check-session-launch:
 	tests/test-dwm-session-launch.sh
 
-check-gtk-theme:
+check-gtk-theme: ${TOML_TOOL}
 	tests/test-lyona-gtk-theme.sh
 
-check-app-palettes:
+check-app-palettes: ${TOML_TOOL}
 	/usr/bin/python3 tests/test-app-palettes.py
 
-check-qt-palette-xvfb:
+check-qt-palette-xvfb: ${TOML_TOOL}
 	@tests/test-qt-palette-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 # dwm-window-thumb and the overview's previews (Sync Sprint 9 S9-01), wired in by
@@ -1040,11 +1040,11 @@ check-overview-close-xvfb: all
 		exit "$$status"
 
 .PHONY: check-theme-apply-gtk-fallback
-check-theme-apply-gtk-fallback:
+check-theme-apply-gtk-fallback: ${TOML_TOOL}
 	tests/test-theme-apply-gtk-fallback.sh
 
 .PHONY: check-theme-apply-qt-palette
-check-theme-apply-qt-palette:
+check-theme-apply-qt-palette: ${TOML_TOOL}
 	tests/test-theme-apply-qt-palette.sh
 
 check-plymouth-theme:
@@ -1060,7 +1060,7 @@ check-test-lib:
 	tests/test-lib.sh
 
 # #368: no test reaches the desktop session it is started from.
-check-session-isolation:
+check-session-isolation: ${TOML_TOOL}
 	tests/test-session-isolation.sh
 
 .PHONY: check-ci-schedule
@@ -1096,7 +1096,7 @@ check-quickshell-lifecycle:
 	tests/test-quickshell-lifecycle-locale.sh
 	tests/test-quickshell-starting-instance.sh
 
-check-quickshell-controlcenter:
+check-quickshell-controlcenter: ${TOML_TOOL}
 	tests/test-quickshell-controlcenter.sh
 
 check-quickshell-power-backend:
@@ -1293,7 +1293,7 @@ check-picom-xvfb:
 check-quickshell-picom-model-xvfb:
 	@tests/test-quickshell-picom-model-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
-check-quickshell-health-xvfb:
+check-quickshell-health-xvfb: ${TOML_TOOL}
 	tests/test-quickshell-health-xvfb.sh
 
 check-quickshell-settings-loading:
@@ -1320,11 +1320,11 @@ check-system-health:
 check-system-management:
 	/usr/bin/python3 tests/test-system-management.py
 
-check-settings:
+check-settings: ${TOML_TOOL}
 	tests/test-settings.sh
 	tests/test-settings-input.sh
 
-check-appearance:
+check-appearance: ${TOML_TOOL}
 	tests/test-dwm-settings-appearance.sh
 	tests/test-dwm-settings-appearance-inventory.sh
 	tests/test-dwm-settings-font.sh
@@ -1333,7 +1333,7 @@ check-appearance:
 	tests/test-dwm-settings-toolkit.sh
 	tests/test-theme-apply-install-lock.sh
 
-check-phase5-optional-components:
+check-phase5-optional-components: ${TOML_TOOL}
 	tests/test-dwm-settings-appearance.sh
 	tests/test-dwm-settings-appearance-inventory.sh
 	tests/test-dwm-settings-toolkit.sh
@@ -1347,7 +1347,7 @@ check-quickshell-settings-xvfb: all
 check-desktop-smoke-xvfb: all
 	tests/test-desktop-smoke-xvfb.sh
 
-check-lightdm-config:
+check-lightdm-config: ${TOML_TOOL}
 	tests/test-lightdm-config.sh
 
 check-archiso:
@@ -1482,7 +1482,7 @@ check-live-backup-label:
 check-legacy-shared-data:
 	tests/test-legacy-shared-data.sh
 
-check-install-preservation:
+check-install-preservation: ${TOML_TOOL}
 	tests/test-install-preservation.sh
 
 .PHONY: check-install-multilib check-install-time-sync check-iso-install-credentials check-live-medium-cleanup \

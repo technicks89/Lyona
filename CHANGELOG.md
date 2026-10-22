@@ -53,6 +53,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings says so when it cannot read the theme file the way dwm does
+  (#437). The Appearance provider checks `themes.toml` with its own linter,
+  then reads it with `lyona-toml`, dwm's parser, so a theme dwm applies is
+  listed even where the linter objects (for example a `[theme.dracula]
+  trailing` header). When `lyona-toml` was missing or failed, the provider
+  kept the linter's verdict without a word, and such a theme was left out.
+  It now reports a `dwm-reader` finding and a partial state. A file dwm cannot
+  parse either still keeps the linter's verdict.
 - A wallpaper preview no longer loses its automatic rollback when it starts on
   a busy machine (#436). The preview's watchdog reads the preview's record
   without the lock while the preview replaces it to note the watchdog's pid; a
