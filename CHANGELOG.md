@@ -53,6 +53,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A wallpaper preview no longer loses its automatic rollback when it starts on
+  a busy machine (#436). The preview's watchdog reads the preview's record
+  without the lock while the preview replaces it to note the watchdog's pid; a
+  read that met the old file just as it was replaced failed, and the watchdog
+  took that for an ended preview and quit. The preview then stayed until a
+  later status check noticed. The watchdog now tries such a read again. Found
+  by the wallpaper test, which also waits for the watchdog where it depended on
+  its timing, and says which line failed when it stops.
 - A panel menu open while Picom starts or stops no longer keeps the wrong
   height (#431). The menu switches between the menu alone and a click-away
   surface over the screen below the panel. Qt sends the new width and height

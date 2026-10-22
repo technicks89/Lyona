@@ -1692,6 +1692,21 @@ start_preview_watchdog() {
 	fi
 }
 
+# The watchdog reads its metadata without the lock, while a writer replaces it
+# by rename. A read that meets the file just as it is replaced can see the old
+# one with no links left, and fails. Right after the watchdog starts, the
+# preview replaces it to record the watchdog's pid, and a watchdog that took
+# that for an ended preview left the preview with no rollback (#436). A failed
+# read is tried again before the watchdog gives up.
+watchdog_read_meta() {
+	local try
+	for try in 1 2 3 4 5; do
+		read_preview_meta "$1" && return 0
+		((try == 5)) || sleep 0.02
+	done
+	return 1
+}
+
 preview_watchdog() {
 	local token=$1 generation=$2 remaining sleep_duration sleep_pid=
 	watchdog_cleanup() {
@@ -1705,11 +1720,11 @@ preview_watchdog() {
 	valid_token "$token" || exit 2
 	[[ $generation =~ ^[A-Za-z0-9._-]{1,64}$ ]] || exit 2
 	ensure_preview_dir
-	read_preview_meta "$token" || exit 0
+	watchdog_read_meta "$token" || exit 0
 	[[ $preview_generation == "$generation" ]] || exit 0
 	clamp_preview_deadline "$token" || exit 0
 	while true; do
-		read_preview_meta "$token" || exit 0
+		watchdog_read_meta "$token" || exit 0
 		[[ $preview_generation == "$generation" ]] || exit 0
 		read_effective_preview_now || exit 0
 		remaining=$((preview_deadline - preview_now))
