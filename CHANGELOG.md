@@ -53,6 +53,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The first time the launcher opened in a session, the first keys typed
+  straight after Super+R could be lost (#443): the query was missing its
+  opening letters, and they did not reach the window underneath either. dwm
+  held the keys and handed them over as it focused the launcher (#391), but
+  the search field only took the focus a moment later, and Qt dropped what
+  came before. The search field is now the launcher's focus item from the
+  start. Seen once in `check-launcher-hold-keys-xvfb` on aarch64; with the
+  field's focus delayed 300 ms, every key of the first query was lost before
+  the change and none after.
 - Settings says so when it cannot read the theme file the way dwm does
   (#437). The Appearance provider checks `themes.toml` with its own linter,
   then reads it with `lyona-toml`, dwm's parser, so a theme dwm applies is
