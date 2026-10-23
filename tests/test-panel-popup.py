@@ -179,7 +179,14 @@ ShellRoot {
    open_popup()
    picom=start('picom','--config',str(base/'picom.conf'))
    what="watch-compositor did not report Picom starting again"; assert watch_line(watch,what,picom)=='compositor 1',what
-   wait_for(lambda: state().get('compositor') and popup() is not None and int(popup()['WIDTH'])==int(panel['WIDTH']),'the popup did not cover the screen when Picom started')
+   # Both steps again, as when Picom stopped: the width was seen at the full
+   # surface with the height still the menu's (aarch64 Full suite run
+   # 39273890621).
+   surface=lambda g: g is not None and (int(g['X']),int(g['WIDTH']),int(g['HEIGHT']))==(int(panel['X']),int(panel['WIDTH']),screen_h-30)
+   try:
+    wait_for(lambda: state().get('compositor') and surface(popup()),'',10)
+   except AssertionError:
+    raise AssertionError('the popup did not cover the screen when Picom started: compositor %r, windows %r'%(state().get('compositor'),geometries()))
    assert_surface(popup()); assert state()['open'] and state()['visible']
    click(700,500); assert_dismissed("Outside click did not dismiss popup after Picom started")
    stop(picom); stop(watch)
