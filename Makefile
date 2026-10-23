@@ -796,6 +796,7 @@ check-session-guards:
 	tests/test-autostart-compositor.sh
 	tests/test-autostart-tray-wait.sh
 	tests/test-autostop.sh
+	tests/test-session-closing-logins.sh
 
 check-session-migration:
 	tests/test-graphical-session-migration.sh

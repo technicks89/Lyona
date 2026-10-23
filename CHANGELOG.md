@@ -53,6 +53,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- After the X server died, from a crash or a killed Xorg, the next login had
+  no panel (#448). The old Quickshell hung as it lost its X server (in Qt's
+  image-cache teardown) and stayed in the dead login, which logind keeps
+  `closing`, and autostart took it for the new login's shell still starting,
+  as it was on the same display (`:0` again), and waited for it. Autostart
+  now tells the shells apart by logind session as well as display, and
+  replaces a dead login's shell; it also ends what is left of the user's own
+  X11 logins that logind reports `closing`, so a dead login's helpers do not
+  stay until a reboot. Reproduced and checked in a VM by killing Xorg and logging in again.
 - The first time the launcher opened in a session, the first keys typed
   straight after Super+R could be lost (#443): the query was missing its
   opening letters, and they did not reach the window underneath either. dwm
