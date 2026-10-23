@@ -209,7 +209,9 @@ and the builder's changes to `releng` for Arch Linux ARM: UEFI only
 (systemd-boot), `linux-aarch64`, SquashFS with the arm64 filter alone, and no
 `memdisk` hook. Each change is explained in
 `docs/evidence/arm2-01-spike.md` and checked by
-`tests/test-arch-iso-builder.sh`.
+`tests/test-arch-iso-builder.sh`. Its wizard installs lyona with archinstall,
+as on x86_64, with the aarch64 differences in
+`docs/evidence/arm2-03-installer.md` (ext4 and ext4 with LUKS, on QEMU/KVM).
 
 ### Signed releases
 

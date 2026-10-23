@@ -14,6 +14,9 @@ export NVIDIA_AUR_MARKER=${NVIDIA_AUR_MARKER:-/run/lyona-nvidia-aur}
 export LYONA_WARNINGS=${LYONA_WARNINGS:-/run/lyona-install-warnings}
 # Left by the wizard once it ranked this medium's mirrorlist (#249).
 export LYONA_MIRRORS_MARKER=${LYONA_MIRRORS_MARKER:-/run/lyona-mirrors-ranked}
+# x86_64, or aarch64 on the experimental Arch Linux ARM medium (ARM Sprint 2),
+# as the wizard takes it.
+export MACHINE_ARCH=${ARCH:-$HOSTTYPE}
 
 fail() {
 	printf 'lyona-postinstall: %s\n' "$1" >&2
@@ -45,6 +48,11 @@ show_logo
 
 add_cachyos_repositories() {
 	rm -f "$CACHYOS_MARKER"
+	# CachyOS builds for x86_64 only (lyona-cachyos refuses anything else).
+	if [[ $MACHINE_ARCH != x86_64 ]]; then
+		printf 'lyona-postinstall: CachyOS is x86_64 only; keeping the %s repositories.\n' "$MACHINE_ARCH"
+		return 0
+	fi
 	install -Dm755 "$REPO_SRC/scripts/lyona-cachyos" "$TARGET$CACHYOS_HELPER"
 
 	# The live medium adds the repositories before archinstall runs, so the
@@ -92,6 +100,10 @@ add_cachyos_repositories() {
 # fallback. Either way there is no fallback initramfs (drop_fallback_initramfs).
 install_cachyos_kernel() {
 	drop_fallback_initramfs
+	if [[ $MACHINE_ARCH != x86_64 ]]; then
+		printf 'lyona-postinstall: keeping the stock kernel; CachyOS is x86_64 only.\n'
+		return 0
+	fi
 	if arch-chroot "$TARGET" pacman -Qq "$CACHYOS_KERNEL" >/dev/null 2>&1; then
 		printf '%s was installed with the base system; it is the only kernel.\n' "$CACHYOS_KERNEL"
 		return 0
@@ -126,6 +138,73 @@ drop_fallback_initramfs() {
 		fi
 	done
 	rm -f -- "$TARGET"/boot/initramfs-*-fallback.img
+}
+
+# aarch64 (ARM2-03): linux-aarch64 installs its kernel as /boot/Image, and
+# GRUB pairs initramfs-linux.img (its preset's) only with a /boot/vmlinuz-linux.
+# Beside /boot/Image alone, grub-mkconfig writes an entry with no initramfs and
+# root=/dev/... (docs/evidence/arm2-01-spike.md): no encrypted root, and the
+# wrong disk when disks are named in another order. The medium's copy of this
+# hook gave the new system that file as pacstrap installed it; this gives it
+# the hook, so every kernel upgrade keeps the copy current. Before the first
+# system update, so an upgrade there is followed too.
+keep_vmlinuz_linux() {
+	local hook=etc/pacman.d/hooks/lyona-vmlinuz-linux.hook
+	install -Dm644 "$REPO_SRC/archiso-aarch64/airootfs/$hook" "$TARGET/$hook"
+	if [[ -f $TARGET/boot/Image ]] &&
+		! cmp -s "$TARGET/boot/Image" "$TARGET/boot/vmlinuz-linux" 2>/dev/null; then
+		cp -f "$TARGET/boot/Image" "$TARGET/boot/vmlinuz-linux"
+		printf 'Copied /boot/Image to /boot/vmlinuz-linux.\n'
+	fi
+	[[ -f $TARGET/boot/vmlinuz-linux ]] || {
+		printf 'lyona-postinstall: the new system has no /boot/vmlinuz-linux to boot.\n' >&2
+		return 1
+	}
+}
+
+# aarch64 (ARM2-03): archinstall installs GRUB at the removable path
+# (\EFI\BOOT\BOOTAA64.EFI) and adds no firmware boot entry. After the live
+# session, AAVMF (QEMU's aarch64 UEFI) then started its UEFI shell instead of
+# the disk; with an entry it boots the disk. An entry an earlier run made is
+# replaced, never added twice.
+add_firmware_boot_entry() {
+	local loader='\EFI\BOOT\BOOTAA64.EFI' sysfs=${LYONA_SYSFS:-/sys} source name disk partition number
+	[[ -d $sysfs/firmware/efi/efivars ]] || {
+		printf 'Not booted with UEFI; no firmware boot entry to add.\n'
+		return 0
+	}
+	[[ -f $TARGET/boot/EFI/BOOT/BOOTAA64.EFI ]] || {
+		printf 'lyona-postinstall: no %s on the new system'"'"'s EFI system partition.\n' "$loader" >&2
+		return 1
+	}
+	source=$(findmnt -n -o SOURCE --target "$TARGET/boot") || return 1
+	name=${source##*/}
+	disk=$(lsblk -n -d -o PKNAME "$source") || return 1
+	partition=$(<"$sysfs/class/block/$name/partition") || return 1
+	[[ -n $disk && -n $partition ]] || return 1
+	while read -r number; do
+		efibootmgr -q -b "$number" -B || return 1
+	done < <(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} lyona\(\t.*\)\{0,1\}$/\1/p')
+	# --create puts the new entry first in BootOrder.
+	efibootmgr -q --create --disk "/dev/$disk" --part "$partition" --label lyona --loader "$loader"
+	printf 'Added the firmware boot entry "lyona" for /dev/%s partition %s.\n' "$disk" "$partition"
+}
+
+# aarch64 (ARM2-03): with no console= on the kernel command line, the kernel
+# takes the console the firmware's ACPI SPCR table names, a serial port, and
+# the display is no console at all. In a VM on GB10 an encrypted disk's
+# passphrase prompt went to the serial port alone and the screen stayed black.
+# console=tty0 puts the console on the display, as on x86_64; the serial port
+# stays one too. Plymouth draws only text while a serial console is active,
+# unless told to ignore them, so the splash and its passphrase box need
+# plymouth.ignore-serial-consoles as well. A drop-in of its own, as the
+# splash's; install.sh's GRUB theme step regenerates grub.cfg with it (#246).
+use_display_console() {
+	install -d -m 0755 "$TARGET/etc/default/grub.d"
+	# shellcheck disable=SC2016 # expanded by grub-mkconfig
+	printf '%s\n' '# The kernel console on the display, not only the firmware'"'"'s serial port (lyona-postinstall.sh, aarch64).' \
+		'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} console=tty0 plymouth.ignore-serial-consoles"' \
+		>"$TARGET/etc/default/grub.d/90-lyona-console.cfg"
 }
 
 installed_kernels() {
@@ -497,6 +576,7 @@ install_yay() {
 }
 
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
+	keep_vmlinuz_linux add_firmware_boot_entry use_display_console \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
 	install_boot_splash splash_in_initramfs \
@@ -540,6 +620,9 @@ fi
 # Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
 set_total_steps 12
+# aarch64 adds three, the indented run_logged calls below: the kernel copy GRUB
+# boots, the firmware boot entry, and the console on the display.
+[[ $MACHINE_ARCH != aarch64 ]] || set_total_steps 15
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
@@ -547,8 +630,18 @@ LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own st
 # key there. Updating first failed every sync with "unknown trust" (Sync Sprint
 # 16, found in a VM once the wizard's CachyOS step ran again).
 run_logged "Adding the CachyOS repositories..." add_cachyos_repositories
+if [[ $MACHINE_ARCH == aarch64 ]]; then
+	run_logged "Keeping the kernel where GRUB finds it..." keep_vmlinuz_linux
+fi
 run_logged "Updating the new system..." arch-chroot "$TARGET" pacman -Syu --noconfirm
 run_logged "Checking the kernel..." install_cachyos_kernel
+if [[ $MACHINE_ARCH == aarch64 ]] &&
+	! run_logged "Adding a firmware boot entry..." add_firmware_boot_entry; then
+	note_warning "No firmware boot entry was added; if the machine starts its firmware shell instead of lyona, choose the disk in its boot menu." >/dev/null
+fi
+if [[ $MACHINE_ARCH == aarch64 ]]; then
+	run_logged "Putting the console on the display..." use_display_console
+fi
 run_logged "Installing GPU drivers..." install_gpu_drivers
 run_logged "Configuring NetworkManager..." install_networkmanager
 if ! run_logged "Setting the Wi-Fi country..." set_wifi_country; then

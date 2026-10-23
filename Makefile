@@ -1503,7 +1503,7 @@ check-install-preservation: ${TOML_TOOL}
 .PHONY: check-install-multilib check-install-time-sync check-iso-install-credentials check-live-medium-cleanup \
 	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary check-install-startx-hint \
 	check-lyona-shell check-gearlever-first-login check-iso-install-wifi check-install-step-timing \
-	check-iso-install-mirrors check-wifi-regdom check-iso-install-recovery
+	check-iso-install-mirrors check-wifi-regdom check-iso-install-recovery check-iso-install-aarch64
 check-install-multilib:
 	tests/test-install-multilib.sh
 
@@ -1570,6 +1570,11 @@ check-wifi-regdom:
 # #265, #266: the image installer applies the keymap, goes back, and recovers.
 check-iso-install-recovery:
 	tests/test-iso-install-recovery.sh
+
+# ARM2-03: the image installer's aarch64 path (no CachyOS, NVIDIA or
+# [multilib]; the kernel copy GRUB boots and the firmware boot entry).
+check-iso-install-aarch64:
+	tests/test-iso-install-aarch64.sh
 
 # #250: both install paths time each step and end with a table.
 check-install-step-timing:
@@ -1793,6 +1798,7 @@ check:
 	$(MAKE) check-iso-install-mirrors
 	$(MAKE) check-wifi-regdom
 	$(MAKE) check-iso-install-recovery
+	$(MAKE) check-iso-install-aarch64
 	$(MAKE) check-install-summary
 	$(MAKE) check-install-startx-hint
 	$(MAKE) check-lyona-shell

@@ -62,6 +62,11 @@ grep -Fq 'read -r -p "Press Enter to reboot. "' "$postinstall" || fail 'the clos
 steps=$(grep -cE '^(if ! )?run_logged ' "$postinstall")
 declared=$(sed -n 's/^set_total_steps \([0-9]*\)$/\1/p' "$postinstall")
 [[ $steps == "$declared" ]] || fail "the progress bar counts $declared steps, but there are $steps"
+# aarch64 (ARM2-03) runs its own steps besides, indented under its gate.
+aarch64_steps=$(grep -cP '^\t!? ?run_logged ' "$postinstall")
+aarch64_declared=$(sed -n 's/^\[\[ \$MACHINE_ARCH != aarch64 \]\] || set_total_steps \([0-9]*\)$/\1/p' "$postinstall")
+[[ $aarch64_declared == $((steps + aarch64_steps)) ]] ||
+	fail "on aarch64 the progress bar counts $aarch64_declared steps, but there are $((steps + aarch64_steps))"
 
 # R16-30: every cancel goes through cancelled, which names the command.
 if grep -n 'fail "aborted' "$wizard" | grep -q .; then

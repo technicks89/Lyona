@@ -6,7 +6,12 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-1.
 ([`docs/evidence/arm2-01-spike.md`](../evidence/arm2-01-spike.md)): A-2, A-3
 and A-4 decided. ARM2-02 built 2026-10-22
 ([`docs/evidence/arm2-02-live-medium.md`](../evidence/arm2-02-live-medium.md)):
-the medium boots to the wizard on QEMU/KVM; UTM and Parallels are untested. GitHub: issues #7 to #11
+the medium boots to the wizard on QEMU/KVM; UTM and Parallels are untested.
+ARM2-03 installed 2026-10-23
+([`docs/evidence/arm2-03-installer.md`](../evidence/arm2-03-installer.md)):
+archinstall (A-4 (a), so item 2 below is not built), ext4 and ext4 with LUKS
+on QEMU/KVM; it took `archlinuxarm-keyring`, the smallest part of ARM2-04's
+keyring item. GitHub: issues #7 to #11
 (label `arm64`); milestone "ARM Sprint 2 - Generic aarch64 image", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
