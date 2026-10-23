@@ -36,6 +36,8 @@ cleanup() {
 		tail -40 "$work/quickshell.log" >&2
 	fi
 	for pid in $pids; do kill "$pid" 2>/dev/null; done
+	# What dwm's autostart detached, Picom among them (lib.sh).
+	kill_session_tree "${home:-}"
 	rm -rf "$work"
 	exit "$status"
 }

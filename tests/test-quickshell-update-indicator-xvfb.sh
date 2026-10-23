@@ -48,6 +48,8 @@ cleanup() {
 	for pid in $pids; do kill "$pid" 2>/dev/null; done
 	# Gone before the workspace is removed, so none of them writes into it again.
 	for pid in $pids; do wait "$pid" 2>/dev/null; done
+	# What dwm's autostart detached, Picom among them (lib.sh).
+	kill_session_tree "${home:-}"
 	rm -rf "$work"
 	exit "$status"
 }
