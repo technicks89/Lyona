@@ -64,6 +64,11 @@ FloatingWindow {
                 TextInput {
                     id: launcherSearch
 
+                    // The window's focus item from the start, not only once
+                    // focusSearch runs: dwm's hold_keys hands over the keys
+                    // typed after Super+R as soon as it focuses the window, and
+                    // on the first open nothing else would take them (#391).
+                    focus: true
                     anchors.fill: parent
                     anchors.leftMargin: 38
                     anchors.rightMargin: 14
