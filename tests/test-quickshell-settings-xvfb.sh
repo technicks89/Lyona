@@ -2081,9 +2081,17 @@ fi
 font_remaining_before=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewRemaining)
 [ "$font_remaining_before" -gt 0 ]
-sleep 1
-font_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewRemaining)
+# The countdown is a 1 s Qt timer (a coarse one, up to 5% late), and the
+# reads are not in step with it: a read 1 s after the last saw the same value
+# once under load (the #447 deep dive). Wait for the tick, up to 3 s.
+i=0
+while [ "$i" -lt 60 ]; do
+	font_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceFontPreviewRemaining)
+	[ "$font_remaining_after" -lt "$font_remaining_before" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
 if [ "$font_remaining_after" -ge "$font_remaining_before" ]; then
 	printf 'Font preview countdown did not advance: %s -> %s\n' \
 		"$font_remaining_before" "$font_remaining_after" >&2
@@ -2159,10 +2167,25 @@ while [ "$i" -lt 100 ]; do
 	sleep 0.05
 done
 # Said out loud: these failed once under full-suite load with no word of which.
+# A second time (#444), Settings still had the state from before the apply:
+# the status read it owed was never made. What it was doing then is printed,
+# and the whole shell log (cleanup prints only its tail).
 if [ "$wallpaper_state" != available ] || [ "$wallpaper_path" != "$test_wallpaper" ] ||
 	[ "$wallpaper_fit" != max ]; then
 	printf 'Wallpaper apply not reflected in Settings: state=%s path=%s fit=%s\n' \
 		"$wallpaper_state" "$wallpaper_path" "$wallpaper_fit" >&2
+	for diagnostic in appearanceInventoryWatchState appearanceInventoryProviderState \
+		appearanceWallpaperProviderState appearanceWallpaperProviderDetail \
+		appearanceWallpaperMutationState appearanceWallpaperStatusBusy \
+		appearanceWallpaperDetail appearanceMutationReady; do
+		printf '  %s=%s\n' "$diagnostic" "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home \
+			XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+			quickshell ipc --path "$config" call settingsTest "$diagnostic" 2>&1 || true)" >&2
+	done
+	printf '  wallpaper.conf: %s\n' "$(cat "$config_home/lyona/wallpaper.conf" 2>&1 || true)" >&2
+	printf -- '--- quickshell.log (whole) ---\n' >&2
+	cat "$work/quickshell.log" >&2
+	printf -- '--- end of quickshell.log ---\n' >&2
 	exit 1
 fi
 
@@ -2201,9 +2224,15 @@ case $wallpaper_message in
 esac
 wallpaper_message_remaining=${wallpaper_message#*within }
 wallpaper_message_remaining=${wallpaper_message_remaining%% seconds*}
-sleep 1.2
-wallpaper_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewRemaining)
+# As for the font preview: wait for the countdown's tick, up to 3 s.
+i=0
+while [ "$i" -lt 60 ]; do
+	wallpaper_remaining_after=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
+		XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest appearanceWallpaperPreviewRemaining)
+	[ "$wallpaper_remaining_after" -lt "$wallpaper_remaining_before" ] && break
+	i=$((i + 1))
+	sleep 0.05
+done
 [ "$wallpaper_remaining_after" -lt "$wallpaper_remaining_before" ] || {
 	printf 'Wallpaper preview deadline did not count down: %s -> %s\n' \
 		"$wallpaper_remaining_before" "$wallpaper_remaining_after" >&2
