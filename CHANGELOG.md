@@ -19,6 +19,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   wizard in a QEMU/KVM virtual machine on GB10, and installing from it is
   ARM2-03. Its live system leaves out `reflector`, which Arch Linux ARM does
   not have. `docs/RELEASING.md` says how to build it.
+- The aarch64 medium installs lyona (ARM2-03), still experimental: the same
+  wizard and archinstall step, with no CachyOS or NVIDIA question, no
+  `[multilib]`, and `archlinuxarm-keyring` in the new system, without which
+  its first download failed with "unknown trust". The postinstall keeps
+  `/boot/vmlinuz-linux` a copy of `linux-aarch64`'s `/boot/Image`, which GRUB
+  boots, adds a `lyona` firmware boot entry, and puts the kernel console on
+  the display (`console=tty0 plymouth.ignore-serial-consoles`): the
+  firmware's serial console had taken the passphrase prompt of an encrypted
+  disk off the screen. ext4 and ext4 with LUKS installed and booted to the
+  greeter in a QEMU/KVM virtual machine on GB10
+  (`docs/evidence/arm2-03-installer.md`); x86_64 installs as before.
 - Systems the image installs boot with the lyona Plymouth splash, the one the
   install medium boots with, and an encrypted disk asks for its passphrase
   there instead of on the bare console: the message, then a box with a

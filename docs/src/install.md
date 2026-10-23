@@ -141,6 +141,13 @@ sudo pacman -Rns plymouth   # optional: its services also run without the splash
 
 `install.sh` on an existing system does not add the splash.
 
+On the experimental aarch64 medium, the install also adds
+`/etc/default/grub.d/90-lyona-console.cfg`, with `console=tty0
+plymouth.ignore-serial-consoles`. Without it, a machine whose firmware names
+a serial console sends the kernel console there alone, and an encrypted disk
+asks for its password on the serial port while the screen stays black. Keep
+it when you turn the splash off.
+
 ## Install on an existing Arch system
 
 On Arch Linux ARM (aarch64, experimental), do its own first steps before

@@ -13,6 +13,10 @@ LYONA_PACMAN_CONF=${LYONA_PACMAN_CONF:-/etc/pacman.conf}
 MIRROR_COUNTRY=
 CACHYOS_HELPER=/root/lyona/scripts/lyona-cachyos
 CACHYOS_PACKAGES=
+# The machine this medium runs on: x86_64, or aarch64 for the experimental Arch
+# Linux ARM medium (ARM Sprint 2). $ARCH, as install.sh and the package map take
+# it, else bash's own; no process is started.
+MACHINE_ARCH=${ARCH:-$HOSTTYPE}
 export LOG_FILE=${LOG_FILE:-/var/log/lyona-install.log}
 
 err() { printf 'lyona-install: %s\n' "$1" >&2; }
@@ -682,6 +686,9 @@ ask_nvidia() {
 	NVIDIA_OPT_IN=0
 	NVIDIA_DETECTED=0
 	NVIDIA_BRANCH=
+	# The NVIDIA driver profiles are x86_64 only; NVIDIA on aarch64 (GB10) is
+	# ARM Sprint 4's own.
+	[[ $MACHINE_ARCH == x86_64 ]] || return 0
 	command -v lspci >/dev/null 2>&1 || return 0
 	if ! lspci | grep -E "VGA|3D|Display" | grep -qE "NVIDIA|GeForce"; then
 		return 0
@@ -785,6 +792,12 @@ change_answer() {
 setup_cachyos_repositories() {
 	CACHYOS_PACKAGES=
 
+	# CachyOS builds for x86_64 only (lyona-cachyos refuses anything else).
+	if [[ $MACHINE_ARCH != x86_64 ]]; then
+		info "CachyOS is x86_64 only; installing from the $MACHINE_ARCH repositories."
+		return 0
+	fi
+
 	if [[ ! -x $CACHYOS_HELPER ]]; then
 		info "CachyOS helper not found at $CACHYOS_HELPER; installing from the stock Arch repositories."
 		return 0
@@ -849,6 +862,16 @@ generate_configs() {
 	local pass_hash
 	# The password on stdin, never in argv, where other processes can read it.
 	pass_hash=$(printf '%s\n' "$PASSWORD" | openssl passwd -6 -stdin)
+
+	# [multilib] holds the 32-bit x86 packages; Arch Linux ARM has none.
+	local optional_repositories='"multilib"' packages=$CACHYOS_PACKAGES
+	[[ $MACHINE_ARCH == x86_64 ]] || optional_repositories=
+	# Arch Linux ARM's base pulls in Arch Linux's keyring, not its own: the new
+	# system then trusted none of its packages, and the postinstall's first
+	# download failed with "unknown trust" (ARM2-03, found in a VM). archinstall
+	# installs these with pacstrap, against this medium's keyring, and the
+	# package's install script populates the new system's.
+	[[ $MACHINE_ARCH != aarch64 ]] || packages='"archlinuxarm-keyring"'
 
 	local esp_id root_id
 	esp_id=$(cat /proc/sys/kernel/random/uuid)
@@ -916,12 +939,12 @@ EOF
   "mirror_config": {
     "mirror_regions": {},
     "custom_servers": [],
-    "optional_repositories": ["multilib"],
+    "optional_repositories": [$optional_repositories],
     "custom_repositories": []
   },
   "network_config": {"type": "nm"},
   "ntp": true,
-  "packages": [$CACHYOS_PACKAGES],
+  "packages": [$packages],
   "pacman_config": {"color": true, "parallel_downloads": 10},
   "swap": {"enabled": true, "algorithm": "zstd"},
   "timezone": "$TIMEZONE",
