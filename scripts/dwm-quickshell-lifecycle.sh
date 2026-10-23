@@ -129,22 +129,30 @@ restart_managed_quickshell() {
 	"$@" quickshell --path "$config" --no-duplicate
 }
 
-# The X display a process was started on: DISPLAY in its environment, which is
-# fixed at exec and readable by its owner. Empty when it has none.
-quickshell_pid_display() {
-	tr '\0' '\n' <"/proc/$1/environ" 2>/dev/null | sed -n '/^DISPLAY=/{s///p;q;}'
+# A variable of a process's environment, NAME=value, which is fixed at exec and
+# readable by its owner. Empty when it has none.
+quickshell_pid_env() {
+	tr '\0' '\n' <"/proc/$1/environ" 2>/dev/null | sed -n "/^$2=/{s///p;q;}"
 }
 
 # quickshell_session_identity_in IDENTITIES: whether one of those instances is
-# this session's: started on this X display. Such an instance that does not
-# answer yet is still loading, or too busy to answer within the probe's second
-# (a loaded login): it is waited for, never stopped, as stopping it killed a
-# shell that was nearly up and started the wait again from nothing (#394). One
-# on another display is another session's, or a dead one's.
+# this session's: started on this X display, and in this logind session when
+# both sides name one. Such an instance that does not answer yet is still
+# loading, or too busy to answer within the probe's second (a loaded login): it
+# is waited for, never stopped, as stopping it killed a shell that was nearly
+# up and started the wait again from nothing (#394). One on another display is
+# another session's, or a dead one's. So is one of another logind session on
+# this display: a display manager gives the next login the same display
+# number, and a shell that hung as its X server died (#448) was waited for at
+# every later login, which then had no panel.
 quickshell_session_identity_in() {
 	[ -n "${DISPLAY:-}" ] || return 1
 	for session_identity in $1; do
-		[ "$(quickshell_pid_display "${session_identity%%:*}")" = "$DISPLAY" ] && return 0
+		session_pid=${session_identity%%:*}
+		[ "$(quickshell_pid_env "$session_pid" DISPLAY)" = "$DISPLAY" ] || continue
+		[ -n "${XDG_SESSION_ID:-}" ] || return 0
+		session_of_pid=$(quickshell_pid_env "$session_pid" XDG_SESSION_ID)
+		[ -n "$session_of_pid" ] && [ "$session_of_pid" != "$XDG_SESSION_ID" ] || return 0
 	done
 	return 1
 }

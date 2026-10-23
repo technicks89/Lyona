@@ -169,8 +169,11 @@ export TMPDIR=$work
 # HOME of its own still wrote the user's kept display layout and Picom log.
 # HOME stays the session's (see the Makefile). Every DWM_* and LYONA_*
 # variable the caller exported goes too, but for the Makefile's
-# LYONA_TEST_KEPT list (#408): helpers take them as overrides.
+# LYONA_TEST_KEPT list (#408): helpers take them as overrides. The locale is
+# C.UTF-8, not the caller's (see the Makefile).
 unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+unset LC_ALL LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY LC_MESSAGES LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT LC_IDENTIFICATION LANGUAGE
+export LANG=C.UTF-8
 kept=' DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS DWM_SECURITY_CONTAINER DWM_IDLE_WATCHERS_SECONDS DWM_TEST_MONITORS DWM_TEST_PICOM_CAPTURE '
 while IFS= read -r name; do
 	case $name in DWM_* | LYONA_*) ;; *) continue ;; esac

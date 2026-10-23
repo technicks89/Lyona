@@ -142,15 +142,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings' Picom opacity sliders read an opacity such as 57% back from
+  Picom's file as 56.99999999999999, and moving the other slider wrote it to
+  the file as `0.5699999999999999`. `dwm-settings-picom status` now rounds the
+  percentages. Found in the #447 deep dive.
+- After the X server died, from a crash or a killed Xorg, the next login had
+  no panel (#448). The old Quickshell hung as it lost its X server (in Qt's
+  image-cache teardown) and stayed in the dead login, which logind keeps
+  `closing`, and autostart took it for the new login's shell still starting,
+  as it was on the same display (`:0` again), and waited for it. Autostart
+  now tells the shells apart by logind session as well as display, and
+  replaces a dead login's shell; it also ends what is left of the user's own
+  X11 logins that logind reports `closing`, so a dead login's helpers do not
+  stay until a reboot. Reproduced and checked in a VM by killing Xorg and logging in again.
 - The first time the launcher opened in a session, the first keys typed
-  straight after Super+R could be lost: the query was missing its opening
-  letters, and they did not reach the window underneath either. dwm held the
-  keys and handed them over as it focused the launcher (#391), but the search
-  field only took the focus a moment later, and Qt dropped what came before.
-  The search field is now the launcher's focus item from the start. Seen once
-  in `check-launcher-hold-keys-xvfb` on aarch64; with the field's focus
-  delayed 300 ms, every key of the first query was lost before the change and
-  none after.
+  straight after Super+R could be lost (#443): the query was missing its
+  opening letters, and they did not reach the window underneath either. dwm
+  held the keys and handed them over as it focused the launcher (#391), but
+  the search field only took the focus a moment later, and Qt dropped what
+  came before. The search field is now the launcher's focus item from the
+  start. Seen once in `check-launcher-hold-keys-xvfb` on aarch64; with the
+  field's focus delayed 300 ms, every key of the first query was lost before
+  the change and none after.
 - Settings' Appearance pane no longer waits for its 5-second loading cap on a
   machine without Bluetooth (ARM1-06). Settings' capability discovery ran
   `bluetoothctl show`, which waits for a Bluetooth daemon that is not running

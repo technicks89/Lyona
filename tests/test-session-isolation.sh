@@ -47,6 +47,12 @@ session_env=(
 	# or read the kept layout, these point at (#408).
 	LYONA_DEV_SCRIPTS="$work/session-scripts"
 	DWM_DISPLAY_KEPT_LAYOUT="$work/session-kept-layout"
+	# The caller's locale: C over ssh or a TTY, where Qt printed its locale
+	# warning on the standard output tests read (#447), and a decimal comma.
+	LANG=C
+	LC_ALL=C
+	LC_NUMERIC=de_DE.UTF-8
+	LANGUAGE=de
 )
 # The run's own variables, which every way in sets or checks itself.
 harness_names=' DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS '
@@ -61,6 +67,8 @@ printf 'DISPLAY=%s\nXAUTHORITY=%s\nWAYLAND_DISPLAY=%s\nDBUS=%s\nRUNTIME=%s\nGSET
 printf 'XDG_CONFIG_HOME=%s\nXDG_DATA_HOME=%s\nXDG_STATE_HOME=%s\nXDG_CACHE_HOME=%s\n' \
 	"${XDG_CONFIG_HOME-unset}" "${XDG_DATA_HOME-unset}" \
 	"${XDG_STATE_HOME-unset}" "${XDG_CACHE_HOME-unset}"
+printf 'LOCALE LANG=%s LC_ALL=%s LC_NUMERIC=%s LANGUAGE=%s\n' \
+	"${LANG-unset}" "${LC_ALL-unset}" "${LC_NUMERIC-unset}" "${LANGUAGE-unset}"
 env | sed -nE 's/^((DWM|LYONA)_[A-Za-z0-9_]*)=(.*)/VARIABLE \1=\3/p'
 EOF
 chmod +x "$work/probe.sh"
@@ -96,6 +104,8 @@ assert_isolated() {
 	assert_line "$1" 'WAYLAND_DISPLAY=unset'
 	assert_line "$1" 'GSETTINGS_BACKEND=memory'
 	assert_line "$1" 'NO_HELPERS=1'
+	grep -Fqx 'LOCALE LANG=C.UTF-8 LC_ALL=unset LC_NUMERIC=unset LANGUAGE=unset' "$1" ||
+		fail "$2 still hands the caller's locale to a test: $(grep '^LOCALE' "$1"). It is replaced in the check block of the Makefile, in scripts/run-tests before the run starts, and in the isolation section of tests/lib.sh."
 	assert_not_contains "$1" "/run/user/$uid"
 	assert_not_contains "$1" ':4242'
 	grep -q '^RUNTIME=/' "$1" || fail "$2: no private runtime directory: $(cat "$1")"
@@ -135,6 +145,7 @@ assert_isolated "$work/make-check.out" 'make check-...'
 	>"$work/make-other.out"
 assert_line "$work/make-other.out" 'DISPLAY=:4242'
 assert_line "$work/make-other.out" 'GSETTINGS_BACKEND=dconf'
+assert_line "$work/make-other.out" 'LOCALE LANG=C LC_ALL=C LC_NUMERIC=de_DE.UTF-8 LANGUAGE=de'
 # install-user puts the managed Quickshell tree under the user's own.
 assert_line "$work/make-other.out" "XDG_CONFIG_HOME=$work/session-config"
 assert_line "$work/make-other.out" "VARIABLE LYONA_DEV_SCRIPTS=$work/session-scripts"
@@ -183,7 +194,7 @@ done
 mkdir -m 700 "$work/private-runtime"
 env "${session_env[@]}" LYONA_TEST_ISOLATED=1 DBUS_SESSION_BUS_ADDRESS="unix:path=$work/private-bus" \
 	XDG_RUNTIME_DIR="$work/private-runtime" DWM_DISPLAY_KEPT_LAYOUT="$work/recipe-layout" \
-	LYONA_DEV_SCRIPTS="$work/recipe-scripts" \
+	LYONA_DEV_SCRIPTS="$work/recipe-scripts" LANG=en_US.UTF-8 LC_ALL= \
 	"$work/lib-probe.sh" >"$work/lib-isolated.out"
 assert_line "$work/lib-isolated.out" 'DISPLAY=:4242'
 assert_line "$work/lib-isolated.out" "DBUS=unix:path=$work/private-bus"
@@ -191,6 +202,9 @@ assert_line "$work/lib-isolated.out" "RUNTIME=$work/private-runtime"
 # An override the recipe set is the test's own (#408).
 assert_line "$work/lib-isolated.out" "VARIABLE DWM_DISPLAY_KEPT_LAYOUT=$work/recipe-layout"
 assert_line "$work/lib-isolated.out" "VARIABLE LYONA_DEV_SCRIPTS=$work/recipe-scripts"
+# So is the locale the recipe gave it.
+grep -Fq 'LOCALE LANG=en_US.UTF-8 ' "$work/lib-isolated.out" ||
+	fail "tests/lib.sh under make or run-tests replaced the recipe's locale: $(grep '^LOCALE' "$work/lib-isolated.out")"
 # The configuration, data and state directories are the test's own on this
 # path too, so a kept layout one test writes is not applied by the next.
 assert_not_contains "$work/lib-isolated.out" "$work/session-"

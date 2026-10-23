@@ -448,7 +448,11 @@ if ! cmp -s "$work/dropped.names" "$work/gated.names"; then
 fi
 # The x86_64 medium ranks its mirrors with reflector; the aarch64 one has none.
 grep -q '^iso reflector$' "$work/x86_64.resolved"
-! grep -q '^iso reflector$' "$work/aarch64.resolved"
+# Not `! grep`: set -e ignores a negated command, so that never failed.
+if grep -q '^iso reflector$' "$work/aarch64.resolved"; then
+	printf 'aarch64 iso resolves reflector, which Arch Linux ARM does not have.\n' >&2
+	exit 1
+fi
 
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

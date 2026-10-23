@@ -204,8 +204,8 @@ trap 'exit 143' TERM
 # recipe started (xvfb-run, dbus-run-session). A test run straight from a
 # terminal loses the session's: a display that is not an Xvfb or Xephyr
 # server, the inherited session bus and the inherited runtime directory,
-# and the DWM_* and LYONA_* overrides it exported (#408). GSettings stays in
-# memory and no installed root helper is found
+# and the DWM_* and LYONA_* overrides it exported (#408), and its locale.
+# GSettings stays in memory and no installed root helper is found
 # (scripts/dwm-trust.sh). The XDG base directories are private to the test
 # on every path (#404); HOME stays the caller's.
 
@@ -233,6 +233,10 @@ if [ -z "${LYONA_TEST_ISOLATED:-}" ]; then
 		unset DISPLAY XAUTHORITY
 	fi
 	unset WAYLAND_DISPLAY
+	# C.UTF-8, not the caller's locale (see the Makefile).
+	unset LC_ALL LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY LC_MESSAGES LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT LC_IDENTIFICATION LANGUAGE
+	LANG=C.UTF-8
+	export LANG
 	# Nothing has started a bus for this test yet, so any bus it inherits is
 	# its caller's session bus, whatever its address (/run/user, an abstract
 	# socket from dbus-launch). A test that needs one starts its own.
