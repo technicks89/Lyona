@@ -53,6 +53,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings' Picom opacity sliders read an opacity such as 57% back from
+  Picom's file as 56.99999999999999, and moving the other slider wrote it to
+  the file as `0.5699999999999999`. `dwm-settings-picom status` now rounds the
+  percentages. Found in the #447 deep dive.
 - After the X server died, from a crash or a killed Xorg, the next login had
   no panel (#448). The old Quickshell hung as it lost its X server (in Qt's
   image-cache teardown) and stayed in the dead login, which logind keeps
