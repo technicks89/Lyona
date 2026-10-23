@@ -68,7 +68,11 @@ GRUB_THEME_LICENSE_DIR = ${DATADIR}/licenses/lyona/grub-themes
 # knobs a developer passes a test (DWM_TEST_TMP_ROOT, DWM_SECURITY_CONTAINER,
 # DWM_IDLE_WATCHERS_SECONDS, DWM_TEST_MONITORS, DWM_TEST_PICOM_CAPTURE), which
 # no helper reads. scripts/run-tests and tests/lib.sh do the same for what
-# they start, with the same list.
+# they start, with the same list. The locale is the caller's no longer either
+# (#447): C.UTF-8 through LANG, and no LC_* or LANGUAGE. Under a C locale (ssh,
+# a TTY, cron) Qt printed its locale warning on the standard output of
+# `quickshell ipc`, which tests read. A test that wants another locale sets
+# LANG for what it runs.
 LYONA_TEST_KEPT := DWM_TEST_TMP_ROOT DWM_TEST_WORKSPACE DWM_TEST_RUNNER_TOKEN \
 	LYONA_TEST_ISOLATED LYONA_NO_TRUSTED_HELPERS DWM_SECURITY_CONTAINER \
 	DWM_IDLE_WATCHERS_SECONDS DWM_TEST_MONITORS DWM_TEST_PICOM_CAPTURE
@@ -80,6 +84,8 @@ ifneq ($(strip $(LYONA_TEST_INHERITED)),)
 unexport $(LYONA_TEST_INHERITED)
 endif
 export GSETTINGS_BACKEND := memory
+export LANG := C.UTF-8
+unexport LC_ALL LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY LC_MESSAGES LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT LC_IDENTIFICATION LANGUAGE
 export DBUS_SESSION_BUS_ADDRESS := unix:path=/nonexistent/lyona-tests-have-no-session-bus
 export LYONA_TEST_ISOLATED := 1
 export LYONA_NO_TRUSTED_HELPERS := 1
