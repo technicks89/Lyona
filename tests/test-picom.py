@@ -395,6 +395,14 @@ class PicomTests(unittest.TestCase):
         self.assertEqual(picom.Configuration().opacity(), (0.9, 0.75))
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
+    def test_status_opacity_is_whole_percent(self):
+        self.write("active-opacity = 0.57; inactive-opacity = 0.29;\n")
+        state = picom.status(False)
+        self.assertEqual((state["active"], state["inactive"]), (57, 29))
+        # Settings sends the unchanged slider back as status gave it.
+        picom.mutate("set-opacity", [58, state["inactive"]], state["revision"])
+        self.assertEqual(picom.Configuration().opacity(), (0.58, 0.29))
+
     def test_preserves_comments_nested_keys_and_format(self):
         text = '# active-opacity = .1;\nactive-opacity=.98; // active\ninactive-opacity = 0.8\nbackend="glx";\nwintypes: { tooltip = { opacity = 0.5; }; };\n'
         config = self.write(text)

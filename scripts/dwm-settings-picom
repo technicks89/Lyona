@@ -885,7 +885,10 @@ def status(detect=True):
         result["path"] = str(config.path)
         result["revision"] = config.revision()
         active, inactive = config.opacity()
-        result.update(active=active * 100, inactive=inactive * 100)
+        # Percent, rounded: 0.57 * 100 is 56.99999999999999 in binary floating
+        # point, which Settings showed as 57 but sent back as it was, and the
+        # file then got 0.5699999999999999 for the other slider.
+        result.update(active=round(active * 100, 4), inactive=round(inactive * 100, 4))
         radius_error = ""
         try:
             result["corner_radius"] = config.corner_radius()

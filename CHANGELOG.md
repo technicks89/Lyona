@@ -53,6 +53,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings' Picom opacity sliders read an opacity such as 57% back from
+  Picom's file as 56.99999999999999, and moving the other slider wrote it to
+  the file as `0.5699999999999999`. `dwm-settings-picom status` now rounds the
+  percentages. Found in the #447 deep dive.
 - The first time the launcher opened in a session, the first keys typed
   straight after Super+R could be lost (#443): the query was missing its
   opening letters, and they did not reach the window underneath either. dwm
