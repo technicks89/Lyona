@@ -4,7 +4,9 @@
 # second on a loaded login) is waited for, never stopped. Autostart restarted
 # it, and so did a shell key pressed early (lyona-shell), killing a shell that
 # was nearly up; under load the restart could be killed again in turn, and the
-# key did nothing. An instance of another display is still replaced, and with
+# key did nothing. An instance of another display is still replaced, and so
+# is one of another logind session on this display (#448): a display manager
+# gives the next login the display of a dead one, whose shell hung. With
 # none running one is started, never restarted (a key's restart stopped the
 # shell autostart had just started). A key whose call came just before the
 # shell answered is asked again.
@@ -73,8 +75,8 @@ STUB
 chmod +x "$work/bin/quickshell" "$work/bin/dwm-quickshell-controlcenter" "$work/bin/xmessage"
 
 instance_pid=
-start_instance() { # DISPLAY
-	env DISPLAY="$1" "$work/qs/quickshell" 60 &
+start_instance() { # DISPLAY [XDG_SESSION_ID]
+	env -u XDG_SESSION_ID DISPLAY="$1" ${2:+XDG_SESSION_ID="$2"} "$work/qs/quickshell" 60 &
 	instance_pid=$!
 	printf '%s\n' "$instance_pid" >"$state/pid"
 	cleanup_add "kill $instance_pid 2>/dev/null || :"
@@ -92,9 +94,10 @@ reset_state() {
 log() { cat "$state/log" 2>/dev/null || :; }
 
 # start_managed_quickshell, as autostart runs it at login.
-autostart_start() { # DISPLAY
+autostart_start() { # DISPLAY [XDG_SESSION_ID]
 	# shellcheck disable=SC2016 # expanded by the inner shell
-	env PATH="$work/bin:$PATH" DISPLAY="$1" STUB_STATE="$state" lyona_lib="$repo/scripts" sh -c '
+	env -u XDG_SESSION_ID PATH="$work/bin:$PATH" DISPLAY="$1" ${2:+XDG_SESSION_ID="$2"} \
+		STUB_STATE="$state" lyona_lib="$repo/scripts" sh -c '
 		. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 		launch() { "$@"; }
 		start_managed_quickshell "$1" launch
@@ -116,6 +119,27 @@ start_instance :8
 autostart_start :7 || fail 'start_managed_quickshell failed'
 log | grep -Fqx "kill $instance_pid" || fail "another display's instance was not stopped: $(log)"
 log | grep -Fqx "start --path $config --no-duplicate" || fail "no shell was started: $(log)"
+wait "$instance_pid" 2>/dev/null || :
+
+# This display's instance of this logind session: kept. So is one when either
+# side names no session, as only the display can tell then.
+for sessions in 'c1 c1' 'c1 -' '- c1'; do
+	reset_state
+	instance_session=${sessions% *}
+	login_session=${sessions#* }
+	start_instance :7 "${instance_session#-}"
+	autostart_start :7 "${login_session#-}" || fail 'start_managed_quickshell failed'
+	[ -z "$(log)" ] || fail "sessions $sessions: autostart stopped this session's shell: $(log)"
+	kill "$instance_pid"
+	wait "$instance_pid" 2>/dev/null || :
+done
+
+# This display's instance of another logind session, a dead login's: replaced.
+reset_state
+start_instance :7 c1
+autostart_start :7 c2 || fail 'start_managed_quickshell failed'
+log | grep -Fqx "kill $instance_pid" || fail "a dead login's shell on this display was not stopped: $(log)"
+log | grep -Fqx "start --path $config --no-duplicate" || fail "no shell was started past a dead login's: $(log)"
 wait "$instance_pid" 2>/dev/null || :
 
 # None running: started.

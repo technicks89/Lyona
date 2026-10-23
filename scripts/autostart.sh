@@ -287,6 +287,12 @@ if command -v autorandr >/dev/null 2>&1; then
 	fi
 fi
 
+# A login whose X server died can stay closing with what it left running: a
+# Quickshell that hung there was this display's (#448). End such logins first.
+if command -v loginctl >/dev/null 2>&1; then
+	lyona_end_closing_x11_sessions "$(loginctl show-session self -p Id --value 2>/dev/null)"
+fi
+
 QUICKSHELL_CONFIG=$config_home/quickshell/shell.qml
 if [ -f "$QUICKSHELL_CONFIG" ]; then
 	quickshell_check=

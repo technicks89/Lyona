@@ -271,8 +271,10 @@ directories (#404); `HOME` stays the session's, so a test that stages files
 for a helper gives it a `HOME` of its own. They drop every `DWM_*` and
 `LYONA_*` variable the caller exported (#408), but for the Makefile's
 `LYONA_TEST_KEPT` list, which the three entry points share: the run's own
-variables and the test knobs no helper reads. A variable a recipe sets, or
-`make VAR=value`, still reaches the test. A test that
+variables and the test knobs no helper reads. A test runs under
+`LANG=C.UTF-8`, with no `LC_*` or `LANGUAGE` of the caller's (#447). A
+variable a recipe sets, a locale too, or `make VAR=value`, still reaches the
+test. A test that
 needs X starts its own Xvfb (`xvfb-run`, `dbus-run-session`) inside its
 recipe. Keep new tests behind those entry points: a Python test, or a shell
 test that does not source `tests/lib.sh`, is isolated only under `make` or
