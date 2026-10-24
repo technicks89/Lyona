@@ -10,6 +10,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A system updated with `lyona-update` records the release's commit in
+  `/etc/lyona-release` (#457). The Makefile took the commit from `git
+  rev-parse`, which has nothing to say in an extracted release archive, so
+  every update stamped `LYONA_COMMIT=unknown`, which `lyona-update check`
+  and Settings -> System then showed, where an image install records the
+  commit. `make release` now writes the commit the archive was made from into
+  it as `.lyona-commit`, part of what the release workflow signs, and the
+  Makefile reads that stamp first, then a checkout's own HEAD.
+  `make release-check` fails when the archive lacks it or an install from the
+  extracted archive would record anything else. Found in the
+  2026.10.0-beta.7 qualification.
 - `lyona-update rollback` removes the commands, helpers and polkit actions the
   release being rolled back had added (#456). The backup an update takes
   holds the files the new release replaces; a file the new release adds was

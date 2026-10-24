@@ -25,10 +25,13 @@ SYSUSERS_DIR = /usr/lib/sysusers.d
 SYSUSERS_CONF = config/systemd/lyona-update.conf
 BUILD_USER = lyona-build
 # UPDATE-001 install provenance. The ISO build passes both through the
-# environment (archiso/airootfs/root/lyona-postinstall.sh); an existing-system
-# install falls back to the local checkout's own HEAD, and finally to
-# "unknown" when git is unavailable -- an ISO-provisioned target has no .git.
-LYONA_COMMIT ?= $(shell git -C . rev-parse HEAD 2>/dev/null || printf unknown)
+# environment (archiso/airootfs/root/lyona-postinstall.sh). A release archive
+# carries the commit it was made from in .lyona-commit (written by `make
+# release`, never tracked), which is read first: an update installs from the
+# extracted archive, which has no .git, and the directory it is extracted into
+# may lie inside some other repository (#457). A checkout has no stamp and uses
+# its own HEAD; "unknown" is the last resort.
+LYONA_COMMIT ?= $(shell grep -Exm1 '[0-9a-f]{40}' .lyona-commit 2>/dev/null || git -C . rev-parse HEAD 2>/dev/null || printf unknown)
 LYONA_SOURCE ?= $(if $(wildcard .git),checkout,tarball)
 CAPITAINE_DARK_THEME = Capitaine-Cursors
 CAPITAINE_LIGHT_THEME = Capitaine-Cursors-White
@@ -750,16 +753,21 @@ uninstall:
 # normalised to 0644 or 0755, keeping only the executable bit git records. tar
 # and gzip write to temporary files, so a failure never leaves a partial
 # archive. lyona-update and lyona-update-root build and install from it as a
-# checkout does. It never holds a built binary, config.h or objects. Byte-for-byte
-# reproducible from the same tree and SOURCE_DATE_EPOCH.
+# checkout does. It never holds a built binary, config.h or objects. One file is
+# not git's: .lyona-commit, the commit the archive was made from, so an install
+# from the archive records it in /etc/lyona-release (LYONA_COMMIT above, #457).
+# Byte-for-byte reproducible from the same tree and SOURCE_DATE_EPOCH.
 release:
 	@set -eu; \
 	git rev-parse --is-inside-work-tree >/dev/null 2>&1 || \
 		{ echo "make release must run in a git checkout: the archive is git's file list" >&2; exit 1; }; \
 	list="$$(mktemp)"; \
 	archive_tar="$$(mktemp)"; \
-	trap 'rm -f "$$list" "$$archive_tar" "${RELEASE_ARCHIVE}.partial"' EXIT; \
+	stamp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$list" "$$archive_tar" "$$stamp_dir" "${RELEASE_ARCHIVE}.partial"' EXIT; \
 	git ls-files -z --cached --others --exclude-standard | LC_ALL=C sort -zu >"$$list"; \
+	git rev-parse HEAD >"$$stamp_dir/.lyona-commit"; \
+	chmod 0644 "$$stamp_dir/.lyona-commit"; \
 	mkdir -p "$$(dirname -- "${RELEASE_ARCHIVE}")"; \
 	if ! tar --null -T "$$list" \
 		--transform 's,^,${RELEASE_NAME}/,S' \
@@ -768,7 +776,7 @@ release:
 		--owner=0 --group=0 --numeric-owner \
 		--mode='u=rwX,go=rX' \
 		--format=gnu \
-		-cf "$$archive_tar" || \
+		-cf "$$archive_tar" -C "$$stamp_dir" .lyona-commit || \
 		! gzip -n -c "$$archive_tar" >"${RELEASE_ARCHIVE}.partial"; then \
 		echo "make release: could not create ${RELEASE_ARCHIVE}" >&2; \
 		exit 1; \
@@ -1624,10 +1632,17 @@ release-check:
 	if awk '$$1 !~ /^(-rw-r--r--|-rwxr-xr-x|lrwxr-xr-x|lrwxrwxrwx)$$/' "$$work/long-listing" | grep -q .; then \
 		echo "Release archive has a mode other than 0644 or 0755." >&2; exit 1; \
 	fi; \
+	head="$$(git rev-parse HEAD)"; \
+	tar -xzOf "${RELEASE_ARCHIVE}" "${RELEASE_NAME}/.lyona-commit" | grep -Fqx "$$head" || \
+		{ echo "Release archive does not carry its commit in .lyona-commit." >&2; exit 1; }; \
 	tar -xzf "${RELEASE_ARCHIVE}" -C "$$work"; \
+	recorded="$$($(MAKE) -s -C "$$work/${RELEASE_NAME}" --no-print-directory \
+		--eval='lyona-print-commit: ; @printf "%s\n" "$$(LYONA_COMMIT)"' lyona-print-commit)"; \
+	[ "$$recorded" = "$$head" ] || \
+		{ echo "An install from the extracted archive would record LYONA_COMMIT=$$recorded, not $$head." >&2; exit 1; }; \
 	$(MAKE) -s -C "$$work/${RELEASE_NAME}" all >/dev/null; \
 	test -x "$$work/${RELEASE_NAME}/dwm"; \
-	echo "==> Release archive validated: a reproducible source archive that builds."
+	echo "==> Release archive validated: a reproducible source archive that builds and records its commit."
 
 check:
 	$(MAKE) clean
