@@ -127,6 +127,35 @@ wait_for_quickshell_executable() {
 	return 1
 }
 
+# The assertions below say what they wanted and what they found. A bare
+# `test` or `grep` under set -e ends the test with nothing but make's
+# "Error 1" (it took three full-suite runs and a trace to find one).
+
+# The number of times a mock command ran, 0 when it never did.
+mock_count() {
+	if [ -f "$1" ]; then
+		cat "$1"
+	else
+		printf 0
+	fi
+}
+
+assert_count() {
+	assert_equals "$2" "$(mock_count "$1")" "${3:-$1}: run count"
+}
+
+# A marker a stub writes when it runs, within wait_for_marker's second.
+expect_marker() {
+	wait_for_marker "$1" || fail "${2:-no marker} ($1 did not appear within 1 s)"
+}
+
+# A message, then the file it is about, then exit 1.
+fail_showing() {
+	printf '%s: %s\n' "$test_name" "$1" >&2
+	lyona_show_file "$2"
+	exit 1
+}
+
 mkdir -p "$work/bin" "$work/runtime-bin/normal" "$work/runtime-bin/stubborn"
 cp "$(command -v sleep)" "$work/runtime-bin/normal/quickshell"
 cp "$(command -v sleep)" "$work/runtime-bin/stubborn/quickshell"
@@ -324,9 +353,12 @@ if [ "${1:-}" = kill ]; then
 		exit 1
 	fi
 	if [ "${TEST_QUICKSHELL_DELAYED_STOP:-0}" = 1 ]; then
+		# USR1, not HUP: a runner started under nohup leaves HUP ignored in
+		# every process it starts, and the stale instance would then live on
+		# until the lifecycle helper's TERM fallback.
 		(
 			sleep 0.2
-			kill -HUP "$selected_pid" 2>/dev/null || true
+			kill -USR1 "$selected_pid" 2>/dev/null || true
 			rm -f "${TEST_STATE:?}/quickshell.stale" \
 				"${TEST_STATE:?}/quickshell.running"
 		) </dev/null >/dev/null 2>&1 &
@@ -483,9 +515,9 @@ run_duplicate_case() {
 				DWM_AUTOSTART_NO_SETSID=1 \
 				sh "$repo/scripts/autostart.sh"
 		fi
-		wait_for_marker "$state/feh.running"
-		wait_for_marker "$state/picom.running"
-		wait_for_marker "$state/dwm-lock-watch.running"
+		expect_marker "$state/feh.running" "$mode run $iteration: autostart did not start feh"
+		expect_marker "$state/picom.running" "$mode run $iteration: autostart did not start picom"
+		expect_marker "$state/dwm-lock-watch.running" "$mode run $iteration: autostart did not start dwm-lock-watch"
 		if ! wait_for_marker "$state/quickshell.running"; then
 			printf 'Quickshell launch arguments:\n' >&2
 			cat "$state/quickshell.args" >&2
@@ -500,10 +532,10 @@ run_duplicate_case() {
 	# with no wallpapers to probe -- and that probe's own marker was what
 	# suppressed the real fallback, so no wallpaper was ever actually set
 	# here. The probe is gone; the count now tracks wallpaper applications.
-	test "$(cat "$state/feh.count")" -eq 1
+	assert_count "$state/feh.count" 1 "$mode: feh over both runs"
 	# And it must be a wallpaper application, not a probe.
-	test "$(wc -l <"$state/feh.args")" -eq 1
-	grep -Fq -- '--bg-fill' "$state/feh.args"
+	assert_equals 1 "$(wc -l <"$state/feh.args")" "$mode: feh invocations in $state/feh.args"
+	assert_contains "$state/feh.args" '--bg-fill'
 	if grep -Fq -- '--loadable' "$state/feh.args"; then
 		printf 'autostart spawned a feh probe with no wallpapers present\n' >&2
 		exit 1
@@ -511,22 +543,25 @@ run_duplicate_case() {
 	# light-locker too: with no saved power config the desktop locks after 10
 	# minutes idle (Sync Sprint 12 S12-10, D-13), and power-apply starts it once.
 	for name in picom dwm-lock-watch quickshell light-locker; do
-		test "$(cat "$state/$name.count")" -eq 1
+		assert_count "$state/$name.count" 1 "$mode: $name over both runs"
 	done
 	# dwm-status is on PATH but no longer started: nothing reads it (#284).
-	test ! -e "$state/dwm-status.count"
-	test ! -e "$state/dex.count"
-	test ! -e "$state/dex-autostart.count"
+	assert_no_file "$state/dwm-status.count" 'dwm-status must not be started'
+	assert_no_file "$state/dex.count" 'dex must not run when the systemd start works'
+	assert_no_file "$state/dex-autostart.count" 'dex-autostart must not run when the systemd start works'
 	awk '
 		/--user import-environment/ && !imported { imported = NR }
 		/--user daemon-reload/ && !reloaded { reloaded = NR }
 		/--user start wm-graphical-session.service/ && !started { started = NR }
 		END { exit !(imported && reloaded && started && imported < reloaded && reloaded < started) }
-	' "$state/systemctl.log"
+	' "$state/systemctl.log" ||
+		fail_showing 'autostart did not import the environment, reload and start the graphical session, in that order' \
+			"$state/systemctl.log"
 	awk -F '\t' '
 		index(":" $1 ":", ":X-DWM:") && index(":" $1 ":", ":dwm:") { found = 1 }
 		END { exit !found }
-	' "$state/systemctl.log"
+	' "$state/systemctl.log" ||
+		fail_showing 'no systemctl call carried an XDG_CURRENT_DESKTOP naming X-DWM and dwm' "$state/systemctl.log"
 	# Stale targets ended once, before they were started, and not again by
 	# the second run in the same login.
 	awk -F '\t' '
@@ -559,9 +594,8 @@ run_relative_config_home_case() {
 		XDG_CONFIG_HOME=relative XDG_RUNTIME_DIR="$runtime" \
 		XDG_SESSION_TYPE=wayland DWM_AUTOSTART_NO_INPUT_WATCH=1 \
 		DWM_AUTOSTART_NO_SETSID=1 sh "$repo/scripts/autostart.sh"
-	wait_for_marker "$state/quickshell.running"
-	grep -Fq -- "--path $home/.config/quickshell/shell.qml --no-duplicate" \
-		"$state/quickshell.args"
+	expect_marker "$state/quickshell.running" 'autostart did not start Quickshell with a relative XDG_CONFIG_HOME'
+	assert_contains "$state/quickshell.args" "--path $home/.config/quickshell/shell.qml --no-duplicate"
 }
 
 run_wallpaper_recovery_with_existing_feh_case() {
@@ -585,8 +619,8 @@ EOF
 		XDG_CONFIG_HOME="$home/.config" XDG_RUNTIME_DIR="$runtime" \
 		XDG_SESSION_TYPE=wayland DWM_AUTOSTART_NO_INPUT_WATCH=1 \
 		DWM_AUTOSTART_NO_SETSID=1 sh "$repo/scripts/autostart.sh"
-	wait_for_marker "$state/wallpaper-helper.running"
-	test ! -e "$state/feh.count"
+	expect_marker "$state/wallpaper-helper.running" 'autostart did not run dwm-settings-wallpaper session-apply'
+	assert_no_file "$state/feh.count" 'the feh fallback must not run when the wallpaper helper does'
 	rm -f "$work/bin/dwm-settings-wallpaper"
 }
 
@@ -604,23 +638,28 @@ run_stale_quickshell_case() {
 	: >"$identity_file"
 	"$work/runtime-bin/normal/quickshell" 60 &
 	managed_pid_one=$!
-	record_test_identity "$managed_pid_one" "$identity_file"
+	record_test_identity "$managed_pid_one" "$identity_file" ||
+		fail "no start time for the first stale Quickshell (pid $managed_pid_one)"
 	(
 		trap '' TERM
 		exec "$work/runtime-bin/stubborn/quickshell" 60
 	) &
 	managed_pid_two=$!
-	record_test_identity "$managed_pid_two" "$identity_file"
+	record_test_identity "$managed_pid_two" "$identity_file" ||
+		fail "no start time for the stubborn stale Quickshell (pid $managed_pid_two)"
 	printf '%s\n%s\n' "$managed_pid_one" "$managed_pid_two" >"$state/quickshell-managed.pids"
 	"$work/runtime-bin/normal/quickshell" 60 &
 	secondary_pid=$!
-	record_test_identity "$secondary_pid" "$identity_file"
+	record_test_identity "$secondary_pid" "$identity_file" ||
+		fail "no start time for the secondary Quickshell (pid $secondary_pid)"
 	printf '%s\n' "$secondary_pid" >"$state/quickshell-secondary.pid"
 	"$work/runtime-bin/normal/quickshell" 60 &
 	replacement_pid=$!
-	record_test_identity "$replacement_pid" "$identity_file"
+	record_test_identity "$replacement_pid" "$identity_file" ||
+		fail "no start time for the replacement Quickshell (pid $replacement_pid)"
 	printf '%s\n' "$replacement_pid" >"$state/quickshell-replacement.pid"
-	wait_for_quickshell_executable "$managed_pid_two"
+	wait_for_quickshell_executable "$managed_pid_two" ||
+		fail "pid $managed_pid_two did not exec the stubborn quickshell"
 	rm -f "$work/runtime-bin/stubborn/quickshell"
 
 	DISPLAY=:99 \
@@ -637,24 +676,24 @@ run_stale_quickshell_case() {
 
 	wait "$managed_pid_one" 2>/dev/null || true
 	wait "$managed_pid_two" 2>/dev/null || true
-	test ! -e "$state/quickshell.stale"
-	test -f "$state/quickshell.running"
-	kill -0 "$secondary_pid"
-	kill -0 "$replacement_pid"
-	test -f "$state/quickshell-tray.ready"
-	test "$(cat "$state/quickshell.count")" -eq 1
-	test "$(cat "$state/quickshell-kill.count")" -eq 2
-	grep -Fqx "$managed_pid_one" "$state/quickshell-kill.pids"
-	grep -Fqx "$managed_pid_two" "$state/quickshell-kill.pids"
+	assert_no_file "$state/quickshell.stale" 'the stale Quickshell was not replaced'
+	assert_file "$state/quickshell.running" 'no managed Quickshell running after the replacement'
+	kill -0 "$secondary_pid" 2>/dev/null || fail "the secondary Quickshell (pid $secondary_pid) was ended"
+	kill -0 "$replacement_pid" 2>/dev/null || fail "the concurrent replacement (pid $replacement_pid) was ended"
+	assert_file "$state/quickshell-tray.ready" 'the tray never became ready'
+	assert_count "$state/quickshell.count" 1 'Quickshell starts'
+	assert_count "$state/quickshell-kill.count" 2 'quickshell kill calls'
+	assert_line "$state/quickshell-kill.pids" "$managed_pid_one"
+	assert_line "$state/quickshell-kill.pids" "$managed_pid_two"
 	if grep -Fqx "$replacement_pid" "$state/quickshell-kill.pids"; then
 		printf '%s\n' 'Concurrent Quickshell replacement was selected for graceful shutdown' >&2
 		exit 1
 	fi
-	test "$(cat "$state/quickshell-list.count")" -eq 1
-	grep -Fq "kill --pid $managed_pid_one" "$state/quickshell.args"
-	grep -Fq "kill --pid $managed_pid_two" "$state/quickshell.args"
-	grep -Fq "list --path $home/.config/quickshell/shell.qml --json" "$state/quickshell.args"
-	grep -Fq -- "--path $home/.config/quickshell/shell.qml --no-duplicate" "$state/quickshell.args"
+	assert_count "$state/quickshell-list.count" 1 'quickshell list calls'
+	assert_contains "$state/quickshell.args" "kill --pid $managed_pid_one"
+	assert_contains "$state/quickshell.args" "kill --pid $managed_pid_two"
+	assert_contains "$state/quickshell.args" "list --path $home/.config/quickshell/shell.qml --json"
+	assert_contains "$state/quickshell.args" "--path $home/.config/quickshell/shell.qml --no-duplicate"
 	kill "$secondary_pid"
 	wait "$secondary_pid" 2>/dev/null || true
 	kill "$replacement_pid"
@@ -680,7 +719,8 @@ run_delayed_quickshell_case() {
 	: >"$identity_file"
 	"$work/runtime-bin/normal/quickshell" 60 &
 	managed_pid=$!
-	record_test_identity "$managed_pid" "$identity_file"
+	record_test_identity "$managed_pid" "$identity_file" ||
+		fail "no start time for the stale Quickshell (pid $managed_pid)"
 	printf '%s\n' "$managed_pid" >"$state/quickshell-managed.pids"
 
 	DISPLAY=:105 \
@@ -695,14 +735,16 @@ run_delayed_quickshell_case() {
 		sh "$repo/scripts/autostart.sh"
 
 	set +e
-	wait "$managed_pid"
+	wait "$managed_pid" 2>/dev/null
 	wait_status=$?
 	set -e
-	test "$wait_status" -eq 129
-	test ! -e "$state/quickshell.stale"
-	test -f "$state/quickshell.running"
-	grep -Fq "kill --pid $managed_pid" "$state/quickshell.args"
-	test "$(cat "$state/quickshell.count")" -eq 1
+	# 138 is the stub's USR1 after its 0.2 s. 143 would be the lifecycle
+	# helper's TERM, which must not come before the grace it gives.
+	assert_equals 138 "$wait_status" 'the stale Quickshell did not end on its own delayed stop'
+	assert_no_file "$state/quickshell.stale" 'the stale Quickshell was not replaced'
+	assert_file "$state/quickshell.running" 'no managed Quickshell running after the delayed stop'
+	assert_contains "$state/quickshell.args" "kill --pid $managed_pid"
+	assert_count "$state/quickshell.count" 1 'Quickshell starts'
 	rm -f "$state/quickshell-managed.pids" "$identity_file"
 }
 
@@ -729,17 +771,21 @@ run_hung_quickshell_case() {
 		sh "$repo/scripts/autostart.sh"
 	elapsed=$(($(date +%s) - started))
 
-	test "$elapsed" -ge 5
-	test "$elapsed" -le 10
-	test "$(cat "$state/quickshell.count")" -eq 1
-	test "$(grep -c '^ipc$' "$state/events.log")" -ge 4
+	if [ "$elapsed" -lt 5 ] || [ "$elapsed" -gt 10 ]; then
+		fail "autostart took ${elapsed}s with a hung Quickshell launch, expected 5 to 10"
+	fi
+	assert_count "$state/quickshell.count" 1 'Quickshell starts'
+	ipc_probes=$(grep -c '^ipc$' "$state/events.log" || true)
+	[ "$ipc_probes" -ge 4 ] ||
+		fail_showing "$ipc_probes IPC probes of the hung Quickshell, expected at least 4" "$state/events.log"
 	awk -F '\t' '
 		$1 == "ipc" { ipc_count++ }
 		$1 == "systemctl" && $2 ~ /start wm-graphical-session.service/ {
 			start_after_ipc = ipc_count
 		}
 		END { exit !(start_after_ipc >= 4) }
-	' "$state/events.log"
+	' "$state/events.log" ||
+		fail_showing 'the graphical session was started before the fourth IPC probe' "$state/events.log"
 }
 
 run_dex_fallback_case() {
@@ -756,8 +802,8 @@ run_dex_fallback_case() {
 		DWM_AUTOSTART_NO_SETSID=1 \
 		sh "$repo/scripts/autostart.sh"
 
-	test "$(cat "$state/dex.count")" -eq 1
-	test ! -e "$state/dex-autostart.count"
+	assert_count "$state/dex.count" 1 'dex runs when the systemd start fails'
+	assert_no_file "$state/dex-autostart.count" 'dex-autostart must not run alongside dex'
 }
 
 run_missing_optional_case() {
@@ -827,10 +873,10 @@ EOF
 		PATH=$minimal_bin \
 		XDG_CONFIG_HOME="$home/.config" \
 		/bin/sh "$case_dir/scripts/autostart.sh"
-	wait_for_marker "$state/theme-resume.args"
-	grep -Fqx '_resume-preview' "$state/theme-resume.args"
-	wait_for_marker "$state/setsid.args"
-	grep -Fqx -- "-f $case_dir/scripts/dwm-settings-theme _resume-preview" "$state/setsid.args"
+	expect_marker "$state/theme-resume.args" 'the theme helper was not retried outside timeout'
+	assert_line "$state/theme-resume.args" '_resume-preview'
+	expect_marker "$state/setsid.args" 'the retry did not go through setsid'
+	assert_line "$state/setsid.args" "-f $case_dir/scripts/dwm-settings-theme _resume-preview"
 }
 
 run_input_watcher_fallback_case() {
@@ -870,9 +916,9 @@ EOF
 		PATH="$work/bin:/usr/bin:/bin" \
 		XDG_CONFIG_HOME="$home/.config" \
 		timeout 10 sh "$case_dir/scripts/autostart.sh"
-	wait_for_marker "$state/watcher.pid"
-	wait_for_marker "$state/watcher.session"
-	grep -Eq "^$$[[:space:]]+[1-9][0-9]*$" "$state/watcher.session"
+	expect_marker "$state/watcher.pid" 'the input watcher fallback did not start'
+	expect_marker "$state/watcher.session" 'the input watcher did not record its session'
+	assert_matches "$state/watcher.session" "^$$[[:space:]]+[1-9][0-9]*$"
 }
 
 run_duplicate_case display-manager
@@ -897,14 +943,18 @@ if grep -q 'systemctl --user enable.*SERVICE_NAME' \
 	printf '%s\n' "XDG setup must not enable the graphical session at early boot" >&2
 	exit 1
 fi
-grep -Fq 'timeout --signal=TERM --kill-after=2 5' "$repo/scripts/autostart.sh"
-grep -Fq '_resume-preview >/dev/null' "$repo/scripts/autostart.sh"
+grep -Fq 'timeout --signal=TERM --kill-after=2 5' "$repo/scripts/autostart.sh" ||
+	fail 'autostart.sh no longer bounds the theme resume with timeout --signal=TERM --kill-after=2 5'
+grep -Fq '_resume-preview >/dev/null' "$repo/scripts/autostart.sh" ||
+	fail 'autostart.sh no longer runs the theme helper _resume-preview'
 # shellcheck disable=SC2016
 grep -Fq '"$wallpaper_helper" session-apply >/dev/null 2>&1 ||' \
-	"$repo/scripts/autostart.sh"
+	"$repo/scripts/autostart.sh" ||
+	fail 'autostart.sh no longer falls back when "$wallpaper_helper" session-apply fails'
 # shellcheck disable=SC2016
 grep -Fq 'feh --no-fehbg --randomize --bg-fill "$HOME/Pictures/backgrounds"' \
-	"$repo/scripts/autostart.sh"
+	"$repo/scripts/autostart.sh" ||
+	fail 'autostart.sh no longer has the feh wallpaper fallback'
 
 # No Control Center helper beside the script or on PATH: the fallback still blanks
 # the screen after 10 minutes idle (Sync Sprint 12 S12-10, D-13), where it used to
