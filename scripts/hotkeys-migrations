@@ -35,7 +35,7 @@
 -   { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  cmd="amixer sset Master toggle" },
 +   { mod="",                 key="XF86AudioMute",          desc="Mute toggle",   func="spawn",  exec=["dwm-quickshell-controls", "volume-toggle-mute"] },
 
-# After 2026.10.0-beta.6: keys typed straight after Super+R wait for the
+# 2026.10.0-beta.7: keys typed straight after Super+R wait for the
 # launcher instead of going to the window you were in (#391).
 -   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"] },
 +   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },

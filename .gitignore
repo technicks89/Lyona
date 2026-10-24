@@ -25,6 +25,8 @@ program.log
 
 /release/**
 /release
+# The commit stamp `make release` puts in the archive; never in a checkout.
+/.lyona-commit
 
 # Local Vicinae AppImage extraction/staging tree
 /vicinae/
