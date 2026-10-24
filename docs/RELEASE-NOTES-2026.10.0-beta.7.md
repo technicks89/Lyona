@@ -195,11 +195,11 @@ standard VGA, no NVIDIA):
   Xorg and logging in again.
 - Each fix's own evidence is under `docs/evidence/`.
 
-**The release tree:** pending. Each `make check` target is being run on its
-own in an Arch Linux ARM container (aarch64, Xvfb). So far only
-`check-arch-platform` and `check-grub-theme` have failed, and both need an
-x86_64 Arch host. The full `make check` on GitHub's x86_64 runners has not run
-yet. This paragraph gets the results before the release is tagged.
+**The release tree:** each of the 163 `make check` targets was run on its own
+in an Arch Linux ARM container (aarch64, Xvfb). 150 passed. The other 13
+fail the same way on `main` in that container, because they need an x86_64
+Arch host: the package, platform, AUR, CachyOS, installer, update and release
+checks. The full `make check` on GitHub's x86_64 runners is still to run.
 
 **Not tested yet:**
 - this release's own image: a fresh install, and an update from beta.6 to
