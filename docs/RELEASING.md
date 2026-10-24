@@ -82,9 +82,11 @@ it does not rewrite release source.
 
 The release asset is a source archive (Sync Sprint 12 S12-19): the repository's
 files under `lyona-VERSION/`, which `lyona-update` and `lyona-update-root` build
-and install the way a checkout installs. `make release` takes git's file list,
-so it runs in a checkout, and the release helper requires that checkout to be
-clean.
+and install the way a checkout installs, plus `.lyona-commit`, the commit the
+archive was made from, which an install from the archive records as
+`LYONA_COMMIT` in `/etc/lyona-release` (#457). `make release` takes git's file
+list, so it runs in a checkout, and the release helper requires that checkout
+to be clean.
 
 `make release-check`:
 
@@ -93,6 +95,8 @@ clean.
   `config.def.h`, the C sources and the scripts);
 - checks that nothing is built or local: no binaries, no `config.h`, no
   objects, no `.git` or `release/`;
+- checks that `.lyona-commit` names the checkout's `HEAD`, and that the
+  extracted archive's Makefile reads it as `LYONA_COMMIT`;
 - extracts the archive alone and builds it.
 
 ## Arch installer ISO
