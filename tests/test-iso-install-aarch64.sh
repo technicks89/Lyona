@@ -559,6 +559,7 @@ grep -B1 'run_logged "Adding a firmware boot entry..."' "$postinstall" | grep -F
 	fail 'the firmware boot entry is not for aarch64 only'
 grep -Pzq '\nif \[\[ \$MACHINE_ARCH == aarch64 \]\]; then\n\trun_logged "Putting the console on the display\.\.\." use_display_console\nfi\n' \
 	"$postinstall" || fail 'the console step is not for aarch64 only'
+# shellcheck disable=SC1003 # the backslash is matched literally: the postinstall's line continuation
 grep -Fq 'check_mirror_dns trust_alarm_keyring keep_vmlinuz_linux add_firmware_boot_entry use_display_console \' "$postinstall" ||
 	fail 'the aarch64 steps are not exported for run_logged'
 

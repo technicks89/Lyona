@@ -38,17 +38,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   tried there. The postinstall checks the new system has Arch Linux ARM's
   keys before its first download, and adds them again when it does not
   (`docs/evidence/arm2-04-mirrors-keyring.md`).
-- Systems the image installs boot with the lyona Plymouth splash, the one the
-  install medium boots with, and an encrypted disk asks for its passphrase
-  there instead of on the bare console: the message, then a box with a
-  blinking cursor and a dot for each character typed (the splash used to add
-  `***` after the message). The postinstall installs `plymouth`
-  and the medium's generated theme, puts the `plymouth` hook before `encrypt`,
-  and adds `splash` through `/etc/default/grub.d/90-lyona-splash.cfg`;
-  `install.sh`'s GRUB theme step regenerates `grub.cfg` with it. A failure puts
-  the hooks back and is listed on the closing screen. In a VM, LightDM started
-  about 0.1 s later with it (8 boots each way). `docs/src/install.md` says how
-  to turn it off. `install.sh` on an existing system does not add it.
 
 ### Changed
 
@@ -119,7 +108,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   aarch64 one on x86_64. herdr and Gear Lever already publish aarch64 builds.
   The decisions are in `docs/AUR-PACKAGES.md` (#3).
 
-
 - The dependency map resolves on aarch64 to packages Arch Linux ARM has
   (ARM1-02). A `pacman -Si` survey of every profile on Arch Linux ARM
   (`docs/evidence/arm1-02-aarch64-packages.md`) found 131 of 141 packages;
@@ -140,6 +128,77 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   derivative whatever its `ID_LIKE`, is still rejected before any change, and
   the rejection now names the identity and the architecture found. CachyOS
   and the gaming profile stay x86_64 only (#1).
+
+### Fixed
+
+- A system updated with `lyona-update` records the release's commit in
+  `/etc/lyona-release` (#457). The Makefile took the commit from `git
+  rev-parse`, which has nothing to say in an extracted release archive, so
+  every update stamped `LYONA_COMMIT=unknown`, which `lyona-update check`
+  and Settings -> System then showed, where an image install records the
+  commit. `make release` now writes the commit the archive was made from into
+  it as `.lyona-commit`, part of what the release workflow signs, and the
+  Makefile reads that stamp first, then a checkout's own HEAD.
+  `make release-check` fails when the archive lacks it or an install from the
+  extracted archive would record anything else. Found in the
+  2026.10.0-beta.7 qualification.
+- `lyona-update rollback` removes the commands, helpers and polkit actions the
+  release being rolled back had added (#456). The backup an update takes
+  holds the files the new release replaces; a file the new release adds was
+  never there to back up, and a rollback restored everything but left it, as
+  the 2026.10.0-beta.7 qualification found with `install-yay` on a system
+  rolled back to beta.6. The backup now also records the managed paths the
+  release is about to add, and a rollback removes them after restoring,
+  naming each one. A backup taken by an older helper has no such list and
+  restores as before.
+
+- Settings' Appearance pane no longer waits for its 5-second loading cap on a
+  machine without Bluetooth (ARM1-06). Settings' capability discovery ran
+  `bluetoothctl show`, which waits for a Bluetooth daemon that is not running
+  until its 2-second timeout. Discovery runs twice when Appearance is opened,
+  so the pane always appeared at the cap. Discovery now first asks the system
+  bus whether a daemon owns `org.bluez`, and reports Bluetooth unavailable at
+  once when none does. In an Arch Linux ARM VM, discovery went from 3.9 s to
+  1.8 s, and Appearance appears in about 2.6 s.
+
+- `tests/measure-picom-cost.sh` names the processor on aarch64, where
+  `/proc/cpuinfo` has no `model name`: it asks the same parser System
+  Information uses.
+
+- `check-herdr-install` passes again: since the architecture comes from
+  `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
+  `uname` stub, and an aarch64 plan case is added.
+
+## [2026.10.0-beta.7] - 2026-10-24
+
+Eighth beta of the Arch Linux line. Keys typed straight after Super+R reach
+the launcher, and shortcuts, popups and menus keep the keyboard on a busy
+machine (#389, #391, #395, #397, #411, #431, #443). The shell is no longer
+restarted while it starts, and comes back after the X server dies (#394,
+#448). A portrait layout no longer crashes dwm at login, display and input
+previews recover from an interrupted change, and autorandr stops Picom around
+its changes on AMD (#369, #371, #372, #386). Menus work without a compositor
+(#384); Wi-Fi gets its regulatory database and Bluetooth is enabled (#365,
+#380); an installed system boots with the Plymouth splash; a failed update
+says why, and the root helper builds as its own user (#333, #334, #336,
+#399); and the tests no longer touch the session they run from (#368, #404,
+#408). See `docs/RELEASE-NOTES-2026.10.0-beta.7.md`.
+
+### Added
+
+- Systems the image installs boot with the lyona Plymouth splash, the one the
+  install medium boots with, and an encrypted disk asks for its passphrase
+  there instead of on the bare console: the message, then a box with a
+  blinking cursor and a dot for each character typed (the splash used to add
+  `***` after the message). The postinstall installs `plymouth`
+  and the medium's generated theme, puts the `plymouth` hook before `encrypt`,
+  and adds `splash` through `/etc/default/grub.d/90-lyona-splash.cfg`;
+  `install.sh`'s GRUB theme step regenerates `grub.cfg` with it. A failure puts
+  the hooks back and is listed on the closing screen. In a VM, LightDM started
+  about 0.1 s later with it (8 boots each way). `docs/src/install.md` says how
+  to turn it off. `install.sh` on an existing system does not add it.
+
+### Changed
 
 - The image installer's archinstall configuration uses archinstall 4.5's
   current forms: `disk_encryption` inside `disk_config`, `audio_config` under
@@ -167,6 +226,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   panel docked. Nothing needed changing: dwm no longer paints a bar of its
   own, so its drawing surface is never shown, and nothing divides by the bar
   height.
+- The Makefile is the one owner of what the update's root helper needs from a
+  release tree: `make all-root` builds everything that never includes
+  `config.h`, `GTK_THEME_IDS` lists the palettes once (for `uninstall`, the
+  legacy removal, the release manifest and the helper's backups, where the same
+  awk was written four times), and SPEC section 6 freezes those names as the
+  release-tree contract. `tests/test-update-root-contract.sh` runs the previous
+  release's helper's reads against the current tree, and
+  `tests/test-lyona-update.sh` orders the same version pairs through both rank
+  functions (#337).
+- `scripts/install-yay` is the one place yay is built and installed, for
+  `install.sh` and the image's postinstall (`--build-only`), as
+  `install-topgrade` is for Topgrade: the pinned build, the closed sudo
+  timestamp and the non-interactive rules live once. The postinstall takes the
+  AUR build prerequisites (`base-devel`, `git`) from the shared map's
+  `aur-build` profile (#339).
 
 ### Fixed
 
@@ -192,23 +266,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   start. Seen once in `check-launcher-hold-keys-xvfb` on aarch64; with the
   field's focus delayed 300 ms, every key of the first query was lost before
   the change and none after.
-- Settings' Appearance pane no longer waits for its 5-second loading cap on a
-  machine without Bluetooth (ARM1-06). Settings' capability discovery ran
-  `bluetoothctl show`, which waits for a Bluetooth daemon that is not running
-  until its 2-second timeout. Discovery runs twice when Appearance is opened,
-  so the pane always appeared at the cap. Discovery now first asks the system
-  bus whether a daemon owns `org.bluez`, and reports Bluetooth unavailable at
-  once when none does. In an Arch Linux ARM VM, discovery went from 3.9 s to
-  1.8 s, and Appearance appears in about 2.6 s.
-
-- `tests/measure-picom-cost.sh` names the processor on aarch64, where
-  `/proc/cpuinfo` has no `model name`: it asks the same parser System
-  Information uses.
-
-- `check-herdr-install` passes again: since the architecture comes from
-  `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
-  `uname` stub, and an aarch64 plan case is added.
-
 - Settings says so when it cannot read the theme file the way dwm does
   (#437). The Appearance provider checks `themes.toml` with its own linter,
   then reads it with `lyona-toml`, dwm's parser, so a theme dwm applies is
@@ -254,7 +311,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   then on a loaded CI runner. dwm now grabs the new keys first and lets go
   only of the ones no longer bound. `check-dwm-regrab-xvfb` changes the keymap
   200 times and fails if dwm ever lets go of Super+R.
-
 - Closing Settings, or leaving its Displays or Input section, no longer
   sometimes leaves an idle `bash` process behind until logout (#420). The
   section's udev watcher, stopped while it was still starting, left the copy
@@ -669,24 +725,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - The root helper runs `make` from a fixed, checked path (`/usr/bin/make`), as
   it does `cosign` and `setpriv`, and its backups list files to `tar` with
   `--verbatim-files-from` (#336).
-
-### Changed
-
-- The Makefile is the one owner of what the update's root helper needs from a
-  release tree: `make all-root` builds everything that never includes
-  `config.h`, `GTK_THEME_IDS` lists the palettes once (for `uninstall`, the
-  legacy removal, the release manifest and the helper's backups, where the same
-  awk was written four times), and SPEC section 6 freezes those names as the
-  release-tree contract. `tests/test-update-root-contract.sh` runs the previous
-  release's helper's reads against the current tree, and
-  `tests/test-lyona-update.sh` orders the same version pairs through both rank
-  functions (#337).
-- `scripts/install-yay` is the one place yay is built and installed, for
-  `install.sh` and the image's postinstall (`--build-only`), as
-  `install-topgrade` is for Topgrade: the pinned build, the closed sudo
-  timestamp and the non-interactive rules live once. The postinstall takes the
-  AUR build prerequisites (`base-devel`, `git`) from the shared map's
-  `aur-build` profile (#339).
 
 ## [2026.10.0-beta.6] - 2026-10-10
 
@@ -3708,7 +3746,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.7...HEAD
+[2026.10.0-beta.7]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...v2026.10.0-beta.7
 [2026.10.0-beta.6]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...v2026.10.0-beta.6
 [2026.10.0-beta.5]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...v2026.10.0-beta.5
 [2026.10.0-beta.4]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...v2026.10.0-beta.4

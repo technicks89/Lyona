@@ -67,8 +67,8 @@ It signs the source archive and the ISO before anything is published, which
 cannot be signed. The workflow runs `scripts/lyona-release` as:
 
 ```sh
-scripts/lyona-release --version v2026.10.0-beta.6 --iso lyona-2026.10.0-beta.6-x86_64.iso \
-	--bundle BUNDLE --notes docs/RELEASE-NOTES-2026.10.0-beta.6.md --prerelease --skip-checks
+scripts/lyona-release --version v2026.10.0-beta.7 --iso lyona-2026.10.0-beta.7-x86_64.iso \
+	--bundle BUNDLE --notes docs/RELEASE-NOTES-2026.10.0-beta.7.md --prerelease --skip-checks
 ```
 
 `BUNDLE` is the signing step's bundle. The version must match `config.mk`; a
@@ -82,9 +82,11 @@ it does not rewrite release source.
 
 The release asset is a source archive (Sync Sprint 12 S12-19): the repository's
 files under `lyona-VERSION/`, which `lyona-update` and `lyona-update-root` build
-and install the way a checkout installs. `make release` takes git's file list,
-so it runs in a checkout, and the release helper requires that checkout to be
-clean.
+and install the way a checkout installs, plus `.lyona-commit`, the commit the
+archive was made from, which an install from the archive records as
+`LYONA_COMMIT` in `/etc/lyona-release` (#457). `make release` takes git's file
+list, so it runs in a checkout, and the release helper requires that checkout
+to be clean.
 
 `make release-check`:
 
@@ -93,6 +95,8 @@ clean.
   `config.def.h`, the C sources and the scripts);
 - checks that nothing is built or local: no binaries, no `config.h`, no
   objects, no `.git` or `release/`;
+- checks that `.lyona-commit` names the checkout's `HEAD`, and that the
+  extracted archive's Makefile reads it as `LYONA_COMMIT`;
 - extracts the archive alone and builds it.
 
 ## Arch installer ISO
@@ -180,6 +184,20 @@ desktop, in the same kind of VM.
 **LUKS, 2026-10-19** (`docs/evidence/arch002-luks-desktop.md`): the same image
 went through the wizard under UEFI with btrfs in LUKS. The passphrase prompt at
 boot opened the root volume, and the system reached the desktop.
+
+**VM qualification, 2026-10-24** (`2026.10.0-beta.7`; details in
+`docs/evidence/arch005-beta7-image-qualification.md`):
+- **Image:** the release workflow's `lyona-2026.10.0-beta.7-x86_64.iso`,
+  SHA-256 `0a63f0292ecb0baebfe4788316939a72e6b32a5ce5658fcab3fcc67b244eb834`,
+  archinstall 4.5-1, linux 7.2.11.arch1-1 on the medium.
+- **Machine:** QEMU 11.1.2 with KVM, q35, x86_64, UEFI (OVMF), a standard VGA
+  adapter, no NVIDIA GPU, 4 GiB, a 40 GiB virtio disk.
+- **Result:** the wizard (btrfs, defaults) reached the desktop in 3 m 10 s;
+  48 desktop checks, three logout cycles and the #448 Xorg-kill relogin
+  passed. A fresh beta.6 image install was updated to beta.7 with beta.6's
+  `lyona-update` (signature verified, user files kept), passed the same 48
+  checks, rolled back to beta.6, and was updated again. The rollback left
+  beta.7's new `install-yay` command behind.
 
 **Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, and Wi-Fi
 installs. Do not treat a release as
@@ -345,7 +363,7 @@ they match). It is run by hand, from the Actions tab or:
 
 ```sh
 gh workflow run build-iso.yml -f channel=main
-gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.10.0-beta.6.md
+gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.10.0-beta.7.md
 ```
 
 It asks for the channel:
