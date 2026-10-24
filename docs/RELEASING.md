@@ -185,6 +185,20 @@ desktop, in the same kind of VM.
 went through the wizard under UEFI with btrfs in LUKS. The passphrase prompt at
 boot opened the root volume, and the system reached the desktop.
 
+**VM qualification, 2026-10-24** (`2026.10.0-beta.7`; details in
+`docs/evidence/arch005-beta7-image-qualification.md`):
+- **Image:** the release workflow's `lyona-2026.10.0-beta.7-x86_64.iso`,
+  SHA-256 `0a63f0292ecb0baebfe4788316939a72e6b32a5ce5658fcab3fcc67b244eb834`,
+  archinstall 4.5-1, linux 7.2.11.arch1-1 on the medium.
+- **Machine:** QEMU 11.1.2 with KVM, q35, x86_64, UEFI (OVMF), a standard VGA
+  adapter, no NVIDIA GPU, 4 GiB, a 40 GiB virtio disk.
+- **Result:** the wizard (btrfs, defaults) reached the desktop in 3 m 10 s;
+  48 desktop checks, three logout cycles and the #448 Xorg-kill relogin
+  passed. A fresh beta.6 image install was updated to beta.7 with beta.6's
+  `lyona-update` (signature verified, user files kept), passed the same 48
+  checks, rolled back to beta.6, and was updated again. The rollback left
+  beta.7's new `install-yay` command behind.
+
 **Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, and Wi-Fi
 installs. Do not treat a release as
 qualified on hardware until it has been.

@@ -146,8 +146,13 @@ Acceptance:
   managed-configuration ownership survive an actual version-to-version
   upgrade and a subsequent rollback. Done 2026-10-09 in a VM only: a fresh
   `2026.10.0-beta.5` image install updated to `beta.6` with beta.5's updater,
-  verified, and rolled back (`docs/evidence/280-config-split.md`); hardware is
-  still to do.
+  verified, and rolled back (`docs/evidence/280-config-split.md`). Repeated
+  2026-10-24 from a fresh `beta.6` image install to the published `beta.7`
+  with beta.6's updater, rolled back, and updated again
+  (`docs/evidence/arch005-beta7-image-qualification.md`): user files and
+  packages survived, but the rollback left beta.7's new `install-yay`
+  command behind, so the "exact pre-upgrade state" below is not yet met.
+  Hardware is still to do.
 - [x] Qualify the existing-system installer (`install.sh`) against a
   pre-existing, non-lyona Arch install with real user data present, per
   `SPEC.md`'s existing-system installer contract. Done 2026-10-19 in a VM with

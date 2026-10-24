@@ -145,8 +145,8 @@ Also in this release:
 - **The first update runs beta.6's code, once.** beta.6's helper installs this
   release and beta.6's `lyona-update` checks it.
   `tests/test-update-root-contract.sh` runs the previous release's helper
-  against this tree, but no VM update from beta.6 to beta.7 has been run yet
-  (see below).
+  against this tree, and a VM update from a fresh beta.6 image install to
+  beta.7 with beta.6's updater has been run (see "Qualification status").
 - **New packages:** `lyona-update` installs lyona's own files, not packages.
   A system installed from beta.6 or earlier lacks three:
   `sudo pacman -S --needed wireless-regdb iw xorg-xmessage`.
@@ -201,9 +201,21 @@ fail the same way on `main` in that container, because they need an x86_64
 Arch host: the package, platform, AUR, CachyOS, installer, update and release
 checks. The full `make check` on GitHub's x86_64 runners is still to run.
 
+**This release's image, 2026-10-24** (after publication; QEMU/KVM, UEFI,
+btrfs, `docs/evidence/arch005-beta7-image-qualification.md`):
+- a fresh install through the wizard reached the desktop in 3 m 10 s, and
+  passed 48 desktop checks, three logout cycles and the #448 Xorg-kill
+  relogin;
+- a fresh beta.6 image install was updated to beta.7 with beta.6's own
+  `lyona-update`: the signature verified, the user's `hotkeys.toml` binding
+  was kept beside the Super+R migration, and the same 48 checks passed;
+- `lyona-update rollback` restored beta.6 (packages, units and files as
+  before the update, but for beta.7's new `install-yay` command, which stayed,
+  and the migrated `hotkeys.toml`, which a rollback leaves as the update
+  wrote it, with the previous file beside it as `.bak.<time>`), and a second
+  update brought beta.7 back.
+
 **Not tested yet:**
-- this release's own image: a fresh install, and an update from beta.6 to
-  beta.7 with beta.6's updater, then a rollback;
 - real hardware, AMD included (#386), NVIDIA and the legacy NVIDIA drivers,
   Wi-Fi installs, two physical outputs, and the Plymouth passphrase prompt on
   hardware.
