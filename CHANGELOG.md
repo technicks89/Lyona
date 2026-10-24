@@ -8,6 +8,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.10.0-beta.7] - 2026-10-24
+
+Eighth beta of the Arch Linux line. Keys typed straight after Super+R reach
+the launcher, and shortcuts, popups and menus keep the keyboard on a busy
+machine (#389, #391, #395, #397, #411, #431, #443). The shell is no longer
+restarted while it starts, and comes back after the X server dies (#394,
+#448). A portrait layout no longer crashes dwm at login, display and input
+previews recover from an interrupted change, and autorandr stops Picom around
+its changes on AMD (#369, #371, #372, #386). Menus work without a compositor
+(#384); Wi-Fi gets its regulatory database and Bluetooth is enabled (#365,
+#380); an installed system boots with the Plymouth splash; a failed update
+says why, and the root helper builds as its own user (#333, #334, #336,
+#399); and the tests no longer touch the session they run from (#368, #404,
+#408). See `docs/RELEASE-NOTES-2026.10.0-beta.7.md`.
+
 ### Added
 
 - Systems the image installs boot with the lyona Plymouth splash, the one the
@@ -50,6 +65,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   panel docked. Nothing needed changing: dwm no longer paints a bar of its
   own, so its drawing surface is never shown, and nothing divides by the bar
   height.
+- The Makefile is the one owner of what the update's root helper needs from a
+  release tree: `make all-root` builds everything that never includes
+  `config.h`, `GTK_THEME_IDS` lists the palettes once (for `uninstall`, the
+  legacy removal, the release manifest and the helper's backups, where the same
+  awk was written four times), and SPEC section 6 freezes those names as the
+  release-tree contract. `tests/test-update-root-contract.sh` runs the previous
+  release's helper's reads against the current tree, and
+  `tests/test-lyona-update.sh` orders the same version pairs through both rank
+  functions (#337).
+- `scripts/install-yay` is the one place yay is built and installed, for
+  `install.sh` and the image's postinstall (`--build-only`), as
+  `install-topgrade` is for Topgrade: the pinned build, the closed sudo
+  timestamp and the non-interactive rules live once. The postinstall takes the
+  AUR build prerequisites (`base-devel`, `git`) from the shared map's
+  `aur-build` profile (#339).
 
 ### Fixed
 
@@ -534,24 +564,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - The root helper runs `make` from a fixed, checked path (`/usr/bin/make`), as
   it does `cosign` and `setpriv`, and its backups list files to `tar` with
   `--verbatim-files-from` (#336).
-
-### Changed
-
-- The Makefile is the one owner of what the update's root helper needs from a
-  release tree: `make all-root` builds everything that never includes
-  `config.h`, `GTK_THEME_IDS` lists the palettes once (for `uninstall`, the
-  legacy removal, the release manifest and the helper's backups, where the same
-  awk was written four times), and SPEC section 6 freezes those names as the
-  release-tree contract. `tests/test-update-root-contract.sh` runs the previous
-  release's helper's reads against the current tree, and
-  `tests/test-lyona-update.sh` orders the same version pairs through both rank
-  functions (#337).
-- `scripts/install-yay` is the one place yay is built and installed, for
-  `install.sh` and the image's postinstall (`--build-only`), as
-  `install-topgrade` is for Topgrade: the pinned build, the closed sudo
-  timestamp and the non-interactive rules live once. The postinstall takes the
-  AUR build prerequisites (`base-devel`, `git`) from the shared map's
-  `aur-build` profile (#339).
 
 ## [2026.10.0-beta.6] - 2026-10-10
 
@@ -3573,7 +3585,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.7...HEAD
+[2026.10.0-beta.7]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...v2026.10.0-beta.7
 [2026.10.0-beta.6]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...v2026.10.0-beta.6
 [2026.10.0-beta.5]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...v2026.10.0-beta.5
 [2026.10.0-beta.4]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.3...v2026.10.0-beta.4
