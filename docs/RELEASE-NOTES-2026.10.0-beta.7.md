@@ -195,9 +195,11 @@ standard VGA, no NVIDIA):
   Xorg and logging in again.
 - Each fix's own evidence is under `docs/evidence/`.
 
-**The release tree:** the full suite, in an Arch Linux ARM container (aarch64,
-Xvfb), passes apart from the checks that need an x86_64 Arch host. On GitHub's
-x86_64 runners, the `make check` workflow runs it all.
+**The release tree:** pending. Each `make check` target is being run on its
+own in an Arch Linux ARM container (aarch64, Xvfb). So far only
+`check-arch-platform` and `check-grub-theme` have failed, and both need an
+x86_64 Arch host. The full `make check` on GitHub's x86_64 runners has not run
+yet. This paragraph gets the results before the release is tagged.
 
 **Not tested yet:**
 - this release's own image: a fresh install, and an update from beta.6 to
