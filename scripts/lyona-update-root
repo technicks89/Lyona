@@ -363,8 +363,17 @@ backup_system_files() {
 		[[ $path != */../* && $path != ../* && -n ${path##*/} ]] || continue
 		if [[ -e /$path || -L /$path ]]; then
 			printf '%s\n' "$path"
+		else
+			# Not there to back up: the new release adds it, and a rollback
+			# removes it again (#456). The legacy PREFIX/share locations are
+			# only ever restored, never counted as added.
+			case $path in
+			"${install_prefix#/}/share/icons/"* | "${install_prefix#/}/share/licenses/lyona") ;;
+			*) printf '%s\n' "$path" >&3 ;;
+			esac
 		fi
-	done >"$dir/manifest"
+	done >"$dir/manifest" 3>"$dir/added"
+	chmod 0600 -- "$dir/manifest" "$dir/added"
 
 	# --verbatim-files-from: a manifest line is a path, never a tar option (#336).
 	if ! tar -C / --numeric-owner --verbatim-files-from -cpf "$dir/system-files.tar" -T "$dir/manifest"; then
@@ -624,6 +633,38 @@ restore-system)
 		done <"$backup_manifest"
 		return 1
 	}
+	# The paths the backup recorded as added by the release it was taken for
+	# (#456): what install-system was about to create, so a rollback removes
+	# them. Checked before anything is restored, with the location rules the
+	# archive members get below; a list that is not root's own, or names a
+	# path outside the managed locations or one the backup itself holds, stops
+	# the restore. A backup taken by an older helper has no list.
+	added_list=$backup_dir/added
+	added_paths=()
+	if [[ -e $added_list || -L $added_list ]]; then
+		[[ -f $added_list && ! -L $added_list && $(stat -c %u -- "$added_list") == 0 ]] ||
+			die "the system backup $backup_id has an added-paths list that is not a root-owned file"
+		while IFS= read -r added_path; do
+			[[ -n $added_path ]] || continue
+			case $added_path in
+			/* | *..* | */) die "the added-paths list of $backup_id has an unsafe path: $added_path" ;;
+			esac
+			case $added_path in
+			"$bin_dir_rel/"*/* | "$libexec_dir_rel/"*/* | "$man_dir_rel/"*/* | "$xsessions_dir_rel/"*/* | "$polkit_dir_rel/"*/*)
+				die "the added-paths list of $backup_id has a nested path under a flat directory: $added_path"
+				;;
+			"$bin_dir_rel/"?* | "$libexec_dir_rel/"?* | "$man_dir_rel/"?* | "$xsessions_dir_rel/"?*) ;;
+			"$icons_dir_rel/"?* | "$licenses_dir_rel" | "$lib_dir_rel" | "$share_dir_rel") ;;
+			"$polkit_dir_rel/com.lyona."*.policy) ;;
+			"$gtk_themes_rel/Lyona-"?*) ;;
+			etc/lyona-release) ;;
+			*) die "the added-paths list of $backup_id names a path outside the managed install locations: $added_path" ;;
+			esac
+			! in_manifest "$added_path" ||
+				die "the added-paths list of $backup_id names a path the backup holds: $added_path"
+			added_paths+=("$added_path")
+		done <"$added_list"
+	fi
 	while IFS= read -r listing_line; do
 		[[ -n $listing_line ]] || continue
 		member_type=${listing_line:0:1}
@@ -702,6 +743,18 @@ restore-system)
 	fi
 	for whole_dir in "$lib_dir_rel" "$share_dir_rel"; do
 		rm -rf -- "/${whole_dir:?}.lyona-restore-old"
+	done
+	# What the release being rolled back added (#456): gone, as it would not
+	# have existed in the version just restored. Said on stdout, so
+	# lyona-update's log names each one.
+	for added_path in "${added_paths[@]}"; do
+		[[ -e /$added_path || -L /$added_path ]] || continue
+		if [[ -d /$added_path && ! -L /$added_path ]]; then
+			rm -rf -- "/${added_path:?}"
+		else
+			rm -f -- "/$added_path"
+		fi
+		printf 'removed /%s, which the release rolled back had added\n' "$added_path"
 	done
 	log_outcome restore-system unknown "$backup_id" succeeded
 	;;

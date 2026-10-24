@@ -247,6 +247,41 @@ run_helper restore-system "$good_id" >/dev/null 2>"$work/err" || {
 [[ $(cat "$bin_file") == v1 ]] || fail 'restore did not bring back the backed-up contents'
 [[ $(stat -c '%u %a' "$bin_file") == '0 755' ]] || fail "restored owner/mode: $(stat -c '%u %a' "$bin_file")"
 
+# #456: what the backup recorded as added by the release it was taken for goes
+# with the rollback, and is named; a list that is not root's, or names a path
+# outside the managed locations or one the backup holds, stops the restore
+# before anything is written.
+added_id=20260927T102000Z-4747
+make_root_backup "$added_id"
+added_cmd=$prefix/bin/dwm-added-by-the-release
+added_helper=$prefix/libexec/lyona/lyona-added-by-the-release
+install -D -o root -g root -m 0755 /dev/null "$added_cmd"
+install -D -o root -g root -m 0755 /dev/null "$added_helper"
+printf '%s\n' "${added_cmd#/}" "${added_helper#/}" "${prefix#/}/bin/dwm-never-installed" |
+	install -o root -g root -m 0600 /dev/stdin "$store/$added_id/added"
+printf 'v2\n' >"$bin_file"
+run_helper restore-system "$added_id" >"$work/out" 2>"$work/err" || {
+	cat "$work/err" >&2
+	fail 'a restore with an added-paths list failed'
+}
+[[ $(cat "$bin_file") == v1 ]] || fail 'the restore with an added-paths list did not restore the backup'
+[[ ! -e $added_cmd && ! -e $added_helper ]] || fail 'a path the release added survived the rollback'
+grep -Fq "removed $added_cmd, which the release rolled back had added" "$work/out" ||
+	fail "the rollback did not name the removed command: $(cat "$work/out")"
+printf 'v2\n' >"$bin_file"
+install -D -o root -g root -m 0644 /dev/null "$added_cmd"
+printf '%s\n' etc/shadow | install -o root -g root -m 0600 /dev/stdin "$store/$added_id/added"
+refuses 'outside the managed install locations' restore-system "$added_id"
+printf '%s\n' "${prefix#/}/bin/sub/dir" | install -o root -g root -m 0600 /dev/stdin "$store/$added_id/added"
+refuses 'nested path under a flat directory' restore-system "$added_id"
+printf '%s\n' "${bin_file#/}" | install -o root -g root -m 0600 /dev/stdin "$store/$added_id/added"
+refuses 'names a path the backup holds' restore-system "$added_id"
+printf '%s\n' "${added_cmd#/}" | install -o "$uid" -g "$uid" -m 0600 /dev/stdin "$store/$added_id/added"
+refuses 'not a root-owned file' restore-system "$added_id"
+[[ $(cat "$bin_file") == v2 && -e $added_cmd ]] || fail 'a refused added-paths list still changed the system'
+rm -rf "${store:?}/$added_id" "$added_cmd"
+printf 'v1\n' >"$bin_file"
+
 # S12-03: the helper's log, in the user's home, is written as the user, so a
 # symlink planted there never makes root create or append to another file.
 log=$home/.local/state/lyona/update.log
@@ -441,6 +476,10 @@ legacy_cursor=$prefix/share/icons/Capitaine-Cursors/index.theme
 install -D -m 0644 /dev/null "$legacy_cursor"
 printf 'legacy cursor\n' >"$legacy_cursor"
 install -D -m 0644 /dev/null "$prefix/share/licenses/lyona/capitaine-cursors/COPYING"
+# #456: a command the live install lacks, which the release adds: recorded as
+# such, and gone again after the rollback.
+added_by_release=$prefix/bin/install-yay
+rm -f "$added_by_release"
 
 run_helper install-unverified release "$tarball" "$sha" "$version" "$config_h" "$new_id" >"$work/install.out" 2>&1 || {
 	tail -40 "$work/install.out" >&2
@@ -464,6 +503,11 @@ grep -q '^usr/share/polkit-1/actions/com.lyona.update.policy$' "$work/backup-lis
 install -m 0644 /dev/null "$prefix/lib/lyona/added-by-the-update.sh"
 grep -Fxq "${helper#/}" "$work/backup-list" ||
 	fail 'the backup does not hold the privileged helper'
+[[ -x $added_by_release ]] || fail 'the update did not install the command the live install lacked'
+[[ $(stat -c '%u %a' "$store/$new_id/added") == '0 600' ]] || fail 'the added-paths list is not root-only'
+grep -Fxq "${added_by_release#/}" "$store/$new_id/added" ||
+	fail "the backup did not record the command the release adds: $(cat "$store/$new_id/added")"
+! grep -Fxq "${live#/}" "$store/$new_id/added" || fail 'the backup recorded a live command as added'
 grep -q "^${datadir#/}/icons/Capitaine-Cursors/" "$work/backup-list" ||
 	fail 'the backup does not hold the cursor themes from DATADIR'
 grep -Fxq "${legacy_cursor#/}" "$work/backup-list" ||
@@ -510,6 +554,7 @@ grep -Fxq '# lib-before-update' "$live_lib" || fail 'the rollback did not bring 
 grep -Fxq '# default-before-update' "$live_default" || fail 'the rollback did not bring PREFIX/share/lyona back'
 [[ ! -e $prefix/lib/lyona/added-by-the-update.sh ]] ||
 	fail 'a file the update added to PREFIX/lib/lyona stayed after the rollback'
+[[ ! -e $added_by_release ]] || fail 'the command the release added stayed after the rollback (#456)'
 [[ ! -e $prefix/lib/lyona.lyona-restore-old && ! -e $prefix/share/lyona.lyona-restore-old ]] ||
 	fail 'the rollback left a set-aside copy behind'
 printf 'install-system signature refusals, install-unverified inputs and backups: PASS\n'

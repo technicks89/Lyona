@@ -8,6 +8,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Fixed
+
+- `lyona-update rollback` removes the commands, helpers and polkit actions the
+  release being rolled back had added (#456). The backup an update takes
+  holds the files the new release replaces; a file the new release adds was
+  never there to back up, and a rollback restored everything but left it, as
+  the 2026.10.0-beta.7 qualification found with `install-yay` on a system
+  rolled back to beta.6. The backup now also records the managed paths the
+  release is about to add, and a rollback removes them after restoring,
+  naming each one. A backup taken by an older helper has no such list and
+  restores as before.
+
 ## [2026.10.0-beta.7] - 2026-10-24
 
 Eighth beta of the Arch Linux line. Keys typed straight after Super+R reach
