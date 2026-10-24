@@ -365,12 +365,16 @@ backup_system_files() {
 			printf '%s\n' "$path"
 		else
 			# Not there to back up: the new release adds it, and a rollback
-			# removes it again (#456). The legacy PREFIX/share locations are
-			# only ever restored, never counted as added.
-			case $path in
-			"${install_prefix#/}/share/icons/"* | "${install_prefix#/}/share/licenses/lyona") ;;
-			*) printf '%s\n' "$path" >&3 ;;
-			esac
+			# removes it again (#456). The legacy PREFIX/share locations, listed
+			# above only when DATADIR is elsewhere, are only ever restored, never
+			# counted as added. When DATADIR is PREFIX/share they are the current
+			# locations, and count like any other.
+			if [[ $install_prefix/share != "$install_datadir" ]]; then
+				case $path in
+				"${install_prefix#/}/share/icons/"* | "${install_prefix#/}/share/licenses/lyona") continue ;;
+				esac
+			fi
+			printf '%s\n' "$path" >&3
 		fi
 	done >"$dir/manifest" 3>"$dir/added"
 	chmod 0600 -- "$dir/manifest" "$dir/added"
