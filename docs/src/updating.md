@@ -379,7 +379,10 @@ half holds the commands, the privileged helpers, `PREFIX/lib/lyona` and
 man page, the session file and `/etc/lyona-release`; a rollback puts them all
 back, and restores your install record
 (`~/.local/state/lyona/install.state`) with them, so a regression in the shared
-code is undone too (#324). Your own files
+code is undone too (#324). The backup also lists the managed files the update
+is about to add, such as a command new in that release, and a rollback
+removes them, so an older release is not left with a newer release's helpers
+(#456). Your own files
 are restored whole: the backed-up Quickshell config, and the data directory when
 the backup holds one, replace the current ones, so nothing a newer version added
 is left behind. An older backup's data directory still holds that version's
