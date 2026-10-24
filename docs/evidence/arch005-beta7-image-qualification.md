@@ -124,6 +124,14 @@ On the fresh beta.6 install, before the update: `lyona-update check` said
   asks for "the exact pre-upgrade state". Harmless here (the script only
   installs yay), but a newer release's helper left on an older system is the
   kind of thing a rollback exists to undo.
+- **A rollback keeps the migrated `hotkeys.toml`.** The rollback restored
+  the backed-up Quickshell config and the system files; the user's
+  `hotkeys.toml`, rewritten by beta.7's reconciliation (Super+R with
+  `hold_keys`), stayed as beta.7 left it, with beta.6's version beside it as
+  `hotkeys.toml.bak.<time>`. That follows the updating guide, which names the
+  Quickshell config and the data directory as the only user files a rollback
+  restores, and beta.6's dwm read the migrated file without complaint; still,
+  a rolled-back system carries one file of the newer release's making.
 - **A tarball update records no commit.** `/etc/lyona-release` and
   `lyona-update check` show `unknown` for the installed commit after an
   update, where the ISO install recorded the release commit. The source

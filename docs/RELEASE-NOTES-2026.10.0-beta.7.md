@@ -210,8 +210,10 @@ btrfs, `docs/evidence/arch005-beta7-image-qualification.md`):
   `lyona-update`: the signature verified, the user's `hotkeys.toml` binding
   was kept beside the Super+R migration, and the same 48 checks passed;
 - `lyona-update rollback` restored beta.6 (packages, units and files as
-  before the update, but for beta.7's new `install-yay` command, which stayed),
-  and a second update brought beta.7 back.
+  before the update, but for beta.7's new `install-yay` command, which stayed,
+  and the migrated `hotkeys.toml`, which a rollback leaves as the update
+  wrote it, with the previous file beside it as `.bak.<time>`), and a second
+  update brought beta.7 back.
 
 **Not tested yet:**
 - real hardware, AMD included (#386), NVIDIA and the legacy NVIDIA drivers,
