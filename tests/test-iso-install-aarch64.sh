@@ -361,7 +361,7 @@ grep -Fq '192.0.2.53, 192.0.2.54' "$work/out.log" || fail "the name servers were
 grep -Fq 'gum choose --header What would you like to do? Retry Continue anyway Cancel the installer' "$work/gum.log" ||
 	fail "the unresolved mirror offered: $(cat "$work/gum.log")"
 grep -Fxq 'SKIP=1' "$work/out.log" || fail 'Continue anyway was not passed on to the postinstall'
-grep -Fq 'export LYONA_WIFI_COUNTRY LYONA_MIRROR_DNS_SKIP' "$wizard" || fail 'the postinstall is not told about Continue anyway'
+grep -Fxq 'export LYONA_MIRROR_DNS_SKIP=0' "$wizard" || fail 'the postinstall is not told about Continue anyway'
 # Behind systemd-resolved's stub, the servers it asks are named too.
 cp "$work/resolv.conf" "$work/resolv.conf.saved"
 printf 'nameserver 127.0.0.53\noptions edns0\n' >"$work/resolv.conf"

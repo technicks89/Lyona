@@ -845,7 +845,8 @@ wait_for_keyring() {
 # network check at the wizard's start reaches archlinux.org once, and a mirror
 # whose name does not resolve fails every download later, with a less clear
 # message. Continue anyway is for a network that downloads through a proxy
-# without resolving names here; the postinstall then does not check either.
+# without resolving names here; the postinstall then does not check either
+# (exported here, so the postinstall the wizard runs sees it).
 export LYONA_RESOLV_CONF=${LYONA_RESOLV_CONF:-/etc/resolv.conf}
 # systemd-resolved's own list, the servers its stub (127.0.0.53, which the
 # medium's resolv.conf names) asks.
@@ -1344,7 +1345,7 @@ main() {
 		export LYONA_NVIDIA_DRIVER=1
 	fi
 	LYONA_WIFI_COUNTRY=$(timezone_country "$TIMEZONE") || LYONA_WIFI_COUNTRY=
-	export LYONA_WIFI_COUNTRY LYONA_MIRROR_DNS_SKIP
+	export LYONA_WIFI_COUNTRY
 	exec "$POSTINSTALL"
 }
 

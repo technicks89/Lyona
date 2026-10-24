@@ -106,9 +106,22 @@ x86_64 question, which an aarch64 host would otherwise not ask. The
 step-count test counts the new steps.
 
 On aarch64 in the Arch Linux ARM CI container: `check-iso-install-aarch64`,
-`-mirrors`, `-recovery`, `-warnings` and `check-archiso` passed; the whole
-suite is below. shellcheck 0.10.0 (`-S warning`): no new warning; shfmt
-3.10.0: no diff.
+`-mirrors`, `-recovery`, `-warnings` and `check-archiso` passed. shellcheck
+0.10.0 (`-S warning`): no new warning; shfmt 3.10.0: no diff.
+
+The whole suite on aarch64 (`ci-local.sh --each check`, 164 targets, on all
+20 cores): 162 passed and 2 failed.
+- `check-wifi-regdom`: "the wizard does not hand the Wi-Fi country to the
+  postinstall". This change had made the wizard's `export LYONA_WIFI_COUNTRY`
+  line also export `LYONA_MIRROR_DNS_SKIP`, and the test reads that line.
+  The second name was redundant, since the variable is exported where it is
+  defined, so the line is back as it was; the aarch64 test checks that
+  definition. Passed after.
+- `check-window-thumb-xvfb`: `AssertionError: ('red does not rise left to
+  right', (70, 123, 84), (90, 123, 84))`, after 2 s (8 to 11 s when it
+  passes). This change touches no file it runs, and it passed three times in
+  a row run alone, but a failure is not dismissed as the test's: it is
+  #50, to be tested on its own.
 
 ## Virtual machine
 
