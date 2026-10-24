@@ -69,11 +69,13 @@ answers() {
 	printf '%s\n' "$@" >"$work/answers"
 }
 # lib CODE: CODE with the wizard loaded as a library; its output in out.log.
+# On x86_64, whose mirror question the answers below are for (aarch64's is in
+# tests/test-iso-install-aarch64.sh).
 lib() {
 	: >"$work/gum.log"
 	: >"$work/calls.log"
 	# shellcheck disable=SC2016 # expanded by the inner shell
-	env PATH="$work/bin:$PATH" STUB_DIR="$work" LYONA_INSTALL_LIB=1 \
+	env PATH="$work/bin:$PATH" STUB_DIR="$work" LYONA_INSTALL_LIB=1 ARCH=x86_64 \
 		LYONA_UI_LIB="$root/lyona-ui.sh" LYONA_NVIDIA_LIB="$root/lyona-nvidia.sh" \
 		LYONA_WIFI_LIB="$root/lyona-wifi.sh" LYONA_LOGO_PATH=/nonexistent \
 		LYONA_ZONEINFO="$work/zoneinfo" LOG_FILE="$work/install.log" \

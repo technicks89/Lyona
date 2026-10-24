@@ -57,7 +57,9 @@ comment quoted releng's removal marker while explaining that the hook had
 none. releng's `zzzz99` hook matches that text anywhere in a file, so it
 would have deleted the hook from the medium. The test checks for the text.
 
-Run on aarch64 in the Arch Linux ARM CI container (two pinned cores):
+Run on aarch64 in the Arch Linux ARM CI container (on all 20 cores: `taskset`
+on `ci-local.sh` does not reach the container, as found on 2026-10-23 for
+Lyona#447; this said "two pinned cores" until ARM2-04):
 `check-archiso`, `check-arch-packages` and `check-ci-parity` passed.
 shellcheck 0.10.0 (`-S warning`, as the Makefile) and shfmt 3.10.0 were clean
 on the changed scripts. Not run here: `check-archiso` on x86_64, which the

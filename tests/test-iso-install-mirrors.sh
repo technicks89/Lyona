@@ -53,10 +53,11 @@ if [[ -n $country ]]; then n=${STUB_COUNTRY_SERVERS:-0}; tag=$country; else n=${
 STUB
 chmod +x "$work/bin/reflector"
 
-# lib CODE: CODE with the wizard loaded as a library.
+# lib CODE: CODE with the wizard loaded as a library, on x86_64 (aarch64 has
+# Arch Linux ARM's mirrors, tests/test-iso-install-aarch64.sh).
 lib() {
 	# shellcheck disable=SC2016 # expanded by the inner shell
-	env PATH="$work/bin:$PATH" LYONA_INSTALL_LIB=1 LYONA_UI_LIB="$root/lyona-ui.sh" \
+	env PATH="$work/bin:$PATH" ARCH=x86_64 LYONA_INSTALL_LIB=1 LYONA_UI_LIB="$root/lyona-ui.sh" \
 		LYONA_NVIDIA_LIB="$root/lyona-nvidia.sh" LYONA_WIFI_LIB="$root/lyona-wifi.sh" \
 		LYONA_LOGO_PATH=/nonexistent LYONA_ZONEINFO="$zoneinfo" \
 		LYONA_MIRRORLIST="$work/mirrorlist" LYONA_MIRRORS_MARKER="$work/marker" \
@@ -121,7 +122,7 @@ out=$(STUB_FAIL=1 lib 'rank_mirrors DE') || fail 'a failed ranking failed the in
 
 # Each ranking is bounded, and the step runs before anything is downloaded.
 [[ $(grep -c 'timeout 30 reflector' "$wizard") == 2 ]] || fail 'a reflector run is not bounded to 30 seconds'
-order=$(grep -nE '^	(confirm_and_proceed|run_logged "Choosing the fastest package mirrors\.\.\." rank_mirrors|setup_cachyos_repositories|run_archinstall)' "$wizard" | cut -d: -f1 | tr '\n' ' ')
+order=$(grep -nE '^	+(confirm_and_proceed|run_logged "Choosing the fastest package mirrors\.\.\." rank_mirrors|setup_cachyos_repositories|run_archinstall)' "$wizard" | cut -d: -f1 | tr '\n' ' ')
 read -r confirm rank cachyos archinstall <<<"$order"
 if [[ -z ${archinstall:-} ]] || ! ((confirm < rank && rank < cachyos && cachyos < archinstall)); then
 	fail "the mirrors are not ranked between the summary and the first download: $order"

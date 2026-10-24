@@ -71,7 +71,18 @@ with the CyberRe boot menu theme, and the lyona boot splash.
      your machine, are ranked before anything is downloaded, and the new system
      keeps the list. When too few mirrors are in the country, worldwide ones are
      added; when they cannot be ranked (no network, or it takes more than 30
-     seconds), the medium's own list is used;
+     seconds), the medium's own list is used. On the experimental aarch64
+     medium the mirrors are Arch Linux ARM's: those in your timezone's country
+     when it has some, else the geo-balanced `mirror.archlinuxarm.org`, which
+     is also kept after a country's as a fallback. **Choose another** lists
+     the countries Arch Linux ARM has mirrors in. They are used in the order
+     listed, not ranked by speed. Arch Linux ARM's mirrors serve HTTP only;
+     pacman checks every package's signature;
+   - before anything is downloaded, the installer waits for the medium's
+     package keyring to be set up, and stops if it has no keys. It also checks
+     that the first mirror's name resolves; if it does not, it names the
+     mirror and your name servers and offers **Retry**, **Continue anyway**
+     (for a network that downloads through a proxy) or **Cancel**;
    - the Wi-Fi country is not asked: it is the timezone's country, shown on
      the summary, and the new system's Wi-Fi uses that country's channels and
      power limits from the first boot. A zone with no country, such as `UTC`,

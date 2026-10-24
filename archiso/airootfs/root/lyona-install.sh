@@ -570,7 +570,13 @@ wifi_country_summary() {
 }
 
 mirror_summary() {
-	if [[ -n $MIRROR_COUNTRY ]]; then
+	if [[ $MACHINE_ARCH == aarch64 ]]; then
+		if [[ -n $MIRROR_COUNTRY ]]; then
+			echo "$(country_name "$MIRROR_COUNTRY") ($MIRROR_COUNTRY), Arch Linux ARM's mirrors there"
+		else
+			echo "Arch Linux ARM's nearest, $(url_host "$(alarm_geo_server)")"
+		fi
+	elif [[ -n $MIRROR_COUNTRY ]]; then
 		echo "$(country_name "$MIRROR_COUNTRY") ($MIRROR_COUNTRY), the fastest of them"
 	else
 		echo "worldwide, the fastest from here"
@@ -597,6 +603,11 @@ choose_mirror_country() {
 # Esc in the country list goes back to the question (#266).
 ask_mirrors() {
 	local question status country
+	# Arch Linux ARM's own mirrors (ARM2-04), defined below.
+	if [[ $MACHINE_ARCH == aarch64 ]]; then
+		ask_alarm_mirrors
+		return
+	fi
 	country=$(timezone_country "$TIMEZONE") || country=
 	if [[ -n $country ]]; then
 		question="Download packages from mirrors in $(country_name "$country")?"
@@ -660,6 +671,235 @@ rank_mirrors() {
 	printf 'Using %s ranked mirrors, fastest first.\n' "$count"
 }
 export -f rank_mirrors
+
+# Arch Linux ARM's mirrors (ARM2-04). reflector ranks Arch Linux's mirrors only,
+# and Arch Linux ARM has no reflector: on aarch64 the mirrors come from the
+# mirrorlist this medium booted with, Arch Linux ARM's own. It enables the
+# geo-balanced mirror.archlinuxarm.org and lists a few mirrors per country,
+# commented out under "### Country" headings, all of them HTTP (pacman checks
+# every package's signature). Its first copy is kept: the chosen list replaces
+# the live one, and a Retry of the wizard reads the countries again.
+export LYONA_ALARM_MIRRORLIST=${LYONA_ALARM_MIRRORLIST:-/etc/pacman.d/mirrorlist.archlinuxarm}
+# shellcheck disable=SC2016 # pacman expands $arch and $repo
+export ALARM_GEO_SERVER='http://mirror.archlinuxarm.org/$arch/$repo'
+export LYONA_ZONEINFO
+
+# url_host URL: the host a mirror URL names.
+url_host() {
+	local host=${1#*://}
+	host=${host%%/*}
+	host=${host##*@}
+	printf '%s\n' "${host%%:*}"
+}
+
+# alarm_mirrorlist: the path of Arch Linux ARM's mirrorlist as the medium
+# booted with it, copied on the first call; the live one if it cannot be.
+alarm_mirrorlist() {
+	if [[ -s $LYONA_ALARM_MIRRORLIST ]] || cp -- "$LYONA_MIRRORLIST" "$LYONA_ALARM_MIRRORLIST" 2>/dev/null; then
+		printf '%s\n' "$LYONA_ALARM_MIRRORLIST"
+	else
+		printf '%s\n' "$LYONA_MIRRORLIST"
+	fi
+}
+
+# alarm_mirrors: each country mirror, as CODE<TAB>NAME<TAB>URL, with the
+# country's ISO 3166 code from iso3166.tab. A country not named there is left
+# out.
+alarm_mirrors() {
+	awk -F'\t' -v OFS='\t' '
+		FNR == NR { if (!/^#/ && NF >= 2) code[$2] = $1; next }
+		/^### / { name = substr($0, 5); sub(/[[:space:]]+$/, "", name); next }
+		name != "" && match($0, /^#?[[:space:]]*Server[[:space:]]*=[[:space:]]*/) {
+			url = substr($0, RLENGTH + 1)
+			sub(/[[:space:]]+$/, "", url)
+			if (name in code) print code[name], name, url
+		}' "$LYONA_ZONEINFO/iso3166.tab" "$(alarm_mirrorlist)"
+}
+
+# alarm_geo_server: the geo-balanced server, the first one before any country;
+# Arch Linux ARM's own if the list has none.
+alarm_geo_server() {
+	local url
+	url=$(awk '/^### / { exit }
+		match($0, /^#?[[:space:]]*Server[[:space:]]*=[[:space:]]*/) {
+			url = substr($0, RLENGTH + 1); sub(/[[:space:]]+$/, "", url); print url; exit
+		}' "$(alarm_mirrorlist)" 2>/dev/null) || url=
+	printf '%s\n' "${url:-$ALARM_GEO_SERVER}"
+}
+
+# The countries with Arch Linux ARM mirrors, or the nearest mirror; Esc goes
+# back to the question.
+choose_alarm_mirror_country() {
+	local choice nearest
+	nearest="Nearest ($(url_host "$(alarm_geo_server)"))"
+	choice=$({
+		echo "$nearest"
+		alarm_mirrors | awk -F'\t' '!seen[$1]++ { print $2 " (" $1 ")" }' | sort
+	} | gum choose --header "Choose where to download Arch Linux ARM's packages from:") || return 1
+	case $choice in
+	"$nearest") MIRROR_COUNTRY= ;;
+	*" ("[A-Z][A-Z]")") MIRROR_COUNTRY=${choice: -3:2} ;;
+	*) return 1 ;;
+	esac
+}
+
+# The aarch64 mirror question: the timezone's country when Arch Linux ARM has
+# mirrors there, else the geo-balanced mirror.
+ask_alarm_mirrors() {
+	local question status country
+	country=$(timezone_country "$TIMEZONE") || country=
+	if [[ -n $country ]] && grep -Fxq -- "$country" < <(alarm_mirrors | cut -f1); then
+		question="Download packages from Arch Linux ARM's mirrors in $(country_name "$country")?"
+	else
+		country=
+		question="Download packages from Arch Linux ARM's nearest mirror, $(url_host "$(alarm_geo_server)")?"
+	fi
+	say "Packages come from Arch Linux ARM's mirrors, in the order listed; they are not ranked by speed."
+	while true; do
+		MIRROR_COUNTRY=$country
+		status=0
+		gum confirm --affirmative "Yes" --negative "Choose another" "$question" || status=$?
+		case $status in
+		0) return 0 ;;
+		1) choose_alarm_mirror_country && return 0 ;;
+		*) cancelled ;;
+		esac
+	done
+}
+
+# select_alarm_mirrors [COUNTRY]: the live mirrorlist, replaced by COUNTRY's
+# Arch Linux ARM mirrors and then the geo-balanced one, as a fallback; that one
+# alone with no country. reflector is not run. Never fails: if the list cannot
+# be written, the mirrorlist the medium booted with stays.
+select_alarm_mirrors() {
+	local country=${1:-} geo work count
+	geo=$(alarm_geo_server)
+	work=$(mktemp) || return 0
+	{
+		printf '# Chosen by lyona-install (Arch Linux ARM, %s) on %s.\n' "${country:-nearest}" "$(date -u +%F)"
+		[[ -z $country ]] || alarm_mirrors | awk -F'\t' -v c="$country" '$1 == c { print "Server = " $3 }'
+		printf 'Server = %s\n' "$geo"
+	} >"$work"
+	count=$(($(grep -c '^Server = ' "$work") - 1))
+	if ! install -m 0644 "$work" "$LYONA_MIRRORLIST"; then
+		rm -f -- "$work"
+		printf 'lyona-install: the chosen mirrorlist could not be written; keeping the current one.\n'
+		return 0
+	fi
+	rm -f -- "$work"
+	: >"$LYONA_MIRRORS_MARKER"
+	if [[ -z $country ]]; then
+		printf "Using Arch Linux ARM's nearest mirror, %s.\n" "$(url_host "$geo")"
+	elif ((count > 0)); then
+		printf 'Using %s Arch Linux ARM mirrors in %s, then %s.\n' "$count" "$country" "$(url_host "$geo")"
+	else
+		printf 'lyona-install: Arch Linux ARM has no mirror in %s; using %s.\n' "$country" "$(url_host "$geo")"
+	fi
+}
+export -f url_host alarm_mirrorlist alarm_mirrors alarm_geo_server select_alarm_mirrors
+
+# pacman's keyring on this medium (ARM2-04). releng's pacman-init.service fills
+# it at boot (pacman-key --init, then --populate); a download before it has
+# finished, or after it failed, fails every package with "unknown trust". Each
+# keyring package installed here (archlinux, and archlinuxarm on the aarch64
+# medium) is checked by its first trusted key.
+LYONA_KEYRINGS=${LYONA_KEYRINGS:-/usr/share/pacman/keyrings}
+
+# missing_keyrings: the installed keyrings whose keys pacman does not have.
+missing_keyrings() {
+	local name fpr
+	for name in archlinux archlinuxarm; do
+		[[ -s $LYONA_KEYRINGS/$name-trusted ]] || continue
+		fpr=$(awk -F: '!/^#/ && NF { print $1; exit }' "$LYONA_KEYRINGS/$name-trusted") || fpr=
+		[[ -n $fpr ]] && pacman-key --list-keys "$fpr" >/dev/null 2>&1 || printf '%s\n' "$name"
+	done
+}
+
+# Up to about a minute for pacman-init.service while it runs or is queued, then
+# the keys; a keyring without them is populated once more, and still without
+# them the wizard stops before anything is downloaded.
+wait_for_keyring() {
+	local i state job missing
+	for ((i = 0; i < 30; i++)); do
+		state=$(systemctl show -p ActiveState --value pacman-init.service 2>/dev/null) || state=
+		job=$(systemctl show -p Job --value pacman-init.service 2>/dev/null) || job=
+		[[ $state == activating || -n $job ]] || break
+		((i > 0)) || say "Waiting for pacman's keyring to be set up..."
+		sleep 2
+	done
+	missing=$(missing_keyrings)
+	if [[ -z $missing ]]; then
+		log_step "keyring: ready (pacman-init.service ${state:-unknown})"
+		return 0
+	fi
+	# shellcheck disable=SC2086 # one keyring name per word
+	log_step "keyring: no keys for" $missing "(pacman-init.service ${state:-unknown}); populating"
+	# shellcheck disable=SC2086
+	pacman-key --populate $missing >>"$LOG_FILE" 2>&1 || :
+	missing=$(missing_keyrings)
+	[[ -n $missing ]] || return 0
+	fail "pacman's keyring has no ${missing//$'\n'/ } keys (pacman-init.service ${state:-unknown}), so no package could be verified. Run pacman-key --init and pacman-key --populate, then lyona-install again."
+}
+
+# The package mirror's name resolves (ARM2-04), before the first download: the
+# network check at the wizard's start reaches archlinux.org once, and a mirror
+# whose name does not resolve fails every download later, with a less clear
+# message. Continue anyway is for a network that downloads through a proxy
+# without resolving names here; the postinstall then does not check either.
+export LYONA_RESOLV_CONF=${LYONA_RESOLV_CONF:-/etc/resolv.conf}
+# systemd-resolved's own list, the servers its stub (127.0.0.53, which the
+# medium's resolv.conf names) asks.
+export LYONA_RESOLVED_CONF=${LYONA_RESOLVED_CONF:-/run/systemd/resolve/resolv.conf}
+export LYONA_MIRROR_DNS_SKIP=0
+
+# mirror_host: the host of the first server the live mirrorlist names.
+mirror_host() {
+	local url
+	url=$(awk 'match($0, /^Server[[:space:]]*=[[:space:]]*/) { print substr($0, RLENGTH + 1); exit }' \
+		"$LYONA_MIRRORLIST" 2>/dev/null) || url=
+	[[ -n $url ]] || return 1
+	url_host "$url"
+}
+
+# name_servers: the name servers resolv.conf lists, on one line; for
+# systemd-resolved's stub, the servers it asks too.
+name_servers() {
+	local servers upstream
+	servers=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = ", " }' "$LYONA_RESOLV_CONF" 2>/dev/null) || servers=
+	if [[ $servers == 127.0.0.53 ]]; then
+		upstream=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = ", " }' "$LYONA_RESOLVED_CONF" 2>/dev/null) || upstream=
+		servers="127.0.0.53, systemd-resolved, which asks: ${upstream:-none}"
+	fi
+	printf '%s\n' "${servers:-none}"
+}
+
+require_mirror_dns() {
+	local host choice
+	host=$(mirror_host) || {
+		log_step "mirror dns: no server in $LYONA_MIRRORLIST"
+		return 0
+	}
+	while ! getent ahosts "$host" >/dev/null 2>&1; do
+		log_step "mirror dns: $host does not resolve (name servers: $(name_servers))"
+		show_logo
+		say --foreground $COLOR_DANGER --bold "The package mirror's name does not resolve: $host"
+		say "Every package is downloaded from it, so the install would fail."
+		say --foreground $COLOR_DIM "Name servers ($LYONA_RESOLV_CONF): $(name_servers)"
+		echo
+		choice=$(gum choose --header "What would you like to do?" \
+			"Retry" "Continue anyway" "Cancel the installer") || cancelled "the package mirror's name does not resolve"
+		case $choice in
+		Retry) ;;
+		"Continue anyway")
+			log_step "mirror dns: continuing without resolving $host"
+			LYONA_MIRROR_DNS_SKIP=1
+			return 0
+			;;
+		*) cancelled "the package mirror's name does not resolve" ;;
+		esac
+	done
+	log_step "mirror dns: $host resolves"
+}
 
 # Ten downloads at a time on this medium (#249), as on the new system. The
 # medium's /etc/pacman.conf is the pacman package's own, with 5:
@@ -1074,10 +1314,17 @@ main() {
 	confirm_and_proceed
 	log_step "confirm_and_proceed done"
 
-	# Before anything is downloaded: archinstall, and the new system after it, use
-	# this medium's mirrorlist.
+	# Before anything is downloaded: pacman's keyring ready, then the mirrors
+	# archinstall, and the new system after it, use (this medium's mirrorlist),
+	# and that the first one's name resolves (ARM2-04).
+	wait_for_keyring
 	use_parallel_downloads
-	run_logged "Choosing the fastest package mirrors..." rank_mirrors "$MIRROR_COUNTRY"
+	if [[ $MACHINE_ARCH == aarch64 ]]; then
+		run_logged "Choosing Arch Linux ARM's package mirrors..." select_alarm_mirrors "$MIRROR_COUNTRY"
+	else
+		run_logged "Choosing the fastest package mirrors..." rank_mirrors "$MIRROR_COUNTRY"
+	fi
+	require_mirror_dns
 
 	log_step "setup_cachyos_repositories"
 	setup_cachyos_repositories
@@ -1097,7 +1344,7 @@ main() {
 		export LYONA_NVIDIA_DRIVER=1
 	fi
 	LYONA_WIFI_COUNTRY=$(timezone_country "$TIMEZONE") || LYONA_WIFI_COUNTRY=
-	export LYONA_WIFI_COUNTRY
+	export LYONA_WIFI_COUNTRY LYONA_MIRROR_DNS_SKIP
 	exec "$POSTINSTALL"
 }
 

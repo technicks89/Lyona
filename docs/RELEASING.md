@@ -211,7 +211,9 @@ and the builder's changes to `releng` for Arch Linux ARM: UEFI only
 `docs/evidence/arm2-01-spike.md` and checked by
 `tests/test-arch-iso-builder.sh`. Its wizard installs lyona with archinstall,
 as on x86_64, with the aarch64 differences in
-`docs/evidence/arm2-03-installer.md` (ext4 and ext4 with LUKS, on QEMU/KVM).
+`docs/evidence/arm2-03-installer.md` (ext4 and ext4 with LUKS, on QEMU/KVM),
+and it downloads from Arch Linux ARM's mirrors, not reflector's
+(`docs/evidence/arm2-04-mirrors-keyring.md`).
 
 ### Signed releases
 

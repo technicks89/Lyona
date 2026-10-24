@@ -30,6 +30,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   disk off the screen. ext4 and ext4 with LUKS installed and booted to the
   greeter in a QEMU/KVM virtual machine on GB10
   (`docs/evidence/arm2-03-installer.md`); x86_64 installs as before.
+- The aarch64 medium downloads from Arch Linux ARM's mirrors (ARM2-04): the
+  mirror question offers those in the timezone's country, or the
+  geo-balanced `mirror.archlinuxarm.org` (kept after a country's as a
+  fallback), and **Choose another** lists the countries Arch Linux ARM has
+  mirrors in. reflector, which ranks Arch Linux's mirrors only, is no longer
+  tried there. The postinstall checks the new system has Arch Linux ARM's
+  keys before its first download, and adds them again when it does not
+  (`docs/evidence/arm2-04-mirrors-keyring.md`).
 - Systems the image installs boot with the lyona Plymouth splash, the one the
   install medium boots with, and an encrypted disk asks for its passphrase
   there instead of on the bare console: the message, then a box with a
@@ -44,6 +52,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Before anything is downloaded, the image installer waits for the medium's
+  package keyring (`pacman-init.service`) and stops, with what to run, when it
+  has no keys, instead of archinstall failing every package with "unknown
+  trust". It also checks that the first mirror's name resolves, on both
+  architectures: when it does not, it names the mirror and the name servers
+  and offers **Retry**, **Continue anyway** (for a network that downloads
+  through a proxy) or **Cancel**, and the postinstall checks again before its
+  first download (ARM2-04). The postinstall has one step more (13; 17 on
+  aarch64).
 - On a Raspberry Pi 4, Picom stays off at login (#32). With the GPU's V3D 4,
   Picom made the desktop unusable: it froze with Xorg's acceleration on, and
   everything fell back to software rendering with it off. Autostart now runs

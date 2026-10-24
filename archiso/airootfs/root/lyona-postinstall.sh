@@ -140,6 +140,68 @@ drop_fallback_initramfs() {
 	rm -f -- "$TARGET"/boot/initramfs-*-fallback.img
 }
 
+# The new system's first package mirror resolves (ARM2-04), checked before the
+# first download, which every later step needs: a name that does not resolve
+# fails each of them with a less clear message. Not checked when the wizard was
+# told to continue without it (a network that downloads through a proxy).
+check_mirror_dns() {
+	local url host servers upstream
+	if [[ ${LYONA_MIRROR_DNS_SKIP:-0} == 1 ]]; then
+		printf "lyona-postinstall: not checking the mirror's name; the wizard was told to continue without it.\n"
+		return 0
+	fi
+	url=$(awk 'match($0, /^Server[[:space:]]*=[[:space:]]*/) { print substr($0, RLENGTH + 1); exit }' \
+		"$TARGET/etc/pacman.d/mirrorlist" 2>/dev/null) || url=
+	if [[ -z $url ]]; then
+		printf "lyona-postinstall: the new system's mirrorlist names no server.\n"
+		return 1
+	fi
+	host=${url#*://}
+	host=${host%%/*}
+	host=${host##*@}
+	host=${host%%:*}
+	if getent ahosts "$host" >/dev/null 2>&1; then
+		printf '%s resolves.\n' "$host"
+		return 0
+	fi
+	servers=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = ", " }' \
+		"${LYONA_RESOLV_CONF:-/etc/resolv.conf}" 2>/dev/null) || servers=
+	# systemd-resolved's stub: the servers it asks too.
+	if [[ $servers == 127.0.0.53 ]]; then
+		upstream=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = ", " }' \
+			"${LYONA_RESOLVED_CONF:-/run/systemd/resolve/resolv.conf}" 2>/dev/null) || upstream=
+		servers="127.0.0.53, systemd-resolved, which asks: ${upstream:-none}"
+	fi
+	printf "lyona-postinstall: the package mirror's name does not resolve: %s (name servers: %s). Check the network, then choose Retry.\n" \
+		"$host" "${servers:-none}"
+	return 1
+}
+
+# aarch64 (ARM2-04): Arch Linux ARM's keys in the new system. archinstall
+# installs archlinuxarm-keyring (the wizard's configuration), whose install
+# script adds them; without them every download fails with "unknown trust"
+# (ARM2-03). Checked by the keyring's first trusted key before the first
+# download, and added once more when missing.
+trust_alarm_keyring() {
+	local fpr
+	fpr=$(awk -F: '!/^#/ && NF { print $1; exit }' \
+		"$TARGET/usr/share/pacman/keyrings/archlinuxarm-trusted" 2>/dev/null) || fpr=
+	if [[ -z $fpr ]]; then
+		printf 'lyona-postinstall: the new system has no archlinuxarm-keyring.\n'
+		return 1
+	fi
+	if arch-chroot "$TARGET" pacman-key --list-keys "$fpr" >/dev/null 2>&1; then
+		printf "Arch Linux ARM's keys are in the new system's keyring.\n"
+		return 0
+	fi
+	printf "lyona-postinstall: Arch Linux ARM's keys are not in the new system's keyring; adding them.\n"
+	arch-chroot "$TARGET" pacman-key --populate archlinuxarm || return 1
+	if ! arch-chroot "$TARGET" pacman-key --list-keys "$fpr" >/dev/null 2>&1; then
+		printf "lyona-postinstall: Arch Linux ARM's keys are still not in the new system's keyring.\n"
+		return 1
+	fi
+}
+
 # aarch64 (ARM2-03): linux-aarch64 installs its kernel as /boot/Image, and
 # GRUB pairs initramfs-linux.img (its preset's) only with a /boot/vmlinuz-linux.
 # Beside /boot/Image alone, grub-mkconfig writes an entry with no initramfs and
@@ -576,7 +638,7 @@ install_yay() {
 }
 
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
-	keep_vmlinuz_linux add_firmware_boot_entry use_display_console \
+	check_mirror_dns trust_alarm_keyring keep_vmlinuz_linux add_firmware_boot_entry use_display_console \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
 	install_boot_splash splash_in_initramfs \
@@ -619,19 +681,23 @@ if [[ -e $LYONA_MIRRORS_MARKER ]]; then
 fi
 # Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
-set_total_steps 12
-# aarch64 adds three, the indented run_logged calls below: the kernel copy GRUB
-# boots, the firmware boot entry, and the console on the display.
-[[ $MACHINE_ARCH != aarch64 ]] || set_total_steps 15
+set_total_steps 13
+# aarch64 adds four, the indented run_logged calls below: the kernel copy GRUB
+# boots, Arch Linux ARM's keys, the firmware boot entry, and the console on the
+# display.
+[[ $MACHINE_ARCH != aarch64 ]] || set_total_steps 17
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
 # repositories (archinstall copied this medium's), and this step trusts their
 # key there. Updating first failed every sync with "unknown trust" (Sync Sprint
 # 16, found in a VM once the wizard's CachyOS step ran again).
+# Before the first download, the CachyOS step's included (ARM2-04).
+run_logged "Checking the package mirror's name..." check_mirror_dns
 run_logged "Adding the CachyOS repositories..." add_cachyos_repositories
 if [[ $MACHINE_ARCH == aarch64 ]]; then
 	run_logged "Keeping the kernel where GRUB finds it..." keep_vmlinuz_linux
+	run_logged "Checking Arch Linux ARM's keys..." trust_alarm_keyring
 fi
 run_logged "Updating the new system..." arch-chroot "$TARGET" pacman -Syu --noconfirm
 run_logged "Checking the kernel..." install_cachyos_kernel
