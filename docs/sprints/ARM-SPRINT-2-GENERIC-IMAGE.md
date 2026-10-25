@@ -6,7 +6,8 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-1.
 ([`docs/evidence/arm2-01-spike.md`](../evidence/arm2-01-spike.md)): A-2, A-3
 and A-4 decided. ARM2-02 built 2026-10-22
 ([`docs/evidence/arm2-02-live-medium.md`](../evidence/arm2-02-live-medium.md)):
-the medium boots to the wizard on QEMU/KVM; UTM and Parallels are untested.
+the medium boots to the wizard on QEMU/KVM; UTM and Parallels are untested
+(no Mac; ARM2-05 replaced them).
 ARM2-03 installed 2026-10-23
 ([`docs/evidence/arm2-03-installer.md`](../evidence/arm2-03-installer.md)):
 archinstall (A-4 (a), so item 2 below is not built), ext4 and ext4 with LUKS
@@ -15,7 +16,12 @@ keyring item. ARM2-04 installed 2026-10-24
 ([`docs/evidence/arm2-04-mirrors-keyring.md`](../evidence/arm2-04-mirrors-keyring.md)):
 Arch Linux ARM's mirrors and keys, with no reflector or CachyOS warning; the
 keyring wait and the mirror-name check (item 4, which had not been built
-for x86_64 either) run on both architectures. GitHub: issues #7 to #11
+for x86_64 either) run on both architectures. ARM2-05 validated 2026-10-25
+([`docs/evidence/arm2-05-generic-image.md`](../evidence/arm2-05-generic-image.md)),
+on three configurations on the GB10 instead of UTM and Parallels (no Mac):
+all six installs reached a working desktop, with update and rollback. The
+update installs upstream Lyona's release (#53), for ARM5-01 and ARM5-02.
+GitHub: issues #7 to #11
 (label `arm64`); milestone "ARM Sprint 2 - Generic aarch64 image", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
@@ -111,14 +117,24 @@ with no warning from reflector or CachyOS in the log.
 
 ## ARM2-05: Validate on three virtual machines
 
-1. **Machines:** UTM (QEMU backend) and Parallels on Apple Silicon; QEMU/KVM
-   on an aarch64 Linux host. UEFI on all three.
+1. **Machines:** three configurations on the project's aarch64 Linux host
+   (GB10), UEFI on all three:
+   - **QEMU/KVM:** virtio-gpu, the medium as a USB stick without `bootindex`;
+   - **another display path:** QEMU/KVM with `bochs-display` instead of
+     virtio-gpu, and the medium as a SCSI CD;
+   - **libvirt:** a `virt-install` machine with libvirt's own defaults, its
+     firmware boot order among them (the `bootindex` behaviour ARM2-03 found).
+
+   UTM and Parallels on Apple Silicon were the plan's first choice, for their
+   different display devices and boot order; there is no Mac to run them on
+   (decided 2026-10-25), so they are recorded as not tested, and the two
+   configurations above stand in for what they would have exercised.
 2. **Run:** a fresh install with ext4 and with btrfs on each; log in; the
    checks of ARM1-06; an update from the image's release to the next
    build and a rollback (`lyona-update`).
 3. **Record** in `docs/evidence/arm2-05-generic-image.md`, as
    `docs/RELEASING.md` asks of the x86_64 image: build host, image checksum,
-   firmware mode, GPU and driver path (virtio-gpu, Apple's paravirtual GPU),
+   firmware mode, GPU and driver path (virtio-gpu, `bochs-display`),
    and what was not tested (real ARM hardware other than the VMs' hosts).
 
 **Acceptance:** all six installs reach a working desktop with no manual step.

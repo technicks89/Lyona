@@ -44,8 +44,15 @@ with the CyberRe boot menu theme, and the lyona boot splash.
    sudo dd if=lyona-VERSION-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync
    ```
 
-3. **Boot it.** The `lyona-install` wizard starts on its own. It checks the
-   network first. With no wired connection and a Wi-Fi card, it offers to
+3. **Boot it**, with Secure Boot turned off in the firmware settings: the
+   image's boot loader is not signed, so firmware with Secure Boot on refuses
+   it (AAVMF, for one, says "Access Denied", then that it found no bootable
+   device). Virtual machines count too: libvirt and virt-manager choose
+   Secure Boot firmware by default where it is installed; turn it off in the
+   machine's firmware settings, or create the machine with
+   `virt-install --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no`.
+   The `lyona-install` wizard starts on its own. It checks the network first.
+   With no wired connection and a Wi-Fi card, it offers to
    connect to Wi-Fi. It lists the networks it finds, with signal strength and
    security, plus **Other (hidden network)**, and asks for the passphrase.
    Open and WPA personal networks are supported, but enterprise (802.1X) and

@@ -191,6 +191,13 @@ if [[ $profile_only != true ]]; then
 	}
 fi
 
+# rsync embeds the checkout in the profile, in --profile-only too. archiso does
+# not depend on it, so a host can lack it; say so before anything is staged.
+command -v rsync >/dev/null 2>&1 || {
+	err "rsync not found. Install the rsync package first."
+	exit 1
+}
+
 # The palette the boot splash is generated from. The installed system can
 # follow the user's chosen theme later; the ISO has no user yet.
 splash_palette="${LYONA_SPLASH_PALETTE:-tokyonight}"

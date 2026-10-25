@@ -105,8 +105,9 @@ The ISO carries the same version as the rest of the project: one `VERSION` in
 `config.mk` drives the source archive, the compiled `dwm -v` string, and the
 installer image. Bump `config.mk` before building the image, not after.
 
-Build the installer image on an Arch host with the `archiso` package
-installed:
+Build the installer image on an Arch host with the `archiso` and `rsync`
+packages installed (archiso does not pull in rsync, which the builder uses to
+embed the checkout):
 
 ```sh
 sudo scripts/build-lyona-arch-iso.sh --output release/
@@ -221,8 +222,9 @@ sudo LYONA_MKARCHISO="$PWD/archiso/archiso/mkarchiso" \
 
 `mkarchiso` needs `arch-install-scripts`, `squashfs-tools`, `libisoburn`,
 `mtools`, `dosfstools`, `erofs-utils`, `mkinitcpio-archiso` and `grub` on the
-host. It produces `lyona-VERSION-aarch64.iso`. The medium is the x86_64 one
-with `archiso-aarch64/`'s package layer, `pacman.conf` and kernel-name hook,
+host, and the builder needs `rsync`. It produces
+`lyona-VERSION-aarch64.iso`. The medium is the x86_64 one with
+`archiso-aarch64/`'s package layer, `pacman.conf` and kernel-name hook,
 and the builder's changes to `releng` for Arch Linux ARM: UEFI only
 (systemd-boot), `linux-aarch64`, SquashFS with the arm64 filter alone, and no
 `memdisk` hook. Each change is explained in
@@ -231,7 +233,10 @@ and the builder's changes to `releng` for Arch Linux ARM: UEFI only
 as on x86_64, with the aarch64 differences in
 `docs/evidence/arm2-03-installer.md` (ext4 and ext4 with LUKS, on QEMU/KVM),
 and it downloads from Arch Linux ARM's mirrors, not reflector's
-(`docs/evidence/arm2-04-mirrors-keyring.md`).
+(`docs/evidence/arm2-04-mirrors-keyring.md`). ext4 and btrfs installs from
+it reached a working desktop on three virtual machine configurations on GB10
+(`docs/evidence/arm2-05-generic-image.md`); UTM, Parallels and real hardware
+are untested.
 
 ### Signed releases
 

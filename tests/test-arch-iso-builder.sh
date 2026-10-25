@@ -1108,6 +1108,21 @@ aarch64) other_arch=x86_64 ;;
 esac
 expect_failure "a $other_arch build on this host" "an $other_arch medium builds on an $other_arch host" \
 	"$repo/scripts/build-lyona-arch-iso.sh" --arch "$other_arch"
+# rsync embeds the checkout, and archiso does not pull it in (ARM2-05): a host
+# without it is told so before anything is staged, not at a late "command not
+# found". The PATH has only what the builder runs before that check.
+no_rsync_bin=$work/no-rsync-bin
+mkdir -p "$no_rsync_bin"
+for tool in dirname awk; do
+	ln -s "$(command -v "$tool")" "$no_rsync_bin/$tool"
+done
+expect_failure 'a host without rsync' 'rsync not found. Install the rsync package first.' \
+	env PATH="$no_rsync_bin" "$BASH" "$repo/scripts/build-lyona-arch-iso.sh" --profile-only \
+	--output "$work/staged-no-rsync"
+[[ ! -e $work/staged-no-rsync ]] || {
+	printf 'build-lyona-arch-iso.sh staged a profile on a host without rsync.\n' >&2
+	exit 1
+}
 # The fixture above is a releng without aarch64 support, as before archiso 91.
 expect_failure 'an aarch64 build from a releng before archiso 91' 'needs archiso 91 or later' \
 	env LYONA_RELENG_DIR="$releng" \

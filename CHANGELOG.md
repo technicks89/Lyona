@@ -131,6 +131,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The install guide says to boot the image with Secure Boot off. The image's
+  boot loader is not signed, and firmware with Secure Boot on refuses it
+  ("Access Denied"), as libvirt and virt-manager's default aarch64 firmware
+  did in ARM2-05; nothing said so. `docs/src/install.md` gives the
+  `virt-install` option that turns it off.
+- The install-medium builder checks for `rsync` before it stages anything,
+  and `docs/RELEASING.md` lists it among the build host's packages. archiso
+  does not depend on it, and a host without it failed late, after the
+  package layer and the splash, with `rsync: command not found`. Found
+  building the aarch64 medium for ARM2-05; it applies to x86_64 too.
 - A system updated with `lyona-update` records the release's commit in
   `/etc/lyona-release` (#457). The Makefile took the commit from `git
   rev-parse`, which has nothing to say in an extracted release archive, so

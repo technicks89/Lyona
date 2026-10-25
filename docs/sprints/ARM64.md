@@ -133,7 +133,7 @@ releases of its own. Until then:
 
 | Target | What validates it | Needed by |
 | --- | --- | --- |
-| Generic | UTM and Parallels on an Apple Silicon Mac; QEMU/KVM on an aarch64 Linux host (the GitHub runner, for boot only) | ARM-1, ARM-2 |
+| Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested | ARM-1, ARM-2 |
 | Raspberry Pi | A Pi 4 (4 GB is the floor to test) and a Pi 5, each with an HDMI display, keyboard and mouse; one SD card and one NVMe (Pi 5) boot | ARM-3 |
 | GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port | ARM-4 |
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
