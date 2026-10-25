@@ -959,6 +959,7 @@ check-build-config:
 check-dev-sync-install:
 	tests/test-dev-sync-install.sh
 	tests/test-install-cleanup.sh
+	tests/test-install-verify-quickshell-restart.sh
 
 check-terminal:
 	tests/test-dwm-terminal.sh
