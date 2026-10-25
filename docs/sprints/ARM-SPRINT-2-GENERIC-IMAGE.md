@@ -11,7 +11,11 @@ ARM2-03 installed 2026-10-23
 ([`docs/evidence/arm2-03-installer.md`](../evidence/arm2-03-installer.md)):
 archinstall (A-4 (a), so item 2 below is not built), ext4 and ext4 with LUKS
 on QEMU/KVM; it took `archlinuxarm-keyring`, the smallest part of ARM2-04's
-keyring item. GitHub: issues #7 to #11
+keyring item. ARM2-04 installed 2026-10-24
+([`docs/evidence/arm2-04-mirrors-keyring.md`](../evidence/arm2-04-mirrors-keyring.md)):
+Arch Linux ARM's mirrors and keys, with no reflector or CachyOS warning; the
+keyring wait and the mirror-name check (item 4, which had not been built
+for x86_64 either) run on both architectures. GitHub: issues #7 to #11
 (label `arm64`); milestone "ARM Sprint 2 - Generic aarch64 image", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 

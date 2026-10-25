@@ -131,7 +131,9 @@ system), and that each aarch64 step runs on aarch64 only, in its place.
 `tests/test-iso-install-warnings.sh` checks the aarch64 step count against the
 `run_logged` calls.
 
-Run on aarch64 in the Arch Linux ARM CI container (two pinned cores):
+Run on aarch64 in the Arch Linux ARM CI container (on all 20 cores: `taskset`
+on `ci-local.sh` does not reach the container, as found on 2026-10-23 for
+Lyona#447; this said "two pinned cores" until ARM2-04):
 `check-iso-install-aarch64`, `-warnings`, `-recovery`, `-credentials`,
 `-mirrors`, `-wifi` and `check-archiso` passed. `check-archiso` first failed
 on a `grub-mkconfig` the console step ran itself, against #246's one
