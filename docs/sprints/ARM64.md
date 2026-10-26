@@ -10,7 +10,9 @@ the two are independent.
 (decided 2026-10-11): the generic image and the Raspberry Pi**, through
 ARM-1, ARM-2, ARM-3 and ARM-5. GB10 (ARM-4) and N1X are deferred: their
 plans stay here, but they are not scheduled or tracked on GitHub. ARM-1 is
-done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31). Nothing
+done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31).
+ARM-2 is done: ARM2-01 to ARM2-05 merged 2026-10-22 to 2026-10-25 (#44 to
+#54). Nothing
 here is a support claim: `SPEC.md` still makes Arch x86_64 the
 only release target, and an aarch64 target is supported only once its sprint
 has met the release validation contract (`SPEC.md` 9.4) on that target.
@@ -106,8 +108,8 @@ depends on ARM-2; ARM-5 closes the project.
 | Sprint | Document | Scope | Exit | Depends on |
 | --- | --- | --- | --- | --- |
 | **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM machine (an Arch Linux ARM VM under KVM on GB10, since 2026-10-19; the Pi 4 run moved to ARM3-06), with no x86_64 regression | A-1, A-9 |
-| **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on UTM, Parallels and QEMU/KVM | ARM-1, A-2, A-3, A-4 |
-| **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 and a Pi 5 | One image boots to a working desktop on a real Pi 4 and Pi 5, within the lean budget | ARM-1, A-3, A-5 |
+| **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on three virtual machines: QEMU/KVM, QEMU/KVM with another display path, and libvirt, on the GB10 (UTM and Parallels until 2026-10-25; there is no Mac) | ARM-1, A-2, A-3, A-4 |
+| **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 | One image boots to a working desktop on a real Pi 4, within the lean budget; the Pi 5 is not tested (there is none, 2026-10-25) | ARM-1, A-3, A-5 |
 | **ARM-4** (deferred) | [`ARM-SPRINT-4-NVIDIA-GB10.md`](ARM-SPRINT-4-NVIDIA-GB10.md) | GB10 detection, its kernel and boot arguments, NVIDIA's aarch64 driver, Picom on NVIDIA aarch64, validation on GB10 hardware | The generic image installs a working desktop with the NVIDIA driver on a real GB10 system | ARM-2, A-6, A-7, hardware |
 | **ARM-5** | [`ARM-SPRINT-5-RELEASE-AND-N1X.md`](ARM-SPRINT-5-RELEASE-AND-N1X.md) | Release workflow for the generic and Pi images, the update path on aarch64, the support contract per target, user docs (the N1X watch item is deferred) | Both images published with a release, each target's status recorded | ARM-2, ARM-3 |
 
@@ -134,7 +136,7 @@ releases of its own. Until then:
 | Target | What validates it | Needed by |
 | --- | --- | --- |
 | Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested | ARM-1, ARM-2 |
-| Raspberry Pi | A Pi 4 (4 GB is the floor to test) and a Pi 5, each with an HDMI display, keyboard and mouse; one SD card and one NVMe (Pi 5) boot | ARM-3 |
+| Raspberry Pi | A Pi 4 (4 GB is the floor to test), with an HDMI display, keyboard and mouse, booting from an SD card. A Pi 5 and its NVMe boot were planned; there is none (2026-10-25), so they are not tested | ARM-3 |
 | GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port | ARM-4 |
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
 

@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1.
 
-**Status:** planned 2026-10-11. ARM2-01 reported 2026-10-22
+**Status:** planned 2026-10-11. Done 2026-10-25: ARM2-01 merged 2026-10-22
+(#44), ARM2-02 2026-10-22 (#45), ARM2-03 2026-10-23 (#47), ARM2-04
+2026-10-25 (#52), ARM2-05 2026-10-25 (#54). ARM2-01 reported 2026-10-22
 ([`docs/evidence/arm2-01-spike.md`](../evidence/arm2-01-spike.md)): A-2, A-3
 and A-4 decided. ARM2-02 built 2026-10-22
 ([`docs/evidence/arm2-02-live-medium.md`](../evidence/arm2-02-live-medium.md)):

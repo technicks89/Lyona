@@ -101,7 +101,7 @@ items=(
 	"3|ARM3-03|arm3-03-pi-boot-configuration-and-kernel|Pi boot configuration and kernel"
 	"3|ARM3-04|arm3-04-the-desktop-on-v3d|The desktop on v3d"
 	"3|ARM3-05|arm3-05-settings-on-a-pi|Settings on a Pi"
-	"3|ARM3-06|arm3-06-validate-on-a-real-pi-4-and-pi-5|Validate on a real Pi 4 and Pi 5"
+	"3|ARM3-06|arm3-06-validate-on-a-real-pi-4|Validate on a real Pi 4"
 	"5|ARM5-01|arm5-01-the-release-workflow-for-arm-images|The release workflow for ARM images"
 	"5|ARM5-02|arm5-02-updates-on-aarch64|Updates on aarch64"
 	"5|ARM5-03|arm5-03-the-support-contract-per-target|The support contract per target"

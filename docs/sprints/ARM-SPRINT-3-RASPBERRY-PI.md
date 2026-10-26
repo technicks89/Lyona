@@ -2,7 +2,10 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 
-**Status:** planned 2026-10-11. Not started. GitHub: issues #12 to #17
+**Status:** planned 2026-10-11. Not started. Validated on a Pi 4 only:
+there is no Pi 5 to test on (decided 2026-10-25), so the Pi 5 is recorded as
+not tested. The image keeps what the Pi 5 needs where it costs nothing (the
+kernel and the firmware's device trees boot both boards). GitHub: issues #12 to #17
 (label `arm64`); milestone "ARM Sprint 3 - Raspberry Pi 4 and 5", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
@@ -22,7 +25,7 @@ with the wizard's questions asked at first boot.
 | [ARM3-03](#arm3-03-pi-boot-configuration-and-kernel) | Feature | ARM3-01 |
 | [ARM3-04](#arm3-04-the-desktop-on-v3d) | Measurement, fix | ARM3-01, a Pi 4 |
 | [ARM3-05](#arm3-05-settings-on-a-pi) | Fix | ARM1-04 |
-| [ARM3-06](#arm3-06-validate-on-a-real-pi-4-and-pi-5) | Validation | ARM3-01 to ARM3-05, hardware |
+| [ARM3-06](#arm3-06-validate-on-a-real-pi-4) | Validation | ARM3-01 to ARM3-05, hardware |
 
 ---
 
@@ -66,18 +69,19 @@ disables itself.
 ## ARM3-03: Pi boot configuration and kernel
 
 1. **Kernel** under A-5: Arch Linux ARM's `linux-rpi`, which boots both
-   boards with the firmware's device trees. Measure the Pi 5 with the 16K-page
-   kernel as well; switch only if it is clearly better and nothing in the
-   desktop breaks.
+   boards with the firmware's device trees. The Pi 5's 16K-page kernel was to be
+   measured too; with no Pi 5 (2026-10-25) it is not, and the image keeps
+   `linux-rpi`.
 2. **`config.txt`:** the KMS display driver (`vc4-kms-v3d`), HDMI hotplug, and
    only what the desktop needs; documented, and kept apart from any line a
    user adds.
 3. **Boot splash:** the Lyona Plymouth theme, as on x86_64, if it works on the
    Pi's KMS console; otherwise the quiet text boot.
-4. **NVMe on the Pi 5** boots the same image.
+4. **NVMe on the Pi 5** should boot the same image; it is not tested (no
+   Pi 5).
 
-**Acceptance:** both boards boot the same image to the wizard, from SD, and
-the Pi 5 from NVMe.
+**Acceptance:** the Pi 4 boots the image to the wizard from SD. The Pi 5,
+from SD and from NVMe, is not tested.
 
 ## ARM3-04: The desktop on `v3d`
 
@@ -85,7 +89,7 @@ The Pi 4's VideoCore VI is the slowest GPU Lyona will support. The lean goal
 (`AGENTS.md`, and the CPU and GPU check of #244) is measured there first.
 
 1. **Picom.** Measure idle and active CPU and GPU with the GLX backend and
-   with XRender on a Pi 4 and a Pi 5. Set the automatic backend choice for
+   with XRender on a Pi 4 (the Pi 5 is not measured). Set the automatic backend choice for
    `v3d` from the numbers.
 2. **The overview's previews.** Measure opening the overview with 10 and 30
    windows. If previews are too slow on a Pi 4, the overview uses icon cards
@@ -98,8 +102,8 @@ The Pi 4's VideoCore VI is the slowest GPU Lyona will support. The lean goal
 **Already found (#32, 2026-10-15):** on the Pi 4's V3D 4, Picom made the
 desktop unusable with both backends it can run. Since 2026-10-21, the
 Automatic policy leaves it off at login there (`dwm-settings-picom
-session-start`), so the overview shows its cards. Check that on the Pi 4, and
-measure whether the Pi 5's V3D 7 needs the same.
+session-start`), so the overview shows its cards. Check that on the Pi 4. Whether the
+Pi 5's V3D 7 needs the same is not measured (no Pi 5).
 
 **Acceptance:** the desktop is usable on a 4 GB Pi 4 by the numbers recorded,
 and its idle cost is within the budget the sprint sets from them.
@@ -116,18 +120,19 @@ and its idle cost is within the budget the sprint sets from them.
 **Acceptance:** every Settings pane opens on a Pi without an error, and what a
 Pi cannot do is hidden or explained.
 
-## ARM3-06: Validate on a real Pi 4 and Pi 5
+## ARM3-06: Validate on a real Pi 4
 
-1. **Hardware:** a Pi 4 (4 GB) and a Pi 5, each with an HDMI display,
-   keyboard and mouse; Ethernet and Wi-Fi.
+1. **Hardware:** a Pi 4 (4 GB), with an HDMI display, keyboard and mouse;
+   Ethernet and Wi-Fi. The plan named a Pi 5 too; there is none to test on
+   (decided 2026-10-25), so it is recorded as not tested.
 2. **Run:** write the image, first boot, wizard, log in, the checks of
    ARM1-06, the ARM3-04 measurements, a reboot, an update and a rollback.
 3. **Record** in `docs/evidence/arm3-06-raspberry-pi.md`: board and memory,
-   boot medium, image checksum, kernel, display, and what was not tested (for
-   example two displays on a Pi 4, or other boards).
+   boot medium, image checksum, kernel, display, and what was not tested (the
+   Pi 5 and its NVMe boot, two displays on a Pi 4, other boards).
 
-**Acceptance:** both boards reach a working desktop from the same image with
-no manual step.
+**Acceptance:** the Pi 4 reaches a working desktop from the image with no
+manual step.
 
 **Also, from ARM1-06 (moved here 2026-10-19):** ARM1-06 was validated in an
 Arch Linux ARM VM on GB10, because the Pi 4 was not available. On the Pi 4,
