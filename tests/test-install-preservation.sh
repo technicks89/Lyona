@@ -427,7 +427,7 @@ exec /usr/bin/mv "$@"
 EOF
 chmod 755 "$WORK_DIR/no-exchange/mv"
 printf '%s\n' 'stale quickshell file' >"$XDG_CONFIG_HOME/quickshell/stale.txt"
-run_as_owner env PATH="$WORK_DIR/no-exchange:$PATH" HOME="$TEST_HOME" make -C "$TEST_REPO" install-user \
+run_as_owner env PATH="$WORK_DIR/no-exchange:$OWNER_TMPDIR/bin:$PATH" HOME="$TEST_HOME" make -C "$TEST_REPO" install-user \
 	USER_HOME="$TEST_HOME" \
 	OWNER="$OWNER" \
 	XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
@@ -484,7 +484,7 @@ run_as_owner env HOME="$FRESH_HOME" make -C "$TEST_REPO" install-user \
 	XDG_DATA_HOME="$FRESH_DATA_HOME" \
 	XDG_STATE_HOME="$FRESH_HOME/.local/state"
 
-if [[ $(wc -l <"$WORK_DIR/fc-cache.log") -ne 3 ]]; then
+if [[ $(wc -l <"$WORK_DIR/fc-cache.log") -ne 4 ]]; then
 	printf 'Expected one font-cache refresh per user install.\n' >&2
 	exit 1
 fi

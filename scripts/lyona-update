@@ -1309,12 +1309,17 @@ cmd_rollback() {
 		# tree and crash when restarted (#461): stopped first, started after.
 		local stopped_quickshell
 		stopped_quickshell=$(quickshell_stop_watching "$config_home/quickshell/shell.qml")
+		local quickshell_restored=true
 		restore_user_tree "$backup_dir/quickshell.tar" "$config_home/quickshell" ||
-			die "could not restore $config_home/quickshell from backup $backup_id"
+			quickshell_restored=false
+		# Started again whether or not the restore worked, so a failed one does
+		# not leave the session without a shell.
 		if [[ -n $stopped_quickshell ]] &&
 			! "$script_dir/dwm-quickshell-controlcenter" action start-quickshell >/dev/null 2>&1; then
 			warn "Quickshell did not start again; log out and back in to start it"
 		fi
+		[[ $quickshell_restored == true ]] ||
+			die "could not restore $config_home/quickshell from backup $backup_id"
 	fi
 	# The account's install record as it was (#324); a backup from before it was
 	# kept leaves the current one.

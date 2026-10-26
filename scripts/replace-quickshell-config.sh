@@ -35,6 +35,14 @@ cp -aL --no-preserve=ownership "$source_dir"/. "$staged"/
 # shellcheck source=scripts/dwm-quickshell-lifecycle.sh
 . "$lyona_lib/dwm-quickshell-lifecycle.sh"
 stopped=$(quickshell_stop_watching "$target/shell.qml")
+# start_stopped: start the shell stopped above again, however this script
+# ends, so a failed swap does not leave the session without one.
+start_stopped() {
+	[ -n "$stopped" ] || return 0
+	"$lyona_lib/dwm-quickshell-controlcenter" action start-quickshell >/dev/null 2>&1 ||
+		printf '  Warning: Quickshell did not start again; log out and back in to start it.\n' >&2
+}
+trap start_stopped EXIT
 [ -z "$stopped" ] ||
 	printf '  Stopped the running Quickshell while its config is replaced.\n'
 
@@ -42,11 +50,10 @@ if [ ! -e "$target" ] && [ ! -L "$target" ]; then
 	mv -T "$staged" "$target"
 elif ! mv --exchange -T "$staged" "$target" 2>/dev/null; then
 	mv -T "$target" "$previous"
-	mv -T "$staged" "$target"
+	if ! mv -T "$staged" "$target"; then
+		mv -T "$previous" "$target" ||
+			printf '  Warning: the previous Quickshell config is kept in %s.\n' "$previous" >&2
+		exit 1
+	fi
 fi
 rm -rf "$staged" "$previous"
-
-if [ -n "$stopped" ]; then
-	"$lyona_lib/dwm-quickshell-controlcenter" action start-quickshell >/dev/null 2>&1 ||
-		printf '  Warning: Quickshell did not start again; log out and back in to start it.\n' >&2
-fi

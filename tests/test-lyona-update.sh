@@ -934,7 +934,11 @@ MV_LOG=$work/restore/mv.log bash -c 'warn() { printf "%s\n" "$*" >&2; }; . "$1";
 	sh "$work/restore.sh" "$work/restore-mv-log.sh" "$work/restore/quickshell.tar" "$work/restore/swap/quickshell" ||
 	fail 'restore_user_tree failed with an exchange'
 assert_equals 'old shell' "$(cat "$work/restore/swap/quickshell/shell.qml")" 'the exchange restores the backup'
-if [ "$(wc -l <"$work/restore/mv.log")" -ne 1 ] || ! grep -q -- '--exchange -T' "$work/restore/mv.log"; then
+# Only where this filesystem and mv can exchange; the two renames below cover
+# the rest.
+mkdir -p "$work/restore/probe-a" "$work/restore/probe-b"
+if mv --exchange -T "$work/restore/probe-a" "$work/restore/probe-b" 2>/dev/null &&
+	{ [ "$(wc -l <"$work/restore/mv.log")" -ne 1 ] || ! grep -q -- '--exchange -T' "$work/restore/mv.log"; }; then
 	fail "the tree was not swapped in one exchange: $(cat "$work/restore/mv.log")"
 fi
 [ "$(find "$work/restore/swap" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] ||
@@ -981,6 +985,10 @@ start_line=$(line_of 'action start-quickshell')
 [ -n "$stop_line" ] && [ -n "$restore_line" ] && [ -n "$start_line" ] &&
 	[ "$stop_line" -lt "$restore_line" ] && [ "$restore_line" -lt "$start_line" ] ||
 	fail 'rollback does not stop a watching shell before restoring its tree and start it after'
+# shellcheck disable=SC2016 # the helper's own source text
+die_line=$(line_of 'die "could not restore $config_home/quickshell')
+[ -n "$die_line" ] && [ "$start_line" -lt "$die_line" ] ||
+	fail 'a failed Quickshell restore stops the rollback before the shell is started again'
 
 # valid_user_archive: readable, and everything under the one expected folder.
 body_of valid_user_archive >"$work/valid-archive.sh"

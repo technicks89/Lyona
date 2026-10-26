@@ -128,6 +128,28 @@ for display in :7 ''; do
 	wait "$instance_pid" 2>/dev/null || :
 done
 
+# The swap fails where the filesystem cannot exchange: the old tree is put
+# back, the script fails, and the shell it stopped is started again.
+reset_state
+live_tree yes
+start_instance :7
+mkdir -p "$work/no-swap"
+cat >"$work/no-swap/mv" <<'STUB'
+#!/bin/sh
+[ "$1" != --exchange ] || exit 1
+case $2 in */.quickshell.new) exit 1 ;; esac
+exec /usr/bin/mv "$@"
+STUB
+chmod +x "$work/no-swap/mv"
+if env -u XDG_SESSION_ID DISPLAY=:7 PATH="$work/no-swap:$work/stub-bin:$PATH" STUB_STATE="$state" \
+	"$scripts/replace-quickshell-config.sh" "$work/src" "$work/config/quickshell" >"$work/out" 2>&1; then
+	fail 'a swap that failed was reported as done'
+fi
+assert_equals 'old theme' "$(cat "$work/config/quickshell/core/Theme.qml")" 'a failed swap puts the old tree back'
+[ "$(log | tail -n 1)" = 'controlcenter action start-quickshell' ] ||
+	fail "the shell stopped for a failed swap was not started again: $(log)"
+wait "$instance_pid" 2>/dev/null || :
+
 # No live tree yet: moved into place.
 reset_state
 rm -rf "$work/config"
