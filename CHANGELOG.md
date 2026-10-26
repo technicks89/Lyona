@@ -39,6 +39,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   process, found 2". The check now waits for the shell it restarted to exit,
   counts this session's managed instances by identity, and asks that
   instance's tray by pid.
+- An update or rollback no longer crashes the running Quickshell (#461).
+  Quickshell 0.3.2 crashes when a shell that has hot-reloaded its config is
+  stopped, and every install replaced `~/.config/quickshell` under the running
+  shell, which reloaded it, often half copied, before the restart that follows
+  stopped it: Quickshell's crash dialog stayed on the desktop. The managed
+  shell no longer watches its own config files, as lyona restarts it after
+  every install, update and rollback; settings, theme and font changes still
+  apply live. `make install-user` builds the new tree beside the live one and
+  swaps it in at once (`mv --exchange`, two renames where the filesystem cannot
+  exchange), as a rollback now restores it too. A shell from an older release,
+  which still watches its files, is stopped before its config is replaced and
+  started again after, so the first update from such a release does not crash
+  it either.
 
 ## [2026.10.0-beta.7] - 2026-10-24
 

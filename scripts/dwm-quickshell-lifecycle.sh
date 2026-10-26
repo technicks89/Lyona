@@ -175,6 +175,34 @@ quickshell_session_identities() {
 	done
 }
 
+# quickshell_stop_watching CONFIG: stop this session's managed shells when they
+# still watch their config files, started from a shell.qml older than #461,
+# and print their identities, for the caller to start one again once the new
+# config is in place. Such a shell hot-reloads a config replaced under it, and
+# Quickshell 0.3.2 crashes when a shell that has reloaded is stopped, as the
+# restart after an install or rollback does. A shell that does not watch them,
+# another session's, or any with no display to start one again on, is left.
+# Only the setting itself, at the start of its line, says a shell does not
+# watch: a commented-out copy does not. Fails when a shell would not stop,
+# still printing what it stopped.
+quickshell_stop_watching() {
+	config=$1
+	[ -n "${DISPLAY:-}" ] && [ -f "$config" ] || return 0
+	! grep -Eq '^[[:space:]]*Component\.onCompleted:[[:space:]]*Quickshell\.watchFiles[[:space:]]*=[[:space:]]*false' \
+		"$config" || return 0
+	watching=
+	for watching_identity in $(quickshell_instance_identities "$config" 2>/dev/null || true); do
+		! quickshell_session_identity_in "$watching_identity" ||
+			watching="$watching $watching_identity"
+	done
+	[ -n "$watching" ] || return 0
+	watching_stopped=0
+	stop_quickshell_identities "$watching" >/dev/null 2>&1 || watching_stopped=1
+	# shellcheck disable=SC2086 # one identity a line
+	printf '%s\n' $watching
+	return "$watching_stopped"
+}
+
 # Whether this session's managed instance is running, answering or not.
 quickshell_session_instance_running() {
 	session_identities=$(quickshell_instance_identities "$1") || return 1

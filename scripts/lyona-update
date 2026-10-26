@@ -1180,6 +1180,13 @@ restore_user_tree() {
 		warn "backup archive $archive does not hold exactly $name"
 		return 1
 	fi
+	# Swapped in at once where the filesystem can (#461): the running shell
+	# never sees its config missing. Two renames otherwise.
+	if [[ -e $target || -L $target ]] &&
+		mv --exchange -T "$staging/$name" "$target" 2>/dev/null; then
+		rm -rf "$staging"
+		return 0
+	fi
 	previous=
 	if [[ -e $target || -L $target ]]; then
 		previous=$staging/.previous
@@ -1237,7 +1244,7 @@ cmd_rollback() {
 	[[ -d $backup_dir && ! -L $backup_dir ]] || die "backup not found: $backup_id"
 
 	local status_phase=restarting status_detail="Verifying backup $backup_id" status_target=$backup_id status_written=false status_quiet=false
-	local status_operation=rollback
+	local status_operation=rollback rollback_note=''
 	trap report_status_failure EXIT
 	start_operation_log rollback
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
@@ -1283,6 +1290,10 @@ cmd_rollback() {
 
 	status_detail="Restoring backup $backup_id"
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
+	# The Quickshell lifecycle, read before the restore replaces it with the
+	# restored release's own, which may lack quickshell_stop_watching (#461).
+	# shellcheck source=scripts/dwm-quickshell-lifecycle.sh
+	. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 	warn "restoring system files (this step requires authentication)"
 	# System files come from the privileged helper's own root-held copy, named by
 	# id; this directory only holds the user-side trees.
@@ -1294,7 +1305,27 @@ cmd_rollback() {
 			die "could not restore $data_home/lyona from backup $backup_id"
 	fi
 	if [[ -f $backup_dir/quickshell.tar ]]; then
+		# A shell that still watches its files would hot-reload the restored
+		# tree and crash when restarted (#461): stopped first, started after.
+		local stopped_quickshell
+		# One that would not stop is warned about, not a reason to stop here,
+		# with the system files already restored.
+		stopped_quickshell=$(quickshell_stop_watching "$config_home/quickshell/shell.qml") ||
+			warn "the running Quickshell did not stop; restoring its config anyway"
+		local quickshell_restored=true
 		restore_user_tree "$backup_dir/quickshell.tar" "$config_home/quickshell" ||
+			quickshell_restored=false
+		# Started again whether or not the restore worked, so a failed one does
+		# not leave the session without a shell. The Control Center is the
+		# restored release's by now: one before beta.7 has no start-quickshell,
+		# and its restart-quickshell starts a shell when none runs.
+		if [[ -n $stopped_quickshell ]] &&
+			! "$script_dir/dwm-quickshell-controlcenter" action start-quickshell >/dev/null 2>&1 &&
+			! "$script_dir/dwm-quickshell-controlcenter" action restart-quickshell >/dev/null 2>&1; then
+			rollback_note='Quickshell did not start again; log out and back in to start it.'
+			warn "$rollback_note"
+		fi
+		[[ $quickshell_restored == true ]] ||
 			die "could not restore $config_home/quickshell from backup $backup_id"
 	fi
 	# The account's install record as it was (#324); a backup from before it was
@@ -1329,7 +1360,7 @@ cmd_rollback() {
 	fi
 
 	status_written=true
-	write_status restarting 'Rollback complete' "$status_target" succeeded ''
+	write_status restarting 'Rollback complete' "$status_target" succeeded "$rollback_note"
 	trap - EXIT
 	printf 'complete\trollback\t%s\n' "${restored_version:-unknown}"
 }

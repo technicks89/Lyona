@@ -604,9 +604,11 @@ install-user:
 		scripts/seed-autostart-overrides.sh
 	@echo "==> Replacing managed Quickshell config..."
 	test -n "${CFG_DIR}"
-	rm -rf "${CFG_DIR}/quickshell"
-	mkdir -p "${CFG_DIR}/quickshell"
-	cp -aL --no-preserve=ownership config/quickshell/. "${CFG_DIR}/quickshell"/
+	@# Swapped in whole, never emptied and copied into under the running shell,
+	@# and an older shell that would hot-reload it stopped first (#461).
+	HOME="${USER_HOME}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" XDG_DATA_HOME="${XDG_DATA_HOME}" \
+		XDG_STATE_HOME="${XDG_STATE_HOME}" \
+		scripts/replace-quickshell-config.sh config/quickshell "${CFG_DIR}/quickshell"
 	@echo "==> Seeding user config (skipping existing files)..."
 	mkdir -p ${CFG_DIR}/lyona
 	test -f ${CFG_DIR}/lyona/hotkeys.toml || install -Dm644 config/hotkeys.toml ${CFG_DIR}/lyona/hotkeys.toml
@@ -1113,6 +1115,7 @@ check-quickshell-audio:
 check-quickshell-lifecycle:
 	tests/test-quickshell-lifecycle-locale.sh
 	tests/test-quickshell-starting-instance.sh
+	tests/test-quickshell-config-replace.sh
 
 check-quickshell-controlcenter: ${TOML_TOOL}
 	tests/test-quickshell-controlcenter.sh
