@@ -265,6 +265,8 @@ runtime_check() {
 		set -eu
 		. "$1"
 		prefix=$2
+		lyona_lib=$prefix/lib/lyona
+		. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 		binary_target=$prefix/bin/dwm
 		quickshell_dir=$3
 		runtime_verify 0

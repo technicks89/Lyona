@@ -29,8 +29,14 @@ config_dir=$work/config/quickshell
 output=$work/output
 mkdir -p "$state" "$work/qs" "$work/stub-bin" "$config_dir"
 : >"$config_dir/shell.qml"
-# The verifier and, in lib/lyona, the lifecycle library it runs.
-stage_helpers prefix "$prefix" lyona-install-verify.sh
+# The verifier and, in lib/lyona, the lifecycle library it sources: the
+# caller's, lyona-update's own. Under PREFIX, an older release's library
+# without the functions the check runs, as after a rollback to it: the check
+# runs what it loaded, never what the rollback restored.
+caller=$work/caller
+stage_helpers prefix "$caller" lyona-install-verify.sh
+mkdir -p "$prefix/bin" "$prefix/lib/lyona"
+printf '%s\n' '# shellcheck shell=sh' >"$prefix/lib/lyona/dwm-quickshell-lifecycle.sh"
 # Instances: real processes named quickshell, owned by this user, as the
 # lifecycle checks identity.
 cp "$(command -v sleep)" "$work/qs/quickshell"
@@ -124,7 +130,7 @@ stop_all() {
 
 probe=$work/runtime-probe
 sed -n -e '/^runtime_quickshell() {$/,/^}$/p' -e '/^runtime_verify() {$/,/^}$/p' \
-	"$prefix/bin/lyona-install-verify.sh" >"$probe"
+	"$caller/bin/lyona-install-verify.sh" >"$probe"
 grep -q '^runtime_verify() {$' "$probe" || fail 'runtime_verify was not found'
 
 # The new shells start as the instance the check runs in: display :7, session c1.
@@ -135,10 +141,12 @@ runtime_check() { # STARTS
 		set -eu
 		. "$1"
 		prefix=$2
+		lyona_lib=$4
+		. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 		binary_target=$prefix/bin/dwm
 		quickshell_dir=$3
 		runtime_verify 1
-	' sh "$probe" "$prefix" "$config_dir"
+	' sh "$probe" "$prefix" "$config_dir" "$caller/lib/lyona"
 }
 
 # A restart: the check sees the new shell, not the old one that still answers.

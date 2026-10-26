@@ -2,7 +2,8 @@
 #
 # Verify, back up and runtime-check a live Lyona install against a source tree
 # (Sync Sprint 12 S12-13). A library, sourced by lyona-update (apply, rollback)
-# and scripts/dev-sync-install.sh, which set LYONA_INSTALL_REPO_DIR first:
+# and scripts/dev-sync-install.sh, which set LYONA_INSTALL_REPO_DIR and
+# lyona_lib, the directory of the libraries it sources, first:
 #
 #     LYONA_INSTALL_REPO_DIR=$tree . "$lyona_lib/lyona-install-verify.sh"
 #     prepare_expected_files
@@ -35,6 +36,15 @@ validate_live_root() {
 		die "$live_root_name must not be the filesystem root"
 	fi
 }
+
+# The managed shell's lifecycle, for runtime_verify (#460), from the caller's
+# library directory and read now: by the time runtime_verify runs, the files
+# under PREFIX are the release just installed or restored, and a rollback to a
+# release older than this one would load a library without what it calls.
+[ -n "${lyona_lib:-}" ] ||
+	die "lyona_lib is required when sourcing lyona-install-verify.sh"
+# shellcheck source=scripts/dwm-quickshell-lifecycle.sh
+. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 
 # The tree the live install is compared against: a checkout for
 # dev-sync-install.sh, an unpacked release or a backup for lyona-update. $0
@@ -451,15 +461,10 @@ backup_live_install() {
 	printf 'Backup created: %s\n' "$backup_dir"
 }
 
-# runtime_quickshell FUNCTION ARGS...: a function of the installed Quickshell
-# lifecycle library, the one the managed shell's restart uses, in a shell of
-# its own so its variables stay out of the caller's.
+# runtime_quickshell FUNCTION ARGS...: a function of the Quickshell lifecycle
+# library, in a subshell so its variables stay out of the caller's.
 runtime_quickshell() {
-	# shellcheck disable=SC2016 # expanded by the inner shell
-	lyona_lib=$prefix/lib/lyona sh -c '
-		. "$lyona_lib/dwm-quickshell-lifecycle.sh"
-		"$@"
-	' sh "$@"
+	("$@")
 }
 
 runtime_verify() {
