@@ -34,7 +34,10 @@ cp -aL --no-preserve=ownership "$source_dir"/. "$staged"/
 
 # shellcheck source=scripts/dwm-quickshell-lifecycle.sh
 . "$lyona_lib/dwm-quickshell-lifecycle.sh"
-stopped=$(quickshell_stop_watching "$target/shell.qml")
+# A shell that would not stop may crash on its next restart; failing here,
+# with the system files of this release already installed, would be worse.
+stopped=$(quickshell_stop_watching "$target/shell.qml") ||
+	printf '  Warning: the running Quickshell did not stop; replacing its config anyway.\n' >&2
 # start_stopped: start the shell stopped above again, however this script
 # ends, so a failed swap does not leave the session without one.
 start_stopped() {

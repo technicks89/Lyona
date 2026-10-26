@@ -182,19 +182,25 @@ quickshell_session_identities() {
 # Quickshell 0.3.2 crashes when a shell that has reloaded is stopped, as the
 # restart after an install or rollback does. A shell that does not watch them,
 # another session's, or any with no display to start one again on, is left.
+# Only the setting itself, at the start of its line, says a shell does not
+# watch: a commented-out copy does not. Fails when a shell would not stop,
+# still printing what it stopped.
 quickshell_stop_watching() {
 	config=$1
 	[ -n "${DISPLAY:-}" ] && [ -f "$config" ] || return 0
-	! grep -Fq 'Quickshell.watchFiles = false' "$config" || return 0
+	! grep -Eq '^[[:space:]]*Component\.onCompleted:[[:space:]]*Quickshell\.watchFiles[[:space:]]*=[[:space:]]*false' \
+		"$config" || return 0
 	watching=
 	for watching_identity in $(quickshell_instance_identities "$config" 2>/dev/null || true); do
 		! quickshell_session_identity_in "$watching_identity" ||
 			watching="$watching $watching_identity"
 	done
 	[ -n "$watching" ] || return 0
-	stop_quickshell_identities "$watching" >/dev/null 2>&1 || true
+	watching_stopped=0
+	stop_quickshell_identities "$watching" >/dev/null 2>&1 || watching_stopped=1
 	# shellcheck disable=SC2086 # one identity a line
 	printf '%s\n' $watching
+	return "$watching_stopped"
 }
 
 # Whether this session's managed instance is running, answering or not.

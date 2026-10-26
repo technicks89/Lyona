@@ -1308,7 +1308,10 @@ cmd_rollback() {
 		# A shell that still watches its files would hot-reload the restored
 		# tree and crash when restarted (#461): stopped first, started after.
 		local stopped_quickshell
-		stopped_quickshell=$(quickshell_stop_watching "$config_home/quickshell/shell.qml")
+		# One that would not stop is warned about, not a reason to stop here,
+		# with the system files already restored.
+		stopped_quickshell=$(quickshell_stop_watching "$config_home/quickshell/shell.qml") ||
+			warn "the running Quickshell did not stop; restoring its config anyway"
 		local quickshell_restored=true
 		restore_user_tree "$backup_dir/quickshell.tar" "$config_home/quickshell" ||
 			quickshell_restored=false

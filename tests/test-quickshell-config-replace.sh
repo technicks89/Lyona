@@ -105,6 +105,38 @@ log | grep -Fqx "kill $instance_pid" || fail "the watching shell was not stopped
 	fail "the stopped shell was not started again after the swap: $(log)"
 wait "$instance_pid" 2>/dev/null || :
 
+# A config whose setting is commented out still watches: stopped first.
+reset_state
+live_tree yes
+printf '%s\n' 'ShellRoot {' '    // Component.onCompleted: Quickshell.watchFiles = false' '}' \
+	>"$work/config/quickshell/shell.qml"
+start_instance :7
+replace :7
+assert_replaced
+log | grep -Fqx "kill $instance_pid" || fail "a shell whose setting is commented out was not stopped: $(log)"
+wait "$instance_pid" 2>/dev/null || :
+
+# A shell that will not stop: warned about, and the config is still replaced
+# and the shell started again, rather than the install failing with the system
+# files of the new release already in place.
+broken=$work/broken-scripts
+stage_helpers checkout "$broken" replace-quickshell-config.sh
+cp "$scripts/dwm-quickshell-controlcenter" "$broken/"
+printf '%s\n' 'stop_quickshell_identities() { return 1; }' >>"$broken/dwm-quickshell-lifecycle.sh"
+reset_state
+live_tree yes
+start_instance :7
+env -u XDG_SESSION_ID DISPLAY=:7 PATH="$work/stub-bin:$PATH" STUB_STATE="$state" \
+	"$broken/replace-quickshell-config.sh" "$work/src" "$work/config/quickshell" >"$work/out" 2>&1 ||
+	fail "a shell that would not stop failed the install: $(cat "$work/out")"
+assert_replaced
+grep -Fq 'the running Quickshell did not stop' "$work/out" ||
+	fail "a shell that would not stop was not reported: $(cat "$work/out")"
+[ "$(log | tail -n 1)" = 'controlcenter action start-quickshell' ] ||
+	fail "the shell was not started again after a failed stop: $(log)"
+kill "$instance_pid"
+wait "$instance_pid" 2>/dev/null || :
+
 # A shell of #461 or later does not watch its files: left running.
 reset_state
 live_tree no
