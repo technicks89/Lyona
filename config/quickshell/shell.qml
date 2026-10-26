@@ -30,6 +30,12 @@ pragma ComponentBehavior: Bound
 ShellRoot {
     id: root
 
+    // Lyona restarts this shell itself after every install, update and
+    // rollback. A hot reload of a config being replaced under it crashed
+    // Quickshell (#461), so the config files are not watched. FileView
+    // watchers (settings, themes, fonts) are separate and still work.
+    Component.onCompleted: Quickshell.watchFiles = false
+
     property var selectedPanelWindow: null
     readonly property var defaultPanelWindow: panelVariants.instances.length > 0
         ? panelVariants.instances[0] : null

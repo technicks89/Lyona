@@ -403,6 +403,47 @@ if [ -e "$XDG_CONFIG_HOME/quickshell/stale.txt" ]; then
 	printf 'Install did not replace managed Quickshell config directory.\n' >&2
 	exit 1
 fi
+# #461: the new tree is built beside the live one and swapped in, never copied
+# into an emptied directory under the running shell, and nothing is left over.
+for leftover in .quickshell.new .quickshell.old; do
+	if [ -e "$XDG_CONFIG_HOME/$leftover" ]; then
+		printf 'Install left %s behind.\n' "$XDG_CONFIG_HOME/$leftover" >&2
+		exit 1
+	fi
+done
+# shellcheck disable=SC2016 # the recipe's and script's own text, not an expansion
+if grep -Fq 'rm -rf "${CFG_DIR}/quickshell"' <<<"$INSTALL_USER_RECIPE" ||
+	! grep -Fq 'scripts/replace-quickshell-config.sh config/quickshell "${CFG_DIR}/quickshell"' <<<"$INSTALL_USER_RECIPE" ||
+	! grep -Fq 'mv --exchange -T "$staged" "$target"' "$repo/scripts/replace-quickshell-config.sh"; then
+	printf 'Install does not swap the managed Quickshell config in whole.\n' >&2
+	exit 1
+fi
+# Where the filesystem cannot exchange, two renames still replace it.
+mkdir -p "$WORK_DIR/no-exchange"
+cat >"$WORK_DIR/no-exchange/mv" <<'EOF'
+#!/bin/sh
+[ "$1" != --exchange ] || exit 1
+exec /usr/bin/mv "$@"
+EOF
+chmod 755 "$WORK_DIR/no-exchange/mv"
+printf '%s\n' 'stale quickshell file' >"$XDG_CONFIG_HOME/quickshell/stale.txt"
+run_as_owner env PATH="$WORK_DIR/no-exchange:$PATH" HOME="$TEST_HOME" make -C "$TEST_REPO" install-user \
+	USER_HOME="$TEST_HOME" \
+	OWNER="$OWNER" \
+	XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
+	XDG_CONFIG_DIRS="$XDG_CONFIG_DIRS" \
+	XDG_DATA_HOME="$XDG_DATA_HOME" \
+	XDG_STATE_HOME="$TEST_HOME/.local/state" >"$WORK_DIR/no-exchange.log" 2>&1 || {
+	cat "$WORK_DIR/no-exchange.log" >&2
+	printf 'Install failed where the filesystem cannot exchange.\n' >&2
+	exit 1
+}
+if [ -e "$XDG_CONFIG_HOME/quickshell/stale.txt" ] ||
+	! cmp -s "$TEST_REPO/config/quickshell/shell.qml" "$XDG_CONFIG_HOME/quickshell/shell.qml" ||
+	[ -e "$XDG_CONFIG_HOME/.quickshell.new" ] || [ -e "$XDG_CONFIG_HOME/.quickshell.old" ]; then
+	printf 'Install did not replace the managed Quickshell config with two renames.\n' >&2
+	exit 1
+fi
 
 LOCKER_OVERRIDE="$XDG_CONFIG_HOME/autostart/light-locker.desktop"
 grep -Fqx 'Exec=light-locker --lock-after-screensaver=5' "$LOCKER_OVERRIDE"

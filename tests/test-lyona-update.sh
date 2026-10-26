@@ -920,10 +920,31 @@ if restore "$work/restore/two.tar" "$work/restore/live/quickshell" 2>/dev/null; 
 	fail 'restore_user_tree accepted an archive with more than the tree'
 fi
 assert_equals 'old shell' "$(cat "$work/restore/live/quickshell/shell.qml")" 'a refused restore keeps the tree'
+# The tree is exchanged with the live one in one step (#461), so a running
+# shell never sees its config missing.
+mkdir -p "$work/restore/swap/quickshell"
+printf 'new shell\n' >"$work/restore/swap/quickshell/shell.qml"
+cat >"$work/restore-mv-log.sh" <<'EOF'
+mv() {
+	printf '%s\n' "$*" >>"$MV_LOG"
+	command mv "$@"
+}
+EOF
+MV_LOG=$work/restore/mv.log bash -c 'warn() { printf "%s\n" "$*" >&2; }; . "$1"; . "$2"; restore_user_tree "$3" "$4"' \
+	sh "$work/restore.sh" "$work/restore-mv-log.sh" "$work/restore/quickshell.tar" "$work/restore/swap/quickshell" ||
+	fail 'restore_user_tree failed with an exchange'
+assert_equals 'old shell' "$(cat "$work/restore/swap/quickshell/shell.qml")" 'the exchange restores the backup'
+if [ "$(wc -l <"$work/restore/mv.log")" -ne 1 ] || ! grep -q -- '--exchange -T' "$work/restore/mv.log"; then
+	fail "the tree was not swapped in one exchange: $(cat "$work/restore/mv.log")"
+fi
+[ "$(find "$work/restore/swap" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] ||
+	fail 'restore_user_tree left its staging behind after an exchange'
 # The swap fails and so does moving the old tree back: the old tree is kept
-# (in the staging folder) rather than deleted with it.
+# (in the staging folder) rather than deleted with it. The filesystem cannot
+# exchange here, so the two renames run.
 cat >"$work/restore-mv.sh" <<'EOF'
 mv() {
+	[ "$1" != --exchange ] || return 1
 	calls=$(($(cat "$MV_COUNT" 2>/dev/null || printf 0) + 1))
 	printf '%s\n' "$calls" >"$MV_COUNT"
 	[ "$calls" -eq 1 ] || return 1
@@ -941,6 +962,25 @@ kept=$(find "$work/restore/live" -path '*/.previous/shell.qml' | head -n1)
 assert_equals 'old shell' "$(cat "$kept")" 'the kept copy is the old tree'
 assert_contains "$work/restore/mv.err" 'the previous copy is kept in'
 rm -rf "$work/restore/live"
+
+# #461: a rollback stops a shell that still watches its files before restoring
+# its tree, and reads the lifecycle library for that before the privileged step
+# puts the restored release's own (which may lack the function) in its place.
+body_of cmd_rollback >"$work/rollback.sh"
+line_of() { grep -nF -- "$1" "$work/rollback.sh" | head -n 1 | cut -d: -f1; }
+# shellcheck disable=SC2016 # the helper's own source text
+lifecycle_line=$(line_of '. "$lyona_lib/dwm-quickshell-lifecycle.sh"')
+privileged_line=$(line_of 'run_privileged restore-system')
+# shellcheck disable=SC2016 # the helper's own source text
+stop_line=$(line_of 'quickshell_stop_watching "$config_home/quickshell/shell.qml"')
+# shellcheck disable=SC2016 # the helper's own source text
+restore_line=$(line_of 'restore_user_tree "$backup_dir/quickshell.tar"')
+start_line=$(line_of 'action start-quickshell')
+[ -n "$lifecycle_line" ] && [ -n "$privileged_line" ] && [ "$lifecycle_line" -lt "$privileged_line" ] ||
+	fail 'rollback does not read the lifecycle library before the privileged restore'
+[ -n "$stop_line" ] && [ -n "$restore_line" ] && [ -n "$start_line" ] &&
+	[ "$stop_line" -lt "$restore_line" ] && [ "$restore_line" -lt "$start_line" ] ||
+	fail 'rollback does not stop a watching shell before restoring its tree and start it after'
 
 # valid_user_archive: readable, and everything under the one expected folder.
 body_of valid_user_archive >"$work/valid-archive.sh"
