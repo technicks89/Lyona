@@ -146,15 +146,33 @@ quickshell_pid_env() {
 # number, and a shell that hung as its X server died (#448) was waited for at
 # every later login, which then had no panel.
 quickshell_session_identity_in() {
-	[ -n "${DISPLAY:-}" ] || return 1
 	for session_identity in $1; do
-		session_pid=${session_identity%%:*}
-		[ "$(quickshell_pid_env "$session_pid" DISPLAY)" = "$DISPLAY" ] || continue
-		[ -n "${XDG_SESSION_ID:-}" ] || return 0
-		session_of_pid=$(quickshell_pid_env "$session_pid" XDG_SESSION_ID)
-		[ -n "$session_of_pid" ] && [ "$session_of_pid" != "$XDG_SESSION_ID" ] || return 0
+		quickshell_identity_in_session "$session_identity" && return 0
 	done
 	return 1
+}
+
+# quickshell_identity_in_session IDENTITY: whether that instance is this
+# session's, as quickshell_session_identity_in decides it.
+quickshell_identity_in_session() {
+	[ -n "${DISPLAY:-}" ] || return 1
+	session_pid=${1%%:*}
+	[ "$(quickshell_pid_env "$session_pid" DISPLAY)" = "$DISPLAY" ] || return 1
+	[ -n "${XDG_SESSION_ID:-}" ] || return 0
+	session_of_pid=$(quickshell_pid_env "$session_pid" XDG_SESSION_ID)
+	[ -z "$session_of_pid" ] || [ "$session_of_pid" = "$XDG_SESSION_ID" ]
+}
+
+# quickshell_session_identities CONFIG: this session's managed instances, one
+# identity a line. Counted by identity, never by name: `pgrep -x quickshell`
+# also counts the quickshell command-line tool (ipc, list, kill) and other
+# sessions' shells (#460).
+quickshell_session_identities() {
+	session_identities=$(quickshell_instance_identities "$1") || return 1
+	for session_identity in $session_identities; do
+		quickshell_identity_in_session "$session_identity" || continue
+		printf '%s\n' "$session_identity"
+	done
 }
 
 # quickshell_stop_watching CONFIG: stop this session's managed shells when they

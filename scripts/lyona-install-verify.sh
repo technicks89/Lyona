@@ -2,7 +2,8 @@
 #
 # Verify, back up and runtime-check a live Lyona install against a source tree
 # (Sync Sprint 12 S12-13). A library, sourced by lyona-update (apply, rollback)
-# and scripts/dev-sync-install.sh, which set LYONA_INSTALL_REPO_DIR first:
+# and scripts/dev-sync-install.sh, which set LYONA_INSTALL_REPO_DIR and
+# lyona_lib, the directory of the libraries it sources, first:
 #
 #     LYONA_INSTALL_REPO_DIR=$tree . "$lyona_lib/lyona-install-verify.sh"
 #     prepare_expected_files
@@ -35,6 +36,15 @@ validate_live_root() {
 		die "$live_root_name must not be the filesystem root"
 	fi
 }
+
+# The managed shell's lifecycle, for runtime_verify (#460), from the caller's
+# library directory and read now: by the time runtime_verify runs, the files
+# under PREFIX are the release just installed or restored, and a rollback to a
+# release older than this one would load a library without what it calls.
+[ -n "${lyona_lib:-}" ] ||
+	die "lyona_lib is required when sourcing lyona-install-verify.sh"
+# shellcheck source=scripts/dwm-quickshell-lifecycle.sh
+. "$lyona_lib/dwm-quickshell-lifecycle.sh"
 
 # The tree the live install is compared against: a checkout for
 # dev-sync-install.sh, an unpacked release or a backup for lyona-update. $0
@@ -451,6 +461,12 @@ backup_live_install() {
 	printf 'Backup created: %s\n' "$backup_dir"
 }
 
+# runtime_quickshell FUNCTION ARGS...: a function of the Quickshell lifecycle
+# library, in a subshell so its variables stay out of the caller's.
+runtime_quickshell() {
+	("$@")
+}
+
 runtime_verify() {
 	allow_session_restart=$1
 	runtime_failed=0
@@ -486,29 +502,60 @@ runtime_verify() {
 			if [ ! -x "$control_helper" ]; then
 				printf 'Runtime error: managed Quickshell control helper is unavailable.\n' >&2
 				runtime_failed=1
-			elif ! "$control_helper" action restart-quickshell; then
-				printf 'Runtime error: Quickshell restart failed.\n' >&2
-				runtime_failed=1
+			else
+				# The helper restarts the shell from a copy in its own session
+				# and returns before that copy has stopped the old shell (#394),
+				# which still answers IPC. Wait for the instances it stops to be
+				# gone, so the checks below see the restarted shell (#460). A
+				# listing that fails would make that wait pass at once, with the
+				# old shell still answering.
+				if ! previous_quickshell=$(runtime_quickshell \
+					quickshell_session_identities "$quickshell_dir/shell.qml" 2>/dev/null); then
+					printf 'Runtime error: could not list the running Quickshell.\n' >&2
+					runtime_failed=1
+				elif ! "$control_helper" action restart-quickshell; then
+					printf 'Runtime error: Quickshell restart failed.\n' >&2
+					runtime_failed=1
+				elif ! runtime_quickshell wait_for_quickshell_exit \
+					"$previous_quickshell" 200 2>/dev/null; then
+					printf 'Runtime error: the previous Quickshell did not stop on restart.\n' >&2
+					runtime_failed=1
+				fi
 			fi
 		fi
 
+		# This session's managed instances, by identity: `pgrep -x quickshell`
+		# also counted the quickshell tool the restart runs, and `ipc --path`
+		# can reach another session's shell. Its tray is asked by pid.
 		tray_ready=0
 		tray_count=
+		session_quickshell=
 		tray_try=0
 		while [ "$tray_try" -lt 50 ]; do
+			session_quickshell=$(runtime_quickshell \
+				quickshell_session_identities "$quickshell_dir/shell.qml" 2>/dev/null || true)
+			session_pid=$(printf '%s\n' "$session_quickshell" | sed -n '1s/:.*//p')
 			# UTF-8 for Quickshell: under a C locale Qt's warning goes to stdout.
-			if tray_count=$(LC_ALL=C.UTF-8 quickshell ipc --path "$quickshell_dir/shell.qml" \
-				call tray count 2>/dev/null); then
-				tray_ready=1
-				break
+			if [ -n "$session_pid" ] &&
+				tray_count=$(LC_ALL=C.UTF-8 quickshell ipc --pid "$session_pid" \
+					call tray count 2>/dev/null); then
+				# A shell that exits as it is asked prints its socket error,
+				# and the call still succeeds (#460).
+				case $tray_count in
+				'' | *[!0-9]*) ;;
+				*)
+					tray_ready=1
+					break
+					;;
+				esac
 			fi
 			tray_try=$((tray_try + 1))
 			sleep 0.1
 		done
 		if [ "$tray_ready" -eq 1 ]; then
-			quickshell_count=$(pgrep -xc quickshell 2>/dev/null || true)
-			if [ "$quickshell_count" -ne 1 ]; then
-				printf 'Runtime error: expected one Quickshell process, found %s.\n' \
+			quickshell_count=$(printf '%s\n' "$session_quickshell" | grep -c .)
+			if [ "$quickshell_count" != 1 ]; then
+				printf 'Runtime error: expected one managed Quickshell in this session, found %s.\n' \
 					"$quickshell_count" >&2
 				runtime_failed=1
 			else
