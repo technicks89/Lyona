@@ -38,6 +38,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   tried there. The postinstall checks the new system has Arch Linux ARM's
   keys before its first download, and adds them again when it does not
   (`docs/evidence/arm2-04-mirrors-keyring.md`).
+- A builder for an experimental Raspberry Pi image (ARM3-01):
+  `scripts/build-lyona-rpi-image.sh` makes `lyona-VERSION-rpi-aarch64.img.xz`
+  and its SHA-256 on an aarch64 Arch Linux ARM host. It is one image for the
+  Pi 4 and the Pi 5, on the Raspberry Pi kernel (`linux-rpi`), which the Pi
+  firmware boots directly. The image has lyona installed (the full profile)
+  but no user, machine-id, SSH host keys, pacman keyring or package cache,
+  and `--check-root` checks that. It does not boot to a desktop yet: the
+  first-boot wizard that creates the user and finishes the install is ARM3-02,
+  and it has not been tried on a Pi. `docs/RELEASING.md` says how to build it
+  (`docs/evidence/arm3-01-pi-image-builder.md`).
 
 ### Changed
 

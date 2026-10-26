@@ -10,6 +10,12 @@ dwm_x86_64_only() {
 	[[ ${ARCH:-$HOSTTYPE} != x86_64 ]] || printf '%s\n' "$@"
 }
 
+# The reverse: prints its arguments on aarch64 only, for what exists in Arch
+# Linux ARM alone (the Raspberry Pi kernel and firmware, ARM3-01).
+dwm_aarch64_only() {
+	[[ ${ARCH:-$HOSTTYPE} != aarch64 ]] || printf '%s\n' "$@"
+}
+
 dwm_packages() {
 	local family=$1
 	local profile=$2
@@ -174,6 +180,20 @@ dwm_packages() {
 		# profile with ARCH=aarch64 (ARM2-02).
 		printf '%s\n' plymouth gum jq curl openssl pciutils
 		dwm_x86_64_only reflector
+		;;
+	arch:rpi-image)
+		# The Raspberry Pi image's base system, which the Pi builder pacstraps
+		# before install.sh adds the desktop (ARM3-01,
+		# scripts/build-lyona-rpi-image.sh). One image for the Pi 4 and the Pi 5
+		# (A-5): the Raspberry Pi kernel, which the firmware boots directly (no
+		# U-Boot), the firmware and its per-board device trees, and the
+		# firmware's Wi-Fi and Bluetooth blobs. Arch Linux ARM only, so empty
+		# on x86_64.
+		# - archlinuxarm-keyring: the keys pacman trusts, initialised at first
+		#   boot, never shipped (ARM3-02);
+		# - sudo: install.sh runs as a user with sudo.
+		dwm_aarch64_only base linux-rpi raspberrypi-bootloader firmware-raspberrypi \
+			archlinuxarm-keyring sudo
 		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): a GPU driver, NetworkManager

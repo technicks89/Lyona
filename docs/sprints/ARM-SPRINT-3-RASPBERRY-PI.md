@@ -2,7 +2,10 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 
-**Status:** planned 2026-10-11. Not started. Validated on a Pi 4 only:
+**Status:** planned 2026-10-11. A-5 decided 2026-10-26 (one image,
+`linux-rpi`). ARM3-01 built 2026-10-26
+([`docs/evidence/arm3-01-pi-image-builder.md`](../evidence/arm3-01-pi-image-builder.md)).
+Validated on a Pi 4 only:
 there is no Pi 5 to test on (decided 2026-10-25), so the Pi 5 is recorded as
 not tested. The image keeps what the Pi 5 needs where it costs nothing (the
 kernel and the firmware's device trees boot both boards). GitHub: issues #12 to #17
@@ -33,10 +36,18 @@ with the wizard's questions asked at first boot.
 
 1. **Script.** A new builder (for example `scripts/build-lyona-rpi-image.sh`),
    run on the aarch64 build host (A-3). It makes a disk image file with a FAT
-   boot partition and a root partition, unpacks Arch Linux ARM's Raspberry Pi
-   aarch64 root filesystem (its checksum and signature checked), and in a
-   chroot installs Lyona with `install.sh` for the recommended profile, as the
-   image postinstall does.
+   boot partition and a root partition, `pacstrap`s the dependency map's
+   `rpi-image` profile from Arch Linux ARM's signed repositories, and in a
+   chroot installs Lyona with `install.sh` for the full profile, as the
+   image postinstall does, as a temporary build user it then removes. The
+   per-user half of the install is left for the first boot (ARM3-02), from a
+   copy of the source at `/usr/local/src/lyona`.
+
+   Changed 2026-10-26: the plan first unpacked Arch Linux ARM's Pi tarball,
+   which is a moving `latest` file over HTTP, with only an MD5 and a
+   signature, and ships `linux-aarch64`, U-Boot and the default `alarm` and
+   `root` passwords, all of which the image would remove. It also named the
+   recommended profile, which installs no display manager.
 2. **Nothing personal in the image:** no user, no SSH host keys, no
    machine-id, an empty pacman cache, the keyring initialised at first boot
    rather than shipped.

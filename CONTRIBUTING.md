@@ -99,6 +99,7 @@ submitting a pull request.
 | Documentation | `mdbook build docs` |
 | Installer or package mapping | `scripts/run-tests make check-arch-packages` on Arch |
 | Arch archiso | `scripts/run-tests make check-archiso` plus all evidence required by [SPEC.md Section 9.4](SPEC.md#94-arch-image-validation) |
+| Raspberry Pi image | `scripts/run-tests make check-rpi-image`, a build on an aarch64 Arch Linux ARM host, and its evidence |
 | Release automation | `scripts/run-tests make release-check` and a dry run of the release helper |
 
 Arch package, VM, and X11 checks require their documented host tools. If a

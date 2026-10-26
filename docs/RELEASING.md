@@ -238,6 +238,32 @@ it reached a working desktop on three virtual machine configurations on GB10
 (`docs/evidence/arm2-05-generic-image.md`); UTM, Parallels and real hardware
 are untested.
 
+### The Raspberry Pi image (experimental)
+
+ARM Sprint 3 (`docs/sprints/ARM-SPRINT-3-RASPBERRY-PI.md`) adds a ready-to-write
+image for the Raspberry Pi 4 and Pi 5, one image for both (A-5). A Pi has no
+installer: the image is the installed system, without a user. It is not
+released, does not boot to a desktop until the first-boot wizard (ARM3-02)
+exists, and has not been tried on a Pi. It builds natively on an aarch64 Arch
+Linux ARM host as root, for example in the privileged `lyona-archlinuxarm`
+container on GB10:
+
+```sh
+sudo scripts/build-lyona-rpi-image.sh --output release/
+```
+
+The builder needs `arch-install-scripts`, `rsync`, `util-linux`, `e2fsprogs`
+(1.47 or later, for `mkfs.ext4 -d`), `dosfstools`, `mtools`, `xz` and `git`,
+and network access. It produces `lyona-VERSION-rpi-aarch64.img.xz` and its
+`.sha256`. It `pacstrap`s the dependency map's `rpi-image` profile (the
+Raspberry Pi kernel `linux-rpi`, its firmware and device trees) into a
+directory, runs `install.sh --profile full` there as a temporary build user,
+then removes that user and everything personal, and makes the MBR disk image
+(a 512 MiB FAT32 boot partition and an ext4 root just large enough) from the
+directory, with no loop device. `--check-root DIR` checks a root filesystem
+the way the builder does before it makes the image.
+`docs/evidence/arm3-01-pi-image-builder.md` records a build.
+
 ### Signed releases
 
 The release workflow signs what users install, the ISO and the source archive,
