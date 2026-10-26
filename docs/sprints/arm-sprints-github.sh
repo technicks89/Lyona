@@ -2,8 +2,9 @@
 # Create the Lyona on ARM sprints on GitHub: one milestone per scheduled sprint
 # and one issue per sprint item, each in its milestone and labelled arm64.
 # Optionally also a GitHub Projects (v2) board with a "Sprint" field. The
-# project's index is docs/sprints/ARM64.md; ARM-4 (GB10) and ARM5-05 (N1X)
-# are deferred and not listed here.
+# project's index is docs/sprints/ARM64.md. ARM-4 (GB10) and ARM5-05 (N1X)
+# are deferred: tracked here since 2026-10-26, with the deferred label, a
+# milestone with no due date, and nothing scheduled.
 #
 # Requires: github-cli (`sudo pacman -S github-cli`), then `gh auth login`.
 # Projects also need the project scope: `gh auth refresh -s project`.
@@ -46,7 +47,7 @@ while (($#)); do
 		shift
 		;;
 	-h | --help)
-		sed -n '2,22p' "$0"
+		sed -n '2,23p' "$0"
 		exit 0
 		;;
 	*)
@@ -69,21 +70,24 @@ gh auth status >/dev/null 2>&1 || {
 owner=${repo%%/*}
 blob="https://github.com/$repo/blob/main/docs/sprints"
 label=arm64
+deferred_label=deferred
 
 run() {
 	if ((dry_run)); then printf 'DRY: %s\n' "$*"; else "$@"; fi
 }
 
-# Sprint number | order (sets the due date) | title | plan document.
+# Sprint number | order (sets the due date; - for none) | title | plan document.
 # ARM-2 and ARM-3 run side by side after ARM-1, so they share a due date.
+# ARM-4 is deferred, so it has none.
 sprints=(
 	"1|1|ARM Sprint 1 - Foundation|ARM-SPRINT-1-FOUNDATION.md"
 	"2|2|ARM Sprint 2 - Generic aarch64 image|ARM-SPRINT-2-GENERIC-IMAGE.md"
 	"3|2|ARM Sprint 3 - Raspberry Pi 4 and 5|ARM-SPRINT-3-RASPBERRY-PI.md"
+	"4|-|ARM Sprint 4 - NVIDIA GB10 (deferred)|ARM-SPRINT-4-NVIDIA-GB10.md"
 	"5|3|ARM Sprint 5 - Release and support contract|ARM-SPRINT-5-RELEASE-AND-N1X.md"
 )
 
-# Sprint | item id | heading anchor | title
+# Sprint | item id | heading anchor | title | deferred (optional)
 items=(
 	"1|ARM1-01|arm1-01-the-support-contract-and-the-identity|The support contract and the identity (A-1)"
 	"1|ARM1-02|arm1-02-the-dependency-map-on-aarch64|The dependency map on aarch64"
@@ -102,27 +106,41 @@ items=(
 	"3|ARM3-04|arm3-04-the-desktop-on-v3d|The desktop on v3d"
 	"3|ARM3-05|arm3-05-settings-on-a-pi|Settings on a Pi"
 	"3|ARM3-06|arm3-06-validate-on-a-real-pi-4|Validate on a real Pi 4"
+	"4|ARM4-01|arm4-01-where-the-kernel-and-driver-come-from|Where the GB10 kernel and driver come from (A-6)|deferred"
+	"4|ARM4-02|arm4-02-detect-gb10-and-offer-its-driver|Detect GB10 and offer its driver (A-7)|deferred"
+	"4|ARM4-03|arm4-03-install-the-kernel-boot-arguments-and-driver|Install the GB10 kernel, boot arguments and driver|deferred"
+	"4|ARM4-04|arm4-04-the-desktop-on-nvidia-aarch64|The desktop on NVIDIA aarch64|deferred"
+	"4|ARM4-05|arm4-05-validate-on-gb10-hardware|Validate on GB10 hardware|deferred"
 	"5|ARM5-01|arm5-01-the-release-workflow-for-arm-images|The release workflow for ARM images"
 	"5|ARM5-02|arm5-02-updates-on-aarch64|Updates on aarch64"
 	"5|ARM5-03|arm5-03-the-support-contract-per-target|The support contract per target"
 	"5|ARM5-04|arm5-04-user-documentation|ARM user documentation"
+	"5|ARM5-05|arm5-05-the-n1x-watch-item|The N1X watch item (A-8)|deferred"
 )
 
 run gh label create "$label" --repo "$repo" --color 0e8a16 \
 	--description "Lyona on ARM (aarch64): docs/sprints/ARM64.md" 2>/dev/null || true
+run gh label create "$deferred_label" --repo "$repo" --color cfd3d7 \
+	--description "Planned, not scheduled: picked up later" 2>/dev/null || true
 
 declare -A milestone_title milestone_doc
 for sprint in "${sprints[@]}"; do
 	IFS='|' read -r n order title doc <<<"$sprint"
 	milestone_title[$n]=$title
 	milestone_doc[$n]=$doc
-	due=$(date -u -d "$start + $((order * days)) days" +%Y-%m-%dT23:59:59Z)
 	exists=$(gh api "repos/$repo/milestones?state=all&per_page=100" \
 		--jq ".[] | select(.title == \"$title\") | .number")
 	if [[ -n $exists ]]; then
 		printf 'milestone exists: %s\n' "$title"
 		continue
 	fi
+	if [[ $order == - ]]; then
+		run gh api "repos/$repo/milestones" -X POST -f title="$title" \
+			-f description="Deferred, not scheduled. Plan: $blob/$doc" >/dev/null
+		printf 'milestone: %s (no due date)\n' "$title"
+		continue
+	fi
+	due=$(date -u -d "$start + $((order * days)) days" +%Y-%m-%dT23:59:59Z)
 	run gh api "repos/$repo/milestones" -X POST -f title="$title" -f due_on="$due" \
 		-f description="Plan: $blob/$doc" >/dev/null
 	printf 'milestone: %s (due %s)\n' "$title" "${due%%T*}"
@@ -140,7 +158,7 @@ if ((with_project)); then
 			project_number=$(gh project create --owner "$owner" --title "$project_title" \
 				--format json --jq .number)
 			gh project field-create "$project_number" --owner "$owner" --name Sprint \
-				--data-type SINGLE_SELECT --single-select-options "ARM-1,ARM-2,ARM-3,ARM-5" >/dev/null
+				--data-type SINGLE_SELECT --single-select-options "ARM-1,ARM-2,ARM-3,ARM-4,ARM-5" >/dev/null
 			gh project link "$project_number" --owner "$owner" --repo "$repo" >/dev/null || true
 		fi
 	fi
@@ -148,22 +166,28 @@ if ((with_project)); then
 fi
 
 for item in "${items[@]}"; do
-	IFS='|' read -r n id anchor title <<<"$item"
+	IFS='|' read -r n id anchor title deferred <<<"$item"
 	full_title="[$id] $title"
+	labels=$label
+	note=
+	if [[ $deferred == deferred ]]; then
+		labels="$label,$deferred_label"
+		note='**Deferred** (2026-10-11): planned, not scheduled. Tracked here so it is visible; work starts only when it is picked up (`ARM64.md`).\n\n'
+	fi
 	existing=$(gh issue list --repo "$repo" --state all --limit 200 \
 		--search "\"[$id]\" in:title" --json number,title,milestone \
 		--jq ".[] | select(.title == \"$full_title\") | \"\(.number) \(.milestone.title // \"\")\"")
 	if [[ -n $existing ]]; then
 		number=${existing%% *}
 		printf 'issue exists: #%s %s\n' "$number" "$full_title"
-		run gh issue edit "$number" --repo "$repo" --add-label "$label" >/dev/null
+		run gh issue edit "$number" --repo "$repo" --add-label "$labels" >/dev/null
 		if [[ ${existing#* } != "${milestone_title[$n]}" ]]; then
 			run gh issue edit "$number" --repo "$repo" --milestone "${milestone_title[$n]}" >/dev/null
 			printf '  milestone set: %s\n' "${milestone_title[$n]}"
 		fi
 		url="https://github.com/$repo/issues/$number"
 	else
-		body=$(printf '%s\n\n**Plan:** [%s %s](%s/%s#%s)\n\nPart of **%s**. Index: [ARM64.md](%s/ARM64.md).\n\nDone when the plan section'"'"'s acceptance passes and `CHANGELOG.md` and `docs/evidence/` are updated in the same PR, with what was not tested said plainly.\n' \
+		body=$(printf '%s\n\n'"$note"'**Plan:** [%s %s](%s/%s#%s)\n\nPart of **%s**. Index: [ARM64.md](%s/ARM64.md).\n\nDone when the plan section'"'"'s acceptance passes and `CHANGELOG.md` and `docs/evidence/` are updated in the same PR, with what was not tested said plainly.\n' \
 			"$title" "${milestone_doc[$n]}" "$id" "$blob" "${milestone_doc[$n]}" "$anchor" \
 			"${milestone_title[$n]}" "$blob")
 		if ((dry_run)); then
@@ -171,7 +195,7 @@ for item in "${items[@]}"; do
 			continue
 		fi
 		url=$(gh issue create --repo "$repo" --title "$full_title" --body "$body" \
-			--label "$label" --milestone "${milestone_title[$n]}")
+			--label "$labels" --milestone "${milestone_title[$n]}")
 		printf 'issue: %s %s\n' "$url" "$full_title"
 	fi
 	if [[ -n $project_number ]] && ((!dry_run)); then
@@ -181,6 +205,12 @@ for item in "${items[@]}"; do
 		field_json=$(gh project field-list "$project_number" --owner "$owner" --format json)
 		field_id=$(jq -r '.fields[] | select(.name == "Sprint") | .id' <<<"$field_json")
 		option_id=$(jq -r ".fields[] | select(.name == \"Sprint\") | .options[] | select(.name == \"ARM-$n\") | .id" <<<"$field_json")
+		if [[ -z $option_id ]]; then
+			# A board made before ARM-4 was tracked lacks its option; add it in
+			# the board's field settings, then re-run.
+			printf '  board: no Sprint option "ARM-%s"; add it and re-run\n' "$n" >&2
+			continue
+		fi
 		gh project item-edit --id "$item_id" --project-id "$project_id" \
 			--field-id "$field_id" --single-select-option-id "$option_id" >/dev/null
 	fi

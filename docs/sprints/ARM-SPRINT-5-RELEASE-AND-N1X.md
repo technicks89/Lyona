@@ -2,7 +2,8 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 and ARM-3.
 
-**Status:** planned 2026-10-11. Not started. GitHub: issues #18 to #21
+**Status:** planned 2026-10-11. Not started. GitHub: issues #18 to #21, and
+#62 for the deferred ARM5-05
 (label `arm64`); milestone "ARM Sprint 5 - Release and support contract", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
@@ -72,7 +73,8 @@ the evidence on file.
 
 ## ARM5-05: The N1X watch item
 
-Deferred (2026-10-11) with GB10; not tracked on GitHub until it is picked up.
+Deferred (2026-10-11) with GB10. Tracked on GitHub since 2026-10-26 (#62,
+label `deferred`), not scheduled.
 
 1. **Write down the gate (A-8)** in `ARM64.md`: work starts when NVIDIA's
    Linux driver lists N1X device IDs and a laptop is available to test.

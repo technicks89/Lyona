@@ -3,8 +3,14 @@
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-2.
 
 **Status:** planned 2026-10-11. **Deferred (2026-10-11):** the project's
-scope for now is the generic image and the Raspberry Pi. Not scheduled and not
-tracked on GitHub. Needs GB10 hardware when it is picked up.
+scope for now is the generic image and the Raspberry Pi. Not scheduled; kept
+deferred on 2026-10-26, when the Pi was put first. Needs GB10 hardware when it
+is picked up: a GB10 that boots Arch. The DGX Spark that builds the images
+runs DGX OS, so how to boot it into Arch (another disk, say) is decided then.
+GitHub (since 2026-10-26): issues
+#57 to #61 (labels `arm64`, `deferred`); milestone "ARM Sprint 4 - NVIDIA GB10
+(deferred)", with no due date, created by
+[`arm-sprints-github.sh`](arm-sprints-github.sh).
 
 **Goal:** the generic image (ARM-2) detects a GB10 system and offers its
 kernel and NVIDIA driver, recommended, as the x86_64 image offers

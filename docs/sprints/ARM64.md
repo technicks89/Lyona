@@ -9,7 +9,8 @@ the two are independent.
 **Status:** planned 2026-10-11 at the maintainer's request. **Scope for now
 (decided 2026-10-11): the generic image and the Raspberry Pi**, through
 ARM-1, ARM-2, ARM-3 and ARM-5. GB10 (ARM-4) and N1X are deferred: their
-plans stay here, but they are not scheduled or tracked on GitHub. ARM-1 is
+plans stay here, but they are not scheduled (on GitHub since 2026-10-26,
+marked deferred). ARM-1 is
 done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31).
 ARM-2 is done: ARM2-01 to ARM2-05 merged 2026-10-22 to 2026-10-25 (#44 to
 #54). Nothing
@@ -155,8 +156,10 @@ ARM2-01's spike and ARM2-05's QEMU/KVM machine.
 
 ## GitHub
 
-Each scheduled sprint (ARM-1, ARM-2, ARM-3, ARM-5) is a milestone and each of
-its items an issue, labelled `arm64`. The issues were created 2026-10-11 in technicks89/Lyona and moved here;
+Each sprint is a milestone and each of its items an issue, labelled `arm64`. The issues were created 2026-10-11 in technicks89/Lyona and moved here;
 [`arm-sprints-github.sh`](arm-sprints-github.sh) creates the milestones and
 the "Lyona on ARM" project board, and puts each issue in its milestone.
-ARM-4 and ARM5-05 are not on GitHub while they are deferred.
+ARM-4 and ARM5-05 are deferred but tracked, so they are visible on the
+board: created 2026-10-26 with the `deferred` label (#57 to #62), ARM-4's
+milestone with no due date and the board's Sprint option "ARM-4". Picking
+one up removes its `deferred` label and gives ARM-4's milestone a due date.
