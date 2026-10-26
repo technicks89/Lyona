@@ -4,7 +4,12 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 
 **Status:** planned 2026-10-11. A-5 decided 2026-10-26 (one image,
 `linux-rpi`). ARM3-01 built 2026-10-26
-([`docs/evidence/arm3-01-pi-image-builder.md`](../evidence/arm3-01-pi-image-builder.md)).
+([`docs/evidence/arm3-01-pi-image-builder.md`](../evidence/arm3-01-pi-image-builder.md)),
+and ARM3-02 on the same branch
+([`docs/evidence/arm3-02-pi-first-boot.md`](../evidence/arm3-02-pi-first-boot.md)):
+the image's first boot reached the desktop in a KVM virtual machine, not yet
+on a Pi. ARM3-02 also gave the image `quiet loglevel=3` and the root by
+PARTUUID in `cmdline.txt`, which are ARM3-03's file.
 Validated on a Pi 4 only:
 there is no Pi 5 to test on (decided 2026-10-25), so the Pi 5 is recorded as
 not tested. The image keeps what the Pi 5 needs where it costs nothing (the
@@ -66,7 +71,9 @@ the static checks.
 1. **Reuse** the image wizard's questions and UI (`lyona-ui.sh`): keymap,
    user and password, hostname, timezone (opt-in lookup), locale, and Wi-Fi
    when there is no Ethernet (`lyona-wifi.sh`). No disk or filesystem
-   question: the system is already on its disk.
+   question: the system is already on its disk. (Built 2026-10-26: the
+   locale is en_US.UTF-8, as on the install medium, which does not ask; Wi-Fi
+   goes through NetworkManager, which the Pi runs, not iwd.)
 2. **First boot:** grow the root partition and filesystem to the card or
    drive, generate the machine-id and SSH host keys, initialise the pacman
    keyring, then the wizard on the console, then LightDM.

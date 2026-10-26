@@ -60,7 +60,8 @@ an untested package or installation path.
   `archiso-aarch64/` is what the experimental aarch64 medium changes
   (`--arch aarch64`, ARM Sprint 2).
 - `scripts/build-lyona-rpi-image.sh`: the experimental Raspberry Pi image
-  builder (ARM Sprint 3), checked by `make check-rpi-image`.
+  builder (ARM Sprint 3), and `rpi/`, the image's first boot (its wizard, unit
+  and LightDM drop-in); both checked by `make check-rpi-image`.
 - `dwm.desktop`: display-manager X session entry.
 - `lightdm/`: the LightDM and slick-greeter configuration the installer
   deploys.

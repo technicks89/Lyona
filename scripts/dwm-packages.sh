@@ -191,9 +191,12 @@ dwm_packages() {
 		# on x86_64.
 		# - archlinuxarm-keyring: the keys pacman trusts, initialised at first
 		#   boot, never shipped (ARM3-02);
-		# - sudo: install.sh runs as a user with sudo.
+		# - sudo: install.sh runs as a user with sudo;
+		# - gum: the first-boot wizard's screens, as on the install medium;
+		# - zram-generator: compressed swap in memory, which archinstall sets up
+		#   on the install medium (swap on an SD card would wear it).
 		dwm_aarch64_only base linux-rpi raspberrypi-bootloader firmware-raspberrypi \
-			archlinuxarm-keyring sudo
+			archlinuxarm-keyring sudo gum zram-generator
 		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): a GPU driver, NetworkManager

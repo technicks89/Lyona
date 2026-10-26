@@ -803,11 +803,11 @@ check-shell:
 		echo "check-shell: skipped: shellcheck is not packaged for $$(uname -m); the x86_64 job runs it"; \
 		exit 0; \
 	fi; \
-	echo shellcheck install.sh ${SHELL_SCRIPTS} tests/*.sh; \
-	shellcheck install.sh ${SHELL_SCRIPTS} tests/*.sh
+	echo shellcheck install.sh ${SHELL_SCRIPTS} rpi/*.sh tests/*.sh; \
+	shellcheck install.sh ${SHELL_SCRIPTS} rpi/*.sh tests/*.sh
 
 check-format:
-	shfmt -d install.sh ${SHELL_SCRIPTS} tests/*.sh
+	shfmt -d install.sh ${SHELL_SCRIPTS} rpi/*.sh tests/*.sh
 
 check-session-guards:
 	tests/test-autostart.sh
@@ -1382,9 +1382,11 @@ check-lightdm-config: ${TOML_TOOL}
 check-archiso:
 	tests/test-arch-iso-builder.sh
 
-# The Raspberry Pi image builder, statically (ARM3-01).
+# The Raspberry Pi image builder, statically (ARM3-01), and its first boot,
+# stubbed (ARM3-02).
 check-rpi-image:
 	tests/test-rpi-image-builder.sh
+	tests/test-rpi-firstboot.sh
 
 check-arch-platform:
 	@$(call run_managed_test,tests/test-arch-platform.sh)

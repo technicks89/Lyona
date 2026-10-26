@@ -33,7 +33,7 @@ rpi_profile() { # ARCH
 	ARCH=$1 bash -c '. "$0"; dwm_packages arch rpi-image' "$repo/scripts/dwm-packages.sh" | sort
 }
 aarch64_packages=$(rpi_profile aarch64)
-for package in base linux-rpi raspberrypi-bootloader firmware-raspberrypi archlinuxarm-keyring sudo; do
+for package in base linux-rpi raspberrypi-bootloader firmware-raspberrypi archlinuxarm-keyring sudo gum zram-generator; do
 	grep -Fqx "$package" <<<"$aarch64_packages" || fail "the rpi-image profile lacks $package on aarch64."
 done
 for package in linux-aarch64 uboot-raspberrypi linux-rpi-16k; do
@@ -115,7 +115,7 @@ make_root() { # DIR
 	printf '#!/bin/sh\n' >"$root/usr/local/src/lyona/install.sh"
 	chmod +x "$root/usr/local/bin/dwm" "$root/usr/local/src/lyona/install.sh"
 	: >"$root/boot/kernel8.img"
-	printf 'root=PARTUUID=1a2b3c4d-02 rw rootwait console=serial0,115200 console=tty1 fsck.repair=yes\n' \
+	printf 'root=PARTUUID=1a2b3c4d-02 rw rootwait console=serial0,115200 console=tty1 fsck.repair=yes quiet loglevel=3\n' \
 		>"$root/boot/cmdline.txt"
 	printf '%%wheel ALL=(ALL:ALL) ALL\n' >"$root/etc/sudoers.d/10-wheel"
 	mkdir -p "$root/etc/systemd/system/multi-user.target.wants"
@@ -123,6 +123,20 @@ make_root() { # DIR
 		"$root/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 	ln -s /usr/lib/systemd/system/lightdm.service "$root/etc/systemd/system/display-manager.service"
 	ln -s /usr/lib/systemd/system/graphical.target "$root/etc/systemd/system/default.target"
+	mkdir -p "$root/usr/local/libexec/lyona" "$root/usr/local/lib/lyona" "$root/usr/bin" \
+		"$root/etc/systemd/system/lightdm.service.d"
+	printf '#!/bin/sh\n' >"$root/usr/local/libexec/lyona/lyona-firstboot"
+	printf '#!/bin/sh\n' >"$root/usr/bin/gum"
+	chmod +x "$root/usr/local/libexec/lyona/lyona-firstboot" "$root/usr/bin/gum"
+	ln -s /etc/systemd/system/lyona-firstboot.service \
+		"$root/etc/systemd/system/multi-user.target.wants/lyona-firstboot.service"
+	cp "$repo/rpi/lightdm-after-firstboot.conf" "$root/etc/systemd/system/lightdm.service.d/lyona-firstboot.conf"
+	printf 'lyona_console_colors() { :; }\n' >"$root/usr/local/lib/lyona/firstboot-console.sh"
+	printf 'LANG=en_US.UTF-8\n' >"$root/etc/locale.conf"
+	ln -s /dev/null "$root/etc/systemd/system/systemd-firstboot.service"
+	mkdir -p "$root/etc/systemd/system-preset"
+	printf '%s\n' '# comment' 'enable NetworkManager.service' 'enable lightdm.service' \
+		'enable lyona-firstboot.service' 'disable *' >"$root/etc/systemd/system-preset/10-lyona-image.preset"
 }
 check() { "$builder" --check-root "$1" 2>&1; }
 
@@ -188,6 +202,23 @@ personal_case 'LightDM is not the display manager' \
 	ln -sfn /usr/lib/systemd/system/gdm.service etc/systemd/system/display-manager.service
 personal_case 'the default target is not graphical.target' \
 	ln -sfn /usr/lib/systemd/system/multi-user.target etc/systemd/system/default.target
+personal_case 'no first-boot wizard' rm usr/local/libexec/lyona/lyona-firstboot
+personal_case 'the first boot is not enabled' \
+	rm etc/systemd/system/multi-user.target.wants/lyona-firstboot.service
+personal_case 'LightDM does not wait for the first boot' \
+	rm etc/systemd/system/lightdm.service.d/lyona-firstboot.conf
+personal_case 'the first boot is marked done' \
+	sh -c 'mkdir -p var/lib/lyona && touch var/lib/lyona/firstboot-done'
+personal_case 'no gum for the first-boot wizard' rm usr/bin/gum
+personal_case 'systemd-firstboot is not masked' rm etc/systemd/system/systemd-firstboot.service
+personal_case "no preset of the image's own" rm etc/systemd/system-preset/10-lyona-image.preset
+personal_case "the image's preset does not enable lightdm.service" \
+	sed -i '/lightdm/d' etc/systemd/system-preset/10-lyona-image.preset
+personal_case "the image's preset does not end with disable *" \
+	sed -i '/^disable/d' etc/systemd/system-preset/10-lyona-image.preset
+personal_case '/boot/cmdline.txt does not boot quiet' sed -i 's/ quiet loglevel=3//' boot/cmdline.txt
+personal_case 'no first-boot console palette' rm usr/local/lib/lyona/firstboot-console.sh
+personal_case 'the locale is not en_US.UTF-8' sh -c 'echo LANG=C >etc/locale.conf'
 out=$(check "$work/nowhere") && fail "a missing directory passed the check."
 grep -Fq 'not a root filesystem' <<<"$out" || fail "a missing directory: $out"
 

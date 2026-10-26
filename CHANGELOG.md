@@ -44,9 +44,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   Pi 4 and the Pi 5, on the Raspberry Pi kernel (`linux-rpi`), which the Pi
   firmware boots directly. The image has lyona installed (the full profile)
   but no user, machine-id, SSH host keys, pacman keyring or package cache,
-  and `--check-root` checks that. It does not boot to a desktop yet: the
-  first-boot wizard that creates the user and finishes the install is ARM3-02,
-  and it has not been tried on a Pi. `docs/RELEASING.md` says how to build it
+  and `--check-root` checks that.
+- The Raspberry Pi image's first boot (ARM3-02), still experimental: on tty1,
+  before the login screen, it grows the root partition to the card, makes
+  the machine's own pacman keyring and SSH host keys, and asks the install
+  medium's questions (keyboard, Wi-Fi through NetworkManager when there is no
+  network, user and password, hostname, timezone). It then creates the user
+  as an administrator and installs lyona's per-user part for them: the
+  prompt, the user folders, the wallpapers and `make install-user`. The login
+  screen comes up when it is done. An interrupted first boot starts again at
+  the next one, removing the user it had created. It reached lyona's desktop
+  in a KVM virtual machine on GB10, which found and fixed six faults
+  (`docs/evidence/arm3-02-pi-first-boot.md`); it has not been tried on a Pi.
+  `docs/RELEASING.md` says how to build the image
   (`docs/evidence/arm3-01-pi-image-builder.md`).
 
 ### Changed

@@ -18,8 +18,10 @@ under emulation (ARM64.md A-3):
      from Arch Linux ARM's signed repositories into a directory;
   2. run install.sh --profile full in a chroot, as a temporary build user
      with passwordless sudo, as the install medium's postinstall does;
-  3. remove the build user and everything personal: no user, no machine-id,
-     no SSH host keys, no pacman keyring, an empty package cache;
+  3. add the first boot (rpi/), which creates the user and finishes the
+     install for it (ARM3-02), then remove the build user and everything
+     personal: no user, no machine-id, no SSH host keys, no pacman keyring,
+     an empty package cache;
   4. make the FAT boot partition and the ext4 root partition from that
      directory (mtools, mkfs.ext4 -d: no loop device or mount), and join
      them in an MBR disk image, compressed with xz, with its SHA-256.
@@ -141,6 +143,31 @@ check_root() {
 		problem "LightDM is not the display manager"
 	[[ $(readlink "$root/etc/systemd/system/default.target" 2>/dev/null) == */graphical.target ]] ||
 		problem "the default target is not graphical.target"
+	# The first boot (ARM3-02), not yet run: its wizard, enabled, with LightDM
+	# waiting for it, and what it needs.
+	[[ -x $root/usr/local/libexec/lyona/lyona-firstboot ]] || problem "no first-boot wizard"
+	[[ -L $root/etc/systemd/system/multi-user.target.wants/lyona-firstboot.service ]] ||
+		problem "the first boot is not enabled"
+	grep -qsx 'ConditionPathExists=/var/lib/lyona/firstboot-done' \
+		"$root/etc/systemd/system/lightdm.service.d/lyona-firstboot.conf" ||
+		problem "LightDM does not wait for the first boot"
+	[[ ! -e $root/var/lib/lyona/firstboot-done ]] || problem "the first boot is marked done"
+	[[ -x $root/usr/bin/gum ]] || problem "no gum for the first-boot wizard"
+	[[ $(readlink "$root/etc/systemd/system/systemd-firstboot.service" 2>/dev/null) == /dev/null ]] ||
+		problem "systemd-firstboot is not masked"
+	file=$root/etc/systemd/system-preset/10-lyona-image.preset
+	if [[ -f $file ]]; then
+		for entry in lightdm.service NetworkManager.service lyona-firstboot.service; do
+			grep -qx "enable $entry" "$file" || problem "the image's preset does not enable $entry"
+		done
+		[[ $(grep -v '^#' "$file" | tail -n 1) == 'disable *' ]] ||
+			problem "the image's preset does not end with disable *"
+	else
+		problem "no preset of the image's own: systemd's first boot would change its units"
+	fi
+	grep -qsw quiet "$root/boot/cmdline.txt" || problem "/boot/cmdline.txt does not boot quiet"
+	[[ -s $root/usr/local/lib/lyona/firstboot-console.sh ]] || problem "no first-boot console palette"
+	grep -qsx 'LANG=en_US.UTF-8' "$root/etc/locale.conf" || problem "the locale is not en_US.UTF-8"
 	# The Pi kernel the firmware boots, and the root it is given.
 	[[ -f $root/boot/kernel8.img ]] || problem "no /boot/kernel8.img (linux-rpi)"
 	if [[ -f $root/boot/cmdline.txt ]]; then
@@ -313,11 +340,26 @@ cmdline=$root/boot/cmdline.txt
 	err "linux-rpi's cmdline.txt has no root=/dev/mmcblk0p2 to replace; its format changed."
 	exit 1
 }
-sed -i "s|root=/dev/mmcblk0p2|root=PARTUUID=$disk_id-02|" "$cmdline"
+# quiet loglevel=3, as the install medium boots: the kernel's messages,
+# audit's among them, otherwise print over the first-boot wizard on tty1.
+sed -i -e "s|root=/dev/mmcblk0p2|root=PARTUUID=$disk_id-02|" -e 's|$| quiet loglevel=3|' "$cmdline"
 cat >>"$root/etc/fstab" <<EOF
 PARTUUID=$disk_id-02	/	ext4	rw,relatime	0 1
 PARTUUID=$disk_id-01	/boot	vfat	rw,relatime,fmask=0022,dmask=0022	0 2
 EOF
+
+# The install medium's locale and swap (archinstall's en_US.UTF-8 and zram
+# with zstd); the keyboard and timezone are the first boot's questions.
+info "Setting the locale and swap..."
+sed -i 's/^#\(en_US\.UTF-8 UTF-8\)/\1/' "$root/etc/locale.gen"
+# glibc's lines end in spaces.
+grep -Eq '^en_US\.UTF-8 UTF-8[[:space:]]*$' "$root/etc/locale.gen" || {
+	err "/etc/locale.gen has no en_US.UTF-8 line to enable; its format changed."
+	exit 1
+}
+arch-chroot "$root" locale-gen
+printf 'LANG=en_US.UTF-8\n' >"$root/etc/locale.conf"
+printf '[zram0]\ncompression-algorithm = zstd\n' >"$root/etc/systemd/zram-generator.conf"
 
 info "Copying this checkout to /usr/local/src/lyona..."
 # The source the first boot finishes the install from, as the new user
@@ -420,6 +462,49 @@ if arch-chroot "$root" systemctl -q list-unit-files bluetooth.service >/dev/null
 	arch-chroot "$root" systemctl enable bluetooth.service
 fi
 arch-chroot "$root" systemctl set-default graphical.target
+
+# The first boot (ARM3-02): its wizard on tty1, then LightDM, which waits for
+# it. The console in the boot splash's palette, as on the install medium.
+info "Adding the first boot..."
+install -Dm755 "$repo_dir/rpi/lyona-firstboot.sh" "$root/usr/local/libexec/lyona/lyona-firstboot"
+install -Dm644 "$repo_dir/rpi/lyona-firstboot.service" "$root/etc/systemd/system/lyona-firstboot.service"
+install -Dm644 "$repo_dir/rpi/lightdm-after-firstboot.conf" \
+	"$root/etc/systemd/system/lightdm.service.d/lyona-firstboot.conf"
+install -d -m 0755 "$root/usr/local/lib/lyona"
+"$repo_dir/scripts/lyona-console-theme" generate tokyonight "$repo_dir/config/themes.toml" \
+	"$root/usr/local/lib/lyona/firstboot-console.sh"
+chmod 644 "$root/usr/local/lib/lyona/firstboot-console.sh"
+arch-chroot "$root" systemctl enable lyona-firstboot.service
+# systemd's own first-boot questions (timezone, root password and more) on the
+# console before lyona's, because the machine-id is uninitialized: masked, as
+# the wizard asks them (found booting the image, ARM3-02).
+arch-chroot "$root" systemctl mask systemd-firstboot.service
+
+# The machine-id is uninitialized, so the first boot is systemd's first boot
+# too, where it applies the presets to every unit (preset-all): Arch's end in
+# "disable *", which disabled LightDM, Bluetooth and power profiles, and its own
+# enable systemd-networkd and systemd-homed (found booting the image,
+# ARM3-02). A preset of the image's own, read first, says what this build
+# enabled and nothing else, so the presets keep the image as it was built.
+info "Recording the enabled units as the image's preset..."
+image_preset=$root/etc/systemd/system-preset/10-lyona-image.preset
+install -d -m 0755 "${image_preset%/*}"
+{
+	printf '# The units the lyona Raspberry Pi image enables (build-lyona-rpi-image.sh),
+'
+	printf "# so systemd's first-boot presets keep them, and enable nothing else.
+"
+	arch-chroot "$root" systemctl list-unit-files --state=enabled --no-legend --no-pager |
+		awk '{ print "enable " $1 }' | LC_ALL=C sort -u
+	printf 'disable *
+'
+} >"$image_preset"
+for unit in lightdm.service NetworkManager.service lyona-firstboot.service; do
+	grep -qx "enable $unit" "$image_preset" || {
+		err "$unit is not enabled in the image's preset; the build went wrong."
+		exit 1
+	}
+done
 
 rm -f -- "$packagekit_mask"
 rmdir --ignore-fail-on-non-empty -- "$root/etc/pacman.d/hooks"

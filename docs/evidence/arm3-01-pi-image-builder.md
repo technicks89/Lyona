@@ -3,7 +3,9 @@
 ARM Sprint 3 item ARM3-01 (issue #12). Built 2026-10-26 on the GB10 (DGX
 Spark) build host of ARM Sprint 2. The acceptance is the builder producing an
 image whose root filesystem passes the static checks: it does. Booting it is
-not part of this item (see "Not tested").
+not part of this item (see "Not tested"). ARM3-02, on the same branch, added
+the first boot to the builder and booted the image
+(`arm3-02-pi-first-boot.md`): the build below is the one before it.
 
 ## Decisions taken for it (2026-10-26)
 
