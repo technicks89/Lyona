@@ -62,10 +62,12 @@ script_dir=$(
 )
 # The verification, backup and runtime checks are shared with lyona-update, in
 # lyona-install-verify.sh (Sync Sprint 12 S12-13). This developer tool runs from
-# a checkout and is not installed, so the library is beside it.
+# a checkout and is not installed, so the library is beside it, as are the
+# libraries it sources.
+lyona_lib=$script_dir
 # shellcheck source=scripts/lyona-install-verify.sh
 LYONA_INSTALL_REPO_DIR=${script_dir%/*} \
-	. "$script_dir/lyona-install-verify.sh"
+	. "$lyona_lib/lyona-install-verify.sh"
 owner=$(id -un)
 
 prepare_expected_files

@@ -959,6 +959,9 @@ check-build-config:
 check-dev-sync-install:
 	tests/test-dev-sync-install.sh
 	tests/test-install-cleanup.sh
+	status=0; tests/test-install-verify-quickshell-restart.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
 
 check-terminal:
 	tests/test-dwm-terminal.sh
