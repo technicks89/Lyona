@@ -506,10 +506,14 @@ runtime_verify() {
 				# The helper restarts the shell from a copy in its own session
 				# and returns before that copy has stopped the old shell (#394),
 				# which still answers IPC. Wait for the instances it stops to be
-				# gone, so the checks below see the restarted shell (#460).
-				previous_quickshell=$(runtime_quickshell \
-					quickshell_session_identities "$quickshell_dir/shell.qml" 2>/dev/null || true)
-				if ! "$control_helper" action restart-quickshell; then
+				# gone, so the checks below see the restarted shell (#460). A
+				# listing that fails would make that wait pass at once, with the
+				# old shell still answering.
+				if ! previous_quickshell=$(runtime_quickshell \
+					quickshell_session_identities "$quickshell_dir/shell.qml" 2>/dev/null); then
+					printf 'Runtime error: could not list the running Quickshell.\n' >&2
+					runtime_failed=1
+				elif ! "$control_helper" action restart-quickshell; then
 					printf 'Runtime error: Quickshell restart failed.\n' >&2
 					runtime_failed=1
 				elif ! runtime_quickshell wait_for_quickshell_exit \

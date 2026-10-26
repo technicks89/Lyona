@@ -57,7 +57,9 @@ live() {
 	done <"$STUB_STATE/pids"
 }
 case $1 in
-list) live | jq -Rsc '[split("\n")[] | select(. != "") | {pid: tonumber}]' ;;
+list)
+	[ ! -e "$STUB_STATE/list-fails" ] || exit 1
+	live | jq -Rsc '[split("\n")[] | select(. != "") | {pid: tonumber}]' ;;
 ipc)
 	if [ "$2" = --pid ]; then
 		printf '%s\n' "$3" >>"$STUB_STATE/asked"
@@ -188,6 +190,19 @@ if runtime_check keep >"$output" 2>&1; then
 fi
 grep -Fq 'the previous Quickshell did not stop on restart' "$output" ||
 	fail "the shell that did not stop was not reported: $(cat "$output")"
+stop_all
+
+# A listing of the old shell that fails: reported, and no restart, since the
+# wait for the old shell would pass at once with it still answering.
+start_instance :7 c1 old
+: >"$state/list-fails"
+if runtime_check 1 >"$output" 2>&1; then
+	fail 'a failed listing of the old shell passed the check'
+fi
+rm -f "$state/list-fails"
+grep -Fq 'could not list the running Quickshell' "$output" ||
+	fail "the failed listing was not reported: $(cat "$output")"
+[ "$(grep -c . "$state/pids")" = 1 ] || fail 'the check restarted a shell it could not list'
 stop_all
 
 printf 'The runtime check waits for the restarted Quickshell: PASS\n'
