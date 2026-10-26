@@ -19,7 +19,7 @@ printf '%s\n' 'LYONA_VERSION=2026.10.0-beta.5' 'LYONA_COMMIT=fb7e28c' 'LYONA_SOU
 	'LYONA_PREFIX=/usr/local' 'LYONA_INSTALL_DATE=2026-10-08T00:00:00Z' >"$record"
 
 # shellcheck disable=SC2016 # expanded by the inner shell
-LYONA_INSTALL_REPO_DIR=$repo USER_HOME=$home HOME=$home PREFIX=$work/prefix \
+LYONA_INSTALL_REPO_DIR=$repo lyona_lib=$repo/scripts USER_HOME=$home HOME=$home PREFIX=$work/prefix \
 	MANPREFIX=$work/prefix/share/man XSESSIONSDIR=$work/xsessions DATADIR=$work/data \
 	XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share XDG_STATE_HOME=$home/.local/state \
 	LYONA_TEST_WORK=$work DWM_TEST_SYSTEM_RECORD=$record DWM_TEST_SYSTEM_OWNER="$(id -u)" \

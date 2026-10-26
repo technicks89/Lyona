@@ -146,15 +146,61 @@ quickshell_pid_env() {
 # number, and a shell that hung as its X server died (#448) was waited for at
 # every later login, which then had no panel.
 quickshell_session_identity_in() {
-	[ -n "${DISPLAY:-}" ] || return 1
 	for session_identity in $1; do
-		session_pid=${session_identity%%:*}
-		[ "$(quickshell_pid_env "$session_pid" DISPLAY)" = "$DISPLAY" ] || continue
-		[ -n "${XDG_SESSION_ID:-}" ] || return 0
-		session_of_pid=$(quickshell_pid_env "$session_pid" XDG_SESSION_ID)
-		[ -n "$session_of_pid" ] && [ "$session_of_pid" != "$XDG_SESSION_ID" ] || return 0
+		quickshell_identity_in_session "$session_identity" && return 0
 	done
 	return 1
+}
+
+# quickshell_identity_in_session IDENTITY: whether that instance is this
+# session's, as quickshell_session_identity_in decides it.
+quickshell_identity_in_session() {
+	[ -n "${DISPLAY:-}" ] || return 1
+	session_pid=${1%%:*}
+	[ "$(quickshell_pid_env "$session_pid" DISPLAY)" = "$DISPLAY" ] || return 1
+	[ -n "${XDG_SESSION_ID:-}" ] || return 0
+	session_of_pid=$(quickshell_pid_env "$session_pid" XDG_SESSION_ID)
+	[ -z "$session_of_pid" ] || [ "$session_of_pid" = "$XDG_SESSION_ID" ]
+}
+
+# quickshell_session_identities CONFIG: this session's managed instances, one
+# identity a line. Counted by identity, never by name: `pgrep -x quickshell`
+# also counts the quickshell command-line tool (ipc, list, kill) and other
+# sessions' shells (#460).
+quickshell_session_identities() {
+	session_identities=$(quickshell_instance_identities "$1") || return 1
+	for session_identity in $session_identities; do
+		quickshell_identity_in_session "$session_identity" || continue
+		printf '%s\n' "$session_identity"
+	done
+}
+
+# quickshell_stop_watching CONFIG: stop this session's managed shells when they
+# still watch their config files, started from a shell.qml older than #461,
+# and print their identities, for the caller to start one again once the new
+# config is in place. Such a shell hot-reloads a config replaced under it, and
+# Quickshell 0.3.2 crashes when a shell that has reloaded is stopped, as the
+# restart after an install or rollback does. A shell that does not watch them,
+# another session's, or any with no display to start one again on, is left.
+# Only the setting itself, at the start of its line, says a shell does not
+# watch: a commented-out copy does not. Fails when a shell would not stop,
+# still printing what it stopped.
+quickshell_stop_watching() {
+	config=$1
+	[ -n "${DISPLAY:-}" ] && [ -f "$config" ] || return 0
+	! grep -Eq '^[[:space:]]*Component\.onCompleted:[[:space:]]*Quickshell\.watchFiles[[:space:]]*=[[:space:]]*false' \
+		"$config" || return 0
+	watching=
+	for watching_identity in $(quickshell_instance_identities "$config" 2>/dev/null || true); do
+		! quickshell_session_identity_in "$watching_identity" ||
+			watching="$watching $watching_identity"
+	done
+	[ -n "$watching" ] || return 0
+	watching_stopped=0
+	stop_quickshell_identities "$watching" >/dev/null 2>&1 || watching_stopped=1
+	# shellcheck disable=SC2086 # one identity a line
+	printf '%s\n' $watching
+	return "$watching_stopped"
 }
 
 # Whether this session's managed instance is running, answering or not.

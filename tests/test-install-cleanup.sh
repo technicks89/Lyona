@@ -75,7 +75,7 @@ for chained in no yes; do
 		# The managed runner backgrounds its child; reset inherited ignored
 		# signals before exec so this fixture starts with normal dispositions.
 		# shellcheck disable=SC2016 # Variables expand in the child shell.
-		USER_HOME=$probe LYONA_INSTALL_REPO_DIR=$repo python3 -c '
+		USER_HOME=$probe LYONA_INSTALL_REPO_DIR=$repo lyona_lib=$repo/scripts python3 -c '
 import os, signal, sys
 for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
     signal.signal(sig, signal.SIG_DFL)
@@ -107,7 +107,7 @@ os.execvp(sys.argv[1], sys.argv[1:])
 done
 
 # A library must leave caller-owned (including ignored) signals intact.
-USER_HOME=$work LYONA_INSTALL_REPO_DIR=$repo bash --posix -c '
+USER_HOME=$work LYONA_INSTALL_REPO_DIR=$repo lyona_lib=$repo/scripts bash --posix -c '
 	set -eu
 	trap "exit 42" HUP
 	trap "" INT
@@ -137,7 +137,7 @@ for legacy in none scripts config both symlink; do
 	USER_HOME=$probe PREFIX=$probe/prefix DATADIR=$probe/system-data \
 		XSESSIONSDIR=$probe/xsessions XDG_DATA_HOME=$probe/data \
 		XDG_STATE_HOME=$probe/state XDG_CONFIG_HOME=$probe/config \
-		LYONA_INSTALL_REPO_DIR=$repo bash --posix -c '
+		LYONA_INSTALL_REPO_DIR=$repo lyona_lib=$repo/scripts bash --posix -c '
 		set -eu
 		probe=$1
 		. "$LYONA_INSTALL_REPO_DIR/scripts/lyona-install-verify.sh"
