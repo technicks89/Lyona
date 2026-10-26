@@ -1244,7 +1244,7 @@ cmd_rollback() {
 	[[ -d $backup_dir && ! -L $backup_dir ]] || die "backup not found: $backup_id"
 
 	local status_phase=restarting status_detail="Verifying backup $backup_id" status_target=$backup_id status_written=false status_quiet=false
-	local status_operation=rollback
+	local status_operation=rollback rollback_note=''
 	trap report_status_failure EXIT
 	start_operation_log rollback
 	write_status "$status_phase" "$status_detail" "$status_target" pending ''
@@ -1313,10 +1313,14 @@ cmd_rollback() {
 		restore_user_tree "$backup_dir/quickshell.tar" "$config_home/quickshell" ||
 			quickshell_restored=false
 		# Started again whether or not the restore worked, so a failed one does
-		# not leave the session without a shell.
+		# not leave the session without a shell. The Control Center is the
+		# restored release's by now: one before beta.7 has no start-quickshell,
+		# and its restart-quickshell starts a shell when none runs.
 		if [[ -n $stopped_quickshell ]] &&
-			! "$script_dir/dwm-quickshell-controlcenter" action start-quickshell >/dev/null 2>&1; then
-			warn "Quickshell did not start again; log out and back in to start it"
+			! "$script_dir/dwm-quickshell-controlcenter" action start-quickshell >/dev/null 2>&1 &&
+			! "$script_dir/dwm-quickshell-controlcenter" action restart-quickshell >/dev/null 2>&1; then
+			rollback_note='Quickshell did not start again; log out and back in to start it.'
+			warn "$rollback_note"
 		fi
 		[[ $quickshell_restored == true ]] ||
 			die "could not restore $config_home/quickshell from backup $backup_id"
@@ -1353,7 +1357,7 @@ cmd_rollback() {
 	fi
 
 	status_written=true
-	write_status restarting 'Rollback complete' "$status_target" succeeded ''
+	write_status restarting 'Rollback complete' "$status_target" succeeded "$rollback_note"
 	trap - EXIT
 	printf 'complete\trollback\t%s\n' "${restored_version:-unknown}"
 }

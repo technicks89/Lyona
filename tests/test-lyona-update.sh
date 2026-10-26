@@ -989,6 +989,35 @@ start_line=$(line_of 'action start-quickshell')
 die_line=$(line_of 'die "could not restore $config_home/quickshell')
 [ -n "$die_line" ] && [ "$start_line" -lt "$die_line" ] ||
 	fail 'a failed Quickshell restore stops the rollback before the shell is started again'
+# The Control Center that starts it is the restored release's: one before
+# beta.7 has only restart-quickshell, which starts a shell when none runs.
+# shellcheck disable=SC2016 # the helper's own source text
+sed -n '/if \[\[ -n \$stopped_quickshell \]\]/,/^\t\tfi$/p' "$work/rollback.sh" >"$work/rollback-start.sh"
+grep -Fq 'action restart-quickshell' "$work/rollback-start.sh" || fail 'the rollback start block was not found'
+mkdir -p "$work/old-cc"
+cat >"$work/old-cc/dwm-quickshell-controlcenter" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$2" >>"$CC_LOG"
+# beta.6: no start-quickshell action; CC_ALL_FAIL=1, restart fails too.
+[ "$2" = restart-quickshell ] && [ "$CC_ALL_FAIL" = 0 ]
+EOF
+chmod +x "$work/old-cc/dwm-quickshell-controlcenter"
+rollback_start() { # [CC_ALL_FAIL]
+	CC_LOG=$work/old-cc/log CC_ALL_FAIL=${1:-0} bash -c '
+		warn() { printf "%s\n" "$*" >&2; }
+		script_dir=$1 stopped_quickshell=1:2 rollback_note=
+		. "$2"
+		printf "note=%s\n" "$rollback_note"
+	' sh "$work/old-cc" "$work/rollback-start.sh"
+}
+rm -f "$work/old-cc/log"
+[ "$(rollback_start 2>/dev/null)" = note= ] || fail 'a rollback to an older Control Center left a note though restart-quickshell started the shell'
+assert_equals "$(printf 'start-quickshell\nrestart-quickshell')" "$(cat "$work/old-cc/log")" 'start-quickshell is tried, then restart-quickshell'
+rm -f "$work/old-cc/log"
+assert_string_contains "$(rollback_start 1 2>/dev/null)" 'note=Quickshell did not start again' 'a shell that starts neither way is reported'
+# shellcheck disable=SC2016 # the helper's own source text
+grep -Fq 'succeeded "$rollback_note"' "$work/rollback.sh" ||
+	fail 'the rollback status does not carry the note that Quickshell did not start'
 
 # valid_user_archive: readable, and everything under the one expected folder.
 body_of valid_user_archive >"$work/valid-archive.sh"
