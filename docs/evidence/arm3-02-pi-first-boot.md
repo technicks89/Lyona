@@ -5,7 +5,8 @@ pull request is a builder whose image boots to a desktop. Run 2026-10-26 on
 the GB10 build host. The acceptance is a stubbed first boot that creates the
 user, sets each answer and disables itself: `tests/test-rpi-firstboot.sh`
 does that. The image's real first boot was also run, in a KVM virtual machine
-(below), and found six faults, all fixed here. It has not run on a Pi.
+(below), and found six faults, all fixed here. A first smoke boot on a Pi 4
+(2026-10-27) reached the desktop and found a seventh, F-7, fixed after it.
 
 ## What the first boot does
 
@@ -144,6 +145,52 @@ needs `TERM` as the unit sets it (`Environment=TERM=linux`). Without it, in
 the CI container, `clear` failed. The test now runs the script with the
 unit's `TERM`, and checks the unit sets it.
 
+## The first boot on a Pi 4 (2026-10-27)
+
+A smoke boot of build 8 on the maintainer's Raspberry Pi 4 (8 GB), written to
+an SD card with `dd` from the `.img.xz` (its SHA-256 checked). It is not
+ARM3-06's run: that is the whole checklist, on the final image.
+
+- **The Pi's own boot:** the firmware booted `linux-rpi` (`uname -r`:
+  `6.18.58-1-rpi`) to the wizard, and the first boot ran to the greeter. The
+  login reached the desktop.
+- **The root partition** grew to the card: 58G on `/dev/mmcblk0p2`, 4.2G
+  used.
+- **zram with zstd works on `linux-rpi`:** `/dev/zram0`, `zstd`, 1.9G, as
+  swap. That answers the question the VM left (it ran another kernel).
+- **`systemctl --failed`** lists none.
+- **The user's install** took 44 s on the Pi ("Installing lyona for ...
+  done in 44s"); the first boot ran from 10:06 to 10:08.
+- **The journal's warnings** (`-p warning`) are the same on any lyona
+  install, none from the image: the Thunar and Tumbler D-Bus service files'
+  names, RTKit not installed (PipeWire uses its defaults), `systemd-homed`
+  not running (the image keeps it off, F-4), `gkr-pam`, and the
+  `BecomeMonitor` denial of the lock and power watchers' `dbus-monitor`,
+  which then falls back to its match rules.
+
+Found, two faults in the first boot's log:
+
+- **F-7, the install profile not recorded** ("No install profile is recorded
+  for this account; treating it as recommended"). On the install medium,
+  `install.sh` records the profile with `lyona-reconcile-user --profile`;
+  the first boot ran only `make install-user`, which reads the record. The
+  account steps are the same for recommended and full today, so nothing
+  differed, but the full image's account read as recommended. Fixed here:
+  the builder records the profile it installs (`LYONA_INSTALL_PROFILE=full`
+  in `/etc/lyona-iso-release`, and `--check-root` fails without it), and the
+  first boot records it for the user before `make install-user`; a failure is
+  a warning, as in `install.sh`. Not yet checked on a rebuilt image.
+- **`config.h` copied as "customised"** for an account that changed nothing.
+  `scripts/configure-build.sh` sets the font size with `s/(size=)…/g`, which
+  also rewrites the emoji font's `pixelsize=14`, so every generated
+  `config.h` differs from `config.def.h`, and `make install-user` copies it to
+  `~/.config/lyona/config.h`. That is lyona's shared code, on x86_64 too:
+  technicks89/Lyona#464. It comes here with a sync, before ARM3-06's image is
+  built.
+
+Not yet reported from the smoke boot: the HDMI resolution, Wi-Fi without
+Ethernet, the time to the wizard, how the desktop responds, and a reboot.
+
 ## Tests
 
 - **`tests/test-rpi-firstboot.sh`** (`make check-rpi-image`), with every
@@ -196,8 +243,9 @@ unit's `TERM`, and checks the unit sets it.
 
 ## Not tested
 
-- **A Pi:** the image's first boot on a Pi 4, its kernel, firmware, Wi-Fi
-  (the NetworkManager path ran only stubbed) and HDMI. That is ARM3-06.
+- **The whole Pi 4 run:** ARM3-06. The smoke boot ran the Pi's kernel and
+  firmware to the desktop; Wi-Fi (the NetworkManager path ran only stubbed)
+  and HDMI are not yet reported, and F-7's fix has not booted on the Pi.
 - **The Pi 5,** and NVMe.
 - **Offline:** a first boot with no network, where mybash and the wallpapers
   are skipped with a warning (stubbed only).

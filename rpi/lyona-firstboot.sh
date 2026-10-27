@@ -345,7 +345,7 @@ user_wallpapers() {
 # which lyona-update also runs. The source is the user's own copy, where
 # install.sh keeps it (~/.local/src/lyona).
 install_user_half() {
-	local checkout commit
+	local checkout commit profile
 	USER_HOME=$(getent passwd "$USERNAME" | cut -d: -f6)
 	[[ -n $USER_HOME && -d $USER_HOME ]] || return 1
 	export USER_HOME
@@ -356,6 +356,8 @@ install_user_half() {
 	chown -R "$USERNAME:" -- "$checkout"
 	commit=$(awk -F= '$1 == "LYONA_ISO_COMMIT" { print $2; exit }' "$FB_ROOT/etc/lyona-iso-release" 2>/dev/null) ||
 		commit=
+	profile=$(awk -F= '$1 == "LYONA_INSTALL_PROFILE" { print $2; exit }' "$FB_ROOT/etc/lyona-iso-release" 2>/dev/null) ||
+		profile=
 	if ! run_logged "Setting up the shell prompt..." as_user "$checkout/scripts/install-mybash"; then
 		note_firstboot_warning "The shell prompt (mybash) was not set up; after logging in, run ~/.local/src/lyona/scripts/install-mybash."
 	fi
@@ -368,6 +370,15 @@ install_user_half() {
 	# (lyona-toml: without it the theme step failed, ARM3-02).
 	run_logged "Building lyona for $USERNAME..." as_user bash -c \
 		'cd "$1" && scripts/configure-build.sh --non-interactive && make clean && make' bash "$checkout"
+	# The profile the image was built with, recorded for the account as
+	# install.sh records it (#273): make install-user reads it back, and without
+	# it treated a full image's account as recommended (found on the Pi 4).
+	if [[ -z $profile ]] ||
+		! run_logged "Recording the $profile profile..." as_user \
+			XDG_CONFIG_HOME="$USER_HOME/.config" XDG_DATA_HOME="$USER_HOME/.local/share" \
+			XDG_STATE_HOME="$USER_HOME/.local/state" "$checkout/scripts/lyona-reconcile-user" --profile "$profile"; then
+		note_firstboot_warning "The install profile was not recorded; after logging in, run ~/.local/src/lyona/scripts/lyona-reconcile-user --profile full."
+	fi
 	run_logged "Installing lyona for $USERNAME..." as_user make -C "$checkout" install-user \
 		USER_HOME="$USER_HOME" OWNER="$USERNAME" \
 		XDG_CONFIG_HOME="$USER_HOME/.config" XDG_DATA_HOME="$USER_HOME/.local/share" \

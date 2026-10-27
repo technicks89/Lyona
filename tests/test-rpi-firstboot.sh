@@ -147,7 +147,11 @@ cp "$wizard_dir"/lyona-{install,ui,nvidia,wifi}.sh "$src/archiso/airootfs/root/"
 grep -E '^WALLPAPERS_(URL|REF)=' "$repo/install.sh" >"$src/install.sh"
 printf '#!/bin/sh\necho mybash >>"$STUB_DIR/calls.log"\n' >"$src/scripts/install-mybash"
 printf '#!/bin/sh\necho "configure-build $*" >>"$STUB_DIR/calls.log"\n' >"$src/scripts/configure-build.sh"
-chmod +x "$src/scripts/install-mybash" "$src/scripts/configure-build.sh"
+# lyona-reconcile-user: logged with the state directory it writes to;
+# STUB_RECONCILE_FAIL fails it.
+printf '#!/bin/sh\necho "reconcile $* XDG_STATE_HOME=$XDG_STATE_HOME" >>"$STUB_DIR/calls.log"\n[ -z "${STUB_RECONCILE_FAIL:-}" ]\n' \
+	>"$src/scripts/lyona-reconcile-user"
+chmod +x "$src/scripts/install-mybash" "$src/scripts/configure-build.sh" "$src/scripts/lyona-reconcile-user"
 wallpapers_url=$(awk -F'"' '$1 == "WALLPAPERS_URL=" { print $2 }' "$repo/install.sh")
 wallpapers_ref=$(awk -F'"' '$1 == "WALLPAPERS_REF=" { print $2 }' "$repo/install.sh")
 [[ -n $wallpapers_url && -n $wallpapers_ref ]] || fail "install.sh's wallpaper pins were not found."
@@ -159,7 +163,7 @@ reset_case() {
 		"$work/chpasswd.stdin" "$work/log"
 	mkdir -p "$work/root/etc" "$work/root/var/lib" "$work/home" "$work/sys/mmcblk0p2" "$work/sys/mmcblk0"
 	printf 'uninitialized\n' >"$work/root/etc/machine-id"
-	printf 'LYONA_ISO_COMMIT=abc1234\n' >"$work/root/etc/lyona-iso-release"
+	printf '%s\n' LYONA_ISO_COMMIT=abc1234 LYONA_INSTALL_PROFILE=full >"$work/root/etc/lyona-iso-release"
 	printf '2\n' >"$work/sys/mmcblk0p2/partition"
 	printf '%s\n' 1056768 >"$work/sys/mmcblk0p2/start"
 	printf '%s\n' 12582912 >"$work/sys/mmcblk0p2/size"
@@ -237,6 +241,13 @@ called 'make '
 called "make -C $home/.local/src/lyona install-user USER_HOME=$home OWNER=pi XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share XDG_STATE_HOME=$home/.local/state LYONA_SOURCE=iso LYONA_COMMIT=abc1234"
 grep -Eq "^runuser -u pi -- env -u DBUS_SESSION_BUS_ADDRESS HOME=$home USER=pi LOGNAME=pi make " "$work/calls.log" ||
 	fail "make install-user did not run as the user."
+# The image's profile recorded for the account, as the user, before make
+# install-user reads it back (found on the Pi 4: it was not recorded).
+called "reconcile --profile full XDG_STATE_HOME=$home/.local/state"
+grep -Eq "^runuser -u pi -- env -u DBUS_SESSION_BUS_ADDRESS HOME=$home USER=pi LOGNAME=pi .* $home/\.local/src/lyona/scripts/lyona-reconcile-user --profile full\$" \
+	"$work/calls.log" || fail "the profile was not recorded as the user."
+[[ $(grep -n '^reconcile ' "$work/calls.log" | cut -d: -f1) -lt $(grep -n '^make -C .* install-user ' "$work/calls.log" | cut -d: -f1) ]] ||
+	fail "the profile was not recorded before make install-user."
 [[ -x $home/.local/src/lyona/scripts/install-mybash ]] || fail "the user has no copy of the source."
 [[ -e $home/.local/state/lyona/first-login-keys ]] || fail "no first-login-keys marker."
 # Done, and disabled.
@@ -307,6 +318,15 @@ printf '%s\n' $'0\tStart again' >>"$work/answers"
 run STUB_MAKE_FAIL=1 || :
 called 'restarted'
 not_called 'systemctl poweroff'
+
+# --- The profile not recorded: a warning, as install.sh's, and the rest goes on -----
+reset_case
+standard_answers
+run STUB_RECONCILE_FAIL=1 || fail "a failed profile record failed the first boot."$'\n'"$(cat "$work/out.log")"
+grep -Fq 'The install profile was not recorded' "$work/out.log" ||
+	fail "a failed profile record was not shown as a warning."$'\n'"$(cat "$work/out.log")"
+called "make -C $home/.local/src/lyona install-user USER_HOME=$home OWNER=pi XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share XDG_STATE_HOME=$home/.local/state LYONA_SOURCE=iso LYONA_COMMIT=abc1234"
+[[ -e $work/root/var/lib/lyona/firstboot-done ]] || fail "a failed profile record left the first boot not done."
 
 # --- Wi-Fi through NetworkManager ---------------------------------------------------
 # The scan's terse output, with an escaped colon and backslash in the SSIDs.

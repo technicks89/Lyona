@@ -7,8 +7,9 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 ([`docs/evidence/arm3-01-pi-image-builder.md`](../evidence/arm3-01-pi-image-builder.md)),
 and ARM3-02 on the same branch
 ([`docs/evidence/arm3-02-pi-first-boot.md`](../evidence/arm3-02-pi-first-boot.md)):
-the image's first boot reached the desktop in a KVM virtual machine, not yet
-on a Pi. ARM3-02 also gave the image `quiet loglevel=3` and the root by
+the image's first boot reached the desktop in a KVM virtual machine, and on
+a Pi 4 in a smoke boot on 2026-10-27 (not ARM3-06's run), which found the
+install profile not recorded (F-7, fixed since). ARM3-02 also gave the image `quiet loglevel=3` and the root by
 PARTUUID in `cmdline.txt`, which are ARM3-03's file.
 Validated on a Pi 4 only:
 there is no Pi 5 to test on (decided 2026-10-25), so the Pi 5 is recorded as

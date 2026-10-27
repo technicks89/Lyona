@@ -51,11 +51,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   medium's questions (keyboard, Wi-Fi through NetworkManager when there is no
   network, user and password, hostname, timezone). It then creates the user
   as an administrator and installs lyona's per-user part for them: the
-  prompt, the user folders, the wallpapers and `make install-user`. The login
+  prompt, the user folders, the wallpapers, the image's install profile
+  (full) and `make install-user`. The login
   screen comes up when it is done. An interrupted first boot starts again at
   the next one, removing the user it had created. It reached lyona's desktop
-  in a KVM virtual machine on GB10, which found and fixed six faults
-  (`docs/evidence/arm3-02-pi-first-boot.md`); it has not been tried on a Pi.
+  in a KVM virtual machine on GB10, which found and fixed six faults, and on
+  a Pi 4 in a first smoke boot, which found the profile not recorded
+  (`docs/evidence/arm3-02-pi-first-boot.md`); the Pi 4 run of ARM3-06 is
+  still to do.
   `docs/RELEASING.md` says how to build the image
   (`docs/evidence/arm3-01-pi-image-builder.md`).
 

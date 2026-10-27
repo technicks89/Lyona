@@ -51,6 +51,10 @@ done
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
 grep -Fq './install.sh --non-interactive --profile full --skip-topgrade --skip-yay --skip-grub-theme' "$builder" ||
 	fail "the builder does not run install.sh for the full profile without the GRUB theme."
+# The stamp records that same profile, for the first boot to record for the
+# account (found on the Pi 4: the account had none).
+grep -Fxq 'LYONA_INSTALL_PROFILE=full' "$builder" ||
+	fail "the image's stamp does not record the full profile install.sh runs with."
 # Empty when the line is missing, so the check below names the step.
 line_of() { grep -nF -- "$1" "$builder" | head -n 1 | cut -d: -f1 || :; }
 sudo_added=$(line_of 'printf '"'"'%s ALL=(ALL) NOPASSWD: ALL\n'"'"' "$build_user" >"$build_sudoers"')
@@ -110,7 +114,7 @@ make_root() { # DIR
 	: >"$root/etc/gshadow"
 	printf 'uninitialized\n' >"$root/etc/machine-id"
 	printf 'LYONA_VERSION=0\n' >"$root/etc/lyona-release"
-	printf 'LYONA_ISO_KIND=rpi-aarch64\n' >"$root/etc/lyona-iso-release"
+	printf '%s\n' LYONA_ISO_KIND=rpi-aarch64 LYONA_INSTALL_PROFILE=full >"$root/etc/lyona-iso-release"
 	printf '#!/bin/sh\n' >"$root/usr/local/bin/dwm"
 	printf '#!/bin/sh\n' >"$root/usr/local/src/lyona/install.sh"
 	chmod +x "$root/usr/local/bin/dwm" "$root/usr/local/src/lyona/install.sh"
@@ -193,6 +197,8 @@ personal_case 'no /etc/lyona-release: lyona is not installed' rm etc/lyona-relea
 personal_case 'no /usr/local/bin/dwm' rm usr/local/bin/dwm
 personal_case 'no lyona source at /usr/local/src/lyona' rm usr/local/src/lyona/install.sh
 personal_case 'no /etc/lyona-iso-release' rm etc/lyona-iso-release
+personal_case '/etc/lyona-iso-release records no install profile for the first boot' \
+	sed -i '/^LYONA_INSTALL_PROFILE=/d' etc/lyona-iso-release
 personal_case 'no /boot/kernel8.img (linux-rpi)' rm boot/kernel8.img
 personal_case '/boot/cmdline.txt does not name the root partition by PARTUUID' \
 	sh -c 'echo "root=/dev/mmcblk0p2 rw rootwait" >boot/cmdline.txt'

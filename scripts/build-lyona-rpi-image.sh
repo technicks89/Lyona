@@ -135,6 +135,8 @@ check_root() {
 	[[ -x $root/usr/local/bin/dwm ]] || problem "no /usr/local/bin/dwm"
 	[[ -x $root/usr/local/src/lyona/install.sh ]] || problem "no lyona source at /usr/local/src/lyona"
 	[[ -f $root/etc/lyona-iso-release ]] || problem "no /etc/lyona-iso-release"
+	grep -Eqx 'LYONA_INSTALL_PROFILE=(core|recommended|full)' "$root/etc/lyona-iso-release" 2>/dev/null ||
+		problem "/etc/lyona-iso-release records no install profile for the first boot"
 	# What the image enables itself: the network, then the greeter (links, so
 	# -L: their targets are absolute paths in the image).
 	[[ -L $root/etc/systemd/system/multi-user.target.wants/NetworkManager.service ]] ||
@@ -376,11 +378,14 @@ rsync -a --delete --chown=0:0 --chmod=go-w "${rsync_excludes[@]}" \
 build_commit="$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 build_date="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" --utc +%Y-%m-%dT%H:%M:%SZ)"
 # The same stamp the install medium writes; LYONA_ISO_KIND says which image.
+# LYONA_INSTALL_PROFILE is the profile install.sh runs with below: the first
+# boot records it for the new account, as install.sh records it for its user.
 cat >"$root/etc/lyona-iso-release" <<EOF
 LYONA_ISO_VERSION=$image_version
 LYONA_ISO_KIND=rpi-aarch64
 LYONA_ISO_COMMIT=$build_commit
 LYONA_ISO_BUILD_DATE=$build_date
+LYONA_INSTALL_PROFILE=full
 EOF
 chmod 644 "$root/etc/lyona-iso-release"
 
