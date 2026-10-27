@@ -2,7 +2,9 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 and ARM-3.
 
-**Status:** planned 2026-10-11. Not started. GitHub: issues #18 to #21, and
+**Status:** planned 2026-10-11. Not started. **Amended 2026-10-27, by the
+maintainer:** ARM5-01's release run happens in Lyona after the merge
+([`ARM64.md`](ARM64.md#end-state)), as Lyona-ARM has no releases. GitHub: issues #18 to #21, and
 #62 for the deferred ARM5-05
 (label `arm64`); milestone "ARM Sprint 5 - Release and support contract", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
@@ -23,8 +25,15 @@ the docs. ARM5-05, the N1X watch item, is deferred with GB10 (2026-10-11).
 
 ## ARM5-01: The release workflow for ARM images
 
+**When:** in two parts (amended 2026-10-27). In Lyona-ARM, before the merge,
+the workflow and `scripts/lyona-release` changes (3 and 4 below), checked by
+the release tests' stubs. In Lyona, after the merge, the release run itself
+(1, 2 and the acceptance), on Lyona's GitHub arm64 runners, which cost
+nothing in a public repository.
+
 1. **Build:** the generic aarch64 image and the Pi image, built on the
-   aarch64 host (A-3), from the same tagged commit as the x86_64 image.
+   aarch64 host (A-3: a GitHub arm64 runner), from the same tagged commit as
+   the x86_64 image.
 2. **Publish** beside the x86_64 image in the release, each with its checksum
    and signed the same way (D-31), with names that say the architecture and
    target (for example `lyona-VERSION-aarch64.iso`,
@@ -34,8 +43,9 @@ the docs. ARM5-05, the N1X watch item, is deferred with GB10 (2026-10-11).
 4. **`scripts/lyona-release`** and the release workflows learn the new
    assets; `tests/test-release-workflows.sh` checks them.
 
-**Acceptance:** a pre-release with the x86_64, generic aarch64 and Pi images,
-each checksummed and signed.
+**Acceptance:** a pre-release of Lyona, after the merge, with the x86_64,
+generic aarch64 and Pi images, each checksummed and signed. Before the merge:
+`tests/test-release-workflows.sh` passes with the new assets.
 
 ## ARM5-02: Updates on aarch64
 
@@ -46,6 +56,12 @@ each checksummed and signed.
 3. **Record** in the release evidence.
 
 **Acceptance:** an update and a rollback pass on both targets.
+
+Note (2026-10-27): "from one release to the next" needs two releases that
+carry the ARM support, and only Lyona makes releases: until the merge,
+`lyona-update` on an ARM install takes upstream releases that drop it (#53).
+So this run also falls after the merge, after ARM5-01's release; when to
+schedule it is the maintainer's call, not decided here.
 
 ## ARM5-03: The support contract per target
 

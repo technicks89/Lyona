@@ -124,7 +124,16 @@ not change ARM-5's release of the generic and Pi images.
 Decided 2026-10-14: one Lyona repository that builds both the x86_64 and the
 ARM versions. Lyona-ARM is where the ARM work happens until ARM-1, ARM-2, ARM-3
 and ARM-5 are done; then it is merged into Lyona as a whole. Lyona-ARM has no
-releases of its own. Until then:
+releases of its own.
+
+**Amended 2026-10-27, by the maintainer:** ARM5-01's release run (a
+pre-release carrying the aarch64 images) needs a release, which Lyona-ARM
+never makes, so it happens in Lyona after the merge, on Lyona's GitHub
+runners (Lyona is public, where standard runners cost nothing; Lyona-ARM is
+private, where they are billed). Before the merge, ARM5-01 writes the release
+workflow's changes and checks them with the release tests' stubs. So the
+merge comes after ARM-1, ARM-2, ARM-3 and ARM-5's pre-merge parts, and ARM-5
+closes in Lyona. Until the merge:
 
 - Lyona `main` is synced in often, each time through a pull request merged
   with a merge commit (not squashed), so Git knows what is already in.
@@ -136,7 +145,7 @@ releases of its own. Until then:
 
 | Target | What validates it | Needed by |
 | --- | --- | --- |
-| Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested | ARM-1, ARM-2 |
+| Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested. Since the GB10 went (2026-10-27) there is no machine for a generic-image install run: a KVM virtual machine on the 8 GB Pi 5 is the candidate (Raspberry Pi's Pi 5 kernel configuration has KVM on), untried | ARM-1, ARM-2, ARM-5 |
 | Raspberry Pi | A Pi 4 (4 GB, the floor to test), with an HDMI display, keyboard and mouse, booting from an SD card. A Pi 5 (8 GB) too, since 2026-10-27, from an SD card; there is no NVMe board, so its NVMe boot is not tested | ARM-3 |
 | GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port. None is available since 2026-10-27 | ARM-4 |
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
@@ -154,10 +163,19 @@ Linux ARM container (`scripts/ci-local.sh --base-image`), native aarch64 VMs
 under KVM with UEFI (AAVMF), not emulated, and the image builds: ARM1-06 was
 validated in such a VM, because the Pi 4 was not available (its Pi run moved to
 ARM3-06), and ARM2-01, ARM2-05, ARM3-01 and ARM3-02 ran there. It is no longer
-available (2026-10-27). What is left for aarch64: the Pi 5 (8 GB) on Arch
-Linux ARM, which can run the image builders as root, and the GitHub arm64
-runner, which runs the suite (the Full suite workflow, ARM1-05) and could build
-(A-3's CI half, untried). Which builds the next image is decided at that build.
+available (2026-10-27). What is left for aarch64:
+
+- **Image builds before the merge:** the Pi 4 (4 GB) or the Pi 5 (8 GB),
+  each on Arch Linux ARM, as root, with the builder's tools and about 15 GB
+  free (a USB SSD rather than the SD card it boots from). The builders need
+  an aarch64 Arch Linux ARM host, not a particular board; neither Pi has
+  built an image yet, and either is slower than the GB10 was.
+- **The suite:** the GitHub arm64 runner (the Full suite workflow, ARM1-05),
+  which Lyona-ARM pays for by the minute, so it runs once before the merge
+  into Lyona rather than on every change; or the same suite in the Arch Linux
+  ARM container on a Pi (`scripts/ci-local.sh --base-image`), slower but free.
+- **Release builds:** after the merge, Lyona's arm64 runners (above, End
+  state).
 
 ## GitHub
 

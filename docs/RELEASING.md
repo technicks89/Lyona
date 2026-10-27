@@ -249,8 +249,10 @@ tried on a Pi: its first boot reached the desktop in a KVM virtual machine
 (`docs/evidence/arm3-02-pi-first-boot.md`). It builds natively on an aarch64 Arch
 Linux ARM host as root. The builds so far ran in the privileged
 `lyona-archlinuxarm` container on GB10, which is no longer available
-(2026-10-27); the hosts left are a Pi 5 (8 GB) running Arch Linux ARM and the
-GitHub arm64 runner (untried for this build):
+(2026-10-27). Before the merge into Lyona, it builds on a Raspberry Pi 4
+(4 GB) or Pi 5 (8 GB) running Arch Linux ARM, with about 15 GB free off its
+boot card; the release build runs on Lyona's GitHub arm64 runner after the
+merge (`docs/sprints/ARM64.md`, End state):
 
 ```sh
 sudo scripts/build-lyona-rpi-image.sh --output release/

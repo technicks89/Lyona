@@ -93,8 +93,8 @@ ten new `--check-root` fault cases. With `check-shell` and `check-format`.
 
 - **The build itself.** The new steps ran in no build: the host here is
   x86_64, and the GB10 that built the images so far is no longer available
-  (2026-10-27). The next build, on the 8 GB Pi 5 running Arch Linux ARM or on
-  the GitHub arm64 runner, runs them; the two checks that can fail it are `config.txt` without the `vc4-kms-v3d` line and an initramfs
+  (2026-10-27). The next build, on the Pi 4 or the Pi 5 running Arch Linux ARM,
+  runs them; the two checks that can fail it are `config.txt` without the `vc4-kms-v3d` line and an initramfs
   without `plymouthd` or `vc4.ko`.
 - **The splash on a Pi 4's KMS console** (ARM3-06): that it shows at boot,
   quits before the wizard on tty1 and before LightDM, and that the headphone
