@@ -29,6 +29,27 @@ grep -Eq 'nmaster[[:space:]]*=[[:space:]]*2;' "$output"
 grep -Eq 'resizehints[[:space:]]*=[[:space:]]*0;' "$output"
 grep -Eq '^#define MODKEY[[:space:]]+Mod1Mask$' "$output"
 grep -Fq 'MesloLGS Nerd Font Mono:size=15' "$output"
+# #464: the interface font size leaves the emoji font's pixelsize alone.
+grep -Fq 'NotoColorEmoji:pixelsize=14' "$output" || {
+	printf '%s\n' "The font size also changed the emoji font's pixelsize." >&2
+	exit 1
+}
+
+# #464: every default gives config.def.h itself, so a fresh config.h does not
+# count as customised. The refresh rate is the template's, not this host's.
+defaults="$work/defaults.h"
+template_rate=$(sed -n -E 's/^static const unsigned int refresh_rate[[:space:]]*=[[:space:]]*([0-9]+);/\1/p' \
+	"$repo/config.def.h")
+DWM_REFRESH_RATE=$template_rate \
+	"$repo/scripts/configure-build.sh" \
+	--non-interactive \
+	--template "$repo/config.def.h" \
+	--output "$defaults" >/dev/null
+cmp -s "$repo/config.def.h" "$defaults" || {
+	diff "$repo/config.def.h" "$defaults" >&2 || true
+	printf '%s\n' "The defaults did not give config.def.h." >&2
+	exit 1
+}
 
 before=$(sha256sum "$output" | awk '{print $1}')
 DWM_REFRESH_RATE=60 \

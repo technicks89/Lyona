@@ -232,7 +232,7 @@ sed -i -E \
 	-e "s/^(static const int nmaster[[:space:]]*=[[:space:]]*)[0-9]+;/\\1${nmaster};/" \
 	-e "s/^(static const int resizehints[[:space:]]*=[[:space:]]*)[01];/\\1${resizehints};/" \
 	-e "s/^(#define MODKEY[[:space:]]+).*/\\1${modkey}/" \
-	-e "s/(size=)[0-9]+/\\1${font_size}/g" \
+	-e "s/(:size=)[0-9]+/\\1${font_size}/g" \
 	"$temporary"
 
 mv "$temporary" "$output"

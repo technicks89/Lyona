@@ -10,6 +10,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `scripts/configure-build.sh` no longer rewrites the emoji font's
+  `pixelsize=14` to the interface font size (#464). Its font-size pattern
+  matched the `size=` inside `pixelsize=`, so even a run with every default
+  wrote a `config.h` that differed from `config.def.h`, and `make
+  install-user` copied it to `~/.config/lyona/config.h` as a customised one,
+  where it went stale as `config.def.h` changed. Only a `:size=` is changed
+  now.
 - A system updated with `lyona-update` records the release's commit in
   `/etc/lyona-release` (#457). The Makefile took the commit from `git
   rev-parse`, which has nothing to say in an extracted release archive, so
