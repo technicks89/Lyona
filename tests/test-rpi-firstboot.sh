@@ -357,7 +357,7 @@ answers $'0\tHome:Net  80%  WPA' $'0\twifi-pass-123'
 wifi 'connect_wifi' >"$work/out.log" || fail "connecting to Wi-Fi failed: $(cat "$work/out.log")"
 profile=$work/root/etc/NetworkManager/system-connections/lyona-wifi.nmconnection
 [[ -f $profile && $(stat -c %a "$profile") == 600 ]] || fail "the Wi-Fi profile is missing or not mode 600."
-grep -Fqx 'ssid=Home:Net' "$profile" && grep -Fqx 'psk=wifi-pass-123' "$profile" ||
+{ grep -Fqx 'ssid=Home:Net' "$profile" && grep -Fqx 'psk=wifi-pass-123' "$profile"; } ||
 	fail "the Wi-Fi profile does not hold the network and its passphrase."
 called "nmcli connection load $profile"
 grep -Eq '^nmcli --wait 30 connection up uuid [0-9a-f-]{36}$' "$work/calls.log" || fail "the profile was not brought up."

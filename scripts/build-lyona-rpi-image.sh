@@ -270,10 +270,10 @@ if [[ ! $image_version =~ ^[0-9]+(\.[0-9]+){1,2}(-(alpha|beta|rc)\.[0-9]+)?$ ]];
 fi
 
 boot_mib=${LYONA_RPI_BOOT_MIB:-512}
-[[ $boot_mib =~ ^[0-9]+$ ]] && ((boot_mib >= 128)) || {
+if ! [[ $boot_mib =~ ^[0-9]+$ ]] || ((boot_mib < 128)); then
 	err "LYONA_RPI_BOOT_MIB must be a whole number of MiB, 128 or more: $boot_mib"
 	exit 1
-}
+fi
 
 # Native only (A-3). Before the root check, so the reason is the one shown.
 host_arch=$(uname -m)
@@ -338,10 +338,10 @@ pacstrap -c -M -C "$repo_dir/archiso-aarch64/pacman.conf" "$root" "${base_packag
 
 info "Naming the partitions by PARTUUID $disk_id..."
 cmdline=$root/boot/cmdline.txt
-[[ -f $cmdline ]] && grep -q 'root=/dev/mmcblk0p2' "$cmdline" || {
+if ! [[ -f $cmdline ]] || ! grep -q 'root=/dev/mmcblk0p2' "$cmdline"; then
 	err "linux-rpi's cmdline.txt has no root=/dev/mmcblk0p2 to replace; its format changed."
 	exit 1
-}
+fi
 # quiet loglevel=3, as the install medium boots: the kernel's messages,
 # audit's among them, otherwise print over the first-boot wizard on tty1.
 sed -i -e "s|root=/dev/mmcblk0p2|root=PARTUUID=$disk_id-02|" -e 's|$| quiet loglevel=3|' "$cmdline"
@@ -577,4 +577,4 @@ dd if="$root_img" of="$image" bs=1M seek=$((offset_mib + boot_mib)) conv=notrunc
 info "Compressing $image_name.xz..."
 xz -T0 -6 -c "$image" >"$output_dir/$image_name.xz"
 (cd "$output_dir" && sha256sum "$image_name.xz" >"$image_name.xz.sha256")
-info "Done. $(du -h "$output_dir/$image_name.xz" | cut -f1) image, $(((offset_mib + boot_mib + root_mib))) MiB written out, at $output_dir/$image_name.xz"
+info "Done. $(du -h "$output_dir/$image_name.xz" | cut -f1) image, $((offset_mib + boot_mib + root_mib)) MiB written out, at $output_dir/$image_name.xz"

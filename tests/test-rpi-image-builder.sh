@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The builder's lines below are matched literally, not expanded here.
+# shellcheck disable=SC2016
 set -euo pipefail
 
 # The Raspberry Pi image builder (ARM3-01), statically: its package list comes
