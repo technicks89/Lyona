@@ -59,11 +59,23 @@ info() {
 # the first user the wizard creates takes UID 1000.
 build_user=lyona-image-build
 
+# unit_exec UNIT: the program UNIT's ExecStart runs (its first word), when it is
+# an absolute path; nothing, and status 1, otherwise. The first-boot wizard's
+# installed path is written once, in rpi/lyona-firstboot.service, and both the
+# install and the check read it from there.
+unit_exec() {
+	local line
+	line=$(sed -n 's/^ExecStart=//p' "$1" 2>/dev/null | head -n 1)
+	line=${line%% *}
+	[[ $line == /* ]] || return 1
+	printf '%s\n' "$line"
+}
+
 # What step 3 must leave, and lyona's install must have put there. Prints
 # each problem and returns 1 if there was one. DIR is a root filesystem with
 # its /boot.
 check_root() {
-	local root=$1 problems=0 file entry
+	local root=$1 problems=0 file entry wizard
 	problem() {
 		printf 'build-lyona-rpi-image: %s: %s\n' "$root" "$*" >&2
 		problems=1
@@ -150,7 +162,11 @@ check_root() {
 		problem "the default target is not graphical.target"
 	# The first boot (ARM3-02), not yet run: its wizard, enabled, with LightDM
 	# waiting for it, and what it needs.
-	[[ -x $root/usr/local/libexec/lyona/lyona-firstboot ]] || problem "no first-boot wizard"
+	if ! wizard=$(unit_exec "$root/etc/systemd/system/lyona-firstboot.service"); then
+		problem "lyona-firstboot.service is missing or names no first-boot wizard"
+	elif [[ ! -x $root$wizard ]]; then
+		problem "no first-boot wizard"
+	fi
 	[[ -L $root/etc/systemd/system/multi-user.target.wants/lyona-firstboot.service ]] ||
 		problem "the first boot is not enabled"
 	grep -qsx 'ConditionPathExists=/var/lib/lyona/firstboot-done' \
@@ -562,8 +578,13 @@ arch-chroot "$root" systemctl set-default graphical.target
 # The first boot (ARM3-02): its wizard on tty1, then LightDM, which waits for
 # it. The console in the boot splash's palette, as on the install medium.
 info "Adding the first boot..."
-install -Dm755 "$repo_dir/rpi/lyona-firstboot.sh" "$root/usr/local/libexec/lyona/lyona-firstboot"
-install -Dm644 "$repo_dir/rpi/lyona-firstboot.service" "$root/etc/systemd/system/lyona-firstboot.service"
+firstboot_unit=$repo_dir/rpi/lyona-firstboot.service
+firstboot_wizard=$(unit_exec "$firstboot_unit") || {
+	err "rpi/lyona-firstboot.service names no first-boot wizard (ExecStart)."
+	exit 1
+}
+install -Dm755 "$repo_dir/rpi/lyona-firstboot.sh" "$root$firstboot_wizard"
+install -Dm644 "$firstboot_unit" "$root/etc/systemd/system/lyona-firstboot.service"
 install -Dm644 "$repo_dir/rpi/lightdm-after-firstboot.conf" \
 	"$root/etc/systemd/system/lightdm.service.d/lyona-firstboot.conf"
 install -d -m 0755 "$root/usr/local/lib/lyona"

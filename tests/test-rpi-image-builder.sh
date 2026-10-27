@@ -147,6 +147,15 @@ fi
 grep -Fq 'plymouth-quit-wait.service' "$repo/rpi/lyona-firstboot.service" ||
 	fail "lyona-firstboot.service does not wait for the splash to leave tty1."
 
+# The wizard is installed where the unit's ExecStart says, read from the unit:
+# its path is written there only (and so in no script, where the root-helper
+# contract in test-shell-contracts.sh looks for libexec paths).
+grep -Fq 'install -Dm755 "$repo_dir/rpi/lyona-firstboot.sh" "$root$firstboot_wizard"' "$builder" ||
+	fail "the builder does not install the wizard at the unit's ExecStart."
+if grep -n 'libexec/lyona/lyona-firstboot' "$builder"; then
+	fail "the builder names the wizard's path; it is the unit's ExecStart."
+fi
+
 # --- Hosts it cannot build on --------------------------------------------------
 # Each refusal comes before anything is made: no work directory is left.
 stub_bin=$work/stub-bin
@@ -212,6 +221,7 @@ make_root() { # DIR
 	printf '#!/bin/sh\n' >"$root/usr/local/libexec/lyona/lyona-firstboot"
 	printf '#!/bin/sh\n' >"$root/usr/bin/gum"
 	chmod +x "$root/usr/local/libexec/lyona/lyona-firstboot" "$root/usr/bin/gum"
+	cp "$repo/rpi/lyona-firstboot.service" "$root/etc/systemd/system/lyona-firstboot.service"
 	ln -s /etc/systemd/system/lyona-firstboot.service \
 		"$root/etc/systemd/system/multi-user.target.wants/lyona-firstboot.service"
 	cp "$repo/rpi/lightdm-after-firstboot.conf" "$root/etc/systemd/system/lightdm.service.d/lyona-firstboot.conf"
@@ -289,6 +299,10 @@ personal_case 'LightDM is not the display manager' \
 personal_case 'the default target is not graphical.target' \
 	ln -sfn /usr/lib/systemd/system/multi-user.target etc/systemd/system/default.target
 personal_case 'no first-boot wizard' rm usr/local/libexec/lyona/lyona-firstboot
+personal_case 'lyona-firstboot.service is missing or names no first-boot wizard' \
+	rm etc/systemd/system/lyona-firstboot.service
+personal_case 'lyona-firstboot.service is missing or names no first-boot wizard' \
+	sed -i 's/^ExecStart=.*/ExecStart=lyona-firstboot/' etc/systemd/system/lyona-firstboot.service
 personal_case 'the first boot is not enabled' \
 	rm etc/systemd/system/multi-user.target.wants/lyona-firstboot.service
 personal_case 'LightDM does not wait for the first boot' \
