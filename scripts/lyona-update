@@ -639,6 +639,36 @@ sha256_of() {
 	sha256sum -- "$1" | awk '{ print $1 }'
 }
 
+# STAGING_DIR/config.h, made from the release's own config.def.h with the
+# configure-build.sh answers in ANSWERS, one DWM_NAME=value a line, which
+# install-user keeps instead of a copy of config.h that would go stale (#464).
+# The lines are read, never run, and configure-build.sh checks each value. A
+# refresh rate the file does not give is the release's own, not the monitor's
+# at update time.
+# Arguments: ANSWERS STAGING_DIR.
+config_h_from_answers() {
+	local answers=$1 dir=$2 line template_rate
+	local -a values=()
+	while IFS= read -r line || [[ -n $line ]]; do
+		case $line in
+		'' | '#'*) ;;
+		DWM_REFRESH_RATE=* | DWM_FONT_SIZE=* | DWM_MODKEY=* | DWM_MFACT=* | DWM_NMASTER=* | \
+			DWM_CURSORWARP=* | DWM_SWALLOWFLOATING=* | DWM_RESIZEHINTS=*)
+			values+=("$line")
+			;;
+		*) warn "ignoring a line of $answers that is not a build answer: $line" ;;
+		esac
+	done <"$answers"
+	template_rate=$(sed -n -E 's/^static const unsigned int refresh_rate[[:space:]]*=[[:space:]]*([0-9]+);.*/\1/p' \
+		"$dir/config.def.h" | head -n 1)
+	rm -f -- "$dir/config.h"
+	env -u DWM_REFRESH_RATE -u DWM_FONT_SIZE -u DWM_MODKEY -u DWM_MFACT -u DWM_NMASTER \
+		-u DWM_CURSORWARP -u DWM_SWALLOWFLOATING -u DWM_RESIZEHINTS \
+		"DWM_REFRESH_RATE=${template_rate:-60}" "${values[@]}" \
+		"$dir/scripts/configure-build.sh" --non-interactive \
+		--template "$dir/config.def.h" --output "$dir/config.h" >/dev/null
+}
+
 # The packages the release being installed needs, from its own package map, not
 # the installed one: a release that adds a dependency otherwise installs helpers
 # that fail at runtime (Sync Sprint 12 S12-11, decided with the maintainer: refuse
@@ -922,11 +952,19 @@ cmd_apply() {
 		die "failed to unpack $tarball"
 	fi
 	# Compile-time options (Sync Sprint 12 S12-02, decision D-18): the user's own
-	# $XDG_CONFIG_HOME/lyona/config.h first, then a checkout's config.h next to
-	# this script. Resolved, because the privileged step refuses a symlink.
-	local candidate
-	for candidate in "$config_home/lyona/config.h" "${script_dir%/*}/config.h"; do
+	# $XDG_CONFIG_HOME/lyona/config.h first, then the build answers beside it
+	# (#464), then a checkout's config.h next to this script. Resolved, because
+	# the privileged step refuses a symlink.
+	local candidate answers_file=$config_home/lyona/build.conf
+	for candidate in "$config_home/lyona/config.h" "$answers_file" "${script_dir%/*}/config.h"; do
 		[[ -f $candidate ]] || continue
+		if [[ $candidate == "$answers_file" ]]; then
+			config_h_from_answers "$answers_file" "$staging_dir" ||
+				die "could not make config.h from the build answers in $answers_file"
+			warn "building with the dwm build answers in $answers_file"
+			config_h_arg=$(readlink -f -- "$staging_dir/config.h")
+			break
+		fi
 		live_config_h=$(readlink -f -- "$candidate")
 		break
 	done

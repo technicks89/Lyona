@@ -17,6 +17,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   install-user` copied it to `~/.config/lyona/config.h` as a customised one,
   where it went stale as `config.def.h` changed. Only a `:size=` is changed
   now.
+- Updates no longer build with a stale copy of `config.h` that only holds the
+  `configure-build.sh` answers (#464). `make install-user` keeps such a
+  `config.h` as its answers, in `~/.config/lyona/build.conf`, and
+  `lyona-update` makes each release's `config.h` from that release's own
+  `config.def.h` with them. That covers a refresh rate detected from the
+  monitor too, which also made every install on a display other than 60 Hz
+  count as customised. An existing `~/.config/lyona/config.h` that holds
+  nothing but answers, as every fresh install's did, becomes `build.conf` on
+  the next `make install-user` or update, and is kept as
+  `config.h.bak.<time>`. A `config.h` edited in any other way is copied and
+  kept as before.
 - A system updated with `lyona-update` records the release's commit in
   `/etc/lyona-release` (#457). The Makefile took the commit from `git
   rev-parse`, which has nothing to say in an extracted release archive, so

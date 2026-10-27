@@ -71,11 +71,19 @@ Quickshell there so the tray host starts before tray clients. Use
 
 **How updates treat `config.h`.** `lyona-update` (and the Settings update pane)
 builds each release with your own
-`${XDG_CONFIG_HOME:-$HOME/.config}/lyona/config.h`, and falls back to a checkout's
-`config.h` when you run `./scripts/lyona-update` from one. With neither, a release
-builds from its `config.def.h`. `make install-user` (run by `install.sh`) copies a
-customised checkout `config.h` there once, and never overwrites one that is already
-there; it does not copy an unchanged default, which would only go stale.
+`${XDG_CONFIG_HOME:-$HOME/.config}/lyona/config.h`. Without one, it makes the
+release's `config.h` from its own `config.def.h` with the answers in
+`${XDG_CONFIG_HOME:-$HOME/.config}/lyona/build.conf`: the refresh rate, font size
+and other `scripts/configure-build.sh` values, one `DWM_NAME=value` a line.
+Without either, it falls back to a checkout's `config.h` when you run
+`./scripts/lyona-update` from one, and otherwise builds from `config.def.h`.
+
+`make install-user` (run by `install.sh`) keeps a checkout `config.h` that only
+holds `configure-build.sh` answers as those answers, in `build.conf`, so it never
+goes stale as `config.def.h` changes. One you edited in any other way is copied
+to `lyona/config.h` once, and one already there is never overwritten. An earlier
+copy that holds nothing but answers is turned into `build.conf`, and kept as
+`config.h.bak.<time>` (#464): before #464, every fresh install made one.
 
 When a release adds a compile-time option, merge it into your copy from the
 release's `config.def.h`; if the build fails, `lyona-update` names the `config.h` it

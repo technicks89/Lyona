@@ -190,8 +190,10 @@ recoverable:
    from `2026.10.0-beta.2` on, its signature with `cosign`, **before** unpacking
    it. An earlier release has no signature: it is installed on its digest alone,
    through the "NOT verified" prompt (below).
-3. Unpack it, and copy your `config.h` into the build: `~/.config/lyona/config.h`,
-   or a checkout's `config.h` when run from one (see Configuration).
+3. Unpack it, and copy your `config.h` into the build: `~/.config/lyona/config.h`;
+   or make one from the release's `config.def.h` with your build answers in
+   `~/.config/lyona/build.conf`; or a checkout's `config.h` when run from one
+   (see Configuration).
 4. Build it, unprivileged, so a compile failure costs you nothing but time.
 5. Back up the live install.
 6. Install the system files through one confirmed privileged step
