@@ -61,6 +61,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   still to do.
   `docs/RELEASING.md` says how to build the image
   (`docs/evidence/arm3-01-pi-image-builder.md`).
+- The Raspberry Pi image's boot configuration and splash (ARM3-03), still
+  experimental. `config.txt` stays the kernel package's, which turns on the
+  KMS display driver (`vc4-kms-v3d`; the kernel sees a display plugged in or
+  out itself) and which pacman keeps across updates; it ends by including
+  `/boot/lyona.txt`, lyona's settings (the headphone jack's audio, no
+  firmware rainbow at power-on, and the Pi 5's PCIe connector for an NVMe
+  drive), then `/boot/custom.txt`, the user's own lines, which win over
+  lyona's and which lyona never changes. The boot shows the lyona Plymouth
+  splash, as an installed x86_64 system does: the theme, the hook, `splash`
+  on the command line, and `vc4` in the initramfs, which the build host
+  (not a Pi) would otherwise leave out. The first-boot wizard waits for the
+  splash to quit. Not booted on a Pi yet: whether the splash shows on its
+  KMS console is ARM3-06's check, and `docs/src/troubleshooting.md` says how
+  to turn it off (`docs/evidence/arm3-03-pi-boot.md`).
 
 ### Changed
 

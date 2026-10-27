@@ -1,0 +1,9 @@
+# /boot/custom.txt: your own boot settings for this Raspberry Pi, which
+# config.txt reads after lyona's (/boot/lyona.txt). A line here wins over
+# one there, and lyona never changes this file. It starts under [all]; a
+# filter such as [pi4] applies from its line to the end of the file.
+# What each setting does:
+# https://www.raspberrypi.com/documentation/computers/config_txt.html
+#
+# For example, 4K at 60 Hz on a Pi 4 (it runs hotter):
+#hdmi_enable_4kp60=1

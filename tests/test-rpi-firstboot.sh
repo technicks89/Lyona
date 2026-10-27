@@ -40,6 +40,10 @@ for line in StandardInput=tty StandardOutput=tty StandardError=tty TTYPath=/dev/
 	'ConditionPathExists=!/var/lib/lyona/firstboot-done' ExecStart=/usr/local/libexec/lyona/lyona-firstboot; do
 	grep -Fqx -- "$line" "$unit" || fail "lyona-firstboot.service lacks: $line"
 done
+# After the boot splash has quit (ARM3-03), as getty@.service is: on tty1, the
+# wizard would otherwise draw under Plymouth.
+grep -Eq '^After=.*(^| )plymouth-quit-wait\.service( |$)' "$unit" ||
+	fail "lyona-firstboot.service does not run after plymouth-quit-wait.service."
 # Nothing starts tty1's getty after it: Arch's LightDM conflicts with getty@tty1,
 # and an ExecStopPost that started it cancelled LightDM's start.
 if grep -n 'start getty@tty1' "$unit"; then

@@ -18,10 +18,12 @@ under emulation (ARM64.md A-3):
      from Arch Linux ARM's signed repositories into a directory;
   2. run install.sh --profile full in a chroot, as a temporary build user
      with passwordless sudo, as the install medium's postinstall does;
-  3. add the first boot (rpi/), which creates the user and finishes the
-     install for it (ARM3-02), then remove the build user and everything
-     personal: no user, no machine-id, no SSH host keys, no pacman keyring,
-     an empty package cache;
+  3. add the boot configuration (rpi/lyona.txt, which config.txt includes,
+     and custom.txt for the user's own lines) and the lyona boot splash
+     (ARM3-03), and the first boot (rpi/), which creates the user and
+     finishes the install for it (ARM3-02); then remove the build user and
+     everything personal: no user, no machine-id, no SSH host keys, no
+     pacman keyring, an empty package cache;
   4. make the FAT boot partition and the ext4 root partition from that
      directory (mtools, mkfs.ext4 -d: no loop device or mount), and join
      them in an MBR disk image, compressed with xz, with its SHA-256.
@@ -41,6 +43,7 @@ Options:
 
 LYONA_RPI_BOOT_MIB sets the boot partition's size (default 512). The root
 partition is made just large enough; the first boot grows it to the card.
+LYONA_SPLASH_PALETTE names the boot splash's palette (default tokyonight).
 EOF
 }
 
@@ -168,6 +171,19 @@ check_root() {
 		problem "no preset of the image's own: systemd's first boot would change its units"
 	fi
 	grep -qsw quiet "$root/boot/cmdline.txt" || problem "/boot/cmdline.txt does not boot quiet"
+	# The boot configuration and the splash (ARM3-03): the kernel package's
+	# config.txt with lyona's and the user's files after it, the KMS driver on,
+	# and Plymouth with the lyona theme in the initramfs, with vc4 for it.
+	grep -qsx 'dtoverlay=vc4-kms-v3d' "$root/boot/config.txt" || problem "/boot/config.txt does not turn on the KMS driver"
+	grep -qsx 'include lyona.txt' "$root/boot/config.txt" || problem "/boot/config.txt does not include lyona.txt"
+	grep -qsx 'include custom.txt' "$root/boot/config.txt" || problem "/boot/config.txt does not include custom.txt"
+	[[ -f $root/boot/lyona.txt ]] || problem "no /boot/lyona.txt"
+	[[ -f $root/boot/custom.txt ]] || problem "no /boot/custom.txt"
+	[[ -f $root/usr/share/plymouth/themes/lyona/lyona.plymouth ]] || problem "no lyona Plymouth theme"
+	grep -qsx 'Theme=lyona' "$root/etc/plymouth/plymouthd.conf" || problem "plymouthd.conf does not select the lyona theme"
+	grep -qsE '^HOOKS=\(.*\<plymouth\>' "$root/etc/mkinitcpio.conf" || problem "the initramfs has no plymouth hook"
+	grep -qsE '^MODULES=\(.*\<vc4\>' "$root/etc/mkinitcpio.conf" || problem "the initramfs does not name the vc4 driver"
+	grep -qsw splash "$root/boot/cmdline.txt" || problem "/boot/cmdline.txt does not boot with the splash"
 	[[ -s $root/usr/local/lib/lyona/firstboot-console.sh ]] || problem "no first-boot console palette"
 	grep -qsx 'LANG=en_US.UTF-8' "$root/etc/locale.conf" || problem "the locale is not en_US.UTF-8"
 	# The Pi kernel the firmware boots, and the root it is given.
@@ -180,6 +196,20 @@ check_root() {
 	fi
 
 	return "$problems"
+}
+
+# splash_in_initramfs ROOT: every initramfs in ROOT's /boot holds Plymouth and
+# the vc4 driver (as modules may be compressed, vc4.ko or vc4.ko.zst).
+splash_in_initramfs() {
+	local image found=1 listing
+	for image in "$1"/boot/initramfs-*.img; do
+		[[ -f $image ]] || continue
+		listing=$(arch-chroot "$1" lsinitcpio -- "/boot/${image##*/}") || return 1
+		grep -q 'plymouthd$' <<<"$listing" || return 1
+		grep -Eq '/vc4\.ko(\.[a-z0-9]+)?$' <<<"$listing" || return 1
+		found=0
+	done
+	return "$found"
 }
 
 output_dir="$PWD/out"
@@ -349,6 +379,67 @@ cat >>"$root/etc/fstab" <<EOF
 PARTUUID=$disk_id-02	/	ext4	rw,relatime	0 1
 PARTUUID=$disk_id-01	/boot	vfat	rw,relatime,fmask=0022,dmask=0022	0 2
 EOF
+
+# The boot configuration (ARM3-03): the kernel package's config.txt as it
+# ships it (pacman keeps it, and an edit of it, as a backup file; it turns on
+# the KMS driver), then lyona's settings in a file of their own, then the
+# user's in theirs, so a line of theirs wins over one of lyona's and an
+# update that replaces lyona.txt touches nothing of theirs. The firmware's
+# include puts a file's lines where the include is.
+info "Adding the boot configuration (lyona.txt, custom.txt)..."
+config_txt=$root/boot/config.txt
+if ! [[ -f $config_txt ]] || ! grep -qx 'dtoverlay=vc4-kms-v3d' "$config_txt"; then
+	err "linux-rpi's config.txt does not turn on the KMS driver (dtoverlay=vc4-kms-v3d); its format changed."
+	exit 1
+fi
+if ! grep -qx 'include lyona.txt' "$config_txt"; then
+	printf '%s\n' '' \
+		"# lyona (build-lyona-rpi-image.sh): the desktop's settings, then your own. lyona" \
+		'# may replace lyona.txt; custom.txt is yours. Keep these two lines last.' \
+		'include lyona.txt' 'include custom.txt' >>"$config_txt"
+fi
+install -m 0644 "$repo_dir/rpi/lyona.txt" "$root/boot/lyona.txt"
+install -m 0644 "$repo_dir/rpi/custom.txt" "$root/boot/custom.txt"
+
+# The boot splash (ARM3-03), as the install medium's postinstall gives a new
+# system (install_boot_splash): the lyona Plymouth theme from the palette the
+# first-boot console uses, Plymouth's hook after udev, and `splash` on the
+# kernel command line. vc4, the Pi's KMS driver, goes in MODULES: the kms
+# hook adds only the drivers the build host has loaded (autodetect), and the
+# host is no Pi, so the initramfs would have no display for the splash.
+# plymouth.ignore-serial-consoles, as on x86_64: linux-rpi's command line
+# names the serial console first, which would turn the splash into text.
+# Whether the splash shows on a Pi's KMS console is ARM3-06's check; without
+# `splash` the boot is the quiet text one (docs/src/troubleshooting.md).
+splash_palette="${LYONA_SPLASH_PALETTE:-tokyonight}"
+info "Adding the boot splash from the $splash_palette palette..."
+mkinitcpio_conf=$root/etc/mkinitcpio.conf
+if ! grep -q '^HOOKS=(base udev ' "$mkinitcpio_conf"; then
+	err "the image's mkinitcpio HOOKS line does not start with base udev; its format changed."
+	exit 1
+fi
+# A MODULES line with entries gets vc4 first; an empty one, vc4 alone (the
+# order matters: the first expression must not see the second's result).
+sed -i -e 's/^HOOKS=(base udev /HOOKS=(base udev plymouth /' \
+	-e '/^MODULES=([^)]/ s/^MODULES=(/MODULES=(vc4 /' -e '/^MODULES=()$/ s/()/(vc4)/' "$mkinitcpio_conf"
+if ! grep -q '^HOOKS=(base udev plymouth ' "$mkinitcpio_conf" || ! grep -q '^MODULES=(vc4\b' "$mkinitcpio_conf"; then
+	err "the plymouth hook or the vc4 module was not put in /etc/mkinitcpio.conf."
+	exit 1
+fi
+"$repo_dir/scripts/lyona-plymouth-theme" generate "$splash_palette" \
+	"$repo_dir/config/themes.toml" "$repo_dir/assets/logo" \
+	"$root/usr/share/plymouth/themes/lyona"
+install -Dm644 "$repo_dir/archiso/airootfs/etc/plymouth/plymouthd.conf" "$root/etc/plymouth/plymouthd.conf"
+mapfile -t splash_packages < <(dwm_packages arch boot-splash)
+# The package's own hook builds the initramfs, with the splash in it. Its stock
+# plymouthd.conf is set aside as .pacnew, lyona's being there first.
+arch-chroot "$root" pacman -S --noconfirm --needed "${splash_packages[@]}"
+rm -f -- "$root/etc/plymouth/plymouthd.conf.pacnew"
+sed -i 's|$| splash plymouth.ignore-serial-consoles|' "$cmdline"
+splash_in_initramfs "$root" || {
+	err "an initramfs in /boot lacks plymouthd or the vc4 driver; the splash would not show."
+	exit 1
+}
 
 # The install medium's locale and swap (archinstall's en_US.UTF-8 and zram
 # with zstd); the keyboard and timezone are the first boot's questions.

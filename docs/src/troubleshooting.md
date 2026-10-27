@@ -265,6 +265,22 @@ overview shows icon-and-title cards. To use Picom anyway, choose a backend in
 **Settings > Appearance > Compositor** (it then starts at every login), or start
 it for one session there. The Raspberry Pi 5 is not affected.
 
+### The Raspberry Pi image's boot settings and splash
+
+The image's `/boot/config.txt` is the kernel package's own file, which turns on
+the KMS display driver (`dtoverlay=vc4-kms-v3d`) and which pacman keeps across
+updates. Its last lines include `/boot/lyona.txt`, lyona's settings (audio on
+the headphone jack, no firmware rainbow at power-on, and on a Pi 5 the PCIe
+connector for an NVMe drive), then `/boot/custom.txt`, which is yours: a line
+there wins over one in `lyona.txt`, and lyona never changes it. Put your own
+`config.txt` settings in `custom.txt`, not in `config.txt` or `lyona.txt`.
+
+The boot shows the lyona splash (Plymouth). To boot with the quiet text
+console instead, remove `splash` from `/boot/cmdline.txt`; put it back to have
+the splash again. A display plugged in after the boot is seen by the kernel's
+driver; `hdmi_force_hotplug` belongs to the firmware's old video path and does
+nothing here.
+
 ### Stopping Picom
 
 **Control Center > Restart Picom** restarts it. To stop it while troubleshooting,

@@ -1,0 +1,25 @@
+# /boot/lyona.txt: the lyona Raspberry Pi image's boot settings (ARM3-03),
+# which config.txt reads after the kernel package's own lines. lyona may
+# replace this file in an update: put your own settings in /boot/custom.txt,
+# which config.txt reads after this one, so a line there wins over one here.
+# What each setting does:
+# https://www.raspberrypi.com/documentation/computers/config_txt.html
+
+[all]
+# The display is the kernel's KMS driver (vc4, with V3D for 3D), which the
+# package's config.txt turns on (dtoverlay=vc4-kms-v3d). It sees a display
+# plugged in or out by itself; hdmi_force_hotplug belongs to the firmware's
+# old video path and does nothing here.
+# Audio on the headphone jack (snd_bcm2835); HDMI audio comes with the
+# display driver.
+dtparam=audio=on
+# No rainbow square from the firmware at power-on: the boot shows the lyona
+# splash, or nothing.
+disable_splash=1
+
+[pi5]
+# The PCIe connector, for an NVMe drive on an M.2 board that is not a HAT+
+# (a HAT+ turns it on itself). Not tested: there is no NVMe board (2026-10-27).
+dtparam=pciex1
+
+[all]
