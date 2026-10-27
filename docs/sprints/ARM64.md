@@ -92,7 +92,7 @@ These come from `AGENTS.md` and `SPEC.md` and hold here too.
 | **A-2** | What builds the generic image? (a) archiso with an aarch64 profile of Lyona's own, (b) archboot, (c) mkosi | ARM-2 | Decide from ARM-2's spike (ARM2-01). Prefer (a) if archiso's aarch64 UEFI boot modes build a working image, so the profile, the builder and its tests stay one design; else (c), which builds any architecture's disk images from a pacman bootstrap | **Decided 2026-10-22: (a)** (ARM2-01, `docs/evidence/arm2-01-spike.md`). archiso v91 built a working aarch64 UEFI image on Arch Linux ARM, unpatched, with six profile changes from releng. archiso is not packaged there, so the builder pins an archiso release |
 | **A-3** | Where are ARM images built? (a) A native aarch64 host (an Arch Linux ARM VM on Apple Silicon, or a GitHub arm64 runner), (b) x86_64 with `qemu-user-static` | ARM-2, ARM-3 | **(a).** Emulated chroots are slow and hide faults that only show natively. The maintainer's Apple Silicon VM for local builds; a GitHub arm64 runner for CI | **Decided 2026-10-22: (a)** (ARM2-01). A privileged Arch Linux ARM container on GB10 built the image in about 200 s. The Apple Silicon VM and a GitHub arm64 runner were not tried: ARM2-02 checks the runner |
 | **A-4** | What installs the system from the generic image? (a) archinstall, patched for Arch Linux ARM, (b) Lyona's own `pacstrap` path for ARM | ARM-2 | **(b)** unless ARM2-01 finds archinstall works unpatched. It is a smaller surface than a patched archinstall: partition, format, `pacstrap`, `genfstab`, bootloader, then the existing postinstall. The wizard's questions stay the same | **Decided 2026-10-22: (a), unpatched** (ARM2-01). The x86_64 image's configuration installed a booting system. GRUB needs a `/boot/vmlinuz-linux` kept current from `linux-aarch64`'s `/boot/Image` to pair the initramfs: a hook of Lyona's own, on the medium and in the new system. ARM2-03 still tries an encrypted install and adds a firmware boot entry |
-| **A-5** | One Raspberry Pi image or two? | ARM-3 | **One** for the Pi 4 and Pi 5, with Arch Linux ARM's `linux-rpi` kernel (4K pages) and the firmware's per-board device trees, as the x86_64 image is one image for every GPU | **Decided 2026-10-26: one image, `linux-rpi`** (ARM3-01). The firmware boots it directly, with no U-Boot; Arch Linux ARM's own Pi tarball ships `linux-aarch64` and U-Boot instead, which the Pi 4 ran for #32. `linux-rpi-16k` (Pi 5 only) is not used: there is no Pi 5 to measure it on |
+| **A-5** | One Raspberry Pi image or two? | ARM-3 | **One** for the Pi 4 and Pi 5, with Arch Linux ARM's `linux-rpi` kernel (4K pages) and the firmware's per-board device trees, as the x86_64 image is one image for every GPU | **Decided 2026-10-26: one image, `linux-rpi`** (ARM3-01). The firmware boots it directly, with no U-Boot; Arch Linux ARM's own Pi tarball ships `linux-aarch64` and U-Boot instead, which the Pi 4 ran for #32. `linux-rpi-16k` (Pi 5 only) is not used: not measured (a Pi 5 arrived 2026-10-27, after this) |
 | **A-6** (deferred with ARM-4) | Where do the GB10 kernel and NVIDIA's aarch64 driver come from? (a) Pinned PKGBUILDs built on the machine at install time, (b) a signed Lyona aarch64 package repository, (c) wait for mainline Linux and Arch Linux ARM | ARM-4 | **(a) first**, as Sprint 14 did for the legacy NVIDIA drivers: reviewed, pinned commits, built as the new user, never as root. Measure the build time on GB10 (20 cores); if it is too long, (b), which overlaps the signed package repository already proposed in `ROADMAP.md` "Future Evaluation". Revisit (c) every release | Open |
 | **A-7** (deferred with ARM-4) | Does GB10 (and later N1X) get its own image? | ARM-4 | **No.** The generic image detects GB10 (by its SMBIOS or PCI IDs) and offers its kernel and driver, recommended, as the x86_64 image offers `nvidia-open` | Open |
 | **A-8** (deferred) | When does N1X work start? | ARM-5 | Only when NVIDIA's Linux driver lists N1X device IDs **and** test hardware is available. Until then it is a watch item, checked at each release | Open |
@@ -110,7 +110,7 @@ depends on ARM-2; ARM-5 closes the project.
 | --- | --- | --- | --- | --- |
 | **ARM-1** | [`ARM-SPRINT-1-FOUNDATION.md`](ARM-SPRINT-1-FOUNDATION.md) | Support contract and identity, the dependency map on aarch64, AUR pins, the code that assumes x86_64, aarch64 CI, `install.sh` on an existing Arch Linux ARM system | `install.sh` reaches a working desktop on an Arch Linux ARM machine (an Arch Linux ARM VM under KVM on GB10, since 2026-10-19; the Pi 4 run moved to ARM3-06), with no x86_64 regression | A-1, A-9 |
 | **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on three virtual machines: QEMU/KVM, QEMU/KVM with another display path, and libvirt, on the GB10 (UTM and Parallels until 2026-10-25; there is no Mac) | ARM-1, A-2, A-3, A-4 |
-| **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 | One image boots to a working desktop on a real Pi 4, within the lean budget; the Pi 5 is not tested (there is none, 2026-10-25) | ARM-1, A-3, A-5 |
+| **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 | One image boots to a working desktop on a real Pi 4, within the lean budget, and on a Pi 5 (8 GB) from an SD card (one since 2026-10-27); the Pi 5's NVMe boot is not tested (no NVMe board) | ARM-1, A-3, A-5 |
 | **ARM-4** (deferred) | [`ARM-SPRINT-4-NVIDIA-GB10.md`](ARM-SPRINT-4-NVIDIA-GB10.md) | GB10 detection, its kernel and boot arguments, NVIDIA's aarch64 driver, Picom on NVIDIA aarch64, validation on GB10 hardware | The generic image installs a working desktop with the NVIDIA driver on a real GB10 system | ARM-2, A-6, A-7, hardware |
 | **ARM-5** | [`ARM-SPRINT-5-RELEASE-AND-N1X.md`](ARM-SPRINT-5-RELEASE-AND-N1X.md) | Release workflow for the generic and Pi images, the update path on aarch64, the support contract per target, user docs (the N1X watch item is deferred) | Both images published with a release, each target's status recorded | ARM-2, ARM-3 |
 
@@ -137,22 +137,27 @@ releases of its own. Until then:
 | Target | What validates it | Needed by |
 | --- | --- | --- |
 | Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested | ARM-1, ARM-2 |
-| Raspberry Pi | A Pi 4 (4 GB is the floor to test), with an HDMI display, keyboard and mouse, booting from an SD card. A Pi 5 and its NVMe boot were planned; there is none (2026-10-25), so they are not tested | ARM-3 |
-| GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port | ARM-4 |
+| Raspberry Pi | A Pi 4 (4 GB, the floor to test), with an HDMI display, keyboard and mouse, booting from an SD card. A Pi 5 (8 GB) too, since 2026-10-27, from an SD card; there is no NVMe board, so its NVMe boot is not tested | ARM-3 |
+| GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port. None is available since 2026-10-27 | ARM-4 |
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
 
-Available to the maintainer (2026-10-13): a Raspberry Pi 4 and an NVIDIA GB10
-system. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
+Available to the maintainer (2026-10-13): a Raspberry Pi 4 (4 GB) and an
+NVIDIA GB10 system. Since 2026-10-27: a Raspberry Pi 5 (8 GB) as well, with no
+NVMe board, and the GB10 no longer. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
 x86_64 host froze that host (2026-10-13), so ARM-1 tested on the GitHub arm64
 runner (ARM1-05) and in a native VM on the GB10 (ARM1-06, below), not in an
 emulated VM.
 
-Since 2026-10-19 the GB10 (a DGX Spark, on its own Ubuntu-based OS) is also an
-aarch64 test host. It runs the suite in the Arch Linux ARM container
-(`scripts/ci-local.sh --base-image`), and native aarch64 VMs under KVM with
-UEFI (AAVMF), not emulated. ARM1-06 was validated in such a VM, because the
-Pi 4 was not available; its Pi run moved to ARM3-06. The same host suits
-ARM2-01's spike and ARM2-05's QEMU/KVM machine.
+From 2026-10-19 to 2026-10-27 the GB10 (a DGX Spark, on its own Ubuntu-based
+OS) was also the aarch64 build and test host. It ran the suite in the Arch
+Linux ARM container (`scripts/ci-local.sh --base-image`), native aarch64 VMs
+under KVM with UEFI (AAVMF), not emulated, and the image builds: ARM1-06 was
+validated in such a VM, because the Pi 4 was not available (its Pi run moved to
+ARM3-06), and ARM2-01, ARM2-05, ARM3-01 and ARM3-02 ran there. It is no longer
+available (2026-10-27). What is left for aarch64: the Pi 5 (8 GB) on Arch
+Linux ARM, which can run the image builders as root, and the GitHub arm64
+runner, which runs the suite (the Full suite workflow, ARM1-05) and could build
+(A-3's CI half, untried). Which builds the next image is decided at that build.
 
 ## GitHub
 

@@ -10,11 +10,14 @@ and ARM3-02 on the same branch
 the image's first boot reached the desktop in a KVM virtual machine, and on
 a Pi 4 in a smoke boot on 2026-10-27 (not ARM3-06's run), which found the
 install profile not recorded (F-7, fixed since). ARM3-02 also gave the image `quiet loglevel=3` and the root by
-PARTUUID in `cmdline.txt`, which are ARM3-03's file.
-Validated on a Pi 4 only:
-there is no Pi 5 to test on (decided 2026-10-25), so the Pi 5 is recorded as
-not tested. The image keeps what the Pi 5 needs where it costs nothing (the
-kernel and the firmware's device trees boot both boards). GitHub: issues #12 to #17
+PARTUUID in `cmdline.txt`, which are ARM3-03's file. ARM3-03 built 2026-10-27
+([`docs/evidence/arm3-03-pi-boot.md`](../evidence/arm3-03-pi-boot.md)):
+`config.txt`'s includes of `lyona.txt` and `custom.txt`, and the splash;
+its boot on the Pi 4 is ARM3-06's run.
+Validated on a Pi 4, and, since one arrived on 2026-10-27, on an 8 GB Pi 5
+from an SD card (there was none on 2026-10-25); the Pi 5's NVMe boot is not tested,
+as there is no NVMe board. The image keeps what the Pi 5 needs (the kernel
+and the firmware's device trees boot both boards, and its PCIe is on). GitHub: issues #12 to #17
 (label `arm64`); milestone "ARM Sprint 3 - Raspberry Pi 4 and 5", created by
 [`arm-sprints-github.sh`](arm-sprints-github.sh).
 
@@ -89,18 +92,30 @@ disables itself.
 
 1. **Kernel** under A-5: Arch Linux ARM's `linux-rpi`, which boots both
    boards with the firmware's device trees. The Pi 5's 16K-page kernel was to be
-   measured too; with no Pi 5 (2026-10-25) it is not, and the image keeps
-   `linux-rpi`.
+   measured too; it is not measured (a Pi 5 arrived 2026-10-27, after this
+   build), and the image keeps `linux-rpi`.
 2. **`config.txt`:** the KMS display driver (`vc4-kms-v3d`), HDMI hotplug, and
    only what the desktop needs; documented, and kept apart from any line a
    user adds.
 3. **Boot splash:** the Lyona Plymouth theme, as on x86_64, if it works on the
    Pi's KMS console; otherwise the quiet text boot.
 4. **NVMe on the Pi 5** should boot the same image; it is not tested (no
-   Pi 5).
+   NVMe board, 2026-10-27). The Pi 5 boots from an SD card in ARM3-06.
 
 **Acceptance:** the Pi 4 boots the image to the wizard from SD. The Pi 5,
 from SD and from NVMe, is not tested.
+
+**Built 2026-10-27** ([`docs/evidence/arm3-03-pi-boot.md`](../evidence/arm3-03-pi-boot.md)):
+`linux-rpi` as A-5 decided (1); the package's `config.txt` kept, with
+`include lyona.txt` and `include custom.txt` at its end, lyona's settings in
+`rpi/lyona.txt` (`dtparam=audio=on`, `disable_splash=1`, `[pi5]
+dtparam=pciex1`) and the user's in `custom.txt`, which wins (2); the lyona
+Plymouth splash as on x86_64, with `vc4` named in `MODULES` so the initramfs
+built on a host that is no Pi has the display driver, and `splash
+plymouth.ignore-serial-consoles` on the command line (3); the Pi 5's PCIe
+turned on for NVMe, untested (4). Whether the splash shows on the Pi 4's KMS
+console is checked in ARM3-06; if not, removing `splash` from `cmdline.txt`
+is the quiet text boot.
 
 ## ARM3-04: The desktop on `v3d`
 
@@ -122,7 +137,7 @@ The Pi 4's VideoCore VI is the slowest GPU Lyona will support. The lean goal
 desktop unusable with both backends it can run. Since 2026-10-21, the
 Automatic policy leaves it off at login there (`dwm-settings-picom
 session-start`), so the overview shows its cards. Check that on the Pi 4. Whether the
-Pi 5's V3D 7 needs the same is not measured (no Pi 5).
+Pi 5's V3D 7 needs the same can be measured on the 8 GB Pi 5 (since 2026-10-27).
 
 **Acceptance:** the desktop is usable on a 4 GB Pi 4 by the numbers recorded,
 and its idle cost is within the budget the sprint sets from them.
@@ -142,13 +157,13 @@ Pi cannot do is hidden or explained.
 ## ARM3-06: Validate on a real Pi 4
 
 1. **Hardware:** a Pi 4 (4 GB), with an HDMI display, keyboard and mouse;
-   Ethernet and Wi-Fi. The plan named a Pi 5 too; there is none to test on
-   (decided 2026-10-25), so it is recorded as not tested.
+   Ethernet and Wi-Fi. A Pi 5 (8 GB) too, since 2026-10-27, from an SD card; its
+   NVMe boot is not tested, as there is no NVMe board.
 2. **Run:** write the image, first boot, wizard, log in, the checks of
    ARM1-06, the ARM3-04 measurements, a reboot, an update and a rollback.
 3. **Record** in `docs/evidence/arm3-06-raspberry-pi.md`: board and memory,
    boot medium, image checksum, kernel, display, and what was not tested (the
-   Pi 5 and its NVMe boot, two displays on a Pi 4, other boards).
+   Pi 5's NVMe boot, two displays on a Pi 4, other boards).
 
 **Acceptance:** the Pi 4 reaches a working desktop from the image with no
 manual step.

@@ -67,14 +67,85 @@ topgrade_built=$(line_of 'build_aur_package install-topgrade topgrade')
 user_removed=$(line_of 'arch-chroot "$root" userdel -r "$build_user"')
 root_checked=$(line_of 'check_root "$root" || {')
 image_made=$(line_of 'mkfs.ext4 -q -L lyona-root -d "$root"')
-for position in sudo_added sudo_removed install_run yay_built topgrade_built user_removed root_checked image_made; do
+boot_config=$(line_of 'install -m 0644 "$repo_dir/rpi/lyona.txt" "$root/boot/lyona.txt"')
+splash_added=$(line_of 'arch-chroot "$root" pacman -S --noconfirm --needed "${splash_packages[@]}"')
+for position in sudo_added sudo_removed install_run yay_built topgrade_built user_removed root_checked image_made \
+	boot_config splash_added; do
 	[[ -n ${!position} ]] || fail "the builder's $position step is missing."
 done
+((boot_config < splash_added && splash_added < install_run)) ||
+	fail "the boot configuration and the splash go in before install.sh, whose package installs may rebuild the initramfs."
 ((yay_built < sudo_added && sudo_added < install_run && install_run < sudo_removed)) ||
 	fail "yay must be built before the build user's sudo exists, and install.sh must run only while it does."
 ((sudo_removed < topgrade_built)) || fail "Topgrade must be built after the build user's sudo is removed."
 ((topgrade_built < user_removed && user_removed < root_checked && root_checked < image_made)) ||
 	fail "the build user must be removed, and the root checked, before the image is made."
+
+# --- The boot configuration and the splash (ARM3-03) ---------------------------
+# config.txt stays the kernel package's (it turns on the KMS driver, and pacman
+# keeps it), with lyona's settings in lyona.txt after it and the user's in
+# custom.txt after those. The splash is the medium's: the lyona theme, the
+# plymouth hook after udev, vc4 named for the initramfs the kms hook would
+# leave without it (autodetect on a host that is no Pi), `splash` and
+# plymouth.ignore-serial-consoles on the command line, and each initramfs
+# checked for plymouthd and vc4 before the image is made.
+grep -Fq "grep -qx 'dtoverlay=vc4-kms-v3d' \"\$config_txt\"" "$builder" ||
+	fail "the builder does not check that config.txt turns on the KMS driver."
+grep -Fq "'include lyona.txt' 'include custom.txt' >>\"\$config_txt\"" "$builder" ||
+	fail "the builder does not include lyona.txt and custom.txt from config.txt."
+grep -Fq 'install -m 0644 "$repo_dir/rpi/custom.txt" "$root/boot/custom.txt"' "$builder" ||
+	fail "the builder does not install custom.txt."
+grep -Fq 'mapfile -t splash_packages < <(dwm_packages arch boot-splash)' "$builder" ||
+	fail "the builder does not take the splash package from the boot-splash profile."
+grep -Fq '"$repo_dir/scripts/lyona-plymouth-theme" generate "$splash_palette"' "$builder" ||
+	fail "the builder does not generate the lyona Plymouth theme."
+grep -Fq 's/^HOOKS=(base udev /HOOKS=(base udev plymouth /' "$builder" ||
+	fail "the builder does not put the plymouth hook after udev."
+modules_empty='/^MODULES=()$/ s/()/(vc4)/'
+modules_full='/^MODULES=([^)]/ s/^MODULES=(/MODULES=(vc4 /'
+grep -Fq -- "-e '$modules_full' -e '$modules_empty'" "$builder" ||
+	fail "the builder does not name vc4 in MODULES for the initramfs, the full line's expression first."
+# The two expressions, in the builder's order, on the stock empty line and on
+# a line with entries: vc4 once, first.
+[[ $(sed -e "$modules_full" -e "$modules_empty" <<<'MODULES=()') == 'MODULES=(vc4)' ]] ||
+	fail "the builder's MODULES expressions do not turn MODULES=() into MODULES=(vc4)."
+[[ $(sed -e "$modules_full" -e "$modules_empty" <<<'MODULES=(ext4 foo)') == 'MODULES=(vc4 ext4 foo)' ]] ||
+	fail "the builder's MODULES expressions do not put vc4 first in a MODULES line with entries."
+grep -Fq "sed -i 's|\$| splash plymouth.ignore-serial-consoles|' \"\$cmdline\"" "$builder" ||
+	fail "the builder does not boot with splash and plymouth.ignore-serial-consoles."
+splash_checked=$(line_of 'splash_in_initramfs "$root" || {')
+[[ -n $splash_checked && $splash_added -lt $splash_checked && $splash_checked -lt $install_run ]] ||
+	fail "each initramfs is checked for the splash right after plymouth is installed."
+# lyona.txt and custom.txt: the firmware's format (property=value or a
+# [filter] a line, under 98 characters, # comments), lyona's with the jack's
+# audio, the Pi 5's PCIe under [pi5] only, and ending under [all] so that
+# custom.txt starts there; custom.txt all comments, so it changes nothing.
+for file in lyona.txt custom.txt; do
+	if grep -nvE '^(#.*|[A-Za-z_]+=[^ ]*|\[[a-z0-9]+\]|)$' "$repo/rpi/$file"; then
+		fail "rpi/$file has a line that is not a config.txt setting, filter or comment."
+	fi
+	if awk 'length > 97 { exit 1 }' "$repo/rpi/$file"; then :; else
+		fail "rpi/$file has a line of 98 characters or more, which the firmware cuts."
+	fi
+done
+grep -Fqx 'dtparam=audio=on' "$repo/rpi/lyona.txt" || fail "rpi/lyona.txt does not turn on the headphone jack's audio."
+grep -Fqx 'disable_splash=1' "$repo/rpi/lyona.txt" || fail "rpi/lyona.txt does not turn off the firmware's rainbow splash."
+grep -Fqx 'dtparam=pciex1' "$repo/rpi/lyona.txt" || fail "rpi/lyona.txt does not turn on the Pi 5's PCIe connector."
+pcie_line=$(grep -nFx 'dtparam=pciex1' "$repo/rpi/lyona.txt" | cut -d: -f1)
+pi5_line=$(grep -nFx '[pi5]' "$repo/rpi/lyona.txt" | cut -d: -f1)
+all_after=$(grep -nFx '[all]' "$repo/rpi/lyona.txt" | cut -d: -f1 | tail -n 1)
+[[ -n $pi5_line && $pi5_line -lt $pcie_line && $pcie_line -lt $all_after ]] ||
+	fail "rpi/lyona.txt's PCIe line must be under [pi5], before a final [all]."
+[[ $(grep -v '^#' "$repo/rpi/lyona.txt" | grep -v '^$' | tail -n 1) == '[all]' ]] ||
+	fail "rpi/lyona.txt must end under [all], where custom.txt starts."
+if grep -q 'hdmi_force_hotplug=' "$repo/rpi/lyona.txt" | grep -v '^#'; then
+	fail "rpi/lyona.txt sets hdmi_force_hotplug, a legacy firmware option the KMS driver ignores."
+fi
+if grep -nvE '^(#.*|)$' "$repo/rpi/custom.txt"; then
+	fail "rpi/custom.txt sets something; it is the user's file and ships with comments only."
+fi
+grep -Fq 'plymouth-quit-wait.service' "$repo/rpi/lyona-firstboot.service" ||
+	fail "lyona-firstboot.service does not wait for the splash to leave tty1."
 
 # --- Hosts it cannot build on --------------------------------------------------
 # Each refusal comes before anything is made: no work directory is left.
@@ -121,8 +192,15 @@ make_root() { # DIR
 	printf '#!/bin/sh\n' >"$root/usr/local/src/lyona/install.sh"
 	chmod +x "$root/usr/local/bin/dwm" "$root/usr/local/src/lyona/install.sh"
 	: >"$root/boot/kernel8.img"
-	printf 'root=PARTUUID=1a2b3c4d-02 rw rootwait console=serial0,115200 console=tty1 fsck.repair=yes quiet loglevel=3\n' \
+	printf 'root=PARTUUID=1a2b3c4d-02 rw rootwait console=serial0,115200 console=tty1 fsck.repair=yes quiet loglevel=3 splash plymouth.ignore-serial-consoles\n' \
 		>"$root/boot/cmdline.txt"
+	printf '%s\n' 'initramfs initramfs-linux.img followkernel' 'dtoverlay=vc4-kms-v3d' '[all]' '' \
+		'include lyona.txt' 'include custom.txt' >"$root/boot/config.txt"
+	cp "$repo/rpi/lyona.txt" "$repo/rpi/custom.txt" "$root/boot/"
+	mkdir -p "$root/usr/share/plymouth/themes/lyona" "$root/etc/plymouth"
+	printf '[Plymouth Theme]\n' >"$root/usr/share/plymouth/themes/lyona/lyona.plymouth"
+	printf '[Daemon]\nTheme=lyona\n' >"$root/etc/plymouth/plymouthd.conf"
+	printf 'MODULES=(vc4)\nHOOKS=(base udev plymouth autodetect kms block filesystems fsck)\n' >"$root/etc/mkinitcpio.conf"
 	printf '%%wheel ALL=(ALL:ALL) ALL\n' >"$root/etc/sudoers.d/10-wheel"
 	mkdir -p "$root/etc/systemd/system/multi-user.target.wants"
 	ln -s /usr/lib/systemd/system/NetworkManager.service \
@@ -227,6 +305,16 @@ personal_case "the image's preset does not end with disable *" \
 personal_case '/boot/cmdline.txt does not boot quiet' sed -i 's/ quiet loglevel=3//' boot/cmdline.txt
 personal_case 'no first-boot console palette' rm usr/local/lib/lyona/firstboot-console.sh
 personal_case 'the locale is not en_US.UTF-8' sh -c 'echo LANG=C >etc/locale.conf'
+personal_case '/boot/config.txt does not turn on the KMS driver' sed -i '/vc4-kms-v3d/d' boot/config.txt
+personal_case '/boot/config.txt does not include lyona.txt' sed -i '/include lyona/d' boot/config.txt
+personal_case '/boot/config.txt does not include custom.txt' sed -i '/include custom/d' boot/config.txt
+personal_case 'no /boot/lyona.txt' rm boot/lyona.txt
+personal_case 'no /boot/custom.txt' rm boot/custom.txt
+personal_case 'no lyona Plymouth theme' rm usr/share/plymouth/themes/lyona/lyona.plymouth
+personal_case 'plymouthd.conf does not select the lyona theme' sh -c 'echo Theme=spinner >etc/plymouth/plymouthd.conf'
+personal_case 'the initramfs has no plymouth hook' sed -i 's/ plymouth//' etc/mkinitcpio.conf
+personal_case 'the initramfs does not name the vc4 driver' sed -i 's/(vc4)/()/' etc/mkinitcpio.conf
+personal_case '/boot/cmdline.txt does not boot with the splash' sed -i 's/ splash//' boot/cmdline.txt
 out=$(check "$work/nowhere") && fail "a missing directory passed the check."
 grep -Fq 'not a root filesystem' <<<"$out" || fail "a missing directory: $out"
 

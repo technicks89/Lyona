@@ -247,8 +247,10 @@ boot asks the questions, creates the user and finishes the install for them
 (`rpi/lyona-firstboot.sh`, ARM3-02). It is not released, and has not been
 tried on a Pi: its first boot reached the desktop in a KVM virtual machine
 (`docs/evidence/arm3-02-pi-first-boot.md`). It builds natively on an aarch64 Arch
-Linux ARM host as root, for example in the privileged `lyona-archlinuxarm`
-container on GB10:
+Linux ARM host as root. The builds so far ran in the privileged
+`lyona-archlinuxarm` container on GB10, which is no longer available
+(2026-10-27); the hosts left are a Pi 5 (8 GB) running Arch Linux ARM and the
+GitHub arm64 runner (untried for this build):
 
 ```sh
 sudo scripts/build-lyona-rpi-image.sh --output release/
@@ -260,7 +262,12 @@ and network access. It produces `lyona-VERSION-rpi-aarch64.img.xz` and its
 `.sha256`. It `pacstrap`s the dependency map's `rpi-image` profile (the
 Raspberry Pi kernel `linux-rpi`, its firmware and device trees) into a
 directory, runs `install.sh --profile full` there as a temporary build user,
-adds the first boot, then removes that user and everything personal, and makes the MBR disk image
+adds the boot configuration and the lyona boot splash (ARM3-03: `config.txt`
+stays the kernel package's and includes `rpi/lyona.txt`, lyona's settings, then
+`custom.txt`, the user's; Plymouth's hook and `vc4` go in the initramfs, and
+`splash` on the command line; `LYONA_SPLASH_PALETTE` names the palette, default
+`tokyonight`) and the first boot, then removes that user and everything
+personal, and makes the MBR disk image
 (a 512 MiB FAT32 boot partition and an ext4 root just large enough) from the
 directory, with no loop device. `--check-root DIR` checks a root filesystem
 the way the builder does before it makes the image.

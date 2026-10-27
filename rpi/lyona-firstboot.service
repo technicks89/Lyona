@@ -4,7 +4,8 @@
 [Unit]
 Description=lyona first boot: create the user and finish the install
 ConditionPathExists=!/var/lib/lyona/firstboot-done
-After=systemd-user-sessions.service NetworkManager.service systemd-localed.service systemd-vconsole-setup.service
+# After the boot splash has left tty1 (ARM3-03), as a getty is.
+After=systemd-user-sessions.service NetworkManager.service systemd-localed.service systemd-vconsole-setup.service plymouth-quit-wait.service
 Wants=NetworkManager.service
 Before=display-manager.service getty@tty1.service
 Conflicts=getty@tty1.service
