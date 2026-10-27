@@ -34,10 +34,12 @@ export LYONA_WIFI_LIB=${LYONA_WIFI_LIB:-$wizard_dir/lyona-wifi.sh}
 export LYONA_LOGO_PATH=${LYONA_LOGO_PATH:-$wizard_dir/lyona-logo.txt}
 export LYONA_CONSOLE_THEME=${LYONA_CONSOLE_THEME:-/usr/local/lib/lyona/firstboot-console.sh}
 # shellcheck source=archiso/airootfs/root/lyona-install.sh
+# shellcheck disable=SC1091 # the wizard library is not among check-shell's inputs
 LYONA_INSTALL_LIB=1 source "${LYONA_WIZARD_LIB:-$wizard_dir/lyona-install.sh}"
 
 # The wizard's own words are about a disk that is not touched until the end;
 # here an answer can always be given again.
+# shellcheck disable=SC2120 # the wizard's questions (lyona-install.sh) pass a reason
 cancelled() {
 	err "cancelled${1:+ -- $1}. Starting the questions again."
 	exec "$FB_SELF"
@@ -264,6 +266,7 @@ ask_questions() {
 	log_step "ask_timezone"
 	ask_timezone
 	log_step "summary"
+	# shellcheck disable=SC2119 # no reason: the summary itself was declined
 	firstboot_summary || cancelled
 }
 
@@ -368,6 +371,7 @@ install_user_half() {
 	# The build, as install.sh does it before make install-user: config.h from
 	# the defaults, then make, which builds the helpers install-user uses
 	# (lyona-toml: without it the theme step failed, ARM3-02).
+	# shellcheck disable=SC2016 # "$1" is the inner shell's: the checkout
 	run_logged "Building lyona for $USERNAME..." as_user bash -c \
 		'cd "$1" && scripts/configure-build.sh --non-interactive && make clean && make' bash "$checkout"
 	# The profile the image was built with, recorded for the account as
