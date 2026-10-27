@@ -179,7 +179,7 @@ Found, two faults in the first boot's log:
   the builder records the profile it installs (`LYONA_INSTALL_PROFILE=full`
   in `/etc/lyona-iso-release`, and `--check-root` fails without it), and the
   first boot records it for the user before `make install-user`; a failure is
-  a warning, as in `install.sh`. Not yet checked on a rebuilt image.
+  a warning, as in `install.sh`. Checked on build 9 (below), in the VM.
 - **`config.h` copied as "customised"** for an account that changed nothing.
   `scripts/configure-build.sh` sets the font size with `s/(size=)…/g`, which
   also rewrites the emoji font's `pixelsize=14`, so every generated
@@ -187,6 +187,16 @@ Found, two faults in the first boot's log:
   `~/.config/lyona/config.h`. That is lyona's shared code, on x86_64 too:
   technicks89/Lyona#464. It comes here with a sync, before ARM3-06's image is
   built.
+
+**Build 9, with F-7's fix, in the VM** (2026-10-27): built from
+`677524f` in 218 s, `lyona-2026.10.0-beta.7-rpi-aarch64.img.xz`, 848,295,024
+bytes, SHA-256
+`0b5fd7994f6146253f2c5a6b88dbf9b7d1491a3246f25bc38b657f1f49e57225`. Its first
+boot, answered as before, reached the greeter. On the disk afterwards:
+`/etc/lyona-iso-release` has `LYONA_INSTALL_PROFILE=full`; the user's
+`~/.local/state/lyona/install-profile` says `full`; the log has "Recording
+the full profile... done in 1s" and no "No install profile"; the done marker
+is there. It has not been written to the Pi.
 
 Not yet reported from the smoke boot: the HDMI resolution, Wi-Fi without
 Ethernet, the time to the wizard, how the desktop responds, and a reboot.
