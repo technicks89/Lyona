@@ -573,6 +573,29 @@ assert_equals "$staged_inode" "$(stat -c %i "$staged_tarball")" \
 rm -f "$config_home/lyona/config.h"
 rm -rf "$state_home/lyona/updates/$source_version"
 
+# ── apply: makes config.h from the build answers in build.conf (#464) ──
+# From the release's own config.def.h, so it never goes stale; a line that is
+# not an answer is left out with a warning, never run.
+reset_curl_responses
+valid_user_record 0000.00.0 | write_user_record
+mkdir -p "$config_home/lyona"
+printf '# answers\nDWM_FONT_SIZE=15\nDWM_MODKEY=alt\ntouch %s\n' "$work/answers-ran" \
+	>"$config_home/lyona/build.conf"
+status=$(DWM_NMASTER=3 apply_source --dry-run 2>"$work/err")
+assert_string_contains "$status" "$(printf 'complete\tapply-dry-run')"
+assert_contains "$work/err" "building with the dwm build answers in $config_home/lyona/build.conf"
+assert_contains "$work/err" "ignoring a line of $config_home/lyona/build.conf that is not a build answer"
+[ ! -e "$work/answers-ran" ] || fail 'a line of build.conf was run'
+staged_config_h=$state_home/lyona/updates/$source_version/config.h
+grep -Fq 'MesloLGS Nerd Font Mono:size=15' "$staged_config_h" || fail 'the staged config.h lacks the font size answer'
+grep -Fq 'NotoColorEmoji:pixelsize=14' "$staged_config_h" || fail 'the staged config.h changed the emoji pixelsize'
+grep -Eq '^#define MODKEY[[:space:]]+Mod1Mask$' "$staged_config_h" || fail 'the staged config.h lacks the modifier answer'
+grep -Eq 'nmaster[[:space:]]*=[[:space:]]*1;' "$staged_config_h" || fail 'a DWM_ value of the caller reached the staged config.h'
+grep -Eq 'refresh_rate[[:space:]]*=[[:space:]]*60;' "$staged_config_h" ||
+	fail "the staged config.h does not have the release's refresh rate"
+rm -f "$config_home/lyona/build.conf"
+rm -rf "$state_home/lyona/updates/$source_version"
+
 # ── apply: the release's required packages are checked first (S12-11) ─
 # From the release's own package map. A missing required package stops the
 # update before anything is built or installed, and says how to install it.

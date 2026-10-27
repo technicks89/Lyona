@@ -5,12 +5,18 @@ set -euo pipefail
 usage() {
 	cat <<'EOF'
 Usage: scripts/configure-build.sh [--non-interactive] [--output FILE] [--template FILE]
+       scripts/configure-build.sh --derive FILE [--template FILE]
 
 Create a local config.h from config.def.h. Existing output files are preserved.
 Unattended values can be provided with these environment variables:
 
   DWM_REFRESH_RATE, DWM_FONT_SIZE, DWM_MODKEY, DWM_MFACT, DWM_NMASTER,
   DWM_CURSORWARP, DWM_SWALLOWFLOATING, DWM_RESIZEHINTS
+
+--derive prints, as those variables, the answers FILE was made from, when it is
+exactly what this script makes from the template with them: the refresh rate,
+and each other value that is not the template's own. It fails for a config.h
+edited in any other way.
 EOF
 }
 
@@ -135,7 +141,88 @@ detect_refresh_rate() {
 	printf '%s\n' 60
 }
 
+# render_config TEMPLATE OUTPUT: OUTPUT is TEMPLATE with the answers in the
+# refresh_rate and other globals. Only a size= that follows a colon is the
+# interface font's: the emoji font's pixelsize= is left as it is (#464).
+render_config() {
+	cp "$1" "$2"
+	sed -i -E \
+		-e "s/^(static const unsigned int refresh_rate[[:space:]]*=[[:space:]]*)[0-9]+;/\\1${refresh_rate};/" \
+		-e "s/^(static const int cursorwarp[[:space:]]*=[[:space:]]*)[01];/\\1${cursorwarp};/" \
+		-e "s/^(static const int swallowfloating[[:space:]]*=[[:space:]]*)[01];/\\1${swallowfloating};/" \
+		-e "s/^(static const float mfact[[:space:]]*=[[:space:]]*)[0-9.]+;/\\1${mfact};/" \
+		-e "s/^(static const int nmaster[[:space:]]*=[[:space:]]*)[0-9]+;/\\1${nmaster};/" \
+		-e "s/^(static const int resizehints[[:space:]]*=[[:space:]]*)[01];/\\1${resizehints};/" \
+		-e "s/^(#define MODKEY[[:space:]]+).*/\\1${modkey}/" \
+		-e "s/(:size=)[0-9]+/\\1${font_size}/g" \
+		"$2"
+}
+
+# config_value FILE PATTERN: the first value PATTERN's group captures in FILE.
+config_value() {
+	sed -n -E "s/$2/\\1/p" "$1" | head -n 1
+}
+
+# read_answers FILE: the answers a config.h holds, into the refresh_rate and
+# other globals, with the modifier as super or alt. Fails when one is missing
+# or is not an answer this script would give.
+read_answers() {
+	local file=$1
+	refresh_rate=$(config_value "$file" '^static const unsigned int refresh_rate[[:space:]]*=[[:space:]]*([0-9]+);.*')
+	font_size=$(config_value "$file" '^static const char \*fonts\[\].*:size=([0-9]+).*')
+	mfact=$(config_value "$file" '^static const float mfact[[:space:]]*=[[:space:]]*([0-9.]+);.*')
+	nmaster=$(config_value "$file" '^static const int nmaster[[:space:]]*=[[:space:]]*([0-9]+);.*')
+	cursorwarp=$(config_value "$file" '^static const int cursorwarp[[:space:]]*=[[:space:]]*([01]);.*')
+	swallowfloating=$(config_value "$file" '^static const int swallowfloating[[:space:]]*=[[:space:]]*([01]);.*')
+	resizehints=$(config_value "$file" '^static const int resizehints[[:space:]]*=[[:space:]]*([01]);.*')
+	case $(config_value "$file" '^#define MODKEY[[:space:]]+([^[:space:]]+)$') in
+	Mod4Mask) modkey=super ;;
+	Mod1Mask) modkey=alt ;;
+	*) return 1 ;;
+	esac
+	[[ -n $cursorwarp && -n $swallowfloating && -n $resizehints ]] || return 1
+	[[ -z $(check_integer "$refresh_rate" x 30 1000) ]] &&
+		[[ -z $(check_integer "$font_size" x 6 48) ]] &&
+		[[ -z $(check_integer "$nmaster" x 1 10) ]] &&
+		[[ -z $(check_decimal "$mfact" x 0.05 0.95) ]]
+}
+
+# derive FILE: print the answers FILE was made from (see usage), or fail. A
+# config.h made before #464, with the emoji font's pixelsize= set to the font
+# size too, counts as made from them.
+derive() {
+	local file=$1 scratch name value
+	local -A answers=() defaults=()
+	[[ -r $file ]] || die "not readable: $file"
+	read_answers "$template" || die "the template has no answers to compare: $template"
+	for name in refresh_rate font_size modkey mfact nmaster cursorwarp swallowfloating resizehints; do
+		defaults[$name]=${!name}
+	done
+	read_answers "$file" || return 1
+	for name in refresh_rate font_size modkey mfact nmaster cursorwarp swallowfloating resizehints; do
+		answers[$name]=${!name}
+	done
+	scratch=$(mktemp -d)
+	# shellcheck disable=SC2064 # the directory is known now
+	trap "rm -rf -- '$scratch'" RETURN
+	case $modkey in
+	super) modkey=Mod4Mask ;;
+	alt) modkey=Mod1Mask ;;
+	esac
+	render_config "$template" "$scratch/config.h"
+	if ! cmp -s "$file" "$scratch/config.h"; then
+		sed -E "s/(size=)[0-9]+/\\1${font_size}/g" "$scratch/config.h" >"$scratch/before-464.h"
+		cmp -s "$file" "$scratch/before-464.h" || return 1
+	fi
+	printf 'DWM_REFRESH_RATE=%s\n' "${answers[refresh_rate]}"
+	for name in font_size modkey mfact nmaster cursorwarp swallowfloating resizehints; do
+		value=${answers[$name]}
+		[[ $value == "${defaults[$name]}" ]] || printf 'DWM_%s=%s\n' "${name^^}" "$value"
+	done
+}
+
 interactive=true
+derive_file=
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 template="$repo_dir/config.def.h"
 output="$repo_dir/config.h"
@@ -149,6 +236,11 @@ while (($# > 0)); do
 	--output)
 		(($# >= 2)) || die "--output requires a path."
 		output=$2
+		shift 2
+		;;
+	--derive)
+		(($# >= 2)) || die "--derive requires a path."
+		derive_file=$2
 		shift 2
 		;;
 	--template)
@@ -167,6 +259,11 @@ while (($# > 0)); do
 done
 
 [[ -r $template ]] || die "template is not readable: $template"
+
+if [[ -n $derive_file ]]; then
+	derive "$derive_file"
+	exit
+fi
 
 if [[ -e $output ]]; then
 	printf 'Preserving existing %s\n' "$output"
@@ -222,18 +319,7 @@ done
 mkdir -p "$(dirname "$output")"
 temporary=$(mktemp "${output}.tmp.XXXXXX")
 trap 'rm -f "$temporary"' EXIT
-cp "$template" "$temporary"
-
-sed -i -E \
-	-e "s/^(static const unsigned int refresh_rate[[:space:]]*=[[:space:]]*)[0-9]+;/\\1${refresh_rate};/" \
-	-e "s/^(static const int cursorwarp[[:space:]]*=[[:space:]]*)[01];/\\1${cursorwarp};/" \
-	-e "s/^(static const int swallowfloating[[:space:]]*=[[:space:]]*)[01];/\\1${swallowfloating};/" \
-	-e "s/^(static const float mfact[[:space:]]*=[[:space:]]*)[0-9.]+;/\\1${mfact};/" \
-	-e "s/^(static const int nmaster[[:space:]]*=[[:space:]]*)[0-9]+;/\\1${nmaster};/" \
-	-e "s/^(static const int resizehints[[:space:]]*=[[:space:]]*)[01];/\\1${resizehints};/" \
-	-e "s/^(#define MODKEY[[:space:]]+).*/\\1${modkey}/" \
-	-e "s/(size=)[0-9]+/\\1${font_size}/g" \
-	"$temporary"
+render_config "$template" "$temporary"
 
 mv "$temporary" "$output"
 trap - EXIT
