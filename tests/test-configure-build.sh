@@ -116,7 +116,8 @@ keep "$repo/config.def.h" "$work/before-464.h"
 test "$(answers_in "$work/home/build.conf")" = "$expected_answers"
 test ! -e "$work/home/config.h"
 backups=$(find "$work/home" -name 'config.h.bak.*')
-test -n "$backups" && cmp -s "$work/before-464.h" "$backups"
+test -n "$backups"
+cmp -s "$work/before-464.h" "$backups"
 
 keep "$output" "$work/edited.h"
 cmp -s "$work/edited.h" "$work/home/config.h"
