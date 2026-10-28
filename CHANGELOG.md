@@ -194,6 +194,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The Raspberry Pi image builder stopped at the boot splash with "the
+  image's mkinitcpio HOOKS line does not start with base udev": mkinitcpio
+  42, which Arch Linux ARM now ships, starts its default `HOOKS` with
+  `base systemd`. The plymouth hook now goes after `udev` or `systemd`, as
+  the x86_64 postinstall already does (ARM3-03).
 - `scripts/configure-build.sh` no longer rewrites the emoji font's
   `pixelsize=14` to the interface font size (#464). Its font-size pattern
   matched the `size=` inside `pixelsize=`, so even a run with every default

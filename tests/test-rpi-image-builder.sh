@@ -85,8 +85,8 @@ done
 # config.txt stays the kernel package's (it turns on the KMS driver, and pacman
 # keeps it), with lyona's settings in lyona.txt after it and the user's in
 # custom.txt after those. The splash is the medium's: the lyona theme, the
-# plymouth hook after udev, vc4 named for the initramfs the kms hook would
-# leave without it (autodetect on a host that is no Pi), `splash` and
+# plymouth hook after udev or systemd, vc4 named for the initramfs the kms hook
+# would leave without it (autodetect on a host that is no Pi), `splash` and
 # plymouth.ignore-serial-consoles on the command line, and each initramfs
 # checked for plymouthd and vc4 before the image is made.
 grep -Fq "grep -qx 'dtoverlay=vc4-kms-v3d' \"\$config_txt\"" "$builder" ||
@@ -99,11 +99,22 @@ grep -Fq 'mapfile -t splash_packages < <(dwm_packages arch boot-splash)' "$build
 	fail "the builder does not take the splash package from the boot-splash profile."
 grep -Fq '"$repo_dir/scripts/lyona-plymouth-theme" generate "$splash_palette"' "$builder" ||
 	fail "the builder does not generate the lyona Plymouth theme."
-grep -Fq 's/^HOOKS=(base udev /HOOKS=(base udev plymouth /' "$builder" ||
-	fail "the builder does not put the plymouth hook after udev."
+hooks_expression='s/^HOOKS=\(base (udev|systemd) /HOOKS=(base \1 plymouth /'
+grep -Fq "sed -i -E '$hooks_expression' \"\$mkinitcpio_conf\"" "$builder" ||
+	fail "the builder does not put the plymouth hook after udev or systemd."
+# The expression on mkinitcpio 41's stock line (udev) and 42's (systemd, as
+# Arch Linux ARM's mkinitcpio 42.2 ships it): plymouth once, right after.
+for init in udev systemd; do
+	case $init in
+	udev) hooks_rest='autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck' ;;
+	systemd) hooks_rest='autodetect microcode modconf kms keyboard sd-vconsole block filesystems fsck' ;;
+	esac
+	[[ $(sed -E "$hooks_expression" <<<"HOOKS=(base $init $hooks_rest)") == "HOOKS=(base $init plymouth $hooks_rest)" ]] ||
+		fail "the builder's HOOKS expression does not put plymouth after $init."
+done
 modules_empty='/^MODULES=()$/ s/()/(vc4)/'
 modules_full='/^MODULES=([^)]/ s/^MODULES=(/MODULES=(vc4 /'
-grep -Fq -- "-e '$modules_full' -e '$modules_empty'" "$builder" ||
+grep -Fq -- "sed -i -e '$modules_full' -e '$modules_empty' \"\$mkinitcpio_conf\"" "$builder" ||
 	fail "the builder does not name vc4 in MODULES for the initramfs, the full line's expression first."
 # The two expressions, in the builder's order, on the stock empty line and on
 # a line with entries: vc4 once, first.

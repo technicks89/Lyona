@@ -51,7 +51,7 @@ and the list at the end says what it has to look at.
    generated from the `tokyonight` palette (`LYONA_SPLASH_PALETTE`
    overrides, as for the medium) into `/usr/share/plymouth/themes/lyona`,
    the medium's `plymouthd.conf`, the `plymouth` hook right after `udev` in
-   `HOOKS`, the `plymouth` package (the map's `boot-splash` profile), whose
+   `HOOKS` (or `systemd`, mkinitcpio 42's default since; fixed 2026-10-28), the `plymouth` package (the map's `boot-splash` profile), whose
    own pacman hook rebuilds the initramfs, and `splash
    plymouth.ignore-serial-consoles` on the command line
    (`ignore-serial-consoles` because `linux-rpi`'s line names the serial

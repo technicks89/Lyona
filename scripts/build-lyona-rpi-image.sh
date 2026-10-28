@@ -419,10 +419,11 @@ install -m 0644 "$repo_dir/rpi/custom.txt" "$root/boot/custom.txt"
 
 # The boot splash (ARM3-03), as the install medium's postinstall gives a new
 # system (install_boot_splash): the lyona Plymouth theme from the palette the
-# first-boot console uses, Plymouth's hook after udev, and `splash` on the
-# kernel command line. vc4, the Pi's KMS driver, goes in MODULES: the kms
-# hook adds only the drivers the build host has loaded (autodetect), and the
-# host is no Pi, so the initramfs would have no display for the splash.
+# first-boot console uses, Plymouth's hook after udev or systemd (mkinitcpio
+# 42's default HOOKS start `base systemd`), and `splash` on the kernel command
+# line. vc4, the Pi's KMS driver, goes in MODULES: the kms hook adds only the
+# drivers the build host has loaded (autodetect), and the host is no Pi, so the
+# initramfs would have no display for the splash.
 # plymouth.ignore-serial-consoles, as on x86_64: linux-rpi's command line
 # names the serial console first, which would turn the splash into text.
 # Whether the splash shows on a Pi's KMS console is ARM3-06's check; without
@@ -430,15 +431,15 @@ install -m 0644 "$repo_dir/rpi/custom.txt" "$root/boot/custom.txt"
 splash_palette="${LYONA_SPLASH_PALETTE:-tokyonight}"
 info "Adding the boot splash from the $splash_palette palette..."
 mkinitcpio_conf=$root/etc/mkinitcpio.conf
-if ! grep -q '^HOOKS=(base udev ' "$mkinitcpio_conf"; then
-	err "the image's mkinitcpio HOOKS line does not start with base udev; its format changed."
+if ! grep -Eq '^HOOKS=\(base (udev|systemd) ' "$mkinitcpio_conf"; then
+	err "the image's mkinitcpio HOOKS line does not start with base and udev or systemd; its format changed."
 	exit 1
 fi
+sed -i -E 's/^HOOKS=\(base (udev|systemd) /HOOKS=(base \1 plymouth /' "$mkinitcpio_conf"
 # A MODULES line with entries gets vc4 first; an empty one, vc4 alone (the
 # order matters: the first expression must not see the second's result).
-sed -i -e 's/^HOOKS=(base udev /HOOKS=(base udev plymouth /' \
-	-e '/^MODULES=([^)]/ s/^MODULES=(/MODULES=(vc4 /' -e '/^MODULES=()$/ s/()/(vc4)/' "$mkinitcpio_conf"
-if ! grep -q '^HOOKS=(base udev plymouth ' "$mkinitcpio_conf" || ! grep -q '^MODULES=(vc4\b' "$mkinitcpio_conf"; then
+sed -i -e '/^MODULES=([^)]/ s/^MODULES=(/MODULES=(vc4 /' -e '/^MODULES=()$/ s/()/(vc4)/' "$mkinitcpio_conf"
+if ! grep -Eq '^HOOKS=\(base (udev|systemd) plymouth ' "$mkinitcpio_conf" || ! grep -q '^MODULES=(vc4\b' "$mkinitcpio_conf"; then
 	err "the plymouth hook or the vc4 module was not put in /etc/mkinitcpio.conf."
 	exit 1
 fi
