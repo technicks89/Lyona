@@ -27,6 +27,10 @@ pragma ComponentBehavior: Bound
  *   from the Lyona installation media for system rescue, and
  *   `lyona-update rollback` for restoring Lyona-managed configuration files
  *   to their previous generation.
+ * - ARM3-05: Board and Processor temperature rows, left out where the
+ *   machine has no device tree or processor thermal zone ("unsupported");
+ *   any other unsupported state reads "Not supported", in the caption colour,
+ *   since it is the machine's, not a failed read.
  */
 ColumnLayout {
     id: root
@@ -39,7 +43,10 @@ ColumnLayout {
         {id: "os-name", label: "Operating system"}, {id: "os-version", label: "Version"},
         {id: "kernel-release", label: "Kernel"}, {id: "architecture", label: "Architecture"},
         {id: "hardware-vendor", label: "Hardware vendor"}, {id: "hardware-model", label: "Hardware model"},
-        {id: "cpu-model", label: "Processor"}, {id: "logical-cpus", label: "Logical processors"},
+        {id: "board-model", label: "Board", optional: true},
+        {id: "cpu-model", label: "Processor"},
+        {id: "cpu-temperature", label: "Processor temperature", optional: true},
+        {id: "logical-cpus", label: "Logical processors"},
         {id: "memory-total-bytes", label: "Memory total"}, {id: "memory-available-bytes", label: "Memory available"},
         {id: "swap-total-bytes", label: "Swap total"}, {id: "swap-free-bytes", label: "Swap free"},
         {id: "uptime-seconds", label: "Uptime"}
@@ -58,13 +65,15 @@ ColumnLayout {
         return (unit === 0 ? value : (amount / Math.pow(1024, unit)).toFixed(1)) + " " + units[unit];
     }
     function value(identifier, state) {
-        if (state.value === "unknown" || state.status === "unavailable" || state.status === "unsupported") return "Unknown";
+        if (state.status === "unsupported") return "Not supported";
+        if (state.value === "unknown" || state.status === "unavailable") return "Unknown";
         if (identifier.indexOf("-bytes") >= 0) return bytes(state.value) + " (" + state.value + " bytes)";
         if (identifier === "uptime-seconds") {
             const seconds = Number(state.value);
             return Math.floor(seconds / 86400) + "d " + Math.floor(seconds % 86400 / 3600) + "h "
                 + Math.floor(seconds % 3600 / 60) + "m";
         }
+        if (identifier === "cpu-temperature") return (Number(state.value) / 1000).toFixed(1) + " C";
         return state.value;
     }
     function revealFocusedControl() {
@@ -83,13 +92,16 @@ ColumnLayout {
         id: row
         required property var definition
         readonly property var stateView: root.model.nativeStateView(definition.id)
+        objectName: "information-row-" + definition.id
+        visible: !(definition.optional === true && stateView.status === "unsupported")
         Layout.fillWidth: true
         spacing: Theme.spacingXs
         PlainText { text: row.definition.label; font.bold: true }
         PlainText {
             objectName: "information-value-" + row.definition.id
             text: root.value(row.definition.id, row.stateView)
-            color: row.stateView.status === "available" ? Theme.menuText : Theme.warning
+            color: row.stateView.status === "available" ? Theme.menuText
+                : row.stateView.status === "unsupported" ? Theme.menuMutedText : Theme.warning
         }
         PlainText {
             text: row.stateView.detail

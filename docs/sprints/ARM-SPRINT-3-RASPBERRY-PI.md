@@ -13,7 +13,10 @@ install profile not recorded (F-7, fixed since). ARM3-02 also gave the image `qu
 PARTUUID in `cmdline.txt`, which are ARM3-03's file. ARM3-03 built 2026-10-27
 ([`docs/evidence/arm3-03-pi-boot.md`](../evidence/arm3-03-pi-boot.md)):
 `config.txt`'s includes of `lyona.txt` and `custom.txt`, and the splash;
-its boot on the Pi 4 is ARM3-06's run.
+its boot on the Pi 4 is ARM3-06's run. ARM3-05 built 2026-10-27
+([`docs/evidence/arm3-05-pi-settings.md`](../evidence/arm3-05-pi-settings.md)):
+System Information's Board and Processor temperature rows, and "Not
+supported" for what a machine lacks; the panes on a Pi are ARM3-06's run.
 Validated on a Pi 4, and, since one arrived on 2026-10-27, on an 8 GB Pi 5
 from an SD card (there was none on 2026-10-25); the Pi 5's NVMe boot is not tested,
 as there is no NVMe board. The image keeps what the Pi 5 needs (the kernel
@@ -153,6 +156,13 @@ and its idle cost is within the budget the sprint sets from them.
 
 **Acceptance:** every Settings pane opens on a Pi without an error, and what a
 Pi cannot do is hidden or explained.
+
+Built 2026-10-27 (`docs/evidence/arm3-05-pi-settings.md`): the Board and
+Processor temperature rows, left out where a machine has neither, and Secure
+Boot explained without UEFI. Suspend and the lid already follow logind and
+UPower, Settings offers no hibernate, firmware, boot-entry or backlight
+control, and updates have no bootloader step, so those needed no change.
+The acceptance is checked on a Pi in ARM3-06.
 
 ## ARM3-06: Validate on a real Pi 4
 

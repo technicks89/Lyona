@@ -24,8 +24,13 @@ NATIVE_SNAPSHOT_MINOR = 1
 INFORMATION_LOCAL_IDS = (
     "os-name", "os-version", "kernel-release", "architecture", "cpu-model",
     "logical-cpus", "memory-total-bytes", "memory-available-bytes",
-    "swap-total-bytes", "swap-free-bytes", "uptime-seconds",
+    "swap-total-bytes", "swap-free-bytes", "uptime-seconds", "board-model",
+    "cpu-temperature",
 )
+# What only some machines have (ARM3-05): a device tree, a processor thermal
+# zone. Where one is "unsupported", its state is still sent, but it leaves the
+# provider's status alone, as a machine without it is not a degraded read.
+INFORMATION_OPTIONAL_IDS = ("board-model", "cpu-temperature")
 # Lyona adaptation (D-5): upstream's single "firewalld" identifier is
 # generalized to the three real, distinct firewall units Arch/CachyOS can
 # ship (firewalld, ufw, nftables), each surfaced through its own identifier.
@@ -70,9 +75,11 @@ def build_information_snapshot(sources: InformationSnapshotSources) -> list[str]
 
     def state(owner, identifier, value):
         group = groups[owner]
-        group["statuses"].append(value.status)
         group["states"].append("\t".join(("state", identifier, value.status,
             shared.clean_text(value.value, truncate=False), shared.clean_text(value.detail))))
+        if identifier in INFORMATION_OPTIONAL_IDS and value.status == "unsupported":
+            return
+        group["statuses"].append(value.status)
         if value.error_code:
             group["errors"].append("\t".join(("error", owner, value.error_code, shared.clean_text(value.detail))))
 

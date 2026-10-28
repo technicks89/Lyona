@@ -33,10 +33,20 @@ TestCase {
     }
 
     function test_information_ids_are_exactly_the_local_reader_fields() {
-        compare(Information.informationIds().length, 13);
+        compare(Information.informationIds().length, 15);
         compare(Information.informationIds().indexOf("os-name") >= 0, true);
         compare(Information.informationIds().indexOf("hardware-model") >= 0, true);
         compare(Information.informationIds().indexOf("uptime-seconds") >= 0, true);
+        // ARM3-05.
+        compare(Information.informationIds().indexOf("board-model") >= 0, true);
+        compare(Information.informationIds().indexOf("cpu-temperature") >= 0, true);
+    }
+
+    function test_valid_value_cpu_temperature_is_canonical_millidegrees() {
+        for (const value of ["0", "48312", "-5000", "9999999"])
+            verify(Information.validValue("cpu-temperature", "available", value), value);
+        for (const value of ["", "-0", "048312", "48.3", "+48312", "10000000", "hot", "unknown"])
+            verify(!Information.validValue("cpu-temperature", "available", value), value + " is not a reading");
     }
 
     function test_security_ids_carry_lyona_d5_firewall_split() {
@@ -52,11 +62,11 @@ TestCase {
 
     function test_state_ids_is_information_plus_filesystem_summary_plus_security() {
         const ids = Information.stateIds();
-        // 13 information + 1 filesystem-summary + 7 security (D-5) = 21,
+        // 15 information (ARM3-05's two) + 1 filesystem-summary + 7 security (D-5) = 23,
         // matching INFORMATION_LOCAL_IDS/HARDWARE_INFORMATION_FIELDS/
         // INFORMATION_SECURITY_IDS's combined size on the Python side and
-        // InformationSnapshotTests's 21-state assertion on the QML side.
-        compare(ids.length, 21);
+        // InformationSnapshotTests's 23-state assertion on the QML side.
+        compare(ids.length, 23);
         compare(ids.indexOf("filesystem-summary") >= 0, true);
         for (const identifier of Information.informationIds()) verify(ids.indexOf(identifier) >= 0, identifier);
         for (const identifier of Information.securityIds()) verify(ids.indexOf(identifier) >= 0, identifier);
@@ -152,7 +162,7 @@ TestCase {
 
     function test_valid_value_information_identifiers_accept_any_nonempty_trimmed_string() {
         for (const identifier of ["os-name", "os-version", "kernel-release", "architecture",
-                "hardware-vendor", "hardware-model", "cpu-model"]) {
+                "hardware-vendor", "hardware-model", "board-model", "cpu-model"]) {
             verify(Information.validValue(identifier, "available", "Arch Linux"), identifier);
             verify(!Information.validValue(identifier, "available", ""), identifier + " empty");
             verify(!Information.validValue(identifier, "available", "   "), identifier + " whitespace-only");

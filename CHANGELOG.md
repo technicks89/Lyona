@@ -75,9 +75,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   splash to quit. Not booted on a Pi yet: whether the splash shows on its
   KMS console is ARM3-06's check, and `docs/src/troubleshooting.md` says how
   to turn it off (`docs/evidence/arm3-03-pi-boot.md`).
+- System Information names the board from the device tree ("Raspberry Pi 5
+  Model B Rev 1.0") and shows the processor's temperature, from the kernel's
+  `cpu-thermal` zone on a Pi or `x86_pkg_temp` on Intel (ARM3-05). A machine
+  without one leaves that row out: a UEFI PC has no device tree, and its
+  name stays under Hardware model; an AMD processor reports no thermal zone.
+  Not run on a Pi yet: that is ARM3-06 (`docs/evidence/arm3-05-pi-settings.md`).
 
 ### Changed
 
+- System Information says "Not supported" in the caption colour, not
+  "Unknown" in the warning colour, for what the machine does not have
+  (ARM3-05). Secure Boot on a machine that did not start through UEFI, a
+  Raspberry Pi or a BIOS boot, says so. "Unknown" stays for a read that failed.
 - Before anything is downloaded, the image installer waits for the medium's
   package keyring (`pacman-init.service`) and stops, with what to run, when it
   has no keys, instead of archinstall failing every package with "unknown

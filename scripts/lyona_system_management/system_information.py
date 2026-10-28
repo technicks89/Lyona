@@ -222,6 +222,67 @@ def parse_cpu_information(data: bytes, read_board: Callable[[], str | None] = re
     return {"cpu-model": InformationState("partial", "unknown", "Processor model was not reported", "missing-provider")}
 
 
+# The Board row (ARM3-05), from the device tree only: a Raspberry Pi names
+# itself there ("Raspberry Pi 5 Model B Rev 1.0"). A UEFI machine has no device
+# tree, and its firmware's name is already Hardware model, so the row is
+# "unsupported" there and Settings leaves it out.
+DEVICE_TREE_MODEL = BOARD_MODEL_FILES[0]
+
+
+def read_board_information() -> InformationState:
+    """The device tree's model, else why there is none; never the SMBIOS name."""
+    path, limit = DEVICE_TREE_MODEL
+    try:
+        with open(path, "rb") as source:
+            data = source.read(limit + 1)
+        if len(data) > limit:
+            raise shared.SnapshotFailure("malformed", "Device-tree model exceeds its byte limit")
+        return information_text(data.rstrip(b"\0\n ").decode("utf-8").strip(), "Board model from the device tree")
+    except OSError as error:
+        if error.errno in (errno.ENOENT, errno.ENOTDIR):
+            return InformationState("unsupported", "unknown",
+                "This machine has no device tree; Hardware model names it", "missing-provider")
+        return information_unknown(error)
+    except (UnicodeError, shared.SnapshotFailure) as error:
+        return information_unknown(error)
+
+
+# The processor's temperature (ARM3-05), from the first kernel thermal zone
+# whose type names it: cpu-thermal on a Raspberry Pi 4 and 5, the package
+# sensor on Intel. Other zones (ACPI, a GPU, a battery) are not the processor,
+# and an AMD processor reports through hwmon, not a thermal zone, so the row is
+# "unsupported" there. Millidegrees Celsius, read once per snapshot.
+THERMAL_ZONES = 32
+PROCESSOR_THERMAL_TYPES = (b"cpu-thermal", b"cpu_thermal", b"soc-thermal", b"soc_thermal", b"x86_pkg_temp")
+
+
+def read_processor_temperature() -> InformationState:
+    """The processor zone's temperature, else why there is none."""
+    try:
+        for index in range(THERMAL_ZONES):
+            zone = f"/sys/class/thermal/thermal_zone{index}"
+            try:
+                with open(zone + "/type", "rb") as source:
+                    kind = source.read(65).strip()
+            except OSError as error:
+                if error.errno in (errno.ENOENT, errno.ENOTDIR):
+                    break
+                raise
+            if kind not in PROCESSOR_THERMAL_TYPES:
+                continue
+            with open(zone + "/temp", "rb") as source:
+                data = source.read(17)
+            match = re.fullmatch(rb"(-?[0-9]{1,7})\n?", data)
+            if match is None:
+                raise shared.SnapshotFailure("malformed", "Thermal zone temperature is malformed")
+            return InformationState("available", str(int(match[1])),
+                f"Kernel thermal zone {kind.decode('ascii')} at this read")
+        return InformationState("unsupported", "unknown",
+            "No kernel thermal zone reports the processor's temperature", "missing-provider")
+    except (OSError, shared.SnapshotFailure) as error:
+        return information_unknown(error)
+
+
 def read_local_information() -> dict[str, InformationState]:
     """Read fixed local sources once; no service, subprocess, journal, or mutation."""
     result = {}
@@ -268,6 +329,8 @@ def read_local_information() -> dict[str, InformationState]:
         result["uptime-seconds"] = information_number(int(uptime), "Whole seconds since boot, including suspend")
     except (OSError, shared.SnapshotFailure) as error:
         result["uptime-seconds"] = information_unknown(error)
+    result["board-model"] = read_board_information()
+    result["cpu-temperature"] = read_processor_temperature()
     return result
 
 
@@ -320,7 +383,14 @@ def read_selinux_status() -> InformationState:
 def read_secure_boot_status() -> InformationState:
     """Read only the fixed EFI variable; absence or denial never means disabled."""
     try:
-        directory = os.stat("/sys/firmware/efi/efivars")
+        try:
+            directory = os.stat("/sys/firmware/efi/efivars")
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENOTDIR):
+                # A Raspberry Pi's firmware, or a BIOS boot (ARM3-05).
+                return InformationState("unsupported", "unknown",
+                    "This machine did not start through UEFI firmware, so it has no Secure Boot", "missing-provider")
+            raise
         if not stat.S_ISDIR(directory.st_mode):
             raise shared.SnapshotFailure("malformed", "EFI variables source is not a directory")
         try:

@@ -98,8 +98,9 @@ class InformationSnapshotTests(unittest.TestCase):
 
     Lyona adaptation (D-5): INFORMATION_SECURITY_IDS carries 7 identifiers
     (selinux, secure-boot, firewalld, ufw, nftables, root-encryption,
-    screen-lock), not upstream's 5 (no separate ufw/nftables) -- every
-    "state" row count below is 21, not upstream's 19.
+    screen-lock), not upstream's 5 (no separate ufw/nftables), and ARM3-05
+    adds board-model and cpu-temperature -- every "state" row count below is
+    23, not upstream's 19.
     """
 
     def sources(self):
@@ -119,7 +120,7 @@ class InformationSnapshotTests(unittest.TestCase):
         with mock.patch.object(provider.operation_journal, "open_journal_directory", side_effect=AssertionError("Journal opened")):
             result = provider.build_information_snapshot(self.sources())
         self.assertEqual(len(rows(result, "provider")), 4)
-        self.assertEqual(len(rows(result, "state")), 21)
+        self.assertEqual(len(rows(result, "state")), 23)
         self.assertEqual([row[1] for row in rows(result, "action")], ["health-open"])
         self.assertEqual(rows(result, "filesystem")[0][6], "18446744073709551615")
         self.assertTrue(all(row[2] == "available" for row in rows(result, "provider")))
@@ -159,7 +160,7 @@ class InformationSnapshotTests(unittest.TestCase):
         result = provider.build_information_snapshot(source)
         self.assertEqual(rows(result, "filesystem"), [])
         self.assertTrue(any(row[1:3] == ["storage", "malformed"] for row in rows(result, "error")))
-        self.assertEqual(len(rows(result, "state")), 21)
+        self.assertEqual(len(rows(result, "state")), 23)
 
     def test_missing_state_is_explicit_and_owner_scoped(self):
         source = self.sources()
@@ -167,7 +168,7 @@ class InformationSnapshotTests(unittest.TestCase):
         result = provider.build_information_snapshot(source)
         state = next(row for row in rows(result, "state") if row[1] == "cpu-model")
         self.assertEqual(state[2:4], ["partial", "unknown"])
-        self.assertEqual(len(rows(result, "state")), 21)
+        self.assertEqual(len(rows(result, "state")), 23)
 
     def test_unmonitored_storage_mode_does_not_start_the_filesystem_reader(self):
         source = provider.InformationSnapshotSources(storage_ready=False)
@@ -206,7 +207,7 @@ class InformationSnapshotTests(unittest.TestCase):
                 self.assertEqual(rows(result, "filesystem"), [])
                 self.assertTrue(any(row[1:4] == ["filesystem-summary", "partial", "unknown"] for row in rows(result, "state")))
                 self.assertTrue(any(row[1:3] == ["storage", "malformed"] for row in rows(result, "error")))
-                self.assertEqual(len(rows(result, "state")), 21)
+                self.assertEqual(len(rows(result, "state")), 23)
 
     def test_all_unavailable_statuses_aggregate_without_hiding_peers(self):
         for status in ("restricted", "unsupported", "unavailable", "partial"):
@@ -219,6 +220,31 @@ class InformationSnapshotTests(unittest.TestCase):
                 self.assertEqual(providers["information"][2], "available")
                 self.assertEqual(providers["diagnostics"][2], "available")
 
+    def test_optional_rows_a_machine_lacks_leave_its_provider_available(self):
+        # ARM3-05: no device tree (a UEFI machine) or no processor thermal
+        # zone (AMD) is the machine's, not a degraded read.
+        source = self.sources()
+        absent = provider.InformationState("unsupported", "unknown", "Absent", "missing-provider")
+        source.local.return_value.update({"board-model": absent, "cpu-temperature": absent})
+        result = provider.build_information_snapshot(source)
+        states = {row[1]: row for row in rows(result, "state")}
+        self.assertEqual(states["board-model"][2:4], ["unsupported", "unknown"])
+        self.assertEqual(states["cpu-temperature"][2:4], ["unsupported", "unknown"])
+        self.assertEqual({row[1]: row[2] for row in rows(result, "provider")}["information"], "available")
+        self.assertFalse([row for row in rows(result, "error") if row[1] == "information"])
+        # A failed read of either still degrades it, as any other row does.
+        for status in ("partial", "restricted", "unavailable"):
+            with self.subTest(status=status):
+                source.local.return_value["cpu-temperature"] = provider.InformationState(status, "unknown", "Failed", "internal")
+                result = provider.build_information_snapshot(source)
+                self.assertEqual({row[1]: row[2] for row in rows(result, "provider")}["information"], "partial")
+                self.assertEqual(len([row for row in rows(result, "error") if row[1] == "information"]), 1)
+        # Another row's unsupported state still counts.
+        source.local.return_value["cpu-temperature"] = absent
+        source.local.return_value["uptime-seconds"] = absent
+        result = provider.build_information_snapshot(source)
+        self.assertEqual({row[1]: row[2] for row in rows(result, "provider")}["information"], "partial")
+
 
 class LocalInformationTests(unittest.TestCase):
     """Sync Sprint 2 S2-01, ported from upstream's d6f028f (#277)."""
@@ -227,6 +253,9 @@ class LocalInformationTests(unittest.TestCase):
         "/etc/os-release": b'NAME=ignored\nPRETTY_NAME="Fedora Linux 44 (Fixture)"\nVERSION_ID=44\n',
         "/proc/cpuinfo": b"processor: 0\nmodel name\t: Fixture CPU\nmodel name: Later CPU\n",
         "/proc/meminfo": b"MemTotal: 1024 kB\nMemAvailable: 768 kB\nSwapTotal: 256 kB\nSwapFree: 128 kB\n",
+        "/sys/firmware/devicetree/base/model": b"Fixture Board\0",
+        "/sys/class/thermal/thermal_zone0/type": b"cpu-thermal\n",
+        "/sys/class/thermal/thermal_zone0/temp": b"48312\n",
     }
 
     def read(self, files=None, *, identity=None, count=4, uptime=10.99):
@@ -274,8 +303,8 @@ class LocalInformationTests(unittest.TestCase):
         self.assertCountEqual(opened, self.FILES)
         self.assertEqual(len(reads), len(streams))
         self.assertTrue(all(stream.closed for stream in streams))
-        self.assertTrue(all(size in (65537, 4194305, 1048577) for size in reads))
-        self.assertEqual(len(result), 11)
+        self.assertTrue(all(size in (65537, 4194305, 1048577, 257, 65, 17) for size in reads))
+        self.assertEqual(len(result), 13)
         for state in result.values():
             if state.status != "available":
                 self.assertEqual(state.value, "unknown")
@@ -288,7 +317,8 @@ class LocalInformationTests(unittest.TestCase):
         expected = {"os-name": "Fedora Linux 44 (Fixture)", "os-version": "44",
             "kernel-release": "6.fixture", "architecture": "x86_64", "cpu-model": "Fixture CPU",
             "logical-cpus": "4", "memory-total-bytes": "1048576", "memory-available-bytes": "786432",
-            "swap-total-bytes": "262144", "swap-free-bytes": "131072", "uptime-seconds": "10"}
+            "swap-total-bytes": "262144", "swap-free-bytes": "131072", "uptime-seconds": "10",
+            "board-model": "Fixture Board", "cpu-temperature": "48312"}
         self.assertEqual({key: state.value for key, state in result.items()}, expected)
 
     def test_arch_os_release_without_version_id_is_rolling(self):
@@ -345,7 +375,7 @@ class LocalInformationTests(unittest.TestCase):
 
     def test_missing_fields_and_invalid_utf8_are_scoped(self):
         result = self.read({"/etc/os-release": b"", "/proc/cpuinfo": b"", "/proc/meminfo": b""})
-        self.assertEqual(sum(state.status == "available" for state in result.values()), 4)
+        self.assertEqual(sum(state.status == "available" for state in result.values()), 6)
         for path, identifier, target in (("/etc/os-release", "os-name", b"Fedora Linux 44 (Fixture)"),
                 ("/proc/cpuinfo", "cpu-model", b"Fixture CPU"), ("/proc/meminfo", "memory-total-bytes", b"1024 kB")):
             result = self.read({path: self.FILES[path].replace(target, b"\xff")})
@@ -406,6 +436,104 @@ class LocalInformationTests(unittest.TestCase):
         with mock.patch.object(provider.time, "CLOCK_BOOTTIME", None):
             self.assertEqual(self.read()["uptime-seconds"].status, "unsupported")
         self.assertEqual(self.read(uptime=OSError(errno.EIO, "clock unavailable"))["uptime-seconds"].status, "unavailable")
+
+
+class BoardAndTemperatureTests(unittest.TestCase):
+    """ARM3-05: the Board and Processor temperature rows, from fixed sysfs paths."""
+
+    MODEL = "/sys/firmware/devicetree/base/model"
+
+    def read(self, reader, files):
+        opened, reads = [], []
+
+        class Source(io.BytesIO):
+            def read(inner, size=-1):
+                reads.append(size)
+                return super().read(size)
+
+        def source(path, mode):
+            self.assertEqual(mode, "rb")
+            opened.append(path)
+            value = files.get(path, FileNotFoundError(errno.ENOENT, "private detail"))
+            if isinstance(value, Exception):
+                raise value
+            return Source(value)
+
+        with mock.patch.object(provider.system_information, "open", source, create=True), \
+                mock.patch.object(provider.os, "listdir", side_effect=AssertionError("Unexpected enumeration")), \
+                mock.patch.object(provider.subprocess, "Popen", side_effect=AssertionError("Unexpected subprocess")):
+            result = reader()
+        self.assertNotIn("private detail", repr(result))
+        if result.status != "available":
+            self.assertEqual(result.value, "unknown")
+            self.assertNotEqual(result.error_code, "")
+        return result, opened, reads
+
+    def zones(self, *kinds, temp=b"48312\n"):
+        files = {}
+        for index, kind in enumerate(kinds):
+            files[f"/sys/class/thermal/thermal_zone{index}/type"] = kind + b"\n"
+            files[f"/sys/class/thermal/thermal_zone{index}/temp"] = temp
+        return files
+
+    def test_board_is_the_device_tree_model_only(self):
+        for data in (b"Raspberry Pi 4 Model B Rev 1.5\0", b"Raspberry Pi 5 Model B Rev 1.0\0\n"):
+            result, opened, reads = self.read(provider.read_board_information, {self.MODEL: data})
+            self.assertEqual((result.status, result.value), ("available", data.split(b"\0")[0].decode()))
+            self.assertEqual((opened, reads), ([self.MODEL], [257]))
+        # Never SMBIOS: a UEFI machine's name is Hardware model's.
+        result, opened, _reads = self.read(provider.read_board_information,
+            {"/sys/class/dmi/id/product_name": b"Fixture\n"})
+        self.assertEqual((result.status, result.error_code), ("unsupported", "missing-provider"))
+        self.assertIn("no device tree", result.detail)
+        self.assertEqual(opened, [self.MODEL])
+
+    def test_board_failures_are_never_a_name(self):
+        for data in (b"", b"\0", b"x" * 257, b"bad\xff", b"two\nlines\0"):
+            with self.subTest(data=data[:20]):
+                result, _opened, _reads = self.read(provider.read_board_information, {self.MODEL: data})
+                self.assertEqual(result.status, "partial")
+        self.assertEqual(self.read(provider.read_board_information, {self.MODEL: b"x" * 256})[0].status, "available")
+        for number, status in ((errno.EACCES, "restricted"), (errno.EIO, "unavailable")):
+            result, _opened, _reads = self.read(provider.read_board_information, {self.MODEL: OSError(number, "private detail")})
+            self.assertEqual(result.status, status)
+
+    def test_temperature_is_the_first_processor_zone(self):
+        # A Pi 4 and 5 have the one zone, cpu-thermal; a laptop lists ACPI first.
+        result, opened, reads = self.read(provider.read_processor_temperature, self.zones(b"cpu-thermal"))
+        self.assertEqual((result.status, result.value), ("available", "48312"))
+        self.assertIn("cpu-thermal", result.detail)
+        self.assertEqual(opened, ["/sys/class/thermal/thermal_zone0/type", "/sys/class/thermal/thermal_zone0/temp"])
+        self.assertEqual(reads, [65, 17])
+        files = self.zones(b"acpitz", b"x86_pkg_temp", b"cpu-thermal")
+        files["/sys/class/thermal/thermal_zone0/temp"] = AssertionError("Not the processor")
+        files["/sys/class/thermal/thermal_zone1/temp"] = b"-5000\n"
+        result, opened, _reads = self.read(provider.read_processor_temperature, files)
+        self.assertEqual((result.value, opened[-1]), ("-5000", "/sys/class/thermal/thermal_zone1/temp"))
+        for data, value in ((b"0\n", "0"), (b"-0", "0"), (b"0048312", "48312"), (b"9999999\n", "9999999")):
+            self.assertEqual(self.read(provider.read_processor_temperature, self.zones(b"cpu-thermal", temp=data))[0].value, value)
+
+    def test_no_processor_zone_is_unsupported_and_bounded(self):
+        for files in ({}, self.zones(b"acpitz", b"iwlwifi_1", b"BAT0")):
+            result, opened, _reads = self.read(provider.read_processor_temperature, files)
+            self.assertEqual((result.status, result.error_code), ("unsupported", "missing-provider"))
+            self.assertFalse([path for path in opened if path.endswith("/temp")])
+        files = {f"/sys/class/thermal/thermal_zone{index}/type": b"acpitz\n" for index in range(40)}
+        _result, opened, _reads = self.read(provider.read_processor_temperature, files)
+        self.assertEqual(len(opened), provider.THERMAL_ZONES)
+
+    def test_temperature_failures_are_never_a_reading(self):
+        for data in (b"", b"48.3", b"+48312", b"12345678", b"48312\n\n", b"hot", b"\xff"):
+            with self.subTest(data=data):
+                result, _opened, _reads = self.read(provider.read_processor_temperature, self.zones(b"cpu-thermal", temp=data))
+                self.assertEqual(result.status, "partial")
+        for number, status in ((errno.EACCES, "restricted"), (errno.ENODATA, "unavailable"), (errno.ENOENT, "unsupported")):
+            result, _opened, _reads = self.read(provider.read_processor_temperature,
+                self.zones(b"cpu-thermal", temp=OSError(number, "private detail")))
+            self.assertEqual(result.status, status)
+        files = self.zones(b"cpu-thermal")
+        files["/sys/class/thermal/thermal_zone0/type"] = OSError(errno.EACCES, "private detail")
+        self.assertEqual(self.read(provider.read_processor_temperature, files)[0].status, "restricted")
 
 
 class LocalSecurityTests(unittest.TestCase):
@@ -509,6 +637,8 @@ class LocalSecurityTests(unittest.TestCase):
     def test_secure_boot_platform_absence_and_variable_absence_are_distinct(self):
         result, opened = self.read("secure-boot", efi=self.absent())
         self.assertEqual(result.status, "unsupported")
+        # ARM3-05: a Raspberry Pi, or a BIOS boot, is told why.
+        self.assertIn("did not start through UEFI", result.detail)
         self.assertEqual(opened, [])
         result, opened = self.read("secure-boot", variable=self.absent())
         self.assertEqual(result.status, "partial")
