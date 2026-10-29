@@ -576,6 +576,126 @@ scan_package_database() {
 	else
 		emit_check dependencies "$status" package-database "Package database" "Package audit needs attention" "$(first_lines 20 <<<"$output")"
 	fi
+	scan_pacman_lock
+}
+
+# A pacman killed while it holds its lock leaves /var/lib/pacman/db.lck behind,
+# and every package operation then fails with "unable to lock database" (#467).
+# Nothing holds the lock across a reboot, so a lock older than this boot is
+# stale. The fixture paths are read only in tests: the root helper runs this
+# script with a clean environment, so nothing from the caller picks the path.
+pacman_lock_paths() {
+	lock=/var/lib/pacman/db.lck
+	proc=/proc
+	if [[ ${DWM_HEALTH_TEST_ROOT:-0} == 1 ]]; then
+		lock=${DWM_HEALTH_PACMAN_LOCK:-$lock}
+		proc=${DWM_HEALTH_PROC_ROOT:-$proc}
+	fi
+}
+
+boot_time() {
+	awk '$1 == "btime" && $2 ~ /^[0-9]+$/ { print $2; found = 1; exit } END { exit !found }' "$1/stat" 2>/dev/null
+}
+
+# "3 hours", "2 days": how long ago SECONDS was, for the evidence.
+age_text() {
+	local seconds=$1
+
+	if ((seconds >= 172800)); then
+		printf '%d days' $((seconds / 86400))
+	elif ((seconds >= 7200)); then
+		printf '%d hours' $((seconds / 3600))
+	else
+		printf '%d minutes' $((seconds / 60))
+	fi
+}
+
+# The process that holds LOCK open, as "name (pid)": pacman keeps its lock open
+# for as long as it runs. Read from PROC's fd links, never from ps output.
+lock_holder() {
+	local lock=$1 proc=$2 target fd pid
+	local -a fd_dirs=("$proc"/[0-9]*/fd)
+
+	target=$(readlink -f -- "$lock" 2>/dev/null) || return 1
+	[[ -d ${fd_dirs[0]} ]] || return 1
+	fd=$(find "${fd_dirs[@]}" -mindepth 1 -maxdepth 1 -type l -printf '%l\t%p\n' 2>/dev/null |
+		LOCK=$target awk -F '\t' '$1 == ENVIRON["LOCK"] { print $2; exit }') || true
+	[[ -n $fd ]] || return 1
+	pid=${fd#"$proc"/}
+	pid=${pid%%/*}
+	printf '%s (%s)\n' "$(cat -- "$proc/$pid/comm" 2>/dev/null || printf unknown)" "$pid"
+}
+
+scan_pacman_lock() {
+	local lock proc btime mtime now when
+
+	pacman_lock_paths
+	if [[ ! -e $lock && ! -L $lock ]]; then
+		emit_check dependencies ok pacman-lock "Package manager lock" "Not locked" "$lock"
+		return
+	fi
+	if [[ -L $lock || ! -f $lock ]]; then
+		emit_check dependencies warn pacman-lock "Package manager lock" "The lock is not a regular file" \
+			"$lock is not a file pacman created; inspect it before removing it"
+		return
+	fi
+	mtime=$(stat -c %Y -- "$lock" 2>/dev/null || true)
+	if ! btime=$(boot_time "$proc") || [[ ! $mtime =~ ^[0-9]+$ ]]; then
+		emit_check dependencies restricted pacman-lock "Package manager lock" "Lock age unavailable" \
+			"$lock exists; its age or the boot time could not be read"
+		return
+	fi
+	when=$(date -d "@$mtime" '+%Y-%m-%d %H:%M' 2>/dev/null || printf '%s' "$mtime")
+	if ((mtime >= btime)); then
+		emit_check dependencies info pacman-lock "Package manager lock" "A package manager is running" \
+			"$lock since $when | This is normal while pacman, an AUR helper or a software update runs"
+		return
+	fi
+	now=$(date +%s)
+	emit_check dependencies warn pacman-lock "Package manager lock" \
+		"Package updates are blocked by a stale pacman lock" \
+		"$lock was left at $when, $(age_text $((now - mtime))) ago, before this boot; nothing holds a lock across a reboot, so it is stale | In a terminal: sudo rm $lock | Then run sudo pacman -Syu: the package manager that left the lock may have stopped mid-transaction" \
+		remove-stale-pacman-lock "Remove the stale lock" system
+}
+
+# The root side checks everything again before it removes the lock, and
+# removes nothing but that one file (#467).
+remove_stale_pacman_lock() {
+	local lock proc btime mtime checked holder
+
+	pacman_lock_paths
+	if [[ ! -e $lock && ! -L $lock ]]; then
+		repair_summary="No pacman lock was present"
+		return 0
+	fi
+	if [[ -L $lock || ! -f $lock ]]; then
+		printf 'the pacman lock is not a regular file; it was left alone: %s\n' "$lock" >&2
+		return 1
+	fi
+	checked=$(stat -c '%d:%i:%Y' -- "$lock" 2>/dev/null) || {
+		printf 'the pacman lock could not be read; it was left alone\n' >&2
+		return 1
+	}
+	mtime=${checked##*:}
+	btime=$(boot_time "$proc") || {
+		printf 'the boot time is unavailable; the pacman lock was left alone\n' >&2
+		return 1
+	}
+	if ((mtime >= btime)); then
+		printf 'A package manager may be running; wait for it to finish\n' >&2
+		return 1
+	fi
+	if holder=$(lock_holder "$lock" "$proc"); then
+		printf 'A package manager may be running; wait for it to finish (%s holds the lock)\n' "$holder" >&2
+		return 1
+	fi
+	# The same file as checked, still not a symlink, right before it goes.
+	if [[ -L $lock || $(stat -c '%d:%i:%Y' -- "$lock" 2>/dev/null) != "$checked" ]]; then
+		printf 'the pacman lock changed while it was checked; it was left alone\n' >&2
+		return 1
+	fi
+	rm -f -- "$lock"
+	repair_summary="Removed the stale pacman lock $lock; run sudo pacman -Syu to finish any interrupted update"
 }
 
 scan_hardware_snapshot() {
@@ -906,10 +1026,10 @@ repair_user() {
 }
 
 repair_system() {
-	local action=${1:-}
+	local action=${1:-} repair_summary=
 
 	case $action in
-	manage-system-service\|* | restart-networkmanager | restart-bluetooth | repair-time-sync) ;;
+	manage-system-service\|* | restart-networkmanager | restart-bluetooth | repair-time-sync | remove-stale-pacman-lock) ;;
 	*)
 		printf 'unsupported system repair: %s\n' "$action" >&2
 		return 2
@@ -942,8 +1062,9 @@ repair_system() {
 			return 1
 		fi
 		;;
+	remove-stale-pacman-lock) remove_stale_pacman_lock ;;
 	esac
-	emit_record repair overview ok "$action" "Repair completed" "$action completed" "The dashboard will rescan" "" "" system
+	emit_record repair overview ok "$action" "Repair completed" "${repair_summary:-$action completed}" "The dashboard will rescan" "" "" system
 }
 
 repair_privileged() {
@@ -951,7 +1072,7 @@ repair_privileged() {
 	local helper pkexec_command
 
 	case $action in
-	manage-system-service\|* | restart-networkmanager | restart-bluetooth | repair-time-sync) ;;
+	manage-system-service\|* | restart-networkmanager | restart-bluetooth | repair-time-sync | remove-stale-pacman-lock) ;;
 	*)
 		printf 'unsupported privileged repair: %s\n' "$action" >&2
 		return 2

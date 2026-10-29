@@ -549,8 +549,10 @@ The snapshot must provide an overall state and categorized details for:
   and the lyona desktop session.
 - Memory, pressure, load, swap, local filesystem capacity, inode use,
   read-only mounts, and available battery, thermal, and drive-health data.
-- Required and optional lyona commands, libraries, configuration, and the
-  distribution package database.
+- Required and optional lyona commands, libraries, configuration, the
+  distribution package database, and a pacman lock (`/var/lib/pacman/db.lck`)
+  left behind: one older than the current boot is stale and blocks every
+  package operation; a newer one means a package manager is running (#467).
 
 The dashboard must begin user-readable checks immediately and request a
 privileged read-only scan. It must first use non-interactive `sudo` when the
@@ -572,9 +574,13 @@ Failed user and system services are displayed as individual rows with Start,
 Stop, Restart, Disable, and Enable actions. A service action is allowed only
 while that exact `.service` unit is in the corresponding failed-unit set;
 system actions require polkit authorization. Other privileged repairs are
-limited to NetworkManager, Bluetooth, and the detected systemd
-time-synchronization provider. Filesystem repair, cleanup, reboot, and
-unattended package changes are not allowed.
+limited to NetworkManager, Bluetooth, the detected systemd
+time-synchronization provider, and removing a stale pacman lock. That repair
+takes no argument, and the root side checks again that the lock is a regular
+file at the fixed path, older than the current boot and held open by no
+process before it removes that one file. Its detail also gives the manual
+`sudo rm` and the `sudo pacman -Syu` to run afterwards. Filesystem repair,
+cleanup, reboot, and unattended package changes are not allowed.
 Only a root-owned, non-writable system installation of the health helper may
 itself be executed through `sudo` or `pkexec`; repository and XDG copies must
 never be elevated. Without an installed helper, the unprivileged copy may use
