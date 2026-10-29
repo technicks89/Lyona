@@ -199,9 +199,14 @@ boot opened the root volume, and the system reached the desktop.
   checks, rolled back to beta.6, and was updated again. The rollback left
   beta.7's new `install-yay` command behind.
 
-**Still untested:** real hardware, NVIDIA and legacy NVIDIA drivers, and Wi-Fi
-installs. Do not treat a release as
-qualified on hardware until it has been.
+**NVIDIA detection on real hardware, 2026-10-29:** on a machine with a GeForce
+GTX 1080 Ti (`10de:1b06`, which `config/nvidia-legacy-gpus.tsv` maps to the
+legacy `580xx` branch), the installer detected the card and installed the
+NVIDIA driver. Stability and gaming on that driver are not yet tested.
+
+**Still untested:** stability and gaming on the NVIDIA driver, the current
+(non-legacy) NVIDIA driver and `470xx`, other real hardware, and Wi-Fi
+installs. Do not treat a release as qualified on hardware until it has been.
 
 ### Signed releases
 
