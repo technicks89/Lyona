@@ -611,8 +611,9 @@ def renderer(config):
     # unusable there, with either backend it can run (#32). The Pi 5 is V3D 7.
     if re.search(r"\bv3d 4\.", name):
         return "v3d4"
-    # Under linux-rpi, Picom gets no GLX or EGL context on the Pi 4, so there
-    # is no renderer to name; its board still says what the GPU is.
+    # On the Pi 4 Picom gets no GLX or EGL context (EGL_BAD_MATCH: its V3D 4.2
+    # gives OpenGL 3.1, as glamor's log says), so there is no renderer to name;
+    # its board still says what the GPU is.
     if not gl and "brcm,bcm2711" in device_tree_compatible():
         return "v3d4"
     if re.search(r"\* Accelerated:\s*1", text):

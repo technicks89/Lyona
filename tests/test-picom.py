@@ -689,8 +689,8 @@ class PicomTests(unittest.TestCase):
                 self.assertEqual(picom.renderer(picom.Configuration()), expected)
 
     def test_v3d4_from_the_board_when_gl_names_no_renderer(self):
-        # ARM3-06: under linux-rpi Picom gets no GL context on the Pi 4, so
-        # its diagnostics name no renderer; the device tree names the SoC.
+        # ARM3-06: Picom gets no GL context on the Pi 4's V3D 4.2, so its
+        # diagnostics name no renderer; the device tree names the SoC.
         no_gl = "### Backend: glx\n"
         compatible = Path(self.tmp.name) / "compatible"
         for soc, gl, expected in [

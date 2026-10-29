@@ -200,9 +200,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `base systemd`. The plymouth hook now goes after `udev` or `systemd`, as
   the x86_64 postinstall already does (ARM3-03).
 - On a Raspberry Pi 4 from the Pi image, Picom started at login, which #32
-  turned off there: under `linux-rpi` Picom gets no GL context, so its
-  diagnostics named no GPU. With no renderer named, the board's device tree
-  (`brcm,bcm2711`) now identifies the Pi 4's V3D 4 (ARM3-06).
+  turned off there: Picom gets no GL context on the Pi 4's V3D 4.2
+  (`EGL_BAD_MATCH`), so its diagnostics named no GPU. With no renderer
+  named, the board's device tree (`brcm,bcm2711`) now identifies the Pi 4's
+  V3D 4 (ARM3-06).
 - The power menu offered Suspend before logind had said whether the system
   can suspend, so on a Pi 4, which cannot, confirming it straight after
   login gave an error. Suspend is now offered once logind has answered, and
