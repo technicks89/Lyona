@@ -304,13 +304,16 @@ lock_repair_refused 'a symlinked lock' 'not a regular file'
 rm -- "$lock"
 
 # Outside test mode the repair needs root, and the fixture paths are not read.
-: >"$work/pacman/db.lck"
-touch -d "@$((btime - 7200))" "$lock"
-if DWM_HEALTH_PACMAN_LOCK="$lock" DWM_HEALTH_PROC_ROOT="$work/proc" \
-	"$HELPER" repair-system remove-stale-pacman-lock >/dev/null 2>&1; then
-	fail 'the lock repair ran without root'
+# Run as root it would act on the real /var/lib/pacman/db.lck, so it is skipped.
+if ((EUID != 0)); then
+	: >"$work/pacman/db.lck"
+	touch -d "@$((btime - 7200))" "$lock"
+	if DWM_HEALTH_PACMAN_LOCK="$lock" DWM_HEALTH_PROC_ROOT="$work/proc" \
+		"$HELPER" repair-system remove-stale-pacman-lock >/dev/null 2>&1; then
+		fail 'the lock repair ran without root'
+	fi
+	[[ -f $lock ]] || fail 'the lock repair used a caller-chosen path'
 fi
-[[ -f $lock ]] || fail 'the lock repair used a caller-chosen path'
 
 if "$HELPER" repair-user 'restart-audio;touch /tmp/not-allowed' 2>"$work/user-repair.err"; then
 	printf 'unknown user repair unexpectedly succeeded\n' >&2
