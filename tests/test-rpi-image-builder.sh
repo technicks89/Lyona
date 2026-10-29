@@ -293,6 +293,8 @@ personal_case 'the package cache is not empty' touch var/cache/pacman/pkg/dwm-6.
 personal_case '/root/.bash_history is left' touch root/.bash_history
 personal_case "the build's PackageKit hook mask is left" \
 	sh -c 'mkdir -p etc/pacman.d/hooks && ln -s /dev/null etc/pacman.d/hooks/90-packagekit-refresh.hook'
+personal_case "pacman's database lock is left" \
+	sh -c 'mkdir -p var/lib/pacman && touch var/lib/pacman/db.lck'
 personal_case '/var/tmp/lyona-yay is left' mkdir var/tmp/lyona-yay
 personal_case 'no /etc/lyona-release: lyona is not installed' rm etc/lyona-release
 personal_case 'no /usr/local/bin/dwm' rm usr/local/bin/dwm

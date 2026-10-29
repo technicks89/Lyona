@@ -49,9 +49,12 @@ Scope {
             "label": "Suspend",
             "detail": "Suspend this system",
             "confirm": true,
-
+            // Offered only once logind has answered: "idle" is the power
+            // model before its first snapshot, which a Pi 4 (no sleep state
+            // at all) can take a few seconds to return.
             "available": root.powerModel === null
-                || (root.powerModel.suspendState !== "unavailable"
+                || (root.powerModel.suspendState !== "idle"
+                    && root.powerModel.suspendState !== "unavailable"
                     && root.powerModel.suspendState !== "restricted")
         },
         {
@@ -83,6 +86,18 @@ Scope {
     function rejectOverlap(origin) {
         root.rejectionOrigin = root.originOrDefault(origin);
         root.rejectionMessage = "Another session action is already in progress";
+    }
+
+    function rejectUnavailable(action, origin) {
+        root.rejectionOrigin = root.originOrDefault(origin);
+        if (action.id === "suspend" && root.powerModel && root.powerModel.suspendState === "idle")
+            root.rejectionMessage = "Checking whether this system can suspend";
+        else
+            root.rejectionMessage = action.id === "suspend" && root.powerModel
+                    && typeof root.powerModel.suspendDetail === "string"
+                    && root.powerModel.suspendDetail.length > 0
+                ? root.powerModel.suspendDetail
+                : action.label + " is unavailable on this system";
     }
 
     function clearOverlapRejection() {
@@ -170,12 +185,7 @@ Scope {
             return;
         }
         if (!requestedAction.available) {
-            root.rejectionOrigin = source;
-            root.rejectionMessage = requestedAction.id === "suspend" && root.powerModel
-                    && typeof root.powerModel.suspendDetail === "string"
-                    && root.powerModel.suspendDetail.length > 0
-                ? root.powerModel.suspendDetail
-                : requestedAction.label + " is unavailable on this system";
+            root.rejectUnavailable(requestedAction, source);
             return;
         }
 
@@ -231,6 +241,15 @@ Scope {
         if (!requestedAction) return;
         if (root.busy || actionProcess.running) {
             root.rejectOverlap(source);
+            return;
+        }
+        // Checked again at the confirmation: what the system can do may have
+        // been learnt since the action was asked for.
+        if (!requestedAction.available) {
+            root.confirming = false;
+            root.pendingAction = null;
+            root.confirmationOrigin = "";
+            root.rejectUnavailable(requestedAction, source);
             return;
         }
 

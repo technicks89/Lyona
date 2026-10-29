@@ -127,6 +127,9 @@ check_root() {
 	[[ ! -e $root/var/lib/systemd/random-seed ]] || problem "the systemd random seed is left"
 	[[ ! -L $root/etc/pacman.d/hooks/90-packagekit-refresh.hook ]] ||
 		problem "the build's PackageKit hook mask is left"
+	# A lock left by a pacman that did not finish: every pacman on the Pi
+	# would then stop at "unable to lock database" (ARM3-06).
+	[[ ! -e $root/var/lib/pacman/db.lck ]] || problem "pacman's database lock is left"
 	for file in "$root"/etc/ssh/ssh_host_*; do
 		[[ ! -e $file ]] || problem "an SSH host key is left: ${file#"$root"}"
 	done

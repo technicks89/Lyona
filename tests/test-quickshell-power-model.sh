@@ -134,8 +134,22 @@ grep -Fq 'root.powerMenuModel.cancelConfirmation("settings")' \
 	"$repo/config/quickshell/settings/SettingsModel.qml"
 grep -Fq 'function clearOverlapRejection()' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml"
-grep -Fq 'requestedAction.label + " is unavailable on this system"' \
+grep -Fq 'action.label + " is unavailable on this system"' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml"
+# ARM3-06: Suspend is not offered before logind has answered (a Pi 4 has no
+# sleep state and its first snapshot is slow), and a confirmation checks
+# again, so one asked for before the answer does not run.
+grep -Fq 'root.powerModel.suspendState !== "idle"' \
+	"$repo/config/quickshell/power/PowerMenuModel.qml"
+grep -Fq '"Checking whether this system can suspend"' \
+	"$repo/config/quickshell/power/PowerMenuModel.qml"
+run_action_block=$(sed -n \
+	'/function runAction(action, origin)/,/root.actionGeneration++;/p' \
+	"$repo/config/quickshell/power/PowerMenuModel.qml")
+if ! printf '%s\n' "$run_action_block" | grep -Fq 'if (!requestedAction.available)'; then
+	printf 'A confirmed session action must check its availability again.\n' >&2
+	exit 1
+fi
 request_action_block=$(sed -n \
 	'/function requestAction(action, origin)/,/function cancelConfirmation(origin)/p' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml")

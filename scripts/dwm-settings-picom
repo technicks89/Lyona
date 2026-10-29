@@ -35,6 +35,9 @@ BACKENDS = ("auto", "xrender", "glx", "egl")
 # owner that exits a moment later. Retry that refusal rather than fail the user.
 TRANSIENT_REFUSAL = "Another composite manager is already running"
 LAUNCH_RETRIES = 3
+# The board's SoC, for a GPU the X server gives no GL renderer for: the Pi 4,
+# Pi 400 and CM4 are "brcm,bcm2711" (ARM3-06).
+DEVICE_TREE_COMPATIBLE = Path("/sys/firmware/devicetree/base/compatible")
 # Largest window corner radius the helper will write, in pixels.
 CORNER_RADIUS_MAX = 32
 BEGIN = "# lyona opacity defaults begin"
@@ -580,6 +583,15 @@ def diagnostics(path):
     return result.stdout
 
 
+def device_tree_compatible():
+    try:
+        with DEVICE_TREE_COMPATIBLE.open("rb") as handle:
+            data = handle.read(4096)
+    except OSError:
+        return ()
+    return tuple(part.decode("ascii", "replace") for part in data.split(b"\0") if part)
+
+
 def renderer(config):
     # Diagnostics queries the current X server. PCI inventory is deliberately unused.
     try:
@@ -598,6 +610,10 @@ def renderer(config):
     # The Raspberry Pi 4's VideoCore VI ("V3D 4.2"): Picom makes the desktop
     # unusable there, with either backend it can run (#32). The Pi 5 is V3D 7.
     if re.search(r"\bv3d 4\.", name):
+        return "v3d4"
+    # Under linux-rpi, Picom gets no GLX or EGL context on the Pi 4, so there
+    # is no renderer to name; its board still says what the GPU is.
+    if not gl and "brcm,bcm2711" in device_tree_compatible():
         return "v3d4"
     if re.search(r"\* Accelerated:\s*1", text):
         if "intel" in name:
