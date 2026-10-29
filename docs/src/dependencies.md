@@ -149,9 +149,9 @@ The printer configuration tool and `arch-audit`.
 
 ### `gaming`
 
-Steam, Gamescope, GameMode and MangoHud, including the 32-bit builds. Needs the `multilib` repository.
+Steam, Gamescope, GameMode and MangoHud, including the 32-bit builds, and GOverlay, a window for configuring MangoHud. Needs the `multilib` repository.
 
-`steam` `gamescope` `gamemode` `lib32-gamemode` `mangohud` `lib32-mangohud`
+`steam` `gamescope` `gamemode` `lib32-gamemode` `mangohud` `lib32-mangohud` `goverlay`
 
 ### `terminal`
 

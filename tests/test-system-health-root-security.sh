@@ -100,6 +100,9 @@ refuses 'an extra field' 'unsupported system repair' \
 	env PKEXEC_UID=1000 "$installed" repair-system 'manage-system-service|restart|sshd.service|x'
 refuses 'a newline' 'invalid repair action' \
 	env PKEXEC_UID=1000 "$installed" repair-system $'restart-bluetooth\nrestart-bluetooth'
+# The stale pacman lock repair takes no path: nothing from the caller picks it.
+refuses 'a lock repair with a path' 'unsupported system repair' \
+	env PKEXEC_UID=1000 "$installed" repair-system 'remove-stale-pacman-lock|/etc/shadow'
 
 # Accepted requests run the installed dwm-system-health, with a clean
 # environment: no PKEXEC_UID, and root's HOME.
@@ -107,8 +110,10 @@ refuses 'a newline' 'invalid repair action' \
 env PKEXEC_UID=1000 HOME=/home/someone "$installed" scan-system
 env PKEXEC_UID=1000 "$installed" repair-system 'manage-system-service|restart|systemd-fsck@dev-disk-by\x2duuid-1.service'
 env PKEXEC_UID=1000 "$installed" repair-system repair-time-sync
+env PKEXEC_UID=1000 "$installed" repair-system remove-stale-pacman-lock
 assert_equals "scan-system|HOME=/root|PKEXEC_UID=
 repair-system manage-system-service|restart|systemd-fsck@dev-disk-by\\x2duuid-1.service|HOME=/root|PKEXEC_UID=
-repair-system repair-time-sync|HOME=/root|PKEXEC_UID=" "$(cat "$record")" 'the accepted requests'
+repair-system repair-time-sync|HOME=/root|PKEXEC_UID=
+repair-system remove-stale-pacman-lock|HOME=/root|PKEXEC_UID=" "$(cat "$record")" 'the accepted requests'
 
 printf 'Privileged system-health helper trust and request checks: PASS\n'

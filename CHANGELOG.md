@@ -8,6 +8,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- System Health reports a pacman lock left behind, and can remove a stale one
+  (#467). A pacman killed while it holds `/var/lib/pacman/db.lck` leaves the
+  lock in place, and from then on pacman, AUR helpers, Topgrade and Settings'
+  updates all fail with `unable to lock database`, even after a reboot. The
+  new "Package manager lock" check warns when the lock is older than the
+  current boot, which nothing can hold, and says a package manager is running
+  when it is newer. "Remove the stale lock" asks polkit, then the root helper
+  checks again that the lock is a regular file older than this boot that no
+  process holds open, and removes only that file. The check's detail also gives
+  the `sudo rm` command and the `sudo pacman -Syu` to run afterwards, since the
+  interrupted update may have stopped mid-transaction.
+- The gaming packages include GOverlay (#466), a window for configuring the
+  MangoHud overlay they already install, instead of editing
+  `~/.config/MangoHud/MangoHud.conf` by hand. It is in `extra`, and like the
+  rest of the gaming set it is installed only on x86_64 once `multilib` is
+  approved.
+
 ### Fixed
 
 - `scripts/configure-build.sh` no longer rewrites the emoji font's

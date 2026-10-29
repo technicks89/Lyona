@@ -127,7 +127,7 @@ dwm_packages() {
 		if [[ ${ARCH:-$(uname -m)} == x86_64 ]]; then
 			printf '%s\n' \
 				steam gamescope gamemode lib32-gamemode \
-				mangohud lib32-mangohud
+				mangohud lib32-mangohud goverlay
 		fi
 		;;
 	arch:theme)

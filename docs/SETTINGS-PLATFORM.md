@@ -139,8 +139,9 @@ must follow this boundary:
 
 - No Phase 1 Settings operation is on the privileged allowlist.
 - Existing health actions remain limited to failed-service actions,
-  NetworkManager, Bluetooth, and time synchronization as specified in
-  `SPEC.md`; they are not automatically Settings actions.
+  NetworkManager, Bluetooth, time synchronization, and removing a stale
+  pacman lock as specified in `SPEC.md`; they are not automatically Settings
+  actions.
 - Phase 2 display persistence allows only validated generated-fragment install
   and rollback operations. It does not accept arbitrary paths, Xorg text,
   commands, or environment-selected executables.

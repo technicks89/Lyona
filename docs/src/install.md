@@ -166,7 +166,8 @@ It installs the `full` profile unless you choose another with `--profile`:
 `core` for the required build/X11/session packages and Alacritty,
 `recommended` for the complete desktop layer, or `full` for optional extras
 such as wallpapers and display-manager setup. On x86_64 Arch, `full` can also
-install Steam, Gamescope, GameMode, and MangoHud after repository approval.
+install Steam, Gamescope, GameMode, MangoHud, and GOverlay after repository
+approval.
 See [Dependencies and Package Profiles](./dependencies.md) for exactly which
 packages each profile installs.
 The installer separately asks before enabling the `multilib` repository for
@@ -281,8 +282,8 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
     cargo-update`.
 - `full`: `recommended` plus optional extras such as wallpapers, display-manager
   setup, `rsync` and `autorandr`. x86_64 Arch full installs also
-  include Steam, Gamescope, and 64-bit and 32-bit GameMode and MangoHud support
-  after separate repository approval.
+  include Steam, Gamescope, 64-bit and 32-bit GameMode and MangoHud support,
+  and GOverlay to configure MangoHud, after separate repository approval.
   The installer enables the `multilib` repository for Steam, Gamescope,
   GameMode, and MangoHud, and installs them, with this machine's Vulkan
   drivers, in the same transaction as everything else. It then adds the
@@ -342,7 +343,8 @@ become `config.h` only once you accept the summary. Unattended, set
 `scripts/configure-build.sh --help`. An existing `config.h` is always kept.
 
 Without `--enable-arch-gaming-repos`, unattended Arch full installs skip
-Steam, Gamescope, GameMode, and MangoHud rather than changing repository trust.
+Steam, Gamescope, GameMode, MangoHud, and GOverlay rather than changing
+repository trust.
 An already-enabled `multilib` counts as approval, since nothing in
 `pacman.conf` has to change -- this is what installs from the lyona ISO get,
 because the ISO ships `multilib` enabled.

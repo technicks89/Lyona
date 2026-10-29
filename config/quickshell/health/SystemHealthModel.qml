@@ -288,6 +288,9 @@ Scope {
         if (id === "repair-time-sync") {
             return "The detected time synchronization provider will be enabled and restarted.";
         }
+        if (id === "remove-stale-pacman-lock") {
+            return "The stale lock /var/lib/pacman/db.lck will be deleted only if no process holds it open and it is still a regular file older than this boot. Run sudo pacman -Syu afterwards to finish any interrupted update.";
+        }
         if (id === "restart-quickshell") {
             return "Quickshell will restart and this dashboard will close.";
         }

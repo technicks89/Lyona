@@ -77,10 +77,11 @@ done
 
 # The repairs dwm-system-health offers; manage-system-service names a verb and
 # a unit, which it also checks against the failed units before acting.
+# remove-stale-pacman-lock takes nothing: the lock's path is fixed (#467).
 valid_repair() {
 	local action=$1 prefix verb unit extra
 	case $action in
-	restart-networkmanager | restart-bluetooth | repair-time-sync) return 0 ;;
+	restart-networkmanager | restart-bluetooth | repair-time-sync | remove-stale-pacman-lock) return 0 ;;
 	manage-system-service\|*) ;;
 	*) return 1 ;;
 	esac
