@@ -145,7 +145,7 @@ dwm_packages() {
 	arch:gaming)
 		# x86_64 only: it needs multilib, which Arch Linux ARM does not have.
 		dwm_x86_64_only steam gamescope gamemode lib32-gamemode \
-			mangohud lib32-mangohud
+			mangohud lib32-mangohud goverlay
 		;;
 	arch:theme)
 		# The icon themes give every GTK application icons on a fresh install

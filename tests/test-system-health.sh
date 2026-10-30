@@ -241,6 +241,80 @@ if DWM_HEALTH_TEST_ROOT=1 PATH="$work/bin:/usr/bin:/bin" \
 fi
 grep -Fq $'meta\toverview\trestricted\tscan-system\tPrivileged scan\tNo trusted installed helper' "$work/no-helper.tsv"
 
+# A pacman killed while it held its lock leaves it behind (#467). The scan tells
+# a stale lock (older than this boot) from a running package manager, and the
+# repair removes only a stale lock that no process holds open. Fixture roots
+# stand in for /var/lib/pacman/db.lck and /proc.
+mkdir -p "$work/proc/4242/fd" "$work/pacman"
+btime=$(($(date +%s) - 3600))
+printf 'cpu  1 2 3 4\nbtime %s\nprocesses 9\n' "$btime" >"$work/proc/stat"
+printf 'pacman\n' >"$work/proc/4242/comm"
+lock=$work/pacman/db.lck
+lock_env=(env DWM_HEALTH_TEST_ROOT=1 DWM_HEALTH_PACMAN_LOCK="$lock" DWM_HEALTH_PROC_ROOT="$work/proc"
+	DWM_HEALTH_COMMAND_TIMEOUT=2 PATH="$work/bin:/usr/bin:/bin")
+lock_scan() {
+	"${lock_env[@]}" HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" \
+		DWM_HEALTH_OS_RELEASE="$work/os-release" "$HELPER" scan-user |
+		awk -F '\t' '$4 == "pacman-lock"'
+}
+lock_repair_refused() { # LABEL EXPECTED-ERROR
+	if "${lock_env[@]}" "$HELPER" repair-system remove-stale-pacman-lock >/dev/null 2>"$work/lock.err"; then
+		fail "$1: the repair succeeded"
+	fi
+	grep -Fq -- "$2" "$work/lock.err" || fail "$1: expected '$2', got: $(cat "$work/lock.err")"
+}
+
+row=$(lock_scan)
+[[ $row == $'check\tdependencies\tok\tpacman-lock\tPackage manager lock\tNot locked\t'* ]] ||
+	fail "no lock: $row"
+"${lock_env[@]}" "$HELPER" repair-system remove-stale-pacman-lock >"$work/lock-none.tsv"
+grep -Fq 'No pacman lock was present' "$work/lock-none.tsv"
+
+touch -d "@$((btime + 60))" "$lock"
+row=$(lock_scan)
+[[ $row == *$'\tinfo\tpacman-lock\t'*$'\tA package manager is running\t'* ]] || fail "fresh lock: $row"
+lock_repair_refused 'a lock newer than this boot' 'A package manager may be running; wait for it to finish'
+[[ -f $lock ]] || fail 'the repair removed a lock newer than this boot'
+
+touch -d "@$((btime - 7200))" "$lock"
+row=$(lock_scan)
+[[ $row == *$'\twarn\tpacman-lock\tPackage manager lock\tPackage updates are blocked by a stale pacman lock\t'* ]] ||
+	fail "stale lock: $row"
+[[ $row == *"sudo rm $lock"*"sudo pacman -Syu"* ]] || fail "stale lock without the manual command: $row"
+[[ $row == *$'\tremove-stale-pacman-lock\tRemove the stale lock\tsystem' ]] || fail "stale lock repair: $row"
+
+ln -s "$(readlink -f -- "$lock")" "$work/proc/4242/fd/3"
+lock_repair_refused 'a lock a process holds open' 'pacman (4242) holds the lock'
+[[ -f $lock ]] || fail 'the repair removed a lock a process holds open'
+rm -- "$work/proc/4242/fd/3"
+
+"${lock_env[@]}" "$HELPER" repair-system remove-stale-pacman-lock >"$work/lock-removed.tsv"
+grep -Fq "Removed the stale pacman lock $lock" "$work/lock-removed.tsv"
+[[ ! -e $lock ]] || fail 'the stale lock is still there'
+
+: >"$work/pacman/elsewhere"
+touch -d "@$((btime - 7200))" "$work/pacman/elsewhere"
+ln -s "$work/pacman/elsewhere" "$lock"
+row=$(lock_scan)
+[[ $row == *$'\twarn\tpacman-lock\tPackage manager lock\tThe lock is not a regular file\t'* ]] ||
+	fail "symlinked lock: $row"
+[[ $row != *remove-stale-pacman-lock* ]] || fail "a symlinked lock offers the repair: $row"
+lock_repair_refused 'a symlinked lock' 'not a regular file'
+[[ -L $lock && -f $work/pacman/elsewhere ]] || fail 'the repair touched a symlinked lock'
+rm -- "$lock"
+
+# Outside test mode the repair needs root, and the fixture paths are not read.
+# Run as root it would act on the real /var/lib/pacman/db.lck, so it is skipped.
+if ((EUID != 0)); then
+	: >"$work/pacman/db.lck"
+	touch -d "@$((btime - 7200))" "$lock"
+	if DWM_HEALTH_PACMAN_LOCK="$lock" DWM_HEALTH_PROC_ROOT="$work/proc" \
+		"$HELPER" repair-system remove-stale-pacman-lock >/dev/null 2>&1; then
+		fail 'the lock repair ran without root'
+	fi
+	[[ -f $lock ]] || fail 'the lock repair used a caller-chosen path'
+fi
+
 if "$HELPER" repair-user 'restart-audio;touch /tmp/not-allowed' 2>"$work/user-repair.err"; then
 	printf 'unknown user repair unexpectedly succeeded\n' >&2
 	exit 1

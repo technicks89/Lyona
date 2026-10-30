@@ -402,7 +402,7 @@ aarch64_gated=(
 	deepin-gtk-theme libva-intel-driver shellcheck archiso reflector
 	nvidia-open nvidia-open-dkms nvidia-utils
 	nvidia-580xx-dkms nvidia-580xx-utils nvidia-470xx-dkms nvidia-470xx-utils
-	steam gamescope gamemode lib32-gamemode mangohud lib32-mangohud
+	steam gamescope gamemode lib32-gamemode mangohud lib32-mangohud goverlay
 )
 mapfile -t all_profiles < <(
 	sed -n '/^dwm_packages() {$/,/^}$/s/^\t\(arch:[a-z0-9-]*\))$/\1/p' \
