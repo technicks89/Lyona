@@ -211,6 +211,7 @@ called 'systemd-machine-id-setup '
 # The answers.
 called 'localectl set-keymap de'
 called 'hostnamectl set-hostname lyona-pi'
+called 'systemctl try-restart bluetooth.service'
 called 'timedatectl set-timezone Europe/Berlin'
 called 'timedatectl set-ntp true'
 grep -Fqx 'options cfg80211 ieee80211_regdom=DE' "$work/root/etc/modprobe.d/lyona-regdom.conf" ||

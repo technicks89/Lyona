@@ -143,6 +143,14 @@ grep -Fq 'root.powerModel.suspendState !== "idle"' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml"
 grep -Fq '"Checking whether this system can suspend"' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml"
+# ARM3-06: where the system cannot suspend (a Pi 4), the power menu and the
+# Power pane do not show Suspend at all.
+grep -Fq '"hidden": root.powerModel !== null' \
+	"$repo/config/quickshell/power/PowerMenuModel.qml"
+grep -Fq 'visible: !modelData.hidden' \
+	"$repo/config/quickshell/power/PowerMenuWindow.qml"
+grep -Fq 'visible: !sessionAction.modelData.hidden' \
+	"$repo/config/quickshell/settings/PowerSettingsPane.qml"
 run_action_block=$(sed -n \
 	'/function runAction(action, origin)/,/root.actionGeneration++;/p' \
 	"$repo/config/quickshell/power/PowerMenuModel.qml")

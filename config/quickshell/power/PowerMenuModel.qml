@@ -55,7 +55,13 @@ Scope {
             "available": root.powerModel === null
                 || (root.powerModel.suspendState !== "idle"
                     && root.powerModel.suspendState !== "unavailable"
-                    && root.powerModel.suspendState !== "restricted")
+                    && root.powerModel.suspendState !== "restricted"),
+            // Not shown where the system cannot suspend at all (logind's
+            // CanSuspend "na", as on a Pi 4), nor before logind has answered.
+            // "restricted" (blocked by policy) stays, to say why.
+            "hidden": root.powerModel !== null
+                && (root.powerModel.suspendState === "idle"
+                    || root.powerModel.suspendState === "unavailable")
         },
         {
             "id": "shutdown",

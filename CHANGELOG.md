@@ -208,6 +208,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   can suspend, so on a Pi 4, which cannot, confirming it straight after
   login gave an error. Suspend is now offered once logind has answered, and
   a confirmation checks again (ARM3-06).
+- Where the system cannot suspend at all (logind's `CanSuspend` is `na`, as
+  on a Raspberry Pi 4), the power menu and the Power pane's session buttons
+  no longer show Suspend; it also stays out of them until logind has
+  answered. Suspend blocked by authorization policy is still shown, with
+  the reason (ARM3-06).
+- The Raspberry Pi image recorded `LYONA_COMMIT=unknown`: the builder runs
+  as root on a checkout a user owns, and git refuses to read that
+  ("dubious ownership"). It now reads the commit with the checkout as a
+  `safe.directory` (ARM3-06).
+- On a Raspberry Pi's first boot, Bluetooth kept the image's hostname,
+  `archlinux`, as the adapter's name until the next boot: bluetoothd starts
+  before the wizard sets the hostname. The wizard now restarts it after
+  setting the hostname (ARM3-06).
 - `scripts/configure-build.sh` no longer rewrites the emoji font's
   `pixelsize=14` to the interface font size (#464). Its font-size pattern
   matched the `size=` inside `pixelsize=`, so even a run with every default

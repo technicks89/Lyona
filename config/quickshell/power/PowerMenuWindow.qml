@@ -102,6 +102,7 @@ ClickAwayPopup {
 
                         Layout.fillWidth: true
                         label: modelData.label
+                        visible: !modelData.hidden
 
                         navigates: modelData.confirm
 

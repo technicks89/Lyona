@@ -291,6 +291,9 @@ apply_system_answers() {
 	# Console and X11 alike: localectl converts the console keymap.
 	localectl set-keymap "$KEYMAP"
 	hostnamectl set-hostname "$HOSTNAME"
+	# bluetoothd named the adapter from the image's hostname when it started,
+	# before this, and keeps that name until it restarts (ARM3-06).
+	systemctl try-restart bluetooth.service || :
 	timedatectl set-timezone "$TIMEZONE"
 	timedatectl set-ntp true
 	set_regdom

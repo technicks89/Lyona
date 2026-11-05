@@ -233,6 +233,7 @@ Flickable {
                     id: sessionAction
                     required property var modelData
                     label: sessionAction.modelData.label
+                    visible: !sessionAction.modelData.hidden
 
                     enabled: !root.powerMenuModel.busy
                         && !root.powerMenuModel.confirming

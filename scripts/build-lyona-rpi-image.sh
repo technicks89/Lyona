@@ -486,7 +486,10 @@ install -d -m 0755 "$root/usr/local/src"
 rsync -a --delete --chown=0:0 --chmod=go-w "${rsync_excludes[@]}" \
 	"$repo_dir/" "$root/usr/local/src/lyona/"
 
-build_commit="$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+# The builder runs as root on a checkout a user owns, which git refuses to
+# read ("dubious ownership") unless it is a safe.directory: without this the
+# image recorded LYONA_COMMIT=unknown (ARM3-06).
+build_commit="$(git -c safe.directory="$repo_dir" -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 build_date="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" --utc +%Y-%m-%dT%H:%M:%SZ)"
 # The same stamp the install medium writes; LYONA_ISO_KIND says which image.
 # LYONA_INSTALL_PROFILE is the profile install.sh runs with below: the first

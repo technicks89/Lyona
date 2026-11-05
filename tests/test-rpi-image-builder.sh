@@ -51,6 +51,10 @@ done
 # GRUB theme (a Pi boots through its firmware). Its passwordless sudo is
 # removed before Topgrade is built and before the user is.
 # shellcheck disable=SC2016 # the literal shell source text is what we look for
+# ARM3-06: run as root on a user's checkout, git refuses to read it unless it
+# is a safe.directory, and the image recorded LYONA_COMMIT=unknown.
+grep -Fq 'git -c safe.directory="$repo_dir" -C "$repo_dir" rev-parse HEAD' "$builder" ||
+	fail "the builder reads the commit without trusting a checkout root does not own."
 grep -Fq './install.sh --non-interactive --profile full --skip-topgrade --skip-yay --skip-grub-theme' "$builder" ||
 	fail "the builder does not run install.sh for the full profile without the GRUB theme."
 # The stamp records that same profile, for the first boot to record for the
