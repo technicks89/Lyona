@@ -10,6 +10,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Snapdragon X groundwork (ARM Sprint 6), not yet used by the installer: a
+  `soc-snapdragon` firmware profile in the dependency map (aarch64 only), a
+  device-tree lookup for the Dell XPS 13 9345 (`scripts/lyona-snapdragon.sh`),
+  and `make check-snapdragon`. No Snapdragon machine has run it yet
+  (`docs/evidence/arm6-00-static-survey.md`).
 - An experimental aarch64 install medium for Arch Linux ARM (ARM2-02):
   `scripts/build-lyona-arch-iso.sh --arch aarch64` builds
   `lyona-VERSION-aarch64.iso` on an aarch64 host, from archiso 91's releng

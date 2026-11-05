@@ -4,7 +4,11 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 (the generic image). Comes
 after ARM-3 and before ARM-5, so that ARM-5's release, support contract and
 user docs cover it (decided 2026-11-05, by the maintainer).
 
-**Status:** planned 2026-11-05. Not started. GitHub: no issues yet.
+**Status:** planned 2026-11-05. Static groundwork done the same day
+(`docs/evidence/arm6-00-static-survey.md`): the firmware profile
+`soc-snapdragon`, a device-tree lookup (`scripts/lyona-snapdragon.sh`) and
+`make check-snapdragon`. Nothing is wired into the installer; ARM6-01 (the XPS)
+has not started. GitHub: no issues yet.
 
 **Goal:** the generic aarch64 image boots and installs Lyona on Snapdragon X
 laptops (X Elite and X Plus). One image covers all of them, with no
@@ -48,6 +52,10 @@ covered laptop is "should work, not tested".
   speaker topology `X1E80100-Dell-XPS-13-9345-tplg.bin`. Nothing has to be
   copied from Windows. The video decoder's `qcvss8380.mbn` is missing; the
   desktop does not need it.
+- **Checked against Arch Linux ARM's repositories (2026-11-05):** the device
+  trees install at `/boot/dtbs/qcom/`, and the firmware is in the split
+  packages `linux-firmware-qcom` and `linux-firmware-atheros` (ath12k), not the
+  base `linux-firmware`.
 - **Known gap:** the XPS's device tree has its embedded controller turned
   off (`&i2c5`, "EC @0x3b", `status = "disabled"`). ARM6-01 finds out what
   that affects.

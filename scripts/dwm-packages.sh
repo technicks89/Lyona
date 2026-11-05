@@ -198,6 +198,16 @@ dwm_packages() {
 		dwm_aarch64_only base linux-rpi raspberrypi-bootloader firmware-raspberrypi \
 			archlinuxarm-keyring sudo gum zram-generator
 		;;
+	arch:soc-snapdragon)
+		# Snapdragon X laptops (ARM Sprint 6, ARM6-04): the Qualcomm firmware
+		# (the GPU, the audio and compute DSPs, battery manager, speaker
+		# topology) and the Atheros firmware (ath12k Wi-Fi). Arch Linux ARM
+		# splits linux-firmware by vendor; the base package has neither. To be
+		# installed only on a machine whose device tree lyona_snapdragon_dtb
+		# names (scripts/lyona-snapdragon.sh), as NVIDIA packages are installed
+		# only where the driver is used. Empty on x86_64.
+		dwm_aarch64_only linux-firmware-qcom linux-firmware-atheros
+		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): a GPU driver, NetworkManager
 	# and the QEMU/KVM guest tools. The NVIDIA DKMS driver also needs each
