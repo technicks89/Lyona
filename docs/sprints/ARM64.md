@@ -13,7 +13,9 @@ plans stay here, but they are not scheduled (on GitHub since 2026-10-26,
 marked deferred). ARM-1 is
 done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31).
 ARM-2 is done: ARM2-01 to ARM2-05 merged 2026-10-22 to 2026-10-25 (#44 to
-#54). Nothing
+#54). ARM-3 is done: validated on a real Pi 4 on 2026-11-05 (ARM3-06,
+`docs/evidence/arm3-06-raspberry-pi.md`). **Added 2026-11-05, by the maintainer:** Snapdragon X laptops, as
+ARM-6, after ARM-3 and before ARM-5, in the generic image. Nothing
 here is a support claim: `SPEC.md` still makes Arch x86_64 the
 only release target, and an aarch64 target is supported only once its sprint
 has met the release validation contract (`SPEC.md` 9.4) on that target.
@@ -28,6 +30,7 @@ has met the release validation contract (`SPEC.md` 9.4) on that target.
 | **Raspberry Pi 5** | BCM2712, VideoCore VII, 4 to 16 GB | A ready-to-boot SD card (or NVMe) image with Lyona preinstalled and a first-boot wizard | **Doable. Medium.** The most predictable target: Arch Linux ARM supports it, and the GPU runs Mesa (`v3d`) |
 | **Raspberry Pi 4** | BCM2711, VideoCore VI, 2 to 8 GB | The same image as the Pi 5 (A-5) | **Doable. Medium.** Slower GPU: the overview's previews and Picom need checking against the lean-desktop goal |
 | **NVIDIA GB10** | Grace Blackwell desktop systems: NVIDIA DGX Spark and the OEM GB10 boxes | The generic image, which detects GB10 and installs its kernel and driver (A-7) | **Doable with risk. Large.** Mainline Linux does not yet carry GB10's hardware-enablement patches: without them USB, and so the keyboard and mouse, does not come up. It needs NVIDIA's patched kernel (or a community package of it) and NVIDIA's aarch64 driver, neither of which Arch Linux ARM packages |
+| **Snapdragon X laptops** (added 2026-11-05) | Qualcomm X Elite and X Plus laptops: the maintainer's Dell XPS 13 9345 to test, and others with a mainline device tree | The generic image, which picks each laptop's device tree at boot from its hardware IDs (A-10, A-11), as Ubuntu's generic arm64 image and Arch's own `stubble` do | **Doable. Medium to large.** `linux-aarch64` builds the X1E80100 drivers, and mainline has the XPS's device tree and `linux-firmware` its firmware. The work is choosing the device tree on the medium and in the installed system. Only laptops with a mainline device tree are covered |
 | **NVIDIA N1X** | The RTX Spark laptops (announced 2026-06-01): the same Grace Blackwell design in a laptop | The generic image, as GB10, if and when it works | **Not doable yet. Watch item.** NVIDIA lists Windows 11 only; the Linux driver's supported-device list has GB10 but no N1X device IDs (checked 2026-10-11). Planned work starts only when both a Linux driver that lists N1X and test hardware exist (A-8) |
 
 What already helps:
@@ -96,15 +99,18 @@ These come from `AGENTS.md` and `SPEC.md` and hold here too.
 | **A-6** (deferred with ARM-4) | Where do the GB10 kernel and NVIDIA's aarch64 driver come from? (a) Pinned PKGBUILDs built on the machine at install time, (b) a signed Lyona aarch64 package repository, (c) wait for mainline Linux and Arch Linux ARM | ARM-4 | **(a) first**, as Sprint 14 did for the legacy NVIDIA drivers: reviewed, pinned commits, built as the new user, never as root. Measure the build time on GB10 (20 cores); if it is too long, (b), which overlaps the signed package repository already proposed in `ROADMAP.md` "Future Evaluation". Revisit (c) every release | Open |
 | **A-7** (deferred with ARM-4) | Does GB10 (and later N1X) get its own image? | ARM-4 | **No.** The generic image detects GB10 (by its SMBIOS or PCI IDs) and offers its kernel and driver, recommended, as the x86_64 image offers `nvidia-open` | Open |
 | **A-8** (deferred) | When does N1X work start? | ARM-5 | Only when NVIDIA's Linux driver lists N1X device IDs **and** test hardware is available. Until then it is a watch item, checked at each release | Open |
+| **A-10** | How does the generic medium choose a Snapdragon laptop's device tree? (a) `stubble`, packaged by Lyona, (b) systemd-stub's `.dtbauto` and `.hwids` | ARM-6 | Decide from ARM6-01; prefer (b), which needs no new package | Open |
+| **A-11** | How does the installed system choose it? (a) the installer writes GRUB's `devicetree` line, (b) the medium's mechanism | ARM-6 | **(a)** unless A-10's choice suits the installed system too | Open |
 | **A-9** | How does CI cover ARM? | ARM-1 | A GitHub `ubuntu-24.04-arm` runner running the suite inside an Arch Linux ARM container, on the manual Full suite workflow first, then on pull requests once it is reliable | Decided 2026-10-13 as recommended |
 
 ---
 
 ## Sprint plan
 
-Five sprints of about two weeks, each one reviewable branch per item. ARM-1
-comes first; ARM-2 and ARM-3 depend on it and not on each other; ARM-4
-depends on ARM-2; ARM-5 closes the project.
+Six sprints of about two weeks, each one reviewable branch per item. ARM-1
+comes first; ARM-2 and ARM-3 depend on it and not on each other; ARM-4 and
+ARM-6 depend on ARM-2; ARM-6 runs after ARM-3 and before ARM-5; ARM-5 closes
+the project.
 
 | Sprint | Document | Scope | Exit | Depends on |
 | --- | --- | --- | --- | --- |
@@ -112,18 +118,21 @@ depends on ARM-2; ARM-5 closes the project.
 | **ARM-2** | [`ARM-SPRINT-2-GENERIC-IMAGE.md`](ARM-SPRINT-2-GENERIC-IMAGE.md) | The builder spike, the aarch64 live medium, the ARM installer path, Arch Linux ARM mirrors and keyring, the image on three virtual machines | The generic image installs a working desktop on three virtual machines: QEMU/KVM, QEMU/KVM with another display path, and libvirt, on the GB10 (UTM and Parallels until 2026-10-25; there is no Mac) | ARM-1, A-2, A-3, A-4 |
 | **ARM-3** | [`ARM-SPRINT-3-RASPBERRY-PI.md`](ARM-SPRINT-3-RASPBERRY-PI.md) | The Pi image builder, the first-boot wizard, Pi boot configuration, the desktop on `v3d`, Settings on a Pi, validation on a Pi 4 | One image boots to a working desktop on a real Pi 4, within the lean budget, and on a Pi 5 (8 GB) from an SD card (one since 2026-10-27); the Pi 5's NVMe boot is not tested (no NVMe board) | ARM-1, A-3, A-5 |
 | **ARM-4** (deferred) | [`ARM-SPRINT-4-NVIDIA-GB10.md`](ARM-SPRINT-4-NVIDIA-GB10.md) | GB10 detection, its kernel and boot arguments, NVIDIA's aarch64 driver, Picom on NVIDIA aarch64, validation on GB10 hardware | The generic image installs a working desktop with the NVIDIA driver on a real GB10 system | ARM-2, A-6, A-7, hardware |
-| **ARM-5** | [`ARM-SPRINT-5-RELEASE-AND-N1X.md`](ARM-SPRINT-5-RELEASE-AND-N1X.md) | Release workflow for the generic and Pi images, the update path on aarch64, the support contract per target, user docs (the N1X watch item is deferred) | Both images published with a release, each target's status recorded | ARM-2, ARM-3 |
+| **ARM-6** | [`ARM-SPRINT-6-SNAPDRAGON-X.md`](ARM-SPRINT-6-SNAPDRAGON-X.md) | Device-tree selection for Snapdragon X laptops in the generic medium and the installed system, their firmware, the desktop on Adreno X1, validation on a Dell XPS 13 9345 | The generic image installs a working desktop on the XPS 13 9345 with no manual step; other covered laptops "should work, not tested" | ARM-2, ARM-3 (order), A-10, A-11, the XPS |
+| **ARM-5** | [`ARM-SPRINT-5-RELEASE-AND-N1X.md`](ARM-SPRINT-5-RELEASE-AND-N1X.md) | Release workflow for the generic and Pi images, the update path on aarch64, the support contract per target, user docs (the N1X watch item is deferred) | Both images published with a release, each target's status recorded | ARM-2, ARM-3, ARM-6 |
 
 Ordering in practice: ARM-3 is the most predictable target and can run beside
 ARM-2 once ARM-1 is merged. ARM-4 (GB10) and the N1X watch item are deferred
 (2026-10-11); when they are picked up, ARM-4 builds on ARM-2's image and does
-not change ARM-5's release of the generic and Pi images.
+not change ARM-5's release of the generic and Pi images. ARM-6 (Snapdragon
+X, added 2026-11-05) comes after ARM-3 and before ARM-5, so the release
+carries it.
 
 ## End state
 
 Decided 2026-10-14: one Lyona repository that builds both the x86_64 and the
-ARM versions. Lyona-ARM is where the ARM work happens until ARM-1, ARM-2, ARM-3
-and ARM-5 are done; then it is merged into Lyona as a whole. Lyona-ARM has no
+ARM versions. Lyona-ARM is where the ARM work happens until ARM-1, ARM-2, ARM-3,
+ARM-6 (added 2026-11-05) and ARM-5 are done; then it is merged into Lyona as a whole. Lyona-ARM has no
 releases of its own.
 
 **Amended 2026-10-27, by the maintainer:** ARM5-01's release run (a
@@ -132,7 +141,7 @@ never makes, so it happens in Lyona after the merge, on Lyona's GitHub
 runners (Lyona is public, where standard runners cost nothing; Lyona-ARM is
 private, where they are billed). Before the merge, ARM5-01 writes the release
 workflow's changes and checks them with the release tests' stubs. So the
-merge comes after ARM-1, ARM-2, ARM-3 and ARM-5's pre-merge parts, and ARM-5
+merge comes after ARM-1, ARM-2, ARM-3, ARM-6 and ARM-5's pre-merge parts, and ARM-5
 closes in Lyona. Until the merge:
 
 - Lyona `main` is synced in often, each time through a pull request merged
@@ -145,14 +154,17 @@ closes in Lyona. Until the merge:
 
 | Target | What validates it | Needed by |
 | --- | --- | --- |
-| Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested. Since the GB10 went (2026-10-27) there is no machine for a generic-image install run: a KVM virtual machine on the 8 GB Pi 5 is the candidate (Raspberry Pi's Pi 5 kernel configuration has KVM on), untried | ARM-1, ARM-2, ARM-5 |
-| Raspberry Pi | A Pi 4 (4 GB, the floor to test), with an HDMI display, keyboard and mouse, booting from an SD card. A Pi 5 (8 GB) too, since 2026-10-27, from an SD card; there is no NVMe board, so its NVMe boot is not tested | ARM-3 |
+| Generic | Three configurations on the GB10: QEMU/KVM with virtio-gpu, QEMU/KVM with `bochs-display` and a CD, and a libvirt machine (ARM2-05); the GitHub arm64 runner, for boot only. UTM and Parallels on Apple Silicon were planned; there is no Mac (2026-10-25), so they are not tested. Since the GB10 went (2026-10-27) there is no machine for a generic-image install run: a KVM virtual machine on the 8 GB Pi 5 was the candidate, but the Pi 5 is not available for that (2026-11-05: it runs the maintainer's DNS) | ARM-1, ARM-2, ARM-5 |
+| Raspberry Pi | A Pi 4 (4 GB, the floor to test), with an HDMI display, keyboard and mouse, booting from an SD card. A Pi 5 (8 GB) too, since 2026-10-27, from an SD card, for short tests only: it runs the maintainer's DNS (2026-11-05). There is no NVMe board, so its NVMe boot is not tested | ARM-3 |
 | GB10 (deferred) | A DGX Spark or an OEM GB10 system, with a display on its HDMI port. None is available since 2026-10-27 | ARM-4 |
+| Snapdragon X | The maintainer's Dell XPS 13 9345 (X1E80100), from a USB stick with Secure Boot off; Windows stays on its drive. Other Snapdragon laptops are not tested | ARM-6 |
 | N1X (deferred) | An RTX Spark laptop, once A-8's gate is met | after ARM-5 |
 
 Available to the maintainer (2026-10-13): a Raspberry Pi 4 (4 GB) and an
 NVIDIA GB10 system. Since 2026-10-27: a Raspberry Pi 5 (8 GB) as well, with no
-NVMe board, and the GB10 no longer. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
+NVMe board, and the GB10 no longer. Since 2026-11-05: the Pi 5 is the
+maintainer's DNS server, borrowed only for short tests, and a Dell XPS 13
+9345 (Snapdragon X Elite) is ARM-6's test laptop. No Apple Silicon Mac is named. An emulated aarch64 QEMU VM on an
 x86_64 host froze that host (2026-10-13), so ARM-1 tested on the GitHub arm64
 runner (ARM1-05) and in a native VM on the GB10 (ARM1-06, below), not in an
 emulated VM.
@@ -165,11 +177,11 @@ validated in such a VM, because the Pi 4 was not available (its Pi run moved to
 ARM3-06), and ARM2-01, ARM2-05, ARM3-01 and ARM3-02 ran there. It is no longer
 available (2026-10-27). What is left for aarch64:
 
-- **Image builds before the merge:** the Pi 4 (4 GB) or the Pi 5 (8 GB),
-  each on Arch Linux ARM, as root, with the builder's tools and about 15 GB
-  free (a USB SSD rather than the SD card it boots from). The builders need
-  an aarch64 Arch Linux ARM host, not a particular board; neither Pi has
-  built an image yet, and either is slower than the GB10 was.
+- **Image builds before the merge:** the Pi 4 (4 GB), on Arch Linux ARM, as
+  root, with the builder's tools and about 15 GB free. It built the Pi image
+  from its own SD card in about 1 h 29 min (ARM3-06, 2026-11-04). The Pi 5
+  is not a build host (2026-11-05: it runs the maintainer's DNS). The
+  builders need an aarch64 Arch Linux ARM host, not a particular board.
 - **The suite:** the GitHub arm64 runner (the Full suite workflow, ARM1-05),
   which Lyona-ARM pays for by the minute, so it runs once before the merge
   into Lyona rather than on every change; or the same suite in the Arch Linux

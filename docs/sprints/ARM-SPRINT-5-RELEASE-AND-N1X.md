@@ -1,6 +1,7 @@
 # ARM Sprint 5 -- Release, support contract and the N1X watch item
 
-Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 and ARM-3.
+Index: [`ARM64.md`](ARM64.md). Depends on ARM-2, ARM-3 and ARM-6 (Snapdragon X,
+added 2026-11-05, which comes before this sprint).
 
 **Status:** planned 2026-10-11. Not started. **Amended 2026-10-27, by the
 maintainer:** ARM5-01's release run happens in Lyona after the merge

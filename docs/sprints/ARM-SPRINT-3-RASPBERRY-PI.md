@@ -2,7 +2,19 @@
 
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-1; independent of ARM-2.
 
-**Status:** planned 2026-10-11. A-5 decided 2026-10-26 (one image,
+**Status:** planned 2026-10-11. **Done 2026-11-05:** ARM3-06 validated the
+image on a real Pi 4 (4 GB, SD card)
+([`docs/evidence/arm3-06-raspberry-pi.md`](../evidence/arm3-06-raspberry-pi.md)).
+The image was built on that Pi from `main` (`51a72b9`). It showed the splash
+and went through the first boot to LightDM with no manual step, with Picom
+off at login on V3D 4 (#32). Its update and rollback worked, but the update
+installed upstream Lyona (#53, which the merge resolves). The fixes it found
+are in `28480a5`: Suspend hidden where the system cannot suspend, the image's
+commit stamp, and Bluetooth's name on the first boot. The Pi 5 (Picom on),
+`install.sh` on Arch Linux ARM's own image, Wi-Fi alone, and the overview
+with 30 windows were reported working, not recorded. Not tested: NVMe on the
+Pi 5 and two displays on a Pi 4; there is no hardware for them, and none will
+be bought. A-5 decided 2026-10-26 (one image,
 `linux-rpi`). ARM3-01 built 2026-10-26
 ([`docs/evidence/arm3-01-pi-image-builder.md`](../evidence/arm3-01-pi-image-builder.md)),
 and ARM3-02 on the same branch

@@ -249,15 +249,17 @@ ARM Sprint 3 (`docs/sprints/ARM-SPRINT-3-RASPBERRY-PI.md`) adds a ready-to-write
 image for the Raspberry Pi 4 and Pi 5, one image for both (A-5). A Pi has no
 installer: the image is the installed system, without a user, and its first
 boot asks the questions, creates the user and finishes the install for them
-(`rpi/lyona-firstboot.sh`, ARM3-02). It is not released, and has not been
-tried on a Pi: its first boot reached the desktop in a KVM virtual machine
-(`docs/evidence/arm3-02-pi-first-boot.md`). It builds natively on an aarch64 Arch
-Linux ARM host as root. The builds so far ran in the privileged
-`lyona-archlinuxarm` container on GB10, which is no longer available
-(2026-10-27). Before the merge into Lyona, it builds on a Raspberry Pi 4
-(4 GB) or Pi 5 (8 GB) running Arch Linux ARM, with about 15 GB free off its
-boot card; the release build runs on Lyona's GitHub arm64 runner after the
-merge (`docs/sprints/ARM64.md`, End state):
+(`rpi/lyona-firstboot.sh`, ARM3-02). It is not released. It was validated
+on a real Raspberry Pi 4 on 2026-11-04 and 2026-11-05: built on that Pi,
+written to an SD card, through the first boot to a working desktop, with an
+update and a rollback (`docs/evidence/arm3-06-raspberry-pi.md`). It builds
+natively on an aarch64 Arch Linux ARM host as root. The first builds ran in
+the privileged `lyona-archlinuxarm` container on GB10, which is no longer
+available (2026-10-27). Before the merge into Lyona, it builds on the Raspberry
+Pi 4 (4 GB) running Arch Linux ARM, with about 15 GB free: there, from the
+Pi's own SD card, it took about 1 h 29 min. Run it as a `systemd-run` unit,
+so a dropped SSH session does not stop it. The release build runs on Lyona's
+GitHub arm64 runner after the merge (`docs/sprints/ARM64.md`, End state):
 
 ```sh
 sudo scripts/build-lyona-rpi-image.sh --output release/
