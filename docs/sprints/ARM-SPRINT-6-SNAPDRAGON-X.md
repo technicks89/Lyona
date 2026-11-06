@@ -171,5 +171,8 @@ with no manual step.
 - Booting at EL2 (the `-el2` device trees) and KVM on these laptops.
 - Dual-boot setup with Windows beyond leaving it untouched: no resizing of
   the Windows partition and no BitLocker handling.
+- Speakers and microphones on the XPS 13 9345: its mainline device tree has
+  no sound card, and no upstream fix has landed. Not carried here; see
+  `docs/evidence/arm6-01-snapdragon-spike.md` ("Sound: decision").
 - The camera and the video decoder (`qcvss8380.mbn` is not in
   `linux-firmware`).

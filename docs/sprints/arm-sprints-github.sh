@@ -78,13 +78,15 @@ run() {
 
 # Sprint number | order (sets the due date; - for none) | title | plan document.
 # ARM-2 and ARM-3 run side by side after ARM-1, so they share a due date.
-# ARM-4 is deferred, so it has none.
+# ARM-4 is deferred, so it has none. ARM-6 (Snapdragon X, added 2026-11-05)
+# comes after ARM-3 and before ARM-5.
 sprints=(
 	"1|1|ARM Sprint 1 - Foundation|ARM-SPRINT-1-FOUNDATION.md"
 	"2|2|ARM Sprint 2 - Generic aarch64 image|ARM-SPRINT-2-GENERIC-IMAGE.md"
 	"3|2|ARM Sprint 3 - Raspberry Pi 4 and 5|ARM-SPRINT-3-RASPBERRY-PI.md"
 	"4|-|ARM Sprint 4 - NVIDIA GB10 (deferred)|ARM-SPRINT-4-NVIDIA-GB10.md"
-	"5|3|ARM Sprint 5 - Release and support contract|ARM-SPRINT-5-RELEASE-AND-N1X.md"
+	"6|3|ARM Sprint 6 - Snapdragon X laptops|ARM-SPRINT-6-SNAPDRAGON-X.md"
+	"5|4|ARM Sprint 5 - Release and support contract|ARM-SPRINT-5-RELEASE-AND-N1X.md"
 )
 
 # Sprint | item id | heading anchor | title | deferred (optional)
@@ -111,6 +113,12 @@ items=(
 	"4|ARM4-03|arm4-03-install-the-kernel-boot-arguments-and-driver|Install the GB10 kernel, boot arguments and driver|deferred"
 	"4|ARM4-04|arm4-04-the-desktop-on-nvidia-aarch64|The desktop on NVIDIA aarch64|deferred"
 	"4|ARM4-05|arm4-05-validate-on-gb10-hardware|Validate on GB10 hardware|deferred"
+	"6|ARM6-01|arm6-01-spike-on-the-xps-13-9345|Spike on the XPS 13 9345 (A-10, A-11)"
+	"6|ARM6-02|arm6-02-the-device-tree-on-the-live-medium|The device tree on the live medium"
+	"6|ARM6-03|arm6-03-the-device-tree-in-the-installed-system|The device tree in the installed system"
+	"6|ARM6-04|arm6-04-firmware-and-packages|Firmware and packages"
+	"6|ARM6-05|arm6-05-the-desktop-on-adreno-x1|The desktop on Adreno X1"
+	"6|ARM6-06|arm6-06-validate-on-the-xps-13-9345|Validate on the XPS 13 9345"
 	"5|ARM5-01|arm5-01-the-release-workflow-for-arm-images|The release workflow for ARM images"
 	"5|ARM5-02|arm5-02-updates-on-aarch64|Updates on aarch64"
 	"5|ARM5-03|arm5-03-the-support-contract-per-target|The support contract per target"
@@ -158,7 +166,7 @@ if ((with_project)); then
 			project_number=$(gh project create --owner "$owner" --title "$project_title" \
 				--format json --jq .number)
 			gh project field-create "$project_number" --owner "$owner" --name Sprint \
-				--data-type SINGLE_SELECT --single-select-options "ARM-1,ARM-2,ARM-3,ARM-4,ARM-5" >/dev/null
+				--data-type SINGLE_SELECT --single-select-options "ARM-1,ARM-2,ARM-3,ARM-4,ARM-5,ARM-6" >/dev/null
 			gh project link "$project_number" --owner "$owner" --repo "$repo" >/dev/null || true
 		fi
 	fi
@@ -206,7 +214,7 @@ for item in "${items[@]}"; do
 		field_id=$(jq -r '.fields[] | select(.name == "Sprint") | .id' <<<"$field_json")
 		option_id=$(jq -r ".fields[] | select(.name == \"Sprint\") | .options[] | select(.name == \"ARM-$n\") | .id" <<<"$field_json")
 		if [[ -z $option_id ]]; then
-			# A board made before ARM-4 was tracked lacks its option; add it in
+			# A board made before a sprint was added (ARM-4, ARM-6) lacks its option; add it in
 			# the board's field settings, then re-run.
 			printf '  board: no Sprint option "ARM-%s"; add it and re-run\n' "$n" >&2
 			continue

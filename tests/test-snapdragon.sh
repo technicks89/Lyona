@@ -52,4 +52,51 @@ profile() { # ARCH
 	fail "the soc-snapdragon profile is not the Qualcomm and Atheros firmware on aarch64."
 [[ -z $(profile x86_64) ]] || fail "the soc-snapdragon profile resolves packages on x86_64."
 
+# The postinstall step: on the XPS it installs the firmware, writes the kernel
+# arguments (with the TPM wait off, ARM6-01) and the device-tree hook; anywhere
+# else it writes nothing. The step runs against a staged target.
+postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh
+sed -n '/^install_snapdragon_support() {$/,/^}$/p' "$postinstall" >"$work/step.sh"
+grep -q '^install_snapdragon_support() {$' "$work/step.sh" || fail 'install_snapdragon_support not found in the postinstall'
+grep -Eq '^[[:space:]]+install_snapdragon_support \\$' "$postinstall" || fail 'install_snapdragon_support is not exported for run_logged'
+grep -q 'run_logged "Setting up a Snapdragon X laptop..." install_snapdragon_support' "$postinstall" ||
+	fail 'the postinstall does not run the Snapdragon X step'
+step_line=$(grep -n 'run_logged "Setting up a Snapdragon X laptop..."' "$postinstall" | cut -d: -f1)
+install_line=$(grep -n 'run_logged "Running install.sh' "$postinstall" | cut -d: -f1)
+[[ $step_line -lt $install_line ]] || fail 'the Snapdragon X step must come before install.sh regenerates grub.cfg'
+
+run_step() { # TARGET
+	(
+		TARGET=$1 REPO_SRC=$repo ARCH=aarch64 LYONA_DMI_ROOT=$dmi
+		arch-chroot() { printf '%s\n' "$*" >>"$work/chroot.log"; }
+		# shellcheck disable=SC1091
+		. "$repo/scripts/dwm-packages.sh"
+		# shellcheck disable=SC1091
+		. "$work/step.sh"
+		install_snapdragon_support
+	)
+}
+target=$work/target
+mkdir -p "$target/boot/dtbs/qcom"
+touch "$target/boot/dtbs/qcom/x1e80100-dell-xps13-9345.dtb"
+: >"$work/chroot.log"
+
+set_dmi 'QEMU' 'KVM Virtual Machine'
+run_step "$target" >/dev/null
+[[ ! -e $target/etc/grub.d/09_lyona_dtb && ! -e $target/etc/default/grub.d/90-lyona-snapdragon.cfg && ! -s $work/chroot.log ]] ||
+	fail 'a machine that is not a Snapdragon X laptop was changed.'
+
+set_dmi 'Dell Inc.' 'XPS 13 9345'
+run_step "$target" >/dev/null
+grep -Fq 'pacman -S --noconfirm --needed' "$work/chroot.log" && grep -Fq 'linux-firmware-qcom' "$work/chroot.log" ||
+	fail 'the XPS did not get the Qualcomm firmware.'
+cfg=$target/etc/default/grub.d/90-lyona-snapdragon.cfg
+for arg in efi=noruntime clk_ignore_unused pd_ignore_unused arm64.nopauth systemd.tpm2_wait=0; do
+	grep -Fq "$arg" "$cfg" || fail "the kernel arguments lack $arg."
+done
+hook=$target/etc/grub.d/09_lyona_dtb
+[[ -x $hook ]] || fail 'the device-tree hook is not executable.'
+grep -Fq 'dtb=/boot/dtbs/qcom/x1e80100-dell-xps13-9345.dtb' "$hook" || fail 'the device-tree hook names the wrong file.'
+sh -n "$hook" || fail 'the device-tree hook is not valid sh.'
+
 printf 'Snapdragon X groundwork: PASS\n'

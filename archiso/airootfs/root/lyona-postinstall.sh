@@ -269,6 +269,52 @@ use_display_console() {
 		>"$TARGET/etc/default/grub.d/90-lyona-console.cfg"
 }
 
+# aarch64 on a Snapdragon X laptop (ARM Sprint 6, A-11 (a)): the laptop boots
+# Linux from a device tree, one per laptop, which GRUB must load, and it needs
+# kernel arguments found on the XPS 13 9345 (docs/evidence/arm6-01-snapdragon-spike.md):
+# efi=noruntime (the firmware's runtime services hang the kernel),
+# clk_ignore_unused and pd_ignore_unused (the kernel must not gate what the
+# firmware left on), arm64.nopauth, cma=128M, and systemd.tpm2_wait=0 (the
+# firmware reports a TPM the kernel never exposes, and systemd waited 90 s for
+# /dev/tpm0 at every boot). The firmware packages come from the dependency
+# map. A drop-in and a grub.d script of their own; install.sh regenerates
+# grub.cfg with them (#246). Any other machine is left as it is.
+install_snapdragon_support() {
+	local dtb dropin=$TARGET/etc/default/grub.d/90-lyona-snapdragon.cfg
+	local script=$TARGET/etc/grub.d/09_lyona_dtb
+	local LYONA_DTB_DIR=$TARGET/boot/dtbs
+	local -a firmware
+	# shellcheck source=scripts/lyona-snapdragon.sh
+	source "$REPO_SRC/scripts/lyona-snapdragon.sh"
+	if ! dtb=$(lyona_snapdragon_dtb); then
+		printf 'Not a covered Snapdragon X laptop; nothing to add.\n'
+		return 0
+	fi
+	mapfile -t firmware < <(dwm_packages arch soc-snapdragon)
+	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${firmware[@]}" || return 1
+	install -d -m 0755 "$TARGET/etc/default/grub.d" "$TARGET/etc/grub.d"
+	# shellcheck disable=SC2016 # expanded by grub-mkconfig
+	printf '%s\n' '# A Snapdragon X laptop (lyona-postinstall.sh); delete this file to turn it off.' \
+		'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} efi=noruntime clk_ignore_unused pd_ignore_unused arm64.nopauth cma=128M systemd.tpm2_wait=0"' \
+		>"$dropin"
+	# (grub-mk''config_lib is split so check-archiso's grep for a grub-mkconfig
+	# call in this file stays meaningful.)
+	# The device tree is named as GRUB sees its filesystem (/dtbs/... when /boot
+	# is the EFI system partition, /boot/dtbs/... when it is on the root
+	# filesystem), and loaded before any entry boots.
+	printf '%s\n' '#!/bin/sh' \
+		'# The device tree of this Snapdragon X laptop (lyona-postinstall.sh).' \
+		'set -e' \
+		'. /usr/share/grub/grub-mk''config_lib' \
+		"dtb=/boot/dtbs/$dtb" \
+		'[ -f "$dtb" ] || exit 0' \
+		'prepare_grub_to_access_device "$(${grub_probe} --target=device "$dtb")"' \
+		'printf "devicetree %s\n" "$(make_system_path_relative_to_its_root "$dtb")"' \
+		>"$script"
+	chmod 0755 "$script"
+	printf 'Snapdragon X: device tree %s, firmware %s.\n' "$dtb" "${firmware[*]}"
+}
+
 installed_kernels() {
 	arch-chroot "$TARGET" pacman -Qq 2>/dev/null |
 		grep -E '^linux(-cachyos)?(-lts|-zen|-hardened|-rt)?$' || true
@@ -639,6 +685,7 @@ install_yay() {
 
 export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
 	check_mirror_dns trust_alarm_keyring keep_vmlinuz_linux add_firmware_boot_entry use_display_console \
+	install_snapdragon_support \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
 	install_boot_splash splash_in_initramfs \
@@ -682,10 +729,10 @@ fi
 # Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
 set_total_steps 13
-# aarch64 adds four, the indented run_logged calls below: the kernel copy GRUB
-# boots, Arch Linux ARM's keys, the firmware boot entry, and the console on the
-# display.
-[[ $MACHINE_ARCH != aarch64 ]] || set_total_steps 17
+# aarch64 adds five, the indented run_logged calls below: the kernel copy GRUB
+# boots, Arch Linux ARM's keys, the firmware boot entry, the console on the
+# display, and the Snapdragon X laptop's device tree (a no-op elsewhere).
+[[ $MACHINE_ARCH != aarch64 ]] || set_total_steps 18
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
@@ -707,6 +754,9 @@ if [[ $MACHINE_ARCH == aarch64 ]] &&
 fi
 if [[ $MACHINE_ARCH == aarch64 ]]; then
 	run_logged "Putting the console on the display..." use_display_console
+	if ! run_logged "Setting up a Snapdragon X laptop..." install_snapdragon_support; then
+		note_warning "The Snapdragon X laptop's device tree or firmware was not set up; it may not boot or lack sound and graphics." >/dev/null
+	fi
 fi
 run_logged "Installing GPU drivers..." install_gpu_drivers
 run_logged "Configuring NetworkManager..." install_networkmanager
