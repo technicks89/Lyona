@@ -683,7 +683,7 @@ install_yay() {
 	return "$status"
 }
 
-export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
+export -f note_warning dwm_packages dwm_x86_64_only dwm_aarch64_only add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
 	check_mirror_dns trust_alarm_keyring keep_vmlinuz_linux add_firmware_boot_entry use_display_console \
 	install_snapdragon_support \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \

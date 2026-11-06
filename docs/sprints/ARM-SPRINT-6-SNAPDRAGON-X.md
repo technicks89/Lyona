@@ -67,7 +67,7 @@ covered laptop is "should work, not tested".
 
 | ID | Question | Recommendation | Status |
 | --- | --- | --- | --- |
-| **A-10** | How does the live medium choose the device tree? (a) `stubble`, packaged for Arch Linux ARM by Lyona (a pinned PKGBUILD, as `dwm-aur.sh` pins AUR packages), (b) systemd-stub's `.dtbauto` and `.hwids` in a unified kernel image | Decide from ARM6-01. Prefer (b) if Arch Linux ARM's systemd builds it and archiso's systemd-boot path can boot a UKI, since it needs no new package | Open |
+| **A-10** | How does the live medium choose the device tree? (a) `stubble`, packaged for Arch Linux ARM by Lyona (a pinned PKGBUILD, as `dwm-aur.sh` pins AUR packages), (b) systemd-stub's `.dtbauto` and `.hwids` in a unified kernel image | Decide from ARM6-01. Prefer (b) if Arch Linux ARM's systemd builds it and archiso's systemd-boot path can boot a UKI, since it needs no new package | **(b)**: on the installed XPS (systemd 262.1) a `ukify` UKI with `.dtbauto` and `.hwids` booted the laptop with no `devicetree` line, no `stubble` ([evidence](../evidence/arm6-01-snapdragon-spike.md)). Not yet checked on the live medium's own systemd | Decided |
 | **A-11** | How does the installed system choose it? (a) The installer matches the laptop once and writes a `devicetree` line for GRUB, (b) the same mechanism as the medium (A-10), with systemd-boot or a UKI | **(a)** unless A-10 is (b) and the installed system can use it too. The installed system boots one known machine, and GRUB stays the bootloader the aarch64 install already uses (ARM2-03) | Open |
 
 ## Items

@@ -65,6 +65,21 @@ step_line=$(grep -n 'run_logged "Setting up a Snapdragon X laptop..."' "$postins
 install_line=$(grep -n 'run_logged "Running install.sh' "$postinstall" | cut -d: -f1)
 [[ $step_line -lt $install_line ]] || fail 'the Snapdragon X step must come before install.sh regenerates grub.cfg'
 
+# run_logged runs each step in a fresh `bash -c`, so only what the postinstall
+# exports exists there. dwm_packages calls dwm_aarch64_only and dwm_x86_64_only:
+# unexported, the profile came back empty (status 127) and pacman had no
+# targets, on the first real XPS install. Run it the way run_logged does.
+exported=$(sed -n '/^export -f /,/[^\\]$/p' "$postinstall" | tr -d '\\\n' | sed 's/^export -f //')
+[[ -n $exported ]] || fail 'the postinstall has no export -f list.'
+# shellcheck disable=SC2016 # expanded by the inner bash
+fresh=$(ARCH=aarch64 EXPORTED=$exported bash -c '
+	. "$0"
+	for f in $EXPORTED; do declare -F "$f" >/dev/null && export -f "$f"; done
+	bash -c "set -Eeuo pipefail; dwm_packages arch soc-snapdragon" 2>&1' "$repo/scripts/dwm-packages.sh") ||
+	fail "dwm_packages arch soc-snapdragon fails in a fresh shell: $fresh"
+[[ $(printf '%s\n' "$fresh" | sort | tr '\n' ' ') == 'linux-firmware-atheros linux-firmware-qcom ' ]] ||
+	fail "in a fresh shell the soc-snapdragon profile resolves: $fresh"
+
 run_step() { # TARGET
 	(
 		TARGET=$1 REPO_SRC=$repo ARCH=aarch64 LYONA_DMI_ROOT=$dmi
