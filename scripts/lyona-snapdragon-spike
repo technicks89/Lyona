@@ -46,13 +46,16 @@ capture lsmod lsmod
 capture lsusb lsusb
 capture lspci lspci -nn
 # Display and GPU.
+# shellcheck disable=SC2016 # expanded by the inner sh, not here
 capture drm sh -c 'ls /sys/class/drm; for s in /sys/class/drm/*/status; do printf "%s: " "$s"; cat "$s"; done'
 capture xrandr xrandr --query
 capture glxinfo glxinfo -B
 # Input, network, power, audio.
 capture input sh -c 'cat /proc/bus/input/devices'
 capture network nmcli device status
+# shellcheck disable=SC2016 # expanded by the inner sh, not here
 capture power sh -c 'for s in /sys/class/power_supply/*; do echo "== $s"; cat "$s/uevent"; done'
+# shellcheck disable=SC2016 # expanded by the inner sh, not here
 capture backlight sh -c 'ls /sys/class/backlight; for b in /sys/class/backlight/*; do cat "$b/brightness" "$b/max_brightness"; done'
 capture audio sh -c 'aplay -l; pactl list short sinks'
 capture sleep sh -c 'cat /sys/power/mem_sleep /sys/power/state'

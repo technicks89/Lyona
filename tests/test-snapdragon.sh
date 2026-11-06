@@ -82,7 +82,9 @@ fresh=$(ARCH=aarch64 EXPORTED=$exported bash -c '
 
 run_step() { # TARGET
 	(
+		# shellcheck disable=SC2034 # read by the sourced step and libraries
 		TARGET=$1 REPO_SRC=$repo ARCH=aarch64 LYONA_DMI_ROOT=$dmi
+		# shellcheck disable=SC2329 # called by the sourced step
 		arch-chroot() { printf '%s\n' "$*" >>"$work/chroot.log"; }
 		# shellcheck disable=SC1091
 		. "$repo/scripts/dwm-packages.sh"
@@ -103,7 +105,9 @@ run_step "$target" >/dev/null
 
 set_dmi 'Dell Inc.' 'XPS 13 9345'
 run_step "$target" >/dev/null
-grep -Fq 'pacman -S --noconfirm --needed' "$work/chroot.log" && grep -Fq 'linux-firmware-qcom' "$work/chroot.log" ||
+grep -Fq 'pacman -S --noconfirm --needed' "$work/chroot.log" ||
+	fail 'the XPS did not get the Qualcomm firmware.'
+grep -Fq 'linux-firmware-qcom' "$work/chroot.log" ||
 	fail 'the XPS did not get the Qualcomm firmware.'
 cfg=$target/etc/default/grub.d/90-lyona-snapdragon.cfg
 for arg in efi=noruntime clk_ignore_unused pd_ignore_unused arm64.nopauth systemd.tpm2_wait=0; do
