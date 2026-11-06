@@ -557,7 +557,8 @@ grep -Fq 'run_logged "Adding a firmware boot entry..." add_firmware_boot_entry' 
 	fail 'the postinstall does not add the firmware boot entry'
 grep -B1 'run_logged "Adding a firmware boot entry..."' "$postinstall" | grep -Fq '[[ $MACHINE_ARCH == aarch64 ]]' ||
 	fail 'the firmware boot entry is not for aarch64 only'
-grep -Pzq '\nif \[\[ \$MACHINE_ARCH == aarch64 \]\]; then\n\trun_logged "Putting the console on the display\.\.\." use_display_console\nfi\n' \
+# The console step opens the aarch64 block; the Snapdragon X step follows it there.
+grep -Pzq '\nif \[\[ \$MACHINE_ARCH == aarch64 \]\]; then\n\trun_logged "Putting the console on the display\.\.\." use_display_console\n' \
 	"$postinstall" || fail 'the console step is not for aarch64 only'
 # shellcheck disable=SC1003 # the backslash is matched literally: the postinstall's line continuation
 grep -Fq 'check_mirror_dns trust_alarm_keyring keep_vmlinuz_linux add_firmware_boot_entry use_display_console \' "$postinstall" ||

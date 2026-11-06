@@ -63,7 +63,7 @@ steps=$(grep -cE '^(if ! )?run_logged ' "$postinstall")
 declared=$(sed -n 's/^set_total_steps \([0-9]*\)$/\1/p' "$postinstall")
 [[ $steps == "$declared" ]] || fail "the progress bar counts $declared steps, but there are $steps"
 # aarch64 (ARM2-03) runs its own steps besides, indented under its gate.
-aarch64_steps=$(grep -cP '^\t!? ?run_logged ' "$postinstall")
+aarch64_steps=$(grep -cP '^\t(if )?!? ?run_logged ' "$postinstall")
 # shellcheck disable=SC2016 # $MACHINE_ARCH is matched literally, as the postinstall writes it
 aarch64_declared=$(sed -n 's/^\[\[ \$MACHINE_ARCH != aarch64 \]\] || set_total_steps \([0-9]*\)$/\1/p' "$postinstall")
 [[ $aarch64_declared == $((steps + aarch64_steps)) ]] ||
