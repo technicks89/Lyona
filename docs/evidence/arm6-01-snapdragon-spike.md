@@ -336,6 +336,31 @@ ESP), with no hand-made GRUB or firmware changes, then rebooted with no edit.
   speaker spike would need a volume cap first (no speaker protection in the
   stack) and is not planned.
 
+### ARM6-04 check and a suspend data point (2026-11-06, the NVMe install)
+
+ARM6-04's acceptance is "`dmesg` shows no missing firmware", from packages the
+dependency map names. Read from `journalctl -k -b` over SSH, kernel
+7.3.1-2-aarch64-ARCH, one hour after boot:
+
+- **No firmware load failed:** no `Direct firmware load ... failed`,
+  `request_firmware failed` or `Unable to load` line. Loaded: both DSPs
+  (`Booting fw image qcom/x1e80100/dell/xps13-9345/qcadsp8380.mbn` and
+  `qccdsp8380.mbn`), the GPU (`gen70500_sqe.fw`, `gen70500_gmu.bin`, GMU
+  v4.3.17, with the zap shader), Wi-Fi (ath12k `fw_version 0x1103006c`) and
+  Bluetooth (`QCA FW build version BTFW.HAMILTON.2.0.1-00349`). The packages
+  are `linux-firmware-qcom` and `linux-firmware-atheros`, installed by the
+  step from `dwm_packages arch soc-snapdragon`.
+- **Noise that is not firmware:** `qrtr: failed to announce new service` and
+  `failed while handling packet from N:-2` at boot (next to the known
+  `qcom_smd_qrtr` probe error `-12`) and after each resume, when the Wi-Fi chip
+  re-initialises over MHI. Seen, not chased; Wi-Fi came back each time.
+- **The video decoder firmware** (`qcvss8380.mbn`) is not in `linux-firmware`
+  and is not loaded; the sprint plan already leaves it out.
+- **Suspend and resume work** (`PM: suspend entry (deep)`, `PM: suspend exit`,
+  twice; the first resumed in about 2 s) with Wi-Fi and Bluetooth back
+  afterwards. Resume time and battery drain asleep are still not measured
+  (ARM6-05).
+
 ## Brightness keys
 
 Not tested, and not pursued: the XPS 13 9345's function row is touch-sensitive,
