@@ -319,11 +319,13 @@ ESP), with no hand-made GRUB or firmware changes, then rebooted with no edit.
   fully-charged, 55 Wh); `/dev/dri/card0` and `renderD128`, no zap-shader or
   GPU init errors; no failed units (`autorandr.service` did not fail this
   time); root btrfs `rw`.
-- **The medium's boot looks hung for 2 to 3 minutes** with the debug options
+- **The medium's boot looked hung for 2 to 3 minutes** with the debug options
   removed (`quiet loglevel=3`) and `copytoram=y`: nothing is drawn while the
-  1.4 GB image is copied from the stick into RAM. ARM6-02 should show progress
-  or avoid the silent copy. The first spike entry (`loglevel=8`) printed
-  kernel lines over gum's screen, which `quiet loglevel=3` removed.
+  1.4 GB image is copied from the stick into RAM. The `copytoram=y` was the
+  spike's own entry; the stock entry the builder writes is `copytoram=n`
+  (`scripts/build-lyona-arch-iso.sh`), so this is not a defect of the medium. The first
+  spike entry (`loglevel=8`) printed kernel lines over gum's screen, which
+  `quiet loglevel=3` removed.
 - Wi-Fi was used for the install. **Ethernet works on this NVMe install**
   (checked afterwards, with the dongle plugged in): the Realtek RTL8153 comes up
   as `enu1u4` through `r8152` (`reset SuperSpeed USB device`, `carrier on`), takes a DHCP lease
@@ -360,6 +362,59 @@ dependency map names. Read from `journalctl -k -b` over SSH, kernel
   twice; the first resumed in about 2 s) with Wi-Fi and Bluetooth back
   afterwards. Resume time and battery drain asleep are still not measured
   (ARM6-05).
+
+## ARM6-02: the device tree on the live medium, development (2026-11-06)
+
+Written on branch `arm/arm6-02-live-medium-device-tree`. Not built on the Pi
+and not booted on the XPS yet; the checks below were made from source and
+Arch Linux ARM's package lists.
+
+- **Why today's medium cannot pick a device tree.** archiso 91's `mkarchiso`
+  fuses device trees into the kernel for aarch64 only if the package list
+  contains `stubble` and the host has `ukify` (`mkarchiso` lines 1397 to 1409,
+  `_make_stubble_efi` at 437). ARM2-02 drops `stubble` (Arch Linux ARM has no
+  such package), so the step is skipped with a warning.
+- **The stock step would not work on Arch Linux ARM anyway.** It reads
+  `usr/lib/modules/<ver>/pkgbase` and `.../dtb/qcom/`; Arch Linux ARM's
+  `linux-aarch64` 7.3.1-2 (from `core.files`) has neither: it installs
+  `boot/Image` and `boot/dtbs/qcom/` (409 trees, 42 of them `-el2`).
+- **The set to fuse is the Snapdragon X family:** `x1e*` and `x1p*` without
+  `-el2` is 26 trees (the XPS 13 9345, Inspiron 14 Plus 7441, Latitude 7455,
+  ThinkPad T14s, Yoga Slim 7x, Surface and ASUS, HP and Microsoft models, the
+  devkit, CRD and QCP). The 383 others are phone and server SoCs. `glymur`
+  (Snapdragon X2) has two trees in this kernel and is not fused. Every
+  `x1e`/`x1p` tree has an `-el2` sibling with the same base name; EL2 is out of
+  scope (see "Not in this sprint" in the sprint plan).
+- **Mechanism (A-10 (b)):** `scripts/lyona-mkarchiso-dtb` makes a copy of
+  `mkarchiso` with the stubble gate removed and `_make_stubble_efi` replaced by
+  `scripts/lyona-mkarchiso-fuse.sh`, which runs `ukify build --stub=
+  linuxaa64.efi.stub --linux=vmlinuz-linux --hwids=<systemd's aa64 table>
+  --devicetree-auto=<each tree>` and writes the result over the medium's
+  kernel. The loader entries are unchanged, so the initramfs and options still
+  come from systemd-boot. The helper checks each edit against the exact text it
+  changes and was run against the real v91 `mkarchiso` (three changes: the
+  function at 438 to 469, the gate at 1401 to 1405; the `use_stubble` switch, the
+  `ukify` check and the call stay; the output parses with `bash -O extglob -n`).
+- **systemd-stub takes the loader's initrd:** read in systemd v262
+  `src/boot/stub.c`: `acquire_previous_initrd` collects an initrd a previous
+  boot stage registered, and it is combined ahead of the UKI's own, so a fused
+  kernel with no `.initrd` still gets the medium's initramfs from systemd-boot.
+  With no `.cmdline` section the stub uses the loader's options, which holds
+  only while Secure Boot is off (already required).
+- **A machine with no match** continues without a device tree (an ACPI virtual
+  machine, a server), as before; this is the stub's documented behaviour, and
+  ARM2-05's three virtual machines still need to confirm it.
+- **Tests:** `tests/test-arch-iso-dtb.sh` (in `make check-archiso`): the patcher's
+  edit and each shape-failure on a stand-in `mkarchiso`, the fusing function on a
+  fake root with a stub `ukify` (the right stub, kernel, hardware-ID directory,
+  and exactly the Snapdragon X trees without `-el2`, sorted, a new tree picked up
+  with no change, no laptop named), and the builder's wiring. Three mutations
+  were each caught.
+- **Not tested:** a build on the Pi 4 (needs `systemd-ukify` on the host), the
+  medium's size with the 26 trees fused, the XPS booting it with no manual step,
+  that systemd-stub's hardware-ID match picks the XPS tree from the fused
+  kernel on that machine (it did from a UKI in ARM6-01, A-10), the three virtual
+  machines, and Secure Boot on.
 
 ## Brightness keys
 

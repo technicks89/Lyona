@@ -116,6 +116,17 @@ what works, and how big ARM6-02 to ARM6-05 are.
 **Acceptance:** the XPS boots the medium to the wizard with no manual step,
 and the three ARM2-05 virtual machines still do.
 
+**Status (2026-11-06): written, not yet tried on hardware.** The mechanism is A-10
+(b): the builder runs a copy of archiso 91's `mkarchiso`
+(`scripts/lyona-mkarchiso-dtb`) in which systemd-stub, not `stubble`, fuses
+the Snapdragon X device trees (`x1e*`, `x1p*`, 26 in `linux-aarch64` 7.3.1) and
+systemd's hardware-ID table into the medium's kernel
+(`scripts/lyona-mkarchiso-fuse.sh`). Open: a build on the Pi 4 (it needs
+`systemd-ukify`), the XPS booting that medium with no manual step, and the
+three virtual machines (an aarch64 ACPI machine has no match and must boot as
+today). The silent two-to-three-minute wait seen in ARM6-01 came from the spike's
+own entry (`copytoram=y`); the stock entry is `copytoram=n`.
+
 ## ARM6-03: The device tree in the installed system
 
 1. The installer finds the laptop's device tree (A-11) and makes the new
@@ -168,7 +179,12 @@ with no manual step.
 
 - Laptops with no mainline device tree, and Windows-on-ARM desktops and
   dev kits with no device tree.
-- Booting at EL2 (the `-el2` device trees) and KVM on these laptops.
+- Booting at EL2 (the `-el2` device trees) and KVM on these laptops. Wanted
+  later, since newer devices use it: every Snapdragon X tree in `linux-aarch64`
+  has an `-el2` sibling with the same base name, so the two cannot share one
+  fused kernel (the stub takes the first match on the hardware IDs). Adding them
+  means separate boot entries, with the firmware or a shim starting Linux at EL2,
+  not a second tree in the same image.
 - Dual-boot setup with Windows beyond leaving it untouched: no resizing of
   the Windows partition and no BitLocker handling.
 - Speakers and microphones on the XPS 13 9345: its mainline device tree has

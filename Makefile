@@ -1380,6 +1380,7 @@ check-lightdm-config: ${TOML_TOOL}
 
 check-archiso:
 	tests/test-arch-iso-builder.sh
+	tests/test-arch-iso-dtb.sh
 
 # The Raspberry Pi image builder, statically (ARM3-01), and its first boot,
 # stubbed (ARM3-02).

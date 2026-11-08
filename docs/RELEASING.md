@@ -227,14 +227,19 @@ sudo LYONA_MKARCHISO="$PWD/archiso/archiso/mkarchiso" \
 
 `mkarchiso` needs `arch-install-scripts`, `squashfs-tools`, `libisoburn`,
 `mtools`, `dosfstools`, `erofs-utils`, `mkinitcpio-archiso` and `grub` on the
-host, and the builder needs `rsync`. It produces
+host, and the builder needs `rsync` and, for aarch64, `systemd-ukify` (it
+refuses to build without it). It produces
 `lyona-VERSION-aarch64.iso`. The medium is the x86_64 one with
 `archiso-aarch64/`'s package layer, `pacman.conf` and kernel-name hook,
 and the builder's changes to `releng` for Arch Linux ARM: UEFI only
 (systemd-boot), `linux-aarch64`, SquashFS with the arm64 filter alone, and no
 `memdisk` hook. Each change is explained in
 `docs/evidence/arm2-01-spike.md` and checked by
-`tests/test-arch-iso-builder.sh`. Its wizard installs lyona with archinstall,
+`tests/test-arch-iso-builder.sh`. The kernel on the medium carries the
+Snapdragon X device trees (ARM6-02): the builder runs a copy of `mkarchiso`
+made by `scripts/lyona-mkarchiso-dtb` that fuses them, with systemd's EFI stub
+and hardware-ID table, into the kernel, so one medium boots each covered laptop
+and any other machine boots as before (`tests/test-arch-iso-dtb.sh`). Its wizard installs lyona with archinstall,
 as on x86_64, with the aarch64 differences in
 `docs/evidence/arm2-03-installer.md` (ext4 and ext4 with LUKS, on QEMU/KVM),
 and it downloads from Arch Linux ARM's mirrors, not reflector's

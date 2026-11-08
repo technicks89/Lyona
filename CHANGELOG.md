@@ -10,6 +10,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The experimental aarch64 medium picks a Snapdragon X laptop's device tree
+  itself (ARM6-02, written but not yet tried on hardware): the builder fuses
+  every Snapdragon X device tree in Arch Linux ARM's kernel package (`x1e*`,
+  `x1p*`, not the `-el2` ones) into the medium's kernel with systemd-stub, which
+  matches the laptop's hardware IDs at boot; a machine with no match boots as
+  before. archiso 91's own step needs `stubble` and a kernel layout Arch Linux
+  ARM does not have, so `scripts/lyona-mkarchiso-dtb` makes a copy of `mkarchiso`
+  with that step replaced, each edit checked against the exact text it changes.
+  The aarch64 build host now needs `systemd-ukify` (`docs/RELEASING.md`), and
+  `make check-archiso` runs `tests/test-arch-iso-dtb.sh`.
 - Snapdragon X groundwork (ARM Sprint 6), not yet used by the installer: a
   `soc-snapdragon` firmware profile in the dependency map (aarch64 only), a
   device-tree lookup for the Dell XPS 13 9345 (`scripts/lyona-snapdragon.sh`),

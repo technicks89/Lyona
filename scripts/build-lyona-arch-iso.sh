@@ -189,6 +189,15 @@ if [[ $profile_only != true ]]; then
 		fi
 		exit 1
 	}
+
+	# The aarch64 medium fuses the Snapdragon X device trees into its kernel
+	# with ukify (ARM6-02). Without it mkarchiso only warns and builds a medium
+	# that cannot pick a device tree, so it is required here.
+	if [[ $arch == aarch64 ]] && ! command -v ukify >/dev/null 2>&1; then
+		err "ukify not found. Install the systemd-ukify package: the aarch64 medium"
+		err "fuses the Snapdragon X device trees into its kernel with it."
+		exit 1
+	fi
 fi
 
 # rsync embeds the checkout in the profile, in --profile-only too. archiso does
@@ -546,6 +555,16 @@ if [[ $profile_only == true ]]; then
 fi
 
 mkdir -p "$output_dir"
+mkarchiso_run=$(command -v "$mkarchiso_cmd")
+if [[ $arch == aarch64 ]]; then
+	# archiso 91's own device-tree step needs `stubble` and a kernel package that
+	# keeps its device trees under /usr/lib/modules; Arch Linux ARM has neither.
+	# A copy of mkarchiso with systemd-stub doing that step instead (ARM6-02).
+	info "Making the mkarchiso that fuses the Snapdragon X device trees into the kernel..."
+	"$repo_dir/scripts/lyona-mkarchiso-dtb" "$mkarchiso_run" \
+		"$repo_dir/scripts/lyona-mkarchiso-fuse.sh" "$work_dir/mkarchiso"
+	mkarchiso_run=$work_dir/mkarchiso
+fi
 info "Running mkarchiso..."
-"$mkarchiso_cmd" -v -w "$work_dir/build" -o "$output_dir" "$profile_dir"
+"$mkarchiso_run" -v -w "$work_dir/build" -o "$output_dir" "$profile_dir"
 info "Done. lyona $iso_version ISO is under $output_dir"
