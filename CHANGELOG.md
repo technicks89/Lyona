@@ -209,6 +209,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The aarch64 medium on a Snapdragon X laptop (ARM6-02, tried on the Dell XPS
+  13 9345): it stopped at systemd's "Initial Setup" keymap prompt before the
+  installer, because `machine-id` is `uninitialized` on the live image and
+  nothing masked `systemd-firstboot`; the aarch64 overlay now masks it and sets
+  `KEYMAP=us`. Its boot entry is now `copytoram=y`, because the XPS's USB
+  returned SquashFS I/O errors when reading the image in place, from a stick
+  that compares equal on the build host, on both USB-C ports. It also gets
+  `plymouth.force-scale=1`: on the 2560x1600 panel Plymouth's HiDPI scale of 2
+  put the splash logo in the bottom right corner, cut off. Plymouth also waits
+  1 s, not its default 8 s, for a DRM device (`DeviceTimeout=1`) before it
+  falls back to the firmware framebuffer, since the Snapdragon's `msm` device
+  appears only after about 68 s. x86_64 keeps `copytoram=n`, no scale override
+  and the default wait. The rebuilt medium is not yet tried; the two kernel
+  arguments were tried by editing the stick's entry, and `DeviceTimeout` not at
+  all.
 - The Raspberry Pi image builder stopped at the boot splash with "the
   image's mkinitcpio HOOKS line does not start with base udev": mkinitcpio
   42, which Arch Linux ARM now ships, starts its default `HOOKS` with

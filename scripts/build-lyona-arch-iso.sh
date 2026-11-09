@@ -333,11 +333,23 @@ info "Quieting the primary boot entries' console output..."
 # copytoram=n: archiso otherwise reads the whole root image into RAM from a
 # USB stick before boot continues, tens of seconds behind a silent splash on
 # real hardware. The stick stays in for the install anyway.
+# aarch64 differs in two ways (ARM6-02, the XPS 13 9345):
+# - copytoram=y: read from the stick as the squashfs, the Snapdragon X's USB
+#   returned I/O errors (loop0, SQUASHFS error -5) on a stick that compares
+#   equal on the build host, on both USB-C ports. Copying the image once,
+#   sequentially, boots; the cost is a minute or more before the shell is up.
+# - plymouth.force-scale=1: the panel is 2560x1600 and Plymouth's automatic
+#   HiDPI scale of 2 made the splash logo land in the bottom right corner,
+#   cut off. At scale 1 it is centred.
+uefi_boot_args='copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0'
+if [[ $arch == aarch64 ]]; then
+	uefi_boot_args='copytoram=y quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1'
+fi
 sed -E -i \
-	'/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
+	"/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?\$/ s/\$/ $uefi_boot_args/" \
 	"$profile_dir/efiboot/loader/entries/01-archiso-linux.conf"
 
-grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
+grep -Fq "$uefi_boot_args" "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
 	err "releng's UEFI boot entry has no matching options line to quiet; the archiso profile format changed."
 	exit 1
 }
@@ -428,6 +440,18 @@ info "Generating the lyona boot splash from the $splash_palette palette..."
 	"$profile_dir/airootfs/usr/share/plymouth/themes/lyona"
 install -Dm644 "$repo_dir/archiso/airootfs/etc/plymouth/plymouthd.conf" \
 	"$profile_dir/airootfs/etc/plymouth/plymouthd.conf"
+if [[ $arch == aarch64 ]]; then
+	# Plymouth waits DeviceTimeout (8 s by default) for a DRM device before it
+	# falls back to the firmware framebuffer. On the XPS 13 9345 the msm DRM
+	# device appears only after about 68 s, so the splash waited about 8 s
+	# for nothing. Not yet tried: whether the framebuffer then draws.
+	sed -i '/^\[Daemon\]$/ a DeviceTimeout=1' \
+		"$profile_dir/airootfs/etc/plymouth/plymouthd.conf"
+	grep -Fqx 'DeviceTimeout=1' "$profile_dir/airootfs/etc/plymouth/plymouthd.conf" || {
+		err "plymouthd.conf has no [Daemon] section to set DeviceTimeout in."
+		exit 1
+	}
+fi
 
 info "Suppressing the optical-drive loopback attach on boot..."
 install -Dm644 "$repo_dir/archiso/airootfs/etc/udev/rules.d/90-lyona-optical-no-loop.rules" \

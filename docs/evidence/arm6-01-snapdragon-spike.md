@@ -416,6 +416,61 @@ Arch Linux ARM's package lists.
   kernel on that machine (it did from a UKI in ARM6-01, A-10), the three virtual
   machines, and Secure Boot on.
 
+### First boots of the medium on the XPS (2026-11-07, 2026-11-08)
+
+Two builds were tried on the XPS 13 9345 from one Lexar USB 2.0 stick (USB
+`21c4:0cc7`, 7.47 GiB): the first build, `new3`, then the rebuild `new4`
+(sha256 `1dc41bd48666ebe838f424491657406bd4af3f3c97a254ba3f737bfae873cdc1`,
+built on the Pi 4, volume ID `2026-11-08-14-12-15-00`). `cmp` against the ISO
+matched on the build host for `new4`, after a replug.
+
+- **"Initial Setup" keymap prompt (`new3`).** `systemd-firstboot` ran because
+  `/etc/machine-id` is `uninitialized` and the unit was unmasked, with no
+  `/etc/vconsole.conf`: the gum installer never started. Found by unpacking
+  `airootfs.sfs`. Fixed by masking the unit and adding `KEYMAP=us` to
+  `archiso-aarch64/airootfs/etc`; `new4` has both. Not a hardware issue.
+- **SquashFS I/O errors (`I/O error, dev loop0` then `SQUASHFS error: Failed to
+  read block ... -5`, scattered sectors).** Seen on the XPS on both USB-C ports
+  with `copytoram=n`, while the stick read back identical on the host and
+  `dmesg` there showed no errors. With `copytoram=y` the same stick booted to the
+  gum menu. Cause not found: the lines before the first error were not
+  photographed. Untested: `usbcore.autosuspend=-1`, a USB 3 stick, a hub.
+- **Black screen for about a minute, then the splash.** `efifb` is up at 0.14 s
+  (2560x1596); the `msm` display driver binds at about 68.5 s, after
+  `aux_bridge ... failed to acquire drm_bridge` deferred probes from 19.9 s, and
+  `systemd` in the real root starts at about 65 s. The ADSP (`charger_pd`) came
+  up at 71 s. Plymouth drew nothing before `msm`. Why `msm` waits (firmware only
+  in the root image is a guess) and why Plymouth does not use `efifb` are
+  unconfirmed. Boot took roughly 2.5 minutes to the menu.
+- **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
+  size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
+  display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
+  off. With `plymouth.force-scale=1` on the stick's entry the logo is centred
+  (maintainer, 2026-11-08). The theme script (`lyona.script`) places the logo
+  from `Window.GetWidth()` and `Window.GetHeight()` and has no scale handling;
+  Plymouth 26.134.222-3.
+- **Where the time goes** (kernel seconds, `dmesg` and Plymouth's debug log,
+  `copytoram=y`, `plymouth.force-scale=1`): `efifb` up at 0.14 s; `Run /init` at
+  9.1 s; `plymouthd` starts at 9.6 s with "Device timeout is set to 8.000000"
+  and finds no DRM device; at 17.6 s the timeout elapses and it finds only
+  `/sys/devices/platform/efi-framebuffer.0/graphics/fb0` and "trying to find
+  associated drm node"; `loop: module loaded` at 62.8 s, so about 54 s went to
+  the copy of the roughly 1 GB image at about 19 MB/s (USB 2.0); `systemd[1]`
+  at 63.5 s. "Device scale is set to 1" confirms the scale argument took
+  effect. The firmware's read of the kernel and initramfs (148 MB) before 0 s is
+  not in these times and was not measured. The log was cut off at 17.6 s, so
+  whether the framebuffer then drew is not known.
+- **Builder change.** `scripts/build-lyona-arch-iso.sh` now writes
+  `copytoram=y` and `plymouth.force-scale=1` for `--arch aarch64` only, and sets
+  `DeviceTimeout=1` in the medium's `plymouthd.conf` for aarch64 only, so the
+  8 s wait for a DRM device that arrives at about 68 s drops to 1 s
+  (`tests/test-arch-iso-builder.sh`, `make check-archiso`: pass). Not yet built
+  or booted; `DeviceTimeout` was not tried by hand, and whether Plymouth draws
+  on `efifb` after the fallback is unconfirmed. `shfmt` was not available to run.
+- **Not tested:** the splash before the copy ends (nothing drawn for about a
+  minute was reported), the rebuilt medium, ACPI, and the installer run on this
+  stick.
+
 ## Brightness keys
 
 Not tested, and not pursued: the XPS 13 9345's function row is touch-sensitive,

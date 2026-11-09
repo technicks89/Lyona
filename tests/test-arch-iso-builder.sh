@@ -1215,10 +1215,26 @@ grep -Fqx 'Target = linux-aarch64' "$vmlinuz_hook" || aarch64_fail 'its kernel-n
 ! grep -Fq 'remove from airootfs' "$vmlinuz_hook" ||
 	aarch64_fail 'its kernel-name hook would be removed from the live medium'
 
-# Everything else is the x86_64 medium's: the quiet boot, no boot menu, the
-# rebranding, the splash, the installer on tty1 and the release stamp.
-grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' \
-	"$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" || aarch64_fail 'its UEFI entry was not quieted'
+# The quiet boot is the x86_64 medium's, with two aarch64 differences (ARM6-02):
+# the image is copied into RAM (the XPS's USB returned I/O errors on random
+# reads) and Plymouth's HiDPI scale is off (the logo was off centre at scale 2).
+# x86_64 keeps copytoram=n and has no scale override: see its entry above.
+grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=y quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1' \
+	"$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" || aarch64_fail 'its UEFI entry was not quieted with copytoram=y and plymouth.force-scale=1'
+! grep -Fq 'copytoram=n' "$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" ||
+	aarch64_fail 'its UEFI entry still has copytoram=n'
+! grep -Fq 'force-scale' "$staged91/efiboot/loader/entries/01-archiso-linux.conf" ||
+	aarch64_fail 'the x86_64 UEFI entry must not get the aarch64 Plymouth scale override'
+# Plymouth's wait for a DRM device is shortened on aarch64 only: the x86_64
+# medium (staged earlier) keeps the default.
+grep -Fqx 'DeviceTimeout=1' "$staged_aarch64/airootfs/etc/plymouth/plymouthd.conf" ||
+	aarch64_fail 'plymouthd.conf does not shorten the DRM device wait'
+grep -Fqx 'Theme=lyona' "$staged_aarch64/airootfs/etc/plymouth/plymouthd.conf" ||
+	aarch64_fail 'plymouthd.conf lost the lyona theme'
+! grep -Fq 'DeviceTimeout' "$work/staged/profile/airootfs/etc/plymouth/plymouthd.conf" ||
+	aarch64_fail 'the x86_64 plymouthd.conf must keep the default DRM device wait'
+# Everything else is the x86_64 medium's: no boot menu, the rebranding, the
+# splash, the installer on tty1 and the release stamp.
 grep -Fqx 'timeout 0' "$staged_aarch64/efiboot/loader/loader.conf" || aarch64_fail 'still shows the boot menu'
 grep -Fqx 'iso_name="lyona"' "$aarch64_profiledef" || aarch64_fail 'is not named lyona'
 grep -Fqx "iso_label=\"$expected_label\"" "$aarch64_profiledef" || aarch64_fail "is not labelled $expected_label"
