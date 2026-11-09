@@ -1138,7 +1138,7 @@ airootfs_image_type="squashfs"
 airootfs_image_tool_options=('-comp' 'xz' '-Xbcj' 'x86,arm64' '-b' '1M' '-Xdict-size' '1M')
 kernel_params_aarch64="clk_ignore_unused pd_ignore_unused arm64.nopauth"
 EOF
-printf '%s\n' base edk2-shell ghostty-terminfo linux linux-dtbs stubble >"$releng_aarch64/packages.aarch64"
+printf '%s\n' base edk2-shell ghostty-terminfo linux linux-dtbs linux-firmware linux-firmware-qcom stubble >"$releng_aarch64/packages.aarch64"
 cat >"$releng_aarch64/efiboot/loader/entries/03-archiso-memtest86+x64.conf" <<'EOF'
 title    Memtest86+
 efi      /boot/memtest86+/memtest.efi
@@ -1196,6 +1196,15 @@ for package in linux-aarch64 archlinuxarm-keyring base "${expected_aarch64[@]}";
 done
 for package in linux linux-dtbs stubble edk2-shell ghostty-terminfo reflector; do
 	! grep -Fqx "$package" "$aarch64_packages" || aarch64_fail "still installs $package"
+done
+
+# The vendor firmware the aarch64 medium does not use is left out of the root
+# image (a smaller copy into RAM); the Qualcomm and Atheros firmware stays.
+for package in linux-firmware linux-firmware-intel linux-firmware-nvidia linux-firmware-amdgpu linux-firmware-radeon; do
+	! grep -Fqx "$package" "$aarch64_packages" || aarch64_fail "still installs $package"
+done
+for package in linux-firmware-qcom linux-firmware-atheros linux-firmware-whence; do
+	[[ $(grep -Fxc "$package" "$aarch64_packages") -eq 1 ]] || aarch64_fail "does not install $package exactly once"
 done
 
 # Arch Linux ARM's repositories, not Arch Linux's [multilib].

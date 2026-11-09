@@ -231,6 +231,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   for about 60 s until `msm` bound at about 60 s (68 s earlier). Carrying
   `pmic_glink`, `pmic_glink_altmode`, `qcom_pd_mapper`, `qrtr` and `qrtr-smd` in
   the initramfs was tried and did not bring `msm` up early, so it is not done.
+  The boot stick runs at USB 2.0 speed (about 30 MB/s) until the USB-C port is
+  set up, whatever the stick, so the aarch64 root image now leaves out the
+  Intel, NVIDIA, AMD, Radeon and TI firmware (about 280 MB) that releng's
+  `linux-firmware` pulled in; the Qualcomm, Atheros, Broadcom, MediaTek and
+  Realtek firmware stays. The copy into RAM should be about 9 s shorter. Not
+  yet measured.
 - The Raspberry Pi image builder stopped at the boot splash with "the
   image's mkinitcpio HOOKS line does not start with base udev": mkinitcpio
   42, which Arch Linux ARM now ships, starts its default `HOOKS` with

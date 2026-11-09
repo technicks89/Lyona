@@ -292,6 +292,23 @@ adapt_releng_aarch64() {
 		sed -i "/^${package}\$/d" "$packages"
 	done
 	printf '%s\n' linux-aarch64 archlinuxarm-keyring >>"$packages"
+
+	# releng's linux-firmware pulls every vendor's firmware: about 280 MB of
+	# Intel, NVIDIA, AMD, Radeon and TI files that no Arch Linux ARM board this
+	# medium targets uses. On the XPS 13 9345 the root image is copied into RAM
+	# over a link that runs at USB 2.0 speed (about 30 MB/s) until the USB-C
+	# port is set up, so every 30 MB cut is about a second off the black
+	# screen. Qualcomm and Atheros (the XPS) stay, with the Wi-Fi vendors a
+	# USB dongle may need.
+	grep -Fqx linux-firmware "$packages" || {
+		err "releng's packages.aarch64 has no linux-firmware; the archiso profile format changed."
+		exit 1
+	}
+	sed -i '/^linux-firmware$/d' "$packages"
+	for package in linux-firmware-qcom linux-firmware-atheros linux-firmware-broadcom \
+		linux-firmware-mediatek linux-firmware-realtek linux-firmware-other linux-firmware-whence; do
+		grep -Fqx "$package" "$packages" || printf '%s\n' "$package" >>"$packages"
+	done
 }
 
 if [[ $arch == aarch64 ]]; then

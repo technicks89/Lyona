@@ -466,6 +466,18 @@ matched on the build host for `new4`, after a replug.
   output of a blind `modprobe -v` (the shell was not visible and the command
   left no trace in `dmesg`). The change was removed. Not tested: ADSP firmware
   in the initramfs.
+- **`new7` (2026-11-09, no early modules, `systemd.tpm2_wait=0`).** Built on the
+  Pi at `fec118f`, sha256
+  `a36c2239a1443821acd213f75e0693bffab52afe2283b6c023859f5e9d29794c`; boot entry
+  `copytoram=y ... plymouth.force-scale=1 systemd.tpm2_wait=0`, image ID
+  `2026-11-09-18-59-41-00`. Kernel seconds from `dmesg`: `Run /init` 9.2;
+  `loop0` 44.6; `systemd` 45.8; `msm` initialized 50.7; ADSP up 53.6; USB
+  disconnect 53.8 (after the copy, harmless); tty1 login 66.6. No I/O errors.
+  Black screen about 50-60 s before the splash (maintainer), matching `msm`
+  initialized at 50.7 s.
+  Two earlier "new7" boots were really `new6`: `dd of=/dev/sda` had written the
+  image into a regular file `/dev/sda` (the device node was missing), so the
+  stick was never flashed.
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
