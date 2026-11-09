@@ -333,7 +333,7 @@ info "Quieting the primary boot entries' console output..."
 # copytoram=n: archiso otherwise reads the whole root image into RAM from a
 # USB stick before boot continues, tens of seconds behind a silent splash on
 # real hardware. The stick stays in for the install anyway.
-# aarch64 differs in two ways (ARM6-02, the XPS 13 9345):
+# aarch64 differs in three ways (ARM6-02, the XPS 13 9345):
 # - copytoram=y: read from the stick as the squashfs, the Snapdragon X's USB
 #   returned I/O errors (loop0, SQUASHFS error -5) on a stick that compares
 #   equal on the build host, on both USB-C ports. Copying the image once,
@@ -341,9 +341,12 @@ info "Quieting the primary boot entries' console output..."
 # - plymouth.force-scale=1: the panel is 2560x1600 and Plymouth's automatic
 #   HiDPI scale of 2 made the splash logo land in the bottom right corner,
 #   cut off. At scale 1 it is centred.
+# - systemd.tpm2_wait=0: the firmware reports a TPM but this kernel exposes no
+#   device for it, so systemd waited its 90 s device timeout for /dev/tpm0
+#   before the installer started. The option tells it not to wait.
 uefi_boot_args='copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0'
 if [[ $arch == aarch64 ]]; then
-	uefi_boot_args='copytoram=y quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1'
+	uefi_boot_args='copytoram=y quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1 systemd.tpm2_wait=0'
 fi
 sed -E -i \
 	"/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?\$/ s/\$/ $uefi_boot_args/" \
