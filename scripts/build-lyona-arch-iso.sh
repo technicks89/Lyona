@@ -334,10 +334,12 @@ info "Quieting the primary boot entries' console output..."
 # USB stick before boot continues, tens of seconds behind a silent splash on
 # real hardware. The stick stays in for the install anyway.
 # aarch64 differs in three ways (ARM6-02, the XPS 13 9345):
-# - copytoram=y: read from the stick as the squashfs, the Snapdragon X's USB
-#   returned I/O errors (loop0, SQUASHFS error -5) on a stick that compares
-#   equal on the build host, on both USB-C ports. Copying the image once,
-#   sequentially, boots; the cost is a minute or more before the shell is up.
+# - copytoram=y: read from the stick as the squashfs, the boot stick drops off
+#   the bus about 71 s in ("usb 3-1: USB disconnect", back 0.7 s later as a new
+#   device) when the ADSP comes up and the USB-C port is reconfigured, so reads
+#   of the mounted image return I/O errors (loop0, SQUASHFS error -5) on any
+#   stick, USB 2 or 3, on both ports. Copying the image into RAM first, which
+#   finishes before that, boots; the cost is a minute before the shell is up.
 # - plymouth.force-scale=1: the panel is 2560x1600 and Plymouth's automatic
 #   HiDPI scale of 2 made the splash logo land in the bottom right corner,
 #   cut off. At scale 1 it is centred.
@@ -454,19 +456,11 @@ if [[ $arch == aarch64 ]]; then
 		err "plymouthd.conf has no [Daemon] section to set DeviceTimeout in."
 		exit 1
 	}
-	# On the XPS 13 9345 the msm DRM device came up only at about 68 s, so the
-	# splash drawn on the firmware framebuffer at 10 s was never visible. The
-	# kms hook already puts msm.ko in the initramfs, but its DisplayPort
-	# controllers stay deferred ("failed to acquire drm_bridge") until the root
-	# image's udev loads the glink/altmode modules. Carrying those in the
-	# initramfs is meant to bring the DRM device up at about 10 s. Not yet
-	# tried: it may also need the ADSP firmware, which is in the root image.
-	sed -i '/^HOOKS=(/ i MODULES+=(pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' \
-		"$archiso_mkinitcpio"
-	grep -Fqx 'MODULES+=(pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$archiso_mkinitcpio" || {
-		err "the early display modules were not added to the initramfs MODULES."
-		exit 1
-	}
+	# Not done, tried and no use: carrying pmic_glink, pmic_glink_altmode,
+	# qcom_pd_mapper, qrtr and qrtr-smd in the initramfs (MODULES+=) did not
+	# bring msm up early. qrtr still registered only after systemd started, at
+	# about the same time msm bound, so the DRM device (and the splash on the
+	# panel) arrives about 50-60 s in whatever the initramfs carries.
 fi
 
 info "Suppressing the optical-drive loopback attach on boot..."

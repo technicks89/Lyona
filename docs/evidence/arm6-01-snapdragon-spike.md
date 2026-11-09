@@ -433,8 +433,17 @@ matched on the build host for `new4`, after a replug.
   read block ... -5`, scattered sectors).** Seen on the XPS on both USB-C ports
   with `copytoram=n`, while the stick read back identical on the host and
   `dmesg` there showed no errors. With `copytoram=y` the same stick booted to the
-  gum menu. Cause not found: the lines before the first error were not
-  photographed. Untested: `usbcore.autosuspend=-1`, a USB 3 stick, a hub.
+  gum menu. Cause found from the `copytoram=y` boot's `dmesg`: at 71.70 s
+  `usb 3-1: USB disconnect, device number 2`, and at 72.39 s the same stick comes
+  back as device number 3. That is right after the ADSP powers up (71.2 s) and
+  its charger/USB-C service starts (71.6 s), so the boot stick is dropped while
+  the ISO is mounted on it and every later read fails. It fails the same on a
+  USB 3 stick (the same block, `6b3216`, every 6 s as `getty@tty1` restarts)
+  and with `usbcore.autosuspend=-1`; `iommu.passthrough=1` gave a black screen.
+  Reads of that range with `dd` from the working `copytoram=y` boot matched the
+  host, and eight parallel readers (about 68 MB/s) caused no errors, so the
+  stick and the read path are fine; only the reconnect breaks it. Not tested:
+  delaying or preventing the reconnect.
 - **Black screen for about a minute, then the splash.** `efifb` is up at 0.14 s
   (2560x1596); the `msm` display driver binds at about 68.5 s, after
   `aux_bridge ... failed to acquire drm_bridge` deferred probes from 19.9 s, and
@@ -442,6 +451,21 @@ matched on the build host for `new4`, after a replug.
   up at 71 s. Plymouth drew nothing before `msm`. Why `msm` waits (firmware only
   in the root image is a guess) and why Plymouth does not use `efifb` are
   unconfirmed. Boot took roughly 2.5 minutes to the menu.
+- **TPM wait and early modules (`new6`, 2026-11-09).** `systemd` waited the
+  90 s default for `/dev/tpm0` (firmware reports a TPM, the kernel has no
+  device); with `systemd.tpm2_wait=0` the tty1 login came at 75.0 s, not about
+  162 s, with no I/O errors in `dmesg`. `DeviceTimeout=1` started Plymouth at
+  10.7 s, but on `efifb`, which the panel does not show; the screen stays black
+  until `msm` binds (59.6 s, `systemd` at 54.2 s, scanout about 64.6 s).
+  Carrying `pmic_glink`, `pmic_glink_altmode`, `qcom_pd_mapper`, `qrtr` and
+  `qrtr-smd` in the initramfs (confirmed present in `/config` and resolving
+  with `modprobe -d`) did not help: the deferred `aux_bridge` probes were
+  unchanged at 19.9 s and `PF_QIPCRTR` registered only after `systemd` started
+  (59.5 s; 48.8 s in a later boot, 0.4 s before `msm` bound). Why the early
+  `modprobe -q` has no effect is unknown: a `break=premount` boot showed no
+  output of a blind `modprobe -v` (the shell was not visible and the command
+  left no trace in `dmesg`). The change was removed. Not tested: ADSP firmware
+  in the initramfs.
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
