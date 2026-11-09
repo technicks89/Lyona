@@ -451,6 +451,19 @@ if [[ $arch == aarch64 ]]; then
 		err "plymouthd.conf has no [Daemon] section to set DeviceTimeout in."
 		exit 1
 	}
+	# On the XPS 13 9345 the msm DRM device came up only at about 68 s, so the
+	# splash drawn on the firmware framebuffer at 10 s was never visible. The
+	# kms hook already puts msm.ko in the initramfs, but its DisplayPort
+	# controllers stay deferred ("failed to acquire drm_bridge") until the root
+	# image's udev loads the glink/altmode modules. Carrying those in the
+	# initramfs is meant to bring the DRM device up at about 10 s. Not yet
+	# tried: it may also need the ADSP firmware, which is in the root image.
+	sed -i '/^HOOKS=(/ i MODULES+=(pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' \
+		"$archiso_mkinitcpio"
+	grep -Fqx 'MODULES+=(pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$archiso_mkinitcpio" || {
+		err "the early display modules were not added to the initramfs MODULES."
+		exit 1
+	}
 fi
 
 info "Suppressing the optical-drive loopback attach on boot..."

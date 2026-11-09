@@ -221,9 +221,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   1 s, not its default 8 s, for a DRM device (`DeviceTimeout=1`) before it
   falls back to the firmware framebuffer, since the Snapdragon's `msm` device
   appears only after about 68 s. x86_64 keeps `copytoram=n`, no scale override
-  and the default wait. The rebuilt medium is not yet tried; the two kernel
-  arguments were tried by editing the stick's entry, and `DeviceTimeout` not at
-  all.
+  and the default wait. With that wait Plymouth did start at 10.7 s, but on the
+  firmware framebuffer, which the panel does not show: the screen stayed black
+  for about 60 s until `msm` bound at about 68 s. The initramfs now also
+  carries `pmic_glink`, `pmic_glink_altmode`, `qcom_pd_mapper`, `qrtr` and
+  `qrtr-smd`, which `msm`'s DisplayPort controllers were waiting for, so the
+  DRM device can come up early (aarch64 only). That change is not yet tried.
 - The Raspberry Pi image builder stopped at the boot splash with "the
   image's mkinitcpio HOOKS line does not start with base udev": mkinitcpio
   42, which Arch Linux ARM now ships, starts its default `HOOKS` with

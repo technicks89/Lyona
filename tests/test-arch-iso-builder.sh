@@ -1233,6 +1233,15 @@ grep -Fqx 'Theme=lyona' "$staged_aarch64/airootfs/etc/plymouth/plymouthd.conf" |
 	aarch64_fail 'plymouthd.conf lost the lyona theme'
 ! grep -Fq 'DeviceTimeout' "$work/staged/profile/airootfs/etc/plymouth/plymouthd.conf" ||
 	aarch64_fail 'the x86_64 plymouthd.conf must keep the default DRM device wait'
+# The modules msm's DisplayPort side waits for go into the aarch64 initramfs
+# only, ahead of HOOKS; the x86_64 initramfs keeps its own module set.
+aarch64_mkinitcpio=$staged_aarch64/airootfs/etc/mkinitcpio.conf.d/archiso.conf
+grep -Fqx 'MODULES+=(pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$aarch64_mkinitcpio" ||
+	aarch64_fail 'its initramfs does not carry the early display modules'
+[[ $(grep -n '^MODULES+=' "$aarch64_mkinitcpio" | cut -d: -f1) -lt $(grep -n '^HOOKS=' "$aarch64_mkinitcpio" | cut -d: -f1) ]] ||
+	aarch64_fail 'the early display modules are not set before HOOKS'
+! grep -Fq 'MODULES' "$work/staged/profile/airootfs/etc/mkinitcpio.conf.d/archiso.conf" ||
+	aarch64_fail 'the x86_64 initramfs must not get the aarch64 display modules'
 # Everything else is the x86_64 medium's: no boot menu, the rebranding, the
 # splash, the installer on tty1 and the release stamp.
 grep -Fqx 'timeout 0' "$staged_aarch64/efiboot/loader/loader.conf" || aarch64_fail 'still shows the boot menu'
