@@ -116,16 +116,37 @@ what works, and how big ARM6-02 to ARM6-05 are.
 **Acceptance:** the XPS boots the medium to the wizard with no manual step,
 and the three ARM2-05 virtual machines still do.
 
-**Status (2026-11-06): written, not yet tried on hardware.** The mechanism is A-10
+**Status (2026-11-10): the XPS boots the medium to the wizard with no manual
+step; the three virtual machines are not yet re-run.** The mechanism is A-10
 (b): the builder runs a copy of archiso 91's `mkarchiso`
 (`scripts/lyona-mkarchiso-dtb`) in which systemd-stub, not `stubble`, fuses
 the Snapdragon X device trees (`x1e*`, `x1p*`, 26 in `linux-aarch64` 7.3.1) and
 systemd's hardware-ID table into the medium's kernel
-(`scripts/lyona-mkarchiso-fuse.sh`). Open: a build on the Pi 4 (it needs
-`systemd-ukify`), the XPS booting that medium with no manual step, and the
-three virtual machines (an aarch64 ACPI machine has no match and must boot as
-today). The silent two-to-three-minute wait seen in ARM6-01 came from the spike's
-own entry (`copytoram=y`); the stock entry is `copytoram=n`.
+(`scripts/lyona-mkarchiso-fuse.sh`). `new11` (sha256 `37a8be3c...`, built on
+the Pi 4 at `ae4f0ba`), written to a USB 3 stick with its boot entry
+unedited, boots the XPS 13 9345 to the installer (gum) at about 51 s, with the
+splash from about 5 s and no I/O errors. The evidence, build by build, is in
+`docs/evidence/arm6-01-snapdragon-spike.md`. What it took, all for aarch64 only
+(the x86_64 medium is unchanged, and `check-archiso` asserts it):
+
+- `copytoram=y`: the boot stick drops off the bus when the ADSP brings up the
+  USB-C ports (about 40 to 70 s in, even for a USB 3 stick, which runs at USB
+  2.0 speed until then), so reading the image in place fails with SquashFS I/O
+  errors. The image is copied into RAM first.
+- `systemd.tpm2_wait=0`: the firmware reports a TPM the kernel has no device
+  for, and systemd waited 90 s for it.
+- The Parade retimer driver and the pmic-glink modules in the initramfs, so
+  `msm` binds at 5 s and the splash shows before the copy, not after about 60 s.
+- Intel, NVIDIA, AMD, Radeon and TI firmware left out of the root image (a
+  shorter copy), and `ldconfig.service` masked (the image carries its cache).
+- `plymouth.force-scale=1` and `DeviceTimeout=1` for the 2560x1600 panel.
+
+Not done: the three ARM2-05 virtual machines on this medium (an aarch64 ACPI
+machine has no match and must boot as today, now with `copytoram=y` and the
+changes above, which are meant to be harmless there but have not been tried),
+any other Snapdragon laptop, and about 6 s of black screen between the splash
+ending and the installer appearing (`docs/evidence/arm6-01-snapdragon-spike.md`,
+`new11`).
 
 ## ARM6-03: The device tree in the installed system
 
