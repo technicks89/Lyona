@@ -473,11 +473,21 @@ if [[ $arch == aarch64 ]]; then
 		err "plymouthd.conf has no [Daemon] section to set DeviceTimeout in."
 		exit 1
 	}
-	# Not done, tried and no use: carrying pmic_glink, pmic_glink_altmode,
-	# qcom_pd_mapper, qrtr and qrtr-smd in the initramfs (MODULES+=) did not
-	# bring msm up early. qrtr still registered only after systemd started, at
-	# about the same time msm bound, so the DRM device (and the splash on the
-	# panel) arrives about 50-60 s in whatever the initramfs carries.
+	# Experiment (ARM6-02, untried): on the XPS 13 9345 msm's DisplayPort
+	# controllers bind about 0.06 s after "remoteproc0: adsp is available", the
+	# registration of the ADSP by qcom_q6v5_pas, and before the ADSP is powered
+	# up. That module was never in the initramfs, which is why carrying only
+	# pmic_glink, qrtr and the others (new6) changed nothing: the root image's
+	# udev loaded qcom_q6v5_pas at about 36 s. Loading it in the initramfs
+	# should bring the DRM device (and the splash on the panel) up before the
+	# copy of the root image. The ADSP firmware is in the root image, so the
+	# ADSP may not boot until it is started by hand; that is not handled here.
+	sed -i '/^HOOKS=(/ i MODULES+=(qcom_q6v5_pas pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' \
+		"$archiso_mkinitcpio"
+	grep -Fqx 'MODULES+=(qcom_q6v5_pas pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$archiso_mkinitcpio" || {
+		err "the early display modules were not added to the initramfs MODULES."
+		exit 1
+	}
 fi
 
 info "Suppressing the optical-drive loopback attach on boot..."

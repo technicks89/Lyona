@@ -478,6 +478,16 @@ matched on the build host for `new4`, after a replug.
   Two earlier "new7" boots were really `new6`: `dd of=/dev/sda` had written the
   image into a regular file `/dev/sda` (the device node was missing), so the
   stick was never flashed.
+- **`new8` (2026-11-09, aarch64 root image without Intel, NVIDIA, AMD, Radeon
+  and TI firmware).** Built on the Pi at `0a02aec`, sha256
+  `bd0a98b5481fc61413ca17fa9f6ae0937676aa17fe23600c32790129fb1ed849`, 970,010,624
+  bytes (new7: 1,468,522,496); `airootfs.sfs` 771,026,944 bytes (new7:
+  1,048,875,008); image ID `2026-11-09-21-51-19-00`. Kernel seconds from
+  `dmesg` on the XPS: `Run /init` 4.5 (new7 9.2); `loop0` 30.1 (44.6); `systemd`
+  31.3 (45.8); `msm` initialized 36.4 (50.7); ADSP up 39.1; USB disconnect 39.2
+  (after the copy, harmless); tty1 login 52.1 (66.6). No I/O errors. The stick
+  still enumerates as `new high-speed USB device` (USB 2.0) on the XPS; the same
+  stick links at 5000 Mb/s on the maintainer's other machine.
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
