@@ -1234,10 +1234,14 @@ grep -Fqx 'Target = linux-aarch64' "$vmlinuz_hook" || aarch64_fail 'its kernel-n
 # the image is copied into RAM (the XPS's USB returned I/O errors on random
 # reads) and Plymouth's HiDPI scale is off (the logo was off centre at scale 2).
 # x86_64 keeps copytoram=n and has no scale override: see its entry above.
-grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=y quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1 systemd.tpm2_wait=0' \
-	"$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" || aarch64_fail 'its UEFI entry was not quieted with copytoram=y, plymouth.force-scale=1 and systemd.tpm2_wait=0'
+grep -Fqx 'options  archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% %KERNEL_PARAMS% copytoram=auto quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1 plymouth.ignore-serial-consoles systemd.tpm2_wait=0' \
+	"$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" || aarch64_fail 'its UEFI entry was not quieted with copytoram=auto, plymouth.force-scale=1, plymouth.ignore-serial-consoles and systemd.tpm2_wait=0'
 ! grep -Fq 'copytoram=n' "$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" ||
 	aarch64_fail 'its UEFI entry still has copytoram=n'
+! grep -Fq 'copytoram=y' "$staged_aarch64/efiboot/loader/entries/01-archiso-linux.conf" ||
+	aarch64_fail 'its UEFI entry forces copytoram=y, which fails on a machine with little RAM'
+! grep -Fq 'ignore-serial-consoles' "$staged91/efiboot/loader/entries/01-archiso-linux.conf" ||
+	aarch64_fail 'the x86_64 UEFI entry must not get the aarch64 serial-console override'
 ! grep -Fq 'tpm2_wait' "$staged91/efiboot/loader/entries/01-archiso-linux.conf" ||
 	aarch64_fail 'the x86_64 UEFI entry must not get the aarch64 TPM wait override'
 ! grep -Fq 'force-scale' "$staged91/efiboot/loader/entries/01-archiso-linux.conf" ||

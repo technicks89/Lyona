@@ -117,7 +117,7 @@ what works, and how big ARM6-02 to ARM6-05 are.
 and the three ARM2-05 virtual machines still do.
 
 **Status (2026-11-10): the XPS boots the medium to the wizard with no manual
-step; the three virtual machines are not yet re-run.** The mechanism is A-10
+step; a generic virtual machine boots it too (emulated).** The mechanism is A-10
 (b): the builder runs a copy of archiso 91's `mkarchiso`
 (`scripts/lyona-mkarchiso-dtb`) in which systemd-stub, not `stubble`, fuses
 the Snapdragon X device trees (`x1e*`, `x1p*`, 26 in `linux-aarch64` 7.3.1) and
@@ -129,7 +129,8 @@ splash from about 5 s and no I/O errors. The evidence, build by build, is in
 `docs/evidence/arm6-01-snapdragon-spike.md`. What it took, all for aarch64 only
 (the x86_64 medium is unchanged, and `check-archiso` asserts it):
 
-- `copytoram=y`: the boot stick drops off the bus when the ADSP brings up the
+- `copytoram=auto` (a copy into RAM when the machine has room: the image plus
+  2 GiB free): the boot stick drops off the bus when the ADSP brings up the
   USB-C ports (about 40 to 70 s in, even for a USB 3 stick, which runs at USB
   2.0 speed until then), so reading the image in place fails with SquashFS I/O
   errors. The image is copied into RAM first.
@@ -141,12 +142,16 @@ splash from about 5 s and no I/O errors. The evidence, build by build, is in
   shorter copy), and `ldconfig.service` masked (the image carries its cache).
 - `plymouth.force-scale=1` and `DeviceTimeout=1` for the 2560x1600 panel.
 
-Not done: the three ARM2-05 virtual machines on this medium (an aarch64 ACPI
-machine has no match and must boot as today, now with `copytoram=y` and the
-changes above, which are meant to be harmless there but have not been tried),
-any other Snapdragon laptop, and about 6 s of black screen between the splash
-ending and the installer appearing (`docs/evidence/arm6-01-snapdragon-spike.md`,
-`new11`).
+A generic aarch64 ACPI virtual machine (QEMU `virt`, emulated, not KVM) boots
+the medium to the installer at 1.5 GiB and above, with no manual step
+(`docs/evidence/arm6-02-live-medium.md`); at 1 GiB the forced `copytoram=y`
+ran out of space, which is why the entry is now `copytoram=auto`. Not done: the
+three ARM2-05 configurations on KVM, the 1 GiB run with `copytoram=auto`, the
+Plymouth splash on a virtual machine with `plymouth.ignore-serial-consoles`
+(it did not show without it, because Plymouth took the ACPI serial console,
+and showed in a patched run), any other Snapdragon laptop, and about 6 s of black screen between
+the splash ending and the installer appearing
+(`docs/evidence/arm6-01-snapdragon-spike.md`, `new11`).
 
 ## ARM6-03: The device tree in the installed system
 

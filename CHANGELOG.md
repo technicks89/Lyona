@@ -213,12 +213,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   13 9345): it stopped at systemd's "Initial Setup" keymap prompt before the
   installer, because `machine-id` is `uninitialized` on the live image and
   nothing masked `systemd-firstboot`; the aarch64 overlay now masks it and sets
-  `KEYMAP=us`. Its boot entry is now `copytoram=y`, because the XPS's USB
-  drops off the bus about 71 s in, when the ADSP comes up and the USB-C port
+  `KEYMAP=us`. Its boot entry is now `copytoram=auto` (archiso's default,
+  which copies the image to RAM only when the machine has room for it: the
+  image plus 2 GiB free), because the XPS's USB drops off the bus about 40 to
+  70 s in, when the ADSP comes up and the USB-C port
   is reconfigured (`usb 3-1: USB disconnect`, back 0.7 s later as a new
   device), so reading the image in place returns SquashFS I/O errors on any
   stick, USB 2 or 3, on both USB-C ports. It also gets
-  `plymouth.force-scale=1`: on the 2560x1600 panel Plymouth's HiDPI scale of 2
+  `plymouth.ignore-serial-consoles` (a machine that publishes a serial console,
+  such as QEMU's `virt`, got Plymouth's text-only splash on it and no splash on
+  the display) and `plymouth.force-scale=1`: on the 2560x1600 panel Plymouth's HiDPI scale of 2
   put the splash logo in the bottom right corner, cut off. Plymouth also waits
   1 s, not its default 8 s, for a DRM device (`DeviceTimeout=1`) before it
   falls back to the firmware framebuffer, since the Snapdragon's `msm` device

@@ -350,22 +350,32 @@ info "Quieting the primary boot entries' console output..."
 # copytoram=n: archiso otherwise reads the whole root image into RAM from a
 # USB stick before boot continues, tens of seconds behind a silent splash on
 # real hardware. The stick stays in for the install anyway.
-# aarch64 differs in three ways (ARM6-02, the XPS 13 9345):
-# - copytoram=y: read from the stick as the squashfs, the boot stick drops off
-#   the bus about 71 s in ("usb 3-1: USB disconnect", back 0.7 s later as a new
-#   device) when the ADSP comes up and the USB-C port is reconfigured, so reads
-#   of the mounted image return I/O errors (loop0, SQUASHFS error -5) on any
-#   stick, USB 2 or 3, on both ports. Copying the image into RAM first, which
-#   finishes before that, boots; the cost is a minute before the shell is up.
+# aarch64 differs in four ways (ARM6-02, the XPS 13 9345):
+# - copytoram=auto, archiso's own default, in place of n: read from the stick as
+#   the squashfs, the boot stick drops off the bus about 40 to 70 s in ("usb 3-1:
+#   USB disconnect", back 0.7 s later as a new device) when the ADSP comes up
+#   and the USB-C port is reconfigured, so reads of the mounted image return I/O
+#   errors (loop0, SQUASHFS error -5) on any stick, USB 2 or 3, on both ports.
+#   Copying the image into RAM first, which finishes before that, boots; the
+#   cost is half a minute before the shell is up. auto copies only when the image
+#   is on a non-optical device, under 4 GiB, and the available memory is more
+#   than the image plus 2 GiB (the XPS has plenty), so a small machine or a
+#   virtual machine boots as before; a forced y failed (ENOSPC) on a 1 GiB one.
 # - plymouth.force-scale=1: the panel is 2560x1600 and Plymouth's automatic
 #   HiDPI scale of 2 made the splash logo land in the bottom right corner,
 #   cut off. At scale 1 it is centred.
+# - plymouth.ignore-serial-consoles: a machine whose firmware publishes a serial
+#   console (the ACPI SPCR table, as QEMU's virt machine and many ARM servers
+#   do) gets that console from the kernel with no console= argument, and
+#   Plymouth then shows only its text-only "details" splash on it and never
+#   tries the display. With this option it uses the display and the serial
+#   console stays.
 # - systemd.tpm2_wait=0: the firmware reports a TPM but this kernel exposes no
 #   device for it, so systemd waited its 90 s device timeout for /dev/tpm0
 #   before the installer started. The option tells it not to wait.
 uefi_boot_args='copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0'
 if [[ $arch == aarch64 ]]; then
-	uefi_boot_args='copytoram=y quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1 systemd.tpm2_wait=0'
+	uefi_boot_args='copytoram=auto quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1 plymouth.ignore-serial-consoles systemd.tpm2_wait=0'
 fi
 sed -E -i \
 	"/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?\$/ s/\$/ $uefi_boot_args/" \
@@ -478,7 +488,7 @@ if [[ $arch == aarch64 ]]; then
 	# pmic_glink_altmode, whose aux bridges they need, is itself deferred with
 	# "failed to acquire retimer-switch" until the Parade PS883x retimers (i2c
 	# 4-0008 and 5-0008, the ps883x module) register. The root image's udev loaded
-	# ps883x at about 36 s (about 60 s with copytoram=y and a slower copy), and
+	# ps883x at about 36 s (about 60 s with a forced copytoram=y and a slower copy), and
 	# msm bound right after. Loading it from the initramfs should bring the DRM
 	# device, and the splash on the panel, up before the copy of the root image.
 	# qcom_q6v5_pas (the ADSP) is not loaded early: without its firmware, which
