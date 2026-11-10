@@ -500,6 +500,16 @@ matched on the build host for `new4`, after a replug.
   i2c devices (`4-0008`, `5-0008`, module `ps883x`) appeared at 59.8 s. `loop0`
   at 54.3 s (new8: 30.1 s) and tty1 at 74.5 s (52.1 s); the cause of the slower
   copy is not known (same stick, still `high-speed`).
+- **`new10` (2026-11-10, `ps883x pmic_glink pmic_glink_altmode qcom_pd_mapper
+  qrtr qrtr-smd` in the initramfs, no `qcom_q6v5_pas`): `msm` binds early.**
+  Built at `44c90a1`, sha256
+  `8fd856d31e00c75be98e7acfa128140308a51bfb3a276a5d39eb69c903cb39e8`, 970,065,920
+  bytes, image ID `2026-11-10-14-50-55-00`. Kernel seconds from `dmesg` on the
+  XPS: `Run /init` 4.5; DisplayPort controllers bound 5.21; `Initialized msm`
+  5.23 (new8: 36.4); `loop0` 32.2; `systemd` 33.4; ADSP available 38.3,
+  powering up 40.3, up 51.2; USB disconnect 45.9 (after the copy, harmless);
+  tty1 login 52.9. No I/O errors. So `msm` waited for the PS883x retimers
+  (`ps883x`), not the ADSP.
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut

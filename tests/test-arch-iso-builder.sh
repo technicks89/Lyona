@@ -1221,6 +1221,12 @@ vmlinuz_hook=$staged_aarch64/airootfs/etc/pacman.d/hooks/lyona-vmlinuz-linux.hoo
 grep -Fqx 'Exec = /usr/bin/cp -f /boot/Image /boot/vmlinuz-linux' "$vmlinuz_hook" ||
 	aarch64_fail 'its kernel-name hook does not copy /boot/Image to /boot/vmlinuz-linux'
 grep -Fqx 'Target = linux-aarch64' "$vmlinuz_hook" || aarch64_fail 'its kernel-name hook is not for linux-aarch64'
+# The root image ships a library cache built at image time, so the first-boot
+# rebuild (ldconfig.service, about 6 s on the XPS) is masked on aarch64 only.
+[[ $(readlink "$staged_aarch64/airootfs/etc/systemd/system/ldconfig.service") == /dev/null ]] ||
+	aarch64_fail 'does not mask ldconfig.service'
+[[ ! -e $work/staged/profile/airootfs/etc/systemd/system/ldconfig.service ]] ||
+	aarch64_fail 'the x86_64 medium must keep ldconfig.service'
 ! grep -Fq 'remove from airootfs' "$vmlinuz_hook" ||
 	aarch64_fail 'its kernel-name hook would be removed from the live medium'
 

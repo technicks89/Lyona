@@ -232,7 +232,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `pmic_glink`, `pmic_glink_altmode`, `qcom_pd_mapper`, `qrtr` and `qrtr-smd` in
   the initramfs did not bring `msm` up early (new6). `msm` binds right after
   the PS883x retimer driver (`ps883x`) loads, which `pmic_glink_altmode` waits
-  for, so that module is now loaded from the initramfs too (untried).
+  for, so that module is now loaded from the initramfs too: `msm` then binds at
+  5.2 s instead of about 36-60 s, before the copy of the root image starts.
+  `ldconfig.service` (about 6 s on the XPS, on every boot of the medium as it is
+  a first boot) is masked on aarch64: the root image already carries a library
+  cache built when the image is made.
   The boot stick runs at USB 2.0 speed (about 30 MB/s) until the USB-C port is
   set up, whatever the stick, so the aarch64 root image now leaves out the
   Intel, NVIDIA, AMD, Radeon and TI firmware (about 280 MB) that releng's
