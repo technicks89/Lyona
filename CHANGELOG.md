@@ -231,8 +231,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   for about 60 s until `msm` bound at about 60 s (68 s earlier). Carrying
   `pmic_glink`, `pmic_glink_altmode`, `qcom_pd_mapper`, `qrtr` and `qrtr-smd` in
   the initramfs did not bring `msm` up early (new6). `msm` binds right after
-  `qcom_q6v5_pas` registers the ADSP, so that module is now loaded from the
-  initramfs too (untried).
+  the PS883x retimer driver (`ps883x`) loads, which `pmic_glink_altmode` waits
+  for, so that module is now loaded from the initramfs too (untried).
   The boot stick runs at USB 2.0 speed (about 30 MB/s) until the USB-C port is
   set up, whatever the stick, so the aarch64 root image now leaves out the
   Intel, NVIDIA, AMD, Radeon and TI firmware (about 280 MB) that releng's

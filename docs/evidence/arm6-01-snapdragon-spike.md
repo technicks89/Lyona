@@ -488,6 +488,18 @@ matched on the build host for `new4`, after a replug.
   (after the copy, harmless); tty1 login 52.1 (66.6). No I/O errors. The stick
   still enumerates as `new high-speed USB device` (USB 2.0) on the XPS; the same
   stick links at 5000 Mb/s on the maintainer's other machine.
+- **`new9` (2026-11-10, `qcom_q6v5_pas` plus the new6 modules in the
+  initramfs): no help, and worse.** Built at `f1b4e1b`, sha256
+  `8a2953c3ea83ca11ce3b9735a490abc5e5490e98dd9639e4751e726ce6d9b90f`. `qcom_q6v5_pas`
+  loaded at 4.66 s ("adsp is available"), but its firmware is not in the
+  initramfs ("Direct firmware load ... qcadsp8380.mbn failed with error -2",
+  "request_firmware failed: -2"), so the ADSP and CDSP never booted. `msm` still
+  bound at 60.0 s, so `msm` does not wait for the ADSP registration. The
+  deferred-probe list at 15.3 s names the real wait: `pmic_glink.altmode.0 ...
+  failed to acquire retimer-switch`; `msm` bound right after the retimers'
+  i2c devices (`4-0008`, `5-0008`, module `ps883x`) appeared at 59.8 s. `loop0`
+  at 54.3 s (new8: 30.1 s) and tty1 at 74.5 s (52.1 s); the cause of the slower
+  copy is not known (same stick, still `high-speed`).
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut

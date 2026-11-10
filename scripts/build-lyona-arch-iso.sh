@@ -474,17 +474,18 @@ if [[ $arch == aarch64 ]]; then
 		exit 1
 	}
 	# Experiment (ARM6-02, untried): on the XPS 13 9345 msm's DisplayPort
-	# controllers bind about 0.06 s after "remoteproc0: adsp is available", the
-	# registration of the ADSP by qcom_q6v5_pas, and before the ADSP is powered
-	# up. That module was never in the initramfs, which is why carrying only
-	# pmic_glink, qrtr and the others (new6) changed nothing: the root image's
-	# udev loaded qcom_q6v5_pas at about 36 s. Loading it in the initramfs
-	# should bring the DRM device (and the splash on the panel) up before the
-	# copy of the root image. The ADSP firmware is in the root image, so the
-	# ADSP may not boot until it is started by hand; that is not handled here.
-	sed -i '/^HOOKS=(/ i MODULES+=(qcom_q6v5_pas pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' \
+	# controllers stay deferred ("failed to acquire drm_bridge") because
+	# pmic_glink_altmode, whose aux bridges they need, is itself deferred with
+	# "failed to acquire retimer-switch" until the Parade PS883x retimers (i2c
+	# 4-0008 and 5-0008, the ps883x module) register. The root image's udev loaded
+	# ps883x at about 36 s (about 60 s with copytoram=y and a slower copy), and
+	# msm bound right after. Loading it from the initramfs should bring the DRM
+	# device, and the splash on the panel, up before the copy of the root image.
+	# qcom_q6v5_pas (the ADSP) is not loaded early: without its firmware, which
+	# is in the root image, the ADSP never booted (new9).
+	sed -i '/^HOOKS=(/ i MODULES+=(ps883x pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' \
 		"$archiso_mkinitcpio"
-	grep -Fqx 'MODULES+=(qcom_q6v5_pas pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$archiso_mkinitcpio" || {
+	grep -Fqx 'MODULES+=(ps883x pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$archiso_mkinitcpio" || {
 		err "the early display modules were not added to the initramfs MODULES."
 		exit 1
 	}

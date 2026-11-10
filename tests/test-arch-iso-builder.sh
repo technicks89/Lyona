@@ -1244,11 +1244,11 @@ grep -Fqx 'Theme=lyona' "$staged_aarch64/airootfs/etc/plymouth/plymouthd.conf" |
 	aarch64_fail 'plymouthd.conf lost the lyona theme'
 ! grep -Fq 'DeviceTimeout' "$work/staged/profile/airootfs/etc/plymouth/plymouthd.conf" ||
 	aarch64_fail 'the x86_64 plymouthd.conf must keep the default DRM device wait'
-# The modules msm's DisplayPort side waits for (the ADSP's remoteproc driver
+# The modules msm's DisplayPort side waits for (the Type-C retimer driver
 # first) go into the aarch64 initramfs only, ahead of HOOKS; the x86_64
 # initramfs keeps its own module set.
 aarch64_mkinitcpio=$staged_aarch64/airootfs/etc/mkinitcpio.conf.d/archiso.conf
-grep -Fqx 'MODULES+=(qcom_q6v5_pas pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$aarch64_mkinitcpio" ||
+grep -Fqx 'MODULES+=(ps883x pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$aarch64_mkinitcpio" ||
 	aarch64_fail 'its initramfs does not carry the early display modules'
 [[ $(grep -n '^MODULES+=' "$aarch64_mkinitcpio" | cut -d: -f1) -lt $(grep -n '^HOOKS=' "$aarch64_mkinitcpio" | cut -d: -f1) ]] ||
 	aarch64_fail 'the early display modules are not set before HOOKS'
