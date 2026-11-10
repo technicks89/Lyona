@@ -510,6 +510,19 @@ matched on the build host for `new4`, after a replug.
   powering up 40.3, up 51.2; USB disconnect 45.9 (after the copy, harmless);
   tty1 login 52.9. No I/O errors. So `msm` waited for the PS883x retimers
   (`ps883x`), not the ADSP.
+- **`new11` (2026-11-10, `ldconfig.service` masked on aarch64).** Built at
+  `ae4f0ba`, sha256
+  `37a8be3c2eb38b209fde37db7e495a36859e30a0835a49450198b82773a1a1c7`, 970,065,920
+  bytes, image ID `2026-11-10-17-00-01-00`. Kernel seconds from `dmesg` on the
+  XPS: `msm` initialized 5.2; `loop0` 36.0; `systemd` 37.2; `System
+  Initialization` 44.5 (new10: 50.6); Plymouth told to quit 45.2; tty1 login
+  51.2 (52.9); ADSP powering up 43.9, up 54.8; USB disconnect 49.5 (after the
+  copy, harmless). No I/O errors; `ldconfig.service` is gone from the blame
+  list. About 6 s pass between Plymouth quitting (45.2 s) and the tty1 login
+  (51.2 s), a black screen before gum; what the login waits for is not known
+  (`systemd-analyze` says bootup is not finished). Not done: keeping the splash
+  up until gum starts. The maintainer judged this boot "much faster than before"
+  and left the gap for now.
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
