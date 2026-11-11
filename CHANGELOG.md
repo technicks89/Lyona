@@ -10,6 +10,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- A Snapdragon X laptop's installed system survives a kernel upgrade (ARM6-03,
+  written, not yet tried on hardware): the `devicetree` line the installer
+  writes into `grub.cfg` is now guarded by a file test, so a kernel that no
+  longer carries the device tree boots as any machine does and not into a GRUB
+  error, and a pacman hook on `linux-aarch64` warns after an upgrade when the
+  file is gone. Only on a covered laptop; any other machine is unchanged.
 - The experimental aarch64 medium picks a Snapdragon X laptop's device tree
   itself (ARM6-02, written but not yet tried on hardware): the builder fuses
   every Snapdragon X device tree in Arch Linux ARM's kernel package (`x1e*`,

@@ -117,5 +117,35 @@ hook=$target/etc/grub.d/09_lyona_dtb
 [[ -x $hook ]] || fail 'the device-tree hook is not executable.'
 grep -Fq 'dtb=/boot/dtbs/qcom/x1e80100-dell-xps13-9345.dtb' "$hook" || fail 'the device-tree hook names the wrong file.'
 sh -n "$hook" || fail 'the device-tree hook is not valid sh.'
+# The line it prints is guarded, so a kernel upgrade that drops the file boots
+# as any machine does, not into a GRUB error (ARM6-03).
+grep -Fq 'if [ -f %s ]; then' "$hook" || fail 'the device-tree line is not guarded by a file test.'
+
+# The kernel-upgrade check: a pacman hook on linux-aarch64 that runs a script,
+# which stays quiet while the device tree is there and says so when it is gone.
+check=$target/usr/local/lib/lyona/snapdragon-dtb-check
+pachook=$target/etc/pacman.d/hooks/lyona-snapdragon-dtb.hook
+[[ -x $check ]] || fail 'the device-tree check is not executable.'
+sh -n "$check" || fail 'the device-tree check is not valid sh.'
+for line in 'Operation = Install' 'Operation = Upgrade' 'Target = linux-aarch64' 'When = PostTransaction' \
+	'Exec = /usr/local/lib/lyona/snapdragon-dtb-check'; do
+	grep -Fxq "$line" "$pachook" || fail "the pacman hook lacks: $line"
+done
+# Run the check against the staged target: its paths are absolute on a real system.
+run_check() { # HOOK_FILE
+	sed -e "s#/etc/grub.d/09_lyona_dtb#$1#" "$check" >"$work/check.sh"
+	sh "$work/check.sh" 2>&1
+}
+with_dtb() { # DTB_PATH: a copy of the hook naming that device tree
+	sed -e "s#^dtb=.*#dtb=$1#" "$hook" >"$work/hook-copy"
+	printf '%s\n' "$work/hook-copy"
+}
+msg=$(run_check "$(with_dtb "$target/boot/dtbs/qcom/x1e80100-dell-xps13-9345.dtb")") ||
+	fail 'the check failed with the device tree present.'
+[[ -z $msg ]] || fail "the check spoke with the device tree present: $msg"
+msg=$(run_check "$(with_dtb "$target/boot/dtbs/qcom/gone.dtb")") || fail 'the check failed (it must never fail an upgrade).'
+[[ $msg == *'no '*'gone.dtb any more'* ]] || fail "the check did not warn about a missing device tree: $msg"
+msg=$(run_check "$target/nonexistent") || fail 'the check failed with no hook.'
+[[ -z $msg ]] || fail "the check spoke on a system with no device-tree hook: $msg"
 
 printf 'Snapdragon X groundwork: PASS\n'

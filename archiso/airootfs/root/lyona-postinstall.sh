@@ -302,6 +302,9 @@ install_snapdragon_support() {
 	# The device tree is named as GRUB sees its filesystem (/dtbs/... when /boot
 	# is the EFI system partition, /boot/dtbs/... when it is on the root
 	# filesystem), and loaded before any entry boots.
+	# The line is guarded: a grub.cfg written for one kernel stays in use after an
+	# upgrade (nothing regenerates it), and a kernel that no longer carries the
+	# file must boot as it would on any machine, not stop on a GRUB error.
 	printf '%s\n' '#!/bin/sh' \
 		'# The device tree of this Snapdragon X laptop (lyona-postinstall.sh).' \
 		'set -e' \
@@ -309,9 +312,35 @@ install_snapdragon_support() {
 		"dtb=/boot/dtbs/$dtb" \
 		'[ -f "$dtb" ] || exit 0' \
 		'prepare_grub_to_access_device "$(${grub_probe} --target=device "$dtb")"' \
-		'printf "devicetree %s\n" "$(make_system_path_relative_to_its_root "$dtb")"' \
+		'rel=$(make_system_path_relative_to_its_root "$dtb")' \
+		'printf "if [ -f %s ]; then\n  devicetree %s\nfi\n" "$rel" "$rel"' \
 		>"$script"
 	chmod 0755 "$script"
+	# After a kernel upgrade, say so when the device tree the hook names is gone.
+	install -d -m 0755 "$TARGET/etc/pacman.d/hooks" "$TARGET/usr/local/lib/lyona"
+	printf '%s\n' '#!/bin/sh' \
+		'# Warn when the kernel no longer carries the device tree of this laptop (lyona-postinstall.sh).' \
+		'script=/etc/grub.d/09_lyona_dtb' \
+		'[ -f "$script" ] || exit 0' \
+		'dtb=$(sed -n "s/^dtb=//p" "$script")' \
+		'[ -n "$dtb" ] && [ ! -f "$dtb" ] || exit 0' \
+		'echo "lyona: the kernel has no $dtb any more; this laptop boots without its device tree." >&2' \
+		'echo "lyona: see /etc/grub.d/09_lyona_dtb and the kernel package'"'"'s /boot/dtbs." >&2' \
+		'exit 0' \
+		>"$TARGET/usr/local/lib/lyona/snapdragon-dtb-check"
+	chmod 0755 "$TARGET/usr/local/lib/lyona/snapdragon-dtb-check"
+	printf '%s\n' '# Checks the laptop'"'"'s device tree after a kernel upgrade (lyona-postinstall.sh).' \
+		'[Trigger]' \
+		'Operation = Install' \
+		'Operation = Upgrade' \
+		'Type = Package' \
+		'Target = linux-aarch64' \
+		'' \
+		'[Action]' \
+		'Description = Checking the Snapdragon X device tree...' \
+		'When = PostTransaction' \
+		'Exec = /usr/local/lib/lyona/snapdragon-dtb-check' \
+		>"$TARGET/etc/pacman.d/hooks/lyona-snapdragon-dtb.hook"
 	printf 'Snapdragon X: device tree %s, firmware %s.\n' "$dtb" "${firmware[*]}"
 }
 

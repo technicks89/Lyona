@@ -163,6 +163,14 @@ the splash ending and the installer appearing
 **Acceptance:** an install on the XPS reboots to LightDM with no manual
 step, and again after a kernel update.
 
+**Status (2026-11-11):** the installer's step (`install_snapdragon_support` in
+`lyona-postinstall.sh`: firmware, kernel arguments, the GRUB device-tree hook)
+was written in ARM6-01 and has not yet run on a real install. This item adds a
+file test around the `devicetree` line and a pacman hook that warns after a
+`linux-aarch64` upgrade when the device tree is gone, with tests that stub the
+upgrade (`tests/test-snapdragon.sh`). Not done: a real install on the XPS
+that reboots to LightDM, and the same after a kernel update.
+
 ## ARM6-04: Firmware and packages
 
 1. The Qualcomm firmware the laptops need (`linux-firmware`'s `qcom`
