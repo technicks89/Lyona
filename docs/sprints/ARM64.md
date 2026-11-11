@@ -15,7 +15,10 @@ done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31).
 ARM-2 is done: ARM2-01 to ARM2-05 merged 2026-10-22 to 2026-10-25 (#44 to
 #54). ARM-3 is done: validated on a real Pi 4 on 2026-11-05 (ARM3-06,
 `docs/evidence/arm3-06-raspberry-pi.md`). **Added 2026-11-05, by the maintainer:** Snapdragon X laptops, as
-ARM-6, after ARM-3 and before ARM-5, in the generic image. Nothing
+ARM-6, after ARM-3 and before ARM-5, in the generic image. ARM-6 is done:
+ARM6-01 merged 2026-11-06 (#79), ARM6-02 to ARM6-06 on 2026-11-11 (#80 to
+#84); validated on the Dell XPS 13 9345 from the generic image
+(`docs/evidence/arm6-06-xps13-9345.md`). Nothing
 here is a support claim: `SPEC.md` still makes Arch x86_64 the
 only release target, and an aarch64 target is supported only once its sprint
 has met the release validation contract (`SPEC.md` 9.4) on that target.
@@ -99,8 +102,8 @@ These come from `AGENTS.md` and `SPEC.md` and hold here too.
 | **A-6** (deferred with ARM-4) | Where do the GB10 kernel and NVIDIA's aarch64 driver come from? (a) Pinned PKGBUILDs built on the machine at install time, (b) a signed Lyona aarch64 package repository, (c) wait for mainline Linux and Arch Linux ARM | ARM-4 | **(a) first**, as Sprint 14 did for the legacy NVIDIA drivers: reviewed, pinned commits, built as the new user, never as root. Measure the build time on GB10 (20 cores); if it is too long, (b), which overlaps the signed package repository already proposed in `ROADMAP.md` "Future Evaluation". Revisit (c) every release | Open |
 | **A-7** (deferred with ARM-4) | Does GB10 (and later N1X) get its own image? | ARM-4 | **No.** The generic image detects GB10 (by its SMBIOS or PCI IDs) and offers its kernel and driver, recommended, as the x86_64 image offers `nvidia-open` | Open |
 | **A-8** (deferred) | When does N1X work start? | ARM-5 | Only when NVIDIA's Linux driver lists N1X device IDs **and** test hardware is available. Until then it is a watch item, checked at each release | Open |
-| **A-10** | How does the generic medium choose a Snapdragon laptop's device tree? (a) `stubble`, packaged by Lyona, (b) systemd-stub's `.dtbauto` and `.hwids` | ARM-6 | Decide from ARM6-01; prefer (b), which needs no new package | Open |
-| **A-11** | How does the installed system choose it? (a) the installer writes GRUB's `devicetree` line, (b) the medium's mechanism | ARM-6 | **(a)** unless A-10's choice suits the installed system too | Open |
+| **A-10** | How does the generic medium choose a Snapdragon laptop's device tree? (a) `stubble`, packaged by Lyona, (b) systemd-stub's `.dtbauto` and `.hwids` | ARM-6 | Decide from ARM6-01; prefer (b), which needs no new package | **(b)**, decided in ARM6-01 and used on the live medium: the builder fuses the Snapdragon X device trees and hardware IDs into the kernel with systemd-stub (ARM6-02), and the XPS boots the medium with no `devicetree` line |
+| **A-11** | How does the installed system choose it? (a) the installer writes GRUB's `devicetree` line, (b) the medium's mechanism | ARM-6 | **(a)** unless A-10's choice suits the installed system too | **Decided 2026-11-11: (a)** (ARM6-03): the installer writes the GRUB `devicetree` line only if the file exists, and a pacman hook warns if a kernel update removes it. The installed XPS booted to LightDM before and after a `linux-aarch64` upgrade |
 | **A-9** | How does CI cover ARM? | ARM-1 | A GitHub `ubuntu-24.04-arm` runner running the suite inside an Arch Linux ARM container, on the manual Full suite workflow first, then on pull requests once it is reliable | Decided 2026-10-13 as recommended |
 
 ---

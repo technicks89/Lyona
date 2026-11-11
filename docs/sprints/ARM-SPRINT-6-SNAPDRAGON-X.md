@@ -4,11 +4,13 @@ Index: [`ARM64.md`](ARM64.md). Depends on ARM-2 (the generic image). Comes
 after ARM-3 and before ARM-5, so that ARM-5's release, support contract and
 user docs cover it (decided 2026-11-05, by the maintainer).
 
-**Status:** planned 2026-11-05. Static groundwork done the same day
-(`docs/evidence/arm6-00-static-survey.md`): the firmware profile
-`soc-snapdragon`, a device-tree lookup (`scripts/lyona-snapdragon.sh`) and
-`make check-snapdragon`. Nothing is wired into the installer; ARM6-01 (the XPS)
-has not started. GitHub: no issues yet.
+**Status: done 2026-11-11.** ARM6-01 merged 2026-11-06 (#79); ARM6-02 to
+ARM6-06 merged 2026-11-11 (#80 to #84, issues #74 to #78). Validated on the
+maintainer's Dell XPS 13 9345 from the generic image
+(`docs/evidence/arm6-06-xps13-9345.md`). Other Snapdragon laptops are
+"should work, not tested"; external displays, EL2, suspend and resume, battery
+life and sound are not covered. Static groundwork 2026-11-05:
+`docs/evidence/arm6-00-static-survey.md`.
 
 **Goal:** the generic aarch64 image boots and installs Lyona on Snapdragon X
 laptops (X Elite and X Plus). One image covers all of them, with no
