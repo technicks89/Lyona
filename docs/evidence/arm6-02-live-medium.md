@@ -41,8 +41,8 @@ medium on its own). Machine ACPI tables, so no device-tree match.
   would have booted at 1 GiB. The aarch64 entry is now `copytoram=auto`
   (archiso copies only when the available memory exceeds the image plus 2
   GiB). `new12` (sha256 `0fbb3969...dfce60`) has that entry; on the XPS it
-  still copied to RAM (see `arm6-01-snapdragon-spike.md`). The 1 GiB rerun on
-  `new12` has been requested and is not yet done.
+  still copied to RAM (see `arm6-01-snapdragon-spike.md`), and 1 GiB now boots
+  (see "The new12 rerun" below).
 - **Snapdragon modules** (`ps883x`, `pmic_glink`, `pmic_glink_altmode`,
   `qcom_pd_mapper`, `qrtr`, `qrtr-smd`): loaded from the initramfs, bound to
   nothing, and logged nothing (no error, no `Direct firmware load`, no
@@ -72,9 +72,44 @@ medium on its own). Machine ACPI tables, so no device-tree match.
   the serial console.
 - **Boot menu:** none shows, because `loader/loader.conf` has `timeout 0`.
 
+## The new12 rerun
+
+`lyona-2026.10.0-beta.7-aarch64.iso` (`new12`), sha256
+`0fbb3969271a75635edf4b1fda7eea2b67df8e4a6b2970b8aa44ee1e62dfce60` (970,070,016
+bytes, verified), built from `302a918`. Booted as shipped, nothing added to the
+kernel line; the same setup as above (TCG `virt`, ACPI, USB stick, virtio-gpu),
+only `-m` changed. Whether the image was copied was read from `/run/archiso`
+and from the backing file of `loop0`.
+
+| RAM | Copied to RAM | Splash on screen | Time to gum | Failed units | MemAvailable at gum |
+| --- | --- | --- | --- | --- | --- |
+| 1 GiB | no | 31 to 64 s | about 114 s | 0 | 819,848 kB |
+| 1.5 GiB | no | 31 to 64 s | about 111 s | 0 | 1,325,028 kB |
+| 2 GiB | no | 31 to 64 s | about 111 s | 0 | 1,836,092 kB |
+| 3 GiB | **no** | 31 to 67 s | about 114 s | 0 | 2,852,028 kB |
+| 4 GiB | yes | 30 to 74 s | about 118 s | 0 | 3,046,632 kB |
+
+- **1 GiB boots.** There was no copy step in the serial output or the journal;
+  `loop0` was `/run/archiso/bootmnt/arch/aarch64/airootfs.sfs` and the medium
+  stayed mounted. The old `No space left on device` is gone.
+- **The splash shows** in every run with no extra argument, the lyona logo.
+  `plymouth.ignore-serial-consoles` fixes the black screen found on `new11`.
+- **3 GiB does not copy.** `airootfs.sfs` is 771,031,040 bytes, so image plus
+  2 GiB is 2,850,112 kB, and the 3 GiB guest has only 2,852,028 kB available
+  once running; in the initramfs, where archiso decides, less. The rule
+  behaves as written, so a machine with about 3 GiB boots from the stick
+  without a copy. It boots, but it is the case where the original
+  I/O-error-at-USB-bring-up problem could return on a 3 GiB real machine;
+  untested. The margin could be lowered if that matters.
+- No `ps883x`, `pmic_glink` or `qrtr` error and no `Direct firmware load` in
+  any run. `journalctl -p warning` showed only the known `arm64.nopauth`,
+  clock and `genpd` lines, and `cfg80211` failing to set the wireless regdom
+  (no Wi-Fi in the guest).
+- Not tested on `new12`: the CD (`/dev/sr*`) no-copy rule, KVM, real hardware
+  other than the XPS, anything past the gum keyboard menu.
+
 ## Not tested
 
 KVM or any real hardware but the XPS; the install itself (nothing past the gum
-keyboard menu); memory
-between 1 and 1.5 GiB; UTM, Parallels, libvirt, Secure Boot, `-cpu cortex-a72`;
+keyboard menu); UTM, Parallels, libvirt, Secure Boot, `-cpu cortex-a72`;
 a virtual machine with a device tree (all runs used ACPI).

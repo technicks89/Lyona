@@ -535,7 +535,11 @@ matched on the build host for `new4`, after a replug.
   (`qmi dma allocation failed ... will try later with small size`) was not
   checked in new11. The `dmesg` was saved from tty2 after the boot, so its
   tail is the maintainer's own login, not the boot finishing. Not recorded:
-  the time gum appeared and how the splash looked (to be added).
+  the exact time gum appeared. The maintainer
+  reported that gum appeared about 8 s after the splash disappeared (new11:
+  about 6 s between Plymouth quitting and the tty1 login, by `dmesg`), so the
+  black gap before gum remains and is no shorter; how the splash looked was not
+  reported.
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
