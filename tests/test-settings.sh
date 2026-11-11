@@ -1003,6 +1003,10 @@ expect_default 150 'a 4K panel with no size' 'Virtual-1 connected primary 3840x2
 expect_default 125 'a 1440p panel with no size' 'Virtual-1 connected primary 2560x1440+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
 expect_default 96 'a 1080p panel with no size' 'Virtual-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
 expect_default 96 'a 1366x768 panel with no size' 'Virtual-1 connected primary 1366x768+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
+# A panel turned left or right: xrandr prints the rotated pixel size but the
+# panel's own millimetres, so the matching axis is the height.
+expect_default 150 'a 13-inch 1600p laptop turned left' 'eDP-1 connected primary 1600x2560+0+0 left (normal left inverted right x axis y axis) 288mm x 180mm'
+expect_default 150 'a 13-inch 1600p laptop turned right' 'eDP-1 connected primary 1600x2560+0+0 right (normal left inverted right x axis y axis) 288mm x 180mm'
 expect_default 150 'a rotated 4K panel (shorter side 2160)' 'DP-1 connected primary 2160x3840+0+0 left (normal left inverted right x axis y axis) 0mm x 0mm'
 
 # Nothing saved: the login applies the panel's default for the session only,
@@ -1015,7 +1019,10 @@ grep -Fqx 'Xft.dpi: 150' "$dpi_db" || { printf 'dpi-apply-saved did not apply th
 [ ! -e "$dpi_config/lyona/dpi.Xresources" ] || { printf 'dpi-apply-saved saved the panel default.\n' >&2; exit 1; }
 run_display discover | grep -Fqx 'dpi'"$(printf '\t')"'150'"$(printf '\t')"'default'"$(printf '\t')"'none'"$(printf '\t')"'150'
 printf 'Xft.dpi:\t168\n' >"$dpi_db"
+printf 'Xft/DPI 99328\n' >"$dpi_config/lyona/xsettingsd.conf"
 [ -z "$(run_display dpi-apply-saved)" ]
+grep -Fqx 'Xft/DPI 172032' "$dpi_config/lyona/xsettingsd.conf" ||
+	{ printf 'dpi-apply-saved left XSettings out of step with the session DPI.\n' >&2; exit 1; }
 grep -Fqx 'Xft.dpi:	168' "$dpi_db" || { printf 'dpi-apply-saved replaced a DPI the session already had.\n' >&2; exit 1; }
 run_display dpi-reset >/dev/null
 run_display discover | grep -Fqx 'dpi'"$(printf '\t')"'150'"$(printf '\t')"'default'"$(printf '\t')"'none'"$(printf '\t')"'150'
@@ -1030,6 +1037,10 @@ grep -Fq 'root.settingsModel.setDisplayDpi(dpiInput.text)' \
 grep -Fq 'root.settingsModel.resetDisplayDpi()' \
 	"$repo/config/quickshell/settings/DisplaySettingsPane.qml"
 grep -Fq 'dpi-apply-saved' "$repo/scripts/autostart.sh"
+# The DPI is applied after autorandr has settled the layout, not before.
+[ "$(grep -n 'autorandr --change' "$repo/scripts/autostart.sh" | tail -1 | cut -d: -f1)" -lt \
+	"$(grep -n 'dpi-apply-saved' "$repo/scripts/autostart.sh" | head -1 | cut -d: -f1)" ] ||
+	{ printf 'autostart.sh applies the DPI before autorandr.\n' >&2; exit 1; }
 
 # #310: without a system battery, automatic layouts are hidden end to end --
 # the real helper must report battery:false and no profiles, and the pane's

@@ -218,20 +218,23 @@ recommended_dpi() {
 		function clamp(v) { return v <= 100 ? base : (v > 200 ? 200 : v) }
 		function tier(side) { return side >= 2160 ? 150 : (side >= 1440 ? 125 : base) }
 		$2 == "connected" {
-			width = 0; height = 0; millimetres = 0; primary = 0
+			width = 0; height = 0; millimetres = 0; primary = 0; sideways = 0
 			for (i = 3; i <= NF; i++) {
 				if ($i == "primary") primary = 1
 				if ($i ~ /^[0-9]+x[0-9]+[+-][0-9]+[+-][0-9]+$/) {
 					match($i, /^[0-9]+/); width = substr($i, RSTART, RLENGTH) + 0
 					rest = substr($i, RSTART + RLENGTH + 1)
 					match(rest, /^[0-9]+/); height = substr(rest, RSTART, RLENGTH) + 0
+					sideways = ($(i + 1) == "left" || $(i + 1) == "right")
 				}
 				if ($i ~ /^[0-9]+mm$/ && $(i + 1) == "x") {
 					match($i, /^[0-9]+/); millimetres = substr($i, RSTART, RLENGTH) + 0
 				}
 			}
 			if (width <= 0 || height <= 0) next
-			density = (millimetres > 0) ? width * 25.4 / millimetres : 0
+			# RandR reports the size in mm of the panel as built (unrotated); a panel
+			# turned left or right shows that axis as its height.
+			density = (millimetres > 0) ? (sideways ? height : width) * 25.4 / millimetres : 0
 			if (density >= minimum && density <= maximum) candidate = clamp(round25(sqrt(base * density)))
 			else candidate = tier(width < height ? width : height)
 			if (primary) { found = candidate; exit }
@@ -379,6 +382,7 @@ apply_saved_dpi() {
 	# stands; otherwise the panel's default, for this session only, so a
 	# monitor change at the next login is followed.
 	if value=$(session_dpi); then
+		write_xsettings_dpi "$value"
 		publish_dpi_state "$value"
 		return 0
 	fi
