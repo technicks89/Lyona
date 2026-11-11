@@ -10,6 +10,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- A Snapdragon X laptop's installed system uses the `schedutil` CPU governor
+  (ARM6 follow-up): the kernel's default here is `performance`, which holds
+  every core at full clock when idle. On the XPS 13 9345, on battery with the
+  display at full brightness and an idle desktop, `schedutil` drew about 2.5 W
+  against about 4.9 W. The installer's Snapdragon step writes
+  `/etc/tmpfiles.d/90-lyona-cpufreq.conf` (delete it to go back to the kernel
+  default). One run of each governor, one machine; battery life under real use
+  and a reboot with the rule were not tested.
 - The generic aarch64 image validated on the Dell XPS 13 9345 (ARM6-06): it
   boots with no manual step, installs to a USB SSD, reaches LightDM and the
   desktop, and survives a `linux-aarch64` upgrade; no failed units, Wi-Fi and

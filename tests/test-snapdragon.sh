@@ -100,7 +100,8 @@ touch "$target/boot/dtbs/qcom/x1e80100-dell-xps13-9345.dtb"
 
 set_dmi 'QEMU' 'KVM Virtual Machine'
 run_step "$target" >/dev/null
-[[ ! -e $target/etc/grub.d/09_lyona_dtb && ! -e $target/etc/default/grub.d/90-lyona-snapdragon.cfg && ! -s $work/chroot.log ]] ||
+[[ ! -e $target/etc/grub.d/09_lyona_dtb && ! -e $target/etc/default/grub.d/90-lyona-snapdragon.cfg &&
+	! -e $target/etc/tmpfiles.d/90-lyona-cpufreq.conf && ! -s $work/chroot.log ]] ||
 	fail 'a machine that is not a Snapdragon X laptop was changed.'
 
 set_dmi 'Dell Inc.' 'XPS 13 9345'
@@ -113,6 +114,8 @@ cfg=$target/etc/default/grub.d/90-lyona-snapdragon.cfg
 for arg in efi=noruntime clk_ignore_unused pd_ignore_unused arm64.nopauth systemd.tpm2_wait=0; do
 	grep -Fq "$arg" "$cfg" || fail "the kernel arguments lack $arg."
 done
+tmpf=$target/etc/tmpfiles.d/90-lyona-cpufreq.conf
+grep -Fq 'cpufreq/scaling_governor - - - - schedutil' "$tmpf" || fail 'the CPU governor rule is missing.'
 hook=$target/etc/grub.d/09_lyona_dtb
 [[ -x $hook ]] || fail 'the device-tree hook is not executable.'
 grep -Fq 'dtb=/boot/dtbs/qcom/x1e80100-dell-xps13-9345.dtb' "$hook" || fail 'the device-tree hook names the wrong file.'

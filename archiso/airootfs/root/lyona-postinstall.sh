@@ -341,6 +341,13 @@ install_snapdragon_support() {
 		'When = PostTransaction' \
 		'Exec = /usr/local/lib/lyona/snapdragon-dtb-check' \
 		>"$TARGET/etc/pacman.d/hooks/lyona-snapdragon-dtb.hook"
+	# The kernel's default governor is performance (every core at full clock when
+	# idle); schedutil draws about half as much on the XPS 13 9345 (ARM6 follow-up).
+	# A tmpfiles rule sets it at boot; 'w-' ignores a kernel that has no such file.
+	install -d -m 0755 "$TARGET/etc/tmpfiles.d"
+	printf '%s\n' '# A Snapdragon X laptop (lyona-postinstall.sh); delete this file to go back to the kernel default.' \
+		'w- /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor - - - - schedutil' \
+		>"$TARGET/etc/tmpfiles.d/90-lyona-cpufreq.conf"
 	printf 'Snapdragon X: device tree %s, firmware %s.\n' "$dtb" "${firmware[*]}"
 }
 
