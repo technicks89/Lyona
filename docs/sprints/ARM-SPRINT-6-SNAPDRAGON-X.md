@@ -185,6 +185,14 @@ drops the device tree, and whether the hook's warning appeared.
 **Acceptance:** the installed XPS loads its GPU, DSP and Wi-Fi firmware
 (`dmesg` shows no missing firmware), from packages the dependency map names.
 
+**Status (2026-11-11):** met on the XPS. The installer's step installs
+`linux-firmware-qcom` and `linux-firmware-atheros` from the dependency map's
+`soc-snapdragon` profile, only on a covered laptop; the kernel log of the
+installed XPS (from `new13`) shows no missing firmware, and the DSPs, GPU,
+Wi-Fi and Bluetooth firmware loaded
+(`docs/evidence/arm6-04-firmware-and-packages.md`). Not covered: other laptops,
+the video decoder firmware (not in `linux-firmware`), sound (a device-tree gap).
+
 ## ARM6-05: The desktop on Adreno X1
 
 1. **Picom** with GLX on the Adreno X1-85: idle and active cost, as #244

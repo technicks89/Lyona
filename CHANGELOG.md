@@ -10,6 +10,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The Qualcomm and Atheros firmware on an installed Snapdragon X laptop (ARM6-04,
+  checked on the XPS 13 9345): the installer already added `linux-firmware-qcom`
+  and `linux-firmware-atheros` from the dependency map on a covered laptop only;
+  the installed system's kernel log shows no missing firmware and the DSPs, GPU,
+  Wi-Fi and Bluetooth firmware loaded. Documentation only, no code change.
 - A Snapdragon X laptop's installed system survives a kernel upgrade (ARM6-03,
   installed on the XPS 13 9345 and rebooted to LightDM before and after a
   `linux-aarch64` upgrade): the `devicetree` line the installer
