@@ -940,12 +940,12 @@ run_display() {
 printf '*background:\t#000000\n' >"$dpi_db"
 
 run_display discover >"$work/dpi-discover.txt"
-grep -Fqx 'dpi	100	default	none	100' "$work/dpi-discover.txt"
+grep -Fqx 'dpi	96	default	none	96' "$work/dpi-discover.txt"
 
 run_display dpi-set 144 | grep -Fqx 'result	dpi-set	144'
 grep -Fqx 'Xft.dpi: 144' "$dpi_config/lyona/dpi.Xresources"
 grep -Fqx 'Xft.dpi: 144' "$dpi_db"
-run_display discover | grep -Fqx 'dpi	144	saved	144	100'
+run_display discover | grep -Fqx 'dpi	144	saved	144	96'
 
 for rejected in 12 500 1e3 -96 '96 96' ''; do
 	if run_display dpi-set "$rejected" >/dev/null 2>"$work/dpi-reject.err"; then
@@ -962,21 +962,21 @@ grep -Fqx 'Xft.dpi: 144' "$dpi_db"
 run_display dpi-reset | grep -Fqx 'result	dpi-reset	default'
 [ ! -e "$dpi_config/lyona/dpi.Xresources" ]
 grep -Fqx '*background:	#000000' "$dpi_db"
-# Reset drops the saved value (144) and applies the panel's default (100 here),
+# Reset drops the saved value (144) and applies the panel's default (96 here),
 # once, not as a saved file.
-if grep -q '^Xft.dpi: 144$' "$dpi_db" || [ "$(grep -c '^Xft.dpi:' "$dpi_db")" != 1 ] || ! grep -Fqx 'Xft.dpi: 100' "$dpi_db"; then
+if grep -q '^Xft.dpi: 144$' "$dpi_db" || [ "$(grep -c '^Xft.dpi:' "$dpi_db")" != 1 ] || ! grep -Fqx 'Xft.dpi: 96' "$dpi_db"; then
 	printf 'dpi-reset did not leave exactly the panel default in the resource database.\n' >&2
 	exit 1
 fi
-run_display discover | grep -Fqx 'dpi	100	default	none	100'
+run_display discover | grep -Fqx 'dpi	96	default	none	96'
 
 run_display dpi-reset >/dev/null
 
 printf 'Xft.dpi:\t168\n' >"$dpi_db"
-run_display discover | grep -Fqx 'dpi	168	session	none	100'
+run_display discover | grep -Fqx 'dpi	168	session	none	96'
 
 # The default DPI follows the panel: sqrt(96 * density) rounded to the nearest
-# 25 and held between 100 and 200, and a tier by the shorter side when the
+# 25, held to 200, and 96 when that is 100 or less (an ordinary monitor), and a tier by the shorter side when the
 # monitor reports no size. Each case is one connected output, as xrandr prints.
 panel_default() { # "eDP-1 connected primary 2560x1600+0+0 (...) 288mm x 180mm"
 	printf '#!/bin/sh\nprintf "%%s\\n" "Screen 0: minimum 320 x 200"\nprintf "%%s\\n" "%s"\n' "$1" >"$dpi_bin/xrandr"
@@ -992,8 +992,8 @@ expect_default() { # EXPECTED DESCRIPTION OUTPUT-LINE
 }
 expect_default 150 'a 13-inch 2560x1600 laptop' 'eDP-1 connected primary 2560x1600+0+0 (normal left inverted right x axis y axis) 288mm x 180mm'
 expect_default 125 'a 13-inch 1920x1200 laptop' 'eDP-1 connected primary 1920x1200+0+0 (normal left inverted right x axis y axis) 286mm x 178mm'
-expect_default 100 'a 24-inch 1080p monitor' 'HDMI-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 527mm x 296mm'
-expect_default 100 'a 27-inch 1440p monitor' 'HDMI-1 connected primary 2560x1440+0+0 (normal left inverted right x axis y axis) 597mm x 336mm'
+expect_default 96 'a 24-inch 1080p monitor' 'HDMI-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 527mm x 296mm'
+expect_default 96 'a 27-inch 1440p monitor' 'HDMI-1 connected primary 2560x1440+0+0 (normal left inverted right x axis y axis) 597mm x 336mm'
 expect_default 125 'a 27-inch 4K monitor' 'DP-1 connected primary 3840x2160+0+0 (normal left inverted right x axis y axis) 597mm x 336mm'
 expect_default 175 'a 15-inch 4K laptop' 'eDP-1 connected primary 3840x2160+0+0 (normal left inverted right x axis y axis) 344mm x 194mm'
 expect_default 200 'the densest accepted panel (384 DPI)' 'eDP-1 connected primary 3840x2400+0+0 (normal left inverted right x axis y axis) 254mm x 159mm'
@@ -1001,8 +1001,8 @@ expect_default 150 'an implausible size (over 384 DPI) falls back to the tier' '
 # No usable size: the tier by the shorter side (a 0 mm size, as some virtual machines report).
 expect_default 150 'a 4K panel with no size' 'Virtual-1 connected primary 3840x2160+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
 expect_default 125 'a 1440p panel with no size' 'Virtual-1 connected primary 2560x1440+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
-expect_default 100 'a 1080p panel with no size' 'Virtual-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
-expect_default 100 'a 1366x768 panel with no size' 'Virtual-1 connected primary 1366x768+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
+expect_default 96 'a 1080p panel with no size' 'Virtual-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
+expect_default 96 'a 1366x768 panel with no size' 'Virtual-1 connected primary 1366x768+0+0 (normal left inverted right x axis y axis) 0mm x 0mm'
 expect_default 150 'a rotated 4K panel (shorter side 2160)' 'DP-1 connected primary 2160x3840+0+0 left (normal left inverted right x axis y axis) 0mm x 0mm'
 
 # Nothing saved: the login applies the panel's default for the session only,
