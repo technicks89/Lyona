@@ -202,23 +202,38 @@ session_dpi() {
 	printf '%s\n' "$value"
 }
 
+# The default DPI of a panel, from its mode and the size the monitor reports:
+# the geometric mean of 96 and the panel's own density, sqrt(96 * density),
+# rounded to the nearest 25 and held between 100 and 200. A 13-inch 1600p laptop
+# (226 DPI) gets 150, a 13-inch 1200p one (171 DPI) 125, a 27-inch 1440p monitor
+# 100: the density alone made the first interface too large to use, a fixed 96
+# too small to read. A monitor that reports no usable size (some virtual
+# machines, TVs and adapters) gets a tier by its shorter side: 2160 pixels or
+# more 150, 1440 or more 125, less than that 100. The primary output wins, else
+# the first connected one. The argument is a file holding `xrandr --query`.
 recommended_dpi() {
 	local query=$1 value
-	value=$(awk -v minimum="$minimum_dpi" -v maximum="$maximum_dpi" '
+	value=$(awk -v minimum="$minimum_dpi" -v maximum="$maximum_dpi" -v base="$default_dpi" '
+		function round25(v) { return int(v / 25 + 0.5) * 25 }
+		function clamp(v) { return v < 100 ? 100 : (v > 200 ? 200 : v) }
+		function tier(side) { return side >= 2160 ? 150 : (side >= 1440 ? 125 : 100) }
 		$2 == "connected" {
-			width = 0; millimetres = 0; primary = 0
+			width = 0; height = 0; millimetres = 0; primary = 0
 			for (i = 3; i <= NF; i++) {
 				if ($i == "primary") primary = 1
 				if ($i ~ /^[0-9]+x[0-9]+[+-][0-9]+[+-][0-9]+$/) {
 					match($i, /^[0-9]+/); width = substr($i, RSTART, RLENGTH) + 0
+					rest = substr($i, RSTART + RLENGTH + 1)
+					match(rest, /^[0-9]+/); height = substr(rest, RSTART, RLENGTH) + 0
 				}
 				if ($i ~ /^[0-9]+mm$/ && $(i + 1) == "x") {
 					match($i, /^[0-9]+/); millimetres = substr($i, RSTART, RLENGTH) + 0
 				}
 			}
-			if (width <= 0 || millimetres <= 0) next
-			candidate = int((width * 25.4 / millimetres) + 0.5)
-			if (candidate < minimum || candidate > maximum) next
+			if (width <= 0 || height <= 0) next
+			density = (millimetres > 0) ? width * 25.4 / millimetres : 0
+			if (density >= minimum && density <= maximum) candidate = clamp(round25(sqrt(base * density)))
+			else candidate = tier(width < height ? width : height)
 			if (primary) { found = candidate; exit }
 			if (fallback == 0) fallback = candidate
 		}
@@ -231,6 +246,22 @@ recommended_dpi() {
 	printf '%s\n' "$value"
 }
 
+# The default DPI of the screens connected now, or 96 when there is no X
+# server to ask or nothing to compute it from.
+automatic_dpi() {
+	local query value
+	if command -v xrandr >/dev/null 2>&1 && [[ -n ${DISPLAY:-} ]]; then
+		query=$(mktemp)
+		if xrandr --query >"$query" 2>/dev/null && value=$(recommended_dpi "$query"); then
+			rm -f "$query"
+			printf '%s\n' "$value"
+			return 0
+		fi
+		rm -f "$query"
+	fi
+	printf '%s\n' "$default_dpi"
+}
+
 emit_dpi() {
 	local query=$1 persisted session recommended active source
 	persisted=$(persisted_dpi || true)
@@ -238,12 +269,18 @@ emit_dpi() {
 	recommended=$(recommended_dpi "$query" || true)
 	if [[ -n $session ]]; then
 		active=$session
-		if [[ $session == "$persisted" ]]; then source=saved; else source=session; fi
+		if [[ $session == "$persisted" ]]; then
+			source=saved
+		elif [[ -z $persisted && $session == "$recommended" ]]; then
+			source=default
+		else
+			source=session
+		fi
 	elif [[ -n $persisted ]]; then
 		active=$persisted
 		source=saved
 	else
-		active=96
+		active=${recommended:-$default_dpi}
 		source=default
 	fi
 	printf 'dpi\t%s\t%s\t%s\t%s\n' \
@@ -328,17 +365,24 @@ reset_dpi() {
 	rm -f "$dpi_resources"
 	clear_merged_dpi
 	write_xsettings_dpi ""
-	publish_dpi_state "$default_dpi"
+	apply_dpi_runtime "$(automatic_dpi)"
 	printf 'result\tdpi-reset\tdefault\n'
 }
 
 apply_saved_dpi() {
 	local value
-	if ! value=$(persisted_dpi); then
-		publish_dpi_state "$(session_dpi || printf '%s' "$default_dpi")"
+	if value=$(persisted_dpi); then
+		apply_dpi_runtime "$value"
 		return 0
 	fi
-	apply_dpi_runtime "$value"
+	# Nothing saved: a DPI the session already has (the user's own Xresources)
+	# stands; otherwise the panel's default, for this session only, so a
+	# monitor change at the next login is followed.
+	if value=$(session_dpi); then
+		publish_dpi_state "$value"
+		return 0
+	fi
+	apply_dpi_runtime "$(automatic_dpi)"
 }
 
 discover() {

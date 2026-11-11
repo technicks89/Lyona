@@ -121,6 +121,20 @@ says why, and the root helper builds as its own user (#333, #334, #336,
 
 ### Changed
 
+- The default interface scale now follows the panel instead of a fixed 96 DPI,
+  so the shell is no longer tiny next to the terminal and other apps on a
+  high-density screen (#481). With no saved DPI, `dwm-settings-display` computes
+  sqrt(96 x the panel's own density), rounded to the nearest 25 and held
+  between 100 and 200 (a 13-inch 2560x1600 laptop gets 150, a 13-inch
+  1920x1200 one 125, a 24-inch 1080p monitor 100); a monitor that reports no
+  usable size gets a tier by its shorter side (2160 or more 150, 1440 or more
+  125, less 100). The login applies it for that session only and never writes
+  it down, so the next login follows a monitor change; `dpi-reset` returns to
+  it. A DPI saved in Settings, or set in your own Xresources, is untouched.
+  Migration: a session that had no saved DPI and ran at 96 now starts at 100
+  or more; to keep the old size, set 96 once with `dwm-settings-display
+  dpi-set 96` (or in Settings). The login screen's `xft-dpi=96` is unchanged.
+
 - The image installer's archinstall configuration uses archinstall 4.5's
   current forms: `disk_encryption` inside `disk_config`, `audio_config` under
   `app_config`, no `debug`, `offline` or `no_pkg_lookups` (which archinstall
