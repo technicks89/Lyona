@@ -11,7 +11,8 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 ### Added
 
 - A Snapdragon X laptop's installed system survives a kernel upgrade (ARM6-03,
-  written, not yet tried on hardware): the `devicetree` line the installer
+  installed on the XPS 13 9345 and rebooted to LightDM before and after a
+  `linux-aarch64` upgrade): the `devicetree` line the installer
   writes into `grub.cfg` is now guarded by a file test, so a kernel that no
   longer carries the device tree boots as any machine does and not into a GRUB
   error, and a pacman hook on `linux-aarch64` warns after an upgrade when the
