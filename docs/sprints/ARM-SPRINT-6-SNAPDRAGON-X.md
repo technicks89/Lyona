@@ -228,6 +228,14 @@ x86_64 comparison at the same window count.
 **Acceptance:** the XPS reaches a working desktop from the generic image
 with no manual step.
 
+**Status (2026-11-11):** met on the XPS, from one image (`new13`, sources
+unchanged to `main`): boot, install to a USB SSD, first login, a
+`linux-aarch64` upgrade and reboots, the desktop and Settings, with no manual
+step on the boot entry. Assembled from the ARM6-02 to ARM6-05 runs and a final
+set of checks over SSH, not one uninterrupted run
+(`docs/evidence/arm6-06-xps13-9345.md`). Not covered: other laptops, external
+displays, EL2, battery life, suspend and resume, sound.
+
 ---
 
 ## Not in this sprint

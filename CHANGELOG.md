@@ -10,6 +10,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The generic aarch64 image validated on the Dell XPS 13 9345 (ARM6-06): it
+  boots with no manual step, installs to a USB SSD, reaches LightDM and the
+  desktop, and survives a `linux-aarch64` upgrade; no failed units, Wi-Fi and
+  Bluetooth working, idle at 0% CPU. Documentation only; other laptops,
+  external displays, EL2, suspend and resume, battery life and sound were not
+  tested.
 - The desktop measured on the XPS 13 9345's Adreno X1-85 (ARM6-05): Picom costs
   1 to 2% of one core under a moving-windows and video load on either XRender
   or GLX (the Automatic policy still chooses XRender there), the idle desktop is
