@@ -10,6 +10,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The desktop measured on the XPS 13 9345's Adreno X1-85 (ARM6-05): Picom costs
+  1 to 2% of one core under a moving-windows and video load on either XRender
+  or GLX (the Automatic policy still chooses XRender there), the idle desktop is
+  0% CPU, and the battery, power-profile, brightness, suspend and display
+  backends read correctly. Documentation only, no code change; the GL renderer
+  name, a browser or high-resolution video load, the battery cost and the
+  overview with many windows were not measured.
 - The Qualcomm and Atheros firmware on an installed Snapdragon X laptop (ARM6-04,
   checked on the XPS 13 9345): the installer already added `linux-firmware-qcom`
   and `linux-firmware-atheros` from the dependency map on a covered laptop only;

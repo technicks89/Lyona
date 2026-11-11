@@ -205,6 +205,17 @@ the video decoder firmware (not in `linux-firmware`), sound (a device-tree gap).
 **Acceptance:** the desktop is usable by the numbers recorded, and every
 Settings pane opens without an error.
 
+**Status (2026-11-11):** met on the XPS. Idle: 0% CPU for Picom, Quickshell
+and Xorg. Under a moving-windows and video load Picom costs 0.9% (XRender) or
+2.1% (GLX) of one core and the machine stays under 8% busy; the Automatic
+policy still chooses XRender on this GPU, GLX being usable. The Settings
+backends (battery, power profiles, brightness, suspend, display) read
+correctly over SSH and every Settings pane was opened on the XPS without an
+error (the maintainer). Evidence: `docs/evidence/arm6-05-desktop-adreno.md`.
+Not covered: the GL renderer name, a browser or high-resolution video load,
+battery cost, the overview with many windows, other laptops, the Pi 4 and
+x86_64 comparison at the same window count.
+
 ## ARM6-06: Validate on the XPS 13 9345
 
 1. **Run:** write the medium, boot, install, first login, the ARM1-06
