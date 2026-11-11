@@ -40,7 +40,9 @@ medium on its own). Machine ACPI tables, so no device-tree match.
   narrowed further. Before ARM6-02 the aarch64 entry was `copytoram=n`, which
   would have booted at 1 GiB. The aarch64 entry is now `copytoram=auto`
   (archiso copies only when the available memory exceeds the image plus 2
-  GiB); not yet re-run.
+  GiB). `new12` (sha256 `0fbb3969...dfce60`) has that entry; on the XPS it
+  still copied to RAM (see `arm6-01-snapdragon-spike.md`). The 1 GiB rerun on
+  `new12` has been requested and is not yet done.
 - **Snapdragon modules** (`ps883x`, `pmic_glink`, `pmic_glink_altmode`,
   `qcom_pd_mapper`, `qrtr`, `qrtr-smd`): loaded from the initramfs, bound to
   nothing, and logged nothing (no error, no `Direct firmware load`, no

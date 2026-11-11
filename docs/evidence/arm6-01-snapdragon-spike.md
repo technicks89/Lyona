@@ -523,6 +523,19 @@ matched on the build host for `new4`, after a replug.
   (`systemd-analyze` says bootup is not finished). Not done: keeping the splash
   up until gum starts. The maintainer judged this boot "much faster than before"
   and left the gap for now.
+- **`new12` (2026-11-10, `copytoram=auto`, `plymouth.ignore-serial-consoles`).**
+  Built at `302a918`, sha256
+  `0fbb3969271a75635edf4b1fda7eea2b67df8e4a6b2970b8aa44ee1e62dfce60`, 970,070,016
+  bytes, image ID `2026-11-10-23-07-01-00`; flashed to `/dev/sda` and the ESP
+  entry read back with the new options. The kernel command line carried
+  `copytoram=auto`. Kernel seconds from `dmesg` on the XPS: `msm` initialized
+  5.2 (same as new11); `loop0` 31.5 (new11: 36.0), so the copy to RAM still
+  happened; Plymouth told to quit 40.7 (new11: 45.2). No I/O errors. The same
+  `gen70500_sqe.fw` and `fastrpc` errors as new11 remain; one `ath12k` line
+  (`qmi dma allocation failed ... will try later with small size`) was not
+  checked in new11. The `dmesg` was saved from tty2 after the boot, so its
+  tail is the maintainer's own login, not the boot finishing. Not recorded:
+  the time gum appeared and how the splash looked (to be added).
 - **Splash off centre.** Panel `eDP-1` is 2560x1600 (`fb0` `msmdrmfb`, virtual
   size 2560,1600), and Plymouth's debug log ended with "Removing 1280x800 pixel
   display": its HiDPI scale of 2. The logo sat in the bottom right corner, cut
