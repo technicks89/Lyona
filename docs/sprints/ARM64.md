@@ -8,9 +8,11 @@ the two are independent.
 
 **Status:** planned 2026-10-11 at the maintainer's request. **Scope for now
 (decided 2026-10-11): the generic image and the Raspberry Pi**, through
-ARM-1, ARM-2, ARM-3 and ARM-5. GB10 (ARM-4) and N1X are deferred: their
-plans stay here, but they are not scheduled (on GitHub since 2026-10-26,
-marked deferred). ARM-1 is
+ARM-1, ARM-2, ARM-3, ARM-6 and ARM-5. **GB10 (ARM-4) and N1X were removed
+from the plan on 2026-11-12, by the maintainer**: they come back at a much
+later date, when the hardware and the RAM to test them are affordable again.
+Their plans stay here as a record, and their GitHub issues (#57 to #62) are
+closed as not planned; nothing is scheduled. ARM-1 is
 done: ARM1-01 to ARM1-05 merged 2026-10-14, ARM1-06 2026-10-19 (#31).
 ARM-2 is done: ARM2-01 to ARM2-05 merged 2026-10-22 to 2026-10-25 (#44 to
 #54). ARM-3 is done: validated on a real Pi 4 on 2026-11-05 (ARM3-06,
@@ -153,6 +155,24 @@ closes in Lyona. Until the merge:
   the dependency map, so the final merge changes nothing on x86_64.
 - A fix to code both repositories share is made in Lyona first and synced in.
 
+Steps to the merge (2026-11-12): ARM5-01's pre-merge part (the release
+workflow, `lyona-release` and the architecture markers, checked with the
+release tests' stubs), ARM5-03 (the support contract per target), ARM5-04 (the
+ARM user documentation and the bug-report template), then the merge pull
+request in Lyona: Lyona-ARM `main` pushed as a branch, Lyona `main` merged
+into it, the full suite on Lyona's runners, a merge commit.
+
+After the merge, in Lyona:
+
+1. ARM5-01's release run: a pre-release with the x86_64, generic aarch64 and
+   Raspberry Pi images, signed, with the architecture markers.
+2. ARM5-02 (#19): `lyona-update` check, apply and rollback from one release to
+   the next, on a generic-image VM and on a Pi, plus package updates. It needs
+   a second release carrying ARM support.
+3. The parked XPS session: the HiDPI default (#482), the CPU governor rule on
+   a fresh install (#86), and a boot and install of the release image.
+4. Close ARM-5 and move the ARM sprint documents to `docs/sprints/completed/`.
+
 ## Hardware and test machines
 
 | Target | What validates it | Needed by |
@@ -197,7 +217,7 @@ available (2026-10-27). What is left for aarch64:
 Each sprint is a milestone and each of its items an issue, labelled `arm64`. The issues were created 2026-10-11 in technicks89/Lyona and moved here;
 [`arm-sprints-github.sh`](arm-sprints-github.sh) creates the milestones and
 the "Lyona on ARM" project board, and puts each issue in its milestone.
-ARM-4 and ARM5-05 are deferred but tracked, so they are visible on the
-board: created 2026-10-26 with the `deferred` label (#57 to #62), ARM-4's
-milestone with no due date and the board's Sprint option "ARM-4". Picking
-one up removes its `deferred` label and gives ARM-4's milestone a due date.
+ARM-4 and ARM5-05 were tracked as deferred (#57 to #62, created 2026-10-26
+with the `deferred` label). On 2026-11-12 they were removed from the plan and
+the issues closed as not planned. Picking them up again means reopening the
+issues, removing the `deferred` label and giving ARM-4's milestone a due date.

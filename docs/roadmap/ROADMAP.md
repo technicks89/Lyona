@@ -547,7 +547,9 @@ Lyona on ARM (requested 2026-10-11): a generic aarch64 UEFI image, one
 Raspberry Pi 4 and 5 image, NVIDIA GB10 systems, and NVIDIA N1X laptops once a
 Linux driver lists them, all on Arch Linux ARM. Planned as its own project in
 `docs/sprints/ARM64.md` (five sprints, decisions A-1 to A-9). The scope for
-now is the generic image and the Raspberry Pi; GB10 and N1X are deferred. Not
+now is the generic image, the Raspberry Pi and Snapdragon X laptops; GB10 and
+N1X were removed from the plan on 2026-11-12 and come back much later, when the
+hardware is affordable again. Not
 scheduled against these phases, and no ARM target is supported until its
 sprint qualifies it.
 
