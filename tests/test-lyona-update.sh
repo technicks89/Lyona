@@ -1376,7 +1376,11 @@ arch_check() { # ARCH CHANNEL
 reset_curl_responses
 valid_user_record 2026.10.0-beta.7 | write_user_record
 arch_release 2026.10.0-beta.7 | canned_response "$latest_url"
-{ printf '['; arch_release 2026.10.0-beta.7; printf ']'; } | canned_response "$list_url"
+{
+	printf '['
+	arch_release 2026.10.0-beta.7
+	printf ']'
+} | canned_response "$list_url"
 status=$(arch_check aarch64 stable)
 assert_string_contains "$status" "$(printf 'state\tunknown')"
 assert_string_contains "$status" 'No aarch64 release has been published on the stable channel yet.'
@@ -1399,7 +1403,11 @@ done
 reset_curl_responses
 valid_user_record 2026.10.0-beta.7 | write_user_record
 arch_release 2026.11.0 aarch64 | canned_response "$latest_url"
-{ printf '['; arch_release 2026.11.0 aarch64; printf ']'; } | canned_response "$list_url"
+{
+	printf '['
+	arch_release 2026.11.0 aarch64
+	printf ']'
+} | canned_response "$list_url"
 status=$(arch_check x86_64 stable)
 assert_string_contains "$status" "$(printf 'state\tunknown')"
 status=$(arch_check aarch64 stable)
@@ -1410,7 +1418,13 @@ assert_string_contains "$status" "$(printf 'available\t2026.11.0')"
 reset_curl_responses
 valid_user_record 2026.10.0-beta.7 | write_user_record
 arch_release 2026.12.0 x86_64 | canned_response "$latest_url"
-{ printf '['; arch_release 2026.12.0 x86_64; printf ','; arch_release 2026.11.0 x86_64 aarch64; printf ']'; } | canned_response "$list_url"
+{
+	printf '['
+	arch_release 2026.12.0 x86_64
+	printf ','
+	arch_release 2026.11.0 x86_64 aarch64
+	printf ']'
+} | canned_response "$list_url"
 status=$(arch_check aarch64 stable)
 assert_string_contains "$status" "$(printf 'available\t2026.11.0')"
 status=$(arch_check x86_64 stable)
@@ -1419,7 +1433,13 @@ assert_string_contains "$status" "$(printf 'available\t2026.12.0')"
 # The preview channel takes the newest release that serves the machine.
 reset_curl_responses
 valid_user_record 2026.10.0-beta.7 | write_user_record
-{ printf '['; arch_release 2026.12.0-beta.1 x86_64; printf ','; arch_release 2026.11.0-beta.1 x86_64 aarch64; printf ']'; } | canned_response "$list_url"
+{
+	printf '['
+	arch_release 2026.12.0-beta.1 x86_64
+	printf ','
+	arch_release 2026.11.0-beta.1 x86_64 aarch64
+	printf ']'
+} | canned_response "$list_url"
 status=$(arch_check aarch64 preview)
 assert_string_contains "$status" "$(printf 'available\t2026.11.0-beta.1')"
 status=$(arch_check x86_64 preview)
