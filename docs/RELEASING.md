@@ -212,8 +212,10 @@ installs. Do not treat a release as qualified on hardware until it has been.
 ### The aarch64 medium (experimental)
 
 ARM Sprint 2 (`docs/sprints/ARM-SPRINT-2-GENERIC-IMAGE.md`) adds an aarch64
-UEFI medium on Arch Linux ARM. It is not released, and is not supported on
-any machine yet (`SPEC.md` 9.4 is not met on any ARM target). It builds only
+UEFI medium on Arch Linux ARM. The release workflow builds it with the
+others (ARM5-01), but no release carrying it exists yet (it is first made in
+Lyona, after the merge), and it is not supported on any machine
+(`SPEC.md` 9.4 is not met on any ARM target). It builds only
 on an aarch64 host, natively (`docs/sprints/ARM64.md` A-3), and needs
 archiso 91 or later, which Arch Linux ARM does not package, so a checkout of
 it provides `mkarchiso` and the `releng` profile:
@@ -289,8 +291,9 @@ the way the builder does before it makes the image.
 
 ### Signed releases
 
-The release workflow signs what users install, the ISO and the source archive,
-from `2026.10.0-beta.2` on (decision D-31, reversing D-14). It records one
+The release workflow signs what users install, the ISOs, the Raspberry Pi
+image and the source archive, from `2026.10.0-beta.2` on (the aarch64 images
+from the first release that carries them) (decision D-31, reversing D-14). It records one
 build-provenance attestation for both, signed keylessly through Sigstore with
 the run's GitHub identity. There is no signing key to keep or rotate: the
 signature names the repository, the workflow file, the branch (`main`) and the
@@ -299,15 +302,16 @@ commit it was built from.
 The signing is its own job (GHSA-xfhv-7h9c-m966). The build job runs the
 repository's code and freshly synced packages in a privileged container, so it
 has a read-only token and cannot sign. The `sign` job, the only one with the
-OIDC token Sigstore signs with, runs no repository code: it downloads the ISO
-and the source archive the build made and attests them with pinned actions.
+OIDC token Sigstore signs with, runs no repository code: it downloads the
+images and the source archive the builds made and attests them with pinned
+actions.
 The signature still names `build-iso.yml` on `main`, whichever job signs, so
 `lyona-update`'s check is unchanged.
 
 The files are signed before anything is published. `scripts/lyona-release
 --bundle` then publishes the signature as `lyona-VERSION.sigstore.json`, and
-refuses a bundle that does not name the digests of the archive and the ISO it
-uploads; the archive is reproducible, so its rebuild is the file that was
+refuses a bundle that does not name the digests of the archive and every image
+it uploads; the archive is reproducible, so its rebuild is the file that was
 signed. The attestation is also kept in the repository's attestation store.
 
 `lyona-update` checks the signature with `cosign` before it unpacks a release,
@@ -325,7 +329,8 @@ cosign verify-blob-attestation --bundle lyona-VERSION.sigstore.json \
 Or, logged in to the GitHub CLI: `gh attestation verify FILE --repo
 technicks89/Lyona`. Either succeeds only for a file this repository's workflow
 built. A release made by hand with `scripts/lyona-release` and no `--bundle` is
-not signed, and `lyona-update` refuses it: publish through the workflow.
+not signed, and `lyona-update` refuses it: publish through the workflow. The
+architecture markers are empty and are not signed.
 
 ### Using the ISO
 
@@ -429,13 +434,27 @@ A mismatch fails in seconds, before anything is built. So commit the new
 `VERSION` (and `CHANGELOG.md`) first, and push it.
 
 What it does:
-- **The ISO:** builds it, and keeps it and its `SHA256SUMS` as a workflow
-  artifact.
-- **The tag and the release:** only once the ISO has built, it runs
-  `scripts/lyona-release` with `--prerelease`. That creates `vVERSION` at the
-  run's commit, with the source archive `lyona-update` installs from, the ISO,
-  and a `SHA256SUMS` of both. `notes` is an optional release notes file in the
-  repository.
+- **The images** (ARM5-01): builds the x86_64 ISO, then, on GitHub's arm64
+  runner, the generic aarch64 ISO (`build-aarch64-iso`) and the Raspberry Pi
+  image (`build-rpi-image`), each in a privileged Arch Linux ARM container
+  that `scripts/ci-archlinuxarm-image.sh` makes from Arch Linux ARM's signed
+  root filesystem, through `scripts/ci-release-aarch64.sh`. Each is kept as a
+  workflow artifact. The aarch64 jobs start after the x86_64 job's version
+  and tag check.
+- **The tag and the release:** only once every image has built (the release
+  job needs all three build jobs, and none may be skipped or fail silently),
+  it runs `scripts/lyona-release` with `--prerelease`. That creates `vVERSION`
+  at the run's commit, with the source archive `lyona-update` installs from,
+  `lyona-VERSION-x86_64.iso`, `lyona-VERSION-aarch64.iso`,
+  `lyona-VERSION-rpi-aarch64.img.xz`, and a `SHA256SUMS` of all of them.
+  `notes` is an optional release notes file in the repository.
+- **One release, both architectures** (#53): the release carries two empty
+  marker assets, `lyona-VERSION-architecture-x86_64` and
+  `lyona-VERSION-architecture-aarch64` (`--architecture`), which
+  `lyona-update` reads to know which architectures a release serves. A release
+  without markers, as the earlier ones, serves x86_64 only. The markers are
+  made only because the run built every image: there is no release for one
+  architecture alone.
 - **Every release starts as a pre-release.** A beta stays one. A main release
   stays one until you promote it, once its ISO has passed the VM
   qualification above.

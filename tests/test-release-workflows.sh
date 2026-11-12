@@ -50,7 +50,7 @@ assert promote[True]["workflow_dispatch"]["inputs"]["tag"]["required"] is True, 
 assert build["permissions"]["contents"] == "read", build["permissions"]
 assert promote["permissions"]["contents"] == "write"
 jobs = build["jobs"]
-assert list(jobs) == ["authorize", "build-iso", "sign", "release"], list(jobs)
+assert list(jobs) == ["authorize", "build-iso", "build-aarch64-iso", "build-rpi-image", "sign", "release"], list(jobs)
 bi, sg, rl = jobs["build-iso"], jobs["sign"], jobs["release"]
 steps = [s.get("name") for s in bi["steps"]]
 # The build runs the repository's code and freshly synced packages: a
@@ -73,22 +73,46 @@ for name, job in jobs.items():
     if name != "sign":
         assert "id-token" not in (job.get("permissions") or {}), name
 assert sg["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}, sg["permissions"]
-assert sg["needs"] == "build-iso" and "container" not in sg and "environment" not in sg, sg
+builds = ["build-iso", "build-aarch64-iso", "build-rpi-image"]
+assert sg["needs"] == builds and "container" not in sg and "environment" not in sg, sg
+# ARM5-01: the aarch64 images build natively on the arm64 runner, after the
+# version and tag check, with a read-only token, no environment and no secret:
+# they can neither sign nor publish. A release needs every build, and no build
+# may be skipped or allowed to fail: one release carries both architectures or
+# none (#53).
+for name in ("build-aarch64-iso", "build-rpi-image"):
+    job = jobs[name]
+    assert job["runs-on"] == "ubuntu-24.04-arm", (name, job["runs-on"])
+    assert job["needs"] == "build-iso", (name, job["needs"])
+    assert job["permissions"] == {"contents": "read"} and "environment" not in job and "container" not in job, job
+    assert "secrets." not in str(job), name
+    assert "scripts/ci-release-aarch64.sh" in str(job["steps"]), name
+    assert "--privileged" in str(job["steps"]), name
+for name, job in jobs.items():
+    assert "if" not in job and not job.get("continue-on-error"), f"{name} may be skipped or fail silently"
+    for st in job["steps"]:
+        assert "if" not in st and not st.get("continue-on-error"), f"{name}: {st.get('name')} may be skipped or fail silently"
+aarch64_uploads = [s["with"]["name"] for n in ("build-aarch64-iso", "build-rpi-image") for s in jobs[n]["steps"] if s.get("uses", "").startswith("actions/upload-artifact@")]
+assert aarch64_uploads == ["lyona-iso-aarch64-${{ needs.build-iso.outputs.tag }}", "lyona-rpi-${{ needs.build-iso.outputs.tag }}"], aarch64_uploads
+for n, art in (("build-aarch64-iso", "aarch64-iso"), ("build-rpi-image", "rpi-image")):
+    up = next(s for s in jobs[n]["steps"] if s.get("uses", "").startswith("actions/upload-artifact@"))
+    assert up["with"]["path"] == "${{ runner.temp }}/" + art and up["with"]["if-no-files-found"] == "error", up["with"]
 for st in sg["steps"]:
     assert "run" not in st and "uses" in st, st
     assert not st["uses"].startswith("actions/checkout@"), st
     assert len(st["uses"].split("@")[1]) == 40, f"not pinned to a commit: {st['uses']}"
 sign = next(st for st in sg["steps"] if st.get("name") == "Sign the release files")
 assert sign["uses"].startswith("actions/attest-build-provenance@") and sign.get("id") == "sign", sign
-for subject in ("iso/*.iso", "source/lyona-*.tar.gz"):
+for subject in ("iso/*.iso", "iso-aarch64/*.iso", "rpi/*.img.xz", "source/lyona-*.tar.gz"):
     assert subject in sign["with"]["subject-path"], subject
 bundle_up = [st for st in sg["steps"] if st["uses"].startswith("actions/upload-artifact@")]
 assert bundle_up and bundle_up[0]["with"]["path"] == "${{ steps.sign.outputs.bundle-path }}", bundle_up
 # The release publishes the signed files: after the signing, with the bundle.
-assert rl["needs"] == ["build-iso", "sign"], rl["needs"]
+assert rl["needs"] == builds + ["sign"], rl["needs"]
 assert rl["permissions"] == {"contents": "read"}, rl["permissions"]
 publish = next(st for st in rl["steps"] if st.get("name") == "Create the tag and the release")
 assert '--bundle "${bundle[0]}"' in publish["run"], publish["run"]
+assert "--architecture x86_64 --architecture aarch64" in publish["run"], publish["run"]
 # Both container images pinned by digest.
 import re
 for name in ("build-iso", "release"):
@@ -100,7 +124,7 @@ assert bi["container"]["image"] == rl["container"]["image"], "the two jobs use d
 for wf in (build, promote):
     assert "authorize" in wf["jobs"], wf["jobs"].keys()
 assert build["jobs"]["build-iso"]["needs"] == "authorize"
-assert build["jobs"]["release"]["needs"] == ["build-iso", "sign"]
+assert build["jobs"]["release"]["needs"] == builds + ["sign"]
 assert promote["jobs"]["promote"]["needs"] == "authorize"
 # The tag is created with the release environment's admin token, and only in
 # the release step; the build checks early that the token exists.
@@ -121,12 +145,16 @@ PY
 step "$build_workflow" 'Check the version and the tag' "$work/check.sh"
 step "$build_workflow" 'Create the tag and the release' "$work/release.sh"
 step "$build_workflow" 'Checksum ISO' "$work/checksum.sh"
+step "$build_workflow" 'Build the aarch64 ISO' "$work/build-aarch64.sh"
+step "$build_workflow" 'Checksum the aarch64 ISO' "$work/checksum-aarch64.sh"
+step "$build_workflow" 'Build the Raspberry Pi image' "$work/build-rpi.sh"
+step "$build_workflow" 'Checksum the Raspberry Pi image' "$work/checksum-rpi.sh"
 step "$promote_workflow" 'Promote the release' "$work/promote.sh"
 step "$build_workflow" 'Allow only admins and maintainers' "$work/authorize.sh"
 step "$promote_workflow" 'Allow only admins and maintainers' "$work/authorize-promote.sh"
 cmp -s "$work/authorize.sh" "$work/authorize-promote.sh" || fail 'the two workflows check who may run them differently'
 if command -v shellcheck >/dev/null 2>&1; then
-	for script in check release checksum promote authorize; do
+	for script in check release checksum promote authorize build-aarch64 checksum-aarch64 build-rpi checksum-rpi; do
 		shellcheck -s bash "$work/$script.sh" || fail "the $script step does not pass shellcheck"
 	done
 fi
@@ -223,18 +251,20 @@ STUB_TAG_SHA="head" check main 2026.10.2 ||
 	fail "a rerun at the tagged commit was refused: $(cat "$work/check.out")"
 
 # ---- the release step -------------------------------------------------------
-mkdir -p "$work/release/scripts" "$work/runner/iso" "$work/runner/bundle"
+mkdir -p "$work/release/scripts" "$work/runner/iso" "$work/runner/iso-aarch64" "$work/runner/rpi" "$work/runner/bundle"
 cat >"$work/release/scripts/lyona-release" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >"$STUB_DIR/release.args"
 EOF
 chmod +x "$work/release/scripts/lyona-release"
 : >"$work/runner/iso/lyona-2026.10.0-x86_64.iso"
+: >"$work/runner/iso-aarch64/lyona-2026.10.0-aarch64.iso"
+: >"$work/runner/rpi/lyona-2026.10.0-rpi-aarch64.img.xz"
 # The sign job's bundle, as download-artifact leaves it.
 : >"$work/runner/bundle/attestation.jsonl"
 release() { (cd "$work/release" && env STUB_DIR="$work" RUNNER_TEMP="$work/runner" VERSION=2026.10.0 NOTES="${1:-}" bash "$work/release.sh"); }
 release || fail 'the release step failed'
-[[ $(cat "$work/release.args") == "--version 2026.10.0 --iso $work/runner/iso/lyona-2026.10.0-x86_64.iso --bundle $work/runner/bundle/attestation.jsonl --prerelease --skip-checks" ]] ||
+[[ $(cat "$work/release.args") == "--version 2026.10.0 --iso $work/runner/iso/lyona-2026.10.0-x86_64.iso --asset $work/runner/iso-aarch64/lyona-2026.10.0-aarch64.iso --asset $work/runner/rpi/lyona-2026.10.0-rpi-aarch64.img.xz --architecture x86_64 --architecture aarch64 --bundle $work/runner/bundle/attestation.jsonl --prerelease --skip-checks" ]] ||
 	fail "lyona-release was run as: $(cat "$work/release.args")"
 release notes/release.md || fail 'the release step with notes failed'
 [[ $(cat "$work/release.args") == *' --prerelease --skip-checks --notes notes/release.md' ]] || fail "with notes: $(cat "$work/release.args")"
@@ -245,6 +275,14 @@ mv "$work/runner/iso/lyona-2026.10.0-x86_64.iso" "$work/runner/held.iso"
 if release >"$work/release.out" 2>&1; then fail 'the release step ran without an ISO'; fi
 grep -Fq 'Expected one ISO, found 0' "$work/release.out" || fail "without an ISO: $(cat "$work/release.out")"
 mv "$work/runner/held.iso" "$work/runner/iso/lyona-2026.10.0-x86_64.iso"
+# One architecture's image missing: no release (the marker is never made for
+# half a release).
+for held in iso-aarch64/lyona-2026.10.0-aarch64.iso rpi/lyona-2026.10.0-rpi-aarch64.img.xz; do
+	mv "$work/runner/$held" "$work/runner/held"
+	if release >"$work/release.out" 2>&1; then fail "the release step ran without $held"; fi
+	grep -Fq 'Expected one' "$work/release.out" || fail "without $held: $(cat "$work/release.out")"
+	mv "$work/runner/held" "$work/runner/$held"
+done
 rm "$work/runner/bundle/attestation.jsonl"
 if release >/dev/null 2>&1; then fail 'the release step ran without a signature bundle'; fi
 

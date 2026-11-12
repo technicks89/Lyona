@@ -10,6 +10,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The release workflow builds the aarch64 images too (ARM5-01, the part before
+  the merge into Lyona): `build-iso.yml` builds the x86_64 ISO, then the generic
+  aarch64 ISO and the Raspberry Pi image on GitHub's arm64 runner (an Arch Linux
+  ARM container, through `scripts/ci-release-aarch64.sh`), signs all of them
+  with the source archive, and publishes `lyona-VERSION-aarch64.iso` and
+  `lyona-VERSION-rpi-aarch64.img.xz` beside the x86_64 ISO. The release is made
+  only when every image built, and carries the empty assets
+  `lyona-VERSION-architecture-x86_64` and `-aarch64` that `lyona-update` reads
+  (#53). `scripts/lyona-release` gains `--asset` and `--architecture`.
+  Checked by `tests/test-release-workflows.sh` and `tests/test-release-helper.sh`
+  with stubs; the aarch64 jobs have not run on a GitHub arm64 runner, and no
+  release has been made.
 - A Snapdragon X laptop's installed system uses the `schedutil` CPU governor
   (ARM6 follow-up): the kernel's default here is `performance`, which holds
   every core at full clock when idle. On the XPS 13 9345, on battery with the

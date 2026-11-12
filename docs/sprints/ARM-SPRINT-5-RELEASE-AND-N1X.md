@@ -3,7 +3,9 @@
 Index: [`ARM64.md`](ARM64.md). Depends on ARM-2, ARM-3 and ARM-6 (Snapdragon X,
 added 2026-11-05, which comes before this sprint).
 
-**Status:** planned 2026-10-11. Not started. **Amended 2026-10-27, by the
+**Status:** planned 2026-10-11. ARM5-01's part before the merge (the workflow and
+`scripts/lyona-release`, checked with stubs) is written 2026-11-12
+([evidence](../evidence/arm5-01-release-workflow.md)); the rest is not started. **Amended 2026-10-27, by the
 maintainer:** ARM5-01's release run happens in Lyona after the merge
 ([`ARM64.md`](ARM64.md#end-state)), as Lyona-ARM has no releases. GitHub: issues #18 to #21, and
 #62 for the deferred ARM5-05

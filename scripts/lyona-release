@@ -17,6 +17,14 @@ Options:
   --version VERSION       Confirm the committed config.mk VERSION to release.
                           Accepts 2026.08.0 or v2026.08.0.
   --iso PATH              Upload an installer ISO alongside the source archive.
+  --asset PATH            Upload another image alongside the ISO (the aarch64
+                          ISO, the Raspberry Pi image). Repeatable. It is
+                          checksummed and, with --bundle, must be signed.
+  --architecture ARCH     Mark the release as serving ARCH (x86_64 or
+                          aarch64): an empty asset lyona-VERSION-architecture-ARCH,
+                          which lyona-update reads (#53). Repeatable. A release
+                          with no marker serves x86_64 only. The ISO workflow
+                          marks an architecture only when its images were built.
   --notes FILE            Use FILE as release notes.
   --bundle FILE           Publish FILE, the Sigstore bundle that signs the
                           source archive and the ISO, as
@@ -120,6 +128,8 @@ config_mk="$repo_root/config.mk"
 default_iso_path="$repo_root/lyona.iso"
 release_version=
 iso_path=
+extra_assets=()
+architectures=()
 notes_file=
 bundle_path=
 dry_run=false
@@ -150,6 +160,30 @@ while (($# > 0)); do
 		;;
 	--iso=*)
 		iso_path=${1#*=}
+		shift
+		;;
+	--asset)
+		if (($# < 2)); then
+			err "--asset requires a value."
+			exit 1
+		fi
+		extra_assets+=("$2")
+		shift 2
+		;;
+	--asset=*)
+		extra_assets+=("${1#*=}")
+		shift
+		;;
+	--architecture)
+		if (($# < 2)); then
+			err "--architecture requires a value."
+			exit 1
+		fi
+		architectures+=("$2")
+		shift 2
+		;;
+	--architecture=*)
+		architectures+=("${1#*=}")
 		shift
 		;;
 	--notes)
@@ -259,6 +293,24 @@ if [[ -n $iso_path && ! -f $iso_path ]]; then
 	exit 1
 fi
 
+for i in "${!extra_assets[@]}"; do
+	extra_assets[i]="$(expand_user_path "${extra_assets[i]}")"
+	if [[ ! -f ${extra_assets[i]} ]]; then
+		err "asset not found: ${extra_assets[i]}"
+		exit 1
+	fi
+done
+
+for arch in "${architectures[@]}"; do
+	case $arch in
+	x86_64 | aarch64) ;;
+	*)
+		err "--architecture must be x86_64 or aarch64: $arch"
+		exit 1
+		;;
+	esac
+done
+
 if [[ -n $notes_file && ! -f $notes_file ]]; then
 	err "release notes file not found: $notes_file"
 	exit 1
@@ -302,6 +354,7 @@ assets=("$release_archive")
 if [[ -n $iso_path ]]; then
 	assets+=("$iso_path")
 fi
+assets+=("${extra_assets[@]}")
 
 if [[ $dry_run == true ]]; then
 	printf '+ sha256sum'
@@ -329,7 +382,7 @@ if [[ -n $bundle_path ]]; then
 			err "could not read the signed digests from $bundle_path"
 			exit 1
 		}
-		for asset in "$release_archive" ${iso_path:+"$iso_path"}; do
+		for asset in "$release_archive" ${iso_path:+"$iso_path"} "${extra_assets[@]}"; do
 			digest=$(sha256sum -- "$asset" | awk '{ print $1 }')
 			grep -Fqx -- "$digest" <<<"$signed" || {
 				err "$bundle_path does not sign $(basename -- "$asset") ($digest)"
@@ -340,6 +393,14 @@ if [[ -n $bundle_path ]]; then
 	run cp -- "$bundle_path" "$signed_bundle"
 	assets+=("$signed_bundle")
 fi
+
+# The architecture markers: empty assets, after the checksums and the signature
+# (they are neither checksummed nor signed; they carry no content).
+for arch in "${architectures[@]}"; do
+	marker="$repo_root/release/lyona-$release_version-architecture-$arch"
+	run touch -- "$marker"
+	assets+=("$marker")
+done
 
 if [[ $dry_run == true ]]; then
 	run gh api "repos/:owner/:repo/git/ref/tags/$tag"

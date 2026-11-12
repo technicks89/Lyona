@@ -188,4 +188,74 @@ grep -Fq 'does not sign lyona.iso' "$work/partial.err"
 	exit 1
 }
 
+# ARM5-01: more images and the architecture markers. --asset images are
+# checksummed and, with --bundle, must be signed; --architecture adds an empty
+# lyona-VERSION-architecture-ARCH asset, unsigned and not in SHA256SUMS.
+printf 'an arm image\n' >"$work/lyona-aarch64.iso"
+printf 'a pi image\n' >"$work/lyona-rpi-aarch64.img.xz"
+make_bundle "$work/all.json" "$archive_digest" "$(digest "$work/lyona.iso")" \
+	"$(digest "$work/lyona-aarch64.iso")" "$(digest "$work/lyona-rpi-aarch64.img.xz")"
+make_bundle "$work/no-pi.json" "$archive_digest" "$(digest "$work/lyona.iso")" "$(digest "$work/lyona-aarch64.iso")"
+live_arm() {
+	STUB_IS_PRERELEASE=true live --prerelease "$@" --asset "$work/lyona-aarch64.iso" \
+		--asset "$work/lyona-rpi-aarch64.img.xz" --architecture x86_64 --architecture aarch64
+}
+rm -f "$work/uploads"
+live_arm --bundle "$work/all.json" >/dev/null 2>"$work/arm.err" || {
+	printf 'release helper refused the ARM images: %s\n' "$(cat "$work/arm.err")" >&2
+	exit 1
+}
+for published in lyona-aarch64.iso lyona-rpi-aarch64.img.xz release/lyona-2026.10.0-architecture-x86_64 \
+	release/lyona-2026.10.0-architecture-aarch64 release/lyona-2026.10.0.sigstore.json; do
+	grep -Fq "$published" "$work/uploads" || {
+		printf 'release helper did not publish %s: %s\n' "$published" "$(cat "$work/uploads")" >&2
+		exit 1
+	}
+done
+for marker in x86_64 aarch64; do
+	[ -f "$stable/release/lyona-2026.10.0-architecture-$marker" ] && [ ! -s "$stable/release/lyona-2026.10.0-architecture-$marker" ] || {
+		printf 'the %s marker is missing or not empty\n' "$marker" >&2
+		exit 1
+	}
+done
+for image in lyona-aarch64.iso lyona-rpi-aarch64.img.xz; do
+	grep -Fq "$image" "$sums" || {
+		printf 'SHA256SUMS lacks %s: %s\n' "$image" "$(cat "$sums")" >&2
+		exit 1
+	}
+done
+if grep -Fq architecture "$sums"; then
+	printf '%s\n' 'SHA256SUMS lists a marker' >&2
+	exit 1
+fi
+# A bundle that leaves an image out is refused, nothing is uploaded.
+rm -f "$work/uploads"
+if live_arm --bundle "$work/no-pi.json" >/dev/null 2>"$work/no-pi.err"; then
+	printf '%s\n' 'release helper published a bundle that does not sign the Pi image' >&2
+	exit 1
+fi
+grep -Fq 'does not sign lyona-rpi-aarch64.img.xz' "$work/no-pi.err"
+[ ! -e "$work/uploads" ] || {
+	printf '%s\n' 'release helper uploaded with a bundle that does not sign the Pi image' >&2
+	exit 1
+}
+# A missing image, and an architecture that is not one.
+if live --prerelease --asset "$work/absent.img.xz" >/dev/null 2>"$work/absent.err"; then
+	printf '%s\n' 'release helper accepted a missing --asset' >&2
+	exit 1
+fi
+grep -Fq 'asset not found' "$work/absent.err"
+if live --prerelease --architecture riscv64 >/dev/null 2>"$work/riscv.err"; then
+	printf '%s\n' 'release helper accepted an unknown architecture' >&2
+	exit 1
+fi
+grep -Fq -- '--architecture must be x86_64 or aarch64' "$work/riscv.err"
+# No marker without --architecture: an x86_64-only release, as before.
+rm -f "$work/uploads" "$stable"/release/lyona-2026.10.0-architecture-*
+STUB_IS_PRERELEASE=true live --prerelease >/dev/null 2>&1
+if grep -Fq architecture "$work/uploads"; then
+	printf '%s\n' 'release helper marked an architecture nobody asked for' >&2
+	exit 1
+fi
+
 printf '%s\n' 'Release helper preflight and remote-write ordering: PASS'
