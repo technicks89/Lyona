@@ -18,6 +18,9 @@ root_helper_name=lyona-update-root
 # overridable only for the test suite, which stubs the GitHub API entirely.
 github_repo=${LYONA_UPDATE_GITHUB_REPO:-technicks89/Lyona}
 github_api_base=${LYONA_UPDATE_GITHUB_API:-https://api.github.com}
+# The architecture of this machine, bash's own as in dwm-utils.sh (a 32-bit
+# userland on a 64-bit kernel is not aarch64). Overridable for the test suite.
+machine_arch=${LYONA_UPDATE_ARCH:-$HOSTTYPE}
 # Signed releases (decision D-31): the release workflow attests each release's
 # files through Sigstore, as build-iso.yml run from main, and publishes the
 # bundle as lyona-VERSION.sigstore.json. Releases before this one were not.
@@ -332,18 +335,45 @@ fetch_url() {
 		"$@"
 }
 
+# Which releases an architecture may install (#53). One release serves every
+# architecture it lists: its assets include an empty lyona-VERSION-architecture-ARCH
+# marker for each. A release with no marker at all predates ARM and is x86_64
+# only, so x86_64 machines see no change and an aarch64 machine never installs
+# a tree without Arch Linux ARM support. The marker names are in the release
+# listing already: no extra request.
+# shellcheck disable=SC2016 # jq variables, not shell ones
+arch_jq='
+def version: (.tag_name // "") | sub("^v"; "");
+def serves($arch):
+	version as $v
+	| [.assets[]?.name | select(startswith("lyona-" + $v + "-architecture-"))] as $m
+	| if ($m | length) == 0 then $arch == "x86_64"
+	  else any($m[]; . == "lyona-" + $v + "-architecture-" + $arch) end;
+'
+
 # Prints one release object (never an array) for the requested channel, or
 # fails if the channel has nothing published or the network is unreachable.
+# Only a release that serves this machine's architecture counts.
 fetch_release() {
-	local requested_channel=$1
+	local requested_channel=$1 latest
 	case $requested_channel in
 	stable)
-		fetch_url "$github_api_base/repos/$github_repo/releases/latest"
+		latest=$(fetch_url "$github_api_base/repos/$github_repo/releases/latest") || return $?
+		if jq -e --arg arch "$machine_arch" "$arch_jq"' serves($arch)' <<<"$latest" >/dev/null 2>&1; then
+			printf '%s\n' "$latest"
+		else
+			# The latest stable release is not for this architecture: the newest
+			# stable one that is, if any.
+			fetch_url "$github_api_base/repos/$github_repo/releases" |
+				jq -c --arg arch "$machine_arch" "$arch_jq"' [.[] | select((.draft | not) and (.prerelease | not) and serves($arch))][0] // empty'
+		fi
 		;;
 	preview)
 		# Newest first, drafts already excluded for an unauthenticated
-		# request -- the first entry is the newest preview or stable build.
-		fetch_url "$github_api_base/repos/$github_repo/releases" | jq -c '.[0] // empty'
+		# request -- the first entry that serves this architecture is the newest
+		# preview or stable build for it.
+		fetch_url "$github_api_base/repos/$github_repo/releases" |
+			jq -c --arg arch "$machine_arch" "$arch_jq"' [.[] | select(serves($arch))][0] // empty'
 		;;
 	*)
 		die "unknown channel: $requested_channel (expected stable or preview)"
@@ -376,6 +406,9 @@ load_cache() {
 	[[ -f $cache_file && ! -L $cache_file ]] || return 1
 	cached=$(cat "$cache_file" 2>/dev/null) || return 1
 	[[ $(jq -r '.channel // empty' <<<"$cached") == "$requested_channel" ]] || return 1
+	# The release was chosen for an architecture (#53); a cache from another one,
+	# or from before it was recorded, is not reused.
+	[[ $(jq -r '.arch // empty' <<<"$cached") == "$machine_arch" ]] || return 1
 	mtime=$(stat -c %Y -- "$cache_file" 2>/dev/null) || return 1
 	now=$(date +%s)
 	age=$((now - mtime))
@@ -398,6 +431,7 @@ save_cache() {
 	tmp=$(mktemp "$(dirname "$cache_file")/.update-index.json.XXXXXX")
 	jq -cn \
 		--arg channel "$requested_channel" \
+		--arg arch "$machine_arch" \
 		--arg version "$release_version" \
 		--arg commit "$release_commit" \
 		--arg publishedAt "$release_published" \
@@ -406,7 +440,7 @@ save_cache() {
 		--arg assetSize "$release_asset_size" \
 		--arg checksum "$release_checksum" \
 		--arg bundleUrl "$release_bundle_url" \
-		'{channel: $channel, version: $version, commit: $commit,
+		'{channel: $channel, arch: $arch, version: $version, commit: $commit,
 		  publishedAt: $publishedAt, assetName: $assetName, assetUrl: $assetUrl,
 		  assetSize: $assetSize, checksum: $checksum, bundleUrl: $bundleUrl}' >"$tmp"
 	mv -fT "$tmp" "$cache_file"
@@ -511,6 +545,8 @@ cmd_check() {
 		if ((resolved == 2)); then
 			state=unknown
 			message="Nothing has been published on the $requested_channel channel yet."
+			[[ $machine_arch == x86_64 ]] ||
+				message="No $machine_arch release has been published on the $requested_channel channel yet."
 			if [[ $requested_channel == stable ]]; then
 				message+=" lyona's releases so far are pre-releases; to be offered them, run: lyona-update set-channel preview"
 			fi
@@ -950,6 +986,12 @@ cmd_apply() {
 	if ! tar -xzf "$tarball" -C "$staging_dir" --strip-components=1; then
 		rm -rf "$staging_dir"
 		die "failed to unpack $tarball"
+	fi
+	# A tree without Arch Linux ARM support must never replace one with it (#53),
+	# whatever the release listing claimed or --file was given.
+	if [[ $machine_arch == aarch64 ]] && ! grep -q archarm "$staging_dir/scripts/dwm-utils.sh" 2>/dev/null; then
+		rm -rf "$staging_dir"
+		die "$requested_version has no Arch Linux ARM support; refusing to install it on this aarch64 machine"
 	fi
 	# Compile-time options (Sync Sprint 12 S12-02, decision D-18): the user's own
 	# $XDG_CONFIG_HOME/lyona/config.h first, then the build answers beside it

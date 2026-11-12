@@ -332,6 +332,18 @@ Useful flags:
 - `--yes` — skip the interactive confirmation prompt (Settings always passes
   this, since it shows its own confirmation first).
 
+## Architectures
+
+lyona updates from its own GitHub releases on every architecture. A release
+lists the architectures it serves with an empty
+`lyona-VERSION-architecture-ARCH` asset for each (`x86_64`, `aarch64`), and an
+update only considers releases that list the machine's. A release with no such
+asset predates Arch Linux ARM and is x86_64 only, so x86_64 is unchanged and an
+aarch64 machine is never offered one. When nothing has been published for it,
+`check` says so (`unknown`, "No aarch64 release has been published on the
+CHANNEL channel yet") and nothing is downloaded. `apply` on aarch64 also
+refuses a downloaded tree that has no Arch Linux ARM support.
+
 ## Channels
 
 ```sh

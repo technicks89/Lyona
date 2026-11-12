@@ -242,6 +242,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `lyona-update` no longer installs a release without Arch Linux ARM support on
+  an aarch64 machine (#53). It always updates from Lyona's releases, but now only
+  from one that lists the machine's architecture: each release carries an empty
+  `lyona-VERSION-architecture-ARCH` asset for every architecture it serves, and a
+  release with none (every release up to 2026.10.0-beta.7) is x86_64 only. So
+  x86_64 machines see no change, and an aarch64 machine reports "No aarch64
+  release has been published on the stable channel yet" until one is published
+  (the same version number no longer reads as `current` against a different
+  tree). A stable channel whose latest release is for another architecture
+  offers the newest one that is for this machine, and the update cache is kept
+  per architecture. After unpacking, an aarch64 `apply` also refuses a tree
+  without Arch Linux ARM support, whatever the listing or `--file` said. Not
+  yet tested on an aarch64 machine against real releases, which need the release
+  workflow (ARM5-01, #18) to publish the markers.
+
 - The aarch64 medium on a Snapdragon X laptop (ARM6-02, tried on the Dell XPS
   13 9345): it stopped at systemd's "Initial Setup" keymap prompt before the
   installer, because `machine-id` is `uninitialized` on the live image and
