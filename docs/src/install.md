@@ -178,7 +178,7 @@ validation did not cover, is in
 | --- | --- | --- |
 | A virtual machine on an aarch64 host (QEMU/KVM, libvirt) | [The generic aarch64 image](#the-generic-aarch64-image) | Supported |
 | Dell XPS 13 9345 | [The generic aarch64 image](#snapdragon-x-laptops) | Supported |
-| Another Snapdragon X laptop | [The generic aarch64 image](#snapdragon-x-laptops) | Experimental: see that section, an install does not boot yet |
+| Another Snapdragon X laptop | [The generic aarch64 image](#snapdragon-x-laptops) | Experimental: not tested |
 | Another aarch64 machine that boots UEFI | [The generic aarch64 image](#the-generic-aarch64-image) | Experimental |
 | Raspberry Pi 4 | [The Raspberry Pi image](#the-raspberry-pi-image) | Supported |
 | Raspberry Pi 5 | [The Raspberry Pi image](#the-raspberry-pi-image) | Experimental |
@@ -248,11 +248,10 @@ tree has no sound card for it yet. External displays, suspend and resume, and
 battery life have not been tested.
 
 **Other Snapdragon X laptops are experimental.** The medium should boot them,
-but this has not been tested. The install's step that loads the device tree
-knows only the XPS 13 9345 so far. On another laptop the installed system
-starts without its device tree, and will most likely not boot. Please
-[report it](#reporting-a-problem-on-arm) with the laptop's model, so that it
-can be added.
+and the install gives the new system the same support as on the XPS: it loads
+the device tree the medium booted with, from the new system's kernel. None of
+this has been tested on another laptop. If one installs, or does not, please
+[report it](#reporting-a-problem-on-arm) with the laptop's model.
 
 ### The Raspberry Pi image
 

@@ -70,7 +70,7 @@ project, `docs/sprints/ARM64.md`). Each aarch64 target has its own status:
 | --- | --- | --- | --- |
 | Virtual machines: QEMU/KVM `virt` and libvirt on an aarch64 host, UEFI | Generic aarch64 ISO | Supported | `docs/evidence/arm2-05-generic-image.md` (2026-10-25). UTM, Parallels and VMware Fusion not tested |
 | Dell XPS 13 9345 (Snapdragon X Elite) | Generic aarch64 ISO | Supported | `docs/evidence/arm6-06-xps13-9345.md` (2026-11-11). No sound (device tree); external displays, EL2, battery life and suspend and resume not covered |
-| Other Snapdragon X laptops with a mainline device tree | Generic aarch64 ISO | Experimental | The medium should boot them, not tested; the install loads the device tree only on the XPS 13 9345 (`scripts/lyona-snapdragon.sh`), so an installed system on another laptop does not boot yet |
+| Other Snapdragon X laptops with a mainline device tree | Generic aarch64 ISO | Experimental | The medium should boot them, and the install loads the device tree the medium booted with (`scripts/lyona-snapdragon.sh`, #92); not tested on any of them |
 | Other aarch64 UEFI machines (Ampere and other servers and workstations) | Generic aarch64 ISO | Experimental | Not tested |
 | Raspberry Pi 4 Model B (SD card) | Raspberry Pi image | Supported | `docs/evidence/arm3-06-raspberry-pi.md` (2026-11-04). Picom stays off at login on V3D 4 (#32); two displays not tested |
 | Raspberry Pi 5 | Raspberry Pi image | Experimental | Booted once, not recorded; NVMe boot not tested |

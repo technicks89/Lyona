@@ -337,11 +337,15 @@ seconds before the wizard appears. Both are expected; wait for the wizard.
 
 ### A Snapdragon laptop other than the XPS 13 9345 does not boot after the install
 
-The install loads the device tree only on the Dell XPS 13 9345 so far, and
-without its device tree a Snapdragon laptop does not start Linux. Other
-laptops are experimental. Please report it, with the laptop's
-`cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name`, so that it
-can be added.
+Without its device tree a Snapdragon laptop does not start Linux. The install
+loads the tree the medium booted with: it looks in the new system's kernel for
+the tree whose board name is the running one's, and adds nothing when it finds
+none, or more than one. The install log, `/var/log/lyona-postinstall.log`,
+says "Snapdragon X: device tree ..." when it found one, and "Not a covered
+Snapdragon X laptop" when it did not. Other laptops than the XPS 13 9345 are
+experimental. Please report it, with the laptop's
+`cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name` and, from
+the live medium, `tr '\0' ' ' </sys/firmware/devicetree/base/compatible`.
 
 ### No sound on the XPS 13 9345
 

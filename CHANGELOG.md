@@ -165,9 +165,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
-- `SPEC.md` section 4: other Snapdragon X laptops stay experimental, but the
-  row now says that the install loads the device tree only on the XPS 13
-  9345, so an installed system on another laptop does not boot yet (ARM5-04).
+- The image installer gives any Snapdragon X laptop the medium boots its
+  device tree, not only the Dell XPS 13 9345 (#92). The medium already picked
+  the laptop's tree at boot from its hardware IDs; the install now finds the
+  tree with the same board name in the new system's kernel (a new helper,
+  `scripts/lyona-dtb-compatible`, reads it from each `qcom/x1e*` and
+  `qcom/x1p*` tree, never an `-el2` one) and sets the laptop up as on the
+  XPS: firmware, kernel arguments and the GRUB device-tree hook. It adds
+  nothing when no tree matches, or more than one. The XPS keeps its fixed
+  entry. Checked with stubbed device trees (`tests/test-snapdragon.sh`), and
+  the helper against a Raspberry Pi 4's 28 real kernel trees; not run on any
+  Snapdragon laptop but the XPS, so other laptops stay experimental.
 
 - System Information says "Not supported" in the caption colour, not
   "Unknown" in the warning colour, for what the machine does not have

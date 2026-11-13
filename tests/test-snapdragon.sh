@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Snapdragon X groundwork (ARM Sprint 6), statically: the device-tree lookup
-# names the XPS 13 9345's device tree only when the machine says so and the
-# kernel has it, and the firmware profile is aarch64 only.
+# names the XPS 13 9345's device tree when the machine says so, or another
+# laptop's from the device tree the live medium booted with (#92), only when
+# the kernel has it; and the firmware profile is aarch64 only.
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
@@ -14,10 +15,12 @@ bash -n "$lib"
 
 dmi=$work/dmi
 dtbs=$work/dtbs
+# The running device tree: absent (an ACPI machine) until a case makes it.
+dt=$work/devicetree
 mkdir -p "$dmi" "$dtbs/qcom"
 lookup() { # ARCH
 	# shellcheck disable=SC2016 # expanded by the inner bash
-	ARCH=$1 LYONA_DMI_ROOT=$dmi LYONA_DTB_DIR=$dtbs bash -c '. "$0"; lyona_snapdragon_dtb' "$lib"
+	ARCH=$1 LYONA_DMI_ROOT=$dmi LYONA_DT_ROOT=$dt LYONA_DTB_DIR=$dtbs bash -c '. "$0"; lyona_snapdragon_dtb' "$lib"
 }
 set_dmi() {
 	printf '%s\n' "$1" >"$dmi/sys_vendor"
@@ -42,6 +45,77 @@ if lookup aarch64 >/dev/null; then fail "a device tree the kernel lacks was name
 # No DMI at all (a board with no SMBIOS).
 rm -f "$dmi/sys_vendor"
 if lookup aarch64 >/dev/null; then fail "a machine with no DMI got a device tree."; fi
+
+# Another laptop, from the device tree the medium booted with (#92). make_dtb
+# writes a real flattened device tree: a root node with the given properties
+# and one child node, as the kernel's trees have.
+make_dtb() { # FILE ROOT_COMPATIBLE [CHILD_COMPATIBLE]
+	python3 -I - "$@" <<'PY'
+import struct, sys
+path, root = sys.argv[1], sys.argv[2]
+child = sys.argv[3] if len(sys.argv) > 3 else "qcom,x1e80100-pdc"
+strings = b"model\0compatible\0"
+def prop(name_off, value):
+    out = struct.pack(">III", 3, len(value), name_off) + value
+    return out + b"\0" * (-len(out) % 4)
+def node(name):
+    out = struct.pack(">I", 1) + name + b"\0"
+    return out + b"\0" * (-len(out) % 4)
+struct_block = (node(b"") + prop(0, b"A laptop\0") +
+                prop(6, root.encode() + b"\0qcom,x1e80100\0") +
+                node(b"soc") + prop(6, child.encode() + b"\0") +
+                struct.pack(">I", 2) + struct.pack(">I", 2) + struct.pack(">I", 9))
+off_rsv = 40
+off_struct = off_rsv + 16
+off_strings = off_struct + len(struct_block)
+total = off_strings + len(strings)
+header = struct.pack(">10I", 0xD00DFEED, total, off_struct, off_strings, off_rsv,
+                     17, 16, 0, len(strings), len(struct_block))
+with open(path, "wb") as f:
+    f.write(header + b"\0" * 16 + struct_block + strings)
+PY
+}
+helper=$repo/scripts/lyona-dtb-compatible
+[[ -x $helper ]] || fail 'lyona-dtb-compatible is not executable.'
+make_dtb "$dtbs/qcom/x1e78100-lenovo-thinkpad-t14s.dtb" 'lenovo,thinkpad-t14s'
+make_dtb "$dtbs/qcom/x1e78100-lenovo-thinkpad-t14s-el2.dtb" 'lenovo,thinkpad-t14s'
+make_dtb "$dtbs/qcom/x1e80100-asus-vivobook-s15.dtb" 'asus,vivobook-s15'
+make_dtb "$dtbs/qcom/x1p42100-asus-zenbook-a14.dtb" 'asus,zenbook-a14'
+# A child node's compatible is not the board's.
+make_dtb "$dtbs/qcom/x1e80100-crd.dtb" 'qcom,x1e80100-crd' 'lenovo,yoga-slim7x'
+printf 'not a device tree\n' >"$dtbs/qcom/x1e80100-broken.dtb"
+out=$("$helper" "$dtbs/qcom/x1e80100-asus-vivobook-s15.dtb" "$dtbs/qcom/x1e80100-broken.dtb") ||
+	fail 'lyona-dtb-compatible read nothing.'
+[[ $out == "asus,vivobook-s15	$dtbs/qcom/x1e80100-asus-vivobook-s15.dtb" ]] ||
+	fail "lyona-dtb-compatible printed: $out"
+if "$helper" "$dtbs/qcom/x1e80100-broken.dtb" >/dev/null; then fail 'a file that is no device tree was read.'; fi
+
+running() { # COMPATIBLE...: the running device tree's root compatible
+	mkdir -p "$dt"
+	printf '%s\0' "$@" >"$dt/compatible"
+}
+set_dmi 'LENOVO' '21N1CTO1WW'
+running 'lenovo,thinkpad-t14s' 'qcom,x1e78100' 'qcom,x1e80100'
+[[ $(lookup aarch64) == qcom/x1e78100-lenovo-thinkpad-t14s.dtb ]] ||
+	fail "the T14s did not get its device tree (not the -el2 one): $(lookup aarch64 || :)"
+running 'asus,zenbook-a14' 'qcom,x1p42100'
+[[ $(lookup aarch64) == qcom/x1p42100-asus-zenbook-a14.dtb ]] || fail 'an X Plus laptop did not get its device tree.'
+running 'lenovo,yoga-slim7x' 'qcom,x1e80100'
+if out=$(lookup aarch64); then fail "a board named only by a child node got a device tree: $out"; fi
+running 'radxa,rock-5b' 'rockchip,rk3588'
+if out=$(lookup aarch64); then fail "a board that is no Snapdragon X laptop got a device tree: $out"; fi
+if lookup x86_64 >/dev/null; then fail "x86_64 got a device tree from the running one."; fi
+# Two trees for one board: no guess.
+make_dtb "$dtbs/qcom/x1e80100-asus-vivobook-s15-copy.dtb" 'asus,vivobook-s15'
+running 'asus,vivobook-s15' 'qcom,x1e80100'
+if out=$(lookup aarch64); then fail "two trees for one board, and one was chosen: $out"; fi
+rm "$dtbs/qcom/x1e80100-asus-vivobook-s15-copy.dtb"
+# The table wins over the running device tree: the XPS stays as validated.
+set_dmi 'Dell Inc.' 'XPS 13 9345'
+touch "$dtbs/qcom/x1e80100-dell-xps13-9345.dtb"
+running 'asus,vivobook-s15' 'qcom,x1e80100'
+[[ $(lookup aarch64) == qcom/x1e80100-dell-xps13-9345.dtb ]] || fail 'the table did not win for the XPS 13 9345.'
+rm -r "$dt" "$dtbs/qcom/x1e80100-dell-xps13-9345.dtb"
 
 # The firmware profile: aarch64 only, from the map.
 profile() { # ARCH
@@ -83,7 +157,7 @@ fresh=$(ARCH=aarch64 EXPORTED=$exported bash -c '
 run_step() { # TARGET
 	(
 		# shellcheck disable=SC2034 # read by the sourced step and libraries
-		TARGET=$1 REPO_SRC=$repo ARCH=aarch64 LYONA_DMI_ROOT=$dmi
+		TARGET=$1 REPO_SRC=$repo ARCH=aarch64 LYONA_DMI_ROOT=$dmi LYONA_DT_ROOT=$dt
 		# shellcheck disable=SC2329 # called by the sourced step
 		arch-chroot() { printf '%s\n' "$*" >>"$work/chroot.log"; }
 		# shellcheck disable=SC1091
@@ -150,5 +224,21 @@ msg=$(run_check "$(with_dtb "$target/boot/dtbs/qcom/gone.dtb")") || fail 'the ch
 [[ $msg == *'no '*'gone.dtb any more'* ]] || fail "the check did not warn about a missing device tree: $msg"
 msg=$(run_check "$target/nonexistent") || fail 'the check failed with no hook.'
 [[ -z $msg ]] || fail "the check spoke on a system with no device-tree hook: $msg"
+
+# Another laptop through the postinstall step (#92): the medium booted it with
+# its tree, so the new system gets the firmware, the arguments and a hook that
+# names that tree.
+target2=$work/target2
+mkdir -p "$target2/boot/dtbs/qcom"
+make_dtb "$target2/boot/dtbs/qcom/x1e78100-lenovo-thinkpad-t14s.dtb" 'lenovo,thinkpad-t14s'
+: >"$work/chroot.log"
+set_dmi 'LENOVO' '21N1CTO1WW'
+running 'lenovo,thinkpad-t14s' 'qcom,x1e78100'
+run_step "$target2" >/dev/null
+grep -Fq 'linux-firmware-qcom' "$work/chroot.log" || fail 'the T14s did not get the Qualcomm firmware.'
+[[ -f $target2/etc/default/grub.d/90-lyona-snapdragon.cfg ]] || fail 'the T14s did not get the kernel arguments.'
+grep -Fq 'dtb=/boot/dtbs/qcom/x1e78100-lenovo-thinkpad-t14s.dtb' "$target2/etc/grub.d/09_lyona_dtb" ||
+	fail 'the T14s hook does not name its device tree.'
+rm -r "$dt"
 
 printf 'Snapdragon X groundwork: PASS\n'
