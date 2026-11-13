@@ -35,6 +35,21 @@ die() {
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
+# The shared shell code beside this script, as in every checkout.
+lyona_lib=$repo/scripts
+# shellcheck source=scripts/dwm-utils.sh
+source "$lyona_lib/dwm-utils.sh"
+# shellcheck source=scripts/dwm-packages.sh
+source "$lyona_lib/dwm-packages.sh"
+is_arch_family || die "this builds in an Arch Linux ARM container, not ${DISTRO_NAME} (ID=${DISTRO_ID})"
+
+# The container starts with base-devel only: install the builder's tools, the
+# dependency map's release-host profile, git among them, before anything runs
+# git.
+mapfile -t packages < <(dwm_packages arch "release-host-$kind")
+((${#packages[@]} > 0)) || die "the dependency map's release-host-$kind profile is empty"
+pacman -Syu --noconfirm --needed "${packages[@]}"
+
 # The mounted checkout belongs to another user.
 git config --global --add safe.directory "$repo"
 work=$(mktemp -d /var/tmp/lyona-release.XXXXXX)
@@ -50,8 +65,6 @@ publish() {
 
 case $kind in
 iso)
-	pacman -Syu --noconfirm --needed git rsync arch-install-scripts squashfs-tools \
-		libisoburn mtools dosfstools erofs-utils mkinitcpio-archiso grub systemd-ukify
 	git clone --quiet https://gitlab.archlinux.org/archlinux/archiso.git "$work/archiso"
 	git -C "$work/archiso" checkout --quiet --detach "$archiso_commit"
 	[[ $(git -C "$work/archiso" rev-parse HEAD) == "$archiso_commit" ]] || die "archiso is not at $archiso_commit"
@@ -61,8 +74,6 @@ iso)
 	publish "$work/iso" 'lyona-*-aarch64.iso'
 	;;
 rpi)
-	pacman -Syu --noconfirm --needed git rsync arch-install-scripts util-linux \
-		e2fsprogs dosfstools mtools xz
 	scripts/build-lyona-rpi-image.sh --output "$work/rpi"
 	publish "$work/rpi" 'lyona-*-rpi-aarch64.img.xz'
 	;;
