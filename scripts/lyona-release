@@ -21,8 +21,9 @@ Options:
                           ISO, the Raspberry Pi image). Repeatable. It is
                           checksummed and, with --bundle, must be signed.
   --architecture ARCH     Mark the release as serving ARCH (x86_64 or
-                          aarch64): an empty asset lyona-VERSION-architecture-ARCH,
-                          which lyona-update reads (#53). Repeatable. A release
+                          aarch64): an asset lyona-VERSION-architecture-ARCH
+                          holding the line ARCH, whose name lyona-update
+                          reads (#53). Repeatable. A release
                           with no marker serves x86_64 only. The ISO workflow
                           marks an architecture only when its images were built.
   --notes FILE            Use FILE as release notes.
@@ -394,11 +395,18 @@ if [[ -n $bundle_path ]]; then
 	assets+=("$signed_bundle")
 fi
 
-# The architecture markers: empty assets, after the checksums and the signature
-# (they are neither checksummed nor signed; they carry no content).
+# The architecture markers, after the checksums and the signature (they are
+# neither checksummed nor signed). lyona-update reads only their names, but
+# each holds its architecture's name: GitHub refuses to upload an empty file
+# ("HTTP 400: Bad Content-Length"), which stopped the 2026.11.0-beta.1 release
+# after its tag was made.
 for arch in "${architectures[@]}"; do
 	marker="$repo_root/release/lyona-$release_version-architecture-$arch"
-	run touch -- "$marker"
+	if [[ $dry_run == true ]]; then
+		printf '+ printf %%s\\n %q > %q\n' "$arch" "$marker"
+	else
+		printf '%s\n' "$arch" >"$marker"
+	fi
 	assets+=("$marker")
 done
 

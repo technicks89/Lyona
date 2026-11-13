@@ -330,7 +330,7 @@ Or, logged in to the GitHub CLI: `gh attestation verify FILE --repo
 technicks89/Lyona`. Either succeeds only for a file this repository's workflow
 built. A release made by hand with `scripts/lyona-release` and no `--bundle` is
 not signed, and `lyona-update` refuses it: publish through the workflow. The
-architecture markers are empty and are not signed.
+architecture markers are not signed; each holds only its architecture's name.
 
 ### Using the ISO
 
@@ -448,7 +448,7 @@ What it does:
   `lyona-VERSION-x86_64.iso`, `lyona-VERSION-aarch64.iso`,
   `lyona-VERSION-rpi-aarch64.img.xz`, and a `SHA256SUMS` of all of them.
   `notes` is an optional release notes file in the repository.
-- **One release, both architectures** (#53): the release carries two empty
+- **One release, both architectures** (#53): the release carries two
   marker assets, `lyona-VERSION-architecture-x86_64` and
   `lyona-VERSION-architecture-aarch64` (`--architecture`), which
   `lyona-update` reads to know which architectures a release serves. A release

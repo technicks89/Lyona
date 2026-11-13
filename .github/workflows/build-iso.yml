@@ -6,7 +6,7 @@ name: Build ISO and release
 # lyona-update installs from, the three images, and a SHA256SUMS of all of
 # them. The tag is created at this run's commit, and only after every image has
 # built: one release carries both architectures or none (ARM5-01, #53), marked
-# for lyona-update by the empty assets lyona-VERSION-architecture-x86_64 and
+# for lyona-update by the marker assets lyona-VERSION-architecture-x86_64 and
 # -aarch64.
 #
 # - beta: VERSION must carry an -alpha.N, -beta.N or -rc.N suffix. It is

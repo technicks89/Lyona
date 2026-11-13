@@ -335,7 +335,7 @@ Useful flags:
 ## Architectures
 
 lyona updates from its own GitHub releases on every architecture. A release
-lists the architectures it serves with an empty
+lists the architectures it serves with a
 `lyona-VERSION-architecture-ARCH` asset for each (`x86_64`, `aarch64`), and an
 update only considers releases that list the machine's. A release with no such
 asset predates Arch Linux ARM and is x86_64 only, so x86_64 is unchanged and an

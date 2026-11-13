@@ -336,8 +336,8 @@ fetch_url() {
 }
 
 # Which releases an architecture may install (#53). One release serves every
-# architecture it lists: its assets include an empty lyona-VERSION-architecture-ARCH
-# marker for each. A release with no marker at all predates ARM and is x86_64
+# architecture it lists: its assets include a lyona-VERSION-architecture-ARCH
+# marker for each (only the name counts). A release with no marker at all predates ARM and is x86_64
 # only, so x86_64 machines see no change and an aarch64 machine never installs
 # a tree without Arch Linux ARM support. The marker names are in the release
 # listing already: no extra request.
