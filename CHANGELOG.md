@@ -287,6 +287,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Connecting to Wi-Fi from the panel no longer pins the saved profile to the
+  access point that was clicked (#484). The profile used to be saved with that
+  access point's BSSID (`802-11-wireless.bssid`), so NetworkManager could not
+  roam to another access point or the other band of the same network, and
+  when that one radio stopped answering it failed with `ssid-not-found` while
+  the network was in range. The clicked access point is still tried first,
+  for that connection only. Profiles saved before this keep their pin; remove
+  it with `nmcli connection modify NAME 802-11-wireless.bssid ""`. They are not
+  changed automatically, because a pin set by hand looks the same.
 - `check-window-thumb-xvfb` no longer fails now and then on a loaded machine
   with "red does not rise left to right" (Lyona-ARM #50). dwm resizes the
   test's `feh` window right after it maps; under load `feh` sometimes missed

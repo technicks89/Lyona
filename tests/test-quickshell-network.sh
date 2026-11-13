@@ -89,24 +89,24 @@ case "$*" in
 "device wifi list ifname wlan1 --rescan yes")
 	printf ':AA\\:BB\\:CC\\:DD\\:EE\\:05:Office WiFi:90:WPA2:36:wlan1\n'
 	;;
-"device wifi connect Guest WiFi ifname wlan0 bssid AA:BB:CC:DD:EE:02")
+"device wifi connect Guest WiFi ifname wlan0")
 	printf 'wifi-open Guest WiFi\n' >>"$DWM_TEST_NMCLI_LOG"
 	;;
-"connection add type wifi ifname wlan0 con-name Cafe:WiFi ssid Cafe:WiFi 802-11-wireless.bssid AA:BB:CC:DD:EE:01 wifi-sec.key-mgmt wpa-psk connection.uuid "*)
+"connection add type wifi ifname wlan0 con-name Cafe:WiFi ssid Cafe:WiFi wifi-sec.key-mgmt wpa-psk connection.uuid "*)
 	for argument do
 		connection_uuid=$argument
 	done
 	printf '%s\n' "$*" >>"$DWM_TEST_NMCLI_ARGV_LOG"
 	printf 'profile-add %s\n' "$connection_uuid" >>"$DWM_TEST_NMCLI_LOG"
 	;;
-"connection add type wifi ifname wlan0 con-name Legacy WiFi ssid Legacy WiFi 802-11-wireless.bssid AA:BB:CC:DD:EE:06 wifi-sec.key-mgmt none wifi-sec.wep-key-type key connection.uuid "*)
+"connection add type wifi ifname wlan0 con-name Legacy WiFi ssid Legacy WiFi wifi-sec.key-mgmt none wifi-sec.wep-key-type key connection.uuid "*)
 	for argument do
 		connection_uuid=$argument
 	done
 	printf '%s\n' "$*" >>"$DWM_TEST_NMCLI_ARGV_LOG"
 	printf 'profile-add %s\n' "$connection_uuid" >>"$DWM_TEST_NMCLI_LOG"
 	;;
-"connection add type wifi ifname wlan0 con-name Cafe:WiFi ssid Cafe:WiFi 802-11-wireless.bssid AA:BB:CC:DD:EE:03 wifi-sec.key-mgmt sae connection.uuid "*)
+"connection add type wifi ifname wlan0 con-name Cafe:WiFi ssid Cafe:WiFi wifi-sec.key-mgmt sae connection.uuid "*)
 	for argument do
 		connection_uuid=$argument
 	done
@@ -281,6 +281,10 @@ DWM_TEST_NMCLI_LOG="$work/nmcli.log" \
 	PATH="$work/bin:$PATH" \
 	"$repo/scripts/dwm-quickshell-network" wifi-connect wlan0 AA:BB:CC:DD:EE:02 "Guest WiFi"
 grep -Fqx "wifi-open Guest WiFi" "$work/nmcli.log"
+# #484: no connect path saves the clicked access point's BSSID in the
+# profile. The stub's patterns match the exact arguments, so a call that still
+# passed "bssid" or "802-11-wireless.bssid" would be an unexpected nmcli call;
+# the argv log is checked as well after the secured connects below.
 
 : >"$work/nmcli.log"
 printf '%s\n' "correct horse battery staple" |
@@ -292,6 +296,13 @@ grep -Fqx "wifi-secured" "$work/nmcli.log"
 password_file=$(sed -n 's/^password-file //p' "$work/nmcli.log")
 [ -n "$password_file" ]
 [ ! -e "$password_file" ]
+grep -Fq "connection add type wifi ifname wlan0 con-name Cafe:WiFi " "$work/nmcli-argv.log"
+grep -Fq " ap AA:BB:CC:DD:EE:01 " "$work/nmcli-argv.log"
+if grep -Fq "bssid" "$work/nmcli-argv.log"; then
+	printf 'wifi-connect saved the BSSID in the profile (#484):\n' >&2
+	cat "$work/nmcli-argv.log" >&2
+	exit 1
+fi
 
 if printf '%s\n' "enterprise secret" |
 	PATH="$work/bin:$PATH" \

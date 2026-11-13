@@ -223,8 +223,12 @@ wifi_connect() {
 			exit 1
 		fi
 
+		# The clicked access point is tried first through "ap" on "connection
+		# up", for this activation only. The profile itself is not pinned to
+		# that BSSID (802-11-wireless.bssid), so NetworkManager can roam to
+		# another access point or band of the same network (#484).
 		set -- connection add type wifi ifname "$ifname" con-name "$ssid" ssid "$ssid" \
-			802-11-wireless.bssid "$bssid" wifi-sec.key-mgmt "$key_mgmt"
+			wifi-sec.key-mgmt "$key_mgmt"
 		if [ -n "$wep_key_type" ]; then
 			set -- "$@" wifi-sec.wep-key-type "$wep_key_type"
 		fi
@@ -244,7 +248,8 @@ wifi_connect() {
 		connection_uuid=
 		return "$status"
 	else
-		run_bounded 90 nmcli device wifi connect "$ssid" ifname "$ifname" bssid "$bssid"
+		# No "bssid": nmcli would save it in the new profile (#484).
+		run_bounded 90 nmcli device wifi connect "$ssid" ifname "$ifname"
 	fi
 }
 
