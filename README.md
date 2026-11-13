@@ -29,6 +29,14 @@ supported platform for installation, runtime behavior, package resolution,
 testing, and release qualification. Use either the Arch installer image or
 the existing-system installer on Arch Linux.
 
+On aarch64, Lyona runs on Arch Linux ARM. Supported: the generic aarch64
+image on QEMU/KVM and libvirt virtual machines and on the Dell XPS 13 9345,
+and the Raspberry Pi image on the Raspberry Pi 4. Other Snapdragon X laptops,
+other aarch64 UEFI machines, the Raspberry Pi 5 and `install.sh` on an
+existing Arch Linux ARM system are experimental; NVIDIA GB10 and N1X are not
+supported. The table, with what each validation did not cover, is in
+[SPEC.md section 4](SPEC.md#4-arch-support-contract).
+
 ## What You Get
 
 | Experience | What it includes |
@@ -116,10 +124,9 @@ The dry run shows the dependency and installation plan before anything changes.
 The installer requires Arch Linux, preserves existing personal configuration,
 and installs the managed desktop components. It accepts only Arch's
 `/etc/os-release` identity (`ID=arch`), and Arch Linux ARM's (`ID=archarm`)
-on aarch64 as an experimental identity of the
-[ARM64 project](docs/sprints/ARM64.md), and rejects every other
-operating-system identity before making changes. No ARM machine is a
-supported target yet.
+on aarch64 ([ARM64 project](docs/sprints/ARM64.md)), and rejects every other
+operating-system identity before making changes. On Arch Linux ARM it is
+experimental: it has been validated in a virtual machine, not on a board.
 
 | Profile | Includes |
 | --- | --- |

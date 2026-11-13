@@ -21,8 +21,8 @@ ARM-6, after ARM-3 and before ARM-5, in the generic image. ARM-6 is done:
 ARM6-01 merged 2026-11-06 (#79), ARM6-02 to ARM6-06 on 2026-11-11 (#80 to
 #84); validated on the Dell XPS 13 9345 from the generic image
 (`docs/evidence/arm6-06-xps13-9345.md`). Nothing
-here is a support claim: `SPEC.md` still makes Arch x86_64 the
-only release target, and an aarch64 target is supported only once its sprint
+here is a support claim: each target's status is `SPEC.md` section 4's table
+(ARM5-03, 2026-11-12), and an aarch64 target is supported only once its sprint
 has met the release validation contract (`SPEC.md` 9.4) on that target.
 
 ---

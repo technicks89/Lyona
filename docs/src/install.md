@@ -78,7 +78,7 @@ with the CyberRe boot menu theme, and the lyona boot splash.
      your machine, are ranked before anything is downloaded, and the new system
      keeps the list. When too few mirrors are in the country, worldwide ones are
      added; when they cannot be ranked (no network, or it takes more than 30
-     seconds), the medium's own list is used. On the experimental aarch64
+     seconds), the medium's own list is used. On the aarch64
      medium the mirrors are Arch Linux ARM's: those in your timezone's country
      when it has some, else the geo-balanced `mirror.archlinuxarm.org`, which
      is also kept after a country's as a fallback. **Choose another** lists
@@ -159,7 +159,7 @@ sudo pacman -Rns plymouth   # optional: its services also run without the splash
 
 `install.sh` on an existing system does not add the splash.
 
-On the experimental aarch64 medium, the install also adds
+On the aarch64 medium, the install also adds
 `/etc/default/grub.d/90-lyona-console.cfg`, with `console=tty0
 plymouth.ignore-serial-consoles`. Without it, a machine whose firmware names
 a serial console sends the kernel console there alone, and an encrypted disk

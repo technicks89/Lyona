@@ -550,8 +550,8 @@ Linux driver lists them, all on Arch Linux ARM. Planned as its own project in
 now is the generic image, the Raspberry Pi and Snapdragon X laptops; GB10 and
 N1X were removed from the plan on 2026-11-12 and come back much later, when the
 hardware is affordable again. Not
-scheduled against these phases, and no ARM target is supported until its
-sprint qualifies it.
+scheduled against these phases. Each ARM target is supported only once its
+sprint qualifies it; the status of each is `SPEC.md` section 4's table.
 
 Searchable keybinds (#232, requested 2026-10-04): typing in the keybind viewer
 (Super + /) narrows the bindings by key or by action, as the launcher and the

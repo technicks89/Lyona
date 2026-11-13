@@ -10,6 +10,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The support contract per aarch64 target (ARM5-03): `SPEC.md` section 4 lists
+  each one as supported, experimental or not supported, with its evidence and
+  what it does not cover. Supported: the generic aarch64 image on QEMU/KVM and
+  libvirt virtual machines and on the Dell XPS 13 9345, and the Raspberry Pi
+  image on the Raspberry Pi 4. Experimental: other Snapdragon X laptops, other
+  aarch64 UEFI machines, the Raspberry Pi 5, and `install.sh` on an existing
+  Arch Linux ARM system. Not supported: NVIDIA GB10 and N1X, and 32-bit ARM.
+  `AGENTS.md` and the README say the same. No release has carried the aarch64
+  images yet, and updates from one release to the next are not yet validated
+  on aarch64 (ARM5-02).
+
 - The release workflow builds the aarch64 images too (ARM5-01, the part before
   the merge into Lyona): `build-iso.yml` builds the x86_64 ISO, then the generic
   aarch64 ISO and the Raspberry Pi image on GitHub's arm64 runner (an Arch Linux

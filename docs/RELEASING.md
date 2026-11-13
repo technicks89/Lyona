@@ -209,13 +209,13 @@ NVIDIA driver. Stability and gaming on that driver are not yet tested.
 (non-legacy) NVIDIA driver and `470xx`, other real hardware, and Wi-Fi
 installs. Do not treat a release as qualified on hardware until it has been.
 
-### The aarch64 medium (experimental)
+### The aarch64 medium
 
 ARM Sprint 2 (`docs/sprints/ARM-SPRINT-2-GENERIC-IMAGE.md`) adds an aarch64
 UEFI medium on Arch Linux ARM. The release workflow builds it with the
 others (ARM5-01), but no release carrying it exists yet (it is first made in
-Lyona, after the merge), and it is not supported on any machine
-(`SPEC.md` 9.4 is not met on any ARM target). It builds only
+Lyona, after the merge). Which machines it is supported on, and which are
+experimental, is `SPEC.md` section 4's table. It builds only
 on an aarch64 host, natively (`docs/sprints/ARM64.md` A-3), and needs
 archiso 91 or later, which Arch Linux ARM does not package, so a checkout of
 it provides `mkarchiso` and the `releng` profile:
