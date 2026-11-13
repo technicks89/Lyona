@@ -5,7 +5,9 @@
 # found", 2026-11-13). The script is copied into a stub checkout whose
 # builders write a dummy image, and run as root in a user namespace with a
 # PATH that has no git until the stub pacman puts one there. Each kind must
-# install its tools before running git and leave exactly its one image in OUT.
+# install its tools (the dependency map's release-host profile) before running
+# git and leave exactly its one image in OUT; an identity other than the Arch
+# family is refused before pacman runs.
 set -eu
 
 # shellcheck source=tests/lib.sh
@@ -20,8 +22,11 @@ unshare=$(command -v unshare)
 make_workspace
 fake=$work/checkout
 stubs=$work/stubs
-mkdir -p "$fake/scripts" "$stubs"
-cp "$repo/scripts/ci-release-aarch64.sh" "$fake/scripts/"
+mkdir -p "$stubs"
+# The script and the libraries it sources (dwm-utils.sh, dwm-packages.sh).
+stage_helpers checkout "$fake/scripts" ci-release-aarch64.sh
+printf 'ID=archarm\nNAME="Arch Linux ARM"\n' >"$work/os-release-archarm"
+printf 'ID=ubuntu\nNAME=Ubuntu\n' >"$work/os-release-ubuntu"
 
 # The tools the script uses besides git, uname and pacman, from the host.
 for tool in bash env mktemp rm find install dirname mkdir; do
@@ -69,20 +74,27 @@ EOF
 done
 chmod +x "$work/bin/uname" "$work/bin/pacman" "$stubs/git" "$fake/scripts/"*
 
+# run_script OS_RELEASE KIND OUT: the script as root, with the identity the
+# os-release file gives (dwm-utils.sh's test mode) and no git on PATH.
+run_script() {
+	"$unshare" -r env -i PATH="$work/bin" DWM_TEST_MODE=1 DWM_OS_RELEASE="$1" \
+		DWM_MACHINE=aarch64 \
+		"$work/bin/bash" "$fake/scripts/ci-release-aarch64.sh" "$2" "$3"
+}
+
 for kind in iso rpi; do
 	out=$work/out-$kind
 	mkdir -p "$out"
 	: >"$work/calls.log"
-	if ! "$unshare" -r env -i PATH="$work/bin" \
-		"$work/bin/bash" "$fake/scripts/ci-release-aarch64.sh" "$kind" "$out" \
-		>"$work/$kind.out" 2>&1; then
+	if ! run_script "$work/os-release-archarm" "$kind" "$out" >"$work/$kind.out" 2>&1; then
 		cat "$work/$kind.out" >&2
 		fail "ci-release-aarch64.sh $kind failed against the stubs"
 	fi
 	first=$(sed -n '1s/ .*//p' "$work/calls.log")
 	[ "$first" = pacman ] ||
 		fail "$kind: the first call was '$first', not pacman installing the tools: $(cat "$work/calls.log")"
-	grep -q '^pacman .* git ' "$work/calls.log" || fail "$kind: pacman did not install git"
+	grep -q '^pacman -Syu --noconfirm --needed git ' "$work/calls.log" ||
+		fail "$kind: pacman did not install the release-host-$kind profile, git first"
 	grep -q '^git config --global --add safe.directory ' "$work/calls.log" ||
 		fail "$kind: the checkout was not marked as a safe directory"
 	grep -q '^build .*--output ' "$work/calls.log" || fail "$kind: the builder did not run"
@@ -92,5 +104,16 @@ for kind in iso rpi; do
 	esac
 	[ "$(ls "$out")" = "$want" ] || fail "$kind: OUT holds '$(ls "$out")', not just $want"
 done
+
+# Another identity is refused before pacman changes anything.
+out=$work/out-ubuntu
+mkdir -p "$out"
+: >"$work/calls.log"
+if run_script "$work/os-release-ubuntu" rpi "$out" >"$work/ubuntu.out" 2>&1; then
+	fail 'ci-release-aarch64.sh ran on an Ubuntu identity'
+fi
+grep -Fq 'not Ubuntu (ID=ubuntu)' "$work/ubuntu.out" ||
+	fail "the refusal did not name the identity: $(cat "$work/ubuntu.out")"
+[ ! -s "$work/calls.log" ] || fail "ran before refusing: $(cat "$work/calls.log")"
 
 printf 'aarch64 release image build script: PASS\n'

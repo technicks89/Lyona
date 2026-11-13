@@ -35,19 +35,19 @@ die() {
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
+# The shared shell code beside this script, as in every checkout.
+lyona_lib=$repo/scripts
+# shellcheck source=scripts/dwm-utils.sh
+source "$lyona_lib/dwm-utils.sh"
+# shellcheck source=scripts/dwm-packages.sh
+source "$lyona_lib/dwm-packages.sh"
+is_arch_family || die "this builds in an Arch Linux ARM container, not ${DISTRO_NAME} (ID=${DISTRO_ID})"
 
-# The container starts with base-devel only: install each builder's tools,
-# git among them, before anything runs git.
-case $kind in
-iso)
-	packages=(git rsync arch-install-scripts squashfs-tools libisoburn mtools
-		dosfstools erofs-utils mkinitcpio-archiso grub systemd-ukify)
-	;;
-rpi)
-	packages=(git rsync arch-install-scripts util-linux e2fsprogs dosfstools
-		mtools xz)
-	;;
-esac
+# The container starts with base-devel only: install the builder's tools, the
+# dependency map's release-host profile, git among them, before anything runs
+# git.
+mapfile -t packages < <(dwm_packages arch "release-host-$kind")
+((${#packages[@]} > 0)) || die "the dependency map's release-host-$kind profile is empty"
 pacman -Syu --noconfirm --needed "${packages[@]}"
 
 # The mounted checkout belongs to another user.

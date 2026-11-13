@@ -198,6 +198,22 @@ dwm_packages() {
 		dwm_aarch64_only base linux-rpi raspberrypi-bootloader firmware-raspberrypi \
 			archlinuxarm-keyring sudo gum zram-generator
 		;;
+	arch:release-host-iso)
+		# The tools scripts/ci-release-aarch64.sh installs into the release
+		# workflow's Arch Linux ARM container to build the aarch64 ISO
+		# (ARM5-01): git for the archiso clone and the commit stamp, and what
+		# mkarchiso and the lyona builder run. Not what goes on the image (that
+		# is `iso`).
+		printf '%s\n' git rsync arch-install-scripts squashfs-tools libisoburn \
+			mtools dosfstools erofs-utils mkinitcpio-archiso grub systemd-ukify
+		;;
+	arch:release-host-rpi)
+		# The same for the Raspberry Pi image: what
+		# scripts/build-lyona-rpi-image.sh checks for, and git for the commit
+		# stamp. Not what goes on the image (that is `rpi-image`).
+		printf '%s\n' git rsync arch-install-scripts util-linux e2fsprogs \
+			dosfstools mtools xz
+		;;
 	arch:soc-snapdragon)
 		# Snapdragon X laptops (ARM Sprint 6, ARM6-04): the Qualcomm firmware
 		# (the GPU, the audio and compute DSPs, battery manager, speaker
