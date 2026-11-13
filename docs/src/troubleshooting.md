@@ -310,6 +310,84 @@ activation errors identify a recovery backup and session log.
 
 ---
 
+## ARM (aarch64)
+
+What each ARM machine supports is in [Install on ARM](install.md#install-on-arm-aarch64).
+The Raspberry Pi 4's Picom and the Pi image's boot settings are under
+[Picom / Compositor](#picom-is-off-on-a-raspberry-pi-4) above.
+
+### The generic aarch64 image does not boot
+
+- **"Access Denied", then no bootable device:** Secure Boot is on. The image's
+  boot loader is not signed; turn Secure Boot off in the firmware settings,
+  or the virtual machine's (libvirt and virt-manager turn it on by default).
+- **A black screen in a virtual machine with little memory:** the medium
+  needs at least 1.5 GiB. With less, it can stop before the wizard, with the
+  screen black and its message only on a serial console.
+- **A Raspberry Pi:** the generic image does not boot one; use the Raspberry Pi
+  image.
+
+### The medium is slow to start on a Snapdragon laptop
+
+On a Snapdragon X laptop the medium copies itself into memory before the
+wizard, because the USB stick drops off the bus for a moment when the
+laptop's USB-C hardware comes up. From a USB 3 stick that takes about 50
+seconds, with the splash on screen. The screen is then black for a few
+seconds before the wizard appears. Both are expected; wait for the wizard.
+
+### A Snapdragon laptop other than the XPS 13 9345 does not boot after the install
+
+The install loads the device tree only on the Dell XPS 13 9345 so far, and
+without its device tree a Snapdragon laptop does not start Linux. Other
+laptops are experimental. Please report it, with the laptop's
+`cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name`, so that it
+can be added.
+
+### No sound on the XPS 13 9345
+
+Expected: the kernel's device tree for the XPS 13 9345 has no sound card yet,
+so `aplay -l` lists none. PipeWire runs, but there is nothing for it to play
+on. It will come with a kernel whose device tree adds it.
+
+### "this laptop boots without its device tree" after a kernel update
+
+On a Snapdragon laptop, a pacman hook checks after every kernel update that
+the new kernel still has the laptop's device tree, and warns with
+`lyona: the kernel has no ... any more; this laptop boots without its device
+tree.` when it does not. Do not reboot into that kernel: it will most likely
+not start. Install the previous kernel package again from pacman's cache
+(`sudo pacman -U /var/cache/pacman/pkg/linux-aarch64-PREVIOUS-VERSION-aarch64.pkg.tar.*`)
+and report it.
+
+### No network in the panel on Arch Linux ARM
+
+Arch Linux ARM manages the network with systemd-networkd, which the panel and
+Settings do not read. `install.sh` asks after its summary whether to switch to
+NetworkManager at the next boot; if you said no, run it again and say yes, or
+run it with `--switch-to-networkmanager`.
+
+### Qt warns about the locale at every login on Arch Linux ARM
+
+Arch Linux ARM's root filesystem ships `LANG=C`. Set a locale as
+[the installation guide](install.md#install-on-an-existing-arch-system) shows.
+
+### `lyona-update` says no aarch64 release has been published
+
+`lyona-update` installs only a release that carries aarch64 support. Until
+one has been published on your channel, `check` says so and nothing is
+downloaded. Package updates (`pacman -Syu`, Settings) are not affected.
+
+### Harmless messages on ARM
+
+- mkinitcpio's `architecture 'aarch64' not supported` and
+  `drm_privacy_screen_register` warnings during a kernel update.
+- On the XPS 13 9345, kernel errors at boot from `pmic-glink`, `fastrpc` and
+  `qrtr` (error -12), `qcom-apm` and `va_macro`: the last two belong to the
+  missing sound.
+- `gkr-pam: unable to locate daemon control file` at each login.
+
+---
+
 ## An update fails to build with "Permission denied"
 
 `lyona-update` builds `dwm`, the one program that includes your `config.h`, as

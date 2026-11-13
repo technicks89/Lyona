@@ -32,11 +32,49 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Architecture
+      description: As `uname -m` prints it.
+      options:
+        - x86_64
+        - aarch64
+    validations:
+      required: true
+
+  - type: input
+    id: machine
+    attributes:
+      label: Machine or board
+      description: |
+        On a Raspberry Pi, `cat /sys/firmware/devicetree/base/model`. On a PC,
+        laptop or other UEFI machine, `cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name`.
+        For a virtual machine, the host and the hypervisor. Add the GPU when the
+        issue is graphical.
+      placeholder: "Dell Inc. XPS 13 9345"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installed from
+      options:
+        - The x86_64 installer image
+        - The generic aarch64 image
+        - The Raspberry Pi image
+        - install.sh on an existing system
+        - Not sure
+    validations:
+      required: true
+
   - type: input
     id: environment
     attributes:
-      label: Architecture and session
-      placeholder: "x86_64, X11 via LightDM"
+      label: Kernel and session
+      description: "`uname -r`, and how the session starts."
+      placeholder: "7.3.3-1-aarch64-ARCH, X11 via LightDM"
     validations:
       required: true
 

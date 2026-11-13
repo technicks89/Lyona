@@ -8,7 +8,10 @@ added 2026-11-05, which comes before this sprint).
 ([evidence](../evidence/arm5-01-release-workflow.md)). ARM5-03, the support
 contract, is written 2026-11-12 from the evidence on file
 ([evidence](../evidence/arm5-03-support-contract.md)), ahead of ARM5-02, whose
-run falls after the merge; the rest is not started. **Amended 2026-10-27, by the
+run falls after the merge. ARM5-04, the user documentation and the bug report
+form, is written 2026-11-12 ([evidence](../evidence/arm5-04-user-docs.md)).
+What is left falls after the merge, in Lyona: ARM5-01's release run and
+ARM5-02. **Amended 2026-10-27, by the
 maintainer:** ARM5-01's release run happens in Lyona after the merge
 ([`ARM64.md`](ARM64.md#end-state)), as Lyona-ARM has no releases. GitHub: issues #18 to #21, and
 #62 for the deferred ARM5-05

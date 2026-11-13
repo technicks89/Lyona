@@ -250,7 +250,7 @@ it reached a working desktop on three virtual machine configurations on GB10
 (`docs/evidence/arm2-05-generic-image.md`); UTM, Parallels and real hardware
 are untested.
 
-### The Raspberry Pi image (experimental)
+### The Raspberry Pi image
 
 ARM Sprint 3 (`docs/sprints/ARM-SPRINT-3-RASPBERRY-PI.md`) adds a ready-to-write
 image for the Raspberry Pi 4 and Pi 5, one image for both (A-5). A Pi has no

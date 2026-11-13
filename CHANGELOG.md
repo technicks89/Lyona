@@ -10,6 +10,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- ARM user documentation (ARM5-04): `docs/src/install.md` gains "Install on
+  ARM (aarch64)", with a section each for the generic aarch64 image, Snapdragon
+  X laptops and the Raspberry Pi image (which image, how to write it, the first
+  boot), what is different on ARM (no CachyOS, no gaming profile, Arch Linux
+  ARM's mirrors, the Pi's first-boot wizard, updates), and how to report a
+  problem with the architecture and machine. `docs/src/troubleshooting.md`
+  gains an ARM section with the known problems the sprints found. The bug
+  report form asks for the architecture, the machine or board, and what it
+  was installed from, and the kernel beside the session.
+
 - The support contract per aarch64 target (ARM5-03): `SPEC.md` section 4 lists
   each one as supported, experimental or not supported, with its evidence and
   what it does not cover. Supported: the generic aarch64 image on QEMU/KVM and
@@ -154,6 +164,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   Not run on a Pi yet: that is ARM3-06 (`docs/evidence/arm3-05-pi-settings.md`).
 
 ### Changed
+
+- `SPEC.md` section 4: other Snapdragon X laptops stay experimental, but the
+  row now says that the install loads the device tree only on the XPS 13
+  9345, so an installed system on another laptop does not boot yet (ARM5-04).
 
 - System Information says "Not supported" in the caption colour, not
   "Unknown" in the warning colour, for what the machine does not have
