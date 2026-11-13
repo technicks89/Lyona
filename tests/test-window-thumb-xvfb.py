@@ -112,7 +112,120 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
         size = text.split('Geometry:')[1].split()[0]
         return tuple(int(v) for v in size.split('x'))
 
+    def profile(img, axis, channel, parts=8):
+        """The channel's mean in PARTS bands across x (axis 0) or down y (axis 1)."""
+        w, h = img.size
+        out = []
+        for i in range(parts):
+            if axis == 0:
+                box = (w * i // parts, 0, max(w * (i + 1) // parts, w * i // parts + 1), h)
+            else:
+                box = (0, h * i // parts, w, max(h * (i + 1) // parts, h * i // parts + 1))
+            out.append(mean(img, box)[channel])
+        return out
+
+    def keep_evidence(path, win, error):
+        """#50: on a wrong preview, record the preview beside what the screen showed.
+
+        The screen is grabbed at once from the X server (the root window, where the
+        visible window is drawn): stripes there but not in the preview point at the
+        helper; a flat window there too means it was captured before it was drawn.
+        Printed to the log, which CI keeps; with DWM_TEST_EVIDENCE_DIR set, the
+        images are copied there as well.
+        """
+        lines = ['#50 evidence: %s' % (error,)]
+        geometry = subprocess.run(['xdotool', 'getwindowgeometry', win], env=env, capture_output=True, text=True).stdout
+        lines.append('window %s: %s' % (win, ' '.join(geometry.split())))
+        try:
+            preview = Image.open(path).convert('RGB')
+            lines.append('preview %s, %d colours' % (preview.size, len(preview.getcolors(maxcolors=1 << 20) or [])))
+            lines.append('preview red across: %s' % profile(preview, 0, 0))
+            lines.append('preview green down: %s' % profile(preview, 1, 1))
+        except Exception as exc:  # the evidence must not hide the failure
+            preview = None
+            lines.append('preview unreadable: %r' % (exc,))
+        screen = screen_of(win)
+        if screen is None:
+            lines.append('screen: unreadable here, or the window is not wholly on screen')
+        else:
+            lines.append('screen red across: %s' % profile(screen, 0, 0))
+            lines.append('screen green down: %s' % profile(screen, 1, 1))
+        keep = os.environ.get('DWM_TEST_EVIDENCE_DIR')
+        if keep:
+            target = Path(keep) / ('window-thumb-%s-%d' % (time.strftime('%Y%m%dT%H%M%S'), os.getpid()))
+            target.mkdir(parents=True, exist_ok=True)
+            if preview is not None:
+                preview.save(target / 'preview.png')
+            if screen is not None:
+                screen.save(target / 'screen.png')
+            (target / 'evidence.txt').write_text('\n'.join(lines) + '\n')
+            lines.append('kept in %s' % target)
+        print('\n'.join(lines), file=sys.stderr, flush=True)
+
     def looks_like_stripes(path, win):
+        try:
+            return check_stripes(path, win)
+        except AssertionError as error:
+            keep_evidence(path, win, error)
+            raise
+
+    def screen_of(win):
+        """The window as the screen shows it now (it is visible, no compositor
+        needed), or None when the screen cannot be read here."""
+        try:
+            from PIL import ImageGrab
+            geometry = subprocess.run(['xdotool', 'getwindowgeometry', win], env=env,
+                                      capture_output=True, text=True).stdout
+            pos = geometry.split('Position:')[1].split()[0].split(',')
+            size = geometry.split('Geometry:')[1].split()[0].split('x')
+            x, y, w, h = int(pos[0]), int(pos[1]), int(size[0]), int(size[1])
+            root = ImageGrab.grab(xdisplay=display).convert('RGB')
+        except Exception:
+            return None
+        if w < 6 or h < 6 or x < 0 or y < 0 or x + w > root.width or y + h > root.height:
+            return None
+        return root.crop((x, y, x + w, y + h))
+
+    def wait_drawn(win, timeout=15.0):
+        """#50: wait until feh shows the image at the window's final size.
+
+        feh maps its window at the image's size, and dwm then resizes it. Until
+        feh redraws, the X server fills the larger window with the window's
+        background, the image itself, tiled; a capture then is a faithful copy of
+        a tiled screen, and red no longer rises across it. Under load (one CPU
+        shared with busy processes) feh sometimes never redrew: it missed the
+        resize, and the tiled background stayed. So wait for the stretched image,
+        as the screen shows it, and when it has not come within 2 s press feh's
+        reload key, which renders the image again at the window's size. Where the
+        screen cannot be read, keep the old fixed wait.
+        """
+        start = time.monotonic()
+        deadline = start + timeout
+        nudge = start + 2.0
+        nudged = 0
+        while True:
+            shown = screen_of(win)
+            if shown is None:
+                time.sleep(0.5)
+                return
+            w, h = shown.size
+            left, right = mean(shown, (0, 0, w // 6, h)), mean(shown, (w - w // 6, 0, w, h))
+            top, bottom = mean(shown, (0, 0, w, h // 6)), mean(shown, (0, h - h // 6, w, h))
+            if right[0] > left[0] + 100 and bottom[1] > top[1] + 90:
+                if nudged:
+                    print('window drawn after %d reload(s) of feh' % nudged, file=sys.stderr, flush=True)
+                return
+            now = time.monotonic()
+            if now > deadline:
+                return  # capture anyway: the check below fails, with evidence
+            if now > nudge:
+                subprocess.run(['xdotool', 'key', '--window', win, 'r'], env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                nudge = now + 3.0
+                nudged += 1
+            time.sleep(0.1)
+
+    def check_stripes(path, win):
         img = Image.open(path).convert('RGB')
         want = expected_size(*window_size(win))
         assert abs(img.width - want[0]) <= 1 and abs(img.height - want[1]) <= 1, (img.size, want)
@@ -138,7 +251,7 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
                 break
             time.sleep(0.1)
         assert window, 'the test window did not appear'
-        time.sleep(0.5)
+        wait_drawn(window)
 
         # 1. No compositor: refused, and nothing is stored.
         assert run('available').returncode == NOCOMP

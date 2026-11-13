@@ -29,6 +29,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `check-window-thumb-xvfb` no longer fails now and then on a loaded machine
+  with "red does not rise left to right" (Lyona-ARM #50). dwm resizes the
+  test's `feh` window right after it maps; under load `feh` sometimes missed
+  the resize and never redrew, so the X server kept showing the window's
+  background, the test image tiled, and `dwm-window-thumb` copied that
+  faithfully. The test now waits until the screen shows the stretched image,
+  pressing `feh`'s reload key when it has not come within 2 s (where the screen
+  cannot be read, it keeps the old fixed wait). On a wrong preview it prints
+  the preview's and the screen's colour profiles to the log; run directly with
+  `DWM_TEST_EVIDENCE_DIR` set, it also keeps both images there. On one CPU
+  shared with busy processes the old test failed 2 of 40 runs on x86_64 and 14
+  of 40 on a Raspberry Pi 4, with the 2026-10-24 numbers exactly; the new one
+  passed 100 of 100 and 80 of 80, the reload needed in 5 and 32 of them.
+
 - Settings > Input could fail a keyboard-layout preview, keep or revert with
   status 141 (#485). Reading the layout or modifier options piped
   `setxkbmap -query` into an `awk` that exited at its match; when `setxkbmap`
