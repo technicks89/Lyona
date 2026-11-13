@@ -186,13 +186,13 @@ validation did not cover, is in
 
 NVIDIA GB10 (DGX Spark) and N1X machines, and 32-bit ARM, are not supported.
 
-The aarch64 images are published beside the x86_64 image from the first
-release that carries them: `lyona-VERSION-aarch64.iso` and
+The aarch64 images are published beside the x86_64 image from
+2026.11.0-beta.1 on: `lyona-VERSION-aarch64.iso` and
 `lyona-VERSION-rpi-aarch64.img.xz`. They are listed in the same
 `lyona-VERSION-SHA256SUMS` and signed the same way, so check them as in step 1
 of [Install from the image](#install-from-the-image), with the aarch64 file
-name. Until a release carries them, build them yourself (see
-[Releasing](https://github.com/technicks89/Lyona/blob/main/docs/RELEASING.md)).
+name. To build them yourself, see
+[Releasing](https://github.com/technicks89/Lyona/blob/main/docs/RELEASING.md).
 
 ### The generic aarch64 image
 

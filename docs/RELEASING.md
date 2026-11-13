@@ -67,8 +67,8 @@ It signs the source archive and the ISO before anything is published, which
 cannot be signed. The workflow runs `scripts/lyona-release` as:
 
 ```sh
-scripts/lyona-release --version v2026.10.0-beta.7 --iso lyona-2026.10.0-beta.7-x86_64.iso \
-	--bundle BUNDLE --notes docs/RELEASE-NOTES-2026.10.0-beta.7.md --prerelease --skip-checks
+scripts/lyona-release --version v2026.11.0-beta.1 --iso lyona-2026.11.0-beta.1-x86_64.iso \
+	--bundle BUNDLE --notes docs/RELEASE-NOTES-2026.11.0-beta.1.md --prerelease --skip-checks
 ```
 
 `BUNDLE` is the signing step's bundle. The version must match `config.mk`; a
@@ -422,7 +422,7 @@ they match). It is run by hand, from the Actions tab or:
 
 ```sh
 gh workflow run build-iso.yml -f channel=main
-gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.10.0-beta.7.md
+gh workflow run build-iso.yml -f channel=beta -f notes=docs/RELEASE-NOTES-2026.11.0-beta.1.md
 ```
 
 It asks for the channel:

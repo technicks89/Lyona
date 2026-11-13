@@ -54,7 +54,7 @@ supported. The table, with what each validation did not cover, is in
 ## Recent Changes
 
 The newest release's notes summarize what changed and what is still being
-qualified: [2026.10.0-beta.7](./docs/RELEASE-NOTES-2026.10.0-beta.7.md).
+qualified: [2026.11.0-beta.1](./docs/RELEASE-NOTES-2026.11.0-beta.1.md).
 [CHANGELOG.md](./CHANGELOG.md) has the complete list.
 
 ## Install

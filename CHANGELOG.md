@@ -8,6 +8,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.11.0-beta.1] - 2026-11-13
+
+Ninth beta of the Arch Linux line, and the first for aarch64 (the ARM64
+project, merged in #488). The release carries a generic aarch64 install image
+(UEFI; supported on QEMU/KVM and libvirt virtual machines and the Dell XPS 13
+9345, experimental on other Snapdragon X laptops and aarch64 UEFI machines)
+and a Raspberry Pi image (supported on the Pi 4, experimental on the Pi 5),
+and `install.sh` accepts Arch Linux ARM; `SPEC.md` section 4 has each target's
+status. The interface scale follows a high-density panel (#481), Wi-Fi
+profiles are no longer pinned to one access point (#484), System Health clears
+a stale pacman lock (#467), and updates and rollbacks keep the shell running
+and record the release's commit (#456, #457, #460, #461). See
+`docs/RELEASE-NOTES-2026.11.0-beta.1.md`.
+
 ### Added
 
 - ARM user documentation (ARM5-04): `docs/src/install.md` gains "Install on
@@ -165,6 +179,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- The default interface scale now follows the panel instead of a fixed 96 DPI,
+  so the shell is no longer tiny next to the terminal and other apps on a
+  high-density screen (#481). With no saved DPI, `dwm-settings-display` computes
+  sqrt(96 x the panel's own density), rounded to the nearest 25 and held to
+  200; a result of 100 or less stays at 96, so an ordinary monitor is unchanged
+  (a 13-inch 2560x1600 laptop gets 150, a 13-inch 1920x1200 one 125, a 24-inch
+  1080p or 27-inch 1440p monitor 96); a monitor that reports no usable size
+  gets a tier by its shorter side (2160 or more 150, 1440 or more 125, less 96).
+  The login applies it for that session only and never writes it down, so the
+  next login follows a monitor change; `dpi-reset` returns to it. A DPI saved in
+  Settings, or set in your own Xresources, is untouched. Migration: a session
+  with no saved DPI on a dense panel (a laptop, a 4K monitor) that ran at 96 now
+  starts at 125 or more; to keep the old size, set 96 once with
+  `dwm-settings-display dpi-set 96` (or in Settings). The login screen's `xft-dpi=96` is unchanged.
 - The image installer gives any Snapdragon X laptop the medium boots its
   device tree, not only the Dell XPS 13 9345 (#92). The medium already picked
   the laptop's tree at boot from its hardware IDs; the install now finds the
@@ -524,22 +552,6 @@ says why, and the root helper builds as its own user (#333, #334, #336,
   to turn it off. `install.sh` on an existing system does not add it.
 
 ### Changed
-
-- The default interface scale now follows the panel instead of a fixed 96 DPI,
-  so the shell is no longer tiny next to the terminal and other apps on a
-  high-density screen (#481). With no saved DPI, `dwm-settings-display` computes
-  sqrt(96 x the panel's own density), rounded to the nearest 25 and held to
-  200; a result of 100 or less stays at 96, so an ordinary monitor is unchanged
-  (a 13-inch 2560x1600 laptop gets 150, a 13-inch 1920x1200 one 125, a 24-inch
-  1080p or 27-inch 1440p monitor 96); a monitor that reports no usable size
-  gets a tier by its shorter side (2160 or more 150, 1440 or more 125, less 96).
-  The login applies it for that session only and never writes it down, so the
-  next login follows a monitor change; `dpi-reset` returns to it. A DPI saved in
-  Settings, or set in your own Xresources, is untouched. Migration: a session
-  with no saved DPI on a dense panel (a laptop, a 4K monitor) that ran at 96 now
-  starts at 125 or more; to keep the old size, set 96 once with
-  `dwm-settings-display
-  dpi-set 96` (or in Settings). The login screen's `xft-dpi=96` is unchanged.
 
 - The image installer's archinstall configuration uses archinstall 4.5's
   current forms: `disk_encryption` inside `disk_config`, `audio_config` under
@@ -4087,7 +4099,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.7...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.1...HEAD
+[2026.11.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.7...v2026.11.0-beta.1
 [2026.10.0-beta.7]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...v2026.10.0-beta.7
 [2026.10.0-beta.6]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...v2026.10.0-beta.6
 [2026.10.0-beta.5]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.4...v2026.10.0-beta.5
