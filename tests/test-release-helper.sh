@@ -189,8 +189,10 @@ grep -Fq 'does not sign lyona.iso' "$work/partial.err"
 }
 
 # ARM5-01: more images and the architecture markers. --asset images are
-# checksummed and, with --bundle, must be signed; --architecture adds an empty
-# lyona-VERSION-architecture-ARCH asset, unsigned and not in SHA256SUMS.
+# checksummed and, with --bundle, must be signed; --architecture adds a
+# lyona-VERSION-architecture-ARCH asset, unsigned and not in SHA256SUMS. It
+# must not be empty: GitHub refuses to upload an empty file (HTTP 400, the
+# 2026.11.0-beta.1 release run), so it holds the architecture's name.
 printf 'an arm image\n' >"$work/lyona-aarch64.iso"
 printf 'a pi image\n' >"$work/lyona-rpi-aarch64.img.xz"
 make_bundle "$work/all.json" "$archive_digest" "$(digest "$work/lyona.iso")" \
@@ -213,8 +215,8 @@ for published in lyona-aarch64.iso lyona-rpi-aarch64.img.xz release/lyona-2026.1
 	}
 done
 for marker in x86_64 aarch64; do
-	[ -f "$stable/release/lyona-2026.10.0-architecture-$marker" ] && [ ! -s "$stable/release/lyona-2026.10.0-architecture-$marker" ] || {
-		printf 'the %s marker is missing or not empty\n' "$marker" >&2
+	[ "$(cat "$stable/release/lyona-2026.10.0-architecture-$marker" 2>/dev/null)" = "$marker" ] || {
+		printf 'the %s marker is missing, empty, or does not hold its name\n' "$marker" >&2
 		exit 1
 	}
 done

@@ -42,8 +42,9 @@ Also in this release:
 
 - **The signature** signs the source archive and all three images. Check an
   image with `cosign` (`docs/src/install.md`).
-- **The architecture markers** are empty files. `lyona-update` reads them to
-  know which architectures a release serves (#53). Every earlier release has
+- **The architecture markers** hold only their architecture's name.
+  `lyona-update` reads their names to know which architectures a release
+  serves (#53). Every earlier release has
   none and counts as x86_64 only.
 - **The installer images** carry `iso_label=LYONA_2026_11_0_BETA1`.
 - **All three images are built from the same commit, by one workflow run.**
