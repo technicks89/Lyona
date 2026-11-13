@@ -225,7 +225,6 @@ fi
 if [ -n "$display_helper" ]; then
 	# The layout last kept in Settings, when the same monitors are connected.
 	"$display_helper" apply-kept >/dev/null 2>&1 || true
-	"$display_helper" dpi-apply-saved >/dev/null 2>&1 || true
 fi
 
 THEME_ENV="$config_home/lyona/theme-env.sh"
@@ -285,6 +284,13 @@ if command -v autorandr >/dev/null 2>&1; then
 	else
 		timeout 15 autorandr --change >/dev/null 2>&1 || true
 	fi
+fi
+
+# The DPI comes after the layout is final (apply-kept and autorandr above): the
+# panel's default depends on the screens connected, and a value computed before
+# a layout change would be stale.
+if [ -n "$display_helper" ]; then
+	"$display_helper" dpi-apply-saved >/dev/null 2>&1 || true
 fi
 
 # A login whose X server died can stay closing with what it left running: a

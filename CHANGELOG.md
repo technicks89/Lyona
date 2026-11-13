@@ -287,6 +287,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- `check-window-thumb-xvfb` no longer fails now and then on a loaded machine
+  with "red does not rise left to right" (Lyona-ARM #50). dwm resizes the
+  test's `feh` window right after it maps; under load `feh` sometimes missed
+  the resize and never redrew, so the X server kept showing the window's
+  background, the test image tiled, and `dwm-window-thumb` copied that
+  faithfully. The test now waits until the screen shows the stretched image,
+  pressing `feh`'s reload key when it has not come within 2 s (where the screen
+  cannot be read, it keeps the old fixed wait). On a wrong preview it prints
+  the preview's and the screen's colour profiles to the log; run directly with
+  `DWM_TEST_EVIDENCE_DIR` set, it also keeps both images there. On one CPU
+  shared with busy processes the old test failed 2 of 40 runs on x86_64 and 14
+  of 40 on a Raspberry Pi 4, with the 2026-10-24 numbers exactly; the new one
+  passed 100 of 100 and 80 of 80, the reload needed in 5 and 32 of them.
+
+- Settings > Input could fail a keyboard-layout preview, keep or revert with
+  status 141 (#485). Reading the layout or modifier options piped
+  `setxkbmap -query` into an `awk` that exited at its match; when `setxkbmap`
+  was still writing, it got SIGPIPE, and `pipefail` made that the helper's
+  failure. `awk` now reads to the end and keeps the first match. Seen as an
+  intermittent `check-settings` failure; `tests/test-settings-input.sh` now
+  has a `setxkbmap` that writes in two parts, which failed every time before
+  the fix.
 - The runtime check after an update or rollback counts the managed Quickshell
   shells after the tray has answered, not before. A second shell that started
   while the first was probed, the duplicate the check exists to report, went
@@ -491,6 +513,22 @@ says why, and the root helper builds as its own user (#333, #334, #336,
   to turn it off. `install.sh` on an existing system does not add it.
 
 ### Changed
+
+- The default interface scale now follows the panel instead of a fixed 96 DPI,
+  so the shell is no longer tiny next to the terminal and other apps on a
+  high-density screen (#481). With no saved DPI, `dwm-settings-display` computes
+  sqrt(96 x the panel's own density), rounded to the nearest 25 and held to
+  200; a result of 100 or less stays at 96, so an ordinary monitor is unchanged
+  (a 13-inch 2560x1600 laptop gets 150, a 13-inch 1920x1200 one 125, a 24-inch
+  1080p or 27-inch 1440p monitor 96); a monitor that reports no usable size
+  gets a tier by its shorter side (2160 or more 150, 1440 or more 125, less 96).
+  The login applies it for that session only and never writes it down, so the
+  next login follows a monitor change; `dpi-reset` returns to it. A DPI saved in
+  Settings, or set in your own Xresources, is untouched. Migration: a session
+  with no saved DPI on a dense panel (a laptop, a 4K monitor) that ran at 96 now
+  starts at 125 or more; to keep the old size, set 96 once with
+  `dwm-settings-display
+  dpi-set 96` (or in Settings). The login screen's `xft-dpi=96` is unchanged.
 
 - The image installer's archinstall configuration uses archinstall 4.5's
   current forms: `disk_encryption` inside `disk_config`, `audio_config` under
