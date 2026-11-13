@@ -153,20 +153,26 @@ with tempfile.TemporaryDirectory(prefix='window-thumb-', dir=str(temp_root)) as 
         keep = os.environ.get('DWM_TEST_EVIDENCE_DIR')
         if keep:
             target = Path(keep) / ('window-thumb-%s-%d' % (time.strftime('%Y%m%dT%H%M%S'), os.getpid()))
-            target.mkdir(parents=True, exist_ok=True)
-            if preview is not None:
-                preview.save(target / 'preview.png')
-            if screen is not None:
-                screen.save(target / 'screen.png')
-            (target / 'evidence.txt').write_text('\n'.join(lines) + '\n')
-            lines.append('kept in %s' % target)
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                if preview is not None:
+                    preview.save(target / 'preview.png')
+                if screen is not None:
+                    screen.save(target / 'screen.png')
+                (target / 'evidence.txt').write_text('\n'.join(lines) + '\n')
+                lines.append('kept in %s' % target)
+            except Exception as exc:  # storage must not hide the profiles or the failure
+                lines.append('evidence not kept in %s: %r' % (target, exc))
         print('\n'.join(lines), file=sys.stderr, flush=True)
 
     def looks_like_stripes(path, win):
         try:
             return check_stripes(path, win)
         except AssertionError as error:
-            keep_evidence(path, win, error)
+            try:
+                keep_evidence(path, win, error)
+            except Exception as exc:  # the assertion below is what the run reports
+                print('#50 evidence failed: %r' % (exc,), file=sys.stderr, flush=True)
             raise
 
     def screen_of(win):
