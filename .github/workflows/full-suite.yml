@@ -14,6 +14,10 @@ on:
         description: "Also build dwm with clang"
         type: boolean
         default: true
+      aarch64:
+        description: "Also run on aarch64 (Arch Linux ARM; experimental)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -84,7 +88,7 @@ jobs:
         env:
           TARGET: ${{ inputs.target }}
         run: |
-          runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci \
+          runuser -u nobody -- env HOME=/home/dwm-ci XDG_RUNTIME_DIR=/run/dwm-ci SHELL=/bin/bash \
             scripts/run-tests make "$TARGET" 2>&1 | tee /var/tmp/lyona-ci/full-suite.log
           exit "${PIPESTATUS[0]}"
 
@@ -94,6 +98,64 @@ jobs:
         with:
           name: full-suite-log
           path: /var/tmp/lyona-ci/full-suite.log
+          if-no-files-found: ignore
+
+  # ARM1-05 (decision A-9): the same suite on aarch64, in Arch Linux ARM.
+  # Arch Linux ARM has no container image, so the job builds one from its
+  # signed root filesystem (scripts/ci-archlinuxarm-image.sh) and runs the suite
+  # in it through scripts/ci-local.sh, the local twin of the job above: the
+  # same package profile (resolved for aarch64), security options, `nobody`
+  # runner and `scripts/run-tests make TARGET`. Manual only until it has been
+  # green several times in a row.
+  full-suite-aarch64:
+    name: make ${{ inputs.target }} (aarch64)
+    if: inputs.aarch64
+    runs-on: ubuntu-24.04-arm
+    # Private repositories get two cores on this runner.
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The whole history: tests/test-shell-contracts.sh checks that each
+          # retired document a commit is cited for is in that commit.
+          fetch-depth: 0
+
+      - name: Validate the target name
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          [[ $TARGET =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "invalid target: $TARGET" >&2; exit 2; }
+
+      - name: Build the Arch Linux ARM image (signature and checksum checked)
+        run: scripts/ci-archlinuxarm-image.sh lyona-archlinuxarm:base-devel
+
+      - name: Run make ${{ inputs.target }} on aarch64
+        env:
+          TARGET: ${{ inputs.target }}
+          CLANG: ${{ inputs.clang }}
+        run: |
+          export TMPDIR=$RUNNER_TEMP/lyona-ci
+          mkdir -p "$TMPDIR"
+          clang=()
+          [[ $CLANG != true ]] || clang=(--clang)
+          # The whole suite runs each target on its own and lists every
+          # failure, instead of stopping at the first: what fails on aarch64
+          # is what this experimental job is for.
+          each=()
+          [[ $TARGET != check ]] || each=(--each)
+          scripts/ci-local.sh --base-image lyona-archlinuxarm:base-devel "${clang[@]}" "${each[@]}" "$TARGET"
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: full-suite-aarch64-log
+          # The whole log directory: --each writes each.log and each/TARGET.log.
+          path: ${{ runner.temp }}/lyona-ci/lyona-ci-local.*/
           if-no-files-found: ignore
 
   display-security:

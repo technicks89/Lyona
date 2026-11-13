@@ -32,16 +32,28 @@ checkout) printf '%s\n' "${*: -1}" >"$dir/.head" ;;
 rev-parse) printf '%s\n' "${STUB_HEAD:-$(cat "$dir/.head")}" ;;
 esac
 EOF
-# makepkg: --printsrcinfo per STUB_SRCINFO (ok, nosum, skip); a build writes a
+# makepkg: --printsrcinfo per STUB_SRCINFO (ok, nosum, skip; perarch: one
+# source per architecture, aarch64's checksummed only with STUB_AARCH64_SUM;
+# x86only: arch=(x86_64)); a build writes a
 # package, its -debug split and a signature, or fails (STUB_BUILD=fail), or
 # hangs (STUB_BUILD=hang). It writes them where makepkg would: PKGDEST from the
 # environment, else the makepkg.conf one (STUB_CONF_PKGDEST), else here.
 cat >"$work/bin/makepkg" <<'EOF'
 #!/bin/bash
 if [[ $1 == --printsrcinfo ]]; then
-	printf 'pkgbase = demo\n\tsource = demo.tar.gz::https://example.org/demo.tar.gz\n'
+	printf 'pkgbase = demo\n\tarch = x86_64\n'
+	[[ ${STUB_SRCINFO:-ok} == x86only ]] || printf '\tarch = aarch64\n'
 	case ${STUB_SRCINFO:-ok} in
-	ok) printf '\tsha256sums = abc\n' ;;
+	perarch)
+		printf '\tsource_x86_64 = demo-x86_64.tar.gz::https://example.org/x86_64.tar.gz\n'
+		printf '\tsha256sums_x86_64 = abc\n'
+		printf '\tsource_aarch64 = demo-aarch64.tar.gz::https://example.org/aarch64.tar.gz\n'
+		[[ -z ${STUB_AARCH64_SUM:-} ]] || printf '\tsha256sums_aarch64 = %s\n' "$STUB_AARCH64_SUM"
+		;;
+	*) printf '\tsource = demo.tar.gz::https://example.org/demo.tar.gz\n' ;;
+	esac
+	case ${STUB_SRCINFO:-ok} in
+	ok | x86only) printf '\tsha256sums = abc\n' ;;
 	skip) printf '\tsha256sums = SKIP\n' ;;
 	esac
 	printf '\npkgname = demo\n'
@@ -86,6 +98,25 @@ for bad in nosum skip; do
 	fi
 	grep -Fq 'has a source without a checksum' "$work/err" || fail "$bad: $(cat "$work/err")"
 done
+
+# ── per architecture (ARM1-03) ─────────────────────────────────────────────
+# Only the sources for the architecture being built need a checksum, and a base
+# that does not list the architecture is refused before makepkg runs.
+n=0
+fetch_as() { # ARCH SRCINFO [AARCH64_SUM]
+	n=$((n + 1))
+	DWM_AUR_ARCH=$1 STUB_SRCINFO=$2 STUB_AARCH64_SUM=${3:-} \
+		aur fetch yay-bin "$work/arch-$n" >/dev/null 2>"$work/err"
+}
+fetch_as aarch64 ok || fail "aarch64: a base with a shared checksummed source was refused: $(cat "$work/err")"
+fetch_as aarch64 perarch def || fail "aarch64: checksummed aarch64 sources were refused: $(cat "$work/err")"
+if fetch_as aarch64 perarch; then fail 'aarch64: an aarch64 source without a checksum was accepted'; fi
+grep -Fq 'has a source without a checksum' "$work/err" || fail "aarch64 nosum: $(cat "$work/err")"
+if fetch_as aarch64 perarch SKIP; then fail 'aarch64: a SKIP aarch64 checksum was accepted'; fi
+fetch_as x86_64 perarch || fail "x86_64: an unchecksummed aarch64 source was held against x86_64: $(cat "$work/err")"
+if fetch_as aarch64 x86only; then fail 'aarch64: an x86_64-only base was accepted'; fi
+grep -Fq 'does not build for aarch64; not building it' "$work/err" || fail "x86only: $(cat "$work/err")"
+fetch_as x86_64 x86only || fail "x86_64: an x86_64-only base was refused: $(cat "$work/err")"
 
 # ── build ─────────────────────────────────────────────────────────────────
 mkdir -p "$work/out"

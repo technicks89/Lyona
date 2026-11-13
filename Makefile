@@ -794,11 +794,19 @@ SHELL_SCRIPTS = $(sort $(wildcard scripts/*.sh) $(shell for f in scripts/*; do \
 	[ -f "$$f" ] && head -n 1 -- "$$f" | grep -Eq '^$(HASH)!.*(/|env )(ba)?sh([[:space:]]|$$)' && \
 	printf '%s\n' "$$f"; done))
 
+# Arch Linux ARM has no shellcheck package (ARM1-02); the result does not depend
+# on the machine, so off x86_64 a missing shellcheck is a skip, and the x86_64
+# job runs it (ARM1-05). On x86_64 it stays required.
 check-shell:
-	shellcheck install.sh ${SHELL_SCRIPTS} tests/*.sh
+	@if ! command -v shellcheck >/dev/null 2>&1 && [ "$$(uname -m)" != x86_64 ]; then \
+		echo "check-shell: skipped: shellcheck is not packaged for $$(uname -m); the x86_64 job runs it"; \
+		exit 0; \
+	fi; \
+	echo shellcheck install.sh ${SHELL_SCRIPTS} rpi/*.sh tests/*.sh; \
+	shellcheck install.sh ${SHELL_SCRIPTS} rpi/*.sh tests/*.sh
 
 check-format:
-	shfmt -d install.sh ${SHELL_SCRIPTS} tests/*.sh
+	shfmt -d install.sh ${SHELL_SCRIPTS} rpi/*.sh tests/*.sh
 
 check-session-guards:
 	tests/test-autostart.sh
@@ -1372,6 +1380,17 @@ check-lightdm-config: ${TOML_TOOL}
 
 check-archiso:
 	tests/test-arch-iso-builder.sh
+	tests/test-arch-iso-dtb.sh
+
+# The Raspberry Pi image builder, statically (ARM3-01), and its first boot,
+# stubbed (ARM3-02).
+check-rpi-image:
+	tests/test-rpi-image-builder.sh
+	tests/test-rpi-firstboot.sh
+
+# Snapdragon X groundwork: device-tree lookup and firmware profile (ARM Sprint 6).
+check-snapdragon:
+	tests/test-snapdragon.sh
 
 check-arch-platform:
 	@$(call run_managed_test,tests/test-arch-platform.sh)
@@ -1508,7 +1527,7 @@ check-install-preservation: ${TOML_TOOL}
 .PHONY: check-install-multilib check-install-time-sync check-iso-install-credentials check-live-medium-cleanup \
 	check-installed-helper-paths check-download-pins check-iso-install-warnings check-install-summary check-install-startx-hint \
 	check-lyona-shell check-gearlever-first-login check-iso-install-wifi check-install-step-timing \
-	check-iso-install-mirrors check-wifi-regdom check-iso-install-recovery
+	check-iso-install-mirrors check-wifi-regdom check-iso-install-recovery check-iso-install-aarch64
 check-install-multilib:
 	tests/test-install-multilib.sh
 
@@ -1575,6 +1594,11 @@ check-wifi-regdom:
 # #265, #266: the image installer applies the keymap, goes back, and recovers.
 check-iso-install-recovery:
 	tests/test-iso-install-recovery.sh
+
+# ARM2-03: the image installer's aarch64 path (no CachyOS, NVIDIA or
+# [multilib]; the kernel copy GRUB boots and the firmware boot entry).
+check-iso-install-aarch64:
+	tests/test-iso-install-aarch64.sh
 
 # #250: both install paths time each step and end with a table.
 check-install-step-timing:
@@ -1779,6 +1803,8 @@ check:
 	$(MAKE) check-changelog-record
 	$(MAKE) check-update-root-contract
 	$(MAKE) check-archiso
+	$(MAKE) check-rpi-image
+	$(MAKE) check-snapdragon
 	$(MAKE) check-cachyos
 	$(MAKE) check-quickshell-state
 	$(MAKE) check-quickshell-state-close
@@ -1805,6 +1831,7 @@ check:
 	$(MAKE) check-iso-install-mirrors
 	$(MAKE) check-wifi-regdom
 	$(MAKE) check-iso-install-recovery
+	$(MAKE) check-iso-install-aarch64
 	$(MAKE) check-install-summary
 	$(MAKE) check-install-startx-hint
 	$(MAKE) check-lyona-shell
@@ -1817,7 +1844,7 @@ check:
 .PHONY: clean all all-root check check-update-root-contract check-install-yay check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-cursor-reload check-xkbset check-picom check-picom-xvfb \
 	check-test-runner \
-	check-display-profile check-display-profiles check-display-setup check-simple-watch-orphans check-autorandr-picom-hook check-archiso check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
+	check-display-profile check-display-profiles check-display-setup check-simple-watch-orphans check-autorandr-picom-hook check-archiso check-rpi-image check-snapdragon check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-yay check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-session-isolation check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-launcher-hold-keys-xvfb check-dwm-activate-xvfb check-dwm-regrab-xvfb check-dwm-bar-docks-xvfb check-dwm-portrait-login-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \

@@ -44,8 +44,15 @@ with the CyberRe boot menu theme, and the lyona boot splash.
    sudo dd if=lyona-VERSION-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync
    ```
 
-3. **Boot it.** The `lyona-install` wizard starts on its own. It checks the
-   network first. With no wired connection and a Wi-Fi card, it offers to
+3. **Boot it**, with Secure Boot turned off in the firmware settings: the
+   image's boot loader is not signed, so firmware with Secure Boot on refuses
+   it (AAVMF, for one, says "Access Denied", then that it found no bootable
+   device). Virtual machines count too: libvirt and virt-manager choose
+   Secure Boot firmware by default where it is installed; turn it off in the
+   machine's firmware settings, or create the machine with
+   `virt-install --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no`.
+   The `lyona-install` wizard starts on its own. It checks the network first.
+   With no wired connection and a Wi-Fi card, it offers to
    connect to Wi-Fi. It lists the networks it finds, with signal strength and
    security, plus **Other (hidden network)**, and asks for the passphrase.
    Open and WPA personal networks are supported, but enterprise (802.1X) and
@@ -71,7 +78,18 @@ with the CyberRe boot menu theme, and the lyona boot splash.
      your machine, are ranked before anything is downloaded, and the new system
      keeps the list. When too few mirrors are in the country, worldwide ones are
      added; when they cannot be ranked (no network, or it takes more than 30
-     seconds), the medium's own list is used;
+     seconds), the medium's own list is used. On the aarch64
+     medium the mirrors are Arch Linux ARM's: those in your timezone's country
+     when it has some, else the geo-balanced `mirror.archlinuxarm.org`, which
+     is also kept after a country's as a fallback. **Choose another** lists
+     the countries Arch Linux ARM has mirrors in. They are used in the order
+     listed, not ranked by speed. Arch Linux ARM's mirrors serve HTTP only;
+     pacman checks every package's signature;
+   - before anything is downloaded, the installer waits for the medium's
+     package keyring to be set up, and stops if it has no keys. It also checks
+     that the first mirror's name resolves; if it does not, it names the
+     mirror and your name servers and offers **Retry**, **Continue anyway**
+     (for a network that downloads through a proxy) or **Cancel**;
    - the Wi-Fi country is not asked: it is the timezone's country, shown on
      the summary, and the new system's Wi-Fi uses that country's channels and
      power limits from the first boot. A zone with no country, such as `UTC`,
@@ -141,7 +159,185 @@ sudo pacman -Rns plymouth   # optional: its services also run without the splash
 
 `install.sh` on an existing system does not add the splash.
 
+On the aarch64 medium, the install also adds
+`/etc/default/grub.d/90-lyona-console.cfg`, with `console=tty0
+plymouth.ignore-serial-consoles`. Without it, a machine whose firmware names
+a serial console sends the kernel console there alone, and an encrypted disk
+asks for its password on the serial port while the screen stays black. Keep
+it when you turn the splash off.
+
+## Install on ARM (aarch64)
+
+lyona runs on 64-bit ARM machines on Arch Linux ARM. Some machines are
+supported, validated by a real install, and some are experimental: built and
+expected to work, but not validated there. The full table, with what each
+validation did not cover, is in
+[SPEC.md section 4](https://github.com/technicks89/Lyona/blob/main/SPEC.md#4-arch-support-contract).
+
+| Your machine | What to use | Status |
+| --- | --- | --- |
+| A virtual machine on an aarch64 host (QEMU/KVM, libvirt) | [The generic aarch64 image](#the-generic-aarch64-image) | Supported |
+| Dell XPS 13 9345 | [The generic aarch64 image](#snapdragon-x-laptops) | Supported |
+| Another Snapdragon X laptop | [The generic aarch64 image](#snapdragon-x-laptops) | Experimental: not tested |
+| Another aarch64 machine that boots UEFI | [The generic aarch64 image](#the-generic-aarch64-image) | Experimental |
+| Raspberry Pi 4 | [The Raspberry Pi image](#the-raspberry-pi-image) | Supported |
+| Raspberry Pi 5 | [The Raspberry Pi image](#the-raspberry-pi-image) | Experimental |
+| Arch Linux ARM already installed | [`install.sh`](#install-on-an-existing-arch-system) | Experimental |
+
+NVIDIA GB10 (DGX Spark) and N1X machines, and 32-bit ARM, are not supported.
+
+The aarch64 images are published beside the x86_64 image from the first
+release that carries them: `lyona-VERSION-aarch64.iso` and
+`lyona-VERSION-rpi-aarch64.img.xz`. They are listed in the same
+`lyona-VERSION-SHA256SUMS` and signed the same way, so check them as in step 1
+of [Install from the image](#install-from-the-image), with the aarch64 file
+name. Until a release carries them, build them yourself (see
+[Releasing](https://github.com/technicks89/Lyona/blob/main/docs/RELEASING.md)).
+
+### The generic aarch64 image
+
+One image for virtual machines, Snapdragon X laptops and other aarch64
+machines that boot UEFI. It does not boot a Raspberry Pi; use
+[the Raspberry Pi image](#the-raspberry-pi-image) there.
+
+1. **Download and check** `lyona-VERSION-aarch64.iso`, as above.
+2. **Write it to a USB stick** with the same `dd` command as on x86_64, using
+   the aarch64 file name. For a virtual machine, attach the ISO as a USB stick
+   or a CD instead.
+3. **Boot it** with Secure Boot off, as on x86_64: the boot loader is not
+   signed. The medium boots UEFI only, and shows no boot menu. It needs at
+   least 1.5 GiB of memory to boot; the virtual machines lyona was validated
+   on had 8 GiB.
+4. **The wizard** asks the same questions as on x86_64, with these
+   differences: the mirrors are Arch Linux ARM's (see the mirrors question
+   above), and there is no NVIDIA driver question. The install uses Arch
+   Linux ARM's `linux-aarch64` kernel. There are no CachyOS repositories or
+   kernel, and the [differences on ARM](#what-is-different-on-arm) apply.
+
+In a virtual machine, use a virtio-gpu display: Mesa then renders in software,
+and Picom chooses its XRender backend. QEMU/KVM by hand and libvirt
+(`virt-install`, virt-manager) are validated. UTM, Parallels and VMware Fusion
+on Apple Silicon are not tested.
+
+### Snapdragon X laptops
+
+The generic aarch64 image boots Snapdragon X laptops (X Elite and X Plus) from
+a device tree, a description of the laptop's hardware that their firmware does
+not give Linux. The image carries every Snapdragon X device tree the kernel
+has, and picks the laptop's own at boot from its hardware IDs. A laptop is
+covered only if mainline Linux has its device tree.
+
+**The Dell XPS 13 9345 is supported.** To install on it:
+
+1. Turn Secure Boot off in the firmware settings, and boot the USB stick from
+   the firmware's one-time boot menu.
+2. The medium copies itself into memory before the wizard starts, because the
+   USB stick drops off the bus for a moment when the laptop's USB-C hardware
+   comes up. From a USB 3 stick this takes about 50 seconds with the splash on
+   screen, then the screen is black for a few seconds before the wizard
+   appears.
+3. The wizard erases the disk you choose. The internal drive holds Windows:
+   install to a USB SSD instead if you want to keep it.
+4. The install adds the laptop's support: its firmware, its kernel arguments,
+   a GRUB step that loads its device tree at every boot, kernel updates
+   included, and the `schedutil` CPU frequency governor, so the cores do not
+   sit at full speed when idle.
+
+Known gaps on the XPS 13 9345: there is no sound, because the kernel's device
+tree has no sound card for it yet. External displays, suspend and resume, and
+battery life have not been tested.
+
+**Other Snapdragon X laptops are experimental.** The medium should boot them,
+and the install gives the new system the same support as on the XPS: it loads
+the device tree the medium booted with, from the new system's kernel. None of
+this has been tested on another laptop. If one installs, or does not, please
+[report it](#reporting-a-problem-on-arm) with the laptop's model.
+
+### The Raspberry Pi image
+
+One image for the Raspberry Pi 4 (supported) and the Raspberry Pi 5
+(experimental). A Pi has no installer: the image is lyona already installed,
+with no user yet, and its first boot asks the questions.
+
+1. **Download and check** `lyona-VERSION-rpi-aarch64.img.xz`, as above.
+2. **Write it to an SD card** of 8 GB or more, which erases the card. The image
+   is about 5.7 GiB written out, and its first boot grows it to fill the card.
+   With Raspberry Pi Imager, choose **Use custom** under the operating
+   systems, pick the `.img.xz`, and say no to OS customisation: the first boot
+   asks those questions itself. Or, with `/dev/sdX` the card as `lsblk` shows
+   it:
+
+   ```bash
+   xzcat lyona-VERSION-rpi-aarch64.img.xz | sudo dd of=/dev/sdX bs=4M status=progress oflag=sync
+   ```
+
+3. **Boot the Pi** with a display, a keyboard and, if you can, a network
+   cable. The first boot grows the root partition to the card and makes this
+   machine's own package keyring and SSH host keys. Then a wizard on the
+   screen asks for the network (it offers Wi-Fi when there is no cable), the
+   keyboard layout, your user name and password, the hostname and the
+   timezone. It needs a network connection to finish. It shows a summary to
+   confirm, where **Change the answers** asks them again.
+4. **It finishes on its own:** it creates your user and sets up your account,
+   then the login screen appears. If the first boot is interrupted, for example
+   by a power cut, it starts again cleanly at the next boot. If a step fails,
+   it offers **Start again** or **Power off**. The log is
+   `/var/log/lyona-firstboot.log`.
+
+On a Pi 4, Picom is off at login, because it makes the desktop unusable with
+the Pi 4's GPU (see [Troubleshooting](troubleshooting.md#picom-is-off-on-a-raspberry-pi-4)).
+A Pi 4 cannot suspend, so Suspend is not offered there. Put your own boot settings in
+`/boot/custom.txt`, not in `config.txt`
+([how](troubleshooting.md#the-raspberry-pi-images-boot-settings-and-splash)).
+Not tested: booting a Pi 5 from NVMe (the image turns its PCIe connector on),
+and two displays on a Pi 4.
+
+### What is different on ARM
+
+- **Packages** come from Arch Linux ARM's repositories and mirrors. Its
+  mirrors serve HTTP only, and pacman checks every package's signature.
+- **The kernel** is `linux-aarch64` from the generic image, or `linux-rpi` on a
+  Raspberry Pi. The CachyOS repositories and kernel are x86_64 only.
+- **No gaming profile:** Steam, Gamescope and GameMode need the 32-bit
+  `multilib` repository, which Arch Linux ARM does not have.
+- **No NVIDIA driver question**, as no supported ARM machine has an NVIDIA GPU.
+- **A Raspberry Pi has a first-boot wizard** instead of the installer.
+- **Updates:** `pacman -Syu` and Settings update the packages as on x86_64.
+  `lyona-update` only installs a release that carries aarch64 support; until
+  one has been published, `check` says so and downloads nothing (see
+  [Updating](updating.md)).
+
+### Reporting a problem on ARM
+
+[Open an issue](https://github.com/technicks89/Lyona/issues) and say, as the
+bug report form asks:
+
+- the architecture (`uname -m`) and the kernel (`uname -r`);
+- the machine: on a Raspberry Pi, `cat /sys/firmware/devicetree/base/model`;
+  on a laptop or other UEFI machine, `cat /sys/class/dmi/id/sys_vendor
+  /sys/class/dmi/id/product_name`; for a virtual machine, the host and the
+  hypervisor;
+- what you installed from (the generic aarch64 image, the Raspberry Pi image
+  or `install.sh`) and its version;
+- the log of the install: `/var/log/lyona-postinstall.log` (readable by root)
+  after the generic image, `/var/log/lyona-firstboot.log` on a Pi, and
+  `journalctl -b -p err` for errors in the current boot.
+
 ## Install on an existing Arch system
+
+On Arch Linux ARM (aarch64, experimental; see
+[Install on ARM](#install-on-arm-aarch64)), do its own first steps before
+the installer: initialise and populate the keyring (`pacman-key --init`,
+`pacman-key --populate archlinuxarm`), upgrade (`pacman -Syu`), install
+`sudo` and `git`, and use an account in `wheel` with `sudo` rights. Also set
+a locale, because its root filesystem ships `LANG=C`, which Qt warns about at
+every login. Uncomment yours (for example `en_US.UTF-8 UTF-8`) in
+`/etc/locale.gen`, then run:
+
+```bash
+sudo locale-gen
+sudo localectl set-locale LANG=en_US.UTF-8
+```
 
 ### 1. Clone
 
@@ -226,7 +422,12 @@ Installer package profiles are selected with `DWM_INSTALL_PROFILE`:
   (Super+E), and NetworkManager with the Wi-Fi regulatory database
   (`wireless-regdb`). NetworkManager is enabled only when no other
   network manager (systemd-networkd, iwd, ConnMan, dhcpcd or netctl) is in use,
-  and starts at the next boot. Bluetooth (`bluetooth.service`, from `bluez`)
+  and starts at the next boot. The exception is Arch Linux ARM's own setup,
+  systemd-networkd with its two stock DHCP files: there an interactive install
+  asks (yes by default) to switch to NetworkManager at the next boot, and an
+  unattended one switches only with `--switch-to-networkmanager`. Any other
+  systemd-networkd setup is left alone. To switch back:
+  `sudo systemctl disable NetworkManager.service && sudo systemctl enable systemd-networkd.service`. Bluetooth (`bluetooth.service`, from `bluez`)
   is enabled and started when the unit is installed, unless it is masked.
   The installer does not set your Wi-Fi country
   on an existing system; when none is set it says how to (see

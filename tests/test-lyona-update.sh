@@ -38,6 +38,7 @@ run_update() {
 		DWM_TEST_SYSTEM_RECORD="$system_record" DWM_TEST_SYSTEM_OWNER="$(id -u)" \
 		DWM_TEST_USER_RECORD="$user_record" DWM_TEST_NOTIFY_LOG="$notify_log" \
 		LYONA_UPDATE_GITHUB_API="$github_api" LYONA_UPDATE_GITHUB_REPO="$github_repo" \
+		LYONA_UPDATE_ARCH="${test_arch:-x86_64}" \
 		LYONA_UPDATE_CACHE_TTL="${LYONA_UPDATE_CACHE_TTL:-300}" \
 		"$helper" "$@"
 }
@@ -1351,5 +1352,116 @@ layout_of() { # RECORD [VAR=VALUE...]
 printf 'LYONA_PREFIX=/usr\nLYONA_DATADIR=/srv/../etc\n' >"$work/layout-record"
 [ "$(layout_of "$work/layout-record")" = '/usr /usr/share/man /usr/share /usr/share/xsessions' ] ||
 	fail "a record value with .. was used: $(layout_of "$work/layout-record")"
+
+# ── architectures (#53): a release serves the architectures it marks ──
+# One release lists the architectures it serves as empty lyona-VERSION-architecture-ARCH
+# assets. No marker at all means x86_64 only (every release before ARM).
+arch_release() { # VERSION [ARCH...]: a release object with those markers
+	version=$1
+	shift
+	printf '{"tag_name":"v%s","published_at":"2026-11-01T00:00:00Z","assets":[' "$version"
+	printf '{"name":"lyona-%s.tar.gz","browser_download_url":"%s/a/%s.tar.gz","size":1}' "$version" "$github_api" "$version"
+	for a in "$@"; do
+		printf ',{"name":"lyona-%s-architecture-%s","browser_download_url":"%s/a/m","size":0}' "$version" "$a" "$github_api"
+	done
+	printf ']}'
+}
+latest_url=$github_api/repos/$github_repo/releases/latest
+list_url=$github_api/repos/$github_repo/releases
+arch_check() { # ARCH CHANNEL
+	test_arch=$1 run_update check --channel "$2"
+}
+
+# aarch64 never takes an unmarked (pre-ARM) release, even at the same version.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.7 | write_user_record
+arch_release 2026.10.0-beta.7 | canned_response "$latest_url"
+{
+	printf '['
+	arch_release 2026.10.0-beta.7
+	printf ']'
+} | canned_response "$list_url"
+status=$(arch_check aarch64 stable)
+assert_string_contains "$status" "$(printf 'state\tunknown')"
+assert_string_contains "$status" 'No aarch64 release has been published on the stable channel yet.'
+# x86_64 is unchanged by it.
+status=$(arch_check x86_64 stable)
+assert_string_contains "$status" "$(printf 'state\tcurrent')"
+
+# A release marked for both is offered to both.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.7 | write_user_record
+arch_release 2026.11.0 x86_64 aarch64 | canned_response "$latest_url"
+for a in x86_64 aarch64; do
+	status=$(arch_check "$a" stable)
+	assert_string_contains "$status" "$(printf 'state\tbehind')"
+	assert_string_contains "$status" "$(printf 'available\t2026.11.0')"
+done
+
+# A release marked for aarch64 only is not offered to x86_64, which is left
+# with nothing; aarch64 gets it.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.7 | write_user_record
+arch_release 2026.11.0 aarch64 | canned_response "$latest_url"
+{
+	printf '['
+	arch_release 2026.11.0 aarch64
+	printf ']'
+} | canned_response "$list_url"
+status=$(arch_check x86_64 stable)
+assert_string_contains "$status" "$(printf 'state\tunknown')"
+status=$(arch_check aarch64 stable)
+assert_string_contains "$status" "$(printf 'available\t2026.11.0')"
+
+# The latest stable release is not for this machine, an older one is: it
+# is the one offered.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.7 | write_user_record
+arch_release 2026.12.0 x86_64 | canned_response "$latest_url"
+{
+	printf '['
+	arch_release 2026.12.0 x86_64
+	printf ','
+	arch_release 2026.11.0 x86_64 aarch64
+	printf ']'
+} | canned_response "$list_url"
+status=$(arch_check aarch64 stable)
+assert_string_contains "$status" "$(printf 'available\t2026.11.0')"
+status=$(arch_check x86_64 stable)
+assert_string_contains "$status" "$(printf 'available\t2026.12.0')"
+
+# The preview channel takes the newest release that serves the machine.
+reset_curl_responses
+valid_user_record 2026.10.0-beta.7 | write_user_record
+{
+	printf '['
+	arch_release 2026.12.0-beta.1 x86_64
+	printf ','
+	arch_release 2026.11.0-beta.1 x86_64 aarch64
+	printf ']'
+} | canned_response "$list_url"
+status=$(arch_check aarch64 preview)
+assert_string_contains "$status" "$(printf 'available\t2026.11.0-beta.1')"
+status=$(arch_check x86_64 preview)
+assert_string_contains "$status" "$(printf 'available\t2026.12.0-beta.1')"
+
+# apply refuses, on aarch64, a tree that has no Arch Linux ARM support, whatever
+# the release listing said or --file was given (checked after the signature).
+reset_curl_responses
+valid_user_record 2026.10.0-beta.7 | write_user_record
+mkdir -p "$work/noarm"
+tar -xzf "$source_tarball" -C "$work/noarm"
+noarm_tree=$(find "$work/noarm" -mindepth 1 -maxdepth 1 -type d | head -1)
+sed -i 's/archarm/nonarm/g' "$noarm_tree/scripts/dwm-utils.sh"
+tar -czf "$work/noarm.tar.gz" -C "$work/noarm" "$(basename "$noarm_tree")"
+noarm_sha=$(sha256sum "$work/noarm.tar.gz" | cut -d' ' -f1)
+if test_arch=aarch64 run_update apply --file "$work/noarm.tar.gz" --version 2026.11.0 \
+	--sha256 "$noarm_sha" --yes >"$work/out" 2>&1; then
+	fail 'a tree without Arch Linux ARM support was installed on aarch64'
+fi
+assert_contains "$work/out" 'has no Arch Linux ARM support; refusing to install it on this aarch64 machine'
+assert_no_file "$state_home/lyona/updates/2026.11.0/scripts/dwm-utils.sh"
+rm -rf "$work/noarm" "$work/noarm.tar.gz"
+reset_curl_responses
 
 printf 'lyona-update contract: PASS\n'

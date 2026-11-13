@@ -19,7 +19,9 @@ source "$repo/scripts/dwm-utils.sh"
 # shellcheck source=scripts/dwm-packages.sh
 source "$repo/scripts/dwm-packages.sh"
 
-if [[ $DISTRO_ID != arch || $DISTRO_FAMILY != arch ]]; then
+# Arch Linux, or Arch Linux ARM on aarch64: the map resolves for the host, and
+# the host's repositories check it.
+if ! is_arch_family; then
 	printf 'Arch package validation requires Arch Linux; detected %s.\n' \
 		"$DISTRO_NAME" >&2
 	exit 1
@@ -388,6 +390,69 @@ vulkan() {
 vulkan_line=$(grep -nF 'batch_optional < <(dwm_vulkan_driver_packages)' "$repo/install.sh" | cut -d: -f1)
 gaming_line=$(grep -nF 'batch_optional < <(dwm_collect_packages gaming)' "$repo/install.sh" | cut -d: -f1)
 [[ -n $vulkan_line && -n $gaming_line ]] && ((vulkan_line < gaming_line))
+
+# --- aarch64 (ARM1-02) ---------------------------------------------------------
+# Every profile resolves on both architectures. Gated to x86_64: what the
+# survey found missing from Arch Linux ARM
+# (docs/evidence/arm1-02-aarch64-packages.md), and the NVIDIA and gaming
+# profiles, which do not apply there. Nothing else changes on x86_64.
+# reflector: the aarch64 medium's iso profile leaves it out (ARM2-02), as it
+# ranks Arch Linux's mirrors.
+aarch64_gated=(
+	deepin-gtk-theme libva-intel-driver shellcheck archiso reflector
+	nvidia-open nvidia-open-dkms nvidia-utils
+	nvidia-580xx-dkms nvidia-580xx-utils nvidia-470xx-dkms nvidia-470xx-utils
+	steam gamescope gamemode lib32-gamemode mangohud lib32-mangohud goverlay
+)
+mapfile -t all_profiles < <(
+	sed -n '/^dwm_packages() {$/,/^}$/s/^\t\(arch:[a-z0-9-]*\))$/\1/p' \
+		"$repo/scripts/dwm-packages.sh" | sed 's/^arch://'
+)
+((${#all_profiles[@]} > 40)) || {
+	printf 'Found only %s profiles in the package map.\n' "${#all_profiles[@]}" >&2
+	exit 1
+}
+resolve_all() { # ARCH
+	local profile
+	for profile in "${all_profiles[@]}"; do
+		# shellcheck disable=SC2016 # expanded by the inner bash
+		ARCH=$1 bash -c '. "$0"; dwm_packages arch "$1"' \
+			"$repo/scripts/dwm-packages.sh" "$profile" | sed "s/^/$profile /" || {
+			printf 'Profile %s did not resolve on %s.\n' "$profile" "$1" >&2
+			return 1
+		}
+	done
+}
+resolve_all aarch64 >"$work/aarch64.resolved"
+resolve_all x86_64 >"$work/x86_64.resolved"
+for package in "${aarch64_gated[@]}"; do
+	if awk -v p="$package" '$2 == p { found = 1 } END { exit !found }' "$work/aarch64.resolved"; then
+		printf 'aarch64 resolves %s, which Arch Linux ARM does not have:\n' "$package" >&2
+		awk -v p="$package" '$2 == p' "$work/aarch64.resolved" >&2
+		exit 1
+	fi
+	awk -v p="$package" '$2 == p { found = 1 } END { exit !found }' "$work/x86_64.resolved" || {
+		printf 'x86_64 no longer resolves %s.\n' "$package" >&2
+		exit 1
+	}
+done
+# On aarch64, only the gated packages (and nothing new) are left out.
+awk '{ print $2 }' "$work/x86_64.resolved" | sort -u >"$work/x86_64.names"
+awk '{ print $2 }' "$work/aarch64.resolved" | sort -u >"$work/aarch64.names"
+printf '%s\n' "${aarch64_gated[@]}" | sort -u >"$work/gated.names"
+comm -23 "$work/x86_64.names" "$work/aarch64.names" >"$work/dropped.names"
+if ! cmp -s "$work/dropped.names" "$work/gated.names"; then
+	printf 'aarch64 drops a different set than the gated packages:\n' >&2
+	diff "$work/gated.names" "$work/dropped.names" >&2 || true
+	exit 1
+fi
+# The x86_64 medium ranks its mirrors with reflector; the aarch64 one has none.
+grep -q '^iso reflector$' "$work/x86_64.resolved"
+# Not `! grep`: set -e ignores a negated command, so that never failed.
+if grep -q '^iso reflector$' "$work/aarch64.resolved"; then
+	printf 'aarch64 iso resolves reflector, which Arch Linux ARM does not have.\n' >&2
+	exit 1
+fi
 
 printf 'Arch required, desktop, and system-management package map: PASS (%s packages)\n' \
 	"${#packages[@]}"

@@ -53,8 +53,9 @@ if [[ $install_status -ne 1 ]]; then
 	printf 'Unsupported installer exited with %s instead of 1.\n' "$install_status" >&2
 	exit 1
 fi
-grep -Fq 'Unsupported distribution: Unsupported Linux' "$work/install-rejection.out"
-grep -Fq 'lyona supports Arch Linux only.' "$work/install-rejection.out"
+grep -Fq 'Unsupported distribution: Unsupported Linux (ID=example on ' "$work/install-rejection.out"
+grep -Fq 'lyona supports Arch Linux, and Arch Linux ARM on aarch64 (experimental), only.' \
+	"$work/install-rejection.out"
 if [[ -e $work/mutations.log ]]; then
 	printf 'Unsupported installer attempted a package or system mutation.\n' >&2
 	exit 1
@@ -88,7 +89,8 @@ if [[ $screensaver_status -ne 1 ]]; then
 		"$screensaver_status" >&2
 	exit 1
 fi
-grep -Fq 'lyona supports Arch Linux only.' "$work/xscreensaver-rejection.out"
+grep -Fq 'lyona supports Arch Linux, and Arch Linux ARM on aarch64 (experimental), only.' \
+	"$work/xscreensaver-rejection.out"
 snapshot_tree "$work/unsupported-home" "$work/screensaver-home.after"
 if [[ -e $work/mutations.log ]] ||
 	! cmp "$work/screensaver-home.before" "$work/screensaver-home.after"; then
@@ -96,4 +98,112 @@ if [[ -e $work/mutations.log ]] ||
 	exit 1
 fi
 
-printf 'Arch Linux-only platform contract: PASS\n'
+# --- The accepted identities (SPEC.md section 4, ARM64.md A-1) ---------------
+cat >"$work/archarm" <<'EOF'
+ID=archarm
+ID_LIKE=arch
+PRETTY_NAME="Arch Linux ARM"
+EOF
+cat >"$work/derivative" <<'EOF'
+ID=example-arch
+ID_LIKE=arch
+PRETTY_NAME="Example Arch Derivative"
+EOF
+
+# family <os-release> <machine>: the family dwm-utils.sh resolves, and whether
+# is_arch_family agrees.
+family() {
+	# shellcheck disable=SC2016
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$1" DWM_MACHINE="$2" bash -c \
+		'. "$1"; if is_arch_family; then a=yes; else a=no; fi
+		printf "%s %s %s" "$DISTRO_FAMILY" "$a" "$DISTRO_MACHINE"' \
+		sh "$repo/scripts/dwm-utils.sh"
+}
+expect_family() {
+	local got
+	got=$(family "$1" "$2")
+	if [[ $got != "$3" ]]; then
+		printf 'Identity %s on %s: expected "%s", got "%s".\n' "${1##*/}" "$2" "$3" "$got" >&2
+		exit 1
+	fi
+}
+expect_family "$work/arch" x86_64 'arch yes x86_64'
+# Arch's own aarch64 port, if it ever ships, is still Arch.
+expect_family "$work/arch" aarch64 'arch yes aarch64'
+expect_family "$work/archarm" aarch64 'arch yes aarch64'
+# 32-bit Arch Linux ARM is out of scope.
+expect_family "$work/archarm" armv7l 'unknown no armv7l'
+expect_family "$work/archarm" x86_64 'unknown no x86_64'
+# ID_LIKE=arch is never enough.
+expect_family "$work/derivative" x86_64 'unknown no x86_64'
+expect_family "$work/derivative" aarch64 'unknown no aarch64'
+
+# Arch Linux ARM on armv7 and a derivative are rejected before any change,
+# naming the identity and the architecture found.
+reject_install() {
+	local release=$1 machine=$2 expect=$3 out=$work/reject-${1##*/}-$2.out status
+	snapshot_tree "$work/unsupported-home" "$work/home.before"
+	set +e
+	DWM_TEST_MODE=1 DWM_OS_RELEASE="$release" DWM_MACHINE="$machine" \
+		DWM_MUTATION_LOG="$work/mutations.log" HOME="$work/unsupported-home" \
+		PATH="$work/bin:$PATH" "$repo/install.sh" \
+		--non-interactive --profile core >"$out" 2>&1
+	status=$?
+	set -e
+	if [[ $status -ne 1 ]] || ! grep -Fq "$expect" "$out"; then
+		printf 'install.sh on %s/%s: exit %s, expected a rejection naming "%s".\n' \
+			"${release##*/}" "$machine" "$status" "$expect" >&2
+		cat "$out" >&2
+		exit 1
+	fi
+	snapshot_tree "$work/unsupported-home" "$work/home.after"
+	if [[ -e $work/mutations.log ]] || ! cmp -s "$work/home.before" "$work/home.after"; then
+		printf 'install.sh on %s/%s attempted a mutation.\n' "${release##*/}" "$machine" >&2
+		exit 1
+	fi
+}
+reject_install "$work/archarm" armv7l 'Unsupported distribution: Arch Linux ARM (ID=archarm on armv7l)'
+reject_install "$work/derivative" aarch64 \
+	'Unsupported distribution: Example Arch Derivative (ID=example-arch on aarch64)'
+
+# Arch Linux ARM on aarch64 gets past the identity check, and the CachyOS
+# repositories, asked for, are skipped with their existing message.
+DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/archarm" DWM_MACHINE=aarch64 \
+	"$repo/install.sh" --dry-run --profile full --enable-cachyos-repos \
+	>"$work/archarm-dry-run.out" 2>&1 || {
+	printf 'install.sh --dry-run failed on Arch Linux ARM/aarch64.\n' >&2
+	cat "$work/archarm-dry-run.out" >&2
+	exit 1
+}
+grep -Fq 'Distribution: Arch Linux ARM' "$work/archarm-dry-run.out"
+grep -Fq 'The CachyOS repositories are x86_64 Arch only; skipping them.' "$work/archarm-dry-run.out"
+grep -Fq 'Dry run complete; no changes were made.' "$work/archarm-dry-run.out"
+
+# NVIDIA detection finds nothing, without an error, on ARM machines (ARM1-04):
+# a Raspberry Pi 4 (a PCIe bridge and the VL805 USB controller), the aarch64
+# QEMU VM, and a machine without lspci (a Pi with no pciutils).
+mkdir -p "$work/gpu-bin"
+cat >"$work/gpu-bin/lspci" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$TEST_LSPCI"
+EOF
+chmod +x "$work/gpu-bin/lspci"
+gpu() {
+	# shellcheck disable=SC2016
+	env PATH="$1" TEST_LSPCI="${2:-}" bash -c '. "$1"; detect_gpu' sh "$repo/scripts/dwm-utils.sh" 2>"$work/gpu.err"
+}
+pi4=$'00:00.0 PCI bridge: Broadcom Inc. and subsidiaries BCM2711 PCIe Bridge (rev 20)\n01:00.0 USB controller: VIA Technologies, Inc. VL805/806 xHCI USB 3.0 Controller (rev 01)'
+# The emulated aarch64 VM's own lspci (2026-10-13).
+vm=$'00:00.0 Host bridge: Red Hat, Inc. QEMU PCIe Host bridge\n00:01.0 Ethernet controller: Red Hat, Inc. Virtio network device\n00:02.0 Display controller: Red Hat, Inc. Virtio 1.0 GPU (rev 01)\n00:03.0 USB controller: Red Hat, Inc. QEMU XHCI Host Controller (rev 01)'
+[[ $(gpu "$work/gpu-bin:$PATH" "$pi4") == unknown && ! -s $work/gpu.err ]]
+[[ $(gpu "$work/gpu-bin:$PATH" "$vm") == unknown && ! -s $work/gpu.err ]]
+mkdir -p "$work/no-lspci"
+for tool in bash env grep ls head; do ln -sf "$(command -v "$tool")" "$work/no-lspci/$tool"; done
+[[ $(gpu "$work/no-lspci") == unknown && ! -s $work/gpu.err ]]
+
+# The settings provider and the health check name Arch Linux ARM's family.
+grep -Eq '^[[:space:]]*arch \| archarm\) printf' "$repo/scripts/dwm-settings-provider"
+# shellcheck disable=SC2016
+grep -Fq '[[ $id == arch || $id == archarm ]] && family=arch' "$repo/scripts/dwm-system-health"
+
+printf 'Arch Linux platform contract (Arch Linux, Arch Linux ARM on aarch64): PASS\n'

@@ -105,8 +105,9 @@ The ISO carries the same version as the rest of the project: one `VERSION` in
 `config.mk` drives the source archive, the compiled `dwm -v` string, and the
 installer image. Bump `config.mk` before building the image, not after.
 
-Build the installer image on an Arch host with the `archiso` package
-installed:
+Build the installer image on an Arch host with the `archiso` and `rsync`
+packages installed (archiso does not pull in rsync, which the builder uses to
+embed the checkout):
 
 ```sh
 sudo scripts/build-lyona-arch-iso.sh --output release/
@@ -208,10 +209,91 @@ NVIDIA driver. Stability and gaming on that driver are not yet tested.
 (non-legacy) NVIDIA driver and `470xx`, other real hardware, and Wi-Fi
 installs. Do not treat a release as qualified on hardware until it has been.
 
+### The aarch64 medium
+
+ARM Sprint 2 (`docs/sprints/ARM-SPRINT-2-GENERIC-IMAGE.md`) adds an aarch64
+UEFI medium on Arch Linux ARM. The release workflow builds it with the
+others (ARM5-01), but no release carrying it exists yet (it is first made in
+Lyona, after the merge). Which machines it is supported on, and which are
+experimental, is `SPEC.md` section 4's table. It builds only
+on an aarch64 host, natively (`docs/sprints/ARM64.md` A-3), and needs
+archiso 91 or later, which Arch Linux ARM does not package, so a checkout of
+it provides `mkarchiso` and the `releng` profile:
+
+```sh
+git clone --branch v91 https://gitlab.archlinux.org/archlinux/archiso.git
+sudo LYONA_MKARCHISO="$PWD/archiso/archiso/mkarchiso" \
+	LYONA_RELENG_DIR="$PWD/archiso/configs/releng" \
+	scripts/build-lyona-arch-iso.sh --arch aarch64 --output release/
+```
+
+`mkarchiso` needs `arch-install-scripts`, `squashfs-tools`, `libisoburn`,
+`mtools`, `dosfstools`, `erofs-utils`, `mkinitcpio-archiso` and `grub` on the
+host, and the builder needs `rsync` and, for aarch64, `systemd-ukify` (it
+refuses to build without it). It produces
+`lyona-VERSION-aarch64.iso`. The medium is the x86_64 one with
+`archiso-aarch64/`'s package layer, `pacman.conf` and kernel-name hook,
+and the builder's changes to `releng` for Arch Linux ARM: UEFI only
+(systemd-boot), `linux-aarch64`, SquashFS with the arm64 filter alone, and no
+`memdisk` hook. Each change is explained in
+`docs/evidence/arm2-01-spike.md` and checked by
+`tests/test-arch-iso-builder.sh`. The kernel on the medium carries the
+Snapdragon X device trees (ARM6-02): the builder runs a copy of `mkarchiso`
+made by `scripts/lyona-mkarchiso-dtb` that fuses them, with systemd's EFI stub
+and hardware-ID table, into the kernel, so one medium boots each covered laptop
+and any other machine boots as before (`tests/test-arch-iso-dtb.sh`). Its wizard installs lyona with archinstall,
+as on x86_64, with the aarch64 differences in
+`docs/evidence/arm2-03-installer.md` (ext4 and ext4 with LUKS, on QEMU/KVM),
+and it downloads from Arch Linux ARM's mirrors, not reflector's
+(`docs/evidence/arm2-04-mirrors-keyring.md`). ext4 and btrfs installs from
+it reached a working desktop on three virtual machine configurations on GB10
+(`docs/evidence/arm2-05-generic-image.md`); UTM, Parallels and real hardware
+are untested.
+
+### The Raspberry Pi image
+
+ARM Sprint 3 (`docs/sprints/ARM-SPRINT-3-RASPBERRY-PI.md`) adds a ready-to-write
+image for the Raspberry Pi 4 and Pi 5, one image for both (A-5). A Pi has no
+installer: the image is the installed system, without a user, and its first
+boot asks the questions, creates the user and finishes the install for them
+(`rpi/lyona-firstboot.sh`, ARM3-02). It is not released. It was validated
+on a real Raspberry Pi 4 on 2026-11-04 and 2026-11-05: built on that Pi,
+written to an SD card, through the first boot to a working desktop, with an
+update and a rollback (`docs/evidence/arm3-06-raspberry-pi.md`). It builds
+natively on an aarch64 Arch Linux ARM host as root. The first builds ran in
+the privileged `lyona-archlinuxarm` container on GB10, which is no longer
+available (2026-10-27). Before the merge into Lyona, it builds on the Raspberry
+Pi 4 (4 GB) running Arch Linux ARM, with about 15 GB free: there, from the
+Pi's own SD card, it took about 1 h 29 min. Run it as a `systemd-run` unit,
+so a dropped SSH session does not stop it. The release build runs on Lyona's
+GitHub arm64 runner after the merge (`docs/sprints/ARM64.md`, End state):
+
+```sh
+sudo scripts/build-lyona-rpi-image.sh --output release/
+```
+
+The builder needs `arch-install-scripts`, `rsync`, `util-linux`, `e2fsprogs`
+(1.47 or later, for `mkfs.ext4 -d`), `dosfstools`, `mtools`, `xz` and `git`,
+and network access. It produces `lyona-VERSION-rpi-aarch64.img.xz` and its
+`.sha256`. It `pacstrap`s the dependency map's `rpi-image` profile (the
+Raspberry Pi kernel `linux-rpi`, its firmware and device trees) into a
+directory, runs `install.sh --profile full` there as a temporary build user,
+adds the boot configuration and the lyona boot splash (ARM3-03: `config.txt`
+stays the kernel package's and includes `rpi/lyona.txt`, lyona's settings, then
+`custom.txt`, the user's; Plymouth's hook and `vc4` go in the initramfs, and
+`splash` on the command line; `LYONA_SPLASH_PALETTE` names the palette, default
+`tokyonight`) and the first boot, then removes that user and everything
+personal, and makes the MBR disk image
+(a 512 MiB FAT32 boot partition and an ext4 root just large enough) from the
+directory, with no loop device. `--check-root DIR` checks a root filesystem
+the way the builder does before it makes the image.
+`docs/evidence/arm3-01-pi-image-builder.md` records a build.
+
 ### Signed releases
 
-The release workflow signs what users install, the ISO and the source archive,
-from `2026.10.0-beta.2` on (decision D-31, reversing D-14). It records one
+The release workflow signs what users install, the ISOs, the Raspberry Pi
+image and the source archive, from `2026.10.0-beta.2` on (the aarch64 images
+from the first release that carries them) (decision D-31, reversing D-14). It records one
 build-provenance attestation for both, signed keylessly through Sigstore with
 the run's GitHub identity. There is no signing key to keep or rotate: the
 signature names the repository, the workflow file, the branch (`main`) and the
@@ -220,15 +302,16 @@ commit it was built from.
 The signing is its own job (GHSA-xfhv-7h9c-m966). The build job runs the
 repository's code and freshly synced packages in a privileged container, so it
 has a read-only token and cannot sign. The `sign` job, the only one with the
-OIDC token Sigstore signs with, runs no repository code: it downloads the ISO
-and the source archive the build made and attests them with pinned actions.
+OIDC token Sigstore signs with, runs no repository code: it downloads the
+images and the source archive the builds made and attests them with pinned
+actions.
 The signature still names `build-iso.yml` on `main`, whichever job signs, so
 `lyona-update`'s check is unchanged.
 
 The files are signed before anything is published. `scripts/lyona-release
 --bundle` then publishes the signature as `lyona-VERSION.sigstore.json`, and
-refuses a bundle that does not name the digests of the archive and the ISO it
-uploads; the archive is reproducible, so its rebuild is the file that was
+refuses a bundle that does not name the digests of the archive and every image
+it uploads; the archive is reproducible, so its rebuild is the file that was
 signed. The attestation is also kept in the repository's attestation store.
 
 `lyona-update` checks the signature with `cosign` before it unpacks a release,
@@ -246,7 +329,8 @@ cosign verify-blob-attestation --bundle lyona-VERSION.sigstore.json \
 Or, logged in to the GitHub CLI: `gh attestation verify FILE --repo
 technicks89/Lyona`. Either succeeds only for a file this repository's workflow
 built. A release made by hand with `scripts/lyona-release` and no `--bundle` is
-not signed, and `lyona-update` refuses it: publish through the workflow.
+not signed, and `lyona-update` refuses it: publish through the workflow. The
+architecture markers are empty and are not signed.
 
 ### Using the ISO
 
@@ -350,13 +434,27 @@ A mismatch fails in seconds, before anything is built. So commit the new
 `VERSION` (and `CHANGELOG.md`) first, and push it.
 
 What it does:
-- **The ISO:** builds it, and keeps it and its `SHA256SUMS` as a workflow
-  artifact.
-- **The tag and the release:** only once the ISO has built, it runs
-  `scripts/lyona-release` with `--prerelease`. That creates `vVERSION` at the
-  run's commit, with the source archive `lyona-update` installs from, the ISO,
-  and a `SHA256SUMS` of both. `notes` is an optional release notes file in the
-  repository.
+- **The images** (ARM5-01): builds the x86_64 ISO, then, on GitHub's arm64
+  runner, the generic aarch64 ISO (`build-aarch64-iso`) and the Raspberry Pi
+  image (`build-rpi-image`), each in a privileged Arch Linux ARM container
+  that `scripts/ci-archlinuxarm-image.sh` makes from Arch Linux ARM's signed
+  root filesystem, through `scripts/ci-release-aarch64.sh`. Each is kept as a
+  workflow artifact. The aarch64 jobs start after the x86_64 job's version
+  and tag check.
+- **The tag and the release:** only once every image has built (the release
+  job needs all three build jobs, and none may be skipped or fail silently),
+  it runs `scripts/lyona-release` with `--prerelease`. That creates `vVERSION`
+  at the run's commit, with the source archive `lyona-update` installs from,
+  `lyona-VERSION-x86_64.iso`, `lyona-VERSION-aarch64.iso`,
+  `lyona-VERSION-rpi-aarch64.img.xz`, and a `SHA256SUMS` of all of them.
+  `notes` is an optional release notes file in the repository.
+- **One release, both architectures** (#53): the release carries two empty
+  marker assets, `lyona-VERSION-architecture-x86_64` and
+  `lyona-VERSION-architecture-aarch64` (`--architecture`), which
+  `lyona-update` reads to know which architectures a release serves. A release
+  without markers, as the earlier ones, serves x86_64 only. The markers are
+  made only because the run built every image: there is no release for one
+  architecture alone.
 - **Every release starts as a pre-release.** A beta stays one. A main release
   stays one until you promote it, once its ISO has passed the VM
   qualification above.

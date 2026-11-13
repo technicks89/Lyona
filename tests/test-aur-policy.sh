@@ -114,7 +114,8 @@ if ! command -v pacman >/dev/null 2>&1 || ! command -v pacman-conf >/dev/null 2>
 fi
 
 official=()
-for candidate in core extra multilib; do
+# alarm: Arch Linux ARM's own official repository (ARM1-02).
+for candidate in core extra multilib alarm; do
 	if pacman-conf --repo-list 2>/dev/null | grep -Fxq "$candidate" &&
 		[[ -n $(pacman -Sl "$candidate" 2>/dev/null | head -n 1) ]]; then
 		official+=("$candidate")
@@ -134,15 +135,24 @@ profiles=$(sed -n 's/^\t\(arch:[a-z0-9-]*\))$/\1/p' "$repo/scripts/dwm-packages.
 for profile in $aur_exception_profiles; do
 	profiles=$(grep -vx "$profile" <<<"$profiles")
 done
+# The host's repositories can vouch only for the host's architecture: on
+# aarch64 the map resolved for aarch64, against Arch Linux ARM's repositories,
+# without the x86_64 install medium's lists (its aarch64 counterpart is ARM2-04).
+host_arch=${ARCH:-$HOSTTYPE}
+if [[ $host_arch != x86_64 ]]; then
+	profiles=$(grep -vx iso <<<"$profiles")
+fi
 [[ -n $profiles ]] || fail 'could not enumerate the package profiles'
 
 names=$work/names
 {
 	for profile in $profiles; do
-		# Same architecture gate the profiles use; gaming is x86_64 only.
-		ARCH=x86_64 dwm_packages arch "$profile"
+		# The architecture gate the profiles use; gaming is x86_64 only.
+		ARCH=$host_arch dwm_packages arch "$profile"
 	done
-	grep -Ev '^[[:space:]]*(#|$)' "$repo/archiso/packages.x86_64"
+	if [[ $host_arch == x86_64 ]]; then
+		grep -Ev '^[[:space:]]*(#|$)' "$repo/archiso/packages.x86_64"
+	fi
 } | sort -u >"$names"
 [[ -s $names ]] || fail 'no package names were collected'
 

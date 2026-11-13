@@ -14,6 +14,10 @@ import qs.settings
  * the security fixture carries D-5's 7 identifiers (firewalld/ufw/nftables
  * as three distinct rows, not upstream's single "firewalld"); the OS-name
  * fixture value names this project's own distribution.
+ *
+ * ARM3-05: the Board row is left out while the fixture has no device tree,
+ * and shown once it has one (a Raspberry Pi); the temperature reads in
+ * degrees; any other unsupported state reads "Not supported".
  */
 ShellRoot {
     id: root
@@ -57,6 +61,14 @@ ShellRoot {
             check(item("information-value-firewalld").text === "enabled", "firewalld reads independently of ufw/nftables (D-5)");
             check(item("information-value-ufw").text === "disabled", "ufw reads independently of firewalld/nftables (D-5)");
             check(item("information-value-nftables").text === "disabled", "nftables reads independently of firewalld/ufw (D-5)");
+            check(!item("information-row-board-model").visible, "No device tree leaves the Board row out");
+            check(item("information-row-cpu-temperature").visible, "A processor thermal zone shows its row");
+            check(item("information-value-cpu-temperature").text === "48.3 C", "Millidegrees read as degrees Celsius");
+            check(item("information-row-swap-total-bytes").visible, "A required row is never left out");
+            check(item("information-value-swap-total-bytes").text === "Not supported", "Unsupported is not unknown");
+            model.deviceTree = true;
+            check(item("information-row-board-model").visible, "A device tree shows the Board row");
+            check(item("information-value-board-model").text === "Raspberry Pi 5 Model B Rev 1.0", "The board is named");
             model.filesystemsRetained = true;
             item("openSystemHealth").forceActiveFocus();
         } else if (stage === 1 && item("openSystemHealth").activeFocus) {
@@ -96,14 +108,19 @@ ShellRoot {
         property int openCount: 0
         property var actions: [{id: "health-open", status: "available", detail: "Open a read-only scan; repairs need separate confirmation."}]
         property bool filesystemsRetained: false
+        property bool deviceTree: false
         property var filesystems: Array.from({length: 256}, (_, index) => ({id: String(index), status: "available",
             source: "/dev/fixture-" + index, target: "/mnt/fixture-" + index, fstype: "ext4",
             sizeBytes: "18446744073709551615", usedBytes: "1073741824", availableBytes: "2147483648", detail: "Fixture filesystem bytes at this read"}))
         function nativeStateView(identifier) {
             if (identifier === "secure-boot") return {status: "partial", value: "unknown", detail: "Firmware evidence unavailable"};
+            if (identifier === "swap-total-bytes") return {status: "unsupported", value: "unknown", detail: "Fixture source is absent"};
+            if (identifier === "board-model") return deviceTree
+                ? {status: "available", value: "Raspberry Pi 5 Model B Rev 1.0", detail: "Board model from the device tree"}
+                : {status: "unsupported", value: "unknown", detail: "This machine has no device tree; Hardware model names it"};
             const values = {"os-name": "Arch Linux (Fixture)", "os-version": "rolling", "kernel-release": "6.18.fixture",
                 architecture: "x86_64", "hardware-vendor": "Fixture vendor", "hardware-model": "Fixture workstation",
-                "cpu-model": "Fixture CPU", "logical-cpus": "16", "uptime-seconds": "94231", "selinux": "enforcing",
+                "cpu-model": "Fixture CPU", "cpu-temperature": "48312", "logical-cpus": "16", "uptime-seconds": "94231", "selinux": "enforcing",
                 "firewalld": "enabled", "ufw": "disabled", "nftables": "disabled",
                 "root-encryption": "encrypted", "screen-lock": "enabled"};
             return {status: "available", value: values[identifier] || "18446744073709551615", detail: "Read-only fixture observation"};

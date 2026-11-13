@@ -13,6 +13,9 @@ set -euo pipefail
 
 # shellcheck source=tests/lib.sh
 . "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib.sh"
+# The legacy NVIDIA branches are the x86_64 medium's: its map and its AUR
+# PKGBUILDs, whatever the host is (ARM1-05).
+export ARCH=x86_64 DWM_AUR_ARCH=x86_64
 make_workspace
 
 postinstall=$repo/archiso/airootfs/root/lyona-postinstall.sh

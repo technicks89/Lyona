@@ -278,6 +278,31 @@ for fake in fake elf-only; do
 	fi
 done
 
+# --- Built for another CPU: refused, said, nothing moved (ARM1-03). -------------
+# The good fixture with its ELF e_machine set to the CPU this machine is not:
+# aarch64 (183) on x86_64, x86_64 (62) elsewhere.
+case $HOSTTYPE in
+x86_64) foreign=183 foreign_name=aarch64 ;;
+*) foreign=62 foreign_name=x86_64 ;;
+esac
+cp "$work/fixtures/Good.AppImage" "$work/home/Downloads/Foreign.AppImage"
+# The format is built on purpose: a byte given in octal.
+# shellcheck disable=SC2059
+printf "\\$(printf %03o "$foreign")\\000" |
+	dd of="$work/home/Downloads/Foreign.AppImage" bs=1 seek=18 conv=notrunc status=none
+notified_before=$(count "$work/notify.log")
+if run_helper open "$work/home/Downloads/Foreign.AppImage" 2>"$work/err"; then
+	fail "an AppImage built for $foreign_name was accepted on $HOSTTYPE"
+fi
+[[ -e $work/home/Downloads/Foreign.AppImage ]] || fail 'the foreign AppImage was moved although it was refused'
+[[ ! -e $entries/lyona-appimage-foreign-appimage.desktop ]] || fail 'the foreign AppImage got a launcher entry'
+grep -Fq "Foreign.AppImage is built for $foreign_name, and this computer is $HOSTTYPE" "$work/err" ||
+	fail "the refusal does not name the two CPUs: $(cat "$work/err")"
+if [[ $(count "$work/notify.log") != $((notified_before + 1)) ]] ||
+	! tail -n 1 "$work/notify.log" | grep -Fq 'AppImage not added'; then
+	fail 'refusing the foreign AppImage was not said'
+fi
+
 # --- list and remove. -----------------------------------------------------------
 listed=$(run_helper list)
 grep -Fq "Good App	$apps/Good.AppImage" <<<"$listed" || fail "list does not show Good App: $listed"

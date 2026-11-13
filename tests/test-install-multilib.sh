@@ -23,7 +23,8 @@ run_case() {
 	rm -f "$work/enabled"
 	[[ ${ALREADY_ENABLED:-0} != 1 ]] || : >"$work/enabled"
 	(
-		DISTRO_ID=arch INSTALL_PROFILE=full ARCH=x86_64 ARCH_GAMING_REPOS_APPROVED=true
+		INSTALL_PROFILE=full ARCH=x86_64 ARCH_GAMING_REPOS_APPROVED=true
+		is_arch_family() { :; }
 		ok() { :; }
 		info() { printf 'info %s\n' "$1" >>"$work/sudo.log"; }
 		warn() { printf 'warn %s\n' "$1" >>"$work/sudo.log"; }

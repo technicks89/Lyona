@@ -14,6 +14,9 @@ export NVIDIA_AUR_MARKER=${NVIDIA_AUR_MARKER:-/run/lyona-nvidia-aur}
 export LYONA_WARNINGS=${LYONA_WARNINGS:-/run/lyona-install-warnings}
 # Left by the wizard once it ranked this medium's mirrorlist (#249).
 export LYONA_MIRRORS_MARKER=${LYONA_MIRRORS_MARKER:-/run/lyona-mirrors-ranked}
+# x86_64, or aarch64 on the experimental Arch Linux ARM medium (ARM Sprint 2),
+# as the wizard takes it.
+export MACHINE_ARCH=${ARCH:-$HOSTTYPE}
 
 fail() {
 	printf 'lyona-postinstall: %s\n' "$1" >&2
@@ -45,6 +48,11 @@ show_logo
 
 add_cachyos_repositories() {
 	rm -f "$CACHYOS_MARKER"
+	# CachyOS builds for x86_64 only (lyona-cachyos refuses anything else).
+	if [[ $MACHINE_ARCH != x86_64 ]]; then
+		printf 'lyona-postinstall: CachyOS is x86_64 only; keeping the %s repositories.\n' "$MACHINE_ARCH"
+		return 0
+	fi
 	install -Dm755 "$REPO_SRC/scripts/lyona-cachyos" "$TARGET$CACHYOS_HELPER"
 
 	# The live medium adds the repositories before archinstall runs, so the
@@ -92,6 +100,10 @@ add_cachyos_repositories() {
 # fallback. Either way there is no fallback initramfs (drop_fallback_initramfs).
 install_cachyos_kernel() {
 	drop_fallback_initramfs
+	if [[ $MACHINE_ARCH != x86_64 ]]; then
+		printf 'lyona-postinstall: keeping the stock kernel; CachyOS is x86_64 only.\n'
+		return 0
+	fi
 	if arch-chroot "$TARGET" pacman -Qq "$CACHYOS_KERNEL" >/dev/null 2>&1; then
 		printf '%s was installed with the base system; it is the only kernel.\n' "$CACHYOS_KERNEL"
 		return 0
@@ -126,6 +138,217 @@ drop_fallback_initramfs() {
 		fi
 	done
 	rm -f -- "$TARGET"/boot/initramfs-*-fallback.img
+}
+
+# The new system's first package mirror resolves (ARM2-04), checked before the
+# first download, which every later step needs: a name that does not resolve
+# fails each of them with a less clear message. Not checked when the wizard was
+# told to continue without it (a network that downloads through a proxy).
+check_mirror_dns() {
+	local url host servers upstream
+	if [[ ${LYONA_MIRROR_DNS_SKIP:-0} == 1 ]]; then
+		printf "lyona-postinstall: not checking the mirror's name; the wizard was told to continue without it.\n"
+		return 0
+	fi
+	url=$(awk 'match($0, /^Server[[:space:]]*=[[:space:]]*/) { print substr($0, RLENGTH + 1); exit }' \
+		"$TARGET/etc/pacman.d/mirrorlist" 2>/dev/null) || url=
+	if [[ -z $url ]]; then
+		printf "lyona-postinstall: the new system's mirrorlist names no server.\n"
+		return 1
+	fi
+	host=${url#*://}
+	host=${host%%/*}
+	host=${host##*@}
+	host=${host%%:*}
+	if getent ahosts "$host" >/dev/null 2>&1; then
+		printf '%s resolves.\n' "$host"
+		return 0
+	fi
+	servers=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = ", " }' \
+		"${LYONA_RESOLV_CONF:-/etc/resolv.conf}" 2>/dev/null) || servers=
+	# systemd-resolved's stub: the servers it asks too.
+	if [[ $servers == 127.0.0.53 ]]; then
+		upstream=$(awk '$1 == "nameserver" { printf "%s%s", sep, $2; sep = ", " }' \
+			"${LYONA_RESOLVED_CONF:-/run/systemd/resolve/resolv.conf}" 2>/dev/null) || upstream=
+		servers="127.0.0.53, systemd-resolved, which asks: ${upstream:-none}"
+	fi
+	printf "lyona-postinstall: the package mirror's name does not resolve: %s (name servers: %s). Check the network, then choose Retry.\n" \
+		"$host" "${servers:-none}"
+	return 1
+}
+
+# aarch64 (ARM2-04): Arch Linux ARM's keys in the new system. archinstall
+# installs archlinuxarm-keyring (the wizard's configuration), whose install
+# script adds them; without them every download fails with "unknown trust"
+# (ARM2-03). Checked by the keyring's first trusted key before the first
+# download, and added once more when missing.
+trust_alarm_keyring() {
+	local fpr
+	fpr=$(awk -F: '!/^#/ && NF { print $1; exit }' \
+		"$TARGET/usr/share/pacman/keyrings/archlinuxarm-trusted" 2>/dev/null) || fpr=
+	if [[ -z $fpr ]]; then
+		printf 'lyona-postinstall: the new system has no archlinuxarm-keyring.\n'
+		return 1
+	fi
+	if arch-chroot "$TARGET" pacman-key --list-keys "$fpr" >/dev/null 2>&1; then
+		printf "Arch Linux ARM's keys are in the new system's keyring.\n"
+		return 0
+	fi
+	printf "lyona-postinstall: Arch Linux ARM's keys are not in the new system's keyring; adding them.\n"
+	arch-chroot "$TARGET" pacman-key --populate archlinuxarm || return 1
+	if ! arch-chroot "$TARGET" pacman-key --list-keys "$fpr" >/dev/null 2>&1; then
+		printf "lyona-postinstall: Arch Linux ARM's keys are still not in the new system's keyring.\n"
+		return 1
+	fi
+}
+
+# aarch64 (ARM2-03): linux-aarch64 installs its kernel as /boot/Image, and
+# GRUB pairs initramfs-linux.img (its preset's) only with a /boot/vmlinuz-linux.
+# Beside /boot/Image alone, grub-mkconfig writes an entry with no initramfs and
+# root=/dev/... (docs/evidence/arm2-01-spike.md): no encrypted root, and the
+# wrong disk when disks are named in another order. The medium's copy of this
+# hook gave the new system that file as pacstrap installed it; this gives it
+# the hook, so every kernel upgrade keeps the copy current. Before the first
+# system update, so an upgrade there is followed too.
+keep_vmlinuz_linux() {
+	local hook=etc/pacman.d/hooks/lyona-vmlinuz-linux.hook
+	install -Dm644 "$REPO_SRC/archiso-aarch64/airootfs/$hook" "$TARGET/$hook"
+	if [[ -f $TARGET/boot/Image ]] &&
+		! cmp -s "$TARGET/boot/Image" "$TARGET/boot/vmlinuz-linux" 2>/dev/null; then
+		cp -f "$TARGET/boot/Image" "$TARGET/boot/vmlinuz-linux"
+		printf 'Copied /boot/Image to /boot/vmlinuz-linux.\n'
+	fi
+	[[ -f $TARGET/boot/vmlinuz-linux ]] || {
+		printf 'lyona-postinstall: the new system has no /boot/vmlinuz-linux to boot.\n' >&2
+		return 1
+	}
+}
+
+# aarch64 (ARM2-03): archinstall installs GRUB at the removable path
+# (\EFI\BOOT\BOOTAA64.EFI) and adds no firmware boot entry. After the live
+# session, AAVMF (QEMU's aarch64 UEFI) then started its UEFI shell instead of
+# the disk; with an entry it boots the disk. An entry an earlier run made is
+# replaced, never added twice.
+add_firmware_boot_entry() {
+	local loader='\EFI\BOOT\BOOTAA64.EFI' sysfs=${LYONA_SYSFS:-/sys} source name disk partition number
+	[[ -d $sysfs/firmware/efi/efivars ]] || {
+		printf 'Not booted with UEFI; no firmware boot entry to add.\n'
+		return 0
+	}
+	[[ -f $TARGET/boot/EFI/BOOT/BOOTAA64.EFI ]] || {
+		printf 'lyona-postinstall: no %s on the new system'"'"'s EFI system partition.\n' "$loader" >&2
+		return 1
+	}
+	source=$(findmnt -n -o SOURCE --target "$TARGET/boot") || return 1
+	name=${source##*/}
+	disk=$(lsblk -n -d -o PKNAME "$source") || return 1
+	partition=$(<"$sysfs/class/block/$name/partition") || return 1
+	[[ -n $disk && -n $partition ]] || return 1
+	while read -r number; do
+		efibootmgr -q -b "$number" -B || return 1
+	done < <(efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} lyona\(\t.*\)\{0,1\}$/\1/p')
+	# --create puts the new entry first in BootOrder.
+	efibootmgr -q --create --disk "/dev/$disk" --part "$partition" --label lyona --loader "$loader"
+	printf 'Added the firmware boot entry "lyona" for /dev/%s partition %s.\n' "$disk" "$partition"
+}
+
+# aarch64 (ARM2-03): with no console= on the kernel command line, the kernel
+# takes the console the firmware's ACPI SPCR table names, a serial port, and
+# the display is no console at all. In a VM on GB10 an encrypted disk's
+# passphrase prompt went to the serial port alone and the screen stayed black.
+# console=tty0 puts the console on the display, as on x86_64; the serial port
+# stays one too. Plymouth draws only text while a serial console is active,
+# unless told to ignore them, so the splash and its passphrase box need
+# plymouth.ignore-serial-consoles as well. A drop-in of its own, as the
+# splash's; install.sh's GRUB theme step regenerates grub.cfg with it (#246).
+use_display_console() {
+	install -d -m 0755 "$TARGET/etc/default/grub.d"
+	# shellcheck disable=SC2016 # expanded by grub-mkconfig
+	printf '%s\n' '# The kernel console on the display, not only the firmware'"'"'s serial port (lyona-postinstall.sh, aarch64).' \
+		'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} console=tty0 plymouth.ignore-serial-consoles"' \
+		>"$TARGET/etc/default/grub.d/90-lyona-console.cfg"
+}
+
+# aarch64 on a Snapdragon X laptop (ARM Sprint 6, A-11 (a)): the laptop boots
+# Linux from a device tree, one per laptop, which GRUB must load, and it needs
+# kernel arguments found on the XPS 13 9345 (docs/evidence/arm6-01-snapdragon-spike.md):
+# efi=noruntime (the firmware's runtime services hang the kernel),
+# clk_ignore_unused and pd_ignore_unused (the kernel must not gate what the
+# firmware left on), arm64.nopauth, cma=128M, and systemd.tpm2_wait=0 (the
+# firmware reports a TPM the kernel never exposes, and systemd waited 90 s for
+# /dev/tpm0 at every boot). The firmware packages come from the dependency
+# map. A drop-in and a grub.d script of their own; install.sh regenerates
+# grub.cfg with them (#246). Any other machine is left as it is.
+install_snapdragon_support() {
+	local dtb dropin=$TARGET/etc/default/grub.d/90-lyona-snapdragon.cfg
+	local script=$TARGET/etc/grub.d/09_lyona_dtb
+	local LYONA_DTB_DIR=$TARGET/boot/dtbs
+	local -a firmware
+	# shellcheck source=scripts/lyona-snapdragon.sh
+	source "$REPO_SRC/scripts/lyona-snapdragon.sh"
+	if ! dtb=$(lyona_snapdragon_dtb); then
+		printf 'Not a covered Snapdragon X laptop; nothing to add.\n'
+		return 0
+	fi
+	mapfile -t firmware < <(dwm_packages arch soc-snapdragon)
+	arch-chroot "$TARGET" pacman -S --noconfirm --needed "${firmware[@]}" || return 1
+	install -d -m 0755 "$TARGET/etc/default/grub.d" "$TARGET/etc/grub.d"
+	# shellcheck disable=SC2016 # expanded by grub-mkconfig
+	printf '%s\n' '# A Snapdragon X laptop (lyona-postinstall.sh); delete this file to turn it off.' \
+		'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} efi=noruntime clk_ignore_unused pd_ignore_unused arm64.nopauth cma=128M systemd.tpm2_wait=0"' \
+		>"$dropin"
+	# (grub-mk''config_lib is split so check-archiso's grep for a grub-mkconfig
+	# call in this file stays meaningful.)
+	# The device tree is named as GRUB sees its filesystem (/dtbs/... when /boot
+	# is the EFI system partition, /boot/dtbs/... when it is on the root
+	# filesystem), and loaded before any entry boots.
+	# The line is guarded: a grub.cfg written for one kernel stays in use after an
+	# upgrade (nothing regenerates it), and a kernel that no longer carries the
+	# file must boot as it would on any machine, not stop on a GRUB error.
+	printf '%s\n' '#!/bin/sh' \
+		'# The device tree of this Snapdragon X laptop (lyona-postinstall.sh).' \
+		'set -e' \
+		'. /usr/share/grub/grub-mk''config_lib' \
+		"dtb=/boot/dtbs/$dtb" \
+		'[ -f "$dtb" ] || exit 0' \
+		'prepare_grub_to_access_device "$(${grub_probe} --target=device "$dtb")"' \
+		'rel=$(make_system_path_relative_to_its_root "$dtb")' \
+		'printf "if [ -f %s ]; then\n  devicetree %s\nfi\n" "$rel" "$rel"' \
+		>"$script"
+	chmod 0755 "$script"
+	# After a kernel upgrade, say so when the device tree the hook names is gone.
+	install -d -m 0755 "$TARGET/etc/pacman.d/hooks" "$TARGET/usr/local/lib/lyona"
+	printf '%s\n' '#!/bin/sh' \
+		'# Warn when the kernel no longer carries the device tree of this laptop (lyona-postinstall.sh).' \
+		'script=/etc/grub.d/09_lyona_dtb' \
+		'[ -f "$script" ] || exit 0' \
+		'dtb=$(sed -n "s/^dtb=//p" "$script")' \
+		'[ -n "$dtb" ] && [ ! -f "$dtb" ] || exit 0' \
+		'echo "lyona: the kernel has no $dtb any more; this laptop boots without its device tree." >&2' \
+		'echo "lyona: see /etc/grub.d/09_lyona_dtb and the kernel package'"'"'s /boot/dtbs." >&2' \
+		'exit 0' \
+		>"$TARGET/usr/local/lib/lyona/snapdragon-dtb-check"
+	chmod 0755 "$TARGET/usr/local/lib/lyona/snapdragon-dtb-check"
+	printf '%s\n' '# Checks the laptop'"'"'s device tree after a kernel upgrade (lyona-postinstall.sh).' \
+		'[Trigger]' \
+		'Operation = Install' \
+		'Operation = Upgrade' \
+		'Type = Package' \
+		'Target = linux-aarch64' \
+		'' \
+		'[Action]' \
+		'Description = Checking the Snapdragon X device tree...' \
+		'When = PostTransaction' \
+		'Exec = /usr/local/lib/lyona/snapdragon-dtb-check' \
+		>"$TARGET/etc/pacman.d/hooks/lyona-snapdragon-dtb.hook"
+	# The kernel's default governor is performance (every core at full clock when
+	# idle); schedutil draws about half as much on the XPS 13 9345 (ARM6 follow-up).
+	# A tmpfiles rule sets it at boot; 'w-' ignores a kernel that has no such file.
+	install -d -m 0755 "$TARGET/etc/tmpfiles.d"
+	printf '%s\n' '# A Snapdragon X laptop (lyona-postinstall.sh); delete this file to go back to the kernel default.' \
+		'w- /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor - - - - schedutil' \
+		>"$TARGET/etc/tmpfiles.d/90-lyona-cpufreq.conf"
+	printf 'Snapdragon X: device tree %s, firmware %s.\n' "$dtb" "${firmware[*]}"
 }
 
 installed_kernels() {
@@ -496,7 +719,9 @@ install_yay() {
 	return "$status"
 }
 
-export -f note_warning dwm_packages add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
+export -f note_warning dwm_packages dwm_x86_64_only dwm_aarch64_only add_cachyos_repositories install_cachyos_kernel drop_fallback_initramfs \
+	check_mirror_dns trust_alarm_keyring keep_vmlinuz_linux add_firmware_boot_entry use_display_console \
+	install_snapdragon_support \
 	installed_kernels lyona_nvidia_branch nvidia_gpu_branch install_nvidia_driver \
 	install_legacy_nvidia_driver install_gpu_drivers set_wifi_country \
 	install_boot_splash splash_in_initramfs \
@@ -539,16 +764,36 @@ if [[ -e $LYONA_MIRRORS_MARKER ]]; then
 fi
 # Every run_logged step below, the yay, install.sh and Topgrade ones too (Sync
 # Sprint 16 R16-29).
-set_total_steps 12
+set_total_steps 13
+# aarch64 adds five, the indented run_logged calls below: the kernel copy GRUB
+# boots, Arch Linux ARM's keys, the firmware boot entry, the console on the
+# display, and the Snapdragon X laptop's device tree (a no-op elsewhere).
+[[ $MACHINE_ARCH != aarch64 ]] || set_total_steps 18
 # From the first step (#266): what a failure before install.sh leaves.
 LYONA_RECOVER_HINT="The base Arch system is installed on $TARGET; lyona's own steps did not finish. Choose Retry to run them again."
 # The CachyOS step first: the new system's pacman.conf already lists the CachyOS
 # repositories (archinstall copied this medium's), and this step trusts their
 # key there. Updating first failed every sync with "unknown trust" (Sync Sprint
 # 16, found in a VM once the wizard's CachyOS step ran again).
+# Before the first download, the CachyOS step's included (ARM2-04).
+run_logged "Checking the package mirror's name..." check_mirror_dns
 run_logged "Adding the CachyOS repositories..." add_cachyos_repositories
+if [[ $MACHINE_ARCH == aarch64 ]]; then
+	run_logged "Keeping the kernel where GRUB finds it..." keep_vmlinuz_linux
+	run_logged "Checking Arch Linux ARM's keys..." trust_alarm_keyring
+fi
 run_logged "Updating the new system..." arch-chroot "$TARGET" pacman -Syu --noconfirm
 run_logged "Checking the kernel..." install_cachyos_kernel
+if [[ $MACHINE_ARCH == aarch64 ]] &&
+	! run_logged "Adding a firmware boot entry..." add_firmware_boot_entry; then
+	note_warning "No firmware boot entry was added; if the machine starts its firmware shell instead of lyona, choose the disk in its boot menu." >/dev/null
+fi
+if [[ $MACHINE_ARCH == aarch64 ]]; then
+	run_logged "Putting the console on the display..." use_display_console
+	if ! run_logged "Setting up a Snapdragon X laptop..." install_snapdragon_support; then
+		note_warning "The Snapdragon X laptop's device tree or firmware was not set up; it may not boot or lack sound and graphics." >/dev/null
+	fi
+fi
 run_logged "Installing GPU drivers..." install_gpu_drivers
 run_logged "Configuring NetworkManager..." install_networkmanager
 if ! run_logged "Setting the Wi-Fi country..." set_wifi_country; then

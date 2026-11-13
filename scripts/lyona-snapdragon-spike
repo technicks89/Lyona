@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ARM6-01 capture: run on the Snapdragon X laptop, booted from the generic
+# medium, to record what the evidence document asks for. Read-only: it writes
+# one directory of text files and changes nothing on the machine.
+#
+# Usage: lyona-snapdragon-spike [OUTPUT_DIR]   (default: ./arm6-01-capture)
+
+out=${1:-arm6-01-capture}
+mkdir -p -- "$out"
+
+# capture NAME COMMAND...: the command's output (stderr too) in NAME.txt; a
+# missing tool or a failing command is recorded, not fatal.
+capture() {
+	local name=$1
+	shift
+	if ! command -v "$1" >/dev/null 2>&1; then
+		printf 'not installed: %s\n' "$1" >"$out/$name.txt"
+		return 0
+	fi
+	"$@" >"$out/$name.txt" 2>&1 || printf '\n(exit status %s)\n' "$?" >>"$out/$name.txt"
+}
+
+# The identity: the DMI strings lyona_snapdragon_dtb matches (confirm them).
+for field in sys_vendor product_name product_version bios_version; do
+	printf '%s: %s\n' "$field" "$(cat "/sys/class/dmi/id/$field" 2>/dev/null || echo '(none)')"
+done >"$out/dmi.txt"
+{
+	printf 'machine: %s\n' "$(uname -m)"
+	printf 'kernel: %s\n' "$(uname -r)"
+	printf 'cmdline: %s\n' "$(cat /proc/cmdline)"
+	if [[ -r /proc/device-tree/model ]]; then
+		printf 'device tree model: %s\n' "$(tr -d '\0' </proc/device-tree/model)"
+		printf 'device tree compatible: %s\n' "$(tr '\0' ' ' </proc/device-tree/compatible)"
+	else
+		printf 'device tree: none (booted by ACPI)\n'
+	fi
+	printf 'EFI: %s\n' "$([[ -d /sys/firmware/efi ]] && echo yes || echo no)"
+} >"$out/boot.txt"
+
+# What loaded, and what is missing.
+capture dmesg-firmware sh -c "dmesg | grep -i -E 'firmware|failed|error|ath12k|msm|adreno|dpu|panel|battmgr|glink|ucsi|remoteproc|q6|adsp|cdsp' || true"
+capture dmesg-full dmesg
+capture lsmod lsmod
+capture lsusb lsusb
+capture lspci lspci -nn
+# Display and GPU.
+# shellcheck disable=SC2016 # expanded by the inner sh, not here
+capture drm sh -c 'ls /sys/class/drm; for s in /sys/class/drm/*/status; do printf "%s: " "$s"; cat "$s"; done'
+capture xrandr xrandr --query
+capture glxinfo glxinfo -B
+# Input, network, power, audio.
+capture input sh -c 'cat /proc/bus/input/devices'
+capture network nmcli device status
+# shellcheck disable=SC2016 # expanded by the inner sh, not here
+capture power sh -c 'for s in /sys/class/power_supply/*; do echo "== $s"; cat "$s/uevent"; done'
+# shellcheck disable=SC2016 # expanded by the inner sh, not here
+capture backlight sh -c 'ls /sys/class/backlight; for b in /sys/class/backlight/*; do cat "$b/brightness" "$b/max_brightness"; done'
+capture audio sh -c 'aplay -l; pactl list short sinks'
+capture sleep sh -c 'cat /sys/power/mem_sleep /sys/power/state'
+# The idle cost the sprint's lean budget watches.
+capture top top -b -n 1 -w 160
+capture free free -m
+
+printf 'Wrote %s/. Add the by-hand results (suspend, lid, touchpad, USB-C, sound)\n' "$out"
+printf 'to docs/evidence/arm6-01-snapdragon-spike.md.\n'

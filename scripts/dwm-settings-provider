@@ -38,7 +38,8 @@ platform_family() {
 	id=$1
 
 	case "$id" in
-	arch) printf '%s\n' arch ;;
+	# Arch Linux ARM is the Arch family too (experimental, ARM64.md A-1).
+	arch | archarm) printf '%s\n' arch ;;
 	*) printf '%s\n' unknown ;;
 	esac
 }
@@ -466,6 +467,21 @@ emit_capability() {
 		"$(clean_field "$detail")"
 }
 
+# Whether bluetoothd owns org.bluez on the system bus. Without it,
+# `bluetoothctl show` waits for the daemon until the probe's 2-second timeout,
+# on every discovery, and holds the Appearance pane to its 5-second loading cap
+# (found on Arch Linux ARM without an adapter, ARM1-06). An answer that is not a
+# plain yes or no (no busctl, no system bus) keeps the bluetoothctl probe.
+bluez_daemon_present() {
+	bluez_owner=$(run_bounded_output busctl --system --json=short call \
+		org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus \
+		NameHasOwner s org.bluez) || return 0
+	case $bluez_owner in
+	*'"data":[false]'*) return 1 ;;
+	esac
+	return 0
+}
+
 emit_probed_command_capability() {
 	section=$1
 	id=$2
@@ -565,11 +581,16 @@ discover() {
 		'Install NetworkManager to enable this section' \
 		'NetworkManager is installed, but its service is not responding' \
 		-t -f RUNNING general
-	emit_probed_command_capability bluetooth bluez Bluetooth delegated bluetoothctl \
-		'BlueZ state is available' \
-		'Install BlueZ tools to enable this section' \
-		'BlueZ tools are installed, but no daemon or adapter is responding' \
-		show
+	if provider_available bluetoothctl && ! bluez_daemon_present; then
+		emit_capability bluetooth bluez Bluetooth unavailable delegated bluetoothctl \
+			'BlueZ tools are installed, but no daemon or adapter is responding'
+	else
+		emit_probed_command_capability bluetooth bluez Bluetooth delegated bluetoothctl \
+			'BlueZ state is available' \
+			'Install BlueZ tools to enable this section' \
+			'BlueZ tools are installed, but no daemon or adapter is responding' \
+			show
+	fi
 
 	if run_bounded_probe pactl info; then
 		emit_capability audio pipewire-audio Audio available user-session pactl \

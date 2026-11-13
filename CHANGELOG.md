@@ -10,6 +10,264 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- ARM user documentation (ARM5-04): `docs/src/install.md` gains "Install on
+  ARM (aarch64)", with a section each for the generic aarch64 image, Snapdragon
+  X laptops and the Raspberry Pi image (which image, how to write it, the first
+  boot), what is different on ARM (no CachyOS, no gaming profile, Arch Linux
+  ARM's mirrors, the Pi's first-boot wizard, updates), and how to report a
+  problem with the architecture and machine. `docs/src/troubleshooting.md`
+  gains an ARM section with the known problems the sprints found. The bug
+  report form asks for the architecture, the machine or board, and what it
+  was installed from, and the kernel beside the session.
+
+- The support contract per aarch64 target (ARM5-03): `SPEC.md` section 4 lists
+  each one as supported, experimental or not supported, with its evidence and
+  what it does not cover. Supported: the generic aarch64 image on QEMU/KVM and
+  libvirt virtual machines and on the Dell XPS 13 9345, and the Raspberry Pi
+  image on the Raspberry Pi 4. Experimental: other Snapdragon X laptops, other
+  aarch64 UEFI machines, the Raspberry Pi 5, and `install.sh` on an existing
+  Arch Linux ARM system. Not supported: NVIDIA GB10 and N1X, and 32-bit ARM.
+  `AGENTS.md` and the README say the same. No release has carried the aarch64
+  images yet, and updates from one release to the next are not yet validated
+  on aarch64 (ARM5-02).
+
+- The release workflow builds the aarch64 images too (ARM5-01, the part before
+  the merge into Lyona): `build-iso.yml` builds the x86_64 ISO, then the generic
+  aarch64 ISO and the Raspberry Pi image on GitHub's arm64 runner (an Arch Linux
+  ARM container, through `scripts/ci-release-aarch64.sh`), signs all of them
+  with the source archive, and publishes `lyona-VERSION-aarch64.iso` and
+  `lyona-VERSION-rpi-aarch64.img.xz` beside the x86_64 ISO. The release is made
+  only when every image built, and carries the empty assets
+  `lyona-VERSION-architecture-x86_64` and `-aarch64` that `lyona-update` reads
+  (#53). `scripts/lyona-release` gains `--asset` and `--architecture`.
+  Checked by `tests/test-release-workflows.sh` and `tests/test-release-helper.sh`
+  with stubs; the aarch64 jobs have not run on a GitHub arm64 runner, and no
+  release has been made.
+- A Snapdragon X laptop's installed system uses the `schedutil` CPU governor
+  (ARM6 follow-up): the kernel's default here is `performance`, which holds
+  every core at full clock when idle. On the XPS 13 9345, on battery with the
+  display at full brightness and an idle desktop, `schedutil` drew about 2.5 W
+  against about 4.9 W. The installer's Snapdragon step writes
+  `/etc/tmpfiles.d/90-lyona-cpufreq.conf` (delete it to go back to the kernel
+  default). One run of each governor, one machine; battery life under real use
+  and a reboot with the rule were not tested.
+- The generic aarch64 image validated on the Dell XPS 13 9345 (ARM6-06): it
+  boots with no manual step, installs to a USB SSD, reaches LightDM and the
+  desktop, and survives a `linux-aarch64` upgrade; no failed units, Wi-Fi and
+  Bluetooth working, idle at 0% CPU. Documentation only; other laptops,
+  external displays, EL2, suspend and resume, battery life and sound were not
+  tested.
+- The desktop measured on the XPS 13 9345's Adreno X1-85 (ARM6-05): Picom costs
+  1 to 2% of one core under a moving-windows and video load on either XRender
+  or GLX (the Automatic policy still chooses XRender there), the idle desktop is
+  0% CPU, and the battery, power-profile, brightness, suspend and display
+  backends read correctly. Documentation only, no code change; the GL renderer
+  name, a browser or high-resolution video load, the battery cost and the
+  overview with many windows were not measured.
+- The Qualcomm and Atheros firmware on an installed Snapdragon X laptop (ARM6-04,
+  checked on the XPS 13 9345): the installer already added `linux-firmware-qcom`
+  and `linux-firmware-atheros` from the dependency map on a covered laptop only;
+  the installed system's kernel log shows no missing firmware and the DSPs, GPU,
+  Wi-Fi and Bluetooth firmware loaded. Documentation only, no code change.
+- A Snapdragon X laptop's installed system survives a kernel upgrade (ARM6-03,
+  installed on the XPS 13 9345 and rebooted to LightDM before and after a
+  `linux-aarch64` upgrade): the `devicetree` line the installer
+  writes into `grub.cfg` is now guarded by a file test, so a kernel that no
+  longer carries the device tree boots as any machine does and not into a GRUB
+  error, and a pacman hook on `linux-aarch64` warns after an upgrade when the
+  file is gone. Only on a covered laptop; any other machine is unchanged.
+- The experimental aarch64 medium picks a Snapdragon X laptop's device tree
+  itself (ARM6-02, written but not yet tried on hardware): the builder fuses
+  every Snapdragon X device tree in Arch Linux ARM's kernel package (`x1e*`,
+  `x1p*`, not the `-el2` ones) into the medium's kernel with systemd-stub, which
+  matches the laptop's hardware IDs at boot; a machine with no match boots as
+  before. archiso 91's own step needs `stubble` and a kernel layout Arch Linux
+  ARM does not have, so `scripts/lyona-mkarchiso-dtb` makes a copy of `mkarchiso`
+  with that step replaced, each edit checked against the exact text it changes.
+  The aarch64 build host now needs `systemd-ukify` (`docs/RELEASING.md`), and
+  `make check-archiso` runs `tests/test-arch-iso-dtb.sh`.
+- Snapdragon X groundwork (ARM Sprint 6), not yet used by the installer: a
+  `soc-snapdragon` firmware profile in the dependency map (aarch64 only), a
+  device-tree lookup for the Dell XPS 13 9345 (`scripts/lyona-snapdragon.sh`),
+  and `make check-snapdragon`. No Snapdragon machine has run it yet
+  (`docs/evidence/arm6-00-static-survey.md`).
+- An experimental aarch64 install medium for Arch Linux ARM (ARM2-02):
+  `scripts/build-lyona-arch-iso.sh --arch aarch64` builds
+  `lyona-VERSION-aarch64.iso` on an aarch64 host, from archiso 91's releng
+  and `archiso-aarch64/`. It boots on UEFI only (systemd-boot), with
+  `linux-aarch64`, and goes straight to the same wizard as the x86_64 medium.
+  It is not released or supported on any machine yet: it booted to the
+  wizard in a QEMU/KVM virtual machine on GB10, and installing from it is
+  ARM2-03. Its live system leaves out `reflector`, which Arch Linux ARM does
+  not have. `docs/RELEASING.md` says how to build it.
+- The aarch64 medium installs lyona (ARM2-03), still experimental: the same
+  wizard and archinstall step, with no CachyOS or NVIDIA question, no
+  `[multilib]`, and `archlinuxarm-keyring` in the new system, without which
+  its first download failed with "unknown trust". The postinstall keeps
+  `/boot/vmlinuz-linux` a copy of `linux-aarch64`'s `/boot/Image`, which GRUB
+  boots, adds a `lyona` firmware boot entry, and puts the kernel console on
+  the display (`console=tty0 plymouth.ignore-serial-consoles`): the
+  firmware's serial console had taken the passphrase prompt of an encrypted
+  disk off the screen. ext4 and ext4 with LUKS installed and booted to the
+  greeter in a QEMU/KVM virtual machine on GB10
+  (`docs/evidence/arm2-03-installer.md`); x86_64 installs as before.
+- The aarch64 medium downloads from Arch Linux ARM's mirrors (ARM2-04): the
+  mirror question offers those in the timezone's country, or the
+  geo-balanced `mirror.archlinuxarm.org` (kept after a country's as a
+  fallback), and **Choose another** lists the countries Arch Linux ARM has
+  mirrors in. reflector, which ranks Arch Linux's mirrors only, is no longer
+  tried there. The postinstall checks the new system has Arch Linux ARM's
+  keys before its first download, and adds them again when it does not
+  (`docs/evidence/arm2-04-mirrors-keyring.md`).
+- A builder for an experimental Raspberry Pi image (ARM3-01):
+  `scripts/build-lyona-rpi-image.sh` makes `lyona-VERSION-rpi-aarch64.img.xz`
+  and its SHA-256 on an aarch64 Arch Linux ARM host. It is one image for the
+  Pi 4 and the Pi 5, on the Raspberry Pi kernel (`linux-rpi`), which the Pi
+  firmware boots directly. The image has lyona installed (the full profile)
+  but no user, machine-id, SSH host keys, pacman keyring or package cache,
+  and `--check-root` checks that.
+- The Raspberry Pi image's first boot (ARM3-02), still experimental: on tty1,
+  before the login screen, it grows the root partition to the card, makes
+  the machine's own pacman keyring and SSH host keys, and asks the install
+  medium's questions (keyboard, Wi-Fi through NetworkManager when there is no
+  network, user and password, hostname, timezone). It then creates the user
+  as an administrator and installs lyona's per-user part for them: the
+  prompt, the user folders, the wallpapers, the image's install profile
+  (full) and `make install-user`. The login
+  screen comes up when it is done. An interrupted first boot starts again at
+  the next one, removing the user it had created. It reached lyona's desktop
+  in a KVM virtual machine on GB10, which found and fixed six faults, and on
+  a Pi 4 in a first smoke boot, which found the profile not recorded
+  (`docs/evidence/arm3-02-pi-first-boot.md`); the Pi 4 run of ARM3-06 is
+  still to do.
+  `docs/RELEASING.md` says how to build the image
+  (`docs/evidence/arm3-01-pi-image-builder.md`).
+- The Raspberry Pi image's boot configuration and splash (ARM3-03), still
+  experimental. `config.txt` stays the kernel package's, which turns on the
+  KMS display driver (`vc4-kms-v3d`; the kernel sees a display plugged in or
+  out itself) and which pacman keeps across updates; it ends by including
+  `/boot/lyona.txt`, lyona's settings (the headphone jack's audio, no
+  firmware rainbow at power-on, and the Pi 5's PCIe connector for an NVMe
+  drive), then `/boot/custom.txt`, the user's own lines, which win over
+  lyona's and which lyona never changes. The boot shows the lyona Plymouth
+  splash, as an installed x86_64 system does: the theme, the hook, `splash`
+  on the command line, and `vc4` in the initramfs, which the build host
+  (not a Pi) would otherwise leave out. The first-boot wizard waits for the
+  splash to quit. Not booted on a Pi yet: whether the splash shows on its
+  KMS console is ARM3-06's check, and `docs/src/troubleshooting.md` says how
+  to turn it off (`docs/evidence/arm3-03-pi-boot.md`).
+- System Information names the board from the device tree ("Raspberry Pi 5
+  Model B Rev 1.0") and shows the processor's temperature, from the kernel's
+  `cpu-thermal` zone on a Pi or `x86_pkg_temp` on Intel (ARM3-05). A machine
+  without one leaves that row out: a UEFI PC has no device tree, and its
+  name stays under Hardware model; an AMD processor reports no thermal zone.
+  Not run on a Pi yet: that is ARM3-06 (`docs/evidence/arm3-05-pi-settings.md`).
+
+### Changed
+
+- The image installer gives any Snapdragon X laptop the medium boots its
+  device tree, not only the Dell XPS 13 9345 (#92). The medium already picked
+  the laptop's tree at boot from its hardware IDs; the install now finds the
+  tree with the same board name in the new system's kernel (a new helper,
+  `scripts/lyona-dtb-compatible`, reads it from each `qcom/x1e*` and
+  `qcom/x1p*` tree, never an `-el2` one) and sets the laptop up as on the
+  XPS: firmware, kernel arguments and the GRUB device-tree hook. It adds
+  nothing when no tree matches, or more than one. The XPS keeps its fixed
+  entry. Checked with stubbed device trees (`tests/test-snapdragon.sh`), and
+  the helper against a Raspberry Pi 4's 28 real kernel trees; not run on any
+  Snapdragon laptop but the XPS, so other laptops stay experimental.
+
+- System Information says "Not supported" in the caption colour, not
+  "Unknown" in the warning colour, for what the machine does not have
+  (ARM3-05). Secure Boot on a machine that did not start through UEFI, a
+  Raspberry Pi or a BIOS boot, says so. "Unknown" stays for a read that failed.
+- Before anything is downloaded, the image installer waits for the medium's
+  package keyring (`pacman-init.service`) and stops, with what to run, when it
+  has no keys, instead of archinstall failing every package with "unknown
+  trust". It also checks that the first mirror's name resolves, on both
+  architectures: when it does not, it names the mirror and the name servers
+  and offers **Retry**, **Continue anyway** (for a network that downloads
+  through a proxy) or **Cancel**, and the postinstall checks again before its
+  first download (ARM2-04). The postinstall has one step more (13; 17 on
+  aarch64).
+- On a Raspberry Pi 4, Picom stays off at login (#32). With the GPU's V3D 4,
+  Picom made the desktop unusable: it froze with Xorg's acceleration on, and
+  everything fell back to software rendering with it off. Autostart now runs
+  `dwm-settings-picom session-start`, which leaves Picom off there under the
+  Automatic policy. Settings > Appearance > Compositor says why, and System
+  Health reports it as information rather than a warning. The
+  overview shows icon-and-title cards. Choosing a backend in Settings, or
+  setting `PICOM_BACKEND`, still starts it at login, and Settings can start it
+  for the session. Every other GPU, the Pi 5's V3D 7 among them, is unchanged.
+  Not yet checked on a Pi 4: unit tests only.
+- On Arch Linux ARM, the installer offers to switch to NetworkManager
+  (ARM1-06). Arch Linux ARM's root filesystem enables systemd-networkd with
+  two stock DHCP files, so NetworkManager was installed but left off, and the
+  panel and Settings showed no network although the machine was online. When
+  that exact setup is found, an interactive install asks after its summary
+  (yes by default) and switches at the next boot: NetworkManager is enabled,
+  then systemd-networkd is disabled with its sockets and wait-online. If the
+  disable fails, the enable is taken back. An unattended install switches only
+  with the new `--switch-to-networkmanager`. Any other network manager, or a
+  systemd-networkd with changed or added files, is still left alone. The
+  installer prints how to switch back. The docs list Arch Linux ARM's first
+  steps before the installer, including setting a locale (it ships `LANG=C`).
+
+- The Full suite workflow runs on aarch64 too (ARM1-05, decision A-9). The
+  new manual job runs the suite in an Arch Linux ARM container on a GitHub ARM
+  runner. The container is built from Arch Linux ARM's own root filesystem,
+  checked against its pinned signing key and published checksum. It uses the
+  same package profile (resolved for aarch64), `nobody` runner and
+  `scripts/run-tests` as the x86_64 job, through `scripts/ci-local.sh
+  --base-image`. For the whole suite every target runs and every failure is
+  listed, with one log per target. Tests of x86_64-only features (legacy
+  NVIDIA, the install medium, CachyOS, the AUR fixtures) are pinned to x86_64.
+  The package checks resolve the map for aarch64 against Arch Linux ARM's
+  repositories. The x86_64 job gives its runner a login shell. The whole
+  suite passes on aarch64 (`docs/evidence/arm1-05-aarch64-ci.md`) (#5).
+
+- Code that assumed x86_64, checked on aarch64 (ARM1-04). System Information
+  names an ARM processor, which has no `model name` in `/proc/cpuinfo`: from
+  its cores' implementer and part codes ("Arm Cortex-A72" on a Raspberry Pi
+  4, "Arm Cortex-X925 + Arm Cortex-A725" on GB10), else the board's name
+  (device tree or SMBIOS), else the codes. NVIDIA detection finds nothing on
+  a Pi or an ARM VM, without an error; Picom's automatic backend chooses
+  XRender for every ARM GPU until one is measured; the GRUB theme and
+  suspend already follow what the machine has. dwm and its helpers build on
+  aarch64 with GCC and Clang without a warning. The x86_64 paths are unchanged
+  (#4).
+
+- The AUR pins and downloaded tools on aarch64 (ARM1-03). `yay-bin` and
+  `topgrade-bin` already build there at their pins, each with its own
+  checksummed aarch64 download (matched to the release files); the legacy
+  NVIDIA bases stay x86_64 only. `dwm-aur.sh` checks the `.SRCINFO` for the
+  machine's architecture (bash's `$HOSTTYPE`, no `uname` process) and refuses
+  a base whose `arch=()` does not name it. `lyona-appimage` reads the CPU an
+  AppImage was built for from its ELF header and refuses one this machine
+  cannot run, saying which CPU it is for: an x86_64 AppImage on aarch64, or an
+  aarch64 one on x86_64. herdr and Gear Lever already publish aarch64 builds.
+  The decisions are in `docs/AUR-PACKAGES.md` (#3).
+
+- The dependency map resolves on aarch64 to packages Arch Linux ARM has
+  (ARM1-02). A `pacman -Si` survey of every profile on Arch Linux ARM
+  (`docs/evidence/arm1-02-aarch64-packages.md`) found 131 of 141 packages;
+  the missing ones are now x86_64 only, through one gate,
+  `dwm_x86_64_only`: `deepin-gtk-theme`, `libva-intel-driver`, `shellcheck`
+  and `archiso`, with the NVIDIA profiles (NVIDIA on aarch64 is ARM Sprint 4's
+  own profile) and the gaming profile, as before. The x86_64 resolution is
+  unchanged, and `check-arch-packages` resolves every profile for both
+  architectures (#2).
+
+- The existing-system installer accepts Arch Linux ARM (`ID=archarm`) on
+  aarch64, as an experimental identity of the ARM64 project (decision A-1 in
+  `docs/sprints/ARM64.md`); no ARM machine is a supported target yet. One
+  helper, `is_arch_family` in `scripts/dwm-utils.sh`, decides which
+  identities are accepted, and `install.sh` and the xscreensaver setup use it.
+  The Settings provider and the health check count Arch Linux ARM as the Arch
+  family. Arch Linux ARM on any other architecture (32-bit `armv7h`), and any
+  derivative whatever its `ID_LIKE`, is still rejected before any change, and
+  the rejection now names the identity and the architecture found. CachyOS
+  and the gaming profile stay x86_64 only (#1).
 - System Health reports a pacman lock left behind, and can remove a stale one
   (#467). A pacman killed while it holds `/var/lib/pacman/db.lck` leaves the
   lock in place, and from then on pacman, AUR helpers, Topgrade and Settings'
@@ -51,7 +309,92 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   intermittent `check-settings` failure; `tests/test-settings-input.sh` now
   has a `setxkbmap` that writes in two parts, which failed every time before
   the fix.
+- The runtime check after an update or rollback counts the managed Quickshell
+  shells after the tray has answered, not before. A second shell that started
+  while the first was probed, the duplicate the check exists to report, went
+  unseen and the check passed; it also made `tests/test-install-verify-quickshell-restart.sh`
+  fail now and then on a slow machine (the Full suite's aarch64 job, 2026-11-12;
+  reproduced by loading one CPU). The test's restart stand-in now registers its
+  shells at once, and a new case starts a second shell during the probe.
+- `lyona-update` no longer installs a release without Arch Linux ARM support on
+  an aarch64 machine (#53). It always updates from Lyona's releases, but now only
+  from one that lists the machine's architecture: each release carries an empty
+  `lyona-VERSION-architecture-ARCH` asset for every architecture it serves, and a
+  release with none (every release up to 2026.10.0-beta.7) is x86_64 only. So
+  x86_64 machines see no change, and an aarch64 machine reports "No aarch64
+  release has been published on the stable channel yet" until one is published
+  (the same version number no longer reads as `current` against a different
+  tree). A stable channel whose latest release is for another architecture
+  offers the newest one that is for this machine, and the update cache is kept
+  per architecture. After unpacking, an aarch64 `apply` also refuses a tree
+  without Arch Linux ARM support, whatever the listing or `--file` said. Not
+  yet tested on an aarch64 machine against real releases, which need the release
+  workflow (ARM5-01, #18) to publish the markers.
 
+- The aarch64 medium on a Snapdragon X laptop (ARM6-02, tried on the Dell XPS
+  13 9345): it stopped at systemd's "Initial Setup" keymap prompt before the
+  installer, because `machine-id` is `uninitialized` on the live image and
+  nothing masked `systemd-firstboot`; the aarch64 overlay now masks it and sets
+  `KEYMAP=us`. Its boot entry is now `copytoram=auto` (archiso's default,
+  which copies the image to RAM only when the machine has room for it: the
+  image plus 2 GiB free), because the XPS's USB drops off the bus about 40 to
+  70 s in, when the ADSP comes up and the USB-C port
+  is reconfigured (`usb 3-1: USB disconnect`, back 0.7 s later as a new
+  device), so reading the image in place returns SquashFS I/O errors on any
+  stick, USB 2 or 3, on both USB-C ports. It also gets
+  `plymouth.ignore-serial-consoles` (a machine that publishes a serial console,
+  such as QEMU's `virt`, got Plymouth's text-only splash on it and no splash on
+  the display) and `plymouth.force-scale=1`: on the 2560x1600 panel Plymouth's HiDPI scale of 2
+  put the splash logo in the bottom right corner, cut off. Plymouth also waits
+  1 s, not its default 8 s, for a DRM device (`DeviceTimeout=1`) before it
+  falls back to the firmware framebuffer, since the Snapdragon's `msm` device
+  appears only after about 68 s. x86_64 keeps `copytoram=n`, no scale override
+  and the default wait. It also gets `systemd.tpm2_wait=0`: the XPS firmware
+  reports a TPM that the kernel has no device for, and systemd waited its 90 s
+  device timeout for `/dev/tpm0` before the installer started. With the
+  Plymouth wait shortened Plymouth did start at 10.7 s, but on the
+  firmware framebuffer, which the panel does not show: the screen stayed black
+  for about 60 s until `msm` bound at about 60 s (68 s earlier). Carrying
+  `pmic_glink`, `pmic_glink_altmode`, `qcom_pd_mapper`, `qrtr` and `qrtr-smd` in
+  the initramfs did not bring `msm` up early (new6). `msm` binds right after
+  the PS883x retimer driver (`ps883x`) loads, which `pmic_glink_altmode` waits
+  for, so that module is now loaded from the initramfs too: `msm` then binds at
+  5.2 s instead of about 36-60 s, before the copy of the root image starts.
+  `ldconfig.service` (about 6 s on the XPS, on every boot of the medium as it is
+  a first boot) is masked on aarch64: the root image already carries a library
+  cache built when the image is made.
+  The boot stick runs at USB 2.0 speed (about 30 MB/s) until the USB-C port is
+  set up, whatever the stick, so the aarch64 root image now leaves out the
+  Intel, NVIDIA, AMD, Radeon and TI firmware (about 280 MB) that releng's
+  `linux-firmware` pulled in; the Qualcomm, Atheros, Broadcom, MediaTek and
+  Realtek firmware stays. On the XPS the tty1 login came at 52 s, not 66.6 s.
+- The Raspberry Pi image builder stopped at the boot splash with "the
+  image's mkinitcpio HOOKS line does not start with base udev": mkinitcpio
+  42, which Arch Linux ARM now ships, starts its default `HOOKS` with
+  `base systemd`. The plymouth hook now goes after `udev` or `systemd`, as
+  the x86_64 postinstall already does (ARM3-03).
+- On a Raspberry Pi 4 from the Pi image, Picom started at login, which #32
+  turned off there: Picom gets no GL context on the Pi 4's V3D 4.2
+  (`EGL_BAD_MATCH`), so its diagnostics named no GPU. With no renderer
+  named, the board's device tree (`brcm,bcm2711`) now identifies the Pi 4's
+  V3D 4 (ARM3-06).
+- The power menu offered Suspend before logind had said whether the system
+  can suspend, so on a Pi 4, which cannot, confirming it straight after
+  login gave an error. Suspend is now offered once logind has answered, and
+  a confirmation checks again (ARM3-06).
+- Where the system cannot suspend at all (logind's `CanSuspend` is `na`, as
+  on a Raspberry Pi 4), the power menu and the Power pane's session buttons
+  no longer show Suspend; it also stays out of them until logind has
+  answered. Suspend blocked by authorization policy is still shown, with
+  the reason (ARM3-06).
+- The Raspberry Pi image recorded `LYONA_COMMIT=unknown`: the builder runs
+  as root on a checkout a user owns, and git refuses to read that
+  ("dubious ownership"). It now reads the commit with the checkout as a
+  `safe.directory` (ARM3-06).
+- On a Raspberry Pi's first boot, Bluetooth kept the image's hostname,
+  `archlinux`, as the adapter's name until the next boot: bluetoothd starts
+  before the wizard sets the hostname. The wizard now restarts it after
+  setting the hostname (ARM3-06).
 - `scripts/configure-build.sh` no longer rewrites the emoji font's
   `pixelsize=14` to the interface font size (#464). Its font-size pattern
   matched the `size=` inside `pixelsize=`, so even a run with every default
@@ -70,6 +413,16 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the next `make install-user` or update, and is kept as
   `config.h.bak.<time>`. A `config.h` edited in any other way is copied and
   kept as before.
+- The install guide says to boot the image with Secure Boot off. The image's
+  boot loader is not signed, and firmware with Secure Boot on refuses it
+  ("Access Denied"), as libvirt and virt-manager's default aarch64 firmware
+  did in ARM2-05; nothing said so. `docs/src/install.md` gives the
+  `virt-install` option that turns it off.
+- The install-medium builder checks for `rsync` before it stages anything,
+  and `docs/RELEASING.md` lists it among the build host's packages. archiso
+  does not depend on it, and a host without it failed late, after the
+  package layer and the splash, with `rsync: command not found`. Found
+  building the aarch64 medium for ARM2-05; it applies to x86_64 too.
 - A system updated with `lyona-update` records the release's commit in
   `/etc/lyona-release` (#457). The Makefile took the commit from `git
   rev-parse`, which has nothing to say in an extracted release archive, so
@@ -112,6 +465,23 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   which still watches its files, is stopped before its config is replaced and
   started again after, so the first update from such a release does not crash
   it either.
+
+- Settings' Appearance pane no longer waits for its 5-second loading cap on a
+  machine without Bluetooth (ARM1-06). Settings' capability discovery ran
+  `bluetoothctl show`, which waits for a Bluetooth daemon that is not running
+  until its 2-second timeout. Discovery runs twice when Appearance is opened,
+  so the pane always appeared at the cap. Discovery now first asks the system
+  bus whether a daemon owns `org.bluez`, and reports Bluetooth unavailable at
+  once when none does. In an Arch Linux ARM VM, discovery went from 3.9 s to
+  1.8 s, and Appearance appears in about 2.6 s.
+
+- `tests/measure-picom-cost.sh` names the processor on aarch64, where
+  `/proc/cpuinfo` has no `model name`: it asks the same parser System
+  Information uses.
+
+- `check-herdr-install` passes again: since the architecture comes from
+  `$HOSTTYPE` (#25), its plan cases set it with `DWM_MACHINE` instead of a
+  `uname` stub, and an aarch64 plan case is added.
 
 ## [2026.10.0-beta.7] - 2026-10-24
 

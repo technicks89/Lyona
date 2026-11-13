@@ -28,6 +28,9 @@ make_workspace
 
 installer=$repo/scripts/install-topgrade
 export STUB_DIR=$work
+# The fixture PKGBUILDs are x86_64's; dwm-aur.sh checks the host's otherwise.
+# Its per-architecture checks are tests/test-dwm-aur.sh's (ARM1-03).
+export DWM_AUR_ARCH=x86_64
 stage_helpers checkout "$work/scripts" install-topgrade
 helper=$work/scripts/install-topgrade
 
@@ -81,7 +84,7 @@ cat >"$work/bin/makepkg" <<'EOF'
 #!/bin/bash
 base=$(basename "$(sed 's/\.git$//' .url)")
 if [[ $1 == --printsrcinfo ]]; then
-	printf 'pkgbase = %s\n\tpkgver = 1.0\n\tsource_x86_64 = %s.tar.gz::https://github.com/x/%s.tar.gz\n' "$base" "$base" "$base"
+	printf 'pkgbase = %s\n\tpkgver = 1.0\n\tarch = x86_64\n\tarch = aarch64\n\tsource_x86_64 = %s.tar.gz::https://github.com/x/%s.tar.gz\n' "$base" "$base" "$base"
 	printf '\tsource_aarch64 = other.tar.gz::https://github.com/x/other.tar.gz\n'
 	case ${STUB_SRCINFO:-ok} in
 	ok) printf '\tb2sums_x86_64 = abc123\n\tb2sums_aarch64 = def456\n' ;;

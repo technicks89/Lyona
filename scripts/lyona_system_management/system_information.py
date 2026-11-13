@@ -133,15 +133,154 @@ def parse_memory_information(data: bytes) -> dict[str, InformationState]:
     return information_fields(data, INFORMATION_MEMORY_KEYS, ":", decode)
 
 
-def parse_cpu_information(data: bytes) -> dict[str, InformationState]:
-    """Use the first x86_64 model-name field, never a later processor's fallback."""
+# ARM CPUs (ARM1-04): /proc/cpuinfo on arm64 has no "model name", only each
+# core's "CPU implementer" and "CPU part" codes (MIDR). The cores Lyona's ARM
+# targets and common ARM machines use, as Linux's cputype.h and util-linux's
+# lscpu name them; anything else falls back to the board's name.
+ARM_IMPLEMENTERS = {0x41: "Arm", 0x4E: "NVIDIA", 0x51: "Qualcomm", 0xC0: "Ampere"}
+ARM_CORES = {
+    (0x41, 0xD03): "Cortex-A53", (0x41, 0xD04): "Cortex-A35", (0x41, 0xD05): "Cortex-A55",
+    (0x41, 0xD07): "Cortex-A57", (0x41, 0xD08): "Cortex-A72", (0x41, 0xD09): "Cortex-A73",
+    (0x41, 0xD0A): "Cortex-A75", (0x41, 0xD0B): "Cortex-A76", (0x41, 0xD0C): "Neoverse-N1",
+    (0x41, 0xD0D): "Cortex-A77", (0x41, 0xD40): "Neoverse-V1", (0x41, 0xD41): "Cortex-A78",
+    (0x41, 0xD44): "Cortex-X1", (0x41, 0xD46): "Cortex-A510", (0x41, 0xD47): "Cortex-A710",
+    (0x41, 0xD48): "Cortex-X2", (0x41, 0xD49): "Neoverse-N2", (0x41, 0xD4B): "Cortex-A78C",
+    (0x41, 0xD4F): "Neoverse-V2", (0x41, 0xD80): "Cortex-A520", (0x41, 0xD81): "Cortex-A720",
+    (0x41, 0xD82): "Cortex-X4", (0x41, 0xD84): "Neoverse-V3", (0x41, 0xD85): "Cortex-X925",
+    (0x41, 0xD87): "Cortex-A725", (0x41, 0xD8E): "Neoverse-N3",
+    (0x51, 0x001): "Oryon", (0xC0, 0xAC3): "Ampere-1", (0xC0, 0xAC4): "Ampere-1a",
+}
+# The board's name, for an ARM CPU the table does not know: the device tree's
+# (a Raspberry Pi), else the firmware's SMBIOS product (a UEFI machine).
+BOARD_MODEL_FILES = (("/sys/firmware/devicetree/base/model", 256), ("/sys/class/dmi/id/product_name", 256))
+
+
+def read_board_model() -> str | None:
+    """The board's name from the first readable, displayable source, else None."""
+    for path, limit in BOARD_MODEL_FILES:
+        try:
+            with open(path, "rb") as source:
+                data = source.read(limit + 1)
+            if len(data) > limit:
+                continue
+            name = data.rstrip(b"\0\n ").decode("utf-8").strip()
+        except (OSError, UnicodeError):
+            continue
+        if name and name.isprintable():
+            return name
+    return None
+
+
+def arm_cpu_model(data: bytes, read_board: Callable[[], str | None]) -> InformationState | None:
+    """An ARM CPU's name from its cores' implementer and part codes, else None.
+
+    Each kind of core once, in order (big.LITTLE chips have two); a core the
+    table does not know gives the board's name, else the codes themselves.
+    """
+    cores, implementer = [], None
+    for line in data.splitlines():
+        key, found, value = line.partition(b":")
+        key = key.strip()
+        if key not in (b"CPU implementer", b"CPU part") or not found:
+            continue
+        try:
+            number = int(value.strip(), 16)
+        except ValueError:
+            raise shared.SnapshotFailure("malformed", "Malformed processor identity field")
+        if key == b"CPU implementer":
+            implementer = number
+        elif implementer is not None:
+            if (implementer, number) not in cores:
+                cores.append((implementer, number))
+            implementer = None
+    if not cores:
+        return None
+    if all(core in ARM_CORES for core in cores):
+        name = " + ".join(f"{ARM_IMPLEMENTERS[i]} {ARM_CORES[(i, p)]}" for i, p in cores)
+        return information_text(name, "Processor model")
+    board = read_board()
+    if board:
+        return information_text(board, "Board model; the processor is not one Lyona names")
+    name = " + ".join(f"CPU implementer 0x{i:02x} part 0x{p:03x}" for i, p in cores)
+    return information_text(name, "Processor identity codes")
+
+
+def parse_cpu_information(data: bytes, read_board: Callable[[], str | None] = read_board_model) -> dict[str, InformationState]:
+    """Use the first x86_64 model-name field, never a later processor's fallback.
+
+    Without one (arm64), name the cores from their implementer and part codes.
+    """
     for line in data.splitlines():
         key, found, value = line.partition(b":")
         if key.strip() == b"model name":
             if not found:
                 raise shared.SnapshotFailure("malformed", "Malformed processor model field")
             return {"cpu-model": information_text(value.decode("utf-8").strip(), "Processor model")}
+    arm = arm_cpu_model(data, read_board)
+    if arm is not None:
+        return {"cpu-model": arm}
     return {"cpu-model": InformationState("partial", "unknown", "Processor model was not reported", "missing-provider")}
+
+
+# The Board row (ARM3-05), from the device tree only: a Raspberry Pi names
+# itself there ("Raspberry Pi 5 Model B Rev 1.0"). A UEFI machine has no device
+# tree, and its firmware's name is already Hardware model, so the row is
+# "unsupported" there and Settings leaves it out.
+DEVICE_TREE_MODEL = BOARD_MODEL_FILES[0]
+
+
+def read_board_information() -> InformationState:
+    """The device tree's model, else why there is none; never the SMBIOS name."""
+    path, limit = DEVICE_TREE_MODEL
+    try:
+        with open(path, "rb") as source:
+            data = source.read(limit + 1)
+        if len(data) > limit:
+            raise shared.SnapshotFailure("malformed", "Device-tree model exceeds its byte limit")
+        return information_text(data.rstrip(b"\0\n ").decode("utf-8").strip(), "Board model from the device tree")
+    except OSError as error:
+        if error.errno in (errno.ENOENT, errno.ENOTDIR):
+            return InformationState("unsupported", "unknown",
+                "This machine has no device tree; Hardware model names it", "missing-provider")
+        return information_unknown(error)
+    except (UnicodeError, shared.SnapshotFailure) as error:
+        return information_unknown(error)
+
+
+# The processor's temperature (ARM3-05), from the first kernel thermal zone
+# whose type names it: cpu-thermal on a Raspberry Pi 4 and 5, the package
+# sensor on Intel. Other zones (ACPI, a GPU, a battery) are not the processor,
+# and an AMD processor reports through hwmon, not a thermal zone, so the row is
+# "unsupported" there. Millidegrees Celsius, read once per snapshot.
+THERMAL_ZONES = 32
+PROCESSOR_THERMAL_TYPES = (b"cpu-thermal", b"cpu_thermal", b"soc-thermal", b"soc_thermal", b"x86_pkg_temp")
+
+
+def read_processor_temperature() -> InformationState:
+    """The processor zone's temperature, else why there is none."""
+    try:
+        for index in range(THERMAL_ZONES):
+            zone = f"/sys/class/thermal/thermal_zone{index}"
+            try:
+                with open(zone + "/type", "rb") as source:
+                    kind = source.read(65).strip()
+            except OSError as error:
+                if error.errno in (errno.ENOENT, errno.ENOTDIR):
+                    break
+                raise
+            if kind not in PROCESSOR_THERMAL_TYPES:
+                continue
+            with open(zone + "/temp", "rb") as source:
+                data = source.read(17)
+            match = re.fullmatch(rb"(-?[0-9]{1,7})\n?", data)
+            if match is None:
+                raise shared.SnapshotFailure("malformed", "Thermal zone temperature is malformed")
+            return InformationState("available", str(int(match[1])),
+                f"Kernel thermal zone {kind.decode('ascii')} at this read")
+        return InformationState("unsupported", "unknown",
+            "No kernel thermal zone reports the processor's temperature", "missing-provider")
+    except (OSError, shared.SnapshotFailure) as error:
+        return information_unknown(error)
 
 
 def read_local_information() -> dict[str, InformationState]:
@@ -190,6 +329,8 @@ def read_local_information() -> dict[str, InformationState]:
         result["uptime-seconds"] = information_number(int(uptime), "Whole seconds since boot, including suspend")
     except (OSError, shared.SnapshotFailure) as error:
         result["uptime-seconds"] = information_unknown(error)
+    result["board-model"] = read_board_information()
+    result["cpu-temperature"] = read_processor_temperature()
     return result
 
 
@@ -242,7 +383,14 @@ def read_selinux_status() -> InformationState:
 def read_secure_boot_status() -> InformationState:
     """Read only the fixed EFI variable; absence or denial never means disabled."""
     try:
-        directory = os.stat("/sys/firmware/efi/efivars")
+        try:
+            directory = os.stat("/sys/firmware/efi/efivars")
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENOTDIR):
+                # A Raspberry Pi's firmware, or a BIOS boot (ARM3-05).
+                return InformationState("unsupported", "unknown",
+                    "This machine did not start through UEFI firmware, so it has no Secure Boot", "missing-provider")
+            raise
         if not stat.S_ISDIR(directory.st_mode):
             raise shared.SnapshotFailure("malformed", "EFI variables source is not a directory")
         try:

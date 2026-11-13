@@ -1670,15 +1670,20 @@ while [ "$i" -lt 200 ]; do
 	i=$((i + 1))
 	sleep 0.05
 done
+test_stage="validating defaults and autostart settings: providers ready (defaults $defaults_status, $defaults_role_count roles, autostart $autostart_status)"
 case $defaults_status in available | partial) : ;; *) exit 1 ;; esac
 [ "$defaults_role_count" -eq 3 ]
 case $autostart_status in ready | degraded) : ;; *) exit 1 ;; esac
+test_stage='validating defaults and autostart settings: one application-directory watcher'
 [ "$(settings_defaults_watch_count)" -eq 1 ]
+test_stage='validating defaults and autostart settings: one autostart watcher'
 [ "$(settings_autostart_watch_count)" -eq 1 ]
+test_stage='validating defaults and autostart settings: an autostart ID with a plus sign'
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest \
 	autostartEntryName vendor-app+variant.desktop)" = 'Plus ID Autostart Fixture' ]
 
+test_stage='validating defaults and autostart settings: an external autostart file change'
 sed -i 's/Name=dwm Test Autostart/Name=dwm Test Autostart Changed/' \
 	"$config_home/autostart/dwm-test-autostart.desktop"
 i=0
@@ -1693,6 +1698,7 @@ done
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartEntryOrigin dwm-test-autostart.desktop)" = user-only ]
 
+test_stage='validating defaults and autostart settings: an external terminal change in hotkeys.toml'
 sed -i 's/terminal = "alacritty"/terminal = "kitty"/' "$config_home/lyona/hotkeys.toml"
 i=0
 while [ "$i" -lt 200 ]; do
@@ -1714,6 +1720,7 @@ while [ "$i" -lt 200 ]; do
 done
 [ "$terminal_id" = Alacritty.desktop ]
 
+test_stage='validating defaults and autostart settings: searching autostart entries'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSetSearch picom >/dev/null
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1721,6 +1728,7 @@ DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_hom
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSetSearch '' >/dev/null
 
+test_stage='validating defaults and autostart settings: setting the terminal role'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsSetRole terminal kitty.desktop >/dev/null
 i=0
@@ -1737,6 +1745,7 @@ done
 [ "$terminal_id" = kitty.desktop ]
 grep -Fqx 'terminal = "kitty"' "$config_home/lyona/hotkeys.toml"
 
+test_stage='validating defaults and autostart settings: resetting the terminal role'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest defaultsResetRole terminal >/dev/null
 i=0
@@ -1753,6 +1762,7 @@ done
 [ "$terminal_id" = Alacritty.desktop ]
 grep -Fqx 'terminal = "alacritty"' "$config_home/lyona/hotkeys.toml"
 
+test_stage='validating defaults and autostart settings: a failed default-application change'
 defaults_helper=$data_home/checkout/scripts/dwm-default-apps
 mv "$defaults_helper" "$defaults_helper.real"
 cat >"$defaults_helper" <<'EOF'
@@ -1787,6 +1797,7 @@ done
 rm "$defaults_helper"
 mv "$defaults_helper.real" "$defaults_helper"
 
+test_stage='validating defaults and autostart settings: disabling an autostart entry'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet dwm-test-autostart.desktop false >/dev/null
 i=0
@@ -1803,6 +1814,7 @@ done
 [ "$autostart_state" = disabled ]
 grep -Eq '^NotShowIn=.*X-DWM' "$config_home/autostart/dwm-test-autostart.desktop"
 
+test_stage='validating defaults and autostart settings: enabling an autostart entry'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet dwm-test-autostart.desktop true >/dev/null
 i=0
@@ -1822,6 +1834,7 @@ if grep -Eq '^NotShowIn=.*X-DWM' "$config_home/autostart/dwm-test-autostart.desk
 	exit 1
 fi
 
+test_stage='validating defaults and autostart settings: a failed autostart change'
 autostart_helper=$data_home/checkout/scripts/dwm-xdg-autostart
 mv "$autostart_helper" "$autostart_helper.real"
 cat >"$autostart_helper" <<'EOF'
@@ -1857,6 +1870,7 @@ done
 rm "$autostart_helper"
 mv "$autostart_helper.real" "$autostart_helper"
 
+test_stage='validating defaults and autostart settings: autostart search, sort and filters'
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
 	XDG_RUNTIME_DIR=$runtime quickshell ipc --path "$config" call settingsTest autostartSet picom.desktop false >/dev/null
 [ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
@@ -1884,6 +1898,7 @@ done
 [ "$autostart_busy" = false ]
 [ "$autostart_state" = disabled ]
 
+test_stage='validating defaults and autostart settings: leaving the page stops their watchers'
 DISPLAY=$display xdotool windowactivate --sync "$window"
 
 DISPLAY=$display xdotool mousemove --window "$window" 120 210 click 1

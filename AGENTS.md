@@ -29,7 +29,12 @@ The sole supported platform is Arch Linux. The archiso-based lyona install
 medium is the current documented image base: one image for every GPU, whose
 installer detects an NVIDIA GPU and offers its driver, recommended, when the
 card supports it. The
-existing-system installer also supports Arch Linux.
+existing-system installer also supports Arch Linux, and accepts Arch Linux
+ARM (`ID=archarm`) on `aarch64` only (the ARM64 project,
+`docs/sprints/ARM64.md`, decision A-1). Each aarch64 target's status --
+supported, experimental or not supported -- is in `SPEC.md` section 4; a
+target is supported only once its sprint has met `SPEC.md` 9.4 on it, and no
+document claims more than that table.
 Every other operating-system identity must fail clearly instead of entering
 an untested package or installation path.
 
@@ -54,6 +59,11 @@ an untested package or installation path.
 - `install.sh`: supported existing-system installer for Arch Linux.
 - `archiso/`, `scripts/build-lyona-arch-iso.sh`: Arch install-medium
   profile and builder (best-effort; see `docs/RELEASING.md`).
+  `archiso-aarch64/` is what the aarch64 medium changes
+  (`--arch aarch64`, ARM Sprint 2).
+- `scripts/build-lyona-rpi-image.sh`: the Raspberry Pi image
+  builder (ARM Sprint 3), and `rpi/`, the image's first boot (its wizard, unit
+  and LightDM drop-in); both checked by `make check-rpi-image`.
 - `dwm.desktop`: display-manager X session entry.
 - `lightdm/`: the LightDM and slick-greeter configuration the installer
   deploys.
@@ -93,7 +103,8 @@ an untested package or installation path.
   driver, never shipped in the image.
 - Keep `archiso/packages.x86_64` synced with the `arch:iso` profile of the
   shared dependency map (see `tests/test-arch-iso-builder.sh`): what the live
-  medium itself runs. The desktop is not on the image; the new system
+  medium itself runs. `archiso-aarch64/packages.aarch64` is the same profile
+  with `ARCH=aarch64`. The desktop is not on the image; the new system
   downloads every package it installs.
 - Run `make check-archiso` for archiso or ISO-builder changes, then validate a
   real or virtual install before claiming the image boots or reaches a usable
@@ -105,6 +116,21 @@ an untested package or installation path.
   QEMU/KVM virtual machine with UEFI firmware (first on 2026-10-03), but not
   tested on real hardware — do not claim it works on hardware until it has
   been.
+- The aarch64 images are the generic aarch64 ISO (`--arch aarch64`, UEFI
+  only, one image for every aarch64 target it covers, picking a Snapdragon X
+  laptop's device tree at boot) and the Raspberry Pi image
+  (`scripts/build-lyona-rpi-image.sh`, Pi 4 and Pi 5). Both are built natively
+  on an aarch64 Arch Linux ARM host, never cross-built: for a release, the
+  GitHub arm64 runner in an Arch Linux ARM container
+  (`scripts/ci-release-aarch64.sh`). Run `make check-archiso` or
+  `make check-rpi-image` for their changes.
+- The aarch64 targets and their status are `SPEC.md` section 4's table. A
+  target is supported only after a real install on that hardware, or for the
+  generic image on the virtual machines named, recorded under
+  `docs/evidence/`; supported today: QEMU/KVM and libvirt virtual machines and
+  the Dell XPS 13 9345 (generic ISO), and the Raspberry Pi 4 (Pi image).
+  Change a status only with that evidence, in `SPEC.md`, this file and the
+  README together.
 
 ## Desktop Settings Rules
 
@@ -127,7 +153,11 @@ an untested package or installation path.
 ## Arch Platform Rules
 
 - Detect Arch Linux through `/etc/os-release` and reject every other identity
-  before package installation or system changes.
+  before package installation or system changes. Arch Linux ARM
+  (`ID=archarm`) is accepted on `aarch64` only; `ID_LIKE`
+  never makes an identity acceptable. Use `is_arch_family`
+  (`scripts/dwm-utils.sh`) rather than testing `ID` directly, and keep
+  architecture gates (CachyOS and gaming are x86_64 only) where they are.
 - Keep Arch package capability names in the shared dependency map
   (`scripts/dwm-packages.sh`). Do not scatter package-name lists across
   multiple scripts.

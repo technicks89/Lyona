@@ -163,6 +163,15 @@ quickshell_compatible() {
 	version_at_least "$version" 0.3.0
 }
 
+# A Raspberry Pi 4 (V3D 4) starts without Picom under the Automatic policy
+# (#32): that is a choice, not a fault. Asked only while Picom is stopped.
+picom_off_at_login() {
+	local helper picom_status
+	helper=$(find_sibling_command dwm-settings-picom) || return 1
+	picom_status=$(run_bounded "$helper" status 2>/dev/null) || return 1
+	[[ $picom_status == *'off at login'* ]]
+}
+
 find_sibling_command() {
 	local name=$1
 
@@ -475,9 +484,13 @@ scan_desktop() {
 	fi
 
 	if command -v picom >/dev/null 2>&1; then
-		status=warn
-		pgrep -x picom >/dev/null 2>&1 && status=ok
-		emit_check desktop "$status" picom-process "Picom" "$([[ $status == ok ]] && printf running || printf 'stopped: window previews are off')" "The compositor, part of the lyona desktop" restart-picom "Restart Picom" user
+		status=warn picom_state='stopped: window previews are off'
+		if pgrep -x picom >/dev/null 2>&1; then
+			status=ok picom_state=running
+		elif picom_off_at_login; then
+			status=info picom_state='off at login on this GPU (V3D 4): window previews are off'
+		fi
+		emit_check desktop "$status" picom-process "Picom" "$picom_state" "The compositor, part of the lyona desktop" restart-picom "Restart Picom" user
 	elif command -v quickshell >/dev/null 2>&1; then
 		emit_check desktop error picom-process "Picom" "Not installed: window previews are off" "The lyona desktop needs the compositor (#244)" install-dependencies "Open dependency installer" user
 	else
@@ -552,7 +565,9 @@ scan_package_database() {
 		source "$os_file"
 		id=${ID:-unknown}
 	fi
-	[[ $id == arch ]] && family=arch
+	# Arch Linux, or Arch Linux ARM (experimental, docs/sprints/ARM64.md A-1):
+	# both keep pacman's database.
+	[[ $id == arch || $id == archarm ]] && family=arch
 
 	case $family in
 	arch)

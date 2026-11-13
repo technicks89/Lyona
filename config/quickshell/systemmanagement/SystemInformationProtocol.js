@@ -13,10 +13,13 @@
 // default Arch/CachyOS install runs none of them. validValue()'s generic
 // enabled/disabled branch already covers ufw/nftables the same way it covers
 // firewalld -- no other function needed a change.
+//
+// ARM3-05: board-model (the device tree's) and cpu-temperature (a kernel
+// thermal zone, in millidegrees Celsius), which only some machines have.
 function informationIds() {
     return ["os-name", "os-version", "kernel-release", "architecture", "hardware-vendor", "hardware-model",
-        "cpu-model", "logical-cpus", "memory-total-bytes", "memory-available-bytes", "swap-total-bytes",
-        "swap-free-bytes", "uptime-seconds"];
+        "board-model", "cpu-model", "cpu-temperature", "logical-cpus", "memory-total-bytes",
+        "memory-available-bytes", "swap-total-bytes", "swap-free-bytes", "uptime-seconds"];
 }
 function securityIds() { return ["selinux", "secure-boot", "firewalld", "ufw", "nftables", "root-encryption", "screen-lock"]; }
 function stateIds() { return informationIds().concat(["filesystem-summary"], securityIds()); }
@@ -40,6 +43,7 @@ function validValue(identifier, status, value) {
     if (["logical-cpus", "memory-total-bytes", "memory-available-bytes", "swap-total-bytes",
             "swap-free-bytes", "uptime-seconds"].indexOf(identifier) >= 0)
         return uint64(value) && (identifier !== "logical-cpus" || value !== "0");
+    if (identifier === "cpu-temperature") return typeof value === "string" && /^(0|-?[1-9][0-9]{0,6})$/.test(value);
     if (identifier === "selinux") return ["enforcing", "permissive", "disabled"].indexOf(value) >= 0;
     if (identifier === "root-encryption") return value === "encrypted" || value === "unencrypted";
     if (securityIds().indexOf(identifier) >= 0) return value === "enabled" || value === "disabled";

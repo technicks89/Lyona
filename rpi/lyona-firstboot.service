@@ -1,0 +1,33 @@
+# The Raspberry Pi image's first boot (ARM3-02): rpi/lyona-firstboot.sh on
+# tty1, before LightDM, which takes tty1 after it. It disables itself when it is done; LightDM waits for
+# its done marker (lightdm-after-firstboot.conf).
+[Unit]
+Description=lyona first boot: create the user and finish the install
+ConditionPathExists=!/var/lib/lyona/firstboot-done
+# After the boot splash has left tty1 (ARM3-03), as a getty is.
+After=systemd-user-sessions.service NetworkManager.service systemd-localed.service systemd-vconsole-setup.service plymouth-quit-wait.service
+Wants=NetworkManager.service
+Before=display-manager.service getty@tty1.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/lyona/lyona-firstboot
+# No getty on tty1 afterwards: LightDM takes tty1 (Arch's lightdm.service
+# conflicts with getty@tty1), and starting the getty here cancelled LightDM's
+# start (found booting the image, ARM3-02).
+StandardInput=tty
+StandardOutput=tty
+# gum draws on stderr when its answer is captured: the journal there gives it no
+# terminal to size, and it crashed (ARM3-02). The wizard logs to its own file.
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+Environment=TERM=linux
+# Questions take as long as they take.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

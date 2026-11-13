@@ -1,9 +1,13 @@
 name: Build ISO and release
 
-# Builds the ISO, then creates the release tag and the GitHub release for the
-# committed config.mk VERSION through scripts/lyona-release: the source archive
-# lyona-update installs from, the ISO, and a SHA256SUMS of both. The tag is
-# created at this run's commit, and only after the ISO has built.
+# Builds the x86_64 ISO, the generic aarch64 ISO and the Raspberry Pi image,
+# then creates the release tag and the GitHub release for the committed
+# config.mk VERSION through scripts/lyona-release: the source archive
+# lyona-update installs from, the three images, and a SHA256SUMS of all of
+# them. The tag is created at this run's commit, and only after every image has
+# built: one release carries both architectures or none (ARM5-01, #53), marked
+# for lyona-update by the empty assets lyona-VERSION-architecture-x86_64 and
+# -aarch64.
 #
 # - beta: VERSION must carry an -alpha.N, -beta.N or -rc.N suffix. It is
 #   published as a pre-release and stays one.
@@ -14,10 +18,12 @@ name: Build ISO and release
 # Rerunning for a VERSION already tagged at this commit replaces the assets; a
 # VERSION tagged at another commit is refused, so bump config.mk first.
 #
-# Three jobs after authorize (GHSA-xfhv-7h9c-m966): build-iso builds and checks
-# everything, with a read-only token and no way to sign; sign, which runs no
-# repository code, attests what build-iso made and is the only job with the
-# OIDC token; release publishes the signed files with the admin's token. The
+# Jobs after authorize (GHSA-xfhv-7h9c-m966): build-iso builds and checks the
+# x86_64 side, and build-aarch64-iso and build-rpi-image the aarch64 side (on
+# GitHub's arm64 runner, in an Arch Linux ARM container), all with a read-only
+# token and no way to sign; sign, which runs no repository code, attests what
+# they made and is the only job with the OIDC token; release publishes the
+# signed files with the admin's token. The
 # signature's identity is the workflow file (build-iso.yml on main), whichever
 # job signs, so lyona-update's check is unchanged.
 #
@@ -231,13 +237,107 @@ jobs:
           path: release/lyona-*.tar.gz
           if-no-files-found: error
 
+  # ARM5-01: the aarch64 images, built natively on GitHub's arm64 runner in an
+  # Arch Linux ARM container (decision A-3; Arch Linux ARM publishes no image,
+  # so scripts/ci-archlinuxarm-image.sh builds one from its signed root
+  # filesystem). Like build-iso: a read-only token, no environment, nothing
+  # signed or published. They start after build-iso, which has checked the
+  # version and the tag, so a bad request fails before an hour of building.
+  build-aarch64-iso:
+    needs: build-iso
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the Arch Linux ARM image
+        run: scripts/ci-archlinuxarm-image.sh lyona-archlinuxarm:base-devel
+
+      # The ISO alone in one directory (the build's profile stays in the
+      # container), uploaded by a single-line path.
+      - name: Build the aarch64 ISO
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/aarch64-iso"
+          docker run --rm --privileged -v "$GITHUB_WORKSPACE:/src" \
+            -v "$RUNNER_TEMP/aarch64-iso:/out" -w /src lyona-archlinuxarm:base-devel \
+            scripts/ci-release-aarch64.sh iso /out
+
+      - name: Checksum the aarch64 ISO
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          iso=("$RUNNER_TEMP"/aarch64-iso/lyona-*-aarch64.iso)
+          ((${#iso[@]} == 1)) || {
+            echo "::error::Expected one aarch64 ISO, found ${#iso[@]}"
+            exit 1
+          }
+          cd "$RUNNER_TEMP/aarch64-iso"
+          sha256sum ./*.iso
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lyona-iso-aarch64-${{ needs.build-iso.outputs.tag }}
+          path: ${{ runner.temp }}/aarch64-iso
+          if-no-files-found: error
+
+  build-rpi-image:
+    needs: build-iso
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the Arch Linux ARM image
+        run: scripts/ci-archlinuxarm-image.sh lyona-archlinuxarm:base-devel
+
+      - name: Build the Raspberry Pi image
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/rpi-image"
+          docker run --rm --privileged -v "$GITHUB_WORKSPACE:/src" \
+            -v "$RUNNER_TEMP/rpi-image:/out" -w /src lyona-archlinuxarm:base-devel \
+            scripts/ci-release-aarch64.sh rpi /out
+
+      - name: Checksum the Raspberry Pi image
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          image=("$RUNNER_TEMP"/rpi-image/lyona-*-rpi-aarch64.img.xz)
+          ((${#image[@]} == 1)) || {
+            echo "::error::Expected one Raspberry Pi image, found ${#image[@]}"
+            exit 1
+          }
+          cd "$RUNNER_TEMP/rpi-image"
+          sha256sum ./*.img.xz
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lyona-rpi-${{ needs.build-iso.outputs.tag }}
+          path: ${{ runner.temp }}/rpi-image
+          if-no-files-found: error
+
   # Signed releases (decision D-31): a build-provenance attestation for the
   # source archive and the ISO, signed keylessly through Sigstore with this
   # run's identity, so there is no signing key to keep. Apart from the build
   # (GHSA-xfhv-7h9c-m966): the only job with the OIDC token, and it runs no
   # repository code, only these pinned actions on build-iso's files.
   sign:
-    needs: build-iso
+    needs: [build-iso, build-aarch64-iso, build-rpi-image]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -252,6 +352,16 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          name: lyona-iso-aarch64-${{ needs.build-iso.outputs.tag }}
+          path: iso-aarch64
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lyona-rpi-${{ needs.build-iso.outputs.tag }}
+          path: rpi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
           name: lyona-source-${{ needs.build-iso.outputs.tag }}
           path: source
 
@@ -261,6 +371,8 @@ jobs:
         with:
           subject-path: |
             iso/*.iso
+            iso-aarch64/*.iso
+            rpi/*.img.xz
             source/lyona-*.tar.gz
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -273,7 +385,7 @@ jobs:
   # stays one until promote-releases.yml is run for it. With the admin's token:
   # the "Lock Tags" ruleset lets only admins create tags.
   release:
-    needs: [build-iso, sign]
+    needs: [build-iso, build-aarch64-iso, build-rpi-image, sign]
     environment: release
     runs-on: ubuntu-latest
     permissions:
@@ -307,6 +419,16 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          name: lyona-iso-aarch64-${{ needs.build-iso.outputs.tag }}
+          path: ${{ runner.temp }}/iso-aarch64
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: lyona-rpi-${{ needs.build-iso.outputs.tag }}
+          path: ${{ runner.temp }}/rpi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
           name: lyona-bundle-${{ needs.build-iso.outputs.tag }}
           path: ${{ runner.temp }}/bundle
 
@@ -322,11 +444,24 @@ jobs:
             echo "::error::Expected one ISO, found ${#iso[@]}"
             exit 1
           }
+          iso_arm=("$RUNNER_TEMP"/iso-aarch64/*.iso)
+          ((${#iso_arm[@]} == 1)) || {
+            echo "::error::Expected one aarch64 ISO, found ${#iso_arm[@]}"
+            exit 1
+          }
+          rpi=("$RUNNER_TEMP"/rpi/*.img.xz)
+          ((${#rpi[@]} == 1)) || {
+            echo "::error::Expected one Raspberry Pi image, found ${#rpi[@]}"
+            exit 1
+          }
           bundle=("$RUNNER_TEMP"/bundle/*)
           if ((${#bundle[@]} != 1)) || [[ ! -f ${bundle[0]} ]]; then
             echo "::error::Expected one signature bundle, found ${#bundle[@]}"
             exit 1
           fi
-          args=(--version "$VERSION" --iso "${iso[0]}" --bundle "${bundle[0]}" --prerelease --skip-checks)
+          # Both architectures, or the release is not made: this step runs only
+          # when every build job passed, so each is marked as served.
+          args=(--version "$VERSION" --iso "${iso[0]}" --asset "${iso_arm[0]}" --asset "${rpi[0]}"
+            --architecture x86_64 --architecture aarch64 --bundle "${bundle[0]}" --prerelease --skip-checks)
           [[ -z $NOTES ]] || args+=(--notes "$NOTES")
           scripts/lyona-release "${args[@]}"

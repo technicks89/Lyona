@@ -161,7 +161,7 @@ DWM_TEST_WORKSPACE=$work/stale-workspace TMPDIR=$work/stale-tmp \
 	DWM_TEST_TMP_ROOT=$work/stale-marker-root \
 	make -s -C "$repo" check-arch-platform >"$stale_marker_out"
 grep -Fq '==> Test workspace: ' "$stale_marker_out"
-grep -Fq 'Arch Linux-only platform contract: PASS' "$stale_marker_out"
+grep -Fq 'Arch Linux platform contract (Arch Linux, Arch Linux ARM on aarch64): PASS' "$stale_marker_out"
 
 forged_marker_out=$work/forged-marker.out
 mkdir "$work/forged-workspace"
@@ -170,7 +170,7 @@ DWM_TEST_WORKSPACE=$work/forged-workspace TMPDIR=$work/forged-workspace \
 	DWM_TEST_RUNNER_TOKEN=wrong DWM_TEST_TMP_ROOT=$work/forged-marker-root \
 	make -s -C "$repo" check-arch-platform >"$forged_marker_out"
 grep -Fq '==> Test workspace: ' "$forged_marker_out"
-grep -Fq 'Arch Linux-only platform contract: PASS' "$forged_marker_out"
+grep -Fq 'Arch Linux platform contract (Arch Linux, Arch Linux ARM on aarch64): PASS' "$forged_marker_out"
 
 link_root=$work/link-root
 ln -s "$test_root" "$link_root"

@@ -48,6 +48,37 @@ Where the AUR is used today:
 | Topgrade (#245) | Topgrade is only in the AUR | `scripts/install-topgrade`, through `dwm-aur.sh` | its pin in `dwm-aur.sh` |
 | The user's own package update (Sync Sprint 15, D-26) | AUR-built packages, such as the drivers above, are not updated by `pacman -Syu` | `run_system` in `scripts/lyona-update-terminal`: `yay -Syu` when `yay` is installed | the exact full upgrade, started by the user in their terminal; it names no packages, so it installs nothing new |
 
+## On aarch64 (ARM1-03)
+
+Checked 2026-10-13 for Arch Linux ARM on aarch64 (ARM Sprint 1, issue #3).
+Every pin is used on aarch64 as it is: none needed a new pin, and none is
+built from source instead.
+
+| AUR base | On aarch64 | How it was checked |
+| --- | --- | --- |
+| `yay-bin` | **Builds.** `arch=()` lists `aarch64`, with its own `source_aarch64` (`yay_13.0.1_aarch64.tar.gz`) and `sha256sums_aarch64` | The `.SRCINFO` at the pin; the release file downloaded and matched to the pinned checksum, an aarch64 ELF |
+| `topgrade-bin` | **Builds.** `arch=()` lists `aarch64`, with `source_aarch64` (the `aarch64-unknown-linux-musl` tarball) and `b2sums_aarch64` | As above, with `b2sum` |
+| `nvidia-580xx-utils`, `nvidia-470xx-utils` | **Not used.** x86_64 only, as their profiles are (ARM1-02); `dwm-aur.sh` refuses a base whose `arch=()` does not name the machine | Not built |
+
+`dwm-aur.sh` checks the `.SRCINFO` for the architecture it is building for:
+bash's own, `$HOSTTYPE`, which is makepkg's `CARCH` on x86_64 and aarch64
+(`DWM_AUR_ARCH` sets it in tests). Only that architecture's sources need a
+checksum, and a base that does not list it is refused before makepkg runs.
+
+The downloaded tools, which are not AUR packages:
+
+- **herdr:** publishes Linux binaries for x86_64 and aarch64, and
+  `install-herdr` pins a checksum for each. The pinned 0.7.5 aarch64 binary
+  matches its pin. An `install.sh` plan on aarch64 offers herdr; other
+  architectures are refused with a message.
+- **Gear Lever:** Flathub builds `it.mijorus.gearlever` for x86_64 and
+  aarch64, and Flatpak installs the build for the machine; nothing to gate.
+- **AppImages (`lyona-appimage`):** an AppImage is built for one CPU. Its
+  ELF header names it, and `lyona-appimage` refuses one this machine cannot
+  run, saying which CPU it is for (an x86_64 AppImage on aarch64, or an
+  aarch64 one on x86_64). x86_64 also runs 32-bit x86 AppImages.
+- **Topgrade:** only `topgrade-bin`, above; there is no cargo path.
+
 ## Topgrade (#245)
 
 Topgrade is only in the AUR. Until #245 it was built from its crates.io release

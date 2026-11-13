@@ -23,8 +23,8 @@ distributions are outside the supported product and validation contract.
 - Preserve the speed, simplicity, and direct configuration model of dwm.
 - Provide consistent defaults and complete Settings behavior on Arch Linux.
 - Support display-manager login and `startx`.
-- Support Arch x86_64. Arch aarch64 remains future scope until its installer
-  and desktop runtime complete the release validation contract.
+- Support Arch x86_64, and Arch Linux ARM on the aarch64 targets that have
+  completed the release validation contract (section 4).
 - Keep user configuration under standard XDG paths and preserve it on upgrade.
 
 ## 3. Non-Goals
@@ -54,17 +54,46 @@ The primary release target is the Arch Linux desktop image:
 | Base media | lyona Arch installer image (archiso-based; see `docs/RELEASING.md`) |
 | Session | Xorg with dwm and the managed Quickshell shell |
 | Variants | One image for every GPU; the installer recommends the proprietary NVIDIA driver on a supported NVIDIA GPU, with nouveau as the alternative |
-| Initial release architecture | x86_64 |
+| Release architectures | x86_64; aarch64 (Arch Linux ARM) for the targets below. The release workflow builds the aarch64 images, but no release has carried them yet (ARM5-01) |
 
-Arch aarch64 is not currently a supported release target. Architecture-aware
-package filtering may remain in shared helpers, but it does not constitute an
-aarch64 support claim without native installer and desktop runtime evidence.
+Arch Linux ARM (`ID=archarm`, aarch64) is the second supported identity (ARM64
+project, `docs/sprints/ARM64.md`). Each aarch64 target has its own status:
+
+- **supported**: validated on the hardware named, or for the generic image on
+  the virtual machines named, by a real install recorded under
+  `docs/evidence/`, with what was not tested said there;
+- **experimental**: built and expected to work, but validated only on virtual
+  machines, or not at all;
+- **not supported**: no image or install path is offered.
+
+| aarch64 target | Image | Status | Evidence, and what it does not cover |
+| --- | --- | --- | --- |
+| Virtual machines: QEMU/KVM `virt` and libvirt on an aarch64 host, UEFI | Generic aarch64 ISO | Supported | `docs/evidence/arm2-05-generic-image.md` (2026-10-25). UTM, Parallels and VMware Fusion not tested |
+| Dell XPS 13 9345 (Snapdragon X Elite) | Generic aarch64 ISO | Supported | `docs/evidence/arm6-06-xps13-9345.md` (2026-11-11). No sound (device tree); external displays, EL2, battery life and suspend and resume not covered |
+| Other Snapdragon X laptops with a mainline device tree | Generic aarch64 ISO | Experimental | The medium should boot them, and the install loads the device tree the medium booted with (`scripts/lyona-snapdragon.sh`, #92); not tested on any of them |
+| Other aarch64 UEFI machines (Ampere and other servers and workstations) | Generic aarch64 ISO | Experimental | Not tested |
+| Raspberry Pi 4 Model B (SD card) | Raspberry Pi image | Supported | `docs/evidence/arm3-06-raspberry-pi.md` (2026-11-04). Picom stays off at login on V3D 4 (#32); two displays not tested |
+| Raspberry Pi 5 | Raspberry Pi image | Experimental | Booted once, not recorded; NVMe boot not tested |
+| An existing Arch Linux ARM system | `install.sh` | Experimental | `docs/evidence/arm1-06-install-sh.md`, in a KVM virtual machine (2026-10-19); boards vary |
+| NVIDIA GB10 (DGX Spark and OEM boxes) | none | Not supported | Removed from the plan 2026-11-12, to return later (`docs/sprints/ARM-SPRINT-4-NVIDIA-GB10.md`) |
+| NVIDIA N1X laptops | none | Not supported | Removed from the plan 2026-11-12, to return later (decision A-8) |
+| 32-bit ARM (`armv7h`) | none | Not supported | Out of scope |
+
+Updates from one release carrying the aarch64 images to the next are not yet
+validated on any aarch64 target (ARM5-02, after the merge into Lyona).
+Architecture-aware package filtering in shared helpers is not a support claim
+for any target not marked supported here. An aarch64 target becomes supported
+only once its ARM sprint has met the release validation contract (section 9.4)
+on that target.
 
 The existing-system installer supports Arch Linux and uses `pacman`. It must
-report the detected distribution and accept only `ID=arch` before package
-installation or system changes. Every other operating-system identity must be
-rejected. Arch Linux is the sole supported distribution; derivative distributions
-are not included by implication.
+report the detected distribution and architecture, and accept only `ID=arch`,
+or `ID=archarm` on `aarch64` (Arch Linux ARM; decision A-1 of the ARM64
+project), before package installation or system changes. Every other
+operating-system identity must be rejected, including `ID=archarm` on any other
+architecture (32-bit `armv7h` is out of scope). Arch Linux, with Arch Linux ARM
+as its aarch64 port, is the sole supported distribution; derivative
+distributions are not included by implication, whatever their `ID_LIKE`.
 
 ## 5. Functional Requirements
 
@@ -519,7 +548,9 @@ Runtime dependencies are classified as:
   only with `--with-gearlever`), Topgrade from the AUR's pinned `topgrade-bin`, Firefox as the default
   browser, GNOME Keyring (`gnome-keyring`) for secret storage, the Thunar
   file manager that Super+E opens, NetworkManager, enabled only when no
-  other network manager is in use, and BlueZ, with `bluetooth.service`
+  other network manager is in use (on Arch Linux ARM, it replaces the root
+  filesystem's stock systemd-networkd setup only with the user's approval: the
+  installer's question, or `--switch-to-networkmanager`), and BlueZ, with `bluetooth.service`
   enabled when the unit is installed and not masked.
   `pam_gnome_keyring.so` ships in that package, and a display manager whose PAM
   stack loads it (as Arch's `lightdm` does) unlocks the login keyring at a
@@ -724,7 +755,13 @@ install it, autostart starts it through `dwm-settings-picom`, and the dependency
 checks report it missing as a required failure when Quickshell is installed
 (optional in the core profile). When it is missing or cannot start, the session
 continues, the overview keeps icon-and-title cards, and one notification says
-so; it is never retried in a loop. Stopping it (`stop`, `toggle`, the Control
+so; it is never retried in a loop. The one exception is a Raspberry Pi 4 (V3D 4,
+ARM64 project): there Picom makes the desktop unusable with either
+backend it can run (#32). So under the Automatic policy, autostart's
+`session-start` leaves it off at login, with no notification, and `status` says
+why. A backend chosen in Settings, `PICOM_BACKEND`, a user configuration
+outside the editor's subset, and `start` from Settings or the Control Center
+still start it. Stopping it (`stop`, `toggle`, the Control
 Center's `toggle-compositor`) remains a troubleshooting action that turns
 window previews off until it starts again.
 
@@ -761,7 +798,8 @@ second compositor keeps the selection and still fails immediately.
 
 Released Arch images are built from an archiso profile (`archiso/`) layered
 onto the system `releng` profile, via `scripts/build-lyona-arch-iso.sh`.
-The live medium embeds this repository, boots on UEFI and legacy BIOS, and
+The live medium embeds this repository, boots on UEFI and legacy BIOS (the
+aarch64 medium, `--arch aarch64`, on UEFI only), and
 auto-logs into a
 root shell that automatically launches `lyona-install`
 (`archiso/airootfs/root/lyona-install.sh`) — no command to type. It is a
@@ -998,7 +1036,9 @@ In a real or nested X11 session:
 
 ### 9.4 Arch Image Validation
 
-- `archiso/packages.x86_64` stays in sync with the `arch:iso` package map,
+- `archiso/packages.x86_64` stays in sync with the `arch:iso` package map
+  (and the aarch64 medium's `archiso-aarch64/packages.aarch64`
+  with the same map on `aarch64`),
   what the live medium itself runs on top of `releng`; the desktop packages are
   not on the image, as the new system downloads every package it installs. The
   postinstall script and ISO builder pass their structural checks

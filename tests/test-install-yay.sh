@@ -22,6 +22,9 @@ make_workspace
 
 installer=$repo/scripts/install-yay
 export STUB_DIR=$work
+# The fixture PKGBUILDs are x86_64's; dwm-aur.sh checks the host's otherwise.
+# Its per-architecture checks are tests/test-dwm-aur.sh's (ARM1-03).
+export DWM_AUR_ARCH=x86_64
 stage_helpers checkout "$work/scripts" install-yay
 helper=$work/scripts/install-yay
 
@@ -62,7 +65,7 @@ cat >"$work/bin/makepkg" <<'EOF2'
 #!/bin/bash
 base=$(basename "$(sed 's/\.git$//' .url)")
 if [[ $1 == --printsrcinfo ]]; then
-	printf 'pkgbase = %s\n\tpkgver = 1.0\n\tsource_x86_64 = %s.tar.gz::https://github.com/x/%s.tar.gz\n' "$base" "$base" "$base"
+	printf 'pkgbase = %s\n\tpkgver = 1.0\n\tarch = x86_64\n\tarch = aarch64\n\tsource_x86_64 = %s.tar.gz::https://github.com/x/%s.tar.gz\n' "$base" "$base" "$base"
 	printf '\tb2sums_x86_64 = abc123\n\npkgname = %s\n' "$base"
 	exit 0
 fi

@@ -413,7 +413,8 @@ notify_session_problem() {
 # goes on, the overview keeps its icon-and-title cards, and the user is told
 # once. dwm-settings-picom picks the backend for this GPU and honours
 # PICOM_BACKEND as an override; it starts nothing if this display already has a
-# compositor.
+# compositor. session-start is start, except on a Raspberry Pi 4 (V3D 4) under
+# the Automatic policy, where it leaves Picom off (#32): no notice, by design.
 start_compositor() {
 	if ! command -v picom >/dev/null 2>&1; then
 		command -v quickshell >/dev/null 2>&1 || return 0
@@ -422,7 +423,7 @@ start_compositor() {
 		return 0
 	fi
 	picom_helper=$(command -v dwm-settings-picom 2>/dev/null || printf '%s' "${0%/*}/dwm-settings-picom")
-	if ! picom_error=$("$picom_helper" start 2>&1 >/dev/null); then
+	if ! picom_error=$("$picom_helper" session-start 2>&1 >/dev/null); then
 		notify_session_problem "Picom could not start" \
 			"Window previews in the overview are off. Try the XRender backend in Settings > Appearance > Compositor. $picom_error"
 	fi

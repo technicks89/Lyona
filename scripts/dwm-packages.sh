@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Prints its arguments on x86_64 only, and returns 0 either way (dwm_packages
+# returns 1 only for an unknown profile). The architecture is $ARCH, as
+# install.sh sets it, else bash's own ($HOSTTYPE, as dwm-utils.sh): no
+# process is started. Packages gated here are missing from Arch
+# Linux ARM, or do not apply on aarch64 (ARM1-02; the survey is
+# docs/evidence/arm1-02-aarch64-packages.md).
+dwm_x86_64_only() {
+	[[ ${ARCH:-$HOSTTYPE} != x86_64 ]] || printf '%s\n' "$@"
+}
+
+# The reverse: prints its arguments on aarch64 only, for what exists in Arch
+# Linux ARM alone (the Raspberry Pi kernel and firmware, ARM3-01).
+dwm_aarch64_only() {
+	[[ ${ARCH:-$HOSTTYPE} != aarch64 ]] || printf '%s\n' "$@"
+}
+
 dwm_packages() {
 	local family=$1
 	local profile=$2
@@ -36,7 +52,10 @@ dwm_packages() {
 	arch:ci-tools)
 		# What the full-suite CI job needs beyond the desktop: linters, the
 		# ISO builder, and the Xvfb/dbus/X11 tools the acceptance tests drive.
-		printf '%s\n' shellcheck shfmt archiso python-dbus python-pillow \
+		# Arch Linux ARM has no shellcheck (no GHC) and no archiso (the ISO
+		# builder is x86_64); the x86_64 job lints and builds the medium.
+		dwm_x86_64_only shellcheck archiso
+		printf '%s\n' shfmt python-dbus python-pillow \
 			xorg-server-xvfb xorg-xauth xdotool dbus inotify-tools jq
 		;;
 	arch:ci-full)
@@ -124,11 +143,9 @@ dwm_packages() {
 			system-config-printer arch-audit
 		;;
 	arch:gaming)
-		if [[ ${ARCH:-$(uname -m)} == x86_64 ]]; then
-			printf '%s\n' \
-				steam gamescope gamemode lib32-gamemode \
-				mangohud lib32-mangohud goverlay
-		fi
+		# x86_64 only: it needs multilib, which Arch Linux ARM does not have.
+		dwm_x86_64_only steam gamescope gamemode lib32-gamemode \
+			mangohud lib32-mangohud goverlay
 		;;
 	arch:theme)
 		# The icon themes give every GTK application icons on a fresh install
@@ -136,8 +153,9 @@ dwm_packages() {
 		printf '%s\n' dconf adwaita-icon-theme papirus-icon-theme
 		;;
 	arch:theme-gtk)
-		printf '%s\n' \
-			adw-gtk-theme deepin-gtk-theme
+		printf '%s\n' adw-gtk-theme
+		# Not in Arch Linux ARM (checked 2026-10-13).
+		dwm_x86_64_only deepin-gtk-theme
 		;;
 	arch:theme-optional)
 		# Qt theming: qt6ct, one fixed package (#247). qt5ct, the other choice
@@ -154,8 +172,41 @@ dwm_packages() {
 		# - curl: the network check, the timezone and the CachyOS setup;
 		# - openssl: the password hash; pciutils: lspci, for the GPU;
 		# - reflector: ranks the mirrors in the user's country (#249). releng
-		#   has it too; listed because the wizard depends on it.
-		printf '%s\n' plymouth gum jq curl openssl pciutils reflector
+		#   has it too; listed because the wizard depends on it. It ranks Arch
+		#   Linux's mirrors from their status page, and is not in Arch Linux
+		#   ARM, whose mirrors are not on it (ARM2-04 decides the wizard's
+		#   mirror step there).
+		# The aarch64 medium's list (archiso-aarch64/packages.aarch64) is this
+		# profile with ARCH=aarch64 (ARM2-02).
+		printf '%s\n' plymouth gum jq curl openssl pciutils
+		dwm_x86_64_only reflector
+		;;
+	arch:rpi-image)
+		# The Raspberry Pi image's base system, which the Pi builder pacstraps
+		# before install.sh adds the desktop (ARM3-01,
+		# scripts/build-lyona-rpi-image.sh). One image for the Pi 4 and the Pi 5
+		# (A-5): the Raspberry Pi kernel, which the firmware boots directly (no
+		# U-Boot), the firmware and its per-board device trees, and the
+		# firmware's Wi-Fi and Bluetooth blobs. Arch Linux ARM only, so empty
+		# on x86_64.
+		# - archlinuxarm-keyring: the keys pacman trusts, initialised at first
+		#   boot, never shipped (ARM3-02);
+		# - sudo: install.sh runs as a user with sudo;
+		# - gum: the first-boot wizard's screens, as on the install medium;
+		# - zram-generator: compressed swap in memory, which archinstall sets up
+		#   on the install medium (swap on an SD card would wear it).
+		dwm_aarch64_only base linux-rpi raspberrypi-bootloader firmware-raspberrypi \
+			archlinuxarm-keyring sudo gum zram-generator
+		;;
+	arch:soc-snapdragon)
+		# Snapdragon X laptops (ARM Sprint 6, ARM6-04): the Qualcomm firmware
+		# (the GPU, the audio and compute DSPs, battery manager, speaker
+		# topology) and the Atheros firmware (ath12k Wi-Fi). Arch Linux ARM
+		# splits linux-firmware by vendor; the base package has neither. To be
+		# installed only on a machine whose device tree lyona_snapdragon_dtb
+		# names (scripts/lyona-snapdragon.sh), as NVIDIA packages are installed
+		# only where the driver is used. Empty on x86_64.
+		dwm_aarch64_only linux-firmware-qcom linux-firmware-atheros
 		;;
 	# The live medium's postinstall installs these onto the target by what it
 	# detects (Sync Sprint 12 S12-15): a GPU driver, NetworkManager
@@ -164,26 +215,31 @@ dwm_packages() {
 	# Arch replaced nvidia and nvidia-dkms with the open kernel modules, which
 	# support Turing (GTX 16xx, RTX 20xx) and newer; older cards need the
 	# AUR-only nvidia-580xx and stay on nouveau.
+	# The NVIDIA profiles are x86_64 only: Arch Linux ARM has no prebuilt
+	# nvidia-open and no legacy branches, and NVIDIA on aarch64 (GB10) is ARM
+	# Sprint 4's own profile.
 	arch:gpu-nvidia)
-		printf '%s\n' nvidia-open nvidia-utils
+		dwm_x86_64_only nvidia-open nvidia-utils
 		;;
 	arch:gpu-nvidia-dkms)
-		printf '%s\n' nvidia-open-dkms nvidia-utils
+		dwm_x86_64_only nvidia-open-dkms nvidia-utils
 		;;
 	# The legacy drivers for older cards (Sync Sprint 14, decision D-23): from the
 	# CachyOS repository when the medium added it, else built from pinned AUR
 	# PKGBUILDs (a listed AUR use; docs/AUR-PACKAGES.md). DKMS only.
 	arch:gpu-nvidia-580xx)
-		printf '%s\n' nvidia-580xx-dkms nvidia-580xx-utils
+		dwm_x86_64_only nvidia-580xx-dkms nvidia-580xx-utils
 		;;
 	arch:gpu-nvidia-470xx)
-		printf '%s\n' nvidia-470xx-dkms nvidia-470xx-utils
+		dwm_x86_64_only nvidia-470xx-dkms nvidia-470xx-utils
 		;;
 	arch:gpu-amd)
 		printf '%s\n' xf86-video-amdgpu
 		;;
 	arch:gpu-intel)
-		printf '%s\n' mesa vulkan-intel libva-intel-driver
+		printf '%s\n' mesa vulkan-intel
+		# Not in Arch Linux ARM (checked 2026-10-13).
+		dwm_x86_64_only libva-intel-driver
 		;;
 	# wireless-regdb: without regulatory.db, cfg80211 stays on the world domain,
 	# where 5 GHz is passive only and the access point's country is ignored

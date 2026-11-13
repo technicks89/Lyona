@@ -99,6 +99,7 @@ submitting a pull request.
 | Documentation | `mdbook build docs` |
 | Installer or package mapping | `scripts/run-tests make check-arch-packages` on Arch |
 | Arch archiso | `scripts/run-tests make check-archiso` plus all evidence required by [SPEC.md Section 9.4](SPEC.md#94-arch-image-validation) |
+| Raspberry Pi image | `scripts/run-tests make check-rpi-image`, a build on an aarch64 Arch Linux ARM host, and its evidence |
 | Release automation | `scripts/run-tests make release-check` and a dry run of the release helper |
 
 Arch package, VM, and X11 checks require their documented host tools. If a
@@ -113,6 +114,16 @@ workflow**. Leave `target` as `check` for everything, or name one `make`
 target (for example `check-system-management`) to rerun a single gate. The
 log is attached to the run as `full-suite-log`. A passing manual run does not
 replace local `scripts/run-tests make check` before merge.
+
+With `aarch64` ticked (the default), the run also has an experimental aarch64
+job (ARM1-05): GitHub's `ubuntu-24.04-arm` runner builds an Arch Linux ARM
+image from Arch Linux ARM's own root filesystem
+(`scripts/ci-archlinuxarm-image.sh`, which checks its signature by the Arch
+Linux ARM Build System key and its published checksum) and runs the same
+target in it through `scripts/ci-local.sh --base-image`. Its log is
+`full-suite-aarch64-log`. Checks of x86_64-only features are pinned to x86_64
+and run there as on an x86_64 host; `check-shell` skips, as ShellCheck is not
+packaged for aarch64. It stays manual until it has been green several times in a row.
 
 ### The same run in local Docker
 
@@ -135,7 +146,9 @@ the `build` packages and clang, and `--refresh` to rebuild the cached package
 images from a fresh base (do that now and then: CI always starts from the newest one). It runs
 the tree's own scripts and tests, with the container's seccomp and AppArmor
 profiles off as in the workflow, so use it on code you trust rather than on an
-unreviewed branch. The first run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
+unreviewed branch. On an aarch64 machine with Docker, run
+`scripts/ci-archlinuxarm-image.sh` and then `scripts/ci-local.sh --base-image
+lyona-archlinuxarm:base-devel` for the aarch64 job. The first run installs the packages (several GB, cached as `lyona-ci:<hash>`), and a full
 pass takes about half an hour. It needs Docker and about 6 GB of disk.
 
 Before merging changes to parallel scheduling, run

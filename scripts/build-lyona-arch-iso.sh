@@ -3,27 +3,34 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-Usage: sudo scripts/build-lyona-arch-iso.sh [--output DIR] [--version VERSION]
+Usage: sudo scripts/build-lyona-arch-iso.sh [--arch ARCH] [--output DIR] [--version VERSION]
 
 Build a lyona Arch Linux install medium by layering this checkout and
 archiso/ onto the system's archiso releng profile, then running mkarchiso.
 Requires the archiso package and root (mkarchiso builds as root).
 
 The image carries the release version from config.mk unless --version
-overrides it, producing lyona-VERSION-x86_64.iso and recording the build
+overrides it, producing lyona-VERSION-ARCH.iso and recording the build
 in /etc/lyona-iso-release on the live medium.
 
 Options:
+  --arch ARCH             x86_64 (the default) or aarch64. aarch64 builds the
+                          experimental Arch Linux ARM medium: archiso-aarch64/
+                          over archiso 91's releng, UEFI only. It builds only
+                          on an aarch64 host (ARM64.md A-3).
   --output DIR            Write the ISO to DIR (default: ./out).
   --version VERSION       Stamp VERSION instead of the config.mk VERSION.
                           Accepts 0.1.0 or v0.1.0.
   --profile-only          Stage and stamp the archiso profile under
                           DIR/profile, then stop without running mkarchiso.
-                          Does not require root.
+                          Does not require root, or a host of ARCH.
   -h, --help              Show this help.
 
 LYONA_RELENG_DIR overrides the archiso releng profile location
-(default: /usr/share/archiso/configs/releng).
+(default: /usr/share/archiso/configs/releng), and LYONA_MKARCHISO the
+mkarchiso to run (default: mkarchiso on PATH). Arch Linux ARM does not
+package archiso: for --arch aarch64, point both at an archiso 91 or later
+checkout (its configs/releng and archiso/mkarchiso; docs/RELEASING.md).
 
 The live medium auto-logs into a root shell on tty1. After completing a base
 Arch install to /mnt (e.g. with `archinstall`), run
@@ -42,9 +49,22 @@ err() {
 output_dir="$PWD/out"
 iso_version=
 profile_only=false
+arch=x86_64
 
 while (($# > 0)); do
 	case "$1" in
+	--arch)
+		if (($# < 2)); then
+			err "--arch requires a value."
+			exit 1
+		fi
+		arch=$2
+		shift 2
+		;;
+	--arch=*)
+		arch=${1#*=}
+		shift
+		;;
 	--output)
 		if (($# < 2)); then
 			err "--output requires a value."
@@ -85,8 +105,22 @@ while (($# > 0)); do
 	esac
 done
 
+case $arch in
+x86_64 | aarch64) ;;
+*)
+	err "--arch must be x86_64 or aarch64: $arch"
+	exit 1
+	;;
+esac
+
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 config_mk="$repo_dir/config.mk"
+# What differs on each architecture: the package layer, pacman.conf and, on
+# aarch64, airootfs/ files. The rest of the medium is archiso/'s, shared.
+case $arch in
+x86_64) arch_profile_dir=$repo_dir/archiso ;;
+aarch64) arch_profile_dir=$repo_dir/archiso-aarch64 ;;
+esac
 
 if [[ -z $iso_version ]]; then
 	[[ -f $config_mk ]] || {
@@ -130,17 +164,48 @@ if ((${#iso_label} > 32)); then
 	exit 1
 fi
 
+mkarchiso_cmd=${LYONA_MKARCHISO:-mkarchiso}
 if [[ $profile_only != true ]]; then
+	# Built natively, never under emulation (ARM64.md A-3): an emulated chroot
+	# is slow and hides faults that only show on the real architecture. Before
+	# the root check, so the reason is the one shown.
+	host_arch=$(uname -m)
+	if [[ $host_arch != "$arch" ]]; then
+		err "an $arch medium builds on an $arch host; this one is $host_arch."
+		exit 1
+	fi
+
 	if [[ $EUID -ne 0 ]]; then
 		err "mkarchiso must run as root."
 		exit 1
 	fi
 
-	command -v mkarchiso >/dev/null 2>&1 || {
-		err "mkarchiso not found. Install the archiso package first."
+	command -v "$mkarchiso_cmd" >/dev/null 2>&1 || {
+		if [[ $arch == aarch64 ]]; then
+			err "mkarchiso not found. Arch Linux ARM does not package archiso: set"
+			err "LYONA_MKARCHISO and LYONA_RELENG_DIR to an archiso 91 checkout."
+		else
+			err "mkarchiso not found. Install the archiso package first."
+		fi
 		exit 1
 	}
+
+	# The aarch64 medium fuses the Snapdragon X device trees into its kernel
+	# with ukify (ARM6-02). Without it mkarchiso only warns and builds a medium
+	# that cannot pick a device tree, so it is required here.
+	if [[ $arch == aarch64 ]] && ! command -v ukify >/dev/null 2>&1; then
+		err "ukify not found. Install the systemd-ukify package: the aarch64 medium"
+		err "fuses the Snapdragon X device trees into its kernel with it."
+		exit 1
+	fi
 fi
+
+# rsync embeds the checkout in the profile, in --profile-only too. archiso does
+# not depend on it, so a host can lack it; say so before anything is staged.
+command -v rsync >/dev/null 2>&1 || {
+	err "rsync not found. Install the rsync package first."
+	exit 1
+}
 
 # The palette the boot splash is generated from. The installed system can
 # follow the user's chosen theme later; the ISO has no user yet.
@@ -150,6 +215,15 @@ releng_dir="${LYONA_RELENG_DIR:-/usr/share/archiso/configs/releng}"
 	err "releng profile not found at $releng_dir. Reinstall the archiso package."
 	exit 1
 }
+# archiso 91 added aarch64 to releng: its package list and its kernel
+# parameters. Older releng profiles have neither, and mkarchiso before 91
+# cannot build an aarch64 UEFI medium (docs/evidence/arm2-01-spike.md).
+if [[ $arch == aarch64 ]] &&
+	{ [[ ! -f $releng_dir/packages.aarch64 ]] ||
+		! grep -q '^kernel_params_aarch64=' "$releng_dir/profiledef.sh"; }; then
+	err "the releng profile at $releng_dir has no aarch64 support; it needs archiso 91 or later."
+	exit 1
+fi
 
 work_dir="$(mktemp -d -p /var/tmp)"
 trap 'rm -rf "$work_dir"' EXIT
@@ -167,12 +241,91 @@ info() { printf 'build-lyona-arch-iso: %s\n' "$*"; }
 info "Copying the releng base profile..."
 cp -a "$releng_dir" "$profile_dir"
 
-info "Layering lyona packages onto packages.x86_64..."
-cat "$repo_dir/archiso/packages.x86_64" >>"$profile_dir/packages.x86_64"
-sort -u -o "$profile_dir/packages.x86_64" "$profile_dir/packages.x86_64"
+# releng's aarch64 profile is written for Arch Linux's own aarch64 port, which
+# has no public repositories; this makes it Arch Linux ARM's (ARM2-02, from
+# the ARM2-01 spike: docs/evidence/arm2-01-spike.md). Every edit checks the
+# shape it changes, so a new releng fails here rather than in the image.
+adapt_releng_aarch64() {
+	local packages=$profile_dir/packages.aarch64
+	local profiledef=$profile_dir/profiledef.sh
+	local hooks_conf=$profile_dir/airootfs/etc/mkinitcpio.conf.d/archiso.conf
+	local package
+
+	info "Adapting releng's aarch64 profile to Arch Linux ARM..."
+	# UEFI only: aarch64 has no BIOS, and syslinux no aarch64 build.
+	grep -q "'uefi.systemd-boot'" "$profiledef" || {
+		err "releng's profiledef.sh has no uefi.systemd-boot boot mode; the archiso profile format changed."
+		exit 1
+	}
+	sed -i "s/'bios\.syslinux'//" "$profiledef"
+	! grep -q 'bios\.syslinux' "$profiledef" || {
+		err "the bios.syslinux boot mode was not removed."
+		exit 1
+	}
+	rm -rf -- "$profile_dir/syslinux"
+	rm -f -- "$profile_dir"/efiboot/loader/entries/*memtest86*
+
+	# linux-aarch64 has CONFIG_XZ_DEC_ARM64 but not CONFIG_XZ_DEC_X86: a
+	# root image block mksquashfs compressed with the x86 filter cannot be
+	# read on the booted medium.
+	grep -q "'-Xbcj' 'x86,arm64'" "$profiledef" || {
+		err "releng's squashfs options have no -Xbcj x86,arm64; the archiso profile format changed."
+		exit 1
+	}
+	sed -i "s/'-Xbcj' 'x86,arm64'/'-Xbcj' 'arm64'/" "$profiledef"
+
+	# memdisk is syslinux's BIOS RAM-disk boot; its hook fails the
+	# initramfs build on aarch64 (no phram module, no memdiskfind).
+	grep -q '^HOOKS=(.* memdisk ' "$hooks_conf" || {
+		err "releng's HOOKS line has no memdisk hook; the archiso profile format changed."
+		exit 1
+	}
+	sed -i '/^HOOKS=(/ s/ memdisk / /' "$hooks_conf"
+
+	# Arch Linux ARM's kernel, linux-aarch64, carries its own device trees;
+	# the other four are not in its repositories.
+	grep -Fqx linux "$packages" || {
+		err "releng's packages.aarch64 has no linux kernel; the archiso profile format changed."
+		exit 1
+	}
+	for package in linux linux-dtbs stubble edk2-shell ghostty-terminfo; do
+		sed -i "/^${package}\$/d" "$packages"
+	done
+	printf '%s\n' linux-aarch64 archlinuxarm-keyring >>"$packages"
+
+	# releng's linux-firmware pulls every vendor's firmware: about 280 MB of
+	# Intel, NVIDIA, AMD, Radeon and TI files that no Arch Linux ARM board this
+	# medium targets uses. On the XPS 13 9345 the root image is copied into RAM
+	# over a link that runs at USB 2.0 speed (about 30 MB/s) until the USB-C
+	# port is set up, so every 30 MB cut is about a second off the black
+	# screen. Qualcomm and Atheros (the XPS) stay, with the Wi-Fi vendors a
+	# USB dongle may need.
+	grep -Fqx linux-firmware "$packages" || {
+		err "releng's packages.aarch64 has no linux-firmware; the archiso profile format changed."
+		exit 1
+	}
+	sed -i '/^linux-firmware$/d' "$packages"
+	for package in linux-firmware-qcom linux-firmware-atheros linux-firmware-broadcom \
+		linux-firmware-mediatek linux-firmware-realtek linux-firmware-other linux-firmware-whence; do
+		grep -Fqx "$package" "$packages" || printf '%s\n' "$package" >>"$packages"
+	done
+}
+
+if [[ $arch == aarch64 ]]; then
+	adapt_releng_aarch64
+fi
+
+info "Layering lyona packages onto packages.$arch..."
+cat "$arch_profile_dir/packages.$arch" >>"$profile_dir/packages.$arch"
+sort -u -o "$profile_dir/packages.$arch" "$profile_dir/packages.$arch"
 
 info "Applying lyona pacman.conf..."
-cp -f "$repo_dir/archiso/pacman.conf" "$profile_dir/pacman.conf"
+cp -f "$arch_profile_dir/pacman.conf" "$profile_dir/pacman.conf"
+
+if [[ $arch == aarch64 ]]; then
+	info "Adding the aarch64 medium's own files..."
+	cp -a "$arch_profile_dir/airootfs/." "$profile_dir/airootfs/"
+fi
 
 info "Rebranding profiledef.sh for lyona $iso_version..."
 sed -i \
@@ -197,21 +350,52 @@ info "Quieting the primary boot entries' console output..."
 # copytoram=n: archiso otherwise reads the whole root image into RAM from a
 # USB stick before boot continues, tens of seconds behind a silent splash on
 # real hardware. The stick stays in for the install anyway.
+# aarch64 differs in four ways (ARM6-02, the XPS 13 9345):
+# - copytoram=auto, archiso's own default, in place of n: read from the stick as
+#   the squashfs, the boot stick drops off the bus about 40 to 70 s in ("usb 3-1:
+#   USB disconnect", back 0.7 s later as a new device) when the ADSP comes up
+#   and the USB-C port is reconfigured, so reads of the mounted image return I/O
+#   errors (loop0, SQUASHFS error -5) on any stick, USB 2 or 3, on both ports.
+#   Copying the image into RAM first, which finishes before that, boots; the
+#   cost is half a minute before the shell is up. auto copies only when the image
+#   is on a non-optical device, under 4 GiB, and the available memory is more
+#   than the image plus 2 GiB (the XPS has plenty), so a small machine or a
+#   virtual machine boots as before; a forced y failed (ENOSPC) on a 1 GiB one.
+# - plymouth.force-scale=1: the panel is 2560x1600 and Plymouth's automatic
+#   HiDPI scale of 2 made the splash logo land in the bottom right corner,
+#   cut off. At scale 1 it is centred.
+# - plymouth.ignore-serial-consoles: a machine whose firmware publishes a serial
+#   console (the ACPI SPCR table, as QEMU's virt machine and many ARM servers
+#   do) gets that console from the kernel with no console= argument, and
+#   Plymouth then shows only its text-only "details" splash on it and never
+#   tries the display. With this option it uses the display and the serial
+#   console stays.
+# - systemd.tpm2_wait=0: the firmware reports a TPM but this kernel exposes no
+#   device for it, so systemd waited its 90 s device timeout for /dev/tpm0
+#   before the installer started. The option tells it not to wait.
+uefi_boot_args='copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0'
+if [[ $arch == aarch64 ]]; then
+	uefi_boot_args='copytoram=auto quiet splash loglevel=3 vt.global_cursor_default=0 plymouth.force-scale=1 plymouth.ignore-serial-consoles systemd.tpm2_wait=0'
+fi
 sed -E -i \
-	'/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
+	"/^options.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?\$/ s/\$/ $uefi_boot_args/" \
 	"$profile_dir/efiboot/loader/entries/01-archiso-linux.conf"
-sed -E -i \
-	'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
-	"$profile_dir/syslinux/archiso_sys-linux.cfg"
 
-grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
+grep -Fq "$uefi_boot_args" "$profile_dir/efiboot/loader/entries/01-archiso-linux.conf" || {
 	err "releng's UEFI boot entry has no matching options line to quiet; the archiso profile format changed."
 	exit 1
 }
-grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/syslinux/archiso_sys-linux.cfg" || {
-	err "releng's BIOS boot entry has no matching APPEND line to quiet; the archiso profile format changed."
-	exit 1
-}
+# syslinux, the BIOS loader, is x86_64 only (the aarch64 medium is UEFI only).
+if [[ $arch == x86_64 ]]; then
+	sed -E -i \
+		'/^APPEND.*archisosearchuuid=%ARCHISO_UUID%( %KERNEL_PARAMS%)?$/ s/$/ copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0/' \
+		"$profile_dir/syslinux/archiso_sys-linux.cfg"
+
+	grep -q 'copytoram=n quiet splash loglevel=3 vt.global_cursor_default=0' "$profile_dir/syslinux/archiso_sys-linux.cfg" || {
+		err "releng's BIOS boot entry has no matching APPEND line to quiet; the archiso profile format changed."
+		exit 1
+	}
+fi
 
 info "Booting straight into the installer, without a boot menu..."
 # There is one thing to boot on this medium and it launches the installer on
@@ -230,28 +414,30 @@ grep -Fqx 'timeout 0' "$loader_conf" || {
 	exit 1
 }
 
-# vesamenu.c32 always draws, whatever the timeout, so the menu module itself
-# has to go rather than just its countdown.
-syslinux_head="$profile_dir/syslinux/archiso_head.cfg"
-syslinux_sys="$profile_dir/syslinux/archiso_sys.cfg"
-grep -q '^UI vesamenu.c32$' "$syslinux_head" || {
-	err "releng's syslinux head has no vesamenu UI line; the archiso profile format changed."
-	exit 1
-}
-grep -q '^TIMEOUT ' "$syslinux_sys" || {
-	err "releng's syslinux config has no TIMEOUT to shorten; the archiso profile format changed."
-	exit 1
-}
-sed -i 's/^UI vesamenu.c32$/PROMPT 0/' "$syslinux_head"
-sed -i 's/^TIMEOUT .*/TIMEOUT 1/' "$syslinux_sys"
-grep -Fqx 'PROMPT 0' "$syslinux_head" || {
-	err "the BIOS boot menu was not disabled."
-	exit 1
-}
-grep -Fqx 'TIMEOUT 1' "$syslinux_sys" || {
-	err "the BIOS boot menu timeout was not shortened."
-	exit 1
-}
+if [[ $arch == x86_64 ]]; then
+	# vesamenu.c32 always draws, whatever the timeout, so the menu module itself
+	# has to go rather than just its countdown.
+	syslinux_head="$profile_dir/syslinux/archiso_head.cfg"
+	syslinux_sys="$profile_dir/syslinux/archiso_sys.cfg"
+	grep -q '^UI vesamenu.c32$' "$syslinux_head" || {
+		err "releng's syslinux head has no vesamenu UI line; the archiso profile format changed."
+		exit 1
+	}
+	grep -q '^TIMEOUT ' "$syslinux_sys" || {
+		err "releng's syslinux config has no TIMEOUT to shorten; the archiso profile format changed."
+		exit 1
+	}
+	sed -i 's/^UI vesamenu.c32$/PROMPT 0/' "$syslinux_head"
+	sed -i 's/^TIMEOUT .*/TIMEOUT 1/' "$syslinux_sys"
+	grep -Fqx 'PROMPT 0' "$syslinux_head" || {
+		err "the BIOS boot menu was not disabled."
+		exit 1
+	}
+	grep -Fqx 'TIMEOUT 1' "$syslinux_sys" || {
+		err "the BIOS boot menu timeout was not shortened."
+		exit 1
+	}
+fi
 
 grep -q '^file_permissions=($' "$profile_dir/profiledef.sh" || {
 	err "releng's profiledef.sh has no file_permissions=( line; the archiso profile format changed."
@@ -286,6 +472,34 @@ info "Generating the lyona boot splash from the $splash_palette palette..."
 	"$profile_dir/airootfs/usr/share/plymouth/themes/lyona"
 install -Dm644 "$repo_dir/archiso/airootfs/etc/plymouth/plymouthd.conf" \
 	"$profile_dir/airootfs/etc/plymouth/plymouthd.conf"
+if [[ $arch == aarch64 ]]; then
+	# Plymouth waits DeviceTimeout (8 s by default) for a DRM device before it
+	# falls back to the firmware framebuffer. On the XPS 13 9345 the msm DRM
+	# device appears only after about 68 s, so the splash waited about 8 s
+	# for nothing. Not yet tried: whether the framebuffer then draws.
+	sed -i '/^\[Daemon\]$/ a DeviceTimeout=1' \
+		"$profile_dir/airootfs/etc/plymouth/plymouthd.conf"
+	grep -Fqx 'DeviceTimeout=1' "$profile_dir/airootfs/etc/plymouth/plymouthd.conf" || {
+		err "plymouthd.conf has no [Daemon] section to set DeviceTimeout in."
+		exit 1
+	}
+	# Experiment (ARM6-02, untried): on the XPS 13 9345 msm's DisplayPort
+	# controllers stay deferred ("failed to acquire drm_bridge") because
+	# pmic_glink_altmode, whose aux bridges they need, is itself deferred with
+	# "failed to acquire retimer-switch" until the Parade PS883x retimers (i2c
+	# 4-0008 and 5-0008, the ps883x module) register. The root image's udev loaded
+	# ps883x at about 36 s (about 60 s with a forced copytoram=y and a slower copy), and
+	# msm bound right after. Loading it from the initramfs should bring the DRM
+	# device, and the splash on the panel, up before the copy of the root image.
+	# qcom_q6v5_pas (the ADSP) is not loaded early: without its firmware, which
+	# is in the root image, the ADSP never booted (new9).
+	sed -i '/^HOOKS=(/ i MODULES+=(ps883x pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' \
+		"$archiso_mkinitcpio"
+	grep -Fqx 'MODULES+=(ps883x pmic_glink pmic_glink_altmode qcom_pd_mapper qrtr qrtr-smd)' "$archiso_mkinitcpio" || {
+		err "the early display modules were not added to the initramfs MODULES."
+		exit 1
+	}
+fi
 
 info "Suppressing the optical-drive loopback attach on boot..."
 install -Dm644 "$repo_dir/archiso/airootfs/etc/udev/rules.d/90-lyona-optical-no-loop.rules" \
@@ -413,6 +627,16 @@ if [[ $profile_only == true ]]; then
 fi
 
 mkdir -p "$output_dir"
+mkarchiso_run=$(command -v "$mkarchiso_cmd")
+if [[ $arch == aarch64 ]]; then
+	# archiso 91's own device-tree step needs `stubble` and a kernel package that
+	# keeps its device trees under /usr/lib/modules; Arch Linux ARM has neither.
+	# A copy of mkarchiso with systemd-stub doing that step instead (ARM6-02).
+	info "Making the mkarchiso that fuses the Snapdragon X device trees into the kernel..."
+	"$repo_dir/scripts/lyona-mkarchiso-dtb" "$mkarchiso_run" \
+		"$repo_dir/scripts/lyona-mkarchiso-fuse.sh" "$work_dir/mkarchiso"
+	mkarchiso_run=$work_dir/mkarchiso
+fi
 info "Running mkarchiso..."
-mkarchiso -v -w "$work_dir/build" -o "$output_dir" "$profile_dir"
+"$mkarchiso_run" -v -w "$work_dir/build" -o "$output_dir" "$profile_dir"
 info "Done. lyona $iso_version ISO is under $output_dir"
