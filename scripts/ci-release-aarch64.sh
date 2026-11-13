@@ -35,6 +35,21 @@ die() {
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
+
+# The container starts with base-devel only: install each builder's tools,
+# git among them, before anything runs git.
+case $kind in
+iso)
+	packages=(git rsync arch-install-scripts squashfs-tools libisoburn mtools
+		dosfstools erofs-utils mkinitcpio-archiso grub systemd-ukify)
+	;;
+rpi)
+	packages=(git rsync arch-install-scripts util-linux e2fsprogs dosfstools
+		mtools xz)
+	;;
+esac
+pacman -Syu --noconfirm --needed "${packages[@]}"
+
 # The mounted checkout belongs to another user.
 git config --global --add safe.directory "$repo"
 work=$(mktemp -d /var/tmp/lyona-release.XXXXXX)
@@ -50,8 +65,6 @@ publish() {
 
 case $kind in
 iso)
-	pacman -Syu --noconfirm --needed git rsync arch-install-scripts squashfs-tools \
-		libisoburn mtools dosfstools erofs-utils mkinitcpio-archiso grub systemd-ukify
 	git clone --quiet https://gitlab.archlinux.org/archlinux/archiso.git "$work/archiso"
 	git -C "$work/archiso" checkout --quiet --detach "$archiso_commit"
 	[[ $(git -C "$work/archiso" rev-parse HEAD) == "$archiso_commit" ]] || die "archiso is not at $archiso_commit"
@@ -61,8 +74,6 @@ iso)
 	publish "$work/iso" 'lyona-*-aarch64.iso'
 	;;
 rpi)
-	pacman -Syu --noconfirm --needed git rsync arch-install-scripts util-linux \
-		e2fsprogs dosfstools mtools xz
 	scripts/build-lyona-rpi-image.sh --output "$work/rpi"
 	publish "$work/rpi" 'lyona-*-rpi-aarch64.img.xz'
 	;;
