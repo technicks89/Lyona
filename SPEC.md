@@ -54,7 +54,7 @@ The primary release target is the Arch Linux desktop image:
 | Base media | lyona Arch installer image (archiso-based; see `docs/RELEASING.md`) |
 | Session | Xorg with dwm and the managed Quickshell shell |
 | Variants | One image for every GPU; the installer recommends the proprietary NVIDIA driver on a supported NVIDIA GPU, with nouveau as the alternative |
-| Release architectures | x86_64; aarch64 (Arch Linux ARM) for the targets below. The release workflow builds the aarch64 images, but no release has carried them yet (ARM5-01) |
+| Release architectures | x86_64; aarch64 (Arch Linux ARM) for the targets below. The aarch64 images are released beside the x86_64 image from 2026.11.0-beta.1 (ARM5-01) |
 
 Arch Linux ARM (`ID=archarm`, aarch64) is the second supported identity (ARM64
 project, `docs/sprints/ARM64.md`). Each aarch64 target has its own status:
