@@ -29,6 +29,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings > Input could fail a keyboard-layout preview, keep or revert with
+  status 141 (#485). Reading the layout or modifier options piped
+  `setxkbmap -query` into an `awk` that exited at its match; when `setxkbmap`
+  was still writing, it got SIGPIPE, and `pipefail` made that the helper's
+  failure. `awk` now reads to the end and keeps the first match. Seen as an
+  intermittent `check-settings` failure; `tests/test-settings-input.sh` now
+  has a `setxkbmap` that writes in two parts, which failed every time before
+  the fix.
+
 - `scripts/configure-build.sh` no longer rewrites the emoji font's
   `pixelsize=14` to the interface font size (#464). Its font-size pattern
   matched the `size=` inside `pixelsize=`, so even a run with every default

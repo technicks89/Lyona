@@ -394,11 +394,14 @@ read_value() {
 	case $setting in
 	keyboard-layout)
 		need_setxkbmap
-		setxkbmap -device "$id" -query | awk '$1 == "layout:" {print $2; exit}'
+		# awk reads to the end and keeps the first match: an `exit` there can close
+		# the pipe while setxkbmap still writes, and under pipefail its SIGPIPE
+		# (141) ended this helper (#485).
+		setxkbmap -device "$id" -query | awk '$1 == "layout:" && !done {print $2; done = 1}'
 		;;
 	modifier-options)
 		need_setxkbmap
-		setxkbmap -device "$id" -query | awk '$1 == "options:" {$1=""; sub(/^[[:space:]]+/, ""); print; exit}'
+		setxkbmap -device "$id" -query | awk '$1 == "options:" && !done {$1=""; sub(/^[[:space:]]+/, ""); print; done = 1}'
 		;;
 	*)
 		property=$(setting_property "$setting") || die "unsupported setting: $setting"

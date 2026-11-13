@@ -126,7 +126,15 @@ cat >"$work/bin/setxkbmap" <<'EOF'
 case " $* " in
 *' -query '*)
 	[ "${TEST_FAIL_QUERY:-0}" != 1 ] || exit 1
-	printf 'rules: evdev\nmodel: pc105\nlayout: %s\noptions: %s\n' "${TEST_LAYOUT-us}" "${TEST_OPTIONS-caps:escape}"
+	if [ "${TEST_QUERY_SPLIT:-0}" = 1 ]; then
+		# Two writes with a pause: the reader has its line before the rest
+		# arrives, so a reader that exits early closes the pipe on us (#485).
+		printf 'rules: evdev\nmodel: pc105\nlayout: %s\n' "${TEST_LAYOUT-us}"
+		sleep 0.3
+		printf 'options: %s\n' "${TEST_OPTIONS-caps:escape}"
+	else
+		printf 'rules: evdev\nmodel: pc105\nlayout: %s\noptions: %s\n' "${TEST_LAYOUT-us}" "${TEST_OPTIONS-caps:escape}"
+	fi
 	;;
 *) [ "${TEST_FAIL_SET:-0}" != 1 ] || exit 1; printf 'setxkbmap %s\n' "$*" >>"$TEST_LOG" ;;
 esac
@@ -616,6 +624,17 @@ env "${env_common[@]}" "$helper" revert keyboard-test >"$work/revert"
 grep -Fqx 'result	revert	keyboard-test' "$work/revert"
 grep -Fq 'setxkbmap -device 13 -layout de' "$work/actions.log"
 grep -Fq 'setxkbmap -device 13 -layout us' "$work/actions.log"
+
+# #485: reading the layout must not die of SIGPIPE when setxkbmap is still
+# writing after the layout line (the reader used to exit at its match, and
+# pipefail turned setxkbmap's 141 into the helper's).
+rm -f "$work/actions.log"
+env "${env_common[@]}" TEST_QUERY_SPLIT=1 "$helper" preview keyboard-test 5 "$keyboard_key" keyboard-layout de >/dev/null ||
+	fail 'a keyboard-layout preview failed while setxkbmap was still writing (#485).'
+env "${env_common[@]}" TEST_QUERY_SPLIT=1 "$helper" revert keyboard-test >"$work/revert-split" ||
+	fail 'reverting that preview failed (#485).'
+grep -Fqx 'result	revert	keyboard-test' "$work/revert-split" || fail 'the split-query preview was not reverted.'
+grep -Fq 'setxkbmap -device 13 -layout us' "$work/actions.log" || fail 'the split-query revert did not restore us.'
 
 # #371: as #369 for display previews. A preview interrupted by its session, or
 # a finalize that died, recovers without applying what it should not.
