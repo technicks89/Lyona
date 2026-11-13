@@ -254,6 +254,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- The runtime check after an update or rollback counts the managed Quickshell
+  shells after the tray has answered, not before. A second shell that started
+  while the first was probed, the duplicate the check exists to report, went
+  unseen and the check passed; it also made `tests/test-install-verify-quickshell-restart.sh`
+  fail now and then on a slow machine (the Full suite's aarch64 job, 2026-11-12;
+  reproduced by loading one CPU). The test's restart stand-in now registers its
+  shells at once, and a new case starts a second shell during the probe.
 - `lyona-update` no longer installs a release without Arch Linux ARM support on
   an aarch64 machine (#53). It always updates from Lyona's releases, but now only
   from one that lists the machine's architecture: each release carries an empty
