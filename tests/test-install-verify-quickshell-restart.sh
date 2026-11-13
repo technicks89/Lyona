@@ -64,6 +64,12 @@ ipc)
 	if [ "$2" = --pid ]; then
 		printf '%s\n' "$3" >>"$STUB_STATE/asked"
 		kill -0 "$3" 2>/dev/null || exit 1
+		# $STUB_STATE/late: another shell starts while this one is probed, once.
+		if [ -e "$STUB_STATE/late" ]; then
+			rm -f "$STUB_STATE/late"
+			"$STUB_QS" 60 </dev/null >/dev/null 2>&1 &
+			printf '%s\n' "$!" | tee -a "$STUB_STATE/all" >>"$STUB_STATE/pids"
+		fi
 		printf '%s\n' "$3"
 	else
 		newest=$(live | tail -n 1)
@@ -97,12 +103,18 @@ setsid -f sh -c '
 	printf "%s\n" "$!" >>"$STUB_STATE/all"
 	for p in $old; do quickshell kill --pid "$p"; done
 	sleep 0.3
+	# All the new shells are registered at once: a check that looks between two
+	# registrations would count one shell of two, which is the stub racing, not
+	# the check.
 	i=0
+	new=
 	while [ "$i" -lt "$STUB_STARTS" ]; do
 		"$STUB_QS" 60 &
-		printf "%s\n" "$!" | tee -a "$STUB_STATE/all" >>"$STUB_STATE/pids"
+		new="$new $!"
 		i=$((i + 1))
 	done
+	for p in $new; do printf "%s\n" "$p" >>"$STUB_STATE/all"; done
+	for p in $new; do printf "%s\n" "$p"; done >>"$STUB_STATE/pids"
 ' </dev/null >/dev/null 2>&1
 printf 'action\trestart-quickshell\n'
 STUB
@@ -128,6 +140,7 @@ stop_all() {
 	: >"$state/all"
 	: >"$state/old"
 	: >"$state/asked"
+	rm -f "$state/late"
 }
 
 probe=$work/runtime-probe
@@ -181,6 +194,18 @@ if runtime_check 2 >"$output" 2>&1; then
 fi
 grep -Fq 'expected one managed Quickshell in this session, found 2' "$output" ||
 	fail "two managed shells were not reported: $(cat "$output")"
+stop_all
+
+# A second shell that starts while the first is being probed: also reported. The
+# count is taken after the tray answers, not before (the stub starts it during
+# the probe, so this does not depend on timing).
+start_instance :7 c1 old
+: >"$state/late"
+if runtime_check 1 >"$output" 2>&1; then
+	fail 'a second shell started during the probe passed the check'
+fi
+grep -Fq 'expected one managed Quickshell in this session, found 2' "$output" ||
+	fail "a shell started during the probe was not reported: $(cat "$output")"
 stop_all
 
 # An old shell that never stops: reported, not checked as if restarted.

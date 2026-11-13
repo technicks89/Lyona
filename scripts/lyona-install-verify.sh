@@ -553,6 +553,13 @@ runtime_verify() {
 			sleep 0.1
 		done
 		if [ "$tray_ready" -eq 1 ]; then
+			# Count after the tray has answered, not before: a second shell
+			# that started while the first was probed is the duplicate this
+			# check exists to report. A listing that fails keeps the earlier one.
+			if recount=$(runtime_quickshell \
+				quickshell_session_identities "$quickshell_dir/shell.qml" 2>/dev/null); then
+				session_quickshell=$recount
+			fi
 			quickshell_count=$(printf '%s\n' "$session_quickshell" | grep -c .)
 			if [ "$quickshell_count" != 1 ]; then
 				printf 'Runtime error: expected one managed Quickshell in this session, found %s.\n' \
