@@ -1776,6 +1776,12 @@ done
 stack_win=$(cat "$work/restore-stack-window-id")
 [ -n "$stack_win" ]
 
+# A swallowed window keeps its own identity for the rules (#477 review): a
+# late title rule naming the child's instance applies to it, and once the
+# child is gone the terminal is matched as itself again.
+cp "$work/rules-backup" "$rules_file"
+sed -i '/^rules = \[/a\  { instance="dwm-xvfb-swallowed", title="Late Child Title", fullscreen=1 },' "$rules_file"
+reload_rules
 : >"$work/swallow-window-ids"
 DISPLAY=$display "$work/xclient" swallow-terminal >"$work/swallow-window-ids" 2>"$work/swallow-client.log" &
 swallow_client_pid=$!
@@ -1789,12 +1795,21 @@ swallowed_win=$(sed -n '2p' "$work/swallow-window-ids")
 [ -n "$terminal_win" ]
 [ -n "$swallowed_win" ]
 wait_for_active_window "$swallowed_win"
+DISPLAY=$display xdotool set_window --name 'Late Child Title' "$swallowed_win"
+wait_for_window_state "$swallowed_win" _NET_WM_STATE_FULLSCREEN
+DISPLAY=$display "$work/xclient" state "$swallowed_win" 0 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state_absent "$swallowed_win" _NET_WM_STATE_FULLSCREEN
 DISPLAY=$display xdotool windowraise "$stack_win"
 DISPLAY=$display xdotool key Super+t
 wait_for_top_window "$swallowed_win"
 
 DISPLAY=$display xdotool windowkill "$swallowed_win"
 wait_for_client_window "$terminal_win"
+DISPLAY=$display xdotool set_window --name 'Late Child Title' "$terminal_win"
+sleep 0.3
+wait_for_window_state_absent "$terminal_win" _NET_WM_STATE_FULLSCREEN
+cp "$work/rules-backup" "$rules_file"
+reload_rules
 DISPLAY=$display xdotool windowraise "$stack_win"
 DISPLAY=$display xdotool key Super+t
 wait_for_top_window "$stack_win"

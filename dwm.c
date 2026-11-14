@@ -4244,6 +4244,16 @@ swallow(Client *p, Client *c)
 	int rulefullscreenapplied = p->rulefullscreenapplied;
 	p->rulefullscreenapplied = c->rulefullscreenapplied;
 	c->rulefullscreenapplied = rulefullscreenapplied;
+	/* And the window's identity, so a later title change matches the rules
+	 * against the window shown, not the terminal; the terminal's is kept for
+	 * unswallow(). */
+	char identity[sizeof c->class];
+	copystr(identity, sizeof identity, p->class);
+	copystr(p->class, sizeof p->class, c->class);
+	copystr(c->class, sizeof c->class, identity);
+	copystr(identity, sizeof identity, p->instance);
+	copystr(p->instance, sizeof p->instance, c->instance);
+	copystr(c->instance, sizeof c->instance, identity);
 
 	#if SHOWWINICON
 	Window icon = p->icon;
@@ -4937,6 +4947,8 @@ unswallow(Client *c)
 	c->rulefullscreenapplied = c->swallowing->rulefullscreenapplied;
 	c->ignoresizehints = c->swallowing->ignoresizehints;
 	updatesizehints(c);
+	copystr(c->class, sizeof c->class, c->swallowing->class);
+	copystr(c->instance, sizeof c->instance, c->swallowing->instance);
 
 	#if SHOWWINICON
 	freeicon(c);
