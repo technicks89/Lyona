@@ -1021,9 +1021,20 @@ grep -Eq '^LYONA_ISO_COMMIT=[0-9a-f]{40}$|^LYONA_ISO_COMMIT=unknown$' "$stamp" |
 
 # #478: run with sudo, root reads a checkout the user owns, and git refuses
 # it unless it is a safe.directory. GIT_TEST_ASSUME_DIFFERENT_OWNER is git's
-# own switch for that check: the stamp must still name the commit.
+# own switch for that check: the stamp must still name the commit. The
+# caller's global and system git config are left out (an empty global file,
+# no system file), so a safe.directory there cannot make this pass.
 if head_commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null); then
-	GIT_TEST_ASSUME_DIFFERENT_OWNER=1 LYONA_RELENG_DIR="$releng" \
+	: >"$work/empty.gitconfig"
+	other_owner=(env GIT_CONFIG_GLOBAL="$work/empty.gitconfig" GIT_CONFIG_NOSYSTEM=1
+		GIT_TEST_ASSUME_DIFFERENT_OWNER=1)
+	# The negative control: with no safe.directory exception, git refuses the
+	# checkout, so the check below tests the builder's exception.
+	if "${other_owner[@]}" git -C "$repo" rev-parse HEAD >/dev/null 2>&1; then
+		printf 'git read a checkout owned by another user with no safe.directory; the other-owner check proves nothing.\n' >&2
+		exit 1
+	fi
+	"${other_owner[@]}" LYONA_RELENG_DIR="$releng" \
 		"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --output "$work/staged-other-owner" \
 		>"$work/profile-other-owner.out" 2>&1
 	grep -Fqx "LYONA_ISO_COMMIT=$head_commit" \
