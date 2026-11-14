@@ -17,7 +17,7 @@
 #   gap      pixels around and between tiled windows, 0-64
 #
 # Super+H/L and the master-count keys still change these live; that is not
-# saved here.
+# saved here. dwm reads at most 102 entries.
 #
 # Example:
 #   layouts = [

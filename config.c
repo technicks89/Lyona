@@ -42,8 +42,11 @@ static void (*spawnfunc)(const Arg *);
 static Rule          rt_rules_buf[TOML_RULES_MAX];
 static char          rt_rules_strbuf[TOML_RULES_MAX * 3][TOML_MAX_STR];
 
-/* layout.toml (#479): at most 16 monitors of 9 tags. */
-#define TOML_LAYOUTS_MAX 144
+/* layout.toml (#479): as many entries as the parser holds when each uses all
+ * five keys (monitor, tag, mfact, nmaster, gap), so the last one is never cut
+ * off; fewer than the 16 monitors of 9 tags there could be. dwm-layout-settings
+ * refuses to write more. */
+#define TOML_LAYOUTS_MAX (TOML_MAX_ENTRIES / 5)
 static LayoutSetting rt_layouts_buf[TOML_LAYOUTS_MAX];
 
 static int           inotify_fd = -1;
@@ -828,13 +831,14 @@ load_rules_toml(const char *user_path, const char *default_path)
 		report_problems(user_path, &doc);
 }
 
-/* An integer key of a layouts entry within [lo, hi], else -1 (not set). */
+/* An integer key of a layouts entry within [lo, hi], else -1 (not set). A
+ * true or false is not a number here. */
 static int
 layout_value(const TomlDoc *doc, int i, const char *key, int lo, int hi)
 {
 	const TomlValue *v = toml_table_get(doc, "layouts", i, key);
 
-	if (!v || v->type != TOML_INT || v->i < lo || v->i > hi)
+	if (!v || v->type != TOML_INT || v->is_bool || v->i < lo || v->i > hi)
 		return -1;
 	return (int)v->i;
 }

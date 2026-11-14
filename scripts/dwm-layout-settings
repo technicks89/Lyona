@@ -20,8 +20,10 @@ set -euo pipefail
 #
 # set saves FIELD (mfact 5-95, nmaster 0-20, gap 0-64) for the TAG (1-9) of
 # the MONITOR (0-15, the panel's numbering); "default" removes it. The file is
-# written whole, from the entries dwm reads; the previous one is kept as
-# layout.toml.bak. It prints:
+# written whole, from the entries dwm reads, under a lock on the directory so
+# two saves never lose each other's change; the previous one is kept as
+# layout.toml.bak. It holds at most 102 entries, as many as dwm reads when each
+# sets all five keys. It prints:
 #   layout-settings-result  ok
 
 # A checkout keeps the shared shell code beside the scripts; an install keeps it
@@ -42,6 +44,9 @@ die() {
 
 layout_dir=$config_home/lyona
 layout_file=$layout_dir/layout.toml
+# dwm's parser holds 512 keys; an entry has at most five (config.c
+# TOML_LAYOUTS_MAX).
+max_entries=102
 
 # The two properties as xprop prints them, one per line, kept here.
 settings_values=
@@ -114,8 +119,14 @@ cmd_set() {
 	if [[ -L $layout_dir ]] || ! path_has_no_symlink_components "$layout_dir"; then
 		die "refusing a symlinked path: $layout_dir"
 	fi
+	# One save at a time, from the read to the replacement; the lock goes
+	# with the process, however it exits.
+	exec 9<"$layout_dir" || die "cannot open $layout_dir"
+	flock -x 9 || die "cannot lock $layout_dir"
 	[[ ! -e $layout_file || (-f $layout_file && ! -L $layout_file) ]] ||
 		die "refusing to replace $layout_file: not a regular file"
+	[[ ! -L $layout_file.bak ]] ||
+		die "refusing to replace $layout_file.bak: it is a symlink"
 
 	# The entries dwm reads now, keyed by "monitor tag".
 	local -A mfacts=() nmasters=() gaps=()
@@ -140,10 +151,14 @@ cmd_set() {
 				continue
 			fi
 			key="${seen_monitor[$idx]} ${seen_tag[$idx]}"
-			[[ -n ${mfacts[$key]+x} ]] || keys+=("$key")
-			mfacts[$key]=
-			nmasters[$key]=
-			gaps[$key]=
+			# A second entry for the same tag adds to the first, as dwm
+			# applies them in order.
+			if [[ -z ${mfacts[$key]+x} ]]; then
+				keys+=("$key")
+				mfacts[$key]=
+				nmasters[$key]=
+				gaps[$key]=
+			fi
 			in_range "${entry_mfact[$idx]:-x}" 5 95 && mfacts[$key]=${entry_mfact[$idx]}
 			in_range "${entry_nmaster[$idx]:-x}" 0 20 && nmasters[$key]=${entry_nmaster[$idx]}
 			in_range "${entry_gap[$idx]:-x}" 0 64 && gaps[$key]=${entry_gap[$idx]}
@@ -164,7 +179,7 @@ cmd_set() {
 	gap) gaps[$target]=$value ;;
 	esac
 
-	local tmp entry fields lines=
+	local tmp entry fields lines='' count=0
 	for entry in $(printf '%s\n' "${keys[@]}" | sort -n -k1,1 -k2,2 | tr ' ' ':'); do
 		key=${entry/:/ }
 		fields=
@@ -173,8 +188,11 @@ cmd_set() {
 		[[ -z ${gaps[$key]} ]] || fields+=", gap=${gaps[$key]}"
 		# An entry with nothing set is the defaults: leave it out.
 		[[ -n $fields ]] || continue
+		count=$((count + 1))
 		lines+=$(printf '  { monitor=%s, tag=%s%s },' "${key% *}" "${key#* }" "$fields")$'\n'
 	done
+	((count <= max_entries)) ||
+		die "layout.toml holds at most $max_entries entries; set a tag back to its defaults first"
 	tmp=$(mktemp "$layout_dir/.layout.toml.XXXXXX")
 	{
 		printf '# Written by Settings > Appearance > Layout; see the shipped layout.toml\n'

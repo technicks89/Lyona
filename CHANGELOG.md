@@ -47,8 +47,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   - The gap defaults to 0, and tiling at gap 0 is unchanged to the pixel.
     Monocle, floating and fullscreen windows are not affected.
   - Hotkeys still change the master size and count live, without saving.
-    Saved values apply again when `layout.toml` changes, not on every config
-    reload.
+    Saved values apply again when `layout.toml` changes or a monitor is
+    plugged back in, not on every config reload or resolution change.
+  - `layout.toml` holds at most 102 entries, as many as dwm reads when each
+    sets all five keys; Settings refuses to add more.
   - The shipped `layout.toml` has no entries, and an existing one is never
     replaced.
 - Long window titles scroll in the panel (#499, upstream dwm-titus #393). A

@@ -49,17 +49,21 @@ run set 0 2 nmaster default >/dev/null
 run set 1 5 gap default >/dev/null
 grep -Fqx 'layouts = []' "$layout"
 
-# A hand-written file is read, its out-of-range values dropped, its comments
-# not kept (the backup has them).
+# A hand-written file is read, its out-of-range and true/false values
+# dropped, its comments not kept (the backup has them). A second entry for a
+# tag adds to the first, as dwm applies them.
 cat >"$layout" <<'EOF'
 # mine
 layouts = [
   { monitor=0, tag=3, mfact=99, gap=6 },
   { monitor=0, tag=10, gap=6 },
+  { monitor=0, tag=3, mfact=50 },
+  { monitor=0, tag=5, gap=true, nmaster=2 },
 ]
 EOF
 run set 0 4 nmaster 3 >/dev/null
-grep -Fqx '  { monitor=0, tag=3, gap=6 },' "$layout"
+grep -Fqx '  { monitor=0, tag=3, mfact=50, gap=6 },' "$layout"
+grep -Fqx '  { monitor=0, tag=5, nmaster=2 },' "$layout"
 grep -Fqx '  { monitor=0, tag=4, nmaster=3 },' "$layout"
 if grep -Fq 'tag=10' "$layout"; then fail "an out-of-range tag was kept"; fi
 grep -Fqx '# mine' "$layout.bak"
@@ -88,6 +92,43 @@ ln -s "$work/real-lyona" "$config/lyona"
 expect_fail 'refusing a symlinked path' set 0 1 gap 2
 rm "$config/lyona"
 mv "$work/real-lyona" "$config/lyona"
+
+# A symlinked backup is not written through either.
+printf 'layouts = []\n' >"$layout"
+rm -f "$layout.bak"
+ln -s "$work/elsewhere" "$layout.bak"
+before=$(sha256sum "$layout")
+expect_fail 'it is a symlink' set 0 1 gap 2
+[[ $(sha256sum "$layout") == "$before" && ! -e $work/elsewhere ]]
+rm "$layout.bak"
+
+# Saves at the same moment wait for each other: none is lost.
+printf 'layouts = []\n' >"$layout"
+pids=()
+for tag in 1 2 3 4 5 6 7 8 9; do
+	run set 2 "$tag" gap "$tag" >/dev/null &
+	pids+=("$!")
+done
+for pid in "${pids[@]}"; do wait "$pid"; done
+[[ $(grep -c '^  { monitor=2, tag=[1-9], gap=[1-9] },$' "$layout") == 9 ]] ||
+	fail "a concurrent save was lost: $(cat "$layout")"
+
+# At most 102 entries, as many as dwm reads: a new one is refused, a change
+# to one there is not.
+{
+	printf 'layouts = [\n'
+	for monitor in 4 5 6 7 8 9 10 11 12 13 14 15; do
+		for tag in 1 2 3 4 5 6 7 8 9; do
+			printf '  { monitor=%s, tag=%s, mfact=50, nmaster=1, gap=1 },\n' "$monitor" "$tag"
+		done
+	done | head -n 102
+	printf ']\n'
+} >"$layout"
+"$repo/lyona-toml" dump "$layout" | grep -Fqx $'layouts\t101\tgap\t1'
+expect_fail 'at most 102 entries' set 0 1 gap 2
+[[ $(run set 15 3 gap 5) == $'layout-settings-result\tok' ]]
+grep -Fqx '  { monitor=15, tag=3, mfact=50, nmaster=1, gap=5 },' "$layout"
+[[ $(grep -c '^  { ' "$layout") == 102 ]]
 
 # state and watch, from xprop's output.
 cat >"$work/bin/xprop" <<'EOF'

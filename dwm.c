@@ -133,6 +133,7 @@ struct Monitor {
 	float mfact;
 	int nmaster;
 	int gap; /* tile gap in pixels, for the current tag (#479) */
+	int layoutindex; /* logical index layout.toml was last applied for, -1 none (#479) */
 	int num;
 	int by, bh;
 	int tx, tw;
@@ -331,6 +332,7 @@ static void updatelayoutprop(void);
 static void applylayoutrequest(void);
 static void applysavedlayouts(int force);
 static void updatelayoutsettingsprop(void);
+static int tilegap(Monitor *m, unsigned int n);
 
 static void managealtbar(Window win, XWindowAttributes *wa);
 static void strutchanged(Window win);
@@ -1244,6 +1246,7 @@ createmon(void)
 	m->lt[0] = &layouts[0];
 	m->lt[1] = &layouts[1 % LENGTH(layouts)];
 	copystr(m->ltsymbol, sizeof m->ltsymbol, layouts[0].symbol);
+	m->layoutindex = -1;
 	m->pertag = ecalloc(1, sizeof(Pertag));
 	m->pertag->curtag = m->pertag->prevtag = 1;
 
@@ -2794,7 +2797,7 @@ static int
 resizetiledmouse(const Arg *arg)
 {
 	int group_clients, index, n, opx, opy, px, py, horizcorner, vertcorner;
-	int horizontal_split;
+	int horizontal_split, gap;
 	float initial_cfact, group_facts;
 	unsigned int dui;
 	Window dummy;
@@ -2812,6 +2815,7 @@ resizetiledmouse(const Arg *arg)
 	}
 	if (index < 0)
 		return 0;
+	gap = tilegap(selmon, (unsigned int)n);
 	if (!XQueryPointer(dpy, c->win, &dummy, &dummy, &opx, &opy, &px, &py, &dui))
 		return 0;
 
@@ -2849,7 +2853,9 @@ resizetiledmouse(const Arg *arg)
 				continue;
 			lasttime = ev.xmotion.time;
 			if (horizontal_split) {
-				float f = (float)(ev.xmotion.x - selmon->wx) / (float)selmon->ww;
+				/* tile()'s master edge: wx + gap + (ww - 3 gap) * mfact. */
+				float f = (float)(ev.xmotion.x - selmon->wx - gap)
+					/ (float)(selmon->ww - 3 * gap);
 				if (f >= 0.05f && f <= 0.95f)
 					selmon->mfact = selmon->pertag->mfacts[selmon->pertag->curtag] = f;
 			}
@@ -4454,6 +4460,17 @@ getfacts(Monitor *m, int msize, int ssize, float *mf, float *sf, int *mr, int *s
 	*sr = ssize - stotal;
 }
 
+/* The gap tile() leaves around and between N tiled windows (#479, upstream
+ * dwm-titus #424): the tag's gap, bounded so many windows or a small monitor
+ * stay usable. resizetiledmouse() places the master edge with it too. */
+static int
+tilegap(Monitor *m, unsigned int n)
+{
+	int masters = MIN(n, (unsigned int)m->nmaster), stacks = n - masters;
+
+	return MIN(m->gap, MIN(m->ww / 8, m->wh / (2 * (MAX(masters, stacks) + 1))));
+}
+
 static void
 tile(Monitor *m)
 {
@@ -4470,12 +4487,10 @@ tile(Monitor *m)
 	if (n == 0)
 		return;
 
-	/* The tag's gap (#479, upstream dwm-titus #424), around and between the
-	 * tiles, bounded so many windows or a small monitor stay usable. With a
-	 * gap of 0 every line below is the arithmetic tile() always did. */
+	/* With a gap of 0 every line below is the arithmetic tile() always did. */
 	masters = MIN(n, (unsigned int)m->nmaster);
 	stacks = n - masters;
-	gap = MIN(m->gap, MIN(m->ww / 8, m->wh / (2 * (MAX(masters, stacks) + 1))));
+	gap = tilegap(m, n);
 	sx = mx = m->wx + gap;
 	sy = my = m->wy + gap;
 	sh = mh = m->wh - 2 * gap;
@@ -5269,13 +5284,16 @@ updatelayoutsettingsprop(void)
 	static long cache[5];
 	static int cachevalid;
 	long data[5];
-	unsigned int tag;
+	unsigned int tag, tagset;
 
 	if (!selmon || !selmon->pertag)
 		return;
 	tag = selmon->pertag->curtag;
+	tagset = selmon->tagset[selmon->seltags];
 	data[0] = MAX(0, getmonlogicalindex(selmon));
-	data[1] = tag <= LENGTH(tags) ? (long)tag : 0;
+	/* A view of several tags uses its first tag's values, but saving them
+	 * would change that one tag: publish 0, which Settings does not save. */
+	data[1] = tag <= LENGTH(tags) && !(tagset & (tagset - 1)) ? (long)tag : 0;
 	data[2] = (long)(selmon->mfact * 100.0f + 0.5f);
 	data[3] = MAX(0, selmon->nmaster);
 	data[4] = MAX(0, selmon->gap);
@@ -5286,25 +5304,31 @@ updatelayoutsettingsprop(void)
 	cachevalid = 1;
 }
 
-/* layout.toml's saved values (#479), applied when they changed (or, with
- * FORCE, when the monitors did). Each tag starts from the defaults, so an
- * entry removed from the file goes back to them; then every entry for the
- * monitor's logical index sets its tag. */
+/* layout.toml's saved values (#479), applied to every monitor when they
+ * changed, and with FORCE (the monitors changed) to a monitor that is new or
+ * now has another logical index; a monitor that kept its index keeps its live
+ * values. Each tag starts from the defaults, so an entry removed from the file
+ * goes back to them; then every entry for the monitor's logical index sets its
+ * tag. */
 void
 applysavedlayouts(int force)
 {
 	static unsigned int applied;
 	Monitor *m;
-	int i, index;
+	int i, index, changed;
 	unsigned int t;
 
-	if (!force && applied == rt_layouts_generation)
+	changed = applied != rt_layouts_generation;
+	if (!force && !changed)
 		return;
 	applied = rt_layouts_generation;
 	for (m = mons; m; m = m->next) {
 		if (!m->pertag)
 			continue;
 		index = getmonlogicalindex(m);
+		if (!changed && m->layoutindex == index)
+			continue;
+		m->layoutindex = index;
 		for (t = 0; t <= LENGTH(tags); t++) {
 			m->pertag->mfacts[t] = mfact;
 			m->pertag->nmasters[t] = nmaster;

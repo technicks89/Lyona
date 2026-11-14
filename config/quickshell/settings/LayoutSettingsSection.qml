@@ -25,6 +25,8 @@ ColumnLayout {
     property int layoutIndex: -1
     property bool available: false
     property string message: ""
+    // The monitor and tag shown when a slider drag began, "" with no drag.
+    property string dragTarget: ""
     readonly property bool editable: root.available && root.tagNumber >= 1
     // Shown: this section's tab selected and the Settings window open. The
     // pane stays loaded when the window hides, so its own visibility is not
@@ -58,10 +60,24 @@ ColumnLayout {
         root.available = true;
     }
 
+    function target() {
+        return root.monitorIndex + " " + root.tagNumber;
+    }
+
     // Saves one value for the tag shown now, named exactly, so a view that
-    // changes meanwhile is never written instead.
+    // changes meanwhile is never written instead. A drag saves only when the
+    // view it began on is still shown.
     function save(field, value) {
+        const began = root.dragTarget;
+        root.dragTarget = "";
         if (!root.editable || saveProcess.running) return;
+        if (began.length > 0 && began !== root.target()) {
+            root.message = "The shown tag changed during the drag; nothing was saved.";
+            masterSlider.liveValue = root.masterSize;
+            countSlider.liveValue = root.masterCount;
+            gapSlider.liveValue = root.gap;
+            return;
+        }
         root.message = "";
         saveProcess.command = Commands.layoutSettingsCommand("set", [
             String(root.monitorIndex), String(root.tagNumber), field, String(Math.round(value))
@@ -149,6 +165,7 @@ ColumnLayout {
         step: 1
         value: root.masterSize
         enabled: root.editable && root.layoutIndex !== 1
+        onDraggingChanged: if (dragging) root.dragTarget = root.target()
         onValueCommitted: value => root.save("mfact", value)
     }
 
@@ -167,6 +184,7 @@ ColumnLayout {
         step: 1
         value: root.masterCount
         enabled: root.editable
+        onDraggingChanged: if (dragging) root.dragTarget = root.target()
         onValueCommitted: value => root.save("nmaster", value)
     }
 
@@ -185,6 +203,7 @@ ColumnLayout {
         step: 1
         value: root.gap
         enabled: root.editable
+        onDraggingChanged: if (dragging) root.dragTarget = root.target()
         onValueCommitted: value => root.save("gap", value)
     }
 

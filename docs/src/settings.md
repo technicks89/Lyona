@@ -108,7 +108,9 @@ it on save). The previous file is kept as `layout.toml.bak`. A tag with no
 saved value uses the defaults, which tile as before: no gap. While the
 monitor shows several tags at once there is nothing to save, and the sliders
 are disabled. `Super+I` and `Super+D` still change the master count live,
-without saving it. The section reads dwm only while it is open. After the
+without saving it; a monitor plugged back in gets its saved values again,
+while a resolution change keeps the live ones. The file holds at most 102
+entries. The section reads dwm only while it is open. After the
 update that adds it, log out and back in once.
 
 ## System

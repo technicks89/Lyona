@@ -59,7 +59,8 @@ cat >"$work/client.c" <<'EOF'
 #include <unistd.h>
 
 /* With no argument, a window that waits; with "frame WIN", that window's
- * frame (X Y W H, border included) as dwm placed it. */
+ * frame (X Y W H, border included) as dwm placed it; with "configure W H", the
+ * root ConfigureNotify a RandR change sends (Xvfb cannot resize its screen). */
 int
 main(int argc, char **argv)
 {
@@ -75,6 +76,18 @@ main(int argc, char **argv)
 		if (!XGetGeometry(dpy, strtoul(argv[2], NULL, 0), &root, &x, &y, &w, &h, &b, &depth))
 			return 1;
 		printf("%d %d %u %u\n", x, y, w + 2 * b, h + 2 * b);
+		return 0;
+	}
+	if (argc == 4 && strcmp(argv[1], "configure") == 0) {
+		XConfigureEvent ce = { 0 };
+
+		ce.type = ConfigureNotify;
+		ce.display = dpy;
+		ce.event = ce.window = DefaultRootWindow(dpy);
+		ce.width = atoi(argv[2]);
+		ce.height = atoi(argv[3]);
+		XSendEvent(dpy, ce.window, False, StructureNotifyMask, (XEvent *)&ce);
+		XSync(dpy, False);
 		return 0;
 	}
 	win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy), 0, 0, 200, 150, 0, 0,
@@ -247,8 +260,55 @@ xdotool key super+comma
 xdotool key super+1
 wait_settings '0, 1, 55, 1, 0'
 
-# Out of range or malformed in layout.toml: that value is ignored, the rest apply.
-printf 'layouts = [\n  { monitor=0, tag=1, mfact=99, nmaster=-1, gap=8 },\n  { monitor=0, tag=12, gap=30 },\n  { tag=1, gap=30 },\n]\n' \
+# A view of several tags is published as tag 0, which Settings does not save.
+xdotool key super+ctrl+2
+wait_settings '0, 0, 55, 1, 0'
+xdotool key super+ctrl+2
+wait_settings '0, 1, 55, 1, 0'
+
+# Waits until _DWM_MONITOR_DESKTOPS matches PATTERN (grep -E).
+wait_desktops() {
+	i=0
+	while [ "$i" -lt 100 ] && ! xprop -root _DWM_MONITOR_DESKTOPS 2>/dev/null | grep -Eq "$1"; do
+		i=$((i + 1))
+		sleep 0.05
+	done
+	xprop -root _DWM_MONITOR_DESKTOPS | grep -Eq "$1" ||
+		fail "monitors: expected $1, got: $(xprop -root _DWM_MONITOR_DESKTOPS)"
+}
+
+# A resolution change keeps a live change on a monitor that stayed.
+xdotool key super+i
+wait_settings '0, 1, 55, 2, 0'
+"$work/client" configure 2048 767
+"$work/client" configure 2048 768
+sleep 0.3
+wait_settings '0, 1, 55, 2, 0'
+
+# A monitor unplugged and plugged back gets its saved values again, not the
+# live change it had. (dwm republishes nothing when an empty monitor goes.)
+xdotool key super+period
+xdotool key super+6
+wait_settings '1, 6, 40, 1, 12'
+xdotool key super+i
+wait_settings '1, 6, 40, 2, 12'
+xdotool key super+comma
+xdotool key super+1
+xrandr --delmonitor RIGHT >/dev/null
+"$work/client" configure 2048 768
+sleep 0.3
+xrandr --setmonitor RIGHT 1024/270x768/200+1024+0 none >/dev/null
+"$work/client" configure 2048 768
+wait_desktops '1024, 0, 1024, 768'
+xdotool key super+period
+xdotool key super+6
+wait_settings '1, 6, 40, 1, 12'
+xdotool key super+comma
+xdotool key super+1
+
+# Out of range, malformed or true/false in layout.toml: that value is
+# ignored, the rest apply (a layout.toml change also drops the live change).
+printf 'layouts = [\n  { monitor=0, tag=1, mfact=99, nmaster=-1, gap=8 },\n  { monitor=0, tag=12, gap=30 },\n  { tag=1, gap=30 },\n  { monitor=0, tag=1, gap=true, nmaster=false },\n]\n' \
 	>"$home/.config/lyona/layout.toml"
 wait_settings '0, 1, 55, 1, 8'
 
@@ -265,5 +325,22 @@ watch_pid=
 grep -q "$(printf '^layout-settings\t0\t1\t55\t1\t8\t0$')" "$work/watch.out" || fail "watch missed the start: $(cat "$work/watch.out")"
 grep -q "$(printf '^layout-settings\t0\t1\t55\t1\t0\t0$')" "$work/watch.out" || fail "watch missed the change: $(cat "$work/watch.out")"
 [ "$(helper state)" = "$(printf 'layout-settings\t0\t1\t55\t1\t0\t0')" ] || fail "state: $(helper state)"
+
+# Capacity: the 102nd entry, every one with all five keys, applies; a 103rd
+# is past what dwm reads and does not.
+{
+	printf 'layouts = [\n'
+	for monitor in 4 5 6 7 8 9 10 11 12 13 14 15; do
+		for tag in 1 2 3 4 5 6 7 8 9; do
+			printf '  { monitor=%s, tag=%s, mfact=50, nmaster=1, gap=1 },\n' "$monitor" "$tag"
+		done
+	done | head -n 101
+	printf '  { monitor=0, tag=1, mfact=60, nmaster=1, gap=9 },\n'
+	printf '  { monitor=0, tag=2, mfact=60, nmaster=1, gap=7 },\n'
+	printf ']\n'
+} >"$home/.config/lyona/layout.toml"
+wait_settings '0, 1, 60, 1, 9'
+xdotool key super+2
+wait_settings '0, 2, 55, 1, 0'
 
 printf 'Layout settings (gaps, master size and count, per tag and monitor): PASS\n'
