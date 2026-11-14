@@ -1,0 +1,27 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║           DWM Layout Settings  ·  layout.toml                        ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  LIVE RELOAD — save this file and changes apply instantly!           ║
+# ║  Settings > Appearance > Layout writes this file for you.            ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# The master area's size and window count, and the gap between tiled
+# windows, for one tag of one monitor. A tag with no entry uses the defaults
+# (config.h's master size and count, and no gap).
+#
+# Fields:
+#   monitor  monitor number, 0 for the primary (as the panel numbers them)
+#   tag      tag number 1-9
+#   mfact    master area size in percent, 5-95
+#   nmaster  windows in the master area, 0-20
+#   gap      pixels around and between tiled windows, 0-64
+#
+# Super+H/L and the master-count keys still change these live; that is not
+# saved here.
+#
+# Example:
+#   layouts = [
+#     { monitor=0, tag=1, mfact=60, nmaster=1, gap=8 },
+#   ]
+
+layouts = []

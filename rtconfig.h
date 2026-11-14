@@ -94,10 +94,25 @@ extern int           rt_nbuttons;
 extern const Rule   *rt_rules;
 extern int           rt_nrules;
 
+/* layout.toml (#479): the saved master size, master count and tile gap for
+ * one tag of one monitor. A value of -1 is not set (the default applies). */
+typedef struct {
+	int monitor; /* logical index, as _DWM_SELECTED_MONITOR */
+	int tag;     /* 1-9 */
+	int mfact;   /* master size in percent, 5-95 */
+	int nmaster; /* master count, 0-20 */
+	int gap;     /* tile gap in pixels, 0-64 */
+} LayoutSetting;
+extern const LayoutSetting *rt_layouts;
+extern int                  rt_nlayouts;
+/* Changes only when the saved values do, so dwm re-applies them then and not
+ * on every reload (a hotkeys.toml edit keeps a live master-size tweak). */
+extern unsigned int         rt_layouts_generation;
+
 /* Finds the user and default config directories and starts the inotify
  * watches. XDG_CONFIG_HOME must already be absolute: dwm.c sets it. */
 void runtime_config_setup(const ConfigEnv *env);
-/* Loads all three files. Returns 1 and fills *theme when themes.toml loaded. */
+/* Loads the runtime files. Returns 1 and fills *theme when themes.toml loaded. */
 int runtime_config_load(ConfigTheme *theme);
 /* The inotify descriptor for select(), or -1. */
 int runtime_config_fd(void);

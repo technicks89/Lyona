@@ -10,6 +10,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Settings > Appearance > Layout (#479, upstream dwm-titus #424): the layout,
+  master area size, master window count and a gap between tiled windows, for
+  the tag the selected monitor shows. Values are saved per monitor and per tag
+  in a fourth runtime file, `~/.config/lyona/layout.toml`, which dwm
+  hot-reloads like the other three. The unprivileged `dwm-layout-settings`
+  helper writes it, keeping the previous file as `layout.toml.bak`.
+  - dwm publishes the selected view's values as `_DWM_LAYOUT_SETTINGS`, which
+    the section watches only while it is open.
+  - The gap defaults to 0, and tiling at gap 0 is unchanged to the pixel.
+    Monocle, floating and fullscreen windows are not affected.
+  - Hotkeys still change the master size and count live, without saving.
+    Saved values apply again when `layout.toml` changes, not on every config
+    reload.
+  - The shipped `layout.toml` has no entries, and an existing one is never
+    replaced.
 - Long window titles scroll in the panel (#499, upstream dwm-titus #393). A
   title too long for its pill scrolls across once after it changes, pauses at
   the end, then rests at its start, elided as before. A title that fits does
@@ -35,6 +50,14 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Settings > Default Apps lists Flatpak applications (#476, upstream
+  dwm-titus #414). Flatpak exports its desktop entries as symlinks, which
+  Default Apps skipped. A symlinked entry file is now read, read-only, if it
+  points to a regular file within the reader's size limit. Its applications
+  directory still must not contain a symlink, a dangling or cyclic link hides
+  no other entry, and a real `Hidden=true` entry still masks one with the same
+  ID. The shared desktop-entry reader checks the size of a link's target, not
+  of the link. No root helper reads these entries.
 - Running-app buttons show the application's icon when its window class is
   not an icon name (#498, upstream dwm-titus #426). For example, Zed's class
   `dev.zed.Zed` showed a letter where its desktop entry names the icon `zed`.

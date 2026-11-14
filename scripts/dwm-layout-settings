@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Settings > Appearance > Layout (#479, upstream dwm-titus #424): the master
+# area's size and window count and the tile gap, per monitor and per tag.
+# Unprivileged: it reads dwm's _DWM_LAYOUT_SETTINGS root property and writes
+# the user's own layout.toml, which dwm hot-reloads and applies.
+#
+#   dwm-layout-settings state
+#   dwm-layout-settings watch
+#   dwm-layout-settings set MONITOR TAG FIELD VALUE|default
+#
+# state prints one line, and watch one on start and one per change (the
+# caller runs it only while the pane is open):
+#   layout-settings  MONITOR  TAG  MFACT  NMASTER  GAP  LAYOUT
+#   layout-settings  unavailable          (dwm publishes no settings)
+# TAG is 0 while the monitor shows several tags: there is nothing to save then.
+# LAYOUT is _DWM_LAYOUT, the index into dwm's layouts[] (-1 until published),
+# which `dwm-quickshell-state layout INDEX` sets.
+#
+# set saves FIELD (mfact 5-95, nmaster 0-20, gap 0-64) for the TAG (1-9) of
+# the MONITOR (0-15, the panel's numbering); "default" removes it. The file is
+# written whole, from the entries dwm reads; the previous one is kept as
+# layout.toml.bak. It prints:
+#   layout-settings-result  ok
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-paths.sh
+. "$lyona_lib/dwm-paths.sh"
+lyona_xdg_dirs
+
+self=dwm-layout-settings
+die() {
+	printf '%s: %s\n' "$self" "$*" >&2
+	exit 1
+}
+
+layout_dir=$config_home/lyona
+layout_file=$layout_dir/layout.toml
+
+# The two properties as xprop prints them, one per line, kept here.
+settings_values=
+layout_index=-1
+
+# Takes one xprop line; true when it was one of the two.
+take_line() {
+	local line=$1 values=${1#*= }
+	case $line in
+	_DWM_LAYOUT_SETTINGS\(*)
+		settings_values=
+		[[ $values =~ ^[0-9]+(,\ [0-9]+){4}$ ]] && settings_values=${values//, /$'\t'}
+		;;
+	_DWM_LAYOUT\(*)
+		layout_index=-1
+		[[ $values =~ ^[0-9]+$ ]] && layout_index=$values
+		;;
+	*) return 1 ;;
+	esac
+}
+
+emit_state() {
+	if [[ -z $settings_values ]]; then
+		printf 'layout-settings\tunavailable\n'
+	else
+		printf 'layout-settings\t%s\t%s\n' "$settings_values" "$layout_index"
+	fi
+}
+
+cmd_state() {
+	local line
+	while IFS= read -r line; do
+		take_line "$line" || :
+	done < <(xprop -root _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null || :)
+	emit_state
+}
+
+# One line on start and one per change, until the X connection ends. The
+# caller binds this process to its own lifetime (Commands.watchCommand).
+cmd_watch() {
+	local line
+	while IFS= read -r line; do
+		take_line "$line" && emit_state
+	done < <(xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
+}
+
+# A decimal integer within [LO, HI], without a sign or leading zeros.
+in_range() { # VALUE LO HI
+	[[ $1 =~ ^(0|[1-9][0-9]{0,2})$ ]] && (($1 >= $2 && $1 <= $3))
+}
+
+cmd_set() {
+	(($# == 4)) || die "set takes MONITOR TAG FIELD VALUE"
+	local monitor=$1 tag=$2 field=$3 value=$4 lo hi
+	in_range "$monitor" 0 15 || die "monitor must be 0-15: $monitor"
+	in_range "$tag" 1 9 || die "tag must be 1-9: $tag"
+	case $field in
+	mfact) lo=5 hi=95 ;;
+	nmaster) lo=0 hi=20 ;;
+	gap) lo=0 hi=64 ;;
+	*) die "field must be mfact, nmaster or gap: $field" ;;
+	esac
+	[[ $value == default ]] || in_range "$value" "$lo" "$hi" ||
+		die "$field must be $lo-$hi or default: $value"
+
+	# The user's own directory, with no symlink on the way, as for every file
+	# Settings writes; the file itself a regular file or absent.
+	path_has_no_symlink_components "$layout_dir" || die "refusing a symlinked path: $layout_dir"
+	mkdir -p -- "$layout_dir"
+	if [[ -L $layout_dir ]] || ! path_has_no_symlink_components "$layout_dir"; then
+		die "refusing a symlinked path: $layout_dir"
+	fi
+	[[ ! -e $layout_file || (-f $layout_file && ! -L $layout_file) ]] ||
+		die "refusing to replace $layout_file: not a regular file"
+
+	# The entries dwm reads now, keyed by "monitor tag".
+	local -A mfacts=() nmasters=() gaps=()
+	local -a keys=()
+	if [[ -f $layout_file ]]; then
+		local dump section idx key val
+		local -A seen_monitor=() seen_tag=() entry_mfact=() entry_nmaster=() entry_gap=()
+		dump=$(lyona_toml dump "$layout_file") || [[ $? == 4 ]] ||
+			die "cannot read $layout_file; fix or remove it first"
+		while IFS=$'\t' read -r section idx key val; do
+			[[ $section == layouts && $idx =~ ^[0-9]+$ ]] || continue
+			case $key in
+			monitor) seen_monitor[$idx]=$val ;;
+			tag) seen_tag[$idx]=$val ;;
+			mfact) entry_mfact[$idx]=$val ;;
+			nmaster) entry_nmaster[$idx]=$val ;;
+			gap) entry_gap[$idx]=$val ;;
+			esac
+		done <<<"$dump"
+		for idx in $(printf '%s\n' "${!seen_monitor[@]}" | sort -n); do
+			if ! in_range "${seen_monitor[$idx]}" 0 15 || ! in_range "${seen_tag[$idx]:-x}" 1 9; then
+				continue
+			fi
+			key="${seen_monitor[$idx]} ${seen_tag[$idx]}"
+			[[ -n ${mfacts[$key]+x} ]] || keys+=("$key")
+			mfacts[$key]=
+			nmasters[$key]=
+			gaps[$key]=
+			in_range "${entry_mfact[$idx]:-x}" 5 95 && mfacts[$key]=${entry_mfact[$idx]}
+			in_range "${entry_nmaster[$idx]:-x}" 0 20 && nmasters[$key]=${entry_nmaster[$idx]}
+			in_range "${entry_gap[$idx]:-x}" 0 64 && gaps[$key]=${entry_gap[$idx]}
+		done
+	fi
+
+	local target="$monitor $tag"
+	if [[ -z ${mfacts[$target]+x} ]]; then
+		keys+=("$target")
+		mfacts[$target]=''
+		nmasters[$target]=''
+		gaps[$target]=''
+	fi
+	[[ $value == default ]] && value=
+	case $field in
+	mfact) mfacts[$target]=$value ;;
+	nmaster) nmasters[$target]=$value ;;
+	gap) gaps[$target]=$value ;;
+	esac
+
+	local tmp entry fields lines=
+	for entry in $(printf '%s\n' "${keys[@]}" | sort -n -k1,1 -k2,2 | tr ' ' ':'); do
+		key=${entry/:/ }
+		fields=
+		[[ -z ${mfacts[$key]} ]] || fields+=", mfact=${mfacts[$key]}"
+		[[ -z ${nmasters[$key]} ]] || fields+=", nmaster=${nmasters[$key]}"
+		[[ -z ${gaps[$key]} ]] || fields+=", gap=${gaps[$key]}"
+		# An entry with nothing set is the defaults: leave it out.
+		[[ -n $fields ]] || continue
+		lines+=$(printf '  { monitor=%s, tag=%s%s },' "${key% *}" "${key#* }" "$fields")$'\n'
+	done
+	tmp=$(mktemp "$layout_dir/.layout.toml.XXXXXX")
+	{
+		printf '# Written by Settings > Appearance > Layout; see the shipped layout.toml\n'
+		printf '# for the fields. Editing by hand is fine: dwm reloads it on save.\n\n'
+		# dwm's parser reads an empty array only on one line.
+		if [[ -z $lines ]]; then
+			printf 'layouts = []\n'
+		else
+			printf 'layouts = [\n%s]\n' "$lines"
+		fi
+	} >"$tmp" || {
+		rm -f -- "$tmp"
+		die "cannot write $layout_file"
+	}
+	chmod 644 -- "$tmp"
+	if [[ -f $layout_file ]] && ! cp -p -- "$layout_file" "$layout_file.bak"; then
+		rm -f -- "$tmp"
+		die "cannot keep a backup of $layout_file"
+	fi
+	mv -fT -- "$tmp" "$layout_file"
+	printf 'layout-settings-result\tok\n'
+}
+
+case ${1:-} in
+state)
+	(($# == 1)) || die "state takes no arguments"
+	cmd_state
+	;;
+watch)
+	(($# == 1)) || die "watch takes no arguments"
+	cmd_watch
+	;;
+set)
+	shift
+	cmd_set "$@"
+	;;
+*)
+	printf 'usage: %s state | watch | set MONITOR TAG mfact|nmaster|gap VALUE|default\n' "$self" >&2
+	exit 2
+	;;
+esac

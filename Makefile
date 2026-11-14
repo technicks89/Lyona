@@ -116,6 +116,7 @@ INSTALL_COMMANDS = \
 	scripts/dwm-display-profile \
 	scripts/dwm-display-setup \
 	scripts/dwm-keybinds \
+	scripts/dwm-layout-settings \
 	scripts/dwm-lock \
 	scripts/dwm-lock-watch \
 	scripts/dwm-panel-settings \
@@ -224,7 +225,7 @@ PYTHON_LIB_DIR = ${LIB_DIR}/python
 # The shipped default TOMLs, read-only, which dwm and the theme helpers fall
 # back to. In PREFIX/share/lyona, found from the executable like LIB_DIR (not
 # DATADIR, which install.sh sets only at install time). S12-13 step 2.
-INSTALL_DEFAULTS = config/hotkeys.toml config/themes.toml config/window-rules.toml
+INSTALL_DEFAULTS = config/hotkeys.toml config/themes.toml config/window-rules.toml config/layout.toml
 INSTALL_DEFAULT_NAMES = $(notdir ${INSTALL_DEFAULTS})
 SHARE_DIR = ${PREFIX}/share/lyona
 AUTORANDR_HOOK = 50-lyona-picom
@@ -614,6 +615,7 @@ install-user:
 	test -f ${CFG_DIR}/lyona/hotkeys.toml || install -Dm644 config/hotkeys.toml ${CFG_DIR}/lyona/hotkeys.toml
 	test -f ${CFG_DIR}/lyona/themes.toml  || install -Dm644 config/themes.toml  ${CFG_DIR}/lyona/themes.toml
 	test -f ${CFG_DIR}/lyona/window-rules.toml || install -Dm644 config/window-rules.toml ${CFG_DIR}/lyona/window-rules.toml
+	test -f ${CFG_DIR}/lyona/layout.toml || install -Dm644 config/layout.toml ${CFG_DIR}/lyona/layout.toml
 	@# lyona-update builds releases with ~/.config/lyona/config.h (decision D-18),
 	@# or makes their config.h from the configure-build.sh answers in build.conf.
 	@# A checkout config.h that holds only answers is kept as those answers, as a
@@ -844,6 +846,17 @@ check-update-root-contract:
 
 check-xvfb-runtime: all
 	status=0; tests/test-xvfb-runtime.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# Settings > Appearance > Layout (#479): the helper, and dwm's gaps and
+# per-monitor, per-tag master settings on Xvfb with two monitors.
+.PHONY: check-layout-settings check-layout-settings-xvfb
+check-layout-settings: ${TOML_TOOL}
+	tests/test-layout-settings.sh
+
+check-layout-settings-xvfb: all
+	status=0; tests/test-layout-settings-xvfb.sh || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1745,6 +1758,8 @@ check:
 	$(MAKE) check-quickshell-wallpaper-reconcile-xvfb
 	$(MAKE) check-desktop-smoke-xvfb
 	$(MAKE) check-xvfb-runtime
+	$(MAKE) check-layout-settings
+	$(MAKE) check-layout-settings-xvfb
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser

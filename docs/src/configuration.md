@@ -10,6 +10,7 @@ every update and rollback unchanged. No recompile is needed.
 | `hotkeys.toml` | All keybindings, including the tag keys |
 | `themes.toml` | Colors, themes, border size |
 | `window-rules.toml` | Per-app window rules: tag, floating, terminal swallowing, always on top, monitor |
+| `layout.toml` | Per-monitor, per-tag master size, master count and gap between tiled windows; Settings > Appearance > Layout writes it |
 | `power.conf` | Control Center screen blanking and auto-lock choices |
 
 dwm tells you about a file it could not load as written with a "dwm: bad config"

@@ -33,10 +33,11 @@ order the shell's panels use. A tag index is 0 to 8.
 | `_DWM_SELECTED_MONITOR` | `CARDINAL`, 1 | the selected monitor changes | the selected monitor's logical index |
 | `_DWM_MONITOR_WINDOWS` | `WINDOW`, 1 per monitor | any monitor's selected window changes, or monitors change | for each monitor, by logical index: its selected window, or 0 (None) when it has none. Each panel names its own monitor's window from it (`dwm-quickshell-state`'s `monitor_windows=`) |
 | `_DWM_LAYOUT` | `CARDINAL`, 1 | the selected monitor's layout changes | an index into dwm's `layouts[]` |
+| `_DWM_LAYOUT_SETTINGS` | `CARDINAL`, 5 | the selected monitor, its tag, or that tag's master size, master count or gap changes (#479) | the logical monitor index (as `_DWM_SELECTED_MONITOR`), the tag 1-9 (0 while several tags are shown), the master size in percent (5-95), the master count and the tile gap in pixels |
 | `_DWM_FULLSCREEN_MONITORS` | `CARDINAL`, 0 or more | a window enters or leaves fullscreen | the logical indexes of the monitors showing a fullscreen window; empty when none |
 | `DWM_TAG_UPDATE` | `CARDINAL`, 1 | any window's tags change | a sequence number, increased each time; its value means nothing, a change means "read `_NET_WM_DESKTOP` again" |
 
-A write does not always mean a change: dwm writes `_DWM_LAYOUT`,
+A write does not always mean a change: dwm writes `_DWM_LAYOUT`, `_DWM_LAYOUT_SETTINGS`,
 `_DWM_MONITOR_WINDOWS` and `_DWM_FULLSCREEN_MONITORS` only when they change, but may write the others again
 with the same value, so a reader compares before acting.
 

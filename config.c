@@ -30,6 +30,9 @@ const Button *rt_buttons  = NULL;
 int           rt_nbuttons = 0;
 const Rule   *rt_rules  = NULL;
 int           rt_nrules = 0;
+const LayoutSetting *rt_layouts = NULL;
+int                  rt_nlayouts = 0;
+unsigned int         rt_layouts_generation = 0;
 
 static const ConfigEnv *env;
 /* dwm's spawn, found by name in env at setup. */
@@ -38,6 +41,10 @@ static void (*spawnfunc)(const Arg *);
 #define TOML_RULES_MAX 64
 static Rule          rt_rules_buf[TOML_RULES_MAX];
 static char          rt_rules_strbuf[TOML_RULES_MAX * 3][TOML_MAX_STR];
+
+/* layout.toml (#479): at most 16 monitors of 9 tags. */
+#define TOML_LAYOUTS_MAX 144
+static LayoutSetting rt_layouts_buf[TOML_LAYOUTS_MAX];
 
 static int           inotify_fd = -1;
 static int           inotify_wd = -1;
@@ -50,6 +57,7 @@ static char          toml_config_dir[PATH_MAX];
 static char          toml_hotkeys_path[PATH_MAX];
 static char          toml_themes_path[PATH_MAX];
 static char          toml_rules_path[PATH_MAX];
+static char          toml_layout_path[PATH_MAX];
 
 static volatile sig_atomic_t sig_reload_pending = 0;
 
@@ -62,6 +70,7 @@ static char          toml_default_dir[PATH_MAX];
 static char          toml_hotkeys_default_path[PATH_MAX];
 static char          toml_themes_default_path[PATH_MAX];
 static char          toml_rules_default_path[PATH_MAX];
+static char          toml_layout_default_path[PATH_MAX];
 
 #define TOML_BUTTONS_MAX 32
 static Button        rt_buttons_buf[TOML_BUTTONS_MAX];
@@ -812,6 +821,64 @@ load_rules_toml(const char *user_path, const char *default_path)
 		report_problems(user_path, &doc);
 }
 
+/* An integer key of a layouts entry within [lo, hi], else -1 (not set). */
+static int
+layout_value(const TomlDoc *doc, int i, const char *key, int lo, int hi)
+{
+	const TomlValue *v = toml_table_get(doc, "layouts", i, key);
+
+	if (!v || v->type != TOML_INT || v->i < lo || v->i > hi)
+		return -1;
+	return (int)v->i;
+}
+
+/* layout.toml (#479): the per-monitor, per-tag master size, master count
+ * and gap that Settings saves. An entry needs a monitor and a tag 1-9; a value
+ * out of range is not set. */
+static void
+load_layout_toml(const char *user_path, const char *default_path)
+{
+	static TomlDoc doc;
+	static int from_config;
+	LayoutSetting next[TOML_LAYOUTS_MAX];
+	int from_user, n, nk = 0, i;
+
+	if (!toml_load_with_fallback(&doc, user_path, default_path, "layout", NULL, from_config,
+	                             &from_user))
+		return;
+	from_config = 1;
+	skip_reset();
+	n = toml_table_count(&doc, "layouts");
+	if (n > TOML_LAYOUTS_MAX) {
+		note_skip("layouts", "more than %d entries", TOML_LAYOUTS_MAX);
+		n = TOML_LAYOUTS_MAX;
+	}
+	memset(next, 0, sizeof(next));
+	for (i = 0; i < n; i++) {
+		LayoutSetting *l = &next[nk];
+
+		l->monitor = layout_value(&doc, i, "monitor", 0, 15);
+		l->tag     = layout_value(&doc, i, "tag", 1, 9);
+		if (l->monitor < 0 || l->tag < 0) {
+			note_skip("layouts", "entry %d needs a monitor 0-15 and a tag 1-9", i + 1);
+			continue;
+		}
+		l->mfact   = layout_value(&doc, i, "mfact", 5, 95);
+		l->nmaster = layout_value(&doc, i, "nmaster", 0, 20);
+		l->gap     = layout_value(&doc, i, "gap", 0, 64);
+		nk++;
+	}
+	if (nk != rt_nlayouts || memcmp(next, rt_layouts_buf, sizeof(next)) != 0) {
+		memcpy(rt_layouts_buf, next, sizeof(next));
+		rt_nlayouts = nk;
+		rt_layouts_generation++;
+	}
+	rt_layouts = rt_layouts_buf;
+	fprintf(stderr, "dwm: loaded %d layout settings from config\n", nk);
+	if (from_user)
+		report_problems(user_path, &doc);
+}
+
 int
 runtime_config_load(ConfigTheme *theme)
 {
@@ -821,6 +888,7 @@ runtime_config_load(ConfigTheme *theme)
 	load_hotkeys_toml(toml_hotkeys_path, toml_hotkeys_default_path);
 	themed = load_themes_toml(toml_themes_path, toml_themes_default_path, theme);
 	load_rules_toml(toml_rules_path,     toml_rules_default_path);
+	load_layout_toml(toml_layout_path,   toml_layout_default_path);
 	return themed;
 }
 
@@ -875,7 +943,8 @@ runtime_config_poll(void)
 		if (ie->len > 0 &&
 		    (strcmp(ie->name, "hotkeys.toml")      == 0 ||
 		     strcmp(ie->name, "themes.toml")       == 0 ||
-		     strcmp(ie->name, "window-rules.toml") == 0))
+		     strcmp(ie->name, "window-rules.toml") == 0 ||
+		     strcmp(ie->name, "layout.toml")       == 0))
 			need_reload = 1;
 		if (ie->len > 0 && strcmp(ie->name, "themes.toml") == 0)
 			themes_changed = 1;
@@ -936,7 +1005,9 @@ setup_inotify(void)
 	    || !pathjoin(toml_themes_path, sizeof(toml_themes_path),
 	                 toml_config_dir, "themes.toml")
 	    || !pathjoin(toml_rules_path, sizeof(toml_rules_path),
-	                 toml_config_dir, "window-rules.toml")) {
+	                 toml_config_dir, "window-rules.toml")
+	    || !pathjoin(toml_layout_path, sizeof(toml_layout_path),
+	                 toml_config_dir, "layout.toml")) {
 		fprintf(stderr, "dwm: user config path exceeds PATH_MAX\n");
 		return;
 	}
@@ -954,7 +1025,10 @@ setup_inotify(void)
 	                 toml_default_dir, "themes.toml")
 	    || !pathjoin(toml_rules_default_path,
 	                 sizeof(toml_rules_default_path),
-	                 toml_default_dir, "window-rules.toml")) {
+	                 toml_default_dir, "window-rules.toml")
+	    || !pathjoin(toml_layout_default_path,
+	                 sizeof(toml_layout_default_path),
+	                 toml_default_dir, "layout.toml")) {
 		fprintf(stderr, "dwm: default config path exceeds PATH_MAX\n");
 		return;
 	} else {

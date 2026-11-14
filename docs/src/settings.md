@@ -97,6 +97,20 @@ backup**. It does not capture the live XRandR layout. Later phases add
 connectivity, audio, power, defaults, personalization, and system-management
 operations.
 
+## Appearance: Layout
+
+Settings > Appearance > Layout shows the tag the selected monitor is on: its
+layout (Tile, Floating or Monocle), the master area's size (5-95%), the number
+of windows in it (0-20) and the gap around and between tiled windows (0-64
+px). A change applies at once and is saved for that tag of that monitor in
+`~/.config/lyona/layout.toml`, which you can also edit by hand (dwm reloads
+it on save). The previous file is kept as `layout.toml.bak`. A tag with no
+saved value uses the defaults, which tile as before: no gap. While the
+monitor shows several tags at once there is nothing to save, and the sliders
+are disabled. `Super+I` and `Super+D` still change the master count live,
+without saving it. The section reads dwm only while it is open. After the
+update that adds it, log out and back in once.
+
 ## System
 
 The System section shows the installed lyona version, its commit and source

@@ -20,6 +20,9 @@ TestCase {
         compare(ids("weather"), ["appearance"]);
         compare(ids("battery"), ["power"]);
         compare(ids("Wallpaper"), ["appearance"]);
+        // Settings > Appearance > Layout (#479).
+        compare(ids("gaps"), ["appearance"]);
+        compare(ids("master"), ["appearance"]);
         verify(ids("wifi").indexOf("network") >= 0);
         verify(ids("timezone").indexOf("system") >= 0);
     }
