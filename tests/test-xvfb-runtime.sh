@@ -17,6 +17,24 @@ require_cmd() {
 # assert_shrunk_centered TILE POPPED: two `xdotool getwindowgeometry --shell`
 # outputs. The second must be 80-90% of the first in each dimension and
 # centered on it (S5-03, upstream #331/#333).
+# Reloads the rules with USR1 and waits until dwm has loaded them.
+reload_rules() {
+	reload_before=$(grep -c '^dwm: loaded [0-9][0-9]* window rules from config$' "$work/dwm.log" || true)
+	kill -USR1 "$dwm_pid"
+	reload_attempt=0
+	while [ "$reload_attempt" -lt 100 ]; do
+		reload_after=$(grep -c '^dwm: loaded [0-9][0-9]* window rules from config$' "$work/dwm.log" || true)
+		if [ "$reload_after" -gt "$reload_before" ]; then
+			return 0
+		fi
+		reload_attempt=$((reload_attempt + 1))
+		sleep 0.05
+	done
+	printf '%s\n' 'dwm did not finish reloading window rules' >&2
+	tail -n 40 "$work/dwm.log" >&2
+	return 1
+}
+
 assert_shrunk_centered() {
 	printf '%s\n---\n%s\n' "$1" "$2" | awk -F= '
 		$0 == "---" { popped = 1; next }
@@ -231,7 +249,7 @@ require_cmd Xvfb awk cc pkg-config xdotool xprop sed grep tail
 pkg-config --exists x11
 
 work=$(mktemp -d)
-trap 'set +e; [ -n "${swallow_client_pid:-}" ] && kill "$swallow_client_pid" 2>/dev/null; [ -n "${many_state_client_pid:-}" ] && kill "$many_state_client_pid" 2>/dev/null; [ -n "${fullscreen_client_pid:-}" ] && kill "$fullscreen_client_pid" 2>/dev/null; [ -n "${panel_pid:-}" ] && kill "$panel_pid" 2>/dev/null; [ -n "${popup_client_pid:-}" ] && kill "$popup_client_pid" 2>/dev/null; [ -n "${second_above_client_pid:-}" ] && kill "$second_above_client_pid" 2>/dev/null; [ -n "${stack_client_pid:-}" ] && kill "$stack_client_pid" 2>/dev/null; [ -n "${above_client_pid:-}" ] && kill "$above_client_pid" 2>/dev/null; [ -n "${second_client_pid:-}" ] && kill "$second_client_pid" 2>/dev/null; [ -n "${client_pid:-}" ] && kill "$client_pid" 2>/dev/null; [ -n "${dwm_pid:-}" ] && kill "$dwm_pid" 2>/dev/null; [ -n "${xvfb_pid:-}" ] && kill "$xvfb_pid" 2>/dev/null; rm -rf "$work"' EXIT HUP INT TERM
+trap 'set +e; [ -n "${plain_overlay_pid:-}" ] && kill "$plain_overlay_pid" 2>/dev/null; [ -n "${swallow_client_pid:-}" ] && kill "$swallow_client_pid" 2>/dev/null; [ -n "${many_state_client_pid:-}" ] && kill "$many_state_client_pid" 2>/dev/null; [ -n "${fullscreen_client_pid:-}" ] && kill "$fullscreen_client_pid" 2>/dev/null; [ -n "${panel_pid:-}" ] && kill "$panel_pid" 2>/dev/null; [ -n "${popup_client_pid:-}" ] && kill "$popup_client_pid" 2>/dev/null; [ -n "${second_above_client_pid:-}" ] && kill "$second_above_client_pid" 2>/dev/null; [ -n "${stack_client_pid:-}" ] && kill "$stack_client_pid" 2>/dev/null; [ -n "${above_client_pid:-}" ] && kill "$above_client_pid" 2>/dev/null; [ -n "${second_client_pid:-}" ] && kill "$second_client_pid" 2>/dev/null; [ -n "${client_pid:-}" ] && kill "$client_pid" 2>/dev/null; [ -n "${dwm_pid:-}" ] && kill "$dwm_pid" 2>/dev/null; [ -n "${xvfb_pid:-}" ] && kill "$xvfb_pid" 2>/dev/null; rm -rf "$work"' EXIT HUP INT TERM
 
 home="$work/home"
 mkdir -p "$home/.config/lyona" "$home/.local/share/lyona/config"
@@ -282,6 +300,7 @@ main(int argc, char **argv)
 	const char *popup_type = NULL;
 	int swallow_terminal = 0;
 	int fixed_size = 0;
+	int rewards_overlay = 0;
 	int extreme_aspect = 0;
 	pid_t child_pid = -1;
 
@@ -458,6 +477,8 @@ main(int argc, char **argv)
 		override_redirect = 1;
 		popup_state = "_NET_WM_STATE_STAYS_ON_TOP";
 	}
+	else if (argc == 2 && strcmp(argv[1], "rewards-overlay") == 0)
+		override_redirect = rewards_overlay = 1;
 	else if (argc == 2 && strcmp(argv[1], "swallow-terminal") == 0)
 		swallow_terminal = 1;
 	else if (argc == 2 && strcmp(argv[1], "fixed") == 0)
@@ -479,6 +500,13 @@ main(int argc, char **argv)
 		classhint.res_name = panel ? "quickshell" : "dwm-xvfb-runtime";
 		classhint.res_class = panel ? "quickshell"
 			: (swallow_terminal ? "DwmXvfbTerminal" : "DwmXvfbRuntime");
+		XSetClassHint(dpy, win, &classhint);
+	}
+	if (rewards_overlay) {
+		/* WFHelper's Relic Rewards toolbar, as the shipped rule names it. */
+		XStoreName(dpy, win, "WFHelper Relic Rewards");
+		classhint.res_name = "wfhelper";
+		classhint.res_class = "wfhelper";
 		XSetClassHint(dpy, win, &classhint);
 	}
 	if (swallow_terminal) {
@@ -1406,6 +1434,298 @@ kill "$fullscreen_client_pid"
 wait "$fullscreen_client_pid" 2>/dev/null || true
 fullscreen_client_pid=
 wait_for_fullscreen_monitors ''
+
+# --- #477: fullscreen, fakefullscreen and ignoresizehints rule keys ----------
+rules_file=$home/.config/lyona/window-rules.toml
+cp "$rules_file" "$work/rules-backup"
+# Starts the client in mode $1 (empty for a plain window), prints its id.
+start_rule_client() {
+	: >"$work/rule-window-id"
+	# shellcheck disable=SC2086 # an empty mode passes no argument
+	DISPLAY=$display "$work/xclient" $1 >"$work/rule-window-id" 2>"$work/rule-client.log" &
+	fullscreen_client_pid=$!
+	i=0
+	while [ "$i" -lt 100 ] && [ ! -s "$work/rule-window-id" ]; do
+		i=$((i + 1))
+		sleep 0.05
+	done
+	rule_win=$(cat "$work/rule-window-id")
+	[ -n "$rule_win" ]
+}
+stop_rule_client() {
+	kill "$fullscreen_client_pid"
+	wait "$fullscreen_client_pid" 2>/dev/null || true
+	fullscreen_client_pid=
+}
+# Rules for the test client: $1 first, then $2 (an override) last.
+set_client_rules() {
+	cp "$work/rules-backup" "$rules_file"
+	sed -i '/^rules = \[/a\  { class="DwmXvfbRuntime", '"$1"' },' "$rules_file"
+	[ -z "${2:-}" ] || sed -i '/^]/i\  { class="DwmXvfbRuntime", '"$2"' },' "$rules_file"
+	reload_rules
+}
+assert_geometry() { # WINDOW X Y WIDTH HEIGHT
+	DISPLAY=$display xdotool getwindowgeometry --shell "$1" >"$work/rule-geometry"
+	for pair in "X=$2" "Y=$3" "WIDTH=$4" "HEIGHT=$5"; do
+		grep -qx "$pair" "$work/rule-geometry" || {
+			printf 'window %s: expected %s, got:\n' "$1" "$pair" >&2
+			cat "$work/rule-geometry" >&2
+			return 1
+		}
+	done
+}
+
+# fullscreen=1 opens in real fullscreen; a later matching rule overrides it,
+# by omission too, and only the integer 1 turns it on.
+for override in '' 'fullscreen=0' 'noswallow=1' 'fullscreen="1"' 'fullscreen=2'; do
+	set_client_rules 'fullscreen=1' "$override"
+	start_rule_client ''
+	wait_for_active_window "$rule_win"
+	if [ -z "$override" ]; then
+		wait_for_window_state "$rule_win" _NET_WM_STATE_FULLSCREEN
+		wait_for_fullscreen_monitors 0
+		assert_geometry "$rule_win" 0 0 1024 768
+		[ "$(DISPLAY=$display "$work/xclient" border "$rule_win")" = border_width=0 ]
+		wait_for_window_above "$rule_win" "$panel_win"
+		DISPLAY=$display xdotool key super+2
+		wait_for_current_desktop 1
+		wait_for_fullscreen_monitors ''
+		DISPLAY=$display xdotool key super+1
+		wait_for_current_desktop 0
+		wait_for_fullscreen_monitors 0
+		DISPLAY=$display "$work/xclient" state "$rule_win" 0 _NET_WM_STATE_FULLSCREEN
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+		wait_for_fullscreen_monitors ''
+	else
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+		wait_for_fullscreen_monitors ''
+	fi
+	stop_rule_client
+done
+
+# ignoresizehints=1 releases a fixed-size window (300x200): it is not forced
+# floating and fills its tile; a late title applies it; 0, omission and a
+# non-integer in a later rule keep the hints.
+for hints_case in enabled late zero omitted invalid; do
+	hints_fields='ignoresizehints=1'
+	[ "$hints_case" != late ] || hints_fields='title="Ignore Hints", ignoresizehints=1'
+	case $hints_case in
+	zero) hints_override='ignoresizehints=0' ;;
+	omitted) hints_override='noswallow=1' ;;
+	invalid) hints_override='ignoresizehints="1"' ;;
+	*) hints_override= ;;
+	esac
+	set_client_rules "$hints_fields" "$hints_override"
+	start_rule_client fixed
+	wait_for_active_window "$rule_win"
+	if [ "$hints_case" = late ]; then
+		# The hints still hold until the title matches.
+		DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" >"$work/hints-before"
+		grep -qx 'WIDTH=300' "$work/hints-before"
+		grep -qx 'HEIGHT=200' "$work/hints-before"
+		DISPLAY=$display xdotool set_window --name 'Ignore Hints' "$rule_win"
+		sleep 0.2
+		# It floated, as a fixed window, before the title matched: tile it now.
+		DISPLAY=$display xdotool key Super+f
+	fi
+	DISPLAY=$display xdotool key Super+t
+	sleep 0.2
+	DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" >"$work/hints-geometry"
+	if [ -z "$hints_override" ]; then
+		if grep -qx 'WIDTH=300' "$work/hints-geometry" || grep -qx 'HEIGHT=200' "$work/hints-geometry"; then
+			printf 'ignoresizehints (%s) kept the fixed size:\n' "$hints_case" >&2
+			cat "$work/hints-geometry" >&2
+			exit 1
+		fi
+	else
+		grep -qx 'WIDTH=300' "$work/hints-geometry"
+		grep -qx 'HEIGHT=200' "$work/hints-geometry"
+	fi
+	wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+	stop_rule_client
+done
+
+# fakefullscreen=1 is borderless windowed fullscreen: the monitor, with no
+# _NET_WM_STATE_FULLSCREEN, held against the client's own resize, move and
+# fullscreen requests; Super+Shift+Y restores the window.
+for windowed_case in startup late both ignore-hints zero omitted invalid; do
+	case $windowed_case in
+	late) windowed_fields='title="DC Universe Online [DCUOT.", fakefullscreen=1' ;;
+	ignore-hints) windowed_fields='fakefullscreen=1, ignoresizehints=1' ;;
+	both) windowed_fields='fullscreen=1, fakefullscreen=1' ;;
+	*) windowed_fields='fakefullscreen=1' ;;
+	esac
+	case $windowed_case in
+	zero) windowed_override='fakefullscreen=0' ;;
+	omitted) windowed_override='noswallow=1' ;;
+	invalid) windowed_override='fakefullscreen="1"' ;;
+	*) windowed_override= ;;
+	esac
+	set_client_rules "$windowed_fields" "$windowed_override"
+	start_rule_client fixed
+	wait_for_active_window "$rule_win"
+	if [ "$windowed_case" = late ]; then
+		DISPLAY=$display xdotool set_window --name 'DC Universe Online' "$rule_win"
+		sleep 0.2
+		wait_for_fullscreen_monitors ''
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+		DISPLAY=$display xdotool set_window --name 'DC Universe Online [DCUOT.619986]' "$rule_win"
+	fi
+	if [ -z "$windowed_override" ]; then
+		wait_for_fullscreen_monitors 0
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+		assert_geometry "$rule_win" 0 0 1024 768
+		[ "$(DISPLAY=$display "$work/xclient" border "$rule_win")" = border_width=0 ]
+		wait_for_window_above "$rule_win" "$panel_win"
+		DISPLAY=$display xdotool windowsize "$rule_win" 640 480
+		DISPLAY=$display xdotool windowmove "$rule_win" 100 120
+		sleep 0.2
+		assert_geometry "$rule_win" 0 0 1024 768
+		DISPLAY=$display "$work/xclient" state "$rule_win" 1 _NET_WM_STATE_FULLSCREEN
+		DISPLAY=$display "$work/xclient" state "$rule_win" 0 _NET_WM_STATE_FULLSCREEN
+		sleep 0.2
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+		wait_for_fullscreen_monitors 0
+		DISPLAY=$display xdotool key super+2
+		wait_for_current_desktop 1
+		wait_for_fullscreen_monitors ''
+		DISPLAY=$display xdotool key super+1
+		wait_for_current_desktop 0
+		wait_for_fullscreen_monitors 0
+		DISPLAY=$display xdotool key Super+Shift+y
+		wait_for_fullscreen_monitors ''
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+		if [ "$windowed_case" != ignore-hints ]; then
+			DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" >"$work/windowed-restored"
+			grep -qx 'WIDTH=300' "$work/windowed-restored"
+			grep -qx 'HEIGHT=200' "$work/windowed-restored"
+		fi
+		# Once applied, a rule does not come back on a later title change.
+		DISPLAY=$display xdotool set_window --name 'DC Universe Online [DCUOT.620000]' "$rule_win"
+		sleep 0.2
+	fi
+	wait_for_fullscreen_monitors ''
+	wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+	stop_rule_client
+done
+
+# A title published after the window maps (Wine does this) applies
+# fullscreen=1 once; the user's exit stays, even when the title leaves the
+# match and comes back.
+for late_override in '' 'fullscreen=0' 'noswallow=1'; do
+	set_client_rules 'title="DC Universe Online [DCUOT.", fullscreen=1' "$late_override"
+	start_rule_client ''
+	wait_for_active_window "$rule_win"
+	DISPLAY=$display xdotool set_window --name 'DC Universe Online' "$rule_win"
+	sleep 0.2
+	wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+	DISPLAY=$display xdotool set_window --name 'DC Universe Online [DCUOT.619986]' "$rule_win"
+	if [ -z "$late_override" ]; then
+		wait_for_window_state "$rule_win" _NET_WM_STATE_FULLSCREEN
+		wait_for_fullscreen_monitors 0
+		assert_geometry "$rule_win" 0 0 1024 768
+		wait_for_window_above "$rule_win" "$panel_win"
+		DISPLAY=$display "$work/xclient" state "$rule_win" 0 _NET_WM_STATE_FULLSCREEN
+		wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+	fi
+	DISPLAY=$display xdotool set_window --name 'DC Universe Online' "$rule_win"
+	sleep 0.2
+	DISPLAY=$display xdotool set_window --name 'DC Universe Online [DCUOT.620000]' "$rule_win"
+	sleep 0.2
+	wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+	wait_for_fullscreen_monitors ''
+	stop_rule_client
+done
+
+# A fullscreen rule for a window opened on a hidden tag: fullscreen there,
+# shown when its tag is.
+set_client_rules 'fullscreen=1, tags=2'
+start_rule_client ''
+wait_for_window_state "$rule_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors ''
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -q '^X=-'
+DISPLAY=$display xdotool key super+2
+wait_for_current_desktop 1
+wait_for_fullscreen_monitors 0
+assert_geometry "$rule_win" 0 0 1024 768
+stop_rule_client
+DISPLAY=$display xdotool key super+1
+wait_for_current_desktop 0
+
+# --- #497: alwaysontop rules for unmanaged overlays ------------------------
+# Over a real fullscreen window: the shipped WFHelper rule raises the overlay
+# above it, without moving the overlay or taking focus; an overlay no rule
+# names stays below; a title change, a later rule and the rule's removal take
+# the raise away, and putting the rule back restores it.
+cp "$work/rules-backup" "$rules_file"
+reload_rules
+start_rule_client ''
+fullscreen_win=$rule_win
+wait_for_active_window "$fullscreen_win"
+DISPLAY=$display "$work/xclient" fullscreen "$fullscreen_win"
+wait_for_window_state "$fullscreen_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+DISPLAY=$display "$work/xclient" rewards-overlay >"$work/overlay-window-id" 2>"$work/overlay-client.log" &
+popup_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/overlay-window-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+overlay_win=$(cat "$work/overlay-window-id")
+[ -n "$overlay_win" ]
+[ "$(DISPLAY=$display "$work/xclient" attributes "$overlay_win")" = "override_redirect=1" ]
+wait_for_window_above "$overlay_win" "$fullscreen_win"
+wait_for_input_focus "$fullscreen_win"
+assert_geometry "$overlay_win" 20 20 320 180
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$overlay_win" "$fullscreen_win"
+wait_for_input_focus "$fullscreen_win"
+# An overlay no rule names stays below real fullscreen.
+DISPLAY=$display "$work/xclient" override >"$work/plain-overlay-id" 2>"$work/plain-overlay.log" &
+plain_overlay_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/plain-overlay-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+plain_overlay_win=$(cat "$work/plain-overlay-id")
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$fullscreen_win" "$plain_overlay_win"
+wait_for_window_above "$overlay_win" "$fullscreen_win"
+kill "$plain_overlay_pid"
+wait "$plain_overlay_pid" 2>/dev/null || true
+plain_overlay_pid=
+# Its identity changes: a title the rule does not match drops the raise.
+DISPLAY=$display xdotool set_window --name 'WFHelper Settings' "$overlay_win"
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$fullscreen_win" "$overlay_win"
+DISPLAY=$display xdotool set_window --name 'WFHelper Relic Rewards' "$overlay_win"
+wait_for_window_above "$overlay_win" "$fullscreen_win"
+# The last matching rule wins, and one without alwaysontop sets it to 0.
+sed -i '/^]/i\  { class="wfhelper", noswallow=1 },' "$rules_file"
+reload_rules
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$fullscreen_win" "$overlay_win"
+# Back to the shipped rules: the raise comes back on reload.
+cp "$work/rules-backup" "$rules_file"
+reload_rules
+wait_for_window_above "$overlay_win" "$fullscreen_win"
+# The rule removed: the overlay is ordinary again.
+sed -i '/WFHelper Relic Rewards/d' "$rules_file"
+reload_rules
+DISPLAY=$display xdotool key Super+t
+wait_for_window_above "$fullscreen_win" "$overlay_win"
+wait_for_input_focus "$fullscreen_win"
+assert_geometry "$overlay_win" 20 20 320 180
+kill "$popup_client_pid"
+wait "$popup_client_pid" 2>/dev/null || true
+popup_client_pid=
+stop_rule_client
+wait_for_fullscreen_monitors ''
+cp "$work/rules-backup" "$rules_file"
+reload_rules
+
 kill "$panel_pid"
 wait "$panel_pid" 2>/dev/null || true
 panel_pid=
@@ -1456,6 +1776,12 @@ done
 stack_win=$(cat "$work/restore-stack-window-id")
 [ -n "$stack_win" ]
 
+# A swallowed window keeps its own identity for the rules (#477 review): a
+# late title rule naming the child's instance applies to it, and once the
+# child is gone the terminal is matched as itself again.
+cp "$work/rules-backup" "$rules_file"
+sed -i '/^rules = \[/a\  { instance="dwm-xvfb-swallowed", title="Late Child Title", fullscreen=1 },' "$rules_file"
+reload_rules
 : >"$work/swallow-window-ids"
 DISPLAY=$display "$work/xclient" swallow-terminal >"$work/swallow-window-ids" 2>"$work/swallow-client.log" &
 swallow_client_pid=$!
@@ -1469,12 +1795,21 @@ swallowed_win=$(sed -n '2p' "$work/swallow-window-ids")
 [ -n "$terminal_win" ]
 [ -n "$swallowed_win" ]
 wait_for_active_window "$swallowed_win"
+DISPLAY=$display xdotool set_window --name 'Late Child Title' "$swallowed_win"
+wait_for_window_state "$swallowed_win" _NET_WM_STATE_FULLSCREEN
+DISPLAY=$display "$work/xclient" state "$swallowed_win" 0 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state_absent "$swallowed_win" _NET_WM_STATE_FULLSCREEN
 DISPLAY=$display xdotool windowraise "$stack_win"
 DISPLAY=$display xdotool key Super+t
 wait_for_top_window "$swallowed_win"
 
 DISPLAY=$display xdotool windowkill "$swallowed_win"
 wait_for_client_window "$terminal_win"
+DISPLAY=$display xdotool set_window --name 'Late Child Title' "$terminal_win"
+sleep 0.3
+wait_for_window_state_absent "$terminal_win" _NET_WM_STATE_FULLSCREEN
+cp "$work/rules-backup" "$rules_file"
+reload_rules
 DISPLAY=$display xdotool windowraise "$stack_win"
 DISPLAY=$display xdotool key Super+t
 wait_for_top_window "$stack_win"

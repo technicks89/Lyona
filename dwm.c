@@ -103,6 +103,11 @@ struct Client {
 	Window publishedwin; /* None until setclientdesktop first publishes */
 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen, isterminal, noswallow, alwaysontop, ewmhabove;
 	int issteam;
+	/* #477: a rule's fullscreen is applied once, at open or when a late title
+	 * matches, never again over the user's own toggles. */
+	int rulefullscreenapplied;
+	int ignoresizehints;
+	int iswindowedfullscreen; /* monitor-sized, without EWMH fullscreen */
 	// int beingmoved; /* disabled: written by placemouse(), never read */
 	int fakefullscreen;
 	pid_t pid;
@@ -118,6 +123,7 @@ struct Client {
 struct OverrideWindow {
 	Window win;
 	int raise;
+	int alwaysontop; /* #497: a rule raises it above real fullscreen */
 	OverrideWindow *next;
 };
 
@@ -148,8 +154,10 @@ struct Monitor {
 	Pertag *pertag;
 };
 
-static void applyrules(Client *c);
+static int applyrules(Client *c);
 static int applytitlerules(Client *c);
+static void applyfullscreenrule(Client *c, int mode);
+static void refreshoverriderules(void);
 static int applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact);
 static void arrange(Monitor *m);
 static void arrangemon(Monitor *m);
@@ -521,13 +529,26 @@ session_script(char *out, size_t size, const char *name)
 	       && pathjoin(out, size, lib, name);
 }
 
-void
+/* What a rule's fullscreen keys ask for (#477). */
+enum { RuleFullscreenNone, RuleFullscreenReal, RuleFullscreenWindowed };
+
+static int
+rulefullscreenmode(const Rule *r)
+{
+	return r->fakefullscreen ? RuleFullscreenWindowed
+		: (r->fullscreen ? RuleFullscreenReal : RuleFullscreenNone);
+}
+
+/* Returns the fullscreen mode the last matching rule asks for, applied by
+ * manage() once the window is mapped. */
+int
 applyrules(Client *c)
 {
 	const char *class, *instance;
 	unsigned int i;
 	const Rule *r;
 	Monitor *m;
+	int fullscreen = RuleFullscreenNone;
 
 	c->isfloating = 0;
 	c->alwaysontop = 0;
@@ -546,6 +567,8 @@ applyrules(Client *c)
 		&& (!r->class || strstr(class, r->class))
 		&& (!r->instance || strstr(instance, r->instance)))
 		{
+			fullscreen = rulefullscreenmode(r);
+			c->ignoresizehints = r->ignoresizehints;
 			c->isterminal = r->isterminal;
 			c->noswallow  = r->noswallow;
 			c->isfloating = r->isfloating;
@@ -575,6 +598,7 @@ applyrules(Client *c)
 
 		c->tags &= montags;
 	}
+	return fullscreen;
 }
 
 int
@@ -584,6 +608,8 @@ applytitlerules(Client *c)
 	unsigned int i;
 	const Rule *r;
 	int changed = 0;
+	int titlefullscreen = RuleFullscreenNone;
+	int ignoresizehints = 0;
 
 	class = c->class[0] ? c->class : broken;
 	instance = c->instance[0] ? c->instance : broken;
@@ -592,11 +618,15 @@ applytitlerules(Client *c)
 	unsigned int n_active_rules = (unsigned int)rt_nrules;
 	for (i = 0; i < n_active_rules; i++) {
 		r = &active_rules[i];
-		if (!r->title)
-			continue;
-		if ((strstr(c->name, r->title))
+		if ((!r->title || strstr(c->name, r->title))
 		&& (!r->class || strstr(class, r->class))
 		&& (!r->instance || strstr(instance, r->instance))) {
+			/* Every matching rule counts for these two, a class-only one
+			 * too, so the last match wins as it does at open (#477). */
+			ignoresizehints = r->ignoresizehints;
+			titlefullscreen = r->title ? rulefullscreenmode(r) : RuleFullscreenNone;
+			if (!r->title)
+				continue;
 			c->isterminal = r->isterminal;
 			c->noswallow = r->noswallow;
 			if (r->isfloating && !c->isfloating) {
@@ -611,7 +641,36 @@ applytitlerules(Client *c)
 		}
 	}
 
+	if (c->ignoresizehints != ignoresizehints) {
+		c->ignoresizehints = ignoresizehints;
+		updatesizehints(c);
+		changed = 1;
+	}
+	/* A title published after the window opened (a game behind its
+	 * launcher's class) gets its fullscreen once; later title changes and
+	 * the user's own toggles are left alone. */
+	if (titlefullscreen != RuleFullscreenNone && !c->rulefullscreenapplied) {
+		applyfullscreenrule(c, titlefullscreen);
+		changed = 1;
+	}
+
 	return changed;
+}
+
+/* A rule's fullscreen (#477). Both modes cover the monitor; only real
+ * fullscreen tells the client, through _NET_WM_STATE_FULLSCREEN. */
+void
+applyfullscreenrule(Client *c, int mode)
+{
+	c->rulefullscreenapplied = 1;
+	c->iswindowedfullscreen = mode == RuleFullscreenWindowed;
+	/* Also corrects the property after a swallow or an inherited fake mode. */
+	ewmh_set_fullscreen_state(c, !c->iswindowedfullscreen);
+	if (c->fakefullscreen == 1)
+		c->fakefullscreen = 2;
+	setfullscreen(c, 1);
+	arrange(c->mon);
+	updatefullscreenmonitors();
 }
 
 int
@@ -645,7 +704,8 @@ applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact)
 		*h = bh;
 	if (*w < bh)
 		*w = bh;
-	if (resizehints || c->isfloating || !c->mon->lt[c->mon->sellt]->arrange) {
+	if (!c->ignoresizehints
+	&& (resizehints || c->isfloating || !c->mon->lt[c->mon->sellt]->arrange)) {
 
 		baseismin = c->basew == c->minw && c->baseh == c->minh;
 		if (!baseismin) {
@@ -913,10 +973,16 @@ clientmessage(XEvent *e)
 	if (cme->message_type == netatom[NetWMState]) {
 		if (cme->data.l[1] == netatom[NetWMFullscreen]
 		|| cme->data.l[2] == netatom[NetWMFullscreen]) {
-			if (c->fakefullscreen == 2 && c->isfullscreen)
-				c->fakefullscreen = 3;
-			setfullscreen(c, (cme->data.l[0] == 1
-				|| (cme->data.l[0] == 2  && !c->isfullscreen)));
+			if (c->iswindowedfullscreen) {
+				/* A windowed rule stays windowed when the client, prompted
+				 * by the resize, asks for fullscreen itself (#477). */
+				ewmh_set_fullscreen_state(c, 0);
+			} else {
+				if (c->fakefullscreen == 2 && c->isfullscreen)
+					c->fakefullscreen = 3;
+				setfullscreen(c, (cme->data.l[0] == 1
+					|| (cme->data.l[0] == 2  && !c->isfullscreen)));
+			}
 		}
 		nstates = getatomproplist(c, netatom[NetWMState], states, LENGTH(states), &truncated);
 		for (i = 1; i <= 2; i++) {
@@ -1092,6 +1158,12 @@ configurerequest(XEvent *e)
 	XWindowChanges wc;
 
 	if ((c = wintoclient(ev->window))) {
+		if (c->iswindowedfullscreen) {
+			/* A windowed game may ask for its old size after the resize. */
+			configure(c);
+			XSync(dpy, False);
+			return;
+		}
 		if (ev->value_mask & CWBorderWidth)
 			c->bw = ev->border_width;
 		else if (c->isfloating || !selmon->lt[selmon->sellt]->arrange) {
@@ -1941,9 +2013,10 @@ closeclient(Client *c)
 void
 manage(Window w, XWindowAttributes *wa)
 {
-	Client *c, *t = NULL, *term = NULL;
+	Client *c, *t = NULL, *term = NULL, *shown;
 	Window trans = None;
 	XWindowChanges wc;
+	int rulefullscreen = 0;
 
 	c = ecalloc(1, sizeof(Client));
 	c->win = w;
@@ -1964,9 +2037,10 @@ manage(Window w, XWindowAttributes *wa)
 	if (XGetTransientForHint(dpy, w, &trans) && (t = wintoclient(trans))) {
 		c->mon = t->mon;
 		c->tags = t->tags;
+		c->rulefullscreenapplied = 1; /* a transient follows its parent */
 	} else {
 		c->mon = selmon;
-		applyrules(c);
+		rulefullscreen = applyrules(c);
 		term = termforwin(c);
 	}
 
@@ -2008,8 +2082,12 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon);
 	XMapWindow(dpy, c->win);
-	if (term)
-		swallow(term, c);
+	/* After a swallow the terminal's client shows the new window. */
+	shown = c;
+	if (term && swallow(term, c))
+		shown = term;
+	if (rulefullscreen)
+		applyfullscreenrule(shown, rulefullscreen);
 	focus(NULL);
 	holdkeys_mapped(c);
 }
@@ -2513,6 +2591,8 @@ propertynotify(XEvent *e)
 	for (ow = overridewindows; ow && ow->win != ev->window; ow = ow->next);
 	if (ow && (ev->atom == netatom[NetWMState]
 	    || ev->atom == netatom[NetWMWindowType]
+	    || ev->atom == XA_WM_CLASS || ev->atom == XA_WM_NAME
+	    || ev->atom == netatom[NetWMName]
 	    || ev->atom == XA_WM_TRANSIENT_FOR)) {
 		updateoverridewindow(ev->window);
 		restackprioritywindows();
@@ -2879,6 +2959,10 @@ restackprioritywindows(void)
 			XRaiseWindow(dpy, ow->win);
 	for (m = mons; m; m = m->next)
 		raisefullscreenclients(m->stack);
+	/* Above real fullscreen: only unmanaged overlays a rule names (#497). */
+	for (ow = overridewindows; ow; ow = ow->next)
+		if (ow->alwaysontop)
+			XRaiseWindow(dpy, ow->win);
 	if (XGetInputFocus(dpy, &focused, &revert))
 		focusfullscreenforoverride(focused);
 }
@@ -3396,7 +3480,8 @@ ewmh_set_desktop_names(void)
 static void
 ewmh_set_fullscreen_state(Client *c, int fullscreen)
 {
-	setatomprop(c, netatom[NetWMState], netatom[NetWMFullscreen], fullscreen);
+	setatomprop(c, netatom[NetWMState], netatom[NetWMFullscreen],
+		fullscreen && !c->iswindowedfullscreen);
 }
 
 void
@@ -3496,6 +3581,11 @@ setfullscreen(Client *c, int fullscreen)
 	int actualfullscreenchanged, savestate = 0, restorestate = 0;
 	int wasactualfullscreen = c->isfullscreen && c->fakefullscreen != 1;
 
+	/* Leaving windowed fullscreen restores the window, without entering the
+	 * Super+Shift+Y fake mode (#477). */
+	if (c->iswindowedfullscreen && !fullscreen)
+		c->fakefullscreen = 0;
+
 	if ((c->fakefullscreen == 0 && fullscreen && !c->isfullscreen)
 			|| (c->fakefullscreen == 2 && fullscreen))
 		savestate = 1;
@@ -3510,11 +3600,13 @@ setfullscreen(Client *c, int fullscreen)
 	} else if (c->fakefullscreen == 3)
 		c->fakefullscreen = 1;
 
-	if (fullscreen != c->isfullscreen) {
+	if (fullscreen != c->isfullscreen || c->iswindowedfullscreen) {
 		ewmh_set_fullscreen_state(c, fullscreen);
 	}
 
 	c->isfullscreen = fullscreen;
+	if (!fullscreen)
+		c->iswindowedfullscreen = 0;
 	actualfullscreenchanged = wasactualfullscreen
 		!= (c->isfullscreen && c->fakefullscreen != 1);
 
@@ -3829,6 +3921,7 @@ reload_config(int applytheme)
 	if (runtime_config_load(&theme))
 		applyconfigtheme(&theme);
 	if (dpy) grabkeys();
+	if (dpy) refreshoverriderules();
 
 	if (applytheme) {
 		/* theme-apply.sh is a command, installed beside dwm; the override
@@ -4141,6 +4234,26 @@ swallow(Client *p, Client *c)
 	int ewmhabove = p->ewmhabove;
 	p->ewmhabove = c->ewmhabove;
 	c->ewmhabove = ewmhabove;
+	/* The terminal's client shows the new window: it takes the window's rule
+	 * state, and keeps its own for the restore (#477). */
+	c->iswindowedfullscreen = p->iswindowedfullscreen;
+	int ignoresizehints = p->ignoresizehints;
+	p->ignoresizehints = c->ignoresizehints;
+	c->ignoresizehints = ignoresizehints;
+	updatesizehints(p);
+	int rulefullscreenapplied = p->rulefullscreenapplied;
+	p->rulefullscreenapplied = c->rulefullscreenapplied;
+	c->rulefullscreenapplied = rulefullscreenapplied;
+	/* And the window's identity, so a later title change matches the rules
+	 * against the window shown, not the terminal; the terminal's is kept for
+	 * unswallow(). */
+	char identity[sizeof c->class];
+	copystr(identity, sizeof identity, p->class);
+	copystr(p->class, sizeof p->class, c->class);
+	copystr(c->class, sizeof c->class, identity);
+	copystr(identity, sizeof identity, p->instance);
+	copystr(p->instance, sizeof p->instance, c->instance);
+	copystr(c->instance, sizeof c->instance, identity);
 
 	#if SHOWWINICON
 	Window icon = p->icon;
@@ -4391,7 +4504,11 @@ togglefakefullscreen(const Arg *arg)
 	if (!c)
 		return;
 
-	if (c->fakefullscreen != 1 && c->isfullscreen) {
+	if (c->iswindowedfullscreen) {
+		/* Out of a rule's windowed fullscreen, back to the tile. */
+		setfullscreen(c, 0);
+		arrange(c->mon);
+	} else if (c->fakefullscreen != 1 && c->isfullscreen) {
 		c->fakefullscreen = 2;
 		setfullscreen(c, 0);
 	} else if (c->fakefullscreen == 1) {
@@ -4826,6 +4943,12 @@ unswallow(Client *c)
 {
 	c->win = c->swallowing->win;
 	c->ewmhabove = c->swallowing->ewmhabove;
+	c->iswindowedfullscreen = c->swallowing->iswindowedfullscreen;
+	c->rulefullscreenapplied = c->swallowing->rulefullscreenapplied;
+	c->ignoresizehints = c->swallowing->ignoresizehints;
+	updatesizehints(c);
+	copystr(c->class, sizeof c->class, c->swallowing->class);
+	copystr(c->instance, sizeof c->instance, c->swallowing->instance);
 
 	#if SHOWWINICON
 	freeicon(c);
@@ -5288,7 +5411,8 @@ updatesizehints(Client *c)
 		c->maxa = (float)size.max_aspect.x / size.max_aspect.y;
 	} else
 		c->maxa = c->mina = 0.0;
-	c->isfixed = (c->maxw && c->maxh && c->maxw == c->minw && c->maxh == c->minh);
+	c->isfixed = !c->ignoresizehints
+		&& (c->maxw && c->maxh && c->maxw == c->minw && c->maxh == c->minh);
 }
 
 void
@@ -5341,16 +5465,53 @@ updatewindowtype(Client *c)
 		c->isfloating = 1;
 }
 
+/* Window rules changed: each unmanaged overlay is matched again, and the
+ * stacking follows (#497). */
+void
+refreshoverriderules(void)
+{
+	OverrideWindow *ow;
+
+	for (ow = overridewindows; ow; ow = ow->next)
+		updateoverridewindow(ow->win);
+	restackprioritywindows();
+}
+
 void
 updateoverridewindow(Window win)
 {
 	Atom states[NET_WM_STATE_MAX], types[NET_WM_STATE_MAX];
 	OverrideWindow *ow;
 	unsigned long nstates, ntypes;
+	XClassHint ch = { NULL, NULL };
+	char title[256];
+	const char *class, *instance;
+	int i;
 
 	for (ow = overridewindows; ow && ow->win != win; ow = ow->next);
 	if (!ow)
 		return;
+	/* An unmanaged window stays unmanaged: of a matching rule, only
+	 * alwaysontop applies, and the last match wins (#497). */
+	XGetClassHint(dpy, win, &ch);
+	class = ch.res_class ? ch.res_class : broken;
+	instance = ch.res_name ? ch.res_name : broken;
+	title[0] = '\0';
+	if (!gettextprop(win, netatom[NetWMName], title, sizeof title))
+		gettextprop(win, XA_WM_NAME, title, sizeof title);
+	ow->alwaysontop = 0;
+	for (i = 0; i < rt_nrules; i++) {
+		const Rule *r = &rt_rules[i];
+
+		if ((!r->title || strstr(title, r->title))
+		&& (!r->class || strstr(class, r->class))
+		&& (!r->instance || strstr(instance, r->instance)))
+			ow->alwaysontop = r->alwaysontop;
+	}
+	if (ch.res_class)
+		XFree(ch.res_class);
+	if (ch.res_name)
+		XFree(ch.res_name);
 	nstates = getwinatomproplist(win, netatom[NetWMState],
 		states, LENGTH(states), NULL);
 	ntypes = getwinatomproplist(win, netatom[NetWMWindowType],
