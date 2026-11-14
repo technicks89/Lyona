@@ -111,10 +111,47 @@ cp "$repo/assets/logo/lyona-icon.png" "$config_home/quickshell/assets/lyona-icon
 cp "$repo"/config/*.toml "$config_home/lyona/"
 mkdir -p "$data_home/lyona/assets"
 cp -a "$repo/assets/logo" "$data_home/lyona/assets/logo"
-ln -s "$repo/scripts" "$data_home/checkout/scripts"
+# The helpers, one link each, without the session hooks (#502, upstream
+# dwm-titus #429). With the whole scripts/ linked, dwm ran the real
+# autostart.sh, which started light-locker and the session's other helpers in
+# this Xvfb, and autostop.sh as it was stopped. The panel, the hotkeys and the
+# launch still use the real helpers.
+session_hooks='autostart.sh autostop.sh'
+link_helpers() {
+	mkdir -p "$1"
+	for script in "$repo"/scripts/* "$repo"/scripts/.[!.]*; do
+		[ -e "$script" ] || continue
+		case " $session_hooks " in
+		*" ${script##*/} "*) continue ;;
+		esac
+		ln -s "$script" "$1/"
+	done
+}
+# Fails when DIR holds a session hook dwm would run.
+assert_no_session_hooks() {
+	for hook in $session_hooks; do
+		[ ! -e "$1/$hook" ] || fail "a session hook is exposed to dwm: $1/$hook"
+	done
+}
+helpers=$work/helpers
+link_helpers "$helpers"
+ln -s "$helpers" "$data_home/checkout/scripts"
 # Helpers are no longer looked up in a per-user copy; the developer override
 # names the directory holding this test's helpers (Sync Sprint 12 S12-13).
 export LYONA_DEV_SCRIPTS="$data_home/checkout/scripts"
+# XDG autostart and other session config come from this test's own empty
+# directory, not the host's /etc/xdg.
+xdg_config_dirs=$work/xdg
+mkdir -p "$xdg_config_dirs"
+# Should a session helper start, it records itself here instead.
+sentinel_bin=$work/sentinel-bin
+session_started=$work/session-started
+mkdir -p "$sentinel_bin"
+for sentinel in light-locker xss-lock xfconfd; do
+	printf '#!/bin/sh\nprintf "%%s\\n" %s >>"%s"\n' "$sentinel" "$session_started" \
+		>"$sentinel_bin/$sentinel"
+	chmod +x "$sentinel_bin/$sentinel"
+done
 
 smoke_marker=$work/launched
 cat >"$data_home/applications/dwm-smoke.desktop" <<EOF
@@ -157,6 +194,11 @@ done
 DISPLAY=$display xprop -root >/dev/null
 
 test_stage='starting dwm'
+# Neither the helpers nor dwm's fallback beside its binary (PREFIX/lib/lyona,
+# PREFIX being the directory above the one holding dwm) may hold a hook.
+assert_no_session_hooks "$LYONA_DEV_SCRIPTS"
+dwm_exe=$(readlink -f "$dwm_bin")
+assert_no_session_hooks "${dwm_exe%/*/*}/lib/lyona"
 # dwm runs its bindings through this lyona-shell first (#411): each call is
 # recorded, so a launcher that did not open tells a key dwm never handled from
 # a call that reached the shell. It runs the checkout's, which the held-index
@@ -169,15 +211,16 @@ exec "$data_home/checkout/scripts/lyona-shell" "\$@"
 EOF
 chmod +x "$work/binding-bin/lyona-shell"
 DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home \
-	XDG_RUNTIME_DIR=$runtime DWM_AUTOSTART_NO_INPUT_WATCH=1 \
-	PATH="$work/binding-bin:$data_home/checkout/scripts:$PATH" \
+	XDG_CONFIG_DIRS=$xdg_config_dirs XDG_RUNTIME_DIR=$runtime DWM_AUTOSTART_NO_INPUT_WATCH=1 \
+	PATH="$sentinel_bin:$work/binding-bin:$data_home/checkout/scripts:$PATH" \
 	"$dwm_bin" >"$work/dwm.log" 2>&1 &
 dwm_pid=$!
 dwm_identity=$(capture_process_identity "$dwm_pid")
 
 test_stage='starting Quickshell'
 env DISPLAY="$display" HOME="$home" XDG_CONFIG_HOME="$config_home" \
-	XDG_DATA_HOME="$data_home" XDG_DATA_DIRS="$data_home" XDG_RUNTIME_DIR="$runtime" \
+	XDG_DATA_HOME="$data_home" XDG_DATA_DIRS="$data_home" XDG_CONFIG_DIRS="$xdg_config_dirs" \
+	XDG_RUNTIME_DIR="$runtime" \
 	QT_QPA_PLATFORM=xcb QT_QUICK_BACKEND=software \
 	QT_QPA_PLATFORMTHEME= QT_ENABLE_HIGHDPI_SCALING=0 QT_SCALE_FACTOR=1 \
 	PATH="$data_home/checkout/scripts:$PATH" \
@@ -328,10 +371,8 @@ test_stage='launching before the application index has loaded'
 index_hold=$work/index-hold
 held_scripts=$work/held-scripts
 mkfifo "$index_hold"
-mkdir "$held_scripts"
-for script in "$repo"/scripts/* "$repo"/scripts/.[!.]*; do
-	[ ! -e "$script" ] || ln -s "$script" "$held_scripts/"
-done
+link_helpers "$held_scripts"
+assert_no_session_hooks "$held_scripts"
 rm "$held_scripts/dwm-quickshell-launcher"
 cat >"$held_scripts/dwm-quickshell-launcher" <<EOF
 #!/bin/sh
@@ -362,7 +403,7 @@ timeout 5 sh -c ': >"$1"' sh "$index_hold" || {
 	printf 'The launcher never asked for the held application index\n' >&2
 	exit 1
 }
-ln -sfn "$repo/scripts" "$data_home/checkout/scripts"
+ln -sfn "$helpers" "$data_home/checkout/scripts"
 i=0
 while [ "$i" -lt 100 ]; do
 	[ -f "$smoke_marker" ] && break
@@ -400,7 +441,7 @@ timeout 5 sh -c ': >"$1"' sh "$index_hold" || {
 	printf 'The launcher never asked for the held application index\n' >&2
 	exit 1
 }
-ln -sfn "$repo/scripts" "$data_home/checkout/scripts"
+ln -sfn "$helpers" "$data_home/checkout/scripts"
 # Until the index loads, or the launcher closes: a launch closes it, and
 # closing clears the index again.
 i=0
@@ -419,5 +460,11 @@ fi
 	exit 1
 }
 launcher_ipc close >/dev/null
+
+test_stage='checking that no session hook ran'
+grep -Fq 'has no executable autostart.sh' "$work/dwm.log" ||
+	fail "dwm did not report skipping autostart.sh: $(grep -F autostart "$work/dwm.log")"
+[ ! -s "$session_started" ] ||
+	fail "session helpers started during the smoke test: $(tr '\n' ' ' <"$session_started")"
 
 printf 'Desktop smoke: dwm build, Quickshell panel, launcher hotkey, application launch, Enter before the index loads, and no stale Enter after reopening: PASS\n'
