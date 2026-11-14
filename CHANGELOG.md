@@ -53,6 +53,20 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the report, so one place's weather is never shown for another. There is no
   extra request or retry. `make check-quickshell-weather-retain-xvfb` covers
   success then failure, failure only, a location change, and off and on.
+- The desktop smoke test no longer starts the session (#502, upstream
+  dwm-titus #429). It linked the whole `scripts/` directory as dwm's
+  `LYONA_DEV_SCRIPTS`, so dwm ran the real `autostart.sh`, which started
+  light-locker, `xfconfd` and the other session helpers inside the test's
+  Xvfb, and `autostop.sh` as it stopped. The test now links each helper
+  except those two hooks and uses its own empty `XDG_CONFIG_DIRS`. It fails
+  before dwm starts if a hook is exposed, here or beside dwm's binary, and it
+  checks that dwm skipped `autostart.sh` and that no stand-in for
+  light-locker, `xss-lock` or `xfconfd` ran. The panel, the hotkeys and the
+  launch still use the real helpers.
+- The input hotplug test no longer fails on a busy machine (#501, upstream
+  dwm-titus #396). Its settle window was 0.15 s against a 0.12 s gap between
+  the fake `add` and `change` events, and an overrun applied the settings
+  twice. The window is now 0.5 s. The helper is unchanged.
 - A local ISO build run with `sudo` records its commit again (#478). As root
   on a checkout the user owns, git refused to read the repository ("dubious
   ownership"), and the image's `/etc/lyona-iso-release` and the installed
