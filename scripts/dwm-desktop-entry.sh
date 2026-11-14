@@ -100,7 +100,8 @@ desktop_entries_read() {
 desktop_entry_get() {
 	local file=$1 key=$2 group=${3:-Desktop Entry} size
 	[[ -f $file && -r $file ]] || return 1
-	size=$(stat -c %s -- "$file" 2>/dev/null) || return 2
+	# The size of the file a symlinked entry points to, not of the link (#476).
+	size=$(stat -L -c %s -- "$file" 2>/dev/null) || return 2
 	((size <= DESKTOP_ENTRY_MAX_BYTES)) || return 2
 	[[ $file != *[$'\t\n']* ]] || return 2
 	desktop_entries_read "$group" "$file" | LC_ALL=C awk -F '\t' -v want="$key" '

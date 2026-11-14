@@ -40,6 +40,17 @@ A write does not always mean a change: dwm writes `_DWM_LAYOUT`,
 `_DWM_MONITOR_WINDOWS` and `_DWM_FULLSCREEN_MONITORS` only when they change, but may write the others again
 with the same value, so a reader compares before acting.
 
+### Read by Settings, not the state bridge
+
+The state bridge does not watch this property: Settings > Appearance > Layout
+reads it through `dwm-layout-settings watch` only while that section is open
+(#479). Changes go the other way through the user's `layout.toml`, which dwm
+reloads; there is no request property.
+
+| Property | Type | Written by dwm when | Value |
+| --- | --- | --- | --- |
+| `_DWM_LAYOUT_SETTINGS` | `CARDINAL`, 5 | the selected monitor, its tag, or that tag's master size, master count or gap changes; only when a value changes | the logical monitor index (as `_DWM_SELECTED_MONITOR`), the tag 1-9 (0 while several tags are shown), the master size in percent (5-95), the master count and the tile gap in pixels |
+
 ### Requests from the shell
 
 | Property | Type | Set by | Effect |

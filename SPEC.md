@@ -127,6 +127,10 @@ The supported runtime files are:
 - `hotkeys.toml`
 - `themes.toml`
 - `window-rules.toml`
+- `layout.toml`: the per-monitor, per-tag master size, master count and tile
+  gap, written by Settings > Appearance > Layout (#479) and editable by hand.
+  The shipped default has no entries, so tiling is unchanged until the user
+  sets a value.
 
 Changes to these files must reload without restarting dwm when the existing
 inotify-based hot reload path is available. Invalid configuration must produce
