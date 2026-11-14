@@ -19,12 +19,29 @@ Rectangle {
         : workspaceMouse.containsMouse ? Theme.controlHoverBorder : Theme.transparent
     border.width: selected || workspaceMouse.containsMouse ? Theme.pillBorderWidth : 0
 
+    // The label's colour in each state, which the theme contrast check holds
+    // to 4.5:1 on that state's surface; the occupied marker shares it.
+    readonly property color foreground: root.selected ? Theme.controlSelectedText
+        : workspaceMouse.containsMouse ? Theme.controlHoverText : Theme.textMuted
+
+    // A tag with windows (#474, upstream dwm-titus #395): a small square in
+    // the top-left corner, as stock dwm's bar draws it.
+    Rectangle {
+        objectName: "occupiedMarker"
+        visible: root.occupied
+        x: Theme.dp(3)
+        y: Theme.dp(3)
+        width: Theme.dp(4)
+        height: width
+        radius: Math.max(1, Theme.dp(1))
+        color: root.foreground
+    }
+
     Text {
         textFormat: Text.PlainText
         anchors.centerIn: parent
         text: root.label
-        color: root.selected ? Theme.controlSelectedText
-            : workspaceMouse.containsMouse ? Theme.controlHoverText : Theme.textMuted
+        color: root.foreground
         font.family: Theme.fontFamily
         font.pixelSize: Theme.panelFontSize
         font.bold: root.selected

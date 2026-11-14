@@ -18,6 +18,10 @@ Scope {
     property string panelText: ""
     property string settingsText: ""
     property double timestamp: 0
+    // Seconds in the panel clock (#472), from Settings. Only then does the
+    // clock tick every second; otherwise it keeps its once-a-minute cadence.
+    property bool showSeconds: false
+    readonly property bool ticksEverySecond: source.precision === SystemClock.Seconds
 
     function refreshDisplay() {
         if (!root.initialized) return;
@@ -25,7 +29,7 @@ Scope {
         // retains local wall-clock fields that Qt can reinterpret in a new zone.
         // Reassigning an equal date alone also cannot notify text bindings.
         const current = new Date(root.timestamp);
-        root.panelText = Qt.formatDateTime(current, "ddd dd MMM - HH:mm");
+        root.panelText = Qt.formatDateTime(current, root.showSeconds ? "ddd dd MMM - HH:mm:ss" : "ddd dd MMM - HH:mm");
         root.settingsText = Qt.formatDateTime(current, "dddd, dd MMMM yyyy - HH:mm t");
     }
 
@@ -40,6 +44,11 @@ Scope {
     }
 
     onTimezoneStateChanged: root.refreshTimezone()
+    onShowSecondsChanged: {
+        if (!root.initialized) return;
+        root.timestamp = source.date.getTime();
+        root.refreshDisplay();
+    }
     Component.onCompleted: {
         root.timestamp = source.date.getTime();
         root.initialized = true;
@@ -49,7 +58,8 @@ Scope {
 
     SystemClock {
         id: source
-        precision: SystemClock.Minutes
+        objectName: "clockSource"
+        precision: root.showSeconds ? SystemClock.Seconds : SystemClock.Minutes
         onDateChanged: {
             if (root.initialized) {
                 root.timestamp = source.date.getTime();

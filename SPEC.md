@@ -106,6 +106,9 @@ The installed session must provide:
 - EWMH desktop and active-window integration for external bars and tools.
   dwm's own root properties for the managed shell, and the DPI state file, are
   specified in `docs/SHELL-STATE-PROTOCOL.md`.
+- The active keyboard layout (XKB group) published on the root window and
+  switchable by request (#470), through libX11's XKB alone; without XKB, dwm
+  runs as before and publishes nothing.
 - Xinerama multi-monitor support.
 - Window swallowing.
 - Per-client size factors and stack reordering.
@@ -945,7 +948,12 @@ configuration and unrelated application configuration by default.
   inspection tools.
 - Each Quickshell panel must show only the tags owned by its monitor, using the
   `_DWM_MONITOR_DESKTOPS` root property to match screen geometry with dwm's
-  logical monitor order and current tag.
+  logical monitor order and current tag, and mark the tags that have windows
+  (#474).
+- With two or more keyboard layouts, the panel shows the active one and a click
+  switches to the next (#470); its panel widget switch hides it. The clock
+  shows seconds only when the user turns that on (#472), and only then updates
+  every second.
 - Defaults should work at 1080p and remain usable at lower and higher
   resolutions.
 - Installation output must be readable in both interactive terminals and logs.

@@ -26,8 +26,11 @@ Scope {
         "network": true,
         "power": true,
         "calendar": true,
-        "weather": false
+        "weather": false,
+        "keyboard": true
     })
+    // Options, which are not widgets (#472): the clock shows seconds.
+    property bool clockSeconds: false
     readonly property string configHome: Xdg.configHome
     readonly property string configPath: root.configHome + "/lyona/panel-widgets.conf"
     readonly property bool mutationReady: root.providerState !== "unavailable"
@@ -40,12 +43,19 @@ Scope {
         // Sync Sprint 12 S12-20: the clock's month calendar, and the weather,
         // which is off until turned on (decision D-19).
         { "id": "calendar", "label": "Calendar" },
-        { "id": "weather", "label": "Weather" }
+        { "id": "weather", "label": "Weather" },
+        // #470: shown only with two or more keyboard layouts.
+        { "id": "keyboard", "label": "Keyboard layout" }
     ]
 
     function validWidget(id) {
         return id === "workspaces" || id === "volume" || id === "bluetooth"
-            || id === "network" || id === "power" || id === "calendar" || id === "weather";
+            || id === "network" || id === "power" || id === "calendar" || id === "weather"
+            || id === "keyboard";
+    }
+
+    function validOption(id) {
+        return id === "clock-seconds";
     }
 
     function widgetEnabled(id) {
@@ -61,8 +71,10 @@ Scope {
             "network": true,
             "power": true,
             "calendar": true,
-            "weather": false
+            "weather": false,
+            "keyboard": true
         });
+        root.clockSeconds = false;
     }
 
     function refresh() {
@@ -71,34 +83,40 @@ Scope {
         });
     }
 
+    // The header, the state, a widget line for each widget, option lines (1.1,
+    // #472) and the end; a record of a kind or name this does not know is
+    // skipped, as Protocol.js says, so a later minor version still reads.
     function parseStatus(text) {
         const lines = text.trim().split("\n");
-        const count = root.widgets.length;
-        if (lines.length !== count + 3 || !Protocol.isHeader(lines[0].split("\t"), "panel-settings-protocol", 1)
-                || lines[count + 2] !== "complete\tstatus") return;
+        if (lines.length < 3 || !Protocol.isHeader(lines[0].split("\t"), "panel-settings-protocol", 1)
+                || lines[lines.length - 1] !== "complete\tstatus") return;
         const state = lines[1].split("\t");
         if (state.length !== 3 || state[0] !== "state"
                 || ["available", "defaults", "partial", "unavailable"].indexOf(state[1]) < 0)
             return;
         const parsed = {};
-        for (let index = 2; index < count + 2; index++) {
+        const options = {};
+        for (let index = 2; index < lines.length - 1; index++) {
             const fields = lines[index].split("\t");
-            if (fields.length !== 3 || fields[0] !== "widget" || !root.validWidget(fields[1])
-                    || (fields[2] !== "enabled" && fields[2] !== "disabled")
-                    || parsed[fields[1]] !== undefined) return;
-            parsed[fields[1]] = fields[2] === "enabled";
+            if (fields.length !== 3 || (fields[0] !== "widget" && fields[0] !== "option")) continue;
+            const known = fields[0] === "widget" ? root.validWidget(fields[1]) : root.validOption(fields[1]);
+            const seen = fields[0] === "widget" ? parsed : options;
+            if (!known) continue;
+            if ((fields[2] !== "enabled" && fields[2] !== "disabled") || seen[fields[1]] !== undefined) return;
+            seen[fields[1]] = fields[2] === "enabled";
         }
         for (const widget of root.widgets) {
             if (parsed[widget.id] === undefined) return;
         }
         root.values = parsed;
+        root.clockSeconds = options["clock-seconds"] === true;
         root.providerState = state[1];
         root.providerDetail = state[2];
         root.statusParsed = true;
     }
 
     function setWidget(id, enabled) {
-        if (!root.validWidget(id) || root.busy || !root.mutationReady) return;
+        if ((!root.validWidget(id) && !root.validOption(id)) || root.busy || !root.mutationReady) return;
         root.busy = true;
         root.pendingWidget = id;
         root.pendingValue = enabled ? "enabled" : "disabled";

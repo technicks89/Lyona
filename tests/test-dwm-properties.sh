@@ -62,6 +62,8 @@ declare -A root_line=(
 	[_DWM_MONITOR_WINDOWS]='_DWM_MONITOR_WINDOWS(WINDOW): window id # 0xa00001, 0x0'
 	[_DWM_LAYOUT]='_DWM_LAYOUT(CARDINAL) = 2'
 	[_DWM_FULLSCREEN_MONITORS]='_DWM_FULLSCREEN_MONITORS(CARDINAL) = 5'
+	[_DWM_KEYBOARD_GROUP]='_DWM_KEYBOARD_GROUP(CARDINAL) = 1, 2'
+	[_DWM_KEYBOARD_SYMBOLS]='_DWM_KEYBOARD_SYMBOLS(UTF8_STRING) = "pc+us+de:2+inet(evdev)"'
 )
 declare -A state_line=(
 	[_DWM_MONITOR_DESKTOPS]='monitor_desktops=0,0,1280,800,4'
@@ -69,6 +71,8 @@ declare -A state_line=(
 	[_DWM_MONITOR_WINDOWS]='monitor_windows=0xa00001|'
 	[_DWM_LAYOUT]='layout=2'
 	[_DWM_FULLSCREEN_MONITORS]='fullscreen_monitors=5'
+	[_DWM_KEYBOARD_GROUP]='keyboard_group=1|2'
+	[_DWM_KEYBOARD_SYMBOLS]='keyboard_layouts=US|DE'
 )
 mkdir -p "$work/bin"
 {

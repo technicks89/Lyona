@@ -19,7 +19,8 @@ Scope {
         "Network": "network",
         "Power": "power",
         "Calendar": "calendar",
-        "Weather": "weather"
+        "Weather": "weather",
+        "Keyboard": "keyboard"
     })
     readonly property bool showVolumeWidget: root.panelSettingsModel
         ? root.panelSettingsModel.widgetEnabled("volume") : true

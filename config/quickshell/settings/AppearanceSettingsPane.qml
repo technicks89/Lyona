@@ -1062,6 +1062,38 @@ Flickable {
             }
         }
 
+        // Not a widget, but saved with them (#472): seconds in the panel clock.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 48
+            color: Theme.controlNormalFill
+            border.color: Theme.controlNormalBorder
+            border.width: Theme.controlBorderWidth
+            radius: Theme.controlRadius
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.spacingLg
+                anchors.rightMargin: Theme.spacingLg
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: "Show seconds in the clock"
+                    color: Theme.menuText
+                }
+
+                PanelToggleSwitch {
+                    checked: root.panelSettingsModel.clockSeconds
+                    busy: root.panelSettingsModel.busy
+                    enabled: root.panelSettingsModel.mutationReady
+                    accessibleName: "Show seconds in the clock"
+                    accessibleDescription: "The panel clock shows seconds and updates every second"
+                    onToggled: root.panelSettingsModel.setWidget("clock-seconds",
+                        !root.panelSettingsModel.clockSeconds)
+                }
+            }
+        }
+
         RowLayout {
             Layout.fillWidth: true
 

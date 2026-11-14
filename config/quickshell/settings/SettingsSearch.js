@@ -32,7 +32,7 @@ var sections = [
             "gtk", "qt", "dark", "notifications", "do not disturb", "panel", "bar", "widgets",
             "weather", "location", "city", "temperature", "contrast", "reduced motion",
             "compositor", "picom", "transparency", "corners", "layout", "tile", "monocle",
-            "master", "gaps", "gap"] },
+            "master", "gaps", "gap", "clock", "seconds"] },
     { "id": "system", "label": "System", "description": "Health and administration",
         "keywords": ["update", "upgrade", "packages", "flatpak", "lyona", "rollback", "backup",
             "timezone", "time", "locale", "language", "accounts", "password", "printers",

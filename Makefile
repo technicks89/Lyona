@@ -860,6 +860,14 @@ check-layout-settings-xvfb: all
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
+# The panel's view of dwm through the state bridge on Xvfb: occupied tags
+# (#474) and the keyboard layout dwm publishes and switches (#470).
+.PHONY: check-panel-state-xvfb
+check-panel-state-xvfb: all
+	status=0; tests/test-panel-state-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
 # Sync Sprint 12 S12-07: the parent-bound watchdog does not poll, and the network
 # and media watchers in the QML models neither drop changes nor respawn forever.
 .PHONY: check-dwm-watchdog check-quickshell-watchers-xvfb check-quickshell-idle-watchers-xvfb
@@ -1172,6 +1180,11 @@ check-quickshell-weather-retain-xvfb:
 .PHONY: check-quickshell-scrolling-title-xvfb
 check-quickshell-scrolling-title-xvfb:
 	@tests/test-quickshell-scrolling-title-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+# The occupied marker, clock seconds and keyboard layout pill (#474, #472, #470).
+.PHONY: check-quickshell-panel-widgets-xvfb
+check-quickshell-panel-widgets-xvfb:
+	@tests/test-quickshell-panel-widgets-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 .PHONY: check-settings-display-security
 check-settings-display-security:
@@ -1749,6 +1762,7 @@ check:
 	$(MAKE) check-quickshell-queued-run-xvfb
 	$(MAKE) check-quickshell-weather-retain-xvfb
 	$(MAKE) check-quickshell-scrolling-title-xvfb
+	$(MAKE) check-quickshell-panel-widgets-xvfb
 	$(MAKE) check-quickshell-update-model
 	$(MAKE) check-quickshell-appearance-model
 	$(MAKE) check-quickshell-settings-loading
@@ -1760,6 +1774,7 @@ check:
 	$(MAKE) check-xvfb-runtime
 	$(MAKE) check-layout-settings
 	$(MAKE) check-layout-settings-xvfb
+	$(MAKE) check-panel-state-xvfb
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser

@@ -53,10 +53,17 @@ paired device, and disconnect a connected device through `bluetoothctl`.
 ## Panel Widgets
 
 The Bar Widgets page can show or hide the workspace, volume, Bluetooth,
-network, power, calendar and weather widgets. Those choices are stored in the
-project-owned `~/.config/lyona/panel-widgets.conf` state and apply to every
-monitor and future Quickshell session. Settings Appearance exposes the same
-shared controls and can restore the defaults: everything on except the weather.
+network, power, calendar, weather and keyboard layout widgets. Those choices
+are stored in the project-owned `~/.config/lyona/panel-widgets.conf` state and
+apply to every monitor and future Quickshell session. Settings Appearance
+exposes the same shared controls, and **Show seconds in the clock**, and can
+restore the defaults: everything on except the weather, and no seconds.
+
+- **Workspaces:** a small square in a tag's corner means it has windows.
+- **Keyboard layout:** shown only with two or more layouts (for example after
+  `setxkbmap -layout us,de`): it names the active one (US, DE), and a click
+  switches to the next. Quick clicks each step one layout.
+- **Seconds:** off by default; on, the clock updates every second.
 
 ### Calendar
 
