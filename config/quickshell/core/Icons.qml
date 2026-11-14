@@ -1,9 +1,127 @@
 pragma Singleton
 
+import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.core
 
 Singleton {
+    id: root
+
+    // A window class's desktop-entry icon (#498, upstream dwm-titus #426):
+    // class -> the entry's Icon= value, "" when no entry matches. Asked of the
+    // launcher helper only for a class with no themed icon, a batch at a time,
+    // and kept for the session. Shared by every panel, so one screen or five
+    // ask once, and nothing is read while no new class appears.
+    property var desktopIcons: ({})
+    // Read by windowIcon, so its callers bind again when an answer arrives.
+    property int desktopIconRevision: 0
+    // The classes waiting for a lookup, and those the running one asks for.
+    // A plain object, not properties: windowIcon queues from inside its
+    // callers' bindings, and a property read and written there is a loop.
+    readonly property var iconLookup: ({ pending: [], asked: [] })
+
+    // The icon for a window: its class as a themed icon name, else its desktop
+    // entry's icon, else launcherIcon's fallbacks. A class not yet looked up
+    // shows the fallback until the answer arrives.
+    function windowIcon(appClass) {
+        const windowClass = appClass || "";
+        void root.desktopIconRevision;
+        if (windowClass.length > 0 && Quickshell.hasThemeIcon(windowClass)) {
+            return Quickshell.iconPath(windowClass);
+        }
+        if (validIconClass(windowClass)) {
+            if (Object.prototype.hasOwnProperty.call(root.desktopIcons, windowClass)) {
+                const entryIcon = entryIconSource(root.desktopIcons[windowClass]);
+                if (entryIcon.length > 0) {
+                    return entryIcon;
+                }
+            } else {
+                requestDesktopIcon(windowClass);
+            }
+        }
+        return launcherIcon("");
+    }
+
+    // What the helper accepts: one field, bounded.
+    function validIconClass(windowClass) {
+        return windowClass.length > 0 && windowClass.length <= 256 && !/[\t\n]/.test(windowClass);
+    }
+
+    // An entry's Icon= is a themed name or an absolute file.
+    function entryIconSource(value) {
+        if (value.length === 0) {
+            return "";
+        }
+        if (value.charAt(0) === "/") {
+            return looksLikeIconFilePath(value) ? "file://" + value : "";
+        }
+        return Quickshell.hasThemeIcon(value) ? Quickshell.iconPath(value) : "";
+    }
+
+    function requestDesktopIcon(windowClass) {
+        const lookup = root.iconLookup;
+        if (lookup.pending.indexOf(windowClass) >= 0 || lookup.asked.indexOf(windowClass) >= 0) {
+            return;
+        }
+        lookup.pending.push(windowClass);
+        // Not from inside the caller's binding: the classes that ask in the
+        // same pass go in one batch.
+        Qt.callLater(root.startDesktopIconLookup);
+    }
+
+    // One lookup at a time; classes that ask meanwhile wait for the next.
+    function startDesktopIconLookup() {
+        const lookup = root.iconLookup;
+        if (desktopIconProcess.running || lookup.pending.length === 0) {
+            return;
+        }
+        lookup.asked = lookup.pending;
+        lookup.pending = [];
+        desktopIconProcess.command = Commands.launcherHelperCommand("icons-for", lookup.asked);
+        desktopIconProcess.running = true;
+    }
+
+    // Every asked class gets an answer, "" when the helper gave none or
+    // failed, so a missing helper is not asked again on every binding.
+    function finishDesktopIconLookup(output) {
+        const lookup = root.iconLookup;
+        const icons = Object.assign({}, root.desktopIcons);
+        for (const windowClass of lookup.asked) {
+            icons[windowClass] = "";
+        }
+        for (const line of (output || "").split("\n")) {
+            const tab = line.indexOf("\t");
+            if (tab <= 0) {
+                continue;
+            }
+            const windowClass = line.slice(0, tab);
+            if (lookup.asked.indexOf(windowClass) >= 0) {
+                icons[windowClass] = line.slice(tab + 1);
+            }
+        }
+        lookup.asked = [];
+        root.desktopIcons = icons;
+        root.desktopIconRevision++;
+        if (lookup.pending.length > 0) {
+            Qt.callLater(root.startDesktopIconLookup);
+        }
+    }
+
+    Process {
+        id: desktopIconProcess
+
+        command: ["sh", "-c", "exit 0"]
+        running: false
+
+        // The pipe closes when the helper ends, however it ends: a failed
+        // lookup finishes with whatever it printed, and every class it did
+        // not answer is recorded as having no entry icon.
+        stdout: StdioCollector {
+            onStreamFinished: root.finishDesktopIconLookup(this.text)
+        }
+    }
+
     // The themed icon for iconName, else the generic application icon, else ""
     // when the theme has neither: a window class is often not an icon name, and
     // the generic one is missing from some themes, where it drew Qt's
