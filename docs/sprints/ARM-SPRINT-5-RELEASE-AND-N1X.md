@@ -10,8 +10,10 @@ contract, is written 2026-11-12 from the evidence on file
 ([evidence](../evidence/arm5-03-support-contract.md)), ahead of ARM5-02, whose
 run falls after the merge. ARM5-04, the user documentation and the bug report
 form, is written 2026-11-12 ([evidence](../evidence/arm5-04-user-docs.md)).
-What is left falls after the merge, in Lyona: ARM5-01's release run and
-ARM5-02. **Amended 2026-10-27, by the
+ARM5-01's release run is done in Lyona (#489): `v2026.11.0-beta.1`, published
+2026-11-13 with the x86_64, generic aarch64 and Pi images, each checksummed
+and signed ([evidence](../evidence/arm5-01-release-workflow.md#the-release-run-in-lyona-2026-11-13)).
+What is left is ARM5-02 (#490). **Amended 2026-10-27, by the
 maintainer:** ARM5-01's release run happens in Lyona after the merge
 ([`ARM64.md`](ARM64.md#end-state)), as Lyona-ARM has no releases. GitHub: issues #18 to #21, and
 #62 for the deferred ARM5-05

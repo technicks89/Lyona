@@ -8,6 +8,37 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- The release workflow for ARM images is done (ARM5-01, #489): the release run
+  in Lyona published `v2026.11.0-beta.1` on 2026-11-13 with the x86_64 ISO,
+  the generic aarch64 ISO and the Raspberry Pi image, built from the same
+  commit (db24732), each checksummed in `SHA256SUMS` and signed, with the
+  `architecture-x86_64` and `architecture-aarch64` markers. The aarch64 jobs
+  ran on GitHub's arm64 runner (the aarch64 ISO in 9 minutes, the Pi image in
+  10). This replaces the 2026.11.0-beta.1 entry's statements that the aarch64
+  jobs had not run and no release had been made.
+  `docs/evidence/arm5-01-release-workflow.md` records the three runs, the
+  published assets and their checks, a real `lyona-update apply` to the
+  release on an x86_64 desktop and on the XPS 13 9345, and fresh installs from
+  the release's x86_64 ISO (QEMU/KVM, UEFI, 48/48 desktop checks) and aarch64
+  ISO (XPS 13 9345). Not tested: an install of the release's Raspberry Pi
+  image or of its aarch64 ISO in a virtual machine, real x86_64 hardware, a
+  `cosign` check of each image (only the source archive's signature, as
+  `lyona-update` checks it), and any rollback (ARM5-02, #490).
+
+### Fixed
+
+- The aarch64 release jobs no longer fail in seconds (#493):
+  `scripts/ci-release-aarch64.sh` ran `git config` before installing git. The
+  tools it installs in the Arch Linux ARM container are now the
+  `arch:release-host-iso` and `arch:release-host-rpi` profiles of the shared
+  dependency map, checked by `tests/test-ci-release-aarch64.sh`.
+- A release no longer fails at its architecture markers (#494): GitHub refuses
+  an empty upload (`HTTP 400: Bad Content-Length`), so each
+  `lyona-VERSION-architecture-ARCH` asset now holds its architecture's name
+  instead of being empty. `lyona-update` still reads only the names.
+
 ## [2026.11.0-beta.1] - 2026-11-13
 
 Ninth beta of the Arch Linux line, and the first for aarch64 (the ARM64
