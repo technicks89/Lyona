@@ -157,15 +157,15 @@ PanelWindow {
                         Layout.preferredHeight: Theme.pillHeight
                         outlined: true
 
-                        UiText {
+                        // A title too long for the pill scrolls once when it
+                        // changes, then rests elided (#499).
+                        ScrollingTitle {
                             id: activeTitle
                             anchors.fill: parent
                             anchors.leftMargin: Theme.pillHorizontalPadding
                             anchors.rightMargin: Theme.pillHorizontalPadding
                             text: root.state.titleForScreen(root.screen)
                             color: Theme.text
-                            elide: Text.ElideRight
-                            verticalAlignment: Text.AlignVCenter
                         }
                     }
 
@@ -223,7 +223,8 @@ PanelWindow {
 
                     anchors.centerIn: parent
                     text: root.weatherModel ? root.weatherModel.panelText : ""
-                    color: Theme.textStrong
+                    // Subdued while it shows the last good report (#480).
+                    color: root.weatherModel && root.weatherModel.stale ? Theme.textMuted : Theme.textStrong
                 }
 
                 MouseArea {

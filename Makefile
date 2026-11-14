@@ -1150,6 +1150,16 @@ check-quickshell-defaults-model:
 check-quickshell-queued-run-xvfb:
 	@tests/test-quickshell-queued-run-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
+# A failed weather refresh keeps the last good report, marked stale (#480).
+.PHONY: check-quickshell-weather-retain-xvfb
+check-quickshell-weather-retain-xvfb:
+	@tests/test-quickshell-weather-retain-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+# A long panel title scrolls once per change, then rests (#499).
+.PHONY: check-quickshell-scrolling-title-xvfb
+check-quickshell-scrolling-title-xvfb:
+	@tests/test-quickshell-scrolling-title-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 .PHONY: check-settings-display-security
 check-settings-display-security:
 	@tests/test-settings-display-security.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
@@ -1724,6 +1734,8 @@ check:
 	$(MAKE) check-quickshell-session-actions
 	$(MAKE) check-quickshell-defaults-model
 	$(MAKE) check-quickshell-queued-run-xvfb
+	$(MAKE) check-quickshell-weather-retain-xvfb
+	$(MAKE) check-quickshell-scrolling-title-xvfb
 	$(MAKE) check-quickshell-update-model
 	$(MAKE) check-quickshell-appearance-model
 	$(MAKE) check-quickshell-settings-loading

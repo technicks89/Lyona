@@ -24,7 +24,7 @@ Rectangle {
         anchors.centerIn: parent
         width: Theme.trayIconSize
         height: Theme.trayIconSize
-        source: Icons.launcherIcon(root.app.appClass)
+        source: Icons.windowIcon(root.app.appClass)
         visible: source.toString().length > 0
     }
 

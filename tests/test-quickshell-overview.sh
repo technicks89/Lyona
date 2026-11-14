@@ -40,7 +40,8 @@ grep -Fq 'root.overviewModel.dwmState.focusWindow(windowId)' "$overview/WindowOv
 grep -Fq 'root.overviewModel.close()' "$overview/WindowOverview.qml"
 grep -Fq 'signal focusRequested(string windowId)' "$overview/OverviewCard.qml"
 grep -Fq 'onFocusRequested: windowId =>' "$overview/WindowOverview.qml"
-grep -Fq 'source: Icons.launcherIcon(root.window.appClass)' "$overview/OverviewCard.qml"
+# A card's icon is the window's: its class, else its desktop entry's (#498).
+grep -Fq 'source: Icons.windowIcon(root.window.appClass)' "$overview/OverviewCard.qml"
 
 # The model is thin glue over DwmStateWindows.js's own groupByTag(): no
 # per-window resolution math duplicated here. And it must read the property

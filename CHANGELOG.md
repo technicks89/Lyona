@@ -10,6 +10,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Long window titles scroll in the panel (#499, upstream dwm-titus #393). A
+  title too long for its pill scrolls across once after it changes, pauses at
+  the end, then rests at its start, elided as before. A title that fits does
+  not move, nothing runs while it rests, and with reduced motion it never
+  moves. The scroll is `core/ScrollingTitle.qml`, checked by
+  `make check-quickshell-scrolling-title-xvfb`.
 - The release workflow for ARM images is done (ARM5-01, #489): the release run
   in Lyona published `v2026.11.0-beta.1` on 2026-11-13 with the x86_64 ISO,
   the generic aarch64 ISO and the Raspberry Pi image, built from the same
@@ -29,6 +35,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Running-app buttons show the application's icon when its window class is
+  not an icon name (#498, upstream dwm-titus #426). For example, Zed's class
+  `dev.zed.Zed` showed a letter where its desktop entry names the icon `zed`.
+  The panel and the window overview now fall back to the matching desktop
+  entry's `Icon=`, looked up by `dwm-quickshell-launcher icons-for`. It
+  matches the desktop-file id, then `StartupWMClass`, then either one ignoring
+  case, then a reverse-DNS class's last part. Unlike upstream, which keeps
+  Quickshell's whole desktop-entry index in memory, the shell asks only for a
+  class with no themed icon, in one batch, and keeps the answer for the
+  session.
+- The weather widget keeps its last report when a refresh fails (#480,
+  upstream dwm-titus #422). A failed refresh after a good one now keeps the
+  temperature, subdued in the panel, and the popup says when it was observed
+  and why it was not updated. "Unavailable" shows only when there is no
+  report. Changing the location or units, or turning the widget off, drops
+  the report, so one place's weather is never shown for another. There is no
+  extra request or retry. `make check-quickshell-weather-retain-xvfb` covers
+  success then failure, failure only, a location change, and off and on.
 - The desktop smoke test no longer starts the session (#502, upstream
   dwm-titus #429). It linked the whole `scripts/` directory as dwm's
   `LYONA_DEV_SCRIPTS`, so dwm ran the real `autostart.sh`, which started

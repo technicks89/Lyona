@@ -720,7 +720,7 @@ grep -Fq 'opacity: 1.0' "$repo/config/quickshell/core/ShellSurface.qml"
 grep -Fq 'opacity: 1.0' "$repo/config/quickshell/core/ClickAwayPopup.qml"
 grep -Fq 'RunningAppsArea { state: root.state }' "$repo/config/quickshell/panel/DwmPanel.qml"
 grep -Fq 'onFocusRequested: windowId => root.state.focusWindow(windowId)' "$repo/config/quickshell/panel/RunningAppsArea.qml"
-grep -Fq 'source: Icons.launcherIcon(root.app.appClass)' "$repo/config/quickshell/panel/RunningAppItem.qml"
+grep -Fq 'source: Icons.windowIcon(root.app.appClass)' "$repo/config/quickshell/panel/RunningAppItem.qml"
 # #280 VM: a class with no themed icon gets the generic one when the theme has it,
 # else its initial: never an empty button, nor Qt's missing-image checkerboard.
 grep -Fq 'Quickshell.hasThemeIcon(name)' "$repo/config/quickshell/core/Icons.qml"
