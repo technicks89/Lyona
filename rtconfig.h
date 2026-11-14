@@ -55,6 +55,11 @@ typedef struct {
 	int isterminal;
 	int noswallow;
 	int monitor;
+	/* #477: open fullscreen, or borderless windowed fullscreen (monitor-sized,
+	 * without _NET_WM_STATE_FULLSCREEN), and ignore the size hints. */
+	int fullscreen;
+	int fakefullscreen;
+	int ignoresizehints;
 } Rule;
 
 /* A function a binding may name in hotkeys.toml. */

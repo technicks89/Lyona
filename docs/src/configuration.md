@@ -49,6 +49,55 @@ omitted follows the current tag), `isfloating`, `isterminal`, `alwaysontop`,
 least one of `class`, `instance` or `title`; one with none would match every window,
 so dwm skips it and says so in its log.
 
+### Fullscreen and size hints
+
+Three keys help with games, whose launcher and game window often share a class:
+
+| Key | `1` means |
+| --- | --- |
+| `fullscreen` | The window opens in real fullscreen, as if it had asked for it. |
+| `fakefullscreen` | Borderless windowed fullscreen: the window covers the monitor, but is not told it is fullscreen (`_NET_WM_STATE_FULLSCREEN` stays off), and dwm keeps that size when the window asks for its old one. This is not the `Super+Shift+Y` fake fullscreen, where the window believes it is fullscreen and stays in its tile. |
+| `ignoresizehints` | dwm ignores the window's size hints (minimum, maximum, increments, aspect), so it fills its tile or the monitor exactly. |
+
+```toml
+{ class="steam_app_24200", tags=4, monitor=0 },
+{ class="steam_app_24200", title="DC Universe Online [DCUOT.", fakefullscreen=1, ignoresizehints=1 },
+```
+
+A title is often published only after the window opens. When it arrives, the
+rules are matched again: `fullscreen` or `fakefullscreen` applies then, once per
+window, so it never undoes your own fullscreen toggle later. For
+`ignoresizehints`, the last matching rule wins, a class-only one included. A
+transient window (a dialog) follows its parent and ignores the fullscreen keys.
+`Super+Shift+Y` takes a window out of `fakefullscreen`, back to its tile.
+
+### Overlays above fullscreen games
+
+Some game helpers draw overlays as unmanaged (override-redirect) windows, which
+dwm does not place, tag or focus. For those, `alwaysontop=1` is the one key that
+applies, and it raises the overlay above real fullscreen windows too, without
+moving it or giving it focus. The shipped rules include WFHelper's Relic Rewards
+toolbar for Warframe:
+
+```toml
+{ class="wfhelper", title="WFHelper Relic Rewards", alwaysontop=1 },
+```
+
+To find an overlay's details, run `xwininfo` and click it (`Override Redirect
+State: yes` means unmanaged), then `xprop -id 0xWINDOW_ID WM_CLASS WM_NAME
+_NET_WM_NAME`. Prefer a rule with both class and title, so the application's
+other windows are not raised. The last matching rule wins, and a matching rule
+without `alwaysontop` sets it back to 0. These rules apply on save, to overlays
+already open too.
+
+For a managed window, `alwaysontop=1` still floats it above normal windows and
+below real fullscreen ones, as before.
+
+An existing `window-rules.toml` is not changed by an update: add the WFHelper
+rule to yours if you want it. The new keys need the new dwm, so log out and back
+in once after updating; a configuration reload cannot replace the running
+program.
+
 ---
 
 ## config.h (compile-time options)
