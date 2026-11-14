@@ -477,7 +477,7 @@ if grep -Fq $'candidate\tbrowser\tnodisplay-browser.desktop\t' <<<"$snapshot"; t
 	exit 1
 fi
 for rejected_id in hidden.desktop not-an-app.desktop chromium.desktop tryexec-stale.desktop duplicate.desktop \
-	oversized.desktop control.desktop linked-escaped.desktop linked-leaf.desktop st.desktop \
+	oversized.desktop control.desktop linked-escaped.desktop st.desktop \
 	hidden-image.desktop stale-image.desktop; do
 	if grep -Fq "$rejected_id" <<<"$snapshot"; then
 		printf 'Rejected desktop entry was emitted as a candidate: %s\n' "$rejected_id" >&2
@@ -485,6 +485,8 @@ for rejected_id in hidden.desktop not-an-app.desktop chromium.desktop tryexec-st
 	fi
 done
 grep -Fqx $'candidate\tbrowser\tvendor-nested.desktop\tNested Browser\tavailable\t\tInstalled desktop entry' <<<"$snapshot"
+# A symlinked entry file is read through its link (#476).
+grep -Fqx $'candidate\tbrowser\tlinked-leaf.desktop\tFirefox\tavailable\t\tInstalled desktop entry' <<<"$snapshot"
 
 # NoDisplay image handlers can be selected and restored without changing other defaults.
 image_defaults_before=$(sha256sum "$work/home/.config/mimeapps.list")
@@ -534,6 +536,67 @@ if grep -Fq escaped.desktop <<<"$symlink_root_snapshot"; then
 	printf 'Symlinked applications root was traversed\n' >&2
 	exit 1
 fi
+
+# #476 (upstream dwm-titus #414): Flatpak exports its desktop entries as
+# symlinks. Settings reads a symlinked entry file, read-only, through every
+# link in its target; its applications directory still holds no symlink. A
+# dangling or cyclic link is no entry and hides no lower-priority one; a real
+# Hidden=true entry still does; a target larger than the reader reads is
+# refused.
+flat=$work/symlink-leaves
+flat_app=$flat/flatpak/app/org.example.Flat/x86_64/stable/abc123/export/share/applications
+mkdir -p "$flat_app" "$flat/high/flatpak/exports/share/applications" \
+	"$flat/high/applications" "$flat/low/applications"
+# Flatpak's own layout: the user export directory, and "current" and
+# "active" symlinks in the target path.
+ln -s x86_64/stable/abc123 "$flat/flatpak/app/org.example.Flat/current"
+ln -s . "$flat/flatpak/app/org.example.Flat/x86_64/stable/abc123/active"
+write_browser_entry() { # FILE NAME [EXTRA]
+	printf '[Desktop Entry]\nType=Application\nName=%s\nCategories=Network;WebBrowser;\nMimeType=text/html;x-scheme-handler/http;\nExec=firefox %%u\n%s' \
+		"$2" "${3:-}" >"$1"
+}
+write_browser_entry "$flat_app/org.example.Flat.desktop" 'Flat Browser'
+ln -s "$flat/flatpak/app/org.example.Flat/current/active/export/share/applications/org.example.Flat.desktop" \
+	"$flat/high/flatpak/exports/share/applications/org.example.Flat.desktop"
+for id in dangle cycle masked; do
+	write_browser_entry "$flat/low/applications/$id-test.desktop" "Low $id"
+done
+ln -s "$flat/missing.desktop" "$flat/high/applications/dangle-test.desktop"
+ln -s cycle-test.desktop "$flat/high/applications/cycle-test.desktop"
+write_browser_entry "$flat/high/applications/masked-test.desktop" 'High masked' 'Hidden=true
+'
+write_browser_entry "$flat/big-target.desktop" 'Big Browser' \
+	"X-Padding=$(head -c 70000 /dev/zero | tr '\0' x)
+"
+ln -s "$flat/big-target.desktop" "$flat/high/applications/big-link.desktop"
+run_leaf_helper() {
+	env "${env_common[@]}" XDG_DATA_HOME="$flat/high" \
+		XDG_DATA_DIRS="$flat/low" "$BASH_BIN" "$HELPER" "$@"
+}
+# Bounded in time: a cyclic link must not hang the scan.
+leaf_snapshot=$(timeout 30 env "${env_common[@]}" XDG_DATA_HOME="$flat/high" \
+	XDG_DATA_DIRS="$flat/low" "$BASH_BIN" "$HELPER" snapshot)
+grep -Fqx $'candidate\tbrowser\torg.example.Flat.desktop\tFlat Browser\tavailable\t\tInstalled desktop entry' <<<"$leaf_snapshot"
+grep -Fqx $'candidate\tbrowser\tdangle-test.desktop\tLow dangle\tavailable\t\tInstalled desktop entry' <<<"$leaf_snapshot"
+grep -Fqx $'candidate\tbrowser\tcycle-test.desktop\tLow cycle\tavailable\t\tInstalled desktop entry' <<<"$leaf_snapshot"
+for rejected in masked-test.desktop big-link.desktop; do
+	if grep -Fq "$rejected" <<<"$leaf_snapshot"; then
+		printf '%s was offered as a candidate\n' "$rejected" >&2
+		exit 1
+	fi
+done
+# The Flatpak entry can be chosen; the defaults are put back after.
+cp -p "$work/home/.config/mimeapps.list" "$work/mimeapps.before-leaf"
+result=$(run_leaf_helper set-role browser org.example.Flat.desktop)
+[[ $result == $'defaults-result\t1\t0\tset-role\tbrowser\torg.example.Flat.desktop\tok' ]] || {
+	printf 'choosing the Flatpak entry answered: %s\n' "$result" >&2
+	exit 1
+}
+grep -Fqx 'x-scheme-handler/http=org.example.Flat.desktop' "$work/home/.config/mimeapps.list"
+expect_status 1 run_leaf_helper set-role browser big-link.desktop
+expect_status 1 run_leaf_helper set-role browser masked-test.desktop
+cp -p "$work/mimeapps.before-leaf" "$work/home/.config/mimeapps.list"
+rm -f "$work/mimeapps.before-leaf"
 
 run_helper browsers >"$work/browsers"
 grep -Fqx $'firefox.desktop\tFirefox' "$work/browsers"
@@ -676,7 +739,6 @@ expect_status 1 run_helper set-role browser duplicate.desktop
 expect_status 1 run_helper set-role browser oversized.desktop
 expect_status 1 run_helper set-role browser control.desktop
 expect_status 1 run_helper set-role browser linked-escaped.desktop
-expect_status 1 run_helper set-role browser linked-leaf.desktop
 [[ ! -s $work/log ]]
 
 mv "$work/home/.config/mimeapps.list" "$work/mimeapps.target"

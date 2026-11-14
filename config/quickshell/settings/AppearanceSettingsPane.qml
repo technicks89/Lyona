@@ -1000,6 +1000,13 @@ Flickable {
             }
         }
 
+        SectionLabel { label: "Layout" }
+
+        // The layout, master area and gap of the tag shown (#479).
+        LayoutSettingsSection {
+            Layout.fillWidth: true
+        }
+
         SectionLabel { label: "Panel widgets" }
 
         StatusCard {

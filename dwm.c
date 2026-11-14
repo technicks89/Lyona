@@ -83,7 +83,7 @@ enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
        NetWMWindowTypeMenu, NetWMWindowTypePopupMenu, NetWMWindowTypeDropdownMenu,
        NetWMWindowTypeCombo, NetWMWindowTypeDnd,
        NetClientList, NetDesktopNames, NetDesktopViewport, NetNumberOfDesktops, NetCurrentDesktop,
-       NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmMonitorWindows, NetDwmLayout, NetDwmSetLayout,
+       NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmMonitorWindows, NetDwmLayout, NetDwmSetLayout, NetDwmLayoutSettings,
        NetCloseWindow, NetWMStrut, NetWMStrutPartial, NetLast };
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast };
 typedef struct Client Client;
@@ -132,6 +132,8 @@ struct Monitor {
 	char ltsymbol[16];
 	float mfact;
 	int nmaster;
+	int gap; /* tile gap in pixels, for the current tag (#479) */
+	int layoutindex; /* logical index layout.toml was last applied for, -1 none (#479) */
 	int num;
 	int by, bh;
 	int tx, tw;
@@ -328,6 +330,9 @@ static void updatecurrentdesktop(void);
 static void updateselectedmonitor(void);
 static void updatelayoutprop(void);
 static void applylayoutrequest(void);
+static void applysavedlayouts(int force);
+static void updatelayoutsettingsprop(void);
+static int tilegap(Monitor *m, unsigned int n);
 
 static void managealtbar(Window win, XWindowAttributes *wa);
 static void strutchanged(Window win);
@@ -462,6 +467,7 @@ struct Pertag {
 	unsigned int curtag, prevtag;
 	int nmasters[LENGTH(tags) + 1];
 	float mfacts[LENGTH(tags) + 1];
+	int gaps[LENGTH(tags) + 1]; /* tile gaps, 0 by default (#479) */
 	unsigned int sellts[LENGTH(tags) + 1];
 	const Layout *ltidxs[LENGTH(tags) + 1][2];
 	int showbars[LENGTH(tags) + 1];
@@ -755,6 +761,7 @@ arrange(Monitor *m)
 		restack(m);
 	} else for (m = mons; m; m = m->next)
 		arrangemon(m);
+	updatelayoutsettingsprop();
 }
 
 void
@@ -1111,6 +1118,8 @@ configurenotify(XEvent *e)
 		if (updategeom() || dirty) {
 			selectedmonitorcachevalid = 0;
 			reconcilemonitortags();
+			/* A monitor that came back gets its saved layout (#479). */
+			applysavedlayouts(1);
 			drw_resize(drw, sw, bh);
 			// updatebars();
 			scanaltbars();
@@ -1237,6 +1246,7 @@ createmon(void)
 	m->lt[0] = &layouts[0];
 	m->lt[1] = &layouts[1 % LENGTH(layouts)];
 	copystr(m->ltsymbol, sizeof m->ltsymbol, layouts[0].symbol);
+	m->layoutindex = -1;
 	m->pertag = ecalloc(1, sizeof(Pertag));
 	m->pertag->curtag = m->pertag->prevtag = 1;
 
@@ -2787,7 +2797,7 @@ static int
 resizetiledmouse(const Arg *arg)
 {
 	int group_clients, index, n, opx, opy, px, py, horizcorner, vertcorner;
-	int horizontal_split;
+	int horizontal_split, gap;
 	float initial_cfact, group_facts;
 	unsigned int dui;
 	Window dummy;
@@ -2805,6 +2815,7 @@ resizetiledmouse(const Arg *arg)
 	}
 	if (index < 0)
 		return 0;
+	gap = tilegap(selmon, (unsigned int)n);
 	if (!XQueryPointer(dpy, c->win, &dummy, &dummy, &opx, &opy, &px, &py, &dui))
 		return 0;
 
@@ -2842,7 +2853,9 @@ resizetiledmouse(const Arg *arg)
 				continue;
 			lasttime = ev.xmotion.time;
 			if (horizontal_split) {
-				float f = (float)(ev.xmotion.x - selmon->wx) / (float)selmon->ww;
+				/* tile()'s master edge: wx + gap + (ww - 3 gap) * mfact. */
+				float f = (float)(ev.xmotion.x - selmon->wx - gap)
+					/ (float)(selmon->ww - 3 * gap);
 				if (f >= 0.05f && f <= 0.95f)
 					selmon->mfact = selmon->pertag->mfacts[selmon->pertag->curtag] = f;
 			}
@@ -3921,6 +3934,7 @@ reload_config(int applytheme)
 	if (runtime_config_load(&theme))
 		applyconfigtheme(&theme);
 	if (dpy) grabkeys();
+	if (dpy) applysavedlayouts(0);
 	if (dpy) refreshoverriderules();
 
 	if (applytheme) {
@@ -4105,6 +4119,7 @@ setup(void)
 	netatom[NetDwmMonitorWindows] = XInternAtom(dpy, "_DWM_MONITOR_WINDOWS", False);
 	netatom[NetDwmLayout] = XInternAtom(dpy, "_DWM_LAYOUT", False);
 	netatom[NetDwmSetLayout] = XInternAtom(dpy, "_DWM_SET_LAYOUT", False);
+	netatom[NetDwmLayoutSettings] = XInternAtom(dpy, "_DWM_LAYOUT_SETTINGS", False);
 	dwmfullscreenmonitorsatom = XInternAtom(dpy, "_DWM_FULLSCREEN_MONITORS", False);
 	dwmtagupdateatom = XInternAtom(dpy, "DWM_TAG_UPDATE", False);
 
@@ -4445,10 +4460,22 @@ getfacts(Monitor *m, int msize, int ssize, float *mf, float *sf, int *mr, int *s
 	*sr = ssize - stotal;
 }
 
+/* The gap tile() leaves around and between N tiled windows (#479, upstream
+ * dwm-titus #424): the tag's gap, bounded so many windows or a small monitor
+ * stay usable. resizetiledmouse() places the master edge with it too. */
+static int
+tilegap(Monitor *m, unsigned int n)
+{
+	int masters = MIN(n, (unsigned int)m->nmaster), stacks = n - masters;
+
+	return MIN(m->gap, MIN(m->ww / 8, m->wh / (2 * (MAX(masters, stacks) + 1))));
+}
+
 static void
 tile(Monitor *m)
 {
 	unsigned int i, n;
+	int gap, masters, stacks;
 	int mx = 0, my = 0, mh = 0, mw = 0;
 	int sx = 0, sy = 0, sh = 0, sw = 0;
 	float mfacts, sfacts;
@@ -4460,26 +4487,32 @@ tile(Monitor *m)
 	if (n == 0)
 		return;
 
-	sx = mx = m->wx;
-	sy = my = m->wy;
-	sh = mh = m->wh;
-	sw = mw = m->ww;
+	/* With a gap of 0 every line below is the arithmetic tile() always did. */
+	masters = MIN(n, (unsigned int)m->nmaster);
+	stacks = n - masters;
+	gap = tilegap(m, n);
+	sx = mx = m->wx + gap;
+	sy = my = m->wy + gap;
+	sh = mh = m->wh - 2 * gap;
+	sw = mw = m->ww - 2 * gap;
 
 	if (m->nmaster && n > m->nmaster) {
-		sw = mw * (1 - m->mfact);
-		mw = mw * m->mfact;
-		sx = mx + mw;
+		sw = (mw - gap) * (1 - m->mfact);
+		mw = (mw - gap) * m->mfact;
+		sx = mx + mw + gap;
 	}
 
+	mh -= MAX(0, masters - 1) * gap;
+	sh -= MAX(0, stacks - 1) * gap;
 	getfacts(m, mh, sh, &mfacts, &sfacts, &mrest, &srest);
 
 	for (i = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), i++)
 		if (i < m->nmaster) {
 			resize(c, mx, my, mw - (2*c->bw), (mh / mfacts) * c->cfact + (i < mrest ? 1 : 0) - (2*c->bw), 0);
-			my += HEIGHT(c);
+			my += HEIGHT(c) + gap;
 		} else {
 			resize(c, sx, sy, sw - (2*c->bw), (sh / sfacts) * c->cfact + ((i - m->nmaster) < srest ? 1 : 0) - (2*c->bw), 0);
-			sy += HEIGHT(c);
+			sy += HEIGHT(c) + gap;
 		}
 }
 
@@ -4615,6 +4648,7 @@ toggleview(const Arg *arg)
 
 		selmon->nmaster = selmon->pertag->nmasters[selmon->pertag->curtag];
 		selmon->mfact = selmon->pertag->mfacts[selmon->pertag->curtag];
+		selmon->gap = selmon->pertag->gaps[selmon->pertag->curtag];
 		selmon->sellt = selmon->pertag->sellts[selmon->pertag->curtag];
 		selmon->lt[selmon->sellt] = selmon->pertag->ltidxs[selmon->pertag->curtag][selmon->sellt];
 		selmon->lt[selmon->sellt^1] = selmon->pertag->ltidxs[selmon->pertag->curtag][selmon->sellt^1];
@@ -5228,6 +5262,8 @@ updatelayoutprop(void)
 	long data[] = { 0 };
 	long idx;
 
+	/* The settings follow the selected monitor and tag too (#479). */
+	updatelayoutsettingsprop();
 	if (!selmon)
 		return;
 	idx = (long)(selmon->lt[selmon->sellt] - layouts);
@@ -5236,6 +5272,85 @@ updatelayoutprop(void)
 	data[0] = idx;
 	ewmh_replace_root_cardinal(netatom[NetDwmLayout], data, 1);
 	cache = idx;
+}
+
+/* The selected monitor's master size, master count and gap for its current
+ * tag (#479): CARDINAL 5, the logical monitor index, the tag (0 for a view of
+ * several tags), the master size in percent, the master count and the gap in
+ * pixels. Written only when a value changes: the Settings pane watches it. */
+void
+updatelayoutsettingsprop(void)
+{
+	static long cache[5];
+	static int cachevalid;
+	long data[5];
+	unsigned int tag, tagset;
+
+	if (!selmon || !selmon->pertag)
+		return;
+	tag = selmon->pertag->curtag;
+	tagset = selmon->tagset[selmon->seltags];
+	data[0] = MAX(0, getmonlogicalindex(selmon));
+	/* A view of several tags uses its first tag's values, but saving them
+	 * would change that one tag: publish 0, which Settings does not save. */
+	data[1] = tag <= LENGTH(tags) && !(tagset & (tagset - 1)) ? (long)tag : 0;
+	data[2] = (long)(selmon->mfact * 100.0f + 0.5f);
+	data[3] = MAX(0, selmon->nmaster);
+	data[4] = MAX(0, selmon->gap);
+	if (cachevalid && !memcmp(data, cache, sizeof(data)))
+		return;
+	ewmh_replace_root_cardinal(netatom[NetDwmLayoutSettings], data, 5);
+	memcpy(cache, data, sizeof(data));
+	cachevalid = 1;
+}
+
+/* layout.toml's saved values (#479), applied to every monitor when they
+ * changed, and with FORCE (the monitors changed) to a monitor that is new or
+ * now has another logical index; a monitor that kept its index keeps its live
+ * values. Each tag starts from the defaults, so an entry removed from the file
+ * goes back to them; then every entry for the monitor's logical index sets its
+ * tag. */
+void
+applysavedlayouts(int force)
+{
+	static unsigned int applied;
+	Monitor *m;
+	int i, index, changed;
+	unsigned int t;
+
+	changed = applied != rt_layouts_generation;
+	if (!force && !changed)
+		return;
+	applied = rt_layouts_generation;
+	for (m = mons; m; m = m->next) {
+		if (!m->pertag)
+			continue;
+		index = getmonlogicalindex(m);
+		if (!changed && m->layoutindex == index)
+			continue;
+		m->layoutindex = index;
+		for (t = 0; t <= LENGTH(tags); t++) {
+			m->pertag->mfacts[t] = mfact;
+			m->pertag->nmasters[t] = nmaster;
+			m->pertag->gaps[t] = 0;
+		}
+		for (i = 0; i < rt_nlayouts; i++) {
+			const LayoutSetting *l = &rt_layouts[i];
+
+			if (l->monitor != index || l->tag < 1 || l->tag > (int)LENGTH(tags))
+				continue;
+			if (l->mfact >= 0)
+				m->pertag->mfacts[l->tag] = l->mfact / 100.0f;
+			if (l->nmaster >= 0)
+				m->pertag->nmasters[l->tag] = l->nmaster;
+			if (l->gap >= 0)
+				m->pertag->gaps[l->tag] = l->gap;
+		}
+		m->mfact = m->pertag->mfacts[m->pertag->curtag];
+		m->nmaster = m->pertag->nmasters[m->pertag->curtag];
+		m->gap = m->pertag->gaps[m->pertag->curtag];
+	}
+	arrange(NULL);
 }
 
 /* A status client asks for a layout by setting the root property
@@ -5632,6 +5747,7 @@ view(const Arg *arg)
 
 	selmon->nmaster = selmon->pertag->nmasters[selmon->pertag->curtag];
 	selmon->mfact = selmon->pertag->mfacts[selmon->pertag->curtag];
+	selmon->gap = selmon->pertag->gaps[selmon->pertag->curtag];
 	selmon->sellt = selmon->pertag->sellts[selmon->pertag->curtag];
 	selmon->lt[selmon->sellt] = selmon->pertag->ltidxs[selmon->pertag->curtag][selmon->sellt];
 	selmon->lt[selmon->sellt^1] = selmon->pertag->ltidxs[selmon->pertag->curtag][selmon->sellt^1];
@@ -6031,6 +6147,7 @@ reconcilemonitortags(void)
 
 		m->nmaster = m->pertag->nmasters[m->pertag->curtag];
 		m->mfact = m->pertag->mfacts[m->pertag->curtag];
+		m->gap = m->pertag->gaps[m->pertag->curtag];
 		m->sellt = m->pertag->sellts[m->pertag->curtag];
 		m->lt[m->sellt] = m->pertag->ltidxs[m->pertag->curtag][m->sellt];
 		m->lt[m->sellt ^ 1] = m->pertag->ltidxs[m->pertag->curtag][m->sellt ^ 1];

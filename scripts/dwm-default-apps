@@ -160,6 +160,23 @@ safe_regular_state_file() {
 	path_has_no_symlink_components "$file"
 }
 
+# A desktop entry Settings only reads, never writes: a regular file, as
+# before, or a symlink to a readable regular file no larger than the shared
+# reader reads (#476, upstream dwm-titus #414: Flatpak exports its entries as
+# symlinks). Only the entry itself may be a link; its applications directory
+# must hold no symlink (path_has_no_symlink_components, checked by the
+# callers). A dangling or cyclic link is no entry, so it hides no other.
+readable_desktop_entry() {
+	local file=$1 size
+	if [[ ! -L $file ]]; then
+		[[ -f $file ]]
+		return
+	fi
+	[[ -f $file && -r $file ]] || return 1
+	size=$(stat -L -c %s -- "$file" 2>/dev/null) || return 1
+	((size <= DESKTOP_ENTRY_MAX_BYTES))
+}
+
 desktop_id_for_file() {
 	local applications=$1
 	local file=$2
@@ -177,17 +194,17 @@ desktop_file_for_id() {
 		if [[ ! -d $applications ]] || ! path_has_no_symlink_components "$applications"; then
 			continue
 		fi
-		if [[ -f $applications/$desktop_id && ! -L $applications/$desktop_id ]]; then
+		if readable_desktop_entry "$applications/$desktop_id"; then
 			printf '%s\n' "$applications/$desktop_id"
 			return 0
 		fi
 		while IFS= read -r -d '' file; do
 			id=$(desktop_id_for_file "$applications" "$file")
-			if [[ $id == "$desktop_id" ]]; then
+			if [[ $id == "$desktop_id" ]] && readable_desktop_entry "$file"; then
 				printf '%s\n' "$file"
 				return 0
 			fi
-		done < <(find "$applications" -mindepth 2 -type f -name '*.desktop' -print0 2>/dev/null)
+		done < <(find "$applications" -mindepth 2 \( -type f -o -type l \) -name '*.desktop' -print0 2>/dev/null)
 	done < <(data_dirs)
 	return 1
 }
@@ -228,7 +245,7 @@ parse_desktop_file() {
 	desktop_parsed_exec=
 	desktop_parsed_categories=
 	desktop_parsed_mime_types=
-	[[ -f $file && ! -L $file ]] || return 1
+	readable_desktop_entry "$file" || return 1
 	[[ -n ${desktop_cache_status[$file]+x} ]] || desktop_cache_load "$file"
 	# Refused whole, or no [Desktop Entry] keys at all.
 	[[ ${desktop_cache_status[$file]:-} == ok && ${desktop_cache_keys[$file]:-0} -gt 0 ]] || return 1
@@ -1236,9 +1253,10 @@ emit_candidates() {
 			continue
 		fi
 		while IFS= read -r -d '' file; do
+			readable_desktop_entry "$file" || continue
 			candidate_dirs+=("$applications")
 			candidate_files+=("$file")
-		done < <(find "$applications" -type f -name '*.desktop' -print0 2>/dev/null)
+		done < <(find "$applications" \( -type f -o -type l \) -name '*.desktop' -print0 2>/dev/null)
 	done < <(data_dirs)
 	desktop_cache_load "${candidate_files[@]}"
 	for index in "${!candidate_files[@]}"; do

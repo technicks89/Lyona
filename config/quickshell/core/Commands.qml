@@ -193,6 +193,11 @@ Singleton {
         return helperCommand("dwm-settings-toolkit", action, args);
     }
 
+    // Settings > Appearance > Layout (#479).
+    function layoutSettingsCommand(action, args) {
+        return helperCommand("dwm-layout-settings", action, args);
+    }
+
     function panelSettingsCommand(action, args) {
         return helperCommand("dwm-panel-settings", action, args);
     }
