@@ -10,6 +10,32 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Window rules can open a window fullscreen, in borderless windowed
+  fullscreen, or without its size hints (#477, upstream dwm-titus #376), with
+  the new `window-rules.toml` keys:
+  - `fullscreen=1`: real fullscreen.
+  - `fakefullscreen=1`: the window covers the monitor without
+    `_NET_WM_STATE_FULLSCREEN`, and dwm holds that size against the window's
+    own resize and fullscreen requests. This is not the `Super+Shift+Y` fake
+    fullscreen, which keeps the window in its tile; `Super+Shift+Y` takes a
+    window out of the rule's mode.
+  - `ignoresizehints=1`: dwm ignores the window's size hints.
+
+  A title published after the window opens (a game behind its launcher's
+  class) is matched when it arrives. The fullscreen keys then apply once per
+  window, so they never undo the user's own toggle. Only the value 1 turns a
+  key on, and windows without these keys behave as before. Nothing in an
+  existing rules file needs to change.
+- `alwaysontop` rules apply to unmanaged overlays (#497, upstream dwm-titus
+  #369). An override-redirect window that a rule names is raised above real
+  fullscreen windows, without being moved or focused. Its rules are matched
+  again when its class or title changes and when the rules file is saved, and
+  the last match wins. The shipped rules add WFHelper's Relic Rewards toolbar
+  for Warframe (`{ class="wfhelper", title="WFHelper Relic Rewards",
+  alwaysontop=1 }`). An existing user file is not changed: add the rule to
+  yours if you want it. Managed always-on-top windows and shell popups stack as
+  before. Both changes are in the dwm binary: log out and back in once after
+  updating.
 - The release workflow for ARM images is done (ARM5-01, #489): the release run
   in Lyona published `v2026.11.0-beta.1` on 2026-11-13 with the x86_64 ISO,
   the generic aarch64 ISO and the Raspberry Pi image, built from the same

@@ -138,10 +138,14 @@ printf '%s\n' "$priority_body" | grep -q 'ow->raise'
 printf '%s\n' "$priority_body" | grep -q 'raisefullscreenclients(m->stack)'
 printf '%s\n' "$priority_body" | grep -q 'focusfullscreenforoverride(focused)'
 override_line=$(printf '%s\n' "$priority_body" |
-	grep -n 'for (ow = overridewindows' | cut -d: -f1)
+	grep -n 'if (ow->raise)' | cut -d: -f1)
 fullscreen_line=$(printf '%s\n' "$priority_body" |
 	grep -n 'raisefullscreenclients(m->stack)' | cut -d: -f1)
 test "$override_line" -lt "$fullscreen_line"
+# #497: only rule-named overlays are raised after real fullscreen.
+overlay_line=$(printf '%s\n' "$priority_body" |
+	grep -n 'if (ow->alwaysontop)' | cut -d: -f1)
+test "$fullscreen_line" -lt "$overlay_line"
 raise_fullscreen_clients_body=$(wm_body 'raisefullscreenclients(Client \*c)')
 printf '%s\n' "$raise_fullscreen_clients_body" | grep -q 'raisefullscreenclients(c->snext);'
 printf '%s\n' "$raise_fullscreen_clients_body" | grep -q 'isvisiblefullscreen(c)'

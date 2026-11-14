@@ -16,10 +16,21 @@
 #   tags        tag number 1–9  (0 or omit = follow current tag)
 #   isfloating  1=float  0=tile             isterminal  1=terminal (swallowing)
 #   alwaysontop 1=raise above normal clients  noswallow 1=never swallow this window
+#   fullscreen  1=open in real fullscreen
+#   fakefullscreen 1=borderless windowed fullscreen: covers the monitor without
+#               telling the window it is fullscreen (not the Super+Shift+Y mode)
+#   ignoresizehints 1=ignore the window's size hints
+#   A title published after the window opens still matches: these three and
+#   isfloating/alwaysontop apply when it arrives, the fullscreen keys once.
+#   Unmanaged overlays (override-redirect windows): only alwaysontop applies,
+#   and it raises them above real fullscreen windows too.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 
 rules = [
+  # ── game overlays: the rewards surface, not the main application ─────────
+  { class="wfhelper", title="WFHelper Relic Rewards", alwaysontop=1 },
+
   # ── terminals (isterminal=1 enables window swallowing) ───────────────────
   { class="St",             isterminal=1 },
   { class="kitty",          isterminal=1 },

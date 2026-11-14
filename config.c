@@ -771,6 +771,9 @@ load_rules_toml(const char *user_path, const char *default_path)
 		const TomlValue *vterm = toml_table_get(&doc, "rules", i, "isterminal");
 		const TomlValue *vno   = toml_table_get(&doc, "rules", i, "noswallow");
 		const TomlValue *vmon  = toml_table_get(&doc, "rules", i, "monitor");
+		const TomlValue *vfull = toml_table_get(&doc, "rules", i, "fullscreen");
+		const TomlValue *vfake = toml_table_get(&doc, "rules", i, "fakefullscreen");
+		const TomlValue *vish  = toml_table_get(&doc, "rules", i, "ignoresizehints");
 		Rule *r = &rt_rules_buf[nk];
 		if (vc && vc->type == TOML_STRING && vc->s[0]) {
 			copystr(rt_rules_strbuf[nk*3+0], TOML_MAX_STR, vc->s);
@@ -803,6 +806,10 @@ load_rules_toml(const char *user_path, const char *default_path)
 		r->isterminal = (vterm && vterm->type == TOML_INT) ? (int)vterm->i         : 0;
 		r->noswallow  = (vno   && vno->type   == TOML_INT) ? (int)vno->i           : 0;
 		r->monitor    = (vmon  && vmon->type  == TOML_INT) ? (int)vmon->i          : -1;
+		/* Only 1 turns these on (#477); any other value is off. */
+		r->fullscreen      = vfull && vfull->type == TOML_INT && vfull->i == 1;
+		r->fakefullscreen  = vfake && vfake->type == TOML_INT && vfake->i == 1;
+		r->ignoresizehints = vish  && vish->type  == TOML_INT && vish->i  == 1;
 		nk++;
 	}
 	rt_rules  = rt_rules_buf;
