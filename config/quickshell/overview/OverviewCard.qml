@@ -111,7 +111,7 @@ Rectangle {
                 width: Theme.trayIconSize
                 height: Theme.trayIconSize
                 visible: !preview.visible && source.toString().length > 0
-                source: Icons.launcherIcon(root.window.appClass)
+                source: Icons.windowIcon(root.window.appClass)
             }
 
             // No preview and no themed icon: the class's initial (#280 VM).

@@ -81,6 +81,8 @@ ClickAwayPopup {
                 Layout.fillWidth: true
                 visible: root.weatherModel.weatherState === "available"
                 text: "Observed " + root.weatherModel.observed.replace("T", " ")
+                    + (root.weatherModel.stale ? ". Not updated: " + root.weatherModel.detail : "")
+                wrapMode: Text.WordWrap
                 color: Theme.menuMutedText
                 font.pixelSize: Theme.smallFontSize
             }

@@ -303,4 +303,54 @@ if "$repo/scripts/dwm-quickshell-launcher" launch "$work/data/applications/missi
 fi
 grep -Fqx "desktop entry not found: $work/data/applications/missing.desktop" "$work/missing.err"
 
+# icons-for (#498): a window class's desktop-entry icon, for the panel when the
+# class is not an icon name. The match, best first: the desktop-file id, then
+# StartupWMClass, then either one ignoring case, then a reverse-DNS class's
+# last part; a class with no entry answers an empty icon.
+icons=$work/icons
+mkdir -p "$icons/high/applications" "$icons/low/applications"
+write_entry() {
+	printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\nIcon=%s\n%s' \
+		"$2" "$2" "$3" "${4:+StartupWMClass=$4
+}" >"$1"
+}
+write_entry "$icons/high/applications/dev.zed.Zed.desktop" Zed zed
+write_entry "$icons/high/applications/firefox.desktop" Firefox firefox firefox
+write_entry "$icons/high/applications/wmclass.desktop" WmClass wm-class-icon Some-Class
+write_entry "$icons/high/applications/no-icon.desktop" NoIcon no-icon-app
+sed -i '/^Icon=/d' "$icons/high/applications/no-icon.desktop"
+# An id match outranks a StartupWMClass match in an earlier directory, and
+# the earlier directory wins between two entries at the same level.
+write_entry "$icons/high/applications/other.desktop" Other other-by-wmclass exact.Id
+write_entry "$icons/low/applications/exact.Id.desktop" Exact exact-by-id
+write_entry "$icons/low/applications/zed-copy.desktop" ZedCopy zed-later dev.zed.Zed
+run_icons_for() {
+	HOME="$work/home" XDG_DATA_HOME="$work/empty" XDG_DATA_DIRS="$icons/high:$icons/low" \
+		"$repo/scripts/dwm-quickshell-launcher" icons-for "$@"
+}
+output=$(run_icons_for dev.zed.Zed Some-Class some-class org.mozilla.Firefox exact.Id no-icon no.such.App dev.zed.Zed)
+expected=$(printf '%s\t%s\n' dev.zed.Zed zed Some-Class wm-class-icon some-class wm-class-icon \
+	org.mozilla.Firefox firefox exact.Id exact-by-id no-icon '' no.such.App '')
+[ "$output" = "$expected" ] || {
+	printf 'icons-for answered:\n%s\nexpected:\n%s\n' "$output" "$expected" >&2
+	exit 1
+}
+# A class that is not one bounded field is refused, with nothing printed.
+long_class=$(printf '%0257d' 0)
+for bad in '' "$(printf 'a\tb')" "$(printf 'a\nb')" "$long_class"; do
+	if output=$(run_icons_for ok "$bad" 2>"$work/icons.err"); then
+		printf 'icons-for accepted an invalid class\n' >&2
+		exit 1
+	fi
+	[ -z "$output" ] || {
+		printf 'icons-for printed for a refused batch: %s\n' "$output" >&2
+		exit 1
+	}
+	grep -Fq 'icons-for:' "$work/icons.err"
+done
+if run_icons_for >/dev/null 2>&1; then
+	printf 'icons-for ran with no class\n' >&2
+	exit 1
+fi
+
 printf 'Quickshell launcher helper: PASS\n'

@@ -12,7 +12,7 @@ lyona_lib=${0%/*}
 . "$lyona_lib/dwm-desktop-entry.sh"
 
 usage() {
-	printf 'usage: %s list|launch <desktop-file>\n' "$0" >&2
+	printf 'usage: %s list|launch <desktop-file>|icons-for <window-class>...\n' "$0" >&2
 }
 
 desktop_id() {
@@ -159,7 +159,8 @@ desktop_entry_summary() {
 	'
 }
 
-list_apps() {
+# The desktop files, one per id: the first in data-directory order.
+list_app_files() {
 	desktop_files |
 		{
 			seen_ids=:
@@ -173,7 +174,11 @@ list_apps() {
 				seen_ids=$seen_ids$id:
 				printf '%s\n' "$file"
 			done
-		} |
+		}
+}
+
+list_apps() {
+	list_app_files |
 		desktop_entry_summary |
 		awk -F '\t' '
 					{
@@ -301,6 +306,76 @@ launch_app() {
 	fallback_launch "$file"
 }
 
+# icons-for CLASS...: for each window class, CLASS<TAB>ICON, the Icon= of the
+# desktop entry that matches it, or CLASS<TAB> when none does (#498, upstream
+# dwm-titus #426). The panel asks only for a class with no themed icon, and
+# remembers the answer. The match, best first: the desktop-file id, then
+# StartupWMClass, then either one ignoring case, then the last part of a
+# reverse-DNS class (org.mozilla.firefox: firefox), ignoring case. Among
+# entries at the same level, the first in data-directory order wins, as for
+# the launcher's list.
+icons_for_classes() {
+	local class
+	for class in "$@"; do
+		# One field each: no tab or newline, and a bounded length.
+		case $class in
+		'' | *"$tab"* | *"$newline"*)
+			printf 'icons-for: invalid window class\n' >&2
+			return 2
+			;;
+		esac
+		((${#class} <= 256)) || {
+			printf 'icons-for: window class longer than 256 characters\n' >&2
+			return 2
+		}
+	done
+	{
+		printf '%s\n' "$@"
+		printf '\n'
+		desktop_entry_summary < <(list_app_files)
+	} | awk -F '\t' '
+		function tail_of(name, parts, n) {
+			n = split(name, parts, ".")
+			return parts[n]
+		}
+		function offer(class, level, icon) {
+			if (!(class in best) || level < best[class]) {
+				best[class] = level
+				found[class] = icon
+			}
+		}
+		# The classes come first, up to an empty line.
+		!entries {
+			if ($0 == "") { entries = 1; next }
+			if (!($0 in wanted)) { wanted[$0] = 1; order[++count] = $0 }
+			next
+		}
+		$5 != "" {
+			id = $6
+			sub(/.*\//, "", id)
+			sub(/\.desktop$/, "", id)
+			wm = $9
+			for (i = 1; i <= count; i++) {
+				class = order[i]
+				lower = tolower(class)
+				if (id == class) offer(class, 1, $5)
+				else if (wm != "" && wm == class) offer(class, 2, $5)
+				else if (tolower(id) == lower || (wm != "" && tolower(wm) == lower)) offer(class, 3, $5)
+				else if (index(class, ".") > 0 &&
+					(tolower(id) == tolower(tail_of(class)) ||
+					 (wm != "" && tolower(wm) == tolower(tail_of(class)))))
+					offer(class, 4, $5)
+			}
+		}
+		END {
+			for (i = 1; i <= count; i++) {
+				class = order[i]
+				printf "%s\t%s\n", class, (class in found) ? found[class] : ""
+			}
+		}
+	'
+}
+
 launch_chatgpt() {
 	file=$(chatgpt_native_desktop)
 	if [ -n "$file" ]; then
@@ -325,6 +400,17 @@ launch)
 		exit 2
 	fi
 	launch_app "$2"
+	;;
+icons-for)
+	shift
+	if [ $# -eq 0 ]; then
+		usage
+		exit 2
+	fi
+	tab=$(printf '\t')
+	newline='
+'
+	icons_for_classes "$@"
 	;;
 launch-chatgpt)
 	if [ $# -ne 1 ]; then
