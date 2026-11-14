@@ -1019,6 +1019,24 @@ grep -Eq '^LYONA_ISO_COMMIT=[0-9a-f]{40}$|^LYONA_ISO_COMMIT=unknown$' "$stamp" |
 	exit 1
 }
 
+# #478: run with sudo, root reads a checkout the user owns, and git refuses
+# it unless it is a safe.directory. GIT_TEST_ASSUME_DIFFERENT_OWNER is git's
+# own switch for that check: the stamp must still name the commit.
+if head_commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null); then
+	GIT_TEST_ASSUME_DIFFERENT_OWNER=1 LYONA_RELENG_DIR="$releng" \
+		"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --output "$work/staged-other-owner" \
+		>"$work/profile-other-owner.out" 2>&1
+	grep -Fqx "LYONA_ISO_COMMIT=$head_commit" \
+		"$work/staged-other-owner/profile/airootfs/etc/lyona-iso-release" || {
+		printf 'a checkout owned by another user stamps LYONA_ISO_COMMIT=%s, not %s.\n' \
+			"$(sed -n 's/^LYONA_ISO_COMMIT=//p' "$work/staged-other-owner/profile/airootfs/etc/lyona-iso-release")" \
+			"$head_commit" >&2
+		exit 1
+	}
+else
+	printf 'note: %s is not a git checkout; the other-owner commit stamp is not checked.\n' "$repo"
+fi
+
 LYONA_RELENG_DIR="$releng" \
 	"$repo/scripts/build-lyona-arch-iso.sh" --profile-only --version v9.9.9 \
 	--output "$work/staged-override" >"$work/override.out" 2>&1
