@@ -507,7 +507,11 @@ for invalid_settle in 0 0.0; do
 done
 
 rm -f "$work/actions.log"
-env "${env_common[@]}" DWM_INPUT_HOTPLUG_SETTLE_SECONDS=0.15 \
+# The fake udevadm's add and change are 0.12 s apart: one settle window must
+# cover both, so they are applied once. A 0.15 s window left 25 ms of margin,
+# which a busy machine overran and applied them twice (#501, upstream
+# dwm-titus #396). 0.5 s keeps the check and the >= 100 ms apply delay below.
+env "${env_common[@]}" DWM_INPUT_HOTPLUG_SETTLE_SECONDS=0.5 \
 	TEST_UDEV_DELAY=0.12 TEST_TIMING_LOG="$work/hotplug-timing.log" "$helper" watch-apply
 [[ $(grep -Fc 'xinput set-prop 12 libinput Accel Speed 0.25' "$work/actions.log") == 1 ]]
 event_time=$(awk '$1 == "event" { print $2; exit }' "$work/hotplug-timing.log")
