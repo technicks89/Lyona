@@ -29,6 +29,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- A local ISO build run with `sudo` records its commit again (#478). As root
+  on a checkout the user owns, git refused to read the repository ("dubious
+  ownership"), and the image's `/etc/lyona-iso-release` and the installed
+  system's `/etc/lyona-release` said `LYONA_COMMIT=unknown`, with no warning.
+  `scripts/build-lyona-arch-iso.sh` now trusts that checkout for the one
+  `git rev-parse` call, as the Raspberry Pi builder already did.
+  `tests/test-arch-iso-builder.sh` checks it with git's
+  `GIT_TEST_ASSUME_DIFFERENT_OWNER`. Release images were not affected: the
+  workflow marks its checkout safe.
 - The aarch64 release jobs no longer fail in seconds (#493):
   `scripts/ci-release-aarch64.sh` ran `git config` before installing git. The
   tools it installs in the Arch Linux ARM container are now the

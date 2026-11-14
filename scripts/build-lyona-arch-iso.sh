@@ -611,7 +611,11 @@ fi
 EOF
 
 info "Recording the release stamp at /etc/lyona-iso-release..."
-build_commit="$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+# Run with sudo, as docs/RELEASING.md says, root reads a checkout the user
+# owns: git refuses that ("dubious ownership") unless the directory is a
+# safe.directory, and the stamp said "unknown" with no warning (#478). Trust
+# this checkout for this one call only.
+build_commit="$(git -c safe.directory="$repo_dir" -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 build_date="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" --utc +%Y-%m-%dT%H:%M:%SZ)"
 install -Dm644 /dev/null "$profile_dir/airootfs/etc/lyona-iso-release"
 cat >"$profile_dir/airootfs/etc/lyona-iso-release" <<EOF
