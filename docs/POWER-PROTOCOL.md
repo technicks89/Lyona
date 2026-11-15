@@ -121,6 +121,29 @@ dwm-settings-power power-lock on|off
 dwm-settings-power power-lock-timeout SECONDS
 ```
 
+Outside Settings, one recovery action:
+
+```text
+dwm-settings-power recover-locker
+```
+
+It prints one line, `locker-recover<TAB>restarted|none|unavailable|failed<TAB>DETAIL`.
+After monitors go away and come back, light-locker can leave its full-screen
+blanking windows up over every monitor while it reports itself inactive, so
+the screens stay black with nothing locked (#416). The action restarts
+light-locker, detached, only when all three hold: light-locker runs for this
+display, `light-locker-command --query` says it is inactive, and a visible
+`light-locker` window exists. While it is blanking or locked it says active and
+is never touched, so this cannot unlock a locked session. It asks once more just
+before stopping light-locker, and leaves it alone if it has turned active since. The autorandr hook
+`60-lyona-locker`, installed in `/etc/xdg/autorandr/preswitch.d` and
+`postswitch.d`, runs it 5 seconds after each layout change, from both phases
+because autorandr skips postswitch when applying a layout fails. A lock per
+display in `$XDG_RUNTIME_DIR` lets one of two overlapping runs recover and the
+other skip; the light-locker it starts does not inherit that lock. It needs
+`light-locker-command` and `xdotool`; without them it reports `unavailable`. The
+manual recovery is the same: `pkill light-locker; setsid -f light-locker`.
+
 DPMS and lock timeouts must be decimal integers from 60 through 86400.
 Malformed and out-of-range values fail instead of being silently coerced.
 DPMS and lock changes are applied through bounded `xset` and `gsettings`

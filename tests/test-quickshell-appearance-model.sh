@@ -177,9 +177,17 @@ grep -Fq 'QueuedRun.startOrQueue(statusProcess, root, "statusPending",' "$wallpa
 grep -Fq '|| actionProcess.running || root.appearance.inventoryRunning' "$wallpaper_model"
 grep -Fq 'readonly property bool reading: statusProcess.running || actionProcess.running' "$wallpaper_model"
 grep -Fq 'if (wallpaperModel.reading) {' "$model"
-grep -Fq 'if (!running && root.appearance.settingsVisible && root.appearance.inventoryPending) {' "$wallpaper_model"
-grep -Fq '} else if (!running && root.appearance.settingsVisible && root.statusPending) {' "$wallpaper_model"
-grep -Fq '} else if (!running && wallpaperModel.statusPending && root.settingsVisible) {' "$model"
+# Each queued read is retried on its own: a status read never waits for an
+# inventory retry that is waiting for the watch (#444;
+# check-quickshell-appearance-status-queue-xvfb runs it).
+grep -Fq 'if (!running && root.appearance.settingsVisible && root.appearance.inventoryPending)' "$wallpaper_model"
+grep -Fxq '            if (!running && root.appearance.settingsVisible && root.statusPending)' "$wallpaper_model"
+grep -Fxq '            if (!running && wallpaperModel.statusPending && root.settingsVisible)' "$model"
+if grep -Fq 'else if (!running && root.appearance.settingsVisible && root.statusPending)' "$wallpaper_model" ||
+	grep -Fq 'else if (!running && wallpaperModel.statusPending && root.settingsVisible)' "$model"; then
+	echo 'a queued status read waits for the inventory retry again (#444)' >&2
+	exit 1
+fi
 grep -Fq 'readonly property bool statusBusy: readinessProcess.running' "$wallpaper_model"
 grep -Fq 'Commands.settingsWallpaperCommand("reset-ready", [])' "$wallpaper_model"
 grep -Fq 'readinessProcess.running || actionProcess.running || root.appearance.inventoryRunning,' "$wallpaper_model"

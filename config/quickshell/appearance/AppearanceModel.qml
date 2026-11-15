@@ -786,11 +786,15 @@ Scope {
                 root.clearInventory(error.length > 0 ? error
                     : "Appearance inventory failed before returning a valid snapshot");
             }
-            if (!running && root.inventoryPending && root.settingsVisible) {
+            // Each queued read is retried on its own: the inventory retry can
+            // wait for a watch that is restarting, and a status read never
+            // needs the watch, so it must not wait with it (#444). If the
+            // inventory read starts first, the status read queues behind it
+            // again and runs when it ends.
+            if (!running && root.inventoryPending && root.settingsVisible)
                 Qt.callLater(root.retryInventoryRefresh);
-            } else if (!running && wallpaperModel.statusPending && root.settingsVisible) {
+            if (!running && wallpaperModel.statusPending && root.settingsVisible)
                 Qt.callLater(wallpaperModel.refreshStatus);
-            }
         }
     }
 
