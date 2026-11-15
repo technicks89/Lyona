@@ -34,10 +34,20 @@ A provider failure affects only its owning Settings section.
 
 NetworkManager state uses explicit `nmcli --terse --escape yes -f ...` fields.
 Wi-Fi scans are bounded to 10 seconds, profile and Wi-Fi activation to 90
-seconds, and disconnect/forget to 15 seconds. Hidden, enterprise, advanced, and
-VPN editing remains delegated to `nm-connection-editor`.
+seconds, and disconnect/forget to 15 seconds. Enterprise, advanced, and VPN
+editing remains delegated to `nm-connection-editor`.
 
-Secured Wi-Fi secrets cross the QML/helper boundary only on stdin. The helper
+A hidden network (#471) is joined with `wifi-connect-hidden IFNAME SSID
+open|wpa-psk|sae [--password-stdin]`: the interface must be a Wi-Fi device
+NetworkManager lists, the name 1 to 32 bytes without control characters, and a
+WPA/WPA2 password 8 to 63 characters or 64 hexadecimal digits. It creates a
+profile with `802-11-wireless.hidden yes` and activates it within the same 90
+seconds; a profile that does not connect is deleted, and the first line of
+stderr says why (a wrong password, or no network answering). Other security
+kinds are the editor's.
+
+Secured Wi-Fi secrets, a hidden network's included, cross the QML/helper
+boundary only on stdin. The helper
 creates a mode-0600 `nmcli --passwd-file`, clears the QML value after writing,
 and removes the file on success, failure, timeout, cancellation, or signal.
 

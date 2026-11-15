@@ -369,4 +369,62 @@ picom_health_case "printf '{\"renderer\": \"v3d4\", \"detail\": \"Picom is stopp
 	fail 'a stopped Picom elsewhere was taken for one left off at login'
 ! picom_health_case 'exit 1' || fail 'a failing status was taken for Picom left off at login'
 
+# The UEFI variable store (#475): efivarfs, 97% full by design, is never a
+# storage error, in either pass; it is one information card, and a failure of
+# the filesystem scan or of its own read does not hide the other. The stub
+# answers as df does: efivarfs is listed unless "-x efivarfs" leaves it out,
+# and "-t efivarfs" lists it alone.
+mkdir -p "$work/bin-efi"
+cat >"$work/bin-efi/df" <<'SCRIPT'
+#!/bin/sh
+only_efi=0 skip_efi=0 prev=
+for arg in "$@"; do
+	[ "$prev" = -t ] && [ "$arg" = efivarfs ] && only_efi=1
+	[ "$prev" = -x ] && [ "$arg" = efivarfs ] && skip_efi=1
+	prev=$arg
+done
+if [ "$only_efi" = 1 ]; then
+	[ -z "${EFI_DF_FAIL:-}" ] || exit 1
+elif [ -n "${DISK_DF_FAIL:-}" ]; then
+	exit 1
+fi
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+if [ "$only_efi" = 0 ]; then
+	printf '/dev/nvme9n1p2 104857600 20971520 83886080 20%% /\n'
+fi
+if [ "$skip_efi" = 0 ]; then
+	printf 'efivarfs 192 186 6 97%% /sys/firmware/efi/efivars\n'
+fi
+SCRIPT
+cat >"$work/bin-efi/lsblk" <<'SCRIPT'
+#!/bin/sh
+printf '      0\n'
+SCRIPT
+chmod +x "$work/bin-efi/df" "$work/bin-efi/lsblk"
+efi_scan() { # OUT [VAR=value...]
+	local out=$1
+	shift
+	env "$@" HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" \
+		DWM_HEALTH_OS_RELEASE="$work/os-release" DWM_HEALTH_COMMAND_TIMEOUT=2 \
+		PATH="$work/bin-efi:$work/bin:/usr/bin:/bin" "$HELPER" scan-user >"$out"
+}
+efi_scan "$work/efi.tsv"
+firmware_card=$'check\tstorage\tinfo\tfirmware-variables\tFirmware variable store\t97% used\t'
+grep -Fq "$firmware_card" "$work/efi.tsv" || fail "no firmware variable store card: $(grep storage "$work/efi.tsv")"
+[ "$(grep -c 'firmware-variables' "$work/efi.tsv")" = 1 ] || fail 'more than one firmware card'
+grep -Fq $'check\tstorage\tok\tdisk-root\t' "$work/efi.tsv" || fail 'the root filesystem was not scanned'
+if grep -E $'^check\tstorage\t(warn|error)\t' "$work/efi.tsv" | grep -q efi; then
+	fail "efivarfs was reported as a storage problem: $(grep storage "$work/efi.tsv")"
+fi
+if grep -Eq $'\t(disk|inodes)-sys-firmware-efi-efivars\t' "$work/efi.tsv"; then
+	fail 'efivarfs was scanned as a filesystem'
+fi
+# The filesystem scan failing leaves the firmware card, and the reverse.
+efi_scan "$work/efi-disk-fail.tsv" DISK_DF_FAIL=1
+grep -Fq $'check\tstorage\trestricted\tstorage-usage\t' "$work/efi-disk-fail.tsv" || fail 'a df failure was not reported'
+grep -Fq "$firmware_card" "$work/efi-disk-fail.tsv" || fail 'a df failure hid the firmware card'
+efi_scan "$work/efi-fail.tsv" EFI_DF_FAIL=1
+grep -Fq $'check\tstorage\tok\tdisk-root\t' "$work/efi-fail.tsv" || fail 'a firmware read failure hid the filesystems'
+if grep -q 'firmware-variables' "$work/efi-fail.tsv"; then fail 'a failed firmware read made a card'; fi
+
 printf 'System health helper: PASS\n'

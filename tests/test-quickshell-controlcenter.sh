@@ -596,8 +596,13 @@ grep -Fq 'root.wifiPasswordPromptVisible = true;' "$repo/config/quickshell/netwo
 grep -Fq 'root.networkModel.cancelWifiPasswordPrompt()' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'wifiPasswordInput.forceActiveFocus();' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'open: panelWindow !== null && panelWindow.screen !== null' "$repo/config/quickshell/network/NetworkWindow.qml"
-grep -Fq 'enabled: !root.networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
-grep -Fq 'wantsKeyboard: !networkModel.wifiPasswordPromptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
+# Either prompt, the password one or the hidden network one (#471), hides the
+# popover and takes the keyboard from it.
+grep -Fq 'readonly property bool promptVisible: root.wifiPasswordPromptVisible || root.hiddenPromptVisible' \
+	"$repo/config/quickshell/network/NetworkModel.qml"
+grep -Fq 'enabled: !root.networkModel.promptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
+grep -Fq 'wantsKeyboard: !networkModel.promptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
+grep -Fq '&& networkModel.visible && !networkModel.promptVisible' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'FloatingWindow {' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq 'title: "dwm network password"' "$repo/config/quickshell/network/NetworkWindow.qml"
 grep -Fq '{ title="dwm network password",     isfloating=1, alwaysontop=1 }' \

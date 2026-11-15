@@ -244,22 +244,39 @@ FloatingWindow {
                                             elide: Text.ElideRight
                                         }
 
-                                        Rectangle {
-                                            visible: root.healthModel.categoryIssueCount(categoryButton.modelData.id) > 0
-                                            implicitWidth: categoryCount.implicitWidth + 12
-                                            implicitHeight: 22
-                                            color: Theme.dangerSurface
-                                            border.color: Theme.danger
-                                            border.width: 1
-                                            radius: 6
+                                        // Warnings, then errors, right-aligned (#500,
+                                        // upstream dwm-titus #394); none, no badge.
+                                        Repeater {
+                                            model: [
+                                                { "kind": "warning", "fill": Theme.warning, "text": Theme.warningBadgeText },
+                                                { "kind": "error", "fill": Theme.danger, "text": Theme.dangerBadgeText }
+                                            ]
 
-                                            UiText {
-                                                id: categoryCount
-                                                anchors.centerIn: parent
-                                                text: root.healthModel.categoryIssueCount(categoryButton.modelData.id)
-                                                color: Theme.danger
-                                                font.pixelSize: Theme.fontCaptionSize
-                                                font.bold: true
+                                            Rectangle {
+                                                id: countBadge
+
+                                                required property var modelData
+                                                readonly property int count: root.healthModel.categoryCount(
+                                                    categoryButton.modelData.id, countBadge.modelData.kind)
+
+                                                objectName: "healthBadge-" + categoryButton.modelData.id + "-" + countBadge.modelData.kind
+                                                visible: countBadge.count > 0
+                                                implicitWidth: Math.max(implicitHeight, badgeLabel.implicitWidth + 12)
+                                                implicitHeight: 22
+                                                color: countBadge.modelData.fill
+                                                radius: 6
+                                                Accessible.name: countBadge.count + (countBadge.modelData.kind === "error"
+                                                    ? (countBadge.count === 1 ? " error" : " errors")
+                                                    : (countBadge.count === 1 ? " warning" : " warnings"))
+
+                                                UiText {
+                                                    id: badgeLabel
+                                                    anchors.centerIn: parent
+                                                    text: countBadge.count
+                                                    color: countBadge.modelData.text
+                                                    font.pixelSize: Theme.fontCaptionSize
+                                                    font.bold: true
+                                                }
                                             }
                                         }
                                     }

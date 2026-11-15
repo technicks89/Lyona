@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-	printf '%s\n' "usage: dwm-quickshell-network snapshot [--wifi yes|no] [--rescan yes|no]|status|devices|connections|wifi-scan [--rescan yes|no] [ifname]|wifi-connect <ifname> <bssid> <ssid> [--password-stdin <security>]|connect <uuid>|disconnect <device>|forget <uuid>|monitor|editor" >&2
+	printf '%s\n' "usage: dwm-quickshell-network snapshot [--wifi yes|no] [--rescan yes|no]|status|devices|connections|wifi-scan [--rescan yes|no] [ifname]|wifi-connect <ifname> <bssid> <ssid> [--password-stdin <security>]|wifi-connect-hidden <ifname> <ssid> open|wpa-psk|sae [--password-stdin]|connect <uuid>|disconnect <device>|forget <uuid>|monitor|editor" >&2
 	exit 2
 }
 
@@ -253,6 +253,131 @@ wifi_connect() {
 	fi
 }
 
+# A hidden network (#471, upstream dwm-titus #379): a profile with
+# 802-11-wireless.hidden, so NetworkManager probes for the name, created and
+# activated as wifi_connect does: the password from stdin into a file only this
+# user can read, passed to nmcli as passwd-file (never in argv), and the profile
+# deleted when it does not connect. SECURITY is open, wpa-psk (WPA/WPA2
+# Personal) or sae (WPA3 Personal); anything else is the editor's.
+wifi_connect_hidden() {
+	need_nmcli
+	if [ "$#" -ne 3 ] && [ "$#" -ne 4 ]; then
+		usage
+	fi
+	ifname=$1
+	ssid=$2
+	security=$3
+	if [ "$#" -eq 4 ] && [ "$4" != "--password-stdin" ]; then
+		usage
+	fi
+	case $security in
+	open)
+		[ "$#" -eq 3 ] || {
+			printf '%s\n' "an open network takes no password" >&2
+			exit 2
+		}
+		;;
+	wpa-psk | sae)
+		[ "$#" -eq 4 ] || {
+			printf '%s\n' "a secured network needs --password-stdin" >&2
+			exit 2
+		}
+		;;
+	*)
+		printf '%s\n' "security must be open, wpa-psk or sae; other kinds open in the NetworkManager editor" >&2
+		exit 2
+		;;
+	esac
+	# A name of 1 to 32 bytes, as 802.11 allows, without control characters.
+	ssid_bytes=$(printf '%s' "$ssid" | LC_ALL=C wc -c)
+	if [ "$ssid_bytes" -lt 1 ] || [ "$ssid_bytes" -gt 32 ]; then
+		printf '%s\n' "the network name must be 1 to 32 bytes" >&2
+		exit 2
+	fi
+	case $ssid in
+	*[[:cntrl:]]*)
+		printf '%s\n' "the network name has a control character" >&2
+		exit 2
+		;;
+	esac
+	# The adapter must be a Wi-Fi device NetworkManager knows.
+	if ! nmcli -t -f DEVICE,TYPE device status 2>/dev/null | grep -Fqx -- "$ifname:wifi"; then
+		printf '%s\n' "no Wi-Fi adapter named $ifname" >&2
+		exit 1
+	fi
+
+	umask 077
+	password_file=
+	connection_uuid=
+	cleanup_hidden_connect() {
+		[ -z "$password_file" ] || rm -f "$password_file"
+		if [ -n "$connection_uuid" ]; then
+			nmcli connection delete uuid "$connection_uuid" >/dev/null 2>&1 || :
+		fi
+	}
+	trap cleanup_hidden_connect EXIT
+	trap 'cleanup_hidden_connect; exit 1' HUP INT TERM
+	if [ "$security" != open ]; then
+		if ! IFS= read -r password || [ -z "$password" ]; then
+			printf '%s\n' "Wi-Fi password required on stdin" >&2
+			exit 2
+		fi
+		if [ "$security" = wpa-psk ]; then
+			# 8 to 63 printable ASCII characters, or 64 hexadecimal digits.
+			case ${#password} in
+			64)
+				case $password in
+				*[!0123456789abcdefABCDEF]*)
+					printf '%s\n' "a 64-character WPA key must be hexadecimal" >&2
+					exit 2
+					;;
+				esac
+				;;
+			*)
+				if [ "${#password}" -lt 8 ] || [ "${#password}" -gt 63 ]; then
+					printf '%s\n' "a WPA password is 8 to 63 characters" >&2
+					exit 2
+				fi
+				;;
+			esac
+		fi
+		password_file=$(mktemp "${TMPDIR:-/tmp}/dwm-network-password.XXXXXX")
+		printf '802-11-wireless-security.psk:%s\n' "$password" >"$password_file"
+		unset password
+	fi
+
+	IFS= read -r connection_uuid </proc/sys/kernel/random/uuid
+	if [ -z "$connection_uuid" ]; then
+		printf '%s\n' "could not generate a connection UUID" >&2
+		exit 1
+	fi
+	set -- connection add type wifi ifname "$ifname" con-name "$ssid" ssid "$ssid" \
+		802-11-wireless.hidden yes connection.uuid "$connection_uuid"
+	if [ "$security" != open ]; then
+		set -- "$@" wifi-sec.key-mgmt "$security"
+	fi
+	run_bounded 90 nmcli "$@" >/dev/null
+
+	set -- connection up uuid "$connection_uuid" ifname "$ifname"
+	[ -z "$password_file" ] || set -- "$@" passwd-file "$password_file"
+	if output=$(run_bounded 90 nmcli "$@" 2>&1); then
+		trap - HUP INT TERM
+		connection_uuid=
+		return 0
+	else
+		status=$?
+	fi
+	# A plain reason; nmcli's own text follows.
+	case $output in
+	*[Ss]ecrets* | *password* | *802-1x* | *psk*) printf '%s\n' "wrong password, or the network asked for one it did not get" >&2 ;;
+	*[Nn]o\ network\ with\ SSID* | *not\ found* | *[Tt]imeout* | *timed\ out*) printf '%s\n' "no network named $ssid answered" >&2 ;;
+	esac
+	printf '%s\n' "$output" | tail -n 3 >&2
+	nmcli connection delete uuid "$connection_uuid" >/dev/null 2>&1 || :
+	connection_uuid=
+	return "$status"
+}
+
 connect_uuid() {
 	need_nmcli
 	[ "$#" -eq 1 ] || usage
@@ -368,6 +493,9 @@ wifi-scan)
 	;;
 wifi-connect)
 	wifi_connect "$@"
+	;;
+wifi-connect-hidden)
+	wifi_connect_hidden "$@"
 	;;
 connect)
 	connect_uuid "$@"

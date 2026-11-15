@@ -456,4 +456,102 @@ DWM_TEST_EDITOR_LOG="$work/editor.log" \
 	"$repo/scripts/dwm-quickshell-network" editor
 grep -Fqx editor "$work/editor.log"
 
+# ── Hidden networks (#471) ──────────────────────────────────────────────
+#
+# wifi-connect-hidden: a hidden profile, the password only in a 0600 file
+# passed as passwd-file (never argv), deleted on failure with a plain reason;
+# a missing adapter and bad input refused before NetworkManager is touched.
+hidden=$work/hidden
+mkdir -p "$hidden/bin"
+cat >"$hidden/bin/nmcli" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"$HIDDEN_ARGV"
+case "$*" in
+'-t -f DEVICE,TYPE device status') printf 'wlan0:wifi\neth0:ethernet\n' ;;
+'connection add '*) ;;
+'connection up '*)
+	file=
+	previous=
+	for argument in "$@"; do
+		[ "$previous" != passwd-file ] || file=$argument
+		previous=$argument
+	done
+	if [ -n "$file" ]; then
+		[ "$(stat -c %a "$file")" = 600 ] || { echo "password file mode $(stat -c %a "$file")" >&2; exit 9; }
+		printf 'file %s %s\n' "$file" "$(cat "$file")" >>"$HIDDEN_LOG"
+	fi
+	case ${HIDDEN_RESULT:-ok} in
+	wrong) echo 'Error: Connection activation failed: Secrets were required, but not provided.' >&2; exit 4 ;;
+	absent) echo 'Error: Connection activation failed: No network with SSID found.' >&2; exit 10 ;;
+	esac
+	;;
+'connection delete '*) printf 'deleted\n' >>"$HIDDEN_LOG" ;;
+*) echo "unexpected nmcli call: $*" >&2; exit 99 ;;
+esac
+SH
+chmod +x "$hidden/bin/nmcli"
+hidden_join() { # PASSWORD ARGS...
+	hidden_password=$1
+	shift
+	: >"$hidden/argv"
+	: >"$hidden/log"
+	hidden_status=0
+	printf '%s\n' "$hidden_password" | env PATH="$hidden/bin:$PATH" HIDDEN_ARGV="$hidden/argv" \
+		HIDDEN_LOG="$hidden/log" HIDDEN_RESULT="$hidden_result" \
+		"$repo/scripts/dwm-quickshell-network" wifi-connect-hidden "$@" \
+		>"$hidden/out" 2>"$hidden/err" || hidden_status=$?
+}
+hidden_result=ok
+hidden_join 'correct horse battery' wlan0 'Back Office' wpa-psk --password-stdin
+[ "$hidden_status" = 0 ] || fail "hidden join: $(cat "$hidden/err")"
+grep -Fq 'connection add type wifi ifname wlan0 con-name Back Office ssid Back Office 802-11-wireless.hidden yes connection.uuid ' \
+	"$hidden/argv" || fail "no hidden profile: $(cat "$hidden/argv")"
+grep -Fq 'wifi-sec.key-mgmt wpa-psk' "$hidden/argv" || fail 'no WPA key management'
+grep -Fq '802-11-wireless-security.psk:correct horse battery' "$hidden/log" || fail 'the password file'
+hidden_file=$(sed -n 's/^file \([^ ]*\) .*/\1/p' "$hidden/log")
+[ -n "$hidden_file" ] || fail 'no password file was used'
+[ ! -e "$hidden_file" ] || fail 'the password file was left behind'
+if grep -Fq 'correct horse' "$hidden/argv"; then fail 'the password was in argv'; fi
+if grep -Fq deleted "$hidden/log"; then fail 'a profile that connected was deleted'; fi
+# WPA3 and open.
+hidden_join 'any length works' wlan0 'Lab' sae --password-stdin
+[ "$hidden_status" = 0 ] || fail "a WPA3 join: $(cat "$hidden/err")"
+grep -Fq 'wifi-sec.key-mgmt sae' "$hidden/argv" || fail 'no WPA3 key management'
+hidden_join '' wlan0 'Open Lab' open
+[ "$hidden_status" = 0 ] || fail "an open join: $(cat "$hidden/err")"
+if grep -Fq 'key-mgmt' "$hidden/argv" || grep -Fq passwd-file "$hidden/argv"; then fail 'an open network got security'; fi
+# A wrong password: the profile goes, and the reason is plain.
+hidden_result=wrong
+hidden_join 'not the password' wlan0 'Back Office' wpa-psk --password-stdin
+[ "$hidden_status" != 0 ] || fail 'a wrong password succeeded'
+grep -Fq deleted "$hidden/log" || fail 'the failed profile was kept'
+grep -Fq 'wrong password' "$hidden/err" || fail "the reason: $(cat "$hidden/err")"
+hidden_result=absent
+hidden_join 'correct horse battery' wlan0 'Nowhere' wpa-psk --password-stdin
+grep -Fq 'no network named Nowhere answered' "$hidden/err" || fail "the reason: $(cat "$hidden/err")"
+hidden_result=ok
+# Refused before NetworkManager is asked to change anything.
+hidden_refused() { # MESSAGE PASSWORD ARGS...
+	hidden_message=$1
+	shift
+	hidden_join "$@"
+	[ "$hidden_status" != 0 ] || fail "accepted: $*"
+	grep -Fq -- "$hidden_message" "$hidden/err" || fail "for $*: expected '$hidden_message', got $(cat "$hidden/err")"
+	if grep -q '^connection ' "$hidden/argv"; then fail "a profile was made for: $*"; fi
+}
+hidden_refused 'no Wi-Fi adapter named wlan9' 'correct horse battery' wlan9 'Back Office' wpa-psk --password-stdin
+hidden_refused 'no Wi-Fi adapter named eth0' 'correct horse battery' eth0 'Back Office' wpa-psk --password-stdin
+hidden_refused 'a WPA password is 8 to 63 characters' 'short' wlan0 'Back Office' wpa-psk --password-stdin
+hidden_refused '64-character WPA key must be hexadecimal' "$(printf 'z%.0s' $(seq 64))" wlan0 'Back Office' wpa-psk --password-stdin
+hidden_refused 'the network name must be 1 to 32 bytes' 'correct horse battery' wlan0 "$(printf 'n%.0s' $(seq 33))" wpa-psk --password-stdin
+hidden_refused 'the network name must be 1 to 32 bytes' 'correct horse battery' wlan0 '' wpa-psk --password-stdin
+hidden_refused 'control character' 'correct horse battery' wlan0 "$(printf 'bad\tname')" wpa-psk --password-stdin
+hidden_refused 'security must be open, wpa-psk or sae' 'x' wlan0 'Corp' wpa-eap --password-stdin
+hidden_refused 'needs --password-stdin' '' wlan0 'Back Office' wpa-psk
+hidden_refused 'takes no password' 'x' wlan0 'Open Lab' open --password-stdin
+hidden_refused 'Wi-Fi password required on stdin' '' wlan0 'Back Office' wpa-psk --password-stdin
+# A 32-byte name of multibyte characters is accepted; 33 bytes is not.
+hidden_join 'correct horse battery' wlan0 "$(printf 'é%.0s' $(seq 16))" wpa-psk --password-stdin
+[ "$hidden_status" = 0 ] || fail "a 32-byte name: $(cat "$hidden/err")"
+
 printf 'Quickshell network helper: PASS\n'

@@ -42,6 +42,22 @@ Scope {
     property var connections: []
     property var wifiNetworks: []
     property bool editorChecked: false
+    // Joining a hidden network (#471, upstream dwm-titus #379). The prompt
+    // opens once a snapshot has named the adapters, and a snapshot never closes
+    // it: one that fails keeps a pending prompt waiting, and one that changes
+    // the adapters only updates what it says.
+    property bool hiddenPromptVisible: false
+    property bool hiddenPromptPending: false
+    property string hiddenSsid: ""
+    property string hiddenSecurity: "wpa-psk"
+    property string hiddenPassword: ""
+    property string hiddenMessage: ""
+    readonly property var wifiDeviceNames: root.devices.filter(function(device) {
+        return device.type === "wifi";
+    }).map(function(device) {
+        return device.device;
+    })
+    readonly property bool promptVisible: root.wifiPasswordPromptVisible || root.hiddenPromptVisible
 
     readonly property var activeConnections: root.connections.filter(function(profile) {
         return profile.active;
@@ -70,6 +86,7 @@ Scope {
 
     function close() {
         root.visible = false;
+        if (!hiddenJoinProcess.running) root.cancelHiddenPrompt();
         root.selectedIndex = 0;
         root.selectedWifiIndex = -1;
         root.wifiPasswordPromptVisible = false;
@@ -198,6 +215,79 @@ Scope {
         else if (!root.actionFailed && !root.busy) root.message = "";
         if (root.selectedIndex >= connections.length) root.selectedIndex = Math.max(0, connections.length - 1);
         if (root.selectedWifiIndex >= wifiNetworks.length) root.selectedWifiIndex = -1;
+        root.hiddenSnapshotRead();
+    }
+
+    // A snapshot was read: a pending prompt opens, and an open one says
+    // whether there is an adapter to join with.
+    function hiddenSnapshotRead() {
+        if (root.hiddenPromptPending) {
+            root.hiddenPromptPending = false;
+            root.hiddenPromptVisible = true;
+        }
+        if (!root.hiddenPromptVisible || hiddenJoinProcess.running) return;
+        const noAdapter = "No Wi-Fi adapter: connect one to join a network.";
+        if (root.wifiDeviceNames.length === 0) root.hiddenMessage = noAdapter;
+        else if (root.hiddenMessage === noAdapter) root.hiddenMessage = "";
+    }
+
+    function openHiddenPrompt() {
+        if (root.busy || root.hiddenPromptVisible) return;
+        root.hiddenPassword = "";
+        root.hiddenMessage = "";
+        root.cancelWifiPasswordPrompt();
+        // Until a snapshot has been read the adapters are unknown.
+        if (!root.stateKnown || snapshotProcess.running) {
+            root.hiddenPromptPending = true;
+            if (!snapshotProcess.running) root.refresh(false);
+            return;
+        }
+        root.hiddenPromptVisible = true;
+        root.hiddenSnapshotRead();
+    }
+
+    function cancelHiddenPrompt() {
+        root.hiddenPromptVisible = false;
+        root.hiddenPromptPending = false;
+        root.hiddenSsid = "";
+        root.hiddenPassword = "";
+        root.hiddenMessage = "";
+        root.hiddenSecurity = "wpa-psk";
+    }
+
+    // The name in UTF-8 bytes, which 802.11 limits to 32.
+    function utf8Length(text) {
+        return encodeURIComponent(text).replace(/%[0-9A-F]{2}/g, "x").length;
+    }
+
+    // Why the hidden join cannot start yet, or "" when it can; the helper
+    // checks the same again.
+    function hiddenJoinProblem() {
+        if (!root.actionsAvailable) return "NetworkManager is not available";
+        if (root.wifiDeviceNames.length === 0) return "No Wi-Fi adapter";
+        const length = root.utf8Length(root.hiddenSsid);
+        if (length < 1) return "Enter the network name";
+        if (length > 32) return "A network name is at most 32 bytes";
+        if (/[\u0000-\u001f\u007f]/.test(root.hiddenSsid)) return "The network name has a control character";
+        if (root.hiddenSecurity === "wpa-psk") {
+            const password = root.hiddenPassword;
+            if (password.length === 64 ? !/^[0-9A-Fa-f]{64}$/.test(password)
+                    : password.length < 8 || password.length > 63)
+                return "A WPA password is 8 to 63 characters";
+        } else if (root.hiddenSecurity === "sae" && root.hiddenPassword.length === 0) {
+            return "Enter the password";
+        }
+        return "";
+    }
+
+    function joinHidden() {
+        if (root.busy || hiddenJoinProcess.running || root.hiddenJoinProblem().length > 0) return;
+        const args = [root.wifiDeviceNames[0], root.hiddenSsid, root.hiddenSecurity];
+        if (root.hiddenSecurity !== "open") args.push("--password-stdin");
+        root.busy = true;
+        root.hiddenMessage = "Joining " + root.hiddenSsid + "...";
+        hiddenJoinProcess.command = Commands.networkHelperCommand("wifi-connect-hidden", args);
+        hiddenJoinProcess.running = true;
     }
 
     function parseDevices(text) {
@@ -525,6 +615,33 @@ Scope {
                     root.message = root.actionLabel + " failed: " + error;
                 }
             }
+        }
+    }
+
+    // The hidden join: the password on stdin, then forgotten; on failure the
+    // prompt stays, with the name kept and the reason shown.
+    Process {
+        id: hiddenJoinProcess
+
+        running: false
+        stdinEnabled: true
+        stderr: StdioCollector { id: hiddenJoinError }
+
+        onStarted: {
+            if (root.hiddenSecurity !== "open") write(root.hiddenPassword + "\n");
+            root.hiddenPassword = "";
+        }
+        onExited: exitCode => {
+            root.busy = false;
+            if (exitCode === 0) {
+                const name = root.hiddenSsid;
+                root.cancelHiddenPrompt();
+                root.message = "Joined " + name;
+            } else {
+                const error = hiddenJoinError.text.trim();
+                root.hiddenMessage = error.length > 0 ? error.split("\n")[0] : "Could not join the network";
+            }
+            root.refresh(false);
         }
     }
 

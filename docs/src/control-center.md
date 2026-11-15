@@ -41,8 +41,13 @@ NetworkManager connections, scans visible Wi-Fi networks, and connects to open
 or WPA personal networks directly. Successful Wi-Fi connections are saved as
 NetworkManager profiles, so they reconnect normally in later sessions.
 
-Hidden SSIDs and enterprise Wi-Fi are handled through the optional
-`nm-connection-editor` fallback when it is installed.
+**Join Hidden Network...** joins a network that does not broadcast its name:
+type the name, choose WPA/WPA2, WPA3 or Open, and the password. A wrong password
+or a name no network answers to keeps the prompt open, with the name, and says
+which. The joined network is saved like any other.
+
+Enterprise Wi-Fi is handled through the optional `nm-connection-editor`
+fallback when it is installed.
 
 ## Bluetooth Popover
 
@@ -116,6 +121,10 @@ required to read system logs and repair system services"). That helper accepts
 only the privileged scan and the listed service repairs. Cancelling the prompt
 leaves a partial report and marks its coverage as incomplete.
 
+Each category in the list shows how many warnings (a check that could not run
+counts as one) and errors it holds, as two badges; the overview counts them
+all.
+
 The dashboard groups checks into:
 
 - Boot and kernel errors from `journalctl`, with `dmesg` as a fallback
@@ -165,9 +174,8 @@ the system repairs are unavailable and the dashboard says so.
 | Restart Quickshell | Reload the managed Quickshell shell |
 | Reload Wallpaper | A random wallpaper from `~/Pictures/backgrounds/` |
 | Restart NetworkManager | The System Health repair: polkit asks for authorization, then NetworkManager restarts |
-| Dependency Check | Opens `check-deps.sh` in a terminal |
+| Check Dependencies | Opens `check-deps.sh --interactive` in a terminal: the report, then, if packages from the shared dependency map are missing, it lists them and asks before installing them with `sudo pacman -S --needed` (pacman shows its summary and asks too). It never upgrades the system: if the package database is too old for the mirrors, it says to run `sudo pacman -Syu` first |
 | Self-Heal | Runs the script named in `~/.config/lyona/self-heal.path` (or `dwm-self-heal` on `PATH`) in a terminal; shown only when one is set up |
-| Install Missing Deps | In a terminal: `install.sh` from a checkout, or the required and desktop packages through pacman from an install |
 | Wallpaper Folder | Open `~/Pictures/backgrounds/` in the file manager |
 | GTK Settings | Launch `nwg-look` for GTK theming; shown only when `nwg-look` is installed |
 

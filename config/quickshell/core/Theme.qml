@@ -30,6 +30,10 @@ Singleton {
     property string warning: "#EBCB8B"
     property string danger: "#BF616A"
     property string dangerSurface: "#3B4252"
+    // Text on a badge filled with a status colour (#500): the background when
+    // it reads at 4.5:1 there, else black or white.
+    readonly property string dangerBadgeText: readableText(bg, danger)
+    readonly property string warningBadgeText: readableText(bg, warning)
     readonly property string shadow: transparent
 
     readonly property string popupBackground: bg

@@ -10,6 +10,33 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Join a hidden Wi-Fi network from the panel (#471, upstream dwm-titus #379):
+  **Join Hidden Network...** in the network popover asks for the name, the
+  security (WPA/WPA2, WPA3 or open) and the password. The new
+  `dwm-quickshell-network wifi-connect-hidden` command checks the adapter, the
+  name and the password, creates a hidden NetworkManager profile and
+  activates it. The password reaches it only on stdin and a mode-0600 file, as
+  for scanned networks. A profile that does not connect is deleted, and the
+  prompt stays open with the name and the reason. The prompt opens only once
+  the network state is known, and adapter changes while it is open update what
+  it says. Previously hidden networks needed `nm-connection-editor`.
+- One **Check Dependencies** action in the Control Center (#500, upstream
+  dwm-titus #394) replaces **Dependency Check** and **Install Missing Deps**.
+  It opens `check-deps.sh --interactive` in a terminal: the report, then, when
+  packages from the shared dependency map are not installed, the list and
+  "Install now? [y/N]". A yes runs `sudo pacman -S --needed` there, so pacman
+  shows its summary and asks too. A no installs nothing. It never refreshes or
+  upgrades the system (no `-y`, no `--noconfirm`). A package database too old
+  for the mirrors ends with advice to run `sudo pacman -Syu` first. It installs
+  the build, X11, required runtime, desktop and font packages; the full
+  installer no longer runs from here, not even from a checkout. System
+  Health's **Open dependency installer** repair opens the same check.
+- System Health's category tabs show warning and error counts as two badges
+  (#500), filled with the warning and danger colours, with text that reads at
+  4.5:1 on every preset (now in the theme contrast check). A check that could
+  not run counts as a warning. The single badge they replace used the danger
+  colour as text on the dark surface, which fell to 1.15:1 on catppuccin-latte.
+
 - The panel marks the tags that have windows (#474, upstream dwm-titus #395):
   a small square in the tag's corner, in the label's colour, on every
   monitor's panel. `WorkspaceButton.qml` received this state but never drew
@@ -102,6 +129,24 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `lyona-update` checks it), and any rollback (ARM5-02, #490).
 
 ### Fixed
+
+- Settings > Input no longer lists power, sleep and lid buttons as keyboards,
+  and shows a device whose interfaces appear as several XInput devices as one
+  card (#473, upstream dwm-titus #385). Parts merge when they are the same
+  kind on the same USB or HID device, by port, so two identical mice stay two.
+  - A change applies to every part that has the setting. When one part fails,
+    the parts already changed are put back. If one of those cannot be put
+    back either, the preview keeps its state, so Revert can retry.
+  - Revert and the automatic rollback give each part its own previous value,
+    found by its stable key, so they work after a replug too.
+  - A device that is not split keeps its key, and a setting saved for one part
+    before still applies to that part; a value saved for the merged card
+    replaces it.
+- System Health no longer reports the UEFI variable store (`efivarfs`) as a
+  storage error (#475, upstream dwm-titus #401). It is left out of the
+  filesystem and inode scans, and shown as one information card, "Firmware
+  variable store", read separately, so a failure of either scan does not hide
+  the other.
 
 - Settings > Default Apps lists Flatpak applications (#476, upstream
   dwm-titus #414). Flatpak exports its desktop entries as symlinks, which

@@ -951,4 +951,162 @@ DWM_INPUT_SESSION_PID=$zombie_parent DWM_INPUT_SESSION_START='' session_parent_a
 kill "$zombie_parent" 2>/dev/null || :
 wait "$zombie_parent" 2>/dev/null || :
 
+# ── #473: button-only keyboards hidden, split devices merged ─────────────
+#
+# A power button (a "keyboard" udev says has keys but no keyboard keys), a mouse
+# whose two USB interfaces are two XInput pointers plus a keyboard interface,
+# and the same model on another port. The stub keeps each device's natural
+# scrolling in a file, can fail a set on one device (TEST_FAIL_SET_ID), or fail
+# putting one back (TEST_FAIL_RESTORE_ID: its set to 0).
+split=$work/split
+mkdir -p "$split/bin" "$split/ns" "$split/home/.config/lyona"
+cp "$work/bin/setxkbmap" "$work/bin/dwm-xkbset" "$split/bin/"
+cat >"$split/devices" <<'EOF'
+⎡ Virtual core pointer                     id=2    [master pointer  (3)]
+⎜   ↳ Gaming Mouse                         id=21   [slave  pointer  (2)]
+⎜   ↳ Gaming Mouse Consumer Control        id=22   [slave  pointer  (2)]
+⎜   ↳ Gaming Mouse                         id=24   [slave  pointer  (2)]
+⎣ Virtual core keyboard                    id=3    [master keyboard (2)]
+    ↳ Power Button                         id=20   [slave  keyboard (3)]
+    ↳ Gaming Mouse Keyboard                id=23   [slave  keyboard (3)]
+EOF
+# The same mouse unplugged and plugged back: new X ids and event nodes.
+sed -e 's/id=21 /id=31 /; s/id=22 /id=32 /' "$split/devices" >"$split/devices-replugged"
+cat >"$split/bin/xinput" <<'EOF'
+#!/bin/sh
+node() {
+	case $1 in 31) printf 21 ;; 32) printf 22 ;; *) printf '%s' "$1" ;; esac
+}
+case $1 in
+--list) cat "$TEST_DEVICES" ;;
+list-props)
+	n=$(node "$2")
+	case $n in
+	20) name='Power Button' product='0, 1' ;;
+	21) name='Gaming Mouse' product='4660, 22136' ;;
+	22) name='Gaming Mouse Consumer Control' product='4660, 22136' ;;
+	23) name='Gaming Mouse Keyboard' product='4660, 22136' ;;
+	24) name='Gaming Mouse' product='4660, 22136' ;;
+	*) exit 1 ;;
+	esac
+	printf "Device '%s':\n\tDevice Product ID (101): %s\n\tDevice Node (102): \"/dev/input/event%s\"\n" \
+		"$name" "$product" "$2"
+	case $n in
+	21 | 22 | 24)
+		printf '\tlibinput Natural Scrolling Enabled (302): %s\n' "$(cat "$TEST_NS/$n" 2>/dev/null || printf 0)"
+		printf '\tlibinput Natural Scrolling Enabled Default (303): 0\n'
+		;;
+	esac
+	;;
+set-prop)
+	[ "${TEST_FAIL_SET_ID:-}" != "$2" ] || exit 1
+	[ "${TEST_FAIL_RESTORE_ID:-}" != "$2" ] || [ "$4" != 0 ] || exit 1
+	printf '%s\n' "$4" >"$TEST_NS/$(node "$2")"
+	printf 'xinput %s\n' "$*" >>"$TEST_LOG"
+	;;
+*) exit 2 ;;
+esac
+EOF
+cat >"$split/bin/udevadm" <<'EOF'
+#!/bin/sh
+[ "${1:-}" = info ] || exit 2
+usb=/devices/pci0000:00/0000:00:14.0/usb1
+case "$*" in
+*event20*) printf 'ID_INPUT=1\nID_INPUT_KEY=1\nID_PATH=acpi-LNXPWRBN:00\nDEVPATH=/devices/LNXSYSTM:00/LNXPWRBN:00/input/input20/event20\n' ;;
+*event21* | *event31*) printf 'ID_INPUT_MOUSE=1\nID_PATH=pci-0000:00:14.0-usb-0:3:1.0\nDEVPATH=%s/1-3/1-3:1.0/0003:1234:5678.0001/input/input21/event21\n' "$usb" ;;
+*event22* | *event32*) printf 'ID_INPUT_MOUSE=1\nID_INPUT_KEY=1\nID_PATH=pci-0000:00:14.0-usb-0:3:1.1\nDEVPATH=%s/1-3/1-3:1.1/0003:1234:5678.0002/input/input22/event22\n' "$usb" ;;
+*event23*) printf 'ID_INPUT_KEY=1\nID_INPUT_KEYBOARD=1\nID_PATH=pci-0000:00:14.0-usb-0:3:1.2\nDEVPATH=%s/1-3/1-3:1.2/0003:1234:5678.0003/input/input23/event23\n' "$usb" ;;
+*event24*) printf 'ID_INPUT_MOUSE=1\nID_PATH=pci-0000:00:14.0-usb-0:4:1.0\nDEVPATH=%s/1-4/1-4:1.0/0003:1234:5678.0004/input/input24/event24\n' "$usb" ;;
+esac
+EOF
+chmod +x "$split/bin/"*
+split_env=(
+	DISPLAY=:88 HOME="$split/home" XDG_CONFIG_HOME="$split/home/.config"
+	XDG_RUNTIME_DIR="$work/runtime" PATH="$split/bin:/usr/bin:/bin"
+	TEST_DEVICES="$split/devices" TEST_LOG="$split/actions.log" TEST_NS="$split/ns"
+	TEST_XKBSET_STATE="$work/xkbset.state"
+)
+split_run() { env "${split_env[@]}" "$@" "$helper" "${split_args[@]}"; }
+ns() { cat "$split/ns/$1" 2>/dev/null || printf 0; }
+split_args=(discover)
+split_run >"$split/discover"
+if grep -Fq 'Power Button' "$split/discover"; then fail 'the power button has a card'; fi
+grep -Fq $'\t21,22\tpointer\tGaming Mouse' "$split/discover" || fail "the mouse's parts were not merged: $(grep device "$split/discover")"
+grep -Fq $'\t23\tkeyboard\tGaming Mouse Keyboard' "$split/discover" || fail 'the keyboard interface lost its own card'
+grep -Fq $'\t24\tpointer\tGaming Mouse' "$split/discover" || fail 'the same model on another port was merged'
+[ "$(grep -c '^device	' "$split/discover")" = 4 ] || fail "cards: $(grep device "$split/discover")"
+merged=$(awk -F '\t' '$1 == "device" && $3 == "21,22" {print $2}' "$split/discover")
+[[ $merged =~ ^[0-9a-f]{16}$ ]] || fail "no merged key: $merged"
+# One natural scrolling row for the merged card, not one per part.
+[ "$(grep -c "^setting	$merged	natural-scroll	" "$split/discover")" = 1 ] || fail 'the merged card repeats its rows'
+# A part's own key, as saved before the parts merged.
+part_key() { printf 'pointer|%s|4660, 22136|path:pci-0000:00:14.0-usb-0:3:1.%s' "$1" "$2" | sha256sum | cut -c1-16; }
+part21=$(part_key 'Gaming Mouse' 0)
+part22=$(part_key 'Gaming Mouse Consumer Control' 1)
+
+# Change, then Revert: every part, then every part back.
+split_args=(preview split-revert 60 "$merged" natural-scroll 1)
+split_run >/dev/null
+[ "$(ns 21)$(ns 22)$(ns 24)" = 110 ] || fail "preview reached $(ns 21)$(ns 22)$(ns 24), not both parts alone"
+split_args=(revert split-revert)
+split_run >/dev/null
+[ "$(ns 21)$(ns 22)" = 00 ] || fail "revert left $(ns 21)$(ns 22)"
+
+# Keep: saved once, under the card's key, replacing what a part had saved for
+# the setting on its own; another part's other setting stays.
+printf '%s\tnatural-scroll\t0\t0\n%s\tpointer-speed\t0.5\t0\n' "$part21" "$part22" \
+	>"$split/home/.config/lyona/input-settings.conf"
+split_args=(preview split-keep 60 "$merged" natural-scroll 1)
+split_run >/dev/null
+split_args=(keep split-keep)
+split_run >/dev/null
+settings=$split/home/.config/lyona/input-settings.conf
+grep -q "^$merged	natural-scroll	1	" "$settings" || fail "not saved under the card: $(cat "$settings")"
+if grep -q "^$part21	natural-scroll" "$settings"; then fail 'the part kept its own natural scrolling'; fi
+grep -q "^$part22	pointer-speed" "$settings" || fail "another setting of a part was dropped"
+# A part's own saved value still applies to that part alone.
+printf '%s\tnatural-scroll\t0\t1\n' "$part21" >"$settings"
+split_args=(apply-saved)
+split_run >/dev/null
+[ "$(ns 21)$(ns 22)" = 01 ] || fail "a part's own value: $(ns 21)$(ns 22)"
+rm -f "$settings"
+printf '0\n' >"$split/ns/22"
+
+# One part failing: none changes, the one already changed is put back.
+: >"$split/actions.log"
+split_args=(preview split-fail 60 "$merged" natural-scroll 1)
+if split_run TEST_FAIL_SET_ID=22 >/dev/null 2>"$split/fail.err"; then fail 'a failed part was accepted'; fi
+[ "$(ns 21)$(ns 22)" = 00 ] || fail "after a failed part: $(ns 21)$(ns 22)"
+grep -Fq 'xinput set-prop 21 libinput Natural Scrolling Enabled 0' "$split/actions.log" ||
+	fail "part 21 was not put back: $(cat "$split/actions.log")"
+split_args=(preview-status)
+[ "$(split_run)" = $'result\tnone' ] || fail "a failed preview left state: $(split_run)"
+
+# One part failing and another not going back: the preview keeps its state,
+# says so, and Revert retries.
+split_args=(preview split-stuck 60 "$merged" natural-scroll 1)
+if split_run TEST_FAIL_SET_ID=22 TEST_FAIL_RESTORE_ID=21 >/dev/null 2>"$split/stuck.err"; then
+	fail 'a stuck part was accepted'
+fi
+grep -Fq 'retained for Revert' "$split/stuck.err" || fail "no recovery message: $(cat "$split/stuck.err")"
+[ "$(ns 21)" = 1 ] || fail 'the stuck part was not stuck'
+split_args=(preview-status)
+split_run | grep -q '^preview-failed	split-stuck	' || fail "the stuck preview was not reported: $(split_run)"
+split_args=(revert split-stuck)
+split_run >/dev/null || fail 'revert did not retry the stuck part'
+[ "$(ns 21)$(ns 22)" = 00 ] || fail "revert after a stuck part: $(ns 21)$(ns 22)"
+
+# Unplugged and plugged back during a preview: Revert finds each part by its
+# key under its new X id, and gives each its own value back (here they differ).
+printf '1\n' >"$split/ns/22"
+split_args=(preview split-replug 60 "$merged" natural-scroll 1)
+split_run >/dev/null
+[ "$(ns 21)$(ns 22)" = 11 ] || fail 'the replug preview did not apply'
+: >"$split/actions.log"
+split_args=(revert split-replug)
+split_run TEST_DEVICES="$split/devices-replugged" >/dev/null || fail 'revert after a replug failed'
+grep -Fq 'xinput set-prop 31 libinput Natural Scrolling Enabled 0' "$split/actions.log" ||
+	fail "revert after a replug missed part 31: $(cat "$split/actions.log")"
+[ "$(ns 21)$(ns 22)" = 01 ] || fail "revert after a replug gave $(ns 21)$(ns 22), not each part its own value"
+
 printf 'Settings input discovery, stable IDs, preview, rollback, and persistence: PASS\n'

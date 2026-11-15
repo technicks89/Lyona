@@ -337,7 +337,7 @@ is_hotplug_device() {
 scan_storage() {
 	local output source percent mount usage status id
 
-	if ! output=$(run_bounded df -P -l -x tmpfs -x devtmpfs -x squashfs 2>/dev/null); then
+	if ! output=$(run_bounded df -P -l -x tmpfs -x devtmpfs -x squashfs -x efivarfs 2>/dev/null); then
 		emit_check storage restricted storage-usage "Filesystem usage" "Unable to read local filesystems" "df failed or timed out"
 		return
 	fi
@@ -363,7 +363,7 @@ scan_storage() {
 		emit_check storage "$status" "disk-$id" "Filesystem $mount" "$usage% used" "$source"
 	done <<<"$output"
 
-	if output=$(run_bounded df -Pi -l -x tmpfs -x devtmpfs -x squashfs 2>/dev/null); then
+	if output=$(run_bounded df -Pi -l -x tmpfs -x devtmpfs -x squashfs -x efivarfs 2>/dev/null); then
 		while read -r source _ _ _ percent mount; do
 			[[ $source == Filesystem ]] && continue
 			usage=${percent%%%}
@@ -389,6 +389,23 @@ scan_storage() {
 			emit_check storage ok root-mount "Root filesystem" "Mounted read-write" "$options"
 		fi
 	fi
+}
+
+# The UEFI variable store (#475, upstream dwm-titus #401): efivarfs is the
+# firmware's fixed-size NVRAM, often nearly full by design, with nothing the
+# user can clean up. Never a storage warning: one information card, read on its
+# own so that neither this nor the filesystem scan hides the other. No card
+# without UEFI (efivarfs not mounted).
+scan_firmware_store() {
+	local output source percent mount
+	output=$(run_bounded df -P -t efivarfs 2>/dev/null) || return 0
+	while read -r source _ _ _ percent mount; do
+		[[ $source == Filesystem ]] && continue
+		[[ ${percent%%%} =~ ^[0-9]+$ ]] || continue
+		emit_check storage info firmware-variables "Firmware variable store" "$percent used" \
+			"UEFI variables (efivarfs at $mount): fixed-size firmware storage, often nearly full by design"
+		return 0
+	done <<<"$output"
 }
 
 scan_user_services() {
@@ -754,6 +771,7 @@ scan_user() {
 	scan_memory
 	scan_load
 	scan_storage
+	scan_firmware_store
 	scan_user_services
 	scan_desktop
 	scan_network
@@ -1028,9 +1046,8 @@ repair_user() {
 		systemctl --user restart "${units[@]}"
 		;;
 	install-dependencies)
-		# One installer flow, the Control Center's: a checkout's install.sh, or
-		# the installed package library (Sync Sprint 16 R16-03).
-		control_helper_action install-missing-deps
+		# One installer flow, the Control Center's check-and-install (#500).
+		control_helper_action dependency-check
 		;;
 	*)
 		printf 'unsupported user repair: %s\n' "$action" >&2

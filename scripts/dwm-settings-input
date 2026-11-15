@@ -26,7 +26,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 self="$script_dir/${BASH_SOURCE[0]##*/}"
 accessibility_key=accessx
 
+# One entry per card: the parts of one physical device merged (#473). device_ids
+# and device_part_keys hold the parts' X ids and keys, space-separated; the
+# part_ arrays hold each part as XInput lists it.
 declare -a device_ids=() device_keys=() device_kinds=() device_names=() device_persistable=()
+declare -a device_part_keys=() device_groups=()
+declare -a part_ids=() part_keys=() part_kinds=() part_names=() part_persistable=()
 # The one-shot actions keep xinput output in a per-run scratch folder, removed on
 # exit (a signal included): a RETURN trap does not run when the helper is stopped
 # part-way through a scan, which left its files behind.
@@ -155,39 +160,79 @@ property_value() {
 	' "$properties"
 }
 
+# udev's properties for an input node, or nothing without udevadm or a node.
+udev_properties() {
+	[[ -n $1 ]] && command -v udevadm >/dev/null 2>&1 || return 0
+	udevadm info --query=property --name="$1" 2>/dev/null || true
+}
+
+udev_value() { # PROPERTIES NAME
+	awk -F= -v name="$2" '$1 == name {print substr($0, index($0, "=") + 1); exit}' <<<"$1"
+}
+
 stable_device_source() {
-	local node=$1 properties serial path devpath
-	[[ -n $node ]] || return 1
-	if command -v udevadm >/dev/null 2>&1; then
-		properties=$(udevadm info --query=property --name="$node" 2>/dev/null || true)
-		serial=$(awk -F= '$1 == "ID_SERIAL" {print substr($0, index($0, "=") + 1); exit}' <<<"$properties")
-		path=$(awk -F= '$1 == "ID_PATH" {print substr($0, index($0, "=") + 1); exit}' <<<"$properties")
-		devpath=$(awk -F= '$1 == "DEVPATH" {print substr($0, index($0, "=") + 1); exit}' <<<"$properties")
-		if [[ -n $serial ]]; then
-			printf 'serial:%s' "$serial"
-			return
-		fi
-		if [[ -n $path ]]; then
-			printf 'path:%s' "$path"
-			return
-		fi
-		devpath=${devpath%/input/input[0-9]*/event[0-9]*}
-		if [[ -n $devpath && $devpath != /devices/virtual* ]]; then
-			printf 'sysfs:%s' "$devpath"
-			return
-		fi
+	local properties=$1 serial path devpath
+	serial=$(udev_value "$properties" ID_SERIAL)
+	path=$(udev_value "$properties" ID_PATH)
+	devpath=$(udev_value "$properties" DEVPATH)
+	if [[ -n $serial ]]; then
+		printf 'serial:%s' "$serial"
+		return
+	fi
+	if [[ -n $path ]]; then
+		printf 'path:%s' "$path"
+		return
+	fi
+	devpath=${devpath%/input/input[0-9]*/event[0-9]*}
+	if [[ -n $devpath && $devpath != /devices/virtual* ]]; then
+		printf 'sysfs:%s' "$devpath"
+		return
 	fi
 	return 1
 }
 
+# A "keyboard" with keys but no keyboard keys (#473, upstream dwm-titus #385):
+# the kernel's power, sleep and lid buttons, a consumer-control interface.
+# udev's input_id says so; without udev nothing is hidden.
+button_only() {
+	[[ $(udev_value "$1" ID_INPUT_KEY) == 1 && $(udev_value "$1" ID_INPUT_KEYBOARD) != 1 ]]
+}
+
+# The physical device an XInput device is part of (#473): the USB device for
+# one of its interfaces ("1-3" of "1-3:1.0"), else the HID device. Empty for a
+# device with neither (PS/2, I2C, virtual), which is never merged. A port, not
+# a serial: two identical mice are two devices.
+physical_device() {
+	local devpath
+	devpath=$(udev_value "$1" DEVPATH)
+	# .../usb1/1-3/1-3:1.0/...: the device directory, then one of its
+	# interfaces; behind a hub, .../1-3/1-3.2/1-3.2:1.0/.
+	if [[ $devpath =~ ^(/devices/.*/[0-9]+-[0-9.]+)/[0-9]+-[0-9.]+:[0-9]+\.[0-9]+/ ]]; then
+		printf 'usb:%s' "${BASH_REMATCH[1]}"
+	elif [[ $devpath =~ ^(/devices/.*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4})/input/ ]]; then
+		printf 'hid:%s' "${BASH_REMATCH[1]}"
+	fi
+}
+
+short_key() { printf '%s' "$1" | sha256sum | awk '{print substr($1, 1, 16)}'; }
+
 scan_devices() {
-	local line id kind name properties product node source identity key persistable devices
+	local line id kind name properties product node source identity persistable devices udev group
+	local index d found merged
+	local -a part_identities=() part_groups=() device_identities=()
 	need_tools
 	device_ids=()
 	device_keys=()
 	device_kinds=()
 	device_names=()
 	device_persistable=()
+	device_part_keys=()
+	device_groups=()
+	part_ids=()
+	part_keys=()
+	part_kinds=()
+	part_names=()
+	part_persistable=()
 	if ! devices=$(xinput --list --short); then
 		die "unable to query XInput devices"
 	fi
@@ -213,25 +258,67 @@ scan_devices() {
 			node=$(property_value "$properties" "Device Node")
 			node=${node#\"}
 			node=${node%\"}
+			rm -f "$properties"
+			udev=$(udev_properties "$node")
+			if [[ $kind == keyboard ]] && button_only "$udev"; then
+				continue
+			fi
 			if [[ $kind == pointer && $name =~ ([Tt]ouch[Pp]ad|[Tt]rack[Pp]ad) ]]; then
 				kind=touchpad
 			fi
-			if source=$(stable_device_source "$node"); then
+			if source=$(stable_device_source "$udev"); then
 				persistable=1
 			else
 				source=unstable
 				persistable=0
 			fi
 			identity="$kind|$name|$product|$source"
-			key=$(printf '%s' "$identity" | sha256sum | awk '{print substr($1, 1, 16)}')
-			device_ids+=("$id")
-			device_keys+=("$key")
-			device_kinds+=("$kind")
-			device_names+=("$name")
-			device_persistable+=("$persistable")
-			rm -f "$properties"
+			group=$(physical_device "$udev")
+			part_ids+=("$id")
+			part_keys+=("$(short_key "$identity")")
+			part_kinds+=("$kind")
+			part_names+=("$name")
+			part_persistable+=("$persistable")
+			part_identities+=("$identity")
+			part_groups+=("${group:+$kind|$group}")
 		fi
 	done <<<"$devices"
+	# One card per physical device and kind: a mouse's several interfaces
+	# merge; its keyboard interface stays a keyboard card.
+	for index in "${!part_ids[@]}"; do
+		found=
+		if [[ -n ${part_groups[$index]} ]]; then
+			for d in "${!device_groups[@]}"; do
+				[[ ${device_groups[$d]} == "${part_groups[$index]}" ]] || continue
+				found=$d
+				break
+			done
+		fi
+		if [[ -z $found ]]; then
+			device_ids+=("${part_ids[$index]}")
+			device_keys+=("${part_keys[$index]}")
+			device_part_keys+=("${part_keys[$index]}")
+			device_kinds+=("${part_kinds[$index]}")
+			device_names+=("${part_names[$index]}")
+			device_persistable+=("${part_persistable[$index]}")
+			device_groups+=("${part_groups[$index]}")
+			device_identities+=("${part_identities[$index]}")
+			continue
+		fi
+		device_ids[found]+=" ${part_ids[$index]}"
+		device_part_keys[found]+=" ${part_keys[$index]}"
+		device_identities[found]+=$'\n'"${part_identities[$index]}"
+		[[ ${part_persistable[$index]} == 1 ]] || device_persistable[found]=0
+		# The shortest name: "Gaming Mouse", not "Gaming Mouse Consumer Control".
+		((${#part_names[$index]} >= ${#device_names[found]})) || device_names[found]=${part_names[$index]}
+	done
+	# A merged card's key: its parts' identities, in a fixed order, so it is the
+	# same each session while the parts are; a single part keeps its own key.
+	for d in "${!device_ids[@]}"; do
+		[[ ${device_ids[$d]} == *' '* ]] || continue
+		merged=$(sort <<<"${device_identities[$d]}")
+		device_keys[d]=$(short_key "merged|${device_kinds[$d]}|$merged")
+	done
 }
 
 device_can_persist() {
@@ -243,19 +330,49 @@ device_can_persist() {
 		[[ ${device_persistable[$index]} == 1 ]] || return 1
 		return 0
 	done
+	for index in "${!part_keys[@]}"; do
+		[[ ${part_keys[$index]} == "$wanted" ]] || continue
+		[[ ${part_persistable[$index]} == 1 ]] || return 1
+		return 0
+	done
 	return 1
 }
 
-resolve_device() {
-	local wanted=$1 index found=
+# The parts KEY names, one "PART-KEY<TAB>ID" line each: every part of a card,
+# or, for a part's own key (a setting saved before the parts merged), that part.
+resolve_parts() {
+	local wanted=$1 index found='' keys ids part
+	local -a key_list=() id_list=()
 	scan_devices
 	for index in "${!device_keys[@]}"; do
 		[[ ${device_keys[$index]} == "$wanted" ]] || continue
 		[[ -z $found ]] || die "stable device identity is ambiguous"
-		found=${device_ids[$index]}
+		found=1
+		keys=${device_part_keys[$index]}
+		ids=${device_ids[$index]}
 	done
+	if [[ -z $found ]]; then
+		for index in "${!part_keys[@]}"; do
+			[[ ${part_keys[$index]} == "$wanted" ]] || continue
+			[[ -z $found ]] || die "stable device identity is ambiguous"
+			found=1
+			keys=${part_keys[$index]}
+			ids=${part_ids[$index]}
+		done
+	fi
 	[[ -n $found ]] || die "device is disconnected or unavailable: $wanted"
-	printf '%s\n' "$found"
+	read -r -a key_list <<<"$keys"
+	read -r -a id_list <<<"$ids"
+	for part in "${!key_list[@]}"; do
+		printf '%s\t%s\n' "${key_list[$part]}" "${id_list[$part]}"
+	done
+}
+
+resolve_device() {
+	local first
+	first=$(resolve_parts "$1") || return 1
+	first=${first%%$'\n'*}
+	printf '%s\n' "${first#*$'\t'}"
 }
 
 emit_setting() {
@@ -271,7 +388,8 @@ emit_unsupported() {
 }
 
 discover() {
-	local index id key kind name properties value default layout options keyboard_query accessibility_query setting label
+	local index id key kind name properties value default layout options keyboard_query accessibility_query setting label part
+	local -a ids=()
 	scan_devices
 	printf 'input-protocol\t1\n'
 	printf 'device\t%s\tsession\taccessibility\tKeyboard accessibility\n' "$accessibility_key"
@@ -296,16 +414,26 @@ discover() {
 		emit_unsupported "$accessibility_key" accessx "Keyboard accessibility controls need dwm-xkbset and an X11 session"
 	fi
 	for index in "${!device_ids[@]}"; do
-		id=${device_ids[$index]}
+		read -r -a ids <<<"${device_ids[$index]}"
+		id=${ids[0]}
 		key=${device_keys[$index]}
 		kind=${device_kinds[$index]}
 		name=${device_names[$index]}
+		# A merged card's parts' properties, first part first: each setting
+		# shows the first part that has it.
 		properties=$(input_tempfile)
-		if ! xinput list-props "$id" >"$properties" 2>/dev/null; then
-			rm -f "$properties"
-			continue
-		fi
+		for part in "${ids[@]}"; do
+			if ! xinput list-props "$part" >>"$properties" 2>/dev/null; then
+				rm -f "$properties"
+				continue 2
+			fi
+		done
+		id=$(
+			IFS=,
+			printf '%s' "${ids[*]}"
+		)
 		printf 'device\t%s\t%s\t%s\t%s\n' "$key" "$id" "$kind" "$(clean_field "$name")"
+		id=${ids[0]}
 		if [[ ${device_persistable[$index]} != 1 ]]; then
 			emit_unsupported "$key" persistence "No stable udev serial, path, or physical sysfs identity; changes are session-only"
 		fi
@@ -384,13 +512,9 @@ validate_value() {
 	esac
 }
 
-read_value() {
-	local key=$1 setting=$2 id properties property value
-	if [[ $key == "$accessibility_key" ]]; then
-		accessibility_value "$setting"
-		return
-	fi
-	id=$(resolve_device "$key") || return 1
+# One part's value, by X id.
+read_part() {
+	local id=$1 setting=$2 properties property value
 	case $setting in
 	keyboard-layout)
 		need_setxkbmap
@@ -405,24 +529,40 @@ read_value() {
 		;;
 	*)
 		property=$(setting_property "$setting") || die "unsupported setting: $setting"
+		# No RETURN trap: it would stay set after this returns (#473).
 		properties=$(input_tempfile)
-		trap 'rm -f "$properties"' RETURN
-		xinput list-props "$id" >"$properties"
+		if ! xinput list-props "$id" >"$properties"; then
+			rm -f "$properties"
+			return 1
+		fi
 		value=$(property_value "$properties" "$property")
-		[[ -n $value ]] || die "$setting is unsupported by device $key"
+		rm -f "$properties"
+		[[ -n $value ]] || return 1
 		printf '%s\n' "$value"
 		;;
 	esac
 }
 
-apply_value() {
-	local key=$1 setting=$2 value=$3 id property
-	validate_value "$setting" "$value" || die "invalid value for $setting"
-	if [[ $key == "$accessibility_key" ]]; then
-		apply_accessibility_value "$setting" "$value"
-		return
+# Whether a part has the setting: every keyboard part has the XKB ones; an
+# XInput property only where the driver exposes it.
+part_supports() {
+	local id=$1 setting=$2 property properties value
+	case $setting in
+	keyboard-layout | modifier-options) return 0 ;;
+	esac
+	property=$(setting_property "$setting") || return 1
+	properties=$(input_tempfile)
+	if ! xinput list-props "$id" >"$properties" 2>/dev/null; then
+		rm -f "$properties"
+		return 1
 	fi
-	id=$(resolve_device "$key") || return 1
+	value=$(property_value "$properties" "$property")
+	rm -f "$properties"
+	[[ -n $value ]]
+}
+
+apply_part() {
+	local id=$1 setting=$2 value=$3 property
 	case $setting in
 	keyboard-layout)
 		need_setxkbmap
@@ -439,8 +579,120 @@ apply_value() {
 	esac
 }
 
+# The device's value: its first part that has the setting.
+read_value() {
+	local key=$1 setting=$2 line id value
+	if [[ $key == "$accessibility_key" ]]; then
+		accessibility_value "$setting"
+		return
+	fi
+	setting_property "$setting" >/dev/null || [[ $setting == keyboard-layout || $setting == modifier-options ]] ||
+		die "unsupported setting: $setting"
+	while IFS= read -r line; do
+		id=${line#*$'\t'}
+		part_supports "$id" "$setting" || continue
+		value=$(read_part "$id" "$setting") || continue
+		printf '%s\n' "$value"
+		return 0
+	done < <(resolve_parts "$key" || printf 'unresolved\n')
+	[[ $line != unresolved ]] || return 1
+	die "$setting is unsupported by device $key"
+}
+
+# Each part that has the setting, as "PART-KEY=VALUE" joined by ";": what a
+# preview of a merged card restores, part by part, even after a replug gives
+# the parts new X ids. A device of one part is its plain value.
+snapshot_value() {
+	local key=$1 setting=$2 line part id value snapshot='' count=0
+	if [[ $key == "$accessibility_key" ]]; then
+		accessibility_value "$setting"
+		return
+	fi
+	local -a lines=()
+	mapfile -t lines < <(resolve_parts "$key" || printf 'unresolved\n')
+	[[ ${lines[0]:-unresolved} != unresolved ]] || return 1
+	if ((${#lines[@]} == 1)); then
+		read_value "$key" "$setting"
+		return
+	fi
+	for line in "${lines[@]}"; do
+		part=${line%%$'\t'*}
+		id=${line#*$'\t'}
+		part_supports "$id" "$setting" || continue
+		value=$(read_part "$id" "$setting") || die "could not read $setting from a part of device $key"
+		[[ $value != *[\;=]* ]] || die "a part's value contains a reserved separator"
+		snapshot+=${snapshot:+;}$part=$value
+		count=$((count + 1))
+	done
+	((count > 0)) || die "$setting is unsupported by device $key"
+	printf '%s\n' "$snapshot"
+}
+
+# Puts back what snapshot_value captured. Every part is tried; a part that
+# cannot be put back (unplugged) fails the whole, so the preview keeps its
+# recovery state and a later retry restores it.
+restore_value() {
+	local key=$1 setting=$2 previous=$3 entry part id status=0
+	local -a entries=()
+	if [[ $key == "$accessibility_key" || $previous != *=* ]]; then
+		apply_value "$key" "$setting" "$previous"
+		return
+	fi
+	IFS=';' read -r -a entries <<<"$previous"
+	for entry in "${entries[@]}"; do
+		part=${entry%%=*}
+		id=$(resolve_device "$part" 2>/dev/null) || {
+			status=1
+			continue
+		}
+		(apply_part "$id" "$setting" "${entry#*=}") || status=1
+	done
+	return "$status"
+}
+
+# Applies VALUE to every part of the device that has the setting, or to none:
+# when a part fails, the parts already changed are put back. If one of those
+# cannot be put back either, it exits 3 and says which, so a preview keeps its
+# recovery state instead of clearing it.
+apply_value() {
+	local key=$1 setting=$2 value=$3 line id i j part_value stuck=''
+	local -a targets=() previous=()
+	validate_value "$setting" "$value" || die "invalid value for $setting"
+	if [[ $key == "$accessibility_key" ]]; then
+		apply_accessibility_value "$setting" "$value"
+		return
+	fi
+	local -a lines=()
+	mapfile -t lines < <(resolve_parts "$key" || printf 'unresolved\n')
+	[[ ${lines[0]:-unresolved} != unresolved ]] || return 1
+	if ((${#lines[@]} == 1)); then
+		apply_part "${lines[0]#*$'\t'}" "$setting" "$value"
+		return
+	fi
+	for line in "${lines[@]}"; do
+		id=${line#*$'\t'}
+		part_supports "$id" "$setting" || continue
+		part_value=$(read_part "$id" "$setting") || die "could not read $setting from part $id of device $key"
+		targets+=("$id")
+		previous+=("$part_value")
+	done
+	((${#targets[@]} > 0)) || die "$setting is unsupported by device $key"
+	for i in "${!targets[@]}"; do
+		(apply_part "${targets[$i]}" "$setting" "$value") && continue
+		for ((j = 0; j < i; j++)); do
+			(apply_part "${targets[$j]}" "$setting" "${previous[$j]}") || stuck+=" ${targets[$j]}"
+		done
+		if [[ -n $stuck ]]; then
+			printf 'dwm-settings-input: %s failed on part %s of device %s, and part(s)%s could not be put back\n' \
+				"$setting" "${targets[$i]}" "$key" "$stuck" >&2
+			exit 3
+		fi
+		die "$setting failed on part ${targets[$i]} of device $key; the other parts were put back"
+	done
+}
+
 persist_value() {
-	local key=$1 setting=$2 value=$3 baseline=${4-} persistable=${5:-} temporary existing_baseline
+	local key=$1 setting=$2 value=$3 baseline=${4-} persistable=${5:-} temporary existing_baseline parts
 	if [[ -z $persistable ]]; then
 		if device_can_persist "$key"; then persistable=1; else persistable=0; fi
 	fi
@@ -451,12 +703,18 @@ persist_value() {
 	fi
 	mkdir -p "$settings_dir"
 	[[ $settings_dir != "$config_dir" ]] || chmod 700 "$settings_dir"
+	# A merged card's value replaces what its parts had saved for the setting
+	# on their own (#473), which would otherwise apply after it at login.
+	parts=$(resolve_parts "$key" 2>/dev/null | cut -f1 | tr '\n' ' ') || parts=''
 	temporary=$(mktemp "$settings_dir/.input-settings.XXXXXX")
 	if [[ -f $settings_file ]]; then
 		if existing_baseline=$(persisted_default "$key" "$setting"); then
 			baseline=$existing_baseline
 		fi
-		awk -F '\t' -v key="$key" -v setting="$setting" '!($1 == key && $2 == setting)' "$settings_file" >"$temporary"
+		awk -F '\t' -v key="$key" -v setting="$setting" -v parts="$parts" '
+			BEGIN { n = split(parts, list, " "); for (i = 1; i <= n; i++) part[list[i]] = 1 }
+			!($2 == setting && ($1 == key || $1 in part))
+		' "$settings_file" >"$temporary"
 	fi
 	printf '%s\t%s\t%s\t%s\n' "$key" "$setting" "$value" "$baseline" >>"$temporary"
 	chmod 600 "$temporary"
@@ -603,12 +861,12 @@ preview_orphaned() {
 }
 
 preview_value() {
-	local token=$1 seconds=$2 key=$3 setting=$4 value=$5 previous state persistable=0
+	local token=$1 seconds=$2 key=$3 setting=$4 value=$5 previous state persistable=0 apply_status=0 failed
 	[[ $seconds =~ ^[1-9][0-9]?$ ]] || die "preview timeout must be between 1 and 99 seconds"
 	ensure_state_dir
 	validate_value "$setting" "$value" || die "invalid value for $setting"
 	state=$(token_file "$token" state)
-	previous=$(read_value "$key" "$setting")
+	previous=$(snapshot_value "$key" "$setting")
 	device_can_persist "$key" && persistable=1
 	[[ $previous != *'|'* ]] || die "captured value contains the reserved preview-state separator"
 	if ! (
@@ -630,7 +888,15 @@ preview_value() {
 		die "another input preview is active"
 	fi
 	record_preview_session "$token"
-	if ! (apply_value "$key" "$setting" "$value"); then
+	(apply_value "$key" "$setting" "$value") || apply_status=$?
+	if ((apply_status == 3)); then
+		# A merged device's part failed and another could not be put back:
+		# keep the captured values, so Revert can retry them (#473).
+		failed=$(token_file "$token" failed)
+		printf 'The change failed on one part of the device and another part could not be put back; Revert retries it.\n' >"$failed"
+		chmod 600 "$failed"
+		die "input preview failed on part of the device; recovery state was retained for Revert"
+	elif ((apply_status != 0)); then
 		cleanup_preview "$token"
 		die "input preview failed; recovery state was cleared"
 	fi
@@ -655,8 +921,9 @@ finish_preview() {
 	trap 'rmdir "$claim" 2>/dev/null || true' RETURN
 	IFS='|' read -r key setting previous value persistable <"$state"
 	if [[ $action == keep ]]; then
+		[[ $previous != *=* || $key == "$accessibility_key" ]] || previous=${previous%%;*} previous=${previous#*=}
 		persist_value "$key" "$setting" "$value" "$previous" "$persistable"
-	elif ! (apply_value "$key" "$setting" "$previous"); then
+	elif ! (restore_value "$key" "$setting" "$previous"); then
 		printf 'Input rollback failed; the captured value is retained for retry.\n' >"$(token_file "$token" failed)"
 		chmod 600 "$(token_file "$token" failed)"
 		rmdir "$claim" 2>/dev/null || true
@@ -686,7 +953,7 @@ watchdog() {
 		fi
 		claim=$(claim_preview "$token")
 		IFS='|' read -r key setting previous value persistable <"$state"
-		if (apply_value "$key" "$setting" "$previous"); then
+		if (restore_value "$key" "$setting" "$previous"); then
 			cleanup_preview "$token"
 			apply_pending_hotplug "$key" "$setting"
 		else

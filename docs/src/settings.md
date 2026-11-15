@@ -50,7 +50,12 @@ the shell to rescale them too. The helper actions are `dpi-set`, `dpi-reset`,
 and the startup-only `dpi-apply-saved`.
 
 The Input section shows each XInput device by a stable hardware identity and
-offers only properties its driver exposes. Pointer acceleration, natural
+offers only properties its driver exposes. Power, sleep and lid buttons, which
+the kernel presents as keyboards, are not listed. A device whose interfaces
+appear as several XInput devices of one kind (a mouse with two pointer
+interfaces) is one card: a change applies to every part that has the setting or,
+when one part fails, to none, and Revert gives each part its own value back,
+also after the device is unplugged and plugged in again. Pointer acceleration, natural
 scrolling, tap-to-click, keyboard layout, and modifier options are supported
 when available. Changes use a timed preview with Keep and Revert. Reset is a
 separate direct action that restores and persists the driver's default. Kept
