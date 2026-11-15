@@ -16,8 +16,8 @@ ClickAwayPopup {
     readonly property int edgeMargin: Theme.rowSpacing
 
     open: panelWindow !== null && panelWindow.screen !== null
-        && networkModel.visible && !networkModel.wifiPasswordPromptVisible
-    wantsKeyboard: !networkModel.wifiPasswordPromptVisible
+        && networkModel.visible && !networkModel.promptVisible
+    wantsKeyboard: !networkModel.promptVisible
     targetWindow: panelWindow
     popupWidth: cardWidth
     popupHeight: cardHeight
@@ -41,7 +41,9 @@ ClickAwayPopup {
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
-                if (root.networkModel.wifiPasswordPromptVisible) {
+                if (root.networkModel.hiddenPromptVisible) {
+                    root.networkModel.cancelHiddenPrompt();
+                } else if (root.networkModel.wifiPasswordPromptVisible) {
                     root.networkModel.cancelWifiPasswordPrompt();
                 } else {
                     root.networkModel.close();
@@ -52,7 +54,7 @@ ClickAwayPopup {
 
         ColumnLayout {
             anchors.fill: parent
-            enabled: !root.networkModel.wifiPasswordPromptVisible
+            enabled: !root.networkModel.promptVisible
             spacing: Theme.popupSpacing
 
             PanelHero {
@@ -158,6 +160,17 @@ ClickAwayPopup {
                 font.pixelSize: Theme.smallFontSize
             }
 
+            // A network that does not broadcast its name (#471).
+            ShellButton {
+                objectName: "joinHiddenButton"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 36
+                label: "Join Hidden Network..."
+                compact: false
+                enabled: root.networkModel.actionsAvailable && !root.networkModel.busy
+                onActivated: root.networkModel.openHiddenPrompt()
+            }
+
             SectionLabel {
                 label: "Saved"
             }
@@ -198,6 +211,12 @@ ClickAwayPopup {
                 compact: false
                 onActivated: root.networkModel.openEditor()
             }
+        }
+
+        HiddenWifiPrompt {
+            networkModel: root.networkModel
+            screen: root.panelWindow ? root.panelWindow.screen : null
+            onVisibleChanged: if (!visible && root.visible) Qt.callLater(function() { content.forceActiveFocus(); })
         }
 
         FloatingWindow {

@@ -958,6 +958,7 @@ ShellRoot {
     }
 
     SystemHealthWindow {
+        id: systemHealthWindow
         healthModel: systemHealthModel
         screen: systemHealthModel.targetScreen ? systemHealthModel.targetScreen : root.activePanelScreen
     }

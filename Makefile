@@ -1177,6 +1177,16 @@ check-quickshell-weather-retain-xvfb:
 	@tests/test-quickshell-weather-retain-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 # A long panel title scrolls once per change, then rests (#499).
+# Joining a hidden Wi-Fi network from the panel (#471).
+.PHONY: check-quickshell-hidden-wifi-xvfb
+check-quickshell-hidden-wifi-xvfb:
+	@tests/test-quickshell-hidden-wifi-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+# System Health's tab badges (#500).
+.PHONY: check-quickshell-health-badges-xvfb
+check-quickshell-health-badges-xvfb:
+	@tests/test-quickshell-health-badges-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 .PHONY: check-quickshell-scrolling-title-xvfb
 check-quickshell-scrolling-title-xvfb:
 	@tests/test-quickshell-scrolling-title-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
@@ -1606,6 +1616,10 @@ check-live-medium-cleanup:
 check-installed-helper-paths:
 	tests/test-installed-helper-paths.sh
 
+# check-deps.sh --interactive: the one dependency check-and-install (#500).
+check-deps-interactive:
+	tests/test-check-deps-interactive.sh
+
 # R16-15, R16-16: what the installers download while sudo is cached is pinned.
 check-download-pins:
 	tests/test-download-pins.sh
@@ -1762,6 +1776,8 @@ check:
 	$(MAKE) check-quickshell-queued-run-xvfb
 	$(MAKE) check-quickshell-weather-retain-xvfb
 	$(MAKE) check-quickshell-scrolling-title-xvfb
+	$(MAKE) check-quickshell-health-badges-xvfb
+	$(MAKE) check-quickshell-hidden-wifi-xvfb
 	$(MAKE) check-quickshell-panel-widgets-xvfb
 	$(MAKE) check-quickshell-update-model
 	$(MAKE) check-quickshell-appearance-model
@@ -1872,6 +1888,7 @@ check:
 	$(MAKE) check-lyona-update-terminal
 	$(MAKE) check-live-medium-cleanup
 	$(MAKE) check-installed-helper-paths
+	$(MAKE) check-deps-interactive
 	$(MAKE) check-download-pins
 	$(MAKE) check-iso-install-warnings
 	$(MAKE) check-iso-install-wifi

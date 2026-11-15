@@ -495,21 +495,14 @@ restart_networkmanager() {
 	"$health_helper" repair-privileged restart-networkmanager >/dev/null
 }
 
+# One action checks and installs (#500, upstream dwm-titus #394): the report,
+# then, when the dependency map's packages are missing, an offer to install
+# them through pacman in the terminal (check-deps.sh -i, which waits for Enter
+# itself). The check-deps.sh beside this helper: a checkout's or the installed
+# one (Sync Sprint 16 R16-03). install-missing-deps, the action this replaced,
+# is the same.
 dependency_check() {
-	terminal_run "'$script_dir/check-deps.sh'; printf '\\nPress enter to close...'; read -r _"
-}
-
-# From a checkout, its own install.sh. An installed system has no install.sh:
-# it installs the required and desktop package groups through the installed
-# package library instead (Sync Sprint 16 R16-03).
-install_missing_deps() {
-	if [ -x "$script_dir/../install.sh" ] && [ -f "$script_dir/dwm-packages.sh" ]; then
-		checkout=$(CDPATH='' cd -- "$script_dir/.." && pwd)
-		terminal_run "cd '$checkout' && ./install.sh; printf '\\nPress enter to close...'; read -r _"
-	else
-		lib=${script_dir%bin}lib/lyona
-		terminal_run "bash -c '. \"\$1/dwm-utils.sh\" && . \"\$1/dwm-packages.sh\" && dwm_install_package_profile build x11 runtime-required desktop' sh '$lib'; printf '\\nPress enter to close...'; read -r _"
-	fi
+	terminal_run "'$script_dir/check-deps.sh' --interactive"
 }
 
 # The configured Self-Heal script, or a reason on stderr and status 1.
@@ -583,7 +576,7 @@ action() {
 	toggle-compositor) toggle_compositor ;;
 	restart-networkmanager) restart_networkmanager ;;
 	dependency-check) dependency_check ;;
-	install-missing-deps) install_missing_deps ;;
+	install-missing-deps) dependency_check ;;
 	self-heal) self_heal ;;
 	open-wallpapers) open_wallpapers ;;
 	gtk-settings) gtk_settings ;;

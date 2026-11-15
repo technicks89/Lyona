@@ -285,6 +285,10 @@
                     root.scaleNetworkPopup = network.createObject(root, {panelWindow: root.defaultPanelWindow,
                         networkModel: {visible: true, busy: false, actionsAvailable: true, editorAvailable: false,
                             wifiPasswordPromptVisible: true, wifiPasswordPromptOrigin: "panel", wifiPassword: "",
+                            // The hidden network prompt's part of the model (#471), closed.
+                            promptVisible: true, hiddenPromptVisible: false, hiddenSsid: "", hiddenSecurity: "wpa-psk",
+                            hiddenPassword: "", hiddenMessage: "", hiddenJoinProblem: () => "",
+                            openHiddenPrompt: () => {}, cancelHiddenPrompt: () => {}, joinHidden: () => {},
                             statusText: "Online", message: "", activeConnections: [], savedProfiles: [], wifiNetworks: [],
                             selectedWifiIndex: -1, selectedWifiNetwork: () => ({ssid: "Test network"}),
                             cancelWifiPasswordPrompt: () => {}, close: () => {}}});

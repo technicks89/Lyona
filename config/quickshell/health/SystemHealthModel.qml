@@ -183,14 +183,17 @@ Scope {
         return count;
     }
 
-    function categoryIssueCount(category) {
+    // A category's errors, or its warnings (a check that could not run is a
+    // warning too), for its tab's badges (#500); the overview counts every
+    // category's.
+    function categoryCount(category, kind) {
         let count = 0;
         for (let i = 0; i < root.rows.length; i++) {
             const row = root.rows[i];
-            if ((category === "overview" || row.category === category)
-                    && (row.status === "error" || row.status === "warn" || row.status === "restricted")) {
+            if (category !== "overview" && row.category !== category) continue;
+            if (kind === "error" ? row.status === "error"
+                    : row.status === "warn" || row.status === "restricted")
                 count++;
-            }
         }
         return count;
     }

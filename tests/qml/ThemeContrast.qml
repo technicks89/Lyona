@@ -30,7 +30,10 @@ ShellRoot {
         ["menuText", "menuHoverBackground", "light"],
         ["menuMutedText", "menuBackground", "light"],
         ["menuMutedText", "menuHoverBackground", "light"],
-        ["controlNormalText", "controlHoverFill", "light"]
+        ["controlNormalText", "controlHoverFill", "light"],
+        // System Health's issue count badges (#500).
+        ["dangerBadgeText", "danger", "all"],
+        ["warningBadgeText", "warning", "all"]
     ]
 
     function lum(color) {

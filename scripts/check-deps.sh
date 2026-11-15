@@ -18,6 +18,29 @@ NC='\033[0m'
 
 MISSING=0
 
+# -i / --interactive (#500, upstream dwm-titus #394): after the report, offer to
+# install what the shared dependency map would and is not installed, in this
+# terminal, through `sudo pacman -S --needed`: visible, confirmed here and by
+# pacman. It never upgrades the system (no -y: see install_missing). The exit
+# status is the report's: non-zero while anything is missing.
+INTERACTIVE=0
+case ${1:-} in
+'') ;;
+-i | --interactive) INTERACTIVE=1 ;;
+-h | --help)
+	printf 'usage: %s [-i|--interactive]\n' "${0##*/}"
+	exit 0
+	;;
+*)
+	printf 'usage: %s [-i|--interactive]\n' "${0##*/}" >&2
+	exit 2
+	;;
+esac
+[[ $# -le 1 ]] || {
+	printf 'usage: %s [-i|--interactive]\n' "${0##*/}" >&2
+	exit 2
+}
+
 check_cmd() {
 	if command -v "$1" &>/dev/null; then
 		printf "  ${GREEN}✓${NC} %s\n" "$1"
@@ -182,11 +205,11 @@ echo ""
 
 if [ $MISSING -eq 0 ]; then
 	printf "${GREEN}All dependencies satisfied. Ready to build!${NC}\n"
-	echo "  Run: make && sudo make install-system && make install-user"
-	exit 0
+	[ "$INTERACTIVE" = 1 ] || echo "  Run: make && sudo make install-system && make install-user"
+	STATUS=0
 else
 	printf "${RED}$MISSING missing dependency/dependencies.${NC}\n"
-	if [ "$DISTRO_FAMILY" != "unknown" ]; then
+	if [ "$INTERACTIVE" = 0 ] && [ "$DISTRO_FAMILY" != "unknown" ]; then
 		echo ""
 		echo "Package suggestions from the shared dependency map:"
 		print_package_profile "Required" required
@@ -194,6 +217,90 @@ else
 		print_package_profile "Optional extras" optional
 		print_package_profile "Supported terminals" terminal
 	fi
-	echo "  Run: ./install.sh   (automated install)"
+	[ "$INTERACTIVE" = 1 ] || echo "  Run: ./install.sh   (automated install)"
+	STATUS=1
+fi
+[ "$INTERACTIVE" = 1 ] || exit "$STATUS"
+
+# What the Control Center's install used to install: the build, X11, required
+# runtime and desktop profiles, and the fonts checked above; and the primary
+# terminal only when the check above found no supported one.
+INSTALL_PROFILES='build x11 runtime-required desktop fonts'
+[ "$TERM_FOUND" -eq 1 ] || INSTALL_PROFILES+=' terminal-primary'
+readonly INSTALL_PROFILES
+
+wait_for_enter() {
+	printf '\nPress Enter to close...'
+	read -r _ || :
+}
+
+# Installs PACKAGES with pacman's own summary and question. Without -y: a
+# refresh without the upgrade (-Sy) is a partial upgrade, and -Syu would turn a
+# dependency install into a full system upgrade. So a package database too old
+# for the mirrors fails here, and says what to do instead.
+install_missing() {
+	local log status
+	log=$(mktemp) || return 1
+	sudo pacman -S --needed "$@" 2>&1 | tee "$log"
+	status=${PIPESTATUS[0]}
+	if [ "$status" -ne 0 ] && command grep -Eq 'failed retrieving file|target not found' "$log"; then
+		printf "\n${YELLOW}Your package database is out of date: update the system first (sudo pacman -Syu), then run this check again.${NC}\n"
+	fi
+	rm -f "$log"
+	return "$status"
+}
+
+if [ "$DISTRO_FAMILY" != arch ] || ! command -v pacman >/dev/null 2>&1; then
+	echo ""
+	echo "Installing needs pacman on Arch Linux; nothing was installed."
+	wait_for_enter
+	exit "$STATUS"
+fi
+read -r -a PROFILES <<<"$INSTALL_PROFILES"
+mapfile -t WANTED < <(dwm_collect_packages "${PROFILES[@]}" 2>/dev/null)
+# pacman -T prints the ones not installed: it exits 0 when there are none and
+# 127 when there are some. Anything else is a failed query, never "nothing to
+# install".
+ABSENT_STATUS=0
+ABSENT_TEXT=$(pacman -T "${WANTED[@]}" 2>/dev/null) || ABSENT_STATUS=$?
+if [ "$ABSENT_STATUS" -ne 0 ] && [ "$ABSENT_STATUS" -ne 127 ]; then
+	echo ""
+	printf "${RED}Could not ask pacman which packages are installed (status %s); nothing was installed.${NC}\n" "$ABSENT_STATUS"
+	wait_for_enter
 	exit 1
 fi
+ABSENT=()
+[ -z "$ABSENT_TEXT" ] || mapfile -t ABSENT <<<"$ABSENT_TEXT"
+echo ""
+if [ "${#ABSENT[@]}" -eq 0 ]; then
+	if [ "$STATUS" -eq 0 ]; then
+		echo "Nothing to install."
+	else
+		echo "Every package the dependency map installs is installed; see the report above for the rest."
+	fi
+	wait_for_enter
+	exit "$STATUS"
+fi
+echo "Not installed: ${ABSENT[*]}"
+printf 'Install now? [y/N] '
+read -r ANSWER || ANSWER=
+case $ANSWER in
+y | Y | yes | YES | Yes) ;;
+*)
+	echo "Nothing was installed."
+	wait_for_enter
+	exit "$STATUS"
+	;;
+esac
+if install_missing "${ABSENT[@]}"; then
+	echo ""
+	echo "Checking again:"
+	echo ""
+	"$0"
+	STATUS=$?
+else
+	printf "\n${RED}The install did not complete.${NC}\n"
+	STATUS=1
+fi
+wait_for_enter
+exit "$STATUS"

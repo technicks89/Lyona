@@ -50,8 +50,8 @@ Scope {
             { "id": "restart-quickshell", "label": "Restart Quickshell" },
             { "id": "reload-wallpaper", "label": "Reload Wallpaper" },
             { "id": "restart-networkmanager", "label": "Restart NetworkManager" },
-            { "id": "dependency-check", "label": "Dependency Check" },
-            { "id": "install-missing-deps", "label": "Install Missing Deps" },
+            // Checks, then offers to install what is missing (#500).
+            { "id": "dependency-check", "label": "Check Dependencies" },
             { "id": "open-wallpapers", "label": "Wallpaper Folder" }
         ];
         if (root.optionalActions.indexOf("self-heal") >= 0) {
