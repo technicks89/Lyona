@@ -258,7 +258,13 @@ start_configured_light_locker() {
 		return 0
 	fi
 
-	light-locker >/dev/null 2>&1 &
+	# Detached, in a session of its own, when asked (recover-locker runs from
+	# a short-lived hook).
+	if [ "${1:-}" = detached ] && command -v setsid >/dev/null 2>&1; then
+		setsid -f light-locker >/dev/null 2>&1 </dev/null
+	else
+		light-locker >/dev/null 2>&1 &
+	fi
 	command -v pgrep >/dev/null 2>&1 || return 0
 	power_attempt=0
 	while [ "$power_attempt" -lt 20 ]; do
@@ -287,6 +293,61 @@ stop_configured_light_locker() {
 		done
 		return 1
 	fi
+}
+
+# light-locker can leave its full-screen blanking windows up over every monitor
+# after the monitors went away and came back, while it reports itself
+# inactive: the screens stay black, with nothing locked, and only restarting
+# light-locker clears them (#416). Restarted only when all three agree: it runs
+# for this display, it says it is inactive (while blanking or locked it says
+# active, and is left alone), and its windows are shown. One line:
+#   locker-recover  restarted|none|unavailable|failed  DETAIL
+# The autorandr hook runs it after a layout change; it can also be run by hand.
+power_recover_locker() {
+	if ! command -v light-locker-command >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1; then
+		printf 'locker-recover\tunavailable\tlight-locker-command and xdotool are needed\n'
+		return 0
+	fi
+	case ${DISPLAY:-} in '' | *,*)
+		printf 'locker-recover\tunavailable\tDISPLAY is not set\n'
+		return 0
+		;;
+	esac
+	# One recovery at a time: the hook runs it from both of autorandr's phases.
+	power_recover_lock=${XDG_RUNTIME_DIR:-/tmp}/lyona-locker-recover.lock
+	if command -v flock >/dev/null 2>&1; then
+		exec 8>>"$power_recover_lock"
+		if ! flock -n 8; then
+			printf 'locker-recover\tnone\tanother recovery is running\n'
+			return 0
+		fi
+	fi
+	if ! configured_light_locker_running; then
+		printf 'locker-recover\tnone\tlight-locker is not running for this display\n'
+		return 0
+	fi
+	if ! power_locker_state=$(run_bounded 3 env LC_ALL=C light-locker-command --query 2>/dev/null); then
+		printf 'locker-recover\tnone\tlight-locker did not say whether it is active\n'
+		return 0
+	fi
+	case $power_locker_state in
+	*inactive*) ;;
+	*)
+		printf 'locker-recover\tnone\tlight-locker is active: blanking or locked\n'
+		return 0
+		;;
+	esac
+	power_locker_windows=$(run_bounded 3 xdotool search --onlyvisible --class '^light-locker$' 2>/dev/null || true)
+	if [ -z "$power_locker_windows" ]; then
+		printf 'locker-recover\tnone\tno light-locker windows are shown\n'
+		return 0
+	fi
+	if stop_configured_light_locker && start_configured_light_locker detached; then
+		printf 'locker-recover\trestarted\tlight-locker was inactive with its blanking windows still shown\n'
+		return 0
+	fi
+	printf 'locker-recover\tfailed\tlight-locker could not be restarted; run: pkill light-locker; setsid -f light-locker\n'
+	return 1
 }
 
 power_apply_dpms_settings() {
@@ -1254,6 +1315,10 @@ power-lock)
 power-lock-timeout)
 	need_args $# 2
 	power_set_lock_timeout "$2"
+	;;
+recover-locker)
+	need_args $# 1
+	power_recover_locker
 	;;
 *)
 	usage

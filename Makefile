@@ -229,7 +229,9 @@ PYTHON_LIB_DIR = ${LIB_DIR}/python
 INSTALL_DEFAULTS = config/hotkeys.toml config/themes.toml config/window-rules.toml config/layout.toml
 INSTALL_DEFAULT_NAMES = $(notdir ${INSTALL_DEFAULTS})
 SHARE_DIR = ${PREFIX}/share/lyona
-AUTORANDR_HOOK = 50-lyona-picom
+# autorandr runs these around a layout change: Picom kept out of it (#386),
+# and light-locker's leftover blanking windows cleared after it (#416).
+AUTORANDR_HOOKS = 50-lyona-picom 60-lyona-locker
 AUTORANDR_HOOK_DIR = /etc/xdg/autorandr
 PRIVILEGED_HELPERS = scripts/dwm-settings-display-root scripts/dwm-system-health-root \
 	scripts/lyona-update-root
@@ -433,7 +435,9 @@ install-system:
 	@# it (#386). Hooks of autorandr's own system-wide folder: harmless when
 	@# autorandr is not installed.
 	for phase in preswitch postswitch; do \
-		install -Dm755 config/autorandr/${AUTORANDR_HOOK} ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d/${AUTORANDR_HOOK}; \
+		for hook in ${AUTORANDR_HOOKS}; do \
+			install -Dm755 config/autorandr/$$hook ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d/$$hook; \
+		done; \
 	done
 	@# From before S12-13, these were installed as commands.
 	for name in ${INSTALL_LIB_NAMES} ${RETIRED_LIB_NAMES}; do \
@@ -748,7 +752,7 @@ uninstall:
 	done
 	rm -f ${DESTDIR}${SHARE_DIR}/xdg/picom/picom.conf
 	for phase in preswitch postswitch; do \
-		rm -f ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d/${AUTORANDR_HOOK}; \
+		for hook in ${AUTORANDR_HOOKS}; do rm -f ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d/$$hook; done; \
 		rmdir ${DESTDIR}${AUTORANDR_HOOK_DIR}/$$phase.d 2>/dev/null || true; \
 	done
 	-rmdir ${DESTDIR}${AUTORANDR_HOOK_DIR} 2>/dev/null
@@ -878,6 +882,11 @@ check-layout-settings-xvfb: all
 .PHONY: check-clipboard-observer
 check-clipboard-observer: ${CLIPBOARD}
 	/usr/bin/python3 tests/test-clipboard-observer-xvfb.py
+
+# Settings' queued wallpaper status read does not wait on the watch (#444).
+.PHONY: check-quickshell-appearance-status-queue-xvfb
+check-quickshell-appearance-status-queue-xvfb:
+	@tests/test-quickshell-appearance-status-queue-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
 # Clipboard history in the shell (#469): model and window against a stub.
 .PHONY: check-quickshell-clipboard-history-xvfb
@@ -1089,6 +1098,9 @@ check-simple-watch-orphans:
 
 check-autorandr-picom-hook:
 	tests/test-autorandr-picom-hook.sh
+
+check-locker-recover:
+	tests/test-locker-recover.sh
 
 check-diagnostics:
 	tests/test-dwm-diagnostics.sh
@@ -1545,7 +1557,7 @@ check-install-manifest: all
 		done; \
 		printf '%s\n' usr/share/lyona/xdg/picom/picom.conf; \
 		for phase in preswitch postswitch; do \
-			printf 'etc/xdg/autorandr/%s.d/${AUTORANDR_HOOK}\n' "$$phase"; \
+			for hook in ${AUTORANDR_HOOKS}; do printf 'etc/xdg/autorandr/%s.d/%s\n' "$$phase" "$$hook"; done; \
 		done; \
 		for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 			printf 'usr/libexec/lyona/%s\n' "$$name"; \
@@ -1799,6 +1811,7 @@ check:
 	$(MAKE) check-display-setup
 	$(MAKE) check-simple-watch-orphans
 	$(MAKE) check-autorandr-picom-hook
+	$(MAKE) check-locker-recover
 	$(MAKE) check-monitor-tags
 	$(MAKE) check-quickshell-launcher
 	$(MAKE) check-quickshell-controls
@@ -1831,6 +1844,7 @@ check:
 	$(MAKE) check-clipboard-observer
 	$(MAKE) check-clipboard-history
 	$(MAKE) check-quickshell-clipboard-history-xvfb
+	$(MAKE) check-quickshell-appearance-status-queue-xvfb
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser
@@ -1949,7 +1963,7 @@ check:
 .PHONY: clean all all-root check check-update-root-contract check-install-yay check-accessibility check-appearance check-phase5-optional-components check-build-config check-build-deps check-default-apps check-xdg-autostart check-dev-sync-install \
 	check-cursor-reload check-xkbset check-picom check-picom-xvfb \
 	check-test-runner \
-	check-display-profile check-display-profiles check-display-setup check-simple-watch-orphans check-autorandr-picom-hook check-archiso check-rpi-image check-snapdragon check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
+	check-display-profile check-display-profiles check-display-setup check-simple-watch-orphans check-autorandr-picom-hook check-locker-recover check-archiso check-rpi-image check-snapdragon check-arch-packages check-aur-policy check-no-aur check-arch-platform check-format check-install \
 	check-gearlever-install check-lyona-appimage check-herdr-install check-mybash-install check-topgrade-install check-install-yay check-install-manifest check-install-preservation check-legacy-shared-data check-live-backup-label check-lyona-version check-lyona-update check-lock \
 	check-session-guards check-session-migration check-webapp-launch check-screenshot check-release-helper check-release-workflows check-ci-release-aarch64 check-changelog-record check-update-root-contract check-shell check-diagnostics check-status check-test-lib check-session-isolation check-shell-contracts check-gtk-theme check-app-palettes check-qt-palette-xvfb check-plymouth-theme check-grub-theme check-session-launch check-dwm-roundtrips check-system-health check-system-management check-settings \
 	check-quickshell-launcher check-quickshell-controls check-quickshell-audio check-quickshell-controlcenter check-quickshell-lifecycle check-quickshell-power check-quickshell-power-backend check-quickshell-power-model check-quickshell-session-actions check-quickshell-defaults-model check-quickshell-update-model check-quickshell-appearance-model check-quickshell-design-system check-quickshell-large-surfaces check-quickshell-large-surfaces-xvfb check-quickshell-panel-menus check-quickshell-overview check-quickshell-overview-xvfb check-overview-keyboard-xvfb check-launcher-hold-keys-xvfb check-dwm-activate-xvfb check-dwm-regrab-xvfb check-dwm-bar-docks-xvfb check-dwm-portrait-login-xvfb check-dwm-xwatch-xvfb check-overview-load-xvfb check-quickshell-theme-contrast check-quickshell-panel-settings check-quickshell-command-menu check-quickshell-notifications check-quickshell-tray check-quickshell-xdg check-quickshell-health-xvfb check-quickshell-settings-loading check-quickshell-settings-xvfb check-quickshell-settings-responsiveness-xvfb check-quickshell-update-progress-xvfb check-desktop-smoke-xvfb check-quickshell-system-management check-quickshell-system-management-xvfb check-quickshell-system-discovery-cycle check-quickshell-update-ui-xvfb check-quickshell-health-navigation-xvfb check-quickshell-information-ui-xvfb check-quickshell-network check-quickshell-connectivity check-quickshell-qml check-lightdm-config check-terminal check-xvfb-runtime install install-system install-user \

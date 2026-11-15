@@ -438,11 +438,11 @@ Scope {
                 root.clearStatus(error.length > 0 ? error
                     : "Wallpaper helper failed before returning a valid status");
             }
-            if (!running && root.appearance.settingsVisible && root.appearance.inventoryPending) {
+            // Each queued read on its own, as at the inventory read's end (#444).
+            if (!running && root.appearance.settingsVisible && root.appearance.inventoryPending)
                 Qt.callLater(root.appearance.retryInventoryRefresh);
-            } else if (!running && root.appearance.settingsVisible && root.statusPending) {
+            if (!running && root.appearance.settingsVisible && root.statusPending)
                 Qt.callLater(root.refreshStatus);
-            }
         }
     }
 

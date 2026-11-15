@@ -180,6 +180,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Screens that stay black after the monitors are turned off and on (#416):
+  light-locker could leave its full-screen blanking windows up while
+  reporting itself inactive, with nothing locked. The new autorandr hook
+  `60-lyona-locker` runs `dwm-settings-power recover-locker` a few seconds after
+  each layout change. It restarts light-locker only when light-locker says it
+  is inactive and its windows are still shown, so a blanked or locked screen is
+  never touched. It can also be run by hand.
+
+- Settings could miss a wallpaper applied outside it (#444). A wallpaper status
+  read queued behind an asset inventory read waited for that read's own retry,
+  which waits for the asset watch to finish restarting, so the old wallpaper
+  could stay on screen indefinitely. Each queued read is now retried on its
+  own. `check-quickshell-appearance-status-queue-xvfb` reproduces the stuck
+  state and failed before the fix.
+
 - The hidden Wi-Fi prompt (#471) had no window rule, so dwm tiled it instead
   of floating it above the network popover. It has one now, and an update adds
   it to an existing `window-rules.toml`.

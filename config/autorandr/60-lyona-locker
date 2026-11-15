@@ -1,0 +1,25 @@
+#!/bin/sh
+# autorandr preswitch.d/postswitch.d hook: light-locker's leftover blanking
+# windows (#416). After monitors go away and come back, light-locker can leave
+# its full-screen black windows over them while it reports itself inactive, and
+# the screens stay black. A few seconds after a layout change,
+# dwm-settings-power recover-locker restarts light-locker if, and only if, that
+# is what happened. It runs from both phases because autorandr skips postswitch
+# when applying the layout fails, as it did when this was seen; the second run
+# finds nothing to do.
+#
+# Installed as /etc/xdg/autorandr/preswitch.d/60-lyona-locker and
+# postswitch.d/60-lyona-locker. Always exits 0: a failing hook must never get
+# in the way of the layout.
+set -u
+
+helper=${LYONA_AUTORANDR_LOCKER_HELPER:-}
+[ -n "$helper" ] || helper=$(command -v dwm-settings-power 2>/dev/null || :)
+[ -n "$helper" ] && [ -x "$helper" ] || exit 0
+settle=${LYONA_AUTORANDR_LOCKER_SETTLE:-5}
+
+(
+	sleep "$settle"
+	"$helper" recover-locker
+) >/dev/null 2>&1 </dev/null &
+exit 0
