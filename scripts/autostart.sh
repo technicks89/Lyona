@@ -462,6 +462,18 @@ if ! command -v "$lock_watch" >/dev/null 2>&1; then
 fi
 start_detached_once dwm-lock-watch "$lock_watch"
 
+# light-locker's leftover blanking windows after an idle blank (#416). The
+# watcher keeps itself to one per display (a lock it holds for its life; a
+# Bash script run through env is named "bash", so pgrep -x cannot find it), and
+# ends with its display.
+blank_watch=dwm-blank-watch
+if ! command -v "$blank_watch" >/dev/null 2>&1; then
+	case $0 in
+	*/*) blank_watch=${0%/*}/dwm-blank-watch ;;
+	esac
+fi
+[ -z "${DISPLAY:-}" ] || start_detached "$blank_watch"
+
 for agent in \
 	/usr/lib/mate-polkit/polkit-mate-authentication-agent-1 \
 	/usr/libexec/polkit-mate-authentication-agent-1 \

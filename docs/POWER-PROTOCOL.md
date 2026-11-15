@@ -135,7 +135,10 @@ light-locker, detached, only when all three hold: light-locker runs for this
 display, `light-locker-command --query` says it is inactive, and a visible
 `light-locker` window exists. While it is blanking or locked it says active and
 is never touched, so this cannot unlock a locked session. It asks once more just
-before stopping light-locker, and leaves it alone if it has turned active since. The autorandr hook
+before stopping light-locker, and leaves it alone if it has turned active since.
+Once it has begun stopping light-locker it always starts it again: TERM, HUP or
+INT meanwhile are obeyed (status 143) only after that, so a session is never
+left without automatic locking. The autorandr hook
 `60-lyona-locker`, installed in `/etc/xdg/autorandr/preswitch.d` and
 `postswitch.d`, runs it 5 seconds after each layout change, from both phases
 because autorandr skips postswitch when applying a layout fails. A lock per
@@ -143,6 +146,17 @@ display in `$XDG_RUNTIME_DIR` lets one of two overlapping runs recover and the
 other skip; the light-locker it starts does not inherit that lock. It needs
 `light-locker-command` and `xdotool`; without them it reports `unavailable`. The
 manual recovery is the same: `pkill light-locker; setsid -f light-locker`.
+
+The same happens after an ordinary idle blank, with no display change: seen on
+a laptop's built-in screen. `dwm-blank-watch`, started by autostart (one per
+display: it holds a lock for its life, and a second one exits), follows light-locker's `ActiveChanged` signal on the session bus
+(`org.freedesktop.ScreenSaver` and `org.gnome.ScreenSaver`). When blanking ends
+(`false`) it runs the recovery 2 seconds later, under the same lock as the
+hook, and logs the result line, or that it skipped because another recovery
+was running (`journalctl -t lyona-locker`). Stopped, it ends a recovery it is
+running too. It ends with its
+X display, so a watcher from a session whose X server died neither lingers nor
+stands in for the next one.
 
 DPMS and lock timeouts must be decimal integers from 60 through 86400.
 Malformed and out-of-range values fail instead of being silently coerced.

@@ -472,6 +472,17 @@ FloatingWindow {
                             DeferredSettingsPane {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
+                                selected: root.settingsModel.selectedSectionId === "fingerprint"
+                                dataLoading: root.settingsModel.fingerprintLoading
+                                windowVisible: root.visible
+                                sourceComponent: FingerprintSettingsPane {
+                                    fingerprintModel: root.settingsModel.fingerprintModel
+                                }
+                            }
+
+                            DeferredSettingsPane {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
                                 selected: root.settingsModel.selectedSectionId === "defaults"
                                 dataLoading: root.defaultsModel.initialLoading || root.autostartModel.initialLoading
                                 windowVisible: root.visible
@@ -533,6 +544,7 @@ FloatingWindow {
                                     && root.settingsModel.selectedSectionId !== "bluetooth"
                                     && root.settingsModel.selectedSectionId !== "audio"
                                     && root.settingsModel.selectedSectionId !== "power"
+                                    && root.settingsModel.selectedSectionId !== "fingerprint"
                                     && root.settingsModel.selectedSectionId !== "defaults"
                                     && root.settingsModel.selectedSectionId !== "appearance"
                                     && root.settingsModel.selectedSectionId !== "system"

@@ -22,7 +22,13 @@ stub() { # NAME BODY
 	chmod +x "$bin/$1"
 }
 stub pgrep '[ "$*" = "-u $(id -u) -x light-locker --env DISPLAY=:77" ] && [ -e "$STUB_DIR/running" ]'
-stub pkill '[ -e "$STUB_DIR/stopfails" ] || rm -f "$STUB_DIR/running" "$STUB_DIR/windows"'
+# "interrupt": recover-locker is asked to stop (TERM) while it stops
+# light-locker; timeout's parent is recover-locker.
+stub pkill '[ -e "$STUB_DIR/stopfails" ] || rm -f "$STUB_DIR/running" "$STUB_DIR/windows"
+if [ -e "$STUB_DIR/interrupt" ]; then
+	read -r _ _ _ helper_pid _ <"/proc/$PPID/stat"
+	kill -TERM "$helper_pid"
+fi'
 stub setsid '[ "$*" = "-f light-locker" ] && [ ! -e "$STUB_DIR/startfails" ] && : >"$STUB_DIR/running"'
 stub light-locker ':'
 # "activates": inactive at the first query, active from the second on.
@@ -45,7 +51,7 @@ run() {
 		XDG_RUNTIME_DIR="$work/run" XDG_CONFIG_HOME="$work/config" "$helper" recover-locker
 }
 setup() { # FLAGS...
-	rm -f "$work"/{running,active,activates,failsecond,queried,windows,noquery,stopfails,startfails,calls}
+	rm -f "$work"/{running,active,activates,failsecond,queried,windows,noquery,stopfails,startfails,interrupt,calls}
 	: >"$work/calls"
 	local flag
 	for flag in "$@"; do : >"$work/$flag"; done
@@ -66,6 +72,16 @@ setup running windows
 expect restarted 'inactive with its blanking windows'
 grep -Fxq 'setsid -f light-locker' "$work/calls" || fail "not restarted detached: $(cat "$work/calls")"
 [[ -e $work/running ]] || fail 'light-locker is not running again'
+
+# Asked to stop while it stops light-locker: light-locker is started again all
+# the same, and then it stops (143), not before.
+setup running windows interrupt
+status=0
+out=$(run) || status=$?
+[[ $out == $'locker-recover\trestarted\t'* ]] || fail "interrupted: $out"
+((status == 143)) || fail "an interrupted recovery exited $status"
+[[ -e $work/running ]] || fail 'an interrupted recovery left light-locker stopped'
+grep -Fxq 'setsid -f light-locker' "$work/calls" || fail "not restarted: $(cat "$work/calls")"
 
 # Blanking or locked: active, and left alone, windows or not.
 setup running windows active

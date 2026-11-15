@@ -33,7 +33,8 @@ not download a script or elevate the Quickshell process.
 ### Navigation and Search
 
 - The left navigation contains Displays, Input, Network, Bluetooth, Audio,
-  Power, Defaults, Appearance, and System in stable roadmap order.
+  Power, Fingerprint (only while a reader is available, #483), Defaults,
+  Appearance, and System in stable roadmap order.
 - Typing in the search field filters section names and descriptions. When the
   first match changes, Settings transitions the section-owned read/watch
   providers; search never mutates desktop state.
@@ -145,6 +146,10 @@ must follow this boundary:
 - Phase 2 display persistence allows only validated generated-fragment install
   and rollback operations. It does not accept arbitrary paths, Xorg text,
   commands, or environment-selected executables.
+- Fingerprint (#483) allows only `enable`, `disable` and `remove-external` on
+  the `lightdm`, `polkit` and `sudo` PAM files, through
+  `dwm-settings-fingerprint-root` and the root-owned `lyona-fingerprint-pam`
+  (`docs/FINGERPRINT.md`). It never takes a path or PAM text.
 - Repository, XDG, home-directory, symlinked, group-writable, and
   other-user-writable helper copies must never be elevated.
 - A trusted helper must resolve outside user-writable paths, be owned by root,

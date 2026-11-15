@@ -234,6 +234,14 @@ owner's process and markers (`docs/CLIPBOARD-PRIVACY.md`); the shell never
 falls back to an unfiltered clipboard listener, runs no source while capture is
 off, and keeps saved history in a private file that turning saving off removes.
 
+Fingerprint authentication (#483, `docs/FINGERPRINT.md`) is offered only with a
+reader fprintd supports and only once fprintd is installed by request. Each use
+(the LightDM login and lock screen, polkit, sudo) is off until the user turns it
+on in Settings, through the allowlisted root helper. It adds one
+`sufficient` line, so the password keeps working at every step, and turning it
+off restores the PAM file byte for byte. A finger never unlocks the login
+keyring, and Settings says so.
+
 ### 5.5 Installer
 
 The supported installation flow must:

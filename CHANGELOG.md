@@ -10,6 +10,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Fingerprint authentication (#483, `docs/FINGERPRINT.md`): Settings >
+  Fingerprint, listed only when fprintd finds a reader.
+  - Enroll and delete fingers.
+  - Turn a finger on, one use at a time, for the login and lock screen,
+    administrator prompts (polkit) or `sudo`.
+  - Each use adds one `sufficient` line to its PAM file, so the password always
+    works. Turning it off restores the file byte for byte.
+  - A line added by hand is shown as set up outside Lyona, and removed only
+    when asked.
+  - The login switch warns that a finger does not unlock the keyring.
+  - `install.sh --with-fingerprint` installs fprintd; it is never installed
+    otherwise.
+
 - Clipboard history (#469, upstream dwm-titus #389 and #411): **Super+V** opens
   a searchable list of what you copied. Enter copies an entry back, Ctrl+D
   deletes one, and **Clear all** deletes everything.
@@ -179,6 +192,12 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `lyona-update` checks it), and any rollback (ARM5-02, #490).
 
 ### Fixed
+
+- Black screens after an ordinary idle blank (#416): light-locker can leave its
+  blanking window up after an idle blank too, with no display change. The new
+  `dwm-blank-watch` follows light-locker's `ActiveChanged` signal and runs
+  `recover-locker` when blanking ends. It logs each result to the journal
+  (`lyona-locker`).
 
 - Screens that stay black after the monitors are turned off and on (#416):
   light-locker could leave its full-screen blanking windows up while

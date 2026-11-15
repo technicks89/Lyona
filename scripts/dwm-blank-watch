@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# light-locker's leftover blanking windows after an idle blank (#416). When
+# light-locker stops blanking it says so on the session bus (ActiveChanged
+# false, on org.freedesktop.ScreenSaver and org.gnome.ScreenSaver). A moment
+# later this runs dwm-settings-power recover-locker, which restarts
+# light-locker only if it says it is inactive while its windows are still shown;
+# a blanked or locked screen is never touched. The autorandr hook
+# 60-lyona-locker does the same after a layout change; both take the same lock
+# per display, so they never recover at once.
+#
+# Started by autostart.sh; one runs per display, holding a lock for its life
+# (a second one exits at once). It ends with its X display (an xprop that stays
+# connected to it), so a watcher from a session whose X server died does not
+# linger, nor stand in for the next session's. Each recovery's result line goes
+# to the journal (logger -t lyona-locker) when logger exists.
+set -u
+
+[ -n "${DISPLAY:-}" ] || exit 0
+command -v dbus-monitor >/dev/null 2>&1 || exit 0
+command -v xprop >/dev/null 2>&1 || exit 0
+
+helper=${DWM_BLANK_WATCH_HELPER:-}
+if [ -z "$helper" ]; then
+	helper=$(command -v dwm-settings-power 2>/dev/null || :)
+	case $0 in
+	*/*) [ ! -x "${0%/*}/dwm-settings-power" ] || helper=${0%/*}/dwm-settings-power ;;
+	esac
+fi
+[ -n "$helper" ] && [ -x "$helper" ] || exit 0
+settle=${DWM_BLANK_WATCH_SETTLE:-2}
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+display_key=$(printf '%s' "$DISPLAY" | tr -c 'A-Za-z0-9._-' '_')
+
+# One watcher per display. Nothing it starts inherits this lock (8>&-).
+if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
+	exec 8>>"$runtime/lyona-blank-watch.$display_key.lock"
+	flock -n 8 || exit 0
+fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/dwm-blank-watch.XXXXXX") || exit 0
+monitor_pid=
+reader_pid=
+xprop_pid=
+# shellcheck disable=SC2329 # run by the EXIT trap
+cleanup() {
+	trap - EXIT HUP INT TERM
+	[ -z "$monitor_pid" ] || kill "$monitor_pid" 2>/dev/null || :
+	# No recovery starts from here on. Each one marks itself before it looks
+	# for this mark, so each is either marked in time to be stopped below or
+	# sees the mark and ends; a stopped one stops its helper, which releases
+	# the recovery lock. The light-locker a recovery starts is in a session of
+	# its own (setsid) and keeps running.
+	: >"$work/stopping" 2>/dev/null || :
+	if [ -n "$reader_pid" ]; then
+		kill -TERM -- "-$reader_pid" 2>/dev/null || :
+		kill -TERM "$reader_pid" 2>/dev/null || :
+	fi
+	# Only a recovery still running: each removes its mark as it ends, and a
+	# PID is signalled only while it is still in the reader's process group,
+	# so a PID reused since then is never touched.
+	for mark in "$work"/recovery.*; do
+		[ -e "$mark" ] && [ -n "$reader_pid" ] || continue
+		recovery_pid=${mark##*.}
+		case $recovery_pid in '' | *[!0-9]*) continue ;; esac
+		pgid=$(ps -o pgid= -p "$recovery_pid" 2>/dev/null | tr -d ' ') || :
+		[ "$pgid" = "$reader_pid" ] || continue
+		kill -TERM "$recovery_pid" 2>/dev/null || :
+	done
+	if [ -n "$xprop_pid" ]; then
+		kill "$xprop_pid" 2>/dev/null || :
+		wait "$xprop_pid" 2>/dev/null || :
+	fi
+	rm -rf -- "$work"
+}
+trap cleanup EXIT
+trap 'exit 143' HUP INT TERM
+mkfifo -- "$work/events" || exit 0
+
+note() {
+	if command -v logger >/dev/null 2>&1; then
+		logger -t lyona-locker -- "$*" 2>/dev/null || :
+	fi
+}
+
+# One recovery at a time, as the autorandr hook does: one already running
+# covers this one. The lock is not passed on to the light-locker it starts.
+# Stopped (cleanup), it stops its helper ($! once the helper is started), and
+# recover-locker itself finishes restarting a light-locker it stopped.
+recover() {
+	sleep "$settle"
+	[ ! -e "$work/stopping" ] || return 0
+	(
+		# Taken once: in the helper's redirection below, $BASHPID would
+		# already be the helper's own.
+		recovery=$BASHPID
+		# Marked while it runs; the mark goes when it ends, however it ends.
+		trap 'rm -f -- "$work/recovery.$recovery"' EXIT
+		: >"$work/recovery.$recovery"
+		trap 'kill -TERM $! 2>/dev/null; exit 143' TERM
+		[ ! -e "$work/stopping" ] || exit 0
+		if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
+			exec 9>>"$runtime/lyona-locker-recover.$display_key.lock"
+			if ! flock -n 9; then
+				note "after an idle blank: skipped; another recovery is running"
+				exit 0
+			fi
+		fi
+		"$helper" recover-locker >"$work/result.$recovery" 2>/dev/null 8>&- 9>&- &
+		wait "$!" || :
+		result=$(cat -- "$work/result.$recovery" 2>/dev/null) || :
+		rm -f -- "$work/result.$recovery"
+		note "after an idle blank: ${result:-no answer}"
+	)
+}
+
+dbus-monitor --session "type='signal',member='ActiveChanged',interface='org.freedesktop.ScreenSaver'" \
+	"type='signal',member='ActiveChanged',interface='org.gnome.ScreenSaver'" \
+	>"$work/events" 2>/dev/null </dev/null 8>&- &
+monitor_pid=$!
+
+# A signal line, then its argument on the next: "boolean false" is the end of
+# blanking. One recovery at a time, in order. In a process group of its own
+# (job control, for this one job), which cleanup stops as one.
+set -m
+(
+	exec 8>&-
+	expecting=0
+	while IFS= read -r line; do
+		case $line in
+		*"member=ActiveChanged"*) expecting=1 ;;
+		*"boolean false"*)
+			[ "$expecting" = 1 ] && recover
+			expecting=0
+			;;
+		*"boolean true"*) expecting=0 ;;
+		esac
+	done
+) <"$work/events" &
+reader_pid=$!
+set +m
+
+# Until the X display goes away, or the session bus does.
+xprop -root -spy _LYONA_BLANK_WATCH >/dev/null 2>&1 </dev/null 8>&- &
+xprop_pid=$!
+wait -n "$xprop_pid" "$monitor_pid" || :
+exit 0

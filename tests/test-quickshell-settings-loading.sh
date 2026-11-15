@@ -45,6 +45,7 @@ for relative, expression in (
     ("power/PowerModel.qml", "snapshotProcess.running || root.snapshotPending"),
     ("accessibility/AccessibilityModel.qml", "statusProcess.running || root.refreshPending"),
     ("panel/PanelSettingsModel.qml", "statusProcess.running || root.refreshPending"),
+    ("settings/FingerprintModel.qml", "!root.loaded && (statusProcess.running || root.statusPending)"),
     ("notifications/NotificationModel.qml",
      'policyState === "loading" || policyState === "defaults" || policySaving'),
     ("systemmanagement/SystemManagementModel.qml",
@@ -124,7 +125,8 @@ if re.search(r"Qt\.callLater\(function\(\) \{ root\.refreshInventory", (root / "
 window = (root / "settings/SettingsWindow.qml").read_text()
 panes = window.count("DeferredSettingsPane {")
 loading = len(re.findall(r"^\s+dataLoading: ", window, re.M))
-if panes != 9 or loading != panes:
+# Ten: Fingerprint (#483) is one, listed only with a reader.
+if panes != 10 or loading != panes:
     failures.append(f"settings/SettingsWindow.qml: {panes} panes but {loading} dataLoading lines")
 # The pane-to-models mapping lives in one place: each dataLoading line is one or
 # more "<model>.initialLoading" or "settingsModel.<x>Loading" terms, joined only

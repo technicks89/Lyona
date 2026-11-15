@@ -134,6 +134,12 @@ dwm_packages() {
 		printf '%s\n' \
 			python python-gobject packagekit accountsservice cups
 		;;
+	arch:fingerprint)
+		# Settings > Fingerprint (#483), opt-in with install.sh
+		# --with-fingerprint and never part of "optional": fprintd brings
+		# libfprint and pam_fprintd. Installing it changes no PAM file.
+		printf '%s\n' fprintd
+		;;
 	arch:system-management-optional)
 		# Delegated administration targets. Each one missing disables only its
 		# own `*-open` action; readable state is unaffected.

@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Fingerprint authentication in PAM (#483): adds and removes fprintd for one
+# use at a time, and says which uses have it. Run as root only by
+# dwm-settings-fingerprint-root (polkit); status is readable by anyone.
+#
+#   lyona-fingerprint-pam [--root DIR] status
+#   lyona-fingerprint-pam [--root DIR] enable|disable|remove-external USE
+#
+# USE is one of:
+#   lightdm  /etc/pam.d/lightdm: the LightDM login and light-locker's lock
+#            screen, which authenticates through the same service
+#   polkit   /etc/pam.d/polkit-1, created over the system's
+#            /usr/lib/pam.d/polkit-1 when that is the only one
+#   sudo     /etc/pam.d/sudo
+#
+# enable adds two lines right after the "#%PAM-1.0" header (or at the top):
+# a marker comment, then
+#   -auth sufficient pam_fprintd.so timeout=10 max-tries=3
+# "sufficient": a finger that fails or times out falls through to the
+# password, which keeps working at every step. The leading "-" makes PAM skip
+# the line if pam_fprintd is ever uninstalled. Nothing else in the file is
+# touched. The original is kept (root-only, in /var/lib/lyona/fingerprint)
+# with the checksum of what was written; disable puts the original back byte
+# for byte when the file is still exactly what was written, and otherwise
+# removes only the two lines (keeping a copy of the file first). For polkit,
+# disable removes the /etc copy it created, which brings back the system's.
+#
+# A pam_fprintd line Lyona did not add is reported as "external" and left
+# alone: enable and disable refuse it. remove-external removes such lines, after
+# keeping a copy of the file, and only when asked.
+#
+# status prints:
+#   fingerprint-pam-protocol  1
+#   module   available|missing  PATH
+#   use      USE  on|off|external|unavailable  DETAIL
+#   complete status
+#
+# DIR (for tests) is the root the paths are under; it is never given by the
+# root helper, which uses /.
+
+root=
+if [[ ${1:-} == --root ]]; then
+	[[ $# -ge 2 && $2 == /* ]] || {
+		printf 'lyona-fingerprint-pam: --root needs an absolute directory\n' >&2
+		exit 2
+	}
+	root=${2%/}
+	shift 2
+fi
+umask 022
+self=lyona-fingerprint-pam
+readonly marker='# lyona-fingerprint: added by Lyona Settings > Fingerprint; turn it off there'
+readonly fprint_line='-auth      sufficient  pam_fprintd.so timeout=10 max-tries=3'
+module=$root/usr/lib/security/pam_fprintd.so
+state_dir=$root/var/lib/lyona/fingerprint
+
+die() {
+	printf '%s: %s\n' "$self" "$*" >&2
+	exit 1
+}
+
+# The file a use edits, and where its original comes from when that file does
+# not exist yet (polkit only).
+target_of() {
+	case $1 in
+	lightdm) printf '%s\n' "$root/etc/pam.d/lightdm" ;;
+	polkit) printf '%s\n' "$root/etc/pam.d/polkit-1" ;;
+	sudo) printf '%s\n' "$root/etc/pam.d/sudo" ;;
+	*) return 1 ;;
+	esac
+}
+vendor_of() {
+	case $1 in
+	polkit) printf '%s\n' "$root/usr/lib/pam.d/polkit-1" ;;
+	*) printf '\n' ;;
+	esac
+}
+valid_use() { [[ $1 == lightdm || $1 == polkit || $1 == sudo ]]; }
+
+# No symlink anywhere on the way to PATH, below the root.
+no_symlinks() {
+	local path=$1
+	while [[ $path == "$root"/* ]]; do
+		[[ ! -L $path ]] || return 1
+		path=${path%/*}
+	done
+	[[ -z $root || ! -L $root ]]
+}
+
+# A regular file this user (root, when root) owns, reached without a symlink.
+plain_owned_file() {
+	no_symlinks "$1" && [[ -f $1 && ! -L $1 && $(stat -c %u -- "$1") == "$EUID" ]]
+}
+
+# The lines of FILE that turn fprintd on, apart from the two Lyona added.
+external_lines() {
+	awk -v marker="$marker" -v line="$fprint_line" '
+		$0 == marker { m = NR; next }
+		m > 0 && NR == m + 1 && $0 == line { next }
+		/^[[:space:]]*#/ { next }
+		/pam_fprintd\.so/ { print NR }
+	' "$1"
+}
+has_lyona_lines() {
+	awk -v marker="$marker" -v line="$fprint_line" '
+		prev == marker && $0 == line { found = 1 }
+		{ prev = $0 }
+		END { exit !found }
+	' "$1"
+}
+
+# The state of a use: on, off, external or unavailable, and why.
+use_state() {
+	local use=$1 target vendor file
+	target=$(target_of "$use")
+	vendor=$(vendor_of "$use")
+	file=$target
+	if [[ ! -e $target && -n $vendor && -e $vendor ]]; then
+		file=$vendor
+	fi
+	if [[ ! -e $file ]]; then
+		printf 'unavailable\t%s does not exist\n' "${target#"$root"}"
+	elif ! no_symlinks "$file" || [[ ! -f $file || ! -r $file ]]; then
+		printf 'unavailable\t%s is not a readable regular file\n' "${file#"$root"}"
+	elif [[ -n $(external_lines "$file") ]]; then
+		printf 'external\tfprintd was added to %s outside Lyona\n' "${file#"$root"}"
+	elif has_lyona_lines "$file"; then
+		printf 'on\tA finger is accepted, or the password\n'
+	else
+		printf 'off\tThe password only\n'
+	fi
+}
+
+cmd_status() {
+	local use state
+	printf 'fingerprint-pam-protocol\t1\n'
+	if [[ -f $module ]]; then
+		printf 'module\tavailable\t%s\n' "${module#"$root"}"
+	else
+		printf 'module\tmissing\t%s\n' "${module#"$root"}"
+	fi
+	for use in lightdm polkit sudo; do
+		state=$(use_state "$use")
+		printf 'use\t%s\t%s\n' "$use" "$state"
+	done
+	printf 'complete\tstatus\n'
+}
+
+private_state_dir() {
+	no_symlinks "$state_dir" || die "refusing a symlinked path: ${state_dir#"$root"}"
+	mkdir -p -- "$state_dir"
+	[[ -d $state_dir && ! -L $state_dir && $(stat -c %u -- "$state_dir") == "$EUID" ]] ||
+		die "not a directory of this user's: ${state_dir#"$root"}"
+	chmod 700 -- "$state_dir"
+}
+
+# Replaces TARGET with the contents of SOURCE, all at once, with REFERENCE's
+# mode and owner (or 0644 and this user).
+replace_file() { # TARGET SOURCE [REFERENCE]
+	local target=$1 source=$2 reference=${3:-} tmp
+	tmp=$(mktemp "${target%/*}/.${target##*/}.lyona.XXXXXX")
+	if ! cat -- "$source" >"$tmp"; then
+		rm -f -- "$tmp"
+		die "cannot write ${target#"$root"}"
+	fi
+	if [[ -n $reference && -e $reference ]]; then
+		chmod --reference="$reference" -- "$tmp"
+		((EUID != 0)) || chown --reference="$reference" -- "$tmp"
+	else
+		chmod 644 -- "$tmp"
+	fi
+	mv -fT -- "$tmp" "$target"
+}
+
+checksum() { sha256sum -- "$1" | cut -d' ' -f1; }
+
+# One change to a use at a time: held from the first look at its files and
+# state until the change is done (released when this exits).
+lock_use() {
+	private_state_dir
+	exec 9>>"$state_dir/$1.lock"
+	flock -w 30 9 || die "another change to $1 is still running"
+}
+
+clear_state() { rm -f -- "$state_dir/$1".{orig,absent,written}; }
+
+cmd_enable() {
+	local use=$1 target vendor source work
+	lock_use "$use"
+	target=$(target_of "$use")
+	vendor=$(vendor_of "$use")
+	[[ -f $module ]] || die "pam_fprintd is not installed (${module#"$root"}); install fprintd first"
+	source=$target
+	[[ -e $target || -z $vendor ]] || source=$vendor
+	[[ -e $source ]] || die "${target#"$root"} does not exist"
+	plain_owned_file "$source" || die "refusing ${source#"$root"}: not a regular file of this user's"
+	[[ -z $(external_lines "$source") ]] ||
+		die "fprintd was added to ${source#"$root"} outside Lyona; remove it there, or with remove-external, first"
+	if has_lyona_lines "$source"; then
+		printf 'fingerprint-pam-result\tenable\t%s\talready\n' "$use"
+		return 0
+	fi
+	no_symlinks "$target" || die "refusing a symlinked path: ${target#"$root"}"
+	clear_state "$use"
+	if [[ -e $target ]]; then
+		cat -- "$target" >"$state_dir/$use.orig"
+	else
+		: >"$state_dir/$use.absent"
+	fi
+	work=$(mktemp)
+	trap 'rm -f -- "$work"' RETURN
+	awk -v marker="$marker" -v line="$fprint_line" '
+		NR == 1 && $0 ~ /^#%PAM-1\.0[[:space:]]*$/ { print; print marker; print line; done = 1; next }
+		NR == 1 { print marker; print line; done = 1 }
+		{ print }
+		END { if (!done) { print marker; print line } }
+	' "$source" >"$work"
+	# The checksum of the bytes written, before they are put in place.
+	checksum "$work" >"$state_dir/$use.written"
+	replace_file "$target" "$work" "$source"
+	printf 'fingerprint-pam-result\tenable\t%s\ton\n' "$use"
+}
+
+cmd_disable() {
+	local use=$1 target work stamp
+	lock_use "$use"
+	target=$(target_of "$use")
+	if [[ ! -e $target ]] || ! has_lyona_lines "$target"; then
+		if [[ -e $target && -n $(external_lines "$target") ]]; then
+			die "fprintd was added to ${target#"$root"} outside Lyona; remove it there, or with remove-external"
+		fi
+		clear_state "$use"
+		printf 'fingerprint-pam-result\tdisable\t%s\talready\n' "$use"
+		return 0
+	fi
+	plain_owned_file "$target" || die "refusing ${target#"$root"}: not a regular file of this user's"
+	# Still exactly what was written: the original, byte for byte.
+	if [[ -f $state_dir/$use.written && $(cat -- "$state_dir/$use.written") == "$(checksum "$target")" ]]; then
+		if [[ -f $state_dir/$use.absent ]]; then
+			rm -f -- "$target"
+			clear_state "$use"
+			printf 'fingerprint-pam-result\tdisable\t%s\trestored\n' "$use"
+			return 0
+		elif [[ -f $state_dir/$use.orig ]]; then
+			replace_file "$target" "$state_dir/$use.orig" "$target"
+			clear_state "$use"
+			printf 'fingerprint-pam-result\tdisable\t%s\trestored\n' "$use"
+			return 0
+		fi
+	fi
+	# Edited since: only Lyona's two lines go, after a copy of the file.
+	stamp=$(date +%Y%m%d%H%M%S)
+	cat -- "$target" >"$state_dir/$use.before-disable.$stamp"
+	work=$(mktemp)
+	trap 'rm -f -- "$work"' RETURN
+	awk -v marker="$marker" -v line="$fprint_line" '
+		skip { skip = 0; if ($0 == line) { held = ""; next } }
+		$0 == marker { skip = 1; held = $0; next }
+		{ if (held != "") { print held; held = "" } print }
+		END { if (held != "") print held }
+	' "$target" >"$work"
+	replace_file "$target" "$work" "$target"
+	clear_state "$use"
+	printf 'fingerprint-pam-result\tdisable\t%s\tremoved\n' "$use"
+}
+
+cmd_remove_external() {
+	local use=$1 target work stamp lines
+	lock_use "$use"
+	target=$(target_of "$use")
+	[[ -e $target ]] || die "${target#"$root"} does not exist"
+	plain_owned_file "$target" || die "refusing ${target#"$root"}: not a regular file of this user's"
+	lines=$(external_lines "$target")
+	if [[ -z $lines ]]; then
+		printf 'fingerprint-pam-result\tremove-external\t%s\talready\n' "$use"
+		return 0
+	fi
+	stamp=$(date +%Y%m%d%H%M%S)
+	cat -- "$target" >"$state_dir/$use.external.$stamp"
+	work=$(mktemp)
+	trap 'rm -f -- "$work"' RETURN
+	awk -v drop="$(printf '%s\n' "$lines" | tr '\n' ' ')" '
+		BEGIN { n = split(drop, d, " "); for (i = 1; i <= n; i++) skip[d[i]] = 1 }
+		!(NR in skip) { print }
+	' "$target" >"$work"
+	replace_file "$target" "$work" "$target"
+	printf 'fingerprint-pam-result\tremove-external\t%s\tremoved\n' "$use"
+}
+
+case ${1:-} in
+status)
+	(($# == 1)) || die "status takes no arguments"
+	cmd_status
+	;;
+enable | disable | remove-external)
+	(($# == 2)) || die "$1 takes one use: lightdm, polkit or sudo"
+	valid_use "$2" || die "unknown use: $2 (lightdm, polkit or sudo)"
+	case $1 in
+	enable) cmd_enable "$2" ;;
+	disable) cmd_disable "$2" ;;
+	remove-external) cmd_remove_external "$2" ;;
+	esac
+	;;
+*)
+	printf 'usage: %s [--root DIR] status | enable|disable|remove-external lightdm|polkit|sudo\n' "$self" >&2
+	exit 2
+	;;
+esac

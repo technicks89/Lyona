@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <action id="com.lyona.fingerprint.manage">
+    <description>Turn fingerprint authentication on or off</description>
+    <message>Authentication is required to change where a fingerprint can be used instead of the password</message>
+    <icon_name>fingerprint</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@PREFIX@/libexec/lyona/dwm-settings-fingerprint-root</annotate>
+  </action>
+</policyconfig>

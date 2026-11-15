@@ -347,12 +347,28 @@ power_recover_locker() {
 		return 0
 		;;
 	esac
-	if stop_configured_light_locker && start_configured_light_locker detached; then
-		printf 'locker-recover\trestarted\tlight-locker was inactive with its blanking windows still shown\n'
-		return 0
+	# Once light-locker is being stopped, it is started again even if this is
+	# asked to stop meanwhile (the blank watcher stopping, a hook killed), or
+	# the session would be left with no automatic locking: TERM, HUP and INT
+	# are noted, not obeyed, until it is, and obeyed then (status 143). They
+	# are handled, not ignored, so the light-locker started does not inherit
+	# them ignored. A start a signal cut short is tried once more; without a
+	# display it fails within about a second, so a closing session is not held.
+	power_recover_interrupted=0
+	trap 'power_recover_interrupted=1' TERM HUP INT
+	power_recover_status=1
+	if stop_configured_light_locker &&
+		{ start_configured_light_locker detached || start_configured_light_locker detached; }; then
+		power_recover_status=0
 	fi
-	printf 'locker-recover\tfailed\tlight-locker could not be restarted; run: pkill light-locker; setsid -f light-locker\n'
-	return 1
+	trap - TERM HUP INT
+	if [ "$power_recover_status" = 0 ]; then
+		printf 'locker-recover\trestarted\tlight-locker was inactive with its blanking windows still shown\n'
+	else
+		printf 'locker-recover\tfailed\tlight-locker could not be restarted; run: pkill light-locker; setsid -f light-locker\n'
+	fi
+	[ "$power_recover_interrupted" = 0 ] || exit 143
+	return "$power_recover_status"
 }
 
 power_apply_dpms_settings() {

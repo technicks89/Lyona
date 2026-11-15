@@ -24,6 +24,10 @@ var sections = [
         "keywords": ["battery", "charging", "power profile", "performance", "suspend", "sleep",
             "lid", "screen lock", "lock", "blank", "idle", "screensaver", "shutdown", "reboot",
             "log out"] },
+    // Listed only while a fingerprint reader is available (SettingsModel.sections).
+    { "id": "fingerprint", "label": "Fingerprint", "description": "Fingers and where they unlock",
+        "keywords": ["fingerprint", "finger", "fprintd", "biometric", "reader", "enroll",
+            "login", "lock screen", "sudo", "polkit", "password"] },
     { "id": "defaults", "label": "Defaults", "description": "Applications and autostart",
         "keywords": ["default applications", "browser", "terminal", "file manager", "file types",
             "mime", "startup applications", "autostart"] },

@@ -142,7 +142,16 @@ Scope {
     readonly property bool displayHasPendingChanges: root.displayBaseline.length > 0
         && root.displayLayoutKey(root.displayOutputs) !== root.displayBaseline
 
-    readonly property var sections: SettingsSearch.sections
+    // Fingerprint is listed only while a reader is available (#483).
+    readonly property var sections: SettingsSearch.sections.filter(function(section) {
+        return section.id !== "fingerprint" || fingerprintModel.readerState === "available";
+    })
+    readonly property alias fingerprintModel: fingerprintModel
+    // A section that leaves the list while selected (the reader went away)
+    // gives way to the first one; a selection still listed stays as it is.
+    onSectionsChanged: root.reconcileSelection()
+    // What DeferredSettingsPane waits on for Fingerprint: its first status read.
+    readonly property bool fingerprintLoading: fingerprintModel.initialLoading
     readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
     readonly property bool shortcutsMatch: SettingsSearch.matchesShortcuts(root.searchQuery)
     // The shortcuts row follows the matching sections in keyboard order.
@@ -158,6 +167,28 @@ Scope {
             if (section.id === id) return section;
         }
         return root.sections[0];
+    }
+
+    function reconcileSelection() {
+        // From the new sections themselves: filteredSections may not have
+        // followed them yet when this runs.
+        const filtered = SettingsSearch.filter(root.sections, root.searchQuery);
+        if (root.sections.some(function(section) { return section.id === root.selectedSectionId; })) {
+            // Still listed, maybe at another place (a section came or went
+            // before it): the keyboard's place follows it. The shortcuts row,
+            // after the sections, keeps the keyboard if it had it.
+            const kept = filtered.findIndex(function(section) {
+                return section.id === root.selectedSectionId;
+            });
+            if (root.shortcutsSelected) root.selectedIndex = filtered.length;
+            else if (kept >= 0) root.selectedIndex = kept;
+            return;
+        }
+        const fallback = root.sections[0].id;
+        const index = filtered.findIndex(function(section) { return section.id === fallback; });
+        root.selectedIndex = Math.max(0, index);
+        root.selectedSectionId = fallback;
+        if (root.visible) root.activateSection(fallback);
     }
 
     function selectedSection() {
@@ -220,6 +251,8 @@ Scope {
         }
         if (id !== "power" && root.powerMenuModel)
             root.powerMenuModel.cancelConfirmation("settings");
+        if (id === "fingerprint" && root.visible) fingerprintModel.refresh();
+        else fingerprintModel.closeSettings();
         if (root.defaultsModel) {
             const wantDefaults = id === "defaults" && root.visible;
             if (wantDefaults && !root.defaultsModel.settingsVisible) root.defaultsModel.openSettings();
@@ -903,6 +936,7 @@ Scope {
         }
         root.selectedIndex = targetIndex;
         root.selectedSectionId = targetId;
+        fingerprintModel.refresh();
         root.refreshCapabilities();
         root.activateSection(root.selectedSectionId);
 		root.recoverDisplayPreview();
@@ -955,6 +989,7 @@ Scope {
 		if (root.controlsModel) root.controlsModel.closeSettings();
 		if (root.powerModel) root.powerModel.closeSettings();
 		if (root.powerMenuModel) root.powerMenuModel.cancelConfirmation("settings");
+		fingerprintModel.closeSettings();
 		if (root.defaultsModel) root.defaultsModel.closeSettings();
 		if (root.autostartModel) root.autostartModel.closeSettings();
 		if (root.appearanceModel) root.appearanceModel.closeSettings();
@@ -968,6 +1003,10 @@ Scope {
 
     function toggle() {
         if (root.visible) root.close(); else root.open();
+    }
+
+    FingerprintModel {
+        id: fingerprintModel
     }
 
     Process {
