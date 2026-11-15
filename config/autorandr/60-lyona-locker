@@ -18,15 +18,19 @@ helper=${LYONA_AUTORANDR_LOCKER_HELPER:-}
 [ -n "$helper" ] && [ -x "$helper" ] || exit 0
 settle=${LYONA_AUTORANDR_LOCKER_SETTLE:-5}
 runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+# One lock per display, named from DISPLAY with anything unsafe replaced.
+display_key=$(printf '%s' "${DISPLAY:-none}" | tr -c 'A-Za-z0-9._-' '_')
 
-# One recovery at a time: when both phases' runs meet, the second skips, and a
-# later one finds nothing left to do.
+# One recovery at a time on a display: when both phases' runs meet, the second
+# skips, and a later one finds nothing left to do. The lock is not passed on:
+# the light-locker the recovery starts would otherwise hold it for its whole
+# life, and every later recovery would skip.
 (
 	sleep "$settle"
 	if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
-		exec 9>>"$runtime/lyona-locker-recover.lock"
+		exec 9>>"$runtime/lyona-locker-recover.$display_key.lock"
 		flock -n 9 || exit 0
 	fi
-	"$helper" recover-locker
+	"$helper" recover-locker 9>&-
 ) >/dev/null 2>&1 </dev/null &
 exit 0

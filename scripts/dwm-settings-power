@@ -333,6 +333,16 @@ power_recover_locker() {
 		printf 'locker-recover\tnone\tno light-locker windows are shown\n'
 		return 0
 	fi
+	# Asked again just before stopping it: one that has started blanking or
+	# locking since is left alone, never stopped (stopping a locked one would
+	# unlock the session).
+	case $(run_bounded 3 env LC_ALL=C light-locker-command --query 2>/dev/null || :) in
+	*inactive*) ;;
+	*)
+		printf 'locker-recover\tnone\tlight-locker became active or stopped answering; left alone\n'
+		return 0
+		;;
+	esac
 	if stop_configured_light_locker && start_configured_light_locker detached; then
 		printf 'locker-recover\trestarted\tlight-locker was inactive with its blanking windows still shown\n'
 		return 0

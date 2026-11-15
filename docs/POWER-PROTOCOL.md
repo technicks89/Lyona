@@ -134,10 +134,13 @@ the screens stay black with nothing locked (#416). The action restarts
 light-locker, detached, only when all three hold: light-locker runs for this
 display, `light-locker-command --query` says it is inactive, and a visible
 `light-locker` window exists. While it is blanking or locked it says active and
-is never touched, so this cannot unlock a locked session. The autorandr hook
+is never touched, so this cannot unlock a locked session. It asks once more just
+before stopping light-locker, and leaves it alone if it has turned active since. The autorandr hook
 `60-lyona-locker`, installed in `/etc/xdg/autorandr/preswitch.d` and
 `postswitch.d`, runs it 5 seconds after each layout change, from both phases
-because autorandr skips postswitch when applying a layout fails. It needs
+because autorandr skips postswitch when applying a layout fails. A lock per
+display in `$XDG_RUNTIME_DIR` lets one of two overlapping runs recover and the
+other skip; the light-locker it starts does not inherit that lock. It needs
 `light-locker-command` and `xdotool`; without them it reports `unavailable`. The
 manual recovery is the same: `pkill light-locker; setsid -f light-locker`.
 

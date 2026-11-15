@@ -25,7 +25,12 @@ stub pgrep '[ "$*" = "-u $(id -u) -x light-locker --env DISPLAY=:77" ] && [ -e "
 stub pkill '[ -e "$STUB_DIR/stopfails" ] || rm -f "$STUB_DIR/running" "$STUB_DIR/windows"'
 stub setsid '[ "$*" = "-f light-locker" ] && [ ! -e "$STUB_DIR/startfails" ] && : >"$STUB_DIR/running"'
 stub light-locker ':'
+# "activates": inactive at the first query, active from the second on.
 stub light-locker-command 'if [ -e "$STUB_DIR/noquery" ]; then exit 1; fi
+if [ -e "$STUB_DIR/activates" ]; then
+	[ -e "$STUB_DIR/queried" ] && : >"$STUB_DIR/active"
+	: >"$STUB_DIR/queried"
+fi
 if [ -e "$STUB_DIR/active" ]; then echo "The screensaver is active"; else echo "The screensaver is inactive"; fi'
 stub xdotool '[ -e "$STUB_DIR/windows" ] && printf "4194305\n6291457\n"; :'
 
@@ -35,7 +40,7 @@ run() {
 		XDG_RUNTIME_DIR="$work/run" XDG_CONFIG_HOME="$work/config" "$helper" recover-locker
 }
 setup() { # FLAGS...
-	rm -f "$work"/{running,active,windows,noquery,stopfails,startfails,calls}
+	rm -f "$work"/{running,active,activates,queried,windows,noquery,stopfails,startfails,calls}
 	: >"$work/calls"
 	local flag
 	for flag in "$@"; do : >"$work/$flag"; done
@@ -60,6 +65,10 @@ grep -Fxq 'setsid -f light-locker' "$work/calls" || fail "not restarted detached
 # Blanking or locked: active, and left alone, windows or not.
 setup running windows active
 expect none 'active'
+not_restarted
+# Turning active between the first query and the stop: left alone.
+setup running windows activates
+expect none 'became active'
 not_restarted
 # Inactive with no windows: the normal state.
 setup running
@@ -93,37 +102,98 @@ not_restarted
 sys_path=/usr/bin:/bin
 mv "$work/xdotool.off" "$bin/xdotool"
 
-# The hook: runs the recovery after the settle delay, in the background, from
-# either phase, and always exits 0.
+# The hook. The stand-in recovery notes when it starts, waits for the test's
+# gate, then notes that it ran; each hook is run with fd 8 on a FIFO, which its
+# background work inherits, so the FIFO's reader ends when all of it has ended.
 cat >"$work/fake-power" <<'STUB'
 #!/bin/sh
+printf '%s %s\n' "$(date +%s%N)" "${DISPLAY:-none}" >>"$STUB_DIR/hook-entered"
+[ ! -e "/proc/$$/fd/9" ] || echo 'fd 9 open' >>"$STUB_DIR/hook-fd"
+i=0
+while [ ! -e "$STUB_DIR/gate" ] && [ "$i" -lt 200 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
 printf '%s\n' "$*" >>"$STUB_DIR/hook-calls"
-sleep "${FAKE_POWER_SLEEP:-0}"
 exit 1
 STUB
 chmod +x "$work/fake-power"
 for phase in preswitch postswitch; do
 	mkdir -p "$work/$phase.d"
 	cp "$hook" "$work/$phase.d/60-lyona-locker"
-	rm -f "$work/hook-calls"
-	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" \
-		LYONA_AUTORANDR_LOCKER_SETTLE=0.2 "$work/$phase.d/60-lyona-locker" || fail "the $phase hook failed"
-	[[ ! -e $work/hook-calls ]] || fail "the $phase hook did not wait before recovering"
-	for _ in $(seq 50); do
-		[[ -e $work/hook-calls ]] && break
-		sleep 0.1
+done
+wait_until() { # COMMAND...: up to 10 seconds
+	local _
+	for _ in $(seq 200); do
+		"$@" && return 0
+		sleep 0.05
 	done
-	[[ $(cat "$work/hook-calls" 2>/dev/null) == recover-locker ]] || fail "the $phase hook did not run recover-locker"
-done
-# Both phases at once: one recovery runs, the other skips.
-rm -f "$work/hook-calls"
+	return 1
+}
+lines() { [[ -e $1 ]] && wc -l <"$1" || echo 0; }
+has_lines() { [[ $(lines "$1") == "$2" ]]; } # FILE N, checked each time it is called
+hook_reset() {
+	rm -f "$work"/{gate,hook-entered,hook-calls,hook-fd} "$work"/done.*
+}
+start_hook() { # NAME PHASE SETTLE [VAR=VALUE...]: runs it; its background work ends the reader done.NAME
+	local name=$1 phase=$2 settle=$3
+	shift 3
+	mkfifo "$work/done.$name"
+	timeout 15 cat "$work/done.$name" >/dev/null &
+	eval "reader_$name=$!"
+	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" "$@" \
+		LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" LYONA_AUTORANDR_LOCKER_SETTLE="$settle" \
+		"$work/$phase.d/60-lyona-locker" 8>"$work/done.$name" || fail "the $phase hook failed"
+}
+hook_ended() { # NAME: its background work has ended, in time
+	local pid
+	eval "pid=\$reader_$1"
+	wait "$pid" || fail "the $1 hook's recovery did not end"
+}
+reader_running() { # NAME
+	local pid
+	eval "pid=\$reader_$1"
+	kill -0 "$pid" 2>/dev/null
+}
+
+# From either phase: the hook returns at once, and the recovery runs after the
+# settle delay, without the lock's descriptor.
 for phase in preswitch postswitch; do
-	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" FAKE_POWER_SLEEP=1 \
-		LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" LYONA_AUTORANDR_LOCKER_SETTLE=0.2 \
-		"$work/$phase.d/60-lyona-locker" || fail "the $phase hook failed"
+	hook_reset
+	started=$(date +%s%N)
+	start_hook one "$phase" 0.3
+	[[ ! -e $work/hook-calls ]] || fail "the $phase hook waited for the recovery"
+	wait_until test -e "$work/hook-entered" || fail "the $phase hook did not start the recovery"
+	entered=$(cut -d' ' -f1 "$work/hook-entered")
+	((entered - started >= 300000000)) || fail "the $phase hook did not wait before recovering"
+	: >"$work/gate"
+	hook_ended one
+	[[ $(cat "$work/hook-calls") == recover-locker ]] || fail "the $phase hook did not run recover-locker"
+	[[ ! -e $work/hook-fd ]] || fail 'the recovery inherited the lock'
 done
-sleep 2
-[[ $(wc -l <"$work/hook-calls") == 1 ]] || fail "two overlapping hooks ran $(wc -l <"$work/hook-calls") recoveries"
+
+# Both phases at once on one display: one recovery runs, the other skips.
+hook_reset
+start_hook a preswitch 0 DISPLAY=:5
+start_hook b postswitch 0 DISPLAY=:5
+wait_until has_lines "$work/hook-entered" 1 || fail 'no overlapping hook started a recovery'
+# The one that lost the lock ends while the other waits at the gate.
+wait_until eval '! reader_running a || ! reader_running b' || fail 'the second overlapping hook did not skip'
+: >"$work/gate"
+hook_ended a
+hook_ended b
+[[ $(lines "$work/hook-calls") == 1 ]] || fail "two overlapping hooks ran $(lines "$work/hook-calls") recoveries"
+
+# Two displays: each has its own lock, so both recover.
+hook_reset
+start_hook a preswitch 0 DISPLAY=:5
+start_hook b preswitch 0 DISPLAY=:6
+wait_until has_lines "$work/hook-entered" 2 || fail "a second display's recovery was locked out: $(cat "$work/hook-entered" 2>/dev/null)"
+: >"$work/gate"
+hook_ended a
+hook_ended b
+[[ $(lines "$work/hook-calls") == 2 ]] || fail 'both displays did not recover'
+
 # Without the helper it does nothing, successfully.
 env -i PATH=/nonexistent LYONA_AUTORANDR_LOCKER_HELPER="$work/missing" /bin/sh "$hook" || fail 'the hook failed without its helper'
 

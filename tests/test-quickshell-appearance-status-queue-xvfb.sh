@@ -44,14 +44,22 @@ python3 "$repo/tests/fixtures/appearance-status-queue.py" "$work/qml" "$repo/tes
 printf '\211PNG\r\n\032\n\0\0\0\rIHDR\0\0\0\001\0\0\0\001\010\002\0\0\0\220wS\336\0\0\0\014IDATx\234c\370\017\0\0\001\001\0\005\030\330N\0\0\0\0IEND\256B`\202' \
 	>"$work/home/Pictures/backgrounds/b.png"
 # The wrapper: the real helper, but a watch that never becomes ready (one still
-# restarting) and an inventory read slowed by the delay the test writes.
+# restarting), and, once the test asks for it ("inventory-hold"), an inventory
+# read held until the test releases it ("inventory-release"), for at most 10
+# seconds, so a test that never gets there fails rather than hangs.
 cat >"$work/appearance-stub" <<STUB
 #!/bin/sh
 helper=\$1
 shift
 case "\$helper \$1" in
 'dwm-settings-appearance watch-inventory') exec sleep 60 ;;
-'dwm-settings-appearance inventory') sleep "\$(cat "\$APPEARANCE_DIR/inventory-delay" 2>/dev/null || echo 0)" ;;
+'dwm-settings-appearance inventory')
+	i=0
+	while [ -e "\$APPEARANCE_DIR/inventory-hold" ] && [ ! -e "\$APPEARANCE_DIR/inventory-release" ] && [ "\$i" -lt 200 ]; do
+		i=\$((i + 1))
+		sleep 0.05
+	done
+	;;
 esac
 exec "$repo/scripts/\$helper" "\$@"
 STUB

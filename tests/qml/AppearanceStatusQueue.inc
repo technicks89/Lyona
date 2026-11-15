@@ -2,8 +2,8 @@
     // wallpaper status read queued behind an inventory read must run once that
     // read ends, even when the inventory read's own retry has to wait for a
     // watch that is restarting. The watch here never becomes ready, as one
-    // still restarting after a change; the inventory read is slowed so the
-    // status read is asked for while it runs.
+    // still restarting after a change; the inventory read is held until the
+    // status read has been asked for while it runs.
     property int queueStage: 0
     property double queueStageStarted: Date.now()
     readonly property string queueDir: Quickshell.env("APPEARANCE_DIR")
@@ -47,8 +47,8 @@
                         || wallpaper.providerState !== "available" || waited < 500) return;
                 root.queueCheck(!model.inventoryWatchReady && !model.inventoryWatchFailed, "the watch: " + state);
                 root.queueCheck(wallpaper.path === "", "a wallpaper before the apply: " + state);
-                // An inventory read that the watch's last ready allowed, slowed.
-                queueShell.command = ["sh", "-c", 'echo 1.5 >"$1/inventory-delay"', "sh", root.queueDir];
+                // An inventory read that the watch's last ready allowed, held.
+                queueShell.command = ["sh", "-c", ': >"$1/inventory-hold"', "sh", root.queueDir];
                 queueShell.running = true;
                 root.queueNext();
                 return;
@@ -79,6 +79,9 @@
                 model.inventoryPending = true;
                 wallpaper.refreshStatus();
                 root.queueCheck(wallpaper.statusPending && model.inventoryRunning, "the status read was not queued: " + state);
+                // Now the inventory read may end.
+                queueShell.command = ["sh", "-c", ': >"$1/inventory-release"', "sh", root.queueDir];
+                queueShell.running = true;
                 root.queueNext();
                 return;
             case 5:
