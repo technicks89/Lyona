@@ -35,6 +35,9 @@ STUB
 cat >"$work/fake-power" <<'STUB'
 #!/bin/sh
 for fd in 8 9; do [ ! -e "/proc/$$/fd/$fd" ] || echo "fd $fd open" >>"$STUB_DIR/fd"; done
+echo $$ >>"$STUB_DIR/power-pids"
+# As recover-locker starts light-locker: detached, in a session of its own.
+if [ -n "${DETACHED_PID_FILE:-}" ]; then setsid -f sh -c 'echo $$ >"$1"; exec sleep 30' sh "$DETACHED_PID_FILE"; fi
 echo $$ >"$STUB_DIR/power-pid"
 printf '%s %s\n' "$*" "$DISPLAY" >>"$STUB_DIR/calls"
 i=0
@@ -110,20 +113,38 @@ wait_until eval '! kill -0 '"$watch_pid"' 2>/dev/null' || fail 'the watcher outl
 wait "$watch_pid" || fail 'the watcher exited non-zero'
 wait_until eval '! pgrep -f "tail -n \+1 -f $work/feed" >/dev/null' || fail 'dbus-monitor outlived the watcher'
 
-# Stopped while a recovery waits on its helper: the helper goes with it, and
-# both locks are free again.
-rm -f "$work/calls" "$work/gate" "$work/logged" "$work/power-pid"
+# Stopped while a recovery waits on its helper, with more ends of blanking
+# queued behind it: the helper goes with it, no queued one starts as it goes
+# (an orphaned recovery could still restart light-locker), and both locks are
+# free again.
+rm -f "$work/calls" "$work/gate" "$work/logged" "$work/power-pid" "$work/power-pids"
+: >"$work/feed"
 : >"$work/x-alive"
+rm -f "$work/monitor-args" "$work/detached-pid"
 env -i PATH="$bin:/usr/bin:/bin" STUB_DIR="$work" DISPLAY=:7 XDG_RUNTIME_DIR="$work/run" \
+	DETACHED_PID_FILE="$work/detached-pid" \
 	DWM_BLANK_WATCH_HELPER="$work/fake-power" DWM_BLANK_WATCH_SETTLE=0 "$watch" &
 watch_pid=$!
 wait_until test -e "$work/monitor-args" || fail 'the watcher did not start again'
-signal org.freedesktop.ScreenSaver false
+for _ in 1 2 3 4; do signal org.freedesktop.ScreenSaver false; done
 wait_until test -e "$work/power-pid" || fail 'no recovery started'
-power_pid=$(cat "$work/power-pid")
 kill -TERM "$watch_pid"
 wait "$watch_pid" || :
-wait_until eval '! kill -0 '"$power_pid"' 2>/dev/null' || fail 'the recovery outlived the watcher'
+all_gone() {
+	local pid
+	while read -r pid; do
+		! kill -0 "$pid" 2>/dev/null || return 1
+	done <"$work/power-pids"
+}
+wait_until all_gone || fail "a recovery outlived the watcher: $(cat "$work/power-pids")"
+# Nothing started once the watcher was gone.
+sleep 0.5
+all_gone || fail "a recovery started after the watcher was stopped: $(cat "$work/power-pids")"
+# What a recovery detached (light-locker) keeps running.
+wait_until test -s "$work/detached-pid" || fail 'the recovery did not detach anything'
+detached_pid=$(cat "$work/detached-pid")
+kill -0 "$detached_pid" 2>/dev/null || fail 'the detached process was stopped with the watcher'
+kill "$detached_pid" 2>/dev/null || :
 flock -n "$work/run/lyona-locker-recover._7.lock" true || fail 'the recovery lock was not released'
 flock -n "$work/run/lyona-blank-watch._7.lock" true || fail 'the watcher lock was not released'
 rm -f "$work/x-alive"

@@ -41,22 +41,16 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/dwm-blank-watch.XXXXXX") || exit 0
 monitor_pid=
 reader_pid=
 xprop_pid=
-# PID and everything below it: the reader and a recovery it may be running,
-# helper included, which releases the recovery lock. The light-locker a
-# recovery starts is detached (setsid), so it is not below it.
-# shellcheck disable=SC2329 # run from cleanup, by the EXIT trap
-kill_tree() {
-	local child
-	for child in $(pgrep -P "$1" 2>/dev/null); do
-		kill_tree "$child"
-	done
-	kill "$1" 2>/dev/null || :
-}
 # shellcheck disable=SC2329 # run by the EXIT trap
 cleanup() {
 	trap - EXIT HUP INT TERM
 	[ -z "$monitor_pid" ] || kill "$monitor_pid" 2>/dev/null || :
-	[ -z "$reader_pid" ] || kill_tree "$reader_pid"
+	# The reader's process group, all at once: the reader and a recovery it
+	# may be running, helper included, which releases the recovery lock. One
+	# signal to the group, so the reader cannot start another recovery while
+	# it is being stopped. The light-locker a recovery starts is in a session
+	# of its own (setsid), so it is not in the group and keeps running.
+	[ -z "$reader_pid" ] || kill -TERM -- "-$reader_pid" 2>/dev/null || :
 	if [ -n "$xprop_pid" ]; then
 		kill "$xprop_pid" 2>/dev/null || :
 		wait "$xprop_pid" 2>/dev/null || :
@@ -96,7 +90,9 @@ dbus-monitor --session "type='signal',member='ActiveChanged',interface='org.free
 monitor_pid=$!
 
 # A signal line, then its argument on the next: "boolean false" is the end of
-# blanking. One recovery at a time, in order.
+# blanking. One recovery at a time, in order. In a process group of its own
+# (job control, for this one job), which cleanup stops as one.
+set -m
 (
 	exec 8>&-
 	expecting=0
@@ -112,6 +108,7 @@ monitor_pid=$!
 	done
 ) <"$work/events" &
 reader_pid=$!
+set +m
 
 # Until the X display goes away, or the session bus does.
 xprop -root -spy _LYONA_BLANK_WATCH >/dev/null 2>&1 </dev/null 8>&- &
