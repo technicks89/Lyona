@@ -159,11 +159,16 @@ configure_appimage_handler() {
 # is bound nowhere in FILE. Prints how many lines it replaced.
 migrate_hotkeys_lines() {
 	awk -v table="$2" '
+		# A field'"'"'s quoted value, with or without spaces around "=".
+		function field(s, name,   v) {
+			if (!match(s, name "[ \t]*=[ \t]*\"[^\"]*\"")) return ""
+			v = substr(s, RSTART, RLENGTH)
+			sub(/^[^"]*"/, "", v)
+			sub(/"$/, "", v)
+			return "\"" v "\""
+		}
 		function chord(s,   mod, key) {
-			if (!match(s, /mod="[^"]*"/)) return ""
-			mod = substr(s, RSTART, RLENGTH)
-			if (!match(s, /key="[^"]*"/)) return ""
-			key = substr(s, RSTART, RLENGTH)
+			if ((mod = field(s, "(^|[^a-z_])mod")) == "" || (key = field(s, "(^|[^a-z_])key")) == "") return ""
 			return mod " " key
 		}
 		BEGIN {
@@ -223,9 +228,13 @@ migrate_hotkeys() {
 # added; fails when that list is not there.
 add_window_rules_lines() {
 	awk -v table="$2" '
-		function title(s) {
-			if (!match(s, /title="[^"]*"/)) return ""
-			return substr(s, RSTART, RLENGTH)
+		# The title a rule names, with or without spaces around "=".
+		function title(s,   v) {
+			if (!match(s, /(^|[^a-z_])title[ \t]*=[ \t]*"[^"]*"/)) return ""
+			v = substr(s, RSTART, RLENGTH)
+			sub(/^[^"]*"/, "", v)
+			sub(/"$/, "", v)
+			return v
 		}
 		BEGIN {
 			while ((getline line < table) > 0)

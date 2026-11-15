@@ -165,7 +165,10 @@ Flickable {
                                         label: presetButton.modelData.label
                                         primary: presetButton.modelData.value === presetRow.selected
                                         accessibleDescription: presetRow.modelData.label + " " + presetButton.modelData.label + ". Starts a timed preview."
+                                        // Also while the devices are read again after Keep: a
+                                        // preset builds on the Modifier options it shows.
                                         enabled: !root.settingsModel.previewOperationLocked
+                                            && root.settingsModel.inputState !== "loading"
                                         onActivated: root.settingsModel.previewInput(deviceCard.modelData.key, "modifier-options",
                                             InputOptions.withChoice(presetRow.options, presetRow.modelData.prefix, presetButton.modelData.value))
                                     }

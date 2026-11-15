@@ -43,6 +43,14 @@ Scope {
     property string message: ""
     // A save asked for while one runs, done once it ends.
     property bool savePending: false
+    // A clear asked for while a save runs, done once it ends, so that save
+    // cannot put back what the clear removes.
+    property bool clearPending: false
+    // Raised by every change that takes entries away; a load that began
+    // before it does not bring them back.
+    property int historyGeneration: 0
+    // dwm-clipboard-history keeps at most 4 MiB.
+    readonly property int maxSavedBytes: 4 * 1024 * 1024
 
     readonly property string status: {
         if (!root.settingsKnown) return "Reading the clipboard history settings...";
@@ -95,7 +103,7 @@ Scope {
         if (!capture) root.entries = [];
         // Saved history, once, when capture comes on with saving; and what is
         // in the list now, saved as soon as saving comes on.
-        if (root.persistEnabled && !wasCapturing && root.entries.length === 0) loadProcess.running = true;
+        if (root.persistEnabled && !wasCapturing && root.entries.length === 0) root.load();
         else if (root.persistEnabled && !wasSaving && root.entries.length > 0) root.save();
         return true;
     }
@@ -103,7 +111,10 @@ Scope {
     function setCapture(enabled) {
         if (root.busy) return;
         if (enabled) root.backendFailed = false;
-        else root.entries = [];
+        else {
+            root.entries = [];
+            root.historyGeneration++;
+        }
         root.run(["set", "capture", enabled ? "on" : "off"]);
     }
 
@@ -181,16 +192,50 @@ Scope {
 
     // ── storage ─────────────────────────────────────────────────────────
     function save() {
-        if (!root.persistEnabled) return;
+        if (!root.persistEnabled || root.clearPending) return;
         if (saveProcess.running) {
             root.savePending = true;
             return;
         }
-        saveProcess.payload = JSON.stringify({ "version": 1, "entries": root.entries });
+        saveProcess.payload = root.serialize(root.entries);
         saveProcess.running = true;
     }
 
-    function parseHistory(text) {
+    // UTF-8 bytes of a string.
+    function utf8Bytes(text) {
+        let bytes = 0;
+        for (let i = 0; i < text.length; i++) {
+            const unit = text.charCodeAt(i);
+            if (unit < 0x80) bytes += 1;
+            else if (unit < 0x800) bytes += 2;
+            else if (unit >= 0xd800 && unit <= 0xdbff) {
+                bytes += 4;
+                i++;
+            } else bytes += 3;
+        }
+        return bytes;
+    }
+
+    // The history as saved: the oldest entries left out until it fits what
+    // dwm-clipboard-history keeps, so a full list is saved rather than refused.
+    function serialize(entries) {
+        let kept = entries;
+        for (;;) {
+            const text = JSON.stringify({ "version": 1, "entries": kept });
+            if (text.length * 3 <= root.maxSavedBytes || root.utf8Bytes(text) <= root.maxSavedBytes || kept.length === 0)
+                return text;
+            kept = kept.slice(0, kept.length - 1);
+        }
+    }
+
+    function load() {
+        loadProcess.generation = root.historyGeneration;
+        loadProcess.running = true;
+    }
+
+    function parseHistory(text, generation) {
+        // Cleared, deleted from or turned off while it loaded: not brought back.
+        if (generation !== root.historyGeneration) return;
         if (text.trim().length === 0) return;
         let value;
         try {
@@ -208,9 +253,10 @@ Scope {
             loaded.push({ "text": item.text,
                 "timestamp": typeof item.timestamp === "number" && item.timestamp > 0 ? item.timestamp : Date.now() });
         }
-        // Copies made while it loaded stay in front.
-        const kept = root.entries.filter(entry => !loaded.some(item => item.text === entry.text));
-        root.entries = kept.concat(loaded).slice(0, root.maxEntries);
+        // Copies made while it loaded stay in front, and win over a saved
+        // entry with the same text.
+        root.entries = root.entries.concat(loaded.filter(item => !root.entries.some(entry => entry.text === item.text)))
+            .slice(0, root.maxEntries);
     }
 
     // ── the window ──────────────────────────────────────────────────────
@@ -278,12 +324,17 @@ Scope {
         if (index < 0 || index >= rows.length) return;
         const text = rows[index].text;
         root.entries = root.entries.filter(entry => entry.text !== text);
+        root.historyGeneration++;
         if (root.persistEnabled) root.save();
     }
 
     function clearAll() {
         root.entries = [];
-        if (!clearProcess.running) clearProcess.running = true;
+        root.historyGeneration++;
+        root.savePending = false;
+        // After a save that is running, which would otherwise put it back.
+        if (saveProcess.running) root.clearPending = true;
+        else if (!clearProcess.running) clearProcess.running = true;
     }
 
     function relativeTime(timestamp) {
@@ -334,9 +385,10 @@ Scope {
 
     Process {
         id: loadProcess
+        property int generation: 0
         command: Commands.clipboardHistoryCommand("load", [])
         running: false
-        stdout: StdioCollector { onStreamFinished: root.parseHistory(this.text) }
+        stdout: StdioCollector { onStreamFinished: root.parseHistory(this.text, loadProcess.generation) }
     }
 
     Process {
@@ -357,7 +409,10 @@ Scope {
                 const error = saveError.text.trim();
                 root.message = error.length > 0 ? error : "The clipboard history could not be saved";
             }
-            if (root.savePending) {
+            if (root.clearPending) {
+                root.clearPending = false;
+                if (!clearProcess.running) clearProcess.running = true;
+            } else if (root.savePending) {
                 root.savePending = false;
                 Qt.callLater(root.save);
             }

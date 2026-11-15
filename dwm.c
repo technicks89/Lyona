@@ -114,6 +114,7 @@ struct Client {
 	int fakefullscreen;
 	/* #496: the title strip above a floating window, when they are on. */
 	Window titlewin;
+	Window titlefor; /* the window _DWM_TITLEBAR_FOR names, which swallowing changes */
 	int titlemapped;
 	pid_t pid;
 	Client *next;
@@ -5524,6 +5525,7 @@ destroytitlebar(Client *c)
 	if (c->titlewin)
 		XDestroyWindow(dpy, c->titlewin);
 	c->titlewin = None;
+	c->titlefor = None;
 	c->titlemapped = 0;
 }
 
@@ -5549,8 +5551,13 @@ updatetitlebar(Client *c)
 			return;
 		XSetClassHint(dpy, c->titlewin, &class);
 		XDefineCursor(dpy, c->titlewin, cursor[CurMove]->cursor);
+		c->titlefor = None;
+	}
+	/* Swallowing gives the client another window: the strip names this one. */
+	if (c->titlefor != c->win) {
 		XChangeProperty(dpy, c->titlewin, titlebarforatom, XA_WINDOW, 32,
 			PropModeReplace, (unsigned char *)&c->win, 1);
+		c->titlefor = c->win;
 	}
 	XMoveResizeWindow(dpy, c->titlewin, c->x, c->y - height, width, height);
 	if (drw->w < (unsigned int)width || drw->h < (unsigned int)height)

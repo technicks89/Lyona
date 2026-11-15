@@ -96,6 +96,52 @@ expect_fail 'not a regular file' set capture off
 rm -f "$settings"
 mv "$work/real.conf" "$settings"
 
+# A symlinked settings directory: nothing in it is believed, so capture reads
+# as off and the source does not start.
+run set capture on >/dev/null
+mv "$config/lyona" "$work/real-lyona"
+ln -s "$work/real-lyona" "$config/lyona"
+[[ $(status_of capture) == off && $(status_of state) == unavailable ]] || fail "settings through a symlinked directory: $(run status)"
+expect_fail 'capture is off' observe
+rm "$config/lyona"
+mv "$work/real-lyona" "$config/lyona"
+
+# A symlinked history directory: load and clear refuse it, and create nothing.
+run set persist on >/dev/null
+mkdir -p "$work/elsewhere-state"
+printf 'secret history' >"$work/elsewhere-state/clipboard-history.json"
+rm -rf "$state/lyona"
+ln -s "$work/elsewhere-state" "$state/lyona"
+expect_fail 'refusing a symlinked path' load
+expect_fail 'refusing a symlinked path' clear
+[[ -f $work/elsewhere-state/clipboard-history.json ]] || fail 'clear removed a file through a symlinked directory'
+rm "$state/lyona"
+run load >/dev/null
+[[ ! -e $state/lyona ]] || fail 'load created the history directory'
+
+# A save still reading when the history is cleared, or saving turned off, puts
+# nothing back.
+run set capture on >/dev/null
+run set persist on >/dev/null
+printf '{"version":1,"entries":[]}' | run save
+for change in 'clear' 'set persist off'; do
+	run set persist on >/dev/null
+	rm -f "$work/save-in"
+	mkfifo "$work/save-in"
+	status=0
+	run save <"$work/save-in" 2>"$work/save.err" &
+	save_pid=$!
+	exec 7>"$work/save-in"
+	sleep 0.3
+	# shellcheck disable=SC2086 # one word per argument
+	run $change >/dev/null
+	printf '{"version":1,"entries":[{"text":"restored after %s","timestamp":1}]}' "$change" >&7
+	exec 7>&-
+	wait "$save_pid" || status=$?
+	[[ $status != 0 ]] || fail "a save begun before '$change' succeeded"
+	[[ ! -e $history ]] || fail "a save begun before '$change' put the history back: $(cat "$history")"
+done
+
 # Bad input.
 expect_fail 'the value must be on or off' set capture maybe
 expect_fail 'set takes capture|persist on|off' set volume on

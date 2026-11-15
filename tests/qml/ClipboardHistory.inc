@@ -142,11 +142,35 @@
                 model.clearAll();
                 root.clipNext();
                 return;
-            case 11:
+            case 11: {
                 if (root.clipLog.indexOf("clear") < 0) return;
+                // Loading saved history: what is in the list now wins over a
+                // saved entry with the same text; a load from before a clear,
+                // delete or capture off changes nothing.
+                const saved = JSON.stringify({ "version": 1, "entries": [
+                    { "text": "fresh", "timestamp": 1 }, { "text": "older", "timestamp": 1 } ] });
+                model.entries = [{ "text": "fresh", "timestamp": Date.now() }];
+                model.parseHistory(saved, model.historyGeneration - 1);
+                root.clipCheck(model.entries.length === 1, "a stale load changed the list");
+                model.parseHistory(saved, model.historyGeneration);
+                root.clipCheck(model.entries.length === 2 && model.entries[0].text === "fresh"
+                    && model.entries[0].timestamp !== 1 && model.entries[1].text === "older",
+                    "merge: " + JSON.stringify(model.entries));
+                // Saving: a list too large for the helper loses its oldest
+                // entries until it fits; a small one is saved whole.
+                root.clipCheck(JSON.parse(model.serialize(model.entries)).entries.length === 2, "a small list was trimmed");
+                const big = [];
+                for (let i = 0; i < 50; i++)
+                    big.push({ "text": String(i) + "\u0001".repeat(60000), "timestamp": i + 1 });
+                const text = model.serialize(big);
+                const kept = JSON.parse(text).entries;
+                root.clipCheck(model.utf8Bytes(text) <= model.maxSavedBytes && kept.length > 0 && kept.length < 50
+                    && kept[0].timestamp === 1, "trimmed to " + kept.length + " entries, " + model.utf8Bytes(text) + " bytes");
+                model.entries = [];
                 console.log("Clipboard history: PASS");
                 Qt.quit();
                 return;
+            }
             }
         }
     }

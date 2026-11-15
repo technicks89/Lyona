@@ -156,6 +156,12 @@ printf '%s\n' "$launcher" "$mine_v" >"$hotkeys"
 run --profile core >/dev/null 2>&1
 grep -Fq 'desc="Clipboard history"' "$hotkeys" && fail 'Super+V was added over a binding the user had on it'
 grep -Fxq -- "$mine_v" "$hotkeys" || fail "the user's Super+V was not kept"
+# Written with spaces around "=", it is the same chord.
+spaced_v='  { mod = "SUPER", key = "v", desc = "Paste", func = "spawn", cmd = "true" },'
+printf '%s\n' "$launcher" "$spaced_v" >"$hotkeys"
+run --profile core >/dev/null 2>&1
+grep -Fq 'desc="Clipboard history"' "$hotkeys" && fail 'Super+V was added over a spaced binding the user had on it'
+grep -Fxq -- "$spaced_v" "$hotkeys" || fail "the user's spaced Super+V was not kept"
 
 # Every line the table replaces with is a binding in today's default.
 while IFS= read -r line; do
@@ -185,6 +191,14 @@ after=$(cat "$rules")
 run --profile core >"$work/out" 2>&1
 [[ $(cat "$rules") == "$after" ]] || fail 'a second run changed window-rules.toml'
 grep -Fq 'Added' "$work/out" && fail 'a second run reported an addition'
+# A rule written with spaces around "=" names its title just the same.
+rm -f "$rules" "$rules".bak.*
+spaced_rule='  { title = "dwm clipboard", isfloating = 0 },'
+printf '%s\n' 'rules = [' "$spaced_rule" ']' >"$rules"
+run --profile core >/dev/null 2>&1
+grep -Fq 'title="dwm clipboard"' "$rules" && fail "a rule was added for a title the user names with spaces: $(cat "$rules")"
+grep -Fxq -- "$spaced_rule" "$rules" || fail "the user's spaced rule was not kept"
+grep -Fq 'title="dwm hidden network"' "$rules" || fail 'the other missing rule was not added'
 # A file without a one-rule-per-line list is left as it is, with a warning.
 rm -f "$rules" "$rules".bak.*
 printf '%s\n' 'rules = [ { class="Gimp", isfloating=1 } ]' >"$rules"
