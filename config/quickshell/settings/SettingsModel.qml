@@ -147,6 +147,9 @@ Scope {
         return section.id !== "fingerprint" || fingerprintModel.readerState === "available";
     })
     readonly property alias fingerprintModel: fingerprintModel
+    // A section that leaves the list while selected (the reader went away)
+    // gives way to the first one; a selection still listed stays as it is.
+    onSectionsChanged: root.reconcileSelection()
     // What DeferredSettingsPane waits on for Fingerprint: its first status read.
     readonly property bool fingerprintLoading: fingerprintModel.initialLoading
     readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
@@ -164,6 +167,15 @@ Scope {
             if (section.id === id) return section;
         }
         return root.sections[0];
+    }
+
+    function reconcileSelection() {
+        if (root.sections.some(function(section) { return section.id === root.selectedSectionId; })) return;
+        const fallback = root.sections[0].id;
+        const index = root.filteredSections.findIndex(function(section) { return section.id === fallback; });
+        root.selectedIndex = Math.max(0, index);
+        root.selectedSectionId = fallback;
+        if (root.visible) root.activateSection(fallback);
     }
 
     function selectedSection() {

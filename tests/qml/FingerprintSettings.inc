@@ -97,6 +97,25 @@
                 root.fpCheck(root.fpLog.indexOf("login") < 0 && root.fpLog.indexOf("maybe") < 0
                     && root.fpLog.indexOf("nose") < 0 && root.fpLog.indexOf("enroll right-index-finger") < 0,
                     "a bad request reached the helper: " + JSON.stringify(root.fpLog));
+                // The reader goes away while Fingerprint is shown: the section
+                // leaves the list, and the selection moves to one that is listed.
+                root.fpCheck(settingsModel.selectedSectionId === "fingerprint", "not on Fingerprint any more");
+                fpShell.command = ["sh", "-c", 'sed "s/^reader\tavailable\t.*/reader\tnone\tNo fingerprint reader was found/" "$1/status-reader" >"$1/status"',
+                    "sh", root.fpDir];
+                fpShell.running = true;
+                root.fpNext();
+                return;
+            case 7:
+                if (fpShell.running) return;
+                model.refresh();
+                root.fpNext();
+                return;
+            case 8:
+                if (model.readerState !== "none") return;
+                root.fpCheck(!root.fpListed(), "still listed without a reader");
+                root.fpCheck(settingsModel.selectedSectionId === settingsModel.sections[0].id
+                    && settingsModel.selectedSection().id === settingsModel.selectedSectionId,
+                    "the selection stayed on " + settingsModel.selectedSectionId);
                 settingsModel.close();
                 console.log("Fingerprint settings: PASS");
                 Qt.quit();

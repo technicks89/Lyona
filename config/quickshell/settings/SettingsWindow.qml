@@ -544,6 +544,7 @@ FloatingWindow {
                                     && root.settingsModel.selectedSectionId !== "bluetooth"
                                     && root.settingsModel.selectedSectionId !== "audio"
                                     && root.settingsModel.selectedSectionId !== "power"
+                                    && root.settingsModel.selectedSectionId !== "fingerprint"
                                     && root.settingsModel.selectedSectionId !== "defaults"
                                     && root.settingsModel.selectedSectionId !== "appearance"
                                     && root.settingsModel.selectedSectionId !== "system"

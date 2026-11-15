@@ -8,10 +8,11 @@
 # 60-lyona-locker does the same after a layout change; both take the same lock
 # per display, so they never recover at once.
 #
-# Started by autostart.sh, one per display. It ends with its X display (an
-# xprop that stays connected to it), so a watcher from a session whose X server
-# died does not linger, nor stand in for the next session's. Each recovery's
-# result line goes to the journal (logger -t lyona-locker) when logger exists.
+# Started by autostart.sh; one runs per display, holding a lock for its life
+# (a second one exits at once). It ends with its X display (an xprop that stays
+# connected to it), so a watcher from a session whose X server died does not
+# linger, nor stand in for the next session's. Each recovery's result line goes
+# to the journal (logger -t lyona-locker) when logger exists.
 set -u
 
 [ -n "${DISPLAY:-}" ] || exit 0
@@ -30,14 +31,36 @@ settle=${DWM_BLANK_WATCH_SETTLE:-2}
 runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 display_key=$(printf '%s' "$DISPLAY" | tr -c 'A-Za-z0-9._-' '_')
 
+# One watcher per display. Nothing it starts inherits this lock (8>&-).
+if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
+	exec 8>>"$runtime/lyona-blank-watch.$display_key.lock"
+	flock -n 8 || exit 0
+fi
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/dwm-blank-watch.XXXXXX") || exit 0
 monitor_pid=
 reader_pid=
+xprop_pid=
+# PID and everything below it: the reader and a recovery it may be running,
+# helper included, which releases the recovery lock. The light-locker a
+# recovery starts is detached (setsid), so it is not below it.
+# shellcheck disable=SC2329 # run from cleanup, by the EXIT trap
+kill_tree() {
+	local child
+	for child in $(pgrep -P "$1" 2>/dev/null); do
+		kill_tree "$child"
+	done
+	kill "$1" 2>/dev/null || :
+}
 # shellcheck disable=SC2329 # run by the EXIT trap
 cleanup() {
 	trap - EXIT HUP INT TERM
 	[ -z "$monitor_pid" ] || kill "$monitor_pid" 2>/dev/null || :
-	[ -z "$reader_pid" ] || kill "$reader_pid" 2>/dev/null || :
+	[ -z "$reader_pid" ] || kill_tree "$reader_pid"
+	if [ -n "$xprop_pid" ]; then
+		kill "$xprop_pid" 2>/dev/null || :
+		wait "$xprop_pid" 2>/dev/null || :
+	fi
 	rm -rf -- "$work"
 }
 trap cleanup EXIT
@@ -57,21 +80,25 @@ recover() {
 	(
 		if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
 			exec 9>>"$runtime/lyona-locker-recover.$display_key.lock"
-			flock -n 9 || exit 0
+			if ! flock -n 9; then
+				note "after an idle blank: skipped; another recovery is running"
+				exit 0
+			fi
 		fi
-		result=$("$helper" recover-locker 9>&- 2>/dev/null) || :
+		result=$("$helper" recover-locker 8>&- 9>&- 2>/dev/null) || :
 		note "after an idle blank: ${result:-no answer}"
 	)
 }
 
 dbus-monitor --session "type='signal',member='ActiveChanged',interface='org.freedesktop.ScreenSaver'" \
 	"type='signal',member='ActiveChanged',interface='org.gnome.ScreenSaver'" \
-	>"$work/events" 2>/dev/null </dev/null &
+	>"$work/events" 2>/dev/null </dev/null 8>&- &
 monitor_pid=$!
 
 # A signal line, then its argument on the next: "boolean false" is the end of
 # blanking. One recovery at a time, in order.
 (
+	exec 8>&-
 	expecting=0
 	while IFS= read -r line; do
 		case $line in
@@ -87,8 +114,7 @@ monitor_pid=$!
 reader_pid=$!
 
 # Until the X display goes away, or the session bus does.
-xprop -root -spy _LYONA_BLANK_WATCH >/dev/null 2>&1 </dev/null &
+xprop -root -spy _LYONA_BLANK_WATCH >/dev/null 2>&1 </dev/null 8>&- &
 xprop_pid=$!
 wait -n "$xprop_pid" "$monitor_pid" || :
-kill "$xprop_pid" 2>/dev/null || :
 exit 0

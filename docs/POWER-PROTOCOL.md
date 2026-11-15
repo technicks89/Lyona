@@ -145,11 +145,13 @@ other skip; the light-locker it starts does not inherit that lock. It needs
 manual recovery is the same: `pkill light-locker; setsid -f light-locker`.
 
 The same happens after an ordinary idle blank, with no display change: seen on
-a laptop's built-in screen. `dwm-blank-watch`, started by autostart once per
-display, follows light-locker's `ActiveChanged` signal on the session bus
+a laptop's built-in screen. `dwm-blank-watch`, started by autostart (one per
+display: it holds a lock for its life, and a second one exits), follows light-locker's `ActiveChanged` signal on the session bus
 (`org.freedesktop.ScreenSaver` and `org.gnome.ScreenSaver`). When blanking ends
 (`false`) it runs the recovery 2 seconds later, under the same lock as the
-hook, and logs the result line (`journalctl -t lyona-locker`). It ends with its
+hook, and logs the result line, or that it skipped because another recovery
+was running (`journalctl -t lyona-locker`). Stopped, it ends a recovery it is
+running too. It ends with its
 X display, so a watcher from a session whose X server died neither lingers nor
 stands in for the next one.
 

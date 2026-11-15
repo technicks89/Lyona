@@ -114,6 +114,44 @@ if run enroll right-thumb >"$work/enroll"; then fail 'a failed enroll succeeded'
 [[ $(tail -1 "$work/enroll") == $'enroll-result\tfailed\tenroll-disconnected' ]] || fail "failed enroll: $(cat "$work/enroll")"
 rm "$work/enrollfails"
 
+# Cancelled (Settings stops the helper): fprintd-enroll is stopped with it, so
+# the reader is free, and another enroll runs at once.
+cat >"$bin/fprintd-enroll" <<'STUB'
+#!/bin/sh
+# Its PID, written once it is waiting, is the test's cue to cancel. Stopped,
+# it ends by TERM (from timeout) or by SIGPIPE (its pipe closes with the
+# helper), whichever comes first; either stops it at once, as either would
+# stop fprintd-enroll, whose claim on the reader ends with its connection.
+echo 'Enroll result: enroll-stage-passed'
+echo $$ >"$STUB_DIR/enroll-pid"
+if [ -e "$STUB_DIR/enrollhangs" ]; then
+	while :; do sleep 0.05; done
+fi
+echo 'Enroll result: enroll-completed'
+STUB
+: >"$work/enrollhangs"
+rm -f "$work/enroll-pid"
+# Started directly (env becomes the helper), so the signal reaches the helper.
+env -i PATH="$bin:/usr/bin:/bin" HOME="$work" STUB_DIR="$work" "$helper" enroll left-thumb >"$work/enroll" &
+enroll_job=$!
+for _ in $(seq 200); do
+	[[ -s $work/enroll-pid ]] && break
+	sleep 0.05
+done
+[[ -s $work/enroll-pid ]] || fail 'fprintd-enroll did not start'
+enroll_pid=$(cat "$work/enroll-pid")
+kill -TERM "$enroll_job"
+wait "$enroll_job" || :
+for _ in $(seq 100); do
+	kill -0 "$enroll_pid" 2>/dev/null || break
+	sleep 0.05
+done
+# Within 5 s, where the old helper left it running until its 120 s timeout.
+if kill -0 "$enroll_pid" 2>/dev/null; then fail 'fprintd-enroll outlived a cancelled enroll'; fi
+rm "$work/enrollhangs"
+run enroll left-thumb >"$work/enroll" || fail 'an enroll right after a cancelled one failed'
+[[ $(tail -1 "$work/enroll") == $'enroll-result\tcompleted\tenroll-completed' ]] || fail "after cancel: $(cat "$work/enroll")"
+
 # Delete.
 [[ $(run delete left-thumb) == $'fingerprint-result\tdelete\tleft-thumb' ]] || fail 'delete'
 [[ $(cat "$work/delete-args") == "$(id -un) -f left-thumb" ]] || fail "delete args: $(cat "$work/delete-args")"

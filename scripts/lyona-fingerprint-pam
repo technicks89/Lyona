@@ -98,7 +98,7 @@ plain_owned_file() {
 external_lines() {
 	awk -v marker="$marker" -v line="$fprint_line" '
 		$0 == marker { m = NR; next }
-		NR == m + 1 && $0 == line { next }
+		m > 0 && NR == m + 1 && $0 == line { next }
 		/^[[:space:]]*#/ { next }
 		/pam_fprintd\.so/ { print NR }
 	' "$1"
@@ -176,10 +176,19 @@ replace_file() { # TARGET SOURCE [REFERENCE]
 
 checksum() { sha256sum -- "$1" | cut -d' ' -f1; }
 
+# One change to a use at a time: held from the first look at its files and
+# state until the change is done (released when this exits).
+lock_use() {
+	private_state_dir
+	exec 9>>"$state_dir/$1.lock"
+	flock -w 30 9 || die "another change to $1 is still running"
+}
+
 clear_state() { rm -f -- "$state_dir/$1".{orig,absent,written}; }
 
 cmd_enable() {
 	local use=$1 target vendor source work
+	lock_use "$use"
 	target=$(target_of "$use")
 	vendor=$(vendor_of "$use")
 	[[ -f $module ]] || die "pam_fprintd is not installed (${module#"$root"}); install fprintd first"
@@ -194,7 +203,6 @@ cmd_enable() {
 		return 0
 	fi
 	no_symlinks "$target" || die "refusing a symlinked path: ${target#"$root"}"
-	private_state_dir
 	clear_state "$use"
 	if [[ -e $target ]]; then
 		cat -- "$target" >"$state_dir/$use.orig"
@@ -209,24 +217,25 @@ cmd_enable() {
 		{ print }
 		END { if (!done) { print marker; print line } }
 	' "$source" >"$work"
+	# The checksum of the bytes written, before they are put in place.
+	checksum "$work" >"$state_dir/$use.written"
 	replace_file "$target" "$work" "$source"
-	checksum "$target" >"$state_dir/$use.written"
 	printf 'fingerprint-pam-result\tenable\t%s\ton\n' "$use"
 }
 
 cmd_disable() {
 	local use=$1 target work stamp
+	lock_use "$use"
 	target=$(target_of "$use")
 	if [[ ! -e $target ]] || ! has_lyona_lines "$target"; then
 		if [[ -e $target && -n $(external_lines "$target") ]]; then
 			die "fprintd was added to ${target#"$root"} outside Lyona; remove it there, or with remove-external"
 		fi
-		[[ ! -d $state_dir ]] || clear_state "$use"
+		clear_state "$use"
 		printf 'fingerprint-pam-result\tdisable\t%s\talready\n' "$use"
 		return 0
 	fi
 	plain_owned_file "$target" || die "refusing ${target#"$root"}: not a regular file of this user's"
-	private_state_dir
 	# Still exactly what was written: the original, byte for byte.
 	if [[ -f $state_dir/$use.written && $(cat -- "$state_dir/$use.written") == "$(checksum "$target")" ]]; then
 		if [[ -f $state_dir/$use.absent ]]; then
@@ -259,6 +268,7 @@ cmd_disable() {
 
 cmd_remove_external() {
 	local use=$1 target work stamp lines
+	lock_use "$use"
 	target=$(target_of "$use")
 	[[ -e $target ]] || die "${target#"$root"} does not exist"
 	plain_owned_file "$target" || die "refusing ${target#"$root"}: not a regular file of this user's"
@@ -267,7 +277,6 @@ cmd_remove_external() {
 		printf 'fingerprint-pam-result\tremove-external\t%s\talready\n' "$use"
 		return 0
 	fi
-	private_state_dir
 	stamp=$(date +%Y%m%d%H%M%S)
 	cat -- "$target" >"$state_dir/$use.external.$stamp"
 	work=$(mktemp)

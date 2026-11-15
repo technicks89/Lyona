@@ -58,7 +58,8 @@ diff <(sed '2,3d' "$r/etc/pam.d/lightdm") "$work/lightdm.orig" >/dev/null || fai
 # Off: the original, byte for byte, and no state left.
 [[ $(run disable lightdm) == *restored ]] || fail 'disable did not restore'
 cmp "$r/etc/pam.d/lightdm" "$work/lightdm.orig" || fail 'lightdm is not the original'
-[[ -z $(find "$r/var/lib/lyona/fingerprint" -name 'lightdm.*') ]] || fail 'state was left behind'
+# Only the use's lock stays.
+[[ -z $(find "$r/var/lib/lyona/fingerprint" -name 'lightdm.*' ! -name lightdm.lock) ]] || fail 'state was left behind'
 [[ $(run disable lightdm) == *already ]] || fail 'a second disable was not a no-op'
 
 # The mode of a file that is not 0644 is kept, and restored.
@@ -99,10 +100,34 @@ cmp "$r/etc/pam.d/lightdm" "$work/lightdm.hand" || fail 'refused requests change
 [[ $(run remove-external lightdm) == *removed ]] || fail 'remove-external'
 cmp "$r/etc/pam.d/lightdm" "$work/lightdm.orig" || fail "after remove-external: $(cat "$r/etc/pam.d/lightdm")"
 compgen -G "$r/var/lib/lyona/fingerprint/lightdm.external.*" >/dev/null || fail 'no copy before remove-external'
+# Lyona's own line with no marker before it, first in a file without a header,
+# is one Lyona did not add.
+cp -p "$r/etc/pam.d/lightdm" "$work/lightdm.keep"
+printf '%s\n' '-auth      sufficient  pam_fprintd.so timeout=10 max-tries=3' 'auth include system-login' >"$r/etc/pam.d/lightdm"
+[[ $(state_of lightdm) == external ]] || fail "an unmarked first line: $(run status)"
+expect_fail 'outside Lyona' enable lightdm
+cp -p "$work/lightdm.keep" "$r/etc/pam.d/lightdm"
 # A commented-out line is not one.
 sed -i '1a #auth sufficient pam_fprintd.so' "$r/etc/pam.d/lightdm"
 [[ $(state_of lightdm) == off ]] || fail 'a comment counted as fprintd'
 cp -p "$work/lightdm.orig" "$r/etc/pam.d/lightdm"
+
+# One change to a use at a time: while another holds the use's lock, a change
+# waits for it.
+mkdir -p "$r/var/lib/lyona/fingerprint"
+flock "$r/var/lib/lyona/fingerprint/sudo.lock" sleep 1 &
+holder=$!
+for _ in $(seq 100); do
+	if ! flock -n "$r/var/lib/lyona/fingerprint/sudo.lock" true; then break; fi
+	sleep 0.02
+done
+started=$(date +%s%N)
+run enable sudo >/dev/null
+waited=$((($(date +%s%N) - started) / 1000000))
+wait "$holder"
+((waited >= 500)) || fail "enable did not wait for the lock (${waited} ms)"
+run disable sudo >/dev/null
+cmp "$r/etc/pam.d/sudo" "$work/sudo.orig" || fail 'sudo is not the original after the locked change'
 
 # Without pam_fprintd, nothing is added.
 mv "$r/usr/lib/security/pam_fprintd.so" "$work/module"

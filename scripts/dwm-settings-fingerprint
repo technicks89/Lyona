@@ -116,10 +116,17 @@ cmd_status() {
 }
 
 cmd_enroll() {
-	local finger=$1 line status last='' result=failed
+	local finger=$1 line status last='' result=failed enroll_fd enroll_pid
 	valid_finger "$finger" || die "unknown finger: $finger"
 	command -v fprintd-enroll >/dev/null 2>&1 || die "fprintd-enroll is not installed"
-	while IFS= read -r line; do
+	# timeout runs in place of the substitution's shell, so its PID is known;
+	# stopped (Settings' Cancel, or Settings closing), this stops it, and timeout
+	# passes the signal on to fprintd-enroll, which releases the reader at once.
+	exec {enroll_fd}< <(LC_ALL=C exec timeout "$enroll_seconds" fprintd-enroll -f "$finger" 2>&1)
+	enroll_pid=$!
+	# shellcheck disable=SC2064 # the PID now, not later
+	trap "kill -TERM $enroll_pid 2>/dev/null; exit 143" TERM INT HUP
+	while IFS= read -r -u "$enroll_fd" line; do
 		case $line in
 		'Enroll result: '*)
 			status=${line#Enroll result: }
@@ -128,7 +135,10 @@ cmd_enroll() {
 			printf 'enroll-status\t%s\n' "$status"
 			;;
 		esac
-	done < <(LC_ALL=C timeout "$enroll_seconds" fprintd-enroll -f "$finger" 2>&1 || :)
+	done
+	exec {enroll_fd}<&-
+	wait "$enroll_pid" 2>/dev/null || :
+	trap - TERM INT HUP
 	[[ $last == enroll-completed ]] && result=completed
 	printf 'enroll-result\t%s\t%s\n' "$result" "${last:-enroll-failed}"
 	[[ $result == completed ]]
