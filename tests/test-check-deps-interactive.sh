@@ -30,6 +30,8 @@ cat >"$work/bin/pacman" <<'EOF'
 case $1 in
 -T)
 	shift
+	printf '%s\n' "$*" >>"$STUB_LOG.T"
+	[ -z "${STUB_T_FAIL:-}" ] || exit "$STUB_T_FAIL"
 	found=0
 	for package in "$@"; do
 		if grep -qx -- "$package" "$STUB_ABSENT"; then
@@ -137,6 +139,39 @@ deps "$work/other-os.out" '\n' DWM_OS_RELEASE="$work/os-release-other"
 grep -Fq 'Installing needs pacman on Arch Linux; nothing was installed.' "$work/other-os.out" ||
 	fail "another system: $(tail -3 "$work/other-os.out")"
 [ ! -s "$work/stub.log" ] || fail "another system ran: $(cat "$work/stub.log")"
+
+# pacman -T failing is not "nothing to install": reported, nothing installed.
+printf 'jq\n' >"$work/absent"
+: >"$work/stub.log"
+deps "$work/t-fail.out" '\n' STUB_T_FAIL=1
+[ "$status" = 1 ] || fail "a failed pacman -T: status $status"
+grep -Fq 'Could not ask pacman which packages are installed (status 1); nothing was installed.' "$work/t-fail.out" ||
+	fail "a failed pacman -T: $(tail -3 "$work/t-fail.out")"
+if grep -q 'Install now' "$work/t-fail.out"; then fail 'an install was offered after a failed query'; fi
+[ ! -s "$work/stub.log" ] || fail "a failed query ran: $(cat "$work/stub.log")"
+
+# The primary terminal is asked for only when no supported terminal is
+# installed: a PATH of everything in /usr/bin but the terminals, and the stubs.
+terminal=$(bash -c '. "$1/scripts/dwm-utils.sh"; . "$1/scripts/dwm-packages.sh"; dwm_packages arch terminal-primary' sh "$repo" | head -n 1)
+[ -n "$terminal" ] || fail 'no primary terminal in the map'
+: >"$work/absent"
+: >"$work/stub.log.T"
+deps "$work/with-term.out" '\n'
+if command -v alacritty >/dev/null || command -v kitty >/dev/null || command -v xterm >/dev/null; then
+	if grep -qw -- "$terminal" "$work/stub.log.T"; then fail "a terminal was asked for with one installed: $(cat "$work/stub.log.T")"; fi
+fi
+mkdir -p "$work/no-term"
+for tool in /usr/bin/*; do
+	case ${tool##*/} in alacritty | kitty | st | warp-terminal | xterm) continue ;; esac
+	ln -s "$tool" "$work/no-term/${tool##*/}" 2>/dev/null || :
+done
+: >"$work/stub.log.T"
+status=0
+printf '\n' | env DWM_TEST_MODE=1 DWM_OS_RELEASE="$work/os-release" HOME="$work/home" \
+	STUB_LOG="$work/stub.log" STUB_ABSENT="$work/absent" PATH="$work/bin:$work/no-term" \
+	"$check" --interactive >"$work/no-term.out" 2>&1 || status=$?
+grep -Fq 'No supported terminal found' "$work/no-term.out" || fail "the terminal check: $(grep -i terminal "$work/no-term.out")"
+grep -qw -- "$terminal" "$work/stub.log.T" || fail "no terminal asked for without one: $(cat "$work/stub.log.T")"
 
 # A wrong argument.
 deps "$work/bad.out" '' -- --install

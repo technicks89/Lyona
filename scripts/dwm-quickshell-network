@@ -373,8 +373,13 @@ wifi_connect_hidden() {
 	*[Nn]o\ network\ with\ SSID* | *not\ found* | *[Tt]imeout* | *timed\ out*) printf '%s\n' "no network named $ssid answered" >&2 ;;
 	esac
 	printf '%s\n' "$output" | tail -n 3 >&2
-	nmcli connection delete uuid "$connection_uuid" >/dev/null 2>&1 || :
-	connection_uuid=
+	# Kept when the delete fails, so the EXIT trap tries again, and named, so
+	# the profile can be removed once NetworkManager answers again.
+	if nmcli connection delete uuid "$connection_uuid" >/dev/null 2>&1; then
+		connection_uuid=
+	else
+		printf '%s\n' "the failed profile $connection_uuid could not be removed; remove it with: nmcli connection delete uuid $connection_uuid" >&2
+	fi
 	return "$status"
 }
 

@@ -262,7 +262,8 @@ FloatingWindow {
                                                 objectName: "healthBadge-" + categoryButton.modelData.id + "-" + countBadge.modelData.kind
                                                 visible: countBadge.count > 0
                                                 implicitWidth: Math.max(implicitHeight, badgeLabel.implicitWidth + 12)
-                                                implicitHeight: 22
+                                                // A large text size grows it, from 22 px.
+                                                implicitHeight: Math.max(Theme.dp(22), badgeLabel.implicitHeight + Theme.dp(6))
                                                 color: countBadge.modelData.fill
                                                 radius: 6
                                                 Accessible.name: countBadge.count + (countBadge.modelData.kind === "error"

@@ -105,6 +105,7 @@ FloatingWindow {
                         clip: true
                         verticalAlignment: TextInput.AlignVCenter
                         enabled: !root.networkModel.busy
+                        activeFocusOnTab: true
                         onAccepted: root.networkModel.joinHidden()
                     }
 

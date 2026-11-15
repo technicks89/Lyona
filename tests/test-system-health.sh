@@ -427,4 +427,15 @@ efi_scan "$work/efi-fail.tsv" EFI_DF_FAIL=1
 grep -Fq $'check\tstorage\tok\tdisk-root\t' "$work/efi-fail.tsv" || fail 'a firmware read failure hid the filesystems'
 if grep -q 'firmware-variables' "$work/efi-fail.tsv"; then fail 'a failed firmware read made a card'; fi
 
+# A Quickshell older than 0.3.0 is installed: installing missing packages
+# cannot help, so the row says how to update and offers no installer (#500).
+mkdir -p "$work/bin-old-qs"
+printf '#!/bin/sh\necho "quickshell 0.2.1, revision abc"\n' >"$work/bin-old-qs/quickshell"
+chmod +x "$work/bin-old-qs/quickshell"
+env HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" DWM_HEALTH_OS_RELEASE="$work/os-release" \
+	DWM_HEALTH_COMMAND_TIMEOUT=2 PATH="$work/bin-old-qs:$work/bin:/usr/bin:/bin" "$HELPER" scan-user >"$work/old-qs.tsv"
+old_qs=$(grep $'^check\tdesktop\terror\tquickshell-version\t' "$work/old-qs.tsv") || fail 'no outdated Quickshell row'
+case $old_qs in *'sudo pacman -Syu'*) ;; *) fail "no update guidance: $old_qs" ;; esac
+case $old_qs in *install-dependencies*) fail "the installer was offered for an outdated Quickshell: $old_qs" ;; esac
+
 printf 'System health helper: PASS\n'

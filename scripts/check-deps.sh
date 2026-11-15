@@ -223,8 +223,11 @@ fi
 [ "$INTERACTIVE" = 1 ] || exit "$STATUS"
 
 # What the Control Center's install used to install: the build, X11, required
-# runtime and desktop profiles, and the fonts checked above.
-readonly INSTALL_PROFILES='build x11 runtime-required desktop fonts'
+# runtime and desktop profiles, and the fonts checked above; and the primary
+# terminal only when the check above found no supported one.
+INSTALL_PROFILES='build x11 runtime-required desktop fonts'
+[ "$TERM_FOUND" -eq 1 ] || INSTALL_PROFILES+=' terminal-primary'
+readonly INSTALL_PROFILES
 
 wait_for_enter() {
 	printf '\nPress Enter to close...'
@@ -255,8 +258,19 @@ if [ "$DISTRO_FAMILY" != arch ] || ! command -v pacman >/dev/null 2>&1; then
 fi
 read -r -a PROFILES <<<"$INSTALL_PROFILES"
 mapfile -t WANTED < <(dwm_collect_packages "${PROFILES[@]}" 2>/dev/null)
-# pacman -T prints the ones not installed (and exits 127 when there are some).
-mapfile -t ABSENT < <(pacman -T "${WANTED[@]}" 2>/dev/null)
+# pacman -T prints the ones not installed: it exits 0 when there are none and
+# 127 when there are some. Anything else is a failed query, never "nothing to
+# install".
+ABSENT_STATUS=0
+ABSENT_TEXT=$(pacman -T "${WANTED[@]}" 2>/dev/null) || ABSENT_STATUS=$?
+if [ "$ABSENT_STATUS" -ne 0 ] && [ "$ABSENT_STATUS" -ne 127 ]; then
+	echo ""
+	printf "${RED}Could not ask pacman which packages are installed (status %s); nothing was installed.${NC}\n" "$ABSENT_STATUS"
+	wait_for_enter
+	exit 1
+fi
+ABSENT=()
+[ -z "$ABSENT_TEXT" ] || mapfile -t ABSENT <<<"$ABSENT_TEXT"
 echo ""
 if [ "${#ABSENT[@]}" -eq 0 ]; then
 	if [ "$STATUS" -eq 0 ]; then

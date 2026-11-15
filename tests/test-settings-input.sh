@@ -981,6 +981,12 @@ case $1 in
 --list) cat "$TEST_DEVICES" ;;
 list-props)
 	n=$(node "$2")
+	# The Nth query of one device fails (TEST_FAIL_PROPS_ID, _AT); the rest work.
+	if [ "${TEST_FAIL_PROPS_ID:-}" = "$2" ]; then
+		count=$(($(cat "$TEST_NS/props.count" 2>/dev/null || printf 0) + 1))
+		printf '%s\n' "$count" >"$TEST_NS/props.count"
+		[ "$count" != "$TEST_FAIL_PROPS_AT" ] || exit 1
+	fi
 	case $n in
 	20) name='Power Button' product='0, 1' ;;
 	21) name='Gaming Mouse' product='4660, 22136' ;;
@@ -997,11 +1003,19 @@ list-props)
 		printf '\tlibinput Natural Scrolling Enabled Default (303): 0\n'
 		;;
 	esac
+	# Tap to click on the second interface only.
+	if [ "$n" = 22 ]; then
+		printf '\tlibinput Tapping Enabled (304): %s\n' "$(cat "$TEST_NS/22.tap" 2>/dev/null || printf 0)"
+		printf '\tlibinput Tapping Enabled Default (305): 1\n'
+	fi
 	;;
 set-prop)
 	[ "${TEST_FAIL_SET_ID:-}" != "$2" ] || exit 1
 	[ "${TEST_FAIL_RESTORE_ID:-}" != "$2" ] || [ "$4" != 0 ] || exit 1
-	printf '%s\n' "$4" >"$TEST_NS/$(node "$2")"
+	case $3 in
+	*Tapping*) printf '%s\n' "$4" >"$TEST_NS/$(node "$2").tap" ;;
+	*) printf '%s\n' "$4" >"$TEST_NS/$(node "$2")" ;;
+	esac
 	printf 'xinput %s\n' "$*" >>"$TEST_LOG"
 	;;
 *) exit 2 ;;
@@ -1085,10 +1099,12 @@ split_args=(preview-status)
 # One part failing and another not going back: the preview keeps its state,
 # says so, and Revert retries.
 split_args=(preview split-stuck 60 "$merged" natural-scroll 1)
-if split_run TEST_FAIL_SET_ID=22 TEST_FAIL_RESTORE_ID=21 >/dev/null 2>"$split/stuck.err"; then
+if split_run TEST_FAIL_SET_ID=22 TEST_FAIL_RESTORE_ID=21 >"$split/stuck.out" 2>"$split/stuck.err"; then
 	fail 'a stuck part was accepted'
 fi
 grep -Fq 'retained for Revert' "$split/stuck.err" || fail "no recovery message: $(cat "$split/stuck.err")"
+# Settings learns the token from the preview itself, so Revert is offered now.
+grep -q '^preview-failed	split-stuck	' "$split/stuck.out" || fail "no preview-failed record: $(cat "$split/stuck.out")"
 [ "$(ns 21)" = 1 ] || fail 'the stuck part was not stuck'
 split_args=(preview-status)
 split_run | grep -q '^preview-failed	split-stuck	' || fail "the stuck preview was not reported: $(split_run)"
@@ -1108,5 +1124,34 @@ split_run TEST_DEVICES="$split/devices-replugged" >/dev/null || fail 'revert aft
 grep -Fq 'xinput set-prop 31 libinput Natural Scrolling Enabled 0' "$split/actions.log" ||
 	fail "revert after a replug missed part 31: $(cat "$split/actions.log")"
 [ "$(ns 21)$(ns 22)" = 01 ] || fail "revert after a replug gave $(ns 21)$(ns 22), not each part its own value"
+
+# A part whose properties cannot be read while the preview captures it: nothing
+# changes, rather than a part changed whose value Revert would not have. (Its
+# second query is the capture's; the scan before it and the ones after work.)
+printf '0\n' >"$split/ns/21"
+printf '0\n' >"$split/ns/22"
+rm -f "$split/ns/props.count"
+: >"$split/actions.log"
+split_args=(preview split-query 60 "$merged" natural-scroll 1)
+if split_run TEST_FAIL_PROPS_ID=22 TEST_FAIL_PROPS_AT=2 >/dev/null 2>"$split/query.err"; then
+	fail 'a preview went ahead with a part it could not read'
+fi
+grep -Fq 'nothing was changed' "$split/query.err" || fail "the reason: $(cat "$split/query.err")"
+[ "$(ns 21)$(ns 22)" = 00 ] || fail "a part changed: $(ns 21)$(ns 22)"
+[ ! -s "$split/actions.log" ] || fail "something was set: $(cat "$split/actions.log")"
+split_args=(preview-status)
+[ "$(split_run)" = $'result\tnone' ] || fail "the refused preview left state: $(split_run)"
+
+# Reset: the default from a part that has the setting (tap to click is only on
+# the second interface), and the parts' own saved entries go with the card's.
+printf '0\n' >"$split/ns/22.tap"
+printf '%s\ttap-to-click\t0\t1\n%s\ttap-to-click\t0\t1\n%s\tnatural-scroll\t1\t0\n' \
+	"$merged" "$part22" "$part21" >"$settings"
+split_args=(reset "$merged" tap-to-click)
+split_run >"$split/reset.out" 2>"$split/reset.err" || fail "reset: $(cat "$split/reset.err")"
+[ "$(cat "$split/ns/22.tap")" = 1 ] || fail 'reset did not apply the default from the part that has it'
+if grep -q 'tap-to-click' "$settings"; then fail "reset left a saved tap-to-click: $(cat "$settings")"; fi
+grep -q "^$part21	natural-scroll" "$settings" || fail 'reset removed another setting'
+rm -f "$settings"
 
 printf 'Settings input discovery, stable IDs, preview, rollback, and persistence: PASS\n'

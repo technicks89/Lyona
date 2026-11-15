@@ -28,9 +28,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   shows its summary and asks too. A no installs nothing. It never refreshes or
   upgrades the system (no `-y`, no `--noconfirm`). A package database too old
   for the mirrors ends with advice to run `sudo pacman -Syu` first. It installs
-  the build, X11, required runtime, desktop and font packages; the full
-  installer no longer runs from here, not even from a checkout. System
-  Health's **Open dependency installer** repair opens the same check.
+  the build, X11, required runtime, desktop and font packages, and the primary
+  terminal when no supported terminal is installed. A failed `pacman -T` query
+  installs nothing and says so. The full installer no longer runs from here,
+  not even from a checkout. System Health's **Open dependency installer** repair
+  opens the same check. A Quickshell that is installed but older than 0.3.0 no
+  longer offers it, since installing cannot update it: the row says to update
+  the system instead.
 - System Health's category tabs show warning and error counts as two badges
   (#500), filled with the warning and danger colours, with text that reads at
   4.5:1 on every preset (now in the theme contrast check). A check that could

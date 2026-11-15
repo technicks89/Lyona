@@ -481,11 +481,14 @@ case "$*" in
 		printf 'file %s %s\n' "$file" "$(cat "$file")" >>"$HIDDEN_LOG"
 	fi
 	case ${HIDDEN_RESULT:-ok} in
-	wrong) echo 'Error: Connection activation failed: Secrets were required, but not provided.' >&2; exit 4 ;;
+	wrong | stuck) echo 'Error: Connection activation failed: Secrets were required, but not provided.' >&2; exit 4 ;;
 	absent) echo 'Error: Connection activation failed: No network with SSID found.' >&2; exit 10 ;;
 	esac
 	;;
-'connection delete '*) printf 'deleted\n' >>"$HIDDEN_LOG" ;;
+'connection delete '*)
+	printf 'deleted\n' >>"$HIDDEN_LOG"
+	[ "${HIDDEN_RESULT:-ok}" != "stuck" ] || exit 8
+	;;
 *) echo "unexpected nmcli call: $*" >&2; exit 99 ;;
 esac
 SH
@@ -529,6 +532,13 @@ grep -Fq 'wrong password' "$hidden/err" || fail "the reason: $(cat "$hidden/err"
 hidden_result=absent
 hidden_join 'correct horse battery' wlan0 'Nowhere' wpa-psk --password-stdin
 grep -Fq 'no network named Nowhere answered' "$hidden/err" || fail "the reason: $(cat "$hidden/err")"
+# A failed profile that cannot be deleted: named, and tried again on exit.
+hidden_result=stuck
+hidden_join 'not the password' wlan0 'Back Office' wpa-psk --password-stdin
+[ "$hidden_status" != 0 ] || fail 'a stuck failure succeeded'
+grep -Fq 'could not be removed; remove it with: nmcli connection delete uuid ' "$hidden/err" ||
+	fail "a profile left behind was not named: $(cat "$hidden/err")"
+[ "$(grep -c deleted "$hidden/log")" = 2 ] || fail "the delete was not tried again on exit: $(cat "$hidden/log")"
 hidden_result=ok
 # Refused before NetworkManager is asked to change anything.
 hidden_refused() { # MESSAGE PASSWORD ARGS...

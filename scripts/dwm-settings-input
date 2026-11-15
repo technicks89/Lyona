@@ -544,7 +544,8 @@ read_part() {
 }
 
 # Whether a part has the setting: every keyboard part has the XKB ones; an
-# XInput property only where the driver exposes it.
+# XInput property only where the driver exposes it. 1: it does not; 2: its
+# properties could not be read, which is not the same.
 part_supports() {
 	local id=$1 setting=$2 property properties value
 	case $setting in
@@ -554,7 +555,7 @@ part_supports() {
 	properties=$(input_tempfile)
 	if ! xinput list-props "$id" >"$properties" 2>/dev/null; then
 		rm -f "$properties"
-		return 1
+		return 2
 	fi
 	value=$(property_value "$properties" "$property")
 	rm -f "$properties"
@@ -603,7 +604,7 @@ read_value() {
 # preview of a merged card restores, part by part, even after a replug gives
 # the parts new X ids. A device of one part is its plain value.
 snapshot_value() {
-	local key=$1 setting=$2 line part id value snapshot='' count=0
+	local key=$1 setting=$2 line part id value snapshot='' count=0 supported
 	if [[ $key == "$accessibility_key" ]]; then
 		accessibility_value "$setting"
 		return
@@ -618,7 +619,12 @@ snapshot_value() {
 	for line in "${lines[@]}"; do
 		part=${line%%$'\t'*}
 		id=${line#*$'\t'}
-		part_supports "$id" "$setting" || continue
+		# A part that could not be asked would go uncaptured, and Revert could
+		# not give its value back: nothing is changed then.
+		supported=0
+		part_supports "$id" "$setting" || supported=$?
+		((supported != 2)) || die "could not read part $id of device $key; nothing was changed"
+		((supported == 0)) || continue
 		value=$(read_part "$id" "$setting") || die "could not read $setting from a part of device $key"
 		[[ $value != *[\;=]* ]] || die "a part's value contains a reserved separator"
 		snapshot+=${snapshot:+;}$part=$value
@@ -655,7 +661,7 @@ restore_value() {
 # cannot be put back either, it exits 3 and says which, so a preview keeps its
 # recovery state instead of clearing it.
 apply_value() {
-	local key=$1 setting=$2 value=$3 line id i j part_value stuck=''
+	local key=$1 setting=$2 value=$3 line id i j part_value supported stuck=''
 	local -a targets=() previous=()
 	validate_value "$setting" "$value" || die "invalid value for $setting"
 	if [[ $key == "$accessibility_key" ]]; then
@@ -671,7 +677,10 @@ apply_value() {
 	fi
 	for line in "${lines[@]}"; do
 		id=${line#*$'\t'}
-		part_supports "$id" "$setting" || continue
+		supported=0
+		part_supports "$id" "$setting" || supported=$?
+		((supported != 2)) || die "could not read part $id of device $key; nothing was changed"
+		((supported == 0)) || continue
 		part_value=$(read_part "$id" "$setting") || die "could not read $setting from part $id of device $key"
 		targets+=("$id")
 		previous+=("$part_value")
@@ -731,12 +740,18 @@ persisted_default() {
 }
 
 remove_persisted_value() {
-	local key=$1 setting=$2 temporary
+	local key=$1 setting=$2 temporary parts
 	[[ -f $settings_file ]] || return 0
 	mkdir -p "$settings_dir"
 	[[ $settings_dir != "$config_dir" ]] || chmod 700 "$settings_dir"
+	# A merged card's parts' own entries go with it (#473), or they would
+	# apply again at login.
+	parts=$(resolve_parts "$key" 2>/dev/null | cut -f1 | tr '\n' ' ') || parts=''
 	temporary=$(mktemp "$settings_dir/.input-settings.XXXXXX")
-	awk -F '\t' -v key="$key" -v setting="$setting" '!($1 == key && $2 == setting)' "$settings_file" >"$temporary"
+	awk -F '\t' -v key="$key" -v setting="$setting" -v parts="$parts" '
+		BEGIN { n = split(parts, list, " "); for (i = 1; i <= n; i++) part[list[i]] = 1 }
+		!($2 == setting && ($1 == key || $1 in part))
+	' "$settings_file" >"$temporary"
 	if [[ -s $temporary ]]; then
 		chmod 600 "$temporary"
 		mv -fT "$temporary" "$settings_file"
@@ -895,6 +910,9 @@ preview_value() {
 		failed=$(token_file "$token" failed)
 		printf 'The change failed on one part of the device and another part could not be put back; Revert retries it.\n' >"$failed"
 		chmod 600 "$failed"
+		# On stdout too, as preview-status reports it, so Settings offers
+		# Revert for this token now.
+		printf 'preview-failed\t%s\t%s\n' "$token" "$(clean_field "$(<"$failed")")"
 		die "input preview failed on part of the device; recovery state was retained for Revert"
 	elif ((apply_status != 0)); then
 		cleanup_preview "$token"
@@ -1004,7 +1022,7 @@ preview_status() {
 }
 
 reset_setting() {
-	local key=$1 setting=$2 id properties default_name default
+	local key=$1 setting=$2 id properties default_name default line
 	if [[ $key == "$accessibility_key" ]]; then
 		case $setting in
 		accessx-shortcuts | sticky-keys | slow-keys | bounce-keys | mouse-keys) ;;
@@ -1030,7 +1048,18 @@ reset_setting() {
 	*) die "unsupported setting: $setting" ;;
 	esac
 	if [[ -z ${default+x} ]]; then
-		id=$(resolve_device "$key") || return 1
+		# The first part of the card that has the setting: a merged card's
+		# first part may not (#473).
+		id=
+		local -a lines=()
+		mapfile -t lines < <(resolve_parts "$key" || printf 'unresolved\n')
+		[[ ${lines[0]:-unresolved} != unresolved ]] || return 1
+		for line in "${lines[@]}"; do
+			part_supports "${line#*$'\t'}" "$setting" || continue
+			id=${line#*$'\t'}
+			break
+		done
+		[[ -n $id ]] || die "$setting is unsupported by device $key"
 		properties=$(input_tempfile)
 		trap 'rm -f "$properties"' RETURN
 		xinput list-props "$id" >"$properties"

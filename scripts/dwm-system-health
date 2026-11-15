@@ -492,7 +492,9 @@ scan_desktop() {
 		if quickshell_compatible "$version" "$detail"; then
 			emit_check desktop ok quickshell-version "Quickshell" "Available" "$detail" restart-quickshell "Restart Quickshell" user
 		elif [[ -n $version ]]; then
-			emit_check desktop error quickshell-version "Quickshell" "Outdated" "$detail; version 0.3.0 or newer is required" install-dependencies "Open dependency installer" user
+			# Installed but old: installing missing packages cannot help (#500),
+			# and nothing here upgrades the system; this says how.
+			emit_check desktop error quickshell-version "Quickshell" "Outdated" "$detail; version 0.3.0 or newer is required | Update the system to get it: sudo pacman -Syu, or the update indicator in the panel"
 		else
 			emit_check desktop error quickshell-version "Quickshell" "Version unavailable" "Could not verify Quickshell 0.3.0 or newer" install-dependencies "Open dependency installer" user
 		fi
