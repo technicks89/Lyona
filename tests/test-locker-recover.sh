@@ -26,7 +26,12 @@ stub pkill '[ -e "$STUB_DIR/stopfails" ] || rm -f "$STUB_DIR/running" "$STUB_DIR
 stub setsid '[ "$*" = "-f light-locker" ] && [ ! -e "$STUB_DIR/startfails" ] && : >"$STUB_DIR/running"'
 stub light-locker ':'
 # "activates": inactive at the first query, active from the second on.
+# "failsecond": the second query still prints inactive, but fails.
 stub light-locker-command 'if [ -e "$STUB_DIR/noquery" ]; then exit 1; fi
+if [ -e "$STUB_DIR/failsecond" ]; then
+	if [ -e "$STUB_DIR/queried" ]; then echo "The screensaver is inactive"; exit 1; fi
+	: >"$STUB_DIR/queried"
+fi
 if [ -e "$STUB_DIR/activates" ]; then
 	[ -e "$STUB_DIR/queried" ] && : >"$STUB_DIR/active"
 	: >"$STUB_DIR/queried"
@@ -40,7 +45,7 @@ run() {
 		XDG_RUNTIME_DIR="$work/run" XDG_CONFIG_HOME="$work/config" "$helper" recover-locker
 }
 setup() { # FLAGS...
-	rm -f "$work"/{running,active,activates,queried,windows,noquery,stopfails,startfails,calls}
+	rm -f "$work"/{running,active,activates,failsecond,queried,windows,noquery,stopfails,startfails,calls}
 	: >"$work/calls"
 	local flag
 	for flag in "$@"; do : >"$work/$flag"; done
@@ -69,6 +74,10 @@ not_restarted
 # Turning active between the first query and the stop: left alone.
 setup running windows activates
 expect none 'became active'
+not_restarted
+# A second query that fails, whatever it printed: left alone.
+setup running windows failsecond
+expect none 'stopped answering'
 not_restarted
 # Inactive with no windows: the normal state.
 setup running

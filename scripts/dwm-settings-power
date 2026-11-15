@@ -335,11 +335,15 @@ power_recover_locker() {
 	fi
 	# Asked again just before stopping it: one that has started blanking or
 	# locking since is left alone, never stopped (stopping a locked one would
-	# unlock the session).
-	case $(run_bounded 3 env LC_ALL=C light-locker-command --query 2>/dev/null || :) in
+	# unlock the session). Only a query that succeeds counts.
+	if ! power_locker_state=$(run_bounded 3 env LC_ALL=C light-locker-command --query 2>/dev/null); then
+		printf 'locker-recover\tnone\tlight-locker stopped answering; left alone\n'
+		return 0
+	fi
+	case $power_locker_state in
 	*inactive*) ;;
 	*)
-		printf 'locker-recover\tnone\tlight-locker became active or stopped answering; left alone\n'
+		printf 'locker-recover\tnone\tlight-locker became active; left alone\n'
 		return 0
 		;;
 	esac
