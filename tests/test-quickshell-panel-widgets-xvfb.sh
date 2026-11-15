@@ -40,7 +40,17 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/scrolling-title.py" "$work/qml" "$repo/tests/qml/PanelWidgets.inc"
+python3 "$repo/tests/fixtures/panel-widgets.py" "$work/qml" "$repo/tests/qml/PanelWidgets.inc"
+# The keyboard requests' stub: it logs each one, takes a moment as dwm would,
+# and fails while keyboard.fail exists.
+cat >"$work/keyboard-stub" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$PANEL_KEYBOARD_LOG"
+sleep 0.1
+[ ! -e "$PANEL_KEYBOARD_LOG.fail" ]
+EOF
+chmod +x "$work/keyboard-stub"
+: >"$work/keyboard.log"
 
 Xvfb -displayfd 3 -screen 0 1024x768x24 -nolisten tcp -extension GLX \
 	3>"$work/display" >"$work/xvfb.log" 2>&1 &
@@ -62,6 +72,7 @@ status=0
 timeout --foreground --kill-after=2s 60s env DISPLAY=":$display_number" HOME="$work/home" \
 	XDG_CONFIG_HOME="$work/home/.config" XDG_DATA_HOME="$work/data" \
 	XDG_STATE_HOME="$work/state" XDG_RUNTIME_DIR="$work/runtime" \
+	PANEL_KEYBOARD_STUB="$work/keyboard-stub" PANEL_KEYBOARD_LOG="$work/keyboard.log" \
 	QT_QPA_PLATFORMTHEME= QT_QUICK_BACKEND=software QSG_RHI_BACKEND=software \
 	quickshell --no-duplicate --path "$work/qml/shell.qml" >"$work/ui.log" 2>&1 || status=$?
 if [ "$status" -ne 0 ] || ! grep -F 'Panel widgets: PASS' "$work/ui.log" ||

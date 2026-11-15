@@ -5499,7 +5499,7 @@ void
 applykeyboardrequest(void)
 {
 	Atom type;
-	int format, status, target;
+	int format, status, target, lock;
 	unsigned long n, after;
 	unsigned char *data = NULL;
 	XkbStateRec state;
@@ -5526,8 +5526,13 @@ applykeyboardrequest(void)
 		target = MIN((int)request, keyboardgroups - 1);
 	else
 		return;
-	if (target != state.group)
-		XkbLockGroup(dpy, XkbUseCoreKbd, (unsigned int)target);
+	/* The effective group is the base, latched and locked groups added
+	 * (wrapped, XKB's default): lock what makes it TARGET, even with a
+	 * group latched or held. The two are signed counts in unsigned shorts. */
+	if (target != state.group) {
+		lock = (target - (short)state.base_group - (short)state.latched_group) % keyboardgroups;
+		XkbLockGroup(dpy, XkbUseCoreKbd, (unsigned int)(lock < 0 ? lock + keyboardgroups : lock));
+	}
 }
 
 #if SHOWWINICON

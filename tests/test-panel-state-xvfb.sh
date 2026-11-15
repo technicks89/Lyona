@@ -81,8 +81,28 @@ main(void)
 		pause();
 }
 EOF
+# Latches XKB group N (relative), as a group-latch key would; it holds until
+# the next key event, of which Xvfb has none.
+cat >"$work/latch.c" <<'EOF'
+#include <X11/Xlib.h>
+#include <X11/XKBlib.h>
+#include <stdlib.h>
+
+int
+main(int argc, char **argv)
+{
+	Display *dpy = XOpenDisplay(NULL);
+
+	if (!dpy || argc != 2 || !XkbLatchGroup(dpy, XkbUseCoreKbd, (unsigned int)atoi(argv[1])))
+		return 1;
+	XSync(dpy, False);
+	return 0;
+}
+EOF
 # shellcheck disable=SC2046 # pkg-config prints separate flags
 cc -o "$work/client" "$work/client.c" $(pkg-config --cflags --libs x11)
+# shellcheck disable=SC2046
+cc -o "$work/latch" "$work/latch.c" $(pkg-config --cflags --libs x11)
 
 Xvfb -displayfd 3 -noreset -screen 0 1024x768x24 \
 	-nolisten tcp 3>"$work/display" >"$work/xvfb.log" 2>&1 &
@@ -202,6 +222,18 @@ sleep 0.3
 kill "$spy_pid"
 wait "$spy_pid" 2>/dev/null || :
 [ "$(wc -l <"$work/spy.out")" -eq 1 ] || fail "an unchanged group was published again: $(cat "$work/spy.out")"
+
+# With a group latched the effective group is locked + latched: a request
+# still ends on the group asked for, and next steps from the effective one.
+"$work/latch" 1 || fail "could not latch a group"
+wait_state 'keyboard_group=0|3'
+bridge keyboard 2
+wait_state 'keyboard_group=2|3'
+bridge keyboard next
+wait_state 'keyboard_group=0|3'
+bridge keyboard prev
+wait_state 'keyboard_group=2|3'
+"$work/latch" 0
 
 # Labels: an explicit ":1", options after the layouts, and an odd name.
 xprop -root -f _DWM_KEYBOARD_SYMBOLS 8u -set _DWM_KEYBOARD_SYMBOLS 'pc+gb:1+ru:2+inet(evdev)+ctrl(nocaps)'

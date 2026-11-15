@@ -4,6 +4,27 @@
     property int widgetStage: 0
     property double widgetStageStarted: Date.now()
     readonly property var widgetPanel: panelVariants.instances.length > 0 ? panelVariants.instances[0] : null
+    // The keyboard requests the stub has logged (one line each), and whether
+    // the file that makes it fail exists yet.
+    property int keyboardRequests: 0
+    property bool keyboardFailing: false
+    property double keyboardSettled: 0
+
+    FileView {
+        id: keyboardLog
+        path: Quickshell.env("PANEL_KEYBOARD_LOG")
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.keyboardRequests = keyboardLog.text().split("\n").filter(line => line.length > 0).length
+    }
+
+    Process {
+        id: keyboardFail
+        command: ["touch", Quickshell.env("PANEL_KEYBOARD_LOG") + ".fail"]
+        running: false
+        onExited: root.keyboardFailing = true
+    }
 
     function widgetCheck(ok, detail) {
         if (!ok) {
@@ -106,7 +127,8 @@
                     + "widget\tweather\tdisabled\nwidget\tkeyboard\tdisabled\n"
                     + "option\tclock-seconds\tdisabled\ncomplete\tstatus\n");
                 root.widgetCheck(!pill.visible, "the pill shows with its widget off");
-                // Clicks queue, one request at a time, and all are sent.
+                // Clicks queue: one request runs, the other two wait.
+                root.widgetCheck(root.keyboardRequests === 0, "requests before any click: " + root.keyboardRequests);
                 dwmState.nextKeyboardLayout();
                 dwmState.nextKeyboardLayout();
                 dwmState.nextKeyboardLayout();
@@ -115,7 +137,29 @@
                 return;
             }
             case 5:
-                if (dwmState.pendingKeyboardSteps > 0) return;
+                // All three are sent, one after another, and no more.
+                if (root.keyboardRequests < 3 || dwmState.pendingKeyboardSteps > 0) return;
+                if (root.keyboardSettled === 0) root.keyboardSettled = Date.now();
+                if (Date.now() - root.keyboardSettled < 500) return;
+                root.widgetCheck(root.keyboardRequests === 3, "three clicks sent " + root.keyboardRequests + " requests");
+                keyboardFail.running = true;
+                root.widgetNext();
+                return;
+            case 6:
+                // A request that fails drops the clicks waiting behind it.
+                if (!root.keyboardFailing) return;
+                dwmState.nextKeyboardLayout();
+                dwmState.nextKeyboardLayout();
+                dwmState.nextKeyboardLayout();
+                root.keyboardSettled = 0;
+                root.widgetNext();
+                return;
+            case 7:
+                if (root.keyboardRequests < 4 || dwmState.pendingKeyboardSteps > 0) return;
+                if (root.keyboardSettled === 0) root.keyboardSettled = Date.now();
+                if (Date.now() - root.keyboardSettled < 800) return;
+                root.widgetCheck(root.keyboardRequests === 4,
+                    "after a failed request, the waiting clicks still sent: " + root.keyboardRequests + " requests");
                 console.log("Panel widgets: PASS");
                 Qt.quit();
                 return;
