@@ -19,7 +19,7 @@ Scope {
     property var uses: ({})
     property bool statusPending: false
     property bool loaded: false
-    readonly property bool initialLoading: !root.loaded && statusProcess.running
+    readonly property bool initialLoading: !root.loaded && (statusProcess.running || root.statusPending)
     readonly property bool busy: enrollProcess.running || actionProcess.running
     property string enrollingFinger: ""
     property int enrollPassed: 0

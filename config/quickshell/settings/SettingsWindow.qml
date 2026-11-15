@@ -473,7 +473,7 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 selected: root.settingsModel.selectedSectionId === "fingerprint"
-                                dataLoading: root.settingsModel.fingerprintModel.initialLoading
+                                dataLoading: root.settingsModel.fingerprintLoading
                                 windowVisible: root.visible
                                 sourceComponent: FingerprintSettingsPane {
                                     fingerprintModel: root.settingsModel.fingerprintModel

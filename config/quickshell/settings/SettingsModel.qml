@@ -147,6 +147,8 @@ Scope {
         return section.id !== "fingerprint" || fingerprintModel.readerState === "available";
     })
     readonly property alias fingerprintModel: fingerprintModel
+    // What DeferredSettingsPane waits on for Fingerprint: its first status read.
+    readonly property bool fingerprintLoading: fingerprintModel.initialLoading
     readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
     readonly property bool shortcutsMatch: SettingsSearch.matchesShortcuts(root.searchQuery)
     // The shortcuts row follows the matching sections in keyboard order.
