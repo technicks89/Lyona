@@ -313,15 +313,6 @@ power_recover_locker() {
 		return 0
 		;;
 	esac
-	# One recovery at a time: the hook runs it from both of autorandr's phases.
-	power_recover_lock=${XDG_RUNTIME_DIR:-/tmp}/lyona-locker-recover.lock
-	if command -v flock >/dev/null 2>&1; then
-		exec 8>>"$power_recover_lock"
-		if ! flock -n 8; then
-			printf 'locker-recover\tnone\tanother recovery is running\n'
-			return 0
-		fi
-	fi
 	if ! configured_light_locker_running; then
 		printf 'locker-recover\tnone\tlight-locker is not running for this display\n'
 		return 0

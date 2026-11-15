@@ -98,6 +98,7 @@ mv "$work/xdotool.off" "$bin/xdotool"
 cat >"$work/fake-power" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >>"$STUB_DIR/hook-calls"
+sleep "${FAKE_POWER_SLEEP:-0}"
 exit 1
 STUB
 chmod +x "$work/fake-power"
@@ -105,7 +106,7 @@ for phase in preswitch postswitch; do
 	mkdir -p "$work/$phase.d"
 	cp "$hook" "$work/$phase.d/60-lyona-locker"
 	rm -f "$work/hook-calls"
-	env -i PATH=/usr/bin:/bin STUB_DIR="$work" LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" \
+	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" \
 		LYONA_AUTORANDR_LOCKER_SETTLE=0.2 "$work/$phase.d/60-lyona-locker" || fail "the $phase hook failed"
 	[[ ! -e $work/hook-calls ]] || fail "the $phase hook did not wait before recovering"
 	for _ in $(seq 50); do
@@ -114,6 +115,15 @@ for phase in preswitch postswitch; do
 	done
 	[[ $(cat "$work/hook-calls" 2>/dev/null) == recover-locker ]] || fail "the $phase hook did not run recover-locker"
 done
+# Both phases at once: one recovery runs, the other skips.
+rm -f "$work/hook-calls"
+for phase in preswitch postswitch; do
+	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" FAKE_POWER_SLEEP=1 \
+		LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" LYONA_AUTORANDR_LOCKER_SETTLE=0.2 \
+		"$work/$phase.d/60-lyona-locker" || fail "the $phase hook failed"
+done
+sleep 2
+[[ $(wc -l <"$work/hook-calls") == 1 ]] || fail "two overlapping hooks ran $(wc -l <"$work/hook-calls") recoveries"
 # Without the helper it does nothing, successfully.
 env -i PATH=/nonexistent LYONA_AUTORANDR_LOCKER_HELPER="$work/missing" /bin/sh "$hook" || fail 'the hook failed without its helper'
 

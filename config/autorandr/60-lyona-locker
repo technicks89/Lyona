@@ -17,9 +17,16 @@ helper=${LYONA_AUTORANDR_LOCKER_HELPER:-}
 [ -n "$helper" ] || helper=$(command -v dwm-settings-power 2>/dev/null || :)
 [ -n "$helper" ] && [ -x "$helper" ] || exit 0
 settle=${LYONA_AUTORANDR_LOCKER_SETTLE:-5}
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
+# One recovery at a time: when both phases' runs meet, the second skips, and a
+# later one finds nothing left to do.
 (
 	sleep "$settle"
+	if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
+		exec 9>>"$runtime/lyona-locker-recover.lock"
+		flock -n 9 || exit 0
+	fi
 	"$helper" recover-locker
 ) >/dev/null 2>&1 </dev/null &
 exit 0
