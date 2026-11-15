@@ -57,7 +57,7 @@ set_defaults() {
 		widget_values[$widget]=enabled
 	done
 	widget_values[weather]=disabled
-	option_values[clock-seconds]=disabled
+	option_values['clock-seconds']=disabled
 }
 
 valid_widget() {
