@@ -45,6 +45,7 @@
 #include <X11/Xproto.h>
 #include <X11/Xresource.h>
 #include <X11/Xutil.h>
+#include <X11/XKBlib.h>
 #ifdef XINERAMA
 #include <X11/extensions/Xinerama.h>
 #endif
@@ -84,6 +85,7 @@ enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
        NetWMWindowTypeCombo, NetWMWindowTypeDnd,
        NetClientList, NetDesktopNames, NetDesktopViewport, NetNumberOfDesktops, NetCurrentDesktop,
        NetWMDesktop, NetDwmMonitorDesktops, NetDwmSelectedMonitor, NetDwmMonitorWindows, NetDwmLayout, NetDwmSetLayout, NetDwmLayoutSettings,
+       NetDwmKeyboardGroup, NetDwmKeyboardSymbols, NetDwmSetKeyboardGroup,
        NetCloseWindow, NetWMStrut, NetWMStrutPartial, NetLast };
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast };
 typedef struct Client Client;
@@ -332,6 +334,10 @@ static void updatelayoutprop(void);
 static void applylayoutrequest(void);
 static void applysavedlayouts(int force);
 static void updatelayoutsettingsprop(void);
+static void setupxkb(void);
+static void updatekeyboard(int reread);
+static void xkbnotify(XEvent *e);
+static void applykeyboardrequest(void);
 static int tilegap(Monitor *m, unsigned int n);
 
 static void managealtbar(Window win, XWindowAttributes *wa);
@@ -379,6 +385,10 @@ static void (*handler[LASTEvent]) (XEvent *) = {
 	[UnmapNotify] = unmapnotify
 };
 static Atom kdewindowtypeoverride, wmatom[WMLast], netatom[NetLast];
+/* XKB's event type, -1 when the server has no XKB (#470), and the keymap's
+ * group count, which a switch request wraps and clamps by. */
+static int xkbeventtype = -1;
+static int keyboardgroups = 1;
 static volatile sig_atomic_t running = 1;
 static Cur *cursor[CurLast];
 static Clr **scheme;
@@ -2614,6 +2624,9 @@ propertynotify(XEvent *e)
 	} else if ((ev->window == root) && (ev->atom == netatom[NetDwmSetLayout])) {
 		if (ev->state == PropertyNewValue)
 			applylayoutrequest();
+	} else if ((ev->window == root) && (ev->atom == netatom[NetDwmSetKeyboardGroup])) {
+		if (ev->state == PropertyNewValue)
+			applykeyboardrequest();
 	} else if ((ev->atom == netatom[NetWMStrutPartial] || ev->atom == netatom[NetWMStrut])
 	           && !wintoclient(ev->window)) {
 		strutchanged(ev->window);
@@ -3129,7 +3142,10 @@ run(void)
 
 		while (XPending(dpy)) {
 			XNextEvent(dpy, &ev);
-			if (handler[ev.type])
+			/* An extension's event type is past handler[]. */
+			if (ev.type == xkbeventtype)
+				xkbnotify(&ev);
+			else if (ev.type < LASTEvent && handler[ev.type])
 				handler[ev.type](&ev);
 		}
 		if (!running) break;
@@ -4120,6 +4136,9 @@ setup(void)
 	netatom[NetDwmLayout] = XInternAtom(dpy, "_DWM_LAYOUT", False);
 	netatom[NetDwmSetLayout] = XInternAtom(dpy, "_DWM_SET_LAYOUT", False);
 	netatom[NetDwmLayoutSettings] = XInternAtom(dpy, "_DWM_LAYOUT_SETTINGS", False);
+	netatom[NetDwmKeyboardGroup] = XInternAtom(dpy, "_DWM_KEYBOARD_GROUP", False);
+	netatom[NetDwmKeyboardSymbols] = XInternAtom(dpy, "_DWM_KEYBOARD_SYMBOLS", False);
+	netatom[NetDwmSetKeyboardGroup] = XInternAtom(dpy, "_DWM_SET_KEYBOARD_GROUP", False);
 	dwmfullscreenmonitorsatom = XInternAtom(dpy, "_DWM_FULLSCREEN_MONITORS", False);
 	dwmtagupdateatom = XInternAtom(dpy, "DWM_TAG_UPDATE", False);
 
@@ -4172,6 +4191,7 @@ setup(void)
 		|LeaveWindowMask|StructureNotifyMask|PropertyChangeMask;
 	XChangeWindowAttributes(dpy, root, CWEventMask|CWCursor, &wa);
 	XSelectInput(dpy, root, wa.event_mask);
+	setupxkb();
 
 	signal(SIGUSR1, sigusr1_handler);
 	normalizexdgenv();
@@ -5380,6 +5400,139 @@ applylayoutrequest(void)
 	if (idx >= 0 && idx < (long)LENGTH(layouts))
 		setlayout(&(Arg){ .v = &layouts[idx] });
 	XFree(data);
+}
+
+/* The keyboard layout (#470, upstream dwm-titus #383): dwm reads and sets
+ * the XKB group, nothing more. It publishes _DWM_KEYBOARD_GROUP, CARDINAL 2
+ * (the active group from 0 and the number of groups), and
+ * _DWM_KEYBOARD_SYMBOLS, the keymap's symbols name ("pc+us+de:2+inet(evdev)"),
+ * from which the state bridge names the groups. Without XKB neither is set,
+ * and requests are ignored. */
+void
+setupxkb(void)
+{
+	int opcode, eventbase, error, major = XkbMajorVersion, minor = XkbMinorVersion;
+	const unsigned int names = XkbSymbolsNameMask | XkbGroupNamesMask;
+
+	if (!XkbQueryExtension(dpy, &opcode, &eventbase, &error, &major, &minor))
+		return;
+	/* Group changes only, not every modifier press; and keymap changes
+	 * (setxkbmap), which can change the groups and their names. */
+	if (!XkbSelectEventDetails(dpy, XkbUseCoreKbd, XkbStateNotify,
+	        XkbGroupStateMask, XkbGroupStateMask)
+	    || !XkbSelectEventDetails(dpy, XkbUseCoreKbd, XkbNamesNotify, names, names)
+	    || !XkbSelectEventDetails(dpy, XkbUseCoreKbd, XkbControlsNotify,
+	        XkbAllControlsMask, XkbAllControlsMask)
+	    || !XkbSelectEvents(dpy, XkbUseCoreKbd, XkbNewKeyboardNotifyMask,
+	        XkbNewKeyboardNotifyMask))
+		return;
+	xkbeventtype = eventbase + XkbEventCode;
+	updatekeyboard(1);
+}
+
+/* Publishes the group (and, with REREAD, first reads the group count and
+ * symbols again); a property is written only when its value changed. */
+void
+updatekeyboard(int reread)
+{
+	static long cache[2] = { -1, -1 };
+	static char symbols[512];
+	XkbStateRec state;
+	XkbDescPtr xkb;
+	char *name;
+	long data[2];
+
+	if (xkbeventtype < 0)
+		return;
+	if (reread && (xkb = XkbAllocKeyboard())) {
+		xkb->device_spec = XkbUseCoreKbd;
+		if (XkbGetControls(dpy, XkbAllControlsMask, xkb) == Success && xkb->ctrls)
+			keyboardgroups = MAX(1, MIN(XkbNumKbdGroups, (int)xkb->ctrls->num_groups));
+		if (XkbGetNames(dpy, XkbSymbolsNameMask, xkb) == Success && xkb->names
+		    && xkb->names->symbols != None
+		    && (name = XGetAtomName(dpy, xkb->names->symbols))) {
+			if (strcmp(name, symbols) != 0) {
+				copystr(symbols, sizeof(symbols), name);
+				XChangeProperty(dpy, root, netatom[NetDwmKeyboardSymbols],
+					XInternAtom(dpy, "UTF8_STRING", False), 8, PropModeReplace,
+					(unsigned char *)symbols, (int)strlen(symbols));
+			}
+			XFree(name);
+		}
+		XkbFreeKeyboard(xkb, 0, True);
+	}
+	if (XkbGetState(dpy, XkbUseCoreKbd, &state) != Success)
+		return;
+	data[0] = MIN(state.group, keyboardgroups - 1);
+	data[1] = keyboardgroups;
+	if (data[0] == cache[0] && data[1] == cache[1])
+		return;
+	ewmh_replace_root_cardinal(netatom[NetDwmKeyboardGroup], data, 2);
+	cache[0] = data[0];
+	cache[1] = data[1];
+}
+
+void
+xkbnotify(XEvent *e)
+{
+	XkbEvent *ev = (XkbEvent *)e;
+
+	switch (ev->any.xkb_type) {
+	case XkbStateNotify:
+		updatekeyboard(0);
+		break;
+	case XkbNewKeyboardNotify:
+	case XkbNamesNotify:
+	case XkbControlsNotify:
+		updatekeyboard(1);
+		break;
+	}
+}
+
+/* _DWM_SET_KEYBOARD_GROUP, CARDINAL 1: a group from 0 (past the last one, the
+ * last), or KBGROUPNEXT or KBGROUPPREV, which wrap. Consumed like
+ * _DWM_SET_LAYOUT, and taken from the server's group at that moment, so quick
+ * requests step one group each. */
+#define KBGROUPNEXT 0x100
+#define KBGROUPPREV 0x101
+void
+applykeyboardrequest(void)
+{
+	Atom type;
+	int format, status, target, lock;
+	unsigned long n, after;
+	unsigned char *data = NULL;
+	XkbStateRec state;
+	long request;
+
+	status = XGetWindowProperty(dpy, root, netatom[NetDwmSetKeyboardGroup], 0, 1, False,
+	    XA_CARDINAL, &type, &format, &n, &after, &data);
+	XDeleteProperty(dpy, root, netatom[NetDwmSetKeyboardGroup]);
+	if (status != Success || !data ||
+	    type != XA_CARDINAL || format != 32 || n != 1 || after != 0) {
+		if (data)
+			XFree(data);
+		return;
+	}
+	request = *(long *)data;
+	XFree(data);
+	if (xkbeventtype < 0 || XkbGetState(dpy, XkbUseCoreKbd, &state) != Success)
+		return;
+	if (request == KBGROUPNEXT)
+		target = (state.group + 1) % keyboardgroups;
+	else if (request == KBGROUPPREV)
+		target = (state.group + keyboardgroups - 1) % keyboardgroups;
+	else if (request >= 0 && request < XkbNumKbdGroups)
+		target = MIN((int)request, keyboardgroups - 1);
+	else
+		return;
+	/* The effective group is the base, latched and locked groups added
+	 * (wrapped, XKB's default): lock what makes it TARGET, even with a
+	 * group latched or held. The two are signed counts in unsigned shorts. */
+	if (target != state.group) {
+		lock = (target - (short)state.base_group - (short)state.latched_group) % keyboardgroups;
+		XkbLockGroup(dpy, XkbUseCoreKbd, (unsigned int)(lock < 0 ? lock + keyboardgroups : lock));
+	}
 }
 
 #if SHOWWINICON

@@ -55,7 +55,7 @@ wait_for() {
 # ── status with nothing configured: the migration writes nothing ────────
 
 status=$(run_helper status)
-assert_string_contains "$status" $'panel-settings-protocol\t1\t0'
+assert_string_contains "$status" $'panel-settings-protocol\t1\t1'
 assert_string_contains "$status" \
 	$'state\tdefaults\tUsing safe defaults; the first change creates persistent state'
 for widget in workspaces volume bluetooth network power; do
@@ -93,7 +93,7 @@ assert_line "$work/lock.err" 'dwm-panel-settings: another panel settings operati
 set_result=$(run_helper set volume disabled)
 assert_string_contains "$set_result" $'result\tset\tvolume\tdisabled' 'set did not confirm the change'
 assert_equals 600 "$(stat -c %a "$state_file")" 'a freshly created state file must be mode 600'
-assert_line "$state_file" $'panel-settings-protocol\t1\t0'
+assert_line "$state_file" $'panel-settings-protocol\t1\t1'
 assert_line "$state_file" $'volume\tdisabled'
 
 persisted=$(run_helper status)
@@ -409,12 +409,65 @@ assert_equals $'panel-settings-action-protocol\t1\t0\nresult\treset\tall\tdefaul
 	"$(run_helper reset)" 'reset result'
 assert_contains "$state_file" $'calendar\tenabled'
 assert_contains "$state_file" $'weather\tdisabled'
-assert_equals 8 "$(wc -l <"$state_file")" 'a reset writes the header and all seven widgets'
-# The model reads the seven-widget status and the reset's result.
+assert_equals 10 "$(wc -l <"$state_file")" 'a reset writes the header, all eight widgets and the option'
+# The model reads the status and the reset's result.
 assert_contains "$model" '{ "id": "calendar", "label": "Calendar" }'
 assert_contains "$model" '{ "id": "weather", "label": "Weather" }'
 assert_contains "$model" '&& fields[2] === "all" && fields[3] === "defaults";'
 assert_contains "$control_window" \
-	'model: ["Volume", "Bluetooth", "Network", "Power", "Workspaces", "Calendar", "Weather"]'
+	'model: ["Volume", "Bluetooth", "Network", "Power", "Workspaces", "Calendar", "Weather", "Keyboard"]'
+
+# ── the keyboard widget (#470) and the clock-seconds option (#472) ───────
+#
+# Protocol 1.1. A 1.0 file (write_state) still reads, its choices kept: the
+# keyboard widget on and seconds off. Status reports the option on its own line.
+write_state $'workspaces\tenabled' $'volume\tdisabled' $'bluetooth\tenabled' \
+	$'network\tenabled' $'power\tenabled' $'calendar\tenabled' $'weather\tdisabled'
+status=$(run_helper status)
+assert_string_contains "$status" $'state\tavailable\t'
+assert_string_contains "$status" $'widget\tvolume\tdisabled'
+assert_string_contains "$status" $'widget\tkeyboard\tenabled'
+assert_string_contains "$status" $'option\tclock-seconds\tdisabled'
+assert_equals $'complete\tstatus' "$(printf '%s\n' "$status" | tail -n 1)" 'status ends with complete'
+# set takes the option like a widget, and keeps the other choices.
+assert_equals $'panel-settings-action-protocol\t1\t0\nresult\tset\tclock-seconds\tenabled' \
+	"$(run_helper set clock-seconds enabled)" 'set clock-seconds result'
+assert_line "$state_file" $'panel-settings-protocol\t1\t1'
+assert_line "$state_file" $'clock-seconds\tenabled'
+assert_line "$state_file" $'volume\tdisabled'
+status=$(run_helper status)
+assert_string_contains "$status" $'option\tclock-seconds\tenabled'
+assert_string_contains "$status" $'state\tavailable\t'
+run_helper set keyboard disabled >/dev/null
+assert_string_contains "$(run_helper status)" $'widget\tkeyboard\tdisabled'
+assert_string_contains "$(run_helper status)" $'option\tclock-seconds\tenabled'
+# An odd value or a repeated option is malformed: preserved, safe defaults.
+cp "$state_file" "$work/good.conf"
+printf 'clock-seconds\tmaybe\n' >>"$state_file"
+status=$(run_helper status)
+assert_string_contains "$status" \
+	$'state\tpartial\tMalformed panel settings were preserved; using safe defaults'
+assert_string_contains "$status" $'option\tclock-seconds\tdisabled'
+assert_string_contains "$status" $'widget\tvolume\tenabled'
+assert_line "$state_file" $'clock-seconds\tmaybe'
+cp "$work/good.conf" "$state_file"
+chmod 600 "$state_file"
+if run_helper set clock-seconds sometimes >"$work/option.out" 2>"$work/option.err"; then
+	fail 'set accepted an option value other than enabled or disabled'
+fi
+if run_helper set seconds enabled >"$work/option.out" 2>"$work/option.err"; then
+	fail 'set accepted an unknown option'
+fi
+# reset turns seconds off with the rest.
+run_helper reset >/dev/null
+assert_line "$state_file" $'clock-seconds\tdisabled'
+assert_line "$state_file" $'keyboard\tenabled'
+# The model: the option, the widget, and records it does not know skipped.
+assert_contains "$model" 'property bool clockSeconds: false'
+assert_contains "$model" '{ "id": "keyboard", "label": "Keyboard layout" }'
+assert_contains "$model" 'root.clockSeconds = options["clock-seconds"] === true;'
+assert_contains "$appearance_pane" 'onToggled: root.panelSettingsModel.setWidget("clock-seconds",'
+assert_contains "$shell" 'showSeconds: panelSettingsModel.clockSeconds'
+assert_contains "$panel" 'root.panelSettingsModel.widgetEnabled("keyboard")'
 
 printf 'Quickshell panel settings persistence: PASS\n'

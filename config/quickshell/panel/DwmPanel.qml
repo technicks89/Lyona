@@ -391,6 +391,34 @@ PanelWindow {
                         }
                     }
 
+                    // The keyboard layout (#470, upstream dwm-titus #384), with two
+                    // or more: a click switches to the next one.
+                    PanelPill {
+                        objectName: "keyboardLayoutPill"
+                        visible: root.panelSettingsModel.widgetEnabled("keyboard")
+                            && root.state.keyboardLayouts.length >= 2
+                            && root.state.keyboardLabel.length > 0
+                        Layout.preferredWidth: keyboardLabel.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
+                        Layout.preferredHeight: Theme.compactWidgetSize
+                        hovered: keyboardMouse.containsMouse
+
+                        UiText {
+                            id: keyboardLabel
+                            anchors.centerIn: parent
+                            text: root.state.keyboardLabel
+                            color: Theme.textStrong
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            id: keyboardMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.state.nextKeyboardLayout()
+                        }
+                    }
+
                     PanelPill {
                         visible: root.panelSettingsModel.widgetEnabled("bluetooth")
                         Layout.preferredWidth: bluetoothRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2

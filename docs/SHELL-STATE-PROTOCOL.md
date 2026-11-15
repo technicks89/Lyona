@@ -34,10 +34,12 @@ order the shell's panels use. A tag index is 0 to 8.
 | `_DWM_MONITOR_WINDOWS` | `WINDOW`, 1 per monitor | any monitor's selected window changes, or monitors change | for each monitor, by logical index: its selected window, or 0 (None) when it has none. Each panel names its own monitor's window from it (`dwm-quickshell-state`'s `monitor_windows=`) |
 | `_DWM_LAYOUT` | `CARDINAL`, 1 | the selected monitor's layout changes | an index into dwm's `layouts[]` |
 | `_DWM_FULLSCREEN_MONITORS` | `CARDINAL`, 0 or more | a window enters or leaves fullscreen | the logical indexes of the monitors showing a fullscreen window; empty when none |
+| `_DWM_KEYBOARD_GROUP` | `CARDINAL`, 2 | the active XKB group or the number of groups changes; only when a value changes (#470) | the active group from 0, and the number of groups (1-4). dwm follows XKB state events for the group only, and re-reads the count on a keymap change (`setxkbmap`). Unset when the server has no XKB. The bridge prints `keyboard_group=GROUP\|COUNT` |
+| `_DWM_KEYBOARD_SYMBOLS` | `UTF8_STRING` | the keymap's symbols name changes (#470) | the keymap's symbols name, such as `pc+us+de:2+inet(evdev)`. The bridge names the groups from it (`keyboard_layouts=US\|DE`): the first part after `pc` is group 1, a part ending `:N` is group N, `us(intl)` is `US`; a group it cannot name gets its number |
 | `DWM_TAG_UPDATE` | `CARDINAL`, 1 | any window's tags change | a sequence number, increased each time; its value means nothing, a change means "read `_NET_WM_DESKTOP` again" |
 
 A write does not always mean a change: dwm writes `_DWM_LAYOUT`,
-`_DWM_MONITOR_WINDOWS` and `_DWM_FULLSCREEN_MONITORS` only when they change, but may write the others again
+`_DWM_MONITOR_WINDOWS`, `_DWM_FULLSCREEN_MONITORS` and the two keyboard properties only when they change, but may write the others again
 with the same value, so a reader compares before acting.
 
 ### Read by Settings, not the state bridge
@@ -56,6 +58,7 @@ reloads; there is no request property.
 | Property | Type | Set by | Effect |
 | --- | --- | --- | --- |
 | `_DWM_SET_LAYOUT` | `CARDINAL`, 1 | `dwm-quickshell-state layout INDEX` (the panel's layout switcher) | dwm reads it, deletes it, and applies `layouts[INDEX]` to the selected monitor, as the layout key would. An index out of range, or a value of another type or length, is ignored. |
+| `_DWM_SET_KEYBOARD_GROUP` | `CARDINAL`, 1 | `dwm-quickshell-state keyboard next\|prev\|GROUP` (a click on the panel's keyboard layout pill) | dwm reads it, deletes it, reads the server's current group and locks the next group (256, wrapping), the previous one (257, wrapping), or group 0-3 (one past the last is the last). The group already active is not set again. Another value, type or length, or a server without XKB, is ignored. The helper waits until dwm has deleted it (at most 2 seconds, else it fails), so the panel sends one request at a time and drops the clicks still waiting when one fails. |
 
 The panel declares itself the bar with the standard strut: a dock
 (`_NET_WM_WINDOW_TYPE_DOCK`) that reserves space at the top or bottom of its

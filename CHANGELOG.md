@@ -10,6 +10,31 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- The panel marks the tags that have windows (#474, upstream dwm-titus #395):
+  a small square in the tag's corner, in the label's colour, on every
+  monitor's panel. `WorkspaceButton.qml` received this state but never drew
+  it.
+- Optional seconds in the panel clock (#472, upstream dwm-titus #381):
+  Settings > Appearance > Panel widgets, **Show seconds in the clock**. Off by
+  default; only while it is on does the clock update every second, so the
+  idle cost is unchanged otherwise. Stored in `panel-widgets.conf` as the
+  `clock-seconds` option (`dwm-panel-settings set clock-seconds enabled`).
+- A keyboard layout pill in the panel (#470, upstream dwm-titus #383 and
+  #384): with two or more layouts it names the active one (US, DE) and a click
+  switches to the next; quick clicks each step once. It is an eighth panel
+  widget, on by default and hidden with one layout.
+  - dwm publishes the active XKB group and the group count
+    (`_DWM_KEYBOARD_GROUP`) and the keymap's symbols (`_DWM_KEYBOARD_SYMBOLS`),
+    from XKB group events only, and switches on `_DWM_SET_KEYBOARD_GROUP`
+    (next, previous, or a group). It uses libX11's XKB, so there is no new
+    dependency, and without XKB it publishes nothing.
+  - `dwm-quickshell-state keyboard next|prev|GROUP` makes the request and
+    waits up to 2 seconds for dwm to take it; the panel drops the waiting
+    clicks when one is not taken.
+  - `panel-widgets.conf` moves to protocol 1.1. A 1.0 file is read as before,
+    its choices kept. A version of lyona from before this reads a 1.1 file as
+    an unsupported version: it keeps the file and shows the defaults.
+  - Both are in the dwm binary: log out and back in once after updating.
 - Window rules can open a window fullscreen, in borderless windowed
   fullscreen, or without its size hints (#477, upstream dwm-titus #376), with
   the new `window-rules.toml` keys:

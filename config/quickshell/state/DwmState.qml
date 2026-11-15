@@ -13,6 +13,18 @@ Scope {
     // (0 tile, 1 floating, 2 monocle), or -1 until dwm publishes _DWM_LAYOUT.
     property int layoutIndex: -1
     property var monitorWorkspaceRows: []
+    // The active XKB group from 0, and a label per group (#470), from
+    // _DWM_KEYBOARD_GROUP and _DWM_KEYBOARD_SYMBOLS; -1 and [] until dwm
+    // publishes them (or without XKB).
+    property int keyboardGroup: -1
+    property var keyboardLayouts: []
+    readonly property string keyboardLabel: root.keyboardGroup >= 0
+        && root.keyboardGroup < root.keyboardLayouts.length
+        ? root.keyboardLayouts[root.keyboardGroup] : ""
+    // Layout clicks not yet sent: one request runs at a time, and the rest
+    // wait for it, so quick clicks each step one group. A request dwm does not
+    // take drops the waiting ones.
+    property int pendingKeyboardSteps: 0
     property var workspaceNames: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
     property var occupiedWorkspaces: []
     property var fullscreenMonitorIndexes: []
@@ -77,6 +89,14 @@ Scope {
                 const parsed = parseInt(value, 10);
 
                 root.layoutIndex = isNaN(parsed) ? -1 : parsed;
+            } else if (key === "keyboard_group") {
+                const fields = value.split("|");
+                const group = parseInt(fields[0], 10);
+                const count = parseInt(fields[1], 10);
+
+                root.keyboardGroup = fields.length === 2 && group >= 0 && group < count ? group : -1;
+            } else if (key === "keyboard_layouts") {
+                root.keyboardLayouts = value.length > 0 ? value.split("|") : [];
             } else if (key === "names") {
                 root.workspaceNames = value.length > 0 ? value.split("|") : [];
             } else if (key === "occupied") {
@@ -306,6 +326,30 @@ Scope {
     // into its layouts[]. dwm ignores an index it does not have.
     function setLayout(index) {
         Quickshell.execDetached(Commands.stateHelperCommand("layout", [String(index)]));
+    }
+
+    // The next keyboard layout, after any request still running (#470).
+    function nextKeyboardLayout() {
+        if (root.keyboardLayouts.length < 2) return;
+        root.pendingKeyboardSteps = Math.min(root.pendingKeyboardSteps + 1, 8);
+        root.sendKeyboardStep();
+    }
+
+    function sendKeyboardStep() {
+        if (keyboardProcess.running || root.pendingKeyboardSteps <= 0) return;
+        root.pendingKeyboardSteps--;
+        keyboardProcess.running = true;
+    }
+
+    Process {
+        id: keyboardProcess
+
+        command: Commands.stateHelperCommand("keyboard", ["next"])
+        running: false
+        onExited: exitCode => {
+            if (exitCode !== 0) root.pendingKeyboardSteps = 0;
+            else Qt.callLater(root.sendKeyboardStep);
+        }
     }
 
     // Always on. Each record is the whole state, so a restarted watcher's

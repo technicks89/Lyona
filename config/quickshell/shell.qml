@@ -148,6 +148,7 @@ ShellRoot {
     ClockModel {
         id: clock
         timezoneState: systemManagementModel.nativeStates.timezone || null
+        showSeconds: panelSettingsModel.clockSeconds
     }
 
     CalendarModel {
