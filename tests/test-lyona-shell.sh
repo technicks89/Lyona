@@ -52,7 +52,7 @@ xmessage_log() {
 	cat "$work/log.xmessage" 2>/dev/null || :
 }
 
-for pair in 'launcher toggle' 'overview toggle' 'controlcenter open' 'controlcenter toggle' \
+for pair in 'launcher toggle' 'clipboard toggle' 'overview toggle' 'controlcenter open' 'controlcenter toggle' \
 	'controlcenter openKeybinds' 'power toggle' 'power confirm logout' 'power confirm reboot' \
 	'settings open' 'settings close' 'settings toggle' 'settings refresh' 'settings status'; do
 	rm -f "$work/log"
@@ -62,7 +62,7 @@ for pair in 'launcher toggle' 'overview toggle' 'controlcenter open' 'controlcen
 		fail "lyona-shell $pair ran: $(cat "$work/log" 2>/dev/null)"
 done
 for pair in '' 'launcher' 'launcher open' 'power confirm shutdown' 'power confirm' 'settingsTest status' \
-	'launcher toggle extra' 'settings quit'; do
+	'launcher toggle extra' 'settings quit' 'clipboard open'; do
 	rm -f "$work/log"
 	status=0
 	# shellcheck disable=SC2086 # one word per argument

@@ -117,6 +117,7 @@ INSTALL_COMMANDS = \
 	scripts/dwm-display-setup \
 	scripts/dwm-keybinds \
 	scripts/dwm-layout-settings \
+	scripts/dwm-clipboard-history \
 	scripts/dwm-lock \
 	scripts/dwm-lock-watch \
 	scripts/dwm-panel-settings \
@@ -261,8 +262,14 @@ TOML_TOOL = lyona-toml
 # R16-40): one watcher for every window. Installed beside lyona-toml.
 XWATCH = dwm-xwatch
 XWATCH_LIBS = $(shell ${PKG_CONFIG} --libs x11)
+# dwm-clipboard-observer, clipboard history's filtering source (#469): started
+# by the shell only while the user has turned history on. Installed beside
+# dwm-xwatch; xcb-xfixes and xcb-res, which dwm and the previews already need.
+CLIPBOARD = dwm-clipboard-observer
+CLIPBOARD_MODULES = xcb xcb-xfixes xcb-res
+CLIPBOARD_LIBS = $(shell ${PKG_CONFIG} --libs ${CLIPBOARD_MODULES})
 
-all: dwm ${THUMB} ${TOML_TOOL} ${XWATCH}
+all: dwm ${THUMB} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD}
 
 .c.o:
 	${CC} ${CPPFLAGS} ${CFLAGS} -c $<
@@ -284,13 +291,16 @@ dwm: check-build-deps ${OBJ}
 # never includes config.h. dwm, which does, it builds as an unprivileged user
 # (make dwm). The names all-root and dwm are part of the release-tree contract
 # an installed helper relies on (SPEC.md section 6, #337).
-all-root: check-build-deps ${THUMB} ${TOML_TOOL} ${XWATCH} $(filter-out dwm.o,${OBJ})
+all-root: check-build-deps ${THUMB} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD} $(filter-out dwm.o,${OBJ})
 
 ${THUMB}: check-build-deps ${THUMB}.c config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${THUMB}.c ${LDFLAGS} ${THUMB_LIBS}
 
 ${XWATCH}: check-build-deps ${XWATCH}.c config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${XWATCH}.c ${LDFLAGS} ${XWATCH_LIBS}
+
+${CLIPBOARD}: check-build-deps ${CLIPBOARD}.c config.mk Makefile
+	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${CLIPBOARD}.c ${LDFLAGS} ${CLIPBOARD_LIBS}
 
 ${TOML_TOOL}: ${TOML_TOOL}.c tomlparser.o util.o tomlparser.h util.h config.mk Makefile
 	${CC} ${CPPFLAGS} ${CFLAGS} -o $@ ${TOML_TOOL}.c tomlparser.o util.o ${LDFLAGS}
@@ -300,7 +310,7 @@ check-build-deps:
 		echo "Missing required command: ${PKG_CONFIG}" >&2; \
 		exit 1; \
 	}
-	@missing="$$(for module in ${PKG_MODULES} ${THUMB_MODULES}; do \
+	@missing="$$(for module in ${PKG_MODULES} ${THUMB_MODULES} ${CLIPBOARD_MODULES}; do \
 		"${PKG_CONFIG}" --exists "$$module" || printf '%s ' "$$module"; \
 	done)"; \
 	if [ -n "$$missing" ]; then \
@@ -310,7 +320,7 @@ check-build-deps:
 	fi
 
 clean:
-	rm -f dwm ${THUMB} ${TOML_TOOL} ${XWATCH} ${OBJ} *.orig *.rej
+	rm -f dwm ${THUMB} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD} ${OBJ} *.orig *.rej
 
 native:
 	$(MAKE) clean
@@ -365,6 +375,8 @@ install-system:
 	@test ! ${THUMB}.c -nt ${THUMB} || { echo "${THUMB} is stale. Run make before install-system." >&2; exit 1; }
 	@test -x ${XWATCH} || { echo "${XWATCH} is not built. Run make before install-system." >&2; exit 1; }
 	@test ! ${XWATCH}.c -nt ${XWATCH} || { echo "${XWATCH} is stale. Run make before install-system." >&2; exit 1; }
+	@test -x ${CLIPBOARD} || { echo "${CLIPBOARD} is not built. Run make before install-system." >&2; exit 1; }
+	@test ! ${CLIPBOARD}.c -nt ${CLIPBOARD} || { echo "${CLIPBOARD} is stale. Run make before install-system." >&2; exit 1; }
 	@test -x ${TOML_TOOL} || { echo "${TOML_TOOL} is not built. Run make before install-system." >&2; exit 1; }
 	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h tomlparser.o util.c util.h util.o config.h config.mk Makefile; do \
 		test ! "$$input" -nt ${TOML_TOOL} || { echo "${TOML_TOOL} is stale. Run make before install-system." >&2; exit 1; }; \
@@ -405,6 +417,7 @@ install-system:
 	@echo "==> Installing the TOML reader..."
 	install -Dm755 ${TOML_TOOL} ${DESTDIR}${LIB_DIR}/${TOML_TOOL}
 	install -Dm755 ${XWATCH} ${DESTDIR}${LIB_DIR}/${XWATCH}
+	install -Dm755 ${CLIPBOARD} ${DESTDIR}${LIB_DIR}/${CLIPBOARD}
 	@echo "==> Installing session scripts..."
 	for f in ${INSTALL_SESSION_SCRIPTS}; do \
 		install -Dm755 "$$f" ${DESTDIR}${LIB_DIR}/$$(basename "$$f"); \
@@ -724,7 +737,7 @@ uninstall:
 	for name in ${INSTALL_COMMAND_NAMES} ${INSTALL_LIB_NAMES} ${RETIRED_COMMAND_NAMES}; do \
 		rm -f ${DESTDIR}${PREFIX}/bin/$$name; \
 	done
-	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL} ${XWATCH}; do \
+	for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${RETIRED_LIB_NAMES} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD}; do \
 		rm -f ${DESTDIR}${LIB_DIR}/$$name; \
 	done
 	rm -rf ${DESTDIR}${PYTHON_LIB_DIR}/${PYTHON_PACKAGE}
@@ -857,6 +870,29 @@ check-layout-settings: ${TOML_TOOL}
 
 check-layout-settings-xvfb: all
 	status=0; tests/test-layout-settings-xvfb.sh || status=$$?; \
+		if [ "$$status" -eq 77 ]; then exit 0; fi; \
+		exit "$$status"
+
+# Clipboard history's filtering source (#469): its policy against native
+# owners on private Xvfb servers.
+.PHONY: check-clipboard-observer
+check-clipboard-observer: ${CLIPBOARD}
+	/usr/bin/python3 tests/test-clipboard-observer-xvfb.py
+
+# Clipboard history in the shell (#469): model and window against a stub.
+.PHONY: check-quickshell-clipboard-history-xvfb
+check-quickshell-clipboard-history-xvfb:
+	@tests/test-quickshell-clipboard-history-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
+# Clipboard history's settings and storage (#469).
+.PHONY: check-clipboard-history
+check-clipboard-history: ${CLIPBOARD}
+	tests/test-clipboard-history.sh
+
+# Floating-window title bars (#496), on Xvfb with two monitors.
+.PHONY: check-titlebars-xvfb
+check-titlebars-xvfb: all
+	status=0; tests/test-titlebars-xvfb.sh || status=$$?; \
 		if [ "$$status" -eq 77 ]; then exit 0; fi; \
 		exit "$$status"
 
@@ -1498,7 +1534,7 @@ check-install-manifest: all
 		for name in ${INSTALL_COMMAND_NAMES}; do \
 			printf 'usr/bin/%s\n' "$$name"; \
 		done; \
-		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL} ${XWATCH}; do \
+		for name in ${INSTALL_LIB_NAMES} ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD}; do \
 			printf 'usr/lib/lyona/%s\n' "$$name"; \
 		done; \
 		for name in $(notdir ${INSTALL_PYTHON}); do \
@@ -1544,7 +1580,7 @@ check-install-manifest: all
 	for name in $(notdir ${PRIVILEGED_HELPERS}); do \
 		test -x "$$stage/usr/libexec/lyona/$$name"; \
 	done; \
-	for name in ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL} ${XWATCH}; do \
+	for name in ${INSTALL_SESSION_SCRIPT_NAMES} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD}; do \
 		test -x "$$stage/usr/lib/lyona/$$name"; \
 	done; \
 	status=0; PYTHONDONTWRITEBYTECODE=1 "$$stage/usr/bin/dwm-system-management" >/dev/null 2>&1 || status=$$?; \
@@ -1696,7 +1732,7 @@ release-check:
 	cmp "$$work/first.tar.gz" "${RELEASE_ARCHIVE}"; \
 	tar -tzf "${RELEASE_ARCHIVE}" > "$$work/listing"; \
 	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c config.c rtconfig.h \
-		${TOML_TOOL}.c ${THUMB}.c ${XWATCH}.c dwm.desktop install.sh scripts/dwm-system-management \
+		${TOML_TOOL}.c ${THUMB}.c ${XWATCH}.c ${CLIPBOARD}.c dwm.desktop install.sh scripts/dwm-system-management \
 		scripts/lyona_system_management/cli.py config/themes.toml; do \
 		grep -Fqx "${RELEASE_NAME}/$$path" "$$work/listing" || \
 			{ echo "Release archive is missing $$path." >&2; exit 1; }; \
@@ -1704,7 +1740,7 @@ release-check:
 	if grep -Ev '^${RELEASE_NAME}/' "$$work/listing" | grep -q .; then \
 		echo "Release archive has entries outside ${RELEASE_NAME}/." >&2; exit 1; \
 	fi; \
-	if grep -Eq '(^|/)config\.h$$|\.o$$|^${RELEASE_NAME}/(dwm|${THUMB}|${TOML_TOOL}|${XWATCH})$$|^${RELEASE_NAME}/(release|\.git)/' \
+	if grep -Eq '(^|/)config\.h$$|\.o$$|^${RELEASE_NAME}/(dwm|${THUMB}|${TOML_TOOL}|${XWATCH}|${CLIPBOARD})$$|^${RELEASE_NAME}/(release|\.git)/' \
 		"$$work/listing"; then \
 		echo "Release archive contains build output, local configuration or git data." >&2; \
 		exit 1; \
@@ -1791,6 +1827,10 @@ check:
 	$(MAKE) check-layout-settings
 	$(MAKE) check-layout-settings-xvfb
 	$(MAKE) check-panel-state-xvfb
+	$(MAKE) check-titlebars-xvfb
+	$(MAKE) check-clipboard-observer
+	$(MAKE) check-clipboard-history
+	$(MAKE) check-quickshell-clipboard-history-xvfb
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser

@@ -43,10 +43,11 @@ an untested package or installation path.
 - `dwm.c`, `config.c`, `drw.c`, `util.c`, `tomlparser.c`: window-manager
   sources. `config.c` (interface `rtconfig.h`) loads and watches the runtime
   TOML files; `config.h` is the compile-time configuration.
-- `dwm-xwatch.c`, `dwm-window-thumb.c`, `lyona-toml.c`: helper programs
-  installed in `PREFIX/lib/lyona`, outside the window manager: the state
-  bridge's X property watcher, the overview's window previews, and the TOML
-  reader scripts use (dwm's own parser).
+- `dwm-xwatch.c`, `dwm-window-thumb.c`, `lyona-toml.c`,
+  `dwm-clipboard-observer.c`: helper programs installed in `PREFIX/lib/lyona`,
+  outside the window manager: the state bridge's X property watcher, the
+  overview's window previews, the TOML reader scripts use (dwm's own parser),
+  and clipboard history's filtering source (`docs/CLIPBOARD-PRIVACY.md`).
 - `config.def.h`: version-controlled default compile-time configuration.
 - `config.h`: local build configuration. Do not overwrite user changes.
 - `config.mk`: compiler, include, library, and installation settings.

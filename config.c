@@ -703,8 +703,6 @@ load_themes_toml(const char *user_path, const char *default_path, ConfigTheme *t
 		return 0;
 	from_config = 1;
 	skip_reset();
-	if (from_user)
-		report_problems(user_path, &doc);
 
 	char *c_normfg = theme->colors[0][0], *c_normbg = theme->colors[0][1];
 	char *c_normborder = theme->colors[0][2];
@@ -750,7 +748,34 @@ load_themes_toml(const char *user_path, const char *default_path, ConfigTheme *t
 	if (vbpx && vbpx->type == TOML_INT && vbpx->i >= 0)
 		theme->borderpx = vbpx->i;
 
+	/* titlebars = 0|1 and titlebar_tags = a tag mask (#496). Absent: off, on
+	 * every tag; invalid: the last valid value stays, and the file is
+	 * reported. */
+	const TomlValue *vtb  = toml_get(&doc, "appearance", "titlebars");
+	const TomlValue *vtbt = toml_get(&doc, "appearance", "titlebar_tags");
+	theme->titlebars = 0;
+	theme->titlebartags = 0x7fffffffL;
+	if (vtb) {
+		if (vtb->type == TOML_INT && (vtb->i == 0 || vtb->i == 1))
+			theme->titlebars = (int)vtb->i;
+		else {
+			theme->titlebars = -1;
+			note_skip("themes", "titlebars must be 0 or 1");
+		}
+	}
+	if (vtbt) {
+		if (vtbt->type == TOML_INT && !vtbt->is_bool && vtbt->i >= 0 && vtbt->i <= 0x7fffffffL)
+			theme->titlebartags = vtbt->i;
+		else {
+			theme->titlebartags = -1;
+			note_skip("themes", "titlebar_tags must be a tag mask, 0 to 2147483647");
+		}
+	}
+
 	fprintf(stderr, "dwm: loaded theme from config\n");
+	/* After every check, so their problems are in the one notice. */
+	if (from_user)
+		report_problems(user_path, &doc);
 	return 1;
 }
 

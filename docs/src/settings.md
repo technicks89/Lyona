@@ -57,7 +57,13 @@ interfaces) is one card: a change applies to every part that has the setting or,
 when one part fails, to none, and Revert gives each part its own value back,
 also after the device is unplugged and plugged in again. Pointer acceleration, natural
 scrolling, tap-to-click, keyboard layout, and modifier options are supported
-when available. Changes use a timed preview with Keep and Revert. Reset is a
+when available. A keyboard also has **Switch layout with** (Alt+Shift,
+Ctrl+Shift, Caps Lock, Shift+Caps Lock, both Shifts, Right Alt, Right Ctrl,
+Menu or none) and **Layout LED** (Caps, Scroll or Num Lock, or off): each
+previews the Modifier options with only its `grp:` or `grp_led:` option
+changed, and says what the chosen key stops doing. The Space chords are not
+offered, since dwm's own Super+Space would still run; any other `grp:` option
+can be typed into Modifier options. Changes use a timed preview with Keep and Revert. Reset is a
 separate direct action that restores and persists the driver's default. Kept
 values are reapplied idempotently at session startup when the device exposes a
 stable udev or physical sysfs identity. Devices without one remain

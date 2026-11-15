@@ -7,6 +7,7 @@ import Quickshell.Services.SystemTray
 import qs.core
 import qs.accessibility
 import qs.appearance
+import qs.clipboard
 import qs.calendar
 import qs.controlcenter
 import qs.controls
@@ -52,6 +53,7 @@ ShellRoot {
 
         commandMenuModel.close();
         launcherModel.close();
+        clipboardModel.close();
         notificationModel.closeHistory();
         controlCenterModel.closeUtility();
         if (popupId !== "bluetooth") bluetoothModel.close();
@@ -168,6 +170,20 @@ ShellRoot {
             if (visible) {
                 commandMenuModel.close();
                 overviewModel.close();
+                clipboardModel.close();
+            }
+        }
+    }
+
+    // Clipboard history (#469): Super+V.
+    ClipboardModel {
+        id: clipboardModel
+
+        onVisibleChanged: {
+            if (visible) {
+                commandMenuModel.close();
+                overviewModel.close();
+                launcherModel.close();
             }
         }
     }
@@ -372,6 +388,36 @@ ShellRoot {
 
         function toggle(): void {
             launcherModel.toggle();
+        }
+    }
+
+    IpcHandler {
+        target: "clipboard"
+
+        function close(): void {
+            clipboardModel.close();
+        }
+
+        // Read-only, for checks: whether it is open, and what it holds.
+        function isOpen(): bool {
+            return clipboardModel.visible;
+        }
+
+        function captureEnabled(): bool {
+            return clipboardModel.captureEnabled;
+        }
+
+        function entryCount(): int {
+            return clipboardModel.entries.length;
+        }
+
+        function open(): void {
+            clipboardModel.openOnScreen(root.activePanelScreen);
+        }
+
+        function toggle(): void {
+            if (clipboardModel.visible) clipboardModel.close();
+            else clipboardModel.openOnScreen(root.activePanelScreen);
         }
     }
 
@@ -817,6 +863,10 @@ ShellRoot {
 
     LauncherWindow {
         launcherModel: launcherModel
+    }
+
+    ClipboardWindow {
+        clipboardModel: clipboardModel
     }
 
     CommandMenuWindow {

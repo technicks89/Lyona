@@ -53,6 +53,15 @@ reloads; there is no request property.
 | --- | --- | --- | --- |
 | `_DWM_LAYOUT_SETTINGS` | `CARDINAL`, 5 | the selected monitor, its tag, or that tag's master size, master count or gap changes; only when a value changes | the logical monitor index (as `_DWM_SELECTED_MONITOR`), the tag 1-9 (0 while several tags are shown), the master size in percent (5-95), the master count and the tile gap in pixels |
 
+### On dwm's own windows
+
+Set on windows dwm creates, not on the root window, for tests and tools that
+look for them; the shell does not read it.
+
+| Property | Type | Written by dwm when | Value |
+| --- | --- | --- | --- |
+| `_DWM_TITLEBAR_FOR` | `WINDOW`, 1 | a floating window's title strip is created (#496: `titlebars = 1` in `themes.toml`) | the client window the strip belongs to. The strip is an override-redirect window of class `DwmTitlebar`, not a client: it is in no client list, and it goes when its window does or title bars are turned off |
+
 ### Requests from the shell
 
 | Property | Type | Set by | Effect |

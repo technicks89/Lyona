@@ -138,10 +138,81 @@ ln -s "$work/linked.toml" "$hotkeys"
 run --profile core >/dev/null 2>&1
 [[ -L $hotkeys && $(cat "$work/linked.toml") == "${olds[0]}" ]] || fail 'a symlinked hotkeys.toml was changed'
 
+# Super+V for clipboard history (#469): added after the launcher when free,
+# never over a binding the user has on Super+V.
+rm -f "$hotkeys" "$hotkeys".bak.*
+launcher=$(grep -F 'desc="App launcher"' "$repo/config/hotkeys.toml")
+clipboard=$(grep -F 'desc="Clipboard history"' "$repo/config/hotkeys.toml")
+printf '%s\n' "${olds[0]}" >"$hotkeys"
+run --profile core >/dev/null 2>&1
+for line in "$launcher" "$clipboard"; do
+	grep -Fxq -- "$line" "$hotkeys" || fail "an old launcher line did not reach today's, with Super+V, in one run: $(cat "$hotkeys")"
+done
+after=$(cat "$hotkeys")
+run --profile core >/dev/null 2>&1
+[[ $(cat "$hotkeys") == "$after" ]] || fail 'a second run changed hotkeys.toml after adding Super+V'
+mine_v='  { mod="SUPER",            key="v",       desc="Paste",                   func="spawn",       cmd="true" },'
+printf '%s\n' "$launcher" "$mine_v" >"$hotkeys"
+run --profile core >/dev/null 2>&1
+grep -Fq 'desc="Clipboard history"' "$hotkeys" && fail 'Super+V was added over a binding the user had on it'
+grep -Fxq -- "$mine_v" "$hotkeys" || fail "the user's Super+V was not kept"
+# Written with spaces around "=", it is the same chord.
+spaced_v='  { mod = "SUPER", key = "v", desc = "Paste", func = "spawn", cmd = "true" },'
+printf '%s\n' "$launcher" "$spaced_v" >"$hotkeys"
+run --profile core >/dev/null 2>&1
+grep -Fq 'desc="Clipboard history"' "$hotkeys" && fail 'Super+V was added over a spaced binding the user had on it'
+grep -Fxq -- "$spaced_v" "$hotkeys" || fail "the user's spaced Super+V was not kept"
+
 # Every line the table replaces with is a binding in today's default.
 while IFS= read -r line; do
 	grep -Fxq -- "$line" "$repo/config/hotkeys.toml" || fail "the table installs a line that is not in config/hotkeys.toml: $line"
 done < <(sed -n 's/^+?\{0,1\} //p' "$table")
+
+# ── rules for the shell's own windows (#469, #471) ──────────────────────
+rules=$home/.config/lyona/window-rules.toml
+additions=$repo/scripts/window-rules-additions
+mine_rule='  { title="dwm clipboard",            isfloating=0 },'
+printf '%s\n' '# my rules' 'rules = [' '  { class="Gimp", isfloating=1 },' "$mine_rule" ']' >"$rules"
+chmod 640 "$rules"
+before=$(cat "$rules")
+run --profile core >"$work/out" 2>&1
+grep -Fq 'title="dwm hidden network"' "$rules" || fail "a missing shell window rule was not added: $(cat "$rules")"
+grep -Fxq -- "$mine_rule" "$rules" || fail "the user's own rule for a shell window was not kept"
+[[ $(grep -c 'title="dwm clipboard"' "$rules") == 1 ]] || fail 'a rule was added for a title the user already has'
+[[ $(tail -n 1 "$rules") == ']' ]] || fail "the rules were not added inside the list: $(cat "$rules")"
+for line in '  { class="Gimp", isfloating=1 },' '# my rules'; do
+	grep -Fxq -- "$line" "$rules" || fail "the user's line was not kept: $line"
+done
+[[ $(stat -c %a "$rules") == 640 ]] || fail "the file's mode changed to $(stat -c %a "$rules")"
+set -- "$rules".bak.*
+[[ -f $1 && $(cat "$1") == "$before" ]] || fail 'the previous window-rules.toml was not backed up as it was'
+grep -Fq 'Added 1 rule(s)' "$work/out" || fail "the addition was not reported: $(cat "$work/out")"
+after=$(cat "$rules")
+run --profile core >"$work/out" 2>&1
+[[ $(cat "$rules") == "$after" ]] || fail 'a second run changed window-rules.toml'
+grep -Fq 'Added' "$work/out" && fail 'a second run reported an addition'
+# A rule written with spaces around "=" names its title just the same.
+rm -f "$rules" "$rules".bak.*
+spaced_rule='  { title = "dwm clipboard", isfloating = 0 },'
+printf '%s\n' 'rules = [' "$spaced_rule" ']' >"$rules"
+run --profile core >/dev/null 2>&1
+grep -Fq 'title="dwm clipboard"' "$rules" && fail "a rule was added for a title the user names with spaces: $(cat "$rules")"
+grep -Fxq -- "$spaced_rule" "$rules" || fail "the user's spaced rule was not kept"
+grep -Fq 'title="dwm hidden network"' "$rules" || fail 'the other missing rule was not added'
+# A file without a one-rule-per-line list is left as it is, with a warning.
+rm -f "$rules" "$rules".bak.*
+printf '%s\n' 'rules = [ { class="Gimp", isfloating=1 } ]' >"$rules"
+run --profile core >"$work/out" 2>&1
+[[ $(cat "$rules") == 'rules = [ { class="Gimp", isfloating=1 } ]' ]] || fail 'a file without the list was changed'
+grep -Fq 'Add the rules in' "$work/out" || fail "no warning for a file without the list: $(cat "$work/out")"
+# Every addition is a rule the shipped default has, and every shell window title has a rule there.
+while IFS= read -r line; do
+	grep -Fxq -- "$line" "$repo/config/window-rules.toml" || fail "an addition is not in config/window-rules.toml: $line"
+done < <(grep -vE '^[[:space:]]*(#|$)' "$additions")
+while IFS= read -r title; do
+	grep -Fq "title=\"$title\"" "$repo/config/window-rules.toml" ||
+		fail "the shell window \"$title\" has no rule in config/window-rules.toml"
+done < <(grep -rhoE '^[[:space:]]*title: "dwm [^"]+"' "$repo/config/quickshell" | sed 's/.*title: "\(.*\)"/\1/' | sort -u)
 
 # ── wiring ───────────────────────────────────────────────────────────────
 grep -Fq 'scripts/lyona-reconcile-user' "$repo/Makefile" || fail 'make install-user does not run lyona-reconcile-user'
@@ -152,4 +223,4 @@ grep -A1 -F 'scripts/lyona-reconcile-user ||' "$repo/Makefile" | grep -Fq 'Warni
 [[ $(grep -cF '"$REPO_DIR/scripts/lyona-reconcile-user" --profile "$INSTALL_PROFILE"' "$repo/install.sh") == 2 ]] ||
 	fail 'install.sh does not record the profile in both the recommended and the core path'
 
-printf 'Reconcile user state (profile, defaults, hotkeys migration): PASS\n'
+printf 'Reconcile user state (profile, defaults, hotkeys and window rules migration): PASS\n'

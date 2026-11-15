@@ -10,6 +10,7 @@
 # first, and the direct quit moved to a harder chord.
 -   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call launcher toggle" },
 +   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
++?   { mod="SUPER",            key="v",       desc="Clipboard history",       func="spawn",       exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },
 -   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter openKeybinds" },
 +   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       exec=["lyona-shell", "controlcenter", "openKeybinds"] },
 -   { mod="SUPER",            key="F1",      desc="Control center",          func="spawn",       cmd="quickshell ipc --path \"${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/shell.qml\" call controlcenter open" },
@@ -39,3 +40,12 @@
 # launcher instead of going to the window you were in (#391).
 -   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"] },
 +   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
++?   { mod="SUPER",            key="v",       desc="Clipboard history",       func="spawn",       exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },
+
+# After 2026.11.0-beta.1: Super+V opens clipboard history (#469), added after the
+# launcher binding only when Super+V is bound nowhere else in the file. The two
+# earlier launcher records add it too, so any old launcher line gets there in
+# one run.
+-   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
++   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
++?   { mod="SUPER",            key="v",       desc="Clipboard history",       func="spawn",       exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },

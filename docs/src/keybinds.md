@@ -14,6 +14,7 @@ Bindings are defined in `~/.config/lyona/hotkeys.toml` and reload instantly on s
 | Keys | Action |
 |------|--------|
 | `Super` + `R` | App launcher (Quickshell) |
+| `Super` + `V` | Clipboard history: off until you turn capture on in it ([privacy](../CLIPBOARD-PRIVACY.md)) |
 | `Super` + `O` | Window overview: every window on every tag ([Getting Started](./getting-started.md#the-window-overview)) |
 | `Super` + `X` | Alacritty terminal |
 | `Super` + `E` | File manager |

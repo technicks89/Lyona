@@ -85,6 +85,11 @@ typedef struct {
 typedef struct {
 	char colors[2][3][8];   /* [SchemeNorm, SchemeSel][fg, bg, border] */
 	long borderpx;          /* at 96 dpi; -1 when themes.toml does not set it */
+	/* Floating-window title strips (#496): 0 or 1, and a tag mask; -1 when
+	 * the value in themes.toml is invalid, so the last valid one is kept.
+	 * Absent, they are 0 (off) and every tag. */
+	int titlebars;
+	long titlebartags;
 } ConfigTheme;
 
 /* What runtime_config_poll found. */

@@ -67,6 +67,7 @@ keys = [
 
   # ── Launchers ────────────────────────────────────────────────────────────────
   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
+  { mod="SUPER",            key="v",       desc="Clipboard history",       func="spawn",       exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },
   # SUPER+Tab is already "Previous tag" (dwm's own func="view" below); o for
   # "overview" is free and mnemonic, but pick your own if you'd rather have it
   # somewhere else -- Sync Sprint 7 S7-03, docs/sprints/completed/SYNC-SPRINT-7-OVERVIEW-FOUNDATION.md.

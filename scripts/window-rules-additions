@@ -1,0 +1,8 @@
+# Window rules for the shell's own windows (#469, #471): scripts/lyona-reconcile-user
+# adds each line to ~/.config/lyona/window-rules.toml when no rule there names
+# its title, so a window added after the file was seeded floats there too. A
+# rule the user has for that title, changed or not, is never touched. Lines
+# starting "#" and blank lines are ignored. Add a line whenever the shell gets a
+# FloatingWindow with a new title, and the same rule to config/window-rules.toml.
+  { title="dwm hidden network",       isfloating=1, alwaysontop=1 },
+  { title="dwm clipboard",            isfloating=1, alwaysontop=1 },
