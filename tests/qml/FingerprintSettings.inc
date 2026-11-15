@@ -57,12 +57,17 @@
                 return;
             case 2:
                 if (fpShell.running) return;
-                settingsModel.open("fingerprint");
+                // Opened on a section after Fingerprint's place, so its keyboard
+                // place has to follow when Fingerprint is listed.
+                settingsModel.open("system");
                 root.fpNext();
                 return;
             case 3:
                 // A reader: listed, fingers and uses read, the pane selected.
                 if (model.readerState !== "available" || !root.fpListed()) return;
+                root.fpCheck(settingsModel.selectedSectionId === "system"
+                    && settingsModel.filteredSections[settingsModel.selectedIndex].id === "system",
+                    "the keyboard's place did not follow System: index " + settingsModel.selectedIndex);
                 root.fpCheck(model.readerDetail === "Test Reader", "reader: " + model.readerDetail);
                 root.fpCheck(JSON.stringify(model.fingers) === '["right-index-finger"]', "fingers");
                 root.fpCheck(model.useState("lightdm") === "external" && model.useState("sudo") === "off"

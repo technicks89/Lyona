@@ -170,9 +170,22 @@ Scope {
     }
 
     function reconcileSelection() {
-        if (root.sections.some(function(section) { return section.id === root.selectedSectionId; })) return;
+        // From the new sections themselves: filteredSections may not have
+        // followed them yet when this runs.
+        const filtered = SettingsSearch.filter(root.sections, root.searchQuery);
+        if (root.sections.some(function(section) { return section.id === root.selectedSectionId; })) {
+            // Still listed, maybe at another place (a section came or went
+            // before it): the keyboard's place follows it. The shortcuts row,
+            // after the sections, keeps the keyboard if it had it.
+            const kept = filtered.findIndex(function(section) {
+                return section.id === root.selectedSectionId;
+            });
+            if (root.shortcutsSelected) root.selectedIndex = filtered.length;
+            else if (kept >= 0) root.selectedIndex = kept;
+            return;
+        }
         const fallback = root.sections[0].id;
-        const index = root.filteredSections.findIndex(function(section) { return section.id === fallback; });
+        const index = filtered.findIndex(function(section) { return section.id === fallback; });
         root.selectedIndex = Math.max(0, index);
         root.selectedSectionId = fallback;
         if (root.visible) root.activateSection(fallback);

@@ -135,7 +135,10 @@ light-locker, detached, only when all three hold: light-locker runs for this
 display, `light-locker-command --query` says it is inactive, and a visible
 `light-locker` window exists. While it is blanking or locked it says active and
 is never touched, so this cannot unlock a locked session. It asks once more just
-before stopping light-locker, and leaves it alone if it has turned active since. The autorandr hook
+before stopping light-locker, and leaves it alone if it has turned active since.
+Once it has begun stopping light-locker it always starts it again: TERM, HUP or
+INT meanwhile are obeyed (status 143) only after that, so a session is never
+left without automatic locking. The autorandr hook
 `60-lyona-locker`, installed in `/etc/xdg/autorandr/preswitch.d` and
 `postswitch.d`, runs it 5 seconds after each layout change, from both phases
 because autorandr skips postswitch when applying a layout fails. A lock per
