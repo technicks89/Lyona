@@ -472,6 +472,17 @@ FloatingWindow {
                             DeferredSettingsPane {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
+                                selected: root.settingsModel.selectedSectionId === "fingerprint"
+                                dataLoading: root.settingsModel.fingerprintModel.initialLoading
+                                windowVisible: root.visible
+                                sourceComponent: FingerprintSettingsPane {
+                                    fingerprintModel: root.settingsModel.fingerprintModel
+                                }
+                            }
+
+                            DeferredSettingsPane {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
                                 selected: root.settingsModel.selectedSectionId === "defaults"
                                 dataLoading: root.defaultsModel.initialLoading || root.autostartModel.initialLoading
                                 windowVisible: root.visible

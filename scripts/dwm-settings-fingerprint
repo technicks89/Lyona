@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Settings > Fingerprint (#483): the reader, the user's enrolled fingers, and
+# where a finger is accepted instead of the password. Unprivileged; the
+# Settings pane is its only caller.
+#
+#   dwm-settings-fingerprint status
+#   dwm-settings-fingerprint enroll FINGER      streams enroll-status lines
+#   dwm-settings-fingerprint delete FINGER
+#   dwm-settings-fingerprint set USE on|off|remove-external
+#
+# status prints:
+#   fingerprint-protocol  1
+#   reader   available|none|unavailable  DETAIL      (DETAIL: the reader's name)
+#   finger   NAME                                    (one per enrolled finger)
+#   module   available|missing  PATH
+#   use      USE  on|off|external|unavailable  DETAIL
+#   complete status
+#
+# The reader and the fingers come from fprintd over D-Bus. Enrolling and
+# deleting need the device claimed for the whole operation, and fprintd ties a
+# claim to one D-Bus connection, so they go through fprintd's own clients
+# (fprintd-enroll, fprintd-delete), whose result lines carry fprintd's D-Bus
+# status names unchanged; fprintd's polkit policy asks for the user's own
+# password. FINGER is one of fprintd's ten finger names.
+#
+# enroll prints, as the reader reports them:
+#   enroll-status  STATUS       (enroll-stage-passed, enroll-retry-scan, ...)
+#   enroll-result  completed|failed  STATUS
+#
+# USE is lightdm (the login and the lock screen), polkit or sudo; set changes
+# its PAM file through dwm-settings-fingerprint-root (polkit, administrator
+# password) and lyona-fingerprint-pam, which documents exactly what changes.
+
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-trust.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-trust.sh
+. "$lyona_lib/dwm-trust.sh"
+
+self=dwm-settings-fingerprint
+script_dir=${BASH_SOURCE[0]%/*}
+fprint_service=net.reactivated.Fprint
+fprint_manager=/net/reactivated/Fprint/Manager
+readonly enroll_seconds=${DWM_FINGERPRINT_ENROLL_SECONDS:-120}
+
+die() {
+	printf '%s: %s\n' "$self" "$*" >&2
+	exit 1
+}
+
+valid_finger() {
+	case $1 in
+	left-thumb | left-index-finger | left-middle-finger | left-ring-finger | left-little-finger) ;;
+	right-thumb | right-index-finger | right-middle-finger | right-ring-finger | right-little-finger) ;;
+	*) return 1 ;;
+	esac
+}
+
+user_name() {
+	local name
+	name=$(id -un) || die "cannot tell who this user is"
+	[[ $name =~ ^[A-Za-z0-9._][A-Za-z0-9._-]*$ ]] || die "unexpected user name"
+	printf '%s\n' "$name"
+}
+
+# The PAM status tool: beside this script in a checkout, in PREFIX/libexec/lyona
+# when installed. Its status only reads, so tests may name another
+# (DWM_FINGERPRINT_PAM_TOOL); changes never use this, only the root helper.
+pam_tool() {
+	local candidate
+	for candidate in ${DWM_FINGERPRINT_PAM_TOOL:+"$DWM_FINGERPRINT_PAM_TOOL"} "$script_dir/lyona-fingerprint-pam" "${script_dir%/bin}/libexec/lyona/lyona-fingerprint-pam"; do
+		[[ -x $candidate ]] || continue
+		printf '%s\n' "$candidate"
+		return 0
+	done
+	return 1
+}
+
+fprint_call() { # METHOD-PATH INTERFACE METHOD [SIGNATURE ARGS...]
+	timeout 10 busctl --system --json=short call "$fprint_service" "$@" 2>/dev/null
+}
+
+cmd_status() {
+	local devices device name fingers user tool pam
+	printf 'fingerprint-protocol\t1\n'
+	if ! command -v busctl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+		printf 'reader\tunavailable\tbusctl and jq are needed to read the reader\n'
+	elif ! devices=$(fprint_call "$fprint_manager" net.reactivated.Fprint.Manager GetDevices); then
+		printf 'reader\tunavailable\tfprintd is not installed or not running\n'
+	elif ! device=$(jq -er '.data[0][0] // empty' <<<"$devices" 2>/dev/null) ||
+		[[ ! $device =~ ^/net/reactivated/Fprint/Device/[0-9]+$ ]]; then
+		printf 'reader\tnone\tNo fingerprint reader was found\n'
+	else
+		name=$(timeout 10 busctl --system --json=short get-property "$fprint_service" "$device" \
+			net.reactivated.Fprint.Device name 2>/dev/null | jq -r '.data // empty' 2>/dev/null || true)
+		name=$(printf '%s' "${name:-Fingerprint reader}" | tr -d '\t\n\r' | cut -c1-80)
+		printf 'reader\tavailable\t%s\n' "$name"
+		user=$(user_name)
+		# None enrolled is an error from fprintd (NoEnrolledPrints): no lines.
+		if fingers=$(fprint_call "$device" net.reactivated.Fprint.Device ListEnrolledFingers s "$user"); then
+			while IFS= read -r name; do
+				valid_finger "$name" && printf 'finger\t%s\n' "$name"
+			done < <(jq -r '.data[0][]?' <<<"$fingers" 2>/dev/null)
+		fi
+	fi
+	if tool=$(pam_tool) && pam=$("$tool" status 2>/dev/null); then
+		printf '%s\n' "$pam" | awk -F '\t' '$1 == "module" || $1 == "use"'
+	else
+		printf 'module\tmissing\t/usr/lib/security/pam_fprintd.so\n'
+		for name in lightdm polkit sudo; do
+			printf 'use\t%s\tunavailable\tThe fingerprint PAM tool is not installed\n' "$name"
+		done
+	fi
+	printf 'complete\tstatus\n'
+}
+
+cmd_enroll() {
+	local finger=$1 line status last='' result=failed
+	valid_finger "$finger" || die "unknown finger: $finger"
+	command -v fprintd-enroll >/dev/null 2>&1 || die "fprintd-enroll is not installed"
+	while IFS= read -r line; do
+		case $line in
+		'Enroll result: '*)
+			status=${line#Enroll result: }
+			[[ $status =~ ^enroll-[a-z-]+$ ]] || continue
+			last=$status
+			printf 'enroll-status\t%s\n' "$status"
+			;;
+		esac
+	done < <(LC_ALL=C timeout "$enroll_seconds" fprintd-enroll -f "$finger" 2>&1 || :)
+	[[ $last == enroll-completed ]] && result=completed
+	printf 'enroll-result\t%s\t%s\n' "$result" "${last:-enroll-failed}"
+	[[ $result == completed ]]
+}
+
+cmd_delete() {
+	local finger=$1 user
+	valid_finger "$finger" || die "unknown finger: $finger"
+	command -v fprintd-delete >/dev/null 2>&1 || die "fprintd-delete is not installed"
+	user=$(user_name)
+	LC_ALL=C timeout 30 fprintd-delete "$user" -f "$finger" >/dev/null 2>&1 ||
+		die "the finger could not be deleted"
+	printf 'fingerprint-result\tdelete\t%s\n' "$finger"
+}
+
+cmd_set() {
+	local use=$1 value=$2 helper request
+	case $use in lightdm | polkit | sudo) ;; *) die "unknown use: $use" ;; esac
+	case $value in
+	on) request=enable ;;
+	off) request=disable ;;
+	remove-external) request=remove-external ;;
+	*) die "the value must be on, off or remove-external: $value" ;;
+	esac
+	helper=$(trusted_root_helper_path dwm-settings-fingerprint-root "${BASH_SOURCE[0]}" dwm-settings-fingerprint) ||
+		die "the trusted fingerprint helper is unavailable"
+	command -v pkexec >/dev/null 2>&1 || die "pkexec is unavailable"
+	pkexec "$helper" "$request" "$use" >/dev/null || die "the change was not made"
+	printf 'fingerprint-result\tset\t%s\t%s\n' "$use" "$value"
+}
+
+case ${1:-} in
+status)
+	(($# == 1)) || die "status takes no arguments"
+	cmd_status
+	;;
+enroll)
+	(($# == 2)) || die "enroll takes a finger"
+	cmd_enroll "$2"
+	;;
+delete)
+	(($# == 2)) || die "delete takes a finger"
+	cmd_delete "$2"
+	;;
+set)
+	(($# == 3)) || die "set takes a use and on, off or remove-external"
+	cmd_set "$2" "$3"
+	;;
+*)
+	printf 'usage: %s status | enroll FINGER | delete FINGER | set lightdm|polkit|sudo on|off|remove-external\n' "$self" >&2
+	exit 2
+	;;
+esac

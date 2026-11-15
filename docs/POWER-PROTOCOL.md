@@ -144,6 +144,15 @@ other skip; the light-locker it starts does not inherit that lock. It needs
 `light-locker-command` and `xdotool`; without them it reports `unavailable`. The
 manual recovery is the same: `pkill light-locker; setsid -f light-locker`.
 
+The same happens after an ordinary idle blank, with no display change: seen on
+a laptop's built-in screen. `dwm-blank-watch`, started by autostart once per
+display, follows light-locker's `ActiveChanged` signal on the session bus
+(`org.freedesktop.ScreenSaver` and `org.gnome.ScreenSaver`). When blanking ends
+(`false`) it runs the recovery 2 seconds later, under the same lock as the
+hook, and logs the result line (`journalctl -t lyona-locker`). It ends with its
+X display, so a watcher from a session whose X server died neither lingers nor
+stands in for the next one.
+
 DPMS and lock timeouts must be decimal integers from 60 through 86400.
 Malformed and out-of-range values fail instead of being silently coerced.
 DPMS and lock changes are applied through bounded `xset` and `gsettings`

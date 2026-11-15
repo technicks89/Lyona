@@ -99,6 +99,15 @@ has "$recommended" '(previous files kept as .bak.<time>)'
 lacks "$recommended" 'Wallpapers: '
 
 full=$(plan full --enable-arch-gaming-repos)
+# fprintd only when asked for (#483), and no PAM change either way.
+has "$recommended" '  Fingerprint: fprintd not installed (optional; use --with-fingerprint)'
+has "$(plan recommended --with-fingerprint)" '  Fingerprint: fprintd installed; no PAM file changed'
+has "$(DWM_INSTALL_FINGERPRINT=true plan recommended)" '  Fingerprint: fprintd installed; no PAM file changed'
+if refused=$(DWM_INSTALL_FINGERPRINT=maybe plan recommended); then
+	fail 'DWM_INSTALL_FINGERPRINT=maybe was accepted'
+fi
+has "$refused" 'Unsupported DWM_INSTALL_FINGERPRINT: maybe'
+grep -Fq -- '--with-fingerprint' <("$repo/install.sh" --help) || fail '--help does not list --with-fingerprint'
 has "$full" "  Wallpapers: downloaded into $work/home/Pictures/backgrounds (pinned commit)"
 has "$full" '  Display manager: '
 lacks "$full" 'Third-party repositories'

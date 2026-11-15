@@ -85,6 +85,9 @@ Options:
   --with-gearlever       Also install Gear Lever from Flathub as the AppImage
                          manager (recommended and full profiles). Without it,
                          lyona-appimage opens AppImages.
+  --with-fingerprint     Also install fprintd, for Settings > Fingerprint (shown
+                         when a supported reader is found). No PAM file is
+                         changed; each use is turned on there.
   --enable-arch-gaming-repos
                          Approve enabling the multilib repository for gaming.
   --enable-cachyos-repos Add the CachyOS repositories for this CPU, replacing
@@ -128,6 +131,9 @@ HERDR_INSTALL_MODE="${DWM_INSTALL_HERDR:-false}"
 TOPGRADE_INSTALL_MODE="${DWM_INSTALL_TOPGRADE:-true}"
 YAY_INSTALL_MODE=true
 GEARLEVER_INSTALL_MODE="${DWM_INSTALL_GEARLEVER:-false}"
+# fprintd, for Settings > Fingerprint (#483): only when asked for. Installing it
+# changes no PAM file; each use is turned on in Settings.
+FINGERPRINT_INSTALL_MODE="${DWM_INSTALL_FINGERPRINT:-false}"
 # The dwm build questions, only when asked for (#289): they are dwm internals
 # most users cannot judge, and a typo in one used to stop the install.
 CONFIGURE_BUILD=false
@@ -187,6 +193,10 @@ while (($# > 0)); do
 		;;
 	--configure-build)
 		CONFIGURE_BUILD=true
+		shift
+		;;
+	--with-fingerprint)
+		FINGERPRINT_INSTALL_MODE=true
 		shift
 		;;
 	--enable-arch-gaming-repos)
@@ -269,6 +279,16 @@ case $GEARLEVER_INSTALL_MODE in
 0 | false | no) GEARLEVER_INSTALL_MODE=false ;;
 *)
 	err "Unsupported DWM_INSTALL_GEARLEVER: $GEARLEVER_INSTALL_MODE"
+	err "Supported values: true, false"
+	exit 1
+	;;
+esac
+
+case $FINGERPRINT_INSTALL_MODE in
+1 | true | yes) FINGERPRINT_INSTALL_MODE=true ;;
+0 | false | no) FINGERPRINT_INSTALL_MODE=false ;;
+*)
+	err "Unsupported DWM_INSTALL_FINGERPRINT: $FINGERPRINT_INSTALL_MODE"
 	err "Supported values: true, false"
 	exit 1
 	;;
@@ -1124,6 +1144,11 @@ print_install_summary() {
 		else
 			printf '  Gear Lever: not installed (optional; use --with-gearlever)\n'
 		fi
+		if [[ $FINGERPRINT_INSTALL_MODE == true ]]; then
+			printf '  Fingerprint: fprintd installed; no PAM file changed (each use is turned on in Settings > Fingerprint)\n'
+		else
+			printf '  Fingerprint: fprintd not installed (optional; use --with-fingerprint)\n'
+		fi
 		if install_topgrade_profile; then
 			printf '  Topgrade: %s\n' "$("$REPO_DIR/scripts/install-topgrade" --print-plan)"
 		else
@@ -1427,6 +1452,9 @@ if install_recommended_profile; then
 		theme theme-gtk fonts shell theme-optional)
 fi
 mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages terminal-primary)
+if install_recommended_profile && [[ $FINGERPRINT_INSTALL_MODE == true ]]; then
+	mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages fingerprint)
+fi
 if install_optional_profile; then
 	mapfile -t -O "${#batch_optional[@]}" batch_optional < <(dwm_collect_packages optional)
 	[[ -n $currentdm ]] ||

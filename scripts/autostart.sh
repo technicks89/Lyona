@@ -462,6 +462,25 @@ if ! command -v "$lock_watch" >/dev/null 2>&1; then
 fi
 start_detached_once dwm-lock-watch "$lock_watch"
 
+# light-locker's leftover blanking windows after an idle blank (#416): one
+# watcher per display, which ends with it. A watcher left from a session whose X
+# server died is on another display, or ending, so it is not counted.
+blank_watch=dwm-blank-watch
+if ! command -v "$blank_watch" >/dev/null 2>&1; then
+	case $0 in
+	*/*) blank_watch=${0%/*}/dwm-blank-watch ;;
+	esac
+fi
+case ${DISPLAY:-} in
+'' | *,*) ;;
+*)
+	if command -v "$blank_watch" >/dev/null 2>&1 &&
+		! pgrep -u "$(id -u)" -x dwm-blank-watch --env "DISPLAY=$DISPLAY" >/dev/null 2>&1; then
+		start_detached "$blank_watch"
+	fi
+	;;
+esac
+
 for agent in \
 	/usr/lib/mate-polkit/polkit-mate-authentication-agent-1 \
 	/usr/libexec/polkit-mate-authentication-agent-1 \

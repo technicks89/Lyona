@@ -165,6 +165,10 @@ Singleton {
         return helperCommand("dwm-settings-display", action, args);
     }
 
+    function settingsFingerprintCommand(action, args) {
+        return helperCommand("dwm-settings-fingerprint", action, args);
+    }
+
     function settingsDisplayProfilesCommand(action, args) {
         return helperCommand("dwm-settings-display-profiles", action, args);
     }

@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The root half of Settings > Fingerprint (#483). The unprivileged
+# dwm-settings-fingerprint asks for it through pkexec, under its own polkit
+# action (com.lyona.fingerprint.manage, pinned to this path by exec.path). It
+# allows three requests on three uses, checks them, and runs the root-owned
+# installed lyona-fingerprint-pam for them against /, with a clean environment.
+
+install_prefix='@PREFIX@'
+
+die() {
+	printf 'dwm-settings-fingerprint-root: %s\n' "$*" >&2
+	exit 1
+}
+
+# BEGIN dwm-trust.sh -- a verbatim copy of scripts/dwm-trust.sh's functions. A
+# root helper sources nothing at run time (Sync Sprint 12 S12-14, D-21), and
+# tests/test-shell-contracts.sh fails if this copy differs from the library.
+# Every directory from PATH's parent up to / is a real directory, owned by root
+# and not group- or other-writable. A stat that fails counts as untrusted.
+trusted_parent_chain() {
+	lyona_trust_parent=${1%/*}
+	while :; do
+		[ -d "$lyona_trust_parent" ] && [ ! -L "$lyona_trust_parent" ] || return 1
+		[ "$(stat -c %u -- "$lyona_trust_parent" 2>/dev/null || printf 1)" = 0 ] || return 1
+		find "$lyona_trust_parent" -maxdepth 0 -type d ! -perm /022 -print -quit 2>/dev/null |
+			grep -q . || return 1
+		[ "$lyona_trust_parent" = / ] && return 0
+		lyona_trust_parent=${lyona_trust_parent%/*}
+		[ -n "$lyona_trust_parent" ] || lyona_trust_parent=/
+	done
+}
+
+# PATH is already canonical (no symlink anywhere in it), and names a root-owned
+# executable that nobody else can write, in a trusted directory chain.
+trusted_file() {
+	lyona_trust_path=$(readlink -f -- "$1" 2>/dev/null) || return 1
+	[ -n "$lyona_trust_path" ] && [ "$lyona_trust_path" = "$1" ] || return 1
+	trusted_parent_chain "$lyona_trust_path" || return 1
+	[ -f "$lyona_trust_path" ] && [ ! -L "$lyona_trust_path" ] && [ -x "$lyona_trust_path" ] || return 1
+	[ "$(stat -c %u -- "$lyona_trust_path" 2>/dev/null || printf 1)" = 0 ] || return 1
+	find "$lyona_trust_path" -maxdepth 0 -type f ! -perm /022 -print -quit 2>/dev/null | grep -q .
+}
+# END dwm-trust.sh
+
+[[ $EUID == 0 && ${PKEXEC_UID:-} =~ ^[0-9]+$ ]] ||
+	die "this helper must run through polkit as root"
+self=$(readlink -f "${BASH_SOURCE[0]}")
+[[ $self == "$install_prefix/libexec/lyona/dwm-settings-fingerprint-root" ]] ||
+	die "helper is not running from its trusted installed path"
+trusted_file "$self" || die "helper is not a trusted root-owned executable"
+
+editor="$install_prefix/libexec/lyona/lyona-fingerprint-pam"
+trusted_file "$editor" || die "trusted lyona-fingerprint-pam is unavailable"
+
+(($# == 2)) || die "usage: dwm-settings-fingerprint-root enable|disable|remove-external lightdm|polkit|sudo"
+case $1 in
+enable | disable | remove-external) ;;
+*) die "unknown request: $1" ;;
+esac
+case $2 in
+lightdm | polkit | sudo) ;;
+*) die "unknown use: $2" ;;
+esac
+exec env -i PATH=/usr/bin:/bin HOME=/root "$editor" "$1" "$2"

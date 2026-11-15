@@ -142,7 +142,11 @@ Scope {
     readonly property bool displayHasPendingChanges: root.displayBaseline.length > 0
         && root.displayLayoutKey(root.displayOutputs) !== root.displayBaseline
 
-    readonly property var sections: SettingsSearch.sections
+    // Fingerprint is listed only while a reader is available (#483).
+    readonly property var sections: SettingsSearch.sections.filter(function(section) {
+        return section.id !== "fingerprint" || fingerprintModel.readerState === "available";
+    })
+    readonly property alias fingerprintModel: fingerprintModel
     readonly property var filteredSections: SettingsSearch.filter(root.sections, root.searchQuery)
     readonly property bool shortcutsMatch: SettingsSearch.matchesShortcuts(root.searchQuery)
     // The shortcuts row follows the matching sections in keyboard order.
@@ -220,6 +224,8 @@ Scope {
         }
         if (id !== "power" && root.powerMenuModel)
             root.powerMenuModel.cancelConfirmation("settings");
+        if (id === "fingerprint" && root.visible) fingerprintModel.refresh();
+        else fingerprintModel.closeSettings();
         if (root.defaultsModel) {
             const wantDefaults = id === "defaults" && root.visible;
             if (wantDefaults && !root.defaultsModel.settingsVisible) root.defaultsModel.openSettings();
@@ -903,6 +909,7 @@ Scope {
         }
         root.selectedIndex = targetIndex;
         root.selectedSectionId = targetId;
+        fingerprintModel.refresh();
         root.refreshCapabilities();
         root.activateSection(root.selectedSectionId);
 		root.recoverDisplayPreview();
@@ -955,6 +962,7 @@ Scope {
 		if (root.controlsModel) root.controlsModel.closeSettings();
 		if (root.powerModel) root.powerModel.closeSettings();
 		if (root.powerMenuModel) root.powerMenuModel.cancelConfirmation("settings");
+		fingerprintModel.closeSettings();
 		if (root.defaultsModel) root.defaultsModel.closeSettings();
 		if (root.autostartModel) root.autostartModel.closeSettings();
 		if (root.appearanceModel) root.appearanceModel.closeSettings();
@@ -968,6 +976,10 @@ Scope {
 
     function toggle() {
         if (root.visible) root.close(); else root.open();
+    }
+
+    FingerprintModel {
+        id: fingerprintModel
     }
 
     Process {
