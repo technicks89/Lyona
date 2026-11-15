@@ -45,8 +45,8 @@ xprop_pid=
 cleanup() {
 	trap - EXIT HUP INT TERM
 	[ -z "$monitor_pid" ] || kill "$monitor_pid" 2>/dev/null || :
-	# No recovery starts from here on. Each one records its PID before it looks
-	# for this mark, so each is either recorded in time to be stopped below or
+	# No recovery starts from here on. Each one marks itself before it looks
+	# for this mark, so each is either marked in time to be stopped below or
 	# sees the mark and ends; a stopped one stops its helper, which releases
 	# the recovery lock. The light-locker a recovery starts is in a session of
 	# its own (setsid) and keeps running.
@@ -55,11 +55,17 @@ cleanup() {
 		kill -TERM -- "-$reader_pid" 2>/dev/null || :
 		kill -TERM "$reader_pid" 2>/dev/null || :
 	fi
-	if [ -f "$work/recoveries" ]; then
-		while read -r recovery_pid; do
-			kill -TERM "$recovery_pid" 2>/dev/null || :
-		done <"$work/recoveries"
-	fi
+	# Only a recovery still running: each removes its mark as it ends, and a
+	# PID is signalled only while it is still in the reader's process group,
+	# so a PID reused since then is never touched.
+	for mark in "$work"/recovery.*; do
+		[ -e "$mark" ] && [ -n "$reader_pid" ] || continue
+		recovery_pid=${mark##*.}
+		case $recovery_pid in '' | *[!0-9]*) continue ;; esac
+		pgid=$(ps -o pgid= -p "$recovery_pid" 2>/dev/null | tr -d ' ') || :
+		[ "$pgid" = "$reader_pid" ] || continue
+		kill -TERM "$recovery_pid" 2>/dev/null || :
+	done
 	if [ -n "$xprop_pid" ]; then
 		kill "$xprop_pid" 2>/dev/null || :
 		wait "$xprop_pid" 2>/dev/null || :
@@ -87,7 +93,9 @@ recover() {
 		# Taken once: in the helper's redirection below, $BASHPID would
 		# already be the helper's own.
 		recovery=$BASHPID
-		printf '%s\n' "$recovery" >>"$work/recoveries"
+		# Marked while it runs; the mark goes when it ends, however it ends.
+		trap 'rm -f -- "$work/recovery.$recovery"' EXIT
+		: >"$work/recovery.$recovery"
 		trap 'kill -TERM $! 2>/dev/null; exit 143' TERM
 		[ ! -e "$work/stopping" ] || exit 0
 		if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
