@@ -45,12 +45,21 @@ xprop_pid=
 cleanup() {
 	trap - EXIT HUP INT TERM
 	[ -z "$monitor_pid" ] || kill "$monitor_pid" 2>/dev/null || :
-	# The reader's process group, all at once: the reader and a recovery it
-	# may be running, helper included, which releases the recovery lock. One
-	# signal to the group, so the reader cannot start another recovery while
-	# it is being stopped. The light-locker a recovery starts is in a session
-	# of its own (setsid), so it is not in the group and keeps running.
-	[ -z "$reader_pid" ] || kill -TERM -- "-$reader_pid" 2>/dev/null || :
+	# No recovery starts from here on. Each one records its PID before it looks
+	# for this mark, so each is either recorded in time to be stopped below or
+	# sees the mark and ends; a stopped one stops its helper, which releases
+	# the recovery lock. The light-locker a recovery starts is in a session of
+	# its own (setsid) and keeps running.
+	: >"$work/stopping" 2>/dev/null || :
+	if [ -n "$reader_pid" ]; then
+		kill -TERM -- "-$reader_pid" 2>/dev/null || :
+		kill -TERM "$reader_pid" 2>/dev/null || :
+	fi
+	if [ -f "$work/recoveries" ]; then
+		while read -r recovery_pid; do
+			kill -TERM "$recovery_pid" 2>/dev/null || :
+		done <"$work/recoveries"
+	fi
 	if [ -n "$xprop_pid" ]; then
 		kill "$xprop_pid" 2>/dev/null || :
 		wait "$xprop_pid" 2>/dev/null || :
@@ -69,9 +78,18 @@ note() {
 
 # One recovery at a time, as the autorandr hook does: one already running
 # covers this one. The lock is not passed on to the light-locker it starts.
+# Stopped (cleanup), it stops its helper ($! once the helper is started), and
+# recover-locker itself finishes restarting a light-locker it stopped.
 recover() {
 	sleep "$settle"
+	[ ! -e "$work/stopping" ] || return 0
 	(
+		# Taken once: in the helper's redirection below, $BASHPID would
+		# already be the helper's own.
+		recovery=$BASHPID
+		printf '%s\n' "$recovery" >>"$work/recoveries"
+		trap 'kill -TERM $! 2>/dev/null; exit 143' TERM
+		[ ! -e "$work/stopping" ] || exit 0
 		if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
 			exec 9>>"$runtime/lyona-locker-recover.$display_key.lock"
 			if ! flock -n 9; then
@@ -79,7 +97,10 @@ recover() {
 				exit 0
 			fi
 		fi
-		result=$("$helper" recover-locker 8>&- 9>&- 2>/dev/null) || :
+		"$helper" recover-locker >"$work/result.$recovery" 2>/dev/null 8>&- 9>&- &
+		wait "$!" || :
+		result=$(cat -- "$work/result.$recovery" 2>/dev/null) || :
+		rm -f -- "$work/result.$recovery"
 		note "after an idle blank: ${result:-no answer}"
 	)
 }

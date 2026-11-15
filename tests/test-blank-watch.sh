@@ -40,8 +40,10 @@ echo $$ >>"$STUB_DIR/power-pids"
 if [ -n "${DETACHED_PID_FILE:-}" ]; then setsid -f sh -c 'echo $$ >"$1"; exec sleep 30' sh "$DETACHED_PID_FILE"; fi
 echo $$ >"$STUB_DIR/power-pid"
 printf '%s %s\n' "$*" "$DISPLAY" >>"$STUB_DIR/calls"
+# Up to 30 s, well past the test's 10 s waits: one nothing stopped is not
+# taken for one that was.
 i=0
-while [ ! -e "$STUB_DIR/gate" ] && [ "$i" -lt 200 ]; do
+while [ ! -e "$STUB_DIR/gate" ] && [ "$i" -lt 600 ]; do
 	i=$((i + 1))
 	sleep 0.05
 done
@@ -136,7 +138,15 @@ all_gone() {
 		! kill -0 "$pid" 2>/dev/null || return 1
 	done <"$work/power-pids"
 }
-wait_until all_gone || fail "a recovery outlived the watcher: $(cat "$work/power-pids")"
+# On failure, where each one left is: its parent, group, session and name.
+describe() {
+	local pid stat
+	while read -r pid; do
+		read -r stat 2>/dev/null <"/proc/$pid/stat" || continue
+		printf '%s ' "pid $pid ppid/pgid/sid $(cut -d' ' -f2-4 <<<"${stat##*) }") $(cat "/proc/$pid/comm" 2>/dev/null)"
+	done <"$work/power-pids"
+}
+wait_until all_gone || fail "a recovery outlived the watcher: $(describe)"
 # Nothing started once the watcher was gone.
 sleep 0.5
 all_gone || fail "a recovery started after the watcher was stopped: $(cat "$work/power-pids")"
