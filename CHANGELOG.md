@@ -10,6 +10,52 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Clipboard history (#469, upstream dwm-titus #389 and #411): **Super+V** opens
+  a searchable list of what you copied. Enter copies an entry back, Ctrl+D
+  deletes one, and **Clear all** deletes everything.
+  - **Capture** is off until you turn it on in the window. **Save** to disk is
+    a second opt-in. The window says before you turn capture on that a
+    password copied by a browser extension or from a terminal can still be
+    kept.
+  - Copies are filtered by the new `dwm-clipboard-observer`, in
+    `PREFIX/lib/lyona`, before any text is read. It finds the copying process
+    through the X server, never a window property, and refuses identifiable
+    password managers (also when run by an interpreter or as a parent) and
+    copies marked secret. It reads at most 64 KiB of valid UTF-8, and polls
+    nothing. It is built on xcb-xfixes and xcb-res, which dwm and the previews
+    already need.
+  - The new `dwm-clipboard-history` keeps the two settings and the saved
+    history. The history is a mode 0600 file under `~/.local/state/lyona/`,
+    written without ever being readable by others. Turning saving or capture
+    off deletes it.
+  - Nothing runs while capture is off. `docs/CLIPBOARD-PRIVACY.md` has the
+    policy and its limits.
+  - An update adds the Super+V binding to an existing `hotkeys.toml` only when
+    Super+V is not bound there already.
+- Title bars on floating windows (#496, upstream dwm-titus #423), off by
+  default. `titlebars = 1` in `themes.toml`, with `titlebar_tags` for the tags,
+  puts a strip with the title above each floating window: drag it to move the
+  window, click **x** to close it. dwm draws the strip itself, without
+  reparenting the window and without a new library or process.
+  - Tiled, fullscreen and borderless-fullscreen windows have none, nor do
+    always-on-top ones, which is what keeps them off the shell's own windows.
+  - The strip stays below the panel, and follows its window across monitors.
+  - Saving the file turns them on and off; an invalid value keeps the last
+    valid one.
+  - The shipped `themes.toml` has both keys, off. Log out and back in once
+    after updating.
+- Settings > Input picks the keyboard layout switch key and its LED (#473,
+  upstream dwm-titus #385): **Switch layout with** (Alt+Shift, Ctrl+Shift, Caps
+  Lock, Shift+Caps Lock, both Shifts, Right Alt, Right Ctrl, Menu or none) and
+  **Layout LED** (Caps, Scroll or Num Lock, or off). Each choice previews the
+  keyboard's Modifier options with only that part changed, and says what the
+  key stops doing. The Space chords are left out, since dwm's own Super+Space
+  would still run.
+- An update adds the rule for a shell window that is new since your
+  `window-rules.toml` was made, after a backup, when no rule of yours names its
+  title (`scripts/window-rules-additions`). Previously a new shell window was
+  tiled in an existing file.
+
 - Join a hidden Wi-Fi network from the panel (#471, upstream dwm-titus #379):
   **Join Hidden Network...** in the network popover asks for the name, the
   security (WPA/WPA2, WPA3 or open) and the password. The new
@@ -133,6 +179,10 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   `lyona-update` checks it), and any rollback (ARM5-02, #490).
 
 ### Fixed
+
+- The hidden Wi-Fi prompt (#471) had no window rule, so dwm tiled it instead
+  of floating it above the network popover. It has one now, and an update adds
+  it to an existing `window-rules.toml`.
 
 - Settings > Input no longer lists power, sleep and lid buttons as keyboards,
   and shows a device whose interfaces appear as several XInput devices as one

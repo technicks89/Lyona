@@ -198,6 +198,11 @@ Singleton {
         return helperCommand("dwm-layout-settings", action, args);
     }
 
+    // Clipboard history's settings, storage and source (#469).
+    function clipboardHistoryCommand(action, args) {
+        return helperCommand("dwm-clipboard-history", action, args);
+    }
+
     function panelSettingsCommand(action, args) {
         return helperCommand("dwm-panel-settings", action, args);
     }

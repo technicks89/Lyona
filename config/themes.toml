@@ -32,6 +32,12 @@ theme = "tokyonight"   # ← change only this line to switch themes
 
 [appearance]
 borderpx = 1   # border size in pixels (0 = none, 1-3 = recommended)
+# Title bars on floating windows: drag one to move the window, click its x to
+# close it. 0 = off (the default), 1 = on. Saving this file applies it.
+titlebars = 0
+# The tags they show on, as a bit mask: 1 = tag 1, 2 = tag 2, 4 = tag 3, ...
+# added together; 511 = all nine.
+titlebar_tags = 511
 
 
 # ══════════════════════════════════════════════════════════════════════════════

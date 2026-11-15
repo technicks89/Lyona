@@ -111,6 +111,11 @@ The installed session must provide:
   runs as before and publishes nothing.
 - Xinerama multi-monitor support.
 - Window swallowing.
+- Optional title bars on floating windows (#496), off by default and turned on
+  in `themes.toml`: drawn by dwm without reparenting, a drag moving the window
+  and a close control closing it as the close key does; none on tiled,
+  fullscreen or always-on-top windows (the shell's own), and nothing created
+  while off.
 - Per-client size factors and stack reordering.
 - Real and fake fullscreen behavior.
 - Window icons from `_NET_WM_ICON`.
@@ -221,6 +226,13 @@ The launcher must:
 The launcher may follow a modular QML structure with small helper scripts,
 IPC-facing open/close/toggle functions, and reusable list/delegate patterns,
 but X11/EWMH behavior remains the compatibility boundary for this project.
+
+Clipboard history (#469, Super+V) keeps text the user copies only after the
+user turns capture on, and saves it to disk only after a second opt-in. Its
+source is `dwm-clipboard-observer`, which admits a copy only after checking its
+owner's process and markers (`docs/CLIPBOARD-PRIVACY.md`); the shell never
+falls back to an unfiltered clipboard listener, runs no source while capture is
+off, and keeps saved history in a private file that turning saving off removes.
 
 ### 5.5 Installer
 

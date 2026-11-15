@@ -30,13 +30,15 @@ published=$(table '## X root-window properties')
 requests=$(table '### Requests from the shell')
 # Published too, but read by Settings rather than the state bridge (#479).
 settings=$(table '### Read by Settings, not the state bridge')
-[[ -n $published && -n $requests && -n $settings ]] || fail 'the protocol document lists no _DWM_ properties'
+# On dwm's own windows, read by neither (#496).
+own=$(table "### On dwm's own windows")
+[[ -n $published && -n $requests && -n $settings && -n $own ]] || fail 'the protocol document lists no _DWM_ properties'
 documented=$(printf '%s\n%s\n' "$published" "$requests" | sort -u)
 
 same() { # WHAT EXPECTED ACTUAL
 	[[ $2 == "$3" ]] || fail "$1 does not match the protocol document:"$'\n'"expected:"$'\n'"$2"$'\n'"found:"$'\n'"$3"
 }
-same 'the names dwm uses' "$(printf '%s\n%s\n' "$documented" "$settings" | sort -u)" \
+same 'the names dwm uses' "$(printf '%s\n%s\n%s\n' "$documented" "$settings" "$own" | sort -u)" \
 	"$(wm_grep -oE '_DWM_[A-Z_]+' | sort -u)"
 same 'the names dwm-xwatch watches' "$published" "$(names "$xwatch_c")"
 same 'the names dwm-quickshell-state uses' "$documented" "$(names "$state")"

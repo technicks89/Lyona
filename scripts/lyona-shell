@@ -12,6 +12,7 @@ usage() {
 usage: lyona-shell TARGET ACTION
 
   launcher toggle              the app launcher
+  clipboard toggle             clipboard history
   overview toggle              the window overview
   controlcenter open|toggle    the Control Center
   controlcenter openKeybinds   the keybinds cheatsheet
@@ -25,7 +26,7 @@ EOF
 
 [ "$#" -ge 2 ] || usage
 case "$1 $2 ${3:-}" in
-'launcher toggle ' | 'overview toggle ' | 'controlcenter open ' | 'controlcenter toggle ' | \
+'launcher toggle ' | 'clipboard toggle ' | 'overview toggle ' | 'controlcenter open ' | 'controlcenter toggle ' | \
 	'controlcenter openKeybinds ' | 'power toggle ' | 'settings open ' | 'settings close ' | \
 	'settings toggle ' | 'settings refresh ' | 'settings status ') [ "$#" -eq 2 ] || usage ;;
 'power confirm logout' | 'power confirm reboot') [ "$#" -eq 3 ] || usage ;;

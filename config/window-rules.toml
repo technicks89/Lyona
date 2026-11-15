@@ -53,6 +53,8 @@ rules = [
   { title="dwm system health",        isfloating=1, alwaysontop=1 },
   { title="dwm settings",             isfloating=1, alwaysontop=1 },
   { title="dwm notification history", isfloating=1, alwaysontop=1 },
+  { title="dwm hidden network",       isfloating=1, alwaysontop=1 },
+  { title="dwm clipboard",            isfloating=1, alwaysontop=1 },
   # The update terminal Settings > System opens, when "Float the update
   # terminal" is on (Sync Sprint 15 S15-04).
   { class="lyona-update-float",       isfloating=1 },

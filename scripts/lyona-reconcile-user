@@ -17,6 +17,10 @@ set -euo pipefail
 # - Every profile: ~/.config/lyona/hotkeys.toml lines that are still an earlier
 #   release's default are moved to this release's (hotkeys-migrations, beside
 #   this script), after a backup. A line the user changed is never touched.
+# - Every profile: rules for the shell's own windows that
+#   ~/.config/lyona/window-rules.toml lacks (window-rules-additions, beside
+#   this script) are added, after a backup; a rule it has for that title is
+#   never touched.
 #
 # Exit status: 0 done, 1 failed, 2 bad usage.
 
@@ -214,6 +218,62 @@ migrate_hotkeys() {
 	ok "Moved $count key binding(s) in hotkeys.toml to this release's defaults; your own changes are kept (previous file: $backup)."
 }
 
+# add_window_rules FILE TABLE: FILE with each rule of TABLE whose title no rule
+# in FILE names added before the "]" that closes "rules = [". Prints how many it
+# added; fails when that list is not there.
+add_window_rules_lines() {
+	awk -v table="$2" '
+		function title(s) {
+			if (!match(s, /title="[^"]*"/)) return ""
+			return substr(s, RSTART, RLENGTH)
+		}
+		BEGIN {
+			while ((getline line < table) > 0)
+				if (line !~ /^[ \t]*(#|$)/) rules[++n] = line
+			close(table)
+		}
+		FNR == NR {
+			if ($0 !~ /^[ \t]*#/ && (t = title($0)) != "") named[t] = 1
+			if ($0 ~ /^rules[ \t]*=[ \t]*\[[ \t]*$/) inside = 1
+			else if (inside && $0 ~ /^\][ \t]*$/) { close_line = FNR; inside = 0 }
+			next
+		}
+		FNR == close_line {
+			for (i = 1; i <= n; i++)
+				if (!(title(rules[i]) in named)) { print rules[i]; added++ }
+		}
+		{ print }
+		END {
+			printf "%d\n", added > "/dev/stderr"
+			if (!close_line) exit 1
+		}
+	' "$1" "$1"
+}
+
+migrate_window_rules() {
+	local file=$config_home/lyona/window-rules.toml table=$script_dir/window-rules-additions tmp count backup
+	[[ -f $file && ! -L $file ]] || return 0
+	[[ -r $table ]] || {
+		warn "The window rules additions are missing; ~/.config/lyona/window-rules.toml was left as it is."
+		return 0
+	}
+	tmp=$(mktemp "$file.XXXXXX")
+	if ! count=$(add_window_rules_lines "$file" "$table" 2>&1 >"$tmp"); then
+		rm -f -- "$tmp"
+		warn "Your ~/.config/lyona/window-rules.toml has no one-rule-per-line \"rules = [\" list; it was left as it is. Add the rules in $table to it by hand."
+		return 0
+	fi
+	if [[ $count == 0 ]] || cmp -s "$tmp" "$file"; then
+		rm -f -- "$tmp"
+		return 0
+	fi
+	backup=$file.bak.$(date +%Y%m%d-%H%M%S)
+	command cp -p -- "$file" "$backup"
+	chmod --reference="$file" -- "$tmp"
+	mv -fT -- "$tmp" "$file"
+	ok "Added $count rule(s) for the shell's own windows to window-rules.toml; your rules are kept (previous file: $backup)."
+}
+
 resolve_profile
 case $profile in
 recommended | full)
@@ -226,3 +286,4 @@ recommended | full)
 	;;
 esac
 migrate_hotkeys
+migrate_window_rules

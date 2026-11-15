@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Clipboard history's settings and storage (#469). Unprivileged; the shell's
+# ClipboardModel is its only caller. Capture and saving to disk are two
+# separate opt-ins, both off until the user turns them on:
+#
+#   dwm-clipboard-history status
+#   dwm-clipboard-history set capture|persist on|off
+#   dwm-clipboard-history load          the saved history, when saving is on
+#   dwm-clipboard-history save          the history from stdin, when saving is on
+#   dwm-clipboard-history clear         removes the saved history
+#   dwm-clipboard-history observe       runs dwm-clipboard-observer, which
+#                                       prints the copies history may keep
+#
+# status prints:
+#   clipboard-history-protocol  1
+#   state    available|unavailable  DETAIL
+#   capture  on|off
+#   persist  on|off
+#   complete status
+#
+# The settings are ${XDG_CONFIG_HOME}/lyona/clipboard-history.conf ("capture=on"
+# and "persist=on" lines; anything else reads as off). The history is
+# ${XDG_STATE_HOME}/lyona/clipboard-history.json, the JSON the shell gives,
+# at most 4 MiB, mode 0600 in a 0700 directory, written whole and renamed into
+# place under umask 077, so it is never readable by others, even for a moment.
+# Saving is on only with capture on; turning either off removes the file. A
+# symlinked file or directory on the way is refused, never written through.
+
+# A checkout keeps the shared shell code beside the scripts; an install keeps it
+# in PREFIX/lib/lyona, beside PREFIX/bin (Sync Sprint 12 S12-13).
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-xdg.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# shellcheck source=scripts/dwm-xdg.sh
+. "$lyona_lib/dwm-xdg.sh"
+# shellcheck source=scripts/dwm-paths.sh
+. "$lyona_lib/dwm-paths.sh"
+lyona_xdg_dirs
+
+self=dwm-clipboard-history
+readonly max_history_bytes=$((4 * 1024 * 1024))
+config_dir=$config_home/lyona
+settings_file=$config_dir/clipboard-history.conf
+# shellcheck disable=SC2154 # lyona_xdg_dirs sets state_home
+state_dir=$state_home/lyona
+history_file=$state_dir/clipboard-history.json
+umask 077
+
+die() {
+	printf '%s: %s\n' "$self" "$*" >&2
+	exit 1
+}
+
+# A directory of this user's, with no symlink on the way, created if missing.
+private_dir() { # DIR MODE
+	path_has_no_symlink_components "$1" || die "refusing a symlinked path: $1"
+	mkdir -p -- "$1"
+	[[ -d $1 && ! -L $1 && -O $1 ]] || die "not a directory of this user's: $1"
+	[[ -z ${2:-} ]] || chmod "$2" -- "$1"
+}
+
+# A file that is absent, or a regular file of this user's.
+plain_file() {
+	[[ ! -e $1 && ! -L $1 ]] || [[ -f $1 && ! -L $1 && -O $1 ]]
+}
+
+capture=off
+persist=off
+read_settings() {
+	local line
+	capture=off
+	persist=off
+	[[ -f $settings_file && ! -L $settings_file ]] || return 0
+	while IFS= read -r line || [[ -n $line ]]; do
+		case $line in
+		capture=on) capture=on ;;
+		persist=on) persist=on ;;
+		esac
+	done <"$settings_file"
+	# Saving needs capture.
+	[[ $capture == on ]] || persist=off
+}
+
+write_settings() {
+	local tmp
+	private_dir "$config_dir"
+	plain_file "$settings_file" || die "refusing to replace $settings_file: not a regular file"
+	tmp=$(mktemp "$config_dir/.clipboard-history.conf.XXXXXX")
+	printf 'capture=%s\npersist=%s\n' "$capture" "$persist" >"$tmp" || {
+		rm -f -- "$tmp"
+		die "cannot write $settings_file"
+	}
+	mv -fT -- "$tmp" "$settings_file"
+}
+
+remove_history() {
+	[[ -e $history_file || -L $history_file ]] || return 0
+	plain_file "$history_file" || die "refusing to remove $history_file: not a regular file"
+	rm -f -- "$history_file"
+}
+
+cmd_status() {
+	local state=available detail="Clipboard history settings"
+	if ! path_has_no_symlink_components "$config_dir" || ! plain_file "$settings_file"; then
+		state=unavailable
+		detail="The clipboard history settings are not a plain file of this user's"
+	fi
+	read_settings
+	printf 'clipboard-history-protocol\t1\n'
+	printf 'state\t%s\t%s\n' "$state" "$detail"
+	printf 'capture\t%s\n' "$capture"
+	printf 'persist\t%s\n' "$persist"
+	printf 'complete\tstatus\n'
+}
+
+cmd_set() {
+	(($# == 2)) || die "set takes capture|persist on|off"
+	[[ $2 == on || $2 == off ]] || die "the value must be on or off: $2"
+	read_settings
+	case $1 in
+	capture)
+		capture=$2
+		# Off: nothing is kept, on disk either.
+		if [[ $2 == off ]]; then
+			persist=off
+		fi
+		;;
+	persist)
+		[[ $2 == off || $capture == on ]] || die "saving to disk needs capture on"
+		persist=$2
+		;;
+	*) die "set takes capture|persist on|off" ;;
+	esac
+	write_settings
+	[[ $persist == on ]] || remove_history
+	printf 'clipboard-history-result\tset\t%s\t%s\n' "$1" "$2"
+}
+
+cmd_load() {
+	read_settings
+	[[ $persist == on ]] || return 0
+	[[ -e $history_file || -L $history_file ]] || return 0
+	plain_file "$history_file" || die "refusing to read $history_file: not a regular file"
+	(($(stat -c %s -- "$history_file") <= max_history_bytes)) || die "$history_file is larger than $max_history_bytes bytes"
+	# Readable by this user only, whatever left it otherwise.
+	chmod 600 -- "$history_file"
+	cat -- "$history_file"
+}
+
+cmd_save() {
+	local tmp size
+	read_settings
+	if [[ $persist != on ]]; then
+		remove_history
+		die "saving to disk is off"
+	fi
+	private_dir "$state_dir" 700
+	plain_file "$history_file" || die "refusing to replace $history_file: not a regular file"
+	tmp=$(mktemp "$state_dir/.clipboard-history.json.XXXXXX")
+	head -c $((max_history_bytes + 1)) >"$tmp" || {
+		rm -f -- "$tmp"
+		die "cannot write $history_file"
+	}
+	size=$(stat -c %s -- "$tmp")
+	if ((size > max_history_bytes)); then
+		rm -f -- "$tmp"
+		die "the history is larger than $max_history_bytes bytes; nothing was saved"
+	fi
+	chmod 600 -- "$tmp"
+	mv -fT -- "$tmp" "$history_file"
+}
+
+# dwm-clipboard-observer: installed beside this helper's library, or built at
+# the root of a checkout. Only while capture is on.
+cmd_observe() {
+	local candidate
+	read_settings
+	[[ $capture == on ]] || die "capture is off"
+	for candidate in "$lyona_lib/dwm-clipboard-observer" "$lyona_lib/../dwm-clipboard-observer"; do
+		[[ -x $candidate ]] || continue
+		exec "$candidate"
+	done
+	die "dwm-clipboard-observer is not installed"
+}
+
+case ${1:-} in
+observe)
+	(($# == 1)) || die "observe takes no arguments"
+	cmd_observe
+	;;
+status)
+	(($# == 1)) || die "status takes no arguments"
+	cmd_status
+	;;
+set)
+	shift
+	cmd_set "$@"
+	;;
+load)
+	(($# == 1)) || die "load takes no arguments"
+	cmd_load
+	;;
+save)
+	(($# == 1)) || die "save takes no arguments"
+	cmd_save
+	;;
+clear)
+	(($# == 1)) || die "clear takes no arguments"
+	remove_history
+	printf 'clipboard-history-result\tclear\n'
+	;;
+*)
+	printf 'usage: %s status | set capture|persist on|off | load | save | clear | observe\n' "$self" >&2
+	exit 2
+	;;
+esac

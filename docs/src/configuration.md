@@ -8,7 +8,7 @@ every update and rollback unchanged. No recompile is needed.
 | File | Purpose |
 |------|---------|
 | `hotkeys.toml` | All keybindings, including the tag keys |
-| `themes.toml` | Colors, themes, border size |
+| `themes.toml` | Colors, themes, border size, title bars on floating windows |
 | `window-rules.toml` | Per-app window rules: tag, floating, terminal swallowing, always on top, monitor |
 | `layout.toml` | Per-monitor, per-tag master size, master count and gap between tiled windows; Settings > Appearance > Layout writes it |
 | `power.conf` | Control Center screen blanking and auto-lock choices |
@@ -99,6 +99,41 @@ in once after updating; a configuration reload cannot replace the running
 program.
 
 ---
+
+### Rules for the shell's own windows
+
+The shell's windows (the launcher, clipboard history, Settings, the network
+prompts and the rest) float because of rules for their titles, `title="dwm ..."`.
+An update adds the rule for a shell window that is new since your file was made,
+after a backup (`window-rules.toml.bak.DATE`), when no rule of yours names that
+title; a rule you have for it is never changed. The list is
+`scripts/window-rules-additions`.
+
+## Title bars on floating windows
+
+For Wine programs, older games or other floating windows you want to move and
+close with the mouse, turn on title bars in the `[appearance]` section of
+`themes.toml`:
+
+```toml
+[appearance]
+titlebars = 1
+titlebar_tags = 511
+```
+
+- `titlebars`: `1` on, `0` off (the default, and what a file without the key
+  means). Saving the file applies it.
+- `titlebar_tags`: the tags they show on, as a bit mask: 1 is tag 1, 2 is tag 2,
+  4 is tag 3 and so on, added together; 511 is all nine, 0 none.
+
+A floating window, or any window in the floating layout, on an allowed tag gets
+a strip above it in the theme's colors with its title: drag the title to move the
+window, click **x** to close it as the close key does. Tiled, fullscreen and
+borderless-fullscreen windows have none, nor do windows a rule makes
+`alwaysontop=1`, which the shell's own windows are; the strip stays below the
+panel.
+dwm draws the strip itself; the window is not reparented, and no program or
+library is added. An invalid value keeps the last valid one, and dwm says so.
 
 ## config.h (compile-time options)
 
