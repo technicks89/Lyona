@@ -8,6 +8,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.11.0-beta.2] - 2026-11-15
+
+Tenth beta of the Arch Linux line, and the second for aarch64, so the first
+that an aarch64 install can update to. It adds fingerprint authentication
+(#483), clipboard history on Super+V (#469), title bars on floating windows
+(#496), a Layout section in Settings > Appearance (#479), a keyboard layout
+pill and switch key (#470, #473), hidden Wi-Fi networks (#471) and new window
+rule keys (#477, #497). It fixes black screens after an idle blank or a
+monitor power cycle (#416) and a wallpaper Settings could miss (#444). See
+`docs/RELEASE-NOTES-2026.11.0-beta.2.md`.
+
 ### Added
 
 - Fingerprint authentication (#483, `docs/FINGERPRINT.md`): Settings >
@@ -4386,7 +4397,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.1...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.2...HEAD
+[2026.11.0-beta.2]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.1...v2026.11.0-beta.2
 [2026.11.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.7...v2026.11.0-beta.1
 [2026.10.0-beta.7]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...v2026.10.0-beta.7
 [2026.10.0-beta.6]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.5...v2026.10.0-beta.6
