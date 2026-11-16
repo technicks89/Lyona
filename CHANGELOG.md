@@ -8,6 +8,21 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Added
+
+- Settings > Appearance > Layout (#530, #534):
+  - A **Title bars on floating windows** switch and the tags they show on,
+    written to `themes.toml`'s `[appearance]` by the new
+    `dwm-settings-theme titlebars` (and read by `titlebars-status`). Only
+    those two keys change; it is refused during a theme or toolkit preview.
+  - **Reset to Default** for the tag shown, and the monitor named by its
+    output (`DP-1, tag 1`) instead of "Monitor 0".
+- The hidden Wi-Fi prompt chooses the adapter when there are several,
+  defaulting to the connected one (#534).
+- Every panel pill has an accessible role and name, the clickable ones can be
+  pressed by a screen reader, and the keyboard layout pill has a tooltip
+  naming the layout a click switches to (#534).
+
 ### Fixed
 
 - Small fixes from the beta.2 review (#529):
@@ -78,6 +93,13 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - The `sudo` fingerprint switch says that any program can ask sudo for a
   finger (#525).
 
+- The Layout section's processes moved into `LayoutSettingsModel.qml`, owned
+  by `SettingsModel`, as the models-only rule asks; the pane only binds
+  (#530). It says "Reading the layout settings..." until dwm's first line,
+  instead of briefly saying dwm had published nothing.
+- The layout limits (master size 5-95, count 0-20, gap 0-64) are checked by
+  `make check-layout-settings` to agree across `config.c`,
+  `dwm-layout-settings` and the Settings sliders (#530).
 ### Documentation
 
 - Updates on aarch64 (ARM5-02, #490,

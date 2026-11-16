@@ -125,8 +125,15 @@ are disabled. `Super+I` and `Super+D` still change the master count live,
 without saving it, and saving another value keeps that live change; a monitor
 plugged back in gets its saved values again,
 while a resolution change keeps the live ones. The file holds at most 102
-entries. The section reads dwm only while it is open. After the
-update that adds it, log out and back in once.
+entries. **Reset to Default** removes the tag's saved values. The section
+names the monitor by its output (`DP-1`), and reads dwm only while it is open.
+After the update that adds it, log out and back in once.
+
+The same section turns **title bars on floating windows** on or off, and picks
+the tags they show on: it writes `titlebars` and `titlebar_tags` in
+`themes.toml`'s `[appearance]` table, changing nothing else there, and is
+refused while a theme or toolkit preview is pending. At least one tag stays
+on. See [Configuration](./configuration.md#title-bars-on-floating-windows).
 
 ## Fingerprint
 

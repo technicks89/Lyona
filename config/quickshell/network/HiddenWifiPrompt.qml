@@ -130,6 +130,30 @@ FloatingWindow {
                     input.onTextChanged: root.networkModel.hiddenSsid = input.text
                 }
 
+                // With several Wi-Fi adapters, which one joins (#534).
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.rowSpacing
+                    visible: root.networkModel.wifiDeviceNames.length > 1
+
+                    Repeater {
+                        model: root.networkModel.wifiDeviceNames
+
+                        delegate: ShellButton {
+                            id: adapterChoice
+
+                            required property string modelData
+
+                            Layout.fillWidth: true
+                            label: adapterChoice.modelData
+                            primary: root.networkModel.hiddenJoinDevice === adapterChoice.modelData
+                            accessibleDescription: "Join with the Wi-Fi adapter " + adapterChoice.modelData
+                            enabled: !root.networkModel.busy
+                            onActivated: root.networkModel.hiddenDevice = adapterChoice.modelData
+                        }
+                    }
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Theme.rowSpacing

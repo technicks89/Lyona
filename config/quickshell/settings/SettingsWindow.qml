@@ -507,6 +507,7 @@ FloatingWindow {
                                     notificationCapability: root.settingsModel.capabilityById(
                                         "accessibility-notifications")
                                     panelSettingsModel: root.panelSettingsModel
+                                    layoutModel: root.settingsModel.layoutSettingsModel
                                     weatherModel: root.weatherModel
                                     capabilities: root.settingsModel.capabilitiesForSection("appearance")
                                         .filter(function(capability) {

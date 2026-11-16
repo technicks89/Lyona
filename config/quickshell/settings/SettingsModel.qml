@@ -40,6 +40,8 @@ Scope {
     property var panelSettingsModel: null
     property var updateModel: null
     property var systemManagementModel: null
+    // For the Layout section's output names (#530).
+    property var dwmState: null
     property var capabilities: []
     property int selectedIndex: 0
     property var displayOutputs: []
@@ -148,6 +150,7 @@ Scope {
         return section.id !== "fingerprint" || fingerprintModel.readerAvailable || fingerprintModel.anyUseActive;
     })
     readonly property alias fingerprintModel: fingerprintModel
+    readonly property alias layoutSettingsModel: layoutSettingsModel
     // A section that leaves the list while selected (the reader went away)
     // gives way to the first one; a selection still listed stays as it is.
     onSectionsChanged: root.reconcileSelection()
@@ -1008,6 +1011,14 @@ Scope {
 
     FingerprintModel {
         id: fingerprintModel
+    }
+
+    // Settings > Appearance > Layout (#530): reads dwm only while Appearance
+    // shows in an open window.
+    LayoutSettingsModel {
+        id: layoutSettingsModel
+        active: root.visible && root.selectedSectionId === "appearance"
+        dwmState: root.dwmState
     }
 
     Process {

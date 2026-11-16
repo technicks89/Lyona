@@ -1398,4 +1398,67 @@ apply_for_xsettings
 grep -Fq 'not broadcasting an invalid GTK theme name' "$work/xs-apply.err"
 grep -Fqx 'Net/ThemeName "Good Theme"' "$cursor_xsettingsd_config"
 
+# Title bars (#534): read from [appearance], set by changing only those two
+# lines, the user file made from the shipped one first, refused during a theme
+# preview.
+tb=$work/titlebars
+mkdir -p "$tb/config/lyona" "$tb/state" "$tb/run"
+chmod 700 "$tb/run"
+run_titlebars() {
+	HOME=$home_dir XDG_CONFIG_HOME=$tb/config XDG_STATE_HOME=$tb/state XDG_RUNTIME_DIR=$tb/run \
+		DWM_APPEARANCE_THEMES_FILE=$tb/config/lyona/themes.toml DWM_APPEARANCE_MANAGED_THEMES_FILE=$managed_file \
+		DWM_APPEARANCE_RELOAD_HELPER=$reload_stub DWM_TEST_RELOAD_LOG=$tb/reload.log \
+		"$helper" "$@"
+}
+grep -q '^titlebars' "$managed_file" || printf '\n[appearance]\nborderpx = 1\n' >>"$managed_file"
+[[ $(run_titlebars titlebars-status) == "$(printf 'appearance-titlebars-protocol\t1\t0\ntitlebars\t0\t511')" ]] ||
+	{
+		printf 'titlebars status without a user file: %s\n' "$(run_titlebars titlebars-status)" >&2
+		exit 1
+	}
+run_titlebars titlebars 1 6 >"$tb/out"
+grep -Fqx "$(printf 'result\ttitlebars\t1\t6')" "$tb/out"
+grep -Fqx 'titlebars = 1' "$tb/config/lyona/themes.toml"
+grep -Fqx 'titlebar_tags = 6' "$tb/config/lyona/themes.toml"
+[[ $(run_titlebars titlebars-status | tail -1) == "$(printf 'titlebars\t1\t6')" ]]
+[[ -s $tb/reload.log ]]
+# Everything else in the file is the shipped file's.
+diff <(grep -v '^titlebar' "$tb/config/lyona/themes.toml") <(grep -v '^titlebar' "$managed_file") >/dev/null ||
+	{
+		printf 'titlebars changed other lines\n' >&2
+		exit 1
+	}
+# A trailing comment is kept, and only the two keys change.
+printf '[appearance]\nborderpx = 2\ntitlebars = 0   # mine\ntitlebar_tags = 511\n\n[active]\ntheme = "nord"\n' >"$tb/config/lyona/themes.toml"
+run_titlebars titlebars 1 3 >/dev/null
+[[ $(cat "$tb/config/lyona/themes.toml") == "$(printf '[appearance]\nborderpx = 2\ntitlebars = 1   # mine\ntitlebar_tags = 3\n\n[active]\ntheme = "nord"')" ]] ||
+	{
+		printf 'titlebars edit: %s\n' "$(cat "$tb/config/lyona/themes.toml")" >&2
+		exit 1
+	}
+# Bad values, and a change while a toolkit preview is armed, are refused, with
+# the file unchanged.
+before=$(cat "$tb/config/lyona/themes.toml")
+if run_titlebars titlebars 2 3 2>/dev/null; then
+	printf 'titlebars accepted 2\n' >&2
+	exit 1
+fi
+if run_titlebars titlebars 1 0 2>/dev/null; then
+	printf 'titlebars accepted mask 0\n' >&2
+	exit 1
+fi
+if run_titlebars titlebars 1 512 2>/dev/null; then
+	printf 'titlebars accepted mask 512\n' >&2
+	exit 1
+fi
+mkdir -p "$tb/state/lyona/appearance/toolkit"
+printf 'token\n' >"$tb/state/lyona/appearance/toolkit/preview.current"
+if run_titlebars titlebars 0 511 2>"$tb/err"; then
+	printf 'titlebars changed during a toolkit preview\n' >&2
+	exit 1
+fi
+grep -q 'toolkit preview' "$tb/err"
+[[ $(cat "$tb/config/lyona/themes.toml") == "$before" ]]
+rm -f "$tb/state/lyona/appearance/toolkit/preview.current"
+
 printf 'dwm settings theme tests passed\n'

@@ -342,6 +342,7 @@ ShellRoot {
         updateModel: updateModel
         systemManagementModel: systemManagementModel
         controlCenterModel: controlCenterModel
+        dwmState: dwmState
     }
 
     LazyLoader {

@@ -896,6 +896,11 @@ check-quickshell-appearance-status-queue-xvfb:
 check-quickshell-fingerprint-settings-xvfb:
 	@tests/test-quickshell-fingerprint-settings-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
 
+# Settings > Appearance > Layout's model (#530, #534) against a stub.
+.PHONY: check-quickshell-layout-settings-model-xvfb
+check-quickshell-layout-settings-model-xvfb:
+	@tests/test-quickshell-layout-settings-model-xvfb.sh; status=$$?; [ $$status -eq 77 ] && exit 0; exit $$status
+
 # Clipboard history in the shell (#469): model and window against a stub.
 .PHONY: check-quickshell-clipboard-history-xvfb
 check-quickshell-clipboard-history-xvfb:
@@ -1868,6 +1873,7 @@ check:
 	$(MAKE) check-quickshell-clipboard-history-xvfb
 	$(MAKE) check-quickshell-appearance-status-queue-xvfb
 	$(MAKE) check-quickshell-fingerprint-settings-xvfb
+	$(MAKE) check-quickshell-layout-settings-model-xvfb
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser
