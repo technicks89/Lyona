@@ -157,6 +157,11 @@ wait_until() { # COMMAND...: up to 10 seconds
 }
 lines() { [[ -e $1 ]] && wc -l <"$1" || echo 0; }
 has_lines() { [[ $(lines "$1") == "$2" ]]; } # FILE N, checked each time it is called
+# The hook does nothing as root (#529); a non-root id for its runs, so the test
+# also runs as root (a CI container).
+mkdir -p "$work/userbin"
+printf '#!/bin/sh\n[ "$1" = -u ] && [ $# = 1 ] && { echo 1000; exit 0; }\nexec /usr/bin/id "$@"\n' >"$work/userbin/id"
+chmod +x "$work/userbin/id"
 hook_reset() {
 	rm -f "$work"/{gate,hook-entered,hook-calls,hook-fd} "$work"/done.*
 }
@@ -166,7 +171,7 @@ start_hook() { # NAME PHASE SETTLE [VAR=VALUE...]: runs it; its background work 
 	mkfifo "$work/done.$name"
 	timeout 15 cat "$work/done.$name" >/dev/null &
 	eval "reader_$name=$!"
-	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" "$@" \
+	env -i PATH="$work/userbin:/usr/bin:/bin" STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" "$@" \
 		LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" LYONA_AUTORANDR_LOCKER_SETTLE="$settle" \
 		"$work/$phase.d/60-lyona-locker" 8>"$work/done.$name" || fail "the $phase hook failed"
 }
@@ -180,6 +185,18 @@ reader_running() { # NAME
 	eval "pid=\$reader_$1"
 	kill -0 "$pid" 2>/dev/null
 }
+
+# Run as root, the hook does nothing (#529): autorandr runs hooks as the
+# session's user.
+mkdir -p "$work/rootbin"
+printf '#!/bin/sh\n[ "$1" = -u ] && { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n' >"$work/rootbin/id"
+chmod +x "$work/rootbin/id"
+hook_reset
+env -i PATH="$work/rootbin:/usr/bin:/bin" STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" \
+	LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" LYONA_AUTORANDR_LOCKER_SETTLE=0 \
+	"$work/postswitch.d/60-lyona-locker" || fail 'the hook failed as root'
+sleep 0.3
+[[ ! -e $work/hook-entered && ! -e $work/hook-calls ]] || fail 'the hook ran the recovery as root'
 
 # From either phase: the hook returns at once, and the recovery runs after the
 # settle delay, without the lock's descriptor.

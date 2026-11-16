@@ -68,7 +68,10 @@ cat >"$work/client.c" <<'EOF'
 /* open CLASS: a window that prints its id, then "deleted" when asked to close.
  * strip WIN: its title strip's "X Y W H" (mapped), or "none".
  * frame WIN: the window's frame, border included, as "X Y W H".
- * fullscreen WIN 0|1: asks for _NET_WM_STATE_FULLSCREEN. */
+ * fullscreen WIN 0|1: asks for _NET_WM_STATE_FULLSCREEN.
+ * moveresize WIN X Y W H: asks dwm to move and resize the window.
+ * size WIN: the window's own "W H", border excluded.
+ * minheight WIN H: sets the window's minimum height hint (WM_NORMAL_HINTS). */
 static Window
 strip_for(Display *dpy, Window target)
 {
@@ -120,6 +123,30 @@ main(int argc, char **argv)
 		if (!XGetGeometry(dpy, strtoul(argv[2], NULL, 0), &root, &x, &y, &w, &h, &b, &depth))
 			return 1;
 		printf("%d %d %u %u\n", x, y, w + 2 * b, h + 2 * b);
+		return 0;
+	}
+	if (!strcmp(argv[1], "minheight") && argc == 4) {
+		XSizeHints *hints = XAllocSizeHints();
+		if (!hints)
+			return 1;
+		hints->flags = PMinSize;
+		hints->min_width = 1;
+		hints->min_height = atoi(argv[3]);
+		XSetWMNormalHints(dpy, strtoul(argv[2], NULL, 0), hints);
+		XFree(hints);
+		XSync(dpy, False);
+		return 0;
+	}
+	if (!strcmp(argv[1], "size") && argc == 3) {
+		if (!XGetGeometry(dpy, strtoul(argv[2], NULL, 0), &root, &x, &y, &w, &h, &b, &depth))
+			return 1;
+		printf("%u %u\n", w, h);
+		return 0;
+	}
+	if (!strcmp(argv[1], "moveresize") && argc == 7) {
+		XMoveResizeWindow(dpy, strtoul(argv[2], NULL, 0), atoi(argv[3]), atoi(argv[4]),
+			(unsigned int)atoi(argv[5]), (unsigned int)atoi(argv[6]));
+		XSync(dpy, False);
 		return 0;
 	}
 	if (!strcmp(argv[1], "fullscreen") && argc == 4) {
@@ -291,6 +318,42 @@ wait_strip "$floating" none
 "$work/client" fullscreen "$floating" 0
 wait_strip "$floating" some
 check_on_top "$floating"
+
+# A window asking for the monitor's whole height at its top is moved below
+# the strip and shortened to fit, so its bottom stays on screen (#529).
+read -r fx fy _ _ <<EOF
+$(frame "$floating")
+EOF
+read -r inner_w inner_h <<EOF
+$("$work/client" size "$floating")
+EOF
+"$work/client" moveresize "$floating" 100 0 400 768
+sleep 0.3
+read -r tx ty tw th <<EOF
+$(frame "$floating")
+EOF
+read -r _ _ _ strip_h <<EOF
+$(strip "$floating")
+EOF
+[ "$ty" -ge "$strip_h" ] && [ $((ty + th)) -le 768 ] ||
+	fail "a full-height window at the top: frame $tx $ty $tw $th, strip height $strip_h"
+# Also with a minimum height the size hints put back, after the layout is
+# arranged again (a tag switch away and back).
+"$work/client" minheight "$floating" 760
+"$work/client" moveresize "$floating" 100 0 400 768
+sleep 0.3
+xdotool key super+2
+sleep 0.2
+xdotool key super+1
+sleep 0.3
+read -r tx ty tw th <<EOF
+$(frame "$floating")
+EOF
+[ "$ty" -ge "$strip_h" ] && [ $((ty + th)) -le 768 ] ||
+	fail "a window with a minimum height, arranged again: frame $tx $ty $tw $th, strip height $strip_h"
+"$work/client" minheight "$floating" 1
+"$work/client" moveresize "$floating" "$fx" "$fy" "$inner_w" "$inner_h"
+sleep 0.3
 
 # The allowed tags: tag 2 only hides it on tag 1; all tags brings it back.
 set_theme titlebar_tags 2

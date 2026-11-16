@@ -29,6 +29,14 @@ start) [ -e "$STUB_DIR/startfails" ] && exit 1; echo running >"$state" ;;
 esac
 STUB
 chmod +x "$work/bin/dwm-settings-picom"
+# The hook does nothing as root (#529); a non-root id, so the test also runs
+# as root (a CI container).
+cat >"$work/bin/id" <<'STUB'
+#!/bin/sh
+[ "$1" = -u ] && [ $# = 1 ] && { echo 1000; exit 0; }
+exec /usr/bin/id "$@"
+STUB
+chmod +x "$work/bin/id"
 
 run() { # run PHASE
 	env -i PATH="$work/bin:/usr/bin:/bin" STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" \

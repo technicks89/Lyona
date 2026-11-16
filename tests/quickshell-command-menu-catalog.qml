@@ -9,11 +9,14 @@ QtObject {
     Component.onCompleted: {
         try {
             const rootEntries = Catalog.entriesFor("root");
-            require(rootEntries.length === 10, "root taxonomy must contain ten entries");
+            require(rootEntries.length === 11, "root taxonomy must contain eleven entries");
             require(rootEntries[0].label === "Apps", "Apps must lead the root menu");
             require(rootEntries[0].provider === "applications", "Apps must declare its dynamic provider");
             require(Catalog.entriesFor(rootEntries[0].target).length === 0, "dynamic Apps submenu must resolve in the catalog");
-            require(rootEntries[9].label === "System", "System must close the root menu");
+            require(rootEntries[10].label === "System", "System must close the root menu");
+            // Clipboard history, reachable without a key (#529).
+            require(rootEntries.some(entry => entry.target === "clipboard" && entry.action === "open"),
+                "Clipboard History must be in the root menu");
 
             const screenshotEntries = Catalog.entriesFor("screenshots");
             require(screenshotEntries.length === 4, "all screenshot modes must be exposed");

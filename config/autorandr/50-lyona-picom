@@ -14,6 +14,11 @@
 # Always exits 0: a failing hook must never get in the way of the layout.
 set -u
 
+# autorandr --batch runs hooks as each session's user. Never as root (#529):
+# the helper and the light-locker or Picom it starts would come from root's
+# environment and PATH.
+[ "$(id -u)" -ne 0 ] || exit 0
+
 case $0 in
 */postswitch.d/*) phase=post ;;
 *) phase=pre ;;

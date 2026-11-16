@@ -46,8 +46,18 @@ function withChoice(options, prefix, value) {
     return kept.join(",");
 }
 
-// What the chosen switch key costs, when it costs something.
-function hint(options) {
+// How many layouts a Keyboard layout value names ("us,de" is 2); 0 when it
+// is not known.
+function layoutCount(layout) {
+    return typeof layout === "string" ? tokens(layout).length : 0;
+}
+
+// What the chosen switch key costs, when it costs something. With one layout
+// there is nothing to switch to (#529): the presets are hidden, and this says
+// how to add a second.
+function hint(options, layouts) {
+    if (layouts === 1)
+        return "One keyboard layout: add a second to Keyboard layout (for example us,de) to choose a switch key and its LED.";
     const key = current(options, switchPrefix);
     if (key === "grp:caps_toggle") return "Caps Lock switches layouts; Shift+Caps Lock is Caps Lock.";
     if (key === "grp:shift_caps_toggle") return "Shift+Caps Lock switches layouts; Caps Lock stays Caps Lock.";

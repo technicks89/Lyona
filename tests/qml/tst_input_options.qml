@@ -37,5 +37,11 @@ TestCase {
         compare(InputOptions.hint("grp:toggle"), "Right Alt switches layouts and no longer works as Alt or AltGr.");
         compare(InputOptions.hint("caps:escape"), "No switch key: switch with the keyboard layout pill in the panel.");
         compare(InputOptions.hint("grp:alt_shift_toggle"), "");
+        // One layout: nothing to switch to, so how to add a second (#529).
+        verify(InputOptions.hint("caps:escape", 1).indexOf("add a second") > 0, InputOptions.hint("caps:escape", 1));
+        compare(InputOptions.hint("caps:escape", 2), "No switch key: switch with the keyboard layout pill in the panel.");
+        compare(InputOptions.layoutCount("us,de"), 2);
+        compare(InputOptions.layoutCount("us"), 1);
+        compare(InputOptions.layoutCount(""), 0);
     }
 }

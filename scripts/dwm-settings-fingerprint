@@ -32,6 +32,8 @@ set -euo pipefail
 # USE is lightdm (the login and the lock screen), polkit or sudo; set changes
 # its PAM file through dwm-settings-fingerprint-root (polkit, administrator
 # password) and lyona-fingerprint-pam, which documents exactly what changes.
+# set exits 3 when the password dialog was dismissed (pkexec's 126), so the
+# pane can say it was cancelled rather than failed (#529).
 
 lyona_lib=${BASH_SOURCE[0]%/*}
 [[ -f $lyona_lib/dwm-trust.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
@@ -166,7 +168,16 @@ cmd_set() {
 	helper=$(trusted_root_helper_path dwm-settings-fingerprint-root "${BASH_SOURCE[0]}" dwm-settings-fingerprint) ||
 		die "the trusted fingerprint helper is unavailable"
 	command -v pkexec >/dev/null 2>&1 || die "pkexec is unavailable"
-	pkexec "$helper" "$request" "$use" >/dev/null || die "the change was not made"
+	local status=0
+	pkexec "$helper" "$request" "$use" >/dev/null || status=$?
+	case $status in
+	0) ;;
+	126)
+		printf 'dwm-settings-fingerprint: not changed: the password prompt was cancelled\n' >&2
+		exit 3
+		;;
+	*) die "the change was not made" ;;
+	esac
 	printf 'fingerprint-result\tset\t%s\t%s\n' "$use" "$value"
 }
 

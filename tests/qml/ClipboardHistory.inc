@@ -107,6 +107,10 @@
                 model.select(1);
                 root.clipCheck(Quickshell.clipboardText === "second\nline", "clipboard: " + Quickshell.clipboardText);
                 root.clipCheck(model.entries[0].text === "second\nline" && !model.visible, "copy back");
+                // The observer then reports the same text: already first, so it is
+                // not a change to save again (#529).
+                root.clipCheck(!model.recordEntry("second\nline") && model.entries.length === 2,
+                    "a copy already first counted as new: " + model.entries.length);
                 model.deleteAt(1);
                 root.clipCheck(model.entries.length === 1, "delete");
                 root.clipNext();

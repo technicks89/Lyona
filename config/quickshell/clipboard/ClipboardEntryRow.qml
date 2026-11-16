@@ -18,7 +18,9 @@ Rectangle {
     property bool hovered: rowMouse.containsMouse || deleteMouse.containsMouse
 
     // One line: line breaks shown as " | ".
-    readonly property string preview: modelData.text.replace(/\r?\n/g, " | ")
+    // One elided line never shows more than this (#529): the full text, up to
+    // 64 KiB, was replaced and laid out for every row.
+    readonly property string preview: modelData.text.slice(0, 512).replace(/\r?\n/g, " | ")
     // timeTick is referenced so the age string recomputes on the periodic refresh.
     readonly property string age: root.timeTick >= 0
         ? root.clipboardModel.relativeTime(root.modelData.timestamp) : ""

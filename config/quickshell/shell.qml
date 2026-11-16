@@ -135,6 +135,8 @@ ShellRoot {
             controlsModel.open();
         } else if (target === "systemhealth" && action === "open") {
             systemHealthModel.openOnScreen(screen);
+        } else if (target === "clipboard" && action === "open") {
+            clipboardModel.openOnScreen(screen);
         } else if (target === "controlcenter" && action === "keybindings") {
             controlCenterModel.openKeybindsOnScreen(screen);
         } else if (target === "power" && action === "open") {
