@@ -17,6 +17,7 @@ usage: lyona-shell TARGET ACTION
   controlcenter open|toggle    the Control Center
   controlcenter openKeybinds   the keybinds cheatsheet
   power toggle                 the power menu
+  panel keyboard               the keyboard onto the panel, or back off it
   power confirm logout|reboot  the power menu, at that action's confirmation
   settings open|close|toggle|refresh|status
                                the Settings window
@@ -27,7 +28,7 @@ EOF
 [ "$#" -ge 2 ] || usage
 case "$1 $2 ${3:-}" in
 'launcher toggle ' | 'clipboard toggle ' | 'overview toggle ' | 'controlcenter open ' | 'controlcenter toggle ' | \
-	'controlcenter openKeybinds ' | 'power toggle ' | 'settings open ' | 'settings close ' | \
+	'controlcenter openKeybinds ' | 'power toggle ' | 'panel keyboard ' | 'settings open ' | 'settings close ' | \
 	'settings toggle ' | 'settings refresh ' | 'settings status ') [ "$#" -eq 2 ] || usage ;;
 'power confirm logout' | 'power confirm reboot') [ "$#" -eq 3 ] || usage ;;
 *) usage ;;

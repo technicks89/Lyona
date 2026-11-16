@@ -652,6 +652,32 @@ ShellRoot {
         }
     }
 
+    // The panel's keyboard path (#534): Ctrl+Alt+Tab, through lyona-shell.
+    IpcHandler {
+        target: "panel"
+
+        // Onto the panel of the focused monitor, or off it when it is there.
+        function keyboard(): void {
+            const target = root.panelForScreen(dwmState.focusedScreen());
+            for (const panel of panelVariants.instances) {
+                if (panel !== target && panel.keyboardMode)
+                    panel.leaveKeyboard();
+            }
+            if (target) target.toggleKeyboard();
+        }
+
+        // Tests and tools: which panel has the keyboard path on, by screen.
+        function keyboardState(): string {
+            return JSON.stringify(panelVariants.instances.map(panel => ({
+                "screen": panel.screen ? panel.screen.name : "",
+                "keyboardMode": panel.keyboardMode,
+                "hasKeyboard": panel.hasKeyboard,
+                "popupOpen": panel.popupOpen,
+                "item": panel.keyboardItemName
+            })));
+        }
+    }
+
     IpcHandler {
         target: "controlcenter"
 

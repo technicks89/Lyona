@@ -49,3 +49,10 @@
 -   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
 +   { mod="SUPER",            key="r",       desc="App launcher",            func="spawn",       exec=["lyona-shell", "launcher", "toggle"], hold_keys="dwm launcher" },
 +?   { mod="SUPER",            key="v",       desc="Clipboard history",       func="spawn",       exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },
+
+# 2026.11.0-beta.3: Ctrl+Alt+Tab moves the keyboard onto the panel, to
+# move between its pills (#534), added after the Super+Alt+F1 binding only
+# when Ctrl+Alt+Tab is bound nowhere else in the file.
+-   { mod="SUPER ALT",        key="F1",      desc="Control center",          func="spawn",       exec=["lyona-shell", "controlcenter", "open"] },
++   { mod="SUPER ALT",        key="F1",      desc="Control center",          func="spawn",       exec=["lyona-shell", "controlcenter", "open"] },
++?   { mod="CTRL ALT",         key="Tab",     desc="Keyboard to the panel",   func="spawn",       exec=["lyona-shell", "panel", "keyboard"] },

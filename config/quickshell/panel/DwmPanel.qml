@@ -73,6 +73,74 @@ PanelWindow {
             + layouts[(group + 1) % layouts.length];
     }
 
+    // The panel's keyboard path (#534): Ctrl+Alt+Tab (lyona-shell panel
+    // keyboard) moves the keyboard here. While keyboardMode is on the panel
+    // says it takes input, and dwm gives it the keyboard when it asks; off,
+    // it says it does not, and dwm hands the keyboard back to the window.
+    property bool keyboardMode: false
+    // The keyboard is on this panel now (not on a popup it opened).
+    readonly property bool hasKeyboard: island.Window.active
+    // A popup of this panel is open: the keyboard is on it, and comes back
+    // here when it closes (dwm sees to that).
+    readonly property bool popupOpen: root.networkModel.visible || root.controlsModel.visible
+        || root.bluetoothModel.visible || root.controlCenterModel.visible
+        || root.powerMenuModel.visible
+        || (root.calendarModel !== null && root.calendarModel.visible)
+        || (root.weatherModel !== null && root.weatherModel.visible)
+        || (trayLoader.item !== null && trayLoader.item.menuOpen)
+    // The objectName of the item with the keyboard, for the shell's test IPC.
+    readonly property string keyboardItemName: island.Window.activeFocusItem
+        ? island.Window.activeFocusItem.objectName : ""
+
+    function toggleKeyboard() {
+        if (root.keyboardMode && root.hasKeyboard)
+            root.leaveKeyboard();
+        else
+            root.enterKeyboard();
+    }
+
+    // Starts on the first pill each time, as a new visit to the panel.
+    function enterKeyboard() {
+        root.keyboardMode = true;
+        logoButton.forceActiveFocus();
+        Qt.callLater(root.requestKeyboard);
+    }
+
+    function requestKeyboard() {
+        const panelWindow = island.Window.window;
+        if (root.keyboardMode && panelWindow)
+            panelWindow.requestActivate();
+    }
+
+    function leaveKeyboard() {
+        root.keyboardMode = false;
+    }
+
+    // Left and Right, as Shift+Tab and Tab: the pills are one row.
+    function moveKeyboardFocus(forward) {
+        const panelWindow = island.Window.window;
+        const current = panelWindow ? panelWindow.activeFocusItem : null;
+        if (!current) return;
+        const next = current.nextItemInFocusChain(forward);
+        if (next) next.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason);
+    }
+
+    // The keyboard went somewhere other than a popup of this panel (a click
+    // on a window, the launcher, a window that opened): the panel stops
+    // taking it, so a later click on a pill does not move it here.
+    onHasKeyboardChanged: if (!hasKeyboard && keyboardMode && !popupOpen) leaveKeyboard()
+    // A popup opened from here closed: dwm gives the keyboard back to the
+    // panel at once, unless something else took it (a click on a window).
+    onPopupOpenChanged: if (!popupOpen && keyboardMode && !hasKeyboard) keyboardReturn.restart()
+
+    Timer {
+        id: keyboardReturn
+
+        interval: 1000
+        onTriggered: if (root.keyboardMode && !root.hasKeyboard && !root.popupOpen) root.leaveKeyboard()
+    }
+
+    focusable: keyboardMode
     implicitHeight: Theme.panelHeight
     color: Theme.barBackground
     // The panel's declaration that it is the bar: on X11 the exclusive zone
@@ -104,6 +172,22 @@ PanelWindow {
 
         PillShadow { cornerRadius: island.radius }
 
+        // Keys a pill does not take itself, while the panel has the keyboard.
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) {
+                root.leaveKeyboard();
+            } else if (event.key === Qt.Key_Right) {
+                root.moveKeyboardFocus(true);
+            } else if (event.key === Qt.Key_Left) {
+                root.moveKeyboardFocus(false);
+            } else if (event.key === Qt.Key_Home) {
+                logoButton.forceActiveFocus(Qt.TabFocusReason);
+            } else {
+                return;
+            }
+            event.accepted = true;
+        }
+
         MouseArea {
             anchors.fill: parent
             onClicked: root.popupRequested(root, "")
@@ -129,6 +213,7 @@ PanelWindow {
 
                     LogoButton {
                         id: logoButton
+                        objectName: "logoButton"
                         onActivated: {
                             root.popupRequested(root, "controlcenter");
                             root.controlCenterModel.toggle();
@@ -154,6 +239,7 @@ PanelWindow {
                                 delegate: WorkspaceButton {
                                     required property int modelData
 
+                                    objectName: "workspaceButton"
                                     label: root.state.workspaceNames[modelData]
                                     selected: modelData === root.state.currentWorkspaceForScreen(root.screen)
                                     occupied: root.state.workspaceOccupied(modelData)
@@ -197,9 +283,14 @@ PanelWindow {
                 active: root.calendarModel !== null && root.calendarModel.visible
                 hovered: clockMouse.containsMouse
                 // Named for screen readers, which can press it (#534).
+                keyboardActivatable: clockMouse.enabled
                 Accessible.role: clockMouse.enabled ? Accessible.Button : Accessible.StaticText
                 Accessible.name: root.clock.panelText + (clockMouse.enabled ? ", calendar" : "")
-                Accessible.onPressAction: if (clockMouse.enabled) {
+                Accessible.onPressAction: clockPill.openCalendar()
+                onTriggered: clockPill.openCalendar()
+
+                function openCalendar() {
+                    if (!clockMouse.enabled) return;
                     root.popupRequested(root, "calendar");
                     root.calendarModel.toggle(clockPill.mapToItem(null, 0, 0).x);
                 }
@@ -222,10 +313,7 @@ PanelWindow {
                     enabled: root.calendarModel !== null && root.panelSettingsModel.widgetEnabled("calendar")
                     hoverEnabled: enabled
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: {
-                        root.popupRequested(root, "calendar");
-                        root.calendarModel.toggle(clockPill.mapToItem(null, 0, 0).x);
-                    }
+                    onClicked: clockPill.openCalendar()
                 }
             }
 
@@ -242,7 +330,11 @@ PanelWindow {
                 hovered: weatherMouse.containsMouse
                 Accessible.role: Accessible.Button
                 Accessible.name: "Weather: " + (root.weatherModel ? root.weatherModel.panelText : "")
-                Accessible.onPressAction: {
+                Accessible.onPressAction: weatherPill.openWeather()
+                keyboardActivatable: true
+                onTriggered: weatherPill.openWeather()
+
+                function openWeather() {
                     root.popupRequested(root, "weather");
                     root.weatherModel.toggle(weatherPill.mapToItem(null, 0, 0).x);
                 }
@@ -262,10 +354,7 @@ PanelWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.popupRequested(root, "weather");
-                        root.weatherModel.toggle(weatherPill.mapToItem(null, 0, 0).x);
-                    }
+                    onClicked: weatherPill.openWeather()
                 }
             }
 
@@ -359,6 +448,8 @@ PanelWindow {
                         Accessible.role: Accessible.Button
                         Accessible.name: root.updateIndicator ? root.updateIndicator.summary : ""
                         Accessible.onPressAction: root.settingsRequested(root, "system")
+                        keyboardActivatable: true
+                        onTriggered: root.settingsRequested(root, "system")
 
                         RowLayout {
                             id: updateAvailableRow
@@ -401,6 +492,8 @@ PanelWindow {
                         hovered: updateMouse.containsMouse
                         Accessible.role: Accessible.Button
                         Accessible.onPressAction: root.updateModel.showProgress()
+                        keyboardActivatable: true
+                        onTriggered: root.updateModel.showProgress()
                         Accessible.name: root.updateModel.busy ? "Update in progress"
                             : root.updateModel.actionSucceeded ? "Update finished" : "Update failed"
 
@@ -440,6 +533,8 @@ PanelWindow {
                         Accessible.role: Accessible.Button
                         Accessible.name: root.keyboardDescription
                         Accessible.onPressAction: root.state.nextKeyboardLayout()
+                        keyboardActivatable: true
+                        onTriggered: root.state.nextKeyboardLayout()
 
                         UiText {
                             id: keyboardLabel
@@ -459,6 +554,7 @@ PanelWindow {
                     }
 
                     PanelPill {
+                        id: bluetoothPill
                         visible: root.panelSettingsModel.widgetEnabled("bluetooth")
                         Layout.preferredWidth: bluetoothRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
                         Layout.preferredHeight: Theme.compactWidgetSize
@@ -466,7 +562,11 @@ PanelWindow {
                         hovered: bluetoothMouse.containsMouse
                         Accessible.role: Accessible.Button
                         Accessible.name: "Bluetooth: " + root.bluetoothModel.statusText
-                        Accessible.onPressAction: {
+                        Accessible.onPressAction: bluetoothPill.openBluetooth()
+                        keyboardActivatable: true
+                        onTriggered: bluetoothPill.openBluetooth()
+
+                        function openBluetooth() {
                             root.popupRequested(root, "bluetooth");
                             root.bluetoothModel.toggle();
                         }
@@ -488,14 +588,12 @@ PanelWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.popupRequested(root, "bluetooth");
-                                root.bluetoothModel.toggle();
-                            }
+                            onClicked: bluetoothPill.openBluetooth()
                         }
                     }
 
                     PanelPill {
+                        id: networkPill
                         visible: root.panelSettingsModel.widgetEnabled("network")
                         Layout.preferredWidth: networkRow.implicitWidth + Theme.networkWidgetHorizontalPadding * 2
                         Layout.preferredHeight: Theme.compactWidgetSize
@@ -503,7 +601,11 @@ PanelWindow {
                         hovered: networkMouse.containsMouse
                         Accessible.role: Accessible.Button
                         Accessible.name: "Network: " + root.networkModel.statusText
-                        Accessible.onPressAction: {
+                        Accessible.onPressAction: networkPill.openNetwork()
+                        keyboardActivatable: true
+                        onTriggered: networkPill.openNetwork()
+
+                        function openNetwork() {
                             root.popupRequested(root, "network");
                             root.networkModel.toggle();
                         }
@@ -529,14 +631,12 @@ PanelWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.popupRequested(root, "network");
-                                root.networkModel.toggle();
-                            }
+                            onClicked: networkPill.openNetwork()
                         }
                     }
 
                     PanelPill {
+                        id: volumePill
                         visible: root.panelSettingsModel.widgetEnabled("volume")
                         Layout.preferredWidth: volumeRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
                         Layout.preferredHeight: Theme.compactWidgetSize
@@ -544,7 +644,14 @@ PanelWindow {
                         hovered: controlsMouse.containsMouse
                         Accessible.role: Accessible.Button
                         Accessible.name: "Volume: " + root.controlsModel.volumeDisplayText
-                        Accessible.onPressAction: {
+                        Accessible.onPressAction: volumePill.openControls()
+                        keyboardActivatable: true
+                        onTriggered: volumePill.openControls()
+                        // Up and Down change the volume, as the wheel does.
+                        Keys.onUpPressed: root.controlsModel.volumeUp()
+                        Keys.onDownPressed: root.controlsModel.volumeDown()
+
+                        function openControls() {
                             root.popupRequested(root, "controls");
                             root.controlsModel.toggle();
                         }
@@ -573,10 +680,7 @@ PanelWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.popupRequested(root, "controls");
-                                root.controlsModel.toggle();
-                            }
+                            onClicked: volumePill.openControls()
                             onWheel: function(wheel) {
                                 if (wheel.angleDelta.y > 0) {
                                     root.controlsModel.volumeUp();
@@ -589,6 +693,8 @@ PanelWindow {
                     }
 
                     PanelPill {
+                        id: powerPill
+                        objectName: "powerPill"
                         visible: root.panelSettingsModel.widgetEnabled("power")
                         Layout.preferredWidth: Theme.pillHeight
                         Layout.preferredHeight: Theme.pillHeight
@@ -596,7 +702,11 @@ PanelWindow {
                         hovered: powerMouse.containsMouse
                         Accessible.role: Accessible.Button
                         Accessible.name: "Power menu"
-                        Accessible.onPressAction: {
+                        Accessible.onPressAction: powerPill.openPower()
+                        keyboardActivatable: true
+                        onTriggered: powerPill.openPower()
+
+                        function openPower() {
                             root.popupRequested(root, "power");
                             root.powerMenuModel.toggle("panel");
                         }
@@ -613,10 +723,7 @@ PanelWindow {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.popupRequested(root, "power");
-                                root.powerMenuModel.toggle("panel");
-                            }
+                            onClicked: powerPill.openPower()
                         }
                     }
                 }
@@ -625,7 +732,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: logoButton.hovered
+        visible: logoButton.hovered || logoButton.activeFocus
         anchorWindow: root
         anchorItem: logoButton
         label: "Control Center"
@@ -642,7 +749,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: updateAvailablePill.visible && updateAvailableMouse.containsMouse
+        visible: updateAvailablePill.visible && (updateAvailableMouse.containsMouse || updateAvailablePill.activeFocus)
         anchorWindow: root
         anchorItem: updateAvailableMouse
         label: root.updateIndicator ? root.updateIndicator.summary : ""
@@ -651,7 +758,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: bluetoothMouse.containsMouse
+        visible: bluetoothMouse.containsMouse || bluetoothPill.activeFocus
         anchorWindow: root
         anchorItem: bluetoothMouse
         label: root.bluetoothModel.statusText
@@ -660,7 +767,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: networkMouse.containsMouse
+        visible: networkMouse.containsMouse || networkPill.activeFocus
         anchorWindow: root
         anchorItem: networkMouse
         label: root.networkModel.statusText
@@ -669,7 +776,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: controlsMouse.containsMouse
+        visible: controlsMouse.containsMouse || volumePill.activeFocus
         anchorWindow: root
         anchorItem: controlsMouse
         label: root.controlsModel.volumeDisplayText
@@ -678,7 +785,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: keyboardPill.visible && keyboardMouse.containsMouse
+        visible: keyboardPill.visible && (keyboardMouse.containsMouse || keyboardPill.activeFocus)
         anchorWindow: root
         anchorItem: keyboardMouse
         label: root.keyboardDescription
@@ -687,7 +794,7 @@ PanelWindow {
     }
 
     PanelTooltip {
-        visible: powerMouse.containsMouse
+        visible: powerMouse.containsMouse || powerPill.activeFocus
         anchorWindow: root
         anchorItem: powerMouse
         label: "Power"

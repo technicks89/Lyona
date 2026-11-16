@@ -14,6 +14,9 @@ RowLayout {
 
     signal menuOpened
 
+    // The tray's menu is shown: the panel's keyboard comes back after it.
+    readonly property bool menuOpen: trayMenu.visible
+
     function closeMenu() {
         trayMenu.closeMenu();
     }

@@ -92,6 +92,7 @@ keys = [
   { mod="SUPER",            key="slash",   desc="Keybinds cheatsheet",     func="spawn",       exec=["lyona-shell", "controlcenter", "openKeybinds"] },
   { mod="SUPER",            key="F1",      desc="Control center",          func="spawn",       exec=["lyona-shell", "controlcenter", "open"] },
   { mod="SUPER ALT",        key="F1",      desc="Control center",          func="spawn",       exec=["lyona-shell", "controlcenter", "open"] },
+  { mod="CTRL ALT",         key="Tab",     desc="Keyboard to the panel",   func="spawn",       exec=["lyona-shell", "panel", "keyboard"] },
   { mod="SUPER SHIFT",      key="r",       desc="Restart Quickshell",      func="spawn",       cmd="dwm-quickshell-controlcenter action restart-quickshell" },
   { mod="SUPER CTRL",       key="r",       desc="Restart Proton/Steam",    func="spawn",       cmd="protonrestart" },
 

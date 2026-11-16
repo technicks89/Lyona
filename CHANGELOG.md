@@ -8,6 +8,18 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+## [2026.11.0-beta.3] - 2026-11-16
+
+Eleventh beta of the Arch Linux line, and the third for aarch64. It works
+through the beta.2 review (#515-#535): the panel from the keyboard with
+Ctrl+Alt+Tab and accessible names for its items (#534), a title bars switch
+and Reset to Default in Settings > Appearance > Layout (#530), Skip xclip in
+clipboard history and an administrator prompt to enroll a finger (#535), and
+fullscreen fixes in dwm (#533). A rollback now keeps the panel's widget
+choices (#520), and saving a layout value no longer resets unsaved Super+H/L
+changes (#515). Updates on aarch64 were validated (#490). See
+`docs/RELEASE-NOTES-2026.11.0-beta.3.md`.
+
 ### Added
 
 - Clipboard history: **Skip xclip**, off by default, refuses copies owned by
@@ -35,6 +47,15 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - Every panel pill has an accessible role and name, the clickable ones can be
   pressed by a screen reader, and the keyboard layout pill has a tooltip
   naming the layout a click switches to (#534).
+- The panel from the keyboard (#534): `Ctrl+Alt+Tab` (`lyona-shell panel
+  keyboard`) moves the keyboard onto the focused monitor's panel. `Tab`, the
+  arrow keys and `Home` move between the logo, tags, clock, running apps, tray
+  icons and pills, shown by a focus ring and their tooltip; `Enter` or `Space`
+  does what a click does; `Escape` gives the keyboard back to the window. A
+  popup opened from there gives the keyboard back to the panel when it closes.
+  dwm gives a bar the keyboard when it asks while it says it takes input. An
+  existing `hotkeys.toml` gets the key on the next update when `Ctrl+Alt+Tab`
+  is free.
 
 ### Fixed
 
@@ -161,6 +182,7 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 - The layout limits (master size 5-95, count 0-20, gap 0-64) are checked by
   `make check-layout-settings` to agree across `config.c`,
   `dwm-layout-settings` and the Settings sliders (#530).
+
 ### Documentation
 
 - Updates on aarch64 (ARM5-02, #490,
@@ -4585,7 +4607,8 @@ status.
 
 - Prefer an installed ChatGPT desktop application for Super+A and hide its duplicate ChatGPT web entry from the managed application launcher, while retaining the web app as the fallback when no native desktop entry exists.
 
-[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.2...HEAD
+[Unreleased]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.3...HEAD
+[2026.11.0-beta.3]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.2...v2026.11.0-beta.3
 [2026.11.0-beta.2]: https://github.com/technicks89/Lyona/compare/v2026.11.0-beta.1...v2026.11.0-beta.2
 [2026.11.0-beta.1]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.7...v2026.11.0-beta.1
 [2026.10.0-beta.7]: https://github.com/technicks89/Lyona/compare/v2026.10.0-beta.6...v2026.10.0-beta.7

@@ -22,6 +22,7 @@ Bindings are defined in `~/.config/lyona/hotkeys.toml` and reload instantly on s
 | `Super` + `/` | Keybind viewer |
 | `Super` + `F1` | Control Center |
 | `Super` + `Alt` + `F1` | Control Center (the same, for keyboards where `Super` + `F1` is taken) |
+| `Ctrl` + `Alt` + `Tab` | The keyboard onto the panel ([below](#the-panel-from-the-keyboard)) |
 | `Super` + `Shift` + `W` | A random wallpaper from `~/Pictures/backgrounds` |
 | `Super` + `Shift` + `R` | Restart Quickshell |
 
@@ -145,6 +146,25 @@ and resizing keep the geometry they start from.
 | `Super` + Left drag | Move window |
 | `Super` + Right drag | Resize window |
 | Click a tag in the panel | Switch to that tag |
+
+## The Panel from the Keyboard
+
+`Ctrl` + `Alt` + `Tab` moves the keyboard onto the panel of the focused
+monitor, starting at the Lyona logo; pressed again, it moves it back.
+
+| Keys | Action |
+|------|--------|
+| `Tab` or `Right` | Next item: the logo, each tag, the clock, the running apps, the tray icons, then the pills on the right |
+| `Shift` + `Tab` or `Left` | Previous item |
+| `Home` | Back to the logo |
+| `Enter` or `Space` | What a click does: shows the tag, focuses the app, opens the pill's popup |
+| `Up` / `Down` on the volume pill | Volume up / down |
+| `Menu` or `Shift` + `F10` on a tray icon | Its menu, as a right-click |
+| `Escape` | The keyboard back to the window you were in |
+
+A popup opened this way gives the keyboard back to the panel, on the same
+item, when it closes with `Escape`. A click on a window or the desktop ends it
+all and focuses what you clicked, as it always does.
 
 ---
 

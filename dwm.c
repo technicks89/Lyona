@@ -278,6 +278,10 @@ static void unfocus(Client *c, int setfocus);
 static void unmanage(Client *c, int destroyed);
 static void untrackoverridewindow(Window win);
 static void focusoverridewindow(Window win);
+static int baracceptsfocus(Window win);
+static void focusbar(Window win);
+static void releasebar(void);
+static Monitor *wintobar(Window win);
 static int focusinside(Window win);
 static void activateclient(Client *c);
 static void updatemonitorwindows(void);
@@ -432,6 +436,10 @@ static Window *clientlistcache;
 /* The override-redirect window given the keyboard on its own request; the
  * selected client gets it back when that window goes. */
 static Window overridefocus;
+/* The panel given the keyboard on its own request (#534): Ctrl+Alt+Tab, to
+ * move between its pills. It gets the keyboard back when a popup it opened
+ * closes, until a client takes it or the panel lets it go. */
+static Window barfocus;
 /* Cleared while a click on the panel switches tags (activateclient() and
  * _NET_CURRENT_DESKTOP), so view() leaves the pointer on the panel. */
 static int viewwarps = 1;
@@ -1044,8 +1052,12 @@ clientmessage(XEvent *e)
 		return;
 	}
 	if (!c) {
-		if (cme->message_type == netatom[NetActiveWindow])
-			focusoverridewindow(cme->window);
+		if (cme->message_type == netatom[NetActiveWindow]) {
+			if (wintobar(cme->window))
+				focusbar(cme->window);
+			else
+				focusoverridewindow(cme->window);
+		}
 		return;
 	}
 	if (cme->message_type == netatom[NetCloseWindow]) {
@@ -1525,6 +1537,9 @@ expose(XEvent *e)
 void
 focus(Client *c)
 {
+	/* A client (or the desktop) has the keyboard now: a popup the panel
+	 * opened gives it to the client when it closes, not to the panel. */
+	barfocus = None;
 	if (!c || !ISVISIBLE(c))
 		for (c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
 	if (selmon->sel && selmon->sel != c)
@@ -2709,6 +2724,10 @@ propertynotify(XEvent *e)
 	} else if ((ev->window == root) && (ev->atom == netatom[NetDwmSetKeyboardGroup])) {
 		if (ev->state == PropertyNewValue)
 			applykeyboardrequest();
+	} else if (barfocus && ev->window == barfocus && ev->atom == XA_WM_HINTS) {
+		/* The panel no longer takes input: it let the keyboard go. */
+		if (!baracceptsfocus(ev->window))
+			releasebar();
 	} else if ((ev->atom == netatom[NetWMStrutPartial] || ev->atom == netatom[NetWMStrut])
 	           && !wintoclient(ev->window)) {
 		strutchanged(ev->window);
@@ -4829,6 +4848,8 @@ unmanagealtbar(Window w)
 	if (!m)
 		return;
 
+	if (barfocus == w)
+		barfocus = None;
 	m->barwin = 0;
 	m->by = 0;
 	m->bh = 0;
@@ -5020,6 +5041,67 @@ focusoverridewindow(Window win)
 		grabbuttons(selmon->sel, 0);
 }
 
+/* The monitor whose bar WIN is, NULL when it is no bar. */
+Monitor *
+wintobar(Window win)
+{
+	Monitor *m;
+
+	if (!win)
+		return NULL;
+	for (m = mons; m && m->barwin != win; m = m->next);
+	return m;
+}
+
+/* True when the bar WIN is viewable and says it takes input (WM_HINTS):
+ * Quickshell's PanelWindow says so only while its focusable is on, which the
+ * panel turns on to ask for the keyboard and off to let it go (#534). */
+int
+baracceptsfocus(Window win)
+{
+	XWindowAttributes wa;
+	XWMHints *wmh;
+	int input = 0;
+
+	if (!XGetWindowAttributes(dpy, win, &wa) || wa.map_state != IsViewable)
+		return 0;
+	if ((wmh = XGetWMHints(dpy, win))) {
+		input = (wmh->flags & InputHint) && wmh->input;
+		XFree(wmh);
+	}
+	return input;
+}
+
+/* The panel asked for the keyboard with _NET_ACTIVE_WINDOW (#534). A bar is
+ * a dock, not a client, so nothing else would give it the keyboard. As for a
+ * popup (focusoverridewindow()), the selected client takes its clicks again,
+ * so a click on it takes the keyboard back. */
+void
+focusbar(Window win)
+{
+	if (!baracceptsfocus(win))
+		return;
+	barfocus = overridefocus = win;
+	if (!focusinside(win))
+		XSetInputFocus(dpy, win, RevertToPointerRoot, CurrentTime);
+	if (selmon->sel)
+		grabbuttons(selmon->sel, 0);
+}
+
+/* The panel let the keyboard go (Escape): to the selected client, when the
+ * panel still has it; a popup it opened gives it there when it closes. */
+void
+releasebar(void)
+{
+	Window win = barfocus;
+
+	barfocus = None;
+	if (win && overridefocus == win) {
+		overridefocus = None;
+		focus(NULL);
+	}
+}
+
 /* True when the keyboard focus is WIN or a window inside it. */
 int
 focusinside(Window win)
@@ -5050,7 +5132,12 @@ untrackoverridewindow(Window win)
 
 	if (win == overridefocus) {
 		overridefocus = None;
-		focus(NULL);
+		/* A popup the panel opened from the keyboard: back to the panel,
+		 * on the pill that opened it (#534). */
+		if (barfocus && barfocus != win && baracceptsfocus(barfocus))
+			focusbar(barfocus);
+		else
+			focus(NULL);
 	}
 
 	for (ow = &overridewindows; *ow && (*ow)->win != win; ow = &(*ow)->next);
