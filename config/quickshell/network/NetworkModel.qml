@@ -650,7 +650,9 @@ Scope {
         onExited: exitCode => {
             root.busy = false;
             if (root.hiddenCancelledName.length > 0) {
-                root.message = "Did not join " + root.hiddenCancelledName;
+                // A join that finished before the stop took effect is kept by
+                // the helper (it exits 0): say so, not that it was cancelled.
+                root.message = (exitCode === 0 ? "Joined " : "Did not join ") + root.hiddenCancelledName;
                 root.hiddenCancelledName = "";
                 root.refresh(false);
                 return;

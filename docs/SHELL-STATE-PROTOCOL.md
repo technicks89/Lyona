@@ -74,8 +74,9 @@ keeps only for this session, is a request property like the two above: the
 shell sets it, dwm applies it and deletes it, and nothing is written to disk.
 A saved default, one that must survive a login, is a value in a user TOML file
 (`layout.toml`, `themes.toml`, `hotkeys.toml`, `window-rules.toml`), written
-by an unprivileged helper and hot-reloaded by dwm, which applies only what
-changed (#515). One Settings section can use both: in Appearance > Layout,
+by an unprivileged helper or by hand and hot-reloaded by dwm. For `layout.toml`
+dwm applies only the values whose saved setting changed, so a live tweak to
+another value survives a save (#515). One Settings section can use both: in Appearance > Layout,
 the Tile/Floating/Monocle choice is a request and is not saved, while master
 size, count and gap are saved in `layout.toml`. A new control picks its path
 by this rule.

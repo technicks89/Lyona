@@ -157,6 +157,11 @@ wait_until() { # COMMAND...: up to 10 seconds
 }
 lines() { [[ -e $1 ]] && wc -l <"$1" || echo 0; }
 has_lines() { [[ $(lines "$1") == "$2" ]]; } # FILE N, checked each time it is called
+# The hook does nothing as root (#529); a non-root id for its runs, so the test
+# also runs as root (a CI container).
+mkdir -p "$work/userbin"
+printf '#!/bin/sh\n[ "$1" = -u ] && [ $# = 1 ] && { echo 1000; exit 0; }\nexec /usr/bin/id "$@"\n' >"$work/userbin/id"
+chmod +x "$work/userbin/id"
 hook_reset() {
 	rm -f "$work"/{gate,hook-entered,hook-calls,hook-fd} "$work"/done.*
 }
@@ -166,7 +171,7 @@ start_hook() { # NAME PHASE SETTLE [VAR=VALUE...]: runs it; its background work 
 	mkfifo "$work/done.$name"
 	timeout 15 cat "$work/done.$name" >/dev/null &
 	eval "reader_$name=$!"
-	env -i PATH=/usr/bin:/bin STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" "$@" \
+	env -i PATH="$work/userbin:/usr/bin:/bin" STUB_DIR="$work" XDG_RUNTIME_DIR="$work/run" "$@" \
 		LYONA_AUTORANDR_LOCKER_HELPER="$work/fake-power" LYONA_AUTORANDR_LOCKER_SETTLE="$settle" \
 		"$work/$phase.d/60-lyona-locker" 8>"$work/done.$name" || fail "the $phase hook failed"
 }

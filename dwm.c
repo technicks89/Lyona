@@ -710,14 +710,15 @@ applyfullscreenrule(Client *c, int mode)
 /* Moves a floating window down so its title strip is below the panel (#496),
  * and when that pushes its bottom past the work area, shortens it to fit
  * (#529): a window as tall as the work area lost its bottom edge, and the
- * buttons there. Only a window the strip moved is shortened, so one the user
- * drags off the bottom keeps its size. */
+ * buttons there. A window held at the strip's top is fitted on every pass,
+ * since the size hints (a minimum height) put its height back each time; one
+ * the user drags lower keeps its size. */
 static void
 titlebarclamp(Client *c, Monitor *m, int *y, int *h)
 {
 	int top = m->wy + titleheight(c), bottom = m->wy + m->wh;
 
-	if (*y >= top)
+	if (*y > top)
 		return;
 	*y = top;
 	if (*y + *h + 2 * c->bw > bottom)

@@ -161,6 +161,10 @@ grep -Fq 'hotkeys.toml has no key for clipboard history' "$work/out" ||
 printf '%s\n' "$launcher" "$clipboard" >"$hotkeys"
 run --profile core >"$work/out" 2>&1
 grep -Fq 'no key for clipboard history' "$work/out" && fail 'the notice came with the key in place'
+# A commented-out binding binds nothing: the notice still comes.
+printf '%s\n' "$launcher" "$mine_v" "# $clipboard" >"$hotkeys"
+run --profile core >"$work/out" 2>&1
+grep -Fq 'no key for clipboard history' "$work/out" || fail 'a commented-out clipboard binding hid the notice'
 printf '%s\n' "$launcher" "$mine_v" >"$hotkeys"
 grep -Fxq -- "$mine_v" "$hotkeys" || fail "the user's Super+V was not kept"
 # Written with spaces around "=", it is the same chord.
