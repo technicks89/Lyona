@@ -46,9 +46,9 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   the Settings note: a release before 2026.11.0-beta.2 has no Settings >
   Fingerprint to turn them off (#523). `docs/FINGERPRINT.md` has an "After a
   rollback" section with the manual steps.
-- With the polkit fingerprint use on, its detail says when polkit's own
-  `/usr/lib/pam.d/polkit-1` has changed since Lyona's `/etc` copy was made,
-  which shadows it (#524).
+- With the polkit fingerprint use on, its detail says when
+  `/etc/pam.d/polkit-1`, which shadows polkit's own `/usr/lib/pam.d/polkit-1`,
+  differs from it apart from Lyona's lines (#524).
 - The `sudo` fingerprint switch says that any program can ask sudo for a
   finger (#525).
 

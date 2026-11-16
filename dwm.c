@@ -337,7 +337,7 @@ static void updateselectedmonitor(void);
 static void updatelayoutprop(void);
 static void applylayoutrequest(void);
 static void applysavedlayouts(int force);
-static void savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
+static unsigned int savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
 		float *mf, int *nm, int *gap);
 static void updatelayoutsettingsprop(void);
 static void setupxkb(void);
@@ -5410,12 +5410,19 @@ updatelayoutsettingsprop(void)
 	cachevalid = 1;
 }
 
+#define SAVED_MFACT   1u
+#define SAVED_NMASTER 2u
+#define SAVED_GAP     4u
+
 /* The value layout.toml sets for one tag of one logical monitor, or the
- * default when no entry sets it: the later entry wins, as when applying. */
-static void
+ * default when no entry sets it: the later entry wins, as when applying.
+ * Returns which of the three an entry sets (SAVED_*), so a value saved equal to
+ * the default still counts as saved. */
+static unsigned int
 savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
 		float *mf, int *nm, int *gap)
 {
+	unsigned int saved = 0;
 	int i;
 
 	*mf = mfact;
@@ -5424,13 +5431,20 @@ savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
 	for (i = 0; i < n; i++) {
 		if (set[i].monitor != index || set[i].tag != (int)tag)
 			continue;
-		if (set[i].mfact >= 0)
+		if (set[i].mfact >= 0) {
 			*mf = set[i].mfact / 100.0f;
-		if (set[i].nmaster >= 0)
+			saved |= SAVED_MFACT;
+		}
+		if (set[i].nmaster >= 0) {
 			*nm = set[i].nmaster;
-		if (set[i].gap >= 0)
+			saved |= SAVED_NMASTER;
+		}
+		if (set[i].gap >= 0) {
 			*gap = set[i].gap;
+			saved |= SAVED_GAP;
+		}
 	}
+	return saved;
 }
 
 /* layout.toml's saved values (#479). With FORCE (the monitors changed), a
@@ -5439,7 +5453,9 @@ savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
  * live values. When the file changed, only the values whose saved setting
  * changed are applied (#515): a Settings save of one tag's gap must not undo a
  * live Super+H/L tweak on that tag's master size, or on any other tag or
- * monitor. An entry removed from the file sends its values back to the
+ * monitor. A value changes when it is newly saved, no longer saved, or saved
+ * with another value: saving one equal to the default still applies it over a
+ * live change. An entry removed from the file sends its values back to the
  * defaults, as before. */
 void
 applysavedlayouts(int force)
@@ -5450,7 +5466,7 @@ applysavedlayouts(int force)
 	Monitor *m;
 	int index, changed, nm, pnm, gap, pgap;
 	float mf, pmf;
-	unsigned int t;
+	unsigned int t, saved, psaved, diff;
 
 	changed = applied != rt_layouts_generation;
 	if (!force && !changed)
@@ -5473,13 +5489,14 @@ applysavedlayouts(int force)
 			m->pertag->gaps[0] = 0;
 		} else if (changed) {
 			for (t = 1; t <= LENGTH(tags); t++) {
-				savedlayoutvalues(prev, nprev, index, t, &pmf, &pnm, &pgap);
-				savedlayoutvalues(rt_layouts, rt_nlayouts, index, t, &mf, &nm, &gap);
-				if (mf != pmf)
+				psaved = savedlayoutvalues(prev, nprev, index, t, &pmf, &pnm, &pgap);
+				saved = savedlayoutvalues(rt_layouts, rt_nlayouts, index, t, &mf, &nm, &gap);
+				diff = saved ^ psaved;
+				if ((diff & SAVED_MFACT) || mf != pmf)
 					m->pertag->mfacts[t] = mf;
-				if (nm != pnm)
+				if ((diff & SAVED_NMASTER) || nm != pnm)
 					m->pertag->nmasters[t] = nm;
-				if (gap != pgap)
+				if ((diff & SAVED_GAP) || gap != pgap)
 					m->pertag->gaps[t] = gap;
 			}
 		} else {

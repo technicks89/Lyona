@@ -61,12 +61,20 @@ environment.
   since, only the two lines are removed, after a copy of the file is kept
   there (`USE.before-disable.TIME`).
 
-While the polkit use is on, `/etc/pam.d/polkit-1` is Lyona's copy, and it
-shadows `/usr/lib/pam.d/polkit-1`: a change polkit's package makes to its own
-PAM file does not take effect, and pacman makes no `.pacnew` for it, because
-the copy is not a packaged file. The use's detail says when polkit's file has
-changed since the copy was made (#524); turning the use off and on again makes
-a new copy from it.
+While the polkit use is on, `/etc/pam.d/polkit-1` shadows
+`/usr/lib/pam.d/polkit-1`: a change polkit's package makes to its own PAM file
+does not take effect, and pacman makes no `.pacnew` for it, because the `/etc`
+file is not a packaged one. The use's detail says when the two differ, apart
+from Lyona's two lines (#524). What to do depends on where the `/etc` file came
+from (as root, `/var/lib/lyona/fingerprint` says):
+
+- **Lyona made it and nobody has edited it** (`polkit.absent` is there):
+  turning the use off removes it, and turning it on again makes a new copy
+  from polkit's current file.
+- **It was there before Lyona** (`polkit.orig`), **or was edited since**:
+  turning the use off keeps it, so turning it off and on does not follow
+  polkit's file. Compare it with `/usr/lib/pam.d/polkit-1` and carry over the
+  changes you want by hand.
 
 A `pam_fprintd` line Lyona did not add, such as one added by hand, shows as
 "Set up outside Lyona". Turning the use on or off is refused for it. **Remove
@@ -134,9 +142,10 @@ removed by hand as root:
 
 1. In `/etc/pam.d/sudo` and `/etc/pam.d/lightdm`, delete the two lines that
    begin with `# lyona-fingerprint:` and `-auth      sufficient  pam_fprintd.so`.
-2. Delete `/etc/pam.d/polkit-1` if Lyona created it (its second line is the
-   `# lyona-fingerprint:` marker); polkit then uses `/usr/lib/pam.d/polkit-1`
-   again.
+2. For `/etc/pam.d/polkit-1`, look in `/var/lib/lyona/fingerprint` first. If
+   `polkit.absent` is there, Lyona created the file: delete it, and polkit uses
+   `/usr/lib/pam.d/polkit-1` again. Otherwise (`polkit.orig`, or neither file),
+   the file was there before: keep it, and delete only the same two lines.
 
 Or update again: the release that added the lines can turn them off.
 

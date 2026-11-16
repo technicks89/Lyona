@@ -253,13 +253,20 @@ xdotool key super+d
 wait_settings '0, 2, 55, 1, 0'
 xdotool key super+1
 wait_settings '0, 1, 55, 2, 4'
-# Saving the same value replaces the live one; removing it goes back to the
+# Saving the same value replaces the live one, even a value equal to the
+# default, and leaves the live master size alone; removing it goes back to the
 # default.
+xdotool key super+l
+wait_settings '0, 1, 60, 2, 4'
+helper set 0 1 nmaster 1 >/dev/null
+wait_settings '0, 1, 60, 1, 4'
 helper set 0 1 nmaster 3 >/dev/null
-wait_settings '0, 1, 55, 3, 4'
+wait_settings '0, 1, 60, 3, 4'
 helper set 0 1 nmaster default >/dev/null
-wait_settings '0, 1, 55, 1, 4'
+wait_settings '0, 1, 60, 1, 4'
 helper set 0 1 gap default >/dev/null
+wait_settings '0, 1, 60, 1, 0'
+xdotool key super+h
 wait_settings '0, 1, 55, 1, 0'
 
 # The second monitor: its own entry, for its own tags.

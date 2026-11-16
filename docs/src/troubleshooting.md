@@ -403,11 +403,13 @@ restart it in that state. To see what the watcher did:
 journalctl -t lyona-locker
 ```
 
-From another console (Ctrl+Alt+F3) or over SSH with `DISPLAY=:0`, the same
-recovery runs by hand, and never touches a locked or blanking screen:
+The same recovery runs by hand, and never touches a locked or blanking screen.
+From another console (Ctrl+Alt+F3) or over SSH, logged in as the same user,
+name the session's display first (usually `:0`; `ls /tmp/.X11-unix` lists
+them, `X0` being `:0`), since a console login has no `DISPLAY`:
 
 ```sh
-dwm-settings-power recover-locker
+DISPLAY=:0 dwm-settings-power recover-locker
 ```
 
 ## New features do nothing after an update

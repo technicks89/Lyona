@@ -88,9 +88,9 @@ diff <(sed '2,3d' "$r/etc/pam.d/polkit-1") "$work/polkit-1.vendor" >/dev/null ||
 cmp "$r/usr/lib/pam.d/polkit-1" "$work/polkit-1.vendor" || fail "the system's polkit file was changed"
 # #524: status says when polkit's own file changed since the copy was made.
 detail_of() { run status | awk -F '\t' -v use="$1" '$1 == "use" && $2 == use { print $4 }'; }
-[[ $(detail_of polkit) != *changed* ]] || fail "polkit reported changed: $(detail_of polkit)"
+[[ $(detail_of polkit) != *differs* ]] || fail "polkit reported a difference: $(detail_of polkit)"
 printf 'session include system-session\n' >>"$r/usr/lib/pam.d/polkit-1"
-[[ $(state_of polkit) == on && $(detail_of polkit) == *'polkit has changed its own PAM file'* ]] ||
+[[ $(state_of polkit) == on && $(detail_of polkit) == *"differs from polkit's own /usr/lib/pam.d/polkit-1"* ]] ||
 	fail "polkit drift not reported: $(run status)"
 cp -p "$work/polkit-1.vendor" "$r/usr/lib/pam.d/polkit-1"
 [[ $(run disable polkit) == *restored ]] || fail 'disable polkit'
