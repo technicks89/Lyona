@@ -164,11 +164,17 @@ rm -f "$work/spy.pid"
 # Started directly, not through run(), so $! is the helper itself.
 env HOME="$work/home" XDG_CONFIG_HOME="$config" PATH="$work/bin:$PATH" "$helper" watch >/dev/null 2>&1 &
 watch_pid=$!
-for _ in $(seq 100); do [[ -s $work/spy.pid ]] && break; sleep 0.05; done
+for _ in $(seq 100); do
+	[[ -s $work/spy.pid ]] && break
+	sleep 0.05
+done
 spy_pid=$(cat "$work/spy.pid")
 kill -TERM "$watch_pid"
 wait "$watch_pid" 2>/dev/null || :
-for _ in $(seq 40); do kill -0 "$spy_pid" 2>/dev/null || break; sleep 0.05; done
+for _ in $(seq 40); do
+	kill -0 "$spy_pid" 2>/dev/null || break
+	sleep 0.05
+done
 if kill -0 "$spy_pid" 2>/dev/null; then
 	kill "$spy_pid" 2>/dev/null || :
 	fail 'the xprop spy outlived a stopped watch'
