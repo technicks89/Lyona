@@ -200,6 +200,22 @@ FloatingWindow {
                     onToggled: root.clipboardModel.setPersist(!root.clipboardModel.persistEnabled)
                 }
 
+                UiText {
+                    text: "Skip xclip"
+                    color: root.clipboardModel.skipXclip ? Theme.menuText : Theme.menuMutedText
+                    font.pixelSize: Theme.smallFontSize
+                }
+
+                PanelToggleSwitch {
+                    objectName: "clipboardSkipXclipSwitch"
+                    checked: root.clipboardModel.skipXclip
+                    busy: root.clipboardModel.busy
+                    enabled: root.clipboardModel.settingsKnown && root.clipboardModel.settingsAvailable
+                    accessibleName: "Skip copies from xclip and xsel"
+                    accessibleDescription: "Does not keep copies made through xclip or xsel, which pass -c and gopass use for passwords"
+                    onToggled: root.clipboardModel.setSkipXclip(!root.clipboardModel.skipXclip)
+                }
+
                 ShellButton {
                     // Asked twice, like deleting a finger (#529).
                     label: root.confirmClear ? "Confirm Clear" : "Clear all"
@@ -219,7 +235,7 @@ FloatingWindow {
 
             UiText {
                 Layout.fillWidth: true
-                text: "Capture is off until you turn it on. Copies from browsers and terminals are kept; copies from identifiable password managers, and copies an application marks as secret, are not. A password copied by a browser extension, or from a terminal, can still be kept. Saving to disk is a separate choice; turning it off deletes the file, and so does turning capture off."
+                text: "Capture is off until you turn it on. Copies from browsers and terminals are kept; copies from identifiable password managers, and copies an application marks as secret, are not. A password copied by a browser extension, or from a terminal, can still be kept; so can one from pass -c or gopass unless Skip xclip is on. Saving to disk is a separate choice; turning it off deletes the file, and so does turning capture off."
                 wrapMode: Text.WordWrap
                 color: Theme.menuMutedText
                 font.pixelSize: Theme.smallFontSize

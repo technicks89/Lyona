@@ -96,17 +96,42 @@ cp -p "$work/polkit-1.vendor" "$r/usr/lib/pam.d/polkit-1"
 [[ $(run disable polkit) == *restored ]] || fail 'disable polkit'
 [[ ! -e $r/etc/pam.d/polkit-1 && $(state_of polkit) == off ]] || fail 'the /etc copy was left'
 
+# #535: the enrolment rule follows the uses: there while one is on, gone when
+# none is, and made again by sync-enroll-rule.
+rule=$r/etc/polkit-1/rules.d/50-lyona-fingerprint-enroll.rules
+[[ ! -e $rule ]] || fail 'the enrolment rule exists with every use off'
+run enable sudo >/dev/null
+[[ -f $rule ]] || fail 'no enrolment rule with sudo on'
+grep -Fq 'action.id == "net.reactivated.fprint.device.enroll"' "$rule" || fail "the enrolment rule: $(cat "$rule")"
+grep -Fq 'polkit.Result.AUTH_ADMIN;' "$rule" || fail "the enrolment rule: $(cat "$rule")"
+[[ $(stat -c %a "$rule") == 644 ]] || fail "the rule's mode: $(stat -c %a "$rule")"
+run enable polkit >/dev/null
+run disable sudo >/dev/null
+[[ -f $rule ]] || fail 'the rule went while polkit was still on'
+run disable polkit >/dev/null
+[[ ! -e $rule ]] || fail 'the rule stayed with every use off'
+run enable sudo >/dev/null
+rm "$rule"
+[[ $(run sync-enroll-rule) == $'fingerprint-pam-result\tsync-enroll-rule\tpresent' && -f $rule ]] ||
+	fail 'sync-enroll-rule did not put the rule back'
+run disable sudo >/dev/null
+[[ $(run sync-enroll-rule) == $'fingerprint-pam-result\tsync-enroll-rule\tabsent' && ! -e $rule ]] ||
+	fail 'sync-enroll-rule left the rule with every use off'
+
 # A line Lyona did not add (as on a machine set up by hand): external, left
 # alone by enable and disable, removed only by remove-external, with a copy.
 sed -i '1a auth        sufficient  pam_fprintd.so' "$r/etc/pam.d/lightdm"
 cp -p "$r/etc/pam.d/lightdm" "$work/lightdm.hand"
 [[ $(state_of lightdm) == external ]] || fail "a hand-added line: $(run status)"
+# A line added by hand turns fingerprint on too: the enrolment rule follows it.
+[[ $(run sync-enroll-rule) == *present && -f $rule ]] || fail 'no enrolment rule with a hand-added line'
 expect_fail 'outside Lyona' enable lightdm
 expect_fail 'outside Lyona' disable lightdm
 cmp "$r/etc/pam.d/lightdm" "$work/lightdm.hand" || fail 'refused requests changed the file'
 [[ $(run remove-external lightdm) == *removed ]] || fail 'remove-external'
 cmp "$r/etc/pam.d/lightdm" "$work/lightdm.orig" || fail "after remove-external: $(cat "$r/etc/pam.d/lightdm")"
 compgen -G "$r/var/lib/lyona/fingerprint/lightdm.external.*" >/dev/null || fail 'no copy before remove-external'
+[[ ! -e $rule ]] || fail 'the enrolment rule stayed after the hand-added line went'
 # Lyona's own line with no marker before it, first in a file without a header,
 # is one Lyona did not add.
 cp -p "$r/etc/pam.d/lightdm" "$work/lightdm.keep"

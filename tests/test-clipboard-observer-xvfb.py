@@ -171,6 +171,35 @@ class Observer(unittest.TestCase):
                 self.assertNotIn("TEXT", requests)
                 self.assertFalse(any(event.get("event") == "text" for event in events))
 
+    def test_xclip_kept_by_default_and_skipped_with_the_option(self):
+        """#535: pass -c and gopass copy through xclip or xsel, which detach
+        from them. Kept by default, as any copy; refused with --skip-xclip,
+        also when the xclip is a forked child of another program."""
+        xclip = self.base / "xclip"
+        xsel = self.base / "xsel"
+        launcher = self.base / "launcher"
+        for executable in (xclip, xsel, launcher):
+            shutil.copy2(self.owner, executable)
+        events, _ = self.capture(xclip, "plain", "xclip default copy")
+        self.assertIn({"event": "text", "text": "xclip default copy"}, events)
+        # The same, with the option.
+        self.observer.terminate()
+        self.observer.wait(timeout=5)
+        self.observer = self.start([self.binary, "--skip-xclip"])
+        self.assertEqual(self.line(self.observer, 3), {"event": "ready", "protocol": 1})
+        time.sleep(0.02)
+        for executable in (xclip, xsel):
+            with self.subTest(owner=executable.name):
+                events, requests = self.capture(executable, "plain", "NEVER-EMIT-" + executable.name)
+                self.assertEqual(requests, [])
+                self.assertFalse(any(event.get("event") == "text" for event in events))
+        events, requests = self.capture(launcher, "spawn", "NEVER-EMIT-FORKED-XCLIP", child=xclip)
+        self.assertEqual(requests, [])
+        self.assertFalse(any(event.get("event") == "text" for event in events))
+        # Other copies are kept as before.
+        events, _ = self.capture(launcher, "plain", "launcher copy")
+        self.assertIn({"event": "text", "text": "launcher copy"}, events)
+
     def test_helper_spawned_by_manager_is_rejected(self):
         events, requests = self.capture(self.other, "spawn", "NEVER-EMIT-MANAGER-HELPER", child=self.owner)
         self.assertEqual(requests, [])

@@ -85,6 +85,8 @@
                     "the keyboard's place did not follow System: index " + settingsModel.selectedIndex);
                 root.fpCheck(model.readerDetail === "Test Reader", "reader: " + model.readerDetail);
                 root.fpCheck(JSON.stringify(model.fingers) === '["right-index-finger"]', "fingers");
+                // Enrolled outside Settings (#535): said until acknowledged.
+                root.fpCheck(JSON.stringify(model.addedFingers) === '["right-index-finger"]', "added: " + JSON.stringify(model.addedFingers));
                 root.fpCheck(model.useState("lightdm") === "external" && model.useState("sudo") === "off"
                     && model.useState("polkit") === "on" && model.moduleAvailable, "uses: " + JSON.stringify(model.uses));
                 settingsModel.selectSection("fingerprint");
@@ -146,6 +148,33 @@
                 root.fpCheck(settingsModel.selectedSectionId === settingsModel.sections[0].id
                     && settingsModel.selectedSection().id === settingsModel.selectedSectionId,
                     "the selection stayed on " + settingsModel.selectedSectionId);
+                settingsModel.close();
+                // With a reader found, opening Settings again reads only the PAM
+                // files (#532); with none, it still looks (stage 2 relies on it).
+                root.fpCheck(!model.readerChecked, "no reader, yet the answer was kept");
+                fpShell.command = ["sh", "-c", 'cp "$1/status-reader" "$1/status"', "sh", root.fpDir];
+                fpShell.running = true;
+                root.fpNext();
+                return;
+            case 12:
+                if (fpShell.running) return;
+                settingsModel.open("displays");
+                root.fpNext();
+                return;
+            case 13:
+                if (!model.readerChecked) return;
+                settingsModel.close();
+                settingsModel.open("displays");
+                root.fpNext();
+                return;
+            case 14:
+                if (root.fpLog.indexOf("status --uses") < 0 || model.busy) return;
+                model.acknowledgeAdded();
+                root.fpNext();
+                return;
+            case 15:
+                if (root.fpLog.indexOf("acknowledge right-index-finger") < 0 || model.busy) return;
+                root.fpCheck(model.message === "Noted as yours", "acknowledge message: " + model.message);
                 settingsModel.close();
                 console.log("Fingerprint settings: PASS");
                 Qt.quit();

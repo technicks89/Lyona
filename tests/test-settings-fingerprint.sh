@@ -88,6 +88,37 @@ complete	status
 EOF
 grep -Fq "ListEnrolledFingers s $(id -un)" "$work/busctl-calls" || fail "fingers were not asked for this user: $(cat "$work/busctl-calls")"
 
+# --uses (#532): the PAM state alone, without a word to fprintd.
+: >"$work/busctl-calls"
+run status --uses >"$work/status"
+diff -u - "$work/status" <<EOF
+fingerprint-protocol	1
+module	missing	/usr/lib/security/pam_fprintd.so
+use	lightdm	off	The password only
+use	polkit	unavailable	/etc/pam.d/polkit-1 does not exist
+use	sudo	off	The password only
+complete	status
+EOF
+[[ ! -s $work/busctl-calls ]] || fail "status --uses asked fprintd: $(cat "$work/busctl-calls")"
+expect_fail 'status takes only --uses' status --everything
+
+# A finger enrolled outside Settings (#535): the first status took the two
+# there as known; one Settings does not know is reported until acknowledged.
+known=$work/.local/state/lyona/fingerprint-fingers
+[[ $(cat "$known") == $'right-index-finger\nleft-thumb' ]] || fail "known fingers: $(cat "$known" 2>/dev/null)"
+[[ $(stat -c %a "$known") == 600 ]] || fail "the known fingers file is mode $(stat -c %a "$known")"
+printf 'right-index-finger\n' >"$known"
+[[ $(run status) == *$'\nfinger\tleft-thumb\nfinger-added\tleft-thumb\n'* ]] || fail "an outside finger was not reported: $(run status)"
+[[ $(run acknowledge left-thumb) == $'fingerprint-result\tacknowledge\tleft-thumb' ]] || fail 'acknowledge'
+[[ $(run status) != *finger-added* ]] || fail "an acknowledged finger was still reported: $(run status)"
+expect_fail 'unknown finger' acknowledge nose
+# Settings' own enrolments and deletions keep the list.
+run enroll right-thumb >/dev/null
+grep -Fqx right-thumb "$known" || fail "an enrolled finger was not recorded: $(cat "$known")"
+run delete left-thumb >/dev/null
+! grep -Fqx left-thumb "$known" || fail "a deleted finger stayed known: $(cat "$known")"
+printf 'right-index-finger\nleft-thumb\n' >"$known"
+
 # No fingers enrolled (fprintd answers with an error): no finger lines.
 rm "$work/fingers"
 [[ $(run status) != *$'\nfinger\t'* ]] || fail 'fingers without any enrolled'

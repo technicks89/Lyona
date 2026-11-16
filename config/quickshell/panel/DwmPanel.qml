@@ -178,6 +178,9 @@ PanelWindow {
                             anchors.leftMargin: Theme.pillHorizontalPadding
                             anchors.rightMargin: Theme.pillHorizontalPadding
                             text: root.state.titleForScreen(root.screen)
+                            // A title that keeps changing in one window scrolls
+                            // at most every 30 s; a new window scrolls (#532).
+                            key: root.state.monitorWindows[root.state.screenIndex(root.screen)] || root.state.activeWindowId
                             color: Theme.text
                         }
                     }

@@ -40,7 +40,7 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/layout-settings-model.py" "$work/qml" "$repo/tests/qml/LayoutSettingsModel.inc"
+python3 "$repo/tests/fixtures/shell-stub.py" "$work/qml" "$repo/tests/qml/LayoutSettingsModel.inc" dwm-layout-settings,dwm-settings-theme:LAYOUT_STUB:helper
 # The stub: the watch follows a feed file; a set is logged after 0.4 s (so
 # the next ones queue), and fails while "fail" exists; title bars in a file.
 : >"$work/layout/feed"

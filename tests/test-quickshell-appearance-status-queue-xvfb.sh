@@ -39,7 +39,7 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/appearance-status-queue.py" "$work/qml" "$repo/tests/qml/AppearanceStatusQueue.inc"
+python3 "$repo/tests/fixtures/shell-stub.py" "$work/qml" "$repo/tests/qml/AppearanceStatusQueue.inc" dwm-settings-appearance,dwm-settings-wallpaper:APPEARANCE_STUB:helper
 # A 1x1 PNG to apply.
 printf '\211PNG\r\n\032\n\0\0\0\rIHDR\0\0\0\001\0\0\0\001\010\002\0\0\0\220wS\336\0\0\0\014IDATx\234c\370\017\0\0\001\001\0\005\030\330N\0\0\0\0IEND\256B`\202' \
 	>"$work/home/Pictures/backgrounds/b.png"

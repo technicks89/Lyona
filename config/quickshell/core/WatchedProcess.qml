@@ -50,7 +50,8 @@ Scope {
 
     property string restartPolicy: "backoff"
     /* How the output is split into lines: a blank line for a helper that
-     * writes records of several lines. */
+     * writes records of several lines, or "" for raw chunks, so no line can
+     * grow without a bound (the clipboard source, #531). */
     property string splitMarker: "\n"
 
     property int settleInterval: 250

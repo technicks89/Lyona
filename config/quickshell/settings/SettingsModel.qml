@@ -940,7 +940,9 @@ Scope {
         }
         root.selectedIndex = targetIndex;
         root.selectedSectionId = targetId;
-        fingerprintModel.refresh();
+        // The PAM state only, after the first open: fprintd is not started
+        // for every Settings window (#532). Opening Fingerprint reads it all.
+        fingerprintModel.refreshForSettings();
         root.refreshCapabilities();
         root.activateSection(root.selectedSectionId);
 		root.recoverDisplayPreview();

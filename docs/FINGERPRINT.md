@@ -27,6 +27,25 @@ scan's result in plain words. fprintd's polkit policy asks for the user's own
 password, and remembers it for a while. The reader and the fingers are read
 from fprintd over D-Bus.
 
+While any use is on, or set up outside Lyona, enrolling asks for the
+**administrator password** instead (#535): `lyona-fingerprint-pam` keeps
+`/etc/polkit-1/rules.d/50-lyona-fingerprint-enroll.rules`, which raises
+fprintd's `net.reactivated.fprint.device.enroll` to `auth_admin`, while one is,
+and removes it when none is. Otherwise someone at an unlocked session could
+add a finger of their own within the remembered window, and it would then work
+wherever fingerprint is on. The install writes or removes the rule to match
+the uses already set.
+
+A finger enrolled **outside Settings** (with `fprintd-enroll`, say) is shown at
+the top of the pane, "Added outside Settings", until **I Added It** is chosen
+or the finger is deleted (#535). Settings keeps the fingers it enrolled in
+`~/.local/state/lyona/fingerprint-fingers`; the first time it reads the reader,
+it takes the fingers enrolled then as known.
+
+Opening Settings reads only the PAM files once a reader has been found (#532),
+so fprintd is not started for every Settings window; the Fingerprint section
+itself reads the reader and the fingers.
+
 ## Uses
 
 | Use | PAM file | What it covers |
@@ -152,7 +171,8 @@ Or update again: the release that added the lines can turn them off.
 ## Validation
 
 - `make check-fingerprint-pam`: the PAM tool against a fake root seeded with
-  real PAM files. On, off and byte-for-byte restore; mode kept; an edited file
+  real PAM files. On, off and byte-for-byte restore; the enrolment rule written
+  and removed with the uses; mode kept; an edited file
   loses only Lyona's lines; polkit's `/etc` copy created and removed, and a
   change to polkit's own file reported; external
   lines reported, refused, and removed only on request; a missing module;

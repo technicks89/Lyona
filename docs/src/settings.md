@@ -154,8 +154,9 @@ the same page has the [recovery steps](https://github.com/technicks89/Lyona/blob
 turn it on there; **Save** keeps the list across restarts in a private file,
 and turning either off deletes that file, as does **Clear all**. Copies from
 identifiable password managers, and copies an application marks as secret,
-are not kept, but a password copied from a browser extension, a terminal, or
-`pass -c` can be. [CLIPBOARD-PRIVACY.md](https://github.com/technicks89/Lyona/blob/main/docs/CLIPBOARD-PRIVACY.md) has the
+are not kept, but a password copied from a browser extension or a terminal can
+be, and so can one from `pass -c` or `gopass` unless **Skip xclip** is on
+(it refuses every copy made through `xclip` or `xsel`). [CLIPBOARD-PRIVACY.md](https://github.com/technicks89/Lyona/blob/main/docs/CLIPBOARD-PRIVACY.md) has the
 full policy and its limits.
 
 ## System

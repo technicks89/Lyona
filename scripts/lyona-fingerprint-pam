@@ -7,6 +7,7 @@ set -euo pipefail
 #
 #   lyona-fingerprint-pam [--root DIR] status
 #   lyona-fingerprint-pam [--root DIR] enable|disable|remove-external USE
+#   lyona-fingerprint-pam [--root DIR] sync-enroll-rule
 #
 # USE is one of:
 #   lightdm  /etc/pam.d/lightdm: the LightDM login and light-locker's lock
@@ -37,6 +38,13 @@ set -euo pipefail
 #   use      USE  on|off|external|unavailable  DETAIL
 #   complete status
 #
+# While any use is on, or set up outside Lyona, a polkit rule makes enrolling
+# a finger ask for the administrator password (#535): fprintd's own policy
+# asks for the user's password and remembers it for a while, so someone at an
+# unlocked session could add a finger of their own, which then works wherever
+# fingerprint is on. Every change here, and sync-enroll-rule (run by the
+# install), writes the rule or removes it to match.
+#
 # DIR (for tests) is the root the paths are under; it is never given by the
 # root helper, which uses /.
 
@@ -55,6 +63,7 @@ readonly marker='# lyona-fingerprint: added by Lyona Settings > Fingerprint; tur
 readonly fprint_line='-auth      sufficient  pam_fprintd.so timeout=10 max-tries=3'
 module=$root/usr/lib/security/pam_fprintd.so
 state_dir=$root/var/lib/lyona/fingerprint
+enroll_rule=$root/etc/polkit-1/rules.d/50-lyona-fingerprint-enroll.rules
 
 die() {
 	printf '%s: %s\n' "$self" "$*" >&2
@@ -149,6 +158,41 @@ use_state() {
 	else
 		printf 'off\tThe password only\n'
 	fi
+}
+
+# The enrolment rule (#535), present exactly while a use is on or external.
+sync_enroll_rule() {
+	local use state any=0 dir tmp
+	for use in lightdm polkit sudo; do
+		state=$(use_state "$use")
+		case ${state%%$'\t'*} in on | external) any=1 ;; esac
+	done
+	dir=${enroll_rule%/*}
+	if ((any == 0)); then
+		[[ ! -e $enroll_rule && ! -L $enroll_rule ]] || {
+			no_symlinks "$enroll_rule" && [[ ! -L $enroll_rule ]] || die "refusing a symlinked path: ${enroll_rule#"$root"}"
+			rm -f -- "$enroll_rule"
+		}
+		return 0
+	fi
+	no_symlinks "$dir" || die "refusing a symlinked path: ${dir#"$root"}"
+	mkdir -p -- "$dir"
+	[[ ! -L $enroll_rule ]] || die "refusing a symlinked path: ${enroll_rule#"$root"}"
+	tmp=$(mktemp "$dir/.50-lyona-fingerprint-enroll.XXXXXX")
+	cat >"$tmp" <<'RULE'
+// Written by Lyona's lyona-fingerprint-pam while fingerprint is on for the
+// login, administrator prompts or sudo (#535); removed when it is off for all.
+// Enrolling a finger asks for the administrator password, not the user's own
+// remembered one, so a finger cannot be added in a moment at an unlocked
+// session and then work wherever fingerprint is on.
+polkit.addRule(function(action, subject) {
+    if (action.id == "net.reactivated.fprint.device.enroll") {
+        return polkit.Result.AUTH_ADMIN;
+    }
+});
+RULE
+	chmod 644 -- "$tmp"
+	mv -fT -- "$tmp" "$enroll_rule"
 }
 
 cmd_status() {
@@ -320,9 +364,15 @@ enable | disable | remove-external)
 	disable) cmd_disable "$2" ;;
 	remove-external) cmd_remove_external "$2" ;;
 	esac
+	sync_enroll_rule
+	;;
+sync-enroll-rule)
+	(($# == 1)) || die "sync-enroll-rule takes no arguments"
+	sync_enroll_rule
+	printf 'fingerprint-pam-result\tsync-enroll-rule\t%s\n' "$([[ -e $enroll_rule ]] && echo present || echo absent)"
 	;;
 *)
-	printf 'usage: %s [--root DIR] status | enable|disable|remove-external lightdm|polkit|sudo\n' "$self" >&2
+	printf 'usage: %s [--root DIR] status | enable|disable|remove-external lightdm|polkit|sudo | sync-enroll-rule\n' "$self" >&2
 	exit 2
 	;;
 esac

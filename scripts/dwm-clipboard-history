@@ -6,7 +6,7 @@ set -euo pipefail
 # separate opt-ins, both off until the user turns them on:
 #
 #   dwm-clipboard-history status
-#   dwm-clipboard-history set capture|persist on|off
+#   dwm-clipboard-history set capture|persist|skip-xclip on|off
 #   dwm-clipboard-history load          the saved history, when saving is on
 #   dwm-clipboard-history save          the history from stdin, when saving is on
 #   dwm-clipboard-history clear         removes the saved history
@@ -18,10 +18,11 @@ set -euo pipefail
 #   state    available|unavailable  DETAIL
 #   capture  on|off
 #   persist  on|off
+#   skip-xclip  on|off        (#535: copies owned by xclip or xsel refused)
 #   complete status
 #
-# The settings are ${XDG_CONFIG_HOME}/lyona/clipboard-history.conf ("capture=on"
-# and "persist=on" lines; anything else reads as off). The history is
+# The settings are ${XDG_CONFIG_HOME}/lyona/clipboard-history.conf ("capture=on",
+# "persist=on" and "skip_xclip=on" lines; anything else reads as off). The history is
 # ${XDG_STATE_HOME}/lyona/clipboard-history.json, the JSON the shell gives,
 # at most 4 MiB, mode 0600 in a 0700 directory, written whole and renamed into
 # place under umask 077, so it is never readable by others, even for a moment.
@@ -36,6 +37,11 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-paths.sh
 . "$lyona_lib/dwm-paths.sh"
+# The shared lock (#531): owner and hard-link checks, and a time limit.
+# lyona-settings-writer: tests/test-shell-contracts.sh holds this file to the
+# shared primitives in dwm-preview-core.sh.
+# shellcheck source=scripts/dwm-preview-core.sh
+. "$lyona_lib/dwm-preview-core.sh"
 lyona_xdg_dirs
 
 self=dwm-clipboard-history
@@ -80,8 +86,8 @@ history_dir_safe() {
 # so a save checks that saving is still on just before it replaces the file.
 lock() {
 	private_dir "$config_dir"
-	exec 9>>"$config_dir/.clipboard-history.lock"
-	flock -x 9 || die "cannot lock the clipboard history"
+	# The shared lock (#531), given up after 30 s rather than hang the shell.
+	preview_lock "$config_dir/.clipboard-history.lock" 9 30 || die "cannot lock the clipboard history"
 }
 
 # What the last clear left, so a save that began before it does not put back
@@ -94,15 +100,18 @@ cleared_mark() {
 
 capture=off
 persist=off
+skip_xclip=off
 read_settings() {
 	local line
 	capture=off
 	persist=off
+	skip_xclip=off
 	settings_safe || return 0
 	while IFS= read -r line || [[ -n $line ]]; do
 		case $line in
 		capture=on) capture=on ;;
 		persist=on) persist=on ;;
+		skip_xclip=on) skip_xclip=on ;;
 		esac
 	done <"$settings_file"
 	# Saving needs capture.
@@ -114,7 +123,7 @@ write_settings() {
 	private_dir "$config_dir"
 	plain_file "$settings_file" || die "refusing to replace $settings_file: not a regular file"
 	tmp=$(mktemp "$config_dir/.clipboard-history.conf.XXXXXX")
-	printf 'capture=%s\npersist=%s\n' "$capture" "$persist" >"$tmp" || {
+	printf 'capture=%s\npersist=%s\nskip_xclip=%s\n' "$capture" "$persist" "$skip_xclip" >"$tmp" || {
 		rm -f -- "$tmp"
 		die "cannot write $settings_file"
 	}
@@ -139,11 +148,12 @@ cmd_status() {
 	printf 'state\t%s\t%s\n' "$state" "$detail"
 	printf 'capture\t%s\n' "$capture"
 	printf 'persist\t%s\n' "$persist"
+	printf 'skip-xclip\t%s\n' "$skip_xclip"
 	printf 'complete\tstatus\n'
 }
 
 cmd_set() {
-	(($# == 2)) || die "set takes capture|persist on|off"
+	(($# == 2)) || die "set takes capture|persist|skip-xclip on|off"
 	[[ $2 == on || $2 == off ]] || die "the value must be on or off: $2"
 	lock
 	read_settings
@@ -159,7 +169,8 @@ cmd_set() {
 		[[ $2 == off || $capture == on ]] || die "saving to disk needs capture on"
 		persist=$2
 		;;
-	*) die "set takes capture|persist on|off" ;;
+	skip-xclip) skip_xclip=$2 ;;
+	*) die "set takes capture|persist|skip-xclip on|off" ;;
 	esac
 	write_settings
 	[[ $persist == on ]] || remove_history
@@ -222,6 +233,9 @@ cmd_observe() {
 	[[ $capture == on ]] || die "capture is off"
 	for candidate in "$lyona_lib/dwm-clipboard-observer" "$lyona_lib/../dwm-clipboard-observer"; do
 		[[ -x $candidate ]] || continue
+		if [[ $skip_xclip == on ]]; then
+			exec "$candidate" --skip-xclip
+		fi
 		exec "$candidate"
 	done
 	die "dwm-clipboard-observer is not installed"
@@ -257,7 +271,7 @@ clear)
 	printf 'clipboard-history-result\tclear\n'
 	;;
 *)
-	printf 'usage: %s status | set capture|persist on|off | load | save | clear | observe\n' "$self" >&2
+	printf 'usage: %s status | set capture|persist|skip-xclip on|off | load | save | clear | observe\n' "$self" >&2
 	exit 2
 	;;
 esac

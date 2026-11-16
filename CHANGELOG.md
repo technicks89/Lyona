@@ -10,6 +10,19 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Added
 
+- Clipboard history: **Skip xclip**, off by default, refuses copies owned by
+  `xclip` or `xsel`, also when forked by another program, so passwords copied
+  by `pass -c` or `gopass` are not kept (#535). `dwm-clipboard-history set
+  skip-xclip on|off`, and `dwm-clipboard-observer --skip-xclip`.
+- Fingerprint (#535):
+  - While any use is on, enrolling a finger asks for the administrator
+    password: `lyona-fingerprint-pam` keeps a polkit rule raising fprintd's
+    enroll action to `auth_admin`, removes it when no use is on, and the
+    install brings it in line with the uses already set
+    (`lyona-fingerprint-pam sync-enroll-rule`).
+  - A finger enrolled outside Settings is shown in Settings > Fingerprint until
+    acknowledged (**I Added It**) or deleted (`dwm-settings-fingerprint
+    acknowledge`, and `finger-added` status lines).
 - Settings > Appearance > Layout (#530, #534):
   - A **Title bars on floating windows** switch and the tags they show on,
     written to `themes.toml`'s `[appearance]` by the new
@@ -83,6 +96,27 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- Per-event costs (#532):
+  - Saving clipboard history sizes each entry once and stringifies the
+    history once, instead of again for every entry dropped, and waits a second
+    after the last change, so a burst of copies is one write.
+  - The panel's window title scrolls once for a new window, and at most every
+    30 seconds for a title that keeps changing in the same one.
+  - Opening Settings reads only the fingerprint PAM state once a reader has
+    been found (`dwm-settings-fingerprint status --uses`), instead of starting
+    fprintd and probing the reader every time.
+- Shared code (#531):
+  - `dwm-layout-settings`, `dwm-clipboard-history`, `dwm-panel-settings`,
+    `dwm-accessibility-settings` and `dwm-blank-watch` take the shared
+    `preview_lock` (owner and hard-link checks, a time limit) instead of a
+    `flock` of their own, and `dwm-accessibility-settings` the shared atomic
+    exchange probe, which now also checks that the two files really swapped;
+    `make check-shell-contracts` holds every helper marked
+    `# lyona-settings-writer:` to the shared primitives.
+  - The clipboard source runs through `WatchedProcess` (raw chunks, never
+    restarted), as the other resident watchers do.
+  - The xvfb tests that run the shell with a stub helper share one fixture,
+    `tests/fixtures/shell-stub.py`, in place of seven copies.
 - A rollback says which fingerprint uses are still on, before it asks and in
   the Settings note: a release before 2026.11.0-beta.2 has no Settings >
   Fingerprint to turn them off (#523). `docs/FINGERPRINT.md` has an "After a

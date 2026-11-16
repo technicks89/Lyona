@@ -138,6 +138,25 @@ Flickable {
             visible: root.model.readerAvailable
             spacing: Theme.spacingLg
 
+            // A finger enrolled outside Settings (#535).
+            UiText {
+                Layout.fillWidth: true
+                visible: root.model.addedFingers.length > 0
+                text: "Added outside Settings: " + root.model.addedFingers.map(function(name) {
+                    return root.model.fingerLabel(name);
+                }).join(", ") + ". It works wherever fingerprint is on. If you did not add it, delete it below."
+                color: Theme.warning
+                wrapMode: Text.WordWrap
+            }
+
+            ShellButton {
+                visible: root.model.addedFingers.length > 0
+                label: "I Added It"
+                accessibleDescription: "Stop warning about the fingers added outside Settings"
+                enabled: !root.model.busy
+                onActivated: root.model.acknowledgeAdded()
+            }
+
             SectionLabel { label: "Enrolled fingers" }
 
             UiText {

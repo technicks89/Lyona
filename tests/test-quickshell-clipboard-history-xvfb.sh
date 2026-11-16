@@ -42,7 +42,7 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/clipboard-history.py" "$work/qml" "$repo/tests/qml/ClipboardHistory.inc"
+python3 "$repo/tests/fixtures/shell-stub.py" "$work/qml" "$repo/tests/qml/ClipboardHistory.inc" dwm-clipboard-history:CLIPBOARD_STUB:action
 # The stub: settings in files, a log of calls, saves to a file, and an
 # observer that follows a feed file of JSON records.
 mkdir -p "$work/clipboard"
@@ -53,8 +53,9 @@ cat >"$work/clipboard-stub" <<'EOF'
 d=$CLIPBOARD_DIR
 case $1 in
 status)
-	printf 'clipboard-history-protocol\t1\nstate\tavailable\tok\ncapture\t%s\npersist\t%s\ncomplete\tstatus\n' \
-		"$(cat "$d/capture" 2>/dev/null || echo off)" "$(cat "$d/persist" 2>/dev/null || echo off)"
+	printf 'clipboard-history-protocol\t1\nstate\tavailable\tok\ncapture\t%s\npersist\t%s\nskip-xclip\t%s\ncomplete\tstatus\n' \
+		"$(cat "$d/capture" 2>/dev/null || echo off)" "$(cat "$d/persist" 2>/dev/null || echo off)" \
+		"$(cat "$d/skip-xclip" 2>/dev/null || echo off)"
 	;;
 set)
 	printf '%s\n' "$3" >"$d/$2"
