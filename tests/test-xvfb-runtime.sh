@@ -481,6 +481,10 @@ main(int argc, char **argv)
 		override_redirect = rewards_overlay = 1;
 	else if (argc == 2 && strcmp(argv[1], "swallow-terminal") == 0)
 		swallow_terminal = 1;
+	/* #533: the child waits for the file $DWM_XVFB_CHILD_GO before it maps,
+	 * so the test can put the terminal in a mode first. */
+	else if (argc == 2 && strcmp(argv[1], "swallow-terminal-late") == 0)
+		swallow_terminal = 2;
 	else if (argc == 2 && strcmp(argv[1], "fixed") == 0)
 		fixed_size = 1;
 	else if (argc == 2 && strcmp(argv[1], "extreme-aspect") == 0)
@@ -608,6 +612,13 @@ main(int argc, char **argv)
 
 		close(ConnectionNumber(dpy));
 		usleep(200000);
+		if (swallow_terminal == 2) {
+			const char *go = getenv("DWM_XVFB_CHILD_GO");
+			int waited;
+
+			for (waited = 0; go && access(go, F_OK) != 0 && waited < 200; waited++)
+				usleep(50000);
+		}
 		child_dpy = XOpenDisplay(NULL);
 		if (!child_dpy)
 			return 3;
@@ -1637,6 +1648,93 @@ for late_override in '' 'fullscreen=0' 'noswallow=1'; do
 	stop_rule_client
 done
 
+# Real fullscreen over fake mode (#533): a window in fake fullscreen
+# (Super+Shift+Y) that a late title rule makes really fullscreen covers the
+# monitor. (a) Super+K does not move focus out of it, as in every mode that
+# covers the monitor (before, this one let it). (b) Its own repeated request
+# changes nothing (before, it dropped to fake but kept the monitor's size and
+# lost the tile it came from), so Super+Shift+Y twice brings it back to its
+# tile.
+set_client_rules 'title="DC Universe Online [DCUOT.", fullscreen=1'
+: >"$work/rof-other-id"
+DISPLAY=$display "$work/xclient" >"$work/rof-other-id" 2>"$work/rof-other.log" &
+rof_other_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/rof-other-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+start_rule_client ''
+wait_for_active_window "$rule_win"
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -E '^(WIDTH|HEIGHT|X|Y)=' >"$work/rof-tile"
+DISPLAY=$display xdotool key Super+Shift+y
+wait_for_window_state "$rule_win" _NET_WM_STATE_FULLSCREEN
+DISPLAY=$display xdotool set_window --name 'DC Universe Online [DCUOT.619986]' "$rule_win"
+wait_for_fullscreen_monitors 0
+assert_geometry "$rule_win" 0 0 1024 768
+DISPLAY=$display xdotool key Super+k
+sleep 0.3
+wait_for_active_window "$rule_win"
+DISPLAY=$display "$work/xclient" state "$rule_win" 1 _NET_WM_STATE_FULLSCREEN
+sleep 0.3
+wait_for_fullscreen_monitors 0
+assert_geometry "$rule_win" 0 0 1024 768
+DISPLAY=$display xdotool key Super+Shift+y
+wait_for_fullscreen_monitors ''
+wait_for_window_state "$rule_win" _NET_WM_STATE_FULLSCREEN
+DISPLAY=$display xdotool key Super+Shift+y
+wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+sleep 0.2
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -E '^(WIDTH|HEIGHT|X|Y)=' >"$work/rof-after"
+cmp -s "$work/rof-tile" "$work/rof-after" || {
+	printf 'real fullscreen over fake mode did not come back to its tile:\n' >&2
+	cat "$work/rof-tile" "$work/rof-after" >&2
+	exit 1
+}
+stop_rule_client
+kill "$rof_other_pid"
+wait "$rof_other_pid" 2>/dev/null || true
+cp "$work/rules-backup" "$rules_file"
+reload_rules
+
+# A tiled window leaving fullscreen goes back into the tiling (#533): the
+# monitor was arranged without it while it was fullscreen (here by a tag
+# switch), so it is arranged again, and the two do not overlap.
+: >"$work/tile-other-id"
+DISPLAY=$display "$work/xclient" >"$work/tile-other-id" 2>"$work/tile-other.log" &
+tile_other_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/tile-other-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+tile_other_win=$(cat "$work/tile-other-id")
+start_rule_client ''
+wait_for_active_window "$rule_win"
+sleep 0.2
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-a"
+DISPLAY=$display xdotool getwindowgeometry --shell "$tile_other_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-b"
+DISPLAY=$display "$work/xclient" state "$rule_win" 1 _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+DISPLAY=$display xdotool key super+2
+wait_for_current_desktop 1
+DISPLAY=$display xdotool key super+1
+wait_for_current_desktop 0
+DISPLAY=$display "$work/xclient" state "$rule_win" 0 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors ''
+sleep 0.3
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-a-after"
+DISPLAY=$display xdotool getwindowgeometry --shell "$tile_other_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-b-after"
+if ! cmp -s "$work/tile-a" "$work/tile-a-after" || ! cmp -s "$work/tile-b" "$work/tile-b-after"; then
+	printf 'the tiling was not restored after fullscreen (before, then after):\n' >&2
+	cat "$work/tile-a" "$work/tile-b" "$work/tile-a-after" "$work/tile-b-after" >&2
+	exit 1
+fi
+stop_rule_client
+kill "$tile_other_pid"
+wait "$tile_other_pid" 2>/dev/null || true
+
 # A fullscreen rule for a window opened on a hidden tag: fullscreen there,
 # shown when its tag is.
 set_client_rules 'fullscreen=1, tags=2'
@@ -1814,6 +1912,58 @@ DISPLAY=$display xdotool windowraise "$stack_win"
 DISPLAY=$display xdotool key Super+t
 wait_for_top_window "$stack_win"
 
+kill "$swallow_client_pid"
+wait "$swallow_client_pid" 2>/dev/null || true
+swallow_client_pid=
+
+# A swallowed window has its own fullscreen mode, and the terminal keeps its
+# own (#533). The terminal in fake fullscreen (Super+Shift+Y) swallows a
+# window: the window does not inherit the fake mode, so its own request
+# covers the monitor (before, the request was taken as fake and it stayed
+# in the tile); once it closes, the terminal is back in its own fake mode
+# (before, unswallowing turned the terminal's fake mode off).
+rm -f "$work/swallow-child-go"
+: >"$work/swallow-window-ids"
+DISPLAY=$display DWM_XVFB_CHILD_GO="$work/swallow-child-go" "$work/xclient" swallow-terminal-late \
+	>"$work/swallow-window-ids" 2>"$work/swallow-client.log" &
+swallow_client_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ "$(wc -l <"$work/swallow-window-ids")" -lt 1 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+terminal_win=$(sed -n '1p' "$work/swallow-window-ids")
+[ -n "$terminal_win" ]
+wait_for_active_window "$terminal_win"
+DISPLAY=$display xdotool key Super+Shift+y
+wait_for_window_state "$terminal_win" _NET_WM_STATE_FULLSCREEN
+DISPLAY=$display xdotool getwindowgeometry --shell "$terminal_win" >"$work/terminal-geometry"
+: >"$work/swallow-child-go"
+i=0
+while [ "$i" -lt 100 ] && [ "$(wc -l <"$work/swallow-window-ids")" -lt 2 ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+swallowed_win=$(sed -n '2p' "$work/swallow-window-ids")
+[ -n "$swallowed_win" ]
+wait_for_active_window "$swallowed_win"
+DISPLAY=$display "$work/xclient" state "$swallowed_win" 1 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state "$swallowed_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+assert_geometry "$swallowed_win" 0 0 1024 768
+DISPLAY=$display xdotool windowkill "$swallowed_win"
+wait_for_client_window "$terminal_win"
+wait_for_fullscreen_monitors ''
+sleep 0.3
+wait_for_window_state "$terminal_win" _NET_WM_STATE_FULLSCREEN
+DISPLAY=$display xdotool getwindowgeometry --shell "$terminal_win" >"$work/terminal-geometry-after"
+grep -E '^(WIDTH|HEIGHT)=' "$work/terminal-geometry" >"$work/terminal-size"
+grep -E '^(WIDTH|HEIGHT)=' "$work/terminal-geometry-after" >"$work/terminal-size-after"
+cmp -s "$work/terminal-size" "$work/terminal-size-after" || {
+	printf 'the terminal did not get its tile back after the swallowed window closed:\n' >&2
+	cat "$work/terminal-geometry" "$work/terminal-geometry-after" >&2
+	exit 1
+}
 kill "$swallow_client_pid"
 wait "$swallow_client_pid" 2>/dev/null || true
 swallow_client_pid=

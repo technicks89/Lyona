@@ -281,7 +281,7 @@ all: dwm ${THUMB} ${TOML_TOOL} ${XWATCH} ${CLIPBOARD}
 
 ${OBJ}: config.h config.mk Makefile
 drw.o: drw.h util.h
-dwm.o: drw.h util.h rtconfig.h
+dwm.o: drw.h util.h rtconfig.h fullscreen.h
 config.o: rtconfig.h tomlparser.h util.h
 util.o: util.h
 tomlparser.o: tomlparser.h
@@ -386,7 +386,7 @@ install-system:
 	@for input in ${TOML_TOOL}.c tomlparser.c tomlparser.h tomlparser.o util.c util.h util.o config.h config.mk Makefile; do \
 		test ! "$$input" -nt ${TOML_TOOL} || { echo "${TOML_TOOL} is stale. Run make before install-system." >&2; exit 1; }; \
 	done
-	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h rtconfig.h config.h config.mk Makefile; do \
+	@for input in ${SRC} ${OBJ} drw.h util.h tomlparser.h rtconfig.h fullscreen.h config.h config.mk Makefile; do \
 		test -e "$$input" || { echo "dwm build input is missing: $$input. Run make before install-system." >&2; exit 1; }; \
 		test ! "$$input" -nt dwm || { echo "dwm is stale. Run make before install-system." >&2; exit 1; }; \
 	done
@@ -1031,6 +1031,11 @@ check-lyona-toml: ${TOML_TOOL}
 .PHONY: check-tomlparser
 check-tomlparser:
 	tests/test-tomlparser.sh
+
+# #533: every move of dwm's fullscreen modes (fullscreen.h) against the old logic.
+.PHONY: check-fullscreen-state
+check-fullscreen-state:
+	tests/test-fullscreen-state.sh
 
 # Sync Sprint 12 S12-13: dwm runs its session scripts from the install, or from
 # LYONA_DEV_SCRIPTS, and never from that override as root.
@@ -1772,7 +1777,7 @@ release-check:
 	$(MAKE) release; \
 	cmp "$$work/first.tar.gz" "${RELEASE_ARCHIVE}"; \
 	tar -tzf "${RELEASE_ARCHIVE}" > "$$work/listing"; \
-	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c config.c rtconfig.h \
+	for path in Makefile config.mk config.def.h dwm.c drw.c util.c tomlparser.c config.c rtconfig.h fullscreen.h \
 		${TOML_TOOL}.c ${THUMB}.c ${XWATCH}.c ${CLIPBOARD}.c dwm.desktop install.sh scripts/dwm-system-management \
 		scripts/lyona_system_management/cli.py config/themes.toml; do \
 		grep -Fqx "${RELEASE_NAME}/$$path" "$$work/listing" || \
@@ -1882,6 +1887,7 @@ check:
 	$(MAKE) check-dwm-config-fallback
 	$(MAKE) check-session-scripts-xvfb
 	$(MAKE) check-tomlparser
+	$(MAKE) check-fullscreen-state
 	$(MAKE) check-lyona-toml
 	$(MAKE) check-theme-readers
 	$(MAKE) check-quickshell-watched-process-xvfb

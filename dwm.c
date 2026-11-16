@@ -60,6 +60,7 @@
 #include "drw.h"
 #include "util.h"
 #include "rtconfig.h"
+#include "fullscreen.h"
 
 #define BUTTONMASK              (ButtonPressMask|ButtonReleaseMask)
 #define CLEANMASK(mask)         (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
@@ -90,10 +91,26 @@ enum { NetSupported, NetWMName, NetWMPid, NetWMState, NetWMCheck,
 enum { WMProtocols, WMDelete, WMState, WMTakeFocus, WMLast };
 typedef struct Client Client;
 typedef struct OverrideWindow OverrideWindow;
-struct Client {
-	char name[256];
+/* What belongs to one X window, not to the place it has (#533). Swallowing
+ * gives the terminal's client another window to show: the two swap this as
+ * one value, and unswallow() puts the terminal's back, so c->cw.class is the
+ * class of the window shown and a field cannot be left behind in a swap. */
+typedef struct {
+	Window win;
 	char class[256];
 	char instance[256];
+	int ewmhabove;
+	int ignoresizehints;
+	/* #477: a rule's fullscreen is applied once, at open or when a late title
+	 * matches, never again over the user's own toggles. */
+	int rulefullscreenapplied;
+	int fsmode; /* FsNone...: fullscreen.h; changed only by setfullscreenmode() */
+	unsigned int icw, ich;
+	Picture icon;
+} ClientWindow;
+struct Client {
+	char name[256];
+	ClientWindow cw;
 	float mina, maxa;
 	float cfact;
 	int x, y, w, h;
@@ -103,15 +120,13 @@ struct Client {
 	unsigned int tags;
 	unsigned int publishedtags; /* tags last published for publishedwin */
 	Window publishedwin; /* None until setclientdesktop first publishes */
-	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen, isterminal, noswallow, alwaysontop, ewmhabove;
+	int isfixed, isfloating, isurgent, neverfocus, isterminal, noswallow, alwaysontop;
 	int issteam;
-	/* #477: a rule's fullscreen is applied once, at open or when a late title
-	 * matches, never again over the user's own toggles. */
-	int rulefullscreenapplied;
-	int ignoresizehints;
-	int iswindowedfullscreen; /* monitor-sized, without EWMH fullscreen */
+	/* Where a fullscreen that covers the monitor goes back to (#533): kept on
+	 * entering it, not read from oldx..oldh, which every resize and the
+	 * client's own configure requests overwrite. */
+	struct { int x, y, w, h, bw, isfloating; } fsrestore;
 	// int beingmoved; /* disabled: written by placemouse(), never read */
-	int fakefullscreen;
 	/* #496: the title strip above a floating window, when they are on. */
 	Window titlewin;
 	Window titlefor; /* the window _DWM_TITLEBAR_FOR names, which swallowing changes */
@@ -121,9 +136,6 @@ struct Client {
 	Client *snext;
 	Client *swallowing;
 	Monitor *mon;
-	Window win;
-	unsigned int icw, ich;
-	Picture icon;
 };
 
 struct OverrideWindow {
@@ -238,7 +250,8 @@ static void sendmon(Client *c, Monitor *m);
 static void setclientstate(Client *c, long state);
 static void setatomprop(Client *c, Atom prop, Atom atom, int enabled);
 static void setfocus(Client *c);
-static void setfullscreen(Client *c, int fullscreen);
+static void fullscreenevent(Client *c, int event);
+static void setfullscreenmode(Client *c, int to, int ewmh);
 static void fullscreen(const Arg *arg);
 static void setlayout(const Arg *arg);
 static void setlayoutshrink(const Arg *arg, int shrink);
@@ -325,7 +338,6 @@ static void ewmh_replace_root_cardinal(Atom prop, const long *data, int n);
 static void ewmh_replace_window_cardinal(Window win, Atom prop, const long *data, int n);
 static void ewmh_set_active_window(Window win);
 static void ewmh_set_desktop_names(void);
-static void ewmh_set_fullscreen_state(Client *c, int fullscreen);
 static Atom getatomprop(Client *c, Atom prop);
 static Atom getwinatomprop(Window win, Atom prop);
 static void setclientdesktop(Client *c);
@@ -587,8 +599,8 @@ applyrules(Client *c)
 	c->isfloating = 0;
 	c->alwaysontop = 0;
 	c->tags = 0;
-	class    = c->class[0]    ? c->class    : broken;
-	instance = c->instance[0] ? c->instance : broken;
+	class    = c->cw.class[0]    ? c->cw.class    : broken;
+	instance = c->cw.instance[0] ? c->cw.instance : broken;
 
 	if (strstr(class, "Steam") || strstr(class, "steam_app_"))
 		c->issteam = 1;
@@ -602,7 +614,7 @@ applyrules(Client *c)
 		&& (!r->instance || strstr(instance, r->instance)))
 		{
 			fullscreen = rulefullscreenmode(r);
-			c->ignoresizehints = r->ignoresizehints;
+			c->cw.ignoresizehints = r->ignoresizehints;
 			c->isterminal = r->isterminal;
 			c->noswallow  = r->noswallow;
 			c->isfloating = r->isfloating;
@@ -645,8 +657,8 @@ applytitlerules(Client *c)
 	int titlefullscreen = RuleFullscreenNone;
 	int ignoresizehints = 0;
 
-	class = c->class[0] ? c->class : broken;
-	instance = c->instance[0] ? c->instance : broken;
+	class = c->cw.class[0] ? c->cw.class : broken;
+	instance = c->cw.instance[0] ? c->cw.instance : broken;
 
 	const Rule *active_rules = rt_rules;
 	unsigned int n_active_rules = (unsigned int)rt_nrules;
@@ -675,15 +687,15 @@ applytitlerules(Client *c)
 		}
 	}
 
-	if (c->ignoresizehints != ignoresizehints) {
-		c->ignoresizehints = ignoresizehints;
+	if (c->cw.ignoresizehints != ignoresizehints) {
+		c->cw.ignoresizehints = ignoresizehints;
 		updatesizehints(c);
 		changed = 1;
 	}
 	/* A title published after the window opened (a game behind its
 	 * launcher's class) gets its fullscreen once; later title changes and
 	 * the user's own toggles are left alone. */
-	if (titlefullscreen != RuleFullscreenNone && !c->rulefullscreenapplied) {
+	if (titlefullscreen != RuleFullscreenNone && !c->cw.rulefullscreenapplied) {
 		applyfullscreenrule(c, titlefullscreen);
 		changed = 1;
 	}
@@ -696,13 +708,8 @@ applytitlerules(Client *c)
 void
 applyfullscreenrule(Client *c, int mode)
 {
-	c->rulefullscreenapplied = 1;
-	c->iswindowedfullscreen = mode == RuleFullscreenWindowed;
-	/* Also corrects the property after a swallow or an inherited fake mode. */
-	ewmh_set_fullscreen_state(c, !c->iswindowedfullscreen);
-	if (c->fakefullscreen == 1)
-		c->fakefullscreen = 2;
-	setfullscreen(c, 1);
+	c->cw.rulefullscreenapplied = 1;
+	fullscreenevent(c, mode == RuleFullscreenWindowed ? FsEvRuleWindowed : FsEvRuleReal);
 	arrange(c->mon);
 	updatefullscreenmonitors();
 }
@@ -756,7 +763,7 @@ applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact)
 		*h = bh;
 	if (*w < bh)
 		*w = bh;
-	if (!c->ignoresizehints
+	if (!c->cw.ignoresizehints
 	&& (resizehints || c->isfloating || !c->mon->lt[c->mon->sellt]->arrange)) {
 
 		baseismin = c->basew == c->minw && c->baseh == c->minh;
@@ -835,7 +842,7 @@ attachbottom(Client *c) {
     Client **tc, *lastNonChatterino = NULL;
 
     for (tc = &c->mon->clients; *tc; tc = &(*tc)->next) {
-        if (!strstr((*tc)->class, "chatterino")) {
+        if (!strstr((*tc)->cw.class, "chatterino")) {
             lastNonChatterino = *tc;
         }
     }
@@ -1048,16 +1055,11 @@ clientmessage(XEvent *e)
 	if (cme->message_type == netatom[NetWMState]) {
 		if (cme->data.l[1] == netatom[NetWMFullscreen]
 		|| cme->data.l[2] == netatom[NetWMFullscreen]) {
-			if (c->iswindowedfullscreen) {
-				/* A windowed rule stays windowed when the client, prompted
-				 * by the resize, asks for fullscreen itself (#477). */
-				ewmh_set_fullscreen_state(c, 0);
-			} else {
-				if (c->fakefullscreen == 2 && c->isfullscreen)
-					c->fakefullscreen = 3;
-				setfullscreen(c, (cme->data.l[0] == 1
-					|| (cme->data.l[0] == 2  && !c->isfullscreen)));
-			}
+			/* A windowed rule stays windowed when the client, prompted by
+			 * the resize, asks for fullscreen itself (#477): fs_step(). */
+			fullscreenevent(c, (cme->data.l[0] == 1
+				|| (cme->data.l[0] == 2 && !fs_active(c->cw.fsmode)))
+				? FsEvClientOn : FsEvClientOff);
 		}
 		nstates = getatomproplist(c, netatom[NetWMState], states, LENGTH(states), &truncated);
 		for (i = 1; i <= 2; i++) {
@@ -1090,9 +1092,9 @@ clientmessage(XEvent *e)
 		}
 		if (updateabove) {
 			if (changed)
-				XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
+				XChangeProperty(dpy, c->cw.win, netatom[NetWMState], XA_ATOM, 32,
 					PropModeReplace, (unsigned char *)states, (int)nstates);
-			c->ewmhabove = atomlistcontains(states, nstates, netatom[NetWMAbove])
+			c->cw.ewmhabove = atomlistcontains(states, nstates, netatom[NetWMAbove])
 				|| atomlistcontains(states, nstates, netatom[NetWMStaysOnTop]);
 			restack(c->mon);
 		}
@@ -1151,8 +1153,8 @@ configure(Client *c)
 
 	ce.type = ConfigureNotify;
 	ce.display = dpy;
-	ce.event = c->win;
-	ce.window = c->win;
+	ce.event = c->cw.win;
+	ce.window = c->cw.win;
 	ce.x = c->x;
 	ce.y = c->y;
 	ce.width = c->w;
@@ -1167,7 +1169,7 @@ configure(Client *c)
 
 	ce.above = None;
 	ce.override_redirect = False;
-	XSendEvent(dpy, c->win, False, StructureNotifyMask, (XEvent *)&ce);
+	XSendEvent(dpy, c->cw.win, False, StructureNotifyMask, (XEvent *)&ce);
 }
 
 void
@@ -1194,7 +1196,7 @@ configurenotify(XEvent *e)
 			updateclientlist();
 			for (m = mons; m; m = m->next) {
 				for (c = m->clients; c; c = c->next) {
-					if (c->isfullscreen && c->fakefullscreen != 1)
+					if (fs_covers(c->cw.fsmode))
 						resizeclient(c, m->mx, m->my, m->mw, m->mh);
 				}
 				if (m->barwin)
@@ -1235,7 +1237,7 @@ configurerequest(XEvent *e)
 	XWindowChanges wc;
 
 	if ((c = wintoclient(ev->window))) {
-		if (c->iswindowedfullscreen) {
+		if (fs_windowed(c->cw.fsmode)) {
 			/* A windowed game may ask for its old size after the resize. */
 			configure(c);
 			XSync(dpy, False);
@@ -1275,7 +1277,7 @@ configurerequest(XEvent *e)
 			if ((ev->value_mask & (CWX|CWY)) && !(ev->value_mask & (CWWidth|CWHeight)))
 				configure(c);
 			if (ISVISIBLE(c))
-				XMoveResizeWindow(dpy, c->win, c->x, c->y, c->w, c->h);
+				XMoveResizeWindow(dpy, c->cw.win, c->x, c->y, c->w, c->h);
 		} else
 			configure(c);
 		updatetitlebar(c);
@@ -1456,8 +1458,8 @@ drawbar(Monitor *m)
 		if (m->sel) {
 			drw_setscheme(drw, scheme[m == selmon ? SchemeSel : SchemeNorm]);
 			#if SHOWWINICON
-			drw_text(drw, x, 0, w, bh, lrpad / 2 + (m->sel->icon ? m->sel->icw + ICONSPACING : 0), m->sel->name, 0);
-			if (m->sel->icon) drw_pic(drw, x + lrpad / 2, (bh - m->sel->ich) / 2, m->sel->icw, m->sel->ich, m->sel->icon);
+			drw_text(drw, x, 0, w, bh, lrpad / 2 + (m->sel->cw.icon ? m->sel->cw.icw + ICONSPACING : 0), m->sel->name, 0);
+			if (m->sel->cw.icon) drw_pic(drw, x + lrpad / 2, (bh - m->sel->cw.ich) / 2, m->sel->cw.icw, m->sel->cw.ich, m->sel->cw.icon);
 			#else
 			drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0);
 			#endif
@@ -1538,7 +1540,7 @@ focus(Client *c)
 		detachstack(c);
 		attachstack(c);
 		grabbuttons(c, 1);
-		XSetWindowBorder(dpy, c->win, scheme[SchemeSel][ColBorder].pixel);
+		XSetWindowBorder(dpy, c->cw.win, scheme[SchemeSel][ColBorder].pixel);
 		setfocus(c);
 	} else {
 		XSetInputFocus(dpy, root, RevertToPointerRoot, CurrentTime);
@@ -1589,7 +1591,7 @@ focusin(XEvent *e)
 	if (ow && (focusfullscreenforoverride(ev->window)
 	    || istransientforbar(ev->window)))
 		return;
-	if (selmon->sel && ev->window != selmon->sel->win)
+	if (selmon->sel && ev->window != selmon->sel->cw.win)
 		setfocus(selmon->sel);
 }
 
@@ -1606,7 +1608,7 @@ focusmon(const Arg *arg)
 	selmon = m;
 	focus(NULL);
 	if (cursorwarp && selmon->sel)
-		XWarpPointer(dpy, None, selmon->sel->win, 0, 0, 0, 0, selmon->sel->w / 2, selmon->sel->h / 2);
+		XWarpPointer(dpy, None, selmon->sel->cw.win, 0, 0, 0, 0, selmon->sel->w / 2, selmon->sel->h / 2);
 	updatecurrentdesktop();
 }
 
@@ -1615,7 +1617,8 @@ focusstack(const Arg *arg)
 {
 	Client *c = NULL, *i;
 
-	if (!selmon->sel || (selmon->sel->isfullscreen && !selmon->sel->fakefullscreen))
+	/* Not out of a window covering its monitor, whichever mode (#533). */
+	if (!selmon->sel || fs_covers(selmon->sel->cw.fsmode))
 		return;
 	if (arg->i > 0) {
 		for (c = selmon->sel->next; c && !ISVISIBLE(c); c = c->next);
@@ -1634,7 +1637,7 @@ focusstack(const Arg *arg)
 		focus(c);
 		restack(selmon);
 		if (cursorwarp)
-			XWarpPointer(dpy, None, c->win, 0, 0, 0, 0, c->w / 2, c->h / 2);
+			XWarpPointer(dpy, None, c->cw.win, 0, 0, 0, 0, c->w / 2, c->h / 2);
 	}
 }
 
@@ -1642,9 +1645,9 @@ focusstack(const Arg *arg)
 void
 freeicon(Client *c)
 {
-	if (c->icon) {
-		XRenderFreePicture(dpy, c->icon);
-		c->icon = None;
+	if (c->cw.icon) {
+		XRenderFreePicture(dpy, c->cw.icon);
+		c->cw.icon = None;
 	}
 }
 #endif
@@ -1657,7 +1660,7 @@ getatomprop(Client *c, Atom prop)
 	unsigned char *p = NULL;
 	Atom da, atom = None;
 
-	if (XGetWindowProperty(dpy, c->win, prop, 0L, sizeof atom, False, XA_ATOM,
+	if (XGetWindowProperty(dpy, c->cw.win, prop, 0L, sizeof atom, False, XA_ATOM,
 		&da, &di, &dl, &dl, &p) == Success && p) {
 		atom = *(Atom *)p;
 		XFree(p);
@@ -1679,7 +1682,7 @@ atomlistcontains(const Atom *atoms, unsigned long nitems, Atom atom)
 unsigned long
 getatomproplist(Client *c, Atom prop, Atom *atoms, unsigned long maxitems, int *truncated)
 {
-	return getwinatomproplist(c->win, prop, atoms, maxitems, truncated);
+	return getwinatomproplist(c->cw.win, prop, atoms, maxitems, truncated);
 }
 
 unsigned long
@@ -1731,7 +1734,7 @@ setatomprop(Client *c, Atom prop, Atom atom, int enabled)
 			return;
 		nitems = out;
 	}
-	XChangeProperty(dpy, c->win, prop, XA_ATOM, 32, PropModeReplace,
+	XChangeProperty(dpy, c->cw.win, prop, XA_ATOM, 32, PropModeReplace,
 		(unsigned char *)atoms, (int)nitems);
 }
 
@@ -1929,9 +1932,9 @@ grabbuttons(Client *c, int focused)
 	{
 		unsigned int i, j;
 		unsigned int modifiers[] = { 0, LockMask, numlockmask, numlockmask|LockMask };
-		XUngrabButton(dpy, AnyButton, AnyModifier, c->win);
+		XUngrabButton(dpy, AnyButton, AnyModifier, c->cw.win);
 		if (!focused)
-			XGrabButton(dpy, AnyButton, AnyModifier, c->win, False,
+			XGrabButton(dpy, AnyButton, AnyModifier, c->cw.win, False,
 				BUTTONMASK, GrabModeSync, GrabModeSync, None, None);
 		if (rt_buttons)
 		for (i = 0; i < (unsigned int)rt_nbuttons; i++)
@@ -1939,7 +1942,7 @@ grabbuttons(Client *c, int focused)
 				for (j = 0; j < LENGTH(modifiers); j++)
 					XGrabButton(dpy, rt_buttons[i].button,
 						rt_buttons[i].mask | modifiers[j],
-						c->win, False, BUTTONMASK,
+						c->cw.win, False, BUTTONMASK,
 						GrabModeAsync, GrabModeSync, None, None);
 	}
 }
@@ -2100,7 +2103,7 @@ closeclient(Client *c)
 		XGrabServer(dpy);
 		XSetErrorHandler(xerrordummy);
 		XSetCloseDownMode(dpy, DestroyAll);
-		XKillClient(dpy, c->win);
+		XKillClient(dpy, c->cw.win);
 		XSync(dpy, False);
 		XSetErrorHandler(xerror);
 		XUngrabServer(dpy);
@@ -2116,7 +2119,7 @@ manage(Window w, XWindowAttributes *wa)
 	int rulefullscreen = 0;
 
 	c = ecalloc(1, sizeof(Client));
-	c->win = w;
+	c->cw.win = w;
 	c->pid = winpid(w);
 
 	c->x = c->oldx = wa->x;
@@ -2134,7 +2137,7 @@ manage(Window w, XWindowAttributes *wa)
 	if (XGetTransientForHint(dpy, w, &trans) && (t = wintoclient(trans))) {
 		c->mon = t->mon;
 		c->tags = t->tags;
-		c->rulefullscreenapplied = 1; /* a transient follows its parent */
+		c->cw.rulefullscreenapplied = 1; /* a transient follows its parent */
 	} else {
 		c->mon = selmon;
 		rulefullscreen = applyrules(c);
@@ -2156,7 +2159,7 @@ manage(Window w, XWindowAttributes *wa)
 	updatewindowtype(c);
 	updatesizehints(c);
 	updatewmhints(c);
-	if (!c->isfullscreen) {
+	if (!fs_active(c->cw.fsmode)) {
 		/* Centered in the area the bar leaves, not on the whole monitor, so a window
 		 * as tall as that area sits right below the bar instead of half over it. */
 		c->x = MAX(c->mon->wx, c->mon->wx + (c->mon->ww - WIDTH(c)) / 2);
@@ -2165,20 +2168,20 @@ manage(Window w, XWindowAttributes *wa)
 	XSelectInput(dpy, w, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
 	grabbuttons(c, 0);
 	if (!c->isfloating)
-		c->isfloating = c->oldstate = trans != None || c->isfixed;
+		c->isfloating = trans != None || c->isfixed;
 	if (c->isfloating)
-		XRaiseWindow(dpy, c->win);
+		XRaiseWindow(dpy, c->cw.win);
 	attachbottom(c);
 	attachstack(c);
 	updateclientlist();
-	XMoveResizeWindow(dpy, c->win, c->x + 2 * sw, c->y, c->w, c->h);
+	XMoveResizeWindow(dpy, c->cw.win, c->x + 2 * sw, c->y, c->w, c->h);
 	setclientstate(c, NormalState);
 	setclientdesktop(c);
 	if (c->mon == selmon)
 		unfocus(selmon->sel, 0);
 	c->mon->sel = c;
 	arrange(c->mon);
-	XMapWindow(dpy, c->win);
+	XMapWindow(dpy, c->cw.win);
 	/* After a swallow the terminal's client shows the new window. */
 	shown = c;
 	if (term && swallow(term, c))
@@ -2413,7 +2416,7 @@ movemouse(const Arg *arg)
 
 	if (!(c = selmon->sel))
 		return;
-	if (c->isfullscreen && c->fakefullscreen != 1)
+	if (fs_covers(c->cw.fsmode))
 		return;
 	restack(selmon);
 	nx = ocx = c->x;
@@ -2535,7 +2538,7 @@ noborder(Client *c)
 	if (!c->mon->lt[c->mon->sellt]->arrange)
 		return 0;
 
-	if (c->fakefullscreen != 1 && c->isfullscreen)
+	if (fs_covers(c->cw.fsmode))
 		return 0;
 
 	return 1;
@@ -2555,7 +2558,7 @@ placemouse(const Arg *arg)
 
 	if (!(c = selmon->sel) || !c->mon->lt[c->mon->sellt]->arrange)
 		return;
-	if (c->isfullscreen)
+	if (fs_active(c->cw.fsmode))
 		return;
 	restack(selmon);
 	prevr = c;
@@ -2566,7 +2569,7 @@ placemouse(const Arg *arg)
 	c->isfloating = 0;
 	// c->beingmoved = 1;
 
-	XGetWindowAttributes(dpy, c->win, &wa);
+	XGetWindowAttributes(dpy, c->cw.win, &wa);
 	ocx = wa.x;
 	ocy = wa.y;
 
@@ -2593,7 +2596,7 @@ placemouse(const Arg *arg)
 				freemove = 1;
 
 			if (freemove)
-				XMoveWindow(dpy, c->win, nx, ny);
+				XMoveWindow(dpy, c->cw.win, nx, ny);
 
 			if ((m = recttomon(ev.xmotion.x, ev.xmotion.y, 1, 1)) && m != selmon)
 				selmon = m;
@@ -2715,7 +2718,7 @@ propertynotify(XEvent *e)
 		switch(ev->atom) {
 		default: break;
 		case XA_WM_TRANSIENT_FOR:
-			if (!c->isfloating && (XGetTransientForHint(dpy, c->win, &trans)) &&
+			if (!c->isfloating && (XGetTransientForHint(dpy, c->cw.win, &trans)) &&
 				(c->isfloating = (wintoclient(trans)) != NULL))
 				arrange(c->mon);
 			break;
@@ -2806,7 +2809,7 @@ resizeclient(Client *c, int x, int y, int w, int h)
 		wc.height += c->bw * 2;
 		wc.border_width = 0;
 	}
-	XConfigureWindow(dpy, c->win, CWX|CWY|CWWidth|CWHeight|CWBorderWidth, &wc);
+	XConfigureWindow(dpy, c->cw.win, CWX|CWY|CWWidth|CWHeight|CWBorderWidth, &wc);
 	configure(c);
 	updatetitlebar(c);
 	XSync(dpy, False);
@@ -2827,7 +2830,7 @@ resizemouse(const Arg *arg)
 
 	if (!(c = selmon->sel))
 		return;
-	if (c->isfullscreen && c->fakefullscreen != 1)
+	if (fs_covers(c->cw.fsmode))
 		return;
 	if (!c->isfloating && selmon->lt[selmon->sellt]->arrange == tile
 	&& resizetiledmouse(arg))
@@ -2839,7 +2842,7 @@ resizemouse(const Arg *arg)
 	nw = c->w;
 	och = c->h;
 	ocw = c->w;
-	if (!XQueryPointer(dpy, c->win, &dummy, &dummy, &opx, &opy, &nx, &ny, &dui))
+	if (!XQueryPointer(dpy, c->cw.win, &dummy, &dummy, &opx, &opy, &nx, &ny, &dui))
 		return;
 	horizcorner = nx < c->w / 2;
 	vertcorner  = ny < c->h / 2;
@@ -2909,7 +2912,7 @@ resizetiledmouse(const Arg *arg)
 	if (index < 0)
 		return 0;
 	gap = tilegap(selmon, (unsigned int)n);
-	if (!XQueryPointer(dpy, c->win, &dummy, &dummy, &opx, &opy, &px, &py, &dui))
+	if (!XQueryPointer(dpy, c->cw.win, &dummy, &dummy, &opx, &opy, &px, &py, &dui))
 		return 0;
 
 	horizcorner = px < c->w / 2;
@@ -2984,19 +2987,19 @@ restack(Monitor *m)
 		return;
 	}
 	if (restackraisesselected(m))
-		XRaiseWindow(dpy, m->sel->win);
+		XRaiseWindow(dpy, m->sel->cw.win);
 	if (m->lt[m->sellt]->arrange) {
 		sibling = m->barwin;
 		wc.stack_mode = Below;
 		for (c = m->stack; c; c = c->snext)
 			if (!c->isfloating && ISVISIBLE(c)) {
 				if (sibling == None) {
-					XLowerWindow(dpy, c->win);
+					XLowerWindow(dpy, c->cw.win);
 				} else {
 					wc.sibling = sibling;
-					XConfigureWindow(dpy, c->win, CWSibling|CWStackMode, &wc);
+					XConfigureWindow(dpy, c->cw.win, CWSibling|CWStackMode, &wc);
 				}
-				sibling = c->win;
+				sibling = c->cw.win;
 			}
 	}
 	restackprioritywindows();
@@ -3007,7 +3010,7 @@ restack(Monitor *m)
 int
 isvisiblefullscreen(Client *c)
 {
-	return c->isfullscreen && c->fakefullscreen != 1 && ISVISIBLE(c);
+	return fs_covers(c->cw.fsmode) && ISVISIBLE(c);
 }
 
 int
@@ -3028,7 +3031,7 @@ raisefullscreenclients(Client *c)
 		return;
 	raisefullscreenclients(c->snext);
 	if (isvisiblefullscreen(c))
-		XRaiseWindow(dpy, c->win);
+		XRaiseWindow(dpy, c->cw.win);
 }
 
 /* Whether restack() raises the selected client of m: it is floating, or the
@@ -3080,8 +3083,8 @@ raisealwaysontopclients(Client *c)
 	if (!c)
 		return;
 	raisealwaysontopclients(c->snext);
-	if ((c->alwaysontop || c->ewmhabove) && ISVISIBLE(c))
-		XRaiseWindow(dpy, c->win);
+	if ((c->alwaysontop || c->cw.ewmhabove) && ISVISIBLE(c))
+		XRaiseWindow(dpy, c->cw.win);
 }
 
 void
@@ -3091,8 +3094,8 @@ raisefloatingclients(Client *c)
 		return;
 	raisefloatingclients(c->snext);
 	if (c->isfloating && ISVISIBLE(c)
-	    && !c->alwaysontop && !c->ewmhabove && !isvisiblefullscreen(c))
-		XRaiseWindow(dpy, c->win);
+	    && !c->alwaysontop && !c->cw.ewmhabove && !isvisiblefullscreen(c))
+		XRaiseWindow(dpy, c->cw.win);
 }
 
 void
@@ -3102,7 +3105,7 @@ raiseselectedclient(Monitor *m)
 
 	if (!m || !(c = m->sel) || !ISVISIBLE(c))
 		return;
-	if (c->alwaysontop || c->ewmhabove || isvisiblefullscreen(c))
+	if (c->alwaysontop || c->cw.ewmhabove || isvisiblefullscreen(c))
 		return;
 	/* Only where restack() itself raises the selected client, so that it is not
 	 * left under the floating clients raised just before it. A tiled selected
@@ -3110,7 +3113,7 @@ raiseselectedclient(Monitor *m)
 	 * raised itself. */
 	if (!restackraisesselected(m))
 		return;
-	XRaiseWindow(dpy, c->win);
+	XRaiseWindow(dpy, c->cw.win);
 }
 
 /* Keys typed right after a hold_keys binding (the launcher's Super+R) belong
@@ -3129,8 +3132,8 @@ raiseselectedclient(Monitor *m)
 static int
 holdkeys_matches(const Client *c)
 {
-	return strstr(c->name, holdkeys_for) || strstr(c->class, holdkeys_for)
-	       || strstr(c->instance, holdkeys_for);
+	return strstr(c->name, holdkeys_for) || strstr(c->cw.class, holdkeys_for)
+	       || strstr(c->cw.instance, holdkeys_for);
 }
 
 static void
@@ -3587,19 +3590,12 @@ ewmh_set_desktop_names(void)
 	}
 }
 
-static void
-ewmh_set_fullscreen_state(Client *c, int fullscreen)
-{
-	setatomprop(c, netatom[NetWMState], netatom[NetWMFullscreen],
-		fullscreen && !c->iswindowedfullscreen);
-}
-
 void
 setclientstate(Client *c, long state)
 {
 	long data[] = { state, None };
 
-	XChangeProperty(dpy, c->win, wmatom[WMState], wmatom[WMState], 32,
+	XChangeProperty(dpy, c->cw.win, wmatom[WMState], wmatom[WMState], 32,
 		PropModeReplace, (unsigned char *)data, 2);
 }
 
@@ -3622,7 +3618,7 @@ setclientdesktop(Client *c)
         return;
     /* Unchanged tags publish nothing: every write wakes the status clients
      * watching these properties. Monitor moves still re-check fullscreen. */
-    if (c->publishedwin == c->win && c->publishedtags == c->tags) {
+    if (c->publishedwin == c->cw.win && c->publishedtags == c->tags) {
         updatefullscreenmonitors();
         return;
     }
@@ -3635,8 +3631,8 @@ setclientdesktop(Client *c)
         data[0] = 0xFFFFFFFF;
     }
 
-	ewmh_replace_window_cardinal(c->win, netatom[NetWMDesktop], data, 1);
-	c->publishedwin = c->win;
+	ewmh_replace_window_cardinal(c->cw.win, netatom[NetWMDesktop], data, 1);
+	c->publishedwin = c->cw.win;
 	c->publishedtags = c->tags;
 	updatefullscreenmonitors();
 	data[0] = ++tagupdatesequence;
@@ -3651,19 +3647,19 @@ sendevent(Client *c, Atom proto)
 	int exists = 0;
 	XEvent ev;
 
-	if (XGetWMProtocols(dpy, c->win, &protocols, &n)) {
+	if (XGetWMProtocols(dpy, c->cw.win, &protocols, &n)) {
 		while (!exists && n--)
 			exists = protocols[n] == proto;
 		XFree(protocols);
 	}
 	if (exists) {
 		ev.type = ClientMessage;
-		ev.xclient.window = c->win;
+		ev.xclient.window = c->cw.win;
 		ev.xclient.message_type = wmatom[WMProtocols];
 		ev.xclient.format = 32;
 		ev.xclient.data.l[0] = proto;
 		ev.xclient.data.l[1] = CurrentTime;
-		XSendEvent(dpy, c->win, False, NoEventMask, &ev);
+		XSendEvent(dpy, c->cw.win, False, NoEventMask, &ev);
 	}
 	return exists;
 }
@@ -3678,73 +3674,74 @@ void
 setfocus(Client *c)
 {
 	if (!c->neverfocus) {
-		XSetInputFocus(dpy, c->win, RevertToPointerRoot, CurrentTime);
-		ewmh_set_active_window(c->win);
+		XSetInputFocus(dpy, c->cw.win, RevertToPointerRoot, CurrentTime);
+		ewmh_set_active_window(c->cw.win);
 	}
 	sendevent(c, wmatom[WMTakeFocus]);
 }
 
+/* EVENT, in the client's fullscreen mode (#533): fs_step() says where it
+ * leads, setfullscreenmode() goes there. */
 void
-setfullscreen(Client *c, int fullscreen)
+fullscreenevent(Client *c, int event)
+{
+	int to = fs_step(c->cw.fsmode, event);
+
+	if (to >= 0)
+		setfullscreenmode(c, to, 1);
+}
+
+/* The only place a client's fullscreen mode changes (#533). Entering a mode
+ * that covers the monitor keeps the geometry to come back to, in fsrestore;
+ * leaving one puts it back; a move between two that cover keeps it. ewmh:
+ * whether to write the window's _NET_WM_STATE, which a window being given
+ * up (unswallow()) is not. Staying in the same mode only puts the property
+ * back: a windowed game asking for fullscreen again gets no new configure
+ * to answer. */
+void
+setfullscreenmode(Client *c, int to, int ewmh)
 {
 	XEvent ev;
-	int actualfullscreenchanged, savestate = 0, restorestate = 0;
-	int wasactualfullscreen = c->isfullscreen && c->fakefullscreen != 1;
+	int from = c->cw.fsmode;
 
-	/* Leaving windowed fullscreen restores the window, without entering the
-	 * Super+Shift+Y fake mode (#477). */
-	if (c->iswindowedfullscreen && !fullscreen)
-		c->fakefullscreen = 0;
+	if (to < 0 || to >= FsModeLast)
+		return;
+	if (ewmh)
+		setatomprop(c, netatom[NetWMState], netatom[NetWMFullscreen], fs_ewmh(to));
+	if (to == from)
+		return;
+	c->cw.fsmode = to;
 
-	if ((c->fakefullscreen == 0 && fullscreen && !c->isfullscreen)
-			|| (c->fakefullscreen == 2 && fullscreen))
-		savestate = 1;
-	else if ((c->fakefullscreen == 0 && !fullscreen && c->isfullscreen)
-			|| (c->fakefullscreen >= 2 && !fullscreen))
-		restorestate = 1;
-
-	if (c->fakefullscreen == 2 && !fullscreen && c->isfullscreen) {
-		c->fakefullscreen = 1;
-		c->isfullscreen = 1;
-		fullscreen = 1;
-	} else if (c->fakefullscreen == 3)
-		c->fakefullscreen = 1;
-
-	if (fullscreen != c->isfullscreen || c->iswindowedfullscreen) {
-		ewmh_set_fullscreen_state(c, fullscreen);
-	}
-
-	c->isfullscreen = fullscreen;
-	if (!fullscreen)
-		c->iswindowedfullscreen = 0;
-	actualfullscreenchanged = wasactualfullscreen
-		!= (c->isfullscreen && c->fakefullscreen != 1);
-
-	if (savestate && !(c->oldstate & (1 << 1))) {
-		c->oldbw = c->bw;
-		c->oldstate = c->isfloating | (1 << 1);
+	if (!fs_covers(from) && fs_covers(to)) {
+		c->fsrestore.x = c->x;
+		c->fsrestore.y = c->y;
+		c->fsrestore.w = c->w;
+		c->fsrestore.h = c->h;
+		c->fsrestore.bw = c->bw;
+		c->fsrestore.isfloating = c->isfloating;
 		c->bw = 0;
 		c->isfloating = 1;
 		resizeclient(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
-		XRaiseWindow(dpy, c->win);
-	} else if (restorestate && (c->oldstate & (1 << 1))) {
-		c->bw = c->oldbw;
-		c->isfloating = c->oldstate = c->oldstate & 1;
-		c->x = c->oldx;
-		c->y = c->oldy;
-		c->w = c->oldw;
-		c->h = c->oldh;
-		/* The restore skips the size hints: room for the strip here. */
-		if (titleheight(c))
-			titlebarclamp(c, c->mon, &c->y, &c->h);
-		resizeclient(c, c->x, c->y, c->w, c->h);
-		restack(c->mon);
+		XRaiseWindow(dpy, c->cw.win);
+	} else if (fs_covers(from) && !fs_covers(to)) {
+		int x = c->fsrestore.x, y = c->fsrestore.y;
+		int w = c->fsrestore.w, h = c->fsrestore.h;
+
+		c->bw = c->fsrestore.bw;
+		c->isfloating = c->fsrestore.isfloating;
+		/* Placed as dwm places a window: on the monitor it is on now (it
+		 * may have been sent to another while fullscreen), with room for a
+		 * title strip. */
+		applysizehints(c, &x, &y, &w, &h, 0);
+		resizeclient(c, x, y, w, h);
+		/* The monitor was arranged without it while it covered it. */
+		arrange(c->mon);
 	} else
 		resizeclient(c, c->x, c->y, c->w, c->h);
 
-	if (!c->isfullscreen)
+	if (!fs_active(to))
 		while (XCheckMaskEvent(dpy, EnterWindowMask, &ev));
-	if (actualfullscreenchanged) {
+	if (fs_covers(from) != fs_covers(to)) {
 		updatefullscreenmonitors();
 		restackprioritywindows();
 	}
@@ -3793,7 +3790,7 @@ setlayoutshrink(const Arg *arg, int shrink)
 	if (shrink && wasarranged && !selmon->lt[selmon->sellt]->arrange)
 		for (c = selmon->clients; c; c = c->next)
 			if (ISVISIBLE(c) && !c->isfloating && !c->isfixed
-			    && (!c->isfullscreen || c->fakefullscreen == 1))
+			    && !fs_covers(c->cw.fsmode))
 				shrinkfloating(c);
 
 	copystr(selmon->ltsymbol, sizeof selmon->ltsymbol,
@@ -4021,12 +4018,12 @@ applyconfigtheme(const ConfigTheme *theme)
 				Client  *c;
 				for (m = mons; m; m = m->next)
 					for (c = m->clients; c; c = c->next) {
-						if (c->isfullscreen && c->fakefullscreen != 1) {
-							c->oldbw = dyn_borderpx;
+						if (fs_covers(c->cw.fsmode)) {
+							c->fsrestore.bw = dyn_borderpx;
 							continue;
 						}
 						c->bw = dyn_borderpx;
-						XSetWindowBorderWidth(dpy, c->win, c->bw);
+						XSetWindowBorderWidth(dpy, c->cw.win, c->bw);
 					}
 			}
 		}
@@ -4145,12 +4142,12 @@ updatedpi(int force)
 		dyn_borderpx = newborder;
 		for (m = mons; m; m = m->next)
 			for (c = m->clients; c; c = c->next) {
-				if (c->isfullscreen && c->fakefullscreen != 1) {
-					c->oldbw = dyn_borderpx;
+				if (fs_covers(c->cw.fsmode)) {
+					c->fsrestore.bw = dyn_borderpx;
 					continue;
 				}
 				c->bw = dyn_borderpx;
-				XSetWindowBorderWidth(dpy, c->win, c->bw);
+				XSetWindowBorderWidth(dpy, c->cw.win, c->bw);
 			}
 	}
 
@@ -4312,10 +4309,10 @@ seturgent(Client *c, int urg)
 	XWMHints *wmh;
 
 	c->isurgent = urg;
-	if (!(wmh = XGetWMHints(dpy, c->win)))
+	if (!(wmh = XGetWMHints(dpy, c->cw.win)))
 		return;
 	wmh->flags = urg ? (wmh->flags | XUrgencyHint) : (wmh->flags & ~XUrgencyHint);
-	XSetWMHints(dpy, c->win, wmh);
+	XSetWMHints(dpy, c->cw.win, wmh);
 	XFree(wmh);
 }
 
@@ -4326,14 +4323,14 @@ showhide(Client *c)
 		return;
 	if (ISVISIBLE(c)) {
 
-		XMoveWindow(dpy, c->win, c->x, c->y);
-		if ((!c->mon->lt[c->mon->sellt]->arrange || c->isfloating) && !c->isfullscreen)
+		XMoveWindow(dpy, c->cw.win, c->x, c->y);
+		if ((!c->mon->lt[c->mon->sellt]->arrange || c->isfloating) && !fs_active(c->cw.fsmode))
 			resize(c, c->x, c->y, c->w, c->h, 0);
 		showhide(c->snext);
 	} else {
 
 		showhide(c->snext);
-		XMoveWindow(dpy, c->win, WIDTH(c) * -2, c->y);
+		XMoveWindow(dpy, c->cw.win, WIDTH(c) * -2, c->y);
 	}
 }
 
@@ -4358,58 +4355,32 @@ swallow(Client *p, Client *c)
 	detachstack(c);
 
 	setclientstate(c, WithdrawnState);
-	XUnmapWindow(dpy, p->win);
+	XUnmapWindow(dpy, p->cw.win);
 
 	p->swallowing = c;
 	c->mon = p->mon;
 
-	Window w = p->win;
-	p->win = c->win;
-	c->win = w;
-	int ewmhabove = p->ewmhabove;
-	p->ewmhabove = c->ewmhabove;
-	c->ewmhabove = ewmhabove;
-	/* The terminal's client shows the new window: it takes the window's rule
-	 * state, and keeps its own for the restore (#477). */
-	c->iswindowedfullscreen = p->iswindowedfullscreen;
-	int ignoresizehints = p->ignoresizehints;
-	p->ignoresizehints = c->ignoresizehints;
-	c->ignoresizehints = ignoresizehints;
+	/* The terminal's client shows the new window: the two swap what belongs
+	 * to a window, the terminal's kept for unswallow() (#533). The rules
+	 * then match the window shown, and its fullscreen mode goes with it,
+	 * from whatever mode the place was in. */
+	int shownmode = c->cw.fsmode;
+	ClientWindow terminal = p->cw;
+
+	p->cw = c->cw;
+	c->cw = terminal;
+	p->cw.fsmode = terminal.fsmode;
 	updatesizehints(p);
-	int rulefullscreenapplied = p->rulefullscreenapplied;
-	p->rulefullscreenapplied = c->rulefullscreenapplied;
-	c->rulefullscreenapplied = rulefullscreenapplied;
-	/* And the window's identity, so a later title change matches the rules
-	 * against the window shown, not the terminal; the terminal's is kept for
-	 * unswallow(). */
-	char identity[sizeof c->class];
-	copystr(identity, sizeof identity, p->class);
-	copystr(p->class, sizeof p->class, c->class);
-	copystr(c->class, sizeof c->class, identity);
-	copystr(identity, sizeof identity, p->instance);
-	copystr(p->instance, sizeof p->instance, c->instance);
-	copystr(c->instance, sizeof c->instance, identity);
+	setfullscreenmode(p, shownmode, 1);
 
-	#if SHOWWINICON
-	Window icon = p->icon;
-	p->icon = c->icon;
-	c->icon = icon;
-	int icw = p->icw;
-	p->icw = c->icw;
-	c->icw = icw;
-	int ich = p->ich;
-	p->ich = c->ich;
-	c->ich = ich;
-	#endif
-
-	XChangeProperty(dpy, c->win, netatom[NetClientList], XA_WINDOW, 32, PropModeReplace,
-		(unsigned char *) &(p->win), 1);
+	XChangeProperty(dpy, c->cw.win, netatom[NetClientList], XA_WINDOW, 32, PropModeReplace,
+		(unsigned char *) &(p->cw.win), 1);
 
 	updatetitle(p);
-	XMoveResizeWindow(dpy, p->win, p->x, p->y, p->w, p->h);
+	XMoveResizeWindow(dpy, p->cw.win, p->x, p->y, p->w, p->h);
 	arrange(p->mon);
 	configure(p);
-	XMapWindow(dpy, p->win);
+	XMapWindow(dpy, p->cw.win);
 	updateclientlist();
 	return 1;
 }
@@ -4422,7 +4393,7 @@ swallowingclient(Window w)
 
 	for (m = mons; m; m = m->next) {
 		for (c = m->clients; c; c = c->next) {
-			if (c->swallowing && c->swallowing->win == w)
+			if (c->swallowing && c->swallowing->cw.win == w)
 				return c;
 		}
 	}
@@ -4522,14 +4493,18 @@ tagmon(const Arg *arg)
 	Client *c = selmon->sel;
 	if (!c || !mons->next)
 		return;
-	if (c->isfullscreen) {
-		c->isfullscreen = 0;
+	if (fs_active(c->cw.fsmode)) {
+		/* Moved as a normal window, then given its mode back as it was (no
+		 * move between modes) and the new monitor's size if it covers one. */
+		int mode = c->cw.fsmode;
+
+		c->cw.fsmode = FsNone;
 		sendmon(c, dirtomon(arg->i));
-		c->isfullscreen = 1;
+		c->cw.fsmode = mode;
 		updatefullscreenmonitors();
-		if (c->fakefullscreen != 1) {
+		if (fs_covers(mode)) {
 			resizeclient(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
-			XRaiseWindow(dpy, c->win);
+			XRaiseWindow(dpy, c->cw.win);
 		}
 	} else
 		sendmon(c, dirtomon(arg->i));
@@ -4654,23 +4629,15 @@ void
 togglefakefullscreen(const Arg *arg)
 {
 	Client *c = selmon->sel;
+	int waswindowed;
+
 	if (!c)
 		return;
-
-	if (c->iswindowedfullscreen) {
-		/* Out of a rule's windowed fullscreen, back to the tile. */
-		setfullscreen(c, 0);
+	waswindowed = fs_windowed(c->cw.fsmode);
+	fullscreenevent(c, FsEvUserFake);
+	/* Out of a rule's windowed fullscreen, back to the tile. */
+	if (waswindowed)
 		arrange(c->mon);
-	} else if (c->fakefullscreen != 1 && c->isfullscreen) {
-		c->fakefullscreen = 2;
-		setfullscreen(c, 0);
-	} else if (c->fakefullscreen == 1) {
-		setfullscreen(c, 0);
-		c->fakefullscreen = 0;
-	} else {
-		c->fakefullscreen = 1;
-		setfullscreen(c, 1);
-	}
 }
 
 void
@@ -4700,7 +4667,7 @@ setfloating(Client *c, int shrink)
 
 	if (!c)
 		return;
-	if (c->isfullscreen && c->fakefullscreen != 1)
+	if (fs_covers(c->cw.fsmode))
 		return;
 	wasfloating = c->isfloating;
 	c->isfloating = !wasfloating || c->isfixed;
@@ -4784,7 +4751,7 @@ unfocus(Client *c, int setfocus)
 	if (!c)
 		return;
 	grabbuttons(c, 0);
-	XSetWindowBorder(dpy, c->win, scheme[SchemeNorm][ColBorder].pixel);
+	XSetWindowBorder(dpy, c->cw.win, scheme[SchemeNorm][ColBorder].pixel);
 	if (setfocus) {
 		XSetInputFocus(dpy, root, RevertToPointerRoot, CurrentTime);
 		ewmh_clear_active_window();
@@ -4803,7 +4770,7 @@ unmanage(Client *c, int destroyed)
 		return;
 	}
 
-	Client *s = swallowingclient(c->win);
+	Client *s = swallowingclient(c->cw.win);
 	if (s) {
 		#if SHOWWINICON
 		freeicon(s->swallowing);
@@ -4825,9 +4792,9 @@ unmanage(Client *c, int destroyed)
 		wc.border_width = c->oldbw;
 		XGrabServer(dpy);
 		XSetErrorHandler(xerrordummy);
-		XSelectInput(dpy, c->win, NoEventMask);
-		XConfigureWindow(dpy, c->win, CWBorderWidth, &wc);
-		XUngrabButton(dpy, AnyButton, AnyModifier, c->win);
+		XSelectInput(dpy, c->cw.win, NoEventMask);
+		XConfigureWindow(dpy, c->cw.win, CWBorderWidth, &wc);
+		XUngrabButton(dpy, AnyButton, AnyModifier, c->cw.win);
 		setclientstate(c, WithdrawnState);
 		XSync(dpy, False);
 		XSetErrorHandler(xerror);
@@ -4846,7 +4813,7 @@ unmanage(Client *c, int destroyed)
 			for (top = m->stack; top && !ISVISIBLE(top); top = top->snext);
 			focus(top);
 			if (top)
-				XSetInputFocus(dpy, top->win, RevertToPointerRoot, CurrentTime);
+				XSetInputFocus(dpy, top->cw.win, RevertToPointerRoot, CurrentTime);
 		}
 
 		updateclientlist();
@@ -4978,7 +4945,7 @@ activateclient(Client *c)
 	focus(c);
 	restack(c->mon);
 	if (warp)
-		XWarpPointer(dpy, None, c->win, 0, 0, 0, 0, c->w / 2, c->h / 2);
+		XWarpPointer(dpy, None, c->cw.win, 0, 0, 0, 0, c->w / 2, c->h / 2);
 }
 
 /* Each monitor's selected window, by logical index as _DWM_MONITOR_DESKTOPS
@@ -5009,7 +4976,7 @@ updatemonitorwindows(void)
 		monitorwindowsbuf[index] = None;
 	for (m = mons; m; m = m->next)
 		if ((index = getmonlogicalindex(m)) >= 0 && index < count)
-			monitorwindowsbuf[index] = m->sel ? m->sel->win : None;
+			monitorwindowsbuf[index] = m->sel ? m->sel->cw.win : None;
 	if (count == monitorwindowscachelen
 	&& (!count || !memcmp(monitorwindowsbuf, monitorwindowscache, count * sizeof(Window))))
 		return;
@@ -5098,32 +5065,28 @@ untrackoverridewindow(Window win)
 void
 unswallow(Client *c)
 {
-	c->win = c->swallowing->win;
-	c->ewmhabove = c->swallowing->ewmhabove;
-	c->iswindowedfullscreen = c->swallowing->iswindowedfullscreen;
-	c->rulefullscreenapplied = c->swallowing->rulefullscreenapplied;
-	c->ignoresizehints = c->swallowing->ignoresizehints;
-	updatesizehints(c);
-	copystr(c->class, sizeof c->class, c->swallowing->class);
-	copystr(c->instance, sizeof c->instance, c->swallowing->instance);
+	/* The terminal's window back, and its own fullscreen mode (#533): one
+	 * move from the mode the swallowed window was shown in. */
+	int shownmode = c->cw.fsmode;
 
 	#if SHOWWINICON
 	freeicon(c);
-	c->icon = c->swallowing->icon;
-	c->icw = c->swallowing->icw;
-	c->ich = c->swallowing->ich;
 	#endif
+	c->cw = c->swallowing->cw;
+	updatesizehints(c);
+	int terminalmode = c->cw.fsmode;
+	c->cw.fsmode = shownmode;
+	setfullscreenmode(c, terminalmode, 1);
 
 	free(c->swallowing);
 	c->swallowing = NULL;
 
-	XDeleteProperty(dpy, c->win, netatom[NetClientList]);
+	XDeleteProperty(dpy, c->cw.win, netatom[NetClientList]);
 
-	setfullscreen(c, 0);
 	updatetitle(c);
 	arrange(c->mon);
-	XMapWindow(dpy, c->win);
-	XMoveResizeWindow(dpy, c->win, c->x, c->y, c->w, c->h);
+	XMapWindow(dpy, c->cw.win);
+	XMoveResizeWindow(dpy, c->cw.win, c->x, c->y, c->w, c->h);
 	setclientstate(c, NormalState);
 	focus(NULL);
 	arrange(c->mon);
@@ -5210,16 +5173,16 @@ updateclass(Client *c)
 {
 	XClassHint ch = { NULL, NULL };
 
-	c->class[0] = '\0';
-	c->instance[0] = '\0';
-	if (!XGetClassHint(dpy, c->win, &ch))
+	c->cw.class[0] = '\0';
+	c->cw.instance[0] = '\0';
+	if (!XGetClassHint(dpy, c->cw.win, &ch))
 		return;
 	if (ch.res_class) {
-		copystr(c->class, sizeof c->class, ch.res_class);
+		copystr(c->cw.class, sizeof c->cw.class, ch.res_class);
 		XFree(ch.res_class);
 	}
 	if (ch.res_name) {
-		copystr(c->instance, sizeof c->instance, ch.res_name);
+		copystr(c->cw.instance, sizeof c->cw.instance, ch.res_name);
 		XFree(ch.res_name);
 	}
 }
@@ -5250,7 +5213,7 @@ updateclientlist(void)
 		if (m->traywin)
 			clients[index++] = m->traywin;
 		for (c = m->clients; c; c = c->next)
-			clients[index++] = c->win;
+			clients[index++] = c->cw.win;
 	}
 	count = index;
 
@@ -5576,7 +5539,7 @@ applylayoutrequest(void)
 int
 titleheight(Client *c)
 {
-	if (!titlebarsenabled || !c || !c->mon || c->isfullscreen || c->iswindowedfullscreen || c->alwaysontop
+	if (!titlebarsenabled || !c || !c->mon || fs_active(c->cw.fsmode) || c->alwaysontop
 	    || !(c->tags & c->mon->tagset[c->mon->seltags] & titlebartags)
 	    || (!c->isfloating && c->mon->lt[c->mon->sellt]->arrange))
 		return 0;
@@ -5614,7 +5577,7 @@ updatetitlebar(Client *c)
 	int height = titleheight(c), width = MAX(1, WIDTH(c));
 	XSetWindowAttributes wa = { .override_redirect = True,
 		.event_mask = ButtonPressMask | ExposureMask | EnterWindowMask };
-	XWindowChanges stack = { .sibling = c->win, .stack_mode = Above };
+	XWindowChanges stack = { .sibling = c->cw.win, .stack_mode = Above };
 	XClassHint class = { "dwm-titlebar", "DwmTitlebar" };
 
 	if (!height || !ISVISIBLE(c)) {
@@ -5633,10 +5596,10 @@ updatetitlebar(Client *c)
 		c->titlefor = None;
 	}
 	/* Swallowing gives the client another window: the strip names this one. */
-	if (c->titlefor != c->win) {
+	if (c->titlefor != c->cw.win) {
 		XChangeProperty(dpy, c->titlewin, titlebarforatom, XA_WINDOW, 32,
-			PropModeReplace, (unsigned char *)&c->win, 1);
-		c->titlefor = c->win;
+			PropModeReplace, (unsigned char *)&c->cw.win, 1);
+		c->titlefor = c->cw.win;
 	}
 	XMoveResizeWindow(dpy, c->titlewin, c->x, c->y - height, width, height);
 	if (drw->w < (unsigned int)width || drw->h < (unsigned int)height)
@@ -5677,7 +5640,7 @@ restacktitlebars(void)
 	for (m = mons; m; m = m->next)
 		for (c = m->clients; c; c = c->next)
 			if (c->titlemapped) {
-				stack.sibling = c->win;
+				stack.sibling = c->cw.win;
 				XConfigureWindow(dpy, c->titlewin, CWSibling | CWStackMode, &stack);
 			}
 }
@@ -5820,7 +5783,7 @@ void
 updateicon(Client *c)
 {
 	freeicon(c);
-	c->icon = geticonprop(c->win, &c->icw, &c->ich);
+	c->cw.icon = geticonprop(c->cw.win, &c->cw.icw, &c->cw.ich);
 }
 #endif
 
@@ -5925,7 +5888,7 @@ updatesizehints(Client *c)
 	long msize;
 	XSizeHints size;
 
-	if (!XGetWMNormalHints(dpy, c->win, &size, &msize))
+	if (!XGetWMNormalHints(dpy, c->cw.win, &size, &msize))
 
 		size.flags = PSize;
 	if (size.flags & PBaseSize) {
@@ -5959,7 +5922,7 @@ updatesizehints(Client *c)
 		c->maxa = (float)size.max_aspect.x / size.max_aspect.y;
 	} else
 		c->maxa = c->mina = 0.0;
-	c->isfixed = !c->ignoresizehints
+	c->isfixed = !c->cw.ignoresizehints
 		&& (c->maxw && c->maxh && c->maxw == c->minw && c->maxh == c->minh);
 }
 
@@ -5991,8 +5954,8 @@ updatestatus(void)
 void
 updatetitle(Client *c)
 {
-	if (!gettextprop(c->win, netatom[NetWMName], c->name, sizeof c->name))
-		gettextprop(c->win, XA_WM_NAME, c->name, sizeof c->name);
+	if (!gettextprop(c->cw.win, netatom[NetWMName], c->name, sizeof c->name))
+		gettextprop(c->cw.win, XA_WM_NAME, c->name, sizeof c->name);
 	if (c->name[0] == '\0')
 		strcpy(c->name, broken);
 	if (c->titlemapped)
@@ -6008,8 +5971,8 @@ updatewindowtype(Client *c)
 
 	nstates = getatomproplist(c, netatom[NetWMState], states, LENGTH(states), NULL);
 	if (atomlistcontains(states, nstates, netatom[NetWMFullscreen]))
-		setfullscreen(c, 1);
-	c->ewmhabove = atomlistcontains(states, nstates, netatom[NetWMAbove])
+		fullscreenevent(c, FsEvClientOn);
+	c->cw.ewmhabove = atomlistcontains(states, nstates, netatom[NetWMAbove])
 		|| atomlistcontains(states, nstates, netatom[NetWMStaysOnTop]);
 	if (wtype == netatom[NetWMWindowTypeDialog])
 		c->isfloating = 1;
@@ -6084,10 +6047,10 @@ updatewmhints(Client *c)
 {
 	XWMHints *wmh;
 
-	if ((wmh = XGetWMHints(dpy, c->win))) {
+	if ((wmh = XGetWMHints(dpy, c->cw.win))) {
 		if (c == selmon->sel && wmh->flags & XUrgencyHint) {
 			wmh->flags &= ~XUrgencyHint;
-			XSetWMHints(dpy, c->win, wmh);
+			XSetWMHints(dpy, c->cw.win, wmh);
 		} else
 			c->isurgent = (wmh->flags & XUrgencyHint) ? 1 : 0;
 		if (wmh->flags & InputHint)
@@ -6111,7 +6074,7 @@ focusfirsttagged(unsigned int tags)
 		if ((c->tags & tags) && ISVISIBLE(c)) {
 			focus(c);
 			if (cursorwarp && viewwarps)
-				XWarpPointer(dpy, None, c->win, 0, 0, 0, 0,
+				XWarpPointer(dpy, None, c->cw.win, 0, 0, 0, 0,
 					c->w / 2, c->h / 2);
 			return;
 		}
@@ -6257,7 +6220,7 @@ wintoclient(Window w)
 
 	for (m = mons; m; m = m->next)
 		for (c = m->clients; c; c = c->next)
-			if (c->win == w)
+			if (c->cw.win == w)
 				return c;
 	return NULL;
 }

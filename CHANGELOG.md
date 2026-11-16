@@ -38,6 +38,28 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Fullscreen in dwm (#533):
+  - A window made really fullscreen by a rule while in fake fullscreen
+    (Super+Shift+Y) dropped to fake fullscreen when it asked for fullscreen
+    again, but kept the monitor's size and lost the tile it came from; a
+    later fullscreen of that window then did not cover the monitor. The
+    request now changes nothing.
+  - The geometry a fullscreen window goes back to is kept when it enters
+    fullscreen, so the window resizing itself while fullscreen, or a late
+    rule switching it between real and windowed fullscreen, no longer leaves
+    it at the monitor's size when it leaves.
+  - A tiled window leaving fullscreen is arranged back into the tiling;
+    windows tiled while it was fullscreen no longer overlap it.
+  - A window sent to another monitor while fullscreen stays on that monitor
+    when it leaves fullscreen, instead of going back to where it was on the
+    first.
+  - Super+J/K no longer moves focus out of real fullscreen entered from fake
+    fullscreen; every fullscreen that covers the monitor blocks it, as real
+    and windowed fullscreen already did.
+  - A swallowed window has its own fullscreen mode: with the terminal in fake
+    fullscreen, the window it swallows is no longer stuck in fake fullscreen
+    when it asks for fullscreen, and when it closes the terminal gets its own
+    mode back instead of losing it.
 - Small fixes from the beta.2 review (#529):
   - Settings > Appearance > Layout: a slider step made while a save was
     running was dropped and the slider snapped back; it is now sent when the
@@ -96,6 +118,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Changed
 
+- dwm keeps a client's fullscreen mode as one value with one table of moves
+  (`fullscreen.h`, checked pair by pair by `make check-fullscreen-state`)
+  instead of three flags, and what belongs to a window (its class, instance,
+  rule state, fullscreen mode, icon) in one value that swallowing swaps as a
+  whole (#533).
 - Per-event costs (#532):
   - Saving clipboard history sizes each entry once and stringifies the
     history once, instead of again for every entry dropped, and waits a second
