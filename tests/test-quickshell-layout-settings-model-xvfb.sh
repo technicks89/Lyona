@@ -58,6 +58,7 @@ case "$1 $2" in
 	echo "set $*" >>"$d/log"
 	;;
 'dwm-settings-theme titlebars-status')
+	echo status >>"$d/log"
 	read -r e m <"$d/titlebars"
 	printf 'appearance-titlebars-protocol\t1\t0\ntitlebars\t%s\t%s\n' "$e" "$m"
 	;;

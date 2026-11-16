@@ -40,7 +40,9 @@ Scope {
     // says it is reading, not that dwm has published nothing (#530).
     property bool reported: false
     property string message: ""
-    readonly property bool editable: root.available && root.tagNumber >= 1
+    // Only on fresh state: after the section reopens, the values are the last
+    // session's until dwm reports again, and a save would name that tag.
+    readonly property bool editable: root.available && root.reported && root.tagNumber >= 1
 
     // The monitor's output name (DP-1), from the panel's own mapping of dwm's
     // monitor order to screens; "" when it is not known.
@@ -73,8 +75,15 @@ Scope {
     property bool titlebarsKnown: false
     property bool titlebarsEnabled: false
     property int titlebarTags: 511
-    property bool titlebarsBusy: titlebarSetProcess.running
+    // Also while a read runs: a toggle then would build on the tags it replaces.
+    readonly property bool titlebarsBusy: titlebarSetProcess.running || root.titlebarsReading
+    // Set when a read is started, not from the process's running, which turns
+    // true only once it has started: a second request in between was lost.
+    property bool titlebarsReading: false
     property string titlebarsMessage: ""
+    // A read asked for while one runs: it runs again when that one ends, so a
+    // write that finished during a read is followed by a read of what it wrote.
+    property bool titlebarsRefreshPending: false
 
     onActiveChanged: {
         if (root.active) {
@@ -182,7 +191,12 @@ Scope {
     }
 
     function refreshTitlebars() {
-        if (!titlebarStatusProcess.running) titlebarStatusProcess.running = true;
+        if (root.titlebarsReading) {
+            root.titlebarsRefreshPending = true;
+            return;
+        }
+        root.titlebarsReading = true;
+        titlebarStatusProcess.running = true;
     }
 
     function parseTitlebars(text) {
@@ -207,7 +221,7 @@ Scope {
 
     // Writes both keys; the last tag cannot be turned off (dwm needs 1-511).
     function setTitlebars(enabled, mask) {
-        if (!root.titlebarsKnown || titlebarSetProcess.running || mask < 1 || mask > 511) return;
+        if (!root.titlebarsKnown || root.titlebarsBusy || mask < 1 || mask > 511) return;
         root.titlebarsMessage = "";
         titlebarSetProcess.command = Commands.settingsThemeCommand("titlebars", [enabled ? "1" : "0", String(mask)]);
         titlebarSetProcess.running = true;
@@ -237,6 +251,9 @@ Scope {
                 : "The layout settings could not be saved";
             if (exitCode === 0) {
                 root.sendPendingSave();
+                // The last write is done: dwm's value wins after a moment, even if
+                // it never reports the value asked for (one it adjusted, say).
+                if (!saveProcess.running) requestedSettle.restart();
             } else {
                 // Nothing more is sent, and the sliders go back to dwm's values.
                 root.pendingSaves = ({});
@@ -245,11 +262,28 @@ Scope {
         }
     }
 
+    // Long enough for dwm's reload and the watch line it causes, so a slider
+    // does not step back to the old value before the new one arrives.
+    Timer {
+        id: requestedSettle
+        interval: 1500
+        repeat: false
+        onTriggered: if (!saveProcess.running && Object.keys(root.pendingSaves).length === 0) root.reconcileRequested(false)
+    }
+
     Process {
         id: titlebarStatusProcess
         command: Commands.settingsThemeCommand("titlebars-status", [])
         running: false
         stdout: StdioCollector { onStreamFinished: root.parseTitlebars(this.text) }
+        onRunningChanged: {
+            if (running) return;
+            root.titlebarsReading = false;
+            if (root.titlebarsRefreshPending) {
+                root.titlebarsRefreshPending = false;
+                Qt.callLater(root.refreshTitlebars);
+            }
+        }
     }
 
     Process {

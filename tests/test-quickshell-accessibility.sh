@@ -205,14 +205,34 @@ named=$(awk '
 		if ($0 ~ /Accessible\.name:/) name = 1
 		if (depth == 0) { if (role && name) n++; inside = 0 } }
 	END { print n + 0 }' "$panel")
-pressable=$(grep -c 'Accessible.onPressAction:' "$panel")
-clickable=$(grep -cE '^[[:space:]]*onClicked:' "$panel")
 [ "$named" = "$pills" ] || {
 	printf 'only %s of the %s panel pills have Accessible.role and Accessible.name\n' "$named" "$pills" >&2
 	exit 1
 }
-[ "$pressable" -ge 7 ] || {
-	printf 'panel pills a screen reader can press: %s (onClicked handlers: %s)\n' "$pressable" "$clickable" >&2
+# Each pill whose own mouse area acts on a click, named by that area's id,
+# has its own press action.
+for area in clockMouse weatherMouse updateAvailableMouse updateMouse keyboardMouse \
+	bluetoothMouse networkMouse controlsMouse powerMouse; do
+	pressable=$(awk -v area="$area" '
+		/^[[:space:]]*PanelPill \{/ { inside = 1; depth = 0; found = press = 0 }
+		inside { depth += gsub(/\{/, "{"); depth -= gsub(/\}/, "}")
+			if ($0 ~ ("id: " area "$")) found = 1
+			if ($0 ~ /Accessible\.onPressAction:/) press = 1
+			if (depth == 0) { if (found) { print press; exit } inside = 0 } }' "$panel")
+	[ "$pressable" = 1 ] || {
+		printf 'the panel pill with %s has no Accessible.onPressAction (found: %s)\n' "$area" "${pressable:-no such pill}" >&2
+		exit 1
+	}
+done
+# And no pill has a click handler of its own that is not in that list.
+clicked=$(awk '
+	/^[[:space:]]*PanelPill \{/ { inside = 1; depth = 0; id = ""; click = 0 }
+	inside { depth += gsub(/\{/, "{"); depth -= gsub(/\}/, "}")
+		if ($0 ~ /id: [A-Za-z]+Mouse$/) { id = $0; sub(/.*id: /, "", id) }
+		if ($0 ~ /^[[:space:]]*onClicked:/ && id != "") click = 1
+		if (depth == 0) { if (click) print id; inside = 0 } }' "$panel" | sort | tr '\n' ' ')
+[ "$clicked" = "bluetoothMouse clockMouse controlsMouse keyboardMouse networkMouse powerMouse updateAvailableMouse updateMouse weatherMouse " ] || {
+	printf 'panel pills with a click handler changed: %s; give a new one a press action and list it here\n' "$clicked" >&2
 	exit 1
 }
 

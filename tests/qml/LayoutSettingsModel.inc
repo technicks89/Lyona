@@ -3,6 +3,7 @@
     property int lmStage: 0
     property double lmStageStarted: Date.now()
     property string lmLog: ""
+    property int lmReads: 0
     readonly property string lmDir: Quickshell.env("LAYOUT_DIR")
 
     function lmCheck(ok, detail) {
@@ -126,7 +127,7 @@
                 root.lmNext();
                 return;
             case 11:
-                if (model.titlebarTags !== 1) return;
+                if (model.titlebarTags !== 1 || model.titlebarsBusy) return;
                 model.toggleTitlebarTag(1);
                 root.lmCheck(!model.titlebarsBusy && model.titlebarTags === 1, "the last tag was turned off");
                 // A failed write: a message, and the sliders back on dwm's values.
@@ -143,8 +144,46 @@
                 if (model.message.length === 0) return;
                 root.lmCheck(model.message.indexOf("cannot write") >= 0 && model.shown("mfact") === 55,
                     "after a failure: " + model.message + ", shown " + model.shown("mfact"));
+                // A value dwm never reports back: once the last write is done,
+                // the slider goes back to dwm's value after the settle.
+                root.lmShellRun('rm -f "$1/fail"');
+                root.lmNext();
+                return;
+            case 14:
+                if (lmShell.running) return;
+                model.save("gap", 9);
+                root.lmNext();
+                return;
+            case 15:
+                if (root.lmLog.indexOf("set 0 1 gap 9") < 0) return;
+                root.lmCheck(model.shown("gap") === 9, "right after the write: " + model.shown("gap"));
+                root.lmNext();
+                return;
+            case 16:
+                if (model.requested.gap !== undefined) return;
+                root.lmCheck(waited > 800 && model.shown("gap") === model.gap,
+                    "settled after " + waited + " ms: shown " + model.shown("gap") + ", dwm " + model.gap);
+                // Reopened, the last session's values are shown but nothing can
+                // be saved until dwm reports again.
                 settingsModel.close();
                 root.lmCheck(!model.active, "still active after Settings closed");
+                settingsModel.open("appearance");
+                root.lmCheck(model.available && !model.editable, "editable on stale state");
+                root.lmNext();
+                return;
+            case 17:
+                if (!model.editable || model.titlebarsBusy) return;
+                root.lmCheck(model.reported, "editable before a report");
+                // A read asked for while one runs is not dropped: it runs after.
+                root.lmReads = root.lmLog.split("\n").filter(line => line === "status").length;
+                model.refreshTitlebars();
+                model.refreshTitlebars();
+                root.lmCheck(model.titlebarsBusy, "a read did not start");
+                root.lmNext();
+                return;
+            case 18:
+                if (model.titlebarsBusy || root.lmLog.split("\n").filter(line => line === "status").length < root.lmReads + 2) return;
+                settingsModel.close();
                 console.log("Layout settings model: PASS");
                 Qt.quit();
                 return;

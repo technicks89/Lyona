@@ -23,25 +23,6 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   pressed by a screen reader, and the keyboard layout pill has a tooltip
   naming the layout a click switches to (#534).
 
-### Changed
-
-- The Layout section's processes moved into `LayoutSettingsModel.qml`, owned
-  by `SettingsModel`, as the models-only rule asks; the pane only binds
-  (#530). It says "Reading the layout settings..." until dwm's first line,
-  instead of briefly saying dwm had published nothing.
-- The layout limits (master size 5-95, count 0-20, gap 0-64) are checked by
-  `make check-layout-settings` to agree across `config.c`,
-  `dwm-layout-settings` and the Settings sliders (#530).
-- A rollback says which fingerprint uses are still on, before it asks and in
-  the Settings note: a release before 2026.11.0-beta.2 has no Settings >
-  Fingerprint to turn them off (#523). `docs/FINGERPRINT.md` has an "After a
-  rollback" section with the manual steps.
-- With the polkit fingerprint use on, its detail says when
-  `/etc/pam.d/polkit-1`, which shadows polkit's own `/usr/lib/pam.d/polkit-1`,
-  differs from it apart from Lyona's lines (#524).
-- The `sudo` fingerprint switch says that any program can ask sudo for a
-  finger (#525).
-
 ### Fixed
 
 - Small fixes from the beta.2 review (#529):
@@ -100,6 +81,25 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   missing one fails the check. `CONTRIBUTING.md`, the repository map and a
   SPEC link point to the new place.
 
+### Changed
+
+- A rollback says which fingerprint uses are still on, before it asks and in
+  the Settings note: a release before 2026.11.0-beta.2 has no Settings >
+  Fingerprint to turn them off (#523). `docs/FINGERPRINT.md` has an "After a
+  rollback" section with the manual steps.
+- With the polkit fingerprint use on, its detail says when
+  `/etc/pam.d/polkit-1`, which shadows polkit's own `/usr/lib/pam.d/polkit-1`,
+  differs from it apart from Lyona's lines (#524).
+- The `sudo` fingerprint switch says that any program can ask sudo for a
+  finger (#525).
+
+- The Layout section's processes moved into `LayoutSettingsModel.qml`, owned
+  by `SettingsModel`, as the models-only rule asks; the pane only binds
+  (#530). It says "Reading the layout settings..." until dwm's first line,
+  instead of briefly saying dwm had published nothing.
+- The layout limits (master size 5-95, count 0-20, gap 0-64) are checked by
+  `make check-layout-settings` to agree across `config.c`,
+  `dwm-layout-settings` and the Settings sliders (#530).
 ### Documentation
 
 - Updates on aarch64 (ARM5-02, #490,
