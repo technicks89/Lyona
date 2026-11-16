@@ -84,18 +84,24 @@ Scope {
     // with no reader found every open still looks, so one plugged in later is
     // seen; without fprintd that look fails at once.
     property bool readerChecked: false
+    // Raised when a full read or a change starts: a PAM-only read begun before
+    // it is older than what that brings, and its result is dropped.
+    property int usesGeneration: 0
 
     function refreshForSettings() {
         if (!root.readerChecked) {
             root.refresh();
             return;
         }
-        if (!usesProcess.running && !statusProcess.running) usesProcess.running = true;
+        if (usesProcess.running || statusProcess.running || root.busy) return;
+        usesProcess.generation = root.usesGeneration;
+        usesProcess.running = true;
     }
 
     // status --uses: the module and use lines only; the reader and fingers
     // stay as last read.
-    function parseUses(text) {
+    function parseUses(text, generation) {
+        if (generation !== root.usesGeneration) return;
         const lines = String(text).trim().split("\n");
         const header = lines.length > 0 ? lines[0].split("\t") : [];
         if (!Protocol.isHeader(header, "fingerprint-protocol", 1)
@@ -169,6 +175,7 @@ Scope {
         root.message = "Touch the reader with your " + root.fingerLabel(finger).toLowerCase()
             + ". fprintd may ask for your password first";
         root.messageSeverity = "idle";
+        root.usesGeneration++;
         enrollProcess.command = Commands.settingsFingerprintCommand("enroll", [finger]);
         enrollProcess.running = true;
     }
@@ -201,6 +208,7 @@ Scope {
         root.pendingAction = kind;
         root.message = working;
         root.messageSeverity = "idle";
+        root.usesGeneration++;
         actionProcess.command = Commands.settingsFingerprintCommand(kind, args);
         actionProcess.running = true;
     }
@@ -245,9 +253,10 @@ Scope {
 
     Process {
         id: usesProcess
+        property int generation: 0
         command: Commands.settingsFingerprintCommand("status", ["--uses"])
         running: false
-        stdout: StdioCollector { onStreamFinished: root.parseUses(this.text) }
+        stdout: StdioCollector { onStreamFinished: root.parseUses(this.text, usesProcess.generation) }
     }
 
     Process {
@@ -255,7 +264,10 @@ Scope {
         command: Commands.settingsFingerprintCommand("status", [])
         running: false
         stdout: StdioCollector { onStreamFinished: root.parseStatus(this.text) }
-        onRunningChanged: if (!running && root.statusPending && !root.busy) Qt.callLater(root.refresh)
+        onRunningChanged: {
+            if (running) root.usesGeneration++;
+            else if (root.statusPending && !root.busy) Qt.callLater(root.refresh);
+        }
     }
 
     Process {

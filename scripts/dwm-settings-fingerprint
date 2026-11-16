@@ -26,7 +26,10 @@ set -euo pipefail
 # after its finger line, until acknowledge accepts it. Settings keeps the
 # fingers it enrolled and deleted in ${XDG_STATE_HOME}/lyona/fingerprint-fingers
 # (one name a line, the user's own); the first status records those enrolled
-# then, and reports none.
+# then, and reports none. A known finger fprintd no longer lists is dropped, so
+# enrolling it again outside Settings is reported; only when fprintd answered,
+# with fingers or with none (NoEnrolledPrints, told apart from a failed call by
+# dbus-send), never when the call failed.
 #
 # The reader and the fingers come from fprintd over D-Bus. Enrolling and
 # deleting need the device claimed for the whole operation, and fprintd ties a
@@ -100,6 +103,17 @@ fprint_call() { # METHOD-PATH INTERFACE METHOD [SIGNATURE ARGS...]
 	timeout 10 busctl --system --json=short call "$fprint_service" "$@" 2>/dev/null
 }
 
+# Whether USER has no fingers enrolled: fprintd answers that with an error,
+# which busctl does not name, so a failed list is asked again through dbus-send.
+fprint_none_enrolled() { # DEVICE USER
+	local reply
+	command -v dbus-send >/dev/null 2>&1 || return 1
+	# It exits 1 with the error, so its output is what tells.
+	reply=$(timeout 10 dbus-send --system --print-reply --dest="$fprint_service" "$1" \
+		net.reactivated.Fprint.Device.ListEnrolledFingers "string:$2" 2>&1) || :
+	[[ $reply == *'net.reactivated.Fprint.Error.NoEnrolledPrints'* ]]
+}
+
 cmd_status() {
 	local devices device name fingers user tool pam uses_only=${1:-}
 	printf 'fingerprint-protocol\t1\n'
@@ -119,13 +133,16 @@ cmd_status() {
 		printf 'reader\tavailable\t%s\n' "$name"
 		user=$(user_name)
 		# None enrolled is an error from fprintd (NoEnrolledPrints): no lines.
-		local enrolled=() known=()
+		local enrolled=() known=() kept=() answered=0
 		if fingers=$(fprint_call "$device" net.reactivated.Fprint.Device ListEnrolledFingers s "$user"); then
+			answered=1
 			while IFS= read -r name; do
 				valid_finger "$name" || continue
 				printf 'finger\t%s\n' "$name"
 				enrolled+=("$name")
 			done < <(jq -r '.data[0][]?' <<<"$fingers" 2>/dev/null)
+		elif fprint_none_enrolled "$device" "$user"; then
+			answered=1
 		fi
 		# Fingers enrolled outside Settings (#535); the first time, the
 		# fingers there now are taken as known.
@@ -134,7 +151,14 @@ cmd_status() {
 			for name in "${enrolled[@]}"; do
 				[[ " ${known[*]} " == *" $name "* ]] || printf 'finger-added\t%s\n' "$name"
 			done
-		else
+			# Known fingers fprintd no longer has are forgotten.
+			if ((answered)); then
+				for name in "${known[@]}"; do
+					[[ " ${enrolled[*]} " != *" $name "* ]] || kept+=("$name")
+				done
+				((${#kept[@]} == ${#known[@]})) || known_write "${kept[@]}"
+			fi
+		elif ((answered)); then
 			known_write "${enrolled[@]}"
 		fi
 	fi

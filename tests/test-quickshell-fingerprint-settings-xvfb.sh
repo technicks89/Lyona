@@ -54,9 +54,14 @@ cat >"$work/fingerprint-stub" <<'EOF'
 d=$FINGERPRINT_DIR
 case $1 in
 status)
-	# The PAM-only read (#532) is logged, so the test can tell it apart.
-	[ "${2:-}" = --uses ] && echo 'status --uses' >>"$d/log"
-	cat "$d/status"
+	# The PAM-only read (#532) is logged, so the test can tell it apart, and
+	# answers as the helper does: no reader or finger lines.
+	if [ "${2:-}" = --uses ]; then
+		echo 'status --uses' >>"$d/log"
+		grep -E '^(fingerprint-protocol|module|use|complete)	' "$d/status"
+	else
+		cat "$d/status"
+	fi
 	;;
 enroll)
 	printf 'enroll-status\tenroll-stage-passed\n'

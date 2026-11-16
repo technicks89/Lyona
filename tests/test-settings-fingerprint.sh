@@ -38,6 +38,19 @@ case "$*" in
 *) exit 1 ;;
 esac
 STUB
+# dbus-send names the error busctl does not: NoEnrolledPrints with no fingers,
+# another error with "listfails" (the call failed, the fingers unknown).
+cat >"$bin/dbus-send" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"$STUB_DIR/dbus-send-calls"
+if [ -e "$STUB_DIR/nofprintd" ] || [ -e "$STUB_DIR/listfails" ]; then
+	echo 'Error org.freedesktop.DBus.Error.NoReply: Did not receive a reply' >&2
+	exit 1
+fi
+[ ! -e "$STUB_DIR/fingers" ] || exit 1
+echo 'Error net.reactivated.Fprint.Error.NoEnrolledPrints: Failed to discover prints' >&2
+exit 1
+STUB
 cat >"$bin/fprintd-enroll" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >"$STUB_DIR/enroll-args"
@@ -121,7 +134,21 @@ printf 'right-index-finger\nleft-thumb\n' >"$known"
 
 # No fingers enrolled (fprintd answers with an error): no finger lines.
 rm "$work/fingers"
+# A list that failed keeps the known fingers.
+: >"$work/listfails"
+[[ $(run status) != *$'\nfinger\t'* ]] || fail 'fingers from a failed list'
+[[ $(cat "$known") == $'right-index-finger\nleft-thumb' ]] || fail "a failed list changed the known fingers: $(cat "$known")"
+rm "$work/listfails"
+# None enrolled, as fprintd says: no finger lines, and the known fingers are
+# forgotten, so enrolling them again outside Settings is reported.
 [[ $(run status) != *$'\nfinger\t'* ]] || fail 'fingers without any enrolled'
+grep -Fq "string:$(id -un)" "$work/dbus-send-calls" || fail "dbus-send: $(cat "$work/dbus-send-calls")"
+[[ ! -s $known ]] || fail "deleted fingers stayed known: $(cat "$known")"
+: >"$work/fingers"
+out=$(run status)
+[[ $out == *$'finger-added\tright-index-finger'* && $out == *$'finger-added\tleft-thumb'* ]] ||
+	fail "fingers enrolled again outside Settings were not reported: $out"
+rm "$work/fingers"
 # No reader.
 rm "$work/reader"
 [[ $(run status) == *$'\nreader\tnone\tNo fingerprint reader was found\n'* ]] || fail "no reader: $(run status)"

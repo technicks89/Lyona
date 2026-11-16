@@ -118,7 +118,10 @@ Scope {
         root.captureEnabled = capture;
         root.persistEnabled = capture && persist;
         root.settingsKnown = true;
-        if (!capture) root.entries = [];
+        if (!capture) {
+            root.entries = [];
+            root.entryBytesCache = ({});
+        }
         // Saved history, once, when capture comes on with saving; and what is
         // in the list now, saved as soon as saving comes on.
         if (root.persistEnabled && !wasCapturing && root.entries.length === 0) root.load();
@@ -131,6 +134,7 @@ Scope {
         if (enabled) root.backendFailed = false;
         else {
             root.entries = [];
+            root.entryBytesCache = ({});
             root.historyGeneration++;
         }
         root.run(["set", "capture", enabled ? "on" : "off"]);
@@ -260,7 +264,9 @@ Scope {
 
     // Each entry's saved size in UTF-8 bytes, by its text, worked out once
     // (#532): the history was stringified and measured again for every entry
-    // dropped, up to seconds on the GUI thread for a large one.
+    // dropped, up to seconds on the GUI thread for a large one. Keyed by the
+    // text, so an entry deleted, cleared or dropped with capture goes from it
+    // too, saving or not.
     property var entryBytesCache: ({})
 
     function entryBytes(entry) {
@@ -391,12 +397,14 @@ Scope {
         if (index < 0 || index >= rows.length) return;
         const text = rows[index].text;
         root.entries = root.entries.filter(entry => entry.text !== text);
+        delete root.entryBytesCache[text];
         root.historyGeneration++;
         if (root.persistEnabled) root.save();
     }
 
     function clearAll() {
         root.entries = [];
+        root.entryBytesCache = ({});
         root.historyGeneration++;
         root.savePending = false;
         saveDebounce.stop();

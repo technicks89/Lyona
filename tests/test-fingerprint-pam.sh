@@ -144,20 +144,60 @@ sed -i '1a #auth sufficient pam_fprintd.so' "$r/etc/pam.d/lightdm"
 [[ $(state_of lightdm) == off ]] || fail 'a comment counted as fprintd'
 cp -p "$work/lightdm.orig" "$r/etc/pam.d/lightdm"
 
-# One change to a use at a time: while another holds the use's lock, a change
-# waits for it.
+# A stack the file pulls in counts too: fprintd in system-auth, two includes
+# below sudo, is external, keeps the enrolment rule and refuses enable.
+printf 'auth include system-auth\n' >"$r/etc/pam.d/system-login"
+printf 'auth substack system-fp\n' >"$r/etc/pam.d/system-auth"
+printf 'auth sufficient pam_fprintd.so\n' >"$r/usr/lib/pam.d/system-fp"
+[[ $(state_of sudo) == external && $(state_of lightdm) == external ]] || fail "fprintd in an included stack: $(run status)"
+run status | grep -Fq '/usr/lib/pam.d/system-fp, which /etc/pam.d/sudo pulls in' || fail "the detail: $(run status)"
+[[ $(run sync-enroll-rule) == *present && -f $rule ]] || fail 'no enrolment rule with fprintd in an included stack'
+expect_fail 'pulls in' enable sudo
+cmp "$r/etc/pam.d/sudo" "$work/sudo.orig" || fail 'a refused enable changed sudo'
+# Debian's @include, and an included stack that cannot be read.
+printf '@include common-fp\n' >"$r/etc/pam.d/system-auth"
+printf 'auth [success=1 default=ignore] pam_fprintd.so\n' >"$r/etc/pam.d/common-fp"
+[[ $(state_of sudo) == external ]] || fail "fprintd through @include: $(run status)"
+if ((EUID != 0)); then
+	printf 'auth required pam_unix.so\n' >"$r/etc/pam.d/common-fp"
+	chmod 000 "$r/etc/pam.d/common-fp"
+	[[ $(state_of sudo) == external ]] || fail "an unreadable included stack: $(run status)"
+	chmod 644 "$r/etc/pam.d/common-fp"
+fi
+# Include loops end; a stack without fprintd leaves the use off.
+printf 'auth include system-login\n' >"$r/etc/pam.d/system-auth"
+[[ $(state_of sudo) == off ]] || fail "an include loop: $(run status)"
+rm "$r/etc/pam.d/system-login" "$r/etc/pam.d/system-auth" "$r/etc/pam.d/common-fp" "$r/usr/lib/pam.d/system-fp"
+run sync-enroll-rule >/dev/null
+
+# The enrolment rule is written before the PAM file: refused, fingerprint
+# stays off.
+mkdir -p "$work/elsewhere"
+mv "$r/etc/polkit-1/rules.d" "$work/rules.d.real"
+ln -s "$work/elsewhere" "$r/etc/polkit-1/rules.d"
+expect_fail 'refusing a symlinked path' enable sudo
+cmp "$r/etc/pam.d/sudo" "$work/sudo.orig" || fail 'enable turned sudo on without the enrolment rule'
+[[ $(state_of sudo) == off ]] || fail "sudo after a refused rule: $(run status)"
+rm "$r/etc/polkit-1/rules.d"
+mv "$work/rules.d.real" "$r/etc/polkit-1/rules.d"
+
+# One change at a time, across every use and the enrolment rule: while
+# another holds the lock, a change, and sync-enroll-rule, wait for it.
 mkdir -p "$r/var/lib/lyona/fingerprint"
-flock "$r/var/lib/lyona/fingerprint/sudo.lock" sleep 1 &
-holder=$!
-for _ in $(seq 100); do
-	if ! flock -n "$r/var/lib/lyona/fingerprint/sudo.lock" true; then break; fi
-	sleep 0.02
+for request in 'enable sudo' sync-enroll-rule; do
+	flock "$r/var/lib/lyona/fingerprint/pam.lock" sleep 1 &
+	holder=$!
+	for _ in $(seq 100); do
+		if ! flock -n "$r/var/lib/lyona/fingerprint/pam.lock" true; then break; fi
+		sleep 0.02
+	done
+	started=$(date +%s%N)
+	# shellcheck disable=SC2086 # the request splits into its words
+	run $request >/dev/null
+	waited=$((($(date +%s%N) - started) / 1000000))
+	wait "$holder"
+	((waited >= 500)) || fail "$request did not wait for the lock (${waited} ms)"
 done
-started=$(date +%s%N)
-run enable sudo >/dev/null
-waited=$((($(date +%s%N) - started) / 1000000))
-wait "$holder"
-((waited >= 500)) || fail "enable did not wait for the lock (${waited} ms)"
 run disable sudo >/dev/null
 cmp "$r/etc/pam.d/sudo" "$work/sudo.orig" || fail 'sudo is not the original after the locked change'
 

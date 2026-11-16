@@ -32,6 +32,15 @@ set -euo pipefail
 # alone: enable and disable refuse it. remove-external removes such lines, after
 # keeping a copy of the file, and only when asked.
 #
+# The stacks a use's file pulls in count too: every "include" and "substack"
+# directive (any type, with or without a leading "-") and Debian's "@include",
+# followed to any depth (at most 32 files), by name in /etc/pam.d and then
+# /usr/lib/pam.d, or by absolute path. A pam_fprintd line in one of those, or
+# one that exists but cannot be read, makes the use "external", so it is never
+# reported off while a finger works through it. A named stack that does not
+# exist is skipped. remove-external edits only the use's own file; a line in a
+# stack it pulls in is removed there, by hand.
+#
 # status prints:
 #   fingerprint-pam-protocol  1
 #   module   available|missing  PATH
@@ -43,7 +52,11 @@ set -euo pipefail
 # asks for the user's password and remembers it for a while, so someone at an
 # unlocked session could add a finger of their own, which then works wherever
 # fingerprint is on. Every change here, and sync-enroll-rule (run by the
-# install), writes the rule or removes it to match.
+# install), writes the rule or removes it to match. enable writes it before it
+# changes the PAM file, so a refused rule leaves fingerprint off. Every change
+# and sync-enroll-rule hold one lock from their first look at the files until
+# the rule matches, so two changes never decide the rule from each other's
+# half-done state.
 #
 # DIR (for tests) is the root the paths are under; it is never given by the
 # root helper, which uses /.
@@ -134,9 +147,54 @@ vendor_followed() {
 	' "$1" | cmp -s - "$2"
 }
 
+# The file a PAM include, substack or @include NAME refers to.
+pam_stack_path() {
+	local name=$1 dir
+	[[ -n $name && $name != *..* ]] || return 1
+	if [[ $name == /* ]]; then
+		printf '%s\n' "$root$name"
+		return 0
+	fi
+	[[ $name != */* ]] || return 1
+	for dir in "$root/etc/pam.d" "$root/usr/lib/pam.d"; do
+		[[ -e $dir/$name ]] || continue
+		printf '%s\n' "$dir/$name"
+		return 0
+	done
+	return 1
+}
+
+# The first stack FILE pulls in, at any depth, that turns fprintd on: its
+# path, or "?" and its path when it cannot be read. Nothing when none does.
+included_fprintd() {
+	local queue=("$1") seen=() file name path i=0
+	while ((i < ${#queue[@]} && i < 32)); do
+		file=${queue[i]}
+		i=$((i + 1))
+		while IFS= read -r name; do
+			path=$(pam_stack_path "$name") || continue
+			[[ " ${seen[*]} " != *" $path "* ]] || continue
+			seen+=("$path")
+			if [[ ! -f $path || ! -r $path ]]; then
+				printf '?%s\n' "$path"
+				return 0
+			fi
+			if [[ -n $(external_lines "$path") ]]; then
+				printf '%s\n' "$path"
+				return 0
+			fi
+			queue+=("$path")
+		done < <(awk '
+			/^[[:space:]]*#/ { next }
+			$1 == "@include" { print $2; next }
+			$2 == "include" || $2 == "substack" { print $3 }
+		' "$file")
+	done
+}
+
 # The state of a use: on, off, external or unavailable, and why.
 use_state() {
-	local use=$1 target vendor file
+	local use=$1 target vendor file included
 	target=$(target_of "$use")
 	vendor=$(vendor_of "$use")
 	file=$target
@@ -149,6 +207,12 @@ use_state() {
 		printf 'unavailable\t%s is not a readable regular file\n' "${file#"$root"}"
 	elif [[ -n $(external_lines "$file") ]]; then
 		printf 'external\tfprintd was added to %s outside Lyona\n' "${file#"$root"}"
+	elif included=$(included_fprintd "$file") && [[ $included == \?* ]]; then
+		printf 'external\t%s, which %s pulls in, cannot be read, so fprintd may be on through it\n' \
+			"${included#\?"$root"}" "${file#"$root"}"
+	elif [[ -n $included ]]; then
+		printf 'external\tfprintd was added to %s, which %s pulls in, outside Lyona\n' \
+			"${included#"$root"}" "${file#"$root"}"
 	elif has_lyona_lines "$file"; then
 		if [[ $file == "$target" && -n $vendor && -f $vendor ]] && ! vendor_followed "$target" "$vendor"; then
 			printf 'on\tA finger is accepted, or the password. /etc/pam.d/polkit-1 differs from polkit'"'"'s own /usr/lib/pam.d/polkit-1, which it shadows: compare them and carry over the changes you want (a copy Lyona made and nobody edited is made again from polkit'"'"'s file by turning this off and on)\n'
@@ -162,12 +226,11 @@ use_state() {
 
 # The enrolment rule (#535), present exactly while a use is on or external.
 sync_enroll_rule() {
-	local use state any=0 dir tmp
+	local use state any=0
 	for use in lightdm polkit sudo; do
 		state=$(use_state "$use")
 		case ${state%%$'\t'*} in on | external) any=1 ;; esac
 	done
-	dir=${enroll_rule%/*}
 	if ((any == 0)); then
 		[[ ! -e $enroll_rule && ! -L $enroll_rule ]] || {
 			no_symlinks "$enroll_rule" && [[ ! -L $enroll_rule ]] || die "refusing a symlinked path: ${enroll_rule#"$root"}"
@@ -175,6 +238,12 @@ sync_enroll_rule() {
 		}
 		return 0
 	fi
+	write_enroll_rule
+}
+
+write_enroll_rule() {
+	local dir tmp
+	dir=${enroll_rule%/*}
 	no_symlinks "$dir" || die "refusing a symlinked path: ${dir#"$root"}"
 	mkdir -p -- "$dir"
 	[[ ! -L $enroll_rule ]] || die "refusing a symlinked path: ${enroll_rule#"$root"}"
@@ -238,19 +307,20 @@ replace_file() { # TARGET SOURCE [REFERENCE]
 
 checksum() { sha256sum -- "$1" | cut -d' ' -f1; }
 
-# One change to a use at a time: held from the first look at its files and
-# state until the change is done (released when this exits).
-lock_use() {
+# One change at a time, to any use, with the enrolment rule: held from the
+# first look at the files and state until the rule matches (released when this
+# exits), since the rule follows every use.
+lock_changes() {
 	private_state_dir
-	exec 9>>"$state_dir/$1.lock"
-	flock -w 30 9 || die "another change to $1 is still running"
+	exec 9>>"$state_dir/pam.lock"
+	flock -w 30 9 || die "another fingerprint change is still running"
 }
 
 clear_state() { rm -f -- "$state_dir/$1".{orig,absent,written}; }
 
 cmd_enable() {
-	local use=$1 target vendor source work
-	lock_use "$use"
+	local use=$1 target vendor source work included
+	lock_changes
 	target=$(target_of "$use")
 	vendor=$(vendor_of "$use")
 	[[ -f $module ]] || die "pam_fprintd is not installed (${module#"$root"}); install fprintd first"
@@ -260,11 +330,16 @@ cmd_enable() {
 	plain_owned_file "$source" || die "refusing ${source#"$root"}: not a regular file of this user's"
 	[[ -z $(external_lines "$source") ]] ||
 		die "fprintd was added to ${source#"$root"} outside Lyona; remove it there, or with remove-external, first"
+	included=$(included_fprintd "$source")
+	[[ -z $included ]] ||
+		die "fprintd may already be on through ${included#\?"$root"}, which ${source#"$root"} pulls in; remove it there first"
 	if has_lyona_lines "$source"; then
 		printf 'fingerprint-pam-result\tenable\t%s\talready\n' "$use"
 		return 0
 	fi
 	no_symlinks "$target" || die "refusing a symlinked path: ${target#"$root"}"
+	# The enrolment rule first: refused, fingerprint stays off.
+	write_enroll_rule
 	clear_state "$use"
 	if [[ -e $target ]]; then
 		cat -- "$target" >"$state_dir/$use.orig"
@@ -287,7 +362,7 @@ cmd_enable() {
 
 cmd_disable() {
 	local use=$1 target work stamp
-	lock_use "$use"
+	lock_changes
 	target=$(target_of "$use")
 	if [[ ! -e $target ]] || ! has_lyona_lines "$target"; then
 		if [[ -e $target && -n $(external_lines "$target") ]]; then
@@ -330,7 +405,7 @@ cmd_disable() {
 
 cmd_remove_external() {
 	local use=$1 target work stamp lines
-	lock_use "$use"
+	lock_changes
 	target=$(target_of "$use")
 	[[ -e $target ]] || die "${target#"$root"} does not exist"
 	plain_owned_file "$target" || die "refusing ${target#"$root"}: not a regular file of this user's"
@@ -368,6 +443,7 @@ enable | disable | remove-external)
 	;;
 sync-enroll-rule)
 	(($# == 1)) || die "sync-enroll-rule takes no arguments"
+	lock_changes
 	sync_enroll_rule
 	printf 'fingerprint-pam-result\tsync-enroll-rule\t%s\n' "$([[ -e $enroll_rule ]] && echo present || echo absent)"
 	;;

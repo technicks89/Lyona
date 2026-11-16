@@ -31,7 +31,10 @@ Item {
     // change in that window waits for its next scroll.
     property string key: ""
     property int sameKeyInterval: 30000
-    property string lastKey: ""
+    // The window last seen, whether its title scrolled or not, and when a
+    // title last scrolled: a switch to a window whose title fits and back
+    // is still a new window.
+    property string observedKey: ""
     property real lastScrollAt: 0
 
     implicitWidth: label.implicitWidth
@@ -45,13 +48,14 @@ Item {
 
     function scrollOnce() {
         root.rest();
+        const sameWindow = root.key.length > 0 && root.key === root.observedKey;
+        root.observedKey = root.key;
         if (Theme.reducedMotion || root.overflow <= 0 || !root.visible) {
             return;
         }
         if (root.key.length > 0) {
             const now = Date.now();
-            if (root.key === root.lastKey && now - root.lastScrollAt < root.sameKeyInterval) return;
-            root.lastKey = root.key;
+            if (sameWindow && now - root.lastScrollAt < root.sameKeyInterval) return;
             root.lastScrollAt = now;
         }
         scroll.start();

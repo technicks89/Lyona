@@ -92,10 +92,17 @@ cmd_state() {
 # One line on start and one per change, until the X connection ends. The
 # caller binds this process to its own lifetime (Commands.watchCommand).
 cmd_watch() {
-	local line
-	while IFS= read -r line; do
+	local line spy_fd spy_pid
+	exec {spy_fd}< <(exec xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
+	spy_pid=$!
+	# The spy goes with this watch, however it ends: stopped with the shell
+	# (its parent-death TERM), xprop -spy was left running until X went away.
+	# shellcheck disable=SC2064 # the PID now, not later
+	trap "kill -TERM $spy_pid 2>/dev/null" EXIT
+	trap 'exit 143' TERM INT HUP
+	while IFS= read -r -u "$spy_fd" line; do
 		take_line "$line" && emit_state
-	done < <(xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
+	done
 }
 
 # A decimal integer within [LO, HI], without a sign or leading zeros.

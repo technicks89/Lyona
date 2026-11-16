@@ -467,7 +467,7 @@ install-system:
 	@# The fingerprint enrolment rule (#535) follows the uses already on, so a
 	@# machine that turned them on before this release gets it too.
 	if [ -z "${DESTDIR}" ] && [ -x ${PRIVILEGED_HELPER_DIR}/lyona-fingerprint-pam ]; then \
-		${PRIVILEGED_HELPER_DIR}/lyona-fingerprint-pam sync-enroll-rule || true; \
+		${PRIVILEGED_HELPER_DIR}/lyona-fingerprint-pam sync-enroll-rule; \
 	fi
 	@echo "==> Installing the update build user..."
 	install -Dm644 ${SYSUSERS_CONF} ${DESTDIR}${SYSUSERS_DIR}/lyona-update.conf

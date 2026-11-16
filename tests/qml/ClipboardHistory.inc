@@ -126,6 +126,8 @@
                     "serialize kept " + savedEntries.length + " entries, " + model.utf8Bytes(savedText) + " bytes");
                 model.deleteAt(1);
                 root.clipCheck(model.entries.length === 1, "delete");
+                // A deleted entry's text leaves the size cache too.
+                root.clipCheck(model.entryBytesCache["first copy"] === undefined, "a deleted entry stayed in the size cache");
                 root.clipNext();
                 return;
             case 6:
@@ -149,7 +151,9 @@
                 root.clipNext();
                 return;
             case 9:
-                if (model.backendFailed || !model.backendReady) return;
+                // Ready, and the retry's own settings change done, or the next
+                // one is refused as busy.
+                if (model.backendFailed || !model.backendReady || model.busy) return;
                 // The retry kept saving on and the list (#516).
                 root.clipCheck(model.capturing && model.persistEnabled && model.entries.length > 0,
                     "after retry: persist " + model.persistEnabled + ", entries " + model.entries.length);
@@ -171,12 +175,15 @@
             case 11:
                 if (model.captureEnabled || model.busy) return;
                 root.clipCheck(model.entries.length === 0 && !model.persistEnabled, "after capture off");
+                root.clipCheck(Object.keys(model.entryBytesCache).length === 0, "capture off kept the size cache");
                 root.clipCheck(root.clipLog.indexOf("set capture off") >= 0, "log: " + root.clipLog);
+                model.entryBytes({ "text": "cached", "timestamp": 1 });
                 model.clearAll();
                 root.clipNext();
                 return;
             case 12: {
                 if (root.clipLog.indexOf("clear") < 0) return;
+                root.clipCheck(Object.keys(model.entryBytesCache).length === 0, "clear kept the size cache");
                 // Loading saved history: what is in the list now wins over a
                 // saved entry with the same text; a load from before a clear,
                 // delete or capture off changes nothing.

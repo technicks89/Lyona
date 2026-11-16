@@ -4,6 +4,7 @@
     property int fpStage: 0
     property double fpStageStarted: Date.now()
     property string fpLog: ""
+    property var fpUsesBefore: null
     readonly property string fpDir: Quickshell.env("FINGERPRINT_DIR")
 
     function fpCheck(ok, detail) {
@@ -164,11 +165,19 @@
             case 13:
                 if (!model.readerChecked) return;
                 settingsModel.close();
+                root.fpUsesBefore = model.uses;
                 settingsModel.open("displays");
                 root.fpNext();
                 return;
             case 14:
-                if (root.fpLog.indexOf("status --uses") < 0 || model.busy) return;
+                // The PAM-only read is taken (a new uses object) and leaves the
+                // reader and the fingers as the full read left them.
+                if (root.fpLog.indexOf("status --uses") < 0 || model.uses === root.fpUsesBefore || model.busy) return;
+                root.fpCheck(model.readerState === "available" && JSON.stringify(model.fingers) === '["right-index-finger"]'
+                    && JSON.stringify(model.addedFingers) === '["right-index-finger"]',
+                    "the PAM-only read changed the reader or fingers: " + model.readerState + ", "
+                    + JSON.stringify(model.fingers) + ", added " + JSON.stringify(model.addedFingers));
+                root.fpCheck(model.useState("polkit") === "on", "uses after the PAM-only read: " + JSON.stringify(model.uses));
                 model.acknowledgeAdded();
                 root.fpNext();
                 return;
