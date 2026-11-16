@@ -186,8 +186,8 @@ included_fprintd() {
 				return 0
 			fi
 			queue+=("$path")
-		# As PAM reads it: a line ending in a backslash goes on in the next,
-		# and the control word is in any case.
+			# As PAM reads it: a line ending in a backslash goes on in the next,
+			# and the control word is in any case.
 		done < <(awk '
 			held == "" && /^[[:space:]]*#/ { next }
 			/\\$/ { held = held substr($0, 1, length($0) - 1) " "; next }
