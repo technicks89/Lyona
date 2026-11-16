@@ -276,6 +276,15 @@ case $lyona_runtime_private in
 	lyona_private_runtime=$XDG_RUNTIME_DIR
 	;;
 esac
+# From here on the environment is isolated, so say so to whatever the test
+# starts. The xvfb tests re-exec themselves under dbus-run-session behind a
+# DWM_*_DBUS_SESSION guard; run from a terminal, the scrub above dropped that
+# guard and pointed the bus at /nonexistent, so every pass re-exec'd again and
+# the fork storm filled the user's pids limit, crashing the desktop's apps.
+# Exported only now: the runtime-directory check above must still see the
+# caller's value.
+LYONA_TEST_ISOLATED=1
+export LYONA_TEST_ISOLATED
 # The XDG base directories (configuration, data, state, cache) are private
 # to this test (#404): helpers prefer them to HOME, so a test that gave its
 # helper a HOME of its own still wrote the user's kept display layout and
