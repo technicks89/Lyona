@@ -33,10 +33,12 @@ set -euo pipefail
 # keeping a copy of the file, and only when asked.
 #
 # The stacks a use's file pulls in count too: every "include" and "substack"
-# directive (any type, with or without a leading "-") and Debian's "@include",
-# followed to any depth (at most 32 files), by name in /etc/pam.d and then
-# /usr/lib/pam.d, or by absolute path. A pam_fprintd line in one of those, or
-# one that exists but cannot be read, makes the use "external", so it is never
+# directive (any type, with or without a leading "-", the control word in any
+# case, a line continued with a backslash as PAM joins it) and Debian's
+# "@include", followed to any depth (at most 32 files), by name in /etc/pam.d
+# and then /usr/lib/pam.d, or by absolute path. A pam_fprintd line in one of
+# those, one that exists but cannot be read, or more files than the 32, makes
+# the use "external", so it is never
 # reported off while a finger works through it. A named stack that does not
 # exist is skipped. remove-external edits only the use's own file; a line in a
 # stack it pulls in is removed there, by hand.
@@ -184,12 +186,20 @@ included_fprintd() {
 				return 0
 			fi
 			queue+=("$path")
+		# As PAM reads it: a line ending in a backslash goes on in the next,
+		# and the control word is in any case.
 		done < <(awk '
-			/^[[:space:]]*#/ { next }
+			held == "" && /^[[:space:]]*#/ { next }
+			/\\$/ { held = held substr($0, 1, length($0) - 1) " "; next }
+			{ $0 = held $0; held = "" }
 			$1 == "@include" { print $2; next }
-			$2 == "include" || $2 == "substack" { print $3 }
+			tolower($2) == "include" || tolower($2) == "substack" { print $3 }
 		' "$file")
 	done
+	# Stacks left unread at the limit: not known to be without fprintd.
+	if ((i < ${#queue[@]})); then
+		printf '!%s\n' "$1"
+	fi
 }
 
 # The state of a use: on, off, external or unavailable, and why.
@@ -207,7 +217,10 @@ use_state() {
 		printf 'unavailable\t%s is not a readable regular file\n' "${file#"$root"}"
 	elif [[ -n $(external_lines "$file") ]]; then
 		printf 'external\tfprintd was added to %s outside Lyona\n' "${file#"$root"}"
-	elif included=$(included_fprintd "$file") && [[ $included == \?* ]]; then
+	elif included=$(included_fprintd "$file") && [[ $included == \!* ]]; then
+		printf 'external\t%s pulls in more than 32 PAM files, so fprintd may be on through one not checked\n' \
+			"${file#"$root"}"
+	elif [[ $included == \?* ]]; then
 		printf 'external\t%s, which %s pulls in, cannot be read, so fprintd may be on through it\n' \
 			"${included#\?"$root"}" "${file#"$root"}"
 	elif [[ -n $included ]]; then
@@ -331,6 +344,8 @@ cmd_enable() {
 	[[ -z $(external_lines "$source") ]] ||
 		die "fprintd was added to ${source#"$root"} outside Lyona; remove it there, or with remove-external, first"
 	included=$(included_fprintd "$source")
+	[[ $included != \!* ]] ||
+		die "${source#"$root"} pulls in more than 32 PAM files, so fprintd may be on through one not checked"
 	[[ -z $included ]] ||
 		die "fprintd may already be on through ${included#\?"$root"}, which ${source#"$root"} pulls in; remove it there first"
 	if has_lyona_lines "$source"; then

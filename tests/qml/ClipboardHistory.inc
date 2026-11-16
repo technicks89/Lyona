@@ -124,6 +124,8 @@
                     && model.utf8Bytes(withOneMore) > model.maxSavedBytes
                     && savedEntries.length > 0 && savedEntries.length < 50 && savedEntries[0].text === big[0].text,
                     "serialize kept " + savedEntries.length + " entries, " + model.utf8Bytes(savedText) + " bytes");
+                model.entryBytes(model.entries[1]);
+                root.clipCheck(model.entryBytesCache["first copy"] !== undefined, "the entry to delete was not in the size cache");
                 model.deleteAt(1);
                 root.clipCheck(model.entries.length === 1, "delete");
                 // A deleted entry's text leaves the size cache too.

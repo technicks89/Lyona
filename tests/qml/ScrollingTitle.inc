@@ -138,6 +138,18 @@
                 return;
             case 13:
                 if (!root.titleMoved || scrollTitle.scrolling) return;
+                // Another window whose title fits, still within the interval...
+                root.titleNext("Short");
+                scrollTitle.key = "0x4";
+                return;
+            case 14:
+                if (waited < 400) return;
+                root.titleCheck(!root.titleScrolled && !root.titleMoved, "a title that fits moved");
+                // ...then a title of its own that does not: its first scroll.
+                root.titleNext(root.longTitle + " (window 4)");
+                return;
+            case 15:
+                if (!root.titleMoved || scrollTitle.scrolling) return;
                 console.log("Scrolling title: PASS");
                 Qt.quit();
                 return;

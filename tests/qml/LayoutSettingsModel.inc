@@ -82,7 +82,7 @@
                 root.lmNext();
                 return;
             case 4:
-                if (root.lmSets("gap").length < 2) return;
+                if (root.lmSets("gap").length < 2 || model.savingField !== "") return;
                 root.lmCheck(JSON.stringify(root.lmSets("gap")) === '["set 0 1 gap 4","set 0 1 gap 6"]',
                     "writes: " + JSON.stringify(root.lmSets("gap")));
                 // Both writes done, and a line from before the last arrives

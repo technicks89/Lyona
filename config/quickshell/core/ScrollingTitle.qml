@@ -49,6 +49,9 @@ Item {
     function scrollOnce() {
         root.rest();
         const sameWindow = root.key.length > 0 && root.key === root.observedKey;
+        // Another window is not held to the last one's interval: one switched
+        // to with a title that fits still scrolls its first that does not.
+        if (!sameWindow) root.lastScrollAt = 0;
         root.observedKey = root.key;
         if (Theme.reducedMotion || root.overflow <= 0 || !root.visible) {
             return;

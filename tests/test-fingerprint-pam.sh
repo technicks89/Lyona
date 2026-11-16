@@ -164,6 +164,21 @@ if ((EUID != 0)); then
 	[[ $(state_of sudo) == external ]] || fail "an unreadable included stack: $(run status)"
 	chmod 644 "$r/etc/pam.d/common-fp"
 fi
+# The control word in any case, as PAM reads it, and an include continued
+# onto the next line with a backslash.
+printf 'auth Include system-fp\n' >"$r/etc/pam.d/system-auth"
+[[ $(state_of sudo) == external ]] || fail "fprintd through 'Include': $(run status)"
+printf 'auth include \\\n\tsystem-fp\n' >"$r/etc/pam.d/system-auth"
+[[ $(state_of sudo) == external ]] || fail "fprintd through a continued include: $(run status)"
+[[ $(run status) == *'/usr/lib/pam.d/system-fp, which /etc/pam.d/sudo pulls in'* ]] || fail "the continued include's detail: $(run status)"
+# More stacks than the scan follows: not known to be off.
+printf 'auth include deep1\n' >"$r/etc/pam.d/system-auth"
+for i in $(seq 40); do printf 'auth include deep%s\n' "$((i + 1))" >"$r/etc/pam.d/deep$i"; done
+[[ $(state_of sudo) == external ]] || fail "a chain past the limit: $(run status)"
+[[ $(run status) == *'more than 32 PAM files'* ]] || fail "the chain's detail: $(run status)"
+expect_fail 'pulls in more than 32 PAM files' enable sudo
+cmp "$r/etc/pam.d/sudo" "$work/sudo.orig" || fail 'a refused enable changed sudo'
+rm "$r"/etc/pam.d/deep*
 # Include loops end; a stack without fprintd leaves the use off.
 printf 'auth include system-login\n' >"$r/etc/pam.d/system-auth"
 [[ $(state_of sudo) == off ]] || fail "an include loop: $(run status)"
