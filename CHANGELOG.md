@@ -8,6 +8,17 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Documentation
+
+- Updates on aarch64 (ARM5-02, #490,
+  `docs/evidence/arm5-02-updates-on-aarch64.md`): `lyona-update` check, apply,
+  rollback and apply again, from `2026.11.0-beta.1` to `2026.11.0-beta.2`,
+  passed on the generic image (on a Dell XPS 13 9345, not a VM) and on a
+  Raspberry Pi 4, with Topgrade (`pacman -Syu` and the AUR) against Arch Linux
+  ARM's repositories, and the Settings > System updates pane's check. Each rollback
+  and apply needed a logout, not a reboot. Not tested: a VM, an install from
+  the Settings pane, and the `panel-widgets.conf` 1.1 rollback caveat.
+
 ## [2026.11.0-beta.2] - 2026-11-15
 
 Tenth beta of the Arch Linux line, and the second for aarch64, so the first

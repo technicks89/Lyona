@@ -13,7 +13,9 @@ form, is written 2026-11-12 ([evidence](../evidence/arm5-04-user-docs.md)).
 ARM5-01's release run is done in Lyona (#489): `v2026.11.0-beta.1`, published
 2026-11-13 with the x86_64, generic aarch64 and Pi images, each checksummed
 and signed ([evidence](../evidence/arm5-01-release-workflow.md#the-release-run-in-lyona-2026-11-13)).
-What is left is ARM5-02 (#490). **Amended 2026-10-27, by the
+ARM5-02's run is done (#490), 2026-11-15: beta.1 to beta.2, update,
+rollback and update again on the generic image (on the XPS 13 9345, not a VM)
+and on a Pi 4 ([evidence](../evidence/arm5-02-updates-on-aarch64.md)). **Amended 2026-10-27, by the
 maintainer:** ARM5-01's release run happens in Lyona after the merge
 ([`ARM64.md`](ARM64.md#end-state)), as Lyona-ARM has no releases. GitHub: issues #18 to #21, and
 #62 for the deferred ARM5-05
