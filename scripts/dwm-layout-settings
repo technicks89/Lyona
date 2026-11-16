@@ -92,14 +92,17 @@ cmd_state() {
 # One line on start and one per change, until the X connection ends. The
 # caller binds this process to its own lifetime (Commands.watchCommand).
 cmd_watch() {
-	local line spy_fd spy_pid
-	exec {spy_fd}< <(exec xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
-	spy_pid=$!
+	local line spy_fd
 	# The spy goes with this watch, however it ends: stopped with the shell
 	# (its parent-death TERM), xprop -spy was left running until X went away.
-	# shellcheck disable=SC2064 # the PID now, not later
-	trap "kill -TERM $spy_pid 2>/dev/null" EXIT
+	# The traps are set before the spy starts, so a stop that lands while it
+	# is starting takes it too: one before $! is read uses $!, which is then
+	# the spy's (this script starts nothing else in the background).
+	watch_spy_pid=
+	trap 'kill -TERM "${watch_spy_pid:-$!}" 2>/dev/null' EXIT
 	trap 'exit 143' TERM INT HUP
+	exec {spy_fd}< <(exec xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
+	watch_spy_pid=$!
 	while IFS= read -r -u "$spy_fd" line; do
 		take_line "$line" && emit_state
 	done

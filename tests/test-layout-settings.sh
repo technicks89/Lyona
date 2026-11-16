@@ -171,11 +171,15 @@ done
 spy_pid=$(cat "$work/spy.pid")
 kill -TERM "$watch_pid"
 wait "$watch_pid" 2>/dev/null || :
+# A killed spy is orphaned, and in a CI container nothing may reap it: a
+# zombie answers kill -0, so it is asked whether it still runs.
+# shellcheck source=scripts/dwm-proc.sh
+. "$repo/scripts/dwm-proc.sh"
 for _ in $(seq 40); do
-	kill -0 "$spy_pid" 2>/dev/null || break
+	proc_alive "$spy_pid" || break
 	sleep 0.05
 done
-if kill -0 "$spy_pid" 2>/dev/null; then
+if proc_alive "$spy_pid"; then
 	kill "$spy_pid" 2>/dev/null || :
 	fail 'the xprop spy outlived a stopped watch'
 fi
