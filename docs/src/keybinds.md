@@ -174,7 +174,8 @@ use the optional Herdr workspace, install it explicitly, change the binding to
 
 An update adds the `Super`+`V` clipboard history binding only when `Super`+`V`
 is free and your `Super`+`R` launcher line is still one of the shipped
-defaults. If yours has no `Super`+`V` line, add this one to the `keys` list:
+defaults, and says so when it could not. Clipboard History is also in the
+command menu either way. To give it a key, add this line to the `keys` list:
 
 ```toml
 { mod="SUPER", key="v", desc="Clipboard history", func="spawn", exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },

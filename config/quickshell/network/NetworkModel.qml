@@ -246,6 +246,22 @@ Scope {
         root.hiddenSnapshotRead();
     }
 
+    property string hiddenCancelledName: ""
+
+    // Cancel in the prompt (#529): closes it at once, also while joining. The
+    // helper is stopped and removes the profile it was adding; it can only do
+    // that once its nmcli call returns, so the popover says so until it has.
+    function cancelHiddenJoin() {
+        if (!hiddenJoinProcess.running) {
+            root.cancelHiddenPrompt();
+            return;
+        }
+        root.hiddenCancelledName = root.hiddenSsid;
+        root.cancelHiddenPrompt();
+        root.message = "Cancelling the join of " + root.hiddenCancelledName + "...";
+        hiddenJoinProcess.running = false;
+    }
+
     function cancelHiddenPrompt() {
         root.hiddenPromptVisible = false;
         root.hiddenPromptPending = false;
@@ -633,6 +649,12 @@ Scope {
         }
         onExited: exitCode => {
             root.busy = false;
+            if (root.hiddenCancelledName.length > 0) {
+                root.message = "Did not join " + root.hiddenCancelledName;
+                root.hiddenCancelledName = "";
+                root.refresh(false);
+                return;
+            }
             if (exitCode === 0) {
                 const name = root.hiddenSsid;
                 root.cancelHiddenPrompt();

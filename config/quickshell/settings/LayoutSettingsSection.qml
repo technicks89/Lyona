@@ -60,6 +60,20 @@ ColumnLayout {
         root.available = true;
     }
 
+    property var pendingSaves: ({})
+
+    function sendPendingSave() {
+        const fields = Object.keys(root.pendingSaves);
+        if (fields.length === 0) return;
+        const pending = Object.assign({}, root.pendingSaves);
+        const field = fields[0];
+        const next = pending[field];
+        delete pending[field];
+        root.pendingSaves = pending;
+        if (next.target === root.target()) root.save(field, next.value);
+        else root.sendPendingSave();
+    }
+
     function target() {
         return root.monitorIndex + " " + root.tagNumber;
     }
@@ -70,7 +84,16 @@ ColumnLayout {
     function save(field, value) {
         const began = root.dragTarget;
         root.dragTarget = "";
-        if (!root.editable || saveProcess.running) return;
+        if (!root.editable) return;
+        // A step made while a save runs is sent when it ends, the latest per
+        // field and only for the same tag (#529): quick arrow-key steps were
+        // dropped, and the slider snapped back.
+        if (saveProcess.running) {
+            const pending = Object.assign({}, root.pendingSaves);
+            pending[field] = { "target": root.target(), "value": value };
+            root.pendingSaves = pending;
+            return;
+        }
         if (began.length > 0 && began !== root.target()) {
             root.message = "The shown tag changed during the drag; nothing was saved.";
             masterSlider.liveValue = root.masterSize;
@@ -108,6 +131,8 @@ ColumnLayout {
             root.message = exitCode === 0 ? ""
                 : saveError.text.trim().length > 0 ? saveError.text.trim()
                 : "The layout settings could not be saved";
+            if (exitCode === 0) Qt.callLater(root.sendPendingSave);
+            else root.pendingSaves = ({});
         }
     }
 

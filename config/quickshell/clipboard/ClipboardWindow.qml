@@ -15,6 +15,7 @@ FloatingWindow {
 
     title: "dwm clipboard"
     visible: clipboardModel.visible
+    property bool confirmClear: false
     screen: clipboardModel.targetScreen
     implicitWidth: 720
     implicitHeight: 600
@@ -28,6 +29,8 @@ FloatingWindow {
     onVisibleChanged: {
         if (visible) {
             Qt.callLater(root.focusSearch);
+        } else {
+            root.confirmClear = false;
         }
     }
 
@@ -198,11 +201,19 @@ FloatingWindow {
                 }
 
                 ShellButton {
-                    label: "Clear all"
+                    // Asked twice, like deleting a finger (#529).
+                    label: root.confirmClear ? "Confirm Clear" : "Clear all"
                     danger: true
                     enabled: root.clipboardModel.entries.length > 0 || root.clipboardModel.persistEnabled
                     accessibleDescription: "Delete every entry, and the saved history"
-                    onActivated: root.clipboardModel.clearAll()
+                    onActivated: {
+                        if (root.confirmClear) {
+                            root.confirmClear = false;
+                            root.clipboardModel.clearAll();
+                        } else {
+                            root.confirmClear = true;
+                        }
+                    }
                 }
             }
 
@@ -241,7 +252,9 @@ FloatingWindow {
                 Layout.fillHeight: true
                 clip: true
                 spacing: Theme.listSpacing
-                model: root.clipboardModel.filteredEntries
+                // Only while shown: a hidden list rebuilt its rows at every copy
+                // (#529).
+                model: root.visible ? root.clipboardModel.filteredEntries : []
 
                 onModelChanged: {
                     if (root.clipboardModel.filteredEntries.length > 0) {

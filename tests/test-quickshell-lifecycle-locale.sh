@@ -35,4 +35,21 @@ pids=$(env -u LANG -u LC_ALL -u LC_CTYPE PATH="$bin:$PATH" lyona_lib="$repo/scri
 ') || fail 'quickshell_instance_pids failed under a C locale'
 [ "$pids" = 4242 ] || fail "under a C locale the managed instance was not found: '$pids'"
 
+# #529: with no instance Quickshell prints plain text, not JSON; that is "no
+# answer" as before, without a jq parse error on stderr (it went to
+# ~/.xsession-errors at every login).
+cat >"$bin/quickshell" <<'STUB'
+#!/bin/sh
+printf 'No running instances for "%s"\nUse --all to list all instances.\n' "$3"
+STUB
+# shellcheck disable=SC2016 # expanded by the inner shell
+if env PATH="$bin:$PATH" lyona_lib="$repo/scripts" sh -c '
+	. "$lyona_lib/dwm-quickshell-lifecycle.sh"
+	quickshell_instance_pids /x/shell.qml
+' >"$work/none.out" 2>"$work/none.err"; then
+	fail 'no instance was reported as found'
+fi
+[ ! -s "$work/none.out" ] && [ ! -s "$work/none.err" ] ||
+	fail "no instance printed: $(cat "$work/none.out" "$work/none.err")"
+
 printf 'Quickshell lifecycle under a C locale: PASS\n'

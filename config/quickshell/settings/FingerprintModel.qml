@@ -163,10 +163,26 @@ Scope {
         root.runAction("delete", [finger], "Deleting " + root.fingerLabel(finger).toLowerCase() + "...");
     }
 
+    property string pendingUse: ""
+    property string pendingValue: ""
+    readonly property var useNames: ({ "lightdm": "The login and lock screen", "polkit": "Administrator prompts", "sudo": "sudo" })
+
     function setUse(use, value) {
         if (["lightdm", "polkit", "sudo"].indexOf(use) < 0
                 || ["on", "off", "remove-external"].indexOf(value) < 0) return;
+        root.pendingUse = use;
+        root.pendingValue = value;
         root.runAction("set", [use, value], "Waiting for the administrator password...");
+    }
+
+    // What a successful action did, in words (#529).
+    function actionResult() {
+        if (root.pendingAction === "delete") return "Finger deleted";
+        if (root.pendingAction !== "set") return "Changed";
+        const name = root.useNames[root.pendingUse] || root.pendingUse;
+        if (root.pendingValue === "on") return name + " now accepts a finger";
+        if (root.pendingValue === "off") return name + " now asks for the password only";
+        return "The line added outside Lyona was removed";
     }
 
     function closeSettings() {
@@ -199,8 +215,12 @@ Scope {
         stderr: StdioCollector { id: actionError }
         onExited: (exitCode, exitStatus) => {
             if (exitCode === 0) {
-                root.message = root.pendingAction === "delete" ? "Finger deleted" : "Changed";
+                root.message = root.actionResult();
                 root.messageSeverity = "success";
+            } else if (exitCode === 3 && root.pendingAction === "set") {
+                // The password dialog was dismissed: not a failure (#529).
+                root.message = "Not changed: the password prompt was cancelled";
+                root.messageSeverity = "idle";
             } else {
                 const error = actionError.text.trim().replace(/^dwm-settings-fingerprint: /, "");
                 root.message = error.length > 0 ? error : "The change was not made";

@@ -13,6 +13,11 @@
 # in the way of the layout.
 set -u
 
+# autorandr --batch runs hooks as each session's user. Never as root (#529):
+# the helper and the light-locker or Picom it starts would come from root's
+# environment and PATH.
+[ "$(id -u)" -ne 0 ] || exit 0
+
 helper=${LYONA_AUTORANDR_LOCKER_HELPER:-}
 [ -n "$helper" ] || helper=$(command -v dwm-settings-power 2>/dev/null || :)
 [ -n "$helper" ] && [ -x "$helper" ] || exit 0

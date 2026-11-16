@@ -69,6 +69,17 @@ look for them; the shell does not read it.
 | `_DWM_SET_LAYOUT` | `CARDINAL`, 1 | `dwm-quickshell-state layout INDEX` (the panel's layout switcher) | dwm reads it, deletes it, and applies `layouts[INDEX]` to the selected monitor, as the layout key would. An index out of range, or a value of another type or length, is ignored. |
 | `_DWM_SET_KEYBOARD_GROUP` | `CARDINAL`, 1 | `dwm-quickshell-state keyboard next\|prev\|GROUP` (a click on the panel's keyboard layout pill) | dwm reads it, deletes it, reads the server's current group and locks the next group (256, wrapping), the previous one (257, wrapping), or group 0-3 (one past the last is the last). The group already active is not set again. Another value, type or length, or a server without XKB, is ignored. The helper waits until dwm has deleted it (at most 2 seconds, else it fails), so the panel sends one request at a time and drops the clicks still waiting when one fails. |
 
+**Which way a change goes into dwm (#529).** A change to live state, one dwm
+keeps only for this session, is a request property like the two above: the
+shell sets it, dwm applies it and deletes it, and nothing is written to disk.
+A saved default, one that must survive a login, is a value in a user TOML file
+(`layout.toml`, `themes.toml`, `hotkeys.toml`, `window-rules.toml`), written
+by an unprivileged helper and hot-reloaded by dwm, which applies only what
+changed (#515). One Settings section can use both: in Appearance > Layout,
+the Tile/Floating/Monocle choice is a request and is not saved, while master
+size, count and gap are saved in `layout.toml`. A new control picks its path
+by this rule.
+
 The panel declares itself the bar with the standard strut: a dock
 (`_NET_WM_WINDOW_TYPE_DOCK`) that reserves space at the top or bottom of its
 screen (`_NET_WM_STRUT_PARTIAL`, or `_NET_WM_STRUT`), which Quickshell sets for a

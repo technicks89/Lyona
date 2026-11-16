@@ -62,6 +62,14 @@ enroll)
 	printf 'enroll-result\tcompleted\tenroll-completed\n'
 	echo "enroll $2" >>"$d/log"
 	;;
+set)
+	echo "$*" >>"$d/log"
+	# The password dialog dismissed, for the login use (#529).
+	if [ "$2" = lightdm ]; then
+		echo 'dwm-settings-fingerprint: not changed: the password prompt was cancelled' >&2
+		exit 3
+	fi
+	;;
 *) echo "$*" >>"$d/log" ;;
 esac
 EOF

@@ -199,6 +199,14 @@ migrate_hotkeys_lines() {
 	' "$1" "$1"
 }
 
+# Says so when hotkeys.toml has no key for clipboard history (#529): the
+# migration adds Super+V only when it is free and the Super+R line is a shipped
+# default, and said nothing otherwise. The command menu has it either way.
+clipboard_key_notice() {
+	grep -Fq '"clipboard", "toggle"' -- "$1" 2>/dev/null && return 0
+	warn "hotkeys.toml has no key for clipboard history (Super+V was taken, or your launcher key is your own). It is in the command menu; to add a key, see docs/src/keybinds.md."
+}
+
 migrate_hotkeys() {
 	local file=$config_home/lyona/hotkeys.toml table=$script_dir/hotkeys-migrations tmp count backup
 	[[ -f $file && ! -L $file ]] || return 0
@@ -214,6 +222,7 @@ migrate_hotkeys() {
 	fi
 	if [[ $count == 0 ]] || cmp -s "$tmp" "$file"; then
 		rm -f -- "$tmp"
+		clipboard_key_notice "$file"
 		return 0
 	fi
 	backup=$file.bak.$(date +%Y%m%d-%H%M%S)
@@ -221,6 +230,7 @@ migrate_hotkeys() {
 	chmod --reference="$file" -- "$tmp"
 	mv -fT -- "$tmp" "$file"
 	ok "Moved $count key binding(s) in hotkeys.toml to this release's defaults; your own changes are kept (previous file: $backup)."
+	clipboard_key_notice "$file"
 }
 
 # add_window_rules FILE TABLE: FILE with each rule of TABLE whose title no rule

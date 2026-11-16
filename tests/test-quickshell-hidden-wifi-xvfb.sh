@@ -49,6 +49,10 @@ printf 'args %s\n' "$*" >>"$HIDDEN_WIFI_LOG"
 IFS= read -r line || line=
 printf 'stdin %s\n' "$line" >>"$HIDDEN_WIFI_LOG"
 sleep 0.1
+# A join that hangs, as nmcli can for up to 90 s, while hidden.log.slow exists.
+if [ -e "$HIDDEN_WIFI_LOG.slow" ]; then
+	sleep 30
+fi
 if [ -e "$HIDDEN_WIFI_LOG.fail" ]; then
 	printf 'wrong password, or the network asked for one it did not get\nError: Secrets were required\n' >&2
 	exit 4

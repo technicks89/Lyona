@@ -10,6 +10,32 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ### Fixed
 
+- Small fixes from the beta.2 review (#529):
+  - Settings > Appearance > Layout: a slider step made while a save was
+    running was dropped and the slider snapped back; it is now sent when the
+    save ends.
+  - With title bars on, a floating window as tall as the work area was moved
+    below the strip without being shortened, so its bottom edge went off the
+    screen; it is now shortened to fit.
+  - The hidden Wi-Fi prompt's Cancel works while joining: it closes the
+    prompt at once, and the helper removes the profile it was adding.
+  - Settings > Fingerprint says "Not changed: the password prompt was
+    cancelled" when the password dialog is dismissed, instead of a failure,
+    and names what a change did ("sudo now accepts a finger").
+  - The login no longer logs `jq: parse error` to `~/.xsession-errors` when no
+    Quickshell is running yet.
+  - Clipboard history: copying an entry back no longer saves the history
+    twice; the hidden window no longer rebuilds its rows at every copy, and a
+    row lays out at most 512 characters; loading saved history stops at 50
+    entries; **Clear all** asks for a second click.
+  - Clipboard History is in the command menu, and an update says when it could
+    not give it `Super`+`V`.
+  - Settings > Input hides the layout switch key and LED presets for a
+    keyboard with one layout, and says to add a second.
+  - The autorandr hooks do nothing when run as root.
+  - `docs/SHELL-STATE-PROTOCOL.md` states when a change to dwm is a request
+    property and when a value in a TOML file.
+
 - Saving one value in Settings > Appearance > Layout reset every unsaved
   Super+H/L and Super+I/D change, on every tag of every monitor (#515). A
   `layout.toml` reload now applies only the values whose saved setting

@@ -166,6 +166,7 @@ static int applyrules(Client *c);
 static int applytitlerules(Client *c);
 static void applyfullscreenrule(Client *c, int mode);
 static void refreshoverriderules(void);
+static void titlebarclamp(Client *c, Monitor *m, int *y, int *h);
 static int applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact);
 static void arrange(Monitor *m);
 static void arrangemon(Monitor *m);
@@ -706,6 +707,23 @@ applyfullscreenrule(Client *c, int mode)
 	updatefullscreenmonitors();
 }
 
+/* Moves a floating window down so its title strip is below the panel (#496),
+ * and when that pushes its bottom past the work area, shortens it to fit
+ * (#529): a window as tall as the work area lost its bottom edge, and the
+ * buttons there. Only a window the strip moved is shortened, so one the user
+ * drags off the bottom keeps its size. */
+static void
+titlebarclamp(Client *c, Monitor *m, int *y, int *h)
+{
+	int top = m->wy + titleheight(c), bottom = m->wy + m->wh;
+
+	if (*y >= top)
+		return;
+	*y = top;
+	if (*y + *h + 2 * c->bw > bottom)
+		*h = MAX(1, bottom - *y - 2 * c->bw);
+}
+
 int
 applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact)
 {
@@ -774,10 +792,8 @@ applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact)
 	*w = MAX(1, *w);
 	*h = MAX(1, *h);
 	/* A title strip stays below the panel, where it can be grabbed (#496). */
-	if (titleheight(c)) {
-		Monitor *bounds = interact ? recttomon(*x, *y, *w, *h) : m;
-		*y = MAX(*y, bounds->wy + titleheight(c));
-	}
+	if (titleheight(c))
+		titlebarclamp(c, interact ? recttomon(*x, *y, *w, *h) : m, y, h);
 	return *x != c->x || *y != c->y || *w != c->w || *h != c->h;
 }
 
@@ -1254,7 +1270,7 @@ configurerequest(XEvent *e)
 			if ((c->y + c->h) > m->my + m->mh && c->isfloating)
 				c->y = MAX(m->wy, m->wy + (m->wh - HEIGHT(c)) / 2);
 			if (titleheight(c))
-				c->y = MAX(c->y, m->wy + titleheight(c));
+				titlebarclamp(c, m, &c->y, &c->h);
 			if ((ev->value_mask & (CWX|CWY)) && !(ev->value_mask & (CWWidth|CWHeight)))
 				configure(c);
 			if (ISVISIBLE(c))
@@ -3719,7 +3735,7 @@ setfullscreen(Client *c, int fullscreen)
 		c->h = c->oldh;
 		/* The restore skips the size hints: room for the strip here. */
 		if (titleheight(c))
-			c->y = MAX(c->y, c->mon->wy + titleheight(c));
+			titlebarclamp(c, c->mon, &c->y, &c->h);
 		resizeclient(c, c->x, c->y, c->w, c->h);
 		restack(c->mon);
 	} else

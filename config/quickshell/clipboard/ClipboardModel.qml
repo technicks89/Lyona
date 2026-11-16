@@ -194,6 +194,12 @@ Scope {
     function recordEntry(text) {
         if (typeof text !== "string" || text.trim().length === 0) return false;
         const value = text.length > root.maxEntryLength ? text.slice(0, root.maxEntryLength) : text;
+        // Already first, as after a copy back from the list: nothing to save
+        // again (#529); only its time moves.
+        if (root.entries.length > 0 && root.entries[0].text === value) {
+            root.entries = [{ "text": value, "timestamp": Date.now() }].concat(root.entries.slice(1));
+            return false;
+        }
         root.entries = [{ "text": value, "timestamp": Date.now() }]
             .concat(root.entries.filter(entry => entry.text !== value)).slice(0, root.maxEntries);
         return true;
@@ -256,6 +262,9 @@ Scope {
         if (!value || value.version !== 1 || !Array.isArray(value.entries)) return;
         const loaded = [];
         for (const item of value.entries) {
+            // Never more than the list keeps: a large or damaged file is not
+            // scanned to the end (#529).
+            if (loaded.length >= root.maxEntries) break;
             if (!item || typeof item.text !== "string" || item.text.trim().length === 0
                     || item.text.length > root.maxEntryLength) continue;
             if (loaded.some(entry => entry.text === item.text)) continue;
@@ -318,8 +327,7 @@ Scope {
         const rows = root.filteredEntries;
         if (index < 0 || index >= rows.length) return;
         const text = rows[index].text;
-        root.recordEntry(text);
-        if (root.persistEnabled) root.save();
+        if (root.recordEntry(text) && root.persistEnabled) root.save();
         Quickshell.clipboardText = text;
         root.close();
     }

@@ -9,11 +9,13 @@
     property string hiddenLog: ""
     // The success message was shown (a refresh after it may replace it).
     property bool sawJoined: false
+    property bool sawCancelled: false
 
     Connections {
         target: networkModel
         function onMessageChanged() {
             if (networkModel.message === "Joined Back Office") root.sawJoined = true;
+            if (networkModel.message === "Did not join Slow Net") root.sawCancelled = true;
         }
     }
 
@@ -41,6 +43,11 @@
     Process {
         id: hiddenFail
         command: ["touch", Quickshell.env("HIDDEN_WIFI_LOG") + ".fail"]
+        running: false
+    }
+    Process {
+        id: hiddenSlow
+        command: ["touch", Quickshell.env("HIDDEN_WIFI_LOG") + ".slow"]
         running: false
     }
     Process {
@@ -132,6 +139,31 @@
                 if (model.busy) return;
                 root.hiddenCheck(!model.hiddenPromptVisible && model.hiddenSsid === "", "a join left the prompt open");
                 root.hiddenCheck(root.sawJoined, "no success message");
+                hiddenSlow.running = true;
+                root.hiddenNext();
+                return;
+            case 6:
+                // A join that hangs can be cancelled: the prompt closes at once,
+                // and the popover says when the helper has stopped (#529).
+                if (hiddenSlow.running || waited < 200) return;
+                model.openHiddenPrompt();
+                model.parseSnapshot(root.withAdapter);
+                model.hiddenSsid = "Slow Net";
+                model.hiddenPassword = "correct horse battery";
+                model.joinHidden();
+                root.hiddenCheck(model.busy, "the slow join did not start");
+                root.hiddenNext();
+                return;
+            case 7:
+                if (waited < 300) return;
+                model.cancelHiddenJoin();
+                root.hiddenCheck(!model.hiddenPromptVisible && model.hiddenSsid === "", "Cancel left the prompt open");
+                root.hiddenCheck(model.message.indexOf("Cancelling the join of Slow Net") === 0, "message: " + model.message);
+                root.hiddenNext();
+                return;
+            case 8:
+                if (model.busy) return;
+                root.hiddenCheck(root.sawCancelled, "after cancel: " + model.message);
                 console.log("Hidden Wi-Fi: PASS");
                 Qt.quit();
                 return;

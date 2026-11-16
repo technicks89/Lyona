@@ -60,6 +60,10 @@ Flickable {
                 property var modifierOptions: deviceCard.settings.filter(function(setting) {
                     return setting.id === "modifier-options";
                 })[0] || null
+                readonly property var keyboardLayout: deviceCard.settings.filter(function(setting) {
+                    return setting.id === "keyboard-layout";
+                })[0] || null
+                readonly property int layoutCount: InputOptions.layoutCount(deviceCard.keyboardLayout === null ? "" : deviceCard.keyboardLayout.value)
 
                 Layout.fillWidth: true
                 Layout.preferredHeight: deviceColumn.implicitHeight + 20
@@ -132,7 +136,7 @@ Flickable {
                     // The layout switch key and its LED (#473): each preset previews
                     // the Modifier options with only its grp: or grp_led: part changed.
                     Repeater {
-                        model: deviceCard.modifierOptions === null ? [] : [
+                        model: deviceCard.modifierOptions === null || deviceCard.layoutCount === 1 ? [] : [
                             { label: "Switch layout with", prefix: InputOptions.switchPrefix, choices: InputOptions.switchChoices },
                             { label: "Layout LED", prefix: InputOptions.ledPrefix, choices: InputOptions.ledChoices }
                         ]
@@ -180,7 +184,7 @@ Flickable {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
                         visible: deviceCard.modifierOptions !== null && text.length > 0
-                        text: deviceCard.modifierOptions === null ? "" : InputOptions.hint(deviceCard.modifierOptions.value)
+                        text: deviceCard.modifierOptions === null ? "" : InputOptions.hint(deviceCard.modifierOptions.value, deviceCard.layoutCount)
                         color: Theme.textMuted
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.smallFontSize

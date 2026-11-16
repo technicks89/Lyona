@@ -211,8 +211,7 @@ FloatingWindow {
                         Layout.preferredWidth: implicitWidth
                         Layout.preferredHeight: Theme.buttonHeight
                         label: "Cancel"
-                        enabled: !root.networkModel.busy
-                        onActivated: root.networkModel.cancelHiddenPrompt()
+                        onActivated: root.networkModel.cancelHiddenJoin()
                     }
 
                     ShellButton {

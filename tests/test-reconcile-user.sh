@@ -153,8 +153,15 @@ run --profile core >/dev/null 2>&1
 [[ $(cat "$hotkeys") == "$after" ]] || fail 'a second run changed hotkeys.toml after adding Super+V'
 mine_v='  { mod="SUPER",            key="v",       desc="Paste",                   func="spawn",       cmd="true" },'
 printf '%s\n' "$launcher" "$mine_v" >"$hotkeys"
-run --profile core >/dev/null 2>&1
+run --profile core >"$work/out" 2>&1
 grep -Fq 'desc="Clipboard history"' "$hotkeys" && fail 'Super+V was added over a binding the user had on it'
+# #529: and it says so, pointing to the command menu.
+grep -Fq 'hotkeys.toml has no key for clipboard history' "$work/out" ||
+	fail "no notice that clipboard history has no key: $(cat "$work/out")"
+printf '%s\n' "$launcher" "$clipboard" >"$hotkeys"
+run --profile core >"$work/out" 2>&1
+grep -Fq 'no key for clipboard history' "$work/out" && fail 'the notice came with the key in place'
+printf '%s\n' "$launcher" "$mine_v" >"$hotkeys"
 grep -Fxq -- "$mine_v" "$hotkeys" || fail "the user's Super+V was not kept"
 # Written with spaces around "=", it is the same chord.
 spaced_v='  { mod = "SUPER", key = "v", desc = "Paste", func = "spawn", cmd = "true" },'

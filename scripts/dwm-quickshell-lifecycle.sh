@@ -20,6 +20,13 @@ quickshell_instance_pids() {
 	# service) Qt prints its locale warning to stdout, the JSON no longer
 	# parsed, no instance was found, and a restart silently did nothing (#280 VM).
 	instances=$(LC_ALL=C.UTF-8 timeout 1 quickshell list --path "$config" --json 2>/dev/null) || return 1
+	# With no instance, Quickshell prints "No running instances for ..." as
+	# plain text, not JSON: that failed in jq and logged a parse error at every
+	# login (#529). It fails the same way here, without the noise.
+	case $instances in
+	'['*) ;;
+	*) return 1 ;;
+	esac
 	printf '%s\n' "$instances" |
 		jq -r '.[]? | .pid | select(type == "number" and . >= 2 and floor == .)'
 }

@@ -103,7 +103,16 @@
                 return;
             case 7:
                 if (model.busy || root.fpLog.indexOf("set sudo on") < 0) return;
-                root.fpCheck(model.messageSeverity === "success", "set message: " + model.message);
+                root.fpCheck(model.messageSeverity === "success" && model.message === "sudo now accepts a finger",
+                    "set message: " + model.message);
+                // A dismissed password dialog is said as cancelled, not failed (#529).
+                model.setUse("lightdm", "off");
+                root.fpNext();
+                return;
+            case 8:
+                if (model.busy || root.fpLog.indexOf("set lightdm off") < 0) return;
+                root.fpCheck(model.message === "Not changed: the password prompt was cancelled"
+                    && model.messageSeverity === "idle", "cancelled message: " + model.message + " / " + model.messageSeverity);
                 // Bad requests never reach the helper.
                 model.setUse("login", "on");
                 model.setUse("sudo", "maybe");
@@ -112,7 +121,7 @@
                 root.fpCheck(!model.busy, "a bad request started something");
                 root.fpNext();
                 return;
-            case 8:
+            case 9:
                 if (waited < 300) return;
                 root.fpCheck(root.fpLog.indexOf("login") < 0 && root.fpLog.indexOf("maybe") < 0
                     && root.fpLog.indexOf("nose") < 0 && root.fpLog.indexOf("enroll right-index-finger") < 0,
@@ -126,12 +135,12 @@
                 fpShell.running = true;
                 root.fpNext();
                 return;
-            case 9:
+            case 10:
                 if (fpShell.running) return;
                 model.refresh();
                 root.fpNext();
                 return;
-            case 10:
+            case 11:
                 if (model.readerState !== "none") return;
                 root.fpCheck(!root.fpListed(), "still listed without a reader");
                 root.fpCheck(settingsModel.selectedSectionId === settingsModel.sections[0].id
