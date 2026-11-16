@@ -38,6 +38,10 @@ static const char *manager_names[] = {
 	"bitwarden", "keepass", "1password", "proton-pass", "protonpass", "nordpass",
 	"enpass", "dashlane", "lastpass", "keeperpasswordmanager", "keeper-desktop", NULL
 };
+/* With --skip-xclip (#535), copies owned by xclip or xsel are refused too:
+ * pass -c and gopass hand their secrets to one of them, which forks into the
+ * background, so the password manager is no longer its parent. */
+static int skip_xclip;
 static xcb_connection_t *connection;
 static int fd, fixes_event, broken;
 static xcb_window_t root, requestor;
@@ -57,6 +61,7 @@ static int eligible_path(const char *path)
 	name[i] = 0;
 	for (i = 0; manager_names[i]; i++)
 		if (strstr(name, manager_names[i])) return 0;
+	if (skip_xclip && (!strcmp(name, "xclip") || !strcmp(name, "xsel"))) return 0;
 	return strcmp(name, "bw") && strcmp(name, "bws") && strcmp(name, "rbw") &&
 		strcmp(name, "pass") && strcmp(name, "gopass") && strcmp(name, "kpcli");
 }
@@ -470,7 +475,8 @@ int main(int argc, char **argv)
 		puts("Sensitivity markers and identifiable password managers excluded; unmarked browser-extension and terminal secrets may be retained.");
 		return 0;
 	}
-	if (argc != 1) { fputs("usage: dwm-clipboard-observer [--policy]\n", stderr); return 2; }
+	if (argc == 2 && !strcmp(argv[1], "--skip-xclip")) skip_xclip = 1;
+	else if (argc != 1) { fputs("usage: dwm-clipboard-observer [--policy | --skip-xclip]\n", stderr); return 2; }
 	if (setrlimit(RLIMIT_CORE, &no_core) || !initialize()) {
 		fputs("Clipboard history unavailable: local X11 with XFixes and XRes 1.2 is required.\n", stderr);
 		goto done;

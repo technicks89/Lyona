@@ -477,18 +477,21 @@ if [ -z "$menu_window" ]; then
 	exit 1
 fi
 
-[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
-	quickshell ipc --path "$config" call menu resultCount)" = 10 ]
-[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
-	quickshell ipc --path "$config" call menu selectedLabel)" = Apps ]
-[ "$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
-	quickshell ipc --path "$config" call launcher applicationConsumers)" = 1 ]
+# The root taxonomy: eleven entries (tests/quickshell-command-menu-catalog.qml).
+menu_rows=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call menu resultCount)
+[ "$menu_rows" = 11 ] || fail "Command menu opened with $menu_rows root rows, not 11"
+menu_selected=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call menu selectedLabel)
+[ "$menu_selected" = Apps ] || fail "Command menu opened on '$menu_selected', not Apps"
+menu_consumers=$(DISPLAY=$display HOME=$home XDG_CONFIG_HOME=$config_home XDG_DATA_HOME=$data_home XDG_RUNTIME_DIR=$runtime \
+	quickshell ipc --path "$config" call launcher applicationConsumers)
+[ "$menu_consumers" = 1 ] || fail "Command menu holds $menu_consumers application consumers, not 1"
 
 geometry=$(DISPLAY=$display xdotool getwindowgeometry --shell "$menu_window")
 width=$(printf '%s\n' "$geometry" | awk -F= '$1 == "WIDTH" { print $2 }')
 height=$(printf '%s\n' "$geometry" | awk -F= '$1 == "HEIGHT" { print $2 }')
-[ "$width" = 720 ]
-[ "$height" = 600 ]
+[ "$width" = 720 ] && [ "$height" = 600 ] || fail "Command menu is ${width}x${height}, not 720x600"
 
 pointer_window=
 i=0

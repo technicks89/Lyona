@@ -38,6 +38,19 @@ case "$*" in
 *) exit 1 ;;
 esac
 STUB
+# dbus-send names the error busctl does not: NoEnrolledPrints with no fingers,
+# another error with "listfails" (the call failed, the fingers unknown).
+cat >"$bin/dbus-send" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >>"$STUB_DIR/dbus-send-calls"
+if [ -e "$STUB_DIR/nofprintd" ] || [ -e "$STUB_DIR/listfails" ]; then
+	echo 'Error org.freedesktop.DBus.Error.NoReply: Did not receive a reply' >&2
+	exit 1
+fi
+[ ! -e "$STUB_DIR/fingers" ] || exit 1
+echo 'Error net.reactivated.Fprint.Error.NoEnrolledPrints: Failed to discover prints' >&2
+exit 1
+STUB
 cat >"$bin/fprintd-enroll" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >"$STUB_DIR/enroll-args"
@@ -88,9 +101,54 @@ complete	status
 EOF
 grep -Fq "ListEnrolledFingers s $(id -un)" "$work/busctl-calls" || fail "fingers were not asked for this user: $(cat "$work/busctl-calls")"
 
+# --uses (#532): the PAM state alone, without a word to fprintd.
+: >"$work/busctl-calls"
+run status --uses >"$work/status"
+diff -u - "$work/status" <<EOF
+fingerprint-protocol	1
+module	missing	/usr/lib/security/pam_fprintd.so
+use	lightdm	off	The password only
+use	polkit	unavailable	/etc/pam.d/polkit-1 does not exist
+use	sudo	off	The password only
+complete	status
+EOF
+[[ ! -s $work/busctl-calls ]] || fail "status --uses asked fprintd: $(cat "$work/busctl-calls")"
+expect_fail 'status takes only --uses' status --everything
+
+# A finger enrolled outside Settings (#535): the first status took the two
+# there as known; one Settings does not know is reported until acknowledged.
+known=$work/.local/state/lyona/fingerprint-fingers
+[[ $(cat "$known") == $'right-index-finger\nleft-thumb' ]] || fail "known fingers: $(cat "$known" 2>/dev/null)"
+[[ $(stat -c %a "$known") == 600 ]] || fail "the known fingers file is mode $(stat -c %a "$known")"
+printf 'right-index-finger\n' >"$known"
+[[ $(run status) == *$'\nfinger\tleft-thumb\nfinger-added\tleft-thumb\n'* ]] || fail "an outside finger was not reported: $(run status)"
+[[ $(run acknowledge left-thumb) == $'fingerprint-result\tacknowledge\tleft-thumb' ]] || fail 'acknowledge'
+[[ $(run status) != *finger-added* ]] || fail "an acknowledged finger was still reported: $(run status)"
+expect_fail 'unknown finger' acknowledge nose
+# Settings' own enrolments and deletions keep the list.
+run enroll right-thumb >/dev/null
+grep -Fqx right-thumb "$known" || fail "an enrolled finger was not recorded: $(cat "$known")"
+run delete left-thumb >/dev/null
+! grep -Fqx left-thumb "$known" || fail "a deleted finger stayed known: $(cat "$known")"
+printf 'right-index-finger\nleft-thumb\n' >"$known"
+
 # No fingers enrolled (fprintd answers with an error): no finger lines.
 rm "$work/fingers"
+# A list that failed keeps the known fingers.
+: >"$work/listfails"
+[[ $(run status) != *$'\nfinger\t'* ]] || fail 'fingers from a failed list'
+[[ $(cat "$known") == $'right-index-finger\nleft-thumb' ]] || fail "a failed list changed the known fingers: $(cat "$known")"
+rm "$work/listfails"
+# None enrolled, as fprintd says: no finger lines, and the known fingers are
+# forgotten, so enrolling them again outside Settings is reported.
 [[ $(run status) != *$'\nfinger\t'* ]] || fail 'fingers without any enrolled'
+grep -Fq "string:$(id -un)" "$work/dbus-send-calls" || fail "dbus-send: $(cat "$work/dbus-send-calls")"
+[[ ! -s $known ]] || fail "deleted fingers stayed known: $(cat "$known")"
+: >"$work/fingers"
+out=$(run status)
+[[ $out == *$'finger-added\tright-index-finger'* && $out == *$'finger-added\tleft-thumb'* ]] ||
+	fail "fingers enrolled again outside Settings were not reported: $out"
+rm "$work/fingers"
 # No reader.
 rm "$work/reader"
 [[ $(run status) == *$'\nreader\tnone\tNo fingerprint reader was found\n'* ]] || fail "no reader: $(run status)"

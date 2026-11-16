@@ -156,6 +156,34 @@ printf '#!/bin/sh\nprintf "%%s\\n" "_DWM_LAYOUT_SETTINGS:  not found."\n' >"$wor
 printf '#!/bin/sh\nprintf "%%s\\n" "_DWM_LAYOUT_SETTINGS(CARDINAL) = 1, 2"\n' >"$work/bin/xprop"
 [[ $(run state) == $'layout-settings\tunavailable' ]]
 
+# A watch stopped by TERM, as the shell's parent-death signal does, stops its
+# xprop spy too: it was left running until the X server went away.
+printf '#!/bin/sh\necho $$ >"%s/spy.pid"\nexec sleep 300\n' "$work" >"$work/bin/xprop"
+chmod +x "$work/bin/xprop"
+rm -f "$work/spy.pid"
+# Started directly, not through run(), so $! is the helper itself.
+env HOME="$work/home" XDG_CONFIG_HOME="$config" PATH="$work/bin:$PATH" "$helper" watch >/dev/null 2>&1 &
+watch_pid=$!
+for _ in $(seq 100); do
+	[[ -s $work/spy.pid ]] && break
+	sleep 0.05
+done
+spy_pid=$(cat "$work/spy.pid")
+kill -TERM "$watch_pid"
+wait "$watch_pid" 2>/dev/null || :
+# A killed spy is orphaned, and in a CI container nothing may reap it: a
+# zombie answers kill -0, so it is asked whether it still runs.
+# shellcheck source=scripts/dwm-proc.sh
+. "$repo/scripts/dwm-proc.sh"
+for _ in $(seq 40); do
+	proc_alive "$spy_pid" || break
+	sleep 0.05
+done
+if proc_alive "$spy_pid"; then
+	kill "$spy_pid" 2>/dev/null || :
+	fail 'the xprop spy outlived a stopped watch'
+fi
+
 # One set of limits (#530): what dwm reads (config.c), what the helper accepts,
 # and what the Settings sliders offer.
 model=$repo/config/quickshell/settings/LayoutSettingsModel.qml

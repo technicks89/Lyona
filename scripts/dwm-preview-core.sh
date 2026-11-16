@@ -105,7 +105,7 @@ preview_mv_exchange_options() {
 
 preview_exchange_supported() {
 	local dir=$1 prefix=$2 cache=${3:-} device='' cached_device='' cached_result=''
-	local probe_a probe_b result=restricted temporary
+	local probe_a probe_b result=restricted temporary identity_a identity_b
 	preview_exchange_detail='Atomic file exchange readiness could not be verified'
 	if ! preview_mv_exchange_options; then
 		preview_exchange_detail='GNU mv with --exchange and --no-copy is required (coreutils 9.5 or newer)'
@@ -128,7 +128,12 @@ preview_exchange_supported() {
 		unlink -- "$probe_a" 2>/dev/null || :
 		return 1
 	}
-	if mv --exchange --no-copy -- "$probe_a" "$probe_b" 2>/dev/null; then
+	# The two files really swapped, not only an exit status of 0.
+	identity_a=$(stat -c '%d:%i' -- "$probe_a" 2>/dev/null) || identity_a=
+	identity_b=$(stat -c '%d:%i' -- "$probe_b" 2>/dev/null) || identity_b=
+	if [[ -n $identity_a && -n $identity_b ]] && mv --exchange --no-copy -- "$probe_a" "$probe_b" 2>/dev/null &&
+		[[ $(stat -c '%d:%i' -- "$probe_a" 2>/dev/null) == "$identity_b" &&
+		$(stat -c '%d:%i' -- "$probe_b" 2>/dev/null) == "$identity_a" ]]; then
 		result=available
 	fi
 	unlink -- "$probe_a" 2>/dev/null || :

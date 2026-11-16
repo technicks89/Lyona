@@ -40,7 +40,7 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/panel-widgets.py" "$work/qml" "$repo/tests/qml/PanelWidgets.inc"
+python3 "$repo/tests/fixtures/shell-stub.py" "$work/qml" "$repo/tests/qml/PanelWidgets.inc" dwm-quickshell-state@keyboard:PANEL_KEYBOARD_STUB:args
 # The keyboard requests' stub: it logs each one, takes a moment as dwm would,
 # and fails while keyboard.fail exists.
 cat >"$work/keyboard-stub" <<'EOF'

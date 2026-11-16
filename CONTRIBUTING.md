@@ -168,11 +168,16 @@ explicitly exclude and document that target from the parallel set before merge.
 - Preserve existing `config.h`, XDG user configuration, and `.xinitrc` files.
 - Keep Quickshell integrations event-driven when a signal, stream, watch, IPC,
   or service API exists. Run a resident watcher through `core/WatchedProcess.qml`
-  rather than a `Process` of its own.
+  rather than a `Process` of its own; `splitMarker: ""` gives raw chunks and
+  `restartPolicy: "never"` leaves a restart to the caller.
 - Use the shared shell code rather than a copy: `dwm-proc.sh` for a process's
   identity (never parse `/proc/PID/stat` in a script), and
   `dwm-preview-core.sh` for a Settings helper's lock, token, clock and atomic
-  exchange. `make check-shell-contracts` refuses copies. In QML, read the XDG
+  exchange. A helper outside the `dwm-settings-*` names that writes user state
+  marks itself with a `# lyona-settings-writer:` comment, and is held to the
+  same rule. `make check-shell-contracts` refuses copies. An xvfb test that runs
+  the shell with a stub helper uses `tests/fixtures/shell-stub.py`, not a copy
+  of it. In QML, read the XDG
   directories through `core/Xdg.qml` (`make check-quickshell-xdg`), and start
   processes from models, not windows or panes.
 - Update user documentation, migration notes, and `CHANGELOG.md` when behavior,

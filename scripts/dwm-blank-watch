@@ -15,6 +15,14 @@
 # to the journal (logger -t lyona-locker) when logger exists.
 set -u
 
+lyona_lib=${BASH_SOURCE[0]%/*}
+[[ -f $lyona_lib/dwm-preview-core.sh ]] || lyona_lib=${lyona_lib%bin}lib/lyona
+# The shared lock (#531): owner and hard-link checks, and a time limit.
+# lyona-settings-writer: tests/test-shell-contracts.sh holds this file to the
+# shared primitives in dwm-preview-core.sh.
+# shellcheck source=scripts/dwm-preview-core.sh
+. "$lyona_lib/dwm-preview-core.sh"
+
 [ -n "${DISPLAY:-}" ] || exit 0
 command -v dbus-monitor >/dev/null 2>&1 || exit 0
 command -v xprop >/dev/null 2>&1 || exit 0
@@ -31,10 +39,10 @@ settle=${DWM_BLANK_WATCH_SETTLE:-2}
 runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 display_key=$(printf '%s' "$DISPLAY" | tr -c 'A-Za-z0-9._-' '_')
 
-# One watcher per display. Nothing it starts inherits this lock (8>&-).
+# One watcher per display. Nothing it starts inherits this lock (8>&-). Held
+# by another watcher, or not a safe file of this user's: this one exits.
 if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
-	exec 8>>"$runtime/lyona-blank-watch.$display_key.lock"
-	flock -n 8 || exit 0
+	preview_lock "$runtime/lyona-blank-watch.$display_key.lock" 8 0 || exit 0
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/dwm-blank-watch.XXXXXX") || exit 0
@@ -99,8 +107,7 @@ recover() {
 		trap 'kill -TERM $! 2>/dev/null; exit 143' TERM
 		[ ! -e "$work/stopping" ] || exit 0
 		if [ -d "$runtime" ] && command -v flock >/dev/null 2>&1; then
-			exec 9>>"$runtime/lyona-locker-recover.$display_key.lock"
-			if ! flock -n 9; then
+			if ! preview_lock "$runtime/lyona-locker-recover.$display_key.lock" 9 0; then
 				note "after an idle blank: skipped; another recovery is running"
 				exit 0
 			fi

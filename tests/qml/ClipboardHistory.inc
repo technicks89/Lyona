@@ -5,6 +5,7 @@
     property double clipStageStarted: Date.now()
     property string clipLog: ""
     property string clipSaved: ""
+    property int clipObserves: 0
     readonly property string clipDir: Quickshell.env("CLIPBOARD_DIR")
 
     function clipCheck(ok, detail) {
@@ -111,8 +112,24 @@
                 // not a change to save again (#529).
                 root.clipCheck(!model.recordEntry("second\nline") && model.entries.length === 2,
                     "a copy already first counted as new: " + model.entries.length);
+                // What is saved (#532): the newest entries that fit, measured
+                // once each; non-ASCII text counts in UTF-8 bytes.
+                const big = [];
+                for (let i = 0; i < 50; i++)
+                    big.push({ "text": String(i) + "é".repeat(60000), "timestamp": 1000 + i });
+                const savedText = model.serialize(big);
+                const savedEntries = JSON.parse(savedText).entries;
+                const withOneMore = JSON.stringify({ "version": 1, "entries": big.slice(0, savedEntries.length + 1) });
+                root.clipCheck(model.utf8Bytes(savedText) <= model.maxSavedBytes
+                    && model.utf8Bytes(withOneMore) > model.maxSavedBytes
+                    && savedEntries.length > 0 && savedEntries.length < 50 && savedEntries[0].text === big[0].text,
+                    "serialize kept " + savedEntries.length + " entries, " + model.utf8Bytes(savedText) + " bytes");
+                model.entryBytes(model.entries[1]);
+                root.clipCheck(model.entryBytesCache["first copy"] !== undefined, "the entry to delete was not in the size cache");
                 model.deleteAt(1);
                 root.clipCheck(model.entries.length === 1, "delete");
+                // A deleted entry's text leaves the size cache too.
+                root.clipCheck(model.entryBytesCache["first copy"] === undefined, "a deleted entry stayed in the size cache");
                 root.clipNext();
                 return;
             case 6:
@@ -136,23 +153,39 @@
                 root.clipNext();
                 return;
             case 9:
-                if (model.backendFailed || !model.backendReady) return;
+                // Ready, and the retry's own settings change done, or the next
+                // one is refused as busy.
+                if (model.backendFailed || !model.backendReady || model.busy) return;
                 // The retry kept saving on and the list (#516).
                 root.clipCheck(model.capturing && model.persistEnabled && model.entries.length > 0,
                     "after retry: persist " + model.persistEnabled + ", entries " + model.entries.length);
+                // Skip xclip (#535): off by default; turned on, the source starts
+                // again to take it.
+                root.clipCheck(!model.skipXclip, "skip xclip on by default");
+                root.clipObserves = root.clipLog.split("\n").filter(line => line === "observe").length;
+                model.setSkipXclip(true);
+                root.clipNext();
+                return;
+            case 10:
+                if (!model.skipXclip || model.busy || !model.backendReady
+                        || root.clipLog.split("\n").filter(line => line === "observe").length <= root.clipObserves) return;
+                root.clipCheck(root.clipLog.indexOf("set skip-xclip on") >= 0 && model.capturing, "log: " + root.clipLog);
                 // Off: the list empties and saving goes with it.
                 model.setCapture(false);
                 root.clipNext();
                 return;
-            case 10:
+            case 11:
                 if (model.captureEnabled || model.busy) return;
                 root.clipCheck(model.entries.length === 0 && !model.persistEnabled, "after capture off");
+                root.clipCheck(Object.keys(model.entryBytesCache).length === 0, "capture off kept the size cache");
                 root.clipCheck(root.clipLog.indexOf("set capture off") >= 0, "log: " + root.clipLog);
+                model.entryBytes({ "text": "cached", "timestamp": 1 });
                 model.clearAll();
                 root.clipNext();
                 return;
-            case 11: {
+            case 12: {
                 if (root.clipLog.indexOf("clear") < 0) return;
+                root.clipCheck(Object.keys(model.entryBytesCache).length === 0, "clear kept the size cache");
                 // Loading saved history: what is in the list now wins over a
                 // saved entry with the same text; a load from before a clear,
                 // delete or capture off changes nothing.

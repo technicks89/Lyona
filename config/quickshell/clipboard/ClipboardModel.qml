@@ -38,6 +38,9 @@ Scope {
     // in time stops capture until the user turns it on again.
     property bool backendReady: false
     property bool backendFailed: false
+    // Copies owned by xclip or xsel refused too (#535), off until turned on:
+    // pass -c and gopass copy through them.
+    property bool skipXclip: false
     // What the Capture switch shows: off while the source has failed, so the
     // click the status asks for retries instead of turning capture off and
     // deleting the saved history (#516).
@@ -91,12 +94,23 @@ Scope {
         const lines = text.trim().split("\n");
         if (lines.length < 3 || !Protocol.isHeader(lines[0].split("\t"), "clipboard-history-protocol", 1)
                 || lines[lines.length - 1] !== "complete\tstatus") return false;
-        let capture = false, persist = false, available = true;
+        let capture = false, persist = false, available = true, skip = false;
         for (const line of lines.slice(1, -1)) {
             const fields = line.split("\t");
             if (fields[0] === "state") available = fields[1] === "available";
             else if (fields[0] === "capture") capture = fields[1] === "on";
             else if (fields[0] === "persist") persist = fields[1] === "on";
+            else if (fields[0] === "skip-xclip") skip = fields[1] === "on";
+        }
+        // A running source restarts to take the new choice.
+        if (skip !== root.skipXclip) {
+            root.skipXclip = skip;
+            if (root.observing) {
+                observer.stop();
+                root.backendReady = false;
+                root.observerBuffer = "";
+                observer.start();
+            }
         }
         const wasCapturing = root.captureEnabled;
         const wasSaving = root.persistEnabled;
@@ -104,7 +118,10 @@ Scope {
         root.captureEnabled = capture;
         root.persistEnabled = capture && persist;
         root.settingsKnown = true;
-        if (!capture) root.entries = [];
+        if (!capture) {
+            root.entries = [];
+            root.entryBytesCache = ({});
+        }
         // Saved history, once, when capture comes on with saving; and what is
         // in the list now, saved as soon as saving comes on.
         if (root.persistEnabled && !wasCapturing && root.entries.length === 0) root.load();
@@ -117,6 +134,7 @@ Scope {
         if (enabled) root.backendFailed = false;
         else {
             root.entries = [];
+            root.entryBytesCache = ({});
             root.historyGeneration++;
         }
         root.run(["set", "capture", enabled ? "on" : "off"]);
@@ -125,6 +143,11 @@ Scope {
     // The Capture switch: on (or a retry, after the source failed) or off.
     function toggleCapture() {
         root.setCapture(!root.capturing);
+    }
+
+    function setSkipXclip(enabled) {
+        if (root.busy) return;
+        root.run(["set", "skip-xclip", enabled ? "on" : "off"]);
     }
 
     function setPersist(enabled) {
@@ -206,7 +229,15 @@ Scope {
     }
 
     // ── storage ─────────────────────────────────────────────────────────
+    // A change to save: written a second after the last one (#532), so a
+    // burst of copies is one write. A crash in that second loses those copies
+    // from the file, never the file.
     function save() {
+        if (!root.persistEnabled || root.clearPending) return;
+        saveDebounce.restart();
+    }
+
+    function writeNow() {
         if (!root.persistEnabled || root.clearPending) return;
         if (saveProcess.running) {
             root.savePending = true;
@@ -231,16 +262,41 @@ Scope {
         return bytes;
     }
 
+    // Each entry's saved size in UTF-8 bytes, by its text, worked out once
+    // (#532): the history was stringified and measured again for every entry
+    // dropped, up to seconds on the GUI thread for a large one. Keyed by the
+    // text, so an entry deleted, cleared or dropped with capture goes from it
+    // too, saving or not.
+    property var entryBytesCache: ({})
+
+    function entryBytes(entry) {
+        const cached = root.entryBytesCache[entry.text];
+        if (cached !== undefined && cached.timestamp === entry.timestamp) return cached.bytes;
+        const bytes = root.utf8Bytes(JSON.stringify(entry));
+        root.entryBytesCache[entry.text] = { "timestamp": entry.timestamp, "bytes": bytes };
+        return bytes;
+    }
+
     // The history as saved: the oldest entries left out until it fits what
     // dwm-clipboard-history keeps, so a full list is saved rather than refused.
+    // Sizes are added and subtracted; the text is built once.
     function serialize(entries) {
-        let kept = entries;
-        for (;;) {
-            const text = JSON.stringify({ "version": 1, "entries": kept });
-            if (text.length * 3 <= root.maxSavedBytes || root.utf8Bytes(text) <= root.maxSavedBytes || kept.length === 0)
-                return text;
-            kept = kept.slice(0, kept.length - 1);
+        const overhead = JSON.stringify({ "version": 1, "entries": [] }).length;
+        const sizes = entries.map(entry => root.entryBytes(entry));
+        let count = entries.length;
+        let total = overhead + sizes.reduce((sum, size) => sum + size, 0) + Math.max(0, count - 1);
+        while (count > 0 && total > root.maxSavedBytes) {
+            count--;
+            total -= sizes[count] + (count > 0 ? 1 : 0);
         }
+        // Only the entries kept stay in the cache.
+        const cache = {};
+        for (let i = 0; i < entries.length; i++) {
+            const cached = root.entryBytesCache[entries[i].text];
+            if (cached !== undefined) cache[entries[i].text] = cached;
+        }
+        root.entryBytesCache = cache;
+        return JSON.stringify({ "version": 1, "entries": entries.slice(0, count) });
     }
 
     function load() {
@@ -341,14 +397,17 @@ Scope {
         if (index < 0 || index >= rows.length) return;
         const text = rows[index].text;
         root.entries = root.entries.filter(entry => entry.text !== text);
+        delete root.entryBytesCache[text];
         root.historyGeneration++;
         if (root.persistEnabled) root.save();
     }
 
     function clearAll() {
         root.entries = [];
+        root.entryBytesCache = ({});
         root.historyGeneration++;
         root.savePending = false;
+        saveDebounce.stop();
         // After a save that is running, which would otherwise put it back.
         if (saveProcess.running) root.clearPending = true;
         else if (!clearProcess.running) clearProcess.running = true;
@@ -431,9 +490,16 @@ Scope {
                 if (!clearProcess.running) clearProcess.running = true;
             } else if (root.savePending) {
                 root.savePending = false;
-                Qt.callLater(root.save);
+                Qt.callLater(root.writeNow);
             }
         }
+    }
+
+    Timer {
+        id: saveDebounce
+        interval: 1000
+        repeat: false
+        onTriggered: root.writeNow()
     }
 
     Process {
@@ -442,21 +508,27 @@ Scope {
         running: false
     }
 
-    // The source, only while capture is on and has not failed.
-    Process {
+    // The source, only while capture is on and has not failed, through the
+    // shared WatchedProcess (#531): raw chunks (an empty split marker), and
+    // never restarted, since a source that ended fails closed and the user's
+    // click retries it.
+    readonly property bool observing: root.settingsKnown && root.captureEnabled && !root.backendFailed
+    onObservingChanged: {
+        root.backendReady = false;
+        root.observerBuffer = "";
+        if (root.observing) observer.start();
+        else observer.stop();
+    }
+
+    WatchedProcess {
         id: observer
         command: Commands.watchCommand(Commands.clipboardHistoryCommand("observe", []))
-        running: root.settingsKnown && root.captureEnabled && !root.backendFailed
-        onRunningChanged: {
-            root.backendReady = false;
-            root.observerBuffer = "";
-        }
-        onExited: {
+        active: root.observing
+        restartPolicy: "never"
+        splitMarker: ""
+        onLine: text => root.observerChunk(text)
+        onEnded: {
             if (root.captureEnabled && !root.backendFailed) root.failBackend();
-        }
-        stdout: SplitParser {
-            splitMarker: ""
-            onRead: data => root.observerChunk(data)
         }
     }
 

@@ -40,7 +40,7 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/hidden-wifi.py" "$work/qml" "$repo/tests/qml/HiddenWifi.inc"
+python3 "$repo/tests/fixtures/shell-stub.py" "$work/qml" "$repo/tests/qml/HiddenWifi.inc" dwm-quickshell-network@wifi-connect-hidden:HIDDEN_WIFI_STUB:args
 # The hidden join's stub: it logs its arguments and the line on its stdin, and
 # fails as the helper does on a wrong password while hidden.log.fail exists.
 cat >"$work/hidden-stub" <<'EOF'

@@ -35,6 +35,7 @@ clipboard-history-protocol	1
 state	available	Clipboard history settings
 capture	off
 persist	off
+skip-xclip	off
 complete	status
 EOF
 [[ ! -e $settings && ! -e $history ]] || fail 'status wrote something'
@@ -144,15 +145,27 @@ done
 
 # Bad input.
 expect_fail 'the value must be on or off' set capture maybe
-expect_fail 'set takes capture|persist on|off' set volume on
+expect_fail 'set takes capture|persist|skip-xclip on|off' set volume on
 expect_fail 'status takes no arguments' status extra
 
+# Skipping xclip/xsel copies (#535): off by default, its own choice, kept when
+# capture goes off and on.
+[[ $(status_of skip-xclip) == off ]] || fail "skip-xclip on by default: $(run status)"
+[[ $(run set skip-xclip on) == $'clipboard-history-result\tset\tskip-xclip\ton' ]] || fail 'set skip-xclip on'
+grep -Fqx 'skip_xclip=on' "$settings" || fail "settings: $(cat "$settings")"
+run set capture off >/dev/null
+run set capture on >/dev/null
+[[ $(status_of skip-xclip) == on ]] || fail "capture off and on dropped skip-xclip: $(run status)"
+
 # observe runs dwm-clipboard-observer, built at the checkout's root; without a
-# display it says history is unavailable.
+# display it says history is unavailable. With skip-xclip on it is given
+# --skip-xclip, which it accepts (a usage error would say so).
 if [[ -x $repo/dwm-clipboard-observer ]]; then
 	run set capture on >/dev/null
 	if run observe >"$work/out" 2>"$work/err"; then fail 'the observer ran without a display'; fi
 	grep -Fq 'Clipboard history unavailable' "$work/err" || fail "observe: $(cat "$work/err")"
+	grep -Fq 'usage' "$work/err" && fail "the observer refused --skip-xclip: $(cat "$work/err")"
+	run set skip-xclip off >/dev/null
 fi
 
 printf 'dwm-clipboard-history: PASS\n'

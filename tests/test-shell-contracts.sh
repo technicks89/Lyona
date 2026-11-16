@@ -203,9 +203,29 @@ for preview_core_user in dwm-preview.sh dwm-settings-wallpaper dwm-settings-them
 	grep -Fq '. "$lyona_lib/dwm-preview-core.sh"' "$repo/scripts/$preview_core_user" ||
 		fail "$preview_core_user does not use dwm-preview-core.sh"
 done
-# shellcheck disable=SC2016 # the $ is a pattern for source text, not an expansion
-preview_copies=$(grep -nE 'flock (-[nwx]|[0-9])|mktemp.*exchange-[ab]|read -r uptime|\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,[0-9]+\}\$' \
-	"$repo/scripts/dwm-preview.sh" "$repo"/scripts/dwm-settings-* 2>/dev/null |
+# Every helper Settings or the shell writes user state through, by name and by
+# the marker line, not only those named dwm-settings-* (#531): a lock copied
+# into dwm-layout-settings or dwm-clipboard-history passed unseen.
+settings_writers=$(grep -l '^# lyona-settings-writer:' "$repo"/scripts/* 2>/dev/null || true)
+for writer in dwm-layout-settings dwm-clipboard-history dwm-panel-settings \
+	dwm-accessibility-settings dwm-blank-watch; do
+	printf '%s\n' "$settings_writers" | grep -Fqx "$repo/scripts/$writer" ||
+		fail "$writer lost its lyona-settings-writer marker"
+done
+# One path a line, read whole, so a checkout path with spaces stays one.
+while IFS= read -r writer; do
+	[ -n "$writer" ] || continue
+	# shellcheck disable=SC2016 # the literal source line
+	grep -Fq '. "$lyona_lib/dwm-preview-core.sh"' "$writer" ||
+		fail "${writer##*/} is a settings writer but does not use dwm-preview-core.sh"
+done <<WRITERS
+$settings_writers
+WRITERS
+# shellcheck disable=SC2016 # the $ is a pattern for source text
+preview_copies=$({
+	printf '%s\n' "$repo/scripts/dwm-preview.sh" "$repo"/scripts/dwm-settings-*
+	printf '%s\n' "$settings_writers"
+} | grep -v '^$' | xargs -d '\n' grep -HnE 'flock (-[nwx]|[0-9])|mktemp.*exchange-[ab]|read -r uptime|\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\{0,[0-9]+\}\$' 2>/dev/null |
 	grep -v 'dwm-settings-display:.*\$1 != \*\.\.\*' || true)
 if [ -n "$preview_copies" ]; then
 	printf '%s: a preview primitive copied outside dwm-preview-core.sh:\n%s\n' "$test_name" "$preview_copies" >&2

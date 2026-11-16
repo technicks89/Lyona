@@ -14,6 +14,9 @@ Scope {
     property string readerState: "unknown"
     property string readerDetail: ""
     property var fingers: []
+    // Fingers enrolled outside Settings (#535), until acknowledged: someone
+    // else's finger would work wherever fingerprint is on.
+    property var addedFingers: []
     property bool moduleAvailable: false
     // { lightdm: { state, detail }, polkit: ..., sudo: ... }
     property var uses: ({})
@@ -75,6 +78,50 @@ Scope {
         QueuedRun.startOrQueue(statusProcess, root, "statusPending", root.busy);
     }
 
+    // Once a reader has been found, opening Settings reads only the PAM files
+    // (#532): enough to list the section, without starting fprintd and probing
+    // the reader every time. The Fingerprint section itself reads it all, and
+    // with no reader found every open still looks, so one plugged in later is
+    // seen; without fprintd that look fails at once.
+    property bool readerChecked: false
+    // Raised when a full read or a change starts: a PAM-only read begun before
+    // it is older than what that brings, and its result is dropped.
+    property int usesGeneration: 0
+
+    function refreshForSettings() {
+        if (!root.readerChecked) {
+            root.refresh();
+            return;
+        }
+        if (usesProcess.running || statusProcess.running || root.busy) return;
+        usesProcess.generation = root.usesGeneration;
+        usesProcess.running = true;
+    }
+
+    // status --uses: the module and use lines only; the reader and fingers
+    // stay as last read.
+    function parseUses(text, generation) {
+        if (generation !== root.usesGeneration) return;
+        const lines = String(text).trim().split("\n");
+        const header = lines.length > 0 ? lines[0].split("\t") : [];
+        if (!Protocol.isHeader(header, "fingerprint-protocol", 1)
+                || lines[lines.length - 1] !== "complete\tstatus") return;
+        const uses = {};
+        let moduleAvailable = false;
+        for (let i = 1; i < lines.length - 1; i++) {
+            const fields = lines[i].split("\t");
+            if (fields[0] === "module" && fields.length === 3) {
+                moduleAvailable = fields[1] === "available";
+            } else if (fields[0] === "use" && fields.length === 4
+                    && (fields[1] === "lightdm" || fields[1] === "polkit" || fields[1] === "sudo")
+                    && ["on", "off", "external", "unavailable"].indexOf(fields[2]) >= 0) {
+                uses[fields[1]] = { "state": fields[2], "detail": fields[3] };
+            }
+        }
+        root.moduleAvailable = moduleAvailable;
+        root.uses = uses;
+    }
+
     function parseStatus(text) {
         const lines = String(text).trim().split("\n");
         const header = lines.length > 0 ? lines[0].split("\t") : [];
@@ -85,6 +132,7 @@ Scope {
             return;
         }
         const fingers = [];
+        const added = [];
         const uses = {};
         let readerState = "unavailable";
         let readerDetail = "";
@@ -98,6 +146,9 @@ Scope {
             } else if (fields[0] === "finger" && fields.length === 2
                     && root.fingerNames.indexOf(fields[1]) >= 0) {
                 fingers.push(fields[1]);
+            } else if (fields[0] === "finger-added" && fields.length === 2
+                    && root.fingerNames.indexOf(fields[1]) >= 0) {
+                added.push(fields[1]);
             } else if (fields[0] === "module" && fields.length === 3) {
                 moduleAvailable = fields[1] === "available";
             } else if (fields[0] === "use" && fields.length === 4
@@ -109,9 +160,11 @@ Scope {
         root.readerState = readerState;
         root.readerDetail = readerDetail;
         root.fingers = fingers;
+        root.addedFingers = added.filter(name => fingers.indexOf(name) >= 0);
         root.moduleAvailable = moduleAvailable;
         root.uses = uses;
         root.loaded = true;
+        root.readerChecked = readerState === "available";
     }
 
     function enroll(finger) {
@@ -122,6 +175,7 @@ Scope {
         root.message = "Touch the reader with your " + root.fingerLabel(finger).toLowerCase()
             + ". fprintd may ask for your password first";
         root.messageSeverity = "idle";
+        root.usesGeneration++;
         enrollProcess.command = Commands.settingsFingerprintCommand("enroll", [finger]);
         enrollProcess.running = true;
     }
@@ -154,6 +208,7 @@ Scope {
         root.pendingAction = kind;
         root.message = working;
         root.messageSeverity = "idle";
+        root.usesGeneration++;
         actionProcess.command = Commands.settingsFingerprintCommand(kind, args);
         actionProcess.running = true;
     }
@@ -167,6 +222,12 @@ Scope {
     property string pendingValue: ""
     readonly property var useNames: ({ "lightdm": "The login and lock screen", "polkit": "Administrator prompts", "sudo": "sudo" })
 
+    // The fingers added outside Settings were the user's own.
+    function acknowledgeAdded() {
+        if (root.addedFingers.length === 0) return;
+        root.runAction("acknowledge", root.addedFingers.slice(), "Saving...");
+    }
+
     function setUse(use, value) {
         if (["lightdm", "polkit", "sudo"].indexOf(use) < 0
                 || ["on", "off", "remove-external"].indexOf(value) < 0) return;
@@ -178,6 +239,7 @@ Scope {
     // What a successful action did, in words (#529).
     function actionResult() {
         if (root.pendingAction === "delete") return "Finger deleted";
+        if (root.pendingAction === "acknowledge") return "Noted as yours";
         if (root.pendingAction !== "set") return "Changed";
         const name = root.useNames[root.pendingUse] || root.pendingUse;
         if (root.pendingValue === "on") return name + " now accepts a finger";
@@ -190,11 +252,22 @@ Scope {
     }
 
     Process {
+        id: usesProcess
+        property int generation: 0
+        command: Commands.settingsFingerprintCommand("status", ["--uses"])
+        running: false
+        stdout: StdioCollector { onStreamFinished: root.parseUses(this.text, usesProcess.generation) }
+    }
+
+    Process {
         id: statusProcess
         command: Commands.settingsFingerprintCommand("status", [])
         running: false
         stdout: StdioCollector { onStreamFinished: root.parseStatus(this.text) }
-        onRunningChanged: if (!running && root.statusPending && !root.busy) Qt.callLater(root.refresh)
+        onRunningChanged: {
+            if (running) root.usesGeneration++;
+            else if (root.statusPending && !root.busy) Qt.callLater(root.refresh);
+        }
     }
 
     Process {

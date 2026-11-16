@@ -39,12 +39,12 @@ export LYONA_DEV_SCRIPTS="$work/data/checkout/scripts"
 chmod 700 "$work/runtime"
 cp -a "$repo/config/quickshell/." "$work/qml/"
 cp "$repo/config/"*.toml "$work/home/.config/lyona/"
-python3 "$repo/tests/fixtures/fingerprint-settings.py" "$work/qml" "$repo/tests/qml/FingerprintSettings.inc"
+python3 "$repo/tests/fixtures/shell-stub.py" "$work/qml" "$repo/tests/qml/FingerprintSettings.inc" dwm-settings-fingerprint:FINGERPRINT_STUB:action
 # The stub: status from a file (no reader at first), calls logged, an enroll
 # that streams fprintd's statuses.
 printf 'fingerprint-protocol\t1\nreader\tnone\tNo fingerprint reader was found\nmodule\tavailable\t/usr/lib/security/pam_fprintd.so\nuse\tlightdm\toff\tThe password only\nuse\tpolkit\toff\tThe password only\nuse\tsudo\toff\tThe password only\ncomplete\tstatus\n' \
 	>"$work/fingerprint/status"
-printf 'fingerprint-protocol\t1\nreader\tavailable\tTest Reader\nfinger\tright-index-finger\nmodule\tavailable\t/usr/lib/security/pam_fprintd.so\nuse\tlightdm\texternal\tfprintd was added to /etc/pam.d/lightdm outside Lyona\nuse\tpolkit\ton\tA finger is accepted, or the password\nuse\tsudo\toff\tThe password only\ncomplete\tstatus\n' \
+printf 'fingerprint-protocol\t1\nreader\tavailable\tTest Reader\nfinger\tright-index-finger\nfinger-added\tright-index-finger\nmodule\tavailable\t/usr/lib/security/pam_fprintd.so\nuse\tlightdm\texternal\tfprintd was added to /etc/pam.d/lightdm outside Lyona\nuse\tpolkit\ton\tA finger is accepted, or the password\nuse\tsudo\toff\tThe password only\ncomplete\tstatus\n' \
 	>"$work/fingerprint/status-reader"
 printf 'fingerprint-protocol\t1\nreader\tnone\tNo fingerprint reader was found\nmodule\tavailable\t/usr/lib/security/pam_fprintd.so\nuse\tlightdm\toff\tThe password only\nuse\tpolkit\toff\tThe password only\nuse\tsudo\ton\tA finger is accepted, or the password\ncomplete\tstatus\n' \
 	>"$work/fingerprint/status-noreader-on"
@@ -53,7 +53,16 @@ cat >"$work/fingerprint-stub" <<'EOF'
 #!/bin/sh
 d=$FINGERPRINT_DIR
 case $1 in
-status) cat "$d/status" ;;
+status)
+	# The PAM-only read (#532) is logged, so the test can tell it apart, and
+	# answers as the helper does: no reader or finger lines.
+	if [ "${2:-}" = --uses ]; then
+		echo 'status --uses' >>"$d/log"
+		grep -E '^(fingerprint-protocol|module|use|complete)	' "$d/status"
+	else
+		cat "$d/status"
+	fi
+	;;
 enroll)
 	printf 'enroll-status\tenroll-stage-passed\n'
 	printf 'enroll-status\tenroll-retry-scan\n'

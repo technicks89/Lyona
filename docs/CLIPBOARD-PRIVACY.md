@@ -58,8 +58,11 @@ application this list does not name can get past the source check. **The
 command-line managers `pass -c` and `gopass` are the usual case** (#526): they
 hand the password to `xclip` or `xsel`, which fork into the background, so the
 clipboard's owner is a lone `xclip` whose parent is no longer `pass`, and the
-copy is probably kept. With those tools, leave capture off, or clear the entry
-after use. Text
+copy is probably kept. Turn on **Skip xclip** in the clipboard window (#535,
+off by default) to refuse every copy owned by `xclip` or `xsel`, also when one
+was forked by another program; ordinary copies made with `xclip` are then not
+kept either. Without it, leave capture off with those tools, or clear the
+entry after use. Text
 copied, pasted into another application and copied again carries that
 application's identity, not the first one's. The policy does not defend
 against a hostile client in the same X11 session, and it does not guess at

@@ -288,7 +288,10 @@
                             // The hidden network prompt's part of the model (#471), closed.
                             promptVisible: true, hiddenPromptVisible: false, hiddenSsid: "", hiddenSecurity: "wpa-psk",
                             hiddenPassword: "", hiddenMessage: "", hiddenJoinProblem: () => "",
-                            openHiddenPrompt: () => {}, cancelHiddenPrompt: () => {}, joinHidden: () => {},
+                            // The adapter choice (#534) and the Cancel that works while joining (#529).
+                            wifiDeviceNames: ["wlan0"], hiddenDevice: "", hiddenJoinDevice: "wlan0",
+                            openHiddenPrompt: () => {}, cancelHiddenPrompt: () => {}, cancelHiddenJoin: () => {},
+                            joinHidden: () => {},
                             statusText: "Online", message: "", activeConnections: [], savedProfiles: [], wifiNetworks: [],
                             selectedWifiIndex: -1, selectedWifiNetwork: () => ({ssid: "Test network"}),
                             cancelWifiPasswordPrompt: () => {}, close: () => {}}});

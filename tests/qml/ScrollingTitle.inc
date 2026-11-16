@@ -97,6 +97,59 @@
                 if (!root.titleMoved || scrollTitle.scrolling) return;
                 root.titleCheck(scrollTitle.text.length === 16383 && scrollTitle.textX === 0
                     && waited < 2000, "a 16383-character title: " + waited + " ms");
+                // With the window known (#532): its first title scrolls...
+                scrollTitle.sameKeyInterval = 1500;
+                scrollTitle.key = "0x1";
+                root.titleNext(root.longTitle + " (window 1)");
+                return;
+            case 7:
+                if (!root.titleMoved || scrollTitle.scrolling) return;
+                root.titleNext(root.longTitle + " (window 1, changed)");
+                return;
+            case 8:
+                // ...a change in the same window soon after does not...
+                if (waited < 400) return;
+                root.titleCheck(!root.titleScrolled && !root.titleMoved, "a quick change in the same window scrolled");
+                root.titleNext();
+                scrollTitle.key = "0x2";
+                return;
+            case 9:
+                // ...another window does...
+                if (!root.titleMoved || scrollTitle.scrolling) return;
+                root.titleNext();
+                return;
+            case 10:
+                // ...and the same window again, once the interval has passed.
+                if (waited < 1600) return;
+                root.titleNext(root.longTitle + " (window 2, later)");
+                return;
+            case 11:
+                if (!root.titleMoved || scrollTitle.scrolling) return;
+                // A switch to a window whose title fits, which does not scroll...
+                root.titleNext("Short");
+                scrollTitle.key = "0x3";
+                return;
+            case 12:
+                if (waited < 400) return;
+                root.titleCheck(!root.titleScrolled && !root.titleMoved, "a title that fits moved");
+                // ...and straight back, within the interval: a new window again.
+                root.titleNext(root.longTitle + " (window 2, again)");
+                scrollTitle.key = "0x2";
+                return;
+            case 13:
+                if (!root.titleMoved || scrollTitle.scrolling) return;
+                // Another window whose title fits, still within the interval...
+                root.titleNext("Short");
+                scrollTitle.key = "0x4";
+                return;
+            case 14:
+                if (waited < 400) return;
+                root.titleCheck(!root.titleScrolled && !root.titleMoved, "a title that fits moved");
+                // ...then a title of its own that does not: its first scroll.
+                root.titleNext(root.longTitle + " (window 4)");
+                return;
+            case 15:
+                if (!root.titleMoved || scrollTitle.scrolling) return;
                 console.log("Scrolling title: PASS");
                 Qt.quit();
                 return;

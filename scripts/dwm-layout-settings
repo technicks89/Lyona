@@ -34,6 +34,11 @@ lyona_lib=${BASH_SOURCE[0]%/*}
 . "$lyona_lib/dwm-xdg.sh"
 # shellcheck source=scripts/dwm-paths.sh
 . "$lyona_lib/dwm-paths.sh"
+# The shared lock (#531): owner and hard-link checks, and a time limit.
+# lyona-settings-writer: tests/test-shell-contracts.sh holds this file to the
+# shared primitives in dwm-preview-core.sh.
+# shellcheck source=scripts/dwm-preview-core.sh
+. "$lyona_lib/dwm-preview-core.sh"
 lyona_xdg_dirs
 
 self=dwm-layout-settings
@@ -87,10 +92,20 @@ cmd_state() {
 # One line on start and one per change, until the X connection ends. The
 # caller binds this process to its own lifetime (Commands.watchCommand).
 cmd_watch() {
-	local line
-	while IFS= read -r line; do
+	local line spy_fd
+	# The spy goes with this watch, however it ends: stopped with the shell
+	# (its parent-death TERM), xprop -spy was left running until X went away.
+	# The traps are set before the spy starts, so a stop that lands while it
+	# is starting takes it too: one before $! is read uses $!, which is then
+	# the spy's (this script starts nothing else in the background).
+	watch_spy_pid=
+	trap 'kill -TERM "${watch_spy_pid:-$!}" 2>/dev/null' EXIT
+	trap 'exit 143' TERM INT HUP
+	exec {spy_fd}< <(exec xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
+	watch_spy_pid=$!
+	while IFS= read -r -u "$spy_fd" line; do
 		take_line "$line" && emit_state
-	done < <(xprop -root -spy _DWM_LAYOUT_SETTINGS _DWM_LAYOUT 2>/dev/null)
+	done
 }
 
 # A decimal integer within [LO, HI], without a sign or leading zeros.
@@ -120,9 +135,9 @@ cmd_set() {
 		die "refusing a symlinked path: $layout_dir"
 	fi
 	# One save at a time, from the read to the replacement; the lock goes
-	# with the process, however it exits.
-	exec 9<"$layout_dir" || die "cannot open $layout_dir"
-	flock -x 9 || die "cannot lock $layout_dir"
+	# with the process, however it exits. A save still waiting after 30 s
+	# gives up rather than hang Settings (#531).
+	preview_lock "$layout_dir/.layout.toml.lock" 9 30 || die "cannot lock $layout_dir/layout.toml"
 	[[ ! -e $layout_file || (-f $layout_file && ! -L $layout_file) ]] ||
 		die "refusing to replace $layout_file: not a regular file"
 	[[ ! -L $layout_file.bak ]] ||
