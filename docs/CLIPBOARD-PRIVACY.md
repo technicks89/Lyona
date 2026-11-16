@@ -13,8 +13,10 @@ until you turn it on, and what it may keep is decided before any text is read.
 - **Saving** to disk is a second, separate opt-in, available only with capture
   on. Saved history is `${XDG_STATE_HOME:-$HOME/.local/state}/lyona/clipboard-history.json`,
   mode 0600 in a 0700 directory, written whole and renamed into place under
-  umask 077, so it is never readable by others, even for a moment. Turning
-  saving off deletes the file. **Clear all** deletes it too.
+  umask 077, so it is never readable by others, even for a moment. It is
+  plain text, not encrypted: home backups and file sync tools copy it like any
+  other file under your home. Turning saving off deletes the file (with `rm`,
+  not overwritten). **Clear all** deletes it too.
 - The two settings are `${XDG_CONFIG_HOME:-$HOME/.config}/lyona/clipboard-history.conf`
   (`capture=on`, `persist=on`; anything else reads as off). A symlinked file or
   directory on the way is refused, never written through.
@@ -52,7 +54,12 @@ Copies are not kept when:
   too deep.
 
 Names are best-effort: a renamed executable, a detached helper or an
-application this list does not name can get past the source check. Text
+application this list does not name can get past the source check. **The
+command-line managers `pass -c` and `gopass` are the usual case** (#526): they
+hand the password to `xclip` or `xsel`, which fork into the background, so the
+clipboard's owner is a lone `xclip` whose parent is no longer `pass`, and the
+copy is probably kept. With those tools, leave capture off, or clear the entry
+after use. Text
 copied, pasted into another application and copied again carries that
 application's identity, not the first one's. The policy does not defend
 against a hostile client in the same X11 session, and it does not guess at

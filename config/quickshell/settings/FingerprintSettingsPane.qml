@@ -5,7 +5,8 @@ import qs.core
 pragma ComponentBehavior: Bound
 
 // Settings > Fingerprint (#483): enroll and delete fingers, and choose where a
-// finger is accepted instead of the password. Listed only with a reader.
+// finger is accepted instead of the password. Listed with a reader, or while a
+// use is on without one (#522): then only the uses show, to turn them off.
 Flickable {
     id: root
 
@@ -124,82 +125,96 @@ Flickable {
             wrapMode: Text.WordWrap
         }
 
-        SectionLabel { label: "Enrolled fingers" }
-
         UiText {
             Layout.fillWidth: true
-            visible: root.model.fingers.length === 0
-            text: "No fingers are enrolled yet"
-            color: Theme.menuMutedText
+            visible: root.model.loaded && !root.model.readerAvailable
+            text: "No fingerprint reader was found, so fingers cannot be enrolled or deleted. A use that is still on asks for a finger first and then falls back to the password; turn it off below."
+            color: Theme.warning
+            wrapMode: Text.WordWrap
         }
 
-        Repeater {
-            model: root.model.fingers
-            delegate: RowLayout {
-                id: fingerRow
-                required property string modelData
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: root.model.readerAvailable
+            spacing: Theme.spacingLg
+
+            SectionLabel { label: "Enrolled fingers" }
+
+            UiText {
                 Layout.fillWidth: true
-                UiText {
+                visible: root.model.fingers.length === 0
+                text: "No fingers are enrolled yet"
+                color: Theme.menuMutedText
+            }
+
+            Repeater {
+                model: root.model.fingers
+                delegate: RowLayout {
+                    id: fingerRow
+                    required property string modelData
                     Layout.fillWidth: true
-                    text: root.model.fingerLabel(fingerRow.modelData)
-                    color: Theme.menuText
-                }
-                ShellButton {
-                    danger: true
-                    label: root.pendingDelete === fingerRow.modelData ? "Confirm Delete" : "Delete"
-                    enabled: !root.model.busy
-                    onActivated: {
-                        if (root.pendingDelete === fingerRow.modelData) {
-                            root.pendingDelete = "";
-                            root.model.deleteFinger(fingerRow.modelData);
-                        } else {
-                            root.pendingDelete = fingerRow.modelData;
+                    UiText {
+                        Layout.fillWidth: true
+                        text: root.model.fingerLabel(fingerRow.modelData)
+                        color: Theme.menuText
+                    }
+                    ShellButton {
+                        danger: true
+                        label: root.pendingDelete === fingerRow.modelData ? "Confirm Delete" : "Delete"
+                        enabled: !root.model.busy
+                        onActivated: {
+                            if (root.pendingDelete === fingerRow.modelData) {
+                                root.pendingDelete = "";
+                                root.model.deleteFinger(fingerRow.modelData);
+                            } else {
+                                root.pendingDelete = fingerRow.modelData;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        SectionLabel { label: "Enroll a finger" }
+            SectionLabel { label: "Enroll a finger" }
 
-        Flow {
-            Layout.fillWidth: true
-            spacing: Theme.spacingSm
-            visible: root.unenrolled.length > 0
-            Repeater {
-                model: root.unenrolled
-                delegate: ShellButton {
-                    id: fingerChoice
-                    required property string modelData
-                    label: root.model.fingerLabel(fingerChoice.modelData)
-                        + (root.nextFinger === fingerChoice.modelData ? " / Chosen" : "")
-                    enabled: !root.model.busy
-                    onActivated: root.chosenFinger = fingerChoice.modelData
+            Flow {
+                Layout.fillWidth: true
+                spacing: Theme.spacingSm
+                visible: root.unenrolled.length > 0
+                Repeater {
+                    model: root.unenrolled
+                    delegate: ShellButton {
+                        id: fingerChoice
+                        required property string modelData
+                        label: root.model.fingerLabel(fingerChoice.modelData)
+                            + (root.nextFinger === fingerChoice.modelData ? " / Chosen" : "")
+                        enabled: !root.model.busy
+                        onActivated: root.chosenFinger = fingerChoice.modelData
+                    }
                 }
             }
-        }
 
-        RowLayout {
-            Layout.fillWidth: true
-            ShellButton {
-                primary: true
-                label: root.model.enrollingFinger.length > 0
-                    ? "Enrolling... " + root.model.enrollPassed + " scans"
-                    : "Enroll " + root.model.fingerLabel(root.nextFinger)
-                visible: root.nextFinger.length > 0
-                enabled: !root.model.busy
-                onActivated: root.model.enroll(root.nextFinger)
-            }
-            ShellButton {
-                label: "Cancel"
-                visible: root.model.enrollingFinger.length > 0
-                onActivated: root.model.cancelEnroll()
-            }
-            UiText {
+            RowLayout {
                 Layout.fillWidth: true
-                visible: root.nextFinger.length === 0
-                text: "Every finger is enrolled"
-                color: Theme.menuMutedText
+                ShellButton {
+                    primary: true
+                    label: root.model.enrollingFinger.length > 0
+                        ? "Enrolling... " + root.model.enrollPassed + " scans"
+                        : "Enroll " + root.model.fingerLabel(root.nextFinger)
+                    visible: root.nextFinger.length > 0
+                    enabled: !root.model.busy
+                    onActivated: root.model.enroll(root.nextFinger)
+                }
+                ShellButton {
+                    label: "Cancel"
+                    visible: root.model.enrollingFinger.length > 0
+                    onActivated: root.model.cancelEnroll()
+                }
+                UiText {
+                    Layout.fillWidth: true
+                    visible: root.nextFinger.length === 0
+                    text: "Every finger is enrolled"
+                    color: Theme.menuMutedText
+                }
             }
         }
 
@@ -227,6 +242,7 @@ Flickable {
         UseCard {
             use: "sudo"
             title: "sudo in a terminal"
+            note: "Any program you run can ask sudo for your finger, and a terminal does not show what a touch approves. Only touch the reader when you have just typed sudo yourself."
         }
     }
 }

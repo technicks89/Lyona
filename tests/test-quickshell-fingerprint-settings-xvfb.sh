@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Settings > Fingerprint (#483) in the shell: the section is listed only with a
-# reader; the fingers and uses are read; the pane loads; enrolling shows its
+# Settings > Fingerprint (#483) in the shell: the section is listed with a
+# reader, or while a use is on without one (#522); the fingers and uses are
+# read; the pane loads; enrolling shows its
 # progress and result; a use is asked to change; bad requests never reach the
 # helper. Every helper is `true` but dwm-settings-fingerprint, a stub;
 # check-settings-fingerprint and check-fingerprint-pam check the real ones.
@@ -45,6 +46,8 @@ printf 'fingerprint-protocol\t1\nreader\tnone\tNo fingerprint reader was found\n
 	>"$work/fingerprint/status"
 printf 'fingerprint-protocol\t1\nreader\tavailable\tTest Reader\nfinger\tright-index-finger\nmodule\tavailable\t/usr/lib/security/pam_fprintd.so\nuse\tlightdm\texternal\tfprintd was added to /etc/pam.d/lightdm outside Lyona\nuse\tpolkit\ton\tA finger is accepted, or the password\nuse\tsudo\toff\tThe password only\ncomplete\tstatus\n' \
 	>"$work/fingerprint/status-reader"
+printf 'fingerprint-protocol\t1\nreader\tnone\tNo fingerprint reader was found\nmodule\tavailable\t/usr/lib/security/pam_fprintd.so\nuse\tlightdm\toff\tThe password only\nuse\tpolkit\toff\tThe password only\nuse\tsudo\ton\tA finger is accepted, or the password\ncomplete\tstatus\n' \
+	>"$work/fingerprint/status-noreader-on"
 : >"$work/fingerprint/log"
 cat >"$work/fingerprint-stub" <<'EOF'
 #!/bin/sh

@@ -13,6 +13,11 @@ now and says plainly that no release has carried the aarch64 images yet and
 that release-to-release updates are not validated on aarch64. Revisit it after
 ARM5-01's pre-release and ARM5-02's run.
 
+**Update 2026-11-15:** both have run. ARM5-01's pre-release is
+`v2026.11.0-beta.1` (2026-11-13), and ARM5-02 passed from beta.1 to beta.2 on
+the XPS 13 9345 and a Pi 4 ([evidence](arm5-02-updates-on-aarch64.md)). SPEC
+section 4 says so; the statuses below are unchanged.
+
 ## The statuses, and where each comes from
 
 | Target | Status | Evidence |

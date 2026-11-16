@@ -57,9 +57,11 @@ The aarch64 targets and their status are unchanged from 2026.11.0-beta.1
 
 - **Fingerprint (#483, `docs/FINGERPRINT.md`).** Settings > Fingerprint is
   listed only when fprintd finds a reader. Enroll and delete fingers, then turn
-  a finger on for each use separately: the login and lock screen, polkit, or
-  `sudo`. Each use adds one `sufficient` line to its PAM file, so the password
-  always works, and turning it off restores the file byte for byte. A line
+  fingerprint on for each use separately (any enrolled finger is accepted):
+  the login and lock screen, polkit, or `sudo`. Each use adds one `sufficient`
+  line to its PAM file, so the password always works, and turning it off
+  restores the file byte for byte unless it was edited since (then only the
+  two lines are removed). A line
   added by hand is shown as set up outside Lyona. A finger at the login does
   not unlock the keyring, and the switch says so. fprintd is installed only
   with `install.sh --with-fingerprint`.
@@ -70,8 +72,10 @@ The aarch64 targets and their status are unchanged from 2026.11.0-beta.1
 - **Title bars (#496).** `titlebars = 1` in `themes.toml` (with
   `titlebar_tags`) draws a strip above each floating window to drag it or close
   it. dwm draws it itself, with no new process.
-- **Layout settings (#479).** Saved per monitor and tag in
-  `~/.config/lyona/layout.toml`, which dwm reloads when it changes. The gap
+- **Layout settings (#479).** The master size and count and the gap are saved
+  per monitor and tag in `~/.config/lyona/layout.toml`, which dwm reloads when
+  it changes; the Tile/Floating/Monocle choice applies live and is not saved
+  (#517). The gap
   defaults to 0, and tiling at gap 0 is unchanged.
 - **Keyboard (#470, #473).** With two or more layouts, a panel pill names the
   active one and a click switches. Settings > Input picks the switch key and
@@ -94,7 +98,8 @@ itself inactive, leaving the screen black with nothing locked.
   windows still shown.
 - The autorandr hook `60-lyona-locker` does the same after a layout change,
   such as monitors turned off and on.
-- Each result is logged to the journal: `journalctl -t lyona-locker`.
+- `dwm-blank-watch` logs each result to the journal
+  (`journalctl -t lyona-locker`); the autorandr hook does not log.
 
 A blanked or locked screen is never touched.
 
@@ -109,16 +114,22 @@ A blanked or locked screen is never touched.
 - **No new packages.** For fingerprint, install fprintd:
   `sudo pacman -S --needed fprintd`, or `install.sh --with-fingerprint`.
 - **Your files:** an update adds the Super+V binding to `hotkeys.toml` when
-  Super+V is free, and adds window rules for new shell windows (the hidden
-  Wi-Fi prompt) to `window-rules.toml` when no rule of yours names them, after
-  a backup. `themes.toml` and other user files are otherwise kept.
+  Super+V is free and your Super+R launcher line is still a shipped default
+  (otherwise add the line from `docs/src/keybinds.md` yourself), and adds
+  window rules for new shell windows (the hidden Wi-Fi prompt and the
+  clipboard window) to `window-rules.toml` when no rule of yours names them,
+  after a backup. `themes.toml` and other user files are otherwise kept.
 - **Before a rollback to beta.1:**
   - turn fingerprint uses off in Settings first, since beta.1 has no
     Settings > Fingerprint to turn them off later (the PAM lines would stay,
     and the password still works);
   - beta.1 reads a `panel-widgets.conf` saved by this release (protocol 1.1)
-    as unsupported: it keeps the file and shows the default widgets until you
-    update again;
+    as unsupported and shows the default widgets; the first panel widget
+    change you make on beta.1 replaces the file, and your beta.2 choices are
+    lost (#520). Releases after beta.2 keep the file with each update and put
+    it back on rollback;
+  - a Settings > Input value saved by this release for a merged keyboard card
+    may not apply on beta.1, which does not know merged cards;
   - beta.1's `dwm` ignores `layout.toml` and the new window rule keys.
 
 ## Known issues

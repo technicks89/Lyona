@@ -70,7 +70,7 @@ an untested package or installation path.
   deploys.
 - `tests/`: the test suite, run through the Makefile's `check-*` targets and
   `scripts/run-tests`.
-- `AGENTS.md`: durable engineering and agent-execution rules.
+- `.github/AGENTS.md`: durable engineering and agent-execution rules.
 - `SPEC.md`: product scope, interfaces, and acceptance criteria.
 - `docs/roadmap/ROADMAP.md`: ordered desktop-environment outcomes.
 - `docs/roadmap/TASKS.md`: implementation work for the active roadmap phase only.
@@ -188,8 +188,8 @@ an untested package or installation path.
   application configuration without explicit user consent or a backup.
 - Runtime TOML files live under
   `${XDG_CONFIG_HOME:-$HOME/.config}/lyona/`.
-- Preserve hot reload behavior for `hotkeys.toml`, `themes.toml`, and
-  `window-rules.toml`.
+- Preserve hot reload behavior for `hotkeys.toml`, `themes.toml`,
+  `window-rules.toml` and `layout.toml`.
 - `${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/` is managed exclusively by
   lyona. Unlike user-owned dwm TOML files, install/update flows may replace
   this directory from tracked `config/quickshell/` to prevent stale shell code.
@@ -314,7 +314,7 @@ and do not call `gsettings`, `xrdb`, Picom or Quickshell IPC outside a stub
 or a private server. `make check-session-isolation` fails when that breaks.
 
 For Arch image changes, follow the complete validation contract in
-[SPEC.md Section 9.4](SPEC.md#94-arch-image-validation). Static validation
+[SPEC.md Section 9.4](../SPEC.md#94-arch-image-validation). Static validation
 alone does not prove package resolution, postinstall behavior, first boot, or
 hardware support.
 

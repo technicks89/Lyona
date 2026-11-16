@@ -14,7 +14,7 @@ Bindings are defined in `~/.config/lyona/hotkeys.toml` and reload instantly on s
 | Keys | Action |
 |------|--------|
 | `Super` + `R` | App launcher (Quickshell) |
-| `Super` + `V` | Clipboard history: off until you turn capture on in it ([privacy](../CLIPBOARD-PRIVACY.md)) |
+| `Super` + `V` | Clipboard history: off until you turn capture on in it ([privacy](https://github.com/technicks89/Lyona/blob/main/docs/CLIPBOARD-PRIVACY.md)) |
 | `Super` + `O` | Window overview: every window on every tag ([Getting Started](./getting-started.md#the-window-overview)) |
 | `Super` + `X` | Alacritty terminal |
 | `Super` + `E` | File manager |
@@ -171,3 +171,11 @@ The terminal variable defaults to Alacritty. Settings -> Defaults can select a
 validated installed terminal without changing the `Super`+`X` key record. To
 use the optional Herdr workspace, install it explicitly, change the binding to
 `dwm-terminal`, and set `DWM_HERDR=1` in the session environment.
+
+An update adds the `Super`+`V` clipboard history binding only when `Super`+`V`
+is free and your `Super`+`R` launcher line is still one of the shipped
+defaults. If yours has no `Super`+`V` line, add this one to the `keys` list:
+
+```toml
+{ mod="SUPER", key="v", desc="Clipboard history", func="spawn", exec=["lyona-shell", "clipboard", "toggle"], hold_keys="dwm clipboard" },
+```

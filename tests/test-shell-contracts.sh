@@ -401,10 +401,17 @@ grep -Fqx '        target: "settingsTest"' "$repo/config/quickshell/settings/Set
 in_git=0
 git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 && in_git=1
 [ "$in_git" = 0 ] || [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = false ] || in_git=0
-doc_refs=$(cd "$repo" && grep -rhoE '([0-9a-f]{7,40}:)?docs/[A-Za-z0-9_./-]+\.md' \
-	scripts config tests archiso install.sh Makefile README.md SPEC.md AGENTS.md \
-	CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md docs/sprints/UPSTREAM-SYNC.md \
-	docs/P6-SYSTEM-MANAGEMENT.md 2>/dev/null | sort -u)
+# Every source must exist: a moved one would otherwise drop out of the check
+# without a word (#518).
+doc_sources='scripts config tests archiso install.sh Makefile README.md SPEC.md
+	.github/AGENTS.md CONTRIBUTING.md SECURITY.md docs/src docs/RELEASING.md
+	docs/sprints/UPSTREAM-SYNC.md docs/P6-SYSTEM-MANAGEMENT.md'
+for source in $doc_sources; do
+	[ -e "$repo/$source" ] || fail "$source is a cited-document source but does not exist"
+done
+# shellcheck disable=SC2086 # the list splits on whitespace, by design
+doc_refs=$(cd "$repo" && grep -rIhoE '([0-9a-f]{7,40}:)?docs/[A-Za-z0-9_./-]+\.md' \
+	$doc_sources | sort -u)
 printf '%s\n' "$doc_refs" >"$work/doc-refs"
 while IFS= read -r reference; do
 	[ -n "$reference" ] || continue

@@ -17,6 +17,13 @@ Scope {
     property bool moduleAvailable: false
     // { lightdm: { state, detail }, polkit: ..., sudo: ... }
     property var uses: ({})
+    readonly property bool readerAvailable: root.readerState === "available"
+    // A use whose PAM line is in place, Lyona's or one added by hand: Settings
+    // stays listed while one is, so it can be turned off without a reader (#522).
+    readonly property bool anyUseActive: ["lightdm", "polkit", "sudo"].some(function(use) {
+        const state = root.uses[use] ? root.uses[use].state : "";
+        return state === "on" || state === "external";
+    })
     property bool statusPending: false
     property bool loaded: false
     readonly property bool initialLoading: !root.loaded && (statusProcess.running || root.statusPending)

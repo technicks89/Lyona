@@ -80,7 +80,7 @@ Started in the background before dwm enters its handler loop.
 autostop.sh
 Run when dwm exits; dwm waits up to five seconds for it.
 .P
-The shipped default hotkeys.toml, themes.toml and window-rules.toml are in
+The shipped default hotkeys.toml, themes.toml, window-rules.toml and layout.toml are in
 .IR PREFIX /share/lyona/config,
 and are used when the files in $XDG_CONFIG_HOME/lyona are missing or unusable.
 .TP 15
@@ -88,10 +88,13 @@ $XDG_CONFIG_HOME/lyona/hotkeys.toml
 Key and mouse bindings.
 .TP 15
 $XDG_CONFIG_HOME/lyona/themes.toml
-The colour theme and border width.
+The colour theme, border width, and title bars on floating windows.
 .TP 15
 $XDG_CONFIG_HOME/lyona/window-rules.toml
 Per-application rules: tag, floating, monitor.
+.TP 15
+$XDG_CONFIG_HOME/lyona/layout.toml
+Saved master area size, master count and gap, per monitor and tag.
 .SH ENVIRONMENT
 .TP 15
 LYONA_DEV_SCRIPTS
@@ -101,7 +104,7 @@ It is never set by an install, and dwm ignores it when running as root.
 .SH SIGNALS
 .TP 15
 SIGUSR1
-Reload hotkeys.toml, themes.toml and window-rules.toml.
+Reload hotkeys.toml, themes.toml, window-rules.toml and layout.toml.
 .TP 15
 SIGUSR2
 Quit, as the quit binding does.

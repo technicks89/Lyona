@@ -8,6 +8,50 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
 
 ## [Unreleased]
 
+### Fixed
+
+- Saving one value in Settings > Appearance > Layout reset every unsaved
+  Super+H/L and Super+I/D change, on every tag of every monitor (#515). A
+  `layout.toml` reload now applies only the values whose saved setting
+  changed; an entry removed still goes back to the default, and a monitor
+  that is new or changed its index still starts from the file.
+- Clipboard history: after the source failed, the status said "Turn capture on
+  to retry" while the Capture switch still showed on, so the click turned
+  capture off and deleted the saved history (#516). The switch now shows off
+  while the source has failed, and one click retries. The window also says
+  that turning capture off deletes the saved file.
+- Settings > Fingerprint left the list when no reader was found, even with a
+  use still on, so there was no way to turn it off (#522). It now stays listed
+  while any use is on or set up outside Lyona, and shows only the uses, with a
+  note that no reader was found.
+- After an update or a rollback that replaces dwm, Settings said only "Update
+  complete" (or "Rollback complete") and closed after 20 seconds; the logout it
+  needs was printed only in a terminal (#521). The status note now says "Log
+  out and back in to finish", and a success with a note stays until dismissed.
+- A rollback lost the panel's widget choices when the older release could not
+  read the newer file: beta.1 rejects beta.2's `panel-widgets.conf` (protocol
+  1.1), and its first panel change replaced it (#520). Each update now keeps
+  `~/.config/lyona/panel-widgets.conf` with its backup, and a rollback puts it
+  back. Backups made before this have no copy, so the beta.2 to beta.1 caveat
+  stays, now described accurately in the beta.2 release notes.
+- `make check-shell-contracts` stopped checking the documents
+  `.github/AGENTS.md` cites when the file moved from the repository root, and
+  passed anyway (#518). Its sources are now listed by their real paths, and a
+  missing one fails the check. `CONTRIBUTING.md`, the repository map and a
+  SPEC link point to the new place.
+
+### Changed
+
+- A rollback says which fingerprint uses are still on, before it asks and in
+  the Settings note: a release before 2026.11.0-beta.2 has no Settings >
+  Fingerprint to turn them off (#523). `docs/FINGERPRINT.md` has an "After a
+  rollback" section with the manual steps.
+- With the polkit fingerprint use on, its detail says when
+  `/etc/pam.d/polkit-1`, which shadows polkit's own `/usr/lib/pam.d/polkit-1`,
+  differs from it apart from Lyona's lines (#524).
+- The `sudo` fingerprint switch says that any program can ask sudo for a
+  finger (#525).
+
 ### Documentation
 
 - Updates on aarch64 (ARM5-02, #490,
@@ -17,7 +61,29 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
   Raspberry Pi 4, with Topgrade (`pacman -Syu` and the AUR) against Arch Linux
   ARM's repositories, and the Settings > System updates pane's check. Each rollback
   and apply needed a logout, not a reboot. Not tested: a VM, an install from
-  the Settings pane, and the `panel-widgets.conf` 1.1 rollback caveat.
+  the Settings pane, and the `panel-widgets.conf` 1.1 rollback caveat. SPEC
+  section 4, the ARM sprint plan, `ARM64.md` and the ARM5-03 contract now say
+  so, and the evidence notes that the Pi's rollback ran during a package
+  upgrade (#519).
+- The Tile/Floating/Monocle choice in Settings > Appearance > Layout applies
+  live and is not saved; the pane, `docs/src/settings.md`, the beta.2 entry
+  and its release notes said it was (#517).
+- `docs/FINGERPRINT.md` names the security trade-offs: fingerprint for `sudo`
+  (CVE-2024-37408, disputed), polkit covering Lyona's own administrator
+  actions, no faillock lockout, and match-on-chip readers (#525).
+- `docs/CLIPBOARD-PRIVACY.md`: copies made by `pass -c` and `gopass` through
+  `xclip`/`xsel` are probably kept, and saved history is plain text that home
+  backups pick up (#526).
+- beta.2 documentation gaps (#527): the Super+V migration's second condition
+  and the manual line; the autorandr hook does not log; an update adds the
+  shell's own window rules (the clipboard window too) and changes none of
+  yours; `dwm.1` lists `layout.toml` and title bars; Fingerprint and Clipboard
+  history sections in the user guide, and an in-book link that went outside
+  it; `install.sh --help` on `--with-fingerprint`'s profiles; release-note
+  wording for fingerprint uses; Layout and Fingerprint rows in
+  `docs/SETTINGS-CAPABILITIES.md`; troubleshooting for a black screen after an
+  idle blank, features missing until a logout, and no panel after logging in
+  during an upgrade.
 
 ## [2026.11.0-beta.2] - 2026-11-15
 
@@ -66,7 +132,8 @@ monitor power cycle (#416) and a wallpaper Settings could miss (#444). See
   - Nothing runs while capture is off. `docs/CLIPBOARD-PRIVACY.md` has the
     policy and its limits.
   - An update adds the Super+V binding to an existing `hotkeys.toml` only when
-    Super+V is not bound there already.
+    Super+V is not bound there already and the Super+R launcher line is still
+    a shipped default (#527).
 - Title bars on floating windows (#496, upstream dwm-titus #423), off by
   default. `titlebars = 1` in `themes.toml`, with `titlebar_tags` for the tags,
   puts a strip with the title above each floating window: drag it to move the
@@ -175,8 +242,9 @@ monitor power cycle (#416) and a wallpaper Settings could miss (#444). See
   updating.
 - Settings > Appearance > Layout (#479, upstream dwm-titus #424): the layout,
   master area size, master window count and a gap between tiled windows, for
-  the tag the selected monitor shows. Values are saved per monitor and per tag
-  in a fourth runtime file, `~/.config/lyona/layout.toml`, which dwm
+  the tag the selected monitor shows. The size, count and gap are saved per
+  monitor and per tag (the layout applies live and is not saved, #517) in a
+  fourth runtime file, `~/.config/lyona/layout.toml`, which dwm
   hot-reloads like the other three. The unprivileged `dwm-layout-settings`
   helper writes it, keeping the previous file as `layout.toml.bak`.
   - dwm publishes the selected view's values as `_DWM_LAYOUT_SETTINGS`, which
@@ -238,7 +306,7 @@ monitor power cycle (#416) and a wallpaper Settings could miss (#444). See
 
 - The hidden Wi-Fi prompt (#471) had no window rule, so dwm tiled it instead
   of floating it above the network popover. It has one now, and an update adds
-  it to an existing `window-rules.toml`.
+  it, and the clipboard window's rule, to an existing `window-rules.toml`.
 
 - Settings > Input no longer lists power, sleep and lid buttons as keyboards,
   and shows a device whose interfaces appear as several XInput devices as one

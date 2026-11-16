@@ -81,9 +81,11 @@ section, **lyona**, above.
   closes.
 - **Floating:** the terminal tiles. Turn on **Float the update terminal** to
   float it. That uses the window class `lyona-update-float`, which a new
-  install's `window-rules.toml` floats. An existing file is never edited for
-  you; if yours predates this, Settings shows the line to add inside its `rules`
-  array:
+  install's `window-rules.toml` floats. An update adds only the rules for the
+  shell's own windows (the hidden Wi-Fi prompt, the clipboard window) to an
+  existing file, after a backup, and never changes yours; this one is not
+  among them, so if your file predates it, Settings shows the line to add
+  inside its `rules` array:
 
   ```toml
   { class="lyona-update-float", isfloating=1 },

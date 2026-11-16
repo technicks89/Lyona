@@ -142,9 +142,10 @@ Scope {
     readonly property bool displayHasPendingChanges: root.displayBaseline.length > 0
         && root.displayLayoutKey(root.displayOutputs) !== root.displayBaseline
 
-    // Fingerprint is listed only while a reader is available (#483).
+    // Fingerprint is listed while a reader is available (#483), and while a use
+    // is still on without one, so it can be turned off (#522).
     readonly property var sections: SettingsSearch.sections.filter(function(section) {
-        return section.id !== "fingerprint" || fingerprintModel.readerState === "available";
+        return section.id !== "fingerprint" || fingerprintModel.readerAvailable || fingerprintModel.anyUseActive;
     })
     readonly property alias fingerprintModel: fingerprintModel
     // A section that leaves the list while selected (the reader went away)

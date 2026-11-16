@@ -86,7 +86,9 @@ dwm-settings status
 dwm-settings close
 ```
 
-Existing `window-rules.toml` files are preserved during upgrades. If your file
+An update never changes a rule in an existing `window-rules.toml`; it only adds
+the rules for the shell's own windows (the hidden Wi-Fi prompt, the clipboard
+window), after a backup. The Settings rule is not among them: if your file
 predates Settings, add this entry inside its `rules` array:
 
 ```toml
@@ -113,16 +115,41 @@ operations.
 Settings > Appearance > Layout shows the tag the selected monitor is on: its
 layout (Tile, Floating or Monocle), the master area's size (5-95%), the number
 of windows in it (0-20) and the gap around and between tiled windows (0-64
-px). A change applies at once and is saved for that tag of that monitor in
-`~/.config/lyona/layout.toml`, which you can also edit by hand (dwm reloads
-it on save). The previous file is kept as `layout.toml.bak`. A tag with no
+px). Each change applies at once. The master size, the count and the gap are
+saved for that tag of that monitor in `~/.config/lyona/layout.toml`, which you
+can also edit by hand (dwm reloads it on save); the layout is not saved, and
+the tag is back to its default layout at the next login. The previous file is kept as `layout.toml.bak`. A tag with no
 saved value uses the defaults, which tile as before: no gap. While the
 monitor shows several tags at once there is nothing to save, and the sliders
 are disabled. `Super+I` and `Super+D` still change the master count live,
-without saving it; a monitor plugged back in gets its saved values again,
+without saving it, and saving another value keeps that live change; a monitor
+plugged back in gets its saved values again,
 while a resolution change keeps the live ones. The file holds at most 102
 entries. The section reads dwm only while it is open. After the
 update that adds it, log out and back in once.
+
+## Fingerprint
+
+Settings > Fingerprint is listed when fprintd finds a supported reader
+(install `fprintd`, or use `install.sh --with-fingerprint`), and while a use is
+still on without one. It enrolls and deletes fingers, and turns fingerprint on
+separately for the login and lock screen, administrator (polkit) prompts, and
+`sudo`. Each use adds one line to its PAM file, so the password always works;
+turning it on or off asks for the administrator password. A finger at the
+login does not unlock the keyring. Before turning on `sudo`, read the
+trade-offs in [FINGERPRINT.md](https://github.com/technicks89/Lyona/blob/main/docs/FINGERPRINT.md#security-trade-offs). If a
+PAM file ever needs repair, or fingerprint lines are left after a rollback,
+the same page has the [recovery steps](https://github.com/technicks89/Lyona/blob/main/docs/FINGERPRINT.md#recovery).
+
+## Clipboard history
+
+`Super`+`V` opens the clipboard history window. **Capture** is off until you
+turn it on there; **Save** keeps the list across restarts in a private file,
+and turning either off deletes that file, as does **Clear all**. Copies from
+identifiable password managers, and copies an application marks as secret,
+are not kept, but a password copied from a browser extension, a terminal, or
+`pass -c` can be. [CLIPBOARD-PRIVACY.md](https://github.com/technicks89/Lyona/blob/main/docs/CLIPBOARD-PRIVACY.md) has the
+full policy and its limits.
 
 ## System
 

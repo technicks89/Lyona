@@ -86,8 +86,9 @@ Options:
                          manager (recommended and full profiles). Without it,
                          lyona-appimage opens AppImages.
   --with-fingerprint     Also install fprintd, for Settings > Fingerprint (shown
-                         when a supported reader is found). No PAM file is
-                         changed; each use is turned on there.
+                         when a supported reader is found; recommended and full
+                         profiles). No PAM file is changed; each use is turned
+                         on there.
   --enable-arch-gaming-repos
                          Approve enabling the multilib repository for gaming.
   --enable-cachyos-repos Add the CachyOS repositories for this CPU, replacing

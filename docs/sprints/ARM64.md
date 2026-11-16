@@ -168,7 +168,9 @@ After the merge, in Lyona:
    Raspberry Pi images, signed, with the architecture markers.
 2. ARM5-02 (#19): `lyona-update` check, apply and rollback from one release to
    the next, on a generic-image VM and on a Pi, plus package updates. It needs
-   a second release carrying ARM support.
+   a second release carrying ARM support. **Done 2026-11-15 (#490):** beta.1 to
+   beta.2 on the XPS 13 9345 (the generic image on hardware, not a VM) and a
+   Pi 4 ([evidence](../evidence/arm5-02-updates-on-aarch64.md)).
 3. The parked XPS session: the HiDPI default (#482), the CPU governor rule on
    a fresh install (#86), and a boot and install of the release image.
 4. Close ARM-5 and move the ARM sprint documents to `docs/sprints/completed/`.

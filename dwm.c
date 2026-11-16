@@ -337,6 +337,8 @@ static void updateselectedmonitor(void);
 static void updatelayoutprop(void);
 static void applylayoutrequest(void);
 static void applysavedlayouts(int force);
+static unsigned int savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
+		float *mf, int *nm, int *gap);
 static void updatelayoutsettingsprop(void);
 static void setupxkb(void);
 static void updatekeyboard(int reread);
@@ -5408,19 +5410,63 @@ updatelayoutsettingsprop(void)
 	cachevalid = 1;
 }
 
-/* layout.toml's saved values (#479), applied to every monitor when they
- * changed, and with FORCE (the monitors changed) to a monitor that is new or
- * now has another logical index; a monitor that kept its index keeps its live
- * values. Each tag starts from the defaults, so an entry removed from the file
- * goes back to them; then every entry for the monitor's logical index sets its
- * tag. */
+#define SAVED_MFACT   1u
+#define SAVED_NMASTER 2u
+#define SAVED_GAP     4u
+
+/* The value layout.toml sets for one tag of one logical monitor, or the
+ * default when no entry sets it: the later entry wins, as when applying.
+ * Returns which of the three an entry sets (SAVED_*), so a value saved equal to
+ * the default still counts as saved. */
+static unsigned int
+savedlayoutvalues(const LayoutSetting *set, int n, int index, unsigned int tag,
+		float *mf, int *nm, int *gap)
+{
+	unsigned int saved = 0;
+	int i;
+
+	*mf = mfact;
+	*nm = nmaster;
+	*gap = 0;
+	for (i = 0; i < n; i++) {
+		if (set[i].monitor != index || set[i].tag != (int)tag)
+			continue;
+		if (set[i].mfact >= 0) {
+			*mf = set[i].mfact / 100.0f;
+			saved |= SAVED_MFACT;
+		}
+		if (set[i].nmaster >= 0) {
+			*nm = set[i].nmaster;
+			saved |= SAVED_NMASTER;
+		}
+		if (set[i].gap >= 0) {
+			*gap = set[i].gap;
+			saved |= SAVED_GAP;
+		}
+	}
+	return saved;
+}
+
+/* layout.toml's saved values (#479). With FORCE (the monitors changed), a
+ * monitor that is new or now has another logical index starts every tag from
+ * the defaults and takes its entries; a monitor that kept its index keeps its
+ * live values. When the file changed, only the values whose saved setting
+ * changed are applied (#515): a Settings save of one tag's gap must not undo a
+ * live Super+H/L tweak on that tag's master size, or on any other tag or
+ * monitor. A value changes when it is newly saved, no longer saved, or saved
+ * with another value: saving one equal to the default still applies it over a
+ * live change. An entry removed from the file sends its values back to the
+ * defaults, as before. */
 void
 applysavedlayouts(int force)
 {
 	static unsigned int applied;
+	static LayoutSetting *prev;
+	static int nprev;
 	Monitor *m;
-	int i, index, changed;
-	unsigned int t;
+	int index, changed, nm, pnm, gap, pgap;
+	float mf, pmf;
+	unsigned int t, saved, psaved, diff;
 
 	changed = applied != rt_layouts_generation;
 	if (!force && !changed)
@@ -5430,29 +5476,45 @@ applysavedlayouts(int force)
 		if (!m->pertag)
 			continue;
 		index = getmonlogicalindex(m);
-		if (!changed && m->layoutindex == index)
+		if (m->layoutindex != index) {
+			m->layoutindex = index;
+			for (t = 1; t <= LENGTH(tags); t++) {
+				savedlayoutvalues(rt_layouts, rt_nlayouts, index, t, &mf, &nm, &gap);
+				m->pertag->mfacts[t] = mf;
+				m->pertag->nmasters[t] = nm;
+				m->pertag->gaps[t] = gap;
+			}
+			m->pertag->mfacts[0] = mfact;
+			m->pertag->nmasters[0] = nmaster;
+			m->pertag->gaps[0] = 0;
+		} else if (changed) {
+			for (t = 1; t <= LENGTH(tags); t++) {
+				psaved = savedlayoutvalues(prev, nprev, index, t, &pmf, &pnm, &pgap);
+				saved = savedlayoutvalues(rt_layouts, rt_nlayouts, index, t, &mf, &nm, &gap);
+				diff = saved ^ psaved;
+				if ((diff & SAVED_MFACT) || mf != pmf)
+					m->pertag->mfacts[t] = mf;
+				if ((diff & SAVED_NMASTER) || nm != pnm)
+					m->pertag->nmasters[t] = nm;
+				if ((diff & SAVED_GAP) || gap != pgap)
+					m->pertag->gaps[t] = gap;
+			}
+		} else {
 			continue;
-		m->layoutindex = index;
-		for (t = 0; t <= LENGTH(tags); t++) {
-			m->pertag->mfacts[t] = mfact;
-			m->pertag->nmasters[t] = nmaster;
-			m->pertag->gaps[t] = 0;
-		}
-		for (i = 0; i < rt_nlayouts; i++) {
-			const LayoutSetting *l = &rt_layouts[i];
-
-			if (l->monitor != index || l->tag < 1 || l->tag > (int)LENGTH(tags))
-				continue;
-			if (l->mfact >= 0)
-				m->pertag->mfacts[l->tag] = l->mfact / 100.0f;
-			if (l->nmaster >= 0)
-				m->pertag->nmasters[l->tag] = l->nmaster;
-			if (l->gap >= 0)
-				m->pertag->gaps[l->tag] = l->gap;
 		}
 		m->mfact = m->pertag->mfacts[m->pertag->curtag];
 		m->nmaster = m->pertag->nmasters[m->pertag->curtag];
 		m->gap = m->pertag->gaps[m->pertag->curtag];
+	}
+	if (changed) {
+		free(prev);
+		prev = NULL;
+		nprev = 0;
+		if (rt_nlayouts > 0) {
+			prev = ecalloc(rt_nlayouts, sizeof(*prev));
+			memcpy(prev, rt_layouts, rt_nlayouts * sizeof(*prev));
+			nprev = rt_nlayouts;
+		}
 	}
 	arrange(NULL);
 }

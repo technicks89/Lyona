@@ -79,8 +79,11 @@ project, `docs/sprints/ARM64.md`). Each aarch64 target has its own status:
 | NVIDIA N1X laptops | none | Not supported | Removed from the plan 2026-11-12, to return later (decision A-8) |
 | 32-bit ARM (`armv7h`) | none | Not supported | Out of scope |
 
-Updates from one release carrying the aarch64 images to the next are not yet
-validated on any aarch64 target (ARM5-02, after the merge into Lyona).
+Updates from one release carrying the aarch64 images to the next were
+validated on 2026-11-15, from 2026.11.0-beta.1 to beta.2 (update, rollback and
+update again), on the Dell XPS 13 9345 (generic image) and a Raspberry Pi 4
+(ARM5-02, `docs/evidence/arm5-02-updates-on-aarch64.md`); not in a virtual
+machine.
 Architecture-aware package filtering in shared helpers is not a support claim
 for any target not marked supported here. An aarch64 target becomes supported
 only once its ARM sprint has met the release validation contract (section 9.4)
@@ -748,7 +751,10 @@ The tool's own plan and confirmation are shown, and nothing is confirmed for
 the user. The reported result comes from the command's exit status; a terminal
 closed early is reported as interrupted, never as success. The terminal tiles
 unless the user chooses to float it, which uses a window class the shipped
-`window-rules.toml` floats. An existing user rules file is never edited.
+`window-rules.toml` floats. An update never changes a rule in an existing user
+rules file; it only adds, after a backup, the rules for the shell's own windows
+listed in `scripts/window-rules-additions` that no rule of the user's names.
+`lyona-update-float` is not among them.
 
 Topgrade (decision D-28) is outside this contract (Sync Sprint 16 R16-52): a
 tool the user runs from a terminal, of their own accord, which updates whatever

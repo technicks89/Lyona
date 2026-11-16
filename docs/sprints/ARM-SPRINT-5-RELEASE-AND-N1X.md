@@ -76,6 +76,12 @@ carry the ARM support, and only Lyona makes releases: until the merge,
 So this run also falls after the merge, after ARM5-01's release; when to
 schedule it is the maintainer's call, not decided here.
 
+**Result (2026-11-15, #490):** met, from beta.1 to beta.2, with one deviation
+from the plan: the generic image ran on the Dell XPS 13 9345, on hardware, not
+in a VM. The Settings pane was opened and found nothing to install after
+Topgrade; no install from it was tested
+([evidence](../evidence/arm5-02-updates-on-aarch64.md)).
+
 ## ARM5-03: The support contract per target
 
 1. `SPEC.md` section 4's target table gets a row per ARM target with its
