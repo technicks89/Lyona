@@ -48,6 +48,11 @@ month) from `config.mk`. A pre-release appends `-alpha.N`, `-beta.N` or
     fullscreen, so the window resizing itself while fullscreen, or a late
     rule switching it between real and windowed fullscreen, no longer leaves
     it at the monitor's size when it leaves.
+  - A tiled window leaving fullscreen is arranged back into the tiling;
+    windows tiled while it was fullscreen no longer overlap it.
+  - A window sent to another monitor while fullscreen stays on that monitor
+    when it leaves fullscreen, instead of going back to where it was on the
+    first.
   - Super+J/K no longer moves focus out of real fullscreen entered from fake
     fullscreen; every fullscreen that covers the monitor blocks it, as real
     and windowed fullscreen already did.

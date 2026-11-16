@@ -1697,6 +1697,44 @@ wait "$rof_other_pid" 2>/dev/null || true
 cp "$work/rules-backup" "$rules_file"
 reload_rules
 
+# A tiled window leaving fullscreen goes back into the tiling (#533): the
+# monitor was arranged without it while it was fullscreen (here by a tag
+# switch), so it is arranged again, and the two do not overlap.
+: >"$work/tile-other-id"
+DISPLAY=$display "$work/xclient" >"$work/tile-other-id" 2>"$work/tile-other.log" &
+tile_other_pid=$!
+i=0
+while [ "$i" -lt 100 ] && [ ! -s "$work/tile-other-id" ]; do
+	i=$((i + 1))
+	sleep 0.05
+done
+tile_other_win=$(cat "$work/tile-other-id")
+start_rule_client ''
+wait_for_active_window "$rule_win"
+sleep 0.2
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-a"
+DISPLAY=$display xdotool getwindowgeometry --shell "$tile_other_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-b"
+DISPLAY=$display "$work/xclient" state "$rule_win" 1 _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors 0
+DISPLAY=$display xdotool key super+2
+wait_for_current_desktop 1
+DISPLAY=$display xdotool key super+1
+wait_for_current_desktop 0
+DISPLAY=$display "$work/xclient" state "$rule_win" 0 _NET_WM_STATE_FULLSCREEN
+wait_for_window_state_absent "$rule_win" _NET_WM_STATE_FULLSCREEN
+wait_for_fullscreen_monitors ''
+sleep 0.3
+DISPLAY=$display xdotool getwindowgeometry --shell "$rule_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-a-after"
+DISPLAY=$display xdotool getwindowgeometry --shell "$tile_other_win" | grep -E '^(X|Y|WIDTH|HEIGHT)=' >"$work/tile-b-after"
+if ! cmp -s "$work/tile-a" "$work/tile-a-after" || ! cmp -s "$work/tile-b" "$work/tile-b-after"; then
+	printf 'the tiling was not restored after fullscreen (before, then after):\n' >&2
+	cat "$work/tile-a" "$work/tile-b" "$work/tile-a-after" "$work/tile-b-after" >&2
+	exit 1
+fi
+stop_rule_client
+kill "$tile_other_pid"
+wait "$tile_other_pid" 2>/dev/null || true
+
 # A fullscreen rule for a window opened on a hidden tag: fullscreen there,
 # shown when its tag is.
 set_client_rules 'fullscreen=1, tags=2'

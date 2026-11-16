@@ -3724,17 +3724,18 @@ setfullscreenmode(Client *c, int to, int ewmh)
 		resizeclient(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
 		XRaiseWindow(dpy, c->cw.win);
 	} else if (fs_covers(from) && !fs_covers(to)) {
+		int x = c->fsrestore.x, y = c->fsrestore.y;
+		int w = c->fsrestore.w, h = c->fsrestore.h;
+
 		c->bw = c->fsrestore.bw;
 		c->isfloating = c->fsrestore.isfloating;
-		c->x = c->fsrestore.x;
-		c->y = c->fsrestore.y;
-		c->w = c->fsrestore.w;
-		c->h = c->fsrestore.h;
-		/* The restore skips the size hints: room for the strip here. */
-		if (titleheight(c))
-			titlebarclamp(c, c->mon, &c->y, &c->h);
-		resizeclient(c, c->x, c->y, c->w, c->h);
-		restack(c->mon);
+		/* Placed as dwm places a window: on the monitor it is on now (it
+		 * may have been sent to another while fullscreen), with room for a
+		 * title strip. */
+		applysizehints(c, &x, &y, &w, &h, 0);
+		resizeclient(c, x, y, w, h);
+		/* The monitor was arranged without it while it covered it. */
+		arrange(c->mon);
 	} else
 		resizeclient(c, c->x, c->y, c->w, c->h);
 

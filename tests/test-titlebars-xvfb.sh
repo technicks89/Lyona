@@ -319,6 +319,25 @@ wait_strip "$floating" none
 wait_strip "$floating" some
 check_on_top "$floating"
 
+# Sent to the other monitor while fullscreen, a floating window comes back on
+# that monitor when it leaves, not where it was on the first (#533).
+open_client DwmTitleFloat
+moved=$client_id
+moved_pid=$last_client_pid
+"$work/client" fullscreen "$moved" 1
+sleep 0.3
+xdotool key super+shift+period
+sleep 0.3
+"$work/client" fullscreen "$moved" 0
+sleep 0.3
+read -r mx _ _ _ <<EOF
+$(frame "$moved")
+EOF
+[ "$mx" -ge 1024 ] || fail "sent to the right monitor while fullscreen, it came back on the left: x $mx"
+kill "$moved_pid"
+wait "$moved_pid" 2>/dev/null || true
+sleep 0.3
+
 # A window asking for the monitor's whole height at its top is moved below
 # the strip and shortened to fit, so its bottom stays on screen (#529).
 read -r fx fy _ _ <<EOF
