@@ -19,7 +19,7 @@ focus_first_tagged_body=$(
 )
 printf '%s\n' "$focus_first_tagged_body" | grep -q '(c->tags & tags) && ISVISIBLE(c)'
 printf '%s\n' "$focus_first_tagged_body" | grep -q 'focus(c);'
-printf '%s\n' "$focus_first_tagged_body" | grep -q 'XWarpPointer(dpy, None, c->win'
+printf '%s\n' "$focus_first_tagged_body" | grep -q 'XWarpPointer(dpy, None, c->cw.win'
 printf '%s\n' "$focus_first_tagged_body" | grep -q 'XWarpPointer(dpy, None, root'
 # The monitor-centre fallback must stay outside the loop, so it only fires
 # when no client matched.
@@ -117,13 +117,13 @@ fi
 wm_grep -q 'ewmh_replace_root_cardinal(dwmtagupdateatom, data, 1)'
 wm_grep -q 'm->barwin, m->wx, m->by, m->ww, m->bh'
 wm_grep -q 'selmon->barwin, selmon->wx, selmon->by, selmon->ww, selmon->bh'
-set_fullscreen_body=$(wm_body 'setfullscreen(Client \*c, int fullscreen)')
-printf '%s\n' "$set_fullscreen_body" | grep -q 'actualfullscreenchanged'
-printf '%s\n' "$set_fullscreen_body" | grep -q 'wasactualfullscreen'
+# The monitors' fullscreen state is refreshed when covering the monitor
+# changes (#533: one place changes the mode, setfullscreenmode()).
+set_fullscreen_body=$(wm_body 'setfullscreenmode(Client \*c, int to, int ewmh)')
+printf '%s\n' "$set_fullscreen_body" | grep -q 'fs_covers(from) != fs_covers(to)'
 printf '%s\n' "$set_fullscreen_body" | grep -q 'updatefullscreenmonitors();'
 visible_fullscreen_body=$(wm_body 'isvisiblefullscreen(Client \*c)')
-printf '%s\n' "$visible_fullscreen_body" | grep -q 'c->isfullscreen'
-printf '%s\n' "$visible_fullscreen_body" | grep -q 'c->fakefullscreen != 1'
+printf '%s\n' "$visible_fullscreen_body" | grep -q 'fs_covers(c->cw.fsmode)'
 printf '%s\n' "$visible_fullscreen_body" | grep -q 'ISVISIBLE(c)'
 monitor_has_fullscreen_body=$(wm_body 'monitorhasfullscreen(Monitor \*m)')
 printf '%s\n' "$monitor_has_fullscreen_body" | grep -q 'isvisiblefullscreen(c)'
@@ -174,7 +174,7 @@ printf '%s\n' "$focus_in_body" | grep -q 'istransientforbar(ev->window)'
 track_override_body=$(wm_body 'trackoverridewindow(Window win)')
 printf '%s\n' "$track_override_body" | grep -q 'FocusChangeMask'
 tagmon_body=$(wm_body 'tagmon(const Arg \*arg)')
-printf '%s\n' "$tagmon_body" | grep -q 'c->isfullscreen = 1;'
+printf '%s\n' "$tagmon_body" | grep -q 'c->cw.fsmode = mode;'
 printf '%s\n' "$tagmon_body" | grep -q 'updatefullscreenmonitors();'
 reconcile_body=$(wm_body 'reconcilemonitortags(void)')
 printf '%s\n' "$reconcile_body" | grep -q 'dwmfullscreenmonitorsatom != None'

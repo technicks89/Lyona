@@ -42,7 +42,7 @@ attach_bottom_body=$(body 'attachbottom(Client \*c)')
 if printf '%s\n' "$attach_bottom_body" | grep -qE '\bX[A-Z][A-Za-z]+\('; then
 	fail 'attachbottom() issues an X round-trip inside its client walk.'
 fi
-printf '%s\n' "$attach_bottom_body" | grep -q '(\*tc)->class' ||
+printf '%s\n' "$attach_bottom_body" | grep -q '(\*tc)->cw.class' ||
 	fail 'attachbottom() no longer reads the cached class.'
 
 for fn in 'applyrules(Client \*c)' 'applytitlerules(Client \*c)'; do
@@ -50,7 +50,7 @@ for fn in 'applyrules(Client \*c)' 'applytitlerules(Client \*c)'; do
 	if printf '%s\n' "$fn_body" | grep -q 'XGetClassHint'; then
 		fail "$fn refetches WM_CLASS instead of reading the cache."
 	fi
-	printf '%s\n' "$fn_body" | grep -q 'c->class' ||
+	printf '%s\n' "$fn_body" | grep -q 'c->cw.class' ||
 		fail "$fn does not read the cached class."
 done
 
