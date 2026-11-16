@@ -156,4 +156,15 @@ printf '#!/bin/sh\nprintf "%%s\\n" "_DWM_LAYOUT_SETTINGS:  not found."\n' >"$wor
 printf '#!/bin/sh\nprintf "%%s\\n" "_DWM_LAYOUT_SETTINGS(CARDINAL) = 1, 2"\n' >"$work/bin/xprop"
 [[ $(run state) == $'layout-settings\tunavailable' ]]
 
+# One set of limits (#530): what dwm reads (config.c), what the helper accepts,
+# and what the Settings sliders offer.
+model=$repo/config/quickshell/settings/LayoutSettingsModel.qml
+for field in mfact nmaster gap; do
+	c_range=$(sed -n "s/.*layout_value(&doc, i, \"$field\", \([0-9]*\), \([0-9]*\)).*/\1 \2/p" "$repo/config.c")
+	sh_range=$(sed -n "s/^[[:space:]]*$field) lo=\([0-9]*\) hi=\([0-9]*\) ;;/\1 \2/p" "$helper")
+	qml_range=$(sed -n "s/.*\"$field\": { \"minimum\": \([0-9]*\), \"maximum\": \([0-9]*\) }.*/\1 \2/p" "$model")
+	[[ -n $c_range && $c_range == "$sh_range" && $c_range == "$qml_range" ]] ||
+		fail "$field limits differ: config.c '$c_range', helper '$sh_range', Settings '$qml_range'"
+done
+
 printf 'dwm-layout-settings: PASS\n'

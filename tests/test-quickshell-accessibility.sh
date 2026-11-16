@@ -194,4 +194,26 @@ assert_contains "$overview/WindowOverview.qml" 'Accessible.name: "Search windows
 		exit 1
 	}
 
+# Every panel pill has a role and a name for screen readers, and each one
+# that does something on a click can be pressed by them too (#534).
+panel=$repo/config/quickshell/panel/DwmPanel.qml
+pills=$(grep -c '^[[:space:]]*PanelPill {' "$panel")
+named=$(awk '
+	/^[[:space:]]*PanelPill \{/ { inside = 1; depth = 0; role = name = 0 }
+	inside { depth += gsub(/\{/, "{"); depth -= gsub(/\}/, "}")
+		if ($0 ~ /Accessible\.role:/) role = 1
+		if ($0 ~ /Accessible\.name:/) name = 1
+		if (depth == 0) { if (role && name) n++; inside = 0 } }
+	END { print n + 0 }' "$panel")
+pressable=$(grep -c 'Accessible.onPressAction:' "$panel")
+clickable=$(grep -cE '^[[:space:]]*onClicked:' "$panel")
+[ "$named" = "$pills" ] || {
+	printf 'only %s of the %s panel pills have Accessible.role and Accessible.name\n' "$named" "$pills" >&2
+	exit 1
+}
+[ "$pressable" -ge 7 ] || {
+	printf 'panel pills a screen reader can press: %s (onClicked handlers: %s)\n' "$pressable" "$clickable" >&2
+	exit 1
+}
+
 printf 'Quickshell accessibility policy model: PASS\n'

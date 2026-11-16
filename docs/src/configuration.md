@@ -112,8 +112,8 @@ title; a rule you have for it is never changed. The list is
 ## Title bars on floating windows
 
 For Wine programs, older games or other floating windows you want to move and
-close with the mouse, turn on title bars in the `[appearance]` section of
-`themes.toml`:
+close with the mouse, turn on title bars in Settings > Appearance > Layout, or
+in the `[appearance]` section of `themes.toml`:
 
 ```toml
 [appearance]

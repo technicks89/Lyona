@@ -5,6 +5,7 @@
     property double hiddenStageStarted: Date.now()
     readonly property string hiddenHeader: "connectivity-protocol\t1\nprovider\tnetwork\tavailable\tdelegated\tNetworkManager\nnetwork-state\tdisconnected\n"
     readonly property string withAdapter: root.hiddenHeader + "network-device\twlan0\twifi\tdisconnected\t-\n"
+    readonly property string withTwoAdapters: root.hiddenHeader + "network-device\twlan0\twifi\tdisconnected\t-\nnetwork-device\twlan1\twifi\tconnected\tHome\n"
     readonly property string withoutAdapter: root.hiddenHeader + "network-device\teth0\tethernet\tunavailable\t-\n"
     property string hiddenLog: ""
     // The success message was shown (a refresh after it may replace it).
@@ -164,6 +165,14 @@
             case 8:
                 if (model.busy) return;
                 root.hiddenCheck(root.sawCancelled, "after cancel: " + model.message);
+                // Two adapters (#534): the connected one by default, the one
+                // chosen otherwise.
+                model.parseSnapshot(root.withTwoAdapters);
+                root.hiddenCheck(model.hiddenJoinDevice === "wlan1", "default adapter: " + model.hiddenJoinDevice);
+                model.hiddenDevice = "wlan0";
+                root.hiddenCheck(model.hiddenJoinDevice === "wlan0", "chosen adapter: " + model.hiddenJoinDevice);
+                model.hiddenDevice = "wlan9";
+                root.hiddenCheck(model.hiddenJoinDevice === "wlan1", "a missing adapter was used: " + model.hiddenJoinDevice);
                 console.log("Hidden Wi-Fi: PASS");
                 Qt.quit();
                 return;

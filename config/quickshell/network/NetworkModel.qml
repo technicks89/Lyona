@@ -52,6 +52,17 @@ Scope {
     property string hiddenSecurity: "wpa-psk"
     property string hiddenPassword: ""
     property string hiddenMessage: ""
+    // The adapter the join uses (#534): chosen in the prompt when there are
+    // several, else the connected one, else the first.
+    property string hiddenDevice: ""
+    readonly property string hiddenJoinDevice: {
+        if (root.wifiDeviceNames.indexOf(root.hiddenDevice) >= 0) return root.hiddenDevice;
+        const connected = root.devices.filter(function(device) {
+            return device.type === "wifi" && device.state === "connected";
+        });
+        if (connected.length > 0) return connected[0].device;
+        return root.wifiDeviceNames.length > 0 ? root.wifiDeviceNames[0] : "";
+    }
     readonly property var wifiDeviceNames: root.devices.filter(function(device) {
         return device.type === "wifi";
     }).map(function(device) {
@@ -269,6 +280,7 @@ Scope {
         root.hiddenPassword = "";
         root.hiddenMessage = "";
         root.hiddenSecurity = "wpa-psk";
+        root.hiddenDevice = "";
     }
 
     // The name in UTF-8 bytes, which 802.11 limits to 32.
@@ -298,7 +310,7 @@ Scope {
 
     function joinHidden() {
         if (root.busy || hiddenJoinProcess.running || root.hiddenJoinProblem().length > 0) return;
-        const args = [root.wifiDeviceNames[0], root.hiddenSsid, root.hiddenSecurity];
+        const args = [root.hiddenJoinDevice, root.hiddenSsid, root.hiddenSecurity];
         if (root.hiddenSecurity !== "open") args.push("--password-stdin");
         root.busy = true;
         root.hiddenMessage = "Joining " + root.hiddenSsid + "...";

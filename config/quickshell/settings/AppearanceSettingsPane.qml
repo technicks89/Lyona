@@ -14,6 +14,7 @@ Flickable {
     required property var notificationModel
     required property var notificationCapability
     required property var panelSettingsModel
+    required property var layoutModel
     // The panel weather's settings (Sync Sprint 12 S12-20); absent in harnesses.
     property var weatherModel: null
     required property var capabilities
@@ -1005,6 +1006,7 @@ Flickable {
         // The layout, master area and gap of the tag shown (#479).
         LayoutSettingsSection {
             Layout.fillWidth: true
+            layoutModel: root.layoutModel
         }
 
         SectionLabel { label: "Panel widgets" }

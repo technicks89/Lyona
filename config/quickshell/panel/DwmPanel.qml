@@ -63,6 +63,15 @@ PanelWindow {
     required property bool primaryPanel
     // Null in a harness whose UpdateModel has no indicator (S15-02).
     readonly property var updateIndicator: root.updateModel ? root.updateModel.indicator : null
+    // The keyboard pill's tooltip and accessible name (#534): the layout now
+    // and the one a click switches to.
+    readonly property string keyboardDescription: {
+        const layouts = root.state.keyboardLayouts;
+        const group = root.state.keyboardGroup;
+        if (group < 0 || layouts.length < 2) return "Keyboard layout";
+        return "Keyboard layout " + root.state.keyboardLabel + "; click to switch to "
+            + layouts[(group + 1) % layouts.length];
+    }
 
     implicitHeight: Theme.panelHeight
     color: Theme.barBackground
@@ -130,6 +139,8 @@ PanelWindow {
                         visible: root.panelSettingsModel.widgetEnabled("workspaces")
                         Layout.preferredWidth: workspaceRow.implicitWidth + 8
                         Layout.preferredHeight: Theme.pillHeight
+                        Accessible.role: Accessible.Grouping
+                        Accessible.name: "Tags"
 
                         RowLayout {
                             id: workspaceRow
@@ -156,6 +167,8 @@ PanelWindow {
                         Layout.preferredWidth: Math.min(activeTitle.implicitWidth + Theme.pillHorizontalPadding * 2, 260)
                         Layout.preferredHeight: Theme.pillHeight
                         outlined: true
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: "Window: " + root.state.titleForScreen(root.screen)
 
                         // A title too long for the pill scrolls once when it
                         // changes, then rests elided (#499).
@@ -180,6 +193,13 @@ PanelWindow {
                 outlined: true
                 active: root.calendarModel !== null && root.calendarModel.visible
                 hovered: clockMouse.containsMouse
+                // Named for screen readers, which can press it (#534).
+                Accessible.role: clockMouse.enabled ? Accessible.Button : Accessible.StaticText
+                Accessible.name: root.clock.panelText + (clockMouse.enabled ? ", calendar" : "")
+                Accessible.onPressAction: if (clockMouse.enabled) {
+                    root.popupRequested(root, "calendar");
+                    root.calendarModel.toggle(clockPill.mapToItem(null, 0, 0).x);
+                }
 
                 UiText {
                     id: clockLabel
@@ -217,6 +237,12 @@ PanelWindow {
                 outlined: true
                 active: root.weatherModel !== null && root.weatherModel.visible
                 hovered: weatherMouse.containsMouse
+                Accessible.role: Accessible.Button
+                Accessible.name: "Weather: " + (root.weatherModel ? root.weatherModel.panelText : "")
+                Accessible.onPressAction: {
+                    root.popupRequested(root, "weather");
+                    root.weatherModel.toggle(weatherPill.mapToItem(null, 0, 0).x);
+                }
 
                 UiText {
                     id: weatherLabel
@@ -289,6 +315,8 @@ PanelWindow {
                         Layout.preferredWidth: batteryRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
                         Layout.preferredHeight: Theme.compactWidgetSize
                         hovered: batteryMouse.containsMouse
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: "Battery " + root.powerModel.batteryPercent.toString() + "%, " + root.powerModel.batteryStatus
 
                         RowLayout {
                             id: batteryRow
@@ -325,7 +353,9 @@ PanelWindow {
                         Layout.preferredWidth: updateAvailableRow.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
                         Layout.preferredHeight: Theme.compactWidgetSize
                         hovered: updateAvailableMouse.containsMouse
+                        Accessible.role: Accessible.Button
                         Accessible.name: root.updateIndicator ? root.updateIndicator.summary : ""
+                        Accessible.onPressAction: root.settingsRequested(root, "system")
 
                         RowLayout {
                             id: updateAvailableRow
@@ -366,6 +396,8 @@ PanelWindow {
                         Layout.preferredHeight: Theme.compactWidgetSize
                         active: root.updateModel.busy
                         hovered: updateMouse.containsMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.onPressAction: root.updateModel.showProgress()
                         Accessible.name: root.updateModel.busy ? "Update in progress"
                             : root.updateModel.actionSucceeded ? "Update finished" : "Update failed"
 
@@ -394,6 +426,7 @@ PanelWindow {
                     // The keyboard layout (#470, upstream dwm-titus #384), with two
                     // or more: a click switches to the next one.
                     PanelPill {
+                        id: keyboardPill
                         objectName: "keyboardLayoutPill"
                         visible: root.panelSettingsModel.widgetEnabled("keyboard")
                             && root.state.keyboardLayouts.length >= 2
@@ -401,6 +434,9 @@ PanelWindow {
                         Layout.preferredWidth: keyboardLabel.implicitWidth + Theme.compactWidgetHorizontalPadding * 2
                         Layout.preferredHeight: Theme.compactWidgetSize
                         hovered: keyboardMouse.containsMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: root.keyboardDescription
+                        Accessible.onPressAction: root.state.nextKeyboardLayout()
 
                         UiText {
                             id: keyboardLabel
@@ -425,6 +461,12 @@ PanelWindow {
                         Layout.preferredHeight: Theme.compactWidgetSize
                         active: root.bluetoothModel.visible
                         hovered: bluetoothMouse.containsMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Bluetooth: " + root.bluetoothModel.statusText
+                        Accessible.onPressAction: {
+                            root.popupRequested(root, "bluetooth");
+                            root.bluetoothModel.toggle();
+                        }
 
                         RowLayout {
                             id: bluetoothRow
@@ -456,6 +498,12 @@ PanelWindow {
                         Layout.preferredHeight: Theme.compactWidgetSize
                         active: root.networkModel.visible
                         hovered: networkMouse.containsMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Network: " + root.networkModel.statusText
+                        Accessible.onPressAction: {
+                            root.popupRequested(root, "network");
+                            root.networkModel.toggle();
+                        }
 
                         RowLayout {
                             id: networkRow
@@ -491,6 +539,12 @@ PanelWindow {
                         Layout.preferredHeight: Theme.compactWidgetSize
                         active: root.controlsModel.visible
                         hovered: controlsMouse.containsMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Volume: " + root.controlsModel.volumeDisplayText
+                        Accessible.onPressAction: {
+                            root.popupRequested(root, "controls");
+                            root.controlsModel.toggle();
+                        }
 
                         RowLayout {
                             id: volumeRow
@@ -537,6 +591,12 @@ PanelWindow {
                         Layout.preferredHeight: Theme.pillHeight
                         active: root.powerMenuModel.visible
                         hovered: powerMouse.containsMouse
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Power menu"
+                        Accessible.onPressAction: {
+                            root.popupRequested(root, "power");
+                            root.powerMenuModel.toggle("panel");
+                        }
 
                         IconText {
                             anchors.centerIn: parent
@@ -610,6 +670,15 @@ PanelWindow {
         anchorWindow: root
         anchorItem: controlsMouse
         label: root.controlsModel.volumeDisplayText
+        anchorY: Theme.panelHeight
+        rightAligned: true
+    }
+
+    PanelTooltip {
+        visible: keyboardPill.visible && keyboardMouse.containsMouse
+        anchorWindow: root
+        anchorItem: keyboardMouse
+        label: root.keyboardDescription
         anchorY: Theme.panelHeight
         rightAligned: true
     }
