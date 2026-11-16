@@ -85,48 +85,56 @@
                 if (root.lmSets("gap").length < 2) return;
                 root.lmCheck(JSON.stringify(root.lmSets("gap")) === '["set 0 1 gap 4","set 0 1 gap 6"]',
                     "writes: " + JSON.stringify(root.lmSets("gap")));
-                root.lmFeed("layout-settings\t0\t1\t55\t1\t6\t0");
+                // Both writes done, and a line from before the last arrives
+                // late, as on a slow machine: the settle keeps the slider.
+                root.lmFeed("layout-settings\t0\t1\t55\t1\t5\t0");
                 root.lmNext();
                 return;
             case 5:
+                if (lmShell.running || model.gap !== 5) return;
+                root.lmCheck(model.shown("gap") === 6, "a late stale line moved the slider: " + model.shown("gap"));
+                root.lmFeed("layout-settings\t0\t1\t55\t1\t6\t0");
+                root.lmNext();
+                return;
+            case 6:
                 if (lmShell.running || model.gap !== 6) return;
                 root.lmCheck(model.requested.gap === undefined && model.shown("gap") === 6, "after dwm caught up: " + JSON.stringify(model.requested));
                 // Reset: the tag's three values back to the defaults.
                 model.resetTag();
                 root.lmNext();
                 return;
-            case 6:
+            case 7:
                 if (root.lmLog.indexOf("set 0 1 gap default") < 0) return;
                 root.lmCheck(root.lmLog.indexOf("set 0 1 mfact default") >= 0 && root.lmLog.indexOf("set 0 1 nmaster default") >= 0,
                     "reset: " + root.lmLog);
                 root.lmNext();
                 return;
-            case 7:
+            case 8:
                 // Title bars: read, turned on, a tag turned off.
                 if (!model.titlebarsKnown) return;
                 root.lmCheck(!model.titlebarsEnabled && model.titlebarTags === 511, "titlebars read");
                 model.setTitlebars(true, 511);
                 root.lmNext();
                 return;
-            case 8:
+            case 9:
                 if (!model.titlebarsEnabled || model.titlebarsBusy) return;
                 root.lmCheck(root.lmLog.indexOf("titlebars 1 511") >= 0, "titlebars on: " + root.lmLog);
                 model.toggleTitlebarTag(1);
                 root.lmNext();
                 return;
-            case 9:
+            case 10:
                 if (model.titlebarTags !== 510 || model.titlebarsBusy) return;
                 root.lmCheck(!model.tagHasTitlebars(1) && model.tagHasTitlebars(2), "tag 1 off");
                 // The last tag stays: dwm needs at least one.
                 root.lmShellRun('printf "1 1\\n" >"$1/titlebars"');
                 root.lmNext();
                 return;
-            case 10:
+            case 11:
                 if (lmShell.running) return;
                 model.refreshTitlebars();
                 root.lmNext();
                 return;
-            case 11:
+            case 12:
                 if (model.titlebarTags !== 1 || model.titlebarsBusy) return;
                 model.toggleTitlebarTag(1);
                 root.lmCheck(!model.titlebarsBusy && model.titlebarTags === 1, "the last tag was turned off");
@@ -134,13 +142,13 @@
                 root.lmShellRun(': >"$1/fail"');
                 root.lmNext();
                 return;
-            case 12:
+            case 13:
                 if (lmShell.running) return;
                 model.save("mfact", 70);
                 root.lmCheck(model.shown("mfact") === 70, "asked for 70");
                 root.lmNext();
                 return;
-            case 13:
+            case 14:
                 if (model.message.length === 0) return;
                 root.lmCheck(model.message.indexOf("cannot write") >= 0 && model.shown("mfact") === 55,
                     "after a failure: " + model.message + ", shown " + model.shown("mfact"));
@@ -149,17 +157,17 @@
                 root.lmShellRun('rm -f "$1/fail"');
                 root.lmNext();
                 return;
-            case 14:
+            case 15:
                 if (lmShell.running) return;
                 model.save("gap", 9);
                 root.lmNext();
                 return;
-            case 15:
+            case 16:
                 if (root.lmLog.indexOf("set 0 1 gap 9") < 0) return;
                 root.lmCheck(model.shown("gap") === 9, "right after the write: " + model.shown("gap"));
                 root.lmNext();
                 return;
-            case 16:
+            case 17:
                 if (model.requested.gap !== undefined) return;
                 root.lmCheck(waited > 800 && model.shown("gap") === model.gap,
                     "settled after " + waited + " ms: shown " + model.shown("gap") + ", dwm " + model.gap);
@@ -171,7 +179,7 @@
                 root.lmCheck(model.available && !model.editable, "editable on stale state");
                 root.lmNext();
                 return;
-            case 17:
+            case 18:
                 if (!model.editable || model.titlebarsBusy) return;
                 root.lmCheck(model.reported, "editable before a report");
                 // A read asked for while one runs is not dropped: it runs after.
@@ -181,7 +189,7 @@
                 root.lmCheck(model.titlebarsBusy, "a read did not start");
                 root.lmNext();
                 return;
-            case 18:
+            case 19:
                 if (model.titlebarsBusy || root.lmLog.split("\n").filter(line => line === "status").length < root.lmReads + 2) return;
                 settingsModel.close();
                 console.log("Layout settings model: PASS");

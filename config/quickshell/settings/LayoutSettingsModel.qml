@@ -127,12 +127,15 @@ Scope {
         root.reconcileRequested(sameView);
     }
 
-    // dwm's value wins once it matches, once no write for the field is left,
-    // or when another monitor or tag is shown.
+    // dwm's value wins once it matches, once no write for the field is left
+    // and the settle after the last one has passed, or when another monitor or
+    // tag is shown. A line from before the last write that arrives after it,
+    // during the settle, does not step the slider back.
     function reconcileRequested(sameView) {
         const kept = {};
         for (const field of Object.keys(root.requested)) {
-            const writing = root.savingField === field || root.pendingSaves[field] !== undefined;
+            const writing = root.savingField === field || root.pendingSaves[field] !== undefined
+                || requestedSettle.running;
             if (sameView && writing && root.requested[field] !== root.watched[field]) kept[field] = root.requested[field];
         }
         root.requested = kept;
